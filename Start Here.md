@@ -542,3 +542,11 @@ Order:
 
 Conflict rule:
 - If generic TYP wrapper instructions conflict with a skill set's own docs, follow the skill's `SKILL.md` and `CORE_UPDATES.md`.
+
+
+## Mandatory TYP file-read rule for all imported skills
+Before installing any imported skill:
+1. Discover every `.md` file in that skill folder (all subfolders).
+2. Read every `.md` file with no exceptions.
+3. Report discovered count and read count.
+4. If counts do not match, stop and mark install as failed.
