@@ -1,23 +1,24 @@
-# self-improving-agent
+# Self-Improving Agent (Imported)
 
 ## Purpose
-Recreated local version of ClawHub skill **self-improving-agent** with all upstream markdown and support files preserved.
+Imported skill package with upstream files preserved intact.
 
-## MANDATORY FIRST STEP
-Execute Teach Yourself Protocol on this folder before any install/use:
-1. Read `SKILL.md`
-2. Read `self-improving-agent-full.md`
-3. Read all files under `upstream-original/` (especially all `.md` files)
-4. Confirm understanding before running anything
+## MANDATORY TYP STEP (NON-OPTIONAL)
+Before install or use, run Teach Yourself Protocol on this skill folder.
+
+Required read order:
+1. SKILL.md (this file)
+2. self-improving-agent-full.md
+3. Every markdown file under upstream-original/
+4. CORE_UPDATES.md
+5. INSTALL.md and INSTRUCTIONS.md
+
+Do not install before completing all reads.
 
 ## What is preserved
-- All upstream files are stored in: `upstream-original/`
-- Original markdown files are intact
-- Original scripts/hooks are intact
+- Upstream files are stored in: upstream-original/
+- Upstream markdown and scripts stay unchanged
 
-## Install target
-Install to `~/.openclaw/skills/self-improving-agent/` for local usage.
-
-## Source
-- ClawHub slug: `self-improving-agent`
-- Recreated into OpenClaw onboarding package for internal/team use.
+## Core file policy for this skill
+Only update relevant core files listed in CORE_UPDATES.md.
+Do not edit unrelated core files.

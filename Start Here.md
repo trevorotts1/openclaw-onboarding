@@ -521,3 +521,11 @@ Order:
 4. 19-youtube-watcher
 
 For each imported skill: run Teach Yourself Protocol, read SKILL.md, read full file, then upstream-original docs, then install.
+
+
+## Imported Skill Enforcement Rule
+For every imported skill (16+), this is mandatory:
+1. Run Teach Yourself Protocol first
+2. Read all upstream markdown files
+3. Apply only relevant core file updates listed in that skill's CORE_UPDATES.md
+4. Do not edit non-relevant core files

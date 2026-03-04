@@ -2620,3 +2620,9 @@ Before installing any skill:
 
 
 ### END references/security-patterns.md
+
+
+## TYP Add-on (Imported Onboarding Standard)
+- This imported skill requires Teach Yourself Protocol before install and before first run.
+- Read all markdown files first, then install, then apply only relevant core updates.
+- Never update non-relevant core files.

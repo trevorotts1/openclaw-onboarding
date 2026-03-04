@@ -1,10 +1,32 @@
-# CORE_UPDATES - humanizer
+# CORE_UPDATES - Humanizer
 
-## AGENTS.md snippet
-- Added recreated `humanizer` skill as Imported Skill #3 with upstream preservation.
+## Rule
+Apply updates only to relevant core files for this skill.
+Do not update unrelated core files.
 
-## TOOLS.md snippet
-- Before running `humanizer`, read `upstream-original/SKILL.md`.
+## Relevant (update allowed)
+- AGENTS.md
+- TOOLS.md
 
-## MEMORY.md snippet
-- `humanizer` cloned from ClawHub and added to onboarding sequence.
+## Optional (only if explicitly needed)
+- MEMORY.md
+
+## Non-relevant (do not edit)
+- USER.md
+- SOUL.md
+- IDENTITY.md
+- HEARTBEAT.md
+
+## Suggested snippets
+### AGENTS.md
+- Add a short rule that this skill must pass TYP before execution.
+- Add skill-specific trigger/use statement.
+
+### TOOLS.md
+- Add only tool commands/endpoints this skill needs.
+
+### MEMORY.md
+- Add only persistent facts and constraints learned from this skill.
+
+### USER.md
+- Update only when this skill needs user preferences or user-specific routing.

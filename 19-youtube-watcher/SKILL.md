@@ -1,15 +1,24 @@
-# youtube-watcher
+# YouTube Watcher (Imported)
 
 ## Purpose
-Recreated local version of ClawHub skill **youtube-watcher** with all upstream files preserved.
+Imported skill package with upstream files preserved intact.
 
-## MANDATORY FIRST STEP
-Execute Teach Yourself Protocol on this folder before any install/use:
-1. Read `SKILL.md`
-2. Read `youtube-watcher-full.md`
-3. Read all files under `upstream-original/`
-4. Confirm understanding before running anything
+## MANDATORY TYP STEP (NON-OPTIONAL)
+Before install or use, run Teach Yourself Protocol on this skill folder.
 
-## Source
-- ClawHub slug: `youtube-watcher`
-- Owner: Michaelgathara
+Required read order:
+1. SKILL.md (this file)
+2. youtube-watcher-full.md
+3. Every markdown file under upstream-original/
+4. CORE_UPDATES.md
+5. INSTALL.md and INSTRUCTIONS.md
+
+Do not install before completing all reads.
+
+## What is preserved
+- Upstream files are stored in: upstream-original/
+- Upstream markdown and scripts stay unchanged
+
+## Core file policy for this skill
+Only update relevant core files listed in CORE_UPDATES.md.
+Do not edit unrelated core files.

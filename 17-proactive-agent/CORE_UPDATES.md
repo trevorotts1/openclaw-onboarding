@@ -1,10 +1,33 @@
-# CORE_UPDATES - proactive-agent
+# CORE_UPDATES - Proactive Agent
 
-## AGENTS.md snippet
-- Added local recreated skill `proactive-agent` from ClawHub, preserving upstream docs in onboarding package.
+## Rule
+Apply updates only to relevant core files for this skill.
+Do not update unrelated core files.
 
-## TOOLS.md snippet
-- If using `proactive-agent`, read `upstream-original/SKILL.md` first before execution.
+## Relevant (update allowed)
+- AGENTS.md
+- TOOLS.md
+- MEMORY.md
+- USER.md
+- SOUL.md
+- HEARTBEAT.md
 
-## MEMORY.md snippet
-- `proactive-agent` recreated and archived in onboarding package with full upstream file preservation.
+## Optional (only if explicitly needed)
+- IDENTITY.md
+
+## Non-relevant (do not edit)
+- None
+
+## Suggested snippets
+### AGENTS.md
+- Add a short rule that this skill must pass TYP before execution.
+- Add skill-specific trigger/use statement.
+
+### TOOLS.md
+- Add only tool commands/endpoints this skill needs.
+
+### MEMORY.md
+- Add only persistent facts and constraints learned from this skill.
+
+### USER.md
+- Update only when this skill needs user preferences or user-specific routing.
