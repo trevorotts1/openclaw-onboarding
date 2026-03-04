@@ -510,3 +510,14 @@ For each imported skill:
 - Read `[skill-name]-full.md`
 - Read all docs in `upstream-original/`
 - Install to `~/.openclaw/skills/<slug>/`
+
+
+## Imported Skills Pack (16-19) - install sequence
+
+Order:
+1. 16-self-improving-agent
+2. 17-proactive-agent
+3. 18-humanizer
+4. 19-youtube-watcher
+
+For each imported skill: run Teach Yourself Protocol, read SKILL.md, read full file, then upstream-original docs, then install.
