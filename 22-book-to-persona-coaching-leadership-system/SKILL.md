@@ -148,13 +148,13 @@ The skill will:
 
 These two skills are separate but work together automatically.
 
-**If skill 22 (ai-workforce-blueprint) is installed:**
+**If skill 23 (ai-workforce-blueprint) is installed:**
 - The workforce scaffold script detects the `coaching-personas` QMD collection during build
 - Each department folder gets a `governing-personas.md` showing which personas govern it
 - Each `00-START-HERE.md` includes a Governing Personas section with QMD query
 - Agents know: go to the right department, use the right persona
 
-**If skill 22 is NOT installed:**
+**If skill 23 is NOT installed:**
 - Personas operate standalone - no department structure required
 - Same persona blueprints, same QMD search, just without dept folder wiring
 

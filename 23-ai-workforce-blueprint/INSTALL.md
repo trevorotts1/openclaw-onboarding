@@ -187,7 +187,13 @@ fi
 chmod +x ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py
 ```
 
-If the skill files are already at `~/.openclaw/skills/23-ai-workforce-blueprint/`, skip the copy but still run the chmod.
+**Verify the critical blueprint file was not truncated during copy:**
+```bash
+wc -c ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-blueprint-full.md
+```
+Expected: 66,000+ characters. If the file is under 50,000 characters, the copy was truncated - re-copy the skill folder before proceeding. A truncated blueprint will produce an incomplete workforce structure.
+
+If the skill files are already at `~/.openclaw/skills/23-ai-workforce-blueprint/`, skip the copy but still run the chmod and file size check.
 
 ---
 

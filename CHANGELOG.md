@@ -4,6 +4,16 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v1.7.0] - March 8, 2026
+
+### Fixed (final polish pass - all skills to 10/10)
+- Skill 22 SKILL.md: "skill 22" → "skill 23" in AI Workforce Blueprint connection section (lines 151 and 157)
+- Skill 22 CORE_UPDATES.md: "Trevor" → "the user" in 2 places (portability for client delivery)
+- Skill 22 INSTALL.md + CORE_UPDATES.md: removed hardcoded "40" persona count in 4 places → dynamic qmd status command
+- Skill 23 INSTALL.md: added ai-workforce-blueprint-full.md file size verification after copy (truncation check)
+
+---
+
 ## [v1.6.0] - March 8, 2026
 
 ### Changed

@@ -13,7 +13,7 @@ Add concise summaries and file paths only. Never paste full documentation into c
 ```
 ## Book-to-Persona Skill (Installed)
 Converts any book (PDF/EPUB/MOBI/AZW3) into a dual-purpose persona blueprint.
-40 pre-built personas already included. Pipeline runs on new books only.
+Pre-built personas already included. Run: qmd status -c coaching-personas to see total count. Pipeline runs on new books only.
 
 Pipeline:
 - Phase 1: Kimi K2.5 via direct Moonshot API (api.moonshot.cn/v1, temp 1.0) → extraction-notes.md
@@ -24,7 +24,7 @@ Pipeline:
 Persona Reflex (DEFAULT BEHAVIOR):
 Before any professional task, run: qmd search coaching-personas "<task keywords>"
 Load returned persona's Task Mode. Execute the task through that methodology.
-Skip only if Trevor explicitly says so.
+Skip only if the user explicitly says so.
 
 Key paths:
 - Skill: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/
@@ -75,7 +75,7 @@ Full QMD guide: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system
 ```
 ## Book-to-Persona Persona Library (Installed [DATE])
 - Skill: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/
-- 40 pre-built personas: ~/Downloads/openclaw-master-files/coaching-personas/personas/
+- Pre-built personas (see qmd status -c coaching-personas for count): ~/Downloads/openclaw-master-files/coaching-personas/personas/
 - QMD collection: coaching-personas [run: qmd status -c coaching-personas to get current counts]
 - GitHub: https://github.com/trevorotts1/openclaw-onboarding (skill 22-book-to-persona)
 - Persona Reflex: query QMD before every professional task (see AGENTS.md)
@@ -102,7 +102,7 @@ When operating through a persona from the book-to-persona library:
 
 ## USER.md
 
-No update required. This skill does not change anything about how you interact with Trevor directly.
+No update required. This skill does not change anything about how you interact with the user directly.
 
 ---
 

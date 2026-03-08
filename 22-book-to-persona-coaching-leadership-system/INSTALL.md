@@ -275,7 +275,7 @@ If Codex OAuth is not found or expired: reconnect via OpenClaw settings using yo
 
 ## Step 5 - Set Up QMD Collection (coaching-personas)
 
-The 40 pre-built personas are already in this skill folder. Now add them to QMD so agents can search them.
+Pre-built personas are already included in this skill folder. Now add them to QMD so agents can search them.
 
 ### 5a - Add the collection
 ```bash
@@ -516,4 +516,4 @@ Run through this checklist:
 - [ ] Core files updated per CORE_UPDATES.md (Step 7)
 - [ ] Pipeline execution test passed (Step 8)
 
-When all boxes are checked: log "Book-to-Persona skill fully installed. QMD collection active. 40 pre-built personas ready. Pipeline verified operational. Ready to process new books or query personas."
+When all boxes are checked: log "Book-to-Persona skill fully installed. QMD collection active. Pre-built personas ready (run: qmd status -c coaching-personas to see count). Pipeline verified operational. Ready to process new books or query personas."
