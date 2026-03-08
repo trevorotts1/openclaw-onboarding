@@ -129,6 +129,8 @@ The agent must verify these two prerequisites are already complete before procee
 
 If either prerequisite is missing, the agent must stop and report this to the user.
 
+**CONFLICT RULE - MANDATORY:** If this skill's files (SKILL.md, CORE_UPDATES.md, INSTALL.md, USAGE.md) conflict with TYP instructions on WHAT to add to core files or WHICH files to update, this skill wins. Always. TYP governs HOW to store (lean summaries + file paths). This skill governs WHAT content goes in and which files it touches. When in doubt: skill docs win.
+
 
 ## What Will Be Installed
 
@@ -205,7 +207,7 @@ mkdir -p ~/Downloads/openclaw-master-files/superpowers
 
 Execute one of these three download methods. Choose based on system capabilities.
 
-**Method A - Using git (if available):**
+**Method A - Using git (PREFERRED - gets everything):**
 
 ```
 cd [MASTER_FILES_FOLDER]/superpowers
@@ -213,6 +215,8 @@ git clone https://github.com/obra/superpowers.git .
 ```
 
 The period at the end is critical. It places files directly into the superpowers folder.
+Git clone downloads ALL folders: skills/, commands/, agents/, hooks/, lib/ - everything in the repo.
+This is the preferred method. If git is available, always use Method A, not Method C.
 
 
 **Method B - Using browser and manual extraction (if git unavailable):**
