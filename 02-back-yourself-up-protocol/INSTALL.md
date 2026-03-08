@@ -9,6 +9,7 @@
 ## Step 1: Find or Create Backup Folder
 
 Search ~/Downloads/ for any folder with "openclaw" and "backup" in the name (case-insensitive):
+- OpenClaw Backups  ← standard default name
 - openclaw-backups
 - OpenClaw Backup
 - openclaw backup
@@ -16,7 +17,7 @@ Search ~/Downloads/ for any folder with "openclaw" and "backup" in the name (cas
 
 If found, use it. If not found:
 ```bash
-mkdir -p ~/Downloads/openclaw-backups/
+mkdir -p ~/Downloads/OpenClaw\ Backups/
 ```
 
 ## Step 2: Place the Skill Files

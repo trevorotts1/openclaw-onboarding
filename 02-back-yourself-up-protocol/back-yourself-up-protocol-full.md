@@ -192,9 +192,13 @@ Before doing anything, tell the user what you intend to change and why. Be speci
 Example:
 > "I need to update the OpenClaw config to add the new Gemini 3.1 Pro model. Before I touch anything, I am going to create a backup of the current config file."
 Step 2: Locate or Create the Backup Folder
-Check for existing backup folders in ~/Downloads/. Different users may have named their backup folder differently. The agent must search for any folder that serves as the OpenClaw backup location.
-Common folder name variations to check for: 
+Check for an existing backup folder in ~/Downloads/. IMPORTANT: Do NOT overwrite or create a duplicate if one already exists.
+
+Standard folder name: OpenClaw Backups
+Common variations to recognize (check case-insensitively):
+OpenClaw Backups
 openclaw-backups
+openclaw_backups
 openclaw-backup
 openclaw backups (with space)
 openclaw backup (with space, singular)
@@ -209,7 +213,7 @@ Decision logic:
 Search ~/Downloads/ for any folder matching the variations above or similar patterns
 If a matching folder is found, use it
 If MULTIPLE matching folders exist, prefer the most specific one (the one with "openclaw" in the name)
-If NO matching folder is found, create ~/Downloads/openclaw-backups/ (this is the standard default)
+If NO matching folder is found, create ~/Downloads/OpenClaw Backups/ (this is the standard default name)
 See the Backup Folder Detection section below for the detailed decision logic and shell commands.
 Step 3: Create the Backup File
 Copy the config file to the backup folder as a plain readable text file (.txt extension, not .json). The file name must follow the human-readable naming convention described in File Naming Convention.
@@ -967,7 +971,7 @@ ls -d ~/Downloads/openclaw-backups 2>/dev/null
 ls -d ~/Downloads/backups 2>/dev/null
 # Not found
 > "I need to update your Claude API key in the OpenClaw config. I do not see a backup folder yet, so I am creating one now."
-mkdir -p ~/Downloads/openclaw-backups/
+mkdir -p ~/Downloads/OpenClaw\ Backups/
 cp ~/.openclaw/openclaw.json ~/Downloads/openclaw-backups/models-backup-February 23 at 2-00 PM.txt
 Agent verifies, asks permission, proceeds as normal.
 Example 3: Backup Verification Fails
@@ -986,7 +990,7 @@ full-backup/
 Agent detects 2 existing backups, deletes the oldest:
 rm -rf ~/Downloads/openclaw-backups/full-backup/full-backup-2026-01-26
 Creates new backup:
-mkdir -p ~/Downloads/openclaw-backups/full-backup/full-backup-2026-02-23/
+mkdir -p ~/Downloads/OpenClaw\ Backups/full-backup/full-backup-2026-02-23/
 Proceeds with the full backup procedure. Result:
 full-backup/
     full-backup-2026-02-09/    (previous)
