@@ -8,6 +8,22 @@ description: >
   Teach Yourself Protocol before every run.
 ---
 
+## MANDATORY - Teach Yourself Protocol (TSP)
+
+**Before using this skill, complete the Teach Yourself Protocol (Skill 01) on this folder.**
+
+Required read order:
+1. SKILL.md (this file)
+2. PIPELINE.md - the full 3-phase pipeline architecture
+3. CHECKLIST.md - the 14-section persona blueprint checklist
+4. GOOD-AND-BAD-EXAMPLES.md - quality standards for persona output
+5. PERSONA-ROUTER.md - task-type to persona routing map
+6. INSTALL.md - setup and dependencies
+7. CORE_UPDATES.md - what to add to your workspace files
+
+Do NOT run the pipeline or add any book before completing all 7 reads.
+Do NOT claim the skill is installed until CORE_UPDATES.md has been applied.
+
 # Book Intelligence Pipeline
 ## Bestselling Book to Coaching Framework and AI Leadership Guidance
 

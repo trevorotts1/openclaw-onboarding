@@ -1,5 +1,6 @@
 ---
 name: ai-workforce-blueprint
+
 description: Build the folder and file system that turns your AI agent into a trained workforce. Creates department folders, role folders, SOPs, Start Here files, routing logic, and all knowledge architecture files your AI needs to operate without babysitting.
 triggers:
   - "build my AI workforce"
@@ -11,6 +12,23 @@ triggers:
   - "scaffold my AI workspace"
 version: 1.0.0
 author: trevorotts1
+---
+
+## MANDATORY - Teach Yourself Protocol (TSP)
+
+**Before using this skill, complete the Teach Yourself Protocol (Skill 01) on this folder.**
+
+Required read order:
+1. SKILL.md (this file)
+2. ai-workforce-blueprint-full.md - the complete 66,819-character blueprint document
+3. INSTRUCTIONS.md - build options A, B, and C explained
+4. EXAMPLES.md - good and bad department/role structure examples
+5. INSTALL.md - setup and dependencies
+6. CORE_UPDATES.md - what to add to your workspace files
+
+Do NOT run the scaffold script or create any folders before completing all 6 reads.
+Do NOT claim the skill is installed until CORE_UPDATES.md has been applied.
+
 ---
 
 # AI Workforce Blueprint Skill
