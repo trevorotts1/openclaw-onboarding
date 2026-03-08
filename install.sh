@@ -116,9 +116,32 @@ fi
 # ─────────────────────────────────────────────
 print_step "Checking API keys..."
 
+PENDING_FILE="$HOME/.openclaw/skills/.pending-setup.md"
+
+log_pending() {
+  local key_name="$1"
+  local description="$2"
+  local skill="$3"
+  if [ ! -f "$PENDING_FILE" ]; then
+    echo "# Pending Skill Setup" > "$PENDING_FILE"
+    echo "These skills were skipped during install and are waiting for setup." >> "$PENDING_FILE"
+    echo "Your AI agent should check this file and remind you when appropriate." >> "$PENDING_FILE"
+    echo "" >> "$PENDING_FILE"
+  fi
+  cat >> "$PENDING_FILE" << ENTRY
+
+## $key_name
+- **Skill:** $skill
+- **What it unlocks:** $description
+- **How to add:** echo "${key_name}=YOUR_KEY_HERE" >> $ENV_FILE
+- **Status:** PENDING
+ENTRY
+}
+
 check_or_ask_key() {
   local key_name="$1"
   local description="$2"
+  local skill="${3:-unknown skill}"
   local existing=""
 
   if [ -f "$ENV_FILE" ]; then
@@ -131,23 +154,33 @@ check_or_ask_key() {
   fi
 
   echo ""
-  print_warn "$key_name not found ($description)"
+  print_warn "$key_name not found"
+  echo "  This key is needed for: $description"
   read -p "  Enter $key_name (or press Enter to skip): " user_key
+
   if [ -n "$user_key" ]; then
     mkdir -p "$(dirname "$ENV_FILE")"
     echo "${key_name}=${user_key}" >> "$ENV_FILE"
     print_ok "$key_name saved"
     return 0
   else
-    print_warn "$key_name skipped - add it later to $ENV_FILE"
+    echo ""
+    read -p "  Remind you about this later, or skip permanently? (remind/skip) [remind]: " remind_choice
+    remind_choice="${remind_choice:-remind}"
+    if [ "$remind_choice" != "skip" ]; then
+      log_pending "$key_name" "$description" "$skill"
+      print_warn "$key_name saved to pending setup - your agent will remind you"
+    else
+      print_warn "$key_name permanently skipped"
+    fi
     return 1
   fi
 }
 
-check_or_ask_key "MOONSHOT_API_KEY"    "Required for book-to-persona Phase 1 (Kimi)" && SUMMARY_INSTALLED+=("Moonshot API") || SUMMARY_NEEDS_KEY+=("MOONSHOT_API_KEY")
-check_or_ask_key "OPENROUTER_API_KEY"  "Required for book-to-persona Phase 2 (DeepSeek) and fallbacks" && true || SUMMARY_NEEDS_KEY+=("OPENROUTER_API_KEY")
-check_or_ask_key "OPENAI_API_KEY"      "Required for book-to-persona Phase 3 (Codex)" && true || SUMMARY_NEEDS_KEY+=("OPENAI_API_KEY")
-check_or_ask_key "GITHUB_TOKEN"        "Required to push new personas to GitHub repo" && true || SUMMARY_NEEDS_KEY+=("GITHUB_TOKEN")
+check_or_ask_key "MOONSHOT_API_KEY"    "Book-to-Persona Phase 1 extraction (Kimi K2.5)" "21-book-to-persona" && SUMMARY_INSTALLED+=("Moonshot API") || SUMMARY_NEEDS_KEY+=("MOONSHOT_API_KEY")
+check_or_ask_key "OPENROUTER_API_KEY"  "Book-to-Persona Phase 2 analysis (DeepSeek) + model fallbacks" "21-book-to-persona" && true || SUMMARY_NEEDS_KEY+=("OPENROUTER_API_KEY")
+check_or_ask_key "OPENAI_API_KEY"      "Book-to-Persona Phase 3 synthesis (Codex)" "21-book-to-persona" && true || SUMMARY_NEEDS_KEY+=("OPENAI_API_KEY")
+check_or_ask_key "GITHUB_TOKEN"        "Push new personas to GitHub repo after pipeline runs" "21-book-to-persona" && true || SUMMARY_NEEDS_KEY+=("GITHUB_TOKEN")
 
 # ─────────────────────────────────────────────
 # STEP 6: Set up QMD collections
@@ -205,11 +238,12 @@ echo ""
 echo -e "${GREEN}Skills folder: $SKILLS_DIR${NC}"
 echo ""
 
-if [ ${#SUMMARY_NEEDS_KEY[@]} -gt 0 ]; then
-  echo -e "${YELLOW}API keys needed (add to $ENV_FILE):${NC}"
-  for key in "${SUMMARY_NEEDS_KEY[@]}"; do
-    echo "  - $key"
-  done
+if [ -f "$PENDING_FILE" ]; then
+  echo -e "${YELLOW}Skills pending setup (your agent will remind you):${NC}"
+  grep "^## " "$PENDING_FILE" | sed 's/^## /  - /'
+  echo ""
+  echo -e "  Full details: $PENDING_FILE"
+  echo -e "  ${BLUE}Your agent reads this file automatically and will remind you when you are ready.${NC}"
   echo ""
 fi
 
