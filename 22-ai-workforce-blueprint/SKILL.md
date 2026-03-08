@@ -98,3 +98,22 @@ Read `ai-workforce-blueprint-full.md` and follow the step-by-step instructions t
 **Option C - Resume:**
 If you already started a structure, tell your AI: "Resume my AI workforce build."
 The AI audits your existing folders and fills gaps.
+
+---
+
+## Connection to Coaching Personas Matrix (Skill 21)
+
+These two skills are separate but work together automatically.
+
+**If skill 21 (book-to-persona) is installed:**
+- The scaffold script detects the `coaching-personas` QMD collection
+- Every department folder automatically gets a `governing-personas.md` file listing which personas govern that department
+- Every `00-START-HERE.md` gets a Governing Personas section with QMD query instructions
+- Agents in each department know exactly which persona methodology to follow
+
+**If skill 21 is NOT installed:**
+- Structure builds clean with no persona references
+- Install skill 21 later, then re-run the scaffold in Option C (audit mode)
+- It will detect personas and wire them in retroactively without touching existing files
+
+**Cross-reference path:** `~/.openclaw/skills/21-book-to-persona/PERSONA-ROUTER.md`

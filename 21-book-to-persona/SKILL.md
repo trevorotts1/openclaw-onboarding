@@ -139,3 +139,21 @@ The skill will:
 - **QMD retrieval at runtime:** `QMD-RETRIEVAL-GUIDE.md`
 - **Build checklist:** `CHECKLIST.md`
 - **Good and bad examples:** `GOOD-AND-BAD-EXAMPLES.md`
+
+---
+
+## Connection to AI Workforce Blueprint (Skill 22)
+
+These two skills are separate but work together automatically.
+
+**If skill 22 (ai-workforce-blueprint) is installed:**
+- The workforce scaffold script detects the `coaching-personas` QMD collection during build
+- Each department folder gets a `governing-personas.md` showing which personas govern it
+- Each `00-START-HERE.md` includes a Governing Personas section with QMD query
+- Agents know: go to the right department, use the right persona
+
+**If skill 22 is NOT installed:**
+- Personas operate standalone - no department structure required
+- Same persona blueprints, same QMD search, just without dept folder wiring
+
+**Cross-reference path:** `~/.openclaw/skills/22-ai-workforce-blueprint/PERSONA-ROUTER.md`
