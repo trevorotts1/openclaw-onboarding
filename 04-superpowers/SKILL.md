@@ -57,7 +57,7 @@ These are the heart of Superpowers. The agent must follow these every time, no e
 1. **SKILL.md** - You are here. Start here to understand what this skill is about.
 2. **superpowers-full.md** - The complete guide. Covers installation steps, what to add to your core files (AGENTS.md, TOOLS.md, MEMORY.md), verification questions, and the full details of all 14 skills.
 3. **INSTALL.md** - Quick install reference.
-4. **INSTRUCTIONS.md** - Step-by-step execution instructions.
+4. **USAGE.md** - How to use the framework day-to-day (trigger map, anti-patterns, Iron Laws in action).
 5. **EXAMPLES.md** - Real examples of how to use the skills.
 6. **CORE_UPDATES.md** - Exactly what to add to your core .md files.
 7. **superpowers.skill** - Machine-readable skill definition.
