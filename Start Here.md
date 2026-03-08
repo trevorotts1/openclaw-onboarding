@@ -531,6 +531,20 @@ alongside the .skill package and tell the human what to do and tell the AI how t
 
 ---
 
+## AUTO-START RULE - READ THIS BEFORE INSTALLING ANYTHING
+
+**When you receive this file, begin immediately. Do not ask the user if you should start. Do not say "Ready to begin?" Do not wait for confirmation. Just start.**
+
+The install script has already downloaded all skills to disk. Your job is to install them in order, one by one, automatically.
+
+- Install Skill 01 → confirm it worked → install Skill 02 → confirm → continue through all 23
+- Only pause when you need something the user must provide (API key not in any env file, 2FA code, first-time browser login)
+- When you need a key: ask clearly, wait for answer, then continue
+- When a skill is optional and the user wants to skip: mark SKIPPED, move to next - do not stop the whole install
+- Do not announce "I will now install skill X" - just do it and report when done
+
+---
+
 ## WHEN ONBOARDING IS COMPLETE
 
 When every skill on the list above is installed and verified, tell the user:
