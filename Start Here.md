@@ -23,18 +23,18 @@ Without this, one bad edit can corrupt your system with no way to recover.
 
 ### ✅ STEP 3: QMD (Semantic Search Engine)
 **Handled automatically by the install script - no skill folder needed.**
-QMD is installed as a system dependency before skills 4-28 run.
+QMD is installed as a system dependency before skills 4-29 run.
 It powers the persona search in Skill 22 and the persona detection in Skill 23.
 If the install script already ran, QMD is installed. No manual step needed.
 
-### STEPS 4-28: All Remaining Skills (in numbered order)
+### STEPS 4-29: All Remaining Skills (in numbered order)
 Skills install sequentially. For each skill:
 - The agent checks if API keys are already present in your env files
 - If a key is found → proceeds automatically
 - If a key is not found → asks you to enter it, or offers to skip and remind you later
 - You can skip any skill and the agent moves to the next one automatically
 
-**Every skill from 04 through 28 requires both TYP (Step 1) and Back Yourself Up (Step 2) to be installed first.**
+**Every skill from 04 through 29 requires both TYP (Step 1) and Back Yourself Up (Step 2) to be installed first.**
 No exceptions. If you skip those two, stop and go back.
 
 ---
@@ -69,7 +69,7 @@ git log HEAD..origin/main --oneline --name-only 2>/dev/null || \
    - Re-run TYP on the updated SKILL.md
    - Re-apply CORE_UPDATES.md if it changed
    - Rebuild the `.skill` archive if scripts changed
-4. Notify Trevor via Telegram: "3 skills updated this week: [list]. Re-learned. No action needed."
+4. Notify via your configured messaging channel: "3 skills updated this week: [list]. Re-learned. No action needed."
 
 ### If git is not available
 
@@ -89,7 +89,7 @@ or what content to add - always follow the skill's files.**
 - TYP governs the storage METHOD: lean summaries and file path references in core files
 - The skill governs the CONTENT and which files it touches
 - Skill docs always take precedence over TYP when there is a conflict
-- This applies to every skill from 03 through 28
+- This applies to every skill from 03 through 29
 
 ---
 
@@ -153,9 +153,7 @@ ls -d ~/Downloads/master-files 2>/dev/null
 ls -d ~/Documents/openclaw-master-files 2>/dev/null
 ```
 
-Also ask the user:
-> "Do you have an existing folder where you keep OpenClaw master files or
-> reference documents? If so, what is the path?"
+If exactly one match is found: use it and continue. If multiple matches are found: ask the user which to use. If no match is found: create ~/Downloads/openclaw-master-files/ and continue.
 
 **If a folder exists:** Use it. Store that path. All skills will be extracted there.
 Do not create a second folder.
@@ -392,7 +390,7 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
 **Each skill folder contains some combination of SKILL.md, INSTALL.md, INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md.** Some skills also include a `[skill-name]-full.md`, a `.skill` package file, an `upstream-original/` subfolder, or additional reference documents. File count varies by skill. If SKILL.md or INSTALL.md is missing from a folder, stop and tell the user before proceeding.
 
 **Naming rules:**
-- Folder names are lowercase with hyphens, prefixed with their install number (01 through 28)
+- Folder names are lowercase with hyphens, prefixed with their install number (01 through 29)
 - The .skill file (when present) matches the folder name without the number prefix
 - Do NOT rename any folder or file. Use the names exactly as listed above.
 
@@ -475,7 +473,7 @@ Every skill folder contains these files. Read them in this exact order:
 6. Read CORE_UPDATES.md - update ONLY the workspace files it specifies, with ONLY the text it provides
 7. Install the .skill package file (if one exists in this folder)
 8. Verify the skill is working
-9. **Tell the user:** "Skill [number] of 28 installed. [Skill name] is complete. Moving to skill [next number]."
+9. **Tell the user:** "Skill [number] of 29 installed. [Skill name] is complete. Moving to skill [next number]." Do not wait for acknowledgment. Continue immediately.
 10. Then and only then move to the next skill
 
 ### What CORE_UPDATES.md Does
@@ -526,7 +524,7 @@ If any step in a skill's installation fails:
 Before asking for any API key, scan these files first:
 - `.env`
 - `secrets/.env`
-- `~/clawd/secrets/.env` (if present)
+- `secrets/.env` (if present in workspace root)
 
 Use flexible matching for key names. Treat these as possible equivalents:
 - OPENROUTER_API_KEY, OPEN_ROUTER_API_KEY, OPEN ROUTER API KEY
@@ -588,7 +586,7 @@ All skill folders are located inside:
 |---|-------|-------------|-------|
 | 1 | Teach Yourself Protocol | 01-teach-yourself-protocol | 🔴 MANDATORY FIRST |
 | 2 | Back Yourself Up Protocol | 02-back-yourself-up-protocol | 🔴 MANDATORY SECOND |
-| — | **QMD** | *(installed by install script)* | ✅ Auto-installed before skills 3-28 |
+| — | **QMD** | *(installed by install script)* | ✅ Auto-installed before skills 3-29 |
 | 3 | Agent Browser (Vercel) - preferred browser automation | 03-agent-browser |
 | 4 | Superpowers | 04-superpowers |
 | 5 | GHL / Convert and Flow Setup | 05-ghl-setup |
@@ -650,14 +648,14 @@ All skill folders are located inside:
 - ALWAYS back up config files before editing them
 - ALWAYS use human-readable dates on all backup filenames: date +'%B %-d at %-I-%M %p'
 - ALWAYS read .md files in this order: SKILL.md → INSTALL.md → all full guide docs present (INSTRUCTIONS.md, EXAMPLES.md, [skill-name]-full.md, upstream-original/ files, etc.) → CORE_UPDATES.md
-- ALWAYS confirm to the user after each skill is installed before moving on
+- ALWAYS report skill completion to the user, then continue immediately without waiting
 - If anything fails, report exact failure and classify as CORE stop or OPTIONAL skip
 
 ---
 
 ## IMPORTED SKILLS (16-28) - AUTHORITATIVE INSTALL RULES
 
-Skills 16 through 28 are imported or recreated skills. Many preserve upstream source files under an `upstream-original/` subfolder. Some have additional reference documents (PIPELINE.md, QMD-RETRIEVAL-GUIDE.md, GOOD-AND-BAD-EXAMPLES.md, etc.).
+Skills 16 through 29 are imported or recreated skills. Many preserve upstream source files under an `upstream-original/` subfolder. Some have additional reference documents (PIPELINE.md, QMD-RETRIEVAL-GUIDE.md, GOOD-AND-BAD-EXAMPLES.md, etc.).
 
 **The file-read order for ALL imported skills is the same as for all skills:**
 1. Read `SKILL.md` first
@@ -685,7 +683,7 @@ Skills 16 through 28 are imported or recreated skills. Many preserve upstream so
 
 The install script has already downloaded all skills to disk. Your job is to install them in order, one by one, automatically.
 
-- Install Skill 01 → confirm it worked → install Skill 02 → confirm → continue through all 28
+- Install Skill 01 → confirm it worked → install Skill 02 → confirm → continue through all 29
 - Only pause when you need something the user must provide (API key not in any env file, 2FA code, first-time browser login)
 - When you need a key: ask clearly, wait for answer, then continue
 - When a skill is optional and the user wants to skip: mark SKIPPED, move to next - do not stop the whole install
@@ -693,9 +691,35 @@ The install script has already downloaded all skills to disk. Your job is to ins
 
 ---
 
+## RESUME DETECTION - CHECK BEFORE STARTING
+
+Before installing skill 01, check if a previous onboarding attempt is partially complete:
+
+```bash
+cat ~/.openclaw/onboarding/.onboarding-status 2>/dev/null
+```
+
+If this file exists with skill statuses, resume from the first skill not marked INSTALLED, ALREADY_INSTALLED, or SKIPPED. Do not reinstall skills that are already complete.
+
+After each skill completes, append to ~/.openclaw/onboarding/.onboarding-status:
+```
+SKILL-01: INSTALLED
+SKILL-02: INSTALLED
+```
+(Use INSTALLED, ALREADY_INSTALLED, SKIPPED, or FAILED)
+
+---
+
+## PROGRESS UPDATES
+
+Every 5 skills completed, send a brief status update via the user's configured messaging channel:
+"Onboarding in progress: [X] of 29 skills complete. Currently on: [skill name]."
+
+---
+
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 28 skills are installed, run this as the final step.
+After all 29 skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 > **Install script URL:** See your instructor or onboarding package README for the latest auto-update script URL.
@@ -711,8 +735,15 @@ This sets up a cron job that runs every Sunday at 2:00 AM. It checks for new ski
 
 ## WHEN ONBOARDING IS COMPLETE
 
+Before delivering the completion summary, remove the ONBOARDING PENDING block from AGENTS.md:
+1. Open [WORKSPACE_ROOT]/AGENTS.md
+2. Find and remove the block between the --- markers that contains "ONBOARDING PENDING - EXECUTE NOW"
+3. Save the file
+
+Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 29 skills processed"
+
 When every skill on the list above is installed and verified, tell the user:
-1. Everything that was installed (all 28 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
+1. Everything that was installed (all 29 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
 2. Everything that was added to each workspace file (AGENTS.md, TOOLS.md, MEMORY.md, etc.)
 3. Which workspace files were updated and which were not touched
 4. Where the full documentation for each skill is saved (the master files folder path)
