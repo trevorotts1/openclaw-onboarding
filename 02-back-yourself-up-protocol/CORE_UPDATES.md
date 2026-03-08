@@ -13,7 +13,7 @@ Add under behavioral rules:
 ### BACKUP PROTOCOL [PRIORITY: CRITICAL]
 Before EVERY edit to ~/.openclaw/openclaw.json - no matter how small:
 1. Find backup folder in ~/Downloads/ (search for openclaw + backup)
-2. cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-$(date +'%B %-d at %-I-%M %p').json"
+2. cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-$(date +'%B %-d at %-I-%M %p').txt"
 3. Verify backup exists and is not empty
 4. Get explicit user permission before making the change
 5. ONLY THEN edit the config
@@ -31,8 +31,8 @@ Add under config management:
 ```
 ## Backup Protocol [PRIORITY: CRITICAL]
 - Config file: ~/.openclaw/openclaw.json (NOT clawdbot.json)
-- Backup command: cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-$(date +'%B %-d at %-I-%M %p').json"
-- Date format: Human-readable. Example: models-backup-February 28 at 3-00 PM.json
+- Backup command: cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-$(date +'%B %-d at %-I-%M %p').txt"
+- Date format: Human-readable. Example: models-backup-February 28 at 3-00 PM.txt
 - Date bash: date +'%B %-d at %-I-%M %p'
 - Rule: Every config edit gets a backup. No exceptions. Backup fails = STOP.
 - Full instance backup: Cron every 2 weeks (1st and 15th). Backs up config, .md files, memory, secrets, skills.

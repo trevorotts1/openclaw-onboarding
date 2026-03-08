@@ -6,7 +6,7 @@
 
 **Agent:**
 1. Finds backup folder in ~/Downloads/
-2. Runs: `cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-March 1 at 3-15 PM.json"`
+2. Runs: `cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-March 1 at 3-15 PM.txt"`
 3. Verifies file exists and is not empty
 4. Says: "Backed up config. I need to add Gemini 3 Flash. Permission to proceed?"
 5. Waits for approval, then makes the edit
@@ -58,7 +58,7 @@ If the real config gets corrupted, this backup is useless.
 
 **RIGHT:**
 ```bash
-cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-$(date +'%B %-d at %-I-%M %p').json"
+cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-$(date +'%B %-d at %-I-%M %p').txt"
 ```
 
 This exact mistake happened February 21, 2026. That is why this protocol exists.

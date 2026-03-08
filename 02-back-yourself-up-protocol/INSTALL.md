@@ -55,7 +55,7 @@ It is NOT clawdbot.json. It is NOT config.json. It is NOT any other file.
 
 Run a test backup right now:
 ```bash
-cp ~/.openclaw/openclaw.json "~/Downloads/openclaw-backups/models-backup-$(date +'%B %-d at %-I-%M %p').json"
+cp ~/.openclaw/openclaw.json "~/Downloads/openclaw-backups/models-backup-$(date +'%B %-d at %-I-%M %p').txt"
 ```
 
 Verify:

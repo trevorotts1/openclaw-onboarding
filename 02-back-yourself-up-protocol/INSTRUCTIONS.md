@@ -10,7 +10,7 @@ Not for one model. Not for a temperature change. Every edit, every time.
 1. Find the backup folder in ~/Downloads/ (search for openclaw + backup)
 2. Create backup:
    ```bash
-   cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-$(date +'%B %-d at %-I-%M %p').json"
+   cp ~/.openclaw/openclaw.json "[BACKUP_FOLDER]/models-backup-$(date +'%B %-d at %-I-%M %p').txt"
    ```
 3. Verify backup exists and is not 0 bytes
 4. Tell the user what you are about to change and why
