@@ -95,6 +95,31 @@ or what content to add - always follow the skill's files.**
 
 ---
 
+## RESUMING A PARTIAL ONBOARDING
+
+Before starting fresh, check if a previous onboarding attempt was partially completed:
+
+```bash
+cat "$MASTER_FILES_FOLDER/OpenClaw Onboarding/.onboarding-status.json" 2>/dev/null
+```
+
+If this file exists and contains skill statuses, resume from the first skill that is not marked INSTALLED or ALREADY_INSTALLED. Do not re-run skills already marked complete.
+
+After each skill completes, write or update this status file:
+
+```json
+{
+  "started": "[ISO timestamp]",
+  "master_files_folder": "[actual path used]",
+  "skills": {
+    "01-teach-yourself-protocol": "INSTALLED",
+    "02-back-yourself-up-protocol": "INSTALLED"
+  }
+}
+```
+
+---
+
 ## BEFORE YOU DO ANYTHING - MANDATORY FIRST STEP
 
 You are about to autonomously set up a new OpenClaw installation. This process is sequential.
@@ -110,6 +135,17 @@ an API key they have not yet entered, a 2FA code, or a first-time browser login.
 
 Before you begin onboarding, verify all of the following. If any check fails, stop
 and tell the user what is missing. Do not start onboarding until every check passes.
+
+### 0. Operating system
+This onboarding package is designed for macOS. All install commands, paths, and tooling
+assume macOS (Darwin). Proceed without asking about OS - if the machine is not macOS,
+tell the user and stop.
+
+```bash
+uname -s
+```
+
+Expected output: Darwin
 
 ### 1. OpenClaw is installed and running
 
@@ -168,7 +204,57 @@ uses the path you found or created here. If the user's folder is called
 `~/Downloads/OpenClaw Master Docs` instead of `~/Downloads/openclaw-master-files`,
 use their path everywhere. Do not rename their folder.
 
-### 4. Download and extract the onboarding package
+### 4. Write permission check
+Verify the workspace root and master files folder are writable:
+
+```bash
+touch [WORKSPACE_ROOT]/.write-test && rm [WORKSPACE_ROOT]/.write-test
+```
+
+If this fails, tell the user the folder is not writable and stop. Do not proceed.
+
+### 5. Disk space check
+
+```bash
+df -h ~ | awk 'NR==2 {print $4}'
+```
+
+Ensure at least 2 GB of free space before starting. Playwright alone uses 500 MB+.
+If less than 2 GB available, warn the user and ask if they want to proceed anyway.
+
+### 6. Workspace root detection
+The workspace root is the directory containing AGENTS.md, TOOLS.md, and other core files.
+Detect it:
+
+```bash
+grep -o '"workspace"[[:space:]]*:[[:space:]]*"[^"]*"' ~/.openclaw/openclaw.json 2>/dev/null
+```
+
+If not found in the config, check these common locations in order: ~/clawd, ~/openclaw, current directory.
+Store the workspace root path - every reference to "workspace root" in this document uses this path.
+
+### 7. Messaging channel detection
+Detect the user's primary messaging channel:
+
+```bash
+grep -o '"channel"[[:space:]]*:[[:space:]]*"[^"]*"' ~/.openclaw/openclaw.json 2>/dev/null
+```
+
+Store the channel name (telegram, slack, discord, etc.). Use this channel for all status
+messages and the weekly update notification. If no channel is found, deliver messages
+in the current conversation only.
+
+### 8. Existing skills scan
+Before starting, scan what OpenClaw skills are already installed:
+
+```bash
+openclaw skills list 2>/dev/null || ls ~/.openclaw/skills/ 2>/dev/null
+```
+
+Record the list. During each skill's pre-check, cross-reference this list to detect
+already-installed skills without repeating setup steps.
+
+### 9. Download and extract the onboarding package
 
 Download the onboarding ZIP and extract it into the master files folder, inside a subfolder called `OpenClaw Onboarding`:
 
@@ -415,9 +501,8 @@ files folder, only summaries and file path references go into the core files.
 
 **DO NOT PROCEED TO STEP 2 UNTIL THIS PROTOCOL IS FULLY LEARNED AND CONFIRMED.**
 
-If you have not learned it, tell the user:
-> "I need to learn the Teach Yourself Protocol before I can begin onboarding.
-> Please share that document with me first."
+If you have not yet read the TYP files, go read them now from the folder listed above.
+Do not announce this to the user - just do it and proceed.
 
 ---
 
@@ -473,8 +558,8 @@ Every skill folder contains these files. Read them in this exact order:
 6. Read CORE_UPDATES.md - update ONLY the workspace files it specifies, with ONLY the text it provides
 7. Install the .skill package file (if one exists in this folder)
 8. Verify the skill is working
-9. **Tell the user:** "Skill [number] of 29 installed. [Skill name] is complete. Moving to skill [next number]." Do not wait for acknowledgment. Continue immediately.
-10. Then and only then move to the next skill
+9. **Report to the user:** "Skill [number] of 29 installed. [Skill name] is complete." Then proceed to the next skill immediately. Do not wait for acknowledgment.
+10. Start the next skill.
 
 ### What CORE_UPDATES.md Does
 
@@ -508,23 +593,33 @@ If any step in a skill's installation fails:
    - record exact reason
    - continue to next skill
 6. Never silently skip. Always report INSTALLED or SKIPPED with reason.
+7. If failure appears network-related (timeout, DNS error, connection refused, download failure):
+   retry the failing step up to 3 times with 10-second delays before classifying as FAILED.
 
 ---
 
 ### EXECUTION STRATEGY (MANDATORY)
 
 1. Run skill 01 and skill 02 sequentially in the main agent.
-2. After skill 02 completes, use staggered sub-agents for remaining non-core skills.
+2. After skill 02 completes, install skills sequentially by default.
+   Sub-agents MAY be used for skills with no dependencies on each other.
+   The following skills MUST remain sequential - do NOT parallelize:
+   - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
+   - Skill 13 (Google Workspace Setup) must complete before Skill 14 (Google Workspace Integration)
+   - Skill 22 (Book to Persona) must complete before Skill 23 (AI Workforce Blueprint)
+   All other skills may be parallelized in batches of up to 3 sub-agents.
 3. The agent executes all installs. The human is not asked to run steps. The agent runs them.
 3. Keep OpenRouter setup for last after model config backup is verified.
 4. Superdesign is the only skill allowed to rely on service CLI commands.
 
 ### API KEY DISCOVERY (MANDATORY BEFORE ASKING USER)
 
-Before asking for any API key, scan these files first:
-- `.env`
-- `secrets/.env`
-- `secrets/.env` (if present in workspace root)
+Before asking for any API key, scan these locations first:
+- `.env` in the workspace root
+- `secrets/.env` in the workspace root
+- `~/.openclaw/secrets/` (any .env files in this directory)
+- `~/.openclaw/openclaw.json` (check provider configs for existing keys)
+- Shell environment: `printenv | grep -i <KEY_NAME>`
 
 Use flexible matching for key names. Treat these as possible equivalents:
 - OPENROUTER_API_KEY, OPEN_ROUTER_API_KEY, OPEN ROUTER API KEY
@@ -534,6 +629,25 @@ Use flexible matching for key names. Treat these as possible equivalents:
 
 If a usable key is found, use it and continue without asking the user.
 If no key is found, ask once. If still missing and skill is optional, mark SKIPPED and continue.
+
+### WHERE TO STORE NEW KEYS
+When a user provides an API key during onboarding:
+1. Check if the skill's INSTALL.md specifies a storage location - use that.
+2. If INSTALL.md does not specify, write the key to `[WORKSPACE_ROOT]/secrets/.env`
+   (create the file if it does not exist).
+3. Never store API keys inside AGENTS.md, TOOLS.md, MEMORY.md, or any workspace .md file.
+
+### DEFERRED KEYS - PENDING LIST
+If a user says they will add a key later or wants to skip:
+1. Mark the skill as SKIPPED with reason: "Missing [KEY_NAME] - user deferred"
+2. Append an entry to `[MASTER_FILES_FOLDER]/OpenClaw Onboarding/.pending-keys.md`:
+   ```
+   ## [Skill Name] - PENDING
+   - Key needed: [KEY_NAME]
+   - Where to add it: [location from INSTALL.md or workspace secrets/.env]
+   - To complete setup later: re-run this skill's INSTALL.md after adding the key
+   ```
+3. Include all pending keys in the final onboarding summary.
 
 ### GOOGLE ACCOUNT BRANCHING (MANDATORY)
 
@@ -653,7 +767,7 @@ All skill folders are located inside:
 
 ---
 
-## IMPORTED SKILLS (16-28) - AUTHORITATIVE INSTALL RULES
+## IMPORTED SKILLS (16-29) - AUTHORITATIVE INSTALL RULES
 
 Skills 16 through 29 are imported or recreated skills. Many preserve upstream source files under an `upstream-original/` subfolder. Some have additional reference documents (PIPELINE.md, QMD-RETRIEVAL-GUIDE.md, GOOD-AND-BAD-EXAMPLES.md, etc.).
 
@@ -735,10 +849,21 @@ This sets up a cron job that runs every Sunday at 2:00 AM. It checks for new ski
 
 ## WHEN ONBOARDING IS COMPLETE
 
-Before delivering the completion summary, remove the ONBOARDING PENDING block from AGENTS.md:
-1. Open [WORKSPACE_ROOT]/AGENTS.md
-2. Find and remove the block between the --- markers that contains "ONBOARDING PENDING - EXECUTE NOW"
-3. Save the file
+### Remove the ONBOARDING PENDING flag
+Before sending the completion summary, remove the flag that install.sh wrote to AGENTS.md:
+
+Open [WORKSPACE_ROOT]/AGENTS.md and delete the block that reads:
+```
+## ONBOARDING PENDING - EXECUTE NOW
+...
+```
+If the block is not present, continue without error.
+
+### How to deliver the completion summary
+- If running in an active chat session: post the summary in that chat.
+- If running as a background or sub-agent task: send the summary via the configured
+  messaging channel (detected in prerequisites).
+- Format the 29-skill status report as a table: Skill | Name | Status | Notes
 
 Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 29 skills processed"
 
