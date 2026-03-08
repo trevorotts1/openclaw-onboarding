@@ -783,7 +783,13 @@ Sessions saved to: `~/.openclaw/playwright-data/<skill-name>/`
 To reset: `rm -rf ~/.openclaw/playwright-data/<skill-name>/`
 
 **OpenClaw browser (Priority 3 - last resort):**
-Uses built-in session handling automatically.
+Uses named Chrome profiles - persistent by default. Use the same profile name every time:
+```bash
+openclaw browser --browser-profile openclaw open <url>
+```
+Session (cookies, logins) is saved automatically to the openclaw profile.
+To use a skill-specific profile: `--browser-profile google-setup`
+To reset: delete or clear the profile via OpenClaw gateway settings.
 
 **On Linux/cloud servers:**
 Add `headless=True` and `args=['--no-sandbox', '--disable-dev-shm-usage']` to Playwright.
