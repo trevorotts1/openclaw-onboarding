@@ -4,6 +4,28 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v1.5.0] - March 7, 2026
+
+### Added
+- **Skill 03 - Agent Browser (Vercel)**: Wrapper skill to ensure `agent-browser` is installed and available as the preferred browser automation tool.
+
+### Changed
+- **Renumbered skills 03 and up** to insert Agent Browser as Skill 03.
+  - Example mapping: 03-superpowers -> 04-superpowers, 12-google-workspace-setup -> 13-google-workspace-setup, 21-book-to-persona -> 22-book-to-persona, 22-ai-workforce-blueprint -> 23-ai-workforce-blueprint.
+- **All INSTALL.md files rewritten to be agent-executable** (autonomous execution). Removed "say to your AI" style instructions.
+- **Google Workspace Setup**: major expansion and hardening
+  - Added Gmail-only OAuth path (separate from Workspace service account path)
+  - Browser automation hierarchy: agent-browser first, Playwright persistent context fallback, OpenClaw browser last resort
+  - Added proactive recovery for org policy blocks on service account JSON key creation
+  - Added automatic post-setup test and GOG setup after success
+- **BlackCEO Team Management**: clarified isolation rules
+  - Isolation means context and data isolation only
+  - Communication is allowed when explicitly directed
+- **Book-to-Persona**: fixed step numbering and added pipeline execution test step
+- **AI Workforce Blueprint**: rewrote INSTALL.md into a real multi-phase autonomous execution flow
+
+---
+
 ## [v1.4.0] - March 7, 2026
 
 ### Added

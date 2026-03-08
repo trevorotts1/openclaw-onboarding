@@ -1,4 +1,4 @@
-# Teach Yourself Protocol (TSP)
+# Teach Yourself Protocol (TYP)
 
 ## What This Skill Is About
 
@@ -9,7 +9,7 @@ storing it in the right place so the agent can find it and use it in future sess
 
 Without this protocol, agents either dump everything into their core workspace files
 (which makes them bloated and slow) or forget what they learned entirely (because AI
-agents start fresh every session with no built-in memory). TSP solves both problems.
+agents start fresh every session with no built-in memory). TYP solves both problems.
 
 ## When This Skill Triggers
 
@@ -27,8 +27,8 @@ agents start fresh every session with no built-in memory). TSP solves both probl
 - User shares credentials, account structures, or system architecture
 - User shares a file saying "here you go" or "use this" without further instructions
 
-**Important:** Every time TSP activates, the agent MUST announce it to the user before
-doing any TSP work. Never run TSP silently.
+**Important:** Every time TYP activates, the agent MUST announce it to the user before
+doing any TYP work. Never run TYP silently.
 
 ## What It Covers
 
@@ -58,16 +58,16 @@ Read them in this order:
 1. **SKILL.md** (this file) - overview and orientation
 2. **teach-yourself-protocol-full.md** - the complete protocol with all 19 sections,
    decision trees, examples, and checklists. This is the authoritative reference.
-3. **INSTRUCTIONS.md** - step-by-step guide for executing TSP
-4. **INSTALL.md** - how to install TSP into a new agent's workspace
-5. **EXAMPLES.md** - worked examples showing TSP in action
+3. **INSTRUCTIONS.md** - step-by-step guide for executing TYP
+4. **INSTALL.md** - how to install TYP into a new agent's workspace
+5. **EXAMPLES.md** - worked examples showing TYP in action
 6. **CORE_UPDATES.md** - the lightweight summaries to add to each core workspace file
 7. **teach-yourself-protocol.skill** - the skill definition file
 
 ## Prerequisites
 
 None. This is the very first skill installed for any OpenClaw agent. All other skills
-depend on it. If TSP is not installed, the agent has no structured way to learn or
+depend on it. If TYP is not installed, the agent has no structured way to learn or
 store anything.
 
 ## Key Things the Agent Needs to Know
@@ -93,7 +93,7 @@ store anything.
    (that it was learned), and AGENTS.md (rules about when to use it). Check every
    core file independently.
 
-6. **Always confirm to the user.** After completing TSP, tell the user what you
+6. **Always confirm to the user.** After completing TYP, tell the user what you
    learned, where you stored it, which core files were updated, and demonstrate your
    working knowledge by summarizing the key points.
 

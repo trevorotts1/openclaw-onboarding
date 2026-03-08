@@ -5,7 +5,7 @@
 **User says:** "Here is the KIE.ai API reference. Learn this." (176K chars)
 
 **Agent process:**
-1. Announces TSP activation
+1. Announces TYP activation
 2. Category: API reference. Priority: CRITICAL. Size: Very Large.
 3. Searches core files and master folder - no existing KIE.ai knowledge found
 4. Creates deep file: `[MASTER_FILES_FOLDER]/apis/kie-ai/kie-ai-api-reference.md` (full 176K, untruncated)
@@ -20,7 +20,7 @@
 **User says:** "Never use em dashes in any output."
 
 **Agent process:**
-1. Announces TSP activation
+1. Announces TYP activation
 2. Category: Preference/rule. Priority: CRITICAL. Size: Small (one rule).
 3. Searches core files - no existing em dash rule found
 4. No deep file needed (under 25 lines)
@@ -35,7 +35,7 @@
 **User shares:** 14 skill files from a GitHub repository
 
 **Agent process:**
-1. Announces TSP
+1. Announces TYP
 2. Category: Skills/knowledge base. Priority: HIGH. Size: Massive (14 files, multiple topics).
 3. Creates folder structure: `[MASTER_FILES_FOLDER]/superpowers/skills/` with 14 subfolders
 4. Stores all files unabridged in their subfolders
@@ -49,7 +49,7 @@
 **User says:** "Use 'calendar' not 'calendar.readonly' for Google API scope."
 
 **Agent process:**
-1. Announces TSP
+1. Announces TYP
 2. Category: Correction. Priority: CRITICAL. Size: Small.
 3. Searches core files - finds old scope in TOOLS.md and MEMORY.md
 4. UPDATES existing entries (does not create new ones)
@@ -64,9 +64,9 @@
 
 **Agent process:**
 1. Reads the file to understand what it is
-2. Recognizes implicit TSP trigger
-3. Confirms: "This looks like [description]. I am activating TSP to store this permanently. Let me know if this is just for this session."
-4. If user confirms or says nothing, follows standard TSP process
-5. If user says "just for now", skips TSP
+2. Recognizes implicit TYP trigger
+3. Confirms: "This looks like [description]. I am activating TYP to store this permanently. Let me know if this is just for this session."
+4. If user confirms or says nothing, follows standard TYP process
+5. If user says "just for now", skips TYP
 
 **Key:** When trigger is implicit, confirm before executing.

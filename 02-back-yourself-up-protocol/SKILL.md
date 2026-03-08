@@ -76,9 +76,9 @@ Read them in this order:
 
 ## Prerequisites
 
-The Teach Yourself Protocol (skill 01) must be installed first. BYUP uses TSP's
+The Teach Yourself Protocol (skill 01) must be installed first. BYUP uses TYP's
 storage structure and file organization rules when installing itself into the agent's
-workspace. If TSP is not installed, the agent will not know how to properly store and
+workspace. If TYP is not installed, the agent will not know how to properly store and
 reference this protocol.
 
 ## Key Things the Agent Needs to Know

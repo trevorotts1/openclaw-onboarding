@@ -4,7 +4,7 @@
 
 ### 1. Announce
 Tell the user: "I am activating the Teach Yourself Protocol to permanently retain this knowledge."
-Never execute TSP silently. The user must always know when it is running.
+Never execute TYP silently. The user must always know when it is running.
 
 ### 2. Understand What You Are Learning
 - What category? (tool, API, process, preference, contact, credential)
@@ -85,7 +85,7 @@ Report:
 1. Dumping full content into core files (causes bloat, burns tokens)
 2. Creating deep file but not referencing it from any core file (orphan file, invisible)
 3. Creating duplicate master files folders (search first)
-4. Skipping the announcement (user must know TSP is active)
+4. Skipping the announcement (user must know TYP is active)
 5. Summarizing the deep file (deep file is COMPLETE, never truncate)
 6. Not checking for existing knowledge (always search first)
 7. Over-summarizing (if the agent would be stuck with just the summary, it is too thin)

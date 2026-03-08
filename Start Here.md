@@ -3,11 +3,52 @@
 
 ---
 
+## THE FIRST TWO REQUIRED INSTALLS - NON-NEGOTIABLE
+
+Before any other skill is installed, these two must be installed in this exact order:
+
+**FIRST: Teach Yourself Protocol (TYP)**
+Located in: `01-teach-yourself-protocol/`
+This teaches the AI how to store knowledge correctly. Without this, every skill
+install will bloat your core files and waste your tokens every session. Nothing
+else can be safely installed until TYP is learned and confirmed.
+
+**SECOND: Back Yourself Up Protocol**
+Located in: `02-back-yourself-up-protocol/`
+This teaches the AI how to back up config files before touching anything.
+Without this, the AI can corrupt your system with no way to recover.
+
+**Every other skill (03 through 23) requires both of these to be installed first.**
+No exceptions. If you skip these two, stop and go back.
+
+---
+
+## TYP CONFLICT RULE - UNIVERSAL (applies to every skill)
+
+Every skill in this package uses the Teach Yourself Protocol. But skills have their
+own SKILL.md, CORE_UPDATES.md, and supporting files that specify exactly what to
+update and how.
+
+**When a skill's files conflict with TYP about which core .md files to update
+or what content to add - always follow the skill's files.**
+
+- TYP governs the storage METHOD: lean summaries and file path references in core files
+- The skill governs the CONTENT and which files it touches
+- Skill docs always take precedence over TYP when there is a conflict
+- This applies to every skill from 03 through 23
+
+---
+
+---
+
 ## BEFORE YOU DO ANYTHING - MANDATORY FIRST STEP
 
-You are about to onboard a new OpenClaw installation. This process is sequential.
-Every step must be completed in order before moving to the next one.
-Do not skip steps. Do not reorder steps. Do not improvise.
+You are about to autonomously set up a new OpenClaw installation. This process is sequential.
+You do the work. The human does not install skills, configure files, or execute steps.
+Your job is to read each skill folder and execute the setup yourself.
+Complete each step fully before moving to the next. Do not skip. Do not reorder. Do not improvise.
+Only pause and request human input when you need something only they can provide:
+an API key they have not yet entered, a 2FA code, or a first-time browser login.
 
 ---
 
@@ -112,84 +153,84 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         EXAMPLES.md
         CORE_UPDATES.md
         back-yourself-up-protocol.skill
-    03-superpowers/
+    04-superpowers/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         superpowers.skill
-    04-ghl-setup/
+    05-ghl-setup/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         ghl-setup.skill
-    05-ghl-install-pages/
+    06-ghl-install-pages/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         ghl-install-pages.skill
-    06-kie-setup/
+    07-kie-setup/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         kie-setup.skill
-    07-vercel-setup/
+    08-vercel-setup/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         vercel-setup.skill
-    08-context7/
+    09-context7/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         context7.skill
-    09-github-setup/
+    10-github-setup/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         github-setup.skill
-    10-superdesign/
+    11-superdesign/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         superdesign.skill
-    11-openrouter-setup/
+    12-openrouter-setup/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         openrouter-setup.skill
-    12-google-workspace-setup/
+    13-google-workspace-setup/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         google-workspace-setup.skill
-    13-google-workspace-integration/
+    14-google-workspace-integration/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
         EXAMPLES.md
         CORE_UPDATES.md
         google-workspace-integration.skill
-    14-blackceo-team-management/
+    15-blackceo-team-management/
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
@@ -312,7 +353,7 @@ It tells you:
 - Only update the files it lists. If a file is not listed, do not touch it.
 - Use the exact text provided. Do not rewrite it, expand it, or summarize it.
 - Add summaries and file path references only. Full documentation stays in the skill folder.
-- This follows the Teach Yourself Protocol. If you have not learned TSP, go back to Step 1.
+- This follows the Teach Yourself Protocol. If you have not learned TYP, go back to Step 1.
 
 ### If a Skill Fails to Install
 
@@ -335,6 +376,7 @@ If any step in a skill's installation fails:
 
 1. Run skill 01 and skill 02 sequentially in the main agent.
 2. After skill 02 completes, use staggered sub-agents for remaining non-core skills.
+3. The agent executes all installs. The human is not asked to run steps. The agent runs them.
 3. Keep OpenRouter setup for last after model config backup is verified.
 4. Superdesign is the only skill allowed to rely on service CLI commands.
 
@@ -405,19 +447,27 @@ All skill folders are located inside:
 |---|-------|-------------|
 | 1 | Teach Yourself Protocol | 01-teach-yourself-protocol |
 | 2 | Back Yourself Up Protocol | 02-back-yourself-up-protocol |
-| 3 | Superpowers | 03-superpowers |
-| 4 | GHL / Convert and Flow Setup | 04-ghl-setup |
-| 5 | GHL / Convert and Flow - Install Pages | 05-ghl-install-pages |
-| 6 | KIE Setup and HTTP Structure | 06-kie-setup |
-| 7 | Vercel Setup (API/browser path only) | 07-vercel-setup |
-| 8 | Context7 Setup (API/browser path only) | 08-context7 |
-| 9 | GitHub / Git Setup (API/browser path only) | 09-github-setup |
-| 10 | SuperDesign Instructions Setup | 10-superdesign |
-| 11 | Google Workspace Setup (branch: Workspace vs Gmail) | 12-google-workspace-setup |
-| 12 | Google Workspace Integration | 13-google-workspace-integration |
-| 13 | BlackCEO Team Management Setup | 14-blackceo-team-management |
-| 14 | Summarize YouTube Setup | 15-summarize-youtube |
-| 15 | OpenRouter Setup (MUST BE LAST, after model backup) | 11-openrouter-setup |
+| 3 | Agent Browser (Vercel) - preferred browser automation | 03-agent-browser |
+| 4 | Superpowers | 04-superpowers |
+| 5 | GHL / Convert and Flow Setup | 05-ghl-setup |
+| 6 | GHL / Convert and Flow - Install Pages | 06-ghl-install-pages |
+| 7 | KIE Setup and HTTP Structure | 07-kie-setup |
+| 8 | Vercel Setup (API/browser path only) | 08-vercel-setup |
+| 9 | Context7 Setup (API/browser path only) | 09-context7 |
+| 10 | GitHub / Git Setup (API/browser path only) | 10-github-setup |
+| 11 | SuperDesign Instructions Setup | 11-superdesign |
+| 12 | Google Workspace Setup (branch: Workspace vs Gmail) | 13-google-workspace-setup |
+| 13 | Google Workspace Integration | 14-google-workspace-integration |
+| 14 | BlackCEO Team Management Setup | 15-blackceo-team-management |
+| 15 | Summarize YouTube Setup | 16-summarize-youtube |
+| 16 | Self-Improving Agent | 17-self-improving-agent |
+| 17 | Proactive Agent | 18-proactive-agent |
+| 18 | Humanizer | 19-humanizer |
+| 19 | YouTube Watcher | 20-youtube-watcher |
+| 20 | Tavily Search | 21-tavily-search |
+| 21 | Book-to-Persona | 22-book-to-persona |
+| 22 | AI Workforce Blueprint | 23-ai-workforce-blueprint |
+| 23 | OpenRouter Setup (MUST BE LAST, after model backup) | 12-openrouter-setup |
 
 
 ---
@@ -438,6 +488,10 @@ alongside the .skill package and tell the human what to do and tell the AI how t
 
 ## RULES THAT APPLY TO THIS ENTIRE ONBOARDING
 
+- Install TYP (01) FIRST. Install Back Yourself Up Protocol (02) SECOND. No exceptions.
+- Every skill from 03 onward requires TYP to be confirmed before its install begins
+- When a skill's files conflict with TYP about which core files to update - the skill wins
+- TYP governs storage method. The skill governs content and which files it touches.
 - Do NOT change any API keys, terminal commands, or config values from what is written
 - Do NOT add steps that are not in the instructions
 - Do NOT use service CLIs for GitHub, Vercel, or Context7 during onboarding
@@ -463,7 +517,7 @@ alongside the .skill package and tell the human what to do and tell the AI how t
 ## WHEN ONBOARDING IS COMPLETE
 
 When every skill on the list above is installed and verified, tell the user:
-1. Everything that was installed (all 15 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
+1. Everything that was installed (all 23 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
 2. Everything that was added to each workspace file (AGENTS.md, TOOLS.md, MEMORY.md, etc.)
 3. Which workspace files were updated and which were not touched
 4. Where the full documentation for each skill is saved (the master files folder path)
@@ -481,14 +535,14 @@ Do not modify this file without Trevor's explicit permission.
 
 The onboarding package now includes:
 
-- `16-self-improving-agent/`
-- `17-proactive-agent/`
+- `17-self-improving-agent/`
+- `18-proactive-agent/`
 
 Both folders follow the 7-file onboarding standard and also preserve all upstream files under `upstream-original/`.
 
 Install order after core skills:
-1. 16-self-improving-agent
-2. 17-proactive-agent
+1. 17-self-improving-agent
+2. 18-proactive-agent
 
 Before installing either skill, execute Teach Yourself Protocol on that skill folder and read:
 - `SKILL.md`
@@ -497,12 +551,12 @@ Before installing either skill, execute Teach Yourself Protocol on that skill fo
 
 
 ## Imported Skills Pack (16-18) - install sequence
-These are imported/recreated skills preserved from upstream with TSP wrapper files.
+These are imported/recreated skills preserved from upstream with TYP wrapper files.
 
 Order:
-1. 16-self-improving-agent
-2. 17-proactive-agent
-3. 18-humanizer
+1. 17-self-improving-agent
+2. 18-proactive-agent
+3. 19-humanizer
 
 For each imported skill:
 - Run Teach Yourself Protocol on that folder
@@ -515,10 +569,10 @@ For each imported skill:
 ## Imported Skills Pack (16-19) - install sequence
 
 Order:
-1. 16-self-improving-agent
-2. 17-proactive-agent
-3. 18-humanizer
-4. 19-youtube-watcher
+1. 17-self-improving-agent
+2. 18-proactive-agent
+3. 19-humanizer
+4. 20-youtube-watcher
 
 For each imported skill: run Teach Yourself Protocol, read SKILL.md, read full file, then upstream-original docs, then install.
 
@@ -534,11 +588,11 @@ For every imported skill (16+), this is mandatory:
 ## Imported Skills Pack (16-20) - install sequence
 
 Order:
-1. 16-self-improving-agent
-2. 17-proactive-agent
-3. 18-humanizer
-4. 19-youtube-watcher
-5. 20-tavily-search
+1. 17-self-improving-agent
+2. 18-proactive-agent
+3. 19-humanizer
+4. 20-youtube-watcher
+5. 21-tavily-search
 
 Conflict rule:
 - If generic TYP wrapper instructions conflict with a skill set's own docs, follow the skill's `SKILL.md` and `CORE_UPDATES.md`.

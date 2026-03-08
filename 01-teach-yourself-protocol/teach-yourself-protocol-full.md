@@ -44,11 +44,11 @@ When the agent detects an implicit trigger, it should briefly confirm before exe
 This confirmation takes 2 seconds and prevents the agent from over-indexing on temporary information. If the user says "no, just use it for now," the agent skips the protocol. If the user confirms or says nothing, the agent proceeds.
 
 IMPORTANT - User Notification Rule:
-Every time the Teach Yourself Protocol is triggered - whether by explicit command ("teach yourself this") or implicit detection (large document shared, corrections given, etc.) - you MUST announce to the user that you are using the TSP. Say something like:
+Every time the Teach Yourself Protocol is triggered - whether by explicit command ("teach yourself this") or implicit detection (large document shared, corrections given, etc.) - you MUST announce to the user that you are using the TYP. Say something like:
 "I am activating the Teach Yourself Protocol to permanently retain this knowledge."
 or
 "This looks like knowledge I should retain. I am using the Teach Yourself Protocol."
-The user should ALWAYS know when TSP is running. Never execute TSP silently. This applies to both explicit and implicit triggers.
+The user should ALWAYS know when TYP is running. Never execute TYP silently. This applies to both explicit and implicit triggers.
 
 When NOT to auto-detect: 
 The user gives you a one-time task with context ("Here is the spreadsheet data, create a chart from it") - that data is for the task, not for permanent storage
@@ -264,9 +264,9 @@ Every lightweight summary that has a corresponding deep file MUST include a line
 "When to go deeper: When debugging API errors, when the user asks about a specific endpoint not listed here, when rate limits are being hit"
 Step 9: Confirm to the User
 
-MANDATORY: The first thing you do when TSP activates is announce it to the user. Before you start creating files, writing summaries, or doing any TSP work, tell the user:
+MANDATORY: The first thing you do when TYP activates is announce it to the user. Before you start creating files, writing summaries, or doing any TYP work, tell the user:
 "I am using the Teach Yourself Protocol to retain this knowledge permanently."
-This is not optional. The user must always know when TSP is active. They should never wonder why you are creating files or updating their core documents. Announce first, then execute.
+This is not optional. The user must always know when TYP is active. They should never wonder why you are creating files or updating their core documents. Announce first, then execute.
 
 After completing the protocol, tell the user:
 What you learned (brief summary)
@@ -571,9 +571,9 @@ When "teach yourself" triggers, run through this entire checklist:
 [ ] Lightweight summaries: Write them with Five Question Test, priority tag, "when to go deeper" line, reference pointer
 [ ] Priority assignment: Tag with CRITICAL / HIGH / STANDARD / REFERENCE
 [ ] Cross-references: Link related deep files to each other
-[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TSP work
-[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TSP work
-[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TSP work
+[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TYP work
+[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TYP work
+[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TYP work
 [ ] Confirm to user: What I learned, where it's stored, what was updated, priority level, working knowledge demonstration
 
 16. Examples
@@ -794,9 +794,9 @@ Cross-References:
 [ ] Inline references added where relevant in the deep file body
 [ ] Core file summaries note relationships where applicable
 Confirmation: 
-[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TSP work
-[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TSP work
-[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TSP work
+[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TYP work
+[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TYP work
+[ ] I announced to the user that I am using the Teach Yourself Protocol BEFORE starting any TYP work
 [ ] I told the user what I learned
 [ ] I told the user where the deep file is stored (if created)
 [ ] I told the user which core files were updated

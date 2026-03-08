@@ -1,36 +1,36 @@
 
 ╔══════════════════════════════════════════════════════════════╗
-  MANDATORY TSP CHECK - READ THIS BEFORE ANYTHING ELSE
+  MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
   DO NOT SKIP. DO NOT PROCEED UNTIL THIS CHECK IS COMPLETE.
 ╚══════════════════════════════════════════════════════════════╝
 
-STEP 1: CHECK IF YOU HAVE BEEN TAUGHT THE TEACH YOURSELF PROTOCOL (TSP)
+STEP 1: CHECK IF YOU HAVE BEEN TAUGHT THE TEACH YOURSELF PROTOCOL (TYP)
 
 Before you read, learn, or execute ANY instruction in this document, you must
-verify that you have already been taught the Teach Yourself Protocol (TSP).
+verify that you have already been taught the Teach Yourself Protocol (TYP).
 
 HOW TO CHECK:
 - Look in your AGENTS.md, TOOLS.md, or MEMORY.md for any mention of:
-  "Teach Yourself Protocol" or "TSP"
-- Look in your session context for prior TSP training
+  "Teach Yourself Protocol" or "TYP"
+- Look in your session context for prior TYP training
 - Look for a tab called "Teach Yourself Protocol" in this same document
 
-IF YOU HAVE BEEN TAUGHT TSP:
-Proceed to the instructions below. Follow the TSP file storage structure.
+IF YOU HAVE BEEN TAUGHT TYP:
+Proceed to the instructions below. Follow the TYP file storage structure.
 
-IF YOU HAVE NOT BEEN TAUGHT TSP:
+IF YOU HAVE NOT BEEN TAUGHT TYP:
 STOP IMMEDIATELY. Do not read further. Do not attempt to learn or execute
 anything in this document. Tell the user exactly this:
 
   "I have not been taught the Teach Yourself Protocol yet. I cannot safely
-   learn or execute these instructions until I have been taught TSP first.
+   learn or execute these instructions until I have been taught TYP first.
    Please share the Teach Yourself Protocol tab with me before we proceed.
-   Without TSP, I will bloat your core .md files and waste your tokens."
+   Without TYP, I will bloat your core .md files and waste your tokens."
 
-DO NOT PROCEED PAST THIS POINT WITHOUT TSP CONFIRMED.
+DO NOT PROCEED PAST THIS POINT WITHOUT TYP CONFIRMED.
 
 ══════════════════════════════════════════════════════════════════
-  TSP FILE STORAGE INSTRUCTIONS (only read this if TSP confirmed)
+  TYP FILE STORAGE INSTRUCTIONS (only read this if TYP confirmed)
 ══════════════════════════════════════════════════════════════════
 
 WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:

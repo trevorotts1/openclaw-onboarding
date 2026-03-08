@@ -75,7 +75,7 @@ Ask the agent these questions. It must answer all correctly:
 3. "What goes in AGENTS.md or TOOLS.md?"
    Expected: Lightweight summaries (10-25 lines) with file path references
 
-4. "What triggers TSP?"
+4. "What triggers TYP?"
    Expected: Explicit ("teach yourself this") and implicit (large documents, corrections, preferences)
 
 5. "What do you do before creating any new knowledge files?"

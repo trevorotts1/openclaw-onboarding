@@ -10,9 +10,9 @@ Do not update files marked NO UPDATE NEEDED.
 Add under behavioral rules:
 
 ```
-### TEACH YOURSELF PROTOCOL (TSP) [PRIORITY: CRITICAL]
-When given a large document, new skill, or new knowledge to learn, I activate TSP.
-- I ALWAYS announce TSP activation to the user before starting
+### TEACH YOURSELF PROTOCOL (TYP) [PRIORITY: CRITICAL]
+When given a large document, new skill, or new knowledge to learn, I activate TYP.
+- I ALWAYS announce TYP activation to the user before starting
 - I do NOT dump full content into core files
 - Full documents go to the master files folder as .md files
 - Core files get only lightweight summaries (10-25 lines) + file path references
@@ -29,7 +29,7 @@ When given a large document, new skill, or new knowledge to learn, I activate TS
 Add under knowledge management section:
 
 ```
-## Teach Yourself Protocol (TSP) [PRIORITY: CRITICAL]
+## Teach Yourself Protocol (TYP) [PRIORITY: CRITICAL]
 - Purpose: Structured learning protocol that prevents core file bloat
 - Trigger: "Teach yourself this", "Learn this", large documents shared, corrections, preferences
 - Process: Announce -> assess size -> check existing -> create deep file if needed -> write core summary -> confirm
@@ -60,7 +60,7 @@ Add under capabilities:
 
 ```
 ## Knowledge Management
-I use the Teach Yourself Protocol (TSP) for all substantial new knowledge.
+I use the Teach Yourself Protocol (TYP) for all substantial new knowledge.
 Full documentation lives in the master files folder. Core files contain only
 lean summaries and file path references. I never bloat core files.
 ```
@@ -68,10 +68,10 @@ lean summaries and file path references. I never bloat core files.
 ---
 
 ## USER.md - NO UPDATE NEEDED
-TSP does not change anything about the user.
+TYP does not change anything about the user.
 
 ## SOUL.md - NO UPDATE NEEDED
-TSP does not change personality or tone.
+TYP does not change personality or tone.
 
 ## HEARTBEAT.md - NO UPDATE NEEDED
-TSP has no recurring tasks or cron jobs.
+TYP has no recurring tasks or cron jobs.
