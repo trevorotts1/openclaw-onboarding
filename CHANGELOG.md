@@ -4,6 +4,37 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v2.2.0] - March 8, 2026
+
+### Added
+- **CLOUD / LINUX INSTALL NOTES section** in Start Here.md: fires automatically when Linux detected. Covers brew→apt-get, Playwright headless mode + --no-sandbox, master files folder path (~/openclaw-master-files/ instead of ~/Downloads/), xdg-open vs open, date command compatibility, shell defaults.
+- **Universal browser session persistence rule** in Start Here.md: all three browser tools now enforce login-once persistent sessions. agent-browser uses `--session-name <skill-name>`, Playwright uses `launchPersistentContext`, OpenClaw browser uses `--browser-profile openclaw` (named Chrome profile, persistent by default).
+
+### Fixed
+- **OS check** now handles three scenarios: macOS (Darwin) full support, Linux proceeds with brew→apt substitution note, Windows/anything else stops with clear message.
+- **Skill 13 (Google Workspace Setup)**:
+  - Added CREDENTIAL CHECK block to both Path A and Path B: scans all ENV files first (workspace secrets/.env, ~/.openclaw/secrets/, openclaw.json, shell env), then offers Option A (agent logs in automatically) or Option B (user logs in manually in open browser). Both use persistent sessions.
+  - Browser priority fixed: agent-browser first, Playwright fallback, OpenClaw browser last resort. Playwright was previously hardcoded throughout.
+  - All 132 agent-browser commands updated with `--session-name google-setup` for persistent sessions.
+  - All `~/clawd/` hardcoded paths replaced with `[WORKSPACE_ROOT]/` (24 occurrences).
+  - Session detection added before first browser step in both paths.
+- **Skill 06 (GHL Install Pages)**: Playwright `launch()` replaced with `launch_persistent_context` pointing to `~/.openclaw/playwright-data/ghl-install-pages/`.
+- **Start Here.md gap analysis fixes** (12 categories):
+  - Resume mechanism: .onboarding-status.json tracks per-skill status, agent resumes from last incomplete skill
+  - Prerequisites: write permission check, 2 GB disk space check, workspace root auto-detection, messaging channel auto-detection, existing skills scan
+  - Master files folder: search first, only ask if multiple candidates
+  - Step 1 TYP: agent reads silently, no announcement
+  - Step 9: report done + continue immediately, no waiting
+  - Sub-agent dependency chain: 05→06, 13→14, 22→23 must stay sequential
+  - API key: expanded scan + storage location + pending keys file
+  - Network retry: up to 3x with 10-second delays
+  - Progress updates every 5 skills
+  - "28 skills" → "29 skills" throughout
+  - Weekly update "Notify Trevor" → generic messaging channel
+  - ONBOARDING PENDING flag removed from AGENTS.md on completion
+
+---
+
 ## [v2.1.0] - March 8, 2026
 
 ### Added
