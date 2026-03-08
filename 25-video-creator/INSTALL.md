@@ -1,5 +1,25 @@
 # Video Creator Skill - Installation Guide
 
+## Teach Yourself Protocol (TYP) - Mandatory Read Order
+
+Before you run any commands in this skill:
+
+1. Discover every Markdown file in this skill folder (including subfolders):
+   ```bash
+   cd "$(dirname "$0")" 2>/dev/null || true
+   find . -name "*.md" | sort
+   ```
+2. Read every discovered `.md` file.
+3. Use this read order:
+   1) `SKILL.md`
+   2) `INSTALL.md`
+   3) `INSTRUCTIONS.md` and `EXAMPLES.md` (and any `*-full.md`)
+   4) `CORE_UPDATES.md`
+
+Conflict rule:
+- If any generic wrapper guidance conflicts with this skill folder, this skill folder wins.
+
+
 ## Prerequisites
 
 - Python 3.8+
@@ -78,7 +98,7 @@ cat > ~/.blackceo/config.json << 'EOF'
 {
   "video_providers": {
     "kieai": {
-      "api_key": "YOUR_KIEAI_KEY",
+      "api_key": "$KIE_API_KEY",
       "endpoint": "https://api.kie.ai/v1"
     },
     "runway": {

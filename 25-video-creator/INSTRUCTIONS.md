@@ -41,7 +41,7 @@ chmod +x ~/.openclaw/skills/video-creator/scripts/*.py
 ### Step 3: Configure AI Providers
 ```bash
 # Set your API keys in environment
-export KIEAI_API_KEY="your_key_here"
+export KIE_API_KEY="your_key_here"
 export RUNWAY_API_KEY="your_key_here"  # Optional
 ```
 
@@ -242,7 +242,7 @@ caption-creator --input product_demo.mp4 --output final.mp4
 ## Troubleshooting
 
 **"API key error"**
-→ Set KIEAI_API_KEY environment variable
+→ Set KIE_API_KEY environment variable
 
 **"MoviePy error"**
 → Run: `pip install moviepy opencv-python --upgrade`

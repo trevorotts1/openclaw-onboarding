@@ -1,5 +1,25 @@
 # Installation Guide - Caption Creator Skill
 
+## Teach Yourself Protocol (TYP) - Mandatory Read Order
+
+Before you run any commands in this skill:
+
+1. Discover every Markdown file in this skill folder (including subfolders):
+   ```bash
+   cd "$(dirname "$0")" 2>/dev/null || true
+   find . -name "*.md" | sort
+   ```
+2. Read every discovered `.md` file.
+3. Use this read order:
+   1) `SKILL.md`
+   2) `INSTALL.md`
+   3) `INSTRUCTIONS.md` and `EXAMPLES.md` (and any `*-full.md`)
+   4) `CORE_UPDATES.md`
+
+Conflict rule:
+- If any generic wrapper guidance conflicts with this skill folder, this skill folder wins.
+
+
 ## System Requirements
 
 ### Minimum Requirements
