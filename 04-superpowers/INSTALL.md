@@ -134,7 +134,11 @@ If either prerequisite is missing, the agent must stop and report this to the us
 
 Superpowers comes from this open-source project: https://github.com/obra/superpowers
 
-It contains 14 skill files. Each skill is a short document (called SKILL.md) that teaches the agent a specific thinking pattern. Here is the complete list:
+It contains 14 skill files plus commands and agent files. Each skill is a short document (called SKILL.md) that teaches the agent a specific thinking pattern. Here is the complete list:
+
+**Important version notes:**
+- **v4.3.0 (Feb 12, 2026):** Brainstorming now has a HARD GATE - no code, no scaffolding, no implementation until design is presented and user has approved it. EnterPlanMode is intercepted to check brainstorming first.
+- **v4.2.0 (Feb 5, 2026):** `using-git-worktrees` is now REQUIRED before `subagent-driven-development` and `executing-plans`. Never implement directly on main branch.
 
 | Number | Skill Name | What It Teaches |
 |--------|-----------|----------------|
@@ -144,8 +148,8 @@ It contains 14 skill files. Each skill is a short document (called SKILL.md) tha
 | 4 | verification-before-completion | Run actual verification commands, show output, never claim done without evidence |
 | 5 | writing-plans | Create implementation plans clear enough for a junior engineer with no context |
 | 6 | writing-skills | How to write new skills for the framework |
-| 7 | executing-plans | How to follow plans step by step without deviation |
-| 8 | subagent-driven-development | Spawn sub-agents per task, review their work, continue forward |
+| 7 | executing-plans | How to follow plans step by step without deviation. **Requires using-git-worktrees first.** |
+| 8 | subagent-driven-development | Spawn sub-agents per task, review their work, continue forward. **Requires using-git-worktrees first.** |
 | 9 | dispatching-parallel-agents | Run multiple agents in parallel for speed |
 | 10 | using-git-worktrees | Isolated workspaces on separate branches |
 | 11 | finishing-a-development-branch | Clean up, squash, merge properly |
@@ -286,6 +290,22 @@ curl -sL "https://raw.githubusercontent.com/obra/superpowers/main/skills/writing
 curl -sL "https://raw.githubusercontent.com/obra/superpowers/main/skills/writing-skills/testing-skills-with-subagents.md" --create-dirs -o [MASTER_FILES_FOLDER]/superpowers/skills/writing-skills/testing-skills-with-subagents.md
 ```
 
+Download commands (slash commands for brainstorm, write-plan, execute-plan):
+
+```
+curl -sL "https://raw.githubusercontent.com/obra/superpowers/main/commands/brainstorm.md" --create-dirs -o [MASTER_FILES_FOLDER]/superpowers/commands/brainstorm.md
+
+curl -sL "https://raw.githubusercontent.com/obra/superpowers/main/commands/write-plan.md" --create-dirs -o [MASTER_FILES_FOLDER]/superpowers/commands/write-plan.md
+
+curl -sL "https://raw.githubusercontent.com/obra/superpowers/main/commands/execute-plan.md" --create-dirs -o [MASTER_FILES_FOLDER]/superpowers/commands/execute-plan.md
+```
+
+Download agents (code reviewer agent):
+
+```
+curl -sL "https://raw.githubusercontent.com/obra/superpowers/main/agents/code-reviewer.md" --create-dirs -o [MASTER_FILES_FOLDER]/superpowers/agents/code-reviewer.md
+```
+
 
 ### Step 4: Verify All Downloads
 
@@ -298,6 +318,20 @@ ls -d [MASTER_FILES_FOLDER]/superpowers/skills/*/ | wc -l
 Expected output: 14
 
 If output is less than 14, re-download missing skills.
+
+Verify commands and agents downloaded:
+
+```
+ls [MASTER_FILES_FOLDER]/superpowers/commands/
+```
+
+Expected: brainstorm.md, write-plan.md, execute-plan.md
+
+```
+ls [MASTER_FILES_FOLDER]/superpowers/agents/
+```
+
+Expected: code-reviewer.md
 
 Verify every skill has its SKILL.md file:
 
