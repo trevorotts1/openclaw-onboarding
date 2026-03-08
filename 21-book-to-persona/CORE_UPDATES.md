@@ -131,3 +131,19 @@ Before professional tasks: qmd search coaching-personas "<task>" → load person
 - Do NOT paste the 14-section blueprint format into any core file
 - Do NOT add API keys to core files
 - Core files get: what it is, what it does, where to find details. That is all.
+
+---
+
+## AGENTS.md - Pending Skill Setup Rule
+
+**Where:** Add at the bottom of AGENTS.md
+
+**Exact text to add:**
+```
+## Pending Skill Setup - Check and Remind
+File: ~/.openclaw/skills/.pending-setup.md
+If this file exists with entries marked Status: PENDING, proactively remind the user.
+When relevant to what they are working on, say: "You have a pending skill setup for [key] - want to add that now?"
+When user provides the key: save it to ~/clawd/secrets/.env and mark the entry Status: COMPLETE.
+Never nag - bring it up once per session max, only when relevant.
+```
