@@ -65,6 +65,26 @@ Say to your AI: "Build my AI workforce. Use Option A."
 
 Your AI will ask you questions about your business and create the full folder structure.
 
+### Step 5 - Set Up Weekly Auto-Update (Agent Handles This)
+
+Run this now - agent executes it, human does nothing:
+
+```bash
+mkdir -p ~/.openclaw/skills/scripts
+curl -s https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/setup-weekly-update.sh -o ~/.openclaw/skills/scripts/setup-weekly-update.sh
+chmod +x ~/.openclaw/skills/scripts/setup-weekly-update.sh
+bash ~/.openclaw/skills/scripts/setup-weekly-update.sh
+```
+
+**Verify:**
+```bash
+crontab -l | grep update-skills
+```
+
+This installs a cron that runs every Sunday at 2:00 AM - checks GitHub, applies updates to installed skills, sends Telegram notification with changelog. Runs automatically forever. Human never has to touch it.
+
+---
+
 ## What Happens After Install
 - Your AI knows the full blueprint system and can build or audit department structures
 - You can say "add a new department" at any time and the AI knows exactly what files to create

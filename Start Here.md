@@ -550,3 +550,25 @@ Before installing any imported skill:
 2. Read every `.md` file with no exceptions.
 3. Report discovered count and read count.
 4. If counts do not match, stop and mark install as failed.
+
+
+## Final Step - Set Up Weekly Auto-Update (Agent Runs This)
+
+After all skills are installed, run this as the final step.
+The agent executes these commands - the human does nothing:
+
+```bash
+mkdir -p ~/.openclaw/skills/scripts
+curl -s https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/setup-weekly-update.sh -o ~/.openclaw/skills/scripts/setup-weekly-update.sh
+chmod +x ~/.openclaw/skills/scripts/setup-weekly-update.sh
+bash ~/.openclaw/skills/scripts/setup-weekly-update.sh
+```
+
+Verify it installed:
+```bash
+crontab -l | grep update-skills
+```
+
+This sets up a cron job that runs every Sunday at 2:00 AM.
+It checks GitHub for new skill versions, downloads and applies updates to installed skills only, and sends a Telegram notification with what changed.
+It runs automatically every week. No human action needed after this point.

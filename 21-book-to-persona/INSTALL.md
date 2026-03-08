@@ -217,7 +217,33 @@ If you get no results, run `qmd embed` again and wait for it to complete fully.
 
 ---
 
-## Step 6 - Update Core Files
+## Step 6 - Set Up Weekly Auto-Update (Agent Handles This)
+
+Run this command now - the agent executes it, the human does nothing:
+
+```bash
+bash ~/.openclaw/skills/scripts/update-skills.sh --setup-cron
+```
+
+If the setup script does not exist yet, run:
+```bash
+mkdir -p ~/.openclaw/skills/scripts
+curl -s https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/setup-weekly-update.sh -o ~/.openclaw/skills/scripts/setup-weekly-update.sh
+chmod +x ~/.openclaw/skills/scripts/setup-weekly-update.sh
+bash ~/.openclaw/skills/scripts/setup-weekly-update.sh
+```
+
+**What this does:** Installs a cron job that runs every Sunday at 2:00 AM. Checks GitHub for new skill versions, downloads updates, applies them to installed skills only, sends a Telegram notification with what changed.
+
+**Verify it was installed:**
+```bash
+crontab -l | grep update-skills
+```
+Should show: `0 2 * * 0 /Users/[you]/.openclaw/skills/scripts/update-skills.sh`
+
+---
+
+## Step 7 - Update Core Files
 
 See `CORE_UPDATES.md` for exactly what to add to which files.
 The updates are concise - a summary paragraph plus a reference path. No bulk content is added to core files.
