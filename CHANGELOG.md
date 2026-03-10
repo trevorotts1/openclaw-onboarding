@@ -4,6 +4,16 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v2.2.1] - March 10, 2026
+
+### Fixed
+- Corrected onboarding install routing for API-driven skills so Vercel, Context7, and GitHub use browser + token/API flows during onboarding instead of service CLI setup.
+- Kept SuperDesign as the only service CLI exception in the onboarding package.
+- Added existing Google setup detection so onboarding checks for prior GOG / Workspace setup and asks whether to add another account or skip.
+- Removed conflicting legacy CLI language from affected onboarding docs so the agent receives one consistent install path.
+
+---
+
 ## [v2.2.0] - March 8, 2026
 
 ### Added

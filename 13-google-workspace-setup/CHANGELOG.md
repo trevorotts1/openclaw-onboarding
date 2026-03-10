@@ -4,6 +4,13 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v1.5.1] - March 10, 2026
+
+### Fixed
+- Added existing-setup detection for Gmail / Google Workspace so onboarding can ask add-account-or-skip before reconfiguring.
+
+---
+
 ## [v1.5.0] - March 7, 2026
 
 ### Changed

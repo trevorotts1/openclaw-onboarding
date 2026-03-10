@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ONBOARDING_VERSION="v2.2.1"
+
 # ============================================================
 #  OpenClaw Onboarding Installer
 #  Run via: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
@@ -9,6 +11,7 @@ set -euo pipefail
 echo ""
 echo "============================================"
 echo "   OpenClaw Onboarding Installer"
+echo "   Version: ${ONBOARDING_VERSION}"
 echo "============================================"
 echo ""
 
@@ -63,6 +66,13 @@ fi
 cp -r "$TEMP_EXTRACT/openclaw-onboarding-main/." "$ONBOARDING_DIR/"
 rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 echo "  Installed to $ONBOARDING_DIR"
+
+# Record onboarding version for update checks and support
+SKILLS_DIR="$HOME/.openclaw/skills"
+mkdir -p "$SKILLS_DIR"
+echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
+echo "$ONBOARDING_VERSION" > "$ONBOARDING_DIR/.onboarding-version"
+echo "  Recorded onboarding version: $ONBOARDING_VERSION"
 
 # ----------------------------------------------------------
 # Step 4: Find or create the OpenClaw Backups folder
@@ -148,6 +158,7 @@ echo "============================================"
 echo "  Onboarding triggered."
 echo "  Your OpenClaw agent is now installing"
 echo "  29 skills autonomously."
+echo "  Installer version: ${ONBOARDING_VERSION}"
 echo "  Check your configured messaging channel"
 echo "  for progress updates."
 echo "============================================"
