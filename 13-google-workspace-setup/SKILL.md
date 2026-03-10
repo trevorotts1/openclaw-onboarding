@@ -71,6 +71,8 @@ behalf, and then your AI can do the rest.
   Google Workspace business accounts use a service account with Domain-Wide Delegation.
   Never mix these up - using the wrong method will always fail.
 
+- **Detect existing setup before starting.** If Gmail or Google Workspace is already configured, tell the user: "We've already detected that this has already been set up for you. Did you want to add an additional Gmail account or Google Workspace account?" If they say yes, run the add-account path. If they say no, skip this skill and continue onboarding.
+
 - **Domain-Wide Delegation requires two steps.** First, enable it on the service account
   in the GCP Console. Second, authorize the scopes in the Google Admin Console. Missing
   either step causes "Access denied" errors.

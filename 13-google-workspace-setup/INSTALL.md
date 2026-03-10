@@ -275,6 +275,31 @@ echo "$USER_EMAIL" | grep -q "@gmail.com" && ACCOUNT_TYPE="gmail" || ACCOUNT_TYP
 - If ACCOUNT_TYPE is "workspace" - proceed to **Path A** below.
 - If ACCOUNT_TYPE is "gmail" - skip to **Path B** below.
 
+## EXISTING-SETUP DETECTION (MANDATORY BEFORE INSTALL)
+
+Before opening browsers or creating anything new, detect whether Google access is already configured for this machine or target account.
+
+Run these checks first:
+```bash
+# GOG auth state
+gog auth list 2>/dev/null || true
+
+# Known Google env/config values
+cat [WORKSPACE_ROOT]/secrets/.env 2>/dev/null | grep -E "USER_EMAIL|GOG_DEFAULT_ACCOUNT|GCP_IMPERSONATE_USER|GOOGLE" || true
+cat ~/.openclaw/openclaw.json 2>/dev/null | grep -i "google\|gmail\|gcp\|impersonate" || true
+
+# Service account files in common locations
+ls ~/clawd/secrets/*google* ~/clawd/secrets/*gcp* ~/Downloads/*google*.json 2>/dev/null || true
+```
+
+If detection shows Gmail or Workspace is already configured, tell the user exactly:
+
+> "We've already detected that this has already been set up for you. Did you want to add an additional Gmail account or Google Workspace account?"
+
+- If user says **yes**: continue this skill using the Add-Account path for the detected account type.
+- If user says **no**: mark this skill as ALREADY_INSTALLED or SKIPPED-ALREADY-CONFIGURED and continue to the next skill.
+- If detection is unclear: continue with normal setup flow and verify using the first successful API/auth test.
+
 
 ======================================================================
 ======================================================================

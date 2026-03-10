@@ -58,3 +58,15 @@ Add:
 ---
 
 ## SOUL.md - NO UPDATE NEEDED
+
+## ADDITIONAL DETECTION INTELLIGENCE
+
+[ADD TO AGENTS.md]
+Preflight: Detect existing GOG or Google Workspace setup for the target account before running this skill. If detected, ask the user: "We've already detected that this has already been set up for you. Did you want to add an additional Gmail account or Google Workspace account?" If user answers yes, run the Add-Account flow in this skill. If no, mark this skill skipped and proceed to the next skill.
+
+[ADD TO TOOLS.md]
+How to detect existing Google setup: 1) Look for GOG config or service account JSON in expected paths (for example, ~/.gogcli/, ~/clawd/secrets/, ~/Downloads/*.json). 2) Check auth state with `gog auth list` and existing env values like GOG_DEFAULT_ACCOUNT or GCP_IMPERSONATE_USER. 3) For Workspace, attempt a minimal API call with stored service account credentials to verify access. Return a boolean setup_present and the detected email when possible.
+
+[ADD TO MEMORY.md]
+When Google setup detection runs, record: {type: 'google-setup-detection', email: '<detected-email-or-null>', method: 'gog|service-account|api-check', user_choice: 'add|skip', timestamp: '<human-readable date>'}.
+
