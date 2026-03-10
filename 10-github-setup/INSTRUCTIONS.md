@@ -137,10 +137,10 @@ To back up a project that is not yet on GitHub, the AI agent does this:
    git commit -m "Initial backup"
 
 5. Create a repository on GitHub and push:
-   gh repo create project-name --private --source=. --push
+   git init && git add . && git commit -m "Initial commit" && git remote add origin https://github.com/USERNAME/project-name.git && git push -u origin main
 
    This creates a PRIVATE repository (only you can see it) on GitHub
-   and uploads all your files. The "gh" command is the GitHub CLI tool.
+   and uploads all your files. This onboarding flow does not require GitHub CLI.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEEPING THINGS IN SYNC

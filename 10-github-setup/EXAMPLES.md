@@ -1,3 +1,8 @@
+## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
+- During onboarding, do NOT use GitHub CLI (gh) for setup/auth.
+- Treat any legacy gh examples below as historical reference only, not the install path.
+- Use browser-based PAT creation, API verification, and local git config from INSTALL.md.
+
 
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
@@ -120,7 +125,7 @@ Expected output:
    15 files changed, 2340 insertions(+)
 
 Step 5: Create a private repository on GitHub and push
-  gh repo create my-website --private --source=. --push
+  git init && git add . && git commit -m "Initial commit" && git remote add origin https://github.com/USERNAME/my-website.git && git push -u origin main
 
 Expected output:
   Created repository your-username/my-website on GitHub

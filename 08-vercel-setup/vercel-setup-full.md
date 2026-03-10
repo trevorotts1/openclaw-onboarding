@@ -1,3 +1,8 @@
+## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
+- During onboarding, do NOT use the Vercel CLI for setup/auth.
+- Treat any legacy CLI examples below as historical reference only, not the install path.
+- Use browser-based token creation and API verification from INSTALL.md.
+
 
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
@@ -196,7 +201,7 @@ CRITICAL - TELL THEM:
 here so I can save it for you. It looks like this: oEYwm7BpJVvtywdi6F6B5ymr"
 
 WAIT FOR TOKEN:
-  → When they provide the token, validate it by running: vercel whoami (or the API call in INSTALL.md Step 4)
+  → When they provide the token, validate it using the API call in INSTALL.md
   → If it looks like a token: Proceed to STEP 4
   → If they lost it: Tell them to delete that token and create a new one
 
@@ -216,10 +221,9 @@ WHEN YOU RECEIVE THE TOKEN:
    - Dashboard: https://vercel.com/dashboard
 
 3. Update TOOLS.md - add this section:
-   ## Vercel CLI & API
+   ## Vercel API
    - Token: $VERCEL_TOKEN (in secrets.env)
-   - CLI: vercel (install with: npm i -g vercel)
-   - API Base: https://api.vercel.com
+      - API Base: https://api.vercel.com
    - Deploy: vercel --prod
    - List projects: vercel ls
 

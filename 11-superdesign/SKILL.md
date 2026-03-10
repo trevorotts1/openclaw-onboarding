@@ -8,6 +8,7 @@ metadata:
   
   version: "1.0"
   priority: HIGH
+  install_method: "cli"
 ---
 
 # SuperDesign Setup

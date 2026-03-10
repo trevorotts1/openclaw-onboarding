@@ -8,9 +8,13 @@ metadata:
   
   version: "1.0"
   priority: HIGH
+  install_method: "api"
 ---
 
-## SETUP METHOD: GitHub API + GitHub CLI (gh) where available.
+## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
+- For this onboarding package, do NOT use GitHub CLI (gh) for setup/auth.
+- Use browser-based PAT creation, API-token verification, and local git config only.
+- Superdesign remains the CLI exception in this onboarding package.
 
 # GitHub and Git Setup
 

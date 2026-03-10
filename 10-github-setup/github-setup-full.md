@@ -1,3 +1,8 @@
+## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
+- During onboarding, do NOT use GitHub CLI (gh) for setup/auth.
+- Treat any legacy gh examples below as historical reference only, not the install path.
+- Use browser-based PAT creation, API verification, and local git config from INSTALL.md.
+
 
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
@@ -324,7 +329,7 @@ BACKUP A WEBSITE:
   git init (if not already a repo)
   git add .
   git commit -m "Backup: $(date +%Y-%m-%d)"
-  gh repo create <name> --private --source=. --push
+  git init && git add . && git commit -m "Initial commit" && git remote add origin https://github.com/USERNAME/<name>.git && git push -u origin main
 
 KEEP IN SYNC:
   • Always pull before starting work: git pull

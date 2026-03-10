@@ -118,8 +118,8 @@ VERCEL SETUP - AGENT EXECUTION GUIDE
 ══════════════════════════════════════════════════════════════════
 
 This guide enables an AI agent to autonomously set up Vercel account access,
-generate API tokens, install the Vercel CLI, and configure OpenClaw for
-website deployment.
+generate API tokens, and configure OpenClaw for website deployment.
+During onboarding, Vercel setup is API/token-driven and must not depend on the Vercel CLI.
 
 Vercel is a website hosting service where the agent deploys (publishes)
 websites so they are live on the internet.
@@ -171,21 +171,7 @@ Agent action:
 3. If VERCEL_TOKEN not found or API call fails:
    - Proceed to Step 2.
 
-STEP 2: INSTALL VERCEL CLI
-
-Agent action:
-1. Install the Vercel CLI globally:
-   npm i -g vercel
-
-2. If permission error:
-   sudo npm i -g vercel
-
-3. Verify:
-   vercel --version
-
-4. If installation fails, report the error and halt. CLI is required.
-
-STEP 3: GUIDE USER TO CREATE VERCEL ACCOUNT (if needed)
+STEP 2: GUIDE USER TO CREATE VERCEL ACCOUNT (if needed)
 
 Agent action:
 1. Instruct the user:
@@ -197,7 +183,7 @@ Agent action:
 2. Do not wait for a conversational reply. Proceed directly to Step 4
    (token creation). The user will complete account creation in parallel.
 
-STEP 4: CREATE VERCEL API TOKEN
+STEP 3: CREATE VERCEL API TOKEN
 
 Agent action:
 1. Instruct user:
@@ -227,7 +213,7 @@ Agent action:
      delete that token, create a new one, and paste it here."
    - Return to Step 4, query 2.
 
-STEP 5: STORE TOKEN IN ENVIRONMENT
+STEP 4: STORE TOKEN IN ENVIRONMENT
 
 Agent action:
 1. Locate or create secrets file using multi-env check:
@@ -249,14 +235,14 @@ Agent action:
 4. Export to current shell session:
    export VERCEL_TOKEN=<TOKEN>
 
-STEP 6: UPDATE CORE DOCUMENTATION FILES
+STEP 5: UPDATE CORE DOCUMENTATION FILES
 
 Agent action - follow CORE_UPDATES.md for exact text:
 1. Update AGENTS.md with Vercel section (lean summary + path reference).
-2. Update TOOLS.md with Vercel CLI and API section.
+2. Update TOOLS.md with Vercel API section.
 3. Update MEMORY.md with setup timestamp.
 
-STEP 7: FINAL VERIFICATION
+STEP 6: FINAL VERIFICATION
 
 Agent action:
 1. Run the verification API call:
@@ -266,24 +252,18 @@ Agent action:
 2. Expected output: the user's Vercel username as a plain string.
    Example: "your-vercel-username"
 
-3. Also verify CLI authentication:
-   vercel whoami
-
-   Expected output: the same username.
-
-4. If both checks pass:
+3. If the API verification passes:
    - Report: "Vercel setup complete! Username: <username>"
    - Proceed to Step 8.
 
-5. If either check fails:
+4. If the API check fails:
    - Report the specific error and retry from Step 4.
 
-STEP 8: COMPLETION REPORT
+STEP 7: COMPLETION REPORT
 
 Agent action:
 1. Generate completion checklist:
-   [x] jq and Node.js/npm dependencies verified
-   [x] Vercel CLI installed and verified
+   [x] jq dependency verified
    [x] Vercel API token created with Full Account scope
    [x] Token validated via API (not format-guessing)
    [x] Token saved to secrets file
@@ -305,8 +285,6 @@ AGENT EXECUTION CHECKLIST
 Before reporting completion, agent must verify ALL items:
 
 [ ] jq installed and available
-[ ] Node.js and npm verified
-[ ] Vercel CLI installed (vercel --version returns output)
 [ ] Existing VERCEL_TOKEN checked across all secrets locations
 [ ] User directed to account creation page (if needed)
 [ ] API token created with Full Account scope
@@ -316,9 +294,8 @@ Before reporting completion, agent must verify ALL items:
 [ ] TOOLS.md updated with Vercel section
 [ ] MEMORY.md updated
 [ ] Final API verification passed - username retrieved
-[ ] CLI verification passed - vercel whoami returns username
 
-DO NOT report setup complete until both verification checks pass and
+DO NOT report setup complete until the API verification check passes and
 all checklist items are confirmed.
 
 ══════════════════════════════════════════════════════════════════
@@ -326,9 +303,8 @@ AGENT CAPABILITIES AFTER SETUP
 ══════════════════════════════════════════════════════════════════
 
 Once Vercel setup is complete, agent can autonomously:
-- Deploy websites to Vercel using the CLI (vercel --prod)
-- Create and manage projects via CLI and API
-- Manage custom domains
-- Set environment variables (vercel env add)
-- Create preview deployments for testing
-- Query project status and deployment history
+- Create and manage projects via Vercel API
+- Manage custom domains via Vercel API
+- Set environment variables via Vercel API
+- Create preview and production deployments via API or authenticated git push
+- Query project status and deployment history via API

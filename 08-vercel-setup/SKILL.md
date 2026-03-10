@@ -8,9 +8,13 @@ metadata:
   
   version: "1.0"
   priority: STANDARD
+  install_method: "api"
 ---
 
-## SETUP METHOD: Vercel CLI (official recommended path).
+## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
+- For this onboarding package, do NOT use the Vercel CLI for setup/auth.
+- Use browser-based account/token creation and API-token verification only.
+- Superdesign remains the CLI exception in this onboarding package.
 
 # Vercel Setup
 
@@ -36,7 +40,6 @@ when each step is confirmed complete.
 
 - Teach Yourself Protocol (TYP) must be learned first (skill 01)
 - Backup Protocol must be learned first (skill 02)
-- Requires Node.js and npm (for Vercel CLI)
 - The human needs a web browser to create their Vercel account
 - A GitHub account is recommended (makes setup easier) but not required
 
@@ -65,7 +68,7 @@ when each step is confirmed complete.
    wording for every question and instruction to give the human, plus the
    commands and API calls to use after setup is complete.
 3. **INSTRUCTIONS.md** - Additional operational instructions.
-4. **INSTALL.md** - Steps for installing the Vercel CLI (npm i -g vercel).
+4. **INSTALL.md** - API/token setup notes and verification flow.
 5. **EXAMPLES.md** - Example deployments and common use cases.
 6. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
 

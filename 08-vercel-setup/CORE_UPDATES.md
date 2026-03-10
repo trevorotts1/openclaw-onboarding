@@ -11,9 +11,9 @@ Add:
 
 ```
 ## Vercel Deployment [PRIORITY: STANDARD]
-- CLI: vercel (installed globally via npm)
-- Deploy preview: vercel
-- Deploy production: vercel --prod
+- Setup method: browser + API token only during onboarding
+- Token: VERCEL_TOKEN
+- API Base: https://api.vercel.com
 - Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/08-vercel-setup/vercel-setup-full.md
 ```
 
@@ -24,11 +24,10 @@ Add:
 Add:
 
 ```
-## Vercel CLI & API
-- Install: npm i -g vercel
-- Auth: vercel login
-- Commands: vercel (preview), vercel --prod (production), vercel ls (list), vercel env (manage env vars)
+## Vercel API
+- Setup/auth method during onboarding: browser + token
 - Token: $VERCEL_TOKEN (stored in secrets file)
+- Verify: curl -H "Authorization: Bearer $VERCEL_TOKEN" https://api.vercel.com/v2/user
 - API Base: https://api.vercel.com
 - Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/08-vercel-setup/vercel-setup-full.md
 ```
@@ -41,8 +40,8 @@ Add:
 
 ```
 ## Vercel Setup - Installed [DATE]
-- CLI installed and authenticated
 - Token stored in secrets file as VERCEL_TOKEN
+- Verified via Vercel API user endpoint
 - Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/08-vercel-setup/vercel-setup-full.md
 ```
 

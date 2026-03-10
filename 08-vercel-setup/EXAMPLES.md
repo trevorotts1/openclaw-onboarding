@@ -1,3 +1,8 @@
+## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
+- During onboarding, do NOT use the Vercel CLI for setup/auth.
+- Treat any legacy CLI examples below as historical reference only, not the install path.
+- Use browser-based token creation and API verification from INSTALL.md.
+
 
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
@@ -96,7 +101,7 @@ Step 2: Deploy a preview first
   vercel
 
 Expected output:
-  Vercel CLI 35.0.0
+  Verified token via API user endpoint
   ? Set up and deploy "~/projects/my-website"? [Y/n] y
   ...
   Preview: https://my-website-abc123.vercel.app
@@ -199,7 +204,7 @@ COMMON TROUBLESHOOTING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 PROBLEM: "vercel: command not found"
-SOLUTION: Install the CLI with: npm i -g vercel
+SOLUTION: Create or refresh the token and validate through the API user endpoint
 
 PROBLEM: Token verification returns an error
 SOLUTION: Make sure $VERCEL_TOKEN is set in your environment. Try:

@@ -296,14 +296,10 @@ CHECK 3: GitHub API test
   If output is "null" or an error message: the token is invalid.
   Delete it from GitHub, create a new one, and repeat Step 3.
 
-CHECK 4 (if gh CLI is available): GitHub CLI authentication
-  gh auth status
+There is no GitHub CLI requirement in this onboarding flow.
+GitHub setup is complete when git config is correct and the PAT verifies through the GitHub API.
 
-  Expected output includes:
-  Logged in to github.com as <username>
-  Token scopes: repo, read:org, workflow (minimum)
-
-ALL FOUR CHECKS MUST PASS before declaring setup complete.
+ALL THREE CHECKS MUST PASS before declaring setup complete.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SETUP CHECKLIST
@@ -327,7 +323,6 @@ Before telling the user that setup is complete, verify ALL of these:
 [ ] CHECK 1: git config --list shows all four expected values
 [ ] CHECK 2: credential.helper returns "store"
 [ ] CHECK 3: API call returns the correct username (not null)
-[ ] CHECK 4: gh auth status (if gh CLI available)
 
 DO NOT tell the user setup is complete until the verification checks pass.
 

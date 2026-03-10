@@ -701,6 +701,7 @@ If any step in a skill's installation fails:
 3. The agent executes all installs. The human is not asked to run steps. The agent runs them.
 3. Keep OpenRouter setup for last after model config backup is verified.
 4. Superdesign is the only skill allowed to rely on service CLI commands.
+5. Vercel, Context7, and GitHub setup must use browser + token/API flows during onboarding, not service CLIs.
 
 ### API KEY DISCOVERY (MANDATORY BEFORE ASKING USER)
 
@@ -839,9 +840,9 @@ All skill folders are located inside:
 | 5 | GHL / Convert and Flow Setup | 05-ghl-setup |
 | 6 | GHL / Convert and Flow - Install Pages | 06-ghl-install-pages |
 | 7 | KIE Setup and HTTP Structure | 07-kie-setup |
-| 8 | Vercel Setup (Vercel CLI) | 08-vercel-setup |
+| 8 | Vercel Setup (API/browser) | 08-vercel-setup |
 | 9 | Context7 Setup (API/browser) | 09-context7 |
-| 10 | GitHub / Git Setup (gh CLI + API) | 10-github-setup |
+| 10 | GitHub / Git Setup (API + git config) | 10-github-setup |
 | 11 | SuperDesign Instructions Setup | 11-superdesign |
 | 12 | Google Workspace Setup (branch: Workspace vs Gmail) | 13-google-workspace-setup |
 | 13 | Google Workspace Integration | 14-google-workspace-integration |
@@ -879,10 +880,10 @@ All skill folders are located inside:
 - TYP governs storage method. The skill governs content and which files it touches.
 - Do NOT change any API keys, terminal commands, or config values from what is written
 - Do NOT add steps that are not in the instructions
-- GitHub setup uses GitHub CLI (gh) and GitHub API as needed
-- Vercel setup uses Vercel CLI (official recommended path)
-- Context7 setup uses API and browser setup (no Context7 CLI required)
-- Superdesign may use its CLI install command as documented
+- GitHub setup uses browser + token/API setup and local git config only
+- Vercel setup uses browser + token/API setup only
+- Context7 setup uses browser + token/API setup only
+- Superdesign is the only onboarding skill allowed to rely on service CLI commands
 - Do NOT skip verification steps
 - Do NOT tell the user a skill is installed until you have verified it works
 - Do NOT bloat AGENTS.md, TOOLS.md, or MEMORY.md with full documentation

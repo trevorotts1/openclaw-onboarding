@@ -1,3 +1,8 @@
+## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
+- During onboarding, do NOT use the Vercel CLI for setup/auth.
+- Treat any legacy CLI examples below as historical reference only, not the install path.
+- Use browser-based token creation and API verification from INSTALL.md.
+
 
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
@@ -47,7 +52,7 @@ The most common thing you will do with Vercel is deploy a website. This
 means taking website files from your computer and putting them on the
 internet where anyone can visit them.
 
-Using the Vercel CLI (command line):
+Using the Vercel API / dashboard flow during onboarding:
 
 1. Navigate to the folder containing your website files:
    cd /path/to/your/website/folder

@@ -7,6 +7,7 @@ metadata:
   
   version: "1.0"
   priority: HIGH
+  install_method: "api"
 ---
 
 ## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
