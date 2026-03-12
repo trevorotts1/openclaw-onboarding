@@ -27,6 +27,8 @@ QMD is installed as a system dependency before skills 4-29 run.
 It powers the persona search in Skill 22 and the persona detection in Skill 23.
 If the install script already ran, QMD is installed. No manual step needed.
 
+**QMD INDEXING happens at strategic points - see QMD INDEXING PROTOCOL below.**
+
 ### STEPS 4-29: All Remaining Skills (in numbered order)
 Skills install sequentially. For each skill:
 - The agent checks if API keys are already present in your env files
@@ -331,6 +333,64 @@ After every skill install, verify:
 - [ ] Deep files have complete content
 - [ ] Core files reference deep files with correct paths
 - [ ] No bloat added to AGENTS.md, MEMORY.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md, or HEARTBEAT.md
+
+---
+
+---
+
+## 🔴 QMD INDEXING PROTOCOL - STRATEGIC EMBEDDING SCHEDULE
+
+**QMD (semantic search) must be indexed at specific milestones, not after every skill.**
+
+### Indexing Schedule
+
+| Milestone | When to Index | Why |
+|-----------|---------------|-----|
+| **Initial** | After Step 3 (QMD install) + TYP + Back Yourself Up complete | Base index of workspace |
+| **Foundation** | After Skills 04-21 complete (before Personas & AI Workforce) | Core tooling ready, prepares for heavy skills |
+| **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
+| **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
+| **API Layer** | After OpenRouter setup (Skill 12) complete | Model routing knowledge searchable |
+| **Final** | After ALL 29 skills complete | Complete system index |
+| **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
+
+### What to Index at Each Milestone
+
+```bash
+# Standard indexing command sequence:
+qmd update          # Update file index
+qmd embed           # Generate embeddings
+qmd status          # Verify completion
+```
+
+### Collections to Index
+
+| Collection | Contents | When Indexed |
+|------------|----------|--------------|
+| `clawd` | Workspace AGENTS.md, MEMORY.md, TOOLS.md, etc. | Every milestone |
+| `master-files` | `~/Downloads/openclaw-master-files/` | Every milestone |
+| `coaching-personas` | `~/Downloads/openclaw-master-files/coaching-personas/personas/` | After Skill 22 |
+
+### Process for Each Indexing
+
+1. **Announce:** "Running QMD indexing for [milestone] milestone..."
+2. **Update:** `qmd update` - scans all collections
+3. **Embed:** `qmd embed` - generates vectors
+4. **Verify:** Check status shows all files indexed
+5. **Report:** "QMD indexing complete: X files, Y collections"
+
+### Forbidden Actions
+- Do NOT index after every single skill (wasteful)
+- Do NOT skip indexing at milestones (breaks search)
+- Do NOT assume "it's probably fine" - verify with `qmd status`
+- Do NOT index before TYP and Back Yourself Up are complete
+
+### Why This Schedule
+
+- **Too frequent:** Wastes time, redundant embeddings
+- **Too rare:** Search returns stale results, new skills invisible
+- **Milestone-based:** Balances freshness with efficiency
+- **Personas/AI Workforce:** These add the most content, need immediate indexing
 
 ---
 

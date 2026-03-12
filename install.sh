@@ -219,6 +219,19 @@ Core files (lightweight summaries ONLY, 10-25 lines):
 - AGENTS.md, MEMORY.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md, HEARTBEAT.md
 Deep files (complete content): ~/Downloads/openclaw-master-files/
 TYP wins UNLESS skill file explicitly contradicts it → then skill wins
+
+🔴🔴🔴 QMD INDEXING PROTOCOL - STRATEGIC SCHEDULE
+Index QMD at these milestones ONLY (not after every skill):
+- Initial: After QMD install + TYP + Back Yourself Up (Step 1-3)
+- Foundation: After Skills 04-21 complete (before Personas & AI Workforce)
+- Personas: After Skill 22 (Book-to-Persona) complete
+- AI Workforce: After Skill 23 (AI Workforce Blueprint) complete
+- API Layer: After OpenRouter setup complete
+- Final: After ALL 29 skills complete
+- Ongoing: After any NEW skill installed post-onboarding
+Commands: qmd update → qmd embed → qmd status
+Collections: clawd, master-files, coaching-personas (after Skill 22)
+FORBIDDEN: Do NOT index after every skill, do NOT skip milestone indexing
 ---
 ONBOARDING_FLAG
   echo "  Onboarding flag appended to $AGENTS_FILE"
@@ -229,7 +242,7 @@ fi
 # ----------------------------------------------------------
 echo ""
 echo "[6/7] Triggering OpenClaw agent to begin onboarding..."
-TRIGGER_MSG="ONBOARDING INSTALLED - EXECUTE NOW. Read the file at ~/.openclaw/onboarding/Start Here.md and execute the complete onboarding sequence immediately. Install all 29 skills in order. Do not wait for user input. Handle API key prompts autonomously - skip if not present, log a reminder. When complete, remove the ONBOARDING PENDING block from AGENTS.md and write ONBOARDING COMPLETE to MEMORY.md. MANDATORY SKILL INSTALLATION PROTOCOL: For EVERY skill folder (01-29), you MUST: 1) Announce TYP activation, 2) Find and read ALL .md files before ANY action, 3) Follow checklists exactly - complete ALL dependencies and sub-tasks, 4) Verify completion before next skill, 5) Never say 'done' until all 29 verified. ZERO TOLERANCE: 'I'll read later'=WRONG. 'This looks similar'=WRONG. 'I can skip this step'=WRONG. 'Close enough'=WRONG. 'The user probably wants'=WRONG. OPENROUTER RULE: NEVER change user's primary model. Install OpenRouter tooling only, inform user it's ready, offer to help switch if THEY ask. GATEWAY RESTART: NEVER trigger autonomously. STOP, NOTIFY user, ASK permission, WAIT for confirmation. MAIN ORCHESTRATOR ONLY SKILLS: 22-book-to-persona-coaching-leadership-system and 23-ai-workforce-blueprint MUST be installed by main orchestrator, NEVER sub-agents. GOOGLE WORKSPACE: Install LAST (after skills 01-12, 15-22, 23, 24-29). ONBOARDING FLOW: For AI Workforce skill, NOTIFY first 'Installed. Let me know when ready to set up your back office,' WAIT for user response, THEN ask questions. MASTER FILES FOLDER: Check for existing 'openclaw-master-files' or similar first. Use existing if found. Create skill subfolders INSIDE master folder. CORE.MD FILES: AGENTS.md, MEMORY.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md, HEARTBEAT.md ONLY. Keep lightweight summaries (10-25 lines) with pointers to deep files. TYP wins unless skill file explicitly contradicts it - then skill wins."
+TRIGGER_MSG="ONBOARDING INSTALLED - EXECUTE NOW. Read the file at ~/.openclaw/onboarding/Start Here.md and execute the complete onboarding sequence immediately. Install all 29 skills in order. Do not wait for user input. Handle API key prompts autonomously - skip if not present, log a reminder. When complete, remove the ONBOARDING PENDING block from AGENTS.md and write ONBOARDING COMPLETE to MEMORY.md. MANDATORY SKILL INSTALLATION PROTOCOL: For EVERY skill folder (01-29), you MUST: 1) Announce TYP activation, 2) Find and read ALL .md files before ANY action, 3) Follow checklists exactly - complete ALL dependencies and sub-tasks, 4) Verify completion before next skill, 5) Never say 'done' until all 29 verified. ZERO TOLERANCE: 'I'll read later'=WRONG. 'This looks similar'=WRONG. 'I can skip this step'=WRONG. 'Close enough'=WRONG. 'The user probably wants'=WRONG. OPENROUTER RULE: NEVER change user's primary model. Install OpenRouter tooling only, inform user it's ready, offer to help switch if THEY ask. GATEWAY RESTART: NEVER trigger autonomously. STOP, NOTIFY user, ASK permission, WAIT for confirmation. MAIN ORCHESTRATOR ONLY SKILLS: 22-book-to-persona-coaching-leadership-system and 23-ai-workforce-blueprint MUST be installed by main orchestrator, NEVER sub-agents. GOOGLE WORKSPACE: Install LAST (after skills 01-12, 15-22, 23, 24-29). ONBOARDING FLOW: For AI Workforce skill, NOTIFY first 'Installed. Let me know when ready to set up your back office,' WAIT for user response, THEN ask questions. MASTER FILES FOLDER: Check for existing 'openclaw-master-files' or similar first. Use existing if found. Create skill subfolders INSIDE master folder. CORE.MD FILES: AGENTS.md, MEMORY.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md, HEARTBEAT.md ONLY. Keep lightweight summaries (10-25 lines) with pointers to deep files. TYP wins unless skill file explicitly contradicts it - then skill wins. QMD INDEXING: Index at milestones ONLY - Initial (after QMD+TYP+Backup), Foundation (after Skills 04-21), Personas (after Skill 22), AI Workforce (after Skill 23), API Layer (after OpenRouter), Final (after all 29). Commands: qmd update, qmd embed, qmd status. Do NOT index after every skill."
 
 if openclaw agent --message "$TRIGGER_MSG" --deliver 2>/dev/null; then
   echo "  Agent triggered successfully."
