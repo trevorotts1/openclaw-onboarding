@@ -3,6 +3,45 @@
 
 ---
 
+## 🔴 TRIGGER DETECTED - YOU ARE NOW EXECUTING ONBOARDING
+
+If you are reading this file, the user has triggered onboarding by saying something like:
+- "Begin onboarding installation"
+- "Start onboarding"
+- "Install the 29 skills"
+
+**Your task:** Install all 29 skills using the 5-Wave Parallel Orchestration below.
+
+### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
+
+**0.1: Confirm AGENTS.md has ONBOARDING PENDING flag**
+```bash
+grep "ONBOARDING PENDING" ~/clawd/AGENTS.md
+```
+If found: Proceed with installation.  
+If NOT found: Stop and tell user: "I don't see an ONBOARDING PENDING flag in AGENTS.md. Please run the install script first: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash"
+
+**0.2: Check for partial/resume state**
+```bash
+cat ~/.openclaw/onboarding/.onboarding-status 2>/dev/null
+cat ~/Downloads/openclaw-master-files/OpenClaw\ Onboarding/.onboarding-status.json 2>/dev/null
+```
+If status files exist with skill markings (INSTALLED, ALREADY_INSTALLED, SKIPPED):  
+→ Resume from first skill NOT marked complete. Do not reinstall completed skills.
+
+**0.3: Test sub-agent spawn capability**
+Before starting Wave 2, verify you can spawn sub-agents:
+```bash
+# Try to spawn a test sub-agent (this is a capability check, not actual install)
+```
+If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use parallel sub-agents).  
+If `sessions_spawn` fails: Use Sequential Mode (install 01→29 one at a time).
+
+**0.4: Announce your strategy**
+Tell user: "Onboarding triggered. I will install 29 skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+
+---
+
 ## Core.md Files - PROTECT AT ALL COSTS
 
 These 7 files are your AI's memory and identity. Keep them LEAN.
