@@ -43,7 +43,9 @@ This guide covers both Google Workspace business accounts (like you@yourdomain.c
 4. **INSTALL.md** - Installation steps specific to this skill.
 5. **EXAMPLES.md** - Example commands and usage patterns.
 6. **CORE_UPDATES.md** - What to add to your core .md files (AGENTS.md, TOOLS.md, etc.).
-7. **google-workspace-integration.skill** - Skill metadata file.
+7. **google-api-js-runbook.md** - Quick reference for using the google-api.js script (zero-dependency Node.js tool for Workspace API access).
+8. **google-docs-api-working-solution.md** - Exact working Python solution with JWT authentication code for direct API calls.
+9. **google-workspace-integration.skill** - Skill metadata file.
 
 ## Prerequisites
 
