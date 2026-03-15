@@ -151,6 +151,22 @@ If `FISH_AUDIO_API_KEY` or `FISH_AUDIO_VOICE_ID` are missing, the installer writ
 
 ---
 
+## Fish Audio Voice Behavior (S2 / S2-Pro)
+
+> **TYP Deep Reference:** `fish-audio-voice-sop.md` is a large document. Do NOT load it into core files. Read it once using TYP, internalize the rules, then apply them when generating voice output.
+
+When generating any Fish Audio S2 voice output (phone calls OR podcast/content), the agent must:
+
+1. Read `fish-audio-voice-sop.md` using TYP before the first voice generation session
+2. Apply the 12 Universal Operating Rules (spoken language, short chunks, pause system, tag system)
+3. Use **Phone Call SOP (Part 3)** for live call interactions
+4. Use **Podcast SOP (Part 4)** for content/podcast/audio generation at 192 kbps
+5. Run the **8-step AI Decision Logic (Part 5)** before every voice response
+
+**The core principle:** Do not speak like written text. Speak like a human being thinking out loud in real time.
+
+---
+
 ## Files in This Skill
 
 | File | Purpose |
@@ -158,4 +174,5 @@ If `FISH_AUDIO_API_KEY` or `FISH_AUDIO_VOICE_ID` are missing, the installer writ
 | `SKILL.md` | This file - TYP, quick reference, standard templates |
 | `INSTALL.md` | Step-by-step installation checklist |
 | `README.md` | One-page summary |
+| `fish-audio-voice-sop.md` | **Deep reference** - Fish Audio S2 voice behavior SOP v2.0 (TYP required, do not load into core) |
 | `references/fish-audio-api-reference.md` | Full 841-line API reference (all endpoints, parameters, examples) |
