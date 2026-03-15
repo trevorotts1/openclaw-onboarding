@@ -700,13 +700,17 @@ Why a dedicated creative tier? Creative writing does not need deep reasoning or 
 
 
 
-Tier 4: Emergency Fallback Tier
+Tier 4: Fallback Tier
 
-ONLY activated when the user has run out of OpenRouter credits or funds.
+These models activate in order when the primary model fails or credits are depleted. They are FREE and capable of both thinking and execution. CRITICAL: DO NOT set any of these as the user's primary model without their explicit permission. They are fallbacks only.
 
-| Model | OpenRouter ID | Alias |
-|-------|---------------|-------|
-| DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | fallback |
+| Priority | Model | OpenRouter ID | Alias | Cost |
+|----------|-------|---------------|-------|------|
+| 1st | Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | flashlite | $0.25/M |
+| 2nd | Healer Alpha | openrouter/openrouter/healer-alpha | healer | FREE |
+| 3rd | Nemotron 3 Super | openrouter/nvidia/nemotron-3-super-120b-a12b:free | nemotron | FREE |
+| 4th | Hunter Alpha | openrouter/openrouter/hunter-alpha | hunter | FREE |
+| 5th (Emergency) | DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | fallback | FREE |
 
 When this activates:
 
@@ -781,6 +785,10 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 | DeepSeek V3.2 Speciale | openrouter/deepseek/deepseek-v3.2-speciale | 163,840 | 65,536 | $0.40 | $1.20 | YES (high-compute) | 0.3 |
 | DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | 163,840 | 163,840 | FREE | FREE | YES | 0.3 |
 | Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | 200,000 | 8,000 | $3.00 | $15.00 | No (research/search model) | 0.3 |
+| Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | 1,048,576 | 65,536 | $0.25 | $1.50 | YES (medium default) | 0.3 |
+| Healer Alpha | openrouter/openrouter/healer-alpha | 262,144 | 32,000 | FREE | FREE | YES (medium default) | 0.3 |
+| Nemotron 3 Super | openrouter/nvidia/nemotron-3-super-120b-a12b:free | TBD | TBD | FREE | FREE | YES (medium default) | 0.3 |
+| Hunter Alpha | openrouter/openrouter/hunter-alpha | 1,000,000 | TBD | FREE | FREE | YES (medium default) | 0.3 |
 
 Important notes about this table:
 
@@ -1055,6 +1063,10 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
       "model": {
         "primary": "openrouter/minimax/minimax-m2.5",
         "fallbacks": [
+          "openrouter/google/gemini-3.1-flash-lite-preview",
+          "openrouter/openrouter/healer-alpha",
+          "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+          "openrouter/openrouter/hunter-alpha",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/deepseek/deepseek-r1-0528:free"
         ]
@@ -1186,6 +1198,38 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
           "params": {
             "temperature": 0.3
           }
+        },
+        "openrouter/google/gemini-3.1-flash-lite-preview": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": {
+              "effort": "medium"
+            }
+          }
+        },
+        "openrouter/openrouter/healer-alpha": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": {
+              "effort": "medium"
+            }
+          }
+        },
+        "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": {
+              "effort": "medium"
+            }
+          }
+        },
+        "openrouter/openrouter/hunter-alpha": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": {
+              "effort": "medium"
+            }
+          }
         }
       }
     }
@@ -1277,7 +1321,11 @@ QUICK REFERENCE TABLE
 | kimi | Kimi K2.5 | Execution | Coding, chat, scraping (100+ parallel agents). No tool calls. Sub-agent for all code generation tasks. | YES (built-in) | 1.0 |
 | creative | Mistral Small Creative | Creative | All writing and content creation | No | 0.3 |
 | research | Perplexity Sonar Pro Search | Research | PRIMARY research model. All research, validation, fact-checking, web search. | No | 0.3 |
-| fallback | DeepSeek R1 Free | Emergency | Zero-credit fallback only | YES (medium default) | 0.3 |
+| flashlite | Gemini 3.1 Flash Lite | Execution/Fallback | First fallback. High-efficiency, large context, low cost. | YES (medium default) | 0.3 |
+| healer | Healer Alpha | Thinking/Execution | Second fallback. Free omni-modal (vision, hearing, reasoning, action). DO NOT set as primary without user permission. | YES (medium default) | 0.3 |
+| nemotron | Nemotron 3 Super | Thinking/Execution | Third fallback. Free 120B-param MoE, complex multi-agent. DO NOT set as primary without user permission. | YES (medium default) | 0.3 |
+| hunter | Hunter Alpha | Thinking/Execution | Fourth fallback. Free 1T-param agentic model, 1M context, long-horizon planning. DO NOT set as primary without user permission. | YES (medium default) | 0.3 |
+| fallback | DeepSeek R1 Free | Emergency | Fifth fallback. Zero-credit fallback only. | YES (medium default) | 0.3 |
 
 Environment Variable
 
@@ -1422,6 +1470,10 @@ openrouter/deepseek/deepseek-v3.2
 openrouter/deepseek/deepseek-v3.2-speciale
 openrouter/deepseek/deepseek-r1-0528:free
 openrouter/perplexity/sonar-pro-search
+openrouter/google/gemini-3.1-flash-lite-preview
+openrouter/openrouter/healer-alpha
+openrouter/nvidia/nemotron-3-super-120b-a12b:free
+openrouter/openrouter/hunter-alpha
 
 NEVER use: openrouter/auto (Auto router picks models unpredictably and breaks configs)
 
@@ -1434,6 +1486,10 @@ Multiple Models with Fallbacks
       "model": {
         "primary": "openrouter/minimax/minimax-m2.5",
         "fallbacks": [
+          "openrouter/google/gemini-3.1-flash-lite-preview",
+          "openrouter/openrouter/healer-alpha",
+          "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+          "openrouter/openrouter/hunter-alpha",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/deepseek/deepseek-r1-0528:free"
         ]
