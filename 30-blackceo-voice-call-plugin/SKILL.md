@@ -271,11 +271,28 @@ The agent should:
 
 ---
 
+## Fish Audio Voice Behavior (S2 / S2-Pro)
+
+> **TYP Deep Reference:** `fish-audio-voice-sop.md` is a large document. Do NOT load it into core files or paste it into the system prompt. Instead, read it once using the Teach Yourself Protocol, internalize the tag system and behavior rules, then apply them contextually when generating voice output.
+
+When generating any Fish Audio S2 voice output (phone calls or podcasts), the agent must:
+
+1. Run: read `fish-audio-voice-sop.md` using TYP before the first voice generation session
+2. Apply the 12 Universal Operating Rules (spoken language, short chunks, pause system, tag system)
+3. Use Phone Call SOP (Part 3) for all `voice_call` tool interactions
+4. Use Podcast SOP (Part 4) for content/audio generation at 192 kbps
+5. Run the 8-step AI Decision Logic (Part 5) before every voice response
+
+**The core principle:** Do not speak like written text. Speak like a human being thinking out loud in real time.
+
+---
+
 ## Files in This Skill
 
 | File | Purpose |
 |------|---------|
 | `SKILL.md` | This file - install guide and reference |
 | `INSTALL.md` | Step-by-step installation checklist |
+| `fish-audio-voice-sop.md` | **Deep reference** - Fish Audio S2 voice behavior SOP (TYP required, do not load into core) |
 | `references/fish-audio-api.md` | Complete Fish Audio API reference |
 | `references/telnyx-config.md` | Telnyx configuration reference |
