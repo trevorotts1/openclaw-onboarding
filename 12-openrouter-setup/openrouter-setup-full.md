@@ -707,9 +707,9 @@ These models activate in order when the primary model fails or credits are deple
 | Priority | Model | OpenRouter ID | Alias | Cost |
 |----------|-------|---------------|-------|------|
 | 1st | Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | flashlite | $0.25/M |
-| 2nd | Healer Alpha | openrouter/openrouter/healer-alpha | healer | FREE |
+| 2nd | Healer Alpha | openrouter/healer-alpha | healer | FREE |
 | 3rd | Nemotron 3 Super | openrouter/nvidia/nemotron-3-super-120b-a12b:free | nemotron | FREE |
-| 4th | Hunter Alpha | openrouter/openrouter/hunter-alpha | hunter | FREE |
+| 4th | Hunter Alpha | openrouter/hunter-alpha | hunter | FREE |
 | 5th (Emergency) | DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | fallback | FREE |
 
 When this activates:
@@ -786,9 +786,9 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 | DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | 163,840 | 163,840 | FREE | FREE | YES | 0.3 |
 | Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | 200,000 | 8,000 | $3.00 | $15.00 | No (research/search model) | 0.3 |
 | Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | 1,048,576 | 65,536 | $0.25 | $1.50 | YES (medium default) | 0.3 |
-| Healer Alpha | openrouter/openrouter/healer-alpha | 262,144 | 32,000 | FREE | FREE | YES (medium default) | 0.3 |
+| Healer Alpha | openrouter/healer-alpha | 262,144 | 32,000 | FREE | FREE | YES (medium default) | 0.3 |
 | Nemotron 3 Super | openrouter/nvidia/nemotron-3-super-120b-a12b:free | TBD | TBD | FREE | FREE | YES (medium default) | 0.3 |
-| Hunter Alpha | openrouter/openrouter/hunter-alpha | 1,000,000 | TBD | FREE | FREE | YES (medium default) | 0.3 |
+| Hunter Alpha | openrouter/hunter-alpha | 1,000,000 | TBD | FREE | FREE | YES (medium default) | 0.3 |
 
 Important notes about this table:
 
@@ -1064,9 +1064,9 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
         "primary": "openrouter/minimax/minimax-m2.5",
         "fallbacks": [
           "openrouter/google/gemini-3.1-flash-lite-preview",
-          "openrouter/openrouter/healer-alpha",
+          "openrouter/healer-alpha",
           "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-          "openrouter/openrouter/hunter-alpha",
+          "openrouter/hunter-alpha",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/deepseek/deepseek-r1-0528:free"
         ]
@@ -1207,7 +1207,7 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
             }
           }
         },
-        "openrouter/openrouter/healer-alpha": {
+        "openrouter/healer-alpha": {
           "params": {
             "temperature": 0.3,
             "reasoning": {
@@ -1223,7 +1223,7 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
             }
           }
         },
-        "openrouter/openrouter/hunter-alpha": {
+        "openrouter/hunter-alpha": {
           "params": {
             "temperature": 0.3,
             "reasoning": {
@@ -1471,9 +1471,9 @@ openrouter/deepseek/deepseek-v3.2-speciale
 openrouter/deepseek/deepseek-r1-0528:free
 openrouter/perplexity/sonar-pro-search
 openrouter/google/gemini-3.1-flash-lite-preview
-openrouter/openrouter/healer-alpha
+openrouter/healer-alpha
 openrouter/nvidia/nemotron-3-super-120b-a12b:free
-openrouter/openrouter/hunter-alpha
+openrouter/hunter-alpha
 
 NEVER use: openrouter/auto (Auto router picks models unpredictably and breaks configs)
 
@@ -1487,9 +1487,9 @@ Multiple Models with Fallbacks
         "primary": "openrouter/minimax/minimax-m2.5",
         "fallbacks": [
           "openrouter/google/gemini-3.1-flash-lite-preview",
-          "openrouter/openrouter/healer-alpha",
+          "openrouter/healer-alpha",
           "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-          "openrouter/openrouter/hunter-alpha",
+          "openrouter/hunter-alpha",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/deepseek/deepseek-r1-0528:free"
         ]
