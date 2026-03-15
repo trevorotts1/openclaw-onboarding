@@ -15,7 +15,7 @@ Add:
 - NEVER mix these methods. They are incompatible.
 - Playwright uses launchPersistentContext (NEVER launch())
 - 70 OAuth scopes configured
-- Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/14-google-workspace-integration/google-workspace-integration-full.md
+- Full guide: ~/Downloads/openclaw-master-files/OpenClaw Onboarding/14-google-workspace-integration/google-workspace-integration-full.md
 ```
 
 ---
@@ -30,7 +30,7 @@ Add:
 - Impersonation: use the primary admin email for your domain
 - GOG CLI: for personal @gmail.com accounts only
 - Places API: uses API Key, NOT service account
-- Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/14-google-workspace-integration/google-workspace-integration-full.md
+- Full guide: ~/Downloads/openclaw-master-files/OpenClaw Onboarding/14-google-workspace-integration/google-workspace-integration-full.md
 ```
 
 ---
@@ -43,7 +43,7 @@ Add:
 ## Google Workspace Integration - Installed [DATE]
 - Two paths: Workspace = service account + DWD; Gmail = GOG CLI OAuth
 - 70 OAuth scopes configured (Workspace path)
-- Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/14-google-workspace-integration/google-workspace-integration-full.md
+- Full guide: ~/Downloads/openclaw-master-files/OpenClaw Onboarding/14-google-workspace-integration/google-workspace-integration-full.md
 ```
 
 ---

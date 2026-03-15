@@ -395,3 +395,47 @@ whisper voiceover.aac --model medium --output_format json --output_dir /tmp
 **YOU do ALL the work.** The client just gives you the video link. You analyze, extract, generate B-roll, assemble, and deliver.
 
 **Ready to create a professional B-roll cut!**
+---
+
+## 🔴 KIE.AI GENERATION ERROR HANDLING
+
+If KIE.AI returns an error or times out during B-roll generation:
+
+**Step 1 - Identify the failure type:**
+- `401 Unauthorized` → API key is wrong or expired. Check `KIE_API_KEY` in `~/clawd/secrets/.env`
+- `429 Too Many Requests` → Rate limited. Wait 60 seconds and retry
+- `500 / 503` → KIE.AI service issue. Wait 2 minutes and retry once
+- Timeout (no response after 90s) → Retry the single failed clip once before stopping
+
+**Step 2 - Retry logic:**
+- Retry any single failed clip up to 2 times before reporting failure
+- Do NOT retry an entire batch — retry only the specific clip that failed
+- If a clip fails after 2 retries, skip it and note it in your final report
+
+**Step 3 - Report to user:**
+"B-roll clip [number] failed to generate after 2 attempts. Error: [message]. All other clips completed. You can regenerate that clip manually or I can retry it now."
+
+**Never deliver a video with a missing B-roll slot without telling the user.**
+
+---
+
+## 🔴 TIMESTAMP VALIDATION BEFORE MERGE
+
+Before running any merge or assembly script, validate all timestamps:
+
+```bash
+# Check video duration first
+ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 original.mp4
+```
+
+Then verify each timestamp is within the video duration:
+- Start time must be less than total duration
+- Start time + clip duration must not exceed total duration
+- All timestamps must be in HH:MM:SS format
+
+**If a timestamp is out of range:**
+1. Do NOT run the merge script
+2. Recalculate the correct timestamps from the transcript
+3. Confirm the corrected timestamps before proceeding
+
+**A timestamp error caught before assembly saves 10+ minutes of wasted processing.**

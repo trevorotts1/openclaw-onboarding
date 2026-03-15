@@ -85,6 +85,16 @@ npm install -g agent-browser
 agent-browser install
 ```
 
+**If the above fails with a permissions error**, try:
+```bash
+sudo npm install -g agent-browser
+```
+
+If `sudo` is not available or still fails, tell the user:
+"The agent-browser install requires npm global permissions. Please ask your system admin or run the terminal as Administrator (Windows) or with sudo (Mac/Linux)."
+
+Do NOT proceed to Step 3 until `npm install -g agent-browser` completes without error.
+
 ## Step 3 - Verify agent-browser works
 
 Run:

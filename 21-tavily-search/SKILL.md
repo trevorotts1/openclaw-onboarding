@@ -11,8 +11,8 @@ Before install or use:
 4. Read CORE_UPDATES.md
 5. Then install
 
-## Priority rule for conflicts
-If generic TYP wrapper instructions conflict with upstream skill behavior, upstream `SKILL.md` and skill-set docs take priority.
+## Conflict Rule
+If generic TYP wrapper instructions conflict with upstream skill behavior, upstream `SKILL.md` and skill-set docs take priority. This is the same rule as defined in INSTALL.md — skill docs always win over TYP on content and file decisions.
 
 ## Source
 - ClawHub slug: `tavily-search`

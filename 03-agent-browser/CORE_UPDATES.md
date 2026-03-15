@@ -6,12 +6,12 @@ This skill is a dependency installer and does **not** require any permanent core
 
 ## [ADD TO AGENTS.md]
 
-Nothing required.
+No changes required. This skill installs a dependency only.
 
 ## [ADD TO TOOLS.md]
 
-Nothing required.
+No changes required. agent-browser is a CLI tool with no API keys or configuration needed in TOOLS.md.
 
 ## [ADD TO MEMORY.md]
 
-Nothing required.
+No changes required. Installation status is verified by running `agent-browser --help`.

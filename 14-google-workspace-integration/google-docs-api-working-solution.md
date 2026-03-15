@@ -28,9 +28,16 @@ import json, time, base64, requests
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-SA_PATH = "/Users/blackceomacmini/Library/Application Support/gogcli/sa-dHJldm9yQGJsYWNrY2VvLmNvbQ.json"
+import os
+# SA key path: use environment variable if set, otherwise fall back to standard location
+# Set GCP_SA_KEY_PATH in your env or ~/clawd/secrets/.env to override
+SA_PATH = os.environ.get(
+    "GCP_SA_KEY_PATH",
+    os.path.expanduser("~/clawd/secrets/gcp-service-account.json")
+)
 SCOPE = "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents"
-SUB = "trevor@blackceo.com"
+# SUB: the Google Workspace user to impersonate via DWD
+SUB = os.environ.get("GOOGLE_IMPERSONATE_EMAIL", "trevor@blackceo.com")
 
 with open(SA_PATH) as f: sa = json.load(f)
 def b64url(d):
@@ -52,7 +59,7 @@ doc = requests.get(f"https://docs.googleapis.com/v1/documents/{DOC_ID}?includeTa
 ```
 
 **RULES - NON-NEGOTIABLE:**
-- SA key: `~/Library/Application Support/gogcli/sa-dHJldm9yQGJsYWNrY2VvLmNvbQ.json` (NOT gcp-service-account.json)
+- SA key: `~/clawd/secrets/gcp-service-account.json` (standard location — override with `GCP_SA_KEY_PATH` env var if needed)
 - Scope: `drive + documents` TOGETHER. Never just documents alone. Never just drive alone.
 - Library: `requests` NOT `urllib`. urllib times out on large docs (42MB+).
 - Timeout: 120 seconds minimum for multi-tab docs.
