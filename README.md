@@ -2,7 +2,9 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-This repo contains **28 skill folders** (01 through 28) plus an install script.
+**Current Version: v3.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+
+This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
 
 - Install happens in a strict order
 - The agent executes the steps autonomously

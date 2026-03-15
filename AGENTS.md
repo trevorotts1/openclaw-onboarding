@@ -15,7 +15,7 @@
 | **Initial** | After QMD install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
-| **Final** | After ALL 29 skills complete | Complete system index |
+| **Final** | After ALL 31 skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Incremental update |
 
 ### Standard Indexing Commands

@@ -4,6 +4,28 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v3.0.0] - March 15, 2026
+
+### Major Release — Voice System, Skill Quality, Model Fixes
+
+#### Added
+- **Skill 31: Fish Audio API Reference** — standalone Fish Audio skill for podcast, video narration, speeches, webinars, and all non-phone audio generation
+- **Fish Audio S2 Voice Behavior SOP v3.0** — added to both Skill 30 (Voice Call) and Skill 31 (Fish Audio). Large TYP deep-reference document covering 8 parts: tag system, universal rules, phone call SOP, podcast SOP, AI decision logic, voice selection, master instruction blocks, and quick-reference cheat sheet. Do NOT load into core files — TYP required
+- **CHANGELOG.md and README.md** — now present in both repos
+
+#### Fixed
+- **Skill count updated throughout**: all references to "29 skills" updated to "31 skills" (install.sh, AGENTS.md, Start Here.md, ONBOARDING PENDING flag)
+- **OpenRouter model ID bugs**: `hunter-alpha` and `healer-alpha` now correctly use `openrouter/` prefix. Was causing "not a valid model ID" errors for all clients
+- **NVIDIA Nemotron model ID**: fixed to include `:free` suffix — `nvidia/nemotron-3-super-120b-a12b:free`
+- **ONBOARDING PENDING flag message**: corrected "29 skills" → "31 skills" in install.sh output
+- **Skill quality improvements**: skills 03, 14, 21, 25, 27 all raised from below 8.5 to 8.5+ after targeted fixes
+
+#### Changed
+- **Version bump**: v2.4.0 → v3.0.0 (major release due to voice system additions)
+- All 31 skills now score 8.5 or above on the 5-dimension evaluation rubric (Clarity, Completeness, Intent Preservation, Error Recovery, Size/Complexity)
+
+---
+
 ## [v2.2.2] - March 12, 2026
 
 ### Added
