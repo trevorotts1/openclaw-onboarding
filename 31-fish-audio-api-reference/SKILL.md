@@ -174,5 +174,5 @@ When generating any Fish Audio S2 voice output (phone calls OR podcast/content),
 | `SKILL.md` | This file - TYP, quick reference, standard templates |
 | `INSTALL.md` | Step-by-step installation checklist |
 | `README.md` | One-page summary |
-| `fish-audio-voice-sop.md` | **Deep reference** - Fish Audio S2 voice behavior SOP v2.0 (TYP required, do not load into core) |
+| `fish-audio-voice-sop.md` | **Deep reference** - Fish Audio S2 voice behavior SOP v3.0 (TYP required, do not load into core) |
 | `references/fish-audio-api-reference.md` | Full 841-line API reference (all endpoints, parameters, examples) |
