@@ -108,9 +108,28 @@ Important notes about analysis:
   --output final-with-broll.mp4
 ```
 
+**Before running the merge, validate your timestamps:**
+```bash
+# Get the total duration of your main video
+ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 talking-head.mp4
+```
+Make sure every timestamp in `--insert-at` is less than the video duration. If a timestamp exceeds the video length, the merge will fail or produce misaligned output.
+
+**Dry run (check without rendering):**
+```bash
+./scripts/merge-broll.sh \
+  --main talking-head.mp4 \
+  --broll "broll1.mp4,broll2.mp4" \
+  --insert-at "12,38" \
+  --output final-with-broll.mp4 \
+  --dry-run
+```
+Use `--dry-run` first to verify the merge plan before committing to a full render.
+
 Notes:
 - By default, the main video's audio is kept continuous.
 - The merge uses `moviepy` via `scripts/broll_merge.py`.
+- If merge fails with a timestamp error, re-check that all insert times are within the video duration.
 
 ## Workflow E: Use the guided B-roll workflow
 

@@ -45,17 +45,11 @@ touches. When in doubt: skill docs win.
 WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 
 1. SAVE FULL DOCUMENTATION TO MASTER FILES FOLDER
-   Find the OpenClaw master files folder in ~/Downloads/. It may be named:
-   - OpenClaw Master Files
-   - OpenClaw Master Documents
-   - OpenClaw Documents
-   - openclaw-master-files
-   - openclaw master files
-   - OpenClaw Files
-   - openclaw-documents
-   - Any variation of "openclaw" + "master" or "files" or "documents"
-   Search case-insensitively. One word or two words. Plural or singular.
-   If no folder is found, create: ~/Downloads/OpenClaw Master Files/
+   The canonical master files folder is: ~/Downloads/openclaw-master-files/
+   If that exact path does not exist, check for these common variations:
+   - ~/Downloads/OpenClaw Master Files/
+   - ~/Downloads/OpenClaw Master Documents/
+   Use whichever exists. If none exist, create: ~/Downloads/openclaw-master-files/
 
    Save this full document content as a .md file in that folder.
 
