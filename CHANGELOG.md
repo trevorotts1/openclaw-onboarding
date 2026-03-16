@@ -4,6 +4,59 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v4.0.0] - March 16, 2026
+
+### Major Release — Department Restructure, Interdepartmental Communication, Persona Mapping, Surgical Updates
+
+#### New Departments
+- **graphics-dept** — NEW separate department for all static image/visual work (KIE.ai primary, Nano Banana, OpenAI images, FAL optional)
+- **video-dept** — NEW separate department for all video production (KIE.ai video endpoints, ties to Skills 24-28)
+- **audio-dept** — NEW separate department for the full audio lifecycle: generate, transcribe, process, deliver (KIE.ai audio/ElevenLabs/Suno endpoints, Fish Audio, Whisper local/cloud)
+- **creative-dept restructured** — now ALL written content only ("If it starts as words, it starts here"). Covers copywriting, blog posts, speeches, keynotes, presentation scripts, PowerPoint content, podcast scripts, video scripts. Creative writes — other departments produce.
+
+#### Suggested Roles Per Department
+- Added `23-ai-workforce-blueprint/suggested-roles/` folder with 15 department files
+- Each file includes: role names, what each role does, core SOPs to build, persona trait suggestions, interdepartmental relationships
+- CRM Specialist role documented across multiple departments (sales, marketing, creative, billing, graphics, video, audio) with department-specific SOPs for each
+
+#### Department Folder Organization
+- All department folders now live inside `openclaw-master-files/my AI company departments/`
+- Company discovery subfolder: `company-discovery/workforce-interview-answers.md` and `persona-alignment-notes.md`
+- Daily company logs: `daily-company-logs/YYYY-MM-DD.md` with QMD integration
+
+#### Interdepartmental Communication System
+- Added `universal-sops/cross-dept-request-template.md` — standard format for all cross-dept requests
+- Added `universal-sops/interdepartmental-communication-guidelines.md` — CC model (not approval model), direct dept-to-dept communication with master orchestrator awareness
+- Added `03-Activity-Log-Template.md` — running daily log format for the master orchestrator
+- Pre-built cross-dept workflow SOPs for common routes (Sales→Audio, Marketing→Graphics, Video→Audio, etc.)
+
+#### Persona 4-Layer Alignment Protocol
+- Added `universal-sops/persona-re-evaluation-protocol.md`
+- 4 layers: Company Alignment → Owner/CEO Alignment → Role/Functional Alignment → Beliefs/Principles Alignment
+- Both Layer 3 (what they DO) and Layer 4 (WHY they do it) must pass
+- Re-evaluation triggers: company goals change, new dept added, owner priorities shift, role changes, persona underperforming
+
+#### Weekly Auto-Update System (Rebuilt)
+- `scripts/update-skills.sh` rebuilt with surgical logic: changelog-first, version comparison, gap analysis, impact rating
+- `scripts/check-update-impact.sh` — helper for per-file risk assessment (LOW/MEDIUM/HIGH)
+- `scripts/setup-weekly-update.sh` updated to v2.0
+- Impact levels: LOW (auto-apply), MEDIUM (recommend + confirm), HIGH (recommend SKIP + show diff)
+- NEVER overwrites: core .md files, company dept folders, custom SOPs
+- NEVER triggers gateway restart — always instructs client with restart steps
+
+#### AI Workforce Interview Improvements
+- Context-first questioning: agent checks existing files before asking any question
+- Cross-department learning: answers carry forward, reducing questions as interview progresses
+- Running answers document: `company-discovery/workforce-interview-answers.md` (append-only)
+
+#### Daily Company Log System
+- Master orchestrator appends log entries in real time (not end of day)
+- Concise single-line timestamped format: `HH:MM — Dept→Dept: action [JobID] ✅/🔄`
+- QMD integration: previous day's log embedded every morning
+- Annual archive: end of year move to `archive/YYYY/`, QMD embed archive
+
+---
+
 ## [v3.0.0] - March 15, 2026
 
 ### Major Release — Voice System, Skill Quality, Model Fixes
