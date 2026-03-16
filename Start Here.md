@@ -15,11 +15,21 @@ If you are reading this file, the user has triggered onboarding by saying someth
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
 **0.1: Confirm AGENTS.md has ONBOARDING PENDING flag**
+
+Search ALL possible AGENTS.md locations — the path differs between Mac and VPS:
 ```bash
-grep "ONBOARDING PENDING" ~/clawd/AGENTS.md
+# Try all possible locations
+grep -r "ONBOARDING PENDING" ~/clawd/AGENTS.md 2>/dev/null || \
+grep -r "ONBOARDING PENDING" ~/.openclaw/workspace/AGENTS.md 2>/dev/null || \
+grep -r "ONBOARDING PENDING" /data/.openclaw/workspace/AGENTS.md 2>/dev/null || \
+find / -name "AGENTS.md" -exec grep -l "ONBOARDING PENDING" {} \; 2>/dev/null | head -3
 ```
-If found: Proceed with installation.  
-If NOT found: Stop and tell user: "I don't see an ONBOARDING PENDING flag in AGENTS.md. Please run the install script first: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash"
+
+**Mac path:** `~/clawd/AGENTS.md`
+**VPS/container path:** `/data/.openclaw/workspace/AGENTS.md`
+
+If found in ANY location: Proceed with installation.  
+If NOT found anywhere: Stop and tell user: "I don't see an ONBOARDING PENDING flag. Please run the install script first."
 
 **0.2: Check for partial/resume state**
 ```bash

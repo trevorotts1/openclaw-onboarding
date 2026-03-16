@@ -175,7 +175,7 @@ ZERO TOLERANCE SHORTCUTS:
 ---
 ONBOARDING_FLAG
 
-echo "  Onboarding flag written to AGENTS.md"
+echo "  Onboarding flag written to: $AGENTS_FILE"
 
 # ----------------------------------------------------------
 # Done
@@ -189,15 +189,22 @@ echo ""
 echo "  📦 30 skills downloaded to:"
 echo "     ~/.openclaw/onboarding/"
 echo ""
+echo "  📋 ONBOARDING FLAG LOCATION:"
+echo "     $AGENTS_FILE"
+echo ""
 echo "  📋 Next step: Tell your AI agent to begin."
 echo ""
-echo "     Send this message to your OpenClaw agent:"
+echo "     Send this EXACT message to your OpenClaw agent:"
 echo ""
-echo "       'Begin onboarding installation'"
+echo "       'Read $AGENTS_FILE and begin onboarding installation'"
 echo ""
 echo "  The agent will read AGENTS.md, find the"
 echo "  ONBOARDING PENDING flag, and install all"
 echo "  30 skills automatically."
+echo ""
+echo "  ⚠️  If the agent says it cannot find the flag,"
+echo "     tell it to run:"
+echo "     grep -r 'ONBOARDING PENDING' $AGENTS_FILE"
 echo ""
 echo "============================================"
 echo ""
