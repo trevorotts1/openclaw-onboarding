@@ -87,8 +87,9 @@ That file is the master instruction file. It contains:
 | 27-video-editor | Video Editor |
 | 28-cinematic-forge | Cinematic Forge |
 | 29-ghl-convert-and-flow | GHL Convert and Flow |
-| 30-blackceo-voice-call-plugin | Voice Call Plugin + Fish Audio |
-| 31-fish-audio-api-reference | Fish Audio API Reference (standalone) |
+| 30-fish-audio-api-reference | Fish Audio API Reference |
+
+> **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
 
 ---
 

@@ -1603,7 +1603,7 @@ label: "wave4-agent-e"
 sessions_spawn with task:
 "Install skills 27, 28, 29, 30 from ~/.openclaw/onboarding/.
 For each skill: Read ALL .md files first, then execute installation steps exactly.
-Skills: 27-video-editor, 28-cinematic-forge, 29-ghl-convert-and-flow, 30-blackceo-voice-call-plugin.
+Skills: 27-video-editor, 28-cinematic-forge, 29-ghl-convert-and-flow, 30-fish-audio-api-reference.
 Report after each skill: 'Skill XX complete - QC passed' or 'Skill XX failed - [reason]'.
 Write status to ~/.openclaw/onboarding/.onboarding-status after each skill."
 label: "wave4-agent-f"

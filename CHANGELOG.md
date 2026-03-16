@@ -4,6 +4,18 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v4.0.1] - March 16, 2026
+
+### Skill Restructure — Voice Call Plugin Removed, Fish Audio Renumbered
+
+#### Changed
+- **Skill 30 (Voice Call Plugin) REMOVED** — The `@openclaw/voice-call` plugin is an official OpenClaw npm package installed via `openclaw plugins install @openclaw/voice-call`. Having it as an onboarding skill caused double-install conflicts on machines where it was already installed. Clients install it manually after onboarding.
+- **Skill 31 → Skill 30 (Fish Audio API Reference)** — Renumbered. Now the final skill. Standalone reference doc so the agent knows Fish Audio endpoints, parameters, and call patterns.
+- **Old Skill 30 folder archived** as `30-blackceo-voice-call-plugin-ARCHIVED`
+- **README and Start Here updated** to reflect new skill numbering
+
+---
+
 ## [v4.0.0] - March 16, 2026
 
 ### Major Release — Department Restructure, Interdepartmental Communication, Persona Mapping, Surgical Updates
