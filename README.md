@@ -2,9 +2,19 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v3.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v4.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
+
+### What's New in v4.0.0 (March 16, 2026)
+- **3 new departments:** graphics-dept, video-dept, audio-dept (separate from creative)
+- **creative-dept restructured:** written content only ("If it starts as words, it starts here")
+- **15 suggested-roles files:** pre-built roles + core SOPs per department
+- **Interdepartmental communication system:** direct dept-to-dept with master orchestrator awareness
+- **4-layer persona alignment protocol** for role-to-persona mapping
+- **Daily company log system** with QMD integration
+- **Surgical weekly auto-update system** with impact analysis (LOW/MEDIUM/HIGH risk)
+- **Department folder organization:** all depts live inside `my AI company departments/` subfolder
 
 - Install happens in a strict order
 - The agent executes the steps autonomously
@@ -76,6 +86,9 @@ That file is the master instruction file. It contains:
 | 26-caption-creator | Caption Creator |
 | 27-video-editor | Video Editor |
 | 28-cinematic-forge | Cinematic Forge |
+| 29-ghl-convert-and-flow | GHL Convert and Flow |
+| 30-blackceo-voice-call-plugin | Voice Call Plugin + Fish Audio |
+| 31-fish-audio-api-reference | Fish Audio API Reference (standalone) |
 
 ---
 
