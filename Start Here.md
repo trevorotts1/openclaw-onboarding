@@ -2011,17 +2011,32 @@ Every 5 skills completed, send a brief status update via the user's configured m
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 30 skills are installed, run this as the final step.
+After all 31 skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
-> **Install script URL:** See your instructor or onboarding package README for the latest auto-update script URL.
+```bash
+bash ~/Downloads/openclaw-master-files/OpenClaw\ Onboarding/scripts/setup-weekly-update.sh
+```
 
 Verify the cron job installed:
 ```bash
 crontab -l | grep update-skills
 ```
 
-This sets up a cron job that runs every Sunday at 2:00 AM. It checks for new skill versions, downloads and applies updates to installed skills only, and sends a Telegram notification with what changed. It runs automatically every week. No human action needed after this point.
+**How the weekly update works (v2.0 - Surgical Logic):**
+1. Runs every Sunday at 2:00 AM
+2. Reads CHANGELOG.md from GitHub FIRST — understands what's new before downloading anything
+3. Compares against locally installed versions
+4. Rates each change: LOW risk (auto-apply), MEDIUM risk (recommend + confirm), HIGH risk (recommend SKIP)
+5. Surfaces recommendations to the user BEFORE making any changes
+6. Waits for user approval on MEDIUM/HIGH items — never acts autonomously
+7. NEVER overwrites: core .md files (AGENTS, MEMORY, SOUL, USER, IDENTITY, HEARTBEAT, TOOLS), company department folders, or custom SOPs
+8. NEVER triggers a gateway restart — always gives client restart instructions instead
+
+**IMPORTANT:** The update script will NEVER overwrite anything inside `my AI company departments/`. That folder contains client-built content and is always protected.
+
+To force a manual check: `bash ~/Downloads/openclaw-master-files/OpenClaw\ Onboarding/scripts/update-skills.sh`
+To check update logs: `cat ~/.openclaw/skills/.update-log`
 
 ---
 

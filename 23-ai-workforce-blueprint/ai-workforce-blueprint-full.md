@@ -92,16 +92,26 @@ When you trigger this skill, you have 3 options. Choose the one that fits your s
 
 **Pre-built departments:**
 
-• marketing-dept - Content, ads, social media, email campaigns
+• marketing-dept - Ads, social media, email campaigns, lead generation
 • sales-dept - Converting leads to customers
 • billing-dept - Invoicing, payments, financial tracking
 • customer-support-dept - Helping existing clients
 • operations-dept - Day-to-day business running
-• creative-dept - Graphics, video, content creation
+• creative-dept - ALL written content (copywriting, speeches, presentations, scripts)
+• graphics-dept - Static images, brand assets, AI image generation (KIE.ai, Nano Banana, OpenAI images)
+• video-dept - AI video generation, editing, captions, storyboarding (KIE.ai video endpoints)
+• audio-dept - Full audio lifecycle: TTS, transcription, music, voice agents, podcasts (KIE.ai audio, Fish Audio, Whisper)
 • hr-people-dept - Team management, hiring
 • legal-compliance-dept - Contracts, regulations
 • it-tech-dept - Software, websites, infrastructure
+• web-development-dept - Websites, funnels, landing pages
+• app-development-dept - Software, mobile apps, APIs
 • master-orchestrator-dept - Routes all work (always included)
+
+**Department handoff rules:**
+• Creative writes ALL content — other departments produce it into final assets
+• Graphics handles static images — Video handles moving images — Audio handles sound
+• If it starts as words, it starts in Creative. If it needs to become an image, it goes to Graphics. Video, to Video. Sound, to Audio.
 
 ### Option B - Manual Build 🛠️
 
@@ -373,54 +383,122 @@ openclaw-master-files/
 |   +-- brand-guidelines.md
 |   +-- tone-of-voice.md
 |   +-- how-to-upload-to-drive.md
+|   +-- cross-dept-request-template.md
+|   +-- interdepartmental-communication-guidelines.md
+|   +-- persona-re-evaluation-protocol.md
 |
-+-- sales-dept/
-|   +-- 00-Department-Overview-Sales.md
++-- my AI company departments/
 |   |
-|   +-- appointment-setter/
-|   |   +-- 00-Start-Here-Appointment-Setter.md
-|   |   +-- 01-How-to-Set-an-Appointment.md
-|   |   +-- 02-How-to-Handle-Objections.md
-|   |   +-- 03-How-to-Qualify-a-Lead.md
-|   |   +-- 04-How-to-Follow-Up.md
-|   |   +-- intelligent-routing.md
-|   |   +-- 05-Good-Examples-Appointment-Setter.md
-|   |   +-- 06-Bad-Examples-Appointment-Setter.md
+|   +-- company-discovery/
+|   |   +-- workforce-interview-answers.md
+|   |   +-- persona-alignment-notes.md
 |   |
-|   +-- closer/
-|   |   +-- 00-Start-Here-Closer.md
-|   |   +-- ...
+|   +-- daily-company-logs/
+|   |   +-- 2026-03-16.md
+|   |   +-- archive/
+|   |       +-- 2025/
 |   |
-|   +-- account-manager/
-|       +-- 00-Start-Here-Account-Manager.md
-|       +-- ...
-|
-+-- marketing-dept/
-|   +-- 00-Department-Overview-Marketing.md
-|   +-- content-creator/
-|   +-- social-media-manager/
-|
-+-- creative-dept/
-|   +-- 00-Department-Overview-Creative.md
-|   +-- ...
-|
-+-- billing-dept/
-|   +-- 00-Department-Overview-Billing.md
-|   +-- ...
-|
-+-- operations-dept/
-    +-- 00-Department-Overview-Operations.md
-    +-- ...
+|   +-- master-orchestrator-dept/
+|   |   +-- 00-00-Master-Orchestrator-Start-Here.md
+|   |   +-- 01-How-to-Route-Work-to-Departments.md
+|   |   +-- 02-How-to-Create-Missing-How-To-Files.md
+|   |   +-- 03-Activity-Log-Template.md
+|   |
+|   +-- sales-dept/
+|   |   +-- 00-Department-Overview-Sales.md
+|   |   +-- appointment-setter/
+|   |   |   +-- 00-Start-Here-Appointment-Setter.md
+|   |   |   +-- 01-How-to-Set-an-Appointment.md
+|   |   |   +-- 02-How-to-Handle-Objections.md
+|   |   |   +-- 03-How-to-Qualify-a-Lead.md
+|   |   |   +-- 04-How-to-Follow-Up.md
+|   |   |   +-- intelligent-routing.md
+|   |   |   +-- 05-Good-Examples-Appointment-Setter.md
+|   |   |   +-- 06-Bad-Examples-Appointment-Setter.md
+|   |   +-- closer/
+|   |   +-- account-manager/
+|   |   +-- crm-specialist/
+|   |
+|   +-- marketing-dept/
+|   |   +-- 00-Department-Overview-Marketing.md
+|   |   +-- content-strategist/
+|   |   +-- social-media-manager/
+|   |   +-- email-marketer/
+|   |   +-- ads-specialist/
+|   |   +-- crm-specialist/
+|   |
+|   +-- creative-dept/
+|   |   +-- 00-Department-Overview-Creative.md
+|   |   +-- copywriter/
+|   |   +-- blog-article-writer/
+|   |   +-- speech-keynote-writer/
+|   |   +-- presentation-writer/
+|   |   +-- podcast-video-script-writer/
+|   |
+|   +-- graphics-dept/
+|   |   +-- 00-Department-Overview-Graphics.md
+|   |   +-- ai-image-generator/
+|   |   +-- brand-asset-designer/
+|   |   +-- ad-creative-designer/
+|   |   +-- thumbnail-cover-designer/
+|   |
+|   +-- video-dept/
+|   |   +-- 00-Department-Overview-Video.md
+|   |   +-- storyboard-producer/
+|   |   +-- ai-video-generator/
+|   |   +-- video-editor/
+|   |   +-- video-ad-producer/
+|   |
+|   +-- audio-dept/
+|   |   +-- 00-Department-Overview-Audio.md
+|   |   +-- tts-specialist/
+|   |   +-- transcription-specialist/
+|   |   +-- music-audio-producer/
+|   |   +-- voice-agent-builder/
+|   |   +-- podcast-producer/
+|   |
+|   +-- billing-dept/
+|   |   +-- 00-Department-Overview-Billing.md
+|   |   +-- invoice-specialist/
+|   |   +-- subscription-manager/
+|   |
+|   +-- customer-support-dept/
+|   |   +-- 00-Department-Overview-Customer-Support.md
+|   |   +-- support-agent/
+|   |   +-- onboarding-specialist/
+|   |   +-- escalation-manager/
+|   |
+|   +-- operations-dept/
+|   |   +-- 00-Department-Overview-Operations.md
+|   |   +-- project-manager/
+|   |   +-- systems-administrator/
+|   |   +-- process-analyst/
+|   |
+|   +-- hr-people-dept/
+|   +-- legal-compliance-dept/
+|   +-- it-tech-dept/
+|   +-- web-development-dept/
+|   +-- app-development-dept/
 ```
 
 ### Annotated Hierarchy Notes
 
 - **openclaw-master-files/**
   - This is the building itself. One master building only.
+- **my AI company departments/**
+  - This is the dedicated home for all department folders. Keeps them separate from skill packs, onboarding docs, and other master file content.
+- **company-discovery/**
+  - Interview answers and persona alignment notes. The learning-about-this-company documents.
+- **daily-company-logs/**
+  - Running daily logs from the master orchestrator. One file per day. Archived annually.
 - **universal-sops/**
   - Shared company policies. Every department can use these.
-- **sales-dept/**, **marketing-dept/**, **operations-dept/**
+- **sales-dept/**, **marketing-dept/**, **operations-dept/**, etc.
   - These are the departments. All end in -dept.
+- **creative-dept/** = ALL written content only. If it starts as words, it starts here.
+- **graphics-dept/** = Static images and visual assets (KIE.ai, Nano Banana, OpenAI images)
+- **video-dept/** = Video production (KIE.ai video endpoints, Skills 24-28)
+- **audio-dept/** = Full audio lifecycle (KIE.ai audio, Fish Audio, Whisper, voice agents)
 - **00-Department-Overview-[Department].md**
   - The department handbook. Everyone in that department reads this first.
 - **role-name/**
