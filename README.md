@@ -4,7 +4,7 @@
 
 **Current Version: v4.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
+This repo contains **30 skill folders** (01 through 30, with 13 archived) plus an install script.
 
 ### What's New in v4.0.0 (March 16, 2026)
 - **3 new departments:** graphics-dept, video-dept, audio-dept (separate from creative)

@@ -20,6 +20,11 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ### Major Release — Department Restructure, Interdepartmental Communication, Persona Mapping, Surgical Updates
 
+#### Skill Restructure
+- **Removed Skill 30** (Voice Call Plugin) — voice-call plugin is installed via OpenClaw npm (`openclaw plugins install @openclaw/voice-call`), not via onboarding. Having it in onboarding caused double-install conflicts.
+- **Renamed Skill 31 → Skill 30** — Fish Audio API Reference is now Skill 30 (standalone reference doc)
+- **Total skills: 30** (was 31)
+
 #### New Departments
 - **graphics-dept** — NEW separate department for all static image/visual work (KIE.ai primary, Nano Banana, OpenAI images, FAL optional)
 - **video-dept** — NEW separate department for all video production (KIE.ai video endpoints, ties to Skills 24-28)
