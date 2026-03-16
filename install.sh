@@ -164,7 +164,7 @@ SUMMARY:
 
 DO NOT:
 - Skip reading Start Here.md
-- Skip skills or say "done" until all 31 complete
+- Skip skills or say "done" until all 30 complete
 - Delegate skills 22-23 to sub-agents
 - Trigger gateway restarts without asking
 
