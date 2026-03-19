@@ -1,4 +1,4 @@
-# QC Checklist — Skill 14: Google Workspace Integration
+# QC Checklist - Skill 14: Google Workspace Integration
 
 Run this checklist after installation to verify the skill installed correctly.
 Each section has a PASS/FAIL result. The skill passes only if ALL sections pass.
