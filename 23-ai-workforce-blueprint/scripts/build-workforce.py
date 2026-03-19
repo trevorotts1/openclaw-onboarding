@@ -1123,27 +1123,18 @@ def build_role_personas_content(role_key, dept_key, for_file=False):
     return '\n'.join(lines), personas
 
 
-def run_qmd_update():
-    """Auto-run QMD update and embed after wiring personas."""
-    telegram_print("\n🔄 Running QMD update after persona wiring...")
+def run_gemini_indexer():
+    """Auto-run Gemini Multimodal Indexer after wiring personas."""
+    telegram_print("\n🔄 Running Gemini Multimodal Indexer after persona wiring...")
     try:
-        result = subprocess.run(["python3", "/Users/blackceomacmini/clawd/scripts/gemini-indexer.py"], capture_output=True, text=True, timeout=60)
+        script_path = os.path.expanduser("~/clawd/scripts/gemini-indexer.py")
+        result = subprocess.run(["python3", script_path], capture_output=True, text=True, timeout=120)
         if result.returncode == 0:
-            telegram_print("  ✓ python3 ~/clawd/scripts/gemini-indexer.py complete")
+            telegram_print("  ✓ Gemini indexing complete")
         else:
-            telegram_print(f"  ⚠️ python3 ~/clawd/scripts/gemini-indexer.py: {result.stderr[:100]}")
+            telegram_print(f"  ⚠️ Gemini indexing error: {result.stderr[:100]}")
     except Exception as e:
-        telegram_print(f"  ⚠️ python3 ~/clawd/scripts/gemini-indexer.py failed: {e}")
-    
-    
-    try:
-        result = # Handled by gemini-indexer.py
-        if result.returncode == 0:
-            telegram_print("  ✓ # Handled by gemini-indexer.py complete")
-        else:
-            telegram_print(f"  ⚠️ # Handled by gemini-indexer.py: {result.stderr[:100]}")
-    except Exception as e:
-        telegram_print(f"  ⚠️ # Handled by gemini-indexer.py failed: {e}")
+        telegram_print(f"  ⚠️ Gemini indexing failed: {e}")
 
 
 def audit_mode(workspace, personas_installed):
@@ -1248,7 +1239,7 @@ def audit_mode(workspace, personas_installed):
     if personas_installed:
         telegram_print("\n✅ Persona wiring complete.")
         # Auto-run QMD update after wiring
-        run_qmd_update()
+        run_gemini_indexer()
     else:
         telegram_print("\nℹ️ Install Skill 22 and re-run to wire personas.")
 
@@ -1425,7 +1416,7 @@ def build_workforce_automated(context, interview_data, departments):
     if personas_still_installed and personas_installed:
         telegram_print("✅ Personas still detected - wiring complete")
         # Auto-run QMD update after wiring personas
-        run_qmd_update()
+        run_gemini_indexer()
     elif personas_still_installed and not personas_installed:
         telegram_print("✅ Personas detected post-build - wiring now...")
         # Run audit mode to wire personas into existing structure
