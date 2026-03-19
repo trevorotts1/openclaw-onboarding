@@ -1,13 +1,13 @@
 #!/bin/bash
 # OpenClaw Onboarding — Weekly Update Cron Setup
-# Version: 2.0 | March 16, 2026
+# Version: 3.0 | March 19, 2026
 # Run this ONCE per machine after onboarding install.
 #
 # What it does:
 # - Installs a cron job that runs every Sunday at 2:00 AM
-# - The cron job runs the surgical update-skills.sh script
+# - The cron job runs the hardened update-skills.sh script
 # - That script checks GitHub for updates, compares versions,
-#   generates impact reports, and surfaces recommendations
+#   backs up first, compares versions, shows a plan, and waits for approval
 # - NO changes are made without user approval
 # - The agent NEVER triggers a gateway restart
 

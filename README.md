@@ -2,9 +2,16 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v5.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v5.0.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
+
+### What's New in v5.0.1 (March 19, 2026)
+- **update-skills.sh v3.0** — now works on any client machine with dynamic folder detection
+- **Backup protocol built in** — backs up core files and config before updates
+- **Approval workflow** — shows a plan and waits for explicit approval before changes
+- **Verification step** — confirms the update completed and warns if a restart may be needed
+- **Never restarts automatically** — user must trigger /restart manually if required
 
 ### What's New in v5.0.0 (March 19, 2026)
 - **Skill 31: Upgraded Memory System** - 5-layer architecture (markdown files, improved flush, session indexing, Gemini Embedding 2 search, Mem0 auto-capture)

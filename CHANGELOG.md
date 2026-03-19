@@ -4,6 +4,19 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.0.1] - March 19, 2026
+
+### Update System Hardening
+
+#### Changed
+- **update-skills.sh rewritten to v3.0** — works on any machine with dynamic onboarding folder detection
+- **Backup protocol added** — backs up core .md files and openclaw.json before applying updates
+- **Approval workflow added** — shows change plan, risk levels, and waits for explicit user approval
+- **Verification step added** — confirms version marker, skill count, and warns if restart may be needed
+- **No autonomous restarts** — script never triggers a gateway restart; user must do it manually if needed
+
+---
+
 ## [v5.0.0] - March 19, 2026
 
 ### Major Release: Memory System Upgrade, Google Workspace CLI, Migration Fixes
