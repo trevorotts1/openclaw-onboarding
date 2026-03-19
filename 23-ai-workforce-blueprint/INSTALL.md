@@ -231,7 +231,7 @@ If you have not already absorbed `ai-workforce-blueprint-full.md` during Phase 1
 
 ### 5b. Gather Business Information from the User
 
-**DEFAULT SELECTION RULE:** If the user has not specified an option and you are running in autonomous mode, use Option B (Quick Setup) by default. If USER.md or MEMORY.md already contains business name, industry, and department structure, proceed directly to building without asking. Only ask for information that is genuinely missing.
+**🔴 MANDATORY OPTION PRESENTATION:** You MUST present all 3 options (A, B, C) to the user and WAIT for them to choose BEFORE doing anything else. Do NOT skip this step. Do NOT auto-select an option. Do NOT proceed to questions until the user has explicitly chosen A, B, or C. If the user says "start" or "begin" without specifying an option, present the 3 options and ask them to choose. NEVER default to any option silently.
 
 Ask the user these questions. Wait for answers before building anything:
 

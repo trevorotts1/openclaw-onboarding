@@ -8,9 +8,9 @@
 If you are reading this file, the user has triggered onboarding by saying something like:
 - "Begin onboarding installation"
 - "Start onboarding"
-- "Install the 30 skills"
+- "Install the 31 skills"
 
-**Your task:** Install all 30 skills using the 5-Wave Parallel Orchestration below.
+**Your task:** Install all 31 skills using the 5-Wave Parallel Orchestration below.
 
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
@@ -48,7 +48,7 @@ If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use 
 If `sessions_spawn` fails: Use Sequential Mode (install 01→30 one at a time).
 
 **0.4: Announce your strategy**
-Tell user: "Onboarding triggered. I will install 30 skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+Tell user: "Onboarding triggered. I will install 31 skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
 
 ---
 
@@ -181,7 +181,7 @@ It powers the persona search in Skill 22 and the persona detection in Skill 23.
 - Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
-- After all 30 skills: final complete index
+- After all 31 skills: final complete index
 
 **Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
@@ -503,7 +503,7 @@ After every skill install, verify:
 | **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
-| **Final** | After ALL 30 skills complete | Complete system index |
+| **Final** | After ALL 31 skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
 
 ### What to Index at Each Milestone
@@ -1643,16 +1643,17 @@ label: "wave4-agent-f"
    - Delete the ONBOARDING PENDING block
 
 4. **Write ONBOARDING COMPLETE to MEMORY.md**
-   - Add entry: "OpenClaw onboarding completed on [date]. All 30 skills installed."
+   - Add entry: "OpenClaw onboarding completed on [date]. All 31 skills installed."
 
 5. **Report completion**
-   - "Wave 5 complete: Onboarding finished. All 30 skills installed."
+   - Install Skill 31 (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
+   - "Wave 5 complete: Onboarding finished. All 31 skills installed."
 
 ---
 
 ### SEQUENTIAL MODE (Fallback)
 
-If `sessions_spawn` doesn't work, install all 30 skills one at a time:
+If `sessions_spawn` doesn't work, install all 31 skills one at a time:
 
 ```
 For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30:
@@ -1684,7 +1685,7 @@ Valid statuses: INSTALLED, ALREADY_INSTALLED, FAILED, SKIPPED
 
 ## PARALLEL INSTALLATION ORCHESTRATION
 
-The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 30 skills efficiently.
+The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 31 skills efficiently.
 
 ### Conflict Prevention (IMPORTANT)
 
@@ -1734,7 +1735,7 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 │         │                 │ Agent F: 27, 28, 29, 30                             │
 │         │                 │ Post-Workforce tools                            │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 5  │ 1 (Sequential)  │ 15 BlackCEO Team Management (verification)      │
+│ Wave 5  │ 2 (Sequential)  │ 15 BlackCEO Team Management, 31 Upgraded Memory  │
 │         │                 │ Final verification and Gemini Engine indexing             │
 └─────────┴─────────────────┴─────────────────────────────────────────────────┘
 ```
@@ -2014,13 +2015,13 @@ SKILL-02: INSTALLED
 ## PROGRESS UPDATES
 
 Every 5 skills completed, send a brief status update via the user's configured messaging channel:
-"Onboarding in progress: [X] of 30 skills complete. Currently on: [skill name]."
+"Onboarding in progress: [X] of 31 skills complete. Currently on: [skill name]."
 
 ---
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 30 skills are installed, run this as the final step.
+After all 31 skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 ```bash
@@ -2063,7 +2064,7 @@ If the block is not present, continue without error.
 
 ### Final Gemini Engine Indexing (MANDATORY)
 
-After all 30 skills are installed, run the final Gemini Engine indexing:
+After all 31 skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
@@ -2088,10 +2089,10 @@ python3 ~/clawd/scripts/gemini-indexer.py --status
   messaging channel (detected in prerequisites).
 - Format the 30-skill status report as a table: Skill | Name | Status | Notes
 
-Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 30 skills processed"
+Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 31 skills processed"
 
 When every skill on the list above is installed and verified, tell the user:
-1. Everything that was installed (all 30 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
+1. Everything that was installed (all 31 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
 2. Everything that was added to each workspace file (AGENTS.md, TOOLS.md, MEMORY.md, etc.)
 3. Which workspace files were updated and which were not touched
 4. Where the full documentation for each skill is saved (the master files folder path)
