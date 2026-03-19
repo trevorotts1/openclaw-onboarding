@@ -1,71 +1,68 @@
-# Skill 13: Google Workspace Integration
+# Skill 14: Google Workspace Integration
 
 ## What This Skill Is About
 
-This skill teaches your AI agent how to connect to your Google Workspace account so it can read your email, check your calendar, manage your Drive files, edit Google Docs and Sheets, and work with 20+ other Google services - all without sharing your password.
+This skill connects your AI agent to Google Workspace using the official Google Workspace CLI (gws). One tool handles everything: Gmail, Calendar, Drive, Docs, Sheets, Chat, Tasks, Keep, Forms, and YouTube.
 
-It uses a "Service Account" (think of it as a robot employee with its own ID badge) combined with "Domain-Wide Delegation" (security clearance you grant through your Google admin panel). Once set up, your AI agent can access Google services silently in the background, 24/7, without you ever clicking "Allow" in a browser.
-
-This guide covers both Google Workspace business accounts (like you@yourdomain.com) and personal Gmail accounts (@gmail.com). Workspace users follow the Service Account path. Gmail users: the agent detects your account type and routes to the OAuth path automatically. See the Gmail path in INSTALL.md for details.
+The Google Workspace CLI replaces older tools like the custom google-api.js script and the GOG CLI. It supports both personal Gmail accounts (via OAuth) and Google Workspace business accounts (via service account with Domain-Wide Delegation).
 
 ## When to Use This Skill
 
-- You are connecting OpenClaw to Google Workspace for the first time
-- You need to set up Gmail, Calendar, Drive, Docs, Sheets, or Slides access for your AI
-- You are creating a Google Cloud project and service account
-- You need to configure Domain-Wide Delegation in your Google Admin Console
-- You are installing or configuring the GOG skill for Google access
-- You are troubleshooting 401 or 403 errors when your AI tries to access Google services
-- You need to enable Google APIs (Gmail, Calendar, Drive, and 23 others)
-- You need the complete list of OAuth scopes for Domain-Wide Delegation
+1. You are connecting OpenClaw to Google services for the first time
+2. You need to access Gmail, Calendar, Drive, Docs, Sheets, or other Google services
+3. You are setting up a new Google Cloud project
+4. You need to configure Domain-Wide Delegation for a Workspace account
+5. You are troubleshooting 401 or 403 errors with Google APIs
+6. You are migrating from the old google-api.js or GOG tools
 
 ## What This Skill Covers
 
-- The difference between Google Cloud Console and Google Admin Console (and what you do in each)
-- Creating a Google Cloud project from scratch
-- Enabling all 26 required Google APIs with direct links to each one
-- Setting up the OAuth Consent Screen (required or Gmail will not work)
-- Creating a Service Account and downloading its JSON key file
-- Fixing Organization Policy blocks (common for accounts created after May 2024)
-- Configuring Domain-Wide Delegation with all 70+ OAuth scopes
-- Installing the google-api.js script (zero dependencies, Node.js only)
-- Installing and configuring the GOG skill in OpenClaw
-- Testing every Google service to confirm it works
-- Updating all six workspace files (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, HEARTBEAT.md) so the AI remembers which tool to use for which account type
-- Complete troubleshooting guide for the most common errors
-- Lessons learned from real-world debugging
+- Installing the Google Workspace CLI (gws)
+- Authenticating with OAuth for personal Gmail accounts
+- Authenticating with service accounts for Workspace business accounts
+- Configuring Domain-Wide Delegation with all 81 OAuth scopes
+- Fixing Organization Policy blocks for newer Google Cloud accounts
+- Setting up Google Chat app configuration
+- Verifying all services work with test commands
+- Installing OpenClaw agent skills for gws
+- Daily usage instructions and common commands
+- Troubleshooting guide for common errors
 
 ## Files in This Folder and Reading Order
 
-1. **SKILL.md** - You are here. Start here for the overview.
-2. **google-workspace-integration-full.md** - The complete step-by-step guide. Read this to execute the setup.
-3. **INSTRUCTIONS.md** - Execution instructions and rules for the AI agent.
-4. **INSTALL.md** - Installation steps specific to this skill.
-5. **EXAMPLES.md** - Example commands and usage patterns.
-6. **CORE_UPDATES.md** - What to add to your core .md files (AGENTS.md, TOOLS.md, etc.).
-7. **google-api-js-runbook.md** - Quick reference for using the google-api.js script (zero-dependency Node.js tool for Workspace API access).
-8. **google-docs-api-working-solution.md** - Exact working Python solution with JWT authentication code for direct API calls.
+1. **SKILL.md** - You are here. Overview and what this skill covers.
+2. **INSTALL.md** - Complete step-by-step installation guide.
+3. **INSTRUCTIONS.md** - Day-to-day usage instructions.
+4. **EXAMPLES.md** - Real command examples and workflows.
+5. **CORE_UPDATES.md** - What to add to your core .md files.
+6. **QC.md** - Quality control checklist to verify installation.
+7. **google-workspace-integration-full.md** - Comprehensive reference with all details.
+8. **CHANGELOG.md** - Version history and changes.
 9. **google-workspace-integration.skill** - Skill metadata file.
 
 ## Prerequisites
 
-- Teach Yourself Protocol (TYP) must be learned first
-- Backup Protocol must be in place
-- Google Workspace account with Super Admin access (not a free @gmail.com)
-- Node.js v18 or newer installed on your machine
+Before starting, make sure you have:
+
+- Teach Yourself Protocol (TYP) already learned
+- Node.js version 18 or higher installed
+- npm (comes with Node.js)
+- A Google account (Gmail or Workspace)
 
 ## Key Things the AI Agent Must Know
 
-1. **Two tools, two account types.** Workspace accounts (@yourdomain.com) use google-api.js with the Service Account. Personal Gmail accounts (@gmail.com) use the GOG CLI with OAuth. Never mix them. Mixing always fails.
+1. **One tool for all accounts.** The gws CLI handles both Gmail and Workspace accounts. No more switching between google-api.js and GOG.
 
-2. **The most common error is using the wrong tool.** If you get a 401 on a Workspace account and you are using GOG, switch to google-api.js immediately. That is almost always the fix.
+2. **Two authentication paths.** Gmail users use `gws auth login` with OAuth. Workspace users use either `gws auth setup` with gcloud or set `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` for service accounts.
 
-3. **Scopes must include both "drive" and "documents" together.** Requesting "documents.readonly" alone will cause 401 errors. Always request the full read/write scopes.
+3. **Domain-Wide Delegation is required for Workspace.** Your Google Admin must authorize the service account with all scopes in the Admin Console.
 
-4. **The OAuth Consent Screen is required.** Without it, Gmail scopes are blocked silently. Configure it as "Internal" before testing anything.
+4. **The OAuth Consent Screen is required for Gmail.** Without it, Google blocks access to sensitive scopes.
 
-5. **Organization Policy blocks are common.** If the Google Cloud organization was created after May 2024, service account key creation is blocked by default. Section 8 of the full guide explains how to fix this.
+5. **Organization Policies may block new setups.** Google Cloud accounts created after May 2024 block service account key creation by default. INSTALL.md Section 5 explains how to fix this.
 
-6. **After setup, update all six workspace files.** The full guide includes exact text blocks to add to AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, and HEARTBEAT.md. This prevents the AI from forgetting the correct tool in future sessions.
+6. **Scopes must include both read and write versions.** The 81-scope list in INSTALL.md covers all services and tool compatibility.
 
-7. **Scope changes require re-authorization.** If you ever add new scopes, you must go back to the Admin Console and re-paste the full scope list. Old scopes do not update automatically.
+7. **After setup, update all workspace files.** CORE_UPDATES.md includes exact text to add to AGENTS.md, TOOLS.md, and MEMORY.md.
+
+8. **Token refresh is automatic but can be manual.** If tokens expire, run `gws auth login` again to refresh.

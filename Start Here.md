@@ -288,6 +288,55 @@ Gateway restarts interrupt active sessions and can kill running processes. The u
 
 ---
 
+## 🔴 ONBOARDING WATCHDOG - NEVER STOP UNTIL ALL 31 SKILLS ARE INSTALLED
+
+**The onboarding process must run continuously until all 31 skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
+
+### Self-Check Rules
+
+1. **After completing each skill**, immediately check the status file and count how many skills are done vs remaining. If skills remain, start the next one without waiting.
+
+2. **After every 5 minutes of work**, verify you are still making progress:
+   - Check which skill you are currently on
+   - Check the status file for completed skills
+   - If you have been idle or stuck on the same step for more than 3 minutes, re-read the current skill's INSTALL.md and resume from where you left off
+
+3. **If context is getting full** (above 70%), trigger the memory flush, then continue installation. Do NOT stop and wait for user input unless a skill explicitly requires it (like Skill 15 which needs Telegram IDs).
+
+4. **If a skill fails**, log the failure, mark it as FAILED in the status file, and move to the next skill. Do NOT stop the entire onboarding because one skill failed. Come back to failed skills after all others are complete.
+
+5. **If you lose your place**, check the status file:
+   ```bash
+   cat ~/.openclaw/onboarding/status.json 2>/dev/null
+   ```
+   Resume from the first skill not marked INSTALLED.
+
+### Progress Reporting
+
+After every 5 skills completed, send the user a brief progress update:
+"Onboarding progress: [X] of 31 skills installed. Currently on: [skill name]. [Y] skills remaining."
+
+### Completion
+
+When all 31 skills are installed:
+1. Count and verify: all 31 skill folders should exist in ~/.openclaw/skills/
+2. Check the status file for any FAILED skills
+3. If any failed, attempt to re-install them one more time
+4. Send the user the final report with pass/fail for each skill
+5. If a gateway restart is needed for any changes to take effect, tell the user:
+   "All 31 skills are installed. To activate the changes, please type /restart in Telegram."
+
+### What This Protocol Prevents
+- Agent stopping after 3-4 skills because the model ran out of steam
+- Agent waiting for user input when none is needed
+- Agent silently dying mid-installation with no error message
+- Agent forgetting where it was after compaction
+- Agent triggering restarts on its own (NEVER do this)
+
+**ZERO TOLERANCE: The onboarding does not end until all 31 skills have been attempted. If you stop early, you failed.**
+
+---
+
 ---
 
 ## 🔴 COMPLETE ALL DEPENDENCIES - NO PARTIAL INSTALLS

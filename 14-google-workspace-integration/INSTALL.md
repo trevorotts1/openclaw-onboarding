@@ -1,8 +1,6 @@
-
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
-  DO NOT SKIP. DO NOT PROCEED UNTIL THIS CHECK IS COMPLETE.
-╚══════════════════════════════════════════════════════════════╝
+DO NOT SKIP. DO NOT PROCEED UNTIL THIS CHECK IS COMPLETE.
 
 STEP 1: CHECK IF YOU HAVE BEEN TAUGHT THE TEACH YOURSELF PROTOCOL (TYP)
 
@@ -20,135 +18,27 @@ Proceed to the instructions below. Follow the TYP file storage structure.
 
 IF YOU HAVE NOT BEEN TAUGHT TYP:
 STOP IMMEDIATELY. Do not read further. Do not attempt to learn or execute
-anything in this document. Tell the user exactly this:
+anything in this document. Stop and report to the user:
 
-  "I have not been taught the Teach Yourself Protocol yet. I cannot safely
-   learn or execute these instructions until I have been taught TYP first.
-   Please share the Teach Yourself Protocol tab with me before we proceed.
-   Without TYP, I will bloat your core .md files and waste your tokens."
+  "Teach Yourself Protocol (TYP) is not installed yet. This skill cannot
+   be safely installed without TYP. Navigate to 01-teach-yourself-protocol/
+   in the onboarding package and complete that installation first.
+   Without TYP, core .md files will be bloated and tokens wasted."
 
 DO NOT PROCEED PAST THIS POINT WITHOUT TYP CONFIRMED.
 
 CONFLICT RULE (applies to all skill installs):
-If this skill's SKILL.md, CORE_UPDATES.md, or any other file in this skill
-folder conflicts with TYP regarding WHICH core .md files to update or WHAT
-content to add, always follow this skill's files. The skill takes precedence
-over TYP on core file update decisions. TYP governs the storage method (lean
-summaries + file paths). The skill governs the content and which files it
-touches. When in doubt: skill docs win.
-
-
-══════════════════════════════════════════════════════════════════
-  TYP FILE STORAGE INSTRUCTIONS (only read this if TYP confirmed)
-══════════════════════════════════════════════════════════════════
-
-WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
-
-1. SAVE FULL DOCUMENTATION TO MASTER FILES FOLDER
-   The canonical master files folder is: ~/Downloads/openclaw-master-files/
-   If that exact path does not exist, check for these common variations:
-   - ~/Downloads/OpenClaw Master Files/
-   - ~/Downloads/OpenClaw Master Documents/
-   Use whichever exists. If none exist, create: ~/Downloads/openclaw-master-files/
-
-   Save this full document content as a .md file in that folder.
-
-2. DO NOT DUMP FULL CONTENT INTO CORE .MD FILES
-   AGENTS.md, TOOLS.md, and MEMORY.md must stay lean.
-   Only add a brief summary and a file path reference to where the full
-   documentation lives. Never paste thousands of lines into core files.
-
-3. USE THE LABELED SECTIONS BELOW TO KNOW WHAT GOES WHERE
-   Look for sections marked:
-   [ADD TO AGENTS.md]
-   [ADD TO TOOLS.md]
-   [ADD TO MEMORY.md]
-   Only add what is labeled. Nothing else goes into core files.
-
-EXECUTION DISCIPLINE - MANDATORY BEFORE YOU START
+If THIS skill file says one thing, and TYP says another, TYP wins.
+Skill docs override generic instructions. TYP overrides skill docs.
+User's explicit override is highest priority. Chain:
+  User Override > TYP > Skill Docs > Generic Instructions
 ╚══════════════════════════════════════════════════════════════╝
-
-These rules apply every single time you execute instructions from this document.
-No exceptions. No shortcuts. No improvising.
-
-RULE 1: READ EVERYTHING BEFORE YOU TOUCH ANYTHING
-Read this entire document from top to bottom before executing a single step.
-Do not start executing while still reading. Finish reading first. Then start.
-
-RULE 2: DO NOT CHANGE THE OPERATOR'S INTENT
-These instructions say exactly what to do. Execute them exactly as written.
-- Do NOT reinterpret steps
-- Do NOT "improve" the instructions
-- Do NOT skip steps because they seem unnecessary
-- Do NOT add steps that are not in the document
-- Do NOT change the order of steps
-If a step says do X, do X. Not Y. Not a better version of X. X.
-
-RULE 3: NEVER MODIFY THESE WITHOUT PERMISSION
-- API keys - copy them exactly, character for character
-- Terminal commands - run them exactly as written, no edits
-- Config values - use the exact values specified
-- Model names - use the exact names specified, spelling matters
-- File paths - use the exact paths specified
-If you are unsure whether something should be changed, the answer is NO.
-Ask the operator. Do not guess. Do not assume.
-
-RULE 4: BUILD YOUR CHECKLIST BEFORE EXECUTING
-Before you run a single command or make a single change, create a numbered
-checklist of every action this document requires you to take. Write it out.
-Show it to the user before starting. Get confirmation. Then execute.
-
-RULE 5: CHECK YOURSELF AGAINST THE CHECKLIST WHEN DONE
-When you believe you are finished, go back to your checklist.
-Verify every single item was completed. Check it off explicitly.
-If anything was missed, complete it before telling the user you are done.
-Do NOT tell the user you are done until the checklist is 100% complete.
-
-RULE 6: REPORT WHAT YOU DID
-When finished, give the user a clear summary:
-- What was completed
-- What commands were run
-- What files were changed
-- Any errors encountered and how they were resolved
-- Confirmation that the checklist was fully satisfied
-
-══════════════════════════════════════════════════════════════════
-
-# Google Workspace Integration - Installation Guide
-
-This is the COMPLETE setup guide for connecting your AI agent to ALL Google Workspace services. Covers both paths:
-- **Path A (Workspace):** Google Workspace business accounts (@yourdomain.com) using a service account with Domain-Wide Delegation.
-- **Path B (Gmail):** Personal @gmail.com accounts using OAuth 2.0 Desktop credentials via GOG CLI.
-
-If you completed the basic setup in Skill 13, this guide extends it to cover all 26 APIs, all 70+ scopes, Organization Policy fixes, the google-api.js script, and the GOG skill.
 
 ---
 
-## ACCOUNT TYPE DETECTION (Run First)
+# Google Workspace Integration - Installation Guide
 
-Before doing anything else, the agent checks which path to follow:
-
-```bash
-# Check if USER_EMAIL is already stored in environment
-echo "$USER_EMAIL"
-echo "$GOOGLE_IMPERSONATE_USER"
-echo "$GOG_DEFAULT_ACCOUNT"
-```
-
-If the email is already stored, detect account type:
-```bash
-echo "$USER_EMAIL" | grep -q "@gmail.com" && echo "PATH_B_GMAIL" || echo "PATH_A_WORKSPACE"
-```
-
-- If `@gmail.com` - proceed directly to **Section 0B (Gmail Path)** at the end of this document.
-- If custom domain - continue with **Section 1 (Workspace Path)** below.
-- If no email is stored - check `~/clawd/secrets/.env` first:
-  ```bash
-  cat ~/clawd/secrets/.env 2>/dev/null | grep -E "USER_EMAIL|IMPERSONATE|GOG_DEFAULT"
-  ```
-  If still not found, ask the user for their Google email address. That is the ONLY time to ask.
-
-**Places API note:** The agent offers to skip Places API setup. It requires a separate API key and is only needed for location search features. The agent skips it unless the user confirms they need it.
+This guide sets up the Google Workspace CLI (gws) for accessing all Google services. It covers both personal Gmail accounts and Google Workspace business accounts.
 
 ---
 
@@ -156,398 +46,367 @@ echo "$USER_EMAIL" | grep -q "@gmail.com" && echo "PATH_B_GMAIL" || echo "PATH_A
 
 Before starting, make sure you have:
 
-- Google email address (Workspace business email OR personal @gmail.com)
-- For Workspace accounts: Google Workspace Super Admin access (needed for Domain-Wide Delegation)
-- Node.js version 18 or higher installed on your computer (check with: node --version)
-- A computer with terminal access (Mac Terminal, Windows PowerShell, or Linux shell)
-- Skill 13 (Google Workspace Setup) completed, OR 30 minutes of uninterrupted time to do both
-- 15-30 minutes for this guide
+1. Node.js version 18 or higher installed
+2. npm (comes with Node.js)
+3. A Google account (Gmail or Workspace)
+4. For Workspace accounts: Google Workspace Super Admin access
+5. 20-30 minutes of uninterrupted time
+
+Check your Node.js version:
+```bash
+node --version
+```
+
+If you see v18.x.x or higher, you are ready. If not, download Node.js from nodejs.org first.
 
 ---
 
-## The Big Picture: Two Places You Must Visit
+## Section 1: Install the Google Workspace CLI
 
-Setting up Google Workspace access requires visiting two different websites. Understanding this up front prevents confusion.
+The Google Workspace CLI (gws) is a single tool that replaces both the old google-api.js script and the GOG CLI.
 
-### Place 1: Google Cloud Console (console.cloud.google.com)
+Step 1. Open your terminal application (Terminal on Mac, PowerShell on Windows).
 
-This is the "construction site" where you build the robot (Service Account) and give it tools (APIs).
+Step 2. Run this command to install gws globally:
+```bash
+npm install -g @googleworkspace/cli
+```
 
-What you do here:
-1. Create a Google Cloud Project
-2. Enable all 26 APIs
-3. Configure the OAuth Consent Screen
-4. Create the Service Account
-5. Download the JSON key file
-6. Copy the Client ID number
+Step 3. Wait for the installation to complete. You will see progress messages.
 
-### Place 2: Google Workspace Admin Console (admin.google.com)
+Step 4. Verify the installation worked:
+```bash
+gws --version
+```
 
-This is the "security desk" where you authorize the robot to act on your behalf.
-
-What you do here:
-1. Navigate to Security, then Access and data control, then API controls, then Manage Domain Wide Delegation
-2. Add the Client ID from Place 1
-3. Paste all the OAuth scopes
-4. Click Authorize
-
-Both places MUST be completed. If you only do Place 1, the robot exists but has no permission. If you only do Place 2, there is no robot to authorize.
+You should see a version number like 1.0.0 or higher. If you see "command not found", close your terminal and open a new one, then try again.
 
 ---
 
-## Section 1: Google Cloud Project Setup
+## Section 2: Authentication for Gmail Users
 
-If you already completed Skill 12, you have a project. Skip to Section 2.
+If you have a personal Gmail account (ending in @gmail.com), follow these steps.
 
-1. Open your browser and go to: https://console.cloud.google.com/
-2. Sign in with your Google Workspace Super Admin account
-3. Click the project dropdown at the top left
-4. Click "New Project" in the top right of the popup
-5. Name it something like "OpenClaw AI Agent"
-6. Click Create
-7. Wait a few seconds, then select your new project from the dropdown
-8. Write down the Project ID (it shows under the project name in the dropdown)
+Step 1. Set up gws authentication:
+```bash
+gws auth setup
+```
 
----
+This opens a browser window asking you to sign in to your Google account.
 
-## Section 2: Enable All 26 APIs
+Step 2. Sign in with your Gmail address.
 
-Each Google service has its own API that must be turned on. For each link below, Click blue "Enable" button. If it says "Manage" instead, it is already enabled.
+Step 3. When asked for permissions, click "Allow" to grant access.
 
-**Make sure your project is selected at the top of every page.**
+Step 4. Run the login command with all the services you want to use:
+```bash
+gws auth login -s gmail,calendar,drive,contacts,docs,sheets,tasks,keep,forms,youtube
+```
 
-### Core APIs (Required)
+Step 5. The browser opens again. Click "Allow" for each service requested.
 
-1. **Gmail API** - https://console.cloud.google.com/apis/library/gmail.googleapis.com
-   - Lets your AI read, send, search, and manage email
+Step 6. Return to your terminal. You should see a success message.
 
-2. **Google Calendar API** - https://console.cloud.google.com/apis/library/calendar-json.googleapis.com
-   - Lets your AI read and create calendar events
+Step 7. Verify authentication worked:
+```bash
+gws auth list
+```
 
-3. **Google Drive API** - https://console.cloud.google.com/apis/library/drive.googleapis.com
-   - Lets your AI find, upload, download, and organize files
-
-4. **People API (Contacts)** - https://console.cloud.google.com/apis/library/people.googleapis.com
-   - Lets your AI look up contacts by name, email, or phone
-
-5. **Google Sheets API** - https://console.cloud.google.com/apis/library/sheets.googleapis.com
-   - Lets your AI read and write spreadsheet data
-
-6. **Google Docs API** - https://console.cloud.google.com/apis/library/docs.googleapis.com
-   - Lets your AI read and edit documents
-
-7. **Google Slides API** - https://console.cloud.google.com/apis/library/slides.googleapis.com
-   - Lets your AI read and create presentations
-
-8. **Google Tasks API** - https://console.cloud.google.com/apis/library/tasks.googleapis.com
-   - Lets your AI manage to-do lists
-
-9. **YouTube Data API v3** - https://console.cloud.google.com/apis/library/youtube.googleapis.com
-   - Lets your AI access channel data and manage videos
-
-10. **Google Chat API** - https://console.cloud.google.com/apis/library/chat.googleapis.com
-    - Lets your AI read and send messages in Chat spaces
-
-11. **Places API (New)** - https://console.cloud.google.com/apis/library/places-backend.googleapis.com
-    - Lets your AI search for businesses and venues (uses API Key, not Service Account)
-
-### Extended APIs (Recommended)
-
-12. **Google Forms API** - https://console.cloud.google.com/apis/library/forms.googleapis.com
-    - Create and manage forms, read responses
-
-13. **Google Meet REST API** - https://console.cloud.google.com/apis/library/meet.googleapis.com
-    - Access meeting info and recordings
-
-14. **Google Keep API** - https://console.cloud.google.com/apis/library/keep.googleapis.com
-    - Create and manage notes
-
-15. **Admin SDK API** - https://console.cloud.google.com/apis/library/admin.googleapis.com
-    - Manage users, groups, and org settings
-
-16. **Contacts API (Legacy)** - https://console.cloud.google.com/apis/library/contacts.googleapis.com
-    - Legacy contacts access for tool compatibility
-
-17. **Blogger API** - https://console.cloud.google.com/apis/library/blogger.googleapis.com
-    - Publish and manage blog content
-
-18. **Google Vault API** - https://console.cloud.google.com/apis/library/vault.googleapis.com
-    - Legal compliance, holds, and data exports
-
-19. **Groups Settings API** - https://console.cloud.google.com/apis/library/groupssettings.googleapis.com
-    - Manage Google Groups settings and permissions
-
-20. **Google Analytics Admin API** - https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com
-    - Manage GA4 properties and configuration
-
-21. **Google Analytics Data API** - https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com
-    - Pull GA4 reports and traffic data
-
-22. **Google Tag Manager API** - https://console.cloud.google.com/apis/library/tagmanager.googleapis.com
-    - Manage tags, triggers, and container publishing
-
-23. **BigQuery API** - https://console.cloud.google.com/apis/library/bigquery.googleapis.com
-    - Run SQL queries on large datasets
-
-24. **Looker Studio API** - https://console.cloud.google.com/apis/library/datastudio.googleapis.com
-    - Manage dashboards and data sources
-
-25. **Google Ads API** - https://console.cloud.google.com/apis/library/googleads.googleapis.com
-    - Manage ad campaigns and budgets (requires separate Developer Token from ads.google.com/aw/apicenter)
-
-26. **Search Console API** - https://console.cloud.google.com/apis/library/searchconsole.googleapis.com
-    - Track SEO performance and indexing status
-
-**Note about Google Chat:** After enabling the Chat API, you also need to configure a Chat App. Go to the Chat API Configuration page, click the Configuration tab, fill in an app name and description, and save.
-
-**Note about YouTube Analytics:** The YouTube Analytics API does NOT support service accounts. If you need YouTube analytics data, use the GOG CLI with OAuth.
+You should see your Gmail address listed with the scopes you authorized.
 
 ---
 
-## Section 3: Configure the OAuth Consent Screen
+## Section 3: Authentication for Workspace Users
 
-This step is CRITICAL. Without it, Google blocks sensitive scopes like Gmail. This is the number one reason people get stuck with "401 Unauthorized" errors.
+If you have a Google Workspace account (like you@yourcompany.com), you have two options.
 
-1. Go to: https://console.cloud.google.com/apis/credentials/consent
-2. If you see "Get Started", click it
-3. Choose "Internal" as the User Type (this limits access to your organization only and does NOT require Google verification)
-4. Click "Create"
-5. Fill in:
-   - App name: "AI Workspace Agent"
-   - User support email: Select your email
-   - Developer contact email: Enter your email
-6. Click "Save and Continue"
-7. On the Scopes page:
-   - Click "Add or Remove Scopes"
-   - Search for and check Gmail, Calendar, Drive scopes
-   - For scopes that do not appear in the search, scroll to the bottom and paste them in the "Manually add scopes" box
-   - Click "Update"
-8. Click "Save and Continue" through remaining steps
-9. Click "Back to Dashboard"
+### Option A: Using gcloud (Recommended for Most Users)
 
----
+Step 1. Make sure you have gcloud installed:
+```bash
+gcloud --version
+```
 
-## Section 4: Create a Service Account
+If not installed, download it from cloud.google.com/sdk.
 
-If you already created one in Skill 12, skip to Section 5.
+Step 2. Authenticate gcloud with your Workspace account:
+```bash
+gcloud auth application-default login
+```
 
-1. Go to: https://console.cloud.google.com/iam-admin/serviceaccounts
-2. Make sure your project is selected at the top
-3. Click "+ CREATE SERVICE ACCOUNT"
-4. Name: "ai-workspace-agent"
-5. Description: "Service account for AI agent Google Workspace access"
-6. Click "Create and Continue"
-7. Skip optional roles - click "Continue"
-8. Skip "Grant users access" - click "Done"
+Step 3. Set up gws:
+```bash
+gws auth setup
+```
 
-**If you get an error about service account creation being blocked,** see Section 5 (Fix Organization Policy Blocks) below.
+Step 4. Follow the prompts to complete authentication.
 
-### Create the JSON Key
+### Option B: Using a Service Account JSON Key
 
-1. Click on your service account's email address in the list
-2. Click the "Keys" tab
-3. Click "Add Key" then "Create new key"
-4. Select "JSON"
-5. Click "Create"
-6. A .json file downloads to your computer
+Step 1. Obtain your service account JSON key file from your Google Cloud Console.
 
-**If you get an error about key creation being disabled,** see Section 5 below.
+Step 2. Save the JSON file to a secure location like:
+```
+~/clawd/secrets/gcp-service-account.json
+```
 
-### Note the Client ID
+Step 3. Set the environment variable to point to your key file:
+```bash
+export GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE=/path/to/your-service-account.json
+```
 
-1. On your service account's detail page, find the "Unique ID" or "Client ID"
-2. It is a long number like 115886301121225599053
-3. Copy this number - you need it for Domain-Wide Delegation
+Step 4. To make this permanent, add it to your shell profile:
+```bash
+echo 'export GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE=/path/to/your-service-account.json' >> ~/.zshrc
+```
 
-**Important:** The Client ID is a NUMBER, not the email address. Using the email in Domain-Wide Delegation will silently fail.
+Step 5. Reload your shell:
+```bash
+source ~/.zshrc
+```
 
 ---
 
-## Section 5: Fix Organization Policy Blocks
+## Section 4: Domain-Wide Delegation (Workspace Only)
 
-If your Google Cloud organization was created after May 2024, Google may block service account creation and key downloads by default. This is not something you did wrong - it is a Google default.
+Domain-Wide Delegation allows a service account to act on behalf of users in your Workspace domain. This step is required for Workspace accounts.
 
-If you did NOT encounter any errors in Section 4, skip this section.
+### Part A: Find Your Service Account Client ID
 
-### Grant Yourself the Required Roles
+Step 1. Go to Google Cloud Console: https://console.cloud.google.com/
 
-1. Go to: https://console.cloud.google.com/iam-admin/iam
-2. In the resource selector dropdown at the top left, switch from your project to your ORGANIZATION (it matches your domain name)
-3. Find your user account in the list
-4. Click the pencil (Edit) icon
-5. Click "+ ADD ANOTHER ROLE"
-6. Search for and add: Organization Administrator
-7. Click "+ ADD ANOTHER ROLE" again
-8. Search for and add: Organization Policy Administrator
-9. Click Save
-10. Wait 1-2 minutes for the roles to take effect
+Step 2. Navigate to IAM & Admin, then Service Accounts.
 
-### Disable the Blocking Policies
+Step 3. Click on your service account email address.
 
-For service account creation being blocked:
+Step 4. Look for the "Unique ID" or "Client ID". It is a long number like 115886301121225599053.
 
-1. Go to: https://console.cloud.google.com/iam-admin/orgpolicies
-2. Make sure your ORGANIZATION is selected (not a project)
-3. In the Filter field, type: iam.disableServiceAccountCreation
-4. Click on "Disable service account creation"
-5. Click "Manage Policy"
-6. Select "Override parent's policy"
-7. Set Enforcement to "Not enforced"
-8. Click "Set Policy"
+Step 5. Copy this number. You will need it in Part B.
 
-For key creation being blocked:
+Important: The Client ID is a NUMBER, not the email address. Using the email will fail silently.
 
-1. Same page, Filter for: iam.disableServiceAccountKeyCreation
-2. Click on "Disable service account key creation"
-3. Click "Manage Policy"
-4. Select "Override parent's policy"
-5. Set Enforcement to "Not enforced"
-6. Click "Set Policy"
+### Part B: Authorize in Google Admin Console
 
-Now go back to Section 4 and create the service account and key. It will work now.
+Step 1. Go to Google Admin Console: https://admin.google.com/ac/owl/domainwidedelegation
 
-**Security tip:** After creating your key, you can optionally re-enable these policies to prevent anyone else from creating keys.
+Step 2. Sign in as a Super Admin.
 
----
+Step 3. Click "Add new".
 
-## Section 6: Domain-Wide Delegation
+Step 4. In the Client ID field, paste the numeric ID from Part A.
 
-This is where you give the Service Account permission to act as you.
-
-### Part A: Enable Delegation on the Service Account
-
-1. Go to: https://console.cloud.google.com/iam-admin/serviceaccounts
-2. Click on your service account email
-3. Look for "Show Advanced Settings" or "Domain-Wide Delegation"
-4. Check "Enable Google Workspace Domain-Wide Delegation"
-5. Click Save
-
-### Part B: Authorize in Admin Console
-
-1. Go to: https://admin.google.com/ac/owl/domainwidedelegation
-2. Sign in as Super Admin
-3. Click "Add new"
-4. Client ID: Paste the numeric ID from Section 4 (NOT the email address)
-5. OAuth Scopes: Paste this entire block (all one line, comma-separated, no spaces):
+Step 5. In the OAuth Scopes field, paste this entire scope list (all on one line, comma-separated, no spaces):
 
 ```
 https://mail.google.com/,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/presentations,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.labels,https://www.googleapis.com/auth/gmail.settings.basic,https://www.googleapis.com/auth/tasks,https://www.googleapis.com/auth/contacts,https://www.googleapis.com/auth/directory.readonly,https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.spaces,https://www.googleapis.com/auth/chat.memberships,https://www.googleapis.com/auth/forms.body,https://www.googleapis.com/auth/forms.responses.readonly,https://www.googleapis.com/auth/keep,https://www.googleapis.com/auth/youtube,https://www.googleapis.com/auth/youtube.upload,https://www.googleapis.com/auth/youtube.force-ssl,https://www.googleapis.com/auth/admin.directory.user,https://www.googleapis.com/auth/admin.directory.group,https://www.googleapis.com/auth/admin.directory.orgunit,https://www.googleapis.com/auth/admin.directory.resource.calendar,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/analytics,https://www.googleapis.com/auth/analytics.edit,https://www.googleapis.com/auth/analytics.manage.users,https://www.googleapis.com/auth/analytics.provision,https://www.googleapis.com/auth/adwords,https://www.googleapis.com/auth/tagmanager.edit.containers,https://www.googleapis.com/auth/tagmanager.edit.containerversions,https://www.googleapis.com/auth/tagmanager.manage.accounts,https://www.googleapis.com/auth/tagmanager.manage.users,https://www.googleapis.com/auth/tagmanager.publish,https://www.googleapis.com/auth/tagmanager.delete.containers,https://www.googleapis.com/auth/datastudio,https://www.googleapis.com/auth/webmasters,https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/business.manage,https://www.googleapis.com/auth/content,https://www.googleapis.com/auth/yt-analytics.readonly,https://www.googleapis.com/auth/yt-analytics-monetary.readonly,https://www.googleapis.com/auth/youtubepartner,https://www.googleapis.com/auth/youtubepartner-channel-audit,https://www.googleapis.com/auth/display-video,https://www.googleapis.com/auth/display-video-mediaplanning,https://www.googleapis.com/auth/doubleclicksearch,https://www.googleapis.com/auth/bigquery,https://www.googleapis.com/auth/bigquery.insertdata,https://www.googleapis.com/auth/admin.reports.audit.readonly,https://www.googleapis.com/auth/admin.reports.usage.readonly,https://www.googleapis.com/auth/indexing,https://www.googleapis.com/auth/devstorage.full_control,https://www.googleapis.com/auth/pubsub,https://www.googleapis.com/auth/youtube.readonly,https://www.googleapis.com/auth/youtube.channel-memberships.creator,https://www.googleapis.com/auth/youtube.third-party-link.creator,https://www.googleapis.com/auth/analytics.readonly,https://www.googleapis.com/auth/analytics.user.deletion,https://www.googleapis.com/auth/tagmanager.readonly,https://www.googleapis.com/auth/dfatrafficking,https://www.googleapis.com/auth/dfareporting,https://www.googleapis.com/auth/ddmconversions,https://www.googleapis.com/auth/firebase,https://www.googleapis.com/auth/firebase.readonly,https://www.googleapis.com/auth/androidpublisher,https://www.googleapis.com/auth/apps.alerts,https://www.googleapis.com/auth/adwords.readonly
 ```
 
-6. Click "Authorize"
+Step 6. Click "Authorize".
 
-**Important notes:**
-- The scopes must be pasted as a single line with commas between them. No spaces after commas. No line breaks.
-- If you EVER add new scopes later, you must re-paste the ENTIRE list and click Authorize again. Google does not let you add one at a time.
-- Propagation can take 5 minutes to 24 hours. Gmail scopes are especially slow. If something does not work right away, wait 15 minutes and try again.
-
----
-
-## Section 7: Script Installation
-
-### Place the google-api.js Script
-
-Save the google-api.js file to your OpenClaw workspace directory. The script has zero external dependencies - it uses only Node.js built-in modules. No npm install needed.
-
-### Set Environment Variables
-
-Add these to your shell profile (~/.zshrc on Mac, ~/.bashrc on Linux):
-
-```bash
-# Required: Path to your Service Account JSON key file
-export GOOGLE_SA_KEY_FILE="/path/to/your-service-account-key.json"
-
-# Required: The email address to impersonate (must be in your Workspace domain)
-export GOOGLE_IMPERSONATE_USER="you@yourdomain.com"
-
-# Optional: Only needed for Places API
-export GOOGLE_PLACES_API_KEY="your-places-api-key-here"
-```
-
-Reload your shell:
-
-```bash
-source ~/.zshrc
-```
-
-### Create a Places API Key (Optional)
-
-Only needed if you want the Places API (searching for businesses and venues):
-
-1. Go to: https://console.cloud.google.com/apis/credentials
-2. Click "Create Credentials" then "API Key"
-3. Click "Restrict Key"
-4. Under "API restrictions", select "Restrict key" and check "Places API (New)"
-5. Click Save
-6. Copy the key and set it as GOOGLE_PLACES_API_KEY
-
-### Verify Setup
-
-```bash
-node --version          # Must be 18+
-node google-api.js help # Should show available commands
-echo $GOOGLE_SA_KEY_FILE     # Should show your key file path
-echo $GOOGLE_IMPERSONATE_USER # Should show your Workspace email
-```
+Important notes:
+- The scopes must be pasted as a single line with commas between them
+- No spaces after commas
+- No line breaks
+- If you add new scopes later, you must re-paste the ENTIRE list and click Authorize again
+- Changes can take 5 minutes to 24 hours to fully propagate
 
 ---
 
-## Section 8: Install and Configure the GOG Skill
+## Section 5: Fix Organization Policy Blocks
 
-GOG is the bridge between your Service Account and OpenClaw actually using Google services. Without GOG, your agent has keys but cannot open doors.
+If your Google Cloud organization was created after May 2024, Google blocks service account creation by default. This is not your fault. It is a Google security default.
 
-### Step 1: Verify Environment Variables
+If you did not encounter any errors in previous sections, skip this section.
 
+### Grant Yourself Required Roles
+
+Step 1. Go to https://console.cloud.google.com/iam-admin/iam
+
+Step 2. In the dropdown at the top left, switch from your project to your ORGANIZATION.
+
+Step 3. Find your user account in the list.
+
+Step 4. Click the pencil (Edit) icon.
+
+Step 5. Click "+ ADD ANOTHER ROLE".
+
+Step 6. Search for and add: Organization Administrator
+
+Step 7. Click "+ ADD ANOTHER ROLE" again.
+
+Step 8. Search for and add: Organization Policy Administrator
+
+Step 9. Click Save.
+
+Step 10. Wait 1-2 minutes for the roles to take effect.
+
+### Disable Blocking Policies
+
+Step 1. Go to https://console.cloud.google.com/iam-admin/orgpolicies
+
+Step 2. Make sure your ORGANIZATION is selected.
+
+Step 3. In the Filter field, type: iam.disableServiceAccountCreation
+
+Step 4. Click on "Disable service account creation".
+
+Step 5. Click "Manage Policy".
+
+Step 6. Select "Override parent's policy".
+
+Step 7. Set Enforcement to "Not enforced".
+
+Step 8. Click "Set Policy".
+
+Step 9. For key creation, filter for: iam.disableServiceAccountKeyCreation
+
+Step 10. Repeat steps 4-8 for this policy.
+
+Now return to Section 3 and create your service account. It will work now.
+
+---
+
+## Section 6: Google Chat App Configuration
+
+Google Chat requires an additional manual step after enabling the API.
+
+Step 1. Go to https://console.cloud.google.com/apis/library/chat.googleapis.com
+
+Step 2. Make sure the Chat API is enabled.
+
+Step 3. Go to the Chat API Configuration page.
+
+Step 4. Click the Configuration tab.
+
+Step 5. Fill in an app name (like "AI Workspace Agent").
+
+Step 6. Fill in a description.
+
+Step 7. Click Save.
+
+This step is required even if you do not plan to build a Chat bot. The API will not work without it.
+
+---
+
+## Section 7: Verify All Services Work
+
+Run these test commands to confirm everything is set up correctly.
+
+### Test Gmail
 ```bash
-echo $GOOGLE_SA_KEY_FILE
-echo $GOOGLE_IMPERSONATE_USER
+gws gmail +triage
 ```
 
-Both should show values. If either is blank, go back to Section 7.
+You should see a list of unread emails or a message saying no emails found.
 
-### Step 2: Install GOG
-
+### Test Calendar
 ```bash
-openclaw skills install gog
+gws calendar +agenda
 ```
 
-Or through the OpenClaw dashboard: navigate to Skills and install "gog".
+You should see today's calendar events or a message saying no events today.
 
-### Step 3: Restart OpenClaw
+### Test Drive
+```bash
+gws drive files list --params '{"pageSize": 5}'
+```
 
+You should see a list of your Drive files.
+
+### Test Sheets
+```bash
+gws sheets spreadsheets create --json '{"properties": {"title": "Test Sheet"}}'
+```
+
+You should see a response with a spreadsheet ID, confirming a new sheet was created.
+
+### Test Docs
+```bash
+gws docs +write
+```
+
+This is an interactive helper. Follow the prompts to create a test document.
+
+### Test Tasks
+```bash
+gws tasks tasklists list
+```
+
+You should see your task lists or a message saying no task lists found.
+
+If any test fails with a 401 or 403 error, check:
+1. Did you complete Domain-Wide Delegation (for Workspace)?
+2. Did you authorize all scopes in the Admin Console?
+3. Have you waited at least 15 minutes for changes to propagate?
+
+---
+
+## Section 8: Install OpenClaw Agent Skills
+
+The gws CLI includes OpenClaw skill files that make it easier to use.
+
+Step 1. Find where gws is installed:
+```bash
+which gws
+```
+
+Step 2. Navigate to the gws installation directory and find the skills folder.
+
+Step 3. Copy or link the skills to your OpenClaw skills directory:
+```bash
+# Option A: Create symbolic links
+ln -s /path/to/gws/skills/* ~/.openclaw/skills/
+
+# Option B: Copy the files
+cp -r /path/to/gws/skills/* ~/.openclaw/skills/
+```
+
+Step 4. Restart OpenClaw to load the new skills:
 ```bash
 openclaw gateway restart
 ```
 
-Wait 10 seconds:
-
+Wait 10 seconds, then check status:
 ```bash
 openclaw gateway status
 ```
 
-Should show "running".
+---
 
-### Step 4: Quick Verification
+## Section 9: Core File Updates
 
-Execute: `gog gmail search 'in:inbox' --limit 3` to verify GOG is working. If it returns message data, setup is complete.
+After completing setup, you MUST update your workspace files so the AI remembers how to use Google services.
 
-If it returns email subjects and senders, GOG is working.
+Add the blocks from CORE_UPDATES.md to each of these files:
+- AGENTS.md
+- TOOLS.md
+- MEMORY.md
+
+This prevents the AI from forgetting the correct commands in future sessions.
 
 ---
 
-## Section 9: Update Workspace Files (Critical)
+## Completion Checklist
 
-After completing setup, you MUST update your workspace files so the AI remembers how to use the correct tool for each account type. If you skip this, the AI will use the wrong method and get 401 errors.
+Use this checklist to confirm installation is complete:
 
-Add the blocks from Section 14 of the full documentation (google-workspace-integration-full.md) to each of these files:
-- MEMORY.md (what to do)
-- TOOLS.md (how to do it)
-- AGENTS.md (rules and self-correction)
-- USER.md (which accounts use which method)
-- IDENTITY.md (why - so it remembers the lesson)
-- HEARTBEAT.md (daily routing for each account)
+- [ ] Node.js 18+ installed and verified
+- [ ] gws CLI installed (gws --version shows a number)
+- [ ] For Gmail: gws auth login completed successfully
+- [ ] For Workspace: service account configured or gcloud auth completed
+- [ ] Domain-Wide Delegation authorized (Workspace only)
+- [ ] All 81 OAuth scopes pasted into Admin Console (Workspace only)
+- [ ] Google Chat app configured
+- [ ] Gmail test passed (gws gmail +triage)
+- [ ] Calendar test passed (gws calendar +agenda)
+- [ ] Drive test passed (gws drive files list)
+- [ ] Sheets test passed (gws sheets spreadsheets create)
+- [ ] Docs test passed (gws docs +write)
+- [ ] Tasks test passed (gws tasks tasklists list)
+- [ ] OpenClaw skills installed
+- [ ] Core files updated (AGENTS.md, TOOLS.md, MEMORY.md)
 
-The key rule to add everywhere: Workspace accounts (@yourdomain.com) use google-api.js. Personal accounts (@gmail.com) use GOG CLI. These are incompatible methods. Mixing them always fails.
+All items checked? Your Google Workspace integration is ready to use.
 
 ---
 
@@ -555,138 +414,30 @@ The key rule to add everywhere: Workspace accounts (@yourdomain.com) use google-
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| "401 Unauthorized" or "Invalid grant" | Auth rejected | Check: key file valid? GOOGLE_IMPERSONATE_USER set? DWD authorized? OAuth Consent Screen configured? Used Client ID (not email) in DWD? |
-| "403 Forbidden" | Scope not granted | Re-paste all scopes in Admin Console DWD. Delete and re-add the entry with clean copy. |
-| "API not enabled" | API switch not flipped | Go to APIs & Services dashboard, find the missing API, enable it |
-| "Service account key creation is disabled" | Organization policy | See Section 5 above |
-| Gmail fails but other services work | OAuth Consent Screen missing or Gmail scopes not propagated | Configure OAuth Consent Screen (Section 3). Wait 15-30 min for propagation. |
-| "GOOGLE_SA_KEY_FILE not set" | Environment variable missing | Add to ~/.zshrc, run source ~/.zshrc |
-| Places returns "API key not valid" | Wrong key type | Places uses API Key (Section 7), not Service Account |
-| Chat returns "404 - Chat app not found" | Chat App not configured | See the Google Chat note in Section 2 |
-| Browser session expired (Playwright) | Google session expires every 7-14 days | Agent pauses, asks you to re-login. Normal behavior. |
-
----
-
-======================================================================
-## Section 0B: GMAIL PATH (Personal @gmail.com Accounts)
-======================================================================
-
-This section applies ONLY to personal @gmail.com accounts.
-Skip this entire section if the user has a Google Workspace business account.
-
-**Detection:** If the user's email ends in @gmail.com, the agent executes this path instead of Sections 1-8.
-
-### Step G1: Create a Google Cloud Project
-
-Same as Section 1. The agent creates an "OpenClaw AI" project in Google Cloud Console.
-See Section 1 for the full step-by-step. Proceed immediately after project creation.
-
-### Step G2: Enable the 6 Core APIs
-
-Same as Section 2, but only the Core APIs (items 1-6 in the Core APIs list).
-Extended APIs are optional for Gmail users. Enable only the 6 core:
-Gmail, Calendar, Drive, Sheets, Docs, People/Contacts.
-
-### Step G3: Set Up OAuth Consent Screen (External)
-
-For Gmail accounts, the consent screen must be "External" (not "Internal").
-
-1. Go to: https://console.cloud.google.com/apis/credentials/consent
-2. Select "External" as user type
-3. Click "Create"
-4. Fill in: App name = "OpenClaw AI Agent", User support email = user's Gmail, Developer contact = user's Gmail
-5. Click "Save and Continue"
-6. On Scopes page, add scopes manually:
-   ```
-   https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/contacts.readonly
-   ```
-7. Click "Save and Continue"
-8. On Test Users page, add the user's Gmail address as a test user
-9. Click "Save and Continue" then "Back to Dashboard"
-
-The app stays in "Testing" mode. That is expected and fine for personal use.
-
-### Step G4: Create OAuth 2.0 Desktop Credentials
-
-1. Go to: https://console.cloud.google.com/apis/credentials
-2. Click "Create Credentials" then "OAuth client ID"
-3. Set application type to "Desktop app"
-4. Name it "OpenClaw Desktop Client"
-5. Click "Create"
-6. Note the Client ID and Client Secret from the dialog
-7. Click "Download JSON"
-8. Move the credentials file:
-   ```bash
-   mkdir -p ~/clawd/secrets
-   mv ~/Downloads/client_secret_*.json ~/clawd/secrets/google-oauth-credentials.json
-   chmod 600 ~/clawd/secrets/google-oauth-credentials.json
-   ```
-
-### Step G5: GOG CLI Setup (OAuth)
-
-1. Install GOG if not present:
-   ```bash
-   command -v gog >/dev/null 2>&1 || brew install steipete/tap/gogcli
-   ```
-
-2. Add the Gmail account with OAuth:
-   ```bash
-   gog auth add "$USER_EMAIL" --services gmail,calendar,drive,contacts,docs,sheets
-   ```
-   This opens a browser for the user to authorize. The agent notifies the user to click "Allow".
-   GOG captures the refresh token automatically. This only happens once.
-
-3. Verify GOG is working:
-   ```bash
-   gog auth list
-   gog gmail search 'newer_than:1d' --max 3 --account "$USER_EMAIL"
-   ```
-
-4. Store default account:
-   ```bash
-   echo "export GOG_DEFAULT_ACCOUNT=$USER_EMAIL" >> ~/clawd/secrets/.env
-   source ~/clawd/secrets/.env
-   ```
-
-### Step G6: Test and Verify
-
-```bash
-gog gmail search 'in:inbox' --limit 3 --account "$USER_EMAIL"
-gog calendar list --account "$USER_EMAIL" --max 5
-```
-
-Both commands should return data without errors.
-
-### Gmail Path Complete
-
-Report to the user:
-- Google Cloud Project created
-- 6 Core APIs enabled
-- OAuth Consent Screen configured (External, Testing mode)
-- OAuth Desktop credentials created and stored
-- GOG CLI installed and authorized
-- Default Gmail account configured
-
-The agent now has access to Gmail, Calendar, Drive, Docs, Sheets, and Contacts via OAuth.
+| "401 Unauthorized" or "Invalid grant" | Auth rejected | Check credentials. For Workspace, verify Domain-Wide Delegation is authorized. |
+| "403 Forbidden" | Scope not granted | Re-paste all 81 scopes in Admin Console. Delete and re-add the entry. |
+| "API not enabled" | API switch not flipped | Go to APIs & Services dashboard, find the missing API, enable it. |
+| "Service account key creation is disabled" | Organization policy | See Section 5 above. |
+| "command not found: gws" | Not installed or not in PATH | Reinstall with npm install -g @googleworkspace/cli. Close and reopen terminal. |
+| Gmail fails but other services work | OAuth Consent Screen missing | Configure OAuth Consent Screen. Wait 15-30 minutes. |
+| Changes not taking effect | Propagation delay | Wait 15 minutes to 24 hours. Gmail scopes are especially slow. |
 
 ---
 
 ## 🔴 GATEWAY RESTART PROTOCOL - NEVER TRIGGER AUTONOMOUSLY
 
-**During this installation, you may encounter instructions to restart the OpenClaw gateway.**
+During this installation, you may encounter instructions to restart the OpenClaw gateway.
 
-**YOU ARE FORBIDDEN from triggering gateway restarts yourself.**
+YOU ARE FORBIDDEN from triggering gateway restarts yourself.
 
 ### Correct Process
 When a gateway restart is needed:
-1. **STOP** - Do NOT execute the restart command
-2. **NOTIFY** the user: "This installation requires an OpenClaw gateway restart to complete."
-3. **INSTRUCT**: "Type `/restart` in Telegram to trigger it"
-4. **WAIT** for user action - do NOT proceed until confirmed
+1. STOP - Do NOT execute the restart command
+2. NOTIFY the user: "This installation requires an OpenClaw gateway restart to complete."
+3. INSTRUCT: "Type /restart in Telegram to trigger it"
+4. WAIT for user action - do NOT proceed until confirmed
 
 ### Forbidden Actions
-- Do NOT run `openclaw gateway restart` without explicit user permission
+- Do NOT run openclaw gateway restart without explicit user permission
 - Do NOT say "I will restart the gateway now" without asking first
 - Do NOT assume the user wants the restart
-
----
