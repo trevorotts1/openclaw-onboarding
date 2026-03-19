@@ -17,6 +17,8 @@ full persona into context.
 ### Add the full persona library as a collection
 
 ```bash
+python3 ~/clawd/scripts/gemini-indexer.py --add \
+  --path ~/Downloads/openclaw-master-files/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
 ```
@@ -25,21 +27,20 @@ full persona into context.
 
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py
-# Handled by gemini-indexer.py
 ```
 
 ### Verify
 
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py --status
-# Should show coaching-personas collection with file count
 ```
+
+Expected output shows: `coaching-personas` collection with file count.
 
 ### After each new persona is built, re-index
 
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py
-# Handled by gemini-indexer.py
 ```
 
 ---
@@ -54,6 +55,15 @@ Use when: you need to identify which persona to activate for a specific human ch
 python3 ~/clawd/scripts/gemini-search.py "methodology for building habits and systems for consistency"
 python3 ~/clawd/scripts/gemini-search.py "negotiation framework for difficult conversations and objection handling"
 python3 ~/clawd/scripts/gemini-search.py "sales questioning technique for uncovering customer problems"
+```
+
+**Expected output format:**
+```
+[coaching-personas/clear-atomic-habits/persona-blueprint.md:142-158]
+Score: 0.87
+The habit loop consists of four stages: cue, craving, response, and reward. To build
+a new habit, make the cue obvious, the craving attractive, the response easy, and
+the reward satisfying...
 ```
 
 Gemini Engine returns the most relevant sections from matching persona blueprints.
@@ -99,24 +109,29 @@ python3 ~/clawd/scripts/gemini-search.py "content writing failure patterns quali
 python3 ~/clawd/scripts/gemini-search.py "your question here"
 ```
 
+**Example:**
+```bash
+python3 ~/clawd/scripts/gemini-search.py "habit stacking implementation guide"
+```
+
 ### Structured query (when you need precise control)
 ```bash
 python3 ~/clawd/scripts/gemini-search.py "habits systems consistency"
-vec:building repeatable behaviors over time
-hyde:a methodology for creating automatic daily routines'
 ```
 
 ### Get a specific file section
 ```bash
-cat ~/Downloads/openclaw-master-files/coaching-personas/personas/clear-atomic-habits/persona-blueprint.md | head -100
-# Returns lines 1-100 of the Atomic Habits blueprint
+head -100 ~/Downloads/openclaw-master-files/coaching-personas/personas/clear-atomic-habits/persona-blueprint.md
 ```
+
+Returns lines 1-100 of the Atomic Habits blueprint.
 
 ### Search multiple personas at once
 ```bash
 python3 ~/clawd/scripts/gemini-search.py "all personas"
-# Returns summaries of all persona blueprints
 ```
+
+Returns summaries of all persona blueprints.
 
 ---
 
@@ -126,7 +141,7 @@ When Gemini Engine returns results, the agent should:
 
 1. **Read the returned section** - Gemini Engine returns the matching text with file path and line numbers
 2. **Identify the persona** - note which persona blueprint the result came from
-3. **Pull more context if needed** - use `cat [path] to read the full file directly` to expand
+3. **Pull more context if needed** - use `head` or `cat [path]` to read the full file directly to expand
 4. **Apply the methodology** - use the extracted framework, questions, or standards directly
 
 ### Example Agent Workflow
@@ -135,7 +150,7 @@ When Gemini Engine returns results, the agent should:
 Agent task: Write a sales outreach email for a SaaS product
 
 Step 1: Query for relevant governance standard
-→ python3 ~/clawd/scripts/gemini-search.py "sales outreach email quality standard execution rules"
+-> python3 ~/clawd/scripts/gemini-search.py "sales outreach email quality standard execution rules"
 
 Step 2: Gemini Engine returns sections from SPIN Selling and StoryBrand personas
 
@@ -157,17 +172,23 @@ Step 5: Agent self-reviews against the non-negotiable rules returned by Gemini E
 python3 ~/clawd/scripts/gemini-indexer.py --status
 ```
 
+**Example output:**
+```
+Collection: coaching-personas
+Files indexed: 42
+Last indexed: March 18 at 3:45 PM
+Status: READY
+```
+
 ### After adding new persona blueprints
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py
-# Handled by gemini-indexer.py
 ```
 
 ### If results seem stale or wrong
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py --rebuild
 python3 ~/clawd/scripts/gemini-indexer.py
-# Handled by gemini-indexer.py
 ```
 
 ### View what is indexed

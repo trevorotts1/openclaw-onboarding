@@ -331,7 +331,59 @@ Gateway restarts interrupt active sessions and can kill running processes. The u
 
 ---
 
-## 🔴 ONBOARDING WATCHDOG - NEVER STOP UNTIL ALL 31 SKILLS ARE INSTALLED
+## 🔴 ONBOARDING WATCHDOG - HEARTBEAT AUTO-RESUME (PERMANENT RULE)
+
+### Phase 0 Setup: Enable the Onboarding Heartbeat
+
+Before starting Skill 01, the agent MUST set up a temporary 5-minute heartbeat that keeps the onboarding alive. This prevents the agent from stalling mid-install.
+
+**Step 1: Set the heartbeat interval to 5 minutes**
+
+The agent must update the heartbeat configuration in openclaw.json:
+```json
+"heartbeat": {
+  "every": "5m"
+}
+```
+
+**Step 2: Write the watchdog task to HEARTBEAT.md**
+
+Add this EXACT content to the TOP of HEARTBEAT.md (above any existing content):
+
+```markdown
+## 🔴 ONBOARDING IN PROGRESS - DO NOT REMOVE UNTIL COMPLETE
+
+Check onboarding status:
+1. Read ~/.openclaw/onboarding/status.json
+2. Count how many skills are INSTALLED vs remaining
+3. If skills remain and you are not currently installing one, resume from the next unfinished skill
+4. If you are stuck on a skill for more than 10 minutes, skip it, mark it FAILED, and move to the next
+5. Report progress: "[X] of 31 skills installed. Currently on: [skill name]."
+
+DO NOT REMOVE this block until all 31 skills are installed or attempted.
+```
+
+**Step 3: After onboarding completes, clean up**
+
+When all 31 skills are installed (or attempted), the agent MUST:
+1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
+2. Reset the heartbeat interval back to the default:
+```json
+"heartbeat": {
+  "every": "1h"
+}
+```
+3. Tell the user: "Onboarding complete. I have reset the heartbeat back to hourly checks. Type /restart in Telegram to apply the change."
+
+### How This Works
+
+OpenClaw sends a heartbeat message to the agent every 5 minutes. The agent reads HEARTBEAT.md and sees the onboarding watchdog task. If it was idle or stalled, it immediately checks the status file and resumes installation. This is external enforcement. The agent cannot "forget" to keep going because OpenClaw keeps poking it.
+
+After onboarding finishes, the heartbeat goes back to hourly and the watchdog task is removed. The client's HEARTBEAT.md returns to normal.
+
+---
+
+## 🔴 ONBOARDING CONTINUITY - NEVER STOP UNTIL ALL 31 SKILLS ARE INSTALLED
 
 **The onboarding process must run continuously until all 31 skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
 

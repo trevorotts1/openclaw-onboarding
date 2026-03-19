@@ -5,6 +5,20 @@ Add concise summaries and file paths only. Never paste full documentation into c
 
 ---
 
+## Quick Reference - Dependency Installation
+
+**One-line install for all Python packages:**
+```bash
+pip3 install google-genai numpy pdfplumber pypdf ebooklib aiohttp beautifulsoup4 mobi lxml --break-system-packages
+```
+
+**Verify all packages:**
+```bash
+python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs4, mobi, lxml; print('ALL PASS')"
+```
+
+---
+
 ## AGENTS.md
 
 **Where:** Add a new section at the bottom of AGENTS.md titled `## Book-to-Persona Skill (Installed)`
@@ -16,10 +30,10 @@ Converts any book (PDF/EPUB/MOBI/AZW3) into a dual-purpose persona blueprint.
 Pre-built personas already included. Run: python3 ~/clawd/scripts/gemini-indexer.py --status to see total count. Pipeline runs on new books only.
 
 Pipeline:
-- Phase 1: Kimi K2.5 via direct Moonshot API (api.moonshot.cn/v1, temp 1.0) → extraction-notes.md
-- Phase 2: DeepSeek V3.2 via OpenRouter → analysis-notes.md
-- Phase 3: GPT-5.3 Codex via OpenClaw OAuth → persona-blueprint.md (all 14 sections)
-- Content filter fallback: OpenRouter moonshotai/kimi-k2.5
+- Phase 1: kimi-k2.5 via api.moonshot.ai/v1 (temp 1.0) → extraction-notes.md
+- Phase 2: deepseek/deepseek-v3.2 via OpenRouter → analysis-notes.md
+- Phase 3: openai-codex/gpt-5.4 via OpenClaw OAuth → persona-blueprint.md (all 14 sections)
+- Content filter fallback: openrouter/moonshotai/kimi-k2.5
 
 Persona Reflex (DEFAULT BEHAVIOR):
 Before any professional task, run: python3 ~/clawd/scripts/gemini-search.py "<task keywords>"

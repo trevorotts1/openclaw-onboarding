@@ -1,5 +1,25 @@
 # CHECKLIST.md - Book Intelligence Pipeline Build Checklist
 
+## Pre-Flight Check (BEFORE starting any persona build)
+
+Run these checks before every pipeline start. Do not proceed if any check fails.
+
+```
+[ ] Python 3.8+ installed (run: python3 --version)
+[ ] All pip dependencies installed (run verify command in INSTALL.md Step 2b)
+[ ] GOOGLE_API_KEY set (run: grep GOOGLE_API_KEY ~/clawd/secrets/.env)
+[ ] Calibre installed - ebook-convert available (run: ebook-convert --version)
+[ ] At least one book file available (PDF, EPUB, MOBI, AZW3 in books/ folder)
+[ ] Moonshot API key OR OpenRouter access configured
+```
+
+**Quick dependency verification:**
+```bash
+python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs4, mobi, lxml; print('ALL PASS')"
+```
+
+---
+
 ## Pre-Run Checklist (run before every pipeline start)
 
 - [ ] TYP complete - all 7 .md files read in this session
