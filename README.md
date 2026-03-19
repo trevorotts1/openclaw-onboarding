@@ -2,9 +2,15 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v5.4.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v5.4.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **32 skill folders** (01 through 32, with 13 archived) plus an install script.
+
+### What's New in v5.4.1 (March 19, 2026)
+- **Skill 32: Cloudflare Tunnel Auto-Setup** - New Phase 6b automates domain registration for client Command Centers
+- Webhook registration system connects client tunnels to zerohumanworkforce.com subdomains
+- Client registry tracking for all active Command Center deployments
+- Automated DNS route creation and URL verification
 
 ### What's New in v5.4.0 (March 19, 2026)
 - **Skill 32: Command Center Setup** - Activates your AI workforce as a live Command Center with persistent department agents, Telegram topics, and a visual Kanban dashboard

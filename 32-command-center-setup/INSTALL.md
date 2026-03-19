@@ -312,6 +312,137 @@ http://localhost:3000
 
 ---
 
+## Phase 6b: Cloudflare Tunnel and Domain Registration (Agent Does This Automatically)
+
+This phase connects your local dashboard to the internet with a custom subdomain. Your Command Center will be accessible from anywhere.
+
+### 6b.1 Check if cloudflared is Installed
+
+The agent checks if Cloudflare's tunnel software is installed:
+
+```bash
+which cloudflared
+```
+
+**If cloudflared is NOT found, the agent installs it:**
+
+**On macOS:**
+```bash
+brew install cloudflared
+```
+
+**On Linux or VPS:**
+```bash
+curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+chmod +x /usr/local/bin/cloudflared
+```
+
+**What you should see:** Installation completes without errors.
+
+### 6b.2 Create the Cloudflare Tunnel
+
+The agent creates a named tunnel for your Command Center:
+
+```bash
+cloudflared tunnel create [clientName]-command-center
+```
+
+Replace [clientName] with your chosen name (for example: laura, acme, johnsmith).
+
+**What you should see:**
+- A tunnel is created
+- A tunnel ID is displayed (this is a long UUID string)
+- A credentials file is saved to ~/.cloudflared/
+
+**Important:** Save the tunnel ID. The agent will use it in the next steps.
+
+### 6b.3 Create the Tunnel Configuration File
+
+The agent creates a config file at ~/.cloudflared/config-command-center.yml:
+
+```yaml
+tunnel: [TUNNEL_ID]
+credentials-file: ~/.cloudflared/[TUNNEL_ID].json
+ingress:
+  - hostname: [clientName].zerohumanworkforce.com
+    service: http://localhost:3000
+  - service: http_status:404
+```
+
+Replace [TUNNEL_ID] with the actual tunnel UUID from Step 6b.2.
+Replace [clientName] with your chosen client name.
+
+**What you should see:** A new file is created with the correct settings.
+
+### 6b.4 Start the Tunnel
+
+The agent starts the tunnel to connect your local dashboard to the internet:
+
+```bash
+cloudflared tunnel run --config ~/.cloudflared/config-command-center.yml [clientName]-command-center
+```
+
+**What you should see:**
+- The tunnel connects to Cloudflare
+- Connection status messages appear
+- The tunnel is now active
+
+### 6b.5 Send Webhook to Register the Subdomain
+
+The agent sends a registration message to Trevor's system to create the DNS route:
+
+```
+COMMAND_CENTER_REGISTRATION
+clientName: [name]
+tunnelId: [tunnel UUID]
+companyName: [company]
+contactEmail: [email]
+```
+
+**What happens on Trevor's side:**
+1. Trevor's agent receives the registration message
+2. The agent runs the command-center-webhook.sh script
+3. The script creates the DNS route: [clientName].zerohumanworkforce.com
+4. Your client information is added to the registry
+
+**What you should see:** A confirmation that the registration was sent.
+
+### 6b.6 Wait for DNS Propagation
+
+DNS changes take a short time to spread across the internet. The agent waits for this to complete.
+
+```bash
+# Wait 30 seconds
+sleep 30
+```
+
+**What you should see:** A brief pause while DNS updates.
+
+### 6b.7 Verify the URL Works
+
+The agent tests your new subdomain to confirm it is live:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" https://[clientName].zerohumanworkforce.com
+```
+
+**Expected result:** The command returns "200" (meaning the site is accessible).
+
+**What you should see:**
+- The HTTP status code 200
+- Your dashboard is now live on the internet
+
+### 6b.8 Report the Live URL to the Client
+
+The agent tells you your Command Center is ready:
+
+**What you should see:**
+> "Your Command Center is now live at: https://[clientName].zerohumanworkforce.com"
+
+You can now access your dashboard from any device, anywhere.
+
+---
+
 ## Phase 7: Verification (Agent Does This Automatically)
 
 The agent runs tests to verify everything works.
@@ -344,7 +475,7 @@ The agent sends you a summary in Telegram:
 
 ---
 
-## Phase 8: Optional - Cloudflare Tunnel for Remote Access
+## Phase 9: Optional - Manual Cloudflare Tunnel Setup (if Phase 6b was skipped)
 
 If you want to access your dashboard from outside your local network, the agent can set up a Cloudflare tunnel.
 
@@ -394,6 +525,9 @@ After all phases are complete, verify:
 - [ ] Agent config entries added for each department
 - [ ] Telegram bindings configured for each topic
 - [ ] Dashboard accessible at localhost:3000
+- [ ] Cloudflare tunnel created and running
+- [ ] DNS route registered for [clientName].zerohumanworkforce.com
+- [ ] Live URL accessible from the internet
 - [ ] Test message received response from correct department head
 - [ ] Memory status shows all department agents active
 

@@ -4,6 +4,27 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.4.1] - March 19, 2026
+
+### Cloudflare Tunnel Auto-Setup for Client Onboarding
+
+#### Added
+- Phase 6b to Skill 32: Cloudflare Tunnel and Domain Registration
+- Automated tunnel creation on client machines
+- Webhook registration system for subdomain DNS routes
+- Client registry tracking at ~/clawd/projects/blackceo-command-center/client-registry.json
+- command-center-webhook.sh script for automated DNS route creation
+- Support for both macOS and Linux/VPS cloudflared installation
+- Automated DNS propagation waiting and URL verification
+- Live URL reporting to clients after tunnel setup
+
+#### Changed
+- Skill 32 INSTALL.md now includes Phase 6b between Phase 6 and Phase 7
+- Phase 8 renamed to Phase 9 (manual tunnel setup as fallback)
+- Completion checklist updated with Cloudflare tunnel verification steps
+
+---
+
 ## [v5.4.0] - March 19, 2026
 
 ### Skill 32: Command Center Setup
