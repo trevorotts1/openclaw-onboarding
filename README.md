@@ -2,9 +2,14 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v5.3.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v5.4.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
+This repo contains **32 skill folders** (01 through 32, with 13 archived) plus an install script.
+
+### What's New in v5.4.0 (March 19, 2026)
+- **Skill 32: Command Center Setup** - Activates your AI workforce as a live Command Center with persistent department agents, Telegram topics, and a visual Kanban dashboard
+- Integration between Skill 23 (AI Workforce Blueprint) and live operation
+- 8-phase installation with automated workspace creation and topic binding
 
 ### What's New in v5.3.0 (March 19, 2026)
 - **Skill 23: AI Workforce Blueprint** - Added department heads (Chief/Head roles) to all 15 existing departments
@@ -109,6 +114,8 @@ That file is the master instruction file. It contains:
 | 28-cinematic-forge | Cinematic Forge |
 | 29-ghl-convert-and-flow | GHL Convert and Flow |
 | 30-fish-audio-api-reference | Fish Audio API Reference |
+| 31-upgraded-memory-system | Upgraded Memory System |
+| 32-command-center-setup | Command Center Setup |
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
 

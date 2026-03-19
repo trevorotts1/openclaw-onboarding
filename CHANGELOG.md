@@ -4,6 +4,38 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.4.0] - March 19, 2026
+
+### Skill 32: Command Center Setup
+
+#### Added
+- **Skill 32: Command Center Setup** - Activates AI workforce as a live Command Center
+- Persistent department agents with dedicated Telegram topics
+- Visual Kanban dashboard at localhost:3000
+- Integration between Skill 23 (AI Workforce Blueprint) and live operation
+- 8-phase installation process with guided Telegram setup
+- Automated workspace creation for each department
+- Automated agent configuration with memory search setup
+- Topic binding system for department-specific communication
+- Cloudflare tunnel support for remote dashboard access
+- 3-check standup cadence (morning, midday, end of day)
+- Worker spin-up system with persona assignment
+
+#### Files Added
+- `32-command-center-setup/SKILL.md` - Overview and context
+- `32-command-center-setup/INSTALL.md` - Step-by-step installation guide
+- `32-command-center-setup/INSTRUCTIONS.md` - Post-install usage guide
+- `32-command-center-setup/CORE_UPDATES.md` - Core file updates
+- `32-command-center-setup/command-center-setup.skill` - Skill metadata
+
+#### Updated
+- README.md: Added Skill 32 to skill inventory, updated version to v5.4.0
+- Start Here.md: Added Skill 32 to the skill list table
+- install.sh: Updated skill count from 31 to 32
+- scripts/update-skills.sh: Updated skill number range to include 32
+
+---
+
 ## [v5.3.1] - March 19, 2026
 
 ### Updater: Silent Failure Fix

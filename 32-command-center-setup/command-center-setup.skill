@@ -1,0 +1,32 @@
+{
+  "name": "command-center-setup",
+  "version": "1.0.0",
+  "description": "Activates your AI workforce as a live Command Center with persistent department agents, a Telegram control room, and a visual Kanban dashboard.",
+  "author": "BlackCEO",
+  "triggers": [
+    "set up my command center",
+    "activate command center",
+    "build my command center",
+    "launch command center"
+  ],
+  "prerequisites": [
+    "Skill 23: AI Workforce Blueprint (MANDATORY)",
+    "Skill 22: Book-to-Persona (Recommended)",
+    "Skill 31: Upgraded Memory System (Recommended)"
+  ],
+  "category": "workforce-management",
+  "installPath": "~/.openclaw/skills/32-command-center-setup",
+  "files": [
+    "SKILL.md",
+    "INSTALL.md",
+    "INSTRUCTIONS.md",
+    "CORE_UPDATES.md",
+    "command-center-setup.skill"
+  ],
+  "readingOrder": [
+    "SKILL.md",
+    "INSTALL.md",
+    "INSTRUCTIONS.md",
+    "CORE_UPDATES.md"
+  ]
+}
