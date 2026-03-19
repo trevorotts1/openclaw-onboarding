@@ -4,6 +4,22 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.2.2] - March 19, 2026
+
+### Skill 31: Full Indexing + Embedding of Master Files
+
+#### Added
+- **extraPaths config step** in INSTALL.md: agent must find and add the master files folder to memorySearch.extraPaths so ALL subfolders, personas, AI workforce docs, and knowledge files get indexed
+- **Multimodal indexing config step**: enables Gemini Embedding 2 to embed images, audio, video, and PDFs, not just markdown
+- **Complete Layer 4 config example** showing the full memorySearch block with extraPaths + multimodal + sync + query
+- **Updated checklist** with extraPaths and multimodal verification items
+- **Updated CORE_UPDATES.md** TOOLS.md section to document extraPaths and multimodal settings
+
+#### Fixed
+- The root cause of her agent not indexing master files: sources only covered memory + sessions, extraPaths was never configured
+
+---
+
 ## [v5.2.1] - March 19, 2026
 
 ### Skill 31: 10/10 Release

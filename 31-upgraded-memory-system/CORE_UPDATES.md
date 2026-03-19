@@ -40,6 +40,8 @@ Follow TYP rules: append only, never overwrite existing content.
 - Provider: gemini (memorySearch.provider = "gemini")
 - Model: models/gemini-embedding-2-preview
 - Requires: GOOGLE_API_KEY
+- extraPaths: points to master files folder (indexes all subfolders and files)
+- Multimodal: enabled for all modalities (text, images, audio, video)
 - Hybrid search: 75% vector / 25% text
 - Mem0 plugin: openclaw-mem0 (auto-capture on, auto-recall on)
 ```

@@ -291,7 +291,68 @@ Find the top-level `memory` section in openclaw.json and set:
 
 **Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. The top-level must say "builtin" and memorySearch.provider must say "gemini". If the top-level still says "qmd", the search will fall back to QMD instead of using Gemini Embedding 2.
 
-### 4.3 Configure search quality
+### 4.3 Add knowledge folders to the index (extraPaths)
+
+By default, OpenClaw only indexes the workspace memory files and session transcripts. To index the full knowledge base (master files, personas, AI workforce docs, and all subfolders), you MUST configure `extraPaths`.
+
+**Step 1: Find the master files folder.**
+
+Search the user's machine for any folder matching these names (case-insensitive):
+- openclaw-master-files
+- OpenClaw Master Files
+- openclaw master files
+- Any folder in ~/Downloads/ containing "openclaw" and "master" or "onboarding"
+
+```bash
+find ~/Downloads -maxdepth 2 -type d -iname "*openclaw*master*" -o -iname "*openclaw*onboarding*" 2>/dev/null
+```
+
+**Step 2: Add the path to memorySearch.extraPaths.**
+
+In `~/.openclaw/openclaw.json`, inside the `agents.defaults.memorySearch` section, add:
+
+```json
+"extraPaths": [
+  "~/Downloads/openclaw-master-files"
+]
+```
+
+Use the ACTUAL path found in Step 1. If the folder is named differently (e.g., "OpenClaw Master Files" with spaces), use that exact name:
+
+```json
+"extraPaths": [
+  "~/Downloads/OpenClaw Master Files"
+]
+```
+
+This tells OpenClaw to index EVERYTHING in that folder and ALL subfolders, including:
+- Coaching personas
+- AI Workforce Blueprint docs
+- Department SOPs
+- All skill documentation
+- Any other knowledge docs
+
+### 4.4 Enable multimodal indexing
+
+Gemini Embedding 2 supports images, audio, and video, not just text. To index ALL file types, enable multimodal in the `memorySearch` section:
+
+```json
+"multimodal": {
+  "enabled": true,
+  "modalities": ["all"]
+}
+```
+
+This tells OpenClaw to embed:
+- `.md`, `.txt` (text documents)
+- `.pdf` (PDF documents)
+- `.png`, `.jpg`, `.jpeg`, `.webp` (images)
+- `.mp3`, `.wav`, `.m4a`, `.ogg` (audio)
+- `.mp4`, `.webm` (video)
+
+Do NOT skip this step. Without multimodal enabled, images and media files in the master files folder will NOT be embedded.
+
+### 4.5 Configure search quality
 
 In the `memorySearch` section, add:
 
@@ -307,6 +368,51 @@ In the `memorySearch` section, add:
   }
 }
 ```
+
+### 4.6 Complete Layer 4 config example
+
+After all Layer 4 steps, the full `memorySearch` section should look like this:
+
+```json
+"memorySearch": {
+  "enabled": true,
+  "sources": ["memory", "sessions"],
+  "experimental": {
+    "sessionMemory": true
+  },
+  "provider": "gemini",
+  "model": "models/gemini-embedding-2-preview",
+  "extraPaths": [
+    "~/Downloads/openclaw-master-files"
+  ],
+  "multimodal": {
+    "enabled": true,
+    "modalities": ["all"]
+  },
+  "sync": {
+    "onSessionStart": true,
+    "onSearch": true,
+    "watch": true,
+    "watchDebounceMs": 1200,
+    "sessions": {
+      "deltaBytes": 20000,
+      "deltaMessages": 10
+    }
+  },
+  "query": {
+    "maxResults": 50,
+    "minScore": 0.18,
+    "hybrid": {
+      "enabled": true,
+      "vectorWeight": 0.75,
+      "textWeight": 0.25,
+      "candidateMultiplier": 8
+    }
+  }
+}
+```
+
+Replace the `extraPaths` value with the actual path found on the user's machine.
 
 ---
 
@@ -703,6 +809,8 @@ CONFIGURATION
 [ ] Layer 3: sessionMemory enabled
 [ ] Layer 4: memory.backend set to "builtin" (or PENDING if no API key)
 [ ] Layer 4: memorySearch.provider set to "gemini" (or PENDING if no API key)
+[ ] Layer 4: extraPaths configured with master files folder path
+[ ] Layer 4: multimodal.enabled = true, modalities = ["all"]
 [ ] Layer 5: Mem0 plugin installed and loaded
 [ ] Layer 5: autoCapture and autoRecall both true
 [ ] Config validated with openclaw config validate - MUST PASS
@@ -904,6 +1012,8 @@ Follow TYP rules: append only, never overwrite existing content.
 - Provider: gemini (memorySearch.provider = "gemini")
 - Model: models/gemini-embedding-2-preview
 - Requires: GOOGLE_API_KEY
+- extraPaths: points to master files folder (indexes all subfolders and files)
+- Multimodal: enabled for all modalities (text, images, audio, video)
 - Hybrid search: 75% vector / 25% text
 - Mem0 plugin: openclaw-mem0 (auto-capture on, auto-recall on)
 ```
