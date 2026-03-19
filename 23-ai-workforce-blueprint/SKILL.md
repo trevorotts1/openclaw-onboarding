@@ -173,7 +173,7 @@ After all departments/roles are defined, Skill 23 re-checks for coaching-persona
 - Every department folder gets a `governing-personas.md` file
 - Every role folder gets its own `governing-personas.md` for role-specific tasks
 - Every `00-START-HERE.md` gets a Governing Personas section with QMD query instructions
-- **Auto-runs QMD update after wiring:** `qmd update && qmd embed`
+- **Auto-runs QMD update after wiring:** `python3 ~/clawd/scripts/gemini-indexer.py`
 - Agents know exactly which persona methodology to follow
 
 **If Skill 22 is NOT installed:**

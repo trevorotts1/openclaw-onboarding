@@ -17,7 +17,6 @@ full persona into context.
 ### Add the full persona library as a collection
 
 ```bash
-qmd collection add ~/Downloads/openclaw-master-files/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
 ```
@@ -25,7 +24,7 @@ qmd collection add ~/Downloads/openclaw-master-files/coaching-personas/personas 
 ### Index it
 
 ```bash
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 qmd embed
 ```
 
@@ -39,7 +38,7 @@ qmd status
 ### After each new persona is built, re-index
 
 ```bash
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 qmd embed
 ```
 
@@ -160,14 +159,14 @@ qmd status
 
 ### After adding new persona blueprints
 ```bash
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 qmd embed
 ```
 
 ### If results seem stale or wrong
 ```bash
 qmd cleanup
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 qmd embed
 ```
 

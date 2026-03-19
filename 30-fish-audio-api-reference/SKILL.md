@@ -146,7 +146,7 @@ If `FISH_AUDIO_API_KEY` or `FISH_AUDIO_VOICE_ID` are missing, the installer writ
    - Add `FISH_AUDIO_API_KEY` to `~/.clawdbot/clawdbot.json` env vars
    - Add `FISH_AUDIO_VOICE_ID` to `~/.clawdbot/clawdbot.json` env vars
    - Add both to `~/clawd/secrets/.env`
-   - Run `qmd update && qmd embed` to re-index
+   - Run `python3 ~/clawd/scripts/gemini-indexer.py` to re-index
    - Mark entry as Status: COMPLETE in `.pending-setup.md`
 
 ---

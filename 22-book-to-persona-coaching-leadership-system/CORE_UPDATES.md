@@ -22,7 +22,7 @@ Pipeline:
 - Content filter fallback: OpenRouter moonshotai/kimi-k2.5
 
 Persona Reflex (DEFAULT BEHAVIOR):
-Before any professional task, run: qmd search coaching-personas "<task keywords>"
+Before any professional task, run: python3 ~/clawd/scripts/gemini-search.py "<task keywords>"
 Load returned persona's Task Mode. Execute the task through that methodology.
 Skip only if the user explicitly says so.
 
@@ -53,13 +53,12 @@ Pipeline model routing:
 
 QMD collection: coaching-personas
 Setup commands (run once on fresh install):
-  qmd collection add ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/personas --name coaching-personas --mask "**/*.md"
-  qmd update
+  python3 ~/clawd/scripts/gemini-indexer.py
   qmd embed  (takes 3-8 min first time, downloads local model, runs offline after)
 
-Runtime query: qmd search coaching-personas "<task keywords>"
-After adding new book: qmd update (no need to re-embed everything)
-If stale/broken: qmd cleanup && qmd update && qmd embed
+Runtime query: python3 ~/clawd/scripts/gemini-search.py "<task keywords>"
+After adding new book: python3 ~/clawd/scripts/gemini-indexer.py (no need to re-embed everything)
+If stale/broken: qmd cleanup && python3 ~/clawd/scripts/gemini-indexer.py
 
 Full pipeline reference: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PIPELINE.md
 Full QMD guide: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/QMD-RETRIEVAL-GUIDE.md
@@ -120,7 +119,7 @@ No update required unless you are setting up a persona as your primary operating
 ```
 ## Persona Reflex - ACTIVE
 QMD collection coaching-personas loaded [run: qmd status -c coaching-personas to get current counts].
-Before professional tasks: qmd search coaching-personas "<task>" → load persona Task Mode.
+Before professional tasks: python3 ~/clawd/scripts/gemini-search.py "<task>" → load persona Task Mode.
 ```
 
 ---

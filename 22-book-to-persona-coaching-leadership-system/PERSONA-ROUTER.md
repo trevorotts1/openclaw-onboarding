@@ -4,7 +4,7 @@
 
 ## How to Use This File
 1. Identify the task type from the list below.
-2. Run: `qmd search coaching-personas "<task keywords>"`
+2. Run: `python3 ~/clawd/scripts/gemini-search.py "<task keywords>"`
 3. Load the returned persona's **Task Mode** section.
 4. Execute the task through that persona's methodology.
 5. If a department folder exists, the persona governs the agent IN that department.
@@ -84,14 +84,14 @@ ELSE → all personas operate STANDALONE (no department required)
 ## QMD Query Examples
 ```bash
 # Find best persona for a sales task
-qmd search coaching-personas "closing a sale making an offer pricing"
+python3 ~/clawd/scripts/gemini-search.py "closing a sale making an offer pricing"
 
 # Find best persona for a content task
-qmd search coaching-personas "content marketing brand story messaging"
+python3 ~/clawd/scripts/gemini-search.py "content marketing brand story messaging"
 
 # Find best persona for a productivity task
-qmd search coaching-personas "habits systems daily routine productivity"
+python3 ~/clawd/scripts/gemini-search.py "habits systems daily routine productivity"
 
 # Find best persona for a leadership task
-qmd search coaching-personas "team leadership purpose why vision"
+python3 ~/clawd/scripts/gemini-search.py "team leadership purpose why vision"
 ```

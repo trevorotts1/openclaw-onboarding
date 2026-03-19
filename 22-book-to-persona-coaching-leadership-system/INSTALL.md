@@ -304,12 +304,12 @@ Pre-built personas are already included in this skill folder. They will be added
 
 **What happens next:**
 - Skill 23 will add the coaching-personas collection to QMD
-- Skill 23 will run `qmd update && qmd embed` to index all personas + workforce files together
+- Skill 23 will run `python3 ~/clawd/scripts/gemini-indexer.py` to index all personas + workforce files together
 - This avoids redundant double-embedding (after Skill 22 and again after Skill 23)
 
 **Note:** If you need to verify personas are searchable after Skill 23 completes, run:
 ```bash
-qmd search coaching-personas "negotiation"
+python3 ~/clawd/scripts/gemini-search.py "negotiation"
 ```
 
 ---
@@ -479,7 +479,7 @@ This triggers the full sequence:
 2. **Phase 1 (Kimi K2.5)** - Spawns sub-agent with extraction prompt + book text. Output: `personas/[author]-[book-slug]/extraction-notes.md`
 3. **Phase 2 (DeepSeek V3.2-Speciale)** - Spawns sub-agent with analysis prompt + extraction notes. Output: `personas/[author]-[book-slug]/analysis-notes.md`
 4. **Phase 3 (GPT-5.3 Codex)** - Spawns sub-agent with synthesis prompt + extraction + analysis notes. Output: `personas/[author]-[book-slug]/persona-blueprint.md`. Falls back to Kimi K2.5 on failure.
-5. **QMD indexing** - Runs `qmd update && qmd embed` to make the new persona searchable.
+5. **QMD indexing** - Runs `python3 ~/clawd/scripts/gemini-indexer.py` to make the new persona searchable.
 
 **Verify each phase completed** by checking:
 - File exists at the expected path

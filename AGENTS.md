@@ -21,7 +21,7 @@
 ### Standard Indexing Commands
 
 ```bash
-qmd update          # Update file index
+python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
 qmd embed           # Generate embeddings
 qmd status          # Verify completion
 ```
@@ -29,7 +29,7 @@ qmd status          # Verify completion
 ### Verification Steps
 
 1. **Announce:** "Running QMD indexing for [milestone] milestone..."
-2. **Update:** `qmd update` - scans all collections
+2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
 3. **Embed:** `qmd embed` - generates vectors
 4. **Status:** `qmd status` - confirm completion
 5. **Report:** "QMD indexing complete: X files, Y collections"
@@ -38,7 +38,7 @@ qmd status          # Verify completion
 
 - **Do NOT** skip indexing at milestones (breaks search)
 - **Do NOT** assume "it's probably fine" - verify with `qmd status`
-- **Do NOT** run `qmd embed` without `qmd update` first
+- **Do NOT** run `qmd embed` without `python3 ~/clawd/scripts/gemini-indexer.py` first
 - **Do NOT** index after every single skill (wastes time)
 
 ### Collections
@@ -60,14 +60,14 @@ When user finishes answering Skill 23 (AI Workforce Blueprint) questions:
 
 1. Build workforce structure
 2. Wire personas to departments and roles
-3. **RUN:** `qmd update && qmd embed`
+3. **RUN:** `python3 ~/clawd/scripts/gemini-indexer.py`
 4. Confirm indexing complete
 
 ---
 
 ## When to Run QMD Indexing
 
-After these events, **ALWAYS** run: `qmd update && qmd embed`
+After these events, **ALWAYS** run: `python3 ~/clawd/scripts/gemini-indexer.py`
 
 - AI Workforce Blueprint setup complete (after questions answered)
 - New book/persona added to coaching-personas collection

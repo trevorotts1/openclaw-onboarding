@@ -150,12 +150,11 @@ After Phase 3 completes for a book:
 
 ```bash
 # If collection doesn't exist yet
-qmd collection add [master-files]/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
 
 # Update index with new blueprint
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 
 # Generate vector embeddings
 qmd embed

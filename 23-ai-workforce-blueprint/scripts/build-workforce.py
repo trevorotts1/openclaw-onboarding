@@ -1129,11 +1129,11 @@ def run_qmd_update():
     try:
         result = subprocess.run(["qmd", "update"], capture_output=True, text=True, timeout=60)
         if result.returncode == 0:
-            telegram_print("  ✓ qmd update complete")
+            telegram_print("  ✓ python3 ~/clawd/scripts/gemini-indexer.py complete")
         else:
-            telegram_print(f"  ⚠️ qmd update: {result.stderr[:100]}")
+            telegram_print(f"  ⚠️ python3 ~/clawd/scripts/gemini-indexer.py: {result.stderr[:100]}")
     except Exception as e:
-        telegram_print(f"  ⚠️ qmd update failed: {e}")
+        telegram_print(f"  ⚠️ python3 ~/clawd/scripts/gemini-indexer.py failed: {e}")
     
     telegram_print("🔄 Running QMD embed...")
     try:

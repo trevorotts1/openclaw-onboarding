@@ -60,7 +60,7 @@ grep "FISH_AUDIO_VOICE_ID" ~/clawd/secrets/.env
 # 2.4 - Confirm QMD has indexed the reference document
 qmd search master-files "fish audio tts endpoint" | head -5
 ```
-**Expected:** Results reference `fish-audio-api-reference.md`. If no results, re-run `qmd update && qmd embed`.
+**Expected:** Results reference `fish-audio-api-reference.md`. If no results, re-run `python3 ~/clawd/scripts/gemini-indexer.py`.
 
 ---
 
@@ -103,7 +103,7 @@ Ask the agent these questions directly. Correct answers are listed below each qu
 > Correct: `application/json` for standard requests with a `reference_id`. `application/msgpack` is required for inline zero-shot voice cloning with reference audio bytes.
 
 **Q12: What should the agent do if FISH_AUDIO_API_KEY or FISH_AUDIO_VOICE_ID are missing?**
-> Correct: Remind the client once per session that setup is PENDING. When credentials are provided, add both to `clawdbot.json` and `~/clawd/secrets/.env`, run `qmd update && qmd embed`, and mark the pending entry as COMPLETE.
+> Correct: Remind the client once per session that setup is PENDING. When credentials are provided, add both to `clawdbot.json` and `~/clawd/secrets/.env`, run `python3 ~/clawd/scripts/gemini-indexer.py`, and mark the pending entry as COMPLETE.
 
 ---
 

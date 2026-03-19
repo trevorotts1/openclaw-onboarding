@@ -61,7 +61,7 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 ### AGENTS.md
 - [ ] Contains section heading `## Book-to-Persona Skill (Installed)`
 - [ ] Section includes the phrase `Persona Reflex (DEFAULT BEHAVIOR)`
-- [ ] Section includes `qmd search coaching-personas "<task keywords>"` as the runtime query pattern
+- [ ] Section includes `python3 ~/clawd/scripts/gemini-search.py "<task keywords>"` as the runtime query pattern
 - [ ] Key paths block is present (skill path, personas path, router path, orchestrator path)
 - [ ] Contains section `## Pending Skill Setup - Check and Remind` with `.pending-setup.md` reference
 - [ ] Full PIPELINE.md content was NOT pasted into AGENTS.md (rule: reference only)
@@ -72,7 +72,6 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 - [ ] Phase 2 routing entry: `deepseek/deepseek-v3.2-speciale` via `OpenRouter`
 - [ ] Phase 3 routing entry: `openai/gpt-5.3-codex` via `OpenClaw OAuth`
 - [ ] Fallback model listed: `OpenRouter moonshotai/kimi-k2.5`
-- [ ] QMD setup commands block present (`qmd collection add`, `qmd update`, `qmd embed`)
 - [ ] Prompt templates were NOT pasted into TOOLS.md (rule: reference only)
 
 ### MEMORY.md
@@ -111,7 +110,7 @@ Answer each question without looking at the files. These confirm the agent has i
 - Expected: 14 sections total. Section 3 = Signature Framework, Section 6 = Coaching Mode: How to Respond, Section 14 = Quick Reference Card
 
 **Q4: What is the Persona Reflex and when does the agent skip it?**
-- Expected: Before any professional task, run `qmd search coaching-personas "<task keywords>"`, load the returned persona's Task Mode, and execute through that methodology. Skip ONLY if the user explicitly says so.
+- Expected: Before any professional task, run `python3 ~/clawd/scripts/gemini-search.py "<task keywords>"`, load the returned persona's Task Mode, and execute through that methodology. Skip ONLY if the user explicitly says so.
 
 **Q5: What is the author name rule in Coaching Mode?**
 - Expected: The author's name appears ONLY inside attribution-flagged direct quotes. Never use the author's name unprompted in the coaching voice.
@@ -129,7 +128,7 @@ Answer each question without looking at the files. These confirm the agent has i
 - Expected: Over 10,000 characters (blueprints are much larger in practice)
 
 **Q10: After adding a new persona blueprint, what two QMD commands must be run?**
-- Expected: `qmd update` then `qmd embed`
+- Expected: `python3 ~/clawd/scripts/gemini-indexer.py` then `qmd embed`
 
 **Passing threshold:** 8/10 correct. Score below 8 = re-read PIPELINE.md, PERSONA-ROUTER.md, CORE_UPDATES.md, and GOOD-AND-BAD-EXAMPLES.md.
 
@@ -143,7 +142,7 @@ Run these prompts and evaluate the agent's actual output against the expected be
 **Prompt:** "Review this sales email before I send it."
 
 **Expected behavior:**
-1. Agent runs `qmd search coaching-personas "sales email review outreach quality standard"` BEFORE writing any output
+1. Agent runs `python3 ~/clawd/scripts/gemini-search.py "sales email review outreach quality standard"` BEFORE writing any output
 2. Agent loads a relevant persona (e.g., `hormozi-100m-offers`, `bly-copywriters-handbook`, or `jones-exactly-what-to-say`)
 3. Agent applies that persona's execution standard and non-negotiable rules
 4. Agent output includes specific rule checks with ✅ / ❌ verdicts, not generic feedback
@@ -224,7 +223,7 @@ These are failure modes the skill is specifically designed to prevent. Verify no
 
 ### Anti-Pattern 4: Skipping Persona Reflex
 **Check:** When given a professional task (write, review, plan, analyze), does the agent query QMD before starting?
-- [ ] Confirmed: Agent queries `qmd search coaching-personas` before executing professional tasks
+- [ ] Confirmed: Agent queries `python3 ~/clawd/scripts/gemini-search.py` before executing professional tasks
 - HARD FAIL if agent proceeds with a task without QMD query and no explicit user instruction to skip
 
 ### Anti-Pattern 5: Pasting Full Docs Into Core Files
@@ -294,7 +293,7 @@ After completing this checklist, mark one:
     Skill is operational. Persona Reflex is active.
 
 [ ] PARTIAL — File structure complete, but QMD not yet embedded or core files not yet updated
-    Action: Complete QMD setup (qmd update && qmd embed) and apply CORE_UPDATES.md
+    Action: Complete QMD setup (python3 ~/clawd/scripts/gemini-indexer.py) and apply CORE_UPDATES.md
 
 [ ] FAIL — One or more HARD FAILs present, or knowledge score below 8/10
     Action: Re-read all 7 skill .md files and repeat failed sections
@@ -306,16 +305,15 @@ After completing this checklist, mark one:
 
 If QMD collection is missing or broken:
 ```bash
-qmd collection add ~/Downloads/openclaw-master-files/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 qmd embed
 ```
 
 If QMD results are stale:
 ```bash
-qmd cleanup && qmd update && qmd embed
+qmd cleanup && python3 ~/clawd/scripts/gemini-indexer.py
 ```
 
 If unsure whether core files were updated:

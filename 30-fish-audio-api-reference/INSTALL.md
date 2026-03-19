@@ -46,7 +46,7 @@ cp "$(dirname "$0")/references/fish-audio-api-reference.md" \
 ## Step 3 - Index with QMD
 
 ```bash
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 qmd embed
 ```
 

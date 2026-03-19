@@ -510,7 +510,7 @@ After every skill install, verify:
 
 ```bash
 # Standard indexing command sequence:
-qmd update          # Update file index
+python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
 qmd embed           # Generate embeddings
 qmd status          # Verify completion
 ```
@@ -526,7 +526,7 @@ qmd status          # Verify completion
 ### Process for Each Indexing
 
 1. **Announce:** "Running QMD indexing for [milestone] milestone..."
-2. **Update:** `qmd update` - scans all collections
+2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
 3. **Embed:** `qmd embed` - generates vectors
 4. **Verify:** Check status shows all files indexed
 5. **Report:** "QMD indexing complete: X files, Y collections"
@@ -1493,8 +1493,7 @@ Install these 4 items yourself, one at a time:
 3. **QMD Setup**
    - Verify QMD is installed: `qmd --version`
    - If not installed, install it
-   - Create collections: `qmd collection add ~/clawd --name clawd --mask "*.md"`
-   - Run initial indexing: `qmd update && qmd embed`
+   - Run initial indexing: `python3 ~/clawd/scripts/gemini-indexer.py`
    - Report: "QMD setup complete"
 
 4. **Skill 03: Agent Browser**
@@ -1634,7 +1633,7 @@ label: "wave4-agent-f"
 
 2. **Final QMD Indexing**
    ```bash
-   qmd update
+   python3 ~/clawd/scripts/gemini-indexer.py
    qmd embed
    qmd status
    ```
@@ -2068,7 +2067,7 @@ After all 30 skills are installed, run the final QMD indexing:
 
 ```bash
 # Final index update
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 
 # Final embeddings generation
 qmd embed
