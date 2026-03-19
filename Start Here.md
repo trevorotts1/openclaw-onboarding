@@ -512,7 +512,7 @@ After every skill install, verify:
 # Standard indexing command sequence:
 python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
 # Handled by gemini-indexer.py           # Generate embeddings
-qmd status          # Verify completion
+python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
 ```
 
 ### Collections to Index
@@ -534,7 +534,7 @@ qmd status          # Verify completion
 ### Forbidden Actions
 - Do NOT index after every single skill (wasteful)
 - Do NOT skip indexing at milestones (breaks search)
-- Do NOT assume "it's probably fine" - verify with `qmd status`
+- Do NOT assume "it's probably fine" - verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
 - Do NOT index before TYP and Back Yourself Up are complete
 
 ### Why This Schedule
@@ -1450,7 +1450,7 @@ This section tells YOU (the AI agent) exactly how to run the 5-wave installation
 **Check for already installed skills:**
 ```bash
 ls -la ~/.openclaw/skills/ 2>/dev/null | grep -E "^d" | wc -l
-qmd status 2>/dev/null
+python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null
 ```
 
 **Check onboarding status file:**
@@ -1491,7 +1491,7 @@ Install these 4 items yourself, one at a time:
    - Report: "Skill 02 complete"
 
 3. **Gemini Engine Setup**
-   - Verify Gemini Engine is installed: `qmd --version`
+   - Verify Gemini Engine is installed: `python3 ~/clawd/scripts/gemini-indexer.py --status`
    - If not installed, install it
    - Run initial indexing: `python3 ~/clawd/scripts/gemini-indexer.py`
    - Report: "Gemini Engine setup complete"
@@ -1635,7 +1635,7 @@ label: "wave4-agent-f"
    ```bash
    python3 ~/clawd/scripts/gemini-indexer.py
    # Handled by gemini-indexer.py
-   qmd status
+   python3 ~/clawd/scripts/gemini-indexer.py --status
    ```
 
 3. **Remove ONBOARDING PENDING flag from AGENTS.md**
@@ -2073,7 +2073,7 @@ python3 ~/clawd/scripts/gemini-indexer.py
 # Handled by gemini-indexer.py
 
 # Verify all collections are indexed
-qmd status
+python3 ~/clawd/scripts/gemini-indexer.py --status
 ```
 
 **Why this is needed:**

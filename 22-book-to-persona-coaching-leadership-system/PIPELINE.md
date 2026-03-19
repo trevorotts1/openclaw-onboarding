@@ -15,7 +15,7 @@ PDF → Text Extraction (pdfplumber, free) → .txt file
                               Phase 3: GPT-5.3 Codex (Synthesis) ← fallback: Kimi K2.5
                                     ↓ persona-blueprint.md
                               Gemini Engine Indexing
-                                    ↓ searchable via qmd query
+                                    ↓ searchable via Gemini semantic search
 ```
 
 ---

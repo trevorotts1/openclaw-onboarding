@@ -58,7 +58,7 @@ Setup commands (run once on fresh install):
 
 Runtime query: python3 ~/clawd/scripts/gemini-search.py "<task keywords>"
 After adding new book: python3 ~/clawd/scripts/gemini-indexer.py (no need to re-embed everything)
-If stale/broken: qmd cleanup && python3 ~/clawd/scripts/gemini-indexer.py
+If stale/broken: python3 ~/clawd/scripts/gemini-indexer.py --rebuild && python3 ~/clawd/scripts/gemini-indexer.py
 
 Full pipeline reference: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PIPELINE.md
 Full Gemini Engine guide: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/GEMINI-RETRIEVAL-GUIDE.md

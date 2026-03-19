@@ -78,7 +78,7 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 
 ```bash
 # Check if coaching-personas Gemini Vector Database exists
-if qmd status 2>/dev/null | grep -q "coaching-personas"; then
+if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 verified: coaching-personas collection found"
   SKILL22_INSTALLED=true
 else
@@ -365,7 +365,7 @@ Use Source 1 if available. Fall back to Source 2, then Source 3. Combine sources
 
 ```bash
 # Re-run detection after questions complete
-if qmd status 2>/dev/null | grep -q "coaching-personas"; then
+if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 detected post-build - running persona wiring..."
   RUN_PERSONA_WIRING=true
 else
@@ -386,7 +386,7 @@ Check if Skill 22 (Book To Persona & Coaching & Leadership System) is installed.
 
 1. Run this command to check for the Gemini Engine coaching-personas collection:
 ```bash
-qmd status 2>/dev/null | grep -q "coaching-personas"
+python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"
 ```
 2. If that returns exit code 0 (match found), personas are installed.
 3. As a fallback, also check for the persona skill folder:
@@ -428,7 +428,7 @@ python3 ~/clawd/scripts/gemini-indexer.py
 # Handled by gemini-indexer.py
 
 # Verify completion
-qmd status
+python3 ~/clawd/scripts/gemini-indexer.py --status
 ```
 
 **Why this happens here:**

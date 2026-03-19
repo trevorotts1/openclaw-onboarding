@@ -65,7 +65,7 @@
 
 ## Gemini Multimodal Indexing Checklist
 
-- [ ] coaching-personas collection exists (`qmd ls coaching-personas`)
+- [ ] coaching-personas collection exists (`python3 ~/clawd/scripts/gemini-indexer.py --status`)
 - [ ] `python3 ~/clawd/scripts/gemini-indexer.py` run after persona saved
 - [ ] `# Handled by gemini-indexer.py` run to generate vector embeddings
 - [ ] Test query returns relevant results: `python3 ~/clawd/scripts/gemini-search.py "[book topic]"`

@@ -637,7 +637,7 @@ This role draws from multiple coaching personas. Choose based on the specific ta
 
 **How to find the right persona for your task:**
 ```bash
-qmd search "<describe your task>" -c coaching-personas
+python3 ~/clawd/scripts/gemini-search.py "<describe your task>"
 ```
 
 This searches the coaching personas collection and returns the best match. Load that persona's Task Mode and execute through that methodology.
@@ -973,7 +973,7 @@ def build_governing_personas_content(dept_key, for_file=False):
     if for_file:
         entries = []
         for folder, description in personas:
-            entries.append(f"### {folder}\n**Focus:** {description}\n**Query:** `qmd search \"{description.lower()}\" -c coaching-personas`\n")
+            entries.append(f"### {folder}\n**Focus:** {description}\n**Query:** `python3 ~/clawd/scripts/gemini-search.py \"{description.lower()}\"`\n")
         return '\n'.join(entries), personas
 
     # For 00-START-HERE.md section
@@ -1110,7 +1110,7 @@ def build_role_personas_content(role_key, dept_key, for_file=False):
         
         sections.append("## How to Query")
         sections.append("```")
-        sections.append('qmd search "<describe your task>" -c coaching-personas')
+        sections.append('python3 ~/clawd/scripts/gemini-search.py "<describe your task>"')
         sections.append("```")
         sections.append("")
         
@@ -1476,7 +1476,7 @@ def main():
         telegram_print("\nTo proceed:")
         telegram_print("  1. Navigate to 22-book-to-persona-coaching-leadership-system/")
         telegram_print("  2. Complete all installation steps (including Gemini Engine setup)")
-        telegram_print("  3. Run: qmd status | grep coaching-personas")
+        telegram_print("  3. Run: python3 ~/clawd/scripts/gemini-indexer.py --status")
         telegram_print("  4. Return here and re-run this script")
         telegram_print("\n" + "❌"*25)
         sys.exit(1)

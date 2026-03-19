@@ -301,7 +301,7 @@ Before allowing Skill 23 to run, verify this Skill 22 installation is complete:
 
 ```bash
 # Check if Gemini Vector Database "coaching-personas" exists
-if qmd status 2>/dev/null | grep -q "coaching-personas"; then
+if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 verified: coaching-personas collection exists"
   echo "Skill 23 may proceed"
 else

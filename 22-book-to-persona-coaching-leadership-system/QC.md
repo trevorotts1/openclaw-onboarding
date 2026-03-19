@@ -168,7 +168,7 @@ Run these prompts and evaluate the agent's actual output against the expected be
 ---
 
 ### Test 4C — Gemini Engine Collection Status
-**Run:** `python3 ~/clawd/scripts/gemini-indexer.py --status` or `qmd status`
+**Run:** `python3 ~/clawd/scripts/gemini-indexer.py --status` 
 
 **Expected output:**
 - Collection named `coaching-personas` is listed
@@ -243,7 +243,7 @@ These are failure modes the skill is specifically designed to prevent. Verify no
 
 ### Anti-Pattern 8: Gemini Engine Not Used for Retrieval
 **Check:** Does the agent try to load entire persona files into context rather than using Gemini Engine surgical queries?
-- [ ] Confirmed: Agent uses `qmd query` and `qmd get [path]:[line] -l [count]` for retrieval
+- [ ] Confirmed: Agent uses `python3 ~/clawd/scripts/gemini-search.py` for semantic retrieval for retrieval
 - FAIL if agent attempts to read entire persona-blueprint.md files into context for routine tasks
 
 ---
@@ -313,7 +313,7 @@ python3 ~/clawd/scripts/gemini-indexer.py
 
 If Gemini Engine results are stale:
 ```bash
-qmd cleanup && python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/clawd/scripts/gemini-indexer.py --rebuild && python3 ~/clawd/scripts/gemini-indexer.py
 ```
 
 If unsure whether core files were updated:

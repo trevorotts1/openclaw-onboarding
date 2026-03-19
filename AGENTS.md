@@ -23,7 +23,7 @@
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
 # Handled by gemini-indexer.py           # Generate embeddings
-qmd status          # Verify completion
+python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
 ```
 
 ### Verification Steps
@@ -31,13 +31,13 @@ qmd status          # Verify completion
 1. **Announce:** "Running Gemini Engine indexing for [milestone] milestone..."
 2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
 3. **Embed:** `# Handled by gemini-indexer.py` - generates vectors
-4. **Status:** `qmd status` - confirm completion
+4. **Status:** `python3 ~/clawd/scripts/gemini-indexer.py --status` - confirm completion
 5. **Report:** "Gemini Engine indexing complete: X files, Y collections"
 
 ### Critical Rules
 
 - **Do NOT** skip indexing at milestones (breaks search)
-- **Do NOT** assume "it's probably fine" - verify with `qmd status`
+- **Do NOT** assume "it's probably fine" - verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
 - **Do NOT** run `# Handled by gemini-indexer.py` without `python3 ~/clawd/scripts/gemini-indexer.py` first
 - **Do NOT** index after every single skill (wastes time)
 
@@ -189,7 +189,7 @@ Don't wait for permission to improve. If you learned something, write it down no
 
 ### Gemini Engine Indexing
 - Index at milestones, not after every skill
-- Always verify with `qmd status`
+- Always verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
 - Personas and AI Workforce need immediate indexing (searchable content)
 
 ### External Actions

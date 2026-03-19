@@ -155,7 +155,7 @@ Before running Skill 23, the system checks for the `coaching-personas` Gemini Ve
 **Pre-flight check in action:**
 ```bash
 # This runs automatically at the start of Skill 23
-if qmd status 2>/dev/null | grep -q "coaching-personas"; then
+if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 verified - proceeding with workforce build"
 else
   echo "❌ STOP: Install Skill 22 (Book-to-Persona) first"

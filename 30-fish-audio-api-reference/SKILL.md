@@ -28,9 +28,9 @@ This skill gives your AI agent complete working knowledge of the Fish Audio API.
 
 **Gemini Engine search pattern:**
 ```bash
-qmd search master-files "fish audio tts endpoint parameters"
-qmd search master-files "fish audio websocket streaming"
-qmd search master-files "fish audio voice cloning"
+python3 ~/clawd/scripts/gemini-search.py "fish audio tts endpoint parameters"
+python3 ~/clawd/scripts/gemini-search.py "fish audio websocket streaming"
+python3 ~/clawd/scripts/gemini-search.py "fish audio voice cloning"
 ```
 
 **Direct reference path:**

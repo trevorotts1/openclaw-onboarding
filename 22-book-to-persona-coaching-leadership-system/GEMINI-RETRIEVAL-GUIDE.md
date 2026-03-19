@@ -31,7 +31,7 @@ python3 ~/clawd/scripts/gemini-indexer.py
 ### Verify
 
 ```bash
-qmd status
+python3 ~/clawd/scripts/gemini-indexer.py --status
 # Should show coaching-personas collection with file count
 ```
 
@@ -101,20 +101,20 @@ python3 ~/clawd/scripts/gemini-search.py "your question here"
 
 ### Structured query (when you need precise control)
 ```bash
-qmd query 'lex:habits systems consistency
+python3 ~/clawd/scripts/gemini-search.py "habits systems consistency"
 vec:building repeatable behaviors over time
 hyde:a methodology for creating automatic daily routines'
 ```
 
 ### Get a specific file section
 ```bash
-qmd get personas/clear-atomic-habits/persona-blueprint.md:1 -l 100
+cat ~/Downloads/openclaw-master-files/coaching-personas/personas/clear-atomic-habits/persona-blueprint.md | head -100
 # Returns lines 1-100 of the Atomic Habits blueprint
 ```
 
 ### Search multiple personas at once
 ```bash
-qmd multi-get "personas/*/persona-blueprint.md"
+python3 ~/clawd/scripts/gemini-search.py "all personas"
 # Returns summaries of all persona blueprints
 ```
 
@@ -126,7 +126,7 @@ When Gemini Engine returns results, the agent should:
 
 1. **Read the returned section** - Gemini Engine returns the matching text with file path and line numbers
 2. **Identify the persona** - note which persona blueprint the result came from
-3. **Pull more context if needed** - use `qmd get [path]:[line] -l [count]` to expand
+3. **Pull more context if needed** - use `cat [path] to read the full file directly` to expand
 4. **Apply the methodology** - use the extracted framework, questions, or standards directly
 
 ### Example Agent Workflow
@@ -154,7 +154,7 @@ Step 5: Agent self-reviews against the non-negotiable rules returned by Gemini E
 
 ### Check collection health
 ```bash
-qmd status
+python3 ~/clawd/scripts/gemini-indexer.py --status
 ```
 
 ### After adding new persona blueprints
@@ -165,14 +165,14 @@ python3 ~/clawd/scripts/gemini-indexer.py
 
 ### If results seem stale or wrong
 ```bash
-qmd cleanup
+python3 ~/clawd/scripts/gemini-indexer.py --rebuild
 python3 ~/clawd/scripts/gemini-indexer.py
 # Handled by gemini-indexer.py
 ```
 
 ### View what is indexed
 ```bash
-qmd ls coaching-personas
+python3 ~/clawd/scripts/gemini-indexer.py --status
 ```
 
 ---

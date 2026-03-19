@@ -58,7 +58,7 @@ grep "FISH_AUDIO_VOICE_ID" ~/clawd/secrets/.env
 
 ```bash
 # 2.4 - Confirm Gemini Engine has indexed the reference document
-qmd search master-files "fish audio tts endpoint" | head -5
+python3 ~/clawd/scripts/gemini-search.py "fish audio tts endpoint" | head -5
 ```
 **Expected:** Results reference `fish-audio-api-reference.md`. If no results, re-run `python3 ~/clawd/scripts/gemini-indexer.py`.
 
