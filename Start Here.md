@@ -299,7 +299,7 @@ Gateway restarts interrupt active sessions and can kill running processes. The u
 2. **After every 5 minutes of work**, verify you are still making progress:
    - Check which skill you are currently on
    - Check the status file for completed skills
-   - If you have been idle or stuck on the same step for more than 3 minutes, re-read the current skill's INSTALL.md and resume from where you left off
+   - If you have been idle or stuck on the same step for more than 10 minutes, re-read the current skill's INSTALL.md and resume from where you left off. Some skills legitimately take 10+ minutes to complete. Do NOT interrupt a skill that is actively working just because it is taking a while. Only re-engage if you have genuinely stalled with no progress
 
 3. **If context is getting full** (above 70%), trigger the memory flush, then continue installation. Do NOT stop and wait for user input unless a skill explicitly requires it (like Skill 15 which needs Telegram IDs).
 
@@ -325,6 +325,31 @@ When all 31 skills are installed:
 4. Send the user the final report with pass/fail for each skill
 5. If a gateway restart is needed for any changes to take effect, tell the user:
    "All 31 skills are installed. To activate the changes, please type /restart in Telegram."
+
+### 🔴 MANDATORY FILE READING BEFORE INSTALLATION
+
+**Before installing ANY skill, you MUST read ALL .md files in that skill folder in the order specified in SKILL.md.**
+
+This is not optional. This is not a suggestion. The Teach Yourself Protocol (TYP) requires it.
+
+For every skill, the reading order is:
+1. SKILL.md (overview, prerequisites, file reading order)
+2. Every file listed in the "Files in This Folder and Reading Order" section of SKILL.md
+3. Only AFTER reading all files do you begin executing INSTALL.md
+
+**If you skip reading files and jump straight to installation:**
+- You will miss prerequisites
+- You will miss conflict rules
+- You will configure things wrong
+- You will waste the client's time fixing your mistakes
+
+**How to verify you read all files:**
+Before starting INSTALL.md, list every .md file you read and confirm:
+"I have read [X] files for Skill [N]: [list filenames]. Proceeding with installation."
+
+If you cannot list the files you read, you did not read them. Go back and read them.
+
+---
 
 ### What This Protocol Prevents
 - Agent stopping after 3-4 skills because the model ran out of steam
