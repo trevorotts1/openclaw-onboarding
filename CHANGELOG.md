@@ -4,6 +4,15 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.0.4] - March 19, 2026
+
+### Cache-Busting Fix
+
+#### Fixed
+- **Updater now cache-busts all GitHub requests** so clients always get the latest changelog and files, not stale CDN copies
+
+---
+
 ## [v5.0.3] - March 19, 2026
 
 ### Critical Migration Fix

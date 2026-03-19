@@ -191,7 +191,7 @@ step_detect_version() {
     fi
     
     # Get remote version from GitHub
-    curl -fsSL "$REPO_URL/CHANGELOG.md" -o "$CHANGELOG_CACHE" 2>/dev/null
+    curl -fsSL -H "Cache-Control: no-cache" "$REPO_URL/CHANGELOG.md?cb=$(date +%s)" -o "$CHANGELOG_CACHE" 2>/dev/null
     if [ $? -ne 0 ]; then
         echo "  ❌ ERROR: Could not fetch changelog from GitHub."
         echo "  Check your internet connection."
@@ -224,7 +224,7 @@ step_gap_report() {
     
     # Download latest to temp for comparison
     mkdir -p "$TEMP_DIR"
-    curl -fsSL "$REPO_ZIP" -o "$TEMP_DIR/latest.zip" 2>/dev/null
+    curl -fsSL -H "Cache-Control: no-cache" "$REPO_ZIP?cb=$(date +%s)" -o "$TEMP_DIR/latest.zip" 2>/dev/null
     if [ $? -ne 0 ]; then
         echo "  ❌ ERROR: Could not download latest version."
         exit 1
