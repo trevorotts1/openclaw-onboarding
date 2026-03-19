@@ -50,7 +50,7 @@ Your files are searchable using Google's Gemini Embedding 2 technology. This is 
 
 For example, if you search for "marketing budget," it will also find notes about "ad spend," "campaign costs," or "quarterly marketing allocation" even if those exact words were not in your search.
 
-It works with all types of files: documents, images, PDFs, and audio files.
+It works with markdown documents, images, and audio files.
 
 **Why it matters:** As your knowledge base grows, simple search stops working. Intelligent search finds what you need even when you do not remember the exact words.
 

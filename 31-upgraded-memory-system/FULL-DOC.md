@@ -313,15 +313,23 @@ In `~/.openclaw/openclaw.json`, inside the `agents.defaults.memorySearch` sectio
 
 ```json
 "extraPaths": [
-  "~/Downloads/openclaw-master-files"
+  "/Users/USERNAME/Downloads/openclaw-master-files"
 ]
 ```
 
-Use the ACTUAL path found in Step 1. If the folder is named differently (e.g., "OpenClaw Master Files" with spaces), use that exact name:
+**CRITICAL: Use the FULL ABSOLUTE path, not a tilde (~).** OpenClaw resolves non-absolute paths relative to the workspace directory, so `~/Downloads/...` becomes `~/clawd/~/Downloads/...` which does not exist.
+
+To get the absolute path:
+```bash
+# This prints the full absolute path
+echo "$(cd ~/Downloads/openclaw-master-files && pwd)"
+```
+
+Use the ACTUAL path found in Step 1. If the folder is named differently (e.g., "OpenClaw Master Files" with spaces), use that exact name with the full absolute path:
 
 ```json
 "extraPaths": [
-  "~/Downloads/OpenClaw Master Files"
+  "/Users/USERNAME/Downloads/OpenClaw Master Files"
 ]
 ```
 
@@ -344,13 +352,13 @@ Gemini Embedding 2 supports images, audio, and video, not just text. To index AL
 ```
 
 This tells OpenClaw to embed:
-- `.md`, `.txt` (text documents)
-- `.pdf` (PDF documents)
-- `.png`, `.jpg`, `.jpeg`, `.webp` (images)
-- `.mp3`, `.wav`, `.m4a`, `.ogg` (audio)
-- `.mp4`, `.webm` (video)
+- `.md` (markdown documents - always indexed, even without multimodal)
+- `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.heic`, `.heif` (images - requires multimodal)
+- `.mp3`, `.wav`, `.ogg`, `.opus`, `.m4a`, `.aac`, `.flac` (audio - requires multimodal)
 
-Do NOT skip this step. Without multimodal enabled, images and media files in the master files folder will NOT be embedded.
+**Not supported by the current indexer:** `.pdf`, `.txt`, `.mp4`, `.webm`, `.sh`, `.py`, `.json`. These file types are skipped during indexing. Only markdown and multimodal media files are indexed.
+
+Do NOT skip this step. Without multimodal enabled, images and audio files in the master files folder will NOT be embedded.
 
 ### 4.5 Configure search quality
 
@@ -383,7 +391,7 @@ After all Layer 4 steps, the full `memorySearch` section should look like this:
   "provider": "gemini",
   "model": "models/gemini-embedding-2-preview",
   "extraPaths": [
-    "~/Downloads/openclaw-master-files"
+    "/Users/USERNAME/Downloads/openclaw-master-files"
   ],
   "multimodal": {
     "enabled": true,
@@ -630,14 +638,12 @@ After completion:
 > - Vector dimensions: 3072
 > - All knowledge files are now searchable.
 
-**File types supported by Gemini Embedding 2 (index ALL of these):**
-- `.md`, `.txt` (text documents)
-- `.pdf` (PDF documents)
-- `.png`, `.jpg`, `.jpeg`, `.webp` (images)
-- `.mp3`, `.wav`, `.m4a`, `.ogg` (audio)
-- `.mp4`, `.webm` (video, if present)
+**File types indexed by OpenClaw memory search:**
+- `.md` (markdown - always indexed)
+- `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.heic`, `.heif` (images - requires multimodal enabled)
+- `.mp3`, `.wav`, `.ogg`, `.opus`, `.m4a`, `.aac`, `.flac` (audio - requires multimodal enabled)
 
-Do NOT limit indexing to just markdown files. Gemini Embedding 2 is multimodal. Index everything.
+**NOT indexed:** `.pdf`, `.txt`, `.mp4`, `.webm`, `.sh`, `.py`, `.json`, `.skill`. The current OpenClaw indexer only supports markdown + multimodal media files.
 
 ---
 
@@ -1091,7 +1097,7 @@ Your files are searchable using Google's Gemini Embedding 2 technology. This is 
 
 For example, if you search for "marketing budget," it will also find notes about "ad spend," "campaign costs," or "quarterly marketing allocation" even if those exact words were not in your search.
 
-It works with all types of files: documents, images, PDFs, and audio files.
+It works with markdown documents, images, and audio files.
 
 **Why it matters:** As your knowledge base grows, simple search stops working. Intelligent search finds what you need even when you do not remember the exact words.
 

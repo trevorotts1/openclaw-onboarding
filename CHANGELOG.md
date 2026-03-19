@@ -4,6 +4,17 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.2.3] - March 19, 2026
+
+### Skill 31: Source-Verified Corrections
+
+#### Fixed
+- **extraPaths must use absolute paths** (e.g., `/Users/USERNAME/Downloads/...`), not tilde paths. OpenClaw `path.isAbsolute()` treats `~` as relative and prepends workspace dir, creating invalid paths. Verified in `src/memory/internal.ts:normalizeExtraMemoryPaths`.
+- **Corrected supported file types** from source code (`src/memory/multimodal.ts`): only `.md` + images (jpg/jpeg/png/webp/gif/heic/heif) + audio (mp3/wav/ogg/opus/m4a/aac/flac) are indexed. Removed false claims about PDF, TXT, MP4, and WebM support.
+- **Added helper command** `echo "$(cd ~/Downloads/openclaw-master-files && pwd)"` so agents can resolve the absolute path correctly.
+
+---
+
 ## [v5.2.2] - March 19, 2026
 
 ### Skill 31: Full Indexing + Embedding of Master Files
