@@ -364,68 +364,187 @@ After verification passes, send this message to the user in Telegram:
 
 Do NOT restart the gateway yourself. Wait for the user to do it.
 
-### Post-Restart: Knowledge Indexing
+### Post-Restart: Knowledge Indexing and Embedding
 
-After the user restarts the gateway, trigger indexing of all knowledge files.
+After the user restarts the gateway, TWO things must happen:
 
-The Gemini Embedding 2 search engine needs to index the user's knowledge base. Search for and index ALL of these:
+1. **Indexing**: discovering and reading all knowledge files
+2. **Embedding**: converting those files into vector representations via the Gemini Embedding 2 API
 
-**Required folders to index (search by name, case-insensitive):**
-- Any folder in ~/Downloads/ containing "openclaw" AND ("master" OR "onboarding") in the name
-- All subfolders within those folders
-- The workspace directory (~/clawd/ or wherever the agent workspace is)
-- The memory/ directory
+These are separate operations. Indexing without embedding means the files are known but not searchable. Both must complete.
 
-**File types to index:**
-Gemini Embedding 2 supports multimodal inputs. Index ALL of these file types:
-- `.md` (markdown)
-- `.txt` (text)
-- `.pdf` (documents)
-- `.png`, `.jpg`, `.jpeg`, `.webp` (images)
-- `.mp3`, `.wav`, `.m4a` (audio, if present)
+#### Step 1: Discover knowledge folders
 
-**How to verify indexing is working:**
+Search the user's machine for all knowledge folders. Check these locations (case-insensitive):
 
 ```bash
-openclaw memory status 2>&1 | head -10
+# Find all candidate knowledge folders
+find ~/Downloads -maxdepth 2 -type d -iname "*openclaw*master*" -o -iname "*openclaw*onboarding*" 2>/dev/null
+```
+
+Also include:
+- The workspace directory (check `agents.defaults.workspace` in openclaw.json, typically ~/clawd/ or ~/.openclaw/workspace)
+- The memory/ subdirectory inside the workspace
+- Any coaching-personas, AI-workforce-blueprint, or department folders inside the master files folder
+
+Report to the user what you found:
+
+> I found these knowledge folders to index and embed:
+> - [list each folder and approximate file count]
+
+#### Step 2: Trigger indexing
+
+OpenClaw's builtin memory backend indexes files in the workspace directory and configured paths automatically after restart. Verify indexing has started:
+
+```bash
+openclaw memory status 2>&1 | grep -E 'Indexed|Provider|Model|Vector|Batch'
+```
+
+If the indexed count is 0 or very low and the restart happened more than 60 seconds ago, something is wrong. Check:
+- Is GOOGLE_API_KEY / GEMINI_API_KEY set in the environment?
+- Is memory.backend = "builtin"?
+- Is memorySearch.provider = "gemini"?
+
+#### Step 3: Verify embedding
+
+Embedding happens automatically as part of the indexing pipeline when the provider is Gemini. Verify embeddings are being generated:
+
+```bash
+openclaw memory status 2>&1 | grep -E 'Vector dims|Embedding cache|chunks'
 ```
 
 Expected output should show:
-- Provider: gemini
-- Model: gemini-embedding-2-preview
-- Indexed: [number] files
-- Vector: ready
+- Vector dims: 3072 (this confirms Gemini Embedding 2 is generating vectors)
+- Embedding cache: enabled with entries
+- Chunks: growing number (files being split and embedded)
 
-**Send indexing status to the user in Telegram:**
+If Vector dims shows 0 or is missing, the embedding pipeline is not running. Check the API key.
 
-> Indexing your knowledge base with Gemini Embedding 2...
-> - Found [X] files across [Y] folders
-> - Indexed: [number] files, [number] chunks
-> - Status: [ready/in progress]
+#### Step 4: Monitor progress
 
-### Post-Restart: Live Memory Test
-
-After indexing, run a live search test to confirm the system is working end-to-end:
+For large knowledge bases, indexing and embedding may take several minutes. Check progress:
 
 ```bash
-# Test with a query relevant to the user's data
-openclaw memory search "important" 2>&1 | head -20
+# Run this every 30 seconds until counts stabilize
+openclaw memory status 2>&1 | grep 'Indexed'
 ```
 
-If results come back, the system is working. If no results, check:
-1. Is GOOGLE_API_KEY set?
-2. Did the restart happen?
-3. Is memory.backend = "builtin"?
+When the indexed file count stops growing and matches the expected file count, indexing and embedding are complete.
 
-**Send test results to the user in Telegram:**
+#### Step 5: Report to user in Telegram
 
-> Memory system test complete:
-> - Search returned [X] results
-> - All [5] layers are operational
+Send a progress update, then a completion message:
+
+During indexing:
+> Indexing and embedding your knowledge base with Gemini Embedding 2...
+> - [X] files found across [Y] folders
+> - [Z] files indexed so far, [N] chunks embedded
+> - Vector dimensions: 3072 (Gemini Embedding 2 confirmed)
+> - Status: in progress...
+
+After completion:
+> Knowledge base indexing and embedding complete.
+> - [X] files indexed
+> - [N] chunks embedded
+> - Vector dimensions: 3072
+> - All knowledge files are now searchable.
+
+**File types supported by Gemini Embedding 2 (index ALL of these):**
+- `.md`, `.txt` (text documents)
+- `.pdf` (PDF documents)
+- `.png`, `.jpg`, `.jpeg`, `.webp` (images)
+- `.mp3`, `.wav`, `.m4a`, `.ogg` (audio)
+- `.mp4`, `.webm` (video, if present)
+
+Do NOT limit indexing to just markdown files. Gemini Embedding 2 is multimodal. Index everything.
+
+---
+
+### Post-Restart: Live Memory Layer Testing
+
+After indexing and embedding are confirmed complete, run a REAL test of each memory layer. Do not just check config values. Actually test whether each layer works.
+
+#### Test Layer 1: Markdown Files
+
+```bash
+# Verify MEMORY.md exists and has real content
+wc -l ~/clawd/MEMORY.md
+# Expected: more than 10 lines of real content, not just a template header
+
+# Verify daily logs exist
+ls ~/clawd/memory/*.md 2>/dev/null | wc -l
+# Expected: at least 1 daily log file
+```
+
+Report: "Layer 1: MEMORY.md has [X] lines. [Y] daily log files found."
+
+#### Test Layer 2: Memory Flush
+
+This layer cannot be tested directly without triggering a compaction event. Verify the config is set correctly:
+
+```bash
+grep -A2 '"memoryFlush"' ~/.openclaw/openclaw.json | head -3
+```
+
+Confirm: enabled = true, softThresholdTokens is set, prompt contains category-based capture instructions.
+
+Report: "Layer 2: Memory flush configured with [X]-category capture prompt."
+
+#### Test Layer 3: Session Indexing
+
+```bash
+# Check if past sessions are being indexed
+openclaw memory status 2>&1 | grep -A2 'sessions'
+```
+
+Expected: shows session source with indexed count > 0 (if there have been previous conversations).
+
+Report: "Layer 3: Session indexing active. [X] past sessions indexed."
+
+#### Test Layer 4: Gemini Embedding 2 Search
+
+Run an actual search query, not just a config check:
+
+```bash
+openclaw memory search "the user" 2>&1 | head -20
+```
+
+Expected: returns actual search results with content from the user's files.
+
+If this returns nothing:
+1. Check if GOOGLE_API_KEY is set: `echo $GOOGLE_API_KEY`
+2. Check if indexing completed: `openclaw memory status`
+3. Check if backend is correct: `grep '"backend"' ~/.openclaw/openclaw.json`
+
+Report: "Layer 4: Gemini search returned [X] results. Search is operational." or "Layer 4: Search returned no results. [diagnosis]."
+
+#### Test Layer 5: Mem0
+
+```bash
+openclaw status 2>&1 | grep -i 'mem0'
+```
+
+Expected: shows openclaw-mem0 registered with autoRecall: true, autoCapture: true.
+
+Report: "Layer 5: Mem0 loaded. Auto-capture: [on/off]. Auto-recall: [on/off]."
+
+#### Final Report to User in Telegram
+
+After testing ALL 5 layers, send ONE comprehensive message:
+
+> Memory system test results:
 >
-> Your upgraded memory system is fully installed and working.
+> Layer 1 (Markdown files): [PASS/FAIL] - MEMORY.md has [X] lines, [Y] daily logs
+> Layer 2 (Memory flush): [PASS/FAIL] - Category-based capture prompt configured
+> Layer 3 (Session indexing): [PASS/FAIL] - [X] past sessions indexed
+> Layer 4 (Gemini search): [PASS/FAIL] - Search returned [X] results from [Y] indexed files
+> Layer 5 (Mem0): [PASS/FAIL] - Auto-capture [on/off], auto-recall [on/off]
+>
+> Overall: [X]/5 layers operational.
+> [If all pass]: Your upgraded memory system is fully installed and working.
+> [If any fail]: [Specific layer] needs attention: [what to fix].
 
-If any layer failed, report which one and what needs to be fixed.
+Do NOT say "all layers working" unless you ran real tests and every one passed.
 
 ---
 
@@ -461,7 +580,8 @@ During an update, progress should be communicated in Telegram, not buried in ter
 ## Completion Checklist
 
 ```
-[ ] Layer 1: MEMORY.md exists and has content
+CONFIGURATION
+[ ] Layer 1: MEMORY.md exists and has real content (not just template)
 [ ] Layer 1: memory/ directory exists
 [ ] Layer 2: Flush prompt updated with category-based capture
 [ ] Layer 3: sessionMemory enabled
@@ -469,10 +589,28 @@ During an update, progress should be communicated in Telegram, not buried in ter
 [ ] Layer 4: memorySearch.provider set to "gemini" (or PENDING if no API key)
 [ ] Layer 5: Mem0 plugin installed and loaded
 [ ] Layer 5: autoCapture and autoRecall both true
-[ ] Config validated with openclaw config validate
-[ ] Gateway restarted by user (agent asked, user typed /restart)
-[ ] Knowledge base indexing triggered (all master files, subfolders, multimodal)
-[ ] Live memory search test returned results
-[ ] All layer statuses reported to user in Telegram
+[ ] Config validated with openclaw config validate - MUST PASS
+
+RESTART
+[ ] Gateway restarted by user (agent asked in Telegram, user typed /restart)
+
+INDEXING AND EMBEDDING
+[ ] Knowledge folders discovered (master files, subfolders, workspace, memory)
+[ ] All supported file types included (md, txt, pdf, images, audio, video)
+[ ] Indexing confirmed running (openclaw memory status shows file count growing)
+[ ] Embedding confirmed (Vector dims: 3072 visible in memory status)
+[ ] Indexing and embedding complete (file count stabilized)
+
+LIVE TESTING (must run real queries, not just config checks)
+[ ] Layer 1 tested: MEMORY.md readable with real content
+[ ] Layer 2 tested: Flush prompt config verified
+[ ] Layer 3 tested: Session indexing shows past sessions
+[ ] Layer 4 tested: openclaw memory search returned real results
+[ ] Layer 5 tested: Mem0 shows registered with autoCapture + autoRecall on
+
+REPORTING
+[ ] All layer test results reported to user in Telegram
+[ ] Indexing/embedding status reported to user in Telegram
+[ ] If any layer failed, specific diagnosis sent to user
 [ ] Core files updated per CORE_UPDATES.md (using TYP rules)
 ```

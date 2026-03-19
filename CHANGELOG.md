@@ -4,6 +4,20 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.1.1] - March 19, 2026
+
+### Skill 31: Embedding + Real Layer Testing
+
+#### Fixed
+- **Indexing and embedding are now separate documented steps** with distinct verification for each
+- **Embedding verification** checks for Vector dims: 3072 to confirm Gemini Embedding 2 is generating vectors
+- **Real layer testing** replaces config-only checks: each layer is tested with actual queries/operations
+- **Per-layer test results** reported individually to user in Telegram with pass/fail and diagnostics
+- **Expanded checklist** now has 4 sections: Configuration, Restart, Indexing/Embedding, Live Testing, Reporting
+- **All Gemini-supported file types** explicitly listed for indexing (md, txt, pdf, images, audio, video)
+
+---
+
 ## [v5.1.0] - March 19, 2026
 
 ### Skill 31 Major Upgrade: Testing, Indexing, Telegram Flow
