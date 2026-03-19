@@ -2,19 +2,20 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v4.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v5.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-This repo contains **31 skill folders** (01 through 30, with 13 archived) plus an install script.
+This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
 
-### What's New in v4.0.0 (March 16, 2026)
-- **3 new departments:** graphics-dept, video-dept, audio-dept (separate from creative)
-- **creative-dept restructured:** written content only ("If it starts as words, it starts here")
-- **15 suggested-roles files:** pre-built roles + core SOPs per department
-- **Interdepartmental communication system:** direct dept-to-dept with master orchestrator awareness
-- **4-layer persona alignment protocol** for role-to-persona mapping
-- **Daily company log system** with Gemini Engine integration
-- **Surgical weekly auto-update system** with impact analysis (LOW/MEDIUM/HIGH risk)
-- **Department folder organization:** all depts live inside `my AI company departments/` subfolder
+### What's New in v5.0.0 (March 19, 2026)
+- **Skill 31: Upgraded Memory System** - 5-layer architecture (markdown files, improved flush, session indexing, Gemini Embedding 2 search, Mem0 auto-capture)
+- **Skill 14 rewritten:** Google Workspace CLI (gws) replaces google-api.js and gog - single tool for Gmail and Workspace
+- **Skill 23 fixed:** AI Workforce Blueprint now properly presents options A, B, C before asking questions
+- **Skill 15 fixed:** BlackCEO Team Management now requires real Telegram IDs, not placeholders
+- **QMD fully replaced** with Google Gemini Embedding 2 across all skills and scripts
+- **Onboarding watchdog** added: 10-minute stall detection, never-stop-early, progress reporting every 5 skills
+- **Mandatory file reading protocol:** agent must read ALL .md files before installing any skill
+- **CONTRIBUTING.md** added: complete checklist for adding/modifying skills
+- **MIGRATION.md** added: step-by-step guide for existing QMD users to migrate to Gemini Embedding 2
 
 - Install happens in a strict order
 - The agent executes the steps autonomously

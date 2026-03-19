@@ -4,6 +4,36 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.0.0] - March 19, 2026
+
+### Major Release: Memory System Upgrade, Google Workspace CLI, Migration Fixes
+
+#### New Skills
+- **Skill 31: Upgraded Memory System** - 5-layer memory architecture (markdown files, improved flush, session indexing, Gemini Embedding 2 search, Mem0 auto-capture)
+
+#### Skill Rewrites
+- **Skill 14: Google Workspace Integration** - Complete rewrite. Replaced google-api.js and gog with Google Workspace CLI (gws). Single tool for both Gmail and Workspace. 81 scopes preserved.
+
+#### Bug Fixes
+- **Skill 23: AI Workforce Blueprint** - Fixed: agent was skipping the 3 options (A, B, C) and going straight to questions. Added MANDATORY OPTION PRESENTATION rule.
+- **Skill 15: BlackCEO Team Management** - Fixed: agent was not writing real Telegram IDs to memory files. Added enforcement block requiring real data, not placeholders.
+
+#### Infrastructure
+- **QMD fully replaced** with Google Gemini Embedding 2 across all skills and scripts
+- **Onboarding watchdog** added to Start Here.md: 10-minute stall detection, never-stop-early, progress reporting every 5 skills
+- **Mandatory file reading** protocol: agent must read ALL .md files before installing any skill
+- **CONTRIBUTING.md** added: checklist for adding/modifying skills and pushing updates
+- **MIGRATION.md** rewritten with correct commands, env vars, and step-by-step instructions
+
+#### Migration Notes
+- Existing users on QMD: run the migration steps in MIGRATION.md
+- The weekly update script (Sundays 2AM) will detect the version change and flag it
+- No automatic changes are applied without user approval
+
+#### Total Skills: 31 (Skill 13 archived)
+
+---
+
 ## [v4.0.1] - March 16, 2026
 
 ### Skill Restructure — Voice Call Plugin Removed, Fish Audio Renumbered

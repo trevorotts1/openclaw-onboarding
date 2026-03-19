@@ -1,6 +1,6 @@
 #!/bin/bash
 # OpenClaw Onboarding — Surgical Update Script
-# Version: 2.0 | March 16, 2026
+# Version: 2.1 | March 19, 2026
 # Runs weekly (Sundays 2 AM) via cron, or manually triggered
 #
 # LOGIC:
@@ -116,6 +116,44 @@ build_gap_list() {
     echo "[OK] Gap report built: $GAP_REPORT"
 }
 
+# Step 3.5: Detect old QMD-based version
+detect_qmd_legacy() {
+    echo "[STEP 3.5] Checking for legacy QMD installation..."
+    
+    QMD_DETECTED=false
+    QMD_RISK_REASON=""
+    
+    # Check 1: qmd command exists
+    if command -v qmd &>/dev/null; then
+        QMD_DETECTED=true
+        QMD_RISK_REASON="QMD command found in PATH"
+    fi
+    
+    # Check 2: QMD cache exists
+    if [ -d "$HOME/.cache/qmd" ] || [ -f "$HOME/.cache/qmd/index.sqlite" ]; then
+        QMD_DETECTED=true
+        QMD_RISK_REASON="$QMD_RISK_REASON; QMD cache found at ~/.cache/qmd"
+    fi
+    
+    # Check 3: Old config references QMD
+    if [ -f "$HOME/.openclaw/openclaw.json" ]; then
+        if grep -q '"backend".*"qmd"' "$HOME/.openclaw/openclaw.json" 2>/dev/null; then
+            QMD_DETECTED=true
+            QMD_RISK_REASON="$QMD_RISK_REASON; openclaw.json has memory.backend = qmd"
+        fi
+    fi
+    
+    if [ "$QMD_DETECTED" = true ]; then
+        echo "[WARNING] LEGACY QMD DETECTED - HIGH RISK MIGRATION REQUIRED"
+        echo "  Reasons: $QMD_RISK_REASON"
+        echo "  Action: Run migration steps in MIGRATION.md before updating"
+        echo ""
+        echo "QMD_LEGACY_DETECTED=true" >> "$LOG_FILE"
+    else
+        echo "[OK] No legacy QMD detected"
+    fi
+}
+
 # Step 4: Impact analysis
 run_impact_analysis() {
     echo "[STEP 4] Running impact analysis..."
@@ -123,6 +161,25 @@ run_impact_analysis() {
     IMPACT_REPORT="/tmp/openclaw-update-impact.md"
     echo "# Impact Analysis" > "$IMPACT_REPORT"
     echo "" >> "$IMPACT_REPORT"
+    
+    # Check for QMD legacy system
+    if [ "$QMD_DETECTED" = true ]; then
+        echo "## ⚠️ HIGH RISK: Legacy QMD System Detected" >> "$IMPACT_REPORT"
+        echo "" >> "$IMPACT_REPORT"
+        echo "**Status:** MIGRATION REQUIRED BEFORE UPDATE" >> "$IMPACT_REPORT"
+        echo "" >> "$IMPACT_REPORT"
+        echo "**Detected:** $QMD_RISK_REASON" >> "$IMPACT_REPORT"
+        echo "" >> "$IMPACT_REPORT"
+        echo "**Required Action:**" >> "$IMPACT_REPORT"
+        echo "1. Read MIGRATION.md in your onboarding folder" >> "$IMPACT_REPORT"
+        echo "2. Follow the QMD to Gemini Embedding 2 migration steps" >> "$IMPACT_REPORT"
+        echo "3. After migration completes, re-run this update check" >> "$IMPACT_REPORT"
+        echo "" >> "$IMPACT_REPORT"
+        echo "**DO NOT proceed with this update until migration is complete.**" >> "$IMPACT_REPORT"
+        echo "" >> "$IMPACT_REPORT"
+        echo "Migration guide: $LOCAL_ONBOARDING_DIR/MIGRATION.md" >> "$IMPACT_REPORT"
+        echo "" >> "$IMPACT_REPORT"
+    fi
     
     # Protected files — NEVER overwrite
     PROTECTED_FILES="AGENTS.md MEMORY.md SOUL.md USER.md IDENTITY.md HEARTBEAT.md TOOLS.md"
@@ -150,6 +207,22 @@ surface_recommendations() {
     echo "Remote version: $LATEST_VERSION"
     echo "Your version: ${LOCAL_VERSION:-none}"
     echo ""
+    
+    # HIGH RISK warning if QMD detected
+    if [ "$QMD_DETECTED" = true ]; then
+        echo "⚠️  HIGH RISK: LEGACY QMD SYSTEM DETECTED"
+        echo ""
+        echo "You are running an old QMD-based version of the onboarding package."
+        echo "You MUST migrate to Gemini Embedding 2 BEFORE applying this update."
+        echo ""
+        echo "Migration steps: $LOCAL_ONBOARDING_DIR/MIGRATION.md"
+        echo ""
+        echo "DO NOT proceed with this update until migration is complete."
+        echo ""
+        echo "=========================================="
+        echo ""
+    fi
+    
     echo "See gap report: $GAP_REPORT"
     echo "See impact report: $IMPACT_REPORT"
     echo ""
@@ -166,6 +239,12 @@ detect_environment
 fetch_changelog
 compare_versions
 build_gap_list
+
+# Initialize QMD detection variables
+QMD_DETECTED=false
+QMD_RISK_REASON=""
+detect_qmd_legacy
+
 run_impact_analysis
 surface_recommendations
 

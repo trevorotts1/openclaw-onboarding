@@ -16,7 +16,7 @@ If you are reading this file, the user has triggered onboarding by saying someth
 
 **0.1: Confirm AGENTS.md has ONBOARDING PENDING flag**
 
-Search ALL possible AGENTS.md locations — the path differs between Mac and VPS:
+Search ALL possible AGENTS.md locations. The path differs between Mac and VPS:
 ```bash
 # Try all possible locations
 grep -r "ONBOARDING PENDING" ~/clawd/AGENTS.md 2>/dev/null || \
@@ -1424,7 +1424,7 @@ All skill folders are located inside:
 |---|-------|-------------|-------|
 | 1 | Teach Yourself Protocol | 01-teach-yourself-protocol | 🔴 MANDATORY FIRST |
 | 2 | Back Yourself Up Protocol | 02-back-yourself-up-protocol | 🔴 MANDATORY SECOND |
-| — | **Gemini Engine** | *(installed by install script)* | ✅ Auto-installed before skills 3-30 |
+| - | **Gemini Engine** | *(installed by install script)* | ✅ Auto-installed before skills 3-30 |
 | 3 | Agent Browser (Vercel) - preferred browser automation | 03-agent-browser |
 | 4 | Superpowers | 04-superpowers |
 | 5 | GHL / Convert and Flow Setup | 05-ghl-setup |
@@ -2109,13 +2109,13 @@ crontab -l | grep update-skills
 
 **How the weekly update works (v2.0 - Surgical Logic):**
 1. Runs every Sunday at 2:00 AM
-2. Reads CHANGELOG.md from GitHub FIRST — understands what's new before downloading anything
+2. Reads CHANGELOG.md from GitHub FIRST. It understands what's new before downloading anything
 3. Compares against locally installed versions
 4. Rates each change: LOW risk (auto-apply), MEDIUM risk (recommend + confirm), HIGH risk (recommend SKIP)
 5. Surfaces recommendations to the user BEFORE making any changes
-6. Waits for user approval on MEDIUM/HIGH items — never acts autonomously
+6. Waits for user approval on MEDIUM/HIGH items. It never acts autonomously
 7. NEVER overwrites: core .md files (AGENTS, MEMORY, SOUL, USER, IDENTITY, HEARTBEAT, TOOLS), company department folders, or custom SOPs
-8. NEVER triggers a gateway restart — always gives client restart instructions instead
+8. NEVER triggers a gateway restart. Always gives client restart instructions instead
 
 **IMPORTANT:** The update script will NEVER overwrite anything inside `my AI company departments/`. That folder contains client-built content and is always protected.
 
