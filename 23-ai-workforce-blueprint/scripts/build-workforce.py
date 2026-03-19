@@ -1127,7 +1127,7 @@ def run_qmd_update():
     """Auto-run QMD update and embed after wiring personas."""
     telegram_print("\n🔄 Running QMD update after persona wiring...")
     try:
-        result = subprocess.run(["qmd", "update"], capture_output=True, text=True, timeout=60)
+        result = subprocess.run(["python3", "/Users/blackceomacmini/clawd/scripts/gemini-indexer.py"], capture_output=True, text=True, timeout=60)
         if result.returncode == 0:
             telegram_print("  ✓ python3 ~/clawd/scripts/gemini-indexer.py complete")
         else:
@@ -1135,9 +1135,9 @@ def run_qmd_update():
     except Exception as e:
         telegram_print(f"  ⚠️ python3 ~/clawd/scripts/gemini-indexer.py failed: {e}")
     
-    telegram_print("🔄 Running QMD embed...")
+    
     try:
-        result = subprocess.run(["qmd", "embed"], capture_output=True, text=True, timeout=300)
+        result = # Handled by gemini-indexer.py
         if result.returncode == 0:
             telegram_print("  ✓ # Handled by gemini-indexer.py complete")
         else:
