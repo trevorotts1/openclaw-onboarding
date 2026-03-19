@@ -210,11 +210,11 @@ Find the top-level `memory` section in openclaw.json and set:
 
 ```json
 "memory": {
-  "backend": "gemini"
+  "backend": "builtin"
 }
 ```
 
-**Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. Both must say "gemini". If the top-level still says "qmd", the search will fail even if memorySearch says "gemini".
+**Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. The top-level must say "builtin" and memorySearch.provider must say "gemini". If the top-level still says "qmd", the search will fall back to QMD instead of using Gemini Embedding 2.
 
 ### 4.3 Configure search quality
 
@@ -294,7 +294,7 @@ ls ~/.cache/qmd/index.sqlite 2>/dev/null && echo "QMD index found" || echo "No Q
 
 ### M.2 If QMD is present, update the backend
 
-The config change in Layer 4 (Step 4.2) handles this. Verify `memory.backend` is "gemini", not "qmd".
+The config change in Layer 4 (Step 4.2) handles this. Verify `memory.backend is "builtin", not "qmd".
 
 ### M.3 Clean up old QMD (optional)
 
@@ -359,7 +359,7 @@ If results come back, all layers are working.
 [ ] Layer 1: memory/ directory exists with daily logs
 [ ] Layer 2: Flush prompt updated with 8 categories
 [ ] Layer 3: sessionMemory enabled
-[ ] Layer 4: memory.backend set to "gemini" (or PENDING if no API key)
+[ ] Layer 4: memory.backend set to "builtin" (or PENDING if no API key)
 [ ] Layer 4: memorySearch.provider set to "gemini" (or PENDING if no API key)
 [ ] Layer 5: Mem0 plugin installed and loaded
 [ ] Layer 5: autoCapture and autoRecall both true

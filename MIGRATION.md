@@ -94,7 +94,7 @@ If your `openclaw.json` has a `memory.backend` setting, change it:
 
 ```json
 "memory": {
-  "backend": "gemini"
+  "backend": "builtin"
 }
 ```
 
@@ -177,7 +177,7 @@ A: `GOOGLE_API_KEY`. If you also have `GEMINI_API_KEY` set, the SDK will use `GO
 - [ ] Onboarding package updated to latest
 - [ ] `python3 ~/clawd/scripts/gemini-indexer.py` ran successfully
 - [ ] `python3 ~/clawd/scripts/gemini-search.py "test query"` returns results
-- [ ] OpenClaw config updated (`memory.backend: "gemini"`)
+- [ ] OpenClaw config updated (`memory.backend: "builtin"`)
 - [ ] Old QMD cache cleaned up (optional)
 
 **Migration is complete when:** `python3 ~/clawd/scripts/gemini-search.py "leadership"` returns persona results and `build-workforce.py` runs without errors.

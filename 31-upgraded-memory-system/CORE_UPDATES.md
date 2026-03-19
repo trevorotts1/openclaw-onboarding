@@ -27,7 +27,7 @@
 - Do NOT disable any of the 5 memory layers without explicit permission
 - Memory flush captures 8 categories: people, credentials, project status, decisions, preferences, errors, finances, deadlines
 - Session indexing is enabled. Past conversations are searchable.
-- Search backend is Gemini Embedding 2 (not QMD). Config: memory.backend = "gemini"
+- Search backend is Gemini Embedding 2 (not QMD). Config: memory.backend = "builtin"
 - Mem0 handles auto-capture and auto-recall. Do not rely on manual memory saves alone.
 - MEMORY.md is the long-term source of truth. Daily logs are session-specific.
 - If MEMORY.md gets longer than 1500 lines, consolidate and trim old entries.
