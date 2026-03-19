@@ -202,6 +202,88 @@ Run these prompts and evaluate the agent's actual output against the expected be
 
 ---
 
+## SECTION 4B — Persona Blueprint 14-Section Verification
+
+Every complete persona-blueprint.md must have exactly 14 sections. Verify any newly built persona.
+
+### Automated 14-Section Check
+
+Run this command on any persona-blueprint.md:
+
+```bash
+python3 << 'EOF'
+import sys
+import re
+
+# Read the blueprint file
+blueprint_path = sys.argv[1] if len(sys.argv) > 1 else "persona-blueprint.md"
+with open(blueprint_path, 'r') as f:
+    content = f.read()
+
+# Define required sections
+required_sections = [
+    "Section 1: Author Intelligence",
+    "Section 2: Core Methodology",
+    "Section 3: Coaching Framework",
+    "Section 4: Agent Governance Framework",
+    "Section 5: Foundational Principles",
+    "Section 6: Problem-Solution Map",
+    "Section 7: Trigger Detection System",
+    "Section 8: Voice and Language",
+    "Section 9: Quote Library",
+    "Section 10: Question Library",
+    "Section 11: Tools, Exercises, and Execution Frameworks",
+    "Section 12: Objections, Resistance, and Failure Modes",
+    "Section 13: Session and Task Structure",
+    "Section 14: Routing Rules and Scope Limits"
+]
+
+# Check each section
+missing = []
+for section in required_sections:
+    # Look for section header (## or ### followed by section name)
+    pattern = r'#{2,3}\s+' + re.escape(section)
+    if not re.search(pattern, content, re.IGNORECASE):
+        missing.append(section)
+
+if missing:
+    print("SECTION CHECK FAILED")
+    print(f"Missing {len(missing)} of 14 required sections:")
+    for m in missing:
+        print(f"  - {m}")
+    sys.exit(1)
+else:
+    print("SECTION CHECK PASSED")
+    print("All 14 required sections present in persona-blueprint.md")
+    sys.exit(0)
+EOF
+```
+
+**Expected result:** "SECTION CHECK PASSED - All 14 required sections present"
+
+### Manual Verification Checklist
+
+If automated check is not available, manually verify:
+
+- [ ] Section 1: Author Intelligence (background, credibility, perspective)
+- [ ] Section 2: Core Methodology (the central system/framework)
+- [ ] Section 3: Coaching Framework (3 phases: Assessment, Challenge, Support)
+- [ ] Section 4: Agent Governance Framework (4A, 4B, 4C, 4D subsections)
+- [ ] Section 5: Foundational Principles (core beliefs that drive the methodology)
+- [ ] Section 6: Problem-Solution Map (specific problems and their solutions)
+- [ ] Section 7: Trigger Detection System (when to activate Coaching vs Task Mode)
+- [ ] Section 8: Voice and Language (how the persona speaks and writes)
+- [ ] Section 9: Quote Library (attributed direct quotes from the author)
+- [ ] Section 10: Question Library (specific coaching questions)
+- [ ] Section 11: Tools, Exercises, and Execution Frameworks (actionable methods)
+- [ ] Section 12: Objections, Resistance, and Failure Modes (handling pushback)
+- [ ] Section 13: Session and Task Structure (how coaching sessions or tasks flow)
+- [ ] Section 14: Routing Rules and Scope Limits (when to use this persona, when NOT to)
+
+**HARD FAIL:** Fewer than 14 sections = persona blueprint incomplete. Re-run Phase 3 synthesis.
+
+---
+
 ## SECTION 5 — Anti-Pattern Checks
 
 These are failure modes the skill is specifically designed to prevent. Verify none are present.
