@@ -2,7 +2,7 @@
 **Source Book:** Find Your Why by Simon Sinek
 **Version:** 1.0.0
 **Built:** March 7 at 5:50 PM
-**QMD Index:** sinek-find-your-why
+**Gemini Index:** sinek-find-your-why
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -14,7 +14,7 @@
 **Source Book:** Find Your Why by Simon Sinek  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** sinek-find-your-why  
+**Gemini Index:** sinek-find-your-why  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

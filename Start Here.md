@@ -172,18 +172,18 @@ Teaches the AI how to back up config files before touching anything.
 Without this, one bad edit can corrupt your system with no way to recover.
 **Nothing else installs until this is confirmed.**
 
-### ✅ STEP 3: QMD (Semantic Search Engine)
+### ✅ STEP 3: Gemini Engine (Semantic Search Engine)
 **Handled automatically by the install script - no skill folder needed.**
-QMD is installed as a system dependency during Step 3 of install.sh.
+Gemini Engine is installed as a system dependency during Step 3 of install.sh.
 It powers the persona search in Skill 22 and the persona detection in Skill 23.
 
-**QMD is automatically installed and indexed at:**
-- Install time: QMD installed, collections (clawd, master-files) created, initial indexing run
+**Gemini Engine is automatically installed and indexed at:**
+- Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
 - After all 30 skills: final complete index
 
-**QMD INDEXING happens at strategic points - see QMD INDEXING PROTOCOL below.**
+**Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
 ### STEPS 4-30: All Remaining Skills (in numbered order)
 Skills install sequentially. For each skill:
@@ -492,15 +492,15 @@ After every skill install, verify:
 
 ---
 
-## 🔴 QMD INDEXING PROTOCOL - STRATEGIC EMBEDDING SCHEDULE
+## 🔴 Gemini Engine INDEXING PROTOCOL - STRATEGIC EMBEDDING SCHEDULE
 
-**QMD (semantic search) must be indexed at specific milestones, not after every skill.**
+**Gemini Engine (semantic search) must be indexed at specific milestones, not after every skill.**
 
 ### Indexing Schedule
 
 | Milestone | When to Index | Why |
 |-----------|---------------|-----|
-| **Initial** | After QMD install (step 3) | Base index of workspace |
+| **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
 | **Final** | After ALL 30 skills complete | Complete system index |
@@ -525,11 +525,11 @@ qmd status          # Verify completion
 
 ### Process for Each Indexing
 
-1. **Announce:** "Running QMD indexing for [milestone] milestone..."
+1. **Announce:** "Running Gemini Engine indexing for [milestone] milestone..."
 2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
 3. **Embed:** `# Handled by gemini-indexer.py` - generates vectors
 4. **Verify:** Check status shows all files indexed
-5. **Report:** "QMD indexing complete: X files, Y collections"
+5. **Report:** "Gemini Engine indexing complete: X files, Y collections"
 
 ### Forbidden Actions
 - Do NOT index after every single skill (wasteful)
@@ -1026,7 +1026,7 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         INSTALL.md
         CORE_UPDATES.md
         PIPELINE.md
-        QMD-RETRIEVAL-GUIDE.md
+        GEMINI-RETRIEVAL-GUIDE.md
         PERSONA-ROUTER.md
         personas/
         pipeline/
@@ -1350,7 +1350,7 @@ All skill folders are located inside:
 |---|-------|-------------|-------|
 | 1 | Teach Yourself Protocol | 01-teach-yourself-protocol | 🔴 MANDATORY FIRST |
 | 2 | Back Yourself Up Protocol | 02-back-yourself-up-protocol | 🔴 MANDATORY SECOND |
-| — | **QMD** | *(installed by install script)* | ✅ Auto-installed before skills 3-30 |
+| — | **Gemini Engine** | *(installed by install script)* | ✅ Auto-installed before skills 3-30 |
 | 3 | Agent Browser (Vercel) - preferred browser automation | 03-agent-browser |
 | 4 | Superpowers | 04-superpowers |
 | 5 | GHL / Convert and Flow Setup | 05-ghl-setup |
@@ -1419,7 +1419,7 @@ All skill folders are located inside:
 
 ## IMPORTED SKILLS (16-30) - AUTHORITATIVE INSTALL RULES
 
-Skills 16 through 30 are imported or recreated skills. Many preserve upstream source files under an `upstream-original/` subfolder. Some have additional reference documents (PIPELINE.md, QMD-RETRIEVAL-GUIDE.md, GOOD-AND-BAD-EXAMPLES.md, etc.).
+Skills 16 through 30 are imported or recreated skills. Many preserve upstream source files under an `upstream-original/` subfolder. Some have additional reference documents (PIPELINE.md, GEMINI-RETRIEVAL-GUIDE.md, GOOD-AND-BAD-EXAMPLES.md, etc.).
 
 **The file-read order for ALL imported skills is the same as for all skills:**
 1. Read `SKILL.md` first
@@ -1490,11 +1490,11 @@ Install these 4 items yourself, one at a time:
    - Mark: `SKILL-02: INSTALLED`
    - Report: "Skill 02 complete"
 
-3. **QMD Setup**
-   - Verify QMD is installed: `qmd --version`
+3. **Gemini Engine Setup**
+   - Verify Gemini Engine is installed: `qmd --version`
    - If not installed, install it
    - Run initial indexing: `python3 ~/clawd/scripts/gemini-indexer.py`
-   - Report: "QMD setup complete"
+   - Report: "Gemini Engine setup complete"
 
 4. **Skill 03: Agent Browser**
    - Read ALL .md files in `~/.openclaw/onboarding/03-agent-browser/`
@@ -1576,7 +1576,7 @@ label: "wave2-qc-agent"
 1. **Skill 22: Book-to-Persona Coaching Leadership System**
    - Read ALL .md files in `~/.openclaw/onboarding/22-book-to-persona-coaching-leadership-system/`
    - Execute installation steps (this includes downloading and processing persona blueprints)
-   - Run QMD indexing for coaching-personas collection
+   - Run Gemini Engine indexing for coaching-personas collection
    - Mark: `SKILL-22: INSTALLED`
    - Report: "Skill 22 complete"
 
@@ -1631,7 +1631,7 @@ label: "wave4-agent-f"
    - Check status file shows `SKILL-15: INSTALLED`
    - If not, install it now
 
-2. **Final QMD Indexing**
+2. **Final Gemini Engine Indexing**
    ```bash
    python3 ~/clawd/scripts/gemini-indexer.py
    # Handled by gemini-indexer.py
@@ -1717,7 +1717,7 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 ├─────────┬─────────────────┬─────────────────────────────────────────────────┤
 │  WAVE   │    AGENTS       │              SKILLS                             │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 1  │ 1 (Sequential)  │ 01 TYP, 02 Backup, QMD, 03 Agent Browser        │
+│ Wave 1  │ 1 (Sequential)  │ 01 TYP, 02 Backup, Gemini Engine, 03 Agent Browser        │
 │         │                 │ Foundation - must complete before Wave 2        │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
 │ Wave 2  │ 4 (Parallel)    │ Agent A: 04, 05, 06, 07 (install)               │
@@ -1735,7 +1735,7 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 │         │                 │ Post-Workforce tools                            │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
 │ Wave 5  │ 1 (Sequential)  │ 15 BlackCEO Team Management (verification)      │
-│         │                 │ Final verification and QMD indexing             │
+│         │                 │ Final verification and Gemini Engine indexing             │
 └─────────┴─────────────────┴─────────────────────────────────────────────────┘
 ```
 
@@ -2061,9 +2061,9 @@ Open [WORKSPACE_ROOT]/AGENTS.md and delete the block that reads:
 ```
 If the block is not present, continue without error.
 
-### Final QMD Indexing (MANDATORY)
+### Final Gemini Engine Indexing (MANDATORY)
 
-After all 30 skills are installed, run the final QMD indexing:
+After all 30 skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update

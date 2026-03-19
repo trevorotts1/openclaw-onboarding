@@ -12,7 +12,7 @@ This repo contains **30 skill folders** (01 through 30, with 13 archived) plus a
 - **15 suggested-roles files:** pre-built roles + core SOPs per department
 - **Interdepartmental communication system:** direct dept-to-dept with master orchestrator awareness
 - **4-layer persona alignment protocol** for role-to-persona mapping
-- **Daily company log system** with QMD integration
+- **Daily company log system** with Gemini Engine integration
 - **Surgical weekly auto-update system** with impact analysis (LOW/MEDIUM/HIGH risk)
 - **Department folder organization:** all depts live inside `my AI company departments/` subfolder
 
@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/mai
 What it does:
 1. Downloads the latest onboarding package
 2. Copies skills into `~/.openclaw/skills/`
-3. Installs QMD early (required by skill 22 and skill 23)
+3. Installs Gemini Engine early (required by skill 22 and skill 23)
 4. Asks for missing API keys with a skip option (does not block optional skills)
 5. Prints the next step
 
@@ -112,5 +112,5 @@ Some skills also include:
 
 ## Notes
 
-- QMD is installed by `install.sh` before platform skills. There is no separate QMD skill folder.
+- Gemini Engine is installed by `install.sh` before platform skills. There is no separate Gemini Engine skill folder.
 - If you fork this repo for client delivery, update `install.sh` to point at your fork.

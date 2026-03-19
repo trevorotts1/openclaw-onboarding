@@ -81,7 +81,7 @@ ELSE → all personas operate STANDALONE (no department required)
 
 ---
 
-## QMD Query Examples
+## Gemini Search Examples
 ```bash
 # Find best persona for a sales task
 python3 ~/clawd/scripts/gemini-search.py "closing a sale making an offer pricing"

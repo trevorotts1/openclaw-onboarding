@@ -2,7 +2,7 @@
 **Source Book:** Good to Great by Jim Collins
 **Version:** 1.0.0
 **Built:** March 7 at 5:02 PM
-**QMD Index:** collins-good-to-great
+**Gemini Index:** collins-good-to-great
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -15,7 +15,7 @@
 **Source Book:** Good to Great by Jim Collins
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** collins-good-to-great
+**Gemini Index:** collins-good-to-great
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT

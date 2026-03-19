@@ -4,15 +4,15 @@
 
 ---
 
-## QMD INDEXING PROTOCOL
+## Gemini Engine INDEXING PROTOCOL
 
-**QMD (semantic search) must be indexed at specific milestones, not after every skill.**
+**Gemini Engine (semantic search) must be indexed at specific milestones, not after every skill.**
 
 ### Indexing Milestones
 
 | Milestone | When to Run | What Gets Indexed |
 |-----------|-------------|-------------------|
-| **Initial** | After QMD install (step 3) | Base index of workspace |
+| **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
 | **Final** | After ALL 31 skills complete | Complete system index |
@@ -28,11 +28,11 @@ qmd status          # Verify completion
 
 ### Verification Steps
 
-1. **Announce:** "Running QMD indexing for [milestone] milestone..."
+1. **Announce:** "Running Gemini Engine indexing for [milestone] milestone..."
 2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
 3. **Embed:** `# Handled by gemini-indexer.py` - generates vectors
 4. **Status:** `qmd status` - confirm completion
-5. **Report:** "QMD indexing complete: X files, Y collections"
+5. **Report:** "Gemini Engine indexing complete: X files, Y collections"
 
 ### Critical Rules
 
@@ -50,7 +50,7 @@ qmd status          # Verify completion
 ### See Also
 
 - [After AI Workforce Setup Complete](#after-ai-workforce-setup-complete) - Post-Skill 23 workflow
-- [When to Run QMD Indexing](#when-to-run-qmd-indexing) - Event-triggered indexing rules
+- [When to Run Gemini Engine Indexing](#when-to-run-qmd-indexing) - Event-triggered indexing rules
 
 ---
 
@@ -65,7 +65,7 @@ When user finishes answering Skill 23 (AI Workforce Blueprint) questions:
 
 ---
 
-## When to Run QMD Indexing
+## When to Run Gemini Engine Indexing
 
 After these events, **ALWAYS** run: `python3 ~/clawd/scripts/gemini-indexer.py`
 
@@ -73,7 +73,7 @@ After these events, **ALWAYS** run: `python3 ~/clawd/scripts/gemini-indexer.py`
 - New book/persona added to coaching-personas collection
 - New departments or roles created
 - Bulk file additions to master-files folder
-- User says "my search isn't working" or "QMD can't find"
+- User says "my search isn't working" or "Gemini Engine can't find"
 - Major restructuring of workforce or personas
 
 ---
@@ -187,7 +187,7 @@ Don't wait for permission to improve. If you learned something, write it down no
 
 > Add lessons here as you learn them
 
-### QMD Indexing
+### Gemini Engine Indexing
 - Index at milestones, not after every skill
 - Always verify with `qmd status`
 - Personas and AI Workforce need immediate indexing (searchable content)

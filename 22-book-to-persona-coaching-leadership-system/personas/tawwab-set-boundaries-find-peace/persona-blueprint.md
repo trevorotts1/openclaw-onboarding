@@ -2,7 +2,7 @@
 **Source Book:** Set Boundaries Find Peace by Nedra Tawwab
 **Version:** 1.0.0
 **Built:** March 7 at 6:00 PM
-**QMD Index:** tawwab-set-boundaries-find-peace
+**Gemini Index:** tawwab-set-boundaries-find-peace
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -14,7 +14,7 @@
 **Source Book:** *Set Boundaries, Find Peace* by Nedra Glover Tawwab  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** tawwab-set-boundaries-find-peace  
+**Gemini Index:** tawwab-set-boundaries-find-peace  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

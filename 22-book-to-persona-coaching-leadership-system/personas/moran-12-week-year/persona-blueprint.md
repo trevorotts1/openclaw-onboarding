@@ -2,7 +2,7 @@
 **Source Book:** The 12 Week Year by Brian Moran
 **Version:** 1.0.0
 **Built:** March 7 at 7:11 PM
-**QMD Index:** moran-12-week-year
+**Gemini Index:** moran-12-week-year
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -14,7 +14,7 @@
 **Source Book:** The 12 Week Year by Brian Moran  
 **Version:** 1.0.0  
 **Built:** March 8, 2026  
-**QMD Index:** moran-12-week-year  
+**Gemini Index:** moran-12-week-year  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

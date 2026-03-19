@@ -2,7 +2,7 @@
 **Source Book:** Cant Hurt Me by David Goggins
 **Version:** 1.0.0
 **Built:** March 7 at 5:46 PM
-**QMD Index:** goggins-cant-hurt-me
+**Gemini Index:** goggins-cant-hurt-me
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -14,7 +14,7 @@
 **Source Book:** *Can’t Hurt Me* by David Goggins  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** goggins-cant-hurt-me  
+**Gemini Index:** goggins-cant-hurt-me  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

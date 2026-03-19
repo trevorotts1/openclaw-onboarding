@@ -77,7 +77,7 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 **Pre-flight check - verify before proceeding:**
 
 ```bash
-# Check if coaching-personas QMD collection exists
+# Check if coaching-personas Gemini Vector Database exists
 if qmd status 2>/dev/null | grep -q "coaching-personas"; then
   echo "✅ Skill 22 verified: coaching-personas collection found"
   SKILL22_INSTALLED=true
@@ -384,7 +384,7 @@ Check if Skill 22 (Book To Persona & Coaching & Leadership System) is installed.
 
 **How detection works - step by step:**
 
-1. Run this command to check for the QMD coaching-personas collection:
+1. Run this command to check for the Gemini Engine coaching-personas collection:
 ```bash
 qmd status 2>/dev/null | grep -q "coaching-personas"
 ```
@@ -398,7 +398,7 @@ ls ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/ 2>/dev/null
 **If coaching personas ARE detected (either check succeeds):**
 - Add a `governing-personas.md` file to every department folder
 - Add a `governing-personas.md` file to EVERY role folder (role-specific persona mapping)
-- Add a "Governing Personas" section to every `00-START-HERE.md` with QMD query instructions
+- Add a "Governing Personas" section to every `00-START-HERE.md` with Gemini Engine query instructions
 - Wire persona methodologies to department AND role operations
 
 **Role-Level Governing Personas:**
@@ -416,9 +416,9 @@ Each role gets its own `governing-personas.md` mapping personas to role-specific
 - Build proceeds clean with no persona references. No errors, no warnings.
 - Note in the completion report: "Coaching personas not detected. If you install Skill 22 later, re-run this skill in Option C (audit mode) to wire personas in."
 
-### Phase 6b - QMD Indexing (ALWAYS RUN)
+### Phase 6b - Gemini Engine Indexing (ALWAYS RUN)
 
-Regardless of whether coaching personas were detected, ALWAYS run QMD indexing after the build:
+Regardless of whether coaching personas were detected, ALWAYS run Gemini Engine indexing after the build:
 
 ```bash
 # Add/update all collections
@@ -432,7 +432,7 @@ qmd status
 ```
 
 **Why this happens here:**
-- Skill 22 no longer runs QMD embed (to avoid double-embedding)
+- Skill 22 no longer runs Gemini Engine embed (to avoid double-embedding)
 - Skill 23 indexes everything at once: master-files + coaching-personas + workforce structure
 - One embed covers all collections, saving time and compute
 

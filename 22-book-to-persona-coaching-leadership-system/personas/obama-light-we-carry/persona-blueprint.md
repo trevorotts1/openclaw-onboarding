@@ -2,7 +2,7 @@
 **Source Book:** The Light We Carry by Michelle Obama
 **Version:** 1.0.0
 **Built:** March 7 at 5:51 PM
-**QMD Index:** obama-light-we-carry
+**Gemini Index:** obama-light-we-carry
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -15,7 +15,7 @@
 **Source Book:** The Light We Carry by Michelle Obama
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** obama-light-we-carry
+**Gemini Index:** obama-light-we-carry
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT

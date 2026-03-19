@@ -14,7 +14,7 @@ PDF → Text Extraction (pdfplumber, free) → .txt file
                                     ↓ analysis-notes.md
                               Phase 3: GPT-5.3 Codex (Synthesis) ← fallback: Kimi K2.5
                                     ↓ persona-blueprint.md
-                              QMD Indexing
+                              Gemini Engine Indexing
                                     ↓ searchable via qmd query
 ```
 
@@ -144,7 +144,7 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 ---
 
-## Phase 4 - QMD Indexing
+## Phase 4 - Gemini Engine Indexing
 
 After Phase 3 completes for a book:
 
@@ -201,7 +201,7 @@ python3 ~/clawd/scripts/gemini-indexer.py
 | Phase 1 Kimi | 3-8 min | ~8 min | ~25 min |
 | Phase 2 DeepSeek | 2-5 min | ~5 min | ~18 min |
 | Phase 3 Codex | 5-12 min | ~12 min | ~40 min |
-| QMD indexing | 1-2 min | ~2 min | ~5 min |
+| Gemini Engine indexing | 1-2 min | ~2 min | ~5 min |
 | **Total** | | | **~1.5 hours** |
 
 With full 21 simultaneous: ~35-45 minutes total.

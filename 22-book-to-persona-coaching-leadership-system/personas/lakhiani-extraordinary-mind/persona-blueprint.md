@@ -2,7 +2,7 @@
 **Source Book:** Code of the Extraordinary Mind by Vishen Lakhiani
 **Version:** 1.0.0
 **Built:** March 7 at 6:43 PM
-**QMD Index:** lakhiani-extraordinary-mind
+**Gemini Index:** lakhiani-extraordinary-mind
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -14,7 +14,7 @@
 **Source Book:** Code of the Extraordinary Mind by Vishen Lakhiani  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** lakhiani-extraordinary-mind  
+**Gemini Index:** lakhiani-extraordinary-mind  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

@@ -6,7 +6,7 @@
 
 ## What Is This Skill?
 
-This skill gives your AI agent complete working knowledge of the Fish Audio API. It installs a full API reference document into your master files and indexes it with QMD so the agent can look up exact endpoints, parameters, and curl examples at query time - without guessing.
+This skill gives your AI agent complete working knowledge of the Fish Audio API. It installs a full API reference document into your master files and indexes it with Gemini Engine so the agent can look up exact endpoints, parameters, and curl examples at query time - without guessing.
 
 **What this enables:**
 - Text-to-speech generation via API (podcasts, phone calls, voicemails, content)
@@ -22,11 +22,11 @@ This skill gives your AI agent complete working knowledge of the Fish Audio API.
 
 **Before making ANY Fish Audio API call, the agent MUST:**
 
-1. Read `references/fish-audio-api-reference.md` OR run a QMD search to find the specific section needed
+1. Read `references/fish-audio-api-reference.md` OR run a Gemini Engine search to find the specific section needed
 2. Never guess at endpoints, parameters, or syntax
 3. Always use exact parameter names and values from the reference doc
 
-**QMD search pattern:**
+**Gemini Engine search pattern:**
 ```bash
 qmd search master-files "fish audio tts endpoint parameters"
 qmd search master-files "fish audio websocket streaming"

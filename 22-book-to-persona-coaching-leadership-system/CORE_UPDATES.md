@@ -13,7 +13,7 @@ Add concise summaries and file paths only. Never paste full documentation into c
 ```
 ## Book-to-Persona Skill (Installed)
 Converts any book (PDF/EPUB/MOBI/AZW3) into a dual-purpose persona blueprint.
-Pre-built personas already included. Run: qmd status -c coaching-personas to see total count. Pipeline runs on new books only.
+Pre-built personas already included. Run: python3 ~/clawd/scripts/gemini-indexer.py --status to see total count. Pipeline runs on new books only.
 
 Pipeline:
 - Phase 1: Kimi K2.5 via direct Moonshot API (api.moonshot.cn/v1, temp 1.0) → extraction-notes.md
@@ -31,7 +31,7 @@ Key paths:
 - Personas: ~/Downloads/openclaw-master-files/coaching-personas/personas/
 - Router: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PERSONA-ROUTER.md
 - Orchestrator: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
-- QMD collection: coaching-personas [run: qmd status -c coaching-personas to get current counts]
+- Gemini Vector Database: coaching-personas [run: python3 ~/clawd/scripts/gemini-indexer.py --status to get current counts]
 
 To add a new book: follow SOP in MEMORY.md under "Add New Book to Coaching Personas Matrix"
 ```
@@ -40,18 +40,18 @@ To add a new book: follow SOP in MEMORY.md under "Add New Book to Coaching Perso
 
 ## TOOLS.md
 
-**Where:** Add a new section under model routing titled `## Book-to-Persona - Model Routing and QMD`
+**Where:** Add a new section under model routing titled `## Book-to-Persona - Model Routing and Gemini Engine`
 
 **Exact text to add:**
 ```
-## Book-to-Persona - Model Routing and QMD
+## Book-to-Persona - Model Routing and Gemini Engine
 Pipeline model routing:
 - Phase 1: moonshot/kimi-k2.5 — MOONSHOT_API_KEY in ~/clawd/secrets/.env — endpoint: https://api.moonshot.cn/v1 — temperature MUST be 1.0
 - Phase 2: deepseek/deepseek-v3.2-speciale via OpenRouter ONLY (OPENROUTER_API_KEY)
 - Phase 3: openai/gpt-5.3-codex via OpenClaw OAuth (ChatGPT subscription)
 - Fallback (content filter): OpenRouter moonshotai/kimi-k2.5 for flagged books
 
-QMD collection: coaching-personas
+Gemini Vector Database: coaching-personas
 Setup commands (run once on fresh install):
   python3 ~/clawd/scripts/gemini-indexer.py
   # Handled by gemini-indexer.py  (takes 3-8 min first time, downloads local model, runs offline after)
@@ -61,7 +61,7 @@ After adding new book: python3 ~/clawd/scripts/gemini-indexer.py (no need to re-
 If stale/broken: qmd cleanup && python3 ~/clawd/scripts/gemini-indexer.py
 
 Full pipeline reference: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PIPELINE.md
-Full QMD guide: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/QMD-RETRIEVAL-GUIDE.md
+Full Gemini Engine guide: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/GEMINI-RETRIEVAL-GUIDE.md
 ```
 
 ---
@@ -74,10 +74,10 @@ Full QMD guide: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system
 ```
 ## Book-to-Persona Persona Library (Installed [DATE])
 - Skill: ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/
-- Pre-built personas (see qmd status -c coaching-personas for count): ~/Downloads/openclaw-master-files/coaching-personas/personas/
-- QMD collection: coaching-personas [run: qmd status -c coaching-personas to get current counts]
+- Pre-built personas (see python3 ~/clawd/scripts/gemini-indexer.py --status for count): ~/Downloads/openclaw-master-files/coaching-personas/personas/
+- Gemini Vector Database: coaching-personas [run: python3 ~/clawd/scripts/gemini-indexer.py --status to get current counts]
 - Source: Available at your onboarding package repo.
-- Persona Reflex: query QMD before every professional task (see AGENTS.md)
+- Persona Reflex: query Gemini Engine before every professional task (see AGENTS.md)
 - Add new book SOP: see "Add New Book to Coaching Personas Matrix" section in this file
 ```
 
@@ -118,7 +118,7 @@ No update required unless you are setting up a persona as your primary operating
 **Exact text to add:**
 ```
 ## Persona Reflex - ACTIVE
-QMD collection coaching-personas loaded [run: qmd status -c coaching-personas to get current counts].
+Gemini Vector Database coaching-personas loaded [run: python3 ~/clawd/scripts/gemini-indexer.py --status to get current counts].
 Before professional tasks: python3 ~/clawd/scripts/gemini-search.py "<task>" → load persona Task Mode.
 ```
 

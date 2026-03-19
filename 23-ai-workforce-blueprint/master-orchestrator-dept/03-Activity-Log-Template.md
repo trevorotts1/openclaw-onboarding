@@ -47,18 +47,18 @@ HH:MM — [FromDept]→[ToDept]: [action description] [JobID] [status emoji]
 
 ---
 
-## QMD Embed Schedule
+## Gemini Engine Embed Schedule
 
 - Current day's log: NEVER embedded mid-day (still being written)
 - Previous day's log: Embedded every morning at day start
 - Commands: `python3 ~/clawd/scripts/gemini-indexer.py` then `# Handled by gemini-indexer.py`
-- Annual archive: Move completed year to `daily-company-logs/archive/YYYY/` and QMD embed the archive
+- Annual archive: Move completed year to `daily-company-logs/archive/YYYY/` and Gemini Engine embed the archive
 
 ---
 
 ## Log Retention Policy
 
 - Current year: All logs stay in `daily-company-logs/`
-- End of year: Move full year to `daily-company-logs/archive/YYYY/` and QMD embed
+- End of year: Move full year to `daily-company-logs/archive/YYYY/` and Gemini Engine embed
 - Never auto-delete: Archiving only. Deletion is the owner's decision.
-- Logs are searchable via QMD after embedding
+- Logs are searchable via Gemini Engine after embedding

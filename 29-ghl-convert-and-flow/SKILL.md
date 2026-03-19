@@ -76,7 +76,7 @@ When a user asks a GHL question, identify the domain and read the matching refer
 
 ---
 
-## QMD-First Workflow
+## Gemini Engine-First Workflow
 
 This skill uses a **read-first, no-memorize** approach to keep context lean.
 

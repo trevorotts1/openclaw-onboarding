@@ -2,7 +2,7 @@
 **Source Book:** Start with Why by Simon Sinek
 **Version:** 1.0.0
 **Built:** March 7 at 4:37 PM
-**QMD Index:** sinek-start-with-why
+**Gemini Index:** sinek-start-with-why
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -15,7 +15,7 @@
 **Source Book:** Start with Why by Simon Sinek
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** sinek-start-with-why
+**Gemini Index:** sinek-start-with-why
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT

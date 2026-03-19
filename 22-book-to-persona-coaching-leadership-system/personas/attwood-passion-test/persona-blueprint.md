@@ -2,7 +2,7 @@
 **Source Book:** The Passion Test by Janet Attwood
 **Version:** 1.0.0
 **Built:** March 7 at 7:49 PM
-**QMD Index:** attwood-passion-test
+**Gemini Index:** attwood-passion-test
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -14,7 +14,7 @@
 **Source Book:** The Passion Test by Janet Bray Attwood and Chris Attwood  
 **Version:** 1.0.0  
 **Built:** March 8, 2026  
-**QMD Index:** attwood-passion-test  
+**Gemini Index:** attwood-passion-test  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

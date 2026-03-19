@@ -2,7 +2,7 @@
 **Source Book:** Relentless by Tim Grover
 **Version:** 1.0.0
 **Built:** March 7 at 6:57 PM
-**QMD Index:** grover-relentless
+**Gemini Index:** grover-relentless
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -15,7 +15,7 @@
 **Source Book:** Relentless by Tim Grover
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** grover-relentless
+**Gemini Index:** grover-relentless
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT

@@ -2,7 +2,7 @@
 **Source Book:** Influence by Robert Cialdini
 **Version:** 1.0.0
 **Built:** March 7 at 4:25 PM
-**QMD Index:** cialdini-influence
+**Gemini Index:** cialdini-influence
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -14,7 +14,7 @@
 **Source Book:** *Influence: The Psychology of Persuasion* by Robert B. Cialdini  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** cialdini-influence  
+**Gemini Index:** cialdini-influence  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

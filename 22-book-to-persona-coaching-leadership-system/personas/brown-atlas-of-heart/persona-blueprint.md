@@ -2,7 +2,7 @@
 **Source Book:** Atlas of the Heart by Brene Brown
 **Version:** 1.0.0
 **Built:** March 7 at 5:53 PM
-**QMD Index:** brown-atlas-of-heart
+**Gemini Index:** brown-atlas-of-heart
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -15,7 +15,7 @@
 **Source Book:** Atlas of the Heart by Brené Brown
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** brown-atlas-of-heart
+**Gemini Index:** brown-atlas-of-heart
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT

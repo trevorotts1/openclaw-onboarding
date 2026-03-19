@@ -1,6 +1,6 @@
 # GEMINI-RETRIEVAL-GUIDE.md - How Agents Query Personas at Runtime
 
-## What QMD Does in This System
+## What Gemini Engine Does in This System
 
 Gemini Embeddings 2 is the Layer 2 retrieval system for the persona library. It allows any agent to search
 across all persona blueprints and pull the exact section they need - without loading every
@@ -8,11 +8,11 @@ full persona into context.
 
 - **Layer 1** (always in context): Lightweight routing tags and persona summaries
 - **Layer 2** (on-demand retrieval): Full methodology sections, question libraries, tools,
-  frameworks - pulled surgically via QMD query
+  frameworks - pulled surgically via Gemini Engine query
 
 ---
 
-## Setup - Adding Personas to QMD
+## Setup - Adding Personas to Gemini Engine
 
 ### Add the full persona library as a collection
 
@@ -56,7 +56,7 @@ python3 ~/clawd/scripts/gemini-search.py "negotiation framework for difficult co
 python3 ~/clawd/scripts/gemini-search.py "sales questioning technique for uncovering customer problems"
 ```
 
-QMD returns the most relevant sections from matching persona blueprints.
+Gemini Engine returns the most relevant sections from matching persona blueprints.
 Read the results to identify which persona to activate.
 
 ### Query Pattern 2 - Pull a specific section from a known persona
@@ -120,11 +120,11 @@ qmd multi-get "personas/*/persona-blueprint.md"
 
 ---
 
-## How to Use QMD Results in Agent Context
+## How to Use Gemini Engine Results in Agent Context
 
-When QMD returns results, the agent should:
+When Gemini Engine returns results, the agent should:
 
-1. **Read the returned section** - QMD returns the matching text with file path and line numbers
+1. **Read the returned section** - Gemini Engine returns the matching text with file path and line numbers
 2. **Identify the persona** - note which persona blueprint the result came from
 3. **Pull more context if needed** - use `qmd get [path]:[line] -l [count]` to expand
 4. **Apply the methodology** - use the extracted framework, questions, or standards directly
@@ -137,7 +137,7 @@ Agent task: Write a sales outreach email for a SaaS product
 Step 1: Query for relevant governance standard
 → python3 ~/clawd/scripts/gemini-search.py "sales outreach email quality standard execution rules"
 
-Step 2: QMD returns sections from SPIN Selling and StoryBrand personas
+Step 2: Gemini Engine returns sections from SPIN Selling and StoryBrand personas
 
 Step 3: Agent reads the returned standards:
 - SPIN: Open with situation question, not product pitch
@@ -145,12 +145,12 @@ Step 3: Agent reads the returned standards:
 
 Step 4: Agent writes email following those standards
 
-Step 5: Agent self-reviews against the non-negotiable rules returned by QMD
+Step 5: Agent self-reviews against the non-negotiable rules returned by Gemini Engine
 ```
 
 ---
 
-## QMD Collection Maintenance
+## Gemini Engine Collection Maintenance
 
 ### Check collection health
 ```bash
@@ -180,10 +180,10 @@ qmd ls coaching-personas
 ## Integration with Routing System
 
 The routing system (trigger-matrix.md, task-routing-matrix.md) identifies WHICH persona to activate.
-QMD retrieves the CONTENT from that persona on demand.
+Gemini Engine retrieves the CONTENT from that persona on demand.
 
 They work together:
 1. Routing engine matches situation to persona (using keyword/tag triggers)
 2. Persona summary activates (Layer 1 - already in context)
-3. For deeper methodology detail, agent runs QMD query (Layer 2 - on-demand)
-4. QMD returns the specific sections needed for that task or coaching moment
+3. For deeper methodology detail, agent runs Gemini Engine query (Layer 2 - on-demand)
+4. Gemini Engine returns the specific sections needed for that task or coaching moment

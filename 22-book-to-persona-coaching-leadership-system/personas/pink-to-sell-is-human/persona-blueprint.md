@@ -2,7 +2,7 @@
 **Source Book:** To Sell Is Human by Daniel Pink
 **Version:** 1.0.0
 **Built:** March 7 at 4:41 PM
-**QMD Index:** pink-to-sell-is-human
+**Gemini Index:** pink-to-sell-is-human
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -14,7 +14,7 @@
 **Source Book:** *To Sell Is Human* by Daniel H. Pink  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** pink-to-sell-is-human  
+**Gemini Index:** pink-to-sell-is-human  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

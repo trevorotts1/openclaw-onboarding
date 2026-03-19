@@ -2,7 +2,7 @@
 **Source Book:** Crucial Conversations by Grenny Patterson
 **Version:** 1.0.0
 **Built:** March 7 at 6:40 PM
-**QMD Index:** grenny-crucial-conversations
+**Gemini Index:** grenny-crucial-conversations
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -15,7 +15,7 @@
 **Source Book:** Crucial Conversations: Tools for Talking When Stakes Are High by Joseph Grenny, Kerry Patterson, Ron McMillan, Al Switzler, and Emily Gregory  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** grenny-crucial-conversations  
+**Gemini Index:** grenny-crucial-conversations  
 **Index Location:** ./qmd-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  

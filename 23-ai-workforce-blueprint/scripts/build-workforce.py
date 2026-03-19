@@ -762,7 +762,7 @@ def show_prebuilt_departments():
 
 
 def check_personas_installed():
-    """Check if coaching-personas QMD collection exists on this machine."""
+    """Check if coaching-personas Gemini Vector Database exists on this machine."""
     try:
         result = subprocess.run(
             ["qmd", "status"],
@@ -1238,7 +1238,7 @@ def audit_mode(workspace, personas_installed):
         telegram_print("\n✓ Everything looks good - no gaps found.")
     if personas_installed:
         telegram_print("\n✅ Persona wiring complete.")
-        # Auto-run QMD update after wiring
+        # Auto-run Gemini Engine update after wiring
         run_gemini_indexer()
     else:
         telegram_print("\nℹ️ Install Skill 22 and re-run to wire personas.")
@@ -1415,7 +1415,7 @@ def build_workforce_automated(context, interview_data, departments):
     personas_still_installed = check_personas_installed()
     if personas_still_installed and personas_installed:
         telegram_print("✅ Personas still detected - wiring complete")
-        # Auto-run QMD update after wiring personas
+        # Auto-run Gemini Engine update after wiring personas
         run_gemini_indexer()
     elif personas_still_installed and not personas_installed:
         telegram_print("✅ Personas detected post-build - wiring now...")
@@ -1475,7 +1475,7 @@ def main():
         telegram_print("\nSkill 23 (AI Workforce Blueprint) requires Skill 22 to be fully installed first.")
         telegram_print("\nTo proceed:")
         telegram_print("  1. Navigate to 22-book-to-persona-coaching-leadership-system/")
-        telegram_print("  2. Complete all installation steps (including QMD setup)")
+        telegram_print("  2. Complete all installation steps (including Gemini Engine setup)")
         telegram_print("  3. Run: qmd status | grep coaching-personas")
         telegram_print("  4. Return here and re-run this script")
         telegram_print("\n" + "❌"*25)

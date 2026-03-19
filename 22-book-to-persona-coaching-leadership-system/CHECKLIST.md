@@ -3,7 +3,7 @@
 ## Pre-Run Checklist (run before every pipeline start)
 
 - [ ] TYP complete - all 7 .md files read in this session
-- [ ] QMD installed (`qmd --version` returns a version)
+- [ ] Google GenAI installed (`python3 -c "import google.genai"`)
 - [ ] pdfplumber installed (`python3 -c "import pdfplumber; print('OK')"`)
 - [ ] Master files folder located or confirmed
 - [ ] PDF file exists and is readable
@@ -63,7 +63,7 @@
 
 ---
 
-## QMD Indexing Checklist
+## Gemini Multimodal Indexing Checklist
 
 - [ ] coaching-personas collection exists (`qmd ls coaching-personas`)
 - [ ] `python3 ~/clawd/scripts/gemini-indexer.py` run after persona saved
@@ -79,5 +79,5 @@ A book is DONE when ALL of these are true:
 1. extraction-notes.md exists and passes Phase 1 checklist
 2. analysis-notes.md exists and passes Phase 2 checklist
 3. persona-blueprint.md exists and passes Phase 3 checklist
-4. QMD indexed and test queries return accurate results
+4. Gemini Engine indexed and test queries return accurate results
 5. pipeline-status.json shows phase3: COMPLETE for this book

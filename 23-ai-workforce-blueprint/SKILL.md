@@ -146,7 +146,7 @@ If a workforce structure already exists, run the scaffold script in audit mode. 
 
 **⚠️ PRE-FLIGHT CHECK: Skill 23 requires Skill 22 to be FULLY installed first.**
 
-Before running Skill 23, the system checks for the `coaching-personas` QMD collection. If not found:
+Before running Skill 23, the system checks for the `coaching-personas` Gemini Vector Database. If not found:
 - STOP and display: "Install Skill 22 (Book-to-Persona) first"
 - Do not proceed with workforce build
 
@@ -169,11 +169,11 @@ After all departments/roles are defined, Skill 23 re-checks for coaching-persona
 **These two skills work together automatically when both are present:**
 
 **If Skill 22 (book-to-persona) is installed:**
-- The scaffold script detects the `coaching-personas` QMD collection
+- The scaffold script detects the `coaching-personas` Gemini Vector Database
 - Every department folder gets a `governing-personas.md` file
 - Every role folder gets its own `governing-personas.md` for role-specific tasks
-- Every `00-START-HERE.md` gets a Governing Personas section with QMD query instructions
-- **Auto-runs QMD update after wiring:** `python3 ~/clawd/scripts/gemini-indexer.py`
+- Every `00-START-HERE.md` gets a Governing Personas section with Gemini Engine query instructions
+- **Auto-runs Gemini Engine update after wiring:** `python3 ~/clawd/scripts/gemini-indexer.py`
 - Agents know exactly which persona methodology to follow
 
 **If Skill 22 is NOT installed:**

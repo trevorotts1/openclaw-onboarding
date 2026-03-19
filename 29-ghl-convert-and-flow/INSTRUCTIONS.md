@@ -14,7 +14,7 @@ Never guess at endpoint syntax. Never invent parameters. Always read the referen
 
 ---
 
-## The QMD-First Workflow (4 Steps)
+## The Gemini Engine-First Workflow (4 Steps)
 
 ### Step 1 - Identify the Domain
 

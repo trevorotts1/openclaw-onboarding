@@ -58,11 +58,11 @@ HH:MM — [Source]: [Action] [JobID] [Status]
 
 ---
 
-## QMD Integration
+## Gemini Engine Integration
 
 - Every morning: run `python3 ~/clawd/scripts/gemini-indexer.py` + `# Handled by gemini-indexer.py` on yesterday's completed log
 - Current day's live log is never embedded mid-day
-- End of year: move all daily logs to `archive/YYYY/` and QMD embed the archive
+- End of year: move all daily logs to `archive/YYYY/` and Gemini Engine embed the archive
 
 ---
 
@@ -84,4 +84,4 @@ At the start of each new year:
 3. Every new SOP creation gets a log entry
 4. Keep entries to one line — concise is the standard
 5. Use Job IDs consistently to make searching easy
-6. If QMD is not installed, daily logs still work — they're just plain .md files
+6. If Gemini Engine is not installed, daily logs still work — they're just plain .md files

@@ -43,7 +43,7 @@ cp "$(dirname "$0")/references/fish-audio-api-reference.md" \
 
 ---
 
-## Step 3 - Index with QMD
+## Step 3 - Index with Gemini Engine
 
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py
@@ -101,6 +101,6 @@ You should get `200` and a file at `/tmp/fish_audio_test.mp3`. Play it to confir
 
 Skill 31 is complete when:
 - [ ] API reference doc is in `~/Downloads/openclaw-master-files/service-integrations/fish-audio/`
-- [ ] QMD has indexed and embedded the document
+- [ ] Gemini Engine has indexed and embedded the document
 - [ ] Credentials are stored in `clawdbot.json` and `.env`
 - [ ] Test curl returned 200 with audio output

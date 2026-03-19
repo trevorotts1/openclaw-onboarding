@@ -2,7 +2,7 @@
 **Source Book:** Instinct by TD Jakes
 **Version:** 1.0.0
 **Built:** March 7 at 5:56 PM
-**QMD Index:** jakes-instinct
+**Gemini Index:** jakes-instinct
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
@@ -15,7 +15,7 @@
 **Source Book:** Instinct by T.D. Jakes
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** jakes-instinct
+**Gemini Index:** jakes-instinct
 **Index Location:** ./qmd-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
