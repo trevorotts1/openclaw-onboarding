@@ -264,6 +264,49 @@ Every skill has a specific install sequence. Follow it exactly:
 
 ---
 
+## 🔴 CORE .MD FILE PROTECTION - DO NOT BLOAT (PERMANENT RULE)
+
+**Definition: "Core .md files" means these 7 files and ONLY these 7 files:**
+
+| File | Purpose |
+|------|---------|
+| MEMORY.md | Long-term persistent state and lessons learned |
+| AGENTS.md | Agent behavior rules and operating procedures |
+| TOOLS.md | Tool setup, API credentials, environment-specific notes |
+| USER.md | Who the human is (name, preferences, contacts) |
+| IDENTITY.md | Who the agent is |
+| SOUL.md | Agent personality and boundaries |
+| HEARTBEAT.md | Periodic check tasks and current project status |
+
+### Protection Rules
+
+1. **NEVER dump large content into core files.** Each skill's CORE_UPDATES.md contains the EXACT text to add. Add ONLY what CORE_UPDATES.md specifies. Nothing more.
+
+2. **NEVER copy full documentation into core files.** Core files are INDEX POINTERS, not storage. They say "Full guide at ~/path/to/file.md" instead of pasting the guide contents.
+
+3. **NEVER overwrite core files.** Always APPEND the specific CORE_UPDATES.md entries. Never replace existing content.
+
+4. **NEVER add the same entry twice.** Before adding a CORE_UPDATES.md entry, check if it already exists in the target core file. If it does, skip it.
+
+5. **Maximum addition per skill:** No more than 20 lines per core file per skill. If a skill's CORE_UPDATES.md exceeds 20 lines for any single core file, something is wrong. Stop and ask the user.
+
+6. **If a core file exceeds these sizes, it is bloated and needs cleanup:**
+   - MEMORY.md: over 2000 lines
+   - AGENTS.md: over 500 lines
+   - TOOLS.md: over 500 lines
+   - USER.md: over 200 lines
+   - IDENTITY.md: over 100 lines
+   - SOUL.md: over 100 lines
+   - HEARTBEAT.md: over 200 lines
+
+### Why This Matters
+
+The Teach Yourself Protocol (TYP) exists specifically to prevent this. Without TYP, agents dump entire skill documentation into AGENTS.md, ballooning it from 500 lines to 5000+ lines. This wastes tokens on every session start, slows the agent down, and pushes important information out of the context window.
+
+**The core files are the agent's brain. Keep them lean. Keep them fast. Keep them relevant.**
+
+---
+
 ## 🔴 GATEWAY RESTART PROTOCOL - NEVER TRIGGER AUTONOMOUSLY (PERMANENT RULE)
 
 **Discipline Rule:** During any skill installation, you may encounter instructions to restart the OpenClaw gateway.
