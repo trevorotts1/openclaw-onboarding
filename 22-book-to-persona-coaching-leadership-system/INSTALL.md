@@ -131,32 +131,34 @@ If any files are missing, re-run the copy command above.
 
 ## Step 2 - Check Dependencies
 
-### Gemini Embedding Engine (Required)
+### All Python Dependencies (Required)
 
-**Step 1:** Ensure the Google GenAI SDK is installed for multimodal vector search:
+**Install ALL dependencies in one command before proceeding:**
 ```bash
-pip3 install google-genai numpy --break-system-packages
+pip3 install google-genai numpy pdfplumber pypdf ebooklib aiohttp beautifulsoup4 mobi --break-system-packages
 ```
+
+**What each package does:**
+- `google-genai` + `numpy`: Gemini Embedding 2 vector search (Layer 4)
+- `pdfplumber`: Extracts text from PDF books (primary extractor)
+- `pypdf`: Fallback PDF reader if pdfplumber fails on certain files
+- `ebooklib`: Extracts text from EPUB books
+- `aiohttp`: Async HTTP client used by the pipeline orchestrator
+- `beautifulsoup4`: Parses HTML from MOBI book conversions
+- `mobi`: Direct MOBI file extraction
+
+**Verify all installed:**
+```bash
+python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs4, mobi; print('All dependencies OK')"
+```
+
+If any fail, re-run the pip3 install command above.
+
+### Gemini API Key (Required)
 
 **Step 2:** Verify your Gemini API Key is in your `.env` file (`GOOGLE_API_KEY` or `GEMINI_API_KEY`).
 
-### pdfplumber (Required for PDF extraction)
 
-Run: `python3 -c "import pdfplumber; print('OK')"`
-
-**If NOT installed:**
-```bash
-pip3 install pdfplumber --break-system-packages
-```
-
-### ebooklib (Required for EPUB extraction)
-
-Run: `python3 -c "import ebooklib; print('OK')"`
-
-**If NOT installed:**
-```bash
-pip3 install ebooklib --break-system-packages
-```
 
 ### Calibre - ebook-convert (Required for MOBI, AZW, AZW3, KFX)
 
