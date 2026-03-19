@@ -4,6 +4,17 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.3.1] - March 19, 2026
+
+### Updater: Silent Failure Fix
+
+#### Fixed
+- Update script no longer silently exits when onboarding folder is not found
+- Error message is now loud, clear, and tells the user exactly what to do next
+- Includes both "run the install first" and "find your files" instructions
+
+---
+
 ## [v5.3.0] - March 19, 2026
 
 ### Skill 23: AI Workforce Blueprint

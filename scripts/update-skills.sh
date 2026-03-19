@@ -157,16 +157,32 @@ step_detect_folder() {
     fi
     
     echo ""
-    echo "  ❌ ERROR: Cannot find onboarding folder."
+    echo "=========================================="
     echo ""
-    echo "  Looked in:"
+    echo "  ❌ COULD NOT FIND YOUR ONBOARDING FILES"
+    echo ""
+    echo "=========================================="
+    echo ""
+    echo "  I looked in these locations and could not find them:"
+    echo ""
     for path in "${SEARCH_PATHS[@]}"; do
         echo "    - $path"
     done
-    echo "    - ~/Downloads/ (recursive search)"
+    echo "    - ~/Downloads/ (searched 3 levels deep)"
     echo ""
-    echo "  If this is a first-time install, run:"
-    echo "    curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash"
+    echo "  This usually means one of two things:"
+    echo ""
+    echo "  1. You have not installed the onboarding package yet."
+    echo "     Run this command first:"
+    echo ""
+    echo "     curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash"
+    echo ""
+    echo "  2. Your onboarding files are in a different location."
+    echo "     Run this to find them:"
+    echo ""
+    echo "     find ~/Downloads ~/.openclaw -maxdepth 3 -name '*.skill' 2>/dev/null"
+    echo ""
+    echo "=========================================="
     echo ""
     exit 1
 }
