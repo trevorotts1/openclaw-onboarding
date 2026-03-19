@@ -4,6 +4,19 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.0.5] - March 19, 2026
+
+### Update Script Safety + Skill Refresh Fix
+
+#### Fixed
+- **Updater now runs `openclaw config validate`** after applying changes. If config is invalid, it warns the user and blocks restart.
+- **Skill folders with content changes are now properly detected** for refresh during updates
+
+#### Changed
+- Changelog is now maintained as an ongoing record of every version with specific changes documented per standard release practice
+
+---
+
 ## [v5.0.4] - March 19, 2026
 
 ### Cache-Busting Fix

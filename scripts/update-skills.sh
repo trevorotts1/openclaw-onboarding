@@ -456,6 +456,22 @@ step_apply() {
         fi
     done
     
+
+    # Validate config if it was touched
+    if [ -f "$HOME/.openclaw/openclaw.json" ]; then
+        if command -v openclaw &>/dev/null; then
+            VALIDATE_RESULT=$(openclaw config validate 2>&1)
+            if echo "$VALIDATE_RESULT" | grep -qi "invalid"; then
+                echo "  ⚠️  WARNING: Config validation failed after update!"
+                echo "  $VALIDATE_RESULT"
+                echo "  DO NOT RESTART until this is resolved."
+                echo ""
+            else
+                echo "  ✅ Config validation passed"
+            fi
+        fi
+    fi
+
     # Update version marker
     echo "$LATEST_VERSION" > "$HOME/.openclaw/skills/.onboarding-version" 2>/dev/null
     echo "$LATEST_VERSION" > "$LOCAL_ONBOARDING_DIR/.onboarding-version" 2>/dev/null
