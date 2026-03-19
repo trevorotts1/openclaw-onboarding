@@ -1,8 +1,8 @@
-# QMD-RETRIEVAL-GUIDE.md - How Agents Query Personas at Runtime
+# GEMINI-RETRIEVAL-GUIDE.md - How Agents Query Personas at Runtime
 
 ## What QMD Does in This System
 
-QMD is the Layer 2 retrieval system for the persona library. It allows any agent to search
+Gemini Embeddings 2 is the Layer 2 retrieval system for the persona library. It allows any agent to search
 across all persona blueprints and pull the exact section they need - without loading every
 full persona into context.
 
