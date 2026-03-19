@@ -310,45 +310,151 @@ rm -rf ~/.cache/qmd/
 
 ## Post-Installation Verification
 
-After all layers are installed, run these checks:
+After all layers are configured, verify each one before asking for a restart.
+
+### Config Validation (MANDATORY)
+
+Before asking the user to restart, validate the config:
 
 ```bash
-# Layer 1: Markdown files exist
-ls ~/clawd/MEMORY.md ~/clawd/memory/
-
-# Layer 2: Flush prompt is configured
-grep "memoryFlush" ~/.openclaw/openclaw.json | head -1
-
-# Layer 3: Session indexing is on
-grep "sessionMemory" ~/.openclaw/openclaw.json
-
-# Layer 4: Gemini provider is set (skip if GOOGLE_API_KEY not set)
-grep '"backend"' ~/.openclaw/openclaw.json
-grep '"provider"' ~/.openclaw/openclaw.json | grep gemini
-
-# Layer 5: Mem0 is loaded
-openclaw plugins list | grep -i "mem0"
+openclaw config validate
 ```
+
+If it says "Config valid", proceed. If it says "Invalid input" or any error, DO NOT ask for a restart. Fix the config issue first.
+
+### Layer-by-Layer Verification
+
+Run these checks and report the results to the user in Telegram:
+
+```bash
+# Layer 1: Markdown files
+echo "Layer 1:" && ls ~/clawd/MEMORY.md 2>/dev/null && echo "MEMORY.md OK" || echo "MEMORY.md MISSING"
+ls ~/clawd/memory/ 2>/dev/null | wc -l | xargs -I{} echo "Daily logs: {} files"
+
+# Layer 2: Flush prompt
+echo "Layer 2:" && grep -c "memoryFlush" ~/.openclaw/openclaw.json | xargs -I{} echo "Flush config entries: {}"
+
+# Layer 3: Session indexing
+echo "Layer 3:" && grep "sessionMemory" ~/.openclaw/openclaw.json | xargs echo
+
+# Layer 4: Gemini search
+echo "Layer 4:" && grep '"backend"' ~/.openclaw/openclaw.json | head -1
+grep '"provider"' ~/.openclaw/openclaw.json | grep gemini | head -1
+
+# Layer 5: Mem0
+echo "Layer 5:" && openclaw plugins list 2>/dev/null | grep -i "mem0" || echo "Mem0 not detected"
+```
+
+**Send the results to the user in Telegram** in plain language:
+
+> Memory system verification:
+> - Layer 1 (Markdown files): [OK/MISSING]
+> - Layer 2 (Memory flush): [CONFIGURED/NOT SET]
+> - Layer 3 (Session indexing): [ENABLED/DISABLED]
+> - Layer 4 (Gemini search): [READY/PENDING - needs API key]
+> - Layer 5 (Mem0): [LOADED/NOT LOADED]
+>
+> Config validation: [PASSED/FAILED]
 
 ### Gateway Restart
 
-After all configuration changes:
+After verification passes, send this message to the user in Telegram:
 
+> All 5 memory layers are configured. I need you to restart the gateway for the changes to take effect. Please type /restart when you are ready.
+
+Do NOT restart the gateway yourself. Wait for the user to do it.
+
+### Post-Restart: Knowledge Indexing
+
+After the user restarts the gateway, trigger indexing of all knowledge files.
+
+The Gemini Embedding 2 search engine needs to index the user's knowledge base. Search for and index ALL of these:
+
+**Required folders to index (search by name, case-insensitive):**
+- Any folder in ~/Downloads/ containing "openclaw" AND ("master" OR "onboarding") in the name
+- All subfolders within those folders
+- The workspace directory (~/clawd/ or wherever the agent workspace is)
+- The memory/ directory
+
+**File types to index:**
+Gemini Embedding 2 supports multimodal inputs. Index ALL of these file types:
+- `.md` (markdown)
+- `.txt` (text)
+- `.pdf` (documents)
+- `.png`, `.jpg`, `.jpeg`, `.webp` (images)
+- `.mp3`, `.wav`, `.m4a` (audio, if present)
+
+**How to verify indexing is working:**
+
+```bash
+openclaw memory status 2>&1 | head -10
 ```
-Tell the user: "I need you to restart the OpenClaw gateway for the memory upgrades to take effect. Please type /restart in Telegram or run: openclaw gateway restart"
+
+Expected output should show:
+- Provider: gemini
+- Model: gemini-embedding-2-preview
+- Indexed: [number] files
+- Vector: ready
+
+**Send indexing status to the user in Telegram:**
+
+> Indexing your knowledge base with Gemini Embedding 2...
+> - Found [X] files across [Y] folders
+> - Indexed: [number] files, [number] chunks
+> - Status: [ready/in progress]
+
+### Post-Restart: Live Memory Test
+
+After indexing, run a live search test to confirm the system is working end-to-end:
+
+```bash
+# Test with a query relevant to the user's data
+openclaw memory search "important" 2>&1 | head -20
 ```
 
-Do NOT restart the gateway yourself. Ask the user to do it.
+If results come back, the system is working. If no results, check:
+1. Is GOOGLE_API_KEY set?
+2. Did the restart happen?
+3. Is memory.backend = "builtin"?
 
-### Final Test
+**Send test results to the user in Telegram:**
 
-After restart, test the memory system:
+> Memory system test complete:
+> - Search returned [X] results
+> - All [5] layers are operational
+>
+> Your upgraded memory system is fully installed and working.
 
-```
-Ask the agent: "Search your memory for [any topic the user has discussed before]"
-```
+If any layer failed, report which one and what needs to be fixed.
 
-If results come back, all layers are working.
+---
+
+## Update Flow (for future updates)
+
+When the onboarding package is updated (via the weekly Sunday check or manual update), the agent should communicate the entire update process to the user in Telegram, not in the terminal.
+
+### Update Status File
+
+After an update runs, it writes a status file at:
+`~/.openclaw/onboarding/.update-result.json`
+
+The agent should check for this file on each heartbeat. If it exists, read it and send a summary to the user in Telegram:
+
+> Your system was updated from [old version] to [new version].
+> Here is what changed: [summary from status file]
+> Backup saved to: [path]
+> [If restart needed]: Type /restart when you are ready.
+
+After sending, rename the file to `.update-result-sent.json` so it is not sent again.
+
+### Update Progress
+
+During an update, progress should be communicated in Telegram, not buried in terminal output. The agent should send brief status messages:
+
+> Checking for updates...
+> Update available: [old] to [new]. Reviewing impact...
+> [X] changes found. Applying approved changes...
+> Update complete. [details]
 
 ---
 
@@ -356,14 +462,17 @@ If results come back, all layers are working.
 
 ```
 [ ] Layer 1: MEMORY.md exists and has content
-[ ] Layer 1: memory/ directory exists with daily logs
-[ ] Layer 2: Flush prompt updated with 8 categories
+[ ] Layer 1: memory/ directory exists
+[ ] Layer 2: Flush prompt updated with category-based capture
 [ ] Layer 3: sessionMemory enabled
 [ ] Layer 4: memory.backend set to "builtin" (or PENDING if no API key)
 [ ] Layer 4: memorySearch.provider set to "gemini" (or PENDING if no API key)
 [ ] Layer 5: Mem0 plugin installed and loaded
 [ ] Layer 5: autoCapture and autoRecall both true
-[ ] Gateway restarted by user
-[ ] Memory search test returned results
-[ ] Core files updated (see CORE_UPDATES.md)
+[ ] Config validated with openclaw config validate
+[ ] Gateway restarted by user (agent asked, user typed /restart)
+[ ] Knowledge base indexing triggered (all master files, subfolders, multimodal)
+[ ] Live memory search test returned results
+[ ] All layer statuses reported to user in Telegram
+[ ] Core files updated per CORE_UPDATES.md (using TYP rules)
 ```

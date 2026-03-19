@@ -4,6 +4,24 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.1.0] - March 19, 2026
+
+### Skill 31 Major Upgrade: Testing, Indexing, Telegram Flow
+
+#### Added
+- **Post-install memory layer testing** with per-layer verification reported to user in Telegram
+- **Config validation gate** before restart (openclaw config validate must pass)
+- **Knowledge base indexing trigger** after restart: indexes all master files, subfolders, personas, AI workforce docs, and multimodal files (images, audio, PDFs)
+- **Telegram-first update flow** design: update progress and approval happen in Telegram, not terminal
+- **Update status file** (.update-result.json) for agent handoff after terminal updates
+- **Expanded completion checklist** with config validation, indexing, live search test, and Telegram reporting steps
+
+#### Fixed
+- Post-install verification now tests each layer individually instead of a single generic search
+- Restart safety: config must validate before user is asked to restart
+
+---
+
 ## [v5.0.5] - March 19, 2026
 
 ### Update Script Safety + Skill Refresh Fix
