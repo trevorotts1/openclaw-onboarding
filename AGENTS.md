@@ -22,7 +22,7 @@
 
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
-qmd embed           # Generate embeddings
+# Handled by gemini-indexer.py           # Generate embeddings
 qmd status          # Verify completion
 ```
 
@@ -30,7 +30,7 @@ qmd status          # Verify completion
 
 1. **Announce:** "Running QMD indexing for [milestone] milestone..."
 2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
-3. **Embed:** `qmd embed` - generates vectors
+3. **Embed:** `# Handled by gemini-indexer.py` - generates vectors
 4. **Status:** `qmd status` - confirm completion
 5. **Report:** "QMD indexing complete: X files, Y collections"
 
@@ -38,7 +38,7 @@ qmd status          # Verify completion
 
 - **Do NOT** skip indexing at milestones (breaks search)
 - **Do NOT** assume "it's probably fine" - verify with `qmd status`
-- **Do NOT** run `qmd embed` without `python3 ~/clawd/scripts/gemini-indexer.py` first
+- **Do NOT** run `# Handled by gemini-indexer.py` without `python3 ~/clawd/scripts/gemini-indexer.py` first
 - **Do NOT** index after every single skill (wastes time)
 
 ### Collections

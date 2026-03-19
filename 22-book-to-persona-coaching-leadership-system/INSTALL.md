@@ -246,6 +246,14 @@ mkdir -p ~/Downloads/openclaw-master-files/coaching-personas/personas
 
 This skill requires three model connections. Check each one:
 
+
+### Google Gemini (Required for Multimodal Embeddings)
+Check for `GOOGLE_API_KEY` or `GEMINI_API_KEY` across all known env file locations:
+```bash
+_find_key "GOOGLE_API_KEY" || _find_key "GEMINI_API_KEY"
+```
+If missing, you MUST add your Google API key to `~/clawd/secrets/.env`. The multimodal embedding engine will crash without it.
+
 ### Kimi K2.5 (Phase 1)
 Check for `MOONSHOT_API_KEY` across all known env file locations:
 ```bash

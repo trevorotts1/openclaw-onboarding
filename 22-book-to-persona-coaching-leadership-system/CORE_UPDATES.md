@@ -54,7 +54,7 @@ Pipeline model routing:
 QMD collection: coaching-personas
 Setup commands (run once on fresh install):
   python3 ~/clawd/scripts/gemini-indexer.py
-  qmd embed  (takes 3-8 min first time, downloads local model, runs offline after)
+  # Handled by gemini-indexer.py  (takes 3-8 min first time, downloads local model, runs offline after)
 
 Runtime query: python3 ~/clawd/scripts/gemini-search.py "<task keywords>"
 After adding new book: python3 ~/clawd/scripts/gemini-indexer.py (no need to re-embed everything)

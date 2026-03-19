@@ -425,7 +425,7 @@ Regardless of whether coaching personas were detected, ALWAYS run QMD indexing a
 python3 ~/clawd/scripts/gemini-indexer.py
 
 # Generate embeddings (covers master-files + coaching-personas + workforce files)
-qmd embed
+# Handled by gemini-indexer.py
 
 # Verify completion
 qmd status

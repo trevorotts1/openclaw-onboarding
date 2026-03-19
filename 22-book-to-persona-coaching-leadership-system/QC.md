@@ -128,7 +128,7 @@ Answer each question without looking at the files. These confirm the agent has i
 - Expected: Over 10,000 characters (blueprints are much larger in practice)
 
 **Q10: After adding a new persona blueprint, what two QMD commands must be run?**
-- Expected: `python3 ~/clawd/scripts/gemini-indexer.py` then `qmd embed`
+- Expected: `python3 ~/clawd/scripts/gemini-indexer.py` then `# Handled by gemini-indexer.py`
 
 **Passing threshold:** 8/10 correct. Score below 8 = re-read PIPELINE.md, PERSONA-ROUTER.md, CORE_UPDATES.md, and GOOD-AND-BAD-EXAMPLES.md.
 
@@ -180,7 +180,7 @@ Run these prompts and evaluate the agent's actual output against the expected be
 ---
 
 ### Test 4D — QMD Query Returns Relevant Results
-**Run:** `qmd query "habit building systems behavior change consistency"`
+**Run:** `python3 ~/clawd/scripts/gemini-search.py "habit building systems behavior change consistency"`
 
 **Expected output:**
 - Returns at least one result from a persona blueprint (e.g., `clear-atomic-habits` or `duhigg-power-of-habit`)
@@ -308,7 +308,7 @@ If QMD collection is missing or broken:
   --name coaching-personas \
   --mask "**/*.md"
 python3 ~/clawd/scripts/gemini-indexer.py
-qmd embed
+# Handled by gemini-indexer.py
 ```
 
 If QMD results are stale:

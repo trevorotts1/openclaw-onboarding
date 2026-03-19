@@ -25,7 +25,7 @@ full persona into context.
 
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py
-qmd embed
+# Handled by gemini-indexer.py
 ```
 
 ### Verify
@@ -39,7 +39,7 @@ qmd status
 
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py
-qmd embed
+# Handled by gemini-indexer.py
 ```
 
 ---
@@ -51,9 +51,9 @@ qmd embed
 Use when: you need to identify which persona to activate for a specific human challenge or task
 
 ```bash
-qmd query "methodology for building habits and systems for consistency"
-qmd query "negotiation framework for difficult conversations and objection handling"
-qmd query "sales questioning technique for uncovering customer problems"
+python3 ~/clawd/scripts/gemini-search.py "methodology for building habits and systems for consistency"
+python3 ~/clawd/scripts/gemini-search.py "negotiation framework for difficult conversations and objection handling"
+python3 ~/clawd/scripts/gemini-search.py "sales questioning technique for uncovering customer problems"
 ```
 
 QMD returns the most relevant sections from matching persona blueprints.
@@ -64,9 +64,9 @@ Read the results to identify which persona to activate.
 Use when: you know which persona you want, and need a specific section (questions, tools, etc.)
 
 ```bash
-qmd query "Atomic Habits coaching questions assessment phase"
-qmd query "SPIN Selling decision logic framework agent governance"
-qmd query "Never Split the Difference objection handling resistance"
+python3 ~/clawd/scripts/gemini-search.py "Atomic Habits coaching questions assessment phase"
+python3 ~/clawd/scripts/gemini-search.py "SPIN Selling decision logic framework agent governance"
+python3 ~/clawd/scripts/gemini-search.py "Never Split the Difference objection handling resistance"
 ```
 
 ### Query Pattern 3 - Find execution standards for a task type
@@ -75,9 +75,9 @@ Use when: an agent is about to execute a specific type of professional task and 
 the governance standard
 
 ```bash
-qmd query "email outreach quality standard non-negotiable rules"
-qmd query "sales call preparation checklist execution standard"
-qmd query "leadership coaching session structure definition of done"
+python3 ~/clawd/scripts/gemini-search.py "email outreach quality standard non-negotiable rules"
+python3 ~/clawd/scripts/gemini-search.py "sales call preparation checklist execution standard"
+python3 ~/clawd/scripts/gemini-search.py "leadership coaching session structure definition of done"
 ```
 
 ### Query Pattern 4 - Find failure patterns to avoid
@@ -85,9 +85,9 @@ qmd query "leadership coaching session structure definition of done"
 Use when: an agent is reviewing their own output or checking for common mistakes
 
 ```bash
-qmd query "failure patterns amateur mistakes sales execution"
-qmd query "what bad coaching looks like versus expert coaching"
-qmd query "content writing failure patterns quality markers"
+python3 ~/clawd/scripts/gemini-search.py "failure patterns amateur mistakes sales execution"
+python3 ~/clawd/scripts/gemini-search.py "what bad coaching looks like versus expert coaching"
+python3 ~/clawd/scripts/gemini-search.py "content writing failure patterns quality markers"
 ```
 
 ---
@@ -96,7 +96,7 @@ qmd query "content writing failure patterns quality markers"
 
 ### Simple hybrid query (recommended - combines BM25 + vector)
 ```bash
-qmd query "your question here"
+python3 ~/clawd/scripts/gemini-search.py "your question here"
 ```
 
 ### Structured query (when you need precise control)
@@ -135,7 +135,7 @@ When QMD returns results, the agent should:
 Agent task: Write a sales outreach email for a SaaS product
 
 Step 1: Query for relevant governance standard
-→ qmd query "sales outreach email quality standard execution rules"
+→ python3 ~/clawd/scripts/gemini-search.py "sales outreach email quality standard execution rules"
 
 Step 2: QMD returns sections from SPIN Selling and StoryBrand personas
 
@@ -160,14 +160,14 @@ qmd status
 ### After adding new persona blueprints
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py
-qmd embed
+# Handled by gemini-indexer.py
 ```
 
 ### If results seem stale or wrong
 ```bash
 qmd cleanup
 python3 ~/clawd/scripts/gemini-indexer.py
-qmd embed
+# Handled by gemini-indexer.py
 ```
 
 ### View what is indexed

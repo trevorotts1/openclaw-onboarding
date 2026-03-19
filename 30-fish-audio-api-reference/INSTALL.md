@@ -47,7 +47,7 @@ cp "$(dirname "$0")/references/fish-audio-api-reference.md" \
 
 ```bash
 python3 ~/clawd/scripts/gemini-indexer.py
-qmd embed
+# Handled by gemini-indexer.py
 ```
 
 Wait for both commands to complete before continuing.

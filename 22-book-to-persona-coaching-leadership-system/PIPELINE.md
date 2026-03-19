@@ -157,7 +157,7 @@ After Phase 3 completes for a book:
 python3 ~/clawd/scripts/gemini-indexer.py
 
 # Generate vector embeddings
-qmd embed
+# Handled by gemini-indexer.py
 ```
 
 ---

@@ -51,7 +51,7 @@ HH:MM — [FromDept]→[ToDept]: [action description] [JobID] [status emoji]
 
 - Current day's log: NEVER embedded mid-day (still being written)
 - Previous day's log: Embedded every morning at day start
-- Commands: `python3 ~/clawd/scripts/gemini-indexer.py` then `qmd embed`
+- Commands: `python3 ~/clawd/scripts/gemini-indexer.py` then `# Handled by gemini-indexer.py`
 - Annual archive: Move completed year to `daily-company-logs/archive/YYYY/` and QMD embed the archive
 
 ---

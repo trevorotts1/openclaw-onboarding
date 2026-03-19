@@ -1139,11 +1139,11 @@ def run_qmd_update():
     try:
         result = subprocess.run(["qmd", "embed"], capture_output=True, text=True, timeout=300)
         if result.returncode == 0:
-            telegram_print("  ✓ qmd embed complete")
+            telegram_print("  ✓ # Handled by gemini-indexer.py complete")
         else:
-            telegram_print(f"  ⚠️ qmd embed: {result.stderr[:100]}")
+            telegram_print(f"  ⚠️ # Handled by gemini-indexer.py: {result.stderr[:100]}")
     except Exception as e:
-        telegram_print(f"  ⚠️ qmd embed failed: {e}")
+        telegram_print(f"  ⚠️ # Handled by gemini-indexer.py failed: {e}")
 
 
 def audit_mode(workspace, personas_installed):
