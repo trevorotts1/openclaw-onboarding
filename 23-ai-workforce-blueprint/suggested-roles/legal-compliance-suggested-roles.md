@@ -8,6 +8,19 @@ Handle contracts, legal documents, compliance requirements, and regulatory matte
 
 ## Roles
 
+### 0. Chief Legal Officer
+**What it does:** Provides strategic oversight for all legal and compliance matters. Reports to the CEO. Manages the legal department workers, runs department standups, selects the right personas for specific tasks, and ensures all legal activities protect the business.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Contract Specialist
 **What it does:** Drafts, reviews, and manages contracts — client agreements, vendor contracts, partnership agreements, NDAs.
 

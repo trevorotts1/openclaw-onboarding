@@ -8,6 +8,19 @@ Build and maintain websites, sales funnels, landing pages, and anything that liv
 
 ## Roles
 
+### 0. Head of Web Development
+**What it does:** Provides strategic oversight for all web development efforts. Reports to the CEO/CTO. Manages the web development department workers, runs department standups, selects the right personas for specific tasks, and ensures all web projects align with business goals.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Funnel Builder
 **What it does:** Builds sales funnels, opt-in pages, checkout pages, and thank-you pages — primarily in GoHighLevel/Convert and Flow or ClickFunnels. Focuses on conversion architecture.
 

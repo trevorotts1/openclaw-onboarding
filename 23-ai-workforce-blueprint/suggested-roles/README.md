@@ -29,6 +29,8 @@ One `.md` file per department listing:
 | it-tech-suggested-roles.md | it-tech-dept |
 | web-development-suggested-roles.md | web-development-dept |
 | app-development-suggested-roles.md | app-development-dept |
+| research-suggested-roles.md | research-dept |
+| communications-suggested-roles.md | communications-dept |
 
 ## How to Use
 

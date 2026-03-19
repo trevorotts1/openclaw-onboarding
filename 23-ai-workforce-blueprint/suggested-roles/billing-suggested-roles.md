@@ -13,6 +13,19 @@ Handle all financial operations — invoicing, payment collection, subscription 
 
 ## Roles
 
+### 0. Chief Financial Officer
+**What it does:** Provides strategic oversight for all financial operations. Reports to the CEO. Manages the billing department workers, runs department standups, selects the right personas for specific tasks, and ensures all financial activities align with business goals.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Invoice Specialist
 **What it does:** Creates and sends invoices, tracks payment status, follows up on unpaid invoices, and records received payments.
 

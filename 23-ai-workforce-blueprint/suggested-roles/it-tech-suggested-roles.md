@@ -8,6 +8,19 @@ Manage technical infrastructure — software tools, servers, websites, integrati
 
 ## Roles
 
+### 0. Chief Technology Officer
+**What it does:** Provides strategic oversight for all technology and IT infrastructure. Reports to the CEO. Manages the IT department workers, runs department standups, selects the right personas for specific tasks, and ensures all technical systems support business operations.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Technical Support Specialist
 **What it does:** First line of response for technical issues — broken tools, login problems, integration failures, error messages.
 

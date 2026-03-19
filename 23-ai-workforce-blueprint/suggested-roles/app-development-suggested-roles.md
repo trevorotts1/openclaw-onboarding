@@ -8,6 +8,19 @@ Build software applications, mobile apps, APIs, and custom tools. Write code, te
 
 ## Roles
 
+### 0. Head of App Development
+**What it does:** Provides strategic oversight for all application development efforts. Reports to the CEO/CTO. Manages the app development department workers, runs department standups, selects the right personas for specific tasks, and ensures all software projects align with business goals.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Software Engineer
 **What it does:** Designs and builds full software applications — backend logic, databases, APIs, and application architecture.
 

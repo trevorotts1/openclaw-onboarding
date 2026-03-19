@@ -4,6 +4,23 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.3.0] - March 19, 2026
+
+### Skill 23: AI Workforce Blueprint
+
+#### Added
+- Department heads (Role #0) added to all 15 existing departments
+- Two new departments: Research and Communications
+- All 17 departments now presented equally (removed "optional" tier)
+
+#### Changed
+- INSTALL.md: Updated department list to show all 17 as recommended choices
+- ai-workforce-blueprint-full.md: Replaced tiered department list with flat list of all 17
+- SKILL.md: Updated "Pre-Built Departments Available" to list all 17 departments
+- suggested-roles/README.md: Added Research and Communications to department file list
+
+---
+
 ## [v5.2.3] - March 19, 2026
 
 ### Skill 31: Source-Verified Corrections

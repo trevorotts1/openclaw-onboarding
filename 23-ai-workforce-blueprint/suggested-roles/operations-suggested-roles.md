@@ -8,6 +8,19 @@ Keep the business running day to day. Manage systems, processes, scheduling, too
 
 ## Roles
 
+### 0. Chief Operating Officer
+**What it does:** Provides strategic oversight for all operations. Reports to the CEO. Manages the operations department workers, runs department standups, selects the right personas for specific tasks, and ensures all operational activities align with business efficiency goals.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Project Manager
 **What it does:** Tracks active projects across all departments. Ensures deadlines are met, tasks are assigned, and nothing falls through the cracks. The coordination hub between departments.
 

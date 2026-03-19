@@ -8,6 +8,19 @@ Generate awareness, attract leads, and nurture prospects into sales-ready opport
 
 ## Roles
 
+### 0. Chief Marketing Officer
+**What it does:** Provides strategic oversight for all marketing efforts. Reports to the CEO/COM. Manages the marketing department workers, runs department standups, selects the right personas for specific tasks, and ensures all marketing activities align with business goals.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Content Strategist
 **What it does:** Plans the overall content calendar. Decides what topics to cover, which formats to use, when to publish, and which channels to prioritize. Coordinates requests to Creative, Graphics, Video, and Audio.
 

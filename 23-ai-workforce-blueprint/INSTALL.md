@@ -238,9 +238,12 @@ Ask the user these questions. Wait for answers before building anything:
 **Required questions:**
 1. "What is the name of your business?"
 2. "What industry are you in?" (coaching, e-commerce, agency, restaurant, law firm, SaaS, etc.)
-3. "Which departments does your business need?" (Show them the starter list from the blueprint as a reference):
-   - Sales, Marketing, Creative, Billing/Finance, Customer Support, Operations
-   - Optional: Web Development, App Development, HR/People, Legal/Compliance, IT/Tech
+3. "Which departments does your business need?" (Show them the starter list from the blueprint as a reference). All 17 departments are recommended - you choose which ones to keep:
+   - Marketing, Sales, Creative, Graphics, Video, Audio
+   - Billing/Finance, Customer Support, Operations
+   - Web Development, App Development
+   - HR/People, Legal/Compliance, IT/Tech
+   - Research, Communications
    - The Master Orchestrator department is always created automatically
 4. "Which setup option do you want?"
    - **Option A - Full Interview** (recommended): "I will interview you about each department - at least 7 questions per department - so I deeply understand your operations, tools, KPIs, and processes. Then I build everything with real content based on your answers."

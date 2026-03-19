@@ -8,6 +8,19 @@ Convert leads into paying customers and manage ongoing client relationships.
 
 ## Roles
 
+### 0. Chief Sales Officer
+**What it does:** Provides strategic oversight for all sales efforts. Reports to the CEO/COM. Manages the sales department workers, runs department standups, selects the right personas for specific tasks, and ensures all sales activities align with revenue goals.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Appointment Setter
 **What it does:** Makes outbound and inbound contact with leads. Qualifies them. Books them into the calendar for a discovery or sales call. Does NOT close — opens the door.
 

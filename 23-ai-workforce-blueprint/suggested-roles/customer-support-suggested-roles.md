@@ -8,6 +8,19 @@ Help existing customers and clients. Resolve issues, onboard new clients, handle
 
 ## Roles
 
+### 0. Head of Customer Success
+**What it does:** Provides strategic oversight for all customer support efforts. Reports to the CEO/COM. Manages the customer support department workers, runs department standups, selects the right personas for specific tasks, and ensures all customer interactions align with satisfaction goals.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Support Agent
 **What it does:** First line of response for all incoming client questions, issues, and requests. Resolves common issues, logs tickets, and escalates when needed.
 

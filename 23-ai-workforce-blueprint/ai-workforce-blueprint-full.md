@@ -223,27 +223,27 @@ QuickBooks, Convert and Flow, Calendly, Google Workspace, social media platforms
 
 ### Common Department Starter List
 
-Every business is different, but here are departments most businesses need. Use this as a starting point - pick what fits YOUR business.
-
-**Departments Almost Every Business Needs:**
+Every business is different, but here are the 17 departments available. Use this as a starting point - pick what fits YOUR business. All departments are presented equally; you choose which ones to keep and which to remove.
 
 | Department | What It Does |
 |-----------|-------------|
 | Marketing | Getting the word out - content, ads, social media, email campaigns |
-| Sales | Converting leads into paying customers (some businesses don't need this separately - if you sell products online with no sales calls, Marketing might handle it all) |
-| Billing/Finance | Invoicing, payment collection, refunds, financial tracking. Accounts receivable falls under this |
+| Sales | Converting leads into paying customers |
+| Creative | Writing all content - copy, blog posts, scripts, speeches |
+| Graphics | Creating static visual assets - images, brand graphics, thumbnails, ad creatives |
+| Video | Producing video content - AI-generated videos, edited videos, short-form content |
+| Audio | Generating and processing audio - voiceovers, music, podcasts, transcriptions |
+| Billing/Finance | Invoicing, payment collection, refunds, financial tracking |
 | Customer Support | Helping existing clients and customers with issues |
 | Operations | The day-to-day of running the business - scheduling, systems, processes |
-
-**Departments That Depend on Your Business:**
-
-| Department | What It Does | You Need This If... |
-|-----------|-------------|-------------------|
-| Creative | Writing content, creating images, producing videos, designing graphics | Your business produces content regularly |
-| Fulfillment/Delivery | Delivering the product or service after the sale | You have a service or physical product to deliver |
-| HR/People | Managing employees, contractors, hiring, onboarding | You have team members |
-| Legal/Compliance | Contracts, regulations, compliance | Your industry has rules and regulations |
-| IT/Tech | Managing software, websites, technical infrastructure | You run technical systems |
+| Web Development | Building and maintaining websites, sales funnels, landing pages |
+| App Development | Building software applications, mobile apps, APIs, custom tools |
+| HR/People | Managing employees, contractors, hiring, onboarding |
+| Legal/Compliance | Contracts, regulations, compliance |
+| IT/Tech | Managing software, websites, technical infrastructure |
+| Research | Gathering market intelligence, competitive analysis, data analysis |
+| Communications | Managing PR, internal communications, and brand messaging |
+| Master Orchestrator | Routes all work between departments (always included) |
 
 ---
 

@@ -10,6 +10,19 @@ ALL written content. If it starts as words, it starts here. Creative writes — 
 
 ## Roles
 
+### 0. Chief Creative Officer
+**What it does:** Provides strategic oversight for all creative efforts. Reports to the CEO/COM. Manages the creative department workers, runs department standups, selects the right personas for specific tasks, and ensures all creative output aligns with brand standards.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Copywriter
 **What it does:** Writes persuasive, conversion-focused copy for ads, landing pages, sales pages, email subject lines, and calls to action.
 

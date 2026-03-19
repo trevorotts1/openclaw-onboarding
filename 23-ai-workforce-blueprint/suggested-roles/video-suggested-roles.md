@@ -19,6 +19,19 @@ Produce all video content — AI-generated videos, edited videos, short-form con
 
 ## Roles
 
+### 0. Head of Video Production
+**What it does:** Provides strategic oversight for all video efforts. Reports to the CEO/COM. Manages the video department workers, runs department standups, selects the right personas for specific tasks, and ensures all video output aligns with brand standards.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Storyboard Producer
 **What it does:** Takes a video script from Creative and builds a storyboard — shot by shot, scene by scene. Plans the visual flow before a single frame is generated. Uses Skill 24 (Storyboard Writer).
 

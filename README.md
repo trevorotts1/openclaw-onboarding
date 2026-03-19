@@ -2,9 +2,14 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v5.2.3** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v5.3.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
+
+### What's New in v5.3.0 (March 19, 2026)
+- **Skill 23: AI Workforce Blueprint** - Added department heads (Chief/Head roles) to all 15 existing departments
+- **Two new departments:** Research (Chief Research Officer + 3 roles) and Communications (Chief Communications Officer + 3 roles)
+- **All 17 departments now presented equally** - Removed the "optional" tier, clients choose which to keep
 
 ### What's New in v5.0.3 (March 19, 2026)
 - **CRITICAL FIX:** memory.backend must be "builtin" not "gemini" to prevent gateway crash on restart

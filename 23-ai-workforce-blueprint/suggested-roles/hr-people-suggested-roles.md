@@ -8,6 +8,19 @@ Manage the human side of the business — hiring, onboarding team members, manag
 
 ## Roles
 
+### 0. Chief People Officer
+**What it does:** Provides strategic oversight for all HR and people operations. Reports to the CEO. Manages the HR department workers, runs department standups, selects the right personas for specific tasks, and ensures all people operations align with company culture and growth goals.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. Recruiter
 **What it does:** Sources and screens candidates for open roles. Manages the hiring pipeline from job post to offer letter.
 

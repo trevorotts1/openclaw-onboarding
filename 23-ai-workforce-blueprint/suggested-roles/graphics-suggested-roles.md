@@ -16,6 +16,19 @@ Create all static visual assets — images, brand graphics, social media visuals
 
 ## Roles
 
+### 0. Chief Design Officer
+**What it does:** Provides strategic oversight for all design efforts. Reports to the CEO/COM. Manages the graphics department workers, runs department standups, selects the right personas for specific tasks, and ensures all visual output aligns with brand standards.
+
+**Core SOPs to build:**
+- 01-How-to-Run-a-Department-Standup.md
+- 02-How-to-Report-to-CEO.md
+- 03-How-to-Select-a-Persona-for-a-Task.md
+- 04-How-to-Manage-Department-KPIs.md
+
+**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+
+---
+
 ### 1. AI Image Generator
 **What it does:** Creates AI-generated images using KIE.ai (Nano Banana Pro endpoint), Nano Banana direct, or OpenAI images. Handles prompt engineering, style direction, and iteration until the image meets the brief.
 
