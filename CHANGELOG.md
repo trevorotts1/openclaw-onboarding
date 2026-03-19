@@ -4,6 +4,22 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.2.1] - March 19, 2026
+
+### Skill 31: 10/10 Release
+
+#### Added
+- **FULL-DOC.md** combined reference document (all skill docs in one file, 1036 lines)
+- **Automated rollback procedure** for Layer 4, Layer 5, and config validation failures
+- **Update result JSON writer** (.update-result.json) for Telegram agent handoff after terminal updates
+- **AGENTS.md flag writer** so agent auto-detects updates and communicates to user in Telegram
+
+#### Changed
+- Rollback rules: restore first, debug second. Never leave user on invalid config.
+- Update script now writes structured status for agent consumption instead of just terminal output
+
+---
+
 ## [v5.2.0] - March 19, 2026
 
 ### Skill 31: Core Updates Rewrite + Client Education

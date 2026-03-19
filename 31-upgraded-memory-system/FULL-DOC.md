@@ -1,3 +1,78 @@
+# Upgraded Memory System - Complete Reference
+
+This is the combined reference document for Skill 31. It contains all documentation in reading order. Use this as a single-file reference instead of reading individual files.
+
+---
+
+---
+
+# === SKILL.md ===
+
+# Skill 31: Upgraded Memory System (5-Layer Architecture)
+
+## What This Skill Is About
+
+This skill upgrades your OpenClaw agent from the default memory system to a 5-layer architecture that makes your agent genuinely remember everything, find information accurately, and improve over time. The default memory system works okay at first but degrades as memory grows. This fixes that.
+
+## When to Use This Skill
+
+- You are setting up a new OpenClaw installation and want the best memory from day one
+- Your agent keeps forgetting things you told it
+- Memory search returns irrelevant results
+- Important information gets lost during compaction
+- You want your agent to automatically capture and recall memory without being told
+- You are migrating from the old QMD search system to Google Gemini Embedding 2
+
+## The 5 Layers
+
+| Layer | What It Does | How It Works |
+|-------|-------------|--------------|
+| 1. Markdown files | Stores the source of truth | MEMORY.md (long-term) and daily logs (memory/YYYY-MM-DD.md) |
+| 2. Memory flush | Saves important context before compaction | Custom prompt with 8 categories tells the agent exactly what to capture |
+| 3. Session indexing | Makes past conversations searchable | Agent can search what you talked about last week, not just today |
+| 4. Gemini Embedding 2 | Finds information by meaning | Google's multimodal embedding API replaces the old local search |
+| 5. Mem0 | Auto-captures and auto-recalls memory | Memory lives outside the context window, survives compaction |
+
+## Files in This Folder and Reading Order
+
+1. **SKILL.md** - You are here. Overview and context.
+2. **INSTALL.md** - Step-by-step installation for all 5 layers.
+3. **INSTRUCTIONS.md** - How to use and maintain the memory system after installation.
+4. **EXAMPLES.md** - Example searches, flush outputs, and memory operations.
+5. **CORE_UPDATES.md** - Exact additions for AGENTS.md, TOOLS.md, MEMORY.md, and HEARTBEAT.md.
+6. **HOW-YOUR-MEMORY-WORKS.md** - Plain-English explanation for clients. If the user ever asks "how does my memory work" or "explain the memory system," reference this file.
+7. **upgraded-memory-system.skill** - Skill metadata file.
+
+## Prerequisites
+
+| Prerequisite | Required For | How to Check |
+|-------------|-------------|--------------|
+| Teach Yourself Protocol (TYP) | All skills | Check AGENTS.md for "Teach Yourself Protocol" |
+| Google API key | Layer 4 (Gemini search) | `echo $GOOGLE_API_KEY` returns a key starting with AIza |
+| Python 3.8+ | Layer 4 (Gemini search) | `python3 --version` |
+| google-genai + numpy | Layer 4 (Gemini search) | `python3 -c "import google.genai; import numpy"` |
+| OpenClaw running | All layers | `openclaw status` shows gateway running |
+
+## Prerequisite Handling
+
+**If prerequisites are NOT met:** Install all skill files anyway. Mark the skill as INSTALLED but NOT IMPLEMENTED. Add a note to AGENTS.md listing which prerequisites are missing. The agent should remind the user once per session until prerequisites are met.
+
+**If prerequisites ARE met:** Install and implement fully. Run verification tests for each layer.
+
+## Key Things the AI Agent Must Know
+
+1. All 5 layers run simultaneously. They do not compete. Each solves a different problem.
+2. Layer 4 (Gemini Embedding 2) replaces the old QMD search engine. QMD is deprecated.
+3. Layer 5 (Mem0) installs as an OpenClaw plugin. It occupies the memory plugin slot.
+4. The memory flush prompt must include explicit categories or it saves junk.
+5. Session indexing adds noise, so the flush prompt is even more important as a filter.
+6. If migrating from QMD: run the migration steps in INSTALL.md before enabling Layer 4.
+7. Do NOT install Cognee (Layer 6) as part of this skill. That is a separate advanced add-on requiring Docker.
+
+---
+
+# === INSTALL.md ===
+
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
 DO NOT SKIP. DO NOT PROCEED UNTIL THIS CHECK IS COMPLETE.
@@ -659,3 +734,303 @@ CLIENT EDUCATION
 [ ] HOW-YOUR-MEMORY-WORKS.md is available in the skill folder
 [ ] If user asks how their memory works, reference this file for a plain-English explanation
 ```
+
+---
+
+# === INSTRUCTIONS.md ===
+
+# Upgraded Memory System - Usage Instructions
+
+## How the 5 Layers Work Together
+
+Every time you interact with your agent, all 5 layers are active:
+
+1. **You say something.** The agent receives your message.
+2. **Layer 5 (Mem0) auto-recalls** relevant memories before the agent responds.
+3. **Layer 3 (Session indexing)** lets the agent search past conversations if needed.
+4. **Layer 4 (Gemini search)** finds relevant content from your memory files by meaning.
+5. **The agent responds** using all that context.
+6. **Layer 5 (Mem0) auto-captures** important facts from the conversation.
+7. **When context gets full, Layer 2 (flush)** saves important information to daily logs before compaction clears the context window.
+8. **Layer 1 (markdown files)** stores everything permanently on disk.
+
+You do not need to do anything special. The system works automatically.
+
+## Maintaining Your Memory
+
+### Weekly: Clean up MEMORY.md
+
+At least once a week, open ~/clawd/MEMORY.md and:
+- Remove entries that are no longer relevant
+- Correct any information that has changed
+- Consolidate duplicate entries
+
+Use Obsidian if you want a nice UI for editing markdown files.
+
+### Monthly: Review daily logs
+
+Check ~/clawd/memory/ for old daily logs. Delete logs older than 90 days that contain only routine information. Keep logs that document important decisions.
+
+### When things feel off: Test the search
+
+If the agent seems to be forgetting things or returning bad search results:
+
+```
+Ask: "Search your memory for [topic]"
+```
+
+If results are poor, the index may need refreshing. This happens automatically but you can force it by restarting the gateway.
+
+## Manual Memory Operations
+
+### Save something important right now
+Just tell your agent: "Remember that [fact]"
+
+### Search for something specific
+Ask: "Search your memory for [topic]"
+
+### Review what was saved today
+Ask: "Show me today's memory log" or check ~/clawd/memory/YYYY-MM-DD.md
+
+### List key decisions from a conversation
+At the end of an important session, say: "List the key decisions from this session that we should save to memory"
+Then pick the ones you want saved.
+
+---
+
+# === EXAMPLES.md ===
+
+# Upgraded Memory System - Examples
+
+## Example: Memory Flush Output
+
+When the context window fills up, the agent automatically writes a note like this:
+
+```markdown
+## Session Note - March 18, 2026
+
+- **Decision:** Replaced QMD search engine with Google Gemini Embedding 2 across both repos
+- **People:** Trevor approved the migration, wants it tested on VPS next
+- **Credentials:** GOOGLE_API_KEY is set in ~/.zshrc
+- **Project status:** Mac repo pushed (commit 478e7be), VPS repo pushed (5d450b3)
+- **Open question:** Whether to add Cognee (Layer 6) as optional skill for clients
+- **Deadline:** Migration guide needs to be ready before next client onboarding (March 25)
+```
+
+Notice the categories: decisions, people, credentials, project status, open questions, deadlines. The improved flush prompt tells the agent to look for these specifically.
+
+## Example: Memory Search
+
+User asks: "What did we decide about the Cognee layer?"
+
+The agent searches memory and finds:
+- From MEMORY.md: "Layer 6 (Cognee) is optional. Layers 1-5 are the core package."
+- From memory/2026-03-18.md: "Cognee runs as sibling Docker container. Not Docker-in-Docker."
+- From a past session: Discussion about Cognee auth tokens and the bridge script.
+
+The agent synthesizes all three sources into one answer.
+
+## Example: Mem0 Auto-Capture
+
+During a conversation, you mention: "My sister Lykisha's number changed to 240-555-1234."
+
+You did not tell the agent to remember this. But Mem0 auto-captured it. Next week when you say "Text my sister," the agent already knows the new number.
+
+## Example: Session Indexing
+
+You had a conversation two weeks ago about setting up a Zoom meeting with a specific client. Today you ask: "What was that Zoom meeting we set up for Dr. Tola?"
+
+Without session indexing, the agent would have no idea. With it enabled, the agent searches past sessions and finds the exact conversation with meeting details.
+
+## Example: Prerequisite Pending
+
+If GOOGLE_API_KEY is not set during installation:
+
+```
+Agent: "I've installed the Upgraded Memory System skill files. Layers 1, 2, 3, and 5
+are active. Layer 4 (Gemini search) is PENDING because GOOGLE_API_KEY is not set.
+
+To complete Layer 4:
+1. Go to https://aistudio.google.com/app/apikey
+2. Create a key
+3. Add to ~/.zshrc: export GOOGLE_API_KEY='AIza...'
+4. Run: source ~/.zshrc
+5. Tell me 'Layer 4 is ready' and I will finish the setup."
+```
+
+---
+
+# === CORE_UPDATES.md ===
+
+# Upgraded Memory System - Core File Updates
+
+These are the EXACT additions to make to each core .md file.
+Follow TYP rules: append only, never overwrite existing content.
+
+---
+
+## Add to MEMORY.md
+
+```markdown
+## Upgraded Memory System (5 Layers) - Installed [DATE]
+- Layer 1: Markdown files (MEMORY.md + daily logs) - Active
+- Layer 2: Memory flush (8-category capture) - Active
+- Layer 3: Session indexing - Active
+- Layer 4: Gemini Embedding 2 search - Active / PENDING
+- Layer 5: Mem0 auto-capture + auto-recall - Active
+- Maintenance: trim MEMORY.md at 1500 lines. Prune daily logs older than 90 days.
+```
+
+---
+
+## Add to AGENTS.md
+
+```markdown
+## Memory System Rules
+- 5 memory layers are active. Do not disable any without explicit permission.
+- Memory flush captures: people, credentials, project status, decisions, preferences, errors, finances, deadlines.
+- MEMORY.md is the long-term source of truth. Daily logs are session-specific.
+- Do not rely on manual memory saves alone. Mem0 handles auto-capture.
+- If MEMORY.md exceeds 1500 lines, consolidate and trim old entries.
+```
+
+---
+
+## Add to TOOLS.md
+
+```markdown
+## Memory Search
+- Backend: builtin (memory.backend = "builtin")
+- Provider: gemini (memorySearch.provider = "gemini")
+- Model: models/gemini-embedding-2-preview
+- Requires: GOOGLE_API_KEY
+- Hybrid search: 75% vector / 25% text
+- Mem0 plugin: openclaw-mem0 (auto-capture on, auto-recall on)
+```
+
+---
+
+## Add to HEARTBEAT.md
+
+```markdown
+## Memory Health Check
+- Periodic: verify openclaw memory status shows Provider: gemini and indexed file count > 0
+- If indexing drops to 0 or provider shows wrong value, flag for investigation
+```
+
+---
+
+## Do NOT modify these files:
+- USER.md (no memory system content belongs here)
+- SOUL.md (no memory system content belongs here)
+- IDENTITY.md (no memory system content belongs here)
+
+---
+
+# === HOW-YOUR-MEMORY-WORKS.md ===
+
+# How Your AI Memory System Works
+
+Your AI assistant has a 5-layer memory system. Each layer solves a different problem. They all work together automatically. Here is what each one does and why it matters.
+
+---
+
+## Layer 1: Your Files
+
+Your assistant stores important information in files on your computer. There are two types:
+
+- **MEMORY.md** is the long-term file. It holds permanent information like your preferences, important decisions, project status, and lessons learned. Think of it like a notebook that never gets thrown away.
+
+- **Daily logs** are short-term files that capture what happens each day. They are stored in a folder called memory/ with one file per day. These are like a daily journal.
+
+**Why it matters:** Without these files, your assistant would forget everything between conversations.
+
+---
+
+## Layer 2: Smart Saving
+
+When a conversation gets long, your assistant needs to make room for new information. Before it does, it automatically saves the important parts to your daily log file.
+
+It knows to save things like:
+- Decisions you made
+- People and relationships mentioned
+- Credentials and accounts discussed
+- Project updates
+- Mistakes and how they were fixed
+- Deadlines and commitments
+
+It also knows NOT to save small talk, greetings, or things already saved before.
+
+**Why it matters:** Without smart saving, your assistant would lose important context from long conversations.
+
+---
+
+## Layer 3: Conversation History Search
+
+Your assistant can search through past conversations, not just the current one. If you talked about something last week, it can find it.
+
+This works automatically. When you ask a question, your assistant checks previous conversations for relevant context before responding.
+
+**Why it matters:** Without this, your assistant only knows what happened in today's conversation.
+
+---
+
+## Layer 4: Intelligent Search
+
+Your files are searchable using Google's Gemini Embedding 2 technology. This is not a simple keyword search. It understands meaning.
+
+For example, if you search for "marketing budget," it will also find notes about "ad spend," "campaign costs," or "quarterly marketing allocation" even if those exact words were not in your search.
+
+It works with all types of files: documents, images, PDFs, and audio files.
+
+**Why it matters:** As your knowledge base grows, simple search stops working. Intelligent search finds what you need even when you do not remember the exact words.
+
+---
+
+## Layer 5: Automatic Memory
+
+Your assistant automatically notices and remembers important information during conversations. It does not wait for you to say "remember this." It captures things like preferences, decisions, and facts on its own.
+
+When you start a new conversation, it automatically recalls relevant memories before responding. You do not need to remind it.
+
+**Why it matters:** Without this, you would have to repeat yourself every time you start a new conversation.
+
+---
+
+## How They Work Together
+
+Here is an example of all 5 layers working at once:
+
+You ask your assistant: "What did we decide about the marketing budget last week?"
+
+1. **Layer 1** has the permanent notes in MEMORY.md
+2. **Layer 2** saved the conversation details to last week's daily log when the conversation ended
+3. **Layer 3** searches through last week's actual conversation transcript
+4. **Layer 4** uses intelligent search to find related notes across all your files
+5. **Layer 5** automatically recalled relevant memories before you even finished typing
+
+Your assistant combines all of this to give you a complete, accurate answer.
+
+---
+
+## Maintenance
+
+Your assistant handles most maintenance automatically. Two things happen periodically:
+
+- **MEMORY.md cleanup**: When the file gets very long (over 1500 lines), old or redundant entries are consolidated to keep it manageable.
+- **Daily log pruning**: Logs older than 90 days are cleaned up to save space.
+
+Your assistant will tell you before making any major changes to these files.
+
+---
+
+## If Something Seems Wrong
+
+If your assistant seems to be forgetting things or not finding information it should know:
+
+1. Ask it: "Check your memory system status"
+2. It will test each layer and report what is working and what is not
+3. Most issues are fixed by typing `/restart` in Telegram
+
+If a restart does not fix it, ask your assistant to run a full memory diagnostic.
+

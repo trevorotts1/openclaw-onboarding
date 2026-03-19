@@ -555,13 +555,49 @@ step_verify() {
         echo ""
     fi
     
-    echo "  To tell your AI agent about the update, send:"
-    echo "    'The onboarding package was updated from $LOCAL_VERSION"
-    echo "     to $LATEST_VERSION. Review the CHANGELOG.md in"
-    echo "     $LOCAL_ONBOARDING_DIR and apply any config"
-    echo "     changes that new or updated skills require.'"
-    echo ""
     echo "=========================================="
+    echo ""
+    
+    # Write update result file for agent handoff
+    RESULT_FILE="$HOME/.openclaw/onboarding/.update-result.json"
+    mkdir -p "$HOME/.openclaw/onboarding" 2>/dev/null
+    cat > "$RESULT_FILE" << RESULTEOF
+{
+  "status": "complete",
+  "from": "$LOCAL_VERSION",
+  "to": "$LATEST_VERSION",
+  "applied": $APPLIED,
+  "errors": $ERRORS,
+  "backup": "$UPDATE_BACKUP",
+  "restart_needed": $( [ "$RESTART_NEEDED" = true ] && echo "true" || echo "false" ),
+  "timestamp": "$(date '+%Y-%m-%d %H:%M:%S')",
+  "onboarding_dir": "$LOCAL_ONBOARDING_DIR",
+  "summary": "$APPLIED changes applied, $ERRORS errors. New skills: [${NEW_SKILLS# }]. Changed skills: [${CHANGED_SKILLS# }]. Infrastructure: [${CHANGED_INFRA# }]."
+}
+RESULTEOF
+    echo "  Update result saved to: $RESULT_FILE"
+    echo "  Your AI agent will pick this up on its next heartbeat"
+    echo "  and send you a summary in Telegram."
+    echo ""
+    
+    # Also write agent flag to AGENTS.md if workspace is known
+    if [ -n "$WORKSPACE" ] && [ -f "$WORKSPACE/AGENTS.md" ]; then
+        # Only add if not already present
+        if ! grep -q "UPDATE APPLIED.*REVIEW" "$WORKSPACE/AGENTS.md" 2>/dev/null; then
+            cat >> "$WORKSPACE/AGENTS.md" << FLAGEOF
+
+---
+🔴 UPDATE APPLIED - REVIEW AND COMMUNICATE TO USER
+An onboarding update was applied: $LOCAL_VERSION to $LATEST_VERSION.
+Read ~/.openclaw/onboarding/.update-result.json for details.
+Send a summary to the user in Telegram including: what changed, backup location, and whether a restart is needed.
+After communicating to user, remove this flag from AGENTS.md.
+---
+FLAGEOF
+            echo "  Agent flag written to AGENTS.md"
+        fi
+    fi
+    
     echo ""
     
     # Log
