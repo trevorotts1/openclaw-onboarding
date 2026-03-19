@@ -4,6 +4,17 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.0.2] - March 19, 2026
+
+### Client Approval UX Fix
+
+#### Fixed
+- **Non-interactive update runs now stop with a human explanation** instead of looking like a mysterious cancel
+- **Exact rerun commands shown** when approval is required but the script was launched with `curl ... | bash`
+- **Clearer approval and cancel wording** so clients understand whether anything changed
+
+---
+
 ## [v5.0.1] - March 19, 2026
 
 ### Update System Hardening

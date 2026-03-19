@@ -33,6 +33,11 @@ LATEST_VERSION=""
 LOCAL_VERSION=""
 QMD_DETECTED=false
 TEMP_DIR="/tmp/openclaw-update-$$"
+SELF_SCRIPT_RAW_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh"
+INTERACTIVE=false
+if [ -t 0 ] && [ -t 1 ]; then
+    INTERACTIVE=true
+fi
 
 mkdir -p "$HOME/.openclaw/skills" 2>/dev/null
 
@@ -41,6 +46,13 @@ echo "============================================"
 echo "  OpenClaw Onboarding Update Script v3.0"
 echo "============================================"
 echo ""
+if [ "$INTERACTIVE" = false ]; then
+    echo "⚠️  IMPORTANT: This updater may need your approval before it can make changes."
+    echo "   Because you ran it in non-interactive mode (for example: curl ... | bash),"
+    echo "   it cannot ask you the yes/no question directly."
+    echo "   It will still analyze safely, then stop with exact rerun instructions if approval is needed."
+    echo ""
+fi
 
 # ----------------------------------------------------------
 # STEP 1: BACKUP PROTOCOL — runs before anything else
@@ -345,17 +357,36 @@ step_approval() {
     echo "=========================================="
     echo ""
     
-    if [ "$TOTAL_CHANGES" -eq 0 ]; then
-        echo "  No changes to apply. Updating version marker only."
+    if [ "$INTERACTIVE" = false ]; then
+        echo "  Approval is required before this updater can make changes."
         echo ""
-        read -p "  Update version marker to $LATEST_VERSION? (y/n): " CONFIRM
-    else
-        read -p "  Apply these changes? (y/n): " CONFIRM
+        echo "  You ran the updater in non-interactive mode, so it cannot safely ask you"
+        echo "  the yes/no approval question here."
+        echo ""
+        echo "  Result: no changes were made."
+        echo "  Your backup is saved at: $UPDATE_BACKUP"
+        echo ""
+        echo "  Run these exact 2 commands instead:"
+        echo ""
+        echo "    curl -fsSL $SELF_SCRIPT_RAW_URL -o /tmp/update-skills.sh"
+        echo "    bash /tmp/update-skills.sh"
+        echo ""
+        echo "  Then when you see the approval question, type: y"
+        echo ""
+        echo "$(date '+%Y-%m-%d %H:%M') — Update paused for interactive approval ($LOCAL_VERSION → $LATEST_VERSION)" >> "$LOG_FILE"
+        rm -rf "$TEMP_DIR"
+        exit 0
     fi
-    
+    if [ "$TOTAL_CHANGES" -eq 0 ]; then
+        echo "  No file changes need to be applied. This will only update the version marker."
+        echo ""
+        read -r -p "  Update version marker to $LATEST_VERSION? (y/n): " CONFIRM
+    else
+        read -r -p "  Apply these changes now? (y/n): " CONFIRM
+    fi
     if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ] && [ "$CONFIRM" != "yes" ]; then
         echo ""
-        echo "  Update cancelled. No changes made."
+        echo "  Update cancelled by user. No changes were made."
         echo "  Your backup is at: $UPDATE_BACKUP"
         echo ""
         echo "$(date '+%Y-%m-%d %H:%M') — Update cancelled by user ($LOCAL_VERSION → $LATEST_VERSION)" >> "$LOG_FILE"

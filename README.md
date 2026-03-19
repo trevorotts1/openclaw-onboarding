@@ -2,9 +2,14 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v5.0.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v5.0.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
+
+### What's New in v5.0.2 (March 19, 2026)
+- **Client approval UX fixed** — non-interactive runs now explain why approval could not be collected
+- **Exact 2-step rerun commands shown** so clients know exactly what to do next
+- **Clear no-changes-made messaging** — safer and less confusing for clients
 
 ### What's New in v5.0.1 (March 19, 2026)
 - **update-skills.sh v3.0** — now works on any client machine with dynamic folder detection
