@@ -253,12 +253,12 @@ Every skill has a specific install sequence. Follow it exactly:
 - [ ] Confirm TYP was applied (core files updated with lightweight summary)
 - [ ] Explicitly state: "[Skill-name] installation verified complete"
 
-### STEP 5: NO GLOBAL "DONE" UNTIL ALL 30 ARE DONE
+### STEP 5: NO GLOBAL "DONE" UNTIL ALL 32 ARE DONE
 - Do NOT say "onboarding complete" after finishing one skill
 - Do NOT skip skills because they "seem optional"
-- Install skills 01-30 in order, confirm each one individually
-- Only after skill 30 (Fish Audio API Reference) is verified complete → remove ONBOARDING PENDING flag
-- Only after skill 30 (Fish Audio API Reference) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
+- Install skills 01-32 in order, confirm each one individually
+- Only after skill 32 (Command Center Setup) is verified complete → remove ONBOARDING PENDING flag
+- Only after skill 32 (Command Center Setup) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
 
 ---
 
@@ -383,7 +383,7 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 
 ---
 
-## 🔴 ONBOARDING CONTINUITY - NEVER STOP UNTIL ALL 31 SKILLS ARE INSTALLED
+## 🔴 ONBOARDING CONTINUITY - NEVER STOP UNTIL ALL 32 SKILLS ARE INSTALLED
 
 **The onboarding process must run continuously until all 32 skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
 
@@ -1371,7 +1371,7 @@ If any step in a skill's installation fails:
 2. **Wave 2** (Pre-Persona): Spawn 4 parallel agents for skills 04-21
 3. **Wave 3** (Core System): Main agent installs skills 22-23 sequentially (NO sub-agents)
 4. **Wave 4** (Post-Workforce): Spawn 2 parallel agents for skills 24-30
-5. **Wave 5** (Final): Verify skill 15 and finalize
+5. **Wave 5** (Final): Install skills 31-32, verify skill 15, and finalize
 
 **Sequential Dependencies (Never Parallelize These):**
 - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
@@ -1819,6 +1819,7 @@ label: "wave4-agent-f"
 
 5. **Report completion**
    - Install Skill 31 (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
+   - Install Skill 32 (Command Center Setup): Read SKILL.md, check prerequisites, follow INSTALL.md
    - "Wave 5 complete: Onboarding finished. All 32 skills installed."
 
 ---
@@ -1907,8 +1908,9 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 │         │                 │ Agent F: 27, 28, 29, 30                             │
 │         │                 │ Post-Workforce tools                            │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 5  │ 2 (Sequential)  │ 15 BlackCEO Team Management, 31 Upgraded Memory  │
-│         │                 │ Final verification and Gemini Engine indexing             │
+│ Wave 5  │ 3 (Sequential)  │ 15 BlackCEO Team Management, 31 Upgraded Memory, │
+│         │                 │ 32 Command Center Setup                              │
+│         │                 │ Final verification and Gemini Engine indexing       │
 └─────────┴─────────────────┴─────────────────────────────────────────────────┘
 ```
 
@@ -2157,7 +2159,7 @@ wait_for_wave() {
 
 The install script has already downloaded all skills to disk. Your job is to install them in order, one by one, automatically.
 
-- Install Skill 01 → confirm it worked → install Skill 02 → confirm → continue through all 30
+- Install Skill 01 → confirm it worked → install Skill 02 → confirm → continue through all 32
 - Only pause when you need something the user must provide (API key not in any env file, 2FA code, first-time browser login)
 - When you need a key: ask clearly, wait for answer, then continue
 - When a skill is optional and the user wants to skip: mark SKIPPED, move to next - do not stop the whole install

@@ -58,7 +58,7 @@ echo "  Found: $(command -v openclaw)"
 # Step 2: Download the onboarding package
 # ----------------------------------------------------------
 echo ""
-echo "[2/5] Downloading 31 skills from GitHub..."
+echo "[2/5] Downloading 32 skills from GitHub..."
 TEMP_ZIP="/tmp/openclaw-onboarding-pkg.zip"
 TEMP_EXTRACT="/tmp/openclaw-onboarding-extract"
 
@@ -146,7 +146,7 @@ cat >> "$AGENTS_FILE" << 'ONBOARDING_FLAG'
 ---
 🔴🔴🔴 ONBOARDING PENDING - EXECUTE IMMEDIATELY
 
-The OpenClaw onboarding package (31 skills) has been installed to:
+The OpenClaw onboarding package (32 skills) has been installed to:
   ~/.openclaw/onboarding/
 
 READ THIS FILE FIRST: ~/.openclaw/onboarding/Start Here.md
@@ -154,7 +154,7 @@ READ THIS FILE FIRST: ~/.openclaw/onboarding/Start Here.md
 It contains the complete execution checklist, wave instructions, and failure handling.
 
 SUMMARY:
-- Install 31 skills using 5-Wave Parallel Orchestration
+- Install 32 skills using 5-Wave Parallel Orchestration
 - Use parallel sub-agents for Waves 2 and 4 (if sessions_spawn works)
 - Use sequential mode for Waves 1, 3, 5
 - Skip skill 13 (archived)
@@ -164,7 +164,7 @@ SUMMARY:
 
 DO NOT:
 - Skip reading Start Here.md
-- Skip skills or say "done" until all 31 complete
+- Skip skills or say "done" until all 32 complete
 - Delegate skills 22-23 to sub-agents
 - Trigger gateway restarts without asking
 
@@ -186,7 +186,7 @@ echo "  OpenClaw Onboarding Package Ready"
 echo "  Version: ${ONBOARDING_VERSION}"
 echo "============================================"
 echo ""
-echo "  📦 31 skills downloaded to:"
+echo "  📦 32 skills downloaded to:"
 echo "     ~/.openclaw/onboarding/"
 echo ""
 echo "  📋 ONBOARDING FLAG LOCATION:"
@@ -200,7 +200,7 @@ echo "       'Read $AGENTS_FILE and begin onboarding installation'"
 echo ""
 echo "  The agent will read AGENTS.md, find the"
 echo "  ONBOARDING PENDING flag, and install all"
-echo "  31 skills automatically."
+echo "  32 skills automatically."
 echo ""
 echo "  ⚠️  If the agent says it cannot find the flag,"
 echo "     tell it to run:"
