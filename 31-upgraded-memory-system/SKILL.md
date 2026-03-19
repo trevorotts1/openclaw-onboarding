@@ -29,8 +29,9 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 2. **INSTALL.md** - Step-by-step installation for all 5 layers.
 3. **INSTRUCTIONS.md** - How to use and maintain the memory system after installation.
 4. **EXAMPLES.md** - Example searches, flush outputs, and memory operations.
-5. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
-6. **upgraded-memory-system.skill** - Skill metadata file.
+5. **CORE_UPDATES.md** - Exact additions for AGENTS.md, TOOLS.md, MEMORY.md, and HEARTBEAT.md.
+6. **HOW-YOUR-MEMORY-WORKS.md** - Plain-English explanation for clients. If the user ever asks "how does my memory work" or "explain the memory system," reference this file.
+7. **upgraded-memory-system.skill** - Skill metadata file.
 
 ## Prerequisites
 

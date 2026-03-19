@@ -4,6 +4,22 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.2.0] - March 19, 2026
+
+### Skill 31: Core Updates Rewrite + Client Education
+
+#### Changed
+- **CORE_UPDATES.md rewritten** with concise, TYP-compliant additions for MEMORY.md, AGENTS.md, TOOLS.md, and HEARTBEAT.md
+- **Explicitly lists which core files to NOT modify** (USER.md, SOUL.md, IDENTITY.md)
+- **HEARTBEAT.md addition** for periodic memory health monitoring
+
+#### Added
+- **HOW-YOUR-MEMORY-WORKS.md** - plain-English explanation of all 5 memory layers for clients who ask how their system works. No jargon. Written for non-technical users.
+- **Client education checklist item** added to completion checklist
+- **SKILL.md updated** with new file listing and reading order
+
+---
+
 ## [v5.1.1] - March 19, 2026
 
 ### Skill 31: Embedding + Real Layer Testing

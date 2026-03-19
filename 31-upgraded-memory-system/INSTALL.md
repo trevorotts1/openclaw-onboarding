@@ -613,4 +613,8 @@ REPORTING
 [ ] Indexing/embedding status reported to user in Telegram
 [ ] If any layer failed, specific diagnosis sent to user
 [ ] Core files updated per CORE_UPDATES.md (using TYP rules)
+
+CLIENT EDUCATION
+[ ] HOW-YOUR-MEMORY-WORKS.md is available in the skill folder
+[ ] If user asks how their memory works, reference this file for a plain-English explanation
 ```
