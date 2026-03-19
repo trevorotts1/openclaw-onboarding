@@ -2,9 +2,12 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v5.0.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v5.0.3** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **31 skill folders** (01 through 31, with 13 archived) plus an install script.
+
+### What's New in v5.0.3 (March 19, 2026)
+- **CRITICAL FIX:** memory.backend must be "builtin" not "gemini" to prevent gateway crash on restart
 
 ### What's New in v5.0.2 (March 19, 2026)
 - **Client approval UX fixed** — non-interactive runs now explain why approval could not be collected

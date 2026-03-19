@@ -4,6 +4,17 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.0.3] - March 19, 2026
+
+### Critical Migration Fix
+
+#### Fixed
+- **memory.backend must be "builtin" not "gemini"** in MIGRATION.md, Skill 31 INSTALL.md, and CORE_UPDATES.md
+- Setting memory.backend to "gemini" crashes the gateway on restart (only "builtin" and "qmd" are valid)
+- All migration instructions now use the correct value
+
+---
+
 ## [v5.0.2] - March 19, 2026
 
 ### Client Approval UX Fix
