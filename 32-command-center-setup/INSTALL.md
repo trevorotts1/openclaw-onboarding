@@ -497,6 +497,25 @@ The agent sends you a summary in Telegram:
 
 ---
 
+## Persona Integration
+
+The Command Center task cards display which AI persona each agent is using. Personas are coaching blueprints extracted from books (Skill 22 / Book-to-Persona system).
+
+Each agent selects a persona based on the task type:
+- Content tasks: copywriting personas (Russell B., Seth G.)
+- Sales tasks: persuasion personas (Alex H., Dean G.)
+- Creative tasks: storytelling personas (Donald M., Austin K.)
+- Leadership tasks: strategy personas (Simon S., Jim C.)
+
+The persona is displayed as a purple pill on each task card with the format: first name + last initial.
+
+To populate personas for clients:
+- Complete the 70-question business interview
+- Match interview answers to persona trait suggestions in suggested-roles files
+- The department head selects the right persona for each task
+
+---
+
 ## Phase 8: Optional - Manual Cloudflare Tunnel Setup (if Phase 6b was skipped)
 
 If you want to access your dashboard from outside your local network, the agent can set up a Cloudflare tunnel.

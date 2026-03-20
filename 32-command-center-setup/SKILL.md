@@ -45,6 +45,7 @@ A web dashboard accessible at localhost:3000:
 - 5 Kanban columns: Backlog, Ready, In Progress, Review, Complete
 - Task creation and assignment
 - Real-time updates
+- Persona pills showing which coaching blueprint each agent is using
 
 ## Files in This Folder and Reading Order
 
