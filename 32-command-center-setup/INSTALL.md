@@ -497,7 +497,7 @@ The agent sends you a summary in Telegram:
 
 ---
 
-## Phase 9: Optional - Manual Cloudflare Tunnel Setup (if Phase 6b was skipped)
+## Phase 8: Optional - Manual Cloudflare Tunnel Setup (if Phase 6b was skipped)
 
 If you want to access your dashboard from outside your local network, the agent can set up a Cloudflare tunnel.
 

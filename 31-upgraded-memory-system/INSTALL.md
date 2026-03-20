@@ -378,12 +378,35 @@ In the plugins.entries section:
   "enabled": true,
   "config": {
     "mode": "open-source",
-    "userId": "[USERNAME]"
+    "userId": "[USERNAME]",
+    "oss": {
+      "llm": {
+        "provider": "gemini",
+        "config": {
+          "apiKey": "${GEMINI_API_KEY}",
+          "model": "gemini-3-flash-preview"
+        }
+      },
+      "embedder": {
+        "provider": "gemini",
+        "config": {
+          "apiKey": "${GEMINI_API_KEY}",
+          "model": "models/gemini-embedding-001"
+        }
+      }
+    }
   }
 }
 ```
 
 Replace [USERNAME] with the user's Telegram username or preferred identifier.
+
+**Important technical notes:**
+- The `llm` and `embedder` blocks must be nested inside `config.oss`, NOT directly under `config`
+- The embedder model requires the "models/" prefix (e.g., "models/gemini-embedding-001")
+- The LLM model does NOT use the "models/" prefix (e.g., "gemini-3-flash-preview")
+- The same GEMINI_API_KEY is used for both LLM and embedder
+- If you previously used OpenAI for Mem0, existing vectors may be incompatible after switching to Gemini embedder and may require a vector store reset/rebuild
 
 ### 5.4 Verify Mem0 is loaded
 

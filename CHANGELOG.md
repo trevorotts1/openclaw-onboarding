@@ -4,6 +4,28 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.5.0] - March 20, 2026
+
+### Mem0 Gemini Migration + Skill 32 Cloudflare Manual Setup
+
+#### Changed
+- **Skill 31**: All Mem0 config examples switched from OpenAI to Gemini
+  - LLM: `gemini` provider, model `gemini-3-flash-preview`
+  - Embedder: `gemini` provider, model `models/gemini-embedding-001`
+  - Both use `${GEMINI_API_KEY}`, zero OpenAI dependency
+  - Migration warning added for vector store dimension mismatch
+- **Skill 32**: Added Phase 8 (Manual Cloudflare Tunnel Setup)
+  - 9 subsections: install, auth, create tunnel, config, DNS, start, test, persistence, Tailscale alt
+  - macOS (launchctl) and Linux (systemd) persistence
+  - Phase 6b clarified as agent-automated path with cross-reference to Phase 8
+  - Phase numbering fixed (was broken: 6b, 7, 9 with missing 8)
+
+#### Fixed
+- Skill 32 phase numbering corrected
+- Skill 32 sub-numbering in Phase 9 fixed (was using 8.x instead of 9.x)
+
+---
+
 ## [v5.4.2] - March 19, 2026
 
 ### Command Center Hardening

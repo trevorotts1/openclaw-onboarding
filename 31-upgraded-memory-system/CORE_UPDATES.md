@@ -44,6 +44,10 @@ Follow TYP rules: append only, never overwrite existing content.
 - Multimodal: enabled for all modalities (text, images, audio, video)
 - Hybrid search: 75% vector / 25% text
 - Mem0 plugin: openclaw-mem0 (auto-capture on, auto-recall on)
+  - LLM provider: gemini (model: gemini-3-flash-preview)
+  - Embedder provider: gemini (model: models/gemini-embedding-001)
+  - Requires: GEMINI_API_KEY
+  - Note: Embedder uses "models/" prefix, LLM does not
 ```
 
 ---
