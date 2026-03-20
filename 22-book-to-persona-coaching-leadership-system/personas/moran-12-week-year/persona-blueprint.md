@@ -3,7 +3,7 @@
 **Version:** 1.0.0
 **Built:** March 7 at 7:11 PM
 **Gemini Index:** moran-12-week-year
-**Index Location:** ./qmd-index/
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,7 +15,7 @@
 **Version:** 1.0.0  
 **Built:** March 8, 2026  
 **Gemini Index:** moran-12-week-year  
-**Index Location:** ./qmd-index/  
+**Index Location:** ./google-embedding-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  
 **QC Status:** QC_PENDING  

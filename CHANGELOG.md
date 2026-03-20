@@ -221,7 +221,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 #### Fixed
 - **memory.backend must be "builtin" not "gemini"** in MIGRATION.md, Skill 31 INSTALL.md, and CORE_UPDATES.md
-- Setting memory.backend to "gemini" crashes the gateway on restart (only "builtin" and "qmd" are valid)
+- Setting memory.backend to "gemini" crashes the gateway on restart (only "builtin" and "google embedding 2" are valid)
 - All migration instructions now use the correct value
 
 ---
@@ -265,14 +265,14 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **Skill 15: BlackCEO Team Management** - Fixed: agent was not writing real Telegram IDs to memory files. Added enforcement block requiring real data, not placeholders.
 
 #### Infrastructure
-- **QMD fully replaced** with Google Gemini Embedding 2 across all skills and scripts
+- **Legacy retrieval fully replaced** with Google Gemini Embedding 2 across all skills and scripts
 - **Onboarding watchdog** added to Start Here.md: 10-minute stall detection, never-stop-early, progress reporting every 5 skills
 - **Mandatory file reading** protocol: agent must read ALL .md files before installing any skill
 - **CONTRIBUTING.md** added: checklist for adding/modifying skills and pushing updates
 - **MIGRATION.md** rewritten with correct commands, env vars, and step-by-step instructions
 
 #### Migration Notes
-- Existing users on QMD: run the migration steps in MIGRATION.md
+- Existing users on Google Embedding 2: run the migration steps in MIGRATION.md
 - The weekly update script (Sundays 2AM) will detect the version change and flag it
 - No automatic changes are applied without user approval
 
@@ -460,7 +460,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 ### Fixed (final polish pass - all skills to 10/10)
 - Skill 22 SKILL.md: "skill 22" → "skill 23" in AI Workforce Blueprint connection section (lines 151 and 157)
 - Skill 22 CORE_UPDATES.md: "Trevor" → "the user" in 2 places (portability for client delivery)
-- Skill 22 INSTALL.md + CORE_UPDATES.md: removed hardcoded "40" persona count in 4 places → dynamic qmd status command
+- Skill 22 INSTALL.md + CORE_UPDATES.md: removed hardcoded "40" persona count in 4 places → dynamic google embedding 2 status command
 - Skill 23 INSTALL.md: added ai-workforce-blueprint-full.md file size verification after copy (truncation check)
 
 ---

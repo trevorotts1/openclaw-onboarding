@@ -21,7 +21,7 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 - Memory search returns irrelevant results
 - Important information gets lost during compaction
 - You want your agent to automatically capture and recall memory without being told
-- You are migrating from the old QMD search system to Google Gemini Embedding 2
+- You are migrating from the old Google Embedding 2 retrieval query system to Google Gemini Embedding 2
 
 ## The 5 Layers
 
@@ -62,11 +62,11 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 ## Key Things the AI Agent Must Know
 
 1. All 5 layers run simultaneously. They do not compete. Each solves a different problem.
-2. Layer 4 (Gemini Embedding 2) replaces the old QMD search engine. QMD is deprecated.
+2. Layer 4 (Gemini Embedding 2) replaces the old Google Embedding 2 retrieval query engine. Google Embedding 2 is deprecated.
 3. Layer 5 (Mem0) installs as an OpenClaw plugin. It occupies the memory plugin slot.
 4. The memory flush prompt must include explicit categories or it saves junk.
 5. Session indexing adds noise, so the flush prompt is even more important as a filter.
-6. If migrating from QMD: run the migration steps in INSTALL.md before enabling Layer 4.
+6. If migrating from Google Embedding 2: run the migration steps in INSTALL.md before enabling Layer 4.
 7. Do NOT install Cognee (Layer 6) as part of this skill. That is a separate advanced add-on requiring Docker.
 
 ---
@@ -289,7 +289,7 @@ Find the top-level `memory` section in openclaw.json and set:
 }
 ```
 
-**Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. The top-level must say "builtin" and memorySearch.provider must say "gemini". If the top-level still says "qmd", the search will fall back to QMD instead of using Gemini Embedding 2.
+**Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. The top-level must say "builtin" and memorySearch.provider must say "gemini". If the top-level still says "google embedding 2", the search will fall back to Google Embedding 2 instead of using Gemini Embedding 2.
 
 ### 4.3 Add knowledge folders to the index (extraPaths)
 
@@ -470,29 +470,29 @@ Expected output should show Mem0 as "loaded" with autoRecall and autoCapture bot
 
 ---
 
-## Migration from QMD (Existing Users Only)
+## Migration from Google Embedding 2 (Existing Users Only)
 
-If the user previously had QMD installed, follow these additional steps:
+If the user previously had Google Embedding 2 installed, follow these additional steps:
 
-### M.1 Check for existing QMD
+### M.1 Check for existing Google Embedding 2
 
 ```bash
-which qmd 2>/dev/null && echo "QMD found" || echo "No QMD installed"
-ls ~/.cache/qmd/index.sqlite 2>/dev/null && echo "QMD index found" || echo "No QMD index"
+which google embedding 2 2>/dev/null && echo "Google Embedding 2 found" || echo "No Google Embedding 2 installed"
+ls ~/.cache/google embedding 2/index.sqlite 2>/dev/null && echo "Google Embedding 2 index found" || echo "No Google Embedding 2 index"
 ```
 
-### M.2 If QMD is present, update the backend
+### M.2 If Google Embedding 2 is present, update the backend
 
-The config change in Layer 4 (Step 4.2) handles this. Verify `memory.backend is "builtin", not "qmd".
+The config change in Layer 4 (Step 4.2) handles this. Verify `memory.backend is "builtin", not "google embedding 2".
 
-### M.3 Clean up old QMD (optional)
+### M.3 Clean up old Google Embedding 2 (optional)
 
 ```bash
 # Backup first (recommended)
-mv ~/.cache/qmd/ ~/.cache/qmd-backup/
+mv ~/.cache/google embedding 2/ ~/.cache/google embedding 2-backup/
 
 # Or remove entirely
-rm -rf ~/.cache/qmd/
+rm -rf ~/.cache/google embedding 2/
 ```
 
 ---
@@ -923,7 +923,7 @@ When the context window fills up, the agent automatically writes a note like thi
 ```markdown
 ## Session Note - March 18, 2026
 
-- **Decision:** Replaced QMD search engine with Google Gemini Embedding 2 across both repos
+- **Decision:** Replaced Google Embedding 2 retrieval query engine with Google Gemini Embedding 2 across both repos
 - **People:** Trevor approved the migration, wants it tested on VPS next
 - **Credentials:** GOOGLE_API_KEY is set in ~/.zshrc
 - **Project status:** Mac repo pushed (commit 478e7be), VPS repo pushed (5d450b3)

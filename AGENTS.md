@@ -50,7 +50,7 @@ python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
 ### See Also
 
 - [After AI Workforce Setup Complete](#after-ai-workforce-setup-complete) - Post-Skill 23 workflow
-- [When to Run Gemini Engine Indexing](#when-to-run-qmd-indexing) - Event-triggered indexing rules
+- [When to Run Gemini Engine Indexing](#when-to-run-google-embedding-indexing) - Event-triggered indexing rules
 
 ---
 

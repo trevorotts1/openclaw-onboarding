@@ -214,7 +214,7 @@ Find the top-level `memory` section in openclaw.json and set:
 }
 ```
 
-**Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. The top-level must say "builtin" and memorySearch.provider must say "gemini". If the top-level still says "qmd", the search will fall back to QMD instead of using Gemini Embedding 2.
+**Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. The top-level must say "builtin" and memorySearch.provider must say "gemini". If the top-level still says "google embedding 2", the search will fall back to Google Embedding 2 instead of using Gemini Embedding 2.
 
 ### 4.3 Add knowledge folders to the index (extraPaths)
 
@@ -395,29 +395,29 @@ Expected output should show Mem0 as "loaded" with autoRecall and autoCapture bot
 
 ---
 
-## Migration from QMD (Existing Users Only)
+## Migration from Google Embedding 2 (Existing Users Only)
 
-If the user previously had QMD installed, follow these additional steps:
+If the user previously had Google Embedding 2 installed, follow these additional steps:
 
-### M.1 Check for existing QMD
+### M.1 Check for existing Google Embedding 2
 
 ```bash
-which qmd 2>/dev/null && echo "QMD found" || echo "No QMD installed"
-ls ~/.cache/qmd/index.sqlite 2>/dev/null && echo "QMD index found" || echo "No QMD index"
+which google embedding 2 2>/dev/null && echo "Google Embedding 2 found" || echo "No Google Embedding 2 installed"
+ls ~/.cache/google embedding 2/index.sqlite 2>/dev/null && echo "Google Embedding 2 index found" || echo "No Google Embedding 2 index"
 ```
 
-### M.2 If QMD is present, update the backend
+### M.2 If Google Embedding 2 is present, update the backend
 
-The config change in Layer 4 (Step 4.2) handles this. Verify `memory.backend is "builtin", not "qmd".
+The config change in Layer 4 (Step 4.2) handles this. Verify `memory.backend is "builtin", not "google embedding 2".
 
-### M.3 Clean up old QMD (optional)
+### M.3 Clean up old Google Embedding 2 (optional)
 
 ```bash
 # Backup first (recommended)
-mv ~/.cache/qmd/ ~/.cache/qmd-backup/
+mv ~/.cache/google embedding 2/ ~/.cache/google embedding 2-backup/
 
 # Or remove entirely
-rm -rf ~/.cache/qmd/
+rm -rf ~/.cache/google embedding 2/
 ```
 
 ---

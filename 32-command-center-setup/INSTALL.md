@@ -476,7 +476,7 @@ The agent verifies that each department workspace has the required memory archit
 
 1. Memory Flush
 2. Session indexing
-3. QMD or equivalent local retrieval layer
+3. Google Embedding 2 or equivalent local retrieval layer
 4. Mem0 semantic memory in free self-hosted mode
 5. Cognee / graph layer when enabled for the workspace
 

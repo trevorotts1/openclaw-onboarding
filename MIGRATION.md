@@ -1,8 +1,8 @@
-# Migration Guide: QMD to Google Gemini Embedding 2
+# Migration Guide: Google Embedding 2 to Google Gemini Embedding 2
 
 **For:** Existing users who installed the onboarding package before March 18, 2026
 **When:** After updating to the latest onboarding package
-**What:** Replace the old QMD local search engine with Google Gemini Embedding 2
+**What:** Replace the old Google Embedding 2 local search engine with Google Gemini Embedding 2
 
 ---
 
@@ -10,11 +10,11 @@
 
 | Before (old) | After (new) |
 |--------------|-------------|
-| QMD local SQLite search (`qmd search`, `qmd status`) | Google Gemini Embedding 2 API |
-| `qmd update && qmd embed` to index | `python3 ~/clawd/scripts/gemini-indexer.py` |
-| `qmd search coaching-personas "query"` | `python3 ~/clawd/scripts/gemini-search.py "query"` |
-| `qmd status` to check index | `python3 ~/clawd/scripts/gemini-indexer.py --status` |
-| Local SQLite database at `~/.cache/qmd/index.sqlite` | Gemini API (no local database needed) |
+| Google Embedding 2 local SQLite search (`Google Embedding 2 retrieval query`, `check Google Embedding 2 retrieval status`) | Google Gemini Embedding 2 API |
+| `refresh the Google Embedding 2 retrieval layer` to index | `python3 ~/clawd/scripts/gemini-indexer.py` |
+| `Google Embedding 2 retrieval query coaching-personas "query"` | `python3 ~/clawd/scripts/gemini-search.py "query"` |
+| `check Google Embedding 2 retrieval status` to check index | `python3 ~/clawd/scripts/gemini-indexer.py --status` |
+| Local SQLite database at `~/.cache/google embedding 2/index.sqlite` | Gemini API (no local database needed) |
 
 ---
 
@@ -22,7 +22,7 @@
 
 **New user installing fresh?** No. The install scripts handle everything automatically.
 
-**Existing user with QMD already set up?** Yes. Follow the steps below.
+**Existing user with Google Embedding 2 already set up?** Yes. Follow the steps below.
 
 ---
 
@@ -109,22 +109,22 @@ And under `agents.defaults.memorySearch`:
 
 ---
 
-## Clean Up Old QMD (Optional)
+## Clean Up Old Google Embedding 2 (Optional)
 
-Your old QMD data is not deleted automatically. To reclaim disk space:
+Your old Google Embedding 2 data is not deleted automatically. To reclaim disk space:
 
 ```bash
-# Remove old QMD cache
-rm -rf ~/.cache/qmd/
+# Remove old Google Embedding 2 cache
+rm -rf ~/.cache/google embedding 2/
 
-# Uninstall QMD if you installed it globally
-npm uninstall -g qmd
+# Uninstall Google Embedding 2 if you installed it globally
+npm uninstall -g google embedding 2
 ```
 
 To keep as backup for 30 days (recommended):
 
 ```bash
-mv ~/.cache/qmd/ ~/.cache/qmd-backup/
+mv ~/.cache/google embedding 2/ ~/.cache/google embedding 2-backup/
 ```
 
 ---
@@ -145,18 +145,18 @@ pip3 install google-genai
 **"404 NOT_FOUND" on embedding model**
 Make sure you are using `models/gemini-embedding-2-preview`, not `text-embedding-004` (which was removed from the API).
 
-**"qmd: command not found" errors in scripts**
+**"google embedding 2: command not found" errors in scripts**
 You are running an outdated version of the onboarding package. Pull the latest from GitHub.
 
 **build-workforce.py fails**
-Make sure `GOOGLE_API_KEY` is set and `google-genai` is installed. The script now uses Gemini API instead of QMD.
+Make sure `GOOGLE_API_KEY` is set and `google-genai` is installed. The script now uses Gemini API instead of Google Embedding 2.
 
 ---
 
 ## FAQ
 
-**Q: Why did we replace QMD?**
-A: QMD is a local SQLite tool that breaks on Linux VPS containers, only supports text, and requires manual maintenance. Gemini Embedding 2 is a managed API with multimodal support (text, images, audio, video), better search quality, and zero local maintenance.
+**Q: Why did we replace Google Embedding 2?**
+A: Google Embedding 2 is a local SQLite tool that breaks on Linux VPS containers, only supports text, and requires manual maintenance. Gemini Embedding 2 is a managed API with multimodal support (text, images, audio, video), better search quality, and zero local maintenance.
 
 **Q: Will this cost money?**
 A: Google AI Studio has a generous free tier. Indexing 40 personas and running occasional searches is well within free limits. Check https://ai.google.dev/pricing for current rates.
@@ -178,6 +178,6 @@ A: `GOOGLE_API_KEY`. If you also have `GEMINI_API_KEY` set, the SDK will use `GO
 - [ ] `python3 ~/clawd/scripts/gemini-indexer.py` ran successfully
 - [ ] `python3 ~/clawd/scripts/gemini-search.py "test query"` returns results
 - [ ] OpenClaw config updated (`memory.backend: "builtin"`)
-- [ ] Old QMD cache cleaned up (optional)
+- [ ] Old Google Embedding 2 cache cleaned up (optional)
 
 **Migration is complete when:** `python3 ~/clawd/scripts/gemini-search.py "leadership"` returns persona results and `build-workforce.py` runs without errors.

@@ -155,7 +155,7 @@ The skill will:
         ├── extraction-notes.md     <- Phase 1 output
         ├── analysis-notes.md       <- Phase 2 output
         ├── persona-blueprint.md    <- Phase 3 output (the deployable persona)
-        └── qmd-index/              <- Gemini Engine index for this persona
+        └── google-embedding-index/              <- Gemini Engine index for this persona
 ```
 
 ---

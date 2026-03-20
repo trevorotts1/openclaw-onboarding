@@ -196,7 +196,7 @@ python3 ~/clawd/scripts/gemini-indexer.py
     "phase2": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
     "phase3": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
     "phase3_model_used": "gpt-5.3-codex | kimi-k2.5 (fallback)",
-    "qmd_indexed": true,
+    "google_embedding_2_indexed": true,
     "started": "March 7 at 3:30 PM",
     "completed": "March 7 at 3:52 PM",
     "errors": []

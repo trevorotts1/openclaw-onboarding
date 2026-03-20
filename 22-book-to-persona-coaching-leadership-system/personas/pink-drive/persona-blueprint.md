@@ -3,7 +3,7 @@
 **Version:** 1.0.0
 **Built:** March 7 at 4:58 PM
 **Gemini Index:** pink-drive
-**Index Location:** ./qmd-index/
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -16,7 +16,7 @@
 **Version:** 1.0.0
 **Built:** March 7, 2026
 **Gemini Index:** pink-drive
-**Index Location:** ./qmd-index/
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

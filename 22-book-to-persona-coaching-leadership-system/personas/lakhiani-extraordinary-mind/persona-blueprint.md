@@ -3,7 +3,7 @@
 **Version:** 1.0.0
 **Built:** March 7 at 6:43 PM
 **Gemini Index:** lakhiani-extraordinary-mind
-**Index Location:** ./qmd-index/
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,7 +15,7 @@
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
 **Gemini Index:** lakhiani-extraordinary-mind  
-**Index Location:** ./qmd-index/  
+**Index Location:** ./google-embedding-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  
 **QC Status:** QC_PENDING

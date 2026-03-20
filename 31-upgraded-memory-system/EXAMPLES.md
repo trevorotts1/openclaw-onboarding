@@ -7,7 +7,7 @@ When the context window fills up, the agent automatically writes a note like thi
 ```markdown
 ## Session Note - March 18, 2026
 
-- **Decision:** Replaced QMD search engine with Google Gemini Embedding 2 across both repos
+- **Decision:** Replaced Google Embedding 2 retrieval query engine with Google Gemini Embedding 2 across both repos
 - **People:** Trevor approved the migration, wants it tested on VPS next
 - **Credentials:** GOOGLE_API_KEY is set in ~/.zshrc
 - **Project status:** Mac repo pushed (commit 478e7be), VPS repo pushed (5d450b3)

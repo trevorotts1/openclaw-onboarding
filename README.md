@@ -48,11 +48,11 @@ This repo contains **32 skill folders** (01 through 32, with 13 archived) plus a
 - **Skill 14 rewritten:** Google Workspace CLI (gws) replaces google-api.js and gog - single tool for Gmail and Workspace
 - **Skill 23 fixed:** AI Workforce Blueprint now properly presents options A, B, C before asking questions
 - **Skill 15 fixed:** BlackCEO Team Management now requires real Telegram IDs, not placeholders
-- **QMD fully replaced** with Google Gemini Embedding 2 across all skills and scripts
+- **Legacy retrieval fully replaced** with Google Gemini Embedding 2 across all skills and scripts
 - **Onboarding watchdog** added: 10-minute stall detection, never-stop-early, progress reporting every 5 skills
 - **Mandatory file reading protocol:** agent must read ALL .md files before installing any skill
 - **CONTRIBUTING.md** added: complete checklist for adding/modifying skills
-- **MIGRATION.md** added: step-by-step guide for existing QMD users to migrate to Gemini Embedding 2
+- **MIGRATION.md** added: step-by-step guide for existing Google Embedding 2 users to migrate to Gemini Embedding 2
 
 - Install happens in a strict order
 - The agent executes the steps autonomously
