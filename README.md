@@ -2,9 +2,22 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v5.5.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v5.5.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **32 skill folders** (01 through 32, with 13 archived) plus an install script.
+
+### What's New in v5.5.1
+- **QC Agent Roles** for all 17 departments with department-specific checklists
+- **QC-ROLES-MASTER.md** (34KB) master reference for QC agent setup
+- Version bump + changelog updated
+
+### Updating Existing Installs
+If you already have the onboarding system installed, update to the latest version:
+
+```
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh | bash
+```
+
 
 ### What's New in v5.5.0 (March 20, 2026)
 - **Mem0 switched to Gemini (Skill 31), Cloudflare manual setup added (Skill 32)

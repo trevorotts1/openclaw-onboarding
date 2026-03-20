@@ -1759,6 +1759,7 @@ label: "wave2-qc-agent"
    - Execute installation steps
    - Mark: `SKILL-23: INSTALLED`
    - Report: "Wave 3 complete: Core system ready"
+   - **ALSO READ:** `23-ai-workforce-blueprint/QC-ROLES-MASTER.md` - Covers QC agent role definitions for all 17 departments
 
 **Why no sub-agents?** These skills require complex configuration, user interaction, and high-stakes decisions that only the main orchestrator should handle.
 

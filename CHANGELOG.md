@@ -1,3 +1,19 @@
+## [v5.5.1] - March 20, 2026
+
+### Skill 23: QC Agent Roles for All 17 Departments
+
+#### Added
+- QC-ROLES-MASTER.md: 34KB master reference covering what QC agents do, how they work, reporting structure, and model selection guidance
+- QC agent role added to all 17 department suggested-roles files
+- Department-specific QC checklists and validation procedures
+- QC agents report to department heads. Do not produce deliverables.
+
+#### Notes for Existing Clients
+- No config changes required
+- QC agent roles are optional additions. Existing department setups are not affected.
+- To add a QC agent to any department, read QC-ROLES-MASTER.md first.
+- Risk level: LOW (additive only, no breaking changes)
+
 # Changelog
 
 All notable changes to the OpenClaw Onboarding package are documented here.
