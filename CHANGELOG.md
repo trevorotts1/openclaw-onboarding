@@ -4,6 +4,23 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.4.2] - March 19, 2026
+
+### Command Center Hardening
+
+#### Added
+- Approved Option C hostname rule for Skill 32: `[company-slug]-[shortid]`
+- Unique-hostname check requirement before DNS registration completes
+- Free self-hosted Mem0 / GitHub verification requirement during Command Center setup
+- 5-layer memory verification requirement for each department workspace
+
+#### Changed
+- Skill 32 INSTALL.md now explains the collision-safe hostname pattern
+- Verification phase now checks free OSS memory mode and 5-layer memory readiness
+- Completion checklist now includes hostname uniqueness and memory verification
+
+---
+
 ## [v5.4.1] - March 19, 2026
 
 ### Cloudflare Tunnel Auto-Setup for Client Onboarding

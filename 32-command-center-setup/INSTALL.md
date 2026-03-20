@@ -349,6 +349,14 @@ cloudflared tunnel create [clientName]-command-center
 
 Replace [clientName] with your chosen name (for example: laura, acme, johnsmith).
 
+**Naming rule (required):** Use the approved Option C pattern for the hostname slug: `[company-slug]-[shortid]`.
+
+Examples:
+- `laura-coaching-a7f3`
+- `acme-dental-m42k`
+
+**Why this matters:** Two clients can have the same or similar company names. The short ID prevents subdomain collisions while keeping the name readable.
+
 **What you should see:**
 - A tunnel is created
 - A tunnel ID is displayed (this is a long UUID string)
@@ -403,7 +411,8 @@ contactEmail: [email]
 1. Trevor's agent receives the registration message
 2. The agent runs the command-center-webhook.sh script
 3. The script creates the DNS route: [clientName].zerohumanworkforce.com
-4. Your client information is added to the registry
+4. The client registry checks that the hostname is unique before finalizing the route
+5. Your client information is added to the registry
 
 **What you should see:** A confirmation that the registration was sent.
 
@@ -460,14 +469,27 @@ openclaw memory status cc/marketing
 
 **Expected result:** Status shows memory system active for the department agent.
 
-### 7.3 Test Dashboard
+**Important requirement:** The Command Center must use the free self-hosted Mem0 / GitHub version, not a paid hosted account path. The agent must confirm the memory layer is running in the free OSS path and must fail the install if memory falls back to an inactive billed account.
+
+### 7.3 Verify the 5-Layer Memory Setup
+The agent verifies that each department workspace has the required memory architecture:
+
+1. Memory Flush
+2. Session indexing
+3. QMD or equivalent local retrieval layer
+4. Mem0 semantic memory in free self-hosted mode
+5. Cognee / graph layer when enabled for the workspace
+
+**Expected result:** Each department workspace is isolated and ready to store its own memory without mixing with Trevor's private memory or another client's workspace.
+
+### 7.4 Test Dashboard
 The agent verifies:
 - Dashboard loads at localhost:3000
 - All departments appear in the sidebar
 - All 5 Kanban columns are visible
 - Task creation works
 
-### 7.4 Report Results
+### 7.5 Report Results
 The agent sends you a summary in Telegram:
 - Which departments are active
 - Dashboard URL
@@ -527,6 +549,9 @@ After all phases are complete, verify:
 - [ ] Dashboard accessible at localhost:3000
 - [ ] Cloudflare tunnel created and running
 - [ ] DNS route registered for [clientName].zerohumanworkforce.com
+- [ ] Hostname follows Option C pattern: [company-slug]-[shortid]
+- [ ] Free self-hosted Mem0 path verified (not hosted billed mode)
+- [ ] 5-layer memory setup verified per department workspace
 - [ ] Live URL accessible from the internet
 - [ ] Test message received response from correct department head
 - [ ] Memory status shows all department agents active
