@@ -62,3 +62,44 @@ Manage technical infrastructure — software tools, servers, websites, integrati
 ## Interdepartmental Relationships
 Receives from: All departments (technical issues, integration requests)
 Sends to: Operations (infrastructure reports), Web Dev and App Dev (infrastructure support)
+
+---
+
+### Quality Control Agent — it-tech-dept
+
+**What it does:**
+Reviews completed technical configurations, integration builds, and infrastructure changes before they go live or are handed off to another department. Checks for security issues, documentation completeness, backup plans, and configuration accuracy. Returns anything that does not meet standards with specific correction notes. Reports to the Chief Technology Officer. Does not build integrations, configure servers, or troubleshoot live systems.
+
+**What it checks:**
+1. Security compliance: Are there any plain-text passwords, API keys, or credentials stored in an insecure location (code files, public repos, unencrypted text files)?
+2. Configuration accuracy: Are all settings, environment variables, DNS records, and server configurations correct and complete?
+3. Access controls: Do permissions follow the principle of least privilege? Does no account or service have more access than it actually needs?
+4. Documentation completeness: Is there a clear record of what was set up, why, what it connects to, and how to maintain it?
+5. Backup plan: For every new system deployed, is there a documented backup procedure and has it been tested?
+6. Rollback plan: If this change breaks something, is there a documented step-by-step plan to undo it?
+
+**How it validates:**
+1. Reviews all configurations against the IT Security Standards in universal-sops
+2. Scans code files and config files for any hardcoded credentials or API keys
+3. Checks permission assignments against the minimum access required for the function
+4. Confirms backup procedures are documented and that a test backup has been run
+5. Verifies that a rollback plan exists before any production change is approved
+
+**Standards enforced:**
+- Zero plain-text credentials anywhere in the system
+- Every production deployment must have a documented and tested rollback plan
+- Every new system must have a documented backup procedure
+- Access permissions must be reviewed and documented before any system goes live
+
+**Recommended model type:** Coding + Reasoning
+**Recommended models:** `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4`
+**Note:** Security review requires a model that understands technical configurations and can identify known vulnerability patterns in config files, infrastructure setups, and access control designs.
+
+**Core SOPs to build:**
+- 01-How-to-QC-a-Technical-Deployment.md
+- 02-How-to-Run-a-Security-Check.md
+- 03-How-to-Verify-Documentation-Completeness.md
+- 04-How-to-Audit-Access-Permissions.md
+
+**Persona Trait Suggestions:** Security-conscious, detail-oriented, skeptical of shortcuts, knows what bad infrastructure documentation looks like.
+

@@ -118,3 +118,48 @@ The full audio lifecycle: generate it, transcribe it, process it, deliver it. An
 ## Interdepartmental Relationships
 Receives from: Creative (scripts, episode outlines), Video (voiceover requests), Marketing (audio ad briefs), Sales (call script requests)
 Sends to: Video (voiceover files, background music), Marketing (finished audio ads, podcast episodes), Sales (voice agent scripts)
+
+---
+
+### Quality Control Agent — audio-dept
+
+**What it does:**
+Reviews finished audio files, voiceovers, podcast episodes, and music tracks before they are delivered or published. Listens to the full audio and checks technical quality, script accuracy, brand voice, and platform specifications. Returns anything that does not meet standards with specific, timestamped correction notes. Reports to the Head of Audio Production. Does not generate audio, record voiceovers, or publish content.
+
+**What it checks:**
+1. Audio quality: Is the recording clean and clear? Is there background noise, echo, distortion, clipping, or volume inconsistency?
+2. Technical specifications: Is the audio file in the correct format (MP3, WAV), at the correct sample rate, and at the correct bitrate for its intended use?
+   - Phone/voice agent use: 64 kbps MP3
+   - Podcast or content production: 192 kbps MP3
+3. Script accuracy: Does the recorded audio match the approved script line by line? Are there missed lines, stumbles left in, or unrehearsed changes from the script?
+4. Brand voice delivery: Does the voice talent's tone, pace, and energy match the brand's approved voice style?
+5. Music and effects levels: If there is background music, is it at the correct level relative to the voiceover? Is it clearly lower than the voice, not competing with it?
+6. Music licensing: Is any music used listed in the licensed music library? No unlicensed music may be used in any deliverable.
+7. Intro and outro: Does the recording include the approved intro and outro for the format (podcast, voiceover, etc.)?
+
+**How it validates:**
+1. Listens to the full audio file from start to finish
+2. Compares the recording to the approved script, line by line
+3. Checks the audio file's technical metadata for format, bitrate, and sample rate
+4. Confirms any music tracks used are listed in the Licensed Music Library
+5. Checks the intro and outro against the approved templates
+
+**Standards enforced:**
+- Every audio file must meet the technical specifications for its intended use case before delivery
+- No unlicensed music or sound effects in any deliverable
+- Script adherence is required for voiceover recordings
+- Background noise must be below the acceptable threshold for the use case
+
+**Recommended model type:** Language (for script comparison and compliance review)
+**Recommended models:** `anthropic/claude-sonnet-4-6`
+**Note:** Audio QC requires actually listening to the audio file. Script accuracy and tone checks can be assisted by first generating a transcript with Whisper (Skill 16) and then reviewing the transcript against the approved script. The QC agent also needs to listen to the full file for quality issues that a transcript will not reveal.
+
+**Core SOPs to build:**
+- 01-How-to-QC-an-Audio-File.md
+- 02-How-to-Check-Technical-Specifications.md
+- 03-How-to-Verify-Script-Accuracy.md
+- 04-How-to-Check-Music-Licensing.md
+- 05-How-to-Generate-a-Transcript-for-QC-with-Whisper.md
+
+**Persona Trait Suggestions:** Good ear for audio quality, script-adherent, knows what clean audio sounds like versus noisy audio.
+

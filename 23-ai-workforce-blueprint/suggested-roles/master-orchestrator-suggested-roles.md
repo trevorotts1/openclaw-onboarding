@@ -34,3 +34,41 @@ Look for personas strong in: systems thinking, decisiveness, clear communication
 Receives from: Every department (all work enters here first or gets CC'd here)
 Sends to: Every department (routes outbound work)
 Logs: All cross-dept requests and completions in activity log
+
+---
+
+### Quality Control Agent — master-orchestrator-dept
+
+**What it does:**
+Receives completed routing packages and cross-department handoffs from the Master Orchestrator before they are finalized. Checks that tasks were routed to the correct department, that handoff documentation is complete, and that cross-department work is consistent and conflict-free. Reports to the Master Orchestrator. Does not produce deliverables or make routing decisions.
+
+**What it checks:**
+1. Routing accuracy: Was the task sent to the correct department based on task type and content?
+2. Handoff completeness: Does the handoff package include what was done, what is pending, and what the receiving department needs to do next?
+3. Cross-department consistency: Does output from one department conflict with output from another department on the same project?
+4. Escalation quality: Were escalations to the CEO genuinely unresolvable at the department level, or should they have been handled internally?
+5. Activity log entries: Are all cross-department actions logged with the correct format, timestamps, and status?
+
+**How it validates:**
+1. Compares each routing decision against the routing logic in 00-ROUTING.md
+2. Checks every handoff package for all required fields (status, actions taken, next steps)
+3. Reviews any cross-department deliverables for conflicting information on shared projects
+4. Confirms that escalations follow the escalation criteria defined in the Master Orchestrator SOPs
+
+**Standards enforced:**
+- Every routed task must include a department assignment with a written rationale
+- Every completed task must include a status summary (done, pending, or blocked) before leaving the orchestrator
+- Cross-department conflicts must be flagged and documented, not silently resolved
+- Escalations to the CEO must meet the defined escalation threshold
+
+**Recommended model type:** Language + Reasoning
+**Recommended models:** `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4`
+
+**Core SOPs to build:**
+- 01-How-to-QC-a-Routing-Decision.md
+- 02-How-to-Review-a-Handoff-Package.md
+- 03-How-to-Flag-a-Cross-Department-Conflict.md
+- 04-How-to-Review-an-Escalation-Decision.md
+
+**Persona Trait Suggestions:** Detail-obsessed, fair and objective, strong systems thinking, able to evaluate decisions rather than make them.
+

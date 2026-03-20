@@ -40,3 +40,25 @@ One `.md` file per department listing:
 4. Use the Persona Trait Suggestions when running the 4-Layer Alignment check
 
 These are suggestions, not requirements. Your business determines the final structure.
+
+---
+
+## QC Agent Roles
+
+Every department file now includes a Quality Control (QC) Agent role at the bottom of the file.
+
+**What the QC Agent does:**
+The QC agent reviews finished work before it leaves the department. It does not produce deliverables. It only checks and approves (or returns) the work that other agents in the department produced.
+
+**Key facts:**
+- Every department has one QC agent
+- The QC agent reports to the department head, not to the CEO
+- The QC agent never fixes work itself — it writes correction notes and sends work back
+- The QC agent has its own recommended AI model based on what type of work the department produces
+
+**Full reference document:**
+See `QC-ROLES-MASTER.md` in this skill's root folder for:
+- The generic QC role template
+- Model selection guidance table
+- Department-specific QC descriptions for all 17 departments
+- Database and seed script notes for adding the QC role type
