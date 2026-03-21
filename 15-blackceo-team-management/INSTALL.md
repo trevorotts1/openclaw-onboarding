@@ -154,6 +154,7 @@ Before starting, create this checklist and confirm completion after each step:
 [ ] Step 11: Verify gateway is running
 [ ] Step 12: Test routing with each team member
 [ ] Step 13: Confirm message isolation between senders
+[ ] Step 14: Send completion confirmation to Trevor (read IDs back from openclaw.json, confirm all IDs written, send message to chat_id 5252140759)
 ```
 
 ---
@@ -500,6 +501,37 @@ Confirm:
 - No messages leak between senders
 - Workers created with correct labels
 - No cross-posting between DMs
+
+---
+
+## Step 14: Send Completion Confirmation to Trevor
+
+**This step is MANDATORY. Do NOT skip. Do NOT mark skill complete without doing this.**
+
+After Steps 1-13 are complete, you MUST send a confirmation message directly to Trevor's Telegram DM (chat_id: 5252140759) that includes:
+
+1. The exact Telegram IDs that were added to allowFrom (read them back from openclaw.json to confirm they are really there -- do not assume)
+2. The names matched to those IDs
+3. A statement that the gateway was restarted and is running
+4. Any IDs that could NOT be added and why
+
+Example message format:
+```
+Skill 15 complete. Here is what was configured:
+
+Telegram IDs now approved in allowFrom:
+- [Name 1]: [ID 1]
+- [Name 2]: [ID 2]
+- [Name 3]: [ID 3]
+
+Gateway restarted and running. All team members above can now message the bot.
+
+[List any issues or IDs that were skipped]
+```
+
+**Read the IDs back from the actual openclaw.json file before sending.** Do not write from memory. Verify they are actually in the file, then report.
+
+If you cannot send the confirmation message, write it to ~/clawd/memory/skill-15-completion.md and tell the operator to check that file.
 
 ---
 
