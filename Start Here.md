@@ -1756,7 +1756,8 @@ label: "wave2-qc-agent"
    - **FIRST:** Notify user: "The AI Workforce Blueprint is installed. Let me know when you're ready for me to set up your company's back office."
    - **WAIT** for user response
    - **THEN:** Read ALL .md files in `~/.openclaw/onboarding/23-ai-workforce-blueprint/`
-   - Execute installation steps
+   - **🔴 MANDATORY - DO NOT SKIP:** Before asking ANY company questions or building ANYTHING, present the 3 setup options (A, B, C) exactly as described in INSTALL.md Phase 5b. WAIT for the user to choose an option. Do NOT auto-select. Do NOT default to Option A. Do NOT start asking questions until the user has explicitly chosen A, B, or C.
+   - Only AFTER the user picks an option: execute the chosen option's steps from INSTALL.md
    - Mark: `SKILL-23: INSTALLED`
    - Report: "Wave 3 complete: Core system ready"
    - **ALSO READ:** `23-ai-workforce-blueprint/QC-ROLES-MASTER.md` - Covers QC agent role definitions for all 17 departments
