@@ -265,10 +265,74 @@ Ask the user these questions. Wait for answers before building anything:
    - **Option B - Quick Setup** (fastest): "I skip the interview and build everything now using what I already know about you from your workspace files (USER.md, MEMORY.md, etc.) plus industry best practices. You can refine later."
    - **Option C - Review First** (middle ground): "I review everything I know, come back with recommendations for departments and roles, you approve or change them, then I build."
 
+### 5b-PRE. Create the Interview Log File (MANDATORY before asking any questions)
+
+Before asking the first interview question, create the interview log file:
+
+**File location:** `[master-files-folder]/AI-Workforce-Interview.md`
+
+**Create it with this header:**
+```
+# AI Workforce Interview
+Started: [date and time]
+Status: IN PROGRESS
+Client: [business name]
+Departments selected: [list]
+
+---
+```
+
+**Write a reference to it in MEMORY.md immediately:**
+```
+AI Workforce Interview in progress: [master-files-folder]/AI-Workforce-Interview.md
+Started: [date]
+```
+
+This ensures the document is findable even if the session compacts or ends.
+
+---
+
+### 5b-RESUME. Check for an Existing Interview (MANDATORY at session start)
+
+At the start of every session BEFORE presenting Option A/B/C, check if an interview is already in progress:
+
+1. Look in MEMORY.md for "AI Workforce Interview in progress"
+2. If found, open that file and read it
+3. Find the last answered question
+4. Tell the user: "I see we started your AI Workforce Interview. We completed [X] departments out of [Y] and we're in the middle of [department name]. Would you like to pick up where we left off?"
+5. If yes: resume from the next unanswered question. Do NOT restart.
+6. If no: ask if they want to start over or continue
+
+Only present Option A/B/C if no interview is in progress.
+
+---
+
 ### 5c. Execute the Chosen Option
 
 #### If Option A (Full Interview):
-For EACH department the user selected, ask at minimum these 7 questions:
+
+**Interview style:** Ask questions the way Oprah Winfrey or Barbara Walters would -- warm, curious, genuinely interested. Never read questions like a form. Make the client feel heard.
+
+**Smart question rule:** Before asking a question, check MEMORY.md, USER.md, and past conversation context. If you already know the answer, present it as a confirmation:
+- "I know you use Convert and Flow as your CRM. Is that still the case for your Marketing department, or has anything changed?"
+This saves time and makes the interview feel personal.
+
+**Log every Q&A in real time** -- write to `AI-Workforce-Interview.md` as you go, not after. Do not wait until the end of the session. Format:
+
+```
+## [Department Name]
+**Q: [question]**
+A: [client's answer]
+
+**Q: [question]**
+A: [client's answer]
+```
+
+**Department finish rule:** If the client wants to stop mid-session, encourage them to finish the current department first:
+"We're almost done with Marketing -- just [X] more questions. Want to push through and finish this one so we have a complete picture for this department?"
+If they insist on stopping, save progress, update the interview file, and end gracefully. Never abandon partial data.
+
+For EACH department the user selected, ask at minimum these 7 questions (but skip any the AI already knows the answer to from prior context):
 1. What is the purpose of this department?
 2. What roles exist inside this department?
 3. What does each role do day to day?
@@ -276,6 +340,11 @@ For EACH department the user selected, ask at minimum these 7 questions:
 5. What is the tech stack for this department?
 6. What are the KPIs for this department?
 7. What are the top 10 most common tasks that need SOPs?
+
+**When the full interview is complete:**
+- Mark the file: `Status: COMPLETE`
+- Update MEMORY.md entry to: "AI Workforce Interview COMPLETE: [path]"
+- Proceed to proposing the full structure
 
 After all interviews complete, propose the full structure to the user. Wait for approval before building.
 

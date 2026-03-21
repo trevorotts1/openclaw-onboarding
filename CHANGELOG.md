@@ -605,3 +605,5 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - Feature: Skill 31 per-department memory architecture -- 3 tiers (CEO full 5 layers, 6 heavy depts full 5 layers, 10 light depts 3 layers), 14-day log retention for departments, per-department Mem0 namespace isolation
 
 - Fix: Skill 32 now includes mandatory Step 6.5 to seed all 17 department workspaces into Mission Control DB after install + added seed-workspaces.py script
+
+- Feature: Skill 23 interview log system -- creates AI-Workforce-Interview.md, logs every Q&A in real time, resumes mid-interview across sessions, Barbara Walters interview style, smart confirmations from prior context, department finish nudge
