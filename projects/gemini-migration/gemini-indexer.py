@@ -12,9 +12,33 @@ except ImportError:
     sys.exit(1)
 
 DB_PATH = os.path.expanduser("~/clawd/data/coaching-personas/gemini-index.sqlite")
+
+def _find_master_files_dir():
+    """Find the master files folder regardless of capitalization or spacing."""
+    downloads = Path(os.path.expanduser("~/Downloads"))
+    # First check the known exact path
+    exact = downloads / "openclaw-master-files"
+    if exact.exists():
+        return str(exact / "coaching-personas" / "personas")
+    # Case-insensitive search for any folder containing 'claw' and ('master' or 'files')
+    try:
+        for entry in downloads.iterdir():
+            if entry.is_dir():
+                name_lower = entry.name.lower()
+                if ("claw" in name_lower) and ("master" in name_lower or "files" in name_lower):
+                    candidate = entry / "coaching-personas" / "personas"
+                    if candidate.exists():
+                        return str(candidate)
+                    # Try without subdirectory if personas folder doesn't exist yet
+                    return str(candidate)
+    except Exception:
+        pass
+    # Final fallback to clawd data dir
+    return os.path.expanduser("~/clawd/data/coaching-personas/personas")
+
 PERSONAS_DIR = os.path.expanduser("~/clawd/data/coaching-personas/personas")
 if not os.path.exists(PERSONAS_DIR):
-    PERSONAS_DIR = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/personas")
+    PERSONAS_DIR = _find_master_files_dir()
 
 GEMINI_MODEL = "gemini-embedding-2-preview"
 CHUNK_SIZE = 1000

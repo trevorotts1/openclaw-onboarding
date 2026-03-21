@@ -583,3 +583,9 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **Skill 02 - Back Yourself Up Protocol**: Automatic config backups before every change.
 - **Skill 03 - Superpowers**: 4 Iron Laws + 14 sub-skills for systematic problem-solving.
 - README.md and Start Here.md included.
+
+## v5.5.2 - March 21, 2026
+- Fix: gemini-indexer.py now does case-insensitive search for master files folder (handles "Open Claw Master Files", "openclaw-master-files", etc.)
+- Fix: install.sh now copies gemini-indexer.py and gemini-search.py to ~/clawd/scripts/ on install so Skill 22 dependency checks pass
+- Fix: install.sh now writes GOOGLE_API_KEY to ~/clawd/secrets/.env if set in environment during install
+- Fix: Skill 22 docs (GEMINI-RETRIEVAL-GUIDE.md, PIPELINE.md, PERSONA-ROUTER.md) updated to use correct script paths

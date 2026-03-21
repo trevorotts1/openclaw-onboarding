@@ -167,7 +167,7 @@ After Phase 3 completes for a book:
   --mask "**/*.md"
 
 # Update index with new blueprint
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/onboarding/projects/gemini-migration/gemini-indexer.py
 
 # Generate vector embeddings
 # Handled by gemini-indexer.py
