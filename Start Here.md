@@ -1367,20 +1367,46 @@ If any step in a skill's installation fails:
 
 **DEFAULT: Use the 5-Wave Parallel Orchestration documented above.**
 
-1. **Wave 1** (Foundation): Run skills 01-03 sequentially in the main agent
-2. **Wave 2** (Pre-Persona): Spawn 4 parallel agents for skills 04-21
-3. **Wave 3** (Core System): Main agent installs skills 22-23 sequentially (NO sub-agents)
-4. **Wave 4** (Post-Workforce): Spawn 2 parallel agents for skills 24-30
-5. **Wave 5** (Final): Install skills 31-32, verify skill 15, and finalize
+### 🔴 PRE-FLIGHT: Write Sub-Agent Config FIRST (before spawning anything)
+
+Before spawning any sub-agents, the main orchestrator MUST write this block to ~/.openclaw/openclaw.json under agents.defaults.subagents. This prevents spawn failures and rate limit errors:
+
+```json
+"subagents": {
+  "maxConcurrent": 20,
+  "maxChildrenPerAgent": 10,
+  "maxSpawnDepth": 4,
+  "archiveAfterMinutes": 43200,
+  "model": {
+    "primary": "[client's primary model from their config]",
+    "fallbacks": []
+  }
+}
+```
+
+After writing, validate JSON syntax: python3 -m json.tool ~/.openclaw/openclaw.json > /dev/null
+If validation fails, fix before spawning. If it passes, proceed.
+
+---
+
+0. **Pre-Flight**: Write sub-agent config block to openclaw.json (above). Validate JSON. Then proceed.
+1. **Wave 1** (Foundation): Spawn ONE sub-agent to install skills 01-03 sequentially. Main agent stays free and available to talk to the client. Sub-agent reports back when done.
+2. **Wave 2** (Pre-Persona): Spawn up to 8 parallel sub-agents for skills 04-21 (in groups respecting dependencies below)
+3. **Wave 3** (Core System): Main agent installs skills 22-23 personally and sequentially (NO sub-agents - requires user interaction)
+4. **Wave 4** (Post-Workforce): Spawn up to 8 parallel sub-agents for skills 24-30
+5. **Wave 5** (Final): Main agent installs skills 31-32, verifies skill 15, sends completion report
 
 **Sequential Dependencies (Never Parallelize These):**
 - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
 - Skill 13 (Google Workspace Setup) must complete before Skill 14 (Google Workspace Integration)
 - Skill 22 (Book to Persona) must complete before Skill 23 (AI Workforce Blueprint)
 
-**Agent Limits:**
-- Maximum 4 sub-agents at any time
-- Main orchestrator handles skills 22-23 personally (no delegation)
+**Agent Limits (from pre-flight config):**
+- maxConcurrent: 20 (hard ceiling from OpenClaw)
+- maxChildrenPerAgent: 10
+- maxSpawnDepth: 4
+- Recommended working limit: 8 parallel at once (safe, avoids file conflicts)
+- Main orchestrator handles skills 22-23 personally (no delegation - requires user interaction)
 
 **The agent executes all installs.** The human is not asked to run steps. The agent runs them.
 
@@ -1893,26 +1919,33 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 ├─────────┬─────────────────┬─────────────────────────────────────────────────┤
 │  WAVE   │    AGENTS       │              SKILLS                             │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 1  │ 1 (Sequential)  │ 01 TYP, 02 Backup, Gemini Engine, 03 Agent Browser        │
-│         │                 │ Foundation - must complete before Wave 2        │
+│ Wave 0  │ Main Agent      │ Write sub-agent config to openclaw.json         │
+│         │                 │ maxConcurrent:20, maxChildren:10, maxDepth:4    │
+│         │                 │ Validate JSON before proceeding                 │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 2  │ 4 (Parallel)    │ Agent A: 04, 05, 06, 07 (install)               │
-│         │ 3 install + 1 QC│ Agent B: 08, 09, 10, 11 (install)               │
-│         │                 │ Agent C: 12, 13, 14, 15, 16, 17, 18, 19, 20, 21 │
-│         │                 │         (install)                               │
-│         │                 │ Agent D: QC Agent (verification)                │
-│         │                 │ Pre-Persona tools - all 4 run simultaneously    │
+│ Wave 1  │ 1 Sub-Agent     │ Skills 01 TYP, 02 Backup, 03 Agent Browser      │
+│         │ (Sequential)    │ Foundation - main agent stays FREE for client   │
+│         │                 │ Sub-agent reports back when all 3 done          │
+├─────────┼─────────────────┼─────────────────────────────────────────────────┤
+│ Wave 2  │ 6 (Parallel)    │ Agent A: 04, 05, 06, 07                         │
+│         │                 │ Agent B: 08, 09, 10, 11                         │
+│         │                 │ Agent C: 12, 14                                 │
+│         │                 │ Agent D: 15, 16, 17                             │
+│         │                 │ Agent E: 18, 19, 20                             │
+│         │                 │ Agent F: 21                                     │
+│         │                 │ All 6 run simultaneously                        │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
 │ Wave 3  │ 1 (Sequential)  │ 22 Book-to-Persona, 23 AI Workforce Blueprint   │
-│         │                 │ CORE SYSTEM - Main orchestrator ONLY            │
+│         │ Main Agent ONLY │ CORE SYSTEM - requires user interaction         │
+│         │                 │ Present A/B/C options - WAIT for user choice    │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 4  │ 2 (Parallel)    │ Agent E: 24, 25, 26                             │
-│         │                 │ Agent F: 27, 28, 29, 30                             │
-│         │                 │ Post-Workforce tools                            │
+│ Wave 4  │ 2 (Parallel)    │ Agent G: 24, 25, 26, 27                         │
+│         │                 │ Agent H: 28, 29, 30                             │
+│         │                 │ Both run simultaneously                         │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 5  │ 3 (Sequential)  │ 15 BlackCEO Team Management, 31 Upgraded Memory, │
-│         │                 │ 32 Command Center Setup                              │
-│         │                 │ Final verification and Gemini Engine indexing       │
+│ Wave 5  │ Main Agent      │ 31 Upgraded Memory, 32 Command Center Setup     │
+│         │ (Sequential)    │ Verify Skill 15 IDs written, send completion    │
+│         │                 │ report to Trevor via Telegram                   │
 └─────────┴─────────────────┴─────────────────────────────────────────────────┘
 ```
 
@@ -1920,80 +1953,54 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 
 ### Agent Spawning Commands
 
-Use these commands to spawn sub-agents for parallel installation:
+Use the sessions_spawn tool (NOT openclaw agent spawn -- that command does not exist).
+The correct method is to call sessions_spawn from within the agent session.
 
-#### Spawn a Single Skill Agent
-```bash
-openclaw agent spawn \
-  --task "Install skill 04 from ~/.openclaw/onboarding/04-superpowers. Read ALL .md files first, then execute. Report: 'Skill 04 complete - QC passed' or 'Skill 04 failed - [reason]'." \
-  --label "skill-04"
-```
+#### Wave 1 - Sub-Agent for Skills 01-03 (Sequential)
+Spawn ONE sub-agent to handle foundation skills. Main agent stays free.
 
-#### Spawn Wave 2 - Agent A (Skills 04-07)
-```bash
-for skill in "04-superpowers" "05-ghl-setup" "06-ghl-install-pages" "07-kie-setup"; do
-  num=${skill%%-*}
-  openclaw agent spawn \
-    --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
-    --label "skill-$num" &
-done
-wait
-```
+sessions_spawn task:
+"Install skills 01-TYP, 02-back-yourself-up-protocol, and 03-agent-browser SEQUENTIALLY from ~/.openclaw/onboarding/. Read ALL .md files in each skill folder before executing. Follow Teach Yourself Protocol for each. Do NOT proceed to the next skill until the current one is fully complete. If a skill fails, report the failure and stop. When all 3 are complete, send: 'Wave 1 complete: Skills 01, 02, 03 installed.'"
 
-#### Spawn Wave 2 - Agent B (Skills 08-11)
-```bash
-for skill in "08-vercel-setup" "09-context7" "10-github-setup" "11-superdesign"; do
-  num=${skill%%-*}
-  openclaw agent spawn \
-    --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
-    --label "skill-$num" &
-done
-wait
-```
+label: "wave-1-foundation"
 
-#### Spawn Wave 2 - Agent C (Skills 12-21)
-```bash
-for skill in "12-openrouter-setup" "13-google-workspace-setup" "14-google-workspace-integration" "15-blackceo-team-management" "16-summarize-youtube" "17-self-improving-agent" "18-proactive-agent" "19-humanizer" "20-youtube-watcher" "21-tavily-search"; do
-  num=${skill%%-*}
-  openclaw agent spawn \
-    --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
-    --label "skill-$num" &
-done
-wait
-```
+#### Wave 2 - 8 Parallel Sub-Agents (Skills 04-21)
+After Wave 1 completes, spawn these 8 agents simultaneously using sessions_spawn for each:
 
-#### Spawn Wave 2 - Agent D (Skills 18-21)
-```bash
-for skill in "18-proactive-agent" "19-humanizer" "20-youtube-watcher" "21-tavily-search"; do
-  num=${skill%%-*}
-  openclaw agent spawn \
-    --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
-    --label "skill-$num" &
-done
-wait
-```
+Agent A (04, 05, 06, 07):
+task: "Install skills 04-superpowers, 05-ghl-setup, 06-ghl-install-pages, 07-kie-setup SEQUENTIALLY from ~/.openclaw/onboarding/. Read ALL .md files first, then execute. Install 05 before 06 (dependency). If a key is missing, mark SKIPPED and continue. Report: 'Agent A complete: skills 04, 05, 06, 07 status: [installed/skipped/failed per skill]'"
+label: "wave-2-agent-a"
 
-#### Spawn Wave 4 - Agent E (Skills 24-26)
-```bash
-for skill in "24-storyboard-writer" "25-video-creator" "26-caption-creator"; do
-  num=${skill%%-*}
-  openclaw agent spawn \
-    --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
-    --label "skill-$num" &
-done
-wait
-```
+Agent B (08, 09, 10, 11):
+task: "Install skills 08-vercel-setup, 09-context7, 10-github-setup, 11-superdesign SEQUENTIALLY from ~/.openclaw/onboarding/. Read ALL .md files first, then execute. If a key is missing, mark SKIPPED and continue. Report: 'Agent B complete: skills 08, 09, 10, 11 status: [installed/skipped/failed per skill]'"
+label: "wave-2-agent-b"
 
-#### Spawn Wave 4 - Agent F (Skills 27-30)
-```bash
-for skill in "27-video-editor" "28-cinematic-forge" "29-ghl-convert-and-flow"; do
-  num=${skill%%-*}
-  openclaw agent spawn \
-    --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
-    --label "skill-$num" &
-done
-wait
-```
+Agent C (12, 14):
+task: "Install skills 12-openrouter-setup, 14-google-workspace-integration SEQUENTIALLY from ~/.openclaw/onboarding/. Read ALL .md files first, then execute. If a key is missing, mark SKIPPED and continue. Report: 'Agent C complete: skills 12, 14 status: [installed/skipped/failed per skill]'"
+label: "wave-2-agent-c"
+
+Agent D (15, 16, 17):
+task: "Install skills 15-blackceo-team-management, 16-summarize-youtube, 17-self-improving-agent SEQUENTIALLY from ~/.openclaw/onboarding/. Read ALL .md files first, then execute. If a key is missing, mark SKIPPED and continue. Report: 'Agent D complete: skills 15, 16, 17 status: [installed/skipped/failed per skill]'"
+label: "wave-2-agent-d"
+
+Agent E (18, 19, 20):
+task: "Install skills 18-proactive-agent, 19-humanizer, 20-youtube-watcher SEQUENTIALLY from ~/.openclaw/onboarding/. Read ALL .md files first, then execute. If a key is missing, mark SKIPPED and continue. Report: 'Agent E complete: skills 18, 19, 20 status: [installed/skipped/failed per skill]'"
+label: "wave-2-agent-e"
+
+Agent F (21):
+task: "Install skill 21-tavily-search from ~/.openclaw/onboarding/. Read ALL .md files first, then execute. If a key is missing, mark SKIPPED. Report: 'Agent F complete: skill 21 status: [installed/skipped/failed]'"
+label: "wave-2-agent-f"
+
+#### Wave 4 - 2 Parallel Sub-Agents (Skills 24-30)
+After Wave 3 (main agent handles 22-23), spawn these 2 simultaneously:
+
+Agent G (24, 25, 26, 27):
+task: "Install skills 24-storyboard-writer, 25-video-creator, 26-caption-creator, 27-video-editor SEQUENTIALLY from ~/.openclaw/onboarding/. Read ALL .md files first, then execute. If a key is missing, mark SKIPPED and continue. Report: 'Agent G complete: skills 24, 25, 26, 27 status: [installed/skipped/failed per skill]'"
+label: "wave-4-agent-g"
+
+Agent H (28, 29, 30):
+task: "Install skills 28-cinematic-forge, 29-ghl-convert-and-flow, 30-fish-audio-api-reference SEQUENTIALLY from ~/.openclaw/onboarding/. Read ALL .md files first, then execute. If a key is missing, mark SKIPPED and continue. Report: 'Agent H complete: skills 28, 29, 30 status: [installed/skipped/failed per skill]'"
+label: "wave-4-agent-h"
 
 ---
 
