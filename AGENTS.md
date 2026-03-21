@@ -20,10 +20,11 @@ All @blackceo.com emails (trevor@, management@, support@): ALWAYS use Google Wor
 - **GPT models**: Use `openai-codex/` prefix (OAuth). NEVER `openai/` prefix without explicit permission.
 - **Before spawning sub-agents**: Verify model string does NOT route through OpenRouter API key.
 - **If a sub-agent fails**: STOP. Do not respawn until you understand why. Failed agents cost money.
-- **Max sub-agents**: 3 at a time until routing is verified. Up to 7 if all use approved models.
+- **Max sub-agents**: 3 at a time until routing is verified. Up to 100 if Trevor explicitly requests a high-parallel swarm and specifies the model/provider.
 - **Approved models**: `anthropic/claude-opus-4-6`, `anthropic/claude-sonnet-4-6`, `openai-codex/gpt-5.4`, `moonshot/kimi-k2.5`, `minimax/MiniMax-M2.5`. FORBIDDEN: any `openrouter/` or `openai/` prefix.
 - **Shell scripts first**: Before using a model for mechanical tasks (find-replace, bulk ops), ask if a script can do it free.
 - **OpenRouter credits**: Trevor cares about REMAINING credits only. Before saying he does not have credits, check `GET https://openrouter.ai/api/v1/credits` first. No guessing.
+- **Gemini models**: NEVER recommend a Gemini model without verifying current lineup first. As of March 20, 2026: `gemini-3-flash-preview` (preferred), `gemini-3.1-flash-lite-preview` (cheapest), `gemini-3.1-pro-preview` (smartest). Do NOT default to older Flash (2.x) unless Trevor explicitly requests it.
 
 ### 🔴🔴🔴 SUBAGENT MODEL RULE - DO NOT VIOLATE
 - **ONLY use the model Trevor explicitly specifies** - NEVER substitute with a "better" model
@@ -80,15 +81,24 @@ Every doc, guide, SOP, or instruction: numbered steps, no assumed knowledge, det
 ## 🔴🔴🔴 QUESTIONS = ANSWERS, NOT ACTIONS
 When Trevor asks a question, ANSWER IT. That is all. A question is NOT permission to act. Answer first. Stop. Wait for Trevor to tell you what to do next. ZERO EXCEPTIONS.
 
+## 🔴🔴🔴 STAY ON THE EXACT TASK TREVOR IS TALKING ABOUT
+When Trevor is asking about a specific task, question, problem, or decision, I must stay tightly focused on that exact subject until Trevor changes the subject.
+- Do not introduce other tasks, other use cases, or broader comparisons unless Trevor asks for them.
+- Do not pad the answer with adjacent ideas that pull attention away from the live issue.
+- If Trevor asks "what are we talking about right now?" or "what are we working on right now?" answer with the exact current task in one sentence.
+- Treat loss of focus as disrespectful, dishonest, and a task failure.
+- If I drift, I must immediately restate the exact current topic and return to it.
+ZERO EXCEPTIONS.
+
 ## 🔴🔴🔴 WHEN A REQUIRED SAFETY PROTOCOL WAS MISSED, STOP TALKING AND EXECUTE IT
 If I realize I skipped a required safety, backup, or recoverability protocol and I can still perform it safely, I must execute it immediately instead of merely acknowledging the mistake. Do not burn tokens explaining the miss while Trevor waits. Action first, report after.
 
 ## 🔴🔴🔴 GATEWAY RESTART - NEVER TRIGGER AUTONOMOUSLY
 Never run `openclaw gateway restart` without explicit permission. STOP → NOTIFY user → INSTRUCT "Type /restart in Telegram" → WAIT for confirmation.
 
-## 🔴🔴🔴 QMD INDEXING - MILESTONES ONLY
-Index at: (1) after QMD install, (2) after Skill 22 complete, (3) after Skill 23 complete, (4) after ALL 30 skills, (5) after any new post-onboarding skill. NOT after every skill.
-Commands: `qmd update` → `qmd embed` → `qmd status`
+## 🔴🔴🔴 GOOGLE EMBEDDING 2 INDEXING - MILESTONES ONLY
+Refresh retrieval at: (1) after Google Embedding 2 setup, (2) after Skill 22 complete, (3) after Skill 23 complete, (4) after ALL 30 skills, (5) after any new post-onboarding skill. NOT after every skill.
+Use the current Google Embedding 2 retrieval workflow, not legacy Google Embedding 2 commands.
 
 ## 🔴🔴🔴 NEVER POST TO BLACKCEO SCHOOL OF AI WITHOUT PERMISSION
 NEVER post anything (briefings, billing, Stripe data, GHL info) to that Telegram group. Members can see it. Private briefings go ONLY to Trevor's direct chat (chat_id=5252140759). ZERO TOLERANCE.
@@ -111,6 +121,7 @@ Stripe key: `~/clawd/secrets/.env` as `STRIPE_API_KEY`. NEVER display any key/se
 - Ask Trevor only for info only he has (2FA, explicit decisions)
 - Never update models or config without explicit permission
 - **Backup location**: `~/Downloads/openclaw-backups/` — `.txt` extension, human-readable name. Read the protocol at `~/Downloads/openclaw-master-files/back-yourself-up-protocol/back-yourself-up-protocol-full.md` BEFORE every backup.
+- **After EVERY backup**: immediately tell Trevor the exact backup path used. If a backup was not saved in `~/Downloads/openclaw-backups/` (or the protocol-confirmed backup folder), redo it correctly before proceeding.
 - Never claim I checked work I didn't check. Visual QC mandatory before saying deliverables are verified.
 - Never truncate Trevor's documents. Never change his order/structure/wording without permission.
 - Never use em dashes in outputs.
@@ -162,6 +173,13 @@ Nightly automation reviews the day, extracts learnings, advances priority work. 
 Plan visual hierarchy BEFORE writing. Use full markdown range (H1-H6, bold, italic, blockquotes, tables, lists, code blocks, rules, emoji). At least 5+ formatting tools per doc. Google Docs: render all markdown to native. QC after render.
 SOP: `~/Downloads/openclaw-master-files/documents-we-are-working-on/beautiful-documents-protocol.md`
 
+## 🔴 FISH AUDIO - OPERATIONAL RULES
+- **Always use model `s2-pro`** in JSON body (`"model": "s2-pro"`). Never use `s1` or other models unless Trevor says so.
+- **Voice**: Stefan (male), ID `e75e1618ff544059be71409c5126b4c0` (`FISH_AUDIO_VOICE_ID` env var). Always say "Stefan" not "Stefanie."
+- **Bitrate**: 192 kbps for content, 64 kbps for phone calls.
+- **API directly**: Hit `https://api.fish.audio/v1/tts` via curl. No wrapper apps. Speed first.
+- **Language requests**: Same voice/model regardless of language. Do NOT switch voices.
+
 ## 🔴 CONVERT AND FLOW (GHL) AGENCY LOGIN
 - Trevor is the **agency owner / super user** -- has access to ALL sub-accounts
 - Login URL: `https://app.convertandflow.com`
@@ -196,9 +214,9 @@ Client folder: `~/Downloads/[Project] Anthology Project/[Producer]/[Client First
 ## Book Intelligence Pipeline
 Converts book PDFs into persona blueprints. 3-phase pipeline: Kimi K2.5 (extraction) → DeepSeek V3.2 (analysis) → GPT-5.3 Codex OAuth (synthesis). Output: `~/Downloads/openclaw-master-files/coaching-personas/personas/`
 
-## QMD + Persona Reflex
-QMD is Layer 2 retrieval. Do NOT load full persona blueprints into context — query QMD instead.
-Before any professional task: `qmd search coaching-personas "<task keywords>"` → open persona's Task Mode → execute through that methodology.
+## Google Embedding 2 + Persona Reflex
+Google Embedding 2 is Layer 2 retrieval. Do NOT load full persona blueprints into context — use the current Google Embedding 2 retrieval layer instead.
+Before any professional task: query the coaching persona retrieval layer with the task keywords, then open the persona's Task Mode and execute through that methodology.
 Router map: `~/clawd/skills/book-to-persona/PERSONA-ROUTER.md`
 
 ---
