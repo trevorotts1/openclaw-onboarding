@@ -879,6 +879,14 @@ REPORTING
 [ ] If any layer failed, specific diagnosis sent to user
 [ ] Core files updated per CORE_UPDATES.md (using TYP rules)
 
+PER-DEPARTMENT MEMORY
+[ ] Tier 2 heavy departments (Research, Legal, Creative, Web Dev, App Dev, IT): MEMORY.md + memory/ folder created in each workspace folder
+[ ] Tier 2: Mem0 configured with per-department userId (e.g. [client-id]-research)
+[ ] Tier 3 light departments (Sales, Marketing, Billing, Support, Operations, HR, Graphics, Video, Audio, Comms): MEMORY.md + memory/ folder created in each workspace folder
+[ ] Tier 3: Mem0 configured with per-department userId
+[ ] 14-day log retention rule added for all department agents
+[ ] Confirmed NO Layer 3 or Layer 4 configured for Tier 3 departments
+
 CLIENT EDUCATION
 [ ] HOW-YOUR-MEMORY-WORKS.md is available in the skill folder
 [ ] If user asks how their memory works, reference this file for a plain-English explanation
