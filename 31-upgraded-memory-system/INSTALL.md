@@ -753,6 +753,93 @@ During an update, progress should be communicated in Telegram, not buried in ter
 
 ---
 
+---
+
+## Per-Department Memory Architecture
+
+🔴 **MANDATORY:** After the main agent memory system is installed and verified above, you must also configure memory for each department agent. Each department gets a different memory tier based on how much data it handles.
+
+---
+
+### Memory Tiers
+
+#### Tier 1: CEO / Main Orchestrator (already covered above)
+- All 5 layers active
+- Daily log retention: 90 days
+- MEMORY.md cap: 1500 lines
+
+#### Tier 2: Heavy Departments -- Full 5 Layers
+These departments handle large files, codebases, contracts, or deep research. They need all 5 layers.
+
+Departments: **Research, Legal/Compliance, Creative, Web Development, App Development, IT/Tech**
+
+For each of these 6 departments:
+1. Create department MEMORY.md at: `[workspace-folder]/MEMORY.md`
+2. Create daily log folder at: `[workspace-folder]/memory/`
+3. Set up session indexing for this agent (Layer 3)
+4. Enable Gemini search for this agent's workspace folder (Layer 4)
+5. Configure Mem0 with per-department userId:
+   - Research → `[client-id]-research`
+   - Legal → `[client-id]-legal`
+   - Creative → `[client-id]-creative`
+   - Web Development → `[client-id]-webdev`
+   - App Development → `[client-id]-appdev`
+   - IT/Tech → `[client-id]-it`
+6. Set MEMORY.md cap: 500 lines
+7. Set daily log retention: 14 days (auto-prune logs older than 14 days)
+
+#### Tier 3: Light Departments -- 3 Layers Only
+These departments handle routine, transactional, or shorter-cycle work. They do NOT need Layers 3 or 4.
+
+Departments: **Sales, Marketing, Billing/Finance, Customer Support, Operations, HR/People, Graphics, Video, Audio, Communications**
+
+For each of these 10 departments:
+1. Create department MEMORY.md at: `[workspace-folder]/MEMORY.md`
+2. Create daily log folder at: `[workspace-folder]/memory/`
+3. Configure Mem0 with per-department userId:
+   - Sales → `[client-id]-sales`
+   - Marketing → `[client-id]-marketing`
+   - Billing → `[client-id]-billing`
+   - Customer Support → `[client-id]-support`
+   - Operations → `[client-id]-operations`
+   - HR → `[client-id]-hr`
+   - Graphics → `[client-id]-graphics`
+   - Video → `[client-id]-video`
+   - Audio → `[client-id]-audio`
+   - Communications → `[client-id]-comms`
+4. Set MEMORY.md cap: 300 lines
+5. Set daily log retention: 14 days (auto-prune logs older than 14 days)
+6. Do NOT enable session indexing (Layer 3) for these departments
+7. Do NOT enable Gemini search (Layer 4) for these departments
+
+---
+
+### Memory Bloat Prevention Rules
+
+Add these cleanup rules to each department agent's configuration:
+
+**For Tier 2 (Heavy) departments:**
+- MEMORY.md over 500 lines: consolidate redundant entries, keep decisions and key facts
+- Daily logs older than 14 days: delete automatically
+- Never delete MEMORY.md itself
+
+**For Tier 3 (Light) departments:**
+- MEMORY.md over 300 lines: trim oldest entries first, keep last 90 days of decisions
+- Daily logs older than 14 days: delete automatically
+- Never delete MEMORY.md itself
+
+**For CEO / main agent:**
+- MEMORY.md over 1500 lines: consolidate, keep all important decisions
+- Daily logs older than 90 days with only routine info: can be deleted
+- Daily logs with important decisions: keep indefinitely
+
+---
+
+### What [client-id] means
+Replace `[client-id]` with the client's primary identifier -- typically their business name slug, e.g. `blackceo`, `acme-dental`, `smith-consulting`. This ensures each client's department memories are isolated from other clients even if they share a Mem0 instance.
+
+---
+
 ## Completion Checklist
 
 ```
@@ -795,4 +882,13 @@ REPORTING
 CLIENT EDUCATION
 [ ] HOW-YOUR-MEMORY-WORKS.md is available in the skill folder
 [ ] If user asks how their memory works, reference this file for a plain-English explanation
+
+PER-DEPARTMENT MEMORY
+[ ] Tier 2 departments (Research, Legal, Creative, Web Dev, App Dev, IT): MEMORY.md + memory/ folder created
+[ ] Tier 2 departments: Mem0 userId set per department (e.g. [client-id]-research)
+[ ] Tier 3 departments (Sales, Marketing, Billing, Support, Ops, HR, Graphics, Video, Audio, Comms): MEMORY.md + memory/ folder created
+[ ] Tier 3 departments: Mem0 userId set per department (e.g. [client-id]-marketing)
+[ ] All department MEMORY.md caps set (500 lines Tier 2, 300 lines Tier 3)
+[ ] All department daily log retention set to 14 days
+[ ] Tier 3 departments: Layer 3 and Layer 4 NOT enabled (confirm these are off)
 ```

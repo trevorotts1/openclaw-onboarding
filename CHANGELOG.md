@@ -599,3 +599,5 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - Feature: AI Workforce Complete marker disables afternoon nudge automatically on completion
 
 - Fix: Skill 23 no longer treats web-dev and app-dev as secondary/optional departments -- all 17 presented as flat equal list
+
+- Feature: Skill 31 now includes per-department memory architecture -- Tier 1 (CEO full 5 layers), Tier 2 (6 heavy depts full 5 layers, 14-day logs, 500-line cap), Tier 3 (10 light depts layers 1+2+5 only, 14-day logs, 300-line cap), per-department Mem0 namespacing, memory bloat prevention rules
