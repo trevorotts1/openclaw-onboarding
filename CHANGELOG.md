@@ -607,3 +607,5 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - Fix: Skill 32 now includes mandatory Step 6.5 to seed all 17 department workspaces into Mission Control DB after install + added seed-workspaces.py script
 
 - Feature: Skill 23 interview log system -- creates AI-Workforce-Interview.md, logs every Q&A in real time, resumes mid-interview across sessions, Barbara Walters interview style, smart confirmations from prior context, department finish nudge
+
+- Fix: Skill 23 interview tone completely rewritten -- warm supportive advisor style, specific BAD vs GOOD question examples, guidance when client does not know the answer, never cold form-style questions
