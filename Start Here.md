@@ -2274,10 +2274,30 @@ python3 ~/clawd/scripts/gemini-indexer.py --status
 
 Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 32 skills processed"
 
+### Post-Install Heartbeat Triggers (MANDATORY after onboarding complete)
+
+After all 32 skills are installed, create TWO recurring OpenClaw cron jobs to nudge the client toward building their AI workforce:
+
+**Morning nudge (9 AM daily):**
+openclaw cron create --name "ai-workforce-morning-nudge" --schedule "0 9 * * *" --task "Send this message to the owner via their primary messaging channel: 'Good morning! Your AI system is fully set up and ready to work for you. Are you ready to start building out your AI workforce? When you say the word, I will walk you through setting up your departments, your roles, and your first AI employees. Let's build something powerful.'"
+
+**Afternoon nudge (1 PM daily):**
+openclaw cron create --name "ai-workforce-afternoon-nudge" --schedule "0 13 * * *" --task "Check if Skill 23 (AI Workforce Blueprint) has been fully completed (check MEMORY.md for 'AI WORKFORCE COMPLETE' marker). If NOT complete: send message to owner: 'Hey -- just checking in. Your AI workforce is ready to be built whenever you are. Pick up where we left off and let\'s get your company running. One question at a time, I\'ll walk you through everything.' If complete: remove or disable this cron job."
+
+**After client finishes all intake questions in Skill 23:**
+The AI must write "AI WORKFORCE COMPLETE - [date]" to MEMORY.md. This disables the afternoon nudge automatically.
+
+**After intake is complete**, the AI must also:
+1. Trigger the workspace provisioning flow (build-workforce.py if it exists, otherwise proceed to department folder creation)
+2. Set up their Cloudflare Tunnel subdomain if Skill 32 has not been run yet
+3. Send the client a message: "Your AI Command Center is being set up now. I will send you the link as soon as it is ready."
+
 When every skill on the list above is installed and verified, tell the user:
 1. Everything that was installed (all 32 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
 2. Everything that was added to each workspace file (AGENTS.md, TOOLS.md, MEMORY.md, etc.)
 3. Which workspace files were updated and which were not touched
+4. Any missing API keys or tokens (consolidated list -- do NOT ask for them one by one)
+5. Confirm the two post-install heartbeat cron jobs are active
 4. Where the full documentation for each skill is saved (the master files folder path)
 5. That the backup protocol is active and the first backup has been created
 

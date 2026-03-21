@@ -593,3 +593,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - Fix: Skill 22 orchestrator.py now auto-installs Calibre via Homebrew when missing instead of stopping and asking the user
 
 - Fix: Parallel sub-agent install architecture - Wave 0 pre-flight config, Wave 1 via sub-agent (main stays free), Wave 2 with 6 parallel agents, correct sessions_spawn commands replacing invalid openclaw agent spawn, maxConcurrent 20/maxChildren 10/maxDepth 4 config block
+
+- Fix: CRM Specialist added as mandatory role in ALL 17 departments (was only in 4)
+- Feature: Post-install heartbeat triggers - morning (9AM) + afternoon (1PM) nudges added to Wave 5 completion flow
+- Feature: AI Workforce Complete marker disables afternoon nudge automatically on completion

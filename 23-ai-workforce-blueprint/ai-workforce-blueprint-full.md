@@ -1384,20 +1384,45 @@ The AI should use the interview answers (or best practices) to determine the rig
 | **marketing-dept** | Content Writer, Social Media Manager, Ads Specialist, Email Marketer, CRM Specialist | Generate awareness, leads, and nurture prospects |
 | **creative-dept** | Graphic Designer, Video Producer, Copywriter, CRM Specialist | Produce visual, video, and written assets |
 | **billing-dept** | Invoice Specialist, Collections, Payment Processor, CRM Specialist | Handle invoicing, payments, and financial tracking |
-| **customer-support-dept** | Support Agent, Onboarding Specialist, Escalation Manager | Help existing customers and resolve issues |
-| **operations-dept** | Project Manager, Systems Admin, Process Analyst | Keep the business running, manage tools, improve processes |
-| **web-development-dept** | Frontend Developer, Backend Developer, Funnel Builder, Landing Page Specialist | Build and maintain websites, funnels, landing pages, and write HTML/CSS/JavaScript |
-| **app-development-dept** | Software Engineer, Mobile Developer, API Developer, QA Tester | Build software, mobile apps, desktop apps, and custom tools. Write code, test code, deploy code. |
+| **customer-support-dept** | Support Agent, Onboarding Specialist, Escalation Manager, CRM Specialist | Help existing customers and resolve issues |
+| **operations-dept** | Project Manager, Systems Admin, Process Analyst, CRM Specialist | Keep the business running, manage tools, improve processes |
+| **web-development-dept** | Frontend Developer, Backend Developer, Funnel Builder, Landing Page Specialist, CRM Specialist | Build and maintain websites, funnels, landing pages, and write HTML/CSS/JavaScript |
+| **app-development-dept** | Software Engineer, Mobile Developer, API Developer, QA Tester, CRM Specialist | Build software, mobile apps, desktop apps, and custom tools. Write code, test code, deploy code. |
+| **graphics-dept** | Graphic Designer, Brand Designer, Template Builder, CRM Specialist | Create visual assets, brand materials, and design templates |
+| **video-production-dept** | Video Editor, Motion Graphics, Scriptwriter, CRM Specialist | Produce and edit video content for marketing and delivery |
+| **audio-production-dept** | Audio Engineer, Podcast Producer, Voice-Over Specialist, CRM Specialist | Produce and edit audio content, podcasts, and voice assets |
+| **hr-people-dept** | Recruiter, Onboarding Coordinator, Culture Manager, CRM Specialist | Manage hiring, onboarding, team health, and culture |
+| **legal-compliance-dept** | Contract Reviewer, Compliance Officer, Policy Manager, CRM Specialist | Manage contracts, compliance, and legal documentation |
+| **it-tech-dept** | Systems Admin, Security Monitor, Tech Support, CRM Specialist | Manage infrastructure, security, and internal tech tools |
+| **research-dept** | Market Researcher, Competitor Analyst, Data Analyst, CRM Specialist | Gather intelligence, analyze markets, and produce research reports |
+| **communications-dept** | PR Specialist, Internal Comms, Community Manager, CRM Specialist | Manage public relations, internal messaging, and community engagement |
 
 ### About the CRM Specialist Role
 
-The CRM Specialist role appears in MULTIPLE departments. This is intentional.
+🔴 **UNIVERSAL RULE: Every department gets a CRM Specialist. No exceptions.**
 
-Sales needs a CRM specialist to manage pipelines and contact records. Marketing needs one to manage campaigns, segments, and automations. Creative needs one to manage asset libraries and content calendars. Billing needs one to manage payment tracking and subscription records.
+The CRM Specialist is a mandatory role in ALL 17 departments. Every part of the business touches the CRM in a different way. Each department needs someone who owns that relationship.
 
-Each department's CRM Specialist has different knowledge base files because they use the CRM differently. The Sales CRM Specialist's SOPs are about pipeline management. The Marketing CRM Specialist's SOPs are about email sequences and tagging. They share the same tool but do different jobs.
+- Sales CRM Specialist: pipeline management, contact records, deal stages
+- Marketing CRM Specialist: email sequences, tags, automations, campaign tracking
+- Billing CRM Specialist: payment records, subscription tracking, invoice history
+- Customer Support CRM Specialist: ticket tracking, case history, customer notes
+- Operations CRM Specialist: workflow automations, tool integrations, process tracking
+- Creative CRM Specialist: asset libraries, content calendars, project records
+- HR CRM Specialist: applicant tracking, onboarding records, employee data
+- Legal CRM Specialist: contract records, compliance tracking, document management
+- IT CRM Specialist: system tickets, vendor records, access management
+- Research CRM Specialist: data collection, report tracking, insight documentation
+- Communications CRM Specialist: media contacts, campaign records, community data
+- Graphics CRM Specialist: brand asset library, client records, revision tracking
+- Video CRM Specialist: project records, client feedback, delivery tracking
+- Audio CRM Specialist: project records, studio scheduling, client delivery
+- Web Development CRM Specialist: client projects, funnel records, deployment tracking
+- App Development CRM Specialist: project sprints, client requirements, release tracking
 
-> 💡 **Rule:** When a role appears in multiple departments, each version gets its own Start Here file and its own knowledge base files specific to how that department uses the role. Do NOT create one shared CRM Specialist folder. Each department gets its own version.
+Each department's CRM Specialist has different knowledge base files because they use the CRM differently. They share the same tool but do completely different jobs.
+
+> 💡 **Rule:** Each department gets its own CRM Specialist folder with SOPs specific to how THAT department uses the CRM. Do NOT create one shared CRM Specialist folder. 17 departments = 17 CRM Specialist folders.
 
 ### About the Web Development and App Development Departments
 
