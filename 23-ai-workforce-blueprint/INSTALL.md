@@ -238,13 +238,28 @@ Ask the user these questions. Wait for answers before building anything:
 **Required questions:**
 1. "What is the name of your business?"
 2. "What industry are you in?" (coaching, e-commerce, agency, restaurant, law firm, SaaS, etc.)
-3. "Which departments does your business need?" (Show them the starter list from the blueprint as a reference). All 17 departments are recommended - you choose which ones to keep:
-   - Marketing, Sales, Creative, Graphics, Video, Audio
-   - Billing/Finance, Customer Support, Operations
-   - Web Development, App Development
-   - HR/People, Legal/Compliance, IT/Tech
-   - Research, Communications
-   - The Master Orchestrator department is always created automatically
+3. "Which departments does your business need?" Present ALL 17 departments as a flat equal list. Do NOT group them, do NOT suggest any are optional or secondary. Every department is equal. The client decides which to keep or remove.
+
+   Present this exact list:
+   1. Marketing
+   2. Sales
+   3. Creative
+   4. Graphics
+   5. Video Production
+   6. Audio Production
+   7. Billing / Finance
+   8. Customer Support
+   9. Operations
+   10. Web Development
+   11. App Development
+   12. HR / People
+   13. Legal / Compliance
+   14. IT / Tech
+   15. Research
+   16. Communications
+   17. Master Orchestrator (always included automatically -- do not ask about this one)
+
+   🔴 Do NOT pre-select any departments. Do NOT suggest that Web Development or App Development are "only if needed." Present all 16 equally and let the client choose. Master Orchestrator is the only one that is automatic.
 4. "Which setup option do you want?"
    - **Option A - Full Interview** (recommended): "I will interview you about each department - at least 7 questions per department - so I deeply understand your operations, tools, KPIs, and processes. Then I build everything with real content based on your answers."
    - **Option B - Quick Setup** (fastest): "I skip the interview and build everything now using what I already know about you from your workspace files (USER.md, MEMORY.md, etc.) plus industry best practices. You can refine later."

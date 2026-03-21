@@ -1434,7 +1434,7 @@ These are technical departments focused on building things with code.
 
 These departments are separate because the skills, tools, and processes are different. A funnel builder and a mobile app developer do very different work.
 
-> ⚠️ **Not every client needs these.** If the client does not build websites or software, skip them. The AI should ask: "Does your business create websites, funnels, or landing pages?" and "Does your business develop software or mobile apps?" If the answer is no, do not create these departments.
+> 💡 **All 17 departments are presented equally during setup.** The client decides which ones to include or exclude -- no department is pre-selected or pre-excluded. Present all 17 during the intake and let the client choose. Do NOT skip or de-prioritize web-development-dept or app-development-dept before asking. If a client says they do not need one, that is their call to make -- not the AI's.
 
 ---
 

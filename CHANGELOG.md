@@ -597,3 +597,5 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - Fix: CRM Specialist added as mandatory role in ALL 17 departments (was only in 4)
 - Feature: Post-install heartbeat triggers - morning (9AM) + afternoon (1PM) nudges added to Wave 5 completion flow
 - Feature: AI Workforce Complete marker disables afternoon nudge automatically on completion
+
+- Fix: Skill 23 no longer treats web-dev and app-dev as secondary/optional departments -- all 17 presented as flat equal list
