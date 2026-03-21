@@ -603,3 +603,5 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - Feature: Skill 31 now includes per-department memory architecture -- Tier 1 (CEO full 5 layers), Tier 2 (6 heavy depts full 5 layers, 14-day logs, 500-line cap), Tier 3 (10 light depts layers 1+2+5 only, 14-day logs, 300-line cap), per-department Mem0 namespacing, memory bloat prevention rules
 
 - Feature: Skill 31 per-department memory architecture -- 3 tiers (CEO full 5 layers, 6 heavy depts full 5 layers, 10 light depts 3 layers), 14-day log retention for departments, per-department Mem0 namespace isolation
+
+- Fix: Skill 32 now includes mandatory Step 6.5 to seed all 17 department workspaces into Mission Control DB after install + added seed-workspaces.py script
