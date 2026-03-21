@@ -277,7 +277,7 @@ def _extract_epub(epub_path: Path) -> str:
 
 
 def _find_calibre() -> str:
-    """Locate ebook-convert binary across common install paths."""
+    """Locate ebook-convert binary across common install paths. Auto-installs via Homebrew if missing."""
     import subprocess
     calibre_paths = [
         "/opt/homebrew/bin/ebook-convert",
@@ -291,10 +291,43 @@ def _find_calibre() -> str:
     result = subprocess.run(["which", "ebook-convert"], capture_output=True, text=True)
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
-    raise RuntimeError(
-        "Calibre not found. Install with: brew install --cask calibre\n"
-        "DeDRM plugin also required: calibre-customize -a ~/clawd/skills/book-to-persona/drm-tools/DeDRM_tools/DeDRM_plugin.zip"
-    )
+
+    # Not found -- auto-install via Homebrew without asking the user
+    log("Calibre not found. Auto-installing via Homebrew (this may take a few minutes)...")
+    brew_paths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+    brew_bin = None
+    for bp in brew_paths:
+        if Path(bp).exists():
+            brew_bin = bp
+            break
+    if brew_bin is None:
+        result2 = subprocess.run(["which", "brew"], capture_output=True, text=True)
+        if result2.returncode == 0 and result2.stdout.strip():
+            brew_bin = result2.stdout.strip()
+
+    if brew_bin:
+        install_result = subprocess.run(
+            [brew_bin, "install", "--cask", "calibre"],
+            capture_output=False,  # show output so user can see progress
+        )
+        if install_result.returncode == 0:
+            log("Calibre installed successfully. Continuing...")
+            # Re-check paths after install
+            for p in calibre_paths:
+                if Path(p).exists():
+                    return p
+            result3 = subprocess.run(["which", "ebook-convert"], capture_output=True, text=True)
+            if result3.returncode == 0 and result3.stdout.strip():
+                return result3.stdout.strip()
+        else:
+            raise RuntimeError("Calibre auto-install failed. Please install manually: brew install --cask calibre")
+    else:
+        raise RuntimeError(
+            "Homebrew not found and Calibre is not installed.\n"
+            "Install Homebrew first: /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n"
+            "Then run: brew install --cask calibre"
+        )
+    raise RuntimeError("Calibre install completed but ebook-convert binary still not found. Please restart Terminal and try again.")
 
 
 def _extract_mobi_python(book_path: Path) -> str:

@@ -589,3 +589,5 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - Fix: install.sh now copies gemini-indexer.py and gemini-search.py to ~/clawd/scripts/ on install so Skill 22 dependency checks pass
 - Fix: install.sh now writes GOOGLE_API_KEY to ~/clawd/secrets/.env if set in environment during install
 - Fix: Skill 22 docs (GEMINI-RETRIEVAL-GUIDE.md, PIPELINE.md, PERSONA-ROUTER.md) updated to use correct script paths
+
+- Fix: Skill 22 orchestrator.py now auto-installs Calibre via Homebrew when missing instead of stopping and asking the user
