@@ -99,11 +99,10 @@ echo "$ONBOARDING_VERSION" > "$ONBOARDING_DIR/.onboarding-version"
 echo "  Version: $ONBOARDING_VERSION"
 
 # ----------------------------------------------------------
-# Step 3b: Set up Gemini Engine (semantic search)
+# Step 3b: Copy Gemini Engine scripts (indexing runs after Skill 22)
 # ----------------------------------------------------------
 echo ""
-echo "[3b/5] Setting up Gemini Engine (semantic search)..."
-SKILLS_DIR="$HOME/.openclaw/skills"
+echo "[3b/5] Installing Gemini Engine scripts..."
 SCRIPTS_DIR="$HOME/clawd/scripts"
 mkdir -p "$SCRIPTS_DIR"
 
@@ -127,15 +126,13 @@ else
 fi
 
 # Check for GOOGLE_API_KEY
-if grep -q "GOOGLE_API_KEY" ~/clawd/secrets/.env 2>/dev/null; then
-  echo "  GOOGLE_API_KEY found in ~/clawd/secrets/.env"
-elif grep -q "GEMINI_API_KEY" ~/clawd/secrets/.env 2>/dev/null; then
-  echo "  GEMINI_API_KEY found in ~/clawd/secrets/.env"
+if grep -q "GOOGLE_API_KEY" ~/.openclaw/.env ~/clawd/secrets/.env ~/.openclaw/secrets/.env 2>/dev/null; then
+  echo "  Google API key found"
 else
-  echo "  Warning: No Google API key found. Add GOOGLE_API_KEY to ~/clawd/secrets/.env before running Gemini Engine indexing."
+  echo "  Warning: No Google API key found. Add GOOGLE_API_KEY to ~/.openclaw/.env before running Gemini Engine indexing."
 fi
 
-echo "  Gemini Engine setup complete"
+echo "  Gemini Engine scripts installed (indexing runs after Skill 22 adds books)"
 
 # ----------------------------------------------------------
 # Step 3c: Set sub-agent concurrency defaults
