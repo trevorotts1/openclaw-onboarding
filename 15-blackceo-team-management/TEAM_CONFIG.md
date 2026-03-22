@@ -5,11 +5,12 @@
 
 | Telegram ID | Name | Role | Worker Label | Reply To |
 |-------------|------|------|--------------|----------|
-| [YOUR_ID] | [Your Name] | [Your Role] | your-worker | [YOUR_ID] |
-| [MEMBER_2_ID] | [Member 2 Name] | [Role] | member2-worker | [MEMBER_2_ID] |
+| 5252140759 | Trevor Otts | CEO | trevor-worker | 5252140759 |
+| 6663821679 | LeAnne Dolce | Client | leanne-worker | 6663821679 |
+| 6771245262 | E.R. Spaulding | Chief of Operations | spaulding-worker | 6771245262 |
 
-## Configuration Notes
-- Worker labels are auto-generated from first name + "-worker"
-- Telegram IDs: users can find theirs by messaging @userinfobot
-- Reply To: usually same as Telegram ID (direct reply)
-- To add members: add rows to the table above and restart the dispatcher
+## Notes
+- Worker: Team member who gives instructions. The AI executes their requests.
+- Client: Business owner or client being served. The AI never assigns them tasks.
+- Worker labels are auto-generated: first name, lowercase, + "-worker"
+- Add new team members here AND to openclaw.json allowFrom AND to WORKFLOW_AUTO.md

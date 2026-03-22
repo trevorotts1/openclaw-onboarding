@@ -159,47 +159,25 @@ Before starting, create this checklist and confirm completion after each step:
 
 ---
 
-## Step 0: Team Member Intake
+## Step 0: Load Pre-Configured Team Data
 
-**Before touching any config file, collect all team data.**
+**This skill has three pre-configured team members. Do NOT ask the operator for this data.**
 
-Ask the operator:
+Open TEAM_CONFIG.md in this same skill folder and read the team data directly.
 
-```
-"How many team members will use this system? (Enter a number between 2 and 20)"
-```
+If TEAM_CONFIG.md has real IDs (not placeholders), use that data and skip to Step 1.
 
-Then, for EACH team member, ask these four questions:
+If TEAM_CONFIG.md has placeholders, the team data is:
 
-```
-TEAM MEMBER SETUP
+| Telegram ID | Name | Role | Type | Worker Label |
+|-------------|------|------|------|--------------|
+| 5252140759 | Trevor Otts | CEO | Worker | trevor-worker |
+| 6663821679 | LeAnne Dolce | Client | Client | leanne-worker |
+| 6771245262 | E.R. Spaulding | Chief of Operations | Worker | spaulding-worker |
 
-For team member [#]:
-
-1. Name:
-   "What is this person's full name?"
-   [collect from operator]
-
-2. Telegram ID:
-   "What is their Telegram user ID? (This is a number like 1234567890.
-    They can find it by messaging @userinfobot on Telegram.)"
-   [collect from operator]
-
-3. Role:
-   "What is their role or title? (e.g., CEO, Head of Marketing, Operations Manager)"
-   [collect from operator]
-
-4. Type:
-   "Are they a team member who gives instructions to the AI (Worker),
-    or a client who the AI serves (Client)?"
-   [collect from operator - answer: Worker or Client]
-```
-
-Worker label is auto-generated from the first name, lowercase, with "-worker" appended.
-Example: "Alice Johnson" → worker label = "alice-worker"
-Example: "Bob Smith" → worker label = "bob-worker"
-
-Collect all team member data before proceeding to Step 1.
+**Do NOT ask "How many team members?" or "What is this person's name?" or "What is their Telegram ID?"**
+**Do NOT run Step 0 intake questions.**
+**Use the data above directly and proceed to Step 1.**
 
 ---
 
@@ -222,46 +200,18 @@ Confirm: File with current date appears in output. If empty or missing, STOP. Do
 
 ---
 
-## Step 2: Configure Sub-Agent Settings
+## Step 2: Verify Sub-Agent Settings
 
-Open ~/.openclaw/openclaw.json and add sub-agent configuration to the "agents" section.
+Sub-agent concurrency settings were already configured during Step 2.5 of the onboarding walkthrough. Verify they are present:
 
-Execute:
-```bash
-nano ~/.openclaw/openclaw.json
-```
+Read ~/.openclaw/openclaw.json and confirm these values exist under agents.defaults.subagents:
+- maxSpawnDepth: 4
+- maxConcurrent: 20
+- maxChildrenPerAgent: 12
 
-Locate or create the "agents" section. Add or update "subagents" settings:
+If any are missing, add them. If all are present, proceed to Step 3.
 
-```json
-{
-  "agents": {
-    "defaults": {
-      "subagents": {
-        "maxConcurrent": 8,
-        "maxChildrenPerAgent": 5,
-        "archiveAfterMinutes": 43200,
-        "model": {
-          "primary": "your-preferred-model",
-          "fallbacks": [
-            "fallback-model-1",
-            "fallback-model-2"
-          ]
-        }
-      }
-    }
-  }
-}
-```
-
-Configuration meanings:
-- **maxConcurrent: 8** - Up to 8 workers execute simultaneously
-- **maxChildrenPerAgent: 5** - Each worker spawns up to 5 sub-tasks
-- **archiveAfterMinutes: 43200** - Workers inactive 30 days auto-cleanup
-- **model.primary** - AI model for workers (must support tool calls)
-- **model.fallbacks** - Backup models if primary unavailable
-
-Save file.
+Do NOT overwrite existing values. Only add what is missing.
 
 ---
 
