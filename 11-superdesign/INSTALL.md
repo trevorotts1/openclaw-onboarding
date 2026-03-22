@@ -155,8 +155,8 @@ Agent execution:
 3. Verify installation by executing: `superdesign --version`
 4. If "command not found" error occurs, attempt: `npx superdesign --version` as fallback
 5. Execute: `superdesign login`
-6. Wait for browser window to open and user completes login (blocking operation - agent waits for user confirmation)
-7. After user confirms login success, execute: `superdesign --help`
+6. **STOP AND ASK THE USER:** "A browser window should be opening for you to log into SuperDesign. Please complete the login in the browser, then reply YES here when you are done." **DO NOT proceed to step 7 until the user replies YES.** If the user does not respond within 2 minutes, ask again.
+7. After user confirms login success with YES, execute: `superdesign --help`
 8. Verify help menu displays without authentication errors
 9. If authentication errors occur, report to user and halt
 
@@ -168,7 +168,7 @@ Agent execution:
 1. Agent opens browser and navigates to: https://chromewebstore.google.com
 2. Agent searches for "Superdesign" in the search box
 3. Agent locates the official SuperDesign extension and clicks "Add to Chrome"
-4. HUMAN ACTION REQUIRED (browser security dialog): Browser displays an "Add extension?" popup. User clicks "Add extension" to confirm. Agent waits until the user confirms completion.
+4. HUMAN ACTION REQUIRED (browser security dialog): Browser displays an "Add extension?" popup. User clicks "Add extension" to confirm. **STOP AND ASK THE USER:** "Please complete this action, then reply YES here when done." **DO NOT proceed until the user replies YES.**
 5. Agent verifies the SuperDesign icon appears in the browser toolbar
 6. If icon not visible, agent clicks the puzzle piece icon (Extensions menu) and pins SuperDesign
 7. Agent confirms extension installation is complete
@@ -207,7 +207,7 @@ Agent execution:
    Execute: `code --install-extension superdesigndev.superdesign`
    If "code" command not found, try: `cursor --install-extension superdesigndev.superdesign`
 2. If CLI installation succeeds, proceed to Part 6B
-3. If CLI installation fails (command not found or error), agent tells user: "Please open your code editor (VS Code, Cursor, or Windsurf), press Cmd+Shift+X (Mac) or Ctrl+Shift+X (Windows/Linux) to open Extensions, search for 'SuperDesign', locate the extension published by 'SuperdesignDev', and click Install." Agent waits until the user confirms completion.
+3. If CLI installation fails (command not found or error), agent tells user: "Please open your code editor (VS Code, Cursor, or Windsurf), press Cmd+Shift+X (Mac) or Ctrl+Shift+X (Windows/Linux) to open Extensions, search for 'SuperDesign', locate the extension published by 'SuperdesignDev', and click Install." **STOP AND ASK THE USER:** "Please complete this action, then reply YES here when done." **DO NOT proceed until the user replies YES.**
 4. Agent verifies installation by executing: `code --list-extensions 2>/dev/null | grep -i superdesign`
 5. If verification fails, report error and continue (extension is optional)
 
@@ -221,8 +221,8 @@ Agent execution:
 3. IF no key found in env: Agent asks user: "Do you have an Anthropic, OpenAI, or OpenRouter API key to configure the SuperDesign IDE extension? This step is optional - you can skip it and use the Web App or CLI instead."
    - IF user provides key: agent captures the key and provider, proceeds to step 4
    - IF user skips: agent skips steps 4-5, documents that IDE extension API key is not configured, and notes user can configure later via Command Palette
-4. HUMAN ACTION REQUIRED (IDE config - requires code editor open): User opens Command Palette (Cmd+Shift+P on Mac, Ctrl+Shift+P on Windows/Linux), types "superdesign: configureApiKey", selects it, and enters the API key. Agent waits for user confirmation.
-5. HUMAN ACTION REQUIRED (IDE settings): User opens Command Palette again, types "superdesign: openSettings", locates "AI Model Provider" setting, and sets it to "anthropic", "openai", or "openrouter" based on the key provided. Agent waits for user confirmation.
+4. HUMAN ACTION REQUIRED (IDE config - requires code editor open): User opens Command Palette (Cmd+Shift+P on Mac, Ctrl+Shift+P on Windows/Linux), types "superdesign: configureApiKey", selects it, and enters the API key. **STOP AND ASK THE USER:** "Please complete this action, then reply YES here when done." **DO NOT proceed until the user replies YES.**
+5. HUMAN ACTION REQUIRED (IDE settings): User opens Command Palette again, types "superdesign: openSettings", locates "AI Model Provider" setting, and sets it to "anthropic", "openai", or "openrouter" based on the key provided. **STOP AND ASK THE USER:** "Please complete this action, then reply YES here when done." **DO NOT proceed until the user replies YES.**
 6. Agent confirms API key configuration is complete
 
 ### Part 6C: Initialize Your Project
