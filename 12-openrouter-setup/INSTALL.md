@@ -3,6 +3,13 @@
 - Before any OpenRouter config edits, back up the model config first.
 - If backup fails, stop OpenRouter setup and report error.
 
+## 🔴 CONFIG SAFETY NOTE
+Before ANY config edit:
+1. Back up `~/.openclaw/openclaw.json` to `~/Downloads/openclaw-backups/` with a human-readable name.
+2. Validate JSON after writing (`jq . < file` or `openclaw doctor`).
+3. Reference https://docs.openclaw.ai for config structure.
+4. Reference https://github.com/openclaw/openclaw for latest schema.
+
 
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
@@ -298,12 +305,11 @@ Agent adds this configuration:
   "agents": {
     "defaults": {
       "model": {
-        "primary": "openrouter/minimax/minimax-m2.5",
+        "primary": "openrouter/minimax/minimax-m2.7",
         "fallbacks": [
+          "openrouter/google/gemini-3.1-flash-lite-preview",
           "openrouter/moonshotai/kimi-k2.5",
-          "openrouter/healer-alpha",
           "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-          "openrouter/hunter-alpha",
           "openrouter/deepseek/deepseek-r1-0528:free"
         ]
       },
@@ -362,10 +368,10 @@ Agent adds this configuration:
             "temperature": 1.0
           }
         },
-        "openrouter/minimax/minimax-m2.5": {
+        "openrouter/minimax/minimax-m2.7": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "high" }
+            "reasoning": true
           }
         },
         "openrouter/mistralai/mistral-small-creative": {
@@ -403,10 +409,10 @@ Agent adds this configuration:
             "reasoning": { "effort": "medium" }
           }
         },
-        "openrouter/healer-alpha": {
+        "openrouter/xiaomi/mimo-v2-omni": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": true
           }
         },
         "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
@@ -415,13 +421,18 @@ Agent adds this configuration:
             "reasoning": { "effort": "medium" }
           }
         },
-        "openrouter/hunter-alpha": {
+        "openrouter/xiaomi/mimo-v2-pro": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": true
           }
         },
         "openrouter/perplexity/sonar-pro-search": {
+          "params": {
+            "temperature": 0.3
+          }
+        },
+        "openrouter/perplexity/sonar": {
           "params": {
             "temperature": 0.3
           }
@@ -442,27 +453,29 @@ NEW_MODELS='{
   "openrouter/anthropic/claude-haiku-4.5": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3.1-pro-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3-flash-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
+  "openrouter/google/gemini-3.1-flash-lite-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/openai/gpt-5.2-codex": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/openai/gpt-5-mini": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/openai/gpt-5-nano": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/moonshotai/kimi-k2.5": {"params": {"temperature": 1.0}},
-  "openrouter/minimax/minimax-m2.5": {"params": {"temperature": 0.3, "reasoning": {"effort": "high"}}},
+  "openrouter/minimax/minimax-m2.7": {"params": {"temperature": 0.3, "reasoning": true}},
   "openrouter/mistralai/mistral-small-creative": {"params": {"temperature": 0.3}},
   "openrouter/qwen/qwen3.5-plus-02-15": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/z-ai/glm-5": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/deepseek/deepseek-v3.2": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/deepseek/deepseek-v3.2-speciale": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/deepseek/deepseek-r1-0528:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/healer-alpha": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
+  "openrouter/xiaomi/mimo-v2-omni": {"params": {"temperature": 0.3, "reasoning": true}},
+  "openrouter/xiaomi/mimo-v2-pro": {"params": {"temperature": 0.3, "reasoning": true}},
   "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/hunter-alpha": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/perplexity/sonar-pro-search": {"params": {"temperature": 0.3}}
+  "openrouter/perplexity/sonar-pro-search": {"params": {"temperature": 0.3}},
+  "openrouter/perplexity/sonar": {"params": {"temperature": 0.3}}
 }'
 
 # Additive merge: existing models are preserved, new models are added/updated
 jq --argjson new "$NEW_MODELS" '
-  .agents.defaults.model.primary = "openrouter/minimax/minimax-m2.5" |
-  .agents.defaults.model.fallbacks = ["openrouter/moonshotai/kimi-k2.5", "openrouter/deepseek/deepseek-r1-0528:free"] |
+  .agents.defaults.model.primary = "openrouter/minimax/minimax-m2.7" |
+  .agents.defaults.model.fallbacks = ["openrouter/google/gemini-3.1-flash-lite-preview", "openrouter/moonshotai/kimi-k2.5", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/deepseek/deepseek-r1-0528:free"] |
   .agents.defaults.thinkingDefault = "medium" |
   .agents.defaults.models = ((.agents.defaults.models // {}) * $new)
 ' ~/.openclaw/openclaw.json > ~/.openclaw/openclaw.json.tmp && mv ~/.openclaw/openclaw.json.tmp ~/.openclaw/openclaw.json
@@ -560,9 +573,11 @@ Agent creates summary for AGENTS.md:
 Before executing ANY task, evaluate which model fits best and switch if needed.
 Key rules:
 - Kimi K2.5 CANNOT do tool calls. Never route tool tasks to Kimi.
-- MiniMax M2.5 is the daily workhorse (cheap + tools + high thinking).
+- MiniMax M2.7 is the daily workhorse (cheap + tools + opt-in reasoning). Pass reasoning: true.
+- MiMo V2 Pro for complex code/orchestration (TEXT ONLY, 1M context).
+- MiMo V2 Omni for multimodal tasks (images+video+audio).
 - Opus is the specialist (complex strategy, writing, client-facing).
-- Perplexity is the research model (all fact-checking and web search).
+- Perplexity Sonar Pro Search for deep research, Perplexity Sonar for quick lookups.
 Full details: See ~/Downloads/openclaw-master-files/openrouter-setup/openrouter-setup-instructions.md
 ```
 
@@ -570,7 +585,7 @@ Agent creates summary for TOOLS.md:
 
 ```
 ## OpenRouter Model Configuration
-17 models configured via OpenRouter. Primary: MiniMax M2.5.
+22 models configured via OpenRouter. Primary: MiniMax M2.7.
 Temperature: 0.3 for all models, 1.0 for Kimi K2.5 only.
 Config file: ~/.openclaw/openclaw.json
 Always back up before editing. Always validate with openclaw doctor after.
@@ -591,14 +606,14 @@ Actions completed:
 1. ✓ Verified or obtained OpenRouter API key
 2. ✓ Backed up config to ~/openclaw-backup-configs/
 3. ✓ Added OPENROUTER_API_KEY to ~/.openclaw/openclaw.json
-4. ✓ Configured 17 models in agents.defaults.models
+4. ✓ Configured 22 models in agents.defaults.models
 5. ✓ Validated config with openclaw doctor
 6. ✓ Restarted openclaw gateway
 7. ✓ Saved full documentation to ~/Downloads/openclaw-master-files/openrouter-setup/
 8. ✓ Added summaries to AGENTS.md and TOOLS.md
 
-Primary model: openrouter/minimax/minimax-m2.5
-Fallback models: openrouter/moonshotai/kimi-k2.5, openrouter/healer-alpha, openrouter/nvidia/nemotron-3-super-120b-a12b:free, openrouter/hunter-alpha, openrouter/deepseek/deepseek-r1-0528:free
+Primary model: openrouter/minimax/minimax-m2.7
+Fallback models: openrouter/google/gemini-3.1-flash-lite-preview, openrouter/moonshotai/kimi-k2.5, openrouter/nvidia/nemotron-3-super-120b-a12b:free, openrouter/deepseek/deepseek-r1-0528:free
 
 Config file: ~/.openclaw/openclaw.json
 Backup location: ~/openclaw-backup-configs/
@@ -620,14 +635,18 @@ Setup is complete and ready for use.
 | GPT-5 Mini | gptmini | Mid-range tasks | Low |
 | GPT-5 Nano | gptnano | Simple questions, cheap lookups | Very Low |
 | Kimi K2.5 | kimi | Code generation, chat (NO tool calls) | Low |
-| MiniMax M2.5 | minimax | RECOMMENDED PRIMARY - daily tasks, tool calls | Low |
+| MiniMax M2.7 | minimax | RECOMMENDED PRIMARY - daily tasks, tool calls | Low |
+| MiMo V2 Pro | mimo-pro | Complex code, orchestration (TEXT ONLY, 1M context) | Medium |
+| MiMo V2 Omni | mimo-omni | Multimodal (text+images+video+audio) | Low-Medium |
 | Mistral Small Creative | creative | All writing and content creation | Very Low |
 | Qwen 3.5 Plus | qwen | General purpose, large context | Low-Medium |
 | GLM-5 | glm5 | Systems design, agent workflows | Low-Medium |
 | DeepSeek V3.2 | deepseek | Value workhorse | Very Low |
 | DeepSeek V3.2 Speciale | speciale | High-compute reasoning | Low |
 | DeepSeek R1 Free | fallback | Emergency - zero credits | FREE |
-| Perplexity Sonar Pro | research | All research and fact-checking | Medium |
+| Perplexity Sonar Pro | research | Deep research, multi-step, fact-checking | Medium |
+| Perplexity Sonar | sonar | Quick web lookups, single questions | Low |
+| Gemini 3.1 Flash Lite | flashlite | Cheapest option, fallback | Very Low |
 
 ---
 

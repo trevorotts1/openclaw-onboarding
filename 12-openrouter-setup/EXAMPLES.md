@@ -14,9 +14,9 @@ This document shows real examples of OpenRouter configuration and model routing 
 
 2. Adds the API key to the env section of your config file.
 
-3. Adds the full 17-model roster to agents.defaults.models.
+3. Adds the full 22-model roster to agents.defaults.models.
 
-4. Sets MiniMax M2.5 as the primary model with Kimi K2.5 and DeepSeek R1 Free as fallbacks.
+4. Sets MiniMax M2.7 as the primary model with Kimi K2.5 and DeepSeek R1 Free as fallbacks.
 
 5. Validates the config:
    openclaw doctor
@@ -26,7 +26,7 @@ This document shows real examples of OpenRouter configuration and model routing 
 
 7. Reports what was done and confirms everything is working.
 
-**What you should see after:** The agent responds to your next message using MiniMax M2.5 as the active model.
+**What you should see after:** The agent responds to your next message using MiniMax M2.7 as the active model.
 
 
 ## Example 2: Switching Models During a Conversation
@@ -43,7 +43,7 @@ This document shows real examples of OpenRouter configuration and model routing 
 
    /model minimax
 
-**What happens:** The agent switches back to MiniMax M2.5: "Switched to MiniMax M2.5. Back to the daily workhorse."
+**What happens:** The agent switches back to MiniMax M2.7: "Switched to MiniMax M2.7. Back to the daily workhorse."
 
 
 ## Example 3: Agent Recommends a Model Switch
@@ -97,7 +97,7 @@ This document shows real examples of OpenRouter configuration and model routing 
 2. Tells you: "Your OpenRouter credits appear to be depleted. I have automatically switched to the free DeepSeek R1 model so we can continue working. When you are ready, add credits at https://openrouter.ai/credits and let me know so I can switch back to your preferred model."
 3. Continues working normally on the free model.
 
-**When you add more credits and tell the agent:** It switches back to your configured primary model (MiniMax M2.5).
+**When you add more credits and tell the agent:** It switches back to your configured primary model (MiniMax M2.7).
 
 
 ## Example 7: Heartbeat Morning Scan
@@ -105,7 +105,7 @@ This document shows real examples of OpenRouter configuration and model routing 
 **Scenario:** It is 7:00 AM and the automated heartbeat fires.
 
 **Phase 1 (The Check):**
-- Agent is on MiniMax M2.5 with low thinking.
+- Agent is on MiniMax M2.7 with low thinking.
 - It checks user@yourdomain.com for new emails.
 - It checks the calendar for today's events.
 - It scans for any alerts or failed payments.
@@ -134,7 +134,7 @@ This document shows real examples of OpenRouter configuration and model routing 
    - Landing page HTML/CSS code: Spawns a Kimi K2.5 sub-agent (code generation, no tool calls needed)
    - API endpoint scripts: Spawns another Kimi K2.5 sub-agent
    - Email sequence copy: Spawns a Mistral Small Creative sub-agent (writing task)
-   - CRM integration and webhook setup: Spawns a MiniMax M2.5 sub-agent (needs tool calls)
+   - CRM integration and webhook setup: Spawns a MiniMax M2.7 sub-agent (needs tool calls)
 
 3. All four sub-agents work in parallel.
 
@@ -241,7 +241,7 @@ Now you can use:
 
 **CORRECT model entry (will work):**
 
-   "openrouter/minimax/minimax-m2.5": {
+   "openrouter/minimax/minimax-m2.7": {
      "params": {
        "temperature": 0.3,
        "reasoning": { "effort": "high" }
@@ -250,7 +250,7 @@ Now you can use:
 
 **INCORRECT model entry (will BREAK the config):**
 
-   "openrouter/minimax/minimax-m2.5": {
+   "openrouter/minimax/minimax-m2.7": {
      "params": { "temperature": 0.3 },
      "contextWindow": 196608,
      "maxTokens": 196608,
@@ -302,19 +302,19 @@ This gives you Haiku (fast and cheap) on Telegram and Opus (powerful) on Discord
 3. Click on the model to see its full specs: context window, max output, input price per million tokens, output price per million tokens.
 4. Use the LIVE page numbers, not numbers from this guide or any other document. Specs change.
 
-For example, if this guide says MiniMax M2.5 costs $0.30 per million input tokens but the live page shows $0.25, use $0.25. Always trust the live page.
+For example, if this guide says MiniMax M2.7 costs $0.30 per million input tokens but the live page shows $0.25, use $0.25. Always trust the live page.
 
 
 ## Quick Reference: Model ID Format
 
 CORRECT format (always use this):
    openrouter/anthropic/claude-opus-4.6
-   openrouter/minimax/minimax-m2.5
+   openrouter/minimax/minimax-m2.7
    openrouter/moonshotai/kimi-k2.5
 
 WRONG format (will break routing):
    anthropic/claude-opus-4.6      (missing openrouter/ prefix)
-   minimax/minimax-m2.5           (missing openrouter/ prefix)
+   minimax/minimax-m2.7           (missing openrouter/ prefix)
    openrouter/auto                (forbidden - never use auto)
 
 
