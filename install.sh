@@ -202,6 +202,15 @@ else
   echo "  Found: $BACKUP_DIR"
 fi
 
+# Create master-files folder (Skills 22/23 expect this)
+MASTER_FILES_DIR="$DOWNLOADS_DIR/openclaw-master-files"
+mkdir -p "$MASTER_FILES_DIR"
+mkdir -p "$MASTER_FILES_DIR/coaching-personas/personas"
+mkdir -p "$MASTER_FILES_DIR/project-prds"
+echo "  Created: $MASTER_FILES_DIR"
+echo "  Created: $MASTER_FILES_DIR/coaching-personas/personas"
+echo "  Created: $MASTER_FILES_DIR/project-prds"
+
 # ----------------------------------------------------------
 # Step 5: Write onboarding flag to AGENTS.md
 # ----------------------------------------------------------
