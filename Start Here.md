@@ -1366,11 +1366,13 @@ changes without backups and corrupt the user's system.
 
 ---
 
-### STEP 2.5: UPDATE SUB-AGENT SETTINGS
+### STEP 2.5: UPDATE SUB-AGENT SETTINGS AND MODEL ALLOW LIST
 
-After backup protocol is installed, update sub-agent concurrency settings so the parallel wave installs can run without hitting limits.
+After backup protocol is installed, update sub-agent concurrency settings AND model allow list so the parallel wave installs can run without hitting limits and sub-agents can use the correct models.
 
-Edit `~/.openclaw/openclaw.json` and add under `agents.defaults.subagents`:
+#### Part A: Sub-Agent Concurrency
+
+Edit `~/.openclaw/openclaw.json` and set these values under `agents.defaults.subagents`:
 
 ```json
 {
@@ -1386,12 +1388,87 @@ Edit `~/.openclaw/openclaw.json` and add under `agents.defaults.subagents`:
 }
 ```
 
-**Verification:**
-1. Read `~/.openclaw/openclaw.json` and confirm all three values are present
-2. Backup the config: `cp ~/.openclaw/openclaw.json ~/Downloads/openclaw-backups/openclaw-json-after-subagent-update-$(date +'%B %-d at %-I-%M %p').txt`
-3. Gateway restart: `openclaw gateway restart`
+#### Part B: Model Allow List
 
-**If you do not set these values, Wave 2 parallel installs will fail with spawn depth and concurrency errors.**
+Edit `~/.openclaw/openclaw.json` and add these models under `agents.defaults.models`. These are the approved models sub-agents can use:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "models": {
+        "moonshot/kimi-k2.5": {
+          "alias": "kimi"
+        },
+        "openrouter/xiaomi/mimo-v2-pro": {
+          "alias": "mimo",
+          "params": {
+            "contextWindow": 1048576,
+            "maxTokens": 131072
+          }
+        },
+        "openrouter/xiaomi/mimo-v2-omni": {
+          "alias": "mimo-omni",
+          "params": {
+            "contextWindow": 262144,
+            "maxTokens": 65536
+          }
+        },
+        "openrouter/minimax/minimax-m2.7": {
+          "alias": "minimax",
+          "params": {
+            "contextWindow": 204800,
+            "maxTokens": 131072
+          }
+        },
+        "openrouter/google/gemini-3.1-flash-lite-preview": {
+          "alias": "gemini-flash",
+          "params": {
+            "contextWindow": 1048576,
+            "maxTokens": 65536
+          }
+        },
+        "openrouter/google/gemini-3-flash-preview": {
+          "alias": "gemini-flash-3",
+          "params": {
+            "contextWindow": 1048576,
+            "maxTokens": 65536
+          }
+        },
+        "openai-codex/gpt-5.4": {
+          "params": {
+            "contextWindow": 1048576,
+            "maxTokens": 65536
+          }
+        },
+        "openrouter/perplexity/sonar-pro-search": {
+          "alias": "sonar-pro-search",
+          "params": {
+            "contextWindow": 200000,
+            "maxTokens": 8000
+          }
+        },
+        "openrouter/perplexity/sonar": {
+          "alias": "sonar",
+          "params": {
+            "contextWindow": 127072,
+            "maxTokens": 8000
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Verification:**
+1. Read `~/.openclaw/openclaw.json` and confirm all values are present
+2. Confirm `maxSpawnDepth`, `maxConcurrent`, `maxChildrenPerAgent` are set
+3. Confirm at least 9 model entries exist under `agents.defaults.models`
+4. Backup the config: `cp ~/.openclaw/openclaw.json ~/Downloads/openclaw-backups/openclaw-json-after-model-update-$(date +'%B %-d at %-I-%M %p').txt`
+5. Gateway restart: `openclaw gateway restart`
+
+**If you do not set these values, Wave 2 parallel installs will fail with spawn depth and concurrency errors, and sub-agents will not know which models to use.**
 
 ---
 

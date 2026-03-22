@@ -157,16 +157,37 @@ try:
         config = json.load(f)
     agents = config.get('agents', {})
     defaults = agents.get('defaults', {})
+
+    # Sub-agent concurrency
     sub = defaults.get('subagents', {})
     sub['maxSpawnDepth'] = 4
     sub['maxConcurrent'] = 20
     sub['maxChildrenPerAgent'] = 12
     defaults['subagents'] = sub
+
+    # Model allow list (core models for sub-agents)
+    models = defaults.get('models', {})
+    model_defs = {
+        'moonshot/kimi-k2.5': {'alias': 'kimi'},
+        'openrouter/xiaomi/mimo-v2-pro': {'alias': 'mimo', 'params': {'contextWindow': 1048576, 'maxTokens': 131072}},
+        'openrouter/xiaomi/mimo-v2-omni': {'alias': 'mimo-omni', 'params': {'contextWindow': 262144, 'maxTokens': 65536}},
+        'openrouter/minimax/minimax-m2.7': {'alias': 'minimax', 'params': {'contextWindow': 204800, 'maxTokens': 131072}},
+        'openrouter/google/gemini-3.1-flash-lite-preview': {'alias': 'gemini-flash', 'params': {'contextWindow': 1048576, 'maxTokens': 65536}},
+        'openrouter/google/gemini-3-flash-preview': {'alias': 'gemini-flash-3', 'params': {'contextWindow': 1048576, 'maxTokens': 65536}},
+        'openai-codex/gpt-5.4': {'params': {'contextWindow': 1048576, 'maxTokens': 65536}},
+        'openrouter/perplexity/sonar-pro-search': {'alias': 'sonar-pro-search', 'params': {'contextWindow': 200000, 'maxTokens': 8000}},
+        'openrouter/perplexity/sonar': {'alias': 'sonar', 'params': {'contextWindow': 127072, 'maxTokens': 8000}},
+    }
+    for mid, mdef in model_defs.items():
+        if mid not in models:
+            models[mid] = mdef
+    defaults['models'] = models
+
     agents['defaults'] = defaults
     config['agents'] = agents
     with open(path, 'w') as f:
         json.dump(config, f, indent=2)
-    print('  Set maxSpawnDepth=4, maxConcurrent=20, maxChildrenPerAgent=12')
+    print('  Set sub-agent concurrency and 9 model allow-list entries')
 except Exception as e:
     print(f'  Warning: Could not update openclaw.json: {e}', file=sys.stderr)
 " 2>&1
