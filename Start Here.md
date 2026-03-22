@@ -1366,6 +1366,35 @@ changes without backups and corrupt the user's system.
 
 ---
 
+### STEP 2.5: UPDATE SUB-AGENT SETTINGS
+
+After backup protocol is installed, update sub-agent concurrency settings so the parallel wave installs can run without hitting limits.
+
+Edit `~/.openclaw/openclaw.json` and add under `agents.defaults.subagents`:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "subagents": {
+        "maxSpawnDepth": 4,
+        "maxConcurrent": 20,
+        "maxChildrenPerAgent": 12
+      }
+    }
+  }
+}
+```
+
+**Verification:**
+1. Read `~/.openclaw/openclaw.json` and confirm all three values are present
+2. Backup the config: `cp ~/.openclaw/openclaw.json ~/Downloads/openclaw-backups/openclaw-json-after-subagent-update-$(date +'%B %-d at %-I-%M %p').txt`
+3. Gateway restart: `openclaw gateway restart`
+
+**If you do not set these values, Wave 2 parallel installs will fail with spawn depth and concurrency errors.**
+
+---
+
 ## STEP 3: INSTALL SKILLS IN THIS EXACT ORDER
 
 Install one skill at a time. Complete each skill fully before starting the next.
