@@ -2,8 +2,8 @@
 **Source Book:** The 5 Second Rule by Mel Robbins
 **Version:** 1.0.0
 **Built:** March 7 at 5:00 PM
-**QMD Index:** robbins-five-second-rule
-**Index Location:** ./qmd-index/
+**Gemini Index:** robbins-five-second-rule
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,8 +15,8 @@
 **Source Book:** The 5 Second Rule by Mel Robbins
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** robbins-five-second-rule
-**Index Location:** ./qmd-index/
+**Gemini Index:** robbins-five-second-rule
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

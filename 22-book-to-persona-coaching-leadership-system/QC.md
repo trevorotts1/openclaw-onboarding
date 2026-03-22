@@ -18,7 +18,7 @@ Verify all required files and folders exist at the correct paths.
 - [ ] `CORE_UPDATES.md` present in skill root
 - [ ] `GOOD-AND-BAD-EXAMPLES.md` present in skill root
 - [ ] `PERSONA-ROUTER.md` present in skill root
-- [ ] `QMD-RETRIEVAL-GUIDE.md` present in skill root
+- [ ] `GEMINI-RETRIEVAL-GUIDE.md` present in skill root
 - [ ] `CHANGELOG.md` present in skill root
 
 ### Agent Prompts
@@ -61,25 +61,24 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 ### AGENTS.md
 - [ ] Contains section heading `## Book-to-Persona Skill (Installed)`
 - [ ] Section includes the phrase `Persona Reflex (DEFAULT BEHAVIOR)`
-- [ ] Section includes `qmd search coaching-personas "<task keywords>"` as the runtime query pattern
+- [ ] Section includes `python3 ~/clawd/scripts/gemini-search.py "<task keywords>"` as the runtime query pattern
 - [ ] Key paths block is present (skill path, personas path, router path, orchestrator path)
 - [ ] Contains section `## Pending Skill Setup - Check and Remind` with `.pending-setup.md` reference
 - [ ] Full PIPELINE.md content was NOT pasted into AGENTS.md (rule: reference only)
 
 ### TOOLS.md
-- [ ] Contains section heading `## Book-to-Persona - Model Routing and QMD`
+- [ ] Contains section heading `## Book-to-Persona - Model Routing and Gemini Engine`
 - [ ] Phase 1 routing entry: `moonshot/kimi-k2.5` with `MOONSHOT_API_KEY` and `https://api.moonshot.cn/v1` and `temperature MUST be 1.0`
 - [ ] Phase 2 routing entry: `deepseek/deepseek-v3.2-speciale` via `OpenRouter`
 - [ ] Phase 3 routing entry: `openai/gpt-5.3-codex` via `OpenClaw OAuth`
 - [ ] Fallback model listed: `OpenRouter moonshotai/kimi-k2.5`
-- [ ] QMD setup commands block present (`qmd collection add`, `qmd update`, `qmd embed`)
 - [ ] Prompt templates were NOT pasted into TOOLS.md (rule: reference only)
 
 ### MEMORY.md
 - [ ] Contains section heading `## Book-to-Persona Persona Library`
 - [ ] Entry includes skill path and personas path
-- [ ] Entry references `qmd status -c coaching-personas` for live count
-- [ ] Entry references Persona Reflex behavior (query QMD before professional tasks)
+- [ ] Entry references `python3 ~/clawd/scripts/gemini-indexer.py --status` for live count
+- [ ] Entry references Persona Reflex behavior (query Gemini Engine before professional tasks)
 - [ ] "Add new book SOP" is referenced
 
 ### SOUL.md
@@ -90,7 +89,7 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 
 ### HEARTBEAT.md (if section exists in file)
 - [ ] Contains `## Persona Reflex - ACTIVE`
-- [ ] References `coaching-personas` collection and the QMD pre-task query pattern
+- [ ] References `coaching-personas` collection and the Gemini Engine pre-task query pattern
 
 **HARD FAIL:** Missing `## Book-to-Persona Skill (Installed)` in AGENTS.md = installation incomplete.
 **HARD FAIL:** Persona Coaching Voice Rule missing from SOUL.md = identity confusion risk at runtime.
@@ -111,7 +110,7 @@ Answer each question without looking at the files. These confirm the agent has i
 - Expected: 14 sections total. Section 3 = Signature Framework, Section 6 = Coaching Mode: How to Respond, Section 14 = Quick Reference Card
 
 **Q4: What is the Persona Reflex and when does the agent skip it?**
-- Expected: Before any professional task, run `qmd search coaching-personas "<task keywords>"`, load the returned persona's Task Mode, and execute through that methodology. Skip ONLY if the user explicitly says so.
+- Expected: Before any professional task, run `python3 ~/clawd/scripts/gemini-search.py "<task keywords>"`, load the returned persona's Task Mode, and execute through that methodology. Skip ONLY if the user explicitly says so.
 
 **Q5: What is the author name rule in Coaching Mode?**
 - Expected: The author's name appears ONLY inside attribution-flagged direct quotes. Never use the author's name unprompted in the coaching voice.
@@ -128,8 +127,8 @@ Answer each question without looking at the files. These confirm the agent has i
 **Q9: What is the minimum character length for a complete persona-blueprint.md output?**
 - Expected: Over 10,000 characters (blueprints are much larger in practice)
 
-**Q10: After adding a new persona blueprint, what two QMD commands must be run?**
-- Expected: `qmd update` then `qmd embed`
+**Q10: After adding a new persona blueprint, what two Gemini Engine commands must be run?**
+- Expected: `python3 ~/clawd/scripts/gemini-indexer.py` then `# Handled by gemini-indexer.py`
 
 **Passing threshold:** 8/10 correct. Score below 8 = re-read PIPELINE.md, PERSONA-ROUTER.md, CORE_UPDATES.md, and GOOD-AND-BAD-EXAMPLES.md.
 
@@ -143,12 +142,12 @@ Run these prompts and evaluate the agent's actual output against the expected be
 **Prompt:** "Review this sales email before I send it."
 
 **Expected behavior:**
-1. Agent runs `qmd search coaching-personas "sales email review outreach quality standard"` BEFORE writing any output
+1. Agent runs `python3 ~/clawd/scripts/gemini-search.py "sales email review outreach quality standard"` BEFORE writing any output
 2. Agent loads a relevant persona (e.g., `hormozi-100m-offers`, `bly-copywriters-handbook`, or `jones-exactly-what-to-say`)
 3. Agent applies that persona's execution standard and non-negotiable rules
 4. Agent output includes specific rule checks with ✅ / ❌ verdicts, not generic feedback
 
-**FAIL signal:** Agent says "This looks good! Make sure it's friendly and clear." with no persona loaded, no QMD query, no rule-based evaluation.
+**FAIL signal:** Agent says "This looks good! Make sure it's friendly and clear." with no persona loaded, no Gemini Engine query, no rule-based evaluation.
 
 ---
 
@@ -168,8 +167,8 @@ Run these prompts and evaluate the agent's actual output against the expected be
 
 ---
 
-### Test 4C — QMD Collection Status
-**Run:** `qmd status -c coaching-personas` or `qmd status`
+### Test 4C — Gemini Engine Collection Status
+**Run:** `python3 ~/clawd/scripts/gemini-indexer.py --status` 
 
 **Expected output:**
 - Collection named `coaching-personas` is listed
@@ -180,8 +179,8 @@ Run these prompts and evaluate the agent's actual output against the expected be
 
 ---
 
-### Test 4D — QMD Query Returns Relevant Results
-**Run:** `qmd query "habit building systems behavior change consistency"`
+### Test 4D — Gemini Engine Query Returns Relevant Results
+**Run:** `python3 ~/clawd/scripts/gemini-search.py "habit building systems behavior change consistency"`
 
 **Expected output:**
 - Returns at least one result from a persona blueprint (e.g., `clear-atomic-habits` or `duhigg-power-of-habit`)
@@ -200,6 +199,88 @@ Run these prompts and evaluate the agent's actual output against the expected be
 3. Applies StoryBrand framework: customer as hero, clarify the message
 
 **FAIL signal:** Agent routes to a sales or productivity persona, or applies no persona at all.
+
+---
+
+## SECTION 4B — Persona Blueprint 14-Section Verification
+
+Every complete persona-blueprint.md must have exactly 14 sections. Verify any newly built persona.
+
+### Automated 14-Section Check
+
+Run this command on any persona-blueprint.md:
+
+```bash
+python3 << 'EOF'
+import sys
+import re
+
+# Read the blueprint file
+blueprint_path = sys.argv[1] if len(sys.argv) > 1 else "persona-blueprint.md"
+with open(blueprint_path, 'r') as f:
+    content = f.read()
+
+# Define required sections
+required_sections = [
+    "Section 1: Author Intelligence",
+    "Section 2: Core Methodology",
+    "Section 3: Coaching Framework",
+    "Section 4: Agent Governance Framework",
+    "Section 5: Foundational Principles",
+    "Section 6: Problem-Solution Map",
+    "Section 7: Trigger Detection System",
+    "Section 8: Voice and Language",
+    "Section 9: Quote Library",
+    "Section 10: Question Library",
+    "Section 11: Tools, Exercises, and Execution Frameworks",
+    "Section 12: Objections, Resistance, and Failure Modes",
+    "Section 13: Session and Task Structure",
+    "Section 14: Routing Rules and Scope Limits"
+]
+
+# Check each section
+missing = []
+for section in required_sections:
+    # Look for section header (## or ### followed by section name)
+    pattern = r'#{2,3}\s+' + re.escape(section)
+    if not re.search(pattern, content, re.IGNORECASE):
+        missing.append(section)
+
+if missing:
+    print("SECTION CHECK FAILED")
+    print(f"Missing {len(missing)} of 14 required sections:")
+    for m in missing:
+        print(f"  - {m}")
+    sys.exit(1)
+else:
+    print("SECTION CHECK PASSED")
+    print("All 14 required sections present in persona-blueprint.md")
+    sys.exit(0)
+EOF
+```
+
+**Expected result:** "SECTION CHECK PASSED - All 14 required sections present"
+
+### Manual Verification Checklist
+
+If automated check is not available, manually verify:
+
+- [ ] Section 1: Author Intelligence (background, credibility, perspective)
+- [ ] Section 2: Core Methodology (the central system/framework)
+- [ ] Section 3: Coaching Framework (3 phases: Assessment, Challenge, Support)
+- [ ] Section 4: Agent Governance Framework (4A, 4B, 4C, 4D subsections)
+- [ ] Section 5: Foundational Principles (core beliefs that drive the methodology)
+- [ ] Section 6: Problem-Solution Map (specific problems and their solutions)
+- [ ] Section 7: Trigger Detection System (when to activate Coaching vs Task Mode)
+- [ ] Section 8: Voice and Language (how the persona speaks and writes)
+- [ ] Section 9: Quote Library (attributed direct quotes from the author)
+- [ ] Section 10: Question Library (specific coaching questions)
+- [ ] Section 11: Tools, Exercises, and Execution Frameworks (actionable methods)
+- [ ] Section 12: Objections, Resistance, and Failure Modes (handling pushback)
+- [ ] Section 13: Session and Task Structure (how coaching sessions or tasks flow)
+- [ ] Section 14: Routing Rules and Scope Limits (when to use this persona, when NOT to)
+
+**HARD FAIL:** Fewer than 14 sections = persona blueprint incomplete. Re-run Phase 3 synthesis.
 
 ---
 
@@ -223,9 +304,9 @@ These are failure modes the skill is specifically designed to prevent. Verify no
 - HARD FAIL if response contains no framework, no questions, no governance rules
 
 ### Anti-Pattern 4: Skipping Persona Reflex
-**Check:** When given a professional task (write, review, plan, analyze), does the agent query QMD before starting?
-- [ ] Confirmed: Agent queries `qmd search coaching-personas` before executing professional tasks
-- HARD FAIL if agent proceeds with a task without QMD query and no explicit user instruction to skip
+**Check:** When given a professional task (write, review, plan, analyze), does the agent query Gemini Engine before starting?
+- [ ] Confirmed: Agent queries `python3 ~/clawd/scripts/gemini-search.py` before executing professional tasks
+- HARD FAIL if agent proceeds with a task without Gemini Engine query and no explicit user instruction to skip
 
 ### Anti-Pattern 5: Pasting Full Docs Into Core Files
 **Check:** Are PIPELINE.md, prompt templates, or the 14-section blueprint format pasted into AGENTS.md, TOOLS.md, or MEMORY.md?
@@ -242,9 +323,9 @@ These are failure modes the skill is specifically designed to prevent. Verify no
 - [ ] Confirmed: Agent can state the 4 fallback triggers (429, timeout, <5000 chars, any error)
 - FAIL if agent believes GPT-5.3 Codex is the only option with no fallback
 
-### Anti-Pattern 8: QMD Not Used for Retrieval
-**Check:** Does the agent try to load entire persona files into context rather than using QMD surgical queries?
-- [ ] Confirmed: Agent uses `qmd query` and `qmd get [path]:[line] -l [count]` for retrieval
+### Anti-Pattern 8: Gemini Engine Not Used for Retrieval
+**Check:** Does the agent try to load entire persona files into context rather than using Gemini Engine surgical queries?
+- [ ] Confirmed: Agent uses `python3 ~/clawd/scripts/gemini-search.py` for semantic retrieval for retrieval
 - FAIL if agent attempts to read entire persona-blueprint.md files into context for routine tasks
 
 ---
@@ -274,8 +355,8 @@ To declare this skill **INSTALLED AND OPERATIONAL**, ALL of the following must b
 **Live Behavior (Section 4)**
 - [ ] Test 4A: Task Mode applies persona execution standard with rule-based evaluation
 - [ ] Test 4B: Coaching Mode applies methodology without author impersonation
-- [ ] Test 4C: QMD collection `coaching-personas` is registered and shows files
-- [ ] Test 4D: QMD query returns relevant persona content
+- [ ] Test 4C: Gemini Vector Database `coaching-personas` is registered and shows files
+- [ ] Test 4D: Gemini Engine query returns relevant persona content
 - [ ] Test 4E: Persona Router correctly routes a marketing task to StoryBrand
 
 **Anti-Patterns (Section 5)**
@@ -293,8 +374,8 @@ After completing this checklist, mark one:
 [ ] PASS — All sections complete, zero HARD FAILs, knowledge score ≥ 8/10
     Skill is operational. Persona Reflex is active.
 
-[ ] PARTIAL — File structure complete, but QMD not yet embedded or core files not yet updated
-    Action: Complete QMD setup (qmd update && qmd embed) and apply CORE_UPDATES.md
+[ ] PARTIAL — File structure complete, but Gemini Engine not yet embedded or core files not yet updated
+    Action: Complete Gemini Engine setup (python3 ~/clawd/scripts/gemini-indexer.py) and apply CORE_UPDATES.md
 
 [ ] FAIL — One or more HARD FAILs present, or knowledge score below 8/10
     Action: Re-read all 7 skill .md files and repeat failed sections
@@ -304,18 +385,17 @@ After completing this checklist, mark one:
 
 ### Quick Repair Commands
 
-If QMD collection is missing or broken:
+If Gemini Vector Database is missing or broken:
 ```bash
-qmd collection add ~/Downloads/openclaw-master-files/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
-qmd update
-qmd embed
+python3 ~/clawd/scripts/gemini-indexer.py
+# Handled by gemini-indexer.py
 ```
 
-If QMD results are stale:
+If Gemini Engine results are stale:
 ```bash
-qmd cleanup && qmd update && qmd embed
+python3 ~/clawd/scripts/gemini-indexer.py --rebuild && python3 ~/clawd/scripts/gemini-indexer.py
 ```
 
 If unsure whether core files were updated:

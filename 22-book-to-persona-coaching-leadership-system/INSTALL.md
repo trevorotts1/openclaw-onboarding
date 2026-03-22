@@ -96,7 +96,7 @@ Run the Teach Yourself Protocol on this skill folder now. Read every .md file in
 3. CHECKLIST.md
 4. GOOD-AND-BAD-EXAMPLES.md
 5. PERSONA-ROUTER.md
-6. QMD-RETRIEVAL-GUIDE.md
+6. GEMINI-RETRIEVAL-GUIDE.md
 7. CORE_UPDATES.md
 8. INSTALL.md (this file - you are reading it now)
 
@@ -123,81 +123,63 @@ Verify:
 ls ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/
 ```
 
-**Expected output:** SKILL.md, INSTALL.md, PIPELINE.md, CHECKLIST.md, CORE_UPDATES.md, GOOD-AND-BAD-EXAMPLES.md, PERSONA-ROUTER.md, QMD-RETRIEVAL-GUIDE.md, personas/, pipeline/, agent-prompts/ all present.
+**Expected output:** SKILL.md, INSTALL.md, PIPELINE.md, CHECKLIST.md, CORE_UPDATES.md, GOOD-AND-BAD-EXAMPLES.md, PERSONA-ROUTER.md, GEMINI-RETRIEVAL-GUIDE.md, personas/, pipeline/, agent-prompts/ all present.
 
 If any files are missing, re-run the copy command above.
 
 ---
 
-## Step 2 - Check Dependencies
+## Step 2 - Check Dependencies (REQUIRED - DO NOT SKIP)
 
-### QMD (Required)
+This step must complete successfully before proceeding. The pipeline will fail if any dependency is missing.
 
-**Step 1:** Check if QMD is already installed:
+### Step 2a - Install All Python Packages
+
+**Run this ONE command to install all required packages:**
 ```bash
-qmd --version
+pip3 install google-genai numpy pdfplumber pypdf ebooklib aiohttp beautifulsoup4 mobi lxml --break-system-packages
 ```
 
-**If you see a version number** (like `qmd 1.1.0`): QMD is installed. Skip to the next dependency.
+**What each package does:**
+- `google-genai` + `numpy`: Gemini Engine vector search
+- `pdfplumber`: Primary PDF text extraction
+- `pypdf`: Fallback PDF reader
+- `ebooklib`: EPUB text extraction
+- `aiohttp`: Async HTTP client for pipeline
+- `beautifulsoup4`: HTML parsing for MOBI files
+- `mobi`: Direct MOBI file extraction
+- `lxml`: XML parsing (required by ebooklib internally)
 
-**If you see "command not found":** Install QMD now using this sequence:
+### Step 2b - Verify Each Package Individually
 
+**Run this verification script. Each line should print "PASS":**
 ```bash
-# Attempt 1: Install via bun (recommended)
-bun install -g https://github.com/tobi/qmd
+echo "Testing google.genai..."; python3 -c "import google.genai; print('PASS')" 2>&1 | grep -q "PASS" && echo "  google.genai: PASS" || echo "  google.genai: FAIL"
+echo "Testing numpy..."; python3 -c "import numpy; print('PASS')" 2>&1 | grep -q "PASS" && echo "  numpy: PASS" || echo "  numpy: FAIL"
+echo "Testing pdfplumber..."; python3 -c "import pdfplumber; print('PASS')" 2>&1 | grep -q "PASS" && echo "  pdfplumber: PASS" || echo "  pdfplumber: FAIL"
+echo "Testing pypdf..."; python3 -c "import pypdf; print('PASS')" 2>&1 | grep -q "PASS" && echo "  pypdf: PASS" || echo "  pypdf: FAIL"
+echo "Testing ebooklib..."; python3 -c "import ebooklib; print('PASS')" 2>&1 | grep -q "PASS" && echo "  ebooklib: PASS" || echo "  ebooklib: FAIL"
+echo "Testing aiohttp..."; python3 -c "import aiohttp; print('PASS')" 2>&1 | grep -q "PASS" && echo "  aiohttp: PASS" || echo "  aiohttp: FAIL"
+echo "Testing bs4..."; python3 -c "import bs4; print('PASS')" 2>&1 | grep -q "PASS" && echo "  beautifulsoup4: PASS" || echo "  beautifulsoup4: FAIL"
+echo "Testing mobi..."; python3 -c "import mobi; print('PASS')" 2>&1 | grep -q "PASS" && echo "  mobi: PASS" || echo "  mobi: FAIL"
+echo "Testing lxml..."; python3 -c "import lxml; print('PASS')" 2>&1 | grep -q "PASS" && echo "  lxml: PASS" || echo "  lxml: FAIL"
 ```
 
-If bun is not installed or the command fails:
+**If any show FAIL:** Re-run the pip3 install command and check for error messages.
+
+### Step 2c - Install Calibre (ebook-convert)
+
+Calibre is required for Kindle format conversion (MOBI, AZW, AZW3, KFX).
+
+**For Mac (Homebrew):**
 ```bash
-# Attempt 2: Install bun first, then QMD
-curl -fsSL https://bun.sh/install | bash
-source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null
-bun install -g https://github.com/tobi/qmd
+brew install --cask calibre
 ```
 
-If bun install still fails:
+**For Linux/VPS (apt-get):**
 ```bash
-# Attempt 3: Fallback to npm
-npm install -g @anthropic/qmd
-```
-
-**After any install attempt, verify:**
-```bash
-qmd --version
-```
-
-This MUST return a version number. If it does not, STOP and report the exact error output. Do not proceed without a working QMD installation.
-
-QMD documentation and source: https://github.com/tobi/qmd
-
-### pdfplumber (Required for PDF extraction)
-
-Run: `python3 -c "import pdfplumber; print('OK')"`
-
-**If NOT installed:**
-```bash
-pip3 install pdfplumber --break-system-packages
-```
-
-### ebooklib (Required for EPUB extraction)
-
-Run: `python3 -c "import ebooklib; print('OK')"`
-
-**If NOT installed:**
-```bash
-pip3 install ebooklib --break-system-packages
-```
-
-### Calibre - ebook-convert (Required for MOBI, AZW, AZW3, KFX)
-
-**Auto-install check:**
-```bash
-if ! command -v ebook-convert &>/dev/null; then
-  echo "Calibre not found. Installing..."
-  brew install --cask calibre
-else
-  echo "Calibre already installed: $(ebook-convert --version | head -1)"
-fi
+sudo apt-get update
+sudo apt-get install calibre
 ```
 
 **Verify installation:**
@@ -205,14 +187,100 @@ fi
 ebook-convert --version
 ```
 
-Calibre handles all Kindle formats including MOBI, AZW, AZW3, and KFX.
-DRM-free files only - DRM-protected books cannot be converted.
+Expected output should show version info (e.g., "ebook-convert (calibre 6.x)"). DRM-free files only.
 
-### Python 3 (Required)
+### Step 2d - Verify GOOGLE_API_KEY
 
-Run: `python3 --version`
+**Check your API key is set:**
+```bash
+grep "GOOGLE_API_KEY" ~/clawd/secrets/.env
+```
 
-Should return Python 3.8 or higher. If not installed, install from https://python.org
+**If missing:** Add your Gemini API key to `~/clawd/secrets/.env`:
+```
+GOOGLE_API_KEY=your_key_here
+```
+
+### Step 2e - Dependency Check Complete Gate
+
+**Before proceeding, confirm ALL checks passed:**
+
+Run this final verification:
+```bash
+python3 << 'EOF'
+import sys
+errors = []
+
+try:
+    import google.genai
+except ImportError as e:
+    errors.append("google.genai: " + str(e))
+
+try:
+    import numpy
+except ImportError as e:
+    errors.append("numpy: " + str(e))
+
+try:
+    import pdfplumber
+except ImportError as e:
+    errors.append("pdfplumber: " + str(e))
+
+try:
+    import pypdf
+except ImportError as e:
+    errors.append("pypdf: " + str(e))
+
+try:
+    import ebooklib
+except ImportError as e:
+    errors.append("ebooklib: " + str(e))
+
+try:
+    import aiohttp
+except ImportError as e:
+    errors.append("aiohttp: " + str(e))
+
+try:
+    import bs4
+except ImportError as e:
+    errors.append("beautifulsoup4: " + str(e))
+
+try:
+    import mobi
+except ImportError as e:
+    errors.append("mobi: " + str(e))
+
+try:
+    import lxml
+except ImportError as e:
+    errors.append("lxml: " + str(e))
+
+try:
+    import subprocess
+    result = subprocess.run(["ebook-convert", "--version"], capture_output=True, text=True)
+    if result.returncode != 0:
+        errors.append("Calibre (ebook-convert) not found")
+except FileNotFoundError:
+    errors.append("Calibre (ebook-convert) not found")
+
+if errors:
+    print("DEPENDENCY CHECK FAILED")
+    print("The following dependencies are missing:")
+    for err in errors:
+        print(f"  - {err}")
+    print("\nSTOP: Install missing dependencies before continuing.")
+    sys.exit(1)
+else:
+    print("DEPENDENCY CHECK PASSED")
+    print("All Python packages and Calibre are installed correctly.")
+    sys.exit(0)
+EOF
+```
+
+**STOP if you see "DEPENDENCY CHECK FAILED"** - Fix the listed issues before proceeding to Step 3.
+
+**If you see "DEPENDENCY CHECK PASSED" - Continue to Step 3.**
 
 ---
 
@@ -245,6 +313,14 @@ mkdir -p ~/Downloads/openclaw-master-files/coaching-personas/personas
 ## Step 4 - Verify Model Access
 
 This skill requires three model connections. Check each one:
+
+
+### Google Gemini (Required for Multimodal Embeddings)
+Check for `GOOGLE_API_KEY` or `GEMINI_API_KEY` across all known env file locations:
+```bash
+_find_key "GOOGLE_API_KEY" || _find_key "GEMINI_API_KEY"
+```
+If missing, you MUST add your Google API key to `~/clawd/secrets/.env`. The multimodal embedding engine will crash without it.
 
 ### Kimi K2.5 (Phase 1)
 Check for `MOONSHOT_API_KEY` across all known env file locations:
@@ -296,20 +372,20 @@ If Codex OAuth is not found or expired: reconnect via OpenClaw settings using yo
 
 ---
 
-## Step 5 - Set Up QMD Collection (coaching-personas) - DOCUMENTATION ONLY
+## Step 5 - Set Up Gemini Engine Collection (coaching-personas) - DOCUMENTATION ONLY
 
-Pre-built personas are already included in this skill folder. They will be added to QMD during Skill 23 (AI Workforce Blueprint) installation.
+Pre-built personas are already included in this skill folder. They will be added to Gemini Engine during Skill 23 (AI Workforce Blueprint) installation.
 
-**DO NOT run QMD embed here.** Skill 23 will run the embedding once after all personas AND workforce files are ready.
+**DO NOT run Gemini Engine embed here.** Skill 23 will run the embedding once after all personas AND workforce files are ready.
 
 **What happens next:**
-- Skill 23 will add the coaching-personas collection to QMD
-- Skill 23 will run `qmd update && qmd embed` to index all personas + workforce files together
+- Skill 23 will add the coaching-personas collection to Gemini Engine
+- Skill 23 will run `python3 ~/clawd/scripts/gemini-indexer.py` to index all personas + workforce files together
 - This avoids redundant double-embedding (after Skill 22 and again after Skill 23)
 
 **Note:** If you need to verify personas are searchable after Skill 23 completes, run:
 ```bash
-qmd search coaching-personas "negotiation"
+python3 ~/clawd/scripts/gemini-search.py "negotiation"
 ```
 
 ---
@@ -322,8 +398,8 @@ qmd search coaching-personas "negotiation"
 Before allowing Skill 23 to run, verify this Skill 22 installation is complete:
 
 ```bash
-# Check if QMD collection "coaching-personas" exists
-if qmd status 2>/dev/null | grep -q "coaching-personas"; then
+# Check if Gemini Vector Database "coaching-personas" exists
+if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 verified: coaching-personas collection exists"
   echo "Skill 23 may proceed"
 else
@@ -479,7 +555,7 @@ This triggers the full sequence:
 2. **Phase 1 (Kimi K2.5)** - Spawns sub-agent with extraction prompt + book text. Output: `personas/[author]-[book-slug]/extraction-notes.md`
 3. **Phase 2 (DeepSeek V3.2-Speciale)** - Spawns sub-agent with analysis prompt + extraction notes. Output: `personas/[author]-[book-slug]/analysis-notes.md`
 4. **Phase 3 (GPT-5.3 Codex)** - Spawns sub-agent with synthesis prompt + extraction + analysis notes. Output: `personas/[author]-[book-slug]/persona-blueprint.md`. Falls back to Kimi K2.5 on failure.
-5. **QMD indexing** - Runs `qmd update && qmd embed` to make the new persona searchable.
+5. **Gemini Engine indexing** - Runs `python3 ~/clawd/scripts/gemini-indexer.py` to make the new persona searchable.
 
 **Verify each phase completed** by checking:
 - File exists at the expected path
@@ -560,7 +636,7 @@ When a gateway restart is needed:
 
 Run through this checklist:
 - [ ] All 8 skill .md files read (TYP complete)
-- [ ] QMD installed and returning version
+- [ ] Gemini Engine installed and returning version
 - [ ] pdfplumber installed
 - [ ] ebooklib installed
 - [ ] Calibre ebook-convert available
@@ -568,9 +644,9 @@ Run through this checklist:
 - [ ] Moonshot API key confirmed in ~/clawd/secrets/.env
 - [ ] OpenRouter API key confirmed in ~/clawd/secrets/.env
 - [ ] Codex OAuth token confirmed and not expired
-- [ ] QMD collection coaching-personas added and embedded (Step 5)
-- [ ] QMD test query returns results
+- [ ] Gemini Vector Database coaching-personas added and embedded (Step 5)
+- [ ] Gemini Engine test query returns results
 - [ ] Core files updated per CORE_UPDATES.md (Step 7)
 - [ ] Pipeline execution test passed (Step 8)
 
-When all boxes are checked: log "Book-to-Persona skill fully installed. QMD collection active. Pre-built personas ready (run: qmd status -c coaching-personas to see count). Pipeline verified operational. Ready to process new books or query personas."
+When all boxes are checked: log "Book-to-Persona skill fully installed. Gemini Vector Database active. Pre-built personas ready (run: python3 ~/clawd/scripts/gemini-indexer.py --status to see count). Pipeline verified operational. Ready to process new books or query personas."

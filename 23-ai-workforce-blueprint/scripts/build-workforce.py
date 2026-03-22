@@ -637,7 +637,7 @@ This role draws from multiple coaching personas. Choose based on the specific ta
 
 **How to find the right persona for your task:**
 ```bash
-qmd search "<describe your task>" -c coaching-personas
+python3 ~/clawd/scripts/gemini-search.py "<describe your task>"
 ```
 
 This searches the coaching personas collection and returns the best match. Load that persona's Task Mode and execute through that methodology.
@@ -762,7 +762,7 @@ def show_prebuilt_departments():
 
 
 def check_personas_installed():
-    """Check if coaching-personas QMD collection exists on this machine."""
+    """Check if coaching-personas Gemini Vector Database exists on this machine."""
     try:
         result = subprocess.run(
             ["qmd", "status"],
@@ -973,7 +973,7 @@ def build_governing_personas_content(dept_key, for_file=False):
     if for_file:
         entries = []
         for folder, description in personas:
-            entries.append(f"### {folder}\n**Focus:** {description}\n**Query:** `qmd search \"{description.lower()}\" -c coaching-personas`\n")
+            entries.append(f"### {folder}\n**Focus:** {description}\n**Query:** `python3 ~/clawd/scripts/gemini-search.py \"{description.lower()}\"`\n")
         return '\n'.join(entries), personas
 
     # For 00-START-HERE.md section
@@ -1110,7 +1110,7 @@ def build_role_personas_content(role_key, dept_key, for_file=False):
         
         sections.append("## How to Query")
         sections.append("```")
-        sections.append('qmd search "<describe your task>" -c coaching-personas')
+        sections.append('python3 ~/clawd/scripts/gemini-search.py "<describe your task>"')
         sections.append("```")
         sections.append("")
         
@@ -1123,27 +1123,18 @@ def build_role_personas_content(role_key, dept_key, for_file=False):
     return '\n'.join(lines), personas
 
 
-def run_qmd_update():
-    """Auto-run QMD update and embed after wiring personas."""
-    telegram_print("\n🔄 Running QMD update after persona wiring...")
+def run_gemini_indexer():
+    """Auto-run Gemini Multimodal Indexer after wiring personas."""
+    telegram_print("\n🔄 Running Gemini Multimodal Indexer after persona wiring...")
     try:
-        result = subprocess.run(["qmd", "update"], capture_output=True, text=True, timeout=60)
+        script_path = os.path.expanduser("~/clawd/scripts/gemini-indexer.py")
+        result = subprocess.run(["python3", script_path], capture_output=True, text=True, timeout=120)
         if result.returncode == 0:
-            telegram_print("  ✓ qmd update complete")
+            telegram_print("  ✓ Gemini indexing complete")
         else:
-            telegram_print(f"  ⚠️ qmd update: {result.stderr[:100]}")
+            telegram_print(f"  ⚠️ Gemini indexing error: {result.stderr[:100]}")
     except Exception as e:
-        telegram_print(f"  ⚠️ qmd update failed: {e}")
-    
-    telegram_print("🔄 Running QMD embed...")
-    try:
-        result = subprocess.run(["qmd", "embed"], capture_output=True, text=True, timeout=300)
-        if result.returncode == 0:
-            telegram_print("  ✓ qmd embed complete")
-        else:
-            telegram_print(f"  ⚠️ qmd embed: {result.stderr[:100]}")
-    except Exception as e:
-        telegram_print(f"  ⚠️ qmd embed failed: {e}")
+        telegram_print(f"  ⚠️ Gemini indexing failed: {e}")
 
 
 def audit_mode(workspace, personas_installed):
@@ -1247,8 +1238,8 @@ def audit_mode(workspace, personas_installed):
         telegram_print("\n✓ Everything looks good - no gaps found.")
     if personas_installed:
         telegram_print("\n✅ Persona wiring complete.")
-        # Auto-run QMD update after wiring
-        run_qmd_update()
+        # Auto-run Gemini Engine update after wiring
+        run_gemini_indexer()
     else:
         telegram_print("\nℹ️ Install Skill 22 and re-run to wire personas.")
 
@@ -1424,8 +1415,8 @@ def build_workforce_automated(context, interview_data, departments):
     personas_still_installed = check_personas_installed()
     if personas_still_installed and personas_installed:
         telegram_print("✅ Personas still detected - wiring complete")
-        # Auto-run QMD update after wiring personas
-        run_qmd_update()
+        # Auto-run Gemini Engine update after wiring personas
+        run_gemini_indexer()
     elif personas_still_installed and not personas_installed:
         telegram_print("✅ Personas detected post-build - wiring now...")
         # Run audit mode to wire personas into existing structure
@@ -1484,8 +1475,8 @@ def main():
         telegram_print("\nSkill 23 (AI Workforce Blueprint) requires Skill 22 to be fully installed first.")
         telegram_print("\nTo proceed:")
         telegram_print("  1. Navigate to 22-book-to-persona-coaching-leadership-system/")
-        telegram_print("  2. Complete all installation steps (including QMD setup)")
-        telegram_print("  3. Run: qmd status | grep coaching-personas")
+        telegram_print("  2. Complete all installation steps (including Gemini Engine setup)")
+        telegram_print("  3. Run: python3 ~/clawd/scripts/gemini-indexer.py --status")
         telegram_print("  4. Return here and re-run this script")
         telegram_print("\n" + "❌"*25)
         sys.exit(1)

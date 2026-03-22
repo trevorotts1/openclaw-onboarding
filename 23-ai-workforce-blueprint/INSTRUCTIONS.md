@@ -11,12 +11,12 @@ When you trigger this skill, you will see 3 options. Choose the one that fits yo
 **Best for:** First-time setup, new businesses, or reorganizing
 
 **What happens:**
-1. I show you 10 pre-built departments you can choose from
+1. I show you 17 pre-built departments you can choose from
 2. You decide: Keep all / Keep some / Add custom / Start from scratch
 3. I interview you about your business (with examples for each question)
 4. I build all folders and files automatically based on your answers
 
-**Pre-built departments available:**
+**The 17 Recommended Departments:**
 
 • marketing-dept - Content, ads, social media, email campaigns
 • sales-dept - Converting leads to customers
@@ -24,20 +24,53 @@ When you trigger this skill, you will see 3 options. Choose the one that fits yo
 • customer-support-dept - Helping existing clients
 • operations-dept - Day-to-day business running
 • creative-dept - Graphics, video, content creation
+• graphics-dept - Static images, brand assets, AI image generation
+• video-dept - AI video generation, editing, captions
+• audio-dept - Full audio lifecycle: TTS, transcription, music, voice
+• web-development-dept - Websites, funnels, landing pages
+• app-development-dept - Software, mobile apps, APIs
 • hr-people-dept - Team management, hiring
 • legal-compliance-dept - Contracts, regulations
 • it-tech-dept - Software, websites, infrastructure
+• research-dept - Market research, competitive analysis
+• comms-dept - Internal communications, announcements
+• ceo-dept - Executive strategy, vision, high-level decisions
 • master-orchestrator-dept - Routes all work (always included)
+
+**Department Flexibility:**
+"Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
+- Default to keeping all 17 if the client has no preference
 
 **Interview questions include:**
 - What is your business name?
+  - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 - In one sentence, what does your business do?
+  - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 - What is your current team size?
+  - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 - What are the main tools your business uses?
+  - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 - What is your biggest challenge right now?
+  - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 - Do you have existing SOPs or training materials?
+  - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-Each question includes examples so you know what kind of answer to give.
+**System Discovery Question:**
+- "What tools do you currently use to run your business? Examples: Stripe for payments, HubSpot or Convert and Flow for your CRM, Mailchimp for email."
+- Store this answer in the workspace config
+
+**KPI Capture per department:**
+- After each department is created: "What does success look like for this department? How would you know it is doing a great job?"
+- If client hesitates: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
+- Present 3 KPI options as choices, not mandates
+
+**Progress Indicators:**
+- After basic business info: "You are 30% complete."
+- After department creation: "You are 50% complete."
+- After KPI setup: "You are 70% complete."
+- At the end: "You are complete! Setting up your AI workforce now."
+
+Each question includes examples so you know what kind of answer to give. After every question, the AI adds: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 **To choose this option:** Say "Build my AI workforce - Option A"
 

@@ -4,15 +4,15 @@
 
 ---
 
-## QMD INDEXING PROTOCOL
+## Gemini Engine INDEXING PROTOCOL
 
-**QMD (semantic search) must be indexed at specific milestones, not after every skill.**
+**Gemini Engine (semantic search) must be indexed at specific milestones, not after every skill.**
 
 ### Indexing Milestones
 
 | Milestone | When to Run | What Gets Indexed |
 |-----------|-------------|-------------------|
-| **Initial** | After QMD install (step 3) | Base index of workspace |
+| **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
 | **Final** | After ALL 31 skills complete | Complete system index |
@@ -21,24 +21,24 @@
 ### Standard Indexing Commands
 
 ```bash
-qmd update          # Update file index
-qmd embed           # Generate embeddings
-qmd status          # Verify completion
+python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
+# Handled by gemini-indexer.py           # Generate embeddings
+python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
 ```
 
 ### Verification Steps
 
-1. **Announce:** "Running QMD indexing for [milestone] milestone..."
-2. **Update:** `qmd update` - scans all collections
-3. **Embed:** `qmd embed` - generates vectors
-4. **Status:** `qmd status` - confirm completion
-5. **Report:** "QMD indexing complete: X files, Y collections"
+1. **Announce:** "Running Gemini Engine indexing for [milestone] milestone..."
+2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
+3. **Embed:** `# Handled by gemini-indexer.py` - generates vectors
+4. **Status:** `python3 ~/clawd/scripts/gemini-indexer.py --status` - confirm completion
+5. **Report:** "Gemini Engine indexing complete: X files, Y collections"
 
 ### Critical Rules
 
 - **Do NOT** skip indexing at milestones (breaks search)
-- **Do NOT** assume "it's probably fine" - verify with `qmd status`
-- **Do NOT** run `qmd embed` without `qmd update` first
+- **Do NOT** assume "it's probably fine" - verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
+- **Do NOT** run `# Handled by gemini-indexer.py` without `python3 ~/clawd/scripts/gemini-indexer.py` first
 - **Do NOT** index after every single skill (wastes time)
 
 ### Collections
@@ -50,7 +50,7 @@ qmd status          # Verify completion
 ### See Also
 
 - [After AI Workforce Setup Complete](#after-ai-workforce-setup-complete) - Post-Skill 23 workflow
-- [When to Run QMD Indexing](#when-to-run-qmd-indexing) - Event-triggered indexing rules
+- [When to Run Gemini Engine Indexing](#when-to-run-google-embedding-indexing) - Event-triggered indexing rules
 
 ---
 
@@ -60,20 +60,20 @@ When user finishes answering Skill 23 (AI Workforce Blueprint) questions:
 
 1. Build workforce structure
 2. Wire personas to departments and roles
-3. **RUN:** `qmd update && qmd embed`
+3. **RUN:** `python3 ~/clawd/scripts/gemini-indexer.py`
 4. Confirm indexing complete
 
 ---
 
-## When to Run QMD Indexing
+## When to Run Gemini Engine Indexing
 
-After these events, **ALWAYS** run: `qmd update && qmd embed`
+After these events, **ALWAYS** run: `python3 ~/clawd/scripts/gemini-indexer.py`
 
 - AI Workforce Blueprint setup complete (after questions answered)
 - New book/persona added to coaching-personas collection
 - New departments or roles created
 - Bulk file additions to master-files folder
-- User says "my search isn't working" or "QMD can't find"
+- User says "my search isn't working" or "Gemini Engine can't find"
 - Major restructuring of workforce or personas
 
 ---
@@ -187,9 +187,9 @@ Don't wait for permission to improve. If you learned something, write it down no
 
 > Add lessons here as you learn them
 
-### QMD Indexing
+### Gemini Engine Indexing
 - Index at milestones, not after every skill
-- Always verify with `qmd status`
+- Always verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
 - Personas and AI Workforce need immediate indexing (searchable content)
 
 ### External Actions

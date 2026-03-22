@@ -2,8 +2,8 @@
 **Source Book:** SPIN Selling by Neil Rackham
 **Version:** 1.0.0
 **Built:** March 7 at 4:26 PM
-**QMD Index:** rackham-spin-selling
-**Index Location:** ./qmd-index/
+**Gemini Index:** rackham-spin-selling
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,8 +15,8 @@
 **Source Book:** SPIN Selling by Neil Rackham
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** rackham-spin-selling
-**Index Location:** ./qmd-index/
+**Gemini Index:** rackham-spin-selling
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

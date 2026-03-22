@@ -264,6 +264,18 @@ Save file.
 
 ---
 
+## 🔴 CRITICAL: Steps 3-8 Must Use REAL Data
+**Do NOT leave placeholder text like [TEAM_MEMBER_NAME] or [TEAM_MEMBER_ID] in any file.**
+After collecting team data in Step 0, you MUST replace ALL placeholders with the actual names, Telegram IDs, and roles collected from the user. If you finish Steps 3-8 and any file still contains square-bracket placeholders, you failed this skill.
+
+**After completing Steps 6-8, verify:**
+1. Open AGENTS.md and confirm real names and Telegram IDs are present (not placeholders)
+2. Open MEMORY.md and confirm the Team Telegram IDs table has real data
+3. Open TOOLS.md and confirm the routing reference has real paths
+4. Read back the team roster to the user and ask them to confirm it is correct
+
+---
+
 ## Step 3: Add Telegram IDs to Allowlist
 
 In the same configuration file, locate the "channels" section. Add each team member's Telegram ID to the allowFrom array using the IDs collected in Step 0.

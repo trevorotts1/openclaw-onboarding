@@ -2,8 +2,8 @@
 **Source Book:** Words that Change Minds by Shelle Rose Charvet
 **Version:** 1.0.0
 **Built:** March 7 at 7:19 PM
-**QMD Index:** charvet-words-change-minds
-**Index Location:** ./qmd-index/
+**Gemini Index:** charvet-words-change-minds
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -14,8 +14,8 @@
 **Source Book:** *Words that Change Minds* by Shelle Rose Charvet  
 **Version:** 1.0.0  
 **Built:** March 8, 2026  
-**QMD Index:** charvet-words-change-minds  
-**Index Location:** ./qmd-index/  
+**Gemini Index:** charvet-words-change-minds  
+**Index Location:** ./google-embedding-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  
 **QC Status:** QC_PENDING  

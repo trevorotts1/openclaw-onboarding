@@ -8,15 +8,15 @@
 If you are reading this file, the user has triggered onboarding by saying something like:
 - "Begin onboarding installation"
 - "Start onboarding"
-- "Install the 30 skills"
+- "Install the 31 skills"
 
-**Your task:** Install all 30 skills using the 5-Wave Parallel Orchestration below.
+**Your task:** Install all 31 skills using the 5-Wave Parallel Orchestration below.
 
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
 **0.1: Confirm AGENTS.md has ONBOARDING PENDING flag**
 
-Search ALL possible AGENTS.md locations — the path differs between Mac and VPS:
+Search ALL possible AGENTS.md locations. The path differs between Mac and VPS:
 ```bash
 # Try all possible locations
 grep -r "ONBOARDING PENDING" ~/clawd/AGENTS.md 2>/dev/null || \
@@ -48,7 +48,7 @@ If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use 
 If `sessions_spawn` fails: Use Sequential Mode (install 01→30 one at a time).
 
 **0.4: Announce your strategy**
-Tell user: "Onboarding triggered. I will install 30 skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+Tell user: "Onboarding triggered. I will install 31 skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
 
 ---
 
@@ -172,18 +172,18 @@ Teaches the AI how to back up config files before touching anything.
 Without this, one bad edit can corrupt your system with no way to recover.
 **Nothing else installs until this is confirmed.**
 
-### ✅ STEP 3: QMD (Semantic Search Engine)
+### ✅ STEP 3: Gemini Engine (Semantic Search Engine)
 **Handled automatically by the install script - no skill folder needed.**
-QMD is installed as a system dependency during Step 3 of install.sh.
+Gemini Engine is installed as a system dependency during Step 3 of install.sh.
 It powers the persona search in Skill 22 and the persona detection in Skill 23.
 
-**QMD is automatically installed and indexed at:**
-- Install time: QMD installed, collections (clawd, master-files) created, initial indexing run
+**Gemini Engine is automatically installed and indexed at:**
+- Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
-- After all 30 skills: final complete index
+- After all 31 skills: final complete index
 
-**QMD INDEXING happens at strategic points - see QMD INDEXING PROTOCOL below.**
+**Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
 ### STEPS 4-30: All Remaining Skills (in numbered order)
 Skills install sequentially. For each skill:
@@ -257,10 +257,53 @@ Every skill has a specific install sequence. Follow it exactly:
 - Do NOT say "onboarding complete" after finishing one skill
 - Do NOT skip skills because they "seem optional"
 - Install skills 01-30 in order, confirm each one individually
-- Only after skill 30 (Fish Audio API Reference) is verified complete → remove ONBOARDING PENDING flag
-- Only after skill 30 (Fish Audio API Reference) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
+- Only after skill 33 (Department Heads) is verified complete → remove ONBOARDING PENDING flag
+- Only after skill 33 (Department Heads) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
 
 ---
+
+---
+
+## 🔴 CORE .MD FILE PROTECTION - DO NOT BLOAT (PERMANENT RULE)
+
+**Definition: "Core .md files" means these 7 files and ONLY these 7 files:**
+
+| File | Purpose |
+|------|---------|
+| MEMORY.md | Long-term persistent state and lessons learned |
+| AGENTS.md | Agent behavior rules and operating procedures |
+| TOOLS.md | Tool setup, API credentials, environment-specific notes |
+| USER.md | Who the human is (name, preferences, contacts) |
+| IDENTITY.md | Who the agent is |
+| SOUL.md | Agent personality and boundaries |
+| HEARTBEAT.md | Periodic check tasks and current project status |
+
+### Protection Rules
+
+1. **NEVER dump large content into core files.** Each skill's CORE_UPDATES.md contains the EXACT text to add. Add ONLY what CORE_UPDATES.md specifies. Nothing more.
+
+2. **NEVER copy full documentation into core files.** Core files are INDEX POINTERS, not storage. They say "Full guide at ~/path/to/file.md" instead of pasting the guide contents.
+
+3. **NEVER overwrite core files.** Always APPEND the specific CORE_UPDATES.md entries. Never replace existing content.
+
+4. **NEVER add the same entry twice.** Before adding a CORE_UPDATES.md entry, check if it already exists in the target core file. If it does, skip it.
+
+5. **Maximum addition per skill:** No more than 20 lines per core file per skill. If a skill's CORE_UPDATES.md exceeds 20 lines for any single core file, something is wrong. Stop and ask the user.
+
+6. **If a core file exceeds these sizes, it is bloated and needs cleanup:**
+   - MEMORY.md: over 2000 lines
+   - AGENTS.md: over 500 lines
+   - TOOLS.md: over 500 lines
+   - USER.md: over 200 lines
+   - IDENTITY.md: over 100 lines
+   - SOUL.md: over 100 lines
+   - HEARTBEAT.md: over 200 lines
+
+### Why This Matters
+
+The Teach Yourself Protocol (TYP) exists specifically to prevent this. Without TYP, agents dump entire skill documentation into AGENTS.md, ballooning it from 500 lines to 5000+ lines. This wastes tokens on every session start, slows the agent down, and pushes important information out of the context window.
+
+**The core files are the agent's brain. Keep them lean. Keep them fast. Keep them relevant.**
 
 ---
 
@@ -285,6 +328,132 @@ When a gateway restart is needed:
 
 ### Why This Matters
 Gateway restarts interrupt active sessions and can kill running processes. The user must control when this happens.
+
+---
+
+## 🔴 ONBOARDING WATCHDOG - HEARTBEAT AUTO-RESUME (PERMANENT RULE)
+
+### Phase 0 Setup: Enable the Onboarding Heartbeat
+
+Before starting Skill 01, the agent MUST set up a temporary 5-minute heartbeat that keeps the onboarding alive. This prevents the agent from stalling mid-install.
+
+**Step 1: Set the heartbeat interval to 5 minutes**
+
+The agent must update the heartbeat configuration in openclaw.json:
+```json
+"heartbeat": {
+  "every": "5m"
+}
+```
+
+**Step 2: Write the watchdog task to HEARTBEAT.md**
+
+Add this EXACT content to the TOP of HEARTBEAT.md (above any existing content):
+
+```markdown
+## 🔴 ONBOARDING IN PROGRESS - DO NOT REMOVE UNTIL COMPLETE
+
+Check onboarding status:
+1. Read ~/.openclaw/onboarding/status.json
+2. Count how many skills are INSTALLED vs remaining
+3. If skills remain and you are not currently installing one, resume from the next unfinished skill
+4. If you are stuck on a skill for more than 10 minutes, skip it, mark it FAILED, and move to the next
+5. Report progress: "[X] of 31 skills installed. Currently on: [skill name]."
+
+DO NOT REMOVE this block until all 31 skills are installed or attempted.
+```
+
+**Step 3: After onboarding completes, clean up**
+
+When all 31 skills are installed (or attempted), the agent MUST:
+1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
+2. Reset the heartbeat interval back to the default:
+```json
+"heartbeat": {
+  "every": "1h"
+}
+```
+3. Tell the user: "Onboarding complete. I have reset the heartbeat back to hourly checks. Type /restart in Telegram to apply the change."
+
+### How This Works
+
+OpenClaw sends a heartbeat message to the agent every 5 minutes. The agent reads HEARTBEAT.md and sees the onboarding watchdog task. If it was idle or stalled, it immediately checks the status file and resumes installation. This is external enforcement. The agent cannot "forget" to keep going because OpenClaw keeps poking it.
+
+After onboarding finishes, the heartbeat goes back to hourly and the watchdog task is removed. The client's HEARTBEAT.md returns to normal.
+
+---
+
+## 🔴 ONBOARDING CONTINUITY - NEVER STOP UNTIL ALL 31 SKILLS ARE INSTALLED
+
+**The onboarding process must run continuously until all 31 skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
+
+### Self-Check Rules
+
+1. **After completing each skill**, immediately check the status file and count how many skills are done vs remaining. If skills remain, start the next one without waiting.
+
+2. **After every 5 minutes of work**, verify you are still making progress:
+   - Check which skill you are currently on
+   - Check the status file for completed skills
+   - If you have been idle or stuck on the same step for more than 10 minutes, re-read the current skill's INSTALL.md and resume from where you left off. Some skills legitimately take 10+ minutes to complete. Do NOT interrupt a skill that is actively working just because it is taking a while. Only re-engage if you have genuinely stalled with no progress
+
+3. **If context is getting full** (above 70%), trigger the memory flush, then continue installation. Do NOT stop and wait for user input unless a skill explicitly requires it (like Skill 15 which needs Telegram IDs).
+
+4. **If a skill fails**, log the failure, mark it as FAILED in the status file, and move to the next skill. Do NOT stop the entire onboarding because one skill failed. Come back to failed skills after all others are complete.
+
+5. **If you lose your place**, check the status file:
+   ```bash
+   cat ~/.openclaw/onboarding/status.json 2>/dev/null
+   ```
+   Resume from the first skill not marked INSTALLED.
+
+### Progress Reporting
+
+After every 5 skills completed, send the user a brief progress update:
+"Onboarding progress: [X] of 33 skills installed. Currently on: [skill name]. [Y] skills remaining."
+
+### Completion
+
+When all 31 skills are installed:
+1. Count and verify: all 31 skill folders should exist in ~/.openclaw/skills/
+2. Check the status file for any FAILED skills
+3. If any failed, attempt to re-install them one more time
+4. Send the user the final report with pass/fail for each skill
+5. If a gateway restart is needed for any changes to take effect, tell the user:
+   "All 31 skills are installed. To activate the changes, please type /restart in Telegram."
+
+### 🔴 MANDATORY FILE READING BEFORE INSTALLATION
+
+**Before installing ANY skill, you MUST read ALL .md files in that skill folder in the order specified in SKILL.md.**
+
+This is not optional. This is not a suggestion. The Teach Yourself Protocol (TYP) requires it.
+
+For every skill, the reading order is:
+1. SKILL.md (overview, prerequisites, file reading order)
+2. Every file listed in the "Files in This Folder and Reading Order" section of SKILL.md
+3. Only AFTER reading all files do you begin executing INSTALL.md
+
+**If you skip reading files and jump straight to installation:**
+- You will miss prerequisites
+- You will miss conflict rules
+- You will configure things wrong
+- You will waste the client's time fixing your mistakes
+
+**How to verify you read all files:**
+Before starting INSTALL.md, list every .md file you read and confirm:
+"I have read [X] files for Skill [N]: [list filenames]. Proceeding with installation."
+
+If you cannot list the files you read, you did not read them. Go back and read them.
+
+---
+
+### What This Protocol Prevents
+- Agent stopping after 3-4 skills because the model ran out of steam
+- Agent waiting for user input when none is needed
+- Agent silently dying mid-installation with no error message
+- Agent forgetting where it was after compaction
+- Agent triggering restarts on its own (NEVER do this)
+
+**ZERO TOLERANCE: The onboarding does not end until all 31 skills have been attempted. If you stop early, you failed.**
 
 ---
 
@@ -492,27 +661,27 @@ After every skill install, verify:
 
 ---
 
-## 🔴 QMD INDEXING PROTOCOL - STRATEGIC EMBEDDING SCHEDULE
+## 🔴 Gemini Engine INDEXING PROTOCOL - STRATEGIC EMBEDDING SCHEDULE
 
-**QMD (semantic search) must be indexed at specific milestones, not after every skill.**
+**Gemini Engine (semantic search) must be indexed at specific milestones, not after every skill.**
 
 ### Indexing Schedule
 
 | Milestone | When to Index | Why |
 |-----------|---------------|-----|
-| **Initial** | After QMD install (step 3) | Base index of workspace |
+| **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
-| **Final** | After ALL 30 skills complete | Complete system index |
+| **Final** | After ALL 31 skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
 
 ### What to Index at Each Milestone
 
 ```bash
 # Standard indexing command sequence:
-qmd update          # Update file index
-qmd embed           # Generate embeddings
-qmd status          # Verify completion
+python3 ~/clawd/scripts/gemini-indexer.py          # Update file index
+# Handled by gemini-indexer.py           # Generate embeddings
+python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
 ```
 
 ### Collections to Index
@@ -525,16 +694,16 @@ qmd status          # Verify completion
 
 ### Process for Each Indexing
 
-1. **Announce:** "Running QMD indexing for [milestone] milestone..."
-2. **Update:** `qmd update` - scans all collections
-3. **Embed:** `qmd embed` - generates vectors
+1. **Announce:** "Running Gemini Engine indexing for [milestone] milestone..."
+2. **Update:** `python3 ~/clawd/scripts/gemini-indexer.py` - scans all collections
+3. **Embed:** `# Handled by gemini-indexer.py` - generates vectors
 4. **Verify:** Check status shows all files indexed
-5. **Report:** "QMD indexing complete: X files, Y collections"
+5. **Report:** "Gemini Engine indexing complete: X files, Y collections"
 
 ### Forbidden Actions
 - Do NOT index after every single skill (wasteful)
 - Do NOT skip indexing at milestones (breaks search)
-- Do NOT assume "it's probably fine" - verify with `qmd status`
+- Do NOT assume "it's probably fine" - verify with `python3 ~/clawd/scripts/gemini-indexer.py --status`
 - Do NOT index before TYP and Back Yourself Up are complete
 
 ### Why This Schedule
@@ -1026,7 +1195,7 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         INSTALL.md
         CORE_UPDATES.md
         PIPELINE.md
-        QMD-RETRIEVAL-GUIDE.md
+        GEMINI-RETRIEVAL-GUIDE.md
         PERSONA-ROUTER.md
         personas/
         pipeline/
@@ -1202,7 +1371,7 @@ If any step in a skill's installation fails:
 2. **Wave 2** (Pre-Persona): Spawn 4 parallel agents for skills 04-21
 3. **Wave 3** (Core System): Main agent installs skills 22-23 sequentially (NO sub-agents)
 4. **Wave 4** (Post-Workforce): Spawn 2 parallel agents for skills 24-30
-5. **Wave 5** (Final): Verify skill 15 and finalize
+5. **Wave 5** (Final): Verify skill 15, install skills 31-33, and finalize
 
 **Sequential Dependencies (Never Parallelize These):**
 - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
@@ -1350,7 +1519,7 @@ All skill folders are located inside:
 |---|-------|-------------|-------|
 | 1 | Teach Yourself Protocol | 01-teach-yourself-protocol | 🔴 MANDATORY FIRST |
 | 2 | Back Yourself Up Protocol | 02-back-yourself-up-protocol | 🔴 MANDATORY SECOND |
-| — | **QMD** | *(installed by install script)* | ✅ Auto-installed before skills 3-30 |
+| - | **Gemini Engine** | *(installed by install script)* | ✅ Auto-installed before skills 3-33 |
 | 3 | Agent Browser (Vercel) - preferred browser automation | 03-agent-browser |
 | 4 | Superpowers | 04-superpowers |
 | 5 | GHL / Convert and Flow Setup | 05-ghl-setup |
@@ -1419,7 +1588,7 @@ All skill folders are located inside:
 
 ## IMPORTED SKILLS (16-30) - AUTHORITATIVE INSTALL RULES
 
-Skills 16 through 30 are imported or recreated skills. Many preserve upstream source files under an `upstream-original/` subfolder. Some have additional reference documents (PIPELINE.md, QMD-RETRIEVAL-GUIDE.md, GOOD-AND-BAD-EXAMPLES.md, etc.).
+Skills 16 through 30 are imported or recreated skills. Many preserve upstream source files under an `upstream-original/` subfolder. Some have additional reference documents (PIPELINE.md, GEMINI-RETRIEVAL-GUIDE.md, GOOD-AND-BAD-EXAMPLES.md, etc.).
 
 **The file-read order for ALL imported skills is the same as for all skills:**
 1. Read `SKILL.md` first
@@ -1450,7 +1619,7 @@ This section tells YOU (the AI agent) exactly how to run the 5-wave installation
 **Check for already installed skills:**
 ```bash
 ls -la ~/.openclaw/skills/ 2>/dev/null | grep -E "^d" | wc -l
-qmd status 2>/dev/null
+python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null
 ```
 
 **Check onboarding status file:**
@@ -1490,12 +1659,11 @@ Install these 4 items yourself, one at a time:
    - Mark: `SKILL-02: INSTALLED`
    - Report: "Skill 02 complete"
 
-3. **QMD Setup**
-   - Verify QMD is installed: `qmd --version`
+3. **Gemini Engine Setup**
+   - Verify Gemini Engine is installed: `python3 ~/clawd/scripts/gemini-indexer.py --status`
    - If not installed, install it
-   - Create collections: `qmd collection add ~/clawd --name clawd --mask "*.md"`
-   - Run initial indexing: `qmd update && qmd embed`
-   - Report: "QMD setup complete"
+   - Run initial indexing: `python3 ~/clawd/scripts/gemini-indexer.py`
+   - Report: "Gemini Engine setup complete"
 
 4. **Skill 03: Agent Browser**
    - Read ALL .md files in `~/.openclaw/onboarding/03-agent-browser/`
@@ -1577,7 +1745,7 @@ label: "wave2-qc-agent"
 1. **Skill 22: Book-to-Persona Coaching Leadership System**
    - Read ALL .md files in `~/.openclaw/onboarding/22-book-to-persona-coaching-leadership-system/`
    - Execute installation steps (this includes downloading and processing persona blueprints)
-   - Run QMD indexing for coaching-personas collection
+   - Run Gemini Engine indexing for coaching-personas collection
    - Mark: `SKILL-22: INSTALLED`
    - Report: "Skill 22 complete"
 
@@ -1632,11 +1800,11 @@ label: "wave4-agent-f"
    - Check status file shows `SKILL-15: INSTALLED`
    - If not, install it now
 
-2. **Final QMD Indexing**
+2. **Final Gemini Engine Indexing**
    ```bash
-   qmd update
-   qmd embed
-   qmd status
+   python3 ~/clawd/scripts/gemini-indexer.py
+   # Handled by gemini-indexer.py
+   python3 ~/clawd/scripts/gemini-indexer.py --status
    ```
 
 3. **Remove ONBOARDING PENDING flag from AGENTS.md**
@@ -1644,16 +1812,17 @@ label: "wave4-agent-f"
    - Delete the ONBOARDING PENDING block
 
 4. **Write ONBOARDING COMPLETE to MEMORY.md**
-   - Add entry: "OpenClaw onboarding completed on [date]. All 30 skills installed."
+   - Add entry: "OpenClaw onboarding completed on [date]. All 31 skills installed."
 
 5. **Report completion**
-   - "Wave 5 complete: Onboarding finished. All 30 skills installed."
+   - Install Skill 31 (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
+   - "Wave 5 complete: Onboarding finished. All 31 skills installed."
 
 ---
 
 ### SEQUENTIAL MODE (Fallback)
 
-If `sessions_spawn` doesn't work, install all 30 skills one at a time:
+If `sessions_spawn` doesn't work, install all 31 skills one at a time:
 
 ```
 For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30:
@@ -1685,7 +1854,7 @@ Valid statuses: INSTALLED, ALREADY_INSTALLED, FAILED, SKIPPED
 
 ## PARALLEL INSTALLATION ORCHESTRATION
 
-The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 30 skills efficiently.
+The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 31 skills efficiently.
 
 ### Conflict Prevention (IMPORTANT)
 
@@ -1718,7 +1887,7 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 ├─────────┬─────────────────┬─────────────────────────────────────────────────┤
 │  WAVE   │    AGENTS       │              SKILLS                             │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 1  │ 1 (Sequential)  │ 01 TYP, 02 Backup, QMD, 03 Agent Browser        │
+│ Wave 1  │ 1 (Sequential)  │ 01 TYP, 02 Backup, Gemini Engine, 03 Agent Browser        │
 │         │                 │ Foundation - must complete before Wave 2        │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
 │ Wave 2  │ 4 (Parallel)    │ Agent A: 04, 05, 06, 07 (install)               │
@@ -1735,8 +1904,8 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 │         │                 │ Agent F: 27, 28, 29, 30                             │
 │         │                 │ Post-Workforce tools                            │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 5  │ 1 (Sequential)  │ 15 BlackCEO Team Management (verification)      │
-│         │                 │ Final verification and QMD indexing             │
+│ Wave 5  │ 2 (Sequential)  │ 15 BlackCEO Team Management, 31 Upgraded Memory  │
+│         │                 │ Final verification and Gemini Engine indexing             │
 └─────────┴─────────────────┴─────────────────────────────────────────────────┘
 ```
 
@@ -2015,13 +2184,13 @@ SKILL-02: INSTALLED
 ## PROGRESS UPDATES
 
 Every 5 skills completed, send a brief status update via the user's configured messaging channel:
-"Onboarding in progress: [X] of 30 skills complete. Currently on: [skill name]."
+"Onboarding in progress: [X] of 31 skills complete. Currently on: [skill name]."
 
 ---
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 30 skills are installed, run this as the final step.
+After all 31 skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 ```bash
@@ -2035,13 +2204,13 @@ crontab -l | grep update-skills
 
 **How the weekly update works (v2.0 - Surgical Logic):**
 1. Runs every Sunday at 2:00 AM
-2. Reads CHANGELOG.md from GitHub FIRST — understands what's new before downloading anything
+2. Reads CHANGELOG.md from GitHub FIRST. It understands what's new before downloading anything
 3. Compares against locally installed versions
 4. Rates each change: LOW risk (auto-apply), MEDIUM risk (recommend + confirm), HIGH risk (recommend SKIP)
 5. Surfaces recommendations to the user BEFORE making any changes
-6. Waits for user approval on MEDIUM/HIGH items — never acts autonomously
+6. Waits for user approval on MEDIUM/HIGH items. It never acts autonomously
 7. NEVER overwrites: core .md files (AGENTS, MEMORY, SOUL, USER, IDENTITY, HEARTBEAT, TOOLS), company department folders, or custom SOPs
-8. NEVER triggers a gateway restart — always gives client restart instructions instead
+8. NEVER triggers a gateway restart. Always gives client restart instructions instead
 
 **IMPORTANT:** The update script will NEVER overwrite anything inside `my AI company departments/`. That folder contains client-built content and is always protected.
 
@@ -2062,19 +2231,19 @@ Open [WORKSPACE_ROOT]/AGENTS.md and delete the block that reads:
 ```
 If the block is not present, continue without error.
 
-### Final QMD Indexing (MANDATORY)
+### Final Gemini Engine Indexing (MANDATORY)
 
-After all 30 skills are installed, run the final QMD indexing:
+After all 31 skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 
 # Final embeddings generation
-qmd embed
+# Handled by gemini-indexer.py
 
 # Verify all collections are indexed
-qmd status
+python3 ~/clawd/scripts/gemini-indexer.py --status
 ```
 
 **Why this is needed:**
@@ -2089,10 +2258,10 @@ qmd status
   messaging channel (detected in prerequisites).
 - Format the 30-skill status report as a table: Skill | Name | Status | Notes
 
-Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 30 skills processed"
+Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 31 skills processed"
 
 When every skill on the list above is installed and verified, tell the user:
-1. Everything that was installed (all 30 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
+1. Everything that was installed (all 33 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
 2. Everything that was added to each workspace file (AGENTS.md, TOOLS.md, MEMORY.md, etc.)
 3. Which workspace files were updated and which were not touched
 4. Where the full documentation for each skill is saved (the master files folder path)
@@ -2101,3 +2270,12 @@ When every skill on the list above is installed and verified, tell the user:
 ---
 
 This file is part of the OpenClaw Onboarding system.
+oarding system.
+not touched
+4. Where the full documentation for each skill is saved (the master files folder path)
+5. That the backup protocol is active and the first backup has been created
+
+---
+
+This file is part of the OpenClaw Onboarding system.
+oarding system.

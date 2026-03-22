@@ -2,8 +2,8 @@
 **Source Book:** This Is Marketing by Seth Godin
 **Version:** 1.0.0
 **Built:** March 7 at 7:13 PM
-**QMD Index:** godin-this-is-marketing
-**Index Location:** ./qmd-index/
+**Gemini Index:** godin-this-is-marketing
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,8 +15,8 @@
 **Source Book:** This Is Marketing by Seth Godin
 **Version:** 1.0.0
 **Built:** March 8, 2026
-**QMD Index:** godin-this-is-marketing
-**Index Location:** ./qmd-index/
+**Gemini Index:** godin-this-is-marketing
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

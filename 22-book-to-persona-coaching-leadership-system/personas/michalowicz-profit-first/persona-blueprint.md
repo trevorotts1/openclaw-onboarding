@@ -2,8 +2,8 @@
 **Source Book:** Profit First by Mike Michalowicz
 **Version:** 1.0.0
 **Built:** March 7 at 6:39 PM
-**QMD Index:** michalowicz-profit-first
-**Index Location:** ./qmd-index/
+**Gemini Index:** michalowicz-profit-first
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,8 +15,8 @@
 **Source Book:** Profit First by Mike Michalowicz
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** michalowicz-profit-first
-**Index Location:** ./qmd-index/
+**Gemini Index:** michalowicz-profit-first
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

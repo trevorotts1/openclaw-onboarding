@@ -2,8 +2,8 @@
 **Source Book:** The Copywriters Handbook by Robert Bly
 **Version:** 1.0.0
 **Built:** March 7 at 6:53 PM
-**QMD Index:** bly-copywriters-handbook
-**Index Location:** ./qmd-index/
+**Gemini Index:** bly-copywriters-handbook
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -14,8 +14,8 @@
 **Source Book:** The Copywriter’s Handbook by Robert Bly  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** bly-copywriters-handbook  
-**Index Location:** ./qmd-index/  
+**Gemini Index:** bly-copywriters-handbook  
+**Index Location:** ./google-embedding-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  
 **QC Status:** QC_PENDING

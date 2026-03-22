@@ -2,8 +2,8 @@
 **Source Book:** Drive by Daniel Pink
 **Version:** 1.0.0
 **Built:** March 7 at 4:58 PM
-**QMD Index:** pink-drive
-**Index Location:** ./qmd-index/
+**Gemini Index:** pink-drive
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,8 +15,8 @@
 **Source Book:** Drive by Daniel H. Pink
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** pink-drive
-**Index Location:** ./qmd-index/
+**Gemini Index:** pink-drive
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

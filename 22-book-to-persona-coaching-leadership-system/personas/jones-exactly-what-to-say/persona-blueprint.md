@@ -2,8 +2,8 @@
 **Source Book:** Exactly What to Say by Phil Jones
 **Version:** 1.0.0
 **Built:** March 7 at 4:49 PM
-**QMD Index:** jones-exactly-what-to-say
-**Index Location:** ./qmd-index/
+**Gemini Index:** jones-exactly-what-to-say
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,8 +15,8 @@
 **Source Book:** Exactly What to Say by Phil Jones
 **Version:** 1.0.0
 **Built:** March 7, 2026
-**QMD Index:** jones-exactly-what-to-say
-**Index Location:** ./qmd-index/
+**Gemini Index:** jones-exactly-what-to-say
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

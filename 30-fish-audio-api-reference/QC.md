@@ -57,16 +57,16 @@ grep "FISH_AUDIO_VOICE_ID" ~/clawd/secrets/.env
 **Expected:** Both lines print with non-empty values.
 
 ```bash
-# 2.4 - Confirm QMD has indexed the reference document
-qmd search master-files "fish audio tts endpoint" | head -5
+# 2.4 - Confirm Gemini Engine has indexed the reference document
+python3 ~/clawd/scripts/gemini-search.py "fish audio tts endpoint" | head -5
 ```
-**Expected:** Results reference `fish-audio-api-reference.md`. If no results, re-run `qmd update && qmd embed`.
+**Expected:** Results reference `fish-audio-api-reference.md`. If no results, re-run `python3 ~/clawd/scripts/gemini-indexer.py`.
 
 ---
 
 ## Section 3: Knowledge Verification Questions
 
-Ask the agent these questions directly. Correct answers are listed below each question. The agent must answer from memory or QMD lookup — it must NOT guess.
+Ask the agent these questions directly. Correct answers are listed below each question. The agent must answer from memory or Gemini Engine lookup — it must NOT guess.
 
 **Q1: What is the base URL for the Fish Audio API?**
 > Correct: `https://api.fish.audio`
@@ -103,7 +103,7 @@ Ask the agent these questions directly. Correct answers are listed below each qu
 > Correct: `application/json` for standard requests with a `reference_id`. `application/msgpack` is required for inline zero-shot voice cloning with reference audio bytes.
 
 **Q12: What should the agent do if FISH_AUDIO_API_KEY or FISH_AUDIO_VOICE_ID are missing?**
-> Correct: Remind the client once per session that setup is PENDING. When credentials are provided, add both to `clawdbot.json` and `~/clawd/secrets/.env`, run `qmd update && qmd embed`, and mark the pending entry as COMPLETE.
+> Correct: Remind the client once per session that setup is PENDING. When credentials are provided, add both to `clawdbot.json` and `~/clawd/secrets/.env`, run `python3 ~/clawd/scripts/gemini-indexer.py`, and mark the pending entry as COMPLETE.
 
 ---
 
@@ -148,7 +148,7 @@ Verify the agent does NOT exhibit any of the following failure behaviors.
 | 5.1 | Agent uses `s1` model instead of `s2-pro` without being told | Ask agent: "What model do I use for a podcast?" — must answer `s2-pro` |
 | 5.2 | Agent uses `latency: balanced` for podcast generation | Ask agent: "What latency for a 30-minute podcast?" — must answer `normal` |
 | 5.3 | Agent uses `latency: normal` for a live real-time AI calling scenario | Ask agent: "What latency for a live phone call AI?" — must answer `balanced` |
-| 5.4 | Agent guesses endpoint parameters without reading the reference | If agent says any endpoint without citing the reference doc or QMD, flag as FAIL |
+| 5.4 | Agent guesses endpoint parameters without reading the reference | If agent says any endpoint without citing the reference doc or Gemini Engine, flag as FAIL |
 | 5.5 | Agent loads `fish-audio-voice-sop.md` into core files or system prompt | This file must be read via TYP only — never injected into `core.md` or live prompts |
 | 5.6 | Agent uses `(parenthesis)` emotion syntax with S2-Pro | S2-Pro uses `[square bracket]` natural language — parenthesis syntax is S1 only |
 | 5.7 | Agent uses `192 kbps` for a phone call | Phone calls must use `64 kbps` to match telephony standards |
@@ -163,7 +163,7 @@ Skill 30 passes QC when ALL of the following are true:
 - [ ] `fish-audio-api-reference.md` exists at the correct master files path (Section 1)
 - [ ] File is 841+ lines (not truncated or empty) (Section 1)
 - [ ] `FISH_AUDIO_API_KEY` and `FISH_AUDIO_VOICE_ID` are present in `clawdbot.json` and `.env` — OR a valid PENDING entry exists in `.pending-setup.md` (Section 2)
-- [ ] QMD search returns results for Fish Audio content (Section 2)
+- [ ] Gemini Engine search returns results for Fish Audio content (Section 2)
 - [ ] Agent answers all 12 knowledge questions correctly without guessing (Section 3)
 - [ ] Live API call returns HTTP 200 with non-zero audio output (Section 4) — *skip if credentials pending*
 - [ ] All 8 anti-patterns are absent (Section 5)

@@ -2,8 +2,8 @@
 **Source Book:** Building a Second Brain by Tiago Forte
 **Version:** 1.0.0
 **Built:** March 7 at 6:52 PM
-**QMD Index:** forte-building-second-brain
-**Index Location:** ./qmd-index/
+**Gemini Index:** forte-building-second-brain
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -14,8 +14,8 @@
 **Source Book:** Building a Second Brain by Tiago Forte  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** forte-building-second-brain  
-**Index Location:** ./qmd-index/  
+**Gemini Index:** forte-building-second-brain  
+**Index Location:** ./google-embedding-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  
 **QC Status:** QC_PENDING

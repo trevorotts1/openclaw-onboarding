@@ -2,8 +2,8 @@
 **Source Book:** The PARA Method by Tiago Forte
 **Version:** 1.0.0
 **Built:** March 7 at 7:13 PM
-**QMD Index:** forte-para-method
-**Index Location:** ./qmd-index/
+**Gemini Index:** forte-para-method
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -15,8 +15,8 @@
 **Source Book:** The PARA Method by Tiago Forte
 **Version:** 1.0.0
 **Built:** March 8, 2026
-**QMD Index:** forte-para-method
-**Index Location:** ./qmd-index/
+**Gemini Index:** forte-para-method
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

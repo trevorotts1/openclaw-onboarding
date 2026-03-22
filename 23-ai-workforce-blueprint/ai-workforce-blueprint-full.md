@@ -85,12 +85,12 @@ When you trigger this skill, you have 3 options. Choose the one that fits your s
 **Best for:** First-time setup, new businesses, reorganizing
 
 **What happens:**
-1. I show you 10 pre-built departments
+1. I show you 17 pre-built departments
 2. You choose: Keep all / Keep some / Add custom / Start fresh
 3. I interview you with example-driven questions
 4. I build everything automatically
 
-**Pre-built departments:**
+**The 17 Recommended Departments:**
 
 • marketing-dept - Ads, social media, email campaigns, lead generation
 • sales-dept - Converting leads to customers
@@ -106,7 +106,14 @@ When you trigger this skill, you have 3 options. Choose the one that fits your s
 • it-tech-dept - Software, websites, infrastructure
 • web-development-dept - Websites, funnels, landing pages
 • app-development-dept - Software, mobile apps, APIs
+• research-dept - Market research, competitive analysis, data insights
+• comms-dept - Internal communications, announcements, newsletters
+• ceo-dept - Executive strategy, vision, high-level decisions
 • master-orchestrator-dept - Routes all work (always included)
+
+**Department Flexibility:**
+"Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
+- Default to keeping all 17 if the client has no preference
 
 **Department handoff rules:**
 • Creative writes ALL content — other departments produce it into final assets
@@ -623,38 +630,52 @@ Skip any question where the answer is already known from these files.
 
 #### The 7 Required Questions (With Examples)
 
+After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+
 **1. What is the purpose of this department?**
    - Example: "The Sales department converts leads into paying customers through calls, demos, and proposals"
    - Example: "The Marketing department generates awareness and brings new leads into the business"
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 **2. What roles exist inside this department?**
    - Example: "Appointment Setter, Closer, Account Manager"
    - Example: "Content Writer, Social Media Manager, Ads Specialist"
    - Example: "Just one person - a generalist who does everything"
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 **3. What does each role do day to day?**
    - Example: "The Appointment Setter makes 50-80 calls per day, books 3-5 appointments"
    - Example: "The Content Writer writes blog posts, emails, and social media content"
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 **4. What does this department receive from other departments and what does it hand off to other departments?**
    - Example: "Receives qualified leads from Marketing, hands closed deals to Operations"
    - Example: "Receives content requests from Sales, hands finished content to everyone"
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 **5. What is the tech stack for this department (tools and logins used daily)?**
    - Example: "GoHighLevel for CRM, Slack for communication, Google Calendar for scheduling"
    - Example: "Canva for design, Buffer for social posting, Google Drive for storage"
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 **6. What are the KPIs for this department (goals, targets, definition of success)?**
    - Example: "Sales: 3-5 appointments booked per day, 75% show rate, $50k monthly revenue"
    - Example: "Marketing: 10,000 impressions per week, 50 new leads per month"
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 **7. What are the most common tasks this department performs that need SOPs (list the top 10)?**
    - Example: "1. Booking appointments 2. Handling objections 3. Following up 4. Updating CRM..."
    - Example: "1. Writing blog posts 2. Scheduling social media 3. Running ad campaigns..."
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+
+**KPI Capture per department:**
+After each department is created, ask: "What does success look like for this department? How would you know it is doing a great job?"
+- If the client hesitates or says "I don't know", offer: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
+- If yes, research industry best practices and present 3 KPI options as choices, not mandates
 
 #### Context-Aware Question Flow
 
-The AI should ask questions in this priority order:
+The AI should ask questions in this priority order. After each question, add: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 1. **Check context files first** - If USER.md says the business uses GoHighLevel, don't ask "What tools do you use?" - you already know.
 
@@ -665,13 +686,29 @@ The AI should ask questions in this priority order:
 3. **Ask team structure:**
    - "What is your current team size?" (Example: Just me, 2-5 people, 10+ people)
 
-4. **Ask about existing materials:**
+4. **System Discovery Question:**
+   - "What tools do you currently use to run your business? Examples: Stripe for payments, HubSpot or Convert and Flow for your CRM, Mailchimp for email."
+   - Store this answer in the workspace config as `connectedSystems`
+
+5. **Department Flexibility Question:**
+   - "Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
+   - Default to keeping all 17 if the client has no preference
+
+6. **Progress Indicator:**
+   - After completing basic business info: "You are 30% complete."
+
+7. **Ask about existing materials:**
    - "Do you have existing SOPs, checklists, or training materials?" (Example: Yes in Google Docs / No starting fresh / Some scattered)
 
-5. **Ask about current challenges:**
+8. **Ask about current challenges:**
    - "What is your biggest challenge right now?" (Example: Following up with leads, creating content, managing invoices)
 
-6. **Then ask the 7 department-specific questions** for each selected department
+9. **Then ask the 7 department-specific questions** for each selected department
+
+10. **Progress Indicators during build:**
+    - After department creation: "You are 50% complete."
+    - After KPI setup: "You are 70% complete."
+    - At the end: "You are complete! Setting up your AI workforce now."
 
 #### Skip Known Information
 
@@ -682,6 +719,9 @@ If the AI already knows something, it should say so and skip the question:
 ✓ Good: "I see you already use GoHighLevel and Slack - I'll include those in the tech stack."
 
 ✗ Bad: Asking "What is your business name?" when it was already in USER.md
+
+**Interview Fallback:**
+After every question that IS asked (not skipped), add this line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 ---
 
@@ -1167,21 +1207,53 @@ BEFORE YOU CREATE ANYTHING:
 
 2. Interview me about my business so you understand what departments and roles I need. (Skip this step if Option B was chosen. For Option C, do the review first, then ask if the user wants a full interview or wants to proceed with the recommendations.)
 
+   After each interview question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+
    First, ask the high level questions:
    - What does your business do?
+     - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    - What are the main functions or activities in your business? (marketing, sales, billing, customer support, content creation, etc.)
+     - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    - For each function, what specific tasks get done? (writing ads, setting appointments, sending invoices, etc.)
+     - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    - Do you have existing SOPs, scripts, checklists, or training materials we can use?
+     - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    - What tools and software does your business use?
+     - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-   Then, for EACH department, ask at least 7 questions minimum (required):
+   **System Discovery Question:**
+   - "What tools do you currently use to run your business? Examples: Stripe for payments, HubSpot or Convert and Flow for your CRM, Mailchimp for email."
+   - Store this answer in the workspace config as `connectedSystems`
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+
+   **Department Flexibility Question:**
+   - "Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
+   - Default to keeping all 17 if the client has no preference
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+
+   **Progress Indicator:** After completing basic business info, tell the client: "You are 30% complete."
+
+   Then, for EACH department, ask at least 7 questions minimum (required). After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    1. What is the purpose of this department?
+      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    2. What roles exist inside this department?
+      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    3. What does each role do day to day?
+      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    4. What does this department receive from other departments and what does it hand off to other departments?
+      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    5. What is the tech stack for this department (tools and logins used daily)?
+      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    6. What are the KPIs for this department (goals, targets, definition of success)?
+      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
    7. What are the most common tasks this department performs that need SOPs (list the top 10)?
+      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+
+   **KPI Capture per department:**
+   After each department is created, ask: "What does success look like for this department? How would you know it is doing a great job?"
+   - If the client hesitates or says "I don't know", offer: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
+   - If yes, research industry best practices and present 3 KPI options as choices, not mandates
+   - After KPI capture, show progress: "You are 50% complete."
 
 3. Think step by step before creating anything. After the interview:
    - Propose the department structure you recommend (with explanations)
@@ -1302,6 +1374,8 @@ BEFORE YOU CREATE ANYTHING:
    - Good-Examples and Bad-Examples are always the last two files
    - Department Overview files list all roles and shared tech stack
 
+   **Progress Indicator:** After KPI setup is complete, tell the client: "You are 70% complete."
+
 7. Self-check (scale of 1 to 10):
    - Rate the completeness of the system you built on a scale of 1 to 10.
    - If the score is below 10, list exactly what is missing.
@@ -1382,12 +1456,21 @@ The AI should use the interview answers (or best practices) to determine the rig
 | **master-orchestrator-dept** | No roles (single occupant) | Routes all incoming work, tracks completion, creates missing SOPs |
 | **sales-dept** | Appointment Setter, Closer, Account Manager, CRM Specialist | Convert leads into customers and manage relationships |
 | **marketing-dept** | Content Writer, Social Media Manager, Ads Specialist, Email Marketer, CRM Specialist | Generate awareness, leads, and nurture prospects |
-| **creative-dept** | Graphic Designer, Video Producer, Copywriter, CRM Specialist | Produce visual, video, and written assets |
+| **creative-dept** | Copywriter, Blog Writer, Speech Writer, Presentation Writer, Script Writer | Produce written content for all channels |
+| **graphics-dept** | AI Image Generator, Brand Asset Designer, Ad Creative Designer, Thumbnail Designer | Create static images and visual assets |
+| **video-dept** | Storyboard Producer, AI Video Generator, Video Editor, Video Ad Producer | Produce video content and editing |
+| **audio-dept** | TTS Specialist, Transcription Specialist, Music Producer, Voice Agent Builder | Handle full audio lifecycle |
 | **billing-dept** | Invoice Specialist, Collections, Payment Processor, CRM Specialist | Handle invoicing, payments, and financial tracking |
 | **customer-support-dept** | Support Agent, Onboarding Specialist, Escalation Manager | Help existing customers and resolve issues |
 | **operations-dept** | Project Manager, Systems Admin, Process Analyst | Keep the business running, manage tools, improve processes |
-| **web-development-dept** | Frontend Developer, Backend Developer, Funnel Builder, Landing Page Specialist | Build and maintain websites, funnels, landing pages, and write HTML/CSS/JavaScript |
-| **app-development-dept** | Software Engineer, Mobile Developer, API Developer, QA Tester | Build software, mobile apps, desktop apps, and custom tools. Write code, test code, deploy code. |
+| **web-development-dept** | Frontend Developer, Backend Developer, Funnel Builder, Landing Page Specialist | Build and maintain websites, funnels, landing pages |
+| **app-development-dept** | Software Engineer, Mobile Developer, API Developer, QA Tester | Build software, mobile apps, APIs |
+| **hr-people-dept** | HR Manager, Recruiter, Onboarding Specialist | Team management, hiring, people operations |
+| **legal-compliance-dept** | Contract Specialist, Compliance Officer | Contracts, regulations, legal matters |
+| **it-tech-dept** | Systems Administrator, IT Support, Security Specialist | Software, websites, infrastructure, tech support |
+| **research-dept** | Market Researcher, Competitive Analyst, Data Analyst | Market research, competitive analysis, data insights |
+| **comms-dept** | Communications Manager, Newsletter Writer, Announcement Specialist | Internal communications, announcements, newsletters |
+| **ceo-dept** | Executive Assistant, Strategy Advisor | Executive strategy, vision, high-level decisions |
 
 ### About the CRM Specialist Role
 

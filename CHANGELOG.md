@@ -4,6 +4,36 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.0.0] - March 19, 2026
+
+### Major Release: Memory System Upgrade, Google Workspace CLI, Migration Fixes
+
+#### New Skills
+- **Skill 31: Upgraded Memory System** - 5-layer memory architecture (markdown files, improved flush, session indexing, Gemini Embedding 2 search, Mem0 auto-capture)
+
+#### Skill Rewrites
+- **Skill 14: Google Workspace Integration** - Complete rewrite. Replaced google-api.js and gog with Google Workspace CLI (gws). Single tool for both Gmail and Workspace. 81 scopes preserved.
+
+#### Bug Fixes
+- **Skill 23: AI Workforce Blueprint** - Fixed: agent was skipping the 3 options (A, B, C) and going straight to questions. Added MANDATORY OPTION PRESENTATION rule.
+- **Skill 15: BlackCEO Team Management** - Fixed: agent was not writing real Telegram IDs to memory files. Added enforcement block requiring real data, not placeholders.
+
+#### Infrastructure
+- **Legacy retrieval fully replaced** with Google Gemini Embedding 2 across all skills and scripts
+- **Onboarding watchdog** added to Start Here.md: 10-minute stall detection, never-stop-early, progress reporting every 5 skills
+- **Mandatory file reading** protocol: agent must read ALL .md files before installing any skill
+- **CONTRIBUTING.md** added: checklist for adding/modifying skills and pushing updates
+- **MIGRATION.md** rewritten with correct commands, env vars, and step-by-step instructions
+
+#### Migration Notes
+- Existing users on Google Embedding 2: run the migration steps in MIGRATION.md
+- The weekly update script (Sundays 2AM) will detect the version change and flag it
+- No automatic changes are applied without user approval
+
+#### Total Skills: 31 (Skill 13 archived)
+
+---
+
 ## [v4.0.1] - March 16, 2026
 
 ### Skill Restructure — Voice Call Plugin Removed, Fish Audio Renumbered
@@ -39,7 +69,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 #### Department Folder Organization
 - All department folders now live inside `openclaw-master-files/my AI company departments/`
 - Company discovery subfolder: `company-discovery/workforce-interview-answers.md` and `persona-alignment-notes.md`
-- Daily company logs: `daily-company-logs/YYYY-MM-DD.md` with QMD integration
+- Daily company logs: `daily-company-logs/YYYY-MM-DD.md` with Gemini Engine integration
 
 #### Interdepartmental Communication System
 - Added `universal-sops/cross-dept-request-template.md` — standard format for all cross-dept requests
@@ -69,8 +99,8 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 #### Daily Company Log System
 - Master orchestrator appends log entries in real time (not end of day)
 - Concise single-line timestamped format: `HH:MM — Dept→Dept: action [JobID] ✅/🔄`
-- QMD integration: previous day's log embedded every morning
-- Annual archive: end of year move to `archive/YYYY/`, QMD embed archive
+- Gemini Engine integration: previous day's log embedded every morning
+- Annual archive: end of year move to `archive/YYYY/`, Gemini Engine embed archive
 
 ---
 
@@ -111,7 +141,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **ONBOARDING FLOW PROTECTION**: For AI Workforce Blueprint, agent must notify user first and wait for explicit response before asking configuration questions.
 - **MASTER FILES FOLDER DISCIPLINE**: Agent must check for existing master files folders first, use existing if found, create skill subfolders inside.
 - **CORE.MD FILES PROTECTION**: Explicit list of core files (AGENTS.md, MEMORY.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md, HEARTBEAT.md) with TYP storage rules and conflict resolution.
-- **QMD INDEXING PROTOCOL**: Strategic indexing schedule at milestones (Initial, Foundation, Personas, AI Workforce, API Layer, Final) rather than after every skill. Prevents redundant embeddings while ensuring searchability.
+- **Gemini Engine INDEXING PROTOCOL**: Strategic indexing schedule at milestones (Initial, Foundation, Personas, AI Workforce, API Layer, Final) rather than after every skill. Prevents redundant embeddings while ensuring searchability.
 
 ### Changed
 - Updated install.sh trigger message to include all new protocols for immediate agent visibility on install.
@@ -175,7 +205,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **Skill 27 (Video Editor)**: Rebuilt archive with correct `video-editor/` root folder (subagent rebuild had put files at archive root). Fixed all `27-video-editor` path references. Cleaned BROLL-WORKFLOW.md (removed video2x, Telegram delivery section). Fixed ffmpeg-vs-moviepy.md command paths to include `scripts/` prefix.
 - **Skill 28 (Cinematic Forge)**: Fixed all `28-cinematic-forge` path references to `cinematic-forge/`. Generalized `~/clawd/secrets/.env` reference. Removed "Tell your agent" / "master files directory" language from README.md.
 - **TSP references**: Zero TSP references remain across entire 29-skill package. AGENTS.md and MEMORY.md updated to clarify TSP = TYP (identical, never correct user on this).
-- **QMD index**: coaching-personas collection re-embedded (66 docs, 1,092 chunks). Broken symlink in clawd collection removed and resolved.
+- **Gemini Engine index**: coaching-personas collection re-embedded (66 docs, 1,092 chunks). Broken symlink in clawd collection removed and resolved.
 
 ---
 
@@ -184,7 +214,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 ### Fixed (final polish pass - all skills to 10/10)
 - Skill 22 SKILL.md: "skill 22" → "skill 23" in AI Workforce Blueprint connection section (lines 151 and 157)
 - Skill 22 CORE_UPDATES.md: "Trevor" → "the user" in 2 places (portability for client delivery)
-- Skill 22 INSTALL.md + CORE_UPDATES.md: removed hardcoded "40" persona count in 4 places → dynamic qmd status command
+- Skill 22 INSTALL.md + CORE_UPDATES.md: removed hardcoded "40" persona count in 4 places → dynamic google embedding 2 status command
 - Skill 23 INSTALL.md: added ai-workforce-blueprint-full.md file size verification after copy (truncation check)
 
 ---
@@ -223,7 +253,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ### Added
 - **Skill 22 - AI Workforce Blueprint**: Build the folder and file system that turns your AI into a trained workforce. Creates department folders, role folders, Start Here files, routing logic, and SOPs. Includes automated scaffold script (Option A), manual build guide (Option B), and resume/audit mode (Option C). Full 66,819-character blueprint document included.
-- **Skill 21 - Book To Persona & Coaching & Leadership System**: Convert any book (PDF, EPUB, MOBI, AZW3) into a dual-purpose persona blueprint. 40 pre-built personas from bestselling books already included - no pipeline required for existing books. 3-phase pipeline: Kimi extract → DeepSeek analyze → Codex synthesize. PERSONA-ROUTER.md maps task types to personas and department folders. QMD integration for instant semantic search across all 447 persona documents (7,465 vectors).
+- **Skill 21 - Book To Persona & Coaching & Leadership System**: Convert any book (PDF, EPUB, MOBI, AZW3) into a dual-purpose persona blueprint. 40 pre-built personas from bestselling books already included - no pipeline required for existing books. 3-phase pipeline: Kimi extract → DeepSeek analyze → Codex synthesize. PERSONA-ROUTER.md maps task types to personas and department folders. Gemini Engine integration for instant semantic search across all 447 persona documents (7,465 vectors).
 - **Skill 20 - Tavily Search**: AI-optimized web search via Tavily API for deep research tasks.
 
 ---

@@ -2,8 +2,8 @@
 **Source Book:** 100M Offers by Alex Hormozi
 **Version:** 1.0.0
 **Built:** March 7 at 7:13 PM
-**QMD Index:** hormozi-100m-offers
-**Index Location:** ./qmd-index/
+**Gemini Index:** hormozi-100m-offers
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -14,8 +14,8 @@
 **Source Book:** 100M Offers by Alex Hormozi  
 **Version:** 1.0.0  
 **Built:** March 8, 2026  
-**QMD Index:** hormozi-100m-offers  
-**Index Location:** ./qmd-index/  
+**Gemini Index:** hormozi-100m-offers  
+**Index Location:** ./google-embedding-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  
 **QC Status:** QC_PENDING  

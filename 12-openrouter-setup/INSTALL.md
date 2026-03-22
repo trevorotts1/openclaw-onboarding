@@ -301,6 +301,9 @@ Agent adds this configuration:
         "primary": "openrouter/minimax/minimax-m2.5",
         "fallbacks": [
           "openrouter/moonshotai/kimi-k2.5",
+          "openrouter/healer-alpha",
+          "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+          "openrouter/hunter-alpha",
           "openrouter/deepseek/deepseek-r1-0528:free"
         ]
       },
@@ -400,6 +403,24 @@ Agent adds this configuration:
             "reasoning": { "effort": "medium" }
           }
         },
+        "openrouter/healer-alpha": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": { "effort": "medium" }
+          }
+        },
+        "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": { "effort": "medium" }
+          }
+        },
+        "openrouter/hunter-alpha": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": { "effort": "medium" }
+          }
+        },
         "openrouter/perplexity/sonar-pro-search": {
           "params": {
             "temperature": 0.3
@@ -432,6 +453,9 @@ NEW_MODELS='{
   "openrouter/deepseek/deepseek-v3.2": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/deepseek/deepseek-v3.2-speciale": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/deepseek/deepseek-r1-0528:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
+  "openrouter/healer-alpha": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
+  "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
+  "openrouter/hunter-alpha": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/perplexity/sonar-pro-search": {"params": {"temperature": 0.3}}
 }'
 
@@ -574,7 +598,7 @@ Actions completed:
 8. ✓ Added summaries to AGENTS.md and TOOLS.md
 
 Primary model: openrouter/minimax/minimax-m2.5
-Fallback models: openrouter/moonshotai/kimi-k2.5, openrouter/deepseek/deepseek-r1-0528:free
+Fallback models: openrouter/moonshotai/kimi-k2.5, openrouter/healer-alpha, openrouter/nvidia/nemotron-3-super-120b-a12b:free, openrouter/hunter-alpha, openrouter/deepseek/deepseek-r1-0528:free
 
 Config file: ~/.openclaw/openclaw.json
 Backup location: ~/openclaw-backup-configs/

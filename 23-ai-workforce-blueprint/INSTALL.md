@@ -77,8 +77,8 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 **Pre-flight check - verify before proceeding:**
 
 ```bash
-# Check if coaching-personas QMD collection exists
-if qmd status 2>/dev/null | grep -q "coaching-personas"; then
+# Check if coaching-personas Gemini Vector Database exists
+if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 verified: coaching-personas collection found"
   SKILL22_INSTALLED=true
 else
@@ -231,33 +231,53 @@ If you have not already absorbed `ai-workforce-blueprint-full.md` during Phase 1
 
 ### 5b. Gather Business Information from the User
 
-**DEFAULT SELECTION RULE:** If the user has not specified an option and you are running in autonomous mode, use Option B (Quick Setup) by default. If USER.md or MEMORY.md already contains business name, industry, and department structure, proceed directly to building without asking. Only ask for information that is genuinely missing.
+**🔴 MANDATORY OPTION PRESENTATION:** You MUST present all 3 options (A, B, C) to the user and WAIT for them to choose BEFORE doing anything else. Do NOT skip this step. Do NOT auto-select an option. Do NOT proceed to questions until the user has explicitly chosen A, B, or C. If the user says "start" or "begin" without specifying an option, present the 3 options and ask them to choose. NEVER default to any option silently.
 
-Ask the user these questions. Wait for answers before building anything:
+Ask the user these questions. Wait for answers before building anything. After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
 **Required questions:**
 1. "What is the name of your business?"
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 2. "What industry are you in?" (coaching, e-commerce, agency, restaurant, law firm, SaaS, etc.)
-3. "Which departments does your business need?" (Show them the starter list from the blueprint as a reference):
-   - Sales, Marketing, Creative, Billing/Finance, Customer Support, Operations
-   - Optional: Web Development, App Development, HR/People, Legal/Compliance, IT/Tech
-   - The Master Orchestrator department is always created automatically
-4. "Which setup option do you want?"
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+3. "What tools do you currently use to run your business? Examples: Stripe for payments, HubSpot or Convert and Flow for your CRM, Mailchimp for email."
+   - Store this answer in the workspace config as `connectedSystems`
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+4. "Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
+   - Default to keeping all 17 if the client has no preference
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+5. "Which setup option do you want?"
    - **Option A - Full Interview** (recommended): "I will interview you about each department - at least 7 questions per department - so I deeply understand your operations, tools, KPIs, and processes. Then I build everything with real content based on your answers."
    - **Option B - Quick Setup** (fastest): "I skip the interview and build everything now using what I already know about you from your workspace files (USER.md, MEMORY.md, etc.) plus industry best practices. You can refine later."
    - **Option C - Review First** (middle ground): "I review everything I know, come back with recommendations for departments and roles, you approve or change them, then I build."
 
+**Progress Indicator:** After completing basic business info, tell the client: "You are 30% complete."
+
 ### 5c. Execute the Chosen Option
 
 #### If Option A (Full Interview):
-For EACH department the user selected, ask at minimum these 7 questions:
+For EACH department the user selected, ask at minimum these 7 questions. After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+
 1. What is the purpose of this department?
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 2. What roles exist inside this department?
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 3. What does each role do day to day?
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 4. What does this department receive from other departments and hand off to other departments?
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 5. What is the tech stack for this department?
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 6. What are the KPIs for this department?
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 7. What are the top 10 most common tasks that need SOPs?
+   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+
+**After each department is created, capture KPIs with this question:**
+"What does success look like for this department? How would you know it is doing a great job?"
+- If the client hesitates or says "I don't know", offer: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
+- If yes, research industry best practices and present 3 KPI options as choices, not mandates
+- After each department's KPI is captured, show progress: "You are 50% complete."
 
 After all interviews complete, propose the full structure to the user. Wait for approval before building.
 
@@ -365,7 +385,7 @@ Use Source 1 if available. Fall back to Source 2, then Source 3. Combine sources
 
 ```bash
 # Re-run detection after questions complete
-if qmd status 2>/dev/null | grep -q "coaching-personas"; then
+if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 detected post-build - running persona wiring..."
   RUN_PERSONA_WIRING=true
 else
@@ -384,9 +404,9 @@ Check if Skill 22 (Book To Persona & Coaching & Leadership System) is installed.
 
 **How detection works - step by step:**
 
-1. Run this command to check for the QMD coaching-personas collection:
+1. Run this command to check for the Gemini Engine coaching-personas collection:
 ```bash
-qmd status 2>/dev/null | grep -q "coaching-personas"
+python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"
 ```
 2. If that returns exit code 0 (match found), personas are installed.
 3. As a fallback, also check for the persona skill folder:
@@ -398,7 +418,7 @@ ls ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/ 2>/dev/null
 **If coaching personas ARE detected (either check succeeds):**
 - Add a `governing-personas.md` file to every department folder
 - Add a `governing-personas.md` file to EVERY role folder (role-specific persona mapping)
-- Add a "Governing Personas" section to every `00-START-HERE.md` with QMD query instructions
+- Add a "Governing Personas" section to every `00-START-HERE.md` with Gemini Engine query instructions
 - Wire persona methodologies to department AND role operations
 
 **Role-Level Governing Personas:**
@@ -416,23 +436,23 @@ Each role gets its own `governing-personas.md` mapping personas to role-specific
 - Build proceeds clean with no persona references. No errors, no warnings.
 - Note in the completion report: "Coaching personas not detected. If you install Skill 22 later, re-run this skill in Option C (audit mode) to wire personas in."
 
-### Phase 6b - QMD Indexing (ALWAYS RUN)
+### Phase 6b - Gemini Engine Indexing (ALWAYS RUN)
 
-Regardless of whether coaching personas were detected, ALWAYS run QMD indexing after the build:
+Regardless of whether coaching personas were detected, ALWAYS run Gemini Engine indexing after the build:
 
 ```bash
 # Add/update all collections
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 
 # Generate embeddings (covers master-files + coaching-personas + workforce files)
-qmd embed
+# Handled by gemini-indexer.py
 
 # Verify completion
-qmd status
+python3 ~/clawd/scripts/gemini-indexer.py --status
 ```
 
 **Why this happens here:**
-- Skill 22 no longer runs QMD embed (to avoid double-embedding)
+- Skill 22 no longer runs Gemini Engine embed (to avoid double-embedding)
 - Skill 23 indexes everything at once: master-files + coaching-personas + workforce structure
 - One embed covers all collections, saving time and compute
 
@@ -476,6 +496,8 @@ Rate the build on a scale of 1 to 10:
 - Below 10 = list exactly what is missing and fix it before proceeding
 
 **Announce to user:** "Build verification complete. Score: [X]/10. [Details of any gaps or confirmation that everything is solid.]"
+
+**Progress Indicator:** After KPI setup is complete, tell the client: "You are 70% complete."
 
 ---
 
@@ -599,7 +621,9 @@ Before reporting done, verify every item:
 
 **Final announcement to user:**
 
-> "AI Workforce Blueprint installation complete.
+> "You are complete! Setting up your AI workforce now.
+>
+> AI Workforce Blueprint installation complete.
 >
 > **Business:** [name]
 > **Workforce location:** [path]

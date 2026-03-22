@@ -8,14 +8,14 @@
 ```
 PDF → Text Extraction (pdfplumber, free) → .txt file
                                               ↓
-                              Phase 1: Kimi K2.5 (Extraction)
+                              Phase 1: kimi-k2.5 via api.moonshot.ai/v1 (Extraction)
                                     ↓ extraction-notes.md
-                              Phase 2: DeepSeek V3.2-Speciale (Analysis)
+                              Phase 2: deepseek/deepseek-v3.2 via OpenRouter (Analysis)
                                     ↓ analysis-notes.md
-                              Phase 3: GPT-5.3 Codex (Synthesis) ← fallback: Kimi K2.5
+                              Phase 3: openai-codex/gpt-5.4 via OAuth (Synthesis) ← fallback: kimi-k2.5
                                     ↓ persona-blueprint.md
-                              QMD Indexing
-                                    ↓ searchable via qmd query
+                              Gemini Engine Indexing
+                                    ↓ searchable via Gemini semantic search
 ```
 
 ---
@@ -43,11 +43,16 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 ## Phase 1 - Extraction (Kimi K2.5)
 
-**Model:** moonshot/kimi-k2.5
-**Route:** Moonshot direct API (MOONSHOT_API_KEY)
+**Model:** `kimi-k2.5` (via Moonshot API)
+**Route:** `https://api.moonshot.ai/v1` (direct API)
+**API Key:** `MOONSHOT_API_KEY` in `~/clawd/secrets/.env`
+**Fallback:** `openrouter/moonshotai/kimi-k2.5` (if content filter triggers)
 **Context:** 262K tokens
 **Max output:** 96K tokens
+**Temperature:** 1.0 (MUST be exactly 1.0)
 **Prompt:** agent-prompts/extraction-agent-prompt.md
+**Cost estimate:** ~$0.50-1.50 per book (varies by length)
+**Expected output:** `extraction-notes.md` (5,000+ characters)
 
 **What it extracts (20 items):**
 - Coaching lens (items 1-11): Author background, central problem, root cause, full methodology,
@@ -69,12 +74,17 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 ---
 
-## Phase 2 - Analysis (DeepSeek V3.2-Speciale)
+## Phase 2 - Analysis (DeepSeek V3.2)
 
-**Model:** deepseek/deepseek-v3.2-speciale
-**Route:** OpenRouter
-**Context:** 163K tokens
+**Model:** `deepseek/deepseek-v3.2` (via OpenRouter)
+**Route:** `https://openrouter.ai/api/v1/chat/completions`
+**API Key:** `OPENROUTER_API_KEY` in `~/clawd/secrets/.env`
+**OpenRouter model ID:** `deepseek/deepseek-v3.2` or `openrouter/deepseek/deepseek-v3.2`
+**Context:** 128K tokens
+**Max output:** 8K tokens
 **Prompt:** agent-prompts/analysis-agent-prompt.md
+**Cost estimate:** ~$0.30-0.80 per book
+**Expected output:** `analysis-notes.md` (3,000+ characters)
 
 **What it analyzes (12 dimensions):**
 1. True operating system (mechanism behind the methodology)
@@ -103,16 +113,19 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 ---
 
-## Phase 3 - Synthesis (GPT-5.3 Codex + Fallback)
+## Phase 3 - Synthesis (GPT-5.4 Codex + Fallback)
 
-**PRIMARY Model:** openai-codex/gpt-5.3-codex
-**Route:** OpenClaw OAuth (ChatGPT subscription - NOT OpenRouter, NOT API key)
-**Context:** 400K tokens
+**PRIMARY Model:** `openai-codex/gpt-5.4` (via OpenAI OAuth)
+**Route:** OpenClaw OAuth (ChatGPT subscription - NOT API key)
+**API Type:** OpenAI Responses API (`/v1/responses`)
+**Context:** 1M tokens (2x pricing past 272K context)
 **Max output:** 128K tokens
 **Prompt:** agent-prompts/synthesis-agent-prompt.md
+**Cost estimate:** ~$2-5 per book (varies by length and context window used)
+**Expected output:** `persona-blueprint.md` (10,000+ characters, all 14 sections)
 
-**FALLBACK Model:** moonshot/kimi-k2.5
-**Fallback trigger:** Any of these:
+**FALLBACK Model:** `kimi-k2.5` via Moonshot API
+**Fallback triggers (ANY of these):**
 - API error or rate limit (429)
 - Timeout after 15 minutes
 - Output under 5,000 characters (truncated)
@@ -144,21 +157,20 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 ---
 
-## Phase 4 - QMD Indexing
+## Phase 4 - Gemini Engine Indexing
 
 After Phase 3 completes for a book:
 
 ```bash
 # If collection doesn't exist yet
-qmd collection add [master-files]/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
 
 # Update index with new blueprint
-qmd update
+python3 ~/clawd/scripts/gemini-indexer.py
 
 # Generate vector embeddings
-qmd embed
+# Handled by gemini-indexer.py
 ```
 
 ---
@@ -184,7 +196,7 @@ qmd embed
     "phase2": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
     "phase3": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
     "phase3_model_used": "gpt-5.3-codex | kimi-k2.5 (fallback)",
-    "qmd_indexed": true,
+    "google_embedding_2_indexed": true,
     "started": "March 7 at 3:30 PM",
     "completed": "March 7 at 3:52 PM",
     "errors": []
@@ -202,7 +214,7 @@ qmd embed
 | Phase 1 Kimi | 3-8 min | ~8 min | ~25 min |
 | Phase 2 DeepSeek | 2-5 min | ~5 min | ~18 min |
 | Phase 3 Codex | 5-12 min | ~12 min | ~40 min |
-| QMD indexing | 1-2 min | ~2 min | ~5 min |
+| Gemini Engine indexing | 1-2 min | ~2 min | ~5 min |
 | **Total** | | | **~1.5 hours** |
 
 With full 21 simultaneous: ~35-45 minutes total.

@@ -1,330 +1,222 @@
 # Google Workspace Integration - Examples
 
-Real examples showing the Google Workspace integration in action, including command-line usage, API calls, and AI interactions.
+Real examples showing the Google Workspace CLI (gws) in action.
 
 ---
 
-## Example 1: Automated Setup (Agent-Driven)
+## Gmail Examples
 
-The agent handles the full setup autonomously. When triggered, it:
-
-1. Detects account type: Workspace (service account path) or Gmail (OAuth path)
-2. Uses Playwright with `launchPersistentContext` (session stored at `~/.openclaw/playwright-data/`)
-3. Creates a GCP project
-4. Enables all required APIs (Gmail, Calendar, Drive, Docs, Sheets, Slides, Chat, Forms, Keep, Admin, Analytics, Tag Manager, Search Console, YouTube, Places, Looker Studio)
-5. Creates a service account with domain-wide delegation (Workspace path)
-   OR creates OAuth Desktop credentials (Gmail path)
-6. Downloads and secures the JSON key or OAuth credentials file
-7. Sets `GOOGLE_SA_KEY_FILE` and `GOOGLE_IMPERSONATE_USER` (Workspace) or `GOG_DEFAULT_ACCOUNT` (Gmail)
-8. Installs and configures the GOG skill
-9. Tests every service
-
-The agent pauses only for browser login (first time), missing API keys, or 2FA codes. Everything else executes continuously without interruption.
-
----
-
-## Example 2: Testing Gmail
-
-**Command line:**
-
+### Send an Email
 ```bash
-node google-api.js gmail unread --limit 3 --pretty
+gws gmail messages send --json '{
+  "to": "sarah@company.com",
+  "subject": "Q3 Budget Review",
+  "body": "Hi Sarah, I have reviewed the Q3 budget. Can we schedule a call to discuss? Thanks!"
+}'
 ```
 
-**Expected output (success):**
-
-```json
-{
-  "messages": [
-    {
-      "id": "19c7b789ef2d56f0",
-      "from": "sarah@company.com",
-      "subject": "Q3 Budget Review",
-      "date": "2026-02-28T14:15:00Z",
-      "snippet": "Hi, here are the Q3 numbers..."
-    },
-    {
-      "id": "19c7b6a2d4e1f3b8",
-      "from": "newsletter@industry.com",
-      "subject": "Weekly Industry Update",
-      "date": "2026-02-28T10:00:00Z",
-      "snippet": "This week in AI..."
-    },
-    {
-      "id": "19c7b5c1a3b2d4e5",
-      "from": "john@vendor.com",
-      "subject": "Invoice #1234",
-      "date": "2026-02-27T16:30:00Z",
-      "snippet": "Attached is the invoice for..."
-    }
-  ],
-  "resultCount": 3
-}
-```
-
-**If you see an error instead:**
-
-```
-Error: 401 Unauthorized
-```
-
-Check: OAuth Consent Screen configured? DWD authorized? All 5 Gmail scopes in the scope list?
-
----
-
-## Example 3: Testing Calendar
-
-**Command line:**
-
+Using the helper:
 ```bash
-node google-api.js calendar today --pretty
+gws gmail +send
 ```
 
-**Expected output (success):**
-
-```json
-{
-  "events": [
-    {
-      "summary": "Team Standup",
-      "start": "2026-02-28T09:00:00-05:00",
-      "end": "2026-02-28T09:30:00-05:00",
-      "location": "Zoom"
-    },
-    {
-      "summary": "Client Call - Pam Perry",
-      "start": "2026-02-28T14:00:00-05:00",
-      "end": "2026-02-28T15:00:00-05:00",
-      "location": "Google Meet"
-    }
-  ]
-}
-```
-
----
-
-## Example 4: Searching Google Drive
-
-**Command line:**
-
+### Reply to an Email
+First get the message ID from a list or search, then:
 ```bash
-node google-api.js drive search "quarterly report" --pretty
+gws gmail messages send --json '{
+  "to": "sarah@company.com",
+  "subject": "Re: Q3 Budget Review",
+  "body": "Thanks for the quick response. Wednesday works for me.",
+  "threadId": "THREAD_ID_HERE"
+}'
 ```
 
-**Expected output:**
-
-```json
-{
-  "files": [
-    {
-      "id": "1abc2def3ghi4jkl",
-      "name": "Q3 Quarterly Report - Final",
-      "mimeType": "application/vnd.google-apps.document",
-      "modifiedTime": "2026-02-15T10:30:00Z"
-    },
-    {
-      "id": "5mno6pqr7stu8vwx",
-      "name": "Quarterly Report Template",
-      "mimeType": "application/vnd.google-apps.spreadsheet",
-      "modifiedTime": "2026-01-10T08:15:00Z"
-    }
-  ]
-}
-```
-
----
-
-## Example 5: Searching Contacts
-
-**Command line:**
-
+### Triage Unread Emails
 ```bash
-node google-api.js contacts search "Pam Perry" --pretty
+gws gmail +triage
 ```
 
-**Expected output:**
+This shows unread emails organized by priority.
 
-```json
-{
-  "connections": [
-    {
-      "name": "Pam Perry",
-      "emails": ["pam@company.com", "pamperry@gmail.com"],
-      "phones": ["+1 (404) 555-1234"]
-    }
-  ]
-}
-```
-
----
-
-## Example 6: Sending an Email
-
-**Command line:**
-
+### Search Emails
 ```bash
-node google-api.js gmail send --to "sarah@company.com" --subject "Meeting Reschedule" --body "Hi Sarah, I need to move our meeting from Tuesday to Wednesday at the same time. Does that work? Thanks,"
+gws gmail messages list --params '{"q": "from:client@email.com newer_than:7d"}'
 ```
 
-**Expected output:**
-
-```json
-{
-  "id": "19c7c890ab3d67e2",
-  "threadId": "19c7c890ab3d67e2",
-  "labelIds": ["SENT"]
-}
-```
-
----
-
-## Example 7: Reading a Google Sheet
-
-**Command line:**
-
+Using the helper:
 ```bash
-node google-api.js sheets read 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms "Sheet1!A1:D5" --pretty
+gws gmail +search
 ```
 
-**Expected output:**
-
-```json
-{
-  "range": "Sheet1!A1:D5",
-  "values": [
-    ["Name", "Email", "Status", "Revenue"],
-    ["John Smith", "john@example.com", "Active", "$15,000"],
-    ["Sarah Chen", "sarah@company.com", "Active", "$22,500"],
-    ["Mike Johnson", "mike@vendor.com", "Pending", "$8,000"],
-    ["Lisa Wang", "lisa@partner.com", "Active", "$31,200"]
-  ]
-}
-```
-
----
-
-## Example 8: Managing Tasks
-
-**List all task lists:**
-
+Search for emails with attachments:
 ```bash
-node google-api.js tasks lists --pretty
+gws gmail messages list --params '{"q": "has:attachment filename:pdf"}'
 ```
 
-**Output:**
+---
 
-```json
-{
-  "items": [
-    {
-      "id": "MDcyNjE2NTI4MzM2MDQ3MzQ1OTk6MDow",
-      "title": "My Tasks"
-    },
-    {
-      "id": "MDcyNjE2NTI4MzM2MDQ3MzQ1OTk6MTA2MzYzMTk0NzoxMA",
-      "title": "Work Projects"
-    }
-  ]
-}
-```
+## Calendar Examples
 
-**Create a new task:**
-
+### Show Today's Agenda
 ```bash
-node google-api.js tasks create MDcyNjE2NTI4MzM2MDQ3MzQ1OTk6MDow --title "Follow up with client by Friday" --pretty
+gws calendar +agenda
 ```
 
-**Output:**
-
-```json
-{
-  "id": "abc123",
-  "title": "Follow up with client by Friday",
-  "status": "needsAction"
-}
-```
-
----
-
-## Example 9: Searching for Places
-
-**Command line:**
-
+### List Events for a Date Range
 ```bash
-node google-api.js places search "coffee shops near Times Square" --pretty
+gws calendar events list --params '{
+  "timeMin": "2026-03-20T00:00:00Z",
+  "timeMax": "2026-03-27T23:59:59Z"
+}'
 ```
 
-**Expected output:**
+### Create an Event
+```bash
+gws calendar events create --json '{
+  "summary": "Team Standup",
+  "start": {"dateTime": "2026-03-20T09:00:00", "timeZone": "America/New_York"},
+  "end": {"dateTime": "2026-03-20T09:30:00", "timeZone": "America/New_York"},
+  "attendees": [{"email": "teammate@company.com"}]
+}'
+```
 
-```json
-{
-  "places": [
-    {
-      "name": "Blue Bottle Coffee",
-      "address": "1 Rockefeller Plaza, New York, NY 10020",
-      "rating": 4.3,
-      "priceLevel": "MODERATE"
-    },
-    {
-      "name": "Starbucks Reserve",
-      "address": "1585 Broadway, New York, NY 10036",
-      "rating": 4.1,
-      "priceLevel": "MODERATE"
-    }
-  ]
-}
+Using the helper:
+```bash
+gws calendar +create
 ```
 
 ---
 
-## Example 10: JWT Token Exchange (For AI Agents Making Direct API Calls)
+## Drive Examples
 
-This is the code pattern your AI uses behind the scenes to authenticate:
+### List Files
+```bash
+gws drive files list --params '{"pageSize": 10}'
+```
 
-```javascript
-const crypto = require("crypto");
-const https = require("https");
-const fs = require("fs");
+### Search Files
+```bash
+gws drive files list --params '{"q": "name contains \"Quarterly Report\""}'
+```
 
-const sa = JSON.parse(fs.readFileSync(process.env.GOOGLE_SA_KEY_FILE, "utf8"));
-const now = Math.floor(Date.now() / 1000);
+Using the helper:
+```bash
+gws drive +search
+```
 
-const header = Buffer.from(JSON.stringify({
-  alg: "RS256", typ: "JWT"
-})).toString("base64url");
+### Upload a File
+```bash
+gws drive files upload --file /path/to/document.pdf
+```
 
-const payload = Buffer.from(JSON.stringify({
-  iss: sa.client_email,                     // Service account email
-  sub: process.env.GOOGLE_IMPERSONATE_USER, // User to impersonate
-  aud: sa.token_uri,                        // Token endpoint
-  iat: now,                                 // Issued now
-  exp: now + 3600,                          // Expires in 1 hour
-  scope: "https://mail.google.com/"         // The scope you need
-})).toString("base64url");
+Using the helper:
+```bash
+gws drive +upload
+```
 
-const signature = crypto.sign(
-  "sha256",
-  Buffer.from(header + "." + payload),
-  sa.private_key
-).toString("base64url");
-
-const jwt = header + "." + payload + "." + signature;
-
-// Exchange JWT for access token:
-// POST to https://oauth2.googleapis.com/token
-// Body: grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=<jwt>
-// Response: { "access_token": "ya29.xxx", "token_type": "Bearer", "expires_in": 3600 }
+### Download a File
+```bash
+gws drive files get --fileId YOUR_FILE_ID --download --destination /path/to/save/
 ```
 
 ---
 
-## Example 11: Asking Your AI (Conversation Style)
+## Sheets Examples
 
-Here is what a typical conversation looks like after setup:
+### Create a New Spreadsheet
+```bash
+gws sheets spreadsheets create --json '{
+  "properties": {"title": "Sales Tracker 2026"}
+}'
+```
+
+### Read Cell Values
+```bash
+gws sheets spreadsheets values get \
+  --spreadsheetId YOUR_SPREADSHEET_ID \
+  --range "Sheet1!A1:D10"
+```
+
+Using the helper:
+```bash
+gws sheets +read
+```
+
+### Append Rows to a Sheet
+```bash
+gws sheets spreadsheets values append \
+  --spreadsheetId YOUR_SPREADSHEET_ID \
+  --range "Sheet1!A1" \
+  --json '{
+    "values": [["John Smith", "john@example.com", "Active", "$15000"]]
+  }'
+```
+
+Using the helper:
+```bash
+gws sheets +append
+```
+
+---
+
+## Docs Examples
+
+### Create a Document
+```bash
+gws docs documents create --json '{
+  "title": "Meeting Notes - March 20"
+}'
+```
+
+Using the helper:
+```bash
+gws docs +write
+```
+
+### Read a Document
+```bash
+gws docs documents get --documentId YOUR_DOCUMENT_ID
+```
+
+---
+
+## Workflow Helpers
+
+### Generate a Standup Report
+```bash
+gws +standup-report
+```
+
+This helper gathers your recent emails, calendar events, and tasks to generate a standup summary.
+
+### Meeting Preparation
+```bash
+gws +meeting-prep
+```
+
+This helper collects information about upcoming meetings, including attendee details from contacts and relevant emails.
+
+### Weekly Digest
+```bash
+gws +weekly-digest
+```
+
+This helper creates a summary of your week: emails sent, meetings attended, tasks completed, and upcoming priorities.
+
+---
+
+## Example Conversation with Your AI
+
+Here is what a typical interaction looks like after setup:
 
 **You:** Check my email for anything from Pam Perry this week
 
-**AI:** I found 2 emails from Pam Perry this week:
+**AI:** I will search your Gmail for emails from Pam Perry in the last 7 days.
+```bash
+gws gmail messages list --params '{"q": "from:pam@company.com newer_than:7d"}'
+```
+
+I found 2 emails from Pam Perry this week:
 
 1. Subject: "Event Venue Options"
    Date: Wednesday at 3:15 PM
@@ -341,7 +233,7 @@ Would you like me to read the full text of either email?
 **AI:** Here is the full email:
 
 From: Pam Perry (pam@company.com)
-Date: Wednesday, February 26, 2026 at 3:15 PM
+Date: Wednesday, March 18, 2026 at 3:15 PM
 Subject: Event Venue Options
 
 Hi,
@@ -357,93 +249,16 @@ All three are available on April 12. Let me know which direction you want to go 
 Best,
 Pam
 
----
+**You:** Create a calendar event for us to discuss this on Friday at 2 PM
 
-## Example 12: Error Recovery (Self-Correction in Action)
-
-**Scenario:** The AI tries to check Workspace email using GOG CLI and gets an error.
-
-**Wrong approach (what NOT to do):**
-
-```
-AI: I tried to check your email but got a 401 Unauthorized error.
-I cannot access your Gmail. You may need to reconfigure the credentials.
-```
-
-**Correct approach (self-correction):**
-
-```
-AI: I got a 401 error using GOG CLI for user@yourdomain.com.
-That is a Workspace account - I should be using google-api.js,
-not GOG. Let me switch tools and try again.
-
-[Switches to google-api.js]
-
-Here are your 3 most recent unread emails:
-1. From: sarah@company.com - "Q3 Budget Review"
-2. From: newsletter@industry.com - "Weekly Update"
-3. From: john@vendor.com - "Invoice #1234"
-```
-
-The AI identifies the wrong tool, corrects itself, and retries - without pushing the problem back to the user.
-
----
-
-## Example 13: Verifying Setup Is Complete
-
-Run these commands in Terminal to confirm everything is set up correctly:
-
+**AI:** I will create that meeting now.
 ```bash
-# Check Node.js version (must be 18+)
-node --version
-
-# Check environment variables
-echo "SA Key File: $GOOGLE_SA_KEY_FILE"
-echo "Impersonate User: $GOOGLE_IMPERSONATE_USER"
-echo "Places API Key: $GOOGLE_PLACES_API_KEY"
-
-# Test each service
-echo "=== Gmail ==="
-node google-api.js gmail unread --limit 1 --pretty
-
-echo "=== Calendar ==="
-node google-api.js calendar today --pretty
-
-echo "=== Drive ==="
-node google-api.js drive list --limit 1 --pretty
-
-echo "=== Contacts ==="
-node google-api.js contacts list --limit 1 --pretty
-
-echo "=== Sheets ==="
-node google-api.js sheets list --pretty
-
-echo "=== Docs ==="
-node google-api.js docs list --pretty
-
-echo "=== Slides ==="
-node google-api.js slides list --pretty
-
-echo "=== Tasks ==="
-node google-api.js tasks lists --pretty
-
-echo "=== YouTube ==="
-node google-api.js youtube channels --pretty
-
-echo "=== Chat ==="
-node google-api.js chat spaces --pretty
-
-echo "=== Places ==="
-node google-api.js places search "coffee near me" --pretty
-
-echo "=== Forms ==="
-node google-api.js forms list --pretty
-
-echo "=== Keep ==="
-node google-api.js keep list --pretty
-
-echo "=== Admin ==="
-node google-api.js admin users --limit 1 --pretty
+gws calendar events create --json '{
+  "summary": "Discuss Event Venues with Pam",
+  "start": {"dateTime": "2026-03-20T14:00:00", "timeZone": "America/New_York"},
+  "end": {"dateTime": "2026-03-20T15:00:00", "timeZone": "America/New_York"},
+  "attendees": [{"email": "pam@company.com"}]
+}'
 ```
 
-Each command should return JSON data. If any command returns an error, check the Troubleshooting section in INSTALL.md.
+Done! I have scheduled the meeting for Friday, March 20 at 2:00 PM and invited Pam.

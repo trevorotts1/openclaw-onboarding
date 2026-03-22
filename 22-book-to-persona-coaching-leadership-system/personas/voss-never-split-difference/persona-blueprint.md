@@ -2,8 +2,8 @@
 **Source Book:** Never Split the Difference by Chris Voss
 **Version:** 1.0.0
 **Built:** March 7 at 4:26 PM
-**QMD Index:** voss-never-split-difference
-**Index Location:** ./qmd-index/
+**Gemini Index:** voss-never-split-difference
+**Index Location:** ./google-embedding-index/
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING
@@ -14,8 +14,8 @@
 **Source Book:** *Never Split the Difference* by Chris Voss  
 **Version:** 1.0.0  
 **Built:** March 7, 2026  
-**QMD Index:** voss-never-split-difference  
-**Index Location:** ./qmd-index/  
+**Gemini Index:** voss-never-split-difference  
+**Index Location:** ./google-embedding-index/  
 **Coaching Mode:** BUILT  
 **Task Mode:** BUILT  
 **QC Status:** QC_PENDING  
