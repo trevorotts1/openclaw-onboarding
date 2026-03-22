@@ -41,18 +41,25 @@ CHUNK_OVERLAP = 200
 # Helpers
 # ---------------------------------------------------------------------------
 def get_api_key():
-    env_path = os.path.expanduser("~/clawd/secrets/.env")
-    api_key = None
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("GOOGLE_API_KEY=") or line.startswith("GEMINI_API_KEY="):
-                    api_key = line.split("=", 1)[1].strip('"\'')
-                    break
-    if not api_key:
-        api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    return api_key
+    # Priority 1: OpenClaw standard location
+    openclaw_env = os.path.expanduser("~/.openclaw/.env")
+    # Priority 2: OpenClaw secrets folder
+    secrets_env = os.path.expanduser("~/.openclaw/secrets/.env")
+    # Priority 3: Clawd secrets (Trevor's machine only)
+    clawd_env = os.path.expanduser("~/clawd/secrets/.env")
+    # Priority 4: User's workspace
+    workspace_env = os.path.expanduser("~/.config/openclaw/.env")
+
+    for env_path in [openclaw_env, secrets_env, clawd_env, workspace_env]:
+        if os.path.exists(env_path):
+            with open(env_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("GOOGLE_API_KEY=") or line.startswith("GEMINI_API_KEY="):
+                        return line.split("=", 1)[1].strip('"\'')
+
+    # Priority 5: Environment variables
+    return os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
 
 def resolve_dir(config):
     if os.path.isdir(config["primary"]):
