@@ -99,6 +99,45 @@ echo "$ONBOARDING_VERSION" > "$ONBOARDING_DIR/.onboarding-version"
 echo "  Version: $ONBOARDING_VERSION"
 
 # ----------------------------------------------------------
+# Step 3b: Set up Gemini Engine (semantic search)
+# ----------------------------------------------------------
+echo ""
+echo "[3b/5] Setting up Gemini Engine (semantic search)..."
+SKILLS_DIR="$HOME/.openclaw/skills"
+SCRIPTS_DIR="$HOME/clawd/scripts"
+mkdir -p "$SCRIPTS_DIR"
+
+# Copy gemini-indexer.py to the expected location
+if [ -f "$ONBOARDING_DIR/scripts/gemini-indexer.py" ]; then
+  cp "$ONBOARDING_DIR/scripts/gemini-indexer.py" "$SCRIPTS_DIR/gemini-indexer.py"
+  chmod +x "$SCRIPTS_DIR/gemini-indexer.py"
+  echo "  Copied gemini-indexer.py to $SCRIPTS_DIR/"
+else
+  echo "  gemini-indexer.py not found in onboarding scripts (will need manual setup)"
+fi
+
+# Install google-genai Python package if not present
+if ! python3 -c "import google.genai" 2>/dev/null; then
+  echo "  Installing google-genai Python package..."
+  pip3 install google-genai --break-system-packages 2>/dev/null || \
+  pip3 install google-genai 2>/dev/null || \
+  echo "  Warning: google-genai install failed. You may need to install it manually: pip3 install google-genai"
+else
+  echo "  google-genai already installed"
+fi
+
+# Check for GOOGLE_API_KEY
+if grep -q "GOOGLE_API_KEY" ~/clawd/secrets/.env 2>/dev/null; then
+  echo "  GOOGLE_API_KEY found in ~/clawd/secrets/.env"
+elif grep -q "GEMINI_API_KEY" ~/clawd/secrets/.env 2>/dev/null; then
+  echo "  GEMINI_API_KEY found in ~/clawd/secrets/.env"
+else
+  echo "  Warning: No Google API key found. Add GOOGLE_API_KEY to ~/clawd/secrets/.env before running Gemini Engine indexing."
+fi
+
+echo "  Gemini Engine setup complete"
+
+# ----------------------------------------------------------
 # Step 4: Set up backup folder
 # ----------------------------------------------------------
 echo ""
