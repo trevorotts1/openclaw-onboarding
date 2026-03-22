@@ -1,0 +1,214 @@
+{
+  "version": "1.0",
+  "description": "Intelligent Workspace Staffing interview questions. 6 questions per department x 17 departments = 102 questions. Each yes-answer triggers a specialist agent creation.",
+  "decision_rule": {
+    "permanent": "Task runs daily/weekly/monthly AND needs memory of past work OR maintains ongoing relationships",
+    "subagent": "Task is one-time, occasional, or batch with no dependency on history"
+  },
+  "departments": [
+    {
+      "department": "marketing",
+      "display_name": "Marketing",
+      "questions": [
+        { "id": "mkt-1", "question": "Does your marketing team post content on social media on a daily or weekly schedule?", "specialist": "Social Media Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "social-media-manager" },
+        { "id": "mkt-2", "question": "Do you send email newsletters or email campaigns on a recurring basis (weekly or more)?", "specialist": "Email Marketing Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "email-marketing-specialist" },
+        { "id": "mkt-3", "question": "Do you run paid advertising campaigns continuously (Facebook Ads, Google Ads, etc.)?", "specialist": "Paid Ads Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "paid-ads-specialist" },
+        { "id": "mkt-4", "question": "Do you create SEO content on an ongoing basis (blog posts, articles, landing pages)?", "specialist": "SEO Content Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "seo-content-specialist" },
+        { "id": "mkt-5", "question": "Do you manage a CRM or marketing automation platform that tracks leads over time?", "specialist": "Marketing CRM Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "marketing-crm-specialist" },
+        { "id": "mkt-6", "question": "Do you occasionally need one-off creative assets like a single flyer or one-time campaign design?", "specialist": "Creative Producer", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "creative-producer" }
+      ]
+    },
+    {
+      "department": "sales",
+      "display_name": "Sales",
+      "questions": [
+        { "id": "sal-1", "question": "Does your sales team manage ongoing lead follow-up sequences like drip campaigns or nurture flows?", "specialist": "Lead Nurturing Specialist", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "lead-nurturing-specialist" },
+        { "id": "sal-2", "question": "Does your team maintain ongoing prospect relationships over weeks or months before closing?", "specialist": "Account Development Rep", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "account-development-rep" },
+        { "id": "sal-3", "question": "Does your team send proposals and negotiate contracts on a regular basis?", "specialist": "Proposal Specialist", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "proposal-specialist" },
+        { "id": "sal-4", "question": "Does your team manage a CRM pipeline that needs daily or weekly updates?", "specialist": "Sales CRM Specialist", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "sales-crm-specialist" },
+        { "id": "sal-5", "question": "Do you occasionally need one-time prospect research or list building?", "specialist": "Prospect Researcher", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "prospect-researcher" },
+        { "id": "sal-6", "question": "Do you run one-time sales campaigns or blitzes that do not repeat?", "specialist": "Sales Campaign Specialist", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "sales-campaign-specialist" }
+      ]
+    },
+    {
+      "department": "billing",
+      "display_name": "Billing/Finance",
+      "questions": [
+        { "id": "bil-1", "question": "Does your team send invoices on a recurring schedule (monthly, weekly, or quarterly)?", "specialist": "Billing Coordinator", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "billing-coordinator" },
+        { "id": "bil-2", "question": "Does your team follow up on overdue accounts or collections regularly?", "specialist": "Collections Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "collections-specialist" },
+        { "id": "bil-3", "question": "Does your team generate financial reports on a regular basis (weekly or monthly)?", "specialist": "Financial Reporting Analyst", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "financial-reporting-analyst" },
+        { "id": "bil-4", "question": "Does your team manage subscriptions or recurring billing that needs continuous tracking?", "specialist": "Subscription Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "subscription-manager" },
+        { "id": "bil-5", "question": "Do you occasionally need one-time financial analysis, audits, or budget reviews?", "specialist": "Financial Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "financial-analyst" },
+        { "id": "bil-6", "question": "Do you occasionally need one-time expense categorization or tax preparation help?", "specialist": "Tax Prep Assistant", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "tax-prep-assistant" }
+      ]
+    },
+    {
+      "department": "support",
+      "display_name": "Customer Support",
+      "questions": [
+        { "id": "sup-1", "question": "Does your team handle customer support tickets on a daily or ongoing basis?", "specialist": "Support Ticket Agent", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "support-ticket-agent" },
+        { "id": "sup-2", "question": "Does your team maintain a knowledge base or FAQ that needs regular updates?", "specialist": "Knowledge Base Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "knowledge-base-manager" },
+        { "id": "sup-3", "question": "Does your team conduct regular customer check-ins or customer success calls?", "specialist": "Customer Success Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "customer-success-manager" },
+        { "id": "sup-4", "question": "Does your team manage customer onboarding as a continuous process?", "specialist": "Onboarding Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "onboarding-specialist" },
+        { "id": "sup-5", "question": "Do you occasionally need one-time bug reports or issue investigations?", "specialist": "Bug Report Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "bug-report-analyst" },
+        { "id": "sup-6", "question": "Do you occasionally need one-time customer surveys or feedback collection?", "specialist": "Survey Specialist", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "survey-specialist" }
+      ]
+    },
+    {
+      "department": "operations",
+      "display_name": "Operations",
+      "questions": [
+        { "id": "ops-1", "question": "Does your team run recurring operational processes (daily checks, weekly reviews)?", "specialist": "Operations Coordinator", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "operations-coordinator" },
+        { "id": "ops-2", "question": "Does your team manage vendor relationships that require ongoing communication?", "specialist": "Vendor Relations Manager", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "vendor-relations-manager" },
+        { "id": "ops-3", "question": "Does your team track inventory or resources on a continuous basis?", "specialist": "Inventory Manager", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "inventory-manager" },
+        { "id": "ops-4", "question": "Does your team manage projects with ongoing deadlines and task tracking?", "specialist": "Project Manager", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "project-manager" },
+        { "id": "ops-5", "question": "Do you occasionally need one-time process documentation or SOP creation?", "specialist": "Process Documenter", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "process-documenter" },
+        { "id": "ops-6", "question": "Do you occasionally need one-time workflow audits or efficiency reviews?", "specialist": "Efficiency Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "efficiency-analyst" }
+      ]
+    },
+    {
+      "department": "creative",
+      "display_name": "Creative",
+      "questions": [
+        { "id": "cre-1", "question": "Does your team produce written content on a recurring schedule (daily blog posts, weekly newsletters)?", "specialist": "Content Producer", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "content-producer" },
+        { "id": "cre-2", "question": "Does your team manage a content calendar with ongoing deadlines and publishing schedules?", "specialist": "Content Calendar Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "content-calendar-manager" },
+        { "id": "cre-3", "question": "Does your team write copy for ads, sales pages, or marketing materials regularly?", "specialist": "Copywriter", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "copywriter" },
+        { "id": "cre-4", "question": "Does your team create scripts for videos, podcasts, or presentations on an ongoing basis?", "specialist": "Script Writer", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "script-writer" },
+        { "id": "cre-5", "question": "Do you occasionally need one-off creative projects like a single speech or one-time presentation?", "specialist": "Creative Project Producer", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "creative-project-producer" },
+        { "id": "cre-6", "question": "Do you occasionally need one-time copywriting like a single landing page or one-off email?", "specialist": "One-Time Copywriter", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "one-time-copywriter" }
+      ]
+    },
+    {
+      "department": "hr",
+      "display_name": "HR/People",
+      "questions": [
+        { "id": "hr-1", "question": "Does your team conduct ongoing recruitment and hiring activities?", "specialist": "Recruitment Coordinator", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "recruitment-coordinator" },
+        { "id": "hr-2", "question": "Does your team manage employee onboarding as a continuous process?", "specialist": "Onboarding Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "hr-onboarding-specialist" },
+        { "id": "hr-3", "question": "Does your team handle employee relations, check-ins, or performance reviews regularly?", "specialist": "Employee Relations Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "employee-relations-manager" },
+        { "id": "hr-4", "question": "Does your team manage payroll processing on a recurring schedule?", "specialist": "Payroll Coordinator", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "payroll-coordinator" },
+        { "id": "hr-5", "question": "Do you occasionally need one-time policy research or handbook documentation?", "specialist": "HR Policy Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "hr-policy-analyst" },
+        { "id": "hr-6", "question": "Do you occasionally need one-time job description writing or compensation benchmarking?", "specialist": "Compensation Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "compensation-analyst" }
+      ]
+    },
+    {
+      "department": "legal",
+      "display_name": "Legal/Compliance",
+      "questions": [
+        { "id": "leg-1", "question": "Does your team manage contracts and agreements on an ongoing basis?", "specialist": "Contract Manager", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "contract-manager" },
+        { "id": "leg-2", "question": "Does your team handle compliance monitoring on a continuous basis?", "specialist": "Compliance Monitor", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "compliance-monitor" },
+        { "id": "leg-3", "question": "Does your team manage regulatory filings or recurring legal deadlines?", "specialist": "Regulatory Coordinator", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "regulatory-coordinator" },
+        { "id": "leg-4", "question": "Does your team review vendor or partner agreements regularly?", "specialist": "Agreement Reviewer", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "agreement-reviewer" },
+        { "id": "leg-5", "question": "Do you occasionally need one-time legal research or document review?", "specialist": "Legal Researcher", "model": "anthropic/claude-sonnet-4-6", "type": "subagent", "folder": "legal-researcher" },
+        { "id": "leg-6", "question": "Do you occasionally need one-time trademark or IP searches?", "specialist": "IP Researcher", "model": "anthropic/claude-sonnet-4-6", "type": "subagent", "folder": "ip-researcher" }
+      ]
+    },
+    {
+      "department": "it",
+      "display_name": "IT/Tech",
+      "questions": [
+        { "id": "it-1", "question": "Does your team monitor systems and handle alerts on an ongoing basis?", "specialist": "Systems Monitor", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "systems-monitor" },
+        { "id": "it-2", "question": "Does your team manage user accounts, access permissions, or identity systems continuously?", "specialist": "User Access Manager", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "user-access-manager" },
+        { "id": "it-3", "question": "Does your team maintain technical documentation that needs regular updates?", "specialist": "IT Documentation Manager", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "it-documentation-manager" },
+        { "id": "it-4", "question": "Does your team manage infrastructure, servers, or cloud resources continuously?", "specialist": "Infrastructure Manager", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "infrastructure-manager" },
+        { "id": "it-5", "question": "Do you occasionally need one-time security audits or penetration testing?", "specialist": "Security Analyst", "model": "openai-codex/gpt-5.4", "type": "subagent", "folder": "security-analyst" },
+        { "id": "it-6", "question": "Do you occasionally need one-time data migrations or system integrations?", "specialist": "Integration Specialist", "model": "openai-codex/gpt-5.4", "type": "subagent", "folder": "integration-specialist" }
+      ]
+    },
+    {
+      "department": "webdev",
+      "display_name": "Web Development",
+      "questions": [
+        { "id": "web-1", "question": "Does your team maintain and update websites on an ongoing basis?", "specialist": "Website Maintenance Specialist", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "website-maintenance-specialist" },
+        { "id": "web-2", "question": "Does your team deploy code or updates on a regular schedule (daily or weekly)?", "specialist": "Deployment Manager", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "deployment-manager" },
+        { "id": "web-3", "question": "Does your team monitor site performance, uptime, or analytics continuously?", "specialist": "Performance Monitor", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "performance-monitor" },
+        { "id": "web-4", "question": "Does your team manage landing pages or sales funnels that need regular updates?", "specialist": "Funnel Manager", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "funnel-manager" },
+        { "id": "web-5", "question": "Do you occasionally need one-off feature development or bug fixes?", "specialist": "Feature Developer", "model": "openai-codex/gpt-5.4", "type": "subagent", "folder": "feature-developer" },
+        { "id": "web-6", "question": "Do you occasionally need one-time site audits or SEO technical reviews?", "specialist": "Site Auditor", "model": "openai-codex/gpt-5.4", "type": "subagent", "folder": "site-auditor" }
+      ]
+    },
+    {
+      "department": "appdev",
+      "display_name": "App Development",
+      "questions": [
+        { "id": "app-1", "question": "Does your team maintain and update applications on an ongoing basis?", "specialist": "App Maintenance Specialist", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "app-maintenance-specialist" },
+        { "id": "app-2", "question": "Does your team manage app releases or version updates on a regular schedule?", "specialist": "Release Manager", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "release-manager" },
+        { "id": "app-3", "question": "Does your team track user feedback, crash reports, or bug tickets continuously?", "specialist": "Feedback Coordinator", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "feedback-coordinator" },
+        { "id": "app-4", "question": "Does your team manage API integrations or backend services that need ongoing monitoring?", "specialist": "API Manager", "model": "openai-codex/gpt-5.4", "type": "permanent", "folder": "api-manager" },
+        { "id": "app-5", "question": "Do you occasionally need one-off feature prototyping or proof-of-concept builds?", "specialist": "Feature Prototyper", "model": "openai-codex/gpt-5.4", "type": "subagent", "folder": "feature-prototyper" },
+        { "id": "app-6", "question": "Do you occasionally need one-time performance profiling or code audits?", "specialist": "Code Auditor", "model": "openai-codex/gpt-5.4", "type": "subagent", "folder": "code-auditor" }
+      ]
+    },
+    {
+      "department": "graphics",
+      "display_name": "Graphics",
+      "questions": [
+        { "id": "gfx-1", "question": "Does your team create visual content on a recurring schedule (daily or weekly)?", "specialist": "Visual Content Creator", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "visual-content-creator" },
+        { "id": "gfx-2", "question": "Does your team maintain brand assets, style guides, or templates continuously?", "specialist": "Brand Asset Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "brand-asset-manager" },
+        { "id": "gfx-3", "question": "Does your team create ad creatives or social media graphics on an ongoing basis?", "specialist": "Ad Creative Designer", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "ad-creative-designer" },
+        { "id": "gfx-4", "question": "Does your team generate images with AI tools (KIE.ai, Nano Banana, etc.) regularly?", "specialist": "AI Image Generator", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "ai-image-generator" },
+        { "id": "gfx-5", "question": "Do you occasionally need one-off design projects like a single logo or one-time banner?", "specialist": "Design Specialist", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "design-specialist" },
+        { "id": "gfx-6", "question": "Do you occasionally need one-time infographic or data visualization projects?", "specialist": "Infographic Designer", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "infographic-designer" }
+      ]
+    },
+    {
+      "department": "video",
+      "display_name": "Video",
+      "questions": [
+        { "id": "vid-1", "question": "Does your team produce video content on a recurring schedule (weekly or more)?", "specialist": "Video Producer", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "video-producer" },
+        { "id": "vid-2", "question": "Does your team manage a video library, archive, or content catalog continuously?", "specialist": "Video Librarian", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "video-librarian" },
+        { "id": "vid-3", "question": "Does your team create video ads or promotional video content regularly?", "specialist": "Video Ad Producer", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "video-ad-producer" },
+        { "id": "vid-4", "question": "Does your team generate videos with AI tools on an ongoing basis?", "specialist": "AI Video Generator", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "ai-video-generator" },
+        { "id": "vid-5", "question": "Do you occasionally need one-off video edits or single video productions?", "specialist": "Video Editor", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "video-editor" },
+        { "id": "vid-6", "question": "Do you occasionally need one-time video captions, subtitles, or transcription?", "specialist": "Caption Specialist", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "caption-specialist" }
+      ]
+    },
+    {
+      "department": "audio",
+      "display_name": "Audio",
+      "questions": [
+        { "id": "aud-1", "question": "Does your team produce audio content on a recurring schedule (podcasts, voiceovers)?", "specialist": "Audio Producer", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "audio-producer" },
+        { "id": "aud-2", "question": "Does your team manage audio assets, libraries, or podcast archives continuously?", "specialist": "Audio Librarian", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "audio-librarian" },
+        { "id": "aud-3", "question": "Does your team create voiceovers or TTS content on a regular basis?", "specialist": "TTS Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "tts-specialist" },
+        { "id": "aud-4", "question": "Does your team manage voice agents or conversational AI on an ongoing basis?", "specialist": "Voice Agent Builder", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "voice-agent-builder" },
+        { "id": "aud-5", "question": "Do you occasionally need one-off audio editing or single podcast episode production?", "specialist": "Audio Editor", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "audio-editor" },
+        { "id": "aud-6", "question": "Do you occasionally need one-time audio transcription or translation?", "specialist": "Transcription Specialist", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "transcription-specialist" }
+      ]
+    },
+    {
+      "department": "research",
+      "display_name": "Research",
+      "questions": [
+        { "id": "res-1", "question": "Does your team conduct ongoing market or competitive research?", "specialist": "Market Researcher", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "market-researcher" },
+        { "id": "res-2", "question": "Does your team track industry trends, news, or competitor moves continuously?", "specialist": "Trend Analyst", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "trend-analyst" },
+        { "id": "res-3", "question": "Does your team maintain data dashboards or analytics that need regular updates?", "specialist": "Data Analyst", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "data-analyst" },
+        { "id": "res-4", "question": "Does your team track customer or market data on an ongoing basis?", "specialist": "Customer Insights Analyst", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "customer-insights-analyst" },
+        { "id": "res-5", "question": "Do you occasionally need one-off deep-dive research reports?", "specialist": "Research Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "research-analyst" },
+        { "id": "res-6", "question": "Do you occasionally need one-time feasibility studies or market sizing?", "specialist": "Feasibility Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "feasibility-analyst" }
+      ]
+    },
+    {
+      "department": "comms",
+      "display_name": "Communications",
+      "questions": [
+        { "id": "com-1", "question": "Does your team manage internal communications on a recurring basis (newsletters, updates)?", "specialist": "Internal Comms Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "internal-comms-manager" },
+        { "id": "com-2", "question": "Does your team handle external PR and media relations continuously?", "specialist": "PR Coordinator", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "pr-coordinator" },
+        { "id": "com-3", "question": "Does your team manage community engagement, forums, or social groups daily?", "specialist": "Community Manager", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "community-manager" },
+        { "id": "com-4", "question": "Does your team manage stakeholder or investor communications on a regular basis?", "specialist": "Stakeholder Comms Specialist", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "stakeholder-comms-specialist" },
+        { "id": "com-5", "question": "Do you occasionally need one-off press releases or public announcements?", "specialist": "Communications Specialist", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "communications-specialist" },
+        { "id": "com-6", "question": "Do you occasionally need one-time crisis communication plans or response drafts?", "specialist": "Crisis Comms Specialist", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "crisis-comms-specialist" }
+      ]
+    },
+    {
+      "department": "ceo",
+      "display_name": "CEO/Executive",
+      "questions": [
+        { "id": "ceo-1", "question": "Do you conduct regular strategic planning and business reviews (weekly or monthly)?", "specialist": "Strategic Planning Coordinator", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "strategic-planning-coordinator" },
+        { "id": "ceo-2", "question": "Do you manage board or investor communications on an ongoing basis?", "specialist": "Board Liaison", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "board-liaison" },
+        { "id": "ceo-3", "question": "Do you track company-wide KPIs and performance metrics on a regular basis?", "specialist": "Performance Tracker", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "performance-tracker" },
+        { "id": "ceo-4", "question": "Do you manage executive scheduling, travel, or meeting coordination continuously?", "specialist": "Executive Assistant", "model": "moonshot/kimi-k2.5", "type": "permanent", "folder": "executive-assistant" },
+        { "id": "ceo-5", "question": "Do you occasionally need one-off strategic analysis or market opportunity reports?", "specialist": "Strategy Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "strategy-analyst" },
+        { "id": "ceo-6", "question": "Do you occasionally need one-time competitive landscape assessments?", "specialist": "Competitive Intelligence Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "competitive-intelligence-analyst" }
+      ]
+    }
+  ]
+}
