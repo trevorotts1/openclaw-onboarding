@@ -4,6 +4,101 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v5.5.2] - March 21, 2026
+
+### Skill 3 Fix + Calibre Auto-Install
+
+#### Fixed
+- **Skill 3**: Case-insensitive Gemini detection for Mem0 provider
+- **Skill 3**: Onboarding path detection for Intel vs Apple Silicon Macs
+- **Skill 3**: Calibre auto-installation (brew install --cask calibre)
+- **Skill 3**: Completion confirmation before proceeding
+
+---
+
+## [v5.5.1] - March 20, 2026
+
+### QC Agent Roles + Cloudflare Manual Setup
+
+#### Added
+- **Skill 23**: QC-ROLES-MASTER.md - 34KB master reference for QC agents
+- **Skill 23**: QC agent roles added to all 17 department suggested-roles files
+- **Skill 32**: Phase 8 - Manual Cloudflare Tunnel Setup (9 subsections)
+
+#### Changed
+- **Skill 31**: Mem0 config switched from OpenAI to Gemini (LLM + embedder)
+- **Skill 32**: Phase 6b clarified as agent-automated path
+
+---
+
+## [v5.5.0] - March 20, 2026
+
+### Command Center v1.4.0 + Multi-Company
+
+#### Added
+- **Skill 34: Intelligent Workspace Staffing** - Auto-hire/fire based on workload
+- Multi-company schema support in Command Center
+- Per-department memory architecture
+- 17 permanent department head agents (54 total agents)
+
+#### Changed
+- **Skill 32**: v1.4.0 with KPI forms, effectiveness tracking, execution queue
+- **Skill 32**: Sparklines, model pills, benchmarks
+
+---
+
+## [v5.4.0] - March 19, 2026
+
+### Command Center Setup
+
+#### Added
+- **Skill 32: Command Center Setup** - Activates AI workforce as live Command Center
+- Persistent department agents with Telegram topics
+- Visual Kanban dashboard at localhost:3000
+- Cloudflare Tunnel auto-setup (Phase 6b)
+
+#### Changed
+- Unique hostname pattern: `[company-slug]-[shortid]`
+- 5-layer memory verification requirement
+
+---
+
+## [v5.3.0] - March 19, 2026
+
+### Department Heads
+
+#### Added
+- **Skill 33: Department Heads** - 17 department head agents with full SOPs
+- Per-department workspace architecture
+- AGENTS.md, MEMORY.md, TOOLS.md templates for each dept
+- agents.list configuration for department orchestration
+
+---
+
+## [v5.2.0] - March 19, 2026
+
+### Command Center v1.3.0
+
+#### Added
+- KPI submission forms
+- Effectiveness tracking (agent task completion rates)
+- Execution queue system
+- Model pills and sparklines
+
+---
+
+## [v5.1.0] - March 19, 2026
+
+### Command Center Setup (Initial)
+
+#### Added
+- **Skill 32: Command Center Setup** - Initial release
+- Kanban board interface
+- Department agent spawning
+- Telegram topic integration
+
+---
+
 ## [v5.0.0] - March 19, 2026
 
 ### Major Release: Memory System Upgrade, Google Workspace CLI, Migration Fixes
