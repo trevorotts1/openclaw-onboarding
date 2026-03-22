@@ -69,7 +69,7 @@ The backup file should exist and not be 0 bytes.
 ## Step 6: Set Up Full Instance Backup Cron
 
 ```bash
-openclaw cron add --schedule "0 3 1,15 * *" --task "Run full instance backup per Back Yourself Up Protocol"
+openclaw cron add --name "backup-full-instance" --cron "0 3 1,15 * *" --message "Run full instance backup per Back Yourself Up Protocol" --session isolated
 ```
 
 Verify:
