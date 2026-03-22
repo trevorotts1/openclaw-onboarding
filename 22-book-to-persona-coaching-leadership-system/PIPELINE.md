@@ -8,14 +8,15 @@
 ```
 PDF → Text Extraction (pdfplumber, free) → .txt file
                                               ↓
-                              Phase 1: kimi-k2.5 via api.moonshot.ai/v1 (Extraction)
+                              Phase 1: Model fallback chain (Extraction)
+                              → MiMo V2 Pro (OpenRouter, 1M ctx) preferred
+                              → Kimi K2.5 (Moonshot, 262K ctx) fallback
+                              → GPT 5.4 (Codex OAuth, 196K ctx) fallback
                                     ↓ extraction-notes.md
                               Phase 2: deepseek/deepseek-v3.2 via OpenRouter (Analysis)
                                     ↓ analysis-notes.md
                               Phase 3: openai-codex/gpt-5.4 via OAuth (Synthesis) ← fallback: kimi-k2.5
                                     ↓ persona-blueprint.md
-                              Phase 3.5: Categorization (automatic)
-                                    ↓ persona-categories.json updated
                               Gemini Engine Indexing
                                     ↓ searchable via Gemini semantic search
 ```
@@ -43,18 +44,19 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 ---
 
-## Phase 1 - Extraction (Kimi K2.5)
+## Phase 1 - Extraction (Model Fallback Chain)
 
-**Model:** `kimi-k2.5` (via Moonshot API)
-**Route:** `https://api.moonshot.ai/v1` (direct API)
-**API Key:** `MOONSHOT_API_KEY` in `~/clawd/secrets/.env`
-**Fallback:** `openrouter/moonshotai/kimi-k2.5` (if content filter triggers)
-**Context:** 262K tokens
-**Max output:** 96K tokens
+**Model priority (try in order):**
+1. `xiaomi/mimo-v2-pro` via OpenRouter (1M context, 131K max output) - PREFERRED
+2. `kimi-k2.5` via Moonshot API (262K context, 96K max output) - if Moonshot key exists
+3. `openai-codex/gpt-5.4` via OpenClaw OAuth (196K context) - if Codex active
+4. `google/gemini-3.1-pro-preview` via OpenRouter (1M context, 65K max output)
+5. `anthropic/claude-sonnet-4-6` via Anthropic (200K context, 128K max output)
+
+**Which model to use:** The agent checks which API keys are available during Step 4 of INSTALL.md and uses the first available model from the priority list.
+
 **Temperature:** 1.0 (MUST be exactly 1.0)
 **Prompt:** agent-prompts/extraction-agent-prompt.md
-**Cost estimate:** ~$0.50-1.50 per book (varies by length)
-**Expected output:** `extraction-notes.md` (5,000+ characters)
 
 **What it extracts (20 items):**
 - Coaching lens (items 1-11): Author background, central problem, root cause, full methodology,
@@ -205,44 +207,6 @@ python3 ~/clawd/scripts/gemini-indexer.py
   }
 }
 ```
-
----
-
-## Phase 3.5: Categorization (Automatic)
-
-After a persona blueprint is generated, automatically tag it in persona-categories.json.
-
-**Location:** `[master-files]/coaching-personas/persona-categories.json`
-**Cost:** Zero - no API call needed. Tags are determined from the persona blueprint content.
-**Time:** Under 1 second per persona
-
-**Tag System:**
-- 12 domain tags: Marketing, Sales, Leadership, Finance, Operations, Communication, Copywriting, Mindset, Productivity/Systems, Coaching, Strategy/Innovation, Personal Development
-- 6 perspective tags: African American experience, Women's challenges, Men's challenges, Family/relationships, Faith/spirituality, Love/romantic relationships
-
-**How tags are determined:**
-1. Read the persona blueprint sections (especially "Core Topics", "Key Frameworks", "Target Audience")
-2. Match keywords against domain tag definitions
-3. Match author bio and book themes against perspective tags
-4. Assign all relevant tags (a persona can have multiple domain and perspective tags)
-
-**Schema per entry:**
-```json
-{
-  "slug": "hormozi-100m-offers",
-  "author": "Alex Hormozi",
-  "book": "$100M Offers",
-  "domain_tags": ["Sales", "Marketing", "Strategy/Innovation"],
-  "perspective_tags": [],
-  "business_stage": "growth",
-  "ideal_user": "business owners scaling past $1M"
-}
-```
-
-**Integration with Skill 23:**
-- Skill 23 reads persona-categories.json to build governing-personas.md per department
-- Domain tags determine which personas are relevant to which department
-- This file is the bridge between Skill 22 (persona creation) and Skill 23 (company building)
 
 ---
 

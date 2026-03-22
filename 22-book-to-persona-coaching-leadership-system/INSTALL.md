@@ -310,29 +310,9 @@ mkdir -p ~/Downloads/openclaw-master-files/coaching-personas/personas
 
 ---
 
-## Step 4 - Verify Installing Agent Model (MANDATORY)
+## Step 4 - Verify Model Access
 
-Before proceeding, verify YOU (the agent reading this) are running on a high reasoning model. This skill makes architectural decisions about persona structure, quality gates, and embedding configuration that require deep reasoning.
-
-**Approved models for installation:**
-- anthropic/claude-opus-4-6
-- anthropic/claude-sonnet-4-6
-- openrouter/xiaomi/mimo-v2-pro (with thinking enabled)
-- google/gemini-3.1-pro-preview
-- openai-codex/gpt-5.4
-- moonshot/kimi-k2.5 (has built-in reasoning)
-
-**NOT approved:** Gemini Flash, Gemini Flash Lite, MiniMax, or any model without strong reasoning capability.
-
-If you are on a low reasoning model, say: "This skill requires a model with strong reasoning ability. Want me to switch before continuing?"
-
-Do NOT proceed on a low reasoning model.
-
----
-
-## Step 4b - Verify Pipeline Model Access
-
-This skill requires three model connections for the persona generation pipeline. Check each one:
+This skill requires three model connections. Check each one:
 
 
 ### Google Gemini (Required for Multimodal Embeddings)
@@ -342,8 +322,17 @@ _find_key "GOOGLE_API_KEY" || _find_key "GEMINI_API_KEY"
 ```
 If missing, you MUST add your Google API key to `~/clawd/secrets/.env`. The multimodal embedding engine will crash without it.
 
-### Kimi K2.5 (Phase 1)
-Check for `MOONSHOT_API_KEY` across all known env file locations:
+### Kimi K2.5 (Phase 1 - Primary) OR MiMo V2 Pro (Phase 1 - Fallback)
+
+Phase 1 needs a large-context model for book extraction. The pipeline tries models in this order:
+
+1. **MiMo V2 Pro via OpenRouter** (1M context) - Best option, largest context
+2. **Kimi K2.5 via Moonshot** (262K context) - If Moonshot key exists
+3. **GPT 5.4 via OpenAI Codex** (196K context) - If Codex OAuth is active
+4. **Gemini 3.1 Pro via OpenRouter** (1M context) - If OpenRouter key exists
+5. **Sonnet 4.6 via Anthropic** (200K context) - Last resort
+
+Check which models are available:
 ```bash
 _find_key() {
   local key_name="$1"
@@ -362,9 +351,15 @@ _find_key() {
   echo "$key_name not found in any env file"
   return 1
 }
-_find_key "MOONSHOT_API_KEY"
+
+echo "Phase 1 model availability:"
+_find_key "OPENROUTER_API_KEY" && echo "  -> MiMo V2 Pro or Gemini 3.1 Pro available"
+_find_key "MOONSHOT_API_KEY" && echo "  -> Kimi K2.5 available"
+# Codex OAuth checked in Step 4 above
+_find_key "ANTHROPIC_API_KEY" && echo "  -> Sonnet 4.6 available"
 ```
-If missing, add your Moonshot API key to `~/clawd/secrets/.env`.
+
+At least ONE model must be available. If none are found, the install cannot proceed.
 
 ### DeepSeek V3.2-Speciale (Phase 2)
 Routes via OpenRouter. Check across all known env files:
@@ -513,10 +508,21 @@ else:
 
 If no PDFs exist yet, skip this sub-step - extraction will be tested on the first real book run.
 
-### 8b - Verify Phase 1 model connectivity (Kimi K2.5)
+### 8b - Verify Phase 1 model connectivity (best available model)
 
+Test whichever Phase 1 model the client has access to. Try in order:
+
+**Option 1: MiMo V2 Pro via OpenRouter (preferred)**
 ```bash
-# Test Moonshot API key with a minimal request
+curl -s https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY ~/clawd/secrets/.env | cut -d= -f2)" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"xiaomi/mimo-v2-pro","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
+  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Phase 1 (MiMo):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
+```
+
+**Option 2: Kimi K2.5 via Moonshot (if Moonshot key exists)**
+```bash
 curl -s https://api.moonshot.cn/v1/chat/completions \
   -H "Authorization: Bearer $(grep MOONSHOT_API_KEY ~/clawd/secrets/.env | cut -d= -f2)" \
   -H "Content-Type: application/json" \
@@ -524,8 +530,9 @@ curl -s https://api.moonshot.cn/v1/chat/completions \
   | python3 -c "import json,sys; r=json.load(sys.stdin); print('Phase 1 (Kimi):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
 ```
 
-**Expected output:** `Phase 1 (Kimi): CONNECTED`
-If it fails, verify MOONSHOT_API_KEY is correct in `~/clawd/secrets/.env`.
+**Option 3: GPT 5.4 via Codex OAuth (already verified in Step 4)**
+
+Report which model connected and use that for Phase 1.
 
 ### 8c - Verify Phase 2 model connectivity (DeepSeek via OpenRouter)
 
