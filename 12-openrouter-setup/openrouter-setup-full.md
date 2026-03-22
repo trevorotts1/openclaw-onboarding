@@ -150,13 +150,13 @@ You are an AI agent running on OpenClaw. This document teaches you how to proper
 
 PRIMARY MODEL
 
-MiniMax M2.5 (openrouter/minimax/minimax-m2.5) is the RECOMMENDED PRIMARY model for most users. It supports tool calls, handles daily task execution, and operates at $0.30/M input with thinking set to HIGH by default.
+MiniMax M2.7 (openrouter/minimax/minimax-m2.7) is the RECOMMENDED PRIMARY model for most users. It supports tool calls, has high-level reasoning (pass reasoning: true), handles daily task execution, and operates at $0.30/M input. 204K context, 131K max output -- double the output of the previous M2.5.
 
-When configuring OpenClaw for a new user who does NOT already have a primary model set, MiniMax M2.5 should be configured as their primary model.
+When configuring OpenClaw for a new user who does NOT already have a primary model set, MiniMax M2.7 should be configured as their primary model.
 
 If the user already has a primary model set, you must NOT override it. Instead, you must ASK them:
 
-"You currently have [current primary model] set as your primary. MiniMax M2.5 is our recommended primary for daily operations because it supports tool calls, has high-level reasoning enabled by default, and costs $0.30/M input. Would you like to swap your primary to MiniMax M2.5, or keep your current primary?"
+"You currently have [current primary model] set as your primary. MiniMax M2.7 is our recommended primary for daily operations because it supports tool calls, has high-level reasoning enabled by default, and costs $0.30/M input. Would you like to swap your primary to MiniMax M2.7, or keep your current primary?"
 
 If they say no, respect that. If they do not respond within 60 seconds, leave their primary model alone. This is non-negotiable.
 
@@ -227,13 +227,11 @@ Context window and max output values are NOT configured in agents.defaults.model
 
 Valid model entry examples:
 
-"openrouter/minimax/minimax-m2.5": {
+"openrouter/minimax/minimax-m2.7": {
   "alias": "minimax",
   "params": {
     "temperature": 0.3,
-    "reasoning": {
-      "effort": "high"
-    }
+    "reasoning": true
   }
 }
 
@@ -248,7 +246,7 @@ Valid model entry examples:
 
 INVALID model entry (will break the config):
 
-"openrouter/minimax/minimax-m2.5": {
+"openrouter/minimax/minimax-m2.7": {
   "params": { "temperature": 0.3 },
   "contextWindow": 196608,
   "maxTokens": 196608
@@ -279,7 +277,9 @@ Each model has its own default thinking level based on its role and capabilities
 | GPT 5.2 Codex | Medium | Code-focused, medium for standard tasks. Escalate to high for complex refactoring. |
 | GPT-5 Mini | Medium | Mid-range model, medium is appropriate. |
 | GPT-5 Nano | Medium | Lowest-cost model, medium for when reasoning is needed at all. |
-| MiniMax M2.5 | HIGH | Primary daily task model. Needs high reasoning for reliable tool calls and task execution. Supports escalation to XHIGH for maximum complexity tasks. |
+| MiniMax M2.7 | Opt-in (reasoning: true) | Primary daily task model. Thinking is opt-in via reasoning parameter -- always pass reasoning: true when spawning sub-agents. No effort levels, just on/off. |
+| MiMo V2 Pro | Always on | Text-only thinking model. Reasoning always enabled. Pass reasoning: true. Complex code, orchestration, agentic workflows. |
+| MiMo V2 Omni | Always on | Multimodal thinking model. Reasoning always enabled. Pass reasoning: true. Supports text, images, video, audio jointly. |
 | DeepSeek V3.2 | MEDIUM | Value workhorse. Medium balances quality with cost efficiency. |
 | DeepSeek V3.2 Speciale | Medium | Premium reasoning variant, medium default with option to escalate. |
 | DeepSeek R1 0528 Free | Medium | Free fallback. Medium provides decent reasoning at zero cost. |
@@ -288,6 +288,7 @@ Each model has its own default thinking level based on its role and capabilities
 | Kimi K2.5 | N/A | Built-in thinking, no configurable parameter. |
 | Mistral Small Creative | N/A | Not a thinking model. |
 | Perplexity Sonar Pro Search | N/A | Research model, no thinking parameter. |
+| Perplexity Sonar | N/A | Quick lookup model, no thinking parameter. |
 
 OpenRouter Reasoning Effort Levels and Budget Formula
 
@@ -346,7 +347,7 @@ Do not use a $25-per-million-token model to answer "What time zone is New York i
 
 Rule 21: KIMI K2.5 CANNOT DO TOOL CALLS
 
-Kimi K2.5 is a chat and code generation model ONLY. It does NOT support tool calls, function execution, or agentic task completion. If a task requires calling tools, executing functions, making API calls, or performing any operation that requires tool use, do NOT assign it to Kimi. Use MiniMax M2.5 or another tool-capable model instead. Assigning a tool-call task to Kimi will cause the task to fail silently or produce errors.
+Kimi K2.5 is a chat and code generation model ONLY. It does NOT support tool calls, function execution, or agentic task completion. If a task requires calling tools, executing functions, making API calls, or performing any operation that requires tool use, do NOT assign it to Kimi. Use MiniMax M2.7 or another tool-capable model instead. Assigning a tool-call task to Kimi will cause the task to fail silently or produce errors.
 
 Rule 22: VERIFY MODEL SPECS BEFORE CONFIGURING
 
@@ -358,13 +359,13 @@ When adding OpenRouter models to a config that already has direct provider model
 
 Rule 24: HEARTBEAT MODEL RESTRICTIONS
 
-Heartbeat Phase 1 (the check) must ALWAYS use a fast, low-cost model. GPT-5 Nano ($0.05/M input) when no tool call is needed. MiniMax M2.5 ($0.30/M input) when a tool call is required to read the task queue. Under NO circumstances should Claude Opus 4.6, Claude Sonnet 4.6, or any Thinking Tier model with reasoning enabled be used for heartbeat Phase 1 checks. Heartbeat checks do not need deep reasoning. They need speed. If multiple sub-agents are all running heartbeat checks on a Thinking Tier model, the token cost adds up across every single tick.
+Heartbeat Phase 1 (the check) must ALWAYS use a fast, low-cost model. GPT-5 Nano ($0.05/M input) when no tool call is needed. MiniMax M2.7 ($0.30/M input) when a tool call is required to read the task queue. Under NO circumstances should Claude Opus 4.6, Claude Sonnet 4.6, or any Thinking Tier model with reasoning enabled be used for heartbeat Phase 1 checks. Heartbeat checks do not need deep reasoning. They need speed. If multiple sub-agents are all running heartbeat checks on a Thinking Tier model, the token cost adds up across every single tick.
 
 Rule 25: PRIMARY MODEL RECOMMENDATION
 
-For new users who do NOT have a primary model configured, set MiniMax M2.5 as their primary model. It supports tool calls, has HIGH thinking enabled by default, and costs $0.30/M input.
+For new users who do NOT have a primary model configured, set MiniMax M2.7 as their primary model. It supports tool calls, has reasoning enabled via reasoning: true, and costs $0.30/M input with 131K max output.
 
-For users who ALREADY have a primary model, ask them if they want to swap to MiniMax M2.5 and explain the benefits. If they decline, respect their choice. If they do not respond within 60 seconds, leave their existing primary model in place.
+For users who ALREADY have a primary model, ask them if they want to swap to MiniMax M2.7 and explain the benefits. If they decline, respect their choice. If they do not respond within 60 seconds, leave their existing primary model in place.
 
 Rule 26: CONTEXT WINDOW MANAGEMENT PROTOCOL (HANDOFF)
 
@@ -383,7 +384,7 @@ Example thresholds by model:
 | Model | Context Window | 80% | 90% | 95% |
 |-------|----------------|-----|-----|-----|
 | Claude Opus 4.6 | 1,000,000 | 800,000 | 900,000 | 950,000 |
-| MiniMax M2.5 | 196,608 | 157,286 | 176,947 | 186,778 |
+| MiniMax M2.7 | 204,800 | 163,840 | 184,320 | 194,560 |
 | Kimi K2.5 | 262,144 | 209,715 | 235,930 | 249,037 |
 | Mistral Small Creative | 32,768 | 26,214 | 29,491 | 31,130 |
 | GPT-5 Nano | 400,000 | 320,000 | 360,000 | 380,000 |
@@ -423,11 +424,11 @@ Rule 27: SUB-AGENT MODEL SELECTION
 
 When operating in multi-agent orchestration mode, the master agent must select the correct sub-agent model for each sub-task. The selection logic is:
 
-Sub-task requires tool calls or function execution = MiniMax M2.5 (Kimi K2.5 CANNOT do tool calls)
+Sub-task requires tool calls or function execution = MiniMax M2.7 (Kimi K2.5 CANNOT do tool calls)
 Sub-task is code generation = Kimi K2.5 (supports 100+ parallel instances for high-volume work)
 Sub-task is creative writing = Mistral Small Creative
 Sub-task is research or fact-checking = Perplexity Sonar Pro Search
-Sub-task is a general operation that does not fit the above = MiniMax M2.5
+Sub-task is a general operation that does not fit the above = MiniMax M2.7
 
 The master agent must also set the thinking level per sub-task based on complexity (medium, high, or xhigh) and set max_tokens to the sub-agent model's actual maximum output limit so the model is not artificially capped. See the Multi-Agent Orchestration section for the full sub-agent selection tables and the reasoning budget formula.
 
@@ -521,7 +522,7 @@ Model ID Reference Table
 | GPT-5 Mini | openrouter/openai/gpt-5-mini | openai/gpt-5-mini |
 | GPT-5 Nano | openrouter/openai/gpt-5-nano | openai/gpt-5-nano |
 | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | moonshot/kimi-k2.5 |
-| MiniMax M2.5 | openrouter/minimax/minimax-m2.5 | minimax/minimax-m2.5 |
+| MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | minimax/minimax-m2.7 |
 | Mistral Small Creative | openrouter/mistralai/mistral-small-creative | mistral/mistral-small-creative |
 | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | qwen/qwen3.5-plus |
 | GLM-5 | openrouter/z-ai/glm-5 | z-ai/glm-5 |
@@ -529,6 +530,10 @@ Model ID Reference Table
 | DeepSeek V3.2 Speciale | openrouter/deepseek/deepseek-v3.2-speciale | deepseek/v3.2-speciale |
 | DeepSeek R1 Free | openrouter/deepseek/deepseek-r1-0528:free | deepseek/r1-free |
 | Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | perplexity/sonar-pro |
+| Perplexity Sonar | openrouter/perplexity/sonar | perplexity/sonar |
+| Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | google/gemini-3.1-flash-lite |
+| MiMo V2 Pro | openrouter/xiaomi/mimo-v2-pro | xiaomi/mimo-v2-pro |
+| MiMo V2 Omni | openrouter/xiaomi/mimo-v2-omni | xiaomi/mimo-v2-omni |
 
 NEVER Use These
 
@@ -560,6 +565,7 @@ These models support extended thinking/reasoning. They cost more per token but d
 | 5th | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | qwen | YES (reasoning supported) |
 | 6th | GLM-5 | openrouter/z-ai/glm-5 | glm5 | YES (reasoning supported) |
 | 7th | DeepSeek V3.2 Speciale | openrouter/deepseek/deepseek-v3.2-speciale | speciale | YES (high-compute reasoning) |
+| 8th | MiMo V2 Pro | openrouter/xiaomi/mimo-v2-pro | mimo-pro | YES (always on, TEXT ONLY, 1M context) |
 
 When to use Thinking Tier:
 
@@ -578,17 +584,18 @@ Tier 2: Execution Tier
 
 For daily tasks, routine work, fast responses, tool calls, and standard operations.
 
-These models are cost-effective and fast. They handle the majority of day-to-day work. MiniMax M2.5 is the PRIMARY daily task model in this tier. It supports tool calls, handles routine operations, and should be the default for any task that does not require deep reasoning or creative writing.
+These models are cost-effective and fast. They handle the majority of day-to-day work. MiniMax M2.7 is the PRIMARY daily task model in this tier. It supports tool calls, handles routine operations, and should be the default for any task that does not require deep reasoning or creative writing. MiMo V2 Omni handles multimodal tasks (images, video, audio) at low cost.
 
 | Priority | Model | OpenRouter ID | Alias | Thinking | Role |
 |----------|-------|---------------|-------|----------|------|
-| 1st | MiniMax M2.5 | openrouter/minimax/minimax-m2.5 | minimax | YES (default: HIGH, supports XHIGH) | **Primary daily task model. Supports tool calls. Use for all routine operations, task execution, and heartbeat. |
-| 2nd | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | flash | YES (thinkingLevel) | Fast responses, large context tasks. |
-| 3rd | Claude Haiku 4.5 | openrouter/anthropic/claude-haiku-4.5 | haiku | YES (extended thinking) | Fast intelligent responses. |
-| 4th | GPT-5 Mini | openrouter/openai/gpt-5-mini | gptmini | YES (reasoning effort) | Mid-range tasks, good value. |
-| 5th | GPT-5 Nano | openrouter/openai/gpt-5-nano | gptnano | YES (reasoning effort) | Simplest tasks, basic lookups. |
-| 6th | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | deepseek | YES (reasoning toggle, default: MEDIUM) | Value workhorse, also suitable for heartbeat. |
-| 7th | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | kimi | YES (built-in, no config param) | Coding and chat ONLY. See critical limitation below. |
+| 1st | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | minimax | YES (opt-in via reasoning: true, no levels) | **Primary daily task model. Supports tool calls. Use for all routine operations, task execution, and heartbeat. |
+| 2nd | MiMo V2 Omni | openrouter/xiaomi/mimo-v2-omni | mimo-omni | YES (always on, supports text+images+video+audio) | Multimodal tasks. Cheaper than Gemini for media analysis. Joint audio-visual processing. |
+| 3rd | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | flash | YES (thinkingLevel) | Fast responses, large context tasks. |
+| 4th | Claude Haiku 4.5 | openrouter/anthropic/claude-haiku-4.5 | haiku | YES (extended thinking) | Fast intelligent responses. |
+| 5th | GPT-5 Mini | openrouter/openai/gpt-5-mini | gptmini | YES (reasoning effort) | Mid-range tasks, good value. |
+| 6th | GPT-5 Nano | openrouter/openai/gpt-5-nano | gptnano | YES (reasoning effort) | Simplest tasks, basic lookups. |
+| 7th | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | deepseek | YES (reasoning toggle, default: MEDIUM) | Value workhorse, also suitable for heartbeat. |
+| 8th | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | kimi | YES (built-in, no config param) | Coding and chat ONLY. See critical limitation below. |
 
 CRITICAL: Kimi K2.5 Limitations and Strengths
 
@@ -612,9 +619,9 @@ The task does NOT require tool calls of any kind
 
 Kimi is NOT used for:
 
-Daily task execution (use MiniMax M2.5)
-Any operation requiring tool calls or function execution (use MiniMax M2.5)
-Heartbeat operations (use GPT-5 Nano or MiniMax M2.5)
+Daily task execution (use MiniMax M2.7)
+Any operation requiring tool calls or function execution (use MiniMax M2.7)
+Heartbeat operations (use GPT-5 Nano or MiniMax M2.7)
 Agentic workflows where the model must call external tools
 
 Heartbeat Protocol: Two-Phase Operation
@@ -630,7 +637,7 @@ Phase 1 is lightweight. The heartbeat wakes up on its schedule and asks one ques
 Phase 1 model selection:
 
 If no tool call is needed to read the task queue: Use GPT-5 Nano ($0.05/M input, $0.40/M output). It reads a list and reports what's due. Done.
-If a tool call IS needed to read the task queue: Use MiniMax M2.5 ($0.30/M input, $1.10/M output). MiniMax supports tool calls. Use it when the check requires calling a function to retrieve the task list.
+If a tool call IS needed to read the task queue: Use MiniMax M2.7 ($0.30/M input, $1.10/M output). MiniMax supports tool calls. Use it when the check requires calling a function to retrieve the task list.
 DeepSeek V3.2 ($0.26/M input, $0.38/M output) is also acceptable for Phase 1 but can be slower than Nano or MiniMax.
 
 FORBIDDEN for Phase 1: Under NO circumstances should the following models EVER be used for heartbeat Phase 1 checks:
@@ -652,20 +659,20 @@ The agent spins up the appropriate model for that specific task:
    Code generation? Route to Kimi K2.5
    Creative writing? Route to Mistral Small Creative
    Research or fact-checking? Route to Perplexity Sonar Pro Search
-   Routine task requiring tool calls? Route to MiniMax M2.5
+   Routine task requiring tool calls? Route to MiniMax M2.7
    Simple factual lookup? Route to GPT-5 Nano
-If it is unclear which model to use: Default to MiniMax M2.5. MiniMax handles tool calls, has HIGH thinking enabled, and is the safest general-purpose choice.
-If it is still unclear after defaulting to MiniMax: Ask the user which model they want for this task. If the user does not respond within 60 seconds, proceed with MiniMax M2.5 and log the decision so the user knows what happened.
+If it is unclear which model to use: Default to MiniMax M2.7. MiniMax handles tool calls, has HIGH thinking enabled, and is the safest general-purpose choice.
+If it is still unclear after defaulting to MiniMax: Ask the user which model they want for this task. If the user does not respond within 60 seconds, proceed with MiniMax M2.7 and log the decision so the user knows what happened.
 
 Why this matters: The token cost of heartbeat Phase 1 is minimal when the right model is used. The token cost from Phase 2 comes from the dispatched model doing the actual work. That cost is appropriate because the right model is being used for the right task.
 
 When to use Execution Tier:
 
-Daily task execution and routine operations (MiniMax M2.5)
-Sending messages and routine communications (MiniMax M2.5)
-Tool calls and function execution (MiniMax M2.5 or DeepSeek V3.2)
+Daily task execution and routine operations (MiniMax M2.7)
+Sending messages and routine communications (MiniMax M2.7)
+Tool calls and function execution (MiniMax M2.7 or DeepSeek V3.2)
 Heartbeat Phase 1 checks with no tool call needed (GPT-5 Nano)
-Heartbeat Phase 1 checks requiring tool calls (MiniMax M2.5)
+Heartbeat Phase 1 checks requiring tool calls (MiniMax M2.7)
 Heartbeat Phase 2 dispatch: route to the appropriate model per this guide
 Code creation and generation (Kimi K2.5)
 Data scraping at scale with parallel agents (Kimi K2.5, 100+ simultaneous instances)
@@ -702,15 +709,13 @@ Why a dedicated creative tier? Creative writing does not need deep reasoning or 
 
 Tier 4: Fallback Tier
 
-These models activate in order when the primary model fails or credits are depleted. They are FREE and capable of both thinking and execution. CRITICAL: DO NOT set any of these as the user's primary model without their explicit permission. They are fallbacks only.
+These models activate in order when the primary model fails or credits are depleted. They are FREE or very cheap and capable of both thinking and execution. CRITICAL: DO NOT set any of these as the user's primary model without their explicit permission. They are fallbacks only.
 
 | Priority | Model | OpenRouter ID | Alias | Cost |
 |----------|-------|---------------|-------|------|
 | 1st | Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | flashlite | $0.25/M |
-| 2nd | Healer Alpha | openrouter/healer-alpha | healer | FREE |
-| 3rd | Nemotron 3 Super | openrouter/nvidia/nemotron-3-super-120b-a12b:free | nemotron | FREE |
-| 4th | Hunter Alpha | openrouter/hunter-alpha | hunter | FREE |
-| 5th (Emergency) | DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | fallback | FREE |
+| 2nd | Nemotron 3 Super | openrouter/nvidia/nemotron-3-super-120b-a12b:free | nemotron | FREE |
+| 3rd (Emergency) | DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | fallback | FREE |
 
 When this activates:
 
@@ -732,11 +737,15 @@ Tier 5: Research Tier
 
 For research, fact-checking, web search, validation, and verifying information as truth.
 
-| Model | OpenRouter ID | Alias | Web Search |
-|-------|---------------|-------|------------|
-| Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | research | YES ($18 per 1,000 web searches) |
+| Model | OpenRouter ID | Alias | Use Case |
+|-------|---------------|-------|----------|
+| Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | research | Deep multi-step research. Follows links, synthesizes multiple sources. $3/M input, $15/M output, 200K context. |
+| Perplexity Sonar | openrouter/perplexity/sonar | sonar | Quick single-question web lookups. Faster and cheaper than Pro Search. 127K context. |
 
-Perplexity Sonar Pro Search is the PRIMARY research model. Any time the system needs to research a topic, validate information, verify facts, check if something is true, look up current data, or perform any kind of web-based information retrieval, Perplexity is the model that gets used. This is not optional. This is not a suggestion. Perplexity is the research model.
+Perplexity Sonar Pro Search is the PRIMARY research model for deep work. Perplexity Sonar is for quick lookups. Any time the system needs to research a topic, validate information, verify facts, check if something is true, look up current data, or perform any kind of web-based information retrieval, a Perplexity model gets used. This is not optional. This is not a suggestion. Perplexity is the research model.
+
+Use Sonar Pro Search for: multi-source research, competitor analysis, technical lookups requiring multiple sources, market research.
+Use Sonar for: quick factual lookups, checking a single fact, fast verification of one piece of information.
 
 When to use Research Tier:
 
@@ -754,7 +763,7 @@ When NOT to use Research Tier:
 Simple factual questions the agent already knows with certainty (use GPT-5 Nano)
 Creative writing tasks (use Mistral Small Creative)
 Code generation (use Kimi K2.5 or GPT 5.2 Codex)
-Daily task execution (use MiniMax M2.5)
+Daily task execution (use MiniMax M2.7)
 
 Pricing note: Perplexity charges $3/M input tokens, $15/M output tokens, PLUS $18 per 1,000 web searches. The web search cost is separate from token costs. The agent should be aware that research tasks cost more than standard model calls because of the web search surcharge.
 
@@ -777,7 +786,7 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 | GPT-5 Mini | openrouter/openai/gpt-5-mini | 400,000 | 128,000 | $0.25 | $2.00 | YES (reasoning effort) | 0.3 |
 | GPT-5 Nano | openrouter/openai/gpt-5-nano | 400,000 | 400,000 | $0.05 | $0.40 | YES (reasoning effort) | 0.3 |
 | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | 262,144 | 262,144 | $0.23 | $3.00 | YES (built-in, no config param). NO TOOL CALLS. | 1.0 |
-| MiniMax M2.5 | openrouter/minimax/minimax-m2.5 | 196,608 | 196,608 | $0.30 | $1.10 | YES (default: HIGH, supports XHIGH) | 0.3 |
+| MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | 204,800 | 131,072 | $0.30 | $1.10 | YES (opt-in via reasoning param, no levels) | 0.3 |
 | Mistral Small Creative | openrouter/mistralai/mistral-small-creative | 32,768 | 32,768 | $0.10 | $0.30 | No | 0.3 |
 | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | 1,000,000 | 65,536 | $0.40 | $2.40 | YES | 0.3 |
 | GLM-5 | openrouter/z-ai/glm-5 | 204,800 | 131,072 | $0.30 | $2.55 | YES | 0.3 |
@@ -786,9 +795,10 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 | DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | 163,840 | 163,840 | FREE | FREE | YES | 0.3 |
 | Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | 200,000 | 8,000 | $3.00 | $15.00 | No (research/search model) | 0.3 |
 | Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | 1,048,576 | 65,536 | $0.25 | $1.50 | YES (medium default) | 0.3 |
-| Healer Alpha | openrouter/healer-alpha | 262,144 | 32,000 | FREE | FREE | YES (medium default) | 0.3 |
+| MiMo V2 Omni | openrouter/xiaomi/mimo-v2-omni | 262,144 | 65,536 | $0.40 | $1.60 | YES (reasoning param, always on) | 0.3 |
 | Nemotron 3 Super | openrouter/nvidia/nemotron-3-super-120b-a12b:free | TBD | TBD | FREE | FREE | YES (medium default) | 0.3 |
-| Hunter Alpha | openrouter/hunter-alpha | 1,000,000 | TBD | FREE | FREE | YES (medium default) | 0.3 |
+| MiMo V2 Pro | openrouter/xiaomi/mimo-v2-pro | 1,000,000 | 131,072 | $1.00 | $4.00 | YES (reasoning param, always on, TEXT ONLY) | 0.3 |
+| Perplexity Sonar | openrouter/perplexity/sonar | 127,000 | 8,000 | $0.50 | $2.00 | No (quick search model) | 0.3 |
 
 Important notes about this table:
 
@@ -825,9 +835,9 @@ Thinking Level Recommendations by Task Complexity
 | Simple with nuance | Low | Summarizing with specific requirements, targeted feedback |
 | Standard analysis | Medium (default) | Code review, document analysis, standard planning |
 | Complex multi-step | High | System architecture, multi-file refactoring, complex debugging |
-| Mission-critical | Xhigh (MiniMax M2.5) | Production deployment planning, security audits, critical business strategy, complex multi-agent orchestration |
+| Mission-critical | Xhigh (MiniMax M2.7) | Production deployment planning, security audits, critical business strategy, complex multi-agent orchestration |
 
-Note: Xhigh is the maximum reasoning level available on OpenRouter (0.95 effort ratio). It is supported by MiniMax M2.5 and other reasoning-capable models. Use it only when the task demands maximum analytical depth and the user has approved the additional token cost.
+Note: Xhigh is the maximum reasoning level available on OpenRouter (0.95 effort ratio). It is supported by MiniMax M2.7 and other reasoning-capable models. Use it only when the task demands maximum analytical depth and the user has approved the additional token cost.
 
 
 
@@ -910,7 +920,7 @@ SCENARIO 12: User needs rapid back-and-forth chat
 Example: "Let's brainstorm ideas quickly, just rapid-fire"
 Use: Kimi K2.5 (Execution Tier, chat mode)
 Why: Kimi excels at conversational flow and rapid iteration. No tool calls needed for brainstorming. Fast and purpose-built for chat.
-Note: If the brainstorming session leads to tasks that need execution (sending messages, calling APIs, creating files), hand those tasks off to MiniMax M2.5 for execution while Kimi continues the conversation.
+Note: If the brainstorming session leads to tasks that need execution (sending messages, calling APIs, creating files), hand those tasks off to MiniMax M2.7 for execution while Kimi continues the conversation.
 
 SCENARIO 13: User asks to review a business proposal
 
@@ -939,14 +949,14 @@ Why: Perplexity is the PRIMARY research model. It has web search built in. Any t
 SCENARIO 17: User needs a task executed that requires tool calls
 
 Example: "Send that message" or "Create a new contact in the CRM" or "Run this automation"
-Use: MiniMax M2.5 (Execution Tier, primary daily task model)
+Use: MiniMax M2.7 (Execution Tier, primary daily task model)
 Why: MiniMax supports tool calls and is the default for any operation requiring function execution. Do NOT assign tool-call tasks to Kimi K2.5.
 
 SCENARIO 18: User needs to scrape data or process data in bulk
 
 Example: "Scrape these 500 URLs and extract the pricing data" or "Process these listings and pull out the contact information"
 Use: Kimi K2.5 (Execution Tier, parallel agent mode)
-Architecture: Spin up 100+ simultaneous Kimi instances, each handling its own target. A master agent (MiniMax M2.5 or a Thinking Tier model) coordinates the work, distributes targets to each Kimi instance, and collects results. Each Kimi agent receives a focused instruction, processes its target, and returns the output. This is high-volume parallel processing, not one model doing everything sequentially.
+Architecture: Spin up 100+ simultaneous Kimi instances, each handling its own target. A master agent (MiniMax M2.7 or a Thinking Tier model) coordinates the work, distributes targets to each Kimi instance, and collects results. Each Kimi agent receives a focused instruction, processes its target, and returns the output. This is high-volume parallel processing, not one model doing everything sequentially.
 Why: Kimi is fast ($0.23/M input) and can run at massive scale. It does not need tool calls for scraping when the master agent handles coordination and data collection.
 
 SCENARIO 19: Master agent orchestrating mixed sub-tasks (code + tool calls + writing)
@@ -954,7 +964,7 @@ SCENARIO 19: Master agent orchestrating mixed sub-tasks (code + tool calls + wri
 Example: "Build the landing page, set up the API endpoints, write the email sequence, and connect it all to the CRM"
 Architecture: Master agent (Opus or Sonnet, Thinking Tier) breaks the project into sub-tasks:
   Code generation sub-tasks (landing page HTML/CSS, API endpoint scripts): Route to Kimi K2.5 as sub-agent. Set max_tokens to 262,144.
-  Tool-call sub-tasks (CRM integration, API connections, webhook configuration): Route to MiniMax M2.5 as sub-agent. Set thinking to high or xhigh based on complexity. Set max_tokens to 196,608.
+  Tool-call sub-tasks (CRM integration, API connections, webhook configuration): Route to MiniMax M2.7 as sub-agent. Always pass reasoning: true. Set max_tokens to 131,072.
   Writing sub-tasks (email sequence copy): Route to Mistral Small Creative as sub-agent. Set max_tokens to 32,768.
   Research sub-tasks (verify CRM API documentation, check endpoint specs): Route to Perplexity Sonar Pro Search.
 Thinking level per sub-task: Standard code generation = medium. Complex API integration = high. Critical production deployment = xhigh. Creative writing = N/A (Mistral has no thinking parameter).
@@ -992,7 +1002,7 @@ When a master agent dispatches work to sub-agents, it MUST select the correct su
 Decision tree for sub-agent selection:
 
 Does the sub-task require tool calls, function execution, API calls, or any interaction with external systems?
-   YES: Use MiniMax M2.5. It supports tool calls. This includes heartbeat operations, sending messages, calling APIs, executing functions, and any operation that requires the model to invoke a tool.
+   YES: Use MiniMax M2.7. It supports tool calls. This includes heartbeat operations, sending messages, calling APIs, executing functions, and any operation that requires the model to invoke a tool.
    NO: Proceed to step 2.
 Is the sub-task code generation? (writing scripts, building modules, generating components, creating code files)
    YES: Use Kimi K2.5. It is purpose-built for code generation. It can run as 100+ parallel instances for high-volume work. Each instance handles its own task independently.
@@ -1002,11 +1012,11 @@ Is the sub-task creative writing? (blog posts, social media, emails, articles, b
    NO: Proceed to step 4.
 Is the sub-task research or fact-checking?
    YES: Use Perplexity Sonar Pro Search. It has web search built in.
-   NO: Default to MiniMax M2.5 for general task execution.
+   NO: Default to MiniMax M2.7 for general task execution.
 
 Sub-Agent Thinking Level Scaling
 
-The master agent evaluates the complexity of each sub-task and sets the thinking level accordingly. This is per-call, not per-model. The same MiniMax M2.5 instance can run at medium thinking for a simple task and xhigh thinking for a complex one within the same orchestration session.
+The master agent evaluates the complexity of each sub-task and sets the thinking level accordingly. This is per-call, not per-model. The same MiniMax M2.7 instance can run at medium thinking for a simple task and xhigh thinking for a complex one within the same orchestration session.
 
 | Sub-Task Complexity | Thinking Level | When to Use |
 |---------------------|----------------|-------------|
@@ -1024,7 +1034,7 @@ Each model has a maximum output token limit. When the master agent dispatches a 
 
 | Model | Max Output Tokens | Set max_tokens To |
 |-------|-------------------|-------------------|
-| MiniMax M2.5 | 196,608 | 196,608 (or the specific amount needed for the task, whichever is lower) |
+| MiniMax M2.7 | 131,072 | 131,072 (or the specific amount needed for the task, whichever is lower) |
 | Kimi K2.5 | 262,144 | 262,144 (or the specific amount needed for the task, whichever is lower) |
 | Mistral Small Creative | 32,768 | 32,768 (or the specific amount needed for the task, whichever is lower) |
 | DeepSeek V3.2 | 8,192 | 8,192 (or the specific amount needed for the task, whichever is lower) |
@@ -1037,7 +1047,7 @@ Each model has a maximum output token limit. When the master agent dispatches a 
 | DeepSeek V3.2 Speciale | 65,536 | The specific amount needed for the task |
 | DeepSeek R1 Free | 163,840 | The specific amount needed for the task |
 
-When reasoning is enabled: max_tokens must be set HIGHER than the reasoning budget. The reasoning budget is calculated from max_tokens (see the formula in Rule 13). If max_tokens is set to 196,608 and reasoning effort is xhigh (0.95 ratio), the reasoning budget consumes 186,778 tokens, leaving only 9,830 tokens for the actual response. The master agent must account for this. If a sub-task needs 8,000 tokens of output AND xhigh reasoning, max_tokens must be set high enough to accommodate both the reasoning budget and the response.
+When reasoning is enabled: max_tokens must be set HIGHER than the reasoning budget. For models with effort-based reasoning, the budget is calculated from max_tokens using the formula in Rule 13. For MiniMax M2.7, reasoning is on/off (true) and consumes tokens from the output budget. The master agent must set max_tokens high enough to accommodate both reasoning and response output.
 
 Cost Benefit
 
@@ -1061,12 +1071,10 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
   "agents": {
     "defaults": {
       "model": {
-        "primary": "openrouter/minimax/minimax-m2.5",
+        "primary": "openrouter/minimax/minimax-m2.7",
         "fallbacks": [
           "openrouter/google/gemini-3.1-flash-lite-preview",
-          "openrouter/healer-alpha",
           "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-          "openrouter/hunter-alpha",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/deepseek/deepseek-r1-0528:free"
         ]
@@ -1141,12 +1149,10 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
             "temperature": 1.0
           }
         },
-        "openrouter/minimax/minimax-m2.5": {
+        "openrouter/minimax/minimax-m2.7": {
           "params": {
             "temperature": 0.3,
-            "reasoning": {
-              "effort": "high"
-            }
+            "reasoning": true
           }
         },
         "openrouter/mistralai/mistral-small-creative": {
@@ -1199,6 +1205,11 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
             "temperature": 0.3
           }
         },
+        "openrouter/perplexity/sonar": {
+          "params": {
+            "temperature": 0.3
+          }
+        },
         "openrouter/google/gemini-3.1-flash-lite-preview": {
           "params": {
             "temperature": 0.3,
@@ -1207,12 +1218,10 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
             }
           }
         },
-        "openrouter/healer-alpha": {
+        "openrouter/xiaomi/mimo-v2-omni": {
           "params": {
             "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
+            "reasoning": true
           }
         },
         "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
@@ -1223,12 +1232,10 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
             }
           }
         },
-        "openrouter/hunter-alpha": {
+        "openrouter/xiaomi/mimo-v2-pro": {
           "params": {
             "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
+            "reasoning": true
           }
         }
       }
@@ -1244,7 +1251,7 @@ EXCEPTION: Kimi K2.5 (openrouter/moonshotai/kimi-k2.5): temperature 1.0
 
 Thinking/Reasoning Settings Summary
 
-MiniMax M2.5: reasoning effort set to "high" by default (primary daily task model, needs reliable tool execution). Supports escalation to "xhigh" (0.95 effort ratio) for maximum complexity tasks.
+MiniMax M2.7: reasoning effort set to "high" by default (primary daily task model, needs reliable tool execution). Supports escalation to "xhigh" (0.95 effort ratio) for maximum complexity tasks.
 DeepSeek V3.2: reasoning effort set to "medium" (value workhorse, balanced quality and cost)
 All other thinking-capable models: reasoning effort set to "medium" by default
 Mistral Small Creative: No reasoning parameter (not a thinking model)
@@ -1312,7 +1319,9 @@ QUICK REFERENCE TABLE
 | qwen | Qwen 3.5 Plus | Thinking | Multimodal, agentic planning | YES (medium default) | 0.3 |
 | glm5 | GLM-5 | Thinking | Systems design, agent workflows | YES (medium default) | 0.3 |
 | speciale | DeepSeek V3.2 Speciale | Thinking | High-compute reasoning | YES (medium default) | 0.3 |
-| minimax | MiniMax M2.5 | Execution | RECOMMENDED PRIMARY. Tool calls, task execution, heartbeat Phase 1 (w/ tool calls), Phase 2 default. Sub-agent for all tool-call tasks. | YES (HIGH default, supports XHIGH) | 0.3 |
+| mimo-pro | MiMo V2 Pro | Thinking | Complex code, orchestration, agentic workflows. TEXT ONLY. 1M context, 131K output. | YES (always on) | 0.3 |
+| minimax | MiniMax M2.7 | Execution | RECOMMENDED PRIMARY. Tool calls, task execution, heartbeat Phase 1 (w/ tool calls), Phase 2 default. Sub-agent for all tool-call tasks. 204K context, 131K output. | YES (opt-in reasoning: true) | 0.3 |
+| mimo-omni | MiMo V2 Omni | Execution | Multimodal (text+images+video+audio). Joint audio-visual processing. Cheaper than Gemini for media analysis. | YES (always on) | 0.3 |
 | flash | Gemini 3 Flash | Execution | Quick responses, large context | YES (medium default) | 0.3 |
 | haiku | Claude Haiku 4.5 | Execution | Fast intelligent responses | YES (medium default) | 0.3 |
 | gptmini | GPT-5 Mini | Execution | Mid-range tasks, good value | YES (medium default) | 0.3 |
@@ -1320,12 +1329,11 @@ QUICK REFERENCE TABLE
 | deepseek | DeepSeek V3.2 | Execution | Value workhorse, heartbeat backup | YES (MEDIUM default) | 0.3 |
 | kimi | Kimi K2.5 | Execution | Coding, chat, scraping (100+ parallel agents). No tool calls. Sub-agent for all code generation tasks. | YES (built-in) | 1.0 |
 | creative | Mistral Small Creative | Creative | All writing and content creation | No | 0.3 |
-| research | Perplexity Sonar Pro Search | Research | PRIMARY research model. All research, validation, fact-checking, web search. | No | 0.3 |
+| research | Perplexity Sonar Pro Search | Research | Deep research. Multi-step, follows links, synthesizes sources. | No | 0.3 |
+| sonar | Perplexity Sonar | Research | Quick web lookups. Single-question, fast and cheap. | No | 0.3 |
 | flashlite | Gemini 3.1 Flash Lite | Execution/Fallback | First fallback. High-efficiency, large context, low cost. | YES (medium default) | 0.3 |
-| healer | Healer Alpha | Thinking/Execution | Second fallback. Free omni-modal (vision, hearing, reasoning, action). DO NOT set as primary without user permission. | YES (medium default) | 0.3 |
-| nemotron | Nemotron 3 Super | Thinking/Execution | Third fallback. Free 120B-param MoE, complex multi-agent. DO NOT set as primary without user permission. | YES (medium default) | 0.3 |
-| hunter | Hunter Alpha | Thinking/Execution | Fourth fallback. Free 1T-param agentic model, 1M context, long-horizon planning. DO NOT set as primary without user permission. | YES (medium default) | 0.3 |
-| fallback | DeepSeek R1 Free | Emergency | Fifth fallback. Zero-credit fallback only. | YES (medium default) | 0.3 |
+| nemotron | Nemotron 3 Super | Fallback | Second fallback. Free 120B-param MoE, complex multi-agent. DO NOT set as primary without user permission. | YES (medium default) | 0.3 |
+| fallback | DeepSeek R1 Free | Emergency | Third fallback. Zero-credit fallback only. | YES (medium default) | 0.3 |
 
 Environment Variable
 
@@ -1363,7 +1371,7 @@ The zero-credit fallback protocol (Rule 16)
 The Kimi K2.5 tool-call limitation (Rule 19)
 The scenario-based routing guide
 Temperature settings (0.3 for all, 1.0 for Kimi K2.5 only)
-MiniMax M2.5 is the primary daily task model (tool calls, execution, heartbeat)
+MiniMax M2.7 is the primary daily task model (tool calls, execution, heartbeat)
 Kimi K2.5 is for coding and chat only (no tool calls)
 Perplexity Sonar Pro Search is the primary research model (all research, validation, fact-checking)
 Sub-agent model selection logic (Rule 25): Kimi for code generation, MiniMax for tool calls, Mistral for writing, Perplexity for research
@@ -1381,7 +1389,7 @@ Context window capacities for each model (so the agent knows when to compact or 
 Long-context management strategies: models with 1M context (Opus 4.6, Sonnet 4.6, Gemini 3.1 Pro, Qwen 3.5 Plus) can handle extended sessions without compaction
 Short-context awareness: Mistral Small Creative (200K) requires proactive session management
 When to switch models mid-session if context is running low
-MiniMax M2.5 is the primary daily task model (tool calls, task execution, heartbeat)
+MiniMax M2.7 is the primary daily task model (tool calls, task execution, heartbeat)
 Kimi K2.5 is for coding and chat only (no tool calls)
 Perplexity Sonar Pro Search is the primary research model
 Context Window Management Protocol: 80% warn, 90% create handoff.md, 95% update handoff.md, post-compaction read handoff.md first (Rule 24)
@@ -1401,7 +1409,7 @@ The purpose of this entire configuration is to ensure the end user gets the best
 Core Principles
 
 Match model complexity to task complexity. Do not use a thinking-tier model for tasks that an execution-tier model handles perfectly well.
-Default to MiniMax M2.5 for daily task execution. MiniMax is the primary daily task model. It supports tool calls, handles routine operations, and should be the first choice for any task that requires doing something (not just talking about it).
+Default to MiniMax M2.7 for daily task execution. MiniMax is the primary daily task model. It supports tool calls, handles routine operations, and should be the first choice for any task that requires doing something (not just talking about it).
 Route all creative/writing tasks to Mistral Small Creative. Social media, blog posts, emails, book chapters, marketing copy. All of it goes to the Creative Tier unless the user specifically requests a different model.
 Route all research, validation, and fact-checking to Perplexity Sonar Pro Search. Any time the agent needs to verify information, look something up, check if data is current, or research a topic, Perplexity handles it. Do not guess. Do not rely on training data for verifiable facts. Use Perplexity.
 Route coding and code generation to Kimi K2.5. Kimi is the coding and chat model. Use it for writing code, building scripts, generating components, and brainstorming. Do NOT assign tool-call tasks to Kimi. It cannot execute tools.
@@ -1410,7 +1418,7 @@ Proactively guide the user to the right model. Do not wait for the user to ask "
 Never let the system go dark because of billing. If credits run out, switch to the free fallback immediately and keep working.
 Track and communicate cost implications. When recommending models, include the pricing context so users can make informed decisions.
 Track context window usage and create handoff.md before compaction. The agent must calculate 80/90/95% thresholds on session start. Warn at 80%. Create handoff.md at 90%. Update handoff.md at 95%. After compaction, read handoff.md first. The agent must know its active model's context window to calculate these thresholds.
-Select the correct sub-agent model in multi-agent orchestration. Tool-call tasks go to MiniMax M2.5. Code generation goes to Kimi K2.5. Creative writing goes to Mistral Small Creative. Research goes to Perplexity. Set thinking level per sub-task complexity. Set max_tokens to the model's actual output limit.
+Select the correct sub-agent model in multi-agent orchestration. Tool-call tasks go to MiniMax M2.7. Code generation goes to Kimi K2.5. Creative writing goes to Mistral Small Creative. Research goes to Perplexity. Set thinking level per sub-task complexity. Set max_tokens to the model's actual output limit.
 
 
 
@@ -1433,15 +1441,15 @@ Using Opus or Codex for simple questions - Match the model to the task. Simple q
 Ignoring the 60-second timeout on model-switching - If the user does not respond within 60 seconds, proceed with your recommendation. Do not wait indefinitely.
 Overriding the user's primary model without permission - The primary model is sacred. Do not touch it without explicit permission.
 Failing to switch to the free fallback when credits are depleted - If the API returns a billing error, switch to DeepSeek R1 Free immediately. Do not stop working.
-Assigning tool-call tasks to Kimi K2.5 - Kimi K2.5 cannot do tool calls. If the task requires executing tools, calling functions, or performing actions, use MiniMax M2.5 instead. This will cause silent failures if ignored.
+Assigning tool-call tasks to Kimi K2.5 - Kimi K2.5 cannot do tool calls. If the task requires executing tools, calling functions, or performing actions, use MiniMax M2.7 instead. This will cause silent failures if ignored.
 Using a standard model for research instead of Perplexity - When the agent needs to verify facts, check current information, or research a topic, always route to Perplexity Sonar Pro Search. Do not guess or rely on training data for verifiable information.
 Not verifying model specs before configuring - Always check the live OpenRouter model page before writing any model into a config. Specs change. Prices change. Do not blindly trust static tables.
-Using Opus or Sonnet for heartbeat checks - Heartbeat Phase 1 is a status check. Use GPT-5 Nano ($0.05/M input) when no tool call is needed, or MiniMax M2.5 ($0.30/M input) when a tool call is required. Multiple sub-agents running heartbeat on Thinking Tier models accumulates token cost across every tick. This is Rule 22. Follow it.
+Using Opus or Sonnet for heartbeat checks - Heartbeat Phase 1 is a status check. Use GPT-5 Nano ($0.05/M input) when no tool call is needed, or MiniMax M2.7 ($0.30/M input) when a tool call is required. Multiple sub-agents running heartbeat on Thinking Tier models accumulates token cost across every tick. This is Rule 22. Follow it.
 Treating heartbeat as one model doing both checking and executing - Heartbeat has two phases. Phase 1 checks what needs to be done (low-cost model). Phase 2 dispatches the right model for the actual work. These are separate operations using separate models.
 Not tracking context window usage - The agent must calculate 80/90/95% thresholds for its active model's context window on session start. If the agent does not know its context window size, it cannot create the handoff.md file in time. Compaction without a handoff file means total loss of session context. This is Rule 24.
-Sending a tool-call sub-task to Kimi K2.5 in multi-agent orchestration - The master agent must route all tool-call sub-tasks to MiniMax M2.5. Kimi K2.5 cannot do tool calls. Sending a tool-call sub-task to Kimi will fail silently. This is Rule 25.
+Sending a tool-call sub-task to Kimi K2.5 in multi-agent orchestration - The master agent must route all tool-call sub-tasks to MiniMax M2.7. Kimi K2.5 cannot do tool calls. Sending a tool-call sub-task to Kimi will fail silently. This is Rule 25.
 Capping sub-agent max_tokens below the model's actual limit - Each model has a maximum output token limit. If the master agent sets max_tokens to a lower value, the sub-agent's output gets cut off. Set max_tokens to the model's actual limit (or the amount needed for the task, whichever is lower). Do not leave it at a default that chokes the output.
-Ignoring the reasoning budget when setting max_tokens with thinking enabled - When reasoning is on, the reasoning budget is calculated FROM max_tokens. If max_tokens is 196,608 and reasoning effort is xhigh (0.95 ratio), reasoning consumes 186,778 tokens, leaving only 9,830 for the actual response. The master agent must set max_tokens high enough to accommodate both the reasoning budget and the response output.
+Ignoring the reasoning budget when setting max_tokens with thinking enabled - When reasoning is on, thinking tokens are billed as output tokens. For MiniMax M2.7 with reasoning: true, tokens are consumed from the output budget. For effort-based models, the reasoning budget is calculated FROM max_tokens. The master agent must set max_tokens high enough to accommodate both reasoning and the response output.
 
 
 
@@ -1462,7 +1470,7 @@ openrouter/openai/gpt-5.2-codex
 openrouter/openai/gpt-5-mini
 openrouter/openai/gpt-5-nano
 openrouter/moonshotai/kimi-k2.5
-openrouter/minimax/minimax-m2.5
+openrouter/minimax/minimax-m2.7
 openrouter/mistralai/mistral-small-creative
 openrouter/qwen/qwen3.5-plus-02-15
 openrouter/z-ai/glm-5
@@ -1471,9 +1479,9 @@ openrouter/deepseek/deepseek-v3.2-speciale
 openrouter/deepseek/deepseek-r1-0528:free
 openrouter/perplexity/sonar-pro-search
 openrouter/google/gemini-3.1-flash-lite-preview
-openrouter/healer-alpha
+openrouter/xiaomi/mimo-v2-omni
 openrouter/nvidia/nemotron-3-super-120b-a12b:free
-openrouter/hunter-alpha
+openrouter/xiaomi/mimo-v2-pro
 
 NEVER use: openrouter/auto (Auto router picks models unpredictably and breaks configs)
 
@@ -1484,18 +1492,16 @@ Multiple Models with Fallbacks
   "agents": {
     "defaults": {
       "model": {
-        "primary": "openrouter/minimax/minimax-m2.5",
+        "primary": "openrouter/minimax/minimax-m2.7",
         "fallbacks": [
           "openrouter/google/gemini-3.1-flash-lite-preview",
-          "openrouter/healer-alpha",
           "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-          "openrouter/hunter-alpha",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/deepseek/deepseek-r1-0528:free"
         ]
       },
       "models": {
-        "openrouter/minimax/minimax-m2.5": {},
+        "openrouter/minimax/minimax-m2.7": {},
         "openrouter/moonshotai/kimi-k2.5": {},
         "openrouter/deepseek/deepseek-r1-0528:free": {}
       }
@@ -1636,7 +1642,7 @@ Recommended Config:
 
 Then per-model overrides where needed (example: MiniMax at HIGH):
 
-"openrouter/minimax/minimax-m2.5": {
+"openrouter/minimax/minimax-m2.7": {
   "params": {
     "temperature": 0.3,
     "reasoning": {
@@ -1675,12 +1681,12 @@ This is the heart of the routing system. It maps every common task type to the b
 
 | Task Category | Best Model(s) | Thinking Level | Rationale |
 |---|---|---|---|
-| Heartbeat Phase 1 (scan emails, calendar, triage priorities) | MiniMax M2.5 | low | Cheap ($0.30/$1.10), supports tool calls, fast enough for scanning. Don't waste expensive models on reading emails. |
+| Heartbeat Phase 1 (scan emails, calendar, triage priorities) | MiniMax M2.7 | low | Cheap ($0.30/$1.10), supports tool calls, fast enough for scanning. Don't waste expensive models on reading emails. |
 | Heartbeat Phase 2 (execute tasks from Phase 1) | Varies per task | Varies | Route each identified task to its best model. See Heartbeat Routing section below. |
-| Tool-heavy operations (API calls, file management, cron jobs, config changes, message sends) | MiniMax M2.5, Opus, or Sonnet | medium | MUST support tool calls. Kimi CANNOT do tool calls. MiniMax is cheapest with tool support. Use Opus for complex multi-step tool chains where reasoning matters. |
+| Tool-heavy operations (API calls, file management, cron jobs, config changes, message sends) | MiniMax M2.7, Opus, or Sonnet | medium | MUST support tool calls. Kimi CANNOT do tool calls. MiniMax is cheapest with tool support. Use Opus for complex multi-step tool chains where reasoning matters. |
 | Deep strategy and analysis (business planning, complex decisions, coaching frameworks, architecture) | Opus | medium to high | Best reasoning capability, most nuanced understanding, highest quality output. This is where Opus earns its premium price. |
 | Long-form writing (documents, guides, SOPs, client deliverables, proposals) | Opus or Sonnet | medium | Writing quality and formatting precision matter. Opus for important/client-facing, Sonnet for internal/less critical. |
-| Quick writing (short messages, Slack DMs, quick emails, status updates) | MiniMax M2.5 or Sonnet | low | Don't waste Opus tokens on a 2-sentence message. MiniMax handles this fine. |
+| Quick writing (short messages, Slack DMs, quick emails, status updates) | MiniMax M2.7 or Sonnet | low | Don't waste Opus tokens on a 2-sentence message. MiniMax handles this fine. |
 | Code generation (writing new code, scripts, automation, refactoring) | Kimi K2.5 or Codex | built-in (Kimi) / medium (Codex) | Kimi K2.5 is cheap ($0.23/$3.00) with built-in reasoning and 262K context. Its killer feature: you can spin up HUNDREDS or even 1,000+ sub-agents simultaneously for parallel code execution. It just can't do tool calls. A master agent (Opus) manages the swarm. Codex for code that also needs tool interaction. |
 | Code debugging (fixing errors, reading logs, troubleshooting, testing) | Opus or Codex | medium to high | Need both strong reasoning AND tool calls to read files, run tests, iterate on fixes. Kimi can't do this because no tool calls. |
 | Research and fact-finding (web search, current information, verification, citations) | Perplexity Sonar Pro | medium | Built specifically for search with real-time web access. Provides cited sources. Other models would need external search tools. |
@@ -1688,7 +1694,7 @@ This is the heart of the routing system. It maps every common task type to the b
 | Image and media generation (creating images, processing media, video generation) | Any model with tool calls (MiniMax is fine) | low | The model just needs to correctly call the Kie.ai or image generation skill. It's not doing the creative work itself. |
 | Document formatting (Google Docs API, PDF creation, complex formatting) | Opus or Sonnet | medium | Complex API call sequences, quality matters, needs reliable tool support and attention to detail. |
 | Client-facing communications (emails to clients, professional messages, proposals) | Opus | medium | Tone, nuance, and quality matter most when the user's name and reputation are on it. |
-| Data processing (parsing CSVs, transforming data, batch operations, calculations) | MiniMax M2.5 or DeepSeek | low to medium | Cost-effective for mechanical, repetitive work. Don't need premium reasoning for data transformation. |
+| Data processing (parsing CSVs, transforming data, batch operations, calculations) | MiniMax M2.7 or DeepSeek | low to medium | Cost-effective for mechanical, repetitive work. Don't need premium reasoning for data transformation. |
 | Creative brainstorming (marketing ideas, campaign concepts, naming, positioning) | Opus or Mistral Creative | medium to high | Opus for strategy-connected creativity. Mistral Creative for pure ideation and divergent thinking. |
 | Quality control (reviewing sub-agent output, verifying deliverables) | Opus or Gemini 3.1 Pro | medium to high | Best reasoning for catching errors and verifying quality. This is the QC layer. Never deliver sub-agent output without running it through QC first. |
 | Planning and blueprinting (architecture, project planning, task decomposition, strategy) | Opus | medium to high | Creates the plan that other models execute. Masterminding, strategic thinking, decision-making. The boss model. |
@@ -1703,7 +1709,7 @@ This table helps the agent quickly determine what each model CAN and CANNOT do:
 | Claude Opus 4.6 | opus | YES | medium | Strategy, writing, complex tasks | $$$$$ ($5/$25) | The premium specialist. Reserve for high-value work. |
 | Claude Sonnet 4.6 | sonnet | YES | medium | Balanced quality and cost | $$$$ ($3/$15) | Good middle ground. Quality close to Opus at lower cost. |
 | Claude Haiku 4.5 | - | YES | medium | Quick quality tasks | $$ ($1/$5) | Fast, cheap, still Claude quality. Good for simple tool operations. |
-| MiniMax M2.5 | - | YES | HIGH | Daily tasks, tool calls, heartbeat | $$ ($0.30/$1.10) | The daily workhorse. Cheap with tool calls AND high thinking. Default for operations. |
+| MiniMax M2.7 | - | YES | HIGH | Daily tasks, tool calls, heartbeat | $$ ($0.30/$1.10) | The daily workhorse. Cheap with tool calls AND high thinking. Default for operations. |
 | Kimi K2.5 | kimi | NO | built-in | Code swarms (cheap, massively scalable) | $ ($0.23/$3.00) | Can spin up 100s-1000s of sub-agents for parallel code. 262K context. CANNOT do tool calls. Needs a master agent (Opus) to orchestrate. |
 | GPT-5.2 Codex | codex | YES | medium | Code plus tool hybrid tasks | $$ ($0.25/$2) | When you need both code AND tool calls. |
 | GPT-5 Mini | - | YES | medium | General purpose, cost-effective | $$ ($0.25/$2) | Solid all-around at moderate cost. |
@@ -1735,7 +1741,7 @@ Heartbeat Routing (Automated Task Execution)
 The heartbeat is where intelligent routing matters most, because it runs autonomously without user input. The agent needs to be smart about cost and model selection on its own.
 
 Phase 1: Morning Scan
-Switch to: MiniMax M2.5 (/model minimax or equivalent)
+Switch to: MiniMax M2.7 (/model minimax or equivalent)
 Thinking: low (/reasoning low)
 What to do: Check emails across all accounts, check calendar, scan for alerts, scan messaging platforms for unread important messages, produce a prioritized task list
 Why MiniMax: It's cheap, supports the tool calls needed to check email/calendar/messages, and Phase 1 doesn't require deep reasoning. You're just reading and summarizing.
@@ -1779,7 +1785,7 @@ Does NOT do the grunt work itself. Too expensive for execution.
 The Worker Layer (Kimi, MiniMax, DeepSeek, etc.)
 These models do the actual work:
 Kimi K2.5 is the code army. Can spin up HUNDREDS or even 1,000+ sub-agents simultaneously for parallel code generation. 262K context per agent. Cannot do tool calls, but doesn't need to - it produces code/text output and sends it back to the boss.
-MiniMax M2.5 handles tool-heavy execution. API calls, file operations, message sends, anything requiring tool interaction.
+MiniMax M2.7 handles tool-heavy execution. API calls, file operations, message sends, anything requiring tool interaction.
 DeepSeek handles cost-effective general execution. Good for mechanical, repetitive, or bulk processing work.
 Codex handles hybrid code + tool tasks. When code needs to also run tests or interact with files.
 
@@ -1879,7 +1885,7 @@ Intelligent Model Routing Section - The complete decision framework:
 
 Model-Specific Notes - Any gotchas or special behaviors:
    "Kimi K2.5 CANNOT do tool calls. Use for code generation only."
-   "MiniMax M2.5 defaults to HIGH thinking. This is the daily workhorse."
+   "MiniMax M2.7 defaults to HIGH thinking. This is the daily workhorse."
    "Perplexity's tool calls are its built-in web search, not OpenClaw tool calls."
    "Google Gemini uses thinking.type/budget format instead of reasoning.effort."
 
@@ -1903,7 +1909,7 @@ Switch: Use /model <alias> and /reasoning <level> if needed
 Model Selection Matrix
 | Task | Best Model | Thinking | Why |
 |------|-----------|----------|-----|
-| Heartbeat scan | MiniMax M2.5 | low | Cheap, fast, tool calls |
+| Heartbeat scan | MiniMax M2.7 | low | Cheap, fast, tool calls |
 | Client email | Opus | medium | Quality matters |
 | Code generation | Kimi K2.5 | built-in | FREE |
 | Research | Perplexity | medium | Built for search |
@@ -1939,7 +1945,7 @@ Switch if needed using /model <alias> and /reasoning <level>.
 
 Key rules:
 Kimi K2.5 CANNOT do tool calls. Never route tool tasks to Kimi.
-MiniMax M2.5 is the daily workhorse (cheap + tools + high thinking).
+MiniMax M2.7 is the daily workhorse (cheap + tools + high thinking).
 Opus is the specialist (complex strategy, writing, client-facing).
 Full details: See TOOLS.md "Intelligent Model Routing" section.
 
@@ -1967,7 +1973,7 @@ Example entry for HEARTBEAT.md:
 Heartbeat Model Routing
 
 Phase 1: Scan and Triage
-Model: MiniMax M2.5 | Thinking: low
+Model: MiniMax M2.7 | Thinking: low
 Tasks: Check emails, calendar, alerts, messages. Produce task list.
 
 Phase 2: Execute Tasks
@@ -1990,7 +1996,7 @@ USER.md describes WHO the agent is helping. It typically contains the user's pre
 
 Model Preferences - Which model the user prefers for different situations:
    "Primary model: Claude Opus 4.6 for direct conversations"
-   "Heartbeat model: MiniMax M2.5 for cost efficiency"
+   "Heartbeat model: MiniMax M2.7 for cost efficiency"
    "Code model: Kimi K2.5 for free code generation"
 
 Cost Sensitivity - How cost-conscious the user is:
@@ -2033,7 +2039,7 @@ No contradictions. If TOOLS.md says "use MiniMax for heartbeat" but HEARTBEAT.md
 
 No redundancy that could diverge. If the same information is in multiple files, make sure they reference each other rather than duplicating content that could get out of sync. Example: AGENTS.md should say "See TOOLS.md for full matrix" rather than copying the entire matrix.
 
-Consistent model names. Use the same model names everywhere. Don't call it "MiniMax" in one file and "minimax-m2.5" in another without the alias connection being clear.
+Consistent model names. Use the same model names everywhere. Don't call it "MiniMax" in one file and "minimax-m2.7" in another without the alias connection being clear.
 
 Consistent thinking levels. If you set MiniMax to HIGH in config, all files should reflect that. Don't have one file saying "medium" for MiniMax.
 

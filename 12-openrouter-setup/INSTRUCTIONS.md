@@ -20,8 +20,8 @@ These models support extended thinking/reasoning. They cost more but deliver sig
 
 ### Tier 2: Execution Tier (Daily Work)
 For: Routine tasks, tool calls, sending messages, file operations, heartbeat checks.
-Models: MiniMax M2.5 (PRIMARY), Gemini 3 Flash, Claude Haiku 4.5, GPT-5 Mini, GPT-5 Nano, DeepSeek V3.2, Kimi K2.5.
-MiniMax M2.5 is the default daily workhorse. It supports tool calls, has HIGH thinking enabled, and costs $0.30 per million input tokens.
+Models: MiniMax M2.7 (PRIMARY), Gemini 3 Flash, Claude Haiku 4.5, GPT-5 Mini, GPT-5 Nano, DeepSeek V3.2, Kimi K2.5.
+MiniMax M2.7 is the default daily workhorse. It supports tool calls, has opt-in reasoning (pass reasoning: true), and costs $0.30 per million input tokens. 204K context, 131K max output.
 
 CRITICAL: Kimi K2.5 CANNOT do tool calls. It is for coding and chat only. If a task requires calling tools, executing functions, or making API calls, do NOT use Kimi. Use MiniMax instead.
 
@@ -47,7 +47,7 @@ To switch to a different model during a conversation, type:
 
    /model opus        (switches to Claude Opus 4.6)
    /model sonnet      (switches to Claude Sonnet 4.6)
-   /model minimax     (switches to MiniMax M2.5)
+   /model minimax     (switches to MiniMax M2.7)
    /model kimi        (switches to Kimi K2.5)
    /model creative    (switches to Mistral Small Creative)
    /model research    (switches to Perplexity Sonar Pro)
@@ -77,7 +77,7 @@ Thinking (also called reasoning) is a feature that lets models "think harder" ab
 ### Default Thinking Levels Per Model
 
 Most models default to medium. Two exceptions:
-- MiniMax M2.5 defaults to HIGH (because it is the daily task model and needs reliable tool execution)
+- MiniMax M2.7 defaults to opt-in reasoning (pass reasoning: true, no effort levels)
 - DeepSeek V3.2 defaults to MEDIUM
 
 Models that do not use thinking at all:
@@ -123,14 +123,17 @@ Before every task, the agent should ask itself four questions:
 | Plan a multi-step automation | Claude Opus 4.6 | medium to high |
 | Analyze a long document | Gemini 3.1 Pro | medium |
 | Quick summary | GPT-5 Mini or Claude Haiku | low |
-| Send a message or make an API call | MiniMax M2.5 | low |
+| Send a message or make an API call | MiniMax M2.7 | low |
 | Research or fact-check something | Perplexity Sonar Pro | medium |
+| Quick web lookup (single question) | Perplexity Sonar | low |
+| Analyze images, video, or audio | MiMo V2 Omni | always on |
+| Complex code or orchestration | MiMo V2 Pro | always on |
 | Write code for a script | Kimi K2.5 | built-in |
 | Build a project plan | Claude Sonnet 4.6 | medium |
 | Review a business proposal | Claude Sonnet 4.6 | medium |
 | Refactor an entire codebase | Claude Opus 4.6 | high |
 | Scrape data in bulk | Kimi K2.5 (parallel instances) | built-in |
-| Heartbeat scan (check emails, calendar) | MiniMax M2.5 | low |
+| Heartbeat scan (check emails, calendar) | MiniMax M2.7 | low |
 
 
 ## Model Switching Permission Protocol
@@ -154,7 +157,7 @@ Go to https://openrouter.ai/activity to see your requests, costs, and token usag
 
 ### Cost-Saving Tips
 
-1. Use MiniMax M2.5 as your daily driver. At $0.30 per million input tokens with tool call support and HIGH thinking, it is the best value for daily work.
+1. Use MiniMax M2.7 as your daily driver. At $0.30 per million input tokens with tool call support and opt-in reasoning (reasoning: true), it is the best value for daily work. 131K max output -- double the previous M2.5.
 
 2. Use Mistral Small Creative for all writing tasks. At $0.10 per million input tokens, it is the cheapest option for creative work.
 
@@ -172,7 +175,7 @@ Go to https://openrouter.ai/activity to see your requests, costs, and token usag
 The heartbeat is when the agent automatically checks for tasks that need doing (emails, calendar events, alerts). It has two phases:
 
 ### Phase 1: The Check
-- Model: MiniMax M2.5
+- Model: MiniMax M2.7
 - Thinking: low
 - What it does: Checks emails, calendar, messages, alerts. Produces a list of tasks.
 - Cost: Very cheap. This is just reading and summarizing.
@@ -204,11 +207,14 @@ The agent should NEVER stop working just because paid models are unavailable. Th
 
 When the agent manages multiple sub-agents (workers) for a big task, each sub-agent uses the right model for its piece of the work:
 
-- Sub-task requires tool calls -> MiniMax M2.5
+- Sub-task requires tool calls -> MiniMax M2.7 (pass reasoning: true)
 - Sub-task is code generation -> Kimi K2.5
+- Sub-task is multimodal (images/video/audio) -> MiMo V2 Omni (pass reasoning: true)
+- Sub-task is complex code/orchestration -> MiMo V2 Pro (pass reasoning: true, TEXT ONLY)
 - Sub-task is creative writing -> Mistral Small Creative
-- Sub-task is research -> Perplexity Sonar Pro Search
-- General task that does not fit above -> MiniMax M2.5
+- Sub-task is deep research -> Perplexity Sonar Pro Search
+- Sub-task is quick lookup -> Perplexity Sonar
+- General task that does not fit above -> MiniMax M2.7
 
 The master agent (usually Opus) plans the work, assigns sub-tasks, and reviews the results. The sub-agents do the actual work. This pattern keeps costs down because the expensive model only plans and reviews, while cheaper models do the heavy lifting.
 
@@ -225,7 +231,7 @@ Key thresholds:
 
 Large context models (1 million tokens): Claude Opus 4.6, Claude Sonnet 4.6, Gemini 3.1 Pro, Qwen 3.5 Plus. These rarely need handoff during a normal session.
 
-Small context models (under 200K tokens): Mistral Small Creative (32K), DeepSeek V3.2 (163K), MiniMax M2.5 (196K). These need more careful context management for long sessions.
+Small context models (under 200K tokens): Mistral Small Creative (32K), DeepSeek V3.2 (163K), MiniMax M2.7 (196K). These need more careful context management for long sessions.
 
 
 ## Updating Your Workspace Files
