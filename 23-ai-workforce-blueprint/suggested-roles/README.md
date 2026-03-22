@@ -60,5 +60,5 @@ The QC agent reviews finished work before it leaves the department. It does not 
 See `QC-ROLES-MASTER.md` in this skill's root folder for:
 - The generic QC role template
 - Model selection guidance table
-- Department-specific QC descriptions for all 17 departments
+- Department-specific QC descriptions for each department
 - Database and seed script notes for adding the QC role type

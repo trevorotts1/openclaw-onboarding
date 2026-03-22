@@ -4,7 +4,7 @@
 
 **Current Version: v5.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-This repo contains **33 skill folders** (01 through 33, with 13 archived) plus an install script.
+This repo contains **34 skill folders** (01 through 34, with 13, 33, and 34 archived) plus an install script.
 
 ### What's New in v5.0.0 (March 19, 2026)
 - **Skill 31: Upgraded Memory System** - 5-layer architecture (markdown files, improved flush, session indexing, Gemini Embedding 2 search, Mem0 auto-capture)

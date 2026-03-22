@@ -18,11 +18,23 @@ Full document: ai-workforce-blueprint-full.md (66,819 chars)
 
 Department folder rules:
 - All dept folders end with -dept (sales-dept/, marketing-dept/, ops-dept/, etc.)
+- Every dept workspace gets: SOUL.md (unique), MEMORY.md (empty), HEARTBEAT.md (dept priorities), memory/ folder, plus TOOLS.md, AGENTS.md, USER.md (inherited from CEO workspace)
 - Every role folder requires: 00-START-HERE.md, numbered task files (01-, 02-...), good-examples.md, bad-examples.md, tools.md
 - Every workspace requires: universal-sops/00-ROUTING.md
 - When routing a task: read universal-sops/00-ROUTING.md first, then go to the matching dept/role folder
 
-To build new dept: create [name]-dept/ folder, create role subfolders, create all 7 required files
+Agent management:
+- Every department has a permanent director (agents.list entry in openclaw.json)
+- Specialists are classified as permanent (daily work, gets agents.list entry) or on-call (template only)
+- Config must be backed up before ANY openclaw.json edit
+
+Persona integration:
+- Each department gets governing-personas.md with pre-qualified persona pool
+- Persona selection uses 5-layer alignment (Mission, Values, KPIs, Dept Goals, Task Fit)
+- Dev Devil's Advocate (DA) auto-created per department using Act As If Protocol
+- Persona diversity tracked in agent performance metrics
+
+To build new dept: use build-workforce.py create_department_workspace()
 To audit existing structure: trigger "Audit my AI workforce at [path]"
 
 This skill is SEPARATE from the book-to-persona / Coaching Personas system.
@@ -41,12 +53,21 @@ Workspace location: [fill in after build]
 ## AI Workforce Blueprint - Scaffold Script
 Script: ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py
 Run: python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py
-What it does: asks questions about your business, creates all dept/role folders and starter files
+
+Key functions:
+- create_department_workspace(): builds ~/clawd/departments/[name]/ with inherited core files
+- create_governing_personas_md(): maps persona-categories.json to department domain tags
+- determine_specialists(): classifies roles as permanent (daily) or on-call (template)
+- add_agent_to_config(): backs up config, then adds agents.list entry
+- generate_org_chart(): creates ~/clawd/ORG-CHART.md
+- generate_departments_json(): creates config/departments.json for Command Center
+- generate_soul_md(): creates unique SOUL.md from interview answers
+- log_fallback(): tracks when clients hesitate during interview
 
 Options:
-- Option A (automated): AI asks questions, builds everything
-- Option B (manual): follow ai-workforce-blueprint-full.md step by step
-- Option C (resume/audit): AI scans existing folders, fills gaps, does not overwrite
+- Option A (Full Interview): AI asks 3-7 questions per department, builds everything
+- Option B (Quick Setup): uses existing workspace context + industry best practices
+- Option C (Audit/Resume): scans existing folders, fills gaps, does not overwrite
 
 Full reference: ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-blueprint-full.md
 ```
@@ -58,13 +79,18 @@ Full reference: ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-bluepr
 **Where:** Add a new entry under installed skills or at the bottom titled `## AI Workforce Blueprint (Installed)`
 
 **Exact text to add:**
+
 ```
 ## AI Workforce Blueprint (Installed [DATE])
 - Skill: ~/.openclaw/skills/23-ai-workforce-blueprint/
 - Workspace built at: [fill in path after build]
 - Departments: [fill in after build]
+- Build script: ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py
 - Source: Available at your onboarding package repo.
 - Routing file: [workspace]/universal-sops/00-ROUTING.md
+- Persona matrix: [workspace]/persona-matrix.md
+- Org chart: [workspace]/ORG-CHART.md
+- Command Center config: [workspace]/config/departments.json
 - Full blueprint: ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-blueprint-full.md
 ```
 

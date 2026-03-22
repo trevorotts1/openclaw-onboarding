@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v5.0.0"
+ONBOARDING_VERSION="v6.0.0"
 
 # ============================================================
 #  OpenClaw Onboarding Installer
@@ -58,7 +58,7 @@ echo "  Found: $(command -v openclaw)"
 # Step 2: Download the onboarding package
 # ----------------------------------------------------------
 echo ""
-echo "[2/5] Downloading 33 skills from GitHub..."
+echo "[2/5] Downloading 34 skills from GitHub..."
 TEMP_ZIP="/tmp/openclaw-onboarding-pkg.zip"
 TEMP_EXTRACT="/tmp/openclaw-onboarding-extract"
 
@@ -146,7 +146,7 @@ cat >> "$AGENTS_FILE" << 'ONBOARDING_FLAG'
 ---
 🔴🔴🔴 ONBOARDING PENDING - EXECUTE IMMEDIATELY
 
-The OpenClaw onboarding package (33 skills) has been installed to:
+The OpenClaw onboarding package (34 skills) has been installed to:
   ~/.openclaw/onboarding/
 
 READ THIS FILE FIRST: ~/.openclaw/onboarding/Start Here.md
@@ -154,17 +154,17 @@ READ THIS FILE FIRST: ~/.openclaw/onboarding/Start Here.md
 It contains the complete execution checklist, wave instructions, and failure handling.
 
 SUMMARY:
-- Install 33 skills using 5-Wave Parallel Orchestration
+- Install 34 skills using 5-Wave Parallel Orchestration
 - Use parallel sub-agents for Waves 2 and 4 (if sessions_spawn works)
 - Use sequential mode for Waves 1, 3, 5
-- Skip skill 13 (archived)
+- Skip skills 13, 33, 34 (archived)
 - Skills 22-23: Main orchestrator ONLY (no sub-agents)
 - Track progress in ~/.openclaw/onboarding/.onboarding-status
 - Remove this flag and write ONBOARDING COMPLETE to MEMORY.md when done
 
 DO NOT:
 - Skip reading Start Here.md
-- Skip skills or say "done" until all 33 complete
+- Skip skills or say "done" until all 34 complete
 - Delegate skills 22-23 to sub-agents
 - Trigger gateway restarts without asking
 
@@ -186,7 +186,7 @@ echo "  OpenClaw Onboarding Package Ready"
 echo "  Version: ${ONBOARDING_VERSION}"
 echo "============================================"
 echo ""
-echo "  📦 33 skills downloaded to:"
+echo "  📦 34 skills downloaded to:"
 echo "     ~/.openclaw/onboarding/"
 echo ""
 echo "  📋 ONBOARDING FLAG LOCATION:"
@@ -200,7 +200,7 @@ echo "       'Read $AGENTS_FILE and begin onboarding installation'"
 echo ""
 echo "  The agent will read AGENTS.md, find the"
 echo "  ONBOARDING PENDING flag, and install all"
-echo "  33 skills automatically."
+echo "  34 skills automatically."
 echo ""
 echo "  ⚠️  If the agent says it cannot find the flag,"
 echo "     tell it to run:"

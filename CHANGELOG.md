@@ -4,6 +4,38 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v6.0.0] - March 22, 2026
+
+### AI Workforce Blueprint v2.3 + Skills 33/34 Merge
+
+#### Added
+- **Skill 23**: Workspace creation with core file inheritance (SOUL.md unique, TOOLS.md/AGENTS.md/USER.md inherited from CEO workspace)
+- **Skill 23**: Specialist determination function (permanent vs on-call classification)
+- **Skill 23**: Persona alignment via 5-layer selection (Mission, Values, KPIs, Dept Goals, Task Fit)
+- **Skill 23**: ORG-CHART.md generation with model assignments
+- **Skill 23**: Command Center departments.json generation
+- **Skill 23**: Config safety protocol (backup before openclaw.json edits)
+- **Skill 23**: interview-handoff.md auto-creation and flush after every answer
+- **Skill 23**: Model check (high reasoning required) at install start
+- **Skill 23**: Hesitation detection with industry research fallback (Perplexity sonar-pro-search)
+- **Skill 23**: Client stop/resume with interview-handoff.md save
+- **Skill 23**: 10 industry examples in INSTRUCTIONS.md
+- **Skill 22**: persona-categories.json (40 personas, 12 domain + 6 perspective tags)
+- **Skill 22**: Category metadata per persona (domain_tags, business_stage, ideal_user)
+
+#### Changed
+- **Skill 23**: All files rewritten to v2.3 (Start Here, SKILL.md, INSTRUCTIONS.md, build-workforce.py, INSTALL.md, CORE_UPDATES.md)
+- **Skill 23**: Options presented as A/B/C with plain English descriptions (no "permanent agent"/"sub-agent")
+- **Skill 23**: Interview questions are dynamic (3-7 per department, not fixed 7 with jargon)
+- **Skill 23**: Department count is dynamic (any number, not hardcoded 17)
+- **Skill 23**: Forbidden jargon removed from all files (handoff, tech stack, SOP, KPI, etc.)
+
+#### Archived
+- **Skill 33**: Department Heads - merged into Skill 23 (create_department_workspace, generate_soul_md, add_agent_to_config)
+- **Skill 34**: Intelligent Staffing - merged into Skill 23 (determine_specialists, persona alignment)
+
+---
+
 ## [v5.5.2] - March 21, 2026
 
 ### Skill 3 Fix + Calibre Auto-Install

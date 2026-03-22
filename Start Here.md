@@ -8,9 +8,9 @@
 If you are reading this file, the user has triggered onboarding by saying something like:
 - "Begin onboarding installation"
 - "Start onboarding"
-- "Install the 33 skills"
+- "Install the 32 skills"
 
-**Your task:** Install all 33 skills using the 5-Wave Parallel Orchestration below.
+**Your task:** Install all 32 skills using the 5-Wave Parallel Orchestration below.
 
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
@@ -45,10 +45,10 @@ Before starting Wave 2, verify you can spawn sub-agents:
 # Try to spawn a test sub-agent (this is a capability check, not actual install)
 ```
 If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use parallel sub-agents).  
-If `sessions_spawn` fails: Use Sequential Mode (install 01→30 one at a time).
+If `sessions_spawn` fails: Use Sequential Mode (install 01→31 one at a time, skipping 13 which is archived).
 
 **0.4: Announce your strategy**
-Tell user: "Onboarding triggered. I will install 33 skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+Tell user: "Onboarding triggered. I will install 32 skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
 
 ---
 
@@ -181,7 +181,7 @@ It powers the persona search in Skill 22 and the persona detection in Skill 23.
 - Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
-- After all 33 skills: final complete index
+- After all 32 skills: final complete index
 
 **Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
@@ -206,7 +206,7 @@ No exceptions. If you skip those two, stop and go back.
 
 ## 🔴 SKILL INSTALLATION PROTOCOL (MANDATORY FOR EACH SKILL)
 
-**For EVERY skill folder (01 through 30), you MUST follow this exact sequence. NO EXCEPTIONS. NO SHORTCUTS.**
+**For EVERY skill folder (01 through 31, skipping 13 which is archived), you MUST follow this exact sequence. NO EXCEPTIONS. NO SHORTCUTS.**
 
 ### ZERO TOLERANCE SHORTCUTS
 The following are FORBIDDEN and will cause installation failures:
@@ -257,8 +257,9 @@ Every skill has a specific install sequence. Follow it exactly:
 - Do NOT say "onboarding complete" after finishing one skill
 - Do NOT skip skills because they "seem optional"
 - Install skills 01-30 in order, confirm each one individually
-- Only after skill 33 (Department Heads) is verified complete → remove ONBOARDING PENDING flag
-- Only after skill 33 (Department Heads) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
+- Only after skill 31 (Upgraded Memory System) is verified complete → remove ONBOARDING PENDING flag
+- Only after skill 31 (Upgraded Memory System) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
+- NOTE: Former Skills 33 (Department Heads) and 34 (Intelligent Staffing) have been merged INTO Skill 23 (AI Workforce Blueprint). They no longer exist as separate skills. Their folders are archived as 33-department-heads-ARCHIVED and 34-intelligent-staffing-ARCHIVED.
 
 ---
 
@@ -304,6 +305,73 @@ Every skill has a specific install sequence. Follow it exactly:
 The Teach Yourself Protocol (TYP) exists specifically to prevent this. Without TYP, agents dump entire skill documentation into AGENTS.md, ballooning it from 500 lines to 5000+ lines. This wastes tokens on every session start, slows the agent down, and pushes important information out of the context window.
 
 **The core files are the agent's brain. Keep them lean. Keep them fast. Keep them relevant.**
+
+---
+
+## 🔴 SYSTEM PHILOSOPHY - READ AND INTERNALIZE
+
+### Why This System Exists
+
+This system builds non-technical business owners into running their business like a real company. Many clients are new entrepreneurs or business owners who have never successfully run a company. The AI is their business partner - not a chatbot, not a tool, but a partner that helps them build something real.
+
+### The Golden Rule of Client Experience
+
+"The whole point of this system is to BUILD them into running a real company. Not quiz them on shit they don't know. The AI should be the expert that guides them, not a survey that interrogates them."
+
+When a client does not know the answer to a question, the AI says: "No worries. Let me research best practices for your industry and suggest something. You just approve it."
+
+The AI leads with knowledge. It suggests answers. It detects when they are stuck and helps them through it. It NEVER uses jargon. It NEVER makes them feel stupid.
+
+### How the Skills Connect (The Pipeline)
+
+Skill 22 (Book-to-Persona Coaching Leadership System) → Skill 23 (AI Workforce Blueprint) → BlackCEO Command Center
+
+- Skill 22 converts books into persona blueprints (coaching and leadership frameworks)
+- Skill 23 interviews the client, creates departments, hires department heads, determines specialists, assigns personas, generates the org chart, and sets up the Command Center config
+- The Command Center displays and manages everything Skill 23 built
+
+Skills 33 (Department Heads) and 34 (Intelligent Staffing) are ARCHIVED. Their logic has been merged into Skill 23. Skill 23 is now the single skill that builds the entire AI company.
+
+### The Act As If Protocol
+
+When a persona is assigned to an agent for a task, the instruction is: "Act as if you are [persona name] executing this task."
+
+This means the agent BECOMES that person for the duration of the task. Their beliefs, standards, voice, approach, quirks. Personas are selected PER TASK, not per role. The same Marketing Director might use Seth Godin for content strategy and Gary Vee for social media.
+
+### Persona Alignment (5 Layers)
+
+Before selecting a persona:
+1. Company Mission - does the persona align with the company's mission?
+2. Owner Values - does it match the owner's personal beliefs and style?
+3. Company Goals/KPIs - does it support what the company is trying to achieve?
+4. Department Goals/KPIs - does it fit this department's objectives?
+5. Task Fit - is this persona the right guide for THIS specific task?
+
+### Model Requirements for Critical Skills
+
+Skills 22 (Book-to-Persona) and 23 (AI Workforce Blueprint) MUST run on high reasoning models:
+- anthropic/claude-opus-4-6
+- anthropic/claude-sonnet-4-6
+- openrouter/xiaomi/mimo-v2-pro (with thinking enabled)
+- google/gemini-3.1-pro-preview
+- openai-codex/gpt-5.4
+
+NEVER use Kimi 2.5, Gemini Flash, or Gemini Flash Lite for these skills. If the client is on a low reasoning model, suggest switching before proceeding.
+
+### Workspace Architecture
+
+Every department gets a workspace with:
+- SOUL.md (unique - department identity)
+- MEMORY.md (unique - department knowledge)
+- HEARTBEAT.md (unique - department priorities)
+- memory/ folder (unique - daily logs)
+- TOOLS.md (inherited from main CEO workspace)
+- AGENTS.md (inherited from main CEO workspace)
+- USER.md (inherited from main CEO workspace)
+
+### Backup Protocol
+
+Before ANY config edit: backup to ~/Downloads/openclaw-backups/ with a human-readable filename. NEVER put backups in hidden dot-folders. Validate JSON after writing. If the backup ended up in the wrong place, re-backup to the correct location.
 
 ---
 
@@ -358,14 +426,14 @@ Check onboarding status:
 2. Count how many skills are INSTALLED vs remaining
 3. If skills remain and you are not currently installing one, resume from the next unfinished skill
 4. If you are stuck on a skill for more than 10 minutes, skip it, mark it FAILED, and move to the next
-5. Report progress: "[X] of 33 skills installed. Currently on: [skill name]."
+5. Report progress: "[X] of 32 skills installed. Currently on: [skill name]."
 
-DO NOT REMOVE this block until all 33 skills are installed or attempted.
+DO NOT REMOVE this block until all 32 skills are installed or attempted.
 ```
 
 **Step 3: After onboarding completes, clean up**
 
-When all 33 skills are installed (or attempted), the agent MUST:
+When all 32 skills are installed (or attempted), the agent MUST:
 1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
 2. Reset the heartbeat interval back to the default:
 ```json
@@ -383,9 +451,9 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 
 ---
 
-## 🔴 ONBOARDING CONTINUITY - NEVER STOP UNTIL ALL 33 SKILLS ARE INSTALLED
+## 🔴 ONBOARDING CONTINUITY - NEVER STOP UNTIL ALL 32 SKILLS ARE INSTALLED
 
-**The onboarding process must run continuously until all 33 skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
+**The onboarding process must run continuously until all 32 skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
 
 ### Self-Check Rules
 
@@ -409,17 +477,17 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 ### Progress Reporting
 
 After every 5 skills completed, send the user a brief progress update:
-"Onboarding progress: [X] of 33 skills installed. Currently on: [skill name]. [Y] skills remaining."
+"Onboarding progress: [X] of 32 skills installed. Currently on: [skill name]. [Y] skills remaining."
 
 ### Completion
 
-When all 33 skills are installed:
-1. Count and verify: all 33 skill folders should exist in ~/.openclaw/skills/
+When all 32 skills are installed:
+1. Count and verify: all 32 skill folders should exist in ~/.openclaw/skills/ (33 and 34 are archived)
 2. Check the status file for any FAILED skills
 3. If any failed, attempt to re-install them one more time
 4. Send the user the final report with pass/fail for each skill
 5. If a gateway restart is needed for any changes to take effect, tell the user:
-   "All 33 skills are installed. To activate the changes, please type /restart in Telegram."
+   "All 32 skills are installed. To activate the changes, please type /restart in Telegram."
 
 ### 🔴 MANDATORY FILE READING BEFORE INSTALLATION
 
@@ -453,7 +521,7 @@ If you cannot list the files you read, you did not read them. Go back and read t
 - Agent forgetting where it was after compaction
 - Agent triggering restarts on its own (NEVER do this)
 
-**ZERO TOLERANCE: The onboarding does not end until all 33 skills have been attempted. If you stop early, you failed.**
+**ZERO TOLERANCE: The onboarding does not end until all 32 skills have been attempted. If you stop early, you failed.**
 
 ---
 
@@ -671,8 +739,8 @@ After every skill install, verify:
 |-----------|---------------|-----|
 | **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
-| **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
-| **Final** | After ALL 33 skills complete | Complete system index |
+| **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions, department workspaces, persona-matrix.md, persona-categories.json, ORG-CHART.md indexed |
+| **Final** | After ALL 32 skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
 
 ### What to Index at Each Milestone
@@ -691,6 +759,7 @@ python3 ~/clawd/scripts/gemini-indexer.py --status   # Verify completion
 | `clawd` | Workspace AGENTS.md, MEMORY.md, TOOLS.md, etc. | Every milestone |
 | `master-files` | `~/Downloads/openclaw-master-files/` | Every milestone |
 | `coaching-personas` | `~/Downloads/openclaw-master-files/coaching-personas/personas/` | After Skill 22 |
+| `departments` | `~/clawd/departments/` (workspace core files, governing-personas.md) | After Skill 23 |
 
 ### Process for Each Indexing
 
@@ -1241,7 +1310,7 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
 **Each skill folder contains some combination of SKILL.md, INSTALL.md, INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md.** Some skills also include a `[skill-name]-full.md`, a `.skill` package file, an `upstream-original/` subfolder, or additional reference documents. File count varies by skill. If SKILL.md or INSTALL.md is missing from a folder, stop and tell the user before proceeding.
 
 **Naming rules:**
-- Folder names are lowercase with hyphens, prefixed with their install number (01 through 30)
+- Folder names are lowercase with hyphens, prefixed with their install number (01 through 31, 33 and 34 are archived)
 - The .skill file (when present) matches the folder name without the number prefix
 - Do NOT rename any folder or file. Use the names exactly as listed above.
 
@@ -1371,7 +1440,7 @@ If any step in a skill's installation fails:
 2. **Wave 2** (Pre-Persona): Spawn 4 parallel agents for skills 04-21
 3. **Wave 3** (Core System): Main agent installs skills 22-23 sequentially (NO sub-agents)
 4. **Wave 4** (Post-Workforce): Spawn 2 parallel agents for skills 24-30
-5. **Wave 5** (Final): Verify skill 15, install skills 31-33, and finalize
+5. **Wave 5** (Final): Verify skill 15, install skill 31, and finalize (Skills 32+ are archived or part of Skill 23)
 
 **Sequential Dependencies (Never Parallelize These):**
 - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
@@ -1519,7 +1588,7 @@ All skill folders are located inside:
 |---|-------|-------------|-------|
 | 1 | Teach Yourself Protocol | 01-teach-yourself-protocol | 🔴 MANDATORY FIRST |
 | 2 | Back Yourself Up Protocol | 02-back-yourself-up-protocol | 🔴 MANDATORY SECOND |
-| - | **Gemini Engine** | *(installed by install script)* | ✅ Auto-installed before skills 3-33 |
+| - | **Gemini Engine** | *(installed by install script)* | ✅ Auto-installed before skills 3-31 |
 | 3 | Agent Browser (Vercel) - preferred browser automation | 03-agent-browser |
 | 4 | Superpowers | 04-superpowers |
 | 5 | GHL / Convert and Flow Setup | 05-ghl-setup |
@@ -1812,27 +1881,27 @@ label: "wave4-agent-f"
    - Delete the ONBOARDING PENDING block
 
 4. **Write ONBOARDING COMPLETE to MEMORY.md**
-   - Add entry: "OpenClaw onboarding completed on [date]. All 33 skills installed."
+   - Add entry: "OpenClaw onboarding completed on [date]. All 32 skills installed."
 
 5. **Report completion**
    - Install Skill 31 (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
-   - "Wave 5 complete: Onboarding finished. All 33 skills installed."
+   - "Wave 5 complete: Onboarding finished. All 32 skills installed."
 
 ---
 
 ### SEQUENTIAL MODE (Fallback)
 
-If `sessions_spawn` doesn't work, install all 33 skills one at a time:
+If `sessions_spawn` doesn't work, install 32 skills one at a time:
 
 ```
-For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30:
+For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31:
   Read ALL .md files in ~/.openclaw/onboarding/[skill-folder]/
   Execute installation steps
   Mark: SKILL-XX: INSTALLED
   Report: "Skill XX complete"
 ```
 
-Skip skill 13 (archived).
+Skip skill 13 (archived). Skills 33 and 34 are archived (merged into Skill 23).
 
 ---
 
@@ -1854,7 +1923,7 @@ Valid statuses: INSTALLED, ALREADY_INSTALLED, FAILED, SKIPPED
 
 ## PARALLEL INSTALLATION ORCHESTRATION
 
-The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 33 skills efficiently.
+The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 32 skills efficiently.
 
 ### Conflict Prevention (IMPORTANT)
 
@@ -1904,8 +1973,9 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 │         │                 │ Agent F: 27, 28, 29, 30                             │
 │         │                 │ Post-Workforce tools                            │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 5  │ 2 (Sequential)  │ 15 BlackCEO Team Management, 31 Upgraded Memory  │
-│         │                 │ Final verification and Gemini Engine indexing             │
+│ Wave 5  │ 1 (Sequential)  │ 31 Upgraded Memory System                         │
+│         │                 │ Final verification and Gemini Engine indexing    │
+│         │                 │ NOTE: Skills 33-34 archived (merged into 23)    │
 └─────────┴─────────────────┴─────────────────────────────────────────────────┘
 ```
 
@@ -2184,13 +2254,13 @@ SKILL-02: INSTALLED
 ## PROGRESS UPDATES
 
 Every 5 skills completed, send a brief status update via the user's configured messaging channel:
-"Onboarding in progress: [X] of 33 skills complete. Currently on: [skill name]."
+"Onboarding in progress: [X] of 32 skills complete. Currently on: [skill name]."
 
 ---
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 33 skills are installed, run this as the final step.
+After all 32 skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 ```bash
@@ -2233,7 +2303,7 @@ If the block is not present, continue without error.
 
 ### Final Gemini Engine Indexing (MANDATORY)
 
-After all 33 skills are installed, run the final Gemini Engine indexing:
+After all 32 skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
@@ -2258,10 +2328,10 @@ python3 ~/clawd/scripts/gemini-indexer.py --status
   messaging channel (detected in prerequisites).
 - Format the 30-skill status report as a table: Skill | Name | Status | Notes
 
-Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 33 skills processed"
+Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 32 skills processed"
 
 When every skill on the list above is installed and verified, tell the user:
-1. Everything that was installed (all 33 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
+1. Everything that was install 32 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
 2. Everything that was added to each workspace file (AGENTS.md, TOOLS.md, MEMORY.md, etc.)
 3. Which workspace files were updated and which were not touched
 4. Where the full documentation for each skill is saved (the master files folder path)

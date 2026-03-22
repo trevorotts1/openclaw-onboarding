@@ -225,74 +225,164 @@ If the skill files are already at `~/.openclaw/skills/23-ai-workforce-blueprint/
 
 This is where you build the actual workforce structure. You do all of this yourself.
 
+### 5-PRE. Model Check (MANDATORY)
+
+Before starting any interview or build work, verify you are running on an approved high reasoning model:
+- anthropic/claude-opus-4-6
+- anthropic/claude-sonnet-4-6
+- openrouter/xiaomi/mimo-v2-pro (with thinking enabled)
+- google/gemini-3.1-pro-preview
+- openai-codex/gpt-5.4
+
+If you are on Kimi 2.5, Gemini Flash, Gemini Flash Lite, or any other low reasoning model:
+Say: "For setting up your company, I recommend switching to a model that thinks more deeply so we get the best results. Want me to switch?"
+
+Do NOT proceed on a low reasoning model. The decisions made here shape the entire company.
+
 ### 5a. Read the Full Blueprint
 
-If you have not already absorbed `ai-workforce-blueprint-full.md` during Phase 1, re-read it now. You need the complete content - all naming conventions, folder structures, file templates, routing logic, and the Master Orchestrator concept.
+If you have not already absorbed `ai-workforce-blueprint-full.md` during Phase 1, re-read it now.
 
-### 5b. Gather Business Information from the User
+### 5b. Check Existing Context
 
-**🔴 MANDATORY OPTION PRESENTATION:** You MUST present all 3 options (A, B, C) to the user and WAIT for them to choose BEFORE doing anything else. Do NOT skip this step. Do NOT auto-select an option. Do NOT proceed to questions until the user has explicitly chosen A, B, or C. If the user says "start" or "begin" without specifying an option, present the 3 options and ask them to choose. NEVER default to any option silently.
+Before asking ANY question, read these files for information you already have:
+- USER.md - personal preferences, name, timezone
+- MEMORY.md - business decisions, prior conversations
+- AGENTS.md - tool configurations, behavior rules
+- TOOLS.md - connected systems
+- workforce-interview-answers.md (in company-discovery/) - previously answered questions if resuming
 
-Ask the user these questions. Wait for answers before building anything. After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+If you already know an answer, confirm instead of re-asking:
+"Based on what I already know, your business is in the real estate industry. Is that still correct?"
 
-**Required questions:**
+### 5c. Present Options (MANDATORY - NEVER SKIP)
+
+**🔴 You MUST present all 3 options and WAIT for the user to choose. NEVER skip. NEVER auto-select.**
+
+**Option A - Full Interview (Recommended)**
+"I will ask you about your business and each department. Based on your answers, I will build your entire AI company - departments, team leaders, specialists, and your command center. This is the most personalized option."
+
+**Option B - Quick Setup (Fastest)**
+"I will use what I already know about you plus industry best practices. I will propose a structure, you approve or adjust, then I build everything. Same result, just faster."
+
+**Option C - Audit / Resume**
+"If we started this before and did not finish, or if you already have departments set up, I will scan what exists and fill in any gaps without changing anything that is already there."
+
+### 5d. Core Business Questions (asked once, not per department)
+
 1. "What is the name of your business?"
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-2. "What industry are you in?" (coaching, e-commerce, agency, restaurant, law firm, SaaS, etc.)
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-3. "What tools do you currently use to run your business? Examples: Stripe for payments, HubSpot or Convert and Flow for your CRM, Mailchimp for email."
-   - Store this answer in the workspace config as `connectedSystems`
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-4. "Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
-   - Default to keeping all 17 if the client has no preference
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-5. "Which setup option do you want?"
-   - **Option A - Full Interview** (recommended): "I will interview you about each department - at least 7 questions per department - so I deeply understand your operations, tools, KPIs, and processes. Then I build everything with real content based on your answers."
-   - **Option B - Quick Setup** (fastest): "I skip the interview and build everything now using what I already know about you from your workspace files (USER.md, MEMORY.md, etc.) plus industry best practices. You can refine later."
-   - **Option C - Review First** (middle ground): "I review everything I know, come back with recommendations for departments and roles, you approve or change them, then I build."
+2. "In one sentence, what does your business do?"
+3. "What industry are you in?" (examples: coaching, e-commerce, agency, restaurant, law firm, SaaS)
+4. "What tools do you currently use to run your business?" (examples: Stripe, Convert and Flow, Mailchimp)
+5. "What is your biggest challenge right now?"
 
-**Progress Indicator:** After completing basic business info, tell the client: "You are 30% complete."
+After every question: "If you are not sure, just tell me to research it. I will look up best practices for your industry and suggest something for you to approve."
 
-### 5c. Execute the Chosen Option
+**After each answered question:**
+1. Update company-discovery/workforce-interview-answers.md with the Q&A
+2. Update company-discovery/interview-handoff.md with progress
+3. Trigger a memory flush
 
-#### If Option A (Full Interview):
-For EACH department the user selected, ask at minimum these 7 questions. After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+After core questions: "You are 30% complete."
 
-1. What is the purpose of this department?
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-2. What roles exist inside this department?
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-3. What does each role do day to day?
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-4. What does this department receive from other departments and hand off to other departments?
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-5. What is the tech stack for this department?
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-6. What are the KPIs for this department?
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-7. What are the top 10 most common tasks that need SOPs?
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+### 5e. Department Selection
 
-**After each department is created, capture KPIs with this question:**
-"What does success look like for this department? How would you know it is doing a great job?"
-- If the client hesitates or says "I don't know", offer: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
-- If yes, research industry best practices and present 3 KPI options as choices, not mandates
-- After each department's KPI is captured, show progress: "You are 50% complete."
+Present recommended departments with plain English descriptions. The client can keep all, remove some, add custom ones, or start from scratch. The number of departments is DYNAMIC - could be 5, 17, or 50.
 
-After all interviews complete, propose the full structure to the user. Wait for approval before building.
+Default to keeping all recommended if the client has no preference. "You can always add more later."
 
-#### If Option B (Quick Setup):
-Read USER.md, MEMORY.md, SOUL.md, and any existing workspace context. Determine departments and roles based on the user's business type and industry best practices. Propose the structure. Wait for brief approval ("looks good" or changes). Then build.
+### 5f. Per-Department Questions (3-7, dynamic)
 
-#### If Option C (Review First):
-Analyze all available information. Present a detailed recommendation document with:
-- Recommended departments and why
-- Recommended roles per department and why
-- Suggested tech stack per department
-- Ask: "Want to add, remove, or change anything?"
-After approval, optionally do the full interview (Option A) or proceed to build (Option B style).
+Questions are NOT a fixed list. Generate questions dynamically based on the client's industry and what you already know. See INSTRUCTIONS.md for the full question framework and 10 industry examples.
 
-### 5d. Build the Folder Structure (Pass 1 - Skeleton)
+**Question categories (pick from these based on relevance):**
+1. What the department does regularly
+2. Who handles it now
+3. What success looks like
+4. What tools are used (only if not already known)
+5. What is most important about this department
+6. What is not working well right now
+7. How this department connects to other parts of the business
+
+NEVER exceed 7 questions per department. Fewer is better when you can infer answers.
+
+**After each answered question:** flush answers and update handoff file.
+
+**KPI capture after each department:** "What does success look like for this department?"
+If client hesitates, use Perplexity sonar-pro-search to research and suggest 3 options.
+
+**Detect hesitation:** If client gives short answers or says "I don't know" twice, shift to offering suggestions. The goal is completion, not interrogation.
+
+**If client wants to stop:** Save everything immediately. "No problem. Everything is saved. Say 'Resume my AI workforce setup' when you are ready to continue."
+
+After department creation: "You are 50% complete."
+After KPIs: "You are 70% complete."
+
+### 5g. Option B (Quick Setup)
+Read USER.md, MEMORY.md, SOUL.md, TOOLS.md, and workspace context. Determine departments and roles based on business type and industry best practices. Propose the full structure. Wait for approval. Then build.
+
+### 5h. Option C (Audit / Resume)
+Check for company-discovery/interview-handoff.md. If it exists, resume exactly where the client left off. If not, scan existing workforce folder, find gaps, fill them without overwriting anything.
+
+---
+
+## PHASE 5-BUILD - CREATE WORKSPACES AND AGENTS
+
+After the interview (or Option B proposal approval), build the company.
+
+### 5-BUILD-A. Config Safety (MANDATORY BEFORE ANY CONFIG EDIT)
+
+Before touching openclaw.json:
+1. Backup to ~/Downloads/openclaw-backups/ with human-readable name
+2. Verify backup exists in that location (NOT in a hidden dot-folder)
+3. If backup ended up in wrong place, re-backup to correct location
+4. Only then proceed with edits
+5. After every edit, validate JSON is parseable
+
+### 5-BUILD-B. Create Department Workspaces
+
+For EACH department the client chose, use build-workforce.py create_department_workspace():
+
+Create folder: ~/clawd/departments/[dept-name]/
+
+**Unique files (created new):**
+- SOUL.md - generated from interview answers via generate_soul_md(), NOT a generic template
+- MEMORY.md - empty, ready for use
+- HEARTBEAT.md - department-specific priorities from interview
+- memory/ folder - for daily session logs
+
+**Inherited files (copied from main CEO workspace ~/clawd/):**
+- TOOLS.md - same tools, same credentials
+- AGENTS.md - same behavioral playbook
+- USER.md - same human, same preferences
+
+**agents.list entry added to openclaw.json via add_agent_to_config():**
+- id: "dept-[name]"
+- name: "[Department] Director"
+- workspace: full path to department folder
+- model: assigned based on department complexity
+
+Every department gets a permanent director. This is NOT a question. Every department has a head.
+
+### 5-BUILD-C. Specialist Determination (Silent)
+
+Using determine_specialists() from build-workforce.py, read the interview answers and determine:
+
+**Full-time team member (permanent):**
+- Work is daily/weekly, needs memory of past work, maintains relationships
+- Gets: SOUL.md + MEMORY.md in ~/clawd/departments/[dept]/specialists/[name]/
+- Gets: agents.list entry in openclaw.json
+
+**On-call specialist:**
+- Work is occasional/one-time, no memory needed
+- Gets: SOUL.md template in ~/clawd/subagents/templates/[name]/
+- No agents.list entry
+
+The client NEVER hears "permanent agent" or "sub-agent."
+
+### 5-BUILD-D. Knowledge Base Folder Structure (Pass 1 - Skeleton)
+
+In addition to core workspace files, create the knowledge base file structure inside each department:
 
 Create the complete folder tree inside `$MASTER_FOLDER`:
 
@@ -342,7 +432,7 @@ find "$WORKFORCE_ROOT" -type f -name "*.md" | sort
 ```
 Ask: "Does this structure look correct before I write the content for each file?"
 
-### 5e. Fill Every File with Real Content (Pass 2 - Content)
+### 5-BUILD-E. Fill Every File with Real Content (Pass 2 - Content)
 
 After user approves the skeleton, go file by file and write real content.
 
@@ -379,7 +469,53 @@ Use Source 1 if available. Fall back to Source 2, then Source 3. Combine sources
 
 ---
 
+## PHASE 5-PERSONA - PERSONA ALIGNMENT (Act As If Protocol)
+
+After workspaces are created, run persona alignment using build-workforce.py functions:
+
+1. Load persona-categories.json via load_persona_categories()
+2. For each department, identify relevant domain tags (marketing dept → marketing, copywriting, communication)
+3. Pull pre-qualified personas from those categories via get_personas_for_category()
+4. Create governing-personas.md per department via create_governing_personas_md()
+5. Create ~/clawd/persona-matrix.md with the full company persona pool
+
+Personas are selected PER TASK at runtime via the 5-layer alignment:
+1. Company Mission alignment
+2. Owner Values alignment (from USER.md)
+3. Company Goals/KPI alignment
+4. Department Goals/KPI alignment
+5. Task Fit
+
+Layers 1-2 were determined at this setup step (pre-qualified pool).
+Layers 3-5 run fresh every time an agent picks up a task.
+
+The instruction to the agent is: "Act as if you are [persona name] executing this task."
+
+## PHASE 5-ORG - GENERATE ORG CHART AND COMMAND CENTER CONFIG
+
+### ORG-CHART.md
+Generate ~/clawd/ORG-CHART.md via generate_org_chart() showing:
+- CEO / Master Orchestrator at top
+- Each department director with their model
+- Specialists under each director (full-time or on-call)
+- Add summary reference to MEMORY.md
+
+### Command Center departments.json
+Generate config/departments.json for the BlackCEO Command Center via generate_departments_json().
+Exact format per entry: { "id": slug, "emoji": emoji, "name": display, "headTitle": director title }
+Only include departments the client chose.
+
+### Devil's Advocate
+Auto-create devils-advocate/ folder in every department. Client is NOT asked.
+Each DA gets challenge questions specific to that department's KPIs.
+
+After everything is built: "You are complete! Setting up your AI workforce now."
+
+---
+
 ## PHASE 5f - RE-DETECT SKILL 22 AFTER QUESTIONS
+
+**This checks whether Skill 22 (Book-to-Persona) was installed during the interview. If detected, Phase 5-PERSONA (above) handles the actual persona wiring.**
 
 **After all departments/roles are created, re-check for coaching-personas:**
 
@@ -600,24 +736,44 @@ When a gateway restart is needed:
 
 Before reporting done, verify every item:
 
+- [ ] Model check passed (high reasoning model confirmed)
 - [ ] TYP was confirmed installed before starting
-- [ ] All 6 skill files were read completely (SKILL.md, ai-workforce-blueprint-full.md, INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, INSTALL.md)
+- [ ] All 6 skill files were read completely
 - [ ] Master files folder located or created
 - [ ] Skill copied to ~/.openclaw/skills/23-ai-workforce-blueprint/
 - [ ] User was asked about business name, industry, departments
 - [ ] User chose Option A, B, or C and that option was fully executed
-- [ ] All department folders created with correct naming (lowercase, hyphens, -dept suffix)
-- [ ] Master Orchestrator department created with all 3 required files
+- [ ] Existing context checked before every question (no redundant asks)
+- [ ] workforce-interview-answers.md created and updated after every answer
+- [ ] interview-handoff.md created and updated after every answer
+- [ ] Config backed up before ANY openclaw.json edit
+- [ ] Backup verified in ~/Downloads/openclaw-backups/ (not hidden folder)
+- [ ] All department workspaces created with FULL core files:
+  - [ ] SOUL.md (unique, generated from interview)
+  - [ ] MEMORY.md (empty)
+  - [ ] HEARTBEAT.md (department priorities)
+  - [ ] memory/ folder
+  - [ ] TOOLS.md (inherited from main workspace)
+  - [ ] AGENTS.md (inherited from main workspace)
+  - [ ] USER.md (inherited from main workspace)
+- [ ] agents.list entries added for all department heads
+- [ ] Specialists determined (permanent vs on-call) silently from interview answers
+- [ ] Permanent specialists have SOUL.md + MEMORY.md + agents.list entry
+- [ ] On-call specialists have template SOUL.md in subagents/templates/
+- [ ] governing-personas.md created per department
+- [ ] persona-matrix.md created in CEO workspace
+- [ ] ORG-CHART.md generated in CEO workspace
+- [ ] departments.json generated for Command Center
+- [ ] Devil's Advocate created per department
+- [ ] All department folders use correct naming (lowercase, hyphens, -dept suffix)
 - [ ] Universal SOPs folder created with 00-ROUTING.md
-- [ ] Every department has a Department Overview file
-- [ ] Every role folder has: Start Here, numbered knowledge base files, intelligent-routing.md, Good Examples, Bad Examples
-- [ ] Every Start Here file has a complete When-to Reference Map
-- [ ] Coaching personas integration checked (wired in if available, noted if not)
-- [ ] Build verified with self-score of 8+ out of 10
+- [ ] Coaching personas integration checked (wired if available, noted if not)
+- [ ] Build verified with self-score of 8.5+ out of 10
 - [ ] AGENTS.md updated per CORE_UPDATES.md
 - [ ] TOOLS.md updated per CORE_UPDATES.md
 - [ ] MEMORY.md updated per CORE_UPDATES.md
 - [ ] Weekly auto-update cron attempted
+- [ ] JSON validated after all config edits
 
 **Final announcement to user:**
 
