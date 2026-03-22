@@ -4,6 +4,25 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v6.0.1] - March 22, 2026
+
+### Bug Fixes - Install Sequence, Skill 15, Skill 22, Gemini Engine
+
+#### Fixed
+- **install.sh**: Gemini Engine script no longer runs indexer on empty directories. Step 3b now only copies script + installs python package. Indexing deferred to after Skill 22 adds books.
+- **install.sh**: Step 3b API key search now checks ~/.openclaw/.env first (OpenClaw standard) instead of hardcoded ~/clawd/secrets/.env (Trevor-specific path).
+- **install.sh**: Step 3c now also sets model allow list (9 models) alongside sub-agent concurrency settings.
+- **install.sh**: Step 4 now creates ~/Downloads/openclaw-master-files/ folder (coaching-personas/personas + project-prds).
+- **Start Here.md**: Added Step 2.5 (sub-agent concurrency + model allow list) between backup protocol and Step 3.
+- **Start Here.md**: Removed stale Skill 13 dependency. Skill 14 now runs independently.
+- **Start Here.md**: Removed Skill 13 from Agent C assignment and Wave 2 install loop.
+- **Skill 15**: Hard-coded team Telegram IDs (Trevor: 5252140759, LeAnne: 6663821679, E.R. Spaulding: 6771245262) back into INSTALL.md and TEAM_CONFIG.md. Previous sub-agent replaced them with placeholders.
+- **Skill 15**: Removed interactive Step 0 intake questions. Step 0 now loads pre-configured data from TEAM_CONFIG.md.
+- **Skill 15**: Step 2 now verifies existing sub-agent settings instead of overwriting them.
+- **Skill 22**: Added model fallback chain. Primary: Kimi K2.5 via OpenRouter, then MiMo V2 Pro, then Kimi via Moonshot, then GPT Codex, then Gemini/Sonnet.
+- **Skill 22**: INSTALL.md Step 4 now checks which models are available instead of requiring Moonshot API key.
+- **gemini-indexer.py**: Added --status, --init, --dry-run flags. Skips missing collections gracefully. Supports multiple collections.
+
 ## [v6.0.0] - March 22, 2026
 
 ### AI Workforce Blueprint v2.3 + Skills 33/34 Merge
