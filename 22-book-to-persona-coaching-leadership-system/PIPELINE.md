@@ -51,7 +51,6 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 2. `xiaomi/mimo-v2-pro` via OpenRouter (1M context, 131K max output) - fallback
 3. `openai-codex/gpt-5.4` via OpenClaw OAuth (196K context) - if Codex active
 4. `google/gemini-3.1-pro-preview` via OpenRouter (1M context, 65K max output)
-5. `anthropic/claude-sonnet-4-6` via Anthropic (200K context, 128K max output)
 
 **Which model to use:** The agent checks which API keys are available during Step 4 of INSTALL.md and uses the first available model from the priority list.
 

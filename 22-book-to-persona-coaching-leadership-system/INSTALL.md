@@ -330,7 +330,6 @@ Phase 1 needs a large-context model for book extraction. The pipeline tries mode
 2. **MiMo V2 Pro via OpenRouter** (1M context) - Largest context, fallback
 3. **GPT 5.4 via OpenAI Codex** (196K context) - If Codex OAuth is active
 4. **Gemini 3.1 Pro via OpenRouter** (1M context) - If OpenRouter key exists
-5. **Sonnet 4.6 via Anthropic** (200K context) - Last resort
 
 Check which models are available:
 ```bash
@@ -356,7 +355,6 @@ echo "Phase 1 model availability:"
 _find_key "OPENROUTER_API_KEY" && echo "  -> MiMo V2 Pro or Gemini 3.1 Pro available"
 _find_key "MOONSHOT_API_KEY" && echo "  -> Kimi K2.5 available"
 # Codex OAuth checked in Step 4 above
-_find_key "ANTHROPIC_API_KEY" && echo "  -> Sonnet 4.6 available"
 ```
 
 At least ONE model must be available. If none are found, the install cannot proceed.
