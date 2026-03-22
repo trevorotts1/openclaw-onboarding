@@ -389,7 +389,7 @@ If Codex OAuth is not found or expired: reconnect via OpenClaw settings using yo
 
 Pre-built personas are already included in this skill folder. They will be added to Gemini Engine during Skill 23 (AI Workforce Blueprint) installation.
 
-**DO NOT run Gemini Engine embed here.** Skill 23 will run the embedding once after all personas AND workforce files are ready.
+**Run the indexer AFTER Skill 22 completes, before Skill 23.** Skill 23 needs the personas indexed before it can find them.
 
 **What happens next:**
 - Run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` to index all personas now
