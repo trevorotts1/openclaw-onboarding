@@ -14,6 +14,8 @@ PDF → Text Extraction (pdfplumber, free) → .txt file
                                     ↓ analysis-notes.md
                               Phase 3: openai-codex/gpt-5.4 via OAuth (Synthesis) ← fallback: kimi-k2.5
                                     ↓ persona-blueprint.md
+                              Phase 3.5: Categorization (automatic)
+                                    ↓ persona-categories.json updated
                               Gemini Engine Indexing
                                     ↓ searchable via Gemini semantic search
 ```
@@ -203,6 +205,44 @@ python3 ~/clawd/scripts/gemini-indexer.py
   }
 }
 ```
+
+---
+
+## Phase 3.5: Categorization (Automatic)
+
+After a persona blueprint is generated, automatically tag it in persona-categories.json.
+
+**Location:** `[master-files]/coaching-personas/persona-categories.json`
+**Cost:** Zero - no API call needed. Tags are determined from the persona blueprint content.
+**Time:** Under 1 second per persona
+
+**Tag System:**
+- 12 domain tags: Marketing, Sales, Leadership, Finance, Operations, Communication, Copywriting, Mindset, Productivity/Systems, Coaching, Strategy/Innovation, Personal Development
+- 6 perspective tags: African American experience, Women's challenges, Men's challenges, Family/relationships, Faith/spirituality, Love/romantic relationships
+
+**How tags are determined:**
+1. Read the persona blueprint sections (especially "Core Topics", "Key Frameworks", "Target Audience")
+2. Match keywords against domain tag definitions
+3. Match author bio and book themes against perspective tags
+4. Assign all relevant tags (a persona can have multiple domain and perspective tags)
+
+**Schema per entry:**
+```json
+{
+  "slug": "hormozi-100m-offers",
+  "author": "Alex Hormozi",
+  "book": "$100M Offers",
+  "domain_tags": ["Sales", "Marketing", "Strategy/Innovation"],
+  "perspective_tags": [],
+  "business_stage": "growth",
+  "ideal_user": "business owners scaling past $1M"
+}
+```
+
+**Integration with Skill 23:**
+- Skill 23 reads persona-categories.json to build governing-personas.md per department
+- Domain tags determine which personas are relevant to which department
+- This file is the bridge between Skill 22 (persona creation) and Skill 23 (company building)
 
 ---
 

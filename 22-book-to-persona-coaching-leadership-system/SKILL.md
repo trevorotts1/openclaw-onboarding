@@ -191,4 +191,11 @@ These two skills are separate but work together automatically.
 - Personas operate standalone - no department structure required
 - Same persona blueprints, same Gemini Engine search, just without dept folder wiring
 
+**Categorization:**
+Every persona is auto-tagged in `persona-categories.json` after generation:
+- 12 domain tags (Marketing, Sales, Leadership, Finance, etc.)
+- 6 perspective tags (African American experience, Women's challenges, etc.)
+- Business stage and ideal user metadata
+This file is the bridge: Skill 23 reads it to build department-specific persona pools.
+
 **Cross-reference path:** `~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PERSONA-ROUTER.md`
