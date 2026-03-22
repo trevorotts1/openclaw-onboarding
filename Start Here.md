@@ -1550,7 +1550,6 @@ If any step in a skill's installation fails:
 
 **Sequential Dependencies (Never Parallelize These):**
 - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
-- Skill 13 (Google Workspace Setup) must complete before Skill 14 (Google Workspace Integration)
 - Skill 22 (Book to Persona) must complete before Skill 23 (AI Workforce Blueprint)
 
 **Agent Limits:**
@@ -2067,7 +2066,7 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
 │ Wave 2  │ 4 (Parallel)    │ Agent A: 04, 05, 06, 07 (install)               │
 │         │ 3 install + 1 QC│ Agent B: 08, 09, 10, 11 (install)               │
-│         │                 │ Agent C: 12, 13, 14, 15, 16, 17, 18, 19, 20, 21 │
+│         │                 │ Agent C: 12, 14, 15, 16, 17, 18, 19, 20, 21       │
 │         │                 │         (install)                               │
 │         │                 │ Agent D: QC Agent (verification)                │
 │         │                 │ Pre-Persona tools - all 4 run simultaneously    │
@@ -2122,7 +2121,7 @@ wait
 
 #### Spawn Wave 2 - Agent C (Skills 12-21)
 ```bash
-for skill in "12-openrouter-setup" "13-google-workspace-setup" "14-google-workspace-integration" "15-blackceo-team-management" "16-summarize-youtube" "17-self-improving-agent" "18-proactive-agent" "19-humanizer" "20-youtube-watcher" "21-tavily-search"; do
+for skill in "12-openrouter-setup" "14-google-workspace-integration" "15-blackceo-team-management" "16-summarize-youtube" "17-self-improving-agent" "18-proactive-agent" "19-humanizer" "20-youtube-watcher" "21-tavily-search"; do
   num=${skill%%-*}
   openclaw agent spawn \
     --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
