@@ -47,8 +47,8 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 ## Phase 1 - Extraction (Model Fallback Chain)
 
 **Model priority (try in order):**
-1. `xiaomi/mimo-v2-pro` via OpenRouter (1M context, 131K max output) - PREFERRED
-2. `kimi-k2.5` via Moonshot API (262K context, 96K max output) - if Moonshot key exists
+1. `kimi-k2.5` via OpenRouter (262K context, 96K max output) - PREFERRED
+2. `xiaomi/mimo-v2-pro` via OpenRouter (1M context, 131K max output) - fallback
 3. `openai-codex/gpt-5.4` via OpenClaw OAuth (196K context) - if Codex active
 4. `google/gemini-3.1-pro-preview` via OpenRouter (1M context, 65K max output)
 5. `anthropic/claude-sonnet-4-6` via Anthropic (200K context, 128K max output)

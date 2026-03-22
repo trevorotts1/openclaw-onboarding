@@ -326,8 +326,8 @@ If missing, you MUST add your Google API key to `~/clawd/secrets/.env`. The mult
 
 Phase 1 needs a large-context model for book extraction. The pipeline tries models in this order:
 
-1. **MiMo V2 Pro via OpenRouter** (1M context) - Best option, largest context
-2. **Kimi K2.5 via Moonshot** (262K context) - If Moonshot key exists
+1. **Kimi K2.5 via OpenRouter** (262K context) - Primary, most clients have OpenRouter
+2. **MiMo V2 Pro via OpenRouter** (1M context) - Largest context, fallback
 3. **GPT 5.4 via OpenAI Codex** (196K context) - If Codex OAuth is active
 4. **Gemini 3.1 Pro via OpenRouter** (1M context) - If OpenRouter key exists
 5. **Sonnet 4.6 via Anthropic** (200K context) - Last resort
