@@ -310,9 +310,29 @@ mkdir -p ~/Downloads/openclaw-master-files/coaching-personas/personas
 
 ---
 
-## Step 4 - Verify Model Access
+## Step 4 - Verify Installing Agent Model (MANDATORY)
 
-This skill requires three model connections. Check each one:
+Before proceeding, verify YOU (the agent reading this) are running on a high reasoning model. This skill makes architectural decisions about persona structure, quality gates, and embedding configuration that require deep reasoning.
+
+**Approved models for installation:**
+- anthropic/claude-opus-4-6
+- anthropic/claude-sonnet-4-6
+- openrouter/xiaomi/mimo-v2-pro (with thinking enabled)
+- google/gemini-3.1-pro-preview
+- openai-codex/gpt-5.4
+- moonshot/kimi-k2.5 (has built-in reasoning)
+
+**NOT approved:** Gemini Flash, Gemini Flash Lite, MiniMax, or any model without strong reasoning capability.
+
+If you are on a low reasoning model, say: "This skill requires a model with strong reasoning ability. Want me to switch before continuing?"
+
+Do NOT proceed on a low reasoning model.
+
+---
+
+## Step 4b - Verify Pipeline Model Access
+
+This skill requires three model connections for the persona generation pipeline. Check each one:
 
 
 ### Google Gemini (Required for Multimodal Embeddings)
