@@ -193,10 +193,10 @@ Expected output should show version info (e.g., "ebook-convert (calibre 6.x)"). 
 
 **Check your API key is set:**
 ```bash
-grep "GOOGLE_API_KEY" ~/clawd/secrets/.env
+grep "GOOGLE_API_KEY" ~/.openclaw/secrets/.env
 ```
 
-**If missing:** Add your Gemini API key to `~/clawd/secrets/.env`:
+**If missing:** Add your Gemini API key to `~/.openclaw/secrets/.env`:
 ```
 GOOGLE_API_KEY=your_key_here
 ```
@@ -320,7 +320,7 @@ Check for `GOOGLE_API_KEY` or `GEMINI_API_KEY` across all known env file locatio
 ```bash
 _find_key "GOOGLE_API_KEY" || _find_key "GEMINI_API_KEY"
 ```
-If missing, you MUST add your Google API key to `~/clawd/secrets/.env`. The multimodal embedding engine will crash without it.
+If missing, you MUST add your Google API key to `~/.openclaw/secrets/.env`. The multimodal embedding engine will crash without it.
 
 ### Kimi K2.5 (Phase 1 - Primary) OR MiMo V2 Pro (Phase 1 - Fallback)
 
@@ -336,7 +336,7 @@ Check which models are available:
 _find_key() {
   local key_name="$1"
   for env_file in \
-    "$HOME/clawd/secrets/.env" \
+    "$HOME/.openclaw/secrets/.env" \
     "$HOME/.openclaw/.env" \
     "$HOME/.config/openclaw/.env"; do
     if [ -f "$env_file" ]; then
@@ -392,13 +392,13 @@ Pre-built personas are already included in this skill folder. They will be added
 **DO NOT run Gemini Engine embed here.** Skill 23 will run the embedding once after all personas AND workforce files are ready.
 
 **What happens next:**
-- Skill 23 will add the coaching-personas collection to Gemini Engine
-- Skill 23 will run `python3 ~/clawd/scripts/gemini-indexer.py` to index all personas + workforce files together
-- This avoids redundant double-embedding (after Skill 22 and again after Skill 23)
+- Run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` to index all personas now
+- Skill 23 will run `python3 ~/.openclaw/scripts/gemini-indexer.py` to index all personas + workforce files together
+- This ensures Skill 23 can find persona files via the index before assigning them to departments
 
 **Note:** If you need to verify personas are searchable after Skill 23 completes, run:
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "negotiation"
+python3 ~/.openclaw/scripts/gemini-search.py "negotiation"
 ```
 
 ---
@@ -412,7 +412,7 @@ Before allowing Skill 23 to run, verify this Skill 22 installation is complete:
 
 ```bash
 # Check if Gemini Vector Database "coaching-personas" exists
-if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
+if python3 ~/.openclaw/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 verified: coaching-personas collection exists"
   echo "Skill 23 may proceed"
 else
@@ -513,7 +513,7 @@ Test whichever Phase 1 model the client has access to. Try in order:
 **Option 1: MiMo V2 Pro via OpenRouter (preferred)**
 ```bash
 curl -s https://openrouter.ai/api/v1/chat/completions \
-  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY ~/clawd/secrets/.env | cut -d= -f2)" \
+  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY ~/.openclaw/secrets/.env | cut -d= -f2)" \
   -H "Content-Type: application/json" \
   -d '{"model":"xiaomi/mimo-v2-pro","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
   | python3 -c "import json,sys; r=json.load(sys.stdin); print('Phase 1 (MiMo):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
@@ -522,7 +522,7 @@ curl -s https://openrouter.ai/api/v1/chat/completions \
 **Option 2: Kimi K2.5 via Moonshot (if Moonshot key exists)**
 ```bash
 curl -s https://api.moonshot.cn/v1/chat/completions \
-  -H "Authorization: Bearer $(grep MOONSHOT_API_KEY ~/clawd/secrets/.env | cut -d= -f2)" \
+  -H "Authorization: Bearer $(grep MOONSHOT_API_KEY ~/.openclaw/secrets/.env | cut -d= -f2)" \
   -H "Content-Type: application/json" \
   -d '{"model":"kimi-k2.5","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
   | python3 -c "import json,sys; r=json.load(sys.stdin); print('Phase 1 (Kimi):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
@@ -536,7 +536,7 @@ Report which model connected and use that for Phase 1.
 
 ```bash
 curl -s https://openrouter.ai/api/v1/chat/completions \
-  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY ~/clawd/secrets/.env | cut -d= -f2)" \
+  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY ~/.openclaw/secrets/.env | cut -d= -f2)" \
   -H "Content-Type: application/json" \
   -d '{"model":"deepseek/deepseek-chat","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
   | python3 -c "import json,sys; r=json.load(sys.stdin); print('Phase 2 (DeepSeek):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
@@ -580,7 +580,7 @@ This triggers the full sequence:
 2. **Phase 1 (Kimi K2.5)** - Spawns sub-agent with extraction prompt + book text. Output: `personas/[author]-[book-slug]/extraction-notes.md`
 3. **Phase 2 (DeepSeek V3.2-Speciale)** - Spawns sub-agent with analysis prompt + extraction notes. Output: `personas/[author]-[book-slug]/analysis-notes.md`
 4. **Phase 3 (GPT-5.3 Codex)** - Spawns sub-agent with synthesis prompt + extraction + analysis notes. Output: `personas/[author]-[book-slug]/persona-blueprint.md`. Falls back to Kimi K2.5 on failure.
-5. **Gemini Engine indexing** - Runs `python3 ~/clawd/scripts/gemini-indexer.py` to make the new persona searchable.
+5. **Gemini Engine indexing** - Runs `python3 ~/.openclaw/scripts/gemini-indexer.py` to make the new persona searchable.
 
 **Verify each phase completed** by checking:
 - File exists at the expected path
@@ -666,12 +666,12 @@ Run through this checklist:
 - [ ] ebooklib installed
 - [ ] Calibre ebook-convert available
 - [ ] Master files folder located or created
-- [ ] Moonshot API key confirmed in ~/clawd/secrets/.env
-- [ ] OpenRouter API key confirmed in ~/clawd/secrets/.env
+- [ ] Moonshot API key confirmed in ~/.openclaw/secrets/.env
+- [ ] OpenRouter API key confirmed in ~/.openclaw/secrets/.env
 - [ ] Codex OAuth token confirmed and not expired
 - [ ] Gemini Vector Database coaching-personas added and embedded (Step 5)
 - [ ] Gemini Engine test query returns results
 - [ ] Core files updated per CORE_UPDATES.md (Step 7)
 - [ ] Pipeline execution test passed (Step 8)
 
-When all boxes are checked: log "Book-to-Persona skill fully installed. Gemini Vector Database active. Pre-built personas ready (run: python3 ~/clawd/scripts/gemini-indexer.py --status to see count). Pipeline verified operational. Ready to process new books or query personas."
+When all boxes are checked: log "Book-to-Persona skill fully installed. Gemini Vector Database active. Pre-built personas ready (run: python3 ~/.openclaw/scripts/gemini-indexer.py --status to see count). Pipeline verified operational. Ready to process new books or query personas."
