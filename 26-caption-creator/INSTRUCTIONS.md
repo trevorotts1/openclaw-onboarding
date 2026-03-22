@@ -65,7 +65,7 @@ whisper --help
 2. Install it:
 
 ```bash
-openclaw skill install caption-creator.skill
+The .skill file is an archive. No CLI command needed - install by following SKILL.md, INSTALL.md, and CORE_UPDATES.md instructions.
 ```
 
 3. Confirm the folder exists:

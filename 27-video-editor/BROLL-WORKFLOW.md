@@ -38,7 +38,7 @@ yt-dlp --version && python3 -c "import moviepy" && scenedetect --version
 ### STEP 2: Install Skill (If Needed)
 
 ```bash
-openclaw skill install video-editor.skill
+The .skill file is an archive. No CLI command needed - install by following SKILL.md, INSTALL.md, and CORE_UPDATES.md instructions.
 ```
 
 ---

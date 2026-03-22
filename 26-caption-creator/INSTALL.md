@@ -96,7 +96,7 @@ Common models:
 ### Install with OpenClaw
 
 ```bash
-openclaw skill install caption-creator.skill
+The .skill file is an archive. No CLI command needed - install by following SKILL.md, INSTALL.md, and CORE_UPDATES.md instructions.
 ```
 
 ### Confirm install location

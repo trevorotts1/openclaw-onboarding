@@ -35,7 +35,7 @@ All files:
 ## Step 3: Install the Skill Package
 
 ```bash
-openclaw skill install back-yourself-up-protocol.skill
+The .skill file is an archive. No CLI command needed - install by following SKILL.md, INSTALL.md, and CORE_UPDATES.md instructions.
 ```
 
 ## Step 4: Verify the Correct Config File

@@ -40,11 +40,16 @@ All files stay together:
 - teach-yourself-protocol-full.md (complete protocol - all 19 sections)
 - teach-yourself-protocol.skill
 
-## Step 3: Install the Skill Package
+## Step 3: Copy Skill to Skills Folder
+
+Copy this skill folder into the OpenClaw skills directory so the agent can access it:
 
 ```bash
-openclaw skill install teach-yourself-protocol.skill
+mkdir -p ~/.openclaw/skills/01-teach-yourself-protocol
+cp -r "$(dirname "$0")"/* ~/.openclaw/skills/01-teach-yourself-protocol/
 ```
+
+If a `.skill` file exists in this folder, it is the skill package archive. The agent does NOT need to run any `openclaw skill install` command - that command does not exist. Simply copy the files.
 
 ## Step 4: Read the Full Protocol
 

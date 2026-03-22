@@ -106,7 +106,7 @@ MoviePy v2 removed `moviepy.editor`, so you must pin MoviePy to v1.
 
 1. In Terminal, run:
    ```bash
-   openclaw skill install video-creator.skill
+   The .skill file is an archive. No CLI command needed - install by following SKILL.md, INSTALL.md, and CORE_UPDATES.md instructions.
    ```
 2. After install, the skill should exist at:
    - `$HOME/.openclaw/skills/video-creator/`

@@ -1380,7 +1380,7 @@ Every skill folder contains these files. Read them in this exact order:
 | 2nd | **INSTALL.md** | Read this SECOND. Step-by-step installation and configuration. Follow every step exactly. Do not skip verification steps. |
 | 3rd | **Full guide doc(s)** (if present) | Read any additional guide documents that exist in the folder: INSTRUCTIONS.md, EXAMPLES.md, [skill-name]-full.md, PIPELINE.md, upstream-original/ files, etc. Not every skill has all of these - read whatever is present. |
 | 4th | **CORE_UPDATES.md** | Read this LAST before installing. This file tells you exactly which workspace files (AGENTS.md, TOOLS.md, MEMORY.md, IDENTITY.md, USER.md, SOUL.md, HEARTBEAT.md) need updating and gives you the exact text to add. Only update the files listed. Do not update files that are not listed. Do not add more than what is written. |
-| Final | **[skill-name].skill** | Install this after reading all docs. This is the skill package. Install it with: openclaw skill install [skill-name].skill (only if a .skill file exists in this folder) |
+| Final | **[skill-name].skill** | This is an archive of the skill folder. No installation command exists - the skill is installed by following SKILL.md, INSTALL.md, and CORE_UPDATES.md above. Simply copy the folder into ~/.openclaw/skills/ and the agent reads the .md files |
 
 ### For Each Skill, Follow This Process
 
