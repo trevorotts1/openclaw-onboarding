@@ -103,17 +103,10 @@ echo "  Version: $ONBOARDING_VERSION"
 # ----------------------------------------------------------
 echo ""
 echo "[3b/5] Installing Gemini Engine scripts..."
-# Determine the agent's workspace directory (not hardcoded to ~/clawd)
-# OpenClaw workspace can be at ~/clawd, ~/.openclaw/workspace, or configured path
-WORKSPACE_DIR=""
-if [ -d "$HOME/clawd" ]; then
-  WORKSPACE_DIR="$HOME/clawd"
-elif [ -d "$HOME/.openclaw/workspace" ]; then
-  WORKSPACE_DIR="$HOME/.openclaw/workspace"
-else
-  WORKSPACE_DIR="$HOME/clawd"
-  mkdir -p "$WORKSPACE_DIR"
-fi
+# Determine the agent's workspace directory
+# Standard OpenClaw workspace: ~/.openclaw/workspace
+WORKSPACE_DIR="$HOME/.openclaw/workspace"
+mkdir -p "$WORKSPACE_DIR"
 SCRIPTS_DIR="$WORKSPACE_DIR/scripts"
 mkdir -p "$SCRIPTS_DIR"
 
@@ -137,7 +130,7 @@ else
 fi
 
 # Check for GOOGLE_API_KEY
-if grep -q "GOOGLE_API_KEY" ~/.openclaw/.env ~/.openclaw/secrets/.env "$WORKSPACE_DIR/secrets/.env" 2>/dev/null; then
+if grep -q "GOOGLE_API_KEY" ~/.openclaw/.env ~/.openclaw/secrets/.env 2>/dev/null; then
   echo "  Google API key found"
 else
   echo "  Warning: No Google API key found. Add GOOGLE_API_KEY to ~/.openclaw/.env before running Gemini Engine indexing."
