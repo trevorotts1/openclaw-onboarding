@@ -138,6 +138,43 @@ fi
 echo "  Gemini Engine setup complete"
 
 # ----------------------------------------------------------
+# Step 3c: Set sub-agent concurrency defaults
+# ----------------------------------------------------------
+echo ""
+echo "[3c/5] Configuring sub-agent concurrency..."
+OPENCLAW_JSON="$HOME/.openclaw/openclaw.json"
+
+if [ -f "$OPENCLAW_JSON" ]; then
+  # Backup first
+  cp "$OPENCLAW_JSON" "$HOME/Downloads/openclaw-backups/openclaw-json-backup-$(date '+%Y-%m-%d-%I%M%p').json" 2>/dev/null || true
+
+  # Use Python to safely update JSON (jq may not be installed)
+  python3 -c "
+import json, os, sys
+path = os.path.expanduser('$OPENCLAW_JSON')
+try:
+    with open(path) as f:
+        config = json.load(f)
+    agents = config.get('agents', {})
+    defaults = agents.get('defaults', {})
+    sub = defaults.get('subagents', {})
+    sub['maxSpawnDepth'] = 4
+    sub['maxConcurrent'] = 20
+    sub['maxChildrenPerAgent'] = 12
+    defaults['subagents'] = sub
+    agents['defaults'] = defaults
+    config['agents'] = agents
+    with open(path, 'w') as f:
+        json.dump(config, f, indent=2)
+    print('  Set maxSpawnDepth=4, maxConcurrent=20, maxChildrenPerAgent=12')
+except Exception as e:
+    print(f'  Warning: Could not update openclaw.json: {e}', file=sys.stderr)
+" 2>&1
+else
+  echo "  Warning: openclaw.json not found at $OPENCLAW_JSON"
+fi
+
+# ----------------------------------------------------------
 # Step 4: Set up backup folder
 # ----------------------------------------------------------
 echo ""
