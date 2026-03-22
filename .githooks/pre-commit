@@ -1,0 +1,25 @@
+#!/bin/bash
+# Pre-commit hook: verify version files are consistent before push
+# Checks: version, install.sh ONBOARDING_VERSION, CHANGELOG.md top entry
+
+VERSION=$(cat version 2>/dev/null)
+INSTALL_VERSION=$(grep 'ONBOARDING_VERSION=' install.sh 2>/dev/null | head -1 | cut -d'"' -f2)
+CHANGELOG_VERSION=$(grep -m1 '^\## \[v' CHANGELOG.md 2>/dev/null | sed 's/.*\[//;s/\].*//')
+
+if [ -z "$VERSION" ]; then
+  echo "ERROR: version file missing"
+  exit 1
+fi
+
+if [ "$VERSION" != "$INSTALL_VERSION" ]; then
+  echo "ERROR: version ($VERSION) != install.sh ONBOARDING_VERSION ($INSTALL_VERSION)"
+  echo "Update install.sh before committing."
+  exit 1
+fi
+
+if [ "$VERSION" != "$CHANGELOG_VERSION" ]; then
+  echo "WARNING: version ($VERSION) != CHANGELOG.md top entry ($CHANGELOG_VERSION)"
+  echo "Consider updating CHANGELOG.md before committing."
+fi
+
+echo "Version check passed: $VERSION"
