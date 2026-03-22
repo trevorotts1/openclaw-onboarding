@@ -102,17 +102,24 @@ When triggered, the skill now presents 3 clear options:
 
 ## Pre-Built Departments Available
 
-The skill comes with 10 pre-configured departments:
+The skill comes with 17 pre-configured departments:
 
 • **marketing-dept** - Content, ads, social media, email campaigns
 • **sales-dept** - Converting leads to customers
+• **creative-dept** - Writing all content (copy, blogs, scripts, speeches)
+• **graphics-dept** - Static visual assets (images, brand graphics, thumbnails)
+• **video-dept** - Video production (AI-generated, edited, short-form)
+• **audio-dept** - Audio generation and processing (voice, music, podcasts)
 • **billing-dept** - Invoicing, payments, financial tracking
 • **customer-support-dept** - Helping existing clients
 • **operations-dept** - Day-to-day business running
-• **creative-dept** - Graphics, video, content creation
+• **web-development-dept** - Websites, sales funnels, landing pages
+• **app-development-dept** - Software applications, mobile apps, APIs
 • **hr-people-dept** - Team management, hiring
 • **legal-compliance-dept** - Contracts, regulations
 • **it-tech-dept** - Software, websites, infrastructure
+• **research-dept** - Market intelligence, competitive analysis, data
+• **communications-dept** - PR, internal communications, brand messaging
 • **master-orchestrator-dept** - Routes all work (always included)
 
 You choose: Keep all / Keep some + remove others / Keep all + add custom / Start from scratch
