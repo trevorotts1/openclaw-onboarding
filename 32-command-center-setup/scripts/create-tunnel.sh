@@ -1,7 +1,7 @@
 #!/bin/bash
 # Phase 6b - Create Cloudflare Tunnel via API
 # Usage: ./create-tunnel.sh <client-slug> <company-name> <contact-email>
-# Example: ./create-tunnel.sh convoplay "ConvoPlay" "sheila@convoplay.com"
+# Example: ./create-tunnel.sh acme-dental "Acme Dental" "ops@acmedental.com"
 
 set -euo pipefail
 
