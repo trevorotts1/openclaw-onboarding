@@ -170,6 +170,7 @@ try:
     models = defaults.get('models', {})
     model_defs = {
         'moonshot/kimi-k2.5': {'alias': 'kimi'},
+        'openrouter/moonshot/kimi-k2.5': {'alias': 'kimi-or', 'params': {'contextWindow': 262144, 'maxTokens': 65536}},
         'openrouter/xiaomi/mimo-v2-pro': {'alias': 'mimo', 'params': {'contextWindow': 1048576, 'maxTokens': 131072}},
         'openrouter/xiaomi/mimo-v2-omni': {'alias': 'mimo-omni', 'params': {'contextWindow': 262144, 'maxTokens': 65536}},
         'openrouter/minimax/minimax-m2.7': {'alias': 'minimax', 'params': {'contextWindow': 204800, 'maxTokens': 131072}},
@@ -188,7 +189,7 @@ try:
     config['agents'] = agents
     with open(path, 'w') as f:
         json.dump(config, f, indent=2)
-    print('  Set sub-agent concurrency and 9 model allow-list entries')
+    print('  Set sub-agent concurrency and 10 model allow-list entries')
 except Exception as e:
     print(f'  Warning: Could not update openclaw.json: {e}', file=sys.stderr)
 " 2>&1
