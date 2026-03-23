@@ -163,7 +163,7 @@ try:
     sub = defaults.get('subagents', {})
     sub['maxSpawnDepth'] = 4
     sub['maxConcurrent'] = 20
-    sub['maxChildrenPerAgent'] = 12
+    sub['maxChildrenPerAgent'] = 20
     defaults['subagents'] = sub
 
     # Model allow list (core models for sub-agents)
