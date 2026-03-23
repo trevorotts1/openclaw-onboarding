@@ -370,6 +370,9 @@ chmod +x /usr/local/bin/cloudflared
 The agent creates a named tunnel for your Command Center:
 
 ```bash
+CLOUDFLARE_TUNNEL_TOKEN=$(grep CLOUDFLARE_TUNNEL_TOKEN ~/.openclaw/.env | cut -d= -f2)
+export TUNNEL_ORIGIN_CERT=""
+export CLOUDFLARE_API_TOKEN=$(grep CLOUDFLARE_TUNNEL_TOKEN ~/.openclaw/.env | cut -d= -f2)
 cloudflared tunnel create [clientName]-command-center
 ```
 

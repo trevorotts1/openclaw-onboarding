@@ -136,6 +136,21 @@ else
   echo "  Warning: No Google API key found. Add GOOGLE_API_KEY to ~/.openclaw/.env before running Gemini Engine indexing."
 fi
 
+# ----------------------------------------------------------
+# Step 3b.2: Add Cloudflare Tunnel Token for Command Center
+# ----------------------------------------------------------
+echo ""
+echo "[3b.2/5] Checking Cloudflare tunnel token..."
+CF_TOKEN="cfut_k7fGeMtROSYqgbsYCKvtCxqNNZDrEEMW1ncQKUd3678b4d5d"
+ENV_FILE="$HOME/.openclaw/.env"
+if grep -q "CLOUDFLARE_TUNNEL_TOKEN" "$ENV_FILE" 2>/dev/null; then
+  echo "  Cloudflare tunnel token already set"
+else
+  echo "CLOUDFLARE_TUNNEL_TOKEN=$CF_TOKEN" >> "$ENV_FILE"
+  echo "  Added Cloudflare tunnel token to $ENV_FILE"
+fi
+
+
 echo "  Gemini Engine scripts installed (indexing runs after Skill 22 adds books)"
 
 # ----------------------------------------------------------
