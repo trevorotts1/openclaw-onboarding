@@ -20,6 +20,42 @@ All @blackceo.com emails (trevor@, management@, support@): ALWAYS use Google Wor
 - **GPT models**: Use `openai-codex/` prefix (OAuth). NEVER `openai/` prefix without explicit permission.
 - **Approved models**: `anthropic/claude-opus-4-6`, `anthropic/claude-sonnet-4-6`, `openai-codex/gpt-5.4`, `moonshot/kimi-k2.5`, `minimax/MiniMax-M2.5`. FORBIDDEN: any `openrouter/` or `openai/` prefix.
 - **Gemini models**: As of March 20, 2026: `gemini-3-flash-preview` (preferred), `gemini-3.1-flash-lite-preview` (cheapest), `gemini-3.1-pro-preview` (smartest). Do NOT default to older Flash (2.x).
+- **MiniMax M2.7** (via OpenRouter, swapped from M2.5 March 21, 2026):
+  - `openrouter/minimax/minimax-m2.7` -- 204K context, 131K max output, $0.30/M input. Double the output of M2.5. Rankings: #7 Programming, #28 Legal, #36 Finance. Thinking is opt-in via reasoning parameter -- ALWAYS pass reasoning: true when spawning MiniMax sub-agents. No levels -- just on/off.
+  - DO NOT use `openrouter/minimax/minimax-m2.5` -- removed March 21, 2026. Replaced by M2.7.
+
+- **MiMo models** (via OpenRouter, added March 21, 2026):
+  - `openrouter/xiaomi/mimo-v2-pro` -- 1M context, 131K max output, $1/M input. Full power. Use for complex code, orchestration, agentic workflows. TEXT ONLY -- no images, no video, no audio. ALWAYS pass reasoning parameter -- thinking is opt-in, Trevor requires it always on. Formerly known as Hunter Alpha.
+  - `openrouter/xiaomi/mimo-v2-omni` -- 262K context, 65.5K max output, $0.40/M input. Cheaper/faster. Supports text, images, video, AND audio in a single request (joint audio-visual processing). Use when task involves any media input -- video analysis, image+code together, Zoom recording analysis, audio+visual QC. ALWAYS pass reasoning parameter -- same rule as Pro.
+  - Thinking rule: every sub-agent spawn using either MiMo model must include reasoning: true in the spawn call. No exceptions.
+  - NOTE: When Trevor uploaded images to Hunter Alpha (now MiMo Pro) in the past, the model never truly saw them -- it is text-only. OpenClaw likely auto-described the image as text before sending.
+
+## 🔴 MODEL MEDIA CAPABILITY MATRIX (Added March 21, 2026)
+When a task involves images, video, or audio -- pick the right model:
+
+Text only: MiMo V2 Pro, Kimi K2.5 (no media)
+Images only: Claude Sonnet 4.6, Claude Opus 4.6, Kimi K2.5
+Images + Video + Audio (joint): MiMo V2 Omni, Gemini 3 Flash, Gemini 3.1 Pro, Gemini 3.1 Flash Lite
+
+Routing rules:
+- Pure coding/orchestration, no media = MiMo V2 Pro or Kimi K2.5
+- Image analysis (bulk/basic) = Gemini 3 Flash sub-agent (cheapest)
+- Image with design judgment = Claude Sonnet 4.6 or Opus 4.6
+- Video or audio analysis = MiMo V2 Omni or Gemini 3 Flash
+- Video + audio JOINT processing (Zoom recordings, etc.) = MiMo V2 Omni (best) or Gemini 3.1 Pro
+
+- **Gemini thinking levels** (added March 21, 2026):
+  - Gemini 3.1 Flash Lite -- supports thinking levels: minimal, low, medium, high. NOT on by default. Default to medium for general tasks.
+  - Gemini 3 Flash -- supports reasoning parameter. NOT on by default. Default to medium.
+  - Gemini 3.1 Pro -- supports reasoning. NOT on by default. Default to high (it is the expensive flagship -- use full power).
+  - Rule: when spawning any Gemini sub-agent, include thinking level in the task prompt or spawn call.
+
+- **Kimi 2.5 thinking**: reasoning is built in natively -- always fires automatically. No flag needed. Context: 262K, max output: 65,535 tokens.
+
+- **Perplexity models** (via OpenRouter, added March 21, 2026):
+  - `openrouter/perplexity/sonar-pro-search` -- Deep agentic research. Multi-step, follows links, synthesizes multiple sources. Use when a task requires live web research across multiple sources (competitor analysis, market research, technical lookups). $3/M input, $15/M output, 200K context. First choice for research sub-agents.
+  - `openrouter/perplexity/sonar` -- Quick single-question lookups. Use when you need one fast answer from the web, not deep synthesis. 127K context. Cheaper and faster than sonar-pro-search.
+  - DO NOT use `openrouter/perplexity/sonar-pro` -- removed March 21, 2026. Replaced by sonar-pro-search.
 - **Shell scripts first**: Before using a model for mechanical tasks (find-replace, bulk ops), ask if a script can do it free.
 - **OpenRouter credits**: Check `GET https://openrouter.ai/api/v1/credits` before claiming no credits. No guessing.
 - **ONLY use the model Trevor explicitly specifies** - NEVER substitute. DISOBEDIENCE COST: thousands of dollars March 8 and March 17-18, 2026.
@@ -96,8 +132,12 @@ Production = Cloudflare tunnel (`~/.cloudflared/config-command-center.yml`) + PM
 ## 🔴 SUB-AGENT DISPATCH DISCIPLINE
 Every sub-agent task must specify: exact files to touch, exact changes, DO NOT TOUCH list, expected output, validation step, branch name. NEVER open-ended tasks. All code work in branches — never main. QC mandatory before merge.
 
+## 🔴 QUALITY GATE BEFORE GITHUB PUSH
+Before pushing ANY skill update, PRD change, or code change to GitHub: STOP and rate the work on a scale of 1 to 10. If it is below 8.5, do NOT push. Refine, fix, update, and re-evaluate. Only push when it reaches 8.5 or higher. This is a protective mechanism. No exceptions.
+
 ## 🔴 PRDS IN MAIN SESSION
 Write PRDs in the main session, not sub-agents. Sub-agents lack conversation context and will miss decisions. PRD folder standard: every project needs PRD.md, CHANGELOG.md, TODO.md, CHECKLIST.md. Location: `~/Downloads/openclaw-master-files/project-prds/[project-name]/`.
+**PLAYBOOK RULE: Every time the PRD is updated, ALL FOUR files must be updated together. Never update PRD.md without also updating CHANGELOG.md, TODO.md, and CHECKLIST.md. No exceptions. No reminders needed.**
 
 ## 🔴 TELEGRAM DISPLAY
 Telegram does not render code blocks or tables correctly. Use plain text and bullet points only in Telegram responses.
@@ -112,9 +152,9 @@ Telegram does not render code blocks or tables correctly. Use plain text and bul
 
 ## 🔴 CONTEXT WINDOW MONITORING
 Every response must include: `🧠 [model] ([access-method]) | ctx [capacity] | [%] used`
-- Sonnet/Opus 4.6 via **anthropic/subscription = 200k context** (NOT 1M — 1M is only Opus 4.6 Max/Team/Enterprise via Claude Code). Kimi 2.5 = 262k. GPT 5.4 = 1M.
+- Sonnet/Opus 4.6 via **anthropic/subscription = 1M context**. Kimi 2.5 = 262k. GPT 5.4 = 1M.
 - Run `session_status` BEFORE writing the line. NEVER copy from previous response. ZERO EXCEPTIONS.
-- Thresholds against **200k ceiling**: 75% (150k) = flush immediately. 85% = critical flag. 90% = emergency flush + handoff, no asking.
+- Flush thresholds: **200k** = flush. **500k** = flush again. **Approaching 1M** = emergency flush + handoff. Three safety nets so compaction never catches us without a fresh flush.
 - At 90%: flush to `memory/YYYY-MM-DD.md` (10-category format), create handoff file, send `🧠 MEM FL ✅`.
 - NEVER compact without warning Trevor. NEVER let compaction catch Trevor off guard.
 - softThresholdTokens (12k) fires on pre-compaction only — NOT periodic. No heartbeat flush (wastes tokens). Track manually.
@@ -210,3 +250,12 @@ Existing folders in `~/Downloads/openclaw-master-files/` stay as-is. Do not rena
 
 ## Tavily Search Routing
 Brave first (broad discovery) → Tavily for citation-heavy/fact-checking → Playwright for logins/navigation. Escalate Brave → Tavily only when Brave output is shallow.
+
+## 🔴 OPENCLAW.JSON - AGENTS.LIST MODEL OVERRIDES DEFAULT
+The `agents.list` entry for the main agent has its own `model:` field that overrides the global default. If Trevor wakes up on the wrong model, check this field first. Current correct value: `openai-codex/gpt-5.4`. Fixed March 22, 2026 (was hardcoded `moonshot/kimi-k2.5`).
+
+## 🔴 ACT AS IF PROTOCOL - PERSONAS PER TASK, NOT PER ROLE
+Coaching personas are selected per task, not per agent role. Same agent can use Seth Godin for content, Hormozi for offers, Gary Vee for social — whatever fits the work. Tags: 12 domain + 6 perspective, flat/equal (no hierarchy). Reference: `persona-categories.json`.
+
+## 🔴 CONFIG FILE EDIT SAFETY
+Before editing any config file (openclaw.json, agents.list, etc.): (1) backup to `~/Downloads/openclaw-backups/` with timestamp, (2) make edit, (3) validate JSON, (4) self-verify backup exists at correct path. Never skip step 1.
