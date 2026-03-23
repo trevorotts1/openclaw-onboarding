@@ -8,7 +8,7 @@ Reads departments dynamically from:
 
 Run this after the Command Center is installed and the DB is created.
 """
-import sqlite3, json, os, sys
+import sqlite3, json, os, sys, re
 from pathlib import Path
 
 def find_db():
@@ -54,9 +54,13 @@ def scan_skill23_workspaces():
     }
     
     departments = []
+    parent_folder_name = None
+    
     for ws_dir in workspace_dirs:
         if not ws_dir.exists():
             continue
+        # Store parent folder name as potential company name
+        parent_folder_name = ws_dir.parent.name if ws_dir.name == "command-center" else ws_dir.name
         for folder in sorted(ws_dir.iterdir()):
             if folder.is_dir() and not folder.name.startswith('.'):
                 dept_id = folder.name.lower().replace(' ', '-')
@@ -82,26 +86,49 @@ def scan_skill23_workspaces():
         if departments:
             break  # Use first directory that has departments
     
-    return departments
+    return departments, parent_folder_name
 
-def find_company_info():
-    """Try to find client company name from Skill 23 output"""
+def find_company_info(parent_folder_name=None):
+    """Find company name from env var, interview answers, or parent folder"""
+    # 1. Check COMPANY_NAME env var first
+    company_name = os.environ.get("COMPANY_NAME", "").strip()
+    if company_name:
+        return company_name
+    
+    # 2. Try to find from Skill 23 interview answers
     answer_files = [
         Path.home() / "Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md",
         Path.home() / ".openclaw/workspace/company-discovery/workforce-interview-answers.md",
     ]
-    company_name = "My Company"
+    
     for f in answer_files:
         if f.exists():
-            with open(f) as fh:
-                for line in fh:
-                    if 'company name' in line.lower() or 'business name' in line.lower():
-                        # Next line might have the answer
-                        next_line = next(fh, '').strip()
-                        if next_line and not next_line.startswith('#'):
-                            company_name = next_line
-                            break
-    return company_name
+            try:
+                with open(f) as fh:
+                    content = fh.read()
+                    # Look for patterns like "Company Name: XYZ" or "## Company Name\nXYZ"
+                    patterns = [
+                        r'(?:company|business)\s*name\s*[:\-]\s*(.+?)(?:\n|$)',
+                        r'#+\s*(?:company|business)\s*name\s*\n+(.+?)(?:\n|$)',
+                    ]
+                    for pattern in patterns:
+                        match = re.search(pattern, content, re.IGNORECASE)
+                        if match:
+                            company_name = match.group(1).strip()
+                            if company_name:
+                                return company_name
+            except Exception:
+                pass
+    
+    # 3. Use parent folder name if available
+    if parent_folder_name and parent_folder_name not in ['workspaces', 'command-center']:
+        # Clean up the folder name (remove common suffixes)
+        clean_name = parent_folder_name.replace('-dept', '').replace('_dept', '')
+        clean_name = clean_name.replace('-', ' ').replace('_', ' ').title()
+        return clean_name
+    
+    # 4. Default fallback
+    return "My Company"
 
 def seed(db_path, departments, company_name):
     conn = sqlite3.connect(db_path)
@@ -129,7 +156,10 @@ def seed(db_path, departments, company_name):
     """)
 
     # Create company entry
-    company_slug = company_name.lower().replace(' ', '-').replace("'", '')
+    company_slug = re.sub(r'[^a-z0-9]+', '-', company_name.lower()).strip('-')
+    if not company_slug:
+        company_slug = 'my-company'
+    
     cur.execute(
         "INSERT OR IGNORE INTO companies (id, name, slug, industry, config) VALUES (?, ?, ?, ?, ?)",
         (company_slug, company_name, company_slug, '', '{}')
@@ -171,18 +201,20 @@ if __name__ == "__main__":
 
     # Try departments.json first, fall back to scanning folders
     departments, source = find_departments_config()
+    parent_folder_name = None
+    
     if departments:
         print(f"Source: {source}")
     else:
         print("departments.json empty or missing. Scanning Skill 23 workspace folders...")
-        departments = scan_skill23_workspaces()
+        departments, parent_folder_name = scan_skill23_workspaces()
         source = "Skill 23 workspace scan"
 
     if not departments:
         print("ERROR: No departments found. Run Skill 23 (AI Workforce Blueprint) first.")
         sys.exit(1)
 
-    company_name = find_company_info()
+    company_name = find_company_info(parent_folder_name)
     
     print(f"DB: {db}")
     print(f"Source: {source}")

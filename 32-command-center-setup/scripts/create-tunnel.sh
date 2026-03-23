@@ -68,16 +68,62 @@ ingress:
 EOF
 echo "[5/7] Config written to ~/.cloudflared/config-command-center.yml"
 
-# Step 6: Start tunnel
-echo "[6/7] Starting tunnel..."
-nohup cloudflared tunnel run --config ~/.cloudflared/config-command-center.yml > /tmp/cloudflared-${TUNNEL_NAME}.log 2>&1 &
-sleep 5
+# Step 6: Set up launchctl service for auto-restart
+echo "[6/7] Setting up launchctl service..."
 
-if pgrep -f "cloudflared.*${TUNNEL_NAME}" > /dev/null; then
-  echo "  Tunnel running (PID: $(pgrep -f "cloudflared.*config-command-center"))"
+PLIST_PATH="$HOME/Library/LaunchAgents/com.cloudflare.${TUNNEL_NAME}.plist"
+CONFIG_PATH="$HOME/.cloudflared/config-command-center.yml"
+
+# Create LaunchAgent plist with KeepAlive for auto-restart
+cat > "$PLIST_PATH" << PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cloudflare.${TUNNEL_NAME}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/cloudflared</string>
+        <string>tunnel</string>
+        <string>--config</string>
+        <string>${CONFIG_PATH}</string>
+        <string>run</string>
+        <string>${TUNNEL_ID}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/cloudflared-${TUNNEL_NAME}.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/cloudflared-${TUNNEL_NAME}.log</string>
+</dict>
+</plist>
+PLIST_EOF
+
+echo "  LaunchAgent created at: $PLIST_PATH"
+
+# Unload if already loaded (to handle re-runs)
+launchctl unload "$PLIST_PATH" 2>/dev/null || true
+
+# Load the service
+launchctl load "$PLIST_PATH"
+
+sleep 3
+
+# Check if tunnel is running
+if launchctl list | grep -q "com.cloudflare.${TUNNEL_NAME}"; then
+  echo "  Tunnel service loaded successfully"
 else
-  echo "ERROR: Tunnel failed to start. Check /tmp/cloudflared-${TUNNEL_NAME}.log"
-  exit 1
+  echo "WARNING: Service may not have loaded. Checking process..."
+  if pgrep -f "cloudflared.*${TUNNEL_ID}" > /dev/null; then
+    echo "  Tunnel process running (PID: $(pgrep -f "cloudflared.*${TUNNEL_ID}"))"
+  else
+    echo "ERROR: Tunnel failed to start. Check /tmp/cloudflared-${TUNNEL_NAME}.log"
+    exit 1
+  fi
 fi
 
 # Step 7: POST webhook
