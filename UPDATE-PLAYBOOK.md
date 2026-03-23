@@ -1,5 +1,5 @@
 # BlackCEO System Update Playbook
-# Version 1.4 | March 22, 2026
+# Version 1.5 | March 22, 2026
 
 This playbook defines how updates are applied to an already-onboarded BlackCEO system. There are three ways to trigger an update. All three follow the same steps below.
 
@@ -47,14 +47,52 @@ Download the full repository. Save it to a temporary location. Do not overwrite 
 ### STEP 3: READ THE CHANGELOG
 Open CHANGELOG.md from the downloaded repo. Find your current version by reading the "version" file in your existing installation. Read every entry between your version and the latest. Make a list of what changed.
 
-### STEP 4: BUILD YOUR GAP REPORT
+### STEP 4: INFRASTRUCTURE CHECK
+Before touching skills, make sure the infrastructure scripts and dependencies from install.sh are up to date. The direct-to-agent method does not run install.sh, so you must do these checks manually:
+
+**4a. Gemini Engine scripts:**
+- Check if ~/.openclaw/workspace/scripts/gemini-indexer.py exists
+- If it does NOT exist, or if the downloaded repo has a newer version, copy it:
+  - From the downloaded repo: scripts/gemini-indexer.py → ~/.openclaw/workspace/scripts/gemini-indexer.py
+  - Also copy gemini-search.py if it exists in the repo scripts folder
+  - Make them executable
+
+**4b. Python dependencies:**
+- Check if the google-genai Python package is installed (try: python3 -c "import google.genai")
+- If it is NOT installed, install it: pip3 install google-genai
+- Also check for numpy (try: python3 -c "import numpy")
+- If missing, install it: pip3 install numpy
+
+**4c. Sub-agent configuration:**
+- Check openclaw.json for the sub-agent settings:
+  - maxSpawnDepth should be 4
+  - maxConcurrent should be 20
+  - maxChildrenPerAgent should be 20
+- If any of these are missing or different, update them (follow config backup protocol first)
+
+**4d. Model allow list:**
+- Check openclaw.json for the model allow list. It should have these 10 models:
+  - moonshot/kimi-k2.5
+  - openrouter/moonshot/kimi-k2.5
+  - openrouter/xiaomi/mimo-v2-pro
+  - openrouter/xiaomi/mimo-v2-omni
+  - openrouter/minimax/minimax-m2.7
+  - openrouter/google/gemini-3.1-flash-lite-preview
+  - openrouter/google/gemini-3-flash-preview
+  - openai-codex/gpt-5.4
+  - openrouter/perplexity/sonar-pro-search
+  - openrouter/perplexity/sonar
+- If any are missing, add them (follow config backup protocol first)
+- Check the official OpenClaw docs (https://docs.openclaw.ai) for the correct config format before editing
+
+### STEP 5: BUILD YOUR GAP REPORT
 Compare what you have installed vs what is in the new repo:
 - Which skills are NEW (you do not have them)?
 - Which skills have been UPDATED?
 - Which skills are UNCHANGED?
 Write out the gap report.
 
-### STEP 5: CREDENTIAL DEPENDENCY CHECK
+### STEP 6: CREDENTIAL DEPENDENCY CHECK
 Before applying any changes, scan every new or updated skill for credential requirements. Check the skill's INSTALL.md, SKILL.md, and CORE_UPDATES.md for mentions of:
 - API keys (e.g., GOOGLE_API_KEY, KIE_API_KEY, OPENROUTER_API_KEY)
 - Tokens (e.g., PRIVATE_INTEGRATION_TOKEN, FISH_AUDIO_API_KEY)
@@ -83,7 +121,7 @@ When the missing credential is provided:
 - Only after the test passes, proceed with installing the blocked skill
 - If the test fails, tell the client or Trevor: "The [credential name] you provided did not work. I got this error: [error]. Please check the key and try again."
 
-### STEP 6: SKILL DEPENDENCY CHECK
+### STEP 7: SKILL DEPENDENCY CHECK
 Some skills depend on other skills being installed or completed first. Before installing a skill, check its INSTALL.md for prerequisites.
 
 Known dependencies:
@@ -99,7 +137,7 @@ If a skill's dependency is not met:
 Example for Command Center:
 - If Skill 23 interview is not complete (no department folders exist), tell the client: "The BlackCEO Command Center is included in this update, but it requires your AI Workforce questions to be completed first. Once you finish the workforce interview, I can activate the Command Center for you."
 
-### STEP 7: RISK ASSESSMENT
+### STEP 8: RISK ASSESSMENT
 For each change that has all credentials and dependencies ready, assign a risk level:
 
 **LOW RISK:** Brand new skill folder. Nothing existing gets touched.
@@ -111,12 +149,12 @@ For each change that has all credentials and dependencies ready, assign a risk l
 **HIGH RISK:** Anything that could affect core files, requires a migration, or could break existing functionality.
 → STOP. Show exactly what the change is, what it affects, and why it is high risk. Ask for explicit approval before proceeding. Do NOT apply until you get a YES.
 
-### STEP 8: APPLY LOW AND MEDIUM RISK CHANGES
+### STEP 9: APPLY LOW AND MEDIUM RISK CHANGES
 - Copy new skill folders (LOW) into your skills directory
 - Replace updated skill folders (MEDIUM) with the new versions
 - These are safe to apply without asking
 
-### STEP 9: HANDLE HIGH RISK CHANGES
+### STEP 10: HANDLE HIGH RISK CHANGES
 For each HIGH risk item:
 - Show exactly what changed
 - Explain what it affects and why it is flagged high risk
@@ -124,14 +162,14 @@ For each HIGH risk item:
 - Do NOT proceed until you get an explicit YES
 - If NO, skip it and move on
 
-### STEP 10: CORE FILE UPDATES
+### STEP 11: CORE FILE UPDATES
 For each new or updated skill, check for CORE_UPDATES.md inside the skill folder. If it exists:
 - Read what it says to add to each core file
 - If the content ALREADY EXISTS in your core file, skip it
 - If the new content CONFLICTS with something already there, STOP. Report the exact conflict: what the update wants to add, what already exists, and what the problem is. Wait for a decision before changing anything.
 - If it is new and does not conflict, APPEND it to the correct core file. Never delete or rewrite existing content.
 
-### STEP 11: CHECK FOR MODEL OR CONFIG CHANGES
+### STEP 12: CHECK FOR MODEL OR CONFIG CHANGES
 Some updates add new models, change auth profiles, or update openclaw.json settings. If the CHANGELOG mentions model or config changes:
 
 **BEFORE making any config change:**
@@ -154,7 +192,7 @@ Some updates add new models, change auth profiles, or update openclaw.json setti
 - If a model change conflicts with existing config, flag it as HIGH RISK and ask before changing
 - If the official docs show a different format than what the skill specifies, flag the discrepancy and ask before proceeding
 
-### STEP 12: SENSITIVE ITEMS - CONFIRMATION REQUIRED
+### STEP 13: SENSITIVE ITEMS - CONFIRMATION REQUIRED
 The following items require confirmation before any changes. They are NOT blocked from updates, but the agent must explain what it wants to change and get a YES before touching them:
 
 **Company department folders** (anything inside "my AI company departments" or department-named folders like marketing/, sales/, operations/):
@@ -171,7 +209,7 @@ The following items require confirmation before any changes. They are NOT blocke
 **Any file the client has customized beyond the original skill install:**
 - Same rule. Flag it, explain the change, ask for confirmation.
 
-### STEP 13: POST-UPDATE VERIFICATION
+### STEP 14: POST-UPDATE VERIFICATION
 - If Skill 22 or 23 was updated, run the Gemini indexer to reindex personas
 - Verify each updated skill folder is complete (check for INSTALL.md, SKILL.md, QC.md at minimum)
 - Update the local version file to match the new version
@@ -184,7 +222,7 @@ The following items require confirmation before any changes. They are NOT blocke
   - What conflicts were found and how they were resolved
   - Whether a gateway restart is recommended
 
-### STEP 14: GATEWAY RESTART
+### STEP 15: GATEWAY RESTART
 Do NOT restart the gateway yourself. Tell the client or Trevor: "The update is complete. You may want to restart your gateway for the new changes to take effect." Let them decide when to restart.
 
 ---
