@@ -93,11 +93,14 @@ Compare what you have installed vs what is in the new repo:
 Write out the gap report.
 
 ### STEP 6: CREDENTIAL DEPENDENCY CHECK
-Before applying any changes, scan every new or updated skill for credential requirements. Check the skill's INSTALL.md, SKILL.md, and CORE_UPDATES.md for mentions of:
-- API keys (e.g., GOOGLE_API_KEY, KIE_API_KEY, OPENROUTER_API_KEY)
-- Tokens (e.g., PRIVATE_INTEGRATION_TOKEN, FISH_AUDIO_API_KEY)
-- Passwords (e.g., service account credentials)
-- OAuth profiles (e.g., openrouter:default, anthropic:default)
+Before applying any changes, read CREDENTIALS.md in the downloaded repo. This file maps every credential name, its aliases, which skills need it, and which credentials are OPTIONAL (do not block on optional ones).
+
+Key rules from CREDENTIALS.md:
+- Many credentials have MULTIPLE names (e.g., GHL_API_KEY = GOHIGHLEVEL_API_KEY = GHL_TOKEN = PRIVATE_INTEGRATION_TOKEN = GHL_PIT). If ANY alias exists, the credential is satisfied.
+- Some credentials are OPTIONAL (PIKA_API_KEY, RUNWAY_API_KEY, APIFY_API_TOKEN, ANTHROPIC_API_KEY for Skill 11). Do NOT flag these as missing or block installation.
+- MOONSHOT_API_KEY is NOT required if OPENROUTER_API_KEY exists (Kimi K2.5 is available via OpenRouter).
+- GOOGLE_API_KEY, GEMINI_API_KEY, and GOOGLE_CLOUD_API_KEY are all the same credential. If any one exists, it is satisfied.
+- Skills that need "at least one LLM key" (Skill 28) are satisfied by ANY of: GEMINI, OPENAI, OPENROUTER, or ANTHROPIC keys.
 
 For each credential found:
 1. Check ALL env file locations where credentials might be stored:
