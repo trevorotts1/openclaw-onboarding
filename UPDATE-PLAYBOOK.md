@@ -1,5 +1,5 @@
 # BlackCEO System Update Playbook
-# Version 1.0 | March 22, 2026
+# Version 1.1 | March 22, 2026
 
 This playbook defines how updates are applied to an already-onboarded BlackCEO system. There are three ways to trigger an update. All three follow the same steps below.
 
@@ -22,7 +22,7 @@ The agent reads this playbook and executes it. No terminal. No client involvemen
 ### Method 3: Remote/Heartbeat (Scheduled)
 Add this to the agent's HEARTBEAT.md:
 
-"Every Sunday at 3 AM, check for updates: Go to https://github.com/trevorotts1/openclaw-onboarding, read the version file, compare it to your installed version. If there is a new version, follow UPDATE-PLAYBOOK.md. If all changes are LOW risk, apply them automatically. If any changes are MEDIUM or HIGH risk, message me with what changed and wait for approval."
+"Every Sunday at 3 AM, check for updates: Go to https://github.com/trevorotts1/openclaw-onboarding, read the version file, compare it to your installed version. If there is a new version, follow UPDATE-PLAYBOOK.md."
 
 The agent checks automatically on schedule and follows this same playbook.
 
@@ -30,104 +30,120 @@ The agent checks automatically on schedule and follows this same playbook.
 
 ## The Update Process (All Methods)
 
-### STEP 1: BACKUP FIRST
-Before anything else, back up your 7 core files:
-- AGENTS.md
-- MEMORY.md
-- SOUL.md
-- USER.md
-- IDENTITY.md
-- HEARTBEAT.md
-- TOOLS.md
-
-Copy them to a backup location with a timestamp in the filename. If anything goes wrong, you restore from these. Do not proceed until backup is confirmed.
+### STEP 1: RUN THE FULL BACKUP PROTOCOL
+Before touching anything, run the Back Yourself Up Protocol (Skill 02). This means:
+- Back up openclaw.json (the config with all models, API keys, auth profiles)
+- Back up all 7 core .md files (AGENTS.md, MEMORY.md, SOUL.md, USER.md, IDENTITY.md, HEARTBEAT.md, TOOLS.md)
+- Back up the skills folder
+- Back up the secrets folder
+- Save everything to the backup folder in Downloads with a human-readable timestamp
+- Verify backups are not empty
+- If any backup fails, STOP. Do not proceed. Fix the backup first.
 
 ### STEP 2: DOWNLOAD THE LATEST VERSION
 Go to https://github.com/trevorotts1/openclaw-onboarding
 Download the full repository. Save it to a temporary location. Do not overwrite your existing installation yet.
 
 ### STEP 3: READ THE CHANGELOG
-Open CHANGELOG.md from the downloaded repo. Find your current version by reading the "version" file in your existing installation. Read every entry between your version and the latest version. Make a list of what changed.
+Open CHANGELOG.md from the downloaded repo. Find your current version by reading the "version" file in your existing installation. Read every entry between your version and the latest. Make a list of what changed.
 
 ### STEP 4: BUILD YOUR GAP REPORT
 Compare what you have installed vs what is in the new repo:
-- Which skills are NEW (you do not have them at all)?
-- Which skills have been UPDATED (newer version in the repo)?
+- Which skills are NEW (you do not have them)?
+- Which skills have been UPDATED?
 - Which skills are UNCHANGED?
-
-Write out the gap report so it is clear what needs attention.
+Write out the gap report.
 
 ### STEP 5: RISK ASSESSMENT
 For each change, assign a risk level:
 
-**LOW RISK:** Brand new skill folder. Nothing existing gets touched. Safe to apply automatically.
+**LOW RISK:** Brand new skill folder. Nothing existing gets touched. 
+→ Auto-apply. No approval needed.
 
-**MEDIUM RISK:** An existing skill folder has updates. The skill files changed but core files are not affected. Show what changed and ask before applying.
+**MEDIUM RISK:** An existing skill folder has updates. Skill files changed but does not require migration or affect company data.
+→ Auto-apply. No approval needed.
 
-**HIGH RISK:** Anything that could affect core files, company department folders, custom SOPs, or requires a migration. Do NOT apply. Show the details and wait for explicit approval.
+**HIGH RISK:** Anything that could affect core files, company department folders, custom SOPs, requires a migration, or could break existing functionality.
+→ STOP. Show exactly what the change is, what it affects, and why it is high risk. Ask for explicit approval before proceeding. Do NOT apply until you get a YES.
 
-### STEP 6: APPLY LOW RISK CHANGES
-Copy new skill folders into your skills directory. These are safe because nothing existing gets touched.
+### STEP 6: APPLY LOW AND MEDIUM RISK CHANGES
+- Copy new skill folders (LOW) into your skills directory
+- Replace updated skill folders (MEDIUM) with the new versions
+- These are safe to apply without asking
 
-### STEP 7: HANDLE MEDIUM RISK CHANGES
-For each MEDIUM risk item:
-- Show exactly what changed (old version vs new version)
-- Explain what the change does
-- Ask for approval before applying
-- If approved, replace the skill folder with the updated version
+### STEP 7: HANDLE HIGH RISK CHANGES
+For each HIGH risk item:
+- Show exactly what changed
+- Explain what it affects and why it is flagged high risk
+- Ask: "This is a high risk change. Do you want me to apply it? Please reply YES or NO."
+- Do NOT proceed until you get an explicit YES
+- If NO, skip it and move on
 
-### STEP 8: CORE FILE UPDATES (CAREFUL)
-For each new or updated skill, check if it has a CORE_UPDATES.md file inside its folder. If it does:
+### STEP 8: CORE FILE UPDATES
+For each new or updated skill, check for CORE_UPDATES.md inside the skill folder. If it exists:
+- Read what it says to add to each core file
+- If the content ALREADY EXISTS in your core file, skip it
+- If the new content CONFLICTS with something already there, STOP. Report the exact conflict: what the update wants to add, what already exists, and what the problem is. Wait for a decision before changing anything.
+- If it is new and does not conflict, APPEND it to the correct core file. Never delete or rewrite existing content.
 
-1. Read what CORE_UPDATES.md says to add to each core file
-2. Check if that content ALREADY EXISTS in your core file. If it does, skip it.
-3. Check if the new content CONFLICTS with something already in your core file. If it does, STOP. Report the conflict:
-   - What the CORE_UPDATES.md wants to add
-   - What already exists that conflicts
-   - Let the client or Trevor decide how to handle it
-4. If it is new and does not conflict, APPEND it to the correct core file. Do not delete or rewrite anything that is already there.
+### STEP 9: CHECK FOR MODEL OR CONFIG CHANGES
+Some updates add new models, change auth profiles, or update openclaw.json settings. If the CHANGELOG mentions model or config changes:
+- Read the new configuration from the updated skill
+- Compare against your current openclaw.json
+- Follow the config backup protocol (Skill 02) before editing openclaw.json
+- Add new models to the allow list
+- Do not remove existing models unless the CHANGELOG explicitly says to
+- If a model change conflicts with existing config, flag it as HIGH RISK and ask before changing
 
-### STEP 9: PROTECTED ITEMS - NEVER TOUCH
+### STEP 10: PROTECTED ITEMS - NEVER TOUCH
 These are off-limits no matter what:
 - Company department folders (anything inside "my AI company departments")
 - Custom SOPs the client created
 - Any file the client has customized beyond what the original skill installed
-- The client's personal data, contacts, or business information
+- Client personal data, contacts, or business information
 
-### STEP 10: POST-UPDATE VERIFICATION
+### STEP 11: POST-UPDATE VERIFICATION
 - If Skill 22 or 23 was updated, run the Gemini indexer to reindex personas
 - Verify each updated skill folder is complete (check for INSTALL.md, SKILL.md, QC.md at minimum)
 - Update the local version file to match the new version
 - Write a summary report:
   - What was updated (list each skill and what changed)
   - What was skipped and why
-  - What needs attention or approval
+  - What conflicts were found and how they were resolved
   - Whether a gateway restart is recommended
 
-### STEP 11: GATEWAY RESTART
-Do NOT restart the gateway yourself. Tell the client: "The update is complete. You may want to restart your gateway for the new changes to take effect." Let them decide when to restart.
+### STEP 12: GATEWAY RESTART
+Do NOT restart the gateway yourself. Tell the client or Trevor: "The update is complete. You may want to restart your gateway for the new changes to take effect." Let them decide when to restart.
 
 ---
+
+## Quick Reference: Risk Levels
+
+| Risk | What It Means | Action |
+|------|--------------|--------|
+| LOW | New skill folder, nothing existing touched | Auto-apply |
+| MEDIUM | Existing skill updated, no migration needed | Auto-apply |
+| HIGH | Affects core files, company data, or needs migration | ASK first, wait for YES |
 
 ## Quick Reference: What Gets Protected
 
 | Item | Rule |
 |------|------|
-| AGENTS.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite existing content. |
-| MEMORY.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite existing content. |
-| SOUL.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite existing content. |
-| USER.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite existing content. |
-| IDENTITY.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite existing content. |
-| HEARTBEAT.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite existing content. |
-| TOOLS.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite existing content. |
-| Company dept folders | NEVER touch. These are client work. |
-| Custom SOPs | NEVER touch. These are client work. |
-| Client personal data | NEVER touch. |
+| AGENTS.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite. Flag conflicts. |
+| MEMORY.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite. Flag conflicts. |
+| SOUL.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite. Flag conflicts. |
+| USER.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite. Flag conflicts. |
+| IDENTITY.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite. Flag conflicts. |
+| HEARTBEAT.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite. Flag conflicts. |
+| TOOLS.md | APPEND only via CORE_UPDATES.md. Never delete or rewrite. Flag conflicts. |
+| openclaw.json | Config backup protocol (Skill 02) BEFORE any edit. |
+| Company dept folders | NEVER touch. Client work. |
+| Custom SOPs | NEVER touch. Client work. |
 
 ## Conflict Resolution
-If a CORE_UPDATES.md entry says to add something that conflicts with existing content:
+If a CORE_UPDATES.md entry conflicts with existing content:
 1. Do not change anything
-2. Report the exact conflict to the client or Trevor
+2. Report the exact conflict
 3. Show what currently exists and what the update wants to add
 4. Wait for a decision before proceeding
 5. Document the decision in the update log
@@ -136,7 +152,7 @@ If a CORE_UPDATES.md entry says to add something that conflicts with existing co
 After every update, append to ~/.openclaw/skills/.update-log:
 - Date and time
 - Previous version and new version
-- What was applied
-- What was skipped
+- What was applied (LOW + MEDIUM items)
+- What was flagged HIGH and the decision made
 - Any conflicts found and how they were resolved
 - Whether gateway restart was recommended
