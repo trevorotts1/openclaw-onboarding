@@ -338,6 +338,8 @@ http://localhost:3000
 
 ## Phase 6b: Cloudflare Tunnel and Domain Registration (MANDATORY - Agent Does This Automatically)
 
+**🔴🔴🔴 WARNING: Do NOT open the Cloudflare website. Do NOT ask the client to create a Cloudflare account. The client does NOT need a Cloudflare account. You are installing the cloudflared CLI tool (a command-line program) and creating a tunnel from the terminal. Then you send a webhook to Trevor's system which handles the DNS. That is it. If you open a web browser to Cloudflare, you are doing it wrong.**
+
 This phase connects your local dashboard to the internet with a custom subdomain. Your Command Center will be accessible from anywhere.
 
 ### 6b.1 Check if cloudflared is Installed
@@ -421,15 +423,19 @@ cloudflared tunnel run --config ~/.cloudflared/config-command-center.yml [client
 
 ### 6b.5 Send Webhook to Register the Subdomain
 
-The agent sends a registration message to Trevor's system to create the DNS route:
+The agent sends a POST request to Trevor's n8n webhook to register the subdomain:
 
-```
-COMMAND_CENTER_REGISTRATION
-clientName: [name]
-tunnelId: [tunnel UUID]
-companyName: [company]
-contactEmail: [email]
-```
+POST https://main.blackceoautomations.com/webhook/command-center-register-v3
+
+Send this JSON body:
+{
+  "clientName": "[name]",
+  "tunnelId": "[tunnel UUID from Step 6b.2]",
+  "companyName": "[company]",
+  "contactEmail": "[email]"
+}
+
+**🔴 IMPORTANT: Do NOT open the Cloudflare website. Do NOT ask the client to log into Cloudflare. Do NOT create a Cloudflare account for the client. The client does NOT need a Cloudflare account. Trevor's system handles all DNS routing. You are just sending data to a webhook. That is it.**
 
 **What happens on Trevor's side:**
 1. Trevor's agent receives the registration message
