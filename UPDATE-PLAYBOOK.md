@@ -1,5 +1,5 @@
 # BlackCEO System Update Playbook
-# Version 1.1 | March 22, 2026
+# Version 1.2 | March 22, 2026
 
 This playbook defines how updates are applied to an already-onboarded BlackCEO system. There are three ways to trigger an update. All three follow the same steps below.
 
@@ -54,10 +54,39 @@ Compare what you have installed vs what is in the new repo:
 - Which skills are UNCHANGED?
 Write out the gap report.
 
-### STEP 5: RISK ASSESSMENT
-For each change, assign a risk level:
+### STEP 5: CREDENTIAL DEPENDENCY CHECK
+Before applying any changes, scan every new or updated skill for credential requirements. Check the skill's INSTALL.md, SKILL.md, and CORE_UPDATES.md for mentions of:
+- API keys (e.g., GOOGLE_API_KEY, KIE_API_KEY, OPENROUTER_API_KEY)
+- Tokens (e.g., PRIVATE_INTEGRATION_TOKEN, FISH_AUDIO_API_KEY)
+- Passwords (e.g., service account credentials)
+- OAuth profiles (e.g., openrouter:default, anthropic:default)
 
-**LOW RISK:** Brand new skill folder. Nothing existing gets touched. 
+For each credential found:
+1. Check ALL env file locations where credentials might be stored:
+   - ~/.openclaw/.env
+   - ~/.openclaw/secrets/.env
+   - ~/.openclaw/workspace/secrets/.env
+   - System environment variables
+2. Check openclaw.json for auth profiles
+3. If the credential EXISTS and is not empty, mark it as READY
+4. If the credential is MISSING or empty, mark it as BLOCKED
+
+If any skill has BLOCKED credentials:
+- Do NOT install or update that skill yet
+- Tell the client or Trevor: "Skill [name] requires [credential name] which is not configured. I need this before I can complete the update. Please provide the key/token/password."
+- Continue with all other skills that have their credentials ready
+- Keep a list of blocked skills and what they need
+
+When the missing credential is provided:
+- Add it to the appropriate env file
+- TEST the credential before proceeding (make a simple API call to verify it works)
+- Only after the test passes, proceed with installing the blocked skill
+- If the test fails, tell the client or Trevor: "The [credential name] you provided did not work. I got this error: [error]. Please check the key and try again."
+
+### STEP 6: RISK ASSESSMENT
+For each change that has all credentials ready, assign a risk level:
+
+**LOW RISK:** Brand new skill folder. Nothing existing gets touched.
 → Auto-apply. No approval needed.
 
 **MEDIUM RISK:** An existing skill folder has updates. Skill files changed but does not require migration or affect company data.
@@ -66,12 +95,12 @@ For each change, assign a risk level:
 **HIGH RISK:** Anything that could affect core files, company department folders, custom SOPs, requires a migration, or could break existing functionality.
 → STOP. Show exactly what the change is, what it affects, and why it is high risk. Ask for explicit approval before proceeding. Do NOT apply until you get a YES.
 
-### STEP 6: APPLY LOW AND MEDIUM RISK CHANGES
+### STEP 7: APPLY LOW AND MEDIUM RISK CHANGES
 - Copy new skill folders (LOW) into your skills directory
 - Replace updated skill folders (MEDIUM) with the new versions
 - These are safe to apply without asking
 
-### STEP 7: HANDLE HIGH RISK CHANGES
+### STEP 8: HANDLE HIGH RISK CHANGES
 For each HIGH risk item:
 - Show exactly what changed
 - Explain what it affects and why it is flagged high risk
@@ -79,14 +108,14 @@ For each HIGH risk item:
 - Do NOT proceed until you get an explicit YES
 - If NO, skip it and move on
 
-### STEP 8: CORE FILE UPDATES
+### STEP 9: CORE FILE UPDATES
 For each new or updated skill, check for CORE_UPDATES.md inside the skill folder. If it exists:
 - Read what it says to add to each core file
 - If the content ALREADY EXISTS in your core file, skip it
 - If the new content CONFLICTS with something already there, STOP. Report the exact conflict: what the update wants to add, what already exists, and what the problem is. Wait for a decision before changing anything.
 - If it is new and does not conflict, APPEND it to the correct core file. Never delete or rewrite existing content.
 
-### STEP 9: CHECK FOR MODEL OR CONFIG CHANGES
+### STEP 10: CHECK FOR MODEL OR CONFIG CHANGES
 Some updates add new models, change auth profiles, or update openclaw.json settings. If the CHANGELOG mentions model or config changes:
 - Read the new configuration from the updated skill
 - Compare against your current openclaw.json
@@ -95,24 +124,25 @@ Some updates add new models, change auth profiles, or update openclaw.json setti
 - Do not remove existing models unless the CHANGELOG explicitly says to
 - If a model change conflicts with existing config, flag it as HIGH RISK and ask before changing
 
-### STEP 10: PROTECTED ITEMS - NEVER TOUCH
+### STEP 11: PROTECTED ITEMS - NEVER TOUCH
 These are off-limits no matter what:
 - Company department folders (anything inside "my AI company departments")
 - Custom SOPs the client created
 - Any file the client has customized beyond what the original skill installed
 - Client personal data, contacts, or business information
 
-### STEP 11: POST-UPDATE VERIFICATION
+### STEP 12: POST-UPDATE VERIFICATION
 - If Skill 22 or 23 was updated, run the Gemini indexer to reindex personas
 - Verify each updated skill folder is complete (check for INSTALL.md, SKILL.md, QC.md at minimum)
 - Update the local version file to match the new version
 - Write a summary report:
   - What was updated (list each skill and what changed)
   - What was skipped and why
+  - What credentials are still missing (blocked skills)
   - What conflicts were found and how they were resolved
   - Whether a gateway restart is recommended
 
-### STEP 12: GATEWAY RESTART
+### STEP 13: GATEWAY RESTART
 Do NOT restart the gateway yourself. Tell the client or Trevor: "The update is complete. You may want to restart your gateway for the new changes to take effect." Let them decide when to restart.
 
 ---
@@ -124,6 +154,7 @@ Do NOT restart the gateway yourself. Tell the client or Trevor: "The update is c
 | LOW | New skill folder, nothing existing touched | Auto-apply |
 | MEDIUM | Existing skill updated, no migration needed | Auto-apply |
 | HIGH | Affects core files, company data, or needs migration | ASK first, wait for YES |
+| BLOCKED | Missing API key, token, or password | STOP. Ask for credential. Test before proceeding. |
 
 ## Quick Reference: What Gets Protected
 
@@ -140,6 +171,19 @@ Do NOT restart the gateway yourself. Tell the client or Trevor: "The update is c
 | Company dept folders | NEVER touch. Client work. |
 | Custom SOPs | NEVER touch. Client work. |
 
+## Credential Dependency Check - Where to Look
+
+| Location | What Lives There |
+|----------|-----------------|
+| ~/.openclaw/.env | Primary env file |
+| ~/.openclaw/secrets/.env | Secondary env file |
+| ~/.openclaw/workspace/secrets/.env | Workspace secrets |
+| System environment variables | Exported vars |
+| ~/.openclaw/openclaw.json | Auth profiles, model configs |
+| ~/.openclaw/agents/main/agent/auth-profiles.json | Registered auth profiles |
+
+Check ALL of these. Do not stop after the first one. A credential might be in any of them.
+
 ## Conflict Resolution
 If a CORE_UPDATES.md entry conflicts with existing content:
 1. Do not change anything
@@ -154,5 +198,6 @@ After every update, append to ~/.openclaw/skills/.update-log:
 - Previous version and new version
 - What was applied (LOW + MEDIUM items)
 - What was flagged HIGH and the decision made
+- What credentials were missing and which skills are blocked
 - Any conflicts found and how they were resolved
 - Whether gateway restart was recommended
