@@ -150,9 +150,19 @@ For each change that has all credentials and dependencies ready, assign a risk l
 → STOP. Show exactly what the change is, what it affects, and why it is high risk. Ask for explicit approval before proceeding. Do NOT apply until you get a YES.
 
 ### STEP 9: APPLY LOW AND MEDIUM RISK CHANGES
-- Copy new skill folders (LOW) into your skills directory
-- Replace updated skill folders (MEDIUM) with the new versions
-- These are safe to apply without asking
+
+**For UPDATED skills (MEDIUM):**
+- Replace the old skill folder with the new version from the downloaded repo
+- Check if the skill has a CORE_UPDATES.md (handled in Step 11)
+
+**For NEW skills that you do not have at all (LOW):**
+- Copy the entire skill folder from the downloaded repo into your skills directory
+- Open the skill's INSTALL.md and follow the installation instructions step by step
+- Each skill has its own INSTALL.md that tells the agent exactly how to set it up
+- Some skills are just reference docs (copy and done). Others have setup steps (API configs, file creation, etc.)
+- If the INSTALL.md requires a credential you do not have, mark it as BLOCKED and move on to the next skill
+- After installation, check the skill's CORE_UPDATES.md and apply any core file additions (handled in Step 11)
+- After installation, run the skill's QC.md checks if one exists to verify it installed correctly
 
 ### STEP 10: HANDLE HIGH RISK CHANGES
 For each HIGH risk item:
