@@ -160,6 +160,9 @@ Each department workspace will have symlinks to shared files from your main work
 
 ---
 
+
+**🔴 GATE CHECK: DO NOT proceed to Phase 4 until every department workspace folder exists at ~/.openclaw/workspaces/command-center/. List the folders and verify. If any are missing, create them now. DO NOT SKIP THIS PHASE.**
+
 ## Phase 4: Agent Configuration (Agent Does This Automatically)
 
 The agent will configure OpenClaw to recognize your department agents.
@@ -230,6 +233,9 @@ openclaw config validate
 
 ---
 
+
+**🔴 GATE CHECK: DO NOT proceed to Phase 5 until every department has an entry in agents.list[] in openclaw.json. Count the entries and verify against your department list. If any are missing, add them now. DO NOT SKIP THIS PHASE.**
+
 ## Phase 5: Telegram Topic Creation (Agent Does This Automatically)
 
 The agent creates one topic per department, plus a Cross-Department topic.
@@ -273,6 +279,9 @@ For each topic, the agent adds a binding to `openclaw.json`:
 **Note:** Each department agent is bound to its specific topic. Messages in that topic go directly to that agent.
 
 ---
+
+
+**🔴 GATE CHECK: DO NOT proceed to Phase 6 until every department has a Telegram topic created. Count the topics and verify against your department list. If any are missing, create them now. DO NOT SKIP THIS PHASE.**
 
 ## Phase 6: Dashboard Deployment (Agent Does This Automatically)
 
@@ -324,7 +333,10 @@ http://localhost:3000
 
 ---
 
-## Phase 6b: Cloudflare Tunnel and Domain Registration (Agent Does This Automatically)
+
+**🔴 GATE CHECK: DO NOT proceed to Phase 6b until the dashboard is running on localhost:3000 and the workspace seeding script has been run. Verify both. DO NOT SKIP THIS PHASE.**
+
+## Phase 6b: Cloudflare Tunnel and Domain Registration (MANDATORY - Agent Does This Automatically)
 
 This phase connects your local dashboard to the internet with a custom subdomain. Your Command Center will be accessible from anywhere.
 
@@ -464,6 +476,9 @@ You can now access your dashboard from any device, anywhere.
 
 ---
 
+
+**🔴 GATE CHECK: DO NOT proceed to Phase 7 until cloudflared is installed, the tunnel is created, the config file exists at ~/.cloudflared/config-command-center.yml, and the tunnel is running. If cloudflared is not installed, install it now with brew install cloudflared (Mac) or the curl command (Linux). DO NOT SKIP THIS PHASE. There is no optional fallback.**
+
 ## Phase 7: Verification (Agent Does This Automatically)
 
 The agent runs tests to verify everything works.
@@ -528,41 +543,41 @@ To populate personas for clients:
 
 ---
 
-## Phase 8: Optional - Manual Cloudflare Tunnel Setup (if Phase 6b was skipped)
 
-If you want to access your dashboard from outside your local network, the agent can set up a Cloudflare tunnel.
 
-### 8.1 Install cloudflared (if not present)
-```bash
-# On macOS
-brew install cloudflared
 
-# On Linux
-curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-sudo dpkg -i cloudflared.deb
-```
 
-### 8.2 Create the Tunnel
-```bash
-cloudflared tunnel create command-center
-```
 
-### 8.3 Configure the Tunnel
-```bash
-cloudflared tunnel route dns command-center command-center.yourdomain.com
-```
 
-### 8.4 Start the Tunnel
-```bash
-cloudflared tunnel run command-center --url http://localhost:3000
-```
 
-### 8.5 Alternative: Tailscale
-If you already use Tailscale, you can use that instead:
-- Install Tailscale on the machine running the dashboard
-- Access the dashboard via the Tailscale IP at port 3000
 
----
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Completion Checklist
 
