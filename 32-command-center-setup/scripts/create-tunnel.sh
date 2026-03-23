@@ -63,7 +63,7 @@ tunnel: $TUNNEL_ID
 credentials-file: $HOME/.cloudflared/${TUNNEL_NAME}.json
 ingress:
   - hostname: ${CLIENT_SLUG}.zerohumanworkforce.com
-    service: http://localhost:3000
+    service: http://localhost:4000
   - service: http_status:404
 EOF
 echo "[5/7] Config written to ~/.cloudflared/config-command-center.yml"

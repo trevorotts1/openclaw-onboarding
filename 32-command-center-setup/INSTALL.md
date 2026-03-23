@@ -402,7 +402,7 @@ tunnel: [TUNNEL_ID]
 credentials-file: ~/.cloudflared/[TUNNEL_ID].json
 ingress:
   - hostname: [clientName].zerohumanworkforce.com
-    service: http://localhost:3000
+    service: http://localhost:4000
   - service: http_status:404
 ```
 
