@@ -1,5 +1,5 @@
 # BlackCEO System Update Playbook
-# Version 1.3 | March 22, 2026
+# Version 1.4 | March 22, 2026
 
 This playbook defines how updates are applied to an already-onboarded BlackCEO system. There are three ways to trigger an update. All three follow the same steps below.
 
@@ -133,12 +133,26 @@ For each new or updated skill, check for CORE_UPDATES.md inside the skill folder
 
 ### STEP 11: CHECK FOR MODEL OR CONFIG CHANGES
 Some updates add new models, change auth profiles, or update openclaw.json settings. If the CHANGELOG mentions model or config changes:
+
+**BEFORE making any config change:**
+1. Run the config backup protocol (Skill 02) first. No exceptions.
+2. Research the current OpenClaw documentation to verify the correct config format:
+   - Official docs: https://docs.openclaw.ai
+   - Official GitHub: https://github.com/openclaw/openclaw
+3. Check the docs for:
+   - The correct property names and structure for the config file
+   - Any recently deprecated or renamed fields
+   - The correct model ID format for the provider (e.g., openrouter/ prefix, :free suffix)
+   - Any breaking changes between OpenClaw versions that affect config
+4. Only AFTER you have verified the correct format from the official docs, proceed with the edit.
+
+**When applying model or config changes:**
 - Read the new configuration from the updated skill
 - Compare against your current openclaw.json
-- Follow the config backup protocol (Skill 02) before editing openclaw.json
-- Add new models to the allow list
+- Add new models to the allow list using the verified format from the docs
 - Do not remove existing models unless the CHANGELOG explicitly says to
 - If a model change conflicts with existing config, flag it as HIGH RISK and ask before changing
+- If the official docs show a different format than what the skill specifies, flag the discrepancy and ask before proceeding
 
 ### STEP 12: SENSITIVE ITEMS - CONFIRMATION REQUIRED
 The following items require confirmation before any changes. They are NOT blocked from updates, but the agent must explain what it wants to change and get a YES before touching them:
