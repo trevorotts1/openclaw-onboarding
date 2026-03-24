@@ -4,6 +4,16 @@ This folder is home. Treat it that way.
 
 ---
 
+## 🔴🔴🔴 CODING SUB-AGENT PROTOCOL - LOCKED March 23, 2026
+1. Model: MiMo V2 Pro (`openrouter/xiaomi/mimo-v2-pro`) for ALL code work. Kimi K2.5 (`moonshot/kimi-k2.5`) is backup ONLY.
+2. Sub-agents NEVER write directly to main. ALWAYS work on a feature branch.
+3. After build passes, pull `git diff` and show Trevor exactly what changed.
+4. Trevor approves the diff. No merge without explicit YES.
+5. Only after approval: merge to main + PM2 restart.
+VIOLATION RECORD: March 23, 2026 -- used Kimi as primary, wrote straight to main on mission-control. Trevor had to call it out twice. DO NOT REPEAT.
+
+---
+
 ## 🔴 APPLE CONTACTS - SEARCH ALL 6 DATABASES
 When looking up a contact, ALWAYS search all 6 databases. NEVER stop after 1-2 and say "not found."
 ```bash
@@ -128,6 +138,7 @@ Backup: automated every 4 hours → `~/Downloads/openclaw-backups/workspace-snap
 
 ## 🔴 VERCEL - NEVER DEPLOY WITHOUT PERMISSION
 Production = Cloudflare tunnel (`~/.cloudflared/config-command-center.yml`) + PM2 on port 3000. NEVER run `vercel deploy` or link a project to Vercel without Trevor asking explicitly. (Violated March 21, 2026.)
+PORT RULE: Trevor's machine = 3000 (matches his Cloudflare tunnel). Client machines = 4000 (their tunnel also points to 4000). DO NOT change client `ecosystem.config.cjs` to port 3000.
 
 ## 🔴 SUB-AGENT DISPATCH DISCIPLINE
 Every sub-agent task must specify: exact files to touch, exact changes, DO NOT TOUCH list, expected output, validation step, branch name. NEVER open-ended tasks. All code work in branches — never main. QC mandatory before merge.
@@ -138,9 +149,13 @@ Before pushing ANY skill update, PRD change, or code change to GitHub: STOP and 
 ## 🔴 PRDS IN MAIN SESSION
 Write PRDs in the main session, not sub-agents. Sub-agents lack conversation context and will miss decisions. PRD folder standard: every project needs PRD.md, CHANGELOG.md, TODO.md, CHECKLIST.md. Location: `~/Downloads/openclaw-master-files/project-prds/[project-name]/`.
 **PLAYBOOK RULE: Every time the PRD is updated, ALL FOUR files must be updated together. Never update PRD.md without also updating CHANGELOG.md, TODO.md, and CHECKLIST.md. No exceptions. No reminders needed.**
+**PRD MUST BE 10/10 BEFORE SPAWNING ANY BUILD AGENT.** Building before PRD is finalized = multiple costly rebuilds. (Lesson: CEO board rebuilt 3x on March 23, 2026 because PRD was incomplete.)
 
 ## 🔴 TELEGRAM DISPLAY
 Telegram does not render code blocks or tables correctly. Use plain text and bullet points only in Telegram responses.
+
+## 🔴 TAILWIND SCROLLBAR - PLUGIN REQUIRED
+`scrollbar-thin`, `scrollbar-thumb-*` etc. silently do nothing without `tailwind-scrollbar` npm package installed + added to `tailwind.config.js` plugins. Always verify the package is installed before using scrollbar classes.
 
 ## 🔴 SUB-AGENT MONITORING PROTOCOL
 1. **Max 3 simultaneous** unless Trevor authorizes more
