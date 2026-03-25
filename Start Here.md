@@ -1988,9 +1988,14 @@ label: "wave4-agent-f"
 4. **Write ONBOARDING COMPLETE to MEMORY.md**
    - Add entry: "OpenClaw onboarding completed on [date]. All 32 skills installed."
 
-5. **Report completion**
-   - Install Skill 31 (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
-   - "Wave 5 complete: Onboarding finished. All 32 skills installed."
+5. **Install Skill 31** (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
+
+6. **Skill 32 triggers automatically after Skill 23**
+   - Skill 32 (Command Center Setup) is triggered automatically when Skill 23 completes. See Skill 23 INSTALL.md for the handoff.
+   - If Skill 23 was completed in a previous session and Skill 32 has not been installed, install it now.
+
+7. **Report completion**
+   - "Wave 5 complete: Onboarding finished. All skills installed."
 
 ---
 

@@ -795,6 +795,22 @@ Before reporting done, verify every item:
 
 ---
 
+## 🔴 AUTOMATIC NEXT STEP — SKILL 32 (COMMAND CENTER SETUP)
+
+After the final announcement above, IMMEDIATELY proceed to install Skill 32 (Command Center Setup). Do NOT wait for the user to ask. Do NOT stop and report. The Command Center is the next required step after the AI Workforce Blueprint.
+
+**What to do:**
+1. Read `~/.openclaw/skills/32-command-center-setup/INSTALL.md` (or `~/.openclaw/onboarding/32-command-center-setup/INSTALL.md` if skills folder does not have it)
+2. Follow Phase 1 prerequisites — all should pass since Skill 23 just completed
+3. Continue through all phases of Skill 32
+
+**What to say to the user:**
+> "Your AI Workforce is built. Now I am setting up your BlackCEO Command Center — this is the dashboard where you will see everything your AI workforce is doing. I will walk you through each step."
+
+This handoff is MANDATORY. Skill 23 is not truly complete until the Command Center is live.
+
+---
+
 ## POST-INSTALL CAPABILITIES
 
 After installation is complete, these commands work:
