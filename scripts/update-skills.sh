@@ -79,7 +79,7 @@ echo ""
 echo "  Step 2: After it restarts, go to your AI agent in Telegram"
 echo "          and send it this exact message:"
 echo ""
-echo '    "Check for updates and follow UPDATE-PLAYBOOK.md"'
+echo '    "There is an update staged in /tmp/oc-update. Read /tmp/oc-update/openclaw-onboarding-main/UPDATE-PLAYBOOK.md and follow it step by step. Report back when done."'
 echo ""
 echo "  That's it. Your AI will handle the rest."
 echo "  It will only update what has changed — nothing else."
