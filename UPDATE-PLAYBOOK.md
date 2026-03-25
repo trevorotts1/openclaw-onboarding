@@ -83,7 +83,16 @@ Before touching skills, make sure the infrastructure scripts and dependencies fr
   - openrouter/perplexity/sonar-pro-search
   - openrouter/perplexity/sonar
 - If any are missing, add them (follow config backup protocol first)
+- The canonical model list and deprecated model replacements are maintained in scripts/deprecated-models.json. When models change, update that file.
 - Check the official OpenClaw docs (https://docs.openclaw.ai) for the correct config format before editing
+
+**4e. Sub-agent configuration:**
+- Check openclaw.json for the sub-agent settings:
+  - maxSpawnDepth should be 4
+  - maxChildrenPerAgent should be 10
+  - maxConcurrent should be 20
+- If any of these are missing or different, update them (follow config backup protocol first)
+- The canonical values are maintained in scripts/deprecated-models.json under subagent_config
 
 ### STEP 5: BUILD YOUR GAP REPORT
 Compare what you have installed vs what is in the new repo:

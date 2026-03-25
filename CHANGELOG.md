@@ -4,6 +4,26 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v6.0.2] - March 25, 2026
+
+### Update System Fix
+
+#### Fixed
+- **scripts/update-skills.sh**: Complete rewrite. Now stages updates to /tmp and creates .update-pending flag file. No longer attempts to apply changes directly — agent follows UPDATE-PLAYBOOK.md.
+- **Version comparison bug**: Eliminated. Script now reads version files directly instead of parsing changelog headers.
+- **scripts/deprecated-models.json**: New file. Single source of truth for required models, deprecated model replacements, and sub-agent configuration.
+- **UPDATE-PLAYBOOK.md**: Step 4d now references deprecated-models.json. Step 4e added for sub-agent config check (maxSpawnDepth: 4, maxChildrenPerAgent: 10, maxConcurrent: 20).
+
+#### Added
+- MiMo V2 Pro (openrouter/xiaomi/mimo-v2-pro) to required model list
+- MiMo V2 Omni (openrouter/xiaomi/mimo-v2-omni) to required model list
+- Sub-agent config validation (4, 10, 20)
+- .update-pending flag file mechanism (replaces AGENTS.md bloat)
+
+#### Changed
+- update-skills.sh no longer applies changes — it stages the update and the agent follows UPDATE-PLAYBOOK.md
+- Deprecated minimax-m2.5 → minimax-m2.7 tracked in deprecated-models.json
+
 ## [v6.0.1] - March 22, 2026
 
 ### Bug Fixes - Install Sequence, Skill 15, Skill 22, Gemini Engine
