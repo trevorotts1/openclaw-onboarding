@@ -66,6 +66,18 @@ echo ""
 # Create flag file
 touch "$FLAG_FILE"
 
+# Write flag to AGENTS.md so the agent sees it on startup
+AGENTS_FILE="$HOME/.openclaw/workspace/AGENTS.md"
+if [ -f "$AGENTS_FILE" ]; then
+    # Only add if not already there
+    if ! grep -q "UPDATE PENDING" "$AGENTS_FILE" 2>/dev/null; then
+        cat >> "$AGENTS_FILE" << 'UPDATEFLAG'
+
+## 🔴 UPDATE PENDING — Read /tmp/oc-update/openclaw-onboarding-main/UPDATE-PLAYBOOK.md and follow it step by step. Report back when done. Remove this flag when complete.
+UPDATEFLAG
+    fi
+fi
+
 echo "Update staged successfully."
 echo ""
 echo "============================================"
