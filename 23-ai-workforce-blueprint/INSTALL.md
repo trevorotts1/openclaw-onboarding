@@ -239,6 +239,49 @@ Say: "For setting up your company, I recommend switching to a model that thinks 
 
 Do NOT proceed on a low reasoning model. The decisions made here shape the entire company.
 
+### 🔴 5-PRE. COMPLETION SAFETY CHECK (MANDATORY — RUN BEFORE ANYTHING ELSE IN PHASE 5)
+
+Before presenting options, before asking a single question, check if this client has ALREADY completed the AI Workforce Blueprint. Run these checks in order:
+
+**Check 1:** Look for department folders in the workspace:
+```bash
+ls -d ~/.openclaw/workspace/*-dept/ 2>/dev/null | head -5
+```
+If department folders exist (e.g., marketing-dept/, sales-dept/), the build was already completed.
+
+**Check 2:** Look for the completed interview answers:
+```bash
+cat ~/.openclaw/workspace/workforce-interview-answers.md 2>/dev/null | head -5
+```
+If this file exists and has real content (not empty, not a template), the interview was already done.
+
+**Check 3:** Look in master files:
+```bash
+ls ~/Downloads/openclaw-master-files/*/SOUL.md 2>/dev/null | head -5
+```
+
+**Check 4:** Search MEMORY.md for completion markers:
+```bash
+grep -i "workforce complete\|AI WORKFORCE COMPLETE\|skill 23.*complete\|blueprint.*complete" ~/.openclaw/workspace/MEMORY.md 2>/dev/null
+```
+
+**Check 5:** Look for interview-handoff.md (partial completion):
+```bash
+cat ~/.openclaw/workspace/interview-handoff.md 2>/dev/null | head -10
+```
+
+**DECISION LOGIC:**
+
+- **If Check 1 AND Check 2 pass (department folders + completed answers exist):** The client is DONE. Do NOT present options. Do NOT ask questions. Say: "I found your completed AI Workforce — [X] departments, [list them]. Your questions are already answered. Proceeding to set up your Command Center." Then go directly to the AUTOMATIC NEXT STEP section (Skill 32).
+
+- **If Check 5 finds a handoff file but Check 1 fails (partial answers, no build):** The client started but did not finish. Say: "I found your previous progress — you answered [X] questions so far. Let me pick up where we left off." Then resume at the last unanswered question. Do NOT start from question 1.
+
+- **If none of the checks find anything:** Ask the client: "Have you already answered the AI Workforce Blueprint questions before? If yes, I'll search for your answers. If not, we'll start fresh." Then proceed to present options.
+
+This check is MANDATORY. It prevents re-asking 70 questions that the client already answered.
+
+---
+
 ### 5a. Read the Full Blueprint
 
 If you have not already absorbed `ai-workforce-blueprint-full.md` during Phase 1, re-read it now.
