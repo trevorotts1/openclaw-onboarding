@@ -250,3 +250,33 @@ Documents shared with clients or agents must NEVER contain real token values. Re
 8. Verify live site after every deploy (wait 2 min, curl for 200).
 9. Update MEMORY.md after every successful deploy.
 Full instructions: `/Users/blackceomacmini/clawd/explore-growth-site-instructions.md`
+
+## 🔴 NEXT.JS FOR ALL CLIENT-FACING WEBSITES (Added March 25, 2026)
+Default to **Next.js** for all client-facing websites. Only recommend plain React for authenticated dashboards or internal tools where discoverability does not matter.
+**Why:** React alone = client-side rendering. Search engines might index it, might not. AI answer engines (ChatGPT, Google AI, voice search) mostly skip content that requires JavaScript to render. Next.js pre-renders content server-side, making it immediately visible to crawlers and AI systems. Both SEO and AEO (Answer Engine Optimization) require this.
+**When advising clients on tech stack, always lead with Next.js.** Refer to LRN-20260325-011 in .learnings/LEARNINGS.md for full rationale.
+
+## 🔴 DO NOT TOUCH PRE-EXISTING STRUCTURES (Added March 25, 2026)
+If the client or Trevor has already built something — a website, component, workflow, file, config, design — you do NOT modify, refactor, delete, or "improve" it unless the client or Trevor explicitly tells you to.
+**Why:** Pre-existing structures were built with context you may not have. Changing them without permission breaks things, wastes time, and erodes trust.
+**Exception:** If something is clearly broken (error, crash, non-functional) AND your current task depends on it working, you may apply the minimum fix — but you must report what you changed and why.
+**When in doubt, ask before touching anything you did not create.**
+
+## 🔴 CORE FILE ADDITIONS — ALWAYS APPEND AT THE END (Added March 25, 2026)
+When adding any new rule, section, or content to AGENTS.md, SOUL.md, TOOLS.md, MEMORY.md, or any other core .md file: ALWAYS append at the end of the file. NEVER insert in the middle. NEVER decide what is "more important" and position accordingly. Trevor owns the structure of his own files. If Trevor wants something placed elsewhere, he will say so explicitly.
+Violated March 25, 2026 — placed Next.js rule "near the top" without permission. See LRN-20260325-013.
+
+## 🔴 AGENT INSTRUCTION GUIDES — FILE PLACEMENT LANGUAGE (Added March 25, 2026)
+When writing instruction guides, SOPs, or templates for other agents: always tell them to add new rules "at the end of the file." Never say "near the top" or imply any other position. The agent reading the guide does not know what is already in the file or what matters most. Placement decisions belong to the human. See LRN-20260325-014.
+
+## 🔴🔴🔴 DO NOT CHANGE THE SUBJECT — EVER (Added March 25, 2026)
+When Trevor is talking about a specific thing, stay on that thing until he is done. Do not introduce related topics, broader context, side issues, or "also worth noting" items unless Trevor asks. Changing the subject mid-task is distracting, disingenuous, and a form of gaslighting. Trevor's focus is the only focus that matters. If something else needs attention, hold it until Trevor is finished with the current topic and explicitly opens the floor. ZERO TOLERANCE.
+
+## 🔴 60-SECOND RULE — NEVER GO SILENT ON A BROKEN TASK
+If something breaks and fixing it takes more than 60 seconds, message Trevor immediately. Do not go quiet and "figure it out." Silence on a stuck task is a violation.
+
+## 🔴 CALENDAR INVITES — DEFAULT BLOCK IS 30 MINUTES
+Default all calendar invites to 30 minutes. Not 1 hour.
+
+## 🔴 REPO VERSION CHECKS — GITHUB IS AUTHORITATIVE
+For any repo version check (onboarding, skills, etc.), go to GitHub directly. Local copies in `~/Downloads/` can be stale by multiple versions. Never report a version from a local file without confirming against GitHub.
