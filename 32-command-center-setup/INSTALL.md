@@ -336,157 +336,73 @@ http://localhost:3000
 
 **🔴 GATE CHECK: DO NOT proceed to Phase 6b until the dashboard is running on localhost:3000 and the workspace seeding script has been run. Verify both. DO NOT SKIP THIS PHASE.**
 
-## Phase 6b: Cloudflare Tunnel and Domain Registration (MANDATORY - Agent Does This Automatically)
+## Phase 6b: Domain Registration (Agent Does This — Trevor Handles Cloudflare)
 
-**🔴🔴🔴 WARNING: Do NOT open the Cloudflare website. Do NOT ask the client to create a Cloudflare account. The client does NOT need a Cloudflare account. You are installing the cloudflared CLI tool (a command-line program) and creating a tunnel from the terminal. Then you send a webhook to Trevor's system which handles the DNS. That is it. If you open a web browser to Cloudflare, you are doing it wrong.**
+**🔴🔴🔴 CRITICAL: The client does NOT need a Cloudflare account. The client does NOT need CLOUDFLARE_TUNNEL_TOKEN. The client does NOT run any cloudflared commands. Trevor owns the Cloudflare account and all tunnels. The client's ONLY job in this phase is to send a webhook to Trevor's system and wait for a subdomain URL to be returned. That is it.**
 
-This phase connects your local dashboard to the internet with a custom subdomain. Your Command Center will be accessible from anywhere.
+This phase registers the client's Command Center with Trevor's system so it gets a live URL at [clientName].zerohumanworkforce.com.
 
-### 6b.1 Check if cloudflared is Installed
+### 6b.1 Choose the Client Subdomain Name
 
-The agent checks if Cloudflare's tunnel software is installed:
+Use the company slug from the Skill 23 build. Follow this naming pattern:
+- Format: [company-slug]-[shortid] (Example: laurane-coaching-a7f3, acme-dental-m42k)
+- All lowercase, hyphens only, no spaces
+- The short ID prevents collisions if two clients have similar company names
+
+Generate the short ID:
+```bash
+openssl rand -hex 2
+```
+This gives you a 4-character hex string. Combine with the company slug.
+
+### 6b.2 Send Webhook to Trevor's System
+
+The agent sends ONE POST request to register this client. Trevor's system handles all Cloudflare tunnel setup on his end.
 
 ```bash
-which cloudflared
+curl -s -X POST https://main.blackceoautomations.com/webhook/command-center-register-v3 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientName": "[company-slug-shortid]",
+    "companyName": "[full company name]",
+    "contactEmail": "[client email]"
+  }'
 ```
 
-**If cloudflared is NOT found, the agent installs it:**
+Replace [company-slug-shortid] with the name from Step 6b.1.
+Replace [full company name] with the client's actual company name.
+Replace [client email] with the client's email address.
 
-**On macOS:**
-```bash
-brew install cloudflared
-```
+**What happens on Trevor's side after this webhook:**
+1. Trevor's system receives the registration
+2. It creates a DNS route: [clientName].zerohumanworkforce.com
+3. It assigns the client to Trevor's existing Cloudflare tunnel
+4. The subdomain goes live
 
-**On Linux or VPS:**
-```bash
-curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
-chmod +x /usr/local/bin/cloudflared
-```
+**What to tell the client:**
+"I have registered your Command Center with the BlackCEO network. Your URL will be ready shortly at [clientName].zerohumanworkforce.com. I will check when it is live."
 
-**What you should see:** Installation completes without errors.
-
-### 6b.2 Create the Cloudflare Tunnel
-
-The agent creates a named tunnel for your Command Center:
-
-```bash
-CLOUDFLARE_TUNNEL_TOKEN=$(grep CLOUDFLARE_TUNNEL_TOKEN ~/.openclaw/.env | cut -d= -f2)
-export TUNNEL_ORIGIN_CERT=""
-export CLOUDFLARE_API_TOKEN=$(grep CLOUDFLARE_TUNNEL_TOKEN ~/.openclaw/.env | cut -d= -f2)
-cloudflared tunnel create [clientName]-command-center
-```
-
-Replace [clientName] with your chosen name (for example: laura, acme, johnsmith).
-
-**Naming rule (required):** Use the approved Option C pattern for the hostname slug: `[company-slug]-[shortid]`.
-
-Examples:
-- `laura-coaching-a7f3`
-- `acme-dental-m42k`
-
-**Why this matters:** Two clients can have the same or similar company names. The short ID prevents subdomain collisions while keeping the name readable.
-
-**What you should see:**
-- A tunnel is created
-- A tunnel ID is displayed (this is a long UUID string)
-- A credentials file is saved to ~/.cloudflared/
-
-**Important:** Save the tunnel ID. The agent will use it in the next steps.
-
-### 6b.3 Create the Tunnel Configuration File
-
-The agent creates a config file at ~/.cloudflared/config-command-center.yml:
-
-```yaml
-tunnel: [TUNNEL_ID]
-credentials-file: ~/.cloudflared/[TUNNEL_ID].json
-ingress:
-  - hostname: [clientName].zerohumanworkforce.com
-    service: http://localhost:4000
-  - service: http_status:404
-```
-
-Replace [TUNNEL_ID] with the actual tunnel UUID from Step 6b.2.
-Replace [clientName] with your chosen client name.
-
-**What you should see:** A new file is created with the correct settings.
-
-### 6b.4 Start the Tunnel
-
-The agent starts the tunnel to connect your local dashboard to the internet:
+### 6b.3 Wait for DNS Propagation
 
 ```bash
-cloudflared tunnel run --config ~/.cloudflared/config-command-center.yml [clientName]-command-center
-```
-
-**What you should see:**
-- The tunnel connects to Cloudflare
-- Connection status messages appear
-- The tunnel is now active
-
-### 6b.5 Send Webhook to Register the Subdomain
-
-The agent sends a POST request to Trevor's n8n webhook to register the subdomain:
-
-POST https://main.blackceoautomations.com/webhook/command-center-register-v3
-
-Send this JSON body:
-{
-  "clientName": "[name]",
-  "tunnelId": "[tunnel UUID from Step 6b.2]",
-  "companyName": "[company]",
-  "contactEmail": "[email]"
-}
-
-**🔴 IMPORTANT: Do NOT open the Cloudflare website. Do NOT ask the client to log into Cloudflare. Do NOT create a Cloudflare account for the client. The client does NOT need a Cloudflare account. Trevor's system handles all DNS routing. You are just sending data to a webhook. That is it.**
-
-**What happens on Trevor's side:**
-1. Trevor's agent receives the registration message
-2. The agent runs the command-center-webhook.sh script
-3. The script creates the DNS route: [clientName].zerohumanworkforce.com
-4. The client registry checks that the hostname is unique before finalizing the route
-5. Your client information is added to the registry
-
-**What you should see:** A confirmation that the registration was sent.
-
-### 6b.6 Wait for DNS Propagation
-
-DNS changes take a short time to spread across the internet. The agent waits for this to complete.
-
-```bash
-# Wait 30 seconds
 sleep 30
 ```
 
-**What you should see:** A brief pause while DNS updates.
-
-### 6b.7 Verify the URL Works
-
-The agent tests your new subdomain to confirm it is live:
+### 6b.4 Verify the URL is Live
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}" https://[clientName].zerohumanworkforce.com
 ```
 
-**Expected result:** The command returns "200" (meaning the site is accessible).
+Expected: 200. If not 200, wait another 30 seconds and try again. If still failing after 2 minutes, message Trevor directly: "Client [name] registered but URL not resolving — [clientName].zerohumanworkforce.com"
 
-**What you should see:**
-- The HTTP status code 200
-- Your dashboard is now live on the internet
+### 6b.5 Report the Live URL to the Client
 
-### 6b.8 Report the Live URL to the Client
-
-The agent tells you your Command Center is ready:
-
-**What you should see:**
-> "Your Command Center is now live at: https://[clientName].zerohumanworkforce.com"
-
-You can now access your dashboard from any device, anywhere.
+> "Your Command Center is now live at: https://[clientName].zerohumanworkforce.com — you can access it from any device, anywhere."
 
 ---
 
-
-**🔴 GATE CHECK: DO NOT proceed to Phase 7 until cloudflared is installed, the tunnel is created, the config file exists at ~/.cloudflared/config-command-center.yml, and the tunnel is running. If cloudflared is not installed, install it now with brew install cloudflared (Mac) or the curl command (Linux). DO NOT SKIP THIS PHASE. There is no optional fallback.**
+**🔴 GATE CHECK: DO NOT proceed to Phase 7 until the webhook was sent AND the URL returns 200. If the URL is not live after 2 minutes, message Trevor to check the registration. Do NOT attempt to set up cloudflared yourself. Do NOT ask the client for a CLOUDFLARE_TUNNEL_TOKEN. That token belongs to Trevor, not the client.**
 
 ## Phase 7: Verification (Agent Does This Automatically)
 
