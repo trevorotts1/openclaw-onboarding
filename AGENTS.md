@@ -280,3 +280,12 @@ Default all calendar invites to 30 minutes. Not 1 hour.
 
 ## 🔴 REPO VERSION CHECKS — GITHUB IS AUTHORITATIVE
 For any repo version check (onboarding, skills, etc.), go to GitHub directly. Local copies in `~/Downloads/` can be stale by multiple versions. Never report a version from a local file without confirming against GitHub.
+
+## 🔴 SUB-AGENT PROMPT SIZE — NEVER ATTACH LARGE FILES
+NEVER attach full file contents to sub-agent prompts. Pass file paths and read in chunks inside the agent instead. ~$33 OpenRouter credits burned in one session (March 26, 2026) from attaching 10 workflow JSON files (~1.5MB total) as prompt attachments.
+
+## 🔴 OPENCLAW OAUTH RE-AUTH COMMAND
+Correct: `openclaw models auth login --provider <provider>`. NEVER `openclaw auth login <provider>` (invalid subcommand). OpenAI Codex OAuth access tokens expire every ~8-10 days by design. Refresh token auto-renews unless two processes consume it simultaneously (`refresh_token_reused` error = re-auth required).
+
+## 🔴 PERPLEXITY API KEY — TWO PLACES REQUIRED
+`PERPLEXITY_API_KEY` must appear in BOTH `tools.web.search.perplexity.apiKey` AND `env.vars` in openclaw.json. Missing from `env.vars` = `missing_perplexity_api_key` error even when the key is set in the tools config.
