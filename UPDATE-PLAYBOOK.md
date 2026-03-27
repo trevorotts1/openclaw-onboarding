@@ -1,5 +1,5 @@
 # BlackCEO System Update Playbook
-# Version 1.5 | March 22, 2026
+# Version 2.0 | March 27, 2026
 
 This playbook defines how updates are applied to an already-onboarded BlackCEO system. There are three ways to trigger an update. All three follow the same steps below.
 
@@ -246,6 +246,111 @@ The following items require confirmation before any changes. They are NOT blocke
 
 ### STEP 15: GATEWAY RESTART
 Do NOT restart the gateway yourself. Tell the client or Trevor: "The update is complete. You may want to restart your gateway for the new changes to take effect." Let them decide when to restart.
+
+## STEP 16: SEND THE CLIENT A FRIENDLY UPDATE SUMMARY
+
+After you have staged or applied an update, send the client a message that explains what happened in plain English. Never use the word "staged" without explaining it. Never send a one-line summary. The client needs to know what was found, what changed, what they need to do, and whether anything requires their attention.
+
+**Send a notification at TWO points:**
+1. **After staging** (when the update script finds a new version but before you apply it): "I found an update and here is what it includes. Want me to apply it?"
+2. **After applying** (when all steps are complete): "The update is done. Here is what was changed. Nothing else was touched."
+
+### Notification Fallback Channels
+Send the notification through ALL available channels in order until one succeeds:
+1. **Telegram** (primary) — use the agent's Telegram channel
+2. **Email** (fallback) — send to the client's registered email
+3. **SMS/text message** (last resort) — send to the client's phone number
+
+If Telegram fails (no response, connection error), immediately try email. If email fails, immediately try SMS. Do not wait between attempts.
+
+**How to send email fallback:**
+- Use the client's email stored in USER.md or agent config
+- Subject line: "BlackCEO System Update — [version] Ready to Install" (staged) or "BlackCEO System Update — [version] Applied Successfully" (complete)
+- Body: same message content as the Telegram message
+
+**How to send SMS fallback:**
+- Use the client's phone number stored in USER.md or agent config
+- Keep it short but still clear: "Your BlackCEO system has a new update (v[version]). I'll apply it now — nothing will break. Check your email for full details."
+
+### Notification Message Templates
+
+#### Template A: Update Found and Staged (Before Applying)
+```
+Hey [Client Name],
+
+Your AI assistant found an update for your BlackCEO system. Here is what is in it:
+
+**Current version:** [old version]
+**New version:** [new version]
+**What changed:**
+- [Change 1 — explained in plain English, no jargon]
+- [Change 2 — explained in plain English]
+- [Change 3 — explained in plain English]
+
+**What this means for you:** [Brief summary of what the client will notice — faster performance, new features, bug fixes, etc.]
+
+**Risk level:** [LOW / MEDIUM / HIGH]
+[If LOW/MEDIUM]: This update is safe and I can apply it right now.
+[If HIGH]: This update could affect [specific thing]. I want to walk you through what will change before I apply it.
+
+Want me to go ahead and install this? Just say yes and I will handle everything.
+
+— Your AI Assistant
+```
+
+#### Template B: Update Applied Successfully (After Installing)
+```
+Hey [Client Name],
+
+Your BlackCEO system has been updated to version [new version]. Here is exactly what was changed:
+
+**What was installed:**
+- [Skill/feature 1 — what it does in plain English]
+- [Skill/feature 2 — what it does]
+- [Bug fix 1 — what was broken and what is fixed now]
+
+**What was NOT touched:**
+- Your configuration and settings — unchanged
+- Your department data — unchanged
+- Your custom workflows — unchanged
+
+**Action needed:** [If none: "Nothing. You are all set." If something: explain exactly what]
+
+Your system is running normally. If anything looks off, just tell me and I will check it immediately.
+
+— Your AI Assistant
+```
+
+#### Template C: Update Blocked (Missing Credential or Dependency)
+```
+Hey [Client Name],
+
+I found an update for your BlackCEO system, but I cannot install everything yet. Here is the situation:
+
+**What I can install right now:**
+- [Skill 1 — ready to go]
+- [Skill 2 — ready to go]
+
+**What is blocked:**
+- [Skill name] needs [credential name] which I do not have on file. This is like trying to start a car without the keys.
+- [Dependency]: [What needs to happen first]
+
+**What I need from you:** [Specific action — provide an API key, finish a setup step, etc.]
+
+**Want me to install what I can right now?** The blocked items will stay on hold until you provide what is needed. Just say yes and I will install everything that is ready.
+
+— Your AI Assistant
+```
+
+#### Template D: SMS Fallback (Short)
+```
+Your BlackCEO system has a new update (v[new version]). [Number] improvements including [brief 1-line summary]. Nothing breaks — I will install it now. Check your email or Telegram for full details.
+```
+
+### What "Staged" Means (Agent Reference)
+When a script says an update is "staged," it means the update has been downloaded and is sitting in a temporary folder waiting to be installed. It is like a package arriving at your door but you have not opened it yet. The update is not affecting your system. Nothing has changed. It is just ready to go when you say the word.
+
+**Never tell the client the update is "staged" without explaining what that means.** Say something like: "The update has been downloaded and is ready to install. It is not affecting your system right now. Want me to install it?"
 
 ---
 
