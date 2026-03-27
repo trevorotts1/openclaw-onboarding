@@ -1,0 +1,308 @@
+{
+  "schemaVersion": "1.0",
+  "created": "2026-03-22",
+  "domainTags": [
+    "marketing",
+    "sales",
+    "leadership",
+    "finance",
+    "operations",
+    "communication",
+    "copywriting",
+    "mindset",
+    "productivity-systems",
+    "coaching",
+    "strategy-innovation",
+    "personal-development"
+  ],
+  "perspectiveTags": [
+    "african-american-experience",
+    "womens-challenges",
+    "mens-challenges",
+    "family-relationships",
+    "faith-spirituality",
+    "love-romantic-relationships"
+  ],
+  "personas": {
+    "attwood-passion-test": {
+      "author": "Janet Attwood",
+      "book": "The Passion Test",
+      "domain": ["coaching", "personal-development", "mindset"],
+      "perspective": ["womens-challenges"],
+      "custom": []
+    },
+    "bly-copywriters-handbook": {
+      "author": "Robert Bly",
+      "book": "The Copywriter's Handbook",
+      "domain": ["copywriting", "marketing", "sales"],
+      "perspective": [],
+      "custom": []
+    },
+    "brown-atlas-of-heart": {
+      "author": "Brene Brown",
+      "book": "Atlas of the Heart",
+      "domain": ["leadership", "coaching", "communication", "personal-development"],
+      "perspective": ["womens-challenges", "love-romantic-relationships", "family-relationships"],
+      "custom": ["emotional-intelligence"]
+    },
+    "charvet-words-change-minds": {
+      "author": "Shelle Rose Charvet",
+      "book": "Words That Change Minds",
+      "domain": ["communication", "sales", "leadership", "copywriting"],
+      "perspective": [],
+      "custom": ["nlp", "language-patterns"]
+    },
+    "cialdini-influence": {
+      "author": "Robert Cialdini",
+      "book": "Influence",
+      "domain": ["sales", "marketing", "communication"],
+      "perspective": [],
+      "custom": ["persuasion-psychology"]
+    },
+    "clear-atomic-habits": {
+      "author": "James Clear",
+      "book": "Atomic Habits",
+      "domain": ["productivity-systems", "mindset", "coaching", "personal-development"],
+      "perspective": [],
+      "custom": ["behavior-design"]
+    },
+    "collins-good-to-great": {
+      "author": "Jim Collins",
+      "book": "Good to Great",
+      "domain": ["leadership", "strategy-innovation", "operations"],
+      "perspective": [],
+      "custom": ["organizational-excellence"]
+    },
+    "collins-good-to-great-summary": {
+      "author": "Jim Collins",
+      "book": "Good to Great (Summary)",
+      "domain": ["leadership", "strategy-innovation", "operations"],
+      "perspective": [],
+      "custom": ["organizational-excellence"]
+    },
+    "duhigg-power-of-habit": {
+      "author": "Charles Duhigg",
+      "book": "The Power of Habit",
+      "domain": ["productivity-systems", "mindset", "operations"],
+      "perspective": [],
+      "custom": ["behavior-design"]
+    },
+    "forte-building-second-brain": {
+      "author": "Tiago Forte",
+      "book": "Building a Second Brain",
+      "domain": ["productivity-systems", "operations", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["knowledge-management"]
+    },
+    "forte-para-method": {
+      "author": "Tiago Forte",
+      "book": "The PARA Method",
+      "domain": ["productivity-systems", "operations"],
+      "perspective": [],
+      "custom": ["knowledge-management", "organization"]
+    },
+    "godin-this-is-marketing": {
+      "author": "Seth Godin",
+      "book": "This Is Marketing",
+      "domain": ["marketing", "leadership", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["permission-marketing", "tribe-building"]
+    },
+    "goggins-cant-hurt-me": {
+      "author": "David Goggins",
+      "book": "Can't Hurt Me",
+      "domain": ["mindset", "personal-development", "coaching"],
+      "perspective": ["african-american-experience", "mens-challenges"],
+      "custom": ["mental-toughness"]
+    },
+    "grenny-crucial-conversations": {
+      "author": "Joseph Grenny",
+      "book": "Crucial Conversations",
+      "domain": ["communication", "leadership", "coaching"],
+      "perspective": ["family-relationships"],
+      "custom": ["conflict-resolution"]
+    },
+    "grover-relentless": {
+      "author": "Tim Grover",
+      "book": "Relentless",
+      "domain": ["mindset", "leadership", "coaching"],
+      "perspective": ["african-american-experience", "mens-challenges"],
+      "custom": ["elite-performance"]
+    },
+    "hormozi-100m-offers": {
+      "author": "Alex Hormozi",
+      "book": "$100M Offers",
+      "domain": ["sales", "marketing", "strategy-innovation", "finance"],
+      "perspective": [],
+      "custom": ["offer-creation", "pricing"]
+    },
+    "jakes-instinct": {
+      "author": "T.D. Jakes",
+      "book": "Instinct",
+      "domain": ["leadership", "coaching", "mindset", "personal-development"],
+      "perspective": ["african-american-experience", "faith-spirituality", "family-relationships"],
+      "custom": ["intuition"]
+    },
+    "jones-exactly-what-to-say": {
+      "author": "Phil Jones",
+      "book": "Exactly What to Say",
+      "domain": ["sales", "communication", "copywriting"],
+      "perspective": [],
+      "custom": ["magic-words"]
+    },
+    "kane-hook-point": {
+      "author": "Brendan Kane",
+      "book": "Hook Point",
+      "domain": ["marketing", "communication", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["attention-capture", "social-media"]
+    },
+    "lakhiani-extraordinary-mind": {
+      "author": "Vishen Lakhiani",
+      "book": "The Code of the Extraordinary Mind",
+      "domain": ["mindset", "personal-development", "coaching", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["consciousness", "unconventional-thinking"]
+    },
+    "michalowicz-profit-first": {
+      "author": "Mike Michalowicz",
+      "book": "Profit First",
+      "domain": ["finance", "operations", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["cash-flow", "small-business-finance"]
+    },
+    "miller-building-storybrand-1": {
+      "author": "Donald Miller",
+      "book": "Building a StoryBrand",
+      "domain": ["marketing", "communication", "copywriting"],
+      "perspective": [],
+      "custom": ["storytelling", "brand-messaging"]
+    },
+    "miller-building-storybrand-2": {
+      "author": "Donald Miller",
+      "book": "Building a StoryBrand (Part 2)",
+      "domain": ["marketing", "communication", "copywriting"],
+      "perspective": [],
+      "custom": ["storytelling", "brand-messaging"]
+    },
+    "moran-12-week-year": {
+      "author": "Brian Moran",
+      "book": "The 12 Week Year",
+      "domain": ["productivity-systems", "leadership", "operations"],
+      "perspective": [],
+      "custom": ["goal-execution", "time-compression"]
+    },
+    "obama-becoming": {
+      "author": "Michelle Obama",
+      "book": "Becoming",
+      "domain": ["leadership", "communication", "personal-development"],
+      "perspective": ["african-american-experience", "womens-challenges", "family-relationships", "love-romantic-relationships"],
+      "custom": ["memoir", "public-service"]
+    },
+    "obama-light-we-carry": {
+      "author": "Michelle Obama",
+      "book": "The Light We Carry",
+      "domain": ["leadership", "coaching", "communication", "personal-development"],
+      "perspective": ["african-american-experience", "womens-challenges", "family-relationships", "love-romantic-relationships"],
+      "custom": ["resilience", "practical-wisdom"]
+    },
+    "pink-drive": {
+      "author": "Daniel Pink",
+      "book": "Drive",
+      "domain": ["leadership", "mindset", "operations"],
+      "perspective": [],
+      "custom": ["motivation-science", "autonomy"]
+    },
+    "pink-to-sell-is-human": {
+      "author": "Daniel Pink",
+      "book": "To Sell Is Human",
+      "domain": ["sales", "communication", "leadership"],
+      "perspective": [],
+      "custom": ["modern-selling"]
+    },
+    "pink-when": {
+      "author": "Daniel Pink",
+      "book": "When",
+      "domain": ["productivity-systems", "operations", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["timing-science"]
+    },
+    "priestley-oversubscribed": {
+      "author": "Daniel Priestley",
+      "book": "Oversubscribed",
+      "domain": ["marketing", "sales", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["demand-creation", "scarcity"]
+    },
+    "rackham-spin-selling": {
+      "author": "Neil Rackham",
+      "book": "SPIN Selling",
+      "domain": ["sales", "communication"],
+      "perspective": [],
+      "custom": ["consultative-selling", "enterprise-sales"]
+    },
+    "robbins-five-second-rule": {
+      "author": "Mel Robbins",
+      "book": "The 5 Second Rule",
+      "domain": ["mindset", "coaching", "personal-development", "productivity-systems"],
+      "perspective": ["womens-challenges"],
+      "custom": ["action-trigger"]
+    },
+    "robbins-let-them-theory": {
+      "author": "Mel Robbins",
+      "book": "The Let Them Theory",
+      "domain": ["coaching", "personal-development", "communication"],
+      "perspective": ["womens-challenges", "family-relationships", "love-romantic-relationships"],
+      "custom": ["boundaries", "emotional-freedom"]
+    },
+    "samit-disrupt-yourself": {
+      "author": "Jay Samit",
+      "book": "Disrupt Yourself",
+      "domain": ["strategy-innovation", "mindset", "leadership"],
+      "perspective": [],
+      "custom": ["disruption", "reinvention"]
+    },
+    "sharma-5am-club": {
+      "author": "Robin Sharma",
+      "book": "The 5 AM Club",
+      "domain": ["productivity-systems", "mindset", "personal-development", "coaching"],
+      "perspective": [],
+      "custom": ["morning-routine", "elite-performance"]
+    },
+    "sinek-find-your-why": {
+      "author": "Simon Sinek",
+      "book": "Find Your Why",
+      "domain": ["leadership", "coaching", "personal-development", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["purpose", "golden-circle"]
+    },
+    "sinek-start-with-why": {
+      "author": "Simon Sinek",
+      "book": "Start With Why",
+      "domain": ["leadership", "marketing", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["purpose", "golden-circle"]
+    },
+    "tawwab-set-boundaries-find-peace": {
+      "author": "Nedra Glover Tawwab",
+      "book": "Set Boundaries, Find Peace",
+      "domain": ["coaching", "personal-development", "communication"],
+      "perspective": ["african-american-experience", "womens-challenges", "family-relationships", "love-romantic-relationships"],
+      "custom": ["boundaries", "mental-health"]
+    },
+    "voss-never-split-difference": {
+      "author": "Chris Voss",
+      "book": "Never Split the Difference",
+      "domain": ["sales", "communication", "leadership"],
+      "perspective": [],
+      "custom": ["negotiation", "fbi-tactics"]
+    },
+    "wiebe-copy-hackers": {
+      "author": "Joanna Wiebe",
+      "book": "Copy Hackers",
+      "domain": ["copywriting", "marketing", "sales"],
+      "perspective": ["womens-challenges"],
+      "custom": ["conversion-copy"]
+    }
+  }
+}

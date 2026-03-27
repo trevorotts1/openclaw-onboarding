@@ -89,7 +89,8 @@ The Command Center reads:
 - department-config.json per department (department KPIs, specialist assignments)
 - ORG-CHART.md (organizational structure)
 - persona-matrix.md (which personas are available and pre-qualified)
-- governing-personas.md per department (category-relevant persona pool)
+- governing-personas.md per role folder (persona matching reference guide, NOT static assignment)
+- persona-matching-protocol.md (3-layer runtime persona matching: company, role/task, person)
 
 ## Model Requirements
 

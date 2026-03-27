@@ -595,20 +595,33 @@ ls ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/ 2>/dev/null
 4. If EITHER check succeeds, treat personas as installed.
 
 **If coaching personas ARE detected (either check succeeds):**
-- Add a `governing-personas.md` file to every department folder
-- Add a `governing-personas.md` file to EVERY role folder (role-specific persona mapping)
-- Add a "Governing Personas" section to every `00-START-HERE.md` with Gemini Engine query instructions
-- Wire persona methodologies to department AND role operations
+- Add a `governing-personas.md` file to EVERY role folder (persona matching reference guide)
+- Add a "Persona Matching" section to every `00-START-HERE.md` with query instructions
+- Copy `persona-matching-protocol.md` to the workspace root for runtime reference
 
-**Role-Level Governing Personas:**
-Each role gets its own `governing-personas.md` mapping personas to role-specific tasks:
+**CRITICAL: Personas are NOT assigned to departments. Personas are attached to an agent or sub-agent at the TASK level.** The `governing-personas.md` in each role folder is a REFERENCE GUIDE, not a static assignment. It lists suggested starting-point personas for common tasks in that role, but the actual persona selection happens at runtime using the 5-layer alignment check:
+1. Company Mission -- does this persona align with the company's mission?
+2. Owner Values -- does this persona match the owner's beliefs and style?
+3. Company Goals/KPIs -- does this persona support current company goals?
+4. Department Goals/KPIs -- does this persona fit this department's objectives?
+5. Task Fit -- is this persona the right guide for THIS specific task?
+Layers 1-2 run once at setup (pre-qualified pool). Layers 3-5 run fresh every task. See `persona-matching-protocol.md` for the full protocol.
+
+**Role-Level Governing Personas (Reference Guide):**
+Each role gets a `governing-personas.md` that helps agents make faster matches:
 ```
 [role-folder]/
   ├── 00-START-HERE.md
-  ├── governing-personas.md    ← NEW: Role-specific persona mapping
+  ├── governing-personas.md    ← Persona matching reference (NOT static assignment)
   ├── 01-[task].md
   └── ...
 ```
+
+The `governing-personas.md` should contain:
+1. Available persona pool (full list installed in this system)
+2. Suggested starting points for common task types in this role
+3. Pointer to persona-matching-protocol.md for the runtime matching process
+4. Task-type examples ("For negotiation tasks, consider Voss")
 
 **If coaching personas are NOT detected (both checks fail):**
 - This is NOT an error condition. Both paths are valid.
