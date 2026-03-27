@@ -338,7 +338,7 @@ http://localhost:3000
 
 ## Phase 6b: Domain Registration + Tunnel Connection
 
-**Architecture:** Trevor owns the Cloudflare account. When the client registers, Trevor's system creates a DEDICATED tunnel for that client and sends back a tunnel token. The client runs cloudflared on their machine to connect their local dashboard to that tunnel. The client never touches Cloudflare's website or creates their own account.
+**Architecture:** Trevor owns the Cloudflare account. When the client registers, Trevor's system creates a DEDICATED tunnel inside Trevor's Cloudflare account, generates a machine-specific tunnel token, returns that token directly in the webhook HTTP response, and also sends Trevor a Telegram backup notification with the same token. The client runs cloudflared on their machine to connect their local dashboard to that tunnel. The client never touches Cloudflare's website or creates their own account.
 
 ### 6b.1 Choose the Client Subdomain Name
 
@@ -352,37 +352,7 @@ Generate the short ID:
 openssl rand -hex 2
 ```
 
-### 6b.2 Send Webhook to Trevor's System
-
-```bash
-curl -s -X POST https://main.blackceoautomations.com/webhook/command-center-register-v3 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "clientName": "[company-slug-shortid]",
-    "companyName": "[full company name]",
-    "contactEmail": "[client email]"
-  }'
-```
-
-**What Trevor's system does automatically:**
-1. Creates a dedicated Cloudflare tunnel for this client
-2. Routes [clientName].zerohumanworkforce.com to that tunnel
-3. Generates a tunnel token specific to this client's machine
-4. Sends Trevor a Telegram notification with the token
-
-**What to tell the client:**
-"I have registered your Command Center. Trevor will send me a tunnel token shortly. Once I receive it I will connect your machine."
-
-### 6b.3 Wait for Trevor's Token
-
-Trevor receives a Telegram notification with the tunnel token. Trevor forwards it to the client's agent.
-
-**When the token arrives, save it:**
-```bash
-echo "CLOUDFLARE_TUNNEL_TOKEN=[token]" >> ~/.openclaw/.env
-```
-
-### 6b.4 Install cloudflared (if not already installed)
+### 6b.2 Install cloudflared (if not already installed)
 
 **Mac:**
 ```bash
@@ -394,18 +364,60 @@ brew install cloudflared
 curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
 ```
 
-Check: `cloudflared --version`
+Check:
+```bash
+cloudflared --version
+```
+
+### 6b.3 Send Webhook to Trevor's System and Capture the Token Response
+
+```bash
+RESPONSE=$(curl -s -X POST https://main.blackceoautomations.com/webhook/command-center-register-v3   -H "Content-Type: application/json"   -d '{
+    "clientName": "[company-slug-shortid]",
+    "companyName": "[full company name]",
+    "contactEmail": "[client email]"
+  }')
+
+TUNNEL_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['tunnelToken'])")
+SUBDOMAIN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['subdomain'])")
+```
+
+**Expected webhook response:**
+```json
+{
+  "status": "success",
+  "subdomain": "[clientName].zerohumanworkforce.com",
+  "tunnelToken": "[token]",
+  "tunnelId": "[uuid]"
+}
+```
+
+**What Trevor's system does automatically:**
+1. Creates a dedicated Cloudflare tunnel for this client inside Trevor's Cloudflare account
+2. Routes [clientName].zerohumanworkforce.com to that tunnel
+3. Generates a tunnel token specific to this client's machine
+4. Returns the token directly in the webhook response to the client agent
+5. Sends Trevor a Telegram backup notification with the same token
+
+### 6b.4 Save the Token Locally
+
+```bash
+grep -v '^CLOUDFLARE_TUNNEL_TOKEN=' ~/.openclaw/.env 2>/dev/null > /tmp/openclaw-env.tmp || true
+echo "CLOUDFLARE_TUNNEL_TOKEN=$TUNNEL_TOKEN" >> /tmp/openclaw-env.tmp
+mv /tmp/openclaw-env.tmp ~/.openclaw/.env
+```
 
 ### 6b.5 Connect This Machine to the Tunnel
 
 ```bash
-cloudflared tunnel run --token [CLOUDFLARE_TUNNEL_TOKEN]
+cloudflared tunnel run --token "$TUNNEL_TOKEN"
 ```
 
 Run this in a background process or via PM2:
 
 ```bash
-pm2 start "cloudflared tunnel run --token [CLOUDFLARE_TUNNEL_TOKEN]" --name cloudflare-tunnel
+pm2 delete cloudflare-tunnel 2>/dev/null || true
+pm2 start "cloudflared tunnel run --token $TUNNEL_TOKEN" --name cloudflare-tunnel
 pm2 save
 ```
 
@@ -413,18 +425,18 @@ pm2 save
 
 ```bash
 sleep 15
-curl -s -o /dev/null -w "%{http_code}" https://[clientName].zerohumanworkforce.com
+curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN"
 ```
 
 Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-tunnel process as online. If still failing after 2 minutes, message Trevor.
 
 ### 6b.7 Report the Live URL to the Client
 
-> "Your Command Center is now live at: https://[clientName].zerohumanworkforce.com"
+> "Your Command Center is now live at: https://$SUBDOMAIN"
 
 ---
 
-**🔴 GATE CHECK: DO NOT proceed to Phase 7 until the URL returns 200. The cloudflare-tunnel PM2 process must be running. Do NOT create a Cloudflare account. Do NOT go to the Cloudflare website. The token comes from Trevor's system.**
+**🔴 GATE CHECK: DO NOT proceed to Phase 7 until the URL returns 200. The cloudflare-tunnel PM2 process must be running. Do NOT create a Cloudflare account. Do NOT go to the Cloudflare website. The tunnel is created inside Trevor's Cloudflare account. The token comes directly from Trevor's system in the webhook response.**
 
 ## Phase 7: Verification (Agent Does This Automatically)
 
