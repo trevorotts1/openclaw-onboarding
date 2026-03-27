@@ -2,12 +2,17 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v5.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v6.0.7** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **34 skill folders** (01 through 34, with 13, 33, and 34 archived) plus an install script.
 
-### What's New in v5.0.0 (March 19, 2026)
-- **Skill 31: Upgraded Memory System** - 5-layer architecture (markdown files, improved flush, session indexing, Gemini Embedding 2 search, Mem0 auto-capture)
+### What's New in v6.0.7 (March 27, 2026)
+- **Persona Matching Protocol**: Personas are now matched per-task at runtime, not assigned per-department at build time. New `persona-matching-protocol.md` documents the 5-layer alignment check (Mission, Values, Company Goals, Department Goals, Task Fit). Layers 1-2 run once at setup; Layers 3-5 run fresh every task.
+- **persona-categories.json added to Skill 22**: 40 personas with 12 domain tags and 6 perspective tags for category-filtered matching.
+- **Skill 23 governing-personas.md corrected**: Now a reference guide per role folder, not a static department assignment.
+- **Skill 32 token-in-webhook-response architecture**: The tunnel token now comes directly in the webhook HTTP response. No more waiting for Trevor to forward a Telegram notification. Trevor still receives a backup Telegram notification.
+- **Skill 32 cloudflared install built into process**: `create-tunnel.sh` auto-installs cloudflared (brew on Mac, curl on Linux) if not present.
+- **Skill 32 simplified script**: `create-tunnel.sh` rewritten from 147 lines to 59. Calls webhook, captures token, saves to .env, starts PM2, verifies URL.
 - **Skill 14 rewritten:** Google Workspace CLI (gws) replaces google-api.js and gog - single tool for Gmail and Workspace
 - **Skill 23 fixed:** AI Workforce Blueprint now properly presents options A, B, C before asking questions
 - **Skill 15 fixed:** BlackCEO Team Management now requires real Telegram IDs, not placeholders

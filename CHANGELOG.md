@@ -4,6 +4,26 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v6.0.7] - March 27, 2026
+
+### Persona Matching Protocol + Skill 32 Token-in-Webhook Architecture
+
+#### Added
+- **persona-matching-protocol.md** (Skill 23): New reference document defining the 5-layer persona alignment check (Company Mission, Owner Values, Company Goals/KPIs, Department Goals/KPIs, Task Fit). Layers 1-2 run once at setup to create a pre-qualified pool. Layers 3-5 run fresh for every task. Personas are matched per-task at runtime, not statically assigned per department.
+- **persona-categories.json** (Skill 22): 40 personas tagged with 12 domain categories (marketing, sales, leadership, finance, operations, communication, copywriting, mindset, productivity-systems, coaching, strategy-innovation, personal-development) and 6 perspective tags (african-american-experience, womens-challenges, mens-challenges, family-relationships, faith-spirituality, love-romantic-relationships). Category-filtered matching enables efficient search across large persona libraries.
+
+#### Changed
+- **Skill 23 INSTALL.md**: Persona alignment section rewritten. governing-personas.md is now a REFERENCE GUIDE in each role folder, not a static department assignment. Added 5-layer alignment description and runtime matching instructions.
+- **Skill 23 SKILL.md**: Corrected persona-matching-protocol.md reference from "3-layer" to "5-layer" (matches the protocol document and all other references).
+- **Skill 32 INSTALL.md Phase 6b**: Architecture rewritten. Tunnel token now returned directly in the webhook HTTP response (JSON: tunnelToken, subdomain, tunnelId). Agent captures token programmatically, saves to ~/.openclaw/.env, starts PM2, verifies URL. Trevor still receives a backup Telegram notification with the same token. No more manual token forwarding step.
+- **Skill 32 INSTALL.md Phase 6b**: cloudflared installation now built into the process. Step 6b.2 installs cloudflared via brew (Mac) or curl (Linux) before the webhook call.
+- **32-command-center-setup/scripts/create-tunnel.sh**: Complete rewrite. Reduced from 147 lines to 59. Removed Cloudflare API calls, credential file management, launchctl plist generation, local tunnel config. Added auto cloudflared install, webhook POST with token capture, PM2 process management, clean verification.
+
+#### Removed
+- **Skill 32**: Manual "Wait for Trevor's Token" step (6b.3). Token now comes in webhook response.
+- **Skill 32**: Manual echo CLOUDFLARE_TUNNEL_TOKEN step. Replaced with automated grep/mv in script.
+- **Skill 32 create-tunnel.sh**: All Cloudflare API code (account ID, bearer token, tunnel creation via API, credential file writing, config-command-center.yml generation, launchctl plist creation). Replaced by single webhook call.
+
 ## [v6.0.2] - March 25, 2026
 
 ### Update System Fix

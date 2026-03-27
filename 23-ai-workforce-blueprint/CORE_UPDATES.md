@@ -29,8 +29,9 @@ Agent management:
 - Config must be backed up before ANY openclaw.json edit
 
 Persona integration:
-- Each department gets governing-personas.md with pre-qualified persona pool
-- Persona selection uses 5-layer alignment (Mission, Values, KPIs, Dept Goals, Task Fit)
+- Each role folder gets governing-personas.md as a REFERENCE GUIDE (not a static assignment)
+- Persona selection uses 5-layer alignment at TASK level (Mission, Values, Company KPIs, Dept KPIs, Task Fit)
+- persona-matching-protocol.md documents the full runtime matching process
 - Dev Devil's Advocate (DA) auto-created per department using Act As If Protocol
 - Persona diversity tracked in agent performance metrics
 

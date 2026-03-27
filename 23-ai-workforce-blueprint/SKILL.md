@@ -90,7 +90,7 @@ The Command Center reads:
 - ORG-CHART.md (organizational structure)
 - persona-matrix.md (which personas are available and pre-qualified)
 - governing-personas.md per role folder (persona matching reference guide, NOT static assignment)
-- persona-matching-protocol.md (3-layer runtime persona matching: company, role/task, person)
+- persona-matching-protocol.md (5-layer runtime persona matching: mission, values, company goals, department goals, task fit)
 
 ## Model Requirements
 
