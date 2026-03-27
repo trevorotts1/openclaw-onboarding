@@ -1,27 +1,19 @@
 #!/bin/bash
 # OpenClaw Onboarding — Weekly Update Cron Setup
-# Version: 3.0 | March 19, 2026
+# Version: 4.0 | March 27, 2026
 # Run this ONCE per machine after onboarding install.
 #
 # What it does:
-# - Installs a cron job that runs every Sunday at 2:00 AM
-# - The cron job runs the hardened update-skills.sh script
+# - Installs a cron job that runs every Sunday at 3:00 AM
+# - The cron job downloads the LATEST update-skills.sh from GitHub
+#   (version-proof: always runs the newest script, never a stale local copy)
 # - That script checks GitHub for updates, compares versions,
-#   backs up first, compares versions, shows a plan, and waits for approval
-# - NO changes are made without user approval
-# - The agent NEVER triggers a gateway restart
+#   stages the update, and tells the human what to tell their agent
+# - NO changes are applied automatically by the cron job
+# - The agent follows UPDATE-PLAYBOOK.md to apply changes intelligently
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-UPDATE_SCRIPT="$SCRIPT_DIR/update-skills.sh"
+REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh"
 LOG_FILE="$HOME/.openclaw/skills/.update-log"
-
-# Ensure update script exists and is executable
-if [ ! -f "$UPDATE_SCRIPT" ]; then
-    echo "[ERROR] update-skills.sh not found at $UPDATE_SCRIPT"
-    exit 1
-fi
-
-chmod +x "$UPDATE_SCRIPT"
 
 # Check if cron already installed
 EXISTING_CRON=$(crontab -l 2>/dev/null | grep "update-skills.sh")
@@ -30,26 +22,28 @@ if [ -n "$EXISTING_CRON" ]; then
     echo "Current entry: $EXISTING_CRON"
     echo ""
     echo "To remove: crontab -e (and delete the update-skills line)"
-    echo "To force a manual check now: bash $UPDATE_SCRIPT"
+    echo "To force a manual check now:"
+    echo "  curl -fsSL $REPO_RAW | bash"
     exit 0
 fi
 
-# Install cron job — Sundays at 2:00 AM
-(crontab -l 2>/dev/null; echo "0 2 * * 0 bash $UPDATE_SCRIPT >> $LOG_FILE 2>&1") | crontab -
+# Install cron job — Sundays at 3:00 AM (version-proof: pulls latest script from GitHub)
+(crontab -l 2>/dev/null; echo "0 3 * * 0 curl -fsSL $REPO_RAW | bash >> $LOG_FILE 2>&1") | crontab -
 
 echo "[OK] Weekly update cron installed."
 echo ""
-echo "Schedule: Every Sunday at 2:00 AM"
-echo "Script: $UPDATE_SCRIPT"
+echo "Schedule: Every Sunday at 3:00 AM"
+echo "Source: GitHub (always latest version)"
 echo "Log: $LOG_FILE"
 echo ""
 echo "What happens each Sunday:"
-echo "  1. Checks GitHub for new versions"
-echo "  2. Compares against your installed skills"
-echo "  3. Generates gap and impact reports"
-echo "  4. Surfaces recommendations — does NOT auto-apply"
-echo "  5. You review and approve before any changes are made"
+echo "  1. Downloads the latest update script from GitHub"
+echo "  2. Checks GitHub for new onboarding versions"
+echo "  3. Compares against your installed version"
+echo "  4. If update available: stages it and creates pending flag"
+echo "  5. You (or your agent) review and apply via UPDATE-PLAYBOOK.md"
 echo ""
-echo "To force a manual check now: bash $UPDATE_SCRIPT"
+echo "To force a manual check now:"
+echo "  curl -fsSL $REPO_RAW | bash"
 echo "To check logs: cat $LOG_FILE"
 echo "To verify cron: crontab -l | grep update-skills"

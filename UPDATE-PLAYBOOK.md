@@ -6,11 +6,11 @@ This playbook defines how updates are applied to an already-onboarded BlackCEO s
 ## How Updates Get Triggered
 
 ### Method 1: Terminal (Manual)
-The client or Trevor runs the update script directly in Terminal:
+The client or Trevor runs the universal bootstrap command in Terminal:
 ```
-bash ~/.openclaw/workspace/scripts/update-skills.sh
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh | bash
 ```
-The script follows this playbook automatically.
+This downloads the latest update script directly from GitHub and runs it. It works regardless of the client's installed version because it always pulls the newest script. The script stages the update and tells the human what to tell their agent next.
 
 ### Method 2: Direct-to-Agent (Trevor sends a message)
 Trevor messages the client's agent on Telegram via Skill 15 (BlackCEO Management):
