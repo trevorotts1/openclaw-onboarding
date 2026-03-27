@@ -144,7 +144,7 @@ It should NOT contain:
 |---------|---------|-----------|
 | Who gets a persona | An agent or sub-agent | A department |
 | When assigned | Per task, at runtime | At build time, permanently |
-| How chosen | 3-layer alignment check | Hardcoded in a config file |
+| How chosen | 5-layer alignment check | Hardcoded in a config file |
 | Can it change? | Yes, every task can have a different persona | No, same persona forever |
 | Where logged? | Task execution log | Static governing-personas.md |
 
