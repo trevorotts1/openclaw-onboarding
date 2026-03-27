@@ -107,20 +107,41 @@ DEFAULT_MODEL_ASSIGNMENTS = {
 # ============================================================
 
 def find_master_files_folder():
-    """Find the master files folder in ~/Downloads/ (case-insensitive search)."""
+    """
+    Find the master files folder in ~/Downloads/ (case-insensitive search).
+    
+    FALLBACK BEHAVIOR (hardened):
+    - If ~/Downloads/ exists and a matching folder is found: use it (normal path)
+    - If ~/Downloads/ exists but no matching folder: create ~/Downloads/openclaw-master-files/
+    - If ~/Downloads/ does NOT exist (e.g., VPS, Docker, headless):
+        use ~/clawd/data/ as the safe fallback location
+    - ALWAYS print a warning to stderr when falling back so the agent knows.
+    - NEVER returns None. A persistence path is always guaranteed.
+    """
     downloads = os.path.join(HOME, "Downloads")
-    if not os.path.isdir(downloads):
-        return None
-    for name in os.listdir(downloads):
-        lower = name.lower().replace(" ", "-").replace("_", "-")
-        if "openclaw" in lower and ("master" in lower or "files" in lower or "documents" in lower):
-            path = os.path.join(downloads, name)
-            if os.path.isdir(path):
-                return path
-    # Create if not found
-    path = os.path.join(downloads, "openclaw-master-files")
-    os.makedirs(path, exist_ok=True)
-    return path
+    
+    # Primary search: ~/Downloads/
+    if os.path.isdir(downloads):
+        for name in os.listdir(downloads):
+            lower = name.lower().replace(" ", "-").replace("_", "-")
+            if "openclaw" in lower and ("master" in lower or "files" in lower or "documents" in lower):
+                path = os.path.join(downloads, name)
+                if os.path.isdir(path):
+                    return path
+        # ~/Downloads exists but no matching folder found - create default
+        path = os.path.join(downloads, "openclaw-master-files")
+        os.makedirs(path, exist_ok=True)
+        return path
+    
+    # FALLBACK: ~/Downloads/ does not exist (VPS, Docker, headless environment)
+    # Use ~/clawd/data/ as a safe data-side location that survives restarts
+    fallback = os.path.join(HOME, "clawd", "data")
+    os.makedirs(fallback, exist_ok=True)
+    print(f"[PERSISTENCE WARNING] ~/Downloads/ not found. Using fallback persistence path: {fallback}",
+          file=sys.stderr)
+    print(f"[PERSISTENCE WARNING] Interview answers and handoff files will be saved to: {fallback}/company-discovery/",
+          file=sys.stderr)
+    return fallback
 
 
 def backup_config():
@@ -195,6 +216,26 @@ def read_handoff():
             with open(handoff_file, 'r') as f:
                 return f.read()
     return None
+
+
+def _ensure_company_discovery_dir():
+    """
+    Ensure COMPANY_DISCOVERY_DIR is set and the directory exists.
+    If MASTER_FILES was not detected, force re-detection with fallback.
+    Returns the path or None if truly impossible (should never happen after hardening).
+    """
+    global MASTER_FILES, COMPANY_DISCOVERY_DIR
+    if not COMPANY_DISCOVERY_DIR:
+        # Re-detect with fallback guarantee
+        MASTER_FILES = find_master_files_folder()
+        if MASTER_FILES:
+            COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
+    if not COMPANY_DISCOVERY_DIR:
+        print("[PERSISTENCE ERROR] Cannot determine company-discovery path. "
+              "Interview answers will NOT be saved this session.", file=sys.stderr)
+        return None
+    os.makedirs(COMPANY_DISCOVERY_DIR, exist_ok=True)
+    return COMPANY_DISCOVERY_DIR
 
 
 # ============================================================
@@ -585,10 +626,11 @@ def add_agent_to_config(config, dept_id, dept_info):
 
 def create_handoff(option, departments_done, departments_remaining, progress_pct):
     """Create or update the interview handoff file for resume capability."""
-    if not COMPANY_DISCOVERY_DIR:
+    discovery_dir = _ensure_company_discovery_dir()
+    if not discovery_dir:
+        print("[PERSISTENCE ERROR] create_handoff() - handoff file NOT saved.", file=sys.stderr)
         return
-    os.makedirs(COMPANY_DISCOVERY_DIR, exist_ok=True)
-    handoff_path = os.path.join(COMPANY_DISCOVERY_DIR, "interview-handoff.md")
+    handoff_path = os.path.join(discovery_dir, "interview-handoff.md")
     content = f"""# Interview Handoff
 ## Last Updated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}
 
@@ -603,6 +645,7 @@ def create_handoff(option, departments_done, departments_remaining, progress_pct
 """
     with open(handoff_path, 'w') as f:
         f.write(content)
+    print(f"[PERSISTENCE] Handoff saved to: {handoff_path}", file=sys.stderr)
 
 
 def log_fallback(question, client_response, fallback_type):
@@ -612,9 +655,11 @@ def log_fallback(question, client_response, fallback_type):
 
     fallback_type: 'offered_research' | 'presented_options' | 'skipped' | 'client_stopped'
     """
-    if not COMPANY_DISCOVERY_DIR:
+    discovery_dir = _ensure_company_discovery_dir()
+    if not discovery_dir:
+        print("[PERSISTENCE ERROR] log_fallback() - analytics NOT saved.", file=sys.stderr)
         return
-    analytics_dir = os.path.join(COMPANY_DISCOVERY_DIR, "interview-analytics")
+    analytics_dir = os.path.join(discovery_dir, "interview-analytics")
     os.makedirs(analytics_dir, exist_ok=True)
     log_path = os.path.join(analytics_dir, "fallback-log.json")
 
@@ -642,10 +687,12 @@ def log_fallback(question, client_response, fallback_type):
 
 def log_answer(question, answer):
     """Append a Q&A to workforce-interview-answers.md."""
-    if not COMPANY_DISCOVERY_DIR:
+    discovery_dir = _ensure_company_discovery_dir()
+    if not discovery_dir:
+        print("[PERSISTENCE ERROR] log_answer() - answer NOT saved. Progress may be lost if session ends.",
+              file=sys.stderr)
         return
-    os.makedirs(COMPANY_DISCOVERY_DIR, exist_ok=True)
-    answers_path = os.path.join(COMPANY_DISCOVERY_DIR, "workforce-interview-answers.md")
+    answers_path = os.path.join(discovery_dir, "workforce-interview-answers.md")
 
     # Create file with header if it doesn't exist
     if not os.path.isfile(answers_path):
@@ -657,6 +704,7 @@ def log_answer(question, answer):
         f.write(f"**Q:** {question}\n")
         f.write(f"**A:** {answer}\n")
         f.write(f"**Logged:** {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n---\n\n")
+    print(f"[PERSISTENCE] Answer logged to: {answers_path}", file=sys.stderr)
 
 
 # ============================================================
@@ -696,10 +744,11 @@ def main():
     """
     global MASTER_FILES, COMPANY_DISCOVERY_DIR
 
-    # Step 1: Detect environment
+    # Step 1: Detect environment (guaranteed non-None after hardening)
     MASTER_FILES = find_master_files_folder()
-    if MASTER_FILES:
-        COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
+    COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
+    print(f"[PERSISTENCE] Master files folder: {MASTER_FILES}", file=sys.stderr)
+    print(f"[PERSISTENCE] Interview answers will be saved to: {COMPANY_DISCOVERY_DIR}/", file=sys.stderr)
 
     # Step 2: Read existing context
     existing_context = read_existing_context()
