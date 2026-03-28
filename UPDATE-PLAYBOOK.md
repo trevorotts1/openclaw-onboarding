@@ -158,6 +158,7 @@ If a skill's dependency is not met:
 Example for Command Center:
 - If Skill 23 interview is not complete (no department folders exist AND no workforce-interview-answers.md found anywhere on disk), tell the client: "The BlackCEO Command Center is included in this update, but it requires your AI Workforce questions to be completed first. Once you finish the workforce interview, I can activate the Command Center for you."
 - IMPORTANT: Before blocking Skill 32, you MUST search for department folders in ALL possible locations: ~/.openclaw/workspaces/command-center/, ~/clawd/departments/, ~/Downloads/openclaw-master-files/. If folders exist in ANY of these locations, the dependency IS met. Do not block just because a version file is missing.
+- If you cannot find the folders in any of those locations, DO NOT silently block. Ask the client: "I need to check if your AI Workforce interview is complete before I can set up the Command Center. Have you already completed the interview questions? If so, can you tell me where your department folders are saved?" The client may know exactly where they are. Accept their answer and use that path. If they say "yes I already did it," search harder or ask them to point you to the folder.
 
 ### STEP 8: RISK ASSESSMENT
 For each change that has all credentials and dependencies ready, assign a risk level:
