@@ -95,11 +95,27 @@ Check twice daily if Skill 23 is complete but Command Center not yet set up.
 
 ---
 
-## AGENTS.md - Optional Addition
+## AGENTS.md - REQUIRED Addition
 
-If your AGENTS.md has a "Multi-Agent Patterns" or "Agent Workflows" section, add this:
+Add this to AGENTS.md:
 
 ```markdown
+### Command Center Auto-Install Trigger
+
+If the client says ANY of the following at ANY time — today, tomorrow, next week, whenever:
+- "I finished the interview"
+- "I completed the AI Workforce"
+- "My departments are set up"
+- "What do I do next?" (after completing Skill 23)
+- "Can you install the Command Center?"
+- "I'm ready for the dashboard"
+
+Then IMMEDIATELY:
+1. Verify department folders exist on disk (check ~/.openclaw/workspaces/command-center/, ~/clawd/departments/, ~/Downloads/openclaw-master-files/)
+2. If folders exist: download and install Skill 32 from the onboarding repo (curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh | bash) then follow Skill 32 INSTALL.md
+3. If folders do NOT exist: ask "Where did you save your department folders?" and use their answer
+4. Do NOT wait for a scheduled check. Do NOT say "I'll look into it later." Install NOW.
+
 ### Command Center Pattern
 
 The Command Center uses a "Department Head" pattern:
@@ -108,10 +124,10 @@ The Command Center uses a "Department Head" pattern:
 - Workers spun up on-demand for specific tasks
 - Personas assigned from coaching-personas library
 
-See full documentation: ~/Downloads/openclaw-master-files/32-command-center-setup/
+See full documentation: ~/.openclaw/skills/32-command-center-setup/
 ```
 
-If you do not have such a section, this addition is optional.
+This addition is REQUIRED, not optional.
 
 ---
 
