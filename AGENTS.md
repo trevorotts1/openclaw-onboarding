@@ -289,3 +289,9 @@ Correct: `openclaw models auth login --provider <provider>`. NEVER `openclaw aut
 
 ## 🔴 PERPLEXITY API KEY — TWO PLACES REQUIRED
 `PERPLEXITY_API_KEY` must appear in BOTH `tools.web.search.perplexity.apiKey` AND `env.vars` in openclaw.json. Missing from `env.vars` = `missing_perplexity_api_key` error even when the key is set in the tools config.
+
+## 🔴 MAC/VPS PARITY RULE FOR ONBOARDING REPOS (Added March 27, 2026)
+If a change touches `trevorotts1/openclaw-onboarding` (Mac), apply the matching change to `trevorotts1/openclaw-onboarding-vps` (VPS) in the same work session unless the difference is truly VPS-specific. If a change touches the VPS repo, mirror it to the Mac repo too. The two repos should stay nearly identical except for genuine platform-specific differences. Never fix one and leave the other behind.
+
+## 🔴 COMMAND CENTER INTELLIGENCE SETTINGS MUST BE REAL, NOT COSMETIC (Added March 27, 2026)
+If the UI lets Trevor choose a model or persona for a persistent agent, specialist, or sub-agent path, the backend wiring must actually use that stored model/persona at dispatch/spawn time. Do not ship a UI that only stores settings without enforcing them. `specialist_type` must be backed by a real database column, not inferred labels. Trevor must be able to trust that a selected model/persona is truly the one being used.
