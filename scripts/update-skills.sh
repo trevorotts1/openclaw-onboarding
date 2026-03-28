@@ -112,7 +112,7 @@ if [ -f "$AGENTS_FILE" ]; then
     if ! grep -q "UPDATE PENDING" "$AGENTS_FILE" 2>/dev/null; then
         cat >> "$AGENTS_FILE" << 'UPDATEFLAG'
 
-## 🔴 UPDATE PENDING — An update has been found and is ready to install. Read /tmp/oc-update-notification.md for the full client summary. Send that message to the client. Then follow /tmp/oc-update/openclaw-onboarding-main/UPDATE-PLAYBOOK.md step by step. Remove this flag when complete.
+## 🔴 UPDATE PENDING — IMMEDIATE ACTION REQUIRED. An update for your BlackCEO system has been downloaded and is ready to install. DO THIS RIGHT NOW: 1) Read the file at /tmp/oc-update-notification.md. 2) SEND that message to your client on Telegram IMMEDIATELY. Do not wait for them to message you first. 3) After sending, follow /tmp/oc-update/openclaw-onboarding-main/UPDATE-PLAYBOOK.md step by step. 4) Remove this flag when complete.
 UPDATEFLAG
     fi
 fi
