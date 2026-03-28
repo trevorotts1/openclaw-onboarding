@@ -148,7 +148,7 @@ Some skills depend on other skills being installed or completed first. Before in
 Known dependencies:
 - Skill 22 (Book-to-Persona): Run the Gemini indexer AFTER installation
 - Skill 23 (AI Workforce Blueprint): Requires Skill 22 to be complete with indexed personas
-- Skill 32 (Command Center): Requires Skill 23 interview to be COMPLETE (department folders must exist)
+- Skill 32 (Command Center): Requires Skill 23 interview to be COMPLETE. To check this, look for ACTUAL department folders on disk — check ~/.openclaw/workspaces/command-center/ or ~/clawd/departments/ or ~/Downloads/openclaw-master-files/ for folders like marketing/, sales/, operations/, etc. Also check for workforce-interview-answers.md. If EITHER the department folders OR the answers file exist, the dependency IS met — even if Skill 23 does not appear in the installed-versions file. Do NOT rely solely on the version tracker. The client may have completed the interview before the version tracker existed.
 
 If a skill's dependency is not met:
 - Do NOT install that skill yet
@@ -156,7 +156,8 @@ If a skill's dependency is not met:
 - Continue with all other skills that have their dependencies met
 
 Example for Command Center:
-- If Skill 23 interview is not complete (no department folders exist), tell the client: "The BlackCEO Command Center is included in this update, but it requires your AI Workforce questions to be completed first. Once you finish the workforce interview, I can activate the Command Center for you."
+- If Skill 23 interview is not complete (no department folders exist AND no workforce-interview-answers.md found anywhere on disk), tell the client: "The BlackCEO Command Center is included in this update, but it requires your AI Workforce questions to be completed first. Once you finish the workforce interview, I can activate the Command Center for you."
+- IMPORTANT: Before blocking Skill 32, you MUST search for department folders in ALL possible locations: ~/.openclaw/workspaces/command-center/, ~/clawd/departments/, ~/Downloads/openclaw-master-files/. If folders exist in ANY of these locations, the dependency IS met. Do not block just because a version file is missing.
 
 ### STEP 8: RISK ASSESSMENT
 For each change that has all credentials and dependencies ready, assign a risk level:
@@ -406,7 +407,7 @@ Check ALL of these. Do not stop after the first one. A credential might be in an
 |-------|-----------|-------------------|
 | Skill 22 | Google API key | GOOGLE_API_KEY must exist in env |
 | Skill 23 | Skill 22 complete | Personas must be indexed |
-| Skill 32 | Skill 23 interview complete | Department folders must exist |
+| Skill 32 | Skill 23 interview complete | Department folders must exist in ~/.openclaw/workspaces/command-center/ OR ~/clawd/departments/ OR workforce-interview-answers.md must exist. Check ALL paths before blocking. |
 
 ## Conflict Resolution
 If a CORE_UPDATES.md entry conflicts with existing content:
