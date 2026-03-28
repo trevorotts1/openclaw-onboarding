@@ -30,6 +30,15 @@ The agent checks automatically on schedule and follows this same playbook.
 
 ## The Update Process (All Methods)
 
+### STEP 0: ACKNOWLEDGE THE CLIENT IMMEDIATELY
+Before doing ANYTHING else — before backup, before review, before reading the changelog — send the client a message RIGHT NOW:
+
+"Hey [Client Name], I just found a system update for your BlackCEO system. I'm going to review it now to make sure everything is safe. This should take about 2-3 minutes. I'll send you a full summary as soon as I'm done reviewing. You don't need to do anything yet."
+
+Do NOT skip this step. Do NOT start working silently. The client needs to know something is happening within 10 seconds of you seeing the update flag. Silence is not acceptable.
+
+After sending this message, proceed to Step 1.
+
 ### STEP 1: RUN THE FULL BACKUP PROTOCOL
 Before touching anything, run the Back Yourself Up Protocol (Skill 02). This means:
 - Back up openclaw.json (the config with all models, API keys, auth profiles)
