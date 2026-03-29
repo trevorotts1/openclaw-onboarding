@@ -4,9 +4,10 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
-## [v6.1.4] - March 29, 2026
+## [v6.1.5] - March 29, 2026
 
 ### Interview Persistence Protocol + Update Flow Fixes + Terminology
+- **Skill 23 SKILL.md**: Added explicit "I Don't Know" Research Protocol. When client cannot answer, agent researches best practices tailored to their industry, goals, department, and role. Presents recommendation, waits for approval, logs with attribution.
 
 #### Added
 - **TERMINOLOGY.md**: New repo-root file defining GHL/Convert and Flow/GoHighLevel naming rules and Private Integration Token (PIT) terminology. Required reading for all agents.

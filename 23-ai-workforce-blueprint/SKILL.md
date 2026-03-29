@@ -178,9 +178,38 @@ Check USER.md, MEMORY.md, AGENTS.md, TOOLS.md, and workforce-interview-answers.m
 ### Question Philosophy
 - Plain English only. No jargon.
 - Every question includes an example answer
-- After every question: "If you are not sure, just tell me to research it."
+- After every question, tell the client: "If you are not sure, just say 'I don't know' and I will research the best answer for you."
 - Dynamic count: 3-7 per department based on complexity and what is already known
 - Progress indicators at milestones
+
+### "I Don't Know" Research Protocol
+
+When the client says "I don't know", "not sure", "skip", "research it", or anything indicating they do not have an answer:
+
+1. **Acknowledge warmly.** Say something like: "No problem. Let me look into the best practices for this."
+
+2. **Research immediately.** Use web search to find best practices that are specific to:
+   - The client's industry (from earlier interview answers)
+   - The client's company goals (from earlier interview answers)
+   - The specific department this question is about
+   - The specific role this question is about
+   Do NOT give generic advice. Research must be tailored to what you already know about this client's business.
+
+3. **Come back with a recommendation.** Present it like:
+   - "Based on what I found, here is what companies like yours typically do: [recommendation]."
+   - "This aligns with your goal of [goal from earlier answer]."
+   - "Do you want to go with this, adjust it, or skip it for now?"
+
+4. **Wait for approval.** The client must say yes, adjust it, or skip. Do NOT auto-accept your own recommendation.
+
+5. **Log the answer.** If they approve:
+   - Write it to workforce-interview-answers.md with a note: "Researched recommendation — approved by client"
+   - Follow the normal flush protocol (handoff update, MEMORY.md, etc.)
+   If they skip:
+   - Log it as skipped in interview-handoff.md
+   - Circle back at the end of the interview
+
+6. **Never make the client feel bad for not knowing.** This is a business partner helping them figure it out, not a test they are failing.
 
 ### Interview Persistence Protocol (Mandatory)
 
