@@ -84,7 +84,7 @@ Before touching skills, make sure the infrastructure scripts and dependencies fr
 **4d. Model allow list:**
 - These model entries go under `agents.defaults.models` in openclaw.json. NOT under the top-level `models` key.
 - Exact JSON path: `config.agents.defaults.models`
-- Check openclaw.json for the model allow list. It should have these 10 models:
+- Check openclaw.json for the model allow list. It should have these 8 models:
   - moonshot/kimi-k2.5
   - openrouter/moonshot/kimi-k2.5
   - openrouter/xiaomi/mimo-v2-pro
@@ -93,8 +93,6 @@ Before touching skills, make sure the infrastructure scripts and dependencies fr
   - openrouter/google/gemini-3.1-flash-lite-preview
   - openrouter/google/gemini-3-flash-preview
   - openai-codex/gpt-5.4
-  - openrouter/perplexity/sonar-pro-search
-  - openrouter/perplexity/sonar
 - If any are missing, add them (follow config backup protocol first)
 - The canonical model list and deprecated model replacements are maintained in scripts/deprecated-models.json. When models change, update that file.
 - Check the official OpenClaw docs (https://docs.openclaw.ai) for the correct config format before editing
