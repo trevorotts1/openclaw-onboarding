@@ -4,6 +4,31 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## [v6.1.4] - March 29, 2026
+
+### Interview Persistence Protocol + Update Flow Fixes + Terminology
+
+#### Added
+- **TERMINOLOGY.md**: New repo-root file defining GHL/Convert and Flow/GoHighLevel naming rules and Private Integration Token (PIT) terminology. Required reading for all agents.
+- **Skill 23 SKILL.md**: Full Interview Persistence Protocol replacing one-line flush note. 4-step mandatory flush after every question (answer to disk first, handoff update, MEMORY.md progress, then next question). Boot-time resume logic with 4-tier fallback. Edge cases: skip/circle-back, answer corrections, stale handoffs (90+ days), crash recovery, resume triggers.
+- **Skill 23 CORE_UPDATES.md**: Interview Resume Protocol section for AGENTS.md — boot-time check for incomplete interviews.
+
+#### Changed
+- **scripts/update-skills.sh**: v6.1.3. Now sends Telegram notification directly to paired user using botToken and allowFrom from openclaw.json. If Telegram fails, prints clear fallback box in Terminal with exact agent instruction. AGENTS.md flag still written as backup layer.
+- **install.sh**: Auto-cleanup of misplaced config keys. If `subagents` or `allow` appear under top-level `models` (where they do not belong), they are deleted automatically. Prevents config validation errors on startup.
+- **UPDATE-PLAYBOOK.md**: v6.1.3. Added explicit JSON paths for subagent config (`agents.defaults.subagents`) and model allow list (`agents.defaults.models`). Added TERMINOLOGY.md reference. Warns agents not to put subagents under `models`.
+- **Start Here.md**: Added TERMINOLOGY.md reference.
+- **All script headers**: Synced to 6.1.3.
+
+#### Removed
+- **Perplexity sonar models** from model allow list (install.sh, deprecated-models.json, UPDATE-PLAYBOOK.md). `openrouter/perplexity/sonar-pro-search` and `openrouter/perplexity/sonar` are web search tools, not models. Allow list is now 8 models.
+
+#### Fixed
+- Script version headers were out of sync with repo version file. All 3 scripts now match `version` file. New rule: every push must bump version + headers in same commit.
+- UPDATE-PLAYBOOK.md told agents to add subagent config but did not specify the JSON path, causing agents to put keys in the wrong place (`models` instead of `agents.defaults`).
+
+---
+
 ## [v6.1.0] - March 27, 2026 (Late Evening)
 
 ### Skill 23 Persistence Hardening + Version-Proof Update System + Notification Overhaul
