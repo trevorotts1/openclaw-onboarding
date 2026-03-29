@@ -29,6 +29,10 @@ Add:
 
 ```
 ## GHL/Convert and Flow [PRIORITY: HIGH]
+- GHL = GoHighLevel = Convert and Flow. All the same platform. Client-facing: always say "Convert and Flow."
+- GHL does NOT use API keys. It uses Private Integration Tokens (PITs). The env var GHL_API_KEY holds a PIT, not an API key.
+- Two types: Location PIT (GHL_API_KEY) for day-to-day work. Agency PIT (GOHIGHLEVEL_AGENCY_PIT) for agency-wide operations.
+- Media uploads require the Location PIT, not the Agency PIT.
 - API credentials stored in ~/clawd/secrets/.env (GHL_API_KEY, GHL_LOCATION_ID)
 - Always include Version header: 2021-07-28 in API calls
 - Full setup guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/05-ghl-setup/ghl-setup-full.md
@@ -42,8 +46,9 @@ Add:
 
 ```
 ## GHL/Convert and Flow API
+- GHL does NOT use API keys. It uses Private Integration Tokens (PITs). Never tell a client they need an "API key" for GHL.
 - Base URL: https://services.leadconnectorhq.com
-- Auth: Bearer token (GHL_API_KEY from secrets/.env)
+- Auth: Bearer token using the Location PIT (GHL_API_KEY from secrets/.env)
 - Required header: Version: 2021-07-28 (without this you get 400 errors)
 - Key endpoints: /contacts/search, /conversations/messages, /opportunities/
 - Full reference: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/05-ghl-setup/ghl-setup-full.md

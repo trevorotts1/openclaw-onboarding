@@ -4,9 +4,10 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
-## [v6.1.5] - March 29, 2026
+## [v6.1.6] - March 29, 2026
 
 ### Interview Persistence Protocol + Update Flow Fixes + Terminology
+- **Skill 5 CORE_UPDATES.md**: Added GHL/PIT terminology. AGENTS.md and TOOLS.md sections now explain that GHL uses Private Integration Tokens, not API keys.
 - **Skill 23 SKILL.md**: Added explicit "I Don't Know" Research Protocol. When client cannot answer, agent researches best practices tailored to their industry, goals, department, and role. Presents recommendation, waits for approval, logs with attribution.
 
 #### Added
