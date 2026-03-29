@@ -181,10 +181,70 @@ Check USER.md, MEMORY.md, AGENTS.md, TOOLS.md, and workforce-interview-answers.m
 - After every question: "If you are not sure, just tell me to research it."
 - Dynamic count: 3-7 per department based on complexity and what is already known
 - Progress indicators at milestones
-- Flush after every answered question (resume capability)
 
-### Handoff File
-Created immediately when interview starts. Updated after every question. Stored at company-discovery/interview-handoff.md. Enables resume from any point.
+### Interview Persistence Protocol (Mandatory)
+
+This interview may take hours, days, weeks, or months. The client may stop and come back at any time. Every answer must survive gateway restarts, session resets, context loss, and even agent replacement. Three files work together to guarantee this:
+
+1. **workforce-interview-answers.md** — the permanent answer record
+2. **interview-handoff.md** — the progress tracker and resume point
+3. **MEMORY.md** — the boot-time progress line
+
+#### After EVERY Answered Question (No Exceptions)
+
+Do these 4 things IN THIS ORDER before asking the next question:
+
+1. **Write the answer to disk first.** Append the question number, question text, client's answer, and timestamp to `workforce-interview-answers.md`. This is the safety net. If everything else fails, the answers are on disk.
+
+2. **Update interview-handoff.md** with:
+   - `last_question_number`: the number just answered
+   - `last_question_text`: what was asked
+   - `next_question_number`: the next one to ask
+   - `total_questions_answered`: running count
+   - `total_questions_estimated`: best estimate of remaining
+   - `skipped_questions`: list of any questions the client said "I don't know" or "skip" (these get circled back to at the end)
+   - `last_updated`: timestamp
+   - `status`: "in_progress" or "complete"
+   - `started_date`: when the interview first began
+   - `interview_version`: the version of Skill 23 that started this interview
+
+3. **Update MEMORY.md** with a single living progress line (update it, do not keep appending new lines):
+   - Format: `Skill 23 Interview: IN PROGRESS | Question X/Y answered | Last: YYYY-MM-DD H:MM PM | Handoff: interview-handoff.md`
+   - When complete: `Skill 23 Interview: COMPLETE | X/X answered | workforce-interview-answers.md`
+
+4. **Only then ask the next question.**
+
+#### Resume Logic (Boot-Time and Session-Start)
+
+At the START of every session, before doing anything else related to Skill 23:
+
+1. Check for `interview-handoff.md`. If it exists and `status` is "in_progress":
+   - Read it. Find `next_question_number`.
+   - Read `workforce-interview-answers.md` to confirm what has been answered.
+   - Tell the client: "I found your previous progress. You answered X questions so far. Picking up where we left off."
+   - Resume from the next unanswered question. Do NOT start over.
+
+2. If `interview-handoff.md` is missing but `workforce-interview-answers.md` exists:
+   - Reconstruct progress by counting answered questions in the file.
+   - Rebuild `interview-handoff.md` from the answers file.
+   - Resume from the next unanswered question.
+
+3. If both files are missing but MEMORY.md says "Skill 23 Interview: IN PROGRESS":
+   - Ask the client: "It looks like you started the interview before but I cannot find the saved answers. Would you like to start fresh or tell me where you left off?"
+
+4. If everything says complete, do NOT re-interview. Proceed to Skill 32.
+
+#### Edge Cases
+
+- **Client says "I don't know" or "skip":** Log it as skipped in `interview-handoff.md`. Move to the next question. Circle back to all skipped questions at the end of the interview. Offer to research the answer for them.
+
+- **Client wants to change a previous answer:** Update the answer in `workforce-interview-answers.md`. Add a note: "Updated on [date] — previous answer was [X]." Do not re-ask every question.
+
+- **Stale handoff (started months ago):** If `started_date` is more than 90 days old, ask the client: "You started this interview on [date]. Some of your answers may be outdated. Would you like to review your previous answers before continuing, or pick up where you left off?"
+
+- **Client says "continue" or "resume" or "pick up where I left off":** These are all resume triggers. Go straight to the resume logic.
+
+- **Gateway crash mid-flush:** Because the answer is written to disk FIRST (step 1), the worst case is that the handoff file and MEMORY.md are slightly behind. On next session start, the agent reconstructs from the answers file.
 
 ## Devil's Advocate (Auto-Created)
 

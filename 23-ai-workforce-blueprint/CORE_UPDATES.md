@@ -97,6 +97,23 @@ Full reference: ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-bluepr
 
 ---
 
+## AGENTS.md - Interview Resume Protocol
+
+**Where:** Add at the bottom of AGENTS.md, after the AI Workforce Blueprint section
+
+**Exact text to add:**
+```
+## 🔴 Skill 23 Interview Resume Protocol (Added with v6.1.2)
+At the START of every session, check for ~/.openclaw/workspace/interview-handoff.md.
+- If it exists and status is "in_progress": resume the interview from the next unanswered question. Do NOT start over.
+- If interview-handoff.md is missing but workforce-interview-answers.md exists: reconstruct progress from the answers file, rebuild the handoff, and resume.
+- If MEMORY.md says "Skill 23 Interview: IN PROGRESS" but no files exist: ask the client if they want to start fresh or tell you where they left off.
+- If everything says COMPLETE: do NOT re-interview. Proceed to Skill 32.
+Resume triggers: "continue", "resume", "pick up where I left off", or any message during an active interview.
+```
+
+---
+
 ## SOUL.md
 
 No update required. This skill governs workspace structure, not agent personality or voice.
