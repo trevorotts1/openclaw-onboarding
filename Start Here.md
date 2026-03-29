@@ -1,6 +1,8 @@
 # START HERE - OpenClaw Onboarding
 **READ THIS ENTIRE FILE BEFORE TOUCHING ANYTHING ELSE.**
 
+**ALSO READ:** `TERMINOLOGY.md` in this repo root. It defines GHL/Convert and Flow/GoHighLevel terminology and Private Integration Token (PIT) rules that apply across all skills.
+
 ---
 
 ## 🔴 TRIGGER DETECTED - YOU ARE NOW EXECUTING ONBOARDING

@@ -1,5 +1,7 @@
 # BlackCEO System Update Playbook
-# Version 2.0 | March 27, 2026
+# Version 6.1.1 | March 29, 2026
+
+**REQUIRED:** Read `TERMINOLOGY.md` in the repo root before proceeding. It defines GHL/Convert and Flow/GoHighLevel terminology and PIT rules.
 
 This playbook defines how updates are applied to an already-onboarded BlackCEO system. There are three ways to trigger an update. All three follow the same steps below.
 
