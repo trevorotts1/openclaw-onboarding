@@ -1,6 +1,6 @@
 #!/bin/bash
 # OpenClaw Onboarding — Weekly Update Cron Setup
-# Version: 4.0 | March 27, 2026
+# Version: 6.1.0 | March 29, 2026
 # Run this ONCE per machine after onboarding install.
 #
 # What it does:

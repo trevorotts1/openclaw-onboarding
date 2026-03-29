@@ -1,6 +1,6 @@
 #!/bin/bash
 # OpenClaw Onboarding — Impact Check Helper
-# Version: 1.0 | March 16, 2026
+# Version: 6.1.0 | March 29, 2026
 #
 # Checks a specific skill or file for update impact.
 # Used by the AI agent to determine risk level before applying changes.
