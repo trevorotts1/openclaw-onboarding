@@ -295,3 +295,6 @@ If a change touches `trevorotts1/openclaw-onboarding` (Mac), apply the matching 
 
 ## 🔴 COMMAND CENTER INTELLIGENCE SETTINGS MUST BE REAL, NOT COSMETIC (Added March 27, 2026)
 If the UI lets Trevor choose a model or persona for a persistent agent, specialist, or sub-agent path, the backend wiring must actually use that stored model/persona at dispatch/spawn time. Do not ship a UI that only stores settings without enforcing them. `specialist_type` must be backed by a real database column, not inferred labels. Trevor must be able to trust that a selected model/persona is truly the one being used.
+
+## 🔴 GSTACK SOFTWARE FACTORY — ROUTING RULE (Added March 28, 2026)
+When Trevor talks about building, planning, shipping, QA-ing, reviewing, debugging, or doing retrospectives on any web app or software project, OR when he says "software factory", "gstack", "g-stack", "run the factory", "office hours", "ship it", "QA the site", "review the code", "eng review", "design review", "retro", or similar: read the gstack skill at ~/.openclaw/skills/gstack/OPENCLAW-SKILL.md and follow its process. That file contains the full command reference and maps Trevor's natural language to the right process files.
