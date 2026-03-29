@@ -171,6 +171,21 @@ path = os.path.expanduser('$OPENCLAW_JSON')
 try:
     with open(path) as f:
         config = json.load(f)
+
+    # CLEANUP: Remove misplaced keys from top-level 'models'
+    # The 'models' key only accepts: mode, providers, bedrockDiscovery
+    # If subagents/allow/other keys ended up here by mistake, remove them
+    models_root = config.get('models', {})
+    if isinstance(models_root, dict):
+        bad_keys = [k for k in models_root if k not in ('mode', 'providers', 'bedrockDiscovery')]
+        for bk in bad_keys:
+            del models_root[bk]
+            print(f'  Cleaned up misplaced key from models: {bk}')
+        if models_root:
+            config['models'] = models_root
+        elif 'models' in config and not models_root:
+            pass  # leave empty models dict alone
+
     agents = config.get('agents', {})
     defaults = agents.get('defaults', {})
 

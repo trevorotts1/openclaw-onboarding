@@ -80,6 +80,8 @@ Before touching skills, make sure the infrastructure scripts and dependencies fr
 - If any of these are missing or different, update them (follow config backup protocol first)
 
 **4d. Model allow list:**
+- These model entries go under `agents.defaults.models` in openclaw.json. NOT under the top-level `models` key.
+- Exact JSON path: `config.agents.defaults.models`
 - Check openclaw.json for the model allow list. It should have these 10 models:
   - moonshot/kimi-k2.5
   - openrouter/moonshot/kimi-k2.5
@@ -96,12 +98,15 @@ Before touching skills, make sure the infrastructure scripts and dependencies fr
 - Check the official OpenClaw docs (https://docs.openclaw.ai) for the correct config format before editing
 
 **4e. Sub-agent configuration:**
-- Check openclaw.json for the sub-agent settings:
-  - maxSpawnDepth should be 4
-  - maxChildrenPerAgent should be 10
-  - maxConcurrent should be 20
+- These settings go under `agents.defaults.subagents` in openclaw.json. NOT under `models`. NOT at the root level.
+- Exact JSON path: `config.agents.defaults.subagents`
+- Required values:
+  - `agents.defaults.subagents.maxSpawnDepth` = 4
+  - `agents.defaults.subagents.maxChildrenPerAgent` = 10
+  - `agents.defaults.subagents.maxConcurrent` = 20
 - If any of these are missing or different, update them (follow config backup protocol first)
 - The canonical values are maintained in scripts/deprecated-models.json under subagent_config
+- **CRITICAL:** If you see `subagents` or `allow` under the `models` key, that is WRONG. Move them to `agents.defaults.subagents`. The `models` key only accepts: `mode`, `providers`, `bedrockDiscovery`.
 
 ### STEP 5: BUILD YOUR GAP REPORT
 Compare what you have installed vs what is in the new repo:
