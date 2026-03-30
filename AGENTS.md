@@ -185,6 +185,9 @@ Before editing any config (openclaw.json, agents.list): (1) backup to `~/Downloa
 ## 🔴 OPENCLAW.JSON — AGENTS.LIST MODEL OVERRIDES DEFAULT
 `agents.list` entry `model:` field overrides global default. If wrong model on wake, check this field first.
 
+## 🔴 OPENCLAW.JSON — MODELS KEY ACCEPTS ONLY 3 FIELDS
+`models` top-level key only accepts: `mode`, `providers`, `bedrockDiscovery`. Nothing else. Subagents → `agents.defaults.subagents`. Model allow list → `agents.defaults.models`. Misplaced keys cause config validation errors on startup.
+
 ## 🔴 OPENCLAW OAUTH RE-AUTH COMMAND
 Correct: `openclaw models auth login --provider <provider>`. NEVER `openclaw auth login <provider>`. OpenAI Codex tokens expire every ~8-10 days. `refresh_token_reused` error = re-auth required.
 
@@ -248,3 +251,6 @@ Full instructions: `/Users/blackceomacmini/clawd/explore-growth-site-instruction
 
 ## 🔴 GSTACK SOFTWARE FACTORY
 When Trevor says "software factory", "gstack", "run the factory", "office hours", "ship it", "QA the site", "review the code", "eng review", "design review", "retro", or similar: read `~/.openclaw/skills/gstack/OPENCLAW-SKILL.md` and follow its process.
+
+## 🔴 ALL SUB-AGENTS MUST USE THINKING: HIGH (Added March 29, 2026)
+When spawning sub-agents via sessions_spawn, ALWAYS pass thinking: "high". Never rely on the default thinking level. If a sub-agent task requires reasoning, planning, or analysis, high thinking must be set explicitly. This applies to all sub-agents regardless of model. Verified at: ~/clawd/AGENTS.md, section "ALL SUB-AGENTS MUST USE THINKING: HIGH".
