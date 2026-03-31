@@ -102,7 +102,7 @@ Before touching skills, make sure the infrastructure scripts and dependencies fr
 - Exact JSON path: `config.agents.defaults.subagents`
 - Required values:
   - `agents.defaults.subagents.maxSpawnDepth` = 4
-  - `agents.defaults.subagents.maxChildrenPerAgent` = 10
+  - `agents.defaults.subagents.maxChildrenPerAgent` = 20
   - `agents.defaults.subagents.maxConcurrent` = 20
 - If any of these are missing or different, update them (follow config backup protocol first)
 - The canonical values are maintained in scripts/deprecated-models.json under subagent_config
