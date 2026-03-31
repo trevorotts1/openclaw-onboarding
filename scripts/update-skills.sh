@@ -159,9 +159,11 @@ New version available: \`$REMOTE_VERSION\`
 
 An update has been downloaded and is ready to install. Nothing has changed yet — it is waiting for your approval.
 
-*What to do next:*
-Tell your AI agent this exact message:
+*STEP 1: Restart your gateway first.*
+Run this in Terminal:
+\`openclaw gateway restart\`
 
+*STEP 2: After restarting, tell your AI agent this exact message:*
 \`Review the update reports and apply approved changes\`
 
 Or just reply *yes* to start the update."
@@ -170,7 +172,7 @@ Or just reply *yes* to start the update."
         TG_RESULT=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             -d chat_id="$CHAT_ID" \
             -d text="$TG_MESSAGE" \
-            -d parse_mode="Markdown" 2>/dev/null)
+            -d parse_mode="Markdown" 2>&1)
 
         # Check if send succeeded
         if echo "$TG_RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if d.get('ok') else 1)" 2>/dev/null; then
@@ -180,12 +182,13 @@ Or just reply *yes* to start the update."
         else
             echo ""
             echo "[WARNING] Could not send Telegram notification."
-            echo "          You may need to tell your agent manually."
+            echo "          Telegram API response: $TG_RESULT"
         fi
     else
         echo ""
         echo "[WARNING] Could not read Telegram config from openclaw.json."
-        echo "          You may need to tell your agent manually."
+        echo "          botToken: $([ -n \"$BOT_TOKEN\" ] && echo 'FOUND' || echo 'MISSING')"
+        echo "          chatId:  $([ -n \"$CHAT_ID\" ] && echo 'FOUND' || echo 'MISSING')"
     fi
 else
     echo ""
@@ -202,25 +205,24 @@ echo "============================================"
 echo ""
 
 if [ "$TELEGRAM_SENT" = true ]; then
-    echo "  A notification was sent to your Telegram."
-    echo "  Check your messages and reply to your agent."
-else
-    echo "  Telegram notification could not be sent."
+    echo "  A notification was also sent to your Telegram."
     echo ""
-    echo "  TELL YOUR AI AGENT THIS EXACT MESSAGE:"
-    echo ""
-    echo "  ┌─────────────────────────────────────────────┐"
-    echo "  │                                             │"
-    echo "  │  Review the update reports and apply        │"
-    echo "  │  approved changes                           │"
-    echo "  │                                             │"
-    echo "  └─────────────────────────────────────────────┘"
-    echo ""
-    echo "  Or restart your gateway and the agent will"
-    echo "  pick it up automatically:"
-    echo ""
-    echo "    openclaw gateway restart"
 fi
+
+echo "  STEP 1: Restart your gateway so your agent"
+echo "  can see the update flag:"
+echo ""
+echo "    openclaw gateway restart"
+echo ""
+echo "  STEP 2: After restarting, tell your AI agent"
+echo "  this exact message:"
+echo ""
+echo "  ┌─────────────────────────────────────────────┐"
+echo "  │                                             │"
+echo "  │  Review the update reports and apply        │"
+echo "  │  approved changes                           │"
+echo "  │                                             │"
+echo "  └─────────────────────────────────────────────┘"
 
 echo ""
 echo "============================================"
