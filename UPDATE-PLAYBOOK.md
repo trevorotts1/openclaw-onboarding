@@ -126,14 +126,28 @@ Key rules from CREDENTIALS.md:
 - Skills that need "at least one LLM key" (Skill 28) are satisfied by ANY of: GEMINI, OPENAI, OPENROUTER, or ANTHROPIC keys.
 
 For each credential found:
-1. Check ALL env file locations where credentials might be stored:
-   - ~/.openclaw/.env
-   - ~/.openclaw/secrets/.env
-   - ~/.openclaw/workspace/secrets/.env
-   - System environment variables
-2. Check openclaw.json for auth profiles
-3. If the credential EXISTS and is not empty, mark it as READY
-4. If the credential is MISSING or empty, mark it as BLOCKED
+1. Check ALL env file locations where credentials might be stored (do NOT skip any):
+   - `~/.openclaw/.env`
+   - `~/.openclaw/secrets/.env`
+   - `~/.openclaw/secrets.env`
+   - `~/.openclaw/openclaw.env`
+   - `~/.openclaw/.env.local`
+   - `~/.openclaw/.env.development`
+   - `~/.openclaw/workspace/secrets/.env`
+   - `~/.config/openclaw/.env`
+   - `~/clawd/secrets/.env` (legacy path — some clients still use this)
+   - `~/clawd/.env`
+2. Check `openclaw.json` for the credential in:
+   - `env.vars` section (environment variables set by OpenClaw)
+   - `auth.profiles` section (provider auth keys)
+   - `tools.web` section (tool API keys)
+   - `plugins.entries` section (plugin-specific keys)
+3. Check system environment variables: `printenv | grep -i "KEYWORD"`
+4. Check if the credential is already in the system shell: `source ~/.openclaw/.env 2>/dev/null && echo $KEY_NAME`
+5. If the credential EXISTS and is not empty in ANY of these locations, mark it as READY
+6. ONLY if the credential is MISSING or empty in ALL locations, mark it as BLOCKED
+
+**CRITICAL: Do NOT ask the client for a key until you have searched ALL locations above. The system is "lazy" if it stops after 1-2 files. Exhaustive search is required before requesting.**
 
 If any skill has BLOCKED credentials:
 - Do NOT install or update that skill yet
