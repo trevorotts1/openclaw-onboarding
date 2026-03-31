@@ -50,8 +50,9 @@ After any update (or during Sunday check), always verify the client has the late
    - **Changed model IDs** (e.g., format changes, prefix changes)
 
 ### Step 3: Apply Safe Updates
+- **REMOVE Perplexity models** — OpenClaw no longer supports Perplexity as a model. Any entry matching `openrouter/perplexity/*` must be deleted from the model allow list. This is a required cleanup, not an optional removal.
 - **ADD new models** to the client's allow list if they are stable and recommended by OpenClaw docs
-- **DO NOT REMOVE** any working model without explicit client approval
+- **DO NOT REMOVE** any working model (except Perplexity) without explicit client approval
 - **FLAG deprecated models** with a Telegram message to the client explaining what changed
 - **If a model ID format changed** (e.g., `openrouter/` prefix added), update it ONLY if the docs confirm the new format is required
 - **Always back up openclaw.json** before making any model changes (follow Skill 02 backup protocol)

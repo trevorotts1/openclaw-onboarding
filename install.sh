@@ -211,6 +211,13 @@ try:
     for mid, mdef in model_defs.items():
         if mid not in models:
             models[mid] = mdef
+
+    # Remove Perplexity models — OpenClaw no longer supports Perplexity as a model
+    perplexity_keys = [k for k in models if 'perplexity' in k.lower() or 'sonar' in k.lower()]
+    for pk in perplexity_keys:
+        del models[pk]
+        print(f'  Removed deprecated model: {pk}')
+
     defaults['models'] = models
 
     agents['defaults'] = defaults

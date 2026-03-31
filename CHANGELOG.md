@@ -11,6 +11,9 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **update-skills.sh Telegram message**: Now includes "openclaw gateway restart" as Step 1 before the agent instruction. Previously did not tell users to restart.
 - **update-skills.sh Telegram errors**: Now logs the actual Telegram API response and config status instead of silently hiding errors.
 
+### Removed
+- **Perplexity models from allow list**: OpenClaw no longer supports Perplexity as a model. Any `openrouter/perplexity/*` entries in the client's model allow list are now automatically removed during install and updates.
+
 ### Added
 - **HEARTBEAT.md**: Sunday 3 AM agent update check — agent reads changelog, sends Telegram summary, waits for approval, follows UPDATE-PLAYBOOK.md
 - **HEARTBEAT.md**: OpenClaw model check — verifies client has latest models, researches docs.openclaw.ai and OpenClaw GitHub before any model changes
