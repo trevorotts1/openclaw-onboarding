@@ -4,6 +4,16 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.4.0 — March 31, 2026
+
+### Fixed
+- **Skill 22 INSTALL.md**: Added Step 5b to deploy gemini-search.py and gemini-indexer.py to ~/clawd/scripts/ after indexing. Added graceful degradation when GOOGLE_API_KEY is missing (falls back to PERSONA-ROUTER.md, no sys.exit).
+- **Skill 22 CORE_UPDATES.md**: Added mandatory re-indexing trigger to AGENTS.md section. When a new persona is added, agents must run gemini-indexer.py.
+- **Skill 23 INSTALL.md**: Phase 5-PERSONA now requires explicit content in every governing-personas.md with gate check (grep verification). Phase 6 now has mandatory specialist folder creation (2+ role files per dept) and ORG-CHART.md creation, both with gate checks.
+- **Skill 23 CORE_UPDATES.md**: Added Governing Personas Update Protocol to AGENTS.md section -- re-index, review assignments, update ORG-CHART.md when new books added.
+
+---
+
 ## v6.3.0 — March 31, 2026
 
 ### Fixed

@@ -201,6 +201,11 @@ grep "GOOGLE_API_KEY" ~/.openclaw/secrets/.env
 GOOGLE_API_KEY=your_key_here
 ```
 
+**Graceful degradation if GOOGLE_API_KEY is missing or expired:**
+- The Gemini indexer will not run (embedding search unavailable)
+- The system falls back to `PERSONA-ROUTER.md` keyword matching (still works for all 40 personas)
+- Do NOT use `sys.exit(1)` in scripts when the key is missing -- log a warning and continue with keyword routing
+
 ### Step 2e - Dependency Check Complete Gate
 
 **Before proceeding, confirm ALL checks passed:**
@@ -400,6 +405,28 @@ Pre-built personas are already included in this skill folder. They will be added
 ```bash
 python3 ~/.openclaw/scripts/gemini-search.py "negotiation"
 ```
+
+---
+
+## Step 5b - Deploy Search Scripts to Agent Workspace
+
+The Gemini search and indexer scripts must be in `~/clawd/scripts/` for agents to find them at runtime. Copy them from the skill folder now:
+
+```bash
+mkdir -p ~/clawd/scripts
+cp ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/gemini-search.py ~/clawd/scripts/gemini-search.py
+cp ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/gemini-indexer.py ~/clawd/scripts/gemini-indexer.py
+chmod +x ~/clawd/scripts/gemini-search.py ~/clawd/scripts/gemini-indexer.py
+```
+
+Verify both files are deployed:
+```bash
+ls ~/clawd/scripts/gemini-*.py
+```
+
+**Expected output:** Both `gemini-search.py` and `gemini-indexer.py` listed.
+
+If either file is missing, re-run the copy commands above. Without these files in `~/clawd/scripts/`, agents cannot search or re-index personas.
 
 ---
 

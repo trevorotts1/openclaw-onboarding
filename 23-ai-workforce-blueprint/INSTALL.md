@@ -524,6 +524,50 @@ After workspaces are created, run persona alignment using build-workforce.py fun
 4. Create governing-personas.md per department via create_governing_personas_md()
 5. Create ~/clawd/persona-matrix.md with the full company persona pool
 
+### Governing-Personas.md Content Requirements (MANDATORY - NOT OPTIONAL)
+
+**For EACH department, the agent MUST write a governing-personas.md with REAL content.** Empty stubs are not acceptable. The file MUST contain at minimum:
+
+```markdown
+# Governing Personas — [Department Name]
+
+## Primary Persona
+- **Name:** [Persona name from book]
+- **Book Title:** [Book title]
+- **Why This Fits:** [1-2 sentences explaining why this persona aligns with this department's mission and the owner's values]
+- **3 Task Types:**
+  1. [Task type] — [brief description of how this persona guides this task]
+  2. [Task type] — [brief description]
+  3. [Task type] — [brief description]
+
+## Secondary Personas
+- [Persona name] — [book] — [when to use this persona instead]
+- [Persona name] — [book] — [when to use this persona instead]
+
+## Runtime Selection
+Personas are selected PER TASK using the 5-layer alignment:
+1. Company Mission alignment
+2. Owner Values alignment (from USER.md)
+3. Company Goals/KPI alignment
+4. Department Goals/KPI alignment
+5. Task Fit
+```
+
+### Gate Check — DO NOT Proceed Until Verified
+
+After creating all governing-personas.md files, run this check:
+
+```bash
+# Count departments with real governing-personas.md content
+ACTUAL=$(grep -rl 'Primary Persona' ~/clawd/departments/*/governing-personas.md 2>/dev/null | wc -l | tr -d ' ')
+EXPECTED=$(ls -d ~/clawd/departments/*/ 2>/dev/null | wc -l | tr -d ' ')
+echo "Departments with governing-personas.md content: $ACTUAL / $EXPECTED"
+```
+
+**DO NOT proceed to Phase 5-ORG until `$ACTUAL` equals `$EXPECTED`.** Every department must have a governing-personas.md with the "Primary Persona" heading and all required fields filled in. Empty stubs, placeholder text, or missing files must be fixed before continuing.
+
+### Persona Runtime Behavior
+
 Personas are selected PER TASK at runtime via the 5-layer alignment:
 1. Company Mission alignment
 2. Owner Values alignment (from USER.md)
@@ -600,6 +644,89 @@ ls ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/ 2>/dev/null
 - Add a `governing-personas.md` file to EVERY role folder (persona matching reference guide)
 - Add a "Persona Matching" section to every `00-START-HERE.md` with query instructions
 - Copy `persona-matching-protocol.md` to the workspace root for runtime reference
+
+### Specialist Folder Creation (MANDATORY)
+
+**For each department, create a `specialists/` subfolder with at least 2 role files.**
+
+Each department must have:
+```
+~/clawd/departments/[dept-name]/specialists/
+  ├── [role-name-1].md
+  └── [role-name-2].md
+```
+
+**Each role file (`[role-name].md`) MUST contain:**
+
+```markdown
+# [Role Title]
+
+## Reports To
+[Department Director name]
+
+## Responsibilities
+1. [Responsibility 1]
+2. [Responsibility 2]
+3. [Responsibility 3]
+4. [Responsibility 4]
+5. [Responsibility 5]
+
+## Key Metrics
+- [Metric 1]: [target/baseline]
+- [Metric 2]: [target/baseline]
+- [Metric 3]: [target/baseline]
+```
+
+Determine role names from the interview answers. Minimum 2 specialist roles per department. If the interview did not specify enough roles, infer from industry best practices for that department type.
+
+### ORG-CHART.md Creation (MANDATORY)
+
+**Create `~/clawd/ORG-CHART.md` showing the full reporting structure.**
+
+Format:
+```markdown
+# ORG-CHART — [Company Name]
+
+## CEO / Master Orchestrator
+[Owner name]
+
+### [Department 1 Name]
+- **Director:** [Director title] ([model])
+  - [Specialist 1 title]
+  - [Specialist 2 title]
+
+### [Department 2 Name]
+- **Director:** [Director title] ([model])
+  - [Specialist 1 title]
+  - [Specialist 2 title]
+
+[... repeat for all departments ...]
+```
+
+**Gate check:**
+```bash
+if [ -s ~/clawd/ORG-CHART.md ]; then
+  echo "✅ ORG-CHART.md exists and is non-empty"
+else
+  echo "❌ ORG-CHART.md missing or empty — FIX BEFORE PROCEEDING"
+  # DO NOT proceed
+fi
+```
+
+**Gate check for specialist folders:**
+```bash
+for dept_dir in ~/clawd/departments/*/; do
+  dept=$(basename "$dept_dir")
+  count=$(ls "$dept_dir/specialists/"*.md 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$count" -lt 2 ]; then
+    echo "❌ $dept has only $count specialist files (need at least 2) — FIX BEFORE PROCEEDING"
+  else
+    echo "✅ $dept has $count specialist files"
+  fi
+done
+```
+
+DO NOT proceed past Phase 6 until ALL specialist folders have at least 2 role files AND ORG-CHART.md exists and is non-empty.
 
 **CRITICAL: Personas are NOT assigned to departments. Personas are attached to an agent or sub-agent at the TASK level.** The `governing-personas.md` in each role folder is a REFERENCE GUIDE, not a static assignment. It lists suggested starting-point personas for common tasks in that role, but the actual persona selection happens at runtime using the 5-layer alignment check:
 1. Company Mission -- does this persona align with the company's mission?
@@ -818,9 +945,12 @@ Before reporting done, verify every item:
 - [ ] Specialists determined (permanent vs on-call) silently from interview answers
 - [ ] Permanent specialists have SOUL.md + MEMORY.md + agents.list entry
 - [ ] On-call specialists have template SOUL.md in subagents/templates/
-- [ ] governing-personas.md created per department
+- [ ] governing-personas.md created per department with REAL content (Primary Persona name, book title, why it fits, 3 task types — NOT empty stubs)
+- [ ] Gate check passed: grep -l 'Primary Persona' ~/clawd/departments/*/governing-personas.md | wc -l equals department count
+- [ ] Specialist folders created: each department has specialists/ with at least 2 role files
+- [ ] Each specialist role file contains: Title, Reports to, Responsibilities (5 bullets), Key metrics
 - [ ] persona-matrix.md created in CEO workspace
-- [ ] ORG-CHART.md generated in CEO workspace
+- [ ] ORG-CHART.md generated in CEO workspace (exists and non-empty)
 - [ ] departments.json generated for Command Center
 - [ ] Devil's Advocate created per department
 - [ ] All department folders use correct naming (lowercase, hyphens, NO -dept suffix)
