@@ -19,6 +19,11 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 ### Removed
 - **Perplexity models from allow list**: OpenClaw no longer supports Perplexity as a model. Any `openrouter/perplexity/*` entries in the client's model allow list are now automatically removed during install and updates.
 
+### Changed
+- **install.sh**: Sync ALL client models to sub-agent allow list — scans entire openclaw.json for model references and adds them to agents.defaults.models. Sub-agents can use any model the client has configured, not just the 8 hardcoded core models.
+- **UPDATE-PLAYBOOK.md Step 6**: Exhaustive credential search — now checks 10+ env file locations, 4 openclaw.json sections, system env, and shell variables before marking a credential as BLOCKED. Explicit warning: "Do NOT ask the client until you have searched ALL locations."
+- **UPDATE-PLAYBOOK.md Step 4e**: Fixed maxChildrenPerAgent mismatch — was 10, corrected to 20 (consistent with install.sh and Step 4c).
+
 ### Added
 - **HEARTBEAT.md**: Sunday 3 AM agent update check — agent reads changelog, sends Telegram summary, waits for approval, follows UPDATE-PLAYBOOK.md
 - **HEARTBEAT.md**: OpenClaw model check — verifies client has latest models, researches docs.openclaw.ai and OpenClaw GitHub before any model changes
