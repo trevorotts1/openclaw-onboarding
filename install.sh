@@ -4,9 +4,31 @@ set -euo pipefail
 ONBOARDING_VERSION="v6.1.9"
 
 # ============================================================
-#  OpenClaw Onboarding Installer
-#  Run via: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+#  OpenClaw Onboarding Installer (IMPROVED)
+#  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
+
+# ----------------------------------------------------------
+# Telegram progress notification function
+# ----------------------------------------------------------
+send_telegram_progress() {
+    local message="$1"
+    if command -v openclaw &>/dev/null; then
+        openclaw message send --message "$message" 2>/dev/null || echo "[TELEGRAM] $message"
+    else
+        echo "[TELEGRAM] $message"
+    fi
+}
+
+# ----------------------------------------------------------
+# Simple spinner for long-running operations
+# ----------------------------------------------------------
+show_status() {
+    local message="$1"
+    echo ""
+    echo "  >>> $message"
+    echo ""
+}
 
 # ----------------------------------------------------------
 # Check if onboarding already in progress
@@ -39,6 +61,8 @@ echo "   Version: ${ONBOARDING_VERSION}"
 echo "============================================"
 echo ""
 
+send_telegram_progress "Starting BlackCEO Command Center install..."
+
 # ----------------------------------------------------------
 # Step 1: Check that OpenClaw CLI is installed
 # ----------------------------------------------------------
@@ -50,6 +74,7 @@ if ! command -v openclaw &>/dev/null; then
   echo "Install OpenClaw first:"
   echo "  npm install -g openclaw"
   echo ""
+  send_telegram_progress "ERROR: OpenClaw CLI not found. Install failed."
   exit 1
 fi
 echo "  Found: $(command -v openclaw)"
@@ -57,28 +82,35 @@ echo "  Found: $(command -v openclaw)"
 # ----------------------------------------------------------
 # Step 2: Download the onboarding package
 # ----------------------------------------------------------
-echo ""
+show_status "Downloading 34 skills package... (this may take 1-2 minutes)"
+
 echo "[2/5] Downloading 34 skills from GitHub..."
 TEMP_ZIP="/tmp/openclaw-onboarding-pkg.zip"
 TEMP_EXTRACT="/tmp/openclaw-onboarding-extract"
 
-curl -fsSL "https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/main.zip" -o "$TEMP_ZIP"
+# NOT silent - users see the download progress bar
+curl -fSL --progress-bar "https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/main.zip" -o "$TEMP_ZIP"
 if [ ! -f "$TEMP_ZIP" ]; then
   echo "ERROR: Failed to download onboarding package."
+  send_telegram_progress "ERROR: Download failed. Install aborted."
   exit 1
 fi
 echo "  Downloaded to $TEMP_ZIP"
 
+send_telegram_progress "Downloaded 34 skills package"
+
 # ----------------------------------------------------------
 # Step 3: Extract to ~/.openclaw/onboarding/
 # ----------------------------------------------------------
-echo ""
+show_status "Extracting skills package..."
+
 echo "[3/5] Extracting to ~/.openclaw/onboarding/..."
 rm -rf "$TEMP_EXTRACT"
 unzip -qo "$TEMP_ZIP" -d "$TEMP_EXTRACT"
 if [ ! -d "$TEMP_EXTRACT/openclaw-onboarding-main" ]; then
   echo "ERROR: Unexpected archive structure."
   rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+  send_telegram_progress "ERROR: Extract failed. Archive structure unexpected."
   exit 1
 fi
 
@@ -98,10 +130,13 @@ echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 echo "$ONBOARDING_VERSION" > "$ONBOARDING_DIR/.onboarding-version"
 echo "  Version: $ONBOARDING_VERSION"
 
+send_telegram_progress "Extracted skills to your OpenClaw ($SKILL_COUNT skills found)"
+
 # ----------------------------------------------------------
 # Step 3b: Copy Gemini Engine scripts (indexing runs after Skill 22)
 # ----------------------------------------------------------
-echo ""
+show_status "Installing Gemini Engine scripts..."
+
 echo "[3b/5] Installing Gemini Engine scripts..."
 # Determine the agent's workspace directory
 # Standard OpenClaw workspace: ~/.openclaw/workspace
@@ -121,6 +156,7 @@ fi
 
 # Install google-genai Python package if not present
 if ! python3 -c "import google.genai" 2>/dev/null; then
+  show_status "Installing google-genai Python package... (this may take 1-2 minutes)"
   echo "  Installing google-genai Python package..."
   pip3 install google-genai --break-system-packages 2>/dev/null || \
   pip3 install google-genai 2>/dev/null || \
@@ -153,10 +189,13 @@ fi
 
 echo "  Gemini Engine scripts installed (indexing runs after Skill 22 adds books)"
 
+send_telegram_progress "Installed Gemini Engine scripts"
+
 # ----------------------------------------------------------
 # Step 3c: Set sub-agent concurrency defaults
 # ----------------------------------------------------------
-echo ""
+show_status "Configuring sub-agent concurrency and models..."
+
 echo "[3c/5] Configuring sub-agent concurrency..."
 OPENCLAW_JSON="$HOME/.openclaw/openclaw.json"
 
@@ -308,7 +347,8 @@ echo "  Created: $MASTER_FILES_DIR/project-prds"
 # ----------------------------------------------------------
 # Step 5: Write onboarding flag to AGENTS.md
 # ----------------------------------------------------------
-echo ""
+show_status "Writing onboarding flag to your agent workspace..."
+
 echo "[5/5] Writing onboarding flag..."
 WORKSPACE_DIR="$HOME/.openclaw/workspace"
 AGENTS_FILE="$WORKSPACE_DIR/AGENTS.md"
@@ -387,3 +427,5 @@ echo "     grep -r 'ONBOARDING PENDING' $AGENTS_FILE"
 echo ""
 echo "============================================"
 echo ""
+
+send_telegram_progress "Install complete! Your AI agent is now installing all 34 skills. This may take 10-20 minutes. You'll get updates as each wave finishes."
