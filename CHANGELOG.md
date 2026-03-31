@@ -4,6 +4,22 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.1.7 — March 31, 2026
+
+### Fixed
+- **update-skills.sh Terminal output**: Always shows gateway restart command and agent message, regardless of Telegram send status. Previously only showed when Telegram failed.
+- **update-skills.sh Telegram message**: Now includes "openclaw gateway restart" as Step 1 before the agent instruction. Previously did not tell users to restart.
+- **update-skills.sh Telegram errors**: Now logs the actual Telegram API response and config status instead of silently hiding errors.
+
+### Added
+- **HEARTBEAT.md**: Sunday 3 AM agent update check — agent reads changelog, sends Telegram summary, waits for approval, follows UPDATE-PLAYBOOK.md
+- **HEARTBEAT.md**: OpenClaw model check — verifies client has latest models, researches docs.openclaw.ai and OpenClaw GitHub before any model changes
+- **HEARTBEAT.md**: Post-update QC loop — QC all updated skills, spin up sub-agent to fix failures, re-QC, maximum 5 retries per skill
+- **setup-weekly-update.sh**: Gateway restart after update staging — agent picks up UPDATE PENDING flag on boot instead of waiting for manual restart
+- **setup-weekly-update.sh**: Smart restart — only restarts gateway if an update was actually staged (checks for flag file)
+
+---
+
 ## [v6.1.6] - March 29, 2026
 
 ### Interview Persistence Protocol + Update Flow Fixes + Terminology
