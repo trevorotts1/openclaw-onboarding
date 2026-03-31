@@ -203,7 +203,37 @@ try:
     defaults['subagents'] = sub
 
     # Model allow list (core models for sub-agents)
+    # This is the SUB-AGENT allow list — any model NOT in this list
+    # cannot be used by sub-agents. It must include ALL models the client has.
     models = defaults.get('models', {})
+
+    # Sync ALL model references from the client's config to the allow list
+    # This ensures models added manually by the client are available to sub-agents
+    def find_model_refs(obj):
+        refs = set()
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k == 'model' and isinstance(v, str) and ('/' in v or ':' in v):
+                    # Skip embedder/search models (not chat models)
+                    if not any(x in v.lower() for x in ['embedding', 'rerank']):
+                        refs.add(v)
+                else:
+                    refs.update(find_model_refs(v))
+        elif isinstance(obj, list):
+            for item in obj:
+                refs.update(find_model_refs(item))
+        return refs
+
+    all_config_models = find_model_refs(config)
+    added_from_config = 0
+    for m in all_config_models:
+        if m not in models:
+            models[m] = {}
+            added_from_config += 1
+    if added_from_config > 0:
+        print(f'  Synced {added_from_config} models from client config to sub-agent allow list')
+
+    # Ensure core models are always present
     model_defs = {
         'moonshot/kimi-k2.5': {'alias': 'kimi'},
         'openrouter/moonshot/kimi-k2.5': {'alias': 'kimi-or', 'params': {'contextWindow': 262144, 'maxTokens': 65536}},
