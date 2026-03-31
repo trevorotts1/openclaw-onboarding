@@ -38,7 +38,8 @@ npm install -g pm2
 The agent will scan for department folders in your master files area. These folders indicate Skill 23 was completed.
 
 **What the agent looks for:**
-- Folders like `marketing/`, `sales/`, `operations/` in your workforce directory
+- Department folders at `~/clawd/departments/[name]-dept/` (where Skill 23 writes them)
+- Also checks `~/.openclaw/workspaces/command-center/` and `~/Downloads/` for department folders
 - Each folder should contain role definitions
 
 **If Skill 23 is NOT found:**
@@ -179,7 +180,7 @@ For each department, the agent adds an entry to `agents.list[]`:
 
 ```json
 {
-  "id": "cc/marketing",
+  "id": "dept-marketing",
   "name": "Chief Marketing Officer",
   "workspace": "/Users/username/.openclaw/workspaces/command-center/marketing",
   "memorySearch": {
@@ -194,7 +195,7 @@ For each department, the agent adds an entry to `agents.list[]`:
 ```
 
 **Important notes:**
-- Agent ID format: `cc/[dept-name]` (cc stands for Command Center)
+- Agent ID format: `dept-[dept-name]` (matches Skill 23's agent ID format)
 - Workspace paths are absolute (not tilde paths)
 - extraPaths points to your master files folder using absolute path
 - Sandboxing is NOT enabled (department heads need full access)
@@ -265,7 +266,7 @@ For each topic, the agent adds a binding to `openclaw.json`:
 {
   "bindings": [
     {
-      "agentId": "cc/marketing",
+      "agentId": "dept-marketing",
       "peer": {
         "kind": "group",
         "id": "-1001234567890",
@@ -313,13 +314,13 @@ pm2 start ecosystem.config.cjs
 
 ### 6.5 Seed Department Workspaces into Database (MANDATORY)
 
-After the dashboard starts, run the workspace seeding script to populate the database with all 17 department workspaces. Without this step, the workspace selector will only show the default workspace.
+After the dashboard starts, run the workspace seeding script to populate the database with all your department workspaces. Without this step, the workspace selector will only show the default workspace.
 
 ```bash
 python3 ~/.openclaw/onboarding/32-command-center-setup/scripts/seed-workspaces.py
 ```
 
-Expected output: "Seeding complete. Inserted: 17 | Skipped (already existed): 0"
+Expected output: "Seeding complete. Inserted: [count] | Skipped (already existed): 0" (where [count] matches your number of departments)
 
 If it says "Could not find mission-control.db" -- verify the dashboard started correctly in step 6.4 before running this.
 
@@ -450,7 +451,7 @@ The agent runs tests to verify everything works.
 
 ### 7.2 Test Memory System
 ```bash
-openclaw memory status cc/marketing
+openclaw memory status dept-marketing
 ```
 
 **Expected result:** Status shows memory system active for the department agent.
