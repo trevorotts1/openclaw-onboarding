@@ -1,6 +1,6 @@
 #!/bin/bash
 # OpenClaw Onboarding — Update Staging Script
-# Version: 6.1.7 | March 31, 2026
+# Version: 6.1.8 | March 31, 2026
 #
 # This script STAGES an update. It does NOT apply changes.
 # The agent follows UPDATE-PLAYBOOK.md to apply changes intelligently.
@@ -164,7 +164,7 @@ Run this in Terminal:
 \`openclaw gateway restart\`
 
 *STEP 2: After restarting, tell your AI agent this exact message:*
-\`Review the update reports and apply approved changes\`
+\`An update was found for your BlackCEO system. Read the notification at /tmp/oc-update-notification.md and follow the UPDATE-PLAYBOOK.md to apply it.\`
 
 Or just reply *yes* to start the update."
 
@@ -219,8 +219,10 @@ echo "  this exact message:"
 echo ""
 echo "  ┌─────────────────────────────────────────────┐"
 echo "  │                                             │"
-echo "  │  Review the update reports and apply        │"
-echo "  │  approved changes                           │"
+echo "  │  An update was found for your BlackCEO      │"
+echo "  │  system. Read the notification at           │"
+echo "  │  /tmp/oc-update-notification.md and follow  │"
+echo "  │  the UPDATE-PLAYBOOK.md to apply it.        │"
 echo "  │                                             │"
 echo "  └─────────────────────────────────────────────┘"
 

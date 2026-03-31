@@ -4,6 +4,13 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.1.8 — March 31, 2026
+
+### Fixed
+- **update-skills.sh message**: Replaced vague "Review the update reports" with specific instruction pointing to /tmp/oc-update-notification.md and UPDATE-PLAYBOOK.md. Agent now knows exactly where to find update details and what to do with them.
+
+---
+
 ## v6.1.7 — March 31, 2026
 
 ### Fixed
