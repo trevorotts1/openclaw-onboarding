@@ -1,6 +1,6 @@
 #!/bin/bash
 # OpenClaw Onboarding — Update Staging Script
-# Version: 6.1.8 | March 31, 2026
+# Version: 6.1.9 | March 31, 2026
 #
 # This script STAGES an update. It does NOT apply changes.
 # The agent follows UPDATE-PLAYBOOK.md to apply changes intelligently.
@@ -157,16 +157,12 @@ if af:
 Your current version: \`$LOCAL_VERSION\`
 New version available: \`$REMOTE_VERSION\`
 
-An update has been downloaded and is ready to install. Nothing has changed yet — it is waiting for your approval.
+An update has been staged and is ready to install.
 
-*STEP 1: Restart your gateway first.*
-Run this in Terminal:
+Run this in Terminal to restart your agent:
 \`openclaw gateway restart\`
 
-*STEP 2: After restarting, tell your AI agent this exact message:*
-\`An update was found for your BlackCEO system. Read the notification at /tmp/oc-update-notification.md and follow the UPDATE-PLAYBOOK.md to apply it.\`
-
-Or just reply *yes* to start the update."
+Your agent will detect the update automatically and handle the rest."
 
         # Send via Telegram Bot API
         TG_RESULT=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
@@ -219,10 +215,8 @@ echo "  this exact message:"
 echo ""
 echo "  ┌─────────────────────────────────────────────┐"
 echo "  │                                             │"
-echo "  │  An update was found for your BlackCEO      │"
-echo "  │  system. Read the notification at           │"
-echo "  │  /tmp/oc-update-notification.md and follow  │"
-echo "  │  the UPDATE-PLAYBOOK.md to apply it.        │"
+echo "  │  Your agent will detect the update          │"
+echo "  │  automatically. No action needed from you.  │"
 echo "  │                                             │"
 echo "  └─────────────────────────────────────────────┘"
 

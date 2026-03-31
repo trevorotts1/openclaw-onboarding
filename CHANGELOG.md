@@ -4,6 +4,14 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.1.9 — March 31, 2026
+
+### Fixed
+- **update-skills.sh Telegram message**: No longer tells user to relay a message to the agent. Now simply says "restart your gateway, your agent will handle the rest." The agent auto-detects the UPDATE PENDING flag on boot.
+- **update-skills.sh Terminal output**: Same fix. Agent auto-detects. No user message relay needed.
+
+---
+
 ## v6.1.8 — March 31, 2026
 
 ### Fixed
