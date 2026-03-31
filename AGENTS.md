@@ -254,3 +254,15 @@ When Trevor says "software factory", "gstack", "run the factory", "office hours"
 
 ## 🔴 ALL SUB-AGENTS MUST USE THINKING: HIGH (Added March 29, 2026)
 When spawning sub-agents via sessions_spawn, ALWAYS pass thinking: "high". Never rely on the default thinking level. If a sub-agent task requires reasoning, planning, or analysis, high thinking must be set explicitly. This applies to all sub-agents regardless of model. Verified at: ~/clawd/AGENTS.md, section "ALL SUB-AGENTS MUST USE THINKING: HIGH".
+
+## 🔴 SUB-AGENTS WILL NOT COMMIT UNLESS TOLD TO
+Explicitly instruct every sub-agent to "commit after each [unit of work]." Without this, agents write files but never commit — all work is silently lost. (March 30: 18 parallel agents produced 18 empty branches.)
+
+## 🔴 PARALLEL AGENTS MUST OWN DISTINCT FILES
+Never assign 2+ parallel agents to write the same file path. Last write wins and earlier work is destroyed. Batch agents by file ownership. Max safe parallelism: 6 agents per batch with non-overlapping file sets.
+
+## 🔴 WORKTREES CANNOT CHERRY-PICK ACROSS EACH OTHER
+Git worktrees do not share refs. `git cherry-pick <hash>` from another worktree fails. Copy files manually (`cp`) then commit in the destination worktree.
+
+## 🔴 TYPESCRIPT — @ts-nocheck BANNED
+ESLint config bans `@ts-nocheck`. Use explicit `: any` annotations instead. Callback params in `.map()`, `.filter()`, `.reduce()` also need explicit types or builds fail.
