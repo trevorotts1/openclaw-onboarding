@@ -17,7 +17,7 @@ Skill: ~/.openclaw/skills/23-ai-workforce-blueprint/
 Full document: ai-workforce-blueprint-full.md (66,819 chars)
 
 Department folder rules:
-- All dept folders end with -dept (sales-dept/, marketing-dept/, ops-dept/, etc.)
+- All dept folders use bare slug names (sales/, marketing/, ops/, etc.) — NO -dept suffix
 - Every dept workspace gets: SOUL.md (unique), MEMORY.md (empty), HEARTBEAT.md (dept priorities), memory/ folder, plus TOOLS.md, AGENTS.md, USER.md (inherited from CEO workspace)
 - Every role folder requires: 00-START-HERE.md, numbered task files (01-, 02-...), good-examples.md, bad-examples.md, tools.md
 - Every workspace requires: universal-sops/00-ROUTING.md
@@ -104,7 +104,7 @@ Full reference: ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-bluepr
 **Exact text to add:**
 ```
 ## 🔴 Skill 23 Interview Resume Protocol (Added with v6.1.2)
-At the START of every session, check for ~/.openclaw/workspace/interview-handoff.md.
+At the START of every session, check for ~/Downloads/openclaw-master-files/company-discovery/interview-handoff.md.
 - If it exists and status is "in_progress": resume the interview from the next unanswered question. Do NOT start over.
 - If interview-handoff.md is missing but workforce-interview-answers.md exists: reconstruct progress from the answers file, rebuild the handoff, and resume.
 - If MEMORY.md says "Skill 23 Interview: IN PROGRESS" but no files exist: ask the client if they want to start fresh or tell you where they left off.

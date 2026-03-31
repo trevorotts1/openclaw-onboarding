@@ -344,7 +344,7 @@ This skill consolidates what were previously three separate skills:
 
 ## Connection to Skill 22 (Book-to-Persona Coaching Leadership System)
 
-Skill 22 must be installed first. Skill 23 checks for the coaching-personas Gemini Vector Database before proceeding.
+Skill 22 is recommended but not required. If installed, coaching personas are wired into department workspaces automatically. If not installed, the workforce structure builds clean and personas can be added later via Option C.
 
 If Skill 22 is installed: personas are assigned during setup using the Act As If Protocol and 5-layer alignment.
 If Skill 22 is NOT installed: structure builds clean. Install Skill 22 later and re-run in Option C to wire personas in.

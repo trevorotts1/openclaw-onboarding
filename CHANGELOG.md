@@ -4,6 +4,17 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.3.0 — March 31, 2026
+
+### Fixed
+- **Skill 23 Phase 0a**: Replaced hard exit if Skill 22 missing with graceful degradation. Workforce build now proceeds with generic personas; client notified they can add custom personas later via Option C.
+- **Skill 23 naming convention**: Removed all -dept suffix references from INSTALL.md (10 edits), CORE_UPDATES.md (1 edit). Standardized to no-suffix folder names matching build-workforce.py actual output.
+- **Skill 32 INSTALL.md**: Removed -dept suffix from department folder references. Consistent with Skill 23.
+- **Interview answer canonical path**: Canonicalized to ~/Downloads/openclaw-master-files/company-discovery/ across INSTALL.md and CORE_UPDATES.md (Skill 23). Removed 3 wrong path references.
+- **Phase 5-PRE check path**: Fixed from ~/.openclaw/workspace/ to ~/clawd/departments/ in Skill 23 INSTALL.md.
+
+---
+
 ## v6.2.0 — March 31, 2026
 
 ### Fixed

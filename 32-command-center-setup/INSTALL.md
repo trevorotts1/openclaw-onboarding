@@ -38,7 +38,7 @@ npm install -g pm2
 The agent will scan for department folders in your master files area. These folders indicate Skill 23 was completed.
 
 **What the agent looks for:**
-- Department folders at `~/clawd/departments/[name]-dept/` (where Skill 23 writes them)
+- Department folders at `~/clawd/departments/[name]/` (where Skill 23 writes them) — NO -dept suffix
 - Also checks `~/.openclaw/workspaces/command-center/` and `~/Downloads/` for department folders
 - Each folder should contain role definitions
 
