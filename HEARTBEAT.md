@@ -37,9 +37,11 @@
 After any update (or during Sunday check), always verify the client has the latest models:
 
 ### Step 1: Research Current Models
-1. Go to https://docs.openclaw.ai — check the models documentation
-2. Go to https://github.com/openclaw/openclaw — check the README and recent commits for new model support
-3. Look for: new model additions, deprecated/removed models, changed model ID formats
+1. Check the current OpenClaw version: `openclaw --version`
+2. Go to https://docs.openclaw.ai — check the models documentation for THIS version
+3. Go to https://github.com/openclaw/openclaw — check the README and recent commits for new model support
+4. Look for: new model additions, deprecated/removed models, changed model ID formats, changed config structure
+5. If OpenClaw changed the config structure, validate the new structure before making changes
 
 ### Step 2: Compare Against Client's Config
 1. Read the client's `~/.openclaw/openclaw.json` → `agents.defaults.models`

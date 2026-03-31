@@ -11,6 +11,11 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **update-skills.sh Telegram message**: Now includes "openclaw gateway restart" as Step 1 before the agent instruction. Previously did not tell users to restart.
 - **update-skills.sh Telegram errors**: Now logs the actual Telegram API response and config status instead of silently hiding errors.
 
+### Added
+- **setup-weekly-update.sh**: Saturday 11:59 PM cron job — runs `npm update -g openclaw` to update OpenClaw CLI before Sunday onboarding check. Ensures config structures are validated against the latest OpenClaw version.
+- **install.sh**: Sub-agent default model — sets `agents.defaults.subagents.model.primary` to `gemini-3.1-flash-lite-preview` so sub-agents use a cheaper model by default.
+- **HEARTBEAT.md model check**: Step 1 now checks `openclaw --version` and validates config structures against the current OpenClaw version before making changes.
+
 ### Removed
 - **Perplexity models from allow list**: OpenClaw no longer supports Perplexity as a model. Any `openrouter/perplexity/*` entries in the client's model allow list are now automatically removed during install and updates.
 

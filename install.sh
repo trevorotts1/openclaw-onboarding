@@ -194,6 +194,12 @@ try:
     sub['maxSpawnDepth'] = 4
     sub['maxConcurrent'] = 20
     sub['maxChildrenPerAgent'] = 20
+
+    # Set default model for sub-agents (cheaper than main agent)
+    # Main agent uses gpt-5.4, sub-agents use gemini-flash by default
+    # Explicit sessions_spawn(model=...) always overrides this
+    sub['model'] = {'primary': 'openrouter/google/gemini-3.1-flash-lite-preview'}
+
     defaults['subagents'] = sub
 
     # Model allow list (core models for sub-agents)
