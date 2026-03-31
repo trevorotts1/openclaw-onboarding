@@ -4,6 +4,17 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.2.0 — March 31, 2026
+
+### Fixed
+- **Command Center (Skill 32) integration with Skill 23**: seed-workspaces.py now scans ~/clawd/departments/ where Skill 23 writes departments. Strips -dept suffix from folder names. DB path corrected to ~/projects/command-center/.
+- **Hardcoded "17 departments" removed**: INSTALL.md Phase 6.5 now uses dynamic count placeholder instead of hardcoded number.
+- **Agent ID format unified**: Changed from cc/[name] to dept-[name] throughout INSTALL.md to match Skill 23 format. Updated Phase 4.2, 5.4, 7.2.
+- **install.sh progress visibility**: Removed -s silent flag from curl. Added show_status() messages with time estimates before long operations. Added send_telegram_progress() notifications at 6 key steps.
+- **Removed __pycache__** from version control, added .gitignore.
+
+---
+
 ## v6.1.9 — March 31, 2026
 
 ### Fixed
