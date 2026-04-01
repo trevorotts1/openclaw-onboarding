@@ -14,12 +14,12 @@ Your models are organized into five tiers. Each tier serves a different purpose.
 
 ### Tier 1: Thinking Tier (Complex Work)
 For: Strategy, architecture, deep analysis, critical decisions, important writing.
-Models: Claude Opus 4.6, Claude Sonnet 4.6, Gemini 3.1 Pro, GPT 5.2 Codex, Qwen 3.5 Plus, GLM-5, DeepSeek V3.2 Speciale.
+Models: Claude Opus 4.6, Claude Sonnet 4.6, Gemini 3.1 Pro, MiMo V2 Pro, Qwen 3.5 Plus, GLM-5, DeepSeek V3.2 Speciale.
 These models support extended thinking/reasoning. They cost more but deliver significantly deeper analysis.
 
 ### Tier 2: Execution Tier (Daily Work)
 For: Routine tasks, tool calls, sending messages, file operations, heartbeat checks.
-Models: MiniMax M2.7 (PRIMARY), Gemini 3 Flash, Claude Haiku 4.5, GPT-5 Mini, GPT-5 Nano, DeepSeek V3.2, Kimi K2.5.
+Models: MiniMax M2.7 (PRIMARY), Gemini 3 Flash, Claude Haiku 4.5, MiniMax M2.7, MiniMax M2.7, DeepSeek V3.2, Kimi K2.5.
 MiniMax M2.7 is the default daily workhorse. It supports tool calls, has opt-in reasoning (pass reasoning: true), and costs $0.30 per million input tokens. 204K context, 131K max output.
 
 CRITICAL: Kimi K2.5 CANNOT do tool calls. It is for coding and chat only. If a task requires calling tools, executing functions, or making API calls, do NOT use Kimi. Use MiniMax instead.
@@ -49,7 +49,7 @@ To switch to a different model during a conversation, type:
    /model kimi        (switches to Kimi K2.5)
    /model creative    (switches to Mistral Small Creative)
    /model research    (switches to Perplexity Sonar Pro)
-   /model codex       (switches to GPT 5.2 Codex)
+   /model codex       (switches to MiMo V2 Pro)
    /model haiku       (switches to Claude Haiku 4.5)
    /model flash       (switches to Gemini 3 Flash)
    /model deepseek    (switches to DeepSeek V3.2)
@@ -112,13 +112,12 @@ Before every task, the agent should ask itself four questions:
 
 | Task | Best Model | Thinking Level |
 |------|-----------|----------------|
-| Simple factual question | GPT-5 Nano | low |
-| Social media post or blog | Mistral Small Creative | none |
+| Simple factual question | Social media post or blog | Mistral Small Creative | none |
 | Professional email to a client | Claude Opus 4.6 | medium |
-| Debug a Python script | GPT 5.2 Codex or Kimi K2.5 | medium |
+| Debug a Python script | MiMo V2 Pro or Kimi K2.5 | medium |
 | Plan a multi-step automation | Claude Opus 4.6 | medium to high |
 | Analyze a long document | Gemini 3.1 Pro | medium |
-| Quick summary | GPT-5 Mini or Claude Haiku | low |
+| Quick summary | MiniMax M2.7 or Claude Haiku | low |
 | Send a message or make an API call | MiniMax M2.7 | low |
 | Research or fact-check something | Perplexity Sonar Pro | medium |
 | Quick web lookup (single question) | Perplexity Sonar | low |
@@ -157,7 +156,7 @@ Go to https://openrouter.ai/activity to see your requests, costs, and token usag
 
 3. Reserve Opus for complex strategy and critical work. At $5.00 per million input tokens, it is 16x more expensive than MiniMax. Only use it when quality truly matters.
 
-4. Use GPT-5 Nano for simple questions. At $0.05 per million input tokens, it is the cheapest paid model.
+4. Use MiniMax M2.7 for simple questions. At $0.05 per million input tokens, it is the cheapest paid model.
 
 5. Use the free DeepSeek R1 for non-critical internal reasoning when cost is a concern.
 

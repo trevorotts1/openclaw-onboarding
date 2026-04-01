@@ -1,3 +1,10 @@
+## v6.5.8 - April 1, 2026
+
+### Changed
+- Skill 12 (OpenRouter Setup): Removed openrouter/openai/gpt-5.2-codex, openrouter/openai/gpt-5-mini, openrouter/openai/gpt-5-nano from all config blocks, model lists, narrative references, and routing tables
+- Skill 12 (OpenRouter Setup): Updated all routing guidance to use MiniMax M2.7 / MiMo V2 Pro / DeepSeek R1 Free as replacements
+- Skill 12 (OpenRouter Setup): Fixed fallback order -- kimi-k2.5 now appears before nemotron in fallback chain
+
 ## v6.5.7 - April 1, 2026
 
 ### Changed

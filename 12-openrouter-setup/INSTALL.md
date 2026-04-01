@@ -302,9 +302,6 @@ Agent adds this configuration:
           "openrouter/minimax/minimax-m2.7",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/google/gemini-3-flash-preview",
-          "openrouter/openai/gpt-5.2-codex",
-          "openrouter/openai/gpt-5-mini",
-          "openrouter/openai/gpt-5-nano",
           "openrouter/mistralai/mistral-small-creative",
           "openrouter/qwen/qwen3.5-plus-02-15",
           "openrouter/z-ai/glm-5",
@@ -332,23 +329,8 @@ Agent adds this configuration:
             "reasoning": { "effort": "medium" }
           }
         },
-        "openrouter/openai/gpt-5.2-codex": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
-          }
         },
-        "openrouter/openai/gpt-5-mini": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
-          }
         },
-        "openrouter/openai/gpt-5-nano": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
-          }
         },
         "openrouter/moonshotai/kimi-k2.5": {
           "params": {
@@ -430,9 +412,6 @@ NEW_MODELS='{
   "openrouter/google/gemini-3.1-pro-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3-flash-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3.1-flash-lite-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/openai/gpt-5.2-codex": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/openai/gpt-5-mini": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/openai/gpt-5-nano": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/moonshotai/kimi-k2.5": {"params": {"temperature": 1.0}},
   "openrouter/minimax/minimax-m2.7": {"params": {"temperature": 0.3, "reasoning": true}},
   "openrouter/mistralai/mistral-small-creative": {"params": {"temperature": 0.3}},
@@ -450,7 +429,7 @@ NEW_MODELS='{
 # Additive merge: existing models are preserved, new models are added/updated
 jq --argjson new "$NEW_MODELS" '
   .agents.defaults.model.primary = "openrouter/minimax/minimax-m2.7" |
-  .agents.defaults.model.fallbacks = ["openrouter/xiaomi/mimo-v2-pro", "openrouter/google/gemini-3.1-flash-lite-preview", "openrouter/openrouter/free", "openrouter/minimax/minimax-m2.7", "openrouter/moonshotai/kimi-k2.5", "openrouter/google/gemini-3-flash-preview", "openrouter/openai/gpt-5.2-codex", "openrouter/openai/gpt-5-mini", "openrouter/openai/gpt-5-nano", "openrouter/mistralai/mistral-small-creative", "openrouter/qwen/qwen3.5-plus-02-15", "openrouter/z-ai/glm-5", "openrouter/deepseek/deepseek-v3.2", "openrouter/deepseek/deepseek-v3.2-speciale", "openrouter/deepseek/deepseek-r1-0528:free", "openrouter/xiaomi/mimo-v2-omni", "openrouter/nvidia/nemotron-3-super-120b-a12b:free"] |
+  .agents.defaults.model.fallbacks = ["openrouter/xiaomi/mimo-v2-pro", "openrouter/google/gemini-3.1-flash-lite-preview", "openrouter/openrouter/free", "openrouter/minimax/minimax-m2.7", "openrouter/moonshotai/kimi-k2.5", "openrouter/google/gemini-3-flash-preview", "openrouter/mistralai/mistral-small-creative", "openrouter/qwen/qwen3.5-plus-02-15", "openrouter/z-ai/glm-5", "openrouter/deepseek/deepseek-v3.2", "openrouter/deepseek/deepseek-v3.2-speciale", "openrouter/deepseek/deepseek-r1-0528:free", "openrouter/xiaomi/mimo-v2-omni", "openrouter/nvidia/nemotron-3-super-120b-a12b:free"] |
   .agents.defaults.thinkingDefault = "medium" |
   .agents.defaults.models = ((.agents.defaults.models // {}) * $new)
 ' ~/.openclaw/openclaw.json > ~/.openclaw/openclaw.json.tmp && mv ~/.openclaw/openclaw.json.tmp ~/.openclaw/openclaw.json
@@ -601,9 +580,6 @@ Setup is complete and ready for use.
 | Claude Haiku 4.5 | haiku | Fast responses | Medium |
 | Gemini 3.1 Pro | gemini31 | Long document analysis | Medium |
 | Gemini 3 Flash | flash | Quick tasks, large context | Low-Medium |
-| GPT 5.2 Codex | codex | Code architecture and debugging | Low-Medium |
-| GPT-5 Mini | gptmini | Mid-range tasks | Low |
-| GPT-5 Nano | gptnano | Simple questions, cheap lookups | Very Low |
 | Kimi K2.5 | kimi | Code generation, chat (NO tool calls) | Low |
 | MiniMax M2.7 | minimax | RECOMMENDED PRIMARY - daily tasks, tool calls | Low |
 | MiMo V2 Pro | mimo-pro | Complex code, orchestration (TEXT ONLY, 1M context) | Medium |

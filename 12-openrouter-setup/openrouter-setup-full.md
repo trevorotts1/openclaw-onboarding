@@ -263,9 +263,6 @@ Each model has its own default thinking level based on its role and capabilities
 | Claude Haiku 4.5 | Medium | Fast model, medium keeps it efficient. |
 | Gemini 3.1 Pro Preview | Medium | Large context reasoning, medium is the balance point. |
 | Gemini 3 Flash Preview | Medium | Speed-focused, medium keeps latency low. |
-| GPT 5.2 Codex | Medium | Code-focused, medium for standard tasks. Escalate to high for complex refactoring. |
-| GPT-5 Mini | Medium | Mid-range model, medium is appropriate. |
-| GPT-5 Nano | Medium | Lowest-cost model, medium for when reasoning is needed at all. |
 | MiniMax M2.7 | Opt-in (reasoning: true) | Primary daily task model. Thinking is opt-in via reasoning parameter -- always pass reasoning: true when spawning sub-agents. No effort levels, just on/off. |
 | MiMo V2 Pro | Always on | Text-only thinking model. Reasoning always enabled. Pass reasoning: true. Complex code, orchestration, agentic workflows. |
 | MiMo V2 Omni | Always on | Multimodal thinking model. Reasoning always enabled. Pass reasoning: true. Supports text, images, video, audio jointly. |
@@ -346,7 +343,7 @@ When adding OpenRouter models to a config that already has direct provider model
 
 Rule 24: HEARTBEAT MODEL RESTRICTIONS
 
-Heartbeat Phase 1 (the check) must ALWAYS use a fast, low-cost model. GPT-5 Nano ($0.05/M input) when no tool call is needed. MiniMax M2.7 ($0.30/M input) when a tool call is required to read the task queue. Under NO circumstances should Claude Opus 4.6, Claude Sonnet 4.6, or any Thinking Tier model with reasoning enabled be used for heartbeat Phase 1 checks. Heartbeat checks do not need deep reasoning. They need speed. If multiple sub-agents are all running heartbeat checks on a Thinking Tier model, the token cost adds up across every single tick.
+Heartbeat Phase 1 (the check) must ALWAYS use a fast, low-cost model. Use MiniMax M2.7 ($0.30/M input) -- it supports tool calls and handles both cases efficiently. Under NO circumstances should MiMo V2 Pro or any Thinking Tier model with reasoning enabled be used for heartbeat Phase 1 checks. Heartbeat checks do not need deep reasoning. They need speed. If multiple sub-agents are all running heartbeat checks on a Thinking Tier model, the token cost adds up across every single tick.
 
 Rule 25: PRIMARY MODEL RECOMMENDATION
 
@@ -374,7 +371,6 @@ Example thresholds by model:
 | MiniMax M2.7 | 204,800 | 163,840 | 184,320 | 194,560 |
 | Kimi K2.5 | 262,144 | 209,715 | 235,930 | 249,037 |
 | Mistral Small Creative | 32,768 | 26,214 | 29,491 | 31,130 |
-| GPT-5 Nano | 400,000 | 320,000 | 360,000 | 380,000 |
 | DeepSeek V3.2 | 163,840 | 131,072 | 147,456 | 155,648 |
 
 Step 2: At 80% capacity, warn the user.
@@ -486,9 +482,6 @@ Model ID Reference Table
 |---------------|------------|---------------------|
 | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | google/gemini-3.1-pro |
 | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | google/gemini-3-flash |
-| GPT 5.2 Codex | openrouter/openai/gpt-5.2-codex | openai/gpt-5.2-codex |
-| GPT-5 Mini | openrouter/openai/gpt-5-mini | openai/gpt-5-mini |
-| GPT-5 Nano | openrouter/openai/gpt-5-nano | openai/gpt-5-nano |
 | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | moonshot/kimi-k2.5 |
 | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | minimax/minimax-m2.7 |
 | Mistral Small Creative | openrouter/mistralai/mistral-small-creative | mistral/mistral-small-creative |
@@ -521,8 +514,7 @@ These models support extended thinking/reasoning. They cost more per token but d
 | Priority | Model | OpenRouter ID | Alias | Thinking |
 |----------|-------|---------------|-------|----------|
 | 1st | 2nd | 3rd | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | gemini31 | YES (thinkingLevel: minimal/low/medium/high) |
-| 4th | GPT 5.2 Codex | openrouter/openai/gpt-5.2-codex | codex | YES (reasoning effort: low/medium/high) |
-| 5th | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | qwen | YES (reasoning supported) |
+| 4th | 5th | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | qwen | YES (reasoning supported) |
 | 6th | GLM-5 | openrouter/z-ai/glm-5 | glm5 | YES (reasoning supported) |
 | 7th | DeepSeek V3.2 Speciale | openrouter/deepseek/deepseek-v3.2-speciale | speciale | YES (high-compute reasoning) |
 | 8th | MiMo V2 Pro | openrouter/xiaomi/mimo-v2-pro | mimo-pro | YES (always on, TEXT ONLY, 1M context) |
@@ -549,9 +541,7 @@ These models are cost-effective and fast. They handle the majority of day-to-day
 | 1st | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | minimax | YES (opt-in via reasoning: true, no levels) | **Primary daily task model. Supports tool calls. Use for all routine operations, task execution, and heartbeat. |
 | 2nd | MiMo V2 Omni | openrouter/xiaomi/mimo-v2-omni | mimo-omni | YES (always on, supports text+images+video+audio) | Multimodal tasks. Cheaper than Gemini for media analysis. Joint audio-visual processing. |
 | 3rd | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | flash | YES (thinkingLevel) | Fast responses, large context tasks. |
-| 4th | 5th | GPT-5 Mini | openrouter/openai/gpt-5-mini | gptmini | YES (reasoning effort) | Mid-range tasks, good value. |
-| 6th | GPT-5 Nano | openrouter/openai/gpt-5-nano | gptnano | YES (reasoning effort) | Simplest tasks, basic lookups. |
-| 7th | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | deepseek | YES (reasoning toggle, default: MEDIUM) | Value workhorse, also suitable for heartbeat. |
+| 4th | 5th | 6th | 7th | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | deepseek | YES (reasoning toggle, default: MEDIUM) | Value workhorse, also suitable for heartbeat. |
 | 8th | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | kimi | YES (built-in, no config param) | Coding and chat ONLY. See critical limitation below. |
 
 CRITICAL: Kimi K2.5 Limitations and Strengths
@@ -578,7 +568,7 @@ Kimi is NOT used for:
 
 Daily task execution (use MiniMax M2.7)
 Any operation requiring tool calls or function execution (use MiniMax M2.7)
-Heartbeat operations (use GPT-5 Nano or MiniMax M2.7)
+Heartbeat operations (use MiniMax M2.7)
 Agentic workflows where the model must call external tools
 
 Heartbeat Protocol: Two-Phase Operation
@@ -593,7 +583,7 @@ Phase 1 is lightweight. The heartbeat wakes up on its schedule and asks one ques
 
 Phase 1 model selection:
 
-If no tool call is needed to read the task queue: Use GPT-5 Nano ($0.05/M input, $0.40/M output). It reads a list and reports what's due. Done.
+If no tool call is needed to read the task queue: Use MiniMax M2.7 ($0.30/M input). It supports tool calls and is the daily workhorse.
 If a tool call IS needed to read the task queue: Use MiniMax M2.7 ($0.30/M input, $1.10/M output). MiniMax supports tool calls. Use it when the check requires calling a function to retrieve the task list.
 DeepSeek V3.2 ($0.26/M input, $0.38/M output) is also acceptable for Phase 1 but can be slower than Nano or MiniMax.
 
@@ -617,7 +607,7 @@ The agent spins up the appropriate model for that specific task:
    Creative writing? Route to Mistral Small Creative
    Research or fact-checking? Route to Perplexity Sonar Pro Search
    Routine task requiring tool calls? Route to MiniMax M2.7
-   Simple factual lookup? Route to GPT-5 Nano
+   Simple factual lookup? Route to MiniMax M2.7 or DeepSeek R1 Free
 If it is unclear which model to use: Default to MiniMax M2.7. MiniMax handles tool calls, has HIGH thinking enabled, and is the safest general-purpose choice.
 If it is still unclear after defaulting to MiniMax: Ask the user which model they want for this task. If the user does not respond within 60 seconds, proceed with MiniMax M2.7 and log the decision so the user knows what happened.
 
@@ -628,14 +618,14 @@ When to use Execution Tier:
 Daily task execution and routine operations (MiniMax M2.7)
 Sending messages and routine communications (MiniMax M2.7)
 Tool calls and function execution (MiniMax M2.7 or DeepSeek V3.2)
-Heartbeat Phase 1 checks with no tool call needed (GPT-5 Nano)
+Heartbeat Phase 1 checks with no tool call needed (MiniMax M2.7 or DeepSeek R1 Free)
 Heartbeat Phase 1 checks requiring tool calls (MiniMax M2.7)
 Heartbeat Phase 2 dispatch: route to the appropriate model per this guide
 Code creation and generation (Kimi K2.5)
 Data scraping at scale with parallel agents (Kimi K2.5, 100+ simultaneous instances)
 Real-time back-and-forth chat (Kimi K2.5)
-Quick summaries of short documents (GPT-5 Mini or Claude Haiku 4.5)
-Simple Q&A and factual questions (GPT-5 Nano)
+Quick summaries of short documents (MiniMax M2.7)
+Simple Q&A and factual questions (MiniMax M2.7 or DeepSeek R1 Free)
 Content drafts and simple edits (any Execution Tier model)
 
 Tier 3: Creative Tier
@@ -709,9 +699,9 @@ Confirming model specifications, API changes, or platform updates before configu
 
 When NOT to use Research Tier:
 
-Simple factual questions the agent already knows with certainty (use GPT-5 Nano)
+Simple factual questions the agent already knows with certainty (use MiniMax M2.7)
 Creative writing tasks (use Mistral Small Creative)
-Code generation (use Kimi K2.5 or GPT 5.2 Codex)
+Code generation (use Kimi K2.5)
 Daily task execution (use MiniMax M2.7)
 
 Pricing note: Perplexity charges $3/M input tokens, $15/M output tokens, PLUS $18 per 1,000 web searches. The web search cost is separate from token costs. The agent should be aware that research tasks cost more than standard model calls because of the web search surcharge.
@@ -726,9 +716,6 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 |-------|---------------|----------------|------------|-----------|------------|----------|------|
 | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | 1,048,576 | 65,536 | $2.00 | $12.00 | YES (thinkingLevel: minimal/low/med/high) | 0.3 |
 | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | 1,048,576 | 65,536 | $0.50 | $3.00 | YES (thinkingLevel) | 0.3 |
-| GPT 5.2 Codex | openrouter/openai/gpt-5.2-codex | 400,000 | 128,000 | $0.25 | $2.00 | YES (reasoning effort: low/med/high) | 0.3 |
-| GPT-5 Mini | openrouter/openai/gpt-5-mini | 400,000 | 128,000 | $0.25 | $2.00 | YES (reasoning effort) | 0.3 |
-| GPT-5 Nano | openrouter/openai/gpt-5-nano | 400,000 | 400,000 | $0.05 | $0.40 | YES (reasoning effort) | 0.3 |
 | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | 262,144 | 262,144 | $0.23 | $3.00 | YES (built-in, no config param). NO TOOL CALLS. | 1.0 |
 | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | 204,800 | 131,072 | $0.30 | $1.10 | YES (opt-in via reasoning param, no levels) | 0.3 |
 | Mistral Small Creative | openrouter/mistralai/mistral-small-creative | 32,768 | 32,768 | $0.10 | $0.30 | No | 0.3 |
@@ -786,7 +773,7 @@ These examples teach the agent which model to select for which type of task. The
 SCENARIO 1: User asks a simple factual question
 
 Example: "What time zone is New York in?"
-Use: GPT-5 Nano ($0.05/M input, fastest, no thinking needed)
+Use: MiniMax M2.7 or DeepSeek R1 Free
 Why: Simple factual lookup. No reasoning required.
 
 SCENARIO 2: User asks to write a social media post
@@ -810,7 +797,7 @@ Why: Email content is creative/communication work, not deep reasoning.
 SCENARIO 5: User asks to debug a Python script
 
 Example: "This script is throwing a TypeError on line 47, help me fix it"
-Use: GPT 5.2 Codex (Thinking Tier, thinking at medium) for complex debugging, or Kimi K2.5 (Execution Tier) for straightforward fixes and code generation
+Use: MiMo V2 Pro (Thinking Tier, thinking at medium) for complex debugging, or Kimi K2.5 (Execution Tier) for straightforward fixes and code generation
 Why: Codex for deep multi-file debugging that requires reasoning. Kimi for direct code fixes and generation where the problem is clear.
 
 SCENARIO 6: User asks to plan a multi-step automation workflow
@@ -828,13 +815,13 @@ Why: 1M context window handles massive documents. Built for long-context analysi
 SCENARIO 8: User needs a quick summary
 
 Example: "Summarize this short Slack thread for me"
-Use: GPT-5 Mini or Claude Haiku 4.5 (Execution Tier)
+Use: MiniMax M2.7 (Execution Tier)
 Why: Fast, capable for simple summarization.
 
 SCENARIO 9: User asks to refactor an entire codebase
 
 Example: "Refactor this entire React app from class components to hooks"
-Use: Claude Opus 4.6 or GPT 5.2 Codex (Thinking Tier, recommend maximum thinking)
+Use: MiMo V2 Pro (openrouter/xiaomi/mimo-v2-pro, Thinking Tier, recommend maximum thinking)
 Why: Multi-file refactoring is high-complexity. Warn user about cost. Recommend max thinking.
 
 SCENARIO 10: User asks to build a detailed project plan
@@ -974,8 +961,6 @@ Each model has a maximum output token limit. When the master agent dispatches a 
 | Kimi K2.5 | 262,144 | 262,144 (or the specific amount needed for the task, whichever is lower) |
 | Mistral Small Creative | 32,768 | 32,768 (or the specific amount needed for the task, whichever is lower) |
 | DeepSeek V3.2 | 8,192 | 8,192 (or the specific amount needed for the task, whichever is lower) |
-| GPT-5 Nano | 400,000 | The specific amount needed for the task (do not set to 400K unless the task actually needs it) |
-| GPT 5.2 Codex | 128,000 | The specific amount needed for the task |
 | Claude Opus 4.6 | 128,000 | The specific amount needed for the task |
 | Claude Sonnet 4.6 | 128,000 | The specific amount needed for the task |
 | GLM-5 | 131,072 | The specific amount needed for the task |
@@ -1012,9 +997,6 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
           "openrouter/minimax/minimax-m2.7",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/google/gemini-3-flash-preview",
-          "openrouter/openai/gpt-5.2-codex",
-          "openrouter/openai/gpt-5-mini",
-          "openrouter/openai/gpt-5-nano",
           "openrouter/mistralai/mistral-small-creative",
           "openrouter/qwen/qwen3.5-plus-02-15",
           "openrouter/z-ai/glm-5",
@@ -1045,29 +1027,8 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
             }
           }
         },
-        "openrouter/openai/gpt-5.2-codex": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
         },
-        "openrouter/openai/gpt-5-mini": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
         },
-        "openrouter/openai/gpt-5-nano": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
         },
         "openrouter/moonshotai/kimi-k2.5": {
           "params": {
@@ -1218,8 +1179,7 @@ QUICK REFERENCE TABLE
 | opus | Claude Opus 4.6 | Thinking | Complex strategy, architecture, critical work | YES (medium default) | 0.3 |
 | sonnet | Claude Sonnet 4.6 | Thinking | Balanced quality + speed, analysis | YES (medium default) | 0.3 |
 | gemini31 | Gemini 3.1 Pro | Thinking | Long context analysis, research | YES (medium default) | 0.3 |
-| codex | GPT 5.2 Codex | Thinking | Code architecture, debugging | YES (medium default) | 0.3 |
-| qwen | Qwen 3.5 Plus | Thinking | Multimodal, agentic planning | YES (medium default) | 0.3 |
+| codex | qwen | Qwen 3.5 Plus | Thinking | Multimodal, agentic planning | YES (medium default) | 0.3 |
 | glm5 | GLM-5 | Thinking | Systems design, agent workflows | YES (medium default) | 0.3 |
 | speciale | DeepSeek V3.2 Speciale | Thinking | High-compute reasoning | YES (medium default) | 0.3 |
 | mimo-pro | MiMo V2 Pro | Thinking | Complex code, orchestration, agentic workflows. TEXT ONLY. 1M context, 131K output. | YES (always on) | 0.3 |
@@ -1227,9 +1187,7 @@ QUICK REFERENCE TABLE
 | mimo-omni | MiMo V2 Omni | Execution | Multimodal (text+images+video+audio). Joint audio-visual processing. Cheaper than Gemini for media analysis. | YES (always on) | 0.3 |
 | flash | Gemini 3 Flash | Execution | Quick responses, large context | YES (medium default) | 0.3 |
 | haiku | Claude Haiku 4.5 | Execution | Fast intelligent responses | YES (medium default) | 0.3 |
-| gptmini | GPT-5 Mini | Execution | Mid-range tasks, good value | YES (medium default) | 0.3 |
-| gptnano | GPT-5 Nano | Execution | Heartbeat Phase 1 (no tool calls). Simple lookups. | YES (medium default) | 0.3 |
-| deepseek | DeepSeek V3.2 | Execution | Value workhorse, heartbeat backup | YES (MEDIUM default) | 0.3 |
+| gptmini | gptnano | deepseek | DeepSeek V3.2 | Execution | Value workhorse, heartbeat backup | YES (MEDIUM default) | 0.3 |
 | kimi | Kimi K2.5 | Execution | Coding, chat, scraping (100+ parallel agents). No tool calls. Sub-agent for all code generation tasks. | YES (built-in) | 1.0 |
 | creative | Mistral Small Creative | Creative | All writing and content creation | No | 0.3 |
 | research | Perplexity Sonar Pro Search | Research | Deep research. Multi-step, follows links, synthesizes sources. | No | 0.3 |
@@ -1339,7 +1297,7 @@ Failing to switch to the free fallback when credits are depleted - If the API re
 Assigning tool-call tasks to Kimi K2.5 - Kimi K2.5 cannot do tool calls. If the task requires executing tools, calling functions, or performing actions, use MiniMax M2.7 instead. This will cause silent failures if ignored.
 Using a standard model for research instead of Perplexity - When the agent needs to verify facts, check current information, or research a topic, always route to Perplexity Sonar Pro Search. Do not guess or rely on training data for verifiable information.
 Not verifying model specs before configuring - Always check the live OpenRouter model page before writing any model into a config. Specs change. Prices change. Do not blindly trust static tables.
-Using Opus or Sonnet for heartbeat checks - Heartbeat Phase 1 is a status check. Use GPT-5 Nano ($0.05/M input) when no tool call is needed, or MiniMax M2.7 ($0.30/M input) when a tool call is required. Multiple sub-agents running heartbeat on Thinking Tier models accumulates token cost across every tick. This is Rule 22. Follow it.
+Using Thinking Tier models for heartbeat checks - Heartbeat Phase 1 is a status check. Use MiniMax M2.7 ($0.30/M input). Multiple sub-agents running heartbeat on Thinking Tier models accumulates token cost across every tick. This is Rule 22. Follow it.
 Treating heartbeat as one model doing both checking and executing - Heartbeat has two phases. Phase 1 checks what needs to be done (low-cost model). Phase 2 dispatches the right model for the actual work. These are separate operations using separate models.
 Not tracking context window usage - The agent must calculate 80/90/95% thresholds for its active model's context window on session start. If the agent does not know its context window size, it cannot create the handoff.md file in time. Compaction without a handoff file means total loss of session context. This is Rule 24.
 Sending a tool-call sub-task to Kimi K2.5 in multi-agent orchestration - The master agent must route all tool-call sub-tasks to MiniMax M2.7. Kimi K2.5 cannot do tool calls. Sending a tool-call sub-task to Kimi will fail silently. This is Rule 25.
@@ -1356,9 +1314,6 @@ OpenClaw uses the format openrouter/<author>/<slug> for OpenRouter models:
 
 openrouter/google/gemini-3.1-pro-preview
 openrouter/google/gemini-3-flash-preview
-openrouter/openai/gpt-5.2-codex
-openrouter/openai/gpt-5-mini
-openrouter/openai/gpt-5-nano
 openrouter/moonshotai/kimi-k2.5
 openrouter/minimax/minimax-m2.7
 openrouter/mistralai/mistral-small-creative
@@ -1389,9 +1344,6 @@ Multiple Models with Fallbacks
           "openrouter/minimax/minimax-m2.7",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/google/gemini-3-flash-preview",
-          "openrouter/openai/gpt-5.2-codex",
-          "openrouter/openai/gpt-5-mini",
-          "openrouter/openai/gpt-5-nano",
           "openrouter/mistralai/mistral-small-creative",
           "openrouter/qwen/qwen3.5-plus-02-15",
           "openrouter/z-ai/glm-5",
@@ -1579,7 +1531,7 @@ This is the heart of the routing system. It maps every common task type to the b
 | Code generation (writing new code, scripts, automation, refactoring) | Kimi K2.5 or Codex | built-in (Kimi) / medium (Codex) | Kimi K2.5 is cheap ($0.23/$3.00) with built-in reasoning and 262K context. Its killer feature: you can spin up HUNDREDS or even 1,000+ sub-agents simultaneously for parallel code execution. It just can't do tool calls. A master agent (Opus) manages the swarm. Codex for code that also needs tool interaction. |
 | Code debugging (fixing errors, reading logs, troubleshooting, testing) | Opus or Codex | medium to high | Need both strong reasoning AND tool calls to read files, run tests, iterate on fixes. Kimi can't do this because no tool calls. |
 | Research and fact-finding (web search, current information, verification, citations) | Perplexity Sonar Pro | medium | Built specifically for search with real-time web access. Provides cited sources. Other models would need external search tools. |
-| Quick factual answers (simple questions, lookups, math, definitions) | GPT-5 Nano or Haiku | low | Cheapest and fastest. Don't overthink simple stuff. Nano is $0.05/$0.40. |
+| Quick factual answers (simple questions, lookups, math, definitions) | MiniMax M2.7 or DeepSeek R1 Free | low | Use MiniMax for tool-capable routing, DeepSeek R1 Free for zero-cost simple queries. |
 | Image and media generation (creating images, processing media, video generation) | Any model with tool calls (MiniMax is fine) | low | The model just needs to correctly call the Kie.ai or image generation skill. It's not doing the creative work itself. |
 | Document formatting (Google Docs API, PDF creation, complex formatting) | Opus or Sonnet | medium | Complex API call sequences, quality matters, needs reliable tool support and attention to detail. |
 | Client-facing communications (emails to clients, professional messages, proposals) | Opus | medium | Tone, nuance, and quality matter most when the user's name and reputation are on it. |
@@ -1601,8 +1553,6 @@ This table helps the agent quickly determine what each model CAN and CANNOT do:
 | MiniMax M2.7 | - | YES | HIGH | Daily tasks, tool calls, heartbeat | $$ ($0.30/$1.10) | The daily workhorse. Cheap with tool calls AND high thinking. Default for operations. |
 | Kimi K2.5 | kimi | NO | built-in | Code swarms (cheap, massively scalable) | $ ($0.23/$3.00) | Can spin up 100s-1000s of sub-agents for parallel code. 262K context. CANNOT do tool calls. Needs a master agent (Opus) to orchestrate. |
 | GPT-5.2 Codex | codex | YES | medium | Code plus tool hybrid tasks | $$ ($0.25/$2) | When you need both code AND tool calls. |
-| GPT-5 Mini | - | YES | medium | General purpose, cost-effective | $$ ($0.25/$2) | Solid all-around at moderate cost. |
-| GPT-5 Nano | - | YES | medium | Quick simple tasks | $ ($0.05/$0.40) | Cheapest option that still works. Use for trivial tasks. |
 | Gemini 3.1 Pro | gemini3 | YES | medium | Multimodal, long context | $$$ ($2/$12) | 1M token context. Good for processing large documents. |
 | Gemini 3 Flash | - | YES | medium | Fast multimodal tasks | $$ ($0.50/$3) | Cheaper Gemini option. Still 1M context. |
 | DeepSeek V3.2 | - | YES | medium | Cost-effective general work | $ ($0.26/$0.38) | Very cheap. Good for bulk/batch processing. |
