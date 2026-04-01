@@ -1,3 +1,14 @@
+## v6.5.13 - April 1, 2026
+
+### Fixed
+- **install.sh - send_telegram_progress function**: Replaced the broken function that had no `--target` or `--channel` flags. The old version silently failed on every fresh install because there was no active Telegram session and no recipient specified. The new version reads the client's Telegram chat ID from `openclaw.json` allowFrom list via python3, passes it explicitly via `--target` and `--channel telegram`, and falls back to terminal output if the ID can't be found or the send fails.
+
+### Changed
+- **version**: Bumped to v6.5.13
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.13
+
+---
+
 ## v6.5.12 - April 1, 2026
 
 ### Fixed
