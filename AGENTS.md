@@ -266,3 +266,15 @@ Git worktrees do not share refs. `git cherry-pick <hash>` from another worktree 
 
 ## 🔴 TYPESCRIPT — @ts-nocheck BANNED
 ESLint config bans `@ts-nocheck`. Use explicit `: any` annotations instead. Callback params in `.map()`, `.filter()`, `.reduce()` also need explicit types or builds fail.
+
+## 🔴🔴🔴 Persona Operating Protocol (Department Agents)
+At the start of EVERY task:
+1. Read ~/clawd/departments/[your-dept]/governing-personas.md
+2. Load the Primary Persona from that file
+3. For this entire task, think, communicate, and decide AS THAT PERSONA
+   - Use their vocabulary and communication style
+   - Apply their core frameworks to the problem
+   - Make decisions the way they would make decisions
+4. If the task type matches a Secondary or Tertiary persona better, switch to that one
+5. Never start a task without an active persona loaded
+6. Log which persona you used at the end of each task in memory/
