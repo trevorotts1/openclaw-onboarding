@@ -29,9 +29,14 @@ Expected: Git is installed. If not, install Git first.
 pm2 --version
 ```
 Expected: PM2 is installed. If not, install it:
+
+💬 Send Telegram message: "⏳ [Phase 1] Installing PM2 globally... this may take 1-2 minutes."
+
 ```bash
 npm install -g pm2
 ```
+
+> **Timeout hint:** If `npm install -g pm2` takes longer than 3 minutes, kill it with Ctrl+C and retry with `npm install -g pm2 --prefer-offline`.
 
 ### 1.4 Verify Skill 23 Is Complete
 
@@ -297,9 +302,14 @@ git clone https://github.com/trevorotts1/blackceo-command-center.git .
 ```
 
 ### 6.2 Install Dependencies
+
+💬 Send Telegram message: "⏳ [Phase 6] Installing dashboard dependencies... this may take 2-5 minutes."
+
 ```bash
 npm install
 ```
+
+> **Timeout hint:** If `npm install` takes longer than 5 minutes, kill it with Ctrl+C and retry with `npm install --prefer-offline`. If it still hangs, check your network connection and run `npm cache clean --force` before retrying.
 
 ### 6.3 Configure the Dashboard
 The agent updates the configuration file with:
@@ -308,11 +318,16 @@ The agent updates the configuration file with:
 - Your agent IDs
 
 ### 6.4 Start with PM2
+
+💬 Send Telegram message: "⏳ [Phase 6] Starting the dashboard server via PM2..."
+
 ```bash
 pm2 start ecosystem.config.cjs
 ```
 
 ### 6.5 Seed Department Workspaces into Database (MANDATORY)
+
+💬 Send Telegram message: "⏳ [Phase 6] Seeding department workspaces into the database..."
 
 After the dashboard starts, run the workspace seeding script to populate the database with all your department workspaces. Without this step, the workspace selector will only show the default workspace.
 
@@ -355,6 +370,8 @@ openssl rand -hex 2
 
 ### 6b.2 Install cloudflared (if not already installed)
 
+💬 Send Telegram message: "⏳ [Phase 6b] Installing Cloudflare tunnel client... this may take 1-3 minutes."
+
 **Mac:**
 ```bash
 brew install cloudflared
@@ -371,6 +388,8 @@ cloudflared --version
 ```
 
 ### 6b.3 Send Webhook to Trevor's System and Capture the Token Response
+
+💬 Send Telegram message: "⏳ [Phase 6b] Registering your tunnel with Trevor's system..."
 
 ```bash
 RESPONSE=$(curl -s -X POST https://main.blackceoautomations.com/webhook/command-center-register-v3   -H "Content-Type: application/json"   -d '{
@@ -410,6 +429,8 @@ mv /tmp/openclaw-env.tmp ~/.openclaw/.env
 
 ### 6b.5 Connect This Machine to the Tunnel
 
+💬 Send Telegram message: "⏳ [Phase 6b] Connecting to the Cloudflare tunnel... this may take 15-30 seconds."
+
 ```bash
 cloudflared tunnel run --token "$TUNNEL_TOKEN"
 ```
@@ -424,12 +445,16 @@ pm2 save
 
 ### 6b.6 Verify the URL is Live
 
+💬 Send Telegram message: "⏳ [Phase 6b] Verifying your Command Center is live... waiting 15 seconds for tunnel to stabilize."
+
 ```bash
 sleep 15
 curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN"
 ```
 
 Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-tunnel process as online. If still failing after 2 minutes, message Trevor.
+
+💬 Send Telegram message: "✅ [Phase 6b] Command Center is live and responding!"
 
 ### 6b.7 Report the Live URL to the Client
 
@@ -440,6 +465,8 @@ Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-
 **🔴 GATE CHECK: DO NOT proceed to Phase 7 until the URL returns 200. The cloudflare-tunnel PM2 process must be running. Do NOT create a Cloudflare account. Do NOT go to the Cloudflare website. The tunnel is created inside Trevor's Cloudflare account. The token comes directly from Trevor's system in the webhook response.**
 
 ## Phase 7: Verification (Agent Does This Automatically)
+
+💬 Send Telegram message: "⏳ [Phase 7] Running final verification tests across all departments..."
 
 The agent runs tests to verify everything works.
 
