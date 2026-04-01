@@ -4,6 +4,13 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.5.5 — April 1, 2026
+
+### Fixed
+- Skill 22 folder name references updated from `22-book-to-persona/` to `22-book-to-persona-coaching-leadership-system/` in all scripts and docs — prevents "directory not found" errors on fresh installs
+
+---
+
 ## v6.5.4 — March 31, 2026
 
 ### Fixed
@@ -543,7 +550,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **install.sh**: One-command autonomous onboarding trigger. Run `curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash`. Downloads package, sets up backup folder, writes onboarding flag to AGENTS.md, fires agent trigger via `openclaw agent --message --deliver`. Zero human action after the curl command.
 - **Skill 29 - GHL / Convert and Flow API v2**: Full API reference skill. 12 domain reference files covering 413 endpoints, 35 modules, 106 scopes. Contacts, conversations, calendars, payments, opportunities, locations, users, auth, campaigns, webhooks, phone-numbers. Proper `ghl-convert-and-flow/` archive root. Phone-numbers module includes TREVOR-ONLY safety warning (no autonomous release).
 - **Weekly GitHub update check**: Added to Start Here.md. Every Sunday, agent pulls from `trevorotts1/openclaw-onboarding`, re-runs TYP on any changed skill, notifies via configured messaging channel.
-- **Missing .skill archives built**: 03-agent-browser, 22-book-to-persona, 23-ai-workforce-blueprint were missing archives - all three rebuilt and verified.
+- **Missing .skill archives built**: 03-agent-browser, 22-book-to-persona-coaching-leadership-system, 23-ai-workforce-blueprint were missing archives - all three rebuilt and verified.
 
 ### Fixed
 - **Skill 02 (Back Yourself Up Protocol)**: All 5 files now consistently use `.txt` extension for backup files (was `.json` in EXAMPLES.md, INSTRUCTIONS.md, INSTALL.md, CORE_UPDATES.md - only back-yourself-up-protocol-full.md had it right). Default folder name standardized to `OpenClaw Backups`. Smart detection: if folder already exists, use it - never create a duplicate.
