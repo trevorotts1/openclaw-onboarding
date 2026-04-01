@@ -1,3 +1,15 @@
+## v6.5.12 - April 1, 2026
+
+### Fixed
+- **install.sh - Gateway restart instruction**: Replaced the Done section with a clear two-step restart flow. Terminal output now shows STEP 1 (restart the gateway) and STEP 2 (send the onboarding message after restart). Without a restart, the agent won't see the ONBOARDING PENDING flag for up to 30 minutes.
+- **install.sh - Telegram timing**: Moved send_telegram_progress call to BEFORE the terminal output block so the notification fires before the script completes. Updated the Telegram message to include restart instructions (`/restart`) and the exact message to send after restart. Previously the Telegram fired silently and the client was never told to restart.
+
+### Changed
+- **version**: Bumped to v6.5.12
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.12
+
+---
+
 ## v6.5.11 - April 1, 2026
 
 ### Fixed
