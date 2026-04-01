@@ -138,11 +138,8 @@ send_telegram_progress "Extracted skills to your OpenClaw ($SKILL_COUNT skills f
 show_status "Installing Gemini Engine scripts..."
 
 echo "[3b/5] Installing Gemini Engine scripts..."
-# Determine the agent's workspace directory
-# Standard OpenClaw workspace: ~/.openclaw/workspace
-WORKSPACE_DIR="$HOME/.openclaw/workspace"
-mkdir -p "$WORKSPACE_DIR"
-SCRIPTS_DIR="$WORKSPACE_DIR/scripts"
+# Scripts go to ~/clawd/scripts/ — this is where ALL skills expect them
+SCRIPTS_DIR="$HOME/clawd/scripts"
 mkdir -p "$SCRIPTS_DIR"
 
 # Copy gemini-indexer.py to the expected location
@@ -152,6 +149,15 @@ if [ -f "$ONBOARDING_DIR/scripts/gemini-indexer.py" ]; then
   echo "  Copied gemini-indexer.py to $SCRIPTS_DIR/"
 else
   echo "  gemini-indexer.py not found in onboarding scripts (will need manual setup)"
+fi
+
+# Copy gemini-search.py to the expected location
+if [ -f "$ONBOARDING_DIR/scripts/gemini-search.py" ]; then
+  cp "$ONBOARDING_DIR/scripts/gemini-search.py" "$SCRIPTS_DIR/gemini-search.py"
+  chmod +x "$SCRIPTS_DIR/gemini-search.py"
+  echo "  Copied gemini-search.py to $SCRIPTS_DIR/"
+else
+  echo "  gemini-search.py not found in onboarding scripts (will need manual setup)"
 fi
 
 # Install google-genai Python package if not present
@@ -177,13 +183,12 @@ fi
 # ----------------------------------------------------------
 echo ""
 echo "[3b.2/5] Checking Cloudflare tunnel token..."
-CF_TOKEN="cfut_k7fGeMtROSYqgbsYCKvtCxqNNZDrEEMW1ncQKUd3678b4d5d"
 ENV_FILE="$HOME/.openclaw/.env"
 if grep -q "CLOUDFLARE_TUNNEL_TOKEN" "$ENV_FILE" 2>/dev/null; then
   echo "  Cloudflare tunnel token already set"
 else
-  echo "CLOUDFLARE_TUNNEL_TOKEN=$CF_TOKEN" >> "$ENV_FILE"
-  echo "  Added Cloudflare tunnel token to $ENV_FILE"
+  echo "  No Cloudflare tunnel token found."
+  echo "  To add one: echo 'CLOUDFLARE_TUNNEL_TOKEN=your-token-here' >> $ENV_FILE"
 fi
 
 

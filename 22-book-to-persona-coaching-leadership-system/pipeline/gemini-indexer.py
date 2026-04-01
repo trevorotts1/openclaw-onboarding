@@ -9,8 +9,10 @@ Usage:
   python3 gemini-indexer.py --status     # Check status (dirs, db, file count)
   python3 gemini-indexer.py --init       # Create required directories
   python3 gemini-indexer.py --dry-run    # Show what would be indexed (no API calls)
+  python3 gemini-indexer.py --watch      # Watch for new PDF/EPUB files and auto-reindex
+  python3 gemini-indexer.py --rotate-logs # Rotate bloated daily reason logs
 """
-import os, sys, time, sqlite3, hashlib, json
+import os, sys, time, sqlite3, hashlib, json, shutil
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -19,6 +21,9 @@ from pathlib import Path
 DB_PATH = os.path.expanduser("~/clawd/data/coaching-personas/gemini-index.sqlite")
 PERSONAS_DIR_PRIMARY = os.path.expanduser("~/clawd/data/coaching-personas/personas")
 PERSONAS_DIR_FALLBACK = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/personas")
+BOOKS_WATCH_DIR = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/books")
+MEMORY_DIR = os.path.expanduser("~/clawd/memory")
+PERSONA_SELECTIONS_DIR = os.path.expanduser("~/clawd/memory/persona-selections")
 
 COLLECTIONS = {
     "coaching-personas": {
@@ -36,6 +41,10 @@ COLLECTIONS = {
 GEMINI_MODEL = "gemini-embedding-2-preview"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
+
+# FIX 2: Reason log rotation constants
+MAX_REASON_LOG_ENTRIES = 100
+KEEP_REASON_LOG_ENTRIES = 20
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -98,6 +107,13 @@ def cmd_status():
     except ImportError:
         print("❌ numpy package: NOT INSTALLED (run: pip3 install numpy --break-system-packages)")
 
+    # watchdog
+    try:
+        import watchdog  # noqa: F401
+        print("✅ watchdog package: installed (--watch available)")
+    except ImportError:
+        print("⚠️  watchdog package: NOT INSTALLED (--watch will be limited)")
+
     # Database
     db_dir = os.path.dirname(DB_PATH)
     if os.path.exists(DB_PATH):
@@ -138,6 +154,7 @@ def cmd_status():
         print("✅ Gemini Engine is ready. Run without --status to start indexing.")
     else:
         print("⚠️  Gemini Engine is NOT ready. Fix the issues above first.")
+        sys.exit(2)
 
 # ---------------------------------------------------------------------------
 # --init: create required directories
@@ -148,6 +165,8 @@ def cmd_init():
         os.path.dirname(DB_PATH),
         PERSONAS_DIR_PRIMARY,
         PERSONAS_DIR_FALLBACK,
+        BOOKS_WATCH_DIR,
+        PERSONA_SELECTIONS_DIR,
     ]
     for d in dirs:
         os.makedirs(d, exist_ok=True)
@@ -173,9 +192,151 @@ def cmd_dry_run():
     print("Done.")
 
 # ---------------------------------------------------------------------------
+# FIX 2: --rotate-logs — cap daily reason log entries
+# ---------------------------------------------------------------------------
+def cmd_rotate_logs():
+    """Rotate daily memory files when persona selection entries exceed MAX_REASON_LOG_ENTRIES."""
+    print("🔄 Rotating reason logs...")
+    os.makedirs(PERSONA_SELECTIONS_DIR, exist_ok=True)
+
+    today = time.strftime("%Y-%m-%d")
+    rotated_count = 0
+
+    # Check all daily memory files in ~/clawd/memory/
+    if not os.path.isdir(MEMORY_DIR):
+        print("⚠️  Memory directory not found.")
+        return
+
+    for fname in os.listdir(MEMORY_DIR):
+        if not fname.endswith(".md"):
+            continue
+        fpath = os.path.join(MEMORY_DIR, fname)
+        if not os.path.isfile(fpath):
+            continue
+
+        with open(fpath, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        # Count persona selection entries
+        persona_lines = [(i, line) for i, line in enumerate(lines) if "[PERSONA_SELECTION]" in line]
+
+        if len(persona_lines) <= MAX_REASON_LOG_ENTRIES:
+            continue
+
+        date_part = fname.replace(".md", "")
+        archive_path = os.path.join(PERSONA_SELECTIONS_DIR, f"{date_part}-archive.md")
+
+        # Archive older entries (all except last KEEP_REASON_LOG_ENTRIES)
+        entries_to_archive = persona_lines[:-KEEP_REASON_LOG_ENTRIES]
+        entries_to_keep_indices = set(i for i, _ in persona_lines[-KEEP_REASON_LOG_ENTRIES:])
+
+        # Write archive
+        archive_content = [line for _, line in entries_to_archive]
+        with open(archive_path, "a", encoding="utf-8") as af:
+            af.writelines(archive_content)
+
+        # Rewrite daily file without archived entries (keep non-persona lines + last N persona lines)
+        kept_lines = [line for i, line in enumerate(lines) if i not in set(idx for idx, _ in entries_to_archive)]
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.writelines(kept_lines)
+
+        archived = len(entries_to_archive)
+        rotated_count += 1
+        print(f"  📦 {fname}: archived {archived} entries → {archive_path}")
+        print(f"     Kept last {KEEP_REASON_LOG_ENTRIES} persona entries in active file.")
+
+    if rotated_count == 0:
+        print("  ✅ No files exceed the cap. Nothing to rotate.")
+    else:
+        print(f"\n✅ Rotated {rotated_count} daily file(s).")
+
+# ---------------------------------------------------------------------------
+# FIX 3: --watch — auto-reindex on new PDF/EPUB files
+# ---------------------------------------------------------------------------
+def cmd_watch():
+    """Watch books directory for new PDF/EPUB files and trigger re-indexing."""
+    try:
+        import watchdog
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+    except ImportError:
+        print("⚠️  watchdog library not available.")
+        print("   Install with: pip3 install watchdog")
+        print("   Falling back to poll-based watching (30s interval)...")
+        _watch_poll_fallback()
+        return
+
+    watch_dir = BOOKS_WATCH_DIR
+    if not os.path.isdir(watch_dir):
+        os.makedirs(watch_dir, exist_ok=True)
+        print(f"📁 Created watch directory: {watch_dir}")
+
+    print(f"👁️  Watching for new PDF/EPUB files in: {watch_dir}")
+    print("   Press Ctrl+C to stop.\n")
+
+    class BookHandler(FileSystemEventHandler):
+        def on_created(self, event):
+            if event.is_directory:
+                return
+            if event.src_path.lower().endswith((".pdf", ".epub")):
+                print(f"\n📖 New file detected: {os.path.basename(event.src_path)}")
+                print("🔄 Triggering re-index...")
+                try:
+                    main()
+                except Exception as e:
+                    print(f"❌ Re-index failed: {e}")
+
+    observer = Observer()
+    observer.schedule(BookHandler(), watch_dir, recursive=True)
+    observer.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+        print("\n🛑 Watch stopped.")
+    observer.join()
+
+
+def _watch_poll_fallback():
+    """Poll-based fallback when watchdog is not installed."""
+    watch_dir = BOOKS_WATCH_DIR
+    if not os.path.isdir(watch_dir):
+        os.makedirs(watch_dir, exist_ok=True)
+
+    known_files = set()
+    for ext in ("*.pdf", "*.epub"):
+        for f in Path(watch_dir).rglob(ext):
+            known_files.add(str(f))
+
+    print(f"👁️  Polling every 30s: {watch_dir}")
+    print("   Press Ctrl+C to stop.\n")
+
+    try:
+        while True:
+            time.sleep(30)
+            current_files = set()
+            for ext in ("*.pdf", "*.epub"):
+                for f in Path(watch_dir).rglob(ext):
+                    current_files.add(str(f))
+            new_files = current_files - known_files
+            if new_files:
+                for nf in new_files:
+                    print(f"\n📖 New file detected: {os.path.basename(nf)}")
+                print("🔄 Triggering re-index...")
+                try:
+                    main()
+                except Exception as e:
+                    print(f"❌ Re-index failed: {e}")
+                known_files = current_files
+    except KeyboardInterrupt:
+        print("\n🛑 Watch stopped.")
+
+# ---------------------------------------------------------------------------
 # Main indexing
 # ---------------------------------------------------------------------------
 def main():
+    # FIX 1: Wrap API init in try/except with exit code 2
     from google import genai
     from google.genai import types
     import numpy as np
@@ -183,9 +344,17 @@ def main():
     def get_client():
         api_key = get_api_key()
         if not api_key:
-            print("ERROR: GOOGLE_API_KEY not found in ~/clawd/secrets/.env")
-            sys.exit(1)
-        return genai.Client(api_key=api_key)
+            print("WARNING: GOOGLE_API_KEY not found. Checked ~/clawd/secrets/.env, "
+                  "~/.openclaw/.env, ~/.openclaw/secrets/.env, and environment variables. "
+                  "Set GOOGLE_API_KEY and try again.")
+            sys.exit(2)
+        try:
+            client = genai.Client(api_key=api_key)
+            return client
+        except Exception as e:
+            print(f"WARNING: Failed to initialize Gemini client — API key may be invalid. "
+                  f"Error: {e}")
+            sys.exit(2)
 
     def init_db():
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -295,5 +464,11 @@ if __name__ == "__main__":
         cmd_init()
     elif "--dry-run" in sys.argv:
         cmd_dry_run()
+    elif "--rotate-logs" in sys.argv:
+        cmd_rotate_logs()
+    elif "--watch" in sys.argv:
+        cmd_watch()
+    elif "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__)
     else:
         main()
