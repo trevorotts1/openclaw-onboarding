@@ -1,3 +1,10 @@
+## v6.5.10 - April 1, 2026
+
+### Added
+- Skill 31 (Upgraded Memory System): Added QC.md with quality control checks (mirrored from VPS v6.5.12)
+- Skill 32 (Command Center Setup): Added QC.md with quality control checks (mirrored from VPS v6.5.12)
+
+
 ## v6.5.9 - April 1, 2026
 
 ### Changed
