@@ -147,7 +147,7 @@ Replace `{baseDir}` with the actual path to the skill folder. Replace `YOUTUBE_U
 Here is how you actually run it:
 
 ```bash
-python3 ~/openclaw-onboarding/20-youtube-watcher/scripts/get_transcript.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+python3 ~/.openclaw/skills/20-youtube-watcher/scripts/get_transcript.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 
 **What to expect:**
