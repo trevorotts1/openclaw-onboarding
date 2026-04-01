@@ -20,6 +20,15 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **Skill 32**: Added 10 Telegram progress pings to INSTALL.md covering every long-running command (npm install, PM2, cloudflared tunnel, database seeding). Added 5-minute npm install timeout with retry fallback (QC: 8→9.5).
 - **Skill 32 seed-workspaces.py**: Added canonical departments.json path as first search candidate. Handoff from Skill 23 to Skill 32 now airtight.
 
+## v6.5.2 — March 31, 2026
+
+### Added
+- **Dynamic Persona Selection Engine**: Every agent now runs Gemini search + 5-layer alignment scoring before selecting a persona for a new task. No more static "always use Primary" behavior.
+- **AGENTS.md**: Persona Operating Protocol now has 3 new steps: (1) Gemini Search finds top 3 candidates, (2) 5-Layer Alignment picks the winner, (3) Reason Log entry to daily memory/[date].md. Graceful fallback to governing-personas.md Primary if Gemini unavailable.
+- **Skill 23 Phase 5-BUILD-B**: Dynamic persona selection engine with weighted scoring table (Owner Values 25%, Company Mission 25%, Business KPIs 20%, Dept KPIs 15%, Task Fit 15%).
+- **Skill 32 Phase 7.5**: 3-layer runtime verification test — Search Evidence (did agent use Gemini?), 5-Layer Alignment (can agent explain reasoning?), Reason Log (did agent write to daily memory file?). FAIL conditions catch agents that always default to the same persona.
+- **Phase numbering fix**: Renumbered duplicate Phase 7.4 in Skill 32 to 7.4/7.5/7.6.
+
 ---
 
 ## v6.4.0 — March 31, 2026
