@@ -1,6 +1,6 @@
 #!/bin/bash
 # OpenClaw Onboarding — Update Staging Script
-# Version: 6.1.9 | March 31, 2026
+# Version: 6.5.6 | April 1, 2026
 #
 # This script STAGES an update. It does NOT apply changes.
 # The agent follows UPDATE-PLAYBOOK.md to apply changes intelligently.
@@ -71,6 +71,56 @@ fi
 echo ""
 echo "Update available: $LOCAL_VERSION → $REMOTE_VERSION"
 echo ""
+
+# ============================================
+# PER-SKILL VERSION CHECK
+# ============================================
+# Compare skill-version.txt for each skill to determine
+# which skills actually need updating vs which are already current.
+# This prevents false "up to date" reports when a skill folder exists
+# but is at an older version.
+
+STAGED_SKILLS_DIR="$STAGED_DIR/openclaw-onboarding-main"
+LOCAL_SKILLS_DIR="$HOME/.openclaw/skills"
+SKILLS_UPDATED=0
+SKILLS_SKIPPED=0
+SKILL_UPDATE_LOG=""
+
+for staged_skill in "$STAGED_SKILLS_DIR"/[0-9]*/; do
+    [ -d "$staged_skill" ] || continue
+    skill_name=$(basename "$staged_skill")
+    staged_version_file="$staged_skill/skill-version.txt"
+    local_version_file="$LOCAL_SKILLS_DIR/$skill_name/skill-version.txt"
+
+    if [ -f "$staged_version_file" ]; then
+        staged_skill_version=$(cat "$staged_version_file" 2>/dev/null | tr -d '[:space:]')
+    else
+        staged_skill_version="unknown"
+    fi
+
+    if [ -f "$local_version_file" ]; then
+        local_skill_version=$(cat "$local_version_file" 2>/dev/null | tr -d '[:space:]')
+    else
+        local_skill_version="none"
+    fi
+
+    if [ "$local_skill_version" = "$staged_skill_version" ]; then
+        SKILLS_SKIPPED=$((SKILLS_SKIPPED + 1))
+        SKILL_UPDATE_LOG="$SKILL_UPDATE_LOG  SKIP: $skill_name (already at $staged_skill_version)\n"
+    else
+        SKILLS_UPDATED=$((SKILLS_UPDATED + 1))
+        SKILL_UPDATE_LOG="$SKILL_UPDATE_LOG  UPDATE: $skill_name ($local_skill_version → $staged_skill_version)\n"
+    fi
+done
+
+echo "Per-skill version check complete:"
+echo "  Skills to update: $SKILLS_UPDATED"
+echo "  Skills already current: $SKILLS_SKIPPED"
+echo ""
+if [ $SKILLS_UPDATED -gt 0 ]; then
+    echo "Skills needing update:"
+    echo -e "$SKILL_UPDATE_LOG"
+fi
 
 # Create flag file
 touch "$FLAG_FILE"

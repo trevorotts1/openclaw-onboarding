@@ -4,6 +4,18 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.5.6 — April 1, 2026
+
+### Added
+- Per-skill version tracking: each skill folder now contains `skill-version.txt`
+- update-skills.sh now compares per-skill versions before overwriting — prevents false "up to date" reports when a skill folder exists but is at an older version
+
+### Fixed
+- install.sh ONBOARDING_VERSION header updated from v6.1.9 to match actual repo version (v6.5.6)
+- check-update-impact.sh and setup-weekly-update.sh version headers synced to v6.5.6
+
+---
+
 ## v6.5.5 — April 1, 2026
 
 ### Fixed
