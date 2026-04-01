@@ -503,19 +503,48 @@ The agent verifies:
 - All 5 Kanban columns are visible
 - Task creation works
 
-### 7.4 Persona Runtime Test
+### 7.5 Persona Runtime Test (Dynamic Selection Verification)
+
 Send each department agent this message:
 > "What persona are you currently operating as and why?"
 
-**Expected:** Agent names the primary persona from their `governing-personas.md` and explains briefly why it fits the department.
+**Then verify all three layers of dynamic selection:**
 
-**FAIL if:** Agent says "I don't have a persona" or gives a generic response without referencing their `governing-personas.md`.
+**Layer 1 - Search Evidence:**
+Ask the agent: "How did you select this persona? Did you search the persona library or just pick a default?"
 
-**Why this matters:** Department agents have `governing-personas.md` files and a Persona Operating Protocol in their AGENTS.md, but if the runtime wiring is broken, agents will ignore both and operate as generic AI. This test catches that failure mode before go-live.
+**Expected:** Agent describes running `gemini-search.py` (or a similar dynamic search) against the 40-persona library to find the top candidates. If the agent says "I always use [same persona]" without searching, the selection is static.
 
-**If an agent fails:** Check that their department AGENTS.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, append it manually and re-test.
+**FAIL if:** Agent says "I always use [same persona]" or "I default to the primary persona every time" -- this means the Dynamic Persona Selection Engine is not firing. The agent must perform a per-task search, not reuse the same persona every time.
 
-### 7.5 Report Results
+**Layer 2 - 5-Layer Alignment:**
+Ask the agent: "Explain the 5-layer alignment you used to select this persona."
+
+**Expected:** Agent names and scores at least 3 of these 5 layers:
+1. Owner values alignment
+2. Company mission alignment
+3. Business KPI alignment
+4. Department KPI alignment
+5. Task fit alignment
+
+**FAIL if:** Agent cannot explain the alignment reasoning or gives a vague "it seemed like a good fit" without referencing specific layers.
+
+**Layer 3 - Reason Log:**
+Ask the agent: "Did you log your persona selection to today's daily memory file?"
+
+**Expected:** Agent confirms it appended a reason log entry to `~/clawd/memory/YYYY-MM-DD.md` (where YYYY-MM-DD is today's date). Then verify the file directly:
+
+```bash
+cat ~/clawd/memory/$(date +%Y-%m-%d).md | grep -i "selected.*persona"
+```
+
+**FAIL if:** No matching line exists in today's memory file. The Persona Operating Protocol requires a reason log entry for every task.
+
+**Why this matters:** Department agents have `governing-personas.md` files and a Persona Operating Protocol in their AGENTS.md. But if the runtime wiring is broken, agents will skip the search, skip the alignment, skip the log, and just default to the same persona every time. This test catches all three failure modes before go-live.
+
+**If an agent fails:** Check that their department AGENTS.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, append it manually and re-test. Also verify `scripts/gemini-search.py` exists and is executable.
+
+### 7.6 Report Results
 The agent sends you a summary in Telegram:
 - Which departments are active
 - Dashboard URL
@@ -601,6 +630,9 @@ After all phases are complete, verify:
 - [ ] Live URL accessible from the internet
 - [ ] Test message received response from correct department head
 - [ ] Memory status shows all department agents active
+- [ ] Persona runtime test: dynamic search confirmed per department
+- [ ] Persona runtime test: 5-layer alignment explained per department
+- [ ] Persona runtime test: reason log entry exists in today's memory file
 
 ## What to Do Next
 
