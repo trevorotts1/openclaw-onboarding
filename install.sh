@@ -75,6 +75,25 @@ fi
 touch "$INSTALL_FLAG"
 trap 'rm -f "$INSTALL_FLAG"' EXIT
 
+# ============================================================
+# CONFIG EDIT PROTOCOL — MANDATORY (Trevor standing rule)
+# Before ANY edit to openclaw.json or exec-approvals.json:
+#   1. Call backup_config_file to create timestamped backup
+#   2. Verify schema against docs.openclaw.ai for that section
+#   3. Only then apply the change
+# Official docs: https://docs.openclaw.ai
+# ============================================================
+backup_config_file() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    local ts
+    ts=$(date +%Y%m%d-%H%M%S)
+    local backup="${file}.bak-${ts}"
+    cp "$file" "$backup"
+    echo "  📦 Backed up: $backup"
+  fi
+}
+
 echo ""
 echo "============================================"
 echo "   OpenClaw Onboarding Installer"
@@ -226,11 +245,16 @@ echo "[3c/5] Configuring sub-agent concurrency..."
 OPENCLAW_JSON="$HOME/.openclaw/openclaw.json"
 
 if [ -f "$OPENCLAW_JSON" ]; then
-  # Backup first
-  cp "$OPENCLAW_JSON" "$HOME/Downloads/openclaw-backups/openclaw-json-backup-$(date '+%Y-%m-%d-%I%M%p').json" 2>/dev/null || true
+  # BACKUP BEFORE EDIT — per Trevor standing rule
+  # Verify schema at: https://docs.openclaw.ai/config
+  backup_config_file "$HOME/.openclaw/openclaw.json"
 
   # Use Python to safely update JSON (jq may not be installed)
   python3 -c "
+# ⚠️  SCHEMA VERIFICATION REQUIRED BEFORE EDITING THIS BLOCK
+# Check docs.openclaw.ai for current field names and valid values
+# Do NOT rely solely on this script — OpenClaw updates may change the schema
+# Backup is created automatically by backup_config_file() above
 import json, os, sys
 path = os.path.expanduser('$OPENCLAW_JSON')
 try:
@@ -353,8 +377,17 @@ fi
 # Write exec-approvals.json — disable approval wall for autonomous operation
 # ----------------------------------------------------------
 EXEC_APPROVALS="$HOME/.openclaw/exec-approvals.json"
+
+# BACKUP BEFORE EDIT — per Trevor standing rule
+# Verify schema at: https://docs.openclaw.ai/tools/exec-approvals
+backup_config_file "$HOME/.openclaw/exec-approvals.json"
+
 if [ -f "$EXEC_APPROVALS" ]; then
   python3 - "$EXEC_APPROVALS" << 'PYEOF'
+# ⚠️  SCHEMA VERIFICATION REQUIRED BEFORE EDITING THIS BLOCK
+# Check docs.openclaw.ai for current field names and valid values
+# Do NOT rely solely on this script — OpenClaw updates may change the schema
+# Backup is created automatically by backup_config_file() above
 import json, sys
 p = sys.argv[1]
 cfg = json.load(open(p))

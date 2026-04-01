@@ -1,5 +1,10 @@
 ## v6.5.16 - April 1, 2026
 
+### Added
+- **install.sh - Mandatory backup-before-edit protocol**: Added `backup_config_file()` function that creates timestamped backups before any openclaw.json or exec-approvals.json edit
+- **install.sh - Docs verification comments**: Added schema verification comments to all config write blocks referencing docs.openclaw.ai
+- **install.sh - Backup calls**: Added backup_config_file calls before all config file modifications
+
 ### Fixed
 - **install.sh - Exec security unconditional application**: Added `apply_exec_security_config()` function that runs at the end of every installer execution (both fresh install AND update). Previously, exec security config was only inside Step 3c which could be skipped if openclaw.json didn't exist yet. Now exec security is applied unconditionally after all skill installs.
 
