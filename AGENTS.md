@@ -268,13 +268,39 @@ Git worktrees do not share refs. `git cherry-pick <hash>` from another worktree 
 ESLint config bans `@ts-nocheck`. Use explicit `: any` annotations instead. Callback params in `.map()`, `.filter()`, `.reduce()` also need explicit types or builds fail.
 
 ## 🔴🔴🔴 Persona Operating Protocol (Department Agents)
-At the start of EVERY task:
-1. Read ~/clawd/departments/[your-dept]/governing-personas.md
-2. Load the Primary Persona from that file
-3. For this entire task, think, communicate, and decide AS THAT PERSONA
-   - Use their vocabulary and communication style
-   - Apply their core frameworks to the problem
-   - Make decisions the way they would make decisions
-4. If the task type matches a Secondary or Tertiary persona better, switch to that one
-5. Never start a task without an active persona loaded
-6. Log which persona you used at the end of each task in memory/
+At the start of EVERY task, run the Dynamic Persona Selection Engine:
+
+### Step 1: Gemini Search (dynamic match)
+- Convert the task description to a concise search query
+- Run: `python3 ~/clawd/scripts/gemini-search.py "task description"`
+- Get the top 3 matching personas from the 40-persona library
+- **Fallback:** If GOOGLE_API_KEY is missing, script fails, or returns empty results, read `~/clawd/departments/[your-dept]/governing-personas.md` and load the Primary Persona as your selection. Skip to Step 3.
+
+### Step 2: 5-Layer Alignment (pick the winner)
+Score each of the top 3 candidates against these 5 layers:
+1. **Owner values** -- Does this persona reflect Trevor's philosophy and standards?
+2. **Company mission** -- Does it advance BlackCEO's mission?
+3. **Business KPIs** -- Will it drive the metrics that matter right now?
+4. **Department KPIs** -- Does it fit this department's current goals?
+5. **Task fit** -- Is this persona's expertise a direct match for the task?
+
+Select the persona that best aligns across all 5 layers. This is a reasoning step the LLM performs -- no code needed.
+
+### Step 3: Reason Log (daily journal)
+Append one line to `~/clawd/memory/$(date +%Y-%m-%d).md`:
+```
+[TASK] Selected [Persona Name] for [task description]. Why: [one-line reason]
+```
+This goes to the daily journal ONLY, not MEMORY.md.
+
+### Step 4: Observe
+For this entire task, think, communicate, and decide AS THAT PERSONA:
+- Use their vocabulary and communication style
+- Apply their core frameworks to the problem
+- Make decisions the way they would make decisions
+
+### Step 5: Resolve Conflicts
+If the task type matches a Secondary or Tertiary persona better mid-task, switch to that one. Never start a task without an active persona loaded.
+
+### Step 6: Log Persona Usage
+Log which persona you used at the end of each task in memory/.
