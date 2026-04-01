@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v6.5.15"
+ONBOARDING_VERSION="v6.5.16"
 
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
@@ -470,6 +470,55 @@ ZERO TOLERANCE SHORTCUTS:
 ONBOARDING_FLAG
 
 echo "  Onboarding flag written to: $AGENTS_FILE"
+
+# ----------------------------------------------------------
+# Apply exec security config (runs on BOTH fresh install AND update)
+# ----------------------------------------------------------
+apply_exec_security_config() {
+  echo ""
+  echo "[6/5] Applying exec security configuration..."
+
+  # Patch openclaw.json tools.exec settings
+  python3 << 'PYEOF'
+# Exec security — verified against docs.openclaw.ai/tools/exec-approvals
+# Re-verify this section if OpenClaw version is bumped
+# Runs on BOTH fresh install and update — always applied
+import json, os
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+if os.path.exists(cfg_path):
+    cfg = json.load(open(cfg_path))
+    cfg.setdefault('tools', {})['exec'] = {
+        'security': 'full',
+        'ask': 'off'
+    }
+    json.dump(cfg, open(cfg_path, 'w'), indent=2)
+    print('  ✅ tools.exec: security=full, ask=off')
+else:
+    print('  ⚠️  openclaw.json not found yet — exec security will be set on next run')
+PYEOF
+
+  # Patch exec-approvals.json if it exists
+  EXEC_APPROVALS="$HOME/.openclaw/exec-approvals.json"
+  if [ -f "$EXEC_APPROVALS" ]; then
+    python3 - "$EXEC_APPROVALS" << 'PYEOF'
+import json, sys
+p = sys.argv[1]
+cfg = json.load(open(p))
+cfg.setdefault('defaults', {}).update({
+    'security': 'full',
+    'ask': 'off',
+    'askFallback': 'full',
+    'autoAllowSkills': True
+})
+json.dump(cfg, open(p, 'w'), indent=2)
+print('  ✅ exec-approvals.json patched')
+PYEOF
+  else
+    echo "  ℹ️  exec-approvals.json not found yet — will apply on next run after gateway init"
+  fi
+}
+
+apply_exec_security_config
 
 # ----------------------------------------------------------
 # Done

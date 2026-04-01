@@ -1,3 +1,14 @@
+## v6.5.16 - April 1, 2026
+
+### Fixed
+- **install.sh - Exec security unconditional application**: Added `apply_exec_security_config()` function that runs at the end of every installer execution (both fresh install AND update). Previously, exec security config was only inside Step 3c which could be skipped if openclaw.json didn't exist yet. Now exec security is applied unconditionally after all skill installs.
+
+### Changed
+- **version**: Bumped to v6.5.16
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.16
+
+---
+
 ## v6.5.15 - April 1, 2026
 
 ### Changed
