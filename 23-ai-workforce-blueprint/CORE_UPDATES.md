@@ -72,7 +72,7 @@ Key functions:
 - determine_specialists(): classifies roles as permanent (daily) or on-call (template)
 - add_agent_to_config(): backs up config, then adds agents.list entry
 - generate_org_chart(): creates ~/clawd/ORG-CHART.md
-- generate_departments_json(): creates config/departments.json for Command Center
+- generate_departments_json(): creates departments.json for Command Center (written to ~/Downloads/openclaw-master-files/company-discovery/departments.json)
 - generate_soul_md(): creates unique SOUL.md from interview answers
 - log_fallback(): tracks when clients hesitate during interview
 
@@ -102,7 +102,7 @@ Full reference: ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-bluepr
 - Routing file: [workspace]/universal-sops/00-ROUTING.md
 - Persona matrix: [workspace]/persona-matrix.md
 - Org chart: [workspace]/ORG-CHART.md
-- Command Center config: [workspace]/config/departments.json
+- Command Center config: ~/Downloads/openclaw-master-files/company-discovery/departments.json
 - Full blueprint: ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-blueprint-full.md
 ```
 

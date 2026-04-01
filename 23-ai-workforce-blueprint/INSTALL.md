@@ -612,7 +612,16 @@ Generate ~/clawd/ORG-CHART.md via generate_org_chart() showing:
 - Add summary reference to MEMORY.md
 
 ### Command Center departments.json
-Generate config/departments.json for the BlackCEO Command Center via generate_departments_json().
+Generate departments.json for the BlackCEO Command Center via generate_departments_json().
+
+**Canonical output path (absolute):**
+```
+~/Downloads/openclaw-master-files/company-discovery/departments.json
+```
+
+This is the exact file that Skill 32 (Command Center Setup) reads to populate the dashboard. Write the JSON array returned by generate_departments_json() to this path. Do NOT write it to a relative path or a different directory.
+
+Exact schema per entry: `{ "id": slug, "emoji": emoji, "name": display, "headTitle": director title }`. Only include departments the client actually chose.
 Exact format per entry: { "id": slug, "emoji": emoji, "name": display, "headTitle": director title }
 Only include departments the client chose.
 
@@ -973,7 +982,7 @@ Before reporting done, verify every item:
 - [ ] Each specialist role file contains: Title, Reports to, Responsibilities (5 bullets), Key metrics
 - [ ] persona-matrix.md created in CEO workspace
 - [ ] ORG-CHART.md generated in CEO workspace (exists and non-empty)
-- [ ] departments.json generated for Command Center
+- [ ] departments.json generated for Command Center at ~/Downloads/openclaw-master-files/company-discovery/departments.json
 - [ ] Devil's Advocate created per department
 - [ ] All department folders use correct naming (lowercase, hyphens, NO -dept suffix)
 - [ ] Universal SOPs folder created with 00-ROUTING.md
