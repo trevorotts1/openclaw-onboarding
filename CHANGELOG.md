@@ -11,6 +11,15 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **Skill 23 INSTALL.md Phase 5-BUILD-B**: Added instruction to append Persona Operating Protocol to each department's AGENTS.md during setup.
 - **Skill 32 INSTALL.md Phase 7.4**: Added Persona Runtime Test to verification phase. Agents must answer "What persona are you operating as and why?" with a reference to governing-personas.md. Fail = install incomplete.
 
+## v6.5.1 — March 31, 2026
+
+### Fixed (QC-driven, 8→10 round)
+- **Skill 22**: Added gemini-search.py and gemini-indexer.py to pipeline/ directory within the skill folder. Fresh client installs no longer fail at Step 5b (QC: 8→10).
+- **Skill 23**: Documented canonical departments.json path as ~/Downloads/openclaw-master-files/company-discovery/departments.json in both INSTALL.md and CORE_UPDATES.md. Absolute path, not relative (QC: 8→9.5).
+- **Skill 23**: Graceful Skill 22 dependency -- Skill 23 no longer blocks if Skill 22 is not installed. Persona creation falls back to local files.
+- **Skill 32**: Added 10 Telegram progress pings to INSTALL.md covering every long-running command (npm install, PM2, cloudflared tunnel, database seeding). Added 5-minute npm install timeout with retry fallback (QC: 8→9.5).
+- **Skill 32 seed-workspaces.py**: Added canonical departments.json path as first search candidate. Handoff from Skill 23 to Skill 32 now airtight.
+
 ---
 
 ## v6.4.0 — March 31, 2026
