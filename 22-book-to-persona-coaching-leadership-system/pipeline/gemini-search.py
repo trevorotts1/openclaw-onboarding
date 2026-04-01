@@ -84,7 +84,7 @@ def main():
 
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, file_path, content, vector FROM embeddings")
+    cursor.execute("SELECT id, file_path, content, vector FROM embeddings WHERE file_path LIKE '%coaching-personas/personas/%'")
     rows = cursor.fetchall()
     conn.close()
 
