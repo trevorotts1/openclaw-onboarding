@@ -401,6 +401,28 @@ Create folder: ~/clawd/departments/[dept-name]/
 - AGENTS.md - same behavioral playbook
 - USER.md - same human, same preferences
 
+**🔴 After copying AGENTS.md to each department workspace, APPEND the Persona Operating Protocol:**
+
+Add this section to the BOTTOM of each department's AGENTS.md:
+
+```markdown
+## 🔴🔴🔴 Persona Operating Protocol
+At the start of EVERY task:
+1. Read ~/clawd/departments/[your-dept]/governing-personas.md
+2. Load the Primary Persona from that file
+3. For this entire task, think, communicate, and decide AS THAT PERSONA
+   - Use their vocabulary and communication style
+   - Apply their core frameworks to the problem
+   - Make decisions the way they would make decisions
+4. If the task type matches a Secondary or Tertiary persona better, switch to that one
+5. Never start a task without an active persona loaded
+6. Log which persona you used at the end of each task in memory/
+```
+
+Replace `[your-dept]` with the actual department folder name (e.g., `marketing`, `sales`, `operations`).
+
+**Why this matters:** Without this protocol, department agents inherit the generic AGENTS.md but have no instruction to actually LOAD and APPLY their governing-personas.md at task time. The file sits there unused. This protocol makes persona activation mandatory on every task.
+
 **agents.list entry added to openclaw.json via add_agent_to_config():**
 - id: "dept-[name]"
 - name: "[Department] Director"

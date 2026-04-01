@@ -4,6 +4,15 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.5.0 — March 31, 2026
+
+### Fixed
+- **Runtime persona wiring (AGENTS.md)**: Added Persona Operating Protocol to ~/clawd/AGENTS.md. Every department agent now reads governing-personas.md at task start and operates through that persona for the entire task. Applies to all 17 departments via symlinks.
+- **Skill 23 INSTALL.md Phase 5-BUILD-B**: Added instruction to append Persona Operating Protocol to each department's AGENTS.md during setup.
+- **Skill 32 INSTALL.md Phase 7.4**: Added Persona Runtime Test to verification phase. Agents must answer "What persona are you operating as and why?" with a reference to governing-personas.md. Fail = install incomplete.
+
+---
+
 ## v6.4.0 — March 31, 2026
 
 ### Fixed

@@ -476,11 +476,24 @@ The agent verifies:
 - All 5 Kanban columns are visible
 - Task creation works
 
+### 7.4 Persona Runtime Test
+Send each department agent this message:
+> "What persona are you currently operating as and why?"
+
+**Expected:** Agent names the primary persona from their `governing-personas.md` and explains briefly why it fits the department.
+
+**FAIL if:** Agent says "I don't have a persona" or gives a generic response without referencing their `governing-personas.md`.
+
+**Why this matters:** Department agents have `governing-personas.md` files and a Persona Operating Protocol in their AGENTS.md, but if the runtime wiring is broken, agents will ignore both and operate as generic AI. This test catches that failure mode before go-live.
+
+**If an agent fails:** Check that their department AGENTS.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, append it manually and re-test.
+
 ### 7.5 Report Results
 The agent sends you a summary in Telegram:
 - Which departments are active
 - Dashboard URL
 - How to access each department topic
+- Persona runtime test results (pass/fail per department)
 
 ---
 
