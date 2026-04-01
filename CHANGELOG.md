@@ -1,3 +1,14 @@
+## v6.5.7 - April 1, 2026
+
+### Changed
+- Skill 12 (OpenRouter Setup): Removed all Anthropic model entries (claude-opus-4.6, claude-sonnet-4.6, claude-haiku-4.5)
+- Skill 12 (OpenRouter Setup): Removed all Perplexity model entries (sonar-pro-search, sonar)
+- Skill 12 (OpenRouter Setup): Added openrouter/openrouter/free model
+- Skill 12 (OpenRouter Setup): Updated fallback chain order -- MiMo V2 Pro first, Gemini Flash Lite second, OpenRouter Free third, then remaining models
+- Skill 12 (OpenRouter Setup): Updated primary model recommendation to openrouter/xiaomi/mimo-v2-pro for sub-agents
+- Skill 12 (OpenRouter Setup): Updated all config JSON examples and bash blocks to reflect new model roster (19 models)
+- Skill 12 (OpenRouter Setup): Updated INSTALL.md, openrouter-setup-full.md, EXAMPLES.md, INSTRUCTIONS.md, QC.md
+
 # Changelog
 
 All notable changes to the OpenClaw Onboarding package are documented here.

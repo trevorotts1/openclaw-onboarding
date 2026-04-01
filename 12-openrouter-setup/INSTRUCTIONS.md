@@ -8,7 +8,6 @@
 
 This document covers how to use the OpenRouter model roster day to day. It assumes you have already completed the installation steps in INSTALL.md. If you have not set up OpenRouter yet, go do that first.
 
-
 ## Understanding the Five Model Tiers
 
 Your models are organized into five tiers. Each tier serves a different purpose. Using the wrong tier wastes money or gives you poor results.
@@ -40,7 +39,6 @@ For: Research, fact-checking, web search, validating information.
 Model: Perplexity Sonar Pro Search.
 Has built-in web search capabilities. Use this every time you need to verify facts or look up current information.
 
-
 ## How to Switch Models
 
 To switch to a different model during a conversation, type:
@@ -58,7 +56,6 @@ To switch to a different model during a conversation, type:
    /model fallback    (switches to DeepSeek R1 Free)
 
 The agent can also switch models automatically based on the task, but it must notify you first and explain why.
-
 
 ## How Thinking Levels Work
 
@@ -102,7 +99,6 @@ The reasoning budget formula:
 
 For example, if max_tokens is 16,000 and effort is medium (0.50), the reasoning budget is 8,000 tokens.
 
-
 ## Intelligent Model Routing (The Decision Framework)
 
 Before every task, the agent should ask itself four questions:
@@ -135,7 +131,6 @@ Before every task, the agent should ask itself four questions:
 | Scrape data in bulk | Kimi K2.5 (parallel instances) | built-in |
 | Heartbeat scan (check emails, calendar) | MiniMax M2.7 | low |
 
-
 ## Model Switching Permission Protocol
 
 When the agent decides a different model would be better for the current task, it must:
@@ -147,7 +142,6 @@ When the agent decides a different model would be better for the current task, i
 5. If you decline, it stays on the current model and does its best.
 6. If you do not respond within 60 seconds, it proceeds with its recommendation.
 7. It always tells you what model is now active after any switch.
-
 
 ## Cost Management
 
@@ -169,7 +163,6 @@ Go to https://openrouter.ai/activity to see your requests, costs, and token usag
 
 6. Do not leave thinking on "high" for everything. Medium is the default for good reason. Only escalate when the task demands it.
 
-
 ## The Heartbeat Protocol (Automated Task Execution)
 
 The heartbeat is when the agent automatically checks for tasks that need doing (emails, calendar events, alerts). It has two phases:
@@ -190,7 +183,6 @@ Each task identified in Phase 1 gets routed to the right model:
 - Create images -> Stay on MiniMax, low thinking
 - Process data or batch operations -> Stay on MiniMax or DeepSeek, low thinking
 
-
 ## Zero-Credit Fallback Protocol
 
 If your OpenRouter credits run out (the API returns a 402 error or any billing error), the agent will:
@@ -201,7 +193,6 @@ If your OpenRouter credits run out (the API returns a 402 error or any billing e
 4. When you confirm you have added more credits, it switches back to your primary model.
 
 The agent should NEVER stop working just because paid models are unavailable. The free fallback keeps things running.
-
 
 ## Multi-Agent Orchestration
 
@@ -218,7 +209,6 @@ When the agent manages multiple sub-agents (workers) for a big task, each sub-ag
 
 The master agent (usually Opus) plans the work, assigns sub-tasks, and reviews the results. The sub-agents do the actual work. This pattern keeps costs down because the expensive model only plans and reviews, while cheaper models do the heavy lifting.
 
-
 ## Context Window Management
 
 Each model has a maximum amount of text it can process in one session (called the context window). When you approach the limit, the agent needs to create a handoff document so it does not lose track of what it was doing.
@@ -233,7 +223,6 @@ Large context models (1 million tokens): Claude Opus 4.6, Claude Sonnet 4.6, Gem
 
 Small context models (under 200K tokens): Mistral Small Creative (32K), DeepSeek V3.2 (163K), MiniMax M2.7 (196K). These need more careful context management for long sessions.
 
-
 ## Updating Your Workspace Files
 
 After configuring OpenRouter, make sure your workspace files are consistent:
@@ -244,7 +233,6 @@ After configuring OpenRouter, make sure your workspace files are consistent:
 - MEMORY.md should have context window capacities and routing quick reference
 
 All files should use the same model names, thinking levels, and recommendations. If TOOLS.md says "use MiniMax for heartbeat" but HEARTBEAT.md says "use Opus for heartbeat," that is a conflict. Fix it.
-
 
 ## Common Config Mistakes to Avoid
 
@@ -263,7 +251,6 @@ All files should use the same model names, thinking levels, and recommendations.
 7. Setting everything to high thinking. Medium is the default for good reason. Only escalate when needed.
 
 8. Not restarting after config changes. Changes do not take effect until you run: openclaw gateway restart
-
 
 ## For the Full Reference
 

@@ -10,7 +10,6 @@ Before ANY config edit:
 3. Reference https://docs.openclaw.ai for config structure.
 4. Reference https://github.com/openclaw/openclaw for latest schema.
 
-
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
   DO NOT SKIP. DO NOT PROCEED UNTIL THIS CHECK IS COMPLETE.
@@ -46,7 +45,6 @@ content to add, agent always follows this skill's files. The skill takes
 precedence over TYP on core file update decisions. TYP governs the storage
 method (lean summaries + file paths). The skill governs the content and which
 files it touches. When in doubt: skill docs win.
-
 
 ══════════════════════════════════════════════════════════════════
   TYP FILE STORAGE INSTRUCTIONS (agent executes only if TYP confirmed)
@@ -129,7 +127,6 @@ what commands were run, and what files were changed.
 
 ══════════════════════════════════════════════════════════════════
 
-
 # OpenRouter Setup - Agent Execution Guide
 
 This guide instructs the agent to set up OpenRouter as the model provider for OpenClaw.
@@ -137,7 +134,6 @@ OpenRouter is a service that gives access to dozens of AI models (Claude, GPT, G
 and many others) through a single API key and a single account.
 
 Agent executes every step in order. Agent does not skip anything.
-
 
 ## What Is OpenRouter?
 
@@ -154,9 +150,7 @@ Benefits:
 OpenClaw has built-in support for OpenRouter. Agent does NOT need to set up a separate
 "provider" section. Agent adds the API key and configures the models.
 
-
 ## Agent Execution Steps
-
 
 ### STEP 1: AGENT CHECKS FOR EXISTING OPENROUTER API KEY
 
@@ -182,7 +176,6 @@ IF API key is NOT found anywhere:
 - IF requester provides a key: Agent captures it and proceeds to STEP 4
 - IF requester wants to skip: Agent sets key as PENDING, skips STEP 5 (API key insertion), proceeds with STEP 4 and STEP 6 (model config only). Agent notes in completion report that API key must be added before models will work.
 
-
 ### STEP 2: AGENT CREATES OPENROUTER ACCOUNT (if needed)
 
 IF requester does not have an OpenRouter account and wants to set one up now:
@@ -193,7 +186,6 @@ IF requester does not have an OpenRouter account and wants to set one up now:
 IF requester already has an OpenRouter account, or API key was found in STEP 1:
 - Agent skips this step
 
-
 ### STEP 3: AGENT OBTAINS OPENROUTER API KEY (if needed)
 
 IF agent does not yet have an API key and requester wants to provide one now:
@@ -203,7 +195,6 @@ IF agent does not yet have an API key and requester wants to provide one now:
 
 IF agent already has an API key, or requester chose to skip:
 - Agent skips this step
-
 
 ### STEP 4: AGENT BACKS UP CURRENT CONFIG FILE
 
@@ -234,7 +225,6 @@ IF backup file size is 0 or backup does not exist:
 
 IF backup is successful and not empty:
 - Agent continues to STEP 5
-
 
 ### STEP 5: AGENT ADDS API KEY TO CONFIG FILE
 
@@ -281,7 +271,6 @@ IF key is not found in config:
 IF key is found in config:
 - Agent continues to STEP 6
 
-
 ### STEP 6: AGENT CONFIGURES MODELS IN CONFIG FILE
 
 Agent reads current config:
@@ -307,31 +296,29 @@ Agent adds this configuration:
       "model": {
         "primary": "openrouter/minimax/minimax-m2.7",
         "fallbacks": [
+          "openrouter/xiaomi/mimo-v2-pro",
           "openrouter/google/gemini-3.1-flash-lite-preview",
+          "openrouter/openrouter/free",
+          "openrouter/minimax/minimax-m2.7",
           "openrouter/moonshotai/kimi-k2.5",
-          "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-          "openrouter/deepseek/deepseek-r1-0528:free"
+          "openrouter/google/gemini-3-flash-preview",
+          "openrouter/openai/gpt-5.2-codex",
+          "openrouter/openai/gpt-5-mini",
+          "openrouter/openai/gpt-5-nano",
+          "openrouter/mistralai/mistral-small-creative",
+          "openrouter/qwen/qwen3.5-plus-02-15",
+          "openrouter/z-ai/glm-5",
+          "openrouter/deepseek/deepseek-v3.2",
+          "openrouter/deepseek/deepseek-v3.2-speciale",
+          "openrouter/deepseek/deepseek-r1-0528:free",
+          "openrouter/xiaomi/mimo-v2-omni",
+          "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
         ]
       },
       "thinkingDefault": "medium",
       "models": {
-        "openrouter/anthropic/claude-opus-4.6": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
-          }
         },
-        "openrouter/anthropic/claude-sonnet-4.6": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
-          }
         },
-        "openrouter/anthropic/claude-haiku-4.5": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
-          }
         },
         "openrouter/google/gemini-3.1-pro-preview": {
           "params": {
@@ -427,16 +414,7 @@ Agent adds this configuration:
             "reasoning": true
           }
         },
-        "openrouter/perplexity/sonar-pro-search": {
-          "params": {
-            "temperature": 0.3
-          }
-        },
-        "openrouter/perplexity/sonar": {
-          "params": {
-            "temperature": 0.3
-          }
-        }
+
       }
     }
   }
@@ -448,9 +426,7 @@ Agent uses jq to ADDITIVELY MERGE new models into the existing config (preservin
 ```bash
 # Define the new models as a separate JSON block
 NEW_MODELS='{
-  "openrouter/anthropic/claude-opus-4.6": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/anthropic/claude-sonnet-4.6": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/anthropic/claude-haiku-4.5": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
+
   "openrouter/google/gemini-3.1-pro-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3-flash-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3.1-flash-lite-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
@@ -468,14 +444,13 @@ NEW_MODELS='{
   "openrouter/xiaomi/mimo-v2-omni": {"params": {"temperature": 0.3, "reasoning": true}},
   "openrouter/xiaomi/mimo-v2-pro": {"params": {"temperature": 0.3, "reasoning": true}},
   "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/perplexity/sonar-pro-search": {"params": {"temperature": 0.3}},
-  "openrouter/perplexity/sonar": {"params": {"temperature": 0.3}}
+
 }'
 
 # Additive merge: existing models are preserved, new models are added/updated
 jq --argjson new "$NEW_MODELS" '
   .agents.defaults.model.primary = "openrouter/minimax/minimax-m2.7" |
-  .agents.defaults.model.fallbacks = ["openrouter/google/gemini-3.1-flash-lite-preview", "openrouter/moonshotai/kimi-k2.5", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/deepseek/deepseek-r1-0528:free"] |
+  .agents.defaults.model.fallbacks = ["openrouter/xiaomi/mimo-v2-pro", "openrouter/google/gemini-3.1-flash-lite-preview", "openrouter/openrouter/free", "openrouter/minimax/minimax-m2.7", "openrouter/moonshotai/kimi-k2.5", "openrouter/google/gemini-3-flash-preview", "openrouter/openai/gpt-5.2-codex", "openrouter/openai/gpt-5-mini", "openrouter/openai/gpt-5-nano", "openrouter/mistralai/mistral-small-creative", "openrouter/qwen/qwen3.5-plus-02-15", "openrouter/z-ai/glm-5", "openrouter/deepseek/deepseek-v3.2", "openrouter/deepseek/deepseek-v3.2-speciale", "openrouter/deepseek/deepseek-r1-0528:free", "openrouter/xiaomi/mimo-v2-omni", "openrouter/nvidia/nemotron-3-super-120b-a12b:free"] |
   .agents.defaults.thinkingDefault = "medium" |
   .agents.defaults.models = ((.agents.defaults.models // {}) * $new)
 ' ~/.openclaw/openclaw.json > ~/.openclaw/openclaw.json.tmp && mv ~/.openclaw/openclaw.json.tmp ~/.openclaw/openclaw.json
@@ -486,7 +461,7 @@ NOTE: The `* $new` operator merges new models INTO existing models. Any pre-exis
 Agent verifies models were added:
 
 ```bash
-grep -c "openrouter/anthropic/claude-opus-4.6" ~/.openclaw/openclaw.json
+grep -c "openrouter/xiaomi/mimo-v2-pro" ~/.openclaw/openclaw.json
 ```
 
 IF models are not found in config:
@@ -500,7 +475,6 @@ IF models are not found in config:
 
 IF models are found in config:
 - Agent continues to STEP 7
-
 
 ### STEP 7: AGENT VALIDATES CONFIG
 
@@ -523,7 +497,6 @@ IF validation FAILS:
   cp ~/openclaw-backup-configs/"$BACKUP_FILE" ~/.openclaw/openclaw.json
   ```
 - Agent does NOT proceed
-
 
 ### STEP 8: AGENT RESTARTS OPENCLAW GATEWAY
 
@@ -550,7 +523,6 @@ IF gateway is not running:
 - Agent STOPS
 - Agent reports error to requester
 - Agent does NOT proceed
-
 
 ### STEP 9: AGENT SAVES DOCUMENTATION TO MASTER FILES
 
@@ -594,7 +566,6 @@ Full reference: ~/Downloads/openclaw-master-files/openrouter-setup/openrouter-se
 
 Agent adds these summaries to AGENTS.md and TOOLS.md respectively (agent does NOT paste full document content).
 
-
 ### STEP 10: AGENT REPORTS COMPLETION
 
 Agent provides requester with summary:
@@ -613,14 +584,13 @@ Actions completed:
 8. ✓ Added summaries to AGENTS.md and TOOLS.md
 
 Primary model: openrouter/minimax/minimax-m2.7
-Fallback models: openrouter/google/gemini-3.1-flash-lite-preview, openrouter/moonshotai/kimi-k2.5, openrouter/nvidia/nemotron-3-super-120b-a12b:free, openrouter/deepseek/deepseek-r1-0528:free
+Fallback models: openrouter/xiaomi/mimo-v2-pro, openrouter/google/gemini-3.1-flash-lite-preview, openrouter/openrouter/free, openrouter/minimax/minimax-m2.7, openrouter/moonshotai/kimi-k2.5, (+ 12 more)
 
 Config file: ~/.openclaw/openclaw.json
 Backup location: ~/openclaw-backup-configs/
 
 Setup is complete and ready for use.
 ```
-
 
 ## Model Reference - What Each Model Is For
 

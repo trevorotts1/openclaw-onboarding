@@ -217,8 +217,7 @@ Answer these from memory (without re-reading the skill docs). If the agent canno
 ---
 
 **4.5** What is the correct model ID format for OpenRouter models?
-**Expected answer:** `openrouter/author/model-slug` — the `openrouter/` prefix is mandatory. Example: `openrouter/anthropic/claude-opus-4.6`.
-
+**Expected answer:** `openrouter/author/model-slug` — the `openrouter/` prefix is mandatory. Example: `
 ---
 
 **4.6** What thinking level does MiniMax M2.5 use by default, and why is it different from other models?

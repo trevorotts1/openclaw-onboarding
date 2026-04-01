@@ -4,7 +4,6 @@
 - Before any OpenRouter config edits, back up the model config first.
 - If backup fails, stop OpenRouter setup and report error.
 
-
 ╔══════════════════════════════════════════════════════════════╗
   MANDATORY TYP CHECK - READ THIS BEFORE ANYTHING ELSE
   DO NOT SKIP. DO NOT PROCEED UNTIL THIS CHECK IS COMPLETE.
@@ -140,13 +139,9 @@ OpenRouter Configuration Guide for OpenClaw Agents
 
 Version 2.0 | Updated February 21, 2026
 
-
-
 WHO THIS IS FOR
 
 You are an AI agent running on OpenClaw. This document teaches you how to properly configure OpenRouter as a model provider. Follow these instructions EXACTLY. Do not improvise. Do not skip steps. Do not assume you know better. This is your configuration bible. Read it. Follow it. Do not deviate.
-
-
 
 PRIMARY MODEL
 
@@ -160,9 +155,7 @@ If the user already has a primary model set, you must NOT override it. Instead, 
 
 If they say no, respect that. If they do not respond within 60 seconds, leave their primary model alone. This is non-negotiable.
 
-For users who need Thinking Tier as primary: Some users may specifically need Claude Opus 4.6 (openrouter/anthropic/claude-opus-4.6) or another Thinking Tier model as their primary because their work is consistently complex (architecture, deep analysis, critical strategy). That is their choice. The agent should not fight them on it, but should confirm they understand the cost difference.
-
-
+For users who need a high-capability primary: Some users may specifically need MiMo V2 Pro (openrouter/xiaomi/mimo-v2-pro) or another powerful model as their primary. That is their choice. The agent should not fight them on it.
 
 CRITICAL RULES: READ BEFORE DOING ANYTHING
 
@@ -235,14 +228,11 @@ Valid model entry examples:
   }
 }
 
-
-
 "openrouter/moonshotai/kimi-k2.5": {
   "params": {
     "temperature": 1.0
   }
 }
-
 
 INVALID model entry (will break the config):
 
@@ -251,7 +241,6 @@ INVALID model entry (will break the config):
   "contextWindow": 196608,
   "maxTokens": 196608
 }
-
 
 If you add ANY key that is not alias, params, or streaming, the config will fail validation, OpenClaw will not start, and the user's entire setup will be broken. This is the single most common configuration error. Do not make it.
 
@@ -294,9 +283,7 @@ OpenRouter Reasoning Effort Levels and Budget Formula
 
 OpenRouter supports five reasoning effort levels. The reasoning budget is calculated using this formula:
 
-
 budget_tokens = max(min(max_tokens * effort_ratio, 128000), 1024)
-
 
 | Effort Level | Effort Ratio | Budget at 16K max_tokens | Budget at 128K max_tokens |
 |--------------|--------------|--------------------------|---------------------------|
@@ -432,8 +419,6 @@ Sub-task is a general operation that does not fit the above = MiniMax M2.7
 
 The master agent must also set the thinking level per sub-task based on complexity (medium, high, or xhigh) and set max_tokens to the sub-agent model's actual maximum output limit so the model is not artificially capped. See the Multi-Agent Orchestration section for the full sub-agent selection tables and the reasoning budget formula.
 
-
-
 STEP 1: CHECK FOR OPENROUTER API KEY
 
 Before configuring anything, check if the user already has an OpenRouter API key.
@@ -465,39 +450,27 @@ I will store it securely in your config."
 
 Do NOT proceed without the key.
 
-
-
 STEP 2: BACKUP THE CONFIG FILE (MANDATORY)
 
 This step is NON-NEGOTIABLE. Do it every single time before editing the config. No exceptions. No shortcuts. No "I'll do it after."
 
 Find the Config File
 
-
 ls ~/.openclaw/openclaw.json
-
 
 Create a Backup Folder (If It Does Not Exist)
 
-
 mkdir -p ~/openclaw-backup-configs
-
 
 Back Up the Current Config with a Date Stamp
 
-
 cp ~/.openclaw/openclaw.json ~/openclaw-backup-configs/openclaw-backup-$(date +%Y-%m-%d-%H%M%S).json
-
 
 Verify the Backup Exists
 
-
 ls -la ~/openclaw-backup-configs/
 
-
 If the backup failed, STOP. Do not edit the config. Fix the backup issue first.
-
-
 
 STEP 3: UNDERSTAND THE MODEL ID FORMAT
 
@@ -505,17 +478,12 @@ OpenClaw uses the format openrouter/<author>/<slug> for OpenRouter models. This 
 
 Correct Format
 
-
 openrouter/<author>/<slug>
-
 
 Model ID Reference Table
 
 | What You Want | CORRECT ID | WRONG (Will Break) |
 |---------------|------------|---------------------|
-| Claude Opus 4.6 | openrouter/anthropic/claude-opus-4.6 | anthropic/claude-opus-4.6 |
-| Claude Sonnet 4.6 | openrouter/anthropic/claude-sonnet-4.6 | anthropic/claude-sonnet-4.6 |
-| Claude Haiku 4.5 | openrouter/anthropic/claude-haiku-4.5 | anthropic/claude-haiku-4.5 |
 | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | google/gemini-3.1-pro |
 | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | google/gemini-3-flash |
 | GPT 5.2 Codex | openrouter/openai/gpt-5.2-codex | openai/gpt-5.2-codex |
@@ -529,8 +497,6 @@ Model ID Reference Table
 | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | deepseek/deepseek-v3.2 |
 | DeepSeek V3.2 Speciale | openrouter/deepseek/deepseek-v3.2-speciale | deepseek/v3.2-speciale |
 | DeepSeek R1 Free | openrouter/deepseek/deepseek-r1-0528:free | deepseek/r1-free |
-| Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | perplexity/sonar-pro |
-| Perplexity Sonar | openrouter/perplexity/sonar | perplexity/sonar |
 | Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | google/gemini-3.1-flash-lite |
 | MiMo V2 Pro | openrouter/xiaomi/mimo-v2-pro | xiaomi/mimo-v2-pro |
 | MiMo V2 Omni | openrouter/xiaomi/mimo-v2-omni | xiaomi/mimo-v2-omni |
@@ -542,13 +508,9 @@ Direct provider calls without the openrouter/ prefix (unless the user has a dire
 
 You can verify the exact format for each model on the OpenRouter models page: https://openrouter.ai/models
 
-
-
 STEP 4: MODEL SELECTION STRATEGY
 
 This section defines which models to use, when to use them, and why. The models are organized into five tiers. Each tier serves a distinct purpose. Using the wrong tier for a task either wastes money or delivers poor results. Both outcomes are unacceptable.
-
-
 
 Tier 1: Thinking Tier
 
@@ -558,9 +520,7 @@ These models support extended thinking/reasoning. They cost more per token but d
 
 | Priority | Model | OpenRouter ID | Alias | Thinking |
 |----------|-------|---------------|-------|----------|
-| 1st | Claude Opus 4.6 | openrouter/anthropic/claude-opus-4.6 | opus | YES (adaptive: low/medium/high/max) |
-| 2nd | Claude Sonnet 4.6 | openrouter/anthropic/claude-sonnet-4.6 | sonnet | YES (adaptive: low/medium/high/max) |
-| 3rd | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | gemini31 | YES (thinkingLevel: minimal/low/medium/high) |
+| 1st | 2nd | 3rd | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | gemini31 | YES (thinkingLevel: minimal/low/medium/high) |
 | 4th | GPT 5.2 Codex | openrouter/openai/gpt-5.2-codex | codex | YES (reasoning effort: low/medium/high) |
 | 5th | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | qwen | YES (reasoning supported) |
 | 6th | GLM-5 | openrouter/z-ai/glm-5 | glm5 | YES (reasoning supported) |
@@ -578,8 +538,6 @@ Code refactoring across entire codebases
 Deep data analysis and research synthesis
 Any task where getting it wrong has significant consequences
 
-
-
 Tier 2: Execution Tier
 
 For daily tasks, routine work, fast responses, tool calls, and standard operations.
@@ -591,8 +549,7 @@ These models are cost-effective and fast. They handle the majority of day-to-day
 | 1st | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | minimax | YES (opt-in via reasoning: true, no levels) | **Primary daily task model. Supports tool calls. Use for all routine operations, task execution, and heartbeat. |
 | 2nd | MiMo V2 Omni | openrouter/xiaomi/mimo-v2-omni | mimo-omni | YES (always on, supports text+images+video+audio) | Multimodal tasks. Cheaper than Gemini for media analysis. Joint audio-visual processing. |
 | 3rd | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | flash | YES (thinkingLevel) | Fast responses, large context tasks. |
-| 4th | Claude Haiku 4.5 | openrouter/anthropic/claude-haiku-4.5 | haiku | YES (extended thinking) | Fast intelligent responses. |
-| 5th | GPT-5 Mini | openrouter/openai/gpt-5-mini | gptmini | YES (reasoning effort) | Mid-range tasks, good value. |
+| 4th | 5th | GPT-5 Mini | openrouter/openai/gpt-5-mini | gptmini | YES (reasoning effort) | Mid-range tasks, good value. |
 | 6th | GPT-5 Nano | openrouter/openai/gpt-5-nano | gptnano | YES (reasoning effort) | Simplest tasks, basic lookups. |
 | 7th | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | deepseek | YES (reasoning toggle, default: MEDIUM) | Value workhorse, also suitable for heartbeat. |
 | 8th | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | kimi | YES (built-in, no config param) | Coding and chat ONLY. See critical limitation below. |
@@ -681,8 +638,6 @@ Quick summaries of short documents (GPT-5 Mini or Claude Haiku 4.5)
 Simple Q&A and factual questions (GPT-5 Nano)
 Content drafts and simple edits (any Execution Tier model)
 
-
-
 Tier 3: Creative Tier
 
 For all creative writing, content creation, copywriting, and narrative work.
@@ -704,8 +659,6 @@ Product descriptions
 Sales copy and landing page content
 
 Why a dedicated creative tier? Creative writing does not need deep reasoning or thinking tokens. Mistral Small Creative is purpose-built for this work at $0.10/M input. Route all creative tasks here.
-
-
 
 Tier 4: Fallback Tier
 
@@ -731,16 +684,12 @@ Notify the user: "Your OpenRouter credits appear to be depleted. I have automati
 Continue operating normally on the free model
 When the user confirms credits have been added, switch back to their configured primary model
 
-
-
 Tier 5: Research Tier
 
 For research, fact-checking, web search, validation, and verifying information as truth.
 
 | Model | OpenRouter ID | Alias | Use Case |
 |-------|---------------|-------|----------|
-| Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | research | Deep multi-step research. Follows links, synthesizes multiple sources. $3/M input, $15/M output, 200K context. |
-| Perplexity Sonar | openrouter/perplexity/sonar | sonar | Quick single-question web lookups. Faster and cheaper than Pro Search. 127K context. |
 
 Perplexity Sonar Pro Search is the PRIMARY research model for deep work. Perplexity Sonar is for quick lookups. Any time the system needs to research a topic, validate information, verify facts, check if something is true, look up current data, or perform any kind of web-based information retrieval, a Perplexity model gets used. This is not optional. This is not a suggestion. Perplexity is the research model.
 
@@ -767,8 +716,6 @@ Daily task execution (use MiniMax M2.7)
 
 Pricing note: Perplexity charges $3/M input tokens, $15/M output tokens, PLUS $18 per 1,000 web searches. The web search cost is separate from token costs. The agent should be aware that research tasks cost more than standard model calls because of the web search surcharge.
 
-
-
 Model Specifications Reference Table
 
 This table contains the verified specifications for every model in the roster. The agent MUST reference this table to understand context window limits, output capacity, and cost implications. This data is critical for preventing context overflow, premature compaction, and unnecessary cost.
@@ -777,9 +724,6 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 
 | Model | OpenRouter ID | Context Window | Max Output | Input $/M | Output $/M | Thinking | Temp |
 |-------|---------------|----------------|------------|-----------|------------|----------|------|
-| Claude Opus 4.6 | openrouter/anthropic/claude-opus-4.6 | 1,000,000 | 128,000 | $5.00 | $25.00 | YES (adaptive: low/med/high/max) | 0.3 |
-| Claude Sonnet 4.6 | openrouter/anthropic/claude-sonnet-4.6 | 1,000,000 | 128,000 | $3.00 | $15.00 | YES (adaptive: low/med/high/max) | 0.3 |
-| Claude Haiku 4.5 | openrouter/anthropic/claude-haiku-4.5 | 200,000 | 64,000 | $1.00 | $5.00 | YES (extended thinking) | 0.3 |
 | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | 1,048,576 | 65,536 | $2.00 | $12.00 | YES (thinkingLevel: minimal/low/med/high) | 0.3 |
 | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | 1,048,576 | 65,536 | $0.50 | $3.00 | YES (thinkingLevel) | 0.3 |
 | GPT 5.2 Codex | openrouter/openai/gpt-5.2-codex | 400,000 | 128,000 | $0.25 | $2.00 | YES (reasoning effort: low/med/high) | 0.3 |
@@ -793,12 +737,10 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | 163,840 | 8,192 | $0.26 | $0.38 | YES (reasoning toggle, default: MEDIUM) | 0.3 |
 | DeepSeek V3.2 Speciale | openrouter/deepseek/deepseek-v3.2-speciale | 163,840 | 65,536 | $0.40 | $1.20 | YES (high-compute) | 0.3 |
 | DeepSeek R1 0528 Free | openrouter/deepseek/deepseek-r1-0528:free | 163,840 | 163,840 | FREE | FREE | YES | 0.3 |
-| Perplexity Sonar Pro Search | openrouter/perplexity/sonar-pro-search | 200,000 | 8,000 | $3.00 | $15.00 | No (research/search model) | 0.3 |
 | Gemini 3.1 Flash Lite Preview | openrouter/google/gemini-3.1-flash-lite-preview | 1,048,576 | 65,536 | $0.25 | $1.50 | YES (medium default) | 0.3 |
 | MiMo V2 Omni | openrouter/xiaomi/mimo-v2-omni | 262,144 | 65,536 | $0.40 | $1.60 | YES (reasoning param, always on) | 0.3 |
 | Nemotron 3 Super | openrouter/nvidia/nemotron-3-super-120b-a12b:free | TBD | TBD | FREE | FREE | YES (medium default) | 0.3 |
 | MiMo V2 Pro | openrouter/xiaomi/mimo-v2-pro | 1,000,000 | 131,072 | $1.00 | $4.00 | YES (reasoning param, always on, TEXT ONLY) | 0.3 |
-| Perplexity Sonar | openrouter/perplexity/sonar | 127,000 | 8,000 | $0.50 | $2.00 | No (quick search model) | 0.3 |
 
 Important notes about this table:
 
@@ -811,8 +753,6 @@ Perplexity Sonar Pro Search has an additional cost of $18 per 1,000 web searches
 Context window is the total input capacity. Max output is the maximum response length the model can generate.
 The agent must reference these context windows to avoid premature compaction or context overflow errors.
 Before configuring any model, verify its current specs at its OpenRouter model page: https://openrouter.ai/models/<model-slug>
-
-
 
 Thinking Model Cost Warning Protocol
 
@@ -838,8 +778,6 @@ Thinking Level Recommendations by Task Complexity
 | Mission-critical | Xhigh (MiniMax M2.7) | Production deployment planning, security audits, critical business strategy, complex multi-agent orchestration |
 
 Note: Xhigh is the maximum reasoning level available on OpenRouter (0.95 effort ratio). It is supported by MiniMax M2.7 and other reasoning-capable models. Use it only when the task demands maximum analytical depth and the user has approved the additional token cost.
-
-
 
 Scenario-Based Model Routing Guide
 
@@ -970,8 +908,6 @@ Architecture: Master agent (Opus or Sonnet, Thinking Tier) breaks the project in
 Thinking level per sub-task: Standard code generation = medium. Complex API integration = high. Critical production deployment = xhigh. Creative writing = N/A (Mistral has no thinking parameter).
 Why: Each sub-agent is matched to its strengths. The master agent handles continuity and integration. Token cost stays appropriate per sub-task.
 
-
-
 MULTI-AGENT ORCHESTRATION
 
 This is a general operational principle, not limited to any single scenario. The agent must understand this pattern and apply it whenever it fits the task.
@@ -1053,8 +989,6 @@ Cost Benefit
 
 This pattern keeps Thinking Tier usage limited to planning and review (low token count) while routing the bulk of generation work to Execution or Creative Tier models. The user pays Thinking Tier prices only for the orchestration, not for every word of output.
 
-
-
 STEP 5: CONFIGURE THE OPENCLAW CONFIG FILE
 
 OpenClaw has BUILT-IN support for OpenRouter. You do NOT need to configure models.providers. Just set your API key and reference models with the openrouter/<author>/<slug> format.
@@ -1062,7 +996,6 @@ OpenClaw has BUILT-IN support for OpenRouter. You do NOT need to configure model
 Full Configuration with All Models
 
 Add your OpenRouter API key and the complete model roster to ~/.openclaw/openclaw.json:
-
 
 {
   "env": {
@@ -1073,36 +1006,28 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
       "model": {
         "primary": "openrouter/minimax/minimax-m2.7",
         "fallbacks": [
+          "openrouter/xiaomi/mimo-v2-pro",
           "openrouter/google/gemini-3.1-flash-lite-preview",
-          "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+          "openrouter/openrouter/free",
+          "openrouter/minimax/minimax-m2.7",
           "openrouter/moonshotai/kimi-k2.5",
-          "openrouter/deepseek/deepseek-r1-0528:free"
+          "openrouter/google/gemini-3-flash-preview",
+          "openrouter/openai/gpt-5.2-codex",
+          "openrouter/openai/gpt-5-mini",
+          "openrouter/openai/gpt-5-nano",
+          "openrouter/mistralai/mistral-small-creative",
+          "openrouter/qwen/qwen3.5-plus-02-15",
+          "openrouter/z-ai/glm-5",
+          "openrouter/deepseek/deepseek-v3.2",
+          "openrouter/deepseek/deepseek-v3.2-speciale",
+          "openrouter/deepseek/deepseek-r1-0528:free",
+          "openrouter/xiaomi/mimo-v2-omni",
+          "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
         ]
       },
       "models": {
-        "openrouter/anthropic/claude-opus-4.6": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
         },
-        "openrouter/anthropic/claude-sonnet-4.6": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
         },
-        "openrouter/anthropic/claude-haiku-4.5": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": {
-              "effort": "medium"
-            }
-          }
         },
         "openrouter/google/gemini-3.1-pro-preview": {
           "params": {
@@ -1200,16 +1125,7 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
             }
           }
         },
-        "openrouter/perplexity/sonar-pro-search": {
-          "params": {
-            "temperature": 0.3
-          }
-        },
-        "openrouter/perplexity/sonar": {
-          "params": {
-            "temperature": 0.3
-          }
-        },
+
         "openrouter/google/gemini-3.1-flash-lite-preview": {
           "params": {
             "temperature": 0.3,
@@ -1243,7 +1159,6 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
   }
 }
 
-
 Temperature Settings Summary
 
 ALL models: temperature 0.3
@@ -1268,34 +1183,24 @@ If the user already has a primary model set, do NOT change it. Only add the Open
 If they already have aliases pointing to direct providers, do NOT overwrite them.
 If they already have models configured, MERGE your additions. Do not replace their existing entries.
 
-
-
 STEP 6: VALIDATE AND RESTART
 
 Validate the Config
 
-
 openclaw doctor
-
 
 If Validation Passes
 
-
 openclaw gateway restart
-
 
 If Validation Fails
 
 RESTORE THE BACKUP IMMEDIATELY:
 
-
 LATEST_BACKUP="$(ls -t ~/openclaw-backup-configs/openclaw-backup-*.json | head -1)" && cp "$LATEST_BACKUP" ~/.openclaw/openclaw.json
 openclaw gateway restart
 
-
 Then review what went wrong before trying again. Do not keep editing a broken config. Restore, analyze, then attempt again with a fresh backup.
-
-
 
 STEP 7: VERIFY IT WORKS
 
@@ -1305,8 +1210,6 @@ Send a test message and confirm a response comes back
 Check status: Run to see the active model
 Test model switching: Try or /model opus to confirm aliases work
 Test fallback: Verify that if the primary model fails, the fallback engages
-
-
 
 QUICK REFERENCE TABLE
 
@@ -1337,11 +1240,7 @@ QUICK REFERENCE TABLE
 
 Environment Variable
 
-
 OPENROUTER_API_KEY=sk-or-...
-
-
-
 
 MD FILE UPDATE INSTRUCTIONS
 
@@ -1400,8 +1299,6 @@ Any Other Relevant .md Files
 
 If the agent has additional knowledge files that reference model capabilities, pricing, or selection logic, those files must also be updated to reflect this guide.
 
-
-
 TOKEN PROTECTION AND COST GUIDANCE RULES
 
 The purpose of this entire configuration is to ensure the end user gets the best possible results for every task while matching model selection to task requirements.
@@ -1419,8 +1316,6 @@ Never let the system go dark because of billing. If credits run out, switch to t
 Track and communicate cost implications. When recommending models, include the pricing context so users can make informed decisions.
 Track context window usage and create handoff.md before compaction. The agent must calculate 80/90/95% thresholds on session start. Warn at 80%. Create handoff.md at 90%. Update handoff.md at 95%. After compaction, read handoff.md first. The agent must know its active model's context window to calculate these thresholds.
 Select the correct sub-agent model in multi-agent orchestration. Tool-call tasks go to MiniMax M2.7. Code generation goes to Kimi K2.5. Creative writing goes to Mistral Small Creative. Research goes to Perplexity. Set thinking level per sub-task complexity. Set max_tokens to the model's actual output limit.
-
-
 
 COMMON MISTAKES TO AVOID
 
@@ -1451,8 +1346,6 @@ Sending a tool-call sub-task to Kimi K2.5 in multi-agent orchestration - The mas
 Capping sub-agent max_tokens below the model's actual limit - Each model has a maximum output token limit. If the master agent sets max_tokens to a lower value, the sub-agent's output gets cut off. Set max_tokens to the model's actual limit (or the amount needed for the task, whichever is lower). Do not leave it at a default that chokes the output.
 Ignoring the reasoning budget when setting max_tokens with thinking enabled - When reasoning is on, thinking tokens are billed as output tokens. For MiniMax M2.7 with reasoning: true, tokens are consumed from the output budget. For effort-based models, the reasoning budget is calculated FROM max_tokens. The master agent must set max_tokens high enough to accommodate both reasoning and the response output.
 
-
-
 OFFICIAL OPENROUTER REFERENCE
 
 The following is from the official OpenRouter documentation for OpenClaw integration (https://openrouter.ai/docs/guides/openclaw-integration). This section covers OpenRouter model format, fallback configuration, and troubleshooting. The user already has OpenClaw configured. This guide is strictly for configuring OpenRouter as the model provider.
@@ -1461,9 +1354,6 @@ Model Format
 
 OpenClaw uses the format openrouter/<author>/<slug> for OpenRouter models:
 
-openrouter/anthropic/claude-opus-4.6
-openrouter/anthropic/claude-sonnet-4.6
-openrouter/anthropic/claude-haiku-4.5
 openrouter/google/gemini-3.1-pro-preview
 openrouter/google/gemini-3-flash-preview
 openrouter/openai/gpt-5.2-codex
@@ -1477,16 +1367,15 @@ openrouter/z-ai/glm-5
 openrouter/deepseek/deepseek-v3.2
 openrouter/deepseek/deepseek-v3.2-speciale
 openrouter/deepseek/deepseek-r1-0528:free
-openrouter/perplexity/sonar-pro-search
 openrouter/google/gemini-3.1-flash-lite-preview
 openrouter/xiaomi/mimo-v2-omni
 openrouter/nvidia/nemotron-3-super-120b-a12b:free
 openrouter/xiaomi/mimo-v2-pro
+openrouter/openrouter/free
 
 NEVER use: openrouter/auto (Auto router picks models unpredictably and breaks configs)
 
 Multiple Models with Fallbacks
-
 
 {
   "agents": {
@@ -1494,10 +1383,23 @@ Multiple Models with Fallbacks
       "model": {
         "primary": "openrouter/minimax/minimax-m2.7",
         "fallbacks": [
+          "openrouter/xiaomi/mimo-v2-pro",
           "openrouter/google/gemini-3.1-flash-lite-preview",
-          "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+          "openrouter/openrouter/free",
+          "openrouter/minimax/minimax-m2.7",
           "openrouter/moonshotai/kimi-k2.5",
-          "openrouter/deepseek/deepseek-r1-0528:free"
+          "openrouter/google/gemini-3-flash-preview",
+          "openrouter/openai/gpt-5.2-codex",
+          "openrouter/openai/gpt-5-mini",
+          "openrouter/openai/gpt-5-nano",
+          "openrouter/mistralai/mistral-small-creative",
+          "openrouter/qwen/qwen3.5-plus-02-15",
+          "openrouter/z-ai/glm-5",
+          "openrouter/deepseek/deepseek-v3.2",
+          "openrouter/deepseek/deepseek-v3.2-speciale",
+          "openrouter/deepseek/deepseek-r1-0528:free",
+          "openrouter/xiaomi/mimo-v2-omni",
+          "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
         ]
       },
       "models": {
@@ -1509,9 +1411,7 @@ Multiple Models with Fallbacks
   }
 }
 
-
 Using Auth Profiles (More Secure)
-
 
 {
   "auth": {
@@ -1524,23 +1424,18 @@ Using Auth Profiles (More Secure)
   }
 }
 
-
 Then set the key in your system keychain:
-
 
 openclaw auth set openrouter:default --key "$OPENROUTER_API_KEY"
 
-
 Per-Channel Models
-
 
 {
   "telegram": {
     "agents": {
       "defaults": {
         "model": {
-          "primary": "openrouter/anthropic/claude-haiku-4.5"
-        }
+          "primary": "        }
       }
     }
   },
@@ -1548,13 +1443,11 @@ Per-Channel Models
     "agents": {
       "defaults": {
         "model": {
-          "primary": "openrouter/anthropic/claude-opus-4.6"
-        }
+          "primary": "        }
       }
     }
   }
 }
-
 
 Monitoring Usage
 
@@ -1578,8 +1471,6 @@ OpenRouter Models: https://openrouter.ai/models
 OpenRouter Activity Dashboard: https://openrouter.ai/activity
 OpenRouter API Documentation: https://openrouter.ai/docs/api
 OpenRouter Reasoning Tokens Guide: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
-
-
 
 SECTION 8: INTELLIGENT MODEL ROUTING VIA SYSTEM PROMPTING
 
@@ -1639,7 +1530,6 @@ Recommended Config:
   }
 }
 
-
 Then per-model overrides where needed (example: MiniMax at HIGH):
 
 "openrouter/minimax/minimax-m2.7": {
@@ -1650,7 +1540,6 @@ Then per-model overrides where needed (example: MiniMax at HIGH):
     }
   }
 }
-
 
 The Decision Framework
 
@@ -1808,7 +1697,6 @@ Opus (or Gemini 3.1) reviews EVERY result (QC pass)
 Opus assembles the final deliverable
 Opus presents polished output to user
 
-
 Why this pattern works financially:
 Opus plans the work: ~2,000-5,000 tokens (small cost)
 50 Kimi agents each write code: 50 x ~3,000 tokens at $0.23/$3.00 (moderate total cost)
@@ -1854,8 +1742,6 @@ Opus is the boss and the QC layer. Use Opus for: planning, blueprinting, masterm
 The swarm pattern saves money. Instead of Opus doing everything at $5/$25, have Opus plan the work (small token cost), spawn Kimi/MiniMax/DeepSeek agents to do the work (cheap), then have Opus review the results (small token cost). The total cost is a fraction of having Opus do it all.
 
 Track and optimize. After each heartbeat or task cycle, evaluate: Did the model choices work? Was anything overkill? Could something have been cheaper without quality loss? Write observations to memory so future sessions can refine.
-
-
 
 SECTION 9: HOW TO UPDATE YOUR WORKSPACE FILES
 
@@ -1915,7 +1801,6 @@ Model Selection Matrix
 | Research | Perplexity | medium | Built for search |
 [... full matrix ...]
 
-
 AGENTS.md - The Behavioral Rules
 
 AGENTS.md defines HOW the agent behaves. It's the rules, the boundaries, the expectations. This is where you put the routing RULE (not the full matrix - that's in TOOLS.md).
@@ -1948,7 +1833,6 @@ Kimi K2.5 CANNOT do tool calls. Never route tool tasks to Kimi.
 MiniMax M2.7 is the daily workhorse (cheap + tools + high thinking).
 Opus is the specialist (complex strategy, writing, client-facing).
 Full details: See TOOLS.md "Intelligent Model Routing" section.
-
 
 HEARTBEAT.md - The Automated Routine
 
@@ -1988,7 +1872,6 @@ Phase 2: Execute Tasks
 
 Phase 3: Return to Baseline
 After tasks: switch back to MiniMax if autonomous, stay on primary if user active.
-
 
 USER.md - The User Context
 
@@ -2051,10 +1934,7 @@ Find all model references across workspace files
 grep -rn "model\|MiniMax\|Opus\|Kimi\|Perplexity\|Codex\|thinking\|reasoning" \
   TOOLS.md AGENTS.md HEARTBEAT.md USER.md MEMORY.md SOUL.md | sort
 
-
 Review the output. Every mention of a model should be consistent with its capabilities, cost, and recommended use case. Every mention of thinking/reasoning levels should match the config.
-
-
 
 SECTION 10: PUTTING IT ALL TOGETHER - FULL IMPLEMENTATION CHECKLIST
 
@@ -2108,5 +1988,4 @@ Congruency Audit
 [ ] Consistent thinking levels everywhere
 [ ] No stale information from old configurations
 [ ] All files reference each other correctly (AGENTS.md points to TOOLS.md, etc.)
-
 

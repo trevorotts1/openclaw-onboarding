@@ -2,7 +2,6 @@
 
 This document shows real examples of OpenRouter configuration and model routing in action. Each example includes what happens, what commands to run, and what to expect.
 
-
 ## Example 1: First-Time Setup (Complete Walkthrough)
 
 **Scenario:** First-time OpenRouter setup on a new OpenClaw installation.
@@ -28,7 +27,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 
 **What you should see after:** The agent responds to your next message using MiniMax M2.7 as the active model.
 
-
 ## Example 2: Switching Models During a Conversation
 
 **Scenario:** You are chatting with the agent on MiniMax and need help planning a complex business strategy.
@@ -45,7 +43,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 
 **What happens:** The agent switches back to MiniMax M2.7: "Switched to MiniMax M2.7. Back to the daily workhorse."
 
-
 ## Example 3: Agent Recommends a Model Switch
 
 **Scenario:** You are on MiniMax and ask the agent to refactor an entire codebase.
@@ -60,7 +57,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 
 **If you do not respond within 60 seconds:** The agent proceeds with Opus (its recommendation) and logs the decision.
 
-
 ## Example 4: Writing a Blog Post (Creative Tier)
 
 **Scenario:** You ask the agent to write a 2,000-word blog post about real estate investing.
@@ -72,7 +68,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 "Switching to Mistral Small Creative for this writing task. This model is purpose-built for content creation at $0.10 per million input tokens - the most cost-effective option for writing."
 
 **Result:** You get a well-written blog post at a fraction of the cost compared to using Opus for the same task.
-
 
 ## Example 5: Researching Current Information
 
@@ -86,7 +81,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 
 **Result:** The agent returns verified, current pricing data with source citations, instead of guessing based on potentially outdated training data.
 
-
 ## Example 6: Running Out of Credits
 
 **Scenario:** You are in the middle of a conversation and the API returns a 402 (Payment Required) error.
@@ -98,7 +92,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 3. Continues working normally on the free model.
 
 **When you add more credits and tell the agent:** It switches back to your configured primary model (MiniMax M2.7).
-
 
 ## Example 7: Heartbeat Morning Scan
 
@@ -120,7 +113,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 - Task 3 (Stripe check): Stays on MiniMax (tool call to check Stripe API). Checks the payment status.
 
 **After all tasks:** Returns to MiniMax at low thinking and waits for the next heartbeat or user interaction.
-
 
 ## Example 8: Multi-Agent Orchestration (Building a Full Project)
 
@@ -145,7 +137,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 6. Opus assembles the final deliverable and presents it to you.
 
 **Why this is cost-effective:** Opus only does the planning and review (small token cost). The bulk of the work is done by cheaper models. Total cost is much less than having Opus do everything.
-
 
 ## Example 9: Adding a Single New Model to Your Config
 
@@ -177,7 +168,6 @@ This document shows real examples of OpenRouter configuration and model routing 
 
 6. Reports what was added and confirms it is working.
 
-
 ## Example 10: Changing a Model's Thinking Level
 
 **Scenario:** You want MiniMax to use xhigh thinking for a particularly complex task.
@@ -195,7 +185,6 @@ This document shows real examples of OpenRouter configuration and model routing 
    /reasoning medium
 
 **What happens:** Thinking drops back to medium (0.50 effort ratio), reducing cost for subsequent requests.
-
 
 ## Example 11: Checking Your Model Configuration
 
@@ -217,25 +206,17 @@ This document shows real examples of OpenRouter configuration and model routing 
 5. Check your credit balance:
    Go to https://openrouter.ai/activity in your browser.
 
-
 ## Example 12: Alias Conflict Resolution
 
 **Scenario:** You already have a direct Anthropic API connection with the alias "opus" and now you are adding the OpenRouter version of Claude Opus.
 
 **What the agent does:** Uses the prefix "or-" to avoid conflicts:
-
-   "openrouter/anthropic/claude-opus-4.6": {
-     "alias": "or-opus",
-     "params": {
-       "temperature": 0.3,
-       "reasoning": { "effort": "medium" }
      }
    }
 
 Now you can use:
 - /model opus for the direct Anthropic version
 - /model or-opus for the OpenRouter version
-
 
 ## Example 13: Correct vs. Incorrect Model Entries
 
@@ -262,7 +243,6 @@ The second example has contextWindow, maxTokens, cost, and notes. These are all 
 
 The ONLY valid keys for a model entry are: alias, params, and streaming. Nothing else.
 
-
 ## Example 14: Per-Channel Model Configuration
 
 **Scenario:** You want different models for different messaging platforms. For example, a cheaper model on Telegram and a more powerful model on Discord.
@@ -272,8 +252,7 @@ The ONLY valid keys for a model entry are: alias, params, and streaming. Nothing
        "agents": {
          "defaults": {
            "model": {
-             "primary": "openrouter/anthropic/claude-haiku-4.5"
-           }
+             "primary": "           }
          }
        }
      },
@@ -281,15 +260,13 @@ The ONLY valid keys for a model entry are: alias, params, and streaming. Nothing
        "agents": {
          "defaults": {
            "model": {
-             "primary": "openrouter/anthropic/claude-opus-4.6"
-           }
+             "primary": "           }
          }
        }
      }
    }
 
 This gives you Haiku (fast and cheap) on Telegram and Opus (powerful) on Discord.
-
 
 ## Example 15: Verifying Model Specs Before Configuring
 
@@ -304,19 +281,16 @@ This gives you Haiku (fast and cheap) on Telegram and Opus (powerful) on Discord
 
 For example, if this guide says MiniMax M2.7 costs $0.30 per million input tokens but the live page shows $0.25, use $0.25. Always trust the live page.
 
-
 ## Quick Reference: Model ID Format
 
 CORRECT format (always use this):
-   openrouter/anthropic/claude-opus-4.6
-   openrouter/minimax/minimax-m2.7
+      openrouter/minimax/minimax-m2.7
    openrouter/moonshotai/kimi-k2.5
 
 WRONG format (will break routing):
    anthropic/claude-opus-4.6      (missing openrouter/ prefix)
    minimax/minimax-m2.7           (missing openrouter/ prefix)
    openrouter/auto                (forbidden - never use auto)
-
 
 ## Quick Reference: Temperature Settings
 
