@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v6.5.6"
+ONBOARDING_VERSION="v6.5.11"
 
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
@@ -239,10 +239,15 @@ try:
     sub['maxConcurrent'] = 20
     sub['maxChildrenPerAgent'] = 20
 
-    # Set default model for sub-agents (cheaper than main agent)
-    # Main agent uses gpt-5.4, sub-agents use gemini-flash by default
+    # NEVER overwrite client's existing primary model
+    # Only set sub-agent primary if no sub-agent model config exists yet
     # Explicit sessions_spawn(model=...) always overrides this
-    sub['model'] = {'primary': 'openrouter/google/gemini-3.1-flash-lite-preview'}
+    existing_primary = sub.get('model', {}).get('primary')
+    if existing_primary:
+        print(f'  Preserving existing primary model: {existing_primary}')
+    else:
+        sub['model'] = {'primary': 'openrouter/google/gemini-3.1-flash-lite-preview'}
+        print('  Set default sub-agent primary model: openrouter/google/gemini-3.1-flash-lite-preview')
 
     defaults['subagents'] = sub
 
@@ -385,6 +390,17 @@ SUMMARY:
 - Skills 22-23: Main orchestrator ONLY (no sub-agents)
 - Track progress in ~/.openclaw/onboarding/.onboarding-status
 - Remove this flag and write ONBOARDING COMPLETE to MEMORY.md when done
+
+CRITICAL WAVE ORDERING RULE:
+- Skill 12 (openrouter-setup) MUST be installed FIRST, before any other skill
+- Wave 1 must always start with Skill 12 as the very first skill
+- Reason: Other skills spawn sub-agents that require OpenRouter to be configured first
+- If Skill 12 is skipped or delayed, sub-agent spawning will fail across all subsequent skills
+
+MIMO V2 PRO THINKING LEVELS:
+- Main agent (you): thinkingDefault is medium -- this is correct, do not change it
+- Sub-agents you spawn: ALWAYS pass thinking: "high" explicitly in sessions_spawn()
+- Never rely on default thinking for sub-agents -- always set it explicitly
 
 DO NOT:
 - Skip reading Start Here.md

@@ -1,3 +1,16 @@
+## v6.5.11 - April 1, 2026
+
+### Fixed
+- **install.sh - Primary model protection**: Sub-agent model config now checks for existing `agents.defaults.subagents.model.primary` before writing. If the client already has a primary model set, it is preserved exactly. Only sets the default (`openrouter/google/gemini-3.1-flash-lite-preview`) on fresh installs. Prevents overwriting client-customized model choices on re-runs.
+- **install.sh - ONBOARDING_FLAG heredoc**: Added critical wave ordering rule: Skill 12 (openrouter-setup) MUST be installed first in Wave 1 before any other skill. Other skills spawn sub-agents that need OpenRouter configured first. Skipping or delaying Skill 12 causes cascading sub-agent failures.
+- **install.sh - ONBOARDING_FLAG heredoc**: Added MiMo V2 Pro thinking level rule. Main agent uses medium (default). All sub-agents spawned via sessions_spawn() must explicitly pass `thinking: "high"`. Never rely on default thinking for sub-agents.
+
+### Changed
+- **version**: Bumped to v6.5.11
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.11 (was v6.5.6, out of sync)
+
+---
+
 ## v6.5.10 - April 1, 2026
 
 ### Added
