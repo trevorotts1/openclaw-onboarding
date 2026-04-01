@@ -26,7 +26,7 @@ CRITICAL: Kimi K2.5 CANNOT do tool calls. It is for coding and chat only. If a t
 
 ### Tier 3: Creative Tier (Writing)
 For: All creative writing, blog posts, social media, emails, book chapters, marketing copy.
-Model: Mistral Small Creative.
+Model: MiniMax M2.7.
 This model is purpose-built for writing at only $0.10 per million input tokens.
 
 ### Tier 4: Emergency Fallback Tier
@@ -47,7 +47,7 @@ To switch to a different model during a conversation, type:
    /model sonnet      (switches to Claude Sonnet 4.6)
    /model minimax     (switches to MiniMax M2.7)
    /model kimi        (switches to Kimi K2.5)
-   /model creative    (switches to Mistral Small Creative)
+   /model creative    (switches to MiniMax M2.7)
    /model research    (switches to Perplexity Sonar Pro)
    /model codex       (switches to MiMo V2 Pro)
    /model haiku       (switches to Claude Haiku 4.5)
@@ -78,7 +78,7 @@ Most models default to medium. Two exceptions:
 - DeepSeek V3.2 defaults to MEDIUM
 
 Models that do not use thinking at all:
-- Mistral Small Creative (creative writing model, no thinking parameter)
+- MiniMax M2.7 (creative writing model, no thinking parameter)
 - Kimi K2.5 (has built-in thinking that you cannot configure)
 - Perplexity Sonar Pro Search (research model, no thinking parameter)
 
@@ -112,7 +112,7 @@ Before every task, the agent should ask itself four questions:
 
 | Task | Best Model | Thinking Level |
 |------|-----------|----------------|
-| Simple factual question | Social media post or blog | Mistral Small Creative | none |
+| Simple factual question | Social media post or blog | MiniMax M2.7 | none |
 | Professional email to a client | Claude Opus 4.6 | medium |
 | Debug a Python script | MiMo V2 Pro or Kimi K2.5 | medium |
 | Plan a multi-step automation | Claude Opus 4.6 | medium to high |
@@ -152,7 +152,7 @@ Go to https://openrouter.ai/activity to see your requests, costs, and token usag
 
 1. Use MiniMax M2.7 as your daily driver. At $0.30 per million input tokens with tool call support and opt-in reasoning (reasoning: true), it is the best value for daily work. 131K max output -- double the previous M2.5.
 
-2. Use Mistral Small Creative for all writing tasks. At $0.10 per million input tokens, it is the cheapest option for creative work.
+2. Use MiniMax M2.7 for all writing tasks. At $0.10 per million input tokens, it is the cheapest option for creative work.
 
 3. Reserve Opus for complex strategy and critical work. At $5.00 per million input tokens, it is 16x more expensive than MiniMax. Only use it when quality truly matters.
 
@@ -201,7 +201,7 @@ When the agent manages multiple sub-agents (workers) for a big task, each sub-ag
 - Sub-task is code generation -> Kimi K2.5
 - Sub-task is multimodal (images/video/audio) -> MiMo V2 Omni (pass reasoning: true)
 - Sub-task is complex code/orchestration -> MiMo V2 Pro (pass reasoning: true, TEXT ONLY)
-- Sub-task is creative writing -> Mistral Small Creative
+- Sub-task is creative writing -> MiniMax M2.7
 - Sub-task is deep research -> Perplexity Sonar Pro Search
 - Sub-task is quick lookup -> Perplexity Sonar
 - General task that does not fit above -> MiniMax M2.7
@@ -220,7 +220,7 @@ Key thresholds:
 
 Large context models (1 million tokens): Claude Opus 4.6, Claude Sonnet 4.6, Gemini 3.1 Pro, Qwen 3.5 Plus. These rarely need handoff during a normal session.
 
-Small context models (under 200K tokens): Mistral Small Creative (32K), DeepSeek V3.2 (163K), MiniMax M2.7 (196K). These need more careful context management for long sessions.
+Small context models (under 200K tokens): MiniMax M2.7 (32K), DeepSeek V3.2 (163K), MiniMax M2.7 (196K). These need more careful context management for long sessions.
 
 ## Updating Your Workspace Files
 

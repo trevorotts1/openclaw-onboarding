@@ -1,3 +1,10 @@
+## v6.5.9 - April 1, 2026
+
+### Changed
+- Skill 12 (OpenRouter Setup): Removed openrouter/mistralai/mistral-small-creative (deprecated, end-of-life April 30, 2026)
+- Skill 12 (OpenRouter Setup): Updated all routing guidance to use MiniMax M2.7 for writing/creative tasks
+- Skill 12 (OpenRouter Setup): Removed all Mistral references from INSTALL.md, openrouter-setup-full.md, INSTRUCTIONS.md, EXAMPLES.md, QC.md
+
 ## v6.5.8 - April 1, 2026
 
 ### Changed

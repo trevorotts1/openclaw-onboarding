@@ -61,11 +61,11 @@ This document shows real examples of OpenRouter configuration and model routing 
 
 **Scenario:** You ask the agent to write a 2,000-word blog post about real estate investing.
 
-**What the agent does:** Switches to Mistral Small Creative (the Creative Tier model) because this is a writing task. It does not need deep reasoning - it needs good writing.
+**What the agent does:** Switches to MiniMax M2.7 (the Creative Tier model) because this is a writing task. It does not need deep reasoning - it needs good writing.
 
 **What the agent says:**
 
-"Switching to Mistral Small Creative for this writing task. This model is purpose-built for content creation at $0.10 per million input tokens - the most cost-effective option for writing."
+"Switching to MiniMax M2.7 for this writing task. This model is purpose-built for content creation at $0.10 per million input tokens - the most cost-effective option for writing."
 
 **Result:** You get a well-written blog post at a fraction of the cost compared to using Opus for the same task.
 
@@ -125,7 +125,7 @@ This document shows real examples of OpenRouter configuration and model routing 
 2. Assigns sub-tasks to the right models:
    - Landing page HTML/CSS code: Spawns a Kimi K2.5 sub-agent (code generation, no tool calls needed)
    - API endpoint scripts: Spawns another Kimi K2.5 sub-agent
-   - Email sequence copy: Spawns a Mistral Small Creative sub-agent (writing task)
+   - Email sequence copy: Spawns a MiniMax M2.7 sub-agent (writing task)
    - CRM integration and webhook setup: Spawns a MiniMax M2.7 sub-agent (needs tool calls)
 
 3. All four sub-agents work in parallel.

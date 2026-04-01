@@ -272,7 +272,7 @@ Each model has its own default thinking level based on its role and capabilities
 | Qwen 3.5 Plus | Medium | Balanced reasoning default. |
 | GLM-5 | Medium | Agentic planning, medium default. |
 | Kimi K2.5 | N/A | Built-in thinking, no configurable parameter. |
-| Mistral Small Creative | N/A | Not a thinking model. |
+| MiniMax M2.7 | N/A | Not a thinking model. |
 | Perplexity Sonar Pro Search | N/A | Research model, no thinking parameter. |
 | Perplexity Sonar | N/A | Quick lookup model, no thinking parameter. |
 
@@ -370,7 +370,7 @@ Example thresholds by model:
 | Claude Opus 4.6 | 1,000,000 | 800,000 | 900,000 | 950,000 |
 | MiniMax M2.7 | 204,800 | 163,840 | 184,320 | 194,560 |
 | Kimi K2.5 | 262,144 | 209,715 | 235,930 | 249,037 |
-| Mistral Small Creative | 32,768 | 26,214 | 29,491 | 31,130 |
+| MiniMax M2.7 | 32,768 | 26,214 | 29,491 | 31,130 |
 | DeepSeek V3.2 | 163,840 | 131,072 | 147,456 | 155,648 |
 
 Step 2: At 80% capacity, warn the user.
@@ -409,7 +409,7 @@ When operating in multi-agent orchestration mode, the master agent must select t
 
 Sub-task requires tool calls or function execution = MiniMax M2.7 (Kimi K2.5 CANNOT do tool calls)
 Sub-task is code generation = Kimi K2.5 (supports 100+ parallel instances for high-volume work)
-Sub-task is creative writing = Mistral Small Creative
+Sub-task is creative writing = MiniMax M2.7
 Sub-task is research or fact-checking = Perplexity Sonar Pro Search
 Sub-task is a general operation that does not fit the above = MiniMax M2.7
 
@@ -484,7 +484,6 @@ Model ID Reference Table
 | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | google/gemini-3-flash |
 | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | moonshot/kimi-k2.5 |
 | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | minimax/minimax-m2.7 |
-| Mistral Small Creative | openrouter/mistralai/mistral-small-creative | mistral/mistral-small-creative |
 | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | qwen/qwen3.5-plus |
 | GLM-5 | openrouter/z-ai/glm-5 | z-ai/glm-5 |
 | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | deepseek/deepseek-v3.2 |
@@ -604,7 +603,7 @@ For each task, the agent evaluates what kind of work it is using the Scenario-Ba
 The agent spins up the appropriate model for that specific task:
    Complex architecture or planning? Route to Opus or Sonnet (Thinking Tier)
    Code generation? Route to Kimi K2.5
-   Creative writing? Route to Mistral Small Creative
+   Creative writing? Route to MiniMax M2.7
    Research or fact-checking? Route to Perplexity Sonar Pro Search
    Routine task requiring tool calls? Route to MiniMax M2.7
    Simple factual lookup? Route to MiniMax M2.7 or DeepSeek R1 Free
@@ -634,8 +633,7 @@ For all creative writing, content creation, copywriting, and narrative work.
 
 | Priority | Model | OpenRouter ID | Alias | Thinking |
 |----------|-------|---------------|-------|----------|
-| 1st | Mistral Small Creative | openrouter/mistralai/mistral-small-creative | creative | No (creative focus, not a thinking model) |
-
+| 1st 
 When to use Creative Tier:
 
 Social media posts (Instagram, Facebook, LinkedIn, X/Twitter, TikTok)
@@ -648,7 +646,7 @@ Brand voice content
 Product descriptions
 Sales copy and landing page content
 
-Why a dedicated creative tier? Creative writing does not need deep reasoning or thinking tokens. Mistral Small Creative is purpose-built for this work at $0.10/M input. Route all creative tasks here.
+Why a dedicated creative tier? Creative writing does not need deep reasoning or thinking tokens. MiniMax M2.7 is purpose-built for this work at $0.10/M input. Route all creative tasks here.
 
 Tier 4: Fallback Tier
 
@@ -700,7 +698,7 @@ Confirming model specifications, API changes, or platform updates before configu
 When NOT to use Research Tier:
 
 Simple factual questions the agent already knows with certainty (use MiniMax M2.7)
-Creative writing tasks (use Mistral Small Creative)
+Creative writing tasks (use MiniMax M2.7)
 Code generation (use Kimi K2.5)
 Daily task execution (use MiniMax M2.7)
 
@@ -718,7 +716,6 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | 1,048,576 | 65,536 | $0.50 | $3.00 | YES (thinkingLevel) | 0.3 |
 | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | 262,144 | 262,144 | $0.23 | $3.00 | YES (built-in, no config param). NO TOOL CALLS. | 1.0 |
 | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | 204,800 | 131,072 | $0.30 | $1.10 | YES (opt-in via reasoning param, no levels) | 0.3 |
-| Mistral Small Creative | openrouter/mistralai/mistral-small-creative | 32,768 | 32,768 | $0.10 | $0.30 | No | 0.3 |
 | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | 1,000,000 | 65,536 | $0.40 | $2.40 | YES | 0.3 |
 | GLM-5 | openrouter/z-ai/glm-5 | 204,800 | 131,072 | $0.30 | $2.55 | YES | 0.3 |
 | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | 163,840 | 8,192 | $0.26 | $0.38 | YES (reasoning toggle, default: MEDIUM) | 0.3 |
@@ -779,19 +776,19 @@ Why: Simple factual lookup. No reasoning required.
 SCENARIO 2: User asks to write a social media post
 
 Example: "Write me an Instagram caption for this product photo"
-Use: Mistral Small Creative (Creative Tier)
+Use: MiniMax M2.7 (Execution Tier)
 Why: Purpose-built for creative content at $0.10/M input. No thinking tokens needed.
 
 SCENARIO 3: User asks to write a long blog post
 
 Example: "Write a 3,000-word blog post about real estate investing strategies"
-Use: Mistral Small Creative (Creative Tier)
+Use: MiniMax M2.7 (Execution Tier)
 Why: Long-form creative writing. Mistral excels here at minimal cost.
 
 SCENARIO 4: User asks to draft a professional email
 
 Example: "Draft an email to my client about the project timeline update"
-Use: Mistral Small Creative (Creative Tier)
+Use: MiniMax M2.7 (Execution Tier)
 Why: Email content is creative/communication work, not deep reasoning.
 
 SCENARIO 5: User asks to debug a Python script
@@ -833,10 +830,10 @@ Why: Structured reasoning without Opus-level cost. Good balance of depth and eff
 SCENARIO 11: User asks to write a book or multiple chapters
 
 Example: "Write chapter 3 of my real estate investing book" or "Help me write my book"
-Use: Mistral Small Creative (Creative Tier) as sub-agents, controlled by a Thinking Tier master agent (Claude Opus 4.6, Gemini 3.1 Pro, or Claude Sonnet 4.6)
-Architecture: Mistral Small Creative CAN write a book. It cannot hold an entire book in one 200K context window, but it does not need to. The correct approach is a multi-agent architecture:
+Use: MiniMax M2.7 (Execution Tier) as sub-agents, controlled by a Thinking Tier master agent (Claude Opus 4.6, Gemini 3.1 Pro, or Claude Sonnet 4.6)
+Architecture: MiniMax M2.7 CAN write a book. It cannot hold an entire book in one 200K context window, but it does not need to. The correct approach is a multi-agent architecture:
   Master Agent (Thinking Tier, large context): Holds the book outline, chapter summaries, character profiles, tone guidelines, continuity notes, and overall structure. This agent plans what each chapter should cover and reviews output for consistency.
-  Sub-Agents (Mistral Small Creative, one per chapter): Each instance of Mistral receives targeted instructions from the master agent for its specific chapter. It writes the chapter, returns the output, and the master agent reviews it before moving to the next.
+  Sub-Agents (MiniMax M2.7, one per chapter): Each instance of Mistral receives targeted instructions from the master agent for its specific chapter. It writes the chapter, returns the output, and the master agent reviews it before moving to the next.
   Multiple calls, not one giant session: You spin up Mistral multiple times. Each call is a fresh, focused chapter task with clear direction from the master agent. This keeps each call well within the context window while producing a full book.
 Why: This architecture uses Mistral at $0.10/M input for the bulk of writing while using the Thinking Tier master agent only for planning, guidance, and quality control. The writing workload is distributed across multiple focused calls rather than routed through a single model.
 
@@ -890,7 +887,7 @@ Example: "Build the landing page, set up the API endpoints, write the email sequ
 Architecture: Master agent (Opus or Sonnet, Thinking Tier) breaks the project into sub-tasks:
   Code generation sub-tasks (landing page HTML/CSS, API endpoint scripts): Route to Kimi K2.5 as sub-agent. Set max_tokens to 262,144.
   Tool-call sub-tasks (CRM integration, API connections, webhook configuration): Route to MiniMax M2.7 as sub-agent. Always pass reasoning: true. Set max_tokens to 131,072.
-  Writing sub-tasks (email sequence copy): Route to Mistral Small Creative as sub-agent. Set max_tokens to 32,768.
+  Writing sub-tasks (email sequence copy): Route to MiniMax M2.7 as sub-agent. Set max_tokens to 32,768.
   Research sub-tasks (verify CRM API documentation, check endpoint specs): Route to Perplexity Sonar Pro Search.
 Thinking level per sub-task: Standard code generation = medium. Complex API integration = high. Critical production deployment = xhigh. Creative writing = N/A (Mistral has no thinking parameter).
 Why: Each sub-agent is matched to its strengths. The master agent handles continuity and integration. Token cost stays appropriate per sub-task.
@@ -911,7 +908,7 @@ Multiple calls, not one giant session: The master agent calls the sub-agent mult
 
 When to Apply This Pattern
 
-Book writing: Master agent (Opus/Sonnet/Gemini) plans chapters, sub-agents (Mistral Small Creative) write individual chapters
+Book writing: Master agent (Opus/Sonnet/Gemini) plans chapters, sub-agents (MiniMax M2.7) write individual chapters
 Large codebases: Master agent (Opus/Codex) plans the architecture, sub-agents (Kimi K2.5) write individual modules or files
 Content campaigns: Master agent plans the campaign strategy, sub-agents (Mistral) write individual posts, emails, and articles
 Data processing: Master agent coordinates the pipeline, sub-agents handle individual data transformation steps
@@ -931,7 +928,7 @@ Is the sub-task code generation? (writing scripts, building modules, generating 
    YES: Use Kimi K2.5. It is purpose-built for code generation. It can run as 100+ parallel instances for high-volume work. Each instance handles its own task independently.
    NO: Proceed to step 3.
 Is the sub-task creative writing? (blog posts, social media, emails, articles, book chapters)
-   YES: Use Mistral Small Creative. It is the Creative Tier model.
+   YES: Use MiniMax M2.7. It is the Creative Tier model.
    NO: Proceed to step 4.
 Is the sub-task research or fact-checking?
    YES: Use Perplexity Sonar Pro Search. It has web search built in.
@@ -959,7 +956,7 @@ Each model has a maximum output token limit. When the master agent dispatches a 
 |-------|-------------------|-------------------|
 | MiniMax M2.7 | 131,072 | 131,072 (or the specific amount needed for the task, whichever is lower) |
 | Kimi K2.5 | 262,144 | 262,144 (or the specific amount needed for the task, whichever is lower) |
-| Mistral Small Creative | 32,768 | 32,768 (or the specific amount needed for the task, whichever is lower) |
+| MiniMax M2.7 | 32,768 | 32,768 (or the specific amount needed for the task, whichever is lower) |
 | DeepSeek V3.2 | 8,192 | 8,192 (or the specific amount needed for the task, whichever is lower) |
 | Claude Opus 4.6 | 128,000 | The specific amount needed for the task |
 | Claude Sonnet 4.6 | 128,000 | The specific amount needed for the task |
@@ -997,7 +994,6 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
           "openrouter/minimax/minimax-m2.7",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/google/gemini-3-flash-preview",
-          "openrouter/mistralai/mistral-small-creative",
           "openrouter/qwen/qwen3.5-plus-02-15",
           "openrouter/z-ai/glm-5",
           "openrouter/deepseek/deepseek-v3.2",
@@ -1039,11 +1035,6 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
           "params": {
             "temperature": 0.3,
             "reasoning": true
-          }
-        },
-        "openrouter/mistralai/mistral-small-creative": {
-          "params": {
-            "temperature": 0.3
           }
         },
         "openrouter/qwen/qwen3.5-plus-02-15": {
@@ -1130,7 +1121,7 @@ Thinking/Reasoning Settings Summary
 MiniMax M2.7: reasoning effort set to "high" by default (primary daily task model, needs reliable tool execution). Supports escalation to "xhigh" (0.95 effort ratio) for maximum complexity tasks.
 DeepSeek V3.2: reasoning effort set to "medium" (value workhorse, balanced quality and cost)
 All other thinking-capable models: reasoning effort set to "medium" by default
-Mistral Small Creative: No reasoning parameter (not a thinking model)
+MiniMax M2.7: No reasoning parameter (not a thinking model)
 Kimi K2.5: No explicit reasoning parameter in config (built-in thinking, no tool calls)
 Perplexity Sonar Pro Search: No reasoning parameter (research/web search model)
 
@@ -1189,7 +1180,6 @@ QUICK REFERENCE TABLE
 | haiku | Claude Haiku 4.5 | Execution | Fast intelligent responses | YES (medium default) | 0.3 |
 | gptmini | gptnano | deepseek | DeepSeek V3.2 | Execution | Value workhorse, heartbeat backup | YES (MEDIUM default) | 0.3 |
 | kimi | Kimi K2.5 | Execution | Coding, chat, scraping (100+ parallel agents). No tool calls. Sub-agent for all code generation tasks. | YES (built-in) | 1.0 |
-| creative | Mistral Small Creative | Creative | All writing and content creation | No | 0.3 |
 | research | Perplexity Sonar Pro Search | Research | Deep research. Multi-step, follows links, synthesizes sources. | No | 0.3 |
 | sonar | Perplexity Sonar | Research | Quick web lookups. Single-question, fast and cheap. | No | 0.3 |
 | flashlite | Gemini 3.1 Flash Lite | Execution/Fallback | First fallback. High-efficiency, large context, low cost. | YES (medium default) | 0.3 |
@@ -1244,7 +1234,7 @@ Update with:
 
 Context window capacities for each model (so the agent knows when to compact or summarize)
 Long-context management strategies: models with 1M context (Opus 4.6, Sonnet 4.6, Gemini 3.1 Pro, Qwen 3.5 Plus) can handle extended sessions without compaction
-Short-context awareness: Mistral Small Creative (200K) requires proactive session management
+Short-context awareness: MiniMax M2.7 (200K) requires proactive session management
 When to switch models mid-session if context is running low
 MiniMax M2.7 is the primary daily task model (tool calls, task execution, heartbeat)
 Kimi K2.5 is for coding and chat only (no tool calls)
@@ -1265,7 +1255,7 @@ Core Principles
 
 Match model complexity to task complexity. Do not use a thinking-tier model for tasks that an execution-tier model handles perfectly well.
 Default to MiniMax M2.7 for daily task execution. MiniMax is the primary daily task model. It supports tool calls, handles routine operations, and should be the first choice for any task that requires doing something (not just talking about it).
-Route all creative/writing tasks to Mistral Small Creative. Social media, blog posts, emails, book chapters, marketing copy. All of it goes to the Creative Tier unless the user specifically requests a different model.
+Route all creative/writing tasks to MiniMax M2.7. Social media, blog posts, emails, book chapters, marketing copy. All of it goes to the Creative Tier unless the user specifically requests a different model.
 Route all research, validation, and fact-checking to Perplexity Sonar Pro Search. Any time the agent needs to verify information, look something up, check if data is current, or research a topic, Perplexity handles it. Do not guess. Do not rely on training data for verifiable facts. Use Perplexity.
 Route coding and code generation to Kimi K2.5. Kimi is the coding and chat model. Use it for writing code, building scripts, generating components, and brainstorming. Do NOT assign tool-call tasks to Kimi. It cannot execute tools.
 Warn before engaging thinking models. Every time. No exceptions. The user must know that thinking mode costs more.
@@ -1273,7 +1263,7 @@ Proactively guide the user to the right model. Do not wait for the user to ask "
 Never let the system go dark because of billing. If credits run out, switch to the free fallback immediately and keep working.
 Track and communicate cost implications. When recommending models, include the pricing context so users can make informed decisions.
 Track context window usage and create handoff.md before compaction. The agent must calculate 80/90/95% thresholds on session start. Warn at 80%. Create handoff.md at 90%. Update handoff.md at 95%. After compaction, read handoff.md first. The agent must know its active model's context window to calculate these thresholds.
-Select the correct sub-agent model in multi-agent orchestration. Tool-call tasks go to MiniMax M2.7. Code generation goes to Kimi K2.5. Creative writing goes to Mistral Small Creative. Research goes to Perplexity. Set thinking level per sub-task complexity. Set max_tokens to the model's actual output limit.
+Select the correct sub-agent model in multi-agent orchestration. Tool-call tasks go to MiniMax M2.7. Code generation goes to Kimi K2.5. Creative writing goes to MiniMax M2.7. Research goes to Perplexity. Set thinking level per sub-task complexity. Set max_tokens to the model's actual output limit.
 
 COMMON MISTAKES TO AVOID
 
@@ -1316,7 +1306,6 @@ openrouter/google/gemini-3.1-pro-preview
 openrouter/google/gemini-3-flash-preview
 openrouter/moonshotai/kimi-k2.5
 openrouter/minimax/minimax-m2.7
-openrouter/mistralai/mistral-small-creative
 openrouter/qwen/qwen3.5-plus-02-15
 openrouter/z-ai/glm-5
 openrouter/deepseek/deepseek-v3.2
@@ -1344,7 +1333,6 @@ Multiple Models with Fallbacks
           "openrouter/minimax/minimax-m2.7",
           "openrouter/moonshotai/kimi-k2.5",
           "openrouter/google/gemini-3-flash-preview",
-          "openrouter/mistralai/mistral-small-creative",
           "openrouter/qwen/qwen3.5-plus-02-15",
           "openrouter/z-ai/glm-5",
           "openrouter/deepseek/deepseek-v3.2",
@@ -1461,7 +1449,7 @@ How they interact:
 thinkingDefault is the baseline. If set to medium, every model starts at medium thinking.
 params.reasoning.effort is a per-model API hint. If MiniMax has effort: "high" in its config, the API request to MiniMax always includes that hint.
 The agent can dynamically change the session-level thinking with /reasoning <level> without touching the config.
-Non-thinking models (Mistral Small Creative, Perplexity Sonar Pro) safely IGNORE both settings. OpenClaw checks the model's reasoning: true/false flag before sending any thinking params.
+Non-thinking models (MiniMax M2.7, Perplexity Sonar Pro) safely IGNORE both settings. OpenClaw checks the model's reasoning: true/false flag before sending any thinking params.
 
 For Google Gemini models: The API format is different. Instead of reasoning.effort, Gemini uses:
 
@@ -1557,7 +1545,7 @@ This table helps the agent quickly determine what each model CAN and CANNOT do:
 | Gemini 3 Flash | - | YES | medium | Fast multimodal tasks | $$ ($0.50/$3) | Cheaper Gemini option. Still 1M context. |
 | DeepSeek V3.2 | - | YES | medium | Cost-effective general work | $ ($0.26/$0.38) | Very cheap. Good for bulk/batch processing. |
 | DeepSeek R1 Free | - | YES | medium | Free reasoning tasks | FREE | Free option with reasoning. Use when cost matters. |
-| Mistral Small Creative | - | YES | none | Creative writing, ideation | $ ($0.10/$0.30) | No thinking model, but good for divergent creative tasks. |
+| MiniMax M2.7 | - | YES | none | Creative writing, ideation | $ ($0.10/$0.30) | No thinking model, but good for divergent creative tasks. |
 | Perplexity Sonar Pro | - | NO* | N/A | Research, web search | $$$ ($3/$15 + search fees) | Built-in web search. "Tool calls" are its search, not OpenClaw tools. |
 | Qwen 3.5 Plus | - | YES | medium | General purpose, large context | $$ ($0.40/$2.40) | 1M context. Solid alternative. |
 | GLM-5 | - | YES | medium | General purpose | $$ ($0.30/$2.55) | Chinese model. Good reasoning at moderate cost. |

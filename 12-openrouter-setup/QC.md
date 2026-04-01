@@ -226,7 +226,7 @@ Answer these from memory (without re-reading the skill docs). If the agent canno
 ---
 
 **4.7** What model should be used for all creative writing tasks, and why?
-**Expected answer:** `openrouter/mistralai/mistral-small-creative`. It is purpose-built for writing at only $0.10 per million input tokens — the cheapest option for creative work.
+**Expected answer:** `openrouter/minimax/minimax-m2.7`. It is purpose-built for writing at only $0.10 per million input tokens — the cheapest option for creative work.
 
 ---
 
@@ -295,7 +295,7 @@ Reset it:
 Send this request:
 > "Write a short blog post intro about the future of AI."
 
-**Pass:** Agent either switches to Mistral Small Creative (Creative Tier) for this writing task, or explicitly acknowledges that this task belongs to the Creative Tier and explains its model choice. It should not use Opus for a simple writing task.
+**Pass:** Agent either switches to MiniMax M2.7 (Execution Tier) for this writing task, or explicitly acknowledges that this task belongs to the Creative Tier and explains its model choice. It should not use Opus for a simple writing task.
 
 ---
 
