@@ -62,9 +62,9 @@ Open CHANGELOG.md from the downloaded repo. Find your current version by reading
 Before touching skills, make sure the infrastructure scripts and dependencies from install.sh are up to date. The direct-to-agent method does not run install.sh, so you must do these checks manually:
 
 **4a. Gemini Engine scripts:**
-- Check if ~/.openclaw/workspace/scripts/gemini-indexer.py exists
+- Check if ~/clawd/scripts/gemini-indexer.py exists
 - If it does NOT exist, or if the downloaded repo has a newer version, copy it:
-  - From the downloaded repo: scripts/gemini-indexer.py → ~/.openclaw/workspace/scripts/gemini-indexer.py
+  - From the downloaded repo: scripts/gemini-indexer.py → ~/clawd/scripts/gemini-indexer.py
   - Also copy gemini-search.py if it exists in the repo scripts folder
   - Make them executable
 
