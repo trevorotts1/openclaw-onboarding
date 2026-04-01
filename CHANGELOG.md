@@ -4,6 +4,12 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 
 ---
 
+## v6.5.4 — March 31, 2026
+
+### Fixed
+- **Version file sync**: Updated version file from v6.5.2 to v6.5.4 to match HEAD commit (0243586d). Version file was not bumped in v6.5.3 or v6.5.4 commits.
+
+---
 ## v6.5.0 — March 31, 2026
 
 ### Fixed
