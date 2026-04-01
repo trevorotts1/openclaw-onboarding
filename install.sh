@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v6.5.13"
+ONBOARDING_VERSION="v6.5.14"
 
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
@@ -328,6 +328,15 @@ try:
 
     agents['defaults'] = defaults
     config['agents'] = agents
+
+    # Exec security — allow agent to run shell commands without approval prompts
+    # Required for autonomous operation (QC, scripts, installs, etc.)
+    config.setdefault('tools', {})['exec'] = {
+        'security': 'full',
+        'ask': 'off'
+    }
+    print('  Set tools.exec: security=full, ask=off (no approval wall)')
+
     with open(path, 'w') as f:
         json.dump(config, f, indent=2)
     print('  Set sub-agent concurrency and 8 model allow-list entries')
@@ -336,6 +345,28 @@ except Exception as e:
 " 2>&1
 else
   echo "  Warning: openclaw.json not found at $OPENCLAW_JSON"
+fi
+
+# ----------------------------------------------------------
+# Write exec-approvals.json — disable approval wall for autonomous operation
+# ----------------------------------------------------------
+EXEC_APPROVALS="$HOME/.openclaw/exec-approvals.json"
+if [ -f "$EXEC_APPROVALS" ]; then
+  python3 - "$EXEC_APPROVALS" << 'PYEOF'
+import json, sys
+p = sys.argv[1]
+cfg = json.load(open(p))
+cfg.setdefault('defaults', {}).update({
+    'security': 'full',
+    'ask': 'off',
+    'askFallback': 'full',
+    'autoAllowSkills': True
+})
+json.dump(cfg, open(p, 'w'), indent=2)
+print('  exec-approvals.json: security=full, ask=off, askFallback=full')
+PYEOF
+else
+  echo "  exec-approvals.json not found yet (will apply on next run after gateway init)"
 fi
 
 # ----------------------------------------------------------

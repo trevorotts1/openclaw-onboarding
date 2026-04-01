@@ -733,3 +733,7 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **Skill 02 - Back Yourself Up Protocol**: Automatic config backups before every change.
 - **Skill 03 - Superpowers**: 4 Iron Laws + 14 sub-skills for systematic problem-solving.
 - README.md and Start Here.md included.
+
+## v6.5.14 - 2026-04-01
+- Set tools.exec security=full and ask=off in openclaw.json during install
+- Write exec-approvals.json with askFallback=full — eliminates approval wall for autonomous agent operation
