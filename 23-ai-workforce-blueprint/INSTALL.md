@@ -406,22 +406,54 @@ Create folder: ~/clawd/departments/[dept-name]/
 Add this section to the BOTTOM of each department's AGENTS.md:
 
 ```markdown
-## 🔴🔴🔴 Persona Operating Protocol
-At the start of EVERY task:
-1. Read ~/clawd/departments/[your-dept]/governing-personas.md
-2. Load the Primary Persona from that file
-3. For this entire task, think, communicate, and decide AS THAT PERSONA
-   - Use their vocabulary and communication style
-   - Apply their core frameworks to the problem
-   - Make decisions the way they would make decisions
-4. If the task type matches a Secondary or Tertiary persona better, switch to that one
-5. Never start a task without an active persona loaded
-6. Log which persona you used at the end of each task in memory/
+## 🔴🔴🔴 Persona Operating Protocol (Dynamic Selection Engine)
+At the start of EVERY task, run dynamic persona selection. Do NOT skip or default.
+
+### Step 1: Gemini Search
+Run the Gemini persona search to find the top 3 matching personas for this task:
+```
+python3 ~/clawd/scripts/gemini-search.py "task description"
+```
+Replace `"task description"` with a concise description of the current task.
+
+**Fallback:** If Gemini is unavailable or the script returns no results, fall back to the Primary Persona listed in `~/clawd/departments/[your-dept]/governing-personas.md`. Do NOT skip persona selection.
+
+### Step 2: 5-Layer Alignment (Pick the Winner)
+Score each of the 3 candidates against these 5 layers. The highest total score wins.
+
+| Layer | Weight | Question |
+|-------|--------|----------|
+| 1. Owner Values | 25% | Does this persona align with the owner's core beliefs and decision-making style? |
+| 2. Company Mission | 25% | Does this persona support the company's mission? |
+| 3. Business KPIs | 20% | Does this persona drive progress on current company-wide goals? |
+| 4. Dept KPIs | 15% | Does this persona fit this department's objectives? |
+| 5. Task Fit | 15% | Is this persona specifically suited for THIS type of task? |
+
+Pick the persona with the highest weighted score. If two candidates tie, pick the one with the higher Task Fit score.
+
+### Step 3: Reason Log
+Append ONE line to your daily journal at `~/clawd/memory/[YYYY-MM-DD].md` (NOT MEMORY.md):
+```
+[HH:MM] Persona: [persona name] | Dept: [dept] | Task: [brief] | Reason: [why selected]
+```
+
+### Step 4: Execute As
+For this entire task, think, communicate, and decide AS THE SELECTED PERSONA:
+- Use their vocabulary and communication style
+- Apply their core frameworks and mental models to the problem
+- Make decisions the way they would make decisions
+
+### Step 5: Resolve Conflicts
+If the persona's guidance conflicts with this department's instructions or the owner's explicit direction, the owner's intent wins. Log the conflict in your daily journal.
+
+### Step 6: Log Persona Usage
+At the end of each task, log to `~/clawd/departments/[your-dept]/memory/[date].md`:
+- Date, task summary, persona used, reason for selection
 ```
 
 Replace `[your-dept]` with the actual department folder name (e.g., `marketing`, `sales`, `operations`).
 
-**Why this matters:** Without this protocol, department agents inherit the generic AGENTS.md but have no instruction to actually LOAD and APPLY their governing-personas.md at task time. The file sits there unused. This protocol makes persona activation mandatory on every task.
+**Why this matters:** Without this protocol, department agents inherit the generic AGENTS.md but have no instruction to dynamically select and APPLY the right persona at task time. The governing-personas.md file sits there unused. This protocol makes dynamic persona selection mandatory on every task, using Gemini search to find the best match and a 5-layer scoring system to pick the winner.
 
 **agents.list entry added to openclaw.json via add_agent_to_config():**
 - id: "dept-[name]"

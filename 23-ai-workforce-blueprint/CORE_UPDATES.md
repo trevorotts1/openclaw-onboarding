@@ -29,8 +29,12 @@ Agent management:
 - Config must be backed up before ANY openclaw.json edit
 
 Persona integration:
-- Each role folder gets governing-personas.md as a REFERENCE GUIDE (not a static assignment)
-- Persona selection uses 5-layer alignment at TASK level (Mission, Values, Company KPIs, Dept KPIs, Task Fit)
+- Each department gets governing-personas.md as a REFERENCE GUIDE (not a static assignment)
+- Every department AGENTS.md includes the Persona Operating Protocol (Dynamic Selection Engine)
+- Dynamic selection: Gemini Search (gemini-search.py) finds top 3 candidates per task, 5-layer alignment picks winner
+- 5-layer scoring: Owner Values (25%), Company Mission (25%), Business KPIs (20%), Dept KPIs (15%), Task Fit (15%)
+- Fallback: if Gemini unavailable, use governing-personas.md Primary Persona
+- Reason log: one-line entry per task to ~/clawd/memory/[date].md (daily journal)
 - persona-matching-protocol.md documents the full runtime matching process
 - Dev Devil's Advocate (DA) auto-created per department using Act As If Protocol
 - Persona diversity tracked in agent performance metrics
