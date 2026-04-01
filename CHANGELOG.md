@@ -29,6 +29,16 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **Skill 32 Phase 7.5**: 3-layer runtime verification test — Search Evidence (did agent use Gemini?), 5-Layer Alignment (can agent explain reasoning?), Reason Log (did agent write to daily memory file?). FAIL conditions catch agents that always default to the same persona.
 - **Phase numbering fix**: Renumbered duplicate Phase 7.4 in Skill 32 to 7.4/7.5/7.6.
 
+## v6.5.3 — March 31, 2026
+
+### Fixed (adversarial QC-driven fixes)
+- **gemini-search.py**: Now returns parent folder names (e.g., "rackham-spin-selling") not bare filenames. Deduplicates by folder -- returns 3 DISTINCT personas not 3 chunks from same file. Clean error on empty input. Exit code 2 on missing API key (triggers AGENTS.md fallback).
+- **gemini-indexer.py**: Exit code 2 (not sys.exit(1)) on missing API key for --status. Added --watch flag for auto-reindex on new book drop. Added --rotate-logs flag with 100-entry cap and archive rotation.
+- **install.sh**: Scripts now copy to ~/clawd/scripts/ (correct path). Added gemini-search.py to copy (was missing). Removed hardcoded Cloudflare tunnel token (was exposed in public GitHub repo).
+- **7 governing-personas.md**: Legal→Tawwab, WebDev→Clear, IT→Samit, Video→Kane, Audio→Grenny, Creative→Godin, AppDev→Clear. Daniel Miller: 5 depts → 1. Jim Collins: 3 depts → 1.
+- **AGENTS.md**: Added weighted scoring rubric for 5-layer alignment (Owner Values 3x, Mission 2x, Biz KPIs 2x, Dept KPIs 1.5x, Task Fit 1x). Tie-breaking rule documented.
+- **AGENTS.md + MEMORY.md**: Added permanent QC Execution Rule -- QC must run scripts not read docs. Any QC on a script requires 3 mandatory execution tests (valid input, empty input, missing API key).
+
 ---
 
 ## v6.4.0 — March 31, 2026
