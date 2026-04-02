@@ -2,6 +2,7 @@
 
 ### Fixed
 - **install.sh - backup_config_file() protocol compliance**: Fixed backup_config_file() to save backups to ~/Downloads/openclaw-backups/ with .txt extension per AGENTS.md protocol. Previously backed up to same directory as original with .bak-timestamp extension.
+- **install.sh - Skill count reporting**: Fixed misleading Telegram progress message that reported skills extracted to "OpenClaw" (ambiguous) instead of specifying the actual path `~/.openclaw/onboarding/`. Added Step 3a to copy .skill packages from the skills/ subdirectory to `~/.openclaw/skills/` so the agent finds skills in the expected location. Prevents "only 3 skills found" confusion caused by empty skills directory.
 
 ### Changed
 - **version**: Bumped to v6.5.18

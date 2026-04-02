@@ -173,7 +173,31 @@ echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 echo "$ONBOARDING_VERSION" > "$ONBOARDING_DIR/.onboarding-version"
 echo "  Version: $ONBOARDING_VERSION"
 
-send_telegram_progress "Extracted skills to your OpenClaw ($SKILL_COUNT skills found)"
+send_telegram_progress "Extracted $SKILL_COUNT skills to ~/.openclaw/onboarding/"
+
+# ----------------------------------------------------------
+# Step 3a: Copy .skill packages to ~/.openclaw/skills/
+# ----------------------------------------------------------
+show_status "Copying .skill packages to skills directory..."
+
+if [ -d "$ONBOARDING_DIR/skills" ]; then
+  for skill_pkg in "$ONBOARDING_DIR/skills"/*; do
+    if [ -d "$skill_pkg" ]; then
+      skill_name=$(basename "$skill_pkg")
+      target_path="$SKILLS_DIR/$skill_name"
+      mkdir -p "$target_path"
+      # Copy contents if source is not empty
+      if [ "$(ls -A "$skill_pkg" 2>/dev/null)" ]; then
+        cp -r "$skill_pkg"/* "$target_path/" 2>/dev/null || true
+        echo "  Installed .skill package: $skill_name"
+      fi
+    fi
+  done
+fi
+
+# Count actual .skill packages installed
+SKILL_PKGS_INSTALLED=$(ls -1 "$SKILLS_DIR" 2>/dev/null | wc -l | tr -d ' ')
+echo "  Total items in skills directory: $SKILL_PKGS_INSTALLED"
 
 # ----------------------------------------------------------
 # Step 3b: Copy Gemini Engine scripts (indexing runs after Skill 22)
