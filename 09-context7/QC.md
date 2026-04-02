@@ -1,189 +1,112 @@
-# QC Checklist — Skill 09: Context7
-**Version:** v1.5.1 | Run this after installation to verify the skill installed correctly.
+# QC Checklist - Skill 09: Context7
+**Version:** v6.5.6
 
-Mark each item [ ] → [x] as you verify it. All items must pass before reporting installation complete.
-
----
-
-## SECTION 1: File Structure Checks
-
-Verify the skill folder contains all required files.
-
-- [ ] `09-context7/SKILL.md` exists
-- [ ] `09-context7/INSTALL.md` exists
-- [ ] `09-context7/INSTRUCTIONS.md` exists
-- [ ] `09-context7/context7-full.md` exists
-- [ ] `09-context7/CORE_UPDATES.md` exists
-- [ ] `09-context7/EXAMPLES.md` exists
-- [ ] `09-context7/CHANGELOG.md` exists
-- [ ] `09-context7/QC.md` exists (this file)
-
-**PASS CRITERIA:** All 8 files present. Missing any file = FAIL.
+Run this after installation. Every section must pass before you mark Context7 complete.
 
 ---
 
-## SECTION 2: Core File Update Checks
+## 1. File and version checks
 
-Verify that AGENTS.md, TOOLS.md, and MEMORY.md were updated correctly.
+Confirm the onboarding folder is intact and the version file matches this checklist.
 
-### 2a. AGENTS.md
-- [ ] AGENTS.md contains a `Context7` section
-- [ ] The section references `CONTEXT7_API_KEY` stored in `secrets.env`
-- [ ] The section includes the instruction to use Context7 BEFORE writing code for external APIs
-- [ ] The section references the full guide path (e.g. `09-context7/context7-full.md`)
-- [ ] The section is a LEAN SUMMARY — NOT a full dump of the skill documentation
-
-### 2b. TOOLS.md
-- [ ] TOOLS.md contains a `Context7` section
-- [ ] The section includes the search endpoint: `https://api.context7.com/v1/search?q=<library>`
-- [ ] The section includes the docs endpoint: `https://api.context7.com/v1/libraries/<id>/context`
-- [ ] The section references `$CONTEXT7_API_KEY`
-- [ ] The section references the full guide path
-- [ ] The section is a LEAN SUMMARY — NOT a full dump
-
-### 2c. MEMORY.md
-- [ ] MEMORY.md contains a `Context7` entry
-- [ ] The entry includes a reminder to check Context7 before writing code for any external library or API
-- [ ] The entry references the full guide path
-- [ ] The entry is brief (3–5 lines max)
-
-### 2d. Files That Must NOT Be Updated
-- [ ] `IDENTITY.md` — no Context7 content added
-- [ ] `HEARTBEAT.md` — no Context7 content added
-- [ ] `USER.md` — no Context7 content added
-- [ ] `SOUL.md` — no Context7 content added
-
-**PASS CRITERIA:** All three required files updated with lean summaries. Forbidden files untouched. Full documentation content NOT pasted into any core file = PASS.
-
----
-
-## SECTION 3: API Key Storage Check
-
-Verify the Context7 API key was stored correctly.
-
-- [ ] `~/.openclaw/secrets.env` exists (or `~/clawd/secrets/.env`)
-- [ ] The file contains a line starting with `CONTEXT7_API_KEY=`
-- [ ] The key value starts with `ctx7sk-`
-- [ ] The key matches the UUID pattern: `ctx7sk-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`
-- [ ] The key was NOT hardcoded into AGENTS.md, TOOLS.md, or any other tracked file
-- [ ] The key was NOT logged in plaintext in any conversation summary file
-
-To verify format, run:
 ```bash
-grep CONTEXT7_API_KEY ~/.openclaw/secrets.env
+SKILL_DIR="$HOME/Downloads/openclaw-master-files/OpenClaw Onboarding/09-context7"
+ls -1 "$SKILL_DIR"
+cat "$SKILL_DIR/skill-version.txt"
 ```
-Expected output: `CONTEXT7_API_KEY=ctx7sk-...` (key present, starts with prefix)
 
-**PASS CRITERIA:** Key present in secrets.env, correct format, not exposed elsewhere = PASS.
+- [ ] `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `context7-full.md`, `QC.md`, and `skill-version.txt` all exist
+- [ ] `skill-version.txt` returns `v6.5.6`
+- [ ] `context7-full.md` is non-empty
 
----
-
-## SECTION 4: Knowledge Verification Questions
-
-Agent must answer all of these correctly from memory (no file lookups).
-
-**Q1:** What is Context7 and why does the agent use it?
-> EXPECTED: Context7 is a real-time documentation lookup service. The agent uses it before writing code for external libraries or APIs to avoid relying on potentially outdated training data.
-
-**Q2:** What are the two API calls needed to look up documentation for a library?
-> EXPECTED:
-> 1. Search: `GET https://api.context7.com/v1/search?q=<library_name>`
-> 2. Get docs: `GET https://api.context7.com/v1/libraries/<library_id>/context`
-
-**Q3:** What is the correct format for a Context7 API key?
-> EXPECTED: Starts with `ctx7sk-` followed by UUID groups — e.g. `ctx7sk-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`
-
-**Q4:** Name three libraries available in Context7 and their IDs.
-> EXPECTED (any three): `n8n-io/n8n-docs`, `facebook/react`, `vercel/next.js`, `websites/marketplace_gohighlevel`, `nodejs/node`
-
-**Q5:** When should the agent fall back to training data instead of Context7?
-> EXPECTED: Only when Context7 does not have documentation for a specific library. Agent must still inform the user: "I could not find current documentation for this library in Context7. I am using my best knowledge, but you may want to double-check the code against the official docs."
-
-**Q6:** Where is the full Context7 documentation saved, and why does it NOT go into AGENTS.md?
-> EXPECTED: Full documentation is saved to the OpenClaw master files folder (e.g. `~/Downloads/openclaw-master-files/`). It does not go into core .md files because TYP requires core files to stay lean — only brief summaries and file path references belong there.
-
-- [ ] Q1 answered correctly
-- [ ] Q2 answered correctly
-- [ ] Q3 answered correctly
-- [ ] Q4 answered correctly
-- [ ] Q5 answered correctly
-- [ ] Q6 answered correctly
-
-**PASS CRITERIA:** All 6 questions answered correctly = PASS. Any wrong answer = FAIL, re-read `context7-full.md`.
+**PASS:** All files exist and the version matches.
 
 ---
 
-## SECTION 5: Live Behavior Test
+## 2. Core file update checks
 
-Run this test to confirm the API key is functional and the agent can reach Context7.
+Verify the lean summaries were added without dumping the whole skill into core files.
 
-### Test 5a — Key Available in Environment
 ```bash
-source ~/.openclaw/secrets.env 2>/dev/null || source ~/clawd/secrets/.env 2>/dev/null || true
-echo $CONTEXT7_API_KEY
+grep -n "Context7" ~/clawd/AGENTS.md ~/clawd/TOOLS.md ~/clawd/MEMORY.md
 ```
-- [ ] Key is printed and starts with `ctx7sk-`
 
-### Test 5b — Search API Call
+- [ ] `AGENTS.md` mentions Context7 as a docs lookup tool and says to use it before coding against external APIs
+- [ ] `TOOLS.md` includes both endpoints below:
+  - `https://api.context7.com/v1/search?q=<library>`
+  - `https://api.context7.com/v1/libraries/<id>/context`
+- [ ] `MEMORY.md` contains a short reminder, not a pasted copy of the full skill
+- [ ] Forbidden files such as `IDENTITY.md`, `SOUL.md`, and `USER.md` were not edited for this skill
+
+**PASS:** All three core files contain short, correct references only.
+
+---
+
+## 3. Secret storage checks
+
+Context7 is API-only. There is no CLI install for this skill.
+
 ```bash
-curl -s -H "Authorization: Bearer $CONTEXT7_API_KEY" \
-  "https://api.context7.com/v1/search?q=react" | jq '.results[0].name'
+printenv CONTEXT7_API_KEY | sed 's/./*/g' | head -c 8; echo
+grep -n '^CONTEXT7_API_KEY=' ~/clawd/secrets/.env 2>/dev/null
 ```
-- [ ] Response returns a library name in quotes (e.g. `"React"` or `"facebook/react"`)
-- [ ] No 401 error
-- [ ] No empty or null response
 
-### Test 5c — Documentation Fetch Call
+- [ ] A `CONTEXT7_API_KEY` exists in environment or secrets storage
+- [ ] Stored key starts with `ctx7sk-`
+- [ ] Key is not committed into repo files or pasted into core docs
+- [ ] No one installed or relied on a fake `context7` CLI for setup
+
+**PASS:** A valid-looking key exists and the skill stays API-only.
+
+---
+
+## 4. Functional API tests
+
+Run the real lookup flow the skill depends on.
+
+### 4A. Search test
 ```bash
-curl -s -H "Authorization: Bearer $CONTEXT7_API_KEY" \
-  "https://api.context7.com/v1/libraries/facebook/react/context" | head -c 200
+source ~/clawd/secrets/.env 2>/dev/null || true
+curl -s -H "Authorization: Bearer $CONTEXT7_API_KEY"   "https://api.context7.com/v1/search?q=react" | jq '.results[0]'
 ```
-- [ ] Response returns documentation content (not an error object)
-- [ ] Content is non-empty
 
-**PASS CRITERIA:** All three sub-tests return expected output = PASS.
+- [ ] Returns JSON, not HTML or an auth error
+- [ ] `.results[0].id` is non-null
+- [ ] `.results[0].name` is non-empty
 
-**Troubleshooting if tests fail:**
-- `401 Unauthorized` → Key is wrong or not loaded. Re-check secrets.env and re-source.
-- `null` response on search → Try a different library name. Check internet connectivity.
-- Empty content on fetch → Library ID may be wrong. Re-run the search step to get the correct ID.
+### 4B. Fetch docs test
+Use the ID from the search result above.
+```bash
+LIB_ID="<paste-library-id-here>"
+curl -s -H "Authorization: Bearer $CONTEXT7_API_KEY"   "https://api.context7.com/v1/libraries/$LIB_ID/context" | jq 'keys'
+```
 
----
+- [ ] Request succeeds with HTTP 200 behavior
+- [ ] Response contains documentation content, not `401`, `403`, or empty output
+- [ ] This confirms the full search -> fetch-docs flow works
 
-## SECTION 6: Anti-Pattern Checks
-
-Verify the agent did NOT do any of the following during installation.
-
-- [ ] Did NOT use any Context7 CLI commands (e.g. `context7 login`, `context7 auth`) — API-only
-- [ ] Did NOT use `gh`, `vercel`, or other service CLIs for this skill's setup
-- [ ] Did NOT paste the full contents of `context7-full.md` into AGENTS.md
-- [ ] Did NOT paste the full contents of `context7-full.md` into TOOLS.md or MEMORY.md
-- [ ] Did NOT skip the TYP check before executing instructions
-- [ ] Did NOT modify `IDENTITY.md`, `HEARTBEAT.md`, `USER.md`, or `SOUL.md`
-- [ ] Did NOT attempt to restart the OpenClaw gateway without explicit user instruction
-- [ ] Did NOT report completion before the verification test (Section 5) was run
-- [ ] Did NOT hardcode the API key into source-controlled files or chat history
-- [ ] Did NOT skip Step 5 (API verification) in the INSTALL.md flow
-
-**PASS CRITERIA:** All 10 anti-patterns confirmed absent = PASS. Any violation = FAIL, investigate and correct.
+**PASS:** Both API calls succeed.
 
 ---
 
-## Final Pass/Fail Summary
+## 5. Failure conditions
 
-| Section | Description | Result |
-|---------|-------------|--------|
-| 1 | File Structure | [ ] PASS / [ ] FAIL |
-| 2 | Core File Updates | [ ] PASS / [ ] FAIL |
-| 3 | API Key Storage | [ ] PASS / [ ] FAIL |
-| 4 | Knowledge Verification | [ ] PASS / [ ] FAIL |
-| 5 | Live Behavior Test | [ ] PASS / [ ] FAIL |
-| 6 | Anti-Pattern Checks | [ ] PASS / [ ] FAIL |
+Mark this skill FAIL if any of these are true:
 
-**OVERALL:**
-- [ ] ALL SECTIONS PASS — Context7 skill is fully installed and operational.
-- [ ] ONE OR MORE SECTIONS FAIL — Do not mark installation complete. Return to the failed section(s), correct the issue, and re-run QC.
+- [ ] `skill-version.txt` does not match `v6.5.6`
+- [ ] `CONTEXT7_API_KEY` is missing or malformed
+- [ ] Search works but docs fetch fails
+- [ ] Core files are bloated with copied full-doc content
+- [ ] Installer relied on a Context7 CLI even though this skill is API-only
 
 ---
 
-*QC document version: 1.0 | Skill version: v1.5.1 | Date written: 2026-03-16*
+## Final pass rule
+
+Pass this skill only if all of the following are true:
+
+- [ ] File set is complete
+- [ ] Version matches `v6.5.6`
+- [ ] Core file summaries are lean and correct
+- [ ] `CONTEXT7_API_KEY` is stored correctly
+- [ ] Search and docs fetch both work with the real API

@@ -1,354 +1,153 @@
 # QC Checklist - Skill 14: Google Workspace Integration
+**Version:** v6.5.6
 
-Run this checklist after installation to verify the skill installed correctly.
-Each section has a PASS/FAIL result. The skill passes only if ALL sections pass.
-
----
-
-## SECTION 1: FILE STRUCTURE CHECKS
-
-Verify every required file is present in the correct location.
-
-### 1A. Skill Folder Files
-
-Check that these files exist inside the skill folder:
-
-```
-~/Downloads/openclaw-master-files/OpenClaw Onboarding/14-google-workspace-integration/
-```
-
-- [ ] SKILL.md
-- [ ] INSTALL.md
-- [ ] INSTRUCTIONS.md
-- [ ] EXAMPLES.md
-- [ ] CORE_UPDATES.md
-- [ ] QC.md
-- [ ] CHANGELOG.md
-- [ ] google-workspace-integration-full.md
-
-**PASS:** All 8 files present.
-**FAIL:** Any file is missing. Re-copy the full skill folder from the source.
+Run this after installation. Every section must pass before you mark Google Workspace integration complete.
 
 ---
 
-### 1B. gws CLI Installation
+## 1. File and version checks
 
 ```bash
+SKILL_DIR="$HOME/Downloads/openclaw-master-files/OpenClaw Onboarding/14-google-workspace-integration"
+ls -1 "$SKILL_DIR"
+cat "$SKILL_DIR/skill-version.txt"
+```
+
+- [ ] Required files exist: `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `google-workspace-integration-full.md`, `QC.md`, `skill-version.txt`
+- [ ] `skill-version.txt` returns `v6.5.6`
+- [ ] `google-workspace-integration-full.md` is non-empty
+
+---
+
+## 2. Core file update checks
+
+```bash
+grep -n "gws\|Google Workspace" ~/clawd/AGENTS.md ~/clawd/TOOLS.md ~/clawd/MEMORY.md
+```
+
+- [ ] Core docs say `gws` replaces older ad hoc Google tooling for this install path
+- [ ] Docs mention both auth paths: Gmail OAuth and Workspace/service-account auth
+- [ ] Docs stay short and reference the full guide by file path
+
+---
+
+## 3. CLI installation checks
+
+```bash
+node --version
+npm --version
 gws --version
 ```
 
-- [ ] Command returns a version number (like 1.0.0 or higher)
-- [ ] No "command not found" error
-
-**PASS:** gws is installed and working.
-**FAIL:** gws not installed. Run npm install -g @googleworkspace/cli.
+- [ ] Node.js is installed and version is 18+
+- [ ] npm is installed
+- [ ] `gws --version` returns a real version number
 
 ---
 
-### 1C. Authentication Status
+## 4. Authentication checks
 
+### 4A. Generic auth listing
 ```bash
 gws auth list
 ```
 
-For Gmail accounts:
-- [ ] Shows your Gmail address
-- [ ] Shows authorized scopes
+- [ ] At least one account or auth profile is listed
+- [ ] Output does not show `Not authenticated`
 
-For Workspace accounts (gcloud method):
-- [ ] Shows authenticated status
-
-For Workspace accounts (service account method):
-- [ ] GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE is set
-- [ ] The file exists at the path specified
-
-**PASS:** Authentication configured correctly for account type.
-**FAIL:** Not authenticated. Follow INSTALL.md Section 2 or 3.
-
----
-
-### 1D. Secrets Directory Structure (if applicable)
-
+### 4B. Workspace credential path check
+Run this only for Workspace/service-account installs.
 ```bash
-ls ~/clawd/secrets/
+printenv GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE
+[ -n "$GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE" ] && ls -l "$GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE"
 ```
 
-For Workspace with service account:
-- [ ] Service account JSON file exists
-- [ ] Permissions are restricted (not world-readable)
+- [ ] `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` is set if the install used a service account
+- [ ] Referenced JSON file exists and is readable
 
-**PASS:** Secrets folder exists with proper credential file.
-**FAIL:** Secrets folder missing or credential file absent.
-
----
-
-## SECTION 2: CORE FILE UPDATE CHECKS
-
-Verify the required core files were updated with the correct content.
-
-### 2A. AGENTS.md
-
-Open AGENTS.md and confirm ALL of these lines are present:
-
-- [ ] Contains: Google Workspace Integration [PRIORITY: CRITICAL]
-- [ ] Contains: gws CLI reference
-- [ ] Contains: Gmail accounts use gws auth login
-- [ ] Contains: Workspace accounts use gws auth setup or service account
-- [ ] Contains: 81 scopes reference for Workspace
-- [ ] Contains a file path pointing to google-workspace-integration-full.md
-
-**PASS:** All items found in AGENTS.md.
-**FAIL:** Any item missing. Add the block from CORE_UPDATES.md.
-
----
-
-### 2B. TOOLS.md
-
-Open TOOLS.md and confirm ALL of these lines are present:
-
-- [ ] Contains: Google Workspace Integration [PRIORITY: CRITICAL]
-- [ ] Contains: Installation path (npm install -g @googleworkspace/cli)
-- [ ] Contains: Auth method for Gmail
-- [ ] Contains: Auth method for Workspace
-- [ ] Contains: Common gws commands
-- [ ] Contains a file path pointing to google-workspace-integration-full.md
-
-**PASS:** All items found in TOOLS.md.
-**FAIL:** Any item missing. Add the block from CORE_UPDATES.md.
-
----
-
-### 2C. MEMORY.md
-
-Open MEMORY.md and confirm ALL of these lines are present:
-
-- [ ] Contains: Google Workspace CLI (gws) installed
-- [ ] Contains: Installation date (not left as [DATE])
-- [ ] Contains: List of services handled
-- [ ] Contains: 81 scopes configured (for Workspace)
-- [ ] Contains a file path pointing to google-workspace-integration-full.md
-
-**PASS:** All items found in MEMORY.md.
-**FAIL:** Any item missing or [DATE] left unfilled. Update MEMORY.md.
-
----
-
-### 2D. Core Files NOT Updated (Verify No Bloat)
-
-Confirm that these files were NOT modified by this skill:
-
-- [ ] IDENTITY.md does NOT contain a Google Workspace section added by this install
-- [ ] HEARTBEAT.md does NOT contain a Google Workspace section added by this install
-- [ ] USER.md does NOT contain a Google Workspace section added by this install
-- [ ] SOUL.md does NOT contain a Google Workspace section added by this install
-
-**PASS:** None of the above files were touched.
-**FAIL:** Any of the above contain additions from this install. Remove them.
-
----
-
-## SECTION 3: ENVIRONMENT CHECKS
-
-### 3A. Node.js Version
-
+### 4C. gcloud check
+Run this only if the install used the gcloud path.
 ```bash
-node --version
+gcloud auth list 2>/dev/null
 ```
 
-- [ ] Output is v18.x.x or higher
-
-**PASS:** Node.js 18+.
-**FAIL:** Node.js below v18. Update Node.js before proceeding.
+- [ ] Active gcloud identity exists if gcloud auth was used
 
 ---
 
-### 3B. gws Installation Path
+## 5. Functional service tests
 
-```bash
-which gws
-```
+These are the exact service checks named in INSTALL.md.
 
-- [ ] Returns a path (like /usr/local/bin/gws or similar)
-
-**PASS:** gws is in PATH.
-**FAIL:** gws not in PATH. May need to reinstall or restart terminal.
-
----
-
-## SECTION 4: KNOWLEDGE VERIFICATION
-
-The agent must answer ALL of these correctly from memory.
-
-**Q1:** What tool is used for Google Workspace access?
-
-> **Correct answer:** The gws CLI (Google Workspace CLI).
-
-- [ ] Agent answers correctly.
-
----
-
-**Q2:** What are the two authentication paths for gws?
-
-> **Correct answer:** Gmail accounts use OAuth via gws auth login. Workspace accounts use gws auth setup with gcloud or service account JSON via GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE.
-
-- [ ] Agent answers correctly.
-
----
-
-**Q3:** How many OAuth scopes are configured for Domain-Wide Delegation?
-
-> **Correct answer:** 81 scopes.
-
-- [ ] Agent answers 81 scopes.
-
----
-
-**Q4:** How do you refresh expired tokens?
-
-> **Correct answer:** Run gws auth login again for Gmail. For Workspace with gcloud, run gcloud auth application-default login. Service accounts refresh automatically.
-
-- [ ] Agent explains token refresh correctly.
-
----
-
-**Q5:** What command shows today's calendar agenda?
-
-> **Correct answer:** gws calendar +agenda
-
-- [ ] Agent answers with the correct command.
-
----
-
-**PASS:** Agent answers all 5 questions correctly.
-**FAIL:** Agent misses any answer. Have the agent re-read the documentation.
-
----
-
-## SECTION 5: LIVE BEHAVIOR TESTS
-
-Run these tests to confirm the integration actually works.
-
-### 5A. Gmail Test
-
+### 5A. Gmail
 ```bash
 gws gmail +triage
 ```
+- [ ] Command succeeds
 
-Expected: List of unread emails or "No unread messages" message.
-
-- [ ] Test passes (returns email data or empty state message)
-- [ ] No 401 or 403 errors
-
----
-
-### 5B. Calendar Test
-
+### 5B. Calendar
 ```bash
 gws calendar +agenda
 ```
+- [ ] Command succeeds
 
-Expected: Today's events or "No events today" message.
-
-- [ ] Test passes (returns events or empty state message)
-- [ ] No 401 or 403 errors
-
----
-
-### 5C. Drive Test
-
+### 5C. Drive
 ```bash
-gws drive files list --params '{"pageSize": 3}'
+gws drive files list --params '{"pageSize": 5}'
 ```
+- [ ] Returns a file list without 401/403 errors
 
-Expected: List of Drive files.
-
-- [ ] Test passes (returns file list)
-- [ ] No 401 or 403 errors
-
----
-
-### 5D. Sheets Test
-
+### 5D. Sheets
 ```bash
 gws sheets spreadsheets create --json '{"properties": {"title": "QC Test Sheet"}}'
 ```
+- [ ] Spreadsheet create call succeeds
+- [ ] Cleanup is documented if you created a live test sheet
 
-Expected: Response with spreadsheet ID.
-
-- [ ] Test passes (returns spreadsheet ID)
-- [ ] No 401 or 403 errors
-
-**Note:** Delete the test sheet after verification.
-
----
-
-### 5E. Docs Test
-
-For interactive testing, verify the helper loads:
+### 5E. Docs
 ```bash
-gws docs +write --help
+gws docs +write
 ```
+- [ ] Command succeeds
 
-Expected: Help text for the docs write helper.
-
-- [ ] Test passes (returns help text)
-
----
-
-### 5F. Tasks Test
-
+### 5F. Tasks
 ```bash
 gws tasks tasklists list
 ```
-
-Expected: List of task lists or empty state.
-
-- [ ] Test passes (returns task lists or empty state)
-- [ ] No 401 or 403 errors
+- [ ] Command succeeds
 
 ---
 
-## SECTION 6: ANTI-PATTERN CHECKS
+## 6. OpenClaw skill-link checks
 
-Verify the agent does NOT exhibit any of these failure modes.
+```bash
+ls -la ~/.openclaw/skills 2>/dev/null | head -50
+```
 
-| Anti-Pattern | Check |
-|---|---|
-| Referencing old tools (google-api.js or gog) | [ ] NOT observed |
-| Using em dashes in documentation | [ ] NOT observed |
-| Autonomously restarting the OpenClaw gateway | [ ] NOT observed |
-| Dumping full skill documentation into AGENTS.md, TOOLS.md, or MEMORY.md | [ ] NOT observed |
-| Pasting scopes with spaces after commas | [ ] NOT observed |
-
-**PASS:** Zero anti-patterns observed.
-**FAIL:** Any anti-pattern observed. Identify and correct.
+- [ ] gws-provided OpenClaw skills were copied or linked into `~/.openclaw/skills`
+- [ ] Skill files are readable by the runtime user
 
 ---
 
-## SECTION 7: PASS CRITERIA SUMMARY
+## 7. Failure conditions
 
-| Section | Description | Result |
-|---|---|---|
-| 1A | Skill folder has all 8 required files | PASS / FAIL |
-| 1B | gws CLI installed and working | PASS / FAIL |
-| 1C | Authentication configured for account type | PASS / FAIL |
-| 1D | Secrets directory structure correct (if applicable) | PASS / FAIL |
-| 2A | AGENTS.md has all required content | PASS / FAIL |
-| 2B | TOOLS.md has all required content | PASS / FAIL |
-| 2C | MEMORY.md has all required content with date | PASS / FAIL |
-| 2D | No bloat added to IDENTITY, HEARTBEAT, USER, SOUL | PASS / FAIL |
-| 3A | Node.js v18+ installed | PASS / FAIL |
-| 3B | gws in PATH | PASS / FAIL |
-| 4 | All 5 knowledge questions answered correctly | PASS / FAIL |
-| 5A-5F | All live API tests pass | PASS / FAIL |
-| 6 | Zero anti-patterns observed | PASS / FAIL |
+Fail this skill if any of these happen:
+
+- [ ] `skill-version.txt` is wrong
+- [ ] `gws --version` fails
+- [ ] `gws auth list` shows no usable auth
+- [ ] One of the required service tests fails with auth or API errors
+- [ ] gws skill files were not linked into the OpenClaw skills folder
 
 ---
 
-### FINAL VERDICT
+## Final pass rule
 
-**SKILL INSTALLED CORRECTLY:** All sections marked PASS.
+Pass only if all of the following are true:
 
-**SKILL INSTALLATION INCOMPLETE:** Any section marked FAIL. Fix the failed section using the referenced file, then re-run only the failed section.
-
-Do NOT mark this skill as installed until every section shows PASS.
+- [ ] Files and version are correct
+- [ ] Core summaries are present and lean
+- [ ] Node 18+, npm, and gws are installed
+- [ ] Auth path is valid for Gmail or Workspace mode
+- [ ] Gmail, Calendar, Drive, Sheets, Docs, and Tasks tests all pass
+- [ ] OpenClaw gws skills are installed

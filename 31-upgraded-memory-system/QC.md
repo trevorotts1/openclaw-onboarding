@@ -1,75 +1,188 @@
-# Skill 31: Upgraded Memory System - Quality Control
+# QC Checklist — Skill 31: Upgraded Memory System
 
-## QC Checks
+Run this after installation to verify all five layers are in place and the memory stack is actually active.
 
-### 1. Required Files Present
+---
+
+## Section 1: File Structure + Version Check
 
 ```bash
-FILES="SKILL.md INSTALL.md INSTRUCTIONS.md EXAMPLES.md CORE_UPDATES.md HOW-YOUR-MEMORY-WORKS.md skill-version.txt"
-OK=true
-for f in $FILES; do
-  if [ -f "$f" ]; then
-    echo "  [PASS] $f exists"
-  else
-    echo "  [FAIL] $f MISSING"
-    OK=false
-  fi
+SKILL_DIR="$HOME/.openclaw/skills/31-upgraded-memory-system"
+[ -d "$SKILL_DIR" ] || SKILL_DIR="$HOME/.openclaw/skills/upgraded-memory-system"
+
+echo "Using skill dir: $SKILL_DIR"
+
+for f in SKILL.md INSTALL.md INSTRUCTIONS.md EXAMPLES.md CORE_UPDATES.md \
+         FULL-DOC.md HOW-YOUR-MEMORY-WORKS.md skill-version.txt; do
+  [ -f "$SKILL_DIR/$f" ] && echo "PASS: $f" || echo "FAIL: $f missing"
 done
-$OK && echo "RESULT: ALL FILES PRESENT" || echo "RESULT: MISSING FILES"
+
+[ -f "$SKILL_DIR/skill-version.txt" ] && echo "Installed version: $(cat "$SKILL_DIR/skill-version.txt")"
 ```
 
-Expected: All 7 files present.
+**Pass criteria:** all required files are present.
 
-### 2. Memory System Wired in Workspace
+---
 
-Check that core memory directories and files exist:
+## Section 2: Dependency + Environment Checks
+
+Layer 4 requires Google Gemini dependencies.
 
 ```bash
-echo "--- Layer 1: Markdown Files ---"
-ls ~/clawd/MEMORY.md 2>/dev/null && echo "  [PASS] MEMORY.md exists" || echo "  [FAIL] MEMORY.md missing"
-[ -d ~/clawd/memory ] && echo "  [PASS] memory/ directory exists" || echo "  [FAIL] memory/ directory missing"
+python3 --version >/dev/null 2>&1 && echo "PASS: python3 found" || echo "FAIL: python3 missing"
+python3 -c "from google import genai; import numpy; print('SDK ready')" 2>/dev/null \
+  && echo "PASS: google-genai + numpy importable" \
+  || echo "FAIL: google-genai and/or numpy missing"
 
-echo "--- Layer 2: Memory Flush ---"
-grep -q "memoryFlush" ~/.openclaw/openclaw.json 2>/dev/null && echo "  [PASS] memoryFlush configured" || echo "  [FAIL] memoryFlush not found"
-
-echo "--- Layer 3: Session Indexing ---"
-grep -q "sessionMemory" ~/.openclaw/openclaw.json 2>/dev/null && echo "  [PASS] sessionMemory enabled" || echo "  [FAIL] sessionMemory not found"
-
-echo "--- Layer 4: Gemini Embedding ---"
-grep -q '"backend"' ~/.openclaw/openclaw.json 2>/dev/null && echo "  [INFO] backend value:" && grep '"backend"' ~/.openclaw/openclaw.json | head -1 || echo "  [FAIL] backend not configured"
-
-echo "--- Layer 5: Mem0 ---"
-openclaw plugins list 2>/dev/null | grep -qi mem0 && echo "  [PASS] Mem0 plugin loaded" || echo "  [FAIL] Mem0 plugin not loaded"
+echo "GOOGLE_API_KEY length: ${#GOOGLE_API_KEY}"
+[ -n "$GOOGLE_API_KEY" ] \
+  && echo "PASS: GOOGLE_API_KEY set" \
+  || echo "INFO: GOOGLE_API_KEY not set - Layer 4 may be pending"
 ```
 
-### 3. Key Environment Variables
+**Pass criteria:** Python packages import cleanly. `GOOGLE_API_KEY` is present unless Layer 4 is intentionally pending.
+
+---
+
+## Section 3: Five-Layer Wiring Checks
+
+### Layer 1: Markdown memory files
 
 ```bash
-echo "Checking env vars..."
-for var in GOOGLE_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY; do
-  val=$(printenv "$var" 2>/dev/null)
-  [ -n "$val" ] && echo "  [PASS] $var is set" || echo "  [INFO] $var not set (may be optional)"
-done
+[ -f ~/clawd/MEMORY.md ] && echo "PASS: MEMORY.md exists" || echo "FAIL: MEMORY.md missing"
+[ -d ~/clawd/memory ] && echo "PASS: memory/ directory exists" || echo "FAIL: memory/ directory missing"
 ```
 
-- `GOOGLE_API_KEY` / `GEMINI_API_KEY` - Required for Layer 4 (Gemini Embedding 2)
-- `OPENROUTER_API_KEY` - Used by Mem0 LLM if configured with Gemini
-
-### 4. Functional Test
+### Layer 2: memoryFlush configured
 
 ```bash
-# Verify MEMORY.md has real content (not just a template header)
-LINES=$(wc -l < ~/clawd/MEMORY.md 2>/dev/null || echo 0)
-[ "$LINES" -gt 10 ] && echo "  [PASS] MEMORY.md has $LINES lines" || echo "  [FAIL] MEMORY.md too short ($LINES lines)"
-
-# Verify daily log directory has at least one entry
-LOGS=$(ls ~/clawd/memory/*.md 2>/dev/null | wc -l)
-[ "$LOGS" -gt 0 ] && echo "  [PASS] $LOGS daily log file(s) found" || echo "  [WARN] No daily logs yet"
-
-# Verify config validates
-openclaw config validate 2>&1 | head -3
-
-echo "RESULT: Functional test complete"
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home()/'.openclaw/openclaw.json'
+obj = json.loads(p.read_text())
+md = obj.get('agents', {}).get('defaults', {})
+flush = md.get('compaction', {}).get('memoryFlush', {})
+print('PASS' if flush else 'FAIL', 'memoryFlush present' if flush else 'memoryFlush missing')
+print('batchSize =', flush.get('batchSize'))
+print('paths =', flush.get('paths'))
+PY
 ```
 
-Expected: MEMORY.md has 10+ lines, at least 1 daily log, config validates.
+### Layer 3: session memory enabled
+
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home()/'.openclaw/openclaw.json'
+obj = json.loads(p.read_text())
+ms = obj.get('agents', {}).get('defaults', {}).get('memorySearch', {})
+print('sessionMemory =', ms.get('sessionMemory'))
+print('PASS' if ms.get('sessionMemory') is True else 'FAIL', 'sessionMemory check')
+PY
+```
+
+### Layer 4: Gemini search backend configured
+
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home()/'.openclaw/openclaw.json'
+obj = json.loads(p.read_text())
+mem = obj.get('memory', {})
+ms = obj.get('agents', {}).get('defaults', {}).get('memorySearch', {})
+print('memory.backend =', mem.get('backend'))
+print('memorySearch.provider =', ms.get('provider'))
+print('memorySearch.model =', ms.get('model'))
+PY
+```
+
+**Expected:**
+- `memory.backend` = `gemini`
+- `memorySearch.provider` = `gemini`
+- model = `models/gemini-embedding-2-preview`
+
+### Layer 5: Mem0 plugin installed and loaded
+
+```bash
+openclaw plugins list 2>/dev/null | grep -i mem0 \
+  && echo "PASS: Mem0 plugin listed" \
+  || echo "FAIL: Mem0 plugin not detected"
+```
+
+**Pass criteria:** Layers 1, 2, 3, and 5 pass. Layer 4 passes if API key is available, or is explicitly marked pending if not.
+
+---
+
+## Section 4: Functional Tests
+
+### 4.1 Config validation
+
+```bash
+openclaw config validate
+```
+
+**Expected:** config validates successfully.
+
+### 4.2 Daily-memory presence
+
+```bash
+COUNT=$(ls ~/clawd/memory/*.md 2>/dev/null | wc -l | tr -d ' ')
+echo "Daily memory files: $COUNT"
+[ "$COUNT" -ge 1 ] && echo "PASS: daily memory exists" || echo "WARN: no daily memory files yet"
+```
+
+### 4.3 Memory plugin runtime visibility
+
+```bash
+openclaw status 2>/dev/null | grep -i mem0 || echo "INFO: openclaw status did not print mem0"
+```
+
+### 4.4 Search-path sanity
+
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home()/'.openclaw/openclaw.json'
+obj = json.loads(p.read_text())
+paths = obj.get('agents', {}).get('defaults', {}).get('compaction', {}).get('memoryFlush', {}).get('paths', [])
+print('paths:', paths)
+print('PASS' if any('memory' in str(x).lower() for x in paths) else 'FAIL', 'memory path included')
+PY
+```
+
+---
+
+## Section 5: Knowledge Verification
+
+**Q1.** What are the five layers?
+> **Expected:** markdown memory files, memoryFlush summaries, session memory search, Gemini embedding search, Mem0 plugin memory.
+
+**Q2.** What env var powers Layer 4?
+> **Expected:** `GOOGLE_API_KEY`
+
+**Q3.** What Python packages are required for Layer 4?
+> **Expected:** `google-genai` and `numpy`
+
+**Q4.** What plugin powers Layer 5?
+> **Expected:** `openclaw-mem0`
+
+**Q5.** What search model should be configured?
+> **Expected:** `models/gemini-embedding-2-preview`
+
+**Pass criteria:** 5/5 correct.
+
+---
+
+## Section 6: Anti-Pattern Checks
+
+Fail the skill if any of these happen:
+
+- `memory.backend` is left on old Google Embedding 2 or anything other than `gemini`
+- `memorySearch.provider` does not match `gemini`
+- Layer 4 is claimed active without `GOOGLE_API_KEY`
+- Mem0 plugin is missing but the system is reported as fully installed
+- `google-genai` / `numpy` are missing but Layer 4 is reported as working
+- session memory is disabled
+- memoryFlush is absent from config
+
+**Pass criteria:** zero anti-patterns triggered.

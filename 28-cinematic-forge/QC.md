@@ -1,220 +1,212 @@
-# Cinematic Forge (Skill 28) - QC Checklist
+# QC Checklist — Skill 28: Cinematic Forge
 
-Run this after installation to verify the skill is installed and the agent has learned it correctly.
-
----
-
-## 1. File Structure Checks
-
-Run each command and verify the expected output.
-
-```bash
-# Check skill folder exists
-ls ~/.openclaw/skills/cinematic-forge/
-```
-**Expected:** `SKILL.md`, `INSTALL.md`, `README.md`, `CORE_UPDATES.md` all present
-
-```bash
-# Check no extra or corrupt files
-find ~/.openclaw/skills/cinematic-forge/ -type f | sort
-```
-**Expected:** Exactly 4 files. No `.tmp`, `.bak`, or partial downloads.
-
-```bash
-# Check SKILL.md is not empty or truncated
-wc -l ~/.openclaw/skills/cinematic-forge/SKILL.md
-```
-**Expected:** 747 lines (or very close). A value under 100 means the file was truncated.
+Run this after installation to verify the skill is installed, the dependencies exist, and the agent understands the production workflow.
 
 ---
 
-## 2. Core File Update Checks
+## Section 1: File Structure + Version Check
 
-Verify that the Teach Yourself Protocol successfully wrote pointers into the agent's core files.
-
-### AGENTS.md
 ```bash
-grep -n "Cinematic Forge" ~/clawd/AGENTS.md
-```
-**Expected:** At minimum one match containing `Cinematic Forge (Skill 28)`. The full block should include:
-- `Intake is 14 questions, asked one at a time`
-- `Track progress in a state file`
-- `Always verify KIE.ai balance before spending credits`
-- `Always QC output video`
+SKILL_DIR="$HOME/.openclaw/skills/cinematic-forge"
+[ -d "$SKILL_DIR" ] || SKILL_DIR="$HOME/.openclaw/skills/28-cinematic-forge"
 
-### TOOLS.md
-```bash
-grep -n "Cinematic Forge" ~/clawd/TOOLS.md
-```
-**Expected:** Entry present under a `## Video Skills Suite` section with:
-- Location pointing to `~/.openclaw/skills/cinematic-forge/`
-- Purpose described as end-to-end video production pipeline
-- Provider listed as `KIE.ai`
+echo "Using skill dir: $SKILL_DIR"
 
-### MEMORY.md
-```bash
-grep -n "Cinematic Forge" ~/clawd/MEMORY.md
-```
-**Expected:** At least one pointer line, e.g.:
-`Cinematic Forge (Skill 28): ~/.openclaw/skills/cinematic-forge/`
+for f in SKILL.md INSTALL.md README.md CORE_UPDATES.md skill-version.txt; do
+  [ -f "$SKILL_DIR/$f" ] \
+    && echo "PASS: $f" \
+    || echo "FAIL: $f missing"
+done
 
-**FAIL condition:** Any of the three files has zero matches. This means the agent did not apply CORE_UPDATES.md and the skill will not be recalled in future sessions.
+[ -f "$SKILL_DIR/cinematic-forge.skill" ] \
+  && echo "PASS: cinematic-forge.skill present" \
+  || echo "INFO: cinematic-forge.skill not present in installed copy"
+
+[ -f "$SKILL_DIR/skill-version.txt" ] && echo "Installed version: $(cat "$SKILL_DIR/skill-version.txt")"
+```
+
+**Pass criteria:** All five required files are present and `skill-version.txt` is readable.
 
 ---
 
-## 3. Dependency Checks
+## Section 2: Dependency Verification
 
 ```bash
-# FFmpeg must be installed
-ffmpeg -version
+ffmpeg -version >/dev/null 2>&1 \
+  && echo "PASS: ffmpeg found" \
+  || echo "FAIL: ffmpeg missing"
+
+curl --version >/dev/null 2>&1 \
+  && echo "PASS: curl found" \
+  || echo "FAIL: curl missing"
+
+which summarize >/dev/null 2>&1 \
+  && echo "PASS: summarize found (recommended)" \
+  || echo "INFO: summarize not installed yet"
+
+if [ -d "$HOME/.openclaw/skills/video-frames" ] || [ -d "$HOME/.npm-global/lib/node_modules/openclaw/skills/video-frames" ]; then
+  echo "PASS: video-frames skill folder found"
+else
+  echo "INFO: video-frames skill folder not found"
+fi
 ```
-**Expected:** Version output. Anything else = FFmpeg not installed. Run `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Linux).
+
+**Expected env vars / credentials:**
+- `KIE_API_KEY` for KIE.ai generation
+- GHL / Convert and Flow Private Integration Token for uploads (`GHL_API_KEY` in Trevor's environment naming)
+- Optional fallback: `IMGBB_API_KEY`
+- Optional for reference-video analysis: one of `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 
 ```bash
-# KIE.ai API key must be set
-source ~/clawd/secrets/.env && echo "KIE_API_KEY=${KIE_API_KEY:0:8}..."
+for var in KIE_API_KEY GHL_API_KEY IMGBB_API_KEY GEMINI_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY; do
+  [ -n "$(printenv "$var" 2>/dev/null)" ] \
+    && echo "PASS: $var set" \
+    || echo "INFO: $var not set"
+done
 ```
-**Expected:** `KIE_API_KEY=xxxxxxxx...` (first 8 chars visible, rest masked). Empty = key not set.
+
+**Pass criteria:** `ffmpeg`, `curl`, and `KIE_API_KEY` are present. Upload credentials must exist for either GHL or imgBB.
+
+---
+
+## Section 3: Core Behavior / Knowledge Verification
+
+The agent should answer these correctly without inventing details.
+
+**Q1.** How many intake questions does Cinematic Forge ask, and how are they asked?
+> **Expected:** 14 questions, asked one at a time.
+
+**Q2.** What aspect ratio is always produced first?
+> **Expected:** 9:16 vertical first. 16:9 only after 9:16 is approved.
+
+**Q3.** What VEO model should be used by default for generation?
+> **Expected:** VEO 3.1 Fast via KIE.ai (`veo3_fast`).
+
+**Q4.** What must happen before any paid generation starts?
+> **Expected:** Check KIE.ai credits, calculate the budget estimate, present the estimate, and get user approval.
+
+**Q5.** What file is used for session recovery if the run is interrupted?
+> **Expected:** `project-state.json`.
+
+**Q6.** Can narrator voiceover and character dialogue overlap in the same segment?
+> **Expected:** No. Never overlap them.
+
+**Q7.** What happens to VEO's built-in audio?
+> **Expected:** It is discarded and replaced with separately generated audio layers.
+
+**Q8.** What tools/models are used for audio layers?
+> **Expected:** ElevenLabs TTS, ElevenLabs SFX, and Suno via KIE.ai.
+
+**Q9.** Where are text overlays and logos added?
+> **Expected:** In post-production with FFmpeg, not inside VEO.
+
+**Q10.** What is the fallback if GHL media upload is not available?
+> **Expected:** imgBB.
+
+**Pass criteria:** 10/10 answers correct.
+
+---
+
+## Section 4: Functional Smoke Test
+
+This does not spend credits. It verifies the local assembly parts of the pipeline.
+
+### 4.1 Create a tiny test project structure
 
 ```bash
-# Verify KIE.ai key is live (not just present)
-source ~/clawd/secrets/.env && curl -s "https://api.kie.ai/api/v1/user/credits" \
-  -H "Authorization: Bearer $KIE_API_KEY" | python3 -m json.tool
+PROJECT_DIR="/tmp/cinematic-forge-qc"
+rm -rf "$PROJECT_DIR"
+mkdir -p "$PROJECT_DIR"/{images,segments,audio/dialogue,audio/narrator,audio/sfx,audio/music,final}
+
+cat > "$PROJECT_DIR/project-state.json" <<'JSON'
+{
+  "project_name": "qc-test",
+  "status": "pre-production",
+  "segments": [],
+  "audio": {
+    "dialogue": [],
+    "narrator": [],
+    "sfx": [],
+    "music": []
+  }
+}
+JSON
+
+[ -f "$PROJECT_DIR/project-state.json" ] \
+  && echo "PASS: project-state.json created" \
+  || echo "FAIL: could not create project-state.json"
 ```
-**Expected:** JSON response containing a `credits` or `balance` field. A `401` or `403` error = invalid key.
+
+### 4.2 Create two short sample segments with FFmpeg
 
 ```bash
-# GHL/Convert and Flow PIT (optional but verify if user has GHL)
-source ~/clawd/secrets/.env && echo "GHL_PIT=${GHL_PIT:0:6}..."
+ffmpeg -y -f lavfi -i "color=c=black:size=1080x1920:rate=30" -t 2 "$PROJECT_DIR/segments/segment_1.mp4" >/dev/null 2>&1
+ffmpeg -y -f lavfi -i "color=c=white:size=1080x1920:rate=30" -t 2 "$PROJECT_DIR/segments/segment_2.mp4" >/dev/null 2>&1
+
+for f in "$PROJECT_DIR/segments/segment_1.mp4" "$PROJECT_DIR/segments/segment_2.mp4"; do
+  [ -f "$f" ] && echo "PASS: $(basename "$f") created" || echo "FAIL: $(basename "$f") missing"
+done
 ```
-**Expected:** Token prefix visible. If the user has GHL, this must be set. If no GHL, imgBB key should be set instead.
+
+### 4.3 Merge the two segments with FFmpeg concat
+
+```bash
+cat > "$PROJECT_DIR/final/concat_list.txt" <<EOF
+file '$PROJECT_DIR/segments/segment_1.mp4'
+file '$PROJECT_DIR/segments/segment_2.mp4'
+EOF
+
+ffmpeg -y -f concat -safe 0 -i "$PROJECT_DIR/final/concat_list.txt" -c copy "$PROJECT_DIR/final/merged.mp4" >/dev/null 2>&1
+
+[ -f "$PROJECT_DIR/final/merged.mp4" ] \
+  && echo "PASS: merged.mp4 created" \
+  || echo "FAIL: merged.mp4 missing"
+
+ffprobe -v error -show_entries stream=width,height -of csv=p=0 "$PROJECT_DIR/final/merged.mp4"
+```
+
+**Expected:** merged file exists and reports `1080,1920`.
 
 ---
 
-## 4. Knowledge Verification Questions
+## Section 5: Optional Live API Checks
 
-Ask the agent each question directly. Expected answers are listed. A wrong answer means the agent did not fully learn SKILL.md.
+Run only if credentials are available and you are intentionally testing live generation.
 
-**Q1: How many intake questions does Cinematic Forge ask, and what is the rule for how they are delivered?**
-Expected answer: 14 questions, asked one at a time. The agent waits for the user's full answer before asking the next question.
+### 5.1 Check KIE credits endpoint
 
-**Q2: What happens to the audio that VEO 3.1 Fast generates inside each video segment?**
-Expected answer: It is discarded entirely. All audio is replaced with separately generated ElevenLabs (voice/SFX) and Suno (music) tracks mixed via FFmpeg.
+```bash
+curl -s "https://api.kie.ai/api/v1/user/credits" \
+  -H "Authorization: Bearer $KIE_API_KEY" | python3 -m json.tool | head -20
+```
 
-**Q3: Can a narrator voiceover and character dialogue appear in the same video segment?**
-Expected answer: No. This is a hard rule. If a segment has characters speaking on screen (lips moving), there is no narrator. If a segment has narrator voiceover, characters on screen do not speak.
+**Expected:** Valid JSON response, not 401/403.
 
-**Q4: What is the primary video format and when is the secondary format created?**
-Expected answer: 9:16 vertical is always the primary format. 16:9 horizontal is only created AFTER the 9:16 version has been approved by the user.
+### 5.2 Verify GHL upload auth can at least read location info
 
-**Q5: What must happen before the agent starts any video generation?**
-Expected answer: (a) Create the project folder structure, (b) check KIE.ai credit balance, (c) calculate and present a budget estimate to the user, (d) wait for user confirmation. Generation cannot begin until the user explicitly approves.
+```bash
+curl -s \
+  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Version: 2021-07-28" \
+  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" | python3 -m json.tool | head -20
+```
 
-**Q6: What is `project-state.json` and why does it exist?**
-Expected answer: A session recovery file created at the start of every project. It tracks which segments are complete, their taskIds, file paths, audio clips, and overall production status. It is updated after every completed step so a new session can resume exactly where the previous one left off if the session crashes or times out.
-
-**Q7: What model is used for video generation, and what does it cost per segment?**
-Expected answer: VEO 3.1 Fast (`veo3_fast`) via KIE.ai. $0.40 per 8-second segment, including Extend operations.
-
-**Q8: How long is each VEO video segment, and how is a 90-second video produced?**
-Expected answer: Each segment is 8 seconds. A 90-second video requires 12 segments: 11 full segments (88 seconds) + 1 segment trimmed to 2 seconds via FFmpeg.
-
-**Q9: What is the correct term for the GHL/Convert and Flow authentication credential?**
-Expected answer: Private Integration Token (PIT). It is NOT called an API key.
-
-**Q10: What should the agent do if the `video-frames` or `summarize` skill is missing when the user provides a reference video (Q12)?**
-Expected answer: Install the missing tool on the spot (not skip the analysis). Then use the Teach Yourself Protocol to learn the skill, write a summary to TOOLS.md and MEMORY.md, and proceed with the reference video analysis.
-
-**Q11: When is Topaz upscaling offered to the user?**
-Expected answer: Only AFTER the user has approved the draft video. It is never offered or run on unapproved content.
-
-**Q12: Which agent model is explicitly banned from running Cinematic Forge, and why?**
-Expected answer: Kimi K2.5. It cannot make tool calls (API requests), which is required for every phase of production.
+**Expected:** Valid JSON for the location. If GHL is unavailable, imgBB may be used as fallback instead.
 
 ---
 
-## 5. Live Behavior Test
+## Section 6: Anti-Pattern Checks
 
-This test verifies the agent behaves correctly in a real interaction. Use a fresh conversation window.
+Fail the skill if any of these happen:
 
-### Test Prompt
-> "Create a 15-second test video of a person walking on a beach at sunset."
+- Agent skips the 14-question intake
+- Agent asks multiple intake questions at once
+- Agent starts generation before budget approval
+- Agent produces 16:9 first instead of 9:16
+- Agent keeps VEO's built-in audio instead of replacing it
+- Agent overlaps narrator and dialogue in the same segment
+- Agent puts logos or on-screen text inside VEO instead of post-production
+- Agent upscales with Topaz before draft approval
+- Agent fails to maintain `project-state.json` after each completed step
 
-### Expected Agent Behavior (in order)
-
-1. **Opening statement** - Agent acknowledges the request and says it will ask 14 questions one at a time.
-
-2. **Question 1 only** - Agent asks about the concept/big picture. It does NOT ask multiple questions at once.
-
-3. **Waits** - After you answer Q1, agent asks Q2 (target audience). Continues one question at a time.
-
-4. **Budget confirmation before generation** - Before generating any assets, agent presents a cost estimate and asks for approval.
-
-5. **Does NOT start generation without approval** - If you say "go ahead" at the right moment, agent creates the project folder structure and initializes `project-state.json` before any API call.
-
-6. **Progress updates** - After each segment completes, agent sends a status update ("Segment 1 of 2 complete...").
-
-### Pass Criteria
-- [ ] Agent asks exactly 1 question at a time (not a batched list)
-- [ ] Agent does not begin generation before presenting a cost estimate
-- [ ] Agent does not begin generation without explicit user confirmation
-- [ ] Agent creates the project folder and `project-state.json` before making KIE.ai calls
-- [ ] Agent provides progress updates after each segment
-
-### Fail Indicators
-- Agent asks multiple questions at once → SKILL.md intake rules were not learned
-- Agent begins generating without cost confirmation → critical rule 10 was missed
-- Agent uses Kimi K2.5 → wrong model, switch to MiniMax M2.5 or Claude Sonnet/Opus
-
----
-
-## 6. Anti-Pattern Checks
-
-These are behaviors the agent must NEVER exhibit. Verify each one is absent.
-
-| Anti-Pattern | How to Check | Expected Result |
-|---|---|---|
-| Dumps all 14 questions at once | Ask agent to start a video project | Agent asks exactly 1 question |
-| Starts generation without budget approval | Monitor agent behavior after intake completes | Agent presents cost estimate and waits |
-| Uses VEO audio in final video | Ask agent to describe assembly steps | Agent says VEO audio is discarded, replaced with ElevenLabs + Suno |
-| Narrator and dialogue overlap | Ask agent: "Can a narrator and character speak in the same segment?" | Agent says no, hard rule |
-| Creates 16:9 before 9:16 approved | Ask agent about format workflow | Agent says 9:16 first, 16:9 only after approval |
-| Skips project-state.json | Ask agent what file tracks session recovery | Agent names `project-state.json` and explains its purpose |
-| Provides END image to VEO Segment 1 | Ask agent: "For Segment 1, do you provide a start image, end image, or both?" | Agent says start image only; end images constrain output and produce stiff video |
-| Offers Topaz upscale during production | Ask agent when Topaz is offered | Agent says only after the user approves the draft |
-| Uses wrong GHL terminology | Ask agent: "What credential do I need for GHL media upload?" | Agent says "Private Integration Token (PIT)" not "API key" |
-| Skips TYP prerequisite check | Ask agent: "What do you need before you can run Cinematic Forge?" | Agent names the Teach Yourself Protocol as mandatory |
-| Triggers gateway restart autonomously | Review INSTALL.md gateway section | Agent must notify user and wait for `/restart` command, never self-trigger |
-
----
-
-## 7. Pass Criteria Summary
-
-The skill is considered fully installed and operational when ALL of the following are true:
-
-- [ ] All 4 skill files present in `~/.openclaw/skills/cinematic-forge/`
-- [ ] `SKILL.md` is not truncated (approximately 747 lines)
-- [ ] `AGENTS.md` contains the Cinematic Forge (Skill 28) rule block
-- [ ] `TOOLS.md` contains the Cinematic Forge entry under Video Skills Suite
-- [ ] `MEMORY.md` contains the Cinematic Forge pointer
-- [ ] FFmpeg installed and responsive
-- [ ] KIE.ai API key present and returns a valid response from the credits endpoint
-- [ ] Agent answers all 12 knowledge verification questions correctly
-- [ ] Live behavior test shows one-question-at-a-time intake and pre-generation budget confirmation
-- [ ] All 11 anti-patterns are absent from agent behavior
-
-**Score: 10/10 checks passed = PASS. Any failure = investigate and re-run the relevant installation step.**
-
----
-
-## 8. Recovery Steps by Failure Type
-
-| Failure | Fix |
-|---|---|
-| Skill files missing | Re-run the onboarding installer so files copy to `~/.openclaw/skills/cinematic-forge/` |
-| Core files not updated | Re-apply `CORE_UPDATES.md` manually — add the exact blocks listed in that file to AGENTS.md, TOOLS.md, MEMORY.md |
-| Agent gives wrong answers to knowledge questions | Re-teach: say "Teach yourself this skill" and paste the full contents of `SKILL.md` |
-| KIE.ai key missing or invalid | Add `KIE_API_KEY=...` to `~/clawd/secrets/.env` and verify with the credits endpoint |
-| FFmpeg not found | `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Linux/WSL) |
-| Agent asks all questions at once | Agent did not internalize intake rules — re-teach SKILL.md and emphasize the intake section |
-| Wrong model (Kimi K2.5) | Switch conversation to MiniMax M2.5, Claude Opus/Sonnet, or GPT-5.2 |
+**Pass criteria:** Zero anti-patterns triggered.

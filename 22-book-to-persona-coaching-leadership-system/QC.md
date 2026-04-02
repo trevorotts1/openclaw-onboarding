@@ -47,8 +47,10 @@ Confirm these specific folders exist inside the personas directory:
 
 ### Secrets
 - [ ] `~/clawd/secrets/.env` exists
-- [ ] `MOONSHOT_API_KEY` entry present in `.env` (value does not need to be verified here)
-- [ ] `OPENROUTER_API_KEY` entry present in `.env`
+- [ ] `GOOGLE_API_KEY` entry present in `.env` (Gemini indexing / retrieval)
+- [ ] `MOONSHOT_API_KEY` entry present in `.env` (Phase 1 extraction)
+- [ ] `OPENROUTER_API_KEY` entry present in `.env` (Phase 2 analysis)
+- [ ] `OPENAI_API_KEY` entry present in `.env` (Phase 3 synthesis)
 
 **HARD FAIL:** Any missing file from skill root, agent-prompts, or pre-built personas folder = installation incomplete.
 
@@ -70,7 +72,7 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 - [ ] Contains section heading `## Book-to-Persona - Model Routing and Gemini Engine`
 - [ ] Phase 1 routing entry: `moonshot/kimi-k2.5` with `MOONSHOT_API_KEY` and `https://api.moonshot.cn/v1` and `temperature MUST be 1.0`
 - [ ] Phase 2 routing entry: `deepseek/deepseek-v3.2-speciale` via `OpenRouter`
-- [ ] Phase 3 routing entry: `openai/gpt-5.3-codex` via `OpenClaw OAuth`
+- [ ] Phase 3 routing entry: `openai-codex/gpt-5.4` (or `GPT-5.4 Codex via OpenClaw OAuth`, matching current docs)
 - [ ] Fallback model listed: `OpenRouter moonshotai/kimi-k2.5`
 - [ ] Prompt templates were NOT pasted into TOOLS.md (rule: reference only)
 
@@ -101,9 +103,9 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 Answer each question without looking at the files. These confirm the agent has internalized the skill, not just installed it.
 
 **Q1: What are the three pipeline phases and which model handles each?**
-- Expected: Phase 1 = Kimi K2.5 (Moonshot direct API), Phase 2 = DeepSeek V3.2-Speciale (OpenRouter), Phase 3 = GPT-5.3 Codex (OpenClaw OAuth)
+- Expected: Phase 1 = Kimi K2.5 (Moonshot direct API), Phase 2 = DeepSeek V3.2-Speciale (OpenRouter), Phase 3 = GPT-5.4 Codex (OpenClaw OAuth)
 
-**Q2: What triggers a Phase 3 fallback from GPT-5.3 Codex to Kimi K2.5?**
+**Q2: What triggers a Phase 3 fallback from GPT-5.4 Codex to Kimi K2.5?**
 - Expected: Any of — API error, rate limit (429), timeout after 15 minutes, output under 5,000 characters, any error message in the response
 
 **Q3: How many sections does a complete persona-blueprint.md have, and what are sections 3, 6, and 14?**
@@ -321,7 +323,7 @@ These are failure modes the skill is specifically designed to prevent. Verify no
 ### Anti-Pattern 7: Missing Fallback Awareness
 **Check:** Does the agent know that Phase 3 has a fallback model, and can it state the fallback trigger conditions?
 - [ ] Confirmed: Agent can state the 4 fallback triggers (429, timeout, <5000 chars, any error)
-- FAIL if agent believes GPT-5.3 Codex is the only option with no fallback
+- FAIL if agent believes GPT-5.4 Codex is the only option with no fallback
 
 ### Anti-Pattern 8: Gemini Engine Not Used for Retrieval
 **Check:** Does the agent try to load entire persona files into context rather than using Gemini Engine surgical queries?
@@ -340,7 +342,7 @@ To declare this skill **INSTALLED AND OPERATIONAL**, ALL of the following must b
 - [ ] All skill root files present
 - [ ] All 3 agent prompt files present
 - [ ] Personas folder exists with at least 5 pre-built personas, each containing all 3 required files
-- [ ] Secrets `.env` file contains both required API key entries
+- [ ] Secrets `.env` file contains all required API key entries (`GOOGLE_API_KEY`, `MOONSHOT_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`)
 
 **Core File Updates (Section 2)**
 - [ ] AGENTS.md updated with `## Book-to-Persona Skill (Installed)` and Persona Reflex

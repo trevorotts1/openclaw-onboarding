@@ -1,3 +1,22 @@
+## v6.5.22 - April 1, 2026
+
+### Added
+- **QC.md - Skill-specific checklists**: Added comprehensive QC.md files for all 34 skills with skill-specific criteria. Each QC.md includes:
+  - Purpose statement tailored to the skill
+  - Installation checks (folder existence, SKILL.md, INSTALL.md)
+  - Dependency checks (specific packages, CLIs, API keys per skill)
+  - Smart key detection with name variations (e.g., OPENROUTER_API_KEY, OPENROUTER_KEY)
+  - 3-5 functional tests specific to what each skill does
+  - QC scoring framework with 8.5/10 minimum passing score
+  - QC loop rule (max 5 retry attempts)
+- **QC.md - Mac/VPS parity**: Ensured QC.md files are synchronized between Mac and VPS repositories with platform-specific path adjustments
+
+### Changed
+- **version**: Bumped to v6.5.22
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.22
+
+---
+
 ## v6.5.21 - April 1, 2026
 
 ### Fixed

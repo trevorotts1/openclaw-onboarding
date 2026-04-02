@@ -224,7 +224,7 @@ Expected answer: Routes all incoming work to the correct department/role. Always
 
 **Q6:** What is the relationship between Skill 23 and Skill 22?
 
-Expected answer: Skill 23 requires Skill 22 (Book-to-Persona) as a prerequisite. If Skill 22 is installed, persona wiring runs automatically after the build. If not installed, the workforce builds clean with no persona references. Skill 22 governs HOW an agent thinks; Skill 23 governs WHERE it works and WHAT it does.
+Expected answer: Skill 22 (Book-to-Persona) is recommended but not required. If Skill 22 is installed, persona wiring runs automatically after the build. If not installed, Skill 23 still builds the workforce cleanly and personas can be added later by installing Skill 22 and re-running Skill 23 in Option C (audit/resume mode). Skill 22 governs HOW an agent thinks; Skill 23 governs WHERE it works and WHAT it does.
 
 **Q7:** What must every `00-Start-Here` file include?
 

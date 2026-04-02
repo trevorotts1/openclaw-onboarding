@@ -4,226 +4,154 @@ Run this checklist after installation to confirm the skill is correctly installe
 
 ---
 
-## 1. File Structure Checks
-
-Verify every required file is present. Run from the skill root:
+## 1. File Structure + Version Check
 
 ```bash
-ls ~/.openclaw/skills/29-ghl-convert-and-flow/
+SKILL_DIR="$HOME/.openclaw/skills/29-ghl-convert-and-flow"
+[ -d "$SKILL_DIR" ] || SKILL_DIR="$HOME/.openclaw/skills/ghl-convert-and-flow"
+
+echo "Using skill dir: $SKILL_DIR"
+
+for f in SKILL.md INSTALL.md INSTRUCTIONS.md EXAMPLES.md CORE_UPDATES.md \
+         ghl-convert-and-flow-full.md skill-version.txt; do
+  [ -f "$SKILL_DIR/$f" ] && echo "PASS: $f" || echo "FAIL: $f missing"
+done
+
+for r in auth.md calendars.md campaigns.md contacts.md conversations.md locations.md \
+         modules.md opportunities.md payments.md phone-numbers.md users.md webhooks.md; do
+  [ -f "$SKILL_DIR/references/$r" ] && echo "PASS: references/$r" || echo "FAIL: references/$r missing"
+done
 ```
 
-**Expected files:**
-
-- [ ] `SKILL.md`
-- [ ] `INSTALL.md`
-- [ ] `INSTRUCTIONS.md`
-- [ ] `EXAMPLES.md`
-- [ ] `CORE_UPDATES.md`
-- [ ] `references/auth.md`
-- [ ] `references/calendars.md`
-- [ ] `references/campaigns.md`
-- [ ] `references/contacts.md`
-- [ ] `references/conversations.md`
-- [ ] `references/locations.md`
-- [ ] `references/modules.md`
-- [ ] `references/opportunities.md`
-- [ ] `references/payments.md`
-- [ ] `references/phone-numbers.md`
-- [ ] `references/users.md`
-- [ ] `references/webhooks.md`
-
-**Pass criteria:** All 17 files present. No missing reference files.
+**Pass criteria:** All required files are present and `skill-version.txt` is readable.
 
 ---
 
-## 2. Core File Update Checks
+## 2. Environment + Tool Checks
 
-Confirm that `TOOLS.md` and `MEMORY.md` were updated with the blocks from `CORE_UPDATES.md`.
-
-### TOOLS.md
+This skill is documentation-first. It mainly needs shell tooling plus real GHL credentials.
 
 ```bash
-grep -n "Convert and Flow" ~/clawd/TOOLS.md
-grep -n "29-ghl-convert-and-flow" ~/clawd/TOOLS.md
-grep -n "leadconnectorhq.com" ~/clawd/TOOLS.md
+curl --version >/dev/null 2>&1 && echo "PASS: curl found" || echo "FAIL: curl missing"
+python3 --version >/dev/null 2>&1 && echo "PASS: python3 found" || echo "FAIL: python3 missing"
+which jq >/dev/null 2>&1 && echo "PASS: jq found" || echo "INFO: jq not installed (recommended)"
 ```
 
-- [ ] `## Convert and Flow (GoHighLevel) API v2` heading is present
-- [ ] Skill path `~/.openclaw/skills/29-ghl-convert-and-flow/` is present
-- [ ] Base URL `https://services.leadconnectorhq.com` is present
-- [ ] Auth note "API keys are DEPRECATED" is present
-- [ ] `Version: 2021-04-15` header noted
-- [ ] Module quick-index (contacts, conversations, calendars, opportunities, locations) is present
-
-### MEMORY.md
+Required environment values:
+- `GHL_API_KEY` (Trevor naming for the Private Integration Token / PIT)
+- `GHL_LOCATION_ID`
 
 ```bash
-grep -n "Convert and Flow API" ~/clawd/MEMORY.md
-grep -n "PRIVATE_INTEGRATION_TOKEN" ~/clawd/MEMORY.md
-grep -n "GHL_LOCATION_ID" ~/clawd/MEMORY.md
-```
+source ~/clawd/secrets/.env 2>/dev/null || true
+for var in GHL_API_KEY GHL_LOCATION_ID; do
+  [ -n "$(printenv "$var" 2>/dev/null)" ] \
+    && echo "PASS: $var set" \
+    || echo "FAIL: $var missing"
+done
 
-- [ ] `## Convert and Flow API - Active Integration` heading is present
-- [ ] `PRIVATE_INTEGRATION_TOKEN` variable reference is present
-- [ ] `GHL_LOCATION_ID` variable reference is present
-- [ ] `source ~/clawd/secrets/.env` load instruction is present
-- [ ] Stats line `413 endpoints | 35 modules | 106 scopes` is present
-
-**Pass criteria:** All 11 checks above pass with matching output.
-
----
-
-## 3. Environment Variable Checks
-
-```bash
-# Check if vars are set in secrets file
-grep "GHL_API_KEY" ~/clawd/secrets/.env
-grep "GHL_LOCATION_ID" ~/clawd/secrets/.env
-
-# Check if they resolve in current shell (after sourcing)
-source ~/clawd/secrets/.env
-echo "API key length: ${#GHL_API_KEY}"
+echo "Token length: ${#GHL_API_KEY}"
 echo "Location ID: $GHL_LOCATION_ID"
 ```
 
-- [ ] `GHL_API_KEY` is present in `~/clawd/secrets/.env` and non-empty
-- [ ] `GHL_LOCATION_ID` is present in `~/clawd/secrets/.env` and non-empty
-- [ ] API key length is > 20 characters (short values indicate truncation)
-- [ ] Location ID is present and non-empty
-- [ ] Neither value is the placeholder string `your_private_integration_token_here`
-
-**Pass criteria:** Both vars resolve to real, non-placeholder values.
+**Pass criteria:** both env vars are present and non-placeholder.
 
 ---
 
-## 4. Knowledge Verification Questions
+## 3. Core Knowledge Verification
 
-Answer these from memory (without re-reading the files). Then verify against `SKILL.md` and `INSTALL.md`.
+**Q1.** What is the base URL for GHL API v2?
+> **Expected:** `https://services.leadconnectorhq.com`
 
-**Q1 — Base URL**
-What is the base URL for all GHL API v2 calls?
-> Expected: `https://services.leadconnectorhq.com`
+**Q2.** What two headers are required on nearly every API call?
+> **Expected:** `Authorization: Bearer <token>` and `Version: 2021-04-15`
 
-**Q2 — Required headers**
-What two headers are required on nearly every GHL API call (beyond Content-Type)?
-> Expected: `Authorization: Bearer <GHL_API_KEY>` and `Version: 2021-04-15`
+**Q3.** What auth method should this skill use?
+> **Expected:** Private Integration Token (PIT), not legacy API keys.
 
-**Q3 — Auth token type**
-What token type does this skill use, and why are the old API keys no longer valid?
-> Expected: Private Integration Token. Old API keys are deprecated.
+**Q4.** If a user asks to send an SMS or inspect conversation history, which reference file should be opened?
+> **Expected:** `references/conversations.md`
 
-**Q4 — Trigger map**
-A user says "send an SMS to a contact." Which reference file should the agent read?
-> Expected: `references/conversations.md`
+**Q5.** If a user asks to book an appointment or inspect free slots, which reference file should be opened?
+> **Expected:** `references/calendars.md`
 
-**Q5 — Trigger map**
-A user says "book an appointment next Tuesday." Which reference file should the agent read?
-> Expected: `references/calendars.md`
+**Q6.** If a call returns HTTP 403, what is the most likely problem?
+> **Expected:** Missing required scope on the Private Integration Token.
 
-**Q6 — Trigger map**
-A user says "create an invoice for $2,500." Which reference file should the agent read?
-> Expected: `references/payments.md`
+**Q7.** What is the rule for the giant master reference file?
+> **Expected:** Do not load it by default. Open only the relevant domain file. Use the full file only if a domain file is missing coverage.
 
-**Q7 — Safety rule**
-What two action categories are Trevor-only and must never be executed autonomously?
-> Expected: Phone number removal/release AND billing/payment actions (charge cards, cancel subscriptions, void invoices)
+**Q8.** What is Trevor-only from this skill?
+> **Expected:** Billing/payment actions and phone-number removal/release are not autonomous agent actions.
 
-**Q8 — Master reference rule**
-The master reference is ~430K characters. What is the rule for using it?
-> Expected: Do NOT load it into context. Only read the specific `references/<domain>.md` file at query time. Only open the master reference if a domain file is missing an endpoint.
+**Q9.** What must the agent never hardcode into curl examples?
+> **Expected:** Real tokens or real location IDs. Use env vars.
 
-**Q9 — Scope error**
-A GHL API call returns HTTP 403. What is the most likely cause and how do you fix it?
-> Expected: Missing scope on the Private Integration Token. Fix: go to GHL Settings > Integrations > Private Integrations, edit the integration, add the required scope, save. Token does not need to be regenerated.
+**Q10.** What should the agent do on a normal query like "look up a contact by email"?
+> **Expected:** Read only `references/contacts.md`, then build the call with env vars.
 
-**Q10 — Stats**
-How many total endpoints and modules does the GHL API v2 have?
-> Expected: 413 endpoints, 35 modules, 106 unique permission scopes
-
-**Pass criteria:** 9 out of 10 correct.
+**Pass criteria:** 10/10 answers correct.
 
 ---
 
-## 5. Live Behavior Test
+## 4. Live Smoke Test
 
-This test confirms the agent follows the correct workflow on a real GHL query — without hallucinating endpoints or loading the master reference.
-
-### Test prompt to give the agent:
-
-> "Look up a contact in GHL by email address. Use the email test@example.com."
-
-### Expected agent behavior (verify each step):
-
-- [ ] Agent identifies domain as "contacts"
-- [ ] Agent reads `references/contacts.md` (NOT the master reference, NOT all reference files)
-- [ ] Agent uses `contacts.readonly` scope (not `.write`)
-- [ ] Agent builds a curl call using `$GHL_API_KEY` and `$GHL_LOCATION_ID` env vars (not hardcoded values)
-- [ ] Agent includes `Version: 2021-04-15` header
-- [ ] Agent uses the correct base URL `https://services.leadconnectorhq.com`
-- [ ] Agent does NOT invent query parameters not found in the reference file
-- [ ] Agent does NOT paste endpoint docs into a core file or memory
-
-### Smoke test (run after env vars are confirmed set):
+### 4.1 Location-read test
 
 ```bash
-source ~/clawd/secrets/.env
+source ~/clawd/secrets/.env 2>/dev/null || true
 
-curl -s \
+HTTP_CODE=$(curl -s -o /tmp/ghl_qc_location.json -w "%{http_code}" \
   -H "Authorization: Bearer $GHL_API_KEY" \
   -H "Version: 2021-04-15" \
-  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID" | python3 -m json.tool
+  "https://services.leadconnectorhq.com/locations/$GHL_LOCATION_ID")
+
+echo "HTTP: $HTTP_CODE"
+python3 -m json.tool /tmp/ghl_qc_location.json | head -20
 ```
 
-- [ ] Response is valid JSON (not an HTML error page)
-- [ ] Response contains `id` field matching `$GHL_LOCATION_ID`
-- [ ] Response contains `name` field (the location/sub-account name)
-- [ ] HTTP response is 200 (not 401, 403, or 404)
+**Expected:** HTTP `200` and JSON showing the location record.
 
-**Pass criteria:** All behavior checks pass AND smoke test returns 200 with a valid location JSON object.
+### 4.2 Contacts-read behavior check
+
+Prompt the agent:
+> "Look up a contact in Convert and Flow by email address."
+
+Verify the agent:
+- identifies the domain as contacts
+- reads `references/contacts.md` only
+- uses `contacts.readonly`
+- includes `Version: 2021-04-15`
+- uses `$GHL_API_KEY` and `$GHL_LOCATION_ID`
+- does not open all reference files up front
+
+**Pass criteria:** All six checks pass.
+
+---
+
+## 5. Special Rule Checks
+
+```bash
+grep -n "phone number" "$SKILL_DIR/references/phone-numbers.md" | head
+```
+
+Verify the agent knows:
+- destructive phone number actions are Trevor-only
+- billing and payment actions require explicit approval
+- the skill is read-on-demand, not bulk-loaded into context
 
 ---
 
 ## 6. Anti-Pattern Checks
 
-These behaviors indicate the skill was NOT installed correctly or the agent is ignoring the workflow rules.
+Fail the skill if any of these occur:
 
-- [ ] **FAIL if** the agent opens the master reference file (`Convert and Flow - GoHighLevel API v2 Master Reference.md`) on a standard query where a domain `references/*.md` file exists
-- [ ] **FAIL if** the agent loads more than one reference file per query (e.g., reads all 10 reference files upfront)
-- [ ] **FAIL if** the agent hardcodes a real API key token value in any curl command instead of using `$GHL_API_KEY`
-- [ ] **FAIL if** the agent copies GHL endpoint documentation into `TOOLS.md`, `MEMORY.md`, `AGENTS.md`, or any other core file
-- [ ] **FAIL if** the agent uses the deprecated `Authorization: Bearer <API_KEY>` pattern instead of a Private Integration Token
-- [ ] **FAIL if** the agent omits the `Version: 2021-04-15` header on API calls
-- [ ] **FAIL if** the agent executes a phone number removal or billing/payment action without explicit Trevor instruction
-- [ ] **FAIL if** the agent triggers a gateway restart autonomously without notifying the user first and waiting for `/restart` confirmation
-- [ ] **FAIL if** the agent invents endpoint parameters not found in the reference file
-- [ ] **FAIL if** `TOOLS.md` or `MEMORY.md` is missing the entries from `CORE_UPDATES.md`
+- agent opens the full master reference for a routine domain query
+- agent reads all reference files up front
+- agent hardcodes a real token in output
+- agent omits the `Version: 2021-04-15` header
+- agent treats GHL PIT like a generic API key in client-facing language
+- agent performs phone-number release/removal autonomously
+- agent performs billing/payment actions autonomously
+- agent invents parameters not documented in the selected reference file
 
 **Pass criteria:** Zero anti-patterns triggered.
-
----
-
-## 7. Pass Criteria Summary
-
-| Section | Pass Threshold |
-|---------|---------------|
-| 1. File Structure | All 17 files present |
-| 2. Core File Updates | All 11 TOOLS.md + MEMORY.md checks pass |
-| 3. Environment Variables | Both vars set, non-empty, non-placeholder |
-| 4. Knowledge Verification | 9/10 questions correct |
-| 5. Live Behavior Test | All behavior checks pass + smoke test HTTP 200 |
-| 6. Anti-Pattern Checks | 0 failures |
-
-**Overall pass:** All 6 sections pass. If any section fails, resolve before using the skill in production.
-
----
-
-## Troubleshooting Quick Reference
-
-| Symptom | Likely Cause | Fix |
-|---------|-------------|-----|
-| Smoke test returns 401 | Invalid or expired token | Re-copy token from GHL > Settings > Integrations > Private Integrations |
-| Smoke test returns 403 | Token missing `locations.readonly` scope | Edit integration in GHL, add scope, save |
-| Smoke test returns 404 | Wrong `GHL_LOCATION_ID` | Verify from GHL URL or Settings > Business Profile |
-| TOOLS.md has no GHL entry | CORE_UPDATES.md step was skipped | Copy blocks from `CORE_UPDATES.md` into `TOOLS.md` and `MEMORY.md` |
-| Agent reads all reference files at once | Skill instructions not loaded | Confirm agent read `SKILL.md` and `INSTRUCTIONS.md` at session start |
-| Agent loads master reference | Missing or unread `SKILL.md` trigger map | Ensure agent reads `SKILL.md` first on every GHL query |
