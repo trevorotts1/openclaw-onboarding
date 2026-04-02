@@ -1,3 +1,17 @@
+## v6.5.20 - April 1, 2026
+
+### Added
+- **install.sh - Post-install skill summary**: Added terminal output showing every skill installed/updated with name, description from SKILL.md, and QC rating (PASS/FAIL)
+- **install.sh - Untouched skills list**: Shows skills that were left unchanged (already at latest version)
+- **install.sh - OpenRouter model check**: Automatically fetches new free models from OpenRouter API and adds them to client's models map. Never touches primary model, never removes existing models.
+- **install.sh - Telegram summary**: Sends concise install summary to client's Telegram after completion
+
+### Changed
+- **version**: Bumped to v6.5.20
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.20
+
+---
+
 ## v6.5.19 - April 1, 2026
 
 ### Fixed

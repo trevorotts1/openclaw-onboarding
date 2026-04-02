@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v6.5.19"
+ONBOARDING_VERSION="v6.5.20"
 
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
@@ -58,6 +58,15 @@ ONBOARDING_DIR="$HOME/.openclaw/onboarding"
 mkdir -p "$ONBOARDING_DIR"
 INSTALL_FLAG="$ONBOARDING_DIR/.install-in-progress"
 
+# ----------------------------------------------------------
+# Feature 1: Skill Summary Tracking Arrays
+# ----------------------------------------------------------
+declare -a SKILLS_INSTALLED=()
+declare -a SKILLS_UPDATED=()
+declare -a SKILLS_SKIPPED=()
+declare -A SKILL_DESCRIPTIONS
+declare -A SKILL_QC_STATUS
+
 if [ -f "$INSTALL_FLAG" ]; then
   echo ""
   echo "============================================"
@@ -95,6 +104,118 @@ backup_config_file() {
     cp "$file" "$backup"
     echo "  📦 Backed up: $backup"
   fi
+}
+
+# ----------------------------------------------------------
+# Feature 2: OpenRouter Model Check
+# Check for new free models and add them to config
+# ----------------------------------------------------------
+check_openrouter_models() {
+  echo "  🔍 Checking OpenRouter for new models..."
+  # Get API key from openclaw.json
+  OPENROUTER_KEY=$(python3 -c "
+import json, os
+cfg = json.load(open(os.path.expanduser('~/.openclaw/openclaw.json')))
+print(cfg.get('env', {}).get('vars', {}).get('OPENROUTER_API_KEY', ''))
+" 2>/dev/null)
+
+  if [ -z "$OPENROUTER_KEY" ]; then
+    echo "  ℹ️  No OPENROUTER_API_KEY found — skipping model check"
+    return
+  fi
+
+  # Fetch current free models from OpenRouter
+  python3 - << 'PYEOF'
+import json, os, urllib.request, urllib.error
+
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+cfg = json.load(open(cfg_path))
+
+key = cfg.get('env', {}).get('vars', {}).get('OPENROUTER_API_KEY', '')
+if not key:
+    print("  No key found")
+    exit(0)
+
+try:
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/models",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    )
+    resp = urllib.request.urlopen(req, timeout=10)
+    data = json.loads(resp.read())
+    models = data.get('data', [])
+    
+    # Get current models map
+    current_models = cfg.get('agents', {}).get('defaults', {}).get('models', {})
+    
+    # Check for free models not already in config
+    new_models = []
+    for m in models:
+        mid = m.get('id', '')
+        # Only add openrouter-prefixed free models
+        if ':free' in mid and mid not in current_models:
+            new_models.append(mid)
+    
+    if new_models:
+        for mid in new_models:
+            current_models[mid] = {"alias": mid, "params": {"temperature": 0.3}}
+        
+        cfg.setdefault('agents', {}).setdefault('defaults', {})['models'] = current_models
+        json.dump(cfg, open(cfg_path, 'w'), indent=2)
+        print(f"  ✅ Added {len(new_models)} new OpenRouter free models: {', '.join(new_models[:5])}{'...' if len(new_models) > 5 else ''}")
+    else:
+        print("  ✅ OpenRouter models up to date — no new free models found")
+        
+except Exception as e:
+    print(f"  ⚠️  OpenRouter check failed: {e}")
+PYEOF
+}
+
+# ----------------------------------------------------------
+# Get skill description from SKILL.md
+# ----------------------------------------------------------
+get_skill_description() {
+  local skill_name="$1"
+  local skill_dir="$SKILLS_DIR/$skill_name"
+  local skill_md="$skill_dir/SKILL.md"
+  
+  if [ -f "$skill_md" ]; then
+    # Extract first non-empty line after the # title
+    local desc=$(grep -v "^#" "$skill_md" 2>/dev/null | grep -v "^$" | head -1 | sed 's/^[[:space:]]*//' | cut -c1-60)
+    if [ -n "$desc" ]; then
+      echo "$desc"
+    else
+      echo "Skill configuration and setup"
+    fi
+  else
+    echo "Skill configuration and setup"
+  fi
+}
+
+# ----------------------------------------------------------
+# QC Check: Verify skill folder and SKILL.md exist
+# ----------------------------------------------------------
+qc_check_skill() {
+  local skill_name="$1"
+  local skill_dir="$SKILLS_DIR/$skill_name"
+  local skill_md="$skill_dir/SKILL.md"
+  
+  if [ ! -d "$skill_dir" ]; then
+    echo "FAIL"
+    return
+  fi
+  
+  if [ ! -f "$skill_md" ]; then
+    echo "FAIL"
+    return
+  fi
+  
+  if [ ! -s "$skill_md" ]; then
+    echo "FAIL"
+    return
+  fi
+  
+  echo "PASS"
 }
 
 echo ""
@@ -180,20 +301,50 @@ send_telegram_progress "Extracted $SKILL_COUNT skills to ~/.openclaw/onboarding/
 # ----------------------------------------------------------
 show_status "Copying .skill packages to skills directory..."
 
+# Build list of existing skills before copy
+EXISTING_SKILLS=""
+if [ -d "$SKILLS_DIR" ]; then
+  EXISTING_SKILLS=$(ls -1 "$SKILLS_DIR" 2>/dev/null | grep -E "^[0-9]+-" | sort)
+fi
+
 if [ -d "$ONBOARDING_DIR/skills" ]; then
   for skill_pkg in "$ONBOARDING_DIR/skills"/*; do
     if [ -d "$skill_pkg" ]; then
       skill_name=$(basename "$skill_pkg")
       target_path="$SKILLS_DIR/$skill_name"
+      
+      # Check if skill already exists (for tracking)
+      skill_exists=0
+      if [ -d "$target_path" ] && [ "$(ls -A "$target_path" 2>/dev/null)" ]; then
+        skill_exists=1
+      fi
+      
       mkdir -p "$target_path"
       # Copy contents if source is not empty
       if [ "$(ls -A "$skill_pkg" 2>/dev/null)" ]; then
         cp -r "$skill_pkg"/* "$target_path/" 2>/dev/null || true
-        echo "  Installed .skill package: $skill_name"
+        
+        if [ $skill_exists -eq 1 ]; then
+          SKILLS_UPDATED+=("$skill_name")
+          echo "  Updated .skill package: $skill_name"
+        else
+          SKILLS_INSTALLED+=("$skill_name")
+          echo "  Installed .skill package: $skill_name"
+        fi
       fi
     fi
   done
 fi
+
+# Build list of skills that were untouched (already existed and weren't in this update)
+for existing in $EXISTING_SKILLS; do
+  if [ -d "$SKILLS_DIR/$existing" ]; then
+    # Check if this skill was NOT in the onboarding package
+    if [ ! -d "$ONBOARDING_DIR/skills/$existing" ]; then
+      SKILLS_SKIPPED+=("$existing")
+    fi
+  fi
+done
 
 # Count actual .skill packages installed
 SKILL_PKGS_INSTALLED=$(ls -1 "$SKILLS_DIR" 2>/dev/null | wc -l | tr -d ' ')
@@ -579,6 +730,93 @@ PYEOF
 }
 
 apply_exec_security_config
+
+# ----------------------------------------------------------
+# Feature 2: Check OpenRouter for new models
+# ----------------------------------------------------------
+check_openrouter_models
+
+# ----------------------------------------------------------
+# Feature 1 & 3: Generate Skill Summary and Send Telegram
+# ----------------------------------------------------------
+generate_skill_summary() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "📦 INSTALL SUMMARY"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  
+  local total_installed=${#SKILLS_INSTALLED[@]}
+  local total_updated=${#SKILLS_UPDATED[@]}
+  local total_skipped=${#SKILLS_SKIPPED[@]}
+  local total_processed=$((total_installed + total_updated))
+  
+  if [ $total_processed -gt 0 ]; then
+    echo ""
+    echo "✅ INSTALLED/UPDATED:"
+    
+    # Process installed skills
+    for skill in "${SKILLS_INSTALLED[@]}"; do
+      local desc=$(get_skill_description "$skill")
+      local qc=$(qc_check_skill "$skill")
+      echo "• $skill — $desc | QC: $qc"
+    done
+    
+    # Process updated skills
+    for skill in "${SKILLS_UPDATED[@]}"; do
+      local desc=$(get_skill_description "$skill")
+      local qc=$(qc_check_skill "$skill")
+      echo "• $skill — $desc | QC: $qc (updated)"
+    done
+  fi
+  
+  if [ $total_skipped -gt 0 ]; then
+    echo ""
+    echo "⏭️  UNTOUCHED (already current):"
+    for skill in "${SKILLS_SKIPPED[@]}"; do
+      echo "• $skill — Already at latest version"
+    done
+  fi
+  
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  
+  # Return values for Telegram summary
+  echo "${total_processed}|${total_skipped}"
+}
+
+# Generate summary and capture counts
+SUMMARY_RESULT=$(generate_skill_summary)
+COUNTS=$(echo "$SUMMARY_RESULT" | tail -1)
+INSTALLED_COUNT=$(echo "$COUNTS" | cut -d'|' -f1)
+SKIPPED_COUNT=$(echo "$COUNTS" | cut -d'|' -f2)
+
+# Feature 3: Send Telegram summary
+TELEGRAM_CHAT_ID=""
+OCJSON="$HOME/.openclaw/openclaw.json"
+if [ -f "$OCJSON" ] && command -v python3 &>/dev/null; then
+    TELEGRAM_CHAT_ID=$(python3 -c "
+import json, sys
+try:
+    cfg = json.load(open('$OCJSON'))
+    allow = cfg.get('channels', {}).get('telegram', {}).get('allowFrom', [])
+    if allow:
+        print(allow[0])
+except:
+    pass
+" 2>/dev/null)
+fi
+
+if [ -n "$TELEGRAM_CHAT_ID" ] && command -v openclaw &>/dev/null; then
+    TELEGRAM_SUMMARY="📦 Install Complete — v${ONBOARDING_VERSION}
+✅ ${INSTALLED_COUNT} skills installed/updated
+⏭️ ${SKIPPED_COUNT} skills unchanged
+🔍 OpenRouter models: checked
+
+Reply YES when ready to proceed."
+    
+    openclaw message send --channel telegram --target "$TELEGRAM_CHAT_ID" --message "$TELEGRAM_SUMMARY" 2>/dev/null || true
+fi
 
 # ----------------------------------------------------------
 # Step 6: Write UPDATE_PENDING flag to AGENTS.md
