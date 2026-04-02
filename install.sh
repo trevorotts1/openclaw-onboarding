@@ -554,16 +554,39 @@ PYEOF
 apply_exec_security_config
 
 # ----------------------------------------------------------
+# Step 6: Write UPDATE_PENDING flag to AGENTS.md
+# ----------------------------------------------------------
+write_update_pending_flag() {
+  echo ""
+  echo "[6/5] Writing UPDATE_PENDING flag to AGENTS.md..."
+
+  AGENTS_FILE="$HOME/.openclaw/workspace/AGENTS.md"
+  if [ -f "$AGENTS_FILE" ]; then
+    # Only add flag if not already present
+    if ! grep -q "UPDATE_PENDING" "$AGENTS_FILE" 2>/dev/null; then
+      echo "" >> "$AGENTS_FILE"
+      echo "## 🔴 UPDATE_PENDING — DO NOT REMOVE UNTIL PROCESSED" >> "$AGENTS_FILE"
+      echo "An OpenClaw onboarding update was just installed. On your next boot:" >> "$AGENTS_FILE"
+      echo "1. Read this flag" >> "$AGENTS_FILE"
+      echo "2. Read your updated SOUL.md, AGENTS.md, TOOLS.md, and MEMORY.md" >> "$AGENTS_FILE"
+      echo "3. Confirm you are ready with: 'Update processed. Running ${ONBOARDING_VERSION}. All core files read.'" >> "$AGENTS_FILE"
+      echo "4. Remove this UPDATE_PENDING section from AGENTS.md" >> "$AGENTS_FILE"
+      echo "## END UPDATE_PENDING" >> "$AGENTS_FILE"
+      echo "  ✅ Update flag written to AGENTS.md"
+    else
+      echo "  ℹ️  Update flag already present in AGENTS.md"
+    fi
+  fi
+}
+
+write_update_pending_flag
+
+# ----------------------------------------------------------
 # Done
 # ----------------------------------------------------------
 send_telegram_progress "✅ BlackCEO AI System install complete!
 
-IMPORTANT -- Do these 2 steps now:
-
-1️⃣ Restart your AI: type /restart in this chat
-2️⃣ After restart, send: 'Read your AGENTS.md and begin onboarding installation'
-
-Your AI will then install all 34 skills automatically. This takes 10-20 minutes."
+You have just received an OpenClaw update. Read the UPDATE_PENDING section in your AGENTS.md, process it, confirm you are ready, then remove the UPDATE_PENDING section from your AGENTS.md."
 
 echo ""
 echo "============================================"
@@ -574,25 +597,10 @@ echo ""
 echo "  📦 34 skills downloaded to:"
 echo "     ~/.openclaw/onboarding/"
 echo ""
-echo "  ============================================"
-echo "  🔴 STEP 1 -- RESTART THE GATEWAY NOW"
-echo "  ============================================"
-echo "  Run this command:"
+echo "  You have just received an OpenClaw update."
+echo "  Read the UPDATE_PENDING section in your AGENTS.md,"
+echo "  process it, confirm you are ready, then remove"
+echo "  the UPDATE_PENDING section from your AGENTS.md."
 echo ""
-echo "     openclaw gateway restart"
-echo ""
-echo "  Or tell your AI in Telegram: /restart"
-echo ""
-echo "  WHY: The agent needs to restart to read"
-echo "  the new ONBOARDING PENDING flag in AGENTS.md."
-echo "  Without restart, it may take 30 minutes."
-echo ""
-echo "  ============================================"
-echo "  🔴 STEP 2 -- AFTER RESTART, SEND THIS MESSAGE"
-echo "  ============================================"
-echo "  Send this EXACT message to your OpenClaw agent:"
-echo ""
-echo "     'Read $AGENTS_FILE and begin onboarding installation'"
-echo ""
-echo "  ============================================"
+echo "============================================"
 echo ""

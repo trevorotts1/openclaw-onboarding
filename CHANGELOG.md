@@ -1,8 +1,8 @@
 ## v6.5.17 - April 1, 2026
 
-### Fixed
-- **install.sh - Post-install exact message restored**: Verified STEP 2 shows the actionable message "Read $AGENTS_FILE and begin onboarding installation" instead of the placeholder "Your agent will detect the update automatically."
-- **install.sh - Telegram notification to client**: Verified send_telegram_progress correctly notifies client at install completion with restart instructions and the exact message to send.
+### Added
+- **install.sh - UPDATE_PENDING flag mechanism**: Added `write_update_pending_flag()` function that writes an UPDATE_PENDING section to AGENTS.md at the end of every install/update. This ensures the agent detects and processes updates on next boot.
+- **install.sh - Exact agent message restored**: Terminal and Telegram messages now show the exact message: "You have just received an OpenClaw update. Read the UPDATE_PENDING section in your AGENTS.md, process it, confirm you are ready, then remove the UPDATE_PENDING section from your AGENTS.md."
 
 ### Changed
 - **version**: Bumped to v6.5.17
