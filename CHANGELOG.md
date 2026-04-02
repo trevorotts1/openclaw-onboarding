@@ -772,6 +772,14 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 - **Skill 03 - Superpowers**: 4 Iron Laws + 14 sub-skills for systematic problem-solving.
 - README.md and Start Here.md included.
 
+## v6.5.17 - 2026-04-01
+### Fixed
+- **install.sh - Auto-restart and Telegram confirmation**: Added automatic gateway restart at end of install. Previously, clients had to manually run `openclaw gateway restart`. Now the installer triggers the restart automatically and queues a Telegram confirmation message to be sent after the gateway comes back up. The notification uses a background process with an 8-second delay to ensure delivery after reconnect.
+
+### Changed
+- **version**: Bumped to v6.5.17
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.17
+
 ## v6.5.14 - 2026-04-01
 - Set tools.exec security=full and ask=off in openclaw.json during install
 - Write exec-approvals.json with askFallback=full — eliminates approval wall for autonomous agent operation

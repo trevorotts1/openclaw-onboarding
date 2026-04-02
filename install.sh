@@ -604,3 +604,42 @@ echo "  the UPDATE_PENDING section from your AGENTS.md."
 echo ""
 echo "============================================"
 echo ""
+
+# ----------------------------------------------------------
+# Auto-restart gateway and send confirmation to client
+# ----------------------------------------------------------
+echo "  🔄 Restarting OpenClaw gateway to apply changes..."
+sleep 2
+
+# Get the Telegram chat ID from openclaw.json
+TELEGRAM_CHAT_ID=""
+OCJSON="$HOME/.openclaw/openclaw.json"
+if [ -f "$OCJSON" ] && command -v python3 &>/dev/null; then
+    TELEGRAM_CHAT_ID=$(python3 -c "
+import json, sys
+try:
+    cfg = json.load(open('$OCJSON'))
+    allow = cfg.get('channels', {}).get('telegram', {}).get('allowFrom', [])
+    if allow:
+        print(allow[0])
+except:
+    pass
+" 2>/dev/null)
+fi
+
+# Trigger gateway restart and send post-restart notification
+if command -v openclaw &>/dev/null; then
+    # Send post-restart notification (queued to arrive after reconnect)
+    if [ -n "$TELEGRAM_CHAT_ID" ]; then
+        echo "  📱 Sending Telegram confirmation to client..."
+        # Use a background process that waits for gateway to come back
+        (sleep 8; openclaw message send --channel telegram --target "$TELEGRAM_CHAT_ID" --message "✅ OpenClaw setup complete! Your agent is live. Go to Telegram and send your agent the message shown in your terminal to finish setup." 2>/dev/null || echo "  📱 Telegram confirmation queued") &
+    else
+        echo "  ⚠️  No Telegram ID found — skipping notification"
+    fi
+    
+    # Now restart the gateway
+    openclaw gateway restart
+else
+    echo "  ⚠️  openclaw command not found - please restart manually: openclaw gateway restart"
+fi
