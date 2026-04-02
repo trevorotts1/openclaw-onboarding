@@ -1,3 +1,14 @@
+## v6.5.19 - April 1, 2026
+
+### Fixed
+- **markitdown-skill**: Added missing SKILL.md and INSTALL.md files to the empty markitdown-skill folder. This was blocking client installs with "empty source folder" error.
+
+### Changed
+- **version**: Bumped to v6.5.19
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.19
+
+---
+
 ## v6.5.18 - April 1, 2026
 
 ### Fixed
