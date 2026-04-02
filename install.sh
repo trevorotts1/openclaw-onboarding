@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v6.5.17"
+ONBOARDING_VERSION="v6.5.18"
 
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
@@ -86,9 +86,12 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 backup_config_file() {
   local file="$1"
   if [ -f "$file" ]; then
+    mkdir -p "$HOME/Downloads/openclaw-backups"
     local ts
-    ts=$(date +%Y%m%d-%H%M%S)
-    local backup="${file}.bak-${ts}"
+    ts=$(date +%Y-%m-%d-%H%M%S)
+    local filename
+    filename=$(basename "$file")
+    local backup="$HOME/Downloads/openclaw-backups/${filename}-backup-${ts}.txt"
     cp "$file" "$backup"
     echo "  📦 Backed up: $backup"
   fi

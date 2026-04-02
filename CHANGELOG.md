@@ -1,3 +1,14 @@
+## v6.5.18 - April 1, 2026
+
+### Fixed
+- **install.sh - backup_config_file() protocol compliance**: Fixed backup_config_file() to save backups to ~/Downloads/openclaw-backups/ with .txt extension per AGENTS.md protocol. Previously backed up to same directory as original with .bak-timestamp extension.
+
+### Changed
+- **version**: Bumped to v6.5.18
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.18
+
+---
+
 ## v6.5.17 - April 1, 2026
 
 ### Added
