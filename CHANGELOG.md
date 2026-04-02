@@ -1,3 +1,15 @@
+## v6.5.17 - April 1, 2026
+
+### Fixed
+- **install.sh - Post-install exact message restored**: Verified STEP 2 shows the actionable message "Read $AGENTS_FILE and begin onboarding installation" instead of the placeholder "Your agent will detect the update automatically."
+- **install.sh - Telegram notification to client**: Verified send_telegram_progress correctly notifies client at install completion with restart instructions and the exact message to send.
+
+### Changed
+- **version**: Bumped to v6.5.17
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.17
+
+---
+
 ## v6.5.16 - April 1, 2026
 
 ### Added
