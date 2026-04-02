@@ -1,3 +1,15 @@
+## v6.5.17 - April 1, 2026
+
+### Added
+- **install.sh - UPDATE_PENDING flag mechanism**: Added `write_update_pending_flag()` function that writes an UPDATE_PENDING section to AGENTS.md at the end of every install/update. This ensures the agent detects and processes updates on next boot.
+- **install.sh - Exact agent message restored**: Terminal and Telegram messages now show the exact message: "You have just received an OpenClaw update. Read the UPDATE_PENDING section in your AGENTS.md, process it, confirm you are ready, then remove the UPDATE_PENDING section from your AGENTS.md."
+
+### Changed
+- **version**: Bumped to v6.5.17
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.17
+
+---
+
 ## v6.5.16 - April 1, 2026
 
 ### Added
