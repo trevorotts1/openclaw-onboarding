@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v6.5.20"
+ONBOARDING_VERSION="v6.5.21"
 
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
@@ -104,6 +104,24 @@ backup_config_file() {
     cp "$file" "$backup"
     echo "  📦 Backed up: $backup"
   fi
+}
+
+# ----------------------------------------------------------
+# Smart skill discovery — searches multiple locations, uses highest count
+# Fixes bug where skills/ subdir (3 items) was counted instead of root (34 items)
+# ----------------------------------------------------------
+discover_skills() {
+  local base_dir="${1:-$HOME/.openclaw/onboarding}"
+  local numbered_count
+  numbered_count=$(find "$base_dir" -maxdepth 1 -type d -name "[0-9][0-9]-*" 2>/dev/null | wc -l | tr -d ' ')
+  local skill_md_count
+  skill_md_count=$(find "$base_dir" -maxdepth 2 -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
+  local installed_count
+  installed_count=$(find "$HOME/.openclaw/skills" -maxdepth 1 -type d 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
+  local max_count=$numbered_count
+  [ "$skill_md_count" -gt "$max_count" ] 2>/dev/null && max_count=$skill_md_count
+  [ "$installed_count" -gt "$max_count" ] 2>/dev/null && max_count=$installed_count
+  echo "$max_count"
 }
 
 # ----------------------------------------------------------
@@ -227,6 +245,11 @@ echo ""
 
 send_telegram_progress "Starting BlackCEO Command Center install..."
 
+# Diagnostic output for skill paths
+echo "  📂 Skills source: $HOME/.openclaw/onboarding"
+echo "  📂 Skills destination: $HOME/.openclaw/skills/"
+echo ""
+
 # ----------------------------------------------------------
 # Step 1: Check that OpenClaw CLI is installed
 # ----------------------------------------------------------
@@ -283,8 +306,8 @@ cp -r "$TEMP_EXTRACT/openclaw-onboarding-main/"* "$ONBOARDING_DIR/"
 rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 echo "  Installed to $ONBOARDING_DIR"
 
-# Count skills
-SKILL_COUNT=$(ls -1 "$ONBOARDING_DIR" | grep -E "^[0-9]+-" | wc -l)
+# Count skills using smart discovery
+SKILL_COUNT=$(discover_skills "$ONBOARDING_DIR")
 echo "  Skills found: $SKILL_COUNT"
 
 # Record version
@@ -902,6 +925,10 @@ if command -v openclaw &>/dev/null; then
     else
         echo "  ⚠️  No Telegram ID found — skipping notification"
     fi
+    
+    # Final skill count verification
+    SKILL_COUNT=$(discover_skills)
+    echo "  ✅ $SKILL_COUNT skills found and installed"
     
     # Now restart the gateway
     openclaw gateway restart

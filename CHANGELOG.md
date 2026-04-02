@@ -1,3 +1,14 @@
+## v6.5.21 - April 1, 2026
+
+### Fixed
+- **install.sh - Smart skill discovery**: Fixed critical bug where installer counted skills from `skills/` subdirectory (only 3 .skill packages) instead of root (34 numbered skill folders). Added `discover_skills()` function that searches multiple locations (numbered folders, SKILL.md files, installed skills) and returns the highest count. Replaced hardcoded `ls | grep | wc -l` with smart discovery. Added diagnostic output showing skills source/destination paths at start and final count at end.
+
+### Changed
+- **version**: Bumped to v6.5.21
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.21
+
+---
+
 ## v6.5.20 - April 1, 2026
 
 ### Added
