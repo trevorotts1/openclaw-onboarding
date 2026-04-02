@@ -834,9 +834,7 @@ if [ -n "$TELEGRAM_CHAT_ID" ] && command -v openclaw &>/dev/null; then
     TELEGRAM_SUMMARY="📦 Install Complete — v${ONBOARDING_VERSION}
 ✅ ${INSTALLED_COUNT} skills installed/updated
 ⏭️ ${SKIPPED_COUNT} skills unchanged
-🔍 OpenRouter models: checked
-
-Reply YES when ready to proceed."
+🔍 OpenRouter models: checked"
     
     openclaw message send --channel telegram --target "$TELEGRAM_CHAT_ID" --message "$TELEGRAM_SUMMARY" 2>/dev/null || true
 fi
