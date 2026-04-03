@@ -1,3 +1,14 @@
+## v6.5.26 - April 3, 2026
+
+### Fixed
+- **Skill 23 - Merge completion**: Merged fix/skill23-department-write-path branch to main. Confirmed branch contents already integrated.
+
+### Changed
+- **version**: Bumped to v6.5.26
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.26
+
+---
+
 ## v6.5.25 - April 3, 2026
 
 ### Fixed
