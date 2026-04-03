@@ -31,7 +31,7 @@ All @blackceo.com emails: ALWAYS use Google Workspace API (service account + DWD
 - **MiniMax M2.7** (`openrouter/minimax/minimax-m2.7`): 204K ctx, 131K output. ALWAYS `reasoning: true`.
 - **Kimi K2.5** (`moonshot/kimi-k2.5`): 262K ctx. Reasoning auto. No flag needed.
 - **Gemini**: `gemini-3-flash-preview` (preferred), `gemini-3.1-flash-lite-preview` (cheapest), `gemini-3.1-pro-preview` (smartest). Include thinking level. Do NOT use 2.x models.
-- **Perplexity**: `openrouter/perplexity/sonar-pro-search` (deep), `openrouter/perplexity/sonar` (quick). **WARNING: Both broken inside sub-agents — main session only.**
+- **Perplexity**: web search tool only, configured under `tools.web.search`. Not a model. Works from sub-agents. Confirmed April 2, 2026.
 - **ONLY use the model Trevor specifies.** NEVER substitute. DISOBEDIENCE COST: thousands of dollars.
 - If sub-agent fails: STOP, don't respawn until you understand why. Shell scripts first — ask if a script can do it free.
 - Media routing: code/orchestration = MiMo V2 Pro/Kimi K2.5 | image bulk = Gemini Flash | image design = Claude | video/audio = MiMo V2 Omni/Gemini Flash
@@ -136,7 +136,7 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 ---
 
 ## 🔴 SERVICE RULES
-- **Fish Audio**: Model `s2-pro`. Voice Stefan (male) `e75e1618ff544059be71409c5126b4c0`. Bitrate: 192 kbps content, 64 kbps calls. Endpoint: `https://api.fish.audio/v1/tts` via curl.
+- **Fish Audio**: Model `s2-pro`. Voice Stefan (male) `e75e1618ff544059be71409c5126b4c0`. Bitrate: 192 kbps content, 64 kbps calls. Endpoint: `https://api.fish.audio/v1/tts` via curl. NOT a native OpenClaw TTS provider (only elevenlabs/openai/edge are valid). On-demand via HTTP skill only. Zero auto TTS. Never recommend ElevenLabs or OpenAI TTS to Trevor. `/v1/audio/speech` returns 404 on Fish Audio.
 - **GHL / Convert and Flow**: Trevor = agency owner. Login `https://app.convertandflow.com`. Creds: `GHL_AGENCY_EMAIL` + `GHL_AGENCY_PASSWORD` in `~/clawd/secrets/.env`. Alert if wallet below $20. Media API: requires `altType=location` + `altId=<locationId>`. Folder creation via API BROKEN — create in UI, pass `folderId` on upload.
 - **Google Workspace API**: @blackceo.com docs = service account + DWD. Personal Gmail = GOG CLI OAuth. Details in `TOOLS.md`.
 - **Zoom**: Trevor = default identity. Do not silently switch. Details in `TOOLS.md`.
@@ -157,8 +157,50 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 - Client-facing docs: NEVER include real token values. Reference env var names only.
 - Calendar invites: default 30 minutes. Not 1 hour.
 - Repo version checks: GitHub is authoritative. Local `~/Downloads/` copies can be stale.
-- Google Embedding 2 refresh: only at milestones (Embedding 2 setup, Skill 22, 23, all 30 skills, new post-onboarding skill). NOT after every skill.
+- Gemini Embedding 2 refresh: only at milestones (Embedding 2 setup, Skill 22, 23, all 30 skills, new post-onboarding skill). NOT after every skill.
+- Memory system: 6 layers, all verified working April 2, 2026. Full details in MEMORY.md section "OPENCLAW 6-LAYER MEMORY SYSTEM".
+- Legacy memory system is fully removed. Gemini Embedding 2 is the active semantic memory layer.
+- After OpenClaw updates: if Mem0 breaks with NODE_MODULE_VERSION error, rebuild: `cd ~/.openclaw/extensions/openclaw-mem0 && PATH=/opt/homebrew/bin:$PATH npm rebuild better-sqlite3`
+- **Update order matters**: restart gateway first (`openclaw gateway restart`), THEN run `openclaw plugins update`. Reverse order causes hashed filename mismatch and plugin failures.
 - Command Center: if UI lets Trevor choose model/persona, backend must actually use it. No cosmetic settings.
+
+---
+
+## 🔴 REMOTION — HOW TO RUN AS AN AGENT
+To start a Remotion project as an agent, ALWAYS run this command:
+```
+npx create-video@latest
+```
+This is the only correct entry point. Do not guess alternatives.
+Reference repo: `~/Downloads/openclaw-master-files/references/remotion/`
+Analysis file: `~/Downloads/openclaw-master-files/references/remotion-openclaw-analysis.md`
+
+BEFORE running, ALWAYS present Trevor with this template menu and ask him to choose:
+
+| Template | Best for |
+|----------|----------|
+| Blank | Starting from scratch — empty canvas, no starter code |
+| Hello World | First project / learning — simple animation playground |
+| Next.js | SaaS app for video generation with full-stack setup |
+| Next.js (Vercel Sandbox) | On-demand video rendering hosted on Vercel |
+| Next.js (No Tailwind) | Same as Next.js but without Tailwind CSS |
+| Next.js (Pages dir) | Next.js with older pages/ router structure |
+| Recorder | Video production tool built entirely in JavaScript |
+| Prompt to Motion Graphics | AI-powered SaaS starter for animation generation |
+| Hello World (JavaScript) | Hello World but in plain JS instead of TypeScript |
+| Render Server | Express.js server for server-side rendering |
+| Electron | Desktop app that renders Remotion videos locally |
+| React Router | SaaS template using React Router 7 / Remix |
+| React Three Fiber | 3D video using React Three Fiber |
+| Still images | Dynamic PNG/JPEG generation with built-in server |
+| Audiogram | Waveform + text visualization for podcasts |
+| Music Visualization | Waveform visualization for music content |
+| Prompt to Video | Story video with images and voiceover from a prompt |
+| Skia | React Native Skia starter |
+| Overlay | Overlays for video editing software |
+| Code Hike | Beautiful animated code walkthroughs |
+
+Wait for Trevor's choice before running the command.
 
 ---
 
@@ -223,3 +265,19 @@ Trevor/Stefanie manage ALL VPS updates, installs, QC, fixes — clients do NOT.
 
 ## 🔴 VPS SKILL QC PROTOCOL
 Verify content matches install.sh and Start Here.md — not just file existence. Spawn MiMo V2 Pro sub-agents (up to 15-20 parallel) to QC skill blocks. Fails QC: fix agent → QC again. Max 5 rounds, then flag to Trevor.
+
+## 🔴 SESSION STATUS PILL RULE (Added April 2, 2026)
+NEVER generate a session status pill from memory, templates, autopilot, or habit.
+BEFORE writing the pill in any response:
+1. Call session_status tool in the SAME turn
+2. Use the EXACT values returned: model name, context size, percentage
+3. If session_status tool is not called in the same turn, DO NOT write a pill
+Violation = fabricated data. Zero tolerance.
+
+## 🔴 BACKUP PROTOCOL - FOUR STEPS EVERY TIME (Added April 2, 2026)
+Every config change requires ALL four steps IN ORDER:
+1. Create backup: copy the config file to ~/Downloads/openclaw-backups/ with .txt extension, timestamp, human-readable name
+2. VERIFY the backup: read the backup file back and confirm it contains the correct pre-change state
+3. Notify Trevor of the backup path immediately (before making any changes)
+4. Verify against official docs (docs.openclaw.ai) before writing
+Missing any step = protocol violation. Zero tolerance.
