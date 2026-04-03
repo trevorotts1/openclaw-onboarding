@@ -1,3 +1,14 @@
+## v6.5.25 - April 3, 2026
+
+### Fixed
+- **Skill 23 - Mac backport parity**: Backported VPS v2.1.0 functionality to Mac. Added `--non-interactive` flag and `build_from_config()` for automated `departments.json` generation in Skill 23.
+
+### Changed
+- **version**: Bumped to v6.5.25
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.25
+
+---
+
 ## v6.5.24 - April 3, 2026
 
 ### Added
