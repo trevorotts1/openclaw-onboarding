@@ -1,3 +1,14 @@
+## v6.5.23 - April 3, 2026
+
+### Fixed
+- **install.sh - Agent message visibility**: Fixed bug where Telegram confirmation told users to "send your agent the message shown in your terminal" but the terminal never printed the exact message. Added clearly formatted "📋 SEND THIS MESSAGE TO YOUR AGENT" block to terminal output. Updated Telegram confirmation message to include the actual text instead of referencing the terminal.
+
+### Changed
+- **version**: Bumped to v6.5.23
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.23
+
+---
+
 ## v6.5.22 - April 1, 2026
 
 ### Added
