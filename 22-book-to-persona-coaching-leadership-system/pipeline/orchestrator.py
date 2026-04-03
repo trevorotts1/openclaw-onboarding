@@ -13,8 +13,10 @@ Runs 4 books in parallel per phase. Manages queue automatically.
 
 import os
 import json
+import sys
 import time
 import asyncio
+import subprocess
 import aiohttp
 import datetime
 from pathlib import Path
@@ -874,6 +876,23 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         mark_phase(status, folder, 3, "COMPLETE")
         status[folder]["completed"] = datetime.datetime.now().strftime('%B %-d at %-I:%M %p')
         save_status(status)
+
+        # Phase 5: Auto re-index persona in Gemini Engine
+        indexer_path = Path.home() / "clawd/scripts/gemini-indexer.py"
+        if indexer_path.exists():
+            log("Phase 5: Re-indexing persona in Gemini Engine...")
+            result_proc = subprocess.run(
+                [sys.executable, str(indexer_path)],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if result_proc.returncode != 0:
+                log(f"  Warning: gemini-indexer.py exited with code {result_proc.returncode}: {result_proc.stderr[:300]}")
+            log("Phase 5: Re-indexing complete.")
+        else:
+            log(f"  Warning: gemini-indexer.py not found at {indexer_path}, skipping re-indexing")
+
         return True
 
     except Exception as e:
