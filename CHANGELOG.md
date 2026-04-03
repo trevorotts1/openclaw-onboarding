@@ -2,6 +2,7 @@
 
 ### Merged
 - **fix/skill22-auto-reindex**: Merged branch containing Skill 22 Phase 5 auto-reindex functionality for automated persona index refresh after synthesis.
+- **fix/skill23-department-write-path**: Merged branch containing Skill 23 Mac backport parity with `--non-interactive` flag and `build_from_config()`.
 
 ### Changed
 - **version**: Bumped to v6.5.26
