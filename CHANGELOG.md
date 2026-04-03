@@ -1,3 +1,14 @@
+## v6.5.26 - April 3, 2026
+
+### Merged
+- **fix/skill22-auto-reindex**: Merged branch containing Skill 22 Phase 5 auto-reindex functionality for automated persona index refresh after synthesis.
+
+### Changed
+- **version**: Bumped to v6.5.26
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.26
+
+---
+
 ## v6.5.25 - April 3, 2026
 
 ### Fixed
