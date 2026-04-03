@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI Workforce Blueprint - Interview Engine & Workspace Builder
-Version: 2.0.0
+Version: 2.1.0
 Date: March 22, 2026
 
 This is the core engine for Skill 23 (AI Workforce Blueprint).
@@ -16,6 +16,11 @@ It handles:
 8. Command Center departments.json generation
 9. Flush after every question (resume capability via handoff file)
 10. Config safety (backup before edits, validate JSON after)
+
+NON-INTERACTIVE MODE:
+- Pass --non-interactive to read all config from a JSON file instead of prompting
+- Use --config-file to specify the JSON config path (default: workforce-config.json)
+- This is required when running via AI agent that cannot handle interactive prompts
 
 IMPORTANT:
 - This script is executed BY the AI agent, not run directly by the client
@@ -32,9 +37,237 @@ FORBIDDEN CLIENT-FACING LANGUAGE:
 import os
 import sys
 import json
+import argparse
 import shutil
 from datetime import datetime
 from pathlib import Path
+
+
+# ============================================================
+# ARGUMENT PARSING
+# ============================================================
+
+def parse_args():
+    """Parse command-line arguments. Supports --non-interactive for AI agent use."""
+    parser = argparse.ArgumentParser(
+        description="AI Workforce Blueprint - Interview Engine & Workspace Builder"
+    )
+    parser.add_argument(
+        '--non-interactive',
+        action='store_true',
+        help='Read config from --config-file instead of prompting interactively'
+    )
+    parser.add_argument(
+        '--config-file',
+        default='workforce-config.json',
+        help='JSON config file for non-interactive mode (default: workforce-config.json)'
+    )
+    return parser.parse_args()
+
+
+def load_non_interactive_config(config_file):
+    """
+    Load workforce config from a JSON file for non-interactive mode.
+
+    Expected JSON structure:
+    {
+        "company_name": "Acme Corp",
+        "company_description": "We sell widgets online",
+        "industry": "e-commerce",
+        "tools": "Stripe, Convert and Flow, Shopify",
+        "biggest_challenge": "Customer retention after first purchase",
+        "departments": {
+            "marketing": {
+                "enabled": true,
+                "activities": "Daily social media posts, weekly email campaigns",
+                "kpis": "10K followers by Q3, 25% email open rate",
+                "tools": "Convert and Flow, Canva, Later",
+                "challenges": "No consistent posting schedule"
+            },
+            "sales": {
+                "enabled": true,
+                "activities": "Inbound lead follow-up, demo calls",
+                "kpis": "Close 10 deals per month",
+                "tools": "Convert and Flow, Calendly",
+                "challenges": "Slow response time to inbound leads"
+            }
+        },
+        "option": "A"
+    }
+    """
+    if not os.path.isfile(config_file):
+        print(f"[NON-INTERACTIVE ERROR] Config file not found: {config_file}", file=sys.stderr)
+        print(f"[NON-INTERACTIVE ERROR] Create a workforce-config.json or use --config-file to specify path.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    with open(config_file, 'r') as f:
+        try:
+            config = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"[NON-INTERACTIVE ERROR] Invalid JSON in {config_file}: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Validate required fields
+    required = ["company_name", "industry", "departments"]
+    missing = [k for k in required if k not in config]
+    if missing:
+        print(f"[NON-INTERACTIVE ERROR] Missing required config keys: {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+
+    return config
+
+
+def build_from_config(config):
+    """
+    Build the full workforce from a non-interactive config JSON.
+
+    This replaces the conversational interview flow with a direct build
+    from the provided configuration. All department workspaces, specialists,
+    and supporting files are created without any interactive prompts.
+    """
+    global MASTER_FILES, COMPANY_DISCOVERY_DIR
+
+    # Detect environment
+    MASTER_FILES = find_master_files_folder()
+    COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
+
+    company_name = config["company_name"]
+    industry = config.get("industry", "")
+    company_description = config.get("company_description", "")
+    tools = config.get("tools", "")
+    biggest_challenge = config.get("biggest_challenge", "")
+
+    # Build core interview answers dict (used by all department functions)
+    core_answers = {
+        "company_name": company_name,
+        "industry": industry,
+        "company_description": company_description,
+        "tools": tools,
+        "biggest_challenge": biggest_challenge,
+    }
+
+    print(f"[NON-INTERACTIVE] Building workforce for: {company_name}", file=sys.stderr)
+    print(f"[NON-INTERACTIVE] Industry: {industry}", file=sys.stderr)
+
+    # Save the config as the interview answers
+    discovery_dir = _ensure_company_discovery_dir()
+    if discovery_dir:
+        answers_path = os.path.join(discovery_dir, "workforce-interview-answers.md")
+        with open(answers_path, 'w') as f:
+            f.write(f"# Workforce Interview Answers (Non-Interactive)\n\n")
+            f.write(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n---\n\n")
+            f.write(f"**Q:** What is the name of your business?\n**A:** {company_name}\n\n---\n\n")
+            f.write(f"**Q:** What industry are you in?\n**A:** {industry}\n\n---\n\n")
+            if company_description:
+                f.write(f"**Q:** What does your business do?\n**A:** {company_description}\n\n---\n\n")
+            if tools:
+                f.write(f"**Q:** What tools do you use?\n**A:** {tools}\n\n---\n\n")
+            if biggest_challenge:
+                f.write(f"**Q:** What is your biggest challenge?\n**A:** {biggest_challenge}\n\n---\n\n")
+
+    # Process departments
+    departments_config = config.get("departments", {})
+    selected_departments = {}
+
+    for dept_id, dept_config in departments_config.items():
+        if dept_config.get("enabled", True):
+            if dept_id in RECOMMENDED_DEPARTMENTS:
+                selected_departments[dept_id] = RECOMMENDED_DEPARTMENTS[dept_id].copy()
+            else:
+                # Custom department
+                selected_departments[dept_id] = {
+                    "name": dept_config.get("name", dept_id.replace("-", " ").title()),
+                    "emoji": dept_config.get("emoji", "\U0001f4c1"),
+                    "head": dept_config.get("head", f"Chief {dept_id.replace('-', ' ').title()} Officer"),
+                    "description": dept_config.get("activities", ""),
+                }
+
+    print(f"[NON-INTERACTIVE] Departments: {', '.join(selected_departments.keys())}", file=sys.stderr)
+
+    # Create department workspaces
+    specialists_by_dept = {}
+    for dept_id, dept_info in selected_departments.items():
+        dept_config = departments_config.get(dept_id, {})
+
+        # Build per-department interview answers
+        dept_answers = {
+            **core_answers,
+            "department_activities": dept_config.get("activities", dept_info["description"]),
+            "department_kpis": dept_config.get("kpis", ""),
+            "department_tools": dept_config.get("tools", tools),
+            "department_challenges": dept_config.get("challenges", ""),
+        }
+
+        # Create workspace
+        dept_dir = create_department_workspace(dept_id, dept_info, dept_answers)
+        print(f"[NON-INTERACTIVE] Created workspace: {dept_dir}", file=sys.stderr)
+
+        # Log department answers
+        if discovery_dir:
+            with open(answers_path, 'a') as f:
+                f.write(f"**Q:** Tell me about your {dept_info['name']} department.\n")
+                f.write(f"**A:** Activities: {dept_config.get('activities', 'N/A')}\n")
+                f.write(f"KPIs: {dept_config.get('kpis', 'N/A')}\n")
+                f.write(f"Challenges: {dept_config.get('challenges', 'N/A')}\n\n---\n\n")
+
+        # Determine specialists
+        specialists, decision_ctx = determine_specialists(dept_id, dept_info, dept_answers)
+        specialists_by_dept[dept_id] = specialists
+
+    # Load persona categories and create governing personas
+    persona_categories = load_persona_categories()
+    for dept_id, dept_info in selected_departments.items():
+        personas_md = create_governing_personas_md(dept_id, dept_info, persona_categories)
+        personas_path = os.path.join(DEPARTMENTS_DIR, dept_id, "governing-personas.md")
+        with open(personas_path, 'w') as f:
+            f.write(personas_md)
+
+    # Generate ORG-CHART.md
+    org_chart = generate_org_chart(selected_departments, specialists_by_dept)
+    org_chart_path = os.path.join(WORKSPACE_ROOT, "ORG-CHART.md")
+    with open(org_chart_path, 'w') as f:
+        f.write(org_chart)
+    print(f"[NON-INTERACTIVE] Created ORG-CHART.md", file=sys.stderr)
+
+    # Generate departments.json for Command Center
+    departments_json = generate_departments_json(selected_departments)
+    if discovery_dir:
+        dept_json_path = os.path.join(discovery_dir, "departments.json")
+        with open(dept_json_path, 'w') as f:
+            json.dump(departments_json, f, indent=2)
+        print(f"[NON-INTERACTIVE] Created departments.json", file=sys.stderr)
+
+    # Update openclaw.json config
+    if os.path.isfile(OPENCLAW_CONFIG):
+        try:
+            backup_path = backup_config()
+            print(f"[NON-INTERACTIVE] Config backed up to: {backup_path}", file=sys.stderr)
+
+            config_data = load_openclaw_config()
+            for dept_id, dept_info in selected_departments.items():
+                add_agent_to_config(config_data, dept_id, dept_info)
+            save_openclaw_config(config_data)
+            print(f"[NON-INTERACTIVE] Config updated with {len(selected_departments)} department agents", file=sys.stderr)
+        except Exception as e:
+            print(f"[NON-INTERACTIVE WARNING] Config update failed: {e}", file=sys.stderr)
+    else:
+        print(f"[NON-INTERACTIVE WARNING] openclaw.json not found at {OPENCLAW_CONFIG} - skipping agent config",
+              file=sys.stderr)
+
+    # Save handoff as completed
+    create_handoff(
+        option=config.get("option", "A"),
+        departments_done=list(selected_departments.keys()),
+        departments_remaining=[],
+        progress_pct=100
+    )
+
+    print(f"\n[NON-INTERACTIVE] Build complete!", file=sys.stderr)
+    print(f"[NON-INTERACTIVE] Company: {company_name}", file=sys.stderr)
+    print(f"[NON-INTERACTIVE] Departments: {len(selected_departments)}", file=sys.stderr)
+    print(f"[NON-INTERACTIVE] Workspace: {DEPARTMENTS_DIR}", file=sys.stderr)
+
 
 # ============================================================
 # CONFIGURATION
@@ -801,4 +1034,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    if args.non_interactive:
+        config = load_non_interactive_config(args.config_file)
+        build_from_config(config)
+    else:
+        main()
