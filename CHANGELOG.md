@@ -1,3 +1,14 @@
+## v6.5.24 - April 3, 2026
+
+### Added
+- **Skill 22 - Phase 5 auto-reindex**: Added Phase 5 auto-reindex after persona generation in orchestrator.py so the Gemini persona index is refreshed automatically after synthesis.
+
+### Changed
+- **version**: Bumped to v6.5.24
+- **ONBOARDING_VERSION**: Updated install.sh header to v6.5.24
+
+---
+
 ## v6.5.23 - April 3, 2026
 
 ### Fixed
