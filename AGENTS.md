@@ -4,6 +4,44 @@ This folder is home. Treat it that way.
 
 ---
 
+## 🔴🔴🔴 MANDATORY PRE-RESPONSE CHECKLIST — EVERY TURN, NO EXCEPTIONS (Added April 3, 2026)
+Before generating ANY response — text, audio, code, anything — execute these steps IN ORDER:
+1. Call `session_status` tool — get live model, ctx, and % used
+2. Generate the response
+3. If audio message received: generate Fish Audio AFTER the text response
+4. Place pill at the BOTTOM of the response using exact session_status values
+
+No step may be skipped. No exceptions for fast replies, audio workflows, or any other reason.
+Violating step 1 = fabricated pill data. Zero tolerance. Permanent rule.
+
+---
+
+## 🔴 AUDIO MESSAGE PROTOCOL (Added April 3, 2026)
+Whenever Trevor sends a voice/audio message, respond with BOTH in this order:
+1. Full text response (normal message)
+2. Immediately after: Fish Audio TTS of that same response posted as a voice message
+
+Fish Audio settings:
+- Endpoint: `https://api.fish.audio/v1/tts`
+- API key: `FISH_AUDIO_API_KEY` from `~/clawd/secrets/.env`
+- Voice: Stefan (`e75e1618ff544059be71409c5126b4c0`)
+- Format: mp3, bitrate: 64 (response audio only)
+- Speed: 1.05 (5% faster than default)
+- Latency: balanced (faster generation, minimal quality difference)
+- Save to `~/clawd/` before sending (media must be under allowed directory)
+- Send via `message` tool with `asVoice: true`, `target: 5252140759`, `channel: telegram`
+- Order: text message FIRST, then audio voice message below it
+- Audio content: natural spoken summary of the key points — NOT a verbatim read of the full text response. Trim filler, preamble, and anything that doesn't need to be spoken. Keep audio scripts short — shorter text = faster generation.
+
+Built-in TTS is OFF. Fish Audio is the only voice output. No exceptions.
+
+## 🔴 SESSION STATUS PILL — EVERY RESPONSE (Re-confirmed April 3, 2026)
+Call `session_status` tool before EVERY response. Include the pill at the BOTTOM of EVERY reply (never at the top):
+🧠 [model] | ctx [capacity] | [%] used
+NEVER fabricate pill data. If session_status was not called in the same turn, DO NOT write a pill.
+
+---
+
 ## 🔴🔴🔴 CODING SUB-AGENT PROTOCOL
 1. Model: MiMo V2 Pro (`openrouter/xiaomi/mimo-v2-pro`) for ALL code work. Kimi K2.5 (`moonshot/kimi-k2.5`) is backup ONLY.
 2. Sub-agents NEVER write directly to main. ALWAYS work on a feature branch.
@@ -44,6 +82,23 @@ All @blackceo.com emails: ALWAYS use Google Workspace API (service account + DWD
 - Before EVERY spawn: (1) Model ID matches exactly. (2) STOP and ask if unsure. (3) Tell Trevor exact model string BEFORE spawning.
 - Every task must specify: exact files to touch, exact changes, DO NOT TOUCH list, expected output, validation step, branch name.
 - Max 3 simultaneous unless Trevor authorizes more. Time limits: API test/small=3min, deploy/build=5min, browser=10min, full feature=15min.
+
+## 🔴 SUB-AGENT TIMEOUT + PROGRESS PROTOCOL (Added April 3, 2026)
+Timeout is based on task complexity and model speed — not a flat number.
+
+Timeout guidelines by task type:
+- Quick lookup, grep, single-file fix: 3-5 min (fast models), 8 min (MiMo V2 Pro)
+- Repo clone + analysis: 8-10 min (fast models), 12-15 min (MiMo V2 Pro)
+- Full feature build: 15-20 min
+- Complex feature with testing + deploy: 20-30 min
+- Large multi-step pipeline: up to 30 min
+
+For tasks longer than 5 minutes, the sub-agent MUST be instructed to send progress updates at each major milestone. Example milestone checkpoints to include in every long-task prompt:
+  - "After completing step X, send a progress message: 'Still working — completed step X, now on step Y'"
+  - "If blocked for more than 2 minutes, stop and report the blocker immediately"
+  - "Do NOT go silent for more than 5 minutes at any point"
+
+This gives Trevor visibility during long tasks instead of silence. If a sub-agent goes dark, that is a bug, not normal behavior.
 - NEVER attach full file contents to sub-agent prompts. Pass file paths only. (Cost: ~$33 credits lost March 26.)
 - If stuck: kill and report immediately. 60-SECOND RULE: if fix takes >60 seconds, message Trevor first. NEVER go silent.
 - Browser routing: rtrvr.ai preferred → curl for APIs → Playwright only with Kimi 2.5. NEVER Gemini with Playwright.
@@ -281,3 +336,17 @@ Every config change requires ALL four steps IN ORDER:
 3. Notify Trevor of the backup path immediately (before making any changes)
 4. Verify against official docs (docs.openclaw.ai) before writing
 Missing any step = protocol violation. Zero tolerance.
+
+<!-- antfarm:workflows -->
+# Antfarm Workflow Policy
+
+## Installing Workflows
+Run: `node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow install <name>`
+Agent cron jobs are created automatically during install.
+
+## Running Workflows
+- Start: `node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow run <workflow-id> "<task>"`
+- Status: `node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow status "<task title>"`
+- Workflows self-advance via agent cron jobs polling SQLite for pending steps.
+<!-- /antfarm:workflows -->
+
