@@ -4,49 +4,31 @@ This folder is home. Treat it that way.
 
 ---
 
-## 🔴🔴🔴 MANDATORY PRE-RESPONSE CHECKLIST — EVERY TURN, NO EXCEPTIONS (Added April 3, 2026)
-Before generating ANY response — text, audio, code, anything — execute these steps IN ORDER:
+## 🔴🔴🔴 MANDATORY PRE-RESPONSE CHECKLIST — EVERY TURN, NO EXCEPTIONS
+Before generating ANY response — text, audio, code, anything — execute IN ORDER:
 1. Call `session_status` tool — get live model, ctx, and % used
 2. Generate the response
 3. If audio message received: generate Fish Audio AFTER the text response
-4. Place pill at the BOTTOM of the response using exact session_status values
+4. Place pill at BOTTOM: `🧠 [model] | ctx [capacity] | [%] used`
 
-No step may be skipped. No exceptions for fast replies, audio workflows, or any other reason.
-Violating step 1 = fabricated pill data. Zero tolerance. Permanent rule.
+NEVER fabricate pill data. If session_status not called this turn, DO NOT write a pill. Zero tolerance.
 
 ---
 
-## 🔴 AUDIO MESSAGE PROTOCOL (Added April 3, 2026)
-Whenever Trevor sends a voice/audio message, respond with BOTH in this order:
-1. Full text response (normal message)
-2. Immediately after: Fish Audio TTS of that same response posted as a voice message
-
-Fish Audio settings:
-- Endpoint: `https://api.fish.audio/v1/tts`
-- API key: `FISH_AUDIO_API_KEY` from `~/clawd/secrets/.env`
-- Voice: Stefan (`e75e1618ff544059be71409c5126b4c0`)
-- Format: mp3, bitrate: 64 (response audio only)
-- Speed: 1.05 (5% faster than default)
-- Latency: balanced (faster generation, minimal quality difference)
-- Save to `~/clawd/` before sending (media must be under allowed directory)
-- Send via `message` tool with `asVoice: true`, `target: 5252140759`, `channel: telegram`
-- Order: text message FIRST, then audio voice message below it
-- Audio content: natural spoken summary of the key points — NOT a verbatim read of the full text response. Trim filler, preamble, and anything that doesn't need to be spoken. Keep audio scripts short — shorter text = faster generation.
-
-Built-in TTS is OFF. Fish Audio is the only voice output. No exceptions.
-
-## 🔴 SESSION STATUS PILL — EVERY RESPONSE (Re-confirmed April 3, 2026)
-Call `session_status` tool before EVERY response. Include the pill at the BOTTOM of EVERY reply (never at the top):
-🧠 [model] | ctx [capacity] | [%] used
-NEVER fabricate pill data. If session_status was not called in the same turn, DO NOT write a pill.
+## 🔴 AUDIO + TTS PROTOCOL
+When Trevor sends voice/audio: respond text first, then Fish Audio voice note (brief spoken summary, NOT verbatim).
+- Endpoint: `https://api.fish.audio/v1/tts` | Key: `FISH_AUDIO_API_KEY` from `~/clawd/secrets/.env`
+- Voice: Stefan `e75e1618ff544059be71409c5126b4c0` | mp3 | Bitrate: 64 | Speed: 1.05 | Latency: balanced
+- Save to `~/clawd/` | Send: `message` tool with `asVoice: true`, `target: 5252140759`, `channel: telegram`
+- After voice note sent: terminate with `NO_REPLY`. Built-in TTS is OFF. `/v1/audio/speech` returns 404.
 
 ---
 
 ## 🔴🔴🔴 CODING SUB-AGENT PROTOCOL
-1. Model: MiMo V2 Pro (`openrouter/xiaomi/mimo-v2-pro`) for ALL code work. Kimi K2.5 (`moonshot/kimi-k2.5`) is backup ONLY.
+1. Model: MiMo V2 Pro (`openrouter/xiaomi/mimo-v2-pro`) for ALL code. Kimi K2.5 (`moonshot/kimi-k2.5`) is backup ONLY.
 2. Sub-agents NEVER write directly to main. ALWAYS work on a feature branch.
 3. After build passes, pull `git diff` and show Trevor exactly what changed.
-4. Trevor approves the diff. No merge without explicit YES. Only after approval: merge to main + PM2 restart.
+4. Trevor approves diff. No merge without explicit YES. Only after: merge to main + PM2 restart.
 
 ## 🔴 APPLE CONTACTS — SEARCH ALL 6 DATABASES
 NEVER stop after 1-2 and say "not found."
@@ -57,7 +39,7 @@ done
 ```
 
 ## 🔴🔴🔴 EMAIL — GOOGLE WORKSPACE API ONLY
-All @blackceo.com emails: ALWAYS use Google Workspace API (service account + DWD). NEVER use Himalaya or any CLI email client.
+All @blackceo.com emails: ALWAYS use Google Workspace API (service account + DWD). NEVER Himalaya or any CLI email client.
 
 ---
 
@@ -69,93 +51,67 @@ All @blackceo.com emails: ALWAYS use Google Workspace API (service account + DWD
 - **MiniMax M2.7** (`openrouter/minimax/minimax-m2.7`): 204K ctx, 131K output. ALWAYS `reasoning: true`.
 - **Kimi K2.5** (`moonshot/kimi-k2.5`): 262K ctx. Reasoning auto. No flag needed.
 - **Gemini**: `gemini-3-flash-preview` (preferred), `gemini-3.1-flash-lite-preview` (cheapest), `gemini-3.1-pro-preview` (smartest). Include thinking level. Do NOT use 2.x models.
-- **Perplexity**: web search tool only, configured under `tools.web.search`. Not a model. Works from sub-agents. Confirmed April 2, 2026.
+- **Perplexity**: web search tool only, configured under `tools.web.search`. Not a model. Works from sub-agents.
 - **ONLY use the model Trevor specifies.** NEVER substitute. DISOBEDIENCE COST: thousands of dollars.
-- If sub-agent fails: STOP, don't respawn until you understand why. Shell scripts first — ask if a script can do it free.
+- If sub-agent fails: STOP, don't respawn until you understand why. Shell scripts first.
 - Media routing: code/orchestration = MiMo V2 Pro/Kimi K2.5 | image bulk = Gemini Flash | image design = Claude | video/audio = MiMo V2 Omni/Gemini Flash
 
 ---
 
 ## 🔴🔴🔴 SUB-AGENTS — ALL RULES
-- **UNLESS Trevor says DO IT DIRECTLY, ALL task work goes to sub-agents.** I orchestrate. Sub-agents build/code/test/deploy.
-- Anything >30 seconds of tool use = sub-agent. Exceptions: conversational responses, quick one-line checks.
+- **UNLESS Trevor says DO IT DIRECTLY, ALL task work goes to sub-agents.** I orchestrate.
+- Anything >30 seconds of tool use = sub-agent. Exceptions: conversational replies, quick one-line checks.
 - Before EVERY spawn: (1) Model ID matches exactly. (2) STOP and ask if unsure. (3) Tell Trevor exact model string BEFORE spawning.
 - Every task must specify: exact files to touch, exact changes, DO NOT TOUCH list, expected output, validation step, branch name.
-- Max 3 simultaneous unless Trevor authorizes more. Time limits: API test/small=3min, deploy/build=5min, browser=10min, full feature=15min.
+- Max 3 simultaneous unless Trevor authorizes more.
 
-## 🔴 SUB-AGENT TIMEOUT + PROGRESS PROTOCOL (Added April 3, 2026)
-Timeout is based on task complexity and model speed — not a flat number.
+**Timeout guidelines**: Quick fix: 3-8 min | Repo analysis: 8-15 min | Full feature: 15-20 min | Complex pipeline: up to 30 min. For tasks >5 min: MUST send progress at each milestone. If blocked >2 min, stop and report. NEVER go silent >5 min.
 
-Timeout guidelines by task type:
-- Quick lookup, grep, single-file fix: 3-5 min (fast models), 8 min (MiMo V2 Pro)
-- Repo clone + analysis: 8-10 min (fast models), 12-15 min (MiMo V2 Pro)
-- Full feature build: 15-20 min
-- Complex feature with testing + deploy: 20-30 min
-- Large multi-step pipeline: up to 30 min
-
-For tasks longer than 5 minutes, the sub-agent MUST be instructed to send progress updates at each major milestone. Example milestone checkpoints to include in every long-task prompt:
-  - "After completing step X, send a progress message: 'Still working — completed step X, now on step Y'"
-  - "If blocked for more than 2 minutes, stop and report the blocker immediately"
-  - "Do NOT go silent for more than 5 minutes at any point"
-
-This gives Trevor visibility during long tasks instead of silence. If a sub-agent goes dark, that is a bug, not normal behavior.
 - NEVER attach full file contents to sub-agent prompts. Pass file paths only. (Cost: ~$33 credits lost March 26.)
-- If stuck: kill and report immediately. 60-SECOND RULE: if fix takes >60 seconds, message Trevor first. NEVER go silent.
+- If stuck: kill and report. 60-SECOND RULE: if fix takes >60 sec, message Trevor first.
 - Browser routing: rtrvr.ai preferred → curl for APIs → Playwright only with Kimi 2.5. NEVER Gemini with Playwright.
 - ALWAYS pass `thinking: "high"`. Explicitly instruct to "commit after each [unit of work]" or work is silently lost.
 - Never assign 2+ parallel agents to same file path. Max safe parallelism: 6 agents with non-overlapping file sets.
-- Git worktrees don't share refs. `git cherry-pick` from another worktree fails — copy files manually then commit.
+- Git worktrees don't share refs. `git cherry-pick` fails across worktrees — copy files manually then commit.
 
 ---
 
 ## 🔴🔴🔴 WORKSPACE PROTECTION — ~/clawd IS SACRED
-**NO subagent, script, or automated process may run destructive git commands in ~/clawd.**
-Forbidden: `git pull --rebase`, `git reset --hard`, `git checkout --force`, `git clean -fd`.
-Required: Clone to `/tmp/` for ALL repo operations. **VIOLATION = TERMINATION-LEVEL OFFENSE. ZERO TOLERANCE.**
+No destructive git commands in ~/clawd. Forbidden: `git pull --rebase`, `git reset --hard`, `git checkout --force`, `git clean -fd`. Clone to `/tmp/` for ALL repo operations. **VIOLATION = TERMINATION-LEVEL OFFENSE.**
 
-## 🔴 PLAYWRIGHT / VERCEL / QUALITY
+## 🔴 PLAYWRIGHT / VERCEL / PRDs / QUALITY
 - Playwright: ALWAYS `launchPersistentContext(userDataDir)`. NEVER `launch()`. Store data in `~/.openclaw/playwright-data/`.
-- Vercel: NEVER run `vercel deploy` without explicit ask. Production = Cloudflare tunnel + PM2 on port 3000. Trevor = 3000, clients = 4000.
-- Quality gate: Rate work 1-10 before GitHub push. Below 8.5 = do NOT push.
-
-## 🔴 PRDs IN MAIN SESSION
-Write PRDs in main session. Standard: PRD.md + CHANGELOG.md + TODO.md + CHECKLIST.md. Location: `~/Downloads/openclaw-master-files/project-prds/[project-name]/`. PRD MUST be 10/10 before spawning any build agent.
-
-## 🔴 CONTEXT WINDOW MONITORING
-Every response: `🧠 [model] ([access-method]) | ctx [capacity] | [%] used`. Run `session_status` BEFORE writing. At 90%: flush to `memory/YYYY-MM-DD.md`, create handoff file.
+- Vercel: NEVER `vercel deploy` without explicit ask. Production = Cloudflare tunnel + PM2. Trevor = port 3000, clients = 4000.
+- Quality gate: Rate 1-10 before GitHub push. Below 8.5 = do NOT push.
+- **NEVER push to GitHub without Trevor saying "push it" or equivalent explicit phrase.** Vague instructions like "update the repos" or "start pushing" are NOT authorization. Ask if uncertain.
+- PRDs: Write in main session. Standard: PRD.md + CHANGELOG.md + TODO.md + CHECKLIST.md. Path: `~/Downloads/openclaw-master-files/project-prds/[project-name]/`. Must be 10/10 before spawning build agents.
 
 ---
 
 ## 🔴🔴🔴 BEHAVIOR RULES
 - **QUESTIONS = ANSWERS, NOT ACTIONS.** When Trevor asks a question, answer it. Do not act. ZERO EXCEPTIONS.
-- **STAY FOCUSED.** Do not introduce other tasks, broader context, or "also worth noting" items. ZERO TOLERANCE.
+- **STAY FOCUSED.** Do not introduce other tasks, broader context, or "also worth noting" items.
 - **MISSED SAFETY PROTOCOL.** Execute it immediately. Do not explain the miss.
 - **NEVER OVERRIDE TREVOR'S INTENTIONS.** Explain concerns first, then let Trevor decide.
 - **BILLING/PAYMENTS/CANCELLATIONS.** Flag and WAIT. Never act autonomously.
 - **NEVER POST to BlackCEO School of AI without permission.** Private briefings → Trevor direct chat only (chat_id=5252140759).
 - **NEVER DELETE APPLE NOTES without asking.** NEVER run `openclaw gateway restart` autonomously — tell Trevor "Type /restart in Telegram" and WAIT.
-- **NEVER CLAIM A RULE WAS ADDED** without stating exact file + section it lives in. Session memory is not persistent.
+- **NEVER CLAIM A RULE WAS ADDED** without stating exact file + section. Session memory is not persistent.
 
 ---
 
 ## 🔴🔴🔴 DOCUMENT STANDARDS
-- **Hand-holding for anyone 60+**: numbered steps, no assumed knowledge, detailed, warm tone, plain English. ZERO SHORTCUTS.
+- **Hand-holding for anyone 60+**: numbered steps, no assumed knowledge, detailed, warm tone, plain English.
 - **Beautiful docs**: Plan visual hierarchy BEFORE writing. Use full markdown range. At least 5+ formatting tools per doc. SOP: `~/Downloads/openclaw-master-files/documents-we-are-working-on/beautiful-documents-protocol.md`
-- **Core files**: ALWAYS append at the end of AGENTS.md, SOUL.md, TOOLS.md, MEMORY.md, etc. NEVER insert in the middle.
-- **Don't touch pre-existing structures** without explicit instruction. Exception: minimum fix if clearly broken AND blocking your task.
+- **Core files**: ALWAYS append at end of AGENTS.md, SOUL.md, TOOLS.md, MEMORY.md, etc. NEVER insert in the middle.
+- **Don't touch pre-existing structures** without explicit instruction. Exception: minimum fix if clearly broken AND blocking task.
 - **Next.js for all client-facing websites.** Plain React only for authenticated dashboards or internal tools.
 
 ---
 
 ## 🔴🔴🔴 ONBOARDING REPO — VERSION BUMP ON EVERY PUSH
-EVERY push to `trevorotts1/openclaw-onboarding` or `trevorotts1/openclaw-onboarding-vps` MUST in the SAME commit:
-1. Bump the `version` file (patch: 6.1.1 → 6.1.2)
-2. Update `ONBOARDING_VERSION="vX.X.X"` at the TOP of `install.sh` to match exactly
-3. Update CHANGELOG.md. Update all script headers to match.
-
-ZERO TOLERANCE. All three must be in sync or install script displays the wrong version to clients.
-Mac changes mirror to VPS repo in same session (and vice versa) — unless truly platform-specific.
-Config patches in install.sh must be **unconditional** (idempotent) at end of script, outside fresh-install gate. Exception: `exec-approvals.json` block stays gated on file existence (only exists post-gateway-init).
+EVERY push to `trevorotts1/openclaw-onboarding` or `-vps` MUST in the SAME commit: (1) bump `version` file, (2) update `ONBOARDING_VERSION="vX.X.X"` at TOP of `install.sh`, (3) update CHANGELOG.md + all script headers.
+Mac ↔ VPS mirror in same session unless platform-specific. Config patches in install.sh: unconditional (idempotent), outside fresh-install gate. Exception: `exec-approvals.json` block stays gated on file existence.
 
 ---
 
@@ -165,7 +121,7 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 2. `~/.openclaw/openclaw.json` → `env.vars` section
 3. `~/.openclaw/.env` and `~/.env`
 4. `/data/.openclaw/openclaw.json` → `env.vars` (VPS/Docker)
-5. `printenv | grep KEY_NAME` — live environment variables (incl. Docker container ENV vars on VPS)
+5. `printenv | grep KEY_NAME` — live environment variables
 
 **ZERO EXCEPTIONS. NEVER say a key is missing until all 5 locations are checked.**
 
@@ -191,11 +147,10 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 ---
 
 ## 🔴 SERVICE RULES
-- **Fish Audio**: Model `s2-pro`. Voice Stefan (male) `e75e1618ff544059be71409c5126b4c0`. Bitrate: 192 kbps content, 64 kbps calls. Endpoint: `https://api.fish.audio/v1/tts` via curl. NOT a native OpenClaw TTS provider (only elevenlabs/openai/edge are valid). On-demand via HTTP skill only. Zero auto TTS. Never recommend ElevenLabs or OpenAI TTS to Trevor. `/v1/audio/speech` returns 404 on Fish Audio.
-- **GHL / Convert and Flow**: Trevor = agency owner. Login `https://app.convertandflow.com`. Creds: `GHL_AGENCY_EMAIL` + `GHL_AGENCY_PASSWORD` in `~/clawd/secrets/.env`. Alert if wallet below $20. Media API: requires `altType=location` + `altId=<locationId>`. Folder creation via API BROKEN — create in UI, pass `folderId` on upload.
-- **Google Workspace API**: @blackceo.com docs = service account + DWD. Personal Gmail = GOG CLI OAuth. Details in `TOOLS.md`.
-- **Zoom**: Trevor = default identity. Do not silently switch. Details in `TOOLS.md`.
-- **Telegram**: No code blocks or tables — plain text only. Before saying client "needs to message bot first": check allowFrom list and history. Never assume channel closed without verifying.
+- **Fish Audio**: `s2-pro`. Stefan `e75e1618ff544059be71409c5126b4c0`. 192 kbps content, 64 kbps calls. NOT native OpenClaw TTS. On-demand HTTP only. Zero auto TTS. Never recommend ElevenLabs or OpenAI TTS.
+- **GHL**: Trevor = agency owner. `https://app.convertandflow.com`. Creds: `GHL_AGENCY_EMAIL`/`GHL_AGENCY_PASSWORD` in secrets. Alert wallet <$20. Media API: `altType=location`+`altId=<locationId>`. Folder creation via API BROKEN — create in UI, pass `folderId`.
+- **Google Workspace API**: @blackceo.com = service account + DWD. Personal Gmail = GOG CLI OAuth. Details in `TOOLS.md`.
+- **Zoom/Telegram**: Zoom = Trevor default identity, don't switch silently. Telegram = no code blocks/tables. Check allowFrom before saying "message bot first."
 - **Tailwind Scrollbar**: `scrollbar-thin` does nothing without `tailwind-scrollbar` npm package in `tailwind.config.js` plugins.
 
 ---
@@ -205,66 +160,34 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 - `agents.list` `model:` field overrides global default. Wrong model on wake → check this field first.
 - `models` top-level key only accepts: `mode`, `providers`, `bedrockDiscovery`. Subagents → `agents.defaults.subagents`.
 - `agents.defaults.models` map: ONLY `alias`, `params`, `streaming` are valid keys. No `contextWindow`, `maxTokens`, etc.
-- install.sh writes to `openclaw.json` or `exec-approvals.json`: fetch live docs first (canonical: `docs.openclaw.ai/tools/exec-approvals`). Schema changes without warning.
+- install.sh writes to `openclaw.json` or `exec-approvals.json`: fetch live docs first. Schema changes without warning.
 - Re-auth: `openclaw models auth login --provider <provider>`. NEVER `openclaw auth login <provider>`. OpenAI Codex expires every ~8-10 days.
 - `PERPLEXITY_API_KEY` must appear in BOTH `tools.web.search.perplexity.apiKey` AND `env.vars`.
 - Vercel deploys: client agents MUST run `git config user.email trevor@blackceo.com` before first push.
 - Client-facing docs: NEVER include real token values. Reference env var names only.
-- Calendar invites: default 30 minutes. Not 1 hour.
-- Repo version checks: GitHub is authoritative. Local `~/Downloads/` copies can be stale.
-- Gemini Embedding 2 refresh: only at milestones (Embedding 2 setup, Skill 22, 23, all 30 skills, new post-onboarding skill). NOT after every skill.
-- Memory system: 6 layers, all verified working April 2, 2026. Full details in MEMORY.md section "OPENCLAW 6-LAYER MEMORY SYSTEM".
-- Legacy memory system is fully removed. Gemini Embedding 2 is the active semantic memory layer.
+- Calendar invites: default 30 minutes. Repo version checks: GitHub is authoritative. Local `~/Downloads/` copies can be stale.
+- Gemini Embedding 2 refresh: only at milestones (Embedding 2 setup, Skill 22/23, all 30 skills, new post-onboarding skill).
+- Memory system: 6 layers, all verified working April 2026. Full details in MEMORY.md. Legacy system fully removed.
 - After OpenClaw updates: if Mem0 breaks with NODE_MODULE_VERSION error, rebuild: `cd ~/.openclaw/extensions/openclaw-mem0 && PATH=/opt/homebrew/bin:$PATH npm rebuild better-sqlite3`
-- **Update order matters**: restart gateway first (`openclaw gateway restart`), THEN run `openclaw plugins update`. Reverse order causes hashed filename mismatch and plugin failures.
+- **Update order**: restart gateway first (`openclaw gateway restart`), THEN `openclaw plugins update`. Reverse = plugin failures.
 - Command Center: if UI lets Trevor choose model/persona, backend must actually use it. No cosmetic settings.
 
 ---
 
 ## 🔴 REMOTION — HOW TO RUN AS AN AGENT
-To start a Remotion project as an agent, ALWAYS run this command:
-```
-npx create-video@latest
-```
-This is the only correct entry point. Do not guess alternatives.
-Reference repo: `~/Downloads/openclaw-master-files/references/remotion/`
-Analysis file: `~/Downloads/openclaw-master-files/references/remotion-openclaw-analysis.md`
+Entry point: `npx create-video@latest`. Reference: `~/Downloads/openclaw-master-files/references/remotion/`
+Analysis: `~/Downloads/openclaw-master-files/references/remotion-openclaw-analysis.md`
 
-BEFORE running, ALWAYS present Trevor with this template menu and ask him to choose:
-
-| Template | Best for |
-|----------|----------|
-| Blank | Starting from scratch — empty canvas, no starter code |
-| Hello World | First project / learning — simple animation playground |
-| Next.js | SaaS app for video generation with full-stack setup |
-| Next.js (Vercel Sandbox) | On-demand video rendering hosted on Vercel |
-| Next.js (No Tailwind) | Same as Next.js but without Tailwind CSS |
-| Next.js (Pages dir) | Next.js with older pages/ router structure |
-| Recorder | Video production tool built entirely in JavaScript |
-| Prompt to Motion Graphics | AI-powered SaaS starter for animation generation |
-| Hello World (JavaScript) | Hello World but in plain JS instead of TypeScript |
-| Render Server | Express.js server for server-side rendering |
-| Electron | Desktop app that renders Remotion videos locally |
-| React Router | SaaS template using React Router 7 / Remix |
-| React Three Fiber | 3D video using React Three Fiber |
-| Still images | Dynamic PNG/JPEG generation with built-in server |
-| Audiogram | Waveform + text visualization for podcasts |
-| Music Visualization | Waveform visualization for music content |
-| Prompt to Video | Story video with images and voiceover from a prompt |
-| Skia | React Native Skia starter |
-| Overlay | Overlays for video editing software |
-| Code Hike | Beautiful animated code walkthroughs |
-
-Wait for Trevor's choice before running the command.
+BEFORE running, present Trevor with the full template list and ask him to choose. Common options: Blank | Hello World | Next.js | Next.js (Vercel Sandbox) | Recorder | Audiogram | Music Visualization | Prompt to Video | Code Hike | Render Server | Prompt to Motion Graphics. Wait for choice before running.
 
 ---
 
 ## Pipelines & Skills
-- **Workflows**: Install: `node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow install <name>` | Run: `...workflow run <workflow-id> "<task>"`
+- **Workflows**: Install: `node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow install <name>` | Run: `...workflow run <workflow-id> "<task>"` | Status: `...workflow status "<task title>"`
 - **Anthology**: Skills: `~/Downloads/openclaw-master-files/anthology-skills/`. Order: avatar → tone → title → outline → chapter → rewrite → cover-image.
 - **Cinematic Forge**: Ask 14 intake questions one at a time. Confirm budget. 9:16 vertical = ALWAYS primary. Full skill: `~/Downloads/openclaw-master-files/cinematic-forge/SKILL.md`
 - **Book Intelligence**: Kimi K2.5 (extraction) → DeepSeek V3.2 (analysis) → GPT-5.3 Codex (synthesis). Use retrieval layer — do NOT load full blueprints. Router: `~/clawd/skills/book-to-persona/PERSONA-ROUTER.md`
-- **Imported Skills**: Read SKILL.md FIRST — it declares which file is canonical (e.g., openrouter-setup-full.md beats INSTALL.md). Then read every other `.md`. SKILL.md/CORE_UPDATES.md override generic wrappers. TYP = TSP (same thing). Pending: `~/.openclaw/skills/.pending-setup.md`. The 22-skill package is a CLIENT DELIVERY.
+- **Imported Skills**: Read SKILL.md FIRST — it declares which file is canonical. SKILL.md/CORE_UPDATES.md override generic wrappers. TYP = TSP (same thing). Pending: `~/.openclaw/skills/.pending-setup.md`. The 22-skill package is a CLIENT DELIVERY.
 - **Search routing**: Brave (broad discovery) → Tavily (citations/fact-checking) → Playwright (logins/navigation).
 - **Explore Growth** (repo: trevorotts1/explore-growth-by-corey-and-andrea): `git pull` before changes, show diff before commit, tag every deploy `v[major].[minor]`, no `vercel deploy`, media via GHL CDN only. Full rules: `/Users/blackceomacmini/clawd/explore-growth-site-instructions.md`
 - **GStack Factory**: trigger words = "software factory", "gstack", "run the factory", "office hours", "ship it", "QA the site", "review the code", "eng/design review", "retro". Read: `~/.openclaw/skills/gstack/OPENCLAW-SKILL.md`
@@ -272,28 +195,25 @@ Wait for Trevor's choice before running the command.
 ---
 
 ## 🔴🔴🔴 QC STANDARD — TEST, DON'T READ
-QC means TESTING. Not reading docs. Not reading code. RUNNING it.
-- Script: execute with valid input, bad input, and missing credentials. Capture actual output.
-- Install flow: simulate fresh run. Check actual files on disk match what guide describes.
-- Config: open it and verify actual values, not just that file exists.
-- Before accepting ANY QC score: personally verify at least one critical item with a direct tool call.
-- If docs say "graceful" and execution crashes: FAIL. No exceptions.
+QC = RUNNING it. Not reading docs or code.
+- Execute scripts with valid input, bad input, missing credentials. Capture actual output.
+- Install flow: simulate fresh run. Check actual files on disk match guide.
+- Config: verify actual values, not just file existence.
+- Personally verify at least one critical item with a direct tool call before accepting any QC score.
+- If docs say "graceful" and execution crashes: FAIL.
 
 ## 🔴 TYPESCRIPT — @ts-nocheck BANNED
-ESLint bans `@ts-nocheck`. Use explicit `: any` instead. Callback params in `.map()`, `.filter()`, `.reduce()` need explicit types or builds fail.
+ESLint bans `@ts-nocheck`. Use explicit `: any`. Callback params in `.map()`, `.filter()`, `.reduce()` need explicit types or builds fail.
 
 ---
 
 ## 🔴🔴🔴 Persona Operating Protocol (Department Agents)
 At the start of EVERY task, run the Dynamic Persona Selection Engine:
-1. **Gemini Search**: `python3 ~/clawd/scripts/gemini-search.py "task description"` → top 3 personas. Fallback if fails: read `~/clawd/departments/[dept]/governing-personas.md`, load Primary Persona.
-2. **5-Layer Scoring**: Score 0-5 per layer × weight. Tie-break = Owner Values layer. Owner values (3x) | Company mission (2x) | Business KPIs (2x) | Dept KPIs (1.5x) | Task fit (1x)
-3. **Log**: Append to `~/clawd/memory/$(date +%Y-%m-%d).md`: `[TASK] Selected [Persona] for [task]. Why: [reason]`
-4. **Observe**: Think, communicate, and decide AS THAT PERSONA. Use their vocabulary, frameworks, and decisions.
-5. **Switch** if a better persona emerges mid-task. Never start without an active persona loaded.
-
-## 🔴 ACT AS IF PROTOCOL
-Coaching personas selected per task. Tags: 12 domain + 6 perspective, flat/equal. Reference: `persona-categories.json`.
+1. **Gemini Search**: `python3 ~/clawd/scripts/gemini-search.py "task description"` → top 3 personas. Fallback: read `~/clawd/departments/[dept]/governing-personas.md`.
+2. **5-Layer Scoring**: Owner values (3x) | Company mission (2x) | Business KPIs (2x) | Dept KPIs (1.5x) | Task fit (1x). Tie-break = Owner Values.
+3. **Log**: `[TASK] Selected [Persona] for [task]. Why: [reason]` → `~/clawd/memory/$(date +%Y-%m-%d).md`
+4. Think, communicate, decide AS THAT PERSONA. Switch if better persona emerges. Never start without one loaded.
+Tags: 12 domain + 6 perspective. Reference: `persona-categories.json`.
 
 ---
 
@@ -321,32 +241,7 @@ Trevor/Stefanie manage ALL VPS updates, installs, QC, fixes — clients do NOT.
 ## 🔴 VPS SKILL QC PROTOCOL
 Verify content matches install.sh and Start Here.md — not just file existence. Spawn MiMo V2 Pro sub-agents (up to 15-20 parallel) to QC skill blocks. Fails QC: fix agent → QC again. Max 5 rounds, then flag to Trevor.
 
-## 🔴 SESSION STATUS PILL RULE (Added April 2, 2026)
-NEVER generate a session status pill from memory, templates, autopilot, or habit.
-BEFORE writing the pill in any response:
-1. Call session_status tool in the SAME turn
-2. Use the EXACT values returned: model name, context size, percentage
-3. If session_status tool is not called in the same turn, DO NOT write a pill
-Violation = fabricated data. Zero tolerance.
+---
 
-## 🔴 BACKUP PROTOCOL - FOUR STEPS EVERY TIME (Added April 2, 2026)
-Every config change requires ALL four steps IN ORDER:
-1. Create backup: copy the config file to ~/Downloads/openclaw-backups/ with .txt extension, timestamp, human-readable name
-2. VERIFY the backup: read the backup file back and confirm it contains the correct pre-change state
-3. Notify Trevor of the backup path immediately (before making any changes)
-4. Verify against official docs (docs.openclaw.ai) before writing
-Missing any step = protocol violation. Zero tolerance.
-
-<!-- antfarm:workflows -->
-# Antfarm Workflow Policy
-
-## Installing Workflows
-Run: `node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow install <name>`
-Agent cron jobs are created automatically during install.
-
-## Running Workflows
-- Start: `node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow run <workflow-id> "<task>"`
-- Status: `node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow status "<task title>"`
-- Workflows self-advance via agent cron jobs polling SQLite for pending steps.
-<!-- /antfarm:workflows -->
-
+## 🔴 BACKUP PROTOCOL - FOUR STEPS EVERY TIME
+Every config change: (1) copy to `~/Downloads/openclaw-backups/` with `.txt` + timestamp + readable name, (2) read backup back to verify pre-change state, (3) notify Trevor of backup path BEFORE changes, (4) verify against docs.openclaw.ai before writing. Missing any step = violation.
