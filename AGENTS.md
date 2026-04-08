@@ -162,6 +162,8 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 - `agents.defaults.models` map: ONLY `alias`, `params`, `streaming` are valid keys. No `contextWindow`, `maxTokens`, etc.
 - install.sh writes to `openclaw.json` or `exec-approvals.json`: fetch live docs first. Schema changes without warning.
 - Re-auth: `openclaw models auth login --provider <provider>`. NEVER `openclaw auth login <provider>`. OpenAI Codex expires every ~8-10 days.
+- **`openclaw configure` WIPES OpenRouter models.** After running the wizard, all OpenRouter models are deleted — re-add them manually from the backup.
+- **Active sessions don't pick up `openclaw configure` changes.** The session binds the model at startup; reconfiguring only affects new sessions. Wrong model after reconfigure → kill and restart session.
 - `PERPLEXITY_API_KEY` must appear in BOTH `tools.web.search.perplexity.apiKey` AND `env.vars`.
 - Vercel deploys: client agents MUST run `git config user.email trevor@blackceo.com` before first push.
 - Client-facing docs: NEVER include real token values. Reference env var names only.
