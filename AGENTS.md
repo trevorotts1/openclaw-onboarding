@@ -157,7 +157,7 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 
 ## 🔴 OPENCLAW CONFIG RULES
 - Config edits: backup to `~/Downloads/openclaw-backups/` with timestamp, edit, validate JSON.
-- `agents.list` `model:` field overrides global default. Wrong model on wake → check this field first.
+- `agents.list` `model:` field overrides BOTH global default AND `/model` session commands. Wrong model or session override silently ignored → check (and remove) this field first. Remove it entirely so the agent inherits from `agents.defaults.model.primary`.
 - `models` top-level key only accepts: `mode`, `providers`, `bedrockDiscovery`. Subagents → `agents.defaults.subagents`.
 - `agents.defaults.models` map: ONLY `alias`, `params`, `streaming` are valid keys. No `contextWindow`, `maxTokens`, etc.
 - install.sh writes to `openclaw.json` or `exec-approvals.json`: fetch live docs first. Schema changes without warning.
