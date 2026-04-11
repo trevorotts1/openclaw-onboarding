@@ -170,7 +170,7 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 - Client-facing docs: NEVER include real token values. Reference env var names only.
 - Calendar invites: default 30 minutes. Repo version checks: GitHub is authoritative. Local `~/Downloads/` copies can be stale.
 - Gemini Embedding 2 refresh: only at milestones (Embedding 2 setup, Skill 22/23, all 30 skills, new post-onboarding skill).
-- Memory system: 6 layers, all verified working April 2026. Full details in MEMORY.md. Legacy system fully removed.
+- Memory system: 6 layers, all verified working April 2026. Full details in MEMORY.md. Legacy system fully removed. Memory Wiki = bridge mode (secondary structured layer on top of mem0, NOT a full rebuild). Use `wiki_search` for retrieval, `memory_store` for raw fact ingestion.
 - After OpenClaw updates: if Mem0 breaks with NODE_MODULE_VERSION error, rebuild: `cd ~/.openclaw/extensions/openclaw-mem0 && PATH=/opt/homebrew/bin:$PATH npm rebuild better-sqlite3`
 - **Update order**: restart gateway first (`openclaw gateway restart`), THEN `openclaw plugins update`. Reverse = plugin failures.
 - Command Center: if UI lets Trevor choose model/persona, backend must actually use it. No cosmetic settings.
