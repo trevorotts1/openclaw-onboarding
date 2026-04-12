@@ -9,18 +9,26 @@ This document lists the exact additions to make to your core .md files after ins
 Add this line to MEMORY.md (usually at the top, in the status section):
 
 ```markdown
-Command Center installed [DATE], [X] departments active, dashboard at [URL]
+Command Center installed [DATE], [X] departments active, dashboard at [URL], wiki enabled
 ```
 
 **Example:**
 ```markdown
-Command Center installed March 19 at 3-45 PM, 5 departments active, dashboard at http://localhost:3000
+Command Center installed March 19 at 3-45 PM, 5 departments active, dashboard at http://localhost:3000, wiki enabled
 ```
 
 **What to replace:**
 - `[DATE]` - Use the current date in human-readable format
 - `[X]` - The number of departments you activated
 - `[URL]` - Either `http://localhost:3000` or your Cloudflare tunnel URL if set up
+
+### Memory Architecture Note
+The Command Center uses a 3-layer memory system:
+1. **Session Memory**: Conversation context within each Telegram topic
+2. **Semantic Memory**: memory-core for long-term fact retrieval across sessions
+3. **Structured Memory**: Memory Wiki for coaching theories, SOPs, and persona blueprints
+
+Each department workspace has isolated memory. Department heads use `wiki_search` and `wiki_get` for structured knowledge retrieval.
 
 ---
 
@@ -148,3 +156,6 @@ After making these additions, verify:
 - Full documentation stays in the skill folder
 - These are pointers and status updates only
 - Update the dashboard URL in TOOLS.md if you change from localhost to Cloudflare
+
+---
+<!-- BREADCRUMB: skill-32-mac | 2026-04-12 | v6.5.7 | CORE_UPDATES.md updated with memory references | Memory Surgery Playbook v3.5 -->

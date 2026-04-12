@@ -28,11 +28,11 @@ The agent searches memory and finds:
 
 The agent synthesizes all three sources into one answer.
 
-## Example: Mem0 Auto-Capture
+## Example: memory-core Auto-Capture
 
 During a conversation, you mention: "My sister Lykisha's number changed to 240-555-1234."
 
-You did not tell the agent to remember this. But Mem0 auto-captured it. Next week when you say "Text my sister," the agent already knows the new number.
+You did not tell the agent to remember this. But memory-core auto-captured it. Next week when you say "Text my sister," the agent already knows the new number.
 
 ## Example: Session Indexing
 

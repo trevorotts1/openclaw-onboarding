@@ -1,8 +1,8 @@
-# Skill 31: Upgraded Memory System (5-Layer Architecture)
+# Skill 31: Upgraded Memory System (8-Layer Architecture)
 
 ## What This Skill Is About
 
-This skill upgrades your OpenClaw agent from the default memory system to a 5-layer architecture that makes your agent genuinely remember everything, find information accurately, and improve over time. The default memory system works okay at first but degrades as memory grows. This fixes that.
+This skill upgrades your OpenClaw agent from the default memory system to an 8-layer architecture that makes your agent genuinely remember everything, find information accurately, and improve over time. The default memory system works okay at first but degrades as memory grows. This fixes that.
 
 ## When to Use This Skill
 
@@ -13,7 +13,7 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 - You want your agent to automatically capture and recall memory without being told
 - You are migrating from the old Google Embedding 2 retrieval query system to Google Gemini Embedding 2
 
-## The 5 Layers
+## The 8 Layers
 
 | Layer | What It Does | How It Works |
 |-------|-------------|--------------|
@@ -21,12 +21,15 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 | 2. Memory flush | Saves important context before compaction | Custom prompt with 8 categories tells the agent exactly what to capture |
 | 3. Session indexing | Makes past conversations searchable | Agent can search what you talked about last week, not just today |
 | 4. Gemini Embedding 2 | Finds information by meaning | Google's multimodal embedding API replaces the old local search |
-| 5. Mem0 | Auto-captures and auto-recalls memory | Memory lives outside the context window, survives compaction |
+| 5. memory-core | Auto-captures and auto-recalls memory | Native OpenClaw memory system - survives compaction, no external dependencies |
+| 6. Cognee | Graph-based knowledge relationships | Connects facts, people, projects in a graph database for complex queries |
+| 7. Obsidian Vault | Structured knowledge base | Obsidian-compatible markdown with wikilinks, frontmatter, and daily notes |
+| 8. Wiki System | Collaborative documentation | Memory wiki with deterministic pages, managed blocks, and source-backed updates |
 
 ## Files in This Folder and Reading Order
 
 1. **SKILL.md** - You are here. Overview and context.
-2. **INSTALL.md** - Step-by-step installation for all 5 layers.
+2. **INSTALL.md** - Step-by-step installation for all 8 layers.
 3. **INSTRUCTIONS.md** - How to use and maintain the memory system after installation.
 4. **EXAMPLES.md** - Example searches, flush outputs, and memory operations.
 5. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
@@ -50,10 +53,11 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 
 ## Key Things the AI Agent Must Know
 
-1. All 5 layers run simultaneously. They do not compete. Each solves a different problem.
+1. All 8 layers run simultaneously. They do not compete. Each solves a different problem.
 2. Layer 4 (Gemini Embedding 2) replaces the old Google Embedding 2 retrieval query engine. Google Embedding 2 is deprecated.
-3. Layer 5 (Mem0) installs as an OpenClaw plugin. It occupies the memory plugin slot.
+3. Layer 5 (memory-core) is the native OpenClaw memory system. It replaces the legacy memory plugin.
+4. Layers 6-8 (Cognee, Obsidian Vault, Wiki System) are advanced add-ons that extend memory capabilities.
 4. The memory flush prompt must include explicit categories or it saves junk.
 5. Session indexing adds noise, so the flush prompt is even more important as a filter.
 6. If migrating from Google Embedding 2: run the migration steps in INSTALL.md before enabling Layer 4.
-7. Do NOT install Cognee (Layer 6) as part of this skill. That is a separate advanced add-on requiring Docker.
+7. Cognee (Layer 6) requires Docker. Install only if you need graph-based knowledge relationships.

@@ -198,6 +198,42 @@ python3 ~/clawd/scripts/gemini-indexer.py --status
 
 ---
 
+## Wiki Integration (Memory Surgery Phase 2)
+
+The persona library is integrated with the OpenClaw Memory Wiki system for unified knowledge retrieval.
+
+### How It Works
+
+**Wiki search covers:**
+- All persona blueprints (persona-blueprint.md files)
+- Extraction notes and analysis notes
+- Persona category tags and metadata
+
+**Search command:**
+```bash
+wiki_search "coaching methodology for sales objections"
+wiki_search "habit building frameworks"
+```
+
+**Wiki get for direct retrieval:**
+```bash
+wiki_get persona-hormozi-100m-offers
+wiki_get coaching-personas/atomic-habits
+```
+
+### Wiki + Gemini Engine Together
+
+| Use Case | Tool | When |
+|----------|------|------|
+| Quick persona lookup | `wiki_search` | Finding persona by name or tag |
+| Deep methodology search | `wiki_get` | Reading full blueprint sections |
+| Semantic content retrieval | `gemini-search.py` | Finding specific frameworks across all personas |
+| Runtime agent queries | Gemini Engine | Task-specific methodology extraction |
+
+**Best practice:** Use wiki for browsing/discovery, Gemini Engine for surgical content retrieval during task execution.
+
+---
+
 ## Integration with Routing System
 
 The routing system (trigger-matrix.md, task-routing-matrix.md) identifies WHICH persona to activate.
@@ -208,3 +244,7 @@ They work together:
 2. Persona summary activates (Layer 1 - already in context)
 3. For deeper methodology detail, agent runs Gemini Engine query (Layer 2 - on-demand)
 4. Gemini Engine returns the specific sections needed for that task or coaching moment
+
+---
+
+<!-- BREADCRUMB: memory-surgery/skill-22-mac | 2026-04-12 | v6.5.7 | Added wiki integration section -->

@@ -213,11 +213,19 @@ When the client says "I don't know", "not sure", "skip", "research it", or anyth
 
 ### Interview Persistence Protocol (Mandatory)
 
-This interview may take hours, days, weeks, or months. The client may stop and come back at any time. Every answer must survive gateway restarts, session resets, context loss, and even agent replacement. Three files work together to guarantee this:
+This interview may take hours, days, weeks, or months. The client may stop and come back at any time. Every answer must survive gateway restarts, session resets, context loss, and even agent replacement. The Memory Wiki system ensures persistence across all layers:
 
-1. **workforce-interview-answers.md** — the permanent answer record
-2. **interview-handoff.md** — the progress tracker and resume point
-3. **MEMORY.md** — the boot-time progress line
+**Active Persistence Files:**
+1. **workforce-interview-answers.md** — the permanent answer record (Layer 1: Filesystem)
+2. **interview-handoff.md** — the progress tracker and resume point (Layer 1: Filesystem)
+3. **MEMORY.md** — the boot-time progress line (Layer 1: Filesystem)
+4. **Memory Wiki** — structured interview pages with provenance (Layer 8: Wiki System)
+
+**Persistence Guarantees:**
+- Layer 1 (Markdown files): All answers written immediately to disk
+- Layer 2 (Memory flush): Key decisions captured before context compaction
+- Layer 7 (Obsidian Vault): Daily interview progress logged to `memory/YYYY-MM-DD.md`
+- Layer 8 (Wiki System): Structured pages enable cross-referencing and search
 
 #### After EVERY Answered Question (No Exceptions)
 
@@ -348,3 +356,39 @@ Skill 22 is recommended but not required. If installed, coaching personas are wi
 
 If Skill 22 is installed: personas are assigned during setup using the Act As If Protocol and 5-layer alignment.
 If Skill 22 is NOT installed: structure builds clean. Install Skill 22 later and re-run in Option C to wire personas in.
+
+## Memory Wiki Integration
+
+The AI Workforce Blueprint integrates with the OpenClaw Memory Wiki system for structured knowledge management:
+
+### Wiki Pages Created
+
+| Page | Purpose | Location |
+|------|---------|----------|
+| Company Org Chart | Live organizational structure | `~/clawd/ORG-CHART.md` |
+| Department Config | Per-department KPIs and assignments | `~/clawd/departments/[dept]/department-config.json` |
+| Persona Matrix | Pre-qualified coaching persona pool | `~/clawd/persona-matrix.md` |
+| Governing Personas | Per-department persona matching guide | `~/clawd/departments/[dept]/governing-personas.md` |
+| Interview Answers | Permanent record of workforce interview | `~/Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md` |
+| Interview Handoff | Progress tracker for resume capability | `~/Downloads/openclaw-master-files/company-discovery/interview-handoff.md` |
+
+### How the Wiki Is Used
+
+- **Department pages** are created with frontmatter for structured queries (id, emoji, head title, KPIs)
+- **Persona pages** include provenance (book source, author, category tags) for 5-layer alignment scoring
+- **Interview data** is stored in the wiki for durability and cross-referencing
+- **Daily session logs** in `memory/` are wiki-compatible markdown for Obsidian integration
+
+### Wiki Maintenance
+
+The workforce structure auto-updates the wiki:
+- Adding a department → creates department page + updates org chart
+- Assigning a persona → updates persona-matrix.md with runtime usage
+- Completing interview → writes to interview answers page
+- Daily operations → logs to dated pages in `memory/` folder
+
+For full wiki capabilities, see Skill 31 (Upgraded Memory System).
+
+---
+<!-- BREADCRUMB: skill-23-mac | 2026-04-12 | Memory Surgery Phase 2 Wave A -->
+<!-- SKILL.md updated: Added Memory Wiki Integration section, updated Interview Persistence Protocol with layer references -->

@@ -1,3 +1,23 @@
+## [2026-04-12] - Memory Architecture Migration v2.0
+
+### Changed
+- Skill 31: Upgraded from 5-layer to 8-layer memory architecture
+- Skill 31: Replaced Mem0 (openclaw-mem0) with memory-core as active memory slot
+- Skill 31: Added Layer 6 (Cognee), Layer 7 (Memory Wiki), Layer 8 (Active Memory)
+- Skill 22: Added Memory Wiki integration for persona blueprint governance
+- Skill 23: Added wiki compilation step to Interview Persistence Protocol
+- Skill 32: Updated prerequisites, added wiki query capability
+- All skills: Updated for memory-core compatibility
+- All skills: Fixed Universal Path Rule violations (~/clawd/ → standard paths)
+
+### Added
+- Skill 31: MIGRATION-FROM-MEM0.md for existing Mem0 users
+- Skill 31: Obsidian check and wiki renderMode selection
+- Memory Surgery Playbook v3.5 implementation
+
+### Removed
+- All skills: Removed all references to openclaw-mem0 / Mem0 (except migration guides)
+
 ## v6.5.26 - April 3, 2026
 
 ### Merged

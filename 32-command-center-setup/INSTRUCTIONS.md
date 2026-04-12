@@ -337,3 +337,6 @@ If something is not working:
 4. Check that the dashboard is running: `pm2 list`
 
 Your Command Center is designed to be self-managing. Once set up, it should run smoothly with minimal intervention.
+
+---
+<!-- BREADCRUMB: skill-32-mac | 2026-04-12 | v6.5.7 | INSTRUCTIONS.md verified | Memory Surgery Playbook v3.5 -->

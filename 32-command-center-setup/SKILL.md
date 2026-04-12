@@ -21,7 +21,16 @@ Use this skill when:
 |--------------|----------|----------------|
 | Skill 23: AI Workforce Blueprint | MANDATORY | This skill builds on the department structure created in Skill 23. Without it, there are no departments to activate. |
 | Skill 22: Book-to-Persona | Recommended | Department heads use personas from your coaching system. Without them, heads will be generic. |
-| Skill 31: Upgraded Memory System | Recommended | Department heads need the 5-layer memory system for persistent operation. |
+| Skill 31: Upgraded Memory System | Recommended | Department heads need the 8-layer memory system for persistent operation. |
+| Memory Wiki | Recommended | Department heads use wiki_search and wiki_get for structured knowledge retrieval across coaching theories and SOPs. |
+
+### Active Memory Note
+This skill requires an active memory system. Department agents maintain persistent state using:
+- **Session Memory**: Conversation context within each department topic
+- **Semantic Memory**: memory-core for long-term fact retrieval
+- **Structured Memory**: Memory Wiki for coaching theories and SOPs
+
+Before activating, verify memory is working: `openclaw memory status`
 
 ## What Gets Created
 
@@ -124,3 +133,6 @@ For issues or questions about the Command Center Setup, refer to:
 - INSTRUCTIONS.md for usage guidance
 - CORE_UPDATES.md for configuration details
 - The main OpenClaw documentation at https://docs.openclaw.ai
+
+---
+<!-- BREADCRUMB: skill-32-mac | 2026-04-12 | v6.5.7 | SKILL.md updated with wiki capability and Active Memory note | Memory Surgery Playbook v3.5 -->

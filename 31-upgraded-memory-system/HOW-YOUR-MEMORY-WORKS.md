@@ -1,6 +1,6 @@
 # How Your AI Memory System Works
 
-Your AI assistant has a 5-layer memory system. Each layer solves a different problem. They all work together automatically. Here is what each one does and why it matters.
+Your AI assistant has an 8-layer memory system. Each layer solves a different problem. They all work together automatically. Here is what each one does and why it matters.
 
 ---
 
@@ -56,19 +56,51 @@ It works with markdown documents, images, and audio files.
 
 ---
 
-## Layer 5: Automatic Memory
+## Layer 5: Automatic Memory (memory-core)
 
 Your assistant automatically notices and remembers important information during conversations. It does not wait for you to say "remember this." It captures things like preferences, decisions, and facts on its own.
 
 When you start a new conversation, it automatically recalls relevant memories before responding. You do not need to remind it.
 
+This layer uses OpenClaw's native memory-core system, which replaced the legacy memory plugin.
+
 **Why it matters:** Without this, you would have to repeat yourself every time you start a new conversation.
+
+---
+
+## Layer 6: Graph Knowledge (Cognee)
+
+Cognee creates a graph database of relationships between facts, people, projects, and concepts. Instead of just finding documents, it can answer complex questions like "What projects is Sarah working on that involve marketing budgets?"
+
+It connects the dots between separate pieces of information that might never appear in the same document.
+
+**Why it matters:** Simple search finds documents. Graph knowledge finds answers that span multiple documents and relationships.
+
+---
+
+## Layer 7: Obsidian Vault (Structured Notes)
+
+Your assistant maintains an Obsidian-compatible vault with structured notes, wikilinks between related concepts, and frontmatter metadata. This makes it easy to browse and explore your knowledge base visually.
+
+Daily notes capture what happened each day. Topic notes organize information by subject. Wikilinks connect related ideas.
+
+**Why it matters:** A well-organized vault makes your knowledge browseable and discoverable, not just searchable.
+
+---
+
+## Layer 8: Wiki System (Collaborative Docs)
+
+The wiki system provides deterministic pages with managed blocks and source-backed updates. Unlike free-form notes, wiki pages follow a structure that ensures consistency and enables collaboration.
+
+Changes are tracked, sources are cited, and updates follow a predictable pattern. This is ideal for documentation that multiple people (or agents) might edit.
+
+**Why it matters:** Structured documentation with provenance tracking ensures information stays accurate and attributable.
 
 ---
 
 ## How They Work Together
 
-Here is an example of all 5 layers working at once:
+Here is an example of all 8 layers working at once:
 
 You ask your assistant: "What did we decide about the marketing budget last week?"
 
@@ -77,6 +109,9 @@ You ask your assistant: "What did we decide about the marketing budget last week
 3. **Layer 3** searches through last week's actual conversation transcript
 4. **Layer 4** uses intelligent search to find related notes across all your files
 5. **Layer 5** automatically recalled relevant memories before you even finished typing
+6. **Layer 6** (Cognee) checks if there are related projects, people, or budget connections
+7. **Layer 7** (Obsidian Vault) looks for any linked notes about marketing or budgets
+8. **Layer 8** (Wiki System) checks for any formal documentation about budget decisions
 
 Your assistant combines all of this to give you a complete, accurate answer.
 

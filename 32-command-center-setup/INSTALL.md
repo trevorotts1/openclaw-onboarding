@@ -199,6 +199,29 @@ For each department, the agent adds an entry to `agents.list[]`:
 }
 ```
 
+### 4.2b Wiki Context Injection
+Each department agent is configured to use the Memory Wiki for structured knowledge retrieval:
+
+```json
+{
+  "wiki": {
+    "enabled": true,
+    "autoSearch": true,
+    "contextInjection": {
+      "onStartup": true,
+      "onTaskSwitch": true,
+      "maxResults": 5
+    }
+  }
+}
+```
+
+This enables department heads to:
+- Search coaching theories via `wiki_search`
+- Retrieve SOPs and playbooks via `wiki_get`
+- Access persona blueprints from the Book-to-Persona system
+- Maintain consistent methodology across all department work
+
 **Important notes:**
 - Agent ID format: `dept-[dept-name]` (matches Skill 23's agent ID format)
 - Workspace paths are absolute (not tilde paths)
@@ -483,7 +506,7 @@ openclaw memory status dept-marketing
 
 **Expected result:** Status shows memory system active for the department agent.
 
-**Important requirement:** The Command Center must use the free self-hosted Mem0 / GitHub version, not a paid hosted account path. The agent must confirm the memory layer is running in the free OSS path and must fail the install if memory falls back to an inactive billed account.
+**Important requirement:** The Command Center must use the built-in memory-core backend (free, local storage), not an external hosted memory service. The agent must confirm the memory layer is running with `"backend": "builtin"` and must fail the install if memory falls back to an external hosted service.
 
 ### 7.3 Verify the 5-Layer Memory Setup
 The agent verifies that each department workspace has the required memory architecture:
@@ -491,7 +514,7 @@ The agent verifies that each department workspace has the required memory archit
 1. Memory Flush
 2. Session indexing
 3. Google Embedding 2 or equivalent local retrieval layer
-4. Mem0 semantic memory in free self-hosted mode
+4. memory-core semantic memory (built-in backend, no external dependencies)
 5. Cognee / graph layer when enabled for the workspace
 
 **Expected result:** Each department workspace is isolated and ready to store its own memory without mixing with Trevor's private memory or another client's workspace.
@@ -625,7 +648,7 @@ After all phases are complete, verify:
 - [ ] Cloudflare tunnel created and running
 - [ ] DNS route registered for [clientName].zerohumanworkforce.com
 - [ ] Hostname follows Option C pattern: [company-slug]-[shortid]
-- [ ] Free self-hosted Mem0 path verified (not hosted billed mode)
+- [ ] memory-core backend verified (builtin, not external hosted service)
 - [ ] 5-layer memory setup verified per department workspace
 - [ ] Live URL accessible from the internet
 - [ ] Test message received response from correct department head
@@ -642,3 +665,6 @@ After all phases are complete, verify:
 4. **Schedule your first standup** with your department heads
 
 Your AI workforce is now live and ready to work.
+
+---
+<!-- BREADCRUMB: skill-32-mac | 2026-04-12 | v6.5.7 | INSTALL.md updated with wiki context injection | Memory Surgery Playbook v3.5 -->

@@ -8,11 +8,11 @@ This is the combined reference document for Skill 31. It contains all documentat
 
 # === SKILL.md ===
 
-# Skill 31: Upgraded Memory System (5-Layer Architecture)
+# Skill 31: Upgraded Memory System (8-Layer Architecture)
 
 ## What This Skill Is About
 
-This skill upgrades your OpenClaw agent from the default memory system to a 5-layer architecture that makes your agent genuinely remember everything, find information accurately, and improve over time. The default memory system works okay at first but degrades as memory grows. This fixes that.
+This skill upgrades your OpenClaw agent from the default memory system to an 8-layer architecture that makes your agent genuinely remember everything, find information accurately, and improve over time. The default memory system works okay at first but degrades as memory grows. This fixes that.
 
 ## When to Use This Skill
 
@@ -23,7 +23,7 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 - You want your agent to automatically capture and recall memory without being told
 - You are migrating from the old Google Embedding 2 retrieval query system to Google Gemini Embedding 2
 
-## The 5 Layers
+## The 8 Layers
 
 | Layer | What It Does | How It Works |
 |-------|-------------|--------------|
@@ -31,12 +31,15 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 | 2. Memory flush | Saves important context before compaction | Custom prompt with 8 categories tells the agent exactly what to capture |
 | 3. Session indexing | Makes past conversations searchable | Agent can search what you talked about last week, not just today |
 | 4. Gemini Embedding 2 | Finds information by meaning | Google's multimodal embedding API replaces the old local search |
-| 5. Mem0 | Auto-captures and auto-recalls memory | Memory lives outside the context window, survives compaction |
+| 5. memory-core | Auto-captures and auto-recalls memory | Native OpenClaw memory system - survives compaction, no external dependencies |
+| 6. Cognee | Graph-based knowledge relationships | Connects facts, people, projects in a graph database for complex queries |
+| 7. Obsidian Vault | Structured knowledge base | Obsidian-compatible markdown with wikilinks, frontmatter, and daily notes |
+| 8. Wiki System | Collaborative documentation | Memory wiki with deterministic pages, managed blocks, and source-backed updates |
 
 ## Files in This Folder and Reading Order
 
 1. **SKILL.md** - You are here. Overview and context.
-2. **INSTALL.md** - Step-by-step installation for all 5 layers.
+2. **INSTALL.md** - Step-by-step installation for all 8 layers.
 3. **INSTRUCTIONS.md** - How to use and maintain the memory system after installation.
 4. **EXAMPLES.md** - Example searches, flush outputs, and memory operations.
 5. **CORE_UPDATES.md** - Exact additions for AGENTS.md, TOOLS.md, MEMORY.md, and HEARTBEAT.md.
@@ -61,13 +64,14 @@ This skill upgrades your OpenClaw agent from the default memory system to a 5-la
 
 ## Key Things the AI Agent Must Know
 
-1. All 5 layers run simultaneously. They do not compete. Each solves a different problem.
+1. All 8 layers run simultaneously. They do not compete. Each solves a different problem.
 2. Layer 4 (Gemini Embedding 2) replaces the old Google Embedding 2 retrieval query engine. Google Embedding 2 is deprecated.
-3. Layer 5 (Mem0) installs as an OpenClaw plugin. It occupies the memory plugin slot.
+3. Layer 5 (memory-core) is the native OpenClaw memory system. It replaces the legacy memory plugin.
+4. Layers 6-8 (Cognee, Obsidian Vault, Wiki System) are advanced add-ons that extend memory capabilities.
 4. The memory flush prompt must include explicit categories or it saves junk.
 5. Session indexing adds noise, so the flush prompt is even more important as a filter.
 6. If migrating from Google Embedding 2: run the migration steps in INSTALL.md before enabling Layer 4.
-7. Do NOT install Cognee (Layer 6) as part of this skill. That is a separate advanced add-on requiring Docker.
+7. Cognee (Layer 6) requires Docker. Install only if you need graph-based knowledge relationships.
 
 ---
 
@@ -424,72 +428,175 @@ Replace the `extraPaths` value with the actual path found on the user's machine.
 
 ---
 
-## Layer 5: Mem0 (Auto-Capture and Auto-Recall)
+## Layer 5: memory-core (Native Memory System)
 
-### 5.1 Install the Mem0 plugin
+Layer 5 uses OpenClaw's built-in memory-core instead of the legacy memory plugin.
 
-```bash
-openclaw plugins install @mem0/openclaw-mem0
-```
+### 5.1 Verify memory-core is enabled
 
-### 5.2 Set the memory slot
-
-In `~/.openclaw/openclaw.json`, set:
+In `~/.openclaw/openclaw.json`, verify the memory backend:
 
 ```json
-"plugins": {
-  "slots": {
-    "memory": "openclaw-mem0"
-  }
+"memory": {
+  "backend": "builtin"
 }
 ```
 
-### 5.3 Configure Mem0
+### 5.2 Configure auto-capture
 
-In the plugins.entries section:
+In `~/.openclaw/openclaw.json`, under `agents.defaults`, add:
 
 ```json
-"openclaw-mem0": {
+"memory": {
+  "autoCapture": true,
+  "autoRecall": true
+}
+```
+
+### 5.3 Verify memory-core status
+
+```bash
+openclaw memory status
+```
+
+Expected output should show:
+- Backend: builtin
+- Provider: gemini
+- Auto-capture: enabled
+- Auto-recall: enabled
+
+---
+
+## Layer 6: Cognee (Graph-Based Knowledge)
+
+**Requires Docker. Skip if Docker is not available.**
+
+### 6.1 Check Docker availability
+
+```bash
+docker --version
+```
+
+If Docker is not installed, Layer 6 will be marked as PENDING.
+
+### 6.2 Install Cognee
+
+```bash
+openclaw plugins install @openclaw/cognee
+```
+
+### 6.3 Configure Cognee
+
+In `~/.openclaw/openclaw.json`, under `plugins.entries`:
+
+```json
+"cognee": {
   "enabled": true,
   "config": {
-    "mode": "open-source",
-    "userId": "[USERNAME]",
-    "oss": {
-      "llm": {
-        "provider": "gemini",
-        "config": {
-          "apiKey": "${GEMINI_API_KEY}",
-          "model": "gemini-3-flash-preview"
-        }
-      },
-      "embedder": {
-        "provider": "gemini",
-        "config": {
-          "apiKey": "${GEMINI_API_KEY}",
-          "model": "models/gemini-embedding-001"
-        }
-      }
-    }
+    "connection_string": "sqlite:///data/cognee.db",
+    "llm_provider": "gemini",
+    "llm_model": "gemini-3-flash-preview"
   }
 }
 ```
 
-Replace [USERNAME] with the user's Telegram username or preferred identifier.
-
-**Important technical notes:**
-- The `llm` and `embedder` blocks must be nested inside `config.oss`, NOT directly under `config`
-- The embedder model requires the "models/" prefix (e.g., "models/gemini-embedding-001")
-- The LLM model does NOT use the "models/" prefix (e.g., "gemini-3-flash-preview")
-- The same GEMINI_API_KEY is used for both LLM and embedder
-- If you previously used OpenAI for Mem0, existing vectors may be incompatible after switching to Gemini embedder and may require a vector store reset/rebuild
-
-### 5.4 Verify Mem0 is loaded
+### 6.4 Start Cognee container
 
 ```bash
-openclaw plugins list | grep -i "mem0"
+openclaw cognee start
 ```
 
-Expected output should show Mem0 as "loaded" with autoRecall and autoCapture both true.
+### 6.5 Verify Cognee is running
+
+```bash
+openclaw cognee status
+```
+
+Expected: Status shows "connected" with graph statistics.
+
+---
+
+## Layer 7: Obsidian Vault (Structured Knowledge Base)
+
+### 7.1 Check if Obsidian is installed (Mac)
+
+```bash
+ls /Applications/Obsidian.app
+```
+
+If Obsidian is not installed, you can download it from https://obsidian.md
+
+### 7.2 Create or identify vault location
+
+Default vault location:
+```bash
+mkdir -p ~/Documents/ObsidianVault
+```
+
+Or use an existing vault:
+```bash
+ls ~/Documents/ | grep -i obsidian
+```
+
+### 7.3 Configure Obsidian integration
+
+In `~/.openclaw/openclaw.json`, add:
+
+```json
+"obsidian": {
+  "enabled": true,
+  "vaultPath": "/Users/USERNAME/Documents/ObsidianVault",
+  "dailyNotes": true,
+  "wikilinks": true
+}
+```
+
+Replace USERNAME with your actual username.
+
+### 7.4 Verify vault access
+
+```bash
+openclaw obsidian status
+```
+
+Expected: Shows vault path, note count, and daily notes status.
+
+---
+
+## Layer 8: Wiki System (Collaborative Documentation)
+
+### 8.1 Enable wiki system
+
+In `~/.openclaw/openclaw.json`, add:
+
+```json
+"wiki": {
+  "enabled": true,
+  "vaultPath": "/Users/USERNAME/.openclaw/wiki",
+  "backend": "sqlite"
+}
+```
+
+### 8.2 Initialize wiki vault
+
+```bash
+openclaw wiki init
+```
+
+### 8.3 Configure wiki sync
+
+```bash
+openclaw wiki config set autoSync true
+openclaw wiki config set syncInterval 300
+```
+
+### 8.4 Verify wiki system
+
+```bash
+openclaw wiki status
+```
+
+Expected: Shows vault initialized, sync enabled, page count.
 
 ---
 
@@ -553,8 +660,8 @@ echo "Layer 3:" && grep "sessionMemory" ~/.openclaw/openclaw.json | xargs echo
 echo "Layer 4:" && grep '"backend"' ~/.openclaw/openclaw.json | head -1
 grep '"provider"' ~/.openclaw/openclaw.json | grep gemini | head -1
 
-# Layer 5: Mem0
-echo "Layer 5:" && openclaw plugins list 2>/dev/null | grep -i "mem0" || echo "Mem0 not detected"
+# Layer 5: memory-core
+echo "Layer 5:" && openclaw memory status 2>/dev/null | grep -E "Backend|autoCapture|autoRecall" || echo "memory-core not detected"
 ```
 
 **Send the results to the user in Telegram** in plain language:
@@ -564,7 +671,7 @@ echo "Layer 5:" && openclaw plugins list 2>/dev/null | grep -i "mem0" || echo "M
 > - Layer 2 (Memory flush): [CONFIGURED/NOT SET]
 > - Layer 3 (Session indexing): [ENABLED/DISABLED]
 > - Layer 4 (Gemini search): [READY/PENDING - needs API key]
-> - Layer 5 (Mem0): [LOADED/NOT LOADED]
+> - Layer 5 (memory-core): [ENABLED/NOT ENABLED]
 >
 > Config validation: [PASSED/FAILED]
 
@@ -572,7 +679,7 @@ echo "Layer 5:" && openclaw plugins list 2>/dev/null | grep -i "mem0" || echo "M
 
 After verification passes, send this message to the user in Telegram:
 
-> All 5 memory layers are configured. I need you to restart the gateway for the changes to take effect. Please type /restart when you are ready.
+> All 8 memory layers are configured. I need you to restart the gateway for the changes to take effect. Please type /restart when you are ready.
 
 Do NOT restart the gateway yourself. Wait for the user to do it.
 
@@ -728,19 +835,19 @@ If this returns nothing:
 
 Report: "Layer 4: Gemini search returned [X] results. Search is operational." or "Layer 4: Search returned no results. [diagnosis]."
 
-#### Test Layer 5: Mem0
+#### Test Layer 5: memory-core
 
 ```bash
-openclaw status 2>&1 | grep -i 'mem0'
+openclaw status 2>&1 | grep -i 'memory-core'
 ```
 
-Expected: shows openclaw-mem0 registered with autoRecall: true, autoCapture: true.
+Expected: shows memory-core registered with autoRecall: true, autoCapture: true.
 
-Report: "Layer 5: Mem0 loaded. Auto-capture: [on/off]. Auto-recall: [on/off]."
+Report: "Layer 5: memory-core enabled. Auto-capture: [on/off]. Auto-recall: [on/off]."
 
 #### Final Report to User in Telegram
 
-After testing ALL 5 layers, send ONE comprehensive message:
+After testing ALL 8 layers, send ONE comprehensive message:
 
 > Memory system test results:
 >
@@ -748,9 +855,9 @@ After testing ALL 5 layers, send ONE comprehensive message:
 > Layer 2 (Memory flush): [PASS/FAIL] - Category-based capture prompt configured
 > Layer 3 (Session indexing): [PASS/FAIL] - [X] past sessions indexed
 > Layer 4 (Gemini search): [PASS/FAIL] - Search returned [X] results from [Y] indexed files
-> Layer 5 (Mem0): [PASS/FAIL] - Auto-capture [on/off], auto-recall [on/off]
+> Layer 5 (memory-core): [PASS/FAIL] - Auto-capture [on/off], auto-recall [on/off]
 >
-> Overall: [X]/5 layers operational.
+> Overall: [X]/8 layers operational.
 > [If all pass]: Your upgraded memory system is fully installed and working.
 > [If any fail]: [Specific layer] needs attention: [what to fix].
 
@@ -772,12 +879,12 @@ If any layer test fails after the config changes and restart:
 3. Report to the user what failed and what was rolled back
 4. Do NOT attempt to re-apply the changes until the root cause is diagnosed
 
-#### Layer 5 failure (Mem0 not loading)
+#### Layer 5 failure (memory-core not enabled)
 
-1. Check if the plugin is installed: `openclaw plugins list`
-2. If missing, reinstall: `openclaw plugins install @mem0/openclaw-mem0`
-3. Verify the memory slot is set correctly in openclaw.json
-4. Ask the user to type /restart
+1. Check memory backend config: `openclaw memory status`
+2. Verify openclaw.json has `"memory": { "backend": "builtin" }`
+3. If config is wrong, correct it and ask the user to type /restart
+4. memory-core is built-in; no plugin installation needed
 
 #### Config validation failure (openclaw config validate says invalid)
 
@@ -840,7 +947,7 @@ CONFIGURATION
 [ ] Layer 4: memorySearch.provider set to "gemini" (or PENDING if no API key)
 [ ] Layer 4: extraPaths configured with master files folder path
 [ ] Layer 4: multimodal.enabled = true, modalities = ["all"]
-[ ] Layer 5: Mem0 plugin installed and loaded
+[ ] Layer 5: memory-core enabled with autoCapture and autoRecall
 [ ] Layer 5: autoCapture and autoRecall both true
 [ ] Config validated with openclaw config validate - MUST PASS
 
@@ -859,7 +966,7 @@ LIVE TESTING (must run real queries, not just config checks)
 [ ] Layer 2 tested: Flush prompt config verified
 [ ] Layer 3 tested: Session indexing shows past sessions
 [ ] Layer 4 tested: openclaw memory search returned real results
-[ ] Layer 5 tested: Mem0 shows registered with autoCapture + autoRecall on
+[ ] Layer 5 tested: memory-core shows autoCapture + autoRecall on
 
 REPORTING
 [ ] All layer test results reported to user in Telegram
@@ -878,16 +985,16 @@ CLIENT EDUCATION
 
 # Upgraded Memory System - Usage Instructions
 
-## How the 5 Layers Work Together
+## How the 8 Layers Work Together
 
-Every time you interact with your agent, all 5 layers are active:
+Every time you interact with your agent, all 8 layers are active:
 
 1. **You say something.** The agent receives your message.
-2. **Layer 5 (Mem0) auto-recalls** relevant memories before the agent responds.
+2. **Layer 5 (memory-core) auto-recalls** relevant memories before the agent responds.
 3. **Layer 3 (Session indexing)** lets the agent search past conversations if needed.
 4. **Layer 4 (Gemini search)** finds relevant content from your memory files by meaning.
 5. **The agent responds** using all that context.
-6. **Layer 5 (Mem0) auto-captures** important facts from the conversation.
+6. **Layer 5 (memory-core) auto-captures** important facts from the conversation.
 7. **When context gets full, Layer 2 (flush)** saves important information to daily logs before compaction clears the context window.
 8. **Layer 1 (markdown files)** stores everything permanently on disk.
 
@@ -967,11 +1074,11 @@ The agent searches memory and finds:
 
 The agent synthesizes all three sources into one answer.
 
-## Example: Mem0 Auto-Capture
+## Example: memory-core Auto-Capture
 
 During a conversation, you mention: "My sister Lykisha's number changed to 240-555-1234."
 
-You did not tell the agent to remember this. But Mem0 auto-captured it. Next week when you say "Text my sister," the agent already knows the new number.
+You did not tell the agent to remember this. But memory-core auto-captured it. Next week when you say "Text my sister," the agent already knows the new number.
 
 ## Example: Session Indexing
 
@@ -1009,12 +1116,12 @@ Follow TYP rules: append only, never overwrite existing content.
 ## Add to MEMORY.md
 
 ```markdown
-## Upgraded Memory System (5 Layers) - Installed [DATE]
+## Upgraded Memory System (8 Layers) - Installed [DATE]
 - Layer 1: Markdown files (MEMORY.md + daily logs) - Active
 - Layer 2: Memory flush (8-category capture) - Active
 - Layer 3: Session indexing - Active
 - Layer 4: Gemini Embedding 2 search - Active / PENDING
-- Layer 5: Mem0 auto-capture + auto-recall - Active
+- Layer 5: memory-core auto-capture + auto-recall - Active
 - Maintenance: trim MEMORY.md at 1500 lines. Prune daily logs older than 90 days.
 ```
 
@@ -1024,10 +1131,10 @@ Follow TYP rules: append only, never overwrite existing content.
 
 ```markdown
 ## Memory System Rules
-- 5 memory layers are active. Do not disable any without explicit permission.
+- 8 memory layers are active. Do not disable any without explicit permission.
 - Memory flush captures: people, credentials, project status, decisions, preferences, errors, finances, deadlines.
 - MEMORY.md is the long-term source of truth. Daily logs are session-specific.
-- Do not rely on manual memory saves alone. Mem0 handles auto-capture.
+- Do not rely on manual memory saves alone. memory-core handles auto-capture.
 - If MEMORY.md exceeds 1500 lines, consolidate and trim old entries.
 ```
 
@@ -1044,7 +1151,7 @@ Follow TYP rules: append only, never overwrite existing content.
 - extraPaths: points to master files folder (indexes all subfolders and files)
 - Multimodal: enabled for all modalities (text, images, audio, video)
 - Hybrid search: 75% vector / 25% text
-- Mem0 plugin: openclaw-mem0 (auto-capture on, auto-recall on)
+- memory-core: builtin backend (auto-capture on, auto-recall on)
   - LLM provider: gemini (model: gemini-3-flash-preview)
   - Embedder provider: gemini (model: models/gemini-embedding-001)
   - Requires: GEMINI_API_KEY
@@ -1074,7 +1181,7 @@ Follow TYP rules: append only, never overwrite existing content.
 
 # How Your AI Memory System Works
 
-Your AI assistant has a 5-layer memory system. Each layer solves a different problem. They all work together automatically. Here is what each one does and why it matters.
+Your AI assistant has an 8-layer memory system. Each layer solves a different problem. They all work together automatically. Here is what each one does and why it matters.
 
 ---
 
@@ -1130,19 +1237,51 @@ It works with markdown documents, images, and audio files.
 
 ---
 
-## Layer 5: Automatic Memory
+## Layer 5: Automatic Memory (memory-core)
 
 Your assistant automatically notices and remembers important information during conversations. It does not wait for you to say "remember this." It captures things like preferences, decisions, and facts on its own.
 
 When you start a new conversation, it automatically recalls relevant memories before responding. You do not need to remind it.
 
+This layer uses OpenClaw's native memory-core system, which replaced the legacy memory plugin.
+
 **Why it matters:** Without this, you would have to repeat yourself every time you start a new conversation.
+
+---
+
+## Layer 6: Graph Knowledge (Cognee)
+
+Cognee creates a graph database of relationships between facts, people, projects, and concepts. Instead of just finding documents, it can answer complex questions like "What projects is Sarah working on that involve marketing budgets?"
+
+It connects the dots between separate pieces of information that might never appear in the same document.
+
+**Why it matters:** Simple search finds documents. Graph knowledge finds answers that span multiple documents and relationships.
+
+---
+
+## Layer 7: Obsidian Vault (Structured Notes)
+
+Your assistant maintains an Obsidian-compatible vault with structured notes, wikilinks between related concepts, and frontmatter metadata. This makes it easy to browse and explore your knowledge base visually.
+
+Daily notes capture what happened each day. Topic notes organize information by subject. Wikilinks connect related ideas.
+
+**Why it matters:** A well-organized vault makes your knowledge browseable and discoverable, not just searchable.
+
+---
+
+## Layer 8: Wiki System (Collaborative Docs)
+
+The wiki system provides deterministic pages with managed blocks and source-backed updates. Unlike free-form notes, wiki pages follow a structure that ensures consistency and enables collaboration.
+
+Changes are tracked, sources are cited, and updates follow a predictable pattern. This is ideal for documentation that multiple people (or agents) might edit.
+
+**Why it matters:** Structured documentation with provenance tracking ensures information stays accurate and attributable.
 
 ---
 
 ## How They Work Together
 
-Here is an example of all 5 layers working at once:
+Here is an example of all 8 layers working at once:
 
 You ask your assistant: "What did we decide about the marketing budget last week?"
 
@@ -1151,6 +1290,9 @@ You ask your assistant: "What did we decide about the marketing budget last week
 3. **Layer 3** searches through last week's actual conversation transcript
 4. **Layer 4** uses intelligent search to find related notes across all your files
 5. **Layer 5** automatically recalled relevant memories before you even finished typing
+6. **Layer 6** (Cognee) checks if there are related projects, people, or budget connections
+7. **Layer 7** (Obsidian Vault) looks for any linked notes about marketing or budgets
+8. **Layer 8** (Wiki System) checks for any formal documentation about budget decisions
 
 Your assistant combines all of this to give you a complete, accurate answer.
 

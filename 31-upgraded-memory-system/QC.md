@@ -1,6 +1,6 @@
 # QC Checklist — Skill 31: Upgraded Memory System
 
-Run this after installation to verify all five layers are in place and the memory stack is actually active.
+Run this after installation to verify all eight layers are in place and the memory stack is actually active.
 
 ---
 
@@ -44,7 +44,7 @@ echo "GOOGLE_API_KEY length: ${#GOOGLE_API_KEY}"
 
 ---
 
-## Section 3: Five-Layer Wiring Checks
+## Section 3: Eight-Layer Wiring Checks
 
 ### Layer 1: Markdown memory files
 
@@ -97,19 +97,46 @@ PY
 ```
 
 **Expected:**
-- `memory.backend` = `gemini`
+- `memory.backend` = `builtin`
 - `memorySearch.provider` = `gemini`
 - model = `models/gemini-embedding-2-preview`
 
-### Layer 5: Mem0 plugin installed and loaded
+### Layer 5: memory-core enabled
 
 ```bash
-openclaw plugins list 2>/dev/null | grep -i mem0 \
-  && echo "PASS: Mem0 plugin listed" \
-  || echo "FAIL: Mem0 plugin not detected"
+openclaw memory status 2>/dev/null | grep -E "Backend.*builtin" \
+  && echo "PASS: memory-core (builtin backend) active" \
+  || echo "FAIL: memory-core not detected"
 ```
 
-**Pass criteria:** Layers 1, 2, 3, and 5 pass. Layer 4 passes if API key is available, or is explicitly marked pending if not.
+### Layer 6: Cognee graph memory (optional)
+
+```bash
+openclaw cognee status 2>/dev/null | grep -i "connected" \
+  && echo "PASS: Cognee connected" \
+  || echo "INFO: Cognee not connected (optional layer)"
+```
+
+### Layer 7: Obsidian vault configured
+
+```bash
+ls /Applications/Obsidian.app 2>/dev/null \
+  && echo "PASS: Obsidian app installed" \
+  || echo "INFO: Obsidian not installed (Mac only)"
+openclaw obsidian status 2>/dev/null | grep -i "vault" \
+  && echo "PASS: Obsidian vault configured" \
+  || echo "INFO: Obsidian vault not configured"
+```
+
+### Layer 8: Wiki system initialized
+
+```bash
+openclaw wiki status 2>/dev/null | grep -i "initialized" \
+  && echo "PASS: Wiki system initialized" \
+  || echo "INFO: Wiki system not initialized"
+```
+
+**Pass criteria:** Layers 1-5 and 7-8 pass (Layer 6 optional). Layer 4 passes if API key is available, or is explicitly marked pending if not.
 
 ---
 
@@ -134,7 +161,7 @@ echo "Daily memory files: $COUNT"
 ### 4.3 Memory plugin runtime visibility
 
 ```bash
-openclaw status 2>/dev/null | grep -i mem0 || echo "INFO: openclaw status did not print mem0"
+openclaw status 2>/dev/null | grep -i memory-core || echo "INFO: openclaw status did not print memory-core"
 ```
 
 ### 4.4 Search-path sanity
@@ -154,8 +181,8 @@ PY
 
 ## Section 5: Knowledge Verification
 
-**Q1.** What are the five layers?
-> **Expected:** markdown memory files, memoryFlush summaries, session memory search, Gemini embedding search, Mem0 plugin memory.
+**Q1.** What are the eight layers?
+> **Expected:** markdown memory files, memoryFlush summaries, session memory search, Gemini embedding search, memory-core auto-capture, Cognee graph knowledge, Obsidian vault, Wiki system.
 
 **Q2.** What env var powers Layer 4?
 > **Expected:** `GOOGLE_API_KEY`
@@ -163,8 +190,8 @@ PY
 **Q3.** What Python packages are required for Layer 4?
 > **Expected:** `google-genai` and `numpy`
 
-**Q4.** What plugin powers Layer 5?
-> **Expected:** `openclaw-mem0`
+**Q4.** What powers Layer 5?
+> **Expected:** `memory-core` (builtin backend, replaces the legacy memory plugin)
 
 **Q5.** What search model should be configured?
 > **Expected:** `models/gemini-embedding-2-preview`
@@ -177,10 +204,10 @@ PY
 
 Fail the skill if any of these happen:
 
-- `memory.backend` is left on old Google Embedding 2 or anything other than `gemini`
+- `memory.backend` is left on old Google Embedding 2 or anything other than `builtin`
 - `memorySearch.provider` does not match `gemini`
 - Layer 4 is claimed active without `GOOGLE_API_KEY`
-- Mem0 plugin is missing but the system is reported as fully installed
+- memory-core is not enabled but the system is reported as fully installed
 - `google-genai` / `numpy` are missing but Layer 4 is reported as working
 - session memory is disabled
 - memoryFlush is absent from config

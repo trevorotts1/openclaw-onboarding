@@ -4,9 +4,11 @@ description: >
   Converts any bestselling book PDF into a dual-purpose persona blueprint — one that coaches
   humans through personal and professional challenges AND governs AI agents executing professional
   work across departments. Runs a 3-phase pipeline: Kimi K2.5 extracts, DeepSeek V3.2 analyzes,
-  GPT-5.4 Codex synthesizes. Output is Gemini Engine-indexed for retrieval. Uses the
-  Teach Yourself Protocol before every run.
+  GPT-5.4 Codex synthesizes. Output is Gemini Engine-indexed for retrieval. Wiki-enabled for
+  unified knowledge access. Uses the Teach Yourself Protocol before every run.
 ---
+
+> **Wiki Note:** This skill is integrated with the OpenClaw Memory Wiki system. All persona blueprints are searchable via `wiki_search` and `wiki_get` for unified knowledge retrieval alongside other memory sources.
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
 
@@ -52,8 +54,8 @@ All dependencies must be installed and verified before running the pipeline.
 | mobi | MOBI file extraction | `pip3 install mobi` | `python3 -c "import mobi; print('PASS')"` |
 | lxml | XML parsing (ebooklib uses this) | `pip3 install lxml` | `python3 -c "import lxml; print('PASS')"` |
 | Calibre (ebook-convert) | Kindle format conversion | Mac: `brew install --cask calibre`<br>Linux: `sudo apt-get install calibre` | `ebook-convert --version` |
-| GOOGLE_API_KEY env var | Gemini Engine | Add to `~/clawd/secrets/.env` | `grep GOOGLE_API_KEY ~/clawd/secrets/.env` |
-| MOONSHOT_API_KEY or OpenRouter | Phase 1 extraction | Add to `~/clawd/secrets/.env` | `grep MOONSHOT_API_KEY ~/clawd/secrets/.env` |
+| GOOGLE_API_KEY env var | Gemini Engine | Add to `secrets/.env` (in your agent workspace) | `grep GOOGLE_API_KEY secrets/.env` |
+| MOONSHOT_API_KEY or OpenRouter | Phase 1 extraction | Add to `secrets/.env` (in your agent workspace) | `grep MOONSHOT_API_KEY secrets/.env` |
 
 **One-line install for all pip packages:**
 ```bash
@@ -199,3 +201,7 @@ Every persona is auto-tagged in `persona-categories.json` after generation:
 This file is the bridge: Skill 23 reads it to build department-specific persona pools.
 
 **Cross-reference path:** `~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PERSONA-ROUTER.md`
+
+---
+
+<!-- BREADCRUMB: memory-surgery/skill-22-mac | 2026-04-12 | v6.5.7 | Added wiki note, memory system verified -->

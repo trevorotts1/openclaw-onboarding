@@ -1,15 +1,15 @@
 # Upgraded Memory System - Usage Instructions
 
-## How the 5 Layers Work Together
+## How the 8 Layers Work Together
 
-Every time you interact with your agent, all 5 layers are active:
+Every time you interact with your agent, all 8 layers are active:
 
 1. **You say something.** The agent receives your message.
-2. **Layer 5 (Mem0) auto-recalls** relevant memories before the agent responds.
+2. **Layer 5 (memory-core) auto-recalls** relevant memories before the agent responds.
 3. **Layer 3 (Session indexing)** lets the agent search past conversations if needed.
 4. **Layer 4 (Gemini search)** finds relevant content from your memory files by meaning.
 5. **The agent responds** using all that context.
-6. **Layer 5 (Mem0) auto-captures** important facts from the conversation.
+6. **Layer 5 (memory-core) auto-captures** important facts from the conversation.
 7. **When context gets full, Layer 2 (flush)** saves important information to daily logs before compaction clears the context window.
 8. **Layer 1 (markdown files)** stores everything permanently on disk.
 

@@ -36,7 +36,7 @@ User's explicit override is highest priority. Chain:
 
 ---
 
-# Upgraded Memory System - Installation
+# Upgraded Memory System - Installation (8-Layer)
 
 ## Prerequisite Check
 
@@ -210,11 +210,11 @@ Find the top-level `memory` section in openclaw.json and set:
 
 ```json
 "memory": {
-  "backend": "gemini"
+  "backend": "builtin"
 }
 ```
 
-**Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. Both must say "gemini". If the top-level still says "google embedding 2", the search will fail even if memorySearch says "gemini".
+**Important:** There may be TWO places where the backend is configured. The top-level `memory.backend` AND the `agents.defaults.memorySearch.provider`. The `memory.backend` should be "builtin" (for memory-core), and `memorySearch.provider` should be "gemini" (for embedding search). If the top-level still says "google embedding 2", the search will fail even if memorySearch says "gemini".
 
 ### 4.3 Configure search quality
 
@@ -235,49 +235,175 @@ In the `memorySearch` section, add:
 
 ---
 
-## Layer 5: Mem0 (Auto-Capture and Auto-Recall)
+## Layer 5: memory-core (Native Memory System)
 
-### 5.1 Install the Mem0 plugin
+Layer 5 uses OpenClaw's built-in memory-core instead of the legacy memory plugin.
 
-```bash
-openclaw plugins install @mem0/openclaw-mem0
-```
+### 5.1 Verify memory-core is enabled
 
-### 5.2 Set the memory slot
-
-In `~/.openclaw/openclaw.json`, set:
+In `~/.openclaw/openclaw.json`, verify the memory backend:
 
 ```json
-"plugins": {
-  "slots": {
-    "memory": "openclaw-mem0"
-  }
+"memory": {
+  "backend": "builtin"
 }
 ```
 
-### 5.3 Configure Mem0
+### 5.2 Configure auto-capture
 
-In the plugins.entries section:
+In `~/.openclaw/openclaw.json`, under `agents.defaults`, add:
 
 ```json
-"openclaw-mem0": {
+"memory": {
+  "autoCapture": true,
+  "autoRecall": true
+}
+```
+
+### 5.3 Verify memory-core status
+
+```bash
+openclaw memory status
+```
+
+Expected output should show:
+- Backend: builtin
+- Provider: gemini
+- Auto-capture: enabled
+- Auto-recall: enabled
+
+---
+
+## Layer 6: Cognee (Graph-Based Knowledge)
+
+**Requires Docker. Skip if Docker is not available.**
+
+### 6.1 Check Docker availability
+
+```bash
+docker --version
+```
+
+If Docker is not installed, Layer 6 will be marked as PENDING.
+
+### 6.2 Install Cognee
+
+```bash
+openclaw plugins install @openclaw/cognee
+```
+
+### 6.3 Configure Cognee
+
+In `~/.openclaw/openclaw.json`, under `plugins.entries`:
+
+```json
+"cognee": {
   "enabled": true,
   "config": {
-    "mode": "open-source",
-    "userId": "[USERNAME]"
+    "connection_string": "sqlite:///data/cognee.db",
+    "llm_provider": "gemini",
+    "llm_model": "gemini-3-flash-preview"
   }
 }
 ```
 
-Replace [USERNAME] with the user's Telegram username or preferred identifier.
-
-### 5.4 Verify Mem0 is loaded
+### 6.4 Start Cognee container
 
 ```bash
-openclaw plugins list | grep -i "mem0"
+openclaw cognee start
 ```
 
-Expected output should show Mem0 as "loaded" with autoRecall and autoCapture both true.
+### 6.5 Verify Cognee is running
+
+```bash
+openclaw cognee status
+```
+
+Expected: Status shows "connected" with graph statistics.
+
+---
+
+## Layer 7: Obsidian Vault (Structured Knowledge Base)
+
+### 7.1 Check if Obsidian is installed (Mac)
+
+```bash
+ls /Applications/Obsidian.app
+```
+
+If Obsidian is not installed, you can download it from https://obsidian.md
+
+### 7.2 Create or identify vault location
+
+Default vault location:
+```bash
+mkdir -p ~/Documents/ObsidianVault
+```
+
+Or use an existing vault:
+```bash
+ls ~/Documents/ | grep -i obsidian
+```
+
+### 7.3 Configure Obsidian integration
+
+In `~/.openclaw/openclaw.json`, add:
+
+```json
+"obsidian": {
+  "enabled": true,
+  "vaultPath": "/Users/USERNAME/Documents/ObsidianVault",
+  "dailyNotes": true,
+  "wikilinks": true
+}
+```
+
+Replace USERNAME with your actual username.
+
+### 7.4 Verify vault access
+
+```bash
+openclaw obsidian status
+```
+
+Expected: Shows vault path, note count, and daily notes status.
+
+---
+
+## Layer 8: Wiki System (Collaborative Documentation)
+
+### 8.1 Enable wiki system
+
+In `~/.openclaw/openclaw.json`, add:
+
+```json
+"wiki": {
+  "enabled": true,
+  "vaultPath": "/Users/USERNAME/.openclaw/wiki",
+  "backend": "sqlite"
+}
+```
+
+### 8.2 Initialize wiki vault
+
+```bash
+openclaw wiki init
+```
+
+### 8.3 Configure wiki sync
+
+```bash
+openclaw wiki config set autoSync true
+openclaw wiki config set syncInterval 300
+```
+
+### 8.4 Verify wiki system
+
+```bash
+openclaw wiki status
+```
+
+Expected: Shows vault initialized, sync enabled, page count.
 
 ---
 
@@ -294,7 +420,7 @@ ls ~/.cache/google embedding 2/index.sqlite 2>/dev/null && echo "Google Embeddin
 
 ### M.2 If Google Embedding 2 is present, update the backend
 
-The config change in Layer 4 (Step 4.2) handles this. Verify `memory.backend` is "gemini", not "google embedding 2".
+The config change in Layer 4 (Step 4.2) handles this. Verify `memory.backend` is "builtin", not "google embedding 2".
 
 ### M.3 Clean up old Google Embedding 2 (optional)
 
@@ -326,8 +452,17 @@ grep "sessionMemory" ~/.openclaw/openclaw.json
 grep '"backend"' ~/.openclaw/openclaw.json
 grep '"provider"' ~/.openclaw/openclaw.json | grep gemini
 
-# Layer 5: Mem0 is loaded
-openclaw plugins list | grep -i "mem0"
+# Layer 5: memory-core is enabled
+openclaw memory status | grep -E "Backend|autoCapture|autoRecall"
+
+# Layer 6: Cognee is running (if Docker available)
+openclaw cognee status 2>/dev/null || echo "Cognee not running (may need Docker)"
+
+# Layer 7: Obsidian is installed (Mac)
+ls /Applications/Obsidian.app 2>/dev/null && echo "Obsidian installed" || echo "Obsidian not installed"
+
+# Layer 8: Wiki system is initialized
+openclaw wiki status 2>/dev/null || echo "Wiki not initialized"
 ```
 
 ### Gateway Restart
@@ -359,10 +494,12 @@ If results come back, all layers are working.
 [ ] Layer 1: memory/ directory exists with daily logs
 [ ] Layer 2: Flush prompt updated with 8 categories
 [ ] Layer 3: sessionMemory enabled
-[ ] Layer 4: memory.backend set to "gemini" (or PENDING if no API key)
+[ ] Layer 4: memory.backend set to "builtin" (or PENDING if no API key)
 [ ] Layer 4: memorySearch.provider set to "gemini" (or PENDING if no API key)
-[ ] Layer 5: Mem0 plugin installed and loaded
-[ ] Layer 5: autoCapture and autoRecall both true
+[ ] Layer 5: memory-core enabled with autoCapture and autoRecall
+[ ] Layer 6: Cognee installed and running (or PENDING if no Docker)
+[ ] Layer 7: Obsidian vault configured (app check: ls /Applications/Obsidian.app)
+[ ] Layer 8: Wiki system initialized and syncing
 [ ] Gateway restarted by user
 [ ] Memory search test returned results
 [ ] Core files updated (see CORE_UPDATES.md)

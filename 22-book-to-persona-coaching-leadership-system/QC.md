@@ -46,7 +46,7 @@ Confirm these specific folders exist inside the personas directory:
 - [ ] `pipeline-status.json` exists (may be empty `{}` on first install — that is acceptable)
 
 ### Secrets
-- [ ] `~/clawd/secrets/.env` exists
+- [ ] `secrets/.env` (in your agent workspace) exists
 - [ ] `GOOGLE_API_KEY` entry present in `.env` (Gemini indexing / retrieval)
 - [ ] `MOONSHOT_API_KEY` entry present in `.env` (Phase 1 extraction)
 - [ ] `OPENROUTER_API_KEY` entry present in `.env` (Phase 2 analysis)
