@@ -1,4 +1,4 @@
-## [2026-04-12] - Memory Architecture Migration v2.0
+## v6.5.31 - April 12, 2026 - Memory Architecture Migration v2.0
 
 ### Changed
 - Skill 31: Upgraded from 5-layer to 8-layer memory architecture
