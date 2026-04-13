@@ -605,20 +605,33 @@ log "Step 13: UPDATE PENDING Flag — Writing flag to AGENTS.md..."
 if [ -f "$AGENTS_FILE" ]; then
     # Check if flag already exists
     if ! grep -q "UPDATE PENDING" "$AGENTS_FILE" 2>/dev/null; then
-        cat >> "$AGENTS_FILE" << 'UPDATEFLAG'
+        # Use double quotes for variable expansion
+        cat >> "$AGENTS_FILE" << UPDATEFLAG
 
-## 🔴 UPDATE PENDING — RESTART REQUIRED
+## 🔴 UPDATE PENDING — PROCESS NOW
 
 An update has been applied to your BlackCEO system:
-- Version: $LOCAL_VERSION → $REMOTE_VERSION
+- Version: ${LOCAL_VERSION} → ${REMOTE_VERSION}
 - Completed: $(date '+%Y-%m-%d %H:%M:%S')
-- Backup: $BACKUP_DIR
+- Backup: ${BACKUP_DIR}
 
 **ACTION REQUIRED:**
-Restart your gateway for changes to take effect:
-\`openclaw gateway restart\`
 
-After restart, this flag will be cleared automatically.
+1. **Tell your AI agent:** "Process the update"
+
+2. **The agent will:**
+   - Read the Teach Yourself Protocol for any NEW skills (check skill-version.txt)
+   - Apply CORE_UPDATES.md entries to AGENTS.md, MEMORY.md, TOOLS.md surgically
+   - Run QC checks on each updated skill
+   - Remove this UPDATE PENDING block when complete
+
+3. **Add memory entry:**
+   "[$(date '+%Y-%m-%d')]: Updated to ${REMOTE_VERSION}. ${#SKILLS_UPDATED[@]} skills updated. All QC passed."
+
+SEND YOUR OWNER THIS MESSAGE IMMEDIATELY:
+"Your BlackCEO system has been updated to ${REMOTE_VERSION}. I am going to review all changes and set everything up. Would you like me to proceed?"
+
+WAIT for the owner to say yes before continuing.
 UPDATEFLAG
         success "UPDATE PENDING flag added to AGENTS.md"
     else

@@ -345,6 +345,15 @@ if [ -d "$ONBOARDING_DIR/skills" ]; then
   for skill_pkg in "$ONBOARDING_DIR/skills"/*; do
     if [ -d "$skill_pkg" ]; then
       skill_name=$(basename "$skill_pkg")
+      
+      # Skip archived skills
+      case "$skill_name" in
+        *ARCHIVED*)
+          echo "  Skipped (archived): $skill_name"
+          continue
+          ;;
+      esac
+      
       target_path="$SKILLS_DIR/$skill_name"
       
       # Check if skill already exists (for tracking)
@@ -354,9 +363,27 @@ if [ -d "$ONBOARDING_DIR/skills" ]; then
       fi
       
       mkdir -p "$target_path"
+      
       # Copy contents if source is not empty
+      # Skip core .md files - those are handled surgically by agent via CORE_UPDATES.md
       if [ "$(ls -A "$skill_pkg" 2>/dev/null)" ]; then
-        cp -r "$skill_pkg"/* "$target_path/" 2>/dev/null || true
+        for item in "$skill_pkg"/*; do
+          item_name=$(basename "$item")
+          
+          # Skip core .md files - agent handles these via CORE_UPDATES.md
+          case "$item_name" in
+            AGENTS.md|MEMORY.md|SOUL.md|USER.md|IDENTITY.md|HEARTBEAT.md|TOOLS.md)
+              echo "  Skipped core file (agent handles via CORE_UPDATES.md): $skill_name/$item_name"
+              continue
+              ;;
+          esac
+          
+          if [ -d "$item" ]; then
+            cp -r "$item" "$target_path/" 2>/dev/null || true
+          else
+            cp "$item" "$target_path/" 2>/dev/null || true
+          fi
+        done
         
         if [ $skill_exists -eq 1 ]; then
           SKILLS_UPDATED+=("$skill_name")
