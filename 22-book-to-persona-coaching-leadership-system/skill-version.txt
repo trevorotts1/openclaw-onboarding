@@ -1,3 +1,1 @@
 v6.5.7
-
-# BREADCRUMB: memory-surgery/skill-22-mac | 2026-04-12 | v6.5.7 | Minor bump for wiki integration

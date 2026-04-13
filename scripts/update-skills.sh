@@ -104,8 +104,8 @@ for SKILL_PATH in "$REPO_DIR"/[0-9]*/; do
 
  STAGED_V="unknown"
  LOCAL_V="none"
- [ -f "$SKILL_PATH/skill-version.txt" ] && STAGED_V=$(cat "$SKILL_PATH/skill-version.txt" | tr -d '[:space:]')
- [ -f "$SKILLS_DIR/$SNAME/skill-version.txt" ] && LOCAL_V=$(cat "$SKILLS_DIR/$SNAME/skill-version.txt" | tr -d '[:space:]')
+ [ -f "$SKILL_PATH/skill-version.txt" ] && STAGED_V=$(cat "$SKILL_PATH/skill-version.txt" | tr -d '[:space:]' | cut -d'#' -f1)
+ [ -f "$SKILLS_DIR/$SNAME/skill-version.txt" ] && LOCAL_V=$(cat "$SKILLS_DIR/$SNAME/skill-version.txt" | tr -d '[:space:]' | cut -d'#' -f1)
 
  # Handle old installs: folder exists but no version file = pre-v6
  if [ -d "$SKILLS_DIR/$SNAME" ]; then
@@ -194,6 +194,30 @@ for SNAME in $UPDATE_LIST $NEW_LIST; do
  done
  echo " Applied: $SNAME"
 done
+
+# ── STEP 8b: Migrate to canonical path if needed ──
+CANONICAL="$HOME/.openclaw/skills"
+if [ "$SKILLS_DIR" != "$CANONICAL" ]; then
+  echo ""
+  echo " Migrating skills to standard location..."
+  mkdir -p "$CANONICAL"
+  for SDIR in "$SKILLS_DIR"/[0-9]*/; do
+    [ -d "$SDIR" ] || continue
+    SNAME=$(basename "$SDIR")
+    if [ ! -d "$CANONICAL/$SNAME" ]; then
+      cp -r "$SDIR" "$CANONICAL/$SNAME"
+    fi
+  done
+  # Copy the version file too
+  if [ -f "$SKILLS_DIR/.onboarding-version" ]; then
+    cp "$SKILLS_DIR/.onboarding-version" "$CANONICAL/.onboarding-version" 2>/dev/null || true
+  fi
+  if [ -f "$SKILLS_DIR/../.onboarding-version" ]; then
+    cp "$SKILLS_DIR/../.onboarding-version" "$CANONICAL/../.onboarding-version" 2>/dev/null || true
+  fi
+  echo " Skills migrated to $CANONICAL"
+  SKILLS_DIR="$CANONICAL"
+fi
 
 # ── STEP 9: Update root files ──
 for RF in "Start Here.md" README.md CHANGELOG.md version; do
