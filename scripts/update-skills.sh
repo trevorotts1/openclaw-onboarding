@@ -12,7 +12,31 @@ REPO_URL="https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/
 REPO_FOLDER="openclaw-onboarding-main"
 BACKUP_BASE="$HOME/Downloads/openclaw-backups"
 
-SKILLS_DIR="$HOME/.openclaw/skills"
+# ── Discover where skills are actually installed ──
+# Old versions installed to different paths. Check all known locations.
+discover_skills_dir() {
+  CANDIDATES=(
+    "$HOME/.openclaw/skills"
+    "$HOME/Downloads/openclaw-master-files"
+    "$HOME/.openclaw/onboarding"
+    "$HOME/openclaw-onboarding"
+  )
+  
+  for DIR in "${CANDIDATES[@]}"; do
+    if [ -d "$DIR" ]; then
+      SKILL_COUNT=$(ls -d "$DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
+      if [ "$SKILL_COUNT" -gt "0" ]; then
+        echo "$DIR"
+        return
+      fi
+    fi
+  done
+  
+  echo "$HOME/.openclaw/skills"
+}
+
+SKILLS_DIR=$(discover_skills_dir)
+echo "Skills directory: $SKILLS_DIR"
 STAGE_DIR="/tmp/blackceo-update-$$"
 STAGE_ZIP="/tmp/blackceo-update-$$.zip"
 LOG_FILE="$SKILLS_DIR/.update-log"
@@ -83,16 +107,25 @@ for SKILL_PATH in "$REPO_DIR"/[0-9]*/; do
  [ -f "$SKILL_PATH/skill-version.txt" ] && STAGED_V=$(cat "$SKILL_PATH/skill-version.txt" | tr -d '[:space:]')
  [ -f "$SKILLS_DIR/$SNAME/skill-version.txt" ] && LOCAL_V=$(cat "$SKILLS_DIR/$SNAME/skill-version.txt" | tr -d '[:space:]')
 
- if [ "$LOCAL_V" = "$STAGED_V" ] && [ "$LOCAL_V" != "none" ]; then
- SKIP_COUNT=$((SKIP_COUNT + 1))
- elif [ "$LOCAL_V" = "none" ]; then
- echo " NEW: $SNAME ($STAGED_V)"
- NEW_LIST="$NEW_LIST $SNAME"
- NEW_COUNT=$((NEW_COUNT + 1))
+ # Handle old installs: folder exists but no version file = pre-v6
+ if [ -d "$SKILLS_DIR/$SNAME" ]; then
+   if [ "$LOCAL_V" = "none" ]; then
+     # Skill folder exists but no version file (old install)
+     LOCAL_V="pre-v6"
+     echo " UPDATE: $SNAME (pre-v6 -> $STAGED_V)"
+     UPDATE_LIST="$UPDATE_LIST $SNAME"
+     UPDATE_COUNT=$((UPDATE_COUNT + 1))
+   elif [ "$LOCAL_V" = "$STAGED_V" ]; then
+     SKIP_COUNT=$((SKIP_COUNT + 1))
+   else
+     echo " UPDATE: $SNAME ($LOCAL_V -> $STAGED_V)"
+     UPDATE_LIST="$UPDATE_LIST $SNAME"
+     UPDATE_COUNT=$((UPDATE_COUNT + 1))
+   fi
  else
- echo " UPDATE: $SNAME ($LOCAL_V -> $STAGED_V)"
- UPDATE_LIST="$UPDATE_LIST $SNAME"
- UPDATE_COUNT=$((UPDATE_COUNT + 1))
+   echo " NEW: $SNAME ($STAGED_V)"
+   NEW_LIST="$NEW_LIST $SNAME"
+   NEW_COUNT=$((NEW_COUNT + 1))
  fi
 done
 
@@ -124,7 +157,7 @@ echo " Ready to update: $LOCAL_VER -> $REMOTE_VER"
 echo " $NEW_COUNT new + $UPDATE_COUNT updates"
 echo "============================================"
 echo ""
-read -p " Type y to proceed: " CONFIRM
+read -p " Type y to proceed: " CONFIRM < /dev/tty
 if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
  echo " Update cancelled."
  rm -rf "$STAGE_DIR" "$STAGE_ZIP"
