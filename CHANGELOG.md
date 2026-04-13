@@ -1,3 +1,35 @@
+## v8.0.0 - April 12-13, 2026 - BlackCEO System Overhaul v3.3
+
+### Overview
+Major overhaul addressing 29 broken items across 6 workstreams (Personas, Workforce, Kanban, Performance, Deployment, Hygiene). All items verified via QC Pass 1 + Pass 2 with exact grep commands.
+
+### Changed
+- **Skill 22**: Replaced hardcoded PERSONA_DETAILS with runtime persona-categories.json loader; added category filtering, auto re-index, auto persona-categories.json update; added anti-staleness guards; added post-task persona verification; added Memory Wiki integration
+- **Skill 23**: Fixed determine_specialists() to populate actual roles; added create_role_workspace() with SOP stubs; added Devil's Advocate SOUL.md + SOP.md generation; added persona-matrix.md auto-generation; added deeper interview questions; added "I don't know" 6-step flow; added 1800s timeout override; added Memory Wiki integration
+- **Skill 32**: Updated tunnel documentation for token-in-response n8n webhook; all port references confirmed 4000; create-tunnel.sh created in Command Center
+- **Command Center**: Replaced hardcoded PERSONA_DETAILS with runtime loader; added grade-calculator.ts (40/30/15/15 formula); wired company-config.json; created DepartmentBrowser.tsx (sidebar + Kanban); created /ceo-board/[dept]/focus/ view; fixed task API department filtering; added Breadcrumb component to all pages; unified /workspace/ and /ceo-board/ route families; added "Business KPIs" / "Agent Performance" / "Proactive Intelligence" lens labels; replaced synthetic data with real API calls
+- **All skills**: Fixed 303 hardcoded ~/clawd/ paths to ~/.openclaw/workspace/ or relative paths
+- **Documentation**: All port references standardized to 4000 across 11 files
+
+### Added
+- department-naming-map.json (17 canonical departments, both repos)
+- persona-selection-log.md template
+- resolve-department.ts (shared department resolution)
+- PRD.md, CHECKLIST.md (Command Center)
+- DECISION-LOG.md (overhaul decisions)
+- create-tunnel.sh (Command Center)
+
+### Removed
+- Hardcoded PERSONA_DETAILS map (~40 entries) from Command Center
+- Synthetic/seeded placeholder data from CEO Board components
+- Hardcoded ~/clawd/ paths from all client-facing skill documentation
+
+### QC Scores
+- A (Personas): 10/10 | B (Workforce): 9.2/10 | C (Kanban): 9.8/10
+- D (Performance): 9.5/10 | E (Deployment): 9.8/10 | F (Hygiene): 8.5/10
+
+---
+
 ## v6.5.31 - April 12, 2026 - Memory Architecture Migration v2.0
 
 ### Changed
