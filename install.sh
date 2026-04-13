@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v8.0.0"
+ONBOARDING_VERSION="v8.1.0"
 
 # ── Version sync check ──
 if [ -f "$ONBOARDING_DIR/version" ] 2>/dev/null; then
