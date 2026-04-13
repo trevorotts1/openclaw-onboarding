@@ -3,6 +3,17 @@ set -euo pipefail
 
 ONBOARDING_VERSION="v8.0.0"
 
+# ── Version sync check ──
+if [ -f "$ONBOARDING_DIR/version" ] 2>/dev/null; then
+ REPO_VER=$(cat "$ONBOARDING_DIR/version" 2>/dev/null | tr -d '[:space:]')
+ if [ -n "$REPO_VER" ] && [ "$ONBOARDING_VERSION" != "$REPO_VER" ]; then
+ echo ""
+ echo " WARNING: install.sh version ($ONBOARDING_VERSION) does not match"
+ echo " repo version file ($REPO_VER). Using repo version."
+ ONBOARDING_VERSION="$REPO_VER"
+ fi
+fi
+
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
@@ -839,6 +850,48 @@ if [ -n "$TELEGRAM_CHAT_ID" ] && command -v openclaw &>/dev/null; then
     openclaw message send --channel telegram --target "$TELEGRAM_CHAT_ID" --message "$TELEGRAM_SUMMARY" 2>/dev/null || true
 fi
 
+# ── Generate skill manifest ──
+MANIFEST_PATH="$HOME/.openclaw/skills/.skill-manifest.json"
+echo "Generating skill manifest..."
+
+python3 -c "
+import os, json
+from datetime import datetime, timezone
+
+skills_dir = os.path.expanduser('~/.openclaw/skills')
+onboarding_ver = '$ONBOARDING_VERSION'
+manifest = {
+    'generated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'onboardingVersion': onboarding_ver,
+    'skills': {}
+}
+
+for entry in sorted(os.listdir(skills_dir)):
+    full = os.path.join(skills_dir, entry)
+    if not os.path.isdir(full):
+        continue
+    if not entry[0].isdigit():
+        continue
+    ver_file = os.path.join(full, 'skill-version.txt')
+    if os.path.isfile(ver_file):
+        with open(ver_file) as f:
+            ver = f.read().strip()
+    else:
+        ver = 'unknown'
+    manifest['skills'][entry] = ver
+
+with open('$MANIFEST_PATH', 'w') as f:
+    json.dump(manifest, f, indent=2)
+
+print(f'✓ Manifest: {len(manifest[\"skills\"])} skills recorded')
+" 2>/dev/null || echo "⚠️  WARNING: Could not generate skill manifest (Python error)"
+
+if [ -f "$MANIFEST_PATH" ]; then
+    echo "✓ Manifest written to $MANIFEST_PATH"
+else
+    echo "⚠️  WARNING: Manifest file was not created"
+fi
+
 # ----------------------------------------------------------
 # Step 6: Write UPDATE_PENDING flag to AGENTS.md
 # ----------------------------------------------------------
@@ -866,6 +919,18 @@ write_update_pending_flag() {
 }
 
 write_update_pending_flag
+
+# ── Final version verification ──
+INSTALLED_VER=$(cat "$HOME/.openclaw/skills/.onboarding-version" 2>/dev/null | tr -d '[:space:]')
+if [ "$INSTALLED_VER" = "$ONBOARDING_VERSION" ]; then
+ echo " Version verified: $INSTALLED_VER"
+else
+ echo " WARNING: Version mismatch after install."
+ echo " Expected: $ONBOARDING_VERSION"
+ echo " Found: $INSTALLED_VER"
+ echo " Forcing correct version..."
+ echo "$ONBOARDING_VERSION" > "$HOME/.openclaw/skills/.onboarding-version"
+fi
 
 # ----------------------------------------------------------
 # Done
