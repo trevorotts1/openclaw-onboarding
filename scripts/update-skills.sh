@@ -244,7 +244,26 @@ if af: print(af[0])
 " 2>/dev/null)
 
  if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
- TG_MSG="Your BlackCEO system has been updated from $LOCAL_VER to $REMOTE_VER. $NEW_COUNT new skills added, $UPDATE_COUNT skills updated. Your agent will review the changes and ask you before setting anything up."
+ # Build detailed message with skill lists
+ NEW_DETAIL=""
+ if [ -n "$NEW_LIST" ]; then
+   NEW_DETAIL=$(echo "$NEW_LIST" | tr ' ' '\n' | sed 's/^/  - /' | tr '\n' ', ' | sed 's/, $//')
+ fi
+ UPDATE_DETAIL=""
+ if [ -n "$UPDATE_LIST" ]; then
+   UPDATE_DETAIL=$(echo "$UPDATE_LIST" | tr ' ' '\n' | sed 's/^/  - /' | tr '\n' ', ' | sed 's/, $//')
+ fi
+ TG_MSG="🔄 BlackCEO System Update: $LOCAL_VER → $REMOTE_VER
+
+📊 Summary:
+• $NEW_COUNT new skills
+• $UPDATE_COUNT skills updated
+
+🆕 New Skills:$NEW_LIST
+
+📝 Updated Skills:$UPDATE_LIST
+
+Your agent will check the system and ask you before making any changes."
  TG_RESULT=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
  -d chat_id="$CHAT_ID" -d text="$TG_MSG" 2>&1)
  if echo "$TG_RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if d.get('ok') else 1)" 2>/dev/null; then
@@ -255,24 +274,144 @@ if af: print(af[0])
  fi
 fi
 
-# ── STEP 12: Write UPDATE PENDING flag ──
+# ── STEP 12: Write UPDATE PENDING flag with Interview Detection ──
 WORKSPACE_ROOT="$HOME/clawd"
 [ ! -d "$WORKSPACE_ROOT" ] && WORKSPACE_ROOT="$HOME/.openclaw/workspace"
 AGENTS_FILE="$WORKSPACE_ROOT/AGENTS.md"
 
 if [ -f "$AGENTS_FILE" ]; then
  if ! grep -q "UPDATE PENDING" "$AGENTS_FILE" 2>/dev/null; then
+ 
+ # ── STEP 12a: SEARCH FOR EXISTING INTERVIEW DATA ──
+ INTERVIEW_DATA_FOUND=""
+ [ -f "$WORKSPACE_ROOT/workforce-interview-answers.md" ] && INTERVIEW_DATA_FOUND="$INTERVIEW_DATA_FOUND workforce-interview-answers.md"
+ [ -f "$WORKSPACE_ROOT/interview-handoff.md" ] && INTERVIEW_DATA_FOUND="$INTERVIEW_DATA_FOUND interview-handoff.md"
+ [ -f "$WORKSPACE_ROOT/company-config.json" ] && INTERVIEW_DATA_FOUND="$INTERVIEW_DATA_FOUND company-config.json"
+ [ -f "$WORKSPACE_ROOT/departments.json" ] && INTERVIEW_DATA_FOUND="$INTERVIEW_DATA_FOUND departments.json"
+ [ -f "$WORKSPACE_ROOT/ORG-CHART.md" ] && INTERVIEW_DATA_FOUND="$INTERVIEW_DATA_FOUND ORG-CHART.md"
+ [ -d "$WORKSPACE_ROOT/company-discovery" ] && INTERVIEW_DATA_FOUND="$INTERVIEW_DATA_FOUND company-discovery/"
+ [ -d "$WORKSPACE_ROOT/departments" ] && INTERVIEW_DATA_FOUND="$INTERVIEW_DATA_FOUND departments/"
+ 
+ # ── STEP 12b: DETERMINE INTERVIEW STATUS ──
+ # STATE A: NEVER STARTED - No evidence found
+ # STATE B: INTERVIEW IN PROGRESS - workforce-interview-answers.md exists, no departments/ folder
+ # STATE C: INTERVIEW COMPLETE - departments/ exists, ORG-CHART.md exists
+ 
+ INTERVIEW_STATE="STATE A - NEVER STARTED"
+ HAS_INTERVIEW_ANSWERS=false
+ HAS_DEPARTMENTS_DIR=false
+ HAS_ORG_CHART=false
+ 
+ [ -f "$WORKSPACE_ROOT/workforce-interview-answers.md" ] && HAS_INTERVIEW_ANSWERS=true
+ [ -d "$WORKSPACE_ROOT/departments" ] && HAS_DEPARTMENTS_DIR=true
+ [ -f "$WORKSPACE_ROOT/ORG-CHART.md" ] && HAS_ORG_CHART=true
+ 
+ if [ "$HAS_DEPARTMENTS_DIR" = true ] && [ "$HAS_ORG_CHART" = true ]; then
+   INTERVIEW_STATE="STATE C - INTERVIEW COMPLETE"
+ elif [ "$HAS_INTERVIEW_ANSWERS" = true ] && [ "$HAS_DEPARTMENTS_DIR" = false ]; then
+   INTERVIEW_STATE="STATE B - INTERVIEW IN PROGRESS"
+ fi
+ 
+ # ── STEP 12c: CHECK IF SKILL 23 IS IN THE UPDATE ──
+ SKILL23_IN_UPDATE=false
+ SKILL23_ACTION=""
+ echo "$NEW_LIST $UPDATE_LIST" | grep -q "23-ai-workforce-blueprint" && SKILL23_IN_UPDATE=true
+ 
+ # ── STEP 12d: BUILD THE FLAG ──
  cat >> "$AGENTS_FILE" << FLAGEOF
 
 ## UPDATE PENDING - PROCESS NOW
 
 A system update was installed ($LOCAL_VER to $REMOTE_VER) on $(date).
 
-New skills:$NEW_LIST
-Updated skills:$UPDATE_LIST
+📊 Summary:
+• $NEW_COUNT new skills added
+• $UPDATE_COUNT skills updated
+
+🆕 New Skills:$NEW_LIST
+
+📝 Updated Skills:$UPDATE_LIST
+
+───────────────────────────────────────────
+🔍 INTERVIEW DETECTION RESULT
+───────────────────────────────────────────
+Detected State: $INTERVIEW_STATE
+
+Data Found:$INTERVIEW_DATA_FOUND
+
+Interview Status Breakdown:
+- workforce-interview-answers.md: $([ "$HAS_INTERVIEW_ANSWERS" = true ] && echo "EXISTS" || echo "NOT FOUND")
+- departments/ folder: $([ "$HAS_DEPARTMENTS_DIR" = true ] && echo "EXISTS" || echo "NOT FOUND")
+- ORG-CHART.md: $([ "$HAS_ORG_CHART" = true ] && echo "EXISTS" || echo "NOT FOUND")
+
+───────────────────────────────────────────
+📋 SKILL 23 HANDLING INSTRUCTIONS
+───────────────────────────────────────────
+FLAGEOF
+
+ # Add Skill 23 specific instructions based on interview state
+ if [ "$SKILL23_IN_UPDATE" = true ]; then
+   case "$INTERVIEW_STATE" in
+     "STATE A - NEVER STARTED")
+       cat >> "$AGENTS_FILE" << 'SKILL23EOF'
+Skill 23 (AI Workforce Blueprint) is in this update.
+
+ACTION REQUIRED:
+1. BEFORE processing Skill 23, you MUST complete the AI Workforce Interview
+2. Read Skill 23's SKILL.md to understand the interview questions
+3. Conduct the full interview with the owner and record answers in workforce-interview-answers.md
+4. Only AFTER the interview is complete, proceed with Skill 23 setup
+5. Do NOT skip the interview - Skill 23 requires this data to function correctly
+
+⚠️  WARNING: Attempting to set up Skill 23 without completing the interview first will result in incomplete configuration.
+SKILL23EOF
+       ;;
+     "STATE B - INTERVIEW IN PROGRESS")
+       cat >> "$AGENTS_FILE" << 'SKILL23EOF'
+Skill 23 (AI Workforce Blueprint) is in this update.
+
+INTERVIEW STATUS: In Progress (workforce-interview-answers.md exists, but departments/ not created)
+
+ACTION REQUIRED:
+1. Check workforce-interview-answers.md for completeness
+2. If interview is incomplete: finish conducting the interview first
+3. If interview is complete: create the departments/ folder and ORG-CHART.md
+4. Only after departments/ and ORG-CHART.md exist, proceed with Skill 23 setup
+
+⚠️  WARNING: Skill 23 requires both completed interview answers AND generated department files.
+SKILL23EOF
+       ;;
+     "STATE C - INTERVIEW COMPLETE")
+       cat >> "$AGENTS_FILE" << 'SKILL23EOF'
+Skill 23 (AI Workforce Blueprint) is in this update.
+
+INTERVIEW STATUS: Complete ✓
+
+ACTION:
+Skill 23 can be processed normally. The interview data and department structure already exist.
+- Review existing departments/ and ORG-CHART.md
+- Follow Skill 23's INSTALL.md for any additional setup steps
+- Run QC.md checks to verify integration
+SKILL23EOF
+       ;;
+   esac
+ else
+   cat >> "$AGENTS_FILE" << 'SKILL23EOF'
+Skill 23 (AI Workforce Blueprint) is NOT in this update.
+
+No special handling required for Skill 23.
+SKILL23EOF
+ fi
+
+ # Add general processing instructions
+ cat >> "$AGENTS_FILE" << 'FLAGEOF2'
+
+───────────────────────────────────────────
+📋 GENERAL PROCESSING INSTRUCTIONS
+───────────────────────────────────────────
 
 SEND YOUR OWNER THIS MESSAGE IMMEDIATELY:
-"Your BlackCEO system was just updated from $LOCAL_VER to $REMOTE_VER. Here is what changed: $NEW_COUNT new skills added, $UPDATE_COUNT skills updated. Would you like me to start setting up the new skills and applying the updates?"
+"Your BlackCEO system was just updated from $LOCAL_VER to $REMOTE_VER. Here is what changed: $NEW_COUNT new skills added, $UPDATE_COUNT skills updated. The new skills include:$NEW_LIST. Would you like me to start setting up the new skills and applying the updates?"
 
 WAIT for the owner to say yes before proceeding.
 
@@ -280,18 +419,19 @@ When they approve:
 - For each UPDATED skill: read SKILL.md and QC.md, verify it works correctly
 - For each NEW skill: run the full Teach Yourself Protocol (read all files in order), follow INSTALL.md setup steps, run QC.md checks
 - For each skill with CORE_UPDATES.md: surgically update AGENTS.md, TOOLS.md, and MEMORY.md
- - Add new entries that do not exist yet
- - Update entries that have changed from a previous skill version
- - Remove entries from old skill versions that no longer apply
- - Do NOT duplicate entries that already exist
- - Do NOT touch the owner's personal content
- - Skill sections are identified by headers like "### [Skill Name] (Skill [Number])"
+  - Add new entries that do not exist yet
+  - Update entries that have changed from a previous skill version
+  - Remove entries from old skill versions that no longer apply
+  - Do NOT duplicate entries that already exist
+  - Do NOT touch the owner's personal content
+  - Skill sections are identified by headers like "### [Skill Name] (Skill [Number])"
 
 After ALL skills are processed:
 1. Remove this entire UPDATE PENDING section from AGENTS.md
 2. Add one line to MEMORY.md under "## System Updates":
- "[DATE]: Updated $LOCAL_VER to $REMOTE_VER. New:$NEW_LIST. Updated:$UPDATE_LIST. All QC passed."
-FLAGEOF
+   "[DATE]: Updated $LOCAL_VER to $REMOTE_VER. New:$NEW_LIST. Updated:$UPDATE_LIST. All QC passed."
+FLAGEOF2
+
  fi
 fi
 
