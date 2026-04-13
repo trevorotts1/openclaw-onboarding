@@ -70,7 +70,7 @@ All credentials go in `secrets/.env` on the client's OpenClaw instance.
 | Video preference (0/2/7 per week) | Production planning | Ask once, store in MEMORY.md |
 | Podcast channel ID | Optional for podcast | Skip if declined |
 
-**Google Sheet:** Created automatically via n8n webhook. No client credentials needed.
+**Google Sheet:** Created automatically via n8n webhook at `https://main.blackceoautomations.com/webhook/social-planner-sheet-create`. No client credentials needed.
 
 **SEARCH BEFORE ASKING:** The agent checks ALL these locations before asking:
 - ~/clawd/secrets/.env
