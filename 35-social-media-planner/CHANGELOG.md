@@ -1,5 +1,15 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v1.1.0 - April 13, 2026
+
+### Changed
+- Google Sheet creation now uses n8n webhook instead of Google Workspace API
+- Webhook endpoint: `POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`
+- Fields: `brandName`, `clientEmail`
+- Response: `sheetUrl`, `sheetId`, `sheetName`
+- No client credentials required for sheet creation
+- Added Google Sheet Verification checklist to QC.md
+
 ## v1.0.0 - April 13, 2026
 
 Initial release.

@@ -43,7 +43,7 @@ All credentials go in `secrets/.env` on the client's OpenClaw instance.
 | kie.ai | Image generation (Nano Banana 2) and video generation (Veo 3.1 Lite) | kie.ai |
 | Fish Audio (OPTIONAL) | Text-to-speech for podcast episodes | fish.audio |
 | Podbean (OPTIONAL) | Podcast hosting (MP3, 192 kbps) | podbean.com |
-| Google Sheets | Content logging and tracking | Client needs a Google account |
+| Google Sheets | Content logging and tracking | **Created automatically via n8n webhook - no client action needed** |
 
 ---
 
@@ -69,6 +69,8 @@ All credentials go in `secrets/.env` on the client's OpenClaw instance.
 | Weekly action link | CTA in comments | Confirm weekly if changed |
 | Video preference (0/2/7 per week) | Production planning | Ask once, store in MEMORY.md |
 | Podcast channel ID | Optional for podcast | Skip if declined |
+
+**Google Sheet:** Created automatically via n8n webhook. No client credentials needed.
 
 **SEARCH BEFORE ASKING:** The agent checks ALL these locations before asking:
 - ~/clawd/secrets/.env
@@ -133,7 +135,7 @@ On the very first activation for a new client, follow references/playbook.md Sec
 1. Reads all OpenClaw core .md files (identity.md, soul.md, memory.md, agents.md, heartbeat.md)
 2. Extracts brand name, founder, target audience, colors, tone, voice, products/services
 3. Asks ONLY for information not found in core files
-4. Sets up the client's Google Sheet (client duplicates the template)
+4. Creates the client's Google Sheet via n8n webhook (automatic - client does nothing)
 5. Gets the weekly action link
 6. Asks video preference (0, 2, or 7 per week)
 7. Confirms notification channels (Telegram > Email > Text)
@@ -164,7 +166,7 @@ Add the weekly theme request to the client's HEARTBEAT.md. See references/playbo
 - [ ] GHL Social Planner API test successful
 - [ ] FFmpeg installed and working
 - [ ] ImageMagick installed and working
-- [ ] First Run Protocol complete (brand info, Google Sheet, action link, video preference, notifications)
+- [ ] First Run Protocol complete (brand info, Google Sheet via webhook, action link, video preference, notifications)
 - [ ] CORE_UPDATES.md applied to AGENTS.md, TOOLS.md, MEMORY.md
 - [ ] HEARTBEAT.md updated with weekly theme request schedule
 - [ ] Skill 30 (Fish Audio) installed (OPTIONAL for podcast production)

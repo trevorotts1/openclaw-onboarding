@@ -71,25 +71,43 @@ After reading the core files, determine what you have and what's missing. Be pro
 | Action link | Must ask every week | Ask during first run AND confirm every weekly heartbeat |
 | Google Sheet link | Must ask once | Provide template for client to duplicate |
 
-### Step 3: Create the Google Sheet
+### Step 3: Create the Google Sheet (Automatic via n8n Webhook)
 
-**The agent creates the Google Sheet for the client. Do NOT ask the client to duplicate the template.**
+**The agent creates the Google Sheet automatically via webhook. The client does nothing.**
 
-Using Google Workspace integration (Skill 14):
-1. Duplicate the template sheet: https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit?usp=sharing
-2. Rename the copy to: "[Brand Name] Social Media Planner"
-3. Share the copy with the client's email (edit access)
-4. Store the new sheet URL in MEMORY.md
-5. Tell the client: "I created your Social Media Planner sheet. Here is the link: [URL]. You have full edit access."
-
-**Fallback only if Google Workspace fails:** Tell the client "I was not able to create the sheet automatically. Please go to this link, click File then Make a Copy, rename it to [Brand Name] Social Media Planner, and share the edit link back with me: [template URL]"
-
-**Template link:**
+Call the n8n webhook to create the sheet:
 ```
-https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit?usp=sharing
+POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create
+Content-Type: application/json
+
+{
+  "brandName": "[Client's Brand Name]",
+  "clientEmail": "[Client's Email Address]"
+}
 ```
 
-Store the client's Google Sheet link for all future weekly updates.
+**Webhook Response:**
+```
+{
+  "sheetUrl": "https://docs.google.com/spreadsheets/d/[SHEET_ID]/edit",
+  "sheetId": "[SHEET_ID]",
+  "sheetName": "[Brand Name] Social Media Planner"
+}
+```
+
+**What the agent does:**
+1. POST to the webhook with brandName and clientEmail
+2. Receive sheetUrl, sheetId, and sheetName in response
+3. Store the sheetUrl in MEMORY.md
+4. Tell the client: "I created your Social Media Planner sheet. Here is the link: [URL]. You have full edit access."
+
+**Fallback if webhook fails:**
+If the webhook returns an error or times out after 3 retries:
+1. Provide the client with the template link: https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit?usp=sharing
+2. Tell the client: "Click File → Make a Copy, rename it to [Brand Name] Social Media Planner, and share the edit link back with me."
+3. Log the fallback in MEMORY.md
+
+**No client credentials required.** The webhook uses the service account to create and share the sheet.
 
 ### Step 4: Ask the Weekly Action Link
 

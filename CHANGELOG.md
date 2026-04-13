@@ -1,3 +1,15 @@
+## v8.3.0 - April 13, 2026 - Skill 35: Google Sheet Webhook Integration
+
+### Changed
+- **Skill 35 (Social Media Planner)**: Updated to v1.1.0
+  - Google Sheet creation now uses n8n webhook instead of Google Workspace API
+  - Webhook: `POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`
+  - Fields: `brandName`, `clientEmail` → Response: `sheetUrl`, `sheetId`, `sheetName`
+  - No client credentials required for sheet creation
+  - Updated playbook.md, SKILL.md, INSTALL.md, CORE_UPDATES.md, README.md, QC.md
+  - Added Google Sheet Verification checklist to QC.md
+- Bumped ONBOARDING_VERSION to v8.3.0
+
 ## v8.2.1 - April 13, 2026 - Comprehensive Repo Instruction Fixes
 - Added SOURCE OF TRUTH rule to Start Here.md (both repos) - skill files are authority over generic docs
 - Added SOURCE OF TRUTH header to Skill 31 (both repos) - all 8 layers required, DREAMS.md required

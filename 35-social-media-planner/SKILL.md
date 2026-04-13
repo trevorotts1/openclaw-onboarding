@@ -96,15 +96,17 @@ On the very first activation for a new client, read `references/playbook.md` Sec
 1. Reading all OpenClaw core .md files
 2. Extracting brand name, founder, target audience, colors, tone, voice, products/services
 3. Asking only for information not found in core files
-4. Setting up the client's Google Sheet from the template
+4. Creating the client's Google Sheet automatically via n8n webhook (client does nothing)
 5. Getting the weekly action link
 6. Asking video preference (0, 2, or 7 per week)
 7. Confirming notification channels (Telegram > Email > Text)
 
-**Google Sheet Template:**
-```
-https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit?usp=sharing
-```
+**Google Sheet Creation (Automatic):**
+- **Webhook:** `POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`
+- **Fields:** `brandName`, `clientEmail`
+- **Response:** `sheetUrl`, `sheetId`, `sheetName`
+- Store `sheetUrl` in MEMORY.md
+- **Fallback:** Template link for manual copy if webhook fails
 
 ## Weekly Workflow
 

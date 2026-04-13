@@ -37,7 +37,7 @@ This skill produces a 7-part weekly content series across Facebook, Instagram, L
 | kie.ai API | Image generation (Nano Banana 2) at 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Video generation (Veo 3.1 Lite) | KIE_API_KEY |
 | Fish Audio S2 API | Podcast TTS with inline [emotion] tags (depends on Skill 30) | FISH_AUDIO_API_KEY + FISH_AUDIO_VOICE_ID |
 | Podbean Publishing (n8n webhook) | Podcast episode publishing. POST to https://main.blackceoautomations.com/webhook/podbean-publish with audio URL, cover image URL, title, description, publish date. Audio and image must go through GHL Media Library first. | PODBEAN_PODCAST_ID + client contact info |
-| Google Sheets API | Content logging across 19 worksheets with inline image previews | Google account access |
+| Google Sheets API | Content logging across 19 worksheets with inline image previews | **Sheet created automatically via n8n webhook** - no client credentials needed |
 | FFmpeg | Video segment merging (audio + video, 192 kbps, H.264, 30fps) | Installed locally |
 | ImageMagick / Python Pillow | LinkedIn PDF carousel generation from 4:5 images | Installed locally |
 | Podbean | Podcast episode hosting (MP3, 192 kbps, 1400x1400 cover art) | Podbean account |

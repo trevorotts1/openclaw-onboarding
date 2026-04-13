@@ -32,7 +32,7 @@ Every week, this skill automatically:
 - kie.ai API access (Nano Banana 2 for images, Veo 3.1 Lite for videos)
 - Fish Audio API key and Voice ID
 - Podbean account for podcast hosting
-- Google Sheets access (template provided for client to duplicate)
+- Google Sheets (**created automatically via n8n webhook - no client action needed**)
 - Telegram for notifications (email and SMS as fallback)
 - FFmpeg and ImageMagick installed locally
 
@@ -79,7 +79,7 @@ https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67
 
 ## Version
 
-v1.0.0 (April 13, 2026)
+v1.1.0 (April 13, 2026)
 
 ## License
 

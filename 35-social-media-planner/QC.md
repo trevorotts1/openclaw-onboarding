@@ -78,6 +78,15 @@ QC runs BEFORE any content is scheduled. Nothing goes to GHL until all checks pa
 - [ ] Email newsletter is scheduled for Tuesday at 9:00 AM
 - [ ] Blog, podcast, and grand finale are scheduled for Day 7
 
+## Google Sheet Verification
+
+- [ ] Webhook POST to `https://main.blackceoautomations.com/webhook/social-planner-sheet-create` successful
+- [ ] Request payload includes `brandName` and `clientEmail`
+- [ ] Response received with `sheetUrl`, `sheetId`, and `sheetName`
+- [ ] Sheet URL stored in MEMORY.md
+- [ ] Client has edit access to the created sheet
+- [ ] Fallback documented if webhook fails (template link provided to client)
+
 ## Blog Post
 
 - [ ] Word count is between 1,500-2,500 words
