@@ -82,13 +82,15 @@ declare -A SKILL_QC_STATUS
 # Discover skills directory - checks multiple locations for old installs
 # ----------------------------------------------------------
 discover_skills_dir() {
+  # Primary Mac location first
   local CANDIDATES=(
-    "$HOME/.openclaw/skills"
     "$HOME/Downloads/openclaw-master-files"
+    "$HOME/.openclaw/skills"
     "$HOME/.openclaw/onboarding"
     "$HOME/openclaw-onboarding"
   )
   
+  # Check exact known paths first
   for DIR in "${CANDIDATES[@]}"; do
     if [ -d "$DIR" ]; then
       local SKILL_COUNT=$(ls -d "$DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
@@ -99,8 +101,18 @@ discover_skills_dir() {
     fi
   done
   
-  # Default to canonical location
-  echo "$HOME/.openclaw/skills"
+  # Fuzzy search for folders with "openclaw" and "master" in name (case-insensitive)
+  local FUZZY_DIR=$(find "$HOME" -maxdepth 2 -type d -iname "*openclaw*" 2>/dev/null | grep -i "master" | head -1)
+  if [ -n "$FUZZY_DIR" ] && [ -d "$FUZZY_DIR" ]; then
+    local SKILL_COUNT=$(ls -d "$FUZZY_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$SKILL_COUNT" -gt "0" ]; then
+      echo "$FUZZY_DIR"
+      return
+    fi
+  fi
+  
+  # Default to Mac canonical location
+  echo "$HOME/Downloads/openclaw-master-files"
 }
 
 if [ -f "$INSTALL_FLAG" ]; then
@@ -153,7 +165,7 @@ discover_skills() {
   local skill_md_count
   skill_md_count=$(find "$base_dir" -maxdepth 2 -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
   local installed_count
-  installed_count=$(find "$HOME/.openclaw/skills" -maxdepth 1 -type d 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
+  installed_count=$(find "${SKILLS_DIR:-$HOME/Downloads/openclaw-master-files}" -maxdepth 1 -type d 2>/dev/null | tail -n +2 | wc -l | tr -d ' ')
   local max_count=$numbered_count
   [ "$skill_md_count" -gt "$max_count" ] 2>/dev/null && max_count=$skill_md_count
   [ "$installed_count" -gt "$max_count" ] 2>/dev/null && max_count=$installed_count
@@ -282,8 +294,10 @@ echo ""
 send_telegram_progress "Starting BlackCEO Command Center install..."
 
 # Diagnostic output for skill paths
-echo "  📂 Skills source: $HOME/.openclaw/onboarding"
-echo "  📂 Skills destination: $HOME/.openclaw/skills/"
+SKILLS_DIR=$(discover_skills_dir)
+export SKILLS_DIR
+echo "  📂 Skills source: $ONBOARDING_DIR"
+echo "  📂 Skills destination: $SKILLS_DIR/"
 echo ""
 
 # ----------------------------------------------------------
@@ -347,7 +361,7 @@ SKILL_COUNT=$(discover_skills "$ONBOARDING_DIR")
 echo "  Skills found: $SKILL_COUNT"
 
 # Record version
-SKILLS_DIR="$HOME/.openclaw/skills"
+SKILLS_DIR="${SKILLS_DIR:-$HOME/Downloads/openclaw-master-files}"
 mkdir -p "$SKILLS_DIR"
 echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 echo "$ONBOARDING_VERSION" > "$ONBOARDING_DIR/.onboarding-version"
@@ -868,14 +882,14 @@ if [ -n "$TELEGRAM_CHAT_ID" ] && command -v openclaw &>/dev/null; then
 fi
 
 # ── Generate skill manifest ──
-MANIFEST_PATH="$HOME/.openclaw/skills/.skill-manifest.json"
+MANIFEST_PATH="$SKILLS_DIR/.skill-manifest.json"
 echo "Generating skill manifest..."
 
 python3 -c "
 import os, json
 from datetime import datetime, timezone
 
-skills_dir = os.path.expanduser('~/.openclaw/skills')
+skills_dir = os.environ.get('SKILLS_DIR', os.path.expanduser('~/.openclaw/skills'))
 onboarding_ver = '$ONBOARDING_VERSION'
 manifest = {
     'generated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -910,7 +924,7 @@ else
 fi
 
 # ── Final version verification ──
-INSTALLED_VER=$(cat "$HOME/.openclaw/skills/.onboarding-version" 2>/dev/null | tr -d '[:space:]')
+INSTALLED_VER=$(cat "$SKILLS_DIR/.onboarding-version" 2>/dev/null | tr -d '[:space:]')
 if [ "$INSTALLED_VER" = "$ONBOARDING_VERSION" ]; then
  echo " Version verified: $INSTALLED_VER"
 else
@@ -918,7 +932,7 @@ else
  echo " Expected: $ONBOARDING_VERSION"
  echo " Found: $INSTALLED_VER"
  echo " Forcing correct version..."
- echo "$ONBOARDING_VERSION" > "$HOME/.openclaw/skills/.onboarding-version"
+ echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 fi
 
 # ── Write UPDATE PENDING flag to AGENTS.md ──
