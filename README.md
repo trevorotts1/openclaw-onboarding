@@ -2,9 +2,24 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v6.0.7** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v8.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **34 skill folders** (01 through 34, with 13, 33, and 34 archived) plus an install script.
+
+### What's New in v8.0.0 (April 13, 2026) — BlackCEO System Overhaul v3.3
+- **Persona runtime loader**: Replaces hardcoded PERSONA_DETAILS with dynamic runtime loading from company-config.json
+- **Grade formula updated**: New 40/30/15/15 weighting (Revenue 40%, Mission 30%, Efficiency 15%, Team 15%)
+- **company-config.json wired to CEO Board**: CEO Performance Board now reads directly from company configuration
+- **Department Browser + Focus view**: New Kanban-style department browser with focused task views at `/ceo-board/[dept]/focus`
+- **Task API department filtering**: All task endpoints support department-based filtering
+- **SOP creation + Devil's Advocate**: Each department now has SOP templates with built-in Devil's Advocate review
+- **303 hardcoded ~/clawd/ paths cleaned**: All paths now use configurable workspace variables
+- **All ports standardized to 4000**: Consistent port configuration across all services
+- **department-naming-map.json created**: Standardized department naming conventions
+- **persona-selection-log template created**: Structured logging for persona selection decisions
+- **Anti-staleness guards added**: Automatic detection and refresh of stale configuration data
+- **Post-task persona verification**: Validation step confirms persona performance after task completion
+- **Memory Wiki integration**: Full integration with OpenClaw Memory Wiki for persistent knowledge
 
 ### What's New in v6.0.7 (March 27, 2026)
 - **Persona Matching Protocol**: Personas are now matched per-task at runtime, not assigned per-department at build time. New `persona-matching-protocol.md` documents the 5-layer alignment check (Mission, Values, Company Goals, Department Goals, Task Fit). Layers 1-2 run once at setup; Layers 3-5 run fresh every task.
@@ -21,10 +36,6 @@ This repo contains **34 skill folders** (01 through 34, with 13, 33, and 34 arch
 - **Mandatory file reading protocol:** agent must read ALL .md files before installing any skill
 - **CONTRIBUTING.md** added: complete checklist for adding/modifying skills
 - **MIGRATION.md** added: step-by-step guide for existing Google Embedding 2 users to migrate to Gemini Embedding 2
-
-- Install happens in a strict order
-- The agent executes the steps autonomously
-- Humans only provide credentials, API keys, 2FA codes, and first time logins when required
 
 ---
 
