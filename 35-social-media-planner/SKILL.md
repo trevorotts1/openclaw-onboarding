@@ -44,7 +44,7 @@ Every week, this skill:
 |-------|-----------|----------|
 | Skill 01 (Teach Yourself Protocol) | REQUIRED | Must read this skill's files before first use |
 | Skill 22 (Book-to-Persona) | RECOMMENDED | Persona-governed content style via 5-layer alignment |
-| Skill 30 (Fish Audio API Reference) | REQUIRED for podcast | Fish Audio S2 API key + Voice ID for podcast TTS |
+| Skill 30 (Fish Audio API Reference) | OPTIONAL (for podcast) | Fish Audio S2 API key + Voice ID for podcast TTS |
 | Skill 31 (Upgraded Memory System) | RECOMMENDED | Memory-core, Dreaming, and Memory Wiki integration |
 
 ## Required Stack
@@ -159,6 +159,15 @@ Read `references/playbook.md` Section 3 for the full 55-step workflow. Summary:
 | Thursday (Day 5) | Day 5 content + Carousel posts |
 | Friday (Day 6) | Day 6 content |
 | Saturday (Day 7) | Grand finale + Video 2 + Blog + Podcast |
+
+## Podcast Deferred Workflow
+
+If no Fish Audio API key or Podbean credentials available:
+
+- Skip podcast production but proceed with ALL other content (do NOT block the skill)
+- Log "PODCAST_DEFERRED" entry in the client's MEMORY.md with current timestamp, client name, and setup status
+- Include weekly reminder in Saturday heartbeat: "Still no podcast setup? Fish Audio API key + Podbean account ready? I can help set it up!"
+- Stop reminding ONLY if client explicitly declines permanently (e.g., "no podcasts ever" or equivalent - log as "PODCAST_DECLINED_PERMANENTLY")
 
 ## Key Principles
 

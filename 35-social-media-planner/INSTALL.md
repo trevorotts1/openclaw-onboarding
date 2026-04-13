@@ -10,7 +10,7 @@ Before installing this skill, verify the following:
 |-------|-------|-----------|
 | Skill 01 (Teach Yourself Protocol) | `ls ~/.openclaw/skills/01-teach-yourself-protocol/` | Install before any other skill |
 | Skill 22 (Book-to-Persona) | `ls ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/` | Needed for persona-governed content. Without it, content uses soul.md tone only |
-| Skill 30 (Fish Audio API Reference) | `ls ~/.openclaw/skills/30-fish-audio-api-reference/` | Needed for podcast production. Without it, no weekly podcast |
+| Skill 30 (Fish Audio API Reference) | `ls ~/.openclaw/skills/30-fish-audio-api-reference/` | OPTIONAL for podcast production. Without it, podcast is skipped but all other content proceeds |
 | Skill 31 (Upgraded Memory System) | `ls ~/.openclaw/skills/31-upgraded-memory-system/` | Needed for memory-core integration. Without it, logs to MEMORY.md directly |
 
 ### Required API Keys and Credentials
@@ -20,9 +20,9 @@ Before installing this skill, verify the following:
 | GHL Private Integration Token | GoHighLevel > Settings > Integrations > Private Integrations. Create a new private integration with `social-media-posting.write` scope. | The token string | GHL_PRIVATE_TOKEN |
 | GHL Location ID | GoHighLevel > Settings > Business Profile. Copy the Location ID. | The location ID string | GHL_LOCATION_ID |
 | kie.ai API Key | Sign up at kie.ai, go to API dashboard, generate key | The API key string | KIE_API_KEY |
-| Fish Audio API Key | Sign up at fish.audio, go to API keys | The API key string | FISH_AUDIO_API_KEY |
-| Fish Audio Voice ID | fish.audio > Voices > select or clone a voice > copy the Voice ID | The voice ID string | FISH_AUDIO_VOICE_ID |
-| Podbean Channel ID (podcast_id) | Podbean dashboard > Podcast Settings. Each client has their own channel. | The channel ID string | PODBEAN_PODCAST_ID |
+| Fish Audio API Key (OPTIONAL) | Sign up at fish.audio, go to API keys | The API key string | FISH_AUDIO_API_KEY |
+| Fish Audio Voice ID (OPTIONAL) | fish.audio > Voices > select or clone a voice > copy the Voice ID | The voice ID string | FISH_AUDIO_VOICE_ID |
+| Podbean Channel ID (OPTIONAL) | Podbean dashboard > Podcast Settings. Each client has their own channel. | The channel ID string | PODBEAN_PODCAST_ID |
 | PPSA Information | [PENDING: Trevor to confirm specific PPSA fields needed] | [PENDING] | [PENDING] |
 
 All credentials go in `secrets/.env` on the client's OpenClaw instance.
@@ -41,9 +41,41 @@ All credentials go in `secrets/.env` on the client's OpenClaw instance.
 |---------|---------|---------|
 | GoHighLevel (Convert and Flow) | Social media posting, email, CRM | Client should already have this |
 | kie.ai | Image generation (Nano Banana 2) and video generation (Veo 3.1 Lite) | kie.ai |
-| Fish Audio | Text-to-speech for podcast episodes | fish.audio |
-| Podbean | Podcast hosting (MP3, 192 kbps) | podbean.com |
+| Fish Audio (OPTIONAL) | Text-to-speech for podcast episodes | fish.audio |
+| Podbean (OPTIONAL) | Podcast hosting (MP3, 192 kbps) | podbean.com |
 | Google Sheets | Content logging and tracking | Client needs a Google account |
+
+---
+
+## Agent vs Client Responsibilities
+
+### AGENT HANDLES (You Don't Need to Do These)
+
+| Task | What Agent Does |
+|------|-----------------|
+| Google Sheet creation | Duplicates template, configures layout, shares with client |
+| Brand info extraction | Reads identity.md, soul.md, memory.md to extract brand details |
+| Persona selection | Uses 5-layer alignment to recommend persona, asks client to confirm |
+| Content production | Writes all posts, generates images, produces videos |
+| Scheduling via GHL | Posts all content via Social Planner API |
+| QC checks | Runs 40+ item checklist before posting |
+| Weekly logging | Updates Google Sheet with all content |
+
+### CLIENT PROVIDES (Agent Will Ask For These)
+
+| Item | Why Needed | Search Before Asking |
+|------|-----------|---------------------|
+| API keys (GHL, kie.ai, Fish Audio) | Authentication | Check all .env files first |
+| Weekly action link | CTA in comments | Confirm weekly if changed |
+| Video preference (0/2/7 per week) | Production planning | Ask once, store in MEMORY.md |
+| Podcast channel ID | Optional for podcast | Skip if declined |
+
+**SEARCH BEFORE ASKING:** The agent checks ALL these locations before asking:
+- ~/clawd/secrets/.env
+- ~/.openclaw/.env
+- ~/.openclaw/openclaw.json env.vars
+- printenv output
+- Match similar variable names (e.g., GHL_TOKEN = GHL_PRIVATE_TOKEN)
 
 ---
 
@@ -125,9 +157,9 @@ Add the weekly theme request to the client's HEARTBEAT.md. See references/playbo
 - [ ] GHL_PRIVATE_TOKEN in secrets/.env and verified working
 - [ ] GHL_LOCATION_ID in secrets/.env
 - [ ] KIE_API_KEY in secrets/.env
-- [ ] FISH_AUDIO_API_KEY in secrets/.env
-- [ ] FISH_AUDIO_VOICE_ID in secrets/.env
-- [ ] PODBEAN_PODCAST_ID in secrets/.env (client's Podbean channel ID)
+- [ ] FISH_AUDIO_API_KEY in secrets/.env (OPTIONAL)
+- [ ] FISH_AUDIO_VOICE_ID in secrets/.env (OPTIONAL)
+- [ ] PODBEAN_PODCAST_ID in secrets/.env (OPTIONAL - client's Podbean channel ID)
 - [ ] PPSA information collected [PENDING: Trevor to confirm fields]
 - [ ] GHL Social Planner API test successful
 - [ ] FFmpeg installed and working
@@ -135,6 +167,6 @@ Add the weekly theme request to the client's HEARTBEAT.md. See references/playbo
 - [ ] First Run Protocol complete (brand info, Google Sheet, action link, video preference, notifications)
 - [ ] CORE_UPDATES.md applied to AGENTS.md, TOOLS.md, MEMORY.md
 - [ ] HEARTBEAT.md updated with weekly theme request schedule
-- [ ] Skill 30 (Fish Audio) installed (for podcast production)
+- [ ] Skill 30 (Fish Audio) installed (OPTIONAL for podcast production)
 - [ ] Skill 22 (Book-to-Persona) installed (for persona-governed content)
 - [ ] Skill 31 (Upgraded Memory) installed (for memory-core integration)
