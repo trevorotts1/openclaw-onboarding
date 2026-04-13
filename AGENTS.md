@@ -170,7 +170,7 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 - Client-facing docs: NEVER include real token values. Reference env var names only.
 - Calendar invites: default 30 minutes. Repo version checks: GitHub is authoritative. Local `~/Downloads/` copies can be stale.
 - Gemini Embedding 2 refresh: only at milestones (Embedding 2 setup, Skill 22/23, all 30 skills, new post-onboarding skill).
-- Memory system: 6 layers, all verified working April 2026. Full details in MEMORY.md. Legacy system fully removed. Memory Wiki = bridge mode (secondary structured layer on top of mem0, NOT a full rebuild). Use `wiki_search` for retrieval, `memory_store` for raw fact ingestion.
+- Memory system: 8 layers, all verified working April 2026. Full details in MEMORY.md. Legacy system fully removed. Memory Wiki = bridge mode (secondary structured layer on top of mem0, NOT a full rebuild). Use `wiki_search` for retrieval, `memory_store` for raw fact ingestion.
 - After OpenClaw updates: if Mem0 breaks with NODE_MODULE_VERSION error, rebuild: `cd ~/.openclaw/extensions/openclaw-mem0 && PATH=/opt/homebrew/bin:$PATH npm rebuild better-sqlite3`
 - **Update order**: restart gateway first (`openclaw gateway restart`), THEN `openclaw plugins update`. Reverse = plugin failures.
 - Command Center: if UI lets Trevor choose model/persona, backend must actually use it. No cosmetic settings.
@@ -204,6 +204,7 @@ QC = RUNNING it. Not reading docs or code.
 - Config: verify actual values, not just file existence.
 - Personally verify at least one critical item with a direct tool call before accepting any QC score.
 - If docs say "graceful" and execution crashes: FAIL.
+- Write QC output to a file, not chat. File output prevents truncation on large QC runs.
 
 ## 🔴 TYPESCRIPT — @ts-nocheck BANNED
 ESLint bans `@ts-nocheck`. Use explicit `: any`. Callback params in `.map()`, `.filter()`, `.reduce()` need explicit types or builds fail.
@@ -248,3 +249,14 @@ Verify content matches install.sh and Start Here.md — not just file existence.
 
 ## 🔴 BACKUP PROTOCOL - FOUR STEPS EVERY TIME
 Every config change: (1) copy to `~/Downloads/openclaw-backups/` with `.txt` + timestamp + readable name, (2) read backup back to verify pre-change state, (3) notify Trevor of backup path BEFORE changes, (4) verify against docs.openclaw.ai before writing. Missing any step = violation.
+
+## 🔴 Repo Sync Protocol
+- After pushing changes to GitHub (either Mac or VPS repo), ALWAYS sync the local copy:
+  ```
+  cd ~/Downloads/openclaw-master-files/OpenClaw\ Onboarding
+  git fetch origin main
+  git reset --hard origin/main
+  ```
+- Verify the sync: compare the version file in the local copy with GitHub. They must match.
+- If they do not match, do NOT proceed with any skill-related work until they are synced.
+- The memory search system indexes ~/Downloads/openclaw-master-files/. If this folder is stale, memory search returns outdated information.
