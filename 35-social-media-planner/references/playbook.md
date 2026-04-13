@@ -71,9 +71,18 @@ After reading the core files, determine what you have and what's missing. Be pro
 | Action link | Must ask every week | Ask during first run AND confirm every weekly heartbeat |
 | Google Sheet link | Must ask once | Provide template for client to duplicate |
 
-### Step 3: Set Up the Google Sheet
+### Step 3: Create the Google Sheet
 
-Tell the client: "I need a Google Sheet to log all your weekly content. Here's a template. Go to File > Make a Copy, rename it to [Your Brand] Social Media Planner, and share the edit link back with me."
+**The agent creates the Google Sheet for the client. Do NOT ask the client to duplicate the template.**
+
+Using Google Workspace integration (Skill 14):
+1. Duplicate the template sheet: https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit?usp=sharing
+2. Rename the copy to: "[Brand Name] Social Media Planner"
+3. Share the copy with the client's email (edit access)
+4. Store the new sheet URL in MEMORY.md
+5. Tell the client: "I created your Social Media Planner sheet. Here is the link: [URL]. You have full edit access."
+
+**Fallback only if Google Workspace fails:** Tell the client "I was not able to create the sheet automatically. Please go to this link, click File then Make a Copy, rename it to [Brand Name] Social Media Planner, and share the edit link back with me: [template URL]"
 
 **Template link:**
 ```
