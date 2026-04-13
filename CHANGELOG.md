@@ -1,3 +1,6 @@
+## v8.2.0 - April 13, 2026 (Update System Fix Applied)
+- Fixed install.sh and update-skills.sh: dynamic skill discovery, applies updates instead of staging, surgical core .md handling, real Telegram messages, full UPDATE PENDING instructions, flag auto-removal after processing
+
 ## v8.2.0 - April 13, 2026
 - Added Skill 35: Social Media Planner
   - 7-part weekly content series across 6 platforms
