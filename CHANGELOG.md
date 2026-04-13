@@ -1,3 +1,24 @@
+## v8.1.0 - April 13, 2026 - Platform Architecture Playbook v1.0
+
+### Overview
+Release adds the missing platform version-detection architecture so client Sunday update checks can reliably detect and apply a new onboarding release.
+
+### Fixed
+- **install.sh version detection**: Moved the repo version sync check to run after `ONBOARDING_DIR` is defined so `set -u` does not hit an unbound variable before the installer can compare versions
+- **Release bookkeeping**: Added the missing changelog entry for the v8.1.0 platform architecture release
+
+### Added
+- **VERSION-ARCHITECTURE.md**: Documents publisher-side vs client-side version truth, `.onboarding-version`, `.skill-manifest.json`, and rollback behavior
+- **scripts/generate-manifest.sh**: Standalone generator for `~/.openclaw/skills/.skill-manifest.json`
+- **install.sh manifest generation**: Installer now writes `.skill-manifest.json` after install
+
+### Changed
+- **install.sh**: Keeps `ONBOARDING_VERSION` aligned with the repo `version` file and verifies the installed `.onboarding-version` at the end of install
+- **scripts/update-skills.sh**: Rewritten as a full safe updater with staged download, version comparison, per-skill diffing, changelog display, risk assessment, backup, confirmation gate, apply, manifest regeneration, logging, Telegram notification, and UPDATE PENDING flag handling
+- **Version**: Root `version` and `install.sh` `ONBOARDING_VERSION` bumped to `v8.1.0`
+
+---
+
 ## v8.0.0 - April 12-13, 2026 - BlackCEO System Overhaul v3.3
 
 ### Overview

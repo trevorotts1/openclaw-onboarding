@@ -3,17 +3,6 @@ set -euo pipefail
 
 ONBOARDING_VERSION="v8.1.0"
 
-# ── Version sync check ──
-if [ -f "$ONBOARDING_DIR/version" ] 2>/dev/null; then
- REPO_VER=$(cat "$ONBOARDING_DIR/version" 2>/dev/null | tr -d '[:space:]')
- if [ -n "$REPO_VER" ] && [ "$ONBOARDING_VERSION" != "$REPO_VER" ]; then
- echo ""
- echo " WARNING: install.sh version ($ONBOARDING_VERSION) does not match"
- echo " repo version file ($REPO_VER). Using repo version."
- ONBOARDING_VERSION="$REPO_VER"
- fi
-fi
-
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
@@ -68,6 +57,17 @@ show_status() {
 ONBOARDING_DIR="$HOME/.openclaw/onboarding"
 mkdir -p "$ONBOARDING_DIR"
 INSTALL_FLAG="$ONBOARDING_DIR/.install-in-progress"
+
+# ── Version sync check ──
+if [ -f "$ONBOARDING_DIR/version" ] 2>/dev/null; then
+ REPO_VER=$(cat "$ONBOARDING_DIR/version" 2>/dev/null | tr -d '[:space:]')
+ if [ -n "$REPO_VER" ] && [ "$ONBOARDING_VERSION" != "$REPO_VER" ]; then
+ echo ""
+ echo " WARNING: install.sh version ($ONBOARDING_VERSION) does not match"
+ echo " repo version file ($REPO_VER). Using repo version."
+ ONBOARDING_VERSION="$REPO_VER"
+ fi
+fi
 
 # ----------------------------------------------------------
 # Feature 1: Skill Summary Tracking Arrays
