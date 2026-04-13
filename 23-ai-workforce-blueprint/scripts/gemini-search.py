@@ -13,12 +13,18 @@ except ImportError:
     print("CRITICAL ERROR: Missing dependencies.")
     sys.exit(1)
 
-DB_PATH = os.path.expanduser("~/clawd/data/coaching-personas/gemini-index.sqlite")
+# Workspace Root Configuration
+WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
+CLAWD_ROOT = os.path.expanduser("~/clawd")  # Legacy fallback
+if not os.path.isdir(WORKSPACE_ROOT):
+    WORKSPACE_ROOT = CLAWD_ROOT
+
+DB_PATH = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/gemini-index.sqlite")
 GEMINI_MODEL = "gemini-embedding-2-preview"
 TOP_K = 3
 
 def get_client():
-    env_path = os.path.expanduser("~/clawd/secrets/.env")
+    env_path = os.path.join(WORKSPACE_ROOT, "secrets/.env")
     api_key = None
     if os.path.exists(env_path):
         with open(env_path, "r") as f:
@@ -28,7 +34,7 @@ def get_client():
                     break
     if not api_key: api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
-        print("ERROR: GOOGLE_API_KEY not found in ~/clawd/secrets/.env")
+        print(f"ERROR: GOOGLE_API_KEY not found in {WORKSPACE_ROOT}/secrets/.env")
         sys.exit(1)
     return genai.Client(api_key=api_key)
 

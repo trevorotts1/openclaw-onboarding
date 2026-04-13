@@ -34,8 +34,31 @@ Define the 3-phase coaching interaction: Assessment (questions to ask), Challeng
 ### Section 7 - Task Mode: When to Invoke
 List the specific work tasks, project types, or professional scenarios where this persona's standards should govern AI agent execution. Minimum 10 task triggers. Format: Task Type -> How This Persona Governs It.
 
-### Section 8 - Task Mode: How to Execute
-Write the complete execution standard: Pre-Work checklist, Step-by-Step process, Quality checkpoints after each step, Non-Negotiable rules that must never be broken, and Definition of Done. An agent must be able to follow this without asking questions.
+### Section 8 - Task Mode: How to Execute (Leadership Mode / Agent Governance Framework)
+Write the complete Agent Governance Framework that governs how an AI agent executes work to this persona's standards. This section must include:
+
+**8A - The Execution Standard**
+- Pre-Task Requirements: What must exist before an agent starts work (inputs, context, constraints)
+- Quality Bar: Specific, measurable definition of excellent output
+- Step-by-Step Execution Checklist: Minimum 7 exact steps in sequence
+- Non-Negotiable Rules: 5-7 rules that cause immediate failure if violated
+- Decision Logic Table: Minimum 8 rows mapping situations → actions → reasoning
+
+**8B - Quality Control Protocol**
+- Pre-Delivery Yes/No Checklist: Specific items that must be verified before shipping
+- Definition of Done: Clear statement of what "complete" means for this standard
+
+**8C - Failure Pattern Recognition**
+- Failure Patterns Table: Minimum 6 patterns with columns for Name, What It Looks Like, Why It Happens, Consequence, Correction
+- Amateur vs Expert Execution Table: Minimum 6 dimensions contrasting amateur and expert approaches
+
+**8D - Task Mode Activation Language**
+- Opening Statement: How to activate task mode
+- Mid-Task Checkpoint Language: How to verify compliance during execution
+- Output Review Language: How to evaluate deliverables against this standard
+- Feedback Language: Specific phrases for "meets standard," "falls short," and "full redo"
+
+An agent must be able to read this section and execute work without asking questions. The standard must be specific enough that two different agents would produce equivalent quality output.
 
 ### Section 9 - Department Routing
 Map which business departments benefit from this persona. For each department (Sales, Marketing, Operations, Leadership, Customer Service, Finance, HR - include all that apply): state the specific use case and what "good output" looks like through this persona's lens.

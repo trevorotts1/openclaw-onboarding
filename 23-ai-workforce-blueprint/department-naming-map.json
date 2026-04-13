@@ -1,0 +1,121 @@
+{
+  "Marketing": {
+    "folder": "marketing",
+    "ccId": "marketing",
+    "agentId": "dept-marketing",
+    "emoji": "megaphone",
+    "headTitle": "Chief Marketing Officer"
+  },
+  "Sales": {
+    "folder": "sales",
+    "ccId": "sales",
+    "agentId": "dept-sales",
+    "emoji": "money",
+    "headTitle": "Chief Revenue Officer"
+  },
+  "Operations": {
+    "folder": "operations",
+    "ccId": "operations",
+    "agentId": "dept-operations",
+    "emoji": "gear",
+    "headTitle": "Chief Operating Officer"
+  },
+  "Customer Success": {
+    "folder": "customer-success",
+    "ccId": "customer-success",
+    "agentId": "dept-customer-success",
+    "emoji": "heart",
+    "headTitle": "VP Customer Success"
+  },
+  "Finance": {
+    "folder": "finance",
+    "ccId": "finance",
+    "agentId": "dept-finance",
+    "emoji": "dollar",
+    "headTitle": "Chief Financial Officer"
+  },
+  "Human Resources": {
+    "folder": "human-resources",
+    "ccId": "human-resources",
+    "agentId": "dept-human-resources",
+    "emoji": "people",
+    "headTitle": "VP People"
+  },
+  "Product": {
+    "folder": "product",
+    "ccId": "product",
+    "agentId": "dept-product",
+    "emoji": "rocket",
+    "headTitle": "Chief Product Officer"
+  },
+  "Technology": {
+    "folder": "technology",
+    "ccId": "technology",
+    "agentId": "dept-technology",
+    "emoji": "laptop",
+    "headTitle": "Chief Technology Officer"
+  },
+  "Legal": {
+    "folder": "legal",
+    "ccId": "legal",
+    "agentId": "dept-legal",
+    "emoji": "shield",
+    "headTitle": "General Counsel"
+  },
+  "Communications": {
+    "folder": "communications",
+    "ccId": "communications",
+    "agentId": "dept-communications",
+    "emoji": "megaphone",
+    "headTitle": "VP Communications"
+  },
+  "Research": {
+    "folder": "research",
+    "ccId": "research",
+    "agentId": "dept-research",
+    "emoji": "magnifying-glass",
+    "headTitle": "Chief Research Officer"
+  },
+  "Supply Chain": {
+    "folder": "supply-chain",
+    "ccId": "supply-chain",
+    "agentId": "dept-supply-chain",
+    "emoji": "truck",
+    "headTitle": "VP Supply Chain"
+  },
+  "Business Development": {
+    "folder": "business-development",
+    "ccId": "business-development",
+    "agentId": "dept-business-development",
+    "emoji": "handshake",
+    "headTitle": "VP Business Development"
+  },
+  "Quality Assurance": {
+    "folder": "quality-assurance",
+    "ccId": "quality-assurance",
+    "agentId": "dept-quality-assurance",
+    "emoji": "clipboard",
+    "headTitle": "VP Quality"
+  },
+  "Content Creation": {
+    "folder": "content-creation",
+    "ccId": "content-creation",
+    "agentId": "dept-content-creation",
+    "emoji": "pen",
+    "headTitle": "Content Director"
+  },
+  "Data Analytics": {
+    "folder": "data-analytics",
+    "ccId": "data-analytics",
+    "agentId": "dept-data-analytics",
+    "emoji": "chart",
+    "headTitle": "Chief Data Officer"
+  },
+  "Executive": {
+    "folder": "executive",
+    "ccId": "executive",
+    "agentId": "dept-executive",
+    "emoji": "crown",
+    "headTitle": "CEO"
+  }
+}

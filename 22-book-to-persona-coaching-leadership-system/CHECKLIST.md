@@ -85,10 +85,10 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 
 ## Gemini Multimodal Indexing Checklist
 
-- [ ] coaching-personas collection exists (`python3 ~/clawd/scripts/gemini-indexer.py --status`)
-- [ ] `python3 ~/clawd/scripts/gemini-indexer.py` run after persona saved
+- [ ] coaching-personas collection exists (`python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status`)
+- [ ] `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` run after persona saved
 - [ ] `# Handled by gemini-indexer.py` run to generate vector embeddings
-- [ ] Test query returns relevant results: `python3 ~/clawd/scripts/gemini-search.py "[book topic]"`
+- [ ] Test query returns relevant results: `python3 ~/.openclaw/workspace/scripts/gemini-search.py "[book topic]"`
 - [ ] At minimum 3 test queries return accurate chunks
 
 ---

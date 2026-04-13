@@ -19,7 +19,7 @@ You do not need to do anything special. The system works automatically.
 
 ### Weekly: Clean up MEMORY.md
 
-At least once a week, open ~/clawd/MEMORY.md and:
+At least once a week, open ~/.openclaw/workspace/MEMORY.md and:
 - Remove entries that are no longer relevant
 - Correct any information that has changed
 - Consolidate duplicate entries
@@ -28,7 +28,7 @@ Use Obsidian if you want a nice UI for editing markdown files.
 
 ### Monthly: Review daily logs
 
-Check ~/clawd/memory/ for old daily logs. Delete logs older than 90 days that contain only routine information. Keep logs that document important decisions.
+Check ~/.openclaw/workspace/memory/ for old daily logs. Delete logs older than 90 days that contain only routine information. Keep logs that document important decisions.
 
 ### When things feel off: Test the search
 
@@ -49,7 +49,7 @@ Just tell your agent: "Remember that [fact]"
 Ask: "Search your memory for [topic]"
 
 ### Review what was saved today
-Ask: "Show me today's memory log" or check ~/clawd/memory/YYYY-MM-DD.md
+Ask: "Show me today's memory log" or check ~/.openclaw/workspace/memory/YYYY-MM-DD.md
 
 ### List key decisions from a conversation
 At the end of an important session, say: "List the key decisions from this session that we should save to memory"

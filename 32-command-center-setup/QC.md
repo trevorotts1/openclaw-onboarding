@@ -106,7 +106,7 @@ PY
 ## Section 5: Dashboard Checks
 
 ```bash
-HTTP_CODE=$(curl -s -o /tmp/command_center_home.html -w "%{http_code}" http://localhost:3000)
+HTTP_CODE=$(curl -s -o /tmp/command_center_home.html -w "%{http_code}" http://localhost:4000)
 echo "HTTP: $HTTP_CODE"
 [ "$HTTP_CODE" = "200" ] && echo "PASS: dashboard reachable" || echo "FAIL: dashboard not reachable"
 
@@ -123,7 +123,7 @@ python3 "$SKILL_DIR/scripts/seed-workspaces.py"
 
 **Expected:** output like `Seeding complete. Inserted: X | Skipped (already existed): Y`.
 
-**Pass criteria:** dashboard serves on port 3000 and PM2 shows the process.
+**Pass criteria:** dashboard serves on port 4000 and PM2 shows the process.
 
 ---
 
@@ -179,13 +179,13 @@ Prompt a department with a task that should use persona search.
 > **Expected:** Skill 23 must already be complete.
 
 **Q2.** What are the three live surfaces created by this skill?
-> **Expected:** persistent department agents, Telegram control room with topics, and a dashboard at localhost:3000.
+> **Expected:** persistent department agents, Telegram control room with topics, and a dashboard at localhost:4000.
 
 **Q3.** What must exist in each department workspace?
 > **Expected:** `IDENTITY.md`, `MEMORY.md`, and `memory/`.
 
 **Q4.** Where should the dashboard be reachable locally?
-> **Expected:** `http://localhost:3000`
+> **Expected:** `http://localhost:4000`
 
 **Q5.** What process manager is used for the dashboard and tunnel?
 > **Expected:** PM2.
@@ -202,7 +202,7 @@ Fail the skill if any of these happen:
 - department workspaces are missing or incomplete
 - agents.list entries are missing for some departments
 - Telegram topics were not created one-per-department plus Cross-Department
-- dashboard is not reachable on localhost:3000
+- dashboard is not reachable on localhost:4000
 - workspace seeding was skipped, leaving only a default workspace in the UI
 - cloudflare tunnel is reported live but there is no token or PM2 process
 - test message in a department topic is answered by the wrong agent or no agent

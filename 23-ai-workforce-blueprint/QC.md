@@ -153,8 +153,8 @@ Verify that AGENTS.md, TOOLS.md, and MEMORY.md were updated per CORE_UPDATES.md.
 
 **Check command:**
 ```bash
-grep -n "AI Workforce Blueprint" ~/clawd/AGENTS.md
-grep -n "Pending Skill Setup" ~/clawd/AGENTS.md
+grep -n "AI Workforce Blueprint" ~/.openclaw/workspace/AGENTS.md
+grep -n "Pending Skill Setup" ~/.openclaw/workspace/AGENTS.md
 ```
 
 ### 3b. TOOLS.md
@@ -164,8 +164,8 @@ grep -n "Pending Skill Setup" ~/clawd/AGENTS.md
 
 **Check command:**
 ```bash
-grep -n "AI Workforce Blueprint" ~/clawd/TOOLS.md
-grep -n "build-workforce.py" ~/clawd/TOOLS.md
+grep -n "AI Workforce Blueprint" ~/.openclaw/workspace/TOOLS.md
+grep -n "build-workforce.py" ~/.openclaw/workspace/TOOLS.md
 ```
 
 ### 3c. MEMORY.md
@@ -176,8 +176,8 @@ grep -n "build-workforce.py" ~/clawd/TOOLS.md
 
 **Check command:**
 ```bash
-grep -n "AI Workforce Blueprint" ~/clawd/MEMORY.md
-grep -n "universal-sops" ~/clawd/MEMORY.md
+grep -n "AI Workforce Blueprint" ~/.openclaw/workspace/MEMORY.md
+grep -n "universal-sops" ~/.openclaw/workspace/MEMORY.md
 ```
 
 ### 3d. Core Files Are Lean
@@ -187,8 +187,8 @@ grep -n "universal-sops" ~/clawd/MEMORY.md
 
 **Check command:**
 ```bash
-wc -l ~/clawd/AGENTS.md
-wc -l ~/clawd/MEMORY.md
+wc -l ~/.openclaw/workspace/AGENTS.md
+wc -l ~/.openclaw/workspace/MEMORY.md
 ```
 
 **FAIL if:** Either file is over 1,000 lines — likely bloated with full docs that should live in the skill folder.

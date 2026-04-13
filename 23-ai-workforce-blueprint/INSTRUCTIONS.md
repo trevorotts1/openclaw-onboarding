@@ -131,6 +131,7 @@ Questions are NOT a fixed list. The AI generates questions in real time based on
 5. What is most important about this department to the business
 6. What is not working well right now
 7. How this department connects to other parts of the business
+8. **Process Preferences (ALWAYS ASK):** "Are there any specific processes you want done a particular way? For example, 'I always want social media posts approved before they go live.' If not, I will use best practices for your industry."
 
 **Examples of good industry-adapted questions:**
 
@@ -213,6 +214,36 @@ If the client gives short answers, says "I don't know" twice, or pauses:
 - Reduce question count for remaining departments
 - The goal is completion, not interrogation
 
+### "I Don't Know" Flow (USE THIS EXACT PROCESS)
+
+When a client says "I don't know," "I'm not sure," or shows hesitation, follow these 6 steps in order:
+
+**1. Acknowledge**
+"That is completely fine. Let me help you figure this out."
+
+**2. Research (Perplexity)**
+Use openrouter/perplexity/sonar-pro-search to look up industry best practices. Example query: "What KPIs do real estate agencies typically track for marketing?" or "How do construction companies handle project billing?"
+
+**3. Provide 2-3 Options**
+Present the research findings as 2-3 concrete options the client can choose from. Keep it simple:
+- "Based on what works for businesses like yours, here are 3 common approaches: [Option A], [Option B], or [Option C]."
+
+**4. Recommend One with Reasoning**
+"My recommendation is [Option X] because [specific reasoning based on their industry/business type]. But you know your business best."
+
+**5. Let Client Choose**
+"Which one feels right for you? Or would you like me to suggest something else?"
+
+**6. Document the Choice**
+After they choose:
+- Record their choice in workforce-interview-answers.md
+- Note that this was a "researched recommendation" (not something they came up with themselves)
+- Use this documented choice when building their department configurations
+
+**Example in action:**
+Client: "I don't know what KPIs my marketing department should track."
+AI: "That is completely fine. Let me research what works for businesses like yours." [Runs Perplexity search] "Based on what I found, here are 3 options most real estate agencies use: 1) Lead volume and cost per lead, 2) Website traffic and conversion rates, or 3) Social media engagement and listing views. My recommendation is option 1 because lead generation is the primary goal for most real estate marketing. Which one feels right for you?"
+
 ### If the Client Wants to Stop
 
 If the client says they need a break, are overwhelmed, or want to stop:
@@ -235,7 +266,7 @@ If the client wants a department that is not in the recommended list:
 
 ### Department Workspaces
 The build-workforce.py script handles all workspace creation via `create_department_workspace()`.
-For each department chosen, create a workspace at ~/clawd/departments/[dept-name]/ with:
+For each department chosen, create a workspace at ~/.openclaw/workspace/departments/[dept-name]/ with:
 
 **Unique files:**
 - SOUL.md - generated from interview answers (NOT a generic template)
@@ -243,7 +274,7 @@ For each department chosen, create a workspace at ~/clawd/departments/[dept-name
 - HEARTBEAT.md - department-specific priorities from interview
 - memory/ folder - for daily session logs
 
-**Inherited files (copied from main CEO workspace ~/clawd/):**
+**Inherited files (copied from main CEO workspace ~/.openclaw/workspace/):**
 - TOOLS.md
 - AGENTS.md
 - USER.md
@@ -276,13 +307,13 @@ After workspaces are created, persona alignment runs using the 5-layer check:
 5. Task Fit
 
 Results stored in:
-- ~/clawd/persona-matrix.md (master pre-qualified pool)
-- ~/clawd/departments/[dept]/governing-personas.md (department-specific pool)
+- ~/.openclaw/workspace/persona-matrix.md (master pre-qualified pool)
+- ~/.openclaw/workspace/departments/[dept]/governing-personas.md (department-specific pool)
 
 Personas are selected PER TASK at runtime, not locked to roles.
 
 ### ORG-CHART.md
-Generated at ~/clawd/ORG-CHART.md via `generate_org_chart()` showing the full company structure: CEO at top, each department director below, specialists under each director with their type (full-time or on-call). Summary reference added to MEMORY.md.
+Generated at ~/.openclaw/workspace/ORG-CHART.md via `generate_org_chart()` showing the full company structure: CEO at top, each department director below, specialists under each director with their type (full-time or on-call). Summary reference added to MEMORY.md.
 
 ### Command Center Config
 departments.json generated via `generate_departments_json()` for the BlackCEO Command Center. Exact schema per entry: id (slug), emoji, name (display), headTitle (director title). Only includes departments the client actually chose.
@@ -291,6 +322,16 @@ departments.json generated via `generate_departments_json()` for the BlackCEO Co
 Auto-created in every department after all workspaces are built. Client is NOT asked about this. Each DA gets a unique set of challenge questions based on that department's KPIs from the interview. The CEO gets a plain-English explanation: "Your AI workforce includes a quality checker in every department whose job is to make sure your team is actually delivering results, not just saying they are."
 
 After everything is built: "You are complete! Setting up your AI workforce now."
+
+### Memory Wiki Documentation
+
+After the workforce is built, generate wiki source pages for:
+- Company structure
+- Department responsibilities
+- Role assignments
+- Persona alignment decisions
+
+These pages are compiled by Memory Wiki for structured knowledge retrieval.
 
 ---
 

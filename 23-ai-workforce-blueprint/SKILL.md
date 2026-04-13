@@ -299,7 +299,7 @@ The CEO gets a plain-English explanation: "Your AI workforce includes a quality 
 
 After Skill 23 finishes, a Marketing department workspace looks like this:
 
-~/clawd/departments/marketing/
+~/.openclaw/workspace/departments/marketing/
 - SOUL.md (unique - Marketing Director identity, generated from interview)
 - MEMORY.md (unique - empty, ready for use)
 - HEARTBEAT.md (unique - department priorities from interview)
@@ -311,13 +311,13 @@ After Skill 23 finishes, a Marketing department workspace looks like this:
 - devils-advocate/ (DA config and challenge questions)
 
 If a specialist was determined to be full-time (e.g., Social Media Manager):
-~/clawd/departments/marketing/specialists/social-media-manager/
+~/.openclaw/workspace/departments/marketing/specialists/social-media-manager/
 - SOUL.md (unique - generated from interview, reflects what the client said about social media)
 - MEMORY.md (unique - tracks campaigns run, engagement data, brand voice decisions)
 - agents.list entry in openclaw.json (makes it a permanent team member that survives restarts)
 
 If a specialist was determined to be on-call (e.g., one-time logo design):
-~/clawd/subagents/templates/logo-designer/
+~/.openclaw/workspace/subagents/templates/logo-designer/
 - SOUL.md (task template only - no persistent memory, spawned by department head when needed)
 
 ## Config Safety
@@ -365,10 +365,10 @@ The AI Workforce Blueprint integrates with the OpenClaw Memory Wiki system for s
 
 | Page | Purpose | Location |
 |------|---------|----------|
-| Company Org Chart | Live organizational structure | `~/clawd/ORG-CHART.md` |
-| Department Config | Per-department KPIs and assignments | `~/clawd/departments/[dept]/department-config.json` |
-| Persona Matrix | Pre-qualified coaching persona pool | `~/clawd/persona-matrix.md` |
-| Governing Personas | Per-department persona matching guide | `~/clawd/departments/[dept]/governing-personas.md` |
+| Company Org Chart | Live organizational structure | `~/.openclaw/workspace/ORG-CHART.md` |
+| Department Config | Per-department KPIs and assignments | `~/.openclaw/workspace/departments/[dept]/department-config.json` |
+| Persona Matrix | Pre-qualified coaching persona pool | `~/.openclaw/workspace/persona-matrix.md` |
+| Governing Personas | Per-department persona matching guide | `~/.openclaw/workspace/departments/[dept]/governing-personas.md` |
 | Interview Answers | Permanent record of workforce interview | `~/Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md` |
 | Interview Handoff | Progress tracker for resume capability | `~/Downloads/openclaw-master-files/company-discovery/interview-handoff.md` |
 

@@ -43,7 +43,7 @@ npm install -g pm2
 The agent will scan for department folders in your master files area. These folders indicate Skill 23 was completed.
 
 **What the agent looks for:**
-- Department folders at `~/clawd/departments/[name]/` (where Skill 23 writes them) — NO -dept suffix
+- Department folders at `~/.openclaw/workspace/departments/[name]/` (where Skill 23 writes them) — NO -dept suffix
 - Also checks `~/.openclaw/workspaces/command-center/` and `~/Downloads/` for department folders
 - Each folder should contain role definitions
 
@@ -162,7 +162,7 @@ Each department workspace will have symlinks to shared files from your main work
 - HEARTBEAT.md
 - SOUL.md
 
-**Important:** The agent uses absolute paths (like `/Users/username/clawd/TOOLS.md`), not tilde paths (`~/clawd/TOOLS.md`). This ensures symlinks work correctly.
+**Important:** The agent uses absolute paths (like `/Users/username/clawd/TOOLS.md`), not tilde paths (`~/.openclaw/workspace/TOOLS.md`). This ensures symlinks work correctly.
 
 ---
 
@@ -365,7 +365,7 @@ If it says "Could not find mission-control.db" -- verify the dashboard started c
 ### 6.6 Verify Dashboard is Accessible
 The agent checks that the dashboard loads at:
 ```
-http://localhost:3000
+http://localhost:4000
 ```
 
 **What you should see:** The workspace selector screen showing all your department workspaces as cards you can click into. Each card shows task counts and agent count for that department.
@@ -373,7 +373,7 @@ http://localhost:3000
 ---
 
 
-**🔴 GATE CHECK: DO NOT proceed to Phase 6b until the dashboard is running on localhost:3000 and the workspace seeding script has been run. Verify both. DO NOT SKIP THIS PHASE.**
+**🔴 GATE CHECK: DO NOT proceed to Phase 6b until the dashboard is running on localhost:4000 and the workspace seeding script has been run. Verify both. DO NOT SKIP THIS PHASE.**
 
 ## Phase 6b: Domain Registration + Tunnel Connection
 
@@ -414,6 +414,8 @@ cloudflared --version
 
 💬 Send Telegram message: "⏳ [Phase 6b] Registering your tunnel with Trevor's system..."
 
+The agent calls the n8n webhook. The webhook returns JSON: `{status, subdomain, tunnelToken}`. The agent reads the `tunnelToken` from the response and uses it to configure cloudflared. No manual token forwarding needed.
+
 ```bash
 RESPONSE=$(curl -s -X POST https://main.blackceoautomations.com/webhook/command-center-register-v3   -H "Content-Type: application/json"   -d '{
     "clientName": "[company-slug-shortid]",
@@ -434,6 +436,8 @@ SUBDOMAIN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys
   "tunnelId": "[uuid]"
 }
 ```
+
+**Important note:** If the webhook returns the old format (`'Workflow was started'`), tell the owner: "The tunnel automation needs updating. Please ask Trevor to update the n8n workflow."
 
 **What Trevor's system does automatically:**
 1. Creates a dedicated Cloudflare tunnel for this client inside Trevor's Cloudflare account
@@ -521,7 +525,7 @@ The agent verifies that each department workspace has the required memory archit
 
 ### 7.4 Test Dashboard
 The agent verifies:
-- Dashboard loads at localhost:3000
+- Dashboard loads at localhost:4000
 - All departments appear in the sidebar
 - All 5 Kanban columns are visible
 - Task creation works
@@ -555,10 +559,10 @@ Ask the agent: "Explain the 5-layer alignment you used to select this persona."
 **Layer 3 - Reason Log:**
 Ask the agent: "Did you log your persona selection to today's daily memory file?"
 
-**Expected:** Agent confirms it appended a reason log entry to `~/clawd/memory/YYYY-MM-DD.md` (where YYYY-MM-DD is today's date). Then verify the file directly:
+**Expected:** Agent confirms it appended a reason log entry to `~/.openclaw/workspace/memory/YYYY-MM-DD.md` (where YYYY-MM-DD is today's date). Then verify the file directly:
 
 ```bash
-cat ~/clawd/memory/$(date +%Y-%m-%d).md | grep -i "selected.*persona"
+cat ~/.openclaw/workspace/memory/$(date +%Y-%m-%d).md | grep -i "selected.*persona"
 ```
 
 **FAIL if:** No matching line exists in today's memory file. The Persona Operating Protocol requires a reason log entry for every task.
@@ -644,7 +648,7 @@ After all phases are complete, verify:
 - [ ] Each department has IDENTITY.md, MEMORY.md, and memory/ folder
 - [ ] Agent config entries added for each department
 - [ ] Telegram bindings configured for each topic
-- [ ] Dashboard accessible at localhost:3000
+- [ ] Dashboard accessible at localhost:4000
 - [ ] Cloudflare tunnel created and running
 - [ ] DNS route registered for [clientName].zerohumanworkforce.com
 - [ ] Hostname follows Option C pattern: [company-slug]-[shortid]
@@ -660,7 +664,7 @@ After all phases are complete, verify:
 ## What to Do Next
 
 1. **Read INSTRUCTIONS.md** for how to use your Command Center daily
-2. **Bookmark your dashboard** at http://localhost:3000
+2. **Bookmark your dashboard** at http://localhost:4000
 3. **Pin the Telegram group** for quick access
 4. **Schedule your first standup** with your department heads
 

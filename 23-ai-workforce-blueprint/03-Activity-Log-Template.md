@@ -60,7 +60,7 @@ HH:MM — [Source]: [Action] [JobID] [Status]
 
 ## Gemini Engine Integration
 
-- Every morning: run `python3 ~/clawd/scripts/gemini-indexer.py` + `# Handled by gemini-indexer.py` on yesterday's completed log
+- Every morning: run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` + `# Handled by gemini-indexer.py` on yesterday's completed log
 - Current day's live log is never embedded mid-day
 - End of year: move all daily logs to `archive/YYYY/` and Gemini Engine embed the archive
 
@@ -71,7 +71,7 @@ HH:MM — [Source]: [Action] [JobID] [Status]
 At the start of each new year:
 1. Create `archive/[previous year]/` folder
 2. Move all daily log files from the previous year into it
-3. Run `python3 ~/clawd/scripts/gemini-indexer.py` + `# Handled by gemini-indexer.py` on the archive
+3. Run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` + `# Handled by gemini-indexer.py` on the archive
 4. Keep the archive permanently — never auto-delete
 5. Deletion is the owner's decision only
 

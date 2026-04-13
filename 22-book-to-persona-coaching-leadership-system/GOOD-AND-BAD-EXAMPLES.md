@@ -82,4 +82,4 @@ This example demonstrates a correctly built persona activation.
 ## Full Examples Reference
 
 For the complete Ava / Five Second Rule persona example with all 14 sections:
-See `~/clawd/projects/coaching-personas-matrix/GOOD-AND-BAD-EXAMPLES.md`
+See `~/.openclaw/workspace/projects/coaching-personas-matrix/GOOD-AND-BAD-EXAMPLES.md`

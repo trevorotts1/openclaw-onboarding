@@ -17,7 +17,7 @@ full persona into context.
 ### Add the full persona library as a collection
 
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py --add \
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --add \
   --path ~/Downloads/openclaw-master-files/coaching-personas/personas \
   --name coaching-personas \
   --mask "**/*.md"
@@ -26,13 +26,13 @@ python3 ~/clawd/scripts/gemini-indexer.py --add \
 ### Index it
 
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
 ```
 
 ### Verify
 
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py --status
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status
 ```
 
 Expected output shows: `coaching-personas` collection with file count.
@@ -40,7 +40,7 @@ Expected output shows: `coaching-personas` collection with file count.
 ### After each new persona is built, re-index
 
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
 ```
 
 ---
@@ -52,9 +52,9 @@ python3 ~/clawd/scripts/gemini-indexer.py
 Use when: you need to identify which persona to activate for a specific human challenge or task
 
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "methodology for building habits and systems for consistency"
-python3 ~/clawd/scripts/gemini-search.py "negotiation framework for difficult conversations and objection handling"
-python3 ~/clawd/scripts/gemini-search.py "sales questioning technique for uncovering customer problems"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "methodology for building habits and systems for consistency"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "negotiation framework for difficult conversations and objection handling"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "sales questioning technique for uncovering customer problems"
 ```
 
 **Expected output format:**
@@ -74,9 +74,9 @@ Read the results to identify which persona to activate.
 Use when: you know which persona you want, and need a specific section (questions, tools, etc.)
 
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "Atomic Habits coaching questions assessment phase"
-python3 ~/clawd/scripts/gemini-search.py "SPIN Selling decision logic framework agent governance"
-python3 ~/clawd/scripts/gemini-search.py "Never Split the Difference objection handling resistance"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "Atomic Habits coaching questions assessment phase"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "SPIN Selling decision logic framework agent governance"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "Never Split the Difference objection handling resistance"
 ```
 
 ### Query Pattern 3 - Find execution standards for a task type
@@ -85,9 +85,9 @@ Use when: an agent is about to execute a specific type of professional task and 
 the governance standard
 
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "email outreach quality standard non-negotiable rules"
-python3 ~/clawd/scripts/gemini-search.py "sales call preparation checklist execution standard"
-python3 ~/clawd/scripts/gemini-search.py "leadership coaching session structure definition of done"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "email outreach quality standard non-negotiable rules"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "sales call preparation checklist execution standard"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "leadership coaching session structure definition of done"
 ```
 
 ### Query Pattern 4 - Find failure patterns to avoid
@@ -95,9 +95,9 @@ python3 ~/clawd/scripts/gemini-search.py "leadership coaching session structure 
 Use when: an agent is reviewing their own output or checking for common mistakes
 
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "failure patterns amateur mistakes sales execution"
-python3 ~/clawd/scripts/gemini-search.py "what bad coaching looks like versus expert coaching"
-python3 ~/clawd/scripts/gemini-search.py "content writing failure patterns quality markers"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "failure patterns amateur mistakes sales execution"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "what bad coaching looks like versus expert coaching"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "content writing failure patterns quality markers"
 ```
 
 ---
@@ -106,17 +106,17 @@ python3 ~/clawd/scripts/gemini-search.py "content writing failure patterns quali
 
 ### Simple hybrid query (recommended - combines BM25 + vector)
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "your question here"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "your question here"
 ```
 
 **Example:**
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "habit stacking implementation guide"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "habit stacking implementation guide"
 ```
 
 ### Structured query (when you need precise control)
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "habits systems consistency"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "habits systems consistency"
 ```
 
 ### Get a specific file section
@@ -128,7 +128,7 @@ Returns lines 1-100 of the Atomic Habits blueprint.
 
 ### Search multiple personas at once
 ```bash
-python3 ~/clawd/scripts/gemini-search.py "all personas"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "all personas"
 ```
 
 Returns summaries of all persona blueprints.
@@ -150,7 +150,7 @@ When Gemini Engine returns results, the agent should:
 Agent task: Write a sales outreach email for a SaaS product
 
 Step 1: Query for relevant governance standard
--> python3 ~/clawd/scripts/gemini-search.py "sales outreach email quality standard execution rules"
+-> python3 ~/.openclaw/workspace/scripts/gemini-search.py "sales outreach email quality standard execution rules"
 
 Step 2: Gemini Engine returns sections from SPIN Selling and StoryBrand personas
 
@@ -169,7 +169,7 @@ Step 5: Agent self-reviews against the non-negotiable rules returned by Gemini E
 
 ### Check collection health
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py --status
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status
 ```
 
 **Example output:**
@@ -182,18 +182,18 @@ Status: READY
 
 ### After adding new persona blueprints
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
 ```
 
 ### If results seem stale or wrong
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py --rebuild
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --rebuild
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
 ```
 
 ### View what is indexed
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py --status
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status
 ```
 
 ---

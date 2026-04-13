@@ -149,13 +149,13 @@ openclaw status | grep "Gateway service"
 ### 1.1 Verify MEMORY.md exists
 
 ```bash
-ls -la ~/clawd/MEMORY.md
+ls -la ~/.openclaw/workspace/MEMORY.md
 ```
 
 If MEMORY.md does not exist, create it:
 
 ```bash
-cat > ~/clawd/MEMORY.md << 'EOF'
+cat > ~/.openclaw/workspace/MEMORY.md << 'EOF'
 # MEMORY.md
 
 > This file contains persistent state, lessons learned, and project status ONLY.
@@ -170,20 +170,20 @@ EOF
 ### 1.2 Verify daily log directory exists
 
 ```bash
-mkdir -p ~/clawd/memory
+mkdir -p ~/.openclaw/workspace/memory
 ```
 
 ### 1.3 Verify core files exist
 
 Check that these files are present. If any are missing, create them from the templates in the onboarding package:
 
-- ~/clawd/MEMORY.md
-- ~/clawd/AGENTS.md
-- ~/clawd/TOOLS.md
-- ~/clawd/USER.md
-- ~/clawd/SOUL.md
-- ~/clawd/IDENTITY.md
-- ~/clawd/HEARTBEAT.md
+- ~/.openclaw/workspace/MEMORY.md
+- ~/.openclaw/workspace/AGENTS.md
+- ~/.openclaw/workspace/TOOLS.md
+- ~/.openclaw/workspace/USER.md
+- ~/.openclaw/workspace/SOUL.md
+- ~/.openclaw/workspace/IDENTITY.md
+- ~/.openclaw/workspace/HEARTBEAT.md
 
 ---
 
@@ -321,7 +321,7 @@ In `~/.openclaw/openclaw.json`, inside the `agents.defaults.memorySearch` sectio
 ]
 ```
 
-**CRITICAL: Use the FULL ABSOLUTE path, not a tilde (~).** OpenClaw resolves non-absolute paths relative to the workspace directory, so `~/Downloads/...` becomes `~/clawd/~/Downloads/...` which does not exist.
+**CRITICAL: Use the FULL ABSOLUTE path, not a tilde (~).** OpenClaw resolves non-absolute paths relative to the workspace directory, so `~/Downloads/...` becomes `~/.openclaw/workspace/~/Downloads/...` which does not exist.
 
 To get the absolute path:
 ```bash
@@ -647,8 +647,8 @@ Run these checks and report the results to the user in Telegram:
 
 ```bash
 # Layer 1: Markdown files
-echo "Layer 1:" && ls ~/clawd/MEMORY.md 2>/dev/null && echo "MEMORY.md OK" || echo "MEMORY.md MISSING"
-ls ~/clawd/memory/ 2>/dev/null | wc -l | xargs -I{} echo "Daily logs: {} files"
+echo "Layer 1:" && ls ~/.openclaw/workspace/MEMORY.md 2>/dev/null && echo "MEMORY.md OK" || echo "MEMORY.md MISSING"
+ls ~/.openclaw/workspace/memory/ 2>/dev/null | wc -l | xargs -I{} echo "Daily logs: {} files"
 
 # Layer 2: Flush prompt
 echo "Layer 2:" && grep -c "memoryFlush" ~/.openclaw/openclaw.json | xargs -I{} echo "Flush config entries: {}"
@@ -702,7 +702,7 @@ find ~/Downloads -maxdepth 2 -type d -iname "*openclaw*master*" -o -iname "*open
 ```
 
 Also include:
-- The workspace directory (check `agents.defaults.workspace` in openclaw.json, typically ~/clawd/ or ~/.openclaw/workspace)
+- The workspace directory (check `agents.defaults.workspace` in openclaw.json, typically ~/.openclaw/workspace)
 - The memory/ subdirectory inside the workspace
 - Any coaching-personas, AI-workforce-blueprint, or department folders inside the master files folder
 
@@ -785,11 +785,11 @@ After indexing and embedding are confirmed complete, run a REAL test of each mem
 
 ```bash
 # Verify MEMORY.md exists and has real content
-wc -l ~/clawd/MEMORY.md
+wc -l ~/.openclaw/workspace/MEMORY.md
 # Expected: more than 10 lines of real content, not just a template header
 
 # Verify daily logs exist
-ls ~/clawd/memory/*.md 2>/dev/null | wc -l
+ls ~/.openclaw/workspace/memory/*.md 2>/dev/null | wc -l
 # Expected: at least 1 daily log file
 ```
 
@@ -1004,7 +1004,7 @@ You do not need to do anything special. The system works automatically.
 
 ### Weekly: Clean up MEMORY.md
 
-At least once a week, open ~/clawd/MEMORY.md and:
+At least once a week, open ~/.openclaw/workspace/MEMORY.md and:
 - Remove entries that are no longer relevant
 - Correct any information that has changed
 - Consolidate duplicate entries
@@ -1013,7 +1013,7 @@ Use Obsidian if you want a nice UI for editing markdown files.
 
 ### Monthly: Review daily logs
 
-Check ~/clawd/memory/ for old daily logs. Delete logs older than 90 days that contain only routine information. Keep logs that document important decisions.
+Check ~/.openclaw/workspace/memory/ for old daily logs. Delete logs older than 90 days that contain only routine information. Keep logs that document important decisions.
 
 ### When things feel off: Test the search
 
@@ -1034,7 +1034,7 @@ Just tell your agent: "Remember that [fact]"
 Ask: "Search your memory for [topic]"
 
 ### Review what was saved today
-Ask: "Show me today's memory log" or check ~/clawd/memory/YYYY-MM-DD.md
+Ask: "Show me today's memory log" or check ~/.openclaw/workspace/memory/YYYY-MM-DD.md
 
 ### List key decisions from a conversation
 At the end of an important session, say: "List the key decisions from this session that we should save to memory"

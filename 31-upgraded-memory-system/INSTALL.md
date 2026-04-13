@@ -70,13 +70,13 @@ openclaw status | grep "Gateway service"
 ### 1.1 Verify MEMORY.md exists
 
 ```bash
-ls -la ~/clawd/MEMORY.md
+ls -la ~/.openclaw/workspace/MEMORY.md
 ```
 
 If MEMORY.md does not exist, create it:
 
 ```bash
-cat > ~/clawd/MEMORY.md << 'EOF'
+cat > ~/.openclaw/workspace/MEMORY.md << 'EOF'
 # MEMORY.md
 
 > This file contains persistent state, lessons learned, and project status ONLY.
@@ -91,20 +91,20 @@ EOF
 ### 1.2 Verify daily log directory exists
 
 ```bash
-mkdir -p ~/clawd/memory
+mkdir -p ~/.openclaw/workspace/memory
 ```
 
 ### 1.3 Verify core files exist
 
 Check that these files are present. If any are missing, create them from the templates in the onboarding package:
 
-- ~/clawd/MEMORY.md
-- ~/clawd/AGENTS.md
-- ~/clawd/TOOLS.md
-- ~/clawd/USER.md
-- ~/clawd/SOUL.md
-- ~/clawd/IDENTITY.md
-- ~/clawd/HEARTBEAT.md
+- ~/.openclaw/workspace/MEMORY.md
+- ~/.openclaw/workspace/AGENTS.md
+- ~/.openclaw/workspace/TOOLS.md
+- ~/.openclaw/workspace/USER.md
+- ~/.openclaw/workspace/SOUL.md
+- ~/.openclaw/workspace/IDENTITY.md
+- ~/.openclaw/workspace/HEARTBEAT.md
 
 ---
 
@@ -440,7 +440,7 @@ After all layers are installed, run these checks:
 
 ```bash
 # Layer 1: Markdown files exist
-ls ~/clawd/MEMORY.md ~/clawd/memory/
+ls ~/.openclaw/workspace/MEMORY.md ~/.openclaw/workspace/memory/
 
 # Layer 2: Flush prompt is configured
 grep "memoryFlush" ~/.openclaw/openclaw.json | head -1

@@ -97,11 +97,16 @@ When a task comes in and needs a persona:
 ```
 
 ### Step 2: Query the Persona Collection
+
+**BEFORE running Gemini search, read `persona-categories.json` (located in Skill 22 folder), identify the relevant domain tags for this department, and include those tags in your search query.** This ensures the search is scoped to the right category space rather than returning generic matches.
+
 ```
-gemini search "<task description> + <role purpose> + <user context keywords>" -c coaching-personas
+# First: read persona-categories.json to find relevant domain tags for this department
+# Then: construct search query with those tags included
+gemini search "<task description> + <role purpose> + <user context keywords> + <domain tags from persona-categories.json>" -c coaching-personas
 ```
 
-This returns the top matching personas ranked by relevance.
+This returns the top matching personas ranked by relevance. Including domain tags (e.g., `marketing`, `sales`, `copywriting`) focuses results on personas whose expertise aligns with the department's domain.
 
 ### Step 3: Apply the 5 Layers
 Score each candidate persona against all 5 layers:
@@ -118,6 +123,28 @@ Layers 1-2 create the pre-qualified pool (run once at setup). Layers 3-5 run fre
 - Log the selection reasoning (which layers influenced the choice and why)
 - Attach the persona to the agent/sub-agent for this task
 - The persona stays attached for the duration of that task only
+
+**MANDATORY: Before executing any task, write a selection log entry to `persona-selection-log.md` in the department workspace.**
+
+Format:
+```
+[date] [task-id] [candidates-considered] [selected-persona] [layer-3-reason] [layer-4-reason] [layer-5-reason]
+```
+
+Example:
+```
+2026-04-12 task-0042 "Hormozi, Miller, Kane" "Hormozi" "Revenue KPI alignment" "Marketing conversion goals" "Sales copywriting task"
+```
+
+Every task dispatch MUST produce a log entry. No exceptions. This creates an audit trail for persona effectiveness and enables future optimization of the matching algorithm.
+
+### Anti-Staleness Guards
+
+MEMORY.md learned preferences are data, NOT shortcuts. Never skip the 5-layer alignment because MEMORY.md says 'usually pick X'.
+
+If persona-selection-log.md shows the same persona chosen 5+ times in a row for the same department, flag for review. Repetition without fresh alignment is staleness.
+
+The full 5-layer check runs fresh EVERY time. No caching. No shortcuts. No 'I already know this one.'
 
 ---
 
@@ -160,3 +187,45 @@ Pick the one with the strongest Layer 5 (task fit) score. The task must get done
 
 **What if Skill 22 is not installed?**
 No persona matching happens. The agent operates without persona guidance. This is a valid state. When Skill 22 is installed later, persona matching activates automatically.
+
+---
+
+## Memory Wiki Integration
+
+After every 50 tasks with persona selection, compile a wiki source page summarizing:
+- Most-used personas per department
+- Task types that consistently match certain personas
+- Persona diversity scores
+
+This data helps tune the 5-layer alignment over time.
+
+---
+
+## Post-Task Persona Verification
+
+After completing any task, the agent MUST self-check:
+
+1. **Did my output follow [persona name]'s methodology?**
+   - Did I apply their specific frameworks and sequencing?
+   - Did I use their decision logic and rules?
+   - Did I avoid patterns they explicitly reject?
+
+2. **Did I apply their specific standards?**
+   - Did I follow the execution checklist?
+   - Did I meet the quality bar defined in the blueprint?
+   - Did I check against failure patterns?
+
+3. **Log the self-check result in the task completion report:**
+   ```
+   [task-id] Persona Verification: [persona-name]
+   - Methodology followed: YES / PARTIAL / NO
+   - Standards applied: YES / PARTIAL / NO
+   - Notes: [any deviations or gaps]
+   ```
+
+**Why this matters:** Persona matching is only effective if the selected persona's methodology is actually applied. This self-check creates accountability and provides data for improving persona selection accuracy over time.
+
+**When verification fails:** If the agent realizes the output did NOT follow the persona's methodology, flag it:
+- Note the gap in the completion report
+- Re-run the task with explicit reference to the persona blueprint
+- Log both attempts for pattern analysis

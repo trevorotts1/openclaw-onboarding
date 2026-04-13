@@ -158,6 +158,58 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 **Output:** persona-blueprint.md saved to persona folder with header block
 
+### Post-Synthesis: Automatic Re-Index (Phase 3 Completion)
+
+After the persona-blueprint.md is written and saved, Phase 3 is NOT complete until the following re-index step runs:
+
+```bash
+# Re-index the Gemini collection with the new persona blueprint
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
+```
+
+**Why:** The blueprint must be indexed immediately so that persona matching (Skill 23 persona-matching-protocol.md) can discover this new persona via semantic search. Without re-indexing, the new persona exists on disk but is invisible to the matching system until a manual index run.
+
+**Validation:** After gemini-indexer.py completes, confirm the new persona appears in search results:
+```bash
+gemini search "<persona name or key topic>" -c coaching-personas
+```
+
+**Phase 3 status in pipeline-status.json should only be set to COMPLETE after both the blueprint is saved AND the re-index succeeds.**
+
+**Persona Matrix Update:** If `persona-matrix.md` exists in the workforce directory (`~/.openclaw/workspace/departments/`), re-run Layers 1-2 to update the pre-qualified persona pool. This ensures newly created personas are available for the 5-layer matching protocol. Run:
+```bash
+python3 ~/Downloads/openclaw-master-files/23-ai-workforce-blueprint/scripts/build-workforce.py --non-interactive --config-file workforce-config.json
+```
+
+### Post-Categorization: Automatic persona-categories.json Update
+
+After the persona blueprint is written and its domain/perspective tags are determined during synthesis, automatically append the new persona entry to `persona-categories.json` (located in the Skill 22 folder):
+
+```python
+# After Phase 3 synthesis produces the blueprint and its tags:
+# 1. Read the persona's domain tags, perspective tags, and custom tags from the blueprint
+# 2. Generate the persona key: "<lastname>-<book-short-title>" (lowercase, hyphenated)
+# 3. Append the entry to persona-categories.json
+```
+
+**Entry format** (matches existing schema):
+```json
+"<persona-key>": {
+  "author": "Author Name",
+  "book": "Book Title",
+  "domain": ["tag1", "tag2"],
+  "perspective": ["tag1"],
+  "custom": ["tag1", "tag2"]
+}
+```
+
+**Validation:**
+- The new entry must use only tags from the existing `domainTags` and `perspectiveTags` arrays, or add new tags to those arrays if the persona introduces genuinely new categories.
+- The JSON must remain valid after insertion.
+- Run `python3 -c "import json; json.load(open('persona-categories.json'))"` to verify.
+
+**This step runs BEFORE the re-index step above, so that persona-categories.json is up to date when the indexer runs.**
+
 ---
 
 ## Phase 4 - Gemini Engine Indexing
@@ -170,7 +222,7 @@ After Phase 3 completes for a book:
   --mask "**/*.md"
 
 # Update index with new blueprint
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
 
 # Generate vector embeddings
 # Handled by gemini-indexer.py
@@ -199,6 +251,8 @@ python3 ~/clawd/scripts/gemini-indexer.py
     "phase2": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
     "phase3": "PENDING | IN_PROGRESS | COMPLETE | FAILED",
     "phase3_model_used": "gpt-5.3-codex | kimi-k2.5 (fallback)",
+    "phase3_categories_updated": true,
+    "phase3_reindexed": true,
     "google_embedding_2_indexed": true,
     "started": "March 7 at 3:30 PM",
     "completed": "March 7 at 3:52 PM",

@@ -34,7 +34,7 @@ Persona integration:
 - Dynamic selection: Gemini Search (gemini-search.py) finds top 3 candidates per task, 5-layer alignment picks winner
 - 5-layer scoring: Owner Values (25%), Company Mission (25%), Business KPIs (20%), Dept KPIs (15%), Task Fit (15%)
 - Fallback: if Gemini unavailable, use governing-personas.md Primary Persona
-- Reason log: one-line entry per task to ~/clawd/memory/[date].md (daily journal)
+- Reason log: one-line entry per task to ~/.openclaw/workspace/memory/[date].md (daily journal)
 - persona-matching-protocol.md documents the full runtime matching process
 - Dev Devil's Advocate (DA) auto-created per department using Act As If Protocol
 - Persona diversity tracked in agent performance metrics
@@ -49,11 +49,11 @@ Workspace location: [fill in after build]
 ### Governing Personas — Update Protocol
 
 When a new book is added to the persona library:
-1. Run `python3 ~/clawd/scripts/gemini-indexer.py` to re-index the coaching-personas collection
+1. Run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` to re-index the coaching-personas collection
 2. Review `governing-personas.md` in each department folder for relevant departments (the new persona may be a better fit for some tasks)
 3. Update persona assignments in `governing-personas.md` if the new persona is a better fit for Primary or Secondary slots
-4. Update `~/clawd/ORG-CHART.md` if specialist roles or department structure changes as a result
-5. Update `~/clawd/persona-matrix.md` to include the new persona in the company pool
+4. Update `~/.openclaw/workspace/ORG-CHART.md` if specialist roles or department structure changes as a result
+5. Update `~/.openclaw/workspace/persona-matrix.md` to include the new persona in the company pool
 
 This ensures the workforce stays current as the persona library grows.
 ```
@@ -71,11 +71,11 @@ Script: ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py
 Run: python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py
 
 Key functions:
-- create_department_workspace(): builds ~/clawd/departments/[name]/ with inherited core files
+- create_department_workspace(): builds ~/.openclaw/workspace/departments/[name]/ with inherited core files
 - create_governing_personas_md(): maps persona-categories.json to department domain tags
 - determine_specialists(): classifies roles as permanent (daily) or on-call (template)
 - add_agent_to_config(): backs up config, then adds agents.list entry
-- generate_org_chart(): creates ~/clawd/ORG-CHART.md
+- generate_org_chart(): creates ~/.openclaw/workspace/ORG-CHART.md
 - generate_departments_json(): creates departments.json for Command Center (written to ~/Downloads/openclaw-master-files/company-discovery/departments.json)
 - generate_soul_md(): creates unique SOUL.md from interview answers
 - log_fallback(): tracks when clients hesitate during interview
@@ -167,6 +167,6 @@ No update required.
 File: ~/.openclaw/skills/.pending-setup.md
 If this file exists with entries marked Status: PENDING, proactively remind the user.
 When relevant to what they are working on, say: "You have a pending skill setup for [key] - want to add that now?"
-When user provides the key: save it to ~/clawd/secrets/.env and mark the entry Status: COMPLETE.
+When user provides the key: save it to ~/.openclaw/workspace/secrets/.env and mark the entry Status: COMPLETE.
 Never nag - bring it up once per session max, only when relevant.
 ```

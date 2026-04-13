@@ -97,7 +97,7 @@ The agents will update their schedule and follow the new times.
 
 ### Accessing the Dashboard
 1. Open your web browser
-2. Go to http://localhost:3000 (or your Cloudflare URL if set up)
+2. Go to http://localhost:4000 (or your Cloudflare URL if set up)
 3. You will see your Kanban board with all departments
 
 ### Creating a New Task
@@ -136,7 +136,7 @@ When you create a task:
 ## How to View the Dashboard
 
 ### Local Access
-- URL: http://localhost:3000
+- URL: http://localhost:4000
 - Only works when you are on the same computer or network
 
 ### Remote Access (if Cloudflare tunnel is set up)

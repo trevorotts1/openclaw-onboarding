@@ -16,14 +16,26 @@ import os, sys, time, sqlite3, hashlib, json, shutil
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
+# Workspace Root Configuration
+# ---------------------------------------------------------------------------
+# WORKSPACE_ROOT can be set via environment variable, defaults to ~/.openclaw/workspace
+# For backward compatibility, also checks ~/clawd/ (legacy path)
+WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
+CLAWD_ROOT = os.path.expanduser("~/clawd")  # Legacy fallback
+
+# Determine which root to use (prefer WORKSPACE_ROOT if it exists, else CLAWD_ROOT)
+if not os.path.isdir(WORKSPACE_ROOT):
+    WORKSPACE_ROOT = CLAWD_ROOT
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DB_PATH = os.path.expanduser("~/clawd/data/coaching-personas/gemini-index.sqlite")
-PERSONAS_DIR_PRIMARY = os.path.expanduser("~/clawd/data/coaching-personas/personas")
+DB_PATH = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/gemini-index.sqlite")
+PERSONAS_DIR_PRIMARY = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/personas")
 PERSONAS_DIR_FALLBACK = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/personas")
 BOOKS_WATCH_DIR = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/books")
-MEMORY_DIR = os.path.expanduser("~/clawd/memory")
-PERSONA_SELECTIONS_DIR = os.path.expanduser("~/clawd/memory/persona-selections")
+MEMORY_DIR = os.path.join(WORKSPACE_ROOT, "memory")
+PERSONA_SELECTIONS_DIR = os.path.join(WORKSPACE_ROOT, "memory/persona-selections")
 
 COLLECTIONS = {
     "coaching-personas": {
@@ -32,7 +44,7 @@ COLLECTIONS = {
         "glob": "**/*.md",
     },
     "master-files": {
-        "primary": os.path.expanduser("~/clawd/data/master-files"),
+        "primary": os.path.join(WORKSPACE_ROOT, "data/master-files"),
         "fallback": os.path.expanduser("~/Downloads/openclaw-master-files"),
         "glob": "**/*.md",
     },
@@ -55,7 +67,8 @@ def get_api_key():
     # Priority 2: OpenClaw secrets folder
     secrets_env = os.path.expanduser("~/.openclaw/secrets/.env")
     # Priority 3: Clawd secrets (Trevor's machine only)
-    clawd_env = os.path.expanduser("~/clawd/secrets/.env")
+    # Legacy path for backward compatibility
+    clawd_env = os.path.join(CLAWD_ROOT, "secrets/.env")
     # Priority 4: User's workspace
     workspace_env = os.path.expanduser("~/.config/openclaw/.env")
 
@@ -92,7 +105,7 @@ def cmd_status():
     if api_key:
         print(f"✅ API key: found ({api_key[:8]}...)")
     else:
-        print("❌ API key: NOT FOUND (add GOOGLE_API_KEY to ~/clawd/secrets/.env)")
+        print(f"❌ API key: NOT FOUND (add GOOGLE_API_KEY to {WORKSPACE_ROOT}/secrets/.env)")
 
     # Python deps
     try:
@@ -202,7 +215,7 @@ def cmd_rotate_logs():
     today = time.strftime("%Y-%m-%d")
     rotated_count = 0
 
-    # Check all daily memory files in ~/clawd/memory/
+    # Check all daily memory files in memory/
     if not os.path.isdir(MEMORY_DIR):
         print("⚠️  Memory directory not found.")
         return
@@ -344,7 +357,7 @@ def main():
     def get_client():
         api_key = get_api_key()
         if not api_key:
-            print("WARNING: GOOGLE_API_KEY not found. Checked ~/clawd/secrets/.env, "
+            print(f"WARNING: GOOGLE_API_KEY not found. Checked {WORKSPACE_ROOT}/secrets/.env, "
                   "~/.openclaw/.env, ~/.openclaw/secrets/.env, and environment variables. "
                   "Set GOOGLE_API_KEY and try again.")
             sys.exit(2)

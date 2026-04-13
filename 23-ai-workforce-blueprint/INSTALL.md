@@ -78,7 +78,7 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 
 ```bash
 # Check if coaching-personas Gemini Vector Database exists
-if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
+if python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 verified: coaching-personas collection found"
   SKILL22_INSTALLED=true
 else
@@ -227,6 +227,8 @@ If the skill files are already at `~/.openclaw/skills/23-ai-workforce-blueprint/
 
 This is where you build the actual workforce structure. You do all of this yourself.
 
+**TIMEOUT NOTE:** For complex businesses (8+ departments, full knowledge base content generation, persona wiring), the complete build can take 25-30 minutes. When spawning a sub-agent to run this skill, set the timeout to **1800 seconds** (30 minutes) to avoid premature termination. Simpler builds (3-5 departments, Option B) typically complete within 600 seconds (10 minutes). If in doubt, always use the higher timeout.
+
 ### 5-PRE. Model Check (MANDATORY)
 
 Before starting any interview or build work, verify you are running on an approved high reasoning model:
@@ -247,7 +249,7 @@ Before presenting options, before asking a single question, check if this client
 
 **Check 1:** Look for department folders in the workspace:
 ```bash
-ls -d ~/clawd/departments/*/ 2>/dev/null | head -5
+ls -d ~/.openclaw/workspace/departments/*/ 2>/dev/null | head -5
 ```
 If department folders exist (e.g., marketing/, sales/), the build was already completed.
 
@@ -388,7 +390,7 @@ Before touching openclaw.json:
 
 For EACH department the client chose, use build-workforce.py create_department_workspace():
 
-Create folder: ~/clawd/departments/[dept-name]/
+Create folder: ~/.openclaw/workspace/departments/[dept-name]/
 
 **Unique files (created new):**
 - SOUL.md - generated from interview answers via generate_soul_md(), NOT a generic template
@@ -396,7 +398,7 @@ Create folder: ~/clawd/departments/[dept-name]/
 - HEARTBEAT.md - department-specific priorities from interview
 - memory/ folder - for daily session logs
 
-**Inherited files (copied from main CEO workspace ~/clawd/):**
+**Inherited files (copied from main CEO workspace ~/.openclaw/workspace/):**
 - TOOLS.md - same tools, same credentials
 - AGENTS.md - same behavioral playbook
 - USER.md - same human, same preferences
@@ -412,11 +414,11 @@ At the start of EVERY task, run dynamic persona selection. Do NOT skip or defaul
 ### Step 1: Gemini Search
 Run the Gemini persona search to find the top 3 matching personas for this task:
 ```
-python3 ~/clawd/scripts/gemini-search.py "task description"
+python3 ~/.openclaw/workspace/scripts/gemini-search.py "task description"
 ```
 Replace `"task description"` with a concise description of the current task.
 
-**Fallback:** If Gemini is unavailable or the script returns no results, fall back to the Primary Persona listed in `~/clawd/departments/[your-dept]/governing-personas.md`. Do NOT skip persona selection.
+**Fallback:** If Gemini is unavailable or the script returns no results, fall back to the Primary Persona listed in `~/.openclaw/workspace/departments/[your-dept]/governing-personas.md`. Do NOT skip persona selection.
 
 ### Step 2: 5-Layer Alignment (Pick the Winner)
 Score each of the 3 candidates against these 5 layers. The highest total score wins.
@@ -432,7 +434,7 @@ Score each of the 3 candidates against these 5 layers. The highest total score w
 Pick the persona with the highest weighted score. If two candidates tie, pick the one with the higher Task Fit score.
 
 ### Step 3: Reason Log
-Append ONE line to your daily journal at `~/clawd/memory/[YYYY-MM-DD].md` (NOT MEMORY.md):
+Append ONE line to your daily journal at `~/.openclaw/workspace/memory/[YYYY-MM-DD].md` (NOT MEMORY.md):
 ```
 [HH:MM] Persona: [persona name] | Dept: [dept] | Task: [brief] | Reason: [why selected]
 ```
@@ -447,7 +449,7 @@ For this entire task, think, communicate, and decide AS THE SELECTED PERSONA:
 If the persona's guidance conflicts with this department's instructions or the owner's explicit direction, the owner's intent wins. Log the conflict in your daily journal.
 
 ### Step 6: Log Persona Usage
-At the end of each task, log to `~/clawd/departments/[your-dept]/memory/[date].md`:
+At the end of each task, log to `~/.openclaw/workspace/departments/[your-dept]/memory/[date].md`:
 - Date, task summary, persona used, reason for selection
 ```
 
@@ -469,12 +471,12 @@ Using determine_specialists() from build-workforce.py, read the interview answer
 
 **Full-time team member (permanent):**
 - Work is daily/weekly, needs memory of past work, maintains relationships
-- Gets: SOUL.md + MEMORY.md in ~/clawd/departments/[dept]/specialists/[name]/
+- Gets: SOUL.md + MEMORY.md in ~/.openclaw/workspace/departments/[dept]/specialists/[name]/
 - Gets: agents.list entry in openclaw.json
 
 **On-call specialist:**
 - Work is occasional/one-time, no memory needed
-- Gets: SOUL.md template in ~/clawd/subagents/templates/[name]/
+- Gets: SOUL.md template in ~/.openclaw/workspace/subagents/templates/[name]/
 - No agents.list entry
 
 The client NEVER hears "permanent agent" or "sub-agent."
@@ -576,7 +578,7 @@ After workspaces are created, run persona alignment using build-workforce.py fun
 2. For each department, identify relevant domain tags (marketing dept → marketing, copywriting, communication)
 3. Pull pre-qualified personas from those categories via get_personas_for_category()
 4. Create governing-personas.md per department via create_governing_personas_md()
-5. Create ~/clawd/persona-matrix.md with the full company persona pool
+5. Create ~/.openclaw/workspace/persona-matrix.md with the full company persona pool
 
 ### Governing-Personas.md Content Requirements (MANDATORY - NOT OPTIONAL)
 
@@ -613,8 +615,8 @@ After creating all governing-personas.md files, run this check:
 
 ```bash
 # Count departments with real governing-personas.md content
-ACTUAL=$(grep -rl 'Primary Persona' ~/clawd/departments/*/governing-personas.md 2>/dev/null | wc -l | tr -d ' ')
-EXPECTED=$(ls -d ~/clawd/departments/*/ 2>/dev/null | wc -l | tr -d ' ')
+ACTUAL=$(grep -rl 'Primary Persona' ~/.openclaw/workspace/departments/*/governing-personas.md 2>/dev/null | wc -l | tr -d ' ')
+EXPECTED=$(ls -d ~/.openclaw/workspace/departments/*/ 2>/dev/null | wc -l | tr -d ' ')
 echo "Departments with governing-personas.md content: $ACTUAL / $EXPECTED"
 ```
 
@@ -637,7 +639,7 @@ The instruction to the agent is: "Act as if you are [persona name] executing thi
 ## PHASE 5-ORG - GENERATE ORG CHART AND COMMAND CENTER CONFIG
 
 ### ORG-CHART.md
-Generate ~/clawd/ORG-CHART.md via generate_org_chart() showing:
+Generate ~/.openclaw/workspace/ORG-CHART.md via generate_org_chart() showing:
 - CEO / Master Orchestrator at top
 - Each department director with their model
 - Specialists under each director (full-time or on-call)
@@ -673,7 +675,7 @@ After everything is built: "You are complete! Setting up your AI workforce now."
 
 ```bash
 # Re-run detection after questions complete
-if python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
+if python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 detected post-build - running persona wiring..."
   RUN_PERSONA_WIRING=true
 else
@@ -694,7 +696,7 @@ Check if Skill 22 (Book To Persona & Coaching & Leadership System) is installed.
 
 1. Run this command to check for the Gemini Engine coaching-personas collection:
 ```bash
-python3 ~/clawd/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"
 ```
 2. If that returns exit code 0 (match found), personas are installed.
 3. As a fallback, also check for the persona skill folder:
@@ -714,7 +716,7 @@ ls ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/ 2>/dev/null
 
 Each department must have:
 ```
-~/clawd/departments/[dept-name]/specialists/
+~/.openclaw/workspace/departments/[dept-name]/specialists/
   ├── [role-name-1].md
   └── [role-name-2].md
 ```
@@ -744,7 +746,7 @@ Determine role names from the interview answers. Minimum 2 specialist roles per 
 
 ### ORG-CHART.md Creation (MANDATORY)
 
-**Create `~/clawd/ORG-CHART.md` showing the full reporting structure.**
+**Create `~/.openclaw/workspace/ORG-CHART.md` showing the full reporting structure.**
 
 Format:
 ```markdown
@@ -768,7 +770,7 @@ Format:
 
 **Gate check:**
 ```bash
-if [ -s ~/clawd/ORG-CHART.md ]; then
+if [ -s ~/.openclaw/workspace/ORG-CHART.md ]; then
   echo "✅ ORG-CHART.md exists and is non-empty"
 else
   echo "❌ ORG-CHART.md missing or empty — FIX BEFORE PROCEEDING"
@@ -778,7 +780,7 @@ fi
 
 **Gate check for specialist folders:**
 ```bash
-for dept_dir in ~/clawd/departments/*/; do
+for dept_dir in ~/.openclaw/workspace/departments/*/; do
   dept=$(basename "$dept_dir")
   count=$(ls "$dept_dir/specialists/"*.md 2>/dev/null | wc -l | tr -d ' ')
   if [ "$count" -lt 2 ]; then
@@ -826,13 +828,13 @@ Regardless of whether coaching personas were detected, ALWAYS run Gemini Engine 
 
 ```bash
 # Add/update all collections
-python3 ~/clawd/scripts/gemini-indexer.py
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py
 
 # Generate embeddings (covers master-files + coaching-personas + workforce files)
 # Handled by gemini-indexer.py
 
 # Verify completion
-python3 ~/clawd/scripts/gemini-indexer.py --status
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status
 ```
 
 **Why this happens here:**
@@ -1009,7 +1011,7 @@ Before reporting done, verify every item:
 - [ ] Permanent specialists have SOUL.md + MEMORY.md + agents.list entry
 - [ ] On-call specialists have template SOUL.md in subagents/templates/
 - [ ] governing-personas.md created per department with REAL content (Primary Persona name, book title, why it fits, 3 task types — NOT empty stubs)
-- [ ] Gate check passed: grep -l 'Primary Persona' ~/clawd/departments/*/governing-personas.md | wc -l equals department count
+- [ ] Gate check passed: grep -l 'Primary Persona' ~/.openclaw/workspace/departments/*/governing-personas.md | wc -l equals department count
 - [ ] Specialist folders created: each department has specialists/ with at least 2 role files
 - [ ] Each specialist role file contains: Title, Reports to, Responsibilities (5 bullets), Key metrics
 - [ ] persona-matrix.md created in CEO workspace
