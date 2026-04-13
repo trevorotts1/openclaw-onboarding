@@ -1,3 +1,16 @@
+## v8.2.0 - April 13, 2026
+- Added Skill 35: Social Media Planner
+  - 7-part weekly content series across 6 platforms
+  - 8 parallel sub-agents for production
+  - 40+ QC checks across 8 categories
+  - GoHighLevel Social Planner API (Private Integration Token) for posting and commenting
+  - Image generation via kie.ai Nano Banana 2
+  - Video via kie.ai Veo 3.1 Lite + FFmpeg
+  - Podcast via Fish Audio S2, published through n8n webhook to Podbean
+  - Persona integration with 5-layer alignment and client override option
+  - Memory-core integration for theme and performance tracking
+  - Podcast cover images: JPEG/PNG only, under 500 KB
+
 ## v8.1.0 - April 13, 2026 - Platform Architecture Playbook v1.0
 
 ### Overview

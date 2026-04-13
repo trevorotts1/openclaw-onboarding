@@ -4,7 +4,7 @@
 
 **Current Version: v8.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-This repo contains **34 skill folders** (01 through 34, with 13, 33, and 34 archived) plus an install script.
+This repo contains **35 skill folders** (01 through 35, with 13, 33, and 34 archived) plus an install script.
 
 ### What's New in v8.0.0 (April 13, 2026) — BlackCEO System Overhaul v3.3
 - **Persona runtime loader**: Replaces hardcoded PERSONA_DETAILS with dynamic runtime loading from company-config.json
@@ -108,6 +108,7 @@ That file is the master instruction file. It contains:
 | 31-upgraded-memory-system | Upgraded Memory System |
 | 32-blackceo-voice-call-plugin | BlackCEO Voice Call Plugin |
 | 33-department-heads | Permanent Department Heads |
+| 35-social-media-planner | Social Media Planner |
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ONBOARDING_VERSION="v8.1.0"
+ONBOARDING_VERSION="v8.2.0"
 
 # ============================================================
 #  OpenClaw Onboarding Installer (IMPROVED)
@@ -119,7 +119,7 @@ backup_config_file() {
 
 # ----------------------------------------------------------
 # Smart skill discovery — searches multiple locations, uses highest count
-# Fixes bug where skills/ subdir (3 items) was counted instead of root (34 items)
+# Fixes bug where skills/ subdir (3 items) was counted instead of root (35 items)
 # ----------------------------------------------------------
 discover_skills() {
   local base_dir="${1:-$HOME/.openclaw/onboarding}"
@@ -280,9 +280,9 @@ echo "  Found: $(command -v openclaw)"
 # ----------------------------------------------------------
 # Step 2: Download the onboarding package
 # ----------------------------------------------------------
-show_status "Downloading 34 skills package... (this may take 1-2 minutes)"
+show_status "Downloading 35 skills package... (this may take 1-2 minutes)"
 
-echo "[2/5] Downloading 34 skills from GitHub..."
+echo "[2/5] Downloading 35 skills from GitHub..."
 TEMP_ZIP="/tmp/openclaw-onboarding-pkg.zip"
 TEMP_EXTRACT="/tmp/openclaw-onboarding-extract"
 
@@ -295,7 +295,7 @@ if [ ! -f "$TEMP_ZIP" ]; then
 fi
 echo "  Downloaded to $TEMP_ZIP"
 
-send_telegram_progress "Downloaded 34 skills package"
+send_telegram_progress "Downloaded 35 skills package"
 
 # ----------------------------------------------------------
 # Step 3: Extract to ~/.openclaw/onboarding/
@@ -674,7 +674,7 @@ cat >> "$AGENTS_FILE" << 'ONBOARDING_FLAG'
 ---
 🔴🔴🔴 ONBOARDING PENDING - EXECUTE IMMEDIATELY
 
-The OpenClaw onboarding package (34 skills) has been installed to:
+The OpenClaw onboarding package (35 skills) has been installed to:
   ~/.openclaw/onboarding/
 
 READ THIS FILE FIRST: ~/.openclaw/onboarding/Start Here.md
@@ -682,10 +682,10 @@ READ THIS FILE FIRST: ~/.openclaw/onboarding/Start Here.md
 It contains the complete execution checklist, wave instructions, and failure handling.
 
 SUMMARY:
-- Install 34 skills using 5-Wave Parallel Orchestration
+- Install 35 skills using 5-Wave Parallel Orchestration
 - Use parallel sub-agents for Waves 2 and 4 (if sessions_spawn works)
 - Use sequential mode for Waves 1, 3, 5
-- Skip skills 13, 33, 34 (archived)
+- Skip skills 13, 33, 34 (archived), install skill 35
 - Skills 22-23: Main orchestrator ONLY (no sub-agents)
 - Track progress in ~/.openclaw/onboarding/.onboarding-status
 - Remove this flag and write ONBOARDING COMPLETE to MEMORY.md when done
@@ -703,7 +703,7 @@ MIMO V2 PRO THINKING LEVELS:
 
 DO NOT:
 - Skip reading Start Here.md
-- Skip skills or say "done" until all 34 complete
+- Skip skills or say "done" until all 35 complete
 - Delegate skills 22-23 to sub-agents
 - Trigger gateway restarts without asking
 
@@ -945,7 +945,7 @@ echo "  OpenClaw Onboarding Package Ready"
 echo "  Version: ${ONBOARDING_VERSION}"
 echo "============================================"
 echo ""
-echo "  📦 34 skills downloaded to:"
+echo "  📦 35 skills downloaded to:"
 echo "     ~/.openclaw/onboarding/"
 echo ""
 echo "  You have just received an OpenClaw update."
