@@ -1,687 +1,271 @@
 #!/bin/bash
-# BlackCEO System — Safe Skill Updater
-# Version: 7.0.0 | April 13, 2026
-#
-# This script performs a FULL safe update with staged download,
-# version checking, per-skill comparison, and user confirmation.
-#
-# Usage: bash ~/.openclaw/workspace/scripts/update-skills.sh
+# BlackCEO System - Safe Update Script
+# Downloads latest, compares versions, backs up config,
+# asks for approval, applies updates, notifies via Telegram,
+# writes UPDATE PENDING flag for the agent.
 
 set -euo pipefail
 
-# ───────────────────────────────────────────────────────────────────────────────
-# CONFIGURATION
-# ───────────────────────────────────────────────────────────────────────────────
-
+# ── CONFIGURATION ──
+# MAC REPO (change these two lines for VPS version):
 REPO_URL="https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/main.zip"
-STAGED_DIR="/tmp/oc-update"
-STAGED_ZIP="/tmp/oc-update.zip"
-STAGED_ROOT="$STAGED_DIR/openclaw-onboarding-main"
-LOCAL_SKILLS_DIR="$HOME/.openclaw/skills"
-BACKUP_DIR="$HOME/Downloads/openclaw-backups/$(date +%Y%m%d-%H%M%S)-update"
-LOG_FILE="$HOME/.openclaw/skills/.update-log"
-FLAG_FILE="$HOME/.openclaw/skills/.update-pending"
-NOTIFICATION_FILE="/tmp/oc-update-notification.md"
+REPO_FOLDER="openclaw-onboarding-main"
+BACKUP_BASE="$HOME/Downloads/openclaw-backups"
+
+SKILLS_DIR="$HOME/.openclaw/skills"
+STAGE_DIR="/tmp/blackceo-update-$$"
+STAGE_ZIP="/tmp/blackceo-update-$$.zip"
+LOG_FILE="$SKILLS_DIR/.update-log"
 OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"
-AGENTS_FILE="$HOME/.openclaw/workspace/AGENTS.md"
-VERSION_FILE="$HOME/.openclaw/skills/.onboarding-version"
-MANIFEST_FILE="$HOME/.openclaw/skills/.skill-manifest.json"
-
-# Protected core files that should never be overwritten
-PROTECTED_FILES=(
-    "AGENTS.md"
-    "MEMORY.md"
-    "SOUL.md"
-    "USER.md"
-    "IDENTITY.md"
-    "HEARTBEAT.md"
-    "TOOLS.md"
-)
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# ───────────────────────────────────────────────────────────────────────────────
-# UTILITY FUNCTIONS
-# ───────────────────────────────────────────────────────────────────────────────
-
-log() {
-    echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE" 2>/dev/null || true
-}
-
-success() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-error() {
-    echo -e "${RED}✗${NC} $1"
-}
-
-# Rollback function for failed skill updates
-rollback_skill() {
-    local skill_name="$1"
-    local backup_path="$2"
-    
-    log "Rolling back $skill_name from backup..."
-    if [ -d "$backup_path" ]; then
-        rm -rf "${LOCAL_SKILLS_DIR:?}/${skill_name:?}"
-        cp -r "$backup_path" "${LOCAL_SKILLS_DIR}/${skill_name}"
-        success "Rolled back $skill_name"
-        return 0
-    else
-        error "No backup found for $skill_name at $backup_path"
-        return 1
-    fi
-}
-
-# Cleanup function on exit
-cleanup() {
-    if [ "${KEEP_STAGED:-false}" != "true" ]; then
-        rm -rf "$STAGED_DIR" "$STAGED_ZIP" 2>/dev/null || true
-    fi
-}
-trap cleanup EXIT
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 1: STAGED DOWNLOAD
-# ───────────────────────────────────────────────────────────────────────────────
 
 echo ""
 echo "============================================"
-echo "   BlackCEO System — Safe Skill Updater"
+echo " BlackCEO System - Update Check"
 echo "============================================"
 echo ""
 
-log "Step 1: Staged Download — Downloading latest version..."
+# ── STEP 1: Current version ──
+mkdir -p "$SKILLS_DIR"
+LOCAL_VER="none"
+if [ -f "$SKILLS_DIR/.onboarding-version" ]; then
+ LOCAL_VER=$(cat "$SKILLS_DIR/.onboarding-version" | tr -d '[:space:]')
+fi
+echo "Installed version: $LOCAL_VER"
 
-# Clean up any previous staged downloads
-rm -rf "$STAGED_DIR" "$STAGED_ZIP"
-mkdir -p "$STAGED_DIR"
-
-# Download the latest version
-curl -fsSL "$REPO_URL" -o "$STAGED_ZIP" 2>/dev/null
-
-if [ ! -f "$STAGED_ZIP" ]; then
-    error "Could not download update. Check your internet connection."
-    exit 1
+# ── STEP 2: Download latest ──
+echo "Downloading latest from GitHub..."
+rm -rf "$STAGE_DIR" "$STAGE_ZIP"
+curl -fsSL "$REPO_URL" -o "$STAGE_ZIP" 2>/dev/null
+if [ ! -f "$STAGE_ZIP" ]; then
+ echo "[ERROR] Download failed. Check internet."
+ exit 1
+fi
+unzip -qo "$STAGE_ZIP" -d "$STAGE_DIR"
+REPO_DIR="$STAGE_DIR/$REPO_FOLDER"
+if [ ! -d "$REPO_DIR" ]; then
+ echo "[ERROR] Unexpected archive structure."
+ rm -rf "$STAGE_DIR" "$STAGE_ZIP"
+ exit 1
 fi
 
-# Extract
-unzip -qo "$STAGED_ZIP" -d "$STAGED_DIR"
-
-if [ ! -d "$STAGED_ROOT" ]; then
-    error "Unexpected archive structure."
-    exit 1
+REMOTE_VER="unknown"
+if [ -f "$REPO_DIR/version" ]; then
+ REMOTE_VER=$(cat "$REPO_DIR/version" | tr -d '[:space:]')
 fi
+echo "Latest version: $REMOTE_VER"
 
-success "Downloaded and extracted to $STAGED_ROOT"
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 2: VERSION CHECK
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 2: Version Check — Comparing local vs remote..."
-
-LOCAL_VERSION="unknown"
-if [ -f "$VERSION_FILE" ]; then
-    LOCAL_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
-fi
-
-REMOTE_VERSION="unknown"
-if [ -f "$STAGED_ROOT/version" ]; then
-    REMOTE_VERSION=$(cat "$STAGED_ROOT/version" | tr -d '[:space:]')
-fi
-
-echo "  Current version: $LOCAL_VERSION"
-echo "  Latest version:  $REMOTE_VERSION"
-
-if [ "$LOCAL_VERSION" = "$REMOTE_VERSION" ]; then
-    echo ""
-    success "You are already on the latest version ($LOCAL_VERSION)."
-    echo "No update needed."
-    exit 0
+# ── STEP 3: Compare versions ──
+if [ "$LOCAL_VER" = "$REMOTE_VER" ]; then
+ echo ""
+ echo "Already up to date ($LOCAL_VER). Nothing to do."
+ rm -rf "$STAGE_DIR" "$STAGE_ZIP"
+ exit 0
 fi
 
 echo ""
-echo "Update available: $LOCAL_VERSION → $REMOTE_VERSION"
+echo "Update available: $LOCAL_VER -> $REMOTE_VER"
 echo ""
 
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 3: PER-SKILL COMPARISON
-# ───────────────────────────────────────────────────────────────────────────────
+# ── STEP 4: Per-skill comparison ──
+UPDATE_LIST=""
+NEW_LIST=""
+SKIP_COUNT=0
+UPDATE_COUNT=0
+NEW_COUNT=0
 
-log "Step 3: Per-Skill Comparison — Analyzing skill differences..."
+for SKILL_PATH in "$REPO_DIR"/[0-9]*/; do
+ [ -d "$SKILL_PATH" ] || continue
+ SNAME=$(basename "$SKILL_PATH")
+ case "$SNAME" in *ARCHIVED*) continue ;; esac
 
-STAGED_SKILLS_DIR="$STAGED_ROOT"
-SKILLS_NEW=0
-SKILLS_UPDATED=0
-SKILLS_UNCHANGED=0
-SKILLS_TOTAL=0
+ STAGED_V="unknown"
+ LOCAL_V="none"
+ [ -f "$SKILL_PATH/skill-version.txt" ] && STAGED_V=$(cat "$SKILL_PATH/skill-version.txt" | tr -d '[:space:]')
+ [ -f "$SKILLS_DIR/$SNAME/skill-version.txt" ] && LOCAL_V=$(cat "$SKILLS_DIR/$SNAME/skill-version.txt" | tr -d '[:space:]')
 
-# Arrays to store skill info
-declare -a NEW_SKILLS=()
-declare -a UPDATED_SKILLS=()
-declare -a UNCHANGED_SKILLS=()
-
-for staged_skill in "$STAGED_SKILLS_DIR"/[0-9]*/; do
-    [ -d "$staged_skill" ] || continue
-    
-    skill_name=$(basename "$staged_skill")
-    staged_version_file="$staged_skill/skill-version.txt"
-    local_version_file="$LOCAL_SKILLS_DIR/$skill_name/skill-version.txt"
-    
-    SKILLS_TOTAL=$((SKILLS_TOTAL + 1))
-    
-    if [ -f "$staged_version_file" ]; then
-        staged_skill_version=$(cat "$staged_version_file" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
-    else
-        staged_skill_version="unknown"
-    fi
-    
-    if [ -f "$local_version_file" ]; then
-        local_skill_version=$(cat "$local_version_file" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
-    else
-        local_skill_version="none"
-    fi
-    
-    if [ ! -d "$LOCAL_SKILLS_DIR/$skill_name" ]; then
-        SKILLS_NEW=$((SKILLS_NEW + 1))
-        NEW_SKILLS+=("$skill_name|$staged_skill_version")
-    elif [ "$local_skill_version" = "$staged_skill_version" ]; then
-        SKILLS_UNCHANGED=$((SKILLS_UNCHANGED + 1))
-        UNCHANGED_SKILLS+=("$skill_name|$local_skill_version")
-    else
-        SKILLS_UPDATED=$((SKILLS_UPDATED + 1))
-        UPDATED_SKILLS+=("$skill_name|$local_skill_version|$staged_skill_version")
-    fi
+ if [ "$LOCAL_V" = "$STAGED_V" ] && [ "$LOCAL_V" != "none" ]; then
+ SKIP_COUNT=$((SKIP_COUNT + 1))
+ elif [ "$LOCAL_V" = "none" ]; then
+ echo " NEW: $SNAME ($STAGED_V)"
+ NEW_LIST="$NEW_LIST $SNAME"
+ NEW_COUNT=$((NEW_COUNT + 1))
+ else
+ echo " UPDATE: $SNAME ($LOCAL_V -> $STAGED_V)"
+ UPDATE_LIST="$UPDATE_LIST $SNAME"
+ UPDATE_COUNT=$((UPDATE_COUNT + 1))
+ fi
 done
 
-echo "  Total skills in repo: $SKILLS_TOTAL"
-echo "  New skills:           $SKILLS_NEW"
-echo "  Skills to update:     $SKILLS_UPDATED"
-echo "  Skills unchanged:     $SKILLS_UNCHANGED"
 echo ""
+echo " New skills: $NEW_COUNT"
+echo " Updates: $UPDATE_COUNT"
+echo " Already current: $SKIP_COUNT"
 
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 4: CHANGELOG DISPLAY
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 4: Changelog Display — Reading CHANGELOG.md..."
-
-if [ -f "$STAGED_ROOT/CHANGELOG.md" ]; then
-    echo ""
-    echo "--- CHANGELOG (since $LOCAL_VERSION) ---"
-    echo ""
-    
-    # Try to extract relevant changelog entries
-    if command -v grep >/dev/null 2>&1; then
-        # Show first 100 lines of changelog that might be relevant
-        head -100 "$STAGED_ROOT/CHANGELOG.md" 2>/dev/null || cat "$STAGED_ROOT/CHANGELOG.md"
-    else
-        head -50 "$STAGED_ROOT/CHANGELOG.md"
-    fi
-    
-    echo ""
-    echo "--- End Changelog ---"
-    echo ""
-else
-    warning "No CHANGELOG.md found in downloaded repo"
+# ── STEP 5: Show changelog ──
+echo ""
+echo "── What changed ──"
+if [ -f "$REPO_DIR/CHANGELOG.md" ]; then
+ head -40 "$REPO_DIR/CHANGELOG.md"
 fi
 
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 5: RISK ASSESSMENT
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 5: Risk Assessment — Evaluating update risks..."
-
-# Determine overall risk level
-RISK_LEVEL="LOW"
-if [ $SKILLS_UPDATED -gt 3 ]; then
-    RISK_LEVEL="MEDIUM"
-fi
-
-# Check for any high-risk indicators
-HIGH_RISK_COUNT=0
-for skill_info in "${UPDATED_SKILLS[@]}"; do
-    IFS='|' read -r skill_name old_ver new_ver <<< "$skill_info"
-    # Check if skill has CORE_UPDATES.md (indicates core file changes)
-    if [ -f "$STAGED_ROOT/$skill_name/CORE_UPDATES.md" ]; then
-        warning "Skill $skill_name has CORE_UPDATES.md (core file modifications)"
-        HIGH_RISK_COUNT=$((HIGH_RISK_COUNT + 1))
-        RISK_LEVEL="HIGH"
-    fi
-done
-
-echo "  Risk Level: $RISK_LEVEL"
-echo "  Skills with core changes: $HIGH_RISK_COUNT"
-echo ""
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 6: BACKUP
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 6: Backup — Creating backup of current installation..."
-
-mkdir -p "$BACKUP_DIR"
-
-# Backup current skills
-cp -r "$LOCAL_SKILLS_DIR" "$BACKUP_DIR/skills" 2>/dev/null || true
-
-# Backup core .md files
-mkdir -p "$BACKUP_DIR/core-files"
-for file in "${PROTECTED_FILES[@]}"; do
-    if [ -f "$HOME/.openclaw/workspace/$file" ]; then
-        cp "$HOME/.openclaw/workspace/$file" "$BACKUP_DIR/core-files/"
-    elif [ -f "$HOME/.openclaw/$file" ]; then
-        cp "$HOME/.openclaw/$file" "$BACKUP_DIR/core-files/"
-    fi
-done
-
-# Backup config
+# ── STEP 6: Back up openclaw.json only ──
+mkdir -p "$BACKUP_BASE"
 if [ -f "$OPENCLAW_CONFIG" ]; then
-    cp "$OPENCLAW_CONFIG" "$BACKUP_DIR/"
+ BACKUP_NAME="openclaw-json-backup-$(date +%Y-%m-%d-%H%M).json"
+ cp "$OPENCLAW_CONFIG" "$BACKUP_BASE/$BACKUP_NAME"
+ echo ""
+ echo " Config backed up: $BACKUP_BASE/$BACKUP_NAME"
 fi
 
-# Backup version file
-if [ -f "$VERSION_FILE" ]; then
-    cp "$VERSION_FILE" "$BACKUP_DIR/"
-fi
-
-# Backup manifest if exists
-if [ -f "$MANIFEST_FILE" ]; then
-    cp "$MANIFEST_FILE" "$BACKUP_DIR/"
-fi
-
-success "Backup created at: $BACKUP_DIR"
+# ── STEP 7: Confirm ──
 echo ""
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 7: YES CONFIRMATION GATE
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 7: Confirmation Gate — Waiting for user approval..."
-
+echo "============================================"
+echo " Ready to update: $LOCAL_VER -> $REMOTE_VER"
+echo " $NEW_COUNT new + $UPDATE_COUNT updates"
+echo "============================================"
 echo ""
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║                    UPDATE SUMMARY                          ║"
-echo "╠════════════════════════════════════════════════════════════╣"
-echo "║  Version: $LOCAL_VERSION → $REMOTE_VERSION"
-echo "║  New skills:       $SKILLS_NEW"
-echo "║  Skills to update: $SKILLS_UPDATED"
-echo "║  Risk Level:       $RISK_LEVEL"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo ""
-
-if [ $SKILLS_NEW -gt 0 ]; then
-    echo "New skills to install:"
-    for skill_info in "${NEW_SKILLS[@]}"; do
-        IFS='|' read -r skill_name version <<< "$skill_info"
-        echo "  - $skill_name (v$version)"
-    done
-    echo ""
+read -p " Type y to proceed: " CONFIRM
+if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+ echo " Update cancelled."
+ rm -rf "$STAGE_DIR" "$STAGE_ZIP"
+ exit 0
 fi
 
-if [ $SKILLS_UPDATED -gt 0 ]; then
-    echo "Skills to update:"
-    for skill_info in "${UPDATED_SKILLS[@]}"; do
-        IFS='|' read -r skill_name old_ver new_ver <<< "$skill_info"
-        echo "  - $skill_name ($old_ver → $new_ver)"
-    done
-    echo ""
-fi
-
-echo "Backup location: $BACKUP_DIR"
+# ── STEP 8: Apply skill by skill ──
 echo ""
-echo "Do you want to proceed with the update?"
-echo "Type YES (in uppercase) to continue, or anything else to cancel:"
-read -r CONFIRM
+echo "Applying updates..."
 
-if [ "$CONFIRM" != "YES" ]; then
-    warning "Update cancelled by user"
-    exit 0
-fi
+PROTECTED="AGENTS.md MEMORY.md SOUL.md USER.md IDENTITY.md HEARTBEAT.md TOOLS.md"
 
-success "User confirmed. Proceeding with update..."
-echo ""
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 8: SKILL-BY-SKILL APPLY
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 8: Skill-by-Skill Apply — Installing/updating skills..."
-
-SUCCESSFUL_SKILLS=()
-FAILED_SKILLS=()
-SKIPPED_SKILLS=()
-
-# Process new skills
-for skill_info in "${NEW_SKILLS[@]}"; do
-    IFS='|' read -r skill_name version <<< "$skill_info"
-    log "Installing new skill: $skill_name..."
-    
-    # Backup before applying (for rollback)
-    SKILL_BACKUP="$BACKUP_DIR/skills/$skill_name"
-    
-    if cp -r "$STAGED_ROOT/$skill_name" "$LOCAL_SKILLS_DIR/" 2>/dev/null; then
-        success "Installed $skill_name"
-        SUCCESSFUL_SKILLS+=("$skill_name (new)")
-    else
-        error "Failed to install $skill_name"
-        FAILED_SKILLS+=("$skill_name")
-    fi
+for SNAME in $UPDATE_LIST $NEW_LIST; do
+ STAGED_PATH="$REPO_DIR/$SNAME"
+ LOCAL_PATH="$SKILLS_DIR/$SNAME"
+ [ -d "$STAGED_PATH" ] || continue
+ mkdir -p "$LOCAL_PATH"
+ 
+ for ITEM in "$STAGED_PATH"/*; do
+ FNAME=$(basename "$ITEM")
+ IS_PROT=false
+ for P in $PROTECTED; do
+ [ "$FNAME" = "$P" ] && IS_PROT=true && break
+ done
+ # Skip protected files (agent handles these surgically)
+ if [ "$IS_PROT" = true ] && [ -f "$LOCAL_PATH/$FNAME" ]; then
+ continue
+ fi
+ if [ -d "$ITEM" ]; then
+ cp -r "$ITEM" "$LOCAL_PATH/"
+ else
+ cp "$ITEM" "$LOCAL_PATH/"
+ fi
+ done
+ echo " Applied: $SNAME"
 done
 
-# Process updated skills
-for skill_info in "${UPDATED_SKILLS[@]}"; do
-    IFS='|' read -r skill_name old_ver new_ver <<< "$skill_info"
-    log "Updating skill: $skill_name ($old_ver → $new_ver)..."
-    
-    # Create backup of current version for rollback
-    SKILL_BACKUP="$BACKUP_DIR/skills/$skill_name"
-    if [ -d "$LOCAL_SKILLS_DIR/$skill_name" ]; then
-        cp -r "$LOCAL_SKILLS_DIR/$skill_name" "$SKILL_BACKUP" 2>/dev/null || true
-    fi
-    
-    # Remove old version and copy new
-    rm -rf "${LOCAL_SKILLS_DIR:?}/${skill_name:?}"
-    
-    if cp -r "$STAGED_ROOT/$skill_name" "$LOCAL_SKILLS_DIR/" 2>/dev/null; then
-        success "Updated $skill_name"
-        SUCCESSFUL_SKILLS+=("$skill_name ($old_ver → $new_ver)")
-    else
-        error "Failed to update $skill_name"
-        # Attempt rollback
-        rollback_skill "$skill_name" "$SKILL_BACKUP" || true
-        FAILED_SKILLS+=("$skill_name")
-    fi
+# ── STEP 9: Update root files ──
+for RF in "Start Here.md" README.md CHANGELOG.md version; do
+ [ -f "$REPO_DIR/$RF" ] && cp "$REPO_DIR/$RF" "$SKILLS_DIR/../" 2>/dev/null || true
 done
+[ -d "$REPO_DIR/scripts" ] && cp -r "$REPO_DIR/scripts" "$SKILLS_DIR/../" 2>/dev/null || true
 
-echo ""
+# ── STEP 10: Update installed version ──
+echo "$REMOTE_VER" > "$SKILLS_DIR/.onboarding-version"
 
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 9: INSTALLED VERSION UPDATE
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 9: Installed Version Update — Updating version file..."
-
-echo "$REMOTE_VERSION" > "$VERSION_FILE"
-success "Updated version file to $REMOTE_VERSION"
-echo ""
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 10: MANIFEST REGENERATION
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 10: Manifest Regeneration — Rebuilding skill manifest..."
-
-# Create JSON manifest of installed skills
-{
-    echo "{"
-    echo "  \"generated_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
-    echo "  \"version\": \"$REMOTE_VERSION\","
-    echo "  \"skills\": ["
-    
-    FIRST=true
-    for skill_dir in "$LOCAL_SKILLS_DIR"/[0-9]*/; do
-        [ -d "$skill_dir" ] || continue
-        
-        skill_name=$(basename "$skill_dir")
-        skill_version="unknown"
-        
-        if [ -f "$skill_dir/skill-version.txt" ]; then
-            skill_version=$(cat "$skill_dir/skill-version.txt" | tr -d '[:space:]')
-        fi
-        
-        if [ "$FIRST" = true ]; then
-            FIRST=false
-        else
-            echo ","
-        fi
-        
-        echo -n "    {\"name\": \"$skill_name\", \"version\": \"$skill_version\"}"
-    done
-    
-    echo ""
-    echo "  ]"
-    echo "}"
-} > "$MANIFEST_FILE"
-
-success "Manifest regenerated at $MANIFEST_FILE"
-echo ""
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 11: UPDATE LOG
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 11: Update Log — Writing detailed log entry..."
-
-{
-    echo ""
-    echo "========================================"
-    echo "Update Completed: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo "Version: $LOCAL_VERSION → $REMOTE_VERSION"
-    echo "Backup: $BACKUP_DIR"
-    echo "Risk Level: $RISK_LEVEL"
-    echo "========================================"
-    echo ""
-    echo "Successful Updates (${#SUCCESSFUL_SKILLS[@]}):"
-    for skill in "${SUCCESSFUL_SKILLS[@]}"; do
-        echo "  ✓ $skill"
-    done
-    echo ""
-    if [ ${#FAILED_SKILLS[@]} -gt 0 ]; then
-        echo "Failed Updates (${#FAILED_SKILLS[@]}):"
-        for skill in "${FAILED_SKILLS[@]}"; do
-            echo "  ✗ $skill"
-        done
-        echo ""
-    fi
-    echo "========================================"
-} >> "$LOG_FILE"
-
-success "Update log written"
-echo ""
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 12: TELEGRAM NOTIFICATION
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 12: Telegram Notification — Sending update notification..."
-
+# ── STEP 11: Telegram notification ──
 TELEGRAM_SENT=false
-
-if [ -f "$OPENCLAW_CONFIG" ]; then
-    # Extract bot token
-    BOT_TOKEN=$(python3 -c "
+if [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
+ BOT_TOKEN=$(python3 -c "
 import json
-with open('$OPENCLAW_CONFIG') as f:
-    d = json.load(f)
-tg = d.get('channels', {}).get('telegram', {})
-print(tg.get('botToken', ''))
-" 2>/dev/null || echo "")
-
-    # Extract first allowFrom chat ID
-    CHAT_ID=$(python3 -c "
+with open('$OPENCLAW_CONFIG') as f: d = json.load(f)
+print(d.get('channels',{}).get('telegram',{}).get('botToken',''))
+" 2>/dev/null)
+ CHAT_ID=$(python3 -c "
 import json
-with open('$OPENCLAW_CONFIG') as f:
-    d = json.load(f)
-tg = d.get('channels', {}).get('telegram', {})
-af = tg.get('allowFrom', [])
-if af:
-    print(af[0])
-" 2>/dev/null || echo "")
+with open('$OPENCLAW_CONFIG') as f: d = json.load(f)
+af = d.get('channels',{}).get('telegram',{}).get('allowFrom',[])
+if af: print(af[0])
+" 2>/dev/null)
 
-    if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
-        # Build the success message
-        TG_MESSAGE="🔄 *BlackCEO System Updated*
-
-Version: \`${LOCAL_VERSION}\` → \`${REMOTE_VERSION}\`
-
-*Summary:*
-• New skills: ${SKILLS_NEW}
-• Updated: ${SKILLS_UPDATED}
-• Unchanged: ${SKILLS_UNCHANGED}
-• Risk Level: ${RISK_LEVEL}
-
-*Backup:* \`${BACKUP_DIR}\`
-
-Run \`openclaw gateway restart\` to apply changes."
-
-        # Send via Telegram Bot API
-        TG_RESULT=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-            -d chat_id="$CHAT_ID" \
-            -d text="$TG_MESSAGE" \
-            -d parse_mode="Markdown" 2>&1 || echo "{\"ok\": false}")
-
-        # Check if send succeeded
-        if echo "$TG_RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if d.get('ok') else 1)" 2>/dev/null; then
-            TELEGRAM_SENT=true
-            success "Telegram notification sent"
-        else
-            warning "Could not send Telegram notification"
-        fi
-    else
-        warning "Could not read Telegram config"
-    fi
-else
-    warning "openclaw.json not found"
+ if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
+ TG_MSG="Your BlackCEO system has been updated from $LOCAL_VER to $REMOTE_VER. $NEW_COUNT new skills added, $UPDATE_COUNT skills updated. Your agent will review the changes and ask you before setting anything up."
+ TG_RESULT=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+ -d chat_id="$CHAT_ID" -d text="$TG_MSG" 2>&1)
+ if echo "$TG_RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); exit(0 if d.get('ok') else 1)" 2>/dev/null; then
+ TELEGRAM_SENT=true
+ echo ""
+ echo " Telegram notification sent."
+ fi
+ fi
 fi
 
-# Generate notification file
-cat > "$NOTIFICATION_FILE" << NOTEOF
-# BlackCEO System Update Complete
-
-**Version:** $LOCAL_VERSION → $REMOTE_VERSION
-**Completed:** $(date '+%Y-%m-%d %H:%M:%S')
-
-## Summary
-
-- **New skills installed:** $SKILLS_NEW
-- **Skills updated:** $SKILLS_UPDATED
-- **Skills unchanged:** $SKILLS_UNCHANGED
-- **Risk Level:** $RISK_LEVEL
-
-## Backup Location
-
-Your previous version was backed up to:
-\`$BACKUP_DIR\`
-
-## What Changed
-
-See the CHANGELOG.md in the downloaded repo for full details:
-https://github.com/trevorotts1/openclaw-onboarding/blob/main/CHANGELOG.md
-
-## Next Steps
-
-1. Review the updated skills above
-2. Restart your gateway for changes to take effect:
-   \`openclaw gateway restart\`
-
-## If Something Goes Wrong
-
-You can restore from the backup if needed:
-\`cp -r "$BACKUP_DIR/skills/*" "$LOCAL_SKILLS_DIR/"\`
-
-NOTEOF
-
-echo "Notification written to: $NOTIFICATION_FILE"
-echo ""
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 13: UPDATE PENDING FLAG IN AGENTS.md
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 13: UPDATE PENDING Flag — Writing flag to AGENTS.md..."
+# ── STEP 12: Write UPDATE PENDING flag ──
+WORKSPACE_ROOT="$HOME/clawd"
+[ ! -d "$WORKSPACE_ROOT" ] && WORKSPACE_ROOT="$HOME/.openclaw/workspace"
+AGENTS_FILE="$WORKSPACE_ROOT/AGENTS.md"
 
 if [ -f "$AGENTS_FILE" ]; then
-    # Check if flag already exists
-    if ! grep -q "UPDATE PENDING" "$AGENTS_FILE" 2>/dev/null; then
-        # Use double quotes for variable expansion
-        cat >> "$AGENTS_FILE" << UPDATEFLAG
+ if ! grep -q "UPDATE PENDING" "$AGENTS_FILE" 2>/dev/null; then
+ cat >> "$AGENTS_FILE" << FLAGEOF
 
-## 🔴 UPDATE PENDING — PROCESS NOW
+## UPDATE PENDING - PROCESS NOW
 
-An update has been applied to your BlackCEO system:
-- Version: ${LOCAL_VERSION} → ${REMOTE_VERSION}
-- Completed: $(date '+%Y-%m-%d %H:%M:%S')
-- Backup: ${BACKUP_DIR}
+A system update was installed ($LOCAL_VER to $REMOTE_VER) on $(date).
 
-**ACTION REQUIRED:**
-
-1. **Tell your AI agent:** "Process the update"
-
-2. **The agent will:**
-   - Read the Teach Yourself Protocol for any NEW skills (check skill-version.txt)
-   - Apply CORE_UPDATES.md entries to AGENTS.md, MEMORY.md, TOOLS.md surgically
-   - Run QC checks on each updated skill
-   - Remove this UPDATE PENDING block when complete
-
-3. **Add memory entry:**
-   "[$(date '+%Y-%m-%d')]: Updated to ${REMOTE_VERSION}. ${#SKILLS_UPDATED[@]} skills updated. All QC passed."
+New skills:$NEW_LIST
+Updated skills:$UPDATE_LIST
 
 SEND YOUR OWNER THIS MESSAGE IMMEDIATELY:
-"Your BlackCEO system has been updated to ${REMOTE_VERSION}. I am going to review all changes and set everything up. Would you like me to proceed?"
+"Your BlackCEO system was just updated from $LOCAL_VER to $REMOTE_VER. Here is what changed: $NEW_COUNT new skills added, $UPDATE_COUNT skills updated. Would you like me to start setting up the new skills and applying the updates?"
 
-WAIT for the owner to say yes before continuing.
-UPDATEFLAG
-        success "UPDATE PENDING flag added to AGENTS.md"
-    else
-        warning "UPDATE PENDING flag already exists in AGENTS.md"
-    fi
-else
-    warning "AGENTS.md not found, skipping flag"
+WAIT for the owner to say yes before proceeding.
+
+When they approve:
+- For each UPDATED skill: read SKILL.md and QC.md, verify it works correctly
+- For each NEW skill: run the full Teach Yourself Protocol (read all files in order), follow INSTALL.md setup steps, run QC.md checks
+- For each skill with CORE_UPDATES.md: surgically update AGENTS.md, TOOLS.md, and MEMORY.md
+ - Add new entries that do not exist yet
+ - Update entries that have changed from a previous skill version
+ - Remove entries from old skill versions that no longer apply
+ - Do NOT duplicate entries that already exist
+ - Do NOT touch the owner's personal content
+ - Skill sections are identified by headers like "### [Skill Name] (Skill [Number])"
+
+After ALL skills are processed:
+1. Remove this entire UPDATE PENDING section from AGENTS.md
+2. Add one line to MEMORY.md under "## System Updates":
+ "[DATE]: Updated $LOCAL_VER to $REMOTE_VER. New:$NEW_LIST. Updated:$UPDATE_LIST. All QC passed."
+FLAGEOF
+ fi
 fi
 
+# ── STEP 13: Terminal output ──
 echo ""
-
-# ───────────────────────────────────────────────────────────────────────────────
-# STEP 14: COMPLETION SUMMARY
-# ───────────────────────────────────────────────────────────────────────────────
-
-log "Step 14: Completion Summary"
-
-echo ""
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║                   UPDATE COMPLETE                              ║"
-echo "╠════════════════════════════════════════════════════════════════╣"
-echo "║  Version: $LOCAL_VERSION → $REMOTE_VERSION"
-echo "║  Backup:  $BACKUP_DIR"
-echo "╠════════════════════════════════════════════════════════════════╣"
-echo "║  Results:                                                      ║"
-printf "║    ✓ Successful:  %d%-30s║\n" "${#SUCCESSFUL_SKILLS[@]}" ""
-printf "║    ✗ Failed:      %d%-30s║\n" "${#FAILED_SKILLS[@]}" ""
-printf "║    ⊘ Unchanged:   %d%-30s║\n" "$SKILLS_UNCHANGED" ""
-echo "╠════════════════════════════════════════════════════════════════╣"
-echo "║  Next Steps:                                                   ║"
-echo "║    1. Review changes above                                     ║"
-echo "║    2. Run: openclaw gateway restart                            ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
+echo "============================================"
+echo " UPDATE COMPLETE"
+echo " $LOCAL_VER -> $REMOTE_VER"
+echo " New skills: $NEW_COUNT"
+echo " Updated: $UPDATE_COUNT"
+echo " Skipped: $SKIP_COUNT"
+echo "============================================"
 echo ""
 
 if [ "$TELEGRAM_SENT" = true ]; then
-    success "A notification was sent to your Telegram."
-else
-    warning "Check $NOTIFICATION_FILE for update details."
+ echo " A notification was sent to your Telegram."
+ echo ""
 fi
 
-echo ""
-echo "Update log: $LOG_FILE"
+echo "┌──────────────────────────────────────────────┐"
+echo "│                                              │"
+echo "│  TELL YOUR AI AGENT:                         │"
+echo "│                                              │"
+echo "│  \"A system update was just installed.       │"
+echo "│  Check your AGENTS.md for the UPDATE        │"
+echo "│  PENDING flag and process the changes.      │"
+echo "│  Ask me before making any changes.\"        │"
+echo "│                                              │"
+echo "└──────────────────────────────────────────────┘"
 echo ""
 
-# Final status
-if [ ${#FAILED_SKILLS[@]} -eq 0 ]; then
-    success "All skills updated successfully!"
-    exit 0
-else
-    error "Some skills failed to update. Check the log for details."
-    exit 1
-fi
+# ── STEP 14: Log and cleanup ──
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Updated $LOCAL_VER -> $REMOTE_VER | New:$NEW_LIST | Updated:$UPDATE_LIST | telegram=$TELEGRAM_SENT" >> "$LOG_FILE"
+rm -rf "$STAGE_DIR" "$STAGE_ZIP"
