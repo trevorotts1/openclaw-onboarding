@@ -5,6 +5,35 @@
 
 ---
 
+## 🔴 SOURCE OF TRUTH RULE - SKILL FILES ARE AUTHORITY
+
+**When skill instructions conflict with generic OpenClaw documentation, the skill files ALWAYS win.**
+
+| If conflict between... | Follow this... | Because... |
+|------------------------|----------------|------------|
+| SKILL.md vs OpenClaw docs | SKILL.md | Skill defines intended behavior |
+| CORE_UPDATES.md vs TYP storage rules | CORE_UPDATES.md | Skill specifies what files to touch |
+| INSTALL.md vs generic install patterns | INSTALL.md | Skill knows its own dependencies |
+| Skill examples vs your assumptions | Skill examples | Examples show verified working patterns |
+
+**ALL 8 MEMORY LAYERS ARE REQUIRED** (not optional):
+1. Markdown files (MEMORY.md, daily logs)
+2. Memory flush protocol
+3. Session indexing
+4. Gemini Embedding 2 search
+5. memory-core (active memory)
+6. Cognee (graph memory)
+7. Obsidian Vault (structured wiki)
+8. Wiki System (deterministic pages)
+
+**DREAMS.md is REQUIRED** - Must be created in workspace root for active memory to function.
+
+**Active Memory is REQUIRED** - memory-core layer must be enabled and configured.
+
+---
+
+---
+
 ## 🔴 TRIGGER DETECTED - YOU ARE NOW EXECUTING ONBOARDING
 
 If you are reading this file, the user has triggered onboarding by saying something like:

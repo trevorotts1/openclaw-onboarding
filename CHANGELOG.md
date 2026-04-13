@@ -1,3 +1,16 @@
+## v8.2.1 - April 13, 2026 - Comprehensive Repo Instruction Fixes
+- Added SOURCE OF TRUTH rule to Start Here.md (both repos) - skill files are authority over generic docs
+- Added SOURCE OF TRUTH header to Skill 31 (both repos) - all 8 layers required, DREAMS.md required
+- Rewrote UPDATE PENDING flag with EXECUTION MODE - do not ask permission, just execute
+- Added 9-step processing protocol: search data → interview detection → process skills → verify memory → verify persona → cleanup config → surgical updates → report → cleanup
+- Added smart credential discovery - searches all .env files, syncs to canonical location
+- Added Gemini scripts copy logic - copies gemini-indexer.py and gemini-search.py to workspace
+- Fixed read -p with /dev/tty in update-skills.sh
+- Verified skill-version.txt files clean (v6.5.7) in Skills 22 and 23
+- Verified Skill 35 exists on GitHub
+- Added discover_skills_dir function for old install migration
+- Bumped version to v8.2.1
+
 ## v8.2.0 - April 13, 2026 (Update System Fix Applied)
 - Fixed install.sh and update-skills.sh: dynamic skill discovery, applies updates instead of staging, surgical core .md handling, real Telegram messages, full UPDATE PENDING instructions, flag auto-removal after processing
 

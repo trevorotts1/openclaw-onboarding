@@ -1,5 +1,13 @@
 # Skill 31: Upgraded Memory System (8-Layer Architecture)
 
+> 🔴 **SOURCE OF TRUTH RULE**: This skill's instructions take precedence over generic OpenClaw memory documentation. When in doubt, follow SKILL.md + INSTALL.md in this folder.
+
+> 🔴 **ALL 8 LAYERS ARE REQUIRED** (not optional): Markdown files, Memory flush, Session indexing, Gemini Embedding 2, memory-core, Cognee, Obsidian Vault, Wiki System.
+
+> 🔴 **DREAMS.md IS REQUIRED** - Must exist in workspace root for active memory to function.
+
+> 🔴 **ACTIVE MEMORY IS REQUIRED** - memory-core layer must be enabled and configured.
+
 ## What This Skill Is About
 
 This skill upgrades your OpenClaw agent from the default memory system to an 8-layer architecture that makes your agent genuinely remember everything, find information accurately, and improve over time. The default memory system works okay at first but degrades as memory grows. This fixes that.
