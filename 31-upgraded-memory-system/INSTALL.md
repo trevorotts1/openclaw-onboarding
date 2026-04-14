@@ -504,3 +504,98 @@ If results come back, all layers are working.
 [ ] Memory search test returned results
 [ ] Core files updated (see CORE_UPDATES.md)
 ```
+
+---
+
+## 🚀 ACTIVATION (REQUIRED - DO NOT SKIP)
+
+**Reading files is NOT activation. You must EXECUTE the activation steps.**
+
+Teach Yourself means READ. Activate means EXECUTE.
+
+### Prerequisites
+- [ ] Skill 01 (Teach Yourself Protocol) installed
+- [ ] Google API Key (recommended for Layer 4, but optional)
+- [ ] Python 3.8+ with google-genai and numpy
+
+### Teach Yourself (COMPLETE BEFORE ACTIVATION)
+1. Read SKILL.md
+2. Read CORE_UPDATES.md
+3. Read INSTALL.md (this file)
+
+### ACTIVATION Steps
+
+#### Step 1: CREATE DREAMS.md
+```bash
+cat > ~/.openclaw/workspace/DREAMS.md << 'EOF'
+# DREAMS.md - Dynamic Reasoning & Execution Memory System
+
+## Active Memory Configuration
+- Mode: [workspace|department|project]
+- Auto-capture: enabled
+- Auto-recall: enabled
+- Flush interval: 30 minutes
+EOF
+```
+
+#### Step 2: CONFIGURE active-memory in openclaw.json
+Add to `~/.openclaw/openclaw.json` under `agents.defaults`:
+```json
+"activeMemory": {
+  "enabled": true,
+  "autoCapture": true,
+  "autoRecall": true,
+  "flushIntervalMinutes": 30,
+  "contextInjection": {
+    "memoryWiki": true,
+    "cognee": true
+  }
+}
+```
+
+#### Step 3: UPDATE memory backend to "builtin"
+In `~/.openclaw/openclaw.json`:
+```json
+"memory": {
+  "backend": "builtin"
+},
+"memorySearch": {
+  "provider": "gemini"
+}
+```
+
+#### Step 4: VERIFY directory structure
+```bash
+mkdir -p ~/.openclaw/workspace/memory
+ls -la ~/.openclaw/workspace/MEMORY.md
+ls -la ~/.openclaw/workspace/DREAMS.md
+```
+
+#### Step 5: RESTART gateway (ask user first)
+```bash
+openclaw gateway restart
+```
+
+#### Step 6: APPLY CORE_UPDATES.md
+Add entries from CORE_UPDATES.md to:
+- AGENTS.md (memory routing rules)
+- TOOLS.md (memory search commands)
+- MEMORY.md (layer documentation)
+
+#### Step 7: RUN QC checks
+Execute ALL checks in QC.md:
+- Verify MEMORY.md exists and has content
+- Test memory search returns results
+- Verify daily log directory works
+- Test flush creates memory/YYYY-MM-DD.md file
+
+#### Step 8: CONFIRM to client
+Send confirmation:
+- ✅ 8-layer memory system configured
+- ✅ DREAMS.md active memory configured
+- ✅ Memory search enabled (Gemini Embedding 2)
+- ✅ Auto-capture and auto-recall active
+- ⚠️ Any pending items (missing API keys, etc.)
+
+**ACTIVATION IS COMPLETE when all steps are done.**
+```

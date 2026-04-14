@@ -1,3 +1,36 @@
+## v8.4.0 - April 13, 2026 - Skill Activation Instructions Fix
+
+### Fixed
+- **FIX 1: update-skills.sh NEW skill processing**: Added explicit 6-step activation protocol that prints when a new skill is detected during update
+  - a. READ all files (Teach Yourself Protocol)
+  - b. CHECK prerequisites, search .env files
+  - c. EXECUTE setup (different from reading!)
+  - d. APPLY CORE_UPDATES.md surgically
+  - e. RUN QC.md checks
+  - f. TELL client what was set up
+  - Added explicit note: "Teach Yourself means READ. Activate means EXECUTE."
+- **FIX 2: Skill 35 INSTALL.md**: Added ACTIVATION section with 8 steps
+  1. CREATE Google Sheet via webhook
+  2. ASK client (videos, action link)
+  3. ASK about podcast (skip-but-keep-asking)
+  4. SEARCH .env for GHL credentials
+  5. ADD heartbeat to HEARTBEAT.md
+  6. APPLY CORE_UPDATES.md
+  7. RUN QC.md checks
+  8. CONFIRM to client
+- **FIX 3: Skill 35 SKILL.md**: Added "⚠️ ACTIVATION REQUIRED" callout right after Teach Yourself Protocol section
+- **FIX 4: Other skills with setup steps**: Added ACTIVATION sections to:
+  - Skill 22: Gemini scripts to workspace
+  - Skill 23: Interview run/resume with build-workforce.py
+  - Skill 31: DREAMS.md + active-memory config
+  - Skill 32: Command Center install + tunnel
+  - Each includes: Prerequisites, Teach Yourself, ACTIVATION, Verification sections
+- **FIX 5: Version bump**
+  - Skill 35: v1.1.0 → v1.2.0
+  - Repo: v8.3.0 → v8.4.0 (both Mac and VPS)
+  - Updated install.sh headers
+  - Updated update-skills.sh headers
+
 ## v8.3.0 - April 13, 2026 - Skill 35: Google Sheet Webhook Integration
 
 ### Changed

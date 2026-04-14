@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v8.3.0"
+ONBOARDING_VERSION="v8.4.0"
 
 # ----------------------------------------------------------
 # SKILLS DIRECTORY SECTION — How to find skills on Mac
@@ -193,6 +193,42 @@ main() {
 
     # Skip archived skills
     case "$SKILL_NAME" in *ARCHIVED*) continue ;; esac
+
+    # Check if this is a NEW skill (doesn't exist in current install)
+    if [ ! -d "$SKILLS_DIR/$SKILL_NAME" ]; then
+      echo ""
+      echo "  🆕 NEW SKILL DETECTED: $SKILL_NAME"
+      echo "  ============================================"
+      echo "  This skill requires ACTIVATION after install."
+      echo "  The agent MUST follow these steps:"
+      echo ""
+      echo "  a. READ all files (Teach Yourself Protocol)"
+      echo "     → SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md"
+      echo "     → Plus any references/*.md files"
+      echo ""
+      echo "  b. CHECK prerequisites, search .env files"
+      echo "     → Verify API keys, credentials, software"
+      echo "     → Check ~/.openclaw/skills/ for dependencies"
+      echo ""
+      echo "  c. EXECUTE setup (different from reading!)"
+      echo "     → Follow INSTALL.md activation steps"
+      echo "     → Copy scripts, create files, run commands"
+      echo "     → 'Teach Yourself' means READ. 'Activate' means EXECUTE."
+      echo ""
+      echo "  d. APPLY CORE_UPDATES.md surgically"
+      echo "     → Add to AGENTS.md, TOOLS.md, MEMORY.md"
+      echo "     → Update HEARTBEAT.md if needed"
+      echo ""
+      echo "  e. RUN QC.md checks"
+      echo "     → Verify all components work"
+      echo "     → Test API connections"
+      echo ""
+      echo "  f. TELL client what was set up"
+      echo "     → List activated features"
+      echo "     → Note any pending items"
+      echo ""
+      echo "  ============================================"
+    fi
 
     # Remove old version if exists
     rm -rf "$SKILLS_DIR/$SKILL_NAME"

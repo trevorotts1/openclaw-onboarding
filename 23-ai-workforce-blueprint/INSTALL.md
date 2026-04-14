@@ -1076,3 +1076,90 @@ After installation is complete, these commands work:
 | "Route this task: [description]" | Read 00-ROUTING.md, find the right department/role/file, execute the task |
 | "What departments do I have?" | List all department folders and their roles |
 | "Rate my workforce structure" | Run the self-score audit from Phase 7 |
+
+---
+
+## 🚀 ACTIVATION (REQUIRED - DO NOT SKIP)
+
+**Reading files is NOT activation. You must EXECUTE the activation steps.**
+
+Teach Yourself means READ. Activate means EXECUTE.
+
+### Prerequisites
+- [ ] Skill 01 (Teach Yourself Protocol) installed
+- [ ] Skill 22 (Book-to-Persona) installed (recommended, not required)
+- [ ] Python 3.8+ available
+- [ ] OpenClaw workspace write access
+
+### Teach Yourself (COMPLETE BEFORE ACTIVATION)
+1. Read SKILL.md
+2. Read ai-workforce-blueprint-full.md (ALL of it)
+3. Read INSTRUCTIONS.md
+4. Read EXAMPLES.md
+5. Read CORE_UPDATES.md
+6. Read INSTALL.md (this file)
+
+### ACTIVATION Steps
+
+#### Step 1: COPY skill to OpenClaw skills folder
+```bash
+mkdir -p ~/.openclaw/skills/23-ai-workforce-blueprint
+cp -r [SKILL_SOURCE_PATH]/* ~/.openclaw/skills/23-ai-workforce-blueprint/
+chmod +x ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py
+```
+
+#### Step 2: VERIFY blueprint file integrity
+```bash
+wc -c ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-blueprint-full.md
+```
+Expected: 66,000+ characters. If under 50,000, re-copy.
+
+#### Step 3: LOCATE/CREATE master files folder
+```bash
+# Search for existing folder
+find ~/Downloads/ -maxdepth 1 -type d -iname "*openclaw*" 2>/dev/null
+
+# If not found, create it
+mkdir -p ~/Downloads/openclaw-master-files
+```
+
+#### Step 4: RUN build-workforce.py (Option A, B, or C)
+```bash
+# Option A: Automated scaffold
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py --option A
+
+# Option B: Manual guided build
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py --option B
+
+# Option C: Audit/Resume existing
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py --option C
+```
+
+#### Step 5: VERIFY department folders created
+```bash
+ls -la ~/.openclaw/workspace/departments/
+```
+Expected: One folder per department chosen during interview.
+
+#### Step 6: APPLY CORE_UPDATES.md surgically
+Add entries from CORE_UPDATES.md to:
+- AGENTS.md (Persona Operating Protocol)
+- TOOLS.md (department routing reference)
+- MEMORY.md (workforce structure logging)
+
+#### Step 7: RUN QC checks
+Execute ALL checks in QC.md:
+- Verify departments.json exists and is valid
+- Check each department has governing-personas.md
+- Verify ORG-CHART.md created
+- Test routing to at least 3 departments
+
+#### Step 8: CONFIRM to client
+Send confirmation listing:
+- ✅ [N] departments created with full workspace structure
+- ✅ [N] roles defined with SOUL.md and SOP.md files
+- ✅ Persona alignment wired (if Skill 22 installed)
+- ✅ Command Center ready for Skill 32
+- ⚠️ Any pending items
+
+**ACTIVATION IS COMPLETE when all steps are done.**

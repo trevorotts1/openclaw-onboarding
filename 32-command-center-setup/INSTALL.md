@@ -671,4 +671,106 @@ After all phases are complete, verify:
 Your AI workforce is now live and ready to work.
 
 ---
+
+## 🚀 ACTIVATION (REQUIRED - DO NOT SKIP)
+
+**Reading files is NOT activation. You must EXECUTE the activation steps.**
+
+Teach Yourself means READ. Activate means EXECUTE.
+
+### Prerequisites
+- [ ] Skill 01 (Teach Yourself Protocol) installed
+- [ ] Skill 23 (AI Workforce Blueprint) completed
+- [ ] Node.js 18+ installed
+- [ ] PM2 installed globally
+- [ ] Git installed
+
+### Teach Yourself (COMPLETE BEFORE ACTIVATION)
+1. Read SKILL.md
+2. Read INSTRUCTIONS.md
+3. Read CORE_UPDATES.md
+4. Read INSTALL.md (this file)
+
+### ACTIVATION Steps
+
+#### Step 1: VERIFY Skill 23 completion
+```bash
+ls -la ~/.openclaw/workspace/departments/
+```
+Expected: Department folders exist from Skill 23.
+If missing: STOP and complete Skill 23 first.
+
+#### Step 2: CLONE Command Center repository
+```bash
+cd ~/projects
+rm -rf command-center  # Remove if exists
+git clone https://github.com/trevorotts1/blackceo-command-center.git command-center
+cd command-center
+```
+
+#### Step 3: INSTALL dependencies
+```bash
+npm install
+```
+Timeout: 5 minutes. If hangs, retry with `npm install --prefer-offline`.
+
+#### Step 4: CONFIGURE environment
+```bash
+cp .env.example .env.local
+# Edit .env.local with client-specific values
+```
+
+#### Step 5: SETUP database
+```bash
+npm run db:push
+npm run db:seed
+```
+
+#### Step 6: CREATE Cloudflare tunnel
+```bash
+# Use the create-tunnel.sh script
+bash scripts/create-tunnel.sh
+```
+This will:
+- Install cloudflared if needed
+- Call n8n webhook to create tunnel
+- Receive tunnel token in response
+- Start PM2 process
+
+#### Step 7: START Command Center
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+```
+
+#### Step 8: VERIFY installation
+- Dashboard accessible at http://localhost:4000
+- Cloudflare tunnel URL accessible from internet
+- Telegram topics created for each department
+
+#### Step 9: APPLY CORE_UPDATES.md
+Add entries from CORE_UPDATES.md to:
+- AGENTS.md (Command Center routing)
+- TOOLS.md (dashboard access reference)
+- MEMORY.md (Command Center URL and status)
+
+#### Step 10: RUN QC checks
+Execute ALL checks in QC.md:
+- Verify dashboard loads at localhost:4000
+- Test Cloudflare tunnel is accessible
+- Verify all department topics exist in Telegram
+- Test message routing to at least 3 departments
+
+#### Step 11: CONFIRM to client
+Send confirmation:
+- ✅ Command Center installed at [localhost:4000]
+- ✅ Cloudflare tunnel active: [https://xxx.zerohumanworkforce.com]
+- ✅ PM2 process running
+- ✅ [N] departments wired to dashboard
+- ✅ Telegram topics created
+- ⚠️ Any pending items
+
+**ACTIVATION IS COMPLETE when all steps are done.**
+
+---
 <!-- BREADCRUMB: skill-32-mac | 2026-04-12 | v6.5.7 | INSTALL.md updated with wiki context injection | Memory Surgery Playbook v3.5 -->

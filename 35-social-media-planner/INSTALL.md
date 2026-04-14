@@ -172,3 +172,81 @@ Add the weekly theme request to the client's HEARTBEAT.md. See references/playbo
 - [ ] Skill 30 (Fish Audio) installed (OPTIONAL for podcast production)
 - [ ] Skill 22 (Book-to-Persona) installed (for persona-governed content)
 - [ ] Skill 31 (Upgraded Memory) installed (for memory-core integration)
+
+---
+
+## 🚀 ACTIVATION (REQUIRED - DO NOT SKIP)
+
+**Reading the files is NOT enough. You must ACTIVATE the skill.**
+
+Teach Yourself means READ. Activate means EXECUTE.
+
+Follow these 8 activation steps in order:
+
+### Step 1: CREATE Google Sheet via webhook
+```bash
+# POST to n8n webhook to create the client's Google Sheet
+curl -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "brandName": "[CLIENT_BRAND_NAME]",
+    "clientEmail": "[CLIENT_EMAIL]"
+  }'
+```
+Store the returned `sheetUrl` and `sheetId` in MEMORY.md.
+
+### Step 2: ASK client for weekly action link
+Ask: "What action link should I include in social media comments this week?"
+- Store in MEMORY.md under `SOCIAL_MEDIA_ACTION_LINK`
+- Confirm weekly if changed
+
+### Step 3: ASK about podcast (skip-but-keep-asking)
+Ask: "Do you want podcast episodes produced? If so, I need your Fish Audio API key and Podbean channel ID."
+- If YES: Collect credentials, store in secrets/.env
+- If NO: Log "PODCAST_DEFERRED" in MEMORY.md with timestamp
+- Re-ask every Saturday in heartbeat
+
+### Step 4: SEARCH .env for GHL credentials
+Check ALL these locations for GHL credentials BEFORE asking:
+- ~/clawd/secrets/.env
+- ~/.openclaw/.env
+- ~/.openclaw/openclaw.json → env.vars
+- printenv | grep GHL
+- Any file containing "PIT" or "Private Integration Token"
+
+Only ask if credentials truly cannot be found after exhaustive search.
+
+### Step 5: ADD heartbeat to HEARTBEAT.md
+Add the weekly theme request schedule to HEARTBEAT.md:
+```markdown
+### Saturday 8:00 AM - Social Media Theme Request
+Ask client: "What's the theme for next week's social media content?"
+- If no response by 12:00 PM: ask again
+- If no response by 6:00 PM: ask again
+- If no response by Sunday 7:00 AM: use "evergreen" theme
+```
+
+### Step 6: APPLY CORE_UPDATES.md surgically
+Add the entries from CORE_UPDATES.md to:
+- AGENTS.md (social media planner routing rules)
+- TOOLS.md (GHL Social Planner API reference)
+- MEMORY.md (weekly logging structure)
+
+### Step 7: RUN QC.md checks
+Execute ALL checks in QC.md:
+- Verify Google Sheet was created and is accessible
+- Test GHL API connection with actual token
+- Verify kie.ai API key works (test image generation)
+- Test FFmpeg and ImageMagick are functional
+- Verify all credentials are in secrets/.env
+
+### Step 8: CONFIRM to client
+Send confirmation message listing:
+- ✅ Google Sheet created and linked
+- ✅ GHL Social Planner connected
+- ✅ Weekly theme heartbeat scheduled
+- ✅ Video preference set to [0/2/7] per week
+- ✅ Podcast [enabled/deferred]
+- ⚠️ Any pending items (missing credentials, etc.)
+
+**ACTIVATION IS COMPLETE when all 8 steps are done.**

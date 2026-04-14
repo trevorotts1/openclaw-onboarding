@@ -18,6 +18,24 @@ Do NOT run the skill or produce any content before completing all 5 reads.
 
 ---
 
+## ⚠️ ACTIVATION REQUIRED
+
+**Reading files is NOT activation. You must EXECUTE the activation steps.**
+
+After reading all 5 files, follow the **ACTIVATION** section in INSTALL.md:
+1. CREATE Google Sheet via webhook
+2. ASK client (videos, action link)
+3. ASK about podcast (skip-but-keep-asking)
+4. SEARCH .env for GHL credentials
+5. ADD heartbeat to HEARTBEAT.md
+6. APPLY CORE_UPDATES.md
+7. RUN QC.md checks
+8. CONFIRM to client
+
+**Teach Yourself means READ. Activate means EXECUTE.**
+
+---
+
 # Social Media Planner (Skill 35)
 
 A complete automated system for producing, scheduling, and managing weekly social media content across 6 platforms using a 7-part cliffhanger series framework.

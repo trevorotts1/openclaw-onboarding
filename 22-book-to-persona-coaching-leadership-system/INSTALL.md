@@ -702,3 +702,73 @@ Run through this checklist:
 - [ ] Pipeline execution test passed (Step 8)
 
 When all boxes are checked: log "Book-to-Persona skill fully installed. Gemini Vector Database active. Pre-built personas ready (run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to see count). Pipeline verified operational. Ready to process new books or query personas."
+
+---
+
+## 🚀 ACTIVATION (REQUIRED - DO NOT SKIP)
+
+**Reading files is NOT activation. You must EXECUTE the activation steps.**
+
+Teach Yourself means READ. Activate means EXECUTE.
+
+### Prerequisites
+- [ ] Skill 01 (Teach Yourself Protocol) installed
+- [ ] Python 3.8+ available
+- [ ] GOOGLE_API_KEY in ~/.openclaw/secrets/.env
+
+### Teach Yourself (COMPLETE BEFORE ACTIVATION)
+1. Read SKILL.md
+2. Read PIPELINE.md
+3. Read CHECKLIST.md
+4. Read GOOD-AND-BAD-EXAMPLES.md
+5. Read PERSONA-ROUTER.md
+6. Read GEMINI-RETRIEVAL-GUIDE.md
+7. Read CORE_UPDATES.md
+8. Read INSTALL.md (this file)
+
+### ACTIVATION Steps
+
+#### Step 1: COPY Gemini scripts to workspace
+```bash
+mkdir -p ~/.openclaw/workspace/scripts
+cp ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/gemini-*.py ~/.openclaw/workspace/scripts/
+chmod +x ~/.openclaw/workspace/scripts/gemini-*.py
+```
+
+#### Step 2: INSTALL Python dependencies
+```bash
+pip3 install google-genai numpy pdfplumber pypdf ebooklib aiohttp beautifulsoup4 mobi lxml --break-system-packages
+```
+
+#### Step 3: INDEX pre-built personas
+```bash
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --collection coaching-personas
+```
+
+#### Step 4: VERIFY index status
+```bash
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status
+```
+Expected: Shows "coaching-personas" collection with 40+ documents.
+
+#### Step 5: APPLY CORE_UPDATES.md
+Add entries from CORE_UPDATES.md to:
+- AGENTS.md (persona selection protocol)
+- TOOLS.md (Gemini Engine reference)
+- MEMORY.md (persona query logging)
+
+#### Step 6: RUN QC checks
+Execute ALL checks in QC.md:
+- Verify Python packages installed
+- Test Gemini indexer returns status
+- Test persona search returns results
+- Verify 40 pre-built personas indexed
+
+#### Step 7: CONFIRM to client
+Send confirmation:
+- ✅ 40 pre-built personas indexed and searchable
+- ✅ Gemini Engine active for persona retrieval
+- ✅ Pipeline ready to process new books
+- ⚠️ Any pending items (missing API keys, etc.)
+
+**ACTIVATION IS COMPLETE when all steps are done.**
