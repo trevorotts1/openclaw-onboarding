@@ -260,3 +260,13 @@ Every config change: (1) copy to `~/Downloads/openclaw-backups/` with `.txt` + t
 - Verify the sync: compare the version file in the local copy with GitHub. They must match.
 - If they do not match, do NOT proceed with any skill-related work until they are synced.
 - The memory search system indexes ~/Downloads/openclaw-master-files/. If this folder is stale, memory search returns outdated information.
+
+---
+
+## 🔴 SLACK MANIFEST GOTCHAS
+- `long_description` minimum **174 chars** — validator rejects anything shorter.
+- Invalid bot scopes: `im:write.invites`, `mpim:write.invites`, `stars:read`, `stars:write`. Invalid user scopes: `chat:write:user`, `files:write:user`.
+- Events `channel_archived` and `channel_unarchived` are invalid for bots — use `channel_rename` / `member_joined_channel` instead.
+- `outgoing_domains` requires `org_deploy_enabled: true` (Enterprise Grid only) — remove the key entirely for standard workspaces.
+- Bots cannot truly impersonate users; they can only customize display name/avatar per message (`username` + `icon_url` params).
+- Socket Mode = no public URL needed; preferred for real-time events in dev/internal apps.
