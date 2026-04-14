@@ -1,3 +1,26 @@
+## v8.7.0 - April 14, 2026
+- Install experience overhaul for 55+ client audience
+- Sub-agent concurrency configured at install time (50 concurrent, 20 queue, 4 depth)
+- Skill processing order in onboarding flag:
+  Phase A: Install all skills in parallel (read + apply)
+  Phase B: Activate foundation (Skill 31 memory, Skill 22 persona)
+  Phase C: Activate interactive (Skill 35 social media)
+  Phase D: Ready but waiting (Skill 23 interview not forced, Skill 32 Command Center waits for interview completion)
+  Phase E: QC and report to client
+- Workforce interview (Skill 23) is installed but NOT executed during onboarding. Client starts it when ready.
+- Command Center (Skill 32) waits for interview completion
+- Timeout reference: 600s simple, 900s complex, 1200s interactive, 1800s media production
+- Clean progress output (6 steps, ~20 lines)
+- All technical noise redirected to log file
+- Silent credential discovery with alternate name matching across all .env files
+- Credential scan results written into onboarding flag
+- Removed all credential warnings from install output
+- Clear completion message with exact next steps
+- Fixed bash 3.2 compatibility (no declare -A)
+- All arrays initialized before use
+- Telegram notification includes follow-up trigger
+
+
 ## v8.6.0 - April 14, 2026 - Skill 35 v1.4.0 Video Pipeline
 
 ### Updated
