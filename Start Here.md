@@ -2021,7 +2021,7 @@ label: "wave4-agent-f"
 
 5. **Install Skill 31** (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
 
-6. **Install Skill 35** (Social Media Planner): Read SKILL.md, check prerequisites (Skills 22, 30, 31), follow INSTALL.md
+6. **Install Skill 35** v1.4.0 | Content Publishing with Video Pipeline | 8 platforms, HTML email, FFmpeg: Read SKILL.md, check prerequisites (Skills 22, 30, 31), follow INSTALL.md
 
 6. **Skill 32 triggers automatically after Skill 23**
    - Skill 32 (Command Center Setup) is triggered automatically when Skill 23 completes. See Skill 23 INSTALL.md for the handoff.

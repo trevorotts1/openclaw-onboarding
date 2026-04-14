@@ -1,5 +1,15 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v1.4.0 - April 14, 2026
+
+### Added/Updated
+- Complete video production pipeline: kie.ai Veo 3.1 Lite generation + FFmpeg crossfade transitions and spec conformance (1080x1920, 9:16, H.264/AAC/30fps)
+- Expanded to 8 platforms for video posts: Facebook, Instagram, LinkedIn, YouTube, TikTok, Pinterest, Threads, X (Twitter)
+- HTML email newsletters with embedded images/links
+- Scaled production to 15 sub-agents + 6 dedicated QC agents
+- Podbean podcast publishing webhook integration
+- FFmpeg for all video post-processing (crossfades, specs, optimization)
+
 ## v1.3.0 - April 13, 2026
 
 ### Changed

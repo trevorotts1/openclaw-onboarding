@@ -25,6 +25,42 @@ This skill produces a 7-part weekly content series across Facebook, Instagram, L
 - Video posts: video + content in one GHL API call
 - Comments: separate API call 1-2 minutes after parent post, contains the action link
 
+### Video Production Process (Skill 35)
+
+1. Generate 5x 15s video segments via kie.ai (`video_generate model=google/veo-3.1-lite-preview durationSeconds=15`)
+2. Write per-segment voiceover scripts with [emotion] tags
+3. Synthesize audio segments via Fish Audio (`sag --voice [from secrets/.env: FISH_AUDIO_VOICE_ID]`)
+4. FFmpeg mux segment 1: `ffmpeg -i video_seg1.mp4 -i audio_seg1.mp3 -c:v copy -c:a aac -shortest seg1_final.mp4`
+5. FFmpeg crossfade segments: `ffmpeg -f concat -safe 0 -i segments.txt -c copy video_pre_final.mp4` (with crossfade filter_complex)
+6. Add brand intro/outro: `ffmpeg -i intro.mp4 -i pre_final.mp4 -filter_complex "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]" -map "[outv]" -map "[outa]" final.mp4`
+7. ffprobe final.mp4: verify duration=60s, resolution=1080x1920, codec=H.264, 30fps, no errors
+
+### Podcast Publishing Process (Skill 35)
+
+1. Write 1500-2000 word script covering 7 days
+2. Embed Fish Audio [emotion] tags
+3. Synthesize MP3 via Fish Audio (192kbps)
+4. Generate 1400x1400 cover JPEG via kie.ai
+5. Upload audio+cover to GHL Media Library
+6. Prepare webhook payload with [from secrets/.env: PODBEAN_PODCAST_ID], audio_url, image_url
+7. Set publish_date Day 7 ISO (e.g. 2026-04-19T09:00:00-04:00)
+8. POST to n8n webhook `https://main.blackceoautomations.com/webhook/podbean-publish`
+9. Verify response: episode_id, status=draft
+10. Update to publish: PATCH /episodes/[episode_id] status=published
+11. Log to Google Sheet Podcast tab
+12. Notify client via Telegram
+13. ffprobe audio.mp3: bitrate=192kbps, no errors
+14. Check Podbean dashboard for live episode
+
+### Email Newsletter Process (Skill 35)
+
+1. Compile Day 2 content into HTML table (3-col: image | recap | CTA)
+2. Inline CSS only (no external stylesheets)
+3. Subject: 60 chars max, e.g. "[Day 2 Theme]: [from identity.md: brand name] Weekly Update"
+4. Preview text: 120 chars max
+5. Deferred send: schedule Tuesday 9AM via GHL Campaigns
+6. Upload images to GHL Media, embed <img src="[media_url]">
+
 ---
 
 ## Add to TOOLS.md

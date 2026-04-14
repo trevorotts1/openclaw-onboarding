@@ -31,7 +31,7 @@ All credentials go in `secrets/.env` on the client's OpenClaw instance.
 
 | Software | Check | Install (Mac) | Install (Linux) |
 |----------|-------|---------------|----------------|
-| FFmpeg | `ffmpeg -version` | `brew install ffmpeg` | `sudo apt install ffmpeg` |
+| FFmpeg | `ffmpeg -version` (must show version ≥4.0) | `brew install ffmpeg` | `sudo apt install ffmpeg` |
 | ImageMagick | `convert -version` | `brew install imagemagick` | `sudo apt install imagemagick` |
 | Python 3 | `python3 --version` | Pre-installed on Mac | `sudo apt install python3` |
 
@@ -113,12 +113,22 @@ If any are missing, ask the client:
 
 ### Step 3: Verify GHL Social Planner Access
 
-Test the GHL API by listing connected social accounts:
+During activation, test GHL connected platforms:
+- Facebook: `curl .../facebook/accounts`
+- Instagram: `curl .../instagram/accounts`
+- LinkedIn: `curl .../linkedin/accounts`
+- YouTube: `curl .../youtube/accounts`
+- TikTok: `curl .../tiktok/accounts`
+- Pinterest: `curl .../pinterest/accounts`
+- X/Twitter: `curl .../twitter/accounts`
+- Threads: `curl .../threads/accounts`
+
+Test example (Facebook):
 ```
-curl -H "Authorization: Bearer {GHL_PRIVATE_TOKEN}" \
-  "https://services.leadconnectorhq.com/social-media-posting/oauth/{GHL_LOCATION_ID}/facebook/accounts/{accountId}"
+curl -H "Authorization: Bearer [from secrets/.env: GHL_PRIVATE_TOKEN]" \
+  "https://services.leadconnectorhq.com/social-media-posting/oauth/[from secrets/.env: GHL_LOCATION_ID]/facebook/accounts"
 ```
-If this returns account data, GHL Social Planner is connected and the token works.
+Ensure at least one account per platform is connected and authorized.
 
 ### Step 4: Verify FFmpeg and ImageMagick
 
@@ -182,6 +192,11 @@ Add the weekly theme request to the client's HEARTBEAT.md. See references/playbo
 Teach Yourself means READ. Activate means EXECUTE.
 
 Follow these 8 activation steps in order:
+
+**Prepare output directories:**
+```bash
+mkdir -p video/segments video/audio video/scripts video/final
+```
 
 ### Step 1: CREATE Google Sheet via webhook
 ```bash
