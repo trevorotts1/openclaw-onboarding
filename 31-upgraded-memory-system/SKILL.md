@@ -6,7 +6,45 @@
 
 > 🔴 **DREAMS.md IS REQUIRED** - Must exist in workspace root for active memory to function.
 
-> 🔴 **ACTIVE MEMORY IS REQUIRED** - memory-core layer must be enabled and configured.
+> 🔴 **ACTIVE MEMORY IS REQUIRED** - Layer 8 (Active Memory) requires memory-core with `autoCapture: true` and `autoRecall: true`. This is NOT optional.
+
+## Active Memory Configuration (Layer 8)
+
+Active Memory is the REQUIRED Layer 8 component that enables native memory capture and recall.
+
+```json
+"memory": {
+  "backend": "builtin"
+},
+"agents": {
+  "defaults": {
+    "memory": {
+      "autoCapture": true,
+      "autoRecall": true
+    },
+    "activeMemory": {
+      "enabled": true,
+      "flushIntervalMinutes": 30,
+      "contextInjection": {
+        "memoryWiki": true,
+        "cognee": true
+      }
+    }
+  }
+}
+```
+
+### Config Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `memory.backend` | string | "builtin" | MUST be "builtin" for memory-core |
+| `agents.defaults.memory.autoCapture` | boolean | true | Automatically capture important context |
+| `agents.defaults.memory.autoRecall` | boolean | true | Automatically recall relevant memory |
+| `agents.defaults.activeMemory.enabled` | boolean | true | Master switch for Active Memory |
+| `agents.defaults.activeMemory.flushIntervalMinutes` | number | 30 | How often to flush working memory |
+| `agents.defaults.activeMemory.contextInjection.memoryWiki` | boolean | true | Inject memory wiki into context |
+| `agents.defaults.activeMemory.contextInjection.cognee` | boolean | true | Inject Cognee graph knowledge |
 
 ## What This Skill Is About
 
@@ -32,7 +70,7 @@ This skill upgrades your OpenClaw agent from the default memory system to an 8-l
 | 5. memory-core | Auto-captures and auto-recalls memory | Native OpenClaw memory system - survives compaction, no external dependencies |
 | 6. Cognee | Graph-based knowledge relationships | Connects facts, people, projects in a graph database for complex queries |
 | 7. Obsidian Vault | Structured knowledge base | Obsidian-compatible markdown with wikilinks, frontmatter, and daily notes |
-| 8. Wiki System | Collaborative documentation | Memory wiki with deterministic pages, managed blocks, and source-backed updates |
+| 8. Active Memory + Wiki System | Native memory capture/recall + collaborative docs | memory-core auto-captures context; Wiki provides structured knowledge base |
 
 ## Files in This Folder and Reading Order
 
@@ -64,7 +102,8 @@ This skill upgrades your OpenClaw agent from the default memory system to an 8-l
 1. All 8 layers run simultaneously. They do not compete. Each solves a different problem.
 2. Layer 4 (Gemini Embedding 2) replaces the old Google Embedding 2 retrieval query engine. Google Embedding 2 is deprecated.
 3. Layer 5 (memory-core) is the native OpenClaw memory system. It replaces the legacy memory plugin.
-4. Layers 6-8 (Cognee, Obsidian Vault, Wiki System) are advanced add-ons that extend memory capabilities.
+4. Layer 8 (Active Memory + Wiki System) is REQUIRED - memory-core must be enabled with autoCapture and autoRecall.
+5. Layers 6-7 (Cognee, Obsidian Vault) are advanced add-ons that extend memory capabilities.
 4. The memory flush prompt must include explicit categories or it saves junk.
 5. Session indexing adds noise, so the flush prompt is even more important as a filter.
 6. If migrating from Google Embedding 2: run the migration steps in INSTALL.md before enabling Layer 4.

@@ -14,13 +14,14 @@
 | 5 | memory-core (native auto-capture + auto-recall) | Active |
 | 6 | Cognee (graph-based knowledge) | Active / PENDING |
 | 7 | Obsidian Vault (structured knowledge base) | Active |
-| 8 | Wiki System (collaborative documentation) | Active |
+| 8 | Active Memory + Wiki System (REQUIRED) | Active |
 
 - Layer 4 provider: gemini, model: models/gemini-embedding-2-preview
 - Layer 5: memory-core backend (replaces the legacy memory plugin)
 - Layer 6: Cognee requires Docker; marked PENDING if unavailable
 - Layer 7: Obsidian app check via `ls /Applications/Obsidian.app` (Mac)
-- Layer 8: Wiki vault with deterministic pages and managed blocks
+- Layer 8: Active Memory (REQUIRED) + Wiki vault with deterministic pages
+- Active Memory config: autoCapture=true, autoRecall=true, backend="builtin"
 - All 8 layers run simultaneously. They solve different problems.
 - Weekly maintenance: clean MEMORY.md, remove stale entries
 - Monthly maintenance: prune daily logs older than 90 days
@@ -35,11 +36,14 @@
 - Session indexing is enabled. Past conversations are searchable.
 - Search backend is Gemini Embedding 2 (not Google Embedding 2). Config: memory.backend = "builtin", memorySearch.provider = "gemini"
 - memory-core (Layer 5) handles auto-capture and auto-recall. Do not rely on manual memory saves alone.
+- ACTIVE MEMORY (Layer 8) IS REQUIRED - must have autoCapture=true and autoRecall=true
 - MEMORY.md is the long-term source of truth. Daily logs are session-specific.
 - If MEMORY.md gets longer than 1500 lines, consolidate and trim old entries.
 - Cognee (Layer 6) provides graph-based knowledge relationships for complex queries.
 - Obsidian Vault (Layer 7) maintains structured knowledge with wikilinks and frontmatter.
 - Wiki System (Layer 8) enables collaborative documentation with source-backed updates.
+- Active Memory config: agents.defaults.memory.autoCapture=true, agents.defaults.memory.autoRecall=true
+- Verify Active Memory: `openclaw memory status` should show Backend: builtin, Auto-capture: enabled
 ```
 
 ## Add to TOOLS.md
@@ -55,5 +59,7 @@
 - memory-core (Layer 5): Native OpenClaw memory with auto-capture and auto-recall
 - Cognee (Layer 6): Graph-based knowledge relationships (requires Docker)
 - Obsidian Vault (Layer 7): Structured knowledge base with wikilinks
-- Wiki System (Layer 8): Collaborative docs with deterministic pages
+- Active Memory + Wiki System (Layer 8): REQUIRED - native memory with auto-capture/recall + collaborative docs
+- Active Memory config: agents.defaults.memory.autoCapture=true, agents.defaults.memory.autoRecall=true
+- Active Memory check: `openclaw memory status` (should show Backend: builtin, Auto-capture: enabled)
 ```

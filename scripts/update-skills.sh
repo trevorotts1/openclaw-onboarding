@@ -1,5 +1,5 @@
 #!/bin/bash
-# BlackCEO System - Safe Update Script v8.7.0
+# BlackCEO System - Safe Update Script v8.8.0
 # Install Experience Overhaul - Clean UI, 5-Phase Processing, Smart Credentials
 #
 # Download latest, compare versions, back up config, apply updates,
@@ -321,6 +321,77 @@ elif [ "$HAS_INTERVIEW_ANSWERS" = true ] && [ "$HAS_DEPARTMENTS_DIR" = false ]; 
  INTERVIEW_STATE="STATE B - INTERVIEW IN PROGRESS"
 fi
 
+# ── Active Memory verification and auto-config ──
+ACTIVE_MEMORY_STATUS="NOT CONFIGURED"
+if [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
+  ACTIVE_MEMORY_CHECK=$(python3 -c "
+import json
+import sys
+try:
+    with open('$OPENCLAW_CONFIG') as f:
+        cfg = json.load(f)
+    
+    # Check if active-memory is configured
+    active_mem = cfg.get('plugins', {}).get('entries', {}).get('active-memory', {})
+    memory_slot = cfg.get('plugins', {}).get('slots', {}).get('memory', '')
+    search_provider = cfg.get('agents', {}).get('defaults', {}).get('memorySearch', {}).get('provider', '')
+    
+    if active_mem.get('enabled') == True and memory_slot == 'memory-core' and search_provider == 'gemini':
+        print('CONFIGURED')
+    else:
+        print('MISSING')
+except:
+    print('ERROR')
+" 2>/dev/null)
+
+  if [ "$ACTIVE_MEMORY_CHECK" = "CONFIGURED" ]; then
+    ACTIVE_MEMORY_STATUS="CONFIGURED"
+  elif [ "$ACTIVE_MEMORY_CHECK" = "MISSING" ]; then
+    # Auto-configure Active Memory
+    python3 << 'PYEOF' 2>/dev/null
+import json
+import os
+
+try:
+    path = os.path.expanduser("~/.openclaw/openclaw.json")
+    with open(path) as f:
+        config = json.load(f)
+    
+    # Configure plugins.entries.active-memory
+    plugins = config.setdefault('plugins', {})
+    entries = plugins.setdefault('entries', {})
+    
+    entries['active-memory'] = {
+        "enabled": True,
+        "agents": ["main"],
+        "allowedChatTypes": ["direct"],
+        "queryMode": "recent",
+        "promptStyle": "balanced",
+        "timeoutMs": 15000,
+        "maxSummaryChars": 220
+    }
+    
+    # Configure plugins.slots.memory
+    slots = plugins.setdefault('slots', {})
+    slots['memory'] = "memory-core"
+    
+    # Configure agents.defaults.memorySearch.provider
+    agents = config.setdefault('agents', {})
+    defaults = agents.setdefault('defaults', {})
+    memory_search = defaults.setdefault('memorySearch', {})
+    memory_search['provider'] = "gemini"
+    
+    with open(path, 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    print("ACTIVE_MEMORY_AUTO_CONFIGURED")
+except:
+    print("ACTIVE_MEMORY_CONFIG_FAILED")
+PYEOF
+    ACTIVE_MEMORY_STATUS="AUTO-CONFIGURED"
+  fi
+fi
+
 # ── Telegram notification ──
 TELEGRAM_SENT=false
 if [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
@@ -444,6 +515,7 @@ $CRED_STATUS
 
 **Phase B: Activate foundation**
 - Skill 31 (Memory System): Verify 8 layers active
+- Verify Active Memory (Layer 8) is enabled and configured
 - Skill 22 (Persona System): Verify Gemini Engine indexed
 
 **Phase C: Activate interactive**
@@ -488,6 +560,7 @@ Detected State: $INTERVIEW_STATE
 
 After processing all skills:
 - [ ] All 8 memory layers verified
+- [ ] Active Memory (Layer 8) configured and enabled
 - [ ] Persona system operational
 - [ ] DREAMS.md exists
 - [ ] Interview state documented

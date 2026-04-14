@@ -213,3 +213,110 @@ Fail the skill if any of these happen:
 - memoryFlush is absent from config
 
 **Pass criteria:** zero anti-patterns triggered.
+
+---
+
+## Section 7: Active Memory Verification Checklist (10-Point)
+
+Active Memory (Layer 8) is REQUIRED. Run these 10 checks to verify full activation:
+
+### Check 1: Memory Backend is "builtin"
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home()/'.openclaw/openclaw.json'
+obj = json.loads(p.read_text())
+backend = obj.get('memory', {}).get('backend')
+print('memory.backend =', backend)
+print('PASS' if backend == 'builtin' else 'FAIL', '- must be "builtin"')
+PY
+```
+
+### Check 2: Auto-Capture is Enabled
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home()/'.openclaw/openclaw.json'
+obj = json.loads(p.read_text())
+auto_capture = obj.get('agents', {}).get('defaults', {}).get('memory', {}).get('autoCapture')
+print('memory.autoCapture =', auto_capture)
+print('PASS' if auto_capture is True else 'FAIL', '- must be true')
+PY
+```
+
+### Check 3: Auto-Recall is Enabled
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home()/'.openclaw/openclaw.json'
+obj = json.loads(p.read_text())
+auto_recall = obj.get('agents', {}).get('defaults', {}).get('memory', {}).get('autoRecall')
+print('memory.autoRecall =', auto_recall)
+print('PASS' if auto_recall is True else 'FAIL', '- must be true')
+PY
+```
+
+### Check 4: Active Memory Master Switch is On
+```bash
+python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path.home()/'.openclaw/openclaw.json'
+obj = json.loads(p.read_text())
+am_enabled = obj.get('agents', {}).get('defaults', {}).get('activeMemory', {}).get('enabled')
+print('activeMemory.enabled =', am_enabled)
+print('PASS' if am_enabled is True else 'WARN', '- should be true (optional but recommended)')
+PY
+```
+
+### Check 5: Memory-Core Reports Active Status
+```bash
+openclaw memory status 2>/dev/null | grep -E "Backend.*builtin" \
+  && echo "PASS: memory-core backend is builtin" \
+  || echo "FAIL: memory-core backend not builtin"
+```
+
+### Check 6: Auto-Capture Shows Enabled in Status
+```bash
+openclaw memory status 2>/dev/null | grep -i "auto.*capture" | grep -i "enabled" \
+  && echo "PASS: auto-capture enabled" \
+  || echo "FAIL: auto-capture not enabled"
+```
+
+### Check 7: Auto-Recall Shows Enabled in Status
+```bash
+openclaw memory status 2>/dev/null | grep -i "auto.*recall" | grep -i "enabled" \
+  && echo "PASS: auto-recall enabled" \
+  || echo "FAIL: auto-recall not enabled"
+```
+
+### Check 8: Gateway Has Been Restarted Since Config Change
+```bash
+openclaw status 2>/dev/null | grep -i "gateway" | head -1
+echo "INFO: If config was changed recently, verify gateway was restarted"
+```
+
+### Check 9: Memory Search Returns Results
+```bash
+# This tests that memory-core is actually working
+openclaw memory search "test query" 2>/dev/null | head -5 \
+  && echo "PASS: memory search returns results" \
+  || echo "WARN: memory search did not return results (may be empty)"
+```
+
+### Check 10: Wiki System Initialized (Layer 8 Component)
+```bash
+openclaw wiki status 2>/dev/null | grep -i "initialized" \
+  && echo "PASS: Wiki system initialized" \
+  || echo "FAIL: Wiki system not initialized"
+```
+
+### Active Memory Scoring
+
+| Score | Interpretation |
+|-------|----------------|
+| 10/10 | Active Memory fully activated and operational |
+| 8-9/10 | Core Active Memory working, minor config optional |
+| 6-7/10 | Active Memory functional but missing recommended settings |
+| < 6/10 | Active Memory NOT properly activated - FIX REQUIRED |
+
+**Pass criteria for Layer 8:** Checks 1-3, 5-7, and 10 must PASS. This is REQUIRED, not optional.

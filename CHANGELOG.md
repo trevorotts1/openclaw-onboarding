@@ -1,3 +1,19 @@
+## v8.8.0 - April 14, 2026 - Active Memory (Layer 8) Configuration
+
+### Added
+- **Active Memory (Layer 8)**: Automatic configuration during install and update
+  - `plugins.entries.active-memory` with enabled=true, agents=["main"], allowedChatTypes=["direct"]
+  - `queryMode`: "recent", `promptStyle`: "balanced", `timeoutMs`: 15000, `maxSummaryChars`: 220
+  - `plugins.slots.memory` set to "memory-core"
+  - `agents.defaults.memorySearch.provider` set to "gemini"
+- **install.sh**: New Step 7a "Configuring Active Memory (Layer 8)" runs after concurrency config
+- **update-skills.sh**: Active Memory verification and auto-configuration if missing
+- **UPDATE PENDING flag**: Added Active Memory verification to Phase B (Skill 31 activation)
+
+### Changed
+- **ONBOARDING_VERSION**: Bumped to v8.8.0 in install.sh and update-skills.sh
+- **Completion checklist**: Added "Active Memory (Layer 8) configured and enabled" to both install and update flags
+
 ## v8.7.0 - April 14, 2026
 - Install experience overhaul for 55+ client audience
 - Sub-agent concurrency configured at install time (50 concurrent, 10 queue, 4 depth)

@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v8.7.0
+#  OpenClaw Onboarding Installer v8.8.0
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v8.7.0"
+ONBOARDING_VERSION="v8.8.0"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -487,6 +487,67 @@ fi
 configure_concurrency
 
 # ----------------------------------------------------------
+# Step 7a: Configure Active Memory (Layer 8)
+# ----------------------------------------------------------
+configure_active_memory() {
+    step "Step 7a: Configuring Active Memory (Layer 8)"
+    
+    local OPENCLAW_JSON="$HOME/.openclaw/openclaw.json"
+    
+    if [ ! -f "$OPENCLAW_JSON" ]; then
+        warn "openclaw.json not found - skipping Active Memory config"
+        return
+    fi
+    
+    backup_config_file "$OPENCLAW_JSON"
+    
+    python3 << 'PYEOF'
+import json, os, sys
+
+path = os.path.expanduser("~/.openclaw/openclaw.json")
+try:
+    with open(path) as f:
+        config = json.load(f)
+    
+    # Configure plugins.entries.active-memory
+    plugins = config.setdefault('plugins', {})
+    entries = plugins.setdefault('entries', {})
+    
+    entries['active-memory'] = {
+        "enabled": True,
+        "agents": ["main"],
+        "allowedChatTypes": ["direct"],
+        "queryMode": "recent",
+        "promptStyle": "balanced",
+        "timeoutMs": 15000,
+        "maxSummaryChars": 220
+    }
+    
+    # Configure plugins.slots.memory
+    slots = plugins.setdefault('slots', {})
+    slots['memory'] = "memory-core"
+    
+    # Configure agents.defaults.memorySearch.provider
+    agents = config.setdefault('agents', {})
+    defaults = agents.setdefault('defaults', {})
+    memory_search = defaults.setdefault('memorySearch', {})
+    memory_search['provider'] = "gemini"
+    
+    with open(path, 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    print("  ✓ Active Memory configured (Layer 8)")
+    print("  ✓ plugins.entries.active-memory enabled")
+    print("  ✓ plugins.slots.memory set to memory-core")
+    print("  ✓ agents.defaults.memorySearch.provider set to gemini")
+except Exception as e:
+    print(f"  ✗ Could not configure Active Memory: {e}", file=sys.stderr)
+PYEOF
+}
+
+configure_active_memory
+
+# ----------------------------------------------------------
 # Step 8: Exec Security Configuration
 # ----------------------------------------------------------
 step "Step 8: Applying Exec Security Configuration"
@@ -597,6 +658,7 @@ A system update was installed. Do NOT ask the owner "would you like me to procee
 
 **Phase B: Foundation (Timeout: 900s / 15 minutes)**
 - Configure memory architecture (all 8 layers)
+- Verify Active Memory (Layer 8) is enabled
 - Set up persona system
 - Initialize Gemini Engine indexing
 - Verify credential sync across all locations
@@ -684,6 +746,7 @@ python3 ~/clawd/scripts/gemini-indexer.py --status
 # Check DREAMS.md exists in workspace root
 # Check memory-core is configured
 # Check Obsidian Vault path is set
+# Check Active Memory (Layer 8) is enabled in plugins.entries.active-memory
 ```
 
 **STEP 5: VERIFY PERSONA SYSTEM**

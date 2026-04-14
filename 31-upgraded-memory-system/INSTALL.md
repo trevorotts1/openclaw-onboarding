@@ -370,7 +370,51 @@ Expected: Shows vault path, note count, and daily notes status.
 
 ---
 
-## Layer 8: Wiki System (Collaborative Documentation)
+## Layer 8: Active Memory + Wiki System (REQUIRED)
+
+Layer 8 consists of two integrated components:
+1. **Active Memory** (REQUIRED) - Native memory-core with auto-capture and auto-recall
+2. **Wiki System** - Collaborative documentation with deterministic pages
+
+### 8.0 Configure Active Memory (REQUIRED)
+
+Active Memory MUST be enabled for the 8-layer system to function.
+
+In `~/.openclaw/openclaw.json`, ensure these settings exist:
+
+```json
+"memory": {
+  "backend": "builtin"
+},
+"agents": {
+  "defaults": {
+    "memory": {
+      "autoCapture": true,
+      "autoRecall": true
+    },
+    "activeMemory": {
+      "enabled": true,
+      "flushIntervalMinutes": 30,
+      "contextInjection": {
+        "memoryWiki": true,
+        "cognee": true
+      }
+    }
+  }
+}
+```
+
+**Verify Active Memory is configured:**
+```bash
+openclaw memory status
+```
+
+Expected output should show:
+- Backend: builtin
+- Auto-capture: enabled
+- Auto-recall: enabled
+
+### 8.1 Enable Wiki System
 
 ### 8.1 Enable wiki system
 
