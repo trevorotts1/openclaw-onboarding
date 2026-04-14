@@ -1,6 +1,6 @@
 ## v8.7.0 - April 14, 2026
 - Install experience overhaul for 55+ client audience
-- Sub-agent concurrency configured at install time (50 concurrent, 20 queue, 4 depth)
+- Sub-agent concurrency configured at install time (50 concurrent, 10 queue, 4 depth)
 - Skill processing order in onboarding flag:
   Phase A: Install all skills in parallel (read + apply)
   Phase B: Activate foundation (Skill 31 memory, Skill 22 persona)

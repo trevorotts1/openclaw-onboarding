@@ -282,7 +282,7 @@ try:
     
     # v8.7.0 concurrency settings
     sub['maxConcurrent'] = 50
-    sub['maxQueue'] = 20
+    sub['maxQueue'] = 10
     sub['maxDepth'] = 4
     
     defaults['subagents'] = sub
@@ -292,7 +292,7 @@ try:
     with open(path, 'w') as f:
         json.dump(config, f, indent=2)
     
-    print("  ✓ Set maxConcurrent=50, maxQueue=20, maxDepth=4")
+    print("  ✓ Set maxConcurrent=50, maxQueue=10, maxDepth=4")
 except Exception as e:
     print(f"  ✗ Could not update concurrency: {e}", file=sys.stderr)
 PYEOF
