@@ -75,8 +75,50 @@ fi
 declare -a SKILLS_INSTALLED=()
 declare -a SKILLS_UPDATED=()
 declare -a SKILLS_SKIPPED=()
-declare -A SKILL_DESCRIPTIONS
-declare -A SKILL_QC_STATUS
+# Bash 3.2 compatibility: Use parallel arrays instead of associative arrays
+declare -a SKILL_DESC_KEYS=()
+declare -a SKILL_DESC_VALS=()
+declare -a SKILL_QC_KEYS=()
+declare -a SKILL_QC_VALS=()
+
+set_skill_description() {
+    local key="$1"
+    local val="$2"
+    SKILL_DESC_KEYS+=("$key")
+    SKILL_DESC_VALS+=("$val")
+}
+
+get_skill_description_from_array() {
+    local search="$1"
+    local i
+    for i in "${!SKILL_DESC_KEYS[@]}"; do
+        if [ "${SKILL_DESC_KEYS[$i]}" = "$search" ]; then
+            echo "${SKILL_DESC_VALS[$i]}"
+            return
+        fi
+    done
+    # Fallback to file lookup if not in array
+    get_skill_description "$search"
+}
+
+set_skill_qc() {
+    local key="$1"
+    local val="$2"
+    SKILL_QC_KEYS+=("$key")
+    SKILL_QC_VALS+=("$val")
+}
+
+get_skill_qc() {
+    local search="$1"
+    local i
+    for i in "${!SKILL_QC_KEYS[@]}"; do
+        if [ "${SKILL_QC_KEYS[$i]}" = "$search" ]; then
+            echo "${SKILL_QC_VALS[$i]}"
+            return
+        fi
+    done
+    echo "unknown"
+}
 
 # ----------------------------------------------------------
 # Discover skills directory - checks multiple locations for old installs
