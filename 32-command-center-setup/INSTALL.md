@@ -418,9 +418,9 @@ The agent calls the n8n webhook. The webhook returns JSON: `{status, subdomain, 
 
 ```bash
 RESPONSE=$(curl -s -X POST https://main.blackceoautomations.com/webhook/command-center-register-v3   -H "Content-Type: application/json"   -d '{
-    "clientName": "[company-slug-shortid]",
-    "companyName": "[full company name]",
-    "contactEmail": "[client email]"
+    "clientName": "[company slug from identity.md, lowercase, no spaces]",
+    "companyName": "[from identity.md: company display name]",
+    "contactEmail": "[from identity.md: owner email]"
   }')
 
 TUNNEL_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['tunnelToken'])")

@@ -36,11 +36,54 @@ This skill produces a 7-part weekly content series across Facebook, Instagram, L
 | GoHighLevel Social Planner API | Post scheduling, commenting, media attachment across all 6 platforms | GHL_PRIVATE_TOKEN + GHL_LOCATION_ID |
 | kie.ai API | Image generation (Nano Banana 2) at 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Video generation (Veo 3.1 Lite) | KIE_API_KEY |
 | Fish Audio S2 API | Podcast TTS with inline [emotion] tags (depends on Skill 30) | FISH_AUDIO_API_KEY + FISH_AUDIO_VOICE_ID |
-| Podbean Publishing (n8n webhook) | Podcast episode publishing. POST to https://main.blackceoautomations.com/webhook/podbean-publish with audio URL, cover image URL, title, description, publish date. Audio and image must go through GHL Media Library first. | PODBEAN_PODCAST_ID + client contact info |
 | Google Sheets API | Content logging across 19 worksheets with inline image previews | **Sheet created automatically via n8n webhook** - no client credentials needed |
 | FFmpeg | Video segment merging (audio + video, 192 kbps, H.264, 30fps) | Installed locally |
 | ImageMagick / Python Pillow | LinkedIn PDF carousel generation from 4:5 images | Installed locally |
 | Podbean | Podcast episode hosting (MP3, 192 kbps, 1400x1400 cover art) | Podbean account |
+
+### Podbean Podcast Publishing (Skill 35)
+
+Podcast episodes are published via n8n webhook.
+
+**Endpoint:** `POST https://main.blackceoautomations.com/webhook/podbean-publish`
+
+**Required fields:**
+- `podcast_id` - from memory.md or secrets/.env: PODBEAN_PODCAST_ID
+- `audio_url` - GHL Media Library URL (must upload generated MP3 first)
+- `image_url` - GHL Media Library URL (must upload cover art first, JPEG/PNG, 1:1, 1400x1400 min, under 500 KB)
+- `title` - episode title based on this week's theme
+- `description` - show notes from podcast script (under 3000 chars)
+- `publish_date` - Day 7 date in ISO format
+- `client_first_name` - from identity.md: owner first name
+- `client_last_name` - from identity.md: owner last name
+- `client_email` - from identity.md: owner email
+
+**Payload:**
+```json
+{
+  "podcast_id": "[from memory.md or secrets/.env: PODBEAN_PODCAST_ID]",
+  "audio_url": "[GHL Media Library URL after uploading the generated MP3]",
+  "image_url": "[GHL Media Library URL after uploading the generated cover art]",
+  "title": "[episode title based on this week's theme]",
+  "description": "[show notes from the podcast script, under 3000 chars]",
+  "publish_date": "[Day 7 date in ISO format]",
+  "client_first_name": "[from identity.md: owner first name]",
+  "client_last_name": "[from identity.md: owner last name]",
+  "client_email": "[from identity.md: owner email]"
+}
+```
+
+### Google Sheet Creation Webhook (Skill 35)
+
+**Endpoint:** `POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`
+
+**Payload:**
+```json
+{
+  "brandName": "[from identity.md: brand name]",
+  "clientEmail": "[from identity.md: owner email]"
+}
+```
 
 ---
 

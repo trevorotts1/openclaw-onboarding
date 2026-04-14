@@ -1,5 +1,20 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v1.3.0 - April 13, 2026
+
+### Changed
+- Updated all webhook payload examples to use explicit variable references from identity.md
+- Google Sheet webhook: `brandName` now references "[from identity.md: brand name]"
+- Google Sheet webhook: `clientEmail` now references "[from identity.md: owner email]"
+- Skill 32 tunnel webhook: `clientName` now references "[company slug from identity.md, lowercase, no spaces]"
+- Skill 32 tunnel webhook: `companyName` now references "[from identity.md: company display name]"
+- Skill 32 tunnel webhook: `contactEmail` now references "[from identity.md: owner email]"
+
+### Added
+- Full Podbean Podcast Publishing webhook documentation in CORE_UPDATES.md TOOLS.md section
+- Detailed payload example for podcast publishing with all required fields
+- Google Sheet Creation Webhook section with payload documentation
+
 ## v1.1.0 - April 13, 2026
 
 ### Changed

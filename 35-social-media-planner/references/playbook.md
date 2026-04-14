@@ -81,8 +81,8 @@ POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create
 Content-Type: application/json
 
 {
-  "brandName": "[Client's Brand Name]",
-  "clientEmail": "[Client's Email Address]"
+  "brandName": "[from identity.md: brand name]",
+  "clientEmail": "[from identity.md: owner email]"
 }
 ```
 
@@ -96,7 +96,7 @@ Content-Type: application/json
 ```
 
 **What the agent does:**
-1. POST to the webhook with brandName and clientEmail
+1. POST to the webhook with brandName (from identity.md: brand name) and clientEmail (from identity.md: owner email)
 2. Receive sheetUrl, sheetId, and sheetName in response
 3. Store the sheetUrl in MEMORY.md
 4. Tell the client: "I created your Social Media Planner sheet. Here is the link: [URL]. You have full edit access."

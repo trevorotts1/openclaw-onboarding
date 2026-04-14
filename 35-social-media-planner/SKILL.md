@@ -121,7 +121,7 @@ On the very first activation for a new client, read `references/playbook.md` Sec
 
 **Google Sheet Creation (Automatic):**
 - **Webhook:** `POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`
-- **Fields:** `brandName`, `clientEmail`
+- **Fields:** `brandName` (from identity.md: brand name), `clientEmail` (from identity.md: owner email)
 - **Response:** `sheetUrl`, `sheetId`, `sheetName`
 - Store `sheetUrl` in MEMORY.md
 - **Fallback:** Template link for manual copy if webhook fails
