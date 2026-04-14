@@ -136,15 +136,44 @@ QC runs BEFORE any content is scheduled. Nothing goes to GHL until all checks pa
 - [ ] client_email, client_first_name, client_last_name are correct
 - [ ] No episode number is included in the payload (automation assigns it)
 
-## Video
+## Video Content QC Checklist
 
-- [ ] Video is 60 seconds
-- [ ] Video is 9:16 (1080 x 1920)
-- [ ] Video is MP4, H.264, 30fps
-- [ ] Audio track is synced
-- [ ] Video plays without errors
+- [ ] Duration exactly 60 seconds (`ffprobe -v quiet -show_entries format=duration -of csv=p=0 final.mp4`)
+- [ ] Resolution 1080x1920 (9:16) (`ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x final.mp4`)
+- [ ] Video codec H.264 (`ffprobe -v quiet -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 final.mp4`)
+- [ ] Audio codec AAC 192kbps (`ffprobe -v quiet -select_streams a:0 -show_entries stream=bit_rate,codec_name -of csv=p=0:s=,x final.mp4`)
+- [ ] Frame rate 30fps (`ffprobe -v quiet -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 final.mp4`)
+- [ ] Smooth crossfade transitions between segments (visual inspection)
+- [ ] 3-second brand intro (first frames match [from identity.md: brand colors/logo])
+- [ ] 3-second brand outro with CTA
+- [ ] ffprobe no errors (`ffprobe final.mp4` returns clean streams)
+- [ ] Audio perfectly synced to video
+- [ ] Bitrate: video ~5Mbps, total <100MB for GHL upload
+- [ ] MP4 container, faststart enabled (`qt-faststart` or `-movflags +faststart`)
+- [ ] No black/blank frames
+- [ ] Consistent lighting/color grading
+- [ ] Text overlays readable (min 24pt, high contrast)
+- [ ] Brand colors used throughout
+- [ ] Content appropriate (no violations, matches weekly theme)
 
 ---
+
+## Email Newsletter QC Checklist
+
+- [ ] Subject line ≤60 characters
+- [ ] Preview text ≤120 characters
+- [ ] Table-based layout (max-width: 600px)
+- [ ] Inline CSS only (no <style> or external)
+- [ ] Mobile responsive (tested 320px-600px)
+- [ ] Images from GHL Media Library (<img src="[media_url]");
+- [ ] Alt text on all images
+- [ ] 3-column table: image | recap | CTA
+- [ ] Brand colors from identity.md
+- [ ] No em dashes
+- [ ] No broken links
+- [ ] Pitch in middle (Day 2 intensity)
+- [ ] CTA button prominent (min 44px height)
+- [ ] Deferred send scheduled Tuesday 9AM
 
 ## QC Failure Process
 
@@ -154,11 +183,13 @@ QC runs BEFORE any content is scheduled. Nothing goes to GHL until all checks pa
 4. If it fails again, retry the revision up to 3 total attempts
 5. After 3 failures: notify the client via Telegram with the specific failure details and which check failed
 
-## QC Agent Assignment
+## QC Agent Assignments
 
-Multiple QC agents can run in parallel checking different content types:
-- QC Agent 1: Text content + persona governance (all 7 days, all 6 platforms)
-- QC Agent 2: Comments (all 42 comments)
-- QC Agent 3: Images (all 21+ images)
-- QC Agent 4: Blog, podcast, email, video
-- QC Agent 5: Scheduling verification + posting bundle verification
+| Agent | Responsibility |
+|-------|----------------|
+| QC Agent 1 | Text content + persona governance (all 7 days, all 8 platforms) |
+| QC Agent 2 | Comments (all 42+ comments) |
+| QC Agent 3 | Images (all 21+ images) |
+| QC Agent 4 | Blog + Email |
+| QC Agent 5 | Podcast + Video |
+| QC Agent 6 | Schedule + Bundle verification |

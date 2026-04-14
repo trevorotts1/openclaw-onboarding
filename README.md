@@ -108,7 +108,9 @@ That file is the master instruction file. It contains:
 | 31-upgraded-memory-system | Upgraded Memory System |
 | 32-blackceo-voice-call-plugin | BlackCEO Voice Call Plugin |
 | 33-department-heads | Permanent Department Heads |
-| 35-social-media-planner | Social Media Planner |
+| 35-social-media-planner | Social Media Planner v1.4.0
+**Requirements:** FFmpeg ≥4.0, kie.ai API key for video generation
+**Features:** Crossfade video transitions, 8-platform publishing |
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
 

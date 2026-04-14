@@ -1,3 +1,8 @@
+## v8.6.0 - April 14, 2026 - Skill 35 v1.4.0 Video Pipeline
+
+### Updated
+- **Skill 35 Social Media Planner v1.4.0**: Full video production pipeline (kie.ai Veo + FFmpeg crossfades/post-processing), 8-platform video posting (Facebook/Instagram/LinkedIn/YouTube/TikTok/Pinterest/Threads/X), HTML email newsletters, scaled to 15 production sub-agents + 6 QC agents, Podbean podcast publishing
+
 ## v8.4.0 - April 13, 2026 - Skill Activation Instructions Fix
 
 ### Fixed
