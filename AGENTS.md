@@ -173,6 +173,8 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 - Memory system: 8 layers, all verified working April 2026. Full details in MEMORY.md. Legacy system fully removed. Memory Wiki = bridge mode (secondary structured layer on top of mem0, NOT a full rebuild). Use `wiki_search` for retrieval, `memory_store` for raw fact ingestion.
 - After OpenClaw updates: if Mem0 breaks with NODE_MODULE_VERSION error, rebuild: `cd ~/.openclaw/extensions/openclaw-mem0 && PATH=/opt/homebrew/bin:$PATH npm rebuild better-sqlite3`
 - **Update order**: restart gateway first (`openclaw gateway restart`), THEN `openclaw plugins update`. Reverse = plugin failures.
+- **Fallback loop**: primary model must NOT appear in the fallbacks list. If it does, the fallback chain loops back to itself.
+- **Ollama context windows**: never cap artificially. Set to the model's actual capacity or queries requiring large context silently fail.
 - Command Center: if UI lets Trevor choose model/persona, backend must actually use it. No cosmetic settings.
 
 ---
