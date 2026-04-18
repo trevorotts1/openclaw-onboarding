@@ -39,7 +39,7 @@ done
 ```
 
 ## 🔴🔴🔴 EMAIL — GOOGLE WORKSPACE API ONLY
-All @blackceo.com emails: ALWAYS use Google Workspace API (service account + DWD). NEVER Himalaya or any CLI email client.
+All @blackceo.com emails: ALWAYS use Google Workspace API (service account + DWD). NEVER Himalaya, GOG CLI, or any CLI email client. Trevor repeated this April 17: `DONT USE GOG TO CHECK EMAIL`.
 
 ---
 
@@ -175,6 +175,7 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 - **Update order**: restart gateway first (`openclaw gateway restart`), THEN `openclaw plugins update`. Reverse = plugin failures.
 - **Fallback loop**: primary model must NOT appear in the fallbacks list. If it does, the fallback chain loops back to itself.
 - **Ollama context windows**: never cap artificially. Set to the model's actual capacity or queries requiring large context silently fail.
+- **Ollama Cloud vs OpenRouter vs local Ollama**: always confirm which runtime is in use before citing context/max-output values. Their published limits differ. Never infer Ollama Cloud max output from local Ollama defaults — the model card may not publish one; use OpenClaw Ollama default (8192) as conservative fallback and flag the assumption explicitly.
 - Command Center: if UI lets Trevor choose model/persona, backend must actually use it. No cosmetic settings.
 
 ---
