@@ -29,6 +29,7 @@ When Trevor sends voice/audio: respond text first, then Fish Audio voice note (b
 2. Sub-agents NEVER write directly to main. ALWAYS work on a feature branch.
 3. After build passes, pull `git diff` and show Trevor exactly what changed.
 4. Trevor approves diff. No merge without explicit YES. Only after: merge to main + PM2 restart.
+5. **ALL work goes to sub-agents — including W0/infrastructure setup.** "Setup" is not an exception. (Trevor enforced April 2026: "You don't change my fucking rules.")
 
 ## 🔴 APPLE CONTACTS — SEARCH ALL 6 DATABASES
 NEVER stop after 1-2 results and say "not found." Loop all `~/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb` with sqlite3 — search ZFIRSTNAME, ZLASTNAME, ZORGANIZATION.
@@ -133,6 +134,7 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 - **Fish Audio**: `s2-pro`. Stefan `e75e1618ff544059be71409c5126b4c0`. 192 kbps content, 64 kbps calls. NOT native OpenClaw TTS. On-demand HTTP only. Zero auto TTS. Never recommend ElevenLabs or OpenAI TTS. Key rotates — always re-check `~/clawd/secrets/.env` if 401.
 - **Image generation**: KIE.ai (preferred). Use `IMAGEGEN_TOOL` or KIE API. NOT Gemini imagegen, NOT DALL-E unless Trevor specifies.
 - **GHL**: Trevor = agency owner. `https://app.convertandflow.com`. Creds: `GHL_AGENCY_EMAIL`/`GHL_AGENCY_PASSWORD` in secrets. Alert wallet <$20. Media API: `altType=location`+`altId=<locationId>`. Folder creation via API BROKEN — create in UI, pass `folderId`.
+- **Supabase**: Service role JWT (`service_role`) is insufficient for DDL (schema creation). Use Management API with `sbp_` token for any schema migrations.
 - **Google Workspace API**: @blackceo.com = service account + DWD. Personal Gmail = GOG CLI OAuth. Details in `TOOLS.md`.
 - **Zoom/Telegram**: Zoom = Trevor default identity, don't switch silently. Telegram = no code blocks/tables.
 - **Tailwind Scrollbar**: `scrollbar-thin` does nothing without `tailwind-scrollbar` npm package in `tailwind.config.js` plugins.
