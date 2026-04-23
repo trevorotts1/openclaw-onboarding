@@ -131,7 +131,7 @@ BEFORE saying any API key is missing, check ALL of these IN ORDER:
 ---
 
 ## 🔴 SERVICE RULES
-- **Fish Audio**: `s2-pro`. Stefan `e75e1618ff544059be71409c5126b4c0`. 192 kbps content, 64 kbps calls. NOT native OpenClaw TTS. On-demand HTTP only. Zero auto TTS. Never recommend ElevenLabs or OpenAI TTS. Key rotates — always re-check `~/clawd/secrets/.env` if 401.
+- **Fish Audio**: `s2-pro`. Stefan `e75e1618ff544059be71409c5126b4c0`. 192 kbps content, 64 kbps calls. NOT native OpenClaw TTS. On-demand HTTP only. Zero auto TTS. Never recommend ElevenLabs or OpenAI TTS. Key rotates — always re-check `~/clawd/secrets/.env` if 401. **All-zero fallback voice ID (`00000000000000000000000000000000`) is INVALID** — causes false validation failures; use a real voice ID or empty string.
 - **Image generation**: KIE.ai (preferred). Use `IMAGEGEN_TOOL` or KIE API. NOT Gemini imagegen, NOT DALL-E unless Trevor specifies.
 - **GHL**: Trevor = agency owner. `https://app.convertandflow.com`. Creds: `GHL_AGENCY_EMAIL`/`GHL_AGENCY_PASSWORD` in secrets. Alert wallet <$20. Media API: `altType=location`+`altId=<locationId>`. Folder creation via API BROKEN — create in UI, pass `folderId`.
 - **Supabase**: Service role JWT (`service_role`) is insufficient for DDL (schema creation). Use Management API with `sbp_` token for any schema migrations.
@@ -178,6 +178,8 @@ Entry point: `npx create-video@latest`. Ref: `~/Downloads/openclaw-master-files/
 
 ## 🔴🔴🔴 QC STANDARD — TEST, DON'T READ
 QC = RUNNING it. Not reading docs or code. Execute with valid + bad input + missing creds; capture actual output. Simulate fresh install. Verify actual values, not file existence. Personally verify at least one critical item via direct tool call. Write QC output to file (not chat). VPS QC: MiMo V2 Pro sub-agents (up to 15-20 parallel), max 5 rounds, then flag to Trevor.
+- **Production is the source of truth.** Branch-pushed or main-merged ≠ fixed. A fix is complete only when production behavior changes. Don't report done until live verification.
+- **Salvage branch pattern**: if a branch has good logic mixed with regressions, classify as SALVAGE — cherry-pick the good parts into a fresh branch on current `main`. Never force-push a mixed branch.
 
 ## 🔴 TYPESCRIPT — @ts-nocheck BANNED
 ESLint bans `@ts-nocheck`. Use explicit `: any`. Callback params in `.map()`, `.filter()`, `.reduce()` need explicit types or builds fail.
@@ -248,3 +250,35 @@ When Trevor asks a direct question: **answer in the first sentence**, then state
 Say **"I searched"** (search results), **"I read/opened"** (direct page), **"I infer"** (evidence-based). Never inflate certainty.
 
 **Stalling** = process before the answer, answering a different question, making Trevor ask twice.
+
+---
+
+## 🔴 GIT CONFIGURATION — VERCEL DEPLOYMENTS
+
+When committing to `trevorotts1/star-app` (or any repo with Vercel auto-deploy):
+
+**Git user must match GitHub verified email:**
+- GitHub primary verified email: `trevor@blackceo.com`
+- **NOT** `trevorotts@gmail.com` or `stefanie@blackceo.com`
+
+**Why this matters:**
+- Vercel validates committer email against GitHub verified emails
+- Wrong email = "GitHub could not associate the committer with a GitHub user" error
+- Deployments fail instantly (0ms build time)
+
+**Correct git config for star-app:**
+```
+git config user.name "Trevor Otts"
+git config user.email "trevor@blackceo.com"
+```
+
+**Workaround if email is wrong:**
+Use Vercel API v6 directly instead of CLI `--prod`:
+```bash
+curl -s -X POST "https://api.vercel.com/v6/deployments" \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"star-app","target":"production","gitSource":{"type":"github","org":"trevorotts1","repo":"star-app","ref":"COMMIT_SHA","repoId":1217511651}}'
+```
+
+Source: Trevor's GitHub email settings screenshot (2026-04-22).
