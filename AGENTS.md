@@ -63,8 +63,9 @@ All @blackceo.com emails: ALWAYS use Google Workspace API (service account + DWD
 - **Timeouts**: Quick fix: 3-8 min | Analysis: 8-15 min | Feature: 15-20 min | Pipeline: up to 30 min. Tasks >5 min: progress at milestones. Blocked >2 min: stop and report. NEVER silent >5 min.
 - NEVER attach full file contents to prompts. Pass file paths only. (Cost: ~$33 credits lost March 26.)
 - Browser: rtrvr.ai preferred → curl for APIs → Playwright only with Kimi 2.5. NEVER Gemini with Playwright.
-- ALWAYS pass `thinking: "high"`. Explicitly instruct "commit after each [unit of work]" or work is silently lost.
+- ALWAYS pass `thinking: "high"`. For Kimi K2.6: HIGH (3m43s) is faster AND better than LOW (13m57s) — structured plan → execute beats wandering re-reads. Explicitly instruct "commit after each [unit of work]" or work is silently lost.
 - Never assign 2+ parallel agents to same file path. Max 6 parallel with non-overlapping file sets.
+- **Multi-subagent parallel tests**: Spawn immediately — pre-reading code first wastes 30+ min (Trevor enforced 2026-04-23). OpenClaw strips old subagent results from context (9/16 outputs lost in 16-agent test). Capture each result to a local file as it arrives. Wait for ALL to finish, then deliver ONE clean table. Never send piecemeal updates.
 - Git worktrees don't share refs. `git cherry-pick` fails across worktrees — copy files manually.
 
 ---
