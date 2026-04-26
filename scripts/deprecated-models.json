@@ -1,24 +1,30 @@
 {
-  "replace": {
-    "openrouter/minimax/minimax-m2.5": "openrouter/minimax/minimax-m2.7"
-  },
-  "remove": [
-    "openrouter/google/gemini-2.0-flash",
-    "openrouter/google/gemini-2.5-flash"
+  "deprecated": [
+    {
+      "model": "openrouter/google/gemini-3.1-flash-lite-preview",
+      "reason": "Replaced by gemini-3-flash",
+      "removalDate": "2026-06-01",
+      "replacement": "google/gemini-3-flash-preview"
+    },
+    {
+      "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      "reason": "Removed from OpenRouter free tier",
+      "removalDate": "2026-05-01",
+      "replacement": "ollama/nemotron-3-super:cloud"
+    },
+    {
+      "model": "openrouter/minimax/minimax-m2.5:free",
+      "reason": "Replaced by minimax-m2.7",
+      "removalDate": "2026-05-15",
+      "replacement": "openrouter/minimax/minimax-m2.7"
+    },
+    {
+      "model": "xiaomi/mimo-v2.5",
+      "reason": "Replaced by mimo-v2.5-pro",
+      "removalDate": "2026-06-01",
+      "replacement": "xiaomi/mimo-v2.5-pro"
+    }
   ],
-  "required": [
-    "moonshot/kimi-k2.5",
-    "openrouter/moonshot/kimi-k2.5",
-    "openrouter/xiaomi/mimo-v2-pro",
-    "openrouter/xiaomi/mimo-v2-omni",
-    "openrouter/minimax/minimax-m2.7",
-    "openrouter/google/gemini-3.1-flash-lite-preview",
-    "openrouter/google/gemini-3-flash-preview",
-    "openai-codex/gpt-5.4"
-  ],
-  "subagent_config": {
-    "maxSpawnDepth": 4,
-    "maxChildrenPerAgent": 10,
-    "maxConcurrent": 20
-  }
+  "lastUpdated": "2026-04-25"
 }
+echo "deprecated-models.json created"
