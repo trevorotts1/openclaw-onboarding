@@ -1,3 +1,17 @@
+## v8.8.1 - April 25, 2026 - Superpowers Install Method Fix
+
+### Fixed
+- **Superpowers INSTALL.md**: Made git clone the ONLY recommended method for downloading superpowers
+  - Method A (git clone) now clearly marked as the only recommended method
+  - Method C (curl individual files) marked as NOT RECOMMENDED - misses 20+ companion files
+  - Added list of missing files: brainstorm server scripts, test files, platform tool references
+  - Updated skill-version.txt to v5.0.7 (upstream superpowers version)
+
+### Changed
+- **ONBOARDING_VERSION**: Bumped to v8.8.1 in install.sh and update-skills.sh
+
+---
+
 ## v8.8.0 - April 14, 2026 - Active Memory (Layer 8) Configuration
 
 ### Added
