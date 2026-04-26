@@ -1,3 +1,17 @@
+## v8.8.2 - April 25, 2026 - Update System Overhaul
+
+### Fixed
+- **update-skills.sh**: Complete rewrite with dependency checks, dry-run mode, deprecated model detection
+- **Error handling**: Added rollback on failure, better logging, verification after applying updates
+- **deprecated-models.json**: Added for tracking model deprecation across updates
+- **.onboarding-version**: Added creation during update process
+- **Telegram notification**: improved with new/updated skill lists
+
+### Changed
+- **ONBOARDING_VERSION**: Bumped to v8.8.2 in install.sh and update-skills.sh
+
+---
+
 ## v8.8.1 - April 25, 2026 - Superpowers Install Method Fix
 
 ### Fixed

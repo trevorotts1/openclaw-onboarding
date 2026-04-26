@@ -6,7 +6,7 @@ set -euo pipefail
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v8.8.1"
+ONBOARDING_VERSION="v8.8.2"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
