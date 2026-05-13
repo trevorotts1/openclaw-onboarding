@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.7.1
+#  OpenClaw Onboarding Installer v9.7.2
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.1"
+ONBOARDING_VERSION="v9.7.2"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -68,43 +68,165 @@ count_list() {
 }
 
 # ----------------------------------------------------------
-# Telegram Progress Notification
+# Telegram Progress Notification (v9.7.2 — uses universal lookup)
 # ----------------------------------------------------------
 TELEGRAM_LAST_RESULT=""
+
+# Cached: only resolve target + account once per install run
+TELEGRAM_TARGET_CACHED=""
+TELEGRAM_ACCOUNT_CACHED=""
+TELEGRAM_RESOLVED=false
+
+resolve_telegram_target_universal() {
+    # Same universal logic as Step 12: openclaw CLI query → JSON scan of all
+    # plausible config locations → recursive walk for any chat ID under any
+    # telegram-related key → $TELEGRAM_CHAT_ID env. Also detects multi-account.
+    local result
+    result=$(python3 - <<'PYEOF' 2>/dev/null
+import json, os, glob, subprocess
+HOME = os.path.expanduser("~")
+
+def first_chat_id_from_cli():
+    for path in ("channels.telegram.allowFrom",
+                 "plugins.entries.telegram.config.allowFrom",
+                 "telegram.allowFrom",
+                 "commands.allowFrom.telegram"):
+        try:
+            r = subprocess.run(["openclaw", "config", "get", path],
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode != 0 or not r.stdout.strip():
+                continue
+            data = json.loads(r.stdout.strip())
+            if isinstance(data, list):
+                for v in data:
+                    s = str(v).strip()
+                    if s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20:
+                        return s
+            elif isinstance(data, (str, int)):
+                s = str(data).strip()
+                if s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20:
+                    return s
+        except Exception:
+            continue
+    return ""
+
+candidates = [
+    os.path.join(HOME, ".openclaw", "openclaw.json"),
+    os.path.join(HOME, ".openclaw", "config.json"),
+    os.path.join(HOME, "Library", "Application Support", "openclaw", "config.json"),
+    os.path.join(HOME, "Library", "Application Support", "openclaw", "openclaw.json"),
+    os.path.join(HOME, ".config", "openclaw", "config.json"),
+    os.path.join(HOME, ".config", "openclaw", "openclaw.json"),
+    "/data/.openclaw/openclaw.json",
+    "/data/.openclaw/config.json",
+]
+for pat in [os.path.join(HOME, ".openclaw", "*.json"),
+            os.path.join(HOME, "Library", "Application Support", "openclaw", "*.json"),
+            "/data/.openclaw/*.json"]:
+    candidates.extend(glob.glob(pat))
+seen = set(); configs = []
+for p in candidates:
+    if p in seen or not os.path.isfile(p): continue
+    seen.add(p); configs.append(p)
+
+KEY_HINTS = ('telegram','chat','allowfrom','allowedchat','chatid','targetchat')
+
+def is_chat_id(v):
+    if not isinstance(v,(str,int)): return False
+    s = str(v).strip()
+    return bool(s) and s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20
+
+def walk(obj, parent='', under_tel=False):
+    if isinstance(obj, dict):
+        for k,v in obj.items():
+            kl = str(k).lower()
+            now = under_tel or ('telegram' in kl)
+            km = any(h in kl for h in KEY_HINTS)
+            if (now or km) and is_chat_id(v):
+                yield (f"{parent}.{k}" if parent else k, v)
+            if isinstance(v, list):
+                for i, item in enumerate(v):
+                    if now and is_chat_id(item):
+                        yield (f"{parent}.{k}[{i}]" if parent else f"{k}[{i}]", item)
+                    yield from walk(item, f"{parent}.{k}[{i}]" if parent else f"{k}[{i}]", now)
+            elif isinstance(v, dict):
+                yield from walk(v, f"{parent}.{k}" if parent else k, now)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            yield from walk(item, f"{parent}[{i}]", under_tel)
+
+chat_id = first_chat_id_from_cli()
+account = ""
+for path in configs:
+    try:
+        cfg = json.load(open(path))
+    except Exception:
+        continue
+    if not chat_id:
+        hits = list(walk(cfg))
+        priority = ['channels.telegram.allowfrom',
+                    'plugins.entries.telegram.config.allowfrom',
+                    'commands.allowfrom.telegram',
+                    'telegram.allowfrom',
+                    'bindings.telegram']
+        for pk in priority:
+            for p, v in hits:
+                if pk in p.lower():
+                    chat_id = str(v); break
+            if chat_id: break
+        if not chat_id and hits:
+            chat_id = str(hits[0][1])
+    accts = cfg.get('channels',{}).get('telegram',{}).get('accounts',{})
+    if isinstance(accts, dict) and accts:
+        account = 'default' if 'default' in accts else list(accts.keys())[0]
+    if chat_id:
+        break
+
+env_tel = os.environ.get('TELEGRAM_CHAT_ID','').strip()
+if not chat_id and env_tel and env_tel.lstrip('-').isdigit():
+    chat_id = env_tel
+print(f"{chat_id}|{account}")
+PYEOF
+)
+    TELEGRAM_TARGET_CACHED="${result%%|*}"
+    TELEGRAM_ACCOUNT_CACHED="${result##*|}"
+    TELEGRAM_RESOLVED=true
+}
+
 send_telegram_progress() {
     local message="$1"
-    local OCJSON="$HOME/.openclaw/openclaw.json"
-    local TELEGRAM_TARGET=""
     TELEGRAM_LAST_RESULT="skipped"
-
-    if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
-        TELEGRAM_TARGET=$(python3 -c "
-import json, sys
-try:
-    cfg = json.load(open('$OCJSON'))
-    allow = cfg.get('channels', {}).get('telegram', {}).get('allowFrom', [])
-    if allow:
-        print(allow[0])
-except:
-    pass
-" 2>/dev/null)
-    fi
 
     if ! command -v openclaw >/dev/null 2>&1; then
         TELEGRAM_LAST_RESULT="no-openclaw-cli"
         return 0
     fi
-    if [ -z "$TELEGRAM_TARGET" ]; then
+
+    # Resolve once, cache for subsequent calls
+    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
+        resolve_telegram_target_universal
+    fi
+
+    if [ -z "$TELEGRAM_TARGET_CACHED" ]; then
         TELEGRAM_LAST_RESULT="no-telegram-target"
         return 0
     fi
 
-    # Send and capture both stdout + stderr to the install log; surface failures
-    if openclaw message send --channel telegram --target "$TELEGRAM_TARGET" --message "$message" >> "$LOG_FILE" 2>&1; then
-        TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET"
+    # Build args. Add --account if multi-account detected.
+    local send_args=(message send --channel telegram --target "$TELEGRAM_TARGET_CACHED" --message "$message")
+    [ -n "$TELEGRAM_ACCOUNT_CACHED" ] && send_args+=(--account "$TELEGRAM_ACCOUNT_CACHED")
+
+    if openclaw "${send_args[@]}" >> "$LOG_FILE" 2>&1; then
+        TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET_CACHED"
     else
+        # Retry without --account
+        if [ -n "$TELEGRAM_ACCOUNT_CACHED" ]; then
+            if openclaw message send --channel telegram --target "$TELEGRAM_TARGET_CACHED" --message "$message" >> "$LOG_FILE" 2>&1; then
+                TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET_CACHED (no-account)"
+                return 0
+            fi
+        fi
         TELEGRAM_LAST_RESULT="failed:see-$LOG_FILE"
-        warn "Telegram notification failed — details in $LOG_FILE"
     fi
 }
 
@@ -383,11 +505,11 @@ cat > "$RESUME_FILE" <<RESUME_JSON
 RESUME_JSON
 success "State carryover initialized at $RESUME_FILE"
 
-# 0.3 — Canonical sub-agent + bootstrap config (v9.7.1)
+# 0.3 — Canonical sub-agent + bootstrap config (v9.7.2)
 # Hard-overwrites the numeric limits (these are protocol gates, not preferences).
 # Preserves agents.defaults.subagents.model.fallbacks if a client has customized it.
 # Sets allowAgents=["*"] on every agents.list entry (wildcard subagent permission).
-note "Configuring canonical sub-agent + bootstrap settings (v9.7.1 spec)..."
+note "Configuring canonical sub-agent + bootstrap settings (v9.7.2 spec)..."
 backup_config_file "$OCJSON"
 
 python3 << PYEOF
@@ -621,7 +743,7 @@ fi
 # ----------------------------------------------------------
 # Step 7: Configure Concurrency
 # ----------------------------------------------------------
-# NOTE (v9.7.1): canonical sub-agent + bootstrap config is now applied in
+# NOTE (v9.7.2): canonical sub-agent + bootstrap config is now applied in
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
@@ -653,7 +775,7 @@ try:
     with open(path) as f:
         config = json.load(f)
 
-    # v9.7.1 BUGFIX:
+    # v9.7.2 BUGFIX:
     # "plugins.entries.active-memory" is NOT a real plugin in current OpenClaw
     # schemas. Earlier install scripts wrote 6 keys there (agents, allowedChatTypes,
     # queryMode, promptStyle, timeoutMs, maxSummaryChars) that the validator
@@ -671,7 +793,7 @@ try:
     # If a prior broken install wrote the bogus active-memory block, REMOVE it
     if 'active-memory' in entries:
         del entries['active-memory']
-        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.1 bug)")
+        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.2 bug)")
 
     # Ensure memory-core plugin is enabled (the real memory plugin)
     mc = entries.setdefault('memory-core', {})
@@ -940,7 +1062,7 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 **DREAMS.md IS REQUIRED** - Must exist in workspace root.
 
-**Timeout References (v9.7.1 — 30-60 min minimums for heavy-reasoning sub-agents):**
+**Timeout References (v9.7.2 — 30-60 min minimums for heavy-reasoning sub-agents):**
 - Phase A: 1800s (30 min per wave)
 - Phase B: 2700s (45 min)
 - Phase C: 3600s (60 min — Book-to-Persona-aware; heavy-reasoning phases need this)
@@ -1201,7 +1323,7 @@ install_weekly_cron() {
         return 0
     fi
 
-    # Resolve Telegram target — v9.7.1 UNIVERSAL lookup. Tries 4 strategies
+    # Resolve Telegram target — v9.7.2 UNIVERSAL lookup. Tries 4 strategies
     # in order, no client action required. Returns the first chat ID found
     # anywhere on the system.
     #
@@ -1386,7 +1508,7 @@ PYEOF
         return 0
     fi
 
-    # v9.7.1: Detect multi-account Telegram setup AND auto-detect the default
+    # v9.7.2: Detect multi-account Telegram setup AND auto-detect the default
     # agent ID. Older onboarding hardcoded "--agent main" but some installs
     # use a different default agent name. We pull both from the live config.
     local CHANNEL_ACCOUNT=""

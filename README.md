@@ -2,13 +2,13 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.7.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.7.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
-### What's New in v9.7.1 (May 13, 2026) — Multi-account Telegram cron support
+### What's New in v9.7.2 (May 13, 2026) — Multi-account Telegram cron support
 
 **v9.6.9 successfully resolved the Telegram chat ID via universal scan — confirmed on a client with the newer multi-account schema** (`channels.telegram.accounts.default` + `channels.telegram.accounts.wifey`). Lookup returned `8666242544`. But the next step (`openclaw cron create`) then failed for that client because the cron delivery couldn't route to a specific Telegram account.
 

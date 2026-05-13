@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.1"
+ONBOARDING_VERSION="v9.7.2"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
