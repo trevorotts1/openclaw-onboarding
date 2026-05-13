@@ -94,24 +94,24 @@ The Command Center reads:
 
 ## Model Requirements
 
-**This skill MUST run on a high reasoning model.** The decisions it makes (department structure, specialist determination, persona alignment) shape the entire company. Wrong choices cascade into everything.
+**This skill MUST run on a heavy-reasoning model.** The decisions it makes (department structure, specialist determination, persona alignment) shape the entire company. Wrong choices cascade into everything.
 
-**Approved models:**
-- anthropic/claude-opus-4-6
-- anthropic/claude-sonnet-4-6
-- openrouter/xiaomi/mimo-v2-pro (with thinking enabled)
-- google/gemini-3.1-pro-preview
-- openai-codex/gpt-5.4
+**Model selection is DYNAMIC** via `shared-utils/select_model.py --purpose-tier heavy`. The selector resolves the best available model in this priority order, walking down only if the higher one is missing from the client's `openclaw.json`:
 
-**Forbidden for this skill:**
-- moonshot/kimi-k2.5
-- google/gemini-3-flash-preview
-- google/gemini-3.1-flash-lite-preview
+1. **Ollama Cloud Kimi** (`ollama/kimi-k*:cloud`, latest version, thinking=high) — PREFERRED, lowest cost per call
+2. **OpenRouter Kimi** (`openrouter/moonshot/kimi-k*`, thinking=high)
+3. **Ollama Cloud DeepSeek V*-pro** (`ollama/deepseek-v*-pro:cloud`)
+4. **OpenRouter DeepSeek V*-pro** (`openrouter/deepseek/deepseek-v*-pro`, thinking=high)
+5. **OAuth GPT** (`codex/gpt-*` or `openai-codex/gpt-*`, whatever the client's latest version is — 5.3, 5.4, 5.5, 5.10, etc.)
 
-**If the client is on a low reasoning model:**
-Say: "For setting up your company, I recommend switching to a model that thinks more deeply so we get the best results. Want me to switch?"
+The selector auto-picks the highest version number in each chain entry. When a new Kimi or GPT version ships and the client adds it to their config, this skill picks it up automatically — no edit needed.
 
-**Research model:** When the AI offers to research industry best practices, it uses openrouter/perplexity/sonar-pro-search.
+**ABSOLUTE RULE:** Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Filter applied at every tier of the selector.
+
+**If the selector returns Tier 5 (owner-input-required):**
+The install agent shows the owner a plain-English prompt asking which model to use. The skill is still installed; only the model-binding waits on the owner's reply.
+
+**Research model:** When the AI offers to research industry best practices, it uses `openrouter/perplexity/sonar-pro-search` for the research pass — that model is purpose-built for live web research and is kept separate from the reasoning chain above.
 
 ## The Three Options
 

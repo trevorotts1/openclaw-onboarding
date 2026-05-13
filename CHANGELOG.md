@@ -1,3 +1,45 @@
+## v9.5.0 - May 13, 2026 - Smart Model Selector + Anthropic Stripped from Skills 15, 22, 23
+
+### Added
+- **`shared-utils/select_model.py`** — new single source of truth for model selection across all skills. Three purpose-tier chains:
+  - **`heavy`**: ollama/kimi-k*:cloud → openrouter/moonshot/kimi-k* → ollama/deepseek-v*-pro:cloud → openrouter/deepseek/deepseek-v*-pro → (openai-)codex/gpt-* (latest version per slot)
+  - **`mid`**: ollama/minimax-m*:cloud → openrouter/xiaomi/mimo-v*-pro
+  - **`fast`**: ollama/deepseek-v*-flash:cloud → openrouter/deepseek/deepseek-v*-flash → openrouter/google/gemini-*-flash-lite
+- **Auto-version pickup** — selector picks the highest version number it finds in each chain slot. When Kimi 2.7 or 3.0 or GPT 5.10 ships and the client adds it, the selector picks it automatically with no skill edit needed.
+- **Tier 5 owner-input fallback** — if a chain finds nothing in the client's config, the selector returns a plain-English prompt for the install agent to show the owner. The install does NOT block; only the model binding waits on the reply.
+- CLI: `python3 select_model.py --skill X --purpose-tier {heavy,mid,fast} --format {json,id,prompt}`. Exit 0 = model returned. Exit 2 = owner input required.
+
+### Security / Policy
+- **Anthropic models FORBIDDEN at every tier.** `anthropic/claude-*` is hardcoded into the FORBIDDEN_PREFIXES filter and rejected before selection. Cost-prohibitive per Trevor's policy. The selector enforces this even if a client has Anthropic models in their config.
+
+### Changed (Skill 22 — Book-to-Persona)
+- **`_meta.json` rewritten and version bumped 1.0.0 → 2.0.0.** Model fields now declare SELECTION INTENT (`"kimi-latest-preferred"`, `"oauth-gpt-preferred-with-kimi-fallback"`), not hardcoded IDs. `selector` field points at `shared-utils/select_model.py`. `forbidden_prefixes` lists `anthropic/` and `claude-`.
+- **`pipeline/orchestrator.py`** — replaced hardcoded `MODEL_EXTRACTION = "moonshotai/kimi-k2.5"`, `MODEL_ANALYSIS = "deepseek/deepseek-v3.2"`, `MODEL_SYNTHESIS = "gpt-5.3-codex"` with `_resolve_model()` that calls the selector at runtime with `--purpose-tier heavy`. Falls back to documented defaults if the selector is unreachable (defense in depth).
+- **`PIPELINE.md`** — Phases 1, 2, 3 documentation rewritten to describe dynamic selection with all 5 heavy-tier chain positions. Removed every hardcoded "kimi-k2.5", "deepseek-v3.2", "gpt-5.4" reference.
+- **`CORE_UPDATES.md`** — splice text for AGENTS.md / TOOLS.md updated. No more hardcoded model IDs in the splice; agents are told to call the selector.
+- **`QC.md`** — Phase 1/2/3 routing assertions changed from "Phase 1 routing entry: moonshot/kimi-k2.5" to "Phase 1 routing references DYNAMIC selection via shared-utils/select_model.py".
+- **`CHECKLIST.md`** — Phase 1 and Phase 2 sub-agent-spawn checklists updated to instruct the install agent to use the selector output.
+
+### Changed (Skill 15 — BlackCEO Team Management)
+- **`blackceo-team-management-full.md`** — Removed:
+  - JSON config block hardwiring `openai-codex/gpt-5.3-codex` as primary with `openrouter/minimax/MiniMax-M2.5` and `openrouter/google/gemini-3-flash-preview` fallbacks
+  - "Complex reasoning → spawn with model: anthropic/claude-opus-4-6" line
+  - "Creative task → spawn with model: mistral/latest-creative" line
+  - Decision tree referencing Opus 4.6, Sonnet 4.6, Mistral Creative, MiniMax M2.5, Gemini Flash
+  - Worker-config note referencing MiniMax/Sonnet/Codex as the only tool-call-capable list
+- **Replaced with selector references and tier descriptions** (heavy/mid/fast).
+- **`EXAMPLES.md`** — Worker config block now points at the selector instead of hardcoding `openai-codex/gpt-5.3-codex`.
+
+### Changed (Skill 23 — AI Workforce Blueprint)
+- **`SKILL.md` Model Requirements section** — entire "Approved models" list (which included `anthropic/claude-opus-4-6` and `anthropic/claude-sonnet-4-6` as the top two entries) replaced with selector tier reference + chain explanation. `kimi-k2.5` removed from the "Forbidden for this skill" list (the skill is now version-agnostic).
+- **`INSTALL.md` Section 5-PRE Model Check** — rewritten to call the selector and react to its Tier 5 owner-input case. Removed the hardcoded "approved models" list that previously included two Anthropic entries.
+- **`QC-ROLES-MASTER.md` 17-row department-to-model table** — every row's "Recommended Models" column was a list of Anthropic + GPT IDs (16 of 17 rows referenced `anthropic/claude-opus-4-6` or `anthropic/claude-sonnet-4-6`). Column renamed to "Selector Tier" and now contains `--purpose-tier heavy` or `--purpose-tier mid` references. Added an "How to invoke" code block at the bottom.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.5.0 in install.sh, update-skills.sh, VERSION, README.md, both repos.
+
+---
+
 ## v9.4.0 - May 13, 2026 - Canonical Bootstrap + Sub-Agent Config in Step 0
 
 ### Added

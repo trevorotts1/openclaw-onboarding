@@ -391,24 +391,42 @@ Model Roles (Sub-Agent Workers Only - Does Not Override Primary Agent)
 
 Cost Strategy
 Use OAuth/subscription models (GPT 5.3 Codex, Gemini) as defaults to keep per-token costs down
-Reserve pay-per-token models (Opus 4.6) for complex tasks only
+Reserve pay-per-token models for complex tasks only; for heavy reasoning prefer OAuth or Ollama-cloud models over OpenRouter to minimize cost
 Route creative work to the creative model, not the thinking model
 Route simple execution to the cheapest capable model
 Recommended Default Config (Sub-Agents Only - Does NOT Touch Primary Agent Model)
 
-{  "agents": {    "defaults": {      "subagents": {        "model": {          "primary": "openai-codex/gpt-5.3-codex",          "fallbacks": [            "openrouter/minimax/MiniMax-M2.5",            "openrouter/google/gemini-3-flash-preview"          ]        }      }    }  }}
+Model selection is DYNAMIC via shared-utils/select_model.py (v9.5.0+). Three tier chains, NEVER Anthropic:
+
+  Heavy reasoning (--purpose-tier heavy):
+    1. ollama/kimi-k*:cloud (latest, thinking=high) — PREFERRED
+    2. openrouter/moonshot/kimi-k* (thinking=high)
+    3. ollama/deepseek-v*-pro:cloud
+    4. openrouter/deepseek/deepseek-v*-pro (thinking=high)
+    5. (openai-)codex/gpt-* (OAuth, latest)
+
+  Mid-tier reasoning (--purpose-tier mid):
+    1. ollama/minimax-m*:cloud
+    2. openrouter/xiaomi/mimo-v*-pro (thinking=high)
+
+  Fast / cheap (--purpose-tier fast):
+    1. ollama/deepseek-v*-flash:cloud
+    2. openrouter/deepseek/deepseek-v*-flash
+    3. openrouter/google/gemini-*-flash-lite
+
+Selector auto-picks the highest version found in the client's openclaw.json — when a new Kimi or GPT version ships and the client adds it, the selector picks it automatically. No skill update needed.
 
 
 Important: This config block ONLY sets the model for sub-agent workers. The client's agents.defaults.model.primary (their main agent) is never modified by this protocol.
 
 Per-Task Model Override (Sub-Agent Spawn Only)
 The dispatcher can override the model per spawn when needed:
-Creative task → spawn with model: "mistral/latest-creative"
-Complex reasoning → spawn with model: "anthropic/claude-opus-4-6"
-Routine execution → use default (codex or minimax)
+Creative task → call select_model.py --purpose-tier mid (Minimax/Mimo chain)
+Complex reasoning → call select_model.py --purpose-tier heavy (Kimi-first; NEVER Anthropic)
+Routine execution → call select_model.py --purpose-tier fast (DeepSeek-flash/Gemini-lite)
 Model Selection Hierarchy (Decision Tree)
 
-Is this a complex strategy/architecture/debugging task?  YES → Opus 4.6  NO ↓Is this creative writing (copy, emails, scripts, hooks)?  YES → Mistral Creative  NO ↓Is this routine execution (file ops, uploads, API calls)?  YES → MiniMax M2.5 or Codex  NO ↓Is this bulk/simple/cost-sensitive?  YES → Gemini Flash  NO → Sonnet 4.6 (general purpose fallback)
+Is this a complex strategy/architecture/debugging task?  YES → --purpose-tier heavy (Kimi-first chain)  NO ↓Is this creative writing (copy, emails, scripts, hooks)?  YES → --purpose-tier mid (Minimax/Mimo)  NO ↓Is this routine execution (file ops, uploads, API calls)?  YES → --purpose-tier mid  NO ↓Is this bulk/simple/cost-sensitive?  YES → --purpose-tier fast (DeepSeek-flash/Gemini-lite)  NO → --purpose-tier heavy. Anthropic FORBIDDEN at every tier
 
 
 Do NOT Use As Primary
@@ -509,7 +527,7 @@ The fix: Write the IDs to BOTH WORKFLOW_AUTO.md AND the core .md files.
 - All team Telegram IDs: see TEAM_CONFIG.md
 - To check a worker's conversation: sessions_history(sessionKey) or sessions_list to find the session
 - To relay between workers: dispatcher reads source worker history, summarizes, sends to target worker or target DM
-- Worker sub-agent model must support tool calls (MiniMax M2.5, Codex, Sonnet - NOT reasoning-only models)
+- Worker sub-agent model must support tool calls (verified at selection time: Kimi 2.6+, Codex GPT, DeepSeek V4-pro all support tools; reasoning-only models are filtered)
 
 
 [ADD TO MEMORY.md]

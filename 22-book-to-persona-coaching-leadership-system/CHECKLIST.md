@@ -33,10 +33,11 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 
 ---
 
-## Phase 1 - Extraction Checklist (Kimi K2.5)
+## Phase 1 - Extraction Checklist (Smart Model Selection)
 
 - [ ] Book text extracted to .txt file (check file exists and is not empty)
-- [ ] Sub-agent spawned with correct model: moonshot/kimi-k2.5
+- [ ] Sub-agent spawned with the model returned by `shared-utils/select_model.py --skill book-to-persona --purpose "Phase 1 extraction" --format id` (Tier 1-4 result, or owner-provided if Tier 5)
+- [ ] Selector did NOT return an Anthropic model (it's filtered at every tier)
 - [ ] Sub-agent received: extraction prompt + full book text
 - [ ] Output file exists: extraction-notes.md in persona folder
 - [ ] Output is over 5,000 characters (not truncated)
@@ -47,10 +48,10 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 
 ---
 
-## Phase 2 - Analysis Checklist (DeepSeek V3.2-Speciale)
+## Phase 2 - Analysis Checklist (Smart Model Selection)
 
 - [ ] extraction-notes.md exists and is complete before Phase 2 starts
-- [ ] Sub-agent spawned with correct model: deepseek/deepseek-v3.2-speciale
+- [ ] Sub-agent spawned with the model returned by `select_model.py` for Phase 2 (same Kimi-first chain as Phase 1)
 - [ ] Output file exists: analysis-notes.md in persona folder
 - [ ] Output is over 3,000 characters
 - [ ] All 12 analytical dimensions present

@@ -113,25 +113,36 @@ The best AI model for a QC agent depends on what type of work the department pro
 - Vision model: a model that can receive and analyze images or video frames
 - Reasoning model: a model that works best when it needs to verify logic, compliance, or multi-step accuracy
 
-| Department | Primary Work Type | Best Model Type | Recommended Models |
+**Model selection** for every department's QC agent is DYNAMIC via `shared-utils/select_model.py`. Anthropic FORBIDDEN at every tier.
+
+| Department | Primary Work Type | Best Model Type | Selector Tier |
 |---|---|---|---|
-| CEO / COM (Orchestrator) | Multi-type routing and triage | Language + Reasoning | `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4` |
-| Marketing | Copy, campaign data, ad assets | Language + Vision | `anthropic/claude-sonnet-4-6`, `openai-codex/gpt-5.4` |
-| Sales | Proposals, scripts, CRM data | Language | `anthropic/claude-sonnet-4-6` |
-| Billing | Numbers, invoices, financial records | Reasoning | `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4` |
-| Customer Support | Written responses, tone, accuracy | Language | `anthropic/claude-sonnet-4-6` |
-| Operations | SOPs, workflows, process docs | Language + Reasoning | `anthropic/claude-sonnet-4-6` |
-| Creative | Copy, scripts, written content | Language | `anthropic/claude-sonnet-4-6`, `openai-codex/gpt-5.4` |
-| HR / People | Policy docs, HR communications | Language + Reasoning | `anthropic/claude-opus-4-6` |
-| Legal / Compliance | Contracts, compliance language | Language + Reasoning | `anthropic/claude-opus-4-6` |
-| IT / Tech | Technical configs, security | Coding + Reasoning | `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4` |
-| Web Development | HTML, CSS, JS, accessibility | Coding | `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4` |
-| App Development | Software code, APIs, databases | Coding | `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4` |
-| Graphics | Images, visual assets, brand | Vision | `anthropic/claude-opus-4-6` with vision, `openai-codex/gpt-5.4` |
-| Video Production | Video frames, specs, captions | Vision + Language | `anthropic/claude-opus-4-6` with vision |
-| Audio Production | Scripts, specs, transcripts | Language | `anthropic/claude-sonnet-4-6` |
-| Research | Citations, data, sourcing | Language + Reasoning | `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4` |
-| Communications | Press releases, public content | Language | `anthropic/claude-sonnet-4-6` |
+| CEO / COM (Orchestrator) | Multi-type routing and triage | Language + Reasoning | `--purpose-tier heavy` |
+| Marketing | Copy, campaign data, ad assets | Language + Vision | `--purpose-tier mid` (vision: use a vision-capable model from your config) |
+| Sales | Proposals, scripts, CRM data | Language | `--purpose-tier mid` |
+| Billing | Numbers, invoices, financial records | Reasoning | `--purpose-tier heavy` |
+| Customer Support | Written responses, tone, accuracy | Language | `--purpose-tier mid` |
+| Operations | SOPs, workflows, process docs | Language + Reasoning | `--purpose-tier heavy` |
+| Creative | Copy, scripts, written content | Language | `--purpose-tier mid` |
+| HR / People | Policy docs, HR communications | Language + Reasoning | `--purpose-tier heavy` |
+| Legal / Compliance | Contracts, compliance language | Language + Reasoning | `--purpose-tier heavy` |
+| IT / Tech | Technical configs, security | Coding + Reasoning | `--purpose-tier heavy` |
+| Web Development | HTML, CSS, JS, accessibility | Coding | `--purpose-tier heavy` |
+| App Development | Software code, APIs, databases | Coding | `--purpose-tier heavy` |
+| Graphics | Images, visual assets, brand | Vision | `--purpose-tier mid` + vision-capable model |
+| Video Production | Video frames, specs, captions | Vision + Language | `--purpose-tier mid` + vision-capable model |
+| Audio Production | Scripts, specs, transcripts | Language | `--purpose-tier mid` |
+| Research | Citations, data, sourcing | Language + Reasoning | `--purpose-tier heavy` |
+| Communications | Press releases, public content | Language | `--purpose-tier mid` |
+
+**How to invoke:**
+```bash
+python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" --skill ai-workforce-blueprint --purpose-tier <heavy|mid|fast> --format id
+```
+
+**Heavy chain:** Ollama Kimi 2.6+ → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT (latest).
+**Mid chain:** Ollama Minimax → OpenRouter Mimo Pro (thinking=high).
+**Fast chain:** Ollama DeepSeek-flash → OpenRouter DeepSeek-flash → OpenRouter Gemini Flash Lite.
 
 **Note on Vision Models:**
 If you need to visually review images or video frames, your QC agent must receive the actual image file as an attachment, not just a description of the image. A language model reading text about an image cannot spot visual problems. Use a vision-capable model and pass the actual image.

@@ -321,8 +321,8 @@ Main session = dispatcher/router. Route all incoming messages by sender ID.
 - Tag: [Dispatcher] / [worker-label]
 
 ## Worker Config
-- Model: openai-codex/gpt-5.3-codex
-- Fallbacks: openrouter/minimax/MiniMax-M2.5, openrouter/google/gemini-3-flash-preview
+- Model: resolved at runtime via `shared-utils/select_model.py --purpose-tier heavy` (Kimi-first chain — Ollama Cloud preferred → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT). NEVER Anthropic.
+- For mid-tier tasks call with `--purpose-tier mid` (Minimax/Mimo). For bulk/cheap call with `--purpose-tier fast` (DeepSeek-flash/Gemini-lite).
 - cleanup: keep
 - archiveAfterMinutes: 43200
 

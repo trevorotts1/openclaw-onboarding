@@ -29,11 +29,11 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 Converts any book (PDF/EPUB/MOBI/AZW3) into a dual-purpose persona blueprint.
 Pre-built personas already included. Run: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status to see total count. Pipeline runs on new books only.
 
-Pipeline:
-- Phase 1: kimi-k2.5 via api.moonshot.ai/v1 (temp 1.0) → extraction-notes.md
-- Phase 2: deepseek/deepseek-v3.2 via OpenRouter → analysis-notes.md
-- Phase 3: openai-codex/gpt-5.4 via OpenClaw OAuth → persona-blueprint.md (all 14 sections)
-- Content filter fallback: openrouter/moonshotai/kimi-k2.5
+Pipeline (model selection is DYNAMIC via shared-utils/select_model.py — Anthropic FORBIDDEN):
+- Phase 1: Latest Kimi (Ollama Cloud preferred) → OpenRouter Kimi → OAuth GPT → DeepSeek V4+ → ask owner. Temperature 1.0. → extraction-notes.md
+- Phase 2: Same Kimi-first chain as Phase 1 (was hardcoded deepseek/deepseek-v3.2 prior to v9.5.0). → analysis-notes.md
+- Phase 3: OAuth GPT preferred → latest Kimi fallback. → persona-blueprint.md (all 14 sections)
+- Runtime fallback: selector re-runs with failed model excluded, walks down tier list. Never selects Anthropic.
 
 Persona Reflex (DEFAULT BEHAVIOR):
 Before any professional task, run: python3 ~/.openclaw/workspace/scripts/gemini-search.py "<task keywords>"
@@ -65,11 +65,13 @@ Do NOT skip this step -- the search will not find the new persona until re-index
 **Exact text to add:**
 ```
 ## Book-to-Persona - Model Routing and Gemini Engine
-Pipeline model routing:
-- Phase 1: moonshot/kimi-k2.5 — MOONSHOT_API_KEY in ~/.openclaw/workspace/secrets/.env — endpoint: https://api.moonshot.cn/v1 — temperature MUST be 1.0
-- Phase 2: deepseek/deepseek-v3.2-speciale via OpenRouter ONLY (OPENROUTER_API_KEY)
-- Phase 3: openai/gpt-5.3-codex via OpenClaw OAuth (ChatGPT subscription)
-- Fallback (content filter): OpenRouter moonshotai/kimi-k2.5 for flagged books
+Pipeline model routing (DYNAMIC selection via shared-utils/select_model.py — never hardcoded):
+- Phase 1: latest Kimi (Ollama Cloud preferred) → OpenRouter Kimi → OAuth GPT → DeepSeek V4+. Temperature 1.0.
+- Phase 2: same Kimi-first chain as Phase 1. (Was hardcoded deepseek/deepseek-v3.2-speciale prior to v9.5.0.)
+- Phase 3: OAuth GPT preferred (subscription, no per-call cost) → latest Kimi fallback.
+- Runtime fallback: selector re-runs with failed model excluded.
+- ABSOLUTE: Anthropic models (anthropic/claude-*) are FORBIDDEN. Filter applied at every tier.
+- Auto-adapts: when client adds a new Kimi or GPT version, selector picks the higher number automatically.
 
 Gemini Vector Database: coaching-personas
 Setup commands (run once on fresh install):

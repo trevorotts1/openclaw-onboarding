@@ -70,10 +70,11 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 
 ### TOOLS.md
 - [ ] Contains section heading `## Book-to-Persona - Model Routing and Gemini Engine`
-- [ ] Phase 1 routing entry: `moonshot/kimi-k2.5` with `MOONSHOT_API_KEY` and `https://api.moonshot.cn/v1` and `temperature MUST be 1.0`
-- [ ] Phase 2 routing entry: `deepseek/deepseek-v3.2-speciale` via `OpenRouter`
-- [ ] Phase 3 routing entry: `openai-codex/gpt-5.4` (or `GPT-5.4 Codex via OpenClaw OAuth`, matching current docs)
-- [ ] Fallback model listed: `OpenRouter moonshotai/kimi-k2.5`
+- [ ] Phase 1 routing references DYNAMIC selection via `shared-utils/select_model.py` (no hardcoded model name)
+- [ ] Phase 2 routing references DYNAMIC selection — Kimi-first chain like Phase 1
+- [ ] Phase 3 routing notes OAuth GPT preferred, latest Kimi as runtime fallback
+- [ ] Anthropic models explicitly flagged as FORBIDDEN
+- [ ] Temperature 1.0 requirement for Phase 1 is documented
 - [ ] Prompt templates were NOT pasted into TOOLS.md (rule: reference only)
 
 ### MEMORY.md

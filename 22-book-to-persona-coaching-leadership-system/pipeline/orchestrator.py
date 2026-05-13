@@ -31,19 +31,63 @@ PROMPTS_DIR = PROJECT_DIR / "agent-prompts"
 STATUS_FILE = PROJECT_DIR / "pipeline-status.json"
 LOG_FILE = PROJECT_DIR / "pipeline-log.txt"
 
-# ─── MODEL IDs ────────────────────────────────────────────────────────────────
-# Phase 1 - Extraction: Kimi K2.5 via OpenRouter (262K context)
-MODEL_EXTRACTION       = "moonshotai/kimi-k2.5"
-MODEL_EXTRACTION_ROUTE = "openrouter"
+# ─── MODEL IDs (v9.5.0: dynamic selection via shared-utils/select_model.py) ──
+# Model selection is no longer hardcoded. The orchestrator calls select_model.py
+# at runtime to pick the best available model for each phase, with these rules:
+#   Phase 1 (extraction): latest Kimi preferred (Ollama Cloud > OpenRouter)
+#   Phase 2 (analysis):   same Kimi-first chain as Phase 1
+#   Phase 3 (synthesis):  OAuth GPT preferred (subscription, no per-call cost)
+# Anthropic models are FORBIDDEN by policy. Filter applied at every tier.
+# The values below are DEFAULTS used only if select_model.py is unreachable.
+import subprocess
+from pathlib import Path as _Path
 
-# Phase 2 - Analysis: DeepSeek V3.2-Speciale via OpenRouter (163K context)
-MODEL_ANALYSIS         = "deepseek/deepseek-v3.2"
-MODEL_ANALYSIS_ROUTE   = "openrouter"
+def _resolve_model(skill: str, purpose: str, purpose_tier: str, fallback: str) -> str:
+    """Call shared-utils/select_model.py with a purpose-tier; return model_id else fallback."""
+    selector = _Path(__file__).resolve().parents[2] / "shared-utils" / "select_model.py"
+    if not selector.exists():
+        selector = _Path.home() / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py"
+    if not selector.exists():
+        selector = _Path("/data/Downloads/openclaw-master-files/shared-utils/select_model.py")
+    if not selector.exists():
+        return fallback
+    try:
+        result = subprocess.run(
+            ["python3", str(selector),
+             "--skill", skill,
+             "--purpose-tier", purpose_tier,
+             "--purpose", purpose,
+             "--format", "id"],
+            capture_output=True, text=True, timeout=10,
+        )
+        model_id = result.stdout.strip()
+        if model_id and "anthropic/" not in model_id.lower() and "claude-" not in model_id.lower():
+            return model_id
+    except Exception:
+        pass
+    return fallback
 
-# Phase 3 - Synthesis: GPT-5.3 Codex via OpenAI direct (OAuth subscription, 400K context)
-# Uses OpenAI Responses API - NOT chat completions, NOT OpenRouter
-MODEL_SYNTHESIS        = "gpt-5.3-codex"
-MODEL_SYNTHESIS_ROUTE  = "openai-responses"
+# All three phases use the HEAVY tier chain:
+#   Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT
+# Anthropic FORBIDDEN.
+
+# Phase 1 - Extraction
+MODEL_EXTRACTION       = _resolve_model("book-to-persona", "Phase 1 extraction", "heavy", fallback="ollama/kimi-k2.6:cloud")
+MODEL_EXTRACTION_ROUTE = ("ollama" if MODEL_EXTRACTION.startswith("ollama/")
+                          else "openai-responses" if "codex" in MODEL_EXTRACTION
+                          else "openrouter")
+
+# Phase 2 - Analysis
+MODEL_ANALYSIS         = _resolve_model("book-to-persona", "Phase 2 analysis", "heavy", fallback="ollama/kimi-k2.6:cloud")
+MODEL_ANALYSIS_ROUTE   = ("ollama" if MODEL_ANALYSIS.startswith("ollama/")
+                          else "openai-responses" if "codex" in MODEL_ANALYSIS
+                          else "openrouter")
+
+# Phase 3 - Synthesis
+MODEL_SYNTHESIS        = _resolve_model("book-to-persona", "Phase 3 synthesis", "heavy", fallback="ollama/kimi-k2.6:cloud")
+MODEL_SYNTHESIS_ROUTE  = ("openai-responses" if "codex" in MODEL_SYNTHESIS
+                          else "ollama" if MODEL_SYNTHESIS.startswith("ollama/")
+                          else "openrouter")
 
 # ─── LIMITS ───────────────────────────────────────────────────────────────────
 PARALLEL_LIMIT   = 40        # Max books processed simultaneously per phase

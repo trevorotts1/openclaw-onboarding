@@ -231,17 +231,20 @@ This is where you build the actual workforce structure. You do all of this yours
 
 ### 5-PRE. Model Check (MANDATORY)
 
-Before starting any interview or build work, verify you are running on an approved high reasoning model:
-- anthropic/claude-opus-4-6
-- anthropic/claude-sonnet-4-6
-- openrouter/xiaomi/mimo-v2-pro (with thinking enabled)
-- google/gemini-3.1-pro-preview
-- openai-codex/gpt-5.4
+Before starting any interview or build work, verify you are running on a heavy-reasoning model by calling the smart selector:
 
-If you are on Kimi 2.5, Gemini Flash, Gemini Flash Lite, or any other low reasoning model:
-Say: "For setting up your company, I recommend switching to a model that thinks more deeply so we get the best results. Want me to switch?"
+```bash
+python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" \
+  --skill ai-workforce-blueprint \
+  --purpose-tier heavy \
+  --format id
+```
 
-Do NOT proceed on a low reasoning model. The decisions made here shape the entire company.
+The selector resolves the best available model from the heavy chain — Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT. **Anthropic models are FORBIDDEN** at every tier.
+
+**If the selector returns Tier 5 (owner-input-required, exit 2):** show the prompt to the owner. Do NOT proceed on a low-reasoning model — the decisions made here shape the entire company.
+
+**If the current session is already running on a fast/cheap model** (DeepSeek-flash, Gemini-flash-lite, Minimax, etc.): say *"For setting up your company, I recommend switching to a heavier-reasoning model so we get the best results. The selector says we should use [model_id from above]. Want me to switch?"*
 
 ### 🔴 5-PRE. COMPLETION SAFETY CHECK (MANDATORY — RUN BEFORE ANYTHING ELSE IN PHASE 5)
 

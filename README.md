@@ -2,27 +2,37 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.4.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.5.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
+### What's New in v9.5.0 (May 13, 2026) — Smart Model Selector + Anthropic Stripped from Skills 15, 22, 23
+
+- **New `shared-utils/select_model.py`** — single source of truth for model selection across all skills. Three purpose-tier chains, auto-picks highest version in each:
+  - **`--purpose-tier heavy`** (reasoning, planning, synthesis): Ollama Cloud Kimi → OpenRouter Kimi → Ollama DeepSeek V*-pro → OpenRouter DeepSeek V*-pro → OAuth GPT (latest)
+  - **`--purpose-tier mid`** (creative, routine): Ollama Cloud Minimax → OpenRouter Mimo Pro (thinking=high)
+  - **`--purpose-tier fast`** (bulk, cheap): Ollama Cloud DeepSeek V*-flash → OpenRouter DeepSeek V*-flash → OpenRouter Gemini Flash Lite
+- **ABSOLUTE RULE — Anthropic models FORBIDDEN.** Filter applied at every tier of every chain. `anthropic/claude-*` is rejected before selection.
+- **Auto-adapts to new versions.** When Kimi 2.7 / 3.0 / GPT-5.10 ships and the client adds it, the selector picks the higher number automatically. Zero skill edits needed.
+- **Tier 5 fallback — owner input prompt.** If the client's `openclaw.json` has nothing matching the chain, the selector returns a plain-English prompt the install agent shows the owner. Install does NOT block; only the model binding waits on the reply.
+- **Patched skills:**
+  - **Skill 22 (Book-to-Persona)** — `_meta.json` rewritten to declare selection INTENT, not hardcoded IDs. `pipeline/orchestrator.py` now calls the selector at runtime. PIPELINE.md, CORE_UPDATES.md, QC.md, CHECKLIST.md all updated. Phase 1, 2, 3 all use `--purpose-tier heavy`.
+  - **Skill 15 (BlackCEO Team Management)** — `full.md` and `EXAMPLES.md` rewritten. Removed `anthropic/claude-opus-4-6` "complex reasoning" line, `openai-codex/gpt-5.3-codex` primary, MiniMax M2.5 fallback, the Opus/Sonnet decision tree. All replaced with selector references.
+  - **Skill 23 (AI Workforce Blueprint)** — `SKILL.md` Model Requirements section, `INSTALL.md` 5-PRE model check, and `QC-ROLES-MASTER.md` 17-row department-to-model table all replaced with selector tier references.
+- **Skill 22 version** bumped 1.0.0 → 2.0.0 (`_meta.json`) to reflect breaking change in model resolution.
+- ONBOARDING_VERSION bumped to v9.5.0.
+
 ### What's New in v9.4.0 (May 13, 2026) — Canonical Bootstrap + Sub-Agent Config in Step 0
 
 - **Step 0 rewritten** to apply the canonical sub-agent + bootstrap config block before any other install work runs. Replaces the broken legacy `configure_concurrency()` function that used wrong field names (`maxQueue`/`maxDepth`) and lower values.
-- **Hard-overwrite of numeric limits** (protocol gates, not preferences):
-  - `agents.defaults.bootstrapMaxChars = 200000` (was 280000)
-  - `agents.defaults.bootstrapTotalMaxChars = 400000` (was 280000)
-  - `agents.defaults.subagents.maxChildrenPerAgent = 20`
-  - `agents.defaults.subagents.maxConcurrent = 100` (with a min-clamp of 50 — never lower)
-  - `agents.defaults.subagents.maxSpawnDepth = 5`
-  - `agents.defaults.subagents.thinking = "high"`
-- **`allowAgents = ["*"]` wildcard** written to every `agents.list[N].subagents` entry (75 entries on the live config). Sub-agent spawning was previously locked to most agents because the lists were empty. Wildcard means every model gains full sub-agent permission, no per-model maintenance.
-- **Sub-agent model fallback chain preserved** if a client has customized it; only seeded if missing. Default seed: `ollama/kimi-k2.6:cloud` → `openrouter/xiaomi/mimo-v2.5-pro` → `deepseek/deepseek-v4-pro`.
-- **5 dependency-aware install waves** (unchanged but now documented with correct cap): Wave 1 = 01+02 sequential foundation. Wave 2 = up to 11 skills parallel (within 20-child cap). Wave 3 = up to 14 skills parallel (within cap). Wave 4 = 31→36 sequential infrastructure. Wave 5 = 22→23→32→35 sequential main-orchestrator-only.
-- Legacy `configure_concurrency()` function renamed to `configure_concurrency_LEGACY_UNUSED()` and Step 7 call replaced with a no-op note pointing back at Step 0.
-- ONBOARDING_VERSION bumped to v9.4.0.
+- **Hard-overwrite of numeric limits** (protocol gates):
+  - `agents.defaults.bootstrapMaxChars = 200000`, `bootstrapTotalMaxChars = 400000`
+  - `agents.defaults.subagents.maxChildrenPerAgent = 20`, `maxConcurrent = 100` (min-clamp 50), `maxSpawnDepth = 5`, `thinking = "high"`
+- **`allowAgents = ["*"]` wildcard** written to every `agents.list[N].subagents` entry (75 entries on live config).
+- **Sub-agent model fallback chain preserved** if a client has customized it; only seeded if missing.
+- **5 dependency-aware install waves** documented with correct cap: Wave 1 = 01+02 sequential. Wave 2 = 11 parallel. Wave 3 = 14 parallel. Wave 4 = 31→36 sequential. Wave 5 = 22→23→32→35 sequential main-orchestrator-only.
 
 ### What's New in v9.3.9 (May 13, 2026) — Trigger Doc Renamed "Fresh Install" → "Full Onboarding"
 
