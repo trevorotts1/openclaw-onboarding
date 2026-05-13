@@ -2,11 +2,17 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.3.3** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.3.4** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.3.4 (May 13, 2026) - Skill 36 standalone qc-ghl-mcp-setup.sh
+- Extracted Skill 36's QC script from the QC.md heredoc into a standalone file at the folder root, matching the convention of the other 32 skills. All 33 active skills now have a standalone qc-*.sh file at their folder root.
+- Skill 36 file count: was 10 files (with QC script embedded in QC.md), now 11 files (QC script as standalone qc-ghl-mcp-setup.sh).
+- The QC.md heredoc is retained as documentation reference but the canonical executable lives at the standalone file path.
+- ONBOARDING_VERSION bumped to v9.3.4.
 
 ### What's New in v9.3.3 (May 13, 2026) — Mac/VPS Sync Audit + Skill 35 v2.0.0 mirrored to VPS
 - **Audited cross-contamination between Mac and VPS repos.** Most folder diffs are legitimate platform-specific paths (Mac uses ~/clawd, VPS uses /data/clawd) — those are correct.

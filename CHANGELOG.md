@@ -1,3 +1,19 @@
+## v9.3.4 - May 13, 2026 - Skill 36 standalone qc-ghl-mcp-setup.sh
+
+### Added
+- **Standalone `qc-ghl-mcp-setup.sh`** at the root of `36-ghl-mcp-setup/` folder in both repos. Matches the convention of the other 32 skills (each skill has a `qc-<short-name>.sh` at its folder root). Previously the Skill 36 QC script lived embedded inside QC.md as a heredoc the agent was supposed to write to disk during install — a special case that broke folder-listing consistency.
+- The new standalone script ports the full v1.0.0 Skill 36 QC logic: master-files fuzzy lookup, GHL canonical credentials check (PIT — not API key), Tier 1 Official MCP tool count (36), Tier 2 Community MCP service running + /health + 500+ tools + real data call, core .md wiring, master-files reference doc archived, PIT security check.
+- All 33 active skills now have a standalone qc-*.sh script at their folder root. Uniform structure. The QC.md heredoc in Skill 36 is retained for documentation reference.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.3.4 in install.sh and update-skills.sh.
+- **version file** bumped to v9.3.4 in both repos.
+
+### Risk: low
+Pure additive change. No behavior changes. The standalone script duplicates the heredoc logic verbatim — anything that previously worked off the heredoc still works; the standalone file now also works for tools that expect a file at the folder root.
+
+---
+
 ## v9.3.3 - May 13, 2026 - Mac/VPS Sync Audit + Skill 35 v2.0.0 mirrored to VPS
 
 ### Fixed
