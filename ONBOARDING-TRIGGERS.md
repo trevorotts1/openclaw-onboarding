@@ -8,20 +8,22 @@ Pick the one block below that matches your exact situation. Each block is self-c
 
 ## Quick block selector
 
-| Your machine | Fresh install or update? | Terminal or Telegram? | Jump to |
+| Your machine | Full onboarding or update? | Terminal or Telegram? | Jump to |
 |---|---|---|---|
-| Mac (Mac Mini, MacBook, iMac, Mac Pro) | Fresh install | Terminal | [Block 1](#block-1--mac-fresh-install-via-terminal) |
-| Mac (Mac Mini, MacBook, iMac, Mac Pro) | Fresh install | Telegram | [Block 2](#block-2--mac-fresh-install-via-telegram) |
-| VPS / Hostinger / cloud server | Fresh install | Terminal | [Block 3](#block-3--vps-fresh-install-via-terminal) |
-| VPS / Hostinger / cloud server | Fresh install | Telegram | [Block 4](#block-4--vps-fresh-install-via-telegram) |
+| Mac (Mac Mini, MacBook, iMac, Mac Pro) | Full onboarding | Terminal | [Block 1](#block-1--mac-full-onboarding-via-terminal) |
+| Mac (Mac Mini, MacBook, iMac, Mac Pro) | Full onboarding | Telegram ⭐ | [Block 2](#block-2--mac-full-onboarding-via-telegram) |
+| VPS / Hostinger / cloud server | Full onboarding | Terminal | [Block 3](#block-3--vps-full-onboarding-via-terminal) |
+| VPS / Hostinger / cloud server | Full onboarding | Telegram ⭐ | [Block 4](#block-4--vps-full-onboarding-via-telegram) |
 | Mac (Mac Mini, MacBook, iMac, Mac Pro) | Update | Terminal | [Block 5](#block-5--mac-update-via-terminal) |
 | Mac (Mac Mini, MacBook, iMac, Mac Pro) | Update | Telegram | [Block 6](#block-6--mac-update-via-telegram) |
 | VPS / Hostinger / cloud server | Update | Terminal | [Block 7](#block-7--vps-update-via-terminal) |
 | VPS / Hostinger / cloud server | Update | Telegram | [Block 8](#block-8--vps-update-via-telegram) |
 
-**Not sure if it's a fresh install or an update?**
-- If you have NEVER installed OpenClaw on this machine before, or you wiped it and started over, it's a **fresh install** (Blocks 1–4).
-- If you already use OpenClaw and you just want the latest skills + bug fixes, it's an **update** (Blocks 5–8).
+⭐ = Standard path. Every client arrives with a baseline OpenClaw + Telegram agent already configured; Block 2 (Mac) or Block 4 (VPS) is what lifts that baseline to the full 36-skill package. Terminal blocks (1, 3) are for self-service or bootstrap scenarios.
+
+**Not sure if it's a full onboarding or an update?**
+- If this is a new client being lifted from the baseline OpenClaw + Telegram setup to the full 36-skill onboarding package, it's a **full onboarding** (Blocks 1–4).
+- If they already have the full package and you just want the latest skills + bug fixes, it's an **update** (Blocks 5–8).
 
 **Not sure if your machine is a Mac or a VPS?**
 - A Mac is the computer sitting on your desk or in your home/office. You sit in front of it.
@@ -60,7 +62,7 @@ If you trigger a fresh install or update while your daily quota is nearly burned
 
 ---
 
-## BLOCK 1 — Mac, Fresh Install, via Terminal
+## BLOCK 1 — Mac, Full Onboarding, via Terminal
 
 ### What this does
 Installs the full OpenClaw onboarding package on your Mac: all 36 skills, your agent setup, memory architecture, persona system, GHL MCPs — everything. About 5–15 minutes depending on internet speed.
@@ -136,14 +138,14 @@ You should get back a list of skills with statuses. If anything failed, your age
 
 ---
 
-## BLOCK 2 — Mac, Fresh Install, via Telegram
+## BLOCK 2 — Mac, Full Onboarding, via Telegram
 
 ### What this does
-Tells your existing OpenClaw Telegram agent to run the install on your Mac for you. You don't open Terminal yourself — the agent does it via its shell-exec capability. Same end result as Block 1, just hands-free.
+Tells your existing OpenClaw Telegram agent to run the full onboarding package install on your Mac for you. You don't open Terminal yourself — the agent does it via its shell-exec capability. End result: all 36 skills, the full memory architecture, personas, and tooling are deployed on top of your baseline OpenClaw + Telegram setup. This is the **standard onboarding path** — clients arrive with a minimal OpenClaw + Telegram bot already configured, and this block lifts them to the full package.
 
 ### Before you start
-- You must already have OpenClaw + Telegram set up. This block assumes you have an agent you currently chat with on Telegram. If you do NOT have OpenClaw running yet, use Block 1 instead — you need a working agent before this block can work.
-- The agent needs shell-exec permissions (which is standard for OpenClaw)
+- You have an existing OpenClaw + Telegram agent you currently chat with (the standard pre-onboarding baseline)
+- The agent has shell-exec permissions (standard for OpenClaw)
 - Have your GHL Private Integration Token and Location ID ready in case the install asks for them
 
 ### Step 1 — Open Telegram
@@ -240,7 +242,7 @@ A final summary message from your agent that looks roughly like:
 
 ---
 
-## BLOCK 3 — VPS, Fresh Install, via Terminal
+## BLOCK 3 — VPS, Full Onboarding, via Terminal
 
 ### What this does
 Installs OpenClaw on your VPS (Hostinger, DigitalOcean, AWS, or any cloud server). Skills land at `/data/Downloads/openclaw-master-files/` because a VPS doesn't have a `~/Downloads` folder — the persistent volume is `/data/` instead. About 10–20 minutes.
@@ -304,13 +306,13 @@ In Telegram, ask:
 
 ---
 
-## BLOCK 4 — VPS, Fresh Install, via Telegram
+## BLOCK 4 — VPS, Full Onboarding, via Telegram
 
 ### What this does
-Your VPS's own OpenClaw agent receives a Telegram message from you and runs the install locally on the VPS. You never SSH in. Same end result as Block 3.
+Your VPS's own OpenClaw agent receives a Telegram message from you and runs the full onboarding package install locally on the VPS. You never SSH in. End result: all 36 skills, the full memory architecture, personas, and tooling are deployed on top of your VPS's baseline OpenClaw + Telegram setup. This is the **standard onboarding path for VPS clients**.
 
 ### Before you start
-- Your VPS already has OpenClaw running and you have a Telegram conversation with the VPS bot
+- Your VPS has the baseline OpenClaw + Telegram agent already running (standard pre-onboarding baseline)
 - IMPORTANT: if you have BOTH a Mac AND a VPS, make sure you're sending this message to your **VPS** bot, not your Mac bot. They're different agents. If you send the VPS install to the Mac bot, the Mac will reject it.
 - Have your GHL credentials ready
 

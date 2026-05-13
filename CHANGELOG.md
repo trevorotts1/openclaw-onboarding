@@ -1,3 +1,14 @@
+## v9.3.9 - May 13, 2026 - Trigger Doc Renamed "Fresh Install" → "Full Onboarding"
+
+### Changed
+- **`ONBOARDING-TRIGGERS.md` Blocks 1-4 renamed** from "Fresh Install" to "Full Onboarding" to accurately reflect the actual onboarding workflow. In Trevor's process, every client arrives with a baseline OpenClaw + Telegram agent already configured. Blocks 1-4 lift that baseline to the full 36-skill onboarding package. The old "Fresh Install" name implied an empty machine, which never occurs in the real workflow and was misleading to anyone reading the trigger document.
+- **Blocks 2 (Mac, Telegram) and 4 (VPS, Telegram) marked with ⭐ as the standard path.** Terminal blocks (1 and 3) remain for self-service or bootstrap scenarios.
+- **Removed alarmist "Before you start" warnings** from Blocks 2 and 4 that previously redirected clients to Terminal-based blocks if they didn't have OpenClaw running — that condition doesn't apply to this workflow.
+- **Block selector table heading** updated: "Fresh install or update?" → "Full onboarding or update?"
+- **ONBOARDING_VERSION** bumped to v9.3.9 in install.sh, update-skills.sh, VERSION file, README.md. Both repos.
+
+---
+
 ## v9.3.8 - May 13, 2026 - Core.md Terminology Seeded into MEMORY.md
 
 ### Added

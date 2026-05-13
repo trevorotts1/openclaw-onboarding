@@ -2,11 +2,18 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.3.8** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.3.9** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.3.9 (May 13, 2026) — Trigger Doc Renamed "Fresh Install" → "Full Onboarding"
+
+- **`ONBOARDING-TRIGGERS.md`** — Blocks 1–4 renamed from "Fresh Install" to "Full Onboarding" to accurately describe what they do. In Trevor's workflow, every client arrives with a baseline OpenClaw + Telegram agent already configured; Blocks 1–4 lift that baseline to the full 36-skill package. The old name implied an empty machine, which is not the actual workflow.
+- **Blocks 2 (Mac, Telegram) and 4 (VPS, Telegram) marked as ⭐ standard path** — these are the default onboarding routes; Terminal blocks (1, 3) are for self-service or bootstrap scenarios.
+- **Alarmist "Before you start" notes removed** from Blocks 2 and 4 — no longer redirects clients to Terminal if they don't have OpenClaw, because in this workflow that case doesn't occur.
+- ONBOARDING_VERSION bumped to v9.3.9.
 
 ### What's New in v9.3.8 (May 13, 2026) — Core.md Terminology Seeded into MEMORY.md
 
@@ -14,7 +21,6 @@ This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 arch
 - **Corrected definitions per the owner's authoritative usage:**
   - **IDENTITY.md** holds the role the agent is playing, including the **experiences and the skills they need to embody** that role — not just surface metadata.
   - **SOUL.md** holds the **personality**, **true mission**, **beliefs**, **rules**, **goals**, **belief systems**, and **principles** — who the agent IS, not who they are playing. First file injected each session.
-- ONBOARDING_VERSION bumped to v9.3.8.
 
 ### What's New in v9.3.7 (May 13, 2026) — Redact production GHL Location ID
 
