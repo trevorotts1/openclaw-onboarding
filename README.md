@@ -11,11 +11,11 @@ This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 arch
 ### What's New in v9.3.2 (May 13, 2026) — Bespoke Per-Skill QC Scripts
 - **Replaced all 31 generic qc-*.sh scripts with bespoke, skill-specific validation scripts.** Each script now tests assertions specific to that skill's actual goal — credentials, software dependencies, live API reachability, prerequisite skills installed, agent core file wiring, security checks. No more copy-paste boilerplate.
 - Examples of the bespoke checks:
-  - Skill 05 (GHL Setup): hits live  endpoint to verify PIT works
-  - Skill 08 (Vercel): validates VERCEL_TOKEN against 
-  - Skill 12 (OpenRouter): validates token against 
-  - Skill 21 (Tavily): hits  with a test query
-  - Skill 30 (Fish Audio): hits 
+  - Skill 05 (GHL Setup): hits live `services.leadconnectorhq.com/locations/<id>` endpoint to verify PIT works
+  - Skill 08 (Vercel): validates VERCEL_TOKEN against `api.vercel.com/v2/user`
+  - Skill 12 (OpenRouter): validates token against `openrouter.ai/api/v1/auth/key`
+  - Skill 21 (Tavily): hits `api.tavily.com/search` with a test query
+  - Skill 30 (Fish Audio): hits `api.fish.audio/wallet/self/api-credit`
   - Skill 22 (Persona): verifies Skill 31 (Memory) installed FIRST + coaching-personas folder + persona-categories.json
   - Skill 23 (Workforce): verifies Skill 22 installed + departments/ OR ORG-CHART.md (STATE C interview-complete)
   - Skill 31 (Memory): all 8 memory layers checked (core .md → flush → session → Gemini → memory-core → Cognee → Obsidian → Active Memory)
