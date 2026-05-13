@@ -2,9 +2,20 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v8.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-This repo contains **35 skill folders** (01 through 35, with 13, 33, and 34 archived) plus an install script.
+This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script.
+
+### What's New in v9.0.0 (May 13, 2026) — GHL MCP Multi-Tier Access
+- **New skill 36 (`36-ghl-mcp-setup`)**: Installs a 5-tier GHL access chain — Official MCP (36 tools), Community MCP (588 tools, BusyBee3333 2026 fork), direct REST API (skill 29), Playwright browser, Codex Computer Use. The agent tries each tier in order before falling through.
+- **`$GHL_COMMUNITY_MCP_URL` env var**: Removes the agent's ability to hardcode wrong port numbers — documented past failures (port 8000 / 8765 confusion) eliminated by design.
+- **Cardinal Tier Escalation Protocol added to SOUL.md template**: Tier order is binding; "session memory is not authoritative — the canonical state block is"; mandatory `[GHL tier used: N — tool_name]` disclosure header on every GHL response.
+- **launchd plist (macOS) / systemd unit (Linux/VPS) lifecycle**: No Docker dependency. Server auto-starts at login, restarts on crash.
+- **20-assertion QC script (`qc-ghl-setup.sh`)**: Exit 0 gate before declaring setup complete. Covers credentials, both MCPs, core file wiring, security.
+- **Credential canonical path migrated in skill 05**: From `~/clawd/secrets/.env` to `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS) to align with AGENTS.md operating rules.
+- **Skill 35 routes GHL operations through MCPs first**: Social posting, blog publish, media upload, campaign scheduling all check `social-media-posting_create-post` (Tier 1) and `create_social_post` (Tier 2) before falling to raw API.
+- **Skill 29 SKILL.md updated**: Now explicitly identifies itself as Tier 3 of the 5-tier chain, points readers to skill 36 for the MCP layer.
+- **README skill inventory fully resynced**: Previous inventory had stale entries (`32-blackceo-voice-call-plugin`, missing `34-intelligent-staffing-ARCHIVED`). Real on-disk folders now reflected.
 
 ### What's New in v8.0.0 (April 13, 2026) — BlackCEO System Overhaul v3.3
 - **Persona runtime loader**: Replaces hardcoded PERSONA_DETAILS with dynamic runtime loading from company-config.json
@@ -86,31 +97,33 @@ That file is the master instruction file. It contains:
 | 09-context7 | Context7 Setup |
 | 10-github-setup | GitHub Setup |
 | 11-superdesign | Superdesign |
-| 12-openrouter-setup | OpenRouter Setup (last) |
-| 13-google-workspace-setup | Google Workspace Setup |
+| 12-openrouter-setup | OpenRouter Setup |
+| 13-google-workspace-setup-ARCHIVED | Google Workspace Setup (ARCHIVED — replaced by skill 14) |
 | 14-google-workspace-integration | Google Workspace Integration |
-| 15-blackceo-team-management | Team Management |
+| 15-blackceo-team-management | BlackCEO Team Management |
 | 16-summarize-youtube | Summarize YouTube |
-| 17-self-improving-agent | Self Improving Agent |
+| 17-self-improving-agent | Self-Improving Agent |
 | 18-proactive-agent | Proactive Agent |
 | 19-humanizer | Humanizer |
 | 20-youtube-watcher | YouTube Watcher |
 | 21-tavily-search | Tavily Search |
-| 22-book-to-persona-coaching-leadership-system | Book to Persona Coaching Leadership System |
+| 22-book-to-persona-coaching-leadership-system | Book-to-Persona Coaching Leadership System |
 | 23-ai-workforce-blueprint | AI Workforce Blueprint |
 | 24-storyboard-writer | Storyboard Writer |
 | 25-video-creator | Video Creator |
 | 26-caption-creator | Caption Creator |
 | 27-video-editor | Video Editor |
 | 28-cinematic-forge | Cinematic Forge |
-| 29-ghl-convert-and-flow | GHL Convert and Flow |
+| 29-ghl-convert-and-flow | GHL Convert and Flow (Tier 3 API reference for skill 36) |
 | 30-fish-audio-api-reference | Fish Audio API Reference |
 | 31-upgraded-memory-system | Upgraded Memory System |
-| 32-blackceo-voice-call-plugin | BlackCEO Voice Call Plugin |
-| 33-department-heads | Permanent Department Heads |
-| 35-social-media-planner | Social Media Planner v1.4.0
-**Requirements:** FFmpeg ≥4.0, kie.ai API key for video generation
-**Features:** Crossfade video transitions, 8-platform publishing |
+| 32-command-center-setup | Command Center Setup |
+| 33-department-heads-ARCHIVED | Department Heads (ARCHIVED) |
+| 34-intelligent-staffing-ARCHIVED | Intelligent Staffing (ARCHIVED) |
+| 35-social-media-planner | Social Media Planner — FFmpeg ≥4.0 + kie.ai key required. Routes GHL operations through skill 36 MCPs when installed. |
+| 36-ghl-mcp-setup | **GHL MCP Setup (v9.0.0)** — 5-tier GHL access chain: Official MCP (36 tools) → Community MCP (588 tools) → REST API (skill 29) → Playwright → Codex Computer Use. Sets `$GHL_COMMUNITY_MCP_URL`, installs launchd plist (macOS), wires cardinal rules into SOUL.md/AGENTS.md/TOOLS.md/MEMORY.md, includes 20-assertion QC script. |
+
+**Total: 36 numbered skill folders** (33 active + 3 archived: 13, 33, 34).
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
 

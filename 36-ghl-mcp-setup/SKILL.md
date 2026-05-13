@@ -1,0 +1,112 @@
+# GHL MCP Setup — Multi-Tier Access for GoHighLevel
+
+## What This Is
+
+This skill teaches your AI agent how to connect to GoHighLevel (also called "Convert and Flow") through a **5-tier access chain** that always picks the cheapest, fastest path first and falls back gracefully when needed.
+
+The chain:
+
+1. **Tier 1 — Official GHL MCP** (36 tools, hosted by GHL, free, no install) — for contacts, calendars, conversations, opportunities, social media, blogs, emails, locations, read-only payments
+2. **Tier 2 — Community GHL MCP** (586 tools, runs locally) — for products, invoices, billing, subscriptions, estimates, store, coupons, Voice AI, Phone System, Agent Studio
+3. **Tier 3 — Direct REST API** with Private Integration Token (uses skill 29's reference files) — for anything neither MCP covers
+4. **Tier 4 — Playwright browser** at app.gohighlevel.com / white-label URL — for UI-only flows
+5. **Tier 5 — Codex Computer Use** (`codex/gpt-5.5`) — visual automation as last resort
+
+## Why This Skill Exists
+
+Before this skill, agents would either:
+- Skip Tier 2 entirely and jump from Tier 1 to Tier 3 (raw API) because Tier 2 felt abstract
+- Hardcode port numbers from stale session memory, hit Cognee on port 8000, declare Tier 2 dead, and fall through
+- Forget to disclose which tier they used, making escalation violations invisible
+
+This skill installs a **canonical state block**, a **disclosure header protocol**, **anti-skip enforcement**, and an **env var (`$GHL_COMMUNITY_MCP_URL`)** that makes the right URL the shortest path. Documented failures on 2026-05-12 (skipping Tier 2, hardcoding wrong port) drove the design.
+
+## When to Use This Skill
+
+- You are setting up GHL on a brand-new OpenClaw install for the first time
+- Your agent currently goes straight to the raw GHL API and you want it to use MCPs first
+- You want to add product / invoice / subscription / billing automation to an existing GHL setup
+- A previous community MCP setup is broken and you need to redeploy it cleanly
+- You're onboarding a new client and want their agent to follow a strict tier escalation rule
+
+## Aliases (treat all as the same platform)
+
+- GHL
+- GoHighLevel
+- Go High Level
+- LeadConnector (`leadconnectorhq.com` is GHL's API host)
+- "Convert and Flow" (or whatever the client's white-label brand is named)
+
+## Prerequisites
+
+You MUST have these installed first:
+
+1. **Skill 01 — Teach Yourself Protocol (TYP)** — governs how this skill's content gets stored
+2. **Skill 02 — Back Yourself Up Protocol (BYUP)** — for config backups before modifying `openclaw.json`
+3. **Skill 05 — GHL Setup** — provides the basic credential discovery foundation
+4. **Skill 29 — GHL Convert and Flow** — provides the Tier 3 reference files (`references/*.md`) and the master API reference
+5. An active GoHighLevel or Convert and Flow account with permission to create a Private Integration Token
+6. **Node.js ≥ 20** installed (community MCP requires it)
+7. **Platform:** macOS (with launchd) OR Linux/VPS (with systemd) — both are supported
+
+## Critical Things Your Agent Must Know
+
+These are the most common mistakes agents make with the MCP setup. Read them carefully.
+
+1. **GHL community MCP runs on port 8765, NOT 8000.** Port 8000 is Cognee on most OpenClaw installs. If your agent reaches for port 8000 for GHL work, it has stale session context. Use `$GHL_COMMUNITY_MCP_URL` — the env var resolves to the correct URL.
+
+2. **Tier order is binding. Do not skip tiers.** If Tier 1 lacks the tool, try Tier 2 BEFORE Tier 3. Skipping Tier 2 because Tier 3 looks more concrete is a documented past failure.
+
+3. **Every GHL response must disclose the tier used.** Format: `[GHL tier used: N — tool_name]`. If the agent fell through tiers, the header must show the chain: `[GHL tier used: 2 (Tier 1 lacked tool: products) — ghl_list_products]`. Missing disclosure = protocol violation.
+
+4. **"It looked broken earlier" is not an excuse for skipping.** If a tier crashed in earlier session work, attempt it fresh. Recover with `launchctl kickstart` (Mac) or `systemctl restart` (Linux) before falling through.
+
+5. **Same Private Integration Token used for both tiers.** Tier 1 sends the PIT as `Authorization: Bearer ...` header. Tier 2 reads it from `~/mcp-servers/ghl-community-mcp/.env` as `GHL_API_KEY`. Both reference the same canonical secrets file (`~/.openclaw/secrets/.env` on Mac, `/data/.openclaw/secrets/.env` on VPS).
+
+6. **The official MCP is stateless.** Initialize does NOT return an `Mcp-Session-Id` header. Do not gate follow-up calls on a session ID — each request is independent.
+
+## What This Skill Covers
+
+- How to detect platform (Mac vs VPS) and pick correct paths
+- How to hunt for existing PIT + Location ID across 7 standard credential locations BEFORE asking the client
+- How to register the Official GHL MCP (Tier 1) with `openclaw mcp set`
+- How to clone, build, and deploy the Community GHL MCP (Tier 2 — BusyBee3333 2026 fork, 588 tools)
+- How to wire `$GHL_COMMUNITY_MCP_URL` env var so agents never hardcode ports
+- How to install launchd plist (macOS) OR systemd unit (Linux/VPS) — no Docker dependency
+- How to add cardinal rules to SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md
+- A 20-point QC script that runs end-to-end verification
+- 5 test prompts to confirm the agent routes correctly after install
+
+## Files in This Folder and Reading Order
+
+1. **SKILL.md** — You are here. Start here for the overview.
+2. **INSTALL.md** — Step-by-step autonomous setup. Run this first.
+3. **INSTRUCTIONS.md** — How to USE the MCPs day-to-day after install.
+4. **EXAMPLES.md** — Real working curl examples for both MCPs and the fall-through pattern.
+5. **CORE_UPDATES.md** — Exact text to add to SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md.
+6. **QC.md** — 7-section quality control checklist + bundled `qc-ghl-setup.sh` script.
+7. **ghl-mcp-setup-full.md** — Long-form complete reference with troubleshooting cheat sheet.
+8. **CHANGELOG.md** — Skill version history.
+9. **ghl-mcp-setup.skill** — Machine-readable bundled archive.
+
+## Priority Operations to Test First
+
+After setup, run these three smoke tests in order:
+
+1. **Tier 1 test:** `locations_get-location` — should return your real BlackCEO / client business info
+2. **Tier 2 test:** `ghl_list_products` (limit 3) — should return real products from the store
+3. **Disclosure test:** Ask the agent in Telegram or main chat: *"How many products are in my store?"* — response should open with `[GHL tier used: 2 — ghl_list_products]`
+
+## Cross-References to Other Skills
+
+- **Skill 05 (`05-ghl-setup`):** Handles the foundational credential discovery. This skill (36) builds on top of it by adding the MCP layer. If a client only has 05 installed, this skill 36 elevates them to MCP-first.
+- **Skill 29 (`29-ghl-convert-and-flow`):** Provides the Tier 3 reference files. When MCPs lack a tool, this skill's instructions fall through to skill 29's `references/[module].md` lookups.
+- **Skill 35 (`35-social-media-planner`):** Posts to GHL Blog + Social Planner + Media Library. As of skill 36 v1.0.0, those operations should route through MCP Tier 1 first (`blogs_create-blog-post`, `social-media-posting_create-post`) and only fall through to raw API if MCPs don't cover the call.
+
+## Important Rules
+
+- Always reference `$GHL_COMMUNITY_MCP_URL` instead of hardcoding a port number
+- Always prefix GHL-data responses with the `[GHL tier used: N — tool_name]` header
+- Never skip Tier 2 just because Tier 3 has a clearer code path
+- Never expose the PIT or Location ID in chat logs, commits, or shared docs
+- Test in a dev / test sub-account before production for any write operation (create_invoice, send_invoice, etc.)

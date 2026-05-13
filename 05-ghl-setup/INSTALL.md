@@ -126,7 +126,7 @@ This is critical. GHL does NOT use traditional API keys anymore. That method is 
 
 ### Where Credentials Get Stored
 The AI agent checks TWO places for GHL credentials:
-1. The secrets file at ~/clawd/secrets/.env (look for GOHIGHLEVEL_API_KEY or GHL_PIT)
+1. The secrets file at ~/.openclaw/secrets/.env (look for GOHIGHLEVEL_API_KEY or GHL_PIT)
 2. The OpenClaw config file at ~/.openclaw/openclaw.json under the env.vars section
 
 
@@ -140,7 +140,7 @@ env files first. Only ask the user if the values are not already stored.
 **Step 1 - Check for existing GHL credentials:**
 ```bash
 # Check secrets/.env
-grep -E "GHL_API_KEY|GHL_PIT|GHL_LOCATION_ID|GOHIGHLEVEL_API_KEY" ~/clawd/secrets/.env 2>/dev/null
+grep -E "GHL_API_KEY|GHL_PIT|GHL_LOCATION_ID|GOHIGHLEVEL_API_KEY" ~/.openclaw/secrets/.env 2>/dev/null
 
 # Check openclaw.json
 cat ~/.openclaw/openclaw.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('env',{}).get('vars',{}))" 2>/dev/null
@@ -172,7 +172,7 @@ curl -s -X GET "https://services.leadconnectorhq.com/locations/search?limit=1" \
   -H "Version: 2021-07-28"
 ```
 If this returns a valid location, extract the location ID automatically from
-the response. Save it to ~/clawd/secrets/.env as GHL_LOCATION_ID.
+the response. Save it to ~/.openclaw/secrets/.env as GHL_LOCATION_ID.
 
 If GHL_LOCATION_ID exists but GHL_API_KEY is missing, check if a token can
 be refreshed from any saved OAuth session in ~/.openclaw/.
@@ -200,11 +200,11 @@ pending in MEMORY.md.
 
 ### Action 2: Configure OpenClaw with GHL Credentials
 
-The PRIMARY credential storage location is ~/clawd/secrets/.env. This is
+The PRIMARY credential storage location is ~/.openclaw/secrets/.env. This is
 where the agent reads credentials at runtime. Always write here first.
 
 The agent must:
-1. Open ~/clawd/secrets/.env (create it if it does not exist)
+1. Open ~/.openclaw/secrets/.env (create it if it does not exist)
 2. Add or update these lines:
    ```
    GHL_API_KEY=<Private Integration Token from Action 1>
@@ -213,7 +213,7 @@ The agent must:
 3. Save the file
 4. Verify the values are present:
    ```bash
-   grep "GHL_API_KEY\|GHL_LOCATION_ID" ~/clawd/secrets/.env
+   grep "GHL_API_KEY\|GHL_LOCATION_ID" ~/.openclaw/secrets/.env
    ```
 
 SECONDARY (optional sync): If ~/.openclaw/openclaw.json already has an
@@ -229,7 +229,7 @@ env.vars section, also add the values there for convenience:
 }
 ```
 
-NOTE: ~/clawd/secrets/.env is the authoritative source. openclaw.json is
+NOTE: ~/.openclaw/secrets/.env is the authoritative source. openclaw.json is
 a secondary mirror only. All runtime code should read from secrets/.env.
 
 

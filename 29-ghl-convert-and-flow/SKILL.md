@@ -4,6 +4,8 @@
 > NEVER paste the master reference into context or core files.
 > ALWAYS read the appropriate `references/*.md` file at query time.
 
+> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct REST API. The agent must try **Tier 1 (Official MCP, `ghl-mcp`, 36 tools)** first, then **Tier 2 (Community MCP, `ghl-community-mcp`, 588 tools)** before falling here. Use this skill's `references/[module].md` files only when neither MCP covers the call. See skill 36 (`36-ghl-mcp-setup`) for the MCP layer and the full 5-tier escalation rules.
+
 ---
 
 ## What Is This Skill?

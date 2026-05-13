@@ -2,6 +2,14 @@
 
 After installing this skill, add the following to the client's core .md files.
 
+> **MCP-First Routing Update (skill 36, May 13, 2026):** If **skill 36 (`36-ghl-mcp-setup`)** is installed, all GHL operations in this skill (social posting, blog publish, media upload, campaign scheduling) MUST route through the MCP layer first:
+>
+> - **Tier 1 (Official MCP):** `social-media-posting_create-post`, `social-media-posting_edit-post`, `social-media-posting_get-account`, `blogs_create-blog-post`, `blogs_update-blog-post`, `emails_create-template`
+> - **Tier 2 (Community MCP):** `create_social_post`, `update_social_post`, `bulk_delete_social_posts`, `upload_media_file`, `bulk_update_media_files`, `create_email_template`, `view_email_center`, `view_campaign_stats`
+> - **Tier 3 (raw API — what this skill historically describes):** Only as a fallback when MCPs lack the call.
+>
+> The agent must emit the disclosure header `[GHL tier used: N — tool_name]` on every GHL-data response per skill 36's protocol. If skill 36 is NOT installed, this skill falls back to the direct API workflow below.
+
 ---
 
 ## Add to AGENTS.md
@@ -14,16 +22,17 @@ This skill produces a 7-part weekly content series across Facebook, Instagram, L
 - Every Saturday, the AI requests the weekly theme from the client via HEARTBEAT.md
 - The AI selects a content persona using 5-layer alignment (client can override with personal brand tone)
 - Content production uses up to 8 parallel sub-agents: Facebook Writer, Instagram Writer, LinkedIn Writer, YouTube/Pinterest/TikTok Writer, Image Generator, Blog and Email Writer, Podcast Script Writer, Video Producer
-- All posting goes through GoHighLevel (Convert and Flow) Social Planner API using a Private Integration Token
+- **Posting path (if skill 36 installed):** route through `social-media-posting_create-post` (Tier 1 Official MCP) by default. Fall to Tier 2 `create_social_post` if Tier 1 lacks a needed field. Fall to direct GoHighLevel Social Planner API (Tier 3) only as last resort.
+- **Posting path (if skill 36 NOT installed):** direct GoHighLevel (Convert and Flow) Social Planner API using Private Integration Token.
 - Every post gets a unique comment with the client's weekly action link posted 1-2 minutes after the main post
 - QC runs 40+ checks before anything is scheduled
 - All content is logged to the client's Google Sheet
 
 **Post types:**
-- Regular posts: image + content bundled in one GHL API call
-- Carousel posts (Thursdays): multiple images + content in one GHL API call
-- Video posts: video + content in one GHL API call
-- Comments: separate API call 1-2 minutes after parent post, contains the action link
+- Regular posts: image + content bundled in one MCP/API call
+- Carousel posts (Thursdays): multiple images + content in one MCP/API call
+- Video posts: video + content in one MCP/API call
+- Comments: separate MCP/API call 1-2 minutes after parent post, contains the action link
 
 ### Video Production Process (Skill 35)
 

@@ -1,0 +1,191 @@
+# GHL MCP — How to Use It Day to Day
+
+This document explains how to USE the 5-tier GHL access chain after setup is complete. If setup is not done yet, read INSTALL.md first.
+
+After setup, your agent can route GHL requests through Official MCP, Community MCP, raw API, browser, and Codex Computer Use — in that order of preference.
+
+## The Cardinal Rule
+
+**Try each tier in numerical order. Do NOT skip tiers.** This rule lives in SOUL.md as a 🔴 cardinal protocol. Violating it is a documented past failure. The rule is binding.
+
+## Disclosure Header Format
+
+Every reply that surfaces GHL / GoHighLevel / Convert and Flow / LeadConnector data MUST begin with this header on its own line:
+
+```
+[GHL tier used: N — tool_name]
+```
+
+Examples:
+- `[GHL tier used: 1 — locations_get-location]`
+- `[GHL tier used: 2 — ghl_list_products]`
+- `[GHL tier used: 2 (Tier 1 lacked tool: products) — ghl_list_products]`
+- `[GHL tier used: 3 (Tier 1+2 lacked tool: webhook_log) — raw API GET /hooks/]`
+
+If you fall through tiers, the header must show the chain so the audit is complete.
+
+## When to Use Which Tier
+
+### Tier 1 — Official GHL MCP (`ghl-mcp`)
+
+Use first when the task is in one of these domains:
+
+| Domain | Example tools |
+|---|---|
+| Contacts | `contacts_get-contact`, `contacts_create-contact`, `contacts_search-contacts`, `contacts_upsert-contact`, `contacts_add-tags`, `contacts_remove-tags` |
+| Conversations | `conversations_send-a-new-message`, `conversations_get-messages`, `conversations_search-conversation` |
+| Opportunities | `opportunities_get-opportunity`, `opportunities_update-opportunity`, `opportunities_search-opportunity`, `opportunities_get-pipelines` |
+| Calendars | `calendars_get-calendar-events`, `calendars_get-appointment-notes` |
+| Locations | `locations_get-location`, `locations_get-custom-fields` |
+| Blogs | `blogs_create-blog-post`, `blogs_update-blog-post`, `blogs_get-blog-post`, `blogs_get-blogs`, `blogs_check-url-slug-exists` |
+| Emails | `emails_fetch-template`, `emails_create-template` |
+| Social Media | `social-media-posting_create-post`, `social-media-posting_edit-post`, `social-media-posting_get-post`, `social-media-posting_get-posts`, `social-media-posting_get-account`, `social-media-posting_get-social-media-statistics` |
+| Payments (read-only) | `payments_get-order-by-id`, `payments_list-transactions` |
+
+**Total: 36 tools.**
+
+### Tier 2 — Community GHL MCP (`ghl-community-mcp`)
+
+Use when Tier 1 lacks the needed tool. Domains:
+
+| Domain | Primary tools |
+|---|---|
+| Products | `ghl_list_products`, `ghl_get_product`, `ghl_create_product`, `ghl_update_product`, `ghl_delete_product`, `ghl_create_price`, `ghl_list_prices`, `ghl_create_product_collection`, `ghl_list_product_collections`, `ghl_list_inventory`, `ghl_bulk_edit_products` |
+| Invoices | `list_invoices`, `get_invoice`, `create_invoice`, `update_invoice`, `delete_invoice`, `send_invoice`, `view_invoice`, `generate_invoice_number` |
+| Recurring billing / subscriptions | `list_invoice_schedules`, `get_invoice_schedule`, `create_invoice_schedule`, `update_invoice_schedule`, `list_subscriptions`, `get_subscription_by_id`, `update_saas_subscription`, `rebilling_update` |
+| Estimates | `list_estimates`, `create_estimate`, `send_estimate`, `create_invoice_from_estimate`, `generate_estimate_number` |
+| Payments (full) | `list_orders`, `get_order_by_id`, `list_transactions`, `get_transaction_by_id`, `list_gateways`, `record_order_payment` |
+| Coupons | `list_coupons`, `create_coupon`, `update_coupon`, `delete_coupon`, `get_coupon` |
+| Voice AI | `create_voice_ai_agent`, `update_voice_ai_agent`, `list_voice_ai_agents`, `get_voice_ai_call_log` |
+| Phone System | `ghl_buy_phone_number`, `ghl_list_phone_numbers`, `update_phone_number`, `ghl_get_call_recording`, `update_call_forwarding` |
+| Agent Studio | `ghl_create_agent`, `ghl_update_agent`, `ghl_deploy_agent`, `ghl_list_agents` |
+| Workflows | `ghl_list_workflows`, `ghl_get_workflow`, `ghl_create_workflow`, `ghl_clone_workflow`, `ghl_trigger_workflow`, `ghl_publish_workflow` |
+
+**Total: 588 tools.** For anything not in this table, run live discovery:
+```bash
+curl $GHL_COMMUNITY_MCP_URL/tools | python3 -m json.tool
+```
+
+### Tier 3 — Direct REST API + skill 29 reference
+
+Use only when neither MCP covers the call. Resolve which reference file to read:
+
+```bash
+# Identify domain from the task, then read the matching reference
+ls "$MASTER_FILES_DIR/29-ghl-convert-and-flow/references/"
+# contacts.md, conversations.md, opportunities.md, calendars.md, locations.md, payments.md, etc.
+```
+
+Then build the curl call:
+```bash
+curl -sS -X GET "https://services.leadconnectorhq.com/<endpoint>?locationId=$GOHIGHLEVEL_LOCATION_ID" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H "Version: 2021-07-28"
+```
+
+Some modules use `Version: 2021-04-15`. Always check the reference file for the correct version header.
+
+### Tier 4 — Playwright browser
+
+Use when the operation can only be done in the UI (no API endpoint exists). Login at the client's white-label URL or `https://app.gohighlevel.com`. Use `launchPersistentContext`, never `launch()`.
+
+### Tier 5 — Codex Computer Use
+
+Last resort. Route through `codex-computer-use` sub-agent with model `codex/gpt-5.5`. Default timeout 45 minutes.
+
+## Verify-Before-Fallthrough Protocol
+
+When a tier returns 404 / 502 / connection refused / "not found":
+
+1. **Re-read the canonical state block in AGENTS.md.** Compare URL/port/path against what you actually called. If they don't match, fix and retry.
+2. **Hit `/health`** for that tier:
+   - Tier 1: `curl https://services.leadconnectorhq.com/mcp/ -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" ...`
+   - Tier 2: `curl $GHL_COMMUNITY_MCP_URL/health`
+3. If health passes, the server is fine — your call shape is wrong. Fix and retry.
+4. If health fails, attempt recovery:
+   - Tier 2 macOS: `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp`
+   - Tier 2 Linux: `sudo systemctl restart ghl-mcp`
+5. Only after recovery fails, fall through to the next tier. The disclosure header must reflect the actual reason.
+
+## Anti-Patterns (DO NOT do these)
+
+- ❌ "Tier 1 doesn't have X → I'll use Tier 3 because Tier 3 has X." → Wrong. Use Tier 2.
+- ❌ Hardcoding a port number from session memory. → Always use `$GHL_COMMUNITY_MCP_URL`.
+- ❌ "Tier 2 crashed earlier in this session → skip it." → Wrong. Restart and retry.
+- ❌ "Tier 3 is faster / cleaner / I prefer raw API." → Personal preference is not a routing override.
+- ❌ Skipping the disclosure header on a GHL response. → Required on every GHL-data response.
+
+## Common Cross-Tier Workflows
+
+### Product → Invoice → Subscription (Tier 2 only)
+
+```
+ghl_create_product          → create the product record
+  ↓
+ghl_create_price            → attach pricing (set type=recurring, interval=month for subscriptions)
+  ↓
+ghl_update_product          → set status=active/live
+  ↓
+create_invoice              → create invoice linked to contact
+  ↓
+send_invoice                → deliver to client
+  ↓
+record_order_payment        → log payment received
+```
+
+For monthly subscriptions, after the price is created:
+```
+create_invoice_schedule           → define recurrence
+  ↓
+update_invoice_schedule           → activate it
+  ↓
+auto_payment_invoice_schedule     → enable auto-charge on file
+```
+
+### Contact lookup + payment history (Tier 1 + Tier 2)
+
+```
+Tier 1: contacts_search-contacts → find the contact
+  ↓
+Tier 2: list_transactions filtered by contactId → payment history
+```
+
+Disclosure: `[GHL tier used: 1+2 — contacts_search-contacts; list_transactions]`
+
+### Social media post via MCP (Tier 1, replaces skill 35's raw API call)
+
+```
+Tier 1: social-media-posting_create-post
+  ↓
+Body includes content, media URLs, platform targets, schedule
+```
+
+This replaces the raw `POST /social-media-posting/oauth/.../accounts` call that skill 35 used pre-v36.
+
+## Health Check Cheatsheet
+
+```bash
+# Tier 1 — verify auth
+curl -sS -m 5 -X POST "https://services.leadconnectorhq.com/mcp/" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H "locationId: $GOHIGHLEVEL_LOCATION_ID" \
+  -H "Version: 2021-07-28" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | grep "^data:" | head -1 | sed 's/^data: //' \
+  | python3 -c "import json,sys; print('Tier 1 OK, tools:', len(json.load(sys.stdin).get('result',{}).get('tools',[])))"
+
+# Tier 2 — verify server running
+curl -sS -m 5 $GHL_COMMUNITY_MCP_URL/health
+
+# Tier 2 service status
+# macOS:
+launchctl print gui/$(id -u)/com.clawd.ghl-mcp | grep -E "state|pid"
+# Linux:
+systemctl status ghl-mcp
+```
+
+## When Setup Is Done and Things Just Work
+
+The disclosure header is your audit trail. Every response with a tier header that matches the task domain is a passing case. Anything missing the header, or showing tier 3 when tier 1 or 2 should have served the request, is a failure to investigate.

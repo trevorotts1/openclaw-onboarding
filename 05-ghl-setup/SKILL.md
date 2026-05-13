@@ -1,5 +1,7 @@
 # GHL / Convert and Flow Setup
 
+> **For MCP-based access (preferred when available):** This skill covers the foundational direct-API setup. For Tier 1 (Official GHL MCP, 36 tools) and Tier 2 (Community GHL MCP, 588 tools — products, invoices, subscriptions, Voice AI, Phone System, Agent Studio), install **skill 36 (`36-ghl-mcp-setup`)** after completing this one. The agent should prefer MCPs first and fall back to this skill's direct REST API only when MCPs lack the needed tool.
+
 ## What This Is
 
 This skill teaches your AI agent how to connect to GoHighLevel (GHL), which is a customer relationship management (CRM) platform. Think of a CRM as a digital address book that also lets you send text messages, emails, and track business conversations - all in one place.

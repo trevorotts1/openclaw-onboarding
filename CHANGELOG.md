@@ -1,3 +1,41 @@
+## v9.0.0 - May 13, 2026 - GHL MCP Multi-Tier Access
+
+### Added
+- **Skill 36 (`36-ghl-mcp-setup`)**: New skill that installs the 5-tier GHL access chain. Folder contains 10 files (SKILL, INSTALL, INSTRUCTIONS, EXAMPLES, CORE_UPDATES, QC, CHANGELOG, skill-version.txt, ghl-mcp-setup-full.md, ghl-mcp-setup.skill bundle).
+- **5-tier escalation chain**:
+  - Tier 1 — Official GHL MCP (`ghl-mcp`, 36 tools, hosted by GHL, stateless protocol)
+  - Tier 2 — Community GHL MCP (`ghl-community-mcp`, 588 tools, BusyBee3333 2026 fork, runs locally on `$GHL_COMMUNITY_MCP_URL`)
+  - Tier 3 — Direct REST API + skill 29 reference files
+  - Tier 4 — Playwright browser at app.gohighlevel.com (or client white-label URL)
+  - Tier 5 — Codex Computer Use (`codex/gpt-5.5`, 45-min default timeout)
+- **`$GHL_COMMUNITY_MCP_URL` env var**: Added to `openclaw.json` `env.vars`. Removes the agent's ability to hardcode wrong port numbers. Documented past failures (port 8000 vs 8765 confusion with Cognee) eliminated by design.
+- **Cardinal rules in SOUL.md template** (deployed via `CORE_UPDATES.md`):
+  - Tier order is binding — no skipping
+  - Session memory is not authoritative — the canonical state block in AGENTS.md is
+  - Mandatory `[GHL tier used: N — tool_name]` disclosure header on every GHL response
+  - "It looked broken earlier" is not an excuse — recover (kickstart / systemctl restart) before falling through
+- **launchd plist (macOS)** at `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` — auto-starts at login, restarts on crash, no Docker dependency
+- **systemd unit (Linux/VPS)** at `/etc/systemd/system/ghl-mcp.service` — same lifecycle guarantees as launchd
+- **20-assertion QC script** (`qc-ghl-setup.sh`): Bundled in skill 36's QC.md. Exits 0 only when all checks pass. Required gate before declaring setup complete.
+- **Canonical state block** in AGENTS.md template: Tier 2 URL/port/health endpoint listed as authoritative; overrides stale session memory.
+- **Anti-pattern enforcement block** citing two documented failures (2026-05-12): (1) skipping Tier 2 for products query, (2) hardcoding port 8000 instead of using `$GHL_COMMUNITY_MCP_URL`.
+- **Tool name reference tables** for both MCPs in TOOLS.md template: contacts (Tier 1), products/invoices/subscriptions (Tier 2), Voice AI / Phone System / Agent Studio (Tier 2 new in BusyBee fork).
+
+### Changed
+- **Skill 05 (`05-ghl-setup`)**: Credential canonical path migrated from `~/clawd/secrets/.env` to `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS) to align with current AGENTS.md operating rules. Updated CORE_UPDATES.md, INSTALL.md, QC.md. Added cross-reference banner at top of SKILL.md pointing to skill 36 for MCP-based access.
+- **Skill 29 (`29-ghl-convert-and-flow`)**: SKILL.md now explicitly identifies itself as **Tier 3** of the 5-tier chain. Banner at top points readers to skill 36 for the MCP layer (Tiers 1 and 2).
+- **Skill 35 (`35-social-media-planner`)**: CORE_UPDATES.md adds MCP-first routing guidance — all GHL operations (social posting, blog publish, media upload, campaign scheduling) check `social-media-posting_create-post` (Tier 1) and `create_social_post` (Tier 2) before falling to the direct Social Planner API.
+- **README skill inventory fully resynced**: Previous inventory was stale — listed `32-blackceo-voice-call-plugin` instead of actual `32-command-center-setup`, missed `34-intelligent-staffing-ARCHIVED`, had formatting issues on `35-social-media-planner` row. Now matches real on-disk folders (01-36, with 13/33/34 archived).
+- **ONBOARDING_VERSION**: Bumped to v9.0.0 in install.sh and update-skills.sh
+- **version file**: Bumped to v9.0.0 in both Mac and VPS repos
+
+### Notes
+- Both repos (Mac onboarding + VPS onboarding) ship skill 36 identically. Platform differences (`~/Downloads` vs `/data/Downloads`, launchd vs systemd) are handled by conditional logic inside the skill's INSTALL.md and QC script.
+- Skill 36 has no destructive interactions with existing skills — only adds cross-reference banners to 05 and 29, and adds MCP-first guidance to 35. Original skill behavior is preserved as fallback.
+- The PIT and Location ID used by skill 36 are the same as those used by skill 05 and skill 29 — no second credential exchange required.
+
+---
+
 ## v8.8.2 - April 25, 2026 - Update System Overhaul
 
 ### Fixed
