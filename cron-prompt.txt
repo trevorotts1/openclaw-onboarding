@@ -108,3 +108,16 @@ RULE 16 — Gateway restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 RULE 17 — INSTALL-CONTRACT.md acknowledgment:
   Before processing any skill update, re-read /Users/.../openclaw-master-files/INSTALL-CONTRACT.md (or fetch from GitHub repo root) and acknowledge it in your work log for each skill: "INSTALL-CONTRACT.md acknowledged for skill NN-name. Proceeding."
+
+RULE 18 — GHL rate-limit pre-check (added v9.3.6 after the 2026-05-13 incident where a single Sunday review burned all 200,000 daily GHL calls):
+  This rule fires BEFORE you run anything that calls GHL during the Sunday cycle. That includes Skill 36's qc-ghl-mcp-setup.sh, post-install QC for any GHL-connected skill (05, 29, 35, 36), or any "verify everything still works" step the agent invents on its own.
+  (a) Probe quota first via Tier 3 direct REST (NOT through the Official MCP — its SSE wrapper strips rate-limit headers):
+        curl -s -D - "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" \
+          -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+          -H "Version: 2021-07-28" -o /dev/null \
+        | grep -i "x-ratelimit"
+  (b) Read X-RateLimit-Daily-Remaining from the response headers.
+  (c) If remaining < 5000: SKIP all GHL-related verification for this Sunday cycle. Log the skip to MEMORY.md under "## System Updates" with the date, the remaining count, and the reset clock time (compute from X-RateLimit-Daily-Reset which is in milliseconds since epoch). Surface to the client in plain English: "GHL daily quota is low ([N] of 200,000 remaining). I skipped GHL verification this week and will resume next Sunday after the quota resets at [HH:MM ET]."
+  (d) If remaining >= 5000: proceed but batch — limit=100 page size, no per-record loops, cache list results in MEMORY.md, do not re-fetch the same data inside a single agent turn.
+  (e) On 429 from any tier: read X-RateLimit-Daily-Reset, surface the reset clock time to the client in plain English, NEVER retry blindly, NEVER fall through tiers. All three tiers (Official MCP, Community MCP, Direct API) share the SAME backend bucket — switching tiers does NOT bypass the limit.
+  (f) This rule binds even if the client says "install all" or "install skills 36" — quota protection is non-negotiable. If quota is low and the client demands GHL work anyway, respond: "Quota is low — proceeding will likely fail. Tell me to proceed anyway with explicit YES, or wait until [reset time]."

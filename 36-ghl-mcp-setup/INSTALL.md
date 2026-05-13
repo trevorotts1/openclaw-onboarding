@@ -104,9 +104,11 @@ checklist of every action this document requires you to take. Write it out.
 Show it to the user before starting. Get confirmation. Then execute.
 
 RULE 5: CHECK YOURSELF AGAINST THE CHECKLIST WHEN DONE
-When you believe you are finished, run the bundled `qc-ghl-setup.sh` from
-QC.md. Do NOT tell the user "setup is complete" until the script exits 0.
-If anything failed, fix it and re-run. The QC script is the gate.
+When you believe you are finished, run the bundled `qc-ghl-mcp-setup.sh`
+shipped in this skill folder. Do NOT extract or rewrite it from QC.md — the
+standalone file is the single source of truth. Do NOT tell the user "setup
+is complete" until the script exits 0. If anything failed, fix it and
+re-run. The QC script is the gate.
 
 RULE 6: REPORT WHAT YOU DID
 When finished, give the user a clear summary:
@@ -474,14 +476,14 @@ cp "$(pwd)/QC.md" "$MASTER_FILES_DIR/36-ghl-mcp-setup/"
 
 ### Action 9: Run the QC Script
 
-Read `QC.md` for the bundled `qc-ghl-setup.sh` script. Save it to:
-```
-$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-setup.sh
-```
+The QC script ships in this folder as `qc-ghl-mcp-setup.sh` — single source
+of truth, do NOT extract it from QC.md (earlier versions instructed that;
+the standalone is now authoritative and has rate-limit probe logic that an
+extracted copy would silently lose).
 
-Run it:
 ```bash
-bash "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-setup.sh"
+chmod +x "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
+bash    "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
 ```
 
 Exit code 0 = setup complete. Any non-zero = fix the failed items and re-run.
@@ -506,5 +508,5 @@ If the response uses Tier 3 or has no disclosure header, the agent isn't loading
 - [ ] launchd plist (Mac) or systemd unit (VPS) running
 - [ ] SOUL.md / AGENTS.md / TOOLS.md / MEMORY.md updated per CORE_UPDATES.md
 - [ ] Full reference copied to `$MASTER_FILES_DIR/36-ghl-mcp-setup/`
-- [ ] `qc-ghl-setup.sh` exits 0
+- [ ] `qc-ghl-mcp-setup.sh` exits 0
 - [ ] User verification prompt returns correct disclosure header

@@ -144,7 +144,7 @@ Credentials: `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (
 Disclosure header required on every GHL response: `[GHL tier used: N — tool_name]`.
 
 Full reference: [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/ghl-mcp-setup-full.md
-QC script: [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/qc-ghl-setup.sh
+QC script: [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh
 ```
 
 ---

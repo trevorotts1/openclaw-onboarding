@@ -93,7 +93,7 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 3. **INSTRUCTIONS.md** — How to USE the MCPs day-to-day after install.
 4. **EXAMPLES.md** — Real working curl examples for both MCPs and the fall-through pattern.
 5. **CORE_UPDATES.md** — Exact text to add to SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md.
-6. **QC.md** — 7-section quality control checklist + bundled `qc-ghl-setup.sh` script.
+6. **QC.md** — 7-section quality control checklist. The QC script itself ships separately as `qc-ghl-mcp-setup.sh` in this folder (do not extract from QC.md — the standalone is the single source of truth).
 7. **ghl-mcp-setup-full.md** — Long-form complete reference with troubleshooting cheat sheet.
 8. **CHANGELOG.md** — Skill version history.
 9. **ghl-mcp-setup.skill** — Machine-readable bundled archive.

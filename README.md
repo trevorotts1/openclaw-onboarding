@@ -67,7 +67,7 @@ This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 arch
   - Injected MCP-first routing logic INTO INSTALL.md (Step 4 — detects Skill 36 and configures routing mode), not just into CORE_UPDATES.md
   - Resolved the 9-month-old `PPSA: PENDING` placeholder (removed)
   - Added 0-10 install-time QC rubric to QC.md with 8.5+ pass gate and loop-until-passing rule (max 5 loops)
-  - New bundled `qc-skill35.sh` validation script (mirrors Skill 36's qc-ghl-setup.sh pattern)
+  - New bundled `qc-skill35.sh` validation script (mirrors Skill 36's qc-ghl-mcp-setup.sh pattern)
 - **install.sh + UPDATE PENDING flag now teach the agent:** all GHL aliases (GHL, GoHighLevel, Convert and Flow, LeadConnector, etc.) refer to the same platform. **GHL DOES NOT USE API KEYS — it uses Private Integration Tokens (PITs).** The env var `GOHIGHLEVEL_API_KEY` is a legacy name; its value is a PIT.
 - **install.sh credential discovery list updated** to use canonical `GOHIGHLEVEL_API_KEY` / `GOHIGHLEVEL_LOCATION_ID` names. Deprecated names (`GHL_PRIVATE_TOKEN`, `GHL_API_KEY`, `GHL_LOCATION_ID`) are still auto-detected for migration but no longer the source of truth.
 - ONBOARDING_VERSION bumped to v9.3.0.
@@ -103,7 +103,7 @@ This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 arch
 - **`$GHL_COMMUNITY_MCP_URL` env var**: Removes the agent's ability to hardcode wrong port numbers — documented past failures (port 8000 / 8765 confusion) eliminated by design.
 - **Cardinal Tier Escalation Protocol added to SOUL.md template**: Tier order is binding; "session memory is not authoritative — the canonical state block is"; mandatory `[GHL tier used: N — tool_name]` disclosure header on every GHL response.
 - **launchd plist (macOS) / systemd unit (Linux/VPS) lifecycle**: No Docker dependency. Server auto-starts at login, restarts on crash.
-- **20-assertion QC script (`qc-ghl-setup.sh`)**: Exit 0 gate before declaring setup complete. Covers credentials, both MCPs, core file wiring, security.
+- **20-assertion QC script (`qc-ghl-mcp-setup.sh`)**: Exit 0 gate before declaring setup complete. Covers credentials, both MCPs, core file wiring, security.
 - **Credential canonical path migrated in skill 05**: From `~/clawd/secrets/.env` to `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS) to align with AGENTS.md operating rules.
 - **Skill 35 routes GHL operations through MCPs first**: Social posting, blog publish, media upload, campaign scheduling all check `social-media-posting_create-post` (Tier 1) and `create_social_post` (Tier 2) before falling to raw API.
 - **Skill 29 SKILL.md updated**: Now explicitly identifies itself as Tier 3 of the 5-tier chain, points readers to skill 36 for the MCP layer.

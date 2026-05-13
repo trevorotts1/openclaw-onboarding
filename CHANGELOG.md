@@ -1,3 +1,20 @@
+## v9.3.6 - May 13, 2026 - Sunday Cron Quota Gate + Triggers Skill 36 Surfacing
+
+### Added
+- **`cron-prompt.txt` RULE 18 — GHL rate-limit pre-check.** Before the Sunday agent runs anything that calls GHL (Skill 36's `qc-ghl-mcp-setup.sh`, post-install QC for any GHL-connected skill, or self-invented "verify everything" steps), it must probe quota via Tier 3 direct REST (the only path whose headers are not stripped), read `X-RateLimit-Daily-Remaining`, and skip GHL verification for the cycle if < 5000 remain. Logs the skip to MEMORY.md and surfaces the reset clock time to the client in plain English. Binding even when the client says "install all" — protection is non-negotiable.
+- **`ONBOARDING-TRIGGERS.md` — "What actually gets installed" inventory section.** Headlines what the 8 install blocks deploy, naming Skill 36 (GHL MCP, 5-tier chain, port 8765, launchd/systemd, disclosure-header protocol, standalone `qc-ghl-mcp-setup.sh` validator) and the other foundation skills (01, 02, 05, 22, 23, 29, 31, 32, 35) so anyone reading the triggers knows what the install delivers without digging into the install script.
+- **`ONBOARDING-TRIGGERS.md` — pre-install rate-limit warning callout.** Documents the 100/10s burst + 200,000/day cap, the shared-bucket constraint across all three MCP tiers, the 2026-05-13 incident, and explains that if Skill 36's QC refuses to proceed because quota is low, that is the protection working — wait for the reset clock and re-run.
+
+### Fixed
+- **Filename drift across 18 live references to the Skill 36 QC script** — `qc-ghl-setup.sh` (obsolete) renamed to `qc-ghl-mcp-setup.sh` (the file that actually ships) in: `ONBOARDING-TRIGGERS.md` (6 refs), `36-ghl-mcp-setup/INSTALL.md` (5 refs), `36-ghl-mcp-setup/QC.md` (2 refs), `36-ghl-mcp-setup/CORE_UPDATES.md` (1), `36-ghl-mcp-setup/SKILL.md` (1), `36-ghl-mcp-setup/ghl-mcp-setup-full.md` (2), `README.md` (2). Historical CHANGELOG entries preserved as-written.
+- **Eliminated embedded duplicate copies of the QC script.** `36-ghl-mcp-setup/QC.md` Section 6 and `36-ghl-mcp-setup/ghl-mcp-setup-full.md` Sections 11.B/11.C previously embedded the full QC script body as a heredoc. The standalone `qc-ghl-mcp-setup.sh` is now declared the single source of truth; the embedded copies are replaced with pointers and a short summary of what the script does. Closes the drift hazard where v9.3.5's rate-limit probe was added to the standalone but the embedded copies silently fell out of sync.
+- **Updated `INSTALL.md` Action 9** — removed the instruction to extract the script from `QC.md` and save it. Now points directly at the shipped standalone file.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.3.6 in install.sh, update-skills.sh, VERSION file. Both repos.
+
+---
+
 ## v9.3.5 - May 13, 2026 - GHL Rate-Limit Protocol (incident response)
 
 ### Added

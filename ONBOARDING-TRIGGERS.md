@@ -29,6 +29,37 @@ Pick the one block below that matches your exact situation. Each block is self-c
 
 ---
 
+## What actually gets installed
+
+A fresh install lays down **36 numbered skill folders** (33 active, 3 archived) plus the agent runtime, memory architecture, and persona system. The headline pieces:
+
+- **Skill 01 — Teach Yourself Protocol** — governs how the agent stores new knowledge
+- **Skill 02 — Back Yourself Up Protocol** — config + secret backups before any change
+- **Skill 05 — GHL Setup** — discovers and stores your GoHighLevel Private Integration Token + Location ID at the canonical secrets path
+- **Skill 22 — Book-to-Persona** — main-orchestrator-only; converts books into voice personas
+- **Skill 23 — AI Workforce Blueprint** — main-orchestrator-only; designs your AI team
+- **Skill 29 — GHL Convert and Flow** — reference files for every GHL REST endpoint (used as the Tier 3 fallback in the 5-tier chain)
+- **Skill 31 — Upgraded Memory System** — 8-layer memory architecture foundation
+- **Skill 32 — Trade Show Mode** — event-on, event-off automation
+- **Skill 35 — Social Media Planner** — posts to GHL Social Planner / Blog / Media Library, MCP-first
+- **Skill 36 — GHL MCP Setup** — wires the **5-tier GHL access chain** (Official MCP → Community MCP on port 8765 → Direct REST → Playwright → Codex), runs a local Node server under launchd (Mac) or systemd (VPS), and installs the disclosure-header protocol so every GHL response shows which tier it used. Bundles a standalone `qc-ghl-mcp-setup.sh` validator that probes live rate-limit quota.
+
+The rest are domain skills (CRM ops, calendars, content, payments, observability, etc.). Your agent reads every skill's `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, and `QC.md` and walks through activation in dependency-aware waves.
+
+---
+
+## 🔴 Before you trigger GHL work — read this
+
+GoHighLevel enforces strict per-location rate limits that apply to **every install block on this page** the moment a GHL-touching skill runs its QC:
+
+- **Burst:** 100 requests per 10 seconds, per location
+- **Daily:** 200,000 requests per day, per location
+- **Shared bucket:** Skill 36's three MCP tiers (Official MCP, Community MCP, Direct REST) all hit the same backend. Switching tiers does NOT bypass the cap.
+
+If you trigger a fresh install or update while your daily quota is nearly burned (this happened on 2026-05-13 — a single bulk run torched all 200k calls), Skill 36's QC script will detect it and refuse to proceed until quota resets the next day. That is by design. If you see the message "GHL daily quota is low / I skipped GHL verification" in your agent's report, that is the protection working. Wait until the daily reset clock the agent gives you, then re-run.
+
+---
+
 ## BLOCK 1 — Mac, Fresh Install, via Terminal
 
 ### What this does
@@ -156,7 +187,7 @@ RULE 13 — Run the bundled QC checks for every single skill. Each skill has a Q
 
 RULE 14 — Skills 22 and 23 are MAIN ORCHESTRATOR ONLY. Never delegate them to sub-agents. You must process those yourself.
 
-RULE 15 — Skill 36 (GHL MCP Setup) has a special bundled script called qc-ghl-setup.sh. You MUST run that script after install and it MUST exit with status 0 before you call GHL done. If it exits non-zero, tell me which assertion failed.
+RULE 15 — Skill 36 (GHL MCP Setup) has a special bundled script called qc-ghl-mcp-setup.sh. You MUST run that script after install and it MUST exit with status 0 before you call GHL done. If it exits non-zero, tell me which assertion failed.
 
 RULE 16 — STOP IMMEDIATELY and ask me before doing any of these:
   (a) A skill needs an API key, password, PIT, or credential you cannot find in my .env files OR openclaw.json env.vars
@@ -319,7 +350,7 @@ RULE 9 — QC every skill against its bundled QC.md. Aim for 8/10 or higher. Any
 
 RULE 10 — Skills 22 and 23: MAIN ORCHESTRATOR ONLY, never delegate.
 
-RULE 11 — Skill 36 (GHL MCP) must run its qc-ghl-setup.sh script. The script must exit with status 0 before you call GHL done.
+RULE 11 — Skill 36 (GHL MCP) must run its qc-ghl-mcp-setup.sh script. The script must exit with status 0 before you call GHL done.
 
 RULE 12 — STOP and ask me before doing any of:
   (a) Skill needs a credential not found in /data/.openclaw/secrets/.env or openclaw.json env.vars
@@ -458,7 +489,7 @@ RULE 6 — For each NEW skill listed in the flag:
   (c) Execute the activation steps in INSTALL.md. Reading is NOT executing — actually run the steps.
   (d) Apply CORE_UPDATES.md surgically. Only add the sections explicitly labeled in CORE_UPDATES.md to my AGENTS.md / TOOLS.md / MEMORY.md / SOUL.md. Never dump full skill content into core files.
   (e) Run the QC checks in QC.md. Reach a passing score (8/10 or higher) before moving to the next skill.
-  (f) If the skill has a bundled qc-*.sh script (like Skill 36's qc-ghl-setup.sh), run it and confirm exit 0.
+  (f) If the skill has a bundled qc-*.sh script (like Skill 36's qc-ghl-mcp-setup.sh), run it and confirm exit 0.
 
 RULE 7 — For UPDATED skills (already in place, just refreshed by the update script): assume activation is unchanged. Do NOT re-activate unless I explicitly ask. The file replacement is sufficient.
 
@@ -466,7 +497,7 @@ RULE 8 — Sub-agent limits: max 50 concurrent, queue 10, spawn depth 4. Never e
 
 RULE 9 — Skills 22 and 23 (if newly installed): MAIN ORCHESTRATOR ONLY, never delegate.
 
-RULE 10 — Skill 36 — if newly installed OR if its launchd plist was updated by the refresh, run qc-ghl-setup.sh and confirm exit 0.
+RULE 10 — Skill 36 — if newly installed OR if its launchd plist was updated by the refresh, run qc-ghl-mcp-setup.sh and confirm exit 0.
 
 RULE 11 — STOP and ask me before:
   (a) A skill needs a credential not in my .env / openclaw.json
@@ -590,7 +621,7 @@ RULE 7 — For each NEW skill in the flag:
   (c) Execute the activation steps in INSTALL.md (reading is not executing — actually run them)
   (d) Apply CORE_UPDATES.md surgically — only labeled sections, no full file dumps
   (e) Run QC checks; reach 8/10 or higher before moving on
-  (f) If the skill has a qc-*.sh script (e.g. Skill 36's qc-ghl-setup.sh), run it and confirm exit 0
+  (f) If the skill has a qc-*.sh script (e.g. Skill 36's qc-ghl-mcp-setup.sh), run it and confirm exit 0
 
 RULE 8 — For UPDATED skills (refreshed in place): no re-activation needed. The file replacement is sufficient unless I explicitly ask.
 
@@ -598,7 +629,7 @@ RULE 9 — Sub-agent limits: max 50 concurrent, queue 10, spawn depth 4.
 
 RULE 10 — Skills 22 and 23 if newly installed: MAIN ORCHESTRATOR ONLY.
 
-RULE 11 — Skill 36 — if newly installed OR if its systemd unit was refreshed, run qc-ghl-setup.sh and confirm exit 0.
+RULE 11 — Skill 36 — if newly installed OR if its systemd unit was refreshed, run qc-ghl-mcp-setup.sh and confirm exit 0.
 
 RULE 12 — STOP and ask me before:
   (a) Credential not in /data/.openclaw/secrets/.env or openclaw.json

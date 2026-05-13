@@ -91,7 +91,7 @@ VERIFICATION
 [ ]  9    All prompts answered from live GHL data (not hallucinated)
 
 QC FINAL (run Section 11 before declaring done)
-[ ]  11   Bundled QC script qc-ghl-setup.sh executed end-to-end with exit 0
+[ ]  11   Bundled QC script qc-ghl-mcp-setup.sh executed end-to-end with exit 0
 [ ]  11   Every assertion in the QC script passed
 [ ]  11   This document copied into $MASTER_FILES_DIR/XX-ghl-mcp-setup/
 [ ]  11   Setup record appended to MEMORY.md with date + client name
@@ -873,179 +873,34 @@ The script asserts each of these. Any failure = setup is incomplete:
 19. **No PIT or Location ID is echoed in any .md or log file** (security)
 20. **Secrets file is chmod 600**
 
-### 11.B The bundled QC script — save this as `qc-ghl-setup.sh` and run
+### 11.B The bundled QC script — ships as `qc-ghl-mcp-setup.sh` in this folder
 
-```bash
-#!/bin/bash
-# qc-ghl-setup.sh — Final QC for GHL MCP setup
-# Exit 0 = all clear. Any non-zero exit = setup incomplete.
-
-set -u
-FAIL=0
-PASS=0
-WARN=0
-
-red()    { printf "\033[31m%s\033[0m\n" "$1"; }
-green()  { printf "\033[32m%s\033[0m\n" "$1"; }
-yellow() { printf "\033[33m%s\033[0m\n" "$1"; }
-
-assert() {
-  local desc="$1" cmd="$2"
-  if eval "$cmd" >/dev/null 2>&1; then
-    green "  ✓ PASS  — $desc"; PASS=$((PASS+1))
-  else
-    red   "  ✗ FAIL  — $desc"; FAIL=$((FAIL+1))
-  fi
-}
-
-warn_only() {
-  local desc="$1" cmd="$2"
-  if eval "$cmd" >/dev/null 2>&1; then
-    green "  ✓ PASS  — $desc"; PASS=$((PASS+1))
-  else
-    yellow "  ⚠ WARN  — $desc"; WARN=$((WARN+1))
-  fi
-}
-
-# Platform detection
-if [ -d "/data/.openclaw" ]; then
-  PLATFORM="vps"
-  SECRETS_ENV="/data/.openclaw/secrets/.env"
-  CONFIG_JSON="/data/.openclaw/openclaw.json"
-  CANONICAL_MASTER="/data/Downloads/openclaw-master-files"
-else
-  PLATFORM="desktop"
-  SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-  CONFIG_JSON="$HOME/.openclaw/openclaw.json"
-  CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
-fi
-
-echo ""
-echo "════════════════════════════════════════════════════════"
-echo "  GHL MCP Setup — Final QC"
-echo "════════════════════════════════════════════════════════"
-echo "Platform: $PLATFORM"
-echo "Date:     $(date)"
-echo "User:     $(whoami)"
-echo ""
-
-# Load secrets so we can test calls
-[ -f "$SECRETS_ENV" ] && set -a && source "$SECRETS_ENV" && set +a
-
-# Locate master files (fuzzy)
-MASTER_FILES_DIR=""
-for r in "$HOME/Downloads" "/data/Downloads" "/root/Downloads" "/data" "$HOME"; do
-  [ -d "$r" ] || continue
-  f=$(find "$r" -maxdepth 2 -type d \
-    \( -iname "*openclaw*master*file*" -o -iname "*open*claw*master*file*" \) \
-    ! -iname "*backup*" ! -iname "*.zip*" 2>/dev/null | head -1)
-  [ -n "$f" ] && MASTER_FILES_DIR="$f" && break
-done
-
-echo "── Section A: Master files + platform ──"
-assert "Master files folder located"                       "[ -n \"$MASTER_FILES_DIR\" ]"
-warn_only "GHL skill subfolder present in master files"    "find \"$MASTER_FILES_DIR\" -maxdepth 2 -type d -iname '*ghl*convert*flow*' 2>/dev/null | grep -q ."
-echo ""
-
-echo "── Section B: Credentials ──"
-assert "GOHIGHLEVEL_API_KEY is set"                        "[ -n \"\${GOHIGHLEVEL_API_KEY:-}\" ]"
-assert "GOHIGHLEVEL_API_KEY starts with pit-"              "[[ \"\${GOHIGHLEVEL_API_KEY:-}\" == pit-* ]]"
-assert "GOHIGHLEVEL_LOCATION_ID is set"                    "[ -n \"\${GOHIGHLEVEL_LOCATION_ID:-}\" ]"
-assert "GOHIGHLEVEL_LOCATION_ID is 22 chars"               "[ \"\${#GOHIGHLEVEL_LOCATION_ID:-}\" -eq 22 ]"
-assert "Secrets file exists"                               "[ -f \"$SECRETS_ENV\" ]"
-assert "Secrets file is chmod 600"                         "[ \"\$(stat -f %A \"$SECRETS_ENV\" 2>/dev/null || stat -c %a \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
-assert "PIT also stored in openclaw.json env.vars"         "openclaw config get env.vars.GOHIGHLEVEL_API_KEY | grep -q 'pit-'"
-assert "Location ID also stored in openclaw.json env.vars" "openclaw config get env.vars.GOHIGHLEVEL_LOCATION_ID | grep -q ."
-assert "GHL_COMMUNITY_MCP_URL env var is set"              "openclaw config get env.vars.GHL_COMMUNITY_MCP_URL | grep -qE 'http://localhost:[0-9]+'"
-echo ""
-
-echo "── Section C: Tier 1 — Official MCP ──"
-assert "ghl-mcp registered in openclaw"                    "openclaw mcp list | grep -q 'ghl-mcp$'"
-T1_TOOLS=$(curl -sS -m 10 -X POST "https://services.leadconnectorhq.com/mcp/" \
-  -H "Authorization: Bearer ${GOHIGHLEVEL_API_KEY:-}" \
-  -H "locationId: ${GOHIGHLEVEL_LOCATION_ID:-}" \
-  -H "Version: 2021-07-28" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' 2>/dev/null \
-  | grep "^data:" | head -1 | sed 's/^data: //' | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("result",{}).get("tools",[])))' 2>/dev/null)
-assert "Tier 1 tools/list returns 36"                      "[ \"$T1_TOOLS\" = '36' ]"
-T1_LOC=$(curl -sS -m 10 -X POST "https://services.leadconnectorhq.com/mcp/" \
-  -H "Authorization: Bearer ${GOHIGHLEVEL_API_KEY:-}" \
-  -H "locationId: ${GOHIGHLEVEL_LOCATION_ID:-}" \
-  -H "Version: 2021-07-28" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Content-Type: application/json" \
-  -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"locations_get-location\",\"arguments\":{\"locationId\":\"${GOHIGHLEVEL_LOCATION_ID:-}\"}}}" 2>/dev/null \
-  | grep "^data:" | head -1)
-assert "Tier 1 locations_get-location returns success"     "echo \"$T1_LOC\" | grep -q '\"success\":true'"
-echo ""
-
-echo "── Section D: Tier 2 — Community MCP ──"
-assert "ghl-community-mcp registered in openclaw"          "openclaw mcp list | grep -q 'ghl-community-mcp'"
-URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
-if [ "$PLATFORM" = "desktop" ]; then
-  assert "launchd service is running"                      "launchctl print gui/\$(id -u)/com.clawd.ghl-mcp 2>/dev/null | grep -q 'state = running'"
-else
-  assert "systemd service is running"                      "systemctl is-active ghl-mcp 2>/dev/null | grep -q '^active$'"
-fi
-T2_HEALTH=$(curl -sS -m 5 "$URL/health" 2>/dev/null)
-assert "Tier 2 /health responds healthy"                   "echo \"$T2_HEALTH\" | grep -q '\"status\":\"healthy\"'"
-assert "Tier 2 /health reports tools count"                "echo \"$T2_HEALTH\" | grep -qE '\"tools\":[0-9]{3}'"
-T2_TOOLS=$(echo "$T2_HEALTH" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tools",0))' 2>/dev/null)
-warn_only "Tier 2 tool count is at least 500"              "[ \"$T2_TOOLS\" -ge 500 ]"
-T2_CALL=$(curl -sS -m 10 -X POST "$URL/execute" -H "Content-Type: application/json" \
-  -d '{"name":"ghl_list_products","arguments":{"limit":1}}' 2>/dev/null)
-assert "Tier 2 ghl_list_products returns success"          "echo \"$T2_CALL\" | grep -qE '\"success\":\\s*true|\"result\"'"
-echo ""
-
-echo "── Section E: Core .md files wired ──"
-# Resolve workspace
-if [ "$PLATFORM" = "vps" ]; then WS="/data/clawd"; else WS="$HOME/clawd"; fi
-assert "SOUL.md exists and has Tier Escalation Protocol"   "[ -f \"$WS/SOUL.md\" ] && grep -q 'Tier Escalation Protocol' \"$WS/SOUL.md\""
-assert "AGENTS.md exists and has canonical state block"    "[ -f \"$WS/AGENTS.md\" ] && grep -qE 'CANONICAL CURRENT STATE|Canonical current state' \"$WS/AGENTS.md\""
-assert "AGENTS.md has tier-skip enforcement / anti-pattern" "[ -f \"$WS/AGENTS.md\" ] && grep -qiE 'tier.skip|anti.pattern|do not skip tiers' \"$WS/AGENTS.md\""
-assert "TOOLS.md has community MCP tool reference"         "[ -f \"$WS/TOOLS.md\" ] && grep -q 'ghl-community-mcp\\|GHL_COMMUNITY_MCP_URL\\|ghl_list_products' \"$WS/TOOLS.md\""
-assert "MEMORY.md has GHL install record"                  "[ -f \"$WS/MEMORY.md\" ] && grep -qE 'GHL MCP setup|GHL MCP configured|ghl-community-mcp' \"$WS/MEMORY.md\""
-echo ""
-
-echo "── Section F: Doc archived to master files ──"
-assert "This doc copied to master files folder"            "find \"$MASTER_FILES_DIR\" -maxdepth 3 -iname 'GHL*MCP*Setup*.md' 2>/dev/null | grep -q ."
-echo ""
-
-echo "── Section G: Security ──"
-assert "PIT not present in any .md file in workspace"      "! grep -rE 'pit-[a-f0-9]{8}-[a-f0-9]{4}' \"$WS\"/*.md 2>/dev/null | grep -v 'pit-XXXXXXXX'"
-assert "PIT not in stdout.log"                             "! grep -qE 'pit-[a-f0-9]{8}-[a-f0-9]{4}' ~/Library/Logs/ghl-mcp/stdout.log 2>/dev/null"
-echo ""
-
-echo "════════════════════════════════════════════════════════"
-echo "  Result: $PASS passed | $FAIL failed | $WARN warnings"
-echo "════════════════════════════════════════════════════════"
-
-if [ "$FAIL" -gt 0 ]; then
-  red "SETUP IS NOT COMPLETE. Fix the failed items and re-run."
-  exit 1
-elif [ "$WARN" -gt 0 ]; then
-  yellow "Setup is complete but with warnings. Review them with the client."
-  exit 0
-else
-  green "All checks pass. Setup is COMPLETE."
-  exit 0
-fi
-```
+The QC script is the standalone file `qc-ghl-mcp-setup.sh` shipped alongside this reference. It is the single source of truth — do NOT extract a copy from this document or from QC.md (earlier versions of this skill embedded a copy here; the embedded copy is now removed to prevent drift, because the standalone has rate-limit probe logic and other v9.3.5+ additions that an extracted copy would silently lose).
 
 ### 11.C How to run
 
 ```bash
-# Save the script (above) to the master files folder
-cat > "$MASTER_FILES_DIR/XX-ghl-mcp-setup/qc-ghl-setup.sh" <<'QCEOF'
-[paste the full script above]
-QCEOF
-chmod +x "$MASTER_FILES_DIR/XX-ghl-mcp-setup/qc-ghl-setup.sh"
+# Locate the master files folder (where install.sh placed the skill)
+if [ -d "/data/.openclaw" ]; then
+  MASTER_FILES_DIR=/data/Downloads/openclaw-master-files
+else
+  MASTER_FILES_DIR=$HOME/Downloads/openclaw-master-files
+fi
 
-# Execute
-"$MASTER_FILES_DIR/XX-ghl-mcp-setup/qc-ghl-setup.sh"
+chmod +x "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
+bash    "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
 ```
+
+What the script does (summary — read the source for details):
+- Detects platform (Mac vs VPS) and resolves canonical secrets / config / workspace paths
+- Sources `~/.openclaw/secrets/.env` (or `/data/.openclaw/secrets/.env`), reads `GOHIGHLEVEL_API_KEY` (PIT) and `GOHIGHLEVEL_LOCATION_ID`
+- Probes Tier 1 (Official MCP) — confirms 36 tools available
+- Probes Tier 2 (Community MCP) — hits `$GHL_COMMUNITY_MCP_URL/health`, confirms tool count
+- Probes Tier 3 (direct REST) — reads `X-RateLimit-Daily-Remaining` and surfaces the reset clock time in plain English if quota is low (v9.3.5 incident-response logic)
+- Asserts SOUL.md / AGENTS.md / TOOLS.md / MEMORY.md contain the canonical state block and disclosure-header protocol
+- Verifies secrets file is `chmod 600` and the PIT does not appear in any tracked `.md` file
+
+Exit code 0 = all clear. Non-zero = the script prints which assertions failed and why; fix and re-run.
 
 ### 11.D Pass/fail thresholds
 
