@@ -89,3 +89,22 @@ RULE 14 — Communication style:
   • Headlines first, details only if asked
   • The client may be over 60 — calibrate accordingly
   • Never paste raw JSON or stack traces unless the client asks
+
+RULE 15 — Sub-agent failure retry (per INSTALL-CONTRACT.md Rule 6):
+  If you spawn a sub-agent to do part of this work and it fails (timeout, error, non-zero exit, hang):
+  (a) Retry once with the same model. Many failures are transient.
+  (b) If second attempt fails, retry with the next fallback model from agents.defaults.subagents.model.fallbacks.
+  (c) If third attempt fails, escalate to yourself (the master orchestrator) — do the task directly or stop and ask Trevor.
+  Never silently abandon a sub-agent's task.
+
+RULE 16 — Gateway restart guard (per INSTALL-CONTRACT.md Rule 5):
+  Sub-agents NEVER call openclaw gateway restart. Only the master orchestrator can.
+  Before YOU (the master) call gateway restart:
+  (a) Run: openclaw subagents list
+  (b) Confirm the list is EMPTY (no active sub-agents)
+  (c) If any sub-agents are active, WAIT for completion or cancel them first
+  (d) Only then proceed with the restart
+  Restarting while sub-agents are working will kill their sessions and break the install.
+
+RULE 17 — INSTALL-CONTRACT.md acknowledgment:
+  Before processing any skill update, re-read /Users/.../openclaw-master-files/INSTALL-CONTRACT.md (or fetch from GitHub repo root) and acknowledge it in your work log for each skill: "INSTALL-CONTRACT.md acknowledged for skill NN-name. Proceeding."

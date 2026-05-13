@@ -2,11 +2,18 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.3.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.3.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.3.1 (May 13, 2026) — Universal QC + Dependency Waves + Step 0 Bootstrap
+- All 31 remaining active skills got the v9.3.0 install-time QC rubric appended to their `QC.md` (8.5+ gate, loop-until-passing). Plus each got a bundled `qc-*.sh` baseline validation script. Total: 33 active skills, 33 rubrics, 33 validation scripts.
+- Install waves rewritten by actual dependency graph (Wave 1 = TYP + BYUP; Wave 2 + 3 = parallel up to 10 sub-agents; Wave 4 = Memory → MCP; Wave 5 = main-orchestrator-only Persona → Workforce → CC → Social).
+- New Step 0 "Bootstrap" in install.sh — recommends `/new`, writes state-carryover JSON, sets `agents.defaults.subagents` to 20/100/5/high, prints cost-aware model priority.
+- cron-prompt.txt: added Rule 15 (sub-agent failure retry), Rule 16 (gateway-restart guard — master only, only when subagents list empty), Rule 17 (INSTALL-CONTRACT acknowledgment per skill).
+- ONBOARDING_VERSION bumped to v9.3.1.
 
 ### What's New in v9.3.0 (May 13, 2026) — Install Discipline Contract + Skill 35 Overhaul
 - **New `INSTALL-CONTRACT.md` at repo root** — 15 binding rules every agent MUST follow when installing or updating any skill. Covers: read all .md files first, follow INSTALL.md order verbatim, QC 8.5+ or loop, no shortcuts, sub-agent gateway-restart guard, credential search order, GHL alias awareness, PIT-not-API-key rule, fuzzy master-files detection, model selection priority (cost-aware), sub-agent settings, /new recommendation, owner-facing communication style. Agents acknowledge the contract BEFORE EACH SKILL.

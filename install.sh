@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.3.0
+#  OpenClaw Onboarding Installer v9.3.1
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.3.0"
+ONBOARDING_VERSION="v9.3.1"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -354,6 +354,62 @@ note "Log file: $LOG_FILE"
 send_telegram_progress "Starting OpenClaw Onboarding install ${ONBOARDING_VERSION}..."
 
 # ----------------------------------------------------------
+# Step 0: Bootstrap — orchestrator model + sub-agent config + state carryover
+# ----------------------------------------------------------
+step "Step 0: Bootstrap (model selection + sub-agent config)"
+
+# 0.1 — Recommend /new session for fresh context (not required)
+note "Recommendation: if you are over 5 minutes into the current session, start a fresh session with /new BEFORE continuing. The install will pick up where you left off via the state-carryover file at ~/.openclaw/.install-resume.json."
+note "This is a recommendation only — the install will proceed either way."
+
+# 0.2 — Write/refresh the state-carryover file
+OCJSON="$HOME/.openclaw/openclaw.json"
+[ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
+RESUME_FILE="$HOME/.openclaw/.install-resume.json"
+[ -d "/data/.openclaw" ] && RESUME_FILE="/data/.openclaw/.install-resume.json"
+mkdir -p "$(dirname "$RESUME_FILE")"
+cat > "$RESUME_FILE" <<RESUME_JSON
+{
+  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "version": "${ONBOARDING_VERSION}",
+  "phase": "A",
+  "wave": "1",
+  "completed_skills": [],
+  "active_skills": [],
+  "pending_skills": [],
+  "owner_decisions": {},
+  "next_step": "Step 0 bootstrap complete — proceeding to credential discovery"
+}
+RESUME_JSON
+success "State carryover initialized at $RESUME_FILE"
+
+# 0.3 — Sub-agent settings (per INSTALL-CONTRACT.md Rule 11)
+if command -v openclaw >/dev/null 2>&1; then
+    # Read existing values (so we only set if missing/wrong)
+    CUR=$(openclaw config get agents.defaults.subagents 2>/dev/null | grep -oE '"maxChildrenPerAgent"[: ]+[0-9]+|"maxConcurrent"[: ]+[0-9]+|"maxSpawnDepth"[: ]+[0-9]+' | head -3)
+    if echo "$CUR" | grep -q "maxChildrenPerAgent.*20"; then
+        success "Sub-agent settings already configured (20/100/5/high)"
+    else
+        note "Configuring sub-agent settings (maxChildrenPerAgent=20, maxConcurrent=100, maxSpawnDepth=5, thinking=high)..."
+        openclaw config set agents.defaults.subagents.maxChildrenPerAgent 20 >> "$LOG_FILE" 2>&1 || warn "could not set maxChildrenPerAgent"
+        openclaw config set agents.defaults.subagents.maxConcurrent 100 >> "$LOG_FILE" 2>&1 || warn "could not set maxConcurrent"
+        openclaw config set agents.defaults.subagents.maxSpawnDepth 5 >> "$LOG_FILE" 2>&1 || warn "could not set maxSpawnDepth"
+        openclaw config set agents.defaults.subagents.thinking '"high"' >> "$LOG_FILE" 2>&1 || warn "could not set thinking level"
+        success "Sub-agent settings written"
+    fi
+else
+    warn "openclaw CLI not present yet — sub-agent config will be set after CLI install"
+fi
+
+# 0.4 — Model selection (advisory; agent picks at runtime based on what's available)
+note "Master orchestrator model priority (per INSTALL-CONTRACT.md Rule 10):"
+note "  1. Subscription / OAuth (no per-call cost): codex/gpt-5.5, openai-codex/gpt-5.5"
+note "  2. Ollama cloud (very low cost): ollama/kimi-k2.6:cloud (orchestrator), ollama/deepseek-v4-pro:cloud (sub-agents)"
+note "  3. OpenRouter (priced per token): openrouter/moonshot/kimi-k2.6 thinking=high"
+note "  FORBIDDEN by default: claude-opus-*, claude-sonnet-*, openai/* (too expensive — explicit owner consent required)"
+note "If the agent cannot determine available models, it must ASK the owner (per Rule 10)."
+
+# ----------------------------------------------------------
 # Step 1: Check OpenClaw CLI
 # ----------------------------------------------------------
 step "Step 1: Verifying OpenClaw CLI"
@@ -683,13 +739,66 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 ### 🔴 5-PHASE PROCESSING ORDER (MANDATORY)
 
-**Phase A: Parallel Install (Timeout: 600s / 10 minutes)**
-- Install all 35 skills concurrently using parallel sub-agents
-- Wave 1: Skills 01-06 (Foundation)
-- Wave 2: Skills 07-12 (Core Integration)
-- Wave 3: Skills 13-18 (Services)
-- Wave 4: Skills 19-24 (Advanced)
-- Wave 5: Skills 25-35 (Specialized)
+**Phase A: Parallel Install — dependency-aware waves (Timeout: 600s / 10 minutes per wave)**
+
+The 33 active skills install in 5 dependency-aware waves, not by number order.
+Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
+A wave cannot start until the previous wave's QC has all skills at 8.5+.
+
+**Wave 1 — FOUNDATION (sequential, must finish before Wave 2 starts):**
+- 01-teach-yourself-protocol  (REQUIRED — every other skill depends on TYP)
+- 02-back-yourself-up-protocol  (REQUIRED — config backup before any other skill modifies config)
+
+**Wave 2 — INDEPENDENT INTEGRATIONS (parallel, ~10 sub-agents simultaneously):**
+- 03-agent-browser
+- 04-superpowers
+- 05-ghl-setup
+- 06-ghl-install-pages
+- 07-kie-setup
+- 08-vercel-setup
+- 09-context7
+- 10-github-setup
+- 11-superdesign
+- 12-openrouter-setup
+- 14-google-workspace-integration
+
+**Wave 3 — CONTENT + SERVICE TOOLS (parallel, ~10 sub-agents):**
+- 15-blackceo-team-management
+- 16-summarize-youtube
+- 17-self-improving-agent
+- 18-proactive-agent
+- 19-humanizer
+- 20-youtube-watcher
+- 21-tavily-search
+- 24-storyboard-writer
+- 25-video-creator
+- 26-caption-creator
+- 27-video-editor
+- 28-cinematic-forge
+- 29-ghl-convert-and-flow
+- 30-fish-audio-api-reference
+
+**Wave 4 — INFRASTRUCTURE (sequential — Memory, then MCP, then Command Center):**
+- 31-upgraded-memory-system  (memory architecture must be ready before persona/CC)
+- 36-ghl-mcp-setup  (MCP layer for GHL — needed by Skill 35 and Command Center)
+
+**Wave 5 — MAIN-ORCHESTRATOR-ONLY (sequential, NEVER delegate to sub-agents):**
+- 22-book-to-persona-coaching-leadership-system  (needs Memory from Wave 4)
+- 23-ai-workforce-blueprint  (needs Persona from Skill 22 — depends on owner interview)
+- 32-command-center-setup  (needs ORG-CHART from Skill 23)
+- 35-social-media-planner  (needs Persona, Memory, MCP — preferred MCP-first routing via Skill 36)
+
+**Wave 1 + 4 + 5 are sequential. Waves 2 + 3 are massively parallel.**
+
+Sub-agent retry policy (per INSTALL-CONTRACT.md Rule 6):
+1. Retry once with same model on failure
+2. Retry with next fallback model
+3. Escalate to master orchestrator
+
+Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
+- ONLY the master orchestrator calls `openclaw gateway restart`
+- Master MUST run `openclaw subagents list` and confirm empty BEFORE restart
+- Never restart in the middle of a wave
 
 **Phase B: Foundation (Timeout: 900s / 15 minutes)**
 - Configure memory architecture (all 8 layers)

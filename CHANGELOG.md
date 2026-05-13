@@ -1,3 +1,34 @@
+## v9.3.1 - May 13, 2026 - Universal QC + Dependency Waves + Step 0 Bootstrap
+
+### Added
+- **Install-time QC rubric appended to all 31 remaining active skills** — every skill (01–32, plus 36) now has the standard 0-10 install-time rubric with 8.5+ pass gate, loop-until-passing rule (max 5 loops), and 7-item self-audit. Skill 35 has its own bespoke v2.0.0 rubric. Skill 36 has its own bespoke 20-assertion rubric. Total: 33 active skills, 33 QC rubrics with the 8.5+ gate.
+- **Bundled `qc-*.sh` validation script for each of the 31 skills** that didn't have one — generic baseline checks (SKILL.md/INSTALL.md/QC.md/CORE_UPDATES.md present, INSTALL-CONTRACT acknowledged, skill installed at canonical path, secrets file chmod 600). Skills 35 and 36 retain their bespoke scripts (`qc-skill35.sh` and `qc-ghl-setup.sh`).
+- **Dependency-aware install waves** replacing the old number-based waves:
+  - Wave 1 (sequential): 01-teach-yourself-protocol, 02-back-yourself-up-protocol
+  - Wave 2 (parallel ~10 sub-agents): 03–12, 14
+  - Wave 3 (parallel ~10 sub-agents): 15–21, 24–30
+  - Wave 4 (sequential): 31 (memory) → 36 (MCP)
+  - Wave 5 (sequential, main-orchestrator-only): 22 (persona) → 23 (workforce) → 32 (command center) → 35 (social planner)
+- **Step 0 "Bootstrap" in install.sh** — runs BEFORE Step 1. Recommends `/new` session, writes state-carryover file (`.install-resume.json`), sets `agents.defaults.subagents` to 20/100/5/high, prints model selection priority (subscription → Ollama cloud → OpenRouter; Opus/Sonnet forbidden by default). Cost-aware per INSTALL-CONTRACT.md Rule 10.
+- **Sub-agent failure retry rule** added to cron-prompt.txt (Rule 15): same-model retry → next-fallback retry → escalate to master. Never silently abandon a task.
+- **Gateway-restart guard** added to cron-prompt.txt (Rule 16): only master orchestrator can call `openclaw gateway restart`, only when `openclaw subagents list` returns empty.
+- **INSTALL-CONTRACT.md re-acknowledgment rule** in cron-prompt.txt (Rule 17): before each skill, agent must log "INSTALL-CONTRACT.md acknowledged for skill NN-name. Proceeding."
+
+### Changed
+- **install.sh UPDATE PENDING flag** — 5-phase processing order rewritten with dependency-aware waves (was number-based). Plus explicit sub-agent retry policy and gateway-restart guard inline.
+- **ONBOARDING_VERSION** bumped to v9.3.1 in install.sh and update-skills.sh.
+- **version file** bumped to v9.3.1.
+
+### Risk: low
+This release is additive and tightens existing discipline. No breaking changes. All clients on v9.3.0 benefit from running `update-skills.sh` to get the new QC rubrics and qc-*.sh scripts.
+
+### Notes
+- The wave order in the UPDATE PENDING flag now matches the actual dependency graph (memory before persona, persona before workforce, workforce before command center, etc.).
+- Parallel waves (2 and 3) can run up to maxConcurrent sub-agents (default 100 per agents.defaults.subagents) — realistic install with 10–20 parallel sub-agents per wave.
+- Step 0 also writes `.install-resume.json` so if the client starts `/new` mid-install, the new session can resume.
+
+---
+
 ## v9.3.0 - May 13, 2026 - Install Discipline Contract + Skill 35 v2.0.0
 
 ### Added
