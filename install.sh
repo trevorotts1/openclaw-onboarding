@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.7.0
+#  OpenClaw Onboarding Installer v9.7.1
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.0"
+ONBOARDING_VERSION="v9.7.1"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -383,11 +383,11 @@ cat > "$RESUME_FILE" <<RESUME_JSON
 RESUME_JSON
 success "State carryover initialized at $RESUME_FILE"
 
-# 0.3 — Canonical sub-agent + bootstrap config (v9.7.0)
+# 0.3 — Canonical sub-agent + bootstrap config (v9.7.1)
 # Hard-overwrites the numeric limits (these are protocol gates, not preferences).
 # Preserves agents.defaults.subagents.model.fallbacks if a client has customized it.
 # Sets allowAgents=["*"] on every agents.list entry (wildcard subagent permission).
-note "Configuring canonical sub-agent + bootstrap settings (v9.7.0 spec)..."
+note "Configuring canonical sub-agent + bootstrap settings (v9.7.1 spec)..."
 backup_config_file "$OCJSON"
 
 python3 << PYEOF
@@ -621,7 +621,7 @@ fi
 # ----------------------------------------------------------
 # Step 7: Configure Concurrency
 # ----------------------------------------------------------
-# NOTE (v9.7.0): canonical sub-agent + bootstrap config is now applied in
+# NOTE (v9.7.1): canonical sub-agent + bootstrap config is now applied in
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
@@ -653,7 +653,7 @@ try:
     with open(path) as f:
         config = json.load(f)
 
-    # v9.7.0 BUGFIX:
+    # v9.7.1 BUGFIX:
     # "plugins.entries.active-memory" is NOT a real plugin in current OpenClaw
     # schemas. Earlier install scripts wrote 6 keys there (agents, allowedChatTypes,
     # queryMode, promptStyle, timeoutMs, maxSummaryChars) that the validator
@@ -671,7 +671,7 @@ try:
     # If a prior broken install wrote the bogus active-memory block, REMOVE it
     if 'active-memory' in entries:
         del entries['active-memory']
-        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.0 bug)")
+        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.1 bug)")
 
     # Ensure memory-core plugin is enabled (the real memory plugin)
     mc = entries.setdefault('memory-core', {})
@@ -940,7 +940,7 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 **DREAMS.md IS REQUIRED** - Must exist in workspace root.
 
-**Timeout References (v9.7.0 — 30-60 min minimums for heavy-reasoning sub-agents):**
+**Timeout References (v9.7.1 — 30-60 min minimums for heavy-reasoning sub-agents):**
 - Phase A: 1800s (30 min per wave)
 - Phase B: 2700s (45 min)
 - Phase C: 3600s (60 min — Book-to-Persona-aware; heavy-reasoning phases need this)
@@ -1201,7 +1201,7 @@ install_weekly_cron() {
         return 0
     fi
 
-    # Resolve Telegram target — v9.7.0 UNIVERSAL lookup. Tries 4 strategies
+    # Resolve Telegram target — v9.7.1 UNIVERSAL lookup. Tries 4 strategies
     # in order, no client action required. Returns the first chat ID found
     # anywhere on the system.
     #
@@ -1386,18 +1386,21 @@ PYEOF
         return 0
     fi
 
-    # Detect multi-account Telegram setup (v9.7.0). If channels.telegram.accounts
-    # exists with named accounts, we need to pass --account <id> for delivery
-    # to work. The 'default' account is the canonical one; if it doesn't exist,
-    # pick the first account.
+    # v9.7.1: Detect multi-account Telegram setup AND auto-detect the default
+    # agent ID. Older onboarding hardcoded "--agent main" but some installs
+    # use a different default agent name. We pull both from the live config.
     local CHANNEL_ACCOUNT=""
-    CHANNEL_ACCOUNT=$(python3 -c "
+    local DEFAULT_AGENT=""
+    local DETECT_OUT
+    DETECT_OUT=$(python3 -c "
 import json, os
 candidates = [
     os.path.expanduser('~/.openclaw/openclaw.json'),
     '/data/.openclaw/openclaw.json',
     os.path.expanduser('~/Library/Application Support/openclaw/openclaw.json'),
 ]
+account = ''
+agent_id = ''
 for p in candidates:
     if not os.path.isfile(p):
         continue
@@ -1405,66 +1408,121 @@ for p in candidates:
         cfg = json.load(open(p))
         accounts = cfg.get('channels', {}).get('telegram', {}).get('accounts', {})
         if isinstance(accounts, dict) and accounts:
-            if 'default' in accounts:
-                print('default')
-            else:
-                print(list(accounts.keys())[0])
-            break
+            account = 'default' if 'default' in accounts else list(accounts.keys())[0]
+        for a in cfg.get('agents', {}).get('list', []) or []:
+            if isinstance(a, dict) and a.get('default'):
+                agent_id = a.get('id', '')
+                break
+        if not agent_id:
+            for a in cfg.get('agents', {}).get('list', []) or []:
+                if isinstance(a, dict) and a.get('id'):
+                    agent_id = a.get('id')
+                    break
+        break
     except Exception:
         continue
+print(f'{account}|{agent_id}')
 " 2>/dev/null)
+    CHANNEL_ACCOUNT="${DETECT_OUT%%|*}"
+    DEFAULT_AGENT="${DETECT_OUT##*|}"
+    [ -n "$DEFAULT_AGENT" ] && note "Default agent detected: $DEFAULT_AGENT"
+    [ -n "$CHANNEL_ACCOUNT" ] && note "Multi-account Telegram detected; will use --account $CHANNEL_ACCOUNT"
 
-    # Build the cron create args. We always pass --agent main (most installs
-    # have main as the default; without it the gateway uses configured default
-    # which can fail on newer schemas).
-    local CRON_ARGS=(
+    local PROMPT_CONTENT
+    PROMPT_CONTENT=$(cat "$PROMPT_FILE")
+
+    # Build escalating cron-create attempts. Start MINIMAL (most-likely-to-succeed
+    # across all OpenClaw versions); add richer flags on retry only if needed.
+    # CRITICAL: capture stderr and PRINT it to the terminal on failure so we can
+    # see the actual error instead of hiding it in a log file.
+    local CRON_ERR_TMP="/tmp/openclaw-cron-err-$$.log"
+
+    try_cron_create() {
+        local label="$1"; shift
+        local out
+        out=$(openclaw cron create "$@" --message "$PROMPT_CONTENT" 2>&1)
+        local rc=$?
+        echo "$out" >> "$LOG_FILE"
+        if [ "$rc" -eq 0 ]; then
+            success "Sunday cron installed ($label) — Sundays 2am ET → telegram $TG_TARGET"
+            return 0
+        else
+            warn "[$label] FAILED:"
+            # Print actual error to terminal (truncated to 300 chars)
+            echo "    $(echo "$out" | head -20 | sed 's/^/    /')"
+            return 1
+        fi
+    }
+
+    # ATTEMPT 1: MINIMAL — name, cron, tz, channel, to, message. No fancy flags.
+    local BASE=(
         --name "weekly-onboarding-update"
-        --agent main
-        --description "Sunday 2am ET — check for OpenClaw onboarding + command-center updates and ask client permission before applying anything."
         --cron "0 2 * * 0"
         --tz "America/New_York"
-        --session isolated
+        --channel telegram
+        --to "$TG_TARGET"
+    )
+    [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
+
+    if try_cron_create "minimal+account" "${BASE[@]}"; then
+        return 0
+    fi
+
+    # ATTEMPT 2: minimal WITHOUT --account (in case account detection was wrong)
+    local BASE_NO_ACCT=(
+        --name "weekly-onboarding-update"
+        --cron "0 2 * * 0"
+        --tz "America/New_York"
+        --channel telegram
+        --to "$TG_TARGET"
+    )
+    if try_cron_create "minimal-no-account" "${BASE_NO_ACCT[@]}"; then
+        return 0
+    fi
+
+    # ATTEMPT 3: minimal + --agent <detected>
+    if [ -n "$DEFAULT_AGENT" ]; then
+        local WITH_AGENT=(
+            --name "weekly-onboarding-update"
+            --agent "$DEFAULT_AGENT"
+            --cron "0 2 * * 0"
+            --tz "America/New_York"
+            --channel telegram
+            --to "$TG_TARGET"
+        )
+        [ -n "$CHANNEL_ACCOUNT" ] && WITH_AGENT+=(--account "$CHANNEL_ACCOUNT")
+        if try_cron_create "with-agent=$DEFAULT_AGENT" "${WITH_AGENT[@]}"; then
+            return 0
+        fi
+    fi
+
+    # ATTEMPT 4: --announce + delivery flags
+    local WITH_ANNOUNCE=(
+        --name "weekly-onboarding-update"
+        --cron "0 2 * * 0"
+        --tz "America/New_York"
         --announce
         --channel telegram
         --to "$TG_TARGET"
-        --thinking high
-        --timeout-seconds 7200
     )
-    if [ -n "$CHANNEL_ACCOUNT" ]; then
-        CRON_ARGS+=(--account "$CHANNEL_ACCOUNT")
-        note "Multi-account Telegram detected; using --account $CHANNEL_ACCOUNT"
+    [ -n "$DEFAULT_AGENT" ] && WITH_ANNOUNCE+=(--agent "$DEFAULT_AGENT")
+    [ -n "$CHANNEL_ACCOUNT" ] && WITH_ANNOUNCE+=(--account "$CHANNEL_ACCOUNT")
+    if try_cron_create "with-announce" "${WITH_ANNOUNCE[@]}"; then
+        return 0
     fi
 
-    # Create the cron — pass --message LAST so the prompt content (which can
-    # contain shell metacharacters) doesn't interfere with arg parsing.
-    local PROMPT_CONTENT
-    PROMPT_CONTENT=$(cat "$PROMPT_FILE")
-    if openclaw cron create "${CRON_ARGS[@]}" --message "$PROMPT_CONTENT" >> "$LOG_FILE" 2>&1; then
-        success "Sunday weekly update-check cron installed (Sundays 2am ET → telegram $TG_TARGET${CHANNEL_ACCOUNT:+ via account=$CHANNEL_ACCOUNT})"
-    else
-        # Retry WITHOUT --account in case the account detection guessed wrong
-        warn "Cron creation failed on first attempt; retrying without --account..."
-        local FALLBACK_ARGS=(
-            --name "weekly-onboarding-update"
-            --agent main
-            --description "Sunday 2am ET — check for OpenClaw onboarding + command-center updates and ask client permission before applying anything."
-            --cron "0 2 * * 0"
-            --tz "America/New_York"
-            --session isolated
-            --announce
-            --channel telegram
-            --to "$TG_TARGET"
-            --thinking high
-            --timeout-seconds 7200
-        )
-        if openclaw cron create "${FALLBACK_ARGS[@]}" --message "$PROMPT_CONTENT" >> "$LOG_FILE" 2>&1; then
-            success "Sunday weekly update-check cron installed (Sundays 2am ET → telegram $TG_TARGET, fallback no-account)"
-        else
-            warn "Cron creation failed — details in $LOG_FILE. Agent can install manually later."
-            warn "To diagnose, share the tail of: $LOG_FILE"
-            warn "Common causes: gateway not running, agent 'main' not defined, channel 'telegram' disabled."
-        fi
-    fi
+    # All 4 attempts failed — leave a recovery hint
+    warn "All cron creation attempts failed. Manual install command:"
+    warn "  openclaw cron create --name weekly-onboarding-update \\"
+    warn "    --cron '0 2 * * 0' --tz America/New_York \\"
+    warn "    --channel telegram --to '$TG_TARGET' \\"
+    [ -n "$CHANNEL_ACCOUNT" ] && warn "    --account $CHANNEL_ACCOUNT \\"
+    [ -n "$DEFAULT_AGENT" ] && warn "    --agent $DEFAULT_AGENT \\"
+    warn "    --message \"\$(cat $PROMPT_FILE)\""
+    warn ""
+    warn "If that fails too, send Trevor the EXACT error message printed above —"
+    warn "the cron command line that's failing is now visible in this output."
+    return 0
 }
 
 install_weekly_cron
