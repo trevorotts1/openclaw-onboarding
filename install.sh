@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.2.0
+#  OpenClaw Onboarding Installer v9.3.0
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.2.0"
+ONBOARDING_VERSION="v9.3.0"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -184,8 +184,10 @@ discover_all_credentials() {
     # Credential types to discover (no output if missing)
     local CRED_LIST="GOOGLE_API_KEY:Google"
     CRED_LIST="$CRED_LIST|GEMINI_API_KEY:Gemini"
-    CRED_LIST="$CRED_LIST|GHL_PRIVATE_TOKEN:GHL"
-    CRED_LIST="$CRED_LIST|GHL_LOCATION_ID:GHL"
+    # GHL credentials — canonical names (v9.2.0+). Deprecated GHL_PRIVATE_TOKEN/GHL_LOCATION_ID
+    # are detected too via the broader search in skill INSTALL.md files for backwards-compat.
+    CRED_LIST="$CRED_LIST|GOHIGHLEVEL_API_KEY:GHL (PIT — legacy var name; value IS a Private Integration Token, NOT an API key — GHL stopped issuing API keys ~2 years ago)"
+    CRED_LIST="$CRED_LIST|GOHIGHLEVEL_LOCATION_ID:GHL Location ID"
     CRED_LIST="$CRED_LIST|OPENROUTER_API_KEY:OpenRouter"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_API_KEY:Fish Audio"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_VOICE_ID:Fish Audio"
@@ -655,9 +657,27 @@ A system update was installed. Do NOT ask the owner "would you like me to procee
 
 **When skill instructions conflict with generic OpenClaw docs, skill files ALWAYS win:**
 - SKILL.md > OpenClaw docs
-- CORE_UPDATES.md > TYP storage rules  
+- CORE_UPDATES.md > TYP storage rules
 - INSTALL.md > generic install patterns
 - Skill examples > your assumptions
+
+---
+
+### 🔴 GHL ALIAS AWARENESS (BINDING — APPLIES TO EVERY GHL-RELATED TASK)
+
+All of these refer to **the same single platform**. Treat them as 100% synonymous in every context — credentials, API calls, MCP routing, documentation, conversation with the owner:
+
+- **GHL**
+- **GoHighLevel**
+- **Go High Level** (two words)
+- **HighLevel** / **High Level**
+- **Convert and Flow** (this owner's white-label brand)
+- **LeadConnector** / **leadconnectorhq.com** (their API host domain)
+- **CnF** (abbreviation)
+
+When the owner says any of these names, they mean the same system. The same Private Integration Token, the same Location ID, the same MCPs (`ghl-mcp` and `ghl-community-mcp`), the same skill 36, the same skill 35, the same skill 29.
+
+**GHL DOES NOT USE API KEYS.** They were deprecated ~2 years ago. GHL uses **Private Integration Tokens (PITs)**. The env variable named `GOHIGHLEVEL_API_KEY` in this system is a legacy variable name — its value is a PIT, not an API key. Never tell the owner they need an "API key" for GHL — they need a Private Integration Token (PIT). Get it from Settings → Integrations → Private Integrations.
 
 ---
 

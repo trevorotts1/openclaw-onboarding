@@ -1,3 +1,40 @@
+## v9.3.0 - May 13, 2026 - Install Discipline Contract + Skill 35 v2.0.0
+
+### Added
+- **`INSTALL-CONTRACT.md`** (312 lines, repo root) — binding discipline contract every agent must read before installing/updating any skill. 15 rules covering: read all .md files first, follow INSTALL.md order verbatim, QC 8.5+ or loop (max 5), no shortcuts (`--force`, `--break-system-packages`, `--no-verify`, model substitution forbidden), sub-agent gateway-restart guard (master orchestrator only, only when subagents list is empty), credential search order (canonical → JSON → deprecated), GHL alias awareness, "PIT not API key" rule, fuzzy master-files detection, cost-aware model selection priority (subscription → Ollama cloud → OpenRouter; Opus/Sonnet forbidden by default), sub-agent settings (20/100/5/high), `/new` session recommendation with state carryover via `.install-resume.json`, owner-facing communication style (over-60 calibrated), 8-point self-audit before declaring done, contract re-acknowledgment BEFORE EACH SKILL.
+- **`lib-shared.sh`** (240 lines, repo root) — shared bash library sourced by install.sh, update-skills.sh, check-updates.sh, and skill scripts:
+  - `detect_platform()` / `resolve_platform_paths()` — single source of truth for Mac vs VPS paths
+  - `find_master_files()` — fuzzy locator handling all name variants (one-word/two-word, hyphenated/underscored/spaced, mixed case, "documents" vs "files")
+  - `get_or_create_master_files()`
+  - `is_ghl_alias()` — recognizes ghl, gohighlevel, highlevel, convertandflow, leadconnector, leadconnectorhq, cnf
+  - `canonical_ghl_pit_name()` / `canonical_ghl_location_id_name()` — single source of truth for env-var names
+  - `read_ghl_pit()` / `read_ghl_location_id()` — read canonical → openclaw.json → deprecated names (with migration)
+- **GHL alias awareness block** in install.sh UPDATE PENDING flag — teaches every installed agent that GHL, GoHighLevel, Convert and Flow, LeadConnector, CnF are all the same platform, and that **GHL does NOT use API keys** (deprecated ~2 years ago) — uses Private Integration Tokens (PITs).
+- **Skill 35 (Social Media Planner) v2.0.0**:
+  - Replaced `GHL_PRIVATE_TOKEN` with canonical `GOHIGHLEVEL_API_KEY` throughout INSTALL.md, CORE_UPDATES.md, SKILL.md
+  - Migrated credential paths from `~/clawd/secrets/.env` (deprecated) to canonical `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS)
+  - Updated required PIT scope list (full Skill 36 set + `medias.write` + `social-media-posting.readonly` + `social-media-posting.write`)
+  - Added Step 4: detect Skill 36 → set `ROUTING_MODE=mcp-first` or `direct-api`. MCP-first now baked into the install sequence, not just post-install
+  - Added 0-10 install-time QC rubric in QC.md with 8.5+ gate and loop-until-passing rule
+  - New bundled `qc-skill35.sh` validation script (8 sections, ~70 assertions; mirrors Skill 36's qc-ghl-setup.sh pattern)
+  - Removed 9-month-old `PPSA: PENDING` placeholder
+
+### Changed
+- **install.sh credential discovery list** — replaced `GHL_PRIVATE_TOKEN:GHL` and `GHL_LOCATION_ID:GHL` with canonical `GOHIGHLEVEL_API_KEY` and `GOHIGHLEVEL_LOCATION_ID` (with inline note that this is a legacy var name whose value is a PIT). Deprecated names still auto-detected for migration via Rule 7 of INSTALL-CONTRACT.md.
+- **install.sh UPDATE PENDING flag** — inserted "🔴 GHL ALIAS AWARENESS" section right after "SOURCE OF TRUTH RULE", teaching every agent the full alias set and the PIT-not-API-key rule.
+- **ONBOARDING_VERSION**: bumped to v9.3.0 in install.sh and update-skills.sh.
+- **version file**: bumped to v9.3.0.
+- **README "Current Version"**: bumped, plus full v9.3.0 "What's New" entry.
+
+### Risk: low
+This release tightens existing install discipline. No new infrastructure that didn't exist in v9.2.0. INSTALL-CONTRACT.md is additive — older clients on v9.2.0 still work without it; this release encourages adoption. Skill 35 v2.0.0 changes are backward-compatible — the auto-search step in INSTALL.md detects deprecated env var names and migrates them.
+
+### Notes
+- INSTALL-CONTRACT.md adoption is enforced via the cron prompt (next Sunday's run will reference it) and via every skill's INSTALL.md (Skill 35 already references it explicitly; other skills get updates in v9.4.0).
+- Skill 35 v2.0.0 install scoring on a fresh install should pass 8.5+ cleanly. Existing Skill 35 installs running v1.4.0 should run `update-skills.sh --only "35"` and the agent should re-process activation per INSTALL-CONTRACT.md Rule 14.
+
+---
+
 ## v9.2.0 - May 13, 2026 - Weekly Auto-Check System + Telegram Permission Flow
 
 ### Added

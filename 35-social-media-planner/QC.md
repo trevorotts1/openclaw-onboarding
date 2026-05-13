@@ -183,6 +183,54 @@ QC runs BEFORE any content is scheduled. Nothing goes to GHL until all checks pa
 4. If it fails again, retry the revision up to 3 total attempts
 5. After 3 failures: notify the client via Telegram with the specific failure details and which check failed
 
+---
+
+## 🔴 INSTALL-TIME QC RUBRIC (v2.0.0+)
+
+The checks above are CONTENT QC — they run weekly during content production. This section is **INSTALL QC** — it runs once during skill activation. The install is NOT complete until this scores 8.5/10 or higher.
+
+### Score breakdown (10 points total)
+
+| Section | Points | What it tests |
+|---|---|---|
+| Prerequisites | 1.5 | Skills 01, 02, 22, 31 installed. Skill 36 detection handled. Skill 30 present OR podcast deferred. |
+| Credentials (canonical names) | 2.0 | `GOHIGHLEVEL_API_KEY` (PIT) AND `GOHIGHLEVEL_LOCATION_ID` present at canonical secrets path (`~/.openclaw/secrets/.env` on Mac / `/data/.openclaw/secrets/.env` on VPS). Deprecated names (`GHL_PRIVATE_TOKEN`, `GHL_API_KEY`, `GHL_LOCATION_ID`) NOT used. |
+| GHL access verified | 1.5 | Smoke test against `get_platform_accounts` (MCP) or `/social-media-posting/oauth/.../facebook/accounts` (direct API) returned 200 with real data. No 403s (= scopes correct). |
+| MCP routing detected | 1.0 | If Skill 36 installed: routing mode = mcp-first AND `$GHL_COMMUNITY_MCP_URL` resolves. If Skill 36 NOT installed: routing mode = direct-api AND warning logged in MEMORY.md. |
+| Software present | 1.0 | FFmpeg ≥4.0, ImageMagick, python3 all working. |
+| First-Run Protocol complete | 1.0 | Brand info extracted from core files. Google Sheet created via webhook. Action link stored. Video preference stored. Notification channel stored. Podcast question answered. |
+| Core .md updates applied surgically | 1.0 | AGENTS.md + TOOLS.md + MEMORY.md got the labeled CORE_UPDATES sections. SOUL.md / IDENTITY.md / USER.md / HEARTBEAT.md NOT touched by this skill. |
+| Heartbeat scheduled | 0.5 | HEARTBEAT.md has Saturday 8 AM theme request entry. |
+| Client confirmation sent | 0.5 | The owner-facing summary message was sent (Telegram or whichever channel they use). |
+
+### Pass / Fail / Loop
+
+- **9.5–10.0:** Excellent. Skill is fully active. No follow-up needed.
+- **8.5–9.4:** Pass. The install is complete. Surface the minor items as "pending" in the client summary message.
+- **7.0–8.4:** **DO NOT declare done.** Loop back, fix the items that lost points, re-score. Max 5 loops.
+- **Below 7.0:** Stop. Escalate to Trevor on Telegram `5252140759` with: which section scored what, what failed, what fix you tried, what's blocking.
+
+### Required actions when below 8.5
+
+1. Re-check the checklist above by section. Identify which sections fell short.
+2. Apply the smallest possible fix per section.
+3. Re-run the relevant checks (don't re-do the whole skill — just the failed sections).
+4. Re-score. If still below 8.5, count this as a loop iteration.
+5. After 5 loops, stop and escalate. Don't keep looping silently.
+
+### Bundled validation script
+
+If `qc-skill35.sh` exists in this folder, run it. It must exit 0 in addition to the rubric scoring 8.5+. The script catches mechanical things the rubric assumes (e.g., env-var format validation, file mode 600 on secrets, webhook reachability).
+
+---
+
+## What v2.0.0 changed in QC.md (May 13, 2026)
+
+- Added the install-time rubric above with 0–10 scoring and the 8.5 gate.
+- Renamed the old failure process to "content QC failure" to distinguish from install QC.
+- Loop-until-passing rule added (max 5 loops, then escalate).
+- Bundled `qc-skill35.sh` script referenced (added separately).
+
 ## QC Agent Assignments
 
 | Agent | Responsibility |

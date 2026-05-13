@@ -2,11 +2,26 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.2.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.3.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.3.0 (May 13, 2026) — Install Discipline Contract + Skill 35 Overhaul
+- **New `INSTALL-CONTRACT.md` at repo root** — 15 binding rules every agent MUST follow when installing or updating any skill. Covers: read all .md files first, follow INSTALL.md order verbatim, QC 8.5+ or loop, no shortcuts, sub-agent gateway-restart guard, credential search order, GHL alias awareness, PIT-not-API-key rule, fuzzy master-files detection, model selection priority (cost-aware), sub-agent settings, /new recommendation, owner-facing communication style. Agents acknowledge the contract BEFORE EACH SKILL.
+- **New `lib-shared.sh`** — shared library sourced by install.sh, update-skills.sh, check-updates.sh, and skill scripts. Provides: platform detection, canonical path resolution, fuzzy master-files locator (handles all variants: openclaw-master-files, OpenClaw Master Files, open claw master files, OpenClawMasterFiles, openclaw documents, etc.), GHL alias detection, canonical GHL credential read functions.
+- **Skill 35 (Social Media Planner) bumped to v2.0.0 with major fixes:**
+  - Replaced `GHL_PRIVATE_TOKEN` with canonical `GOHIGHLEVEL_API_KEY` everywhere (eliminates the "auto-fix during install" bug)
+  - Migrated credential paths from deprecated `~/clawd/secrets/.env` to canonical `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS)
+  - Updated required PIT scopes to match Skill 36's full set + Skill 35-specific scopes (medias.write, social-media-posting.readonly + write)
+  - Injected MCP-first routing logic INTO INSTALL.md (Step 4 — detects Skill 36 and configures routing mode), not just into CORE_UPDATES.md
+  - Resolved the 9-month-old `PPSA: PENDING` placeholder (removed)
+  - Added 0-10 install-time QC rubric to QC.md with 8.5+ pass gate and loop-until-passing rule (max 5 loops)
+  - New bundled `qc-skill35.sh` validation script (mirrors Skill 36's qc-ghl-setup.sh pattern)
+- **install.sh + UPDATE PENDING flag now teach the agent:** all GHL aliases (GHL, GoHighLevel, Convert and Flow, LeadConnector, etc.) refer to the same platform. **GHL DOES NOT USE API KEYS — it uses Private Integration Tokens (PITs).** The env var `GOHIGHLEVEL_API_KEY` is a legacy name; its value is a PIT.
+- **install.sh credential discovery list updated** to use canonical `GOHIGHLEVEL_API_KEY` / `GOHIGHLEVEL_LOCATION_ID` names. Deprecated names (`GHL_PRIVATE_TOKEN`, `GHL_API_KEY`, `GHL_LOCATION_ID`) are still auto-detected for migration but no longer the source of truth.
+- ONBOARDING_VERSION bumped to v9.3.0.
 
 ### What's New in v9.2.0 (May 13, 2026) — Weekly Auto-Check System
 - **New `check-updates.sh`** at repo root — READ-ONLY script that fetches the latest version + changelog excerpt from GitHub and compares to the local install. Per-skill aware (lists every skill folder's version diff). Emits structured JSON. Never installs anything.
