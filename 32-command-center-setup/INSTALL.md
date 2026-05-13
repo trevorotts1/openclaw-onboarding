@@ -540,9 +540,9 @@ Send each department agent this message:
 **Layer 1 - Search Evidence:**
 Ask the agent: "How did you select this persona? Did you search the persona library or just pick a default?"
 
-**Expected:** Agent describes running `gemini-search.py` (or a similar dynamic search) against the 40-persona library to find the top candidates. If the agent says "I always use [same persona]" without searching, the selection is static.
+**Expected (v9.6.2+):** Agent describes running `select-persona-for-task.py` from `~/.openclaw/skills/23-ai-workforce-blueprint/scripts/`. That script combines THREE things in one call: (1) Gemini Embeddings 2 semantic search via `gemini-search.py`, (2) keyword filter by dept domain tags, (3) full 5-layer alignment scoring. The agent should be able to show the JSON output containing `model_id`, `score`, `mode`, `top_3` candidates, and the 5-layer `breakdown`.
 
-**FAIL if:** Agent says "I always use [same persona]" or "I default to the primary persona every time" -- this means the Dynamic Persona Selection Engine is not firing. The agent must perform a per-task search, not reuse the same persona every time.
+**FAIL if:** Agent says "I always use [same persona]", "I default to the primary persona every time", OR "I only ran `gemini-search.py` directly without scoring" -- the Dynamic Persona Selection Engine must call the unified `select-persona-for-task.py` for full 5-layer scoring, not just raw semantic search.
 
 **Layer 2 - 5-Layer Alignment:**
 Ask the agent: "Explain the 5-layer alignment you used to select this persona."
@@ -569,7 +569,7 @@ cat ~/.openclaw/workspace/memory/$(date +%Y-%m-%d).md | grep -i "selected.*perso
 
 **Why this matters:** Department agents have `governing-personas.md` files and a Persona Operating Protocol in their AGENTS.md. But if the runtime wiring is broken, agents will skip the search, skip the alignment, skip the log, and just default to the same persona every time. This test catches all three failure modes before go-live.
 
-**If an agent fails:** Check that their department AGENTS.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, append it manually and re-test. Also verify `scripts/gemini-search.py` exists and is executable.
+**If an agent fails:** Check that their department AGENTS.md contains the `## 🔴🔴🔴 Persona Operating Protocol` section. If missing, append it manually and re-test. Also verify BOTH `scripts/gemini-search.py` AND `~/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py` exist and are executable. The agent calls the latter for every task; the latter internally calls the former for semantic search.
 
 ### 7.6 Report Results
 The agent sends you a summary in Telegram:

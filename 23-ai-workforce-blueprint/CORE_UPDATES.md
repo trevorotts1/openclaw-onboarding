@@ -31,10 +31,10 @@ Agent management:
 Persona integration:
 - Each department gets governing-personas.md as a REFERENCE GUIDE (not a static assignment)
 - Every department AGENTS.md includes the Persona Operating Protocol (Dynamic Selection Engine)
-- Dynamic selection: Gemini Search (gemini-search.py) finds top 3 candidates per task, 5-layer alignment picks winner
+- Dynamic selection (v9.6.2+): every dept director calls `select-persona-for-task.py --dept X --task "..." --format json` for every task. The script unifies semantic search (Gemini Embeddings 2 via gemini-search.py) + keyword filter (dept domain tags from persona-categories.json) + full 5-layer alignment scoring. One call. The director does NOT separately invoke gemini-search.py.
 - 5-layer scoring: Owner Values (25%), Company Mission (25%), Business KPIs (20%), Dept KPIs (15%), Task Fit (15%)
-- Fallback: if Gemini unavailable, use governing-personas.md Primary Persona
-- Reason log: one-line entry per task to ~/.openclaw/workspace/memory/[date].md (daily journal)
+- Fallback: if Gemini unavailable, selector falls back to keyword + 5-layer only (exits 2 instead of 0, but still returns a winner). NEVER returns "no persona selected".
+- Reason log: AUTO-LOGGED by the selector to ~/clawd/zero-human-company/[slug]/departments/[dept]/memory/[date].md. The director does NOT log again.
 - persona-matching-protocol.md documents the full runtime matching process
 - Dev Devil's Advocate (DA) auto-created per department using Act As If Protocol
 - Persona diversity tracked in agent performance metrics

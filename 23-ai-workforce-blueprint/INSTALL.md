@@ -411,49 +411,72 @@ Create folder: ~/.openclaw/workspace/departments/[dept-name]/
 Add this section to the BOTTOM of each department's AGENTS.md:
 
 ```markdown
-## 🔴🔴🔴 Persona Operating Protocol (Dynamic Selection Engine)
-At the start of EVERY task, run dynamic persona selection. Do NOT skip or default.
+## 🔴🔴🔴 Persona Operating Protocol (Dynamic Selection Engine — v9.6.2)
+At the start of EVERY task, run dynamic persona selection. Do NOT skip. Do NOT default.
 
-### Step 1: Gemini Search
-Run the Gemini persona search to find the top 3 matching personas for this task:
-```
-python3 ~/.openclaw/workspace/scripts/gemini-search.py "task description"
-```
-Replace `"task description"` with a concise description of the current task.
+### Step 1: Run the Unified Selector (does Steps 1 + 2 in one call)
 
-**Fallback:** If Gemini is unavailable or the script returns no results, fall back to the Primary Persona listed in `~/.openclaw/workspace/departments/[your-dept]/governing-personas.md`. Do NOT skip persona selection.
-
-### Step 2: 5-Layer Alignment (Pick the Winner)
-Score each of the 3 candidates against these 5 layers. The highest total score wins.
-
-| Layer | Weight | Question |
-|-------|--------|----------|
-| 1. Owner Values | 25% | Does this persona align with the owner's core beliefs and decision-making style? |
-| 2. Company Mission | 25% | Does this persona support the company's mission? |
-| 3. Business KPIs | 20% | Does this persona drive progress on current company-wide goals? |
-| 4. Dept KPIs | 15% | Does this persona fit this department's objectives? |
-| 5. Task Fit | 15% | Is this persona specifically suited for THIS type of task? |
-
-Pick the persona with the highest weighted score. If two candidates tie, pick the one with the higher Task Fit score.
-
-### Step 3: Reason Log
-Append ONE line to your daily journal at `~/.openclaw/workspace/memory/[YYYY-MM-DD].md` (NOT MEMORY.md):
-```
-[HH:MM] Persona: [persona name] | Dept: [dept] | Task: [brief] | Reason: [why selected]
+```bash
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py \
+    --dept [your-dept] \
+    --task "<concise task description here>" \
+    --format json
 ```
 
-### Step 4: Execute As
+This script does THREE things internally:
+1. **Semantic search** via `gemini-search.py` (Gemini Embeddings 2 against the coaching-personas collection)
+2. **Keyword filter** by your dept's domain tags from `persona-categories.json`
+3. **5-Layer alignment scoring** per `persona-matching-protocol.md`:
+   | Layer | Weight | Source |
+   |-------|--------|--------|
+   | 1. Company Mission | 25% | SOUL.md, company-config.json |
+   | 2. Owner Values    | 25% | USER.md, MEMORY.md |
+   | 3. Business KPIs   | 20% | company-config.json |
+   | 4. Dept KPIs       | 15% | dept SOUL.md, dept-config.json |
+   | 5. Task Fit        | 15% | task description + semantic score |
+
+**Output (JSON):**
+```json
+{
+  "persona_id": "hormozi-100m-offers",
+  "score": 0.86,
+  "mode": "hybrid (semantic + keyword + 5-layer)",
+  "gemini_available": true,
+  "top_3": [{...}, {...}, {...}],
+  "breakdown": {"mission": 0.85, "values": 0.80, "company_kpis": 0.75, "dept_kpis": 0.90, "task_fit": 0.95, "semantic_score": 0.82}
+}
+```
+
+**Exit codes:**
+- `0` = selection successful, persona_id printed
+- `2` = Gemini Engine unavailable; selector still returned a persona via keyword + 5-layer only (logged but acceptable as fallback)
+- `1` = no candidates found at all (dept's governing-personas.md missing or persona library empty)
+
+**Logging:** The selector AUTO-LOGS the selection to `~/clawd/zero-human-company/[slug]/departments/[your-dept]/memory/[YYYY-MM-DD].md`. Do NOT log again manually.
+
+### Step 2: Execute AS the Selected Persona ("Act As If" Protocol)
+
 For this entire task, think, communicate, and decide AS THE SELECTED PERSONA:
-- Use their vocabulary and communication style
-- Apply their core frameworks and mental models to the problem
-- Make decisions the way they would make decisions
+- Use their vocabulary and communication style (from the persona's blueprint Section 8: Voice and Language)
+- Apply their core frameworks and mental models (Section 2: Core Methodology, Section 5: Foundational Principles)
+- Make decisions following their execution standard (Section 4A: Agent Governance Framework)
+- Follow their definition of done (Section 4D: Task Activation Language)
 
-### Step 5: Resolve Conflicts
-If the persona's guidance conflicts with this department's instructions or the owner's explicit direction, the owner's intent wins. Log the conflict in your daily journal.
+The selected persona's blueprint is at: `~/Downloads/openclaw-master-files/coaching-personas/personas/[persona-id]/persona-blueprint.md`
 
-### Step 6: Log Persona Usage
-At the end of each task, log to `~/.openclaw/workspace/departments/[your-dept]/memory/[date].md`:
-- Date, task summary, persona used, reason for selection
+### Step 3: Follow the Dept's DMAIC SOP for this Task Type
+
+In your role folder, find the numbered SOP file that matches this task (e.g. `01-How-to-Build-a-Content-Calendar.md`). Follow its DEFINE → MEASURE → ANALYZE → IMPROVE → CONTROL structure. The persona embodiment from Step 2 is the LENS through which you execute the SOP — the SOP is the structure, the persona is the voice.
+
+### Step 4: Resolve Conflicts
+If the persona's guidance conflicts with this department's SOP, the owner's explicit direction, or the company SOUL.md mission — the owner's intent wins. Log the conflict to today's daily journal with the resolution.
+
+### Step 5: No Guessing (binding for all AI employees)
+If you hit an edge case the SOP doesn't cover:
+- DO NOT GUESS.
+- Either you are ABSOLUTELY SURE of the next step (proceed) OR you are NOT SURE (research or escalate).
+- Research via Perplexity (`openrouter/perplexity/sonar-pro-search`) for industry best practices, OR escalate to your department head.
+- Document the edge case + research outcome in today's daily journal.
 ```
 
 Replace `[your-dept]` with the actual department folder name (e.g., `marketing`, `sales`, `operations`).

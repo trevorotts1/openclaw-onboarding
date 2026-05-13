@@ -2,23 +2,28 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.3** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
+### What's New in v9.6.3 (May 13, 2026) — Department Directors Now Call Unified Persona Selector
+
+Fixes the runtime wiring gap diagnosed after v9.6.2 shipped: the unified `select-persona-for-task.py` script existed, but Skill 32 was still telling department directors to call `gemini-search.py` directly (which only does semantic search, no 5-layer scoring).
+
+- **Persona Operating Protocol rewritten** (in Skill 23 INSTALL.md, lines 414-475) — every department's AGENTS.md now gets a v9.6.2+ protocol that tells the director to call `select-persona-for-task.py --dept X --task "..." --format json` as Step 1. The unified script does semantic search + keyword filter + full 5-layer alignment scoring in one call. The director then "Acts As If" the returned persona for the task.
+- **Reason logging is now AUTO-LOGGED by the selector** — the director no longer needs to manually append to the daily journal. Reduces opportunity for skipped logs.
+- **Skill 32's runtime persona-selection QC test (INSTALL.md §7.5)** updated to look for evidence the director called the unified selector, not just `gemini-search.py` standalone. New FAIL condition: "Agent only ran `gemini-search.py` directly without 5-layer scoring."
+- **Skill 23 CORE_UPDATES.md** persona-integration text updated to describe the unified selector pattern (was: "Gemini Search finds top 3, 5-layer alignment picks winner — two separate steps"; now: "select-persona-for-task.py does all three in one call").
+- ONBOARDING_VERSION bumped to v9.6.3.
+
 ### What's New in v9.6.2 (May 13, 2026) — Bulletproof Pass: SOP Auto-Spawn + Runtime Persona Selector + Diagnostic Runner
 
-The "anything less than a 9 must be fixed" pass. Targets the gaps between Skill 22 / Skill 23 / Skill 31 / Skill 32 so the full pipeline actually runs end-to-end without manual intervention.
-
-- **SOP auto-population.** New `23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py` reads `sop-research-manifest.json` and spawns up to 10 parallel sub-agents (heavy tier, 1800s each), one per department, to write real DMAIC SOPs replacing the `[Step 1 - to be personalized]` placeholders. Spawns via `openclaw subagents spawn` when available; falls back to per-dept queue files the orchestrating AI agent picks up. Auto-invoked from `build-workforce.py:build_from_config` so a fresh install no longer leaves stub SOPs sitting around.
-- **Runtime persona selector.** New `23-ai-workforce-blueprint/scripts/select-persona-for-task.py` — the script Skill 32's department directors call every time a new task lands in their Telegram topic. Hybrid search: (1) Gemini Embeddings 2 semantic query against the `coaching-personas` collection, (2) keyword filter by dept domain tags, (3) 5-layer alignment scoring per persona-matching-protocol.md. Logs the selection + breakdown to the dept's daily memory file. Falls back gracefully if Gemini Engine unavailable (exits with code 2 but still returns a persona).
-- **Skill 22 Phase 2/3 routing fixed.** Previously `call_codex()` and `call_openrouter(MODEL_ANALYSIS)` were hardwired — ignoring the per-book context-aware model resolution that Phase 1 already used. Now Phases 2 and 3 resolve the model PER BOOK via `resolve_phase_model("phase2"|"phase3", input_chars=...)` and route to the correct API (Ollama, OpenRouter, or OpenAI Responses) based on the resolved model's prefix. Big books auto-flip to DeepSeek V4-pro (1M ctx). Phase 3 synthesis still prefers OAuth GPT.
-- **SYSTEM-DIAGNOSTIC-CHECKLIST.md.** New comprehensive 9-area checklist at the repo root covering: (1) Workforce Interview, (2) Workforce build phase, (3) Book-to-Persona, (4) Gemini Embeddings 2, (5) Semantic Search, (6) Keyword Search, (7) Task Assignments / Kanban, (8) Persona Assignments, (9) Agent Linking, plus cross-cutting integrity checks. Each row has a remediation recipe.
-- **`scripts/qc-system-integrity.sh` runner.** Executable companion to the checklist. Runs all checks, color-coded output, exits 0 only when all green. Smoke-test shows it correctly fails on a fresh machine with no Skill 23 build yet.
-- **Skill 22 docs alignment.** PIPELINE.md / INSTALL.md / QC.md updated where stale model/timeout references remained.
-- ONBOARDING_VERSION bumped to v9.6.2.
+- **SOP auto-population.** New `23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py` reads `sop-research-manifest.json` and spawns up to 10 parallel sub-agents (heavy tier, 1800s each), one per dept, to write real DMAIC SOPs replacing placeholders. Auto-invoked from `build-workforce.py:build_from_config`.
+- **Runtime persona selector.** New `select-persona-for-task.py` — hybrid search (Gemini semantic + keyword filter + 5-layer alignment). Logs per-task selection to the dept's daily memory file. Falls back gracefully if Gemini Engine unavailable.
+- **Skill 22 Phase 2/3 routing fixed.** No more hardwired models; per-book size-aware resolution.
+- **`SYSTEM-DIAGNOSTIC-CHECKLIST.md`** at repo root + **`scripts/qc-system-integrity.sh`** executable runner. 9-area checklist + cross-cutting integrity. Color-coded, exits 0 only when all green.
 
 ### What's New in v9.6.0 (May 13, 2026) — Zero Human Company folder + Slim Interview + Lean Six Sigma SOPs
 

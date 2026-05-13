@@ -1,3 +1,26 @@
+## v9.6.3 - May 13, 2026 - Department directors call unified persona selector
+
+Closes the runtime wiring gap diagnosed after v9.6.2 shipped: the unified
+`select-persona-for-task.py` script existed, but the Persona Operating
+Protocol pasted into every department's AGENTS.md still told directors
+to call `gemini-search.py` directly (which only does semantic search, no
+5-layer scoring). Result: persona selection at runtime was incomplete.
+
+### Changed
+- **Skill 23 INSTALL.md `## 🔴🔴🔴 Persona Operating Protocol` block** rewritten to make `select-persona-for-task.py` the entry point. The director runs the unified script as Step 1; it returns JSON with the chosen persona, 5-layer breakdown, top-3 candidates, and mode (hybrid vs keyword-only fallback). The director then "Acts As If" the persona for the task.
+- **Reason logging moved from manual to automatic.** The selector auto-logs to `~/clawd/zero-human-company/<slug>/departments/<dept>/memory/<date>.md`. The director no longer manually appends.
+- **Skill 32 INSTALL.md §7.5 runtime persona-selection QC test** updated: expected behavior is now "agent calls select-persona-for-task.py and can show its JSON output." FAIL condition added: "Agent only ran gemini-search.py directly without 5-layer scoring."
+- **Skill 23 CORE_UPDATES.md persona-integration block** updated to describe the unified selector pattern.
+
+### Why this matters
+Before v9.6.3: the unified script was built but agents weren't told to call it. They'd run raw semantic search and pick the top result — no 5-layer scoring, no alignment with mission/values/KPIs.
+After v9.6.3: every persona choice goes through the full scoring stack. The "in alignment with the user's belief systems, the SOUL.md, the company mission, the dept goals, the task goals" requirement is enforced by the selector, not left as a manual checklist.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.6.3.
+
+---
+
 ## v9.6.2 - May 13, 2026 - Bulletproof Pass: SOP Auto-Spawn + Runtime Persona Selector + Diagnostic Runner
 
 The "anything less than a 9 must be fixed" pass. Closes the gaps between Skill 22 / 23 / 31 / 32 so the pipeline runs end-to-end without manual intervention.
