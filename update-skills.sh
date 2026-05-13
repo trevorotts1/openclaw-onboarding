@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v9.1.1"
+ONBOARDING_VERSION="v9.2.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -201,9 +201,37 @@ get_current_version() {
 # Main update logic
 # ----------------------------------------------------------
 main() {
+  # ----------------------------------------------------------
+  # Parse CLI args: --only "05,06,35" installs only those skill folders
+  # (number prefix matches skill folder name prefix)
+  # ----------------------------------------------------------
+  ONLY_SKILLS=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --only)
+        shift
+        ONLY_SKILLS="${1:-}"
+        ;;
+      --only=*)
+        ONLY_SKILLS="${1#--only=}"
+        ;;
+      --help|-h)
+        echo "Usage: update-skills.sh [--only \"05,06,35\"]"
+        echo "  --only LIST   Install only skill folders whose number prefix matches LIST (comma-separated)"
+        echo "                Example: --only \"05,06,36\" installs only skills 05-ghl-setup, 06-ghl-install-pages, 36-ghl-mcp-setup"
+        echo "  (no flag)     Install/update all skills"
+        exit 0
+        ;;
+    esac
+    shift || true
+  done
+
   echo "============================================"
   echo "   OpenClaw Skills Updater (Mac)"
   echo "   Version: ${ONBOARDING_VERSION}"
+  if [ -n "$ONLY_SKILLS" ]; then
+    echo "   Mode: SELECTIVE — only [$ONLY_SKILLS]"
+  fi
   echo "============================================"
   echo ""
 
@@ -211,6 +239,23 @@ main() {
   SKILLS_DIR=$(discover_skills_dir)
   export SKILLS_DIR
   echo "  📂 Skills directory: $SKILLS_DIR"
+
+  # ----------------------------------------------------------
+  # Catchup check: if last weekly cron check is older than 7 days,
+  # surface a note so the user knows the Sunday cron may have missed.
+  # ----------------------------------------------------------
+  if [ -f "$SKILLS_DIR/.last-update-check" ]; then
+    LAST_CHECK_TS=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$(cat "$SKILLS_DIR/.last-update-check")" +%s 2>/dev/null || \
+                    date -d "$(cat "$SKILLS_DIR/.last-update-check")" +%s 2>/dev/null || echo 0)
+    NOW_TS=$(date +%s)
+    if [ "$LAST_CHECK_TS" -gt 0 ]; then
+      DAYS_SINCE=$(( (NOW_TS - LAST_CHECK_TS) / 86400 ))
+      if [ "$DAYS_SINCE" -gt 7 ]; then
+        echo "  ℹ️  Weekly Sunday check last ran ${DAYS_SINCE} days ago — your machine may have been asleep."
+        echo "      This manual run will catch up."
+      fi
+    fi
+  fi
 
   # Check for UPDATE PENDING flag
   PENDING_FILE=$(check_update_pending)
@@ -284,12 +329,32 @@ main() {
   # Copy new skills
   echo "  Installing skills to $SKILLS_DIR..."
   NEW_SKILLS_CSV=""
+  SKIPPED_COUNT=0
   for SKILL_DIR in "$EXTRACTED_DIR"/[0-9]*/; do
     [ -d "$SKILL_DIR" ] || continue
     SKILL_NAME=$(basename "$SKILL_DIR")
 
     # Skip archived skills
     case "$SKILL_NAME" in *ARCHIVED*) continue ;; esac
+
+    # --only filter: if ONLY_SKILLS is set, install only matching prefixes
+    if [ -n "$ONLY_SKILLS" ]; then
+      SKILL_PREFIX=$(echo "$SKILL_NAME" | cut -d'-' -f1)
+      MATCH="false"
+      OIFS=$IFS; IFS=','
+      for want in $ONLY_SKILLS; do
+        want_trimmed=$(echo "$want" | tr -d '[:space:]')
+        if [ "$SKILL_PREFIX" = "$want_trimmed" ]; then
+          MATCH="true"
+          break
+        fi
+      done
+      IFS=$OIFS
+      if [ "$MATCH" != "true" ]; then
+        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+        continue
+      fi
+    fi
 
     # Check if this is a NEW skill (doesn't exist in current install)
     if [ ! -d "$SKILLS_DIR/$SKILL_NAME" ]; then
@@ -352,7 +417,69 @@ main() {
   echo "   Skills updated successfully!"
   echo "   Version: $ONBOARDING_VERSION"
   echo "   Location: $SKILLS_DIR"
+  if [ -n "$ONLY_SKILLS" ]; then
+    echo "   Mode: SELECTIVE — only [$ONLY_SKILLS]"
+    echo "   Skipped: $SKIPPED_COUNT other skills (not in --only list)"
+  fi
   echo "============================================"
+
+  # Mark the check timestamp so the catchup logic in future runs is accurate
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$SKILLS_DIR/.last-update-check" 2>/dev/null || true
+
+  # ----------------------------------------------------------
+  # Ensure the Sunday weekly update-check cron exists (idempotent)
+  # Existing clients on pre-v9.2.0 won't have it; running the updater
+  # backfills it.
+  # ----------------------------------------------------------
+  if command -v openclaw >/dev/null 2>&1; then
+    if openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
+      echo "  ✓ Sunday weekly update-check cron already installed"
+    else
+      OCJSON="$HOME/.openclaw/openclaw.json"
+      [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
+      TG_TARGET=""
+      if [ -f "$OCJSON" ]; then
+        TG_TARGET=$(python3 -c "
+import json
+try:
+    cfg=json.load(open('$OCJSON'))
+    allow=cfg.get('channels',{}).get('telegram',{}).get('allowFrom',[])
+    if allow: print(allow[0])
+except: pass
+" 2>/dev/null)
+      fi
+      if [ -n "$TG_TARGET" ]; then
+        PROMPT_TMP="/tmp/openclaw-cron-prompt-$$.txt"
+        REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
+        [ -d "/data/.openclaw" ] && REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main"
+        if curl -fsSL --max-time 15 "${REPO_URL}/cron-prompt.txt" -o "$PROMPT_TMP" 2>/dev/null && [ -s "$PROMPT_TMP" ]; then
+          PROMPT_CONTENT=$(cat "$PROMPT_TMP")
+          if openclaw cron create \
+              --name "weekly-onboarding-update" \
+              --description "Sunday 2am ET — check for OpenClaw onboarding + command-center updates and ask client permission before applying anything." \
+              --cron "0 2 * * 0" \
+              --tz "America/New_York" \
+              --exact \
+              --session isolated \
+              --announce \
+              --channel telegram \
+              --to "$TG_TARGET" \
+              --thinking high \
+              --timeout-seconds 7200 \
+              --message "$PROMPT_CONTENT" >/dev/null 2>&1; then
+            echo "  ✓ Sunday weekly update-check cron installed (Sundays 2am ET → telegram $TG_TARGET)"
+          else
+            echo "  ⚠ Cron install failed — agent can retry manually"
+          fi
+          rm -f "$PROMPT_TMP"
+        else
+          echo "  ⚠ Could not fetch cron-prompt.txt — agent can install cron manually later"
+        fi
+      else
+        echo "  ⚠ No telegram target configured — skipping cron install. Configure Telegram first then re-run."
+      fi
+    fi
+  fi
 
   # ----------------------------------------------------------
   # Post-update: write UPDATE PENDING flag + Telegram + backup block

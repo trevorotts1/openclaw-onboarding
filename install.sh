@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.1.1
+#  OpenClaw Onboarding Installer v9.2.0
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.1.1"
+ONBOARDING_VERSION="v9.2.0"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -915,7 +915,89 @@ cat <<'BACKUP_BLOCK'
 
 BACKUP_BLOCK
 
-# Restart gateway (last thing — agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)
+# ----------------------------------------------------------
+# Step 12: Install Sunday weekly update-check cron (idempotent)
+# ----------------------------------------------------------
+step "Step 12: Installing Sunday weekly update-check cron"
+
+install_weekly_cron() {
+    # Skip if openclaw CLI isn't available
+    if ! command -v openclaw >/dev/null 2>&1; then
+        warn "openclaw CLI not on PATH — skipping cron install. Re-run update-skills.sh later to install it."
+        return 0
+    fi
+
+    # Skip if cron already exists (idempotent)
+    if openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
+        success "Sunday weekly update-check cron already installed"
+        return 0
+    fi
+
+    # Resolve Telegram target
+    local OCJSON="$HOME/.openclaw/openclaw.json"
+    [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
+    local TG_TARGET=""
+    if [ -f "$OCJSON" ]; then
+        TG_TARGET=$(python3 -c "
+import json
+try:
+    cfg=json.load(open('$OCJSON'))
+    allow=cfg.get('channels',{}).get('telegram',{}).get('allowFrom',[])
+    if allow: print(allow[0])
+except: pass
+" 2>/dev/null)
+    fi
+    if [ -z "$TG_TARGET" ]; then
+        warn "Cannot resolve telegram target from openclaw.json — skipping cron install. Configure Telegram first, then re-run update-skills.sh to install the cron."
+        return 0
+    fi
+
+    # Pull cron prompt from the just-installed repo files
+    local PROMPT_FILE=""
+    for candidate in "$SKILLS_DIR/.cron-prompt.txt" "$HOME/Downloads/openclaw-master-files/.cron-prompt.txt" "/tmp/openclaw-cron-prompt-${ONBOARDING_VERSION}.txt"; do
+        [ -f "$candidate" ] && PROMPT_FILE="$candidate" && break
+    done
+
+    # If not staged locally, fetch from GitHub
+    if [ -z "$PROMPT_FILE" ]; then
+        PROMPT_FILE="/tmp/openclaw-cron-prompt-${ONBOARDING_VERSION}.txt"
+        curl -fsSL --max-time 15 "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/cron-prompt.txt" -o "$PROMPT_FILE" 2>/dev/null || {
+            warn "Failed to fetch cron-prompt.txt from GitHub — skipping cron install"
+            return 0
+        }
+    fi
+    if [ ! -s "$PROMPT_FILE" ]; then
+        warn "cron-prompt.txt is empty — skipping cron install"
+        return 0
+    fi
+
+    # Create the cron
+    local PROMPT_CONTENT
+    PROMPT_CONTENT=$(cat "$PROMPT_FILE")
+    if openclaw cron create \
+        --name "weekly-onboarding-update" \
+        --description "Sunday 2am ET — check for OpenClaw onboarding + command-center updates and ask client permission before applying anything." \
+        --cron "0 2 * * 0" \
+        --tz "America/New_York" \
+        --exact \
+        --session isolated \
+        --announce \
+        --channel telegram \
+        --to "$TG_TARGET" \
+        --thinking high \
+        --timeout-seconds 7200 \
+        --message "$PROMPT_CONTENT" >> "$LOG_FILE" 2>&1; then
+        success "Sunday weekly update-check cron installed (Sundays 2am ET → telegram $TG_TARGET)"
+    else
+        warn "Cron creation failed — details in $LOG_FILE. Agent can install manually later."
+    fi
+}
+
+install_weekly_cron
+
+# ----------------------------------------------------------
+# Final: Restart gateway (agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)
+# ----------------------------------------------------------
 note "Restarting OpenClaw gateway..."
 if command -v openclaw >/dev/null 2>&1; then
     openclaw gateway restart

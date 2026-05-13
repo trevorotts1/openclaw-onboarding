@@ -1,3 +1,34 @@
+## v9.2.0 - May 13, 2026 - Weekly Auto-Check System + Telegram Permission Flow
+
+### Added
+- **`check-updates.sh` at repo root** — READ-ONLY script that fetches the GitHub `version` file + `CHANGELOG.md` excerpt + per-skill `skill-version.txt` map from the live repo, compares against local state, emits structured JSON. Never installs anything. Designed to be called by the Sunday cron or manually for inspection.
+- **`--only "05,06,36"` flag on `update-skills.sh`** — partial install support. Comma-separated list of skill folder prefixes; the updater only installs/updates matching folders. Existing call with no flag still does all-or-nothing.
+- **Catchup detection in `update-skills.sh`** — if `.last-update-check` timestamp is older than 7 days, surfaces a note that the Sunday cron may have missed (machine asleep at 2am Sunday). Manual run still works normally; the note is informational.
+- **Cron-installer in `install.sh` AND `update-skills.sh`** — idempotently creates the `weekly-onboarding-update` cron via `openclaw cron create`. Fresh installs get the cron automatically as part of Step 12. Existing clients (pre-v9.2.0) get the cron backfilled the first time they run `update-skills.sh` after upgrading.
+- **`cron-prompt.txt` at repo root** — 14-rule orchestration prompt the Sunday cron fires. Detects platform, runs check-updates.sh on each relevant repo (onboarding + command-center), classifies risk per change (Q1 Option C — explicit `### Risk: low|medium|high` tag in changelog if present, agent inference if not), composes plain-English Telegram summary to client, requires explicit permission BEFORE installing, supports five response paths ("install all" / "install onboarding" / "install command center" / "install skills NN, NN" / "skip this week" / "ping Trevor"), escalates high-risk items to Trevor on `5252140759`, sends final summary after install completes.
+- **Per-skill selection in cron prompt** — client can reply "install skills 5, 6, 36" and the cron uses `update-skills.sh --only "05,06,36"` instead of all-or-nothing.
+- **High-risk safety check** — even if client says "install all", if any item is classified HIGH the agent stops and explicitly confirms before proceeding.
+- **2-hour permission timeout** — if client doesn't reply, cron exits cleanly with a "no response, will ask next Sunday, no changes made" Telegram. No silent updates.
+
+### Fixed
+- **🐛 Silent Sunday auto-update bug**. The old `weekly-onboarding-update` cron prompt said *"Execute: bash update-skills.sh ... Report the results ... Ask the client if they want to proceed"*. Problem: `update-skills.sh` is destructive — running it = applying the update. So "report results" meant "tell client what was just applied" and "ask if they want to proceed" was nonsensical (proceed with what, it already happened). v9.2.0 replaces this with the new cron-prompt.txt that calls `check-updates.sh` (read-only) first, then asks permission, then runs the install only after explicit yes.
+- Trevor's existing cron (`ad0730e5-b64c...`) was deleted and recreated with the v9.2.0 prompt as part of this release. The new cron ID is `bcbe0b1b-4d31-41a1-80d1-1d170b40f987`. Next fire: Sunday May 17, 2am ET.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.2.0 in `install.sh` and `update-skills.sh`.
+- **version file** bumped to v9.2.0.
+- **README "What's New"** entry added for v9.2.0; new feature link to cron-prompt.txt + check-updates.sh.
+
+### Risk: medium
+This release introduces new infrastructure (cron orchestration + per-skill install). The cron itself is backward-compatible (existing clients on v9.0.0+ will have it installed by running `update-skills.sh`). Per-skill install is opt-in via flag. The fix for the silent auto-update bug is the most impactful change — clients will now always be asked before any update applies.
+
+### Notes
+- Existing clients who already have a stale `weekly-onboarding-update` cron from pre-v9.2.0: the install script's `install_weekly_cron` function skips if a cron with that name exists. To force the upgrade, the client (or staff) must run `openclaw cron delete <id>` first, then re-run `update-skills.sh` to install the new prompt. This release does NOT automatically delete old crons — too destructive without explicit permission.
+- The cron orchestration prompt depends on `check-updates.sh` being present in each repo (added in this release). The new cron will fail gracefully if run against a pre-v9.2.0 install (no `check-updates.sh` available yet).
+- Backward-compatible with v9.1.x. Existing clients can upgrade via `update-skills.sh`.
+
+---
+
 ## v9.1.1 - May 13, 2026 - Block-Based Trigger Document
 
 ### Changed

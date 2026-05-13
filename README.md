@@ -2,11 +2,20 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.1.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.2.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.2.0 (May 13, 2026) — Weekly Auto-Check System
+- **New `check-updates.sh`** at repo root — READ-ONLY script that fetches the latest version + changelog excerpt from GitHub and compares to the local install. Per-skill aware (lists every skill folder's version diff). Emits structured JSON. Never installs anything.
+- **`update-skills.sh` now accepts `--only "05,06,36"` flag** for partial installs. Lets clients install only specific skill folders instead of all-or-nothing. Existing call with no flag still installs everything.
+- **New cron-installer block in `install.sh` and `update-skills.sh`** — idempotently creates the Sunday 2am ET weekly update-check cron via `openclaw cron create`. Fresh installs get the cron automatically. Existing clients get it the first time they run the updater.
+- **New `cron-prompt.txt`** — the orchestration prompt the Sunday cron fires. Checks all relevant repos (onboarding + command-center), classifies risk per change (Q1 Option C: changelog `### Risk:` tag if present, agent inference if not), composes a plain-English Telegram summary, asks client permission BEFORE applying anything, supports per-skill selection ("install skills 5, 6, 36"), supports high-risk escalation to Trevor.
+- **Catchup logic in `update-skills.sh`** — if the weekly check hasn't fired in >7 days (machine was asleep), the manual updater run surfaces a note so the client knows.
+- **🐛 BUG FIX:** The old `weekly-onboarding-update` cron silently auto-installed updates every Sunday WITHOUT permission. Now it asks first. (Was 'Execute `update-skills.sh`' then 'ask if you want to proceed' — proceed with what, it already happened.)
+- Script version bumped to v9.2.0 in install.sh and update-skills.sh.
 
 ### What's New in v9.1.1 (May 13, 2026) — Block-Based Trigger Document
 - **ONBOARDING-TRIGGERS.md restructured into 8 standalone blocks**: previously 5 sections (with the update path bundled into one "either-platform" section); now 8 separate blocks — 4 fresh-install (Mac Terminal, Mac Telegram, VPS Terminal, VPS Telegram) plus 4 update (same 4 paths). Each block is self-contained; staff and clients can grab one without reading the others.

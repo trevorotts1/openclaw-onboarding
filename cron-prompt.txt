@@ -1,0 +1,91 @@
+It's Sunday — time for the weekly OpenClaw update check. Follow these rules exactly. Do not skip steps. Do not improvise.
+
+RULE 1 — Detect platform first:
+  if [ -d "/data/.openclaw" ]; then PLATFORM=vps; else PLATFORM=mac; fi
+
+RULE 2 — Run the check-updates scripts. These are READ-ONLY and never install anything. They emit JSON.
+  (a) Onboarding repo (the platform-matching one):
+        Mac: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/check-updates.sh | bash
+        VPS: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/check-updates.sh | bash
+  (b) BlackCEO Command Center:
+        curl -fsSL https://raw.githubusercontent.com/trevorotts1/blackceo-command-center/main/check-updates.sh | bash
+
+RULE 3 — Parse both JSON outputs. Extract for each: local_version, latest_version, has_update (or has_repo_update / has_skill_updates for onboarding), risk_hint, inferred_risk, changelog_excerpt, and (onboarding only) skill_changes array.
+
+RULE 4 — Classify risk per repo. Use this rubric in priority order:
+  (1) If risk_hint field is non-empty (low|medium|high), use that value. This is the explicit tag from the changelog.
+  (2) Otherwise, read changelog_excerpt and infer:
+        🔴 HIGH — any of: breaking change, schema migration, credential migration, deprecated model, API version change, drop/delete table/column, "BREAKING"
+        🟡 MEDIUM — new skill added, new feature, new dependency, new env var required, new credential needed
+        🟢 LOW — bug fix, doc update, content restructure, version bump only, comment change
+  (3) For onboarding skill_changes: classify each individual skill's update by reading its CHANGELOG entry if available (fetch via raw.githubusercontent.com/.../<skill_folder>/CHANGELOG.md). If no per-skill changelog exists, inherit the repo-level risk.
+
+RULE 5 — If no updates anywhere (has_update is false for ALL repos), send this short Telegram message and exit:
+  "Sunday update check complete. Everything is up to date. Onboarding: vX.Y.Z (current). Command Center: vA.B.C (current). Nothing to do this week."
+
+RULE 6 — If updates ARE available, compose a SUMMARY Telegram message in this exact structure (plain English, no jargon, headlines-first, over-60 friendly):
+
+  ──────────────────────────────────────────
+  Sunday Update Check — [DATE]
+
+  Found updates available. Here is the summary:
+
+  ★ ONBOARDING [LOW/MEDIUM/HIGH risk]
+  • Current: vX.Y.Z → Available: vA.B.C
+  • What changed in plain English: [2-3 sentences from the changelog summary]
+  • Skills affected: [list any individual skill changes if onboarding has skill_changes — use the format "Skill NN-name (vX → vY)"]
+  • My recommendation: [INSTALL NOW / HOLD — explain why in one sentence]
+
+  ★ COMMAND CENTER [LOW/MEDIUM/HIGH risk]
+  • Current: vX.Y.Z → Available: vA.B.C
+  • What changed in plain English: [2-3 sentences from the changelog]
+  • My recommendation: [INSTALL NOW / HOLD — explain why]
+
+  ──────────────────────────────────────────
+  What would you like me to do? Reply with ONE of these:
+  • "install all" — I update everything
+  • "install onboarding" — only the onboarding update
+  • "install command center" — only the Command Center update
+  • "install skills 05, 06, 36" — only those specific skill folders from onboarding (numbers from the skill_changes list)
+  • "skip this week" — do nothing, ask me again next Sunday
+  • "ping Trevor" — message Trevor on Telegram 5252140759 to ask before I touch anything (USE THIS if you see HIGH risk and aren't sure)
+  ──────────────────────────────────────────
+
+RULE 7 — If ANY repo has HIGH risk, automatically add this line at the bottom of the summary: "⚠️ This update is HIGH risk. I recommend you reply 'ping Trevor' so I can confirm with him before doing anything destructive."
+
+RULE 8 — Send the summary as a single Telegram message to the configured target (telegram allowFrom[0] from openclaw.json).
+
+RULE 9 — Wait for the client's reply. Do not exit. Stay alive until they respond OR until 2 hours pass with no response (in which case send: "I didn't hear back — I'll ask again next Sunday. No changes made." and exit).
+
+RULE 10 — Act on the client's response:
+  (a) "install all" — run all relevant update commands:
+        Mac: bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh)
+             then if command center has update: bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/blackceo-command-center/main/update.sh)
+        VPS: substitute -vps repo URLs as appropriate
+  (b) "install onboarding" — run only the onboarding update-skills.sh
+  (c) "install command center" — run only the command-center update.sh
+  (d) "install skills 05, 06, 36" — run update-skills.sh with --only flag:
+        bash <(curl -fsSL .../update-skills.sh) --only "05,06,36"
+  (e) "skip this week" — write a note in MEMORY.md under "## System Updates": "[DATE]: client chose to skip weekly update. Pending: [list]." Then exit.
+  (f) "ping Trevor" — send a Telegram message to 5252140759 with: "Client [name from identity.md if available] declined the Sunday update — wants your call. Here's the summary: [paste summary]. Reply 'install' or 'hold' or 'install X only'." Wait for Trevor's response. Then act on Trevor's response per the same rules (a)-(d). If Trevor says "hold", write to client: "Trevor said hold off this week. I'll check again next Sunday."
+
+RULE 11 — High-risk safety check: even if the client says "install all", if the inferred_risk for any item is HIGH and the changelog_excerpt mentions any of [breaking, migration, schema, drop, delete, deprecate], do this BEFORE running the install:
+  Send: "You picked 'install all' but [item name] is marked HIGH risk because [reason]. Are you sure? Reply YES to proceed or 'ping Trevor' to confirm with him first."
+  Wait for explicit YES before continuing.
+
+RULE 12 — After install completes, send a final Telegram summary to the client:
+  "Done. Updated: [list]. Skipped: [list per client choice]. Anything broken? Tell me. Pending action items (if any): [list]."
+  Then exit.
+
+RULE 13 — Forbidden:
+  • Do NOT install anything before the client (or Trevor) explicitly says yes
+  • Do NOT use --force, --no-verify, --break-system-packages, or any shortcut flag
+  • Do NOT silently auto-update if the client doesn't reply within the 2-hour window — exit cleanly with the "no response, will ask next Sunday" message
+  • Do NOT push to GitHub
+  • Do NOT message anyone other than the configured client target and (optionally per Rule 10f) Trevor on 5252140759
+
+RULE 14 — Communication style:
+  • Plain English, no acronyms unless explained
+  • Headlines first, details only if asked
+  • The client may be over 60 — calibrate accordingly
+  • Never paste raw JSON or stack traces unless the client asks
