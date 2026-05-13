@@ -65,6 +65,15 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 
 6. **The official MCP is stateless.** Initialize does NOT return an `Mcp-Session-Id` header. Do not gate follow-up calls on a session ID — each request is independent.
 
+7. **🔴 GHL rate limits apply to ALL tiers — they share the same backend bucket.** Switching tiers does NOT bypass the limit.
+   - **Burst limit:** 100 requests per 10 seconds per location
+   - **Daily limit:** 200,000 requests per day per location
+   - **Response headers on every call:** `X-RateLimit-Remaining`, `X-RateLimit-Daily-Remaining`, `X-RateLimit-Limit-Daily`, `X-RateLimit-Daily-Reset` (seconds until reset)
+   - **Documented past failure (2026-05-13):** location `Mct54Bwi1KlNouGXQcDX` burned its 200k daily quota — Tier 1 returned 200 SSE wrapping a 429, Tier 2 returned 500 wrapping a 429, Tier 3 returned 429 direct. All three failed simultaneously because they all hit the same backend.
+   - **Before bulk operations:** make ONE cheap probe call (`locations_get-location` or `tools/list`), read `X-RateLimit-Daily-Remaining` from the response. If less than 1000 remaining, STOP and tell the owner the daily-reset time in plain English ("Rate limit will reset around 11 PM ET tonight"). Do NOT proceed.
+   - **On 429:** read `X-RateLimit-Daily-Reset` (seconds-until-reset), compute clock time, surface to owner. NEVER retry blindly. NEVER fall through tiers (they share the bucket).
+   - **Always batch:** use `limit=100` page size, cache list results in MEMORY.md for at least 5 minutes, never re-fetch the same data per agent turn.
+
 ## What This Skill Covers
 
 - How to detect platform (Mac vs VPS) and pick correct paths

@@ -2,11 +2,21 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.3.4** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.3.5** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.3.5 (May 13, 2026) — GHL Rate-Limit Protocol (2026-05-13 incident response)
+
+- **Documented incident:** location Mct54Bwi1KlNouGXQcDX burned all 200,000 daily GHL API calls. All three tiers (Official MCP, Community MCP, Raw API) returned 429s simultaneously because they share the same per-location backend bucket. Switching tiers does NOT bypass.
+- **New INSTALL-CONTRACT.md Rule 8a** — full rate-limit awareness protocol. Pre-flight  probe before bulk ops. On 429: parse , surface wall-clock reset time to owner, NEVER retry blindly, NEVER fall through tiers, log to MEMORY.md.
+- **Skill 36 SKILL.md** — added rate-limit as Critical Thing #7.
+- **Skill 36 INSTRUCTIONS.md** — full Rate-Limit Protocol section with pre-flight curl example, batching rules, common quota-burners list.
+- **Skill 36 qc-ghl-mcp-setup.sh** — new Section B2 actually probes the rate-limit headers (via Tier 3 direct API where the headers live), reports remaining quota + reset time in plain English, fails if under 100 remaining.
+- **GHL response headers documented:**  (burst budget),  (daily budget left),  (200000),  (ms until reset),  (100),  (10000).
+- ONBOARDING_VERSION bumped to v9.3.5.
 
 ### What's New in v9.3.4 (May 13, 2026) - Skill 36 standalone qc-ghl-mcp-setup.sh
 - Extracted Skill 36's QC script from the QC.md heredoc into a standalone file at the folder root, matching the convention of the other 32 skills. All 33 active skills now have a standalone qc-*.sh file at their folder root.

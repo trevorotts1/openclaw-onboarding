@@ -107,6 +107,55 @@ When a tier returns 404 / 502 / connection refused / "not found":
    - Tier 2 Linux: `sudo systemctl restart ghl-mcp`
 5. Only after recovery fails, fall through to the next tier. The disclosure header must reflect the actual reason.
 
+## 🔴 Rate-Limit Protocol — 429 is NOT a fallthrough trigger
+
+GHL enforces per-location rate limits across ALL THREE tiers — they share the same backend bucket. Switching tiers does NOT bypass.
+
+**Limits:** 100 req/10s burst | 200,000 req/day per location.
+
+**Headers on every response:**
+- `X-RateLimit-Remaining` (burst budget)
+- `X-RateLimit-Daily-Remaining` (daily budget left)
+- `X-RateLimit-Limit-Daily` (200000)
+- `X-RateLimit-Daily-Reset` (seconds until reset)
+
+**Pre-flight before bulk ops:**
+
+```bash
+# Cheap probe — read headers
+curl -sS -i -X POST "https://services.leadconnectorhq.com/mcp/" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H "locationId: $GOHIGHLEVEL_LOCATION_ID" \
+  -H "Version: 2021-07-28" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | grep -i "x-ratelimit-daily-remaining"
+```
+
+If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLimit-Daily-Reset` (seconds), surface to owner as "Rate limit nearly exhausted — back at HH:MM ET". Do NOT proceed.
+
+**On 429 from any tier:**
+
+1. Parse `X-RateLimit-Daily-Reset` (or `Retry-After` if present).
+2. Compute clock time: `reset_time = now + reset_seconds`.
+3. Surface to owner: "Rate limited — back at HH:MM ET (in X hours)."
+4. **DO NOT retry blindly. DO NOT fall through to a different tier** (all three share the same quota).
+5. Log the incident to MEMORY.md under "## Rate Limit Incidents".
+
+**Batching rules:**
+- Use `limit=100` on list endpoints, not many `limit=5` calls.
+- Cache list results in MEMORY.md for ≥5 minutes; don't refetch per turn.
+- Polling intervals ≥60 sec; non-critical ≥5 min.
+
+**What burns quota fast (avoid):**
+- Test loops during development that re-call live endpoints
+- n8n workflows hitting GHL every few seconds
+- Community MCP polling intervals set too tight
+- Agent re-fetching the same products/contacts list every turn instead of caching
+
+**Documented past failure:** 2026-05-13, BlackCEO location `Mct54Bwi1KlNouGXQcDX` burned all 200k daily calls. All three tiers returned the same underlying 429 simultaneously. Root cause was test loops + polling + per-turn re-fetches. Recovery: wait ~7 hours for daily reset; do NOT attempt workarounds.
+
 ## Anti-Patterns (DO NOT do these)
 
 - ❌ "Tier 1 doesn't have X → I'll use Tier 3 because Tier 3 has X." → Wrong. Use Tier 2.

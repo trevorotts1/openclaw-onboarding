@@ -1,3 +1,40 @@
+## v9.3.5 - May 13, 2026 - GHL Rate-Limit Protocol (incident response)
+
+### Added
+- **Rate-limit awareness protocol** baked into the install discipline contract and Skill 36 documentation. Triggered by the 2026-05-13 incident where BlackCEO location Mct54Bwi1KlNouGXQcDX burned all 200,000 daily GHL API calls during development testing. All three tiers (Official MCP, Community MCP, Raw API) returned 429s simultaneously because they share the same per-location backend bucket — switching tiers does NOT bypass.
+- **INSTALL-CONTRACT.md — new Rule 8a "GHL rate-limit awareness"**. Binding rules:
+  - Before bulk operations: probe `X-RateLimit-Daily-Remaining`. If under 1000, STOP. If under 5000, warn the owner. Compute reset time from `X-RateLimit-Daily-Reset` and surface in plain English ("back at HH:MM ET").
+  - On 429: NEVER retry blindly. NEVER fall through tiers. Parse reset header, surface wall-clock time, log to MEMORY.md under "## Rate Limit Incidents".
+  - Always batch: limit=100 page size, cache list results in MEMORY.md for 5+ min, polling intervals >=60 sec.
+  - Documented past failure block with date + location ID + root causes (test loops + n8n polling + community MCP polling + agent per-turn re-fetches).
+- **Skill 36 SKILL.md "Critical Things Your Agent Must Know" entry #7** — full rate-limit summary visible to every agent reading the skill.
+- **Skill 36 INSTRUCTIONS.md "Rate-Limit Protocol — 429 is NOT a fallthrough trigger"** — operational reference with pre-flight curl example showing how to read the headers, on-429 response steps, batching rules, common quota-burners list.
+- **Skill 36 qc-ghl-mcp-setup.sh — new Section B2** — actually probes the rate-limit headers on a Tier 3 direct API call (which is where the headers live; the Official MCP SSE wrapper does not expose them). Reports remaining daily quota, burst quota, and reset time in plain English. Fails the QC if under 100 daily remaining. Tested live during this release — correctly detected the 0-remaining state on the burned location and computed reset time as "around 7:00 PM EDT".
+
+### Headers reference
+
+- `X-RateLimit-Remaining` — burst budget left in current 10s window
+- `X-RateLimit-Max` — 100 (burst cap per 10s)
+- `X-RateLimit-Daily-Remaining` — daily budget left
+- `X-RateLimit-Limit-Daily` — 200000 (daily cap)
+- `X-RateLimit-Daily-Reset` — milliseconds until daily quota resets
+- `X-RateLimit-Interval-Milliseconds` — 10000 (10-second burst window)
+
+These headers ONLY appear on direct API responses (Tier 3 endpoints under services.leadconnectorhq.com/contacts, /locations, /products, etc.). The Official MCP SSE wrapper does NOT expose them — its responses contain only `data: {...}` JSON-RPC payloads. Pre-flight probes must hit a direct API endpoint.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.3.5 in install.sh and update-skills.sh.
+- **version file** bumped to v9.3.5 in both repos.
+
+### Risk: medium
+This release adds new agent behavior (rate-limit pre-flight + 429 handling). Behavior is additive — clients on v9.3.4 still work, but the new rules prevent future quota exhaustion. Most impactful for clients who run heavy GHL workflows or test scripts.
+
+### Notes
+- Trevor's local workspace AGENTS.md and MEMORY.md updated separately during this release (not part of the repo push). MEMORY.md got a "## Rate Limit Incidents" section logging the 2026-05-13 event with full headers, root causes, and the fix.
+- VPS install.sh has the same rules but uses systemd paths where the Mac uses launchd.
+
+---
+
 ## v9.3.4 - May 13, 2026 - Skill 36 standalone qc-ghl-mcp-setup.sh
 
 ### Added

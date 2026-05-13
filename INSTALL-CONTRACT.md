@@ -156,6 +156,42 @@ When the owner uses any of these names, you respond in their language but you kn
 
 ---
 
+## 🔴 Rule 8a — GHL rate-limit awareness (BINDING; documented past failure 2026-05-13)
+
+GHL enforces per-location rate limits that apply to **all three tiers simultaneously** — Tier 1, Tier 2, and Tier 3 all hit the same backend bucket. Switching tiers does NOT bypass the limit. When the limit is hit, ALL THREE TIERS fail at once.
+
+**The limits:**
+- Burst: **100 requests per 10 seconds per location**
+- Daily: **200,000 requests per day per location**
+
+**Response headers on EVERY GHL response** (Tier 1 inside the SSE data, Tier 2 inside the wrapped response, Tier 3 direct):
+- `X-RateLimit-Remaining` — burst budget left in the current 10s window
+- `X-RateLimit-Daily-Remaining` — daily budget left until reset
+- `X-RateLimit-Limit-Daily` — 200000 (the cap)
+- `X-RateLimit-Daily-Reset` — seconds until daily quota resets
+
+**Before any bulk operation** (loops, multi-fetch, polling, large list pulls):
+1. Make ONE cheap probe call first (e.g. `locations_get-location` via Tier 1, or `tools/list`).
+2. Parse `X-RateLimit-Daily-Remaining` from the response headers.
+3. If less than **1000** remaining: STOP. Tell the owner in plain English: "Rate limit nearly exhausted — back in X hours (around HH:MM ET)." Compute `HH:MM ET` from `X-RateLimit-Daily-Reset`. Do NOT proceed.
+4. If less than **5000** remaining: warn the owner and ask if they want to proceed with limit-aware batching.
+
+**On 429 response** (regardless of which tier surfaced it — Tier 1 may wrap inside a 200 SSE, Tier 2 inside a 500, Tier 3 direct):
+1. Parse `X-RateLimit-Daily-Reset` (seconds until reset).
+2. Compute wall-clock reset time in the owner's local timezone.
+3. Surface to owner: "Rate limited — back in X hours (around HH:MM ET on [date])."
+4. NEVER retry blindly. NEVER fall through to a different tier (they all share the same bucket).
+5. Log the incident to MEMORY.md under "## Rate Limit Incidents" with date, location ID, what was running when it burned (test loop / n8n / cron / agent re-fetch / etc.) so the root cause is fixable.
+
+**Always batch:**
+- Use `limit=100` page size on list endpoints rather than many small calls.
+- Cache list results (products, invoices, contacts, transactions) in MEMORY.md for at least 5 minutes. Do NOT re-fetch the same data per agent turn.
+- Polling intervals: minimum 60 seconds; minimum 5 minutes for non-time-critical state.
+
+**Documented past failure:** On 2026-05-13, BlackCEO location `Mct54Bwi1KlNouGXQcDX` burned all 200k daily calls. All three tiers (Official MCP, Community MCP, Raw API) returned the same underlying 429. The cause was a combination of test loops during development, polling intervals, and per-turn agent re-fetches. The fix is the rules above — never the workaround of switching tiers.
+
+---
+
 ## 🔴 Rule 9 — Fuzzy detection of the master-files folder
 
 The `openclaw-master-files` folder name varies across installs. ALWAYS use the fuzzy locator from `lib-shared.sh` (`find_master_files()`) instead of hardcoding `openclaw-master-files`. The locator handles all common variants:

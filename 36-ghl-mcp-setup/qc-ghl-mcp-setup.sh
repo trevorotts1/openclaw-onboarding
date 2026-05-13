@@ -108,6 +108,35 @@ warn_only "Location ID in openclaw.json env.vars"  "command -v openclaw && openc
 assert "GHL_COMMUNITY_MCP_URL env var set"         "command -v openclaw && openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | grep -qE 'http://localhost:[0-9]+'"
 
 echo ""
+echo "── Section B2: GHL rate-limit budget check (NEW: 2026-05-13 incident response) ──"
+# Rate-limit headers only appear on direct API responses (Tier 3 endpoints),
+# NOT on the Official MCP SSE wrapper. So we probe the locations endpoint directly.
+# All three tiers share the same backend bucket — switching tiers doesn't bypass.
+RL_RAW=$(curl -sS -i -m 10 "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H "Version: 2021-07-28" 2>/dev/null | tr -d '\r')
+RL_DAILY_REMAINING=$(echo "$RL_RAW" | grep -i "^x-ratelimit-daily-remaining:" | awk -F': ' '{print $2}' | tr -d '[:space:]')
+RL_DAILY_RESET_MS=$(echo "$RL_RAW" | grep -i "^x-ratelimit-daily-reset:" | awk -F': ' '{print $2}' | tr -d '[:space:]')
+RL_BURST_REMAINING=$(echo "$RL_RAW" | grep -i "^x-ratelimit-remaining:" | awk -F': ' '{print $2}' | tr -d '[:space:]')
+if [ -n "$RL_DAILY_REMAINING" ]; then
+  echo "  Daily quota remaining: $RL_DAILY_REMAINING / 200000"
+  echo "  Burst (10s window) remaining: ${RL_BURST_REMAINING:-?} / 100"
+  if [ -n "$RL_DAILY_RESET_MS" ] && [ "$RL_DAILY_RESET_MS" -gt 0 ] 2>/dev/null; then
+    RESET_HRS=$(python3 -c "print(round($RL_DAILY_RESET_MS / 1000 / 3600, 1))" 2>/dev/null)
+    RESET_CLOCK=$(python3 -c "
+import time
+t = time.time() + ($RL_DAILY_RESET_MS / 1000)
+print(time.strftime('%-I:%M %p %Z', time.localtime(t)))
+" 2>/dev/null)
+    echo "  Daily quota resets in: ~${RESET_HRS} hours (around ${RESET_CLOCK})"
+  fi
+  warn_only "GHL daily quota > 5000 (safe for bulk ops)" "[ \"$RL_DAILY_REMAINING\" -gt 5000 ]"
+  assert "GHL daily quota > 100 (any GHL op possible at all)" "[ \"$RL_DAILY_REMAINING\" -gt 100 ]"
+else
+  yellow "  ⚠ Could not read rate-limit headers (token may be invalid or network issue)"; WARN=$((WARN+1))
+fi
+
+echo ""
 echo "── Section C: Tier 1 (Official MCP) ──"
 assert "ghl-mcp registered in openclaw mcp list" "command -v openclaw && openclaw mcp list 2>/dev/null | grep -q 'ghl-mcp$'"
 T1_TOOLS=$(curl -sS -m 10 -X POST "https://services.leadconnectorhq.com/mcp/" \
