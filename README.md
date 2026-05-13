@@ -2,21 +2,31 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.3** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.4** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
+### What's New in v9.6.4 (May 13, 2026) — Add Personas from Books, YouTube, or Video
+
+New unified entry point for growing the persona library. Before v9.6.4, Skill 22 only accepted book files (PDF/EPUB/MOBI/AZW3). Now any teaching content — YouTube talks, podcasts, lectures, local seminar recordings — can become a persona, automatically wired into the same selector chain that picks personas for tasks.
+
+- **New `22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh`** — single entry point. Detects source type automatically and routes to the right extractor:
+  - **Book files (.pdf .epub .mobi .azw3):** pdfplumber extracts text
+  - **YouTube URLs:** invokes Skill 16 (Summarize YouTube) for transcript extraction (uses `OPENAI_API_KEY` then falls back to `GEMINI_API_KEY`)
+  - **Local video files (.mp4 .mov .mkv .avi .webm):** ffmpeg extracts audio + whisper transcribes
+  - **Already-transcribed text (.txt .md):** copied directly
+- **After extraction, runs Skill 22's 3-phase pipeline** (Extraction → Analysis → Synthesis) so the resulting persona blueprint has the full dual-purpose structure (coaching half + governance half, 14 sections).
+- **Auto-registers in `persona-categories.json`** with a stub entry (owner reviews and adds domain/perspective tags after first use).
+- **Auto-re-indexes Gemini Engine** so the new persona is immediately searchable by `select-persona-for-task.py`. From that point forward, every task selection considers the new persona as a candidate (filtered by dept domain tags + scored across the 5 alignment layers).
+- **Dependencies documented in SKILL.md:** YouTube needs Skill 16 + an OpenAI/Gemini key; video needs `ffmpeg` + `whisper`. Both are checked at script invocation and friendly errors printed if missing.
+
 ### What's New in v9.6.3 (May 13, 2026) — Department Directors Now Call Unified Persona Selector
 
-Fixes the runtime wiring gap diagnosed after v9.6.2 shipped: the unified `select-persona-for-task.py` script existed, but Skill 32 was still telling department directors to call `gemini-search.py` directly (which only does semantic search, no 5-layer scoring).
-
-- **Persona Operating Protocol rewritten** (in Skill 23 INSTALL.md, lines 414-475) — every department's AGENTS.md now gets a v9.6.2+ protocol that tells the director to call `select-persona-for-task.py --dept X --task "..." --format json` as Step 1. The unified script does semantic search + keyword filter + full 5-layer alignment scoring in one call. The director then "Acts As If" the returned persona for the task.
-- **Reason logging is now AUTO-LOGGED by the selector** — the director no longer needs to manually append to the daily journal. Reduces opportunity for skipped logs.
-- **Skill 32's runtime persona-selection QC test (INSTALL.md §7.5)** updated to look for evidence the director called the unified selector, not just `gemini-search.py` standalone. New FAIL condition: "Agent only ran `gemini-search.py` directly without 5-layer scoring."
-- **Skill 23 CORE_UPDATES.md** persona-integration text updated to describe the unified selector pattern (was: "Gemini Search finds top 3, 5-layer alignment picks winner — two separate steps"; now: "select-persona-for-task.py does all three in one call").
-- ONBOARDING_VERSION bumped to v9.6.3.
+- **Persona Operating Protocol rewritten** in Skill 23 INSTALL.md. Every department's AGENTS.md now tells the director to call `select-persona-for-task.py --dept X --task "..." --format json` as Step 1. Unified script does semantic + keyword + 5-layer in one call.
+- **Reason logging auto-logged** by the selector to the dept's daily memory file.
+- **Skill 32 INSTALL.md §7.5** updated: FAIL if agent only ran `gemini-search.py` standalone.
 
 ### What's New in v9.6.2 (May 13, 2026) — Bulletproof Pass: SOP Auto-Spawn + Runtime Persona Selector + Diagnostic Runner
 

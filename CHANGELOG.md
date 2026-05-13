@@ -1,3 +1,35 @@
+## v9.6.4 - May 13, 2026 - Add personas from books, YouTube, or video
+
+New unified entry point so the persona library can grow from any teaching
+source, not just book files.
+
+### Added
+- **`22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh`** — single command for adding a new persona:
+  - **Books** (.pdf / .epub / .mobi / .azw3): pdfplumber
+  - **YouTube URLs**: routes through Skill 16 (Summarize YouTube) — uses `OPENAI_API_KEY` first, falls back to `GEMINI_API_KEY`
+  - **Local video** (.mp4 / .mov / .mkv / .avi / .webm): ffmpeg → whisper for transcript
+  - **Already-transcribed text** (.txt / .md): direct copy
+- After extraction, drops the text into `coaching-personas/text/<slug>.txt` and registers a `source.json` marker in `coaching-personas/personas/<slug>/`.
+- Invokes Skill 22's 3-phase pipeline (Extraction → Analysis → Synthesis) on the new source via `orchestrator.py --single-book --slug <slug>`.
+- Auto-re-indexes Gemini Engine (`gemini-indexer.py`) so the new persona is immediately searchable by `select-persona-for-task.py` for future tasks.
+- Auto-registers a stub entry in `persona-categories.json` so the persona shows up in the keyword filter; owner adds domain + perspective tags after first use.
+
+### Changed (Skill 22 SKILL.md)
+- "When To Use This Skill" expanded to include YouTube and video sources.
+- "Quick Start" rewritten with the 4 source-type examples and the dependency list (Skill 16 + API key for YouTube; ffmpeg + whisper for local video).
+
+### Dependencies introduced
+- For YouTube path: Skill 16 (Summarize YouTube) must be installed; an OpenAI or Gemini API key must be in `~/.openclaw/secrets/.env`.
+- For local video path: `ffmpeg` + `whisper` (or `whisper-cli`). Friendly errors printed if either is missing.
+
+### Why this matters
+Before v9.6.4: clients had to manually convert YouTube content / video into a transcript text file and rename it, then drop it into the personas folder, then manually invoke the pipeline. Now it's one command. A client who watches a Gary Vee keynote on YouTube can add Gary Vee to their persona library in ~10 minutes (transcript extraction + pipeline). The next task that lands on their Marketing Director can immediately consider Gary Vee as a candidate via the 5-layer scoring.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.6.4.
+
+---
+
 ## v9.6.3 - May 13, 2026 - Department directors call unified persona selector
 
 Closes the runtime wiring gap diagnosed after v9.6.2 shipped: the unified

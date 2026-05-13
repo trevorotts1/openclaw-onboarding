@@ -113,26 +113,53 @@ Confirm by saying: "TYP complete - ready to run Book Intelligence Pipeline."
 
 ## When To Use This Skill
 
-- You have a new book PDF to add to the persona library
+- You have a new book PDF, EPUB, MOBI, or AZW3 to add to the persona library
+- You have a YouTube link (talk, podcast, lecture, interview) that contains the same kind of teaching as a book
+- You have a local video file (seminar recording, course session, keynote)
+- You have already-transcribed text from any of the above
 - You want to rebuild an existing persona with updated extraction
 - You are setting up the pipeline for the first time on a new workspace
-- You need to add Gemini Engine indexing to an existing persona blueprint
 
 ---
 
-## Quick Start (After TYP)
+## Quick Start (After TYP) — v9.6.4+
 
-```
-Run Book Intelligence Pipeline on: [book title or PDF path]
+**Single entry point: `add-persona-from-source.sh`** — routes any of the source types above to the right extractor and then through the standard 3-phase pipeline.
+
+```bash
+# Book PDF/EPUB/MOBI:
+bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
+    --source "/path/to/Atomic Habits - James Clear.pdf"
+
+# YouTube video (uses Skill 16 — Summarize YouTube — for transcript):
+bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
+    --source "https://youtube.com/watch?v=abc123" \
+    --title "Hormozi Million Dollar Offers Talk" \
+    --author "Alex Hormozi"
+
+# Local video file (uses ffmpeg + whisper for transcript):
+bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
+    --source "/path/to/seminar.mp4" --title "Seth Godin Keynote" --author "Seth Godin"
+
+# Already-transcribed text:
+bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
+    --source "/path/to/transcript.txt" --title "Foo" --author "Bar"
 ```
 
-The skill will:
-1. Locate or create the master files folder
-2. Extract text from the PDF
-3. Spawn Phase 1 -> Phase 2 -> Phase 3 sub-agents in sequence
-4. Save extraction notes, analysis notes, and persona blueprint
-5. Index the persona in Gemini Engine
-6. Update CORE_UPDATES references in core .md files
+The script will:
+1. Detect source type (book / YouTube / video / text)
+2. Extract text via the right tool:
+   - Books → pdfplumber
+   - YouTube → Skill 16 (Summarize YouTube) for transcript
+   - Local video → ffmpeg + Whisper for transcript
+3. Drop the text into the persona library and register a `source.json` marker
+4. Invoke Skill 22's 3-phase pipeline (Extraction → Analysis → Synthesis)
+5. Re-index Gemini Engine so the new persona is immediately searchable
+6. Add a stub entry to `persona-categories.json` (you tag manually after first use)
+
+**Dependencies for non-book sources:**
+- YouTube: Skill 16 (Summarize YouTube) installed; `OPENAI_API_KEY` or `GEMINI_API_KEY` in `~/.openclaw/secrets/.env`
+- Video: `ffmpeg` + `whisper` (or `whisper-cli`). Mac: `brew install ffmpeg && pip install openai-whisper`. Linux: `apt install ffmpeg && pip install openai-whisper`.
 
 ---
 
