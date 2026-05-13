@@ -1,3 +1,29 @@
+## v9.7.0 - May 13, 2026 - Multi-account Telegram cron support
+
+### The bug
+v9.6.9's universal Telegram lookup correctly resolved Floyd's chat ID `8666242544` via JSON tree walk against `commands.allowFrom.telegram[0]`. But the next line — `openclaw cron create` — failed because his OpenClaw has a multi-account schema (`channels.telegram.accounts.default` + `channels.telegram.accounts.wifey`). Without `--account <id>`, the gateway didn't know which Telegram account to use for delivery and rejected the cron.
+
+Single-account installs (legacy schema) don't have `channels.telegram.accounts` at all, so the `--account` flag was correctly omitted before. The new multi-account schema needs it.
+
+### Fixed
+- **Auto-detect multi-account setup.** Before calling `openclaw cron create`, scan the openclaw.json for `channels.telegram.accounts`. If present and non-empty:
+  - Prefer `--account default` if the `default` account exists
+  - Otherwise use the first account key
+  - Single-account / legacy installs: omit `--account` entirely
+- **Explicit `--agent main` flag.** Newer OpenClaw versions require an agent ID for cron jobs; older versions defaulted to "main" automatically. Pass it explicitly for compat across versions.
+- **Removed `--exact` flag.** Was redundant with `--session isolated`; some newer schemas reject the combination.
+- **Retry-without-account fallback.** If first attempt with `--account` fails, retry without it before giving up. Handles edge cases where account detection guesses wrong.
+- **Improved error messaging.** Lists common failure causes (gateway down, agent 'main' undefined, channel 'telegram' disabled).
+
+### Verified
+- Tested `openclaw cron create` on this machine with the new args (including `--account default`): exit 0, job created cleanly.
+- Tested without `--account` (legacy single-account): exit 0 still works.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.7.0.
+
+---
+
 ## v9.6.9 - May 13, 2026 - UNIVERSAL Telegram lookup (no client action ever)
 
 Replaced rigid 5-path lookup with 4-strategy universal resolver. Client never needs to do anything.

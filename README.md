@@ -2,47 +2,39 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.9** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.7.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
+### What's New in v9.7.0 (May 13, 2026) — Multi-account Telegram cron support
+
+**v9.6.9 successfully resolved the Telegram chat ID via universal scan — confirmed on a client with the newer multi-account schema** (`channels.telegram.accounts.default` + `channels.telegram.accounts.wifey`). Lookup returned `8666242544`. But the next step (`openclaw cron create`) then failed for that client because the cron delivery couldn't route to a specific Telegram account.
+
+**Fix:** install.sh now auto-detects multi-account setups and passes `--account <id>` to `openclaw cron create`. Logic:
+
+- If `channels.telegram.accounts` exists with named accounts → pass `--account default` (or first key if `default` missing)
+- Otherwise → omit `--account` (single-account / legacy schema)
+
+Also added:
+- Explicit `--agent main` flag (some newer OpenClaw builds require it for cron jobs)
+- Removed `--exact` flag (was redundant with `--session isolated`)
+- Retry-without-account fallback if the first attempt fails
+- Improved error messaging that lists likely causes: gateway not running, agent 'main' not defined, channel 'telegram' disabled
+
+Verified on this machine: `openclaw cron create` with all the new args returns exit 0 and creates a valid cron job.
+
 ### What's New in v9.6.9 (May 13, 2026) — UNIVERSAL Telegram lookup (no client action ever)
 
-Replaced the rigid 5-path lookup with a universal 4-strategy resolver that finds the Telegram chat ID no matter where it lives on the client's machine. **No client action required.**
+Replaced rigid 5-path lookup with 4-strategy universal resolver:
 
-**Strategy 1 — Ask the `openclaw` CLI directly:**
-```
-openclaw config get channels.telegram.allowFrom
-openclaw config get plugins.entries.telegram.config.allowFrom
-openclaw config get telegram.allowFrom
-```
-The CLI knows where its own config lives regardless of platform / install location / username. Parses JSON output, returns the first 6+ digit numeric string.
+- **Strategy 1:** `openclaw config get` direct query (CLI knows where its own config lives)
+- **Strategy 2:** Scan every plausible `openclaw.json` location (Mac, Linux, VPS, XDG paths, globbed)
+- **Strategy 3:** Recursive JSON tree walk — finds any 6-20 digit numeric value under any key containing `telegram`, `chat`, `allowfrom`, `allowedchat`, `chatid`, or `targetchat`
+- **Strategy 4:** `$TELEGRAM_CHAT_ID` env var
 
-**Strategy 2 — Walk every plausible openclaw.json on the machine:**
-- `~/.openclaw/openclaw.json`
-- `~/.openclaw/config.json`
-- `~/Library/Application Support/openclaw/{openclaw,config}.json` (macOS XDG path)
-- `~/.config/openclaw/{openclaw,config}.json` (Linux XDG path)
-- `/data/.openclaw/{openclaw,config}.json` (VPS path)
-- `/etc/openclaw/openclaw.json`
-- Plus glob `*.json` in each of those directories
-- De-duped; non-existent files skipped silently.
-
-**Strategy 3 — Recursive JSON tree walk:**
-For each config found, walk the ENTIRE JSON tree looking for any numeric value (6-20 digits, optionally negative for groups) under ANY key whose name contains `telegram`, `chat`, `allowfrom`, `allowedchat`, `chatid`, or `targetchat`. Once a key with "telegram" is found, every numeric descendant is considered. Priority order honored: `channels.telegram.allowfrom` wins over deeper nested matches.
-
-**Strategy 4 — `$TELEGRAM_CHAT_ID` env var** as final fallback.
-
-Only if all 4 strategies fail does the install warn and skip — with a clear remediation path (diagnostic script or env-var override).
-
-The lookup will now find a chat ID regardless of:
-- Which OpenClaw version the client installed with
-- Whether their config is at `~/.openclaw/` or `~/Library/Application Support/openclaw/`
-- Whether Telegram is configured under `channels.telegram`, `plugins.entries.telegram.config`, top-level `telegram`, `bindings.telegram`, `agents.list[*].bindings.telegram`, or anywhere else nested under a "telegram" key.
-
-Verified end-to-end: Strategy 1 returned `5252140759` from the live `openclaw config get`. Strategy 2/3 also returned the same value from the JSON scan.
+Works regardless of OpenClaw schema version. Tested against multi-account schema (`channels.telegram.accounts.default`) and legacy single-account (`channels.telegram.allowFrom`).
 
 ### What's New in v9.6.5 (May 13, 2026) — Closing the Last 4 Gaps
 
