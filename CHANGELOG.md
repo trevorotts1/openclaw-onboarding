@@ -1,3 +1,47 @@
+## v9.6.2 - May 13, 2026 - Bulletproof Pass: SOP Auto-Spawn + Runtime Persona Selector + Diagnostic Runner
+
+The "anything less than a 9 must be fixed" pass. Closes the gaps between Skill 22 / 23 / 31 / 32 so the pipeline runs end-to-end without manual intervention.
+
+### Added
+
+- **`23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py`** — reads `sop-research-manifest.json` and spawns up to 10 parallel sub-agents (heavy tier, 1800s each), one per department, to write real DMAIC SOPs replacing the `[Step 1 - to be personalized]` placeholders.
+  - Spawn mode: native `openclaw subagents spawn` when CLI available; falls back to per-dept queue files (`.sop-write-queue/sop-work-*.md`) the orchestrating AI agent picks up.
+  - Auto-invoked from `build-workforce.py:build_from_config()` immediately after `write_sop_research_manifest()`. Fresh installs no longer leave stub SOPs sitting around.
+  - Exit codes: 0 all success, 1 manifest missing, 2 some sub-agents failed, 3 model selector returned Tier 5 owner-input-required.
+
+- **`23-ai-workforce-blueprint/scripts/select-persona-for-task.py`** — runtime persona selector. Called every time a new task lands in a Department's Telegram topic. Hybrid search:
+  - **Semantic:** Gemini Embeddings 2 via `gemini-search.py --collection coaching-personas --query "<task>"`
+  - **Keyword:** filter candidates by dept domain tags from `persona-categories.json`
+  - **5-layer alignment:** scores each candidate on Mission / Owner Values / Company KPIs / Dept KPIs / Task Fit per `persona-matching-protocol.md`
+  - Falls back to keyword + 5-layer if Gemini Engine unavailable (exit 2, still returns winner).
+  - Logs each selection to `~/clawd/zero-human-company/<slug>/departments/<dept>/memory/<date>.md` with full breakdown.
+
+- **`SYSTEM-DIAGNOSTIC-CHECKLIST.md`** at repo root — comprehensive 9-area checklist:
+  1. AI Workforce Interview (Skill 23 interview phase)
+  2. AI Workforce Skill Set (Skill 23 build phase)
+  3. Book-to-Persona (Skill 22)
+  4. Gemini Embeddings 2 (Skill 31)
+  5. Semantic Search (runtime persona selection)
+  6. Keyword Search (domain + perspective tags)
+  7. Task Assignments (Kanban / Command Center)
+  8. Persona Assignments (governing-personas + matrix)
+  9. Agent Linking (agents.list[] + symlink integrity)
+  Plus cross-cutting checks (Anthropic forbidden, bootstrap limits canonical, timeouts ≥ 1800s, both repos at same commit, MEMORY.md has all 5 build artifacts, GHL quota healthy). Every row has a remediation recipe.
+
+- **`scripts/qc-system-integrity.sh`** — executable companion to the checklist. Runs all checks, color-coded output (green/yellow/red), exits 0 only when all green. Categorizes by severity: hard failures vs warn-only checks. Smoke-tested on a fresh machine — correctly identifies missing components and prints the exact remediation command for each.
+
+### Fixed
+
+- **Skill 22 Phase 2 routing.** Previously hardwired to `call_openrouter(MODEL_ANALYSIS)` — used the module-load-time resolved model regardless of book size. Now resolves per-chunk and per-pass via `resolve_phase_model("phase2", input_chars=...)`. Routes to Ollama / OpenRouter / OpenAI Responses based on resolved model prefix. Big chunks auto-flip to DeepSeek V4-pro (1M ctx).
+
+- **Skill 22 Phase 3 synthesis routing.** Previously hardwired to `call_codex()` (which hardcoded `MODEL_SYNTHESIS = gpt-5.3-codex`). Now resolves per-book via `resolve_phase_model("phase3", input_chars=len(user_prompt))`. OAuth GPT preferred when available; falls through to Ollama Kimi → OpenRouter Kimi → DeepSeek V4-pro per the heavy-tier chain. Anthropic FORBIDDEN at every position.
+
+### Changed
+
+- **ONBOARDING_VERSION** bumped to v9.6.2 in install.sh, update-skills.sh, VERSION, README.md.
+
+---
+
 ## v9.6.1 - May 13, 2026 - Command Center hardcoded-17 fix + Shared core files + Per-agent config
 
 ### 🔴 Blocker fixes

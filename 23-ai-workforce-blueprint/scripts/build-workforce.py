@@ -266,6 +266,38 @@ def build_from_config(config):
         print(f"[NON-INTERACTIVE] SOP research manifest ready: {manifest_path}", file=sys.stderr)
         print(f"[NON-INTERACTIVE] AI agent: spawn up to 10 parallel sub-agents (heavy tier, 1800s timeout) per the manifest", file=sys.stderr)
 
+        # v9.6.2: auto-invoke populate-sops-from-manifest.py so the SOP stubs
+        # actually get filled in (instead of sitting as placeholder files).
+        # Runs in the background (sub-agents are spawned in parallel internally),
+        # exit code 0 = all populated, 2 = some failed, 3 = no model available.
+        populate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                        "populate-sops-from-manifest.py")
+        if os.path.isfile(populate_script):
+            try:
+                rc = subprocess.run(
+                    ["python3", populate_script, "--manifest", manifest_path,
+                     "--max-parallel", "10", "--timeout", "1800"],
+                    timeout=3600 + 60,  # 60-min cap on the whole batch
+                ).returncode
+                if rc == 0:
+                    print(f"[NON-INTERACTIVE] SOPs auto-populated successfully", file=sys.stderr)
+                elif rc == 2:
+                    print(f"[NON-INTERACTIVE] Some SOP sub-agents failed; rerun with: "
+                          f"python3 {populate_script}", file=sys.stderr)
+                elif rc == 3:
+                    print(f"[NON-INTERACTIVE] Model selector returned owner-input-required; "
+                          f"SOPs not populated. The AI agent must ask the owner which model "
+                          f"to use, then rerun: python3 {populate_script}", file=sys.stderr)
+            except subprocess.TimeoutExpired:
+                print(f"[NON-INTERACTIVE] SOP population timed out at 60 min; some SOPs may be "
+                      f"partial. Rerun: python3 {populate_script}", file=sys.stderr)
+            except Exception as e:
+                print(f"[NON-INTERACTIVE] SOP population error: {e}; rerun manually with: "
+                      f"python3 {populate_script}", file=sys.stderr)
+        else:
+            print(f"[NON-INTERACTIVE] populate-sops-from-manifest.py not found; "
+                  f"SOPs remain as DMAIC stubs", file=sys.stderr)
+
     # v9.6.1: Write company-config.json to the ZHC folder so Skill 32 picks up
     # the actual company name + industry + brand colors. Brand colors can be
     # provided via the non-interactive config; otherwise neutral defaults.

@@ -2,25 +2,23 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
-### What's New in v9.6.1 (May 13, 2026) — Command Center Hardcoded-17 Fix + Shared AGENTS/TOOLS/USER + Per-Agent Sub-Agent Config
+### What's New in v9.6.2 (May 13, 2026) — Bulletproof Pass: SOP Auto-Spawn + Runtime Persona Selector + Diagnostic Runner
 
-Critical diagnostic fixes for the AI Workforce → Command Center pipeline:
+The "anything less than a 9 must be fixed" pass. Targets the gaps between Skill 22 / Skill 23 / Skill 31 / Skill 32 so the full pipeline actually runs end-to-end without manual intervention.
 
-- **🔴 BLOCKER FIX — Skill 32 was setting up the Kanban with 17 hardcoded default departments even when the client said 15 or 50.** `seed-workspaces.py` was reading from stale legacy paths and falling through to scanning generic folders. Now reads `departments.json` from the v9.6.0 ZHC canonical path first (`~/clawd/zero-human-company/<slug>/departments.json`), then short-alias `~/clawd/zhc/<slug>/`, then legacy paths. Strict match: seeds exactly the number of departments the client chose, no 17-default fallback.
-- **🔴 BLOCKER FIX — AGENTS.md / TOOLS.md / USER.md are now SYMLINKED, not copied** into each department folder. Previous `shutil.copy2()` created per-dept duplicates that diverged from the master over time. Now every department director, specialist, and sub-agent reads the SAME `~/clawd/AGENTS.md`, `~/clawd/TOOLS.md`, `~/clawd/USER.md`. When any agent writes to its AGENTS.md/TOOLS.md/USER.md, the write lands in the universal file and ALL other agents pick it up on next read. (Falls back to copy if symlink is unsupported.)
-- **🔴 BLOCKER FIX — Every department director agent now inherits the canonical sub-agent + bootstrap config.** `add_agent_to_config()` writes these into every `agents.list[]` entry: `bootstrapMaxChars=200000`, `bootstrapTotalMaxChars=400000`, `subagents.maxChildrenPerAgent=20`, `maxConcurrent=100`, `maxSpawnDepth=5`, `thinking="high"`, `timeoutSeconds=1800`, `allowAgents=["*"]`, plus the canonical model fallback chain (Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro). Previous behavior: directors inherited OpenClaw defaults, not Trevor's canonical values.
-- **Brand color persistence.** New `write_company_config_json()` writes `~/clawd/zero-human-company/<slug>/company-config.json` with `name`, `slug`, `industry`, `brand.primary`, `brand.accent`, `brand.text`. Brand colors can be passed in the non-interactive config (`brand_colors` field). Skill 32's `seed-workspaces.py` reads this and writes the brand colors to the `companies.config` table so the Kanban dashboard renders client-specific colors instead of generic UI.
-- **Director model selection via `select_model.py`.** Replaces the stale `DEFAULT_MODEL_ASSIGNMENTS` dict (which still referenced `moonshot/kimi-k2.5`). Now calls the heavy-tier selector chain at agent-creation time; falls back to `ollama/kimi-k2.6:cloud` if selector unreachable. Anthropic-stripped at every position.
-- **departments.json now written to BOTH** the ZHC company folder (canonical for Skill 32) AND the legacy `company-discovery/` folder (backward compat). Explicit log message: "EXACT department count: N (this is what the client chose)."
-- **`seed-workspaces.py`** also strips the `dept-` prefix from IDs when writing to the workspaces table — previously some installs ended up with `dept-marketing` AND `marketing` as separate rows.
-- **VPS-aware paths throughout Skill 32 + Skill 23.** Checks `/data/clawd/` and `/data/Downloads/` in addition to `$HOME` equivalents.
-- ONBOARDING_VERSION bumped to v9.6.1.
+- **SOP auto-population.** New `23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py` reads `sop-research-manifest.json` and spawns up to 10 parallel sub-agents (heavy tier, 1800s each), one per department, to write real DMAIC SOPs replacing the `[Step 1 - to be personalized]` placeholders. Spawns via `openclaw subagents spawn` when available; falls back to per-dept queue files the orchestrating AI agent picks up. Auto-invoked from `build-workforce.py:build_from_config` so a fresh install no longer leaves stub SOPs sitting around.
+- **Runtime persona selector.** New `23-ai-workforce-blueprint/scripts/select-persona-for-task.py` — the script Skill 32's department directors call every time a new task lands in their Telegram topic. Hybrid search: (1) Gemini Embeddings 2 semantic query against the `coaching-personas` collection, (2) keyword filter by dept domain tags, (3) 5-layer alignment scoring per persona-matching-protocol.md. Logs the selection + breakdown to the dept's daily memory file. Falls back gracefully if Gemini Engine unavailable (exits with code 2 but still returns a persona).
+- **Skill 22 Phase 2/3 routing fixed.** Previously `call_codex()` and `call_openrouter(MODEL_ANALYSIS)` were hardwired — ignoring the per-book context-aware model resolution that Phase 1 already used. Now Phases 2 and 3 resolve the model PER BOOK via `resolve_phase_model("phase2"|"phase3", input_chars=...)` and route to the correct API (Ollama, OpenRouter, or OpenAI Responses) based on the resolved model's prefix. Big books auto-flip to DeepSeek V4-pro (1M ctx). Phase 3 synthesis still prefers OAuth GPT.
+- **SYSTEM-DIAGNOSTIC-CHECKLIST.md.** New comprehensive 9-area checklist at the repo root covering: (1) Workforce Interview, (2) Workforce build phase, (3) Book-to-Persona, (4) Gemini Embeddings 2, (5) Semantic Search, (6) Keyword Search, (7) Task Assignments / Kanban, (8) Persona Assignments, (9) Agent Linking, plus cross-cutting integrity checks. Each row has a remediation recipe.
+- **`scripts/qc-system-integrity.sh` runner.** Executable companion to the checklist. Runs all checks, color-coded output, exits 0 only when all green. Smoke-test shows it correctly fails on a fresh machine with no Skill 23 build yet.
+- **Skill 22 docs alignment.** PIPELINE.md / INSTALL.md / QC.md updated where stale model/timeout references remained.
+- ONBOARDING_VERSION bumped to v9.6.2.
 
 ### What's New in v9.6.0 (May 13, 2026) — Zero Human Company folder + Slim Interview + Lean Six Sigma SOPs
 

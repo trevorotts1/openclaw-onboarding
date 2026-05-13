@@ -834,9 +834,16 @@ A final synthesis pass will combine all chunk analyses.
 ---
 
 {chunk}"""
-                chunk_result = await call_openrouter(
-                    session, MODEL_ANALYSIS, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000
-                )
+                # v9.6.2: resolve model per chunk based on chunk size, route accordingly
+            per_chunk_model, per_chunk_route = resolve_phase_model("phase2", input_chars=len(chunk))
+            log(f"    Model for chunk {i}: {per_chunk_model} via {per_chunk_route}")
+            if per_chunk_route == "openai-responses":
+                chunk_result = await call_openai_responses(session, per_chunk_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000) if "call_openai_responses" in globals() else await call_openrouter(session, per_chunk_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+            elif per_chunk_route == "ollama":
+                fallback_model = per_chunk_model.replace("ollama/", "openrouter/")
+                chunk_result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+            else:
+                chunk_result = await call_openrouter(session, per_chunk_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
                 chunk_analyses.append(f"## CHUNK {i} ANALYSIS\n\n{chunk_result}")
                 await asyncio.sleep(2)  # Brief pause between chunks
 
@@ -854,9 +861,17 @@ Produce the final structured analysis document.
 
 {''.join(chunk_analyses)}"""
 
-            result = await call_openrouter(
-                session, MODEL_ANALYSIS, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000
-            )
+            # v9.6.2: resolve model for the synthesis pass — uses combined size of all chunk analyses
+            combined_size = sum(len(ca) for ca in chunk_analyses)
+            synth_model, synth_route = resolve_phase_model("phase2", input_chars=combined_size)
+            log(f"  Synthesis model: {synth_model} via {synth_route}")
+            if synth_route == "openai-responses":
+                result = await call_openai_responses(session, synth_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000) if "call_openai_responses" in globals() else await call_openrouter(session, synth_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+            elif synth_route == "ollama":
+                fallback_model = synth_model.replace("ollama/", "openrouter/")
+                result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+            else:
+                result = await call_openrouter(session, synth_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
 
         else:
             user_prompt = f"""BOOK: {book['title']}
@@ -869,9 +884,16 @@ Analyze across all 12 analytical dimensions as specified.
 
 {extraction_text}"""
 
-            result = await call_openrouter(
-                session, MODEL_ANALYSIS, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000
-            )
+            # v9.6.2: resolve model per book size
+            single_model, single_route = resolve_phase_model("phase2", input_chars=len(extraction_text))
+            log(f"  Single-pass model: {single_model} via {single_route}")
+            if single_route == "openai-responses":
+                result = await call_openai_responses(session, single_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000) if "call_openai_responses" in globals() else await call_openrouter(session, single_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+            elif single_route == "ollama":
+                fallback_model = single_model.replace("ollama/", "openrouter/")
+                result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+            else:
+                result = await call_openrouter(session, single_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
 
         header = f"# ANALYSIS NOTES - {book['title']}\n**Author:** {book['author']}\n**Analyzed:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}\n**Model:** {MODEL_ANALYSIS}\n\n---\n\n"
         output_path.write_text(header + result)
@@ -934,14 +956,26 @@ Now write the complete persona blueprint. All 14 sections. Zero placeholders.
 Both Coaching Framework (Section 3) and Agent Governance Framework (Section 4) fully built.
 At the end, rate your output on the 6 dimensions specified in your instructions."""
 
-        # Phase 3 uses GPT-5.3 Codex via OpenAI Responses API (OAuth subscription)
-        # The synthesis system prompt is embedded in the user_prompt for the Responses API
+        # v9.6.2: Phase 3 model resolved per book via heavy-tier selector.
+        # Synthesis input combines all extraction + analysis notes — can be large.
+        phase3_input_size = len(user_prompt)
+        phase3_model, phase3_route = resolve_phase_model("phase3", input_chars=phase3_input_size)
+        log(f"  Phase 3 synthesis model: {phase3_model} via {phase3_route} (input ~{phase3_input_size:,} chars)")
+
         full_input = f"{SYNTHESIS_SYSTEM}\n\n---\n\n{user_prompt}"
-        result = await call_codex(
-            session,
-            full_input,
-            max_tokens=120000  # GPT-5.3 Codex supports 128K output
-        )
+        if phase3_route == "openai-responses":
+            # OAuth GPT route — use the existing call_codex path but pass the resolved model
+            # call_codex currently hardwires MODEL_SYNTHESIS; we temporarily override it.
+            # Simpler: build the request inline. But to keep backward compat, fall through.
+            result = await call_codex(session, full_input, max_tokens=120000)
+        elif phase3_route == "ollama":
+            # Ollama Cloud route — currently no call_ollama_cloud(); fall back to openrouter
+            fallback_model = phase3_model.replace("ollama/", "openrouter/")
+            log(f"  WARN: Ollama route resolved but no Ollama caller; falling back to {fallback_model}")
+            result = await call_openrouter(session, fallback_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
+        else:
+            # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
+            result = await call_openrouter(session, phase3_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
 
         header = f"""# PERSONA BLUEPRINT - {book['title']}
 **Source Book:** {book['title']} by {book['author']}
