@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.3.9
+#  OpenClaw Onboarding Installer v9.4.0
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.3.9"
+ONBOARDING_VERSION="v9.4.0"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -273,7 +273,7 @@ discover_skills() {
 # ----------------------------------------------------------
 # Concurrency Configuration
 # ----------------------------------------------------------
-configure_concurrency() {
+configure_concurrency_LEGACY_UNUSED() {
     step "Configuring Sub-Agent Concurrency"
     
     local OPENCLAW_JSON="$HOME/.openclaw/openclaw.json"
@@ -383,23 +383,87 @@ cat > "$RESUME_FILE" <<RESUME_JSON
 RESUME_JSON
 success "State carryover initialized at $RESUME_FILE"
 
-# 0.3 — Sub-agent settings (per INSTALL-CONTRACT.md Rule 11)
-if command -v openclaw >/dev/null 2>&1; then
-    # Read existing values (so we only set if missing/wrong)
-    CUR=$(openclaw config get agents.defaults.subagents 2>/dev/null | grep -oE '"maxChildrenPerAgent"[: ]+[0-9]+|"maxConcurrent"[: ]+[0-9]+|"maxSpawnDepth"[: ]+[0-9]+' | head -3)
-    if echo "$CUR" | grep -q "maxChildrenPerAgent.*20"; then
-        success "Sub-agent settings already configured (20/100/5/high)"
-    else
-        note "Configuring sub-agent settings (maxChildrenPerAgent=20, maxConcurrent=100, maxSpawnDepth=5, thinking=high)..."
-        openclaw config set agents.defaults.subagents.maxChildrenPerAgent 20 >> "$LOG_FILE" 2>&1 || warn "could not set maxChildrenPerAgent"
-        openclaw config set agents.defaults.subagents.maxConcurrent 100 >> "$LOG_FILE" 2>&1 || warn "could not set maxConcurrent"
-        openclaw config set agents.defaults.subagents.maxSpawnDepth 5 >> "$LOG_FILE" 2>&1 || warn "could not set maxSpawnDepth"
-        openclaw config set agents.defaults.subagents.thinking '"high"' >> "$LOG_FILE" 2>&1 || warn "could not set thinking level"
-        success "Sub-agent settings written"
-    fi
-else
-    warn "openclaw CLI not present yet — sub-agent config will be set after CLI install"
-fi
+# 0.3 — Canonical sub-agent + bootstrap config (v9.4.0)
+# Hard-overwrites the numeric limits (these are protocol gates, not preferences).
+# Preserves agents.defaults.subagents.model.fallbacks if a client has customized it.
+# Sets allowAgents=["*"] on every agents.list entry (wildcard subagent permission).
+note "Configuring canonical sub-agent + bootstrap settings (v9.4.0 spec)..."
+backup_config_file "$OCJSON"
+
+python3 << PYEOF
+import json, os, sys
+
+path = "$OCJSON"
+if not os.path.exists(path):
+    print(f"  ⚠  {path} does not exist yet — Step 0 will be retried after CLI install", file=sys.stderr)
+    sys.exit(0)
+
+with open(path) as f:
+    cfg = json.load(f)
+
+agents = cfg.setdefault('agents', {})
+defaults = agents.setdefault('defaults', {})
+sub = defaults.setdefault('subagents', {})
+
+# Hard-overwrite numeric limits (protocol gates)
+sub['maxChildrenPerAgent'] = 20
+sub['maxSpawnDepth']       = 5
+# maxConcurrent: hard-overwrite to 100, with a min-clamp of 50 (never less)
+prev_concurrent = sub.get('maxConcurrent', 100)
+try:
+    prev_concurrent = int(prev_concurrent)
+except (TypeError, ValueError):
+    prev_concurrent = 100
+sub['maxConcurrent'] = max(100, prev_concurrent) if prev_concurrent >= 50 else 100
+# Hard set thinking level
+sub['thinking'] = 'high'
+
+# PRESERVE model fallbacks if already set; only seed if missing
+model_block = sub.get('model')
+if not isinstance(model_block, dict) or 'fallbacks' not in model_block:
+    sub['model'] = {
+        'fallbacks': [
+            'ollama/kimi-k2.6:cloud',
+            'openrouter/xiaomi/mimo-v2.5-pro',
+            'deepseek/deepseek-v4-pro'
+        ]
+    }
+    print("  ✓ subagents.model.fallbacks seeded (was missing)")
+else:
+    print("  ℹ  subagents.model.fallbacks preserved (already customized)")
+
+# Bootstrap character limits — hard overwrite
+prev_max   = defaults.get('bootstrapMaxChars')
+prev_total = defaults.get('bootstrapTotalMaxChars')
+defaults['bootstrapMaxChars']       = 200000
+defaults['bootstrapTotalMaxChars']  = 400000
+
+print(f"  ✓ bootstrapMaxChars: {prev_max} → 200000")
+print(f"  ✓ bootstrapTotalMaxChars: {prev_total} → 400000")
+print(f"  ✓ subagents.maxChildrenPerAgent → 20")
+print(f"  ✓ subagents.maxConcurrent → {sub['maxConcurrent']} (min-clamp 50)")
+print(f"  ✓ subagents.maxSpawnDepth → 5")
+print(f"  ✓ subagents.thinking → high")
+
+# Wildcard allowAgents on every agents.list entry
+agent_list = agents.get('list', [])
+updated_entries = 0
+for entry in agent_list:
+    if not isinstance(entry, dict):
+        continue
+    entry_sub = entry.setdefault('subagents', {})
+    prev_allow = entry_sub.get('allowAgents', None)
+    if prev_allow != ['*']:
+        entry_sub['allowAgents'] = ['*']
+        updated_entries += 1
+print(f"  ✓ allowAgents=['*'] applied to {updated_entries} agents.list entries (wildcard subagent permission)")
+
+cfg['agents'] = agents
+with open(path, 'w') as f:
+    json.dump(cfg, f, indent=2)
+print("  ✓ openclaw.json written")
+PYEOF
+success "Canonical sub-agent + bootstrap config applied"
 
 # 0.4 — Model selection (advisory; agent picks at runtime based on what's available)
 note "Master orchestrator model priority (per INSTALL-CONTRACT.md Rule 10):"
@@ -557,7 +621,14 @@ fi
 # ----------------------------------------------------------
 # Step 7: Configure Concurrency
 # ----------------------------------------------------------
-configure_concurrency
+# NOTE (v9.4.0): canonical sub-agent + bootstrap config is now applied in
+# Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
+# configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
+# field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
+# maxChildrenPerAgent=20, maxConcurrent=100 (min-clamp 50), maxSpawnDepth=5,
+# bootstrapMaxChars=200000, bootstrapTotalMaxChars=400000, plus the
+# allowAgents=["*"] wildcard on every agents.list entry.
+note "Step 7: Sub-agent + bootstrap config already applied in Step 0 — skipping"
 
 # ----------------------------------------------------------
 # Step 7a: Configure Active Memory (Layer 8)
@@ -749,7 +820,7 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 - 01-teach-yourself-protocol  (REQUIRED — every other skill depends on TYP)
 - 02-back-yourself-up-protocol  (REQUIRED — config backup before any other skill modifies config)
 
-**Wave 2 — INDEPENDENT INTEGRATIONS (parallel, ~10 sub-agents simultaneously):**
+**Wave 2 — INDEPENDENT INTEGRATIONS (parallel, up to 20 sub-agents per maxChildrenPerAgent — 11 skills in this wave):**
 - 03-agent-browser
 - 04-superpowers
 - 05-ghl-setup
@@ -762,7 +833,7 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 - 12-openrouter-setup
 - 14-google-workspace-integration
 
-**Wave 3 — CONTENT + SERVICE TOOLS (parallel, ~10 sub-agents):**
+**Wave 3 — CONTENT + SERVICE TOOLS (parallel, up to 20 sub-agents — 14 skills in this wave, all within the maxChildrenPerAgent cap):**
 - 15-blackceo-team-management
 - 16-summarize-youtube
 - 17-self-improving-agent

@@ -2,18 +2,33 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.3.9** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.4.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
+### What's New in v9.4.0 (May 13, 2026) — Canonical Bootstrap + Sub-Agent Config in Step 0
+
+- **Step 0 rewritten** to apply the canonical sub-agent + bootstrap config block before any other install work runs. Replaces the broken legacy `configure_concurrency()` function that used wrong field names (`maxQueue`/`maxDepth`) and lower values.
+- **Hard-overwrite of numeric limits** (protocol gates, not preferences):
+  - `agents.defaults.bootstrapMaxChars = 200000` (was 280000)
+  - `agents.defaults.bootstrapTotalMaxChars = 400000` (was 280000)
+  - `agents.defaults.subagents.maxChildrenPerAgent = 20`
+  - `agents.defaults.subagents.maxConcurrent = 100` (with a min-clamp of 50 — never lower)
+  - `agents.defaults.subagents.maxSpawnDepth = 5`
+  - `agents.defaults.subagents.thinking = "high"`
+- **`allowAgents = ["*"]` wildcard** written to every `agents.list[N].subagents` entry (75 entries on the live config). Sub-agent spawning was previously locked to most agents because the lists were empty. Wildcard means every model gains full sub-agent permission, no per-model maintenance.
+- **Sub-agent model fallback chain preserved** if a client has customized it; only seeded if missing. Default seed: `ollama/kimi-k2.6:cloud` → `openrouter/xiaomi/mimo-v2.5-pro` → `deepseek/deepseek-v4-pro`.
+- **5 dependency-aware install waves** (unchanged but now documented with correct cap): Wave 1 = 01+02 sequential foundation. Wave 2 = up to 11 skills parallel (within 20-child cap). Wave 3 = up to 14 skills parallel (within cap). Wave 4 = 31→36 sequential infrastructure. Wave 5 = 22→23→32→35 sequential main-orchestrator-only.
+- Legacy `configure_concurrency()` function renamed to `configure_concurrency_LEGACY_UNUSED()` and Step 7 call replaced with a no-op note pointing back at Step 0.
+- ONBOARDING_VERSION bumped to v9.4.0.
+
 ### What's New in v9.3.9 (May 13, 2026) — Trigger Doc Renamed "Fresh Install" → "Full Onboarding"
 
-- **`ONBOARDING-TRIGGERS.md`** — Blocks 1–4 renamed from "Fresh Install" to "Full Onboarding" to accurately describe what they do. In Trevor's workflow, every client arrives with a baseline OpenClaw + Telegram agent already configured; Blocks 1–4 lift that baseline to the full 36-skill package. The old name implied an empty machine, which is not the actual workflow.
+- **`ONBOARDING-TRIGGERS.md`** — Blocks 1–4 renamed from "Fresh Install" to "Full Onboarding" to accurately describe what they do. In Trevor's workflow, every client arrives with a baseline OpenClaw + Telegram agent already configured; Blocks 1–4 lift that baseline to the full 36-skill package.
 - **Blocks 2 (Mac, Telegram) and 4 (VPS, Telegram) marked as ⭐ standard path** — these are the default onboarding routes; Terminal blocks (1, 3) are for self-service or bootstrap scenarios.
-- **Alarmist "Before you start" notes removed** from Blocks 2 and 4 — no longer redirects clients to Terminal if they don't have OpenClaw, because in this workflow that case doesn't occur.
-- ONBOARDING_VERSION bumped to v9.3.9.
+- **Alarmist "Before you start" notes removed** from Blocks 2 and 4.
 
 ### What's New in v9.3.8 (May 13, 2026) — Core.md Terminology Seeded into MEMORY.md
 

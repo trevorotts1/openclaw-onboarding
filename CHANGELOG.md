@@ -1,3 +1,31 @@
+## v9.4.0 - May 13, 2026 - Canonical Bootstrap + Sub-Agent Config in Step 0
+
+### Added
+- **Canonical Step 0 bootstrap block** in `install.sh`. Runs before any other install work and writes the protocol-gate numeric limits + sub-agent permissions block to `openclaw.json`:
+  - `agents.defaults.bootstrapMaxChars` → `200000` (hard overwrite)
+  - `agents.defaults.bootstrapTotalMaxChars` → `400000` (hard overwrite)
+  - `agents.defaults.subagents.maxChildrenPerAgent` → `20` (hard overwrite)
+  - `agents.defaults.subagents.maxConcurrent` → `100` with min-clamp of 50 (hard overwrite if existing < 100, never lower than 50)
+  - `agents.defaults.subagents.maxSpawnDepth` → `5` (hard overwrite)
+  - `agents.defaults.subagents.thinking` → `"high"` (hard overwrite)
+  - `agents.defaults.subagents.model.fallbacks` — **preserved** if a client has customized it; only seeded with default chain (Ollama Kimi cloud → OpenRouter Xiaomi Mimo → DeepSeek v4 pro) if missing entirely
+  - `agents.list[N].subagents.allowAgents = ["*"]` wildcard applied to every entry in the agent list (75 entries on Trevor's live config). Previously most entries had `allowAgents: []` and could not spawn sub-agents at all.
+
+### Fixed
+- **Removed conflict with legacy `configure_concurrency()` function** which used the wrong field names (`maxQueue`/`maxDepth`) and lower values (`50/10/4`). Renamed to `configure_concurrency_LEGACY_UNUSED()`. Step 7 invocation replaced with a no-op note that points back at Step 0.
+- **Wave-count documentation** in the UPDATE PENDING flag aligned with `maxChildrenPerAgent=20`: Wave 2 ~11 skills parallel, Wave 3 ~14 skills parallel — both within the cap. Previous comments said "~10 sub-agents" which was stale from older `maxChildren=10`.
+
+### Changed
+- **5-wave dependency-aware install pipeline** documented explicitly:
+  - **Wave 1 — Foundation** (sequential): `01-teach-yourself-protocol`, `02-back-yourself-up-protocol`
+  - **Wave 2 — Independent integrations** (parallel, up to 20 children): 11 skills — 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 14
+  - **Wave 3 — Content + service tools** (parallel, up to 20 children): 14 skills — 15, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 29, 30
+  - **Wave 4 — Infrastructure** (sequential): `31-upgraded-memory-system` → `36-ghl-mcp-setup`
+  - **Wave 5 — Main-orchestrator-only** (sequential, NEVER delegate): `22-book-to-persona` → `23-ai-workforce-blueprint` → `32-command-center-setup` → `35-social-media-planner`
+- **ONBOARDING_VERSION** bumped to v9.4.0 in install.sh, update-skills.sh, VERSION, README.md, both repos.
+
+---
+
 ## v9.3.9 - May 13, 2026 - Trigger Doc Renamed "Fresh Install" → "Full Onboarding"
 
 ### Changed
