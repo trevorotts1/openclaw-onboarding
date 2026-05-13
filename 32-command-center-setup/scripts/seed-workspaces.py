@@ -411,3 +411,19 @@ if __name__ == "__main__":
     print(f"Departments found: {len(departments)} (will seed exactly this many — no 17-default fallback)")
     print("Seeding workspaces...")
     seed(db, departments, company_info)
+
+    # v9.6.5: auto-generate brand.css so the Kanban frontend renders client colors.
+    # The generator finds the public/ dir automatically; logs warning if it can't.
+    import subprocess
+    brand_css_script = Path(__file__).parent / "generate-brand-css.py"
+    if brand_css_script.is_file():
+        try:
+            subprocess.run(
+                ["python3", str(brand_css_script), "--company-slug", company_info["slug"]],
+                check=False, timeout=10,
+            )
+        except (subprocess.TimeoutExpired, Exception) as e:
+            print(f"  [BRAND-CSS] Auto-generation failed: {e}", file=sys.stderr)
+            print(f"  [BRAND-CSS] Run manually: python3 {brand_css_script}", file=sys.stderr)
+    else:
+        print(f"  [BRAND-CSS] Script not found at {brand_css_script}; skipped", file=sys.stderr)

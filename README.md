@@ -2,25 +2,29 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.4** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.5** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
+### What's New in v9.6.5 (May 13, 2026) — Closing the Last 4 Gaps
+
+The 4 remaining gaps to a true 10 are now closed:
+
+- **Brand colors render in the Kanban frontend.** New `32-command-center-setup/scripts/generate-brand-css.py` reads `companies.config` from the Mission Control DB (or falls back to `company-config.json` in the ZHC folder) and writes a `public/brand.css` with CSS custom properties (`--brand-primary`, `--brand-accent`, `--brand-text`) plus utility classes the Kanban app imports. Auto-invoked by `seed-workspaces.py` so every install regenerates the CSS. Result: dashboard renders the client's actual brand colors, not generic neutral defaults.
+
+- **Devil's Advocate gate on Kanban "Done" column.** New `🔴🔴🔴 Kanban Done-Gate Protocol` section appended to AGENTS.md via Skill 32 CORE_UPDATES.md. Binding rules: workers move cards to Review (not Complete) when finished. DA reads the SOP's DEFINE section + the artifact, returns PASS/FAIL/INDETERMINATE. Only the DA moves cards to Complete. Prevents "task completion theater" where workers self-mark Done without quality validation.
+
+- **Company KPI roll-up widget.** New `32-command-center-setup/scripts/generate-kpi-rollup.py` reads `company-config.json` (company KPIs) + each `department-config.json` (dept KPIs that declare `rolls_up_to: <company-kpi-id>`), computes weighted rollup, writes `kpi-rollup.json` with company KPI grades (A/A-/B/C/D), per-department grades, and contributing-department breakdowns. The CEO Performance Board frontend imports this to render the three-lens view (Revenue / Mission / Operational Excellence).
+
+- **Live selector quality test harness.** New `23-ai-workforce-blueprint/scripts/test-persona-selector.sh` fires 10 canned tasks across 5 departments at the selector and asserts: (A1) every task returns a persona, (A2) persona diversity (≥3 unique across 10 tasks), (A3) score breakdowns vary (catches flat-scoring bugs), (A4) marketing-tagged tasks return marketing-tagged personas (catches keyword filter not running). Exit 0 = selector functional. Now a runnable quality check, not just a structural one.
+
+- **All 4 scripts mirrored to both Mac + VPS repos.** Auto-invoked from existing seed/install paths so a fresh install produces a fully branded, DA-gated, KPI-tracked, quality-tested Command Center on day one.
+
 ### What's New in v9.6.4 (May 13, 2026) — Add Personas from Books, YouTube, or Video
 
-New unified entry point for growing the persona library. Before v9.6.4, Skill 22 only accepted book files (PDF/EPUB/MOBI/AZW3). Now any teaching content — YouTube talks, podcasts, lectures, local seminar recordings — can become a persona, automatically wired into the same selector chain that picks personas for tasks.
-
-- **New `22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh`** — single entry point. Detects source type automatically and routes to the right extractor:
-  - **Book files (.pdf .epub .mobi .azw3):** pdfplumber extracts text
-  - **YouTube URLs:** invokes Skill 16 (Summarize YouTube) for transcript extraction (uses `OPENAI_API_KEY` then falls back to `GEMINI_API_KEY`)
-  - **Local video files (.mp4 .mov .mkv .avi .webm):** ffmpeg extracts audio + whisper transcribes
-  - **Already-transcribed text (.txt .md):** copied directly
-- **After extraction, runs Skill 22's 3-phase pipeline** (Extraction → Analysis → Synthesis) so the resulting persona blueprint has the full dual-purpose structure (coaching half + governance half, 14 sections).
-- **Auto-registers in `persona-categories.json`** with a stub entry (owner reviews and adds domain/perspective tags after first use).
-- **Auto-re-indexes Gemini Engine** so the new persona is immediately searchable by `select-persona-for-task.py`. From that point forward, every task selection considers the new persona as a candidate (filtered by dept domain tags + scored across the 5 alignment layers).
-- **Dependencies documented in SKILL.md:** YouTube needs Skill 16 + an OpenAI/Gemini key; video needs `ffmpeg` + `whisper`. Both are checked at script invocation and friendly errors printed if missing.
+- **New `add-persona-from-source.sh`** — book PDFs, YouTube URLs, local video, or transcript text → persona pipeline. Auto-re-indexes Gemini Engine.
 
 ### What's New in v9.6.3 (May 13, 2026) — Department Directors Now Call Unified Persona Selector
 

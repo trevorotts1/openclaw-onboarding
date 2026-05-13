@@ -1,3 +1,57 @@
+## v9.6.5 - May 13, 2026 - Close the last 4 gaps to a true 10
+
+The 4 outstanding gaps from the v9.6.x bulletproof pass are now closed.
+
+### Added — Brand color rendering
+
+- **`32-command-center-setup/scripts/generate-brand-css.py`** reads `companies.config` from the Mission Control SQLite DB (canonical) or falls back to `company-config.json` in the ZHC folder.
+- Writes `public/brand.css` with:
+  - CSS custom properties (`--brand-primary`, `--brand-accent`, `--brand-text`, plus derived `*-hover` / `*-muted` / focus-ring variants using `color-mix`)
+  - Utility classes (`.bg-brand-primary`, `.text-brand`, `.border-brand-accent`, etc.)
+  - Targeted overrides for header, primary buttons, Kanban column tops, active task cards, CEO grade pills
+- Hex sanitization with safe fallbacks if config returns garbage.
+- Auto-output-path detection (`~/projects/command-center/public/brand.css` and 4 alternates). `--output` flag to override.
+- `seed-workspaces.py` auto-invokes `generate-brand-css.py --company-slug <slug>` after each seed so every install/update refreshes the CSS.
+
+### Added — Devil's Advocate Done-gate
+
+- New `## 🔴🔴🔴 Kanban Done-Gate Protocol` section appended to `~/clawd/AGENTS.md` via Skill 32 CORE_UPDATES.md.
+- **Binding workflow:** Backlog → Ready → In Progress → **REVIEW** → (DA validates) → Complete.
+- Worker rules: NEVER move a card directly to Complete. Mark `da_pending=true` and move to Review.
+- DA validates against measurable DEFINE criteria from the SOP. Returns PASS / FAIL / INDETERMINATE. Only DA moves cards to Complete.
+- If SOP lacks measurable criteria, DA returns INDETERMINATE and logs that the SOP needs updating — closes the "we said done but had no way to verify" loop.
+
+### Added — Company KPI roll-up
+
+- **`32-command-center-setup/scripts/generate-kpi-rollup.py`** reads:
+  - `~/clawd/zero-human-company/<slug>/company-config.json` → company-level KPIs (`id`, `label`, `target`, `actual`, `unit`)
+  - `~/clawd/zero-human-company/<slug>/departments/<dept>/department-config.json` → per-dept KPIs with `rolls_up_to: <company-kpi-id>` and `weight`
+- Writes `kpi-rollup.json` with:
+  - Per company KPI: target / actual / percent_of_target / letter grade / list of contributing dept KPIs with weights
+  - Per department: aggregate grade based on KPI hit-rate (≥85% of target = hit)
+- Grade thresholds: 100%+ = A, 85-99% = A-, 70-84% = B, 55-69% = C, <55% = D
+- Output consumed by the CEO Performance Board frontend (Revenue / Mission / Operational Excellence lenses).
+
+### Added — Selector quality test harness
+
+- **`23-ai-workforce-blueprint/scripts/test-persona-selector.sh`** — fires 10 canned tasks across 5 depts at `select-persona-for-task.py` and asserts:
+  - **A1** Every task returns a persona id (catches script crashes)
+  - **A2** Persona diversity ≥ 3 unique across 10 tasks (catches "selector always returns the same persona" / stale-cache bugs)
+  - **A3** Score breakdowns vary ≥ 3 unique pairs (catches flat-scoring bugs)
+  - **A4** Marketing-tagged tasks return marketing-tagged personas (catches keyword filter not running)
+- Exits 0 if A1 passes and A2 doesn't FAIL; exit 3 otherwise.
+- `--verbose` flag prints full JSON per call for human review of top-3 candidates.
+- Quality of selection still requires human review, but the harness now catches the obvious functional failures automatically.
+
+### Mirrored
+
+All 4 new scripts mirrored to both Mac + VPS repos. CORE_UPDATES.md addition mirrored. `seed-workspaces.py` auto-invocation hook present in both.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.6.5.
+
+---
+
 ## v9.6.4 - May 13, 2026 - Add personas from books, YouTube, or video
 
 New unified entry point so the persona library can grow from any teaching
