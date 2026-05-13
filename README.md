@@ -2,19 +2,30 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.7** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.8** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
-### What's New in v9.6.7 (May 13, 2026) — Telegram cron regex bug fix
+### What's New in v9.6.8 (May 13, 2026) — Telegram diagnostic script + identified the real bug
 
-**Bug:** In v9.6.6 the 5-path Telegram lookup correctly found the chat ID, but the sanity-check regex `^-?\d+$` (intended to verify the result is numeric) was inside a bash heredoc piped to `python3 -c`. The shell ate the backslash before `\d`, so the regex compiled as `^-?d+$` — which only matches literal "d" characters, not digits. Chat ID `5252140759` has no `d`s, so the regex failed, the script printed nothing, and the cron installer skipped with "Cannot resolve telegram target."
+**v9.6.7 fixed the regex bug but the install on a real client machine still failed at Step 12.** Diagnosis confirmed the v9.6.7 code works correctly when the chat ID exists in any of the 5 lookup paths — but the client's `openclaw.json` has Telegram configured somewhere NONE of those 5 paths reach. Their Telegram bot works fine, so the chat ID is in the file — just in a 6th location we haven't accounted for.
 
-**Fix:** Replaced the regex with plain string ops (`target.lstrip('-').isdigit()`). Verified end-to-end via the same bash-heredoc execution path that the install actually uses — now correctly resolves `5252140759` against a real `channels.telegram.allowFrom` array.
+**New `scripts/diagnose-telegram-config.sh`** — run it on any affected machine and it dumps:
+- Every top-level key in their `openclaw.json`
+- Every key/value pair where "telegram" or "chat" appears (with full path)
+- Status of each of the 5 known lookup paths
+- Full content of `channels.telegram`, `plugins.entries.telegram`, and top-level `telegram` blocks
 
-The 5-path lookup itself was correct; only the post-find sanitization was broken.
+One-liner for affected clients:
+```
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/diagnose-telegram-config.sh | bash
+```
+
+Paste the output back so we can add the missing 6th path to v9.6.9.
+
+This is a discovery script, not a fix — the actual fix depends on what their config looks like.
 
 ### What's New in v9.6.5 (May 13, 2026) — Closing the Last 4 Gaps
 

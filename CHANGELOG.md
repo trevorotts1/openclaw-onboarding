@@ -1,3 +1,26 @@
+## v9.6.8 - May 13, 2026 - Telegram diagnostic script (v9.6.7 still failed on real client)
+
+### What happened
+v9.6.7 fixed the broken regex inside the heredoc'd Python. Verified it returns `5252140759` against my own openclaw.json. BUT a live client install on a real Mac (different user, different `$HOME`, different `openclaw.json`) still showed "Cannot resolve telegram target." That means their config has Telegram configured in a location NOT covered by any of the 5 known lookup paths. Their Telegram bot works fine, so the chat ID is somewhere in their file — just not in:
+1. `channels.telegram.allowFrom[0]`
+2. `plugins.entries.telegram.config.allowFrom[0]`
+3. `telegram.allowFrom[0]`
+4. `agents.list[*].bindings.telegram.*`
+5. `$TELEGRAM_CHAT_ID` env var
+
+### Added
+- **`scripts/diagnose-telegram-config.sh`** — dumps every key/value where "telegram" or "chat" appears in the user's openclaw.json. Shows the status of each known lookup path. Prints full `channels.telegram`, `plugins.entries.telegram`, and top-level `telegram` blocks. Run it on any failing machine; paste output back. We use that to add the missing 6th lookup path in v9.6.9.
+
+One-liner:
+```
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/diagnose-telegram-config.sh | bash
+```
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.6.8.
+
+---
+
 ## v9.6.7 - May 13, 2026 - Telegram cron regex bug fix
 
 ### The bug
