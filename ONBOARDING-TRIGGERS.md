@@ -1,367 +1,688 @@
 # How to Trigger OpenClaw Onboarding
 
-Welcome. This document shows you exactly how to start (or restart) your OpenClaw onboarding install. There is more than one way to do it because every client uses their computer differently. Pick the version below that matches your setup.
+This document shows you exactly how to start a fresh OpenClaw install or run an update on an existing install. There are **8 different ways to do it**, depending on (1) what kind of machine you have, (2) whether this is your first install or an update, and (3) whether you'd rather use Terminal or your Telegram agent.
+
+Pick the one block below that matches your exact situation. Each block is self-contained — you don't need to read the others.
 
 ---
 
-## Which version should I use?
+## Quick block selector
 
-Answer these two questions, then jump to the matching section:
+| Your machine | Fresh install or update? | Terminal or Telegram? | Jump to |
+|---|---|---|---|
+| Mac (Mac Mini, MacBook, iMac, Mac Pro) | Fresh install | Terminal | [Block 1](#block-1--mac-fresh-install-via-terminal) |
+| Mac (Mac Mini, MacBook, iMac, Mac Pro) | Fresh install | Telegram | [Block 2](#block-2--mac-fresh-install-via-telegram) |
+| VPS / Hostinger / cloud server | Fresh install | Terminal | [Block 3](#block-3--vps-fresh-install-via-terminal) |
+| VPS / Hostinger / cloud server | Fresh install | Telegram | [Block 4](#block-4--vps-fresh-install-via-telegram) |
+| Mac (Mac Mini, MacBook, iMac, Mac Pro) | Update | Terminal | [Block 5](#block-5--mac-update-via-terminal) |
+| Mac (Mac Mini, MacBook, iMac, Mac Pro) | Update | Telegram | [Block 6](#block-6--mac-update-via-telegram) |
+| VPS / Hostinger / cloud server | Update | Terminal | [Block 7](#block-7--vps-update-via-terminal) |
+| VPS / Hostinger / cloud server | Update | Telegram | [Block 8](#block-8--vps-update-via-telegram) |
 
-**Question 1 — Which kind of machine are you installing on?**
-- A **Mac Mini, Mac laptop, or Mac desktop** → your install is the "Mac" version (Section A or B below)
-- A **VPS, Hostinger box, or rented cloud server** → your install is the "VPS" version (Section C or D below)
+**Not sure if it's a fresh install or an update?**
+- If you have NEVER installed OpenClaw on this machine before, or you wiped it and started over, it's a **fresh install** (Blocks 1–4).
+- If you already use OpenClaw and you just want the latest skills + bug fixes, it's an **update** (Blocks 5–8).
 
-**Question 2 — Are you comfortable opening Terminal and pasting a command?**
-- **Yes, I can open Terminal and paste a command** → use Section A (Mac) or Section C (VPS)
-- **No, I prefer to just talk to my agent on Telegram and let the agent do the work** → use Section B (Mac) or Section D (VPS). Note: this requires that your OpenClaw and Telegram are already set up so you have an agent to talk to.
-
-**Special case — already onboarded with us in the past?**
-You're not doing a fresh install. You just need to pull the latest updates. Go to **Section E — Existing Client Update**.
+**Not sure if your machine is a Mac or a VPS?**
+- A Mac is the computer sitting on your desk or in your home/office. You sit in front of it.
+- A VPS (Virtual Private Server) is a computer you rented from a cloud provider like Hostinger or DigitalOcean. You connect to it remotely — it lives somewhere else.
 
 ---
 
-## Section A — Mac, using Terminal
+## BLOCK 1 — Mac, Fresh Install, via Terminal
 
-**For:** clients on a Mac who are comfortable opening Terminal.
-**Time:** about 5–15 minutes depending on your internet speed.
-**What it does:** downloads every skill, sets up your OpenClaw, installs everything in waves with quality control, then tells your agent what to do next.
+### What this does
+Installs the full OpenClaw onboarding package on your Mac: all 36 skills, your agent setup, memory architecture, persona system, GHL MCPs — everything. About 5–15 minutes depending on internet speed.
 
-### Step 1: Open Terminal on your Mac
+### Before you start
+- Make sure your Mac is connected to the internet
+- Make sure you can find your Mac's Terminal app (we'll show you how below)
+- Have your GHL Private Integration Token and Location ID ready if you want GHL connected during install (otherwise the script will let you skip and add them later)
 
-1. Press **Command (⌘) + Space** at the same time to open Spotlight Search
-2. Type the word **Terminal**
-3. Press **Return / Enter**
-4. A black or white window will open with text. That's Terminal. You're in the right place.
+### Step 1 — Open Terminal on your Mac
 
-### Step 2: Copy and paste this exact command
+1. Press **Command (⌘) + Space** at the same time. A search bar appears in the middle of your screen.
+2. Type the word **Terminal**.
+3. Press **Return / Enter** on your keyboard.
+4. A black or white window opens with some text. That's Terminal. You're in the right place.
 
-Copy the line between the markers, paste it into Terminal, and press **Return / Enter**:
+### Step 2 — Paste this command and press Return
+
+Copy the entire line between the markers, paste it into Terminal, and press **Return / Enter**:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 ```
 
-You will see lines of progress scrolling by. Do NOT close Terminal while this is happening. The whole install takes about 5–15 minutes.
+### What you'll see while it runs
 
-### Step 3: When it finishes, look at the bottom of the Terminal window
+Lines of progress will scroll by. You'll see messages like:
 
-When the install is done, Terminal will print a big box that says **"BACKUP — IF YOU DID NOT GET A TELEGRAM NOTE"** with instructions inside. That box is your safety net.
+- `Step 1: ...` / `Step 2: ...` / etc. — the script works through about 11 steps
+- Skills being copied into `~/.openclaw/skills/`
+- `Silent Credential Discovery` — the script looks for any API keys or PITs you already have stored
+- `Configuring Active Memory (Layer 8)` — memory system being set up
+- `Sub-agent concurrency configured at install time (50 concurrent, 10 queue, 4 depth)`
+- `UPDATE PENDING flag written to AGENTS.md` — this is what your agent will read after install
 
-Two things will happen at the same time:
+The whole run takes **5–15 minutes**. Don't close Terminal while it's running.
 
-1. **Your Telegram should ding** with a message from your OpenClaw bot. It will look something like:
-   *"OpenClaw Onboarding install complete. Paste this to your agent: [block of instructions]."*
-   If you got that ding, just copy what it tells you to paste, paste it back to your agent on Telegram, and your agent will take over from there.
+### When it finishes
 
-2. **If your Telegram did NOT ding** (for any reason), look at the box at the bottom of the Terminal window. Copy the instruction between the `>>>` and `<<<` markers, then paste it to your agent in whatever app you normally use to talk to your agent (Telegram, web chat, whatever).
+Two things happen at the end of the install:
 
-Either way, the agent reads your AGENTS.md file, sees the UPDATE PENDING flag at the top, and walks through the rest of the setup automatically. You do not have to type any more commands.
+1. **A big ASCII box prints in your Terminal window** that looks like this:
+   ```
+   ╔════════════════════════════════════════════════════════════════════╗
+   ║   BACKUP — IF YOU DID NOT GET A TELEGRAM NOTE                      ║
+   ╠════════════════════════════════════════════════════════════════════╣
+   ║   ... instructions for what to paste to your agent ...             ║
+   ╚════════════════════════════════════════════════════════════════════╝
+   ```
+   This box is your safety net. We'll come back to it.
 
-### Step 4: Confirm the install is fully active
+2. **Your Telegram should ding** with a message from your OpenClaw bot containing the exact instructions to paste to your agent.
 
-Ask your agent (in Telegram or wherever you talk to it):
+### Success looks like this
+
+- Terminal ends with `✓ OpenClaw Onboarding v9.1.x installed` and a green status line: `✓ Telegram completion note sent to [YOUR_CHAT_ID]`
+- You receive a Telegram message from your OpenClaw bot. It starts with `✅ OpenClaw Onboarding v9.1.x install complete` and contains a `▶` arrow followed by the instruction to paste to your agent
+- Copy the instruction inside the Telegram message and paste it back to your agent on Telegram. Your agent reads your AGENTS.md, sees the UPDATE PENDING flag, and walks through the rest of the setup automatically. You do not have to type any more commands.
+
+### If something looks wrong
+
+- **Terminal shows `⚠ Telegram skipped — no telegram.allowFrom configured`** — your Telegram isn't set up to receive notifications from your OpenClaw. Use the backup ASCII box at the bottom of Terminal: copy the instruction between `>>>` and `<<<`, paste it to your agent in whatever app you use to talk to your agent.
+- **Terminal shows `⚠ Telegram completion note FAILED`** — Telegram is configured but the send failed. Same fix: use the backup ASCII box.
+- **You didn't get a Telegram note AND you don't see the backup ASCII box** — scroll up in Terminal. The box is near the bottom, just before the gateway restart message. If you genuinely don't see it, the install didn't complete; re-run the curl command from Step 2.
+
+### How to verify it worked
+
+Wait about 30 seconds after Terminal finishes (gateway needs to restart), then ask your agent (in Telegram, web chat, or however you talk to it):
 
 > *"Are all my skills activated? Give me a summary."*
 
-You should get back a list of skills with their statuses. If anything failed, the agent will tell you and propose a fix.
+You should get back a list of skills with statuses. If anything failed, your agent will tell you and propose a fix.
 
 ---
 
-## Section B — Mac, using Telegram (no Terminal)
+## BLOCK 2 — Mac, Fresh Install, via Telegram
 
-**For:** clients on a Mac who prefer to not touch Terminal. Requires that you already have OpenClaw + Telegram set up so you have an agent to message.
-**Time:** about 5–15 minutes.
-**What it does:** your existing Telegram agent runs the install for you locally on your Mac.
+### What this does
+Tells your existing OpenClaw Telegram agent to run the install on your Mac for you. You don't open Terminal yourself — the agent does it via its shell-exec capability. Same end result as Block 1, just hands-free.
 
-### Step 1: Open your Telegram chat with your OpenClaw agent
+### Before you start
+- You must already have OpenClaw + Telegram set up. This block assumes you have an agent you currently chat with on Telegram. If you do NOT have OpenClaw running yet, use Block 1 instead — you need a working agent before this block can work.
+- The agent needs shell-exec permissions (which is standard for OpenClaw)
+- Have your GHL Private Integration Token and Location ID ready in case the install asks for them
 
-Open Telegram. Find your conversation with your OpenClaw bot (the one you normally chat with).
+### Step 1 — Open Telegram
 
-### Step 2: Paste this exact message to your agent
+Open the Telegram app on your phone or computer. Find your existing conversation with your OpenClaw bot.
 
-Copy everything between the `>>>` and `<<<` markers below. Paste it as a single message to your agent. Send it.
+### Step 2 — Paste this exact message to your agent
+
+Copy everything between the `>>>` and `<<<` markers below. Paste it as a single message to your agent. Send.
 
 ```
 >>>
-I need you to run the OpenClaw onboarding install on my Mac and follow these rules exactly.
+I need you to run the OpenClaw onboarding fresh install on my Mac and follow these rules exactly. This is a long but complete instruction set — read it all before you start.
 
-CONTRACT (do not deviate):
-1. Open my Terminal yourself using your shell-exec capability. Run this command exactly as written, do not change a single character:
-   curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+RULE 1 — Run this command on my Mac using your shell-exec capability. Run it exactly as written, character for character, no edits:
+  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 
-2. Watch the install output. Tell me progress every 5 skills (or every 2 minutes, whichever comes first). Use plain English, not jargon.
+RULE 2 — Do not modify the command. Do not change the URL. Do not add flags. Do not pipe to anything other than bash. If you think the command needs a tweak, ask me first — do not assume.
 
-3. Stop telling me about technical details I don't need. I want headlines: "5 of 35 skills installed," "Phase A complete," "QC running." Not raw error logs.
+RULE 3 — Watch the install output continuously. You should never lose track of which step the install is on. Capture stdout AND stderr.
 
-4. When the install finishes, my Mac will write an UPDATE PENDING flag at the top of my AGENTS.md file. Read that flag carefully. Follow the 5-Phase Processing Order written in it EXACTLY. Do not improvise. Do not skip phases.
+RULE 4 — Send me progress updates every 5 skills installed OR every 2 minutes, whichever comes first. Plain English headlines only, no raw error logs unless I ask.
 
-5. Process skills in waves the way the flag says: Phase A = parallel install in 5 waves, Phase B = activate foundation (Skill 31 memory + Skill 22 persona), Phase C = interactive (Skill 23 + Skill 35), Phase D = ready/waiting, Phase E = QC + report.
+RULE 5 — When the install completes, my system writes an UPDATE PENDING flag at the top of my workspace AGENTS.md file. Read that flag completely before doing anything else.
 
-6. Spin up sub-agents within the configured limits: max 50 concurrent, queue 10, spawn depth 4. Do not exceed these.
+RULE 6 — Follow the 5-Phase Processing Order in the UPDATE PENDING flag EXACTLY. Do not improvise. Do not skip phases. Do not reorder phases.
 
-7. Run the QC checks for every skill. If any skill scores below 8 out of 10 on QC, do not silently move on — tell me which skill failed and what the failure was.
+RULE 7 — Phase A: parallel install of all skills in 5 waves. Timeout: 600 seconds (10 minutes). Wave 1 = Skills 01–06, Wave 2 = 07–12, Wave 3 = 13–18, Wave 4 = 19–24, Wave 5 = 25–36.
 
-8. For Skill 36 (GHL MCP Setup): you MUST run its bundled qc-ghl-setup.sh script after install. Do not declare GHL set up until that script exits with status 0.
+RULE 8 — Phase B: activate foundation skills (Skill 31 Upgraded Memory System and Skill 22 Book-to-Persona). Timeout: 900 seconds.
 
-9. If you hit ANY of these situations, stop immediately and ask me before doing anything:
-   - A skill needs my API key, password, or other credential you cannot find in my .env files
-   - A skill says it needs my intervention or input
-   - A QC check fails and you don't have a clear fix
-   - You're about to push to GitHub or send a message to someone other than me
-   - You think a step is unnecessary and want to skip it (don't — ask first)
+RULE 9 — Phase C: process interactive skills (Skill 23 AI Workforce Blueprint, Skill 35 Social Media Planner). Timeout: 1200 seconds.
 
-10. Do NOT take shortcuts:
-    - Never use --break-system-packages
-    - Never use --force
-    - Never use --no-verify
-    - Never substitute a model name for one you "think is better"
-    - Never invent a step that's not in the install script or the UPDATE PENDING flag
+RULE 10 — Phase D: validate all skill installations and run QC. Timeout: 1800 seconds.
 
-11. When the entire install AND activation are complete:
-    - Remove the UPDATE PENDING section from my AGENTS.md
-    - Add a one-line entry to my MEMORY.md under "## System Updates" with today's date and the version installed
-    - Send me a final summary: "Install complete. [N] skills active. Memory: 8 layers verified. Personas: [M] available. Anything that needs my attention: [list]."
+RULE 11 — Phase E: final QC and report to me. No timeout.
 
-12. Total time budget: aim for under 30 minutes from start to final summary. If you're over 30 minutes, send me a progress note explaining where you're stuck.
+RULE 12 — Sub-agent concurrency limits: max 50 concurrent sub-agents, queue depth 10, spawn depth 4. NEVER exceed these.
 
-Match my communication preferences: I am over 60, I want plain English, no acronyms unless you explain them, headlines first, details only if I ask. Confirm you understand by replying with "Got it — starting your install" and a brief plain-English summary of what you're about to do. Then start.
+RULE 13 — Run the bundled QC checks for every single skill. Each skill has a QC.md file with a 0–10 scoring rubric. Aim for 8 out of 10 or higher. If a skill scores below 8, stop and tell me which skill failed and why.
+
+RULE 14 — Skills 22 and 23 are MAIN ORCHESTRATOR ONLY. Never delegate them to sub-agents. You must process those yourself.
+
+RULE 15 — Skill 36 (GHL MCP Setup) has a special bundled script called qc-ghl-setup.sh. You MUST run that script after install and it MUST exit with status 0 before you call GHL done. If it exits non-zero, tell me which assertion failed.
+
+RULE 16 — STOP IMMEDIATELY and ask me before doing any of these:
+  (a) A skill needs an API key, password, PIT, or credential you cannot find in my .env files OR openclaw.json env.vars
+  (b) A skill explicitly asks for owner input or a decision
+  (c) A QC check fails and you don't have a clear, documented fix
+  (d) You're about to push to GitHub, send a message to anyone other than me, post to social media, or take any externally-visible action
+  (e) You think a step is unnecessary and want to skip it (the answer is don't skip it — ask first)
+
+RULE 17 — NEVER take these shortcuts under any circumstances:
+  (a) No --break-system-packages
+  (b) No --force
+  (c) No --no-verify
+  (d) No --no-gpg-sign
+  (e) No substituting a model name for one you "think is better"
+  (f) No inventing steps that aren't in the install script or the UPDATE PENDING flag
+
+RULE 18 — Watchdog: if you go more than 10 minutes without progress on a single skill, send me an alert explaining where you're stuck.
+
+RULE 19 — Total time budget: aim for under 30 minutes from start to final summary. If you go over 30 minutes, send a progress note explaining what's slow.
+
+RULE 20 — Communication style: I am over 60. I want plain English, no acronyms unless you explain them, headlines first, technical details only if I ask. Never assume I know what an acronym means. Never paste raw stack traces unless I ask.
+
+RULE 21 — When everything is complete:
+  (a) Remove the entire UPDATE PENDING section from my AGENTS.md
+  (b) Append one line to my MEMORY.md under "## System Updates" with today's date and the version installed
+  (c) Send me a final summary in this exact shape: "Install complete. [N] skills active. Memory: 8 layers verified. Personas: [M] available. Anything that needs my attention: [bulleted list, or 'nothing']."
+
+RULE 22 — Confirm you understand by replying with "Got it — starting your install" followed by a brief plain-English summary (2–3 sentences) of what you're about to do. Then start. Do not skip the confirmation step.
 <<<
 ```
 
-### Step 3: Wait and watch
+### What you'll see while it runs
 
-Your agent will reply confirming it understands, then start running the install on your Mac. You'll get progress updates every few minutes. The whole thing usually takes 15–30 minutes for a fresh install.
+- Your agent will reply confirming it understands. It will say "Got it — starting your install" and a short summary.
+- Every few minutes you'll get a progress update: *"5 of 36 skills installed,"* *"Phase A complete, moving to Phase B,"* *"Running QC on Skill 31,"* etc.
+- If the agent has a question for you (per RULE 16), it will stop and ask in plain English. Answer the question — the agent will not move on until you respond.
 
-When done, your agent will send you a summary message. Read it. If anything needs your attention, the agent will list it clearly.
+### Success looks like this
 
-### Step 4: If something goes wrong
+A final summary message from your agent that looks roughly like:
 
-If your agent stops responding or sends an error you don't understand, send this:
+> *"Install complete. 33 skills active (3 archived skills skipped as expected). Memory: 8 layers verified. Personas: 40 available. Anything that needs my attention: nothing — everything passed QC."*
 
-> *"Something seems wrong. Tell me in plain English what just happened, what the error is, and what you need from me to keep going. Do not move on without asking."*
+### If something looks wrong
+
+- **Your agent stops replying for 10+ minutes** — send: *"Are you still working on the install? What's the current status?"* The watchdog rule should make this rare, but ask anyway.
+- **The agent sends you an error you don't understand** — send: *"Explain that error in plain English. What does it mean and what do you need from me to keep going?"*
+- **The agent says it can't find a credential** — that's expected if you don't have a PIT or API key for some service. Tell the agent to skip that credential for now and continue. You can add it later.
+- **The agent tries to skip a step or take a shortcut** — say no firmly: *"Do not skip that step. Either complete it as written or stop and tell me why you can't."*
 
 ---
 
-## Section C — VPS, using Terminal (SSH)
+## BLOCK 3 — VPS, Fresh Install, via Terminal
 
-**For:** clients who manage their own VPS / Hostinger box and can SSH into it.
-**Time:** about 10–20 minutes.
-**What it does:** same as Section A, but uses the VPS-specific repo so paths land in `/data/` (the persistent volume on a VPS) instead of `~/Downloads/`.
+### What this does
+Installs OpenClaw on your VPS (Hostinger, DigitalOcean, AWS, or any cloud server). Skills land at `/data/Downloads/openclaw-master-files/` because a VPS doesn't have a `~/Downloads` folder — the persistent volume is `/data/` instead. About 10–20 minutes.
 
-### Step 1: SSH into your VPS
+### Before you start
+- You need SSH access to your VPS (IP address, username, password or key)
+- You'll need a terminal app on your local Mac (built-in Terminal) or Windows (built-in Windows Terminal / PowerShell)
+- Have your GHL Private Integration Token and Location ID ready
 
-In Terminal on your Mac (or Windows Terminal / PowerShell on Windows), connect to your VPS:
+### Step 1 — Open Terminal locally and SSH into your VPS
+
+On your Mac (or Windows), open your local Terminal. Paste:
 
 ```
 ssh root@YOUR.VPS.IP.ADDRESS
 ```
 
-Replace `YOUR.VPS.IP.ADDRESS` with the actual IP your hosting provider gave you. Enter your password when asked.
+Replace `YOUR.VPS.IP.ADDRESS` with the actual IP address your hosting provider gave you (it'll look something like `177.7.42.223`). Press Return. Enter the password when prompted.
 
-### Step 2: Paste the VPS install command
+You'll know you're connected when the prompt changes to show the VPS hostname.
 
-Once you're logged in to the VPS, paste this command and press **Return**:
+### Step 2 — Paste the VPS install command and press Return
 
 ```
 curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/install.sh | bash
 ```
 
-You'll see progress scrolling. Don't close the SSH session.
+### What you'll see while it runs
 
-### Step 3: When it finishes
+Same as Block 1, but paths land under `/data/` instead of `~/`:
+- `Step 1` through `Step 11`
+- Skills copied to `/data/.openclaw/skills/`
+- `Silent Credential Discovery` checks `/data/.openclaw/secrets/.env`
+- `UPDATE PENDING flag written to /data/clawd/AGENTS.md`
 
-Same as Section A:
+10–20 minutes total. Do not close the SSH session.
 
-1. **Your Telegram should ding** with a paste-ready message for your agent
-2. **If it didn't,** the Terminal will show a big box labeled **"BACKUP — IF YOU DID NOT GET A TELEGRAM NOTE"** with instructions to copy and paste to your agent
+### When it finishes
 
-Follow whichever path your install actually gave you.
+Same pattern as Block 1:
+1. Big ASCII backup box prints in Terminal
+2. Your Telegram should ding with a paste-ready message for your agent
 
-### Step 4: Confirm in Telegram
+### Success looks like this
 
-Ask your agent the same question:
+- Terminal: `✓ OpenClaw Onboarding v9.1.x installed` + `✓ Telegram completion note sent`
+- Telegram: paste-ready message from your bot
+- Your VPS agent receives the paste and walks through the rest of the setup
 
-> *"Are all my skills activated? Give me a summary."*
+### If something looks wrong
 
----
+- **`Permission denied` during SSH** — your password or key is wrong. Check your hosting provider's control panel for the correct credentials.
+- **`No space left on device`** — your VPS's `/data/` volume is full. Run `df -h /data` to check disk usage. You may need to upgrade your VPS plan or clean up old files.
+- **Telegram silent fail** — same fix as Block 1: use the backup ASCII box at the bottom of Terminal.
 
-## Section D — VPS, using Telegram (no SSH)
+### How to verify it worked
 
-**For:** clients who have a VPS but don't want to SSH in. Your VPS's OpenClaw needs to already be running so Telegram can reach it.
-**Time:** about 15–30 minutes.
-**What it does:** the OpenClaw agent running ON your VPS receives your Telegram message and runs the install locally on the VPS itself.
-
-### Step 1: Open Telegram
-
-Open Telegram. Find your conversation with your VPS's OpenClaw agent. (If you have BOTH a Mac and a VPS, make sure you're sending this to the VPS bot, not the Mac bot.)
-
-### Step 2: Paste this exact message
-
-Copy everything between `>>>` and `<<<`. Paste it as one message. Send.
-
-```
->>>
-I need you to run the OpenClaw onboarding install on this VPS and follow these rules exactly.
-
-CONTRACT (do not deviate):
-1. Run this command on the VPS using your shell-exec capability. Run it exactly as written, do not change a single character:
-   curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/install.sh | bash
-
-2. The VPS install puts skills under /data/ — the persistent volume. Mac paths like ~/Downloads do not exist on a VPS. The script knows this. Do not try to override paths.
-
-3. Watch the install output. Tell me progress every 5 skills (or every 2 minutes, whichever comes first). Plain English headlines only.
-
-4. When the install finishes, an UPDATE PENDING flag will be written to the top of my AGENTS.md file (the workspace AGENTS.md on the VPS, not the Mac one). Read that flag carefully. Follow the 5-Phase Processing Order EXACTLY. No improvising.
-
-5. Process skills in the waves the flag describes: Phase A parallel install, Phase B foundation, Phase C interactive, Phase D ready/waiting, Phase E QC.
-
-6. Sub-agent limits: max 50 concurrent, queue 10, spawn depth 4. Do not exceed.
-
-7. QC every skill. Anything scoring below 8/10 — stop, tell me what failed, propose a fix.
-
-8. Skill 36 (GHL MCP) must run its bundled qc-ghl-setup.sh and exit 0 before you call GHL done.
-
-9. Stop and ask me if:
-   - A skill needs a credential you can't find in /data/.openclaw/secrets/.env or openclaw.json env.vars
-   - A skill asks for owner input
-   - A QC check fails without a clear fix
-   - You're about to push to GitHub or message someone other than me
-   - You think a step is unnecessary
-
-10. Forbidden shortcuts:
-    - No --break-system-packages
-    - No --force
-    - No --no-verify
-    - No model substitutions
-
-11. When complete:
-    - Remove the UPDATE PENDING section from AGENTS.md
-    - Append to MEMORY.md under "## System Updates": today's date + version
-    - Final summary: skills active, memory layers verified, personas available, anything pending my attention
-
-12. Budget: 30 minutes. If you're over, send a progress note.
-
-Confirm with "Got it — starting your VPS install" and a brief plain-English summary, then start.
-<<<
-```
-
-### Step 3: Watch and wait
-
-Your VPS agent will run the install. You'll get Telegram updates as it progresses. Whole thing usually 20–40 minutes for a fresh VPS install.
-
-### Step 4: Confirm
+In Telegram, ask:
 
 > *"Are all my skills activated on the VPS? Give me a summary."*
 
 ---
 
-## Section E — Existing Client Update (you've onboarded with us before)
+## BLOCK 4 — VPS, Fresh Install, via Telegram
 
-**For:** anyone who has ANY previous version of OpenClaw onboarding installed — doesn't matter if it was last week, last year, or two years ago. The update script checks what skills you have and intelligently updates only what changed.
-**Time:** usually 3–10 minutes.
-**What it does:** pulls the latest skills from GitHub, replaces older versions with newer ones, leaves unchanged skills alone, installs any brand-new skills you didn't have before.
+### What this does
+Your VPS's own OpenClaw agent receives a Telegram message from you and runs the install locally on the VPS. You never SSH in. Same end result as Block 3.
 
-The update is **non-destructive**. Your existing settings, credentials, and core .md files are kept. Only the skill folders themselves get refreshed.
+### Before you start
+- Your VPS already has OpenClaw running and you have a Telegram conversation with the VPS bot
+- IMPORTANT: if you have BOTH a Mac AND a VPS, make sure you're sending this message to your **VPS** bot, not your Mac bot. They're different agents. If you send the VPS install to the Mac bot, the Mac will reject it.
+- Have your GHL credentials ready
 
-### Mac update via Terminal
+### Step 1 — Open Telegram
+
+Open Telegram. Find your conversation with your **VPS** OpenClaw bot.
+
+### Step 2 — Paste this exact message
+
+```
+>>>
+I need you to run the OpenClaw onboarding fresh install on this VPS and follow these rules exactly. This is a long instruction set — read it all before you start.
+
+RULE 1 — Run this command on the VPS using your shell-exec capability. Run it exactly as written, no edits:
+  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/install.sh | bash
+
+RULE 2 — Do not modify the command. Do not change the URL (note the URL ends in -vps/main/install.sh — this is the VPS variant, not the Mac one). Do not add flags.
+
+RULE 3 — VPS file paths are different from Mac. Skills land at /data/.openclaw/skills/ not ~/.openclaw/skills/. Secrets at /data/.openclaw/secrets/.env not ~/.openclaw/secrets/.env. Workspace at /data/clawd not ~/clawd. The install script knows this — do not override paths.
+
+RULE 4 — Watch the install output continuously. Tell me progress every 5 skills OR every 2 minutes, whichever comes first.
+
+RULE 5 — Plain English headlines only. No raw error logs unless I ask.
+
+RULE 6 — When the install finishes, an UPDATE PENDING flag is written to the top of /data/clawd/AGENTS.md (the VPS workspace AGENTS.md, not anything on the Mac). Read the flag completely.
+
+RULE 7 — Follow the 5-Phase Processing Order in the flag EXACTLY:
+  Phase A: parallel install in 5 waves (timeout 600s)
+  Phase B: activate foundation skills 31 + 22 (timeout 900s)
+  Phase C: process interactive skills 23 + 35 (timeout 1200s)
+  Phase D: validate + QC (timeout 1800s)
+  Phase E: final QC + report (no timeout)
+
+RULE 8 — Sub-agent limits: max 50 concurrent, queue 10, spawn depth 4. Never exceed.
+
+RULE 9 — QC every skill against its bundled QC.md. Aim for 8/10 or higher. Anything below 8 — stop and tell me which skill and what failed.
+
+RULE 10 — Skills 22 and 23: MAIN ORCHESTRATOR ONLY, never delegate.
+
+RULE 11 — Skill 36 (GHL MCP) must run its qc-ghl-setup.sh script. The script must exit with status 0 before you call GHL done.
+
+RULE 12 — STOP and ask me before doing any of:
+  (a) Skill needs a credential not found in /data/.openclaw/secrets/.env or openclaw.json env.vars
+  (b) Skill asks for owner input
+  (c) QC check fails without a clear fix
+  (d) You're about to push to GitHub, send a message to anyone other than me, post anywhere externally
+  (e) You think a step is skippable (ask first; the answer is don't skip)
+
+RULE 13 — NEVER use these shortcuts:
+  (a) --break-system-packages
+  (b) --force
+  (c) --no-verify
+  (d) --no-gpg-sign
+  (e) Model name substitution
+  (f) Steps not in the install script or UPDATE PENDING flag
+
+RULE 14 — Watchdog: 10 minutes stalled on one skill = send me an alert.
+
+RULE 15 — Total time budget: under 40 minutes for VPS install (slightly longer than Mac due to network latency). Send progress note if over.
+
+RULE 16 — Communication: plain English, no acronyms unless explained, headlines first, I'm over 60.
+
+RULE 17 — When complete:
+  (a) Remove UPDATE PENDING section from /data/clawd/AGENTS.md
+  (b) Append to /data/clawd/MEMORY.md under "## System Updates" with date + version
+  (c) Final summary: "VPS install complete. [N] skills active. Memory: 8 layers verified. Personas: [M] available. Anything pending my attention: [list or 'nothing']."
+
+RULE 18 — Confirm with "Got it — starting your VPS install" + 2–3 sentence plain-English summary. Then start.
+<<<
+```
+
+### What you'll see while it runs
+
+Same flow as Block 2 but the bot is your VPS bot. Progress updates, agent questions if it needs your input.
+
+### Success looks like this
+
+Final summary message similar to Block 2 but mentioning VPS.
+
+### If something looks wrong
+
+Same fixes as Block 2.
+
+---
+
+## BLOCK 5 — Mac, Update, via Terminal
+
+### What this does
+Updates an existing Mac OpenClaw install to the latest version. Checks what skills you currently have, compares against the GitHub repo, installs anything new, replaces anything that changed, and leaves unchanged skills alone. Non-destructive — your settings and credentials are preserved.
+
+**This works for ANY prior version.** Doesn't matter if you're on v3.x, v6.x, v8.x, or whatever — the script figures it out.
+
+### Before you start
+- Your Mac already has OpenClaw running from a previous install
+- You have internet
+- You'll see a small confirmation prompt if your current version matches the latest (asking if you want to force re-install)
+
+### Step 1 — Open Terminal
+
+Same as Block 1: ⌘+Space → type **Terminal** → Return.
+
+### Step 2 — Paste the update command and press Return
 
 ```
 curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
 ```
 
-### VPS update via Terminal
+### What you'll see while it runs
+
+- `📂 Skills directory: /Users/[you]/.openclaw/skills` (or `~/Downloads/openclaw-master-files/`)
+- `Current version: vX.Y.Z` / `Latest version: v9.1.x`
+- `Downloading latest skills from GitHub...`
+- `Creating backup: ~/Downloads/openclaw-backups/skills-backup-YYYYMMDD-HHMMSS` — your old skills get backed up before any change
+- For each skill being installed: either `Updated: NN-skill-name` (replaced in place) or `🆕 NEW SKILL DETECTED: NN-skill-name` followed by activation instructions for your agent
+- At the end: `Skills updated successfully!` + UPDATE PENDING flag written + Telegram status line + backup ASCII box
+
+3–10 minutes total.
+
+### When it finishes
+
+Same as install: Telegram ding + backup ASCII box in Terminal. The Telegram message lists which skills were newly installed (need activation) and which were updated in place (already working).
+
+### Success looks like this
+
+- Terminal: `Skills updated successfully! Version: v9.1.x`
+- Terminal: `✓ Telegram sent to [YOUR_CHAT_ID]`
+- Telegram: paste-ready message listing new skills + activation prompt
+- Backup folder exists at `~/Downloads/openclaw-backups/` in case you need to roll back
+
+### If something looks wrong
+
+- **`openclaw command not found`** — the OpenClaw CLI isn't on your PATH yet. Run `which openclaw` to find it. If empty, your previous install may be broken; use Block 1 to do a fresh install instead.
+- **`Already up to date`** — you already have the latest version. The script will ask if you want to force re-install. Answer `y` only if you suspect something is broken and want to refresh everything.
+- **`ERROR: Could not find extracted folder`** — the download from GitHub failed or got corrupted. Re-run the update command.
+
+### How to verify it worked
+
+Wait 30 seconds, then ask your agent:
+
+> *"What changed in this update? List newly installed skills and anything updated."*
+
+---
+
+## BLOCK 6 — Mac, Update, via Telegram
+
+### What this does
+Tells your existing OpenClaw Telegram agent to run the update on your Mac. Hands-free version of Block 5.
+
+### Before you start
+Same as Block 2 — you need a working OpenClaw + Telegram setup with shell-exec.
+
+### Step 1 — Open Telegram
+
+Find your conversation with your **Mac** OpenClaw bot.
+
+### Step 2 — Paste this exact message
+
+```
+>>>
+I need you to run the OpenClaw skills updater on my Mac and follow these rules exactly. Read all rules before starting.
+
+RULE 1 — Run this command on my Mac using your shell-exec capability. Run it exactly as written, no edits:
+  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
+
+RULE 2 — Do not modify the command, URL, or add flags. If a tweak seems needed, ask me first.
+
+RULE 3 — Watch the update output. Send me a progress note when the download finishes and when the skill copy loop completes.
+
+RULE 4 — Plain English headlines only.
+
+RULE 5 — When the update completes, an UPDATE PENDING flag is written at the top of my AGENTS.md. The flag lists which skills are NEW (didn't exist before) and which were UPDATED in place. Read the flag completely.
+
+RULE 6 — For each NEW skill listed in the flag:
+  (a) Read ALL files in the skill folder: SKILL.md, INSTALL.md, INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, QC.md, and any references/*.md
+  (b) Check prerequisites first. Search ALL standard credential locations BEFORE asking me: ~/.openclaw/secrets/.env, openclaw.json env.vars, printenv, ~/.env, ~/clawd/secrets/.env
+  (c) Execute the activation steps in INSTALL.md. Reading is NOT executing — actually run the steps.
+  (d) Apply CORE_UPDATES.md surgically. Only add the sections explicitly labeled in CORE_UPDATES.md to my AGENTS.md / TOOLS.md / MEMORY.md / SOUL.md. Never dump full skill content into core files.
+  (e) Run the QC checks in QC.md. Reach a passing score (8/10 or higher) before moving to the next skill.
+  (f) If the skill has a bundled qc-*.sh script (like Skill 36's qc-ghl-setup.sh), run it and confirm exit 0.
+
+RULE 7 — For UPDATED skills (already in place, just refreshed by the update script): assume activation is unchanged. Do NOT re-activate unless I explicitly ask. The file replacement is sufficient.
+
+RULE 8 — Sub-agent limits: max 50 concurrent, queue 10, spawn depth 4. Never exceed.
+
+RULE 9 — Skills 22 and 23 (if newly installed): MAIN ORCHESTRATOR ONLY, never delegate.
+
+RULE 10 — Skill 36 — if newly installed OR if its launchd plist was updated by the refresh, run qc-ghl-setup.sh and confirm exit 0.
+
+RULE 11 — STOP and ask me before:
+  (a) A skill needs a credential not in my .env / openclaw.json
+  (b) A skill asks for owner input
+  (c) A QC check fails without a clear fix
+  (d) You're about to push to GitHub, message anyone other than me, or take any external action
+  (e) You think a step is skippable
+
+RULE 12 — NEVER use: --break-system-packages, --force, --no-verify, --no-gpg-sign, model substitution, or invented steps.
+
+RULE 13 — Watchdog: 10 minutes stalled = alert me.
+
+RULE 14 — Time budget: 15 minutes for a typical update (much less than a fresh install). Progress note if over.
+
+RULE 15 — Communication: plain English, no acronyms unless explained, headlines first, I'm over 60.
+
+RULE 16 — When complete:
+  (a) Remove the UPDATE PENDING section from my AGENTS.md
+  (b) Append to MEMORY.md under "## System Updates" — today's date + version + list of newly-installed skills
+  (c) Final summary: "Update complete. Newly installed: [list of new skills or 'none']. Updated in place: [count]. Anything needing my attention: [list or 'nothing']."
+
+RULE 17 — Confirm with "Got it — starting your update" + 2–3 sentence summary. Then start.
+<<<
+```
+
+### What you'll see while it runs
+
+Agent confirms understanding, runs the update, sends progress notes, processes any NEW skills' activation steps.
+
+### Success looks like this
+
+Final summary listing newly installed skills (if any) and confirming updates landed.
+
+### If something looks wrong
+
+Same fixes as Block 2 — ask the agent in plain English what's happening, demand it stop and explain rather than skip.
+
+---
+
+## BLOCK 7 — VPS, Update, via Terminal
+
+### What this does
+Updates an existing VPS install to the latest version. Same as Block 5 but for VPS paths (`/data/.openclaw/skills/` and `/data/Downloads/openclaw-master-files/`).
+
+### Before you start
+Same as Block 3 — SSH access to your VPS.
+
+### Step 1 — SSH into your VPS
+
+```
+ssh root@YOUR.VPS.IP.ADDRESS
+```
+
+### Step 2 — Paste the VPS update command
 
 ```
 curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/update-skills.sh | bash
 ```
 
-### Either platform via Telegram
+### What you'll see
 
-Paste this to your agent:
+- `📂 Skills directory: /data/.openclaw/skills` (or `/data/Downloads/openclaw-master-files/`)
+- Backup created at `~/openclaw-backups/skills-backup-YYYYMMDD-HHMMSS` (note: VPS backups go to home, not Downloads)
+- Skill copy loop
+- UPDATE PENDING flag + Telegram + backup ASCII box at the end
+
+3–10 minutes.
+
+### Success looks like this
+
+Same as Block 5 but with VPS paths in the summary.
+
+### If something looks wrong
+
+- **`ssh: connection refused`** — your VPS may be offline or rebooting. Check your hosting provider's control panel.
+- **`No space left on device`** — VPS storage full; check `df -h /data`.
+- **`openclaw command not found`** — VPS CLI missing; use Block 3 to do a fresh install.
+
+### How to verify it worked
+
+In Telegram (after gateway restart finishes ~30 seconds later):
+
+> *"What changed in this VPS update? List newly installed skills."*
+
+---
+
+## BLOCK 8 — VPS, Update, via Telegram
+
+### What this does
+Your VPS's own agent receives a Telegram message and runs the update on the VPS. Hands-free version of Block 7.
+
+### Before you start
+Same as Block 4 — make sure you're messaging the **VPS** bot, not the Mac bot.
+
+### Step 1 — Open Telegram
+
+Find your **VPS** OpenClaw bot conversation.
+
+### Step 2 — Paste this exact message
 
 ```
 >>>
-Please run the OpenClaw skills updater on this machine. Use the curl command from the README for whichever repo matches my system (openclaw-onboarding for Mac, openclaw-onboarding-vps for VPS — you should already know which I'm on).
+I need you to run the OpenClaw skills updater on this VPS and follow these rules exactly. Read all rules before starting.
 
-After the script finishes, read the UPDATE PENDING flag the script wrote at the top of my AGENTS.md. For any NEW skills the script installed (the flag will list them by name), follow each skill's full activation:
-- Read SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md
-- Check prerequisites + look for credentials in my .env files before asking me
-- Execute the activation steps in INSTALL.md
-- Apply CORE_UPDATES.md surgically (no full file dumps)
-- Run the QC checks; reach a passing score before moving on
-- For Skill 36 specifically: run qc-ghl-setup.sh and confirm exit 0
+RULE 1 — Run this command on the VPS using your shell-exec capability. Run it exactly as written, no edits:
+  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/update-skills.sh | bash
 
-For skills that were just UPDATED (not new), assume they activated cleanly via the file replacement. No re-activation needed unless I ask.
+RULE 2 — Do not modify the command. The URL ends in -vps/main/update-skills.sh — confirm you're using the VPS variant, not the Mac variant.
 
-Send me a summary at the end with what was newly installed, what was updated, and anything needing my attention.
+RULE 3 — VPS paths are different from Mac. Skills at /data/.openclaw/skills/. Secrets at /data/.openclaw/secrets/.env. Workspace at /data/clawd. The update script knows this — do not override paths.
+
+RULE 4 — Watch the update output. Send me a progress note when the download finishes and when the skill copy loop completes.
+
+RULE 5 — Plain English headlines only.
+
+RULE 6 — When the update completes, an UPDATE PENDING flag is written at the top of /data/clawd/AGENTS.md. The flag lists NEW skills (didn't exist before) and UPDATED skills (refreshed in place). Read the flag completely.
+
+RULE 7 — For each NEW skill in the flag:
+  (a) Read ALL files in the skill folder: SKILL.md, INSTALL.md, INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, QC.md, and any references/*.md
+  (b) Check prerequisites. Search ALL standard credential locations BEFORE asking me: /data/.openclaw/secrets/.env, openclaw.json env.vars, printenv, /data/.env
+  (c) Execute the activation steps in INSTALL.md (reading is not executing — actually run them)
+  (d) Apply CORE_UPDATES.md surgically — only labeled sections, no full file dumps
+  (e) Run QC checks; reach 8/10 or higher before moving on
+  (f) If the skill has a qc-*.sh script (e.g. Skill 36's qc-ghl-setup.sh), run it and confirm exit 0
+
+RULE 8 — For UPDATED skills (refreshed in place): no re-activation needed. The file replacement is sufficient unless I explicitly ask.
+
+RULE 9 — Sub-agent limits: max 50 concurrent, queue 10, spawn depth 4.
+
+RULE 10 — Skills 22 and 23 if newly installed: MAIN ORCHESTRATOR ONLY.
+
+RULE 11 — Skill 36 — if newly installed OR if its systemd unit was refreshed, run qc-ghl-setup.sh and confirm exit 0.
+
+RULE 12 — STOP and ask me before:
+  (a) Credential not in /data/.openclaw/secrets/.env or openclaw.json
+  (b) Skill asks for owner input
+  (c) QC failure without clear fix
+  (d) Any external action (GitHub push, message to anyone but me, etc.)
+  (e) Skipping a step
+
+RULE 13 — NEVER use --break-system-packages, --force, --no-verify, --no-gpg-sign, model substitution, or invented steps.
+
+RULE 14 — Watchdog: 10 minutes stalled = alert me.
+
+RULE 15 — Time budget: 20 minutes for a typical VPS update. Progress note if over.
+
+RULE 16 — Communication: plain English, no acronyms unless explained, headlines first, I'm over 60.
+
+RULE 17 — When complete:
+  (a) Remove UPDATE PENDING section from /data/clawd/AGENTS.md
+  (b) Append to /data/clawd/MEMORY.md under "## System Updates" with date + version + list of new skills
+  (c) Final summary: "VPS update complete. Newly installed: [list or 'none']. Updated in place: [count]. Anything needing my attention: [list or 'nothing']."
+
+RULE 18 — Confirm with "Got it — starting your VPS update" + 2–3 sentence summary. Then start.
 <<<
 ```
 
-After the update, ask your agent:
+### What you'll see, success, and troubleshooting
 
-> *"What's new in this update? Anything I should know about?"*
+Same pattern as Block 6, but the bot is the VPS bot. Reference Block 6 for the troubleshooting walkthrough.
 
 ---
 
-## Troubleshooting
+## Shared troubleshooting
 
-### "I didn't get a Telegram notification after the install"
+These apply to all 8 blocks above.
 
-The install script will always print a backup instruction block to your Terminal at the end. Look for the box with `╔` and `╠` border characters. Copy the lines between `>>>` and `<<<` from inside that box and paste them to your agent in any chat you use.
+### "I didn't get a Telegram notification at the end"
 
-If you used the Telegram method (Section B or D) instead of Terminal, your agent already has the instructions baked into the contract you sent.
+Every Terminal-based install (Blocks 1, 3, 5, 7) prints a backup ASCII box at the end of the run with paste-ready instructions for your agent. Look for the box bordered by `╔` and `╠` characters. Copy the instruction between `>>>` and `<<<` from inside the box and paste it to your agent in any chat you use.
+
+If you used a Telegram block (Blocks 2, 4, 6, 8), your agent already has the instructions baked into the contract you sent.
 
 ### "My agent didn't see the UPDATE PENDING flag in AGENTS.md"
 
-This usually means your agent's session loaded BEFORE the install finished writing the flag. Try one of these:
+The agent's session likely loaded BEFORE the flag was written. Try one of:
 
-1. **Telegram method:** type `/restart` to your bot — that reloads the agent's context
-2. **Terminal method:** the install script triggers a gateway restart automatically. Wait 30 seconds, then chat with your agent again — it will reload the file.
+1. **Telegram users:** type `/restart` to your bot (reloads the agent's context)
+2. **Terminal users:** the install/update script triggers a gateway restart automatically. Wait 30 seconds, then chat with your agent again.
 3. **If neither works:** ask your agent: *"Please re-read my AGENTS.md file right now and process anything new at the top."*
 
-### "It says 'openclaw command not found'"
+### "It says `openclaw: command not found`"
 
-Your OpenClaw CLI isn't installed yet, or isn't on your PATH. If this is a brand-new install, that's normal — the install script will install it for you. If it's not a fresh install, you may need to reinstall OpenClaw before running the updater.
+Your OpenClaw CLI isn't installed yet or isn't on your PATH. If this is a fresh install (Blocks 1–4), the install script will install it for you as part of the run. If this is an update (Blocks 5–8) and the CLI is missing, your previous install may be broken — use Blocks 1–4 to do a fresh install instead.
 
 ### "Something else went wrong"
 
-Send your agent this message:
+Send your agent (in Telegram or whatever you use):
 
-> *"The install just produced this error: [paste the last 10–20 lines of red text from Terminal]. Read it, tell me in plain English what happened, and propose the next step. Do NOT just try the install again — diagnose first."*
+> *"The install/update just produced this error: [paste the last 10–20 lines of red or yellow text from Terminal]. Read it, tell me in plain English what happened, and propose the next step. Do not just retry without diagnosing first."*
 
----
+### "How do I tell if I'm using the right block?"
 
-## What happens after onboarding finishes
+If you're unsure, send your agent:
 
-After everything is installed and activated, your agent has 36 skills available. Some highlights:
+> *"Which one is my machine — a Mac or a VPS? And is my OpenClaw installed already, or do I need a fresh install?"*
 
-- **Skill 05 + 36 (GHL):** Your agent can manage your GoHighLevel / Convert and Flow account — search contacts, send messages, manage products, create invoices, schedule recurring billing, and more. Skill 36 specifically adds the 5-tier access chain so your agent always uses the most efficient path.
-- **Skill 22 + 23 (Personas + Workforce):** Your agent picks the right persona for each task based on a 5-layer alignment check.
-- **Skill 31 (Memory):** 8-layer memory system so your agent remembers things across sessions.
-- **Skill 35 (Social Media Planner):** Weekly content production across 8 platforms.
-
-Each skill has its own SKILL.md file describing what it does. If you want to know more about any one of them, ask your agent:
-
-> *"What does Skill [number] do? Plain English please."*
+Your agent can answer both questions instantly.
 
 ---
 
 ## Privacy and security
 
-- Your Private Integration Tokens, API keys, and passwords are stored in `~/.openclaw/secrets/.env` on Mac or `/data/.openclaw/secrets/.env` on VPS. These files are set to permissions `600` — only you can read them.
-- The install script never sends credentials anywhere except to the services they're for (GHL, Google, Stripe, etc.).
-- The Telegram notifications use your own bot — no third party sees them.
-- Everything is logged to `/tmp/openclaw-install-*.log` for troubleshooting. Logs do NOT contain your secrets.
+- Your Private Integration Tokens, API keys, and passwords are stored at `~/.openclaw/secrets/.env` (Mac) or `/data/.openclaw/secrets/.env` (VPS) with file permissions `600` — only you can read them.
+- Install scripts never send credentials anywhere except the services they're for (GHL, Google, Stripe, etc.).
+- Telegram notifications use your own bot — no third party sees them.
+- Install logs go to `/tmp/openclaw-install-*.log` and never contain your secrets.
 
 ---
 
 ## Getting help
 
-If you're stuck, tell your agent in plain English what's happening and what you've tried. Agents are good at diagnosing. If your agent is also stuck, message Trevor or his team and include:
+If you're stuck and your agent can't diagnose, message Trevor or his team and include:
 
-1. Which section above you were using (A, B, C, D, or E)
-2. The last 5–10 lines of output you saw
+1. Which block above you were using (1 through 8)
+2. The last 5–10 lines of output you saw in Terminal or your last 2–3 Telegram messages
 3. What you expected to happen vs what actually happened
 
-That's it. You're set up.
+That's it.

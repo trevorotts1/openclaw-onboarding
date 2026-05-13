@@ -1,3 +1,18 @@
+## v9.1.1 - May 13, 2026 - Block-Based Trigger Document
+
+### Changed
+- **ONBOARDING-TRIGGERS.md restructured from 5 sections to 8 standalone blocks**. Previous version bundled the update path into a single "either platform" section; new version separates Mac-update-Telegram (Block 6) from VPS-update-Telegram (Block 8) and Mac-update-Terminal (Block 5) from VPS-update-Terminal (Block 7). Same for fresh installs (Blocks 1–4). Staff can now send a client a deep link to the exact block matching their situation.
+- **Telegram contracts inside Blocks 2, 4, 6, 8 expanded from 12 rules to 18–22 numbered rules each**. New explicit rules cover: phase timing (Phase A 600s, B 900s, C 1200s, D 1800s, E no timeout), sub-agent concurrency caps (50/10/4), QC scoring thresholds (8/10 minimum), forbidden shortcut list (--break-system-packages, --force, --no-verify, --no-gpg-sign, model substitution, invented steps), watchdog alerts (10-min stall), communication style calibration (plain English, no jargon, headlines first, over-60 friendly), and required final-summary format. Rules are designed to survive frontier-model softening.
+- **Quick block selector table** added at top of trigger doc — staff and clients can route to the right block in one glance.
+- **Anchor IDs on each block** (e.g. ) for deep linking.
+
+### Notes
+- This is a content-only patch release.  and  are unchanged from v9.1.0 functionality; only the version string bumped to v9.1.1.
+- Backward-compatible with v9.1.0 — clients on v9.1.0 don't need to update unless they want the new trigger doc structure (which is public/GitHub-hosted, so they'll see it regardless).
+- The private staff version at  is synced to v9.1.1 with the same 8-block structure plus staff-only notes per block + escalation rules at top.
+
+---
+
 ## v9.1.0 - May 13, 2026 - Telegram Handoff Fix + Onboarding Triggers
 
 ### Fixed

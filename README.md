@@ -2,11 +2,18 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.1.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.1.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.1.1 (May 13, 2026) — Block-Based Trigger Document
+- **ONBOARDING-TRIGGERS.md restructured into 8 standalone blocks**: previously 5 sections (with the update path bundled into one "either-platform" section); now 8 separate blocks — 4 fresh-install (Mac Terminal, Mac Telegram, VPS Terminal, VPS Telegram) plus 4 update (same 4 paths). Each block is self-contained; staff and clients can grab one without reading the others.
+- **Telegram contracts expanded to 18–22 numbered rules each**: explicit phase timing, sub-agent concurrency limits, QC thresholds, forbidden shortcuts, watchdog rules, communication style calibration. Each rule is hard-coded so frontier models can't soften them.
+- **Deep-link anchors** on each block for direct linking (e.g. `#block-1-mac-fresh-install-via-terminal`) so staff can send a client to the exact section they need.
+- **Quick block selector table** at top of doc for fast self-routing.
+- Script version bumped to v9.1.1 (content-only patch release; install.sh and update-skills.sh otherwise unchanged from v9.1.0).
 
 ### What's New in v9.1.0 (May 13, 2026) — Telegram Handoff Fix + Onboarding Triggers
 - **Fixed silent Telegram failure on install completion**: previous versions wrapped `openclaw message send` with `2>/dev/null || true`, swallowing all errors. v9.1.0 logs failures and surfaces a status line so you can see whether the note actually went through.
