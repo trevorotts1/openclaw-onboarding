@@ -2,11 +2,29 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.3.5** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.3.8** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.3.8 (May 13, 2026) — Core.md Terminology Seeded into MEMORY.md
+
+- **New install + update step (10b)** — `install.sh` and `update-skills.sh` now seed every workspace `MEMORY.md` with a `## Terminology — Core.md Files` section. The owner's term "Core.md files" refers to the 6 OpenClaw bootstrap files loaded each session (IDENTITY, SOUL, AGENTS, USER, TOOLS, MEMORY) — not a literal `core.md` file. Idempotent: re-runs detect the existing section and skip.
+- **Corrected definitions per the owner's authoritative usage:**
+  - **IDENTITY.md** holds the role the agent is playing, including the **experiences and the skills they need to embody** that role — not just surface metadata.
+  - **SOUL.md** holds the **personality**, **true mission**, **beliefs**, **rules**, **goals**, **belief systems**, and **principles** — who the agent IS, not who they are playing. First file injected each session.
+- ONBOARDING_VERSION bumped to v9.3.8.
+
+### What's New in v9.3.7 (May 13, 2026) — Redact production GHL Location ID
+
+- Redacted real BlackCEO Location ID from 7 documentation references across both repos (replaced with `[REDACTED]` in incident citations, fake `AbCdEfGhIjKlMnOpQrStUv` in format examples). Pure documentation change — runtime Location ID still read from `~/.openclaw/secrets/.env` as `GOHIGHLEVEL_LOCATION_ID`.
+
+### What's New in v9.3.6 (May 13, 2026) — Sunday Cron Quota Gate + Onboarding Triggers Skill 36 Surfacing
+
+- `cron-prompt.txt` RULE 18: Sunday cron now probes GHL daily quota via Tier 3 direct REST before any GHL-touching task; skips the cycle if `< 5000` remain, surfaces reset clock time to client in plain English. Binding even on "install all."
+- `ONBOARDING-TRIGGERS.md`: new "What actually gets installed" inventory naming Skill 36 (5-tier chain, port 8765, launchd/systemd, disclosure protocol, standalone `qc-ghl-mcp-setup.sh` validator). Pre-install rate-limit warning callout citing 2026-05-13 incident.
+- Filename drift fix — 18 references corrected from `qc-ghl-setup.sh` → `qc-ghl-mcp-setup.sh`. Eliminated embedded duplicate copies of the QC script in `QC.md` and `ghl-mcp-setup-full.md`; standalone file is now the single source of truth.
 
 ### What's New in v9.3.5 (May 13, 2026) — GHL Rate-Limit Protocol (2026-05-13 incident response)
 

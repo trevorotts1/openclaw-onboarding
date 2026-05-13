@@ -1,3 +1,19 @@
+## v9.3.8 - May 13, 2026 - Core.md Terminology Seeded into MEMORY.md
+
+### Added
+- **`install.sh` Step 10b and `update-skills.sh` post-flag hook**: every install and every update now seeds the workspace `MEMORY.md` with a `## Terminology — Core.md Files` section, idempotently. The section defines the owner's term "Core.md files" as the 6 OpenClaw bootstrap files loaded each session (IDENTITY, SOUL, AGENTS, USER, TOOLS, MEMORY) — explicitly NOT a literal `core.md` file. Includes a routing table mapping intent (personality / procedure / tool note / durable fact / user info / identity metadata) to the correct target file. Re-runs detect the existing section header and skip.
+
+### Fixed
+- **Corrected SOUL.md and IDENTITY.md definitions** in install/update seeds and in the README, replacing earlier compressed versions that had stripped specifics the owner explicitly defined:
+  - **IDENTITY.md** now states: *the role the agent is playing — contains the experiences and the skills they need to embody that role.* Earlier seed listed only "name / vibe / emoji / routing metadata," which omitted the embodied capability set.
+  - **SOUL.md** now states: *the personality, true mission, beliefs, rules, goals, belief systems, and principles — who the agent IS, not who they are playing.* Earlier seed compressed this to "personality, beliefs, mission, principles, boundaries," dropping rules / goals / belief systems and inserting "boundaries" from generic OpenClaw docs.
+- **README.md staleness** — both repos: "Current Version" was stuck at v9.3.5 through the v9.3.6 and v9.3.7 releases. Now bumped to v9.3.8 with What's New entries for v9.3.6, v9.3.7, and v9.3.8 added.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.3.8 in install.sh, update-skills.sh, VERSION file, README.md. Both repos.
+
+---
+
 ## v9.3.7 - May 13, 2026 - Redact production GHL Location ID from documentation
 
 ### Security

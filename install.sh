@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.3.7
+#  OpenClaw Onboarding Installer v9.3.8
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.3.7"
+ONBOARDING_VERSION="v9.3.8"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -926,6 +926,44 @@ Send summary:
 FLAGCONTENT
 
 success "UPDATE PENDING flag written to AGENTS.md"
+
+# ----------------------------------------------------------
+# Step 10b: Seed Core.md Terminology into MEMORY.md (idempotent)
+# ----------------------------------------------------------
+step "Step 10b: Seeding Core.md terminology in MEMORY.md"
+
+MEMORY_FILE="$WORKSPACE_DIR/MEMORY.md"
+touch "$MEMORY_FILE"
+
+if ! grep -q "## Terminology — Core.md Files" "$MEMORY_FILE" 2>/dev/null; then
+  cat >> "$MEMORY_FILE" << 'COREMDEOF'
+
+## Terminology — Core.md Files
+
+When the owner says **"Core.md files"** they mean the OpenClaw bootstrap files loaded every session — not a literal file called `core.md`. The Core.md files are:
+
+- **IDENTITY.md** — the role the agent is playing. It contains the **experiences and the skills they need to embody** that role. Not just surface metadata (name / vibe / emoji) — the lived background and capability set of the character being played.
+- **SOUL.md** — the **personality** of the agent, its **true mission**, its **beliefs**, its **rules**, its **goals**, its **belief systems**, its **principles**. Who the agent IS, not who they are playing. First file injected each session.
+- **AGENTS.md** — operating procedures, protocols, workflows, memory rules. *What the agent does and how*
+- **USER.md** — the human being helped (name, timezone, preferences, communication style)
+- **TOOLS.md** — local tool notes and conventions (camera names, SSH aliases, environment-specific specifics) — NOT a permissions registry
+- **MEMORY.md** — curated long-term durable facts, decisions, preferences. Loaded in main private sessions; paired with daily logs at `memory/YYYY-MM-DD.md`
+
+When the owner says "update the Core.md files" or "this needs to live in the Core.md files," choose the right one of these six based on its purpose:
+- Personality / principle → SOUL.md
+- Procedure / workflow → AGENTS.md
+- Tool note → TOOLS.md
+- Durable fact / decision → MEMORY.md
+- User info → USER.md
+- Identity metadata → IDENTITY.md
+
+Never interpret "Core.md" as a literal filename.
+
+COREMDEOF
+  success "Core.md terminology seeded into MEMORY.md"
+else
+  note "Core.md terminology already present in MEMORY.md — skipped"
+fi
 
 # ----------------------------------------------------------
 # Step 11: Generate Manifest
