@@ -14,8 +14,8 @@ This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 arch
   - VPS install.sh header comment referenced Mac repo URL. Fixed to openclaw-onboarding-vps/main.
   - Skill 35 v2.0.0 (canonical GOHIGHLEVEL_API_KEY env var, MCP-first routing, qc-skill35.sh) had only landed on Mac. Mirrored to VPS. Both repos now ship Skill 35 v2.0.0 identically.
 - **Confirmed correct (not bugs):**
-  - Mac/VPS install.sh and update-skills.sh contain reciprocal defensive branches () that auto-switch repo URL based on detected platform. This is by design — protects against the wrong script being run on the wrong machine.
-  - 21 skill folders have legitimate path differences between Mac and VPS ( vs ). This is correct; not cross-contamination.
+  - Mac/VPS install.sh and update-skills.sh contain reciprocal defensive branches (`[ -d "/data/.openclaw" ] && REPO_URL=...-vps/main`) that auto-switch repo URL based on detected platform. This is by design — protects against the wrong script being run on the wrong machine.
+  - 21 skill folders have legitimate path differences between Mac and VPS (`~/clawd/...` vs `/data/clawd/...`). This is correct; not cross-contamination.
 - ONBOARDING_VERSION bumped to v9.3.3.
 
 ### What's New in v9.3.2 (May 13, 2026) — Bespoke Per-Skill QC Scripts
