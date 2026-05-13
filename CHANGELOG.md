@@ -1,3 +1,50 @@
+## v9.6.6 - May 13, 2026 - 🔴 CRITICAL HOTFIX: active-memory schema + Telegram cron resolution
+
+### The bug
+
+A live client install on 2026-05-13 surfaced two cascading errors:
+
+1. **Config invalid** — `plugins.entries.active-memory: Unrecognized keys: "agents", "allowedChatTypes", "queryMode", "promptStyle", "timeoutMs", "maxSummaryChars"`. OpenClaw's validator rejected the block, gateway refused to start.
+2. **Cannot resolve telegram target from openclaw.json — skipping cron install.** Cascading downstream failure — cron installer couldn't reach the dead gateway to query Telegram routing.
+
+### Root cause
+
+`plugins.entries.active-memory` was never a real OpenClaw plugin. Verified via `openclaw config schema` against the live runtime — there is no `active-memory` entry; the canonical memory plugin is `memory-core`. Active-memory-style behavior (Layer 8) is configured through:
+- `plugins.entries.memory-core.{enabled, config}`
+- `plugins.entries.memory-wiki.{enabled, config}`
+- `agents.defaults.memorySearch.{enabled, sources, provider, fallback}`
+- `plugins.slots.memory = "memory-core"`
+
+Skill 31's `configure_active_memory()` was carrying a stale field name + invented keys from an old OpenClaw schema that never made it into production.
+
+### Fixed
+
+- **`install.sh:configure_active_memory()` rewritten** to write only canonical fields. Also REMOVES any pre-existing bogus `plugins.entries.active-memory` block on every install — self-healing for clients who run an upgrade.
+- **`install.sh` Step 12 cron Telegram lookup widened** from 1 path to 5:
+  - `channels.telegram.allowFrom[0]` (canonical)
+  - `plugins.entries.telegram.config.allowFrom[0]`
+  - `telegram.allowFrom[0]` (legacy)
+  - `agents.list[*].bindings.telegram.*` (per-agent binding)
+  - `$TELEGRAM_CHAT_ID` env var
+  Diagnostic error message now lists all 5 paths.
+
+### Added
+
+- **`scripts/fix-active-memory-bug.sh`** — standalone recovery script for clients already affected. Backs up openclaw.json, removes invalid block, sets canonical fields, prompts gateway restart. Idempotent. One-line recovery:
+  ```
+  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/fix-active-memory-bug.sh | bash
+  ```
+
+### Verified
+
+- Live `openclaw config schema` confirms `plugins.entries.active-memory` does NOT exist in the live OpenClaw schema. The canonical `memorySearch` field structure was extracted from the live schema and used to rewrite `configure_active_memory()`.
+- Smoke-tested `fix-active-memory-bug.sh` against a healthy machine — correctly detected nothing-to-fix and exited cleanly.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.6.6 in install.sh, update-skills.sh, VERSION, README.md.
+
+---
+
 ## v9.6.5 - May 13, 2026 - Close the last 4 gaps to a true 10
 
 The 4 outstanding gaps from the v9.6.x bulletproof pass are now closed.

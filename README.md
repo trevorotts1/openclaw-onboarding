@@ -2,25 +2,49 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.5** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.6** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
+### What's New in v9.6.6 (May 13, 2026) — Critical Hotfix: active-memory schema + Telegram cron resolution
+
+**🔴 Critical bug discovered in live client install (May 13, 2026):** The pre-v9.6.6 install script wrote `plugins.entries.active-memory` to `openclaw.json` with 6 keys (`agents`, `allowedChatTypes`, `queryMode`, `promptStyle`, `timeoutMs`, `maxSummaryChars`) that the OpenClaw config validator rejects as "Unrecognized keys." Result: gateway refused to start. Cascading effect: Step 12 cron install could not resolve Telegram target because the gateway was dead.
+
+**Root cause:** `active-memory` was never a real OpenClaw plugin. The canonical place to configure Active Memory (Layer 8) behavior is `agents.defaults.memorySearch.*`, with `plugins.entries.memory-core.*` as the actual memory plugin. Skill 31's install script was carrying a stale field name from a much earlier OpenClaw schema.
+
+- **install.sh Step 7a `configure_active_memory()` rewritten** to write the canonical fields:
+  - `plugins.entries.memory-core.enabled = true` (the REAL memory plugin)
+  - `plugins.entries.memory-wiki.enabled = true` (structured layer)
+  - `agents.defaults.memorySearch.enabled = true`
+  - `agents.defaults.memorySearch.sources = ["memory"]`
+  - `agents.defaults.memorySearch.provider = "gemini"` (fallback: "openai")
+  - `plugins.slots.memory = "memory-core"`
+  - **Also removes any pre-existing bogus `plugins.entries.active-memory` block** on each install run — self-healing for affected clients who run the new installer.
+
+- **install.sh Step 12 cron Telegram lookup widened** to check 5 paths instead of 1:
+  1. `channels.telegram.allowFrom[0]` (canonical)
+  2. `plugins.entries.telegram.config.allowFrom[0]`
+  3. `telegram.allowFrom[0]` (legacy)
+  4. `agents.list[*].bindings.telegram.{allowFrom, chatId, chatIds, allowedChatIds, targetChatId}`
+  5. `$TELEGRAM_CHAT_ID` environment variable
+  
+  Friendlier error message lists all 5 paths so the client knows where to put the chat ID.
+
+- **New recovery script for already-affected clients:** `scripts/fix-active-memory-bug.sh` — backs up `openclaw.json`, removes the invalid block, sets the canonical fields, prompts the owner to restart the gateway. Idempotent. Curl one-liner:
+  ```
+  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/fix-active-memory-bug.sh | bash
+  ```
+
+- **Schema validation confirmed against live `openclaw config schema`** — verified that `plugins.entries.active-memory` doesn't exist in the live schema; verified `agents.defaults.memorySearch` and `plugins.entries.memory-core` are the canonical paths.
+
 ### What's New in v9.6.5 (May 13, 2026) — Closing the Last 4 Gaps
 
-The 4 remaining gaps to a true 10 are now closed:
-
-- **Brand colors render in the Kanban frontend.** New `32-command-center-setup/scripts/generate-brand-css.py` reads `companies.config` from the Mission Control DB (or falls back to `company-config.json` in the ZHC folder) and writes a `public/brand.css` with CSS custom properties (`--brand-primary`, `--brand-accent`, `--brand-text`) plus utility classes the Kanban app imports. Auto-invoked by `seed-workspaces.py` so every install regenerates the CSS. Result: dashboard renders the client's actual brand colors, not generic neutral defaults.
-
-- **Devil's Advocate gate on Kanban "Done" column.** New `🔴🔴🔴 Kanban Done-Gate Protocol` section appended to AGENTS.md via Skill 32 CORE_UPDATES.md. Binding rules: workers move cards to Review (not Complete) when finished. DA reads the SOP's DEFINE section + the artifact, returns PASS/FAIL/INDETERMINATE. Only the DA moves cards to Complete. Prevents "task completion theater" where workers self-mark Done without quality validation.
-
-- **Company KPI roll-up widget.** New `32-command-center-setup/scripts/generate-kpi-rollup.py` reads `company-config.json` (company KPIs) + each `department-config.json` (dept KPIs that declare `rolls_up_to: <company-kpi-id>`), computes weighted rollup, writes `kpi-rollup.json` with company KPI grades (A/A-/B/C/D), per-department grades, and contributing-department breakdowns. The CEO Performance Board frontend imports this to render the three-lens view (Revenue / Mission / Operational Excellence).
-
-- **Live selector quality test harness.** New `23-ai-workforce-blueprint/scripts/test-persona-selector.sh` fires 10 canned tasks across 5 departments at the selector and asserts: (A1) every task returns a persona, (A2) persona diversity (≥3 unique across 10 tasks), (A3) score breakdowns vary (catches flat-scoring bugs), (A4) marketing-tagged tasks return marketing-tagged personas (catches keyword filter not running). Exit 0 = selector functional. Now a runnable quality check, not just a structural one.
-
-- **All 4 scripts mirrored to both Mac + VPS repos.** Auto-invoked from existing seed/install paths so a fresh install produces a fully branded, DA-gated, KPI-tracked, quality-tested Command Center on day one.
+- **Brand colors render in the Kanban frontend** via `generate-brand-css.py` (auto-invoked by `seed-workspaces.py`).
+- **Devil's Advocate gate on Kanban "Done" column** — Kanban Done-Gate Protocol added to AGENTS.md.
+- **Company KPI roll-up widget** via `generate-kpi-rollup.py`.
+- **Live selector quality test harness** at `test-persona-selector.sh`.
 
 ### What's New in v9.6.4 (May 13, 2026) — Add Personas from Books, YouTube, or Video
 
