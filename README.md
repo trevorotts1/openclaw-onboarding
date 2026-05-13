@@ -2,11 +2,25 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.5.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.6.0 (May 13, 2026) — Zero Human Company folder + Slim Interview + Lean Six Sigma SOPs
+
+- **New Zero Human Company (ZHC) folder structure.** Departments now live under `~/clawd/zero-human-company/<company-slug>/departments/` so an owner with multiple companies can host each one's workforce in its own folder. Per-company artifacts (ORG-CHART, persona-matrix, departments.json, interview-handoff, workforce-interview-answers, pre-interview-research, sop-research-manifest) all live under the same per-company directory. Discovery order: canonical → `~/clawd/zhc/<slug>/` short alias → legacy `~/clawd/departments/` (still readable).
+- **Pre-interview asset gathering (Step 6a).** Before any questions, the agent offers to ingest brand docs, LinkedIn, YouTube, website, deck, anything the client has. Findings written to `pre-interview-research.md`. Used to pre-fill core questions and skip ones the materials already answer.
+- **Per-department questions slimmed.** Was 3-7 mandatory. Now 2-3 mandatory + AI may extend up to 7 only when criticality is detected (revenue-engine dept, contradictory answers, serious gap). KPI capture folded into the success-metric question. Process preferences moved to conditional.
+- **Pull-forward rule (binding).** Before asking any question, check pre-interview research → MEMORY.md → USER.md → AGENTS.md. If the answer exists, confirm rather than re-ask.
+- **Specialist staffing offer.** If a client doesn't know what specialists their dept needs, the AI offers to research and recommend — client doesn't have to answer.
+- **Progress in plain English** ("1 department done, 16 to go, about 22 minutes left") instead of percentages.
+- **Lean Six Sigma SOP generation phase (new).** After all department workspaces are created, `build-workforce.py` writes a `sop-research-manifest.json` listing every SOP stub that needs population. The AI agent reads it and spawns up to 10 parallel sub-agents (heavy tier, 1800s timeout per v9.5.2) — one per department. Each sub-agent reads the dept's SOUL.md + persona blueprint + interview KPIs, runs Perplexity research for industry best practices, then writes real DMAIC-structured SOPs replacing the previous `[Step 1 - to be personalized]` placeholders.
+- **Every SOP includes the "no guessing" rule.** Pasted verbatim into every SOP file: edge cases trigger Perplexity research or escalation to the department head. AI employees may never guess.
+- **MEMORY.md `## AI Workforce Build` section.** New dedicated section listing all per-company file paths so a future agent finds everything from one place.
+- **Save-on-break protocol clarified.** Explicit message: "Everything is saved. When you come back, just say: 'Resume my AI workforce setup' — I'll pick up at department X of 17."
+- ONBOARDING_VERSION bumped to v9.6.0.
 
 ### What's New in v9.5.2 (May 13, 2026) — Sub-Agent Timeout Floors (30-60 min for Heavy Reasoning)
 

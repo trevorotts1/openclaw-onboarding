@@ -107,7 +107,33 @@ Check these files for information you already have:
 If you already know an answer, confirm instead of re-asking:
 "Based on what I already know, your business is in the real estate industry and your main goal is lead generation. Is that still correct, or would you like to change anything?"
 
-### Core Business Questions (asked once, not per department)
+### Step 6a — Pre-Interview Asset Gathering (v9.6.0)
+
+**Before any questions, offer to ingest the client's existing materials.** Many clients have brand docs, social channels, websites, or videos that already describe their business. Reading those first means fewer interview questions later.
+
+Ask:
+
+> "Before we start, do you have anything I can read to learn about your business? I'm looking for:
+> - **Brand documents** — mission/vision, brand voice guide, positioning statement
+> - **Communication style guides** — tone, do/don't language, audience profiles
+> - **Your LinkedIn profile or company page**
+> - **Your YouTube channel or video links** — I can review what's there
+> - **Your website**
+> - **A pitch deck or sales deck**
+> - **Anything else** that explains who you are, what you do, and how you talk
+>
+> Drop the links or upload the files. I'll skim them and use what I find to ask smarter questions and skip the ones I can already answer myself. If you don't have any of this, no problem — we'll just answer it as we go."
+
+**What to do with the materials:**
+
+1. Read every doc the client provides. Watch YouTube videos with the transcript or summary tool. Fetch LinkedIn profile + recent posts.
+2. Write findings to `~/clawd/zero-human-company/[company-slug]/pre-interview-research.md` under sections: `## Mission & Vision`, `## Industry`, `## Tools Used`, `## Brand Voice`, `## Target Audience`, `## Open Questions`, `## Source URLs`.
+3. Use those findings to PRE-FILL the answers to the Core Business Questions (Step 7) and to reduce the per-department question count.
+4. When asking a follow-up that the materials already answer, FRAME it as a confirmation, not a question. e.g. *"Based on your LinkedIn, your business is in real estate brokerage — is that still right, or did anything change?"*
+
+### Step 7 — Core Business Questions (asked once, not per department)
+
+Each question — confirm first using pre-interview research and MEMORY.md, only ASK if the answer isn't already known.
 
 1. "What is the name of your business?"
 2. "In one sentence, what does your business do?"
@@ -115,23 +141,70 @@ If you already know an answer, confirm instead of re-asking:
 4. "What tools do you currently use to run your business?" (examples: Stripe, Convert and Flow, Mailchimp)
 5. "What is your biggest challenge right now?"
 
-After every question: "If you are not sure, just tell me to research it. I will look up best practices for your industry and suggest something for you to approve."
+After every question that gets ASKED (not confirmed):
+> "If you are not sure, just let me do a little bit of research, and I can come back and help you with the answer."
 
-After core questions: "You are 30% complete."
+After core questions, tell the client where they are in plain English:
+> "5 of 5 core questions done. Now we'll go through your 17 departments — 2 to 3 questions each, takes about 20 to 30 minutes. Want to keep going or take a break? Everything is saved as we go."
 
-### Per-Department Questions (3-7, dynamic)
+### Step 8 — Department Selection (v9.6.0)
 
-Questions are NOT a fixed list. The AI generates questions in real time based on the client's industry, business type, and what it already knows. A hair salon gets different questions than a SaaS company.
+Show the recommended **17 departments** with plain-English one-liners. Then ask:
 
-**Question categories (pick from these based on relevance):**
-1. What the department does regularly
-2. Who handles it now (you, someone else, or nobody yet)
-3. What success looks like for this department
-4. What tools are used (only if not already known from core questions)
-5. What is most important about this department to the business
-6. What is not working well right now
-7. How this department connects to other parts of the business
-8. **Process Preferences (ALWAYS ASK):** "Are there any specific processes you want done a particular way? For example, 'I always want social media posts approved before they go live.' If not, I will use best practices for your industry."
+> "These are the 17 departments most businesses run. Would you like:
+> - **All 17** (recommended for most clients)
+> - **Keep these 17 and add more** (some clients have 25-50 departments)
+> - **Remove some** (smaller businesses sometimes only need 5-8)
+> - **Start from a custom list** (you tell me what departments you want)
+>
+> If you're not sure, go with all 17. We can always remove or add later."
+
+Default = all 17 if no preference expressed.
+
+### Step 9 — Per-Department Questions (2-3 mandatory, AI may extend up to 7 if critical)
+
+**v9.6.0 SLIM FORMAT.** Two-to-three questions per department by default. The AI extends up to a total of 7 questions for a single dept ONLY when one of these criticality triggers fires:
+
+- The dept is the revenue engine (e.g. Sales for a coaching business, Marketing for a content business)
+- The client's answers to the mandatory questions are contradictory or reveal a serious gap
+- The dept is unusual for the industry and needs deeper discovery
+- The client explicitly asks for more detail
+
+**Mandatory questions (2-3 per department, always asked unless already known from pre-interview research):**
+
+1. **What this department does** (function): "What does your [dept] department actually do day-to-day?" — confirm from pre-interview research instead of asking if already covered there.
+2. **Success metric / KPIs** (folded — was a separate question before v9.6.0): "What does success look like for this department? How would you know it's doing a great job?" — if client hesitates: *"No problem, let me research what companies in [their industry] typically measure and suggest 2-3 options."*
+3. **Who handles it now** (only if unclear from pre-interview research): "Who handles this today — you, someone on your team, or nobody yet?"
+
+**Conditional follow-ups (the AI picks 0-4 of these only when relevant — never all):**
+- What tools are used (skip if already known from core Q4)
+- What is not working well right now (only if the client seems to want to fix something)
+- How this department connects to other parts of the business (only for revenue-engine depts)
+- Process preferences (only if pre-interview research suggests they have strong opinions about how work gets done)
+
+**Specialist staffing — let the AI do this:**
+
+If the client doesn't know what specialists/employees they need for a department, the AI offers up front:
+
+> "If you know what your [dept] department does but you don't know exactly who you need on the team, just tell me. I'll research what companies in [industry] typically have on their [dept] team and recommend the specialists for you. You don't have to figure that part out — that's my job."
+
+The client never has to answer "what specialists do I need" — the AI determines specialist roles silently via `determine_specialists()` after the dept questions are done, or runs research and recommends.
+
+**Pull-forward rule (binding):**
+
+Before asking ANY question, check:
+1. `~/clawd/zero-human-company/[slug]/pre-interview-research.md` — Step 6a findings
+2. `~/clawd/MEMORY.md` — facts already saved
+3. `~/clawd/USER.md` — owner preferences
+4. `~/clawd/AGENTS.md` — tools/behavior already configured
+
+If the answer exists in any of those files, **DO NOT re-ask**. Instead, frame as confirmation:
+> "Based on what I already know, your marketing focuses on social media and email. Still right, or did anything change?"
+
+**Progress indicator (plain English, not %):**
+
+After each dept completes:
+> "1 department done, 16 to go. About 22 minutes left at your current pace. Want to keep going or take a break? Everything is saved either way."
 
 **Examples of good industry-adapted questions:**
 

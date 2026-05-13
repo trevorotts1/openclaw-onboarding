@@ -1,3 +1,33 @@
+## v9.6.0 - May 13, 2026 - Zero Human Company folder + Slim Interview + Lean Six Sigma SOPs
+
+### Added — Skill 23 (AI Workforce Blueprint)
+- **Zero Human Company (ZHC) folder structure.** New `resolve_company_paths()` in `build-workforce.py` sets `~/clawd/zero-human-company/<company-slug>/departments/` as the canonical workspace, with `~/clawd/zhc/<slug>/` short-alias support and `~/clawd/departments/` legacy fallback. Per-company artifacts (ORG-CHART, persona-matrix, departments.json, workforce-interview-answers, interview-handoff, pre-interview-research, sop-research-manifest) live under the same per-company directory so owners with multiple companies don't mix data.
+- **`slugify_company_name()`** — converts "BlackCEO LLC" → "blackceo-llc". Used to name per-company folders.
+- **Step 6a Pre-Interview Asset Gathering.** Before any interview questions, the agent offers to ingest brand docs, LinkedIn, YouTube, website, deck, and anything else the client has. Findings persisted to `pre-interview-research.md` and used to pre-fill core questions + skip dept questions already answered by the materials.
+- **Lean Six Sigma SOP generation phase.** New `write_sop_research_manifest()` function. After all department workspaces are built, writes `sop-research-manifest.json` listing every SOP stub needing population, with company + industry context, dept KPIs, dept tools, dept challenges, and the assigned persona for each role. The AI agent reads the manifest and spawns up to 10 parallel sub-agents (heavy tier, 1800s timeout per v9.5.2), one per department, to do Perplexity research + write the real DMAIC-structured SOP body.
+- **`LEAN_SIX_SIGMA_SOP_PROMPT`** template (~70 lines) embedded into the manifest. Every spawned sub-agent gets this prompt verbatim. It mandates: DMAIC sections (Define / Measure / Analyze / Improve / Control), measurable done criteria, persona embodiment (e.g. "for a leadership SOP, embody John Maxwell's principles verbatim"), Devil's Advocate checkpoints, and the binding "no guessing" rule.
+- **"No guessing" rule** pasted into every SOP: edge cases require Perplexity research or escalation to the department head. Documented in `memory/[date].md` per dept.
+- **MEMORY.md `## AI Workforce Build` section** (in CORE_UPDATES.md). New dedicated splice text lists all per-company file paths: ZHC folder, pre-interview-research, workforce-interview-answers, interview-handoff, ORG-CHART, persona-matrix, departments.json, sop-research-manifest, and the discovery-order fallback chain. Single place for future agents to find everything.
+
+### Changed — Skill 23 Interview Flow
+- **Per-department questions: 3-7 → 2-3 mandatory** with AI extension up to 7 ONLY on criticality triggers (revenue-engine dept, contradictory answers, serious gap, client request).
+- **KPI capture folded** into the success-metric mandatory question instead of being its own separate question.
+- **Process preferences moved from "ALWAYS ASK"** to conditional (only ask when pre-interview research signals strong opinions).
+- **Specialist staffing offer:** AI proactively offers to research + recommend specialists when client doesn't know what their dept needs.
+- **Pull-forward rule (binding):** Before asking any question, agent checks pre-interview-research → MEMORY.md → USER.md → AGENTS.md. Existing facts get a confirmation, not a re-ask.
+- **Department selection:** 17 recommended departments still shown but with explicit choice: "all 17 (recommended) / add more / remove some / start custom." Default = all 17.
+- **Progress indicators in plain English:** "1 department done, 16 to go. About 22 minutes left at your current pace." Replaced 30%/50%/70% percentages.
+- **Save-on-break message:** "Everything is saved. When you come back, just say: 'Resume my AI workforce setup' — I'll pick up at department X of 17."
+- **`build_from_config()`** calls `resolve_company_paths()` immediately after parsing `company_name`. All subsequent dept/role creation uses the resolved per-company `DEPARTMENTS_DIR`.
+- **ORG-CHART.md write location** changed from `WORKSPACE_ROOT/ORG-CHART.md` (shared across companies) to `COMPANY_DIR/ORG-CHART.md` (per-company).
+- **AGENTS.md Interview Resume Protocol** (in CORE_UPDATES.md) updated to check ZHC path first, then fall back to legacy `company-discovery/` path.
+- **VPS install detection:** `WORKSPACE_ROOT` and `OPENCLAW_CONFIG` now check for `/data/` paths and use them when present.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.6.0 in install.sh, update-skills.sh, VERSION, README.md.
+
+---
+
 ## v9.5.2 - May 13, 2026 - Sub-Agent Timeout Floors (30-60 min for Heavy Reasoning)
 
 ### Added

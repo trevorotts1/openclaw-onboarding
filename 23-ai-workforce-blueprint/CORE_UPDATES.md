@@ -112,19 +112,68 @@ Full reference: ~/.openclaw/skills/23-ai-workforce-blueprint/ai-workforce-bluepr
 
 ---
 
+## MEMORY.md — AI Workforce Build (v9.6.0)
+
+**Where:** Add a new section at the bottom of MEMORY.md titled `## AI Workforce Build`. This is the single place a future agent looks to find every workforce artifact for this company.
+
+**Exact text to add (filled in after interview + build complete):**
+```
+## AI Workforce Build
+
+Company: [COMPANY_NAME]
+Company slug: [company-slug]
+Built: [DATE]
+Status: COMPLETE | IN_PROGRESS | NOT_STARTED
+
+Zero Human Company folder (everything for this company lives here):
+- ~/clawd/zero-human-company/[company-slug]/
+
+Per-company artifacts:
+- Pre-interview research: ~/clawd/zero-human-company/[company-slug]/pre-interview-research.md
+- Interview answers (permanent record): ~/clawd/zero-human-company/[company-slug]/workforce-interview-answers.md
+- Interview handoff (progress / resume): ~/clawd/zero-human-company/[company-slug]/interview-handoff.md
+- ORG-CHART: ~/clawd/zero-human-company/[company-slug]/ORG-CHART.md
+- Persona matrix: ~/clawd/zero-human-company/[company-slug]/persona-matrix.md
+- Departments JSON (Command Center): ~/clawd/zero-human-company/[company-slug]/departments.json
+- SOP research manifest (parallel sub-agent job queue): ~/clawd/zero-human-company/[company-slug]/sop-research-manifest.json
+- Department workspaces: ~/clawd/zero-human-company/[company-slug]/departments/[dept-id]/
+
+Discovery order if an agent is looking for an older / legacy install:
+1. ~/clawd/zero-human-company/[slug]/        — v9.6.0+ canonical
+2. ~/clawd/zhc/[slug]/                       — short alias
+3. ~/clawd/departments/                       — pre-v9.6.0 legacy (still readable)
+
+Multi-company: if the owner has more than one company, each gets its own
+slug folder under ~/clawd/zero-human-company/. Don't mix departments
+across companies. ORG-CHART, persona matrix, and departments.json are
+per-company files, not shared.
+```
+
+---
+
 ## AGENTS.md - Interview Resume Protocol
 
 **Where:** Add at the bottom of AGENTS.md, after the AI Workforce Blueprint section
 
 **Exact text to add:**
 ```
-## 🔴 Skill 23 Interview Resume Protocol (Added with v6.1.2)
-At the START of every session, check for ~/Downloads/openclaw-master-files/company-discovery/interview-handoff.md.
+## 🔴 Skill 23 Interview Resume Protocol (Added with v6.1.2; updated v9.6.0 for ZHC paths)
+At the START of every session, check the per-company handoff file:
+- v9.6.0+ path: ~/clawd/zero-human-company/[company-slug]/interview-handoff.md
+- Legacy path: ~/Downloads/openclaw-master-files/company-discovery/interview-handoff.md
+
 - If it exists and status is "in_progress": resume the interview from the next unanswered question. Do NOT start over.
 - If interview-handoff.md is missing but workforce-interview-answers.md exists: reconstruct progress from the answers file, rebuild the handoff, and resume.
-- If MEMORY.md says "Skill 23 Interview: IN PROGRESS" but no files exist: ask the client if they want to start fresh or tell you where they left off.
+- If MEMORY.md "## AI Workforce Build" section says IN_PROGRESS but no files exist: ask the client if they want to start fresh or tell you where they left off.
 - If everything says COMPLETE: do NOT re-interview. Proceed to Skill 32.
+
 Resume triggers: "continue", "resume", "pick up where I left off", or any message during an active interview.
+
+Save-on-break protocol: ANY time the client says they want to stop, are overwhelmed, or need a break, immediately:
+1. Append current answer to workforce-interview-answers.md
+2. Update interview-handoff.md with last_question_number and next_question_number
+3. Update MEMORY.md "## AI Workforce Build" section status to IN_PROGRESS
+4. Reply: "Everything is saved. When you come back, just say: 'Resume my AI workforce setup' — I'll pick up at department X of 17."
 ```
 
 ---

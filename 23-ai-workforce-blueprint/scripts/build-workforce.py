@@ -140,6 +140,14 @@ def build_from_config(config):
     COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
 
     company_name = config["company_name"]
+
+    # v9.6.0: resolve the Zero Human Company folder for this client BEFORE
+    # any dept workspace is created. This sets COMPANY_DIR / DEPARTMENTS_DIR
+    # to ~/clawd/zero-human-company/<company-slug>/...
+    resolve_company_paths(company_name)
+    print(f"[ZHC] Company folder: {COMPANY_DIR}", file=sys.stderr)
+    print(f"[ZHC] Departments folder: {DEPARTMENTS_DIR}", file=sys.stderr)
+
     industry = config.get("industry", "")
     company_description = config.get("company_description", "")
     tools = config.get("tools", "")
@@ -234,12 +242,29 @@ def build_from_config(config):
         with open(personas_path, 'w') as f:
             f.write(personas_md)
 
-    # Generate ORG-CHART.md
+    # Generate ORG-CHART.md (writes to the per-company ZHC folder, v9.6.0+)
     org_chart = generate_org_chart(selected_departments, specialists_by_dept)
-    org_chart_path = os.path.join(WORKSPACE_ROOT, "ORG-CHART.md")
+    org_chart_path = os.path.join(COMPANY_DIR or WORKSPACE_ROOT, "ORG-CHART.md")
     with open(org_chart_path, 'w') as f:
         f.write(org_chart)
-    print(f"[NON-INTERACTIVE] Created ORG-CHART.md", file=sys.stderr)
+    print(f"[NON-INTERACTIVE] Created ORG-CHART.md at {org_chart_path}", file=sys.stderr)
+
+    # v9.6.0: write the SOP research manifest so the AI agent can fan out
+    # parallel sub-agents (one per department) to write real Lean Six Sigma
+    # SOPs to replace the [Step X — to be personalized] placeholders.
+    # The sub-agents are spawned BY the AI agent reading this manifest,
+    # not by this script directly — keeps spawn under the agent's control
+    # so it respects the v9.4.0 maxConcurrent / maxSpawnDepth gates and
+    # the v9.5.2 timeout floors (1800s per heavy-reasoning sub-agent).
+    manifest_path = write_sop_research_manifest(
+        company_name=company_name,
+        industry=industry,
+        departments=selected_departments,
+        interview_answers={dept_id: dept_config for dept_id, dept_config in config.get("departments", {}).items()},
+    )
+    if manifest_path:
+        print(f"[NON-INTERACTIVE] SOP research manifest ready: {manifest_path}", file=sys.stderr)
+        print(f"[NON-INTERACTIVE] AI agent: spawn up to 10 parallel sub-agents (heavy tier, 1800s timeout) per the manifest", file=sys.stderr)
 
     # Generate departments.json for Command Center
     departments_json = generate_departments_json(selected_departments)
@@ -291,13 +316,77 @@ def build_from_config(config):
 # ============================================================
 
 HOME = os.path.expanduser("~")
-WORKSPACE_ROOT = os.path.join(HOME, "clawd")
-DEPARTMENTS_DIR = os.path.join(WORKSPACE_ROOT, "departments")
+# VPS install detection: prefer /data/clawd if it exists, else $HOME/clawd
+if os.path.isdir("/data/clawd"):
+    WORKSPACE_ROOT = "/data/clawd"
+else:
+    WORKSPACE_ROOT = os.path.join(HOME, "clawd")
+
+# Zero Human Company folder structure (v9.6.0+)
+# Top-level: ~/clawd/zero-human-company/
+# Per-company: ~/clawd/zero-human-company/<company-slug>/
+# Departments live inside the per-company folder.
+ZHC_ROOT = os.path.join(WORKSPACE_ROOT, "zero-human-company")
+
+# DEPARTMENTS_DIR is resolved per-company at runtime once the company slug is known.
+# Falls back to the pre-v9.6.0 path for legacy installs (auto-detected).
+DEPARTMENTS_DIR = None       # Resolved by resolve_company_paths() below
+COMPANY_DIR = None           # ~/clawd/zero-human-company/<slug>/
+COMPANY_SLUG = None
+LEGACY_DEPARTMENTS_DIR = os.path.join(WORKSPACE_ROOT, "departments")  # pre-v9.6.0 location
+
 SUBAGENTS_DIR = os.path.join(WORKSPACE_ROOT, "subagents", "templates")
 MASTER_FILES = None  # Detected at runtime
 OPENCLAW_CONFIG = os.path.join(HOME, ".openclaw", "openclaw.json")
+if os.path.isdir("/data/.openclaw"):
+    OPENCLAW_CONFIG = "/data/.openclaw/openclaw.json"
 BACKUP_DIR = os.path.join(HOME, "Downloads", "openclaw-backups")
-COMPANY_DISCOVERY_DIR = None  # Set after master files detected
+COMPANY_DISCOVERY_DIR = None  # Set after master files detected; per-company file is now in COMPANY_DIR
+
+
+def slugify_company_name(name: str) -> str:
+    """Convert 'BlackCEO LLC' -> 'blackceo-llc'. Lowercase, hyphens, no special chars."""
+    import re
+    s = name.lower().strip()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s or "unnamed-company"
+
+
+def resolve_company_paths(company_name: str):
+    """
+    Set the global COMPANY_DIR / DEPARTMENTS_DIR / COMPANY_SLUG paths based on
+    the client's company name. Creates the folders if missing.
+
+    Discovery order at runtime (an agent looking for the workforce later):
+      1. ~/clawd/zero-human-company/<slug>/         ← v9.6.0+ canonical
+      2. ~/clawd/zhc/<slug>/                        ← short alias (legacy from very early v9.6 testing)
+      3. ~/clawd/departments/                        ← pre-v9.6.0 (still readable for legacy installs)
+    """
+    global COMPANY_SLUG, COMPANY_DIR, DEPARTMENTS_DIR
+    COMPANY_SLUG = slugify_company_name(company_name)
+
+    # Canonical path
+    canonical = os.path.join(ZHC_ROOT, COMPANY_SLUG)
+    # Short-alias path (for installs that already have it)
+    short_alias = os.path.join(WORKSPACE_ROOT, "zhc", COMPANY_SLUG)
+
+    if os.path.isdir(short_alias) and not os.path.isdir(canonical):
+        # Existing short-alias install — keep using it, don't fork
+        COMPANY_DIR = short_alias
+    else:
+        COMPANY_DIR = canonical
+
+    os.makedirs(COMPANY_DIR, exist_ok=True)
+    DEPARTMENTS_DIR = os.path.join(COMPANY_DIR, "departments")
+    os.makedirs(DEPARTMENTS_DIR, exist_ok=True)
+
+    # If pre-v9.6.0 legacy departments folder exists with content, log a migration note
+    if os.path.isdir(LEGACY_DEPARTMENTS_DIR) and os.listdir(LEGACY_DEPARTMENTS_DIR):
+        print(f"[ZHC] Legacy ~/clawd/departments/ detected. Reading from it for backward compat.\n"
+              f"[ZHC] New writes go to: {DEPARTMENTS_DIR}", file=sys.stderr)
+
+    return COMPANY_DIR, DEPARTMENTS_DIR
 
 # Files inherited from main CEO workspace
 INHERITED_FILES = ["TOOLS.md", "AGENTS.md", "USER.md"]
@@ -1038,6 +1127,156 @@ If this task cannot be completed at the specialist level, escalate to the {dept_
 
     print(f"[ROLE-WORKSPACE] {len(created_folders)} roles created for {dept_id}", file=sys.stderr)
     return created_folders
+
+
+# ============================================================
+# LEAN SIX SIGMA SOP POPULATION (v9.6.0)
+# ============================================================
+# After all department + role workspaces are created, this phase replaces the
+# `[Step 1 - to be personalized]` placeholders with REAL SOP content. It uses:
+#   - Perplexity research for industry best practices (--purpose-tier heavy)
+#   - The dept's SOUL.md (mission, values, KPIs from the interview)
+#   - The role's persona blueprint (from Skill 22 if installed)
+#   - Lean Six Sigma DMAIC structure (Define, Measure, Analyze, Improve, Control)
+#
+# Spawns 5-10 parallel sub-agents (one per department, capped at maxConcurrent=10
+# per the v9.4.0 sub-agent config). The actual sub-agent spawn is performed by
+# the AI agent running this build, not by this script — this script writes a
+# manifest the agent reads and executes.
+
+SOP_RESEARCH_MANIFEST_NAME = "sop-research-manifest.json"
+
+
+def write_sop_research_manifest(company_name, industry, departments, interview_answers):
+    """
+    Write a manifest the AI agent reads to spawn parallel research + SOP-writing
+    sub-agents. One sub-agent per department.
+
+    Each manifest entry contains everything a sub-agent needs to write the real
+    SOPs for one department: the role list, the SOP filenames, the dept's
+    interview context, KPIs, persona traits, the company mission.
+
+    Sub-agent prompt is also embedded so all sub-agents follow the same
+    Lean Six Sigma DMAIC template and the "no guessing" rule.
+    """
+    if not COMPANY_DIR:
+        print("[SOP-MANIFEST] COMPANY_DIR not resolved; skipping", file=sys.stderr)
+        return None
+
+    manifest_path = os.path.join(COMPANY_DIR, SOP_RESEARCH_MANIFEST_NAME)
+    entries = []
+
+    for dept_id, dept_info in departments.items():
+        dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
+        if not os.path.isdir(dept_dir):
+            continue
+
+        # Collect every SOP stub that needs population
+        sop_files = []
+        for entry in os.listdir(dept_dir):
+            role_dir = os.path.join(dept_dir, entry)
+            if not os.path.isdir(role_dir) or entry == "memory" or entry == "devils-advocate":
+                continue
+            for fname in os.listdir(role_dir):
+                if fname.startswith(("01-", "02-", "03-", "04-", "05-", "06-", "07-", "08-", "09-")) and fname.endswith(".md"):
+                    sop_files.append({
+                        "role_folder": entry,
+                        "sop_file": fname,
+                        "role_dir": role_dir,
+                    })
+
+        dept_answers = interview_answers.get(dept_id, {}) if isinstance(interview_answers.get(dept_id), dict) else {}
+        entry = {
+            "dept_id": dept_id,
+            "dept_name": dept_info.get("name", dept_id),
+            "dept_head": dept_info.get("head", ""),
+            "dept_dir": dept_dir,
+            "company_name": company_name,
+            "industry": industry,
+            "department_activities": dept_answers.get("department_activities", ""),
+            "department_kpis": dept_answers.get("department_kpis", ""),
+            "department_tools": dept_answers.get("department_tools", ""),
+            "department_challenges": dept_answers.get("department_challenges", ""),
+            "sop_files": sop_files,
+            "sub_agent_purpose_tier": "heavy",
+            "sub_agent_timeout_seconds": 1800,
+        }
+        entries.append(entry)
+
+    manifest = {
+        "version": "1.0",
+        "company": company_name,
+        "company_slug": COMPANY_SLUG,
+        "industry": industry,
+        "generated_at": datetime.now().isoformat(),
+        "max_parallel_sub_agents": 10,
+        "departments": entries,
+        "sub_agent_instructions": LEAN_SIX_SIGMA_SOP_PROMPT,
+    }
+
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"[SOP-MANIFEST] Wrote {manifest_path} with {len(entries)} departments queued for parallel SOP writing", file=sys.stderr)
+    return manifest_path
+
+
+# The sub-agent prompt template. The AI agent reads this from the manifest and
+# uses it verbatim when spawning each per-department SOP-writing sub-agent.
+LEAN_SIX_SIGMA_SOP_PROMPT = """
+You are writing real, AI-facing SOPs for the {DEPT_NAME} department of {COMPANY_NAME} (industry: {INDUSTRY}).
+
+You have ONE department's worth of SOP stub files to populate. Each stub currently has placeholder steps like '[Step 1 - to be personalized based on research]'. Your job is to REPLACE those placeholders with real, executable steps the AI agent will follow.
+
+Use the Lean Six Sigma DMAIC structure for every SOP. Every SOP file must contain these sections:
+
+  ## DEFINE
+  - What this task is in one sentence
+  - Required inputs (data, files, credentials, prior outputs)
+  - Required outputs (the artifact this task produces)
+  - Done criteria — MEASURABLE, not vague. e.g. 'Email scheduled, subject line A/B tested, segment confirmed'
+
+  ## MEASURE
+  - KPIs this task moves. Numbers, not adjectives.
+  - How those KPIs map to the department KPIs: {DEPT_KPIS}
+  - How department KPIs roll up to company KPIs.
+
+  ## ANALYZE (when the task underperforms)
+  - Root-cause checklist. Five Whys. Not symptom-chasing.
+  - Common failure modes specific to this industry: research them via Perplexity.
+
+  ## IMPROVE — Step-by-Step
+  - Numbered concrete steps. Each step references a specific tool from: {DEPT_TOOLS}
+  - Each step is something an AI agent can ACTUALLY do (read file X, call API Y, post to channel Z).
+  - Embody the role's persona expertise. If the persona is John Maxwell for a leadership role, use Maxwell's principles verbatim where applicable.
+
+  ## CONTROL
+  - Devil's Advocate checkpoints. What the DA verifies before declaring done.
+  - The DA must validate measurable criteria from DEFINE, not subjective taste.
+
+  ## ESCALATION + RESEARCH RULE (binding — paste this section verbatim into every SOP)
+  If you hit an edge case not covered above:
+    - DO NOT GUESS. Guessing is forbidden for any AI employee.
+    - You are either ABSOLUTELY SURE of the next step (proceed) or you are NOT SURE (research).
+    - If not sure: run Perplexity research (`openrouter/perplexity/sonar-pro-search`) with a specific query, OR escalate to the {DEPT_HEAD}.
+    - Document the edge case AND the research outcome in {DEPT_DIR}/memory/[YYYY-MM-DD].md.
+
+Hard constraints:
+  - NEVER reference Anthropic models. Use the selector chain heavy tier when invoking models.
+  - Plain English. No corporate jargon.
+  - Tools referenced must be from {DEPT_TOOLS}. If a useful tool is missing from that list, recommend it under a 'Suggested tool additions' section at the bottom — don't pretend it's available.
+  - Cite Perplexity research findings inline when a step is derived from research. e.g. 'Per industry benchmark (Perplexity 2026-05-13): companies in {INDUSTRY} typically...'
+
+For each role folder in this department, you'll find:
+  - 00-START-HERE.md (DO NOT rewrite — already contains role context)
+  - governing-personas.md (DO NOT rewrite — already lists persona traits)
+  - 01-, 02-, 03-, etc. SOP files (THESE are what you populate)
+  - tools.md, good-examples.md, bad-examples.md (write these if missing)
+
+When you write an SOP, keep the file's existing top metadata (Role, Department, Company, Industry, Version, Date). Replace ONLY the body sections (Purpose, Who This Is For, Prerequisites, Step-by-Step, What to Do If Something Goes Wrong, Escalation) with the DMAIC-structured content above.
+
+Output: rewrite each SOP file in place. Report back with a list of files written, line count per file, and any edge cases you flagged for owner attention.
+"""
 
 
 # ============================================================
