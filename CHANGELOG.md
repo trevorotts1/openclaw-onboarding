@@ -1,3 +1,39 @@
+## v9.3.2 - May 13, 2026 - Bespoke Per-Skill QC Scripts
+
+### Changed
+- **Replaced the 31 generic qc-*.sh scripts with bespoke skill-specific validation scripts.** v9.3.1 generated a single 100-line generic template and copied it to every skill. v9.3.2 ships custom scripts where each script tests the actual goal of that specific skill.
+- Bespoke per-skill assertions include:
+  - **Skill 01 (TYP):** 3-layer storage model + AGENTS.md lean-file check (<50KB)
+  - **Skill 02 (BYUP):** backup directory writable + live cp test
+  - **Skill 03 (Agent Browser):** agent-browser CLI on PATH + --help responds
+  - **Skill 04 (Superpowers):** companion files preserved (git-clone install, not curl-only)
+  - **Skill 05 (GHL Setup):** PIT format validation + live `services.leadconnectorhq.com/locations/` endpoint hit + alias awareness in core files
+  - **Skill 06 (GHL Install Pages):** GHL_AGENCY_EMAIL/PASSWORD present + Playwright + Chrome detection
+  - **Skill 07 (KIE Setup):** live `api.kie.ai/api/v1/chat/credit` endpoint check
+  - **Skill 08 (Vercel):** vercel CLI + jq + live token validation via `api.vercel.com/v2/user`
+  - **Skill 09 (Context7):** MCP registered in openclaw mcp list
+  - **Skill 10 (GitHub):** gh authenticated + git user.email + git user.name configured
+  - **Skill 11 (Superdesign):** at least one LLM key + Chrome + Node v16+
+  - **Skill 12 (OpenRouter):** sk-or- prefix + live `openrouter.ai/api/v1/auth/key` validation
+  - **Skill 14 (Google Workspace):** gws CLI + auth status + legacy 'google-api.js' confirmed absent
+  - **Skill 15 (Team Management):** CLIENT_ID present + non-placeholder TEAM_MEMBER_*_ID values
+  - **Skill 16 (YouTube Summary):** at least one summarization LLM + yt-dlp
+  - **Skill 21 (Tavily):** live `api.tavily.com/search` hit
+  - **Skill 22 (Book-to-Persona):** Skill 31 dep + coaching-personas folder + persona-categories.json + PERSONA-ROUTER.md
+  - **Skill 23 (Workforce):** Skill 22 dep + STATE C evidence (departments/ OR ORG-CHART.md) + company-config.json
+  - **Skill 25/26/27 (Video skills):** FFmpeg-specific codec checks (libx264, drawtext filter, concat demuxer)
+  - **Skill 28 (Cinematic Forge):** FFmpeg supports x264 + AAC
+  - **Skill 29 (GHL API):** PIT + references/ subfolder + master reference doc in master-files
+  - **Skill 30 (Fish Audio):** live `api.fish.audio/wallet/self/api-credit` hit
+  - **Skill 31 (Memory):** all 8 memory layers (core .md → flush → session → Gemini → memory-core → Cognee → Obsidian → Active Memory) + DREAMS.md
+  - **Skill 32 (Command Center):** port 3000 (Mac)/4000 (VPS) reachable + PM2 + cloudflared (Mac) + tunnel token
+- All bespoke scripts share the same shell scaffolding: source lib-shared.sh, fallback resolve_platform_paths, color-coded PASS/FAIL/WARN output, proper exit codes for cron gating.
+
+### Risk: low
+Pure replacement of QC scripts. No install.sh / update-skills.sh behavior changes. Existing v9.3.1 installs work unchanged; running update-skills.sh pulls the bespoke scripts in.
+
+---
+
 ## v9.3.1 - May 13, 2026 - Universal QC + Dependency Waves + Step 0 Bootstrap
 
 ### Added

@@ -2,11 +2,27 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.3.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.3.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.3.2 (May 13, 2026) — Bespoke Per-Skill QC Scripts
+- **Replaced all 31 generic qc-*.sh scripts with bespoke, skill-specific validation scripts.** Each script now tests assertions specific to that skill's actual goal — credentials, software dependencies, live API reachability, prerequisite skills installed, agent core file wiring, security checks. No more copy-paste boilerplate.
+- Examples of the bespoke checks:
+  - Skill 05 (GHL Setup): hits live  endpoint to verify PIT works
+  - Skill 08 (Vercel): validates VERCEL_TOKEN against 
+  - Skill 12 (OpenRouter): validates token against 
+  - Skill 21 (Tavily): hits  with a test query
+  - Skill 30 (Fish Audio): hits 
+  - Skill 22 (Persona): verifies Skill 31 (Memory) installed FIRST + coaching-personas folder + persona-categories.json
+  - Skill 23 (Workforce): verifies Skill 22 installed + departments/ OR ORG-CHART.md (STATE C interview-complete)
+  - Skill 31 (Memory): all 8 memory layers checked (core .md → flush → session → Gemini → memory-core → Cognee → Obsidian → Active Memory)
+  - Skill 32 (Command Center): port 3000 (Mac) or 4000 (VPS) reachable, PM2 installed, Cloudflare tunnel token
+  - Skill 25/26/27/28 (video skills): FFmpeg-specific codec + filter checks (drawtext, libx264, AAC, concat demuxer)
+- Each script returns proper exit codes (0 = pass, 1 = fail) so the cron / install orchestrator can gate on it.
+- ONBOARDING_VERSION bumped to v9.3.2.
 
 ### What's New in v9.3.1 (May 13, 2026) — Universal QC + Dependency Waves + Step 0 Bootstrap
 - All 31 remaining active skills got the v9.3.0 install-time QC rubric appended to their `QC.md` (8.5+ gate, loop-until-passing). Plus each got a bundled `qc-*.sh` baseline validation script. Total: 33 active skills, 33 rubrics, 33 validation scripts.
