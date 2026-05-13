@@ -580,7 +580,7 @@ async def call_moonshot(session: aiohttp.ClientSession, system: str, user: str) 
                 "https://api.moonshot.ai/v1/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=600)
+                timeout=aiohttp.ClientTimeout(total=1800)  # v9.5.2: 30 min for heavy reasoning
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -623,7 +623,7 @@ async def call_openrouter(session: aiohttp.ClientSession, model: str, system: st
                 f"{OPENROUTER_BASE_URL}/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=600)
+                timeout=aiohttp.ClientTimeout(total=1800)  # v9.5.2: 30 min for heavy reasoning
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -678,7 +678,7 @@ async def call_codex(session: aiohttp.ClientSession, user: str, max_tokens: int 
                 f"{OPENAI_BASE_URL}/responses",
                 headers=headers,
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=900)  # Codex synthesis takes longer
+                timeout=aiohttp.ClientTimeout(total=3600)  # v9.5.2: 60 min — heavy synthesis can run long on large books
             ) as response:
                 if response.status == 200:
                     data = await response.json()

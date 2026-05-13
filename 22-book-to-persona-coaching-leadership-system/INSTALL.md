@@ -576,7 +576,7 @@ If it fails, verify OPENROUTER_API_KEY is correct.
 
 Phase 3 uses OpenClaw OAuth routing, so the connectivity test is confirming the token is valid and not expired (already done in Step 4). If the Codex OAuth check in Step 4 returned a future expiration date, Phase 3 is ready.
 
-If Codex is unavailable, the pipeline automatically falls back to Kimi K2.5 (Phase 1 model) for synthesis. The fallback triggers on: API error, rate limit (429), timeout after 15 minutes, or output under 5,000 characters.
+If the primary Phase 3 model is unavailable, the pipeline auto-falls-back through the heavy chain via `select_model.py`. Fallback triggers: API error, rate limit (429), HTTP timeout (60 min for Phase 3 as of v9.5.2, 30 min for Phases 1/2), or output under 5,000 characters.
 
 ### 8e - Verify output directory structure
 

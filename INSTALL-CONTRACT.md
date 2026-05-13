@@ -257,6 +257,33 @@ The fallbacks should include cheap-first models per Rule 10.
 
 ---
 
+## 🔴 Rule 11a — Sub-agent timeout floor (v9.5.2)
+
+When spawning a sub-agent, the timeout MUST be sized to the work the sub-agent is doing. Premature timeouts kill long-running reasoning mid-thought and force expensive retries.
+
+**Binding timeout floors by work class:**
+
+| Work class | Examples | Min timeout | Preferred timeout |
+|---|---|---|---|
+| Heavy reasoning | Book extraction (Skill 22), AI Workforce interview synthesis (Skill 23), persona blueprint generation, complex multi-file refactors | **1800s (30 min)** | **3600s (60 min)** |
+| Mid-tier reasoning | Creative copy, routine analysis, structured-form generation, single-file edits | 600s (10 min) | 1200s (20 min) |
+| Fast / bulk | Single API call, classification, format conversion, lint runs | 300s (5 min) | 600s (10 min) |
+
+**Skill 22 (Book-to-Persona) specifically:** Phase 1 (Extraction) and Phase 2 (Analysis) sub-agents get 1800s (30 min) HTTP timeout each. Phase 3 (Synthesis) gets 3600s (60 min). With 20+ books in a typical persona library and 3 phases per book, total pipeline wall time runs 1.5–3 hours. Do NOT set a wave-level timeout under 30 min when Skill 22 is in the wave.
+
+**Skill 23 (AI Workforce Blueprint):** The interview synthesis pass can take 20–45 min for complex businesses (8+ departments). Allow 3600s (60 min) for the synthesis sub-agent.
+
+**Master orchestrator wave timeouts (v9.5.2):**
+- Phase A (parallel install per wave): 1800s (30 min)
+- Phase B (foundation): 2700s (45 min)
+- Phase C (interactive — Book/Workforce): 3600s (60 min)
+- Phase D (validation + QC): 3600s (60 min)
+- Phase E (final QC): no timeout
+
+**Anti-pattern:** spawning a heavy-reasoning sub-agent with a 600s timeout because "10 minutes seems like enough." It's not. The sub-agent burns 9 minutes producing 3,000 chars of an 8,000-char persona blueprint, gets killed, retries, and either repeats the partial output or burns the entire quota. Set 1800s minimum.
+
+---
+
 ## 🔴 Rule 12 — Recommend `/new` session, don't require it
 
 For long-running install sessions (a full onboarding install can take 30–60 min), recommend the owner start a fresh session with `/new` so the install gets a clean context. This is a recommendation, not a requirement.

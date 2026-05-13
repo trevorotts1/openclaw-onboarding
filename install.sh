@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.5.1
+#  OpenClaw Onboarding Installer v9.5.2
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.5.1"
+ONBOARDING_VERSION="v9.5.2"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -383,11 +383,11 @@ cat > "$RESUME_FILE" <<RESUME_JSON
 RESUME_JSON
 success "State carryover initialized at $RESUME_FILE"
 
-# 0.3 — Canonical sub-agent + bootstrap config (v9.5.1)
+# 0.3 — Canonical sub-agent + bootstrap config (v9.5.2)
 # Hard-overwrites the numeric limits (these are protocol gates, not preferences).
 # Preserves agents.defaults.subagents.model.fallbacks if a client has customized it.
 # Sets allowAgents=["*"] on every agents.list entry (wildcard subagent permission).
-note "Configuring canonical sub-agent + bootstrap settings (v9.5.1 spec)..."
+note "Configuring canonical sub-agent + bootstrap settings (v9.5.2 spec)..."
 backup_config_file "$OCJSON"
 
 python3 << PYEOF
@@ -621,7 +621,7 @@ fi
 # ----------------------------------------------------------
 # Step 7: Configure Concurrency
 # ----------------------------------------------------------
-# NOTE (v9.5.1): canonical sub-agent + bootstrap config is now applied in
+# NOTE (v9.5.2): canonical sub-agent + bootstrap config is now applied in
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
@@ -810,7 +810,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 ### 🔴 5-PHASE PROCESSING ORDER (MANDATORY)
 
-**Phase A: Parallel Install — dependency-aware waves (Timeout: 600s / 10 minutes per wave)**
+**Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
 The 33 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
@@ -871,20 +871,23 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 - Master MUST run `openclaw subagents list` and confirm empty BEFORE restart
 - Never restart in the middle of a wave
 
-**Phase B: Foundation (Timeout: 900s / 15 minutes)**
+**Phase B: Foundation (Timeout: 2700s / 45 minutes)**
 - Configure memory architecture (all 8 layers)
 - Verify Active Memory (Layer 8) is enabled
 - Set up persona system
 - Initialize Gemini Engine indexing
 - Verify credential sync across all locations
 
-**Phase C: Interactive (Timeout: 1200s / 20 minutes)**
+**Phase C: Interactive (Timeout: 3600s / 60 minutes per sub-agent — Book-to-Persona phases can take this long with large books)**
 - Run AI Workforce Interview (if needed)
 - Generate company departments and ORG-CHART
 - Process Skill 23 (AI Workforce Blueprint) - MAIN ORCHESTRATOR ONLY
 - Process Skill 22 (Book-to-Persona) - MAIN ORCHESTRATOR ONLY
+  - Each phase sub-agent (Extraction, Analysis, Synthesis) gets 60 min
+  - With 20+ books and 3 phases each, total wall time can run 1.5-3 hours
+  - DO NOT timeout a Book-to-Persona phase under 30 min
 
-**Phase D: Ready but Waiting (Timeout: 1800s / 30 minutes)**
+**Phase D: Ready but Waiting (Timeout: 3600s / 60 minutes)**
 - Validate all skill installations
 - Run QC checks on critical skills
 - Verify sub-agent spawning works
@@ -916,12 +919,18 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 **DREAMS.md IS REQUIRED** - Must exist in workspace root.
 
-**Timeout References:**
-- Phase A: 600s (10 min)
-- Phase B: 900s (15 min)  
-- Phase C: 1200s (20 min)
-- Phase D: 1800s (30 min)
+**Timeout References (v9.5.2 — 30-60 min minimums for heavy-reasoning sub-agents):**
+- Phase A: 1800s (30 min per wave)
+- Phase B: 2700s (45 min)
+- Phase C: 3600s (60 min — Book-to-Persona-aware; heavy-reasoning phases need this)
+- Phase D: 3600s (60 min)
 - Phase E: No timeout
+
+**Sub-agent timeout floor (binding):**
+- ANY sub-agent spawned for heavy-reasoning work (Skill 22 phases, Skill 23 interview, persona synthesis, complex analysis) must have timeout ≥ 1800s (30 min). 60 min preferred.
+- Mid-tier sub-agents (creative, routine): min 600s (10 min).
+- Fast/bulk sub-agents: min 300s (5 min).
+- The maxConcurrent=100 ceiling protects against runaway parallel spawn; per-spawn timeout protects each one from premature kill.
 
 ---
 

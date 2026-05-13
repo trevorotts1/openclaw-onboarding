@@ -1,3 +1,32 @@
+## v9.5.2 - May 13, 2026 - Sub-Agent Timeout Floors (30-60 min for Heavy Reasoning)
+
+### Added
+- **INSTALL-CONTRACT.md Rule 11a** — binding sub-agent timeout floors:
+  - Heavy reasoning: min 1800s (30 min), preferred 3600s (60 min). Applies to Skill 22 phases, Skill 23 workforce synthesis, persona blueprint generation, complex multi-file refactors.
+  - Mid-tier: min 600s, preferred 1200s.
+  - Fast/bulk: min 300s, preferred 600s.
+- **Anti-pattern documented**: spawning a heavy-reasoning sub-agent with a 600s timeout. The sub-agent burns 9 minutes producing partial output, gets killed mid-thought, retries with the same partial state. Costs more than just allowing 30 min in the first place.
+
+### Changed
+- **install.sh UPDATE PENDING flag — phase timeouts raised:**
+  - Phase A (parallel install per wave): 600s → 1800s (30 min)
+  - Phase B (foundation memory/persona setup): 900s → 2700s (45 min)
+  - Phase C (interactive — Book-to-Persona, Workforce Blueprint): 1200s → 3600s (60 min)
+  - Phase D (validation + QC): 1800s → 3600s (60 min)
+  - Phase E (final QC): no change (no timeout)
+- **Skill 22 orchestrator.py — HTTP timeouts raised** to match the floors:
+  - `call_moonshot()` (direct Moonshot API for Phase 1): 600s → 1800s
+  - `call_openrouter()` (Phase 1/2 + content-filter fallback): 600s → 1800s
+  - `call_codex()` (Phase 3 OAuth GPT synthesis): 900s → 3600s
+- **Skill 22 PIPELINE.md / INSTALL.md / QC.md** — replaced "timeout after 15 minutes" references with the new floors (30 min Phases 1/2, 60 min Phase 3).
+
+### Context
+- Skill 22 (Book-to-Persona) Phase 3 synthesis on a large book (700K-1M chars) can take 8-12 minutes per book under normal conditions. With 21 books in parallel, the wave-level wall time can run 1.5-3 hours. The previous 1200s (20 min) Phase C timeout was killing Synthesis sub-agents mid-thought before the 14-section blueprint finished writing.
+- Skill 23 (AI Workforce Blueprint) synthesis on a complex business (8+ departments, full knowledge base content generation) takes 25-30 min. Previous 1200s Phase C cap was insufficient.
+- ONBOARDING_VERSION bumped to v9.5.2 in install.sh, update-skills.sh, VERSION, README.md.
+
+---
+
 ## v9.5.1 - May 13, 2026 - Context-Aware Model Selection + GLM/Mimo Added
 
 ### Added

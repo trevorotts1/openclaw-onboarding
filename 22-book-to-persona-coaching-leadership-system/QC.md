@@ -107,7 +107,7 @@ Answer each question without looking at the files. These confirm the agent has i
 - Expected: Phase 1 = Kimi K2.5 (Moonshot direct API), Phase 2 = DeepSeek V3.2-Speciale (OpenRouter), Phase 3 = GPT-5.4 Codex (OpenClaw OAuth)
 
 **Q2: What triggers a Phase 3 fallback from GPT-5.4 Codex to Kimi K2.5?**
-- Expected: Any of — API error, rate limit (429), timeout after 15 minutes, output under 5,000 characters, any error message in the response
+- Expected: Any of — API error, rate limit (429), HTTP timeout (30 min Phases 1/2, 60 min Phase 3 — v9.5.2), output under 5,000 characters, any error message in the response
 
 **Q3: How many sections does a complete persona-blueprint.md have, and what are sections 3, 6, and 14?**
 - Expected: 14 sections total. Section 3 = Signature Framework, Section 6 = Coaching Mode: How to Respond, Section 14 = Quick Reference Card

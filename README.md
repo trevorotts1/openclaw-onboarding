@@ -2,22 +2,36 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.5.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.5.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
-### What's New in v9.5.1 (May 13, 2026) — Context-Aware Model Selection + GLM/Mimo Added to Heavy Chain
+### What's New in v9.5.2 (May 13, 2026) — Sub-Agent Timeout Floors (30-60 min for Heavy Reasoning)
 
-- **`select_model.py` now accepts `--context-need {normal,large,huge}` or `--input-chars N`.** The heavy chain reorders based on input size:
-  - **`normal` (< 800K chars, default)**: Ollama Kimi → OpenRouter Kimi → OpenRouter Mimo Pro → OpenRouter GLM → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT — Kimi preferred (smartest thinker, 262K ctx)
-  - **`large` (800K–3M chars)**: Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT → Kimi (last resort) — DeepSeek-pro first because its 1M context handles books Kimi can't
-  - **`huge` (> 3M chars)**: Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT only
-- **OpenRouter Mimo Pro (thinking=high)** and **OpenRouter GLM (thinking=high)** added to the heavy chain as mid-cost alternatives in the `normal` context-need slot.
-- **Skill 22 orchestrator.py — context-aware per-book selection.** When a book's text is extracted (via `pdfplumber`), the orchestrator now passes the actual character count to `select_model.py --input-chars N`. Books under 800K chars get Kimi (smarter). Books 800K–3M get DeepSeek-pro automatically (1M ctx). Books over 3M get DeepSeek-pro-only fallback. The `max_chars` truncation cap also auto-scales: 900K for Kimi, 3.5M for DeepSeek-pro.
-- **Phase 1 call routing rewritten** in `orchestrator.py` — now switches between `call_openrouter`, `call_openai_responses`, and fall-through to existing `call_moonshot` based on the resolved model's route prefix. `OPENROUTER_FALLBACK_FOLDERS` content-filter handling preserved.
-- ONBOARDING_VERSION bumped to v9.5.1.
+- **New INSTALL-CONTRACT.md Rule 11a** — binding timeout floors by work class:
+  - Heavy reasoning sub-agents (Skill 22 phases, Skill 23 workforce synthesis, persona generation, complex refactor): **min 1800s (30 min), preferred 3600s (60 min)**
+  - Mid-tier (creative copy, routine analysis): min 600s, preferred 1200s
+  - Fast/bulk (single API call, lint, format conversion): min 300s, preferred 600s
+- **install.sh UPDATE PENDING flag — phase timeouts raised:**
+  - Phase A (parallel install per wave): 600s → **1800s (30 min)**
+  - Phase B (foundation): 900s → **2700s (45 min)**
+  - Phase C (interactive Book/Workforce): 1200s → **3600s (60 min)**
+  - Phase D (validation + QC): 1800s → **3600s (60 min)**
+  - Phase E: still no timeout
+- **Skill 22 orchestrator.py — HTTP timeouts raised:**
+  - Moonshot (Phase 1): 600s → 1800s
+  - OpenRouter (Phase 1/2 fallback): 600s → 1800s
+  - Codex / OAuth GPT (Phase 3): 900s → 3600s
+- **Skill 22 PIPELINE.md, INSTALL.md, QC.md** — updated "Timeout after 15 minutes" references to reflect the new floors (30 min Phases 1/2, 60 min Phase 3).
+- ONBOARDING_VERSION bumped to v9.5.2.
+
+### What's New in v9.5.1 (May 13, 2026) — Context-Aware Model Selection + GLM/Mimo Added
+
+- `select_model.py` now accepts `--context-need {normal,large,huge}` or `--input-chars N`. Heavy chain reorders: normal favors Kimi (smartest, 262K ctx); large flips to DeepSeek V4-pro (1M ctx); huge is DeepSeek-pro only.
+- OpenRouter Mimo Pro + OpenRouter GLM added to the heavy chain at the `normal` slot.
+- Skill 22 orchestrator computes book char count per book and passes it to the selector. Small books → Kimi (smarter), large books → DeepSeek-pro (1M ctx).
 
 ### What's New in v9.5.0 (May 13, 2026) — Smart Model Selector + Anthropic Stripped from Skills 15, 22, 23
 
@@ -33,7 +47,7 @@ This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 arch
   - **Skill 15 (BlackCEO Team Management)** — `full.md` and `EXAMPLES.md` rewritten. Removed `anthropic/claude-opus-4-6` "complex reasoning" line, `openai-codex/gpt-5.3-codex` primary, MiniMax M2.5 fallback, the Opus/Sonnet decision tree. All replaced with selector references.
   - **Skill 23 (AI Workforce Blueprint)** — `SKILL.md` Model Requirements section, `INSTALL.md` 5-PRE model check, and `QC-ROLES-MASTER.md` 17-row department-to-model table all replaced with selector tier references.
 - **Skill 22 version** bumped 1.0.0 → 2.0.0 (`_meta.json`) to reflect breaking change in model resolution.
-- ONBOARDING_VERSION bumped to v9.5.1.
+- ONBOARDING_VERSION bumped to v9.5.2.
 
 ### What's New in v9.4.0 (May 13, 2026) — Canonical Bootstrap + Sub-Agent Config in Step 0
 

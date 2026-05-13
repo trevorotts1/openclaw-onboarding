@@ -152,7 +152,7 @@ NEVER Anthropic.
 
 **Runtime fallback** (when the primary selection fails mid-execution): the selector re-runs with the failed model excluded, walking down the tier list. Same triggers as before:
 - API error or rate limit (429)
-- Timeout after 15 minutes
+- Timeout — Phase 1/2 use 30-minute HTTP timeouts; Phase 3 uses 60 min. Sub-agents that wrap these phases must allow ≥ 30 minutes wall time (60 preferred) to avoid premature kills (v9.5.2)
 - Output under 5,000 characters (truncated)
 - Any error message in the response
 
