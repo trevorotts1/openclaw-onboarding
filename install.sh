@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.7.5
+#  OpenClaw Onboarding Installer v9.7.6
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.5"
+ONBOARDING_VERSION="v9.7.6"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -68,7 +68,7 @@ count_list() {
 }
 
 # ----------------------------------------------------------
-# Telegram Progress Notification (v9.7.5 — uses universal lookup)
+# Telegram Progress Notification (v9.7.6 — uses universal lookup)
 # ----------------------------------------------------------
 TELEGRAM_LAST_RESULT=""
 
@@ -212,17 +212,17 @@ send_telegram_progress() {
         return 0
     fi
 
-    # v9.7.5: capture stderr + retry with fresh scope-approval if needed.
-    # Try in order: with --account → without --account → re-approve scopes → retry.
-    # On every failure, print the actual error so we don't fly blind.
+    # v9.7.6: defensive — protect against `set -euo pipefail` killing the
+    # install when openclaw command-substitutions return non-zero.
+    # Every openclaw call wrapped with `|| rc=$?` so set -e doesn't fire.
 
-    local out rc
+    local out="" rc=0
     # Attempt 1: with --account
     local send_args=(message send --channel telegram --target "$TELEGRAM_TARGET_CACHED" --message "$message")
     [ -n "$TELEGRAM_ACCOUNT_CACHED" ] && send_args+=(--account "$TELEGRAM_ACCOUNT_CACHED")
 
-    out=$(openclaw "${send_args[@]}" 2>&1)
-    rc=$?
+    rc=0
+    out=$(openclaw "${send_args[@]}" 2>&1) || rc=$?
     echo "$out" >> "$LOG_FILE"
     if [ "$rc" -eq 0 ]; then
         TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET_CACHED"
@@ -233,8 +233,8 @@ send_telegram_progress() {
     if echo "$out" | grep -qiE "scope upgrade pending|pairing required|scope.*pending"; then
         warn "Telegram send blocked by pending scope upgrade — re-approving..."
         openclaw devices approve --latest >> "$LOG_FILE" 2>&1 || true
-        out=$(openclaw "${send_args[@]}" 2>&1)
-        rc=$?
+        rc=0
+        out=$(openclaw "${send_args[@]}" 2>&1) || rc=$?
         echo "$out" >> "$LOG_FILE"
         if [ "$rc" -eq 0 ]; then
             TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET_CACHED (after re-approval)"
@@ -244,8 +244,8 @@ send_telegram_progress() {
 
     # Attempt 2: without --account
     if [ -n "$TELEGRAM_ACCOUNT_CACHED" ]; then
-        out=$(openclaw message send --channel telegram --target "$TELEGRAM_TARGET_CACHED" --message "$message" 2>&1)
-        rc=$?
+        rc=0
+        out=$(openclaw message send --channel telegram --target "$TELEGRAM_TARGET_CACHED" --message "$message" 2>&1) || rc=$?
         echo "$out" >> "$LOG_FILE"
         if [ "$rc" -eq 0 ]; then
             TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET_CACHED (no-account)"
@@ -253,16 +253,15 @@ send_telegram_progress() {
         fi
     fi
 
-    # All attempts failed. Print actual error to terminal (only the first 8 lines
-    # so we don't spam) so we know what's actually wrong instead of being blind.
+    # All attempts failed. Print actual error once so we know what's wrong.
     TELEGRAM_LAST_RESULT="failed:see-$LOG_FILE"
-    # Only print verbose error on the FIRST send failure to avoid spam
     if [ -z "${TELEGRAM_ERR_PRINTED:-}" ]; then
         TELEGRAM_ERR_PRINTED=1
         warn "openclaw message send FAILED. Actual error:"
         echo "$out" | head -8 | sed 's/^/    /'
         warn "(subsequent send failures will be silent to avoid spam)"
     fi
+    return 0   # NEVER kill the install — Telegram is optional
 }
 
 # ----------------------------------------------------------
@@ -509,7 +508,7 @@ echo "╚═══════════════════════�
 echo ""
 note "Log file: $LOG_FILE"
 
-# v9.7.5: Auto-approve pending gateway scope upgrades BEFORE anything that
+# v9.7.6: Auto-approve pending gateway scope upgrades BEFORE anything that
 # requires the gateway (Telegram sends, cron creates, message sends).
 # OpenClaw's security model rejects ALL gateway-touching CLI calls when a
 # scope upgrade is pending. The install must clear pending approvals first.
@@ -593,11 +592,11 @@ cat > "$RESUME_FILE" <<RESUME_JSON
 RESUME_JSON
 success "State carryover initialized at $RESUME_FILE"
 
-# 0.3 — Canonical sub-agent + bootstrap config (v9.7.5)
+# 0.3 — Canonical sub-agent + bootstrap config (v9.7.6)
 # Hard-overwrites the numeric limits (these are protocol gates, not preferences).
 # Preserves agents.defaults.subagents.model.fallbacks if a client has customized it.
 # Sets allowAgents=["*"] on every agents.list entry (wildcard subagent permission).
-note "Configuring canonical sub-agent + bootstrap settings (v9.7.5 spec)..."
+note "Configuring canonical sub-agent + bootstrap settings (v9.7.6 spec)..."
 backup_config_file "$OCJSON"
 
 python3 << PYEOF
@@ -831,7 +830,7 @@ fi
 # ----------------------------------------------------------
 # Step 7: Configure Concurrency
 # ----------------------------------------------------------
-# NOTE (v9.7.5): canonical sub-agent + bootstrap config is now applied in
+# NOTE (v9.7.6): canonical sub-agent + bootstrap config is now applied in
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
@@ -863,7 +862,7 @@ try:
     with open(path) as f:
         config = json.load(f)
 
-    # v9.7.5 BUGFIX:
+    # v9.7.6 BUGFIX:
     # "plugins.entries.active-memory" is NOT a real plugin in current OpenClaw
     # schemas. Earlier install scripts wrote 6 keys there (agents, allowedChatTypes,
     # queryMode, promptStyle, timeoutMs, maxSummaryChars) that the validator
@@ -881,7 +880,7 @@ try:
     # If a prior broken install wrote the bogus active-memory block, REMOVE it
     if 'active-memory' in entries:
         del entries['active-memory']
-        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.5 bug)")
+        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.6 bug)")
 
     # Ensure memory-core plugin is enabled (the real memory plugin)
     mc = entries.setdefault('memory-core', {})
@@ -1150,7 +1149,7 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 **DREAMS.md IS REQUIRED** - Must exist in workspace root.
 
-**Timeout References (v9.7.5 — 30-60 min minimums for heavy-reasoning sub-agents):**
+**Timeout References (v9.7.6 — 30-60 min minimums for heavy-reasoning sub-agents):**
 - Phase A: 1800s (30 min per wave)
 - Phase B: 2700s (45 min)
 - Phase C: 3600s (60 min — Book-to-Persona-aware; heavy-reasoning phases need this)
@@ -1405,7 +1404,7 @@ install_weekly_cron() {
         return 0
     fi
 
-    # v9.7.5: Auto-approve any pending device pairing / scope upgrade requests
+    # v9.7.6: Auto-approve any pending device pairing / scope upgrade requests
     # BEFORE attempting cron operations. OpenClaw's security model requires
     # the owner to explicitly approve any new scope (like cron-write). When the
     # install adds new capabilities, the gateway rejects the connection with
@@ -1482,7 +1481,7 @@ except Exception:
         return 0
     fi
 
-    # Resolve Telegram target — v9.7.5 UNIVERSAL lookup. Tries 4 strategies
+    # Resolve Telegram target — v9.7.6 UNIVERSAL lookup. Tries 4 strategies
     # in order, no client action required. Returns the first chat ID found
     # anywhere on the system.
     #
@@ -1667,7 +1666,7 @@ PYEOF
         return 0
     fi
 
-    # v9.7.5: Detect multi-account Telegram setup AND auto-detect the default
+    # v9.7.6: Detect multi-account Telegram setup AND auto-detect the default
     # agent ID. Older onboarding hardcoded "--agent main" but some installs
     # use a different default agent name. We pull both from the live config.
     local CHANNEL_ACCOUNT=""
@@ -1720,9 +1719,8 @@ print(f'{account}|{agent_id}')
 
     try_cron_create() {
         local label="$1"; shift
-        local out
-        out=$(openclaw cron create "$@" --message "$PROMPT_CONTENT" 2>&1)
-        local rc=$?
+        local out="" rc=0
+        out=$(openclaw cron create "$@" --message "$PROMPT_CONTENT" 2>&1) || rc=$?
         echo "$out" >> "$LOG_FILE"
         if [ "$rc" -eq 0 ]; then
             success "Sunday cron installed ($label) — Sundays 2am ET → telegram $TG_TARGET"
