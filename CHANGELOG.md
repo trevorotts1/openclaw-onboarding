@@ -1,3 +1,23 @@
+## v9.3.3 - May 13, 2026 - Mac/VPS Sync Audit + Skill 35 v2.0.0 mirrored to VPS
+
+### Fixed
+- **VPS install.sh header URL** referenced Mac repo (`openclaw-onboarding/main/install.sh` instead of `openclaw-onboarding-vps/main/install.sh`). Stale since the original VPS fork. Fixed.
+- **Skill 35 v2.0.0 only existed on Mac.** The v9.3.0 INSTALL.md rewrite, QC.md rubric upgrade, and qc-skill35.sh bespoke validator only landed on the Mac repo. VPS was still shipping the v1.4.0 INSTALL.md with deprecated `GHL_PRIVATE_TOKEN` env var, deprecated `~/clawd/secrets/.env` paths, and old PIT scope list. Mirrored to VPS. Both repos now ship Skill 35 v2.0.0 identically.
+
+### Audited (confirmed correct)
+- **Cross-platform defensive branches** in both install.sh and update-skills.sh that read `[ -d "/data/.openclaw" ] && REPO_URL=...-vps/main` — these are intentional, protect against the wrong script being run on the wrong machine. Each script auto-detects platform and switches repo URL.
+- **21 skill folders have legitimate Mac-vs-VPS path differences** (Mac uses `~/clawd/...`, VPS uses `/data/clawd/...`). This is correct — not cross-contamination. The platform paths are platform-specific.
+- **All 36 skill folders present in both repos** (33 active + 3 archived: 13/33/34). No skills missing on either side.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.3.3 in install.sh and update-skills.sh.
+- **version file** bumped to v9.3.3 in both repos.
+
+### Risk: low
+Bug-fix release. No new infrastructure. Existing clients on v9.3.2 should run `update-skills.sh` to pull the Skill 35 v2.0.0 fix on VPS clients specifically.
+
+---
+
 ## v9.3.2 - May 13, 2026 - Bespoke Per-Skill QC Scripts
 
 ### Changed
