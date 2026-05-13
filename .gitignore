@@ -1,1 +1,4 @@
 30-blackceo-voice-call-plugin-ARCHIVED/
+
+__pycache__/
+*.pyc

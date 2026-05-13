@@ -60,35 +60,62 @@ FORBIDDEN_PREFIXES = (
 )
 
 
-# Purpose-tier chains. Each entry is a regex with a version capture group.
-# Position 1 in a chain = most preferred.
+# Pattern definitions — each slot in the chain gets a version-capturing regex.
+KIMI_OLLAMA      = {"label": "Ollama Cloud Kimi (thinking=high) — smartest, 262K ctx",
+                    "pattern": re.compile(r"^ollama/kimi-k(\d+(?:\.\d+)*)(?::cloud)?$")}
+KIMI_OPENROUTER  = {"label": "OpenRouter Kimi (thinking=high) — 262K ctx",
+                    "pattern": re.compile(r"^openrouter/moonshot(?:ai)?/kimi-k(\d+(?:\.\d+)*)$")}
+DEEPSEEK_PRO_OLLAMA     = {"label": "Ollama Cloud DeepSeek V*-pro (thinking=high) — 1M ctx",
+                           "pattern": re.compile(r"^ollama/deepseek-v(\d+(?:\.\d+)*)-pro(?::cloud)?$")}
+DEEPSEEK_PRO_OPENROUTER = {"label": "OpenRouter DeepSeek V*-pro (thinking=high) — 1M ctx",
+                           "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-pro$")}
+OAUTH_GPT        = {"label": "OAuth GPT (latest, subscription)",
+                    "pattern": re.compile(r"^(?:openai-)?codex/gpt-(\d+(?:\.\d+)*)(?:-[a-z]+)?$")}
+MIMO_OPENROUTER  = {"label": "OpenRouter Mimo Pro (thinking=high)",
+                    "pattern": re.compile(r"^openrouter/xiaomi/mimo-v(\d+(?:\.\d+)*)-pro$")}
+GLM_OPENROUTER   = {"label": "OpenRouter GLM (thinking=high)",
+                    "pattern": re.compile(r"^openrouter/(?:z-ai|zhipu(?:ai)?)/glm-?(\d+(?:\.\d+)*)$")}
+MINIMAX_OLLAMA   = {"label": "Ollama Cloud Minimax",
+                    "pattern": re.compile(r"^ollama/minimax-m(\d+(?:\.\d+)*)(?::cloud)?$")}
+DEEPSEEK_FLASH_OLLAMA     = {"label": "Ollama Cloud DeepSeek V*-flash",
+                             "pattern": re.compile(r"^ollama/deepseek-v(\d+(?:\.\d+)*)-flash(?::cloud)?$")}
+DEEPSEEK_FLASH_OPENROUTER = {"label": "OpenRouter DeepSeek V*-flash",
+                             "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-flash$")}
+GEMINI_FLASH_LITE         = {"label": "OpenRouter Gemini Flash Lite",
+                             "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-flash-lite(?:-preview)?$")}
+
+# Purpose-tier chains. Each chain has 3 context-need variants:
+#   normal — input fits in Kimi's 262K window (default; Kimi preferred for smart reasoning)
+#   large  — input is 800K-3M chars; Kimi can't fit reliably → DeepSeek V4-pro first (1M ctx)
+#   huge   — input is > 3M chars; DeepSeek V4-pro only (1M ctx is the max we have)
 CHAINS = {
-    "heavy": [
-        {"label": "Ollama Cloud Kimi (thinking=high)",
-         "pattern": re.compile(r"^ollama/kimi-k(\d+(?:\.\d+)*)(?::cloud)?$")},
-        {"label": "OpenRouter Kimi (thinking=high)",
-         "pattern": re.compile(r"^openrouter/moonshot(?:ai)?/kimi-k(\d+(?:\.\d+)*)$")},
-        {"label": "Ollama Cloud DeepSeek V*-pro",
-         "pattern": re.compile(r"^ollama/deepseek-v(\d+(?:\.\d+)*)-pro(?::cloud)?$")},
-        {"label": "OpenRouter DeepSeek V*-pro (thinking=high)",
-         "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-pro$")},
-        {"label": "OAuth GPT (latest)",
-         "pattern": re.compile(r"^(?:openai-)?codex/gpt-(\d+(?:\.\d+)*)(?:-[a-z]+)?$")},
-    ],
-    "mid": [
-        {"label": "Ollama Cloud Minimax",
-         "pattern": re.compile(r"^ollama/minimax-m(\d+(?:\.\d+)*)(?::cloud)?$")},
-        {"label": "OpenRouter Mimo Pro (thinking=high)",
-         "pattern": re.compile(r"^openrouter/xiaomi/mimo-v(\d+(?:\.\d+)*)-pro$")},
-    ],
-    "fast": [
-        {"label": "Ollama Cloud DeepSeek V*-flash",
-         "pattern": re.compile(r"^ollama/deepseek-v(\d+(?:\.\d+)*)-flash(?::cloud)?$")},
-        {"label": "OpenRouter DeepSeek V*-flash",
-         "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-flash$")},
-        {"label": "OpenRouter Gemini Flash Lite",
-         "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-flash-lite(?:-preview)?$")},
-    ],
+    "heavy": {
+        "normal": [
+            KIMI_OLLAMA, KIMI_OPENROUTER,
+            MIMO_OPENROUTER, GLM_OPENROUTER,    # mid-cost OR alternates if Kimi missing
+            DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
+            OAUTH_GPT,
+        ],
+        "large": [
+            DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
+            OAUTH_GPT,
+            KIMI_OLLAMA, KIMI_OPENROUTER,  # last resort; may fail on big input
+        ],
+        "huge": [
+            DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
+            OAUTH_GPT,
+        ],
+    },
+    "mid": {
+        "normal": [MINIMAX_OLLAMA, MIMO_OPENROUTER, GLM_OPENROUTER],
+        "large":  [MINIMAX_OLLAMA, MIMO_OPENROUTER, GLM_OPENROUTER],
+        "huge":   [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+    },
+    "fast": {
+        "normal": [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_FLASH_LITE],
+        "large":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_FLASH_LITE],
+        "huge":   [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
+    },
 }
 
 
@@ -168,9 +195,22 @@ def _best_match_in_position(models: list, chain_entry: dict) -> Optional[str]:
     return candidates[0][1]
 
 
+def _classify_context_need(input_chars: Optional[int]) -> str:
+    """Map an input character count to a context-need bucket."""
+    if input_chars is None:
+        return "normal"
+    if input_chars > 3_000_000:
+        return "huge"
+    if input_chars > 800_000:
+        return "large"
+    return "normal"
+
+
 def select_model_for_skill(
     skill_name: str = "",
     purpose_tier: str = "heavy",
+    context_need: str = "normal",
+    input_chars: Optional[int] = None,
     purpose: str = "",
     openclaw_json_path: Optional[str] = None,
 ) -> dict:
@@ -180,19 +220,29 @@ def select_model_for_skill(
     Args:
       skill_name:     For logs / prompts
       purpose_tier:   "heavy" | "mid" | "fast"  (default: heavy)
-      purpose:        Free-text description of what the model is for
+      context_need:   "normal" | "large" | "huge"  (auto-derived from input_chars if given)
+      input_chars:    Optional input size; if provided, overrides context_need
+      purpose:        Free-text description
       openclaw_json_path: Path override
 
     Returns dict with:
       model_id, chain_position, position_label, needs_owner_input,
-      purpose_tier, available_models, prompt_to_owner, skill, purpose
+      purpose_tier, context_need, available_models, prompt_to_owner,
+      skill, purpose
     """
     if purpose_tier not in CHAINS:
         purpose_tier = "heavy"
 
+    # Auto-derive context_need from input_chars if caller passed it
+    if input_chars is not None:
+        context_need = _classify_context_need(input_chars)
+
+    if context_need not in ("normal", "large", "huge"):
+        context_need = "normal"
+
     cfg = _load_openclaw_config(openclaw_json_path)
     available = _list_available_models(cfg)
-    chain = CHAINS[purpose_tier]
+    chain = CHAINS[purpose_tier][context_need]
 
     for idx, entry in enumerate(chain, start=1):
         match = _best_match_in_position(available, entry)
@@ -203,6 +253,7 @@ def select_model_for_skill(
                 "position_label": entry["label"],
                 "needs_owner_input": False,
                 "purpose_tier": purpose_tier,
+                "context_need": context_need,
                 "available_models": available,
                 "prompt_to_owner": "",
                 "skill": skill_name,
@@ -213,13 +264,14 @@ def select_model_for_skill(
     chain_summary = " → ".join(e["label"] for e in chain)
     prompt = (
         f"I cannot find a model for {skill_name or 'this skill'} "
-        f"(tier: {purpose_tier}{', ' + purpose if purpose else ''}). "
+        f"(tier: {purpose_tier} / context: {context_need}"
+        f"{', ' + purpose if purpose else ''}). "
         f"I looked for: {chain_summary}. "
-        f"None are present in your openclaw.json. Anthropic models are excluded by policy (too expensive).\n\n"
+        f"None are present in your openclaw.json. Anthropic models are excluded by policy.\n\n"
         f"Available models in your config: "
         f"{', '.join(available) if available else '(none discoverable)'}\n\n"
         f"Which model should I use for {skill_name or 'this skill'}? "
-        f"Reply with the exact model ID (e.g. ollama/kimi-k2.7:cloud). "
+        f"Reply with the exact model ID (e.g. ollama/kimi-k2.7:cloud or ollama/deepseek-v4-pro:cloud). "
         f"The install will continue without this — I just need the answer before "
         f"wiring {skill_name or 'this skill'} for runtime use."
     )
@@ -229,6 +281,7 @@ def select_model_for_skill(
         "position_label": "owner-input-required",
         "needs_owner_input": True,
         "purpose_tier": purpose_tier,
+        "context_need": context_need,
         "available_models": available,
         "prompt_to_owner": prompt,
         "skill": skill_name,
@@ -247,6 +300,14 @@ def main():
                         default="heavy",
                         help="heavy=Kimi-first reasoning chain (default); "
                              "mid=Minimax/Mimo chain; fast=DeepSeek-flash/Gemini-lite chain")
+    parser.add_argument("--context-need", choices=("normal", "large", "huge"),
+                        default="normal",
+                        help="normal=fits Kimi 262K ctx (default, Kimi preferred); "
+                             "large=>800K chars, DeepSeek-pro 1M ctx preferred; "
+                             "huge=>3M chars, DeepSeek-pro only")
+    parser.add_argument("--input-chars", type=int, default=None,
+                        help="Optional input size in chars; overrides --context-need "
+                             "(< 800K = normal, 800K-3M = large, > 3M = huge)")
     parser.add_argument("--purpose", default="", help="Free-text description")
     parser.add_argument("--config", default=None, help="Path to openclaw.json")
     parser.add_argument(
@@ -259,6 +320,8 @@ def main():
     result = select_model_for_skill(
         skill_name=args.skill,
         purpose_tier=args.purpose_tier,
+        context_need=args.context_need,
+        input_chars=args.input_chars,
         purpose=args.purpose,
         openclaw_json_path=args.config,
     )

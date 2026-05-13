@@ -42,8 +42,14 @@ LOG_FILE = PROJECT_DIR / "pipeline-log.txt"
 import subprocess
 from pathlib import Path as _Path
 
-def _resolve_model(skill: str, purpose: str, purpose_tier: str, fallback: str) -> str:
-    """Call shared-utils/select_model.py with a purpose-tier; return model_id else fallback."""
+def _resolve_model(skill: str, purpose: str, purpose_tier: str,
+                   fallback: str, input_chars: int = None) -> str:
+    """Call shared-utils/select_model.py with purpose-tier + optional input_chars.
+
+    Passing input_chars makes the selector auto-pick DeepSeek V4-pro (1M ctx) for
+    inputs that won't fit in Kimi's 262K window. Default behavior with no
+    input_chars uses Kimi-first (smartest thinker).
+    """
     selector = _Path(__file__).resolve().parents[2] / "shared-utils" / "select_model.py"
     if not selector.exists():
         selector = _Path.home() / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py"
@@ -51,15 +57,15 @@ def _resolve_model(skill: str, purpose: str, purpose_tier: str, fallback: str) -
         selector = _Path("/data/Downloads/openclaw-master-files/shared-utils/select_model.py")
     if not selector.exists():
         return fallback
+    cmd = ["python3", str(selector),
+           "--skill", skill,
+           "--purpose-tier", purpose_tier,
+           "--purpose", purpose,
+           "--format", "id"]
+    if input_chars is not None:
+        cmd.extend(["--input-chars", str(input_chars)])
     try:
-        result = subprocess.run(
-            ["python3", str(selector),
-             "--skill", skill,
-             "--purpose-tier", purpose_tier,
-             "--purpose", purpose,
-             "--format", "id"],
-            capture_output=True, text=True, timeout=10,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         model_id = result.stdout.strip()
         if model_id and "anthropic/" not in model_id.lower() and "claude-" not in model_id.lower():
             return model_id
@@ -67,27 +73,43 @@ def _resolve_model(skill: str, purpose: str, purpose_tier: str, fallback: str) -
         pass
     return fallback
 
-# All three phases use the HEAVY tier chain:
-#   Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT
-# Anthropic FORBIDDEN.
 
-# Phase 1 - Extraction
-MODEL_EXTRACTION       = _resolve_model("book-to-persona", "Phase 1 extraction", "heavy", fallback="ollama/kimi-k2.6:cloud")
-MODEL_EXTRACTION_ROUTE = ("ollama" if MODEL_EXTRACTION.startswith("ollama/")
-                          else "openai-responses" if "codex" in MODEL_EXTRACTION
-                          else "openrouter")
+def _route_for(model_id: str) -> str:
+    """Resolve the API route based on the model's prefix."""
+    if model_id.startswith("ollama/"):
+        return "ollama"
+    if "codex" in model_id:
+        return "openai-responses"
+    return "openrouter"
 
-# Phase 2 - Analysis
-MODEL_ANALYSIS         = _resolve_model("book-to-persona", "Phase 2 analysis", "heavy", fallback="ollama/kimi-k2.6:cloud")
-MODEL_ANALYSIS_ROUTE   = ("ollama" if MODEL_ANALYSIS.startswith("ollama/")
-                          else "openai-responses" if "codex" in MODEL_ANALYSIS
-                          else "openrouter")
 
-# Phase 3 - Synthesis
-MODEL_SYNTHESIS        = _resolve_model("book-to-persona", "Phase 3 synthesis", "heavy", fallback="ollama/kimi-k2.6:cloud")
-MODEL_SYNTHESIS_ROUTE  = ("openai-responses" if "codex" in MODEL_SYNTHESIS
-                          else "ollama" if MODEL_SYNTHESIS.startswith("ollama/")
-                          else "openrouter")
+def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
+    """
+    Resolve (model_id, route) for a given pipeline phase.
+    Pass input_chars when the actual input size is known so the selector
+    can context-switch to DeepSeek V4-pro for large/huge books.
+
+    All three phases use the HEAVY tier chain:
+      normal context: Ollama Kimi → OpenRouter Kimi → Mimo → GLM → DeepSeek-pro → GPT
+      large context  (800K-3M chars): Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → GPT → Kimi
+      huge context   (> 3M chars):    Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → GPT
+    Anthropic FORBIDDEN at every position.
+    """
+    purpose_map = {
+        "phase1": "Phase 1 extraction",
+        "phase2": "Phase 2 analysis",
+        "phase3": "Phase 3 synthesis",
+    }
+    purpose = purpose_map.get(phase, phase)
+    fallback = "ollama/kimi-k2.6:cloud" if input_chars is None or input_chars <= 800_000 else "ollama/deepseek-v4-pro:cloud"
+    model_id = _resolve_model("book-to-persona", purpose, "heavy", fallback, input_chars=input_chars)
+    return model_id, _route_for(model_id)
+
+
+# Default models for module import (resolved without book size — caller should re-resolve per book):
+MODEL_EXTRACTION, MODEL_EXTRACTION_ROUTE = resolve_phase_model("phase1")
+MODEL_ANALYSIS,   MODEL_ANALYSIS_ROUTE   = resolve_phase_model("phase2")
+MODEL_SYNTHESIS,  MODEL_SYNTHESIS_ROUTE  = resolve_phase_model("phase3")
 
 # ─── LIMITS ───────────────────────────────────────────────────────────────────
 PARALLEL_LIMIT   = 40        # Max books processed simultaneously per phase
@@ -724,6 +746,16 @@ async def run_extraction(session: aiohttp.ClientSession, book: dict, status: dic
         text = extract_book_text(book_path)
         log(f"  {fmt} extracted: {len(text):,} characters")
 
+        # v9.5.1: re-resolve model PER BOOK based on its actual char count.
+        # Books > 800K chars switch from Kimi (262K ctx) to DeepSeek V4-pro (1M ctx).
+        # Books > 3M chars get DeepSeek-only.
+        per_book_model, per_book_route = resolve_phase_model("phase1", input_chars=len(text))
+        log(f"  Model for this book (Phase 1, {len(text):,} chars): {per_book_model} via {per_book_route}")
+
+        # If the resolved model is DeepSeek-pro (1M ctx) we can pass the full text.
+        # Otherwise truncate to leave room for the system prompt (Kimi: 262K tokens ≈ 900K chars cap).
+        max_chars = 3_500_000 if "deepseek-v" in per_book_model and "pro" in per_book_model else 900_000
+
         user_prompt = f"""BOOK: {book['title']}
 AUTHOR: {book['author']}
 
@@ -731,18 +763,28 @@ Here is the complete book text. Extract all 20 items as specified in your instru
 
 ---
 
-{text[:900000]}"""  # Kimi K2.5 has 262K context - leave room for system prompt
+{text[:max_chars]}"""
 
-        # Use OpenRouter as fallback for books that hit Kimi's content filter
+        # Route the call based on the resolved model. Falls back to call_moonshot()
+        # only when the resolved model is moonshot/* (preserved for backward compat).
         if folder in OPENROUTER_FALLBACK_FOLDERS:
             log(f"  Using OpenRouter fallback for {book['title']} (content filter)")
-            result = await call_openrouter(session, "moonshotai/kimi-k2.5", EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            result = await call_openrouter(session, per_book_model.replace("ollama/", "").replace("openrouter/", ""),
+                                            EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+        elif per_book_route == "ollama":
+            # TODO(v9.5.2): implement call_ollama_cloud() for direct Ollama API.
+            # For now, fall through to Moonshot/OpenRouter via the existing helpers.
+            log(f"  WARN: Ollama route resolved ({per_book_model}) but call_ollama_cloud() not implemented; using OpenRouter fallback")
+            fallback_model = per_book_model.replace("ollama/", "openrouter/")
+            result = await call_openrouter(session, fallback_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+        elif per_book_route == "openrouter":
+            result = await call_openrouter(session, per_book_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+        elif per_book_route == "openai-responses":
+            # OAuth GPT — uses existing OpenAI client path
+            result = await call_openai_responses(session, per_book_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000) if "call_openai_responses" in globals() else await call_openrouter(session, per_book_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
         else:
-            result = await call_moonshot(
-                session,
-                EXTRACTION_SYSTEM,
-                user_prompt
-            )
+            # Last-resort backward-compat fallback to direct Moonshot API
+            result = await call_moonshot(session, EXTRACTION_SYSTEM, user_prompt)
 
         header = f"# EXTRACTION NOTES - {book['title']}\n**Author:** {book['author']}\n**Extracted:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}\n**Model:** {MODEL_EXTRACTION}\n\n---\n\n"
         output_path.write_text(header + result)

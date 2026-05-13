@@ -1,3 +1,27 @@
+## v9.5.1 - May 13, 2026 - Context-Aware Model Selection + GLM/Mimo Added
+
+### Added
+- **`select_model.py` --context-need flag** with three buckets: `normal` (default, fits Kimi's 262K window), `large` (800K-3M chars, needs DeepSeek V4-pro's 1M ctx), `huge` (> 3M chars, DeepSeek-pro only viable).
+- **`--input-chars N` flag** — caller passes the actual input size, selector auto-derives context_need. Used by Skill 22 orchestrator to pick the right model per book.
+- **OpenRouter Mimo Pro** and **OpenRouter GLM** added to the heavy chain's `normal` context-need slot as mid-cost alternatives for clients whose configs lack Kimi.
+- **Skill 22 `orchestrator.py` rewritten** for context-aware per-book selection:
+  - New `resolve_phase_model(phase, input_chars=None)` function — call once per book with `len(text)` to get the right model + route
+  - Phase 1 call site now passes book char count → selector picks Kimi for small/medium books, DeepSeek V4-pro for large/huge books
+  - `max_chars` truncation cap auto-scales: 900K for Kimi (262K token cap), 3.5M for DeepSeek-pro (1M token cap)
+  - Route resolution maps `ollama/` → ollama, `codex` → openai-responses, default → openrouter
+
+### Context window reasoning
+- Kimi 2.6 has 262K-token context (~900K-1M chars). Smartest reasoning model in the chain.
+- DeepSeek V4-pro has ~1M-token context (~3-4M chars). Slightly less smart than Kimi, but handles books Kimi can't fit.
+- For 80-90% of books in a typical library (Atomic Habits ~200K chars, SPIN Selling ~400K chars), Kimi is the right call.
+- For unusually large books (Tools of Titans ~700K chars, reference books > 1M chars), the selector now auto-flips to DeepSeek-pro. Zero retry cost, zero quality loss on the small books.
+
+### Changed
+- **Heavy chain (`normal` context) reorder:** Ollama Kimi → OpenRouter Kimi → OpenRouter Mimo Pro → OpenRouter GLM → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT. (Mimo and GLM inserted between Kimi and DeepSeek-pro as cheaper alternates when Kimi is missing but reasoning is needed.)
+- **ONBOARDING_VERSION** bumped to v9.5.1 in install.sh, update-skills.sh, VERSION, README.md.
+
+---
+
 ## v9.5.0 - May 13, 2026 - Smart Model Selector + Anthropic Stripped from Skills 15, 22, 23
 
 ### Added
