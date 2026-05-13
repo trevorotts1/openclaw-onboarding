@@ -1,3 +1,47 @@
+## v9.6.9 - May 13, 2026 - UNIVERSAL Telegram lookup (no client action ever)
+
+Replaced rigid 5-path lookup with 4-strategy universal resolver. Client never needs to do anything.
+
+### Strategy 1: openclaw CLI direct query
+- `openclaw config get channels.telegram.allowFrom`
+- `openclaw config get plugins.entries.telegram.config.allowFrom`
+- `openclaw config get telegram.allowFrom`
+- Parses JSON output (array or scalar). Returns first 6+ digit numeric.
+- This is authoritative — CLI knows where its own config lives regardless of platform.
+
+### Strategy 2: Scan every plausible openclaw.json location
+- `~/.openclaw/{openclaw,config}.json`
+- `~/Library/Application Support/openclaw/{openclaw,config}.json` (macOS XDG)
+- `~/.config/openclaw/{openclaw,config}.json` (Linux XDG)
+- `/data/.openclaw/{openclaw,config}.json` (VPS)
+- `/etc/openclaw/openclaw.json`
+- Glob `*.json` in each dir
+- De-duped, non-existent files skipped silently
+
+### Strategy 3: Recursive JSON tree walk for ANY chat ID under ANY telegram-related key
+- For each config file found, walks the entire JSON tree
+- Detects chat IDs as integers/strings 6-20 digits (optionally negative for groups)
+- Considers key matches: `telegram`, `chat`, `allowfrom`, `allowedchat`, `chatid`, `targetchat`
+- Once a parent key contains "telegram", every numeric descendant qualifies
+- Priority: `channels.telegram.allowfrom` > `plugins.entries.telegram.config.allowfrom` > `telegram.allowfrom` > `bindings.telegram` > first hit anywhere
+- Works regardless of nesting depth or alternate key spellings
+
+### Strategy 4: $TELEGRAM_CHAT_ID env var (final fallback)
+
+### Failure-path messaging
+If all 4 strategies fail, the install still doesn't crash — just warns and skips cron with a clear remediation:
+- Run the diagnostic script to see what's actually in the config
+- Or `export TELEGRAM_CHAT_ID=<id>` and rerun
+
+### Verified
+- Strategy 1 against `openclaw config get channels.telegram.allowFrom` returns `["5252140759", "6663821679", "6771245262"]` → parser extracts `5252140759`.
+- Strategy 2/3 against the same openclaw.json returns 6 hits under telegram paths; first priority hit (`channels.telegram.allowFrom[0]`) returns `5252140759`.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.6.9.
+
+---
+
 ## v9.6.8 - May 13, 2026 - Telegram diagnostic script (v9.6.7 still failed on real client)
 
 ### What happened

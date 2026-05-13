@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.6.8
+#  OpenClaw Onboarding Installer v9.6.9
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.6.8"
+ONBOARDING_VERSION="v9.6.9"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -383,11 +383,11 @@ cat > "$RESUME_FILE" <<RESUME_JSON
 RESUME_JSON
 success "State carryover initialized at $RESUME_FILE"
 
-# 0.3 — Canonical sub-agent + bootstrap config (v9.6.8)
+# 0.3 — Canonical sub-agent + bootstrap config (v9.6.9)
 # Hard-overwrites the numeric limits (these are protocol gates, not preferences).
 # Preserves agents.defaults.subagents.model.fallbacks if a client has customized it.
 # Sets allowAgents=["*"] on every agents.list entry (wildcard subagent permission).
-note "Configuring canonical sub-agent + bootstrap settings (v9.6.8 spec)..."
+note "Configuring canonical sub-agent + bootstrap settings (v9.6.9 spec)..."
 backup_config_file "$OCJSON"
 
 python3 << PYEOF
@@ -621,7 +621,7 @@ fi
 # ----------------------------------------------------------
 # Step 7: Configure Concurrency
 # ----------------------------------------------------------
-# NOTE (v9.6.8): canonical sub-agent + bootstrap config is now applied in
+# NOTE (v9.6.9): canonical sub-agent + bootstrap config is now applied in
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
@@ -653,7 +653,7 @@ try:
     with open(path) as f:
         config = json.load(f)
 
-    # v9.6.8 BUGFIX:
+    # v9.6.9 BUGFIX:
     # "plugins.entries.active-memory" is NOT a real plugin in current OpenClaw
     # schemas. Earlier install scripts wrote 6 keys there (agents, allowedChatTypes,
     # queryMode, promptStyle, timeoutMs, maxSummaryChars) that the validator
@@ -671,7 +671,7 @@ try:
     # If a prior broken install wrote the bogus active-memory block, REMOVE it
     if 'active-memory' in entries:
         del entries['active-memory']
-        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.6.8 bug)")
+        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.6.9 bug)")
 
     # Ensure memory-core plugin is enabled (the real memory plugin)
     mc = entries.setdefault('memory-core', {})
@@ -940,7 +940,7 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 **DREAMS.md IS REQUIRED** - Must exist in workspace root.
 
-**Timeout References (v9.6.8 — 30-60 min minimums for heavy-reasoning sub-agents):**
+**Timeout References (v9.6.9 — 30-60 min minimums for heavy-reasoning sub-agents):**
 - Phase A: 1800s (30 min per wave)
 - Phase B: 2700s (45 min)
 - Phase C: 3600s (60 min — Book-to-Persona-aware; heavy-reasoning phases need this)
@@ -1201,77 +1201,168 @@ install_weekly_cron() {
         return 0
     fi
 
-    # Resolve Telegram target (v9.6.8: widened lookup — clients configure
-    # Telegram in different places depending on which onboarding version they
-    # installed from)
-    local OCJSON="$HOME/.openclaw/openclaw.json"
-    [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
+    # Resolve Telegram target — v9.6.9 UNIVERSAL lookup. Tries 4 strategies
+    # in order, no client action required. Returns the first chat ID found
+    # anywhere on the system.
+    #
+    # Strategy 1: Ask the `openclaw` CLI directly (knows where its own config lives)
+    # Strategy 2: Walk every known openclaw.json location on the machine
+    # Strategy 3: Recursively scan every JSON tree for ANY numeric value under
+    #             any key whose name contains "telegram", "chat", "allow", or "from"
+    # Strategy 4: $TELEGRAM_CHAT_ID env var
     local TG_TARGET=""
-    if [ -f "$OCJSON" ]; then
-        TG_TARGET=$(python3 -c "
-import json, os, re
-def first(*vals):
-    for v in vals:
-        if v: return v
-    return ''
+
+    # Strategy 1: openclaw CLI query (most authoritative)
+    if command -v openclaw >/dev/null 2>&1; then
+        for cli_path in \
+            "channels.telegram.allowFrom" \
+            "plugins.entries.telegram.config.allowFrom" \
+            "telegram.allowFrom"
+        do
+            local raw
+            raw=$(openclaw config get "$cli_path" 2>/dev/null || true)
+            if [ -n "$raw" ]; then
+                # Strip JSON brackets/quotes, get first numeric token
+                TG_TARGET=$(echo "$raw" | python3 -c "
+import json, sys, re
 try:
-    cfg = json.load(open('$OCJSON'))
-
-    # Path 1 (canonical): channels.telegram.allowFrom[0]
-    a = cfg.get('channels', {}).get('telegram', {}).get('allowFrom', []) or []
-
-    # Path 2: plugins.entries.telegram.config.allowFrom[0]
-    b = cfg.get('plugins', {}).get('entries', {}).get('telegram', {}).get('config', {}).get('allowFrom', []) or []
-
-    # Path 3: legacy top-level telegram.allowFrom[0]
-    c = cfg.get('telegram', {}).get('allowFrom', []) or []
-
-    # Path 4: agents.list[].bindings.telegram.allowFrom / chatId
-    d = []
-    for ag in cfg.get('agents', {}).get('list', []) or []:
-        bindings = (ag.get('bindings') or {}).get('telegram') or {}
-        for k in ('allowFrom', 'allowedChatIds', 'chatIds'):
-            v = bindings.get(k) or []
-            if isinstance(v, list):
-                d.extend([str(x) for x in v if x])
-        for k in ('chatId', 'targetChatId'):
-            v = bindings.get(k)
-            if v:
-                d.append(str(v))
-        if d:
-            break
-
-    # Path 5: env var fallback
-    env_target = os.environ.get('TELEGRAM_CHAT_ID', '').strip()
-
-    target = first(
-        str(a[0]) if a else '',
-        str(b[0]) if b else '',
-        str(c[0]) if c else '',
-        d[0] if d else '',
-        env_target,
-    )
-    # Sanity: chat IDs are integers, possibly negative for groups.
-    # NOTE: This script is embedded in a heredoc that the shell expands.
-    # We deliberately avoid backslash regex escapes (the shell eats them)
-    # and use plain string ops instead.
-    if target:
-        t = target.lstrip('-')
-        if t.isdigit():
-            print(target)
-except Exception as e:
+    data = json.loads(sys.stdin.read().strip())
+    if isinstance(data, list) and data:
+        for v in data:
+            s = str(v).strip()
+            if s.lstrip('-').isdigit() and len(s.lstrip('-')) >= 6:
+                print(s); break
+    elif isinstance(data, (str, int)):
+        s = str(data).strip()
+        if s.lstrip('-').isdigit() and len(s.lstrip('-')) >= 6:
+            print(s)
+except Exception:
     pass
 " 2>/dev/null)
+                [ -n "$TG_TARGET" ] && break
+            fi
+        done
+        [ -n "$TG_TARGET" ] && note "Telegram target resolved via openclaw CLI: $TG_TARGET"
     fi
+
+    # Strategy 2 + 3: scan every openclaw.json on the box, recursively walk each
     if [ -z "$TG_TARGET" ]; then
-        warn "Cannot resolve telegram target from openclaw.json. Looked at:"
-        warn "  - channels.telegram.allowFrom[0]"
-        warn "  - plugins.entries.telegram.config.allowFrom[0]"
-        warn "  - telegram.allowFrom[0] (legacy)"
-        warn "  - agents.list[*].bindings.telegram (allowFrom / chatId / chatIds)"
+        TG_TARGET=$(python3 - <<'PYEOF' 2>/dev/null
+import json, os, glob, re
+
+# All known + plausible config locations
+HOME = os.path.expanduser("~")
+candidates = [
+    os.path.join(HOME, ".openclaw", "openclaw.json"),
+    os.path.join(HOME, ".openclaw", "config.json"),
+    os.path.join(HOME, "Library", "Application Support", "openclaw", "config.json"),
+    os.path.join(HOME, "Library", "Application Support", "openclaw", "openclaw.json"),
+    os.path.join(HOME, ".config", "openclaw", "config.json"),
+    os.path.join(HOME, ".config", "openclaw", "openclaw.json"),
+    "/data/.openclaw/openclaw.json",
+    "/data/.openclaw/config.json",
+    "/etc/openclaw/openclaw.json",
+]
+# Also glob anything that looks like an openclaw config
+for pattern in [
+    os.path.join(HOME, ".openclaw", "*.json"),
+    os.path.join(HOME, "Library", "Application Support", "openclaw", "*.json"),
+    "/data/.openclaw/*.json",
+]:
+    candidates.extend(glob.glob(pattern))
+
+# De-dupe, keep existing files
+seen = set()
+configs = []
+for p in candidates:
+    if p in seen or not os.path.isfile(p):
+        continue
+    seen.add(p)
+    configs.append(p)
+
+# Telegram-related key matcher. Case-insensitive substring on key names.
+KEY_HINTS = ('telegram', 'chat', 'allowfrom', 'allowedchat', 'chatid', 'targetchat')
+
+def is_chat_id(v):
+    if not isinstance(v, (str, int)):
+        return False
+    s = str(v).strip()
+    if not s:
+        return False
+    # Chat IDs are 6+ digit integers, optionally negative for groups
+    return s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20
+
+def walk(obj, parent_key='', under_telegram_branch=False):
+    """Yield (path, value) tuples for plausible chat IDs."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            kl = str(k).lower()
+            now_under = under_telegram_branch or ('telegram' in kl)
+            key_matches = any(h in kl for h in KEY_HINTS)
+            if (now_under or key_matches) and is_chat_id(v):
+                yield (f"{parent_key}.{k}" if parent_key else k, v)
+            if isinstance(v, list):
+                for i, item in enumerate(v):
+                    if now_under and is_chat_id(item):
+                        yield (f"{parent_key}.{k}[{i}]" if parent_key else f"{k}[{i}]", item)
+                    yield from walk(item, f"{parent_key}.{k}[{i}]" if parent_key else f"{k}[{i}]", now_under)
+            elif isinstance(v, dict):
+                yield from walk(v, f"{parent_key}.{k}" if parent_key else k, now_under)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            yield from walk(item, f"{parent_key}[{i}]", under_telegram_branch)
+
+# Try each config; first chat ID under a telegram branch wins
+for path in configs:
+    try:
+        cfg = json.load(open(path))
+    except Exception:
+        continue
+    hits = list(walk(cfg))
+    # Prefer hits in priority-ordered key paths
+    priority_keys = [
+        'channels.telegram.allowfrom',
+        'plugins.entries.telegram.config.allowfrom',
+        'telegram.allowfrom',
+        'bindings.telegram',
+    ]
+    for pkey in priority_keys:
+        for path_str, val in hits:
+            if pkey in path_str.lower():
+                print(str(val))
+                raise SystemExit(0)
+    # Fallback: first hit anywhere
+    if hits:
+        for path_str, val in hits:
+            print(str(val))
+            raise SystemExit(0)
+PYEOF
+)
+        [ -n "$TG_TARGET" ] && note "Telegram target resolved via universal JSON scan: $TG_TARGET"
+    fi
+
+    # Strategy 4: env var
+    if [ -z "$TG_TARGET" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+        local t="${TELEGRAM_CHAT_ID#-}"
+        if [[ "$t" =~ ^[0-9]+$ ]]; then
+            TG_TARGET="$TELEGRAM_CHAT_ID"
+            note "Telegram target resolved via \$TELEGRAM_CHAT_ID env var: $TG_TARGET"
+        fi
+    fi
+
+    if [ -z "$TG_TARGET" ]; then
+        warn "Cannot resolve telegram target via ANY strategy (CLI / JSON scan / env var)."
+        warn "This means OpenClaw is installed but Telegram chat ID is not in any of these places:"
+        warn "  - any openclaw.json file under ~/.openclaw/, ~/Library/Application Support/openclaw/,"
+        warn "    ~/.config/openclaw/, or /data/.openclaw/"
         warn "  - \$TELEGRAM_CHAT_ID environment variable"
-        warn "Skipping cron install. To finish: set one of the above, then run:"
-        warn "  bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh)"
+        warn "  - 'openclaw config get channels.telegram.allowFrom' returned empty"
+        warn ""
+        warn "To diagnose what's actually in your config, run:"
+        warn "  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/diagnose-telegram-config.sh | bash"
+        warn ""
+        warn "Or set it manually:"
+        warn "  export TELEGRAM_CHAT_ID=<your-chat-id> && rerun the install"
         return 0
     fi
     note "Telegram cron target resolved: $TG_TARGET"

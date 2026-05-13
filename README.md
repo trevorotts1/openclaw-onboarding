@@ -2,30 +2,47 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.8** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.9** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
-### What's New in v9.6.8 (May 13, 2026) — Telegram diagnostic script + identified the real bug
+### What's New in v9.6.9 (May 13, 2026) — UNIVERSAL Telegram lookup (no client action ever)
 
-**v9.6.7 fixed the regex bug but the install on a real client machine still failed at Step 12.** Diagnosis confirmed the v9.6.7 code works correctly when the chat ID exists in any of the 5 lookup paths — but the client's `openclaw.json` has Telegram configured somewhere NONE of those 5 paths reach. Their Telegram bot works fine, so the chat ID is in the file — just in a 6th location we haven't accounted for.
+Replaced the rigid 5-path lookup with a universal 4-strategy resolver that finds the Telegram chat ID no matter where it lives on the client's machine. **No client action required.**
 
-**New `scripts/diagnose-telegram-config.sh`** — run it on any affected machine and it dumps:
-- Every top-level key in their `openclaw.json`
-- Every key/value pair where "telegram" or "chat" appears (with full path)
-- Status of each of the 5 known lookup paths
-- Full content of `channels.telegram`, `plugins.entries.telegram`, and top-level `telegram` blocks
-
-One-liner for affected clients:
+**Strategy 1 — Ask the `openclaw` CLI directly:**
 ```
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/diagnose-telegram-config.sh | bash
+openclaw config get channels.telegram.allowFrom
+openclaw config get plugins.entries.telegram.config.allowFrom
+openclaw config get telegram.allowFrom
 ```
+The CLI knows where its own config lives regardless of platform / install location / username. Parses JSON output, returns the first 6+ digit numeric string.
 
-Paste the output back so we can add the missing 6th path to v9.6.9.
+**Strategy 2 — Walk every plausible openclaw.json on the machine:**
+- `~/.openclaw/openclaw.json`
+- `~/.openclaw/config.json`
+- `~/Library/Application Support/openclaw/{openclaw,config}.json` (macOS XDG path)
+- `~/.config/openclaw/{openclaw,config}.json` (Linux XDG path)
+- `/data/.openclaw/{openclaw,config}.json` (VPS path)
+- `/etc/openclaw/openclaw.json`
+- Plus glob `*.json` in each of those directories
+- De-duped; non-existent files skipped silently.
 
-This is a discovery script, not a fix — the actual fix depends on what their config looks like.
+**Strategy 3 — Recursive JSON tree walk:**
+For each config found, walk the ENTIRE JSON tree looking for any numeric value (6-20 digits, optionally negative for groups) under ANY key whose name contains `telegram`, `chat`, `allowfrom`, `allowedchat`, `chatid`, or `targetchat`. Once a key with "telegram" is found, every numeric descendant is considered. Priority order honored: `channels.telegram.allowfrom` wins over deeper nested matches.
+
+**Strategy 4 — `$TELEGRAM_CHAT_ID` env var** as final fallback.
+
+Only if all 4 strategies fail does the install warn and skip — with a clear remediation path (diagnostic script or env-var override).
+
+The lookup will now find a chat ID regardless of:
+- Which OpenClaw version the client installed with
+- Whether their config is at `~/.openclaw/` or `~/Library/Application Support/openclaw/`
+- Whether Telegram is configured under `channels.telegram`, `plugins.entries.telegram.config`, top-level `telegram`, `bindings.telegram`, `agents.list[*].bindings.telegram`, or anywhere else nested under a "telegram" key.
+
+Verified end-to-end: Strategy 1 returned `5252140759` from the live `openclaw config get`. Strategy 2/3 also returned the same value from the JSON scan.
 
 ### What's New in v9.6.5 (May 13, 2026) — Closing the Last 4 Gaps
 
