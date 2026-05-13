@@ -1,3 +1,40 @@
+## v9.6.1 - May 13, 2026 - Command Center hardcoded-17 fix + Shared core files + Per-agent config
+
+### 🔴 Blocker fixes
+
+- **Skill 32 was seeding the Kanban with 17 hardcoded default departments, regardless of how many the client actually chose in the interview.** `seed-workspaces.py find_departments_config()` read `departments.json` only from stale legacy paths and fell through to the wrong fallback. **Fix:** new priority order checks ZHC paths first — `~/clawd/zero-human-company/<slug>/departments.json` (canonical) → `~/clawd/zhc/<slug>/departments.json` (short-alias) → `/data/clawd/zero-human-company/<slug>/...` (VPS) → legacy `company-discovery/` → very-old `~/clawd/departments/`. Most-recently-modified ZHC company picked when `$COMPANY_SLUG` not specified. Strict match: seeds exactly the count the client chose. Dashboard prints "EXACT department count: N (this is what the client chose)."
+
+- **AGENTS.md, TOOLS.md, USER.md were being COPIED into every department folder via `shutil.copy2`** at `build-workforce.py:623-628`, creating per-dept duplicates that diverged from the master over time. **Fix:** every dept folder now SYMLINKS to the master `~/clawd/AGENTS.md`, `~/clawd/TOOLS.md`, `~/clawd/USER.md`. One write updates all agents. Stale copies / wrong symlinks are detected and replaced. Falls back to copy only if symlink is unsupported (e.g. Windows without admin).
+
+- **Department director agents had no canonical sub-agent or bootstrap config in `openclaw.json`.** Every new dept director was created with just `id`, `name`, `workspace`, `model` — inheriting OpenClaw defaults instead of Trevor's canonical values. **Fix:** `add_agent_to_config()` now writes the full canonical block into every `agents.list[]` entry:
+  - `bootstrapMaxChars = 200000`
+  - `bootstrapTotalMaxChars = 400000`
+  - `subagents.maxChildrenPerAgent = 20`
+  - `subagents.maxConcurrent = 100`
+  - `subagents.maxSpawnDepth = 5`
+  - `subagents.thinking = "high"`
+  - `subagents.timeoutSeconds = 1800`
+  - `subagents.allowAgents = ["*"]`
+  - `subagents.model.fallbacks = [Ollama Kimi 2.6, OpenRouter Kimi 2.6, Ollama DeepSeek-pro, OpenRouter DeepSeek-pro]`
+
+### Added
+
+- **`write_company_config_json()` in build-workforce.py.** Writes `~/clawd/zero-human-company/<slug>/company-config.json` containing `name`, `slug`, `industry`, `brand` (primary / accent / text hex colors), `created`, `schema_version`. This is what Skill 32 reads to render the dashboard with the client's actual company name + brand colors instead of generic UI.
+- **Brand color extraction in `seed-workspaces.py find_company_info()`.** Returns dict with `name + slug + industry + brand_primary + brand_accent + brand_text`. Priority: `$COMPANY_BRAND_COLORS` env (JSON) → ZHC `company-config.json` → interview answers → neutral defaults. Persisted to `companies.config` blob so the Kanban dashboard renders them.
+- **`_resolve_director_model()`** — calls `shared-utils/select_model.py --purpose-tier heavy` to pick the dept director's model at agent-creation time. Replaces stale `DEFAULT_MODEL_ASSIGNMENTS` dict (still referenced `moonshot/kimi-k2.5`). Anthropic-stripped at every tier per v9.5.0 policy.
+- **departments.json dual-write.** Now written to BOTH the ZHC canonical path AND the legacy `company-discovery/` path for backward-compat during the v9.5 → v9.6 transition.
+- **`_zhc_root_candidates()`** + **`_scan_zhc_for_company_slugs()`** helpers in `seed-workspaces.py` so Skill 32 enumerates all per-company ZHC folders cleanly. Supports multi-company installs.
+
+### Changed
+
+- **`scan_skill23_workspaces()` checks ZHC paths first** (canonical + short-alias on Mac, both on VPS) before falling back to legacy `~/clawd/departments/`. Older installs still work.
+- **Workspace-table inserts now strip the `dept-` prefix** from IDs before writing. Prior bug: some installs ended up with both `dept-marketing` and `marketing` as separate workspace rows.
+- **VPS-aware path detection** added throughout. `WORKSPACE_ROOT`, `OPENCLAW_CONFIG`, and all ZHC discovery checks `/data/` paths in addition to `$HOME` equivalents.
+- **Companies table upsert** (`ON CONFLICT(id) DO UPDATE`) instead of `INSERT OR IGNORE`. Re-running seed updates name/industry/config if they changed (e.g. brand color update).
+- ONBOARDING_VERSION bumped to v9.6.1 in install.sh, update-skills.sh, VERSION, README.md.
+
+---
+
 ## v9.6.0 - May 13, 2026 - Zero Human Company folder + Slim Interview + Lean Six Sigma SOPs
 
 ### Added — Skill 23 (AI Workforce Blueprint)

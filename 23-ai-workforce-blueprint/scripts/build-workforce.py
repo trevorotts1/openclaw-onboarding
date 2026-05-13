@@ -266,13 +266,28 @@ def build_from_config(config):
         print(f"[NON-INTERACTIVE] SOP research manifest ready: {manifest_path}", file=sys.stderr)
         print(f"[NON-INTERACTIVE] AI agent: spawn up to 10 parallel sub-agents (heavy tier, 1800s timeout) per the manifest", file=sys.stderr)
 
-    # Generate departments.json for Command Center
+    # v9.6.1: Write company-config.json to the ZHC folder so Skill 32 picks up
+    # the actual company name + industry + brand colors. Brand colors can be
+    # provided via the non-interactive config; otherwise neutral defaults.
+    brand_colors = config.get("brand_colors", {}) if isinstance(config.get("brand_colors"), dict) else {}
+    write_company_config_json(company_name, industry, brand_colors)
+
+    # Generate departments.json — v9.6.1 writes to BOTH the ZHC company folder
+    # (canonical for Skill 32 to read) and the legacy company-discovery folder
+    # (kept for backward compatibility during the v9.5 -> v9.6 transition).
     departments_json = generate_departments_json(selected_departments)
+    if COMPANY_DIR:
+        zhc_dept_json = os.path.join(COMPANY_DIR, "departments.json")
+        with open(zhc_dept_json, 'w') as f:
+            json.dump(departments_json, f, indent=2)
+        print(f"[NON-INTERACTIVE] Wrote departments.json to ZHC folder: {zhc_dept_json}", file=sys.stderr)
+        print(f"[NON-INTERACTIVE] EXACT department count: {len(departments_json)} (this is what the client chose)", file=sys.stderr)
+
     if discovery_dir:
         dept_json_path = os.path.join(discovery_dir, "departments.json")
         with open(dept_json_path, 'w') as f:
             json.dump(departments_json, f, indent=2)
-        print(f"[NON-INTERACTIVE] Created departments.json", file=sys.stderr)
+        print(f"[NON-INTERACTIVE] Created legacy departments.json at {dept_json_path}", file=sys.stderr)
 
     # Copy departments.json to Command Center config directory (bridge path gap)
     copy_departments_to_command_center(departments_json)
@@ -620,11 +635,37 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(da_sop_path, 'w') as f:
             f.write(da_sop_content)
 
-    # Inherit files from main workspace
+    # v9.6.1: SHARED files (AGENTS.md / TOOLS.md / USER.md) are SYMLINKED,
+    # not copied. Every dept director, specialist, and sub-agent reads the
+    # SAME master file at ~/clawd/. When any agent writes to its AGENTS.md,
+    # TOOLS.md, or USER.md, the write lands in the universal file and ALL
+    # other agents pick it up on next read.
+    #
+    # Reason: prior `shutil.copy2()` was creating per-dept duplicates that
+    # diverged from the master over time, defeating the purpose of a shared
+    # operating playbook (AGENTS.md), shared tool registry (TOOLS.md), and
+    # shared owner profile (USER.md).
     for filename in INHERITED_FILES:
         src = os.path.join(WORKSPACE_ROOT, filename)
         dst = os.path.join(dept_dir, filename)
-        if os.path.isfile(src) and not os.path.isfile(dst):
+        if not os.path.isfile(src):
+            continue
+        # If a stale copy or wrong symlink exists, remove it before re-linking
+        if os.path.lexists(dst):
+            # Already a correct symlink pointing to the master? Skip.
+            if os.path.islink(dst) and os.readlink(dst) == src:
+                continue
+            try:
+                os.remove(dst)
+            except OSError as e:
+                print(f"[INHERITED-FILES WARN] Could not replace {dst}: {e}", file=sys.stderr)
+                continue
+        try:
+            os.symlink(src, dst)
+        except OSError as e:
+            # Fallback to copy only if symlink unsupported (rare — Windows w/o admin)
+            print(f"[INHERITED-FILES WARN] symlink failed for {filename}: {e}; falling back to copy",
+                  file=sys.stderr)
             shutil.copy2(src, dst)
 
     # Create SOUL.md (generated from interview, not a template)
@@ -1467,6 +1508,39 @@ def generate_org_chart(departments, specialists_by_dept):
 # COMMAND CENTER CONFIG GENERATION
 # ============================================================
 
+def write_company_config_json(company_name, industry, brand_colors=None):
+    """
+    v9.6.1: Write company-config.json to the per-company ZHC folder so
+    Skill 32 (Command Center) can read company name + industry + brand
+    colors when it seeds the dashboard.
+
+    brand_colors is an optional dict with primary / accent / text hex values.
+    If None or missing keys, BlackCEO neutral defaults are used.
+    """
+    if not COMPANY_DIR:
+        print("[COMPANY-CONFIG] COMPANY_DIR not resolved; skipping", file=sys.stderr)
+        return None
+
+    brand_colors = brand_colors or {}
+    cfg = {
+        "name":     company_name,
+        "slug":     COMPANY_SLUG,
+        "industry": industry,
+        "brand": {
+            "primary": brand_colors.get("primary", "#1f2937"),
+            "accent":  brand_colors.get("accent",  "#3b82f6"),
+            "text":    brand_colors.get("text",    "#f8fafc"),
+        },
+        "created":  datetime.now().isoformat(),
+        "schema_version": "1.0",
+    }
+    path = os.path.join(COMPANY_DIR, "company-config.json")
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2)
+    print(f"[COMPANY-CONFIG] Wrote {path}", file=sys.stderr)
+    return path
+
+
 def generate_departments_json(departments):
     """
     Generate departments.json for the BlackCEO Command Center.
@@ -1664,7 +1738,13 @@ To regenerate after adding new personas (via Skill 22):
 # ============================================================
 
 def add_agent_to_config(config, dept_id, dept_info):
-    """Add a department head agent to openclaw.json agents.list."""
+    """
+    Add a department head agent to openclaw.json agents.list.
+
+    v9.6.1: Every new department director agent inherits the canonical
+    sub-agent + bootstrap config block. These values are protocol gates,
+    not preferences — every agent in the workforce gets the same.
+    """
     agents_list = config.get("agents", {}).get("list", [])
     agent_id = f"dept-{dept_id}"
 
@@ -1673,19 +1753,69 @@ def add_agent_to_config(config, dept_id, dept_info):
     if agent_id in existing_ids:
         return False  # Already exists, skip
 
-    model = DEFAULT_MODEL_ASSIGNMENTS.get(dept_id, "moonshot/kimi-k2.5")
+    # v9.6.1: Use the canonical model selector chain instead of the stale
+    # DEFAULT_MODEL_ASSIGNMENTS dict (which still references moonshot/kimi-k2.5).
+    # The selector picks Ollama Kimi 2.6+ first, with fallbacks.
+    # If select_model.py is unreachable at install time, fall back to a
+    # safe default that Anthropic-strips and matches v9.5.x policy.
+    model = _resolve_director_model(dept_id) or "ollama/kimi-k2.6:cloud"
     workspace = os.path.join(DEPARTMENTS_DIR, dept_id)
+
+    # Canonical sub-agent + bootstrap config (matches the master orchestrator
+    # values written by install.sh Step 0 in v9.4.0+).
+    canonical_subagents = {
+        "thinking": "high",
+        "maxChildrenPerAgent": 20,
+        "maxConcurrent": 100,
+        "maxSpawnDepth": 5,
+        "timeoutSeconds": 1800,
+        "allowAgents": ["*"],
+        "model": {
+            "fallbacks": [
+                "ollama/kimi-k2.6:cloud",
+                "openrouter/moonshot/kimi-k2.6",
+                "ollama/deepseek-v4-pro:cloud",
+                "openrouter/deepseek/deepseek-v4-pro",
+            ]
+        },
+    }
 
     agent_entry = {
         "id": agent_id,
         "name": dept_info["head"],
         "workspace": workspace,
         "model": model,
+        "bootstrapMaxChars": 200000,
+        "bootstrapTotalMaxChars": 400000,
+        "subagents": canonical_subagents,
     }
 
     agents_list.append(agent_entry)
     config["agents"]["list"] = agents_list
     return True
+
+
+def _resolve_director_model(dept_id):
+    """Call shared-utils/select_model.py --purpose-tier heavy for the dept director."""
+    import subprocess
+    selector_candidates = [
+        os.path.join(HOME, "Downloads", "openclaw-master-files", "shared-utils", "select_model.py"),
+        "/data/Downloads/openclaw-master-files/shared-utils/select_model.py",
+    ]
+    for sel in selector_candidates:
+        if os.path.isfile(sel):
+            try:
+                r = subprocess.run(
+                    ["python3", sel, "--skill", f"dept-{dept_id}",
+                     "--purpose-tier", "heavy", "--format", "id"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                model_id = r.stdout.strip()
+                if model_id and "anthropic/" not in model_id.lower() and "claude-" not in model_id.lower():
+                    return model_id
+            except Exception:
+                pass
+    return None
 
 
 # ============================================================

@@ -2,25 +2,34 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
+### What's New in v9.6.1 (May 13, 2026) — Command Center Hardcoded-17 Fix + Shared AGENTS/TOOLS/USER + Per-Agent Sub-Agent Config
+
+Critical diagnostic fixes for the AI Workforce → Command Center pipeline:
+
+- **🔴 BLOCKER FIX — Skill 32 was setting up the Kanban with 17 hardcoded default departments even when the client said 15 or 50.** `seed-workspaces.py` was reading from stale legacy paths and falling through to scanning generic folders. Now reads `departments.json` from the v9.6.0 ZHC canonical path first (`~/clawd/zero-human-company/<slug>/departments.json`), then short-alias `~/clawd/zhc/<slug>/`, then legacy paths. Strict match: seeds exactly the number of departments the client chose, no 17-default fallback.
+- **🔴 BLOCKER FIX — AGENTS.md / TOOLS.md / USER.md are now SYMLINKED, not copied** into each department folder. Previous `shutil.copy2()` created per-dept duplicates that diverged from the master over time. Now every department director, specialist, and sub-agent reads the SAME `~/clawd/AGENTS.md`, `~/clawd/TOOLS.md`, `~/clawd/USER.md`. When any agent writes to its AGENTS.md/TOOLS.md/USER.md, the write lands in the universal file and ALL other agents pick it up on next read. (Falls back to copy if symlink is unsupported.)
+- **🔴 BLOCKER FIX — Every department director agent now inherits the canonical sub-agent + bootstrap config.** `add_agent_to_config()` writes these into every `agents.list[]` entry: `bootstrapMaxChars=200000`, `bootstrapTotalMaxChars=400000`, `subagents.maxChildrenPerAgent=20`, `maxConcurrent=100`, `maxSpawnDepth=5`, `thinking="high"`, `timeoutSeconds=1800`, `allowAgents=["*"]`, plus the canonical model fallback chain (Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro). Previous behavior: directors inherited OpenClaw defaults, not Trevor's canonical values.
+- **Brand color persistence.** New `write_company_config_json()` writes `~/clawd/zero-human-company/<slug>/company-config.json` with `name`, `slug`, `industry`, `brand.primary`, `brand.accent`, `brand.text`. Brand colors can be passed in the non-interactive config (`brand_colors` field). Skill 32's `seed-workspaces.py` reads this and writes the brand colors to the `companies.config` table so the Kanban dashboard renders client-specific colors instead of generic UI.
+- **Director model selection via `select_model.py`.** Replaces the stale `DEFAULT_MODEL_ASSIGNMENTS` dict (which still referenced `moonshot/kimi-k2.5`). Now calls the heavy-tier selector chain at agent-creation time; falls back to `ollama/kimi-k2.6:cloud` if selector unreachable. Anthropic-stripped at every position.
+- **departments.json now written to BOTH** the ZHC company folder (canonical for Skill 32) AND the legacy `company-discovery/` folder (backward compat). Explicit log message: "EXACT department count: N (this is what the client chose)."
+- **`seed-workspaces.py`** also strips the `dept-` prefix from IDs when writing to the workspaces table — previously some installs ended up with `dept-marketing` AND `marketing` as separate rows.
+- **VPS-aware paths throughout Skill 32 + Skill 23.** Checks `/data/clawd/` and `/data/Downloads/` in addition to `$HOME` equivalents.
+- ONBOARDING_VERSION bumped to v9.6.1.
+
 ### What's New in v9.6.0 (May 13, 2026) — Zero Human Company folder + Slim Interview + Lean Six Sigma SOPs
 
-- **New Zero Human Company (ZHC) folder structure.** Departments now live under `~/clawd/zero-human-company/<company-slug>/departments/` so an owner with multiple companies can host each one's workforce in its own folder. Per-company artifacts (ORG-CHART, persona-matrix, departments.json, interview-handoff, workforce-interview-answers, pre-interview-research, sop-research-manifest) all live under the same per-company directory. Discovery order: canonical → `~/clawd/zhc/<slug>/` short alias → legacy `~/clawd/departments/` (still readable).
-- **Pre-interview asset gathering (Step 6a).** Before any questions, the agent offers to ingest brand docs, LinkedIn, YouTube, website, deck, anything the client has. Findings written to `pre-interview-research.md`. Used to pre-fill core questions and skip ones the materials already answer.
-- **Per-department questions slimmed.** Was 3-7 mandatory. Now 2-3 mandatory + AI may extend up to 7 only when criticality is detected (revenue-engine dept, contradictory answers, serious gap). KPI capture folded into the success-metric question. Process preferences moved to conditional.
-- **Pull-forward rule (binding).** Before asking any question, check pre-interview research → MEMORY.md → USER.md → AGENTS.md. If the answer exists, confirm rather than re-ask.
-- **Specialist staffing offer.** If a client doesn't know what specialists their dept needs, the AI offers to research and recommend — client doesn't have to answer.
-- **Progress in plain English** ("1 department done, 16 to go, about 22 minutes left") instead of percentages.
-- **Lean Six Sigma SOP generation phase (new).** After all department workspaces are created, `build-workforce.py` writes a `sop-research-manifest.json` listing every SOP stub that needs population. The AI agent reads it and spawns up to 10 parallel sub-agents (heavy tier, 1800s timeout per v9.5.2) — one per department. Each sub-agent reads the dept's SOUL.md + persona blueprint + interview KPIs, runs Perplexity research for industry best practices, then writes real DMAIC-structured SOPs replacing the previous `[Step 1 - to be personalized]` placeholders.
-- **Every SOP includes the "no guessing" rule.** Pasted verbatim into every SOP file: edge cases trigger Perplexity research or escalation to the department head. AI employees may never guess.
-- **MEMORY.md `## AI Workforce Build` section.** New dedicated section listing all per-company file paths so a future agent finds everything from one place.
-- **Save-on-break protocol clarified.** Explicit message: "Everything is saved. When you come back, just say: 'Resume my AI workforce setup' — I'll pick up at department X of 17."
-- ONBOARDING_VERSION bumped to v9.6.0.
+- **New Zero Human Company (ZHC) folder structure.** Departments now live under `~/clawd/zero-human-company/<company-slug>/departments/` so an owner with multiple companies can host each one's workforce in its own folder.
+- **Pre-interview asset gathering (Step 6a).** Before any questions, the agent offers to ingest brand docs, LinkedIn, YouTube, website, deck.
+- **Per-department questions slimmed** from 3-7 → 2-3 mandatory + up to 7 conditional on criticality.
+- **Pull-forward rule (binding).** Before asking any question, check pre-interview research → MEMORY.md → USER.md → AGENTS.md.
+- **Lean Six Sigma SOP generation phase.** `sop-research-manifest.json` written for parallel sub-agent fan-out (up to 10, heavy tier, 1800s each).
+- **MEMORY.md `## AI Workforce Build` section** lists all per-company file paths.
 
 ### What's New in v9.5.2 (May 13, 2026) — Sub-Agent Timeout Floors (30-60 min for Heavy Reasoning)
 
