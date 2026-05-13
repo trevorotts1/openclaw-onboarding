@@ -1,3 +1,32 @@
+## v9.6.7 - May 13, 2026 - Telegram cron regex bug fix
+
+### The bug
+
+v9.6.6 widened the Telegram chat-ID lookup to 5 paths to fix the "cannot resolve telegram target" error. The lookup correctly returned `5252140759` from `channels.telegram.allowFrom[0]` — but the script then printed nothing because the **sanity-check regex was broken by shell escaping**.
+
+The Python code in `install.sh` Step 12 ran as a bash heredoc (`python3 -c "...big script..."`). Inside that heredoc, the regex was written as `re.match(r'^-?\d+$', target)`. The shell consumed the `\` before `d`, so what actually reached Python was `re.match(r'^-?d+$', target)` — a regex that only matches literal lowercase `d` characters.
+
+`'5252140759'` doesn't contain any `d`s, so `re.match` returned None, the `if target and re.match(...)` branch never fired, and the script produced empty output.
+
+The cron installer downstream interpreted "empty output" as "Telegram not configured" and skipped, even though Telegram was perfectly configured in Path 1.
+
+### Fix
+
+Replaced the regex with plain string ops that don't depend on backslash escapes:
+```python
+if target:
+    t = target.lstrip('-')
+    if t.isdigit():
+        print(target)
+```
+
+Verified by simulating the exact `bash -c "$(python3 -c ...)"` execution against Trevor's openclaw.json — now correctly resolves `5252140759`.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.6.7 in install.sh, update-skills.sh, VERSION, README.md.
+
+---
+
 ## v9.6.6 - May 13, 2026 - 🔴 CRITICAL HOTFIX: active-memory schema + Telegram cron resolution
 
 ### The bug

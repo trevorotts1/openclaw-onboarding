@@ -2,42 +2,19 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.6.6** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.6.7** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
 
-### What's New in v9.6.6 (May 13, 2026) — Critical Hotfix: active-memory schema + Telegram cron resolution
+### What's New in v9.6.7 (May 13, 2026) — Telegram cron regex bug fix
 
-**🔴 Critical bug discovered in live client install (May 13, 2026):** The pre-v9.6.6 install script wrote `plugins.entries.active-memory` to `openclaw.json` with 6 keys (`agents`, `allowedChatTypes`, `queryMode`, `promptStyle`, `timeoutMs`, `maxSummaryChars`) that the OpenClaw config validator rejects as "Unrecognized keys." Result: gateway refused to start. Cascading effect: Step 12 cron install could not resolve Telegram target because the gateway was dead.
+**Bug:** In v9.6.6 the 5-path Telegram lookup correctly found the chat ID, but the sanity-check regex `^-?\d+$` (intended to verify the result is numeric) was inside a bash heredoc piped to `python3 -c`. The shell ate the backslash before `\d`, so the regex compiled as `^-?d+$` — which only matches literal "d" characters, not digits. Chat ID `5252140759` has no `d`s, so the regex failed, the script printed nothing, and the cron installer skipped with "Cannot resolve telegram target."
 
-**Root cause:** `active-memory` was never a real OpenClaw plugin. The canonical place to configure Active Memory (Layer 8) behavior is `agents.defaults.memorySearch.*`, with `plugins.entries.memory-core.*` as the actual memory plugin. Skill 31's install script was carrying a stale field name from a much earlier OpenClaw schema.
+**Fix:** Replaced the regex with plain string ops (`target.lstrip('-').isdigit()`). Verified end-to-end via the same bash-heredoc execution path that the install actually uses — now correctly resolves `5252140759` against a real `channels.telegram.allowFrom` array.
 
-- **install.sh Step 7a `configure_active_memory()` rewritten** to write the canonical fields:
-  - `plugins.entries.memory-core.enabled = true` (the REAL memory plugin)
-  - `plugins.entries.memory-wiki.enabled = true` (structured layer)
-  - `agents.defaults.memorySearch.enabled = true`
-  - `agents.defaults.memorySearch.sources = ["memory"]`
-  - `agents.defaults.memorySearch.provider = "gemini"` (fallback: "openai")
-  - `plugins.slots.memory = "memory-core"`
-  - **Also removes any pre-existing bogus `plugins.entries.active-memory` block** on each install run — self-healing for affected clients who run the new installer.
-
-- **install.sh Step 12 cron Telegram lookup widened** to check 5 paths instead of 1:
-  1. `channels.telegram.allowFrom[0]` (canonical)
-  2. `plugins.entries.telegram.config.allowFrom[0]`
-  3. `telegram.allowFrom[0]` (legacy)
-  4. `agents.list[*].bindings.telegram.{allowFrom, chatId, chatIds, allowedChatIds, targetChatId}`
-  5. `$TELEGRAM_CHAT_ID` environment variable
-  
-  Friendlier error message lists all 5 paths so the client knows where to put the chat ID.
-
-- **New recovery script for already-affected clients:** `scripts/fix-active-memory-bug.sh` — backs up `openclaw.json`, removes the invalid block, sets the canonical fields, prompts the owner to restart the gateway. Idempotent. Curl one-liner:
-  ```
-  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/fix-active-memory-bug.sh | bash
-  ```
-
-- **Schema validation confirmed against live `openclaw config schema`** — verified that `plugins.entries.active-memory` doesn't exist in the live schema; verified `agents.defaults.memorySearch` and `plugins.entries.memory-core` are the canonical paths.
+The 5-path lookup itself was correct; only the post-find sanitization was broken.
 
 ### What's New in v9.6.5 (May 13, 2026) — Closing the Last 4 Gaps
 

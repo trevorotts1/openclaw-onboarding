@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.6.6
+#  OpenClaw Onboarding Installer v9.6.7
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.6.6"
+ONBOARDING_VERSION="v9.6.7"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -383,11 +383,11 @@ cat > "$RESUME_FILE" <<RESUME_JSON
 RESUME_JSON
 success "State carryover initialized at $RESUME_FILE"
 
-# 0.3 — Canonical sub-agent + bootstrap config (v9.6.6)
+# 0.3 — Canonical sub-agent + bootstrap config (v9.6.7)
 # Hard-overwrites the numeric limits (these are protocol gates, not preferences).
 # Preserves agents.defaults.subagents.model.fallbacks if a client has customized it.
 # Sets allowAgents=["*"] on every agents.list entry (wildcard subagent permission).
-note "Configuring canonical sub-agent + bootstrap settings (v9.6.6 spec)..."
+note "Configuring canonical sub-agent + bootstrap settings (v9.6.7 spec)..."
 backup_config_file "$OCJSON"
 
 python3 << PYEOF
@@ -621,7 +621,7 @@ fi
 # ----------------------------------------------------------
 # Step 7: Configure Concurrency
 # ----------------------------------------------------------
-# NOTE (v9.6.6): canonical sub-agent + bootstrap config is now applied in
+# NOTE (v9.6.7): canonical sub-agent + bootstrap config is now applied in
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
@@ -653,7 +653,7 @@ try:
     with open(path) as f:
         config = json.load(f)
 
-    # v9.6.6 BUGFIX:
+    # v9.6.7 BUGFIX:
     # "plugins.entries.active-memory" is NOT a real plugin in current OpenClaw
     # schemas. Earlier install scripts wrote 6 keys there (agents, allowedChatTypes,
     # queryMode, promptStyle, timeoutMs, maxSummaryChars) that the validator
@@ -671,7 +671,7 @@ try:
     # If a prior broken install wrote the bogus active-memory block, REMOVE it
     if 'active-memory' in entries:
         del entries['active-memory']
-        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.6.6 bug)")
+        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.6.7 bug)")
 
     # Ensure memory-core plugin is enabled (the real memory plugin)
     mc = entries.setdefault('memory-core', {})
@@ -940,7 +940,7 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 **DREAMS.md IS REQUIRED** - Must exist in workspace root.
 
-**Timeout References (v9.6.6 — 30-60 min minimums for heavy-reasoning sub-agents):**
+**Timeout References (v9.6.7 — 30-60 min minimums for heavy-reasoning sub-agents):**
 - Phase A: 1800s (30 min per wave)
 - Phase B: 2700s (45 min)
 - Phase C: 3600s (60 min — Book-to-Persona-aware; heavy-reasoning phases need this)
@@ -1201,7 +1201,7 @@ install_weekly_cron() {
         return 0
     fi
 
-    # Resolve Telegram target (v9.6.6: widened lookup — clients configure
+    # Resolve Telegram target (v9.6.7: widened lookup — clients configure
     # Telegram in different places depending on which onboarding version they
     # installed from)
     local OCJSON="$HOME/.openclaw/openclaw.json"
@@ -1251,9 +1251,14 @@ try:
         d[0] if d else '',
         env_target,
     )
-    # Sanity: chat IDs are integers, possibly negative for groups
-    if target and re.match(r'^-?\d+$', target):
-        print(target)
+    # Sanity: chat IDs are integers, possibly negative for groups.
+    # NOTE: This script is embedded in a heredoc that the shell expands.
+    # We deliberately avoid backslash regex escapes (the shell eats them)
+    # and use plain string ops instead.
+    if target:
+        t = target.lstrip('-')
+        if t.isdigit():
+            print(target)
 except Exception as e:
     pass
 " 2>/dev/null)
