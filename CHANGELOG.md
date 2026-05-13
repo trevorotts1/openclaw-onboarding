@@ -1,3 +1,13 @@
+## v9.3.7 - May 13, 2026 - Redact production GHL Location ID from documentation
+
+### Security
+- **Redacted the real BlackCEO GHL Location ID** from 7 documentation references across both repos. Replaced with `[REDACTED]` in prose citations (incident postmortems in SKILL.md, INSTRUCTIONS.md, INSTALL-CONTRACT.md, CHANGELOG.md, README.md) and with the fake string `AbCdEfGhIjKlMnOpQrStUv` in format examples (ghl-mcp-setup-full.md ×2). Pure documentation change — zero runtime impact: no script, install path, QC, or agent behavior reads these files for the Location ID value (the real ID lives in `~/.openclaw/secrets/.env` as `GOHIGHLEVEL_LOCATION_ID` and is read from there at runtime). Removes a public production-identifier leak from HEAD. Note: the real ID remains in git history of prior commits — rotation is not possible for Location IDs (they're permanent tenant identifiers), so history rewrite would be the only complete scrub if needed.
+
+### Changed
+- **ONBOARDING_VERSION** bumped to v9.3.7 in install.sh, update-skills.sh, VERSION file. Both repos.
+
+---
+
 ## v9.3.6 - May 13, 2026 - Sunday Cron Quota Gate + Triggers Skill 36 Surfacing
 
 ### Added
@@ -18,7 +28,7 @@
 ## v9.3.5 - May 13, 2026 - GHL Rate-Limit Protocol (incident response)
 
 ### Added
-- **Rate-limit awareness protocol** baked into the install discipline contract and Skill 36 documentation. Triggered by the 2026-05-13 incident where BlackCEO location Mct54Bwi1KlNouGXQcDX burned all 200,000 daily GHL API calls during development testing. All three tiers (Official MCP, Community MCP, Raw API) returned 429s simultaneously because they share the same per-location backend bucket — switching tiers does NOT bypass.
+- **Rate-limit awareness protocol** baked into the install discipline contract and Skill 36 documentation. Triggered by the 2026-05-13 incident where BlackCEO location [REDACTED] burned all 200,000 daily GHL API calls during development testing. All three tiers (Official MCP, Community MCP, Raw API) returned 429s simultaneously because they share the same per-location backend bucket — switching tiers does NOT bypass.
 - **INSTALL-CONTRACT.md — new Rule 8a "GHL rate-limit awareness"**. Binding rules:
   - Before bulk operations: probe `X-RateLimit-Daily-Remaining`. If under 1000, STOP. If under 5000, warn the owner. Compute reset time from `X-RateLimit-Daily-Reset` and surface in plain English ("back at HH:MM ET").
   - On 429: NEVER retry blindly. NEVER fall through tiers. Parse reset header, surface wall-clock time, log to MEMORY.md under "## Rate Limit Incidents".

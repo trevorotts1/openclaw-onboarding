@@ -10,7 +10,7 @@ This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 arch
 
 ### What's New in v9.3.5 (May 13, 2026) — GHL Rate-Limit Protocol (2026-05-13 incident response)
 
-- **Documented incident:** location Mct54Bwi1KlNouGXQcDX burned all 200,000 daily GHL API calls. All three tiers (Official MCP, Community MCP, Raw API) returned 429s simultaneously because they share the same per-location backend bucket. Switching tiers does NOT bypass.
+- **Documented incident:** location [REDACTED] burned all 200,000 daily GHL API calls. All three tiers (Official MCP, Community MCP, Raw API) returned 429s simultaneously because they share the same per-location backend bucket. Switching tiers does NOT bypass.
 - **New INSTALL-CONTRACT.md Rule 8a** — full rate-limit awareness protocol. Pre-flight  probe before bulk ops. On 429: parse , surface wall-clock reset time to owner, NEVER retry blindly, NEVER fall through tiers, log to MEMORY.md.
 - **Skill 36 SKILL.md** — added rate-limit as Critical Thing #7.
 - **Skill 36 INSTRUCTIONS.md** — full Rate-Limit Protocol section with pre-flight curl example, batching rules, common quota-burners list.

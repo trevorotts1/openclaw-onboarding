@@ -154,7 +154,7 @@ If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLi
 - Community MCP polling intervals set too tight
 - Agent re-fetching the same products/contacts list every turn instead of caching
 
-**Documented past failure:** 2026-05-13, BlackCEO location `Mct54Bwi1KlNouGXQcDX` burned all 200k daily calls. All three tiers returned the same underlying 429 simultaneously. Root cause was test loops + polling + per-turn re-fetches. Recovery: wait ~7 hours for daily reset; do NOT attempt workarounds.
+**Documented past failure:** 2026-05-13, BlackCEO location `[REDACTED]` burned all 200k daily calls. All three tiers returned the same underlying 429 simultaneously. Root cause was test loops + polling + per-turn re-fetches. Recovery: wait ~7 hours for daily reset; do NOT attempt workarounds.
 
 ## Anti-Patterns (DO NOT do these)
 

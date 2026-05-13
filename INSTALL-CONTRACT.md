@@ -188,7 +188,7 @@ GHL enforces per-location rate limits that apply to **all three tiers simultaneo
 - Cache list results (products, invoices, contacts, transactions) in MEMORY.md for at least 5 minutes. Do NOT re-fetch the same data per agent turn.
 - Polling intervals: minimum 60 seconds; minimum 5 minutes for non-time-critical state.
 
-**Documented past failure:** On 2026-05-13, BlackCEO location `Mct54Bwi1KlNouGXQcDX` burned all 200k daily calls. All three tiers (Official MCP, Community MCP, Raw API) returned the same underlying 429. The cause was a combination of test loops during development, polling intervals, and per-turn agent re-fetches. The fix is the rules above — never the workaround of switching tiers.
+**Documented past failure:** On 2026-05-13, BlackCEO location `[REDACTED]` burned all 200k daily calls. All three tiers (Official MCP, Community MCP, Raw API) returned the same underlying 429. The cause was a combination of test loops during development, polling intervals, and per-turn agent re-fetches. The fix is the rules above — never the workaround of switching tiers.
 
 ---
 

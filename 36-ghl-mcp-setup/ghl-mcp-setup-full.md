@@ -269,7 +269,7 @@ find ~/mcp-servers ~/mcp ~/services /data/mcp-servers 2>/dev/null -maxdepth 4 -n
 | Conceptual value | Env var names you may find it under |
 |---|---|
 | **Private Integration Token (PIT)** for the **Location** (sub-account) | `GHL_API_KEY`, `GOHIGHLEVEL_API_KEY`, `GHL_PIT`, `GHL_LOCATION_PIT`, `LEADCONNECTOR_PIT`. Value format: `pit-xxxxxxxx-xxxx-...` |
-| **Location ID** (sub-account ID) | `GHL_LOCATION_ID`, `GOHIGHLEVEL_LOCATION_ID`. Value format: 22-char alphanumeric (e.g. `Mct54Bwi1KlNouGXQcDX`) |
+| **Location ID** (sub-account ID) | `GHL_LOCATION_ID`, `GOHIGHLEVEL_LOCATION_ID`. Value format: 22-char alphanumeric (e.g. `AbCdEfGhIjKlMnOpQrStUv`) |
 | (Optional) **Agency PIT** for agency-wide ops | `GHL_AGENCY_PIT`, `GOHIGHLEVEL_AGENCY_PIT` |
 | (Optional) **User ID** | `GHL_USER_ID`, `GOHIGHLEVEL_USER_ID` |
 
@@ -290,7 +290,7 @@ Use this exact request template (adapt the client's white-label brand name):
 
 > "I'm setting up [BRAND]'s AI integration. To do that without scraping the UI, I need two things from your GHL/[BRAND] account:
 >
-> 1. **Location ID** — open [BRAND] → Settings → Company → Locations → click the location → copy the ID at the top (22 characters, looks like `Mct54Bwi1KlNouGXQcDX`).
+> 1. **Location ID** — open [BRAND] → Settings → Company → Locations → click the location → copy the ID at the top (22 characters, looks like `AbCdEfGhIjKlMnOpQrStUv`).
 >
 > 2. **Private Integration Token** with these scopes:
 >    - `contacts.readonly`, `contacts.write`
