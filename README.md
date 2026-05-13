@@ -2,9 +2,21 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.1.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script.
+This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
+
+> **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.1.0 (May 13, 2026) — Telegram Handoff Fix + Onboarding Triggers
+- **Fixed silent Telegram failure on install completion**: previous versions wrapped `openclaw message send` with `2>/dev/null || true`, swallowing all errors. v9.1.0 logs failures and surfaces a status line so you can see whether the note actually went through.
+- **Fixed race condition during gateway restart**: completion message used to be backgrounded with a 10-second sleep, then sent AFTER the gateway restart had begun — by which time the gateway was down and the send silently failed. Now the message is sent BEFORE the restart, so the gateway is still up to deliver it.
+- **Paste-ready Telegram body**: the completion notification now contains an exact instruction block the client can copy and paste to their agent. No more vague "check AGENTS.md" wording.
+- **Backup terminal block**: install.sh now always prints a fully-formatted backup instruction box at the end of the install, regardless of whether the Telegram note made it through. Nobody gets stranded.
+- **update-skills.sh now writes its own UPDATE PENDING flag**: previously only fresh installs wrote the flag, so existing-client updates left the agent with no idea anything happened. Now the updater writes a flag, lists which skills were newly installed, and tells the agent the activation steps.
+- **update-skills.sh now sends its own Telegram + backup block**: mirrors the install.sh fix.
+- **New ONBOARDING-TRIGGERS.md at repo root**: client-facing document with 5 trigger sections (Mac terminal, Mac Telegram, VPS terminal, VPS Telegram, existing-client update). No version numbers pinned — always pulls latest. Hand-holding tone for over-60 audience.
+- **ONBOARDING_VERSION bumped to v9.1.0** in install.sh and update-skills.sh.
 
 ### What's New in v9.0.0 (May 13, 2026) — GHL MCP Multi-Tier Access
 - **New skill 36 (`36-ghl-mcp-setup`)**: Installs a 5-tier GHL access chain — Official MCP (36 tools), Community MCP (588 tools, BusyBee3333 2026 fork), direct REST API (skill 29), Playwright browser, Codex Computer Use. The agent tries each tier in order before falling through.

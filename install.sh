@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.0.0
+#  OpenClaw Onboarding Installer v9.1.0
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.0.0"
+ONBOARDING_VERSION="v9.1.0"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -70,10 +70,12 @@ count_list() {
 # ----------------------------------------------------------
 # Telegram Progress Notification
 # ----------------------------------------------------------
+TELEGRAM_LAST_RESULT=""
 send_telegram_progress() {
     local message="$1"
     local OCJSON="$HOME/.openclaw/openclaw.json"
     local TELEGRAM_TARGET=""
+    TELEGRAM_LAST_RESULT="skipped"
 
     if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
         TELEGRAM_TARGET=$(python3 -c "
@@ -88,8 +90,21 @@ except:
 " 2>/dev/null)
     fi
 
-    if command -v openclaw >/dev/null 2>&1 && [ -n "$TELEGRAM_TARGET" ]; then
-        openclaw message send --channel telegram --target "$TELEGRAM_TARGET" --message "$message" 2>/dev/null || true
+    if ! command -v openclaw >/dev/null 2>&1; then
+        TELEGRAM_LAST_RESULT="no-openclaw-cli"
+        return 0
+    fi
+    if [ -z "$TELEGRAM_TARGET" ]; then
+        TELEGRAM_LAST_RESULT="no-telegram-target"
+        return 0
+    fi
+
+    # Send and capture both stdout + stderr to the install log; surface failures
+    if openclaw message send --channel telegram --target "$TELEGRAM_TARGET" --message "$message" >> "$LOG_FILE" 2>&1; then
+        TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET"
+    else
+        TELEGRAM_LAST_RESULT="failed:see-$LOG_FILE"
+        warn "Telegram notification failed — details in $LOG_FILE"
     fi
 }
 
@@ -848,38 +863,63 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Send completion notification
-send_telegram_progress "✅ OpenClaw Onboarding ${ONBOARDING_VERSION} installed successfully!
+# Send completion notification BEFORE gateway restart (so the gateway is still up to deliver it).
+# The body contains paste-ready instructions in case the agent's session loses context during restart.
+send_telegram_progress "✅ OpenClaw Onboarding ${ONBOARDING_VERSION} install complete.
 
-📦 Skills: $count_installed processed
-⏳ Gateway restart in progress...
+📦 ${count_installed} skills processed.
+⏳ Gateway restart starting now — agent will be unavailable for ~30 seconds.
 
-Next: Process UPDATE PENDING in AGENTS.md"
+When the gateway is back, paste this to your agent:
 
-# Restart gateway
+▶ \"I just ran the OpenClaw onboarding install. There is an UPDATE PENDING flag at the top of my AGENTS.md. Please follow the 5-Phase Processing Order in that flag to activate all skills. Start with Phase A (parallel install in waves). Do not skip any phase. Run QC after each skill. Send me a summary when complete.\"
+
+(If you did not receive THIS Telegram note, see the same instructions printed in your Terminal where you ran the install command.)"
+
+# Echo Telegram result so the operator knows whether it actually fired
+case "$TELEGRAM_LAST_RESULT" in
+    sent:*)              success "Telegram completion note sent to ${TELEGRAM_LAST_RESULT#sent:}" ;;
+    no-openclaw-cli)     warn "Telegram skipped — openclaw CLI not on PATH yet (first-install case)" ;;
+    no-telegram-target)  warn "Telegram skipped — no telegram.allowFrom configured in openclaw.json" ;;
+    failed:*)            warn "Telegram completion note FAILED — using backup instructions below" ;;
+esac
+
+# Always print the backup instructions block to terminal — no client gets stranded
+cat <<'BACKUP_BLOCK'
+
+╔════════════════════════════════════════════════════════════════════╗
+║   BACKUP — IF YOU DID NOT GET A TELEGRAM NOTE                      ║
+╠════════════════════════════════════════════════════════════════════╣
+║                                                                    ║
+║   After the gateway restart completes (about 30 seconds), open     ║
+║   whatever you use to talk to your OpenClaw agent (Telegram,       ║
+║   web UI, terminal chat — whatever you have set up).               ║
+║                                                                    ║
+║   Paste this EXACT message to your agent (you can copy from        ║
+║   anywhere between the >>> and <<< markers):                       ║
+║                                                                    ║
+║   >>>                                                              ║
+║   I just ran the OpenClaw onboarding install. There is an          ║
+║   UPDATE PENDING flag at the top of my AGENTS.md. Please follow    ║
+║   the 5-Phase Processing Order in that flag to activate all        ║
+║   skills. Start with Phase A (parallel install in waves). Do not   ║
+║   skip any phase. Run QC after each skill. Send me a summary       ║
+║   when complete.                                                   ║
+║   <<<                                                              ║
+║                                                                    ║
+║   Your agent will read the UPDATE PENDING flag from your           ║
+║   AGENTS.md file and walk through the rest of the install for     ║
+║   you. You do not need to type any other commands.                ║
+║                                                                    ║
+╚════════════════════════════════════════════════════════════════════╝
+
+BACKUP_BLOCK
+
+# Restart gateway (last thing — agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)
 note "Restarting OpenClaw gateway..."
 if command -v openclaw >/dev/null 2>&1; then
-    # Queue a post-restart message
-    TELEGRAM_CHAT_ID=""
-    OCJSON="$HOME/.openclaw/openclaw.json"
-    if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
-        TELEGRAM_CHAT_ID=$(python3 -c "
-import json
-try:
-    cfg = json.load(open('$OCJSON'))
-    allow = cfg.get('channels', {}).get('telegram', {}).get('allowFrom', [])
-    if allow:
-        print(allow[0])
-except:
-    pass
-" 2>/dev/null)
-    fi
-    
-    if [ -n "$TELEGRAM_CHAT_ID" ]; then
-        (sleep 10; openclaw message send --channel telegram --target "$TELEGRAM_CHAT_ID" --message "✅ Gateway restart complete! Your agent is ready. Check AGENTS.md for UPDATE PENDING instructions." 2>/dev/null || true) &
-    fi
-    
     openclaw gateway restart
+    success "Gateway restart triggered. Your agent will reload AGENTS.md on next session."
 else
     warn "openclaw command not found - restart manually: openclaw gateway restart"
 fi

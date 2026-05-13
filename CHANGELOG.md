@@ -1,3 +1,29 @@
+## v9.1.0 - May 13, 2026 - Telegram Handoff Fix + Onboarding Triggers
+
+### Fixed
+- **install.sh — silent Telegram failure on completion**: `openclaw message send ... 2>/dev/null || true` swallowed all errors. Now logs to `/tmp/openclaw-install-*.log` and surfaces a per-send status (`sent:TARGET`, `no-openclaw-cli`, `no-telegram-target`, or `failed:see-LOG`) so operators know whether the note actually delivered.
+- **install.sh — race condition during gateway restart**: the post-restart Telegram send used `(sleep 10; openclaw message send ...) &` — the 10-second backgrounded delay finished AFTER the gateway restart had taken the gateway down, so the send silently failed. The completion message is now sent BEFORE the gateway restart while the gateway is still up.
+- **install.sh — vague Telegram message body**: the old message said "Check AGENTS.md for UPDATE PENDING instructions" with no actionable content. Now contains a paste-ready instruction block the client copies directly to their agent.
+
+### Added
+- **install.sh — always-printed backup terminal block**: regardless of whether the Telegram note delivered, install.sh now prints a fully-formatted ASCII box at the end of the install containing the exact instructions to paste to the agent. No client gets stranded if Telegram is misconfigured.
+- **update-skills.sh — UPDATE PENDING flag write**: previously only `install.sh` wrote the flag; existing-client updates via `update-skills.sh` left the agent unaware anything happened. Now `update-skills.sh` writes its own flag listing exactly which skills were newly installed and the activation steps for each.
+- **update-skills.sh — Telegram notification + backup block**: mirrors the install.sh handoff. Same paste-ready body, same per-send status surfacing, same always-printed backup block.
+- **update-skills.sh — `NEW_SKILLS_CSV` tracking**: the updater builds a comma-separated list of newly-installed (vs updated-in-place) skills during the install loop. The UPDATE PENDING flag and Telegram message both reference this list explicitly so the agent activates only what's new.
+- **ONBOARDING-TRIGGERS.md at repo root**: new client-facing document with five trigger sections — (A) Mac terminal, (B) Mac Telegram, (C) VPS terminal, (D) VPS Telegram, (E) existing-client update for ANY prior version. No version numbers pinned. Plain-English hand-holding tone calibrated for an over-60 audience. README now links to this file as the first thing a new client should read.
+
+### Changed
+- **ONBOARDING_VERSION**: bumped to v9.1.0 in `install.sh` and `update-skills.sh`.
+- **version file**: bumped to v9.1.0 in both Mac and VPS repos.
+- **README "Current Version" header**: bumped to v9.1.0; added pointer to `ONBOARDING-TRIGGERS.md` for new clients.
+
+### Notes
+- The Telegram bugs were diagnosed by inspecting actual log behavior on Trevor's Mac (commit `40a57ce` install on 2026-05-13) — confirmed that the previous Telegram notification never arrived despite `openclaw message send` being a valid command. Root cause was error-swallowing + post-restart race, not command syntax.
+- `update-skills.sh` is non-destructive — it backs up existing skills to `~/Downloads/openclaw-backups/` (Mac) or `~/openclaw-backups/` (VPS) before replacing them. Unchanged skills are still re-copied for hash consistency, but the backup ensures recovery.
+- This release is backward-compatible with v9.0.0. Clients on any prior version can run `update-skills.sh` to land on v9.1.0 without re-running the full install.
+
+---
+
 ## v9.0.0 - May 13, 2026 - GHL MCP Multi-Tier Access
 
 ### Added

@@ -6,7 +6,103 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v8.4.0"
+ONBOARDING_VERSION="v9.1.0"
+
+LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
+
+# ----------------------------------------------------------
+# Telegram Progress Notification (mirrors install.sh)
+# ----------------------------------------------------------
+TELEGRAM_LAST_RESULT=""
+send_telegram_progress() {
+  local message="$1"
+  local OCJSON="$HOME/.openclaw/openclaw.json"
+  local TELEGRAM_TARGET=""
+  TELEGRAM_LAST_RESULT="skipped"
+
+  if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+    TELEGRAM_TARGET=$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$OCJSON'))
+    allow = cfg.get('channels', {}).get('telegram', {}).get('allowFrom', [])
+    if allow:
+        print(allow[0])
+except:
+    pass
+" 2>/dev/null)
+  fi
+
+  if ! command -v openclaw >/dev/null 2>&1; then
+    TELEGRAM_LAST_RESULT="no-openclaw-cli"
+    return 0
+  fi
+  if [ -z "$TELEGRAM_TARGET" ]; then
+    TELEGRAM_LAST_RESULT="no-telegram-target"
+    return 0
+  fi
+  if openclaw message send --channel telegram --target "$TELEGRAM_TARGET" --message "$message" >> "$LOG_FILE" 2>&1; then
+    TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET"
+  else
+    TELEGRAM_LAST_RESULT="failed:see-$LOG_FILE"
+  fi
+}
+
+# ----------------------------------------------------------
+# Write UPDATE PENDING flag to AGENTS.md
+# ----------------------------------------------------------
+write_update_pending_flag() {
+  local version="$1"
+  local new_skills="$2"
+
+  local WORKSPACE_DIR="$HOME/clawd"
+  [ ! -d "$WORKSPACE_DIR" ] && WORKSPACE_DIR="$HOME/.openclaw/workspace"
+  mkdir -p "$WORKSPACE_DIR"
+  local AGENTS_FILE="$WORKSPACE_DIR/AGENTS.md"
+
+  touch "$AGENTS_FILE"
+  grep -v "UPDATE PENDING\|ONBOARDING PENDING" "$AGENTS_FILE" > "$AGENTS_FILE.tmp" 2>/dev/null || true
+  mv "$AGENTS_FILE.tmp" "$AGENTS_FILE" 2>/dev/null || true
+
+  local DATE_STAMP
+  DATE_STAMP=$(date +%Y-%m-%d)
+
+  cat >> "$AGENTS_FILE" <<FLAGCONTENT
+
+## 🔴🔴🔴 UPDATE PENDING — SKILL UPDATE TO ${version}
+
+**EXECUTION MODE: DO NOT ASK PERMISSION. EXECUTE IMMEDIATELY.**
+
+A skill update was applied via update-skills.sh on ${DATE_STAMP}. Process the activation steps now.
+
+### What changed in this update
+- Onboarding version: ${version}
+- New skills installed (require ACTIVATION): ${new_skills:-none — updates only}
+
+### How to process each NEW skill (only NEW ones, updates are already in place)
+
+For each new skill folder under \`~/.openclaw/skills/\`:
+1. READ all files (Teach Yourself Protocol): SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md, plus any \`references/*.md\` files
+2. CHECK prerequisites and search ALL standard credential locations (canonical: \`~/.openclaw/secrets/.env\` on Mac, \`/data/.openclaw/secrets/.env\` on VPS, plus \`openclaw.json\` env.vars). Skip asking the owner if values already exist.
+3. EXECUTE the activation steps in INSTALL.md (read ≠ execute)
+4. APPLY CORE_UPDATES.md surgically — add to AGENTS.md / TOOLS.md / MEMORY.md / SOUL.md only the sections explicitly labeled in that file
+5. RUN the bundled QC checks; do not declare done until QC reaches a pass score (skills with a \`qc-*.sh\` script must exit 0)
+6. REPORT to owner what was activated and any items pending owner input
+
+### Discipline (binding)
+- Skills 22-23: MAIN ORCHESTRATOR ONLY, never delegate
+- Tier order in any tiered skill (e.g. skill 36 GHL MCP): try Tier N before Tier N+1, no skipping
+- Disclosure headers (e.g. \`[GHL tier used: N — tool_name]\`) required per any skill's SOUL-level rules
+- No destructive shortcuts: no \`--force\`, no \`--no-verify\`, no \`--break-system-packages\` unless explicitly instructed
+
+### When activation is complete
+- Remove this entire UPDATE PENDING section from AGENTS.md
+- Add to MEMORY.md under "## System Updates":
+  "${version} update applied on ${DATE_STAMP}. New skills activated: ${new_skills:-none}."
+
+FLAGCONTENT
+  echo "  ✓ UPDATE PENDING flag written to $AGENTS_FILE"
+}
 
 # ----------------------------------------------------------
 # SKILLS DIRECTORY SECTION — How to find skills on Mac
@@ -187,6 +283,7 @@ main() {
 
   # Copy new skills
   echo "  Installing skills to $SKILLS_DIR..."
+  NEW_SKILLS_CSV=""
   for SKILL_DIR in "$EXTRACTED_DIR"/[0-9]*/; do
     [ -d "$SKILL_DIR" ] || continue
     SKILL_NAME=$(basename "$SKILL_DIR")
@@ -196,6 +293,12 @@ main() {
 
     # Check if this is a NEW skill (doesn't exist in current install)
     if [ ! -d "$SKILLS_DIR/$SKILL_NAME" ]; then
+      # Track for flag + Telegram
+      if [ -z "$NEW_SKILLS_CSV" ]; then
+        NEW_SKILLS_CSV="$SKILL_NAME"
+      else
+        NEW_SKILLS_CSV="$NEW_SKILLS_CSV, $SKILL_NAME"
+      fi
       echo ""
       echo "  🆕 NEW SKILL DETECTED: $SKILL_NAME"
       echo "  ============================================"
@@ -250,6 +353,58 @@ main() {
   echo "   Version: $ONBOARDING_VERSION"
   echo "   Location: $SKILLS_DIR"
   echo "============================================"
+
+  # ----------------------------------------------------------
+  # Post-update: write UPDATE PENDING flag + Telegram + backup block
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Writing UPDATE PENDING flag for agent activation..."
+  write_update_pending_flag "$ONBOARDING_VERSION" "$NEW_SKILLS_CSV"
+
+  echo "  Sending Telegram notification..."
+  send_telegram_progress "✅ OpenClaw skill update ${ONBOARDING_VERSION} complete.
+
+New skills (need activation): ${NEW_SKILLS_CSV:-none — updates only}.
+
+Paste this to your agent:
+
+▶ \"I just ran update-skills.sh. There is an UPDATE PENDING flag at the top of my AGENTS.md describing what changed. Please follow the activation steps for any new skills listed. Run QC after each one. Send me a summary when complete.\"
+
+(If you didn't get THIS Telegram note, the same instructions are also printed in your Terminal.)"
+
+  case "$TELEGRAM_LAST_RESULT" in
+    sent:*)              echo "  ✓ Telegram sent to ${TELEGRAM_LAST_RESULT#sent:}" ;;
+    no-openclaw-cli)     echo "  ⚠ Telegram skipped — openclaw CLI not on PATH" ;;
+    no-telegram-target)  echo "  ⚠ Telegram skipped — no telegram.allowFrom configured in openclaw.json" ;;
+    failed:*)            echo "  ⚠ Telegram FAILED — see $LOG_FILE (using backup block below)" ;;
+  esac
+
+  # Always print the backup block so client is never stranded
+  cat <<'BACKUP_BLOCK'
+
+╔════════════════════════════════════════════════════════════════════╗
+║   BACKUP — IF YOU DID NOT GET A TELEGRAM NOTE                      ║
+╠════════════════════════════════════════════════════════════════════╣
+║                                                                    ║
+║   Open whatever you use to talk to your OpenClaw agent (Telegram,  ║
+║   web UI, terminal chat — whatever you have set up).               ║
+║                                                                    ║
+║   Paste this EXACT message to your agent (copy between the         ║
+║   >>> and <<< markers):                                            ║
+║                                                                    ║
+║   >>>                                                              ║
+║   I just ran update-skills.sh. There is an UPDATE PENDING flag     ║
+║   at the top of my AGENTS.md describing what changed. Please       ║
+║   follow the activation steps for any new skills listed in the     ║
+║   flag. Run QC after each one. Send me a summary when complete.    ║
+║   <<<                                                              ║
+║                                                                    ║
+║   Your agent will read the flag and walk through the activation    ║
+║   for you. You don't need to type any other commands.              ║
+║                                                                    ║
+╚════════════════════════════════════════════════════════════════════╝
+
+BACKUP_BLOCK
 }
 
 main "$@"
