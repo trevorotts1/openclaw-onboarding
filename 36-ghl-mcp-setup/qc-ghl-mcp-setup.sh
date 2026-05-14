@@ -25,19 +25,12 @@ LIB="$SKILL_DIR/../lib-shared.sh"
 
 if ! command -v resolve_platform_paths >/dev/null 2>&1; then
   resolve_platform_paths() {
-    if [ -d "/data/.openclaw" ]; then
-      export OPENCLAW_PLATFORM="vps"
-      export SECRETS_ENV="/data/.openclaw/secrets/.env"
-      export CONFIG_JSON="/data/.openclaw/openclaw.json"
-      export WORKSPACE="/data/clawd"
-      export SKILLS_DIR_DEFAULT="/data/.openclaw/skills"
-    else
-      export OPENCLAW_PLATFORM="mac"
-      export SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-      export CONFIG_JSON="$HOME/.openclaw/openclaw.json"
-      export WORKSPACE="$HOME/clawd"
-      export SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"
-    fi
+    # Canonical Mac paths
+    export SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+    export CONFIG_JSON="$HOME/.openclaw/openclaw.json"
+    export WORKSPACE="$HOME/clawd"
+    [ ! -d "$WORKSPACE" ] && WORKSPACE="$HOME/.openclaw/workspace"
+    export SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"
   }
 fi
 resolve_platform_paths
@@ -83,7 +76,7 @@ echo "── Section A: Master files + platform ──"
 
 # Fuzzy locator (mirrors lib-shared.sh)
 MASTER_FILES_DIR=""
-for r in "$HOME/Downloads" "/data/Downloads" "/root/Downloads" "/data" "$HOME"; do
+for r in "$HOME/Downloads" "~/Downloads" "/root/Downloads" "/data" "$HOME"; do
   [ -d "$r" ] || continue
   f=$(find "$r" -maxdepth 2 -type d \
     \( -iname "*openclaw*master*file*" -o -iname "*open*claw*master*file*" \) \

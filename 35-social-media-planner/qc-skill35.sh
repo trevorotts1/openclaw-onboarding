@@ -15,15 +15,10 @@ LIB="$(dirname "$0")/../lib-shared.sh"
 # Fallback platform resolution if lib-shared not present
 if ! command -v resolve_platform_paths >/dev/null 2>&1; then
   resolve_platform_paths() {
-    if [ -d "/data/.openclaw" ]; then
-      export OPENCLAW_PLATFORM="vps"
-      export SECRETS_ENV="/data/.openclaw/secrets/.env"
-      export WORKSPACE="/data/clawd"
-    else
-      export OPENCLAW_PLATFORM="mac"
-      export SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-      export WORKSPACE="$HOME/clawd"
-    fi
+    # Canonical Mac paths
+    export SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+    export WORKSPACE="$HOME/clawd"
+    [ ! -d "$WORKSPACE" ] && WORKSPACE="$HOME/.openclaw/workspace"
   }
 fi
 resolve_platform_paths
@@ -71,12 +66,12 @@ echo "  Date:     $(date)"
 echo ""
 
 echo "── Section A: Prerequisites ──"
-assert "Skill 01 (TYP) installed"   "[ -d \"$HOME/.openclaw/skills/01-teach-yourself-protocol\" ] || [ -d \"/data/.openclaw/skills/01-teach-yourself-protocol\" ]"
-assert "Skill 02 (BYUP) installed"  "[ -d \"$HOME/.openclaw/skills/02-back-yourself-up-protocol\" ] || [ -d \"/data/.openclaw/skills/02-back-yourself-up-protocol\" ]"
-assert "Skill 22 (Persona) installed" "[ -d \"$HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system\" ] || [ -d \"/data/.openclaw/skills/22-book-to-persona-coaching-leadership-system\" ]"
-assert "Skill 31 (Memory) installed" "[ -d \"$HOME/.openclaw/skills/31-upgraded-memory-system\" ] || [ -d \"/data/.openclaw/skills/31-upgraded-memory-system\" ]"
+assert "Skill 01 (TYP) installed"   "[ -d \"$HOME/.openclaw/skills/01-teach-yourself-protocol\" ] || [ -d \"~/.openclaw/skills/01-teach-yourself-protocol\" ]"
+assert "Skill 02 (BYUP) installed"  "[ -d \"$HOME/.openclaw/skills/02-back-yourself-up-protocol\" ] || [ -d \"~/.openclaw/skills/02-back-yourself-up-protocol\" ]"
+assert "Skill 22 (Persona) installed" "[ -d \"$HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system\" ] || [ -d \"~/.openclaw/skills/22-book-to-persona-coaching-leadership-system\" ]"
+assert "Skill 31 (Memory) installed" "[ -d \"$HOME/.openclaw/skills/31-upgraded-memory-system\" ] || [ -d \"~/.openclaw/skills/31-upgraded-memory-system\" ]"
 warn_only "Skill 36 (GHL MCP) installed — recommended for MCP-first routing" \
-  "[ -d \"$HOME/.openclaw/skills/36-ghl-mcp-setup\" ] || [ -d \"/data/.openclaw/skills/36-ghl-mcp-setup\" ]"
+  "[ -d \"$HOME/.openclaw/skills/36-ghl-mcp-setup\" ] || [ -d \"~/.openclaw/skills/36-ghl-mcp-setup\" ]"
 
 echo ""
 echo "── Section B: GHL credentials (canonical names) ──"

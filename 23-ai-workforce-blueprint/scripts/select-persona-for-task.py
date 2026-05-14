@@ -56,14 +56,14 @@ HOME = Path.home()
 ZHC_ROOTS = [
     HOME / "clawd" / "zero-human-company",
     HOME / "clawd" / "zhc",
-    Path("/data/clawd/zero-human-company"),
-    Path("/data/clawd/zhc"),
+    Path("~/clawd/zero-human-company"),
+    Path("~/clawd/zhc"),
 ]
 
 GEMINI_SEARCH_CANDIDATES = [
     HOME / ".openclaw" / "workspace" / "scripts" / "gemini-search.py",
     HOME / "clawd" / "scripts" / "gemini-search.py",
-    Path("/data/clawd/scripts/gemini-search.py"),
+    Path("~/clawd/scripts/gemini-search.py"),
     HOME / "Downloads" / "openclaw-master-files" / "23-ai-workforce-blueprint" / "scripts" / "gemini-search.py",
 ]
 
@@ -95,7 +95,7 @@ def find_dept_dir(company_dir, dept_id):
             return cand
     # Legacy
     for legacy in [HOME / "clawd" / "departments" / dept_id,
-                   Path("/data/clawd/departments") / dept_id]:
+                   Path("~/clawd/departments") / dept_id]:
         if legacy.is_dir():
             return legacy
     return None
@@ -119,7 +119,7 @@ def load_governing_personas(dept_dir):
 def load_persona_categories():
     """Read persona-categories.json to support keyword/tag filtering."""
     for p in [HOME / "Downloads" / "openclaw-master-files" / "coaching-personas" / "persona-categories.json",
-              Path("/data/Downloads/openclaw-master-files/coaching-personas/persona-categories.json")]:
+              Path("~/Downloads/openclaw-master-files/coaching-personas/persona-categories.json")]:
         if p.exists():
             try:
                 return json.load(open(p))

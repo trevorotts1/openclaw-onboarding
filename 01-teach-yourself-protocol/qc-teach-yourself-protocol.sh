@@ -6,7 +6,7 @@ PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
 LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
 if ! command -v resolve_platform_paths >/dev/null 2>&1; then
-  resolve_platform_paths() { if [ -d "/data/.openclaw" ]; then export SECRETS_ENV="/data/.openclaw/secrets/.env" WORKSPACE="/data/clawd" SKILLS_DIR_DEFAULT="/data/.openclaw/skills" OPENCLAW_PLATFORM="vps"; else export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills" OPENCLAW_PLATFORM="mac"; fi; }
+  resolve_platform_paths() { export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"; }
 fi
 resolve_platform_paths
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
@@ -26,7 +26,7 @@ assert "Full reference doc"   "[ -f \"$SKILLS_DIR_DEFAULT/01-teach-yourself-prot
 echo ""
 echo "── Section B: 3-layer storage model wired ──"
 warn_only "AGENTS.md references TYP" "grep -qiE 'teach.yourself.protocol|TYP' \"$WORKSPACE/AGENTS.md\" 2>/dev/null"
-warn_only "Master-files folder full reference"  "find $HOME/Downloads /data/Downloads 2>/dev/null -maxdepth 4 -name 'teach-yourself-protocol-full.md' | head -1 | grep -q ."
+warn_only "Master-files folder full reference"  "find $HOME/Downloads ~/Downloads 2>/dev/null -maxdepth 4 -name 'teach-yourself-protocol-full.md' | head -1 | grep -q ."
 warn_only "Core .md files exist (AGENTS / TOOLS / MEMORY)" "[ -f \"$WORKSPACE/AGENTS.md\" ] && [ -f \"$WORKSPACE/TOOLS.md\" ] && [ -f \"$WORKSPACE/MEMORY.md\" ]"
 warn_only "AGENTS.md under 50KB (TYP lean-file rule)" "[ \$(stat -f %z \"$WORKSPACE/AGENTS.md\" 2>/dev/null || stat -c %s \"$WORKSPACE/AGENTS.md\" 2>/dev/null || echo 0) -lt 51200 ]"
 echo ""

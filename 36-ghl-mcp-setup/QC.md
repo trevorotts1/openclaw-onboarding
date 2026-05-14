@@ -7,7 +7,7 @@ Verifies that the 5-tier GHL access chain is fully installed and routing correct
 ## 2. Installation Checks
 
 - [ ] Skill folder exists with all 10 files: SKILL.md, INSTALL.md, INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, QC.md, CHANGELOG.md, skill-version.txt, ghl-mcp-setup-full.md, ghl-mcp-setup.skill
-- [ ] Platform detected correctly (`/data/.openclaw` → VPS, else desktop)
+- [ ] Platform detected correctly (`~/.openclaw` → VPS, else desktop)
 - [ ] `$CANONICAL_MASTER` resolves to a real openclaw-master-files folder
 - [ ] OpenClaw MCP entries `ghl-mcp` AND `ghl-community-mcp` both present in `openclaw mcp list`
 - [ ] Env var `GHL_COMMUNITY_MCP_URL` is set in `openclaw.json` `env.vars`
@@ -91,12 +91,8 @@ The script ships in this skill folder as `qc-ghl-mcp-setup.sh` — single source
 To run it:
 
 ```bash
-# Locate the master files folder (where install.sh placed the skill)
-if [ -d "/data/.openclaw" ]; then
-  MASTER_FILES_DIR=/data/Downloads/openclaw-master-files
-else
-  MASTER_FILES_DIR=$HOME/Downloads/openclaw-master-files
-fi
+# Master files folder on Mac (where install.sh placed the skill)
+MASTER_FILES_DIR=$HOME/Downloads/openclaw-master-files
 
 chmod +x "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
 bash    "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
@@ -105,8 +101,8 @@ bash    "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
 Exit code 0 = setup complete. Any non-zero exit = fix the failed items and re-run.
 
 The script:
-- Detects platform (Mac vs VPS), resolves canonical paths
-- Sources `~/.openclaw/secrets/.env` (or `/data/...`), reads `GOHIGHLEVEL_API_KEY` + `GOHIGHLEVEL_LOCATION_ID`
+- Uses canonical Mac paths (`~/.openclaw/...`, `~/Downloads/...`)
+- Reads `GOHIGHLEVEL_API_KEY` + `GOHIGHLEVEL_LOCATION_ID` from `~/.openclaw/secrets/.env` (canonical) or `~/clawd/secrets/.env` (legacy)
 - Probes Tier 1 (official MCP) for 36 tools
 - Probes Tier 2 (community MCP) on `$GHL_COMMUNITY_MCP_URL` for the full tool count
 - Probes Tier 3 (direct REST) and reads `X-RateLimit-Daily-Remaining` — if low, surfaces reset clock time

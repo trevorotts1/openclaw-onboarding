@@ -2,35 +2,57 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.7.11
+#  OpenClaw Onboarding Installer v10.0.0 — Mac mini
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+#
+#  This installer is for Mac mini / macOS deployments of OpenClaw.
+#  It is NOT cross-platform. The Hostinger Docker VPS installer lives at:
+#    https://github.com/trevorotts1/openclaw-onboarding-vps
+#
+#  Canonical Mac paths (per OpenClaw 2026.5.x docs at docs.openclaw.ai):
+#    ~/.openclaw/                       — config root
+#    ~/.openclaw/openclaw.json          — main config
+#    ~/.openclaw/credentials/           — channel allowlists + pairing
+#    ~/.openclaw/agents/<id>/agent/auth-profiles.json  — per-agent creds
+#    ~/.openclaw/secrets/.env           — operator secrets (canonical)
+#    ~/clawd/                           — workspace (most existing clients)
+#    ~/.openclaw/workspace/             — workspace (OpenClaw default for new installs)
+#    ~/Downloads/openclaw-master-files/ — onboarding master files
+#    ~/Downloads/openclaw-backups/      — config backups
+#
+#  Credential discovery: ~/.openclaw/secrets/.env (canonical) +
+#    ~/.openclaw/openclaw.json env.vars block + models.providers.*.apiKey +
+#    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.11"
+ONBOARDING_VERSION="v10.0.0"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
 # ----------------------------------------------------------
-# Platform-aware paths (v9.7.9) — Mac/desktop vs Hostinger Docker VPS
+# Mac canonical paths (hardcoded — no platform detect)
 # ----------------------------------------------------------
-# On Hostinger Docker VPS, OpenClaw runs inside a container whose persistent
-# volume is mounted at /data — so all install artifacts (config, downloads,
-# backups, workspace) MUST live under /data or they're lost on container
-# rebuild. On Mac, $HOME is the right base. Detector: presence of
-# /data/.openclaw/ — the persistent volume mount that only exists on VPS.
-if [ -d "/data/.openclaw" ]; then
-    OPENCLAW_PLATFORM="vps"
-    OC_HOME="/data"
-    OC_CONFIG="/data/.openclaw"
-else
-    OPENCLAW_PLATFORM="desktop"
-    OC_HOME="$HOME"
-    OC_CONFIG="$HOME/.openclaw"
+OC_CONFIG="$HOME/.openclaw"
+OC_JSON="$HOME/.openclaw/openclaw.json"
+OC_CREDENTIALS="$HOME/.openclaw/credentials"
+OC_AGENTS="$HOME/.openclaw/agents"
+OC_SKILLS_DIR="$HOME/.openclaw/skills"
+OC_LOGS="$HOME/.openclaw/logs"
+OC_AUTH_PROFILES="$HOME/.openclaw/agents/main/agent/auth-profiles.json"
+OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+OC_DOWNLOADS="$HOME/Downloads"
+OC_BACKUPS="$HOME/Downloads/openclaw-backups"
+OC_LEGACY_CLAWD="$HOME/clawd"        # most existing clients use this as workspace
+OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"  # OpenClaw docs default for new installs
+
+# Hard fail early if running on Hostinger Docker VPS — that's the wrong installer
+if [ -d "/data/.openclaw" ] && [ ! -d "$HOME/.openclaw" ]; then
+    echo "ERROR: This is the Mac mini installer; /data/.openclaw exists which means you're on a VPS." >&2
+    echo "Use the VPS installer: https://github.com/trevorotts1/openclaw-onboarding-vps" >&2
+    exit 1
 fi
-OC_DOWNLOADS="$OC_HOME/Downloads"
-OC_CLAWD="$OC_HOME/clawd"
-OC_JSON="$OC_CONFIG/openclaw.json"
-export OPENCLAW_PLATFORM OC_HOME OC_CONFIG OC_DOWNLOADS OC_CLAWD OC_JSON
+
+mkdir -p "$OC_BACKUPS"
 
 # ----------------------------------------------------------
 # Bash 3.2 Compatible UI Helpers
@@ -90,173 +112,389 @@ count_list() {
 }
 
 # ----------------------------------------------------------
-# Telegram Progress Notification (v9.7.8 — uses universal lookup)
+# Bulletproof Mac Telegram chat ID resolver (v10.0.0)
 # ----------------------------------------------------------
-TELEGRAM_LAST_RESULT=""
+# On Mac, the canonical pairing flow always succeeds before onboarding runs.
+# If we don't find a chat ID, it's because we didn't look in the right place.
+# This resolver searches 23 locations in priority order, stops at first hit,
+# logs which source matched.
+#
+# Tier 1 — primary Mac locations:
+#   1. openclaw config get channels.telegram.allowFrom
+#   2. openclaw config get commands.ownerAllowFrom
+#   3. ~/.openclaw/credentials/telegram-*-allowFrom.json glob
+#   4. ~/.openclaw/credentials/telegram-pairing.json
+# Tier 2 — alternate schema:
+#   5. channels.telegram.groupAllowFrom
+#   6. commands.allowFrom.telegram (older schema)
+#   7. plugins.entries.telegram.config.allowFrom
+# Tier 3 — per-agent bindings:
+#   8. agents.list[*].bindings.telegram.chatId
+#   9. agents.list[*].channels.telegram
+# Tier 4 — Mac config files in multiple known locations:
+#   10. ~/.openclaw/openclaw.json (direct)
+#   11. ~/Library/Application Support/openclaw/openclaw.json
+#   12. ~/.config/openclaw/openclaw.json
+#   13. ~/.openclaw-dev/openclaw.json (dev profile)
+# Tier 5 — runtime CLI introspection:
+#   14. openclaw channels telegram list
+#   15. openclaw devices list --json
+# Tier 6 — Mac secrets/env files:
+#   16. ~/.openclaw/secrets/.env
+#   17. ~/.openclaw/.env
+#   18. ~/clawd/secrets/.env (legacy)
+#   19. env.vars block in openclaw.json
+#   20. Mac shell env: TELEGRAM_CHAT_ID, TELEGRAM_OWNER_ID, TG_CHAT_ID, etc
+# Tier 7 — exhaustive last-resort:
+#   21. Recursive walk of ~/.openclaw/ for any JSON with telegram chat IDs
+#   22. Recursive walk of ~/clawd/ for telegram-related configs
+#   23. Audit log scan: ~/.openclaw/logs/*.jsonl for pairing.approved events
+#
+# Validation: chat ID must be 6-20 digits (optional leading -), must NOT be
+# the bot's own ID.
 
-# Cached: only resolve target + account once per install run
+TELEGRAM_LAST_RESULT=""
 TELEGRAM_TARGET_CACHED=""
 TELEGRAM_ACCOUNT_CACHED=""
+TELEGRAM_SOURCE_CACHED=""
 TELEGRAM_RESOLVED=false
 
 resolve_telegram_target_universal() {
-    # Same universal logic as Step 12: openclaw CLI query → JSON scan of all
-    # plausible config locations → recursive walk for any chat ID under any
-    # telegram-related key → $TELEGRAM_CHAT_ID env. Also detects multi-account.
     local result
     result=$(python3 - <<'PYEOF' 2>/dev/null
-import json, os, glob, subprocess
+import json, os, glob, subprocess, re
+
 HOME = os.path.expanduser("~")
+OC_CONFIG = os.path.join(HOME, ".openclaw")
+OC_JSON = os.path.join(OC_CONFIG, "openclaw.json")
+OC_CREDS = os.path.join(OC_CONFIG, "credentials")
+OC_LOGS = os.path.join(OC_CONFIG, "logs")
 
-def first_chat_id_from_cli():
-    for path in ("channels.telegram.allowFrom",
-                 "plugins.entries.telegram.config.allowFrom",
-                 "telegram.allowFrom",
-                 "commands.allowFrom.telegram"):
-        try:
-            r = subprocess.run(["openclaw", "config", "get", path],
-                               capture_output=True, text=True, timeout=10)
-            if r.returncode != 0 or not r.stdout.strip():
-                continue
-            data = json.loads(r.stdout.strip())
-            if isinstance(data, list):
-                for v in data:
-                    s = str(v).strip()
-                    if s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20:
-                        return s
-            elif isinstance(data, (str, int)):
-                s = str(data).strip()
-                if s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20:
-                    return s
-        except Exception:
-            continue
-    return ""
+def is_chat_id(v, bot_id=""):
+    if not isinstance(v, (str, int)): return False
+    s = str(v).strip().replace("telegram:", "").replace("tg:", "")
+    if not s: return False
+    digits = s.lstrip("-")
+    if not (digits.isdigit() and 6 <= len(digits) <= 20): return False
+    if bot_id and s == bot_id: return False
+    return s
 
-candidates = [
-    os.path.join(HOME, ".openclaw", "openclaw.json"),
-    os.path.join(HOME, ".openclaw", "config.json"),
-    os.path.join(HOME, "Library", "Application Support", "openclaw", "config.json"),
-    os.path.join(HOME, "Library", "Application Support", "openclaw", "openclaw.json"),
-    os.path.join(HOME, ".config", "openclaw", "config.json"),
-    os.path.join(HOME, ".config", "openclaw", "openclaw.json"),
-    "/data/.openclaw/openclaw.json",
-    "/data/.openclaw/config.json",
-]
-for pat in [os.path.join(HOME, ".openclaw", "*.json"),
-            os.path.join(HOME, "Library", "Application Support", "openclaw", "*.json"),
-            "/data/.openclaw/*.json"]:
-    candidates.extend(glob.glob(pat))
-seen = set(); configs = []
-for p in candidates:
-    if p in seen or not os.path.isfile(p): continue
-    seen.add(p); configs.append(p)
-
-KEY_HINTS = ('telegram','chat','allowfrom','allowedchat','chatid','targetchat')
-
-def is_chat_id(v):
-    if not isinstance(v,(str,int)): return False
-    s = str(v).strip()
-    return bool(s) and s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20
-
-def walk(obj, parent='', under_tel=False):
-    if isinstance(obj, dict):
-        for k,v in obj.items():
-            kl = str(k).lower()
-            now = under_tel or ('telegram' in kl)
-            km = any(h in kl for h in KEY_HINTS)
-            if (now or km) and is_chat_id(v):
-                yield (f"{parent}.{k}" if parent else k, v)
-            if isinstance(v, list):
-                for i, item in enumerate(v):
-                    if now and is_chat_id(item):
-                        yield (f"{parent}.{k}[{i}]" if parent else f"{k}[{i}]", item)
-                    yield from walk(item, f"{parent}.{k}[{i}]" if parent else f"{k}[{i}]", now)
-            elif isinstance(v, dict):
-                yield from walk(v, f"{parent}.{k}" if parent else k, now)
-    elif isinstance(obj, list):
-        for i, item in enumerate(obj):
-            yield from walk(item, f"{parent}[{i}]", under_tel)
-
-chat_id = first_chat_id_from_cli()
-account = ""
-
-# Strategy 5 (v9.7.10): Hostinger Docker VPS stores chat IDs in SEPARATE
-# credential files at credentials/telegram-<account>-allowFrom.json — NOT
-# inside openclaw.json's channels.telegram block. File schema:
-#   {"version":1, "allowFrom":["8279177438"]}
-# The substring between "telegram-" and "-allowFrom.json" IS the account name
-# (e.g., "default"), so this strategy also gives us the --account flag value.
-import re
-cred_roots = [
-    os.path.join(HOME, ".openclaw", "credentials"),
-    "/data/.openclaw/credentials",
-    os.path.join(HOME, "Library", "Application Support", "openclaw", "credentials"),
-    os.path.join(HOME, ".config", "openclaw", "credentials"),
-]
-for cdir in cred_roots:
-    if not os.path.isdir(cdir):
-        continue
+def cli_get(path):
     try:
-        fnames = os.listdir(cdir)
-    except Exception:
-        continue
+        r = subprocess.run(["openclaw", "config", "get", path],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0 or not r.stdout.strip(): return None
+        return r.stdout.strip()
+    except Exception: return None
+
+def parse_json_safe(s):
+    try: return json.loads(s)
+    except Exception: return None
+
+# Load openclaw.json once
+cfg = {}
+try: cfg = json.load(open(OC_JSON))
+except Exception: pass
+
+bot_id = ""
+bt = cfg.get("channels", {}).get("telegram", {}).get("botToken", "") or ""
+if ":" in bt:
+    bot_id = bt.split(":")[0]
+
+result_chat = ""
+result_account = ""
+result_source = ""
+
+def try_value(val, src, account_hint=""):
+    global result_chat, result_account, result_source
+    if result_chat: return
+    if val is None: return
+    cid = is_chat_id(val, bot_id)
+    if cid:
+        result_chat = cid
+        result_account = account_hint
+        result_source = src
+
+def try_list(values, src, account_hint=""):
+    if result_chat: return
+    if not isinstance(values, list): return
+    for v in values:
+        cid = is_chat_id(v, bot_id)
+        if cid:
+            try_value(cid, src, account_hint); return
+
+# ─── S1: channels.telegram.allowFrom (Mac primary) ───
+raw = cli_get("channels.telegram.allowFrom")
+if raw:
+    data = parse_json_safe(raw)
+    if isinstance(data, list): try_list(data, "S1:channels.telegram.allowFrom (CLI)")
+elif "allowFrom" in cfg.get("channels", {}).get("telegram", {}):
+    try_list(cfg["channels"]["telegram"]["allowFrom"], "S1:channels.telegram.allowFrom (json)")
+
+# ─── S2: commands.ownerAllowFrom ───
+if not result_chat:
+    raw = cli_get("commands.ownerAllowFrom")
+    if raw:
+        data = parse_json_safe(raw)
+        if isinstance(data, list): try_list(data, "S2:commands.ownerAllowFrom (CLI)")
+    elif "ownerAllowFrom" in cfg.get("commands", {}):
+        try_list(cfg["commands"]["ownerAllowFrom"], "S2:commands.ownerAllowFrom (json)")
+
+# ─── S3: credentials/telegram-*-allowFrom.json ───
+if not result_chat and os.path.isdir(OC_CREDS):
+    try: fnames = sorted(os.listdir(OC_CREDS))
+    except Exception: fnames = []
+    fnames.sort(key=lambda f: ("default" not in f, f))
     for fname in fnames:
-        m = re.match(r'^telegram-(.+)-allowFrom\.json$', fname)
-        if not m:
-            continue
+        m = re.match(r"^telegram-(.+)-allowFrom\.json$", fname)
+        if not m: continue
+        try: data = json.load(open(os.path.join(OC_CREDS, fname)))
+        except Exception: continue
+        try_list(data.get("allowFrom") or [], f"S3:credentials/{fname}", m.group(1))
+        if result_chat: break
+
+# ─── S4: credentials/telegram-pairing.json ───
+if not result_chat:
+    pp = os.path.join(OC_CREDS, "telegram-pairing.json")
+    if os.path.isfile(pp):
+        try: data = json.load(open(pp))
+        except Exception: data = {}
+        def walk_pair(obj):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if any(x in k.lower() for x in ("chat", "user", "owner")):
+                        cid = is_chat_id(v, bot_id)
+                        if cid: return cid
+                    r = walk_pair(v)
+                    if r: return r
+            elif isinstance(obj, list):
+                for it in obj:
+                    r = walk_pair(it)
+                    if r: return r
+            return None
+        found = walk_pair(data)
+        if found: try_value(found, "S4:credentials/telegram-pairing.json")
+
+# ─── S5: channels.telegram.groupAllowFrom ───
+if not result_chat:
+    try_list(cfg.get("channels", {}).get("telegram", {}).get("groupAllowFrom", []),
+             "S5:channels.telegram.groupAllowFrom")
+
+# ─── S6: commands.allowFrom.telegram (older schema) ───
+if not result_chat:
+    af = cfg.get("commands", {}).get("allowFrom", {})
+    if isinstance(af, dict): try_list(af.get("telegram", []), "S6:commands.allowFrom.telegram")
+
+# ─── S7: plugins.entries.telegram.config.allowFrom ───
+if not result_chat:
+    pte = cfg.get("plugins", {}).get("entries", {}).get("telegram", {})
+    try_list(pte.get("config", {}).get("allowFrom", []), "S7:plugins.entries.telegram.config.allowFrom")
+
+# ─── S8 + S9: per-agent bindings & channels ───
+if not result_chat:
+    for i, ag in enumerate(cfg.get("agents", {}).get("list", []) or []):
+        if not isinstance(ag, dict): continue
+        bind = (ag.get("bindings") or {}).get("telegram") or {}
+        if isinstance(bind, dict):
+            for key in ("chatId", "chatID", "userId", "id"):
+                cid = is_chat_id(bind.get(key, ""), bot_id)
+                if cid:
+                    try_value(cid, f"S8:agents.list[{i}].bindings.telegram.{key}"); break
+        if result_chat: break
+        ch = (ag.get("channels") or {}).get("telegram") or {}
+        if isinstance(ch, dict):
+            for key in ("chatId", "userId", "allowFrom"):
+                v = ch.get(key)
+                if isinstance(v, list): try_list(v, f"S9:agents.list[{i}].channels.telegram.{key}")
+                else:
+                    cid = is_chat_id(v, bot_id)
+                    if cid: try_value(cid, f"S9:agents.list[{i}].channels.telegram.{key}")
+        if result_chat: break
+
+# ─── S10-S13: Mac config files in multiple known locations ───
+if not result_chat:
+    extra_paths = [
+        os.path.join(HOME, "Library", "Application Support", "openclaw", "openclaw.json"),
+        os.path.join(HOME, ".config", "openclaw", "openclaw.json"),
+        os.path.join(HOME, ".openclaw-dev", "openclaw.json"),
+    ]
+    for p in extra_paths:
+        if not os.path.isfile(p): continue
+        try: extra_cfg = json.load(open(p))
+        except Exception: continue
+        try_list(extra_cfg.get("channels", {}).get("telegram", {}).get("allowFrom", []),
+                 f"S10-13:extra-config:{os.path.basename(p)}")
+        if result_chat: break
+
+# ─── S14 + S15: CLI live introspection ───
+if not result_chat:
+    for cmd in (["channels", "telegram", "list", "--json"],
+                ["pairing", "list", "telegram", "--json"]):
         try:
-            data = json.load(open(os.path.join(cdir, fname)))
-        except Exception:
-            continue
-        allow = data.get('allowFrom') or []
-        if not isinstance(allow, list):
-            continue
-        for v in allow:
-            s = str(v).strip()
-            if s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20:
-                chat_id = s
-                account = m.group(1)
+            r = subprocess.run(["openclaw"] + cmd, capture_output=True, text=True, timeout=10)
+            if r.returncode != 0: continue
+            data = parse_json_safe(r.stdout) or []
+            def walk_cmd(obj):
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if any(x in k.lower() for x in ("chat", "user", "owner", "allowfrom")):
+                            cid = is_chat_id(v, bot_id)
+                            if cid: return cid
+                        r = walk_cmd(v)
+                        if r: return r
+                elif isinstance(obj, list):
+                    for it in obj:
+                        r = walk_cmd(it)
+                        if r: return r
+            found = walk_cmd(data)
+            if found: try_value(found, f"S14-15:cli {' '.join(cmd)}")
+            if result_chat: break
+        except Exception: continue
+
+# ─── S16-S18: Mac secrets/env files ───
+if not result_chat:
+    env_files = [
+        os.path.join(HOME, ".openclaw", "secrets", ".env"),
+        os.path.join(HOME, ".openclaw", ".env"),
+        os.path.join(HOME, "clawd", "secrets", ".env"),
+    ]
+    keys = ("TELEGRAM_CHAT_ID", "TELEGRAM_OWNER_ID", "TG_CHAT_ID", "TELEGRAM_USER_ID")
+    for envf in env_files:
+        if not os.path.isfile(envf): continue
+        try:
+            for line in open(envf):
+                line = line.strip()
+                if "=" not in line or line.startswith("#"): continue
+                k, _, v = line.partition("=")
+                if k in keys and v:
+                    v = v.strip().strip('"').strip("'")
+                    cid = is_chat_id(v, bot_id)
+                    if cid: try_value(cid, f"S16-18:{envf}:{k}"); break
+            if result_chat: break
+        except Exception: continue
+
+# ─── S19: env.vars block inside openclaw.json (Trevor's inline pattern) ───
+if not result_chat:
+    env_vars = cfg.get("env", {}).get("vars", {})
+    for k in ("TELEGRAM_CHAT_ID", "TELEGRAM_OWNER_ID", "TG_CHAT_ID", "TELEGRAM_USER_ID"):
+        v = env_vars.get(k, "")
+        cid = is_chat_id(v, bot_id)
+        if cid: try_value(cid, f"S19:env.vars.{k}"); break
+
+# ─── S20: Mac shell env vars ───
+if not result_chat:
+    for var in ("TELEGRAM_CHAT_ID", "TELEGRAM_OWNER_ID", "TG_CHAT_ID", "TELEGRAM_USER_ID"):
+        v = (os.environ.get(var) or "").strip()
+        if not v: continue
+        cid = is_chat_id(v, bot_id)
+        if cid: try_value(cid, f"S20:env.{var}"); break
+
+# ─── S21: exhaustive recursive walk of ~/.openclaw/ ───
+if not result_chat:
+    KEY_HINTS = ("telegram", "chat", "allowfrom", "owner", "user")
+    def deep_walk(obj, under_tel=False):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                kl = str(k).lower()
+                tel_branch = under_tel or "telegram" in kl
+                key_hit = any(h in kl for h in KEY_HINTS)
+                if (tel_branch or key_hit):
+                    cid = is_chat_id(v, bot_id)
+                    if cid: return cid
+                    if isinstance(v, list):
+                        for it in v:
+                            cid = is_chat_id(it, bot_id)
+                            if cid: return cid
+                r = deep_walk(v, tel_branch)
+                if r: return r
+        elif isinstance(obj, list):
+            for it in obj:
+                r = deep_walk(it, under_tel)
+                if r: return r
+        return None
+    for root, dirs, files in os.walk(OC_CONFIG):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", "npm", ".git", "media", "logs", "tmp", "cache")]
+        for f in files:
+            if not f.endswith(".json"): continue
+            p = os.path.join(root, f)
+            try: data = json.load(open(p))
+            except Exception: continue
+            found = deep_walk(data)
+            if found:
+                try_value(found, f"S21:walk:{os.path.relpath(p, OC_CONFIG)}")
                 break
-        if chat_id:
-            break
-    if chat_id:
-        break
+        if result_chat: break
 
-for path in configs:
-    try:
-        cfg = json.load(open(path))
-    except Exception:
-        continue
-    if not chat_id:
-        hits = list(walk(cfg))
-        priority = ['channels.telegram.allowfrom',
-                    'plugins.entries.telegram.config.allowfrom',
-                    'commands.allowfrom.telegram',
-                    'telegram.allowfrom',
-                    'bindings.telegram']
-        for pk in priority:
-            for p, v in hits:
-                if pk in p.lower():
-                    chat_id = str(v); break
-            if chat_id: break
-        if not chat_id and hits:
-            chat_id = str(hits[0][1])
-    if not account:
-        accts = cfg.get('channels',{}).get('telegram',{}).get('accounts',{})
-        if isinstance(accts, dict) and accts:
-            account = 'default' if 'default' in accts else list(accts.keys())[0]
-    if chat_id:
-        break
+# ─── S22: recursive walk of ~/clawd/ for telegram configs ───
+if not result_chat and os.path.isdir(os.path.join(HOME, "clawd")):
+    for root, dirs, files in os.walk(os.path.join(HOME, "clawd")):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", ".clawhub", ".agents")]
+        if root.count(os.sep) - os.path.join(HOME, "clawd").count(os.sep) > 3: continue  # max depth 3
+        for f in files:
+            if not (f.endswith(".json") or f.endswith(".md")): continue
+            if "telegram" not in f.lower() and "config" not in f.lower(): continue
+            p = os.path.join(root, f)
+            try:
+                if f.endswith(".json"):
+                    data = json.load(open(p))
+                    found = deep_walk(data) if 'deep_walk' in dir() else None
+                    if found: try_value(found, f"S22:walk:{os.path.relpath(p, HOME)}"); break
+            except Exception: continue
+        if result_chat: break
 
-env_tel = os.environ.get('TELEGRAM_CHAT_ID','').strip()
-if not chat_id and env_tel and env_tel.lstrip('-').isdigit():
-    chat_id = env_tel
-print(f"{chat_id}|{account}")
+# ─── S23: audit log scan ───
+if not result_chat and os.path.isdir(OC_LOGS):
+    for f in sorted(os.listdir(OC_LOGS), reverse=True)[:5]:  # last 5 log files
+        if not f.endswith(".jsonl"): continue
+        try:
+            for line in open(os.path.join(OC_LOGS, f)):
+                if "pairing" not in line.lower(): continue
+                if "approved" not in line.lower() and "accept" not in line.lower(): continue
+                rec = parse_json_safe(line)
+                if not rec: continue
+                def walk_rec(o):
+                    if isinstance(o, dict):
+                        for k, v in o.items():
+                            if any(x in str(k).lower() for x in ("chat", "user", "owner")):
+                                cid = is_chat_id(v, bot_id)
+                                if cid: return cid
+                            r = walk_rec(v)
+                            if r: return r
+                    elif isinstance(o, list):
+                        for it in o:
+                            r = walk_rec(it)
+                            if r: return r
+                found = walk_rec(rec)
+                if found: try_value(found, f"S23:logs/{f}"); break
+            if result_chat: break
+        except Exception: continue
+
+print(f"{result_chat}|{result_account}|{result_source}")
 PYEOF
 )
-    TELEGRAM_TARGET_CACHED="${result%%|*}"
-    TELEGRAM_ACCOUNT_CACHED="${result##*|}"
+    TELEGRAM_TARGET_CACHED=$(echo "$result" | cut -d'|' -f1)
+    TELEGRAM_ACCOUNT_CACHED=$(echo "$result" | cut -d'|' -f2)
+    TELEGRAM_SOURCE_CACHED=$(echo "$result" | cut -d'|' -f3-)
     TELEGRAM_RESOLVED=true
+    if [ -n "$TELEGRAM_TARGET_CACHED" ]; then
+        local acc_note=""
+        [ -n "$TELEGRAM_ACCOUNT_CACHED" ] && acc_note=" (account=$TELEGRAM_ACCOUNT_CACHED)"
+        note "Telegram target resolved: $TELEGRAM_TARGET_CACHED$acc_note via $TELEGRAM_SOURCE_CACHED"
+    else
+        warn "Telegram chat ID NOT FOUND in any of 23 search locations."
+        warn "This should not happen on a paired Mac install."
+        warn "Dumping each source's actual state for debugging:"
+        {
+            echo "--- channels.telegram.allowFrom (CLI):"
+            openclaw config get channels.telegram.allowFrom 2>&1 || true
+            echo "--- commands.ownerAllowFrom (CLI):"
+            openclaw config get commands.ownerAllowFrom 2>&1 || true
+            echo "--- credentials/ listing:"
+            ls -la "$OC_CREDENTIALS/" 2>&1 || true
+            echo "--- env (telegram-related):"
+            printenv | grep -iE "^(TELEGRAM_|TG_)" 2>&1 || true
+        } | sed 's/^/    /' | head -50
+    fi
 }
 
 send_telegram_progress() {
@@ -336,46 +574,35 @@ send_telegram_progress() {
 backup_config_file() {
     local file="$1"
     if [ -f "$file" ]; then
-        mkdir -p "$OC_DOWNLOADS/openclaw-backups"
-        local ts
+        mkdir -p "$OC_BACKUPS"
+        local ts filename backup
         ts=$(date +%Y-%m-%d-%H%M%S)
-        local filename
         filename=$(basename "$file")
-        local backup="$OC_DOWNLOADS/openclaw-backups/${filename}-backup-${ts}.txt"
+        backup="$OC_BACKUPS/${filename}-backup-${ts}.txt"
         cp "$file" "$backup"
         note "Backed up: $backup"
     fi
 }
 
 # ----------------------------------------------------------
-# Smart Credential Discovery (v9.7.11)
+# Bulletproof Mac Credential Discovery (v10.0.0)
 # ----------------------------------------------------------
-# Platform-aware credential lookup with alias support. Three sources scanned
-# in order: (1) container env vars [primary on Hostinger Docker VPS — that's
-# where Hostinger injects everything], (2) .env files [primary on Mac/desktop
-# at ~/.openclaw/secrets/.env etc], (3) models.providers.*.apiKey inside
-# openclaw.json [used by both platforms for LLM keys].
+# Sources searched (in order, first hit wins per credential):
+#   1. Shell env vars (printenv)             — operator exports in shell rc files
+#   2. ~/.openclaw/secrets/.env              — canonical Mac secrets file
+#   3. ~/.openclaw/.env                      — alternate (often symlink)
+#   4. ~/clawd/secrets/.env                  — legacy location, still seen on some clients
+#   5. env.vars block in ~/.openclaw/openclaw.json  — inline pattern (your Mac uses this)
+#   6. models.providers.<name>.apiKey        — LLM keys baked into config
+#   7. plugins.entries.<plugin>.config.*     — plugin-level secrets
+#   8. auth-profiles.json profiles.*.key     — per-agent api_key entries
+#   9. ~/.openclaw/secrets.json              — official OpenClaw secrets file (per docs)
+#  10. Recursive scan of openclaw.json for any field named apiKey|token|secret
 #
-# Alias map handles naming variants — e.g. Hostinger sets
-# GHL_PRIVATE_INTEGRATION_TOKEN, Mac install expects GOHIGHLEVEL_API_KEY,
-# both hold the same Private Integration Token value. Lookup tries every
-# alias in the list and returns the first hit.
+# Alias map handles naming variants per credential.
 
-ENV_LOCATIONS=""
-# Tracks which canonical credentials were discovered (pipe-delimited)
 CREDS_FOUND_LIST=""
 
-build_env_locations() {
-    ENV_LOCATIONS="$OC_CONFIG/.env"
-    ENV_LOCATIONS="$ENV_LOCATIONS|$OC_CONFIG/secrets/.env"
-    ENV_LOCATIONS="$ENV_LOCATIONS|$OC_CLAWD/secrets/.env"
-    ENV_LOCATIONS="$ENV_LOCATIONS|$OC_HOME/.env"
-    ENV_LOCATIONS="$ENV_LOCATIONS|$OC_JSON"
-}
-
-# get_alias_list <CANONICAL_VAR> — returns space-separated alias names
-# (canonical first). Includes naming variants seen across Hostinger Docker,
-# Mac installs, and common third-party docs.
 get_alias_list() {
     case "$1" in
         GOHIGHLEVEL_API_KEY)
@@ -412,122 +639,204 @@ get_alias_list() {
             echo "VERCEL_TOKEN VERCEL_API_TOKEN" ;;
         GITHUB_TOKEN)
             echo "GITHUB_TOKEN GH_TOKEN" ;;
+        ANTHROPIC_API_KEY)
+            echo "ANTHROPIC_API_KEY CLAUDE_API_KEY" ;;
+        CONTEXT7_API_KEY)
+            echo "CONTEXT7_API_KEY CTX7_API_KEY" ;;
+        AIRTABLE_TOKEN)
+            echo "AIRTABLE_TOKEN AIRTABLE_API_KEY AIRTABLE_PAT" ;;
+        DEEPSEEK_API_KEY)
+            echo "DEEPSEEK_API_KEY DEEPSEEK_KEY" ;;
+        ELEVENLABS_API_KEY)
+            echo "ELEVENLABS_API_KEY ELEVEN_API_KEY" ;;
+        BRAVE_API_KEY)
+            echo "BRAVE_API_KEY BRAVE_SEARCH_API_KEY" ;;
+        FAL_API_KEY)
+            echo "FAL_API_KEY FAL_KEY" ;;
         *)
             echo "$1" ;;
     esac
 }
 
-# search_env_var <CANONICAL_VAR> — tries every alias against env vars,
-# .env files, and openclaw.json models.providers. Returns first non-empty
-# value found. Also prints to stderr which alias matched (so the install
-# log records the actual var name used, useful for debugging).
-search_env_var() {
+# search_env_var_mac <CANONICAL_VAR> — bulletproof Mac-only lookup across 10
+# sources. Prints stderr line showing which source/alias matched.
+search_env_var_mac() {
     local CANONICAL="$1"
     local aliases
     aliases=$(get_alias_list "$CANONICAL")
 
-    # Source 1: container environment (Hostinger Docker injects creds here).
-    # `printenv` is set -u safe AND bash 3.2 compatible (no indirect expansion).
+    # Source 1: shell env vars
     for VAR_NAME in $aliases; do
         local env_val
         env_val=$(printenv "$VAR_NAME" 2>/dev/null || true)
         if [ -n "$env_val" ]; then
-            [ "$VAR_NAME" != "$CANONICAL" ] && echo "    [alias: $VAR_NAME=env]" >&2
+            [ "$VAR_NAME" != "$CANONICAL" ] && echo "    [src: env.$VAR_NAME → $CANONICAL]" >&2
             echo "$env_val"
             return
         fi
     done
 
-    # Source 2: .env files at known locations
-    for VAR_NAME in $aliases; do
-        local locs="$ENV_LOCATIONS"
-        while [ -n "$locs" ]; do
-            local ENV_FILE
-            if echo "$locs" | grep -q "|"; then
-                ENV_FILE=$(echo "$locs" | cut -d'|' -f1)
-                locs=$(echo "$locs" | cut -d'|' -f2-)
-            else
-                ENV_FILE="$locs"
-                locs=""
-            fi
-            [ ! -f "$ENV_FILE" ] && continue
-
-            local FOUND=""
-            if echo "$ENV_FILE" | grep -q "\.json$"; then
-                FOUND=$(python3 -c "
-import json
-try:
-    cfg=json.load(open('$ENV_FILE'))
-    print(cfg.get('env',{}).get('vars',{}).get('$VAR_NAME',''))
-except Exception:
-    pass
-" 2>/dev/null)
-            else
-                FOUND=$(grep -E "^${VAR_NAME}=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | head -1 || true)
-            fi
-            if [ -n "$FOUND" ]; then
-                [ "$VAR_NAME" != "$CANONICAL" ] && echo "    [alias: $VAR_NAME in $ENV_FILE]" >&2
-                echo "$FOUND"
+    # Sources 2-4: .env files at canonical Mac locations
+    for env_file in "$OC_SECRETS_ENV" "$OC_CONFIG/.env" "$OC_LEGACY_CLAWD/secrets/.env"; do
+        [ ! -f "$env_file" ] && continue
+        for VAR_NAME in $aliases; do
+            local found
+            found=$(grep -E "^${VAR_NAME}=" "$env_file" 2>/dev/null | cut -d'=' -f2- | head -1 || true)
+            if [ -n "$found" ]; then
+                # Strip surrounding quotes if present
+                found="${found%\"}"; found="${found#\"}"
+                found="${found%\'}"; found="${found#\'}"
+                echo "    [src: $env_file.$VAR_NAME]" >&2
+                echo "$found"
                 return
             fi
         done
     done
 
-    # Source 3: openclaw.json models.providers.<x>.apiKey (LLM keys only)
-    if [ -f "$OC_JSON" ]; then
-        case "$CANONICAL" in
-            OPENROUTER_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|OLLAMA_API_KEY)
-                local provider_key
-                case "$CANONICAL" in
-                    OPENROUTER_API_KEY)  provider_key="openrouter" ;;
-                    OPENAI_API_KEY)      provider_key="openai"     ;;
-                    GEMINI_API_KEY)      provider_key="google"     ;;
-                    GOOGLE_API_KEY)      provider_key="google"     ;;
-                    OLLAMA_API_KEY)      provider_key="ollama"     ;;
-                esac
-                local val
-                val=$(python3 -c "
-import json
+    [ ! -f "$OC_JSON" ] && { echo ""; return; }
+
+    # Sources 5-10 — single python pass over openclaw.json + auth-profiles.json
+    local result
+    result=$(CANONICAL="$CANONICAL" ALIASES="$aliases" OC_JSON="$OC_JSON" OC_AUTH="$OC_AUTH_PROFILES" OC_CONFIG_DIR="$OC_CONFIG" python3 - <<'PYEOF' 2>/dev/null
+import json, os, re
+CANONICAL = os.environ['CANONICAL']
+ALIASES = os.environ['ALIASES'].split()
+OC_JSON = os.environ['OC_JSON']
+OC_AUTH = os.environ['OC_AUTH']
+SECRETS_JSON = os.path.join(os.environ['OC_CONFIG_DIR'], 'secrets.json')
+
+cfg = {}
+try: cfg = json.load(open(OC_JSON))
+except Exception: pass
+
+# Source 5: env.vars block inside openclaw.json (Trevor's inline pattern — Mac has 70 keys here)
+env_vars = cfg.get("env", {}).get("vars", {})
+for alias in ALIASES:
+    if alias in env_vars and env_vars[alias]:
+        print(f"src=env.vars.{alias}"); print(env_vars[alias]); raise SystemExit(0)
+
+# Source 6: models.providers.<name>.apiKey
+provider_map = {
+    "OPENROUTER_API_KEY": "openrouter",
+    "OPENAI_API_KEY": "openai",
+    "GEMINI_API_KEY": "google",
+    "GOOGLE_API_KEY": "google",
+    "OLLAMA_API_KEY": "ollama",
+    "ANTHROPIC_API_KEY": "anthropic",
+    "DEEPSEEK_API_KEY": "deepseek",
+}
+pk = provider_map.get(CANONICAL)
+if pk:
+    val = cfg.get("models", {}).get("providers", {}).get(pk, {}).get("apiKey", "")
+    if val:
+        print(f"src=models.providers.{pk}.apiKey"); print(val); raise SystemExit(0)
+
+# Source 7: plugins.entries.<plugin>.config.*
+for pname, p in (cfg.get("plugins", {}).get("entries", {}) or {}).items():
+    pc = p.get("config", {}) if isinstance(p, dict) else {}
+    for alias in ALIASES:
+        if alias in pc and pc[alias]:
+            print(f"src=plugins.entries.{pname}.config.{alias}"); print(pc[alias]); raise SystemExit(0)
+    for fld in ("apiKey", "token", "secret", "key"):
+        v = pc.get(fld, "")
+        if v and CANONICAL.lower().replace("_","") in (pname + fld).lower().replace("_",""):
+            print(f"src=plugins.entries.{pname}.config.{fld}"); print(v); raise SystemExit(0)
+
+# Source 8: auth-profiles.json
 try:
-    cfg=json.load(open('$OC_JSON'))
-    print(cfg.get('models',{}).get('providers',{}).get('$provider_key',{}).get('apiKey',''))
-except Exception:
-    pass
-" 2>/dev/null)
-                if [ -n "$val" ]; then
-                    echo "    [models.providers.$provider_key.apiKey]" >&2
-                    echo "$val"
-                    return
-                fi
-                ;;
-        esac
+    auth = json.load(open(OC_AUTH))
+    for prof_id, prof in (auth.get("profiles") or {}).items():
+        if not isinstance(prof, dict): continue
+        provider = prof.get("provider", "").lower()
+        canonical_provider = CANONICAL.replace("_API_KEY","").lower()
+        if provider and provider == canonical_provider and prof.get("key"):
+            print(f"src=auth-profiles.{prof_id}.key"); print(prof["key"]); raise SystemExit(0)
+except Exception: pass
+
+# Source 9: ~/.openclaw/secrets.json
+if os.path.isfile(SECRETS_JSON):
+    try:
+        s = json.load(open(SECRETS_JSON))
+        def find(obj, target_aliases):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k in target_aliases and isinstance(v, (str,int)) and v:
+                        return (k, v)
+                    if isinstance(v, (dict, list)):
+                        r = find(v, target_aliases)
+                        if r: return r
+            elif isinstance(obj, list):
+                for it in obj:
+                    r = find(it, target_aliases)
+                    if r: return r
+            return None
+        f = find(s, ALIASES)
+        if f: print(f"src=secrets.json.{f[0]}"); print(f[1]); raise SystemExit(0)
+    except Exception: pass
+
+# Source 10: deep recursive scan of openclaw.json for any field name matching alias
+def deep_find(obj, target_aliases, parent=""):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            full = f"{parent}.{k}" if parent else k
+            if k in target_aliases and isinstance(v, (str,int)) and v:
+                return (full, v)
+            r = deep_find(v, target_aliases, full)
+            if r: return r
+    elif isinstance(obj, list):
+        for i, it in enumerate(obj):
+            r = deep_find(it, target_aliases, f"{parent}[{i}]")
+            if r: return r
+    return None
+f = deep_find(cfg, ALIASES)
+if f: print(f"src=deep:{f[0]}"); print(f[1]); raise SystemExit(0)
+PYEOF
+)
+    if [ -n "$result" ]; then
+        local src val
+        src=$(echo "$result" | head -1 | sed 's/^src=//')
+        val=$(echo "$result" | sed -n '2p')
+        if [ -n "$val" ]; then
+            echo "    [src: $src]" >&2
+            echo "$val"
+            return
+        fi
     fi
 
     echo ""
 }
 
+# Back-compat shim for older callers
+search_env_var() { search_env_var_mac "$@"; }
+build_env_locations() { :; }   # no-op kept for old call sites
+
 discover_all_credentials() {
-    step "Smart Credential Discovery (v9.7.11 — platform-aware with alias map)"
+    step "Bulletproof Credential Discovery (v10.0.0 — Mac mini)"
+    note "Lookup priority: shell env → ~/.openclaw/secrets/.env → ~/clawd/secrets/.env → openclaw.json env.vars/providers/plugins → auth-profiles.json → secrets.json → deep scan"
 
-    build_env_locations
-    note "Platform: $OPENCLAW_PLATFORM (lookup priority: env vars → .env files → openclaw.json providers)"
-
-    # Canonical credential names. Aliases are handled inside search_env_var
+    # Canonical credential names. Aliases are handled inside search_env_var_mac
     # via get_alias_list — extending the alias set requires editing only that.
     local CRED_LIST="GOOGLE_API_KEY:Google"
     CRED_LIST="$CRED_LIST|GEMINI_API_KEY:Gemini"
     CRED_LIST="$CRED_LIST|OPENAI_API_KEY:OpenAI"
     CRED_LIST="$CRED_LIST|OPENROUTER_API_KEY:OpenRouter"
     CRED_LIST="$CRED_LIST|OLLAMA_API_KEY:Ollama Cloud"
+    CRED_LIST="$CRED_LIST|ANTHROPIC_API_KEY:Anthropic Claude"
+    CRED_LIST="$CRED_LIST|DEEPSEEK_API_KEY:DeepSeek"
     CRED_LIST="$CRED_LIST|GOHIGHLEVEL_API_KEY:GHL (PIT — GoHighLevel Private Integration Token)"
     CRED_LIST="$CRED_LIST|GOHIGHLEVEL_LOCATION_ID:GHL Location ID"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_API_KEY:Fish Audio"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_VOICE_ID:Fish Audio Voice"
+    CRED_LIST="$CRED_LIST|ELEVENLABS_API_KEY:ElevenLabs"
     CRED_LIST="$CRED_LIST|PODBEAN_API_KEY:Podbean"
     CRED_LIST="$CRED_LIST|PODBEAN_API_SECRET:Podbean Secret"
     CRED_LIST="$CRED_LIST|TAVILY_API_KEY:Tavily Search"
+    CRED_LIST="$CRED_LIST|BRAVE_API_KEY:Brave Search"
     CRED_LIST="$CRED_LIST|KIE_API_KEY:KIE.ai (skill 27)"
+    CRED_LIST="$CRED_LIST|FAL_API_KEY:Fal.ai"
     CRED_LIST="$CRED_LIST|TELEGRAM_BOT_TOKEN:Telegram Bot"
+    CRED_LIST="$CRED_LIST|CONTEXT7_API_KEY:Context7 MCP"
+    CRED_LIST="$CRED_LIST|AIRTABLE_TOKEN:Airtable"
     CRED_LIST="$CRED_LIST|GITHUB_TOKEN:GitHub"
     CRED_LIST="$CRED_LIST|VERCEL_TOKEN:Vercel"
     CRED_LIST="$CRED_LIST|SUPABASE_SERVICE_ROLE_KEY:Supabase"
@@ -576,23 +885,23 @@ has_cred() {
 # Directory Discovery
 # ----------------------------------------------------------
 discover_skills_dir() {
+    # Mac canonical skills location is ~/Downloads/openclaw-master-files (where
+    # this installer extracts to). Fallbacks include the onboarding stage dir,
+    # legacy locations, and the ~/openclaw-onboarding clone if present.
     local CANDIDATES="$OC_DOWNLOADS/openclaw-master-files"
     CANDIDATES="$CANDIDATES|$OC_CONFIG/skills"
     CANDIDATES="$CANDIDATES|$OC_CONFIG/onboarding"
-    CANDIDATES="$CANDIDATES|$OC_HOME/openclaw-onboarding"
-    
-    local dirs
-    dirs="$CANDIDATES"
+    CANDIDATES="$CANDIDATES|$HOME/openclaw-onboarding"
+
+    local dirs="$CANDIDATES"
     while [ -n "$dirs" ]; do
         local DIR
         if echo "$dirs" | grep -q "|"; then
             DIR=$(echo "$dirs" | cut -d'|' -f1)
             dirs=$(echo "$dirs" | cut -d'|' -f2-)
         else
-            DIR="$dirs"
-            dirs=""
+            DIR="$dirs"; dirs=""
         fi
-        
         if [ -d "$DIR" ]; then
             local SKILL_COUNT
             SKILL_COUNT=$(find "$DIR" -maxdepth 1 -type d -name "[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
@@ -1072,7 +1381,7 @@ fi
 # ----------------------------------------------------------
 step "Step 6: Installing Gemini Engine Scripts"
 
-SCRIPTS_DIR="$OC_CLAWD/scripts"
+SCRIPTS_DIR="$OC_LEGACY_CLAWD/scripts"
 mkdir -p "$SCRIPTS_DIR"
 
 for SCRIPT in gemini-indexer.py gemini-search.py; do
@@ -1241,58 +1550,66 @@ fi
 # ----------------------------------------------------------
 step "Step 9: Setting Up Backup Folders"
 
-DOWNLOADS_DIR="$OC_DOWNLOADS"
-mkdir -p "$DOWNLOADS_DIR/OpenClaw Backups"
-mkdir -p "$DOWNLOADS_DIR/openclaw-master-files"
-mkdir -p "$DOWNLOADS_DIR/openclaw-master-files/coaching-personas/personas"
-mkdir -p "$DOWNLOADS_DIR/openclaw-master-files/project-prds"
+mkdir -p "$OC_BACKUPS"
+mkdir -p "$OC_DOWNLOADS/openclaw-master-files"
+mkdir -p "$OC_DOWNLOADS/openclaw-master-files/coaching-personas/personas"
+mkdir -p "$OC_DOWNLOADS/openclaw-master-files/project-prds"
 
-success "Backup folders created"
+success "Backup folders created at $OC_BACKUPS, master files at $OC_DOWNLOADS/openclaw-master-files"
 
 # ----------------------------------------------------------
 # Step 10: Write UPDATE PENDING Flag with 5-Phase Processing
 # ----------------------------------------------------------
 step "Step 10: Writing UPDATE PENDING Flag to AGENTS.md"
 
-# v9.7.8: Query the agent's REAL workspace from openclaw config. The agent
-# reads its core .md files from agents.defaults.workspace — NOT necessarily
-# ~/clawd/. Floyd's install wrote AGENTS.md to ~/clawd/ but his agent reads
-# from ~/.openclaw/workspace/, so the UPDATE PENDING flag was invisible to it.
+# Bulletproof Mac workspace resolver (v10.0.0).
+# OpenClaw agents read core .md files from agents.defaults.workspace OR a
+# per-agent override at agents.list[*].workspace. Writing to the wrong path
+# means the agent never sees the UPDATE PENDING flag (this was Floyd's bug).
+# Resolution priority:
+#   1. agents.list[<main>].workspace (per-agent override — wins if set)
+#   2. agents.defaults.workspace via `openclaw config get`
+#   3. ~/clawd (most existing Mac clients have it from older onboarding)
+#   4. ~/.openclaw/workspace (OpenClaw docs default for fresh installs)
 WORKSPACE_DIR=""
-if command -v openclaw >/dev/null 2>&1; then
-    WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace 2>/dev/null \
-        | head -1 | python3 -c "
-import sys, json
+
+# Step 1: per-agent workspace override on the "main" agent
+if [ -f "$OC_JSON" ]; then
+    WORKSPACE_DIR=$(python3 -c "
+import json
 try:
-    raw = sys.stdin.read().strip()
-    if raw.startswith('\"'):
-        print(json.loads(raw))
-    else:
-        print(raw)
-except Exception:
-    pass
+    cfg=json.load(open('$OC_JSON'))
+    for ag in cfg.get('agents',{}).get('list',[]) or []:
+        if isinstance(ag, dict) and ag.get('id') == 'main':
+            ws = ag.get('workspace')
+            if ws:
+                import os; print(os.path.expanduser(ws)); break
+except Exception: pass
 " 2>/dev/null)
 fi
-# Fallback chain if CLI query returned nothing or non-existent path
+
+# Step 2: agents.defaults.workspace via CLI
+if [ -z "$WORKSPACE_DIR" ] && command -v openclaw >/dev/null 2>&1; then
+    WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace 2>/dev/null \
+        | head -1 | python3 -c "
+import sys, json, os
+try:
+    raw = sys.stdin.read().strip()
+    if raw.startswith('\"'): print(os.path.expanduser(json.loads(raw)))
+    else: print(os.path.expanduser(raw))
+except Exception: pass
+" 2>/dev/null)
+fi
+
+# Step 3 + 4: disk fallbacks
 if [ -z "$WORKSPACE_DIR" ] || [ ! -d "$WORKSPACE_DIR" ]; then
-    # v9.7.11: on VPS the canonical workspace is /data/.openclaw/workspace,
-    # NOT /data/clawd. Mac uses ~/clawd. Detect platform and pick accordingly.
-    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
-        if [ -d "$OC_CONFIG/workspace" ]; then
-            WORKSPACE_DIR="$OC_CONFIG/workspace"
-        elif [ -d "$OC_CLAWD" ]; then
-            WORKSPACE_DIR="$OC_CLAWD"
-        else
-            WORKSPACE_DIR="$OC_CONFIG/workspace"
-        fi
+    if [ -d "$OC_LEGACY_CLAWD" ]; then
+        WORKSPACE_DIR="$OC_LEGACY_CLAWD"
     else
-        if [ -d "$OC_CLAWD" ]; then
-            WORKSPACE_DIR="$OC_CLAWD"
-        else
-            WORKSPACE_DIR="$OC_CONFIG/workspace"
-        fi
+        WORKSPACE_DIR="$OC_WORKSPACE_DEFAULT"
     fi
 fi
+
 mkdir -p "$WORKSPACE_DIR"
 AGENTS_FILE="$WORKSPACE_DIR/AGENTS.md"
 note "Agent workspace resolved: $WORKSPACE_DIR (UPDATE PENDING flag goes into $AGENTS_FILE)"
@@ -1809,207 +2126,20 @@ except Exception:
         return 0
     fi
 
-    # Resolve Telegram target — v9.7.8 UNIVERSAL lookup. Tries 4 strategies
-    # in order, no client action required. Returns the first chat ID found
-    # anywhere on the system.
-    #
-    # Strategy 1: Ask the `openclaw` CLI directly (knows where its own config lives)
-    # Strategy 2: Walk every known openclaw.json location on the machine
-    # Strategy 3: Recursively scan every JSON tree for ANY numeric value under
-    #             any key whose name contains "telegram", "chat", "allow", or "from"
-    # Strategy 4: $TELEGRAM_CHAT_ID env var
-    local TG_TARGET=""
-
-    # Strategy 1: openclaw CLI query (most authoritative)
-    if command -v openclaw >/dev/null 2>&1; then
-        for cli_path in \
-            "channels.telegram.allowFrom" \
-            "plugins.entries.telegram.config.allowFrom" \
-            "telegram.allowFrom"
-        do
-            local raw
-            raw=$(openclaw config get "$cli_path" 2>/dev/null || true)
-            if [ -n "$raw" ]; then
-                # Strip JSON brackets/quotes, get first numeric token
-                TG_TARGET=$(echo "$raw" | python3 -c "
-import json, sys, re
-try:
-    data = json.loads(sys.stdin.read().strip())
-    if isinstance(data, list) and data:
-        for v in data:
-            s = str(v).strip()
-            if s.lstrip('-').isdigit() and len(s.lstrip('-')) >= 6:
-                print(s); break
-    elif isinstance(data, (str, int)):
-        s = str(data).strip()
-        if s.lstrip('-').isdigit() and len(s.lstrip('-')) >= 6:
-            print(s)
-except Exception:
-    pass
-" 2>/dev/null)
-                [ -n "$TG_TARGET" ] && break
-            fi
-        done
-        [ -n "$TG_TARGET" ] && note "Telegram target resolved via openclaw CLI: $TG_TARGET"
+    # Reuse the bulletproof 23-location resolver from the top of this script.
+    # Cached after first call, so this is a no-op if already resolved.
+    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
+        resolve_telegram_target_universal
     fi
-
-    # Strategy 5 (v9.7.10): Hostinger Docker VPS keeps chat IDs in SEPARATE
-    # credential files at credentials/telegram-<account>-allowFrom.json — not
-    # inside openclaw.json. Check this FIRST since CLI `config get` can't see it.
-    if [ -z "$TG_TARGET" ]; then
-        TG_TARGET=$(python3 - <<'PYEOF' 2>/dev/null
-import json, os, re
-HOME = os.path.expanduser("~")
-cred_roots = [
-    os.path.join(HOME, ".openclaw", "credentials"),
-    "/data/.openclaw/credentials",
-    os.path.join(HOME, "Library", "Application Support", "openclaw", "credentials"),
-    os.path.join(HOME, ".config", "openclaw", "credentials"),
-]
-for cdir in cred_roots:
-    if not os.path.isdir(cdir):
-        continue
-    try:
-        fnames = os.listdir(cdir)
-    except Exception:
-        continue
-    for fname in fnames:
-        if not re.match(r'^telegram-(.+)-allowFrom\.json$', fname):
-            continue
-        try:
-            data = json.load(open(os.path.join(cdir, fname)))
-        except Exception:
-            continue
-        for v in (data.get('allowFrom') or []):
-            s = str(v).strip()
-            if s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20:
-                print(s); raise SystemExit(0)
-PYEOF
-)
-        [ -n "$TG_TARGET" ] && note "Telegram target resolved via credentials/ file: $TG_TARGET"
-    fi
-
-    # Strategy 2 + 3: scan every openclaw.json on the box, recursively walk each
-    if [ -z "$TG_TARGET" ]; then
-        TG_TARGET=$(python3 - <<'PYEOF' 2>/dev/null
-import json, os, glob, re
-
-# All known + plausible config locations
-HOME = os.path.expanduser("~")
-candidates = [
-    os.path.join(HOME, ".openclaw", "openclaw.json"),
-    os.path.join(HOME, ".openclaw", "config.json"),
-    os.path.join(HOME, "Library", "Application Support", "openclaw", "config.json"),
-    os.path.join(HOME, "Library", "Application Support", "openclaw", "openclaw.json"),
-    os.path.join(HOME, ".config", "openclaw", "config.json"),
-    os.path.join(HOME, ".config", "openclaw", "openclaw.json"),
-    "/data/.openclaw/openclaw.json",
-    "/data/.openclaw/config.json",
-    "/etc/openclaw/openclaw.json",
-]
-# Also glob anything that looks like an openclaw config
-for pattern in [
-    os.path.join(HOME, ".openclaw", "*.json"),
-    os.path.join(HOME, "Library", "Application Support", "openclaw", "*.json"),
-    "/data/.openclaw/*.json",
-]:
-    candidates.extend(glob.glob(pattern))
-
-# De-dupe, keep existing files
-seen = set()
-configs = []
-for p in candidates:
-    if p in seen or not os.path.isfile(p):
-        continue
-    seen.add(p)
-    configs.append(p)
-
-# Telegram-related key matcher. Case-insensitive substring on key names.
-KEY_HINTS = ('telegram', 'chat', 'allowfrom', 'allowedchat', 'chatid', 'targetchat')
-
-def is_chat_id(v):
-    if not isinstance(v, (str, int)):
-        return False
-    s = str(v).strip()
-    if not s:
-        return False
-    # Chat IDs are 6+ digit integers, optionally negative for groups
-    return s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20
-
-def walk(obj, parent_key='', under_telegram_branch=False):
-    """Yield (path, value) tuples for plausible chat IDs."""
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            kl = str(k).lower()
-            now_under = under_telegram_branch or ('telegram' in kl)
-            key_matches = any(h in kl for h in KEY_HINTS)
-            if (now_under or key_matches) and is_chat_id(v):
-                yield (f"{parent_key}.{k}" if parent_key else k, v)
-            if isinstance(v, list):
-                for i, item in enumerate(v):
-                    if now_under and is_chat_id(item):
-                        yield (f"{parent_key}.{k}[{i}]" if parent_key else f"{k}[{i}]", item)
-                    yield from walk(item, f"{parent_key}.{k}[{i}]" if parent_key else f"{k}[{i}]", now_under)
-            elif isinstance(v, dict):
-                yield from walk(v, f"{parent_key}.{k}" if parent_key else k, now_under)
-    elif isinstance(obj, list):
-        for i, item in enumerate(obj):
-            yield from walk(item, f"{parent_key}[{i}]", under_telegram_branch)
-
-# Try each config; first chat ID under a telegram branch wins
-for path in configs:
-    try:
-        cfg = json.load(open(path))
-    except Exception:
-        continue
-    hits = list(walk(cfg))
-    # Prefer hits in priority-ordered key paths
-    priority_keys = [
-        'channels.telegram.allowfrom',
-        'plugins.entries.telegram.config.allowfrom',
-        'telegram.allowfrom',
-        'bindings.telegram',
-    ]
-    for pkey in priority_keys:
-        for path_str, val in hits:
-            if pkey in path_str.lower():
-                print(str(val))
-                raise SystemExit(0)
-    # Fallback: first hit anywhere
-    if hits:
-        for path_str, val in hits:
-            print(str(val))
-            raise SystemExit(0)
-PYEOF
-)
-        [ -n "$TG_TARGET" ] && note "Telegram target resolved via universal JSON scan: $TG_TARGET"
-    fi
-
-    # Strategy 4: env var
-    if [ -z "$TG_TARGET" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
-        local t="${TELEGRAM_CHAT_ID#-}"
-        if [[ "$t" =~ ^[0-9]+$ ]]; then
-            TG_TARGET="$TELEGRAM_CHAT_ID"
-            note "Telegram target resolved via \$TELEGRAM_CHAT_ID env var: $TG_TARGET"
-        fi
-    fi
+    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
 
     if [ -z "$TG_TARGET" ]; then
-        warn "Cannot resolve telegram target via ANY strategy (CLI / JSON scan / env var)."
-        warn "This means OpenClaw is installed but Telegram chat ID is not in any of these places:"
-        warn "  - any openclaw.json file under ~/.openclaw/, ~/Library/Application Support/openclaw/,"
-        warn "    ~/.config/openclaw/, or /data/.openclaw/"
-        warn "  - \$TELEGRAM_CHAT_ID environment variable"
-        warn "  - 'openclaw config get channels.telegram.allowFrom' returned empty"
-        warn ""
-        warn "To diagnose what's actually in your config, run:"
+        warn "Telegram chat ID not found by bulletproof resolver — cannot install weekly cron."
+        warn "Run the diagnostic to dump every location that was checked:"
         warn "  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/diagnose-telegram-config.sh | bash"
-        warn ""
-        warn "Or set it manually:"
-        warn "  export TELEGRAM_CHAT_ID=<your-chat-id> && rerun the install"
         return 0
     fi
-    note "Telegram cron target resolved: $TG_TARGET"
+    note "Telegram cron target resolved: $TG_TARGET (source: $TELEGRAM_SOURCE_CACHED)"
 
     # Pull cron prompt from the just-installed repo files
     local PROMPT_FILE=""
@@ -2041,16 +2171,15 @@ import json, os, re
 HOME = os.path.expanduser('~')
 candidates = [
     os.path.expanduser('~/.openclaw/openclaw.json'),
-    '/data/.openclaw/openclaw.json',
     os.path.expanduser('~/Library/Application Support/openclaw/openclaw.json'),
+    os.path.expanduser('~/.config/openclaw/openclaw.json'),
 ]
 account = ''
 agent_id = ''
 
-# v9.7.10: Detect account from Hostinger Docker credentials/ file FIRST.
-# Filename pattern: telegram-<account>-allowFrom.json
+# Detect account from credentials/telegram-<account>-allowFrom.json (Mac canonical location).
 for cdir in (os.path.join(HOME, '.openclaw', 'credentials'),
-             '/data/.openclaw/credentials'):
+             os.path.expanduser('~/Library/Application Support/openclaw/credentials')):
     if not os.path.isdir(cdir):
         continue
     try:

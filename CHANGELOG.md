@@ -1,3 +1,96 @@
+## v10.0.0 - May 14, 2026 - The split: Mac-only repo, bulletproof discovery
+
+### What changed
+This is a deliberate major version break. Through v9.7.11, this repo and openclaw-onboarding-vps shared install.sh in lockstep, with `if [ -d "/data/.openclaw" ]; then ... else ... fi` platform-detect blocks throughout. That worked but bloated each repo with code that never fired on its target environment.
+
+**v10.0.0 establishes two separate, independently-coherent codebases.** This repo is now Mac-only. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps and is its own thing going forward.
+
+### Hard split (no shared code with VPS repo)
+- Platform-detect block removed. Paths hardcoded to `~/...` everywhere.
+- `OC_DOWNLOADS`, `OC_CLAWD`, `OC_HOME` indirection variables replaced with explicit `$HOME/...` references where readable, kept as Mac-only `OC_*` constants where used in many places.
+- Safety guard added at script top: if `/data/.openclaw` exists and `~/.openclaw` does not, the installer hard-fails and points the operator to the VPS repo. Prevents accidentally running the Mac installer on a server.
+- All `/data/...` references purged from install.sh and from every skill folder.
+- All `if [ -d "/data/.openclaw" ]; then ... else ... fi` blocks in skill QC scripts collapsed to Mac-only single-path code.
+- 263 path replacements across 81 skill files (clean every skill per the architectural split).
+
+### Bulletproof Telegram chat ID resolver — 23 sources
+On Mac, the canonical pairing flow always succeeds before onboarding runs. If the resolver doesn't find a chat ID, it means it didn't look hard enough. v10.0.0 searches 23 locations in priority order:
+
+**Tier 1** — primary Mac:
+1. `channels.telegram.allowFrom` via `openclaw config get` (your Mac primary)
+2. `commands.ownerAllowFrom`
+3. `~/.openclaw/credentials/telegram-*-allowFrom.json` (filename gives account name)
+4. `~/.openclaw/credentials/telegram-pairing.json`
+
+**Tier 2** — alternate schemas:
+5. `channels.telegram.groupAllowFrom`
+6. `commands.allowFrom.telegram` (older schema)
+7. `plugins.entries.telegram.config.allowFrom`
+
+**Tier 3** — per-agent bindings:
+8. `agents.list[*].bindings.telegram.chatId`
+9. `agents.list[*].channels.telegram`
+
+**Tier 4** — Mac config files in multiple known locations:
+10. `~/.openclaw/openclaw.json` (direct)
+11. `~/Library/Application Support/openclaw/openclaw.json` (Mac XDG)
+12. `~/.config/openclaw/openclaw.json` (alternate)
+13. `~/.openclaw-dev/openclaw.json` (dev profile)
+
+**Tier 5** — runtime CLI introspection:
+14. `openclaw channels telegram list --json`
+15. `openclaw devices list --json` paired entries
+
+**Tier 6** — Mac secrets/env files:
+16. `~/.openclaw/secrets/.env` (canonical)
+17. `~/.openclaw/.env` (often symlink)
+18. `~/clawd/secrets/.env` (legacy)
+19. `env.vars` block inside `openclaw.json` (your inline pattern with ~70 keys)
+20. Mac shell env vars: TELEGRAM_CHAT_ID, TELEGRAM_OWNER_ID, TG_CHAT_ID, TELEGRAM_USER_ID
+
+**Tier 7** — exhaustive last-resort:
+21. Recursive walk of `~/.openclaw/` for any JSON with telegram chat IDs
+22. Recursive walk of `~/clawd/` for telegram-related configs
+23. Audit log scan: `~/.openclaw/logs/*.jsonl` for `pairing.approved` events
+
+**Validation:** chat ID must be 6-20 digits, not the bot's own ID. Account name captured from filename. Source logged.
+
+**Verified live on the Mac dev box:** resolved `5252140759` via Strategy 1 (`channels.telegram.allowFrom (CLI)`).
+
+### Bulletproof credential discovery — 10 sources
+Replaces v9.7.11's three-source lookup with full coverage of Mac credential locations:
+
+1. Shell env vars (`printenv`) — operator's shell rc exports
+2. `~/.openclaw/secrets/.env` — canonical Mac secrets file
+3. `~/.openclaw/.env` — alternate (often symlink)
+4. `~/clawd/secrets/.env` — legacy location, still seen on some clients
+5. `env.vars` block in `~/.openclaw/openclaw.json` — inline pattern (your Mac has 70 keys here)
+6. `models.providers.<name>.apiKey` — LLM keys baked into config
+7. `plugins.entries.<plugin>.config.*` — plugin-level secrets
+8. `auth-profiles.json` per-agent api_key entries
+9. `~/.openclaw/secrets.json` — official OpenClaw secrets file (per docs)
+10. Deep recursive scan of `openclaw.json` for any field named `apiKey|token|secret`
+
+Alias map expanded to include DEEPSEEK, ELEVENLABS, BRAVE, FAL, CONTEXT7, AIRTABLE, ANTHROPIC variants.
+
+### Bulletproof workspace resolver
+Resolves the agent workspace via multi-step lookup so the UPDATE PENDING flag never lands in the wrong file again:
+1. `agents.list[<main>].workspace` (per-agent override — wins if set)
+2. `agents.defaults.workspace` via `openclaw config get`
+3. `~/clawd` if it exists on disk (most existing Mac clients)
+4. `~/.openclaw/workspace` (OpenClaw docs default for fresh installs)
+
+### Skills sweep
+Cleaned all 36 skill folders to Mac-only paths. Critical 4 skills (06, 29, 11, 16) had their VPS branches removed. QC scripts had platform-detect collapsed to Mac single-path code.
+
+### Companion repo
+The VPS installer for Hostinger Docker now lives at:
+https://github.com/trevorotts1/openclaw-onboarding-vps
+
+Both repos at v10.0.0 mark the canonical split. Versions diverge from here.
+
+---
+
 ## v9.7.11 - May 14, 2026 - Smart credential discovery + 4 critical skill fixes
 
 ### Background

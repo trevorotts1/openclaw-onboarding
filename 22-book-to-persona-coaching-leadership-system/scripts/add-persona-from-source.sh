@@ -53,14 +53,10 @@ if [ -z "$SOURCE" ]; then
   exit 1
 fi
 
-# ─── PLATFORM DETECT ─────────────────────────────────────────────────────────
-if [ -d "/data/.openclaw" ]; then
-  WORKSPACE=/data/clawd
-  MASTER=/data/Downloads/openclaw-master-files
-else
-  WORKSPACE=$HOME/clawd
-  MASTER=$HOME/Downloads/openclaw-master-files
-fi
+# ─── CANONICAL MAC PATHS ─────────────────────────────────────────────────────
+WORKSPACE="$HOME/clawd"
+[ ! -d "$WORKSPACE" ] && WORKSPACE="$HOME/.openclaw/workspace"
+MASTER="$HOME/Downloads/openclaw-master-files"
 
 PERSONA_DIR="$MASTER/coaching-personas"
 TEXT_DIR="$PERSONA_DIR/text"
@@ -277,7 +273,7 @@ echo "  Text input:          $TEXT_FILE"
 
 # ─── INVOKE PIPELINE ─────────────────────────────────────────────────────────
 ORCHESTRATOR="$HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
-[ ! -f "$ORCHESTRATOR" ] && ORCHESTRATOR="/data/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
+[ ! -f "$ORCHESTRATOR" ] && ORCHESTRATOR="~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
 
 if [ ! -f "$ORCHESTRATOR" ]; then
   yellow "  Skill 22 orchestrator not found at expected path."

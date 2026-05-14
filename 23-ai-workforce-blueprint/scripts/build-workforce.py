@@ -363,9 +363,9 @@ def build_from_config(config):
 # ============================================================
 
 HOME = os.path.expanduser("~")
-# VPS install detection: prefer /data/clawd if it exists, else $HOME/clawd
-if os.path.isdir("/data/clawd"):
-    WORKSPACE_ROOT = "/data/clawd"
+# VPS install detection: prefer ~/clawd if it exists, else $HOME/clawd
+if os.path.isdir("~/clawd"):
+    WORKSPACE_ROOT = "~/clawd"
 else:
     WORKSPACE_ROOT = os.path.join(HOME, "clawd")
 
@@ -385,8 +385,8 @@ LEGACY_DEPARTMENTS_DIR = os.path.join(WORKSPACE_ROOT, "departments")  # pre-v9.6
 SUBAGENTS_DIR = os.path.join(WORKSPACE_ROOT, "subagents", "templates")
 MASTER_FILES = None  # Detected at runtime
 OPENCLAW_CONFIG = os.path.join(HOME, ".openclaw", "openclaw.json")
-if os.path.isdir("/data/.openclaw"):
-    OPENCLAW_CONFIG = "/data/.openclaw/openclaw.json"
+if os.path.isdir("~/.openclaw"):
+    OPENCLAW_CONFIG = "~/.openclaw/openclaw.json"
 BACKUP_DIR = os.path.join(HOME, "Downloads", "openclaw-backups")
 COMPANY_DISCOVERY_DIR = None  # Set after master files detected; per-company file is now in COMPANY_DIR
 
@@ -521,7 +521,7 @@ def find_master_files_folder():
     
     # FALLBACK: ~/Downloads/ does not exist (VPS, Docker, headless environment)
     # Use ~/.openclaw/workspace/data/ as a safe data-side location that survives restarts
-    # Use ~/.openclaw/workspace/data as fallback (or /data/clawd/ on VPS)
+    # Use ~/.openclaw/workspace/data as fallback (or ~/clawd/ on VPS)
     workspace_root = os.environ.get("WORKSPACE_ROOT", os.path.join(HOME, ".openclaw", "workspace"))
     if not os.path.isdir(workspace_root):
         workspace_root = os.path.join(HOME, "clawd")  # Legacy fallback
@@ -1832,7 +1832,7 @@ def _resolve_director_model(dept_id):
     import subprocess
     selector_candidates = [
         os.path.join(HOME, "Downloads", "openclaw-master-files", "shared-utils", "select_model.py"),
-        "/data/Downloads/openclaw-master-files/shared-utils/select_model.py",
+        "~/Downloads/openclaw-master-files/shared-utils/select_model.py",
     ]
     for sel in selector_candidates:
         if os.path.isfile(sel):

@@ -45,13 +45,13 @@ HOME = Path.home()
 ZHC_ROOTS = [
     HOME / "clawd" / "zero-human-company",
     HOME / "clawd" / "zhc",
-    Path("/data/clawd/zero-human-company"),
-    Path("/data/clawd/zhc"),
+    Path("~/clawd/zero-human-company"),
+    Path("~/clawd/zhc"),
 ]
 
 SELECTOR_CANDIDATES = [
     HOME / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py",
-    Path("/data/Downloads/openclaw-master-files/shared-utils/select_model.py"),
+    Path("~/Downloads/openclaw-master-files/shared-utils/select_model.py"),
 ]
 
 

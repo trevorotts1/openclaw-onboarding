@@ -164,20 +164,15 @@ Expected output: "Playwright installed successfully" printed to stdout.
 
 GHL login credentials must NEVER be hardcoded in scripts or saved in code repositories.
 
-**ALWAYS check for existing credentials before asking the user. Platform-aware:**
+**ALWAYS check for existing credentials before asking the user. Mac canonical locations checked in priority order:**
 
 ```bash
-# Mac (canonical secrets file): grep ~/.openclaw/secrets/.env
-# Hostinger Docker VPS: container env vars are pre-populated (no .env file exists)
-if [ -d "/data/.openclaw" ]; then
-    # VPS: check container env first (Hostinger injects vars there)
-    printenv | grep -E "^(GHL_EMAIL|GHL_PASSWORD)="
-    # Some VPS installs also keep an .env at /data/.openclaw/secrets/.env
-    [ -f /data/.openclaw/secrets/.env ] && grep -E "GHL_EMAIL|GHL_PASSWORD" /data/.openclaw/secrets/.env
-else
-    grep -E "GHL_EMAIL|GHL_PASSWORD" ~/.openclaw/secrets/.env 2>/dev/null
-    grep -E "GHL_EMAIL|GHL_PASSWORD" ~/clawd/secrets/.env 2>/dev/null  # legacy location
-fi
+# Canonical secrets file
+grep -E "^(GHL_EMAIL|GHL_PASSWORD)=" ~/.openclaw/secrets/.env 2>/dev/null
+# Legacy location (older Mac onboarding stored creds here)
+grep -E "^(GHL_EMAIL|GHL_PASSWORD)=" ~/clawd/secrets/.env 2>/dev/null
+# Shell env vars (operator may have exported in shell rc)
+printenv | grep -E "^(GHL_EMAIL|GHL_PASSWORD)="
 ```
 
 **Decision tree:**
@@ -198,8 +193,8 @@ If credentials need to be added, store them in the canonical secrets file for th
 nano ~/.openclaw/secrets/.env
 # Hostinger Docker VPS: Hostinger normally injects creds as container env vars, so
 # adding GHL_EMAIL/GHL_PASSWORD via the Hostinger control panel is preferred. As a
-# fallback, you can write to /data/.openclaw/secrets/.env (create dir if missing):
-mkdir -p /data/.openclaw/secrets && nano /data/.openclaw/secrets/.env
+# fallback, you can write to ~/.openclaw/secrets/.env (create dir if missing):
+mkdir -p ~/.openclaw/secrets && nano ~/.openclaw/secrets/.env
 ```
 
 Add these two lines (replace with actual email and password):
@@ -348,7 +343,7 @@ Follow TYP rules - only add summaries and file path references.
 - Viewport minimum: 1440x900
 - Builder loads inside nested iframes - use get_builder_frame() to switch context
 - Every selector has fallback chains - use find_element_with_fallback()
-- Credential location: ~/.openclaw/secrets/.env (Mac) | container env vars or /data/.openclaw/secrets/.env (VPS)
+- Credential location: ~/.openclaw/secrets/.env (Mac) | container env vars or ~/.openclaw/secrets/.env (VPS)
 
 **Add to MEMORY.md:**
 - GHL page deployment skill has been learned

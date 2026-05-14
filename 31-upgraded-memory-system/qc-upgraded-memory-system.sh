@@ -5,7 +5,7 @@ PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
 LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
 if ! command -v resolve_platform_paths >/dev/null 2>&1; then
-  resolve_platform_paths() { if [ -d "/data/.openclaw" ]; then export SECRETS_ENV="/data/.openclaw/secrets/.env" CONFIG_JSON="/data/.openclaw/openclaw.json" WORKSPACE="/data/clawd" SKILLS_DIR_DEFAULT="/data/.openclaw/skills" OPENCLAW_PLATFORM="vps"; else export SECRETS_ENV="$HOME/.openclaw/secrets/.env" CONFIG_JSON="$HOME/.openclaw/openclaw.json" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills" OPENCLAW_PLATFORM="mac"; fi; }
+  resolve_platform_paths() { export SECRETS_ENV="$HOME/.openclaw/secrets/.env" CONFIG_JSON="$HOME/.openclaw/openclaw.json" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"; }
 fi
 resolve_platform_paths
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
@@ -23,7 +23,7 @@ echo ""
 echo "── 8-layer memory architecture ──"
 assert "Layer 1: Core .md files exist"  "[ -f \"$WORKSPACE/AGENTS.md\" ] && [ -f \"$WORKSPACE/TOOLS.md\" ] && [ -f \"$WORKSPACE/MEMORY.md\" ]"
 warn_only "Layer 2: Memory flush referenced in AGENTS.md" "grep -qiE 'memory flush|flushed' \"$WORKSPACE/AGENTS.md\" 2>/dev/null"
-warn_only "Layer 3: Session indexing path exists" "[ -d \"$HOME/.openclaw/agents\" ] || [ -d \"/data/.openclaw/agents\" ]"
+warn_only "Layer 3: Session indexing path exists" "[ -d \"$HOME/.openclaw/agents\" ] || [ -d \"~/.openclaw/agents\" ]"
 assert "Layer 4: Gemini Embedding 2 configured (Gemini OR Google API key)" "[ -n \"$GEMINI_API_KEY\" ] || [ -n \"$GOOGLE_API_KEY\" ]"
 warn_only "Layer 4: gemini-indexer.py present" "find \"$WORKSPACE\" -maxdepth 3 -name 'gemini-indexer.py' 2>/dev/null | head -1 | grep -q ."
 warn_only "Layer 5: memory-core plugin enabled" "command -v openclaw && openclaw config get plugins.slots.memory 2>/dev/null | grep -qi 'memory-core'"

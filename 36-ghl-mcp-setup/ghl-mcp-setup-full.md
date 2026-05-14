@@ -122,16 +122,16 @@ The Tier 3 fallback (REST API + skill set), the install of this document, and se
 | Platform | Canonical location |
 |---|---|
 | **macOS / desktop install** | `~/Downloads/openclaw-master-files/` |
-| **VPS / Docker / server install** | `/data/Downloads/openclaw-master-files/` (VPS has no `~/Downloads/` — the persistent volume is `/data/`, with `/data/Downloads/`, `/data/clawd/`, and `/data/.openclaw/` as the twins of the Mac home-dir equivalents) |
+| **VPS / Docker / server install** | `~/Downloads/openclaw-master-files/` (VPS has no `~/Downloads/` — the persistent volume is `/data/`, with `~/Downloads/`, `~/clawd/`, and `~/.openclaw/` as the twins of the Mac home-dir equivalents) |
 | **Other Linux desktop** | `$HOME/Downloads/openclaw-master-files/` |
 
 #### Smart locator (run this before anything else)
 
 ```bash
-# Detect platform — VPS is the one with /data/.openclaw populated
-if [ -d "/data/.openclaw" ]; then
+# Detect platform — VPS is the one with ~/.openclaw populated
+if [ -d "~/.openclaw" ]; then
   PLATFORM="vps"
-  CANONICAL_MASTER="/data/Downloads/openclaw-master-files"
+  CANONICAL_MASTER="~/Downloads/openclaw-master-files"
 else
   PLATFORM="desktop"
   CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
@@ -143,12 +143,12 @@ echo "Canonical path if missing: $CANONICAL_MASTER"
 MASTER_FILES_DIR=""
 ROOTS=(
   "$HOME/Downloads"        # macOS / Linux desktop canonical
-  "/data/Downloads"        # VPS canonical
+  "~/Downloads"        # VPS canonical
   "/root/Downloads"        # some root-shell VPS setups
   "/data"                  # in case it was placed at the volume root
   "$HOME"                  # in case the client dropped it in home
   "$HOME/clawd"            # in case it lives next to the workspace
-  "/data/clawd"            # VPS twin of above
+  "~/clawd"            # VPS twin of above
   "/opt"                   # some server installs
   "/srv"                   # some server installs
 )
@@ -187,7 +187,7 @@ fi
 
 Stop and ask the client/Trevor with this exact message:
 
-> "I can't find an `openclaw-master-files` folder anywhere under `~/Downloads/`, `/data/Downloads/`, or the other usual locations. This folder holds the GHL API skill set that the Tier 3 fallback depends on. I'd like to create it at `$CANONICAL_MASTER` and then either (a) copy in the GHL skill from a known-good source, or (b) flag that the skill is missing and proceed with Tiers 1+2 only.
+> "I can't find an `openclaw-master-files` folder anywhere under `~/Downloads/`, `~/Downloads/`, or the other usual locations. This folder holds the GHL API skill set that the Tier 3 fallback depends on. I'd like to create it at `$CANONICAL_MASTER` and then either (a) copy in the GHL skill from a known-good source, or (b) flag that the skill is missing and proceed with Tiers 1+2 only.
 >
 > Do I have permission to create the folder? If yes, also tell me whether you have a backup of the skill set I should restore into it."
 
@@ -222,10 +222,10 @@ The client likely already has a GHL Private Integration Token (PIT) and Location
 
 ```bash
 # Resolve platform-correct paths first
-if [ -d "/data/.openclaw" ]; then
-  SECRETS_ENV="/data/.openclaw/secrets/.env"
-  CONFIG_JSON="/data/.openclaw/openclaw.json"
-  WORKSPACE="/data/clawd"
+if [ -d "~/.openclaw" ]; then
+  SECRETS_ENV="~/.openclaw/secrets/.env"
+  CONFIG_JSON="~/.openclaw/openclaw.json"
+  WORKSPACE="~/clawd"
 else
   SECRETS_ENV="$HOME/.openclaw/secrets/.env"
   CONFIG_JSON="$HOME/.openclaw/openclaw.json"
@@ -315,8 +315,8 @@ Use this exact request template (adapt the client's white-label brand name):
 
 ```bash
 # Pick the right secrets path for this platform
-if [ -d "/data/.openclaw" ]; then
-  SECRETS_DIR="/data/.openclaw/secrets"
+if [ -d "~/.openclaw" ]; then
+  SECRETS_DIR="~/.openclaw/secrets"
 else
   SECRETS_DIR="$HOME/.openclaw/secrets"
 fi
@@ -721,7 +721,7 @@ These values are authoritative. If your session history disagrees, trust this bl
 - Use when Tier 1 lacks the needed tool
 
 **Tier 3 — Direct REST API with PIT**
-- Skill set at `$MASTER_FILES_DIR/29-ghl-convert-and-flow/` (Mac default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`; VPS default: `/data/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`)
+- Skill set at `$MASTER_FILES_DIR/29-ghl-convert-and-flow/` (Mac default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`; VPS default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`)
 - Read `references/[module].md` for endpoint specifics
 - Base URL: `https://services.leadconnectorhq.com`
 - Version header: `2021-07-28` (some modules use `2021-04-15`)
@@ -799,7 +799,7 @@ Two MCP servers configured for [client white-label brand]:
 
 2. **Community GHL MCP — DEPLOYED** — OpenClaw entry `ghl-community-mcp`, BusyBee3333 2026 fork. 588 tools. Runs locally on `$GHL_COMMUNITY_MCP_URL` (env var resolves to `http://localhost:8765` unless port collision required a different port). Repo at `~/mcp-servers/ghl-community-mcp`. Lifecycle: launchd plist `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist` (macOS) or `ghl-mcp.service` (Linux). Auto-starts at login, restarts on crash. **No Docker dependency.**
 
-3. **Tier 3 fallback** — GHL skill at `$MASTER_FILES_DIR/29-ghl-convert-and-flow/` (Mac default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`; VPS default: `/data/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`). Pre-installed for all clients unless Section 1.B noted otherwise.
+3. **Tier 3 fallback** — GHL skill at `$MASTER_FILES_DIR/29-ghl-convert-and-flow/` (Mac default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`; VPS default: `~/Downloads/openclaw-master-files/29-ghl-convert-and-flow/`). Pre-installed for all clients unless Section 1.B noted otherwise.
 
 4. **Tier 4 fallback** — Playwright browser at `[client white-label URL]`.
 
@@ -881,8 +881,8 @@ The QC script is the standalone file `qc-ghl-mcp-setup.sh` shipped alongside thi
 
 ```bash
 # Locate the master files folder (where install.sh placed the skill)
-if [ -d "/data/.openclaw" ]; then
-  MASTER_FILES_DIR=/data/Downloads/openclaw-master-files
+if [ -d "~/.openclaw" ]; then
+  MASTER_FILES_DIR=~/Downloads/openclaw-master-files
 else
   MASTER_FILES_DIR=$HOME/Downloads/openclaw-master-files
 fi
@@ -893,7 +893,7 @@ bash    "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
 
 What the script does (summary — read the source for details):
 - Detects platform (Mac vs VPS) and resolves canonical secrets / config / workspace paths
-- Sources `~/.openclaw/secrets/.env` (or `/data/.openclaw/secrets/.env`), reads `GOHIGHLEVEL_API_KEY` (PIT) and `GOHIGHLEVEL_LOCATION_ID`
+- Sources `~/.openclaw/secrets/.env` (or `~/.openclaw/secrets/.env`), reads `GOHIGHLEVEL_API_KEY` (PIT) and `GOHIGHLEVEL_LOCATION_ID`
 - Probes Tier 1 (Official MCP) — confirms 36 tools available
 - Probes Tier 2 (Community MCP) — hits `$GHL_COMMUNITY_MCP_URL/health`, confirms tool count
 - Probes Tier 3 (direct REST) — reads `X-RateLimit-Daily-Remaining` and surfaces the reset clock time in plain English if quota is low (v9.3.5 incident-response logic)
@@ -1119,7 +1119,7 @@ Source: https://github.com/openclaw/mcporter
 - [ ] launchd / systemd unit owns logs that don't contain the PIT (check `~/Library/Logs/ghl-mcp/stdout.log` for any leaked auth)
 - [ ] Smoke tests pass for both MCPs (verified with real data)
 - [ ] All 5 test prompts (Phase 8) produce correct disclosure headers
-- [ ] This document copied to `$MASTER_FILES_DIR/XX-ghl-mcp-setup/` (Mac: `~/Downloads/openclaw-master-files/XX-ghl-mcp-setup/`; VPS: `/data/Downloads/openclaw-master-files/XX-ghl-mcp-setup/`) for future re-use
+- [ ] This document copied to `$MASTER_FILES_DIR/XX-ghl-mcp-setup/` (Mac: `~/Downloads/openclaw-master-files/XX-ghl-mcp-setup/`; VPS: `~/Downloads/openclaw-master-files/XX-ghl-mcp-setup/`) for future re-use
 
 ---
 

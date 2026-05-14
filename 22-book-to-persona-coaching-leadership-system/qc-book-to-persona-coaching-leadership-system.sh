@@ -5,7 +5,7 @@ PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
 LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
 if ! command -v resolve_platform_paths >/dev/null 2>&1; then
-  resolve_platform_paths() { if [ -d "/data/.openclaw" ]; then export SECRETS_ENV="/data/.openclaw/secrets/.env" WORKSPACE="/data/clawd" SKILLS_DIR_DEFAULT="/data/.openclaw/skills" OPENCLAW_PLATFORM="vps"; else export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills" OPENCLAW_PLATFORM="mac"; fi; }
+  resolve_platform_paths() { export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"; }
 fi
 resolve_platform_paths
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
@@ -20,9 +20,9 @@ echo "═══ Skill 22 — Book-to-Persona Coaching Leadership — Install QC 
 echo ""
 assert "Skill 22 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/22-book-to-persona-coaching-leadership-system\" ]"
 assert "Skill 31 (Memory) installed FIRST" "[ -d \"$SKILLS_DIR_DEFAULT/31-upgraded-memory-system\" ]"
-warn_only "coaching-personas folder exists (40 personas)" "[ -d \"$WORKSPACE/coaching-personas\" ] || find $HOME/Downloads /data/Downloads -maxdepth 4 -name 'coaching-personas' 2>/dev/null | head -1 | grep -q ."
-warn_only "persona-categories.json present (12 domain + 6 perspective tags)" "find $HOME/Downloads /data/Downloads \"$WORKSPACE\" -maxdepth 5 -name 'persona-categories.json' 2>/dev/null | head -1 | grep -q ."
-warn_only "PERSONA-ROUTER.md present" "find $HOME/Downloads /data/Downloads \"$WORKSPACE\" -maxdepth 5 -name 'PERSONA-ROUTER.md' 2>/dev/null | head -1 | grep -q ."
+warn_only "coaching-personas folder exists (40 personas)" "[ -d \"$WORKSPACE/coaching-personas\" ] || find $HOME/Downloads ~/Downloads -maxdepth 4 -name 'coaching-personas' 2>/dev/null | head -1 | grep -q ."
+warn_only "persona-categories.json present (12 domain + 6 perspective tags)" "find $HOME/Downloads ~/Downloads \"$WORKSPACE\" -maxdepth 5 -name 'persona-categories.json' 2>/dev/null | head -1 | grep -q ."
+warn_only "PERSONA-ROUTER.md present" "find $HOME/Downloads ~/Downloads \"$WORKSPACE\" -maxdepth 5 -name 'PERSONA-ROUTER.md' 2>/dev/null | head -1 | grep -q ."
 assert "Embedding API key (Gemini OR Google)" "[ -n \"$GEMINI_API_KEY\" ] || [ -n \"$GOOGLE_API_KEY\" ]"
 warn_only "AGENTS.md notes 'Skill 22 MAIN ORCHESTRATOR ONLY'" "grep -qiE 'main orchestrator only|skill 22.*never delegate' \"$WORKSPACE/AGENTS.md\" 2>/dev/null"
 echo ""

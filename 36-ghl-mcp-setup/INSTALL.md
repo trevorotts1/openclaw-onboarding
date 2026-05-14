@@ -38,7 +38,7 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 
 1. SAVE FULL DOCUMENTATION TO MASTER FILES FOLDER
    Find the OpenClaw master files folder. On macOS it is in ~/Downloads/.
-   On a VPS it is in /data/Downloads/. The folder may be named:
+   On a VPS it is in ~/Downloads/. The folder may be named:
    - OpenClaw Master Files
    - OpenClaw Master Documents
    - OpenClaw Documents
@@ -50,7 +50,7 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
    Search case-insensitively. One word or two words. Plural or singular.
    If no folder is found:
    - macOS: create ~/Downloads/openclaw-master-files/
-   - VPS: create /data/Downloads/openclaw-master-files/
+   - VPS: create ~/Downloads/openclaw-master-files/
    Ask the user for permission before creating if there is any ambiguity.
 
    Save this skill's `ghl-mcp-setup-full.md` to:
@@ -153,7 +153,7 @@ MCP coverage (Tier 1 + Tier 2):
 
 ### Where Credentials Get Stored (CANONICAL — overrides any older skill)
 - macOS: `~/.openclaw/secrets/.env`
-- VPS: `/data/.openclaw/secrets/.env`
+- VPS: `~/.openclaw/secrets/.env`
 
 Env var names: `GOHIGHLEVEL_API_KEY` (= the Location PIT, despite the legacy name)
 and `GOHIGHLEVEL_LOCATION_ID`. Secondary mirror: `openclaw.json` `env.vars`.
@@ -163,23 +163,14 @@ them to `~/.openclaw/secrets/.env` before installing this skill.
 
 ## Autonomous Setup Execution
 
-### Pre-Action 0: Detect Platform
+### Pre-Action 0: Canonical Mac Paths
 
 ```bash
-if [ -d "/data/.openclaw" ]; then
-  export PLATFORM="vps"
-  export SECRETS_ENV="/data/.openclaw/secrets/.env"
-  export CONFIG_JSON="/data/.openclaw/openclaw.json"
-  export CANONICAL_MASTER="/data/Downloads/openclaw-master-files"
-  export WORKSPACE="/data/clawd"
-else
-  export PLATFORM="desktop"
-  export SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-  export CONFIG_JSON="$HOME/.openclaw/openclaw.json"
-  export CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
-  export WORKSPACE="$HOME/clawd"
-fi
-echo "Platform detected: $PLATFORM"
+export SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+export CONFIG_JSON="$HOME/.openclaw/openclaw.json"
+export CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
+export WORKSPACE="$HOME/clawd"
+[ ! -d "$WORKSPACE" ] && WORKSPACE="$HOME/.openclaw/workspace"
 echo "Workspace: $WORKSPACE"
 ```
 
@@ -187,7 +178,7 @@ echo "Workspace: $WORKSPACE"
 
 ```bash
 MASTER_FILES_DIR=""
-for r in "$HOME/Downloads" "/data/Downloads" "/root/Downloads" "/data" "$HOME"; do
+for r in "$HOME/Downloads" "~/Downloads" "/root/Downloads" "/data" "$HOME"; do
   [ -d "$r" ] || continue
   found=$(find "$r" -maxdepth 2 -type d \
     \( -iname "*openclaw*master*file*" -o -iname "*open*claw*master*file*" \) \

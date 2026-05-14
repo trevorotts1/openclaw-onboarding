@@ -1,18 +1,28 @@
-# OpenClaw Onboarding
+# OpenClaw Onboarding — Mac mini
 
-**A complete onboarding package for setting up a fully operational OpenClaw agent.**
+**A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
-**Current Version: v9.7.11** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v10.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+
+This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
-> **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+> **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
-### What's New in v9.7.11 (May 14, 2026) — Smart credential discovery + 4 critical skill fixes
+### What's New in v10.0.0 (May 14, 2026) — The split: Mac-only repo, bulletproof discovery
 
-install.sh credential discovery is now platform-aware and alias-smart. Hostinger Docker VPS exposes API keys as container env vars (no .env files); Mac uses `~/.openclaw/secrets/.env`. Lookup now tries multiple naming variants per credential — e.g. `GOHIGHLEVEL_API_KEY` ↔ `GHL_PRIVATE_INTEGRATION_TOKEN` ↔ `GHL_API_KEY` ↔ `GHL_PIT`. Also reads LLM keys directly from `models.providers.<name>.apiKey` in openclaw.json.
+This is a deliberate major version break that splits the previous unified codebase into two dedicated repos. The VPS installer is its own thing now (https://github.com/trevorotts1/openclaw-onboarding-vps). This repo is Mac-only — no `/data/...` paths, no Hostinger Docker branches, no platform detect.
 
-4 critical skill fixes (skills 06, 29, 11, 16) that would have failed outright on Hostinger Docker — see CHANGELOG.md for the line-by-line fix list.
+**Bulletproof Telegram chat ID resolver — 23 sources.** Mac canonical pairing always succeeds before onboarding runs. If we don't find a chat ID, it's because we didn't look hard enough. The resolver now walks all 23 plausible Mac locations (CLI queries, credentials/ files, openclaw.json branches, per-agent bindings, alternate Mac config paths, runtime CLI introspection, .env files, env.vars block, shell env vars, recursive filesystem walks, audit logs). Verified live on the Mac dev box — resolved chat ID via Strategy 1.
+
+**Bulletproof credential discovery — 10 sources.** Shell env → ~/.openclaw/secrets/.env → ~/clawd/secrets/.env → env.vars block in openclaw.json → models.providers.*.apiKey → plugins.entries.*.config → auth-profiles.json → ~/.openclaw/secrets.json → deep scan. Alias map covers naming variants per credential.
+
+**Bulletproof workspace resolver.** Per-agent override → defaults.workspace → ~/clawd → ~/.openclaw/workspace. Handles both your existing setup (~/clawd) and OpenClaw's fresh-install default.
+
+**All 36 skills cleaned to Mac-only paths.** 263 path replacements across 81 files. No more cross-platform branches in skill code.
+
+See CHANGELOG.md for the full list of changes.
 
 End-of-discovery report now lists any missing canonical credentials so the operator can fix gaps before skill installs hit them.
 

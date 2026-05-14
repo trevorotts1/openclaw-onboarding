@@ -10,7 +10,7 @@ Do not update files marked NO UPDATE NEEDED.
 **This skill updates the canonical credential location for GHL.** Skill 05 (older versions) pointed to `~/clawd/secrets/.env`. As of skill 36 v1.0.0 and aligned with the agent's current AGENTS.md operating rules:
 
 - **macOS canonical:** `~/.openclaw/secrets/.env`
-- **VPS canonical:** `/data/.openclaw/secrets/.env`
+- **VPS canonical:** `~/.openclaw/secrets/.env`
 - **Secondary mirror:** `openclaw.json` `env.vars` (gateway reads from here at runtime)
 
 Env var names: `GOHIGHLEVEL_API_KEY` (the Location PIT — legacy variable name kept for backwards compatibility) and `GOHIGHLEVEL_LOCATION_ID`.
@@ -65,7 +65,7 @@ Add this section. Adapt aliases to client white-label brand:
 | Live tool discovery | `curl $GHL_COMMUNITY_MCP_URL/tools` |
 | Lifecycle | macOS: launchd `~/Library/LaunchAgents/com.clawd.ghl-mcp.plist`. Linux: systemd `ghl-mcp.service`. |
 | Restart | macOS: `launchctl kickstart gui/$(id -u)/com.clawd.ghl-mcp`. Linux: `sudo systemctl restart ghl-mcp`. |
-| Credentials | `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS). Env vars: `GOHIGHLEVEL_API_KEY` (PIT), `GOHIGHLEVEL_LOCATION_ID`. |
+| Credentials | `~/.openclaw/secrets/.env` (Mac) / `~/.openclaw/secrets/.env` (VPS). Env vars: `GOHIGHLEVEL_API_KEY` (PIT), `GOHIGHLEVEL_LOCATION_ID`. |
 
 ### Tier order (try in sequence; do not skip)
 
@@ -137,7 +137,7 @@ Two MCP servers configured (skill 36):
 
 2. **Community GHL MCP** (`ghl-community-mcp`) — BusyBee3333 2026 fork, 588 tools. Local at `$GHL_COMMUNITY_MCP_URL`. Runs via launchd (macOS) or systemd (Linux). Repo at `~/mcp-servers/ghl-community-mcp/` (Mac) or `/data/mcp-servers/ghl-community-mcp/` (VPS).
 
-Credentials: `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS). Env vars: `GOHIGHLEVEL_API_KEY` (PIT), `GOHIGHLEVEL_LOCATION_ID`.
+Credentials: `~/.openclaw/secrets/.env` (Mac) / `~/.openclaw/secrets/.env` (VPS). Env vars: `GOHIGHLEVEL_API_KEY` (PIT), `GOHIGHLEVEL_LOCATION_ID`.
 
 5-tier escalation: MCP official → MCP community → REST API + skill 29 → Playwright → Codex Computer Use.
 

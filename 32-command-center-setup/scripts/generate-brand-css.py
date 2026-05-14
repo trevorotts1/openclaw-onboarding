@@ -50,8 +50,8 @@ def find_zhc_company_config(slug=None):
     roots = [
         HOME / "clawd" / "zero-human-company",
         HOME / "clawd" / "zhc",
-        Path("/data/clawd/zero-human-company"),
-        Path("/data/clawd/zhc"),
+        Path("~/clawd/zero-human-company"),
+        Path("~/clawd/zhc"),
     ]
     candidates = []
     for root in roots:

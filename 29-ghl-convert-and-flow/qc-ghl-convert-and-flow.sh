@@ -5,7 +5,7 @@ PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
 LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
 if ! command -v resolve_platform_paths >/dev/null 2>&1; then
-  resolve_platform_paths() { if [ -d "/data/.openclaw" ]; then export SECRETS_ENV="/data/.openclaw/secrets/.env" WORKSPACE="/data/clawd" SKILLS_DIR_DEFAULT="/data/.openclaw/skills" OPENCLAW_PLATFORM="vps"; else export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills" OPENCLAW_PLATFORM="mac"; fi; }
+  resolve_platform_paths() { export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"; }
 fi
 resolve_platform_paths
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
@@ -24,7 +24,7 @@ assert "Value starts with pit-"         "[[ \"$GOHIGHLEVEL_API_KEY\" == pit-* ]]
 assert "GOHIGHLEVEL_LOCATION_ID set"    "[ -n \"$GOHIGHLEVEL_LOCATION_ID\" ]"
 assert "references/ subfolder present (Tier 3 lookup files)" "[ -d \"$SKILLS_DIR_DEFAULT/29-ghl-convert-and-flow/references\" ]"
 warn_only "Master reference file in master-files folder" \
-  "find $HOME/Downloads /data/Downloads -maxdepth 4 -name '*GoHighLevel*Master Reference*.md' -o -name '*Convert and Flow*Master Reference*.md' 2>/dev/null | head -1 | grep -q ."
+  "find $HOME/Downloads ~/Downloads -maxdepth 4 -name '*GoHighLevel*Master Reference*.md' -o -name '*Convert and Flow*Master Reference*.md' 2>/dev/null | head -1 | grep -q ."
 warn_only "SKILL.md identifies this as Tier 3" "grep -qiE 'tier 3|tier.*36|skill 36' \"$SKILLS_DIR_DEFAULT/29-ghl-convert-and-flow/SKILL.md\" 2>/dev/null"
 warn_only "jq installed" "command -v jq"
 assert "Python 3 installed" "command -v python3"

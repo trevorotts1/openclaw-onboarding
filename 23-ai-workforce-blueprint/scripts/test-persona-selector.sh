@@ -44,13 +44,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# ─── PLATFORM DETECT ─────────────────────────────────────────────────────────
-if [ -d "/data/.openclaw" ]; then
-  SELECTOR=/data/Downloads/openclaw-master-files/23-ai-workforce-blueprint/scripts/select-persona-for-task.py
-  [ ! -f "$SELECTOR" ] && SELECTOR=$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py
-else
-  SELECTOR=$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py
-fi
+# ─── CANONICAL MAC PATH ──────────────────────────────────────────────────────
+SELECTOR="$HOME/Downloads/openclaw-master-files/23-ai-workforce-blueprint/scripts/select-persona-for-task.py"
+[ ! -f "$SELECTOR" ] && SELECTOR="$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py"
 
 red()    { printf "\033[31m%s\033[0m\n" "$1"; }
 green()  { printf "\033[32m%s\033[0m\n" "$1"; }

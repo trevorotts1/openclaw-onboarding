@@ -54,7 +54,7 @@ def _resolve_model(skill: str, purpose: str, purpose_tier: str,
     if not selector.exists():
         selector = _Path.home() / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py"
     if not selector.exists():
-        selector = _Path("/data/Downloads/openclaw-master-files/shared-utils/select_model.py")
+        selector = _Path("~/Downloads/openclaw-master-files/shared-utils/select_model.py")
     if not selector.exists():
         return fallback
     cmd = ["python3", str(selector),

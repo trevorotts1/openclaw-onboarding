@@ -194,7 +194,7 @@ The checks above are CONTENT QC — they run weekly during content production. T
 | Section | Points | What it tests |
 |---|---|---|
 | Prerequisites | 1.5 | Skills 01, 02, 22, 31 installed. Skill 36 detection handled. Skill 30 present OR podcast deferred. |
-| Credentials (canonical names) | 2.0 | `GOHIGHLEVEL_API_KEY` (PIT) AND `GOHIGHLEVEL_LOCATION_ID` present at canonical secrets path (`~/.openclaw/secrets/.env` on Mac / `/data/.openclaw/secrets/.env` on VPS). Deprecated names (`GHL_PRIVATE_TOKEN`, `GHL_API_KEY`, `GHL_LOCATION_ID`) NOT used. |
+| Credentials (canonical names) | 2.0 | `GOHIGHLEVEL_API_KEY` (PIT) AND `GOHIGHLEVEL_LOCATION_ID` present at canonical secrets path (`~/.openclaw/secrets/.env` on Mac / `~/.openclaw/secrets/.env` on VPS). Deprecated names (`GHL_PRIVATE_TOKEN`, `GHL_API_KEY`, `GHL_LOCATION_ID`) NOT used. |
 | GHL access verified | 1.5 | Smoke test against `get_platform_accounts` (MCP) or `/social-media-posting/oauth/.../facebook/accounts` (direct API) returned 200 with real data. No 403s (= scopes correct). |
 | MCP routing detected | 1.0 | If Skill 36 installed: routing mode = mcp-first AND `$GHL_COMMUNITY_MCP_URL` resolves. If Skill 36 NOT installed: routing mode = direct-api AND warning logged in MEMORY.md. |
 | Software present | 1.0 | FFmpeg ≥4.0, ImageMagick, python3 all working. |

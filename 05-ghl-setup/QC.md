@@ -17,7 +17,7 @@ Enables the agent to connect to Convert and Flow (GoHighLevel) using the correct
 - [ ] The agent understands and uses the mandatory `Version: 2021-07-28` header on every GHL API request.
 
 ## 4. Key Detection
-- [ ] Search all standard secret locations in order: `~/.openclaw/secrets/.env`, `~/.openclaw/openclaw.json` `env.vars`, `~/.openclaw/.env`, `/data/.openclaw/openclaw.json` `env.vars`, `/data/.openclaw/.env`, live environment via `printenv`, and `~/.env`.
+- [ ] Search all standard secret locations in order: `~/.openclaw/secrets/.env`, `~/.openclaw/openclaw.json` `env.vars`, `~/.openclaw/.env`, `~/.openclaw/openclaw.json` `env.vars`, `~/.openclaw/.env`, live environment via `printenv`, and `~/.env`.
 - [ ] Recognize all practical token variable variations: `GHL_API_KEY`, `GHL_PIT`, `GOHIGHLEVEL_API_KEY`, and where relevant `GOHIGHLEVEL_AGENCY_PIT` for agency-level work.
 - [ ] Recognize location variables: `GHL_LOCATION_ID` and any existing mirrored location value in JSON config.
 - [ ] QC fails if the installer asks for an “API key” without first checking for a Private Integration Token or if it ignores an already-present token.
@@ -62,7 +62,7 @@ After install, score yourself honestly against this rubric. **Pass gate: 8.5/10 
 | Prerequisites + INSTALL-CONTRACT.md acknowledged | 1.0 | INSTALL-CONTRACT.md was read this session AND acknowledged in your work log for this specific skill. All prerequisite skills installed. |
 | All skill .md files read before any execution | 1.0 | SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md (this file), any referenced `references/*.md`. Reading happened BEFORE any command was run. |
 | INSTALL.md steps executed in order | 1.5 | No skipping, no reordering, no improvising. If a step was skipped, owner consent is documented. |
-| Credentials at canonical paths with canonical names | 1.5 | `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS), chmod 600. Canonical env-var names used (not deprecated ones). For GHL: `GOHIGHLEVEL_API_KEY` (a PIT, not an API key) + `GOHIGHLEVEL_LOCATION_ID`. |
+| Credentials at canonical paths with canonical names | 1.5 | `~/.openclaw/secrets/.env` (Mac) / `~/.openclaw/secrets/.env` (VPS), chmod 600. Canonical env-var names used (not deprecated ones). For GHL: `GOHIGHLEVEL_API_KEY` (a PIT, not an API key) + `GOHIGHLEVEL_LOCATION_ID`. |
 | Functional checks pass | 1.5 | The skill's specific smoke tests (API reachability, software present, etc.) all return expected results. No 4xx/5xx unhandled. |
 | CORE_UPDATES.md applied surgically | 1.0 | Only labeled sections added to labeled core files. No SOUL.md / IDENTITY.md / USER.md / HEARTBEAT.md touched unless this skill's CORE_UPDATES.md explicitly labels them. |
 | Skill-specific QC items above all checked | 1.5 | Every checkbox in the skill-specific sections of THIS QC.md is ticked. |

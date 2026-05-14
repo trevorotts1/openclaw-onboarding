@@ -61,7 +61,7 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 
 4. **"It looked broken earlier" is not an excuse for skipping.** If a tier crashed in earlier session work, attempt it fresh. Recover with `launchctl kickstart` (Mac) or `systemctl restart` (Linux) before falling through.
 
-5. **Same Private Integration Token used for both tiers.** Tier 1 sends the PIT as `Authorization: Bearer ...` header. Tier 2 reads it from `~/mcp-servers/ghl-community-mcp/.env` as `GHL_API_KEY`. Both reference the same canonical secrets file (`~/.openclaw/secrets/.env` on Mac, `/data/.openclaw/secrets/.env` on VPS).
+5. **Same Private Integration Token used for both tiers.** Tier 1 sends the PIT as `Authorization: Bearer ...` header. Tier 2 reads it from `~/mcp-servers/ghl-community-mcp/.env` as `GHL_API_KEY`. Both reference the same canonical secrets file (`~/.openclaw/secrets/.env` on Mac, `~/.openclaw/secrets/.env` on VPS).
 
 6. **The official MCP is stateless.** Initialize does NOT return an `Mcp-Session-Id` header. Do not gate follow-up calls on a session ID — each request is independent.
 

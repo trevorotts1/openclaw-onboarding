@@ -41,8 +41,8 @@ def _zhc_root_candidates():
     return [
         Path.home() / "clawd" / "zero-human-company",   # v9.6.0+ canonical
         Path.home() / "clawd" / "zhc",                   # short-alias
-        Path("/data/clawd/zero-human-company"),          # VPS canonical
-        Path("/data/clawd/zhc"),                          # VPS short-alias
+        Path("~/clawd/zero-human-company"),          # VPS canonical
+        Path("~/clawd/zhc"),                          # VPS short-alias
     ]
 
 
@@ -95,7 +95,7 @@ def find_departments_config():
     # 3+4+5. Legacy paths
     candidates.extend([
         Path.home() / "Downloads/openclaw-master-files/company-discovery/departments.json",
-        Path("/data/Downloads/openclaw-master-files/company-discovery/departments.json"),
+        Path("~/Downloads/openclaw-master-files/company-discovery/departments.json"),
         Path.home() / "clawd/departments/departments.json",
         Path.home() / "projects/command-center/config/departments.json",
         Path.home() / "projects/mission-control/config/departments.json",
@@ -128,7 +128,7 @@ def scan_skill23_workspaces():
     # Legacy paths
     workspace_dirs.extend([
         Path.home() / "clawd/departments",
-        Path("/data/clawd/departments"),
+        Path("~/clawd/departments"),
         Path.home() / ".openclaw/workspaces/command-center",
         Path.home() / "Downloads/openclaw-master-files/my AI company departments",
     ])
@@ -245,7 +245,7 @@ def find_company_info(parent_folder_name=None):
         answer_files.append(root / slug / "workforce-interview-answers.md")
     answer_files.extend([
         Path.home() / "Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md",
-        Path("/data/Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md"),
+        Path("~/Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md"),
         Path.home() / ".openclaw/workspace/company-discovery/workforce-interview-answers.md",
     ])
 
