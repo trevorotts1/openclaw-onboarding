@@ -2,13 +2,35 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.7.8
+#  OpenClaw Onboarding Installer v9.7.9
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.8"
+ONBOARDING_VERSION="v9.7.9"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
+
+# ----------------------------------------------------------
+# Platform-aware paths (v9.7.9) — Mac/desktop vs Hostinger Docker VPS
+# ----------------------------------------------------------
+# On Hostinger Docker VPS, OpenClaw runs inside a container whose persistent
+# volume is mounted at /data — so all install artifacts (config, downloads,
+# backups, workspace) MUST live under /data or they're lost on container
+# rebuild. On Mac, $HOME is the right base. Detector: presence of
+# /data/.openclaw/ — the persistent volume mount that only exists on VPS.
+if [ -d "/data/.openclaw" ]; then
+    OPENCLAW_PLATFORM="vps"
+    OC_HOME="/data"
+    OC_CONFIG="/data/.openclaw"
+else
+    OPENCLAW_PLATFORM="desktop"
+    OC_HOME="$HOME"
+    OC_CONFIG="$HOME/.openclaw"
+fi
+OC_DOWNLOADS="$OC_HOME/Downloads"
+OC_CLAWD="$OC_HOME/clawd"
+OC_JSON="$OC_CONFIG/openclaw.json"
+export OPENCLAW_PLATFORM OC_HOME OC_CONFIG OC_DOWNLOADS OC_CLAWD OC_JSON
 
 # ----------------------------------------------------------
 # Bash 3.2 Compatible UI Helpers
@@ -270,12 +292,12 @@ send_telegram_progress() {
 backup_config_file() {
     local file="$1"
     if [ -f "$file" ]; then
-        mkdir -p "$HOME/Downloads/openclaw-backups"
+        mkdir -p "$OC_DOWNLOADS/openclaw-backups"
         local ts
         ts=$(date +%Y-%m-%d-%H%M%S)
         local filename
         filename=$(basename "$file")
-        local backup="$HOME/Downloads/openclaw-backups/${filename}-backup-${ts}.txt"
+        local backup="$OC_DOWNLOADS/openclaw-backups/${filename}-backup-${ts}.txt"
         cp "$file" "$backup"
         note "Backed up: $backup"
     fi
@@ -287,11 +309,11 @@ backup_config_file() {
 ENV_LOCATIONS=""
 
 build_env_locations() {
-    ENV_LOCATIONS="$HOME/.openclaw/.env"
-    ENV_LOCATIONS="$ENV_LOCATIONS|$HOME/.openclaw/secrets/.env"
-    ENV_LOCATIONS="$ENV_LOCATIONS|$HOME/clawd/secrets/.env"
-    ENV_LOCATIONS="$ENV_LOCATIONS|$HOME/.env"
-    ENV_LOCATIONS="$ENV_LOCATIONS|$HOME/.openclaw/openclaw.json"
+    ENV_LOCATIONS="$OC_CONFIG/.env"
+    ENV_LOCATIONS="$ENV_LOCATIONS|$OC_CONFIG/secrets/.env"
+    ENV_LOCATIONS="$ENV_LOCATIONS|$OC_CLAWD/secrets/.env"
+    ENV_LOCATIONS="$ENV_LOCATIONS|$OC_HOME/.env"
+    ENV_LOCATIONS="$ENV_LOCATIONS|$OC_JSON"
 }
 
 search_env_var() {
@@ -382,10 +404,10 @@ discover_all_credentials() {
 # Directory Discovery
 # ----------------------------------------------------------
 discover_skills_dir() {
-    local CANDIDATES="$HOME/Downloads/openclaw-master-files"
-    CANDIDATES="$CANDIDATES|$HOME/.openclaw/skills"
-    CANDIDATES="$CANDIDATES|$HOME/.openclaw/onboarding"
-    CANDIDATES="$CANDIDATES|$HOME/openclaw-onboarding"
+    local CANDIDATES="$OC_DOWNLOADS/openclaw-master-files"
+    CANDIDATES="$CANDIDATES|$OC_CONFIG/skills"
+    CANDIDATES="$CANDIDATES|$OC_CONFIG/onboarding"
+    CANDIDATES="$CANDIDATES|$OC_HOME/openclaw-onboarding"
     
     local dirs
     dirs="$CANDIDATES"
@@ -409,11 +431,11 @@ discover_skills_dir() {
         fi
     done
     
-    echo "$HOME/Downloads/openclaw-master-files"
+    echo "$OC_DOWNLOADS/openclaw-master-files"
 }
 
 discover_skills() {
-    local base_dir="${1:-$HOME/.openclaw/onboarding}"
+    local base_dir="${1:-$OC_CONFIG/onboarding}"
     local numbered_count
     numbered_count=$(find "$base_dir" -maxdepth 1 -type d -name "[0-9][0-9]-*" 2>/dev/null | wc -l | tr -d ' ')
     local skill_md_count
@@ -432,19 +454,19 @@ discover_skills() {
 configure_concurrency_LEGACY_UNUSED() {
     step "Configuring Sub-Agent Concurrency"
     
-    local OPENCLAW_JSON="$HOME/.openclaw/openclaw.json"
-    
+    local OPENCLAW_JSON="$OC_JSON"
+
     if [ ! -f "$OPENCLAW_JSON" ]; then
         warn "openclaw.json not found - skipping concurrency config"
         return
     fi
-    
+
     backup_config_file "$OPENCLAW_JSON"
-    
-    python3 << 'PYEOF'
+
+    OPENCLAW_JSON="$OPENCLAW_JSON" python3 << 'PYEOF'
 import json, os, sys
 
-path = os.path.expanduser("~/.openclaw/openclaw.json")
+path = os.environ['OPENCLAW_JSON']
 try:
     with open(path) as f:
         config = json.load(f)
@@ -474,7 +496,7 @@ PYEOF
 # ----------------------------------------------------------
 # Version Sync Check
 # ----------------------------------------------------------
-ONBOARDING_DIR="$HOME/.openclaw/onboarding"
+ONBOARDING_DIR="$OC_CONFIG/onboarding"
 mkdir -p "$ONBOARDING_DIR"
 INSTALL_FLAG="$ONBOARDING_DIR/.install-in-progress"
 
@@ -646,10 +668,8 @@ note "Recommendation: if you are over 5 minutes into the current session, start 
 note "This is a recommendation only — the install will proceed either way."
 
 # 0.2 — Write/refresh the state-carryover file
-OCJSON="$HOME/.openclaw/openclaw.json"
-[ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
-RESUME_FILE="$HOME/.openclaw/.install-resume.json"
-[ -d "/data/.openclaw" ] && RESUME_FILE="/data/.openclaw/.install-resume.json"
+OCJSON="$OC_JSON"
+RESUME_FILE="$OC_CONFIG/.install-resume.json"
 mkdir -p "$(dirname "$RESUME_FILE")"
 cat > "$RESUME_FILE" <<RESUME_JSON
 {
@@ -880,7 +900,7 @@ fi
 # ----------------------------------------------------------
 step "Step 6: Installing Gemini Engine Scripts"
 
-SCRIPTS_DIR="$HOME/clawd/scripts"
+SCRIPTS_DIR="$OC_CLAWD/scripts"
 mkdir -p "$SCRIPTS_DIR"
 
 for SCRIPT in gemini-indexer.py gemini-search.py; do
@@ -919,19 +939,19 @@ note "Step 7: Sub-agent + bootstrap config already applied in Step 0 — skippin
 configure_active_memory() {
     step "Step 7a: Configuring Active Memory (Layer 8)"
     
-    local OPENCLAW_JSON="$HOME/.openclaw/openclaw.json"
-    
+    local OPENCLAW_JSON="$OC_JSON"
+
     if [ ! -f "$OPENCLAW_JSON" ]; then
         warn "openclaw.json not found - skipping Active Memory config"
         return
     fi
-    
+
     backup_config_file "$OPENCLAW_JSON"
-    
-    python3 << 'PYEOF'
+
+    OPENCLAW_JSON="$OPENCLAW_JSON" python3 << 'PYEOF'
 import json, os, sys
 
-path = os.path.expanduser("~/.openclaw/openclaw.json")
+path = os.environ['OPENCLAW_JSON']
 try:
     with open(path) as f:
         config = json.load(f)
@@ -1000,14 +1020,14 @@ configure_active_memory
 # ----------------------------------------------------------
 step "Step 8: Applying Exec Security Configuration"
 
-OPENCLAW_JSON="$HOME/.openclaw/openclaw.json"
+OPENCLAW_JSON="$OC_JSON"
 if [ -f "$OPENCLAW_JSON" ]; then
     backup_config_file "$OPENCLAW_JSON"
-    
-    python3 << 'PYEOF'
+
+    OPENCLAW_JSON="$OPENCLAW_JSON" python3 << 'PYEOF'
 import json, os
 
-path = os.path.expanduser("~/.openclaw/openclaw.json")
+path = os.environ['OPENCLAW_JSON']
 if os.path.exists(path):
     with open(path) as f:
         cfg = json.load(f)
@@ -1023,7 +1043,7 @@ if os.path.exists(path):
 PYEOF
 fi
 
-EXEC_APPROVALS="$HOME/.openclaw/exec-approvals.json"
+EXEC_APPROVALS="$OC_CONFIG/exec-approvals.json"
 if [ -f "$EXEC_APPROVALS" ]; then
     backup_config_file "$EXEC_APPROVALS"
     
@@ -1049,7 +1069,7 @@ fi
 # ----------------------------------------------------------
 step "Step 9: Setting Up Backup Folders"
 
-DOWNLOADS_DIR="$HOME/Downloads"
+DOWNLOADS_DIR="$OC_DOWNLOADS"
 mkdir -p "$DOWNLOADS_DIR/OpenClaw Backups"
 mkdir -p "$DOWNLOADS_DIR/openclaw-master-files"
 mkdir -p "$DOWNLOADS_DIR/openclaw-master-files/coaching-personas/personas"
@@ -1083,10 +1103,10 @@ except Exception:
 fi
 # Fallback chain if CLI query returned nothing or non-existent path
 if [ -z "$WORKSPACE_DIR" ] || [ ! -d "$WORKSPACE_DIR" ]; then
-    if [ -d "$HOME/clawd" ]; then
-        WORKSPACE_DIR="$HOME/clawd"
+    if [ -d "$OC_CLAWD" ]; then
+        WORKSPACE_DIR="$OC_CLAWD"
     else
-        WORKSPACE_DIR="$HOME/.openclaw/workspace"
+        WORKSPACE_DIR="$OC_CONFIG/workspace"
     fi
 fi
 mkdir -p "$WORKSPACE_DIR"
@@ -1333,7 +1353,20 @@ Send summary:
 ---
 FLAGCONTENT
 
-success "UPDATE PENDING flag written to AGENTS.md"
+# v9.7.9: Read-back verification. Don't just trust the heredoc — actually
+# confirm the flag is in the file. If not, surface a HARD ERROR so the user
+# knows it didn't land instead of being told everything worked.
+if grep -q "UPDATE PENDING - EXECUTE IMMEDIATELY" "$AGENTS_FILE" 2>/dev/null; then
+    AGENTS_SIZE=$(wc -c < "$AGENTS_FILE" 2>/dev/null | tr -d ' ')
+    success "UPDATE PENDING flag written to $AGENTS_FILE (file is now $AGENTS_SIZE bytes)"
+    note "Verify your AGENT reads from $AGENTS_FILE. If it reads a DIFFERENT path, the flag is invisible to it."
+    note "Quick test: ask your agent 'What is the size of your AGENTS.md and what's the last section?' — should report $AGENTS_SIZE bytes ending with 'UPDATE PENDING - EXECUTE IMMEDIATELY' section."
+else
+    error "AGENTS.md write FAILED — flag NOT present in $AGENTS_FILE after write."
+    error "File exists: $([ -f "$AGENTS_FILE" ] && echo yes || echo NO)"
+    error "File size: $(wc -c < "$AGENTS_FILE" 2>/dev/null | tr -d ' ') bytes"
+    error "This is a bug — heredoc append didn't take effect. Please report with this log: $LOG_FILE"
+fi
 
 # ----------------------------------------------------------
 # Step 10b: Seed Core.md Terminology into MEMORY.md (idempotent)
@@ -1451,11 +1484,24 @@ When the gateway is back, paste this to your agent:
 
 (If you did not receive THIS Telegram note, see the same instructions printed in your Terminal where you ran the install command.)"
 
-# Echo Telegram result so the operator knows whether it actually fired
+# v9.7.9: Echo Telegram result with EXPLICIT delivery caveat. Important on
+# fresh-install machines where the openclaw.json has a chat ID but the bot
+# itself may not be the one the owner has a conversation with on their phone.
+# `openclaw message send` returns success when the gateway accepts the message
+# — but if the bot token differs from the one your phone messages, the note
+# goes to a different Telegram account.
 case "$TELEGRAM_LAST_RESULT" in
-    sent:*)              success "Telegram completion note sent to ${TELEGRAM_LAST_RESULT#sent:}" ;;
+    sent:*)
+        success "Telegram completion note sent to chat ID ${TELEGRAM_LAST_RESULT#sent:}"
+        note "IF you didn't actually receive it in Telegram on your phone:"
+        note "  This machine's bot may not be the bot you message from your phone."
+        note "  - Open Telegram on phone. Search for the BlackCEO / OpenClaw bot you use."
+        note "  - Look for a Telegram message arriving right now from any bot."
+        note "  - If nothing arrived, this machine has its own bot you haven't opened a chat with."
+        note "  Read the backup instruction box below — agent will activate from there."
+        ;;
     no-openclaw-cli)     warn "Telegram skipped — openclaw CLI not on PATH yet (first-install case)" ;;
-    no-telegram-target)  warn "Telegram skipped — no telegram.allowFrom configured in openclaw.json" ;;
+    no-telegram-target)  warn "Telegram skipped — no telegram chat ID found anywhere in openclaw.json" ;;
     failed:*)            warn "Telegram completion note FAILED — using backup instructions below" ;;
 esac
 
@@ -1747,7 +1793,7 @@ PYEOF
 
     # Pull cron prompt from the just-installed repo files
     local PROMPT_FILE=""
-    for candidate in "$SKILLS_DIR/.cron-prompt.txt" "$HOME/Downloads/openclaw-master-files/.cron-prompt.txt" "/tmp/openclaw-cron-prompt-${ONBOARDING_VERSION}.txt"; do
+    for candidate in "$SKILLS_DIR/.cron-prompt.txt" "$OC_DOWNLOADS/openclaw-master-files/.cron-prompt.txt" "/tmp/openclaw-cron-prompt-${ONBOARDING_VERSION}.txt"; do
         [ -f "$candidate" ] && PROMPT_FILE="$candidate" && break
     done
 

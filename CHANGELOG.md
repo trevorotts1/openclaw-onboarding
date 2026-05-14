@@ -1,3 +1,52 @@
+## v9.7.9 - May 14, 2026 - Platform-aware paths for Hostinger Docker VPS
+
+### The gap
+v9.7.8 install.sh hardcoded `$HOME/Downloads/...`, `$HOME/.openclaw/...`, `$HOME/clawd/...` everywhere — 34 separate path references. On a Hostinger Docker VPS, `$HOME` resolves to `/root`, so install artifacts (downloads, backups, master files, workspace) landed in `/root/Downloads/...` inside the container, NOT on the `/data` persistent volume mount. Result: every container rebuild wipes the install. The recovery scripts (`fix-active-memory-bug.sh`, `diagnose-telegram-config.sh`) already platform-detected via `[ -d "/data/.openclaw" ]`, but `install.sh` itself did not.
+
+Additionally, three Python heredocs (concurrency config, Active Memory config, exec security) hardcoded `os.path.expanduser("~/.openclaw/openclaw.json")` — on a VPS running as root, that path doesn't exist; the real config is at `/data/.openclaw/openclaw.json`.
+
+### Fixed
+- **Top-level platform-detect block.** Added right after VERSION declaration:
+  ```bash
+  if [ -d "/data/.openclaw" ]; then
+      OPENCLAW_PLATFORM="vps"; OC_HOME="/data"; OC_CONFIG="/data/.openclaw"
+  else
+      OPENCLAW_PLATFORM="desktop"; OC_HOME="$HOME"; OC_CONFIG="$HOME/.openclaw"
+  fi
+  OC_DOWNLOADS="$OC_HOME/Downloads"; OC_CLAWD="$OC_HOME/clawd"; OC_JSON="$OC_CONFIG/openclaw.json"
+  ```
+- **All 34 hardcoded `$HOME` paths replaced** with the platform-aware vars:
+  - `$HOME/Downloads/openclaw-backups` → `$OC_DOWNLOADS/openclaw-backups`
+  - `$HOME/Downloads/openclaw-master-files` → `$OC_DOWNLOADS/openclaw-master-files`
+  - `$HOME/.openclaw/openclaw.json` → `$OC_JSON`
+  - `$HOME/.openclaw/onboarding` → `$OC_CONFIG/onboarding`
+  - `$HOME/.openclaw/.install-resume.json` → `$OC_CONFIG/.install-resume.json`
+  - `$HOME/.openclaw/exec-approvals.json` → `$OC_CONFIG/exec-approvals.json`
+  - `$HOME/clawd/scripts` → `$OC_CLAWD/scripts`
+  - Workspace fallback chain now checks `$OC_CLAWD` before `$OC_CONFIG/workspace`
+- **Python heredocs now read $OPENCLAW_JSON from env** instead of hardcoded `expanduser("~/.openclaw/...")`. Bash exports the platform-correct path before invoking python. Applies to: `configure_concurrency_LEGACY_UNUSED`, `configure_active_memory`, `exec security` block at Step 8.
+- **Env credential discovery now scans VPS paths too.** `build_env_locations` walks `$OC_CONFIG/.env`, `$OC_CONFIG/secrets/.env`, `$OC_CLAWD/secrets/.env`, `$OC_HOME/.env`, `$OC_JSON` — automatically resolves to `/data/...` on VPS.
+
+### Telegram-ID detection on Docker VPS (unchanged — already worked)
+The 4-strategy universal Telegram resolver from v9.6.9 already handled Docker correctly:
+1. **`openclaw config get`** — runs inside the container as the same `openclaw` binary that owns the config; finds chat ID regardless of file location.
+2. **JSON file scan** — explicit candidates list already included `/data/.openclaw/openclaw.json`, `/data/.openclaw/config.json`, and `/data/.openclaw/*.json` glob.
+3. **Recursive tree walk** — runs on any config found in step 2, so it works on whatever VPS config schema the client has.
+4. **`$TELEGRAM_CHAT_ID` env** — platform-independent.
+
+The Hostinger Docker setup mounts `/data` from the host into the container as a persistent volume. `openclaw.json` lives at `/data/.openclaw/openclaw.json` inside the container. install.sh runs inside the same container (curl-piped into bash there), so the detector `[ -d "/data/.openclaw" ]` correctly identifies the VPS path layout, and the Telegram resolver finds the chat ID via the CLI query or the JSON scan.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.7.9.
+- File header comment updated to v9.7.9.
+
+### Verified
+- `bash -n install.sh` — syntax OK.
+- `grep '$HOME/(\\.openclaw|Downloads|clawd|Library)'` — 0 hardcoded references outside the platform-detect block.
+- All 3 Telegram resolver code paths confirmed to include `/data/.openclaw/` in candidates.
+
+---
+
 ## v9.7.0 - May 13, 2026 - Multi-account Telegram cron support
 
 ### The bug

@@ -2,11 +2,19 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.7.8** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.7.9** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.7.9 (May 14, 2026) — Platform-aware paths for Hostinger Docker VPS
+
+VPS installs now correctly use `/data/...` instead of `/root/Downloads/...`. The Hostinger Docker container persists `/data` across rebuilds; the previous version's hardcoded `$HOME/Downloads/...` paths landed install artifacts inside the container, where they'd be lost on rebuild.
+
+Top-level platform detector added (`[ -d "/data/.openclaw" ]` → VPS); 34 hardcoded `$HOME` paths replaced; 3 Python heredocs updated to read `$OPENCLAW_JSON` from env instead of hardcoded `expanduser`. Telegram-ID detection on Docker VPS already worked via the 4-strategy universal resolver from v9.6.9 — `openclaw config get` runs inside the container and finds the chat ID regardless of where openclaw.json lives.
+
+See CHANGELOG.md for the complete diff inventory.
 
 ### What's New in v9.7.8 (May 13, 2026) — Multi-account Telegram cron support
 
