@@ -2,13 +2,21 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
-**Current Version: v10.0.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v10.0.1** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
+
+### What's New in v10.0.1 (May 14, 2026) — Stop breaking Telegram with rotation
+
+v9.7.7 added a `rotate_all_devices_to_full_scopes()` helper that, per the OpenClaw docs, was actually creating new pending scope upgrade requests. Those pending requests blocked the gateway from sending Telegram messages during install — exactly the failure mode the rotation was meant to prevent. Self-inflicted deadlock.
+
+v10.0.1 removes the rotation entirely, plus the two scope-approval helpers that were trying to clean up after it. Existing clients all have `operator.write` on their paired device (that's what their daily Telegram requires), so `openclaw message send` just works directly. No rotation, no approval, no retries, no user action.
+
+See CHANGELOG.md for the full root-cause analysis and removed-code list.
 
 ### What's New in v10.0.0 (May 14, 2026) — The split: Mac-only repo, bulletproof discovery
 

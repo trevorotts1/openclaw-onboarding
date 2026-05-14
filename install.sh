@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v10.0.0 — Mac mini
+#  OpenClaw Onboarding Installer v10.0.1 — Mac mini
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 #
 #  This installer is for Mac mini / macOS deployments of OpenClaw.
@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.0.0"
+ONBOARDING_VERSION="v10.0.1"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -516,16 +516,16 @@ send_telegram_progress() {
         return 0
     fi
 
-    # v9.7.8: defensive — protect against `set -euo pipefail` killing the
-    # install when openclaw command-substitutions return non-zero.
-    # Every openclaw call wrapped with `|| rc=$?` so set -e doesn't fire.
-
+    # v10.0.1 — direct send only, no scope manipulation.
+    # Every paired client has operator.write (that's what their daily Telegram
+    # usage requires). `openclaw message send` succeeds for them on the first
+    # call. No retries, no rotation, no approval — just send.
+    # Wrapped with `|| rc=$?` so `set -euo pipefail` doesn't kill the install
+    # if anything unexpected happens.
     local out="" rc=0
-    # Attempt 1: with --account
     local send_args=(message send --channel telegram --target "$TELEGRAM_TARGET_CACHED" --message "$message")
     [ -n "$TELEGRAM_ACCOUNT_CACHED" ] && send_args+=(--account "$TELEGRAM_ACCOUNT_CACHED")
 
-    rc=0
     out=$(openclaw "${send_args[@]}" 2>&1) || rc=$?
     echo "$out" >> "$LOG_FILE"
     if [ "$rc" -eq 0 ]; then
@@ -533,38 +533,11 @@ send_telegram_progress() {
         return 0
     fi
 
-    # If error is scope-related, re-approve and retry
-    if echo "$out" | grep -qiE "scope upgrade pending|pairing required|scope.*pending"; then
-        warn "Telegram send blocked by pending scope upgrade — re-approving..."
-        openclaw devices approve --latest >> "$LOG_FILE" 2>&1 || true
-        rc=0
-        out=$(openclaw "${send_args[@]}" 2>&1) || rc=$?
-        echo "$out" >> "$LOG_FILE"
-        if [ "$rc" -eq 0 ]; then
-            TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET_CACHED (after re-approval)"
-            return 0
-        fi
-    fi
-
-    # Attempt 2: without --account
-    if [ -n "$TELEGRAM_ACCOUNT_CACHED" ]; then
-        rc=0
-        out=$(openclaw message send --channel telegram --target "$TELEGRAM_TARGET_CACHED" --message "$message" 2>&1) || rc=$?
-        echo "$out" >> "$LOG_FILE"
-        if [ "$rc" -eq 0 ]; then
-            TELEGRAM_LAST_RESULT="sent:$TELEGRAM_TARGET_CACHED (no-account)"
-            return 0
-        fi
-    fi
-
-    # All attempts failed. Print actual error once so we know what's wrong.
+    # Send failed. Capture for end-of-install diagnostic. Don't retry, don't
+    # touch device scopes, don't prompt the user. Their Telegram is already
+    # paired and working; whatever this transient failure was, it shouldn't
+    # change their setup.
     TELEGRAM_LAST_RESULT="failed:see-$LOG_FILE"
-    if [ -z "${TELEGRAM_ERR_PRINTED:-}" ]; then
-        TELEGRAM_ERR_PRINTED=1
-        warn "openclaw message send FAILED. Actual error:"
-        echo "$out" | head -8 | sed 's/^/    /'
-        warn "(subsequent send failures will be silent to avoid spam)"
-    fi
     return 0   # NEVER kill the install — Telegram is optional
 }
 
@@ -1011,131 +984,17 @@ echo "╚═══════════════════════�
 echo ""
 note "Log file: $LOG_FILE"
 
-# v9.7.8: Auto-approve pending gateway scope upgrades BEFORE anything that
-# requires the gateway (Telegram sends, cron creates, message sends).
-# OpenClaw's security model rejects ALL gateway-touching CLI calls when a
-# scope upgrade is pending. The install must clear pending approvals first.
-#
-# v9.7.8: Breaks the scope-upgrade loop in OpenClaw 2026.5.x.
-# Behavior verified directly against the live 2026.5.7 CLI on the dev box
-# (not stale older issues). Current 2026.5.x operator scope set = 5 scopes:
-#   operator.admin, operator.approvals, operator.pairing,
-#   operator.read, operator.write
-# Devices paired before all 5 existed carry only a subset. Each gateway
-# operation that needs a missing scope triggers a new scope-upgrade
-# request — leading to repeated "scope upgrade pending approval" rejections.
-#
-# Canonical fix per https://docs.openclaw.ai/cli/devices (current docs site):
-# rotate every paired operator-role device with ALL 5 scopes upfront. After
-# rotation, the gateway issues no further upgrade requests for that device.
-# Caveat from the docs: rotation only works if the operator role itself is
-# already approved in the pairing contract — it can't mint a new role. Any
-# client whose Telegram agent already works has a valid contract, so this
-# applies to the exact failure mode we hit on 2026.5.7.
-rotate_all_devices_to_full_scopes() {
-    if ! command -v openclaw >/dev/null 2>&1; then
-        return 0
-    fi
-    local devices_json=""
-    devices_json=$(openclaw devices list --json 2>/dev/null) || return 0
-    [ -z "$devices_json" ] && return 0
-
-    # Extract every paired operator-role device ID that's missing one of the
-    # 5 canonical scopes (operator.admin, operator.approvals, operator.pairing,
-    # operator.write, operator.read).
-    local device_ids
-    device_ids=$(echo "$devices_json" | python3 -c "
-import sys, json
-try:
-    d = json.loads(sys.stdin.read())
-    paired = d.get('paired', []) if isinstance(d, dict) else []
-    needed = {'operator.admin','operator.approvals','operator.pairing','operator.write','operator.read'}
-    out = []
-    for p in paired:
-        if p.get('role') != 'operator': continue
-        have = set(p.get('scopes', []))
-        if needed - have:  # device is missing one or more
-            did = p.get('deviceId') or p.get('id')
-            if did: out.append(did)
-    for did in out:
-        print(did)
-except Exception:
-    pass
-" 2>/dev/null)
-
-    if [ -z "$device_ids" ]; then
-        return 0  # all devices already have full scopes
-    fi
-
-    note "Rotating operator devices to full scopes (breaks scope-upgrade loop per OpenClaw issue #21688)..."
-    local rotated=0
-    while IFS= read -r did; do
-        [ -z "$did" ] && continue
-        if openclaw devices rotate \
-            --device "$did" \
-            --role operator \
-            --scope operator.admin \
-            --scope operator.approvals \
-            --scope operator.pairing \
-            --scope operator.write \
-            --scope operator.read \
-            >> "$LOG_FILE" 2>&1; then
-            rotated=$((rotated + 1))
-        fi
-    done <<< "$device_ids"
-    if [ "$rotated" -gt 0 ]; then
-        success "Rotated $rotated device(s) to full operator scopes. Telegram + cron commands will now work."
-    fi
-}
-rotate_all_devices_to_full_scopes
-
-approve_pending_scopes_early() {
-    if ! command -v openclaw >/dev/null 2>&1; then
-        return 0
-    fi
-    local pending
-    pending=$(openclaw devices list --json 2>/dev/null || echo "")
-    [ -z "$pending" ] && return 0
-
-    local has_pending
-    has_pending=$(echo "$pending" | python3 -c "
-import sys, json
-try:
-    d = json.loads(sys.stdin.read())
-    items = d.get('pending', []) if isinstance(d, dict) else (d if isinstance(d, list) else [])
-    if items: print('yes')
-except Exception:
-    pass
-" 2>/dev/null)
-    [ "$has_pending" != "yes" ] && return 0
-
-    note "Pre-flight: detected pending gateway scope/pairing approval — auto-approving so install can use gateway (Telegram, cron, message-send)..."
-    if openclaw devices approve --latest >> "$LOG_FILE" 2>&1; then
-        success "Pre-flight scope approval succeeded. Gateway commands will work for the rest of this install."
-    else
-        local req_id
-        req_id=$(echo "$pending" | python3 -c "
-import sys, json
-try:
-    d = json.loads(sys.stdin.read())
-    items = d.get('pending', []) if isinstance(d, dict) else (d if isinstance(d, list) else [])
-    for it in items:
-        rid = it.get('requestId') or it.get('id')
-        if rid: print(rid); break
-except Exception:
-    pass
-" 2>/dev/null)
-        if [ -n "$req_id" ] && openclaw devices approve "$req_id" >> "$LOG_FILE" 2>&1; then
-            success "Pre-flight scope approval succeeded (by request ID: $req_id)."
-        else
-            warn "Pre-flight scope approval FAILED. Telegram notifications + cron creation will likely fail."
-            warn "Manual fix BEFORE re-running:"
-            warn "  openclaw devices list      (see pending requests)"
-            warn "  openclaw devices approve --latest"
-        fi
-    fi
-}
-approve_pending_scopes_early
+# v10.0.1 — REMOVED rotate_all_devices_to_full_scopes() + approve_pending_scopes_early().
+# Per https://docs.openclaw.ai/gateway/operator-scopes.md:
+#   "Already paired devices do not get broader access silently: reconnects
+#   that ask for a broader role or broader scopes create a new pending
+#   upgrade request."
+# The previous rotation call asked for 5 scopes — when the device didn't
+# already have all 5, rotation CREATED a pending upgrade request, which
+# then blocked every gateway call (including the Telegram send the rotation
+# was supposed to enable). Self-inflicted deadlock.
+# Every existing client has a paired device with operator.write — that's the
+# only scope needed for `openclaw message send`. We just call it directly.
 
 send_telegram_progress "Starting OpenClaw Onboarding install ${ONBOARDING_VERSION}..."
 
@@ -2049,76 +1908,10 @@ install_weekly_cron() {
         return 0
     fi
 
-    # v9.7.8: Auto-approve any pending device pairing / scope upgrade requests
-    # BEFORE attempting cron operations. OpenClaw's security model requires
-    # the owner to explicitly approve any new scope (like cron-write). When the
-    # install adds new capabilities, the gateway rejects the connection with
-    # "scope upgrade pending approval" until the owner approves.
-    #
-    # We auto-approve the latest pending request because the OWNER is the one
-    # running this install script — the consent is implicit.
-    approve_pending_scopes() {
-        local pending
-        # `openclaw devices list --json` returns pending pairings/scope upgrades
-        pending=$(openclaw devices list --json 2>/dev/null || echo "")
-        if [ -z "$pending" ]; then
-            return 0  # Can't query; assume nothing pending
-        fi
-        local has_pending
-        has_pending=$(echo "$pending" | python3 -c "
-import sys, json
-try:
-    data = json.loads(sys.stdin.read())
-    if isinstance(data, dict):
-        items = data.get('pending', []) or data.get('items', []) or []
-    elif isinstance(data, list):
-        items = data
-    else:
-        items = []
-    if items:
-        print('yes')
-except Exception:
-    pass
-" 2>/dev/null)
-        if [ "$has_pending" = "yes" ]; then
-            note "Detected pending device pairing/scope-upgrade request — auto-approving..."
-            local approve_out
-            approve_out=$(openclaw devices approve --latest 2>&1)
-            local rc=$?
-            if [ "$rc" -eq 0 ]; then
-                success "Approved pending scope upgrade. Cron commands will now work."
-            else
-                # --latest sometimes only previews; try fetching requestId and approving by ID
-                local req_id
-                req_id=$(echo "$pending" | python3 -c "
-import sys, json
-try:
-    data = json.loads(sys.stdin.read())
-    items = data.get('pending', []) or data.get('items', []) or (data if isinstance(data, list) else [])
-    for it in items:
-        rid = it.get('requestId') or it.get('id')
-        if rid:
-            print(rid); break
-except Exception:
-    pass
-" 2>/dev/null)
-                if [ -n "$req_id" ]; then
-                    if openclaw devices approve "$req_id" >> "$LOG_FILE" 2>&1; then
-                        success "Approved pending scope upgrade by request ID: $req_id"
-                    else
-                        warn "Scope approval failed. Manual fix:"
-                        warn "  openclaw devices list   (see pending requests)"
-                        warn "  openclaw devices approve --latest   (approve the most recent)"
-                        warn "Then re-run the install. Cron creation needs this approval."
-                    fi
-                else
-                    warn "Pending request detected but could not extract request ID."
-                    warn "Run manually: openclaw devices approve --latest"
-                fi
-            fi
-        fi
-    }
-    approve_pending_scopes
+    # v10.0.1 — REMOVED approve_pending_scopes() pre-flight here too. Same reason
+    # as the top-of-script removal: every paired client already has operator.write
+    # (their daily Telegram usage requires it). `openclaw cron create` works
+    # directly without scope manipulation.
 
     # Skip if cron already exists (idempotent)
     if openclaw cron list 2>/dev/null | grep -qi "weekly-onboarding-update"; then
@@ -2318,6 +2111,21 @@ print(f'{account}|{agent_id}')
 }
 
 install_weekly_cron
+
+# ----------------------------------------------------------
+# Telegram diagnostic note (v10.0.1)
+# ----------------------------------------------------------
+# Safety net only. Existing clients have working paired Telegram; this should
+# never fire. If `message send` did fail somewhere, point to the log so the
+# install team can debug. User takes no action — their daily Telegram is
+# already paired and unaffected by this install.
+case "$TELEGRAM_LAST_RESULT" in
+    sent:*|"") : ;;
+    *)
+        warn "Telegram progress messages didn't all go through (this install's notifications only — your daily Telegram chats are unaffected)."
+        warn "Install log: $LOG_FILE"
+        ;;
+esac
 
 # ----------------------------------------------------------
 # Final: Restart gateway (agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)

@@ -1,3 +1,61 @@
+## v10.0.1 - May 14, 2026 - Stop breaking Telegram with rotation
+
+### The bug
+Floyd ran v9.7.11 install on his Mac. His paired Telegram had been working fine before the install — he uses it daily to talk to his agent. The install broke it. Every Telegram progress message during install failed with:
+
+> `GatewayTransportError: gateway closed (1008): pairing required: device is asking for more scopes than currently approved`
+
+Same pattern would have hit v10.0.0 (no functional change in scope handling from 9.7.11 → 10.0.0). This release fixes it.
+
+### What was causing it
+The install was calling `rotate_all_devices_to_full_scopes()` at startup. That function ran `openclaw devices rotate --device <id> --role operator --scope operator.admin --scope operator.approvals --scope operator.pairing --scope operator.write --scope operator.read` for every operator device.
+
+Per the OpenClaw docs (https://docs.openclaw.ai/gateway/operator-scopes.md):
+
+> "Already paired devices do not get broader access silently: reconnects that ask for a broader role or broader scopes create a new pending upgrade request."
+
+So when the rotation asked for scopes the device didn't already have, OpenClaw created a new pending scope upgrade request. The gateway then refused all subsequent connections (including the Telegram send the rotation was supposed to enable) until that pending request was approved. The approval call failed because:
+1. `openclaw devices approve --latest` only PREVIEWS pending requests, doesn't approve them (documented behavior I had missed).
+2. `openclaw devices approve <requestId>` requires the calling device to have `operator.approvals` — which it doesn't, since that's exactly the scope being requested.
+
+The install was creating its own scope deadlock and couldn't escape it. Self-inflicted failure mode that's been present since v9.7.7.
+
+### What was removed
+- `rotate_all_devices_to_full_scopes()` function and its call. Gone.
+- `approve_pending_scopes_early()` function and its call. Gone.
+- `approve_pending_scopes()` nested function inside `install_weekly_cron`. Gone.
+- Scope-retry block inside `send_telegram_progress()` that called `openclaw devices approve --latest` mid-flight when it saw a scope error. Gone.
+
+### What stayed
+- Bulletproof 23-location Telegram chat ID resolver — unchanged.
+- Bulletproof 10-source credential discovery — unchanged.
+- Bulletproof workspace resolver — unchanged.
+- `send_telegram_progress()` still sends the message via `openclaw message send`. Just one direct call now. No retries on scope errors (because we don't create scope problems anymore).
+
+### What `send_telegram_progress` does now
+1. Resolve chat ID via the bulletproof 23-location resolver (cached after first call).
+2. Build the `openclaw message send` command with `--target` and optional `--account`.
+3. Run it. Capture stdout/stderr to the install log.
+4. On success: mark sent, return 0.
+5. On failure: mark failed:see-log, return 0. Don't touch device scopes, don't retry, don't prompt the user.
+
+### Safety net at end of install
+If `TELEGRAM_LAST_RESULT` indicates failure (which shouldn't happen on a paired install), prints one short warning:
+
+```
+⚠️ Telegram progress messages didn't all go through (this install's notifications only — your daily Telegram chats are unaffected).
+⚠️ Install log: /tmp/openclaw-install-XXXX.log
+```
+
+No recovery panel. No manual approval instructions. No user action required. Their existing paired Telegram continues to work after the install just like before.
+
+### Net effect for clients
+- Floyd reruns the install → no rotation → no pending request created → his paired device's `operator.write` scope is used directly by `openclaw message send` → Telegram progress message delivers → install completes normally.
+- Every existing client (all have paired working Telegram) → same outcome. Install becomes faster and quieter.
+- Fresh install with no paired device → Telegram resolver finds no chat ID → install proceeds without progress messages → backup-instructions panel handles the rest at the end (unchanged behavior).
+
+---
+
 ## v10.0.0 - May 14, 2026 - The split: Mac-only repo, bulletproof discovery
 
 ### What changed
