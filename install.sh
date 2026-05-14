@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v10.0.1 — Mac mini
+#  OpenClaw Onboarding Installer v10.0.2 — Mac mini
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 #
 #  This installer is for Mac mini / macOS deployments of OpenClaw.
@@ -25,9 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.0.1"
-LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
-exec 1> >(tee -a "$LOG_FILE") 2>&1
+ONBOARDING_VERSION="v10.0.2"
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)
@@ -42,6 +40,7 @@ OC_AUTH_PROFILES="$HOME/.openclaw/agents/main/agent/auth-profiles.json"
 OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
 OC_DOWNLOADS="$HOME/Downloads"
 OC_BACKUPS="$HOME/Downloads/openclaw-backups"
+OC_INSTALL_LOG_DIR="$HOME/Downloads/openclaw-backups/install-logs"
 OC_LEGACY_CLAWD="$HOME/clawd"        # most existing clients use this as workspace
 OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"  # OpenClaw docs default for new installs
 
@@ -52,7 +51,13 @@ if [ -d "/data/.openclaw" ] && [ ! -d "$HOME/.openclaw" ]; then
     exit 1
 fi
 
-mkdir -p "$OC_BACKUPS"
+mkdir -p "$OC_BACKUPS" "$OC_INSTALL_LOG_DIR"
+
+# Durable log location (v10.0.2): /tmp is wiped on reboot. Persist install
+# logs alongside backups so they survive a restart and can be referenced when
+# reporting issues.
+LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
+exec 1> >(tee -a "$LOG_FILE") 2>&1
 
 # ----------------------------------------------------------
 # Bash 3.2 Compatible UI Helpers
@@ -2115,15 +2120,12 @@ install_weekly_cron
 # ----------------------------------------------------------
 # Telegram diagnostic note (v10.0.1)
 # ----------------------------------------------------------
-# Safety net only. Existing clients have working paired Telegram; this should
-# never fire. If `message send` did fail somewhere, point to the log so the
-# install team can debug. User takes no action — their daily Telegram is
-# already paired and unaffected by this install.
+# Surfaces just the Telegram-specific outcome — the full install summary
+# below will also show any errors/warnings from the entire run.
 case "$TELEGRAM_LAST_RESULT" in
     sent:*|"") : ;;
     *)
         warn "Telegram progress messages didn't all go through (this install's notifications only — your daily Telegram chats are unaffected)."
-        warn "Install log: $LOG_FILE"
         ;;
 esac
 
@@ -2137,3 +2139,51 @@ if command -v openclaw >/dev/null 2>&1; then
 else
     warn "openclaw command not found - restart manually: openclaw gateway restart"
 fi
+
+# ----------------------------------------------------------
+# Install summary (v10.0.2) — scan log for warnings/errors, print actionable
+# report block right in the terminal so issues are visible without scrolling.
+# ----------------------------------------------------------
+print_install_summary() {
+    # Patterns that indicate something went wrong:
+    #   warn() prints `  ⚠️  ...`
+    #   error() prints `  ✗ ERROR: ...`
+    #   openclaw gateway/transport errors include these tokens
+    local err_pat='^  ✗ ERROR:|GatewayClientRequestError|GatewayTransportError|gateway connect failed|scope upgrade pending|pairing required'
+    local warn_pat='^  ⚠️'
+
+    local err_count warn_count
+    err_count=$(grep -cE "$err_pat" "$LOG_FILE" 2>/dev/null | head -1)
+    warn_count=$(grep -cE "$warn_pat" "$LOG_FILE" 2>/dev/null | head -1)
+    err_count=${err_count:-0}
+    warn_count=${warn_count:-0}
+
+    echo ""
+    echo "══════════════════════════════════════════════════════════════════════"
+    if [ "$err_count" -eq 0 ] && [ "$warn_count" -eq 0 ]; then
+        echo "  ✅ INSTALL COMPLETED CLEANLY — no warnings or errors detected"
+        echo ""
+        echo "     Log (durable, survives reboot):"
+        echo "       $LOG_FILE"
+        echo "══════════════════════════════════════════════════════════════════════"
+        return 0
+    fi
+
+    echo "  ⚠️  PLEASE REPORT THE FOLLOWING TO THE TRACKER"
+    echo "     ${err_count} error(s), ${warn_count} warning(s) detected during install."
+    echo ""
+    echo "  ─── First 10 issues (most recent first) ──────────────────────────────"
+    grep -nE "$err_pat|$warn_pat" "$LOG_FILE" 2>/dev/null | tail -10 | sed 's/^/     /'
+    echo ""
+    echo "  ─── Full log (durable, survives reboot) ──────────────────────────────"
+    echo "     $LOG_FILE"
+    echo ""
+    echo "  ─── To copy the full log to your clipboard ───────────────────────────"
+    echo "     cat \"$LOG_FILE\" | pbcopy"
+    echo ""
+    echo "  ─── Report at ────────────────────────────────────────────────────────"
+    echo "     https://github.com/trevorotts1/openclaw-onboarding/issues/new"
+    echo "     (paste the log contents into the issue body)"
+    echo "══════════════════════════════════════════════════════════════════════"
+}
+print_install_summary

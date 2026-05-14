@@ -1,3 +1,68 @@
+## v10.0.2 - May 14, 2026 - Durable logs + actionable terminal error summary
+
+### Durable log location
+Install log moved from `/tmp/openclaw-install-...log` (wiped on reboot) to:
+
+```
+~/Downloads/openclaw-backups/install-logs/openclaw-install-YYYYMMDD-HHMMSS.log
+```
+
+The log directory is created automatically at install start. Logs persist across reboots and live alongside the existing config backups, so a user reporting an issue days later can still attach the exact log from when the install ran.
+
+### Terminal error summary at end of install
+At the very end of every install, after the gateway restart, a new summary block prints to the terminal that scans the log for warnings/errors and reports them in one visible place. No more scrolling 200 lines to find what went wrong.
+
+**If clean:**
+```
+══════════════════════════════════════════════════════════════════════
+  ✅ INSTALL COMPLETED CLEANLY — no warnings or errors detected
+     Log (durable, survives reboot):
+       /Users/flo/Downloads/openclaw-backups/install-logs/openclaw-install-20260514-093045.log
+══════════════════════════════════════════════════════════════════════
+```
+
+**If issues found:**
+```
+══════════════════════════════════════════════════════════════════════
+  ⚠️  PLEASE REPORT THE FOLLOWING TO THE TRACKER
+     2 error(s), 3 warning(s) detected during install.
+
+  ─── First 10 issues (most recent first) ──────────────────────────────
+     142:  ⚠️  Telegram send blocked by pending scope upgrade
+     178:  ✗ ERROR: openclaw cron create failed
+     ...
+
+  ─── Full log (durable, survives reboot) ──────────────────────────────
+     /Users/flo/Downloads/openclaw-backups/install-logs/openclaw-install-...log
+
+  ─── To copy the full log to your clipboard ───────────────────────────
+     cat "..." | pbcopy
+
+  ─── Report at ────────────────────────────────────────────────────────
+     https://github.com/trevorotts1/openclaw-onboarding/issues/new
+     (paste the log contents into the issue body)
+══════════════════════════════════════════════════════════════════════
+```
+
+### Patterns detected
+The summary scans the log for:
+- `^  ✗ ERROR:` — anything printed via the `error()` helper
+- `^  ⚠️` — anything printed via the `warn()` helper
+- `GatewayClientRequestError` / `GatewayTransportError` / `gateway connect failed` — OpenClaw gateway-level failures
+- `scope upgrade pending` / `pairing required` — known scope/pairing problems
+
+If any of these appear in the log, the summary block fires. If none appear, the clean-install block fires.
+
+### Why this matters
+Before: when a client hit a problem, they'd see scattered warnings during the install but not know what to do. The log was in `/tmp` which dies on reboot.
+
+Now: every install ends with a clear PASS or FAIL block. If FAIL, the exact line numbers, the durable log path, the copy command, and the report URL are all in one place. Floyd (or anyone) can copy the log to clipboard with one command and paste it into a GitHub issue.
+
+### No functional changes to the install itself
+v10.0.1's removal of the rotation/approval helpers stays. v10.0.2 is purely about observability.
+
+---
+
 ## v10.0.1 - May 14, 2026 - Stop breaking Telegram with rotation
 
 ### The bug
