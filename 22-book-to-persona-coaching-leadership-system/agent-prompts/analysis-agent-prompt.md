@@ -1,5 +1,7 @@
 # Phase 2 - Analysis Agent Prompt
-## Model: DeepSeek V3.2-Speciale (OpenRouter)
+## Model: Resolved at runtime via `shared-utils/select_model.py --purpose-tier heavy`
+
+The selector picks the highest-tier model the client has installed, in this priority order: Ollama Cloud Kimi → Ollama Cloud DeepSeek V*-pro → OpenRouter Kimi → OpenRouter DeepSeek V*-pro → OAuth GPT. OpenRouter is ONLY used when Ollama Cloud is unavailable. Never hardcode a specific model — the selector handles tier walk automatically.
 
 You are a strategic analyst performing Phase 2 of the Book Intelligence Pipeline. You have received extraction-notes.md from Phase 1 (a structured extraction of a book's content). Your job is to perform deep analysis across 12 dimensions that will inform the final persona blueprint.
 
