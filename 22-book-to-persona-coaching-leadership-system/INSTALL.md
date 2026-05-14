@@ -327,14 +327,15 @@ _find_key "GOOGLE_API_KEY" || _find_key "GEMINI_API_KEY"
 ```
 If missing, you MUST add your Google API key to `~/.openclaw/secrets/.env`. The multimodal embedding engine will crash without it.
 
-### Kimi K2.5 (Phase 1 - Primary) OR MiMo V2 Pro (Phase 1 - Fallback)
+### Phase 1 — Large-context model (Ollama Cloud preferred, OpenRouter fallback)
 
-Phase 1 needs a large-context model for book extraction. The pipeline tries models in this order:
+Phase 1 needs a large-context model for book extraction. The pipeline uses `shared-utils/select_model.py` which enforces this priority order:
 
-1. **Kimi K2.5 via OpenRouter** (262K context) - Primary, most clients have OpenRouter
-2. **MiMo V2 Pro via OpenRouter** (1M context) - Largest context, fallback
-3. **GPT 5.4 via OpenAI Codex** (196K context) - If Codex OAuth is active
-4. **Gemini 3.1 Pro via OpenRouter** (1M context) - If OpenRouter key exists
+1. **Ollama Cloud Kimi** (`ollama/kimi-k*:cloud`, 262K context) - PREFERRED. Subscription pricing, no per-call cost beyond Ollama plan.
+2. **Ollama Cloud DeepSeek V*-pro** (`ollama/deepseek-v*-pro:cloud`, 1M context) - Largest context, also subscription-billed.
+3. **OpenRouter Kimi** (`openrouter/moonshot/kimi-k*`, 262K context) - Per-token billed fallback when Ollama Cloud is unavailable.
+4. **OpenRouter DeepSeek V*-pro** (`openrouter/deepseek/deepseek-v*-pro`, 1M context) - Per-token billed largest-context fallback.
+5. **OAuth GPT** (`codex/gpt-*` or `openai-codex/gpt-*`, 196K context) - Subscription, used if no Ollama/OpenRouter Kimi available.
 
 Check which models are available:
 ```bash
@@ -356,19 +357,16 @@ _find_key() {
   return 1
 }
 
-echo "Phase 1 model availability:"
-_find_key "OPENROUTER_API_KEY" && echo "  -> MiMo V2 Pro or Gemini 3.1 Pro available"
-_find_key "MOONSHOT_API_KEY" && echo "  -> Kimi K2.5 available"
+echo "Model availability (Ollama Cloud preferred):"
+_find_key "OLLAMA_API_KEY" && echo "  ✓ Tier 1/2 (Ollama Cloud Kimi / DeepSeek-pro) available"
+_find_key "OPENROUTER_API_KEY" && echo "  ✓ Tier 3/4 (OpenRouter fallbacks) available"
 # Codex OAuth checked in Step 4 above
 ```
 
 At least ONE model must be available. If none are found, the install cannot proceed.
 
-### DeepSeek V3.2-Speciale (Phase 2)
-Routes via OpenRouter. Check across all known env files:
-```bash
-_find_key "OPENROUTER_API_KEY"
-```
+### Phase 2 — Heavy reasoning model (same chain as Phase 1)
+Phase 2 uses the same `select_model.py --purpose-tier heavy` chain. Ollama Cloud first, OpenRouter only as fallback. **Do not configure Phase 2 to call OpenRouter directly** — the selector handles tier walk automatically.
 
 ### GPT-5.3 Codex (Phase 3)
 Routes via OpenClaw OAuth. Check:
@@ -533,43 +531,34 @@ else:
 
 If no PDFs exist yet, skip this sub-step - extraction will be tested on the first real book run.
 
-### 8b - Verify Phase 1 model connectivity (best available model)
+### 8b - Verify model connectivity (Ollama Cloud preferred, OpenRouter fallback)
 
-Test whichever Phase 1 model the client has access to. Try in order:
+The pipeline uses `shared-utils/select_model.py` which enforces Ollama-Cloud-first priority. Verify which tier is available:
 
-**Option 1: MiMo V2 Pro via OpenRouter (preferred)**
+**Tier 1 (PREFERRED): Ollama Cloud Kimi**
+```bash
+OLLAMA_KEY="$(grep OLLAMA_API_KEY ~/.openclaw/secrets/.env 2>/dev/null | cut -d= -f2 || python3 -c "import json; print(json.load(open('${HOME}/.openclaw/openclaw.json')).get('models',{}).get('providers',{}).get('ollama',{}).get('apiKey',''))")"
+curl -s https://ollama.com/api/chat \
+  -H "Authorization: Bearer $OLLAMA_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"kimi-k2.6:cloud","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"stream":false}' \
+  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Tier 1 (Ollama Cloud Kimi):', r.get('message',{}).get('content','FAILED'))"
+```
+
+**Tier 2 (FALLBACK): OpenRouter Kimi — only used when Ollama Cloud Kimi is unavailable**
 ```bash
 curl -s https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $(grep OPENROUTER_API_KEY ~/.openclaw/secrets/.env | cut -d= -f2)" \
   -H "Content-Type: application/json" \
-  -d '{"model":"xiaomi/mimo-v2-pro","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
-  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Phase 1 (MiMo):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
+  -d '{"model":"moonshotai/kimi-k2","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
+  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Tier 2 (OpenRouter Kimi):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
 ```
 
-**Option 2: Kimi K2.5 via Moonshot (if Moonshot key exists)**
-```bash
-curl -s https://api.moonshot.cn/v1/chat/completions \
-  -H "Authorization: Bearer $(grep MOONSHOT_API_KEY ~/.openclaw/secrets/.env | cut -d= -f2)" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"kimi-k2.5","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
-  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Phase 1 (Kimi):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
-```
+**Expected:** Tier 1 (Ollama Cloud Kimi) should connect. The selector only walks down to OpenRouter if Tier 1 is unavailable in the client's openclaw.json.
 
-**Option 3: GPT 5.4 via Codex OAuth (already verified in Step 4)**
+### 8c - Verify Phase 2 model connectivity (same Ollama-first chain)
 
-Report which model connected and use that for Phase 1.
-
-### 8c - Verify Phase 2 model connectivity (DeepSeek via OpenRouter)
-
-```bash
-curl -s https://openrouter.ai/api/v1/chat/completions \
-  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY ~/.openclaw/secrets/.env | cut -d= -f2)" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"deepseek/deepseek-chat","messages":[{"role":"user","content":"Reply with only: CONNECTED"}],"max_tokens":10}' \
-  | python3 -c "import json,sys; r=json.load(sys.stdin); print('Phase 2 (DeepSeek):', r.get('choices',[{}])[0].get('message',{}).get('content','FAILED'))"
-```
-
-**Expected output:** `Phase 2 (DeepSeek): CONNECTED`
+Phase 2 uses the same heavy-reasoning chain as Phase 1 — Ollama Cloud Kimi preferred, OpenRouter Kimi as fallback, DeepSeek V*-pro as tertiary. The selector picks whichever the client has. Use the Tier 1 / Tier 2 tests above. **Do not call OpenRouter as the primary verification** — that contradicts the Ollama-Cloud-first policy.
 If it fails, verify OPENROUTER_API_KEY is correct.
 
 ### 8d - Verify Phase 3 model connectivity (Codex OAuth)
@@ -693,9 +682,9 @@ Run through this checklist:
 - [ ] ebooklib installed
 - [ ] Calibre ebook-convert available
 - [ ] Master files folder located or created
-- [ ] Moonshot API key confirmed in ~/.openclaw/secrets/.env
-- [ ] OpenRouter API key confirmed in ~/.openclaw/secrets/.env
-- [ ] Codex OAuth token confirmed and not expired
+- [ ] Ollama Cloud key confirmed (`OLLAMA_API_KEY` or `models.providers.ollama.apiKey` in openclaw.json) — PRIMARY for Phase 1 + 2
+- [ ] OpenRouter API key confirmed — fallback only, used when Ollama Cloud is unavailable
+- [ ] Codex OAuth token confirmed and not expired (Phase 3 primary)
 - [ ] Gemini Vector Database coaching-personas added and embedded (Step 5)
 - [ ] Gemini Engine test query returns results
 - [ ] Core files updated per CORE_UPDATES.md (Step 7)

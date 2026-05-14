@@ -103,7 +103,9 @@ Spawn via Antfarm or TaskFlow:
 ```
 node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow run content-publishing-engine "Publish: [topic]" --vars="brand=[from identity.md: brand name]"
 ```
-Or subagent: `sessions_spawn task="Run Content Publishing Engine on [topic]" runtime="subagent" model="openrouter/xiaomi/mimo-v2-pro"`
+Or subagent (model must be from the Ollama-Cloud-first chain — see `shared-utils/select_model.py --purpose-tier mid`):
+`sessions_spawn task="Run Content Publishing Engine on [topic]" runtime="subagent" model="ollama/minimax-m2.7:cloud"`
+Fallback if Ollama Cloud Minimax isn't available: `model="openrouter/xiaomi/mimo-v2-pro"`. Never hardcode the OpenRouter option as the primary.
 
 ## Variable Reference
 - `[from identity.md: brand name]`, `[from identity.md: brand voice]`

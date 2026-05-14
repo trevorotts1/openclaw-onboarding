@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v10.0.3 — Mac mini
+#  OpenClaw Onboarding Installer v10.1.0 — Mac mini
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 #
 #  This installer is for Mac mini / macOS deployments of OpenClaw.
@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.0.3"
+ONBOARDING_VERSION="v10.1.0"
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)

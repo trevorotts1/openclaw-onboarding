@@ -2,13 +2,19 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
-**Current Version: v10.0.3** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v10.1.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
+
+### What's New in v10.1.0 (May 14, 2026) — Ollama Cloud first, OpenRouter as fallback
+
+Skills (especially the Skill 22 book-to-persona pipeline and Skill 35 social-media-planner) had legacy documentation that defaulted heavy-reasoning calls to OpenRouter even when Ollama Cloud Kimi / DeepSeek-pro was available. Ollama Cloud is subscription-billed (cheap) while OpenRouter is per-token (expensive), so the wrong default was costing real money on every install.
+
+The `shared-utils/select_model.py` selector was already correctly ordered Ollama-first. v10.1.0 fixes the stale skill docs (SKILL.md tables, INSTALL.md verify steps, QC.md checklists, agent prompts) to match. Clients with Ollama Cloud configured will now correctly route through it for heavy reasoning; OpenRouter only fires as fallback when Ollama Cloud is unavailable.
 
 ### What's New in v10.0.3 (May 14, 2026) — CLI scope auto-repair
 

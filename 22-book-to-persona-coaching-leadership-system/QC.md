@@ -45,12 +45,12 @@ Confirm these specific folders exist inside the personas directory:
 - [ ] `pipeline/orchestrator.py` exists (or equivalent pipeline script)
 - [ ] `pipeline-status.json` exists (may be empty `{}` on first install — that is acceptable)
 
-### Secrets
+### Secrets (Ollama Cloud preferred, OpenRouter as fallback)
 - [ ] `secrets/.env` (in your agent workspace) exists
-- [ ] `GOOGLE_API_KEY` entry present in `.env` (Gemini indexing / retrieval)
-- [ ] `MOONSHOT_API_KEY` entry present in `.env` (Phase 1 extraction)
-- [ ] `OPENROUTER_API_KEY` entry present in `.env` (Phase 2 analysis)
-- [ ] `OPENAI_API_KEY` entry present in `.env` (Phase 3 synthesis)
+- [ ] `GOOGLE_API_KEY` entry present in `.env` (Gemini indexing / retrieval) — always required
+- [ ] `OLLAMA_API_KEY` entry present (Tier 1 + 2 primary — Ollama Cloud Kimi / DeepSeek-pro)
+- [ ] `OPENROUTER_API_KEY` entry present (Tier 3 + 4 fallback only — used when Ollama Cloud is unavailable)
+- [ ] `OPENAI_API_KEY` entry present (Tier 5 OAuth GPT fallback for Phase 3)
 
 **HARD FAIL:** Any missing file from skill root, agent-prompts, or pre-built personas folder = installation incomplete.
 
@@ -104,7 +104,7 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 Answer each question without looking at the files. These confirm the agent has internalized the skill, not just installed it.
 
 **Q1: What are the three pipeline phases and which model handles each?**
-- Expected: Phase 1 = Kimi K2.5 (Moonshot direct API), Phase 2 = DeepSeek V3.2-Speciale (OpenRouter), Phase 3 = GPT-5.4 Codex (OpenClaw OAuth)
+- Expected: Phase 1 + Phase 2 = Ollama Cloud Kimi/DeepSeek-pro (per `shared-utils/select_model.py --purpose-tier heavy`), Phase 3 = OAuth GPT preferred. OpenRouter only appears as primary if the client's openclaw.json has NO Ollama Cloud models.
 
 **Q2: What triggers a Phase 3 fallback from GPT-5.4 Codex to Kimi K2.5?**
 - Expected: Any of — API error, rate limit (429), HTTP timeout (30 min Phases 1/2, 60 min Phase 3 — v9.5.2), output under 5,000 characters, any error message in the response
@@ -343,7 +343,7 @@ To declare this skill **INSTALLED AND OPERATIONAL**, ALL of the following must b
 - [ ] All skill root files present
 - [ ] All 3 agent prompt files present
 - [ ] Personas folder exists with at least 5 pre-built personas, each containing all 3 required files
-- [ ] Secrets `.env` file contains all required API key entries (`GOOGLE_API_KEY`, `MOONSHOT_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`)
+- [ ] Secrets `.env` file contains all required API key entries: `GOOGLE_API_KEY` (always required), `OLLAMA_API_KEY` (PRIMARY — Ollama Cloud Kimi / DeepSeek-pro), `OPENROUTER_API_KEY` (fallback only), `OPENAI_API_KEY` (OAuth GPT for Phase 3)
 
 **Core File Updates (Section 2)**
 - [ ] AGENTS.md updated with `## Book-to-Persona Skill (Installed)` and Persona Reflex

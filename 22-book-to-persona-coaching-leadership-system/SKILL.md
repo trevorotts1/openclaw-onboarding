@@ -55,7 +55,7 @@ All dependencies must be installed and verified before running the pipeline.
 | lxml | XML parsing (ebooklib uses this) | `pip3 install lxml` | `python3 -c "import lxml; print('PASS')"` |
 | Calibre (ebook-convert) | Kindle format conversion | Mac: `brew install --cask calibre`<br>Linux: `sudo apt-get install calibre` | `ebook-convert --version` |
 | GOOGLE_API_KEY env var | Gemini Engine | Add to `secrets/.env` (in your agent workspace) | `grep GOOGLE_API_KEY secrets/.env` |
-| MOONSHOT_API_KEY or OpenRouter | Phase 1 extraction | Add to `secrets/.env` (in your agent workspace) | `grep MOONSHOT_API_KEY secrets/.env` |
+| Ollama Cloud (preferred) or OpenRouter (fallback) | Phase 1 extraction | Ollama: `OLLAMA_API_KEY` in env or `models.providers.ollama.apiKey` in openclaw.json. Fallback: OpenRouter via `OPENROUTER_API_KEY` | `grep OLLAMA_API_KEY secrets/.env` or check openclaw.json |
 
 **One-line install for all pip packages:**
 ```bash
@@ -165,11 +165,18 @@ The script will:
 
 ## Model Routing
 
-| Phase | Model | Route | Fallback |
-|-------|-------|-------|----------|
-| Phase 1 - Extraction | Kimi K2.5 | Moonshot direct API (api.moonshot.ai/v1) | openrouter/moonshotai/kimi-k2.5 |
-| Phase 2 - Analysis | DeepSeek V3.2 | OpenRouter (openrouter.ai) | None |
-| Phase 3 - Synthesis | GPT-5.4 Codex | OpenAI OAuth (OpenClaw) | Kimi K2.5 |
+**All model selection runs through `shared-utils/select_model.py` which enforces Ollama-Cloud-first priority. The selector picks whatever the client has installed, walking down the chain only when a higher tier is unavailable. See `PIPELINE.md` for the full per-phase chain.**
+
+| Phase | Primary (Tier 1) | Secondary | Tertiary | Fallback |
+|-------|------------------|-----------|----------|----------|
+| Phase 1 - Extraction | `ollama/kimi-k*:cloud` (Ollama Cloud Kimi) | `ollama/deepseek-v*-pro:cloud` | `openrouter/moonshot/kimi-k*` | `openrouter/deepseek/deepseek-v*-pro` |
+| Phase 2 - Analysis | `ollama/kimi-k*:cloud` (Ollama Cloud Kimi) | `ollama/deepseek-v*-pro:cloud` | `openrouter/moonshot/kimi-k*` | `openrouter/deepseek/deepseek-v*-pro` |
+| Phase 3 - Synthesis | `codex/gpt-*` or `openai-codex/gpt-*` (OAuth GPT, no per-call cost) | `ollama/kimi-k*:cloud` (Ollama Cloud Kimi) | `openrouter/moonshot/kimi-k*` | — |
+
+**ABSOLUTE RULES (enforced by the selector):**
+- Ollama Cloud ALWAYS preferred over OpenRouter when both are available — Ollama Cloud has subscription pricing while OpenRouter is per-token billed.
+- Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Hardcoded filter at every tier.
+- The selector reads the client's actual `openclaw.json` and picks the highest available version at each tier. New Kimi/DeepSeek versions are picked up automatically when the client adds them.
 
 ---
 

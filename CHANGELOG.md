@@ -1,3 +1,46 @@
+## v10.1.0 - May 14, 2026 - Ollama Cloud first, OpenRouter as fallback only
+
+### The bug
+Skills were defaulting to OpenRouter for heavy-reasoning calls (Phase 1 + 2 of Skill 22 book pipeline, social-media-planner subagents, etc.) even when the client had Ollama Cloud Kimi / DeepSeek-pro available. Ollama Cloud is subscription-billed (cheap) and OpenRouter is per-token (expensive), so the wrong default was costing real money on every install.
+
+### Root cause
+The `shared-utils/select_model.py` selector was correctly ordered Ollama-first — but legacy skill DOCUMENTATION (SKILL.md tables, INSTALL.md verify steps, QC.md checklists, CHECKLIST.md prerequisites, agent prompts) hadn't been updated to match. Agents reading those docs were getting outdated guidance like:
+
+- "Phase 2 - Analysis | DeepSeek V3.2 | OpenRouter (openrouter.ai) | None"
+- "Kimi K2.5 via OpenRouter (preferred)"
+- "Required: MOONSHOT_API_KEY or OpenRouter"
+- "subagent model='openrouter/xiaomi/mimo-v2-pro'"
+
+### What was fixed
+
+**Skill 22 (book-to-persona):**
+- `SKILL.md` Model Routing table: rewritten with 4-tier columns (Primary/Secondary/Tertiary/Fallback). Ollama Cloud Kimi is Primary for Phase 1 and Phase 2. OpenRouter Kimi only appears as Tertiary.
+- `SKILL.md` Prerequisites table: replaced "MOONSHOT_API_KEY or OpenRouter" row with "Ollama Cloud (preferred) or OpenRouter (fallback)".
+- `INSTALL.md` Phase 1 / Phase 2 sections: rewrote priority order — Ollama Cloud Kimi → Ollama Cloud DeepSeek V*-pro → OpenRouter Kimi → OpenRouter DeepSeek V*-pro → OAuth GPT.
+- `INSTALL.md` model connectivity verify (Step 8b/8c): test Tier 1 (Ollama Cloud) FIRST, OpenRouter only as Tier 2 fallback test.
+- `INSTALL.md` pre-flight checklist: split into Ollama Cloud key (primary) + OpenRouter key (fallback) + Codex OAuth.
+- `QC.md` secrets checklist: lists `OLLAMA_API_KEY` as primary, `OPENROUTER_API_KEY` as fallback.
+- `QC.md` expected output: "Phase 1 + Phase 2 = Ollama Cloud Kimi/DeepSeek-pro... OpenRouter only appears as primary if the client's openclaw.json has NO Ollama Cloud models."
+- `CHECKLIST.md`: replaced "Moonshot API key OR OpenRouter access" with "Ollama Cloud configured — PRIMARY, OpenRouter only as fallback."
+- `agent-prompts/analysis-agent-prompt.md`: replaced hardcoded "DeepSeek V3.2-Speciale (OpenRouter)" with `select_model.py` resolution + priority order.
+
+**Skill 35 (social-media-planner):**
+- `SKILL.md` subagent spawn example: replaced hardcoded `openrouter/xiaomi/mimo-v2-pro` with `ollama/minimax-m2.7:cloud` primary + OpenRouter as fallback note.
+
+### What stayed unchanged (correctly)
+- `shared-utils/select_model.py` was already Ollama-Cloud-first in every tier. No code change needed.
+- `openrouter/perplexity/sonar-pro-search` references in skill 23 (ai-workforce-blueprint) are kept as-is — that specific research model has no Ollama equivalent and is the documented exception.
+- Skill 22 `PIPELINE.md` was already correctly ordered (Ollama Cloud preferred → OpenRouter → OAuth GPT → DeepSeek V4+). No change needed.
+- Skill 22 `CORE_UPDATES.md` already said "Ollama Cloud preferred." No change needed.
+- Skill 15 `blackceo-team-management-full.md` already documented "for heavy reasoning prefer OAuth or Ollama-cloud models over OpenRouter to minimize cost." No change.
+
+### Net effect
+- Existing clients with Ollama Cloud configured: heavy-reasoning calls now correctly route through Ollama Cloud Kimi (cheap subscription) instead of OpenRouter (per-token billing). Cost reduction on every book extraction, every social-media campaign generation, every workforce-blueprint interview.
+- Clients without Ollama Cloud: selector still walks down the tier chain to OpenRouter as designed. No behavior change for them.
+- All updated skill docs explicitly tell agents not to hardcode OpenRouter as primary, with the only exception being the Perplexity research model in Skill 23 (which has no Ollama equivalent).
+
+---
+
 ## v10.0.3 - May 14, 2026 - CLI scope auto-repair (the real root cause)
 
 ### The real bug Floyd found
