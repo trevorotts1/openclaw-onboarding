@@ -1,3 +1,39 @@
+## v9.7.10 - May 14, 2026 - Strategy 5: scan credentials/ for chat IDs (Hostinger Docker schema)
+
+### The miss
+v9.7.9 platform-aware install correctly detected the Hostinger Docker VPS, used `/data/...` paths, and ran the 4-strategy universal Telegram lookup — but still came up empty on Evelyn's account even though her Telegram is clearly paired (she actively talks to her `main` agent / Temperance over Telegram every day).
+
+Live SSH probe of her container revealed: Hostinger Docker stores the chat allowlist in a SEPARATE file `credentials/telegram-<account>-allowFrom.json` — NOT inside `openclaw.json`. Her chat ID `8279177438` lives at `/data/.openclaw/credentials/telegram-default-allowFrom.json` with schema `{"version":1, "allowFrom":["8279177438"]}`. The CLI doesn't expose `credentials/*` via `config get`, the openclaw.json `channels.telegram` block contains only the bot token, and `commands.allowFrom = {}` — so all four lookup strategies returned empty.
+
+### Fixed (v9.7.10)
+- **Strategy 5 added: scan `credentials/telegram-<account>-allowFrom.json`.** Glob pattern matches `telegram-*-allowFrom.json`; the substring between `telegram-` and `-allowFrom.json` is the account name (`default`, `wifey`, etc.) which also feeds `openclaw cron create --account <name>`. Applied to all 3 lookup sites:
+  - `resolve_telegram_target_universal()` (top-of-script Telegram progress sender)
+  - Step 12 in-line resolver inside `install_weekly_cron`
+  - Account/agent detector that builds the cron `--account` flag
+- **Search roots scanned:** `$OC_CONFIG/credentials/`, `/data/.openclaw/credentials/`, `~/Library/Application Support/openclaw/credentials/`, `~/.config/openclaw/credentials/`.
+- **diagnose-telegram-config.sh** now dumps `credentials/` directory contents at the top so the next time a chat-ID hunt is needed, the actual schema is visible.
+
+### Strategy order on Hostinger Docker (after this fix)
+1. `openclaw config get channels.telegram.allowFrom` → "path not found" (CLI doesn't expose credentials/)
+2. **Strategy 5 NEW** — scan `/data/.openclaw/credentials/telegram-*-allowFrom.json` → finds `8279177438` ✓ AND captures account `default`
+3. Strategies 2/3/4 unused (5 already succeeded)
+
+On Mac/desktop installs where the chat ID DOES live inside openclaw.json, Strategy 5 finds nothing and the lookup falls through to the older strategies — zero regression.
+
+### Verified live
+- `/data/.openclaw/credentials/telegram-default-allowFrom.json` exists, contains `{"version":1, "allowFrom":["8279177438"]}`.
+- Evelyn's container has ONE real agent (`main`, Identity: Temperance, model `ollama/deepseek-v4-flash:cloud`). The 3 other agents (`smoke-openrouter`, `smoke-openai`, `smoke-gemini`) ship with the Hostinger image as built-in API smoke tests — not her workflow.
+- OpenClaw version on her container: 2026.5.6 (Mac dev box is 2026.5.7 — close enough that the v9.7.9 device-rotation logic also works there; both paired devices already have full 5 operator scopes).
+
+### Why earlier diagnostic missed this
+First SSH probe queried `openclaw config get channels.telegram.allowFrom` + dumped the `channels.telegram` block from openclaw.json — both returned empty because the schema doesn't live there on Hostinger. Should have `find`-ed the entire `/data/.openclaw/` tree for telegram-related files from the start; that grep would have surfaced `credentials/telegram-default-allowFrom.json` immediately. Updated the diagnose script so this is always the first thing dumped.
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.7.10.
+- diagnose-telegram-config.sh version header bumped to v9.7.10.
+
+---
+
 ## v9.7.9 - May 14, 2026 - Platform-aware paths for Hostinger Docker VPS
 
 ### The gap

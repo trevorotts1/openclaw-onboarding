@@ -2,11 +2,17 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.7.9** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.7.10** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.7.10 (May 14, 2026) — Strategy 5: scan credentials/ for chat IDs
+
+Hostinger Docker installs store the Telegram chat allowlist in a SEPARATE file (`credentials/telegram-<account>-allowFrom.json`) — NOT inside openclaw.json like Mac/desktop. v9.7.9's 4-strategy universal lookup missed this. v9.7.10 adds Strategy 5: glob the `credentials/` directory for `telegram-*-allowFrom.json` files, read the `allowFrom` array, also derive the account name from the filename. Zero regression on Mac (Strategy 5 finds no files there and the lookup falls through to the older strategies).
+
+See CHANGELOG.md for live verification on Evelyn's Hostinger container.
 
 ### What's New in v9.7.9 (May 14, 2026) — Platform-aware paths for Hostinger Docker VPS
 

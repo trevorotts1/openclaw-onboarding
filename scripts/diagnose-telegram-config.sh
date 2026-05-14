@@ -1,18 +1,39 @@
 #!/bin/bash
-# diagnose-telegram-config.sh — v9.6.8
+# diagnose-telegram-config.sh — v9.7.10
 #
 # Run this on a machine where the install says "Cannot resolve telegram target"
 # even though Telegram is clearly working. It dumps every place a Telegram
-# chat ID could be hiding in openclaw.json so we can extend the lookup.
+# chat ID could be hiding — both inside openclaw.json AND in the separate
+# credentials/ directory used by Hostinger Docker installs.
 #
 # USAGE:
 #   curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/diagnose-telegram-config.sh | bash
 
 if [ -d "/data/.openclaw" ]; then
   OCJSON=/data/.openclaw/openclaw.json
+  CRED_DIR=/data/.openclaw/credentials
 else
   OCJSON=$HOME/.openclaw/openclaw.json
+  CRED_DIR=$HOME/.openclaw/credentials
 fi
+
+echo "════════════════════════════════════════════════════"
+echo "  Credentials directory dump (Hostinger Docker schema)"
+echo "════════════════════════════════════════════════════"
+if [ -d "$CRED_DIR" ]; then
+  echo "Credentials dir: $CRED_DIR"
+  ls -la "$CRED_DIR" 2>&1
+  echo ""
+  for f in "$CRED_DIR"/telegram-*-allowFrom.json; do
+    [ -f "$f" ] || continue
+    echo "--- $f ---"
+    cat "$f"
+    echo ""
+  done
+else
+  echo "No credentials/ dir at $CRED_DIR (this is normal for Mac/desktop installs)"
+fi
+echo ""
 
 echo "════════════════════════════════════════════════════"
 echo "  Telegram Config Diagnostic"

@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.7.9
+#  OpenClaw Onboarding Installer v9.7.10
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.9"
+ONBOARDING_VERSION="v9.7.10"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -179,6 +179,49 @@ def walk(obj, parent='', under_tel=False):
 
 chat_id = first_chat_id_from_cli()
 account = ""
+
+# Strategy 5 (v9.7.10): Hostinger Docker VPS stores chat IDs in SEPARATE
+# credential files at credentials/telegram-<account>-allowFrom.json — NOT
+# inside openclaw.json's channels.telegram block. File schema:
+#   {"version":1, "allowFrom":["8279177438"]}
+# The substring between "telegram-" and "-allowFrom.json" IS the account name
+# (e.g., "default"), so this strategy also gives us the --account flag value.
+import re
+cred_roots = [
+    os.path.join(HOME, ".openclaw", "credentials"),
+    "/data/.openclaw/credentials",
+    os.path.join(HOME, "Library", "Application Support", "openclaw", "credentials"),
+    os.path.join(HOME, ".config", "openclaw", "credentials"),
+]
+for cdir in cred_roots:
+    if not os.path.isdir(cdir):
+        continue
+    try:
+        fnames = os.listdir(cdir)
+    except Exception:
+        continue
+    for fname in fnames:
+        m = re.match(r'^telegram-(.+)-allowFrom\.json$', fname)
+        if not m:
+            continue
+        try:
+            data = json.load(open(os.path.join(cdir, fname)))
+        except Exception:
+            continue
+        allow = data.get('allowFrom') or []
+        if not isinstance(allow, list):
+            continue
+        for v in allow:
+            s = str(v).strip()
+            if s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20:
+                chat_id = s
+                account = m.group(1)
+                break
+        if chat_id:
+            break
+    if chat_id:
+        break
+
 for path in configs:
     try:
         cfg = json.load(open(path))
@@ -198,9 +241,10 @@ for path in configs:
             if chat_id: break
         if not chat_id and hits:
             chat_id = str(hits[0][1])
-    accts = cfg.get('channels',{}).get('telegram',{}).get('accounts',{})
-    if isinstance(accts, dict) and accts:
-        account = 'default' if 'default' in accts else list(accts.keys())[0]
+    if not account:
+        accts = cfg.get('channels',{}).get('telegram',{}).get('accounts',{})
+        if isinstance(accts, dict) and accts:
+            account = 'default' if 'default' in accts else list(accts.keys())[0]
     if chat_id:
         break
 
@@ -1669,6 +1713,42 @@ except Exception:
         [ -n "$TG_TARGET" ] && note "Telegram target resolved via openclaw CLI: $TG_TARGET"
     fi
 
+    # Strategy 5 (v9.7.10): Hostinger Docker VPS keeps chat IDs in SEPARATE
+    # credential files at credentials/telegram-<account>-allowFrom.json — not
+    # inside openclaw.json. Check this FIRST since CLI `config get` can't see it.
+    if [ -z "$TG_TARGET" ]; then
+        TG_TARGET=$(python3 - <<'PYEOF' 2>/dev/null
+import json, os, re
+HOME = os.path.expanduser("~")
+cred_roots = [
+    os.path.join(HOME, ".openclaw", "credentials"),
+    "/data/.openclaw/credentials",
+    os.path.join(HOME, "Library", "Application Support", "openclaw", "credentials"),
+    os.path.join(HOME, ".config", "openclaw", "credentials"),
+]
+for cdir in cred_roots:
+    if not os.path.isdir(cdir):
+        continue
+    try:
+        fnames = os.listdir(cdir)
+    except Exception:
+        continue
+    for fname in fnames:
+        if not re.match(r'^telegram-(.+)-allowFrom\.json$', fname):
+            continue
+        try:
+            data = json.load(open(os.path.join(cdir, fname)))
+        except Exception:
+            continue
+        for v in (data.get('allowFrom') or []):
+            s = str(v).strip()
+            if s.lstrip('-').isdigit() and 6 <= len(s.lstrip('-')) <= 20:
+                print(s); raise SystemExit(0)
+PYEOF
+)
+        [ -n "$TG_TARGET" ] && note "Telegram target resolved via credentials/ file: $TG_TARGET"
+    fi
+
     # Strategy 2 + 3: scan every openclaw.json on the box, recursively walk each
     if [ -z "$TG_TARGET" ]; then
         TG_TARGET=$(python3 - <<'PYEOF' 2>/dev/null
@@ -1817,7 +1897,8 @@ PYEOF
     local DEFAULT_AGENT=""
     local DETECT_OUT
     DETECT_OUT=$(python3 -c "
-import json, os
+import json, os, re
+HOME = os.path.expanduser('~')
 candidates = [
     os.path.expanduser('~/.openclaw/openclaw.json'),
     '/data/.openclaw/openclaw.json',
@@ -1825,14 +1906,33 @@ candidates = [
 ]
 account = ''
 agent_id = ''
+
+# v9.7.10: Detect account from Hostinger Docker credentials/ file FIRST.
+# Filename pattern: telegram-<account>-allowFrom.json
+for cdir in (os.path.join(HOME, '.openclaw', 'credentials'),
+             '/data/.openclaw/credentials'):
+    if not os.path.isdir(cdir):
+        continue
+    try:
+        for fn in os.listdir(cdir):
+            m = re.match(r'^telegram-(.+)-allowFrom\.json\$', fn)
+            if m:
+                account = m.group(1)
+                break
+    except Exception:
+        pass
+    if account:
+        break
+
 for p in candidates:
     if not os.path.isfile(p):
         continue
     try:
         cfg = json.load(open(p))
-        accounts = cfg.get('channels', {}).get('telegram', {}).get('accounts', {})
-        if isinstance(accounts, dict) and accounts:
-            account = 'default' if 'default' in accounts else list(accounts.keys())[0]
+        if not account:
+            accounts = cfg.get('channels', {}).get('telegram', {}).get('accounts', {})
+            if isinstance(accounts, dict) and accounts:
+                account = 'default' if 'default' in accounts else list(accounts.keys())[0]
         for a in cfg.get('agents', {}).get('list', []) or []:
             if isinstance(a, dict) and a.get('default'):
                 agent_id = a.get('id', '')
