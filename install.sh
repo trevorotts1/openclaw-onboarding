@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.7.7
+#  OpenClaw Onboarding Installer v9.7.8
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.7"
+ONBOARDING_VERSION="v9.7.8"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -68,7 +68,7 @@ count_list() {
 }
 
 # ----------------------------------------------------------
-# Telegram Progress Notification (v9.7.7 — uses universal lookup)
+# Telegram Progress Notification (v9.7.8 — uses universal lookup)
 # ----------------------------------------------------------
 TELEGRAM_LAST_RESULT=""
 
@@ -212,7 +212,7 @@ send_telegram_progress() {
         return 0
     fi
 
-    # v9.7.7: defensive — protect against `set -euo pipefail` killing the
+    # v9.7.8: defensive — protect against `set -euo pipefail` killing the
     # install when openclaw command-substitutions return non-zero.
     # Every openclaw call wrapped with `|| rc=$?` so set -e doesn't fire.
 
@@ -508,20 +508,27 @@ echo "╚═══════════════════════�
 echo ""
 note "Log file: $LOG_FILE"
 
-# v9.7.7: Auto-approve pending gateway scope upgrades BEFORE anything that
+# v9.7.8: Auto-approve pending gateway scope upgrades BEFORE anything that
 # requires the gateway (Telegram sends, cron creates, message sends).
 # OpenClaw's security model rejects ALL gateway-touching CLI calls when a
 # scope upgrade is pending. The install must clear pending approvals first.
 #
-# v9.7.7: BREAKS the scope-upgrade loop documented in OpenClaw GitHub issues
-# #21688 and #23006. Root cause: OpenClaw 2026.2.19+ added new scopes
-# (operator.write, operator.read) but legacy paired devices only carry
-# operator.admin / operator.approvals / operator.pairing. Each operation
-# needing a new scope triggers an upgrade request → infinite loop.
+# v9.7.8: Breaks the scope-upgrade loop in OpenClaw 2026.5.x.
+# Behavior verified directly against the live 2026.5.7 CLI on the dev box
+# (not stale older issues). Current 2026.5.x operator scope set = 5 scopes:
+#   operator.admin, operator.approvals, operator.pairing,
+#   operator.read, operator.write
+# Devices paired before all 5 existed carry only a subset. Each gateway
+# operation that needs a missing scope triggers a new scope-upgrade
+# request — leading to repeated "scope upgrade pending approval" rejections.
 #
-# Fix: rotate every paired operator-role device with ALL 5 scopes upfront,
-# BEFORE any gateway-touching CLI call. After rotation, no further upgrade
-# requests are issued because the device already has every needed scope.
+# Canonical fix per https://docs.openclaw.ai/cli/devices (current docs site):
+# rotate every paired operator-role device with ALL 5 scopes upfront. After
+# rotation, the gateway issues no further upgrade requests for that device.
+# Caveat from the docs: rotation only works if the operator role itself is
+# already approved in the pairing contract — it can't mint a new role. Any
+# client whose Telegram agent already works has a valid contract, so this
+# applies to the exact failure mode we hit on 2026.5.7.
 rotate_all_devices_to_full_scopes() {
     if ! command -v openclaw >/dev/null 2>&1; then
         return 0
@@ -659,11 +666,11 @@ cat > "$RESUME_FILE" <<RESUME_JSON
 RESUME_JSON
 success "State carryover initialized at $RESUME_FILE"
 
-# 0.3 — Canonical sub-agent + bootstrap config (v9.7.7)
+# 0.3 — Canonical sub-agent + bootstrap config (v9.7.8)
 # Hard-overwrites the numeric limits (these are protocol gates, not preferences).
 # Preserves agents.defaults.subagents.model.fallbacks if a client has customized it.
 # Sets allowAgents=["*"] on every agents.list entry (wildcard subagent permission).
-note "Configuring canonical sub-agent + bootstrap settings (v9.7.7 spec)..."
+note "Configuring canonical sub-agent + bootstrap settings (v9.7.8 spec)..."
 backup_config_file "$OCJSON"
 
 python3 << PYEOF
@@ -897,7 +904,7 @@ fi
 # ----------------------------------------------------------
 # Step 7: Configure Concurrency
 # ----------------------------------------------------------
-# NOTE (v9.7.7): canonical sub-agent + bootstrap config is now applied in
+# NOTE (v9.7.8): canonical sub-agent + bootstrap config is now applied in
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
@@ -929,7 +936,7 @@ try:
     with open(path) as f:
         config = json.load(f)
 
-    # v9.7.7 BUGFIX:
+    # v9.7.8 BUGFIX:
     # "plugins.entries.active-memory" is NOT a real plugin in current OpenClaw
     # schemas. Earlier install scripts wrote 6 keys there (agents, allowedChatTypes,
     # queryMode, promptStyle, timeoutMs, maxSummaryChars) that the validator
@@ -947,7 +954,7 @@ try:
     # If a prior broken install wrote the bogus active-memory block, REMOVE it
     if 'active-memory' in entries:
         del entries['active-memory']
-        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.7 bug)")
+        print("  ✓ Removed invalid plugins.entries.active-memory block (pre-v9.7.8 bug)")
 
     # Ensure memory-core plugin is enabled (the real memory plugin)
     mc = entries.setdefault('memory-core', {})
@@ -1055,7 +1062,7 @@ success "Backup folders created"
 # ----------------------------------------------------------
 step "Step 10: Writing UPDATE PENDING Flag to AGENTS.md"
 
-# v9.7.7: Query the agent's REAL workspace from openclaw config. The agent
+# v9.7.8: Query the agent's REAL workspace from openclaw config. The agent
 # reads its core .md files from agents.defaults.workspace — NOT necessarily
 # ~/clawd/. Floyd's install wrote AGENTS.md to ~/clawd/ but his agent reads
 # from ~/.openclaw/workspace/, so the UPDATE PENDING flag was invisible to it.
@@ -1240,7 +1247,7 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 **DREAMS.md IS REQUIRED** - Must exist in workspace root.
 
-**Timeout References (v9.7.7 — 30-60 min minimums for heavy-reasoning sub-agents):**
+**Timeout References (v9.7.8 — 30-60 min minimums for heavy-reasoning sub-agents):**
 - Phase A: 1800s (30 min per wave)
 - Phase B: 2700s (45 min)
 - Phase C: 3600s (60 min — Book-to-Persona-aware; heavy-reasoning phases need this)
@@ -1495,7 +1502,7 @@ install_weekly_cron() {
         return 0
     fi
 
-    # v9.7.7: Auto-approve any pending device pairing / scope upgrade requests
+    # v9.7.8: Auto-approve any pending device pairing / scope upgrade requests
     # BEFORE attempting cron operations. OpenClaw's security model requires
     # the owner to explicitly approve any new scope (like cron-write). When the
     # install adds new capabilities, the gateway rejects the connection with
@@ -1572,7 +1579,7 @@ except Exception:
         return 0
     fi
 
-    # Resolve Telegram target — v9.7.7 UNIVERSAL lookup. Tries 4 strategies
+    # Resolve Telegram target — v9.7.8 UNIVERSAL lookup. Tries 4 strategies
     # in order, no client action required. Returns the first chat ID found
     # anywhere on the system.
     #
@@ -1757,7 +1764,7 @@ PYEOF
         return 0
     fi
 
-    # v9.7.7: Detect multi-account Telegram setup AND auto-detect the default
+    # v9.7.8: Detect multi-account Telegram setup AND auto-detect the default
     # agent ID. Older onboarding hardcoded "--agent main" but some installs
     # use a different default agent name. We pull both from the live config.
     local CHANNEL_ACCOUNT=""
