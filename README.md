@@ -2,13 +2,21 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
-**Current Version: v10.0.2** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v10.0.3** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
+
+### What's New in v10.0.3 (May 14, 2026) — CLI scope auto-repair
+
+Real root cause finally identified (with Floyd's help): fresh OpenClaw pairings can leave the CLI device with `[operator.read, operator.pairing]` only — missing `operator.write` and `operator.admin`. Without those, every `openclaw message send` and `openclaw cron create` call from the CLI is rejected by the gateway with `scope upgrade pending approval`. The gateway reports `Capability: read-only` in `openclaw gateway status --verbose`.
+
+v10.0.3 adds `auto_repair_cli_scopes()` that detects this state at install start and repairs it automatically via two strategies: (Plan A) `openclaw devices rotate` + `approve` using the master gateway token from openclaw.json, or (Plan B) direct edit of `~/.openclaw/devices/paired.json` per Floyd's proven repair sequence. Both back up state, restart the gateway, and verify capability afterwards.
+
+The UPDATE PENDING flag in AGENTS.md now includes a self-healing guide so the agent knows how to recover if anything goes wrong.
 
 ### What's New in v10.0.2 (May 14, 2026) — Durable logs + terminal error summary
 

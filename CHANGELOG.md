@@ -1,3 +1,54 @@
+## v10.0.3 - May 14, 2026 - CLI scope auto-repair (the real root cause)
+
+### The real bug Floyd found
+Floyd ran v10.0.2, ran the install on his own machine with Claude Code helping him debug, and they got to root cause:
+
+**His CLI device was paired with only `[operator.read, operator.pairing]` scopes — missing `operator.write` and `operator.admin`.**
+
+Without `operator.write`, EVERY `openclaw message send` and `openclaw cron create` call from the CLI was rejected by the gateway with `scope upgrade pending approval`. This was true regardless of whether my install ran rotation, regardless of any prior install attempt. The CLI device was DOA from its original pairing.
+
+Verified via `openclaw gateway status --verbose | grep "Capability:"` which reports:
+- `admin-capable` or `write-capable` → CLI device has the scopes it needs
+- `read-only` → CLI device is missing write (this was Floyd's state)
+
+### What he did to fix it (proven approach)
+1. Edited `~/.openclaw/devices/paired.json` directly — found the entry where `clientId == "cli"`, added `operator.write` + `operator.admin` to:
+   - `scopes` array
+   - `approvedScopes` array
+   - `tokens.operator.scopes` array
+2. Cleared stuck pending requests: `echo '{}' > ~/.openclaw/devices/pending.json`
+3. Restarted gateway: `openclaw gateway restart`
+4. Re-ran install — Telegram + cron worked on the first try
+
+### What v10.0.3 does
+Adds `auto_repair_cli_scopes()` that runs BEFORE the first Telegram send. It:
+
+1. Calls `openclaw gateway status --verbose | grep "Capability:"` to detect read-only state.
+2. If admin-capable / write-capable → no action, install continues.
+3. If read-only:
+   - **Plan A (sanctioned CLI path):** read the master gateway token from `gateway.auth.token` in openclaw.json. Try `openclaw devices rotate --device <cli_id> --role operator --scope ... --token <master>` to upgrade the CLI device. If rotation creates a pending request (per docs it can), approve it via `openclaw devices approve <pendingId> --token <master>`. Restart gateway. Re-check capability.
+   - **Plan B (proven direct edit):** if Plan A didn't restore write capability, edit `~/.openclaw/devices/paired.json` directly per Floyd's proven sequence — add write/admin/pairing/approvals/read to `scopes`, `approvedScopes`, and `tokens.operator.scopes` for every device with `clientId == "cli"`. Clear `pending.json` to `{}`. Restart gateway. Re-check capability.
+4. Backs up paired.json + pending.json before any edit (timestamped `.bak-*` files).
+5. Logs every step to the install log.
+
+### Self-healing guide added to AGENTS.md flag
+The UPDATE PENDING block now includes a "If This Install Had Errors — Self-Healing Guide" section with the exact diagnostic command, auto-repair instructions, and manual repair steps. So if an agent runs install and hits any scope issues, the flag content tells the next session exactly how to fix it.
+
+### Web research grounding
+Verified against:
+- https://docs.openclaw.ai/gateway/operator-scopes.md (scope definitions, "broader access creates pending upgrade request")
+- https://docs.openclaw.ai/cli/devices.md (rotate/approve semantics, `--token` flag)
+- https://docs.openclaw.ai/gateway/troubleshooting.md (capability check)
+- Live `openclaw devices --help` output on Mac dev box (2026.5.12)
+- Floyd's reproduction document (2026.5.7)
+
+### Net effect for clients
+- Healthy clients (CLI has write/admin already) → auto-repair is a no-op, install proceeds normally.
+- Affected clients (Floyd, anyone with read-only CLI device) → auto-repair runs, CLI gets the missing scopes, install proceeds normally, Telegram + cron work.
+- Edge case (auto-repair fails) → install continues, AGENTS.md flag still gets written, install summary at end shows the warnings + log path, self-healing guide in AGENTS.md gives the agent the manual recovery steps.
+
+---
+
 ## v10.0.2 - May 14, 2026 - Durable logs + actionable terminal error summary
 
 ### Durable log location
