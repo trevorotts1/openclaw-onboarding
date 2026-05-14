@@ -1,3 +1,63 @@
+## v9.7.11 - May 14, 2026 - Smart credential discovery + 4 critical skill fixes
+
+### Background
+Live SSH probe of Evelyn's Hostinger Docker container revealed:
+- No `.env` files anywhere on the system
+- All API keys live as **container env vars** (Hostinger injects them at boot)
+- LLM API keys ALSO inline in `models.providers.<name>.apiKey` in openclaw.json
+- The **GHL Private Integration Token** is exposed as `GHL_PRIVATE_INTEGRATION_TOKEN`, NOT `GOHIGHLEVEL_API_KEY` like Mac install expects — same value, different name
+- 4 onboarding skills hardcode Mac-only assumptions that fail on Hostinger Docker
+
+### Fixed
+- **install.sh credential discovery rewritten** as smart 3-source platform-aware lookup:
+  1. **Source 1: container env vars** (primary on Hostinger Docker — uses `printenv` for `set -u` + bash 3.2 safety)
+  2. **Source 2: .env files** at canonical Mac locations
+  3. **Source 3: `models.providers.<name>.apiKey`** in openclaw.json (LLM keys on both platforms)
+- **Alias map** for naming variants — single canonical lookup tries every known variant. Examples:
+  - `GOHIGHLEVEL_API_KEY` ↔ `GHL_PRIVATE_INTEGRATION_TOKEN` ↔ `GHL_API_KEY` ↔ `GHL_PIT` ↔ `HIGHLEVEL_API_KEY`
+  - `GOHIGHLEVEL_LOCATION_ID` ↔ `GHL_LOCATION_ID` ↔ `HIGHLEVEL_LOCATION_ID`
+  - `OPENAI_API_KEY` ↔ `OPENAI_TOKEN`
+  - `FISH_AUDIO_API_KEY` ↔ `FISHAUDIO_API_KEY`
+  - `PODBEAN_API_KEY` ↔ `PODBEAN_CLIENT_ID`
+  - `TAVILY_API_KEY` ↔ `TAVILY_KEY`
+  - `KIE_API_KEY` ↔ `KIE_AI_API_KEY`
+  - `GITHUB_TOKEN` ↔ `GH_TOKEN`
+  - `VERCEL_TOKEN` ↔ `VERCEL_API_TOKEN`
+  - `GEMINI_API_KEY` ↔ `GOOGLE_GEMINI_API_KEY`
+  - `TELEGRAM_BOT_TOKEN` ↔ `TG_BOT_TOKEN` ↔ `BOT_TOKEN`
+- **Missing-credentials report** at end of credential discovery — prints what's not configured yet so the operator can fix gaps BEFORE skills hit them.
+- **Discovery logs which alias matched** when a non-canonical variant was used — so the next time a client uses an unusual var name, the install log tells us exactly which alias hit.
+- **Expanded credential set scanned**: added OPENAI_API_KEY, OLLAMA_API_KEY, TAVILY_API_KEY, KIE_API_KEY, GITHUB_TOKEN, VERCEL_TOKEN, SUPABASE_SERVICE_ROLE_KEY (previously skipped).
+- **Workspace fallback priority** flipped on VPS: `/data/.openclaw/workspace` wins before `/data/clawd` (Mac convention) since `/data/clawd` doesn't exist on Hostinger.
+
+### Skills fixed (4 critical)
+- **Skill 06 ghl-install-pages**: INSTALL.md hardcoded `~/clawd/secrets/.env` for the GHL_EMAIL / GHL_PASSWORD checks. Rewrote credential lookup block to be platform-aware (env vars on VPS, .env on Mac).
+- **Skill 29 ghl-convert-and-flow**: QC.md sourced `~/clawd/secrets/.env` which doesn't exist on VPS. Replaced with platform-aware loader that walks `/data/.openclaw/secrets/.env`, `~/.openclaw/secrets/.env`, then `~/clawd/secrets/.env`. Also added GHL alias normalization: maps `GHL_PRIVATE_INTEGRATION_TOKEN` → `GHL_API_KEY` and `GOHIGHLEVEL_LOCATION_ID` → `GHL_LOCATION_ID`.
+- **Skill 11 superdesign**: superdesign-full.md prescribed `apt-get install nodejs npm`. The Hostinger container has no apt. Added note that container ships with Node v22; skip the apt step entirely on VPS.
+- **Skill 16 summarize-youtube**: The skill is built around the Mac-only `brew install steipete/tap/summarize`. Added a VPS fallback path using `pip3 install --user yt-dlp` for transcript extraction with agent-LLM summarization. Also switched primary yt-dlp install instruction to pip (works on both platforms).
+
+### Evelyn's missing credentials (live audit of her container)
+What she HAS (verified env-var inspection):
+- OPENROUTER_API_KEY, OLLAMA_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GOOGLE_API_KEY
+- GHL_PRIVATE_INTEGRATION_TOKEN, GHL_LOCATION_ID
+- TELEGRAM_BOT_TOKEN, FISH_AUDIO_API_KEY
+- SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, SUPABASE_SECRET_KEY, SUPABASE_PUBLISHABLE_KEY, SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF
+
+What she's MISSING (will block these skills if not provided):
+- `FISH_AUDIO_VOICE_ID` — skill 30 voice clone (skill auto-prompts on first run)
+- `PODBEAN_API_KEY` + `PODBEAN_API_SECRET` — podcast publishing (skill 30 dependency)
+- `TAVILY_API_KEY` — skill 21 search (silent skip if missing)
+- `KIE_API_KEY` — skill 27 video creator (skill auto-prompts on first run)
+- `VERCEL_TOKEN` — skill 08 (only needed for actual deployments)
+- `GITHUB_TOKEN` / `GH_TOKEN` — skill 10 (gh CLI handles its own auth if not present)
+- `GHL_EMAIL` + `GHL_PASSWORD` — skill 06 Playwright login (gets prompted at skill install)
+
+### Changed
+- ONBOARDING_VERSION bumped to v9.7.11.
+- diagnose-telegram-config.sh kept at v9.7.10 — no change needed.
+
+---
+
 ## v9.7.10 - May 14, 2026 - Strategy 5: scan credentials/ for chat IDs (Hostinger Docker schema)
 
 ### The miss

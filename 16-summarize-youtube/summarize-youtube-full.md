@@ -47,7 +47,10 @@ The installation will take several minutes. You may need to enter your computer 
 
 ### Step 2: Install the Summarize Tool
 
-Once Homebrew is ready, install the summarize tool with this command:
+**Platform check first.** On Hostinger Docker VPS Homebrew is not available in the
+container — use the Python fallback path below. On Mac use Homebrew.
+
+**Mac (Homebrew):**
 
 ```bash
 brew install steipete/tap/summarize
@@ -58,6 +61,19 @@ This command does several things:
 2. Downloads the summarize program
 3. Installs it on your system
 4. Makes it available in your command line
+
+**Hostinger Docker VPS (Python fallback — no Homebrew available):**
+
+```bash
+# `summarize` is a Mac-only CLI; on VPS we replicate its behavior with yt-dlp
+# (for transcript extraction) + the agent's primary LLM for summarization.
+pip3 install --user yt-dlp
+export PATH="$HOME/.local/bin:$PATH"
+yt-dlp --version  # verify
+```
+
+The skill's runtime logic will detect the missing `summarize` binary and
+auto-fall-back to the yt-dlp + agent-LLM pipeline.
 
 **What to expect:**
 - You will see download progress messages
@@ -358,14 +374,14 @@ The tool complains that yt-dlp is missing or not installed.
 
 **Solutions:**
 
-1. Install yt-dlp using Homebrew:
+1. Install yt-dlp using Python pip (works on Mac AND Hostinger Docker VPS):
    ```bash
-   brew install yt-dlp
+   pip3 install --user yt-dlp
    ```
 
-2. Or install using Python pip:
+2. Or on Mac with Homebrew already set up:
    ```bash
-   pip3 install yt-dlp
+   brew install yt-dlp
    ```
 
 3. Verify installation:

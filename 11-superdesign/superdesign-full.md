@@ -2100,7 +2100,9 @@ brew install node
 # Windows (download from)
 # https://nodejs.org - download the LTS version
 
-# Linux (Ubuntu/Debian)
+# Linux (Ubuntu/Debian) — NOTE: only on full Linux installs, NOT inside the
+# Hostinger OpenClaw Docker container. That container ships with Node v22 and
+# does NOT have apt available — skip this step entirely on Hostinger VPS.
 sudo apt update && sudo apt install nodejs npm
 
 # Verify installation

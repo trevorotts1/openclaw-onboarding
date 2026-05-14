@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v9.7.10
+#  OpenClaw Onboarding Installer v9.7.11
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 # ============================================================
 
-ONBOARDING_VERSION="v9.7.10"
+ONBOARDING_VERSION="v9.7.11"
 LOG_FILE="/tmp/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
@@ -348,9 +348,22 @@ backup_config_file() {
 }
 
 # ----------------------------------------------------------
-# Silent Credential Discovery (No warnings for missing keys)
+# Smart Credential Discovery (v9.7.11)
 # ----------------------------------------------------------
+# Platform-aware credential lookup with alias support. Three sources scanned
+# in order: (1) container env vars [primary on Hostinger Docker VPS — that's
+# where Hostinger injects everything], (2) .env files [primary on Mac/desktop
+# at ~/.openclaw/secrets/.env etc], (3) models.providers.*.apiKey inside
+# openclaw.json [used by both platforms for LLM keys].
+#
+# Alias map handles naming variants — e.g. Hostinger sets
+# GHL_PRIVATE_INTEGRATION_TOKEN, Mac install expects GOHIGHLEVEL_API_KEY,
+# both hold the same Private Integration Token value. Lookup tries every
+# alias in the list and returns the first hit.
+
 ENV_LOCATIONS=""
+# Tracks which canonical credentials were discovered (pipe-delimited)
+CREDS_FOUND_LIST=""
 
 build_env_locations() {
     ENV_LOCATIONS="$OC_CONFIG/.env"
@@ -360,88 +373,203 @@ build_env_locations() {
     ENV_LOCATIONS="$ENV_LOCATIONS|$OC_JSON"
 }
 
+# get_alias_list <CANONICAL_VAR> — returns space-separated alias names
+# (canonical first). Includes naming variants seen across Hostinger Docker,
+# Mac installs, and common third-party docs.
+get_alias_list() {
+    case "$1" in
+        GOHIGHLEVEL_API_KEY)
+            echo "GOHIGHLEVEL_API_KEY GHL_PRIVATE_INTEGRATION_TOKEN GHL_API_KEY GHL_PIT HIGHLEVEL_API_KEY HIGHLEVEL_TOKEN GHL_PRIVATE_TOKEN" ;;
+        GOHIGHLEVEL_LOCATION_ID)
+            echo "GOHIGHLEVEL_LOCATION_ID GHL_LOCATION_ID HIGHLEVEL_LOCATION_ID LOCATION_ID" ;;
+        TELEGRAM_BOT_TOKEN)
+            echo "TELEGRAM_BOT_TOKEN TG_BOT_TOKEN BOT_TOKEN" ;;
+        GEMINI_API_KEY)
+            echo "GEMINI_API_KEY GOOGLE_GEMINI_API_KEY" ;;
+        GOOGLE_API_KEY)
+            echo "GOOGLE_API_KEY GOOGLE_CLOUD_API_KEY" ;;
+        OPENAI_API_KEY)
+            echo "OPENAI_API_KEY OPENAI_TOKEN" ;;
+        OPENROUTER_API_KEY)
+            echo "OPENROUTER_API_KEY OR_API_KEY" ;;
+        FISH_AUDIO_API_KEY)
+            echo "FISH_AUDIO_API_KEY FISHAUDIO_API_KEY FISH_API_KEY" ;;
+        FISH_AUDIO_VOICE_ID)
+            echo "FISH_AUDIO_VOICE_ID FISHAUDIO_VOICE_ID" ;;
+        PODBEAN_API_KEY)
+            echo "PODBEAN_API_KEY PODBEAN_CLIENT_ID" ;;
+        PODBEAN_API_SECRET)
+            echo "PODBEAN_API_SECRET PODBEAN_CLIENT_SECRET" ;;
+        TAVILY_API_KEY)
+            echo "TAVILY_API_KEY TAVILY_KEY" ;;
+        KIE_API_KEY)
+            echo "KIE_API_KEY KIE_AI_API_KEY" ;;
+        OLLAMA_API_KEY)
+            echo "OLLAMA_API_KEY" ;;
+        SUPABASE_SERVICE_ROLE_KEY)
+            echo "SUPABASE_SERVICE_ROLE_KEY SUPABASE_SERVICE_KEY" ;;
+        VERCEL_TOKEN)
+            echo "VERCEL_TOKEN VERCEL_API_TOKEN" ;;
+        GITHUB_TOKEN)
+            echo "GITHUB_TOKEN GH_TOKEN" ;;
+        *)
+            echo "$1" ;;
+    esac
+}
+
+# search_env_var <CANONICAL_VAR> — tries every alias against env vars,
+# .env files, and openclaw.json models.providers. Returns first non-empty
+# value found. Also prints to stderr which alias matched (so the install
+# log records the actual var name used, useful for debugging).
 search_env_var() {
-    local VAR_NAME="$1"
-    local FOUND=""
-    local locs
-    locs="$ENV_LOCATIONS"
-    
-    while [ -n "$locs" ]; do
-        local ENV_FILE
-        if echo "$locs" | grep -q "|"; then
-            ENV_FILE=$(echo "$locs" | cut -d'|' -f1)
-            locs=$(echo "$locs" | cut -d'|' -f2-)
-        else
-            ENV_FILE="$locs"
-            locs=""
+    local CANONICAL="$1"
+    local aliases
+    aliases=$(get_alias_list "$CANONICAL")
+
+    # Source 1: container environment (Hostinger Docker injects creds here).
+    # `printenv` is set -u safe AND bash 3.2 compatible (no indirect expansion).
+    for VAR_NAME in $aliases; do
+        local env_val
+        env_val=$(printenv "$VAR_NAME" 2>/dev/null || true)
+        if [ -n "$env_val" ]; then
+            [ "$VAR_NAME" != "$CANONICAL" ] && echo "    [alias: $VAR_NAME=env]" >&2
+            echo "$env_val"
+            return
         fi
-        
-        if [ -f "$ENV_FILE" ]; then
-            if echo "$ENV_FILE" | grep -q ".json$"; then
+    done
+
+    # Source 2: .env files at known locations
+    for VAR_NAME in $aliases; do
+        local locs="$ENV_LOCATIONS"
+        while [ -n "$locs" ]; do
+            local ENV_FILE
+            if echo "$locs" | grep -q "|"; then
+                ENV_FILE=$(echo "$locs" | cut -d'|' -f1)
+                locs=$(echo "$locs" | cut -d'|' -f2-)
+            else
+                ENV_FILE="$locs"
+                locs=""
+            fi
+            [ ! -f "$ENV_FILE" ] && continue
+
+            local FOUND=""
+            if echo "$ENV_FILE" | grep -q "\.json$"; then
                 FOUND=$(python3 -c "
 import json
 try:
     cfg=json.load(open('$ENV_FILE'))
     print(cfg.get('env',{}).get('vars',{}).get('$VAR_NAME',''))
-except:
+except Exception:
     pass
 " 2>/dev/null)
             else
                 FOUND=$(grep -E "^${VAR_NAME}=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | head -1 || true)
             fi
             if [ -n "$FOUND" ]; then
+                [ "$VAR_NAME" != "$CANONICAL" ] && echo "    [alias: $VAR_NAME in $ENV_FILE]" >&2
                 echo "$FOUND"
                 return
             fi
-        fi
+        done
     done
+
+    # Source 3: openclaw.json models.providers.<x>.apiKey (LLM keys only)
+    if [ -f "$OC_JSON" ]; then
+        case "$CANONICAL" in
+            OPENROUTER_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|OLLAMA_API_KEY)
+                local provider_key
+                case "$CANONICAL" in
+                    OPENROUTER_API_KEY)  provider_key="openrouter" ;;
+                    OPENAI_API_KEY)      provider_key="openai"     ;;
+                    GEMINI_API_KEY)      provider_key="google"     ;;
+                    GOOGLE_API_KEY)      provider_key="google"     ;;
+                    OLLAMA_API_KEY)      provider_key="ollama"     ;;
+                esac
+                local val
+                val=$(python3 -c "
+import json
+try:
+    cfg=json.load(open('$OC_JSON'))
+    print(cfg.get('models',{}).get('providers',{}).get('$provider_key',{}).get('apiKey',''))
+except Exception:
+    pass
+" 2>/dev/null)
+                if [ -n "$val" ]; then
+                    echo "    [models.providers.$provider_key.apiKey]" >&2
+                    echo "$val"
+                    return
+                fi
+                ;;
+        esac
+    fi
+
     echo ""
 }
 
 discover_all_credentials() {
-    step "Silent Credential Discovery"
-    
+    step "Smart Credential Discovery (v9.7.11 — platform-aware with alias map)"
+
     build_env_locations
-    
-    # Credential types to discover (no output if missing)
+    note "Platform: $OPENCLAW_PLATFORM (lookup priority: env vars → .env files → openclaw.json providers)"
+
+    # Canonical credential names. Aliases are handled inside search_env_var
+    # via get_alias_list — extending the alias set requires editing only that.
     local CRED_LIST="GOOGLE_API_KEY:Google"
     CRED_LIST="$CRED_LIST|GEMINI_API_KEY:Gemini"
-    # GHL credentials — canonical names (v9.2.0+). Deprecated GHL_PRIVATE_TOKEN/GHL_LOCATION_ID
-    # are detected too via the broader search in skill INSTALL.md files for backwards-compat.
-    CRED_LIST="$CRED_LIST|GOHIGHLEVEL_API_KEY:GHL (PIT — legacy var name; value IS a Private Integration Token, NOT an API key — GHL stopped issuing API keys ~2 years ago)"
-    CRED_LIST="$CRED_LIST|GOHIGHLEVEL_LOCATION_ID:GHL Location ID"
+    CRED_LIST="$CRED_LIST|OPENAI_API_KEY:OpenAI"
     CRED_LIST="$CRED_LIST|OPENROUTER_API_KEY:OpenRouter"
+    CRED_LIST="$CRED_LIST|OLLAMA_API_KEY:Ollama Cloud"
+    CRED_LIST="$CRED_LIST|GOHIGHLEVEL_API_KEY:GHL (PIT — GoHighLevel Private Integration Token)"
+    CRED_LIST="$CRED_LIST|GOHIGHLEVEL_LOCATION_ID:GHL Location ID"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_API_KEY:Fish Audio"
-    CRED_LIST="$CRED_LIST|FISH_AUDIO_VOICE_ID:Fish Audio"
+    CRED_LIST="$CRED_LIST|FISH_AUDIO_VOICE_ID:Fish Audio Voice"
     CRED_LIST="$CRED_LIST|PODBEAN_API_KEY:Podbean"
-    CRED_LIST="$CRED_LIST|PODBEAN_API_SECRET:Podbean"
-    CRED_LIST="$CRED_LIST|TELEGRAM_BOT_TOKEN:Telegram"
-    
+    CRED_LIST="$CRED_LIST|PODBEAN_API_SECRET:Podbean Secret"
+    CRED_LIST="$CRED_LIST|TAVILY_API_KEY:Tavily Search"
+    CRED_LIST="$CRED_LIST|KIE_API_KEY:KIE.ai (skill 27)"
+    CRED_LIST="$CRED_LIST|TELEGRAM_BOT_TOKEN:Telegram Bot"
+    CRED_LIST="$CRED_LIST|GITHUB_TOKEN:GitHub"
+    CRED_LIST="$CRED_LIST|VERCEL_TOKEN:Vercel"
+    CRED_LIST="$CRED_LIST|SUPABASE_SERVICE_ROLE_KEY:Supabase"
+
     local found_count=0
-    local creds
-    creds="$CRED_LIST"
-    
+    local missing_creds=""
+    local creds="$CRED_LIST"
+
     while [ -n "$creds" ]; do
         local CRED_ENTRY
         if echo "$creds" | grep -q "|"; then
             CRED_ENTRY=$(echo "$creds" | cut -d'|' -f1)
             creds=$(echo "$creds" | cut -d'|' -f2-)
         else
-            CRED_ENTRY="$creds"
-            creds=""
+            CRED_ENTRY="$creds"; creds=""
         fi
-        
         local VAR_NAME=$(echo "$CRED_ENTRY" | cut -d':' -f1)
-        local SERVICE=$(echo "$CRED_ENTRY" | cut -d':' -f2)
-        local VALUE=$(search_env_var "$VAR_NAME")
-        
+        local SERVICE=$(echo "$CRED_ENTRY" | cut -d':' -f2-)
+        local VALUE
+        VALUE=$(search_env_var "$VAR_NAME")
         if [ -n "$VALUE" ]; then
             found_count=$((found_count + 1))
-            success "Found $VAR_NAME for $SERVICE"
+            success "Found $VAR_NAME — $SERVICE"
+            CREDS_FOUND_LIST="$CREDS_FOUND_LIST|$VAR_NAME"
+        else
+            missing_creds="$missing_creds|$VAR_NAME ($SERVICE)"
         fi
     done
-    
-    note "$found_count credentials discovered (silent mode - no warnings for missing)"
+
+    note "$found_count credentials discovered."
+    if [ -n "$missing_creds" ]; then
+        warn "Not configured yet (some skills will skip or require these later):"
+        echo "$missing_creds" | tr '|' '\n' | grep -v '^$' | sed 's/^/      /'
+    fi
+}
+
+# has_cred <CANONICAL_VAR> — returns 0 if discover_all_credentials found it
+has_cred() {
+    case "|${CREDS_FOUND_LIST}|" in
+        *"|$1|"*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # ----------------------------------------------------------
@@ -1147,10 +1275,22 @@ except Exception:
 fi
 # Fallback chain if CLI query returned nothing or non-existent path
 if [ -z "$WORKSPACE_DIR" ] || [ ! -d "$WORKSPACE_DIR" ]; then
-    if [ -d "$OC_CLAWD" ]; then
-        WORKSPACE_DIR="$OC_CLAWD"
+    # v9.7.11: on VPS the canonical workspace is /data/.openclaw/workspace,
+    # NOT /data/clawd. Mac uses ~/clawd. Detect platform and pick accordingly.
+    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
+        if [ -d "$OC_CONFIG/workspace" ]; then
+            WORKSPACE_DIR="$OC_CONFIG/workspace"
+        elif [ -d "$OC_CLAWD" ]; then
+            WORKSPACE_DIR="$OC_CLAWD"
+        else
+            WORKSPACE_DIR="$OC_CONFIG/workspace"
+        fi
     else
-        WORKSPACE_DIR="$OC_CONFIG/workspace"
+        if [ -d "$OC_CLAWD" ]; then
+            WORKSPACE_DIR="$OC_CLAWD"
+        else
+            WORKSPACE_DIR="$OC_CONFIG/workspace"
+        fi
     fi
 fi
 mkdir -p "$WORKSPACE_DIR"

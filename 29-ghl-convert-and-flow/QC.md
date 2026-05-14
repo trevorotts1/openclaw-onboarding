@@ -42,7 +42,16 @@ Required environment values:
 - `GHL_LOCATION_ID`
 
 ```bash
-source ~/clawd/secrets/.env 2>/dev/null || true
+# Platform-aware env load. Hostinger Docker VPS already has these as
+# container env vars (no .env file exists). Mac stores them in
+# ~/.openclaw/secrets/.env (canonical) or ~/clawd/secrets/.env (legacy).
+# Also normalize naming: VPS uses GHL_PRIVATE_INTEGRATION_TOKEN; map to GHL_API_KEY.
+for env_file in /data/.openclaw/secrets/.env "$HOME/.openclaw/secrets/.env" "$HOME/clawd/secrets/.env"; do
+  [ -f "$env_file" ] && set -a && . "$env_file" && set +a && break
+done
+[ -z "${GHL_API_KEY:-}" ] && [ -n "${GHL_PRIVATE_INTEGRATION_TOKEN:-}" ] && export GHL_API_KEY="$GHL_PRIVATE_INTEGRATION_TOKEN"
+[ -z "${GHL_API_KEY:-}" ] && [ -n "${GOHIGHLEVEL_API_KEY:-}" ] && export GHL_API_KEY="$GOHIGHLEVEL_API_KEY"
+[ -z "${GHL_LOCATION_ID:-}" ] && [ -n "${GOHIGHLEVEL_LOCATION_ID:-}" ] && export GHL_LOCATION_ID="$GOHIGHLEVEL_LOCATION_ID"
 for var in GHL_API_KEY GHL_LOCATION_ID; do
   [ -n "$(printenv "$var" 2>/dev/null)" ] \
     && echo "PASS: $var set" \
@@ -98,7 +107,16 @@ echo "Location ID: $GHL_LOCATION_ID"
 ### 4.1 Location-read test
 
 ```bash
-source ~/clawd/secrets/.env 2>/dev/null || true
+# Platform-aware env load. Hostinger Docker VPS already has these as
+# container env vars (no .env file exists). Mac stores them in
+# ~/.openclaw/secrets/.env (canonical) or ~/clawd/secrets/.env (legacy).
+# Also normalize naming: VPS uses GHL_PRIVATE_INTEGRATION_TOKEN; map to GHL_API_KEY.
+for env_file in /data/.openclaw/secrets/.env "$HOME/.openclaw/secrets/.env" "$HOME/clawd/secrets/.env"; do
+  [ -f "$env_file" ] && set -a && . "$env_file" && set +a && break
+done
+[ -z "${GHL_API_KEY:-}" ] && [ -n "${GHL_PRIVATE_INTEGRATION_TOKEN:-}" ] && export GHL_API_KEY="$GHL_PRIVATE_INTEGRATION_TOKEN"
+[ -z "${GHL_API_KEY:-}" ] && [ -n "${GOHIGHLEVEL_API_KEY:-}" ] && export GHL_API_KEY="$GOHIGHLEVEL_API_KEY"
+[ -z "${GHL_LOCATION_ID:-}" ] && [ -n "${GOHIGHLEVEL_LOCATION_ID:-}" ] && export GHL_LOCATION_ID="$GOHIGHLEVEL_LOCATION_ID"
 
 HTTP_CODE=$(curl -s -o /tmp/ghl_qc_location.json -w "%{http_code}" \
   -H "Authorization: Bearer $GHL_API_KEY" \

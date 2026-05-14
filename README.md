@@ -2,11 +2,19 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent.**
 
-**Current Version: v9.7.10** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v9.7.11** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update, with both Terminal and Telegram options for Mac and VPS.
+
+### What's New in v9.7.11 (May 14, 2026) — Smart credential discovery + 4 critical skill fixes
+
+install.sh credential discovery is now platform-aware and alias-smart. Hostinger Docker VPS exposes API keys as container env vars (no .env files); Mac uses `~/.openclaw/secrets/.env`. Lookup now tries multiple naming variants per credential — e.g. `GOHIGHLEVEL_API_KEY` ↔ `GHL_PRIVATE_INTEGRATION_TOKEN` ↔ `GHL_API_KEY` ↔ `GHL_PIT`. Also reads LLM keys directly from `models.providers.<name>.apiKey` in openclaw.json.
+
+4 critical skill fixes (skills 06, 29, 11, 16) that would have failed outright on Hostinger Docker — see CHANGELOG.md for the line-by-line fix list.
+
+End-of-discovery report now lists any missing canonical credentials so the operator can fix gaps before skill installs hit them.
 
 ### What's New in v9.7.10 (May 14, 2026) — Strategy 5: scan credentials/ for chat IDs
 
