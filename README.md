@@ -2,13 +2,19 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
-**Current Version: v10.2.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v10.3.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
+
+### What's New in v10.3.0 (May 14, 2026) — Auto-install Calibre + remove MOONSHOT_API_KEY hardcoding
+
+**Fix 1:** install.sh now auto-installs Calibre (ebook-convert) for Skill 22 ebook extraction. Mac uses `brew install --cask calibre`; VPS uses Linuxbrew or the official Calibre Linux installer. Silent if already present, non-fatal if it fails.
+
+**Fix 2:** Skill 22 `pipeline/orchestrator.py` no longer crashes on missing `MOONSHOT_API_KEY`. Added real `call_ollama_cloud()` function that hits `https://ollama.com/api/chat` directly. All three phases (Phase 1 extraction, Phase 2 analysis, Phase 3 synthesis) now route through Ollama Cloud when the selector picks `ollama/*` models — previously a TODO that silently fell back to OpenRouter. Same-model OpenRouter fallback fires on Ollama Cloud failure. Deprecated `call_moonshot()` kept for back-compat but no longer in the routing chain. Future-proofed via version-pattern regex.
 
 ### What's New in v10.2.0 (May 14, 2026) — No-shortcut rule for sub-agents + explicit DeepSeek/Kimi priority
 

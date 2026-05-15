@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v10.2.0 — Mac mini
+#  OpenClaw Onboarding Installer v10.3.0 — Mac mini
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 #
 #  This installer is for Mac mini / macOS deployments of OpenClaw.
@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.2.0"
+ONBOARDING_VERSION="v10.3.0"
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)
@@ -1462,6 +1462,47 @@ if ! python3 -c "import google.genai" 2>/dev/null; then
         warn "google-genai install failed - manual install required"
 else
     success "google-genai already installed"
+fi
+
+# ----------------------------------------------------------
+# v10.3.0: Install Calibre (ebook-convert) for Skill 22 book extraction
+# ----------------------------------------------------------
+# Skill 22 needs `ebook-convert` to handle MOBI, AZW, AZW3, KFX formats.
+# Without Calibre, the book-to-persona pipeline silently skips those formats
+# and only processes PDF/EPUB — which is fine for many books but causes
+# silent gaps for Kindle libraries. Auto-install here so it's ready by the
+# time Skill 22 runs in Wave 5.
+#
+# Mac: Homebrew cask (the canonical Mac install path). Falls back gracefully
+# if brew is missing or the install fails — Skill 22 has graceful degradation
+# for missing Calibre.
+if command -v ebook-convert >/dev/null 2>&1; then
+    success "Calibre (ebook-convert) already installed: $(ebook-convert --version 2>&1 | head -1)"
+else
+    note "Installing Calibre (ebook-convert) for Skill 22 ebook extraction..."
+    if command -v brew >/dev/null 2>&1; then
+        if brew install --cask calibre 2>&1 | tee -a "$LOG_FILE" | tail -3; then
+            if command -v ebook-convert >/dev/null 2>&1; then
+                success "Calibre installed: $(ebook-convert --version 2>&1 | head -1)"
+            else
+                # Calibre installs to /Applications/calibre.app on Mac; ebook-convert is inside
+                CALIBRE_BIN="/Applications/calibre.app/Contents/MacOS/ebook-convert"
+                if [ -x "$CALIBRE_BIN" ]; then
+                    note "Calibre installed to /Applications/calibre.app. Adding to PATH via symlink..."
+                    sudo ln -sf "$CALIBRE_BIN" /usr/local/bin/ebook-convert 2>/dev/null || \
+                        warn "Could not symlink ebook-convert — Skill 22 will need to use the full path /Applications/calibre.app/Contents/MacOS/ebook-convert"
+                else
+                    warn "Calibre install ran but ebook-convert not found on PATH. Skill 22 ebook extraction will be limited to PDF/EPUB."
+                fi
+            fi
+        else
+            warn "brew install --cask calibre failed. Skill 22 ebook extraction limited to PDF/EPUB."
+            warn "To install manually: brew install --cask calibre"
+        fi
+    else
+        warn "Homebrew not found on this Mac. Skill 22 ebook extraction will be limited to PDF/EPUB."
+        warn "To install Calibre manually: install Homebrew (https://brew.sh), then run: brew install --cask calibre"
+    fi
 fi
 
 # ----------------------------------------------------------

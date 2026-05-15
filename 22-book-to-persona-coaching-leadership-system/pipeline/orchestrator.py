@@ -4,7 +4,7 @@ BlackCEO Coaching Personas Matrix - Orchestration Engine
 Manages the 3-phase book-to-persona pipeline across all 21 books.
 
 Pipeline:
-  Phase 1 - Extraction (Kimi K2.5) - reads full book, extracts raw data
+  Phase 1 - Extraction (Ollama DeepSeek V4-pro or Kimi 2.6, latest version — selector-resolved)
   Phase 2 - Analysis (DeepSeek V3.2-Speciale) - deep analytical work
   Phase 3 - Synthesis (GPT-5.3 Codex) - writes the full persona blueprint
 
@@ -131,17 +131,27 @@ def get_keys():
     return keys
 
 _KEYS = get_keys()
-OPENROUTER_API_KEY = _KEYS.get("OPENROUTER_API_KEY") or ""
-MOONSHOT_API_KEY = _KEYS.get("MOONSHOT_API_KEY") or ""
-OPENAI_API_KEY     = _KEYS.get("OPENAI_API_KEY") or ""
+# v10.3.0: Ollama Cloud is now the primary route for heavy reasoning. The
+# selector picks ollama/* first; we only need OpenRouter/OAuth as fallback
+# routes if the client doesn't have Ollama Cloud configured.
+OLLAMA_API_KEY      = _KEYS.get("OLLAMA_API_KEY") or os.environ.get("OLLAMA_API_KEY", "")
+OPENROUTER_API_KEY  = _KEYS.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY", "")
+OPENAI_API_KEY      = _KEYS.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+MOONSHOT_API_KEY    = _KEYS.get("MOONSHOT_API_KEY") or os.environ.get("MOONSHOT_API_KEY", "")  # deprecated, kept for back-compat only
 
-if not OPENROUTER_API_KEY:
-    raise ValueError("OPENROUTER_API_KEY not found")
-if not MOONSHOT_API_KEY:
-    raise ValueError("MOONSHOT_API_KEY not found")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY not found in secrets/.env (check WORKSPACE_ROOT env var)")
+# No hard requirement on any single key — at least ONE provider key must
+# be present, but the selector decides which one to use. Crashing on a
+# missing MOONSHOT_API_KEY was the old (pre-v10.3.0) behavior and was wrong:
+# it forced clients with Ollama Cloud to also configure Moonshot, even
+# though the new chain never calls Moonshot direct anymore.
+if not (OLLAMA_API_KEY or OPENROUTER_API_KEY or OPENAI_API_KEY):
+    raise ValueError(
+        "No model provider API key found. Set at least one of: "
+        "OLLAMA_API_KEY (preferred), OPENROUTER_API_KEY (fallback), or OPENAI_API_KEY (last resort) "
+        "in secrets/.env or as a container env var."
+    )
 
+OLLAMA_BASE_URL     = "https://ollama.com/api"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENAI_BASE_URL     = "https://api.openai.com/v1"
 
@@ -557,8 +567,76 @@ def chunk_text(text: str, chunk_size: int = MAX_CHUNK_SIZE, overlap: int = 2000)
 
 # ─── API CALLS ────────────────────────────────────────────────────────────────
 
+async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: str, user: str, max_tokens: int = 16000) -> str:
+    """
+    Call Ollama Cloud (https://ollama.com/api/chat) for any ollama/* model.
+    v10.3.0: this is the PRIMARY route for heavy reasoning. Kimi 2.6+ and
+    DeepSeek V4-pro both run here at subscription-billed cost.
+
+    `model` arg must be an Ollama model id WITHOUT the "ollama/" prefix
+    (e.g. "kimi-k2.6:cloud" not "ollama/kimi-k2.6:cloud"). Caller strips it.
+    """
+    if not OLLAMA_API_KEY:
+        raise RuntimeError("Ollama Cloud route requested but OLLAMA_API_KEY is not set")
+
+    headers = {
+        "Authorization": f"Bearer {OLLAMA_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": False,
+        "options": {
+            "temperature": 1.0,
+            "num_predict": max_tokens,
+        },
+    }
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            async with session.post(
+                f"{OLLAMA_BASE_URL}/chat",
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=1800),
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    # Ollama Cloud chat response shape: {"message": {"content": "..."}}
+                    msg = data.get("message", {}) if isinstance(data, dict) else {}
+                    content = msg.get("content", "") if isinstance(msg, dict) else ""
+                    if content:
+                        return content
+                    log(f"  Ollama Cloud returned empty content (attempt {attempt}/{MAX_RETRIES}); body preview: {json.dumps(data)[:200]}")
+                else:
+                    error_text = await response.text()
+                    log(f"  Ollama Cloud error {response.status}: {error_text[:200]}")
+                if attempt < MAX_RETRIES:
+                    log(f"  Retrying in {RETRY_DELAY}s... (attempt {attempt}/{MAX_RETRIES})")
+                    import asyncio as _asyncio
+                    await _asyncio.sleep(RETRY_DELAY * attempt)
+        except Exception as e:
+            log(f"  Exception on attempt {attempt}: {e}")
+            if attempt < MAX_RETRIES:
+                import asyncio as _asyncio
+                await _asyncio.sleep(RETRY_DELAY * attempt)
+
+    raise RuntimeError(f"All {MAX_RETRIES} attempts failed for {model} via Ollama Cloud")
+
+
 async def call_moonshot(session: aiohttp.ClientSession, system: str, user: str) -> str:
-    """Call Kimi K2.5 via Moonshot direct API."""
+    """
+    DEPRECATED in v10.3.0. Kept for backward compatibility but no longer
+    referenced by the routing chain. The selector chain now goes:
+    Ollama Cloud → OpenRouter (same models) → OAuth GPT. Moonshot direct
+    API is not in the chain.
+
+    Calls Kimi K2.5 via Moonshot direct API (legacy path).
+    """
     headers = {
         "Authorization": f"Bearer {MOONSHOT_API_KEY}",
         "Content-Type": "application/json"
@@ -765,26 +843,39 @@ Here is the complete book text. Extract all 20 items as specified in your instru
 
 {text[:max_chars]}"""
 
-        # Route the call based on the resolved model. Falls back to call_moonshot()
-        # only when the resolved model is moonshot/* (preserved for backward compat).
+        # v10.3.0: Route the call based on the resolved model. Priority is
+        # Ollama Cloud first (cheap subscription), OpenRouter same-model
+        # fallback second, OAuth GPT third. Moonshot direct API is no longer
+        # in the routing chain (Kimi 2.6 + DeepSeek V4-pro both available
+        # via Ollama Cloud and OpenRouter — no need for the direct route).
         if folder in OPENROUTER_FALLBACK_FOLDERS:
             log(f"  Using OpenRouter fallback for {book['title']} (content filter)")
-            result = await call_openrouter(session, per_book_model.replace("ollama/", "").replace("openrouter/", ""),
-                                            EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            or_model = per_book_model.replace("ollama/", "").replace("openrouter/", "")
+            result = await call_openrouter(session, or_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
         elif per_book_route == "ollama":
-            # TODO(v9.5.2): implement call_ollama_cloud() for direct Ollama API.
-            # For now, fall through to Moonshot/OpenRouter via the existing helpers.
-            log(f"  WARN: Ollama route resolved ({per_book_model}) but call_ollama_cloud() not implemented; using OpenRouter fallback")
-            fallback_model = per_book_model.replace("ollama/", "openrouter/")
-            result = await call_openrouter(session, fallback_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            # PRIMARY route — strip the "ollama/" prefix and call Ollama Cloud
+            ollama_model = per_book_model.replace("ollama/", "", 1)
+            try:
+                result = await call_ollama_cloud(session, ollama_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            except Exception as e:
+                # Ollama Cloud failed — fall back to OpenRouter same model
+                log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
+                fallback_model = per_book_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                result = await call_openrouter(session, fallback_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
         elif per_book_route == "openrouter":
-            result = await call_openrouter(session, per_book_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            or_model = per_book_model.replace("openrouter/", "", 1)
+            result = await call_openrouter(session, or_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
         elif per_book_route == "openai-responses":
             # OAuth GPT — uses existing OpenAI client path
-            result = await call_openai_responses(session, per_book_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000) if "call_openai_responses" in globals() else await call_openrouter(session, per_book_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            if "call_openai_responses" in globals():
+                result = await call_openai_responses(session, per_book_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            else:
+                result = await call_codex(session, user_prompt, max_tokens=16000)
         else:
-            # Last-resort backward-compat fallback to direct Moonshot API
-            result = await call_moonshot(session, EXTRACTION_SYSTEM, user_prompt)
+            # Unknown route — try OpenRouter as a safe default
+            log(f"  WARN: unknown route '{per_book_route}' for model {per_book_model}; trying OpenRouter")
+            or_model = per_book_model.replace("ollama/", "openrouter/").replace(":cloud", "").replace("openrouter/", "", 1)
+            result = await call_openrouter(session, or_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
 
         header = f"# EXTRACTION NOTES - {book['title']}\n**Author:** {book['author']}\n**Extracted:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}\n**Model:** {MODEL_EXTRACTION}\n\n---\n\n"
         output_path.write_text(header + result)
@@ -838,14 +929,24 @@ A final synthesis pass will combine all chunk analyses.
             per_chunk_model, per_chunk_route = resolve_phase_model("phase2", input_chars=len(chunk))
             log(f"    Model for chunk {i}: {per_chunk_model} via {per_chunk_route}")
             if per_chunk_route == "openai-responses":
-                chunk_result = await call_openai_responses(session, per_chunk_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000) if "call_openai_responses" in globals() else await call_openrouter(session, per_chunk_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                if "call_openai_responses" in globals():
+                    chunk_result = await call_openai_responses(session, per_chunk_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                else:
+                    chunk_result = await call_codex(session, user_prompt, max_tokens=16000)
             elif per_chunk_route == "ollama":
-                fallback_model = per_chunk_model.replace("ollama/", "openrouter/")
-                chunk_result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                # v10.3.0: Ollama Cloud is now a real route
+                ollama_model = per_chunk_model.replace("ollama/", "", 1)
+                try:
+                    chunk_result = await call_ollama_cloud(session, ollama_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                except Exception as e:
+                    log(f"    Ollama Cloud chunk call failed ({e}); falling back to OpenRouter")
+                    fallback_model = per_chunk_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                    chunk_result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
             else:
-                chunk_result = await call_openrouter(session, per_chunk_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
-                chunk_analyses.append(f"## CHUNK {i} ANALYSIS\n\n{chunk_result}")
-                await asyncio.sleep(2)  # Brief pause between chunks
+                or_model = per_chunk_model.replace("openrouter/", "", 1)
+                chunk_result = await call_openrouter(session, or_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+            chunk_analyses.append(f"## CHUNK {i} ANALYSIS\n\n{chunk_result}")
+            await asyncio.sleep(2)  # Brief pause between chunks
 
             # Final synthesis of all chunk analyses
             log(f"  Synthesizing {len(chunks)} chunk analyses into unified analysis...")
@@ -866,12 +967,22 @@ Produce the final structured analysis document.
             synth_model, synth_route = resolve_phase_model("phase2", input_chars=combined_size)
             log(f"  Synthesis model: {synth_model} via {synth_route}")
             if synth_route == "openai-responses":
-                result = await call_openai_responses(session, synth_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000) if "call_openai_responses" in globals() else await call_openrouter(session, synth_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                if "call_openai_responses" in globals():
+                    result = await call_openai_responses(session, synth_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                else:
+                    result = await call_codex(session, synthesis_prompt, max_tokens=16000)
             elif synth_route == "ollama":
-                fallback_model = synth_model.replace("ollama/", "openrouter/")
-                result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                # v10.3.0: Ollama Cloud is now a real route
+                ollama_model = synth_model.replace("ollama/", "", 1)
+                try:
+                    result = await call_ollama_cloud(session, ollama_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                except Exception as e:
+                    log(f"  Ollama Cloud synthesis call failed ({e}); falling back to OpenRouter")
+                    fallback_model = synth_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                    result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
             else:
-                result = await call_openrouter(session, synth_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                or_model = synth_model.replace("openrouter/", "", 1)
+                result = await call_openrouter(session, or_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
 
         else:
             user_prompt = f"""BOOK: {book['title']}
@@ -888,12 +999,22 @@ Analyze across all 12 analytical dimensions as specified.
             single_model, single_route = resolve_phase_model("phase2", input_chars=len(extraction_text))
             log(f"  Single-pass model: {single_model} via {single_route}")
             if single_route == "openai-responses":
-                result = await call_openai_responses(session, single_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000) if "call_openai_responses" in globals() else await call_openrouter(session, single_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                if "call_openai_responses" in globals():
+                    result = await call_openai_responses(session, single_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                else:
+                    result = await call_codex(session, user_prompt, max_tokens=16000)
             elif single_route == "ollama":
-                fallback_model = single_model.replace("ollama/", "openrouter/")
-                result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                # v10.3.0: Ollama Cloud is now a real route
+                ollama_model = single_model.replace("ollama/", "", 1)
+                try:
+                    result = await call_ollama_cloud(session, ollama_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                except Exception as e:
+                    log(f"  Ollama Cloud single-pass call failed ({e}); falling back to OpenRouter")
+                    fallback_model = single_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                    result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
             else:
-                result = await call_openrouter(session, single_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                or_model = single_model.replace("openrouter/", "", 1)
+                result = await call_openrouter(session, or_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
 
         header = f"# ANALYSIS NOTES - {book['title']}\n**Author:** {book['author']}\n**Analyzed:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}\n**Model:** {MODEL_ANALYSIS}\n\n---\n\n"
         output_path.write_text(header + result)
@@ -964,18 +1085,21 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
 
         full_input = f"{SYNTHESIS_SYSTEM}\n\n---\n\n{user_prompt}"
         if phase3_route == "openai-responses":
-            # OAuth GPT route — use the existing call_codex path but pass the resolved model
-            # call_codex currently hardwires MODEL_SYNTHESIS; we temporarily override it.
-            # Simpler: build the request inline. But to keep backward compat, fall through.
+            # OAuth GPT route — preferred for Phase 3 synthesis (no per-call cost)
             result = await call_codex(session, full_input, max_tokens=120000)
         elif phase3_route == "ollama":
-            # Ollama Cloud route — currently no call_ollama_cloud(); fall back to openrouter
-            fallback_model = phase3_model.replace("ollama/", "openrouter/")
-            log(f"  WARN: Ollama route resolved but no Ollama caller; falling back to {fallback_model}")
-            result = await call_openrouter(session, fallback_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
+            # v10.3.0: Ollama Cloud is now a real route — call it directly
+            ollama_model = phase3_model.replace("ollama/", "", 1)
+            try:
+                result = await call_ollama_cloud(session, ollama_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
+            except Exception as e:
+                log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
+                fallback_model = phase3_model.replace("ollama/", "openrouter/").replace(":cloud", "")
+                result = await call_openrouter(session, fallback_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
         else:
             # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
-            result = await call_openrouter(session, phase3_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
+            or_model = phase3_model.replace("openrouter/", "", 1)
+            result = await call_openrouter(session, or_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
 
         header = f"""# PERSONA BLUEPRINT - {book['title']}
 **Source Book:** {book['title']} by {book['author']}

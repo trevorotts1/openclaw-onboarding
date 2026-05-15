@@ -593,9 +593,9 @@ Run Book Intelligence Pipeline on: [book title or path to PDF]
 
 This triggers the full sequence:
 1. **Text extraction** - pdfplumber extracts to `text/[book-slug].txt`
-2. **Phase 1 (Kimi K2.5)** - Spawns sub-agent with extraction prompt + book text. Output: `personas/[author]-[book-slug]/extraction-notes.md`
+2. **Phase 1 (resolved via `select_model.py --purpose-tier heavy`)** — Ollama DeepSeek V4-pro / Ollama Kimi 2.6 preferred (latest versions auto-detected). Spawns sub-agent with extraction prompt + book text. Output: `personas/[author]-[book-slug]/extraction-notes.md`
 3. **Phase 2 (DeepSeek V3.2-Speciale)** - Spawns sub-agent with analysis prompt + extraction notes. Output: `personas/[author]-[book-slug]/analysis-notes.md`
-4. **Phase 3 (GPT-5.3 Codex)** - Spawns sub-agent with synthesis prompt + extraction + analysis notes. Output: `personas/[author]-[book-slug]/persona-blueprint.md`. Falls back to Kimi K2.5 on failure.
+4. **Phase 3 (OAuth GPT preferred, latest Codex version auto-detected)** — Spawns sub-agent with synthesis prompt + extraction + analysis notes. Output: `personas/[author]-[book-slug]/persona-blueprint.md`. Falls back to Ollama Cloud Kimi (latest) on OAuth failure.
 5. **Gemini Engine indexing** - Runs `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` to make the new persona searchable.
 
 **Verify each phase completed** by checking:

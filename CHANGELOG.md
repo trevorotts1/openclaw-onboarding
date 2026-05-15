@@ -1,3 +1,48 @@
+## v10.3.0 - May 14, 2026 - Auto-install Calibre + remove MOONSHOT_API_KEY hardcoding
+
+Two real-world install errors fixed.
+
+### Fix 1: Auto-install Calibre during install.sh
+
+**The bug:** Every install would warn `Calibre install failed - manual install required` because Skill 22 needs `ebook-convert` for MOBI/AZW/AZW3/KFX formats but install.sh never tried to install it. Result: Skill 22 silently dropped Kindle-format books and only processed PDFs/EPUBs.
+
+**The fix:** Added an explicit Calibre install step in install.sh right after the google-genai dependency install.
+
+- **Mac install.sh:** runs `brew install --cask calibre` if `ebook-convert` is missing. Calibre installs to `/Applications/calibre.app/Contents/MacOS/ebook-convert` on Mac; the script symlinks that into `/usr/local/bin/ebook-convert` so it shows up on PATH for Skill 22. If brew isn't on the system, warns clearly with a recovery URL.
+- **VPS install.sh:** tries Linuxbrew first (`/data/linuxbrew/.linuxbrew/bin/brew install calibre`) — Hostinger Docker ships with Linuxbrew. Falls back to the official Calibre Linux installer (`https://download.calibre-ebook.com/linux-installer.sh`) into `/data/.openclaw/calibre/` with a symlink to `/usr/local/bin/ebook-convert`.
+- Both paths: silent success if already installed (`command -v ebook-convert`), no spam.
+- Both paths: non-fatal failure. Install continues; Skill 22 has graceful PDF/EPUB-only degradation if Calibre stays unavailable.
+
+### Fix 2: Stop crashing on missing MOONSHOT_API_KEY + reroute Phase 1 through Ollama Cloud
+
+**The bug:** `22-book-to-persona/pipeline/orchestrator.py` had a hard `raise ValueError("MOONSHOT_API_KEY not found")` at module-load time. Result: ANY client without a Moonshot key — including every client we now configure to use Ollama Cloud Kimi 2.6 — crashed the entire Book-to-Persona pipeline on first call. The hardcoded `call_moonshot()` function pointed at `kimi-k2.5` via direct `api.moonshot.ai/v1`, completely bypassing the `select_model.py` chain that's supposed to pick the best available model.
+
+Also, the `per_book_route == "ollama"` branch in `run_extraction()` had a `# TODO: implement call_ollama_cloud()` placeholder that fell back to OpenRouter — so even when the selector correctly picked `ollama/kimi-k2.6:cloud`, the actual call went out via OpenRouter (per-token billed, wrong route).
+
+**The fix:**
+
+1. **No more hard `MOONSHOT_API_KEY` requirement.** Replaced the three `raise ValueError` lines with one: "at least ONE of OLLAMA_API_KEY (preferred), OPENROUTER_API_KEY, or OPENAI_API_KEY must be set." The pipeline now starts cleanly even when only Ollama is configured.
+
+2. **Added `call_ollama_cloud()` function.** New async helper hits `https://ollama.com/api/chat` with `Bearer $OLLAMA_API_KEY`. Used by all three phases (run_extraction, run_analysis, run_synthesis) when the selector resolves an `ollama/*` model.
+
+3. **Rewrote all three phase routing blocks.** When `per_book_route == "ollama"`, the orchestrator now calls `call_ollama_cloud()` directly. If that fails (rate limit, network), it falls back to the SAME model via OpenRouter (e.g. `ollama/kimi-k2.6:cloud` → `openrouter/moonshot/kimi-k2.6`). OAuth GPT is the last resort.
+
+4. **Deprecated `call_moonshot()`.** The function still exists for backward compatibility but is no longer in the routing chain. The `select_model.py` selector chain doesn't produce `moonshot/*` model IDs anymore, so the function is unreachable from normal operation.
+
+5. **Updated documentation to match.** All Skill 22 docs that referenced "Phase 1 (Kimi K2.5)" or "Phase 3 fallback to Kimi K2.5" now say "selector-resolved, latest version auto-detected." Both agent-prompt files (extraction-agent-prompt.md, synthesis-agent-prompt.md) had their hardcoded `## Model: Kimi K2.5` headers replaced with the priority chain explainer.
+
+**Future-proofing:** the selector uses regex patterns that match version numbers (`kimi-k(\d+(?:\.\d+)*)`), so when the client adds Kimi 2.7 or DeepSeek V5 to their openclaw.json, the orchestrator picks up the newer version automatically — no code changes needed.
+
+### Skill 22 files updated (mirrored to both repos)
+- `pipeline/orchestrator.py` — added Ollama Cloud route, removed Moonshot crash, rewired all three phases
+- `SKILL.md` — top-of-file description now reflects dynamic model selection
+- `INSTALL.md` — Phase 1 + Phase 3 descriptions
+- `QC.md` — Q2 verification question
+- `agent-prompts/extraction-agent-prompt.md` — model header
+- `agent-prompts/synthesis-agent-prompt.md` — model header
+
+---
+
 ## v10.2.0 - May 14, 2026 - No-shortcut rule for sub-agents + explicit DeepSeek/Kimi priority for book extraction
 
 Two changes, both in response to observed install behavior.

@@ -3,8 +3,11 @@ name: book-to-persona-coaching-leadership-system
 description: >
   Converts any bestselling book PDF into a dual-purpose persona blueprint — one that coaches
   humans through personal and professional challenges AND governs AI agents executing professional
-  work across departments. Runs a 3-phase pipeline: Kimi K2.5 extracts, DeepSeek V3.2 analyzes,
-  GPT-5.4 Codex synthesizes. Output is Gemini Engine-indexed for retrieval. Wiki-enabled for
+  work across departments. Runs a 3-phase pipeline with dynamic model selection via
+  shared-utils/select_model.py: Phase 1 (extraction) and Phase 2 (analysis) prefer
+  Ollama Cloud DeepSeek V4-pro and Kimi 2.6 (latest versions auto-detected) with
+  OpenRouter same-model fallback. Phase 3 (synthesis) prefers OAuth GPT. Never
+  Anthropic. Output is Gemini Engine-indexed for retrieval. Wiki-enabled for
   unified knowledge access. Uses the Teach Yourself Protocol before every run.
 ---
 
@@ -83,7 +86,7 @@ Drop any supported format into the `books/` folder and the pipeline handles the 
 
 Takes any book (PDF, EPUB, MOBI, or Kindle) and produces a **dual-purpose persona blueprint** through a 3-phase sub-agent pipeline:
 
-- **Phase 1 - Extraction** (Kimi K2.5): Reads the full book text, extracts 20 structured items across two lenses - coaching methodology and agent governance frameworks
+- **Phase 1 - Extraction** (Ollama DeepSeek V4-pro preferred, latest version auto-detected): Reads the full book text, extracts 20 structured items across two lenses — coaching methodology and agent governance frameworks. Selector falls back to Ollama Kimi 2.6 → OpenRouter DeepSeek V4-pro → OpenRouter Kimi 2.6 → OAuth GPT when higher tiers are unavailable.
 - **Phase 2 - Analysis** (DeepSeek V3.2): Deep analytical work across 12 dimensions including Amateur-to-Expert Gap, failure taxonomy, execution standards, decision logic
 - **Phase 3 - Synthesis** (GPT-5.4 Codex via OAuth): Writes the complete 14-section persona blueprint - fully deployable for both human coaching and AI agent governance
 

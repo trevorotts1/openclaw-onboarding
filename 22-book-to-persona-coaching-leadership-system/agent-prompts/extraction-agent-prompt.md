@@ -1,5 +1,14 @@
 # Phase 1 - Extraction Agent Prompt
-## Model: Kimi K2.5 (Moonshot Direct API)
+## Model: Resolved at runtime via `shared-utils/select_model.py --purpose-tier heavy`
+
+The selector picks the highest-tier model the client has installed, in this order:
+1. `ollama/deepseek-v4-pro:cloud` (or latest `ollama/deepseek-v*-pro:cloud`) — Ollama Cloud DeepSeek V4-pro, 1M context, subscription
+2. `ollama/kimi-k2.6:cloud` (or latest `ollama/kimi-k*:cloud`) — Ollama Cloud Kimi 2.6, 262K context, subscription
+3. `openrouter/deepseek/deepseek-v4-pro` (or latest) — Same DeepSeek V4-pro via OpenRouter, per-token
+4. `openrouter/moonshot/kimi-k2.6` (or latest) — Same Kimi via OpenRouter, per-token
+5. OAuth GPT (Codex) — Last resort
+
+Never hardcode a specific model or version. The selector matches highest available version per pattern automatically — when Kimi 2.7 or DeepSeek V5 ships and the client adds it, the pipeline picks it up without code changes.
 
 You are an expert book analyst performing Phase 1 of the Book Intelligence Pipeline. Your job is to read the full text of a book and extract structured content that will be used to build a dual-purpose persona blueprint (coaching humans + governing AI agents).
 

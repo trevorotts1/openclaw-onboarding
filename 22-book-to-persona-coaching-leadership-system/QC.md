@@ -106,7 +106,7 @@ Answer each question without looking at the files. These confirm the agent has i
 **Q1: What are the three pipeline phases and which model handles each?**
 - Expected: Phase 1 + Phase 2 = Ollama Cloud Kimi/DeepSeek-pro (per `shared-utils/select_model.py --purpose-tier heavy`), Phase 3 = OAuth GPT preferred. OpenRouter only appears as primary if the client's openclaw.json has NO Ollama Cloud models.
 
-**Q2: What triggers a Phase 3 fallback from GPT-5.4 Codex to Kimi K2.5?**
+**Q2: What triggers a Phase 3 fallback from OAuth GPT (latest Codex version) to Ollama Kimi (latest, e.g. 2.6)?**
 - Expected: Any of — API error, rate limit (429), HTTP timeout (30 min Phases 1/2, 60 min Phase 3 — v9.5.2), output under 5,000 characters, any error message in the response
 
 **Q3: How many sections does a complete persona-blueprint.md have, and what are sections 3, 6, and 14?**
