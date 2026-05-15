@@ -1,3 +1,44 @@
+## v10.2.0 - May 14, 2026 - No-shortcut rule for sub-agents + explicit DeepSeek/Kimi priority for book extraction
+
+Two changes, both in response to observed install behavior.
+
+### Change 1: NO-SHORTCUT RULE for every skill-installing sub-agent
+
+**The bug observed:** Sub-agents installing skills were skipping `CORE_UPDATES.md`, missing `INSTRUCTIONS.md`, ignoring `references/*.md` subdirectories, and going straight to install commands without reading the full skill folder. Result: wrong content written to AGENTS.md/MEMORY.md, missed dependencies, silent install failures.
+
+**The fix:** Added a hard reinforcement block to the UPDATE PENDING flag (inside install.sh) that every sub-agent reads when they start a skill install. Key elements:
+
+1. **Required reads** explicitly enumerated — SKILL.md, INSTALL.md, INSTRUCTIONS.md, CORE_UPDATES.md, EXAMPLES.md, QC.md, CHANGELOG.md, every `*-full.md`, every `references/*.md`, every `agent-prompts/*.md`, every `pipeline/*.md`, plus skill-specific docs like PERSONA-ROUTER.md, CHECKLIST.md, GEMINI-RETRIEVAL-GUIDE.md, GOOD-AND-BAD-EXAMPLES.md.
+
+2. **Mandatory verification step:** sub-agent runs `find "$SKILL_DIR" -type f \( -name "*.md" -o -name "*.skill" \) | sort` BEFORE any install command and reports the count.
+
+3. **Structured read-log required:** sub-agent reports back to master with file list, read times, byte counts, and coverage percentage. Coverage MUST be 100%; below 100% the sub-agent stops and identifies what was missed.
+
+4. **Refusal pattern:** if asked to "install quickly" or "skip docs", the sub-agent refuses with a specific message explaining why reading is mandatory.
+
+5. **Master orchestrator check:** master independently lists the files via `find` and confirms the count matches what the sub-agent reported. Mismatch = install marked FAILED, sub-agent ordered to read missing files.
+
+### Change 2: Explicit DeepSeek V4-pro / Kimi 2.6 priority for Skill 22 book extraction
+
+**The directive (verbatim from owner):** "With the book extraction we should favor Ollama DeepSeek V4 Pro OR the latest version, or Kimi 2.6 Ollama Cloud or the latest version. If they don't have Ollama, then go to the OpenRouter version of the same models. Make this clear."
+
+**What changed:**
+
+- `shared-utils/select_model.py` heavy/normal chain reordered from `KIMI_OLLAMA, KIMI_OPENROUTER, MIMO, GLM, DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT` to: `DEEPSEEK_PRO_OLLAMA, KIMI_OLLAMA, DEEPSEEK_PRO_OPENROUTER, KIMI_OPENROUTER, OAUTH_GPT, MIMO, GLM`. Ollama Cloud DeepSeek V4-pro is now the absolute first pick for heavy reasoning. Ollama Cloud Kimi 2.6 is second. OpenRouter versions of the same models are third and fourth (only fire when the Ollama copy isn't installed). OAuth GPT is fifth. MIMO/GLM are last (only used when Kimi/DeepSeek are completely missing).
+
+- Module docstring updated: priority list at the top of `select_model.py` now reflects v10.2.0 order.
+
+- `22-book-to-persona/SKILL.md` Model Routing section: replaced the 4-tier-column table with an explicit 5-tier list (Ollama DeepSeek-pro = Tier 1, Ollama Kimi = Tier 2, OpenRouter DeepSeek-pro = Tier 3, OpenRouter Kimi = Tier 4, OAuth GPT = Tier 5) plus per-phase preferences.
+
+- `22-book-to-persona/PIPELINE.md` Phase 1 + Phase 2 sections: priority order rewritten to match. Plain-English explanation added: "Prefer Ollama DeepSeek V4-pro or Kimi 2.6 (or latest of each). If the client doesn't have Ollama Cloud, fall back to the OpenRouter version of THE SAME MODEL. Never default to a different model just because OpenRouter is configured — same model family, different route."
+
+**What stayed unchanged:**
+- The "large" and "huge" chain variants already had DeepSeek-pro first (correct for long-context cases). No reorder needed there.
+- All anti-Anthropic filters stayed in place.
+- All other skill files (Skill 15, Skill 23, Skill 35) already use `select_model.py` and inherit the new priority automatically.
+
+---
+
 ## v10.1.0 - May 14, 2026 - Ollama Cloud first, OpenRouter as fallback only
 
 ### The bug

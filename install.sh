@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v10.1.0 — Mac mini
+#  OpenClaw Onboarding Installer v10.2.0 — Mac mini
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 #
 #  This installer is for Mac mini / macOS deployments of OpenClaw.
@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.1.0"
+ONBOARDING_VERSION="v10.2.0"
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)
@@ -1772,7 +1772,70 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
 **Wave 1 + 4 + 5 are sequential. Waves 2 + 3 are massively parallel.**
 
-Sub-agent retry policy (per INSTALL-CONTRACT.md Rule 6):
+### 🔴🔴🔴 NO-SHORTCUT RULE FOR EVERY SUB-AGENT (HARD ENFORCEMENT)
+
+Every sub-agent installing a skill MUST read ALL files in that skill's folder BEFORE running any execution step. This is non-negotiable. Skill installs that skip the read step routinely write the wrong content to AGENTS.md/MEMORY.md, miss required env vars, install the wrong dependency versions, or skip CORE_UPDATES.md entirely.
+
+**REQUIRED FILES (per skill, every sub-agent reads each one fully, top to bottom, BEFORE any execution):**
+
+1. `SKILL.md` — what this skill does, prerequisites, model requirements
+2. `INSTALL.md` — the actual install steps (read FULLY before executing ANY step)
+3. `INSTRUCTIONS.md` — runtime behavior + how the agent uses the skill at runtime
+4. `CORE_UPDATES.md` — what gets added to AGENTS.md / MEMORY.md / TOOLS.md / IDENTITY.md / SOUL.md (this file is non-optional — skipping it leaves the agent unable to use the skill)
+5. `EXAMPLES.md` — concrete usage examples (if present)
+6. `QC.md` — the install verification checklist (every item must pass after install)
+7. `CHANGELOG.md` — version history (if present)
+8. Any `*-full.md` master reference document
+9. Any `references/*.md` subdirectory files (e.g. Skill 29 has 12 reference files — every single one must be read)
+10. Any `agent-prompts/*.md` (Skill 22 has these for each pipeline phase)
+11. Any `pipeline/*.md` or `PIPELINE.md`
+12. Any `CHECKLIST.md`, `PERSONA-ROUTER.md`, `GEMINI-RETRIEVAL-GUIDE.md`, `GOOD-AND-BAD-EXAMPLES.md` etc — skill-specific docs are NOT optional
+
+**MANDATORY VERIFICATION STEP (sub-agent runs this BEFORE any install command):**
+
+```bash
+# List every .md file in the skill folder + every reference subdirectory
+SKILL_DIR="$HOME/.openclaw/skills/<skill-folder>"
+find "$SKILL_DIR" -type f \( -name "*.md" -o -name "*.skill" \) | sort
+```
+
+The sub-agent MUST report back to the master orchestrator a structured read-log BEFORE any install step runs:
+
+```
+Skill: <skill-folder-name>
+Files read in this session (full read, top to bottom):
+- SKILL.md (read at HH:MM:SS, N bytes)
+- INSTALL.md (read at HH:MM:SS, N bytes)
+- INSTRUCTIONS.md (read at HH:MM:SS, N bytes)
+- CORE_UPDATES.md (read at HH:MM:SS, N bytes)
+- [every other .md / reference file in the skill folder]
+Total files read: N
+Total files in skill folder: N
+Coverage: 100%
+```
+
+**Coverage MUST be 100%. If not, the sub-agent STOPS, requests permission to continue, and identifies which files were missed and why.**
+
+**REFUSAL PATTERN (built into every sub-agent's bootstrap):**
+
+If a sub-agent is asked to "install skill X quickly" or "skip the docs" or "you already know how this works":
+
+> "I cannot install this skill without first reading every file in the skill folder. Skipping reads causes incorrect AGENTS.md/MEMORY.md updates, missed dependencies, and silent install failures (see INSTALL-CONTRACT.md Rule 7). Reading the files takes 2-5 minutes; cleaning up a broken install takes 30+ minutes. I'm reading the files now."
+
+**MASTER ORCHESTRATOR CHECK (after sub-agent reports complete):**
+
+Before marking the skill as installed, the master orchestrator validates the sub-agent's read-log by independently listing the same files and confirming the count matches:
+
+```bash
+# Master runs this to verify the sub-agent didn't lie about coverage
+EXPECTED=$(find "$HOME/.openclaw/skills/<skill-folder>" -type f \( -name "*.md" -o -name "*.skill" \) | wc -l)
+REPORTED=<count from sub-agent's read-log>
+[ "$EXPECTED" = "$REPORTED" ] || error "Sub-agent skipped files"
+```
+
+If the counts don't match, the install for that skill is marked FAILED and the sub-agent is asked to read the missing files before any further execution.
+
+### Sub-agent retry policy (per INSTALL-CONTRACT.md Rule 6)
 1. Retry once with same model on failure
 2. Retry with next fallback model
 3. Escalate to master orchestrator

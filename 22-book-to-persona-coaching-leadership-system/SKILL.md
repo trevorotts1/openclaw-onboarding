@@ -167,16 +167,29 @@ The script will:
 
 **All model selection runs through `shared-utils/select_model.py` which enforces Ollama-Cloud-first priority. The selector picks whatever the client has installed, walking down the chain only when a higher tier is unavailable. See `PIPELINE.md` for the full per-phase chain.**
 
-| Phase | Primary (Tier 1) | Secondary | Tertiary | Fallback |
-|-------|------------------|-----------|----------|----------|
-| Phase 1 - Extraction | `ollama/kimi-k*:cloud` (Ollama Cloud Kimi) | `ollama/deepseek-v*-pro:cloud` | `openrouter/moonshot/kimi-k*` | `openrouter/deepseek/deepseek-v*-pro` |
-| Phase 2 - Analysis | `ollama/kimi-k*:cloud` (Ollama Cloud Kimi) | `ollama/deepseek-v*-pro:cloud` | `openrouter/moonshot/kimi-k*` | `openrouter/deepseek/deepseek-v*-pro` |
-| Phase 3 - Synthesis | `codex/gpt-*` or `openai-codex/gpt-*` (OAuth GPT, no per-call cost) | `ollama/kimi-k*:cloud` (Ollama Cloud Kimi) | `openrouter/moonshot/kimi-k*` | — |
+**Explicit priority for Phase 1 + Phase 2 (book extraction + analysis):**
+
+| Tier | Model | Notes |
+|------|-------|-------|
+| **Tier 1 (Primary)** | `ollama/deepseek-v4-pro:cloud` (or latest `ollama/deepseek-v*-pro:cloud`) | Ollama Cloud DeepSeek V4-pro — 1M context, subscription-billed, smartest for long-context analysis |
+| **Tier 2 (Primary)** | `ollama/kimi-k2.6:cloud` (or latest `ollama/kimi-k*:cloud`) | Ollama Cloud Kimi 2.6 — 262K context, subscription-billed, smartest for compact extraction |
+| **Tier 3 (Fallback)** | `openrouter/deepseek/deepseek-v4-pro` (or latest `openrouter/deepseek/deepseek-v*-pro`) | Same DeepSeek V4-pro model via OpenRouter when Ollama Cloud is unavailable. Per-token billed. |
+| **Tier 4 (Fallback)** | `openrouter/moonshot/kimi-k2.6` (or latest `openrouter/moonshot/kimi-k*`) | Same Kimi 2.6 model via OpenRouter when Ollama Cloud is unavailable. Per-token billed. |
+| **Tier 5 (Last resort)** | `codex/gpt-*` or `openai-codex/gpt-*` (OAuth GPT) | Subscription-billed (ChatGPT plan), used only when both Ollama Cloud AND OpenRouter Kimi/DeepSeek are missing |
+
+**Per-phase tier preference:**
+
+| Phase | Tier preference (in order) |
+|-------|----------------------------|
+| Phase 1 - Extraction | Tier 1 (Ollama DeepSeek V4-pro) → Tier 2 (Ollama Kimi 2.6) → Tier 3 (OpenRouter DeepSeek V4-pro) → Tier 4 (OpenRouter Kimi 2.6) → Tier 5 (OAuth GPT) |
+| Phase 2 - Analysis | Tier 1 (Ollama DeepSeek V4-pro) → Tier 2 (Ollama Kimi 2.6) → Tier 3 (OpenRouter DeepSeek V4-pro) → Tier 4 (OpenRouter Kimi 2.6) → Tier 5 (OAuth GPT) |
+| Phase 3 - Synthesis | Tier 5 (OAuth GPT — no per-call cost) → Tier 2 (Ollama Kimi 2.6) → Tier 4 (OpenRouter Kimi 2.6) |
 
 **ABSOLUTE RULES (enforced by the selector):**
-- Ollama Cloud ALWAYS preferred over OpenRouter when both are available — Ollama Cloud has subscription pricing while OpenRouter is per-token billed.
+- Ollama Cloud is ALWAYS preferred over OpenRouter when both are available. Same model, cheaper route. The selector matches on model family (DeepSeek V*-pro, Kimi K*) and prefers the Ollama-routed copy first.
+- If the client has Ollama Cloud DeepSeek V4-pro AND OpenRouter DeepSeek V4-pro, the selector picks Ollama. Same with Kimi 2.6.
 - Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Hardcoded filter at every tier.
-- The selector reads the client's actual `openclaw.json` and picks the highest available version at each tier. New Kimi/DeepSeek versions are picked up automatically when the client adds them.
+- The selector reads the client's actual `openclaw.json` and picks the highest available version at each tier. New Kimi/DeepSeek versions are picked up automatically when the client adds them — no code change needed.
 
 ---
 

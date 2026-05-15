@@ -50,11 +50,14 @@ Run all books in parallel using ThreadPoolExecutor for maximum speed.
 
 **Model selection is DYNAMIC.** No model is hardcoded in this skill. The agent calls `shared-utils/select_model.py` which walks `openclaw.json` and picks the best available model in this priority order:
 
-1. **Ollama Cloud Kimi (Tier 1, PREFERRED)** — `ollama/kimi-k*:cloud`, highest version number wins. Cheap, smart, large context, no per-call cost beyond Ollama subscription.
-2. **OpenRouter Kimi (Tier 2)** — `openrouter/moonshot/kimi-k*`, highest version. Per-token pricing.
-3. **OAuth GPT (Tier 3)** — `codex/gpt-*` or `openai-codex/gpt-*`, highest version. Subscription cost, no per-call.
-4. **DeepSeek V4+ (Tier 4)** — `ollama/deepseek-v*:cloud` preferred over `openrouter/deepseek/deepseek-v*`. Cheap, smart, large context.
-5. **STOP and ask the owner (Tier 5)** — if none of the above are in the client's `openclaw.json`, the selector prompts: *"Which model should I use for Book-to-Persona Phase 1? Reply with the model ID."* The install continues without blocking; the skill is wired once the owner answers.
+1. **Ollama Cloud DeepSeek V4-pro or latest (Tier 1, PREFERRED)** — `ollama/deepseek-v4-pro:cloud` or higher version. 1M context window, subscription-billed, smartest for long-context book extraction.
+2. **Ollama Cloud Kimi 2.6 or latest (Tier 2, PREFERRED)** — `ollama/kimi-k2.6:cloud` or higher version. 262K context, subscription-billed, smartest for compact extraction.
+3. **OpenRouter DeepSeek V4-pro or latest (Tier 3, FALLBACK)** — `openrouter/deepseek/deepseek-v4-pro` or higher. Same DeepSeek V4-pro model, per-token billed. Used only when Ollama Cloud DeepSeek V4-pro is unavailable.
+4. **OpenRouter Kimi 2.6 or latest (Tier 4, FALLBACK)** — `openrouter/moonshot/kimi-k2.6` or higher. Same Kimi model, per-token billed. Used only when Ollama Cloud Kimi is unavailable.
+5. **OAuth GPT (Tier 5, LAST RESORT)** — `codex/gpt-*` or `openai-codex/gpt-*`, highest version. ChatGPT subscription, no per-call cost. Used when neither Ollama Cloud nor OpenRouter has Kimi or DeepSeek V*-pro.
+6. **STOP and ask the owner (Tier 6)** — if none of the above are in the client's `openclaw.json`, the selector prompts: *"Which model should I use for Book-to-Persona Phase 1? Reply with the model ID."* The install continues without blocking; the skill is wired once the owner answers.
+
+**The rule in plain English:** prefer Ollama DeepSeek V4-pro or Kimi 2.6 (or whatever the latest version of each is). If the client doesn't have Ollama Cloud, fall back to the OpenRouter version of THE SAME MODEL (DeepSeek V4-pro / Kimi 2.6). Never default to a different model just because OpenRouter is configured — same model family, different route.
 
 **ABSOLUTE RULE:** Never select Anthropic models (`anthropic/claude-*`). The selector filters them out at every tier.
 
@@ -93,9 +96,9 @@ python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" \
 
 ## Phase 2 - Analysis (Smart Model Selection)
 
-**Model selection:** Same `shared-utils/select_model.py` chain as Phase 1 — latest Kimi (Ollama preferred → OpenRouter → OAuth GPT → DeepSeek V4+). Never Anthropic.
+**Model selection:** Same `shared-utils/select_model.py` chain as Phase 1. Priority: Ollama Cloud DeepSeek V4-pro (1M context, smartest for analysis) → Ollama Cloud Kimi 2.6 → OpenRouter DeepSeek V4-pro → OpenRouter Kimi 2.6 → OAuth GPT. Never Anthropic.
 
-**Why this changed:** v9.5.0 retired the hardcoded `deepseek/deepseek-v3.2` Phase 2 model. The selector now picks whatever the client has, with the same Kimi-first priority — which gives better analysis output if a Kimi 2.6+ is available, and DeepSeek V4+ is still a reasonable fallback for clients without Kimi.
+**Why this changed:** v10.2.0 made the priority explicit at the model-family level — DeepSeek V4-pro is the preferred Phase 2 model (1M context handles full-book analysis without chunking), and Kimi 2.6 is the smart-extraction alternate. Both come from Ollama Cloud first; the same models from OpenRouter only fire when the Ollama copy isn't configured. v9.5.0 had already retired the hardcoded `deepseek/deepseek-v3.2` Phase 2 model — v10.2.0 just makes the Ollama-first preference for the new DeepSeek V4-pro and Kimi 2.6 explicit.
 
 **Route + API key:** Depends on which model the selector picks. Ollama → local Ollama daemon. OpenRouter → `OPENROUTER_API_KEY` in `~/.openclaw/secrets/.env`. OAuth → OpenClaw OAuth (no API key needed).
 **Context:** 128K–1M tokens depending on the selected model.

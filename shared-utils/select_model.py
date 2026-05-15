@@ -5,14 +5,15 @@ Used by Skill 22 (Book-to-Persona), Skill 15 (Team Management), Skill 23 (AI
 Workforce Blueprint), and any other skill that needs a model recommendation
 that auto-adapts to whatever the client has installed.
 
-Three purpose-tier chains (v9.5.0):
+Three purpose-tier chains (v10.2.0 priority — Ollama Cloud first, then
+OpenRouter version of the same models, then OAuth GPT):
 
   --purpose-tier heavy   (Heavy reasoning / heavy thinking — default)
-    1. ollama/kimi-k*:cloud           (Ollama Cloud Kimi 2.6+, thinking=high)
-    2. openrouter/moonshot/kimi-k*    (OpenRouter Kimi, thinking=high)
-    3. ollama/deepseek-v*-pro:cloud   (Ollama Cloud DeepSeek V4-pro)
-    4. openrouter/deepseek/deepseek-v*-pro  (OpenRouter DeepSeek V4-pro, thinking=high)
-    5. codex/gpt-* OR openai-codex/gpt-*    (OAuth GPT — latest version)
+    1. ollama/deepseek-v*-pro:cloud   (Ollama Cloud DeepSeek V4-pro, 1M ctx)
+    2. ollama/kimi-k*:cloud           (Ollama Cloud Kimi 2.6+, 262K ctx)
+    3. openrouter/deepseek/deepseek-v*-pro  (OpenRouter DeepSeek V4-pro — same model, OR route)
+    4. openrouter/moonshot/kimi-k*    (OpenRouter Kimi — same model, OR route)
+    5. codex/gpt-* OR openai-codex/gpt-*    (OAuth GPT — last resort, latest version)
 
   --purpose-tier mid     (Mid-tier reasoning — fast but capable)
     1. ollama/minimax-m*:cloud        (Ollama Cloud Minimax 2.7+)
@@ -84,23 +85,34 @@ DEEPSEEK_FLASH_OPENROUTER = {"label": "OpenRouter DeepSeek V*-flash",
 GEMINI_FLASH_LITE         = {"label": "OpenRouter Gemini Flash Lite",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-flash-lite(?:-preview)?$")}
 
-# Purpose-tier chains. Each chain has 3 context-need variants:
-#   normal — input fits in Kimi's 262K window (default; Kimi preferred for smart reasoning)
-#   large  — input is 800K-3M chars; Kimi can't fit reliably → DeepSeek V4-pro first (1M ctx)
-#   huge   — input is > 3M chars; DeepSeek V4-pro only (1M ctx is the max we have)
+# Purpose-tier chains. v10.2.0 priority (per owner directive):
+#   For heavy reasoning + book extraction, prefer Ollama Cloud DeepSeek V4-pro
+#   or Ollama Cloud Kimi 2.6 (or latest version of each). If the client has
+#   neither on Ollama Cloud, fall back to the SAME model via OpenRouter
+#   (openrouter/deepseek/deepseek-v4-pro or openrouter/moonshot/kimi-k2.6).
+#   OAuth GPT only when neither Ollama nor OpenRouter has those models.
+#
+# Each chain has 3 context-need variants:
+#   normal — input fits in Kimi's 262K window
+#   large  — input is 800K-3M chars; DeepSeek V4-pro's 1M ctx required
+#   huge   — input is > 3M chars; DeepSeek V4-pro only
 CHAINS = {
     "heavy": {
+        # Default heavy reasoning — Ollama DeepSeek V4-pro and Kimi 2.6 first,
+        # then OpenRouter versions of the same models, then OAuth GPT.
         "normal": [
-            KIMI_OLLAMA, KIMI_OPENROUTER,
-            MIMO_OPENROUTER, GLM_OPENROUTER,    # mid-cost OR alternates if Kimi missing
-            DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
-            OAUTH_GPT,
+            DEEPSEEK_PRO_OLLAMA, KIMI_OLLAMA,           # Ollama Cloud preferred (same models)
+            DEEPSEEK_PRO_OPENROUTER, KIMI_OPENROUTER,   # Same models via OpenRouter as fallback
+            OAUTH_GPT,                                  # Last resort
+            MIMO_OPENROUTER, GLM_OPENROUTER,            # Mid-cost OR alternates only if Kimi/DeepSeek missing
         ],
+        # Large input (800K-3M chars): DeepSeek V4-pro's 1M context required
         "large": [
             DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
             OAUTH_GPT,
-            KIMI_OLLAMA, KIMI_OPENROUTER,  # last resort; may fail on big input
+            KIMI_OLLAMA, KIMI_OPENROUTER,  # last resort; 262K may fail on big input
         ],
+        # Huge input (>3M chars): DeepSeek V4-pro is the only model with enough context
         "huge": [
             DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
             OAUTH_GPT,

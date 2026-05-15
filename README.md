@@ -2,13 +2,19 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
-**Current Version: v10.1.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
+**Current Version: v10.2.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
 
 This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
 
 This repo contains **36 skill folders** (01 through 36, with 13, 33, and 34 archived) plus an install script and update script.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
+
+### What's New in v10.2.0 (May 14, 2026) — No-shortcut rule for sub-agents + explicit DeepSeek/Kimi priority
+
+**Change 1 — Sub-agent no-shortcut rule.** Sub-agents installing skills were skipping CORE_UPDATES.md, INSTRUCTIONS.md, references/*.md and other skill docs, leading to wrong AGENTS.md/MEMORY.md updates and silent install failures. v10.2.0 adds a hard reinforcement block in the UPDATE PENDING flag that requires every sub-agent to read ALL files in the skill folder BEFORE any install command, report a structured read-log with 100% coverage, and the master orchestrator independently verifies the file count.
+
+**Change 2 — Book extraction model priority.** Per owner directive: for Skill 22 (book-to-persona) Phase 1 + 2, favor Ollama DeepSeek V4-pro OR Ollama Kimi 2.6 (or latest version of each). If the client doesn't have Ollama Cloud, fall back to the OpenRouter version of the SAME model. Updated `select_model.py` chain order, Skill 22 SKILL.md Model Routing section, and Skill 22 PIPELINE.md Phase 1 + 2 priority lists.
 
 ### What's New in v10.1.0 (May 14, 2026) — Ollama Cloud first, OpenRouter as fallback
 
