@@ -1,3 +1,48 @@
+## [v10.5.0] — 2026-05-17 — Wave 3: v2.1 Integration Layer
+
+This release wires the v2.1 shipped helpers into a usable end-to-end flow without modifying the 90+KB `build-workforce.py` or 105KB `install.sh` files. New "integration layer" scripts hook in post-hoc.
+
+### Added — Integration scripts
+
+- **`23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py`** — Runs after `build-workforce.py` finishes. Walks the active zero-human-company's departments and creates role-level workspace folders for every department that doesn't have them yet. Reads roles from `suggested-roles/[dept]-suggested-roles.md`. Idempotent. Includes Master Orchestrator (CEO) creation at company root with CEO variant of deferral clause.
+
+- **`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`** — v2.1-aware drop-in alternative to `select-persona-for-task.py`. Adds: stickiness check (reads `persona_assignment` table, returns sticky persona without re-scoring if score ≥0.5), adaptive weights (uses `adaptive_weights.get_weights_for_task()`), behavioral profile reading (Layer 2 reads `## Behavioral Identity Profile` section of USER.md), hybrid mode (returns two personas when task signals both leadership AND coaching), weight override application (reads `persona_weight_overrides` table), task category emission (for next-task stickiness writes).
+
+- **`23-ai-workforce-blueprint/scripts/gemini-section-indexer.py`** — Section-level Gemini indexer. Indexes each persona blueprint at the `##` heading level instead of character chunks (14 vectors per persona vs. 80+). Auto-migrates the embeddings schema with `unit_type`, `unit_metadata`, `persona_version` columns. Replaces previous chunk-level rows for re-indexed personas. Uses real Gemini embeddings when `GOOGLE_API_KEY` is set, falls back to deterministic hash-based vectors for testing plumbing without API costs.
+
+### Added — Orchestration
+
+- **`23-ai-workforce-blueprint/scripts/run-v2.1-migrations.sh`** — One command end-to-end migration: platform detection → deferral clause patching → section-level Gemini re-index → role-level workspace creation. All four steps idempotent. Run once per upgrade.
+
+- **`23-ai-workforce-blueprint/scripts/verify-v2.1-installation.sh`** — Smoke-test every shipped piece. Checks all 21 files exist, every Python file is syntactically valid, every bash script parses, and 6 runtime tests (industry detector, task category inference, adaptive weights, migration dry-run, post-build dry-run, section indexer dry-run) execute cleanly. Exits 0 if all green.
+
+### Added — Documentation
+
+- **`RUNBOOK-v2.1.md`** — Operational runbook for human operators. Covers: fresh install vs upgrade flow, day-to-day scripts (industry detector, persona selector, task category inference, adaptive weights, DA challenge generator, behavioral pattern extractor, nudge cron), the recommended hand-touch list for inline integrations (`build-workforce.py` + `install.sh` + `select-persona-for-task.py` switch), persona stickiness flow walkthrough, recommended cron entries, troubleshooting table, rollback instructions.
+
+### Changed
+
+- **`skill-version.txt`** bumped to `10.5.0` (integration milestone)
+- **Root `version` file** bumped to `v10.5.0`
+
+### What's now end-to-end (after running `run-v2.1-migrations.sh`)
+
+1. Existing client's SOUL.md / IDENTITY.md → all carry the appropriate Persona Governance Override clause
+2. Existing client's Gemini index → section-level (14 vectors per persona), mode-aware retrieval
+3. Existing client's departments → role-level folders for every Director / Specialist / QC / Deep Research role
+4. Master Orchestrator (CEO agent) workspace at `[ZHC]/[company]/master-orchestrator/` with CEO deferral clause
+5. Task dispatch (when wired via the RUNBOOK Section 5B switch) → uses stickiness + adaptive weights + behavioral profile
+
+### What still requires the hand-touch list (documented in RUNBOOK Section 5)
+
+- 12-line edit to `build-workforce.py` after `create_department_workspace()` for AUTOMATIC role workspace creation (currently requires running `post-build-role-workspaces.py` after each build)
+- 1-line edit to `src/lib/persona-selector.ts` in Command Center to switch from `select-persona-for-task.py` to `persona-selector-v2.py`
+- Verification that `install.sh` copies `shared-utils/` (likely already does — verify on next install)
+
+All three are 1-12 line edits, kept out of this release for risk management.
+
+---
+
 ## [v10.4.1] — 2026-05-17 — Wave 2 Execution
 
 ### Added — shared-utils

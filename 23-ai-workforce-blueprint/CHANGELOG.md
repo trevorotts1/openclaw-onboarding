@@ -1,3 +1,23 @@
+## [v10.5.0] — 2026-05-17 — Wave 3: v2.1 Integration Layer
+
+### Added — scripts/
+
+- **`post-build-role-workspaces.py`** — Post-hoc role-level workspace creator. Walks `[ZHC]/[company]/departments/` and creates role folders for every department missing them. Reads from `suggested-roles/[dept]-suggested-roles.md` to determine role list. Includes Master Orchestrator (CEO) creation at company root with CEO deferral clause variant. Idempotent.
+- **`persona-selector-v2.py`** — v2.1-aware drop-in alternative to `select-persona-for-task.py`. Adds stickiness check, adaptive weights, behavioral profile reading, hybrid mode, weight override application.
+- **`gemini-section-indexer.py`** — Section-level indexer. 14 vectors per persona (one per `##` section) instead of 80+ character chunks. Real Gemini embeddings when `GOOGLE_API_KEY` set; deterministic fallback otherwise.
+- **`run-v2.1-migrations.sh`** — Orchestrates: platform detect → migrate deferral clauses → re-index Gemini at section level → create role workspaces. One command.
+- **`verify-v2.1-installation.sh`** — End-to-end smoke test. 36 checks across file existence, Python syntax, bash syntax, and runtime execution.
+
+### Added — root
+
+- **`RUNBOOK-v2.1.md`** (in skill root) — Operator runbook covering upgrade flow, day-to-day scripts, persona stickiness walkthrough, hand-touch integration list, cron recommendations, troubleshooting, rollback.
+
+### Version
+
+`skill-version.txt` bumped to `10.5.0`.
+
+---
+
 ## [v10.4.1] — 2026-05-17 — Wave 2 Execution
 
 ### Added
