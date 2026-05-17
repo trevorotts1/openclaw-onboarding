@@ -1,5 +1,75 @@
 # OpenClaw Onboarding — Mac mini
 
+<!-- BEGIN v2.1 SECTION -->
+## v2.1 — Zero-Human Company Spec (PRD v2.1)
+
+> **What this version delivers:** A solo founder can complete the AI Workforce setup in under 45 minutes and end up with the operational machinery of a Fortune 500 company. 16 mandatory departments. 130-200 specialized AI roles. Persona-governed execution.
+
+### The 16 Mandatory Departments
+Auto-built for every zero-human company:
+
+1. **Marketing** — Demand generation, brand positioning
+2. **Sales** — Outreach, conversion, deals
+3. **Billing & Finance** — Invoices, cash flow, forecasting
+4. **Customer Support** — Onboarding, retention, service
+5. **Web Development** — Website, funnels, SEO, technical SEO
+6. **App Development** — Desktop, mobile, PWA
+7. **Graphics** — Visual content across all formats
+8. **Video** — Production, editing, Video SEO
+9. **Audio** — Podcast, AI voice (11 Labs), sound design
+10. **Research** — McKinsey-style industry + competitor intel
+11. **Communications** — PR, internal/external messaging
+12. **CRM** — Platform admin, **Email Deliverability & Optimization (flagship)**
+13. **OpenClaw Maintenance** — System health, backups, security
+14. **Legal** — Contracts, compliance, IP
+15. **Social Media** — Organic posting across 10 platforms (separate from Paid Ads)
+16. **Paid Advertisement** — Paid media across 13 ad platforms
+
+**Plus: Master Orchestrator (CEO agent)** above all departments. Special persona deferral clause — uses personas as input but mission and owner values override on conflict.
+
+### Industry Vertical Packs (Auto-Added)
+- **Personal/Professional Development** (~60% of clients): Presentations, Client Coaches, Course Creator, Podcast, Community Management
+- **Real Estate**: Listings, MLS Ops, Lead Gen, Showings, Open House, Closing, Local Market Intelligence
+- **Service Industry**: Scheduling/Dispatch, Field Operations, Reviews Management, Recurring Service
+
+### The 30-Question Interview
+6 phases, ~35 minutes total. Pre-interview asset drop pre-fills 40%+ of answers. Behavioral interview (5 scenario-based questions) replaces value-based platitudes. Department customization bundled across 13 questions (not 1-per-dept).
+
+### Universal How-To Template
+Every role's `how-to.md` follows the same 18-section structure: identity, persona governance, daily/weekly/monthly/quarterly ops, KPIs tied to revenue cascade, tools, SOPs, quality gates, handoffs, escalation paths, good/bad examples, common mistakes, research sources, edge cases, update triggers.
+
+QC sub-agent verifies every generated document against a 9-item quality checklist. 2 revision cycles max before flagging for owner review.
+
+### Generation Orchestration
+After the interview completes, the AI spawns sub-agents:
+- 1 industry research sub-agent (McKinsey + Perplexity + competitor intel)
+- Up to 10 department sub-agents in parallel
+- Up to 50 role sub-agents in parallel (each generating one how-to.md)
+- 1 QC sub-agent
+
+**Full build: 25-45 minutes for 130-200 role documents.**
+
+### Platform Abstraction
+`shared-utils/detect_platform.py` resolves paths automatically:
+- Mac legacy: `~/clawd/`
+- Mac new install: `~/.openclaw/workspace/`
+- VPS (Hostinger Docker): `/data/.openclaw/workspace/`
+
+No hardcoded paths. Same code runs on every platform.
+
+### Persona Governance Override
+Persona is the strongest control over agent behavior. Every generated SOUL.md and IDENTITY.md contains a deferral clause:
+
+> *When a persona is assigned, that persona governs HOW you perform the work. Your beliefs, voice, decision logic come from the persona — not from this file.*
+
+Master Orchestrator (CEO) gets the special variant: persona is INPUT, but company mission and owner values WIN on conflict.
+
+### Documentation
+See PRD v2.1 (`onboarding ant farm PRD v2.1.md` in user's local Downloads) for the complete specification. Executes in order: v1.1 (foundation) → v2.0 (intelligence) → v2.1 (zero-human-company spec).
+<!-- END v2.1 SECTION -->
+
+
+
 **A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
 **Current Version: v10.3.0** — See [CHANGELOG.md](CHANGELOG.md) for what's new.
