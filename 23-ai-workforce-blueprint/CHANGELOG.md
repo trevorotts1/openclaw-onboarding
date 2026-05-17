@@ -1,3 +1,26 @@
+## [v10.4.1] — 2026-05-17 — Wave 2 Execution
+
+### Added
+
+- `scripts/infer-task-category.py` — Classifies a task description into one of 14 task categories. Used by persona stickiness (v2.0 Ch 13) and adaptive weights (v2.0 Ch 17).
+- `scripts/create-role-workspaces.py` — Creates role-level workspaces inside a department. Each role gets its own folder with unique IDENTITY/SOUL/MEMORY/HEARTBEAT/how-to.md files plus symlinks to the company-root AGENTS/TOOLS/USER.md. Master Orchestrator role uses the CEO variant of the Persona Governance Override clause.
+
+### Moved
+
+These previously-mandatory suggested-roles files moved to `suggested-roles/_deprecated/`:
+- `creative-suggested-roles.md` (folded into Graphics + Video + Audio)
+- `hr-people-suggested-roles.md` (no longer mandatory)
+- `it-tech-suggested-roles.md` (replaced by OpenClaw Maintenance)
+- `operations-suggested-roles.md` (distributed across departments)
+
+Preserved for Audit/Resume mode (Option C) backward compatibility.
+
+### Version
+
+`skill-version.txt` bumped to `10.4.1`.
+
+---
+
 ## [v10.4.0] — 2026-05-17 — Zero-Human Company Spec (PRD v2.1)
 
 ### Added

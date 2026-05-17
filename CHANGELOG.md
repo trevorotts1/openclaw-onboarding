@@ -1,3 +1,33 @@
+## [v10.4.1] — 2026-05-17 — Wave 2 Execution
+
+### Added — shared-utils
+
+- `shared-utils/migrate-deferral-clauses.py` — Idempotent migration that walks every existing zero-human-company workspace and appends the appropriate Persona Governance Override clause to every SOUL.md and IDENTITY.md. Master Orchestrator gets the CEO variant; all other agents get the standard variant. Safe to re-run.
+- `shared-utils/industry-detector.py` — Detects industry vertical (personal-pro-dev, real-estate, service-industry, ecommerce, saas, agency, content-creator) from pre-interview research + interview answers. Returns confidence score and matched signals. Used by Skill 23 Phase 0 to auto-select an industry vertical pack.
+- `shared-utils/extract-behavioral-patterns.py` — Takes B-1 through B-5 behavioral interview answers and extracts a structured Behavioral Identity Profile to USER.md. Uses heavy-tier model when available; falls back to a structurally-valid passthrough profile when no LLM call is possible.
+- `shared-utils/adaptive_weights.py` — Returns task-taxonomy-driven 5-layer scoring weight matrix. Different weights for execution tasks (TaskFit dominates), coaching tasks (Owner Values dominates), strategic decisions (Mission dominates), routine ops (Dept KPIs dominates), and sensitive depts.
+- `shared-utils/devils-advocate.py` — Generates Devil's Advocate challenges with specific, data-cited concerns. Triggers: critical_task, strategic_decision, consecutive_approval, kpi_swing, sensitive_dept. Falls back to structurally-valid template when no LLM is available.
+- `shared-utils/nudge-incomplete-interviews.py` — Cron script (recommended cadence: every 6 hours) that scans for incomplete interviews and sends Telegram nudges at 24h, 72h, and 168h idle. Records nudges_sent in interview-handoff.md to prevent re-sending. Includes "Do It For Me" escape hatch language at the 168h mark.
+
+### Added — Skill 23 scripts
+
+- `23-ai-workforce-blueprint/scripts/infer-task-category.py` — Classifies a task description into one of 14 categories (email-outreach, social-post, content-write, video-script, research, strategy, design, ops, finance, legal, hr, customer-service, coaching-prompt, review-feedback). Used by adaptive_weights and persona_assignment.
+- `23-ai-workforce-blueprint/scripts/create-role-workspaces.py` — Extends the v9.6.1 department-level symlink pattern to the role level. Per role: creates unique IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT.md, how-to.md (stub pending sub-agent generation); symlinks AGENTS.md, TOOLS.md, USER.md to workspace root. Master Orchestrator role uses the CEO variant of the deferral clause.
+
+### Moved — `suggested-roles/_deprecated/`
+
+These files moved from `suggested-roles/` to `suggested-roles/_deprecated/` with a README explaining the deprecation. Preserved for Audit/Resume mode (Option C) backward compatibility but not used in new builds:
+- `creative-suggested-roles.md` → folded into Graphics + Video + Audio
+- `hr-people-suggested-roles.md` → zero-human company has no human team
+- `it-tech-suggested-roles.md` → replaced by OpenClaw Maintenance dept
+- `operations-suggested-roles.md` → distributed across each dept
+
+### skill-version.txt
+
+Bumped to `10.4.1`.
+
+---
+
 ## [v10.4.0] — 2026-05-17 — Zero-Human Company Spec (PRD v2.1)
 
 ### Added
