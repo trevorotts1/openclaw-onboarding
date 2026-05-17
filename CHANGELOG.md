@@ -1,3 +1,43 @@
+## [v10.4.0] — 2026-05-17 — Zero-Human Company Spec (PRD v2.1)
+
+### Added
+- **Shared platform abstraction**: `shared-utils/detect-platform.sh` and `shared-utils/detect_platform.py` resolve paths automatically across Mac (clawd-legacy or .openclaw-new) and VPS (`/data/.openclaw`)
+- **30-question interview structure** replacing v9.6 dense flow. Target: owner completion in under 45 minutes. 6 phases — asset drop, behavioral identity (5Q), vision/goals (4Q), customer context (5Q), department customization (13 bundled Q), final review
+- **16 mandatory departments** auto-built for every zero-human company: Marketing, Sales, Billing & Finance, Customer Support, Web Development, App Development, Graphics, Video, Audio, Research, Communications, CRM, OpenClaw Maintenance, Legal, Social Media, Paid Advertisement
+- **3 industry vertical packs** auto-added by Phase 0 detection: Personal/Professional Development (~60% of clients), Real Estate, Service Industry
+- **Universal 18-section how-to.md template** at `23-ai-workforce-blueprint/templates/universal-how-to-template.md`. Every role document follows the same strict structure: identity, persona governance override, daily/weekly/monthly/quarterly ops, KPIs tied to revenue cascade, tools, SOPs, quality gates, handoffs, escalation paths, good/bad examples, common mistakes, research sources, edge cases, update triggers
+- **Role documentation generation prompt** at `23-ai-workforce-blueprint/prompts/role-doc-generation-prompt.md`. Enforces consistent sub-agent output: required Perplexity research calls, mandatory section coverage, 2500-5500 word target, anti-hallucination checks
+- **4 new suggested-roles department files**: `crm-suggested-roles.md` (with Email Deliverability & Optimization Specialist as flagship role), `openclaw-maintenance-suggested-roles.md`, `social-media-suggested-roles.md`, `paid-advertisement-suggested-roles.md`
+- **Persona Governance Override clause** baked into every generated SOUL.md, IDENTITY.md, and how-to.md Section 2. When a persona is assigned, it overrides the identity file. When no persona is assigned, identity file governs as fallback. The owner's company mission and personal values are honored in both modes
+- **CEO Persona Deferral Clause** (special variant) applied only to the Master Orchestrator. CEO does NOT fully defer — persona is INPUT but mission and owner values win on conflict
+- **Role-level workspace architecture**. Each role inside each department now has its own folder with unique IDENTITY.md / SOUL.md / MEMORY.md / HEARTBEAT.md / how-to.md plus symlinks to company-root AGENTS.md / TOOLS.md / USER.md
+- **Revenue cascade** (yearly → quarterly → monthly → weekly → daily) baked into every role's KPI section. Single owner input drives KPI targets across all 130-200 roles
+- New mandatory roles in existing departments: **SEO Specialist** + **Technical SEO Specialist** in Web Development; **Video SEO Specialist** in Video; **Email Deliverability & Optimization Specialist** in CRM (flagship — most consequential role in the system)
+
+### Changed
+- Interview density: ~50-65 questions in v9.6 → ~28-30 questions in v2.1
+- Department naming map (`department-naming-map.json`) reorganized into `mandatory` / `vertical_packs` / `deprecated` tiers
+- Sub-agent generation orchestration: 1 manifest → up to 10 department sub-agents → up to 50 role sub-agents in parallel → 25-45 minute full build of 130-200 role documents
+- Industry vertical detection runs in Phase 0 (asset drop) and auto-applies vertical pack with one confirmation question
+
+### Deprecated (moved to `suggested-roles/_deprecated/` in a follow-up commit)
+- `creative-suggested-roles.md` — responsibilities folded into Graphics + Video + Audio departments
+- `hr-people-suggested-roles.md` — zero-human company has no human team to manage
+- `it-tech-suggested-roles.md` — replaced by OpenClaw Maintenance department
+- `operations-suggested-roles.md` — operations distributed into each department
+
+### Migration Notes for Existing Workspaces
+- Run `shared-utils/migrate-deferral-clauses.py` to add Persona Governance Override clause to every existing SOUL.md and IDENTITY.md (idempotent, safe to re-run)
+- Existing department-level workspaces built with v9.x format remain functional. v2.1 role-level extensions apply to new builds and audited (Option C) refreshes
+- Existing `gemini-index.sqlite` should be re-indexed at section level when v2.0 Chapter 13 ships (separate work item)
+
+### Documentation
+- PRD v2.1 saved at user's local Downloads: `onboarding ant farm PRD v2.1.md`
+- Supersedes PRD v1.1 (foundation) and v2.0 (intelligence layer)
+- Execution order remains: v1.1 → v2.0 → v2.1
+
+---
+
 ## v10.3.0 - May 14, 2026 - Auto-install Calibre + remove MOONSHOT_API_KEY hardcoding
 
 Two real-world install errors fixed.

@@ -1,121 +1,206 @@
 {
-  "Marketing": {
-    "folder": "marketing",
-    "ccId": "marketing",
-    "agentId": "dept-marketing",
-    "emoji": "megaphone",
-    "headTitle": "Chief Marketing Officer"
+  "version": "2.1.0",
+  "description": "Department naming and tier map for AI Workforce Blueprint v2.1. Mandatory departments auto-build for every company. Vertical packs auto-add based on Phase 0 industry detection. Custom departments are added by owner request.",
+
+  "mandatory": {
+    "marketing": {
+      "display_name": "Marketing",
+      "emoji": "📣",
+      "one_liner": "Getting the word out about your business",
+      "director_title": "Director of Marketing",
+      "suggested_roles_file": "marketing-suggested-roles.md"
+    },
+    "sales": {
+      "display_name": "Sales",
+      "emoji": "💰",
+      "one_liner": "Turning interested people into paying customers",
+      "director_title": "Director of Sales",
+      "suggested_roles_file": "sales-suggested-roles.md"
+    },
+    "billing-finance": {
+      "display_name": "Billing & Finance",
+      "emoji": "🧾",
+      "one_liner": "Invoices, payments, tracking your money",
+      "director_title": "Director of Finance",
+      "suggested_roles_file": "billing-suggested-roles.md"
+    },
+    "customer-support": {
+      "display_name": "Customer Support",
+      "emoji": "🤝",
+      "one_liner": "Helping your existing customers when they need it",
+      "director_title": "Director of Customer Support",
+      "suggested_roles_file": "customer-support-suggested-roles.md"
+    },
+    "web-development": {
+      "display_name": "Web Development",
+      "emoji": "🌐",
+      "one_liner": "Your website, funnels, landing pages, SEO",
+      "director_title": "Director of Web Development",
+      "suggested_roles_file": "web-development-suggested-roles.md",
+      "v2_1_additions": ["SEO Specialist", "Technical SEO Specialist"]
+    },
+    "app-development": {
+      "display_name": "App Development",
+      "emoji": "📱",
+      "one_liner": "Desktop apps, mobile apps, PWAs",
+      "director_title": "Director of App Development",
+      "suggested_roles_file": "app-development-suggested-roles.md"
+    },
+    "graphics": {
+      "display_name": "Graphics",
+      "emoji": "🎨",
+      "one_liner": "Visual content — logos, images, ads, slides",
+      "director_title": "Director of Graphics",
+      "suggested_roles_file": "graphics-suggested-roles.md"
+    },
+    "video": {
+      "display_name": "Video",
+      "emoji": "🎬",
+      "one_liner": "Video production, editing, AI video, YouTube optimization",
+      "director_title": "Director of Video",
+      "suggested_roles_file": "video-suggested-roles.md",
+      "v2_1_additions": ["Video SEO Specialist"]
+    },
+    "audio": {
+      "display_name": "Audio",
+      "emoji": "🎙️",
+      "one_liner": "Podcasts, voiceovers, AI voice, music, sound design",
+      "director_title": "Director of Audio",
+      "suggested_roles_file": "audio-suggested-roles.md"
+    },
+    "research": {
+      "display_name": "Research",
+      "emoji": "🔬",
+      "one_liner": "Market research, competitor analysis, data insights",
+      "director_title": "Director of Research",
+      "suggested_roles_file": "research-suggested-roles.md"
+    },
+    "communications": {
+      "display_name": "Communications",
+      "emoji": "📨",
+      "one_liner": "PR, announcements, internal and external messaging",
+      "director_title": "Director of Communications",
+      "suggested_roles_file": "communications-suggested-roles.md"
+    },
+    "crm": {
+      "display_name": "CRM",
+      "emoji": "🔗",
+      "one_liner": "Manages your contact management, email, automations",
+      "director_title": "Director of CRM",
+      "suggested_roles_file": "crm-suggested-roles.md",
+      "v2_1_flagship_role": "Email Deliverability & Optimization Specialist"
+    },
+    "openclaw-maintenance": {
+      "display_name": "OpenClaw Maintenance",
+      "emoji": "🛠️",
+      "one_liner": "Keeps your AI system healthy and up to date",
+      "director_title": "Director of OpenClaw Maintenance",
+      "suggested_roles_file": "openclaw-maintenance-suggested-roles.md"
+    },
+    "legal": {
+      "display_name": "Legal",
+      "emoji": "⚖️",
+      "one_liner": "Contracts, regulations, keeping you protected",
+      "director_title": "Director of Legal",
+      "suggested_roles_file": "legal-compliance-suggested-roles.md"
+    },
+    "social-media": {
+      "display_name": "Social Media",
+      "emoji": "📲",
+      "one_liner": "Organic posting and community across all platforms",
+      "director_title": "Director of Social Media",
+      "suggested_roles_file": "social-media-suggested-roles.md",
+      "v2_1_specialists": [
+        "Facebook Specialist", "Instagram Specialist", "TikTok Specialist",
+        "LinkedIn Specialist", "Twitter/X Specialist", "Pinterest Specialist",
+        "YouTube Channel Specialist", "Threads Specialist", "Bluesky Specialist",
+        "Community Manager"
+      ]
+    },
+    "paid-advertisement": {
+      "display_name": "Paid Advertisement",
+      "emoji": "🎯",
+      "one_liner": "Paid ads across every platform — search, social, audio",
+      "director_title": "Director of Paid Advertisement",
+      "suggested_roles_file": "paid-advertisement-suggested-roles.md",
+      "v2_1_specialists": [
+        "Google Ads Specialist", "Bing Ads Specialist",
+        "Facebook Ads Specialist", "Instagram Ads Specialist",
+        "TikTok Ads Specialist", "LinkedIn Ads Specialist",
+        "Twitter/X Ads Specialist", "Pinterest Ads Specialist",
+        "YouTube Ads Specialist", "Spotify Audio Ads Specialist",
+        "Snapchat Ads Specialist", "Native Ads Specialist"
+      ]
+    }
   },
-  "Sales": {
-    "folder": "sales",
-    "ccId": "sales",
-    "agentId": "dept-sales",
-    "emoji": "money",
-    "headTitle": "Chief Revenue Officer"
+
+  "vertical_packs": {
+    "personal-pro-dev": {
+      "auto_add_keywords": ["coach", "mentor", "speaker", "thought leader", "consultant", "mastermind", "course", "training", "keynote", "workshop", "transformation"],
+      "auto_add_departments": [
+        {"id": "presentations", "name": "Presentations", "emoji": "🎤", "one_liner": "Slides, decks, keynote prep, talking points"},
+        {"id": "client-coaches", "name": "Client Coaches", "emoji": "🧠", "one_liner": "Coaches who work directly with your coaching clients"},
+        {"id": "course-creator", "name": "Course Creator", "emoji": "🎓", "one_liner": "Curriculum design, course operations, student success"},
+        {"id": "podcast", "name": "Podcast", "emoji": "🎧", "one_liner": "Production, guest booking, show notes, distribution"},
+        {"id": "community-management", "name": "Community Management", "emoji": "👥", "one_liner": "Facebook Groups, Skool, Circle, Discord, Slack"}
+      ]
+    },
+    "real-estate": {
+      "auto_add_keywords": ["realtor", "real estate", "broker", "listings", "mls", "property", "homes for sale", "rental"],
+      "auto_add_departments": [
+        {"id": "listings", "name": "Listings Management", "emoji": "🏘️", "one_liner": "MLS, photos, descriptions, syndication"},
+        {"id": "lead-generation", "name": "Lead Generation", "emoji": "📍", "one_liner": "Zillow, Realtor.com, FB lead ads, local SEO"},
+        {"id": "showings", "name": "Showings Coordinator", "emoji": "🔑", "one_liner": "Scheduling, follow-up, feedback collection"},
+        {"id": "open-house", "name": "Open House", "emoji": "🚪", "one_liner": "Marketing, host coordination, lead capture"},
+        {"id": "closing-coordinator", "name": "Closing Coordinator", "emoji": "📋", "one_liner": "Transaction management, document tracking, deadline compliance"},
+        {"id": "local-market-intelligence", "name": "Local Market Intelligence", "emoji": "🗺️", "one_liner": "Comps, trends, neighborhood data"}
+      ]
+    },
+    "service-industry": {
+      "auto_add_keywords": ["spa", "salon", "plumber", "electrician", "maid", "cleaning service", "lawn care", "hvac", "pest control", "auto repair", "restaurant"],
+      "auto_add_departments": [
+        {"id": "scheduling-dispatch", "name": "Scheduling & Dispatch", "emoji": "📅", "one_liner": "Booking, routing, technician/staff scheduling"},
+        {"id": "field-operations", "name": "Field Operations", "emoji": "🚐", "one_liner": "Service quality, on-site procedures, customer satisfaction"},
+        {"id": "reviews-management", "name": "Reviews Management", "emoji": "⭐", "one_liner": "Google, Yelp, industry-specific reviews — request, monitor, respond"},
+        {"id": "recurring-service", "name": "Recurring Service Coordinator", "emoji": "🔄", "one_liner": "Memberships, subscriptions, retention"}
+      ]
+    },
+    "ecommerce": {
+      "auto_add_keywords": ["shop", "store", "products", "shipping", "skus", "inventory", "shopify", "amazon", "etsy"],
+      "auto_add_departments": [
+        {"id": "logistics-fulfillment", "name": "Logistics & Fulfillment", "emoji": "📦", "one_liner": "Inventory, shipping, returns"},
+        {"id": "merchandising", "name": "Merchandising", "emoji": "🛍️", "one_liner": "Product listings, pricing, promotions"}
+      ]
+    },
+    "saas": {
+      "auto_add_keywords": ["software", "platform", "subscription", "users", "freemium", "trial", "api", "integrations"],
+      "auto_add_departments": [
+        {"id": "engineering", "name": "Engineering", "emoji": "⚙️", "one_liner": "Core product development"},
+        {"id": "devops", "name": "DevOps", "emoji": "🚀", "one_liner": "Deployment, infrastructure, monitoring"},
+        {"id": "product-management", "name": "Product Management", "emoji": "🗂️", "one_liner": "Roadmap, user research, feature prioritization"}
+      ]
+    },
+    "agency": {
+      "auto_add_keywords": ["agency", "clients", "client work", "campaigns", "white label", "fractional", "done for you"],
+      "auto_add_departments": [
+        {"id": "account-management", "name": "Account Management", "emoji": "💼", "one_liner": "Client relationships, deliverables, retention"},
+        {"id": "project-management", "name": "Project Management", "emoji": "📊", "one_liner": "Scope, timeline, resource allocation"}
+      ]
+    },
+    "content-creator": {
+      "auto_add_keywords": ["influencer", "creator", "youtube channel", "podcast host", "blogger"],
+      "auto_add_departments": [
+        {"id": "podcast", "name": "Podcast", "emoji": "🎧", "one_liner": "Production, distribution, sponsor management"},
+        {"id": "community-management", "name": "Community Management", "emoji": "👥", "one_liner": "Cross-platform engagement"},
+        {"id": "brand-partnerships", "name": "Brand Partnerships", "emoji": "🤝", "one_liner": "Sponsor outreach, contract negotiation"}
+      ]
+    }
   },
-  "Operations": {
-    "folder": "operations",
-    "ccId": "operations",
-    "agentId": "dept-operations",
-    "emoji": "gear",
-    "headTitle": "Chief Operating Officer"
-  },
-  "Customer Success": {
-    "folder": "customer-success",
-    "ccId": "customer-success",
-    "agentId": "dept-customer-success",
-    "emoji": "heart",
-    "headTitle": "VP Customer Success"
-  },
-  "Finance": {
-    "folder": "finance",
-    "ccId": "finance",
-    "agentId": "dept-finance",
-    "emoji": "dollar",
-    "headTitle": "Chief Financial Officer"
-  },
-  "Human Resources": {
-    "folder": "human-resources",
-    "ccId": "human-resources",
-    "agentId": "dept-human-resources",
-    "emoji": "people",
-    "headTitle": "VP People"
-  },
-  "Product": {
-    "folder": "product",
-    "ccId": "product",
-    "agentId": "dept-product",
-    "emoji": "rocket",
-    "headTitle": "Chief Product Officer"
-  },
-  "Technology": {
-    "folder": "technology",
-    "ccId": "technology",
-    "agentId": "dept-technology",
-    "emoji": "laptop",
-    "headTitle": "Chief Technology Officer"
-  },
-  "Legal": {
-    "folder": "legal",
-    "ccId": "legal",
-    "agentId": "dept-legal",
-    "emoji": "shield",
-    "headTitle": "General Counsel"
-  },
-  "Communications": {
-    "folder": "communications",
-    "ccId": "communications",
-    "agentId": "dept-communications",
-    "emoji": "megaphone",
-    "headTitle": "VP Communications"
-  },
-  "Research": {
-    "folder": "research",
-    "ccId": "research",
-    "agentId": "dept-research",
-    "emoji": "magnifying-glass",
-    "headTitle": "Chief Research Officer"
-  },
-  "Supply Chain": {
-    "folder": "supply-chain",
-    "ccId": "supply-chain",
-    "agentId": "dept-supply-chain",
-    "emoji": "truck",
-    "headTitle": "VP Supply Chain"
-  },
-  "Business Development": {
-    "folder": "business-development",
-    "ccId": "business-development",
-    "agentId": "dept-business-development",
-    "emoji": "handshake",
-    "headTitle": "VP Business Development"
-  },
-  "Quality Assurance": {
-    "folder": "quality-assurance",
-    "ccId": "quality-assurance",
-    "agentId": "dept-quality-assurance",
-    "emoji": "clipboard",
-    "headTitle": "VP Quality"
-  },
-  "Content Creation": {
-    "folder": "content-creation",
-    "ccId": "content-creation",
-    "agentId": "dept-content-creation",
-    "emoji": "pen",
-    "headTitle": "Content Director"
-  },
-  "Data Analytics": {
-    "folder": "data-analytics",
-    "ccId": "data-analytics",
-    "agentId": "dept-data-analytics",
-    "emoji": "chart",
-    "headTitle": "Chief Data Officer"
-  },
-  "Executive": {
-    "folder": "executive",
-    "ccId": "executive",
-    "agentId": "dept-executive",
-    "emoji": "crown",
-    "headTitle": "CEO"
+
+  "deprecated": {
+    "creative": "Folded into Graphics + Video + Audio departments",
+    "hr-people": "No longer mandatory — zero-human company has no human employees to manage",
+    "it-tech": "Replaced by OpenClaw Maintenance department",
+    "operations": "Operations responsibilities distributed across each department"
   }
 }
