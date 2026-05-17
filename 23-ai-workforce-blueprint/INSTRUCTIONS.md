@@ -1,464 +1,471 @@
-# AI Workforce Blueprint - Build Instructions
+# AI Workforce Blueprint — Build Instructions
+
+**Version:** v10.4.0 (PRD v2.1 — Zero-Human Company Spec)
+**Target interview length:** ~30 questions, ~35 minutes
+**Persona governance:** Persona overrides identity files. CEO has special clause (mission/owner override persona on conflict).
+
+---
 
 ## Philosophy
 
-This interview builds people into running a real company. It is NOT a survey. The AI is the expert. It leads with knowledge, suggests answers when the client is unsure, and adapts to each person's comfort level. No jargon. No overwhelm. Partnership, not interrogation.
+This interview builds people into running a Fortune 500-scale company with $0 in human payroll. It is NOT a survey. The AI is the expert. It leads with knowledge, suggests answers when the client is unsure, and adapts to each person's comfort level.
+
+**No jargon. No overwhelm. Partnership, not interrogation.**
 
 **Forbidden client-facing language:**
-- Never say: SOPs, handoffs, tech stack, permanent agent, sub-agent, agent
+- Never say: SOPs, handoffs, tech stack, permanent agent, sub-agent, agent, Lean Six Sigma, DMAIC
 - Instead say: step-by-step instructions, what departments share, tools you use, team member, specialist, director
 
-**Research model:** When the client is unsure, use openrouter/perplexity/sonar-pro-search to research industry best practices and suggest answers for their approval.
+The system uses Lean Six Sigma methodology INTERNALLY (standard work templates, quality gates, value-stream handoffs, continuous improvement) — but the owner never hears those words.
+
+**Research model:** When the client is unsure, use `openrouter/perplexity/sonar-pro-search` to research industry best practices and suggest answers for their approval.
 
 ---
 
 ## The 3 Options
 
-When you trigger this skill, ALWAYS present all 3 options. NEVER skip this. NEVER auto-select.
+When you trigger this skill, ALWAYS present all 3 options. NEVER skip. NEVER auto-select.
+
+### Option A — Full Interview (Recommended)
+Best for: First-time setup. ~30 questions, ~35 minutes. AI generates 130-200 role-level how-to documents in the background after the interview completes.
+
+### Option B — Quick Setup (Fastest)
+Best for: Owners who want it done fast. AI reads existing workspace files + pre-interview research + industry best practices, proposes everything, owner approves.
+
+### Option C — Audit / Resume Mode
+Best for: Returning users, adding personas later, resuming an interrupted interview. Picks up from `interview-handoff.md`. Never overwrites custom edits.
 
 ---
 
-### Option A - Full Interview (Recommended)
+## v2.1 Interview Structure (Option A)
 
-**Best for:** First-time setup, new businesses, or reorganizing
+### Phase 0 — Pre-Interview Asset Drop (0 questions, ~5 min)
 
-**What happens:**
-1. I check what I already know about you from your workspace files
-2. I show you the recommended departments and you decide which ones fit
-3. I interview you about your business with dynamic questions (3-7 per department based on your needs)
-4. I build everything automatically: departments, team leaders, specialists, org chart, and your Command Center config
-5. I assign coaching personas to guide how your AI team thinks and works
+Before any question, ask the owner:
 
-**Department Recommendations:**
-
-Present the recommended departments with plain English descriptions. The client can keep all, remove some, add custom ones, or start from scratch.
-
-The number of departments is DYNAMIC. A client might choose 5 or 25. Never force a fixed number.
-
-Each department description should be one plain sentence:
-- Marketing - Getting the word out about your business
-- Sales - Turning interested people into paying customers
-- Billing / Finance - Invoices, payments, tracking your money
-- Customer Support - Helping your existing customers when they need it
-- Operations - Making sure the day-to-day runs smoothly
-- Creative - All the writing (blogs, emails, scripts, copy)
-- HR / People - Managing your team, hiring, culture
-- Legal / Compliance - Contracts, regulations, keeping you protected
-- IT / Tech - Your technology, servers, software, security
-- Web Development - Your website, landing pages, funnels
-- App Development - Mobile apps, software applications
-- Graphics - Visual content (logos, images, brand assets)
-- Video - Video production, editing, AI video
-- Audio - Podcasts, voiceovers, music, audio production
-- Research - Market research, competitor analysis, data insights
-- Communications - PR, announcements, internal and external messaging
-- CEO / Executive - Strategy, vision, high-level decisions
-
-Default to keeping all recommended departments if the client has no preference. But never pressure them. "You can always add more later."
-
-**To choose this option:** Say "Build my AI workforce - Option A"
-
----
-
-### Option B - Quick Setup (Fastest)
-
-**Best for:** People who want it done fast without a long interview
-
-**What happens:**
-- I read what I already know about you from your workspace files (USER.md, MEMORY.md, AGENTS.md, TOOLS.md)
-- I combine that with industry best practices for your type of business
-- I propose a full company structure: which departments, who leads each one, which specialists are needed, and which coaching personas fit
-- You review it and say "looks good" or tell me what to change
-- I build everything: department workspaces with core files, team leader agents, specialist assignments, persona alignment, org chart, and Command Center config
-- Same output as Option A, just without the interview
-
-**To choose this option:** Say "Build my AI workforce - Option B"
-
----
-
-### Option C - Audit / Resume Mode
-
-**Best for:** Returning users, adding personas later, resuming an interrupted interview, checking for gaps
-
-**What happens:**
-1. I scan your existing workforce folder
-2. If an interview-handoff.md exists, I resume exactly where you left off
-3. I add any missing files without overwriting anything existing
-4. If Coaching Personas (Skill 22) were installed after the initial build, I wire them in
-5. I never overwrite or delete anything existing
-
-**To choose this option:** Say "Audit my AI workforce" or "Build my AI workforce - Option C"
-
----
-
-## Interview Design (Option A)
-
-### Model Requirement
-This interview MUST run on a high reasoning model (Opus 4.6, Sonnet 4.6, MiMo V2 Pro with thinking, Gemini 3.1 Pro, or GPT 5.4). If the client is on a low reasoning model, suggest switching: "For setting up your company, I recommend switching to a model that thinks more deeply. Want me to switch?"
-
-### Before Asking Any Question
-Check these files for information you already have:
-- USER.md - personal preferences, name, timezone
-- MEMORY.md - business decisions, prior conversations
-- AGENTS.md - tool configurations, behavior rules
-- TOOLS.md - connected systems
-- workforce-interview-answers.md - previously answered questions (if resuming)
-
-If you already know an answer, confirm instead of re-asking:
-"Based on what I already know, your business is in the real estate industry and your main goal is lead generation. Is that still correct, or would you like to change anything?"
-
-### Step 6a — Pre-Interview Asset Gathering (v9.6.0)
-
-**Before any questions, offer to ingest the client's existing materials.** Many clients have brand docs, social channels, websites, or videos that already describe their business. Reading those first means fewer interview questions later.
-
-Ask:
-
-> "Before we start, do you have anything I can read to learn about your business? I'm looking for:
-> - **Brand documents** — mission/vision, brand voice guide, positioning statement
-> - **Communication style guides** — tone, do/don't language, audience profiles
-> - **Your LinkedIn profile or company page**
-> - **Your YouTube channel or video links** — I can review what's there
-> - **Your website**
-> - **A pitch deck or sales deck**
-> - **Anything else** that explains who you are, what you do, and how you talk
+> "Before we start, drop in anything that tells the story of your business. The more I have, the fewer questions I'll ask. For every document or link, I'll skip 3-5 questions later.
 >
-> Drop the links or upload the files. I'll skim them and use what I find to ask smarter questions and skip the ones I can already answer myself. If you don't have any of this, no problem — we'll just answer it as we go."
-
-**What to do with the materials:**
-
-1. Read every doc the client provides. Watch YouTube videos with the transcript or summary tool. Fetch LinkedIn profile + recent posts.
-2. Write findings to `~/clawd/zero-human-company/[company-slug]/pre-interview-research.md` under sections: `## Mission & Vision`, `## Industry`, `## Tools Used`, `## Brand Voice`, `## Target Audience`, `## Open Questions`, `## Source URLs`.
-3. Use those findings to PRE-FILL the answers to the Core Business Questions (Step 7) and to reduce the per-department question count.
-4. When asking a follow-up that the materials already answer, FRAME it as a confirmation, not a question. e.g. *"Based on your LinkedIn, your business is in real estate brokerage — is that still right, or did anything change?"*
-
-### Step 7 — Core Business Questions (asked once, not per department)
-
-Each question — confirm first using pre-interview research and MEMORY.md, only ASK if the answer isn't already known.
-
-1. "What is the name of your business?"
-2. "In one sentence, what does your business do?"
-3. "What industry are you in?" (examples: coaching, e-commerce, agency, restaurant, law firm, SaaS)
-4. "What tools do you currently use to run your business?" (examples: Stripe, Convert and Flow, Mailchimp)
-5. "What is your biggest challenge right now?"
-
-After every question that gets ASKED (not confirmed):
-> "If you are not sure, just let me do a little bit of research, and I can come back and help you with the answer."
-
-After core questions, tell the client where they are in plain English:
-> "5 of 5 core questions done. Now we'll go through your 17 departments — 2 to 3 questions each, takes about 20 to 30 minutes. Want to keep going or take a break? Everything is saved as we go."
-
-### Step 8 — Department Selection (v9.6.0)
-
-Show the recommended **17 departments** with plain-English one-liners. Then ask:
-
-> "These are the 17 departments most businesses run. Would you like:
-> - **All 17** (recommended for most clients)
-> - **Keep these 17 and add more** (some clients have 25-50 departments)
-> - **Remove some** (smaller businesses sometimes only need 5-8)
-> - **Start from a custom list** (you tell me what departments you want)
+> What helps most:
+> - Your website URL
+> - Your About Me / founder bio page or PDF
+> - LinkedIn (personal AND company)
+> - YouTube channel or video links
+> - Podcast (if you have one)
+> - Brand documents — color scheme, brand voice guide
+> - Logo files
+> - Pitch deck or sales deck
+> - Customer testimonials
+> - Any SOPs or processes you've written
+> - Social media handles (Instagram, TikTok, Facebook, Twitter/X, Pinterest, LinkedIn, Threads, Bluesky, YouTube)
+> - Calendly or booking link
+> - Past business plans
+> - **Anything else that helps me understand your business**
 >
-> If you're not sure, go with all 17. We can always remove or add later."
+> If you have nothing, no problem — we'll build it together."
 
-Default = all 17 if no preference expressed.
+**AI actions during Phase 0:**
+1. Fetch every URL (Perplexity Sonar Pro for website crawl, LinkedIn parsing, YouTube transcript extraction)
+2. Parse uploaded files (heavy model — DeepSeek/Kimi/Minimax)
+3. Write findings to `[ZHC]/[slug]/pre-interview-research.md` with sections:
+   - Mission & Vision
+   - Industry vertical (auto-detected)
+   - Stage (idea/MVP/growth/scale)
+   - Geographic scope
+   - Tools Used
+   - Brand Voice
+   - Target Audience
+   - Customers
+   - Open Questions
+   - Source URLs
+4. Pre-fill answers to later phases. Frame as confirmation, not question: *"Based on your LinkedIn, you're in real estate — still right, or did anything change?"*
 
-### Step 9 — Per-Department Questions (2-3 mandatory, AI may extend up to 7 if critical)
+**Industry auto-detection** via `shared-utils/industry-detector.py`:
+- Personal/Professional Development (coaches, thought leaders) — ~60% of clients
+- Real Estate
+- Service Industry (spas, plumbers, maids, lawn care, restaurants)
+- E-commerce
+- SaaS / Tech
+- Agency
+- Content Creator
 
-**v9.6.0 SLIM FORMAT.** Two-to-three questions per department by default. The AI extends up to a total of 7 questions for a single dept ONLY when one of these criticality triggers fires:
+If detection confidence < 0.7, ask the C-4 confirmation question in Phase 3.
 
-- The dept is the revenue engine (e.g. Sales for a coaching business, Marketing for a content business)
-- The client's answers to the mandatory questions are contradictory or reveal a serious gap
-- The dept is unusual for the industry and needs deeper discovery
-- The client explicitly asks for more detail
+---
 
-**Mandatory questions (2-3 per department, always asked unless already known from pre-interview research):**
+### Phase 1 — Behavioral Identity (5 questions, ~12 min)
 
-1. **What this department does** (function): "What does your [dept] department actually do day-to-day?" — confirm from pre-interview research instead of asking if already covered there.
-2. **Success metric / KPIs** (folded — was a separate question before v9.6.0): "What does success look like for this department? How would you know it's doing a great job?" — if client hesitates: *"No problem, let me research what companies in [their industry] typically measure and suggest 2-3 options."*
-3. **Who handles it now** (only if unclear from pre-interview research): "Who handles this today — you, someone on your team, or nobody yet?"
+These come BEFORE business questions. Behavior reveals identity; words conceal it.
 
-**Conditional follow-ups (the AI picks 0-4 of these only when relevant — never all):**
-- What tools are used (skip if already known from core Q4)
-- What is not working well right now (only if the client seems to want to fix something)
-- How this department connects to other parts of the business (only for revenue-engine depts)
-- Process preferences (only if pre-interview research suggests they have strong opinions about how work gets done)
+**B-1: Hard Conversation Behavior**
+"Tell me about the last time you had to have a really hard conversation with someone on your team. Walk me through what you said and how you said it. Give me the actual words you used."
 
-**Specialist staffing — let the AI do this:**
+**B-2: Failure Response**
+"Think about the last big mistake you or your team made — something that cost real money or real trust. What did you do in the first hour after you found out?"
 
-If the client doesn't know what specialists/employees they need for a department, the AI offers up front:
+**B-3: Money Pressure**
+"You have $10,000 to invest in growing your business this month. Walk me through how you'd decide where to put it. What do you look at? What do you trust? What do you ignore?"
 
-> "If you know what your [dept] department does but you don't know exactly who you need on the team, just tell me. I'll research what companies in [industry] typically have on their [dept] team and recommend the specialists for you. You don't have to figure that part out — that's my job."
+**B-4: Style Sample**
+"In ONE sentence, describe what your business does, as if you're talking to a friend at a barbeque. Not a pitch — just how you'd actually say it."
 
-The client never has to answer "what specialists do I need" — the AI determines specialist roles silently via `determine_specialists()` after the dept questions are done, or runs research and recommends.
+**B-5: Anti-Mentors**
+"Name 2-3 people whose business thinking has shaped you most. Then name 1-2 people whose business thinking you actively disagree with."
 
-**Pull-forward rule (binding):**
+After B-5: Run `extract-behavioral-patterns.py` and write `## Behavioral Identity Profile` to USER.md.
 
-Before asking ANY question, check:
-1. `~/clawd/zero-human-company/[slug]/pre-interview-research.md` — Step 6a findings
-2. `~/clawd/MEMORY.md` — facts already saved
-3. `~/clawd/USER.md` — owner preferences
-4. `~/clawd/AGENTS.md` — tools/behavior already configured
+---
 
-If the answer exists in any of those files, **DO NOT re-ask**. Instead, frame as confirmation:
-> "Based on what I already know, your marketing focuses on social media and email. Still right, or did anything change?"
+### Phase 2 — Vision and Goals (4 questions, ~6 min)
 
-**Progress indicator (plain English, not %):**
+**V-1:** "What do you want this business to give you and your family in the next 5 years? Money is fine — but go beyond money if you can."
+**V-2:** "What does winning look like for you in 12 months? Be specific — numbers, milestones, feeling."
+**V-3:** "What's your revenue goal for the next 12 months? If you're not sure, give me a range — I'll do the math from there."
+**V-4:** "What's the thing you secretly want this business to become but don't talk about often?"
 
-After each dept completes:
-> "1 department done, 16 to go. About 22 minutes left at your current pace. Want to keep going or take a break? Everything is saved either way."
+**AI auto-derives Revenue Cascade from V-3** (becomes the KPI spine for every role):
 
-**Examples of good industry-adapted questions:**
+| Cadence | Formula |
+|---|---|
+| Quarterly | yearly ÷ 4 |
+| Monthly | yearly ÷ 12 |
+| Weekly | yearly ÷ 50 |
+| Daily | yearly ÷ 250 |
 
-For a hair salon's marketing:
-- "How do your clients usually find out about you? Word of mouth, social media, Google?"
-- "Do you post on social media regularly or is that something you want to start doing?"
+**Edge case:** If owner has no revenue yet → use "first paying customer" cascade (first customer in 60 days, 5 customers in 90 days, 20 in 6 months).
 
-For a SaaS company's marketing:
-- "What channels drive most of your signups right now?"
-- "Do you run paid campaigns or is growth mostly organic?"
+---
 
-For a coaching business's sales:
-- "When someone is interested in working with you, how does that process usually go?"
-- "Do you have a follow-up system for people who showed interest but didn't sign up?"
+### Phase 3 — Customer & Business Context (5 questions, ~7 min)
 
-For a restaurant's operations:
-- "Walk me through a typical day at your restaurant from open to close."
-- "What is the one thing that causes the most headaches in your day-to-day?"
+**C-1:** "Describe your ideal customer like you're describing a friend. Who are they, what do they do, what keeps them up at night?"
+**C-2:** "Where do they spend their time — online or in person? What platforms, communities, events?"
+**C-3:** "In their words (not yours), what problem do they pay you to solve?"
+**C-4** (only if auto-detection confidence < 0.7): "From your materials it looks like you're in [auto-detected industry]. Is that right?"
+**C-5:** "What's the biggest thing holding you back from growing right now?"
 
-For a law firm's billing:
-- "How do you currently track your billable hours and send invoices?"
-- "Is getting paid on time a problem for your firm?"
+---
 
-For an e-commerce store's customer support:
-- "When a customer has an issue with an order, what happens right now?"
-- "Do you get the same types of questions over and over?"
+### Phase 4 — Department Customization (~13 bundled questions, ~10 min)
 
-For a real estate agency's marketing:
-- "Where are most of your leads coming from right now? Zillow, referrals, social media?"
-- "Do you create content about your listings or your local market?"
+Do NOT ask one question per department. Bundle related departments. Each question captures ONE customization signal.
 
-For a fitness coach's sales:
-- "What does your process look like from someone following you online to becoming a paying client?"
-- "What usually stops people from signing up after they express interest?"
+**Q-D1:** "How do most people hear about your business right now? And where do you want them hearing about you 12 months from now?"
+*(Captures: Marketing + Communications + Social Media + Paid Advertisement signal)*
 
-For a nonprofit's operations:
-- "How do you currently track donations and communicate with your donors?"
-- "What takes up the most time for your team on a weekly basis?"
+**Q-D2:** "What makes your business different from the 3 closest competitors? If you're not sure, I'll research it and propose something."
+*(Marketing positioning + Research signal)*
 
-For a construction company's billing:
-- "How do you handle invoicing for your projects? Per milestone, upon completion, or something else?"
-- "Do you have a system for tracking materials costs and change orders?"
+**Q-D3:** "When someone is interested in working with you, walk me through what currently happens, step by step."
+*(Sales)*
 
-The AI should generate questions like these for ANY industry. These examples show the STYLE and DEPTH expected. Plain language. Relevant to their world. Never generic.
+**Q-D4:** "How do you currently get paid — invoices, subscriptions, one-time, retainers? What payment systems do you use?"
+*(Billing & Finance)*
 
-**The AI decides how many questions based on:**
-- How much it already knows from the core questions
-- How complex this department is for this industry
-- Whether the client is comfortable or getting fatigued (short answers = offer more support, fewer questions)
-- Whether the AI can infer answers from what was already said
+**Q-D5:** "When a customer has an issue, what happens right now? What's the most common issue they raise?"
+*(Customer Support)*
 
-NEVER exceed 7 questions per department.
+**Q-D6:** "Do you have a website now? Are you building or planning to build an app? If yes to either — what's the role those play in your business?"
+*(Web Development + App Development)*
 
-### KPI Capture (per department)
+**Q-D7:** "What does your business produce visually and in video / audio? Examples: social posts, YouTube videos, podcast episodes, sales VSLs, courses, presentations."
+*(Graphics + Video + Audio)*
 
-After each department's questions:
-"What does success look like for this department? How would you know it is doing a great job?"
+**Q-D8:** "What do you need to know more about — your competitors, your industry, your customers, or all three?"
+*(Research)*
 
-If the client hesitates: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
+**Q-D9:** "Which CRM or contact-management system do you use (or want to use)? Examples: GoHighLevel, HubSpot, Salesforce, ActiveCampaign, or 'I don't have one yet'."
+*(CRM)*
 
-If yes, use Perplexity sonar-pro-search to research and present 3 options. Client picks whichever feels right.
+**Q-D10:** "Do you currently use written contracts with clients or vendors? Are there any compliance or regulatory requirements in your industry?"
+*(Legal — and triggers regulated-industry overlay if applicable)*
 
-After department creation: "You are 50% complete."
-After KPI setup: "You are 70% complete."
+**Q-D11 [CRITICAL]:** "On a scale of 1-10, how confident are you that your business emails actually land in inboxes (not spam)? Have you set up SPF, DKIM, or DMARC? It's fine if those terms don't mean anything to you."
+*(Email Deliverability — flagship CRM role)*
 
-### Flush After Every Question
+**Q-D12:** "How comfortable are you with technical setup, troubleshooting, and updating systems? I'll calibrate how much hand-holding the maintenance team gives you."
+*(OpenClaw Maintenance)*
 
-After every answered question:
-1. Update workforce-interview-answers.md (in company-discovery/ folder) with the question and answer
-2. Update interview-handoff.md with current progress state
-3. Trigger a memory flush
+**Q-D13:** "Of everything we just talked about, which area is MOST important for you to nail in the next 90 days?"
+*(Highest-weight signal — used by Learning Loop and persona_assignment table)*
 
-This ensures no progress is ever lost. If the session dies or the client walks away, they resume exactly where they left off via Option C.
+---
 
-### Detecting Hesitation
+### Phase 5 — Industry Vertical Pack Confirmation (1 question, ~1 min)
 
-If the client gives short answers, says "I don't know" twice, or pauses:
+"Based on what you told me, you're in [DETECTED_INDUSTRY]. Businesses like yours always need a few extra departments: [vertical pack list]. Sound right, or want me to skip some?"
+
+---
+
+### Phase 6 — Final Review (~1-2 min)
+
+AI shows a plain-English summary of EVERYTHING captured. Owner confirms or edits any line. Then: "Build my company."
+
+**Total: ~28-30 questions, ~35 minutes** (with asset drop happening in parallel).
+
+---
+
+## The 16 Mandatory Departments
+
+Auto-built for EVERY zero-human company, no exceptions:
+
+1. **Marketing** — brand, awareness, demand generation
+2. **Sales** — outreach, conversion, deals
+3. **Billing & Finance** — invoices, payments, cash flow, forecasting
+4. **Customer Support** — onboarding, retention, service, refunds
+5. **Web Development** — website, funnels, landing pages, SEO (with SEO Specialist + Funnel Builder)
+6. **App Development** — desktop, mobile, PWA
+7. **Graphics** — brand identity, social graphics, slides, ad creative
+8. **Video** — long-form, short-form, editing, motion graphics, Video SEO Specialist
+9. **Audio** — podcast, AI voice (11 Labs), sound design, speech writing, music
+10. **Research** — McKinsey-style industry analysis, competitive intel, market trends
+11. **Communications** — PR, internal comms, crisis comms, speech writing
+12. **CRM** — platform admin, **Email Deliverability & Optimization Specialist (flagship)**, segmentation, automation
+13. **OpenClaw Maintenance** — system health, skill updates, memory hygiene, backups, security
+14. **Legal** — contracts, compliance, terms, privacy, IP
+15. **Social Media (organic only)** — Facebook, Instagram, TikTok, LinkedIn, Twitter/X, Pinterest, YouTube channel, Threads, Bluesky, Community Manager
+16. **Paid Advertisement** — Google Ads, Bing, Meta Ads, TikTok, LinkedIn, Twitter, Pinterest, YouTube Ads, Spotify, Snapchat, Native (Taboola/Outbrain)
+
+**Plus: Master Orchestrator (CEO Agent)** — sits above all departments at `[ZHC]/[slug]/master-orchestrator/`. Special CEO persona deferral clause (mission/owner override persona on conflict).
+
+See `suggested-roles/*.md` for the full role roster per department.
+
+---
+
+## Industry Vertical Packs (Auto-Added Based on Phase 0 Detection)
+
+### Personal / Professional Development Pack (~60% of clients)
+- Presentations (slides, decks, keynote prep)
+- Client Coaches (for coaching agency clients — distinct from Customer Support)
+- Course Creator (curriculum, ops, student success)
+- Podcast
+- Community Management (Facebook Groups, Skool, Circle, Discord, Slack)
+
+### Real Estate Pack
+- Listings Management
+- MLS Operations
+- Lead Generation (Zillow, Realtor.com, FB lead ads)
+- Showings Coordinator
+- Open House Specialist
+- Closing Coordinator
+- Local Market Intelligence
+
+### Service Industry Pack (spas, plumbers, maids, lawn care)
+- Scheduling / Dispatch
+- Field Operations / Service Quality
+- Local SEO (added to Web Development)
+- Reviews Management (Google, Yelp)
+- Recurring Service / Membership Coordinator
+
+---
+
+## Universal How-To Template (Sub-Agent Output Standard)
+
+Every role's `how-to.md` follows the 18-section template at `templates/universal-how-to-template.md`. Sub-agents generating role docs use the prompt at `prompts/role-doc-generation-prompt.md`.
+
+The 18 sections (every one must be present and filled):
+1. Role Identity (Who You Are / What This Role Is NOT)
+2. Persona Governance Override (verbatim from Chapter 19)
+3. Daily Operations
+4. Weekly Operations
+5. Monthly Operations
+6. Quarterly Operations
+7. KPIs (tied to revenue cascade)
+8. Tools You Use
+9. Standard Operating Procedures (numbered, atomic)
+10. Quality Gates
+11. Handoffs (Value Stream Map)
+12. Escalation Paths
+13. Good Output Examples
+14. Bad Output Examples (Anti-Patterns)
+15. Common Mistakes
+16. Research Sources (tiered: role-specific, McKinsey/HBR, Perplexity, Deep Research dept)
+17. Edge Cases for This Role
+18. Update Triggers
+
+QC sub-agent verifies all 18 sections present, no TODOs, KPIs link to revenue cascade, Section 13 has concrete examples, Section 16 has actual URLs, word count 2500-5500.
+
+---
+
+## Role-Level Workspace Architecture
+
+Per role within each department:
+
+```
+[ZHC]/[slug]/departments/[dept]-dept/[role-slug]/
+├── IDENTITY.md         (unique to role)
+├── SOUL.md             (unique to role, with deferral clause)
+├── MEMORY.md           (unique to role, starts empty)
+├── HEARTBEAT.md        (unique to role)
+├── how-to.md           (universal 18-section template)
+├── AGENTS.md → [ZHC]/[slug]/AGENTS.md    (symlink)
+├── TOOLS.md  → [ZHC]/[slug]/TOOLS.md     (symlink)
+└── USER.md   → [ZHC]/[slug]/USER.md      (symlink)
+```
+
+Symlink pattern extends the existing v9.6.1 department-level pattern down to the role level.
+
+---
+
+## Generation Orchestration (After Interview)
+
+**Stage 1 (1 min):** `build-workforce.py` writes `sop-research-manifest.json`
+**Stage 2 (5-10 min):** 1 sub-agent runs industry + competitor research → `[ZHC]/research/industry-research.md` + `competitor-intel.md`
+**Stage 3 (10-30 min):** Up to 10 dept sub-agents in parallel — each generates dept SOUL/MEMORY/HEARTBEAT/governing-personas.md, DA SOUL+SOP, then spawns 5-13 role sub-agents
+**Stage 4 (parallel with Stage 3):** Up to 50 role sub-agents concurrently — each generates IDENTITY/SOUL/MEMORY/HEARTBEAT/how-to.md per the universal template
+**Stage 5 (5 min):** 1 QC sub-agent scans every how-to.md against the 9-item checklist
+**Stage 6 (2 min):** Assembly — ORG-CHART.md, departments.json, persona-matrix.md, company-config.json
+
+**Total: ~25-45 min for a full 130-200 document build.**
+
+Owner sees real-time progress at `/onboarding/building` in the Command Center. Telegram notification when complete.
+
+---
+
+## Assisting Language (PRESERVED FROM v9.6.0 — DO NOT REMOVE)
+
+### After every ASKED question (not confirmed):
+> "If you're not sure, just let me do a little bit of research, and I can come back and help you with the answer."
+
+### "I Don't Know" Flow (6 steps — USE THIS EXACT PROCESS)
+1. **Acknowledge:** "That is completely fine. Let me help you figure this out."
+2. **Research:** Use Perplexity Sonar Pro for industry best practices.
+3. **Provide 2-3 Options:** "Based on what works for businesses like yours, here are 3 common approaches..."
+4. **Recommend One:** "My recommendation is [X] because [specific reasoning]. But you know your business best."
+5. **Let Client Choose:** "Which one feels right for you? Or want me to suggest something else?"
+6. **Document the Choice:** Record in `workforce-interview-answers.md` as "researched recommendation."
+
+### Hesitation Detection
+If client gives short answers, says "I don't know" twice, or pauses:
 - Shift to offering suggestions instead of asking more questions
 - "Based on what I know about businesses like yours, most companies in [industry] focus on [X]. Want me to set that up for you?"
-- Reduce question count for remaining departments
-- The goal is completion, not interrogation
-
-### "I Don't Know" Flow (USE THIS EXACT PROCESS)
-
-When a client says "I don't know," "I'm not sure," or shows hesitation, follow these 6 steps in order:
-
-**1. Acknowledge**
-"That is completely fine. Let me help you figure this out."
-
-**2. Research (Perplexity)**
-Use openrouter/perplexity/sonar-pro-search to look up industry best practices. Example query: "What KPIs do real estate agencies typically track for marketing?" or "How do construction companies handle project billing?"
-
-**3. Provide 2-3 Options**
-Present the research findings as 2-3 concrete options the client can choose from. Keep it simple:
-- "Based on what works for businesses like yours, here are 3 common approaches: [Option A], [Option B], or [Option C]."
-
-**4. Recommend One with Reasoning**
-"My recommendation is [Option X] because [specific reasoning based on their industry/business type]. But you know your business best."
-
-**5. Let Client Choose**
-"Which one feels right for you? Or would you like me to suggest something else?"
-
-**6. Document the Choice**
-After they choose:
-- Record their choice in workforce-interview-answers.md
-- Note that this was a "researched recommendation" (not something they came up with themselves)
-- Use this documented choice when building their department configurations
-
-**Example in action:**
-Client: "I don't know what KPIs my marketing department should track."
-AI: "That is completely fine. Let me research what works for businesses like yours." [Runs Perplexity search] "Based on what I found, here are 3 options most real estate agencies use: 1) Lead volume and cost per lead, 2) Website traffic and conversion rates, or 3) Social media engagement and listing views. My recommendation is option 1 because lead generation is the primary goal for most real estate marketing. Which one feels right for you?"
+- Reduce question count for remaining areas
+- **Goal is completion, not interrogation**
 
 ### If the Client Wants to Stop
-
-If the client says they need a break, are overwhelmed, or want to stop:
 - Save everything immediately (flush answers, update handoff file)
-- Tell them: "No problem. Everything we have done so far is saved. When you are ready to continue, just say 'Resume my AI workforce setup' and I will pick up right where we left off."
-- Do NOT make them feel bad for stopping. This is their company. Their pace.
+- "No problem. Everything we have done so far is saved. When you're ready, say 'Resume my AI workforce setup' and I'll pick up exactly where we left off."
+- DO NOT make them feel bad. Their company. Their pace.
 
-### Custom Departments
+### Telegram Nudge Cadence (multi-day persistence)
+- +24h idle: "You're {progress}% done. Want to keep going? {link}"
+- +3d idle: "Still want to finish your AI workforce setup? You stopped at: {last_question}. {link}"
+- +7d idle: "Last check-in. Want me to finish your setup with best-guess defaults? Reply YES and I'll handle it."
 
-If the client wants a department that is not in the recommended list:
-- Ask them the same dynamic questions (3-7) for that department
-- Create the workspace with the same structure as any other department
-- Generate a SOUL.md specific to what they described
-- The system handles any department name. There are no limits.
-- Example: If a client says "I need a Partnerships department," create partnerships-dept/ with a Partnerships Director and treat it exactly like any other department.
+If owner replies YES at the 7-day nudge → auto-run Option B (Quick Setup) → ~25-45 min later, completed company is ready.
+
+---
+
+## Pull-Forward Rule (Binding)
+
+Before asking ANY question, check (in this order):
+1. `[ZHC]/[slug]/pre-interview-research.md` — Phase 0 findings
+2. `[OPENCLAW_ROOT]/workspace/MEMORY.md` — facts already saved
+3. `[OPENCLAW_ROOT]/workspace/USER.md` — owner preferences + behavioral profile
+4. `[OPENCLAW_ROOT]/workspace/AGENTS.md` — tools/behavior already configured
+
+If the answer exists in any of those files, **DO NOT re-ask**. Frame as confirmation:
+> "Based on what I already know, your marketing focuses on social media and email. Still right, or did anything change?"
+
+---
+
+## Flush After Every Question
+
+After every answered question:
+1. Update `workforce-interview-answers.md` with question + answer
+2. Update `interview-handoff.md` with progress state
+3. Trigger memory flush
+
+This ensures no progress is ever lost. If session dies, resume via Option C.
 
 ---
 
 ## What Gets Built After the Interview
 
 ### Department Workspaces
-The build-workforce.py script handles all workspace creation via `create_department_workspace()`.
-For each department chosen, create a workspace at ~/.openclaw/workspace/departments/[dept-name]/ with:
+For each of the 16 mandatory departments + vertical pack departments, `create_department_workspace()` creates:
+- SOUL.md (generated from interview, NOT a template — includes the deferral clause)
+- MEMORY.md (empty)
+- HEARTBEAT.md (department priorities)
+- memory/ folder
+- governing-personas.md (pre-qualified persona pool from 5-layer scoring)
+- devils-advocate/SOUL.md + SOP.md
+- AGENTS.md, TOOLS.md, USER.md as SYMLINKS to workspace root
 
-**Unique files:**
-- SOUL.md - generated from interview answers (NOT a generic template)
-- MEMORY.md - empty, ready for use
-- HEARTBEAT.md - department-specific priorities from interview
-- memory/ folder - for daily session logs
+### Role-Level Folders (NEW in v2.1)
+Inside each department, one folder per role (Director, specialists, QC, Deep Research). Each role folder contains:
+- IDENTITY.md (unique, with deferral clause)
+- SOUL.md (unique, with deferral clause)
+- MEMORY.md (empty)
+- HEARTBEAT.md (role-specific cadence)
+- how-to.md (universal 18-section template, generated by sub-agent)
+- AGENTS.md, TOOLS.md, USER.md as SYMLINKS to workspace root
 
-**Inherited files (copied from main CEO workspace ~/.openclaw/workspace/):**
-- TOOLS.md
-- AGENTS.md
-- USER.md
+### Master Orchestrator (CEO Agent)
+Created at `[ZHC]/[slug]/master-orchestrator/`. Same file structure as a role folder, BUT:
+- SOUL.md and IDENTITY.md contain the **CEO Deferral Clause** (mission/owner override persona on conflict)
+- how-to.md Section 2 contains the CEO Deferral Clause instead of the standard one
 
-### Department Head Agents
-Every department automatically gets a permanent director added to agents.list in openclaw.json via `add_agent_to_config()`. This is NOT a question asked to the client. Every department has a head. Period.
-
-The SOUL.md for each director is generated from interview answers via `generate_soul_md()`, NOT from a generic template. If the client said their marketing focuses on social media and email, the Marketing Director's SOUL.md reflects that. If they said they do paid ads, the SOUL.md includes ad management responsibilities.
-
-### Specialist Determination (Silent)
-The AI reads the interview answers via `determine_specialists()` and determines which specialist roles are needed per department:
-
-**Full-time team member** (permanent agent with memory):
-- Work happens daily or weekly
-- Needs to remember past work
-- Maintains ongoing relationships
-
-**On-call specialist** (spawned when needed):
-- Work is occasional or one-time
-- No memory dependency
-
-The client NEVER hears these technical terms. They see their org chart showing directors and specialists.
-
-### Persona Assignment (Act As If Protocol)
-After workspaces are created, persona alignment runs using the 5-layer check:
-1. Company Mission alignment
-2. Owner Values alignment (from USER.md)
-3. Company Goals/KPI alignment
-4. Department Goals/KPI alignment
-5. Task Fit
-
-Results stored in:
-- ~/.openclaw/workspace/persona-matrix.md (master pre-qualified pool)
-- ~/.openclaw/workspace/departments/[dept]/governing-personas.md (department-specific pool)
-
-Personas are selected PER TASK at runtime, not locked to roles.
-
-### ORG-CHART.md
-Generated at ~/.openclaw/workspace/ORG-CHART.md via `generate_org_chart()` showing the full company structure: CEO at top, each department director below, specialists under each director with their type (full-time or on-call). Summary reference added to MEMORY.md.
-
-### Command Center Config
-departments.json generated via `generate_departments_json()` for the BlackCEO Command Center. Exact schema per entry: id (slug), emoji, name (display), headTitle (director title). Only includes departments the client actually chose.
-
-### Devil's Advocate
-Auto-created in every department after all workspaces are built. Client is NOT asked about this. Each DA gets a unique set of challenge questions based on that department's KPIs from the interview. The CEO gets a plain-English explanation: "Your AI workforce includes a quality checker in every department whose job is to make sure your team is actually delivering results, not just saying they are."
-
-After everything is built: "You are complete! Setting up your AI workforce now."
-
-### Memory Wiki Documentation
-
-After the workforce is built, generate wiki source pages for:
-- Company structure
-- Department responsibilities
-- Role assignments
-- Persona alignment decisions
-
-These pages are compiled by Memory Wiki for structured knowledge retrieval.
+### Company-Level Files
+- ORG-CHART.md (full structure with persona pills)
+- departments.json (for Command Center)
+- company-config.json (revenue cascade, mission, KPI targets)
+- persona-matrix.md (full persona-to-dept mapping)
 
 ---
 
-## Config Safety
+## Persona Governance — Two Deferral Clauses
 
-Before ANY edit to openclaw.json:
-1. Backup to ~/Downloads/openclaw-backups/ with human-readable name
-2. Make the edit
-3. Validate JSON after writing
-4. Verify backup is in correct location (not a hidden folder)
-5. If backup ended up wrong, re-backup to correct location
+### Standard Clause (every agent except Master Orchestrator)
+
+```markdown
+## Persona Governance Override
+
+When you are assigned a persona for a task, that persona governs HOW you perform
+the work. Your beliefs, voice, decision logic, quality bar, and judgment for that
+task come from the persona — not from this file.
+
+Act AS IF you ARE the persona for the duration of the task. Use their frameworks.
+Use their phrasing. Hold their standards. Make the calls they would make.
+
+This file is your fallback identity. It governs only when no persona is assigned.
+When a persona is present, this file is subordinate to it.
+
+**Order of operations:**
+1. Check for an assigned persona. If present → act AS that persona.
+2. If no persona is assigned → use this file (SOUL.md / IDENTITY.md / how-to.md).
+3. In all cases: honor the company's mission (workspace SOUL.md) and the owner's
+   stated values (workspace USER.md).
+```
+
+### CEO Clause (Master Orchestrator only)
+
+```markdown
+## Persona Governance — CEO Mode
+
+As the CEO / Master Orchestrator, you do NOT fully defer to assigned personas.
+You use them as INPUT, but you remain accountable to the company's mission and
+the owner's values at all times — those override the persona when there is conflict.
+
+When a persona is assigned to a CEO-level task:
+1. Read the persona's frameworks, voice, and decision logic. Consider them.
+2. Compare to mission (workspace SOUL.md) and owner profile (workspace USER.md).
+3. Where the persona ALIGNS → embody it for the task.
+4. Where the persona CONFLICTS → mission and owner WIN. Log conflict in MEMORY.md.
+5. Your own identity governs when no persona is assigned.
+
+You are the protector of the mission. Personas are tools you use, not authorities
+you serve.
+```
+
+Apply via `STANDARD_DEFERRAL_CLAUSE` and `CEO_DEFERRAL_CLAUSE` constants in `build-workforce.py`. Append to every generated SOUL.md and IDENTITY.md. To migrate existing workspaces: run `shared-utils/migrate-deferral-clauses.py`.
 
 ---
-
-## Required Files in Every Role Folder
-
-| File | What it is |
-|------|-----------|
-| 00-START-HERE.md | First file the AI reads. What this role does, who owns it, where to find files |
-| 01-[task-name].md | Step-by-step instructions for task 1. Numbered, sequential |
-| 02-[task-name].md | Step-by-step instructions for task 2 |
-| (continue numbering) | One file per major task |
-| good-examples.md | Examples of excellent output for this role |
-| bad-examples.md | Examples of bad output and what to avoid |
-| tools.md | List of every tool this role uses |
-
-## The Routing File
-
-Every workforce structure needs: universal-sops/00-ROUTING.md
-
-This tells the AI which department owns each type of task, which role handles it, and which file to read first.
-
-## Naming Convention (Non-Negotiable)
-
-- Department folders: [name]-dept/ (lowercase, hyphens)
-- Role folders: descriptive lowercase with hyphens
-- Files: numbered with two digits (01-, 02-)
-- No spaces in folder or file names. Ever.
-
-## Context Awareness
-
-Before asking questions, check:
-- MEMORY.md for business info
-- USER.md for preferences
-- AGENTS.md for known tools
-- IDENTITY.md for context
-
-If you already know something, use that info and skip the question.
 
 ## Telegram-Friendly Output
 
-All messages use Telegram-friendly formatting:
-- No markdown tables
-- No code blocks
+All client-facing messages use Telegram-friendly formatting:
+- No markdown tables in chat (use them in markdown files only)
+- No code blocks in chat
 - Short lines with bullets
 - Emojis for visual breaks
 
@@ -466,8 +473,8 @@ All messages use Telegram-friendly formatting:
 
 ## Quick Start Guide
 
-**New user?** → Option A
-**Want it fast?** → Option B
-**Already built something?** → Option C
+- **New user?** → Option A
+- **Want it fast?** → Option B
+- **Already built something?** → Option C
 
 Tell me: "Start AI workforce blueprint"
