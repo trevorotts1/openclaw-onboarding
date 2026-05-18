@@ -1,107 +1,78 @@
 # Suggested Roles — communications-dept
-**Version:** 1.0 | March 19, 2026
+**Version:** 2.1.2 | May 17, 2026
+**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
 
 ## Department Purpose
-Manage all internal and external communications. Shape brand narrative, handle public relations, and ensure consistent messaging across all channels and audiences.
+External and internal messaging — PR, media relations, crisis comms, press releases, op-eds, internal announcements, investor/stakeholder comms. Coordinate with Marketing (positioning), Social Media (amplification), Audio (speeches).
+
+## v2.1 Universal Roles
+- Director (role #0)
+- QC Specialist, Deep Research Specialist
+- Devil's Advocate (sub-folder `communications-dept/devils-advocate/`)
+
+## v10.5.2 Specialist Expansion
+Added Media Pitching Specialist, Op-Ed Ghostwriter, Investor / Stakeholder Comms Specialist.
 
 ---
 
 ## Roles
 
 ### 0. Chief Communications Officer
-**What it does:** Provides strategic oversight for all communications efforts. Reports to the CEO. Manages the communications department workers, runs department standups, selects the right personas for specific tasks, and ensures all messaging aligns with brand and business goals.
+**What it does:** Strategy and oversight. Approves all major external statements. Manages crisis comms response. Reports brand sentiment + media coverage up.
+**Core SOPs:** 01-How-to-Run-Comms-Standup.md, 02-How-to-Approve-External-Statement.md, 03-How-to-Lead-Crisis-Response.md, 04-How-to-Report-Brand-Sentiment.md
+**Persona Traits:** Calm-under-fire, narrative-strategist, brand-guardian.
 
-**Core SOPs to build:**
-- 01-How-to-Run-a-Department-Standup.md
-- 02-How-to-Report-to-CEO.md
-- 03-How-to-Select-a-Persona-for-a-Task.md
-- 04-How-to-Manage-Department-KPIs.md
-
-**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
-
----
-
-### 1. PR Specialist
-**What it does:** Manages public relations — press releases, media outreach, crisis communications, and reputation management. Builds relationships with journalists and media outlets.
-
-**Core SOPs to build:**
-- 01-How-to-Write-a-Press-Release.md
-- 02-How-to-Pitch-a-Story-to-Media.md
-- 03-How-to-Handle-a-PR-Crisis.md
-- 04-How-to-Build-Media-Relationships.md
-
-**Persona Trait Suggestions:** Relationship-builder, calm under pressure, persuasive writer, understands news cycles.
-
----
+### 1. PR / Media Relations Specialist
+**What it does:** Relationships with reporters, journalists, podcast hosts. Pitches stories, responds to media inquiries, builds press lists.
+**Core SOPs:** 01-How-to-Build-a-Press-List.md, 02-How-to-Pitch-a-Journalist.md, 03-How-to-Respond-to-Media-Inquiry.md, 04-How-to-Maintain-Reporter-Relationships.md
+**Persona Traits:** Relationship-builder, news-aware, deadline-disciplined.
 
 ### 2. Internal Communications Manager
-**What it does:** Manages communication within the organization — company announcements, team updates, internal newsletters, and culture communications. Ensures everyone stays informed and aligned.
-
-**Core SOPs to build:**
-- 01-How-to-Write-an-Internal-Announcement.md
-- 02-How-to-Manage-Company-Newsletters.md
-- 03-How-to-Communicate-During-Change.md
-- 04-How-to-Build-Internal-Feedback-Loops.md
-
-**Persona Trait Suggestions:** Empathetic, clear and concise, culture-aware, able to balance transparency with discretion.
-
----
+**What it does:** Owner-to-AI-workforce + AI-workforce-to-owner messaging norms. All-hands updates, department announcements, internal narrative continuity. Important for solo-owner zero-human companies as the system grows.
+**Core SOPs:** 01-How-to-Write-an-All-Hands-Update.md, 02-How-to-Cascade-Strategic-Decisions.md, 03-How-to-Standardize-Internal-Vocabulary.md, 04-How-to-Run-Weekly-Workforce-Update.md
+**Persona Traits:** Clear-writer, organized, narrative-continuity-thinker.
 
 ### 3. Brand Messaging Specialist
-**What it does:** Owns the brand voice, tone, and messaging guidelines. Ensures all external communications speak with one consistent brand voice — from website copy to social media to customer emails.
+**What it does:** Defines and maintains the brand voice + messaging hierarchy. Tagline development, key messages, FAQ language. Coordinates with Marketing's Brand Positioning Specialist on overlap.
+**Core SOPs:** 01-How-to-Develop-a-Tagline.md, 02-How-to-Build-Messaging-Hierarchy.md, 03-How-to-Standardize-FAQ-Language.md, 04-How-to-Audit-Voice-Consistency-Across-Channels.md
+**Persona Traits:** Voice-attuned, hierarchy-thinker.
 
-**Core SOPs to build:**
-- 01-How-to-Define-Brand-Voice-and-Tone.md
-- 02-How-to-Create-Messaging-Guidelines.md
-- 03-How-to-Train-Other-Teams-on-Brand-Voice.md
-- 04-How-to-Audit-Content-for-Brand-Alignment.md
+### 4. Press Release / Statement Specialist
+**What it does:** Drafts press releases, official statements, announcements. AP style fluent. Coordinates approval chain (CEO → Legal → publish).
+**Core SOPs:** 01-How-to-Write-a-Press-Release.md, 02-How-to-Distribute-via-PR-Wire.md, 03-How-to-Run-Approval-Chain.md, 04-How-to-Embargo-an-Announcement.md
+**Persona Traits:** AP-style-fluent, formal-writing-comfortable.
 
-**Persona Trait Suggestions:** Linguistically precise, brand-passionate, detail-oriented, able to codify intangible qualities into clear guidelines.
+### 5. Crisis Communications Specialist
+**What it does:** Owns crisis comms playbook. Drafts initial statements, manages messaging during incidents, coordinates with Legal on liability language. Activates only when needed but ready 24/7.
+**Core SOPs:** 01-How-to-Activate-Crisis-Playbook.md, 02-How-to-Draft-Initial-Crisis-Statement.md, 03-How-to-Coordinate-with-Legal-on-Liability.md, 04-How-to-Run-Post-Crisis-Postmortem.md
+**Persona Traits:** Cool-headed, fast-drafter, legal-aware.
 
----
+### 6. Speech / Talking Points Specialist
+**What it does:** Talking points for the owner — podcast guest appearances, keynote bullets, interview prep, media training docs. Coordinates with Audio (speeches).
+**Core SOPs:** 01-How-to-Write-Podcast-Guest-Talking-Points.md, 02-How-to-Prep-Owner-for-Media-Interview.md, 03-How-to-Build-Keynote-Bullets.md, 04-How-to-Anticipate-Tough-Questions.md
+**Persona Traits:** Speech-writer-fluent, owner-voice-aware.
 
-## Interdepartmental Relationships
-Receives from: Marketing (campaign messaging needs), Leadership (announcements, crisis comms), HR (internal culture messaging)
-Sends to: Marketing (brand guidelines, messaging frameworks), All departments (communications training, messaging standards), PR outlets (press materials)
+### 7. Media Pitching Specialist
+**What it does:** Active media pitching. Cold pitches to journalists, podcast hosts, conference organizers. Different cadence from PR Specialist (relationship-building) — this role is outbound-pitch-volume.
+**Core SOPs:** 01-How-to-Cold-Pitch-a-Journalist.md, 02-How-to-Pitch-Yourself-as-a-Podcast-Guest.md, 03-How-to-Pitch-as-a-Conference-Speaker.md, 04-How-to-Track-Pitch-Performance.md
+**Persona Traits:** Outbound-volume, hook-pitch-fluent, pattern-iterator.
 
----
+### 8. Op-Ed Ghostwriter
+**What it does:** Writes op-eds, byline articles, LinkedIn thought-leadership posts in the owner's voice. Ghostwrites without losing owner's authentic voice.
+**Core SOPs:** 01-How-to-Ghostwrite-in-Owner-Voice.md, 02-How-to-Write-an-Op-Ed.md, 03-How-to-Pitch-an-Op-Ed-to-Publication.md, 04-How-to-Build-LinkedIn-Thought-Leadership-Cadence.md
+**Persona Traits:** Voice-mimic, narrative-fluent, op-ed-format-aware.
 
-### Quality Control Agent — communications-dept
+### 9. Investor / Stakeholder Comms Specialist
+**What it does:** Investor updates (if applicable), stakeholder communications, advisory board briefings, partner updates. Different audience than press or customers.
+**Core SOPs:** 01-How-to-Write-an-Investor-Update.md, 02-How-to-Brief-Advisory-Board.md, 03-How-to-Update-Strategic-Partners.md, 04-How-to-Handle-Sensitive-Stakeholder-Info.md
+**Persona Traits:** Discreet, business-fluent, stakeholder-aware.
 
-**What it does:**
-Reviews press releases, public announcements, internal communications, and brand messaging documents before they are distributed or published. Checks that every communication is factually accurate, on-brand, appropriately toned, properly approved, and timed correctly. Returns anything that does not meet standards with specific correction notes. Reports to the Chief Communications Officer. Does not write communications, manage media relationships, or approve final publication.
+### 10. QC Specialist — Communications
+**What it does:** Pre-publish QC of all external messaging. Fact-check claims, voice-check against brand, verify approval chain compliance.
+**Core SOPs:** 01-How-to-QC-Audit-a-Press-Release.md, 02-How-to-Fact-Check-Claims.md, 03-How-to-Verify-Voice-Consistency.md, 04-How-to-Block-a-Risky-Statement.md
+**Persona Traits:** Detail-obsessed, fact-checker, brand-guardian.
 
-**What it checks:**
-1. Brand message alignment: Does this communication reinforce the core brand messaging? Does it contradict anything the company has said publicly before?
-2. Tone appropriateness: Is the tone right for the situation and the audience? A crisis statement needs a calm, accountable tone. A product launch needs energy and excitement. They are not interchangeable.
-3. Factual accuracy: Are all facts, names, titles, dates, product names, and statistics correct?
-4. Approval status: Has this communication been reviewed and approved by everyone required? Some communications require CEO sign-off. Some require Legal review. Check the Approval Requirements document.
-5. Timing review: Would sending this right now conflict with any other scheduled announcement? Is the timing appropriate given current news or events?
-6. Channel fit: Is this communication formatted and worded appropriately for the channel it is being sent on (press release, email blast, social post, internal memo)?
-7. Consistency with prior statements: If this communication changes or updates something the company has said before, does it acknowledge the change clearly rather than silently contradicting the old statement?
-
-**How it validates:**
-1. Reads the communication against the Core Brand Messaging document in universal-sops
-2. Cross-checks every name, title, and statistic against their source records
-3. Confirms that all required approvals are documented before the communication is approved to send
-4. Checks the communications calendar for conflicts before approving timing
-5. Reviews prior public statements on the same topic for any contradictions
-
-**Standards enforced:**
-- No external communication goes out without the required approvals documented
-- No communication may silently contradict a prior public statement
-- All facts must be verified before any public communication is released
-- Tone must be appropriate for the situation, not generic
-
-**Recommended model type:** Language
-**Recommended models:** `anthropic/claude-sonnet-4-6`
-
-**Core SOPs to build:**
-- 01-How-to-QC-a-Public-Communication.md
-- 02-How-to-Verify-Approval-Status.md
-- 03-How-to-Check-Factual-Accuracy.md
-- 04-How-to-Review-for-Prior-Statement-Conflicts.md
-- 05-How-to-Assess-Tone-for-Situation.md
-
-**Persona Trait Suggestions:** Brand-message fluent, situationally aware, thorough about approval requirements, knows the difference between a factual error and a tone problem.
-
+### 11. Deep Research Specialist — Communications
+**What it does:** On-call for media landscape trends, journalist research before pitching, sentiment analysis tools. Tier-1: PR Week, Cision, Muck Rack.
+**Core SOPs:** 01-How-to-Research-a-Journalist-Before-Pitching.md, 02-How-to-Run-Sentiment-Analysis.md, 03-How-to-Track-Media-Landscape-Trends.md, 04-How-to-Brief-Director.md
+**Persona Traits:** Investigative, source-rigorous.

@@ -1,3 +1,55 @@
+## [v10.5.2] — 2026-05-17 — Wave 4.5: Specialist Coverage Expansion
+
+Every mandatory department now has the role roster needed to operate at Fortune-500 scale. Brings 12 pre-v2.1 department files up to the v2.1 baseline (added missing QC + Deep Research roles to depts that had them only conceptually) AND adds 70 new specialist roles across 16 departments.
+
+### What changed per department
+
+| Department | Pre-Wave-4.5 specialists | Post-Wave-4.5 specialists | Net change |
+|---|---:|---:|---:|
+| Marketing | 4 → | 11 (Brand Positioning, Content Strategist, Content Marketing, Funnel, Customer Journey, Influencer, Marketing Analytics, Lead Magnet, Webinar/Event, Email Campaign, Affiliate) | +7 |
+| Sales | 4 → | 11 (SDR, Appointment Setter, Discovery, Closer, AE Full-Cycle, Account Manager, Proposal, Follow-up, Sales Ops, CRM-Sales, +1 deep research) | +7 |
+| Billing & Finance | 3 → | 9 (Invoicing/AR, Subscription, Bookkeeping, Cash Flow, FP&A, Collections, Financial Reporting, Tax Liaison, CRM-Billing) | +6 |
+| Customer Support | 3 → | 11 (Tier 1/2, Refunds, Onboarding, Retention, KB, Live Chat, Voice, Account Health, Churn Prevention) | +8 |
+| Web Development | 3 → | 12 (Funnel, Landing Page, SEO, Tech SEO, Web Designer, Frontend/JS/React, CRO, WordPress, Member Area, A11y, Web Security) | +9 |
+| App Development | 3 → | 11 (Desktop, iOS, Android, PWA, API/Backend, UX/UI, Cloud Infra, ASO, App Analytics, QA Tester) | +8 |
+| Graphics | 5 → | 12 (AI Image Gen, Brand Identity, Social Media Graphics, Ad Creative, Presentation Designer, Course Slides, Book Cover, Infographic, Email Designer, Print, Thumbnail) | +7 |
+| Video | 5 → | 13 (Storyboard, Long-form, Short-form, AI Video Gen, Editor, Video SEO, VSL, Motion Graphics, Animation, Color Grading, Captioning, Live Streaming, CRM-Video) | +8 |
+| Audio | 6 → | 11 (Producer, Editor, AI Voice, Sound Design, Speech Writing, Music, Transcription, Audio Mastering, Audiobook, Voice Agent Builder, CRM-Audio) | +5 |
+| Research | 3 → | 7 (Industry Analysis, Competitive Intel, Market Trends, Customer Research, Persona Research, Data Analysis, Survey & Polling) | +4 |
+| Communications | 3 → | 10 (PR, Internal Comms, Brand Messaging, Press Release, Crisis Comms, Speech/Talking Points, Media Pitching, Op-Ed Ghostwriter, Investor/Stakeholder, Deep Research) | +7 |
+| CRM | 7 → | 7 (already complete in v2.1, no expansion needed) | 0 |
+| OpenClaw Maintenance | 6 → | 9 (System Health, Skill Update, Memory Hygiene, Integration/MCP, Backup & Recovery, Security & Secrets, Monitoring/Observability, Performance Tuning, Disaster Recovery) | +3 |
+| Legal | 2 → | 10 (Contract Drafter, Customer Agreement, Affiliate Agreement, Employment Contract, Compliance Monitor, Industry-Specific Regulatory, Terms/Privacy, IP/Trademark, Vendor Contract, Dispute Resolution) | +8 |
+| Social Media | 10 → | 13 (Facebook, Instagram, TikTok, LinkedIn, Twitter/X, Pinterest, YouTube Channel, Threads, Bluesky, Community Manager, Reddit, Quora, Discord) | +3 |
+| Paid Advertisement | 12 → | 17 (Google, Bing, Facebook, Instagram, TikTok, LinkedIn, Twitter/X, Pinterest, YouTube, Spotify, Snapchat, Native, Cross-Platform Attribution, Retargeting, Creative Testing, Audience Research, Conversion Tracking) | +5 |
+| **TOTAL specialists** | **79** | **174** | **+95** |
+
+Plus universal roles (Director + QC + Deep Research per dept = 47 universal) + Master Orchestrator = **~222 total roles in the canonical roster**.
+
+### v2.1 Baseline Brought Forward
+
+Every department now has all 4 universal roles confirmed:
+- Director (role #0)
+- QC Specialist
+- Deep Research Specialist (except Research dept which IS deep research)
+- Devil's Advocate (sub-folder, created by `build-workforce.py:create_department_workspace`)
+
+### Calendar Specialist NOT added
+Confirmed via owner feedback: clients use GoHighLevel calendar or Google Calendar directly. No Calendly/booking-system specialist needed in Web Development.
+
+### Why this matters for the role library generation (PRD v2.3)
+PRD v2.3 estimated 146 docs. With this expansion, the library generation produces **~205 docs** (Master Orchestrator + ~204 mandatory specialists across 16 depts). Adjusts:
+- 20 writer sub-agents → still 20 (each writer handles ~10 docs instead of ~7)
+- Wall-clock: ~130-150 min instead of ~100-115
+- Cost: ~$22-35 (Ollama primary) or ~$110-150 (all OpenRouter)
+- Still well within owner's time and budget tolerance
+
+### Versions
+- `skill-version.txt`: 10.5.1 → **10.5.2**
+- Onboarding root `version`: v10.5.1 → **v10.5.2**
+
+---
+
 ## [v10.5.1] — 2026-05-17 — Wave 4: Hand-Touch Integration
 
 ### Changed

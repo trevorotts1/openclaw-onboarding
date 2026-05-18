@@ -1,120 +1,160 @@
 # Suggested Roles — sales-dept
-**Version:** 1.0 | March 16, 2026
+**Version:** 2.1.2 | May 17, 2026
+**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
 
 ## Department Purpose
-Convert leads into paying customers and manage ongoing client relationships.
+Convert qualified leads into paying customers. Own the pipeline from first sales-ready lead through close to renewal/expansion. Coordinate with Marketing (handoff), CRM (lead enrichment + sequence execution), Customer Support (onboarding handoff), and Legal (contract signing).
+
+## v2.1 Universal Roles
+- Director (role #0)
+- QC Specialist (numbered role)
+- Deep Research Specialist (numbered role)
+- Devil's Advocate (sub-folder `sales-dept/devils-advocate/`)
+
+## v10.5.2 Specialist Expansion
+Added SDR vs Account Executive split, Account Manager (post-sale), Proposal & Quote Specialist, Discovery Call Specialist (split from Closer), Sales Operations Specialist.
 
 ---
 
 ## Roles
 
 ### 0. Chief Sales Officer
-**What it does:** Provides strategic oversight for all sales efforts. Reports to the CEO/COM. Manages the sales department workers, runs department standups, selects the right personas for specific tasks, and ensures all sales activities align with revenue goals.
-
+**What it does:** Strategic oversight of sales. Manages pipeline forecasts, quota planning, team coordination, persona assignment to deals. Reports to CEO on revenue achievement vs. the cascade.
 **Core SOPs to build:**
-- 01-How-to-Run-a-Department-Standup.md
-- 02-How-to-Report-to-CEO.md
-- 03-How-to-Select-a-Persona-for-a-Task.md
-- 04-How-to-Manage-Department-KPIs.md
-
-**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+- 01-How-to-Run-Sales-Standup.md
+- 02-How-to-Forecast-the-Pipeline.md
+- 03-How-to-Set-Quotas-from-Revenue-Cascade.md
+- 04-How-to-Conduct-Win-Loss-Reviews.md
+**Persona Trait Suggestions:** Pipeline-thinker, quota-driven, coaching-mindset, numerate.
 
 ---
 
-### 1. Appointment Setter
-**What it does:** Makes outbound and inbound contact with leads. Qualifies them. Books them into the calendar for a discovery or sales call. Does NOT close — opens the door.
-
+### 1. SDR (Sales Development Rep)
+**What it does:** Top-of-funnel outreach. Cold email, cold call, LinkedIn DM. Qualifies leads, books discovery calls for AEs. Does NOT close deals.
 **Core SOPs to build:**
-- 01-How-to-Set-an-Appointment.md
-- 02-How-to-Handle-Objections.md
-- 03-How-to-Qualify-a-Lead.md
-- 04-How-to-Follow-Up-with-No-Shows.md
-- 05-How-to-Log-Activity-in-CRM.md
-
-**Persona Trait Suggestions:** Persistence, active listening, optimism, calm under pressure, conversational warmth.
+- 01-How-to-Cold-Email-a-Prospect.md
+- 02-How-to-Cold-Call-a-Prospect.md
+- 03-How-to-Qualify-a-Lead-BANT-or-MEDDIC.md
+- 04-How-to-Book-a-Discovery-Call.md
+**Persona Trait Suggestions:** Persistent, high-volume, rejection-resilient, scripted but human.
 
 ---
 
-### 2. Closer
-**What it does:** Takes booked appointments, presents the offer, handles price objections, and closes the sale. Receives from Appointment Setter, hands off closed deals to Operations or Account Manager.
+### 2. Appointment Setter
+**What it does:** Handles inbound leads who requested contact. Confirms appointment, runs pre-call qualification, ensures the prospect shows up. Lower volume than SDR, higher-quality leads.
+**Core SOPs to build:**
+- 01-How-to-Respond-to-an-Inbound-Lead.md
+- 02-How-to-Confirm-an-Appointment.md
+- 03-How-to-Reduce-Appointment-No-Show-Rate.md
+- 04-How-to-Pre-Qualify-Before-Discovery.md
+**Persona Trait Suggestions:** Warm, organized, follow-through-disciplined.
 
+---
+
+### 3. Discovery Call Specialist
+**What it does:** Runs first sales conversation. Diagnoses prospect's situation, pain, desired outcome. Determines fit. Hands qualified prospects to the Closer or runs the close themselves if scope is small.
 **Core SOPs to build:**
 - 01-How-to-Run-a-Discovery-Call.md
-- 02-How-to-Present-the-Offer.md
-- 03-How-to-Handle-Price-Objections.md
-- 04-How-to-Close-the-Sale.md
-- 05-How-to-Handle-a-Lost-Deal.md
-
-**Persona Trait Suggestions:** Confidence, empathy, strategic thinking, resilience, persuasion without pressure.
+- 02-How-to-Diagnose-Pain-vs-Want.md
+- 03-How-to-Determine-Fit.md
+- 04-How-to-Hand-Off-to-Closer.md
+**Persona Trait Suggestions:** Listener, diagnostic, calm under questions, doesn't pitch in discovery.
 
 ---
 
-### 3. Account Manager
-**What it does:** Manages existing client relationships after the sale. Ensures satisfaction, handles renewals, identifies upsell opportunities, and prevents churn.
-
+### 4. Closer
+**What it does:** Runs the proposal/close conversation. Presents the offer, handles objections, asks for the sale, closes the deal. Often the highest-paid role in Sales.
 **Core SOPs to build:**
-- 01-How-to-Onboard-a-New-Client.md
-- 02-How-to-Run-a-Check-In-Call.md
-- 03-How-to-Handle-a-Complaint.md
-- 04-How-to-Identify-an-Upsell-Opportunity.md
-- 05-How-to-Process-a-Renewal.md
-
-**Persona Trait Suggestions:** Patience, proactive communication, relationship-building, problem-solving, accountability.
+- 01-How-to-Present-an-Offer.md
+- 02-How-to-Handle-Price-Objection.md
+- 03-How-to-Handle-Timing-Objection.md
+- 04-How-to-Ask-for-the-Sale.md
+- 05-How-to-Run-the-Trial-Close.md
+**Persona Trait Suggestions:** Confident, conviction-led, objection-skilled, never-quit attitude.
 
 ---
 
-### 4. CRM Specialist (Sales Version)
-**What it does:** Manages the sales pipeline in the CRM. Keeps contact records accurate, stages updated, automations running, and reports clean. Different from the Marketing CRM Specialist — this version focuses on pipeline and deal tracking.
-
+### 5. Account Executive (Full-Cycle)
+**What it does:** For deals that don't split into SDR/Discovery/Closer, the AE owns the full deal cycle from qualified lead to closed-won. Common for mid-market and longer sales cycles.
 **Core SOPs to build:**
-- 01-How-to-Manage-the-Sales-Pipeline.md
-- 02-How-to-Log-Contact-Records.md
-- 03-How-to-Run-Pipeline-Reports.md
-- 04-How-to-Set-Up-Follow-Up-Automations.md
-- 05-How-to-Tag-and-Segment-Leads.md
-
-**Persona Trait Suggestions:** Detail-oriented, systematic, data-driven, reliable, process-focused.
+- 01-How-to-Run-a-Full-Cycle-Sales-Process.md
+- 02-How-to-Multi-Thread-a-Deal-Across-Stakeholders.md
+- 03-How-to-Build-a-Mutual-Action-Plan.md
+- 04-How-to-Run-a-Champion-Coaching-Session.md
+**Persona Trait Suggestions:** Strategic, multi-stakeholder-fluent, deal-architect.
 
 ---
 
-## Interdepartmental Relationships
-Receives from: Marketing (qualified leads)
-Sends to: Operations (closed deals), Billing (invoices), Creative (email copy), Audio (call scripts), Graphics (sales deck visuals)
-
----
-
-### Quality Control Agent — sales-dept
-
-**What it does:**
-Receives finished sales deliverables (proposals, scripts, CRM entries, follow-up sequences) before they go to a client or are used by a sales rep. Checks for accuracy, completeness, and adherence to the approved sales process. Returns anything that does not meet standards with clear written correction notes. Reports to the Chief Sales Officer. Does not write scripts, close deals, or enter CRM data.
-
-**What it checks:**
-1. Proposal accuracy: Do the pricing, terms, and offer details in the proposal match the current approved pricing sheet?
-2. Script structure: Does the sales script follow the approved framework (intro, discovery questions, offer presentation, objection handling, close)?
-3. CRM record completeness: Do all new contact records have name, email, phone, company, lead source, deal stage, and assigned rep?
-4. Follow-up sequence assignment: Does every new lead have a follow-up sequence assigned in the CRM?
-5. Tone and professionalism: Is all client-facing communication free of spelling errors, grammatical mistakes, and unprofessional language?
-6. Closing documentation: Does every closed deal record include the signed agreement or a reference to it?
-
-**How it validates:**
-1. Compares proposal line items against the current Pricing Sheet
-2. Checks sales scripts against the Approved Script Structure checklist
-3. Spot-checks CRM records for missing required fields
-4. Confirms every new lead has a pipeline stage and an active follow-up sequence
-
-**Standards enforced:**
-- No proposal goes to a client without a current pricing check
-- All CRM records must be complete before a deal advances to the next stage
-- Sales scripts must follow the approved structure before they are used in calls or messages
-
-**Recommended model type:** Language
-**Recommended models:** `anthropic/claude-sonnet-4-6`
-
+### 6. Account Manager (Post-Sale)
+**What it does:** Owns the relationship after the sale. Drives renewals, identifies expansion opportunities, manages account health. Hands escalations to Customer Support. Separate from new-business close.
 **Core SOPs to build:**
-- 01-How-to-QC-a-Sales-Proposal.md
-- 02-How-to-Review-a-Sales-Script.md
-- 03-How-to-Audit-CRM-Record-Completeness.md
-- 04-How-to-Verify-Follow-Up-Sequence-Assignment.md
+- 01-How-to-Run-a-Quarterly-Business-Review-with-Client.md
+- 02-How-to-Identify-Expansion-Opportunities.md
+- 03-How-to-Run-a-Renewal-Conversation.md
+- 04-How-to-Defuse-a-Churn-Risk-Conversation.md
+**Persona Trait Suggestions:** Relationship-first, business-outcome-focused, expansion-minded.
 
-**Persona Trait Suggestions:** Detail-oriented, consistent, knowledgeable about sales process, fair when returning work.
+---
 
+### 7. Proposal & Quote Specialist
+**What it does:** Drafts proposals, statements of work, and quotes. Custom-tailors based on discovery findings. Coordinates with Legal for contract review.
+**Core SOPs to build:**
+- 01-How-to-Draft-a-Proposal-from-Discovery-Notes.md
+- 02-How-to-Build-a-Tiered-Pricing-Quote.md
+- 03-How-to-Write-a-Statement-of-Work.md
+- 04-How-to-Hand-Off-to-Legal-for-Contract.md
+**Persona Trait Suggestions:** Writer + numerate, attention to scope detail.
+
+---
+
+### 8. Follow-Up Sequence Specialist
+**What it does:** Owns post-touchpoint sequences for prospects who didn't close immediately. Builds the multi-week follow-up cadences (email + SMS + retargeting) that resurrect cold deals.
+**Core SOPs to build:**
+- 01-How-to-Build-a-21-Day-Follow-Up-Cadence.md
+- 02-How-to-Re-engage-a-Stale-Lead.md
+- 03-How-to-Test-Subject-Lines-in-Follow-Up.md
+- 04-How-to-Hand-Off-Re-Engaged-Lead-Back-to-AE.md
+**Persona Trait Suggestions:** Patient, sequence-disciplined, copy-aware.
+
+---
+
+### 9. Sales Operations / Pipeline Specialist
+**What it does:** CRM hygiene, pipeline reporting, lead routing rules, sales tool stack maintenance. Provides the analytical infrastructure the rest of the team runs on.
+**Core SOPs to build:**
+- 01-How-to-Audit-Pipeline-Hygiene.md
+- 02-How-to-Build-a-Sales-KPI-Dashboard.md
+- 03-How-to-Configure-Lead-Routing-Rules.md
+- 04-How-to-Onboard-a-New-Sales-Tool.md
+**Persona Trait Suggestions:** Systems-thinker, data-driven, tool-fluent.
+
+---
+
+### 10. CRM Specialist (Sales Version)
+**What it does:** Bridges between Sales dept and CRM dept. Owns Sales-side CRM configuration (pipeline stages, deal fields, automations). Hands off to CRM dept for platform-level work.
+**Core SOPs to build:**
+- 01-How-to-Configure-Sales-Pipeline-Stages.md
+- 02-How-to-Set-Up-Deal-Field-Standards.md
+- 03-How-to-Coordinate-With-CRM-Department.md
+**Persona Trait Suggestions:** Detail-oriented, process-fluent.
+
+---
+
+### 11. QC Specialist — Sales
+**What it does:** Reviews proposals before they go out. Audits discovery call notes for completeness. Listens to sample sales calls for quality. Verifies pricing math and contract terms.
+**Core SOPs to build:**
+- 01-How-to-QC-Review-a-Proposal.md
+- 02-How-to-Audit-a-Discovery-Call-Recording.md
+- 03-How-to-Verify-Pricing-Math.md
+- 04-How-to-Spot-Sales-Compliance-Issues.md
+**Persona Trait Suggestions:** Standards-driven, math-checker, sales-process-fluent.
+
+---
+
+### 12. Deep Research Specialist — Sales
+**What it does:** On-call researcher for sales intelligence — competitive deal positioning, account research, industry sales benchmarks (Gartner, Forrester, McKinsey).
+**Core SOPs to build:**
+- 01-How-to-Run-Account-Research-Before-Discovery.md
+- 02-How-to-Find-Competitive-Win-Stories.md
+- 03-How-to-Source-Industry-Sales-Benchmarks.md
+- 04-How-to-Brief-AE-on-Competitive-Threat.md
+**Persona Trait Suggestions:** Investigative, source-cite-rigorous, competitive-aware.

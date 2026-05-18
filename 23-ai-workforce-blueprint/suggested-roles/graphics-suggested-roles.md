@@ -1,141 +1,88 @@
 # Suggested Roles — graphics-dept
-**Version:** 1.0 | March 16, 2026
+**Version:** 2.1.2 | May 17, 2026
+**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
 
 ## Department Purpose
-Create all static visual assets — images, brand graphics, social media visuals, ad creatives, thumbnails, presentation designs, and any AI-generated imagery. This department does not write copy (that's Creative) and does not produce video (that's Video).
+All static visual content for the company — brand identity, social graphics, slides, ads, book covers, infographics, email design. Coordinate with Marketing (briefs), Web Dev (assets), Video (thumbnails), Audio (podcast covers), Paid Ads (ad creative), Social Media (post graphics).
 
-## Primary Tools
-- **KIE.ai** (primary engine — access via Nano Banana Pro endpoint, covers multiple image models)
-- **Nano Banana Pro direct** (secondary — direct access to Gemini image generation)
-- **OpenAI image generation direct** (secondary — DALL-E/GPT-image via openai-codex/ prefix)
-- **FAL / File** (optional — only if client has a FAL endpoint configured)
+## v2.1 Universal Roles
+- Director (role #0)
+- QC Specialist, Deep Research Specialist
+- Devil's Advocate (sub-folder `graphics-dept/devils-advocate/`)
 
-**Rule:** Use KIE.ai first. It gives access to the most models in one API call. Go direct only if KIE.ai doesn't cover the specific need or the client has a direct account.
+## v10.5.2 Specialist Expansion
+Added Book Cover Designer, Course Slide Designer, Infographic Specialist, Email Designer. Critical for personal/professional development clients.
 
 ---
 
 ## Roles
 
 ### 0. Chief Design Officer
-**What it does:** Provides strategic oversight for all design efforts. Reports to the CEO/COM. Manages the graphics department workers, runs department standups, selects the right personas for specific tasks, and ensures all visual output aligns with brand standards.
+**What it does:** Owns the brand visual system. Sets standards, approves major brand assets, manages design system evolution.
+**Core SOPs:** 01-How-to-Run-Design-Standup.md, 02-How-to-Approve-a-Brand-Asset.md, 03-How-to-Evolve-Design-System.md, 04-How-to-Report-Design-KPIs.md
+**Persona Traits:** Visual-strategist, system-thinker, brand-guardian.
 
-**Core SOPs to build:**
-- 01-How-to-Run-a-Department-Standup.md
-- 02-How-to-Report-to-CEO.md
-- 03-How-to-Select-a-Persona-for-a-Task.md
-- 04-How-to-Manage-Department-KPIs.md
+### 1. AI Image Generator Specialist
+**What it does:** Generates images using Midjourney, DALL-E, Stable Diffusion, Seedream. Manages prompt libraries, style consistency, asset routing.
+**Core SOPs:** 01-How-to-Prompt-Midjourney-Effectively.md, 02-How-to-Maintain-Brand-Style-Across-AI-Generators.md, 03-How-to-Route-Generated-Assets-to-ImgBB.md, 04-How-to-Build-a-Prompt-Library.md
+**Persona Traits:** Prompt-engineer, style-fluent, AI-tool-deep.
 
-**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+### 2. Brand Identity Specialist (Logo, Color, Type)
+**What it does:** Logo design and evolution, color palette decisions, typography selection, brand guidelines document. Owns the system, not the daily output.
+**Core SOPs:** 01-How-to-Design-a-Logo.md, 02-How-to-Build-a-Color-Palette.md, 03-How-to-Write-Brand-Guidelines.md, 04-How-to-Audit-Brand-Consistency.md
+**Persona Traits:** System-designer, type-fluent, color-theory-aware.
 
----
+### 3. Social Media Graphics Specialist
+**What it does:** Static posts, carousels, story templates, reels covers across platforms. High-volume, brand-on-brand, format-aware (square / 9:16 / etc.).
+**Core SOPs:** 01-How-to-Design-an-Instagram-Carousel.md, 02-How-to-Design-Story-Templates.md, 03-How-to-Design-a-LinkedIn-Post-Graphic.md, 04-How-to-Manage-Asset-Volume.md
+**Persona Traits:** High-volume, format-fluent, on-brand-fast.
 
-### 1. AI Image Generator
-**What it does:** Creates AI-generated images using KIE.ai (Nano Banana Pro endpoint), Nano Banana direct, or OpenAI images. Handles prompt engineering, style direction, and iteration until the image meets the brief.
+### 4. Ad Creative Specialist
+**What it does:** Static ad creative for Paid Ads dept. Headline + visual integration. Builds variations for A/B testing. Coordinates with Paid Ads specialists per platform.
+**Core SOPs:** 01-How-to-Design-an-Ad-Creative.md, 02-How-to-Build-Ad-Variations-for-A-B.md, 03-How-to-Adapt-Creative-Across-Platforms.md, 04-How-to-Analyze-Top-Performing-Ad-Creative.md
+**Persona Traits:** Performance-driven, hook-aware, A/B-mindset.
 
-**Core SOPs to build:**
-- 01-How-to-Generate-an-Image-with-KIE.md
-- 02-How-to-Write-an-Effective-Image-Prompt.md
-- 03-How-to-Use-Reference-Images.md
-- 04-How-to-Iterate-When-the-First-Result-Misses.md
-- 05-How-to-Use-Nano-Banana-Direct.md
+### 5. Presentation Designer (Slides, Decks)
+**What it does:** Sales decks, pitch decks, investor decks, course slides, internal presentations. Slide system design + per-deck execution.
+**Core SOPs:** 01-How-to-Design-a-Sales-Deck.md, 02-How-to-Design-a-Pitch-Deck.md, 03-How-to-Build-a-Slide-Master-System.md, 04-How-to-Handle-Last-Minute-Deck-Edits.md
+**Persona Traits:** Presentation-fluent, narrative-aware, deck-fast.
 
-**Persona Trait Suggestions:** Visual creativity, attention to aesthetic detail, patience with iteration, understanding of composition and style.
+### 6. Course Slide Designer
+**What it does:** Education-specific slide work for course creators. Cognitive-load-aware, learning-objective-aligned. For coaches with online courses.
+**Core SOPs:** 01-How-to-Design-Course-Slides-for-Retention.md, 02-How-to-Match-Slides-to-Learning-Objectives.md, 03-How-to-Design-Module-Title-Cards.md, 04-How-to-Build-Course-Slide-Templates.md
+**Persona Traits:** Educational-design-savvy, cognitive-load-aware.
 
----
+### 7. Book Cover Designer
+**What it does:** Book covers (printed + Kindle thumbnails). Critical for personal/professional development clients who publish. Includes spine + back-cover for print.
+**Core SOPs:** 01-How-to-Design-a-Book-Cover.md, 02-How-to-Optimize-Cover-for-Kindle-Thumbnail.md, 03-How-to-Design-Print-Spine-and-Back.md, 04-How-to-Test-Cover-Variants-with-Audience.md
+**Persona Traits:** Genre-aware, thumbnail-readable, publishing-fluent.
 
-### 2. Brand Asset Designer
-**What it does:** Creates and maintains brand-consistent visual assets — logos, icons, brand templates, color-consistent graphics, and visual identity materials. Ensures all output aligns with brand guidelines in universal-sops.
+### 8. Infographic Specialist
+**What it does:** Information-dense graphics — process flows, comparison charts, data visualizations, social-share-friendly explainers.
+**Core SOPs:** 01-How-to-Design-a-Process-Infographic.md, 02-How-to-Visualize-Data-Effectively.md, 03-How-to-Design-Share-Friendly-Infographics.md, 04-How-to-Adapt-Infographics-Across-Formats.md
+**Persona Traits:** Data-storyteller, hierarchy-aware, simplifier.
 
-**Core SOPs to build:**
-- 01-How-to-Follow-Brand-Guidelines.md
-- 02-How-to-Create-a-Social-Media-Template.md
-- 03-How-to-Create-a-Brand-Graphic.md
-- 04-How-to-Resize-Assets-for-Different-Platforms.md
+### 9. Email Designer
+**What it does:** Email template design (header, body, footer system). Coordinates with CRM Email Deliverability for technical email rendering across clients. Email-safe HTML/CSS aware.
+**Core SOPs:** 01-How-to-Design-an-Email-Template.md, 02-How-to-Make-Email-Render-Across-Clients.md, 03-How-to-Build-Modular-Email-Blocks.md, 04-How-to-Optimize-Dark-Mode-for-Email.md
+**Persona Traits:** Email-rendering-aware, modular-thinker, dark-mode-conscious.
 
-**Persona Trait Suggestions:** Brand-conscious, consistency-focused, detail-oriented, understanding of visual identity.
+### 10. Print / Asset Design Specialist
+**What it does:** Print assets — business cards, brochures, signage, merch. Plus the general "make this asset that doesn't fit a category" specialist.
+**Core SOPs:** 01-How-to-Design-Business-Cards.md, 02-How-to-Prepare-Print-Ready-Files.md, 03-How-to-Design-Brochures.md, 04-How-to-Coordinate-with-Print-Shops.md
+**Persona Traits:** Print-fluent, CMYK-aware, vendor-coordinator.
 
----
+### 11. Thumbnail / Cover Designer
+**What it does:** YouTube thumbnails, podcast cover art, social media post covers. CTR-optimized design.
+**Core SOPs:** 01-How-to-Design-a-YouTube-Thumbnail.md, 02-How-to-A-B-Test-Thumbnails.md, 03-How-to-Design-Podcast-Cover-Art.md, 04-How-to-Match-Thumbnail-to-Audience.md
+**Persona Traits:** CTR-obsessed, scroll-stopping-design.
 
-### 3. Ad Creative Designer
-**What it does:** Creates visual ad creatives for paid campaigns — static images, carousel frames, banner ads. Works from briefs from Marketing Ads Specialist. Optimizes for click performance, not just aesthetics.
+### 12. QC Specialist — Graphics
+**What it does:** Pre-publish QC on every graphic. Checks brand consistency, resolution, format correctness, copy accuracy in graphics.
+**Core SOPs:** 01-How-to-QC-Audit-a-Graphic.md, 02-How-to-Verify-Brand-Compliance.md, 03-How-to-Check-Resolution-and-Format.md, 04-How-to-Block-Off-Brand-Assets.md
+**Persona Traits:** Detail-obsessed, brand-guardian.
 
-**Core SOPs to build:**
-- 01-How-to-Design-a-Static-Ad-Creative.md
-- 02-How-to-Create-Multiple-Ad-Variants.md
-- 03-How-to-Design-for-Different-Ad-Formats.md
-- 04-How-to-A-B-Test-Visual-Concepts.md
-
-**Persona Trait Suggestions:** Performance-aware creativity, speed, ability to produce volume without sacrificing quality.
-
----
-
-### 4. Thumbnail and Cover Designer
-**What it does:** Creates thumbnails for YouTube videos, podcast cover art, blog feature images, and social media cover photos. Works closely with Video and Audio departments.
-
-**Core SOPs to build:**
-- 01-How-to-Create-a-YouTube-Thumbnail.md
-- 02-How-to-Create-Podcast-Cover-Art.md
-- 03-How-to-Design-a-Blog-Feature-Image.md
-- 04-How-to-Create-a-Social-Cover-Photo.md
-
-**Persona Trait Suggestions:** Eye-catching design instincts, understanding of what performs on each platform, speed.
-
----
-
-### 5. CRM Specialist (Graphics Version)
-**What it does:** Tracks graphic asset requests, delivery status, and asset libraries inside the CRM. Manages the visual asset library so nothing gets lost or duplicated.
-
-**Core SOPs to build:**
-- 01-How-to-Log-a-Graphics-Request.md
-- 02-How-to-Organize-the-Visual-Asset-Library.md
-- 03-How-to-Track-Asset-Delivery-Status.md
-
-**Persona Trait Suggestions:** Organized, asset-management focused, detail-oriented.
-
----
-
-## Interdepartmental Relationships
-Receives from: Marketing (ad creative briefs, social visual briefs), Sales (sales deck visuals), Video (thumbnails, title cards), Creative (presentation copy to design), any dept needing visuals
-Sends to: Marketing (finished ad creatives, social visuals), Video (thumbnails, motion graphics source files), Sales (sales decks), Audio (cover art)
-
----
-
-### Quality Control Agent — graphics-dept
-
-**What it does:**
-Receives finished visual assets from Graphics department workers before they are delivered to any other department or used in any published content. Reviews every asset for brand compliance, file specifications, visual quality, and completeness. Returns anything that does not meet standards with specific correction notes. Reports to the Chief Design Officer. Does not generate images, design assets, or deliver files to other departments.
-
-**What it checks:**
-1. Brand color accuracy: Do all colors in the asset match the exact hex codes in the Brand Guidelines? Even a small color shift is a failure.
-2. Logo usage: Is the correct version of the logo used (horizontal vs stacked, full color vs white vs black)? Is the logo not stretched, rotated, recolored, or placed with insufficient clearspace?
-3. Font compliance: Are only the brand-approved fonts used? Are font weights and sizes consistent with brand standards?
-4. File specifications: Is the file in the correct format (JPG, PNG, SVG, PDF), the correct dimensions, and the correct resolution for its intended use?
-5. Visual quality: Is the image sharp and free of pixelation, blurriness, compression artifacts, or jagged edges?
-6. Text legibility: If there is text in the image, is it readable at the smallest size it will be displayed?
-7. Deliverable completeness: Were all the files requested in the brief delivered? If multiple sizes or formats were requested, are all of them present?
-
-**How it validates:**
-1. Opens each asset and samples colors using the brand hex codes from the Brand Guidelines
-2. Zooms in to 100% on each asset to check for pixelation or quality issues
-3. Checks file size and dimensions against the specification sheet for the intended platform
-4. Verifies logo version, clearspace, and usage against the Logo Usage Guide
-5. Confirms all files listed in the brief are present in the delivery
-
-**Standards enforced:**
-- Zero color deviations from brand hex codes on any client-facing asset
-- Logo must appear in its approved version only, with correct clearspace
-- Every file in the brief must be delivered before the job is approved
-- Files must meet platform specifications (resolution, dimensions, format)
-
-**Recommended model type:** Vision
-**Recommended models:** `anthropic/claude-opus-4-6` with vision enabled, `openai-codex/gpt-5.4` with vision enabled
-**Note:** Visual QC requires passing the actual image file to the model, not a text description. A language model reading about an image cannot check color accuracy, logo placement, pixelation, or visual quality. Always attach the image.
-
-**Core SOPs to build:**
-- 01-How-to-QC-a-Graphic-Asset.md
-- 02-How-to-Check-Brand-Color-Compliance.md
-- 03-How-to-Verify-Logo-Usage.md
-- 04-How-to-Check-File-Specifications.md
-
-**Persona Trait Suggestions:** Visually precise, brand-standards fluent, detail-oriented enough to spot a wrong shade of blue.
-
+### 13. Deep Research Specialist — Graphics
+**What it does:** Trend research, emerging design tools evaluation, design system best practice. Tier-1: Smashing Magazine, Brand New, design industry reports.
+**Core SOPs:** 01-How-to-Track-Design-Trends.md, 02-How-to-Evaluate-New-Design-Tools.md, 03-How-to-Research-Industry-Visual-Conventions.md, 04-How-to-Brief-Director.md
+**Persona Traits:** Trend-aware, tool-curious, source-rigorous.
