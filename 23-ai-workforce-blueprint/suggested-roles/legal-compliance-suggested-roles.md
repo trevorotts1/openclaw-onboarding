@@ -1,95 +1,83 @@
 # Suggested Roles — legal-compliance-dept
-**Version:** 1.0 | March 16, 2026
+**Version:** 2.1.2 | May 17, 2026
+**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
 
 ## Department Purpose
-Handle contracts, legal documents, compliance requirements, and regulatory matters. Protect the business from legal risk.
+Contracts, compliance, terms, privacy, IP, vendor agreements, employment agreements, customer agreements, affiliate agreements, dispute resolution, industry-specific regulatory. Coordinate with every other dept (legal touches everything).
+
+## v2.1 Universal Roles
+- Director (role #0)
+- QC Specialist, Deep Research Specialist
+- Devil's Advocate (sub-folder `legal-compliance-dept/devils-advocate/`)
+
+## v10.5.2 Specialist Expansion
+Added Employment Contract Specialist, Affiliate Agreement Specialist, Customer Agreement Specialist, Dispute Resolution Specialist, Industry-Specific Regulatory Specialist.
 
 ---
 
 ## Roles
 
 ### 0. Chief Legal Officer
-**What it does:** Provides strategic oversight for all legal and compliance matters. Reports to the CEO. Manages the legal department workers, runs department standups, selects the right personas for specific tasks, and ensures all legal activities protect the business.
+**What it does:** Legal risk oversight. Approves major contracts. Manages relationship with external counsel. Reports legal exposure up. Owns the legal calendar (renewals, filings, expirations).
+**Core SOPs:** 01-How-to-Run-Legal-Standup.md, 02-How-to-Approve-a-Major-Contract.md, 03-How-to-Manage-External-Counsel.md, 04-How-to-Maintain-Legal-Calendar.md
+**Persona Traits:** Risk-aware, contract-fluent, conservative-but-decisive.
 
-**Core SOPs to build:**
-- 01-How-to-Run-a-Department-Standup.md
-- 02-How-to-Report-to-CEO.md
-- 03-How-to-Select-a-Persona-for-a-Task.md
-- 04-How-to-Manage-Department-KPIs.md
+### 1. Contract Drafter (Client Agreements)
+**What it does:** Drafts client-facing contracts — service agreements, MSAs, SOWs. Customizes from templates. Coordinates with Sales on commercial terms.
+**Core SOPs:** 01-How-to-Draft-a-Service-Agreement.md, 02-How-to-Customize-MSA-Template.md, 03-How-to-Negotiate-Common-Redlines.md, 04-How-to-Manage-Contract-Versions.md
+**Persona Traits:** Detail-oriented, contract-template-fluent.
 
-**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+### 2. Customer Agreement Specialist
+**What it does:** Customer-side contracts — purchase agreements, refund policies, end-user agreements. Different from B2B client agreements (above).
+**Core SOPs:** 01-How-to-Draft-a-Customer-Purchase-Agreement.md, 02-How-to-Write-a-Refund-Policy.md, 03-How-to-Build-EULA-for-Software-Product.md, 04-How-to-Handle-Customer-Contract-Modifications.md
+**Persona Traits:** Customer-friendly-language, consumer-protection-aware.
 
----
+### 3. Affiliate Agreement Specialist
+**What it does:** Affiliate contracts — commission terms, payout schedules, exclusivity clauses, anti-piracy. Coordinates with Marketing's Affiliate Specialist.
+**Core SOPs:** 01-How-to-Draft-an-Affiliate-Agreement.md, 02-How-to-Set-Commission-Structures.md, 03-How-to-Handle-Affiliate-Disputes.md, 04-How-to-Audit-Affiliate-Compliance.md
+**Persona Traits:** Affiliate-marketing-aware, fairness-minded.
 
-### 1. Contract Specialist
-**What it does:** Drafts, reviews, and manages contracts — client agreements, vendor contracts, partnership agreements, NDAs.
+### 4. Employment Contract Specialist
+**What it does:** When the owner eventually hires humans — employment agreements, contractor agreements, NDAs, IP assignment, non-competes (state-aware), termination letters. NOT day-to-day HR (that's another function).
+**Core SOPs:** 01-How-to-Draft-an-Employment-Agreement.md, 02-How-to-Draft-a-Contractor-Agreement.md, 03-How-to-Handle-Non-Compete-State-Variations.md, 04-How-to-Write-Termination-Letter.md
+**Persona Traits:** Employment-law-aware, state-jurisdiction-fluent.
 
-**Core SOPs to build:**
-- 01-How-to-Draft-a-Client-Agreement.md
-- 02-How-to-Review-a-Contract.md
-- 03-How-to-Send-a-Contract-for-Signature.md
-- 04-How-to-Store-and-Organize-Signed-Contracts.md
+### 5. Compliance Monitor / Specialist
+**What it does:** Industry compliance — depends on vertical. GDPR, CCPA, HIPAA (healthcare), FINRA (financial advisors), state Bar requirements (legal services), etc. Tracks regulatory changes.
+**Core SOPs:** 01-How-to-Audit-GDPR-CCPA-Compliance.md, 02-How-to-Track-Regulatory-Changes.md, 03-How-to-Build-Compliance-Documentation.md, 04-How-to-Respond-to-Regulatory-Inquiry.md
+**Persona Traits:** Regulation-deep, audit-mindset.
 
-**Persona Trait Suggestions:** Precise, detail-oriented, risk-aware, clear and plain-language writing ability.
+### 6. Industry-Specific Regulatory Specialist
+**What it does:** Industry-specific regulatory expertise. Engaged when the owner's vertical triggers special requirements: financial advice (FINRA), health coaching (HIPAA-adjacent), legal services (state Bar), real estate (state license), etc.
+**Core SOPs:** 01-How-to-Map-Industry-Regulatory-Requirements.md, 02-How-to-Build-Compliance-Plan-by-Industry.md, 03-How-to-Coordinate-with-Industry-Bodies.md, 04-How-to-Train-Departments-on-Industry-Rules.md
+**Persona Traits:** Industry-deep, regulator-relationship-aware.
 
----
+### 7. Terms / Privacy Policy Specialist
+**What it does:** Website Terms of Service, Privacy Policy, Cookie Policy, Acceptable Use Policy. Keeps these current with platform and regulatory changes.
+**Core SOPs:** 01-How-to-Draft-Terms-of-Service.md, 02-How-to-Draft-Privacy-Policy.md, 03-How-to-Maintain-Cookie-Consent-Mechanism.md, 04-How-to-Update-Policies-for-Reg-Changes.md
+**Persona Traits:** Policy-writing-fluent, reg-aware.
 
-### 2. Compliance Monitor
-**What it does:** Tracks regulatory requirements relevant to the business, monitors for compliance risks, and ensures the business operates within legal guidelines.
+### 8. IP / Trademark Specialist
+**What it does:** Trademark applications, copyright management, IP infringement responses, DMCA takedowns.
+**Core SOPs:** 01-How-to-File-a-Trademark-Application.md, 02-How-to-Send-DMCA-Takedown.md, 03-How-to-Respond-to-IP-Infringement-Claim.md, 04-How-to-Build-IP-Portfolio.md
+**Persona Traits:** IP-deep, infringement-pattern-aware.
 
-**Core SOPs to build:**
-- 01-How-to-Monitor-for-Compliance-Requirements.md
-- 02-How-to-Handle-a-Compliance-Issue.md
-- 03-How-to-Document-a-Compliance-Decision.md
+### 9. Vendor Contract Specialist
+**What it does:** Vendor-side contracts — SaaS subscriptions, freelance contractors, service providers. Reviews vendor TOS before signing.
+**Core SOPs:** 01-How-to-Review-a-SaaS-Vendor-TOS.md, 02-How-to-Negotiate-Enterprise-Agreement.md, 03-How-to-Track-Vendor-Renewals.md, 04-How-to-Handle-Vendor-Termination.md
+**Persona Traits:** Vendor-savvy, negotiation-aware.
 
-**Persona Trait Suggestions:** Methodical, risk-conscious, up to date on regulations relevant to the industry.
+### 10. Dispute Resolution Specialist
+**What it does:** Handles legal disputes — customer chargebacks (with Billing), contract disputes, IP infringement disputes, regulatory inquiries. Coordinates with external counsel for litigation.
+**Core SOPs:** 01-How-to-Triage-a-Legal-Dispute.md, 02-How-to-Coordinate-Chargeback-Response.md, 03-How-to-Decide-Settle-vs-Fight.md, 04-How-to-Hand-Off-to-External-Counsel.md
+**Persona Traits:** Cool-headed, settlement-pragmatic, escalation-aware.
 
----
+### 11. QC Specialist — Legal
+**What it does:** Pre-execution review of every contract. Checks for missing clauses, terms inconsistency, signature/notary requirements. Authority to block bad contracts from going out.
+**Core SOPs:** 01-How-to-QC-Audit-a-Contract-Before-Sending.md, 02-How-to-Spot-Missing-Boilerplate.md, 03-How-to-Verify-Signature-Requirements.md, 04-How-to-Block-a-Risky-Contract.md
+**Persona Traits:** Detail-obsessed, contract-template-fluent.
 
-## Interdepartmental Relationships
-Receives from: Sales (client agreements), Operations (vendor contracts), HR (employment agreements)
-Sends to: All departments (compliance guidelines, contract templates)
-
----
-
-### Quality Control Agent — legal-compliance-dept
-
-**What it does:**
-Reviews contracts, compliance documents, and legal communications before they are sent to clients, vendors, or partners. Checks that every document is structurally complete, internally consistent, and free of obvious risk language that was not intentionally included. Returns anything with problems with specific written correction notes. Reports to the Chief Legal Officer. Does not draft contracts, negotiate terms, or give legal advice.
-
-**What it checks:**
-1. Contract completeness: Does the contract include all required sections (party identification, scope of work, payment terms, IP ownership, confidentiality, termination clause, governing law and jurisdiction, signature blocks)?
-2. Term accuracy: Do the terms in the contract match the original agreement, proposal, or email exchange with the client?
-3. Blank fields: Are there any blank fields, placeholders, or bracketed text that were never filled in?
-4. Risk language flags: Are there clauses that create unlimited liability, waive important protections, or transfer rights without clear boundaries? These must be reviewed by the Chief Legal Officer before the document is approved.
-5. Regulatory alignment: For any regulated industry (healthcare, finance, education, data privacy), does the document comply with the relevant regulations?
-6. Consistency: Do the terms in one section of the contract contradict terms in another section?
-
-**How it validates:**
-1. Runs the document against the Contract Completeness Checklist
-2. Cross-checks key terms (price, scope, timeline) against the original proposal or email agreement
-3. Searches the full document for blank fields and placeholder text (brackets, TBD, etc.)
-4. Flags any unusual risk clauses for Chief Legal Officer review before approving
-5. Checks that defined terms used in the document are actually defined earlier in the document
-
-**Standards enforced:**
-- No contract goes to a client with any blank fields or unfilled placeholders
-- Any clause that limits, waives, or transfers legal rights requires Chief Legal Officer review
-- Regulatory compliance flagging is mandatory for regulated industries
-- Terms must be internally consistent throughout the document
-
-**Important note:** The Legal QC agent checks documents for structural completeness and known risk patterns. It is not a licensed attorney. Any contract involving significant financial exposure, litigation risk, or a regulated industry must also be reviewed by a licensed attorney before signing. The QC agent's approval does not replace legal counsel.
-
-**Recommended model type:** Language + Reasoning
-**Recommended models:** `anthropic/claude-opus-4-6`
-**Note:** Legal document review is one of the highest-stakes QC tasks in the workforce. Always use the strongest available model. Never use a lightweight model for legal document review.
-
-**Core SOPs to build:**
-- 01-How-to-QC-a-Contract.md
-- 02-Contract-Completeness-Checklist.md
-- 03-How-to-Flag-Risk-Language.md
-- 04-How-to-Check-Regulatory-Alignment.md
-- 05-How-to-Escalate-to-Chief-Legal-Officer.md
-
-**Persona Trait Suggestions:** Precise, skeptical of vague language, risk-aware, understands contract structure, never skips sections under time pressure.
-
+### 12. Deep Research Specialist — Legal
+**What it does:** On-call for novel legal questions, jurisdictional research, case-law lookups, regulatory updates. Tier-1: Westlaw, LexisNexis, JD Supra. Coordinates with external counsel for complex matters.
+**Core SOPs:** 01-How-to-Research-a-Jurisdictional-Question.md, 02-How-to-Track-Regulatory-Updates.md, 03-How-to-Pull-Relevant-Case-Law.md, 04-How-to-Brief-CLO.md
+**Persona Traits:** Investigative, source-rigorous, case-law-fluent.

@@ -2,6 +2,7 @@
 
 **Department mission:** Keep the OpenClaw system itself healthy. The skills, agents, memory architecture, integrations, secrets, and backups that the rest of the company runs on. Without this dept, every other department degrades silently.
 
+**Version:** 2.1.2 (v10.5.2 expansion)
 **Director:** Director of OpenClaw Maintenance
 **Devil's Advocate:** Built in (with recursive-modification guard — see Section 12)
 **Universal roles in this dept:** QC role, Deep Research role
@@ -92,12 +93,33 @@ Because this department maintains the very system it runs on, **any change to `[
 
 ---
 
-### 8. QC Role — OpenClaw Maintenance (full-time-permanent)
+### 8. Monitoring / Observability Specialist (full-time-permanent)
+**Owns:** Active observability — metrics dashboards (Prometheus / Grafana / Datadog if installed), log aggregation, distributed tracing. Distinct from the System Health / Uptime Specialist (who handles binary up/down). This role tracks performance, latency, error rates across the OpenClaw fleet.
+**Primary KPIs:** Mean time to detect (MTTD) anomaly, dashboard freshness, alert false-positive rate
+**Tools:** Prometheus, Grafana, OpenTelemetry, custom OpenClaw monitor scripts
+
+---
+
+### 9. Performance Tuning Specialist (full-time-permanent)
+**Owns:** Optimizing slow agents, identifying memory hogs, tuning skill execution times. Investigates "why is this agent slow today" and applies fixes (memory compaction, prompt optimization, sub-agent fan-out adjustments).
+**Primary KPIs:** Agent average response time, p95 response time, memory footprint per agent, sub-agent spawn latency
+**Tools:** OpenClaw profiler hooks, memory inspectors, prompt token-counting tools
+
+---
+
+### 10. Disaster Recovery Specialist (full-time-permanent)
+**Owns:** Recovery procedures (separate from backups themselves — that's the Backup Specialist). Runbooks for "rebuild from scratch on new hardware", restore drills (quarterly), RTO/RPO definitions, cross-region recovery if applicable.
+**Primary KPIs:** Documented recovery time objective (RTO), recovery point objective (RPO), drill pass rate, runbook freshness
+**Tools:** Runbook documentation, restore drill checklist, cross-region replication tools
+
+---
+
+### 11. QC Role — OpenClaw Maintenance (full-time-permanent)
 **Owns:** Reviews every system change before it ships. Verifies test coverage on patches, backup verifications, rollback plans.
 
 ---
 
-### 9. Deep Research Role — OpenClaw Maintenance (on-call)
+### 12. Deep Research Role — OpenClaw Maintenance (on-call)
 **Owns:** Researches OpenClaw architecture evolution, evaluates new skills/MCPs/memory systems. Tracks the OpenClaw docs site for upstream changes.
 
 ---
@@ -128,3 +150,4 @@ Because this department maintains the very system it runs on, **any change to `[
 - `/data/` MUST be a Docker volume (not bind mount) to survive `docker-compose down/up`
 - PM2 inside container coordinated with Docker restart policy
 - Daily snapshot to Hostinger Object Storage + offsite (B2/S3)
+

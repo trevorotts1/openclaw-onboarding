@@ -2,6 +2,7 @@
 
 **Department mission:** Own organic social presence across every platform. Post content, respond to comments, manage community, grow followers. **Paid advertising is a separate department** — this team handles unpaid posts only.
 
+**Version:** 2.1.2 (v10.5.2 expansion)
 **Director:** Director of Social Media
 **Devil's Advocate:** Built in
 **Universal roles in this dept:** QC role, Deep Research role
@@ -102,12 +103,34 @@
 
 ---
 
-### 12. QC Role — Social Media (full-time-permanent)
+### 12. Reddit Specialist (full-time-permanent or on-call)
+**Owns:** Reddit presence — subreddit participation, AMAs, post timing, community-norm awareness. Reddit punishes self-promotion; requires careful long-game relationship-building. Critical for tech / SaaS / niche-product brands.
+**Primary KPIs:** Karma growth, upvote ratio, AMA engagement, traffic-from-reddit
+**Daily routine:** Read 5+ relevant subreddits, comment thoughtfully, post only when valuable
+**Tools:** Reddit native, RedditList for subreddit research, Later for scheduling
+
+---
+
+### 13. Quora Specialist (on-call)
+**Owns:** Quora answers as long-tail content + audience-building. Answers questions in the company's domain. Long-tail SEO benefit.
+**Primary KPIs:** Answer views, follower growth on Quora, click-through to website
+**Tools:** Quora native
+
+---
+
+### 14. Discord Community Specialist (full-time-permanent or on-call)
+**Owns:** Discord server administration — channel structure, role management, bot configuration, voice events. Distinct from cross-platform Community Manager (#11) — Discord requires its own deep platform fluency.
+**Primary KPIs:** Active member count, message volume per channel, voice-event attendance, retention 7/30/90
+**Tools:** Discord native, MEE6, Carl Bot, Discohook
+
+---
+
+### 15. QC Role — Social Media (full-time-permanent)
 **Owns:** Reviews every scheduled post BEFORE publication for: brand voice, factual accuracy, link correctness, hashtag relevance, image quality, compliance.
 
 ---
 
-### 13. Deep Research Role — Social Media (on-call)
+### 16. Deep Research Role — Social Media (on-call)
 **Owns:** Platform algorithm research, trend forecasting, competitor content analysis, emerging platform evaluation.
 
 ---
@@ -135,3 +158,4 @@
 **This department does NOT touch ads.** All paid advertising — boosted posts, ad campaigns, lead ads — is owned by the **Paid Advertisement department**.
 
 If a post is performing well organically and the Director wants to boost it: refer to Paid Ads department for that workflow.
+

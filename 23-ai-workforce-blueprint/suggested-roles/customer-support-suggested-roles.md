@@ -1,105 +1,83 @@
 # Suggested Roles — customer-support-dept
-**Version:** 1.0 | March 16, 2026
+**Version:** 2.1.2 | May 17, 2026
+**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
 
 ## Department Purpose
-Help existing customers and clients. Resolve issues, onboard new clients, handle escalations, and ensure satisfaction after the sale.
+Help existing customers get value, resolve issues, retain accounts, and turn customers into advocates. Cover Tier 1 (FAQ), Tier 2 (escalation), refunds, onboarding, retention, proactive monitoring, and churn prevention.
+
+## v2.1 Universal Roles
+- Director (role #0)
+- QC Specialist, Deep Research Specialist
+- Devil's Advocate (sub-folder `customer-support-dept/devils-advocate/`)
+
+## v10.5.2 Specialist Expansion
+Added Knowledge Base Specialist, Live Chat Specialist, Voice/Phone Support Specialist, Account Health Monitor (proactive), Churn Prevention Specialist.
 
 ---
 
 ## Roles
 
 ### 0. Head of Customer Success
-**What it does:** Provides strategic oversight for all customer support efforts. Reports to the CEO/COM. Manages the customer support department workers, runs department standups, selects the right personas for specific tasks, and ensures all customer interactions align with satisfaction goals.
+**What it does:** Oversees support strategy, escalation paths, customer-satisfaction targets, retention KPIs. Reports to CEO on customer health.
+**Core SOPs:** 01-How-to-Run-Support-Standup.md, 02-How-to-Report-CS-KPIs.md, 03-How-to-Set-Tier-Escalation-Rules.md, 04-How-to-Run-Customer-Health-Review.md
+**Persona Traits:** Customer-empathy, ops-disciplined, retention-obsessed.
 
-**Core SOPs to build:**
-- 01-How-to-Run-a-Department-Standup.md
-- 02-How-to-Report-to-CEO.md
-- 03-How-to-Select-a-Persona-for-a-Task.md
-- 04-How-to-Manage-Department-KPIs.md
+### 1. Tier 1 Support Specialist
+**What it does:** First line of customer inquiries. Handles FAQ, password resets, common issues. Escalates anything beyond scope to Tier 2.
+**Core SOPs:** 01-How-to-Resolve-a-Tier-1-Ticket.md, 02-How-to-Use-the-Knowledge-Base.md, 03-How-to-Triage-Severity.md, 04-How-to-Escalate-to-Tier-2.md
+**Persona Traits:** Patient, fast-typer, FAQ-fluent.
 
-**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+### 2. Tier 2 Support Specialist
+**What it does:** Handles complex/escalated issues. Coordinates with engineering, billing, legal as needed. Resolves what Tier 1 can't.
+**Core SOPs:** 01-How-to-Diagnose-a-Complex-Issue.md, 02-How-to-Coordinate-Cross-Dept-Resolution.md, 03-How-to-Write-a-Resolution-Postmortem.md, 04-How-to-Hand-Back-to-Tier-1.md
+**Persona Traits:** Diagnostic, calm under fire, cross-functional.
 
----
+### 3. Refunds & Disputes Specialist
+**What it does:** Handles refund requests, chargebacks, disputes. Knows when to refund vs negotiate vs deny. Coordinates with Legal for chargeback responses.
+**Core SOPs:** 01-How-to-Process-a-Refund.md, 02-How-to-Respond-to-a-Chargeback.md, 03-How-to-Negotiate-a-Refund-Down.md, 04-How-to-Document-Decision-Reasoning.md
+**Persona Traits:** Negotiator, policy-fluent, fair-minded.
 
-### 1. Support Agent
-**What it does:** First line of response for all incoming client questions, issues, and requests. Resolves common issues, logs tickets, and escalates when needed.
+### 4. Onboarding Specialist
+**What it does:** Owns the first 30 days of every new customer's experience. Runs welcome sequences, kickoff calls, milestone check-ins. Sets the relationship's tone.
+**Core SOPs:** 01-How-to-Run-a-Customer-Kickoff-Call.md, 02-How-to-Build-a-30-Day-Onboarding-Sequence.md, 03-How-to-Spot-Onboarding-Failure-Signals.md, 04-How-to-Hand-Off-to-Account-Manager.md
+**Persona Traits:** Warm, organized, milestone-driven.
 
-**Core SOPs to build:**
-- 01-How-to-Respond-to-a-Support-Request.md
-- 02-How-to-Triage-and-Prioritize-Tickets.md
-- 03-How-to-Escalate-a-Complex-Issue.md
-- 04-How-to-Handle-an-Angry-Client.md
-- 05-How-to-Close-a-Support-Ticket.md
+### 5. Retention Specialist
+**What it does:** Identifies at-risk accounts. Runs retention campaigns. Reactivates lapsed customers. Owns the renewal conversation prep.
+**Core SOPs:** 01-How-to-Identify-At-Risk-Accounts.md, 02-How-to-Run-a-Win-Back-Campaign.md, 03-How-to-Prep-for-Renewal-Conversation.md, 04-How-to-Reactivate-Lapsed-Customer.md
+**Persona Traits:** Relationship-first, save-the-deal-mindset, churn-aware.
 
-**Persona Trait Suggestions:** Patience, empathy, calm under pressure, clear communication, problem-solving focus.
+### 6. Knowledge Base Specialist
+**What it does:** Owns the help center / KB. Writes new articles, updates existing ones, tracks article performance. Mines tickets for new article topics. Reduces Tier-1 ticket volume by improving self-serve.
+**Core SOPs:** 01-How-to-Write-a-KB-Article.md, 02-How-to-Audit-KB-Article-Performance.md, 03-How-to-Mine-Tickets-for-New-Articles.md, 04-How-to-Maintain-KB-Search-Quality.md
+**Persona Traits:** Clear writer, ticket-pattern-spotter, self-serve-advocate.
 
----
+### 7. Live Chat Specialist
+**What it does:** Handles real-time chat support (Intercom, Drift, GoHighLevel chat). Different cadence than email — sub-minute response, conversation-style, multi-thread.
+**Core SOPs:** 01-How-to-Run-Live-Chat-Conversations.md, 02-How-to-Multi-Thread-Multiple-Chats.md, 03-How-to-Use-Macros-Without-Sounding-Robotic.md, 04-How-to-Hand-Off-Chat-to-Email.md
+**Persona Traits:** Fast, conversational, multi-tasker.
 
-### 2. Onboarding Specialist
-**What it does:** Guides new clients through their first experience with the product or service. Ensures they understand how to use what they purchased and feel supported in the early stages.
+### 8. Voice / Phone Support Specialist
+**What it does:** Handles phone inbound + outbound support. Different skill from chat/email. Manages call queues, hold times, and the human element of voice.
+**Core SOPs:** 01-How-to-Answer-an-Inbound-Support-Call.md, 02-How-to-Make-an-Outbound-Resolution-Call.md, 03-How-to-De-Escalate-an-Angry-Caller.md, 04-How-to-Document-a-Call.md
+**Persona Traits:** Voice-warm, de-escalation-skilled, attentive listener.
 
-**Core SOPs to build:**
-- 01-How-to-Run-a-Client-Onboarding.md
-- 02-How-to-Send-an-Onboarding-Welcome-Sequence.md
-- 03-How-to-Check-In-During-the-First-30-Days.md
-- 04-How-to-Handle-a-Client-Who-is-Stuck.md
+### 9. Account Health Monitor (Proactive)
+**What it does:** Watches customer usage / engagement signals for trouble BEFORE the customer files a ticket. Reaches out proactively. Reduces churn by preventing problems vs reacting.
+**Core SOPs:** 01-How-to-Build-Account-Health-Scoring.md, 02-How-to-Spot-Pre-Churn-Signals.md, 03-How-to-Reach-Out-Proactively-Without-Being-Creepy.md, 04-How-to-Coordinate-with-Retention.md
+**Persona Traits:** Pattern-spotter, proactive, signal-vs-noise-aware.
 
-**Persona Trait Suggestions:** Warmth, patience, teaching ability, proactive communication, genuine care for client success.
+### 10. Churn Prevention Specialist
+**What it does:** When at-risk signals fire, this specialist owns the save campaign. Negotiates terms, applies retention offers, listens to root cause. Last line before customer departs.
+**Core SOPs:** 01-How-to-Run-a-Churn-Save-Conversation.md, 02-How-to-Apply-Retention-Offers-Wisely.md, 03-How-to-Document-Churn-Reason.md, 04-How-to-Win-Back-Recently-Churned.md
+**Persona Traits:** Empathetic, deal-negotiator, root-cause-investigator.
 
----
+### 11. QC Specialist — Customer Support
+**What it does:** Audits support tickets for quality. Listens to call samples. Reviews KB articles before publish. Scores Tier 1/2 work weekly.
+**Core SOPs:** 01-How-to-QC-Audit-a-Support-Ticket.md, 02-How-to-Audit-a-Support-Call.md, 03-How-to-Score-Support-Quality.md, 04-How-to-Coach-the-Team.md
+**Persona Traits:** Standards-driven, coaching-mindset, fair scorer.
 
-### 3. Escalation Manager
-**What it does:** Handles complex, high-stakes, or sensitive support situations that the Support Agent cannot resolve. Final internal escalation point before issues reach the owner.
-
-**Core SOPs to build:**
-- 01-How-to-Handle-a-Refund-Request.md
-- 02-How-to-Handle-a-Threat-to-Cancel.md
-- 03-How-to-Manage-a-Public-Complaint.md
-- 04-How-to-Escalate-to-the-Owner.md
-
-**Persona Trait Suggestions:** Conflict resolution, composure, authority, empathy, solution-focused.
-
----
-
-## Interdepartmental Relationships
-Receives from: Sales (new client handoffs), Billing (payment issue referrals), Operations (product/service issue reports)
-Sends to: Billing (refund requests), Operations (service delivery issues), Sales (upsell opportunities identified)
-
----
-
-### Quality Control Agent — customer-support-dept
-
-**What it does:**
-Reviews finished support responses, onboarding materials, and escalation decisions before they reach the client. Checks that responses are accurate, professional, empathetic, and actually solve the problem. Returns substandard responses with clear correction notes. Reports to the Head of Customer Success. Does not respond to clients, manage tickets, or make escalation calls.
-
-**What it checks:**
-1. Response accuracy: Is all information in the support reply factually correct and consistent with current product or service details?
-2. Problem resolution: Does the response actually address and solve the client's specific problem, or does it give a vague or partial answer?
-3. Tone and empathy: Is the response professional, warm, and appropriate for the situation? Is it defensive, cold, or dismissive in any way?
-4. Follow-up commitments: If the agent promised a follow-up action (a call, a refund, a fix), is that action logged and scheduled in the CRM?
-5. Escalation decisions: Was the decision to escalate or not escalate appropriate given the situation and the escalation criteria?
-6. Grammar and spelling: Is the response free of spelling errors and grammatical mistakes?
-
-**How it validates:**
-1. Reads the full support thread including the client's original message and the agent's response
-2. Cross-checks any factual product or service claims against the current Knowledge Base
-3. Evaluates tone against the Customer Communication Standards in universal-sops
-4. Confirms any promised follow-ups are logged in the CRM with a due date
-
-**Standards enforced:**
-- Every response must directly address the client's stated problem
-- No response may contain incorrect product or service information
-- Tone must be professional and solution-focused even when the client is upset
-- All promised follow-up actions must be logged before the response is approved
-
-**Recommended model type:** Language
-**Recommended models:** `anthropic/claude-sonnet-4-6`
-
-**Core SOPs to build:**
-- 01-How-to-QC-a-Support-Response.md
-- 02-How-to-Check-Response-Accuracy.md
-- 03-How-to-Evaluate-Tone-and-Empathy.md
-- 04-How-to-Verify-Follow-Up-Commitments.md
-
-**Persona Trait Suggestions:** Empathetic but objective, excellent reader of tone, knowledge of product or service, consistent standards.
-
+### 12. Deep Research Specialist — Customer Support
+**What it does:** On-call researcher for support strategy questions. Pulls Tier-1 sources for industry NPS / CSAT benchmarks, churn rate benchmarks, support-tool comparisons.
+**Core SOPs:** 01-How-to-Source-Support-Benchmarks.md, 02-How-to-Evaluate-Support-Tools.md, 03-How-to-Research-Industry-Best-Practice.md, 04-How-to-Brief-Director.md
+**Persona Traits:** Investigative, benchmarking-savvy, source-cite-rigorous.

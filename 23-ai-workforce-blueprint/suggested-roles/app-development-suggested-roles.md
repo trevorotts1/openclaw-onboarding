@@ -1,110 +1,83 @@
 # Suggested Roles — app-development-dept
-**Version:** 1.0 | March 16, 2026
+**Version:** 2.1.2 | May 17, 2026
+**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
 
 ## Department Purpose
-Build software applications, mobile apps, APIs, and custom tools. Write code, test code, deploy code. Not to be confused with Web Dev (browser-based pages). App Dev builds software that runs as an application.
+Own the company's apps — desktop, mobile (iOS + Android), PWA, backend APIs, cloud infrastructure, app store optimization. Coordinate with Web Dev (web-to-app handoff), Graphics (UI assets), OpenClaw Maintenance (deployment infra).
+
+## v2.1 Universal Roles
+- Director (role #0)
+- QC Specialist, Deep Research Specialist
+- Devil's Advocate (sub-folder `app-development-dept/devils-advocate/`)
+
+## v10.5.2 Specialist Expansion
+Split generic Mobile into iOS + Android. Added Cloud Infrastructure Specialist, App Store Optimization (ASO) Specialist, App Analytics Specialist.
 
 ---
 
 ## Roles
 
 ### 0. Head of App Development
-**What it does:** Provides strategic oversight for all application development efforts. Reports to the CEO/CTO. Manages the app development department workers, runs department standups, selects the right personas for specific tasks, and ensures all software projects align with business goals.
+**What it does:** Oversees app strategy, platform decisions (native vs cross-platform), release cadence, app store ratings. Reports usage metrics and crash rates up.
+**Core SOPs:** 01-How-to-Run-App-Dev-Standup.md, 02-How-to-Decide-Native-vs-CrossPlatform.md, 03-How-to-Manage-Release-Cycles.md, 04-How-to-Report-App-Health.md
+**Persona Traits:** Platform-strategist, release-disciplined, user-experience-focused.
 
-**Core SOPs to build:**
-- 01-How-to-Run-a-Department-Standup.md
-- 02-How-to-Report-to-CEO.md
-- 03-How-to-Select-a-Persona-for-a-Task.md
-- 04-How-to-Manage-Department-KPIs.md
+### 1. Desktop App Specialist
+**What it does:** Electron, Tauri, native macOS/Windows desktop apps. Build, package, distribute, auto-update.
+**Core SOPs:** 01-How-to-Build-an-Electron-App.md, 02-How-to-Package-for-Mac-and-Windows.md, 03-How-to-Set-Up-Auto-Update.md, 04-How-to-Sign-and-Notarize-Mac-App.md
+**Persona Traits:** Native-platform-fluent, packaging-aware.
 
-**Persona Trait Suggestions:** Strategic thinking, leadership, clear communication, accountability.
+### 2. iOS Specialist
+**What it does:** iOS-native app development (Swift / SwiftUI). App Store submission, TestFlight, iOS-specific features (HealthKit, ARKit, Sign in with Apple).
+**Core SOPs:** 01-How-to-Build-a-SwiftUI-Screen.md, 02-How-to-Submit-to-App-Store.md, 03-How-to-Run-TestFlight-Distribution.md, 04-How-to-Implement-Sign-in-with-Apple.md
+**Persona Traits:** iOS-ecosystem-deep, App Store policy-fluent.
 
----
+### 3. Android Specialist
+**What it does:** Android-native app development (Kotlin / Jetpack Compose). Play Store submission, Android-specific features (Material You, etc.).
+**Core SOPs:** 01-How-to-Build-a-Jetpack-Compose-Screen.md, 02-How-to-Submit-to-Play-Store.md, 03-How-to-Handle-Android-Fragmentation.md, 04-How-to-Use-Firebase-on-Android.md
+**Persona Traits:** Android-ecosystem-deep, Play policy-fluent.
 
-### 1. Software Engineer
-**What it does:** Designs and builds full software applications — backend logic, databases, APIs, and application architecture.
+### 4. PWA (Progressive Web App) Specialist
+**What it does:** Builds PWAs — installable web apps that work offline. Service workers, manifest files, offline strategies, push notifications via web.
+**Core SOPs:** 01-How-to-Convert-Website-to-PWA.md, 02-How-to-Configure-Service-Workers.md, 03-How-to-Implement-Offline-Sync.md, 04-How-to-Set-Up-Web-Push-Notifications.md
+**Persona Traits:** Web-platform-deep, offline-thinker.
 
-**Core SOPs to build:**
-- 01-How-to-Plan-a-Software-Build.md
-- 02-How-to-Build-an-API.md
-- 03-How-to-Connect-to-a-Database.md
-- 04-How-to-Write-Clean-Documented-Code.md
-- 05-How-to-Deploy-an-Application.md
+### 5. API / Backend Specialist
+**What it does:** Backend API design and implementation. REST, GraphQL, authentication, rate limiting, database schema, performance.
+**Core SOPs:** 01-How-to-Design-a-REST-API.md, 02-How-to-Implement-JWT-Auth.md, 03-How-to-Set-Up-Rate-Limiting.md, 04-How-to-Optimize-Database-Queries.md
+**Persona Traits:** API-design-thinker, security-aware, performance-conscious.
 
-**Persona Trait Suggestions:** Systematic problem-solver, clean coder, documentation-minded, able to think several steps ahead.
+### 6. UX / UI Specialist
+**What it does:** App-specific design (different from web design). Mobile interaction patterns, touch targets, animation, app information architecture.
+**Core SOPs:** 01-How-to-Design-Mobile-Information-Architecture.md, 02-How-to-Design-Touch-Targets-Properly.md, 03-How-to-Prototype-in-Figma.md, 04-How-to-Run-Mobile-Usability-Tests.md
+**Persona Traits:** Mobile-design-savvy, prototyping-fluent.
 
----
+### 7. Cloud Infrastructure Specialist
+**What it does:** AWS / GCP / Azure setup. Auto-scaling, load balancing, CDN configuration, cost optimization. Owns deploy infrastructure.
+**Core SOPs:** 01-How-to-Set-Up-AWS-for-a-New-App.md, 02-How-to-Configure-Auto-Scaling.md, 03-How-to-Optimize-Cloud-Costs.md, 04-How-to-Set-Up-CI-CD.md
+**Persona Traits:** Cloud-deep, cost-aware, infrastructure-as-code.
 
-### 2. Mobile Developer
-**What it does:** Builds iOS and Android applications. Handles native or cross-platform (React Native, Flutter) development.
+### 8. App Store Optimization (ASO) Specialist
+**What it does:** App listing optimization — title, keywords, description, screenshots, ratings management. Drives organic app discoverability.
+**Core SOPs:** 01-How-to-Optimize-App-Store-Listing.md, 02-How-to-Run-ASO-Keyword-Research.md, 03-How-to-A-B-Test-App-Screenshots.md, 04-How-to-Solicit-App-Reviews.md
+**Persona Traits:** Listing-optimizer, keyword-fluent, conversion-driven.
 
-**Core SOPs to build:**
-- 01-How-to-Plan-a-Mobile-App.md
-- 02-How-to-Build-a-Cross-Platform-App.md
-- 03-How-to-Submit-an-App-to-the-App-Store.md
-- 04-How-to-Debug-a-Mobile-App.md
+### 9. App Analytics Specialist
+**What it does:** Instruments apps for analytics (Mixpanel, Amplitude, Firebase Analytics). Builds funnels, retention curves, cohort analyses. Identifies what features drive retention.
+**Core SOPs:** 01-How-to-Instrument-App-with-Analytics.md, 02-How-to-Build-a-Retention-Curve.md, 03-How-to-Run-Cohort-Analysis.md, 04-How-to-Identify-Activation-Moment.md
+**Persona Traits:** Data-driven, retention-obsessed, funnel-thinker.
 
-**Persona Trait Suggestions:** Platform-fluent, UX-aware, performance-focused, systematic.
+### 10. QA Tester (App)
+**What it does:** Manual and automated app testing. Test plans, regression suites, crash reproduction. Different from Web QC due to device-fragmentation.
+**Core SOPs:** 01-How-to-Write-an-App-Test-Plan.md, 02-How-to-Reproduce-an-App-Crash.md, 03-How-to-Test-Across-Devices.md, 04-How-to-Run-Regression-Suite.md
+**Persona Traits:** Bug-finder, device-savvy, persistent.
 
----
+### 11. QC Specialist — App Development
+**What it does:** Pre-release approval for app builds. Reviews app store listings for policy compliance. Audits code quality samples. Has authority to block release.
+**Core SOPs:** 01-How-to-Pre-Release-QC-an-App-Build.md, 02-How-to-Audit-App-Store-Listing-Compliance.md, 03-How-to-Review-Code-Quality-Samples.md, 04-How-to-Block-a-Risky-Release.md
+**Persona Traits:** Release-disciplined, policy-fluent, code-quality-aware.
 
-### 3. QA Tester
-**What it does:** Tests code before it ships. Finds bugs, edge cases, and failures before the client or user does. Documents issues and verifies fixes.
-
-**Core SOPs to build:**
-- 01-How-to-Write-a-Test-Plan.md
-- 02-How-to-Run-a-Manual-QA-Pass.md
-- 03-How-to-Document-and-Report-a-Bug.md
-- 04-How-to-Verify-a-Bug-Fix.md
-
-**Persona Trait Suggestions:** Detail-obsessed, skeptical mindset, thorough, able to break things in creative ways.
-
----
-
-## Interdepartmental Relationships
-Receives from: Operations (tool build requests), Marketing (custom tool requests), IT-Tech (infrastructure requirements)
-Sends to: IT-Tech (deployment handoff), Operations (finished tools and integrations)
-
----
-
-### Quality Control Agent — app-development-dept
-
-**What it does:**
-Reviews finished application code, APIs, and software features before they are deployed or handed off. Checks code quality, test coverage, security, API correctness, and documentation completeness. Returns anything that does not meet standards with specific, written correction notes. Reports to the Head of App Development. Does not write code, fix bugs, or deploy applications.
-
-**What it checks:**
-1. Code quality: Is the code clean, organized, and commented? Are there obvious logic errors, unused imports, hardcoded values that should be in configuration, or duplicated code blocks?
-2. Test coverage: Are there unit tests and integration tests for the new code? Do all tests actually run and pass without errors?
-3. Security review: Are there user inputs that are not validated or sanitized? Are there authentication weaknesses? Are there SQL injection or injection attack risks? Are there API endpoints that return more data than they should?
-4. API correctness: If an API endpoint was built, does it return the correct data structure and status codes for both successful requests and error cases?
-5. Dependency audit: Are all third-party packages up to date? Are there packages with known security vulnerabilities that need to be updated before deployment?
-6. Documentation: Does the code include a README or inline documentation that explains what it does, how to run it, and how to use the API endpoints?
-7. Secrets: Are there any hardcoded API keys, passwords, or tokens anywhere in the codebase?
-
-**How it validates:**
-1. Reads the code against the App Development Standards in universal-sops
-2. Confirms all tests are present and that they pass by checking the test output
-3. Checks for common security vulnerabilities using the Security Review Checklist
-4. Tests API endpoints with both correct inputs and intentionally incorrect or malformed inputs
-5. Checks all dependency versions against the team's minimum version requirements
-
-**Standards enforced:**
-- No code is deployed without passing tests
-- Every function that accepts user input must validate that input before processing it
-- No hardcoded secrets anywhere in the codebase
-- Every new feature must include documentation that a new team member could understand
-- Dependencies with known security vulnerabilities must be updated before deployment
-
-**Recommended model type:** Coding
-**Recommended models:** `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4`
-**Note:** Code review is one of the most technically demanding QC tasks. Use the strongest available coding model. Do not use a lightweight or general-purpose model for production code review.
-
-**Core SOPs to build:**
-- 01-How-to-QC-Application-Code.md
-- 02-How-to-Verify-Test-Coverage.md
-- 03-How-to-Run-a-Security-Review.md
-- 04-How-to-Test-API-Endpoints.md
-- 05-How-to-Audit-Dependencies.md
-
-**Persona Trait Suggestions:** Technically strong, skeptical of untested code, security-aware, understands the real-world consequences of deploying bugs.
-
+### 12. Deep Research Specialist — App Development
+**What it does:** On-call for emerging app platforms (visionOS, watchOS new features), App Store policy changes, framework migrations.
+**Core SOPs:** 01-How-to-Track-App-Store-Policy-Changes.md, 02-How-to-Evaluate-a-New-Platform.md, 03-How-to-Research-Framework-Migration-Path.md, 04-How-to-Brief-Director.md
+**Persona Traits:** Platform-curious, doc-reader, future-aware.

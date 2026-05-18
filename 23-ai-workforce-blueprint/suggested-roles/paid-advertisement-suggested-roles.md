@@ -2,6 +2,7 @@
 
 **Department mission:** Run paid media across every advertising platform. Build campaigns, manage budgets, optimize creative, track ROAS, scale winners, kill losers. **Organic social is a separate department** — this team only handles paid placements.
 
+**Version:** 2.1.2 (v10.5.2 expansion)
 **Director:** Director of Paid Advertisement
 **Devil's Advocate:** Built in
 **Universal roles in this dept:** QC role, Deep Research role
@@ -115,12 +116,52 @@ Director surfaces ROAS-below-target campaigns to Master Orchestrator within 48h.
 
 ---
 
-### 14. QC Role — Paid Advertisement (full-time-permanent)
+### 14. Cross-Platform Attribution Specialist (full-time-permanent)
+**Owns:** Attribution modeling across every paid channel. Implements Hyros, Triple Whale, Northbeam, or custom GA4 attribution. Tells the Director which dollars actually produced revenue vs which were credit-claiming.
+**Primary KPIs:** Attribution model accuracy (vs known-truth tests), incremental ROAS by channel, lift-test pass rate
+**Tools:** Hyros, Triple Whale, Northbeam, GA4 Server-Side Tagging, Meta CAPI, server-side conversion API
+**SOPs:** 01-How-to-Set-Up-Hyros, 02-How-to-Run-Incrementality-Test, 03-How-to-Reconcile-Platform-vs-Attribution-Tool, 04-How-to-Identify-Channel-Cannibalization
+
+---
+
+### 15. Retargeting Strategist (full-time-permanent)
+**Owns:** Cross-platform retargeting strategy. Pixel firing, custom audiences, lookalike modeling, exclusion lists, retargeting frequency caps. Different from per-platform Ads Specialists — this role architects the cross-channel chase.
+**Primary KPIs:** Retargeting CPA vs prospecting CPA, audience overlap minimization, retargeting frequency capped properly
+**Tools:** Meta Pixel + Custom Audiences, Google Customer Match, Facebook Custom Audiences API
+**SOPs:** 01-How-to-Design-Cross-Platform-Retargeting-Cascade, 02-How-to-Set-Frequency-Caps, 03-How-to-Build-Lookalikes-from-Customer-File, 04-How-to-Coordinate-Retargeting-Exclusions
+
+---
+
+### 16. Creative Testing / A-B Specialist (full-time-permanent)
+**Owns:** Systematic creative testing across platforms. Designs test matrices, runs statistically significant tests, identifies winning creative attributes (hooks, formats, durations). Hands winning patterns to Graphics + Video.
+**Primary KPIs:** Tests per week, statistically significant winners per month, % of spend on tested vs untested creative
+**Tools:** Meta Ads Manager experiments, Google Ads experiments, internal test-tracking spreadsheet/dashboard
+**SOPs:** 01-How-to-Design-an-Ad-Creative-Test-Matrix, 02-How-to-Determine-Statistical-Significance-for-Ads, 03-How-to-Document-Winning-Creative-Attributes, 04-How-to-Hand-Off-Winners-to-Graphics-Video
+
+---
+
+### 17. Audience Research Specialist (full-time-permanent or on-call)
+**Owns:** Audience targeting research — who to target, where they cluster, interest/behavior overlap, lookalike seed quality. Coordinates with Research dept's Persona Research.
+**Primary KPIs:** Audience CTR vs CPC, audience-cost-per-acquisition, audience-fatigue rate
+**Tools:** Meta Audience Insights (legacy/replacement), Google Audience Manager, third-party Sparktoro
+**SOPs:** 01-How-to-Build-Initial-Audience-Sets, 02-How-to-Research-Interest-Overlap, 03-How-to-Refresh-Saturated-Audiences, 04-How-to-Coordinate-with-Persona-Research
+
+---
+
+### 18. Conversion Tracking Specialist (full-time-permanent)
+**Owns:** The technical implementation of conversion tracking — pixels, server-side events, conversion API setup, deduplication, post-iOS 14 / 17 measurement. Without this, NONE of the other ad spend has correct attribution.
+**Primary KPIs:** % of events firing on server-side (vs client-only), deduplication rate, browser pixel fire success rate
+**Tools:** Google Tag Manager Server-Side, Meta Conversion API, Stape.io, Segment, RudderStack
+**SOPs:** 01-How-to-Set-Up-Server-Side-GTM, 02-How-to-Implement-Meta-CAPI, 03-How-to-Deduplicate-Server-Plus-Browser-Events, 04-How-to-Audit-Pixel-Fire-Accuracy
+
+---
+
+### 19. QC Role — Paid Advertisement (full-time-permanent)
 **Owns:** Reviews every ad BEFORE it launches for: claim compliance (FTC, platform policy), creative quality, link correctness, landing page consistency, budget cap accuracy.
 
 ---
 
-### 15. Deep Research Role — Paid Advertisement (on-call)
+### 20. Deep Research Role — Paid Advertisement (on-call)
 **Owns:** Platform policy changes, new ad formats, audience research for new campaigns, competitor ad spy (via Facebook Ad Library, AdSpy, etc.).
 
 ---
@@ -152,3 +193,4 @@ When the Social Media department flags a post performing well organically:
 4. Specialist sets budget guard rails based on organic ROAS proxy
 5. QC reviews before launch
 6. Post-launch: 7-day performance review, scale or kill
+
