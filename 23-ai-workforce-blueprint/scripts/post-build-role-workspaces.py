@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """
-Post-build role workspace creator.
+Post-build role workspace creator (v10.5.1).
 
 Runs after `build-workforce.py` finishes. Walks the active zero-human-company's
-departments and creates role-level workspaces for every dept that doesn't have
-them yet.
+departments and AUGMENTS existing role folders (created by the v9.x
+`create_role_workspace` in build-workforce.py) with v2.1 files: IDENTITY.md,
+SOUL.md, MEMORY.md, HEARTBEAT.md, how-to.md stub, and symlinks for AGENTS.md,
+TOOLS.md, USER.md.
 
-This is the integration that makes the v2.1 role-level architecture real for
-existing builds — without modifying `build-workforce.py` itself.
+This makes the v2.1 architecture real for existing builds without modifying
+`build-workforce.py` itself.
 
-Idempotent — safe to re-run. Only creates folders that don't exist.
+Idempotent — safe to re-run. Only adds files that don't exist.
+
+Behavior:
+- For each department folder under `[ZHC]/[company]/departments/`:
+  - For every role subfolder (any naming pattern, with or without numeric prefix):
+    - Add IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT.md, how-to.md if missing
+    - (Re)create AGENTS.md, TOOLS.md, USER.md symlinks to workspace root
+- For the company root, ensure a `master-orchestrator/` folder exists with CEO
+  variant of the deferral clause.
 
 Usage:
     python3 23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py
@@ -17,220 +27,122 @@ Usage:
     python3 23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py --dry-run
 """
 import argparse
-import json
-import re
 import sys
 from pathlib import Path
 
-# Make sibling modules importable
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "shared-utils"))
 
 from detect_platform import get_openclaw_paths  # type: ignore
-from create_role_workspaces import build_all_roles_for_dept, slugify  # type: ignore
+from create_role_workspaces import (  # type: ignore
+    augment_all_existing_role_folders,
+    create_role_workspace,
+    augment_role_folder,
+)
 
 
-# Default roles every department gets (regardless of dept-specific specialists)
-DEFAULT_DEPT_ROLES = [
-    {"name": "Director of {dept}", "type": "full-time-permanent", "is_ceo": False},
-    {"name": "QC Specialist", "type": "full-time-permanent"},
-    {"name": "Deep Research Specialist", "type": "on-call"},
-]
-
-
-def parse_suggested_roles_md(roles_md_path: Path) -> list:
-    """
-    Parse a suggested-roles/[dept]-suggested-roles.md file to extract role names.
-
-    Roles are listed under `### N. Role Name (...)`. We extract the name only;
-    everything else is filled by the role-doc-generation sub-agent later.
-    """
-    if not roles_md_path.exists():
-        return []
-
-    content = roles_md_path.read_text(encoding="utf-8", errors="replace")
-    roles = []
-    # Match patterns like "### 1. Role Name (full-time-permanent)" or "### 1. Role Name"
-    pattern = re.compile(r"^###\s+\d+\.\s+(.+?)$", re.MULTILINE)
-    for match in pattern.finditer(content):
-        line = match.group(1).strip()
-        # Strip parenthetical role type
-        name = re.sub(r"\s*\(.*?\)\s*$", "", line).strip()
-        # Strip trailing flags like "⭐ FLAGSHIP ROLE"
-        name = re.sub(r"\s*[⭐🔧🚨]\s*FLAGSHIP.*$", "", name).strip()
-        if name and len(name) < 80:
-            roles.append({"name": name, "type": "full-time-permanent"})
-    return roles
-
-
-def find_suggested_roles_file(skill_root: Path, dept_id: str) -> Path:
-    """
-    Map dept_id to a suggested-roles file path. Try multiple naming conventions.
-    """
-    candidates = [
-        skill_root / "suggested-roles" / f"{dept_id}-suggested-roles.md",
-        skill_root / "suggested-roles" / f"{dept_id.replace('-dept','')}-suggested-roles.md",
-        skill_root / "suggested-roles" / f"{dept_id.replace('_','-')}-suggested-roles.md",
-    ]
-    # Also try replacing common naming variants
-    aliases = {
-        "billing-finance": "billing",
-        "openclaw-maintenance": "openclaw-maintenance",
-        "social-media": "social-media",
-        "paid-advertisement": "paid-advertisement",
-        "legal": "legal-compliance",
-        "customer-support": "customer-support",
-        "web-development": "web-development",
-        "app-development": "app-development",
+def process_company(company_root: Path, dry_run: bool = False) -> dict:
+    """Walk a company and augment every dept + ensure CEO at company root."""
+    counts = {
+        "depts_scanned": 0,
+        "role_folders_augmented": 0,
+        "role_files_written": 0,
+        "ceo_created_or_augmented": False,
     }
-    if dept_id in aliases:
-        candidates.append(skill_root / "suggested-roles" / f"{aliases[dept_id]}-suggested-roles.md")
-    for c in candidates:
-        if c.exists():
-            return c
-    return candidates[0]  # return non-existent canonical for error reporting
-
-
-def process_company(company_root: Path, skill_root: Path, dry_run: bool = False) -> dict:
-    """
-    Walk a single company workspace and create role-level workspaces.
-    """
     workspace_root = company_root  # symlinks resolve here
-    departments_json = company_root / "departments.json"
 
-    counts = {"depts_scanned": 0, "roles_created": 0, "roles_skipped_exist": 0, "depts_without_roles_file": 0}
-
-    # Master orchestrator (CEO) lives at company root, not inside departments/
-    if not (company_root / "master-orchestrator").exists():
+    # 1. Master Orchestrator (CEO) — lives at company root
+    ceo_path = company_root / "master-orchestrator"
+    if not ceo_path.exists():
         tag = "[DRY-RUN] " if dry_run else ""
         print(f"  {tag}Creating master-orchestrator (CEO agent)")
         if not dry_run:
-            build_all_roles_for_dept(
-                company_root,  # dept_path = company_root because CEO sits at company level
-                "master-orchestrator",
-                [{"name": "Master Orchestrator", "type": "full-time-permanent", "is_ceo": True}],
+            create_role_workspace(
+                company_root,
+                "Master Orchestrator",
                 workspace_root,
+                role_metadata={"is_ceo": True, "type": "full-time-permanent"},
             )
-            counts["roles_created"] += 1
+            counts["ceo_created_or_augmented"] = True
     else:
-        counts["roles_skipped_exist"] += 1
+        if not dry_run:
+            print(f"  Augmenting existing master-orchestrator")
+            result = augment_role_folder(
+                ceo_path,
+                workspace_root,
+                role_metadata={"is_ceo": True, "name": "Master Orchestrator"},
+            )
+            if result["written"]:
+                print(f"    + {len(result['written'])} files: {', '.join(result['written'])}")
+            counts["ceo_created_or_augmented"] = bool(result["written"])
+        else:
+            print(f"  [DRY-RUN] would augment master-orchestrator")
+            counts["ceo_created_or_augmented"] = True
 
-    # Departments
-    dept_ids = []
-    if departments_json.exists():
-        try:
-            data = json.loads(departments_json.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                dept_ids = [d.get("id", "").replace("dept-", "") for d in data if isinstance(d, dict)]
-            elif isinstance(data, dict) and "departments" in data:
-                dept_ids = [d.get("id", "").replace("dept-", "") for d in data["departments"]]
-        except Exception as e:
-            print(f"  WARN: failed to parse departments.json: {e}")
-
+    # 2. Departments
     departments_dir = company_root / "departments"
-    if departments_dir.exists():
-        # Also scan filesystem for any depts not in departments.json
-        for entry in departments_dir.iterdir():
-            if entry.is_dir():
-                dept_slug = entry.name.replace("-dept", "")
-                if dept_slug not in dept_ids:
-                    dept_ids.append(dept_slug)
+    if not departments_dir.exists():
+        print(f"  WARN: no departments/ folder at {departments_dir}")
+        return counts
 
-    for dept_id in dept_ids:
-        if not dept_id:
-            continue
-        dept_path = departments_dir / f"{dept_id}-dept"
-        if not dept_path.exists():
-            dept_path = departments_dir / dept_id
-        if not dept_path.exists():
-            print(f"  WARN: dept folder not found for {dept_id}")
+    for dept_path in sorted(departments_dir.iterdir()):
+        if not dept_path.is_dir():
             continue
         counts["depts_scanned"] += 1
-
-        # Find the suggested-roles file
-        roles_file = find_suggested_roles_file(skill_root, dept_id)
-        roles_from_file = parse_suggested_roles_md(roles_file)
-
-        if not roles_from_file:
-            counts["depts_without_roles_file"] += 1
-            # Fall back to just the defaults (Director / QC / Deep Research)
-            roles = [
-                {"name": f"Director of {dept_id.replace('-', ' ').title()}", "type": "full-time-permanent"},
-                {"name": "QC Specialist", "type": "full-time-permanent"},
-                {"name": "Deep Research Specialist", "type": "on-call"},
-            ]
-        else:
-            roles = roles_from_file
-
-        # Skip role folders that already exist
-        new_roles = []
-        for role in roles:
-            slug = slugify(role["name"])
-            if (dept_path / slug).exists():
-                counts["roles_skipped_exist"] += 1
-            else:
-                new_roles.append(role)
-
-        if not new_roles:
-            print(f"  Department '{dept_id}': all {len(roles)} roles already exist, skipping")
-            continue
-
-        tag = "[DRY-RUN] " if dry_run else ""
-        print(f"  {tag}Department '{dept_id}': creating {len(new_roles)} new role workspaces")
-        if not dry_run:
-            build_all_roles_for_dept(dept_path, dept_id, new_roles, workspace_root)
-            counts["roles_created"] += len(new_roles)
+        print(f"\n  === Department: {dept_path.name} ===")
+        results = augment_all_existing_role_folders(dept_path, workspace_root, dry_run=dry_run)
+        counts["role_folders_augmented"] += len(results)
+        for r in results:
+            if not r.get("dry_run"):
+                counts["role_files_written"] += len(r.get("written", []))
 
     return counts
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create role-level workspaces post-build for all departments in the active zero-human-company")
-    parser.add_argument("--company-slug", help="Process only this company slug. Defaults to all companies in ZHC root.")
-    parser.add_argument("--dry-run", action="store_true", help="Report what would be created without writing.")
-    parser.add_argument("--skill-root", help="Path to the 23-ai-workforce-blueprint skill (defaults to detect)")
+    parser = argparse.ArgumentParser(description="Augment existing role folders with v2.1 files")
+    parser.add_argument("--company-slug", help="Process only this company slug. Defaults to all companies.")
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     paths = get_openclaw_paths()
     zhc_root = paths["company_root"]
-    skill_root = Path(args.skill_root) if args.skill_root else (paths["skills"] / "23-ai-workforce-blueprint")
-    if not skill_root.exists():
-        # Fallback to current source repo if installed skills aren't found
-        skill_root = Path(__file__).resolve().parent.parent
-
-    print(f"Platform:       {paths['platform']}")
-    print(f"ZHC root:       {zhc_root}")
-    print(f"Skill root:     {skill_root}")
-    if args.dry_run:
-        print("DRY-RUN MODE — no files written")
-    print()
-
     if not zhc_root.exists():
         print(f"ERROR: ZHC root {zhc_root} does not exist. Has any company been built yet?")
         return 1
 
-    total = {"depts_scanned": 0, "roles_created": 0, "roles_skipped_exist": 0, "depts_without_roles_file": 0}
+    print(f"Platform: {paths['platform']}")
+    print(f"ZHC root: {zhc_root}")
+    if args.dry_run:
+        print("DRY-RUN — no files written")
+    print()
+
     companies = []
     if args.company_slug:
         target = zhc_root / args.company_slug
         if target.exists():
             companies.append(target)
-    else:
+        else:
+            print(f"WARN: company slug '{args.company_slug}' not found, scanning all")
+    if not companies:
         companies = [p for p in zhc_root.iterdir() if p.is_dir()]
 
+    total = {"depts_scanned": 0, "role_folders_augmented": 0, "role_files_written": 0, "ceos": 0}
     for company in companies:
-        print(f"=== Company: {company.name} ===")
-        result = process_company(company, skill_root, dry_run=args.dry_run)
-        for k, v in result.items():
-            total[k] = total.get(k, 0) + v
-        print()
+        print(f"\n=== Company: {company.name} ===")
+        result = process_company(company, dry_run=args.dry_run)
+        for k in ["depts_scanned", "role_folders_augmented", "role_files_written"]:
+            total[k] += result[k]
+        if result["ceo_created_or_augmented"]:
+            total["ceos"] += 1
 
-    print("=" * 60)
-    print(f"Companies processed:           {len(companies)}")
-    print(f"Departments scanned:           {total['depts_scanned']}")
-    print(f"Role workspaces created:       {total['roles_created']}")
-    print(f"Role workspaces already exist: {total['roles_skipped_exist']}")
-    print(f"Depts without roles file:      {total['depts_without_roles_file']}")
+    print("\n" + "=" * 60)
+    print(f"Companies processed:               {len(companies)}")
+    print(f"Departments scanned:               {total['depts_scanned']}")
+    print(f"Role folders augmented:            {total['role_folders_augmented']}")
+    print(f"v2.1 files written:                {total['role_files_written']}")
+    print(f"Master Orchestrators ready:        {total['ceos']}")
     print("=" * 60)
     return 0
 

@@ -1438,6 +1438,15 @@ if [ -d "$ONBOARDING_DIR/scripts" ]; then
     cp -r "$ONBOARDING_DIR/scripts" "$SKILLS_DIR/../"
 fi
 
+# v10.5.1: Install shared-utils to skills root for v2.1 helper imports
+if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
+    mkdir -p "$SKILLS_DIR/shared-utils"
+    cp -r "$ONBOARDING_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"
+    chmod +x "$SKILLS_DIR/shared-utils/"*.sh 2>/dev/null || true
+    chmod +x "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
+    success "shared-utils installed to $SKILLS_DIR/shared-utils"
+fi
+
 # ----------------------------------------------------------
 # Step 6: Install Gemini Scripts
 # ----------------------------------------------------------

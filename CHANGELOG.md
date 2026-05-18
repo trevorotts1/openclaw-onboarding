@@ -1,3 +1,40 @@
+## [v10.5.1] — 2026-05-17 — Wave 4: Hand-Touch Integration
+
+The three hand-touch edits documented in RUNBOOK-v2.1.md Section 5 are now applied. v2.1 is fully wired end-to-end — no manual integration steps remain.
+
+### Changed — `install.sh`
+
+Added a `shared-utils/` install block after the scripts-copy step. shared-utils now lands at `$SKILLS_DIR/shared-utils/` so v2.1 helper imports (`from detect_platform import get_openclaw_paths`, `from adaptive_weights import get_weights_for_task`, etc.) resolve correctly when invoked from inside a skill folder.
+
+### Changed — `23-ai-workforce-blueprint/scripts/build-workforce.py`
+
+Added a v10.5.1 post-build hook at the end of `build_from_config()` (just before "Build complete!"). After all departments are created and persona matrix is generated, it spawns `post-build-role-workspaces.py` via subprocess (30s timeout) to augment every role folder with v2.1 files: IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT.md, how-to.md (stub pending sub-agent generation), plus AGENTS/TOOLS/USER symlinks. Master Orchestrator (CEO) is created at the company root with the CEO variant of the Persona Governance Override clause. The hook is idempotent and wrapped in try/except so a failure won't break the main build.
+
+### Changed — `shared-utils/create-role-workspaces.py`
+
+Added `augment_role_folder(role_path, workspace_root, role_metadata)` and `augment_all_existing_role_folders(dept_path, workspace_root)` helpers. These detect EXISTING role folders (any naming pattern, with or without the v9.x numeric prefix like `00-chief-marketing-officer/`) and add v2.1 files in place. Existing files (including pre-v2.1 `00-START-HERE.md` and SOP stubs) are preserved.
+
+### Changed — `23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py`
+
+Reworked to call the new `augment_all_existing_role_folders` instead of creating duplicate folders. Walks `[ZHC]/[company]/departments/[dept]/` and ensures every role subfolder has the v2.1 file set. Creates Master Orchestrator at company root if missing.
+
+### Version
+
+- `skill-version.txt`: 10.5.0 → **10.5.1**
+- Root `version` file: v10.5.0 → **v10.5.1**
+
+### End-to-end now works
+
+After this release, the install + first interview flow does this automatically without any RUNBOOK Section 5 hand-touches:
+
+1. `bash install.sh` → onboarding + skills + shared-utils all installed
+2. AI runs Skill 23 Option A → interview completes
+3. `build-workforce.py` creates dept workspaces with `00-START-HERE.md` + SOP stubs (existing v9.x behavior preserved) **AND** v2.1 IDENTITY/SOUL/MEMORY/HEARTBEAT/how-to.md + symlinks (new in v10.5.1)
+4. Master Orchestrator workspace ready at company root with CEO deferral clause
+5. Sub-agents fan out to generate the 130-200 detailed how-to.md files using the universal template
+
+---
+
 ## [v10.5.0] — 2026-05-17 — Wave 3: v2.1 Integration Layer
 
 This release wires the v2.1 shipped helpers into a usable end-to-end flow without modifying the 90+KB `build-workforce.py` or 105KB `install.sh` files. New "integration layer" scripts hook in post-hoc.

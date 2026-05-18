@@ -352,6 +352,27 @@ def build_from_config(config):
     # Generate/update persona-matrix.md for workforce visibility
     generate_persona_matrix(selected_departments, persona_categories, company_name)
 
+
+    # v10.5.1: Run v2.1 post-build augmentation — adds IDENTITY.md, SOUL.md,
+    # MEMORY.md, HEARTBEAT.md, how-to.md (universal 18-section template), and
+    # AGENTS/TOOLS/USER symlinks to every role folder created above. Master
+    # Orchestrator (CEO) gets the CEO variant of the deferral clause. Idempotent.
+    try:
+        import subprocess as _subprocess
+        _script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "post-build-role-workspaces.py")
+        if os.path.isfile(_script):
+            _result = _subprocess.run(
+                ["python3", _script, "--company-slug", COMPANY_SLUG or ""],
+                capture_output=True, text=True, timeout=300
+            )
+            print(_result.stdout, file=sys.stderr)
+            if _result.returncode != 0:
+                print(f"[v2.1 WARN] post-build-role-workspaces.py exited {_result.returncode}", file=sys.stderr)
+        else:
+            print(f"[v2.1 WARN] post-build-role-workspaces.py not found at {_script}", file=sys.stderr)
+    except Exception as _e:
+        print(f"[v2.1 WARN] post-build augmentation failed: {_e}", file=sys.stderr)
+
     print(f"\n[NON-INTERACTIVE] Build complete!", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Company: {company_name}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Departments: {len(selected_departments)}", file=sys.stderr)

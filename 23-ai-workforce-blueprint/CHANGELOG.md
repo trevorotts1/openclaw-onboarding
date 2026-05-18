@@ -1,3 +1,22 @@
+## [v10.5.1] — 2026-05-17 — Wave 4: Hand-Touch Integration
+
+### Changed
+
+- **`scripts/build-workforce.py`** — Inline v10.5.1 hook at the end of `build_from_config()`. After all departments and persona matrix are created, spawns `post-build-role-workspaces.py` via subprocess (30s timeout) to augment every role folder with v2.1 files. Wrapped in try/except so failure doesn't break the main build.
+- **`scripts/post-build-role-workspaces.py`** — Reworked to AUGMENT existing role folders rather than create duplicates. Detects pre-v2.1 role folders (any naming pattern, with or without numeric prefix) and adds IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT.md, how-to.md stub, and AGENTS/TOOLS/USER symlinks in place. Master Orchestrator (CEO) created at company root with CEO deferral clause if missing. Pre-v2.1 files like `00-START-HERE.md` are preserved.
+
+### Version
+
+`skill-version.txt` bumped to `10.5.1`.
+
+### What's no longer a hand-touch (RUNBOOK Section 5)
+
+- ✅ `build-workforce.py` post-build call — now automatic
+- ✅ `install.sh` shared-utils copy — fixed in install.sh
+- ✅ Command Center `src/lib/persona-selector.ts` — created and points at `persona-selector-v2.py`
+
+---
+
 ## [v10.5.0] — 2026-05-17 — Wave 3: v2.1 Integration Layer
 
 ### Added — scripts/
