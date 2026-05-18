@@ -1,0 +1,142 @@
+{
+  "_defaults": {
+    "extras": [],
+    "min_sops": 5,
+    "min_edge_cases": 3,
+    "min_tier1_citations": 3,
+    "is_flagship": false
+  },
+  "master-orchestrator": {
+    "extras": [
+      "CEO operating principles 2026",
+      "Fortune 500 cross-functional coordination",
+      "AI agent orchestration frameworks 2026",
+      "executive decision-making frameworks"
+    ],
+    "min_sops": 10,
+    "min_edge_cases": 6,
+    "min_tier1_citations": 4,
+    "is_flagship": true,
+    "is_ceo": true
+  },
+  "email-deliverability-optimization-specialist": {
+    "extras": [
+      "2026 email deliverability SPF DKIM DMARC best practices",
+      "GoHighLevel deliverability optimization 2026",
+      "Apple Mail Privacy Protection workarounds 2026",
+      "Google Postmaster Tools setup guide",
+      "email warmup protocols for new sending domains",
+      "Microsoft SNDS sender reputation",
+      "Talos Reputation Center email"
+    ],
+    "min_sops": 13,
+    "min_edge_cases": 7,
+    "min_tier1_citations": 4,
+    "is_flagship": true
+  },
+  "director-of-sales": {
+    "extras": [
+      "B2B sales pipeline management best practices 2026",
+      "SaaS sales metrics SaaStr SaaSquatch",
+      "CRM hygiene KPIs",
+      "sales team management at scale 2026"
+    ],
+    "min_sops": 8,
+    "min_edge_cases": 5,
+    "min_tier1_citations": 3
+  },
+  "director-of-paid-advertisement": {
+    "extras": [
+      "cross-channel attribution 2026 Hyros Triple Whale Northbeam",
+      "performance marketing ROAS benchmarks 2026",
+      "iOS 17 18 attribution impact",
+      "MMM marketing mix modeling 2026"
+    ],
+    "min_sops": 10,
+    "min_edge_cases": 6,
+    "min_tier1_citations": 3
+  },
+  "cross-platform-attribution-specialist": {
+    "extras": [
+      "Hyros attribution setup 2026",
+      "Triple Whale dashboard configuration",
+      "Northbeam media mix modeling",
+      "GA4 server-side tagging best practices"
+    ],
+    "min_sops": 8,
+    "min_edge_cases": 5,
+    "min_tier1_citations": 3
+  },
+  "seo-specialist": {
+    "extras": [
+      "Google EEAT signals 2026",
+      "Core Web Vitals optimization 2026",
+      "schema markup for content sites",
+      "Google Search Generative Experience SEO"
+    ],
+    "min_sops": 7,
+    "min_edge_cases": 4,
+    "min_tier1_citations": 3
+  },
+  "video-seo-specialist": {
+    "extras": [
+      "YouTube algorithm 2026",
+      "YouTube SEO best practices",
+      "video metadata optimization",
+      "YouTube thumbnail CTR optimization"
+    ],
+    "min_sops": 7,
+    "min_edge_cases": 4,
+    "min_tier1_citations": 3
+  },
+  "director-of-marketing": {
+    "extras": [
+      "CMO playbook 2026",
+      "marketing department KPIs",
+      "brand strategy frameworks"
+    ],
+    "min_sops": 8,
+    "min_edge_cases": 5,
+    "min_tier1_citations": 3
+  },
+  "director-of-crm": {
+    "extras": [
+      "CRM platform selection 2026",
+      "CRM hygiene best practices",
+      "marketing automation workflows"
+    ],
+    "min_sops": 7,
+    "min_edge_cases": 4,
+    "min_tier1_citations": 3
+  },
+  "head-of-customer-success": {
+    "extras": [
+      "customer success benchmarks 2026",
+      "NPS CSAT methodology",
+      "churn prevention frameworks"
+    ],
+    "min_sops": 7,
+    "min_edge_cases": 4,
+    "min_tier1_citations": 3
+  },
+  "chief-legal-officer": {
+    "extras": [
+      "general counsel responsibilities 2026",
+      "legal risk frameworks",
+      "regulatory compliance 2026"
+    ],
+    "min_sops": 8,
+    "min_edge_cases": 5,
+    "min_tier1_citations": 3
+  },
+  "chief-financial-officer": {
+    "extras": [
+      "CFO role at growth-stage companies 2026",
+      "13-week cash flow forecasting",
+      "FP&A best practices"
+    ],
+    "min_sops": 8,
+    "min_edge_cases": 5,
+    "min_tier1_citations": 3
+  }
+}
