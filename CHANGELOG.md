@@ -1,3 +1,81 @@
+## [v10.6.2] — 2026-05-19 — Version Drift Prevention Infrastructure
+
+This release does two things: (1) realigns all 5 version locations that had drifted to different values, and (2) adds the tooling to prevent that drift from happening again.
+
+### Why this was needed
+"The version" is stored in 5 separate files in this repo. Before v10.6.2, nothing forced them to stay in sync. As of the v10.6.1 push, three of them disagreed:
+
+| Location | v10.6.1 value (before this release) |
+|---|---|
+| `/version` | `v10.6.1` |
+| `/install.sh` `ONBOARDING_VERSION=` | `v10.6.0` ❌ stale |
+| `/23-ai-workforce-blueprint/skill-version.txt` | `10.6.1` |
+| `/23-ai-workforce-blueprint/templates/role-library/_index.json` `"version"` | `10.6.0` ❌ stale |
+| `/23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` heading | `v10.6.0` ❌ stale |
+
+Plus zero git tags. Drift was mathematically guaranteed because there was no single tool to update all 5 at once and no automated check to catch disagreement.
+
+### Added — `scripts/bump-version.sh`
+Single command that atomically updates all 5 version locations:
+
+```bash
+./scripts/bump-version.sh v10.6.2          # bump all 5 + verify
+./scripts/bump-version.sh v10.6.2 --tag    # also create a git tag
+./scripts/bump-version.sh --check          # report drift, exit 1 if any
+```
+
+The script knows the format quirks (some files use `v` prefix, some don't; `_index.json` is JSON and needs structured edit). It refuses to finish if any file fails to update. It can optionally create a `vX.Y.Z` git tag.
+
+### Added — `.github/workflows/version-consistency.yml`
+GitHub Actions check that runs on every push to main and every PR. Reads all 5 version locations, normalizes the format, and fails the build (with a clear "DRIFT DETECTED" message naming the disagreeing files) if any disagree. Tells the author exactly which command to run to fix.
+
+Status check name: `Version consistency` — visible on every PR.
+
+### Added — `23-ai-workforce-blueprint/scripts/verify-role-library.sh`
+The QC summary referenced this script as a sanity-check step, but it never existed in the repo. Now it does. Runs 7 checks against the installed role library:
+1. `_index.json` parses
+2. ≥180 PASS role docs found
+3. `_index.json[total_roles]` matches actual file count
+4. Every PASS doc has ≥19 numbered sections
+5. Every PASS doc has the Persona Governance Override clause (or CEO variant)
+6. No literal client names ("BlackCEO", "Trevor", "ZeroHumanCompany") in any PASS doc
+7. `_pending_rewrite/` slugs do not overlap with library slugs
+
+Verified locally against the v10.6.x library: 7/7 pass on all 216 docs.
+
+### Updated — all 5 version locations → v10.6.2 / 10.6.2
+Via the new `scripts/bump-version.sh` so the entire repo agrees again.
+
+### Workflow going forward
+Every future release MUST run:
+```bash
+./scripts/bump-version.sh vX.Y.Z
+git add version install.sh 23-ai-workforce-blueprint/skill-version.txt \
+        23-ai-workforce-blueprint/templates/role-library/_index.json \
+        23-ai-workforce-blueprint/templates/role-library/_qc-summary.md
+git commit -m "release: bump to vX.Y.Z"
+git push
+```
+The GitHub Actions check will refuse the push if any file disagrees.
+
+### Gap 3 clarification (was unclear in the v10.6.1 commit message)
+The Wave 5b prior session shipped a commit titled "Gap 3 Part A: implement handle_mid_task_mode_switch()" — this was confusing because there was no follow-up Part B commit. Clarification: **Gap 3 Part B was shipped to a different repo.** Part A (the persona handler) went to `select-persona-for-task.py` in both onboarding repos. Part B (the API route that calls it on mid-task messages) went to `src/app/api/tasks/[id]/messages/route.ts` in `blackceo-command-center`. Both halves of Gap 3 are live; the commit titles just split across two repos.
+
+### Files in this commit
+- `scripts/bump-version.sh` (new, executable)
+- `.github/workflows/version-consistency.yml` (new)
+- `23-ai-workforce-blueprint/scripts/verify-role-library.sh` (new, executable)
+- `/version` → `v10.6.2`
+- `/install.sh` → `ONBOARDING_VERSION="v10.6.2"`
+- `/23-ai-workforce-blueprint/skill-version.txt` → `10.6.2`
+- `/23-ai-workforce-blueprint/templates/role-library/_index.json` → `"version": "10.6.2"` + refreshed `generated_at`
+- `/23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` → heading `Role Library v10.6.2`
+- `README.md` — adds versioning workflow section
+- `CHANGELOG.md` — this entry
+- `23-ai-workforce-blueprint/CHANGELOG.md` — companion entry
+
+---
+
 ## [v10.6.1] — 2026-05-19 — Wave 5b: Library Template-Fill + Wave 4 Bugfixes
 
 When `build-workforce.py` creates a role workspace, it now reads the v10.6.0 role library and template-fills the role's `how-to.md` with company-specific tokens — instead of writing a placeholder stub that waits for a sub-agent.

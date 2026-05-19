@@ -1,0 +1,87 @@
+name: Version consistency
+
+# Fails the build if any of the 5 version locations disagree.
+# Triggered on every push to main and every PR targeting main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-version-drift:
+    name: Verify all 5 version locations agree
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Reading 5 version locations..."
+
+          # Loc 1: /version (with v prefix)
+          V_ROOT=$(head -1 version | tr -d '[:space:]')
+
+          # Loc 2: /install.sh — ONBOARDING_VERSION=
+          V_INSTALL=$(grep -E '^ONBOARDING_VERSION=' install.sh | head -1 \
+            | sed -E 's/^ONBOARDING_VERSION="?([^"]*)"?.*/\1/')
+
+          # Loc 3: /23-ai-workforce-blueprint/skill-version.txt (no v prefix)
+          V_SKILL=$(head -1 23-ai-workforce-blueprint/skill-version.txt | tr -d '[:space:]')
+
+          # Loc 4: /23-ai-workforce-blueprint/templates/role-library/_index.json
+          V_INDEX=$(python3 -c "
+          import json
+          d = json.load(open('23-ai-workforce-blueprint/templates/role-library/_index.json'))
+          print(d.get('version', 'MISSING'))
+          ")
+
+          # Loc 5: /23-ai-workforce-blueprint/templates/role-library/_qc-summary.md
+          V_QC=$(grep -oE 'Role Library v[0-9]+\.[0-9]+\.[0-9]+' \
+            23-ai-workforce-blueprint/templates/role-library/_qc-summary.md \
+            | head -1 | sed 's/Role Library //')
+
+          # Normalize (strip leading v)
+          norm() { echo "${1#v}"; }
+          N_ROOT=$(norm "$V_ROOT")
+          N_INSTALL=$(norm "$V_INSTALL")
+          N_SKILL=$(norm "$V_SKILL")
+          N_INDEX=$(norm "$V_INDEX")
+          N_QC=$(norm "$V_QC")
+
+          echo ""
+          echo "Version state:"
+          printf "  %-55s %s\n" "/version"                                                "$V_ROOT"
+          printf "  %-55s %s\n" "/install.sh ONBOARDING_VERSION"                          "$V_INSTALL"
+          printf "  %-55s %s\n" "/23-ai-workforce-blueprint/skill-version.txt"            "$V_SKILL"
+          printf "  %-55s %s\n" "/.../templates/role-library/_index.json [version]"       "$V_INDEX"
+          printf "  %-55s %s\n" "/.../templates/role-library/_qc-summary.md heading"      "$V_QC"
+          echo ""
+
+          # Compare normalized values
+          FAIL=""
+          [ "$N_ROOT" = "$N_INSTALL" ] || FAIL="$FAIL install.sh($N_INSTALL)"
+          [ "$N_ROOT" = "$N_SKILL"   ] || FAIL="$FAIL skill-version.txt($N_SKILL)"
+          [ "$N_ROOT" = "$N_INDEX"   ] || FAIL="$FAIL _index.json($N_INDEX)"
+          [ "$N_ROOT" = "$N_QC"      ] || FAIL="$FAIL _qc-summary.md($N_QC)"
+
+          if [ -n "$FAIL" ]; then
+            echo "❌ VERSION DRIFT DETECTED"
+            echo "   /version says: $N_ROOT"
+            echo "   Disagrees with:$FAIL"
+            echo ""
+            echo "FIX: run ./scripts/bump-version.sh v$N_ROOT (or your intended version)"
+            echo "     to rewrite all 5 files atomically, then commit + push."
+            exit 1
+          fi
+
+          echo "✅ All 5 version locations agree at $V_ROOT"

@@ -1,3 +1,25 @@
+## [v10.6.2] — 2026-05-19 — Role Library Version Realigned + verify-role-library.sh
+
+### Added
+- `scripts/verify-role-library.sh` — 7-check sanity script for the role library on disk. Was referenced from the QC summary "next step" line but never existed until now. Use:
+  ```bash
+  bash 23-ai-workforce-blueprint/scripts/verify-role-library.sh
+  # or
+  bash 23-ai-workforce-blueprint/scripts/verify-role-library.sh --skill-dir /path/to/skill
+  bash 23-ai-workforce-blueprint/scripts/verify-role-library.sh --json
+  ```
+
+### Updated
+- `skill-version.txt` → `10.6.2` (was `10.6.1`)
+- `templates/role-library/_index.json` `"version"` → `"10.6.2"` (was `"10.6.0"` — stale since the role library merge)
+- `templates/role-library/_index.json` `generated_at` refreshed
+- `templates/role-library/_qc-summary.md` heading → `Role Library v10.6.2` (was `v10.6.0`)
+
+### Why these were stale
+The Wave 5b commit (v10.6.1) only touched `/version` and `/skill-version.txt`. The library files were left at their original v10.6.0 generation values. Repo-wide drift-prevention (`scripts/bump-version.sh` + `.github/workflows/version-consistency.yml`) was added in this same release to prevent recurrence — see root `CHANGELOG.md`.
+
+---
+
 ## [v10.6.1] — 2026-05-19 — Wave 5b: Library Template-Fill
 
 ### Added

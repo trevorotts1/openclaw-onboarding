@@ -1,5 +1,9 @@
 # OpenClaw Onboarding — Mac mini
 
+> **Version:** see `/version` — this repo at v10.6.2.
+> Every release MUST agree across 5 files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
+
+
 <!-- BEGIN v2.1 SECTION -->
 ## v2.1 — Zero-Human Company Spec (PRD v2.1)
 
