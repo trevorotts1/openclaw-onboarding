@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.5.4"
+ONBOARDING_VERSION="v10.5.5"
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)
@@ -953,26 +953,41 @@ PYEOF
 }
 
 # ----------------------------------------------------------
-# Version Sync Check
+# Bookkeeping: install dir + stale-state cleanup (v10.5.5)
 # ----------------------------------------------------------
+# Self-healing: we do NOT downgrade ONBOARDING_VERSION to whatever the
+# previous install wrote to disk. The constant in THIS script is the
+# truth. Any stale ~/.openclaw/onboarding/version file from a prior
+# install is informational only — it will be rewritten at end of run.
+#
+# We also auto-clear .install-in-progress if it's older than 1 hour
+# (i.e. a previous run crashed). No more "rm to clear" tax on clients.
 ONBOARDING_DIR="$OC_CONFIG/onboarding"
 mkdir -p "$ONBOARDING_DIR"
 INSTALL_FLAG="$ONBOARDING_DIR/.install-in-progress"
 
+# Capture prior version for purely informational logging
+PRIOR_VERSION=""
 if [ -f "$ONBOARDING_DIR/version" ] 2>/dev/null; then
-    REPO_VER=$(cat "$ONBOARDING_DIR/version" 2>/dev/null | tr -d '[:space:]')
-    if [ -n "$REPO_VER" ] && [ "$ONBOARDING_VERSION" != "$REPO_VER" ]; then
-        note "install.sh version ($ONBOARDING_VERSION) updated to repo version ($REPO_VER)"
-        ONBOARDING_VERSION="$REPO_VER"
+    PRIOR_VERSION=$(cat "$ONBOARDING_DIR/version" 2>/dev/null | tr -d '[:space:]')
+    if [ -n "$PRIOR_VERSION" ] && [ "$PRIOR_VERSION" != "$ONBOARDING_VERSION" ]; then
+        note "Upgrading from $PRIOR_VERSION → $ONBOARDING_VERSION"
     fi
 fi
 
-# Check for existing install
+# Stale-lock auto-clear: if the lock file exists but is > 60 minutes old,
+# the previous run crashed mid-install. Wipe it instead of blocking.
 if [ -f "$INSTALL_FLAG" ]; then
-    step "Installation Already In Progress"
-    error "Another installation process is already running."
-    echo "  To clear: rm $INSTALL_FLAG"
-    exit 0
+    LOCK_AGE_MINS=$(( ( $(date +%s) - $(stat -f %m "$INSTALL_FLAG" 2>/dev/null || stat -c %Y "$INSTALL_FLAG" 2>/dev/null || echo 0) ) / 60 ))
+    if [ "$LOCK_AGE_MINS" -gt 60 ] 2>/dev/null; then
+        warn "Stale install lock detected (${LOCK_AGE_MINS} min old) — auto-clearing and continuing"
+        rm -f "$INSTALL_FLAG"
+    else
+        step "Installation Already In Progress"
+        error "Another installation is running (started ${LOCK_AGE_MINS} min ago)."
+        error "If you know it crashed, run: rm $INSTALL_FLAG"
+        exit 0
+    fi
 fi
 
 touch "$INSTALL_FLAG"
