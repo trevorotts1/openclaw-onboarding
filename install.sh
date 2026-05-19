@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.5.3"
+ONBOARDING_VERSION="v10.5.4"
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)
@@ -1731,7 +1731,13 @@ touch "$AGENTS_FILE"
 grep -v "UPDATE PENDING\|ONBOARDING PENDING\|ONBOARDING COMPLETE" "$AGENTS_FILE" > "$AGENTS_FILE.tmp" 2>/dev/null || true
 mv "$AGENTS_FILE.tmp" "$AGENTS_FILE" 2>/dev/null || true
 
-cat >> "$AGENTS_FILE" << 'FLAGCONTENT'
+# v10.5.4 Tier-3 fallback: also write the payload to a standalone file so the
+# operator can recover with `cat`+paste even if both Telegram fails AND the
+# AGENTS.md append fails. Single source of truth via tee — same bytes go to
+# both files.
+UPDATE_PENDING_FILE="$ONBOARDING_DIR/UPDATE-PENDING.md"
+
+cat << 'FLAGCONTENT' | tee "$UPDATE_PENDING_FILE" >> "$AGENTS_FILE"
 
 ## 🔴🔴🔴 UPDATE PENDING - EXECUTE IMMEDIATELY
 
@@ -2078,11 +2084,15 @@ if grep -q "UPDATE PENDING - EXECUTE IMMEDIATELY" "$AGENTS_FILE" 2>/dev/null; th
     success "UPDATE PENDING flag written to $AGENTS_FILE (file is now $AGENTS_SIZE bytes)"
     note "Verify your AGENT reads from $AGENTS_FILE. If it reads a DIFFERENT path, the flag is invisible to it."
     note "Quick test: ask your agent 'What is the size of your AGENTS.md and what's the last section?' — should report $AGENTS_SIZE bytes ending with 'UPDATE PENDING - EXECUTE IMMEDIATELY' section."
+    note "Tier-3 backup: identical payload also saved to $UPDATE_PENDING_FILE — use for cat+paste recovery if AGENTS.md is ever wrong."
 else
     error "AGENTS.md write FAILED — flag NOT present in $AGENTS_FILE after write."
     error "File exists: $([ -f "$AGENTS_FILE" ] && echo yes || echo NO)"
     error "File size: $(wc -c < "$AGENTS_FILE" 2>/dev/null | tr -d ' ') bytes"
-    error "This is a bug — heredoc append didn't take effect. Please report with this log: $LOG_FILE"
+    error "RECOVERY: the full UPDATE PENDING payload was ALSO saved to $UPDATE_PENDING_FILE."
+    error "  To paste manually:  cat \"$UPDATE_PENDING_FILE\" | pbcopy   (then paste into your agent)"
+    error "  Or send via gateway: openclaw message send --channel telegram --message \"\$(cat \"$UPDATE_PENDING_FILE\")\""
+    error "Please report with this log: $LOG_FILE"
 fi
 
 # ----------------------------------------------------------
@@ -2222,32 +2232,60 @@ case "$TELEGRAM_LAST_RESULT" in
     failed:*)            warn "Telegram completion note FAILED — using backup instructions below" ;;
 esac
 
-# Always print the backup instructions block to terminal — no client gets stranded
-cat <<'BACKUP_BLOCK'
+# Always print the backup instructions block to terminal — no client gets stranded.
+# Unquoted heredoc so $UPDATE_PENDING_FILE expands to the real path.
+cat <<BACKUP_BLOCK
 
 ╔════════════════════════════════════════════════════════════════════╗
-║   BACKUP — IF YOU DID NOT GET A TELEGRAM NOTE                      ║
+║  TIER 2 — IF YOU DID NOT GET A TELEGRAM NOTE                       ║
 ╠════════════════════════════════════════════════════════════════════╣
 ║                                                                    ║
-║   After the gateway restart completes (about 30 seconds), open     ║
-║   whatever you use to talk to your OpenClaw agent (Telegram,       ║
-║   web UI, terminal chat — whatever you have set up).               ║
+║  After the gateway restart completes (about 30 seconds), open      ║
+║  whatever you use to talk to your OpenClaw agent (Telegram,        ║
+║  web UI, terminal chat — whatever you have set up).                ║
 ║                                                                    ║
-║   Paste this EXACT message to your agent (you can copy from        ║
-║   anywhere between the >>> and <<< markers):                       ║
+║  Paste this EXACT message to your agent (copy from between the     ║
+║  >>> and <<< markers):                                             ║
 ║                                                                    ║
-║   >>>                                                              ║
-║   I just ran the OpenClaw onboarding install. There is an          ║
-║   UPDATE PENDING flag at the top of my AGENTS.md. Please follow    ║
-║   the 5-Phase Processing Order in that flag to activate all        ║
-║   skills. Start with Phase A (parallel install in waves). Do not   ║
-║   skip any phase. Run QC after each skill. Send me a summary       ║
-║   when complete.                                                   ║
-║   <<<                                                              ║
+║  >>>                                                               ║
+║  I just ran the OpenClaw onboarding install. There is an           ║
+║  UPDATE PENDING flag at the top of my AGENTS.md. Please follow     ║
+║  the 5-Phase Processing Order in that flag to activate all         ║
+║  skills. Start with Phase A (parallel install in waves). Do not    ║
+║  skip any phase. Run QC after each skill. Send me a summary        ║
+║  when complete.                                                    ║
+║  <<<                                                               ║
 ║                                                                    ║
-║   Your agent will read the UPDATE PENDING flag from your           ║
-║   AGENTS.md file and walk through the rest of the install for     ║
-║   you. You do not need to type any other commands.                ║
+║  Your agent will read the UPDATE PENDING flag from your            ║
+║  AGENTS.md file and walk through the rest of the install for      ║
+║  you. You do not need to type any other commands.                 ║
+║                                                                    ║
+╠════════════════════════════════════════════════════════════════════╣
+║  TIER 3 — IF YOUR AGENT ALSO CAN'T FIND THE FLAG IN AGENTS.md      ║
+╠════════════════════════════════════════════════════════════════════╣
+║                                                                    ║
+║  The full UPDATE PENDING payload was ALSO saved to a standalone    ║
+║  file on this machine. The agent does NOT need to read AGENTS.md   ║
+║  to use it — the file IS the activation instructions.              ║
+║                                                                    ║
+║  Location:                                                         ║
+║                                                                    ║
+║    $UPDATE_PENDING_FILE
+║                                                                    ║
+║  Recovery — one of these depending on your setup:                  ║
+║                                                                    ║
+║  (a) Copy to clipboard, then paste into agent chat:                ║
+║       cat "$UPDATE_PENDING_FILE" | pbcopy
+║                                                                    ║
+║  (b) Send directly to your agent via Telegram (if it works):       ║
+║       openclaw message send --channel telegram \\                  ║
+║         --message "\$(cat "$UPDATE_PENDING_FILE")"
+║                                                                    ║
+║  (c) Or just open the file and read/paste it yourself:             ║
+║       open "$UPDATE_PENDING_FILE"
+║                                                                    ║
+║  The file contains the full 5-Phase Processing Order with every    ║
+║  skill activation step inline — no AGENTS.md lookup required.      ║
 ║                                                                    ║
 ╚════════════════════════════════════════════════════════════════════╝
 
