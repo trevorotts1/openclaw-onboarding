@@ -1,3 +1,38 @@
+## [v10.6.1] — 2026-05-19 — Wave 5b: Library Template-Fill
+
+### Added
+- `scripts/create_role_workspaces.py` — replaces `create-role-workspaces.py` (deleted)
+  - New: `library_lookup(role_slug, dept_slug)` — reads `templates/role-library/_index.json` for matching role
+  - New: `try_library_fill(role_name, dept_path, is_ceo)` — orchestrates lookup + token-fill, returns filled content or None
+  - New: `fill_tokens(content, role_name, dept_name, is_ceo)` — substitutes `{{COMPANY_NAME}}`, revenue cascade tokens (`{{YEARLY_GOAL}}` → cascade ÷4 ÷12 ÷52 ÷250), `{{INDUSTRY_VERTICAL}}`, `{{ROLE_TITLE}}`, `{{DEPARTMENT_NAME}}`, `{{DIRECTOR_OR_MASTER_ORCHESTRATOR}}`, `{{ISO_DATE}}`, `{{ASSIGNED_PERSONA}}`
+  - New: `augment_role_folder(role_path, workspace_root)` — idempotent v2.1 file augmentation (previously referenced by post-build, never defined — Wave 4 bug)
+  - New: `augment_all_existing_role_folders(dept_path, workspace_root, dry_run)` — walks a dept and augments each role folder (Wave 4 bug fix)
+- `create_role_workspace()` now uses library template-fill for `how-to.md` when a match exists; falls back to `stub_how_to()` when no match
+
+### Behavior change for `build-workforce.py`
+When `build-workforce.py` finishes a dept build, the post-build hook (in place since Wave 4) now actually works — and where the v10.6.0 library has a matching role doc, the role's `how-to.md` is template-filled from the library instead of left as a stub awaiting a fresh sub-agent generation.
+
+Estimated time-per-role on a typical build: ~3 min (template-fill) vs ~15 min (sub-agent fresh write). With ~210 of 216 library matches across the 16 mandatory depts, a typical build drops from ~3 hours to ~30-45 minutes of role-doc work.
+
+### Removed
+- `scripts/create-role-workspaces.py` (hyphen-named — Python could not import it as `create_role_workspaces`)
+
+### Library header stamp
+Every doc filled from the library carries a header comment so QC/owner can identify provenance:
+```
+<!-- Filled from role-library v10.6.0 on YYYY-MM-DD -->
+```
+
+---
+
+## [v10.6.0] — 2026-05-19 — Role Library Production (216 PASS docs)
+
+Backfilled. The 216-doc role library was merged to main via `role-library-v10.6.0` branch. The library lives at `templates/role-library/[dept]/[role-slug].md` with an `_index.json` registry.
+
+Library is dormant at v10.6.0 — nothing reads from it. v10.6.1 (Wave 5b) wires it into role workspace creation.
+
+---
+
 ## [v10.5.2] — 2026-05-17 — Wave 4.5: Specialist Coverage Expansion
 
 Every mandatory department now has the role roster needed to operate at Fortune-500 scale. Brings 12 pre-v2.1 department files up to the v2.1 baseline (added missing QC + Deep Research roles to depts that had them only conceptually) AND adds 70 new specialist roles across 16 departments.
