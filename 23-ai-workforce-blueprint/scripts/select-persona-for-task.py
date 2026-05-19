@@ -272,17 +272,101 @@ def log_selection(dept_dir, task_text, selected_persona, score_breakdown, top_3,
         f.write(entry)
 
 
+# ─── MID-TASK MODE SWITCH ─────────────────────────────────────────────────────
+
+COACHING_SIGNALS = re.compile(
+    r"\bi('m| am) (stuck|lost|confused|not sure|overwhelmed)\b"
+    r"|what should i (do|say|try|focus on)\b"
+    r"|help me (think|figure|understand|decide|work through)\b"
+    r"|\b(i need (help|advice|guidance|support)|don't know (what|how)|not sure (what|how))\b"
+    r"|\b(what (do|would) you (think|suggest|recommend)|how do i|walk me through)\b",
+    re.IGNORECASE,
+)
+
+def detect_interaction_mode(message: str) -> str:
+    """Return 'coaching' if message has coaching signals, else 'leadership'."""
+    return "coaching" if COACHING_SIGNALS.search(message) else "leadership"
+
+
+def handle_mid_task_mode_switch(
+    current_persona_id: str,
+    current_mode: str,
+    new_message: str
+) -> dict:
+    """
+    Called when a task is already in_progress and a new message arrives.
+
+    If the new message's mode matches the current mode: no change needed.
+    If the mode differs (e.g., task started as leadership, owner now asking for coaching):
+        - Keep the same persona
+        - Switch the mode
+        - Return the new mode instruction
+
+    NEVER triggers a new persona selection. Only switches which section
+    of the current persona blueprint governs the response.
+    """
+    new_mode = detect_interaction_mode(new_message)
+    mode_switched = (new_mode != current_mode)
+
+    blueprint_section = 6 if new_mode == "coaching" else 4
+
+    if new_mode == "coaching":
+        instruction = (
+            f"The owner is seeking coaching. Switch to Coaching Mode. "
+            f"You remain {current_persona_id}. "
+            f"Apply Section 6 of your persona blueprint: the coaching framework. "
+            f"Ask questions. Issue challenges. Support the owner's thinking. "
+            f"Do NOT execute work — engage the human."
+        )
+    else:
+        instruction = (
+            f"Return to task execution. Switch to Leadership Mode. "
+            f"You remain {current_persona_id}. "
+            f"Apply Section 4 of your persona blueprint: the agent governance framework. "
+            f"Execute with your persona's standards, voice, and quality bar."
+        )
+
+    return {
+        "persona_id": current_persona_id,
+        "mode": new_mode,
+        "mode_switched": mode_switched,
+        "blueprint_section": blueprint_section,
+        "instruction": instruction,
+        "previous_mode": current_mode,
+    }
+
+
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Pick the best persona for a task using hybrid search + 5-layer alignment.")
-    parser.add_argument("--dept", required=True, help="Department ID, e.g. 'marketing'")
-    parser.add_argument("--task", required=True, help="Task description in plain English")
+    parser.add_argument("--dept", required=False, default=None, help="Department ID, e.g. 'marketing'")
+    parser.add_argument("--task", required=False, default=None, help="Task description in plain English")
     parser.add_argument("--company-slug", default=None, help="ZHC company slug (auto-detected if omitted)")
     parser.add_argument("--top-k-semantic", type=int, default=8, help="How many semantic candidates to fetch")
     parser.add_argument("--top-k-final", type=int, default=3, help="How many final-ranked candidates to print")
     parser.add_argument("--format", choices=("json", "id"), default="json", help="Output format")
+    parser.add_argument("--mode-switch", action="store_true",
+                        help="Check if mode should switch for a mid-task message")
+    parser.add_argument("--current-persona", type=str,
+                        help="Current persona_id on the task")
+    parser.add_argument("--current-mode", type=str, choices=["leadership", "coaching"],
+                        help="Current mode on the task")
+    parser.add_argument("--message", type=str,
+                        help="New incoming message to evaluate for mode switch")
     args = parser.parse_args()
+
+    if args.mode_switch:
+        if not all([args.current_persona, args.current_mode, args.message]):
+            print(json.dumps({"error": "--current-persona, --current-mode, and --message are required for --mode-switch"}))
+            sys.exit(1)
+        result = handle_mid_task_mode_switch(args.current_persona, args.current_mode, args.message)
+        print(json.dumps(result))
+        sys.exit(0)
+
+    if not args.dept or not args.task:
+        print("[SELECT-PERSONA] --dept and --task are required unless --mode-switch is used.", file=sys.stderr)
+        sys.exit(1)
 
     # Discover the company + dept folders
     company_dir = find_company_dir(args.company_slug)
