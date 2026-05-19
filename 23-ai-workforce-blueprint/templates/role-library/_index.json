@@ -1,0 +1,2470 @@
+{
+  "generated_at": "2026-05-19T17:01:31.645488+00:00",
+  "version": "10.6.0",
+  "total_roles": 216,
+  "departments": {
+    "app-development": {
+      "count": 13,
+      "roles": [
+        "android-specialist",
+        "api-backend-specialist",
+        "app-analytics-specialist",
+        "app-store-optimization-aso-specialist",
+        "cloud-infrastructure-specialist",
+        "deep-research-specialist-app-development",
+        "desktop-app-specialist",
+        "head-of-app-development",
+        "ios-specialist",
+        "pwa-progressive-web-app-specialist",
+        "qa-tester-app",
+        "qc-specialist-app-development",
+        "ux-ui-specialist"
+      ]
+    },
+    "audio": {
+      "count": 14,
+      "roles": [
+        "ai-voice-specialist-11-labs-play.ht",
+        "audio-mastering-specialist",
+        "audiobook-production-specialist",
+        "crm-specialist-audio-version",
+        "deep-research-specialist-audio",
+        "head-of-audio-production",
+        "music-and-audio-producer",
+        "podcast-editor",
+        "podcast-producer",
+        "qc-specialist-audio",
+        "sound-design-sfx-specialist",
+        "speech-writing-specialist",
+        "transcription-specialist",
+        "voice-agent-builder"
+      ]
+    },
+    "billing": {
+      "count": 12,
+      "roles": [
+        "bookkeeping-specialist",
+        "cash-flow-forecasting-specialist",
+        "chief-financial-officer",
+        "collections-specialist",
+        "crm-specialist-billing-version",
+        "deep-research-specialist---billing",
+        "financial-reporting-specialist",
+        "fpanda--forecasting-analyst",
+        "invoicing-and-ar-specialist",
+        "qc-specialist---billing",
+        "subscription--recurring-revenue-specialist",
+        "tax-liaison-specialist"
+      ]
+    },
+    "communications": {
+      "count": 12,
+      "roles": [
+        "brand-messaging-specialist",
+        "chief-communications-officer",
+        "crisis-communications-specialist",
+        "deep-research-specialist-communications",
+        "internal-communications-manager",
+        "investor--stakeholder-comms-specialist",
+        "media-pitching-specialist",
+        "op-ed-ghostwriter",
+        "pr--media-relations-specialist",
+        "press-release-statement-specialist",
+        "qc-specialist-communications",
+        "speech--talking-points-specialist"
+      ]
+    },
+    "crm": {
+      "count": 9,
+      "roles": [
+        "automation-workflow-specialist",
+        "crm-platform-administrator",
+        "deep-research-role-\u2014-crm",
+        "director-of-crm",
+        "email-deliverability-optimization-specialist",
+        "pipeline-stage-specialist",
+        "qc-role-\u2014-crm",
+        "sms--whatsapp--dm-sequence-specialist",
+        "tag--segmentation-specialist"
+      ]
+    },
+    "customer-support": {
+      "count": 13,
+      "roles": [
+        "account-health-monitor-proactive",
+        "churn-prevention-specialist",
+        "deep-research-specialist-\u2014-customer-support",
+        "head-of-customer-success",
+        "knowledge-base-specialist",
+        "live-chat-specialist",
+        "onboarding-specialist",
+        "qc-specialist-\u2014-customer-support",
+        "refunds-and-disputes-specialist",
+        "retention-specialist",
+        "tier-1-support-specialist",
+        "tier-2-support-specialist",
+        "voice--phone-support-specialist"
+      ]
+    },
+    "graphics": {
+      "count": 14,
+      "roles": [
+        "ad-creative-specialist",
+        "ai-image-generator-specialist",
+        "book-cover-designer",
+        "brand-identity-specialist-logo-color-type",
+        "chief-design-officer",
+        "course-slide-designer",
+        "deep-research-specialist-\u2014-graphics",
+        "email-designer",
+        "infographic-specialist",
+        "presentation-designer-slides-decks",
+        "print--asset-design-specialist",
+        "qc-specialist-\u2014-graphics",
+        "social-media-graphics-specialist",
+        "thumbnail--cover-designer"
+      ]
+    },
+    "legal-compliance": {
+      "count": 14,
+      "roles": [
+        "affiliate-agreement-specialist",
+        "chief-legal-officer",
+        "compliance-monitor--specialist",
+        "contract-drafter-client-agreements",
+        "customer-agreement-specialist",
+        "deep-research-specialist---legal",
+        "dispute-resolution-specialist",
+        "employment-contract-specialist",
+        "industry-specific-regulatory-specialist",
+        "ip--trademark-specialist",
+        "qc-specialist---legal",
+        "qc-specialist-legal",
+        "terms--privacy-policy-specialist",
+        "vendor-contract-specialist"
+      ]
+    },
+    "marketing": {
+      "count": 14,
+      "roles": [
+        "affiliate--referral-specialist",
+        "brand-positioning-specialist",
+        "chief-marketing-officer",
+        "content-marketing-strategist",
+        "content-strategist",
+        "customer-journey-architect",
+        "deep-research-specialist-\u2014-marketing",
+        "email-campaign-strategist",
+        "funnel-strategist",
+        "influencer-marketing-specialist",
+        "lead-magnet-specialist",
+        "marketing-analytics-specialist",
+        "qc-specialist-\u2014-marketing",
+        "webinar-event-marketing-specialist"
+      ]
+    },
+    "master-orchestrator": {
+      "count": 1,
+      "roles": [
+        "master-orchestrator"
+      ]
+    },
+    "openclaw-maintenance": {
+      "count": 12,
+      "roles": [
+        "backup-and-recovery-specialist",
+        "deep-research-role-\u2014-openclaw-maintenance",
+        "director-of-openclaw-maintenance",
+        "disaster-recovery-specialist",
+        "integration--mcp-specialist",
+        "memory-hygiene-specialist",
+        "monitoring--observability-specialist",
+        "performance-tuning-specialist",
+        "qc-role-\u2014-openclaw-maintenance",
+        "security-and-secrets-specialist",
+        "skill-update-and-patch-specialist",
+        "system-health--uptime-specialist"
+      ]
+    },
+    "paid-advertisement": {
+      "count": 20,
+      "roles": [
+        "audience-research-specialist",
+        "bing--microsoft-ads-specialist",
+        "conversion-tracking-specialist",
+        "creative-testing--a-b-specialist",
+        "cross-platform-attribution-specialist",
+        "deep-research-role-\u2014-paid-advertisement",
+        "director-of-paid-advertisement",
+        "facebook-ads-specialist",
+        "google-ads-specialist",
+        "instagram-ads-specialist",
+        "linkedin-ads-specialist",
+        "native-ads-specialist",
+        "pinterest-ads-specialist",
+        "qc-role-\u2014-paid-advertisement",
+        "retargeting-strategist",
+        "snapchat-ads-specialist",
+        "spotify-audio-ads-specialist",
+        "tiktok-ads-specialist",
+        "twitter-x-ads-specialist",
+        "youtube-ads-specialist"
+      ]
+    },
+    "research": {
+      "count": 9,
+      "roles": [
+        "chief-research-officer",
+        "competitive-intelligence-specialist",
+        "customer-research-specialist",
+        "data-analysis-specialist",
+        "industry-analysis-specialist-mckinsey-style",
+        "market-trends-specialist",
+        "persona-research-specialist",
+        "qc-specialist---research",
+        "survey-and-polling-specialist"
+      ]
+    },
+    "sales": {
+      "count": 13,
+      "roles": [
+        "account-executive-full-cycle",
+        "account-manager-post-sale",
+        "appointment-setter",
+        "chief-sales-officer",
+        "closer",
+        "crm-specialist-sales-version",
+        "deep-research-specialist-\\342\\200\\224-sales",
+        "discovery-call-specialist",
+        "follow-up-sequence-specialist",
+        "proposal-and-quote-specialist",
+        "qc-specialist-\\342\\200\\224-sales",
+        "sales-operations--pipeline-specialist",
+        "sdr-sales-development-rep"
+      ]
+    },
+    "social-media": {
+      "count": 16,
+      "roles": [
+        "bluesky-specialist",
+        "community-manager",
+        "deep-research-role-\u2014-social-media",
+        "director-of-social-media",
+        "discord-community-specialist",
+        "facebook-specialist",
+        "instagram-specialist",
+        "linkedin-specialist",
+        "pinterest-specialist",
+        "qc-role-\u2014-social-media",
+        "quora-specialist",
+        "reddit-specialist",
+        "threads-specialist",
+        "tiktok-specialist",
+        "twitter-x-specialist",
+        "youtube-channel-specialist-organic-only"
+      ]
+    },
+    "video": {
+      "count": 16,
+      "roles": [
+        "ai-video-generator-specialist",
+        "animation-specialist-2d-3d-whiteboard",
+        "captioning--subtitling-specialist",
+        "color-grading-specialist",
+        "crm-specialist-video-version",
+        "deep-research-specialist-video",
+        "head-of-video-production",
+        "live-streaming-specialist",
+        "long-form-video-specialist-youtube-courses-sales-videos",
+        "motion-graphics-specialist",
+        "qc-specialist-video",
+        "short-form-video-specialist-reels-shorts-tiktok",
+        "storyboard-pre-production-specialist",
+        "video-editor",
+        "video-seo-specialist",
+        "vsl-video-sales-letter-specialist"
+      ]
+    },
+    "web-development": {
+      "count": 14,
+      "roles": [
+        "conversion-rate-optimization-cro-specialist",
+        "deep-research-specialist-web-development",
+        "frontend--javascript--react-specialist",
+        "funnel-builder-specialist",
+        "head-of-web-development",
+        "landing-page-specialist",
+        "member-area--membership-site-specialist",
+        "qc-specialist-web-development",
+        "seo-specialist-organic-search",
+        "technical-seo-specialist",
+        "web-accessibility-a11y-specialist",
+        "web-designer",
+        "web-security-specialist",
+        "wordpress-specialist"
+      ]
+    }
+  },
+  "roles": [
+    {
+      "slug": "android-specialist",
+      "dept": "app-development",
+      "title": "Android Specialist",
+      "role_type": "specialist",
+      "word_count": 9299,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/android-specialist.md"
+    },
+    {
+      "slug": "api-backend-specialist",
+      "dept": "app-development",
+      "title": "API / Backend Specialist",
+      "role_type": "specialist",
+      "word_count": 10370,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/api-backend-specialist.md"
+    },
+    {
+      "slug": "app-analytics-specialist",
+      "dept": "app-development",
+      "title": "App Analytics Specialist",
+      "role_type": "specialist",
+      "word_count": 9889,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/app-analytics-specialist.md"
+    },
+    {
+      "slug": "app-store-optimization-aso-specialist",
+      "dept": "app-development",
+      "title": "App Store Optimization (ASO) Specialist",
+      "role_type": "specialist",
+      "word_count": 10057,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/app-store-optimization-aso-specialist.md"
+    },
+    {
+      "slug": "cloud-infrastructure-specialist",
+      "dept": "app-development",
+      "title": "Cloud Infrastructure Specialist",
+      "role_type": "specialist",
+      "word_count": 9012,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/cloud-infrastructure-specialist.md"
+    },
+    {
+      "slug": "deep-research-specialist-app-development",
+      "dept": "app-development",
+      "title": "Deep Research Specialist \u2014 App Development",
+      "role_type": "deep-research",
+      "word_count": 15206,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/app-development/deep-research-specialist-app-development.md"
+    },
+    {
+      "slug": "desktop-app-specialist",
+      "dept": "app-development",
+      "title": "Desktop App Specialist",
+      "role_type": "specialist",
+      "word_count": 8972,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/desktop-app-specialist.md"
+    },
+    {
+      "slug": "head-of-app-development",
+      "dept": "app-development",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "leadership",
+      "word_count": 8821,
+      "sop_count": 7,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/head-of-app-development.md"
+    },
+    {
+      "slug": "ios-specialist",
+      "dept": "app-development",
+      "title": "iOS Specialist",
+      "role_type": "specialist",
+      "word_count": 12252,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/ios-specialist.md"
+    },
+    {
+      "slug": "pwa-progressive-web-app-specialist",
+      "dept": "app-development",
+      "title": "PWA (Progressive Web App) Specialist",
+      "role_type": "specialist",
+      "word_count": 9809,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/pwa-progressive-web-app-specialist.md"
+    },
+    {
+      "slug": "qa-tester-app",
+      "dept": "app-development",
+      "title": "QA Tester (App)",
+      "role_type": "specialist",
+      "word_count": 9887,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/qa-tester-app.md"
+    },
+    {
+      "slug": "qc-specialist-app-development",
+      "dept": "app-development",
+      "title": "QC Specialist -- App Development",
+      "role_type": "qc",
+      "word_count": 10836,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/app-development/qc-specialist-app-development.md"
+    },
+    {
+      "slug": "ux-ui-specialist",
+      "dept": "app-development",
+      "title": "UX / UI Specialist",
+      "role_type": "specialist",
+      "word_count": 10376,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/app-development/ux-ui-specialist.md"
+    },
+    {
+      "slug": "ai-voice-specialist-11-labs-play.ht",
+      "dept": "audio",
+      "title": "AI Voice Specialist",
+      "role_type": "specialist",
+      "word_count": 12930,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/ai-voice-specialist-11-labs-play.ht.md"
+    },
+    {
+      "slug": "audio-mastering-specialist",
+      "dept": "audio",
+      "title": "Audio Mastering Specialist",
+      "role_type": "specialist",
+      "word_count": 9655,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/audio-mastering-specialist.md"
+    },
+    {
+      "slug": "audiobook-production-specialist",
+      "dept": "audio",
+      "title": "Audiobook Production Specialist",
+      "role_type": "specialist",
+      "word_count": 10282,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/audiobook-production-specialist.md"
+    },
+    {
+      "slug": "crm-specialist-audio-version",
+      "dept": "audio",
+      "title": "CRM Specialist -- Audio Version",
+      "role_type": "specialist",
+      "word_count": 18978,
+      "sop_count": 8,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/crm-specialist-audio-version.md"
+    },
+    {
+      "slug": "deep-research-specialist-audio",
+      "dept": "audio",
+      "title": "Deep Research Specialist -- Audio Production",
+      "role_type": "deep-research",
+      "word_count": 9848,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/audio/deep-research-specialist-audio.md"
+    },
+    {
+      "slug": "head-of-audio-production",
+      "dept": "audio",
+      "title": "Head of Audio Production",
+      "role_type": "leadership",
+      "word_count": 10903,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/head-of-audio-production.md"
+    },
+    {
+      "slug": "music-and-audio-producer",
+      "dept": "audio",
+      "title": "Music and Audio Producer",
+      "role_type": "specialist",
+      "word_count": 12350,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/music-and-audio-producer.md"
+    },
+    {
+      "slug": "podcast-editor",
+      "dept": "audio",
+      "title": "Podcast Editor",
+      "role_type": "specialist",
+      "word_count": 11399,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/podcast-editor.md"
+    },
+    {
+      "slug": "podcast-producer",
+      "dept": "audio",
+      "title": "Podcast Producer",
+      "role_type": "specialist",
+      "word_count": 11243,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/podcast-producer.md"
+    },
+    {
+      "slug": "qc-specialist-audio",
+      "dept": "audio",
+      "title": "QC Specialist \u2014 Audio Production",
+      "role_type": "qc",
+      "word_count": 12133,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/audio/qc-specialist-audio.md"
+    },
+    {
+      "slug": "sound-design-sfx-specialist",
+      "dept": "audio",
+      "title": "Sound Design / SFX Specialist",
+      "role_type": "specialist",
+      "word_count": 10029,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/sound-design-sfx-specialist.md"
+    },
+    {
+      "slug": "speech-writing-specialist",
+      "dept": "audio",
+      "title": "Speech Writing Specialist",
+      "role_type": "specialist",
+      "word_count": 7440,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/speech-writing-specialist.md"
+    },
+    {
+      "slug": "transcription-specialist",
+      "dept": "audio",
+      "title": "Transcription Specialist",
+      "role_type": "specialist",
+      "word_count": 7624,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/transcription-specialist.md"
+    },
+    {
+      "slug": "voice-agent-builder",
+      "dept": "audio",
+      "title": "Voice Agent Builder",
+      "role_type": "specialist",
+      "word_count": 10874,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/audio/voice-agent-builder.md"
+    },
+    {
+      "slug": "bookkeeping-specialist",
+      "dept": "billing",
+      "title": "Bookkeeping Specialist",
+      "role_type": "specialist",
+      "word_count": 7134,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/bookkeeping-specialist.md"
+    },
+    {
+      "slug": "cash-flow-forecasting-specialist",
+      "dept": "billing",
+      "title": "Cash Flow Forecasting Specialist",
+      "role_type": "specialist",
+      "word_count": 8920,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/cash-flow-forecasting-specialist.md"
+    },
+    {
+      "slug": "chief-financial-officer",
+      "dept": "billing",
+      "title": "Chief Financial Officer",
+      "role_type": "leadership",
+      "word_count": 13293,
+      "sop_count": 8,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/chief-financial-officer.md"
+    },
+    {
+      "slug": "collections-specialist",
+      "dept": "billing",
+      "title": "Collections Specialist",
+      "role_type": "specialist",
+      "word_count": 11061,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/collections-specialist.md"
+    },
+    {
+      "slug": "crm-specialist-billing-version",
+      "dept": "billing",
+      "title": "CRM Specialist (Billing Version)",
+      "role_type": "specialist",
+      "word_count": 9263,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/crm-specialist-billing-version.md"
+    },
+    {
+      "slug": "deep-research-specialist---billing",
+      "dept": "billing",
+      "title": "Deep Research Specialist \u2014 Billing",
+      "role_type": "deep-research",
+      "word_count": 12594,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/billing/deep-research-specialist---billing.md"
+    },
+    {
+      "slug": "financial-reporting-specialist",
+      "dept": "billing",
+      "title": "Financial Reporting Specialist",
+      "role_type": "specialist",
+      "word_count": 11248,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/financial-reporting-specialist.md"
+    },
+    {
+      "slug": "fpanda--forecasting-analyst",
+      "dept": "billing",
+      "title": "FP&A / Forecasting Analyst",
+      "role_type": "specialist",
+      "word_count": 10021,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/fpanda--forecasting-analyst.md"
+    },
+    {
+      "slug": "invoicing-and-ar-specialist",
+      "dept": "billing",
+      "title": "Invoicing & AR Specialist",
+      "role_type": "specialist",
+      "word_count": 11118,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/invoicing-and-ar-specialist.md"
+    },
+    {
+      "slug": "qc-specialist---billing",
+      "dept": "billing",
+      "title": "QC Specialist \u2014 Billing",
+      "role_type": "qc",
+      "word_count": 12657,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/billing/qc-specialist---billing.md"
+    },
+    {
+      "slug": "subscription--recurring-revenue-specialist",
+      "dept": "billing",
+      "title": "Subscription / Recurring Revenue Specialist",
+      "role_type": "specialist",
+      "word_count": 11179,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/subscription--recurring-revenue-specialist.md"
+    },
+    {
+      "slug": "tax-liaison-specialist",
+      "dept": "billing",
+      "title": "Tax Liaison Specialist",
+      "role_type": "specialist",
+      "word_count": 8591,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/billing/tax-liaison-specialist.md"
+    },
+    {
+      "slug": "brand-messaging-specialist",
+      "dept": "communications",
+      "title": "Brand Messaging Specialist",
+      "role_type": "specialist",
+      "word_count": 5199,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/brand-messaging-specialist.md"
+    },
+    {
+      "slug": "chief-communications-officer",
+      "dept": "communications",
+      "title": "Chief Communications Officer",
+      "role_type": "leadership",
+      "word_count": 13219,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/chief-communications-officer.md"
+    },
+    {
+      "slug": "crisis-communications-specialist",
+      "dept": "communications",
+      "title": "Crisis Communications Specialist",
+      "role_type": "specialist",
+      "word_count": 5253,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/crisis-communications-specialist.md"
+    },
+    {
+      "slug": "deep-research-specialist-communications",
+      "dept": "communications",
+      "title": "Deep Research Specialist \u2014 Communications",
+      "role_type": "deep-research",
+      "word_count": 5107,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/communications/deep-research-specialist-communications.md"
+    },
+    {
+      "slug": "internal-communications-manager",
+      "dept": "communications",
+      "title": "Internal Communications Manager",
+      "role_type": "specialist",
+      "word_count": 4851,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/internal-communications-manager.md"
+    },
+    {
+      "slug": "investor--stakeholder-comms-specialist",
+      "dept": "communications",
+      "title": "Investor / Stakeholder Comms Specialist",
+      "role_type": "specialist",
+      "word_count": 4359,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/investor--stakeholder-comms-specialist.md"
+    },
+    {
+      "slug": "media-pitching-specialist",
+      "dept": "communications",
+      "title": "Media Pitching Specialist",
+      "role_type": "specialist",
+      "word_count": 9979,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/media-pitching-specialist.md"
+    },
+    {
+      "slug": "op-ed-ghostwriter",
+      "dept": "communications",
+      "title": "Op-Ed Ghostwriter",
+      "role_type": "specialist",
+      "word_count": 4958,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/op-ed-ghostwriter.md"
+    },
+    {
+      "slug": "pr--media-relations-specialist",
+      "dept": "communications",
+      "title": "PR / Media Relations Specialist",
+      "role_type": "specialist",
+      "word_count": 10957,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/pr--media-relations-specialist.md"
+    },
+    {
+      "slug": "press-release-statement-specialist",
+      "dept": "communications",
+      "title": "Press Release / Statement Specialist",
+      "role_type": "specialist",
+      "word_count": 10865,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/press-release-statement-specialist.md"
+    },
+    {
+      "slug": "qc-specialist-communications",
+      "dept": "communications",
+      "title": "QC Specialist \u2014 Communications",
+      "role_type": "qc",
+      "word_count": 12846,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/communications/qc-specialist-communications.md"
+    },
+    {
+      "slug": "speech--talking-points-specialist",
+      "dept": "communications",
+      "title": "Speech / Talking Points Specialist",
+      "role_type": "specialist",
+      "word_count": 5122,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/communications/speech--talking-points-specialist.md"
+    },
+    {
+      "slug": "automation-workflow-specialist",
+      "dept": "crm",
+      "title": "Automation Workflow Specialist",
+      "role_type": "specialist",
+      "word_count": 11051,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/crm/automation-workflow-specialist.md"
+    },
+    {
+      "slug": "crm-platform-administrator",
+      "dept": "crm",
+      "title": "CRM Platform Administrator",
+      "role_type": "specialist",
+      "word_count": 11104,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/crm/crm-platform-administrator.md"
+    },
+    {
+      "slug": "deep-research-role-\u2014-crm",
+      "dept": "crm",
+      "title": "Deep Research Role \u2014 CRM",
+      "role_type": "deep-research",
+      "word_count": 13493,
+      "sop_count": 7,
+      "sop_min": 8,
+      "path": "templates/role-library/crm/deep-research-role-\u2014-crm.md"
+    },
+    {
+      "slug": "director-of-crm",
+      "dept": "crm",
+      "title": "Director of CRM",
+      "role_type": "leadership",
+      "word_count": 11021,
+      "sop_count": 8,
+      "sop_min": 5,
+      "path": "templates/role-library/crm/director-of-crm.md"
+    },
+    {
+      "slug": "email-deliverability-optimization-specialist",
+      "dept": "crm",
+      "title": "Email Deliverability & Optimization Specialist",
+      "role_type": "specialist",
+      "word_count": 13816,
+      "sop_count": 13,
+      "sop_min": 5,
+      "path": "templates/role-library/crm/email-deliverability-optimization-specialist.md"
+    },
+    {
+      "slug": "pipeline-stage-specialist",
+      "dept": "crm",
+      "title": "Pipeline / Stage Specialist",
+      "role_type": "specialist",
+      "word_count": 4426,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/crm/pipeline-stage-specialist.md"
+    },
+    {
+      "slug": "qc-role-\u2014-crm",
+      "dept": "crm",
+      "title": "QC Role \u2014 CRM",
+      "role_type": "qc",
+      "word_count": 11814,
+      "sop_count": 6,
+      "sop_min": 8,
+      "path": "templates/role-library/crm/qc-role-\u2014-crm.md"
+    },
+    {
+      "slug": "sms--whatsapp--dm-sequence-specialist",
+      "dept": "crm",
+      "title": "SMS / WhatsApp / DM Sequence Specialist",
+      "role_type": "specialist",
+      "word_count": 9139,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/crm/sms--whatsapp--dm-sequence-specialist.md"
+    },
+    {
+      "slug": "tag--segmentation-specialist",
+      "dept": "crm",
+      "title": "Tag / Segmentation Specialist",
+      "role_type": "specialist",
+      "word_count": 6088,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/crm/tag--segmentation-specialist.md"
+    },
+    {
+      "slug": "account-health-monitor-proactive",
+      "dept": "customer-support",
+      "title": "Account Health Monitor (Proactive)",
+      "role_type": "specialist",
+      "word_count": 8159,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/account-health-monitor-proactive.md"
+    },
+    {
+      "slug": "churn-prevention-specialist",
+      "dept": "customer-support",
+      "title": "Churn Prevention Specialist",
+      "role_type": "specialist",
+      "word_count": 7549,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/churn-prevention-specialist.md"
+    },
+    {
+      "slug": "deep-research-specialist-\u2014-customer-support",
+      "dept": "customer-support",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "deep-research",
+      "word_count": 8138,
+      "sop_count": 7,
+      "sop_min": 8,
+      "path": "templates/role-library/customer-support/deep-research-specialist-\u2014-customer-support.md"
+    },
+    {
+      "slug": "head-of-customer-success",
+      "dept": "customer-support",
+      "title": "Head of Customer Success",
+      "role_type": "leadership",
+      "word_count": 7745,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/head-of-customer-success.md"
+    },
+    {
+      "slug": "knowledge-base-specialist",
+      "dept": "customer-support",
+      "title": "Knowledge Base Specialist",
+      "role_type": "specialist",
+      "word_count": 8453,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/knowledge-base-specialist.md"
+    },
+    {
+      "slug": "live-chat-specialist",
+      "dept": "customer-support",
+      "title": "Live Chat Specialist",
+      "role_type": "specialist",
+      "word_count": 7922,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/live-chat-specialist.md"
+    },
+    {
+      "slug": "onboarding-specialist",
+      "dept": "customer-support",
+      "title": "Onboarding Specialist",
+      "role_type": "specialist",
+      "word_count": 8147,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/onboarding-specialist.md"
+    },
+    {
+      "slug": "qc-specialist-\u2014-customer-support",
+      "dept": "customer-support",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "qc",
+      "word_count": 7132,
+      "sop_count": 7,
+      "sop_min": 8,
+      "path": "templates/role-library/customer-support/qc-specialist-\u2014-customer-support.md"
+    },
+    {
+      "slug": "refunds-and-disputes-specialist",
+      "dept": "customer-support",
+      "title": "Refunds & Disputes Specialist",
+      "role_type": "specialist",
+      "word_count": 8604,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/refunds-and-disputes-specialist.md"
+    },
+    {
+      "slug": "retention-specialist",
+      "dept": "customer-support",
+      "title": "Retention Specialist",
+      "role_type": "specialist",
+      "word_count": 7865,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/retention-specialist.md"
+    },
+    {
+      "slug": "tier-1-support-specialist",
+      "dept": "customer-support",
+      "title": "Tier 1 Support Specialist",
+      "role_type": "specialist",
+      "word_count": 8192,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/tier-1-support-specialist.md"
+    },
+    {
+      "slug": "tier-2-support-specialist",
+      "dept": "customer-support",
+      "title": "Tier 2 Support Specialist",
+      "role_type": "specialist",
+      "word_count": 8525,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/tier-2-support-specialist.md"
+    },
+    {
+      "slug": "voice--phone-support-specialist",
+      "dept": "customer-support",
+      "title": "Voice / Phone Support Specialist",
+      "role_type": "specialist",
+      "word_count": 7775,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/customer-support/voice--phone-support-specialist.md"
+    },
+    {
+      "slug": "ad-creative-specialist",
+      "dept": "graphics",
+      "title": "Ad Creative Specialist",
+      "role_type": "specialist",
+      "word_count": 8204,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/ad-creative-specialist.md"
+    },
+    {
+      "slug": "ai-image-generator-specialist",
+      "dept": "graphics",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 7572,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/ai-image-generator-specialist.md"
+    },
+    {
+      "slug": "book-cover-designer",
+      "dept": "graphics",
+      "title": "Book Cover Designer",
+      "role_type": "specialist",
+      "word_count": 8742,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/book-cover-designer.md"
+    },
+    {
+      "slug": "brand-identity-specialist-logo-color-type",
+      "dept": "graphics",
+      "title": "Brand Identity Specialist",
+      "role_type": "specialist",
+      "word_count": 7812,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/brand-identity-specialist-logo-color-type.md"
+    },
+    {
+      "slug": "chief-design-officer",
+      "dept": "graphics",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "leadership",
+      "word_count": 7672,
+      "sop_count": 7,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/chief-design-officer.md"
+    },
+    {
+      "slug": "course-slide-designer",
+      "dept": "graphics",
+      "title": "Course Slide Designer",
+      "role_type": "specialist",
+      "word_count": 7773,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/course-slide-designer.md"
+    },
+    {
+      "slug": "deep-research-specialist-\u2014-graphics",
+      "dept": "graphics",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "deep-research",
+      "word_count": 11362,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/graphics/deep-research-specialist-\u2014-graphics.md"
+    },
+    {
+      "slug": "email-designer",
+      "dept": "graphics",
+      "title": "Email Designer",
+      "role_type": "specialist",
+      "word_count": 8222,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/email-designer.md"
+    },
+    {
+      "slug": "infographic-specialist",
+      "dept": "graphics",
+      "title": "Infographic Specialist",
+      "role_type": "specialist",
+      "word_count": 7403,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/infographic-specialist.md"
+    },
+    {
+      "slug": "presentation-designer-slides-decks",
+      "dept": "graphics",
+      "title": "Presentation Designer (Slides, Decks)",
+      "role_type": "specialist",
+      "word_count": 8814,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/presentation-designer-slides-decks.md"
+    },
+    {
+      "slug": "print--asset-design-specialist",
+      "dept": "graphics",
+      "title": "Print / Asset Design Specialist",
+      "role_type": "specialist",
+      "word_count": 8584,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/print--asset-design-specialist.md"
+    },
+    {
+      "slug": "qc-specialist-\u2014-graphics",
+      "dept": "graphics",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "qc",
+      "word_count": 9503,
+      "sop_count": 7,
+      "sop_min": 8,
+      "path": "templates/role-library/graphics/qc-specialist-\u2014-graphics.md"
+    },
+    {
+      "slug": "social-media-graphics-specialist",
+      "dept": "graphics",
+      "title": "Social Media Graphics Specialist",
+      "role_type": "specialist",
+      "word_count": 8004,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/social-media-graphics-specialist.md"
+    },
+    {
+      "slug": "thumbnail--cover-designer",
+      "dept": "graphics",
+      "title": "Thumbnail / Cover Designer",
+      "role_type": "specialist",
+      "word_count": 7861,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/graphics/thumbnail--cover-designer.md"
+    },
+    {
+      "slug": "affiliate-agreement-specialist",
+      "dept": "legal-compliance",
+      "title": "Affiliate Agreement Specialist",
+      "role_type": "specialist",
+      "word_count": 9083,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/affiliate-agreement-specialist.md"
+    },
+    {
+      "slug": "chief-legal-officer",
+      "dept": "legal-compliance",
+      "title": "Chief Legal Officer",
+      "role_type": "leadership",
+      "word_count": 8936,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/chief-legal-officer.md"
+    },
+    {
+      "slug": "compliance-monitor--specialist",
+      "dept": "legal-compliance",
+      "title": "Compliance Monitor / Specialist",
+      "role_type": "specialist",
+      "word_count": 8874,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/compliance-monitor--specialist.md"
+    },
+    {
+      "slug": "contract-drafter-client-agreements",
+      "dept": "legal-compliance",
+      "title": "Contract Drafter (Client Agreements)",
+      "role_type": "specialist",
+      "word_count": 9790,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/contract-drafter-client-agreements.md"
+    },
+    {
+      "slug": "customer-agreement-specialist",
+      "dept": "legal-compliance",
+      "title": "Customer Agreement Specialist",
+      "role_type": "specialist",
+      "word_count": 10262,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/customer-agreement-specialist.md"
+    },
+    {
+      "slug": "deep-research-specialist---legal",
+      "dept": "legal-compliance",
+      "title": "Deep Research Specialist -- Legal",
+      "role_type": "deep-research",
+      "word_count": 9443,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/legal-compliance/deep-research-specialist---legal.md"
+    },
+    {
+      "slug": "dispute-resolution-specialist",
+      "dept": "legal-compliance",
+      "title": "Dispute Resolution Specialist",
+      "role_type": "specialist",
+      "word_count": 6856,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/dispute-resolution-specialist.md"
+    },
+    {
+      "slug": "employment-contract-specialist",
+      "dept": "legal-compliance",
+      "title": "Employment Contract Specialist",
+      "role_type": "specialist",
+      "word_count": 10311,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/employment-contract-specialist.md"
+    },
+    {
+      "slug": "industry-specific-regulatory-specialist",
+      "dept": "legal-compliance",
+      "title": "Industry-Specific Regulatory Specialist",
+      "role_type": "specialist",
+      "word_count": 6036,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/industry-specific-regulatory-specialist.md"
+    },
+    {
+      "slug": "ip--trademark-specialist",
+      "dept": "legal-compliance",
+      "title": "IP & Trademark Specialist",
+      "role_type": "specialist",
+      "word_count": 9609,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/ip--trademark-specialist.md"
+    },
+    {
+      "slug": "qc-specialist---legal",
+      "dept": "legal-compliance",
+      "title": "QC Specialist -- Legal",
+      "role_type": "qc",
+      "word_count": 8389,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/legal-compliance/qc-specialist---legal.md"
+    },
+    {
+      "slug": "qc-specialist-legal",
+      "dept": "legal-compliance",
+      "title": "QC Specialist \u2014 Legal & Compliance",
+      "role_type": "qc",
+      "word_count": 13650,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/legal-compliance/qc-specialist-legal.md"
+    },
+    {
+      "slug": "terms--privacy-policy-specialist",
+      "dept": "legal-compliance",
+      "title": "Terms / Privacy Policy Specialist",
+      "role_type": "specialist",
+      "word_count": 7735,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/terms--privacy-policy-specialist.md"
+    },
+    {
+      "slug": "vendor-contract-specialist",
+      "dept": "legal-compliance",
+      "title": "Vendor Contract Specialist",
+      "role_type": "specialist",
+      "word_count": 10150,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/legal-compliance/vendor-contract-specialist.md"
+    },
+    {
+      "slug": "affiliate--referral-specialist",
+      "dept": "marketing",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 8252,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/affiliate--referral-specialist.md"
+    },
+    {
+      "slug": "brand-positioning-specialist",
+      "dept": "marketing",
+      "title": "Brand Positioning Specialist",
+      "role_type": "specialist",
+      "word_count": 10132,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/brand-positioning-specialist.md"
+    },
+    {
+      "slug": "chief-marketing-officer",
+      "dept": "marketing",
+      "title": "Chief Marketing Officer",
+      "role_type": "leadership",
+      "word_count": 10793,
+      "sop_count": 6,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/chief-marketing-officer.md"
+    },
+    {
+      "slug": "content-marketing-strategist",
+      "dept": "marketing",
+      "title": "Content Marketing Strategist",
+      "role_type": "specialist",
+      "word_count": 10690,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/content-marketing-strategist.md"
+    },
+    {
+      "slug": "content-strategist",
+      "dept": "marketing",
+      "title": "Content Strategist",
+      "role_type": "specialist",
+      "word_count": 9822,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/content-strategist.md"
+    },
+    {
+      "slug": "customer-journey-architect",
+      "dept": "marketing",
+      "title": "Customer Journey Architect",
+      "role_type": "specialist",
+      "word_count": 9428,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/customer-journey-architect.md"
+    },
+    {
+      "slug": "deep-research-specialist-\u2014-marketing",
+      "dept": "marketing",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "deep-research",
+      "word_count": 12033,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/marketing/deep-research-specialist-\u2014-marketing.md"
+    },
+    {
+      "slug": "email-campaign-strategist",
+      "dept": "marketing",
+      "title": "Email Campaign Strategist",
+      "role_type": "specialist",
+      "word_count": 9505,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/email-campaign-strategist.md"
+    },
+    {
+      "slug": "funnel-strategist",
+      "dept": "marketing",
+      "title": "Funnel Strategist",
+      "role_type": "specialist",
+      "word_count": 9929,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/funnel-strategist.md"
+    },
+    {
+      "slug": "influencer-marketing-specialist",
+      "dept": "marketing",
+      "title": "Influencer Marketing Specialist",
+      "role_type": "specialist",
+      "word_count": 8693,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/influencer-marketing-specialist.md"
+    },
+    {
+      "slug": "lead-magnet-specialist",
+      "dept": "marketing",
+      "title": "Lead Magnet Specialist",
+      "role_type": "specialist",
+      "word_count": 9226,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/lead-magnet-specialist.md"
+    },
+    {
+      "slug": "marketing-analytics-specialist",
+      "dept": "marketing",
+      "title": "Marketing Analytics Specialist",
+      "role_type": "specialist",
+      "word_count": 9928,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/marketing-analytics-specialist.md"
+    },
+    {
+      "slug": "qc-specialist-\u2014-marketing",
+      "dept": "marketing",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "qc",
+      "word_count": 10596,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/marketing/qc-specialist-\u2014-marketing.md"
+    },
+    {
+      "slug": "webinar-event-marketing-specialist",
+      "dept": "marketing",
+      "title": "Webinar / Event Marketing Specialist",
+      "role_type": "specialist",
+      "word_count": 12065,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/marketing/webinar-event-marketing-specialist.md"
+    },
+    {
+      "slug": "master-orchestrator",
+      "dept": "master-orchestrator",
+      "title": "Master Orchestrator",
+      "role_type": "orchestrator",
+      "word_count": 10962,
+      "sop_count": 10,
+      "sop_min": 5,
+      "path": "templates/role-library/master-orchestrator/master-orchestrator.md"
+    },
+    {
+      "slug": "backup-and-recovery-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "Backup & Recovery Specialist",
+      "role_type": "specialist",
+      "word_count": 9673,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/backup-and-recovery-specialist.md"
+    },
+    {
+      "slug": "deep-research-role-\u2014-openclaw-maintenance",
+      "dept": "openclaw-maintenance",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "deep-research",
+      "word_count": 12974,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/openclaw-maintenance/deep-research-role-\u2014-openclaw-maintenance.md"
+    },
+    {
+      "slug": "director-of-openclaw-maintenance",
+      "dept": "openclaw-maintenance",
+      "title": "Director of OpenClaw Maintenance",
+      "role_type": "leadership",
+      "word_count": 9978,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/director-of-openclaw-maintenance.md"
+    },
+    {
+      "slug": "disaster-recovery-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "Disaster Recovery Specialist",
+      "role_type": "specialist",
+      "word_count": 10267,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/disaster-recovery-specialist.md"
+    },
+    {
+      "slug": "integration--mcp-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 8684,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/integration--mcp-specialist.md"
+    },
+    {
+      "slug": "memory-hygiene-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "Memory Hygiene Specialist",
+      "role_type": "specialist",
+      "word_count": 9758,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/memory-hygiene-specialist.md"
+    },
+    {
+      "slug": "monitoring--observability-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "Monitoring & Observability Specialist",
+      "role_type": "specialist",
+      "word_count": 8944,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/monitoring--observability-specialist.md"
+    },
+    {
+      "slug": "performance-tuning-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "Performance Tuning Specialist",
+      "role_type": "specialist",
+      "word_count": 9547,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/performance-tuning-specialist.md"
+    },
+    {
+      "slug": "qc-role-\u2014-openclaw-maintenance",
+      "dept": "openclaw-maintenance",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "qc",
+      "word_count": 10830,
+      "sop_count": 6,
+      "sop_min": 8,
+      "path": "templates/role-library/openclaw-maintenance/qc-role-\u2014-openclaw-maintenance.md"
+    },
+    {
+      "slug": "security-and-secrets-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "Security & Secrets Specialist",
+      "role_type": "specialist",
+      "word_count": 9966,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/security-and-secrets-specialist.md"
+    },
+    {
+      "slug": "skill-update-and-patch-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 8882,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/skill-update-and-patch-specialist.md"
+    },
+    {
+      "slug": "system-health--uptime-specialist",
+      "dept": "openclaw-maintenance",
+      "title": "System Health & Uptime Specialist",
+      "role_type": "specialist",
+      "word_count": 8988,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/openclaw-maintenance/system-health--uptime-specialist.md"
+    },
+    {
+      "slug": "audience-research-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 7082,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/audience-research-specialist.md"
+    },
+    {
+      "slug": "bing--microsoft-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 4956,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/bing--microsoft-ads-specialist.md"
+    },
+    {
+      "slug": "conversion-tracking-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 7643,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/conversion-tracking-specialist.md"
+    },
+    {
+      "slug": "creative-testing--a-b-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 7636,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/creative-testing--a-b-specialist.md"
+    },
+    {
+      "slug": "cross-platform-attribution-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 7690,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/cross-platform-attribution-specialist.md"
+    },
+    {
+      "slug": "deep-research-role-\u2014-paid-advertisement",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "deep-research",
+      "word_count": 8959,
+      "sop_count": 7,
+      "sop_min": 8,
+      "path": "templates/role-library/paid-advertisement/deep-research-role-\u2014-paid-advertisement.md"
+    },
+    {
+      "slug": "director-of-paid-advertisement",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "leadership",
+      "word_count": 11065,
+      "sop_count": 8,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/director-of-paid-advertisement.md"
+    },
+    {
+      "slug": "facebook-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 10316,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/facebook-ads-specialist.md"
+    },
+    {
+      "slug": "google-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 10615,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/google-ads-specialist.md"
+    },
+    {
+      "slug": "instagram-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 9911,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/instagram-ads-specialist.md"
+    },
+    {
+      "slug": "linkedin-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 9774,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/linkedin-ads-specialist.md"
+    },
+    {
+      "slug": "native-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 6449,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/native-ads-specialist.md"
+    },
+    {
+      "slug": "pinterest-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 4595,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/pinterest-ads-specialist.md"
+    },
+    {
+      "slug": "qc-role-\u2014-paid-advertisement",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "qc",
+      "word_count": 8590,
+      "sop_count": 7,
+      "sop_min": 8,
+      "path": "templates/role-library/paid-advertisement/qc-role-\u2014-paid-advertisement.md"
+    },
+    {
+      "slug": "retargeting-strategist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 6800,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/retargeting-strategist.md"
+    },
+    {
+      "slug": "snapchat-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 5191,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/snapchat-ads-specialist.md"
+    },
+    {
+      "slug": "spotify-audio-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "Spotify Audio Ads Specialist",
+      "role_type": "specialist",
+      "word_count": 9100,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/spotify-audio-ads-specialist.md"
+    },
+    {
+      "slug": "tiktok-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 9861,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/tiktok-ads-specialist.md"
+    },
+    {
+      "slug": "twitter-x-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 5649,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/twitter-x-ads-specialist.md"
+    },
+    {
+      "slug": "youtube-ads-specialist",
+      "dept": "paid-advertisement",
+      "title": "YouTube Ads Specialist",
+      "role_type": "specialist",
+      "word_count": 9029,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/paid-advertisement/youtube-ads-specialist.md"
+    },
+    {
+      "slug": "chief-research-officer",
+      "dept": "research",
+      "title": "Chief Research Officer",
+      "role_type": "leadership",
+      "word_count": 10495,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/research/chief-research-officer.md"
+    },
+    {
+      "slug": "competitive-intelligence-specialist",
+      "dept": "research",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 6406,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/research/competitive-intelligence-specialist.md"
+    },
+    {
+      "slug": "customer-research-specialist",
+      "dept": "research",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 7215,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/research/customer-research-specialist.md"
+    },
+    {
+      "slug": "data-analysis-specialist",
+      "dept": "research",
+      "title": "Data Analysis Specialist",
+      "role_type": "specialist",
+      "word_count": 10283,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/research/data-analysis-specialist.md"
+    },
+    {
+      "slug": "industry-analysis-specialist-mckinsey-style",
+      "dept": "research",
+      "title": "Industry Analysis Specialist (McKinsey-Style)",
+      "role_type": "specialist",
+      "word_count": 9264,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/research/industry-analysis-specialist-mckinsey-style.md"
+    },
+    {
+      "slug": "market-trends-specialist",
+      "dept": "research",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 8028,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/research/market-trends-specialist.md"
+    },
+    {
+      "slug": "persona-research-specialist",
+      "dept": "research",
+      "title": "Persona Research Specialist",
+      "role_type": "specialist",
+      "word_count": 9887,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/research/persona-research-specialist.md"
+    },
+    {
+      "slug": "qc-specialist---research",
+      "dept": "research",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "qc",
+      "word_count": 8789,
+      "sop_count": 7,
+      "sop_min": 8,
+      "path": "templates/role-library/research/qc-specialist---research.md"
+    },
+    {
+      "slug": "survey-and-polling-specialist",
+      "dept": "research",
+      "title": "Survey and Polling Specialist",
+      "role_type": "specialist",
+      "word_count": 9891,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/research/survey-and-polling-specialist.md"
+    },
+    {
+      "slug": "account-executive-full-cycle",
+      "dept": "sales",
+      "title": "Account Executive (Full-Cycle) \u2014 How-To Guide",
+      "role_type": "specialist",
+      "word_count": 9271,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/account-executive-full-cycle.md"
+    },
+    {
+      "slug": "account-manager-post-sale",
+      "dept": "sales",
+      "title": "Account Manager (Post-Sale)",
+      "role_type": "specialist",
+      "word_count": 6895,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/account-manager-post-sale.md"
+    },
+    {
+      "slug": "appointment-setter",
+      "dept": "sales",
+      "title": "Appointment Setter",
+      "role_type": "specialist",
+      "word_count": 12481,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/appointment-setter.md"
+    },
+    {
+      "slug": "chief-sales-officer",
+      "dept": "sales",
+      "title": "Chief Sales Officer",
+      "role_type": "leadership",
+      "word_count": 10149,
+      "sop_count": 8,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/chief-sales-officer.md"
+    },
+    {
+      "slug": "closer",
+      "dept": "sales",
+      "title": "Closer",
+      "role_type": "specialist",
+      "word_count": 5313,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/closer.md"
+    },
+    {
+      "slug": "crm-specialist-sales-version",
+      "dept": "sales",
+      "title": "CRM Specialist (Sales Version)",
+      "role_type": "specialist",
+      "word_count": 6728,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/crm-specialist-sales-version.md"
+    },
+    {
+      "slug": "deep-research-specialist-\\342\\200\\224-sales",
+      "dept": "sales",
+      "title": "Deep Research Specialist \u2014 Sales",
+      "role_type": "deep-research",
+      "word_count": 8639,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/sales/deep-research-specialist-\\342\\200\\224-sales.md"
+    },
+    {
+      "slug": "discovery-call-specialist",
+      "dept": "sales",
+      "title": "Discovery Call Specialist",
+      "role_type": "specialist",
+      "word_count": 14193,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/discovery-call-specialist.md"
+    },
+    {
+      "slug": "follow-up-sequence-specialist",
+      "dept": "sales",
+      "title": "Follow-Up Sequence Specialist",
+      "role_type": "specialist",
+      "word_count": 7642,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/follow-up-sequence-specialist.md"
+    },
+    {
+      "slug": "proposal-and-quote-specialist",
+      "dept": "sales",
+      "title": "Proposal & Quote Specialist",
+      "role_type": "specialist",
+      "word_count": 7690,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/proposal-and-quote-specialist.md"
+    },
+    {
+      "slug": "qc-specialist-\\342\\200\\224-sales",
+      "dept": "sales",
+      "title": "QC Specialist \u2014 Sales",
+      "role_type": "qc",
+      "word_count": 8703,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/sales/qc-specialist-\\342\\200\\224-sales.md"
+    },
+    {
+      "slug": "sales-operations--pipeline-specialist",
+      "dept": "sales",
+      "title": "Sales Operations / Pipeline Specialist",
+      "role_type": "specialist",
+      "word_count": 7291,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/sales-operations--pipeline-specialist.md"
+    },
+    {
+      "slug": "sdr-sales-development-rep",
+      "dept": "sales",
+      "title": "SDR (Sales Development Rep)",
+      "role_type": "specialist",
+      "word_count": 7811,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/sales/sdr-sales-development-rep.md"
+    },
+    {
+      "slug": "bluesky-specialist",
+      "dept": "social-media",
+      "title": "Bluesky Specialist",
+      "role_type": "specialist",
+      "word_count": 3926,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/bluesky-specialist.md"
+    },
+    {
+      "slug": "community-manager",
+      "dept": "social-media",
+      "title": "Community Manager",
+      "role_type": "specialist",
+      "word_count": 6054,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/community-manager.md"
+    },
+    {
+      "slug": "deep-research-role-\u2014-social-media",
+      "dept": "social-media",
+      "title": "Deep Research Role \u2014 Social Media",
+      "role_type": "deep-research",
+      "word_count": 7418,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/social-media/deep-research-role-\u2014-social-media.md"
+    },
+    {
+      "slug": "director-of-social-media",
+      "dept": "social-media",
+      "title": "Director of Social Media",
+      "role_type": "leadership",
+      "word_count": 5709,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/director-of-social-media.md"
+    },
+    {
+      "slug": "discord-community-specialist",
+      "dept": "social-media",
+      "title": "Discord Community Specialist",
+      "role_type": "specialist",
+      "word_count": 5347,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/discord-community-specialist.md"
+    },
+    {
+      "slug": "facebook-specialist",
+      "dept": "social-media",
+      "title": "Facebook Specialist",
+      "role_type": "specialist",
+      "word_count": 6423,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/facebook-specialist.md"
+    },
+    {
+      "slug": "instagram-specialist",
+      "dept": "social-media",
+      "title": "Instagram Specialist",
+      "role_type": "specialist",
+      "word_count": 7307,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/instagram-specialist.md"
+    },
+    {
+      "slug": "linkedin-specialist",
+      "dept": "social-media",
+      "title": "LinkedIn Specialist",
+      "role_type": "specialist",
+      "word_count": 6516,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/linkedin-specialist.md"
+    },
+    {
+      "slug": "pinterest-specialist",
+      "dept": "social-media",
+      "title": "Pinterest Specialist",
+      "role_type": "specialist",
+      "word_count": 6098,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/pinterest-specialist.md"
+    },
+    {
+      "slug": "qc-role-\u2014-social-media",
+      "dept": "social-media",
+      "title": "QC Role \u2014 Social Media",
+      "role_type": "qc",
+      "word_count": 6673,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/social-media/qc-role-\u2014-social-media.md"
+    },
+    {
+      "slug": "quora-specialist",
+      "dept": "social-media",
+      "title": "Quora Specialist",
+      "role_type": "specialist",
+      "word_count": 5238,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/quora-specialist.md"
+    },
+    {
+      "slug": "reddit-specialist",
+      "dept": "social-media",
+      "title": "Reddit Specialist",
+      "role_type": "specialist",
+      "word_count": 6183,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/reddit-specialist.md"
+    },
+    {
+      "slug": "threads-specialist",
+      "dept": "social-media",
+      "title": "Threads Specialist",
+      "role_type": "specialist",
+      "word_count": 4288,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/threads-specialist.md"
+    },
+    {
+      "slug": "tiktok-specialist",
+      "dept": "social-media",
+      "title": "TikTok Specialist",
+      "role_type": "specialist",
+      "word_count": 6768,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/tiktok-specialist.md"
+    },
+    {
+      "slug": "twitter-x-specialist",
+      "dept": "social-media",
+      "title": "Twitter/X Specialist",
+      "role_type": "specialist",
+      "word_count": 6214,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/twitter-x-specialist.md"
+    },
+    {
+      "slug": "youtube-channel-specialist-organic-only",
+      "dept": "social-media",
+      "title": "YouTube Channel Specialist \u2014 Organic Only",
+      "role_type": "specialist",
+      "word_count": 6770,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/social-media/youtube-channel-specialist-organic-only.md"
+    },
+    {
+      "slug": "ai-video-generator-specialist",
+      "dept": "video",
+      "title": "AI Video Generator Specialist",
+      "role_type": "specialist",
+      "word_count": 7136,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/ai-video-generator-specialist.md"
+    },
+    {
+      "slug": "animation-specialist-2d-3d-whiteboard",
+      "dept": "video",
+      "title": "Animation Specialist (2D/3D/Whiteboard)",
+      "role_type": "specialist",
+      "word_count": 7055,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/animation-specialist-2d-3d-whiteboard.md"
+    },
+    {
+      "slug": "captioning--subtitling-specialist",
+      "dept": "video",
+      "title": "Captioning / Subtitling Specialist",
+      "role_type": "specialist",
+      "word_count": 6801,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/captioning--subtitling-specialist.md"
+    },
+    {
+      "slug": "color-grading-specialist",
+      "dept": "video",
+      "title": "Color Grading Specialist",
+      "role_type": "specialist",
+      "word_count": 7198,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/color-grading-specialist.md"
+    },
+    {
+      "slug": "crm-specialist-video-version",
+      "dept": "video",
+      "title": "CRM Specialist (Video Version)",
+      "role_type": "specialist",
+      "word_count": 13095,
+      "sop_count": 8,
+      "sop_min": 5,
+      "path": "templates/role-library/video/crm-specialist-video-version.md"
+    },
+    {
+      "slug": "deep-research-specialist-video",
+      "dept": "video",
+      "title": "Deep Research Specialist -- Video",
+      "role_type": "deep-research",
+      "word_count": 15032,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/video/deep-research-specialist-video.md"
+    },
+    {
+      "slug": "head-of-video-production",
+      "dept": "video",
+      "title": "Head of Video Production",
+      "role_type": "leadership",
+      "word_count": 6535,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/video/head-of-video-production.md"
+    },
+    {
+      "slug": "live-streaming-specialist",
+      "dept": "video",
+      "title": "Live Streaming Specialist",
+      "role_type": "specialist",
+      "word_count": 7306,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/live-streaming-specialist.md"
+    },
+    {
+      "slug": "long-form-video-specialist-youtube-courses-sales-videos",
+      "dept": "video",
+      "title": "Long-Form Video Specialist (YouTube, Courses, Sales Videos) \u2014 How-To Guide",
+      "role_type": "specialist",
+      "word_count": 8696,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/long-form-video-specialist-youtube-courses-sales-videos.md"
+    },
+    {
+      "slug": "motion-graphics-specialist",
+      "dept": "video",
+      "title": "Motion Graphics Specialist",
+      "role_type": "specialist",
+      "word_count": 7080,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/motion-graphics-specialist.md"
+    },
+    {
+      "slug": "qc-specialist-video",
+      "dept": "video",
+      "title": "QC Specialist -- Video Production",
+      "role_type": "qc",
+      "word_count": 11265,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/video/qc-specialist-video.md"
+    },
+    {
+      "slug": "short-form-video-specialist-reels-shorts-tiktok",
+      "dept": "video",
+      "title": "Short-Form Video Specialist (Reels, Shorts, TikTok)",
+      "role_type": "specialist",
+      "word_count": 7234,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/short-form-video-specialist-reels-shorts-tiktok.md"
+    },
+    {
+      "slug": "storyboard-pre-production-specialist",
+      "dept": "video",
+      "title": "Storyboard & Pre-Production Specialist",
+      "role_type": "specialist",
+      "word_count": 17612,
+      "sop_count": 8,
+      "sop_min": 5,
+      "path": "templates/role-library/video/storyboard-pre-production-specialist.md"
+    },
+    {
+      "slug": "video-editor",
+      "dept": "video",
+      "title": "Video Editor",
+      "role_type": "specialist",
+      "word_count": 7222,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/video/video-editor.md"
+    },
+    {
+      "slug": "video-seo-specialist",
+      "dept": "video",
+      "title": "Video SEO Specialist",
+      "role_type": "specialist",
+      "word_count": 6968,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/video-seo-specialist.md"
+    },
+    {
+      "slug": "vsl-video-sales-letter-specialist",
+      "dept": "video",
+      "title": "VSL (Video Sales Letter) Specialist",
+      "role_type": "specialist",
+      "word_count": 7423,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/video/vsl-video-sales-letter-specialist.md"
+    },
+    {
+      "slug": "conversion-rate-optimization-cro-specialist",
+      "dept": "web-development",
+      "title": "Conversion Rate Optimization (CRO) Specialist",
+      "role_type": "specialist",
+      "word_count": 8274,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/conversion-rate-optimization-cro-specialist.md"
+    },
+    {
+      "slug": "deep-research-specialist-web-development",
+      "dept": "web-development",
+      "title": "Deep Research Specialist -- Web Development",
+      "role_type": "deep-research",
+      "word_count": 9486,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/web-development/deep-research-specialist-web-development.md"
+    },
+    {
+      "slug": "frontend--javascript--react-specialist",
+      "dept": "web-development",
+      "title": "Frontend / JavaScript / React Specialist",
+      "role_type": "specialist",
+      "word_count": 7521,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/frontend--javascript--react-specialist.md"
+    },
+    {
+      "slug": "funnel-builder-specialist",
+      "dept": "web-development",
+      "title": "Funnel Builder Specialist",
+      "role_type": "specialist",
+      "word_count": 7932,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/funnel-builder-specialist.md"
+    },
+    {
+      "slug": "head-of-web-development",
+      "dept": "web-development",
+      "title": "Head of Web Development",
+      "role_type": "leadership",
+      "word_count": 7209,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/head-of-web-development.md"
+    },
+    {
+      "slug": "landing-page-specialist",
+      "dept": "web-development",
+      "title": "Landing Page Specialist",
+      "role_type": "specialist",
+      "word_count": 7950,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/landing-page-specialist.md"
+    },
+    {
+      "slug": "member-area--membership-site-specialist",
+      "dept": "web-development",
+      "title": "Member Area / Membership Site Specialist \u2014 How-To Guide",
+      "role_type": "specialist",
+      "word_count": 8191,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/member-area--membership-site-specialist.md"
+    },
+    {
+      "slug": "qc-specialist-web-development",
+      "dept": "web-development",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "qc",
+      "word_count": 11655,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/web-development/qc-specialist-web-development.md"
+    },
+    {
+      "slug": "seo-specialist-organic-search",
+      "dept": "web-development",
+      "title": "SEO Specialist (Organic Search)",
+      "role_type": "specialist",
+      "word_count": 8000,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/seo-specialist-organic-search.md"
+    },
+    {
+      "slug": "technical-seo-specialist",
+      "dept": "web-development",
+      "title": "Technical SEO Specialist",
+      "role_type": "specialist",
+      "word_count": 7660,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/technical-seo-specialist.md"
+    },
+    {
+      "slug": "web-accessibility-a11y-specialist",
+      "dept": "web-development",
+      "title": "Web Accessibility (A11y) Specialist",
+      "role_type": "specialist",
+      "word_count": 7974,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/web-accessibility-a11y-specialist.md"
+    },
+    {
+      "slug": "web-designer",
+      "dept": "web-development",
+      "title": "Web Designer",
+      "role_type": "specialist",
+      "word_count": 7295,
+      "sop_count": 4,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/web-designer.md"
+    },
+    {
+      "slug": "web-security-specialist",
+      "dept": "web-development",
+      "title": "{{ROLE_TITLE}}",
+      "role_type": "specialist",
+      "word_count": 8375,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/web-security-specialist.md"
+    },
+    {
+      "slug": "wordpress-specialist",
+      "dept": "web-development",
+      "title": "WordPress Specialist",
+      "role_type": "specialist",
+      "word_count": 8010,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/web-development/wordpress-specialist.md"
+    }
+  ]
+}
