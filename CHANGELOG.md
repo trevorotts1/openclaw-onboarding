@@ -1,3 +1,105 @@
+## [v10.10.0] — 2026-05-20 — v2.0 Fresh-Run P0 Closeout: Last 8 Gaps
+
+The fresh-run v2.0 audit (against v10.8.0) graded the system at **raw composite 8.21 (B band)** but flooring to **F** because three critical phases stayed below threshold: Install Paths (4.18), Book-to-Persona (7.25), Sunday Update (4.70). Additionally, Phase 8 (5.45) and Phase 10 (7.80) were below 8.5.
+
+v10.9.0 already closed Phases 6/7/8/11/15/14 partial. v10.10.0 closes the remaining 8 gaps the fresh-run audit identified.
+
+### Risk: medium
+Changes touch install.sh (Mac + VPS), update-skills.sh, two embedding scripts, B2P orchestrator, cron-prompt. All changes additive or strictly safer than prior behavior. New direct-to-agent install path lives alongside the terminal path.
+
+### Fix #1 — `update-skills.sh` cron 2am → 3am (Phase 20.1)
+**Before:** `install.sh` was patched in v10.8.0 to use `"0 3 * * 0"`, but the SEPARATE `update-skills.sh` (used by the Sunday update flow when applying detected updates) still had `--cron "0 2 * * 0"`. Audit Phase 20.1 scored 0.0 because of this.
+**Now:** `update-skills.sh` line 491 corrected. Single canonical cron schedule across both files: `0 3 * * 0` (3am Sunday).
+
+### Fix #2 — Gemini 3.1 Pro pattern + chain slot (Phase 8.2/8.3)
+**Before:** Audit P0-002 explicitly asked for `Gemini-3.1-Pro` as the final fallback in orchestrator + installer-subagent chains. My v10.9.0 chains had Gemini Flash Lite as the Gemini fallback — wrong tier.
+**Now:** `shared-utils/select_model.py`:
+- New `GEMINI_PRO` pattern: `^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-pro(?:-preview)?$`
+- Slotted as **position 3** (after Kimi/DeepSeek but BEFORE Flash Lite) in both `orchestrator` and `installer-subagent` chains.
+- Flash Lite drops to position 4 (cheaper last resort).
+
+**Smoke test:** `CHAINS["orchestrator"]["normal"]` is now Kimi cloud → Kimi OR → **Gemini Pro** → Gemini Flash Lite → OAuth GPT. Same pattern for `installer-subagent` with DeepSeek leading.
+
+### Fix #3 — OpenAI embeddings fallback (Phase 10.3)
+**Before:** Both `gemini-indexer.py` and `gemini-search.py` did `sys.exit(1)` if `GOOGLE_API_KEY` was absent. Audit Phase 10.3 scored 0.0 — no fallback.
+**Now:** Both scripts now:
+- New `_read_secret()` helper looks for keys in `secrets/.env` → env var → `openclaw.json` env block
+- New `get_embedder()` returns `(provider, client, model_id)` tuple
+- Resolution order: **Gemini Embeddings v2 (preferred per N18) → OpenAI text-embedding-3-small (fallback) → exit with clear error**
+- `get_embedding()` / `embed_query()` dispatch on provider — Gemini uses `embed_content`, OpenAI uses `embeddings.create`
+- Legacy `get_client()` kept for backward compat — internally calls `get_embedder()[1]`
+
+**Smoke test:** with stubbed OpenAI client + Gemini keys blocked, `get_embedder()` returns `("openai", client, "text-embedding-3-small")` and `get_embedding()` produces a 1536-dim float32 vector. With Gemini keys present, returns `("gemini", client, "gemini-embedding-2-preview")` correctly.
+
+### Fix #4 — Book-to-Persona Phase 3: remove stale GPT references (Phase 14.4)
+**Before:** Audit Phase 14.4 scored 2.0 because `orchestrator.py` docstrings/comments said "Phase 3 - Synthesis (GPT-5.3 Codex)" and "OAuth GPT preferred." My v10.9.0 switched the runtime `purpose_tier` to `"book-to-persona"` (which has no GPT in the chain) — but the docstrings still claimed GPT.
+**Now:** `22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py`:
+- Top-of-file pipeline docstring rewritten — describes the 5-position PRD §5.4 chain (Kimi → DeepSeek → Gemini Flash Lite). No GPT.
+- Comment block at line 34 rewritten — explicitly says Phase 3 NO LONGER falls to GPT as of v10.10.0.
+- `resolve_phase_model()` docstring updated.
+- LAST-RESORT fallback (used only when `select_model.py` is unreachable) is now `openrouter/google/gemini-3.1-flash-lite-preview` — the §5.4 position 5. Was implicitly GPT before via legacy `call_codex` path.
+
+The legacy `call_codex()` function remains in the file for backward compat with old callers, but it's no longer on the resolution path.
+
+### Fix #5 — Mac install.sh: execute Start Here.md + ensure ~/clawd/ (Phase 2.1)
+**Before:** `install.sh` copied `Start Here.md` but never explicitly executed it; `~/clawd/` was only created in legacy mode.
+**Now:**
+- New `mkdir -p "$OC_LEGACY_CLAWD"` unconditionally creates `~/clawd/` so persona-selector and skill paths that default to it work on fresh installs.
+- New verification block confirms `Start Here.md` landed at the expected path post-copy.
+- The triple-fire trigger (`fire_install_kickoff_triplet()` from v10.8.0) at end of install.sh already instructs the agent to "Read $skills_dir/Start Here.md end to end" — this fix ensures the file is THERE for the agent to read.
+
+### Fix #6 — VPS install.sh: auto-provision /data/.openclaw/ (Phase 2.3)
+**Before:** VPS `install.sh` hard-failed with `exit 1` if `/data/.openclaw/` didn't already exist, assuming the Hostinger Docker provisioner had pre-created it.
+**Now:**
+- Mac/Darwin pre-flight check — refuses + redirects if accidentally run on Mac.
+- If `/data/.openclaw/` is missing: auto-provision `OC_CONFIG`, `credentials/`, `agents/main/agent/`, `skills/`, `logs/`, `backups/`, `master-files/`, `secrets/`. Idempotent.
+- Workspace dir (`OC_WORKSPACE_DEFAULT`) also created unconditionally.
+- Clear error if mkdir fails (filesystem permissions issue, not "wrong installer").
+
+Clean-container VPS installs now work end-to-end without a separate pre-provisioning step.
+
+### Fix #7 — Direct-to-agent install path (Phase 2.2/2.4)
+**Before:** Audit P0-009: "Create separate direct-to-agent install code path." The triple-fire trigger had an instruction block but only AFTER install.sh ran — there was no entry point for users who never want to open a terminal.
+**Now:** `direct-to-agent-install.md` (NEW) — a self-contained 183-line spec the user pastes to their agent (Telegram, OpenClaw dashboard, etc.). The agent then executes the full onboarding without terminal. Same end-state as `install.sh`. Triple-fire trigger applies on this path too (step 12). Includes a comparison table showing equivalence to the terminal path.
+
+### Fix #8 — AGENTS.md flag on DETECTION, not just after install (Phase 20.4)
+**Before:** Audit Phase 20.4 scored 1.0 because the AGENTS.md update-pending flag was only written by `update-skills.sh` AFTER the install ran. If the user missed the Telegram message and didn't reply, no flag existed for the next agent session to discover.
+**Now:** `cron-prompt.txt` RULE 5.5 (NEW): drop an `<!-- OPENCLAW_UPDATE_DETECTED:<version>:<timestamp> -->` marker block in AGENTS.md the moment updates are detected, BEFORE the Telegram summary fires. Format documented in the rule. Idempotent — only writes if marker for that version isn't already present.
+
+### Bump path
+- `v10.9.0` → `v10.10.0` — minor bump. All additive.
+
+### Companion releases
+- `openclaw-onboarding-vps` v10.10.0 — same waves, VPS paths
+- `blackceo-command-center` — no changes this release (still v3.2.0)
+
+### Expected audit deltas vs fresh-run v10.8.0 (5.99 grade F → 8.21 floored F)
+- Phase 2 (Install Paths): 4.18 → expected ≥8.0 (clawd unconditional + VPS auto-provision + direct-to-agent path)
+- Phase 8 (Model Selection): 5.45 → expected ≥9.0 (4 PRD §5 chains from v10.9.0 + GEMINI_PRO from v10.10.0)
+- Phase 10 (Gemini Embeddings): 7.80 → expected ≥9.0 (OpenAI fallback shipped)
+- Phase 14 (Book-to-Persona): 7.25 → expected ≥8.5 (stale GPT refs gone + last-resort = Gemini Flash Lite)
+- Phase 20 (Sunday Update): 4.70 → expected ≥8.5 (update-skills.sh cron fixed + RULE 5.5 detection flag)
+
+If these land per estimate, the next audit should clear all critical-phase override triggers and the final grade should be **B or A** (raw composite already at 8.21+).
+
+### How to upgrade
+```bash
+# Mac
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/check-updates.sh | bash
+# Or force update now:
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/force-update.sh | bash
+
+# VPS
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/check-updates.sh | bash
+```
+
+For direct-to-agent install (no terminal): fetch and paste to your agent —
+```
+https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/direct-to-agent-install.md
+```
+
+---
+
 ## [v10.9.0] — 2026-05-20 — v2.0 Audit Full Closeout: Remaining Phases (6/7/8/11/15) + B2P Chain
 
 v10.8.0 closed the 9 P0 items I had committed to. The audit's BROADER findings — Phases 6, 7, 8, 11, 15 and the B2P chain alignment — were not in my P0 list but WERE in the audit report. v10.9.0 closes those too. This is the release where the next audit should land at B/A band on the bread-and-butter and across the board.

@@ -488,7 +488,7 @@ except: pass
           if openclaw cron create \
               --name "weekly-onboarding-update" \
               --description "Sunday 2am ET — check for OpenClaw onboarding + command-center updates and ask client permission before applying anything." \
-              --cron "0 2 * * 0" \
+              --cron "0 3 * * 0" \
               --tz "America/New_York" \
               --exact \
               --session isolated \

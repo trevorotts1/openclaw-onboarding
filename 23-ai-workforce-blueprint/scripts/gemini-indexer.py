@@ -2,14 +2,32 @@
 import os, sys, time, sqlite3, hashlib
 from pathlib import Path
 
+# v10.10.0 P0-003: graceful OpenAI fallback when GOOGLE_API_KEY absent.
+# Per N18, Gemini Embeddings v2 is the canonical embedder. When the client
+# doesn't have a Google API key, we fall back to OpenAI text-embedding-3-small.
+# When neither is present, we exit with a clear error rather than silently
+# producing nonsense embeddings.
 try:
     from google import genai
     from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
+    types = None
+
+try:
     import numpy as np
 except ImportError:
-    print("CRITICAL ERROR: Missing dependencies.")
-    print("Run: pip3 install google-genai numpy --break-system-packages")
+    print("CRITICAL ERROR: numpy missing. Run: pip3 install numpy --break-system-packages")
     sys.exit(1)
+
+try:
+    import openai as openai_pkg
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    openai_pkg = None
 
 # Workspace Root Configuration
 WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
@@ -23,23 +41,79 @@ if not os.path.exists(PERSONAS_DIR):
     PERSONAS_DIR = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/personas")
 
 GEMINI_MODEL = "gemini-embedding-2-preview"
+OPENAI_EMBED_MODEL = "text-embedding-3-small"  # cheaper than -large; 1536-dim
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
 
-def get_client():
+
+def _read_secret(name: str) -> str:
+    """Read API key from secrets/.env, then env var, then openclaw.json env block."""
     env_path = os.path.join(WORKSPACE_ROOT, "secrets/.env")
-    api_key = None
     if os.path.exists(env_path):
         with open(env_path, "r") as f:
             for line in f:
-                if line.startswith("GOOGLE_API_KEY="):
-                    api_key = line.strip().split("=", 1)[1].strip('"\'')
-                    break
-    if not api_key: api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        print(f"ERROR: GOOGLE_API_KEY not found in {WORKSPACE_ROOT}/secrets/.env")
-        sys.exit(1)
-    return genai.Client(api_key=api_key)
+                if line.startswith(f"{name}="):
+                    return line.strip().split("=", 1)[1].strip('"\'')
+    v = os.environ.get(name)
+    if v:
+        return v
+    # openclaw.json env block fallback (Mac + VPS)
+    import json
+    for ocj in (os.path.expanduser("~/.openclaw/openclaw.json"),
+                "/data/.openclaw/openclaw.json"):
+        if os.path.exists(ocj):
+            try:
+                with open(ocj) as f:
+                    env = json.load(f).get("env", {})
+                if env.get(name):
+                    return env[name]
+            except Exception:
+                pass
+    return ""
+
+
+def get_embedder():
+    """
+    Resolve the embedder.
+
+    Returns a tuple (provider, client_or_key, model_id).
+        provider ∈ {"gemini", "openai"}
+
+    Resolution order:
+      1. Gemini (Embeddings v2) — preferred per N18. Requires GOOGLE_API_KEY +
+         google-genai package.
+      2. OpenAI (text-embedding-3-small) — fallback when Gemini unavailable.
+         Requires OPENAI_API_KEY + openai package.
+      3. Exit with clear error if neither available.
+    """
+    google_key = _read_secret("GOOGLE_API_KEY") or _read_secret("GEMINI_API_KEY")
+    if google_key and GENAI_AVAILABLE:
+        return ("gemini", genai.Client(api_key=google_key), GEMINI_MODEL)
+
+    openai_key = _read_secret("OPENAI_API_KEY")
+    if openai_key and OPENAI_AVAILABLE:
+        client = openai_pkg.OpenAI(api_key=openai_key)
+        print("[gemini-indexer] WARN: GOOGLE_API_KEY absent — falling back to "
+              f"OpenAI {OPENAI_EMBED_MODEL}. Per N18 this is the documented "
+              "fallback when Gemini is unavailable.", file=sys.stderr)
+        return ("openai", client, OPENAI_EMBED_MODEL)
+
+    print("ERROR: No embedding provider available.", file=sys.stderr)
+    print("  Set GOOGLE_API_KEY (preferred) or OPENAI_API_KEY in "
+          f"{WORKSPACE_ROOT}/secrets/.env", file=sys.stderr)
+    if not GENAI_AVAILABLE:
+        print("  Note: google-genai not installed. "
+              "Run: pip3 install google-genai --break-system-packages", file=sys.stderr)
+    if not OPENAI_AVAILABLE:
+        print("  Note: openai not installed. "
+              "Run: pip3 install openai --break-system-packages", file=sys.stderr)
+    sys.exit(1)
+
+
+# Legacy alias — old callers still call get_client()
+def get_client():
+    provider, client, _ = get_embedder()
+    return client
 
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -65,18 +139,37 @@ def chunk_text(text):
         start = end - CHUNK_OVERLAP
     return chunks
 
-def get_embedding(client, text, retries=5):
+def get_embedding(client_or_pair, text, retries=5):
+    """
+    Embed `text`. Works with Gemini client (legacy) OR with the new
+    (provider, client, model_id) tuple returned by get_embedder().
+    """
+    if isinstance(client_or_pair, tuple):
+        provider, client, model_id = client_or_pair
+    else:
+        provider, client, model_id = "gemini", client_or_pair, GEMINI_MODEL
+
     delay = 2
     for attempt in range(retries):
         try:
-            response = client.models.embed_content(
-                model=GEMINI_MODEL,
-                contents=text,
-                config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
-            )
-            return np.array(response.embeddings[0].values, dtype=np.float32)
+            if provider == "gemini":
+                response = client.models.embed_content(
+                    model=model_id,
+                    contents=text,
+                    config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
+                )
+                return np.array(response.embeddings[0].values, dtype=np.float32)
+            elif provider == "openai":
+                # OpenAI returns 1536-dim float vectors for text-embedding-3-small
+                response = client.embeddings.create(
+                    model=model_id,
+                    input=text,
+                )
+                return np.array(response.data[0].embedding, dtype=np.float32)
+            else:
+                raise ValueError(f"unknown provider: {provider}")
         except Exception as e:
-            if "429" in str(e).lower() or "quota" in str(e).lower():
+            if "429" in str(e).lower() or "quota" in str(e).lower() or "rate" in str(e).lower():
                 time.sleep(delay)
                 delay *= 2
             else:
@@ -90,7 +183,11 @@ def main():
     if not os.path.exists(PERSONAS_DIR):
         print(f"ERROR: Directory not found -> {PERSONAS_DIR}")
         sys.exit(1)
-    client = get_client()
+    # v10.10.0 P0-003: get_embedder() returns (provider, client, model_id)
+    # tuple — supports both Gemini (preferred) and OpenAI (fallback).
+    embedder = get_embedder()
+    print(f"📐 Using embedder: {embedder[0]} ({embedder[2]})", file=sys.stderr)
+    client = embedder  # passed straight to get_embedding() which unpacks the tuple
     conn = init_db()
     cursor = conn.cursor()
     files = list(Path(PERSONAS_DIR).rglob("*.md"))

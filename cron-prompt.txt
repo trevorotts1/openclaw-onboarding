@@ -23,6 +23,19 @@ RULE 4 — Classify risk per repo. Use this rubric in priority order:
 RULE 5 — If no updates anywhere (has_update is false for ALL repos), send this short Telegram message and exit:
   "Sunday update check complete. Everything is up to date. Onboarding: vX.Y.Z (current). Command Center: vA.B.C (current). Nothing to do this week."
 
+RULE 5.5 — v10.10.0 P0 — Drop AGENTS.md DETECTION flag (triple-fire N22 sub-rule).
+  When updates ARE detected (any repo's has_update is true), BEFORE composing the Telegram summary in RULE 6, append a detection marker to the platform-appropriate AGENTS.md so the next agent session sees the update-pending state:
+    Mac path:  $HOME/.openclaw/AGENTS.md
+    VPS path:  /data/.openclaw/AGENTS.md
+  Marker format (append at end of file, idempotent — only write if marker for THIS version isn't already there):
+    <!-- OPENCLAW_UPDATE_DETECTED:<latest_version>:<timestamp> -->
+    ## OpenClaw Sunday update detected: <latest_version> (from <local_version>)
+    Repos: onboarding (vX.Y.Z), command-center (vA.B.C)
+    Risk: [LOW/MEDIUM/HIGH]
+    Status: PENDING_USER_REPLY — awaiting Telegram reply per RULE 6.
+    <!-- OPENCLAW_UPDATE_DETECTED_END -->
+  This way: even if the user misses the Telegram message, the agent reading AGENTS.md will surface the pending update. The flag remains until the user replies (RULE 10) or until next Sunday's check.
+
 RULE 6 — If updates ARE available, compose a SUMMARY Telegram message in this exact structure (plain English, no jargon, headlines-first, over-60 friendly):
 
   ──────────────────────────────────────────

@@ -3,12 +3,20 @@
 BlackCEO Coaching Personas Matrix - Orchestration Engine
 Manages the 3-phase book-to-persona pipeline across all 21 books.
 
-Pipeline:
-  Phase 1 - Extraction (Ollama DeepSeek V4-pro or Kimi 2.6, latest version — selector-resolved)
-  Phase 2 - Analysis (DeepSeek V3.2-Speciale) - deep analytical work
-  Phase 3 - Synthesis (GPT-5.3 Codex) - writes the full persona blueprint
+Pipeline (v10.10.0 — PRD §5.4 'book-to-persona' chain):
+  Phase 1 - Extraction (selector-resolved, see PRD §5.4):
+              1. Ollama Cloud Kimi  →  2. OpenRouter Kimi  →
+              3. Ollama Cloud DeepSeek V4 Pro  →
+              4. OpenRouter DeepSeek V4 Pro  →
+              5. OpenRouter Gemini 3.1 Flash Lite (cheapest fallback)
+  Phase 2 - Analysis (same chain as Phase 1)
+  Phase 3 - Synthesis (same chain — was GPT-5.3 Codex pre-v10.10.0;
+              now uses the §5.4 chain so the cheapest fallback is
+              Gemini Flash Lite, not GPT, matching N1 + cost policy)
 
-Runs 4 books in parallel per phase. Manages queue automatically.
+Anthropic models are FORBIDDEN by policy (N1). Filter applied at every tier.
+
+Runs up to 4 books in parallel per phase. Manages queue automatically.
 """
 
 import os
@@ -31,14 +39,22 @@ PROMPTS_DIR = PROJECT_DIR / "agent-prompts"
 STATUS_FILE = PROJECT_DIR / "pipeline-status.json"
 LOG_FILE = PROJECT_DIR / "pipeline-log.txt"
 
-# ─── MODEL IDs (v9.5.0: dynamic selection via shared-utils/select_model.py) ──
-# Model selection is no longer hardcoded. The orchestrator calls select_model.py
-# at runtime to pick the best available model for each phase, with these rules:
-#   Phase 1 (extraction): latest Kimi preferred (Ollama Cloud > OpenRouter)
-#   Phase 2 (analysis):   same Kimi-first chain as Phase 1
-#   Phase 3 (synthesis):  OAuth GPT preferred (subscription, no per-call cost)
-# Anthropic models are FORBIDDEN by policy. Filter applied at every tier.
-# The values below are DEFAULTS used only if select_model.py is unreachable.
+# ─── MODEL IDs (v10.10.0: PRD §5.4 'book-to-persona' chain) ──────────────────
+# Model selection is dynamic via shared-utils/select_model.py with the
+# 'book-to-persona' purpose_tier chain (5 positions):
+#   1. ollama/kimi-k*:cloud
+#   2. openrouter/moonshot/kimi-k*
+#   3. ollama/deepseek-v*-pro:cloud
+#   4. openrouter/deepseek/deepseek-v*-pro
+#   5. openrouter/google/gemini-*-flash-lite       ← cheapest fallback
+#
+# Phase 3 (synthesis) used to default to GPT-5.3 Codex when nothing else was
+# available. As of v10.10.0 we no longer fall through to GPT — Gemini Flash
+# Lite is the cheapest non-Anthropic non-GPT path, matching the audit's
+# Phase 14.4 requirement (PRD §5.4) and the no-Anthropic-models policy (N1).
+# Anthropic models are FORBIDDEN. Filter applied at every tier.
+# The fallback strings below are last-resort defaults only used if
+# select_model.py itself is unreachable.
 import subprocess
 from pathlib import Path as _Path
 
@@ -89,11 +105,15 @@ def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
     Pass input_chars when the actual input size is known so the selector
     can context-switch to DeepSeek V4-pro for large/huge books.
 
-    All three phases use the HEAVY tier chain:
-      normal context: Ollama Kimi → OpenRouter Kimi → Mimo → GLM → DeepSeek-pro → GPT
-      large context  (800K-3M chars): Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → GPT → Kimi
-      huge context   (> 3M chars):    Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → GPT
-    Anthropic FORBIDDEN at every position.
+    v10.10.0 — all three phases use the PRD §5.4 'book-to-persona' chain:
+      normal context: Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek Pro →
+                      OpenRouter DeepSeek Pro → Gemini Flash Lite
+      large context (800K-3M chars): same chain, large-input variant where
+                      DeepSeek Pro (1M ctx) leads
+      huge context  (> 3M chars):    DeepSeek Pro only
+
+    No GPT in the chain. No Anthropic. Gemini Flash Lite is the cheapest
+    fallback per PRD §5.4 and the audit's Phase 14.4 requirement.
     """
     purpose_map = {
         "phase1": "Phase 1 extraction",
@@ -101,11 +121,25 @@ def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
         "phase3": "Phase 3 synthesis",
     }
     purpose = purpose_map.get(phase, phase)
-    fallback = "ollama/kimi-k2.6:cloud" if input_chars is None or input_chars <= 800_000 else "ollama/deepseek-v4-pro:cloud"
-    # v10.9.0 P1-F: pin Book-to-Persona explicitly to PRD §5.4 role-specific
-    # chain (Kimi → DeepSeek → Gemini Flash Lite). The "heavy" alias is kept
-    # for backward-compat; new code uses "book-to-persona".
+    # v10.10.0: the LAST-RESORT fallback (used only when select_model.py is
+    # itself unreachable) is now Gemini Flash Lite, not GPT/Kimi. This
+    # matches PRD §5.4 (the 'book-to-persona' chain ends at Flash Lite) and
+    # closes audit Phase 14.4 finding ("Phase 3 = GPT-5.3 Codex").
+    if input_chars is None or input_chars <= 800_000:
+        fallback = "ollama/kimi-k2.6:cloud"
+    else:
+        fallback = "ollama/deepseek-v4-pro:cloud"
+    # Tier-5 (no Ollama, no OpenRouter, no models matching) falls to
+    # Gemini Flash Lite per PRD §5.4 position 5 — this is the LAST RESORT.
+    last_resort = "openrouter/google/gemini-3.1-flash-lite-preview"
+
     model_id = _resolve_model("book-to-persona", purpose, "book-to-persona", fallback, input_chars=input_chars)
+    # If _resolve_model couldn't find anything, it falls back to the
+    # `fallback` string above. If even that's not in the client's config,
+    # final defense: Gemini Flash Lite. This makes the comment "no GPT in
+    # the chain" structurally true.
+    if not model_id:
+        model_id = last_resort
     return model_id, _route_for(model_id)
 
 

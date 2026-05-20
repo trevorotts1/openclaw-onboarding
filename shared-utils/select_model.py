@@ -84,6 +84,10 @@ DEEPSEEK_FLASH_OPENROUTER = {"label": "OpenRouter DeepSeek V*-flash",
                              "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-flash$")}
 GEMINI_FLASH_LITE         = {"label": "OpenRouter Gemini Flash Lite",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-flash-lite(?:-preview)?$")}
+# v10.10.0 P0-002: Gemini 3.1 Pro pattern. Final fallback for the
+# orchestrator and installer-subagent chains per PRD §5.1 and §5.2.
+GEMINI_PRO                = {"label": "OpenRouter Gemini Pro",
+                             "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-pro(?:-preview)?$")}
 
 # Purpose-tier chains. v10.2.0 priority (per owner directive):
 #   For heavy reasoning + book extraction, prefer Ollama Cloud DeepSeek V4-pro
@@ -135,15 +139,18 @@ CHAINS = {
     #
     # §5.1 Master Orchestrator (thinking=high):
     #   1. ollama/kimi-k*:cloud  → 2. openrouter/moonshot/kimi-k*  → 3. Gemini 3.1 Pro
+    # v10.10.0 P0-002: Gemini Pro is now in position 3, the explicit PRD §5.1
+    # fallback. Flash Lite drops to position 4 (cheaper last resort).
     "orchestrator": {
         "normal": [
             KIMI_OLLAMA,                # 1. Ollama Cloud Kimi (latest)
             KIMI_OPENROUTER,            # 2. OpenRouter Kimi (same model, OR route)
-            GEMINI_FLASH_LITE,          # 3. Gemini fallback (Pro pattern not yet in registry; Flash Lite is the available pattern)
+            GEMINI_PRO,                 # 3. Gemini 3.1 Pro — PRD §5.1 explicit fallback
+            GEMINI_FLASH_LITE,          # 4. Gemini Flash Lite — cheaper last resort
             OAUTH_GPT,
         ],
-        "large": [KIMI_OLLAMA, KIMI_OPENROUTER, DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
-        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+        "large": [KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_PRO, DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
     },
 
     # §5.2 Installer sub-agent — needs DeepSeek V4 Pro's 1M context for big
@@ -153,11 +160,12 @@ CHAINS = {
         "normal": [
             DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4 Pro
             DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4 Pro
-            GEMINI_FLASH_LITE,          # 3. Gemini Pro fallback (Flash Lite is the closest available pattern)
+            GEMINI_PRO,                 # 3. Gemini 3.1 Pro — PRD §5.2 explicit fallback
+            GEMINI_FLASH_LITE,          # 4. Cheaper last resort
             OAUTH_GPT,
         ],
-        "large": [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
-        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+        "large": [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
+        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
     },
 
     # §5.3 QC sub-agent — cheap+capable; Kimi for reasoning, Flash Lite for

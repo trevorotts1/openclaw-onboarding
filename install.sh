@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.9.0"
+ONBOARDING_VERSION="v10.10.0"
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)
@@ -1441,12 +1441,35 @@ done
 
 success "$SKILL_COUNT skills installed"
 
+# v10.10.0 P0-007: ensure ~/clawd/ legacy workspace exists unconditionally.
+# Older onboarding only created it when the user selected "legacy mode";
+# new installs need it too for backward-compat (the persona-selector and
+# many skill paths still default to ~/clawd/ when ~/.openclaw/workspace
+# doesn't exist).
+mkdir -p "$OC_LEGACY_CLAWD" 2>/dev/null && note "Ensured legacy workspace exists: $OC_LEGACY_CLAWD"
+
 # Copy root files
 for ROOT_FILE in "Start Here.md" README.md CHANGELOG.md version; do
     if [ -f "$ONBOARDING_DIR/$ROOT_FILE" ]; then
         cp "$ONBOARDING_DIR/$ROOT_FILE" "$SKILLS_DIR/../"
     fi
 done
+
+# v10.10.0 P0-007: Trigger agent execution of Start Here.md, not just copy.
+# The bash install.sh has done its bootstrap. The actual onboarding work
+# (read 33 skills, wave-install, run interview, build ZHC, etc.) is the
+# agent's job — driven by Start Here.md. We've copied the file; we now
+# need to MAKE SURE the agent reads it. Three independent channels (the
+# triple-fire in fire_install_kickoff_triplet at end of install.sh) all
+# include a direct instruction: "Read $SKILLS_DIR/../Start Here.md end to
+# end." This block ensures the file at that path has the same content the
+# triple-fire instructs the agent to read.
+START_HERE_LANDED="$SKILLS_DIR/../Start Here.md"
+if [ -f "$START_HERE_LANDED" ]; then
+    success "Start Here.md placed at $START_HERE_LANDED — agent will be instructed to execute it via the triple-fire trigger at install.sh end"
+else
+    warn "Start Here.md NOT found at expected path $START_HERE_LANDED — agent dispatch may fail"
+fi
 
 # Copy scripts folder
 if [ -d "$ONBOARDING_DIR/scripts" ]; then
