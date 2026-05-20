@@ -5,19 +5,29 @@ import sqlite3
 import argparse
 import time
 
+# v10.12.0 P10.2: graceful google-genai import (matches indexer pattern). When
+# the package is absent we fall through to OpenAI rather than crashing.
 try:
     from google import genai
     from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
+    types = None
+
+try:
     import numpy as np
 except ImportError:
-    print("CRITICAL ERROR: Missing dependencies.")
+    print("CRITICAL ERROR: numpy missing. Run: pip3 install numpy --break-system-packages", file=sys.stderr)
     sys.exit(1)
 
-# Workspace Root Configuration
+# Workspace Root Configuration (Mac → VPS fallback). Legacy ~/clawd removed in v10.12.0.
 WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
-CLAWD_ROOT = os.path.expanduser("~/clawd")  # Legacy fallback
 if not os.path.isdir(WORKSPACE_ROOT):
-    WORKSPACE_ROOT = CLAWD_ROOT
+    VPS_WORKSPACE = "/data/.openclaw/workspace"
+    if os.path.isdir(VPS_WORKSPACE):
+        WORKSPACE_ROOT = VPS_WORKSPACE
 
 DB_PATH = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/gemini-index.sqlite")
 GEMINI_MODEL = "gemini-embedding-2-preview"
@@ -60,19 +70,29 @@ def _read_secret(name):
 
 def get_embedder():
     """
-    Returns (provider, client, model_id). v10.10.0 P0-003.
-    Order: Gemini (preferred) → OpenAI (fallback) → error.
+    Returns (provider, client, model_id). v10.10.0 P0-003 + v10.12.0 P10.2.
+    Order: Gemini (preferred per N18) → OpenAI (fallback) → error.
+    Both arms now check both the API key AND the package being importable.
     """
     google_key = _read_secret("GOOGLE_API_KEY") or _read_secret("GEMINI_API_KEY")
-    if google_key:
+    if google_key and GENAI_AVAILABLE:
         return ("gemini", genai.Client(api_key=google_key), GEMINI_MODEL)
     openai_key = _read_secret("OPENAI_API_KEY")
     if openai_key and OPENAI_AVAILABLE:
         client = openai_pkg.OpenAI(api_key=openai_key)
-        print(f"[gemini-search] WARN: GOOGLE_API_KEY absent — falling back to "
-              f"OpenAI {OPENAI_EMBED_MODEL}.", file=sys.stderr)
+        print(f"[gemini-search] WARN: GOOGLE_API_KEY absent or google-genai not "
+              f"installed — falling back to OpenAI {OPENAI_EMBED_MODEL} per N18.",
+              file=sys.stderr)
         return ("openai", client, OPENAI_EMBED_MODEL)
-    print("ERROR: No embedding provider available. Set GOOGLE_API_KEY or OPENAI_API_KEY.", file=sys.stderr)
+    print("ERROR: No embedding provider available.", file=sys.stderr)
+    print(f"  Set GOOGLE_API_KEY (preferred) or OPENAI_API_KEY in {WORKSPACE_ROOT}/secrets/.env",
+          file=sys.stderr)
+    if not GENAI_AVAILABLE:
+        print("  Note: google-genai not installed. Run: pip3 install google-genai --break-system-packages",
+              file=sys.stderr)
+    if not OPENAI_AVAILABLE:
+        print("  Note: openai not installed. Run: pip3 install openai --break-system-packages",
+              file=sys.stderr)
     sys.exit(1)
 
 

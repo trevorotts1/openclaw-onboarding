@@ -172,3 +172,34 @@ rm -f "$LOCAL_SKILLS_TMP" "$REMOTE_SKILLS_TMP"
 # Mark when this check ran (for catchup detection in update-skills.sh)
 mkdir -p "$(dirname "$SKILLS_DIR/.last-update-check")"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$SKILLS_DIR/.last-update-check" 2>/dev/null || true
+
+# ----------------------------------------------------------
+# N22 (triple-fire trigger, detection-side) — write the AGENTS.md flag
+# whenever an update is detected. This fires on DETECTION, NOT only on
+# force-update apply. The flag remains until the user replies (via the
+# Sunday cron Telegram flow) or until next Sunday's check clears it.
+# v10.12.0 P20.1: prior versions only wrote this flag from force-update.sh.
+# ----------------------------------------------------------
+if [ "$HAS_REPO_UPDATE" = "true" ] || [ "$HAS_SKILL_UPDATES" = "true" ]; then
+  if [ "$PLATFORM" = "vps" ]; then
+    AGENTS_MD="/data/.openclaw/AGENTS.md"
+  else
+    AGENTS_MD="$HOME/.openclaw/AGENTS.md"
+  fi
+  mkdir -p "$(dirname "$AGENTS_MD")" 2>/dev/null || true
+  flag_marker="<!-- OPENCLAW_UPDATE_DETECTED:${LATEST_VERSION}:$(date -u +%Y-%m-%dT%H:%M:%SZ) -->"
+  if [ -f "$AGENTS_MD" ] && grep -qF "OPENCLAW_UPDATE_DETECTED:${LATEST_VERSION}" "$AGENTS_MD" 2>/dev/null; then
+    : # already flagged for this version
+  else
+    {
+      echo ""
+      echo "$flag_marker"
+      echo "## OpenClaw update detected: ${LATEST_VERSION} (from ${LOCAL_VERSION})"
+      echo "Repo: ${REPO_NAME}"
+      echo "Risk hint: ${RISK_HINT:-unknown}"
+      echo "Detected at $(date -u +%Y-%m-%dT%H:%M:%SZ) by check-updates.sh"
+      echo "Status: PENDING_USER_REPLY — awaiting Telegram reply per Sunday cron RULE 6."
+      echo "<!-- OPENCLAW_UPDATE_DETECTED_END -->"
+    } >> "$AGENTS_MD" 2>/dev/null || true
+  fi
+fi

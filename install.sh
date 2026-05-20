@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v10.3.0 — Mac mini
+#  OpenClaw Onboarding Installer v10.12.0 — Mac mini
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 #
 #  This installer is for Mac mini / macOS deployments of OpenClaw.
@@ -25,7 +25,21 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.10.0"
+ONBOARDING_VERSION="v10.12.0"
+
+# ----------------------------------------------------------
+# Shared library — source if available (best-effort, never required).
+# Provides detect_platform(), find_master_files(), and other helpers
+# used by update-skills.sh / check-updates.sh / skills' QC scripts.
+# Falls back to inlined definitions below if the file isn't present
+# yet (e.g. first-time install before the repo has been cloned).
+# ----------------------------------------------------------
+_lib_shared_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-shared.sh"
+if [ -f "$_lib_shared_self" ]; then
+  # shellcheck source=/dev/null
+  source "$_lib_shared_self"
+  export OPENCLAW_LIB_SHARED_SOURCED=1
+fi
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)
@@ -2645,42 +2659,55 @@ fire_install_kickoff_triplet() {
     local tg_fired="false" flag_fired="false"
     local tg_reason="" flag_reason=""
 
-    # 1. Telegram message
+    # 1. Telegram message — UNCONDITIONAL attempt (N22). Even if the openclaw
+    #    CLI isn't on PATH yet (first-time install), we still try; the
+    #    attempt is what's unconditional, not the success. Reason logged.
+    local tg_msg
+    tg_msg="🚀 OpenClaw onboarding files installed (${ONBOARDING_VERSION:-?}). To start the actual onboarding, paste the instructions printed in your terminal to your agent. Or reply to this message with 'start onboarding'."
     if command -v openclaw >/dev/null 2>&1; then
-        local tg_msg
-        tg_msg="🚀 OpenClaw onboarding files installed (${ONBOARDING_VERSION:-?}). To start the actual onboarding, paste the instructions printed in your terminal to your agent. Or reply to this message with 'start onboarding'."
         if openclaw message send --message "$tg_msg" 2>/dev/null; then
             tg_fired="true"
         else
             tg_reason="openclaw message send failed (Telegram likely not paired or scopes missing)"
         fi
     else
-        tg_reason="openclaw CLI not on PATH"
+        # No CLI yet — try the lowest-level fallback: tg.sh helper if it
+        # exists in the skills dir; otherwise log the reason. The terminal
+        # block (trigger 3) still surfaces the message, which is why
+        # triple-fire is triple-fire and not single-point-of-failure.
+        local tg_helper="$skills_dir/scripts/send-telegram.sh"
+        if [ -x "$tg_helper" ]; then
+            if "$tg_helper" "$tg_msg" 2>/dev/null; then
+                tg_fired="true"
+            else
+                tg_reason="openclaw CLI absent; send-telegram.sh helper invocation failed"
+            fi
+        else
+            tg_reason="openclaw CLI absent and no send-telegram.sh helper available (Telegram delivery deferred to first post-install agent session)"
+        fi
     fi
 
-    # 2. AGENTS.md flag
-    if [ -d "$(dirname "$agents_md")" ]; then
-        local flag_marker
-        flag_marker="<!-- OPENCLAW_ONBOARDING_KICKOFF:${ONBOARDING_VERSION:-?} -->"
-        if [ -f "$agents_md" ] && grep -qF "$flag_marker" "$agents_md" 2>/dev/null; then
-            flag_fired="true"
-        else
-            {
-                echo ""
-                echo "$flag_marker"
-                echo "## OpenClaw onboarding kickoff: ${ONBOARDING_VERSION:-?}"
-                echo "Triggered at $(date -u +%Y-%m-%dT%H:%M:%SZ) via install.sh on platform=$plat."
-                echo ""
-                echo "The bash install.sh has finished bootstrapping repo files at $skills_dir."
-                echo "Read the terminal kickoff block (printed at install.sh end) and execute"
-                echo "those instructions in order. Begin with: read $skills_dir/Start\\ Here.md"
-                echo "and $skills_dir/INSTALL-CONTRACT.md end to end before any work."
-                echo "<!-- OPENCLAW_ONBOARDING_KICKOFF_END -->"
-            } >> "$agents_md" 2>/dev/null && flag_fired="true" \
-                                            || flag_reason="could not write $agents_md"
-        fi
+    # 2. AGENTS.md flag — UNCONDITIONAL attempt (N22). Create the parent dir
+    #    if needed; only skip if mkdir + write both fail.
+    mkdir -p "$(dirname "$agents_md")" 2>/dev/null || true
+    local flag_marker
+    flag_marker="<!-- OPENCLAW_ONBOARDING_KICKOFF:${ONBOARDING_VERSION:-?} -->"
+    if [ -f "$agents_md" ] && grep -qF "$flag_marker" "$agents_md" 2>/dev/null; then
+        flag_fired="true"
     else
-        flag_reason="AGENTS.md parent directory $(dirname "$agents_md") does not exist"
+        {
+            echo ""
+            echo "$flag_marker"
+            echo "## OpenClaw onboarding kickoff: ${ONBOARDING_VERSION:-?}"
+            echo "Triggered at $(date -u +%Y-%m-%dT%H:%M:%SZ) via install.sh on platform=$plat."
+            echo ""
+            echo "The bash install.sh has finished bootstrapping repo files at $skills_dir."
+            echo "Read the terminal kickoff block (printed at install.sh end) and execute"
+            echo "those instructions in order. Begin with: read $skills_dir/Start\\ Here.md"
+            echo "and $skills_dir/INSTALL-CONTRACT.md end to end before any work."
+            echo "<!-- OPENCLAW_ONBOARDING_KICKOFF_END -->"
+        } >> "$agents_md" 2>/dev/null && flag_fired="true" \
+                                        || flag_reason="could not write $agents_md (mkdir -p $(dirname "$agents_md") also tried)"
     fi
 
     # 3. Terminal fallback — ALWAYS printed regardless of 1 and 2

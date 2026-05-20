@@ -273,7 +273,7 @@ Before installing any skill, the master orchestrator must verify these `agents.d
   "thinking": "high",
   "maxChildrenPerAgent": 20,
   "maxConcurrent": 100,
-  "maxSpawnDepth": 5,
+  "maxSpawnDepth": 4,
   "timeoutSeconds": 1800
 }
 ```

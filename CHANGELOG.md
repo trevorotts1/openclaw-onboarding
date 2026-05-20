@@ -1,3 +1,81 @@
+## [v10.12.0] — 2026-05-20 — v2.0 Full Closeout: Every Below-B+ Phase
+
+The v10.11.0 audit (raw 7.89, F-floor from 5 critical-phase misses) identified 11 phases below threshold. This release closes **every single item** across all 11 phases. The release auditor specifically called out that v10.11.0's "rewrote Wave 3" claim was incomplete — only the summary section was rewritten, not the procedure block at line 1950. That's the headline fix here.
+
+### Risk: low-medium
+All fixes are additive or strictly safer. The unconditional triple-fire trigger change is backward compatible (existing reason-logging path retained when CLI absent). Skill 22 QC script overhaul will surface real dependency gaps that prior versions silently passed.
+
+### Phase 6 (5.50 → expected ≥ 8.5) — Master Orchestrator (Top blocker)
+
+- **Start Here.md lines 1950-1966** — fully rewrote Wave 3 procedure to dispatch sub-agents serially via `sessions_spawn` instead of "YOU Install These, No Sub-Agents". User-interaction step now surfaces via triple-fire trigger before Skill 23 dispatch (N22). Self-contradicting doc is reconciled.
+- **Start Here.md line 2117 diagram** — column "CORE SYSTEM - Main orchestrator ONLY" replaced with "Dispatched serially (N22 user-interaction)".
+- **Dashboard `agents/master-orchestrator/IDENTITY.md`** — section heading "Persona Governance — CEO Mode" renamed to "CEO_DEFERRAL — Persona Governance Override (Master Orchestrator Mode)" to match the onboarding AGENTS.md (which claimed the three sources were "kept in sync" — now they actually are).
+
+### Phase 7 (6.50 → expected ≥ 8.5) — Sub-Agent Rules
+
+- **`INSTALL-CONTRACT.md` Rule 11 line 276** — `"maxSpawnDepth": 5` → `4`. Contract now agrees with `install.sh` and `direct-to-agent-install.md`.
+- **`AGENTS.md`** — added the canonical N1–N27 unified index (27-row table). Previously 12 N-rules (N7, N9, N10, N16, N18, N20, N21, N23–N27) were unlabeled or scattered. Every rule now has a binding doc + enforcement column. N16 (persona governance on every non-mechanical task) is now explicitly labeled.
+
+### Phase 11 (6.50 → expected ≥ 8.5) — Skill Format
+
+- **Skill 22 `INSTRUCTIONS.md` (NEW, ~210 lines)** — comprehensive execution guide for the Book-to-Persona 3-phase pipeline: TYP read-order, 4 source-type routing, per-phase model chain (N1 non-Anthropic), Calibre auto-install (N26), Gemini Engine indexing step, failure modes, QC gate.
+- **Skill 35 `INSTRUCTIONS.md` (NEW, ~190 lines)** — execution guide for the 15+6 agent content publishing engine: variable sources (never hardcode), 5-phase cycle, 6 QC gates, per-platform cheat sheets, GHL quota pre-check reminder.
+- **Skill 32 `SKILL.md`** — added MANDATORY TYP banner at the top (matches Skill 22/23 placement). Previously TYP reference lived only in `INSTALL.md`.
+
+### Phase 12 (5.50 → expected ≥ 8.5) — Per-Skill Audit
+
+- **Skill 22 `qc-book-to-persona-coaching-leadership-system.sh`** — full overhaul:
+  - Removed the erroneous hard-assert on Skill 31 (was never an INSTALL.md prerequisite).
+  - Added real INSTALL.md dependency asserts: Python 3.8+, pdfplumber, pypdf, ebooklib, aiohttp, beautifulsoup4, mobi, lxml, numpy, google-genai (warn), openai (warn — N18 fallback), Calibre ebook-convert (with N26 path detection across Mac + Linux), embedding key resolution (Gemini OR OpenAI), Ollama Cloud / OpenRouter key warns.
+  - Adds `INSTRUCTIONS.md present` structural assert.
+- **Skill 23 `qc-ai-workforce-blueprint.sh` line 19** — `assert "Skill 22 (Persona) installed FIRST"` softened to `warn_only "Skill 22 ... recommended; graceful-degradation supported per INSTALL.md"`. Aligns QC with the documented graceful-degradation path.
+
+### Phase 10 (7.50 → expected ≥ 8.5) — Gemini Embeddings
+
+- **`gemini-indexer.py`** — full refactor of `main()`:
+  - Removed `# Process just the first 2 files for the test` + `for file_path in files[:2]:` hardcoded test stub. Now iterates the full file list in production.
+  - Added `argparse` with `--status` (DB stats + embedder readiness report) and `--rebuild` (drop all embeddings + re-index from scratch) flags.
+  - Removed `~/clawd` legacy fallback (replaced with VPS fallback `/data/.openclaw/workspace`).
+  - Final print message no longer says "Indexing test complete" — now reports added/skipped/errors counts.
+- **`gemini-search.py`** — symmetric fixes:
+  - Wrapped `from google import genai` in try/except → `GENAI_AVAILABLE` guard. When `google-genai` is missing but `OPENAI_API_KEY` is set, falls back to OpenAI per N18 instead of crashing with `ImportError`.
+  - Removed `~/clawd` legacy fallback.
+
+### Phase 4 (7.50 → expected ≥ 8.5) — Bootstrap Settings
+
+- **VPS `install.sh`** — terminal-kickoff documentation block now explicitly lists `maxChars=200000, maxTotalChars=400000, maxSpawnDepth=4, maxChildren=20, maxConcurrent=100, thinking=high` (matches Mac line 2721). The actual Python config-writing block already wrote `bootstrapMaxChars=200000` / `bootstrapTotalMaxChars=400000` — this fix surfaces those values in the agent-facing doc block.
+- **Both `install.sh`** — `ONBOARDING_VERSION="v10.10.0"` → `"v10.12.0"`. Header comments `v10.3.0` → `v10.12.0`.
+
+### Phase 2 (8.00 → expected ≥ 8.5) — Install Paths
+
+- **`DIRECT-TO-AGENT-UPDATE-MESSAGE.md`** — body "latest version is v6.0.1" → `v10.12.0`. Header "Version 1.0 | March 22, 2026" → "Version 2.0 | 2026-05-20 (v10.12.0)". Future bumps must keep this file in sync with `version`.
+- **Both `install.sh`** — now source `lib-shared.sh` from repo root if present (best-effort). Sets `OPENCLAW_LIB_SHARED_SOURCED=1` env marker. Previously the shared library existed but no caller used it.
+
+### Phase 3 (8.00 → expected ≥ 8.5) — Triple-Fire Trigger
+
+- **`fire_install_kickoff_triplet()` in both `install.sh`** — Telegram + AGENTS.md flag are now **truly unconditional attempts**:
+  - Telegram: when `openclaw` CLI is absent (first-time install), now tries `$skills_dir/scripts/send-telegram.sh` helper as a fallback. Only logs "deferred to first post-install agent session" if both fail. Previously was a hard-skip on CLI absence.
+  - AGENTS.md flag: `mkdir -p` parent dir before write. Previously the write was guarded by `if [ -d "$(dirname ...)" ]` and silently skipped if the dir was missing.
+- **`ONBOARDING-TRIGGERS.md`** — added "N22 — Triple-Fire Trigger Semantics (Unconditional)" section at the top. Explicitly documents that all three triggers attempt unconditionally with best-effort delivery + reason logging when a path fails.
+
+### Phase 5 (7.50 → expected ≥ 8.5) — Wave Concurrency
+
+- **`AGENTS.md`** — added "Wave Taxonomies — 5-Wave (Install) vs 7-Wave (Audit)" section explaining the distinction. Pushes back on audit false-negatives that dinged the install docs for "missing 7-wave structure" (the 5-wave install structure is intentional and dependency-driven).
+- **Dashboard `scripts/check-wave-concurrency.sh`** — copied byte-identical from onboarding repos. AGENTS.md references the script as universal enforcement; now it physically lives in all three repos.
+
+### Phase 9 (8.00 → expected ≥ 8.5) — Web Research
+
+- **`scripts/web-research-preflight.sh`** — added `extract_details()` helper that parses each Ollama / OpenRouter model page body for context-window tokens (K/M-aware), max-output tokens, and per-1M USD pricing. Results land in `preflight-research.json` under `ollama_lookups[].details` and `openrouter_lookups[].details`. Previously the script only recorded HTTP 200 reachability and discarded the page body.
+
+### Phase 20 detection-side enhancement
+
+- **`check-updates.sh`** — when `has_repo_update` or `has_skill_updates` is true, now writes the `<!-- OPENCLAW_UPDATE_DETECTED:<version>:<ts> -->` flag to `AGENTS.md` directly (Mac: `$HOME/.openclaw/AGENTS.md`, VPS: `/data/.openclaw/AGENTS.md`). Previously this flag was only written by `force-update.sh` on apply. Now the next agent session sees the pending update on the very next read.
+
+### Files touched
+
+- Both onboarding repos: `Start Here.md`, `AGENTS.md`, `INSTALL-CONTRACT.md`, `install.sh`, `ONBOARDING-TRIGGERS.md`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `check-updates.sh`, `scripts/web-research-preflight.sh`, `22-book-to-persona-coaching-leadership-system/INSTRUCTIONS.md` (new), `22-book-to-persona-coaching-leadership-system/qc-book-to-persona-coaching-leadership-system.sh`, `23-ai-workforce-blueprint/qc-ai-workforce-blueprint.sh`, `23-ai-workforce-blueprint/scripts/gemini-indexer.py`, `23-ai-workforce-blueprint/scripts/gemini-search.py`, `32-command-center-setup/SKILL.md`, `35-social-media-planner/INSTRUCTIONS.md` (new), `version`, `CHANGELOG.md`.
+- Dashboard: `agents/master-orchestrator/IDENTITY.md`, `scripts/check-wave-concurrency.sh` (new), `version`, `package.json`, `CHANGELOG.md` (in companion v3.4.0 entry).
+
 ## [v10.11.0] — 2026-05-20 — v2.0 Re-Audit Closeout: 6 Remaining P0s
 
 The v10.10.0 fresh-run re-audit (v2.0) found 10 P0 items. Verification against the GitHub HEAD confirmed **3 were false negatives** (cron 3am, force-update.sh, AGENTS.md detection flag — all already shipped in v10.10.0). The remaining 7 P0s were truly missing and shipped here as 6 distinct fixes (one P0 spans two repos).

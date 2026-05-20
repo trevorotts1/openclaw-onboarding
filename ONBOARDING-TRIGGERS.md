@@ -2,6 +2,27 @@
 
 This document shows you exactly how to start a fresh OpenClaw install or run an update on an existing install. There are **8 different ways to do it**, depending on (1) what kind of machine you have, (2) whether this is your first install or an update, and (3) whether you'd rather use Terminal or your Telegram agent.
 
+---
+
+## 🔴 N22 — Triple-Fire Trigger Semantics (Unconditional)
+
+Every install kickoff in this document, regardless of which of the 8 blocks below is used, fires **ALL THREE** triggers in `fire_install_kickoff_triplet()`:
+
+1. **Telegram message** — sent via `openclaw message send`. If the CLI isn't on PATH yet (first-time install), falls back to `scripts/send-telegram.sh` helper, otherwise logs the reason and defers delivery to the first post-install agent session. **The attempt is unconditional.**
+2. **AGENTS.md flag** — appends `<!-- OPENCLAW_ONBOARDING_KICKOFF:<version> --> ... <!-- OPENCLAW_ONBOARDING_KICKOFF_END -->` to `$HOME/.openclaw/AGENTS.md` (Mac) or `/data/.openclaw/AGENTS.md` (VPS). Parent dir auto-created with `mkdir -p` if missing. **The attempt is unconditional.**
+3. **Terminal block** — printed via `cat <<TERMEOF` with no guard. **Always fires, always visible in the terminal.**
+
+This is **not "any one of three"** — all three attempts MUST happen on every install kickoff (and every Sunday-update detection, see `cron-prompt.txt` RULE 5.5 + `check-updates.sh`). Best-effort delivery with reason logging when a path fails, but the **attempt** is unconditional. This is the N22 binding.
+
+The same triple-fire pattern applies to:
+- Install kickoff: `install.sh::fire_install_kickoff_triplet()` (both Mac + VPS repos)
+- Update detection: `check-updates.sh` appends to AGENTS.md when `has_repo_update=true` or `has_skill_updates=true`
+- Force-update: `force-update.sh` (manual command at repo root) fires all three on demand
+
+If you see a kickoff where only one of three fired and no `reason` was logged in the terminal block — that's a bug, file it.
+
+---
+
 Pick the one block below that matches your exact situation. Each block is self-contained — you don't need to read the others.
 
 ---

@@ -65,6 +65,85 @@ This clause is identical to the CEO_DEFERRAL block in `create_role_workspaces.py
 
 ---
 
+## 🔴 N1–N27 — Non-Negotiables (Canonical Index)
+
+This is the single canonical index of the N1–N27 non-negotiables. Every other doc that references an N-rule MUST link to this section. If a rule is invoked elsewhere without its N-number, that's a bug.
+
+| N | Rule | Binding doc | Enforced by |
+|---|------|-------------|-------------|
+| N1 | **No Anthropic models in OpenClaw pipeline.** Pipeline (orchestrator, installer sub-agents, QC, scoring) uses DeepSeek V4 Pro (Ollama Cloud) + Gemini 3.1 Flash Lite (OpenRouter). Anthropic models are too expensive for sub-agent volume. | `direct-to-agent-install.md` | `shared-utils/select_model.py` model chains |
+| N2 | **Master Orchestrator does no work.** Orchestrator coordinates only — spawns sub-agents, reads reports, scores composites, dispatches. Never reads skill `.md` files to install them. Never runs `install.sh` steps directly. Never QCs its own work. | This file (top section) | Audit Phase 6 |
+| N3 | **Read before act.** Before any non-read action on a skill, the worker sub-agent must confirm by re-stating the skill's file inventory. No "act and verify"; verify first. | `direct-to-agent-install.md` | `qc-agent.sh` cross-check |
+| N4 | **Follow declared step order.** Sub-agents execute steps in the order declared in `INSTALL.md`. No re-ordering "for efficiency." No skipping "to save time." | `direct-to-agent-install.md` | QC scripts verify step-by-step exit codes |
+| N5 | **No self-QC.** The sub-agent that installed skill N CANNOT be the QC agent for skill N. Orchestrator dispatches QC to a different sub-agent (different model preferred). | This file (N5 section) | `scripts/qc-agent.sh` |
+| N6 | **Max 5 retry loops.** A failing skill gets re-installed up to 5 times. Loop 6 → escalate to owner via Telegram. Looping silently more than 5 times is a violation. | `INSTALL-CONTRACT.md` Rule 3 | `direct-to-agent-install.md` Step 7 |
+| N7 | **Orchestrator-only authority for gateway restart.** Sub-agents NEVER call `openclaw gateway restart`. Only the master orchestrator. Before restart: confirm `openclaw subagents list` is empty. | `INSTALL-CONTRACT.md` Rule 5 | Gateway-restart guard in cron-prompt RULE 16 |
+| N8 | **Orchestrator passes full content to sub-agents.** When dispatching, paste the actual TEXT of `SKILL.md`, `INSTRUCTIONS.md`, `INSTALL.md`, `QC.md`, and every `.py`/`.sh` script. Not file paths — content. | This file (N8 section) | Sub-agent confirms by re-stating file inventory |
+| N9 | **Standing observers are exempt from concurrency cap.** Memory Wiki + Devil's Advocate sub-agents observe rather than perform; they don't count against Mac=10 / VPS=5. | This file (N2 standing-observer exception) | `scripts/check-wave-concurrency.sh` excludes them |
+| N10 | **Acknowledge INSTALL-CONTRACT.md per skill.** Before processing skill N, re-read `INSTALL-CONTRACT.md` and log: "INSTALL-CONTRACT.md acknowledged for skill NN-name. Proceeding." | `INSTALL-CONTRACT.md` Rule 14 | Worker sub-agent log lines |
+| N11 | **Bootstrap setting: `maxChildrenPerAgent: 20`.** Per-agent fan-out cap. | `INSTALL-CONTRACT.md` Rule 11 | `install.sh` writes openclaw.json |
+| N12 | **Bootstrap setting: `maxConcurrent: 100`.** Process-wide cap across all agents. | `INSTALL-CONTRACT.md` Rule 11 | `install.sh` writes openclaw.json |
+| N13 | **Bootstrap setting: `thinking: high`.** Reasoning budget default for sub-agents. | `INSTALL-CONTRACT.md` Rule 11 | `install.sh` writes openclaw.json |
+| N14 | **Wave concurrency cap: Mac=10, VPS=5 worker sub-agents per wave.** Gate every wave with `scripts/check-wave-concurrency.sh` BEFORE dispatch. Standing observers exempt (see N9). Also includes `maxSpawnDepth: 4` (depth-4 recursion is the deepest the orchestrator allows). | `INSTALL-CONTRACT.md` Rule 0 + Rule 11 | `scripts/check-wave-concurrency.sh` |
+| N15 | **Pre-flight web research before model config.** `scripts/web-research-preflight.sh` fetches `docs.openclaw.ai`, `ollama.com`, `openrouter.ai` and lands `preflight-research.json` BEFORE any settings/model step. | `direct-to-agent-install.md` Step 2 | `install.sh` invokes the script before model config |
+| N16 | **Persona governance on EVERY non-mechanical task.** Every dispatch that isn't a pure mechanical operation (file copy, version check) runs `persona-selector-v2.py` first; the resolver consumes the pinned persona via Hop 10 (`task_pinned` → `sticky_assignment` → `agent_settings` cascade). | `direct-to-agent-install.md` Hard Rules + this file | `intelligence-resolver.ts` (dashboard) |
+| N17 | **Department roster from interview only — binary gate.** The 17 canonical departments come from the AI Workforce Interview (Skill 23). No hand-edited departments, no hardcoded extras, no implicit "Operations / Creative / HR" leftovers. | `dashboard/QC.md` | Migration 020 + `departments.config.ts` |
+| N18 | **Gemini Embeddings v2 + OpenAI fallback.** Use `gemini-embedding-2-preview`. When `GOOGLE_API_KEY` is absent, fall back to OpenAI `text-embedding-3-small` (1536-dim) — documented, not hidden. | `23-ai-workforce-blueprint/scripts/gemini-indexer.py` + `gemini-search.py` | `get_embedder()` resolver |
+| N19 | **ZHC layout for `agents/` directory.** Every role workspace has IDENTITY.md, HEARTBEAT.md, MEMORY.md, SOUL.md, USER.md + 4 symlinks (AGENTS.md, TOOLS.md, MEMORY.md, USER.md). | `dashboard/QC.md` | `agents/_shared/*` + symlink validator |
+| N20 | **Persona matrix is bread-and-butter.** The 5-layer scoring matrix (mission, owner_values, company_kpis, dept_kpis, task_fit) runs on every non-mechanical dispatch. Audit Phase 16 threshold raised to 9.0. | `dashboard/PRD.md` + persona-selector-v2.py | Audit Phase 16 + 17 |
+| N21 | **10-Hop Integration Trace must pass end-to-end.** Hops 1-10 connect interview → DB → selector → resolver → dispatch → activity log. Hop 10 (resolver consumes selector output) is the keystone. | `dashboard/PRD.md` Phase 17 | Audit Phase 17 threshold 9.0 |
+| N22 | **Triple-fire trigger.** Every install kickoff and Sunday-update detection fires ALL THREE: Telegram message + AGENTS.md flag + terminal block. NOT any one of three. All three fire unconditionally — best-effort with reason logging if a path fails, but the attempt is unconditional. | `install.sh::fire_install_kickoff_triplet()` + `ONBOARDING-TRIGGERS.md` | Audit Phase 3 |
+| N23 | **Sunday 3am cron.** Weekly update check fires at `0 3 * * 0` (3am Sunday in the install machine's TZ). Auto-installed by `setup-weekly-update.sh`. Force-update available via `force-update.sh` at repo root for manual runs. | `setup-weekly-update.sh` + `cron-prompt.txt` | Audit Phase 20 |
+| N24 | **No silent abandonment of sub-agent work.** Per INSTALL-CONTRACT Rule 6: on sub-agent failure, retry once with same model → retry once with fallback model → escalate to orchestrator. Never silently drop the task. | `INSTALL-CONTRACT.md` Rule 6 | cron-prompt RULE 15 |
+| N25 | **Skill-version-pinning + reproducibility.** Every skill has `skill-version.txt`. The Sunday update check compares remote against local and writes per-skill changes into `skill_changes[]` in the detection JSON. | `check-updates.sh` | Audit Phase 20.7 |
+| N26 | **Calibre auto-install for Book-to-Persona.** `_find_calibre()` in `22-book-to-persona/pipeline/orchestrator.py` auto-installs Calibre when missing — Homebrew on Mac, apt-get on Linux (with upstream installer fallback). User never sees an "install Calibre manually" prompt. | `22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py` | Audit Phase 14 |
+| N27 | **No lying / no shortcuts / proof required.** End-to-end completion is the only completion. Every claimed fix needs a verifiable artifact (commit hash, curl-against-HEAD output, exit code). The 20% not done gets disclosed, not buried. | This file + owner directive | Audit retro on every release |
+
+If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
+
+---
+
+## 🔵 Wave Taxonomies — 5-Wave (Install) vs 7-Wave (Audit)
+
+OpenClaw uses **two distinct wave taxonomies**. Confusing them is a common audit false-negative.
+
+### 5-Wave INSTALL structure (used by `Start Here.md` orchestration)
+
+| Wave | Skills | Sub-agents | Concurrency |
+|------|--------|------------|-------------|
+| Wave 1 — Foundation | 01 TYP, 02 Backup, Gemini Engine, 03 Agent Browser | 1 sequential | Mac=10 / VPS=5 cap |
+| Wave 2 — Pre-Persona | 04–21 | 4 parallel (3 install + 1 QC) | within cap |
+| Wave 3 — Core System (user-interaction-aware) | 22 Book-to-Persona, 23 AI Workforce | 2 sub-agents serial (Skill 22 → Skill 23) | within cap |
+| Wave 4 — Post-Workforce | 24–30 | 2 parallel | within cap |
+| Wave 5 — Final | 31 Memory + verify + final indexing | 1 sequential | within cap |
+
+This is the **operational** taxonomy: it controls how the installer dispatches sub-agents and how `scripts/check-wave-concurrency.sh` gates concurrency.
+
+### 7-Wave AUDIT structure (used by audit Phases 1–22)
+
+The independent audit framework groups the 22 audit phases into 7 waves:
+
+| Wave | Phases | Focus |
+|------|--------|-------|
+| Wave A | Phases 1–3 | Repo inventory, install paths, triple-fire trigger |
+| Wave B | Phases 4–6 | Bootstrap settings, wave concurrency, master orchestrator |
+| Wave C | Phases 7–9 | Sub-agent rules, model selection, web research |
+| Wave D | Phases 10–12 | Gemini embeddings, skill format, per-skill audit |
+| Wave E | Phases 13–17 | Workforce interview, book-to-persona, ZHC, persona matrix, integration trace |
+| Wave F | Phases 18–20 | Selection log/DB, dashboard, Sunday update |
+| Wave G | Phases 21–22 | QC framework, final composite scoring |
+
+This is the **diagnostic** taxonomy: it controls how the audit's sub-agents group their work and how `openclaw-analysis-v2-complete.md` reports scores. **It does NOT control install dispatch.**
+
+### Why two taxonomies
+
+- The 5-wave install structure is constrained by **inter-skill dependencies** (e.g., Skill 23 needs Skill 22's persona index; Skill 31 needs everything else done first).
+- The 7-wave audit structure is constrained by **audit-time independence** (which checks can run in parallel without contaminating each other).
+
+They are not interchangeable, and the audit should NEVER ding the install docs for "missing 7-wave structure" or vice versa. If you see that finding, push back — the 5-wave install structure is intentional and is documented in `Start Here.md`.
+
+---
+
 ## Gemini Engine INDEXING PROTOCOL
 
 **Gemini Engine (semantic search) must be indexed at specific milestones, not after every skill.**

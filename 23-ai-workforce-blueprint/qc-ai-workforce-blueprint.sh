@@ -16,7 +16,7 @@ echo ""
 echo "═══ Skill 23 — AI Workforce Blueprint — Install QC ═══"
 echo ""
 assert "Skill 23 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/23-ai-workforce-blueprint\" ]"
-assert "Skill 22 (Persona) installed FIRST" "[ -d \"$SKILLS_DIR_DEFAULT/22-book-to-persona-coaching-leadership-system\" ]"
+warn_only "Skill 22 (Persona) installed (recommended; graceful-degradation supported per INSTALL.md)" "[ -d \"$SKILLS_DIR_DEFAULT/22-book-to-persona-coaching-leadership-system\" ]"
 warn_only "Interview state evidence (A/B/C): answers, departments, or ORG-CHART" \
   "[ -f \"$WORKSPACE/workforce-interview-answers.md\" ] || [ -d \"$WORKSPACE/departments\" ] || [ -f \"$WORKSPACE/ORG-CHART.md\" ]"
 warn_only "departments/ folder OR ORG-CHART.md exists (STATE C — complete)" "[ -d \"$WORKSPACE/departments\" ] || [ -f \"$WORKSPACE/ORG-CHART.md\" ]"

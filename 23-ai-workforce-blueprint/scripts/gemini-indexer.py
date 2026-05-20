@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import os, sys, time, sqlite3, hashlib
 from pathlib import Path
 
@@ -29,11 +30,13 @@ except ImportError:
     OPENAI_AVAILABLE = False
     openai_pkg = None
 
-# Workspace Root Configuration
+# Workspace Root Configuration (Mac default → VPS fallback). Legacy ~/clawd
+# was removed in v10.12.0 per memory: "OpenClaw is the system (not Clawdbot, not Ant Farm)".
 WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
-CLAWD_ROOT = os.path.expanduser("~/clawd")  # Legacy fallback
 if not os.path.isdir(WORKSPACE_ROOT):
-    WORKSPACE_ROOT = CLAWD_ROOT
+    VPS_WORKSPACE = "/data/.openclaw/workspace"
+    if os.path.isdir(VPS_WORKSPACE):
+        WORKSPACE_ROOT = VPS_WORKSPACE
 
 DB_PATH = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/gemini-index.sqlite")
 PERSONAS_DIR = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/personas")
@@ -177,33 +180,79 @@ def get_embedding(client_or_pair, text, retries=5):
                 time.sleep(delay)
     return None
 
-def main():
-    print(f"🚀 Starting Gemini Multimodal Indexer")
+def cmd_status():
+    """Report DB stats + embedder readiness without running an index pass."""
+    print(f"📁 Workspace root: {WORKSPACE_ROOT}")
+    print(f"📁 Personas dir:   {PERSONAS_DIR}")
+    print(f"📁 DB path:        {DB_PATH}")
+    if not os.path.exists(DB_PATH):
+        print("ℹ️  DB not initialized yet — run without --status to build it.")
+    else:
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM embeddings")
+        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(DISTINCT file_path) FROM embeddings")
+        files_indexed = cur.fetchone()[0]
+        cur.execute("SELECT MAX(last_updated) FROM embeddings")
+        last_ts = cur.fetchone()[0]
+        conn.close()
+        print(f"📊 Chunks indexed:  {total}")
+        print(f"📄 Files indexed:   {files_indexed}")
+        if last_ts:
+            print(f"🕐 Last updated:    {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_ts))}")
+    if not os.path.exists(PERSONAS_DIR):
+        print(f"⚠️  Personas dir missing: {PERSONAS_DIR}")
+    else:
+        files_on_disk = list(Path(PERSONAS_DIR).rglob("*.md"))
+        print(f"📄 .md files on disk: {len(files_on_disk)}")
+    # Resolution check (don't actually call the API)
+    google_key = _read_secret("GOOGLE_API_KEY") or _read_secret("GEMINI_API_KEY")
+    openai_key = _read_secret("OPENAI_API_KEY")
+    if google_key and GENAI_AVAILABLE:
+        print(f"🔑 Embedder ready:  gemini ({GEMINI_MODEL})")
+    elif openai_key and OPENAI_AVAILABLE:
+        print(f"🔑 Embedder ready:  openai ({OPENAI_EMBED_MODEL}) [N18 fallback]")
+    else:
+        print("⚠️  Embedder NOT ready — missing GOOGLE_API_KEY/OPENAI_API_KEY or python pkg.")
+    return 0
+
+
+def cmd_index(rebuild: bool = False):
+    print(f"🚀 Starting Gemini Multimodal Indexer{' (REBUILD)' if rebuild else ''}")
     print(f"📁 Scanning: {PERSONAS_DIR}")
     if not os.path.exists(PERSONAS_DIR):
         print(f"ERROR: Directory not found -> {PERSONAS_DIR}")
         sys.exit(1)
-    # v10.10.0 P0-003: get_embedder() returns (provider, client, model_id)
-    # tuple — supports both Gemini (preferred) and OpenAI (fallback).
+    # get_embedder() returns (provider, client, model_id) tuple — supports
+    # both Gemini (preferred per N18) and OpenAI (fallback).
     embedder = get_embedder()
     print(f"📐 Using embedder: {embedder[0]} ({embedder[2]})", file=sys.stderr)
     client = embedder  # passed straight to get_embedding() which unpacks the tuple
     conn = init_db()
     cursor = conn.cursor()
+
+    if rebuild:
+        print("🧹 --rebuild: dropping all existing embeddings")
+        cursor.execute("DELETE FROM embeddings")
+        conn.commit()
+
     files = list(Path(PERSONAS_DIR).rglob("*.md"))
     print(f"📄 Found {len(files)} markdown files to process.")
-    
+
     total_chunks = 0
-    # Process just the first 2 files for the test
-    for file_path in files[:2]:
+    skipped = 0
+    errors = 0
+    for file_path in files:
         try:
             content = file_path.read_text(encoding="utf-8", errors="ignore")
-            if not content.strip(): continue
+            if not content.strip():
+                continue
             chunks = chunk_text(content)
             file_hash = hashlib.md5(content.encode('utf-8')).hexdigest()
             cursor.execute("SELECT id FROM embeddings WHERE id LIKE ? LIMIT 1", (f"{file_hash}_%",))
-            if cursor.fetchone():
-                print(f"  Skipping (already indexed): {file_path.name}")
+            if cursor.fetchone() and not rebuild:
+                skipped += 1
                 continue
             print(f"  Indexing: {file_path.name} ({len(chunks)} chunks)")
             cursor.execute("DELETE FROM embeddings WHERE file_path = ?", (str(file_path),))
@@ -220,9 +269,30 @@ def main():
                     time.sleep(0.5)
             conn.commit()
         except Exception as e:
+            errors += 1
             print(f"  ❌ Error processing {file_path.name}: {e}")
     conn.close()
-    print(f"✅ Indexing test complete. Added {total_chunks} new chunks.")
+    print(f"✅ Indexing complete. Added {total_chunks} new chunks across {len(files) - skipped - errors} files "
+          f"(skipped {skipped} unchanged, {errors} errors).")
+    return 0 if errors == 0 else 2
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="gemini-indexer",
+        description="OpenClaw Gemini Engine indexer — builds the SQLite embeddings DB "
+                    "for the coaching-personas collection. Gemini-first with OpenAI fallback (N18).",
+    )
+    parser.add_argument("--status", action="store_true",
+                        help="Report DB stats and embedder readiness without indexing.")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="Drop all existing embeddings and re-index from scratch.")
+    args = parser.parse_args()
+
+    if args.status:
+        sys.exit(cmd_status())
+    sys.exit(cmd_index(rebuild=args.rebuild))
+
 
 if __name__ == "__main__":
     main()

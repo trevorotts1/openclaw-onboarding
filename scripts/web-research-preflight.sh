@@ -37,6 +37,68 @@ ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 mkdir -p "$(dirname "$OUT")"
 
 # --------------------------------------------------------
+# Detail-extraction helper — scrape a model page body for
+# context-window / max-output / pricing hints. Best-effort grep.
+# Returns a JSON object string (or {} if nothing found).
+# --------------------------------------------------------
+extract_details() {
+  local body_file="$1"
+  [ ! -s "$body_file" ] && { echo "{}"; return; }
+  python3 - "$body_file" <<'PYEOF' 2>/dev/null || echo "{}"
+import json, re, sys
+try:
+    body = open(sys.argv[1], encoding='utf-8', errors='ignore').read(200000)
+except Exception:
+    print("{}"); sys.exit(0)
+out = {}
+# Context window: look for "context", "ctx", "tokens" near a K/M number
+ctx_patterns = [
+    r"context\s*(?:length|window|size)?\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*([KMkm])",
+    r"(\d+(?:\.\d+)?)\s*([KMkm])\s*(?:token|ctx|context)",
+    r"\"context_length\"\s*:\s*(\d+)",
+    r"\"max_tokens?\"\s*:\s*(\d+)",
+]
+for p in ctx_patterns:
+    m = re.search(p, body, re.IGNORECASE)
+    if m:
+        if len(m.groups()) >= 2 and m.group(2):
+            n = float(m.group(1))
+            unit = m.group(2).upper()
+            multiplier = 1000 if unit == "K" else 1_000_000
+            out["context_window_tokens"] = int(n * multiplier)
+            out["context_window_raw"] = f"{m.group(1)}{unit}"
+        else:
+            out["context_window_tokens"] = int(m.group(1))
+            out["context_window_raw"] = m.group(1)
+        break
+# Max output (less common): look for "max output", "output tokens"
+out_patterns = [
+    r"(?:max\s*output|output\s*tokens?)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*([KMkm])",
+    r"(?:max\s*output|output\s*tokens?)\s*[:\-]?\s*(\d+)",
+]
+for p in out_patterns:
+    m = re.search(p, body, re.IGNORECASE)
+    if m:
+        if len(m.groups()) >= 2 and m.group(2):
+            n = float(m.group(1))
+            unit = m.group(2).upper()
+            mult = 1000 if unit == "K" else 1_000_000
+            out["max_output_tokens"] = int(n * mult)
+        else:
+            out["max_output_tokens"] = int(m.group(1))
+        break
+# Pricing hints — best-effort (openrouter pages list "$X / 1M input/output")
+price = re.search(r'\$?\s*(\d+(?:\.\d+)?)\s*/\s*1M\s*(?:input|in)', body, re.IGNORECASE)
+if price:
+    out["input_price_per_1m_usd"] = float(price.group(1))
+price_out = re.search(r'\$?\s*(\d+(?:\.\d+)?)\s*/\s*1M\s*(?:output|out)', body, re.IGNORECASE)
+if price_out:
+    out["output_price_per_1m_usd"] = float(price_out.group(1))
+print(json.dumps(out))
+PYEOF
+}
+
+# --------------------------------------------------------
 # 1. docs.openclaw.ai
 # --------------------------------------------------------
 DOCS_URL="https://docs.openclaw.ai/"
@@ -81,12 +143,16 @@ print('\\n'.join(sorted(found)))
     base=${model_id#ollama/}
     base=${base%:cloud}
     URL="https://ollama.com/library/${base}"
-    if curl -fsSL --max-time 10 -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null | grep -q "^200$"; then
+    body_tmp=$(mktemp)
+    if curl -fsSL --max-time 12 -o "$body_tmp" -w "%{http_code}" "$URL" 2>/dev/null | grep -q "^200$"; then
       st="ok"
+      details=$(extract_details "$body_tmp")
     else
       st="unreachable"
+      details="{}"
     fi
-    LOOKUPS_JSON="${LOOKUPS_JSON}{\"model_id\":\"$model_id\",\"url\":\"$URL\",\"status\":\"$st\"},"
+    rm -f "$body_tmp"
+    LOOKUPS_JSON="${LOOKUPS_JSON}{\"model_id\":\"$model_id\",\"url\":\"$URL\",\"status\":\"$st\",\"details\":${details}},"
   done <<< "$OLLAMA_MODELS"
   if [ -n "$LOOKUPS_JSON" ]; then
     OLLAMA_LOOKUPS="[${LOOKUPS_JSON%,}]"
@@ -122,12 +188,16 @@ print('\\n'.join(sorted(found)))
     # OpenRouter model URL: https://openrouter.ai/<vendor>/<model>
     bare=${model_id#openrouter/}
     URL="https://openrouter.ai/${bare}"
-    if curl -fsSL --max-time 10 -o /dev/null -w "%{http_code}" "$URL" 2>/dev/null | grep -q "^200$"; then
+    body_tmp=$(mktemp)
+    if curl -fsSL --max-time 12 -o "$body_tmp" -w "%{http_code}" "$URL" 2>/dev/null | grep -q "^200$"; then
       st="ok"
+      details=$(extract_details "$body_tmp")
     else
       st="unreachable"
+      details="{}"
     fi
-    OR_JSON="${OR_JSON}{\"model_id\":\"$model_id\",\"url\":\"$URL\",\"status\":\"$st\"},"
+    rm -f "$body_tmp"
+    OR_JSON="${OR_JSON}{\"model_id\":\"$model_id\",\"url\":\"$URL\",\"status\":\"$st\",\"details\":${details}},"
   done <<< "$OR_MODELS"
   if [ -n "$OR_JSON" ]; then
     OPENROUTER_LOOKUPS="[${OR_JSON%,}]"

@@ -1947,26 +1947,43 @@ label: "wave2-qc-agent"
 
 ---
 
-#### WAVE 3: Core System (Sequential - YOU Install These, No Sub-Agents)
+#### WAVE 3: Core System (Sequential — Dispatch Sub-Agents, NOT orchestrator-direct)
 
-**⚠️ CRITICAL: These skills MUST be installed by YOU (main orchestrator), NEVER by sub-agents.**
+**⚠️ N2 ENFORCEMENT: These skills install via SUB-AGENTS, same as every other skill. The Master Orchestrator dispatches and coordinates — it does NOT install. User-interaction steps surface via the triple-fire trigger (N22), not orchestrator-direct execution.**
 
-1. **Skill 22: Book-to-Persona Coaching Leadership System**
-   - Read ALL .md files in `~/.openclaw/onboarding/22-book-to-persona-coaching-leadership-system/`
-   - Execute installation steps (this includes downloading and processing persona blueprints)
-   - Run Gemini Engine indexing for coaching-personas collection
-   - Mark: `SKILL-22: INSTALLED`
-   - Report: "Skill 22 complete"
+**Sequential, not parallel:** Skill 22 must complete before Skill 23 dispatches (Skill 23 depends on Skill 22's persona index existing).
 
-2. **Skill 23: AI Workforce Blueprint**
-   - **FIRST:** Notify user: "The AI Workforce Blueprint is installed. Let me know when you're ready for me to set up your company's back office."
-   - **WAIT** for user response
-   - **THEN:** Read ALL .md files in `~/.openclaw/onboarding/23-ai-workforce-blueprint/`
-   - Execute installation steps
-   - Mark: `SKILL-23: INSTALLED`
-   - Report: "Wave 3 complete: Core system ready"
+1. **Skill 22: Book-to-Persona Coaching Leadership System** — DISPATCH SUB-AGENT
+   ```
+   sessions_spawn with task:
+   "Install skill 22-book-to-persona-coaching-leadership-system from
+   ~/.openclaw/onboarding/. Per N8, full file content has been passed
+   in this brief: [orchestrator pastes SKILL.md, INSTRUCTIONS.md,
+   INSTALL.md, QC.md content here per N8 — do NOT pass file paths only].
+   Per N4, follow steps in declared order. Run Gemini Engine indexing
+   for coaching-personas collection on completion. Self-report when
+   each step exits 0. NO self-QC (N5) — QC dispatches separately.
+   Write status to ~/.openclaw/onboarding/.onboarding-status."
+   label: "wave3-agent-skill22"
+   ```
+   After sub-agent reports `Skill 22 complete`, dispatch QC sub-agent (different model, per N5). On QC PASS → mark `SKILL-22: INSTALLED` and proceed to Skill 23.
 
-**Why no sub-agents?** These skills require complex configuration, user interaction, and high-stakes decisions that only the main orchestrator should handle.
+2. **Skill 23: AI Workforce Blueprint** — DISPATCH SUB-AGENT (after Skill 22 PASS)
+   - **User-interaction trigger:** Before dispatching the Skill 23 sub-agent, fire the triple-fire trigger (N22) — Telegram + AGENTS.md flag + terminal block — surfacing: *"The Book-to-Persona system is installed. Reply when you're ready for the AI Workforce Blueprint to set up your company's back office."*
+   - **WAIT** for user reply (per the triple-fire response protocol).
+   - **THEN dispatch sub-agent:**
+   ```
+   sessions_spawn with task:
+   "Install skill 23-ai-workforce-blueprint from ~/.openclaw/onboarding/.
+   Per N8, full file content has been passed in this brief: [paste
+   content]. Per N4, follow steps in declared order. Conduct the
+   workforce interview per the script. Self-report each step exit code.
+   NO self-QC (N5)."
+   label: "wave3-agent-skill23"
+   ```
+   After sub-agent reports `Skill 23 complete`, dispatch QC sub-agent. On QC PASS → mark `SKILL-23: INSTALLED`. Report: "Wave 3 complete: Core system ready"
+
+**N2 rationale:** Skills 22+23 are sequential and user-interaction-aware, but that does NOT make them orchestrator-direct work. The orchestrator coordinates the wait/dispatch handoff via the triple-fire trigger; the sub-agent does the install. Concurrency cap stays Mac=10/VPS=5 (these dispatch one at a time, well under cap). v10.11.0 changelog said this wave was rewritten — v10.12.0 actually rewrites it.
 
 ---
 
@@ -2113,8 +2130,8 @@ trap 'rm -f "$INSTALL_FLAG"' EXIT
 │         │                 │ Agent D: QC Agent (verification)                │
 │         │                 │ Pre-Persona tools - all 4 run simultaneously    │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
-│ Wave 3  │ 1 (Sequential)  │ 22 Book-to-Persona, 23 AI Workforce Blueprint   │
-│         │                 │ CORE SYSTEM - Main orchestrator ONLY            │
+│ Wave 3  │ 2 sub-agents    │ 22 Book-to-Persona, 23 AI Workforce Blueprint   │
+│         │ (Sequential)    │ Dispatched serially (N22 user-interaction)      │
 ├─────────┼─────────────────┼─────────────────────────────────────────────────┤
 │ Wave 4  │ 2 (Parallel)    │ Agent E: 24, 25, 26                             │
 │         │                 │ Agent F: 27, 28, 29, 30                             │
