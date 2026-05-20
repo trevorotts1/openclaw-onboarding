@@ -135,6 +135,139 @@ def check_sticky_assignment(department_id: str, task_category: str, db_path: Pat
     return None
 
 
+def find_selection_log() -> Path:
+    """Locate persona-selection-log.md. Returns Path (may not exist)."""
+    if "PERSONA_SELECTION_LOG_PATH" in os.environ:
+        return Path(os.environ["PERSONA_SELECTION_LOG_PATH"])
+    candidates = [
+        Path.home() / ".openclaw" / "skills" / "23-ai-workforce-blueprint" / "persona-selection-log.md",
+        Path("/data/.openclaw/skills/23-ai-workforce-blueprint/persona-selection-log.md"),
+        Path.home() / "clawd" / "skills" / "23-ai-workforce-blueprint" / "persona-selection-log.md",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]
+
+
+def write_selection_log_md(log_path: Path, entry: dict):
+    """Append a single row to persona-selection-log.md. Best-effort, never raises."""
+    try:
+        if not log_path.parent.exists():
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        if not log_path.exists():
+            log_path.write_text(
+                "# Persona Selection Log\n\n"
+                "Every task dispatch produces a log entry here. "
+                "Append-only.\n\n"
+                "| date | task-id | dept | task-cat | selected | score | mode | reasoning |\n"
+                "|------|---------|------|----------|----------|-------|------|-----------|\n",
+                encoding="utf-8",
+            )
+        reasoning = (entry.get("reasoning") or "").replace("|", "/").replace("\n", " ")[:240]
+        row = (
+            f"| {entry.get('date', '?')} "
+            f"| {entry.get('task_id', '?')} "
+            f"| {entry.get('department', '?')} "
+            f"| {entry.get('task_category', '?')} "
+            f"| {entry.get('persona_id', '?')} "
+            f"| {entry.get('score', 0):.2f} "
+            f"| {entry.get('mode', '?')} "
+            f"| {reasoning} |\n"
+        )
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(row)
+    except OSError as e:
+        print(f"[persona-selector] WARN: could not write selection log: {e}", file=sys.stderr)
+
+
+def write_persona_assignment_db(db_path: Path, entry: dict):
+    """Upsert into persona_assignment table. Best-effort, never raises."""
+    if not db_path or not db_path.exists():
+        return
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        # Check current state to compute switch_count
+        cur.execute(
+            "SELECT persona_id, switch_count FROM persona_assignment "
+            "WHERE department_id = ? AND task_category = ?",
+            (entry["department"], entry["task_category"]),
+        )
+        existing = cur.fetchone()
+        switch_count = 0
+        if existing:
+            existing_persona_id, existing_switch_count = existing
+            switch_count = existing_switch_count or 0
+            if existing_persona_id != entry["persona_id"]:
+                switch_count += 1
+        cur.execute(
+            """
+            INSERT INTO persona_assignment
+                (department_id, task_category, persona_id, persona_name,
+                 persona_mode, persona_version, last_score, last_assigned_at,
+                 switch_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+            ON CONFLICT (department_id, task_category) DO UPDATE SET
+                persona_id        = excluded.persona_id,
+                persona_name      = excluded.persona_name,
+                persona_mode      = excluded.persona_mode,
+                persona_version   = excluded.persona_version,
+                last_score        = excluded.last_score,
+                last_assigned_at  = excluded.last_assigned_at,
+                switch_count      = excluded.switch_count
+            """,
+            (
+                entry["department"],
+                entry["task_category"],
+                entry["persona_id"],
+                entry.get("persona_name") or entry["persona_id"],
+                entry.get("mode"),
+                int(entry.get("persona_version", 1)),
+                float(entry.get("score", 0.0)),
+                switch_count,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"[persona-selector] WARN: persona_assignment upsert failed: {e}", file=sys.stderr)
+
+
+def record_selection(selection: dict, task_text: str, department: str, db_path: Path):
+    """
+    Persist a selection to both persona-selection-log.md and the
+    persona_assignment DB table. Adds no fields to the selection dict
+    (returns None). Safe to call after main() prints the result.
+    """
+    from datetime import datetime
+    if not selection or not selection.get("persona_id"):
+        return  # nothing to record (e.g., mechanical task / no persona)
+
+    llm_meta = selection.get("layers", {}).get("_llm_reasoning", {}) if isinstance(selection.get("layers"), dict) else {}
+    reasoning_parts = []
+    for k in ("mission", "owner_values", "company_kpis", "dept_kpis"):
+        v = llm_meta.get(k) if isinstance(llm_meta, dict) else None
+        if v:
+            reasoning_parts.append(f"{k}: {v[:60]}")
+    reasoning = " | ".join(reasoning_parts) if reasoning_parts else "(heuristic mode — no LLM reasoning)"
+
+    entry = {
+        "date":           datetime.now().strftime("%Y-%m-%d"),
+        "task_id":        os.environ.get("OPENCLAW_TASK_ID", "(no-task-id)"),
+        "department":     department,
+        "task_category":  selection.get("task_category", "general"),
+        "persona_id":     selection["persona_id"],
+        "persona_name":   selection.get("persona_name") or selection["persona_id"],
+        "mode":           selection.get("interaction_mode") or selection.get("mode") or "leadership",
+        "persona_version": selection.get("persona_version", 1),
+        "score":          selection.get("score", 0.0),
+        "reasoning":      reasoning,
+    }
+    write_selection_log_md(find_selection_log(), entry)
+    write_persona_assignment_db(db_path, entry)
+
+
 def apply_weight_overrides(persona_id: str, base_score: float, department_id: str,
                             task_category: str, db_path: Path) -> tuple:
     """Returns (adjusted_score, applied_factor)."""
@@ -472,6 +605,7 @@ def main():
             "task_category": task_category,
             "breakdown": {"stickiness": True},
         }
+        record_selection(out, args.task, args.department, db_path)
         print(json.dumps(out, indent=2) if args.format == "json" else f"STICKY: {out['persona_name']} ({out['score']:.2f})")
         return 0
 
@@ -493,10 +627,12 @@ def main():
             "secondary_persona_name": coach.get("persona_name"),
             "secondary_persona_score": coach["score"],
             "weights_used": weights,
+            "layers": leader.get("layers", {}),
         }
     else:
         out = select_persona(args.task, args.department, mode, weights, paths, db_path)
 
+    record_selection(out, args.task, args.department, db_path)
     print(json.dumps(out, indent=2) if args.format == "json" else f"{out.get('persona_name','(none)')} ({out.get('score',0):.2f})")
     return 0
 
