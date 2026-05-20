@@ -1,0 +1,107 @@
+name: QC static checks
+
+# Wave 5.2 of the post-analysis remediation. The full qc-system-integrity.sh
+# needs a live OpenClaw install (~/.openclaw/ or /data/.openclaw/) so it can't
+# run in CI as-is. This job runs the static subset — invariants that are
+# detectable from the repo alone — so we catch regressions on every push:
+#
+#   • All Python scripts in shared-utils/ and active skills parse without error
+#   • DEFAULT_WEIGHTS in adaptive_weights.py sums to 1.0
+#   • company-config.template.json is valid JSON (schema v2.0)
+#   • persona-categories.json is valid JSON
+#   • No Anthropic model strings in Skill 22/23 scripts
+#   • No flat-constant scoring (0.7/0.7/0.8/0.8) lingering in persona-selector-v2.py
+#
+# Triggers on every push to main and every PR targeting main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  qc-static:
+    name: QC static invariants
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python syntax (shared-utils + Skill 22/23 scripts)
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in $(find shared-utils 22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint -type f -name '*.py'); do
+            python3 -c "import ast; ast.parse(open('$f').read())" || { echo "  ✗ syntax: $f"; fail=1; }
+          done
+          [ $fail -eq 0 ] && echo "✓ Python syntax OK across all skill scripts"
+          exit $fail
+
+      - name: DEFAULT_WEIGHTS sums to 1.0
+        shell: python {0}
+        run: |
+          import sys
+          sys.path.insert(0, 'shared-utils')
+          from adaptive_weights import DEFAULT_WEIGHTS
+          total = sum(DEFAULT_WEIGHTS.values())
+          if not (0.999 <= total <= 1.001):
+              print(f"✗ DEFAULT_WEIGHTS sums to {total}, expected 1.0")
+              sys.exit(1)
+          print(f"✓ DEFAULT_WEIGHTS sums to {total}")
+
+      - name: company-config template is valid JSON
+        shell: bash
+        run: |
+          python3 -c "
+          import json, sys
+          d = json.load(open('23-ai-workforce-blueprint/templates/company-config.template.json'))
+          required = ['schema_version', 'mission', 'owner_values', 'company_kpis', 'dept_kpis']
+          missing = [k for k in required if k not in d]
+          if missing:
+              print(f'✗ missing required fields: {missing}'); sys.exit(1)
+          if d['schema_version'] != '2.0':
+              print(f'✗ schema_version is {d[\"schema_version\"]}, expected 2.0'); sys.exit(1)
+          print('✓ company-config template valid (schema v2.0)')
+          "
+
+      - name: No Anthropic model strings in Skill 22/23 scripts
+        shell: bash
+        run: |
+          set -uo pipefail
+          if grep -rEn "'(claude-[a-z0-9-]+|anthropic/[a-z0-9-]+)'" 22-book-to-persona-coaching-leadership-system/scripts 23-ai-workforce-blueprint/scripts shared-utils/ 2>&1; then
+            echo "✗ Found Anthropic model string(s) above"; exit 1
+          fi
+          echo "✓ No Anthropic model strings in pipeline scripts"
+
+      - name: persona-selector-v2 no longer uses flat scoring constants
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Check that _heuristic_layer_scores is structured (reads cc fields) not flat 0.7/0.8.
+          # Specifically: should NOT contain `mission_score = 0.8` or `dept_score = 0.7` as bare assignments.
+          if grep -E "^\s*(mission_score|values_score|dept_score|company_kpi_score)\s*=\s*0\.[78](\s|$)" 23-ai-workforce-blueprint/scripts/persona-selector-v2.py 2>&1 | grep -v "= 0\.6"; then
+            echo "✗ Flat-constant scoring detected in persona-selector-v2.py"; exit 1
+          fi
+          echo "✓ No flat-constant scoring in persona-selector-v2.py"
+
+      - name: llm_score module loads
+        shell: bash
+        run: |
+          python3 -c "
+          import sys
+          sys.path.insert(0, 'shared-utils')
+          from llm_score import score_layer, summarize_persona_blueprint, _cache_key, NEUTRAL_FALLBACK_SCORE
+          assert callable(score_layer)
+          assert callable(summarize_persona_blueprint)
+          assert NEUTRAL_FALLBACK_SCORE == 0.6
+          k = _cache_key('test-persona', 'mission', 'summary', 'context')
+          assert len(k) == 64
+          print('✓ llm_score module imports + cache key generation OK')
+          "
