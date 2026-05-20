@@ -234,16 +234,21 @@ def score_candidate(persona_id, task_text, dept_kpis, company_kpis, owner_values
     overlap = persona_tokens & task_tokens
     task_fit = min(1.0, task_fit + 0.05 * len(overlap))
 
-    # Dept KPIs — flat 0.7 baseline (would be raised by per-persona analysis)
+    # DEPRECATED v1 SCORING — kept for backward compatibility only.
+    # Per Wave 3 (2026-05-19) the production path is persona-selector-v2.py,
+    # which uses real LLM evaluation (DeepSeek V4 Pro via Ollama Cloud, with
+    # OpenRouter fallback). v1 still returns flat constants for Layers 1-4
+    # because the v1 callers tolerate it; new callers should use v2.
+    #
+    # Weights below now match PRD §10 canonical (20/25/20/20/15) — earlier
+    # values (25/25/20/15/15) diverged from the spec; unified Wave 3.
     dept_fit = 0.7
-    # Company KPIs — flat 0.7 baseline
     company_fit = 0.7
-    # Mission + Values — pre-qualified; flat 0.8 baseline
     mission = 0.8
     values = 0.8
 
-    total = (mission * 0.25 + values * 0.25 + company_fit * 0.20
-             + dept_fit * 0.15 + task_fit * 0.15)
+    total = (mission * 0.20 + values * 0.25 + company_fit * 0.20
+             + dept_fit * 0.20 + task_fit * 0.15)
     return total, {
         "mission": mission, "values": values, "company_kpis": company_fit,
         "dept_kpis": dept_fit, "task_fit": task_fit,
@@ -339,6 +344,13 @@ def handle_mid_task_mode_switch(
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
+    print(
+        "[select-persona-for-task v1] DEPRECATION NOTICE: this entry point still "
+        "uses flat-constant scoring for Layers 1-4. Use persona-selector-v2.py "
+        "for real LLM-based scoring (DeepSeek V4 Pro via Ollama Cloud, OpenRouter "
+        "fallback). v1 is kept for backward compatibility with existing callers.",
+        file=sys.stderr,
+    )
     parser = argparse.ArgumentParser(description="Pick the best persona for a task using hybrid search + 5-layer alignment.")
     parser.add_argument("--dept", required=False, default=None, help="Department ID, e.g. 'marketing'")
     parser.add_argument("--task", required=False, default=None, help="Task description in plain English")

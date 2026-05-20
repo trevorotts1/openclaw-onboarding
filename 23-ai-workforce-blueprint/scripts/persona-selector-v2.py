@@ -47,6 +47,23 @@ except ImportError:
     def infer_task_category(task_text: str) -> str:
         return "general"
 
+try:
+    from llm_score import score_layer, summarize_persona_blueprint  # type: ignore
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+    def score_layer(*args, **kwargs):  # type: ignore
+        return {"score": 0.6, "reasoning": "llm_score module not available",
+                "model": "stub", "cached": False, "fallback": True}
+    def summarize_persona_blueprint(persona_id: str, max_chars: int = 2000) -> str:  # type: ignore
+        return f"(no blueprint summary — llm_score module not available)"
+
+
+# When env var SCORING_MODE=llm, use LLM evaluation for Layers 1-4.
+# When SCORING_MODE=heuristic (default), use the keyword-hit baseline.
+# Wave 3 default flips to "llm" once owner has tested in production.
+SCORING_MODE = os.environ.get("SCORING_MODE", "llm" if LLM_AVAILABLE else "heuristic").lower()
+
 
 # -------- Coaching/Leadership/Hybrid mode detection (copied from v1 for portability) --------
 COACHING_SIGNALS = [
@@ -222,25 +239,11 @@ def _persona_keywords(persona_id: str) -> list:
     return [p for p in parts if p and p not in stop]
 
 
-def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
-                          department_id: str, paths: dict) -> dict:
-    """
-    Compute the 5 component scores. v2 schema reads:
-      Layer 1 (mission)      <- company-config.mission + workspace SOUL.md
-      Layer 2 (owner_values) <- company-config.owner_values + USER.md behavioral profile
-      Layer 3 (company_kpis) <- company-config.company_kpis
-      Layer 4 (dept_kpis)    <- company-config.dept_kpis[dept_id]
-      Layer 5 (task_fit)     <- semantic search (v1) — heuristic fallback here.
-
-    This is the v2 heuristic baseline. Wave 3 replaces Layers 1-4 with real
-    LLM evaluation (DeepSeek V4 Pro via Ollama Cloud, fallback to Gemini 3.1
-    Flash Lite via OpenRouter). Until then, this version at least reads the
-    right data instead of returning flat constants.
-    """
-    cc = load_company_config(paths)
+def _heuristic_layer_scores(persona_id: str, task_text: str, owner_profile: str,
+                             department_id: str, cc: dict, paths: dict) -> dict:
+    """Keyword-hit baseline (SCORING_MODE=heuristic). Cheap, no LLM calls."""
     kws = _persona_keywords(persona_id)
 
-    # Layer 1 (Mission): persona keywords vs (company mission text + SOUL.md)
     mission_text = (cc.get("mission") or "").lower()
     soul_md = paths.get("soul_md")
     if soul_md and soul_md.exists():
@@ -249,9 +252,8 @@ def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
         hits = sum(1 for kw in kws if kw in mission_text)
         mission_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
     else:
-        mission_score = 0.6   # explicit "no data" floor (was 0.7 flat)
+        mission_score = 0.6
 
-    # Layer 2 (Owner Values): persona keywords vs (declared values list + behavioral profile)
     values_text = " ".join(cc.get("owner_values") or []).lower()
     if owner_profile:
         values_text += " " + owner_profile.lower()
@@ -261,7 +263,6 @@ def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     else:
         values_score = 0.6
 
-    # Layer 3 (Company KPIs): persona keywords vs company_kpis list
     company_kpis = cc.get("company_kpis") or []
     if company_kpis:
         kpi_text = " ".join(company_kpis).lower()
@@ -270,7 +271,6 @@ def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     else:
         company_kpi_score = 0.6
 
-    # Layer 4 (Dept KPIs): persona keywords vs dept_kpis[dept_id]
     dept_kpis_map = cc.get("dept_kpis") or {}
     dept_kpis = dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}") or []
     if dept_kpis:
@@ -280,7 +280,6 @@ def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     else:
         dept_score = 0.6
 
-    # Layer 5 (Task Fit): heuristic based on task length & specificity
     task_fit = 0.7 + min(len(task_text) / 1000.0, 0.2)
 
     return {
@@ -290,6 +289,85 @@ def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
         "dept_kpis":    round(dept_score, 4),
         "task_fit":     round(task_fit, 4),
     }
+
+
+def _llm_layer_scores(persona_id: str, task_text: str, owner_profile: str,
+                       department_id: str, cc: dict, paths: dict) -> dict:
+    """
+    LLM-backed scoring for Layers 1-4 (Wave 3). Each layer is one cached LLM
+    call to DeepSeek V4 Pro (Ollama Cloud primary, OpenRouter fallback,
+    Gemini 3.1 Flash Lite last resort — see llm_score.py).
+    """
+    persona_summary = summarize_persona_blueprint(persona_id, max_chars=2000)
+
+    soul_excerpt = "(missing)"
+    if paths.get("soul_md") and paths["soul_md"].exists():
+        soul_excerpt = paths["soul_md"].read_text(encoding="utf-8", errors="replace")[:800]
+    mission_ctx = (
+        f"Company mission: {cc.get('mission') or '(none stated)'}\n"
+        f"Workspace SOUL.md excerpt: {soul_excerpt}"
+    )
+    mission_res = score_layer(persona_id, "mission", persona_summary, mission_ctx)
+
+    values_list = cc.get("owner_values") or []
+    values_ctx = (
+        f"Stated owner values: {', '.join(values_list) if values_list else '(none stated)'}\n\n"
+        f"Owner behavioral profile (USER.md excerpt):\n{owner_profile[:1500] if owner_profile else '(no profile)'}"
+    )
+    values_res = score_layer(persona_id, "owner_values", persona_summary, values_ctx)
+
+    company_kpis = cc.get("company_kpis") or []
+    company_kpi_ctx = (
+        f"Company-level KPIs: {', '.join(company_kpis) if company_kpis else '(none defined)'}\n"
+        f"Company industry: {cc.get('industry') or '(unspecified)'}"
+    )
+    company_kpi_res = score_layer(persona_id, "company_kpis", persona_summary, company_kpi_ctx)
+
+    dept_kpis_map = cc.get("dept_kpis") or {}
+    dept_kpis = dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}") or []
+    dept_kpi_ctx = (
+        f"Department: {department_id}\n"
+        f"Department KPIs: {', '.join(dept_kpis) if dept_kpis else '(none defined)'}"
+    )
+    dept_kpi_res = score_layer(persona_id, "dept_kpis", persona_summary, dept_kpi_ctx)
+
+    task_fit = 0.7 + min(len(task_text) / 1000.0, 0.2)
+
+    return {
+        "mission":      round(mission_res["score"], 4),
+        "owner_values": round(values_res["score"], 4),
+        "company_kpis": round(company_kpi_res["score"], 4),
+        "dept_kpis":    round(dept_kpi_res["score"], 4),
+        "task_fit":     round(task_fit, 4),
+        "_llm_reasoning": {
+            "mission":      mission_res.get("reasoning", "")[:200],
+            "owner_values": values_res.get("reasoning", "")[:200],
+            "company_kpis": company_kpi_res.get("reasoning", "")[:200],
+            "dept_kpis":    dept_kpi_res.get("reasoning", "")[:200],
+        },
+        "_llm_meta": {
+            "model": mission_res.get("model", "?"),
+            "any_fallback": any(r.get("fallback") for r in (
+                mission_res, values_res, company_kpi_res, dept_kpi_res
+            )),
+        },
+    }
+
+
+def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
+                          department_id: str, paths: dict) -> dict:
+    """
+    Dispatch to heuristic or LLM-based scoring depending on SCORING_MODE.
+    Default: 'llm' when llm_score module is importable, else 'heuristic'.
+    Override with `SCORING_MODE=heuristic` env var (for offline tests or
+    when API keys are missing).
+    """
+    cc = load_company_config(paths)
+    if SCORING_MODE == "llm" and LLM_AVAILABLE:
+        return _llm_layer_scores(persona_id, task_text, owner_profile,
+                                   department_id, cc, paths)
+    return _heuristic_layer_scores(persona_id, task_text, owner_profile,
+                                     department_id, cc, paths)
 
 
 def score_persona(persona_id: str, task_text: str, owner_profile: str,

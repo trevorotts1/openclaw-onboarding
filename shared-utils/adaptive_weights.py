@@ -16,13 +16,16 @@ Usage:
     # -> {'mission': 0.10, 'owner_values': 0.20, 'company_kpis': 0.10, 'dept_kpis': 0.20, 'task_fit': 0.40}
 """
 
-# Default weights (used as fallback when no specific profile matches)
+# Default weights — PRD §10 canonical (20/25/20/20/15). Sums to 1.0.
+# This is the single source of truth across v1, v2, and the PRD. Earlier
+# versions of v1 (select-persona-for-task.py) used 25/25/20/15/15 and v2 used
+# 20/30/15/15/20 — both wrong. Wave 3 unified them to this set.
 DEFAULT_WEIGHTS = {
     "mission":      0.20,
-    "owner_values": 0.30,
-    "company_kpis": 0.15,
-    "dept_kpis":    0.15,
-    "task_fit":     0.20,
+    "owner_values": 0.25,
+    "company_kpis": 0.20,
+    "dept_kpis":    0.20,
+    "task_fit":     0.15,
 }
 
 # Override profiles keyed by (task_category, mode). All values sum to 1.0.
