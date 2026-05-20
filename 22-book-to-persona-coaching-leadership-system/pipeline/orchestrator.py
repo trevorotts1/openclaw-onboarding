@@ -392,13 +392,19 @@ def _extract_epub(epub_path: Path) -> str:
 
 
 def _find_calibre() -> str:
-    """Locate ebook-convert binary across common install paths. Auto-installs via Homebrew if missing."""
+    """Locate ebook-convert binary across common install paths. Auto-installs (Homebrew on Mac, apt-get on Linux) if missing. N26."""
     import subprocess
+    import platform
     calibre_paths = [
+        # Mac
         "/opt/homebrew/bin/ebook-convert",
         "/usr/local/bin/ebook-convert",
         "/Applications/calibre.app/Contents/MacOS/ebook-convert",
+        # Linux (VPS)
         "/usr/bin/ebook-convert",
+        "/usr/local/bin/ebook-convert",
+        "/snap/bin/ebook-convert",
+        "/opt/calibre/ebook-convert",
     ]
     for p in calibre_paths:
         if Path(p).exists():
@@ -407,7 +413,53 @@ def _find_calibre() -> str:
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
 
-    # Not found -- auto-install via Homebrew without asking the user
+    is_linux = platform.system() == "Linux"
+
+    if is_linux:
+        # Linux/VPS path: try apt-get first, then upstream installer fallback
+        log("Calibre not found. Auto-installing on Linux via apt-get (this may take a few minutes)...")
+        apt_get = None
+        for p in ["/usr/bin/apt-get", "/usr/local/bin/apt-get"]:
+            if Path(p).exists():
+                apt_get = p
+                break
+        if apt_get:
+            sudo_bin = "/usr/bin/sudo" if Path("/usr/bin/sudo").exists() else None
+            update_cmd = ([sudo_bin] if sudo_bin else []) + [apt_get, "update", "-y"]
+            install_cmd = ([sudo_bin] if sudo_bin else []) + [apt_get, "install", "-y", "calibre"]
+            subprocess.run(update_cmd, capture_output=False)
+            install_result = subprocess.run(install_cmd, capture_output=False)
+            if install_result.returncode == 0:
+                log("Calibre installed via apt-get. Continuing...")
+                for p in calibre_paths:
+                    if Path(p).exists():
+                        return p
+                result_post = subprocess.run(["which", "ebook-convert"], capture_output=True, text=True)
+                if result_post.returncode == 0 and result_post.stdout.strip():
+                    return result_post.stdout.strip()
+
+        # apt-get failed or unavailable — try upstream Calibre installer
+        log("apt-get install failed or unavailable. Falling back to upstream Calibre installer...")
+        installer_cmd = (
+            'wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh '
+            '| sh /dev/stdin install_dir=/opt isolated=y'
+        )
+        install_result2 = subprocess.run(installer_cmd, shell=True, capture_output=False)
+        if install_result2.returncode == 0:
+            log("Calibre installed via upstream installer. Continuing...")
+            for p in calibre_paths:
+                if Path(p).exists():
+                    return p
+            result_post2 = subprocess.run(["which", "ebook-convert"], capture_output=True, text=True)
+            if result_post2.returncode == 0 and result_post2.stdout.strip():
+                return result_post2.stdout.strip()
+        raise RuntimeError(
+            "Calibre auto-install failed on Linux. Please install manually:\n"
+            "  sudo apt-get install -y calibre\n"
+            "  OR: wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin"
+        )
+
+    # Mac path: auto-install via Homebrew
     log("Calibre not found. Auto-installing via Homebrew (this may take a few minutes)...")
     brew_paths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
     brew_bin = None
@@ -423,11 +475,10 @@ def _find_calibre() -> str:
     if brew_bin:
         install_result = subprocess.run(
             [brew_bin, "install", "--cask", "calibre"],
-            capture_output=False,  # show output so user can see progress
+            capture_output=False,
         )
         if install_result.returncode == 0:
             log("Calibre installed successfully. Continuing...")
-            # Re-check paths after install
             for p in calibre_paths:
                 if Path(p).exists():
                     return p

@@ -1,3 +1,36 @@
+## [v10.11.0] — 2026-05-20 — v2.0 Re-Audit Closeout: 6 Remaining P0s
+
+The v10.10.0 fresh-run re-audit (v2.0) found 10 P0 items. Verification against the GitHub HEAD confirmed **3 were false negatives** (cron 3am, force-update.sh, AGENTS.md detection flag — all already shipped in v10.10.0). The remaining 7 P0s were truly missing and shipped here as 6 distinct fixes (one P0 spans two repos).
+
+### Risk: low-medium
+All 6 fixes are additive or strictly safer than prior behavior. The intelligence-resolver change is backward compatible — the new `taskId` parameter is optional, and the new persona sources (`task_pinned`, `sticky_assignment`) only fire when the relevant tables have data.
+
+### Fix #1 — `maxSpawnDepth` 5 → 4 in `install.sh` (N14 wave concurrency)
+**Before:** Mac `install.sh` and VPS `install.sh` both wrote `maxSpawnDepth: 5` to the generated openclaw config at 7 different locations. PRD N14 specifies depth 4 — deeper recursion lets sub-agents chain too far before the orchestrator can dispatch fresh ones.
+**Now:** All 7 occurrences in both `install.sh` files now write `maxSpawnDepth: 4`.
+
+### Fix #2 — Remove N2-contradicting "orchestrator installs Skills 22-23" language from `Start Here.md`
+**Before:** Both `Start Here.md` files contained a section titled `🔴 MAIN ORCHESTRATOR ONLY - SPECIFIC SKILLS` with the directive "Skills 22 and 23 MUST be installed by main agent, NEVER sub-agents". This directly contradicts N2 ("Master Orchestrator does NO work — coordinates only").
+**Now:** Section retitled `🔴 SKILLS 22 + 23 — USER-INTERACTION-AWARE WAVE`. The wave still serializes (Skill 22 before 23) but the rule is now "dispatch sub-agents for skills 22-23 sequentially; user-interaction steps surface via the triple-fire trigger (N22)". Critical Rule 3 rewritten to enforce N2 instead of contradicting it.
+
+### Fix #3 — Add CEO_DEFERRAL clause to `AGENTS.md` (persona governance override)
+**Before:** Standard per-role agents carry `STANDARD_DEFERRAL` in their `IDENTITY.md` — they act AS the assigned persona. The CEO/Master Orchestrator carries no equivalent clause, so persona governance was undefined at the CEO tier.
+**Now:** Both onboarding `AGENTS.md` files now carry a `## 🔴 CEO_DEFERRAL` section. CEO uses personas as INPUT but stays accountable to mission (`SOUL.md`) and owner (`USER.md`). 5-step procedure: read persona → compare to mission → embody if aligns → mission wins on conflict (logged to `MEMORY.md`) → own identity governs when no persona assigned. Kept in sync with `create_role_workspaces.py` and the dashboard `master-orchestrator/IDENTITY.md`.
+
+### Fix #4 — Standardize skill count to "33 active skills" across all docs
+**Before:** `Start Here.md` referenced "35 skills" in 19 places and "32 skill folders" once. `AGENTS.md` referenced "31 skills" once. The actual installed count is 33 (skills 33 and 34 are archived).
+**Now:** All references normalized to "33 active skills" (or "33 active skill folders"). Verification: zero occurrences of "31 skill" / "35 skill" remain across all 4 files (Mac + VPS).
+
+### Fix #5 — Add Linux installer to `_find_calibre()` (N26 — Calibre auto-install on VPS)
+**Before:** `22-book-to-persona/pipeline/orchestrator.py::_find_calibre()` only checked Mac paths (`/opt/homebrew`, `/Applications/calibre.app/...`) and auto-installed via Homebrew. On the VPS Docker container (Linux/Debian), Calibre auto-install failed because Homebrew isn't available — N26 was silently broken on VPS.
+**Now:** `_find_calibre()` detects `platform.system() == "Linux"` and:
+- Checks Linux paths first: `/usr/bin/ebook-convert`, `/snap/bin/ebook-convert`, `/opt/calibre/ebook-convert`.
+- Auto-installs via `apt-get update && apt-get install -y calibre` (with `sudo` if available).
+- Falls back to the upstream installer (`wget … calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=/opt isolated=y`) if apt-get fails.
+- Mac path unchanged (Homebrew flow preserved).
+
+Both repos updated (Mac onboarding + VPS onboarding) — file mirrored byte-for-byte.
+
 ## [v10.10.0] — 2026-05-20 — v2.0 Fresh-Run P0 Closeout: Last 8 Gaps
 
 The fresh-run v2.0 audit (against v10.8.0) graded the system at **raw composite 8.21 (B band)** but flooring to **F** because three critical phases stayed below threshold: Install Paths (4.18), Book-to-Persona (7.25), Sunday Update (4.70). Additionally, Phase 8 (5.45) and Phase 10 (7.80) were below 8.5.

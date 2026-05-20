@@ -39,9 +39,9 @@
 If you are reading this file, the user has triggered onboarding by saying something like:
 - "Begin onboarding installation"
 - "Start onboarding"
-- "Install the 35 skills"
+- "Install the 33 active skills"
 
-**Your task:** Install all 35 skills using the 5-Wave Parallel Orchestration below.
+**Your task:** Install all 33 active skills using the 5-Wave Parallel Orchestration below.
 
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
@@ -79,7 +79,7 @@ If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use 
 If `sessions_spawn` fails: Use Sequential Mode (install 01→31 one at a time, skipping 13 which is archived).
 
 **0.4: Announce your strategy**
-Tell user: "Onboarding triggered. I will install 35 skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+Tell user: "Onboarding triggered. I will install 33 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
 
 ---
 
@@ -212,7 +212,7 @@ It powers the persona search in Skill 22 and the persona detection in Skill 23.
 - Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
-- After all 35 skills: final complete index
+- After all 33 active skills: final complete index
 
 **Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
@@ -457,14 +457,14 @@ Check onboarding status:
 2. Count how many skills are INSTALLED vs remaining
 3. If skills remain and you are not currently installing one, resume from the next unfinished skill
 4. If you are stuck on a skill for more than 10 minutes, skip it, mark it FAILED, and move to the next
-5. Report progress: "[X] of 35 skills installed. Currently on: [skill name]."
+5. Report progress: "[X] of 33 active skills installed. Currently on: [skill name]."
 
-DO NOT REMOVE this block until all 35 skills are installed or attempted.
+DO NOT REMOVE this block until all 33 active skills are installed or attempted.
 ```
 
 **Step 3: After onboarding completes, clean up**
 
-When all 35 skills are installed (or attempted), the agent MUST:
+When all 33 active skills are installed (or attempted), the agent MUST:
 1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
 2. Reset the heartbeat interval back to the default:
 ```json
@@ -484,7 +484,7 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 
 ## 🔴 ONBOARDING CONTINUITY - NEVER STOP UNTIL ALL 32 SKILLS ARE INSTALLED
 
-**The onboarding process must run continuously until all 35 skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
+**The onboarding process must run continuously until all 33 active skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
 
 ### Self-Check Rules
 
@@ -508,17 +508,17 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 ### Progress Reporting
 
 After every 5 skills completed, send the user a brief progress update:
-"Onboarding progress: [X] of 35 skills installed. Currently on: [skill name]. [Y] skills remaining."
+"Onboarding progress: [X] of 33 active skills installed. Currently on: [skill name]. [Y] skills remaining."
 
 ### Completion
 
-When all 35 skills are installed:
-1. Count and verify: all 32 skill folders should exist in ~/.openclaw/skills/ (33 and 34 are archived)
+When all 33 active skills are installed:
+1. Count and verify: all 33 active skill folders should exist in ~/.openclaw/skills/ (33 and 34 are archived)
 2. Check the status file for any FAILED skills
 3. If any failed, attempt to re-install them one more time
 4. Send the user the final report with pass/fail for each skill
 5. If a gateway restart is needed for any changes to take effect, tell the user:
-   "All 35 skills are installed. To activate the changes, please type /restart in Telegram."
+   "All 33 active skills are installed. To activate the changes, please type /restart in Telegram."
 
 ### 🔴 MANDATORY FILE READING BEFORE INSTALLATION
 
@@ -552,7 +552,7 @@ If you cannot list the files you read, you did not read them. Go back and read t
 - Agent forgetting where it was after compaction
 - Agent triggering restarts on its own (NEVER do this)
 
-**ZERO TOLERANCE: The onboarding does not end until all 35 skills have been attempted. If you stop early, you failed.**
+**ZERO TOLERANCE: The onboarding does not end until all 33 active skills have been attempted. If you stop early, you failed.**
 
 ---
 
@@ -614,25 +614,28 @@ Changing someone's primary model without permission breaks their workflow. Model
 
 ---
 
-## 🔴 MAIN ORCHESTRATOR ONLY - SPECIFIC SKILLS
+## 🔴 SKILLS 22 + 23 — USER-INTERACTION-AWARE WAVE
 
-**The following skills MUST be installed by the main orchestrator agent, NEVER by sub-agents:**
+> **v10.11.0 update (2026-05-20):** This section was previously titled "MAIN ORCHESTRATOR ONLY" and forbade sub-agents from installing Skills 22 and 23. That language directly contradicted N2 ("Master Orchestrator does NO work — sub-agents do the work"). Per the v2.0 audit Phase 6 finding, the rule has been rewritten: Skills 22 and 23 install via sub-agents like every other skill, with the user-interaction requirements handled by the dispatch protocol.
 
-| Skill | Folder | Reason |
-|-------|--------|--------|
-| AI Workforce Blueprint | `23-ai-workforce-blueprint/` | Complex multi-step setup requiring user interaction |
-| Book-to-Persona Coaching System | `22-book-to-persona-coaching-leadership-system/` | High-stakes configuration, user must be present |
+**Skills 22 and 23 are special because they require live user interaction (Book-to-Persona book selection in 22, AI Workforce Interview in 23). They are NOT special because they need to be installed by the Master Orchestrator.**
 
-### Process for These Skills
-1. Main orchestrator reads ALL .md files
-2. Main orchestrator pauses and notifies: "This skill requires user interaction. I'll handle this directly."
-3. Main orchestrator proceeds with install steps
-4. Sub-agents are NEVER spawned for these skills
+| Skill | Folder | Special handling |
+|-------|--------|------------------|
+| AI Workforce Blueprint | `23-ai-workforce-blueprint/` | Sub-agent dispatch must pause at the Interview step and surface ~30 questions to the user via Telegram/dashboard before continuing. Non-interactive mode (`--non-interactive --config-file workforce-config.json`) is the AI-driven install path. |
+| Book-to-Persona | `22-book-to-persona-coaching-leadership-system/` | Sub-agent dispatch surfaces book selection via Telegram/dashboard. After books are chosen, the rest of the pipeline (Calibre conversion → Gemini indexing → blueprint synthesis) runs without further interaction. |
 
-### Forbidden Actions
-- Do NOT spawn sub-agents to install these skills
-- Do NOT delegate these skills to background processes
-- Do NOT skip user interaction steps
+### Dispatch protocol for Skills 22 + 23
+
+1. Master Orchestrator dispatches a sub-agent like for any other skill (per N2).
+2. Sub-agent reads ALL .md files for the skill (N3).
+3. When the install reaches a user-interaction step, the sub-agent pauses and surfaces the question(s) to the user through the triple-fire trigger (Telegram + AGENTS.md flag + terminal fallback).
+4. Once the user replies, the sub-agent continues the install.
+5. QC by an independent sub-agent per N5.
+
+### Non-interactive mode (AI-driven installs)
+
+`build-workforce.py --non-interactive --config-file workforce-config.json` lets an AI agent install OpenClaw on a fresh VPS (or any host without a human at a keyboard) by supplying interview-equivalent answers in a JSON file. The config file MUST contain real interview answers — captured from a prior Telegram conversation, extracted from owner-provided documents (LinkedIn, website, brand docs), or supplied by the orchestrator based on context. **Non-interactive mode is a delivery format for interview answers, not a way to skip the interview.** Hand-faking departments in `workforce-config.json` is a direct N17 violation.
 
 ---
 
@@ -771,7 +774,7 @@ After every skill install, verify:
 | **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions, department workspaces, persona-matrix.md, persona-categories.json, ORG-CHART.md indexed |
-| **Final** | After ALL 35 skills complete | Complete system index |
+| **Final** | After ALL 33 active skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
 
 ### What to Index at Each Milestone
@@ -1573,19 +1576,20 @@ If any step in a skill's installation fails:
 
 **DEFAULT: Use the 5-Wave Parallel Orchestration documented above.**
 
-1. **Wave 1** (Foundation): Run skills 01-03 sequentially in the main agent
-2. **Wave 2** (Pre-Persona): Spawn 4 parallel agents for skills 04-21
-3. **Wave 3** (Core System): Main agent installs skills 22-23 sequentially (NO sub-agents)
-4. **Wave 4** (Post-Workforce): Spawn 2 parallel agents for skills 24-30
-5. **Wave 5** (Final): Verify skill 15, install skill 31, and finalize (Skills 32+ are archived or part of Skill 23)
+1. **Wave 1** (Foundation): Dispatch 3 sub-agents for skills 01-03 (run sequentially)
+2. **Wave 2** (Pre-Persona): Dispatch parallel sub-agents for skills 04-21 (cap: Mac=10, VPS=5 concurrent — see `check-wave-concurrency.sh`)
+3. **Wave 3** (Core System): Dispatch sub-agents for skills 22-23 sequentially (NOT parallel — Skill 22 must complete before 23, see Sequential Dependencies). User-interaction steps surface via the triple-fire trigger (Telegram + AGENTS.md flag + terminal fallback).
+4. **Wave 4** (Post-Workforce): Dispatch parallel sub-agents for skills 24-30
+5. **Wave 5** (Final): Dispatch sub-agents to verify skill 15, install skill 31, and finalize
 
 **Sequential Dependencies (Never Parallelize These):**
 - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
 - Skill 22 (Book to Persona) must complete before Skill 23 (AI Workforce Blueprint)
 
-**Agent Limits:**
-- Maximum 4 sub-agents at any time
-- Main orchestrator handles skills 22-23 personally (no delegation)
+**Concurrency caps (N14 — enforced by `scripts/check-wave-concurrency.sh`):**
+- Mac: ≤10 worker sub-agents per wave
+- VPS: ≤5 worker sub-agents per wave
+- Standing observers (Memory Wiki, Devil's Advocate) don't count
 
 **The agent executes all installs.** The human is not asked to run steps. The agent runs them.
 
@@ -2017,7 +2021,7 @@ label: "wave4-agent-f"
    - Delete the ONBOARDING PENDING block
 
 4. **Write ONBOARDING COMPLETE to MEMORY.md**
-   - Add entry: "OpenClaw onboarding completed on [date]. All 35 skills installed."
+   - Add entry: "OpenClaw onboarding completed on [date]. All 33 active skills installed."
 
 5. **Install Skill 31** (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
 
@@ -2034,7 +2038,7 @@ label: "wave4-agent-f"
 
 ### SEQUENTIAL MODE (Fallback)
 
-If `sessions_spawn` doesn't work, install 35 skills one at a time:
+If `sessions_spawn` doesn't work, install 33 active skills one at a time:
 
 ```
 For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 35:
@@ -2066,7 +2070,7 @@ Valid statuses: INSTALLED, ALREADY_INSTALLED, FAILED, SKIPPED
 
 ## PARALLEL INSTALLATION ORCHESTRATION
 
-The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 35 skills efficiently.
+The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 33 active skills efficiently.
 
 ### Conflict Prevention (IMPORTANT)
 
@@ -2342,12 +2346,12 @@ wait_for_wave() {
 
 ### Critical Rules for Parallel Installation
 
-1. **MAXIMUM 4 SUB-AGENTS AT ONCE** - Never spawn more than 4 parallel agents
+1. **CONCURRENCY CAP** - Mac ≤ 10 worker sub-agents per wave; VPS ≤ 5. Gate every wave with `scripts/check-wave-concurrency.sh` (N14).
 2. **SEQUENTIAL WAVES** - Wave N must signal completion before Wave N+1 starts
-3. **MAIN ORCHESTRATOR ONLY** - Skills 22 and 23 MUST be installed by main agent, NEVER sub-agents
-4. **QC AFTER EACH SKILL** - Not just at wave end - every skill gets QC'd
+3. **N2 — MASTER ORCHESTRATOR DOES NO WORK** - All skill installs (including 22 and 23) are dispatched to sub-agents. The orchestrator coordinates; sub-agents execute. Skills 22 and 23 surface user-interaction steps via the triple-fire trigger (Telegram + AGENTS.md flag + terminal fallback).
+4. **QC AFTER EACH SKILL** - Independent QC sub-agent per N5 (the install agent cannot QC its own work). Every skill gets QC'd. Gate: ≥ 8.5/10.
 5. **REAL-TIME REPORTING** - Update progress file and notify after EACH skill
-6. **FAILURE HANDLING** - If a skill fails, log it but continue (optional skills) or stop (critical skills)
+6. **FAILURE HANDLING** - If a skill fails, log it but continue (optional skills) or stop (critical skills). Retry cap: 5 loops per skill, then escalate to owner via Telegram.
 
 ### Critical Skills (Cannot Skip)
 - Skill 01: Teach Yourself Protocol
@@ -2397,13 +2401,13 @@ SKILL-02: INSTALLED
 ## PROGRESS UPDATES
 
 Every 5 skills completed, send a brief status update via the user's configured messaging channel:
-"Onboarding in progress: [X] of 35 skills complete. Currently on: [skill name]."
+"Onboarding in progress: [X] of 33 active skills complete. Currently on: [skill name]."
 
 ---
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 35 skills are installed, run this as the final step.
+After all 33 active skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 ```bash
@@ -2446,7 +2450,7 @@ If the block is not present, continue without error.
 
 ### Final Gemini Engine Indexing (MANDATORY)
 
-After all 35 skills are installed, run the final Gemini Engine indexing:
+After all 33 active skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
@@ -2471,7 +2475,7 @@ python3 ~/clawd/scripts/gemini-indexer.py --status
   messaging channel (detected in prerequisites).
 - Format the 30-skill status report as a table: Skill | Name | Status | Notes
 
-Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 35 skills processed"
+Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 33 active skills processed"
 
 When every skill on the list above is installed and verified, tell the user:
 1. Everything that was install 32 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)

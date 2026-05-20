@@ -1268,7 +1268,7 @@ sub = defaults.setdefault('subagents', {})
 
 # Hard-overwrite numeric limits (protocol gates)
 sub['maxChildrenPerAgent'] = 20
-sub['maxSpawnDepth']       = 5
+sub['maxSpawnDepth']       = 4
 # maxConcurrent: hard-overwrite to 100, with a min-clamp of 50 (never less)
 prev_concurrent = sub.get('maxConcurrent', 100)
 try:
@@ -1303,7 +1303,7 @@ print(f"  ✓ bootstrapMaxChars: {prev_max} → 200000")
 print(f"  ✓ bootstrapTotalMaxChars: {prev_total} → 400000")
 print(f"  ✓ subagents.maxChildrenPerAgent → 20")
 print(f"  ✓ subagents.maxConcurrent → {sub['maxConcurrent']} (min-clamp 50)")
-print(f"  ✓ subagents.maxSpawnDepth → 5")
+print(f"  ✓ subagents.maxSpawnDepth → 4")
 print(f"  ✓ subagents.thinking → high")
 
 # Wildcard allowAgents on every agents.list entry
@@ -1559,7 +1559,7 @@ fi
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
-# maxChildrenPerAgent=20, maxConcurrent=100 (min-clamp 50), maxSpawnDepth=5,
+# maxChildrenPerAgent=20, maxConcurrent=100 (min-clamp 50), maxSpawnDepth=4,
 # bootstrapMaxChars=200000, bootstrapTotalMaxChars=400000, plus the
 # allowAgents=["*"] wildcard on every agents.list entry.
 note "Step 7: Sub-agent + bootstrap config already applied in Step 0 — skipping"
