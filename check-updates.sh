@@ -65,11 +65,14 @@ fi
 LATEST_VERSION=$(fetch_remote version | tr -d '[:space:]')
 LATEST_CHANGELOG=$(fetch_remote CHANGELOG.md)
 
-# Pull just the most recent changelog entry (top section until next "## v")
+# Pull just the most recent changelog entry (top section until next heading).
+# Matches BOTH heading formats used historically:
+#   ## v10.6.2 — ...        (older entries)
+#   ## [v10.7.0] — ...      (current bracketed style, since v10.6.2 release)
 LATEST_ENTRY=""
 if [ -n "$LATEST_CHANGELOG" ]; then
   LATEST_ENTRY=$(echo "$LATEST_CHANGELOG" | awk '
-    /^## v/ {
+    /^## (\[v|v)/ {
       if (count == 0) { count=1; print; next }
       else { exit }
     }
