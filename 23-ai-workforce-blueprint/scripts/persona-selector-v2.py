@@ -184,52 +184,101 @@ def list_available_personas(paths: dict) -> list:
     return []
 
 
+_COMPANY_CONFIG_CACHE = {"path": None, "data": None, "warned": False}
+
+
+def load_company_config(paths: dict) -> dict:
+    """Load company-config.json (schema v2.0). Warns ONCE to stderr if absent."""
+    cfg_path = paths.get("company_config")
+    if not cfg_path or not cfg_path.exists():
+        if not _COMPANY_CONFIG_CACHE["warned"]:
+            print(f"[persona-selector] WARN: company-config.json not found at "
+                  f"{cfg_path}. Layers 1-3 will fall back to neutral defaults. "
+                  f"Re-run Skill 23 build-workforce to generate it.",
+                  file=sys.stderr)
+            _COMPANY_CONFIG_CACHE["warned"] = True
+        return {}
+    if _COMPANY_CONFIG_CACHE["path"] == str(cfg_path) and _COMPANY_CONFIG_CACHE["data"] is not None:
+        return _COMPANY_CONFIG_CACHE["data"]
+    try:
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        _COMPANY_CONFIG_CACHE["path"] = str(cfg_path)
+        _COMPANY_CONFIG_CACHE["data"] = data
+        if data.get("schema_version", "1.0") < "2.0":
+            print(f"[persona-selector] WARN: company-config.json is schema "
+                  f"v{data.get('schema_version', '1.0')} — Layers 1-3 need v2.0. "
+                  f"Re-run Skill 23 build-workforce to upgrade.",
+                  file=sys.stderr)
+        return data
+    except Exception as e:
+        print(f"[persona-selector] ERROR reading company-config.json: {e}", file=sys.stderr)
+        return {}
+
+
+def _persona_keywords(persona_id: str) -> list:
+    """Tokenize persona-id into lowercase keyword list (filter stopwords)."""
+    stop = {"the", "and", "of", "or", "a", "an", "to", "in", "on", "for"}
+    parts = persona_id.lower().replace("_", "-").split("-")
+    return [p for p in parts if p and p not in stop]
+
+
 def compute_layer_scores(persona_id: str, task_text: str, owner_profile: str,
                           department_id: str, paths: dict) -> dict:
     """
-    Compute the 5 component scores. Without a heavy LLM call this is heuristic;
-    the real scoring runs through the Gemini index in v1.x.
+    Compute the 5 component scores. v2 schema reads:
+      Layer 1 (mission)      <- company-config.mission + workspace SOUL.md
+      Layer 2 (owner_values) <- company-config.owner_values + USER.md behavioral profile
+      Layer 3 (company_kpis) <- company-config.company_kpis
+      Layer 4 (dept_kpis)    <- company-config.dept_kpis[dept_id]
+      Layer 5 (task_fit)     <- semantic search (v1) — heuristic fallback here.
 
-    For v2 we keep it portable: each layer returns a value in [0,1].
+    This is the v2 heuristic baseline. Wave 3 replaces Layers 1-4 with real
+    LLM evaluation (DeepSeek V4 Pro via Ollama Cloud, fallback to Gemini 3.1
+    Flash Lite via OpenRouter). Until then, this version at least reads the
+    right data instead of returning flat constants.
     """
-    # Layer 1 (Mission): look at workspace SOUL.md vs persona name
-    mission_score = 0.7
-    soul_md = paths["soul_md"]
-    if soul_md.exists():
-        mission_text = soul_md.read_text(encoding="utf-8", errors="replace").lower()
-        if persona_id.lower().replace("-", " ").split()[0] in mission_text:
-            mission_score = 0.85
+    cc = load_company_config(paths)
+    kws = _persona_keywords(persona_id)
 
-    # Layer 2 (Owner Values): match persona keywords against behavioral profile
-    values_score = 0.65
+    # Layer 1 (Mission): persona keywords vs (company mission text + SOUL.md)
+    mission_text = (cc.get("mission") or "").lower()
+    soul_md = paths.get("soul_md")
+    if soul_md and soul_md.exists():
+        mission_text += " " + soul_md.read_text(encoding="utf-8", errors="replace").lower()
+    if mission_text:
+        hits = sum(1 for kw in kws if kw in mission_text)
+        mission_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
+    else:
+        mission_score = 0.6   # explicit "no data" floor (was 0.7 flat)
+
+    # Layer 2 (Owner Values): persona keywords vs (declared values list + behavioral profile)
+    values_text = " ".join(cc.get("owner_values") or []).lower()
     if owner_profile:
-        op_lower = owner_profile.lower()
-        persona_keywords = persona_id.lower().replace("-", " ").split()
-        hits = sum(1 for kw in persona_keywords if kw in op_lower)
-        if hits > 0:
-            values_score = min(0.65 + (hits * 0.10), 0.95)
+        values_text += " " + owner_profile.lower()
+    if values_text:
+        hits = sum(1 for kw in kws if kw in values_text)
+        values_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
+    else:
+        values_score = 0.6
 
-    # Layer 3 (Company KPIs): read company-config.json
-    company_kpi_score = 0.7
-    cfg = paths["company_config"]
-    if cfg.exists():
-        try:
-            data = json.loads(cfg.read_text(encoding="utf-8"))
-            kpis = json.dumps(data.get("companyKPIs") or data.get("kpis") or [])
-            if persona_id.lower().split("-")[0] in kpis.lower():
-                company_kpi_score = 0.82
-        except Exception:
-            pass
+    # Layer 3 (Company KPIs): persona keywords vs company_kpis list
+    company_kpis = cc.get("company_kpis") or []
+    if company_kpis:
+        kpi_text = " ".join(company_kpis).lower()
+        hits = sum(1 for kw in kws if kw in kpi_text)
+        company_kpi_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
+    else:
+        company_kpi_score = 0.6
 
-    # Layer 4 (Dept KPIs): dept SOUL.md / HEARTBEAT.md
-    dept_score = 0.7
-    dept_path = paths["workspace"] / "departments" / f"{department_id}-dept"
-    if not dept_path.exists():
-        dept_path = paths["workspace"] / "departments" / department_id
-    if dept_path.exists():
-        dept_soul = dept_path / "SOUL.md"
-        if dept_soul.exists():
-            dept_score = 0.75
+    # Layer 4 (Dept KPIs): persona keywords vs dept_kpis[dept_id]
+    dept_kpis_map = cc.get("dept_kpis") or {}
+    dept_kpis = dept_kpis_map.get(department_id) or dept_kpis_map.get(f"dept-{department_id}") or []
+    if dept_kpis:
+        dept_kpi_text = " ".join(dept_kpis).lower()
+        hits = sum(1 for kw in kws if kw in dept_kpi_text)
+        dept_score = min(0.6 + (hits * 0.10), 0.95) if hits > 0 else 0.6
+    else:
+        dept_score = 0.6
 
     # Layer 5 (Task Fit): heuristic based on task length & specificity
     task_fit = 0.7 + min(len(task_text) / 1000.0, 0.2)

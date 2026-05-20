@@ -69,6 +69,8 @@ def get_openclaw_paths() -> dict:
     coaching_personas = workspace / "coaching-personas"
     gemini_index = workspace / "data" / "gemini-index.sqlite"
 
+    company_dir = resolve_active_company_dir(company_root)
+
     return {
         "root": root,
         "platform": platform,
@@ -77,12 +79,13 @@ def get_openclaw_paths() -> dict:
         "secrets": root / "secrets",
         "master_files": master_files,
         "company_root": company_root,
+        "company_dir": company_dir,
         "coaching_personas": coaching_personas,
         "gemini_index": gemini_index,
         "persona_categories": coaching_personas / "persona-categories.json",
-        "departments_json": workspace / "departments.json",
-        "company_config": workspace / "company-config.json",
-        "org_chart": workspace / "ORG-CHART.md",
+        "departments_json": (company_dir / "departments.json") if company_dir else (workspace / "departments.json"),
+        "company_config": (company_dir / "company-config.json") if company_dir else (workspace / "company-config.json"),
+        "org_chart": (company_dir / "ORG-CHART.md") if company_dir else (workspace / "ORG-CHART.md"),
         "user_md": workspace / "USER.md",
         "soul_md": workspace / "SOUL.md",
         "memory_md": workspace / "MEMORY.md",
@@ -90,6 +93,34 @@ def get_openclaw_paths() -> dict:
         "tools_md": workspace / "TOOLS.md",
         "heartbeat_md": workspace / "HEARTBEAT.md",
     }
+
+
+def resolve_active_company_dir(company_root: Path):
+    """
+    Resolve the active per-company ZHC folder under company_root.
+
+    Resolution order:
+        1. $OPENCLAW_COMPANY_SLUG env var → company_root/<slug>/
+        2. Single subdir under company_root → that one
+        3. Most-recently-modified subdir under company_root
+        4. None (no company built yet)
+
+    Returns Path or None.
+    """
+    import os
+    if not company_root.exists():
+        return None
+    slug = os.environ.get("OPENCLAW_COMPANY_SLUG")
+    if slug:
+        candidate = company_root / slug
+        if candidate.is_dir():
+            return candidate
+    subdirs = [p for p in company_root.iterdir() if p.is_dir() and not p.name.startswith(".")]
+    if not subdirs:
+        return None
+    if len(subdirs) == 1:
+        return subdirs[0]
+    return max(subdirs, key=lambda p: p.stat().st_mtime)
 
 
 if __name__ == "__main__":

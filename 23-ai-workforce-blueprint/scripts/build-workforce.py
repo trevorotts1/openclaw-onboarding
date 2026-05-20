@@ -298,11 +298,19 @@ def build_from_config(config):
             print(f"[NON-INTERACTIVE] populate-sops-from-manifest.py not found; "
                   f"SOPs remain as DMAIC stubs", file=sys.stderr)
 
-    # v9.6.1: Write company-config.json to the ZHC folder so Skill 32 picks up
-    # the actual company name + industry + brand colors. Brand colors can be
-    # provided via the non-interactive config; otherwise neutral defaults.
+    # v10.7.0: Write company-config.json (schema v2.0) to the ZHC folder.
+    # Now includes mission, owner_values, company_kpis, dept_kpis so the
+    # persona-selector Layers 1-4 have real data instead of falling back to
+    # flat constants. Brand colors / mission / KPIs come from the
+    # non-interactive config; departments-derived dept_kpis are aggregated.
     brand_colors = config.get("brand_colors", {}) if isinstance(config.get("brand_colors"), dict) else {}
-    write_company_config_json(company_name, industry, brand_colors)
+    write_company_config_json(
+        company_name,
+        industry,
+        brand_colors,
+        full_config=config,
+        selected_departments=selected_departments,
+    )
 
     # Generate departments.json — v9.6.1 writes to BOTH the ZHC company folder
     # (canonical for Skill 32 to read) and the legacy company-discovery folder
@@ -1561,36 +1569,90 @@ def generate_org_chart(departments, specialists_by_dept):
 # COMMAND CENTER CONFIG GENERATION
 # ============================================================
 
-def write_company_config_json(company_name, industry, brand_colors=None):
+def write_company_config_json(company_name, industry, brand_colors=None,
+                              full_config=None, selected_departments=None):
     """
-    v9.6.1: Write company-config.json to the per-company ZHC folder so
-    Skill 32 (Command Center) can read company name + industry + brand
-    colors when it seeds the dashboard.
+    v10.7.0: Write company-config.json to the per-company ZHC folder.
 
-    brand_colors is an optional dict with primary / accent / text hex values.
-    If None or missing keys, BlackCEO neutral defaults are used.
+    Schema v2.0 includes the data the persona scoring engine reads at
+    runtime (mission, owner_values, company_kpis, dept_kpis). The earlier
+    v1.0 schema only carried name/industry/brand and the persona-selector
+    Layer 3 always fell back to a flat constant.
+
+    Args:
+        company_name:     str — company display name.
+        industry:         str — industry vertical (e.g., "personal-development").
+        brand_colors:     dict — optional {primary, accent, text} hex values.
+        full_config:      dict — the non-interactive config (or harvested
+                                  interview answers) from which mission, owner
+                                  values, and company KPIs are pulled.
+        selected_departments: dict — departments dict (dept_id -> info) used
+                                  to derive dept_kpis aggregate.
     """
     if not COMPANY_DIR:
         print("[COMPANY-CONFIG] COMPANY_DIR not resolved; skipping", file=sys.stderr)
         return None
 
     brand_colors = brand_colors or {}
+    full_config = full_config or {}
+    selected_departments = selected_departments or {}
+
+    mission = (
+        full_config.get("mission")
+        or full_config.get("company_mission")
+        or full_config.get("company_description")
+        or ""
+    )
+
+    owner_values = full_config.get("owner_values") or []
+    if isinstance(owner_values, str):
+        owner_values = [v.strip() for v in owner_values.split(",") if v.strip()]
+
+    company_kpis = full_config.get("company_kpis") or []
+    if isinstance(company_kpis, str):
+        company_kpis = [k.strip() for k in company_kpis.split(",") if k.strip()]
+
+    departments_cfg = full_config.get("departments", {}) or {}
+    dept_kpis = {}
+    for dept_id, dept_info in selected_departments.items():
+        raw_kpis = ""
+        if isinstance(departments_cfg.get(dept_id), dict):
+            raw_kpis = departments_cfg[dept_id].get("kpis", "") or ""
+        if not raw_kpis and isinstance(dept_info, dict):
+            raw_kpis = dept_info.get("kpis", "") or ""
+        if isinstance(raw_kpis, list):
+            dept_kpis[dept_id] = raw_kpis
+        elif isinstance(raw_kpis, str) and raw_kpis:
+            dept_kpis[dept_id] = [k.strip() for k in raw_kpis.split(",") if k.strip()]
+        else:
+            dept_kpis[dept_id] = []
+
     cfg = {
         "name":     company_name,
         "slug":     COMPANY_SLUG,
         "industry": industry,
+        "mission":  mission,
+        "owner_values": owner_values,
+        "company_kpis": company_kpis,
+        "dept_kpis":    dept_kpis,
+        "connected_systems": full_config.get("connected_systems", []),
         "brand": {
             "primary": brand_colors.get("primary", "#1f2937"),
             "accent":  brand_colors.get("accent",  "#3b82f6"),
             "text":    brand_colors.get("text",    "#f8fafc"),
         },
         "created":  datetime.now().isoformat(),
-        "schema_version": "1.0",
+        "schema_version": "2.0",
     }
     path = os.path.join(COMPANY_DIR, "company-config.json")
     with open(path, "w") as f:
         json.dump(cfg, f, indent=2)
-    print(f"[COMPANY-CONFIG] Wrote {path}", file=sys.stderr)
+    print(f"[COMPANY-CONFIG] Wrote {path} (schema v2.0)", file=sys.stderr)
+    missing = [k for k in ("mission", "owner_values", "company_kpis") if not cfg[k]]
+    if missing:
+        print(f"[COMPANY-CONFIG] WARN: empty fields {missing} — persona scoring "
+              f"Layers 1-3 will fall back. Re-run interview or pass via config.",
+              file=sys.stderr)
     return path
 
 

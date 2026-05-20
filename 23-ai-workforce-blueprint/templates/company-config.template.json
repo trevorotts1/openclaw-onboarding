@@ -1,0 +1,76 @@
+{
+  "schema_version": "2.0",
+  "name": "BlackCEO",
+  "slug": "blackceo",
+  "industry": "personal-development",
+  "mission": "Help Black creators and entrepreneurs build durable wealth-generating businesses without burning out, by replacing busywork with an AI-run zero-human company.",
+  "owner_values": [
+    "ownership",
+    "directness",
+    "speed-over-perfection",
+    "evidence-over-vibes",
+    "no-bullshit-no-padding"
+  ],
+  "company_kpis": [
+    "monthly recurring revenue",
+    "new paid clients per month",
+    "client retention 90-day",
+    "content output per week",
+    "agent task completion rate"
+  ],
+  "dept_kpis": {
+    "marketing": [
+      "qualified leads per week",
+      "cost per qualified lead",
+      "content pieces shipped per week"
+    ],
+    "sales": [
+      "closed-won per month",
+      "average deal size",
+      "pipeline velocity days"
+    ],
+    "billing-finance": [
+      "monthly net revenue",
+      "monthly gross margin",
+      "ar days outstanding"
+    ],
+    "customer-support": [
+      "first response time",
+      "csat score",
+      "tickets resolved per day"
+    ],
+    "crm": [
+      "contacts enriched per week",
+      "sequence reply rate",
+      "list hygiene score"
+    ],
+    "openclaw-maintenance": [
+      "uptime percent",
+      "skill update lag days",
+      "qc failures per week"
+    ],
+    "social-media": [
+      "posts per week per channel",
+      "engagement rate",
+      "follower net growth"
+    ],
+    "paid-advertisement": [
+      "roas",
+      "cpa",
+      "ad spend per qualified lead"
+    ]
+  },
+  "connected_systems": [
+    "ghl",
+    "openrouter",
+    "ollama-cloud",
+    "vercel",
+    "github"
+  ],
+  "brand": {
+    "primary": "#1f2937",
+    "accent":  "#3b82f6",
+    "text":    "#f8fafc"
+  },
+  "_comment": "This is the schema v2.0 template. Real company-config.json is written by build-workforce.py to ~/clawd/zero-human-company/<slug>/company-config.json. The persona scoring engine reads mission, owner_values, company_kpis, and dept_kpis from this file. Empty arrays cause Layer 1-4 to fall back to a 0.6 neutral score (and log a warning). After Wave 3, Layers 1-4 will be evaluated by DeepSeek V4 Pro via Ollama Cloud (fallback: Gemini 3.1 Flash Lite via OpenRouter)."
+}
