@@ -470,27 +470,66 @@ INHERITED_FILES = ["TOOLS.md", "AGENTS.md", "USER.md"]
 # Files to check for existing context before asking questions
 CONTEXT_FILES = ["USER.md", "MEMORY.md", "AGENTS.md", "TOOLS.md"]
 
-# Recommended departments with plain-English descriptions
-# This is a SUGGESTION list, not hardcoded. The client chooses what they need.
+# Canonical 17 departments — N17 binding. This list MUST match the dashboard's
+# `config/departments.json` exactly. v10.13.0 sync: removed Operations / Creative
+# / HR / IT (none of these are produced by the AI Workforce Interview anymore;
+# they were pre-v10.7.0 leftovers). Added CRM, OpenClaw Maintenance, Social
+# Media, Paid Advertisement (all 4 explicit interview outputs).
+#
+# Per N17, this dict is a SUGGESTION list during the interview — the client
+# still chooses which subset they need. But no department OUTSIDE this list
+# may be invented by the script. The interview output IS the source of truth
+# for which subset is enabled in the dashboard.
 RECOMMENDED_DEPARTMENTS = {
+    "ceo": {"name": "CEO", "emoji": "👔", "head": "Chief Executive Officer", "description": "Executive strategy, vision, high-level decisions"},
     "marketing": {"name": "Marketing", "emoji": "📢", "head": "Chief Marketing Officer", "description": "Getting the word out about your business - social media, ads, email, content"},
-    "sales": {"name": "Sales", "emoji": "💰", "head": "Chief Sales Officer", "description": "Turning interested people into paying customers"},
+    "sales": {"name": "Sales", "emoji": "💰", "head": "Chief Revenue Officer", "description": "Turning interested people into paying customers"},
     "billing": {"name": "Billing / Finance", "emoji": "💳", "head": "Chief Financial Officer", "description": "Invoices, payments, tracking your money"},
-    "support": {"name": "Customer Support", "emoji": "🎧", "head": "Chief Customer Officer", "description": "Helping your existing customers when they need it"},
-    "operations": {"name": "Operations", "emoji": "⚙️", "head": "Chief Operating Officer", "description": "Making sure the day-to-day runs smoothly"},
-    "creative": {"name": "Creative", "emoji": "✍️", "head": "Chief Creative Officer", "description": "All the writing - blogs, emails, scripts, copy"},
-    "hr": {"name": "HR / People", "emoji": "👥", "head": "Chief People Officer", "description": "Managing your team, hiring, culture"},
-    "legal": {"name": "Legal / Compliance", "emoji": "⚖️", "head": "General Counsel", "description": "Contracts, regulations, keeping you protected"},
-    "it": {"name": "IT / Tech", "emoji": "🖥️", "head": "Chief Technology Officer", "description": "Your technology, servers, software, security"},
-    "webdev": {"name": "Web Development", "emoji": "🌐", "head": "Chief Web Officer", "description": "Your website, landing pages, funnels"},
-    "appdev": {"name": "App Development", "emoji": "📱", "head": "Chief App Officer", "description": "Mobile apps, software applications"},
-    "graphics": {"name": "Graphics", "emoji": "🎨", "head": "Chief Graphics Officer", "description": "Visual content - logos, images, brand assets"},
-    "video": {"name": "Video", "emoji": "🎬", "head": "Chief Video Officer", "description": "Video production, editing, AI video"},
-    "audio": {"name": "Audio", "emoji": "🎙️", "head": "Chief Audio Officer", "description": "Podcasts, voiceovers, music, audio production"},
-    "research": {"name": "Research", "emoji": "🔬", "head": "Chief Research Officer", "description": "Market research, competitor analysis, data insights"},
-    "comms": {"name": "Communications", "emoji": "📣", "head": "Chief Communications Officer", "description": "PR, announcements, internal and external messaging"},
-    "ceo": {"name": "CEO / COM", "emoji": "👔", "head": "Chief Executive Officer", "description": "Executive strategy, vision, high-level decisions"},
+    "support": {"name": "Customer Support", "emoji": "🛟", "head": "Chief Support Officer", "description": "Helping your existing customers when they need it"},
+    "webdev": {"name": "Web Development", "emoji": "🌐", "head": "Head of Web Development", "description": "Your website, landing pages, funnels"},
+    "appdev": {"name": "App Development", "emoji": "🛠️", "head": "Head of App Development", "description": "Mobile apps, software applications"},
+    "graphics": {"name": "Graphics", "emoji": "🖼️", "head": "Head of Graphics", "description": "Visual content - logos, images, brand assets"},
+    "video": {"name": "Video Production", "emoji": "🎬", "head": "Head of Video Production", "description": "Video production, editing, AI video"},
+    "audio": {"name": "Audio Production", "emoji": "🎵", "head": "Head of Audio Production", "description": "Podcasts, voiceovers, music, audio production"},
+    "research": {"name": "Research", "emoji": "🔬", "head": "Head of Research", "description": "Market research, competitor analysis, data insights"},
+    "comms": {"name": "Communications", "emoji": "📡", "head": "Head of Communications", "description": "PR, announcements, internal and external messaging"},
+    "crm": {"name": "CRM", "emoji": "📇", "head": "Head of CRM", "description": "Customer data, lead lifecycle, pipeline hygiene (GHL-focused)"},
+    "openclaw": {"name": "OpenClaw Maintenance", "emoji": "🦾", "head": "Head of OpenClaw Maintenance", "description": "Sunday updates, skill bumps, system QC, internal tooling"},
+    "legal": {"name": "Legal / Compliance", "emoji": "⚖️", "head": "Chief Legal Officer", "description": "Contracts, regulations, keeping you protected"},
+    "social": {"name": "Social Media", "emoji": "📱", "head": "Head of Social Media", "description": "Organic channels — LinkedIn, X, Instagram, TikTok, YouTube"},
+    "paid-ads": {"name": "Paid Advertisement", "emoji": "🎯", "head": "Head of Paid Advertisement", "description": "Meta / Google / YouTube / TikTok paid acquisition — ROAS, CPA, retargeting"},
 }
+
+# N17 runtime guard — if config/departments.json is reachable from the workspace,
+# verify our hardcoded list matches it. Drift between this dict and the dashboard
+# config is the exact failure mode the Phase 13 audit catches.
+def _verify_departments_against_dashboard_config() -> None:
+    """Best-effort N17 drift check. Logs a warning if the keys diverge; never raises."""
+    import json as _json
+    candidate_paths = [
+        os.path.expanduser("~/.openclaw/dashboard/config/departments.json"),
+        "/data/.openclaw/dashboard/config/departments.json",
+        os.path.expanduser("~/Documents/blackceo-command-center/config/departments.json"),
+    ]
+    for p in candidate_paths:
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p) as f:
+                dashboard = _json.load(f)
+            dashboard_ids = {d["id"].removeprefix("dept-") for d in dashboard if isinstance(d, dict) and "id" in d}
+            script_ids = set(RECOMMENDED_DEPARTMENTS.keys())
+            extra_in_script = script_ids - dashboard_ids
+            missing_from_script = dashboard_ids - script_ids
+            if extra_in_script or missing_from_script:
+                print(f"[N17 WARN] build-workforce.py departments drift from {p}:", file=sys.stderr)
+                if extra_in_script:
+                    print(f"  Extra in script (not in dashboard): {sorted(extra_in_script)}", file=sys.stderr)
+                if missing_from_script:
+                    print(f"  Missing from script (in dashboard): {sorted(missing_from_script)}", file=sys.stderr)
+            return
+        except Exception:
+            return  # Best-effort only — never block on a parsing issue
 
 # Model assignments per department type
 # Creative/content departments use Kimi (fast, good for writing)
@@ -515,6 +554,98 @@ DEFAULT_MODEL_ASSIGNMENTS = {
     "billing": "moonshot/kimi-k2.5",
     "hr": "moonshot/kimi-k2.5",
 }
+
+
+# ============================================================
+# RESEARCH FALLBACK (Phase 13 audit — P1)
+# ============================================================
+# When the interview encounters an unknown answer (industry-specific term,
+# unfamiliar role title, missing dept-KPI baseline), the script can call
+# OpenRouter's Perplexity Sonar model for a live web-grounded answer.
+# Best-effort: if OPENROUTER_API_KEY is missing or the network is down, the
+# function returns None and the caller falls back to its existing default
+# (per N15 web-research pre-flight already lands authoritative defaults in
+# preflight-research.json).
+
+RESEARCH_MODEL = "openrouter/perplexity/sonar-pro-search"
+RESEARCH_TIMEOUT_S = 12
+
+def research_unknown_answer(question: str, context: str = "", purpose_tier: str = "light") -> str:
+    """
+    Best-effort web research via OpenRouter Perplexity Sonar.
+
+    Args:
+        question: the unknown answer the agent needs (e.g. "What's the typical
+                  CPA for a Series-A SaaS company in healthtech?").
+        context: 1-2 sentence framing the script already has.
+        purpose_tier: "light" | "standard" | "heavy" — controls max_tokens.
+
+    Returns:
+        The model's response text, or None if research is unavailable.
+
+    N1 compliance: Perplexity Sonar is hosted via OpenRouter, NOT Anthropic.
+    N15 alignment: this is the runtime counterpart to web-research-preflight.sh
+                   — preflight populates static defaults, this fills gaps.
+    """
+    import os as _os
+    import json as _json
+
+    api_key = _os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        # Try reading from secrets/.env via the existing convention
+        for env_path in (
+            _os.path.expanduser("~/.openclaw/secrets/.env"),
+            "/data/.openclaw/secrets/.env",
+        ):
+            if _os.path.exists(env_path):
+                try:
+                    with open(env_path) as fh:
+                        for line in fh:
+                            if line.startswith("OPENROUTER_API_KEY="):
+                                api_key = line.strip().split("=", 1)[1].strip('"\'')
+                                break
+                except Exception:
+                    pass
+                if api_key:
+                    break
+    if not api_key:
+        # No key — return None so caller falls back to its built-in default.
+        print(f"[research] OPENROUTER_API_KEY absent — skipping web research for: {question[:80]}",
+              file=sys.stderr)
+        return None
+
+    max_tokens = {"light": 300, "standard": 700, "heavy": 1500}.get(purpose_tier, 300)
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=_json.dumps({
+                "model": RESEARCH_MODEL.removeprefix("openrouter/"),
+                "messages": [
+                    {"role": "system", "content": "You are a research assistant. Cite sources when relevant. Be concise."},
+                    {"role": "user", "content": (f"{context}\n\n" if context else "") + question},
+                ],
+                "max_tokens": max_tokens,
+            }).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://openclaw.ai",
+                "X-Title": "OpenClaw AI Workforce Interview",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=RESEARCH_TIMEOUT_S) as resp:
+            body = _json.loads(resp.read().decode("utf-8"))
+        choices = body.get("choices", [])
+        if choices:
+            msg = choices[0].get("message", {})
+            return msg.get("content", "").strip() or None
+        return None
+    except Exception as e:
+        print(f"[research] failed for '{question[:60]}...': {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return None
 
 
 # ============================================================

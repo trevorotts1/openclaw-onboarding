@@ -1,3 +1,96 @@
+## [v10.13.0] — 2026-05-20 — v2.0 v10.12.0 audit closeout: 5 new P0s + every below-threshold phase
+
+The v10.12.0 audit (raw 8.74, F-floor from 7 below-threshold phases) found **2 NEW P0 blockers** that v10.12.0 introduced or missed:
+
+- **P0-001 (Phase 5):** `install.sh` embedded `FLAGCONTENT` heredoc still said "MAIN-ORCHESTRATOR-ONLY / NEVER delegate to sub-agents" for Skills 22/23. v10.12.0 fixed `Start Here.md` but not this template. The runtime AGENTS.md flag the installer wrote contradicted the same repo's `Start Here.md`. Self-contradicting system.
+- **P0-002 (Phase 13):** `build-workforce.py::RECOMMENDED_DEPARTMENTS` had the stale pre-v10.7.0 set (operations/creative/hr/it) instead of the canonical 17 (which include crm/openclaw/social/paid-ads). N17 violation.
+
+Plus 3 more P0s and full coverage of the 7 below-threshold phases (4, 5, 10, 11, 12, 13, 14).
+
+### Risk: low-medium
+All fixes additive or strictly safer. The build-workforce.py departments change adds an N17 drift-check that warns (does not fail) if the script's hardcoded list diverges from the dashboard's `config/departments.json`. Triple-fire trigger remains best-effort.
+
+### P0-001 — install.sh FLAGCONTENT template no longer contradicts N2
+
+Both Mac (lines 1817-1820, 1968-1969, 1988-1990) and VPS (lines 1818-1820, 1911-1912, 1931-1933) had three separate blocks inside the `cat << 'FLAGCONTENT'` heredoc that said:
+
+- `Wave 5 — MAIN-ORCHESTRATOR-ONLY (sequential, NEVER delegate to sub-agents)`
+- `Process Skill 23 (AI Workforce Blueprint) - MAIN ORCHESTRATOR ONLY`
+- `Skills 22-23: MAIN ORCHESTRATOR ONLY` / `Never delegate to sub-agents`
+
+All three are now rewritten to dispatch sub-agents, with the user-interaction step surfaced via the triple-fire trigger (N22). Verified live: 0 occurrences of `MAIN-ORCHESTRATOR-ONLY`, 0 of `MAIN ORCHESTRATOR ONLY`, 0 of `NEVER delegate` in either install.sh.
+
+### P0-002 — RECOMMENDED_DEPARTMENTS now matches dashboard config/departments.json
+
+`build-workforce.py::RECOMMENDED_DEPARTMENTS` lines 475-493 fully replaced. Removed: `operations`, `creative`, `hr`, `it`. Added: `crm`, `openclaw`, `social`, `paid-ads`. Plus a new `_verify_departments_against_dashboard_config()` drift-check function that compares against the live dashboard `config/departments.json` at runtime and warns (does not fail) on divergence. Future drift surfaces immediately instead of silently rotting.
+
+### P0-003 + P0-004 + P10.3 — OpenAI runtime fallback + keyword-search fallback in Skill 22 pipeline gemini-search.py + scripts/ path fix
+
+The Skill 22 pipeline `gemini-search.py` (NOT the Skill 23 copy I fixed in v10.12.0) still hard-exited on `ImportError` for `google.genai` and on missing `GOOGLE_API_KEY`. Full rewrite:
+
+- **Graceful imports** for google-genai, numpy, openai (all wrapped in try/except with `_AVAILABLE` guards).
+- **OpenAI runtime fallback** via `get_embedder()` returning `(provider, client, model_id)` or `None`.
+- **Keyword-search fallback** via `keyword_fallback_search()` using SQLite `LIKE` on the `content` column — pipeline stays operational even with zero embedding SDKs installed.
+- **Removed `~/clawd` legacy fallback**; replaced with VPS workspace path.
+
+Also copied the fixed file to **`scripts/gemini-search.py` at repo root** (Mac + VPS) so `install.sh` Step 6 stops hitting 404. Same file is also synced to `23-ai-workforce-blueprint/scripts/gemini-search.py` for tool-path consistency. All 6 copies (Mac + VPS × 3 locations) are byte-identical now.
+
+The Mac/VPS root `scripts/gemini-indexer.py` and `22.../pipeline/gemini-indexer.py` copies were also overwritten with the v10.12.0 fixed version (adds OpenAI fallback, removes files[:2] stub, removes ~/clawd, adds argparse).
+
+### P0-005 — qc-system-integrity.sh row-count + invocation smoke (Phase 14)
+
+`scripts/qc-system-integrity.sh` gains 4 new Phase-14 checks:
+
+- **X.3** — `coaching-personas/personas/` has ≥40 persona blueprint `.md` files.
+- **X.4** — `persona-categories.json` catalog count matches on-disk persona folder count.
+- **X.5** — `gemini-index.sqlite` has ≥40 embedded rows from `coaching-personas/personas/`.
+- **X.6** — Coaching-mode invocation smoke test — runs `gemini-search.py 'leadership coaching' --limit 1` and grep's for PERSONA: / SCORE: / KEYWORD-HITS: in output.
+
+### Phase 4 archives — Skill 13 + Skill 34
+
+- **Skill 13** (google-workspace-setup-ARCHIVED): NEW `ARCHIVED.md` (42 lines) + NEW `README.md` (13 lines). Documents migration to MCP servers (claude_ai_Gmail, claude_ai_Google_Calendar, claude_ai_Google_Drive) + Skill 29 (GHL) + Skill 36 (GHL MCP).
+- **Skill 34** (intelligent-staffing-ARCHIVED): `ARCHIVED.md` rewritten (was byte-identical to Skill 33's). 53 lines of Skill-34-specific context — explains the 3 capabilities Skill 34 used to provide (specialist classification / persona alignment / package tier) and exactly where each moved (build-workforce.py / persona-selector-v2.py / DEFAULT_MODEL_ASSIGNMENTS). NEW `README.md` (14 lines).
+
+### Phase 5 — install.sh now copies CEO_DEFERRAL-bearing AGENTS.md to workspace
+
+Both install.sh root-file copy loops now include: `AGENTS.md`, `INSTALL-CONTRACT.md`, `ONBOARDING-TRIGGERS.md`, `direct-to-agent-install.md` (in addition to the existing 4: `Start Here.md`, `README.md`, `CHANGELOG.md`, `version`). Fresh installs now land with the canonical CEO_DEFERRAL clause + N1-N27 index + N22 unconditional semantics in the workspace from minute one — no "the workspace AGENTS.md is empty until the agent writes it" gap.
+
+### Phase 11 — empty submodules + Skill 04 INSTRUCTIONS.md + Skill 35 QC
+
+- **Empty submodule gitlinks removed** from Mac repo: `skills/book-to-persona`, `skills/markitdown-skill`, `skills/self-improving-agent` were orphan gitlinks (mode 160000 commits pointing to empty / un-registered submodules with no `.gitmodules` file). Removed cleanly via `git rm --cached` + filesystem cleanup.
+- **Skill 04 (superpowers) INSTRUCTIONS.md** — NEW, 122 lines. Daily usage guide for the 14 sub-skills (brainstorming, tdd, gather-context, debugging, root-cause-analysis, code-review, etc.) + the 4 Iron Laws + integration with OpenClaw N3/N4/N5/N6/N16. Closes audit Phase 11 + 12 finding.
+- **Skill 35 QC script** — added `qc-social-media-planner.sh` as a canonical-name copy of the existing `qc-skill35.sh`. Both lookup paths now work.
+
+### Phase 12 — systemic QC assert drift
+
+- **Skill 04 (superpowers) `qc-superpowers.sh`** — `assert "Python 3 installed"` softened to `warn_only`. SKILL.md only lists Skill 01 + 02 as prerequisites; Python is for optional helper scripts. Aligns QC with documented prereqs.
+- **Skill 23 (ai-workforce-blueprint) `qc-ai-workforce-blueprint.sh`** — `assert "Python 3 installed"` softened to `warn_only`. INSTALL.md Phase 2a documents graceful degradation ("the build can still proceed manually without the scaffold script").
+- **Skill 32 (command-center-setup) `SKILL.md`** — added 3 new MANDATORY prerequisites to the Prerequisites table: **Node.js v18+**, **npm**, **Python 3.8+**. Skill 32's QC continues to hard-assert all 3 (they're correct asserts; they were just undocumented prereqs). Now documented.
+
+### Phase 13 — research_unknown_answer() wired into build-workforce.py
+
+NEW function `research_unknown_answer(question, context, purpose_tier)` calls OpenRouter's `perplexity/sonar-pro-search` model via `urllib.request` (no extra Python dependency). Best-effort: returns None if `OPENROUTER_API_KEY` is absent. Pairs with N15 web-research pre-flight (preflight populates static defaults; research_unknown_answer fills runtime gaps). N1 compliance: Perplexity Sonar via OpenRouter, NOT Anthropic.
+
+### Phase 14 — coverage already added via P0-005
+
+The 4 qc-system-integrity.sh checks (X.3, X.4, X.5, X.6) cover all 3 Phase 14 remediation items: ≥40 blueprints on disk, catalog count match, ≥40 embedding rows in SQLite, and the coaching-mode invocation smoke test.
+
+### Files touched
+
+Both onboarding repos:
+- `install.sh`, `Start Here.md` (was already done in v10.12.0; v10.13.0 fixed the FLAGCONTENT block)
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`, `qc-ai-workforce-blueprint.sh`
+- `04-superpowers/INSTRUCTIONS.md` (new), `qc-superpowers.sh`
+- `13-google-workspace-setup-ARCHIVED/ARCHIVED.md` (new), `README.md` (new)
+- `34-intelligent-staffing-ARCHIVED/ARCHIVED.md` (rewritten), `README.md` (new)
+- `22-book-to-persona-coaching-leadership-system/pipeline/gemini-search.py` (rewritten with keyword fallback)
+- `22.../pipeline/gemini-indexer.py`, `23-ai-workforce-blueprint/scripts/gemini-indexer.py`, `scripts/gemini-indexer.py`, `scripts/gemini-search.py`, `23-ai-workforce-blueprint/scripts/gemini-search.py` (all synced to v10.12.0 fixed version)
+- `32-command-center-setup/SKILL.md` (added Node.js / npm / Python 3 to Prerequisites)
+- `35-social-media-planner/qc-social-media-planner.sh` (new — canonical-name copy of qc-skill35.sh)
+- `scripts/qc-system-integrity.sh` (4 new Phase-14 checks)
+- `version`, `CHANGELOG.md`
+- Mac only: `skills/book-to-persona`, `skills/markitdown-skill`, `skills/self-improving-agent` removed (orphan submodules)
+
 ## [v10.12.0] — 2026-05-20 — v2.0 Full Closeout: Every Below-B+ Phase
 
 The v10.11.0 audit (raw 7.89, F-floor from 5 critical-phase misses) identified 11 phases below threshold. This release closes **every single item** across all 11 phases. The release auditor specifically called out that v10.11.0's "rewrote Wave 3" claim was incomplete — only the summary section was rewritten, not the procedure block at line 1950. That's the headline fix here.

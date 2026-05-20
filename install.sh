@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-#  OpenClaw Onboarding Installer v10.12.0 — Mac mini
+#  OpenClaw Onboarding Installer v10.13.0 — Mac mini
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 #
 #  This installer is for Mac mini / macOS deployments of OpenClaw.
@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.12.0"
+ONBOARDING_VERSION="v10.13.0"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -1462,8 +1462,18 @@ success "$SKILL_COUNT skills installed"
 # doesn't exist).
 mkdir -p "$OC_LEGACY_CLAWD" 2>/dev/null && note "Ensured legacy workspace exists: $OC_LEGACY_CLAWD"
 
-# Copy root files
-for ROOT_FILE in "Start Here.md" README.md CHANGELOG.md version; do
+# Copy root files (v10.13.0: added AGENTS.md, INSTALL-CONTRACT.md,
+# ONBOARDING-TRIGGERS.md, direct-to-agent-install.md so the workspace
+# has CEO_DEFERRAL + N1-N27 + N22 semantics on a fresh install).
+for ROOT_FILE in \
+    "Start Here.md" \
+    README.md \
+    CHANGELOG.md \
+    version \
+    AGENTS.md \
+    INSTALL-CONTRACT.md \
+    ONBOARDING-TRIGGERS.md \
+    direct-to-agent-install.md; do
     if [ -f "$ONBOARDING_DIR/$ROOT_FILE" ]; then
         cp "$ONBOARDING_DIR/$ROOT_FILE" "$SKILLS_DIR/../"
     fi
@@ -1872,11 +1882,13 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 - 31-upgraded-memory-system  (memory architecture must be ready before persona/CC)
 - 36-ghl-mcp-setup  (MCP layer for GHL — needed by Skill 35 and Command Center)
 
-**Wave 5 — MAIN-ORCHESTRATOR-ONLY (sequential, NEVER delegate to sub-agents):**
-- 22-book-to-persona-coaching-leadership-system  (needs Memory from Wave 4)
-- 23-ai-workforce-blueprint  (needs Persona from Skill 22 — depends on owner interview)
-- 32-command-center-setup  (needs ORG-CHART from Skill 23)
-- 35-social-media-planner  (needs Persona, Memory, MCP — preferred MCP-first routing via Skill 36)
+**Wave 5 — USER-INTERACTION-AWARE SUB-AGENT DISPATCH (sequential — N22 surfaces interview/decision steps; N2 keeps the orchestrator out of the install work):**
+- 22-book-to-persona-coaching-leadership-system  (needs Memory from Wave 4 — dispatch sub-agent)
+- 23-ai-workforce-blueprint  (depends on Skill 22 persona index — triple-fire trigger surfaces the owner interview prompt, then dispatch sub-agent)
+- 32-command-center-setup  (needs ORG-CHART from Skill 23 — dispatch sub-agent)
+- 35-social-media-planner  (needs Persona, Memory, MCP — dispatch sub-agent; MCP-first routing via Skill 36)
+
+N2 ENFORCEMENT: These four skills install via SUB-AGENTS like every other skill. The orchestrator coordinates the wait/dispatch handoff via the triple-fire trigger (N22) for user-interaction steps, then dispatches the install sub-agent. Concurrency cap stays Mac=10 / VPS=5 (these dispatch one at a time, well under cap). NO orchestrator-direct installation.
 
 **Wave 1 + 4 + 5 are sequential. Waves 2 + 3 are massively parallel.**
 
@@ -1963,8 +1975,8 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 **Phase C: Interactive (Timeout: 3600s / 60 minutes per sub-agent — Book-to-Persona phases can take this long with large books)**
 - Run AI Workforce Interview (if needed)
 - Generate company departments and ORG-CHART
-- Process Skill 23 (AI Workforce Blueprint) - MAIN ORCHESTRATOR ONLY
-- Process Skill 22 (Book-to-Persona) - MAIN ORCHESTRATOR ONLY
+- Dispatch Skill 23 sub-agent (AI Workforce Blueprint) — N22 surfaces interview prompts, sub-agent does the work (N2)
+- Dispatch Skill 22 sub-agent (Book-to-Persona) — orchestrator coordinates; sub-agent runs the pipeline (N2)
   - Each phase sub-agent (Extraction, Analysis, Synthesis) gets 60 min
   - With 20+ books and 3 phases each, total wall time can run 1.5-3 hours
   - DO NOT timeout a Book-to-Persona phase under 30 min
@@ -1985,9 +1997,10 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 
 ### 🔴 CRITICAL RULES
 
-**Skills 22-23: MAIN ORCHESTRATOR ONLY**
-- Never delegate to sub-agents
-- These require interview data and surgical precision
+**Skills 22-23: USER-INTERACTION-AWARE SUB-AGENT DISPATCH (N2 + N22)**
+- DISPATCH SUB-AGENTS — orchestrator does NOT install personally (N2)
+- User-interaction steps surface via the triple-fire trigger (N22): Telegram + AGENTS.md flag + terminal block
+- Sequential, not parallel: Skill 22 must complete + QC-pass before Skill 23 dispatches
 
 **Memory Architecture - ALL 8 LAYERS REQUIRED:**
 1. Markdown files (AGENTS.md, MEMORY.md, etc.)

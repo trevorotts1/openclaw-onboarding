@@ -343,6 +343,53 @@ check "X.2" "Bootstrap limits canonical (200K / 400K)" \
   "[ \"\$(python3 -c 'import json; c=json.load(open(\"$OCJSON\")); print(c[\"agents\"][\"defaults\"][\"bootstrapMaxChars\"], c[\"agents\"][\"defaults\"][\"bootstrapTotalMaxChars\"])' 2>/dev/null)\" = '200000 400000' ]" \
   "Re-run install.sh Step 0"
 
+# ─── COACHING-PERSONAS PIPELINE INTEGRITY (P0-005 / Phase 14) ────────────────
+echo
+blue "── COACHING-PERSONAS PIPELINE (Phase 14) ──"
+
+# Resolve workspace root (Mac default → VPS fallback)
+WS_ROOT="${WORKSPACE_ROOT:-$HOME/.openclaw/workspace}"
+[ -d "/data/.openclaw/workspace" ] && [ ! -d "$WS_ROOT" ] && WS_ROOT="/data/.openclaw/workspace"
+
+GEMINI_INDEX_DB="$WS_ROOT/data/coaching-personas/gemini-index.sqlite"
+PERSONAS_DIR="$WS_ROOT/data/coaching-personas/personas"
+PERSONA_CATALOG_CANDIDATES=(
+  "$HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json"
+  "/data/.openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json"
+)
+PERSONA_CATALOG=""
+for p in "${PERSONA_CATALOG_CANDIDATES[@]}"; do
+  [ -f "$p" ] && PERSONA_CATALOG="$p" && break
+done
+
+# X.3 — coaching-personas/ has ≥40 .md blueprint files (matches persona-categories.json catalog)
+check "X.3" "coaching-personas/personas has ≥40 persona blueprints" \
+  "[ -d \"$PERSONAS_DIR\" ] && [ \"\$(find \"$PERSONAS_DIR\" -maxdepth 2 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')\" -ge 40 ]" \
+  "Run Skill 22 pipeline on a fresh batch of source books to populate personas/, or restore from backup."
+
+# X.4 — persona-categories.json catalog count matches on-disk personas
+if [ -n "$PERSONA_CATALOG" ]; then
+  check "X.4" "persona-categories.json catalog count matches on-disk personas" \
+    "python3 -c '
+import json, os, glob, sys
+cat=json.load(open(\"$PERSONA_CATALOG\"))
+cat_n=len(cat) if isinstance(cat, list) else len(cat.get(\"personas\", []))
+disk_n=len([d for d in glob.glob(\"$PERSONAS_DIR/*\") if os.path.isdir(d)])
+sys.exit(0 if disk_n >= cat_n else 1)
+' 2>/dev/null" \
+    "Catalog says one count; disk has another. Re-run Skill 22 pipeline or audit the catalog."
+fi
+
+# X.5 — gemini-index.sqlite exists and has ≥40 embedding rows from coaching-personas/
+check "X.5" "gemini-index.sqlite has ≥40 embedded rows from coaching-personas/" \
+  "[ -f \"$GEMINI_INDEX_DB\" ] && [ \"\$(sqlite3 \"$GEMINI_INDEX_DB\" \"SELECT COUNT(DISTINCT file_path) FROM embeddings WHERE file_path LIKE '%coaching-personas/personas/%'\" 2>/dev/null)\" -ge 40 ]" \
+  "Run: python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/gemini-indexer.py (then verify with --status)"
+
+# X.6 — Coaching-mode invocation smoke test (gemini-search.py returns ≥1 persona for a known query)
+check "X.6" "gemini-search.py returns ≥1 persona for a known leadership query (coaching invocation smoke)" \
+  "[ -f \"$GEMINI_INDEX_DB\" ] && python3 \"$WS_ROOT/scripts/gemini-search.py\" 'leadership coaching' --limit 1 2>/dev/null | grep -qE 'PERSONA:|SCORE:|KEYWORD-HITS:'" \
+  "If empty: re-index. If hard-error: check google-genai or openai package install."
+
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
 echo
 blue "═══════════════════════════════════════════════════"

@@ -22,7 +22,7 @@ warn_only "Interview state evidence (A/B/C): answers, departments, or ORG-CHART"
 warn_only "departments/ folder OR ORG-CHART.md exists (STATE C — complete)" "[ -d \"$WORKSPACE/departments\" ] || [ -f \"$WORKSPACE/ORG-CHART.md\" ]"
 warn_only "company-config.json present" "[ -f \"$WORKSPACE/company-config.json\" ] || find \"$WORKSPACE\" -maxdepth 3 -name 'company-config.json' 2>/dev/null | head -1 | grep -q ."
 warn_only "AGENTS.md notes 'Skill 23 MAIN ORCHESTRATOR ONLY'" "grep -qiE 'skill 23.*main orchestrator|workforce.*main orchestrator' \"$WORKSPACE/AGENTS.md\" 2>/dev/null"
-assert "Python 3 installed" "command -v python3"
+warn_only "Python 3 installed (INSTALL.md Phase 2a documents graceful degradation — build can proceed manually without scaffold script)" "command -v python3"
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 23 QC FAILED"; exit 1; } || { green "Skill 23 QC PASS"; exit 0; }

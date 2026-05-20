@@ -36,6 +36,9 @@ Use this skill when:
 | Skill 22: Book-to-Persona | Recommended | Department heads use personas from your coaching system. Without them, heads will be generic. |
 | Skill 31: Upgraded Memory System | Recommended | Department heads need the 8-layer memory system for persistent operation. |
 | Memory Wiki | Recommended | Department heads use wiki_search and wiki_get for structured knowledge retrieval across coaching theories and SOPs. |
+| **Node.js v18+** | MANDATORY | Dashboard is a Next.js app — the Command Center cannot start without `node` on PATH. QC asserts presence. |
+| **npm** | MANDATORY | Required to install dashboard dependencies (`npm install`). QC asserts presence. |
+| **Python 3.8+** | MANDATORY | Several setup scripts (`persona-selector-v2.py`, `gemini-indexer.py`, build-workforce helpers) are Python-based. QC asserts presence. |
 
 ### Active Memory Note
 This skill requires an active memory system. Department agents maintain persistent state using:
