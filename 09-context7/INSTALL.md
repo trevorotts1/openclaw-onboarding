@@ -1,3 +1,5 @@
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
 ## 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN)
 - For this onboarding package, do NOT use service CLIs for GitHub, Vercel, or Context7.
 - Do NOT use `gh`, `vercel`, or any Context7 CLI command for setup/auth.

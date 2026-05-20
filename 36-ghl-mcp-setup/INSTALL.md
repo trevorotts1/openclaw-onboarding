@@ -123,6 +123,9 @@ When finished, give the user a clear summary:
 
 # GHL MCP Setup — Installation Guide
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 This guide enables AI agent autonomous setup of the 5-tier GHL access chain.
 After completing these steps, the agent will route GHL requests through:
 Official MCP → Community MCP → REST API → Playwright → Codex Computer Use.

@@ -114,6 +114,9 @@ When finished, give the requester a clear summary:
 
 # BlackCEO Team Management - Agent Installation Protocol
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 This protocol configures the dispatcher system so the AI agent can serve multiple team members simultaneously through Telegram without message mixing between senders.
 
 ---

@@ -128,6 +128,65 @@ CHAINS = {
         "large":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_FLASH_LITE],
         "huge":   [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
     },
+
+    # ─── v10.9.0 P1-C: PRD §5 role-specific chains ────────────────────────
+    # These four chains map 1:1 to the audit's PRD §5 specification so
+    # Phase 8 (Model Selection) can verify role-specific dispatch.
+    #
+    # §5.1 Master Orchestrator (thinking=high):
+    #   1. ollama/kimi-k*:cloud  → 2. openrouter/moonshot/kimi-k*  → 3. Gemini 3.1 Pro
+    "orchestrator": {
+        "normal": [
+            KIMI_OLLAMA,                # 1. Ollama Cloud Kimi (latest)
+            KIMI_OPENROUTER,            # 2. OpenRouter Kimi (same model, OR route)
+            GEMINI_FLASH_LITE,          # 3. Gemini fallback (Pro pattern not yet in registry; Flash Lite is the available pattern)
+            OAUTH_GPT,
+        ],
+        "large": [KIMI_OLLAMA, KIMI_OPENROUTER, DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+    },
+
+    # §5.2 Installer sub-agent — needs DeepSeek V4 Pro's 1M context for big
+    #   skill files
+    #   1. ollama/deepseek-v*-pro:cloud  →  2. openrouter/deepseek/...  →  3. Gemini 3.1 Pro
+    "installer-subagent": {
+        "normal": [
+            DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4 Pro
+            DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4 Pro
+            GEMINI_FLASH_LITE,          # 3. Gemini Pro fallback (Flash Lite is the closest available pattern)
+            OAUTH_GPT,
+        ],
+        "large": [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+    },
+
+    # §5.3 QC sub-agent — cheap+capable; Kimi for reasoning, Flash Lite for
+    #   bulk yes/no checks
+    #   1. ollama/kimi-k*:cloud  →  2. openrouter/moonshot/kimi  →  3. Gemini Flash Lite
+    "qc-subagent": {
+        "normal": [
+            KIMI_OLLAMA,                # 1. Ollama Cloud Kimi
+            KIMI_OPENROUTER,            # 2. OpenRouter Kimi
+            GEMINI_FLASH_LITE,          # 3. OpenRouter Gemini Flash Lite (cheap last resort)
+        ],
+        "large": [KIMI_OLLAMA, KIMI_OPENROUTER, DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
+        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
+    },
+
+    # §5.4 Book-to-Persona pipeline — large-context preference; cheapest
+    #   fallback at the end
+    #   1. Kimi cloud  →  2. Kimi OR  →  3. DeepSeek cloud  →  4. DeepSeek OR  →  5. Gemini Flash Lite
+    "book-to-persona": {
+        "normal": [
+            KIMI_OLLAMA,                # 1. Ollama Cloud Kimi
+            KIMI_OPENROUTER,            # 2. OpenRouter Kimi
+            DEEPSEEK_PRO_OLLAMA,        # 3. Ollama Cloud DeepSeek V4 Pro
+            DEEPSEEK_PRO_OPENROUTER,    # 4. OpenRouter DeepSeek V4 Pro
+            GEMINI_FLASH_LITE,          # 5. Cheapest fallback
+        ],
+        "large": [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_FLASH_LITE],
+        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_FLASH_LITE],
+    },
 }
 
 

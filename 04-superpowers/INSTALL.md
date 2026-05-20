@@ -118,6 +118,9 @@ When finished, give the user a clear summary:
 
 # Superpowers - Installation Guide
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 This guide automates the installation of the Superpowers discipline framework on an AI agent. Superpowers is a set of 14 skill files that teach the agent how to think properly before coding, debug systematically, and never claim something is "done" without proof.
 
 ## Learning Sequence

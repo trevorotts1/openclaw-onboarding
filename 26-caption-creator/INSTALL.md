@@ -1,5 +1,8 @@
 # Installation Guide - Caption Creator Skill
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 ## Teach Yourself Protocol (TYP) - Mandatory read order
 
 Before you run any commands in this skill:

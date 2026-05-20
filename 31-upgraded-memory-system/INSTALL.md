@@ -38,6 +38,9 @@ User's explicit override is highest priority. Chain:
 
 # Upgraded Memory System - Installation (8-Layer)
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 ## Prerequisite Check
 
 Before installing, check these prerequisites. If any are missing, still install the skill files but mark the skill as PENDING.

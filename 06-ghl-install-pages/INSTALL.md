@@ -113,6 +113,9 @@ When finished, give the user a clear summary:
 
 # GHL Install Pages - Setup and Prerequisites
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 This guide covers everything the AI agent needs to have in place BEFORE deploying pages into GoHighLevel (Convert and Flow). This is about getting the tools ready. For the actual step-by-step deployment process, see INSTRUCTIONS.md.
 
 This document assumes the HTML code is already written and ready to go. The agent is setting up the ability to insert that HTML code into GHL's page builder.

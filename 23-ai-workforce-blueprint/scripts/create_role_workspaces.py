@@ -402,6 +402,63 @@ def create_role_workspace(dept_path, role_name, workspace_root, role_metadata=No
         (role_path / "how-to.md").write_text(
             stub_how_to(role_name, dept_name, is_ceo), encoding="utf-8")
 
+    # v10.9.0 P1-E: SOP/ subfolder per role (N19 requirement)
+    # Per-role SOP folder holds the how-to docs the role uses on the job.
+    # Some roles get one giant document; some get multiple. how-to.md (root)
+    # is the canonical INDEX into SOP/. This is where the role looks for
+    # instructions on individual tasks.
+    sop_dir = role_path / "SOP"
+    sop_dir.mkdir(exist_ok=True)
+    sop_index = sop_dir / "00-INDEX.md"
+    if not sop_index.exists():
+        sop_index.write_text(
+            f"""# {role_name} — SOP Index
+
+This folder contains the standard operating procedures the {role_name} uses
+to perform their job. The role's `how-to.md` (one level up) is the entry
+point and references this folder.
+
+## How this folder works
+
+- **00-INDEX.md** (this file) — table of contents for the SOPs in this folder.
+- **NN-<topic>.md** — individual SOPs, numbered in execution order where order matters.
+  Examples:
+    01-daily-startup.md
+    02-task-intake.md
+    03-quality-check.md
+    99-escalation-protocol.md
+- **_assets/** (optional) — supporting files referenced by SOPs (templates, screenshots, prompts).
+
+## Conventions
+
+- Each SOP is one focused procedure. Don't bury 5 procedures in one doc.
+- Each SOP starts with: Purpose, Inputs, Steps, Outputs, Escalation.
+- SOPs are READ-FIRST: the role MUST read the relevant SOP before executing
+  a task it covers. No improvising.
+- When a persona is assigned for a task (see workspace-level `governing-personas.md`),
+  the persona governs HOW the role executes the SOP — but the SOP's WHAT remains
+  the canonical procedure.
+
+## Populating this folder
+
+Initially this folder may contain only this index. SOPs are added incrementally:
+- By the role itself as it accumulates work (the role writes its own SOPs)
+- By the `populate-sops-from-manifest.py` script when a role-library manifest exists for this department
+- By the Master Orchestrator dispatching a "write SOP" task during onboarding for high-priority procedures
+
+When a new SOP is added, append a line to the table below.
+
+## Current SOPs
+
+| # | File | Purpose |
+|---|------|---------|
+| 00 | 00-INDEX.md | This index |
+
+(Add new SOPs as rows above as they're authored.)
+""",
+            encoding="utf-8",
+        )
+
     # Symlinks for shared files
     for shared in ["AGENTS.md", "TOOLS.md", "USER.md"]:
         link_path = role_path / shared
@@ -469,6 +526,21 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
             else:
                 fpath.write_text(stub_how_to(role_name, dept_name, is_ceo), encoding="utf-8")
         written.append(filename)
+
+    # v10.9.0 P1-E: ensure SOP/ folder exists in augmented roles too
+    sop_dir = role_path / "SOP"
+    if not sop_dir.exists():
+        sop_dir.mkdir(parents=True, exist_ok=True)
+        sop_index = sop_dir / "00-INDEX.md"
+        if not sop_index.exists():
+            sop_index.write_text(
+                f"# {role_name} — SOP Index\n\n"
+                f"Operating procedures for {role_name} in {dept_name}.\n"
+                f"Files: NN-<topic>.md (numbered in execution order where order matters).\n"
+                f"This index is auto-created by create_role_workspaces.py augment path.\n",
+                encoding="utf-8",
+            )
+            written.append("SOP/00-INDEX.md")
 
     symlinked = []
     for shared in V21_SYMLINKS:

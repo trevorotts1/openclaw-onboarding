@@ -38,6 +38,9 @@ User's explicit override is highest priority. Chain:
 
 # Google Workspace Integration - Installation Guide
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 This guide sets up the Google Workspace CLI (gws) for accessing all Google services. It covers both personal Gmail accounts and Google Workspace business accounts.
 
 ---

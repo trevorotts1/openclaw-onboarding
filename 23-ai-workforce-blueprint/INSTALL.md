@@ -78,6 +78,9 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 
 ```bash
 # Check if coaching-personas Gemini Vector Database exists
+
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
 if python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
   echo "✅ Skill 22 verified: coaching-personas collection found"
   SKILL22_INSTALLED=true

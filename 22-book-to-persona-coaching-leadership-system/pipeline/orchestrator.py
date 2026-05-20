@@ -102,7 +102,10 @@ def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
     }
     purpose = purpose_map.get(phase, phase)
     fallback = "ollama/kimi-k2.6:cloud" if input_chars is None or input_chars <= 800_000 else "ollama/deepseek-v4-pro:cloud"
-    model_id = _resolve_model("book-to-persona", purpose, "heavy", fallback, input_chars=input_chars)
+    # v10.9.0 P1-F: pin Book-to-Persona explicitly to PRD §5.4 role-specific
+    # chain (Kimi → DeepSeek → Gemini Flash Lite). The "heavy" alias is kept
+    # for backward-compat; new code uses "book-to-persona".
+    model_id = _resolve_model("book-to-persona", purpose, "book-to-persona", fallback, input_chars=input_chars)
     return model_id, _route_for(model_id)
 
 

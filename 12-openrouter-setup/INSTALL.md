@@ -129,6 +129,9 @@ what commands were run, and what files were changed.
 
 # OpenRouter Setup - Agent Execution Guide
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 This guide instructs the agent to set up OpenRouter as the model provider for OpenClaw.
 OpenRouter is a service that gives access to dozens of AI models (Claude, GPT, Gemini,
 and many others) through a single API key and a single account.

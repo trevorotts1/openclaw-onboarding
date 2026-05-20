@@ -1,5 +1,8 @@
 # Teach Yourself Protocol - Installation
 
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
 ## Prerequisites
 - OpenClaw installed and running (`openclaw status`)
 - Write access to workspace files (AGENTS.md, TOOLS.md, MEMORY.md, IDENTITY.md)

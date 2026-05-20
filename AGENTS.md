@@ -4,6 +4,47 @@
 
 ---
 
+## 🔴 N2 — MASTER ORCHESTRATOR DOES NO WORK
+
+**The Master Orchestrator does NOT perform installation work, file edits, API calls, or any other domain operation. The Master Orchestrator coordinates. Sub-agents do the work.**
+
+Allowed: spawn sub-agents, spawn standing observers (Memory Wiki + Devil's Advocate), read sub-agent reports, score the final composite, restart the gateway without asking permission (orchestrator-only authority per N7), self-rate its PRD / mission spec, compose the final summary.
+
+Forbidden: reading skill `.md` files for the purpose of installing them, running `install.sh` steps directly, writing configuration files, QC'ing its own work (see N5), skipping steps "to save time" (see N4).
+
+If the orchestrator catches itself doing work, that's an N2 violation. The work is discarded and a sub-agent is spawned to redo it cleanly.
+
+**Standing-observer exception:** Memory Wiki + Devil's Advocate sub-agents are spawned by the orchestrator at session start and do NOT count against the wave concurrency cap (Mac=10 / VPS=5) — they observe rather than perform.
+
+---
+
+## 🔴 N5 — NO SELF-QC
+
+The sub-agent that performed work on skill N CANNOT be the QC agent for skill N.
+
+The orchestrator dispatches QC to a DIFFERENT sub-agent than the installer. Hard structural rule. Self-QC is the failure mode that produced the v1.0 grade-F audit — installers tick all boxes when they grade themselves.
+
+QC runs `scripts/qc-agent.sh <skill>`, which cross-checks `.onboarding-status` against the actual `qc-*.sh` exit code (refuses to trust the installer's status file).
+
+---
+
+## 🔴 N8 — MASTER ORCHESTRATOR PROVIDES FULL CONTENT TO SUB-AGENTS
+
+When dispatching a sub-agent for skill N, the orchestrator MUST pass the actual CONTENT of the relevant `INSTALL.md`, `SKILL.md`, `QC.md`, and scripts. Sub-agents do NOT work blind.
+
+Failure mode this prevents: the sub-agent skips a step because it lacked context. Owner directive verbatim: *"normally when it's not installed correctly is because the master orchestrator didn't give the sub-agent enough context."*
+
+Dispatch protocol:
+1. Orchestrator reads the skill's file inventory (`ls skills/NN-<slug>/`)
+2. Captures the actual TEXT of `SKILL.md`, `INSTALL.md`, `QC.md`, every `.py`/`.sh` under `scripts/`
+3. Hands that text to the sub-agent as the brief — not file paths, the content
+4. Sub-agent confirms by re-stating the file inventory before any non-read action
+5. Sub-agent executes step-by-step, declared order, no re-ordering
+
+Wave concurrency cap (Mac=10 / VPS=5) is enforced BEFORE dispatch via `scripts/check-wave-concurrency.sh` — see INSTALL-CONTRACT.md Rule 0.
+
+---
+
 ## Gemini Engine INDEXING PROTOCOL
 
 **Gemini Engine (semantic search) must be indexed at specific milestones, not after every skill.**
