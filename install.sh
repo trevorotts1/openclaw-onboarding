@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.6.2"
+ONBOARDING_VERSION="v10.7.0"
 
 # ----------------------------------------------------------
 # Mac canonical paths (hardcoded — no platform detect)

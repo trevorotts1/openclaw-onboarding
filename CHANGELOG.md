@@ -1,3 +1,62 @@
+## [v10.7.0] — 2026-05-20 — Post-Analysis Remediation: Persona Pipeline Fix
+
+This is the remediation release for the 2026-05-19 15-phase analysis (grade F). Six waves of fixes that take the persona-matching "bread and butter" from a paper architecture (flat-constant scoring, empty selection log, no symlinks, self-scored QC) to a working end-to-end pipeline.
+
+### Why this was needed
+The 2026-05-19 audit found the persona-matching pipeline scored 5.1/10 against a 9.0 threshold and the 10-hop integration trace scored 4.7/10 — both pushed the composite grade to F. The root cause was sequential development without back-propagation: 40 persona blueprints, a solid interview framework, adaptive weights, and DB tables all existed but were never wired together. v10.7.0 wires them.
+
+### Wave 1.1 — `company-config.json` schema v2.0
+The persona scoring engine reads Layers 1-3 from `company-config.json`, but the file was missing AND the existing write path used a v1.0 schema that only carried name/industry/brand. Layer 3 always fell back to 0.7 flat.
+
+- `shared-utils/detect_platform.py`: new `resolve_active_company_dir()` so `paths["company_config"]` resolves to `~/clawd/zero-human-company/<slug>/company-config.json` (canonical) instead of the wrong workspace-level path. Honors `$OPENCLAW_COMPANY_SLUG` env var, falls back to most-recent-mtime directory.
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` — `write_company_config_json()` extended to schema v2.0: `mission`, `owner_values`, `company_kpis`, `dept_kpis` (aggregated from per-dept config), `connected_systems`. Logs a stderr WARN when required fields are empty.
+- `23-ai-workforce-blueprint/templates/company-config.template.json` — new reference template.
+
+### Wave 3 — Real LLM-based persona scoring
+Layers 1-4 no longer return flat 0.8/0.8/0.7/0.7. Each layer now calls an LLM that evaluates persona-fit against real context.
+
+- `shared-utils/llm_score.py` (NEW): three-step provider chain — Ollama Cloud DeepSeek V4 Pro → OpenRouter DeepSeek V4 Pro → OpenRouter Gemini 3.1 Flash Lite. Per the no-Anthropic-in-pipeline policy.
+- 30-day SQLite cache keyed by SHA-256(persona_id + layer + persona_summary + context). Repeat scoring of the same persona for the same company is free.
+- Graceful fallback to `NEUTRAL_FALLBACK_SCORE = 0.6` when ALL providers fail — never raises, never blocks dispatch.
+- `23-ai-workforce-blueprint/scripts/persona-selector-v2.py`: `compute_layer_scores()` split into `_heuristic_layer_scores()` (cheap baseline) and `_llm_layer_scores()` (production). Dispatcher reads `SCORING_MODE` env var. Default: `"llm"` when llm_score is importable, else `"heuristic"`.
+- `shared-utils/adaptive_weights.py`: `DEFAULT_WEIGHTS` unified to PRD §10 canonical (20/25/20/20/15). Earlier divergence (v1 25/25/20/15/15, v2 20/30/15/15/20) cleaned up.
+- `23-ai-workforce-blueprint/scripts/select-persona-for-task.py`: added a stderr DEPRECATION notice pointing users at v2. Adjusted its hard-coded weights to also match PRD §10 so v1 callers see consistent weights even though they still use flat layer constants.
+
+### Wave 4.1+4.2 — Selection log + post-task verification
+The persona-selection log existed as a template with zero entries; the `persona_assignment` DB table existed empty; post-task adherence verification was protocol-only. All three now have writers.
+
+- `23-ai-workforce-blueprint/scripts/persona-selector-v2.py` — on every dispatch (sticky reuse AND fresh selection):
+  - Appends a row to `persona-selection-log.md` in a structured markdown table (`| date | task-id | dept | task-cat | selected | score | mode | reasoning |`). Creates the log with header on first write. Auto-discovers path via `$PERSONA_SELECTION_LOG_PATH` → `~/.openclaw/...` → `/data/...` → `~/clawd/...`.
+  - UPSERTs into `persona_assignment` (composite key on `department_id, task_category`). Computes `switch_count` by comparing previous `persona_id`. ON CONFLICT DO UPDATE.
+  - Both writes are best-effort — failure logs to stderr but does NOT block dispatch.
+- `23-ai-workforce-blueprint/scripts/verify-persona-adherence.py` (NEW): reads task output, asks the LLM to score adherence 0.0–1.0 and surface the top 2-3 deviations. Writes result to `persona_assignment.verification_json` via `ALTER TABLE IF NOT EXISTS` pattern (creates `verification_json`, `verification_last_score`, `verification_count` columns lazily on first run — idempotent).
+
+### Wave 5.1+5.2 — Independent QC + CI gates
+The QC framework's core flaw was self-referential blindness: the installer scored its own work, the QC agent polled a file the installer wrote, and `qc-system-integrity.sh` was never actually run.
+
+- `scripts/qc-agent.sh` (NEW, executable): standalone external QC runner that doesn't trust `.onboarding-status`. Verifies skill folder structure, runs the qc-*.sh script, checks the QC.md rubric format, cross-checks the status file against the actual script exit code (flags lying installers). Returns structured JSON.
+- `.github/workflows/qc-static.yml` (NEW): runs on every push to main + every PR. Static invariants: all Python parses, `DEFAULT_WEIGHTS` sums to 1.0, company-config template valid JSON with schema v2.0, no Anthropic model strings in pipeline scripts, no flat-constant scoring left in v2, `llm_score` module imports.
+- `scripts/qc-system-integrity.sh` Wave 6 fixes: VPS `WORKSPACE` corrected from `/data/clawd` to `/data/.openclaw/workspace` (the canonical path used everywhere else). Platform label `desktop` → `mac` (matches openclaw.json + detect_platform.py).
+
+### Companion dashboard release (`blackceo-command-center` v3.2.0)
+Wave 1.2 (department canonical set N17), Wave 2 (agents ZHC layout — 69 symlinks + IDENTITY/HEARTBEAT/USER), Wave 4.3 (PersonaGovernanceBoard UI + /api/persona-assignment), Wave 5.3 (QC.md + qc-cc.sh + qc-cc CI workflow), Wave 6 (migration 008 placeholder, dead `.superdesign/` removed, root binary removed).
+
+### Bump path
+- `v10.6.2` → `v10.7.0` — minor bump because this release adds new features (LLM scoring, selection log writers, post-task verification, qc-agent.sh, qc-static CI gate) without breaking existing v10.6.2 callers (v1 select-persona-for-task.py still works with a deprecation notice).
+
+### How to upgrade
+```bash
+# Mac
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/check-updates.sh | bash
+# Then follow the printed instructions to apply.
+
+# VPS — same flow against openclaw-onboarding-vps (port pending)
+```
+
+To enable LLM scoring after upgrade, set `OLLAMA_CLOUD_API_KEY` (primary). The `OPENROUTER_API_KEY` already in `~/.openclaw/openclaw.json` serves as the paid fallback.
+
+---
+
 ## [v10.6.2] — 2026-05-19 — Version Drift Prevention Infrastructure
 
 This release does two things: (1) realigns all 5 version locations that had drifted to different values, and (2) adds the tooling to prevent that drift from happening again.
