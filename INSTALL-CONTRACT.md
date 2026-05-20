@@ -14,6 +14,33 @@ Reading this contract once at the start of an install session is necessary but N
 
 ---
 
+## 🔴 Rule 0 — Wave concurrency caps (v10.8.0 P0-8)
+
+**Hard caps per platform:**
+- Mac mini installs: **≤ 10 worker sub-agents concurrent** within a single wave.
+- VPS Hostinger Docker installs: **≤ 5 worker sub-agents concurrent** within a single wave.
+
+Standing observers (Memory Wiki sub-agent + Devil's Advocate sub-agent) do
+NOT count toward these caps — they are persistent observers, not workers.
+
+Before spawning a wave, the Master Orchestrator MUST run:
+
+```bash
+bash scripts/check-wave-concurrency.sh --proposed <N> --reason "wave-X-skill-install"
+```
+
+Exit 0 → spawn allowed. Exit 1 → REJECT — orchestrator must split the wave
+into multiple smaller waves OR reduce parallelism until the gate accepts.
+Skipping this gate is an N14 violation; the wave's results are discarded.
+
+The caps exist because the audit found VPS runtime regularly running out of
+memory/CPU when more than 5 sub-agents tried to run concurrently against
+the same Hostinger Docker container. Mac is more forgiving (10) but not
+unlimited — beyond 10 the workspace lock contention starts producing race
+conditions in SQLite writes.
+
+---
+
 ## 🔴 Rule 1 — Read every .md file in the skill folder BEFORE touching the system
 
 Before you run a single command, write a single file, or call a single API, you must read the FULL TEXT of every `.md` file in the skill's folder:

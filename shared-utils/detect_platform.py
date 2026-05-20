@@ -70,6 +70,7 @@ def get_openclaw_paths() -> dict:
     gemini_index = workspace / "data" / "gemini-index.sqlite"
 
     company_dir = resolve_active_company_dir(company_root)
+    persona_categories = resolve_persona_categories(workspace, root, coaching_personas)
 
     return {
         "root": root,
@@ -82,7 +83,7 @@ def get_openclaw_paths() -> dict:
         "company_dir": company_dir,
         "coaching_personas": coaching_personas,
         "gemini_index": gemini_index,
-        "persona_categories": coaching_personas / "persona-categories.json",
+        "persona_categories": persona_categories,
         "departments_json": (company_dir / "departments.json") if company_dir else (workspace / "departments.json"),
         "company_config": (company_dir / "company-config.json") if company_dir else (workspace / "company-config.json"),
         "org_chart": (company_dir / "ORG-CHART.md") if company_dir else (workspace / "ORG-CHART.md"),
@@ -93,6 +94,37 @@ def get_openclaw_paths() -> dict:
         "tools_md": workspace / "TOOLS.md",
         "heartbeat_md": workspace / "HEARTBEAT.md",
     }
+
+
+def resolve_persona_categories(workspace: Path, root: Path, coaching_personas: Path) -> Path:
+    """
+    Resolve persona-categories.json. v10.8.0 P0-5 fix: previously the path
+    pointed only at workspace/coaching-personas/persona-categories.json,
+    which doesn't exist on a fresh install. The file ships in Skill 22's
+    folder (22-book-to-persona-coaching-leadership-system/persona-categories.json)
+    and is COPIED to the coaching-personas workspace folder when Skill 22 runs.
+
+    Resolution order (first existing path wins):
+      1. $PERSONA_CATEGORIES_PATH env var (operator override)
+      2. workspace/coaching-personas/persona-categories.json (runtime/post-install canonical)
+      3. root/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json (shipped)
+      4. workspace/22-book-to-persona-coaching-leadership-system/persona-categories.json (legacy)
+      5. coaching-personas (the original location — returned as a "next-best" stub even if missing)
+    """
+    import os
+    if os.environ.get("PERSONA_CATEGORIES_PATH"):
+        p = Path(os.environ["PERSONA_CATEGORIES_PATH"])
+        if p.exists():
+            return p
+    candidates = [
+        coaching_personas / "persona-categories.json",
+        root / "skills" / "22-book-to-persona-coaching-leadership-system" / "persona-categories.json",
+        workspace / "22-book-to-persona-coaching-leadership-system" / "persona-categories.json",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]  # canonical-but-missing path (warns elsewhere)
 
 
 def resolve_active_company_dir(company_root: Path):

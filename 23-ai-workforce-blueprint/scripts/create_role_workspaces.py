@@ -521,12 +521,165 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
     return results
 
 
+# ─── governing-personas.md per dept (v10.8.0 P0-3 fix) ────────────────────────
+
+def write_governing_personas_md(dept_path, dept_id, dept_name=None):
+    """
+    Write a department's governing-personas.md reference guide. This file is
+    the persona-matching protocol's required per-department artifact (Hop 9
+    of the integration trace).
+
+    The persona-selector reads `persona-categories.json` at runtime and
+    decides which persona to apply per task. This file is a HUMAN reference
+    listing the top pre-qualified personas for this department — it does
+    NOT statically assign a persona. The selector still chooses dynamically.
+
+    Idempotent: overwrites the file each time the workspace is rebuilt so
+    edits to persona-categories.json propagate.
+    """
+    dept_path = Path(dept_path)
+    if not dept_path.exists():
+        return None
+
+    if dept_name is None:
+        dept_name = dept_path.name.replace("-dept", "").replace("-", " ").title()
+
+    # Read persona-categories.json via detect_platform (P0-5 path resolver)
+    persona_list_text = "_(persona-categories.json not found at install time — "\
+                         "this file will repopulate after Skill 22 builds the catalog)_"
+    try:
+        paths = get_openclaw_paths()
+        pc_path = paths.get("persona_categories")
+        if pc_path and Path(pc_path).exists():
+            data = json.loads(Path(pc_path).read_text(encoding="utf-8"))
+            # Schema is dict {persona_id: {author, book, domain, perspective, custom}}
+            # OR list [{id, ...}]
+            entries = []
+            if isinstance(data, dict):
+                for pid, meta in data.items():
+                    if not isinstance(meta, dict):
+                        continue
+                    entries.append({"id": pid, **meta})
+            elif isinstance(data, list):
+                for m in data:
+                    if isinstance(m, dict):
+                        entries.append(m)
+            # Pick personas whose domain tag plausibly matches this dept.
+            # We use a simple keyword family map below — selector still does
+            # the real LLM-evaluated pick per task.
+            dept_lower = dept_id.lower().replace("-dept", "").replace("dept-", "")
+            DEPT_DOMAIN_HINTS = {
+                "marketing":      ["marketing", "copywriting", "strategy-innovation"],
+                "sales":          ["sales", "communication", "copywriting"],
+                "billing":        ["finance", "operations"],
+                "billing-finance": ["finance", "operations"],
+                "customer-support": ["communication", "coaching"],
+                "crm":            ["sales", "communication"],
+                "social-media":   ["marketing", "communication", "copywriting"],
+                "paid-advertisement": ["marketing", "copywriting", "strategy-innovation"],
+                "research":       ["strategy-innovation", "productivity-systems"],
+                "communications": ["communication", "leadership"],
+                "legal":          ["leadership", "strategy-innovation"],
+                "legal-compliance": ["leadership", "strategy-innovation"],
+                "openclaw-maintenance": ["productivity-systems", "operations"],
+                "web-development":  ["productivity-systems"],
+                "app-development":  ["productivity-systems"],
+                "graphics":         ["copywriting", "strategy-innovation"],
+                "video":            ["copywriting", "strategy-innovation"],
+                "video-production": ["copywriting", "strategy-innovation"],
+                "audio":            ["copywriting", "communication"],
+                "audio-production": ["copywriting", "communication"],
+            }
+            hints = DEPT_DOMAIN_HINTS.get(dept_lower, [])
+            ranked = []
+            for e in entries:
+                domain = (e.get("domain") or "").lower()
+                if any(h in domain for h in hints):
+                    ranked.append(e)
+            # If nothing matched, just show the first 5 in the catalog
+            if not ranked:
+                ranked = entries[:5]
+            else:
+                ranked = ranked[:5]
+
+            if ranked:
+                rows = []
+                for e in ranked:
+                    pid = e.get("id", "?")
+                    author = e.get("author", "")
+                    book = e.get("book", "")
+                    domain = e.get("domain", "")
+                    rows.append(f"| `{pid}` | {author} | {book} | {domain} |")
+                persona_list_text = (
+                    "| Persona ID | Author | Source | Domain |\n"
+                    "|------------|--------|--------|--------|\n"
+                    + "\n".join(rows)
+                )
+    except Exception as e:
+        persona_list_text = f"_(error reading persona-categories.json: {e})_"
+
+    content = f"""# governing-personas.md — {dept_name}
+
+**Generated:** {_now_iso()}
+**Department:** {dept_name} (`{dept_id}`)
+
+## What this file is
+
+A REFERENCE GUIDE — not a static assignment. The persona-selector picks the
+governing persona per task at runtime using the 5-layer scoring matrix
+(mission / owner_values / company_kpis / dept_kpis / task_fit).
+
+This file lists personas that have been **pre-qualified** for this department's
+work based on their domain alignment. The selector treats this list as a
+recommendation pool, but it can still pick from outside the pool when the
+task context warrants it.
+
+## Pre-qualified personas
+
+{persona_list_text}
+
+## How selection works
+
+For every task assigned to this department:
+
+1. The director (or dispatching agent) calls `persona-selector-v2.py --task "..." --department {dept_id}`
+2. The selector pre-qualifies personas using Layers 1+2 (company mission +
+   owner values fit)
+3. It scores remaining candidates on Layers 3-5 (company KPIs / dept KPIs /
+   task fit via semantic similarity)
+4. The top-scoring persona is selected and the assignment is logged to
+   `persona-selection-log.md` + `persona_assignment` DB
+5. The role-based agent adopts that persona for the duration of the task
+6. On task completion, `record-task-completion` runs the adherence verifier
+   and writes back to `persona_assignment.verification_json`
+
+## Anti-staleness
+
+If the same persona is selected ≥5 times in a row for the same (department,
+task_category) without a switch, `persona_assignment.needs_review` flips to 1.
+Surface that on the dashboard and review whether the stickiness is genuine.
+
+## Updating this file
+
+This file is regenerated every time `create_role_workspaces.py` is run
+against the department. Edit `persona-categories.json` (or run Skill 22 to
+add more personas) and re-run the workspace builder.
+"""
+    out_path = dept_path / "governing-personas.md"
+    out_path.write_text(content, encoding="utf-8")
+    print(f"  ✓ wrote {out_path.relative_to(dept_path.parent) if dept_path.parent.exists() else out_path}")
+    return out_path
+
+
 # ─── BUILD ALL ROLES FOR A DEPT (used by build-workforce.py) ──────────────────
 
 def build_all_roles_for_dept(dept_path, dept_id, roles, workspace_root):
     """
     Create all role workspaces for a department. Each role gets library
     template-fill on its how-to.md when a matching library doc exists.
+
+    v10.8.0 P0-3: also writes governing-personas.md per department (Hop 9
+    of the integration trace).
     """
     created = []
     for role in roles:
@@ -538,6 +691,10 @@ def build_all_roles_for_dept(dept_path, dept_id, roles, workspace_root):
         except ValueError:
             rel = role_path
         print(f"  ✓ Created role workspace: {rel}")
+
+    # Write the per-dept governing-personas.md reference guide (P0-3)
+    write_governing_personas_md(dept_path, dept_id)
+
     return created
 
 

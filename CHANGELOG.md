@@ -1,3 +1,96 @@
+## [v10.8.0] — 2026-05-20 — v2.0 Audit P0 Fixes: Complete the Persona Pipeline
+
+The v10.7.0 release moved Phase 16 (Persona Matrix) from 5.1 → 5.65 against a 9.0 threshold — marginal. The v2.0 audit (Phase 22) identified specifically which gaps remained: Layer 5 was still a text-length heuristic, post-task adherence was a script with no caller, `governing-personas.md` wasn't being generated, anti-staleness was half-done, and several new PRD scope items hadn't been built. This release closes all 9 P0 items end-to-end and proves each one with a smoke test.
+
+### Risk: medium
+New code on critical paths (persona selector, install.sh kickoff). All new code is additive — fallbacks preserve v10.7.0 behavior when new dependencies aren't present. Existing v10.7.0 callers work unchanged.
+
+### P0-1 — Layer 5 (Task Fit) is now real semantic scoring
+**Before:** `task_fit = 0.7 + min(len(task_text) / 1000.0, 0.2)` — a 500-character task scored 0.95, a 50-character task scored 0.75, regardless of persona-task fit.
+**Now:** `shared-utils/semantic_task_fit.py` provides a three-step resolution chain:
+1. **Gemini Embedding 2** semantic similarity (best) — requires `gemini-index.sqlite` + `GOOGLE_API_KEY`. Embeds the task once per dispatch (module-level cache) and computes cosine similarity vs each persona's blueprint embedding.
+2. **Keyword overlap** between task tokens and persona id/blueprint summary (fallback when no embedding infra) — strictly better than text length.
+3. **Neutral 0.6** with explicit `_task_fit_method` field surfacing the fallback (only when both above fail).
+
+Wired into BOTH `_heuristic_layer_scores` and `_llm_layer_scores` in `persona-selector-v2.py`. The output JSON now includes `_task_fit_method` so the dispatcher can see which path produced the score.
+
+### P0-2 — Post-task adherence verification is wired into dispatch
+**Before:** `verify-persona-adherence.py` existed but nothing called it. PM4 scored 1.0/10.
+**Now:** `persona-selector-v2.py` exposes `record_task_completion()` as a Python function AND as a CLI mode (`--mode record-completion`). The dispatcher invokes:
+```bash
+python3 persona-selector-v2.py --mode record-completion \
+  --task-id <id> --persona-id <p> --department <d> \
+  --task "<task text>" --task-output-file <output.md>
+```
+This runs `verify-persona-adherence.py`, captures the JSON, and writes back to `persona_assignment.verification_json` (column auto-created via ALTER TABLE IF NOT EXISTS). Smoke test confirmed end-to-end LLM evaluation runs (Gemini 3.1 Flash Lite returned a real adherence score on a stub task).
+
+### P0-3 — `governing-personas.md` generated per department
+**Before:** Phase 17 Hop 9 broken — workspace scripts never wrote this file.
+**Now:** `create_role_workspaces.py` `write_governing_personas_md()` generates one file per department. It reads `persona-categories.json` via the (P0-5 fixed) resolver, filters by `DEPT_DOMAIN_HINTS` (e.g., marketing → marketing / copywriting / strategy-innovation), and writes a structured markdown table of the top 5 pre-qualified personas plus the protocol explanation. Called from `build_all_roles_for_dept()` so every workforce build produces them. Smoke test confirmed file written, correctly filters by domain (marketing personas IN; off-domain leadership personas OUT), 2053 chars structured markdown.
+
+### P0-4 — Anti-staleness flag (5+ consecutive same persona → `needs_review=1`)
+**Before:** `switch_count` tracked but no flag when the selector got stuck on one persona for a (dept, task_category) pair.
+**Now:** `persona-selector-v2.py` `write_persona_assignment_db()` tracks `consecutive_count` per (dept, task_category) AND flips `needs_review=1` when consecutive ≥ 5. The CASE clause in the UPSERT preserves a prior `1` even after a switch (so the dashboard sees the historical concern). Stderr FLAG message emitted at every selection that triggers it. Columns auto-added via ALTER TABLE IF NOT EXISTS — idempotent. Unit test with stubbed SQLite DB confirmed exact threshold behavior: 4 consecutive = 0, 5 consecutive = 1.
+
+### P0-5 — `persona-categories.json` path resolver
+**Before:** `detect_platform.py` pointed only at `workspace/coaching-personas/persona-categories.json` (doesn't exist on fresh install). Audit IT2 score 3.0 / PM5 score 3.0.
+**Now:** `resolve_persona_categories()` checks 4 locations in priority order:
+1. `$PERSONA_CATEGORIES_PATH` env var (operator override)
+2. workspace/coaching-personas/persona-categories.json (canonical post-Skill-22)
+3. **`root/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json`** (shipped — fixes the audit finding)
+4. workspace/22-book-to-persona-coaching-leadership-system/persona-categories.json (legacy)
+
+First existing path wins. Returns the canonical-but-missing path if none found so downstream warns can be specific.
+
+### P0-6 — Sunday Update overhaul
+**Before:** Phase 20 scored 4.70 (was 8.3 in v1.0). Cron at 2am, no force-update command, AGENTS.md flag only after install.
+**Now:** Three changes:
+- **Cron schedule:** all 5 occurrences of `"0 2 * * 0"` in `install.sh` corrected to `"0 3 * * 0"` (3am Sunday per N23). Includes the manual-command fallback warn message.
+- **`force-update.sh` (NEW):** for users whose computer was off Sunday. Combines check-updates.sh + triple-fire trigger. End-to-end smoke confirmed: detected v10.7.0 available locally, fired Telegram (gracefully failed — CLI not paired in test env), wrote AGENTS.md flag, printed terminal fallback block, emitted structured JSON.
+- **Triple-fire on detection:** the Sunday cron prompt already follows this pattern; force-update.sh enforces it identically for manual triggers.
+
+### P0-7 — Web research pre-flight
+**Before:** Phase 9 scored 0.35. Zero web research happened before settings config / model install.
+**Now:** `scripts/web-research-preflight.sh` (NEW) fetches:
+- `https://docs.openclaw.ai/` (canonical OpenClaw settings reference; status logged)
+- `ollama.com/library/<model>` for every `ollama/*` model in `openclaw.json`
+- `openrouter.ai/<vendor>/<model>` for every `openrouter/*` model in `openclaw.json`
+
+Output: `$HOME/.openclaw/preflight-research.json` (Mac) / `/data/.openclaw/preflight-research.json` (VPS). Master Orchestrator MUST read this before any settings config step. End-to-end smoke confirmed: docs.openclaw.ai reachable, 1 Ollama model checked, 1 OpenRouter model checked, valid JSON written.
+
+### P0-8 — Wave concurrency cap enforcement (N14)
+**Before:** Phase 5 scored 0.40. Caps documented in PRD but not enforced in code.
+**Now:** Two changes:
+- **`INSTALL-CONTRACT.md` Rule 0 (NEW):** mandates the gate. Mac ≤ 10 worker sub-agents per wave. VPS ≤ 5. Standing observers don't count. Skipping the gate discards the wave's results.
+- **`scripts/check-wave-concurrency.sh` (NEW):** the gate. Auto-detects platform. Accepts `--proposed <N>` and exits 0 (allow) or 1 (reject) with structured JSON explaining the decision. Tested: 7 on Mac → ALLOW, 15 on Mac → REJECT, 6 on VPS → REJECT.
+
+### P0-9 — Install-kickoff triple-fire trigger (N22)
+**Before:** install.sh ended with `print_install_summary` — no Telegram + no AGENTS.md flag. Owner explicitly flagged this at PRD time. Phase 3 scored 5.40.
+**Now:** `fire_install_kickoff_triplet()` appended to install.sh. After the bash bootstrap completes, ALL THREE channels fire independently:
+1. **Telegram** — sends a paired-chat message ("🚀 OpenClaw onboarding files installed. To start onboarding, paste the instructions in your terminal...")
+2. **AGENTS.md flag** — appends a `<!-- OPENCLAW_ONBOARDING_KICKOFF:version -->` marker block to AGENTS.md so the next agent session sees the kickoff-pending state
+3. **Terminal fallback** — always printed, regardless of 1 and 2. Contains the complete agent-instruction block the user can copy-paste to their agent.
+
+Tested in isolation: AGENTS.md flag wrote successfully, Telegram gracefully failed (CLI not paired in test env), terminal block printed.
+
+### Bump path
+- `v10.7.0` → `v10.8.0` — minor bump. All changes additive.
+
+### Companion releases
+- `openclaw-onboarding-vps` v10.8.0 — same waves, VPS paths
+- `blackceo-command-center` — no changes this release (dashboard already at v3.2.0)
+
+### How to upgrade
+```bash
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/check-updates.sh | bash
+# Or force update now (computer off during Sunday cron):
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/force-update.sh | bash
+```
+
+To enable Layer 5 semantic scoring: set `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) and run Skill 22 to populate the embedding index. Without those, the keyword-overlap fallback kicks in — still strictly better than the text-length heuristic.
+
+---
+
 ## [v10.7.0] — 2026-05-20 — Post-Analysis Remediation: Persona Pipeline Fix
 
 This is the remediation release for the 2026-05-19 15-phase analysis (grade F). Six waves of fixes that take the persona-matching "bread and butter" from a paper architecture (flat-constant scoring, empty selection log, no symlinks, self-scored QC) to a working end-to-end pipeline.

@@ -58,6 +58,14 @@ except ImportError:
     def summarize_persona_blueprint(persona_id: str, max_chars: int = 2000) -> str:  # type: ignore
         return f"(no blueprint summary — llm_score module not available)"
 
+try:
+    from semantic_task_fit import semantic_task_fit  # type: ignore
+    SEMANTIC_AVAILABLE = True
+except ImportError:
+    SEMANTIC_AVAILABLE = False
+    def semantic_task_fit(persona_id, task_text, paths, persona_summary=""):  # type: ignore
+        return {"score": 0.6, "method": "module_missing", "detail": "semantic_task_fit not importable"}
+
 
 # When env var SCORING_MODE=llm, use LLM evaluation for Layers 1-4.
 # When SCORING_MODE=heuristic (default), use the keyword-hit baseline.
@@ -181,33 +189,76 @@ def write_selection_log_md(log_path: Path, entry: dict):
         print(f"[persona-selector] WARN: could not write selection log: {e}", file=sys.stderr)
 
 
+def _ensure_persona_assignment_columns(conn):
+    """Ensure consecutive_count + needs_review columns exist (anti-staleness)."""
+    cols = {c[1] for c in conn.execute("PRAGMA table_info(persona_assignment)").fetchall()}
+    if "consecutive_count" not in cols:
+        try:
+            conn.execute("ALTER TABLE persona_assignment ADD COLUMN consecutive_count INTEGER DEFAULT 0")
+        except sqlite3.Error:
+            pass
+    if "needs_review" not in cols:
+        try:
+            conn.execute("ALTER TABLE persona_assignment ADD COLUMN needs_review INTEGER DEFAULT 0")
+        except sqlite3.Error:
+            pass
+
+
+ANTI_STALENESS_THRESHOLD = 5  # 5+ consecutive same persona → flag for review
+
+
 def write_persona_assignment_db(db_path: Path, entry: dict):
-    """Upsert into persona_assignment table. Best-effort, never raises."""
+    """Upsert into persona_assignment table. Best-effort, never raises.
+
+    Anti-staleness guard (v10.8.0): when the same persona is selected for
+    the same (department, task_category) ≥5 times in a row WITHOUT switching,
+    `needs_review` is flipped to 1. The orchestrator / dashboard surfaces
+    rows with needs_review=1 so a human (or a meta-agent) can decide whether
+    the stickiness is genuine or a sign the selector has gone deaf.
+    """
     if not db_path or not db_path.exists():
         return
     try:
         conn = sqlite3.connect(str(db_path))
+        _ensure_persona_assignment_columns(conn)
         cur = conn.cursor()
-        # Check current state to compute switch_count
+
         cur.execute(
-            "SELECT persona_id, switch_count FROM persona_assignment "
+            "SELECT persona_id, switch_count, consecutive_count "
+            "FROM persona_assignment "
             "WHERE department_id = ? AND task_category = ?",
             (entry["department"], entry["task_category"]),
         )
         existing = cur.fetchone()
         switch_count = 0
+        consecutive_count = 1
         if existing:
-            existing_persona_id, existing_switch_count = existing
+            existing_persona_id, existing_switch_count, existing_consecutive = existing
             switch_count = existing_switch_count or 0
-            if existing_persona_id != entry["persona_id"]:
+            if existing_persona_id == entry["persona_id"]:
+                consecutive_count = (existing_consecutive or 0) + 1
+            else:
                 switch_count += 1
+                consecutive_count = 1
+
+        # Anti-staleness flag: same persona ≥ THRESHOLD in a row WITHOUT a switch
+        needs_review = 1 if consecutive_count >= ANTI_STALENESS_THRESHOLD else 0
+        if needs_review:
+            print(
+                f"[persona-selector] FLAG: {entry['persona_id']} selected "
+                f"{consecutive_count}x in a row for "
+                f"({entry['department']}, {entry['task_category']}) — "
+                f"needs_review=1",
+                file=sys.stderr,
+            )
+
         cur.execute(
             """
             INSERT INTO persona_assignment
                 (department_id, task_category, persona_id, persona_name,
                  persona_mode, persona_version, last_score, last_assigned_at,
-                 switch_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                 switch_count, consecutive_count, needs_review)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
             ON CONFLICT (department_id, task_category) DO UPDATE SET
                 persona_id        = excluded.persona_id,
                 persona_name      = excluded.persona_name,
@@ -215,7 +266,12 @@ def write_persona_assignment_db(db_path: Path, entry: dict):
                 persona_version   = excluded.persona_version,
                 last_score        = excluded.last_score,
                 last_assigned_at  = excluded.last_assigned_at,
-                switch_count      = excluded.switch_count
+                switch_count      = excluded.switch_count,
+                consecutive_count = excluded.consecutive_count,
+                needs_review      = CASE
+                                      WHEN excluded.needs_review = 1 THEN 1
+                                      ELSE persona_assignment.needs_review
+                                    END
             """,
             (
                 entry["department"],
@@ -226,6 +282,8 @@ def write_persona_assignment_db(db_path: Path, entry: dict):
                 int(entry.get("persona_version", 1)),
                 float(entry.get("score", 0.0)),
                 switch_count,
+                consecutive_count,
+                needs_review,
             ),
         )
         conn.commit()
@@ -266,6 +324,87 @@ def record_selection(selection: dict, task_text: str, department: str, db_path: 
     }
     write_selection_log_md(find_selection_log(), entry)
     write_persona_assignment_db(db_path, entry)
+
+
+def record_task_completion(task_id: str, persona_id: str, department: str,
+                            task_category: str, task_text: str, task_output: str,
+                            db_path: Path = None) -> dict:
+    """
+    Invoke verify-persona-adherence.py to score how well the agent's output
+    followed the assigned persona's methodology. Writes the result to
+    persona_assignment.verification_json + verification_last_score +
+    verification_count via the verify script's own DB writer.
+
+    This is the WIRING that the v2.0 audit Phase 16 PM4 flagged as missing:
+    the script existed but nothing called it. Now persona-selector-v2.py
+    itself can be invoked with --mode record-completion to trigger the
+    adherence verification post-task.
+
+    Returns the verify script's JSON result (or an error dict on failure).
+    """
+    import subprocess
+    if db_path is None:
+        db_path = find_dashboard_db()
+
+    verify_script = Path(__file__).parent / "verify-persona-adherence.py"
+    if not verify_script.exists():
+        return {
+            "ok": False,
+            "error": f"verify-persona-adherence.py not found at {verify_script}",
+        }
+
+    # Write task_output to a temp file (CLI takes --output-file or --output-text;
+    # using a file avoids any shell quoting / large-content issues).
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False,
+                                       encoding="utf-8") as tmp:
+        tmp.write(task_output)
+        tmp_path = tmp.name
+
+    cmd = [
+        sys.executable, str(verify_script),
+        "--persona-id", persona_id,
+        "--task-id",    task_id,
+        "--department", department,
+        "--task-category", task_category,
+        "--task-text",  task_text[:1500],
+        "--output-file", tmp_path,
+        "--format",     "json",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        if proc.returncode != 0:
+            return {
+                "ok":         False,
+                "error":      f"verify exited {proc.returncode}",
+                "stderr":     proc.stderr[:500],
+            }
+        try:
+            result = json.loads(proc.stdout)
+            result["ok"] = True
+            return result
+        except json.JSONDecodeError:
+            return {
+                "ok":     False,
+                "error":  "verify output not JSON",
+                "stdout": proc.stdout[:500],
+            }
+    except subprocess.TimeoutExpired:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return {"ok": False, "error": "verify-persona-adherence timed out (120s)"}
+    except Exception as e:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 def apply_weight_overrides(persona_id: str, base_score: float, department_id: str,
@@ -413,7 +552,12 @@ def _heuristic_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     else:
         dept_score = 0.6
 
-    task_fit = 0.7 + min(len(task_text) / 1000.0, 0.2)
+    # Layer 5 (Task Fit) — semantic similarity via Gemini Embedding 2,
+    # falling back to keyword overlap, falling back to neutral 0.6.
+    # The pre-v10.8.0 text-length heuristic (0.7 + len/1000) was the gap
+    # the v2.0 audit flagged. Replaced with semantic_task_fit module.
+    tf = semantic_task_fit(persona_id, task_text, paths)
+    task_fit = tf["score"]
 
     return {
         "mission":      round(mission_score, 4),
@@ -421,6 +565,7 @@ def _heuristic_layer_scores(persona_id: str, task_text: str, owner_profile: str,
         "company_kpis": round(company_kpi_score, 4),
         "dept_kpis":    round(dept_score, 4),
         "task_fit":     round(task_fit, 4),
+        "_task_fit_method": tf["method"],
     }
 
 
@@ -464,7 +609,10 @@ def _llm_layer_scores(persona_id: str, task_text: str, owner_profile: str,
     )
     dept_kpi_res = score_layer(persona_id, "dept_kpis", persona_summary, dept_kpi_ctx)
 
-    task_fit = 0.7 + min(len(task_text) / 1000.0, 0.2)
+    # Layer 5 (Task Fit) — semantic similarity via Gemini Embedding 2.
+    # Replaces the v10.7.0 text-length heuristic per v2.0 audit Phase 16 PM1.
+    tf = semantic_task_fit(persona_id, task_text, paths, persona_summary)
+    task_fit = tf["score"]
 
     return {
         "mission":      round(mission_res["score"], 4),
@@ -472,6 +620,7 @@ def _llm_layer_scores(persona_id: str, task_text: str, owner_profile: str,
         "company_kpis": round(company_kpi_res["score"], 4),
         "dept_kpis":    round(dept_kpi_res["score"], 4),
         "task_fit":     round(task_fit, 4),
+        "_task_fit_method": tf["method"],
         "_llm_reasoning": {
             "mission":      mission_res.get("reasoning", "")[:200],
             "owner_values": values_res.get("reasoning", "")[:200],
@@ -565,14 +714,58 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
 
 def main():
     parser = argparse.ArgumentParser(description="v2.1-aware persona selector (stickiness + adaptive weights + behavioral profile)")
-    parser.add_argument("--task", required=True)
-    parser.add_argument("--department", required=True)
+    parser.add_argument("--mode", default="select",
+                        choices=["select", "record-completion"],
+                        help="select = pick a persona for a task (default). "
+                             "record-completion = invoke verify-persona-adherence "
+                             "for an already-completed task (v10.8.0 P0-2 wiring).")
+    parser.add_argument("--task", required=False)
+    parser.add_argument("--department", required=False)
     parser.add_argument("--format", default="json", choices=["json", "human"])
     parser.add_argument("--skip-stickiness", action="store_true", help="Force fresh selection even if a sticky assignment exists")
+    # record-completion mode args
+    parser.add_argument("--task-id", help="(record-completion) task identifier")
+    parser.add_argument("--persona-id", help="(record-completion) persona that governed the task")
+    parser.add_argument("--task-category", default="general", help="(record-completion)")
+    parser.add_argument("--task-output-file", help="(record-completion) path to task output file")
+    parser.add_argument("--task-output", help="(record-completion) inline task output")
     args = parser.parse_args()
 
     paths = get_openclaw_paths()
     db_path = find_dashboard_db()
+
+    # ─── record-completion mode (P0-2 wiring) ────────────────────────────
+    if args.mode == "record-completion":
+        if not (args.task_id and args.persona_id and args.department):
+            parser.error("--mode record-completion requires --task-id, --persona-id, --department")
+        # Read task output from file or inline
+        if args.task_output:
+            task_output = args.task_output
+        elif args.task_output_file:
+            try:
+                task_output = Path(args.task_output_file).read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                print(json.dumps({"ok": False, "error": f"could not read output file: {e}"}, indent=2))
+                return 2
+        else:
+            parser.error("--mode record-completion requires --task-output or --task-output-file")
+        task_text = args.task or "(no task text supplied)"
+        result = record_task_completion(
+            task_id=args.task_id,
+            persona_id=args.persona_id,
+            department=args.department,
+            task_category=args.task_category,
+            task_text=task_text,
+            task_output=task_output,
+            db_path=db_path,
+        )
+        print(json.dumps(result, indent=2) if args.format == "json"
+              else f"adherence: {result.get('adherence_score', 'n/a')}")
+        return 0 if result.get("ok") else 1
+
+    # ─── select mode (default) ────────────────────────────────────────────
+    if not (args.task and args.department):
+        parser.error("--task and --department are required for select mode")
 
     # Mode detection
     mode = detect_interaction_mode(args.task)
