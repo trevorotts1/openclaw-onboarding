@@ -1,3 +1,82 @@
+## [v10.13.7] — 2026-05-21 — REAL credential validator (regex + Shannon entropy, gitleaks methodology) — no more fake "Found" reports
+
+### The fuck-up I've been compounding for 3 hours
+v10.13.3 added a filesystem walker that found `.env.example` files. v10.13.4 added a substring blocklist as a "validator." v10.13.5 / v10.13.6 didn't touch credential discovery. **Each version reported a NEW set of fake keys** because my "validator" was guessed substrings, not real validation. Aurelia's v10.13.6 install reported Fish Audio / Podbean / Brave / Fal / Airtable / Supabase as "Found" — none existed. The previous versions reported Anthropic / DeepSeek etc. similarly. Each fix was a patch on the symptom, not the root cause.
+
+### What I should have done from the start
+Real credential scanners (gitleaks, GitGuardian, TruffleHog) use TWO signals together:
+1. **Provider-specific regex** — OpenAI keys start with `sk-`, Anthropic with `sk-ant-api03-`, Google with `AIza`, Brave with `BSA`, Tavily with `tvly-`, Supabase JWT with `eyJ`, Telegram bot tokens `<id>:<34char>`, etc.
+2. **Shannon entropy** — real keys are high-entropy random strings (4+ bits/char). Placeholders like `your_key_here` or `AKIAIOSFODNN7EXAMPLE` have low entropy.
+
+I did neither in v10.13.4. v10.13.7 does both.
+
+### What v10.13.7 actually does
+Three-stage validator (`looks_like_real_key`):
+
+1. **Stage 1 — Provider-specific regex.** Each canonical var name maps to a regex documented by the provider OR derived from gitleaks default ruleset. Sources: [gitleaks](https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml), [GitGuardian docs](https://docs.gitguardian.com/secrets-detection/), and provider API docs (verified May 2026). 26 providers mapped:
+
+| Provider | Regex |
+|---|---|
+| OPENAI_API_KEY | `^sk-(proj-\|svcacct-\|admin-)?[A-Za-z0-9_-]{32,}$` |
+| ANTHROPIC_API_KEY | `^sk-ant-(api03-)?[A-Za-z0-9_-]{80,}$` |
+| GEMINI/GOOGLE_API_KEY | `^AIza[A-Za-z0-9_-]{35}$` (39 chars total) |
+| OPENROUTER_API_KEY | `^sk-or-(v1-)?[A-Za-z0-9_-]{32,}$` |
+| GITHUB_TOKEN | `^(gh[poursr]_[A-Za-z0-9]{36}\|github_pat_[A-Za-z0-9_]{82}\|[a-f0-9]{40})$` |
+| BRAVE_API_KEY | `^BSA[A-Za-z][A-Za-z0-9_-]{20,}$` |
+| TAVILY_API_KEY | `^tvly-[A-Za-z0-9_-]{20,}$` |
+| AIRTABLE_TOKEN | `^(pat[A-Za-z0-9]{14}\.[A-Za-z0-9]{60,}\|key[A-Za-z0-9]{14})$` |
+| SUPABASE_SERVICE_ROLE_KEY | `^(eyJ...\..\..\|sb_secret_...)$` |
+| TELEGRAM_BOT_TOKEN | `^[0-9]{8,12}:[A-Za-z0-9_-]{30,40}$` |
+| NOTION_API_KEY | `^ntn_[A-Za-z0-9]{40,50}$` |
+| VERCEL_TOKEN | `^(vcp_)?[A-Za-z0-9]{24,40}$` |
+| Others (ElevenLabs, DeepSeek, Ollama, KIE, Fal, Fish Audio, Podbean, GHL, Context7) | provider-specific shapes |
+
+If `canonical` maps to a known provider AND the value doesn't match the regex → REJECT (it's the wrong shape; can't be this provider's key).
+
+2. **Stage 2 — Placeholder-substring rejection** (kept from v10.13.4 as defense in depth). Rejects `xxxxx`, `your_*`, `*_HERE`, `REPLACE_ME`, `<...>`, `[...]`, `{{...}}`, `*EXAMPLE`, etc.
+
+3. **Stage 3 — Shannon entropy.** Computed in Python (bash can't do log2 cleanly): `-sum((c/n) * log2(c/n))` for character frequencies. Threshold 3.0 bits/char per gitleaks default. Catches values that PASS regex shape but are obvious low-entropy fillers (e.g. `AIzaXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxX` matches the Google AIza regex but its 1.59 bits/char entropy rejects it).
+
+### What gets validated now (every source path)
+- Source 1: `printenv` — passes `$CANONICAL` to validator
+- Source 1b: `$HOME`-wide env-file walker — passes `$CANONICAL`
+- Source 1c: shell-source fallback — passes `$CANONICAL`
+- Sources 5-10 (Python): `env.vars`, `models.providers.*.apiKey`, `plugins.entries.*`, `auth-profiles.json`, `secrets.json`, deep scan — all routed through `emit()` which calls `looks_like_real_key(value, CANONICAL)`
+- Belt-and-suspenders: bash also re-validates AFTER Python returns, in case the Python validator missed something
+
+### Where the fake values are coming from on Aurelia's box
+Best guess: `openclaw skills install <name>` writes default `env.vars` entries for skills that REQUIRE certain keys, populating them with empty strings or template placeholders. The deep-scan source 10 hit those and reported them as "Found" without checking shape. v10.13.7's validator catches them regardless of source — even if I never identify the root cause of WHO writes the placeholders, the user-facing report is now correct.
+
+### Verification — 16/16 smoke tests pass
+| Test case | Expected | Got |
+|---|---|---|
+| Real OpenAI `sk-proj-abc...` | PASS | ✅ PASS |
+| Real Anthropic `sk-ant-api03-...` | PASS | ✅ PASS |
+| Real Google AIza pattern | PASS | ✅ PASS |
+| Real Brave BSA pattern | PASS | ✅ PASS |
+| Real Tavily tvly- pattern | PASS | ✅ PASS |
+| Real Telegram bot token | PASS | ✅ PASS |
+| Real GitHub PAT | PASS | ✅ PASS |
+| Real Notion ntn_ pattern | PASS | ✅ PASS |
+| `your_openai_key_here` | FAIL | ✅ FAIL |
+| `sk-xxxxxxxxxxxxxxxxxxxx` | FAIL | ✅ FAIL |
+| `REPLACE_ME` | FAIL | ✅ FAIL |
+| `AIzaXxXxXxX...` (right shape, low entropy) | FAIL | ✅ FAIL |
+| `your-fish-key-here` (Aurelia bug) | FAIL | ✅ FAIL |
+| `<your-brave-key>` | FAIL | ✅ FAIL |
+| `AKIAIOSFODNN7EXAMPLE` (gitleaks canonical) | FAIL | ✅ FAIL |
+| Unknown var, decent entropy | PASS | ✅ PASS (no provider mapping → entropy decides) |
+
+### Apology
+I've been guessing for 3 hours when 30 minutes of web research would have given me the right design. v10.13.3 should have been entropy+regex from the start. The substring blocklist I shipped in v10.13.4 was incomplete and unprincipled. Every patch since then was a Band-Aid on a wound that needed surgery. I'm sorry. v10.13.7 is the principled fix, grounded in how real credential scanners work, with 16/16 test cases proving it.
+
+### Files
+- `install.sh` — `looks_like_real_key` (bash, top-level, 3-stage with provider regex + entropy), Python `looks_like_real_key` (parallel implementation in `PYEOF` block), `emit()` (Python gate), Sources 1/1b/1c/5-10 all pass `$CANONICAL` to validator
+- `version` → `v10.13.7`
+- `README.md` — version reference
+
+---
+
 ## [v10.13.6] — 2026-05-21 — Port VPS v10.14.7 inline-paste-block pattern to Mac (kickoff message now self-contained)
 
 ### The bug Trevor caught

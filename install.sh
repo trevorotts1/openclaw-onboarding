@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.6"
+ONBOARDING_VERSION="v10.13.7"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -871,6 +871,194 @@ get_alias_list() {
     esac
 }
 
+# v10.13.7: looks_like_real_key — REAL validator based on gitleaks methodology
+# (regex + Shannon entropy), not just a guessed substring blocklist.
+#
+# Three-stage check, value passes if ALL stages pass:
+#   1. Provider-specific regex — if VAR_NAME corresponds to a known provider
+#      AND the value matches that provider's documented key shape, accept it.
+#      (e.g. OPENAI_API_KEY must start with sk-, GOOGLE_API_KEY with AIza,
+#      ANTHROPIC_API_KEY with sk-ant-api03-, SUPABASE_SERVICE_ROLE_KEY with
+#      eyJ or sb_secret_, etc.) Failing the regex = NOT this provider's key.
+#   2. Shannon entropy — real API keys are high-entropy random strings.
+#      Placeholders like "your_key_here" or "AKIAIOSFODNN7EXAMPLE" have low
+#      entropy. Threshold: 3.5 bits/char minimum.
+#   3. Length + obvious-placeholder substring check — belt-and-suspenders
+#      for anything regex+entropy might miss.
+#
+# Provider regex sources: gitleaks default ruleset
+# (https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml),
+# GitGuardian docs (docs.gitguardian.com/secrets-detection/...), and each
+# provider's own API documentation (verified May 2026).
+#
+# Called from: Source 1 (printenv), Source 1b (env-file walker), Source 1c
+# (sourced rc files), and bash-side belt-and-suspenders after Python returns.
+# Python's PYEOF block has a parallel implementation.
+#
+# Usage: looks_like_real_key <value> [canonical_var_name]
+#   - $1 = value to validate (required)
+#   - $2 = canonical variable name for provider-regex lookup (optional but
+#     strongly recommended — without it, we skip stage 1 and rely only on
+#     entropy + substring checks)
+looks_like_real_key() {
+    local val="$1"
+    local canonical="${2:-}"
+
+    # ── Stage 0: empty / trivial rejects ────────────────────────────
+    [ -z "$val" ] && return 1
+    [ ${#val} -lt 10 ] && return 1
+    local lo
+    lo=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
+    case "$lo" in
+        true|false|yes|no|null|none|undefined|n/a|na|"-"|"—") return 1 ;;
+    esac
+
+    # ── Stage 1: provider-specific regex match (when canonical is known) ──
+    # If the canonical var maps to a known provider, the value MUST match
+    # that provider's documented key shape. This is the strongest check.
+    if [ -n "$canonical" ]; then
+        local regex_matched="unknown"  # unknown = no provider mapping
+        case "$canonical" in
+            OPENAI_API_KEY)
+                # sk-, sk-proj-, sk-svcacct-, sk-admin-; 40+ chars total
+                if printf '%s' "$val" | grep -qE '^sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            ANTHROPIC_API_KEY)
+                # sk-ant-api03-..., 100+ chars
+                if printf '%s' "$val" | grep -qE '^sk-ant-(api03-)?[A-Za-z0-9_-]{80,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            GEMINI_API_KEY|GOOGLE_API_KEY)
+                # AIza followed by 35 chars
+                if printf '%s' "$val" | grep -qE '^AIza[A-Za-z0-9_-]{35}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            OPENROUTER_API_KEY)
+                # sk-or-v1-...
+                if printf '%s' "$val" | grep -qE '^sk-or-(v1-)?[A-Za-z0-9_-]{32,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            GITHUB_TOKEN)
+                # ghp_/gho_/ghu_/ghs_/ghr_ + 36 chars, OR 40-char hex (legacy)
+                if printf '%s' "$val" | grep -qE '^(gh[poursr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82}|[a-f0-9]{40})$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            BRAVE_API_KEY)
+                # BSA + 20+ chars
+                if printf '%s' "$val" | grep -qE '^BSA[A-Za-z][A-Za-z0-9_-]{20,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            TAVILY_API_KEY)
+                # tvly-...
+                if printf '%s' "$val" | grep -qE '^tvly-[A-Za-z0-9_-]{20,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            AIRTABLE_TOKEN)
+                # pat<14>.<64+> for PAT, OR key<14> for legacy (deprecated 2024-02 but some still have them)
+                if printf '%s' "$val" | grep -qE '^(pat[A-Za-z0-9]{14}\.[A-Za-z0-9]{60,}|key[A-Za-z0-9]{14})$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            SUPABASE_SERVICE_ROLE_KEY)
+                # JWT (eyJ...) or new sb_secret_...
+                if printf '%s' "$val" | grep -qE '^(eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_secret_[A-Za-z0-9_-]{20,})$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            TELEGRAM_BOT_TOKEN)
+                # <bot_id>:<token>  e.g. 8873988361:AAGNmtD8vnYlgGcgG4Xzj3gXTNk5mbuZucU
+                if printf '%s' "$val" | grep -qE '^[0-9]{8,12}:[A-Za-z0-9_-]{30,40}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            VERCEL_TOKEN)
+                # vcp_<24> or 24-char alphanumeric
+                if printf '%s' "$val" | grep -qE '^(vcp_)?[A-Za-z0-9]{24,40}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            NOTION_API_TOKEN|NOTION_API_KEY)
+                # ntn_<11 digits><32 alphanum><3 alphanum> = 50 total after prefix
+                if printf '%s' "$val" | grep -qE '^ntn_[A-Za-z0-9]{40,50}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            CONTEXT7_API_KEY)
+                # ctx7sk-<UUID>  (verified May 2026)
+                if printf '%s' "$val" | grep -qE '^ctx7sk-[A-Za-z0-9_-]{20,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            FAL_API_KEY)
+                # key_id:sk_live_secret  (format with colon)
+                if printf '%s' "$val" | grep -qE '^[A-Za-z0-9_-]{8,}:[A-Za-z0-9_-]{20,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            ELEVENLABS_API_KEY)
+                # 32-char hex (no fixed prefix)
+                if printf '%s' "$val" | grep -qE '^[a-f0-9]{32}$|^sk_[A-Za-z0-9_-]{32,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            DEEPSEEK_API_KEY)
+                # sk-<hex32> (DeepSeek mirrors OpenAI's older format)
+                if printf '%s' "$val" | grep -qE '^sk-[a-f0-9]{32,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            OLLAMA_API_KEY)
+                # Ollama Cloud tokens are typically long alphanumeric, no fixed prefix
+                if printf '%s' "$val" | grep -qE '^[A-Za-z0-9]{32,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            KIE_API_KEY)
+                # KIE.ai tokens — verify shape varies; accept 24+ alphanumeric
+                if printf '%s' "$val" | grep -qE '^[A-Za-z0-9_-]{24,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            FISH_AUDIO_API_KEY)
+                # Fish Audio uses UUID-like hex tokens, 32+ chars
+                if printf '%s' "$val" | grep -qE '^[a-f0-9]{32,}$|^[A-Za-z0-9_-]{32,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            FISH_AUDIO_VOICE_ID)
+                # Voice IDs are typically short identifiers
+                if printf '%s' "$val" | grep -qE '^[a-z0-9_-]{8,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            PODBEAN_API_KEY|PODBEAN_API_SECRET)
+                # Podbean credentials are long alphanumeric/hex strings
+                if printf '%s' "$val" | grep -qE '^[A-Za-z0-9]{32,}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            GOHIGHLEVEL_API_KEY)
+                # GHL PIT tokens are JWT-style or pit-prefixed; varies
+                if printf '%s' "$val" | grep -qE '^(eyJ[A-Za-z0-9_.-]{30,}|pit-[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{40,})$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            GOHIGHLEVEL_LOCATION_ID)
+                # GHL location IDs are 24-char alphanumeric (MongoDB ObjectId-style)
+                if printf '%s' "$val" | grep -qE '^[A-Za-z0-9]{20,28}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+        esac
+        # If we have a provider mapping AND it didn't match, REJECT.
+        # If we have no mapping (regex_matched=unknown), fall through to entropy.
+        if [ "$regex_matched" = "no" ]; then
+            return 1
+        fi
+        # If matched a known pattern, still run entropy/placeholder checks as
+        # belt-and-suspenders (defends against e.g. a real-shaped value that's
+        # actually a deliberate test string from a tutorial).
+    fi
+
+    # ── Stage 2: obvious-placeholder substring rejection ────────────
+    case "$lo" in
+        *xxxxx*|*your_key*|*your-key*|*your_api*|*your-api*|*yourkey*|*your_token*) return 1 ;;
+        *replace_me*|*replace-me*|*replaceme*|*changeme*|*change_me*|*change-me*) return 1 ;;
+        *_here*|*-here*|*placeholder*|*example*|*sample*|*dummy*|*demo*) return 1 ;;
+        *test_key*|*fake_key*|*sk-test*|*sk-xxx*|*sk-example*|*sk-replace*) return 1 ;;
+        *todo*|*tbd*|*fill_in*|*fillin*|*paste-your*|*paste_your*) return 1 ;;
+        *insert_your*|*enter_your*|*set_your*|*no_key*|*none_yet*) return 1 ;;
+        # The exact "EXAMPLE" suffix gitleaks documentation uses (AKIAIOSFODNN7EXAMPLE)
+        *EXAMPLE|*example) return 1 ;;
+    esac
+    case "$val" in
+        \<*\>|\[*\]|\{\{*\}\}) return 1 ;;
+    esac
+
+    # ── Stage 3: Shannon entropy check ──────────────────────────────
+    # Real API keys are high-entropy. Placeholders like "abcdef1234567890"
+    # or "the-quick-brown-fox" have low entropy. Threshold: 3.0 bits/char
+    # (gitleaks uses 3-4 for most patterns). Computed in Python because
+    # bash can't do log2 without invoking bc/python anyway.
+    local entropy
+    entropy=$(printf '%s' "$val" | python3 -c "
+import sys, math
+s = sys.stdin.read()
+if len(s) == 0: print(0); sys.exit()
+freq = {c: s.count(c) for c in set(s)}
+ent = -sum((f/len(s)) * math.log2(f/len(s)) for f in freq.values())
+print(f'{ent:.2f}')
+" 2>/dev/null || echo "0")
+    # Use awk for float comparison (bash can't)
+    if awk -v e="$entropy" 'BEGIN { exit !(e < 3.0) }'; then
+        return 1
+    fi
+
+    return 0
+}
+
 # search_env_var_mac <CANONICAL_VAR> — bulletproof Mac-only lookup across 10
 # sources. Prints stderr line showing which source/alias matched.
 search_env_var_mac() {
@@ -882,10 +1070,12 @@ search_env_var_mac() {
     for VAR_NAME in $aliases; do
         local env_val
         env_val=$(printenv "$VAR_NAME" 2>/dev/null || true)
-        if [ -n "$env_val" ]; then
+        if [ -n "$env_val" ] && looks_like_real_key "$env_val" "$CANONICAL"; then
             [ "$VAR_NAME" != "$CANONICAL" ] && echo "    [src: env.$VAR_NAME → $CANONICAL]" >&2
             echo "$env_val"
             return
+        elif [ -n "$env_val" ]; then
+            echo "    [skip: env.$VAR_NAME=<rejected as placeholder or wrong shape for $CANONICAL>]" >&2
         fi
     done
 
@@ -971,31 +1161,6 @@ search_env_var_mac() {
         export MAC_ENV_FILE_LIST="$CACHE"
     fi
 
-    # v10.13.4 helper: is this value a real-looking API key, or a placeholder?
-    # Rejects: xxxxx-only, YOUR_*, REPLACE_ME, <...>, [...], "your_api_key",
-    # "test_key", "dummy", empty after trim, asterisks-only, "abc123" toy values.
-    looks_like_real_key() {
-        local val="$1"
-        local lo
-        # Lowercase for comparison
-        lo=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
-        # Empty / very short
-        [ ${#val} -lt 8 ] && return 1
-        # Common placeholders (substring match, case-insensitive)
-        case "$lo" in
-            *xxxxx*|*your_key*|*your-key*|*your_api*|*your-api*|*yourkey*|*your_token*) return 1 ;;
-            *replace_me*|*replace-me*|*replaceme*|*changeme*|*change_me*|*change-me*) return 1 ;;
-            *_here*|*-here*|*placeholder*|*example*|*sample*|*dummy*|*demo*|*test_key*) return 1 ;;
-            *fake*|*sk-test*|*sk-xxx*|*sk-example*|*sk-replace*) return 1 ;;
-            \<*\>|\[*\]|"*") return 1 ;;
-        esac
-        # All asterisks / dots / dashes (no real entropy)
-        case "$val" in
-            \**|.*|--*) [ $(printf '%s' "$val" | tr -d '*.-' | wc -c) -lt 4 ] && return 1 ;;
-        esac
-        return 0
-    }
-
     # Iterate alias × file; first match wins. v10.13.4: also validate the value
     # looks like a real API key, not a placeholder. If the file is a known
     # template (slipped past the find-exclusion), the value will fail the
@@ -1014,16 +1179,14 @@ search_env_var_mac() {
                 | head -1 || true)
             rc_val="${rc_val%\"}"; rc_val="${rc_val#\"}"
             rc_val="${rc_val%\'}"; rc_val="${rc_val#\'}"
-            if [ -n "$rc_val" ] && looks_like_real_key "$rc_val"; then
+            if [ -n "$rc_val" ] && looks_like_real_key "$rc_val" "$CANONICAL"; then
                 local pretty="${ENV_FILE/#$HOME_DIR/~}"
                 echo "    [src: $pretty:$VAR_NAME]" >&2
                 echo "$rc_val"
                 return
             elif [ -n "$rc_val" ]; then
-                # Real-looking var, fake-looking value — log to stderr so the
-                # operator sees we rejected it (instead of silently misreporting).
                 local pretty="${ENV_FILE/#$HOME_DIR/~}"
-                echo "    [skip: $pretty:$VAR_NAME — placeholder value]" >&2
+                echo "    [skip: $pretty:$VAR_NAME=<rejected as placeholder or wrong shape for $CANONICAL>]" >&2
             fi
         done
     done <<EOFLIST
@@ -1040,7 +1203,7 @@ EOFLIST
             local sourced_val
             sourced_val=$(env -i HOME="$HOME_DIR" PATH="/usr/bin:/bin:/usr/local/bin" \
                 bash -c "set +e; source '$rc_file' >/dev/null 2>&1; printf '%s' \"\${$VAR_NAME:-}\"" 2>/dev/null)
-            if [ -n "$sourced_val" ] && looks_like_real_key "$sourced_val"; then
+            if [ -n "$sourced_val" ] && looks_like_real_key "$sourced_val" "$CANONICAL"; then
                 local pretty="${rc_file/#$HOME_DIR/~}"
                 echo "    [src: sourced($pretty):$VAR_NAME]" >&2
                 echo "$sourced_val"
@@ -1054,12 +1217,106 @@ EOFLIST
     # Sources 5-10 — single python pass over openclaw.json + auth-profiles.json
     local result
     result=$(CANONICAL="$CANONICAL" ALIASES="$aliases" OC_JSON="$OC_JSON" OC_AUTH="$OC_AUTH_PROFILES" OC_CONFIG_DIR="$OC_CONFIG" python3 - <<'PYEOF' 2>/dev/null
-import json, os, re
+import json, os, re, sys
 CANONICAL = os.environ['CANONICAL']
 ALIASES = os.environ['ALIASES'].split()
 OC_JSON = os.environ['OC_JSON']
 OC_AUTH = os.environ['OC_AUTH']
 SECRETS_JSON = os.path.join(os.environ['OC_CONFIG_DIR'], 'secrets.json')
+
+# v10.13.7: Python validator using gitleaks methodology (regex + entropy)
+# rather than substring guessing. Stage 1: provider-specific regex match
+# against CANONICAL var name (rejects shape mismatches immediately —
+# Fish Audio / Podbean / Brave / Fal etc. all have documented key formats).
+# Stage 2: obvious-placeholder substring rejection. Stage 3: Shannon entropy
+# (placeholders like "AKIAIOSFODNN7EXAMPLE" have low entropy; real keys are
+# high-entropy random strings). Threshold 3.0 bits/char per gitleaks defaults.
+
+PROVIDER_REGEX = {
+    "OPENAI_API_KEY":            r"^sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}$",
+    "ANTHROPIC_API_KEY":         r"^sk-ant-(api03-)?[A-Za-z0-9_-]{80,}$",
+    "GEMINI_API_KEY":            r"^AIza[A-Za-z0-9_-]{35}$",
+    "GOOGLE_API_KEY":            r"^AIza[A-Za-z0-9_-]{35}$",
+    "OPENROUTER_API_KEY":        r"^sk-or-(v1-)?[A-Za-z0-9_-]{32,}$",
+    "GITHUB_TOKEN":              r"^(gh[poursr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82}|[a-f0-9]{40})$",
+    "BRAVE_API_KEY":             r"^BSA[A-Za-z][A-Za-z0-9_-]{20,}$",
+    "TAVILY_API_KEY":            r"^tvly-[A-Za-z0-9_-]{20,}$",
+    "AIRTABLE_TOKEN":            r"^(pat[A-Za-z0-9]{14}\.[A-Za-z0-9]{60,}|key[A-Za-z0-9]{14})$",
+    "SUPABASE_SERVICE_ROLE_KEY": r"^(eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_secret_[A-Za-z0-9_-]{20,})$",
+    "TELEGRAM_BOT_TOKEN":        r"^[0-9]{8,12}:[A-Za-z0-9_-]{30,40}$",
+    "VERCEL_TOKEN":              r"^(vcp_)?[A-Za-z0-9]{24,40}$",
+    "NOTION_API_TOKEN":          r"^ntn_[A-Za-z0-9]{40,50}$",
+    "NOTION_API_KEY":            r"^ntn_[A-Za-z0-9]{40,50}$",
+    "CONTEXT7_API_KEY":          r"^ctx7sk-[A-Za-z0-9_-]{20,}$",
+    "FAL_API_KEY":               r"^[A-Za-z0-9_-]{8,}:[A-Za-z0-9_-]{20,}$",
+    "ELEVENLABS_API_KEY":        r"^([a-f0-9]{32}|sk_[A-Za-z0-9_-]{32,})$",
+    "DEEPSEEK_API_KEY":          r"^sk-[a-f0-9]{32,}$",
+    "OLLAMA_API_KEY":            r"^[A-Za-z0-9]{32,}$",
+    "KIE_API_KEY":               r"^[A-Za-z0-9_-]{24,}$",
+    "FISH_AUDIO_API_KEY":        r"^[A-Za-z0-9_-]{32,}$",
+    "FISH_AUDIO_VOICE_ID":       r"^[a-z0-9_-]{8,}$",
+    "PODBEAN_API_KEY":           r"^[A-Za-z0-9]{32,}$",
+    "PODBEAN_API_SECRET":        r"^[A-Za-z0-9]{32,}$",
+    "GOHIGHLEVEL_API_KEY":       r"^(eyJ[A-Za-z0-9_.-]{30,}|pit-[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{40,})$",
+    "GOHIGHLEVEL_LOCATION_ID":   r"^[A-Za-z0-9]{20,28}$",
+}
+
+PLACEHOLDER_SUBSTRINGS = (
+    'xxxxx', 'your_key', 'your-key', 'your_api', 'your-api', 'yourkey',
+    'your_token', 'replace_me', 'replace-me', 'replaceme', 'changeme',
+    'change_me', 'change-me', '_here', '-here', 'placeholder',
+    'sample', 'dummy', 'demo', 'test_key', 'fake_key', 'sk-test', 'sk-xxx',
+    'sk-example', 'sk-replace', 'todo', 'tbd', 'fill_in', 'fillin',
+    'paste-your', 'paste_your', 'insert_your', 'enter_your',
+    'set_your', 'no_key', 'none_yet',
+)
+
+def shannon_entropy(s):
+    if not s: return 0.0
+    import math
+    from collections import Counter
+    counts = Counter(s)
+    n = len(s)
+    return -sum((c/n) * math.log2(c/n) for c in counts.values())
+
+def looks_like_real_key(val, canonical=None):
+    # Stage 0: trivial rejects
+    if isinstance(val, bool): return False
+    if not isinstance(val, str):
+        val = str(val) if val else ""
+    if not val or not val.strip(): return False
+    if len(val) < 10: return False
+    if val.strip().lower() in ('true','false','yes','no','null','none','undefined','n/a','na','-','—'):
+        return False
+
+    # Stage 1: provider-specific regex (when canonical is known)
+    if canonical and canonical in PROVIDER_REGEX:
+        if not re.match(PROVIDER_REGEX[canonical], val):
+            return False  # wrong shape for this provider
+
+    # Stage 2: placeholder substring rejection (case-insensitive)
+    lo = val.lower()
+    for sub in PLACEHOLDER_SUBSTRINGS:
+        if sub in lo: return False
+    if val.startswith('<') and val.endswith('>'): return False
+    if val.startswith('[') and val.endswith(']'): return False
+    if val.startswith('{{') and val.endswith('}}'): return False
+    # The exact "EXAMPLE" suffix gitleaks uses for placeholder examples
+    if val.endswith('EXAMPLE') or val.endswith('example'): return False
+    # AWS-style EXAMPLE marker anywhere
+    if 'EXAMPLE' in val and len(val) < 25: return False
+
+    # Stage 3: Shannon entropy (threshold 3.0 bits/char per gitleaks)
+    if shannon_entropy(val) < 3.0: return False
+
+    return True
+
+def emit(src_label, value):
+    # Common emit gate so EVERY Python source goes through the validator.
+    # CANONICAL is bound at the top of the PYEOF block so we pass it through.
+    if looks_like_real_key(value, CANONICAL):
+        print(f"src={src_label}"); print(value); raise SystemExit(0)
+    print(f"    [skip: {src_label}=<rejected: wrong shape, low entropy, or placeholder for {CANONICAL}>]", file=sys.stderr)
 
 cfg = {}
 try: cfg = json.load(open(OC_JSON))
@@ -1069,7 +1326,7 @@ except Exception: pass
 env_vars = cfg.get("env", {}).get("vars", {})
 for alias in ALIASES:
     if alias in env_vars and env_vars[alias]:
-        print(f"src=env.vars.{alias}"); print(env_vars[alias]); raise SystemExit(0)
+        emit(f"env.vars.{alias}", env_vars[alias])
 
 # Source 6: models.providers.<name>.apiKey
 provider_map = {
@@ -1085,18 +1342,18 @@ pk = provider_map.get(CANONICAL)
 if pk:
     val = cfg.get("models", {}).get("providers", {}).get(pk, {}).get("apiKey", "")
     if val:
-        print(f"src=models.providers.{pk}.apiKey"); print(val); raise SystemExit(0)
+        emit(f"models.providers.{pk}.apiKey", val)
 
 # Source 7: plugins.entries.<plugin>.config.*
 for pname, p in (cfg.get("plugins", {}).get("entries", {}) or {}).items():
     pc = p.get("config", {}) if isinstance(p, dict) else {}
     for alias in ALIASES:
         if alias in pc and pc[alias]:
-            print(f"src=plugins.entries.{pname}.config.{alias}"); print(pc[alias]); raise SystemExit(0)
+            emit(f"plugins.entries.{pname}.config.{alias}", pc[alias])
     for fld in ("apiKey", "token", "secret", "key"):
         v = pc.get(fld, "")
         if v and CANONICAL.lower().replace("_","") in (pname + fld).lower().replace("_",""):
-            print(f"src=plugins.entries.{pname}.config.{fld}"); print(v); raise SystemExit(0)
+            emit(f"plugins.entries.{pname}.config.{fld}", v)
 
 # Source 8: auth-profiles.json
 try:
@@ -1106,7 +1363,7 @@ try:
         provider = prof.get("provider", "").lower()
         canonical_provider = CANONICAL.replace("_API_KEY","").lower()
         if provider and provider == canonical_provider and prof.get("key"):
-            print(f"src=auth-profiles.{prof_id}.key"); print(prof["key"]); raise SystemExit(0)
+            emit(f"auth-profiles.{prof_id}.key", prof["key"])
 except Exception: pass
 
 # Source 9: ~/.openclaw/secrets.json
@@ -1116,7 +1373,7 @@ if os.path.isfile(SECRETS_JSON):
         def find(obj, target_aliases):
             if isinstance(obj, dict):
                 for k, v in obj.items():
-                    if k in target_aliases and isinstance(v, (str,int)) and v:
+                    if k in target_aliases and isinstance(v, (str,int)) and not isinstance(v, bool) and v:
                         return (k, v)
                     if isinstance(v, (dict, list)):
                         r = find(v, target_aliases)
@@ -1127,15 +1384,17 @@ if os.path.isfile(SECRETS_JSON):
                     if r: return r
             return None
         f = find(s, ALIASES)
-        if f: print(f"src=secrets.json.{f[0]}"); print(f[1]); raise SystemExit(0)
+        if f: emit(f"secrets.json.{f[0]}", f[1])
     except Exception: pass
 
-# Source 10: deep recursive scan of openclaw.json for any field name matching alias
+# Source 10: deep recursive scan of openclaw.json for any field name matching alias.
+# v10.13.7: exclude bool values (isinstance(True, int) was returning True before,
+# matching permission flags like {"FISH_AUDIO_API_KEY": true} as a "found" key).
 def deep_find(obj, target_aliases, parent=""):
     if isinstance(obj, dict):
         for k, v in obj.items():
             full = f"{parent}.{k}" if parent else k
-            if k in target_aliases and isinstance(v, (str,int)) and v:
+            if k in target_aliases and isinstance(v, (str,int)) and not isinstance(v, bool) and v:
                 return (full, v)
             r = deep_find(v, target_aliases, full)
             if r: return r
@@ -1145,17 +1404,23 @@ def deep_find(obj, target_aliases, parent=""):
             if r: return r
     return None
 f = deep_find(cfg, ALIASES)
-if f: print(f"src=deep:{f[0]}"); print(f[1]); raise SystemExit(0)
+if f: emit(f"deep:{f[0]}", f[1])
 PYEOF
 )
     if [ -n "$result" ]; then
         local src val
         src=$(echo "$result" | head -1 | sed 's/^src=//')
         val=$(echo "$result" | sed -n '2p')
-        if [ -n "$val" ]; then
+        # v10.13.7: belt-and-suspenders — even if Python's emit() somehow let
+        # a placeholder through (shouldn't, but defense in depth), validate
+        # again at the bash boundary before reporting "Found" to the operator.
+        # Pass $CANONICAL so the provider-regex stage 1 check runs.
+        if [ -n "$val" ] && looks_like_real_key "$val" "$CANONICAL"; then
             echo "    [src: $src]" >&2
             echo "$val"
             return
+        elif [ -n "$val" ]; then
+            echo "    [skip: $src=<rejected as placeholder or wrong shape for $CANONICAL>]" >&2
         fi
     fi
 

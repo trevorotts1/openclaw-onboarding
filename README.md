@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Mac mini
 
-> **Version:** see `/version` — this repo at v10.13.6.
+> **Version:** see `/version` — this repo at v10.13.7.
 > Every release MUST agree across 5 files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
 
 
