@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.9"
+ONBOARDING_VERSION="v10.13.10"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -781,6 +781,87 @@ send_telegram_progress() {
 }
 
 # ----------------------------------------------------------
+# v10.13.10: Shared Operator Secrets Injector
+# ----------------------------------------------------------
+# Some credentials (Podbean OAuth app, future Google service account, etc.)
+# are SHARED across every client — they belong to Trevor's master account, not
+# to each individual client. Public GitHub repo can't hold them. Solution:
+# operator exports them as env vars in ~/.zshrc before running curl|bash.
+# install.sh reads them HERE and writes to the client's local secrets file
+# (chmod 600) + openclaw.json env.vars block.
+#
+# Operator setup (one-time, in ~/.zshrc on operator's Mac):
+#   export OPENCLAW_PODBEAN_CLIENT_ID="..."
+#   export OPENCLAW_PODBEAN_CLIENT_SECRET="..."
+#   # (future: OPENCLAW_GOOGLE_SERVICE_ACCOUNT_JSON, etc.)
+#
+# Per-client install:
+#   OPENCLAW_OWNER_NAME="Aurelia" curl ...install.sh | bash
+#   (vars from operator's ~/.zshrc inherited automatically)
+inject_shared_operator_secrets() {
+    local injected_count=0
+    local mode_oc_json_ready="no"
+    [ -f "$OC_JSON" ] && mode_oc_json_ready="yes"
+
+    # Ensure secrets/.env exists with safe perms BEFORE we write to it
+    mkdir -p "$(dirname "$OC_SECRETS_ENV")" 2>/dev/null || true
+    if [ ! -f "$OC_SECRETS_ENV" ]; then
+        touch "$OC_SECRETS_ENV"
+        chmod 600 "$OC_SECRETS_ENV" 2>/dev/null || true
+    fi
+
+    # Helper: append VAR=value to secrets/.env (replacing any existing line for VAR)
+    _shared_write_env() {
+        local var="$1"; local val="$2"
+        # Remove any existing line for this var
+        grep -v "^${var}=" "$OC_SECRETS_ENV" > "$OC_SECRETS_ENV.tmp" 2>/dev/null || true
+        mv "$OC_SECRETS_ENV.tmp" "$OC_SECRETS_ENV" 2>/dev/null || true
+        # Append new line
+        printf '%s=%s\n' "$var" "$val" >> "$OC_SECRETS_ENV"
+        chmod 600 "$OC_SECRETS_ENV" 2>/dev/null || true
+    }
+
+    # Helper: write to openclaw.json env.vars block (if openclaw.json exists)
+    _shared_write_ocjson() {
+        local var="$1"; local val="$2"
+        [ "$mode_oc_json_ready" != "yes" ] && return 0
+        # Use python to safely merge into env.vars (preserves other keys)
+        VAR="$var" VAL="$val" OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+p = os.environ['OC_JSON']
+v = os.environ['VAR']
+val = os.environ['VAL']
+try:
+    d = json.load(open(p))
+except Exception:
+    d = {}
+d.setdefault('env', {}).setdefault('vars', {})[v] = val
+json.dump(d, open(p, 'w'), indent=2)
+PYEOF
+    }
+
+    # Podbean shared OAuth app credentials
+    if [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] && [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
+        _shared_write_env "PODBEAN_CLIENT_ID" "$OPENCLAW_PODBEAN_CLIENT_ID"
+        _shared_write_env "PODBEAN_CLIENT_SECRET" "$OPENCLAW_PODBEAN_CLIENT_SECRET"
+        _shared_write_ocjson "PODBEAN_CLIENT_ID" "$OPENCLAW_PODBEAN_CLIENT_ID"
+        _shared_write_ocjson "PODBEAN_CLIENT_SECRET" "$OPENCLAW_PODBEAN_CLIENT_SECRET"
+        success "Podbean shared OAuth app credentials injected from operator env (chmod 600)"
+        injected_count=$((injected_count + 2))
+    elif [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] || [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
+        warn "Only one of OPENCLAW_PODBEAN_CLIENT_ID / OPENCLAW_PODBEAN_CLIENT_SECRET set — both required. Skipping Podbean injection."
+    fi
+
+    # (future shared secrets get added here — same pattern)
+
+    if [ "$injected_count" -gt 0 ]; then
+        note "Shared operator secrets: $injected_count value(s) written to $OC_SECRETS_ENV"
+    else
+        note "Shared operator secrets: none in env. Set OPENCLAW_PODBEAN_CLIENT_ID + _CLIENT_SECRET in ~/.zshrc to inject."
+    fi
+}
+
+# ----------------------------------------------------------
 # Config Backup Protocol
 # ----------------------------------------------------------
 backup_config_file() {
@@ -837,10 +918,12 @@ get_alias_list() {
             echo "FISH_AUDIO_API_KEY FISHAUDIO_API_KEY FISH_API_KEY" ;;
         FISH_AUDIO_VOICE_ID)
             echo "FISH_AUDIO_VOICE_ID FISHAUDIO_VOICE_ID" ;;
-        PODBEAN_API_KEY)
-            echo "PODBEAN_API_KEY PODBEAN_CLIENT_ID" ;;
-        PODBEAN_API_SECRET)
-            echo "PODBEAN_API_SECRET PODBEAN_CLIENT_SECRET" ;;
+        PODBEAN_API_KEY|PODBEAN_CLIENT_ID)
+            echo "PODBEAN_CLIENT_ID PODBEAN_API_KEY" ;;
+        PODBEAN_API_SECRET|PODBEAN_CLIENT_SECRET)
+            echo "PODBEAN_CLIENT_SECRET PODBEAN_API_SECRET" ;;
+        PODBEAN_PODCAST_ID)
+            echo "PODBEAN_PODCAST_ID PODBEAN_CHANNEL_ID PODCAST_ID" ;;
         TAVILY_API_KEY)
             echo "TAVILY_API_KEY TAVILY_KEY" ;;
         KIE_API_KEY)
@@ -1000,9 +1083,16 @@ looks_like_real_key() {
                 # Voice IDs are typically short identifiers
                 if printf '%s' "$val" | grep -qE '^[a-z0-9_-]{8,}$'; then
                     regex_matched="yes"; else regex_matched="no"; fi ;;
-            PODBEAN_API_KEY|PODBEAN_API_SECRET)
-                # Podbean credentials are long alphanumeric/hex strings
-                if printf '%s' "$val" | grep -qE '^[A-Za-z0-9]{32,}$'; then
+            PODBEAN_CLIENT_ID|PODBEAN_API_KEY|PODBEAN_CLIENT_SECRET|PODBEAN_API_SECRET)
+                # Real Podbean OAuth app credentials are 20-21 char hex strings
+                # (verified May 2026 — previous v10.13.7 spec of {32,} was wrong
+                # and rejected real keys). Accept lower-case hex with hyphens
+                # too (Podbean has been known to use both).
+                if printf '%s' "$val" | grep -qiE '^[a-f0-9]{16,40}$|^[A-Za-z0-9_-]{16,40}$'; then
+                    regex_matched="yes"; else regex_matched="no"; fi ;;
+            PODBEAN_PODCAST_ID)
+                # Podcast IDs are alphanumeric strings (varies by Podbean URL slug)
+                if printf '%s' "$val" | grep -qE '^[A-Za-z0-9_-]{6,}$'; then
                     regex_matched="yes"; else regex_matched="no"; fi ;;
             GOHIGHLEVEL_API_KEY)
                 # GHL PIT tokens are JWT-style or pit-prefixed; varies
@@ -1256,8 +1346,11 @@ PROVIDER_REGEX = {
     "KIE_API_KEY":               r"^[A-Za-z0-9_-]{24,}$",
     "FISH_AUDIO_API_KEY":        r"^[A-Za-z0-9_-]{32,}$",
     "FISH_AUDIO_VOICE_ID":       r"^[a-z0-9_-]{8,}$",
-    "PODBEAN_API_KEY":           r"^[A-Za-z0-9]{32,}$",
-    "PODBEAN_API_SECRET":        r"^[A-Za-z0-9]{32,}$",
+    "PODBEAN_CLIENT_ID":         r"^[A-Za-z0-9_-]{16,40}$",
+    "PODBEAN_API_KEY":           r"^[A-Za-z0-9_-]{16,40}$",
+    "PODBEAN_CLIENT_SECRET":     r"^[A-Za-z0-9_-]{16,40}$",
+    "PODBEAN_API_SECRET":        r"^[A-Za-z0-9_-]{16,40}$",
+    "PODBEAN_PODCAST_ID":        r"^[A-Za-z0-9_-]{6,}$",
     "GOHIGHLEVEL_API_KEY":       r"^(eyJ[A-Za-z0-9_.-]{30,}|pit-[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{40,})$",
     "GOHIGHLEVEL_LOCATION_ID":   r"^[A-Za-z0-9]{20,28}$",
 }
@@ -1462,8 +1555,15 @@ discover_all_credentials() {
     CRED_LIST="$CRED_LIST|FISH_AUDIO_API_KEY:Fish Audio"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_VOICE_ID:Fish Audio Voice"
     CRED_LIST="$CRED_LIST|ELEVENLABS_API_KEY:ElevenLabs"
-    CRED_LIST="$CRED_LIST|PODBEAN_API_KEY:Podbean"
-    CRED_LIST="$CRED_LIST|PODBEAN_API_SECRET:Podbean Secret"
+    # v10.13.10: Podbean client_id + client_secret are SHARED (operator's OAuth
+    # app — same for every client), injected via OPENCLAW_PODBEAN_CLIENT_ID +
+    # OPENCLAW_PODBEAN_CLIENT_SECRET env vars at install time. Discovery still
+    # checks if they're present in the client's openclaw.json (post-injection)
+    # so we know the injection worked, but they're labeled as shared.
+    CRED_LIST="$CRED_LIST|PODBEAN_CLIENT_ID:Podbean App ID (shared)"
+    CRED_LIST="$CRED_LIST|PODBEAN_CLIENT_SECRET:Podbean App Secret (shared)"
+    # PODBEAN_PODCAST_ID is per-client — the client's specific podcast destination
+    CRED_LIST="$CRED_LIST|PODBEAN_PODCAST_ID:Podbean Podcast/Channel ID (per-client)"
     CRED_LIST="$CRED_LIST|TAVILY_API_KEY:Tavily Search"
     CRED_LIST="$CRED_LIST|BRAVE_API_KEY:Brave Search"
     CRED_LIST="$CRED_LIST|KIE_API_KEY:KIE.ai (skill 27)"
@@ -2003,6 +2103,14 @@ if ! command -v openclaw >/dev/null 2>&1; then
 fi
 
 success "OpenClaw CLI found: $(command -v openclaw)"
+
+# ----------------------------------------------------------
+# Step 1.5: Inject shared operator secrets (v10.13.10+)
+# ----------------------------------------------------------
+# BEFORE credential discovery — so the values are in secrets/.env + openclaw.json
+# when Step 2 runs, and discovery reports them as "Found" via the shared label.
+step "Step 1.5: Injecting shared operator secrets (Podbean app credentials etc.)"
+inject_shared_operator_secrets
 
 # ----------------------------------------------------------
 # Step 2: Silent Credential Discovery

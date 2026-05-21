@@ -1,3 +1,51 @@
+## [v10.13.10] — 2026-05-21 — Shared operator secrets injector (Podbean OAuth app credentials)
+
+### Why
+Podbean's `client_id` + `client_secret` are operator-level (Trevor's OAuth app — same for every client), not per-client. The public OpenClaw repo cannot hold them. Solution: operator stores them as env vars in `~/.zshrc`, install.sh reads them at install time and writes them to the client's local `secrets/.env` (chmod 600) + `openclaw.json` `env.vars`. Never in the repo, never in bash history per-install.
+
+### Setup (operator does this ONCE on their Mac)
+```bash
+echo 'export OPENCLAW_PODBEAN_CLIENT_ID="<your-app-client-id>"' >> ~/.zshrc
+echo 'export OPENCLAW_PODBEAN_CLIENT_SECRET="<your-app-client-secret>"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### Per-client install (unchanged)
+```bash
+OPENCLAW_OWNER_NAME="Aurelia" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+```
+The env vars set in `~/.zshrc` are inherited automatically.
+
+### What install.sh does (Step 1.5)
+1. Reads `OPENCLAW_PODBEAN_CLIENT_ID` + `OPENCLAW_PODBEAN_CLIENT_SECRET` from env
+2. If both set: writes `PODBEAN_CLIENT_ID=<value>` and `PODBEAN_CLIENT_SECRET=<value>` to `~/.openclaw/secrets/.env` (mode 600 — owner-only)
+3. Mirrors them to `openclaw.json` `env.vars` block so the gateway picks them up at runtime
+4. If only one set: warns and skips (need both for OAuth to work)
+5. If neither set: skips silently with a note that they can be added later
+
+### Credential discovery changes
+- `PODBEAN_API_KEY` / `PODBEAN_API_SECRET` aliases now resolve to `PODBEAN_CLIENT_ID` / `PODBEAN_CLIENT_SECRET` (the canonical OAuth names)
+- Discovery labels them as **"(shared)"** so the operator sees they're not per-client
+- New per-client field: `PODBEAN_PODCAST_ID` — the client's specific podcast destination (different for each client)
+
+### Validator regex fix (sub-bug caught while reviewing)
+v10.13.7 spec'd Podbean credentials as `^[A-Za-z0-9]{32,}$` (32+ chars). **Wrong.** Real Podbean OAuth app credentials are 20-21 hex chars. The regex would have rejected real values. Fixed to `^[A-Za-z0-9_-]{16,40}$`.
+
+### Extensibility
+Future shared secrets (Google service account JSON, master OpenRouter provisioning key, etc.) add to the same `inject_shared_operator_secrets` function. One env-var pattern: `OPENCLAW_<SECRET_NAME>` → written to `secrets/.env` + `env.vars`.
+
+### Smoke test (verified)
+- Set `OPENCLAW_PODBEAN_CLIENT_ID="77c4ffb08971d5b8369df"` + `OPENCLAW_PODBEAN_CLIENT_SECRET="3d7d490e9a6e5ae238d2e"` in env
+- Ran `inject_shared_operator_secrets`
+- `secrets/.env` contains both values, file mode `600` ✅
+
+### Files
+- `install.sh` — `inject_shared_operator_secrets()` function, Step 1.5 call, Podbean alias + regex updates, CRED_LIST relabeling
+- `version` → `v10.13.10`
+- `README.md` — version reference
+
+---
+
 ## [v10.13.9] — 2026-05-21 — Clawd is DEAD: stop writing UPDATE PENDING + scripts + workspace to ~/clawd
 
 ### The bug Trevor caught (correctly, with profanity)
