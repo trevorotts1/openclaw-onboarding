@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.7"
+ONBOARDING_VERSION="v10.13.8"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -1738,7 +1738,7 @@ try:
         if 'operator.write' not in scopes and 'operator.admin' not in scopes:
             print(p.get('deviceId') or ''); break
 except Exception: pass
-" 2>/dev/null)
+" 2>/dev/null) || cli_id=""
 
     # ─── PLAN A: CLI rotate + approve with master token ───
     if [ -n "$cli_id" ]; then
@@ -1763,7 +1763,7 @@ try:
         rid = it.get('requestId') or it.get('id')
         if rid: print(rid); break
 except Exception: pass
-" 2>/dev/null)
+" 2>/dev/null) || pending_id=""
 
         if [ -n "$pending_id" ]; then
             note "Plan A: pending request $pending_id created — approving with master token..."
@@ -2421,6 +2421,15 @@ except Exception: pass
 fi
 
 # Step 2: agents.defaults.workspace via CLI
+# v10.13.8 (P0 from Aurelia's v10.13.6 install): `openclaw config get
+# agents.defaults.workspace` exits NON-ZERO on a fresh install where the
+# key has never been set. With `set -euo pipefail` at line 2, this kills
+# the whole install silently. The Aurelia symptom: install reached the
+# Step 10 banner via Telegram progress, then no more messages — script
+# died here. Fix: wrap the pipeline-bearing command substitution with
+# `|| WORKSPACE_DIR=""` so a non-zero exit becomes an empty string and
+# the disk fallback below takes over. Matches the protection pattern at
+# line 508/510 (config get with `|| true`).
 if [ -z "$WORKSPACE_DIR" ] && command -v openclaw >/dev/null 2>&1; then
     WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace 2>/dev/null \
         | head -1 | python3 -c "
@@ -2430,7 +2439,7 @@ try:
     if raw.startswith('\"'): print(os.path.expanduser(json.loads(raw)))
     else: print(os.path.expanduser(raw))
 except Exception: pass
-" 2>/dev/null)
+" 2>/dev/null) || WORKSPACE_DIR=""
 fi
 
 # Step 3 + 4: disk fallbacks

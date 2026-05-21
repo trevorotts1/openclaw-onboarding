@@ -1,3 +1,48 @@
+## [v10.13.8] — 2026-05-21 — Fix Step 10 silent kill: pipefail + `openclaw config get` on fresh install (caught by Aurelia's agent)
+
+### The bug
+Aurelia's AI agent diagnosed this from her install logs:
+> *"Script (root): wrap line 2160's pipeline with `|| true` — the script already uses that pattern elsewhere (line 2186); they just missed this one."*
+
+Line 2 of install.sh: `set -euo pipefail`. Step 10's workspace resolver has this pipeline:
+
+```bash
+WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace 2>/dev/null \
+    | head -1 | python3 -c "..." 2>/dev/null)
+```
+
+On a fresh install, `agents.defaults.workspace` is not set in `openclaw.json`. `openclaw config get` exits **non-zero**. With `pipefail`, the whole pipeline returns non-zero. With `set -e`, the command substitution exit code propagates and **kills install.sh silently** — no error message, no Telegram, nothing.
+
+### How this explains Aurelia's stuck install
+Her Telegram showed every progress message through "Security + backups configured. Almost done — finalizing your agent's playbook now…" (the v10.13.4 message that fires BEFORE Step 10), then went silent. That's because Step 10's first action was the failing pipeline above. install.sh exited at that point. No more steps ran. No kickoff Telegram fired. The agent on her phone never got the new UPDATE PENDING flag — it kept reading stale `[PENDING API KEY]` markers from a previous attempt.
+
+### Fix
+Three pipelines patched with `|| <var>=""` to neutralize pipefail-triggered errexit. The pattern matches the existing protection at lines 508/510.
+
+1. **`WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace ...) || WORKSPACE_DIR=""`** — primary Aurelia fix. Empty value falls through to the disk fallback (`~/clawd` or `~/.openclaw/workspace`) which is the correct behavior on a fresh install.
+
+2. **`cli_id=$(openclaw devices list ... | python3 -c "...") || cli_id=""`** — same pattern, fires when devices aren't paired yet.
+
+3. **`pending_id=$(openclaw devices list ... | python3 -c "...") || pending_id=""`** — same pattern, fires when no pending device requests exist.
+
+### Risk: very low
+- Each `|| <var>=""` only fires on a failing CLI call. Successful calls still flow normally.
+- Downstream code already handles empty strings (workspace resolver has a disk fallback; device-rotation code checks `[ -n "$cli_id" ]` before using it).
+- No new behavior added; just stops `set -e` from killing the install on expected fresh-install conditions.
+
+### Bigger lesson
+Any `var=$(cmd1 | cmd2 | cmd3)` inside `set -euo pipefail` is a silent-kill hazard if any command can fail under normal operating conditions. The whole install.sh should be audited for this pattern; for now I fixed the three known-vulnerable sites + the two `|| true`-protected ones at lines 508/510 confirm the pattern was already used elsewhere — I just hadn't applied it consistently.
+
+### Files
+- `install.sh` — three `|| <var>=""` patches at the workspace resolver + devices-list call sites
+- `version` → `v10.13.8`
+- `README.md` — version reference
+
+### Credit
+Aurelia's AI agent identified the bug from the install log without needing my prompting. The fix is exactly what it suggested.
+
+---
+
 ## [v10.13.7] — 2026-05-21 — REAL credential validator (regex + Shannon entropy, gitleaks methodology) — no more fake "Found" reports
 
 ### The fuck-up I've been compounding for 3 hours
