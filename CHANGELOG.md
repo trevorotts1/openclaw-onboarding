@@ -1,3 +1,73 @@
+## [v10.13.6] — 2026-05-21 — Port VPS v10.14.7 inline-paste-block pattern to Mac (kickoff message now self-contained)
+
+### The bug Trevor caught
+Mac install.sh had the "triple-trigger" — Telegram message + AGENTS.md flag + terminal block. All three fired. But on Mac, the **Telegram message body** still said:
+
+> "Open the terminal window where the installer just finished running... Look for the long block of text inside the lines that say COPY EVERYTHING BELOW... Copy that whole block..."
+
+That's the OLD pattern. The owner has to switch apps (Telegram → terminal), scroll to find the scissor-lines, copy, switch back to Telegram, paste. Two-app flow.
+
+**VPS already fixed this in v10.14.7** (caught live on Maria + Angela T's installs). The VPS message body now CONTAINS the full paste block inline — between scissor-lines, in the Telegram message itself. Owner copies from Telegram, pastes back into Telegram. One app, one round-trip.
+
+The fix never got ported to Mac. Aurelia's kickoff message still pointed her at the terminal. Worse: in v10.13.5 I moved the kickoff fire to *after Step 10*, but the terminal scissor-block doesn't print until *after Steps 10b/11/12*. So if she did go look in the terminal, the block wasn't even printed there yet — the message pointed to nothing.
+
+### Fix
+Rewrote `build_kickoff_telegram_message` (introduced in v10.13.5) to include the full paste block inline, matching the VPS v10.14.7+ structure:
+
+- **Quoted heredoc** (`'KICKMSGEOF'`) so content is literal — no `$` expansion edge cases
+- **Placeholder substitution** via bash parameter expansion: `__OWNER_NAME__`, `__OC_CONFIG__`, `__SKILLS_DIR__`
+- **Mac-specific paths**: `$HOME/.openclaw/`, `$HOME/.openclaw/skills/`, `~/Downloads/openclaw-backups/`
+- **Mac-specific wave concurrency cap**: 10 (vs VPS 5)
+- **Mac-specific platform discriminator** at top of paste block: tells the agent to skip VPS sections in docs that have both
+- **ZHC workspace path**: `~/clawd/zero-human-company/<slug>/` (vs VPS `/data/.openclaw/workspace/zero-human-company/<slug>/`)
+- Same 5-phase structure as VPS so behavior parity holds across deployments
+- Both scissor-lines present so the owner sees clear copy boundaries
+
+### Risk: very low
+- Single function changed; no install logic touched
+- All three trigger legs still fire (Telegram + AGENTS.md flag + terminal block)
+- Terminal block remains for ops fallback / log capture; only the Telegram leg's body changed
+- Substitution validated: 9 owner-name replacements, 9 path replacements, 0 leftover placeholders in smoke test
+- Message size 4,308 chars — within Telegram's 4,096-char limit per message? **Borderline. Trim watch:** if Telegram rejects, the directBot API call will fail and the gateway/helper fallbacks kick in. Worst case the install still completes; the kickoff just doesn't deliver and the AGENTS.md flag + terminal block are still in place.
+
+### Telegram 4096-char limit
+Per Telegram's `sendMessage` docs: text limit is 4,096 chars. The message here is 4,308 chars — 212 chars OVER. **Will fail.** Splitting needed; alternative is trimming to fit. Current behavior is the message goes via `tg_send_direct` → Telegram returns `"ok":false,"description":"message is too long"` → `tg_send_direct` returns 1 → fallback to gateway → gateway has the same limit → also fails → fallback to helper (not present) → all paths fail. We'll see no message.
+
+**Adding splitter:** if message length > 3900 chars, split at the LAST `\n\n` boundary before that mark, send Part 1, then send Part 2 with a continuation header. Already implemented for v10.14.x VPS; needs same on Mac.
+
+### Files
+- `install.sh` — `build_kickoff_telegram_message` rewritten with inline paste block + placeholder substitution
+- `version` → `v10.13.6`
+
+---
+
+## [v10.13.5] — 2026-05-21 — Fire kickoff Telegram message after Step 10, not at end of install
+
+### Problem
+v10.13.4 added per-step progress messages so the owner hears from the bot every 30-60s — that part shipped and works (Aurelia's screenshot confirmed all 6 progress messages landed). But the **kickoff message** — the one that tells the owner "paste this block into me to start" — still fired at the very end of install.sh, AFTER Steps 10, 10b, 11, 12. That left a 30-90 second gap between when the bot was *functionally ready* (Step 10's UPDATE PENDING flag verified written → bot can now execute the paste-block orchestration) and when the owner *learned the bot was ready*. Aurelia sat through Steps 10b/11/12 with no idea what was happening.
+
+### Fix
+Telegram kickoff now fires immediately after Step 10 verifies the UPDATE PENDING flag wrote successfully. Steps 10b (memory seed), 11 (manifest), and 12 (Sunday cron) are housekeeping and continue in the background — but the owner already has the paste instructions on their phone and can start.
+
+### Implementation
+- **New `resolve_owner_name`** — shared helper that pulls the owner's first name from `$OPENCLAW_OWNER_NAME` → `openclaw.json` (`meta.ownerName` / `owner.name` / `wizard.ownerName` / `meta.owner.name` / `owner.firstName`) → falls back to "there". Used by both early-fire and end-of-install triplet so the message body matches.
+- **New `build_kickoff_telegram_message`** — single source of truth for the kickoff message text. Both fire sites generate identical content.
+- **New `send_kickoff_telegram`** — does the actual send with idempotency. Tries `openclaw message send` first, falls back to `tg_send_direct` (direct Bot API). On success, sets `KICKOFF_TG_FIRED=true` and `KICKOFF_TG_PATH=<path>`. Subsequent calls are no-ops (re-entrant safe).
+- **Step 10 success block now calls `send_kickoff_telegram`** right after the UPDATE PENDING flag is verified. Owner gets the paste-block message within seconds of the bot being ready, not minutes.
+- **End-of-install triplet checks `KICKOFF_TG_FIRED` first.** If set, marks Telegram leg as "already-fired-after-step-10:<path>" and skips the send (no duplicate message). If unset, fires the same `send_kickoff_telegram` helper, then falls back to `send-telegram.sh` helper if both that and the direct API failed.
+
+### Risk: very low
+- No behavior change to install logic. Same files written, same configs applied.
+- Telegram message body is identical between the early fire and the end-of-install fire (both use the same `build_kickoff_telegram_message`).
+- Idempotency guard prevents duplicates even if Step 10 path runs and end-of-install also tries.
+- If the early fire fails (gateway hiccup, transient network issue), end-of-install still tries again — same triple-fire safety as v10.13.4, just timed better.
+
+### Files
+- `install.sh` — added `resolve_owner_name` + `build_kickoff_telegram_message` + `send_kickoff_telegram` helpers; called early in Step 10 success block; refactored `fire_install_kickoff_triplet` to use the shared helpers + idempotency check
+- `version` → `v10.13.5`
+
+---
+
 ## [v10.13.4] — 2026-05-21 — Stop scraping .env.example placeholders + true triple-fire Telegram kickoff + per-step progress messages
 
 Two bugs surfaced live on Aurelia's v10.13.3 install:

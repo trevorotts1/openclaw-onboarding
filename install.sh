@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.4"
+ONBOARDING_VERSION="v10.13.6"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -514,6 +514,173 @@ PYEOF
             printenv | grep -iE "^(TELEGRAM_|TG_)" 2>&1 || true
         } | sed 's/^/    /' | head -50
     fi
+}
+
+# v10.13.5: Resolve owner first name from env var or openclaw.json. Shared
+# helper used by both early-kickoff (after Step 10) and final triplet.
+resolve_owner_name() {
+    local oc_json="${1:-$HOME/.openclaw/openclaw.json}"
+    [ -d "/data/.openclaw" ] && oc_json="/data/.openclaw/openclaw.json"
+    local name
+    name=$(python3 -c "
+import json, os, sys
+candidates = []
+env_name = os.environ.get('OPENCLAW_OWNER_NAME','').strip()
+if env_name: candidates.append(env_name)
+try:
+    d = json.load(open('$oc_json'))
+    for path in (('meta','ownerName'), ('owner','name'), ('wizard','ownerName'),
+                 ('meta','owner','name'), ('owner','firstName')):
+        cur = d
+        for k in path:
+            cur = cur.get(k, {}) if isinstance(cur, dict) else {}
+        if isinstance(cur, str) and cur.strip():
+            candidates.append(cur.strip())
+            break
+except Exception:
+    pass
+for n in candidates:
+    print(n.split()[0]); sys.exit(0)
+" 2>/dev/null)
+    echo "${name:-there}"
+}
+
+# v10.13.6: Telegram kickoff is delivered as TWO messages because the full
+# Mac paste block + intro exceeds Telegram's 4096-char limit (~4,300 chars
+# total). Splitting at a natural boundary keeps each message well under
+# the limit AND makes UX cleaner: the second message is JUST the paste
+# block (no chrome), so the owner copies the entire second message and
+# pastes back.
+#
+# Discovered live during Aurelia's v10.13.5 → v10.13.6 testing: the
+# all-in-one message I first wrote was 4,294 UTF-16 code units = 198
+# units over Telegram's hard limit, returning HTTP 400
+# "message is too long" on the direct Bot API path.
+#
+# Part 1: short greeting + instructions
+# Part 2: just the paste block (between scissor-lines)
+build_kickoff_intro_message() {
+    local owner_name="$1"
+    cat <<INTROEOF
+Hi ${owner_name}! 👋
+
+Your AI workforce is ready to set up. Here's what to do — just one step:
+
+📋 In a moment I'll send you a SECOND message. That message will contain a long block of instructions for me. All you have to do is:
+
+  1. Copy that next message in full (long-press → Copy on phone, Cmd+C on Mac)
+  2. Paste it back to me in this same chat
+  3. Hit Send
+
+That's it. I'll respond within a minute and start setting up your team. Total setup takes about an hour, including a 30-question business interview in the middle. I'll keep you posted as I work.
+
+Standing by — sending Part 2 now. 🚀
+INTROEOF
+}
+
+build_kickoff_paste_block() {
+    local owner_name="$1"
+    local skills_dir oc_config
+    skills_dir="$HOME/.openclaw/skills"
+    oc_config="$HOME/.openclaw"
+    local template
+    template=$(cat <<'KICKMSGEOF'
+Start the OpenClaw onboarding process. Follow this procedure exactly.
+
+DEPLOYMENT PLATFORM — READ THIS BEFORE ANYTHING ELSE:
+This is a Mac mini install (local macOS, not a Hostinger VPS). All paths under __OC_CONFIG__/. When you read INSTALL-CONTRACT.md, START HERE.md, or any other doc that mentions BOTH "Mac mini" AND "VPS" sections, USE ONLY THE MAC MINI SECTION. Skip every "VPS" reference.
+
+Mac specifics:
+- Wave concurrency cap: 10 helpers max (NOT 5 — that is VPS)
+- File paths: __OC_CONFIG__/ (NOT /data/.openclaw/ — that is VPS)
+- Backups: ~/Downloads/openclaw-backups/ (NOT /data/.openclaw/backups/)
+- Process supervision: macOS launchd (NOT container nohup)
+
+If a doc section is ambiguous, default to Mac. Do NOT ask __OWNER_NAME__ ("Mac or VPS?") — always Mac for this install.
+
+PHASE 1 — Read the docs first (do not skip):
+1. Read __OC_CONFIG__/Start Here.md end to end.
+2. Read __OC_CONFIG__/INSTALL-CONTRACT.md end to end. Non-negotiable: Rule 0 (wave cap = 10 on Mac), Rule 1 (read every .md before acting), Rule 16 (read INSTALL-GOTCHAS.md if present).
+3. Run web research pre-flight: bash __SKILLS_DIR__/web-research-preflight.sh
+4. Settings: maxChars=200000, maxTotalChars=400000, maxSpawnDepth=4, maxChildren=20, maxConcurrent=100, thinking=high.
+5. Set up workspace files (USER.md, AGENTS.md, TOOLS.md at workspace root, symlinked into per-role workspaces).
+
+PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__ in plain English (no jargon):
+- Before each wave: "Starting Wave N of 5 — about to set up X skills, ~Y minutes."
+- After each wave: "Wave N done. X skills working. Now starting Wave N+1."
+- Gate each wave: bash __SKILLS_DIR__/check-wave-concurrency.sh --proposed N --reason wave-N
+- Skill folders at __SKILLS_DIR__/01-... through __SKILLS_DIR__/36-... (33 active + 3 archived).
+- Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
+
+PHASE 3 — Verify:
+6. Run __SKILLS_DIR__/qc-system-integrity.sh — must exit 0.
+7. Message __OWNER_NAME__: "All skills installed. Ready for the 30-question business interview? About 35 min of your focused time. Reply yes when ready."
+8. Wait for confirmation before proceeding.
+
+PHASE 4 — Build the workforce:
+9. Run AI Workforce Interview (Skill 23) with __OWNER_NAME__. ZHC workspace on Mac: ~/clawd/zero-human-company/<slug>/
+10. After interview, run __SKILLS_DIR__/23-ai-workforce-blueprint/scripts/create_role_workspaces.py to write per-department governing-personas.md.
+11. Message __OWNER_NAME__ confirming workforce built + list departments created.
+
+PHASE 5 — Wrap up:
+12. Walk __OWNER_NAME__ through Telegram supergroup setup (Skill 32 INSTALL.md Phase 2 — 7 manual phone steps, one at a time).
+13. Final summary in plain English: what was installed, what is working, what did not work.
+
+HARD RULES:
+- No shortcuts. No self-QC.
+- All helpers use non-Anthropic models (Ollama Cloud primary, OpenRouter fallback).
+- Persona governance on every non-mechanical task.
+- Master Orchestrator only dispatches; never works directly.
+- Telegram progress updates between waves are mandatory (N28).
+- Plain English to __OWNER_NAME__. NO jargon (QC, sub-agent, manifest).
+KICKMSGEOF
+)
+    local msg="${template//__OWNER_NAME__/$owner_name}"
+    msg="${msg//__OC_CONFIG__/$oc_config}"
+    msg="${msg//__SKILLS_DIR__/$skills_dir}"
+    printf '%s' "$msg"
+}
+
+# Legacy single-message builder kept as a back-compat shim; concatenates the
+# two messages with a separator. Used only by code paths that haven't been
+# updated to send two separate messages.
+build_kickoff_telegram_message() {
+    local owner_name="$1"
+    local intro paste
+    intro=$(build_kickoff_intro_message "$owner_name")
+    paste=$(build_kickoff_paste_block "$owner_name")
+    printf '%s\n\n--- PASTE THIS BACK ---\n\n%s' "$intro" "$paste"
+}
+
+# v10.13.5: Send the kickoff message via the most reliable path available.
+# Tries openclaw CLI first, then tg_send_direct (direct Bot API). Sets the
+# global KICKOFF_TG_FIRED=true on success so the final triplet doesn't dupe.
+# Idempotent: returns immediately if already fired.
+send_kickoff_telegram() {
+    [ "${KICKOFF_TG_FIRED:-false}" = "true" ] && return 0
+    local owner_name intro paste
+    owner_name=$(resolve_owner_name)
+    intro=$(build_kickoff_intro_message "$owner_name")
+    paste=$(build_kickoff_paste_block "$owner_name")
+
+    # v10.13.6: Send as TWO messages because the full Mac paste block + intro
+    # is over Telegram's 4096-char limit. Intro first (so owner sees context),
+    # then paste block (which they copy in full and paste back). Direct Bot
+    # API is primary path because it's the most reliable (no gateway/scope
+    # dependency). openclaw CLI is fallback.
+    if tg_send_direct "$intro" && tg_send_direct "$paste"; then
+        export KICKOFF_TG_FIRED="true"
+        export KICKOFF_TG_PATH="direct-bot-api-2msg"
+        return 0
+    fi
+    if command -v openclaw >/dev/null 2>&1 \
+       && openclaw message send --message "$intro" 2>/dev/null \
+       && openclaw message send --message "$paste" 2>/dev/null; then
+        export KICKOFF_TG_FIRED="true"
+        export KICKOFF_TG_PATH="openclaw-cli-gateway-2msg"
+        return 0
+    fi
+    return 1
 }
 
 # v10.13.4: Direct Bot API send — bypasses gateway entirely. Reads bot token +
@@ -2376,6 +2543,18 @@ if grep -q "UPDATE PENDING - EXECUTE IMMEDIATELY" "$AGENTS_FILE" 2>/dev/null; th
     note "Verify your AGENT reads from $AGENTS_FILE. If it reads a DIFFERENT path, the flag is invisible to it."
     note "Quick test: ask your agent 'What is the size of your AGENTS.md and what's the last section?' — should report $AGENTS_SIZE bytes ending with 'UPDATE PENDING - EXECUTE IMMEDIATELY' section."
     note "Tier-3 backup: identical payload also saved to $UPDATE_PENDING_FILE — use for cat+paste recovery if AGENTS.md is ever wrong."
+
+    # v10.13.5: Fire the Telegram kickoff message NOW — the moment the
+    # UPDATE PENDING flag is verified. Owner can paste the block as soon as
+    # install.sh's stdout reaches its final scissor-lines (Steps 10b/11/12
+    # remaining are housekeeping; the bot is already functionally ready).
+    # Previously the kickoff fired at the very end which left the owner
+    # waiting 30-90 extra seconds with no idea what to do.
+    if send_kickoff_telegram; then
+        success "Kickoff message sent to your phone (via ${KICKOFF_TG_PATH:-?}). Check your Telegram for what to do next."
+    else
+        warn "Kickoff Telegram message could not be sent right now — will retry at end of install. The same instructions will appear in this terminal too."
+    fi
 else
     error "AGENTS.md write FAILED — flag NOT present in $AGENTS_FILE after write."
     error "File exists: $([ -f "$AGENTS_FILE" ] && echo yes || echo NO)"
@@ -2894,77 +3073,34 @@ fire_install_kickoff_triplet() {
         openclaw_json="$HOME/.openclaw/openclaw.json"
     fi
 
-    # v10.13.1: Resolve the owner's first name for personalized greeting.
-    # Priority: OPENCLAW_OWNER_NAME env var → openclaw.json (meta.ownerName /
-    # owner.name / wizard.ownerName / meta.owner.name / owner.firstName) →
-    # fall back to "there". First name only for natural-feeling greetings.
-    local owner_name
-    owner_name=$(python3 -c "
-import json, os, sys
-candidates = []
-env_name = os.environ.get('OPENCLAW_OWNER_NAME','').strip()
-if env_name: candidates.append(env_name)
-try:
-    d = json.load(open('$openclaw_json'))
-    for path in (('meta','ownerName'), ('owner','name'), ('wizard','ownerName'),
-                 ('meta','owner','name'), ('owner','firstName')):
-        cur = d
-        for k in path:
-            cur = cur.get(k, {}) if isinstance(cur, dict) else {}
-        if isinstance(cur, str) and cur.strip():
-            candidates.append(cur.strip())
-            break
-except Exception:
-    pass
-for n in candidates:
-    print(n.split()[0]); sys.exit(0)
-" 2>/dev/null)
-    owner_name="${owner_name:-there}"
-
+    # v10.13.5: kickoff Telegram now uses shared helpers (resolve_owner_name +
+    # build_kickoff_telegram_message + send_kickoff_telegram). The send helper
+    # has its own idempotency guard via KICKOFF_TG_FIRED — if the early fire
+    # after Step 10 already succeeded, this is a no-op and tg_fired stays
+    # accurate. Otherwise this is the final-attempt fire.
     local tg_fired="false" flag_fired="false"
     local tg_reason="" flag_reason=""
 
-    # 1. Telegram message — UNCONDITIONAL attempt (N22). Even if the openclaw
-    #    CLI isn't on PATH yet (first-time install), we still try; the
-    #    attempt is what's unconditional, not the success. Reason logged.
-    #
-    # v10.13.1: personalized greeting + plain-English instructions.
-    local tg_msg
-    tg_msg="Hi ${owner_name}! 👋
-
-Your AI workforce is almost ready. Here's what to do next — it's just one step:
-
-1. Open the terminal window where the installer just finished running
-2. Look for the long block of text inside the lines that say
-   'COPY EVERYTHING BELOW THIS LINE' and 'COPY EVERYTHING ABOVE THIS LINE'
-3. Copy that whole block (highlight it, then Cmd+C on Mac or Ctrl+C on Windows)
-4. Paste it into this chat (where you're reading this message)
-5. Hit Send
-
-That's it. I'll respond within 30 seconds and start setting up your team.
-
-Total setup time: about an hour. I'll send you updates as I work so you always know what's happening. The most important part is a 30-question interview about your business — that's when you'll need ~35 minutes of focused time. I'll let you know before we get there.
-
-Ready when you are. 🚀"
-    # v10.13.4: kickoff now has THREE delivery paths (true triple-fire for the
-    # Telegram leg, not just a single attempt with two excuses).
-    # 1) openclaw message send (gateway)
-    # 2) send-telegram.sh helper (if present)
-    # 3) tg_send_direct — direct Bot API curl using bot token + chat ID
-    #    from openclaw.json (bypasses gateway, scopes, CLI entirely)
-    if command -v openclaw >/dev/null 2>&1 && openclaw message send --message "$tg_msg" 2>/dev/null; then
+    if [ "${KICKOFF_TG_FIRED:-false}" = "true" ]; then
         tg_fired="true"
-        tg_reason="path:openclaw-cli-gateway"
+        tg_reason="already-fired-after-step-10:${KICKOFF_TG_PATH:-?}"
+    elif send_kickoff_telegram; then
+        tg_fired="true"
+        tg_reason="path:${KICKOFF_TG_PATH:-?}"
     else
+        # Last-ditch fallback to send-telegram.sh helper (rarely present, but
+        # try it before giving up). Build the message text manually since
+        # send_kickoff_telegram already failed.
+        local owner_name
+        owner_name=$(resolve_owner_name "$openclaw_json")
+        local tg_msg
+        tg_msg=$(build_kickoff_telegram_message "$owner_name")
         local tg_helper="$skills_dir/scripts/send-telegram.sh"
         if [ -x "$tg_helper" ] && "$tg_helper" "$tg_msg" 2>/dev/null; then
             tg_fired="true"
             tg_reason="path:send-telegram.sh-helper"
-        elif tg_send_direct "$tg_msg"; then
-            tg_fired="true"
-            tg_reason="path:direct-bot-api(final-fallback)"
         else
-            tg_reason="all three paths failed: gateway, helper, direct Bot API. Bot token or chat ID likely missing from openclaw.json."
+            tg_reason="all paths failed: gateway, direct Bot API, helper. Bot token or chat ID likely missing from openclaw.json."
         fi
     fi
 
