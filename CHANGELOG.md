@@ -1,3 +1,50 @@
+## [v10.13.1] — 2026-05-21 — Personalized owner greeting + wave-progress messaging + plain-English UX (Mac companion to VPS v10.14.4)
+
+UX-focused release. Average client is non-technical and over 60; every screen and message they see needs to read like a friend, not a sysadmin. Companion to VPS repo `openclaw-onboarding-vps` v10.14.4 — same changes, paths adjusted for Mac (`$HOME/.openclaw` vs `/data/.openclaw`).
+
+### Risk: very low
+Pure UX changes. No behavior change to install steps, schema writes, or any fallback logic. The install does exactly the same work; the human-facing text just becomes warm + clear.
+
+### Changes
+
+- **Personalized greeting** in `install.sh::fire_install_kickoff_triplet`:
+  - New owner-name resolver tries `OPENCLAW_OWNER_NAME` env var → `~/.openclaw/openclaw.json` (`meta.ownerName` / `owner.name` / `wizard.ownerName` / `meta.owner.name` / `owner.firstName`) → falls back to "there". Uses first name only ("Hi Maria!" not "Hi Maria Hernandez Esq.!").
+  - Telegram kickoff message rewritten: opens with "Hi {Name}! 👋" and 6 numbered steps explaining exactly how to find the paste block, copy it, and send it to the bot. No technical jargon.
+- **Terminal completion block** completely rewritten:
+  - Banner now says `✓ All set, {Name}! Your AI workforce is installed.` instead of "OpenClaw Onboarding Kickoff — Triple-Fire Trigger".
+  - 6-step "what to do next" with concrete keyboard shortcuts (Cmd+C on Mac, Ctrl+C on Windows).
+  - Paste block uses `📋 COPY EVERYTHING BELOW THIS LINE 📋` and `📋 COPY EVERYTHING ABOVE THIS LINE 📋` delimiters — visually unmissable.
+  - Internal terminology ("Triple-Fire Trigger", "N22 enforcement") removed from owner-facing surfaces.
+  - Concrete minute-by-minute timeline added (Minute 0, 5, 15, 30, 40-45, 45-80, 80-90).
+  - "If something seems off" section uses plain language.
+- **Paste block** expanded with **mandatory wave-progress messaging instructions**:
+  - Before each wave, the bot must send a plain-English Telegram message: "Starting Wave 2 of 5 now. About to set up 18 utility skills in parallel — this should take about 10 minutes."
+  - After each wave: "Wave 2 is done. 18 skills are working. Now starting Wave 3."
+  - Before the workforce interview: explicit warning + ask for "yes" to proceed.
+  - Final summary in plain English at the end.
+  - Hard rule (N28 binding): NO jargon — no "QC", no "sub-agent", no "manifest". Bot speaks like a friend.
+
+### How to set the owner's name before running an install
+
+Three options, any one works:
+
+1. **Env var (cleanest):**
+   ```
+   OPENCLAW_OWNER_NAME="Maria" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+   ```
+2. **openclaw.json before install:**
+   ```
+   python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); d.setdefault('meta',{})['ownerName']='Maria'; open('$HOME/.openclaw/openclaw.json','w').write(json.dumps(d,indent=2))"
+   ```
+3. **Skip and default to "there"** — works fine, just less personal.
+
+### Files touched
+`install.sh` (3 sections: owner-name resolver, Telegram message, terminal block), `version`, `23-ai-workforce-blueprint/skill-version.txt`, `23-ai-workforce-blueprint/templates/role-library/_index.json`, `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md`, `CHANGELOG.md`.
+
+NOT touched: dashboard, force-update.sh, check-updates.sh, README, ONBOARDING-TRIGGERS, INSTALL-CONTRACT.md.
+
+---
+
 ## [v10.13.0] — 2026-05-20 — v2.0 v10.12.0 audit closeout: 5 new P0s + every below-threshold phase
 
 The v10.12.0 audit (raw 8.74, F-floor from 7 below-threshold phases) found **2 NEW P0 blockers** that v10.12.0 introduced or missed:
