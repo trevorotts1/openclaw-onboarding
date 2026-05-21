@@ -1,3 +1,46 @@
+## [v10.13.3] — 2026-05-21 — Bulletproof credential discovery — walk ANY env file under $HOME (Aurelia's agent had to find this for us)
+
+### What went wrong (honest diagnosis)
+Aurelia's agent self-diagnosed the v10.13.2 scanner. Findings:
+1. Her API keys were in an env file at a **non-canonical location** (some operator tool's `.env` outside `~/.openclaw/`, `~/clawd/`, and outside any shell-rc file).
+2. `printenv` returned every key (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) **unset** — the operator never `source`d the file into their shell, so it was invisible to the install subshell.
+3. The 5 keys that **were** found came from openclaw.json (`env.vars` + `models.providers.*.apiKey`) and `auth-profiles.json` — locations the scanner does enumerate.
+4. The 19 keys the scanner **missed** were real, correct, present on disk — just in a file the scan didn't list.
+
+### How v10.13.2 screwed this up
+v10.13.2 scanned **9 hardcoded paths** (shell-rc files + 3 OpenClaw `.env` paths + 3 `.config/` paths). Anything outside that list was invisible. I assumed operators stored API keys at "canonical" locations. Trevor had told me explicitly: *"sometimes it's in a sequence environments file, sometimes it's a CLAWD environments file, sometimes it's an OpenClaw environments file, sometimes it's an OpenClaw secrets file"* — but I built a fixed-list scanner anyway. The mistake was treating the path list as exhaustive instead of treating env-file discovery as a filesystem-walk problem.
+
+### What v10.13.3 actually does
+Replaces the fixed-path scanner with a real env-file discovery pipeline:
+
+1. **Tier 1 — Canonical paths first.** Same priority order as before (shell-rc files, `~/.openclaw/secrets/.env`, `~/clawd/.env`, `~/.config/openclaw/.env`, etc.) so existing installs behave identically.
+2. **Tier 2 — `$HOME`-wide walk (depth 4).** `find $HOME -maxdepth 4 -type f \( -name "*.env" -o -name "*.env.*" -o -name ".env.*" -o -name "secrets.env" -o -name "secrets" -o -name "api_keys*" -o -name "*.envrc" \) -size -2048k`. Excludes `node_modules`, `.git`, `Library`, `Downloads`, `.Trash`, `.npm-global`, `.cache`, `.venv`, `venv`, `__pycache__`, `.pyenv`. Catches `~/sequence/.env`, `~/codex/.env`, `~/Documents/<proj>/.env`, `~/<any-other-tool>/secrets.env`, etc.
+3. **Tier 3 — Sourced-file fallback.** For each rc file (`.zshenv`, `.zprofile`, `.zshrc`, `.bash_profile`, `.bashrc`, `.profile`), runs `env -i bash -c "source '<rcfile>'; printf '%s' \"$VAR_NAME\""` in a clean subshell. Catches keys that arrive via `source ~/some-non-env-file` inside the operator's rc — values they don't see in `printenv` but the rc would load on a real interactive shell.
+4. **Observability.** Discovery banner now prints `Candidate env files discovered under $HOME: N` so the operator can SEE whether their file was enumerated. If a key still doesn't get found in a future install, the log shows whether the file was scanned or skipped (instead of failing silently).
+
+### Aliases left alone from v10.13.2
+GEMINI ↔ GOOGLE mutual aliasing (and Ollama, DeepSeek, etc.) stays. Confirmed working in smoke test — planting `GEMINI_API_KEY` in `~/sequence/.env` satisfies both GEMINI and GOOGLE.
+
+### Smoke test
+Planted 5 keys across 5 weird locations: `~/.env`, `~/sequence/.env`, `~/.codex/.env`, `~/Documents/projects/.env`, `~/random-tool/secrets.env`. All 5 located by the walker. Banner reported `Candidate env files discovered under $HOME: 8`. With GEMINI mutual-alias, 6 credentials surfaced from 5 files.
+
+### Risk: low
+- Walker is depth-4 and excludes the heaviest dirs (`node_modules`, `Library`, etc.). Tested on my Mac: <2s wall time.
+- Tier-1 canonical paths come FIRST in the cache so existing installs never see a path-order regression.
+- Tier-3 sourcing happens in `env -i` (clean env) so the operator's rc-file side-effects can't pollute install.sh's running shell.
+- The scanner only ever READS files. Never writes.
+
+### Files
+- `install.sh` — `search_env_var_mac` (replaced shell-rc block with `$HOME`-walk + sourced-file fallback), discovery banner (advertises new lookup chain + candidate count)
+- `version` → `v10.13.3`
+- `README.md` — version reference
+- Credential discovery sub-version → `v10.1.1`
+
+### Apology
+This bug should not have shipped in v10.13.2. The right scanner was a filesystem walk from day one. Aurelia's agent should not have had to diagnose this — I should have. Fixed now, with explicit visibility (`Candidate env files discovered: N`) so the next failure mode is self-explaining instead of silent.
+
+---
+
 ## [v10.13.2] — 2026-05-21 — Fix Step 4 extraction hang + credential discovery alias gaps + shell-rc scanning (live-fix from Aurelia's install)
 
 Two bugs Trevor caught mid-install on Aurelia's Mac mini:

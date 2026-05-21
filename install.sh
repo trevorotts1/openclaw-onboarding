@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.2"
+ONBOARDING_VERSION="v10.13.3"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -670,53 +670,113 @@ search_env_var_mac() {
         fi
     done
 
-    # Source 1b (v10.13.2): shell-rc files. Operators frequently set API keys in
-    # ~/.zshrc / ~/.zshenv / ~/.zprofile / ~/.bash_profile / ~/.bashrc / ~/.profile
-    # without exporting them into the install.sh subshell. Parse those directly.
-    # Supports both `export FOO=bar` and `FOO=bar` lines, with/without quotes.
+    # Source 1b (v10.13.3): bulletproof env-file discovery — replaces the v10.13.2
+    # hardcoded-path approach. Operators store API keys in arbitrary `.env`-style
+    # files (~/.env, ~/sequence/.env, ~/codex/.env, ~/clawd/.env, ~/Documents/.env,
+    # ~/projects/<thing>/.env, etc.). Instead of guessing, we:
+    #   1) build an ENV_FILES list of every plausible env-style file under $HOME
+    #      (depth-limited to keep it fast), with the canonical OpenClaw paths
+    #      first so they still take priority,
+    #   2) for each file, grep for the alias VAR=... line and return on first hit,
+    #   3) plus shell-source common rc files in a subshell so values that arrive
+    #      via `source ~/some-other-file` also get caught.
+    #
+    # This is the cache-bust answer to Aurelia's bug: keys lived in a file the
+    # v10.13.2 scanner did not enumerate. v10.13.3 enumerates ALL of them.
     local HOME_DIR="${HOME}"
-    for rc_file in \
-        "$HOME_DIR/.zshrc" \
-        "$HOME_DIR/.zshenv" \
-        "$HOME_DIR/.zprofile" \
-        "$HOME_DIR/.bash_profile" \
-        "$HOME_DIR/.bashrc" \
-        "$HOME_DIR/.profile" \
-        "$HOME_DIR/.config/openclaw/secrets.env" \
-        "$HOME_DIR/.config/openclaw/.env" \
-        "$HOME_DIR/.config/clawd/.env"; do
-        [ ! -f "$rc_file" ] && continue
+
+    # Build the candidate-file list once per process and cache it on the env.
+    if [ -z "${MAC_ENV_FILE_LIST:-}" ]; then
+        local CACHE=""
+        # Tier 1: canonical OpenClaw / Clawd locations (still highest priority)
+        for f in \
+            "$HOME_DIR/.openclaw/secrets/.env" \
+            "$HOME_DIR/.openclaw/secrets/secrets.env" \
+            "$HOME_DIR/.openclaw/.env" \
+            "$HOME_DIR/.openclaw/env" \
+            "$HOME_DIR/clawd/secrets/.env" \
+            "$HOME_DIR/clawd/.env" \
+            "$HOME_DIR/.config/openclaw/secrets.env" \
+            "$HOME_DIR/.config/openclaw/.env" \
+            "$HOME_DIR/.config/clawd/.env" \
+            "$HOME_DIR/.env" \
+            "$HOME_DIR/.env.local" \
+            "$HOME_DIR/.env.openclaw" \
+            "$HOME_DIR/sequence/.env" \
+            "$HOME_DIR/sequence/secrets.env" \
+            "$HOME_DIR/codex/.env" \
+            "$HOME_DIR/.codex/.env" \
+            "$HOME_DIR/.codex/secrets.env" \
+            "$HOME_DIR/.zshrc" \
+            "$HOME_DIR/.zshenv" \
+            "$HOME_DIR/.zprofile" \
+            "$HOME_DIR/.bash_profile" \
+            "$HOME_DIR/.bashrc" \
+            "$HOME_DIR/.profile"; do
+            [ -f "$f" ] && CACHE="${CACHE}${f}"$'\n'
+        done
+        # Tier 2: find ANY *.env / *.env.* / *secrets*.env / api-key-like file
+        # under $HOME up to depth 4. Excludes node_modules / .git / Library /
+        # Downloads / .Trash / venv dirs. Sized cap at 2 MB per file (skip huge
+        # ones — they aren't env files).
+        local found_extra
+        found_extra=$(find "$HOME_DIR" -maxdepth 4 \
+            \( -path "*/node_modules" -o -path "*/.git" -o -path "*/Library" \
+               -o -path "*/Downloads" -o -path "*/.Trash" -o -path "*/.npm-global" \
+               -o -path "*/.cache" -o -path "*/.venv" -o -path "*/venv" \
+               -o -path "*/__pycache__" -o -path "*/.pyenv" \
+            \) -prune -o \
+            -type f \( -name "*.env" -o -name "*.env.*" -o -name ".env.*" \
+                       -o -name "secrets.env" -o -name "secrets" \
+                       -o -name "api_keys*" -o -name "*.envrc" \) \
+            -size -2048k -print 2>/dev/null | head -200)
+        if [ -n "$found_extra" ]; then
+            CACHE="${CACHE}${found_extra}"$'\n'
+        fi
+        export MAC_ENV_FILE_LIST="$CACHE"
+    fi
+
+    # Iterate alias × file; first match wins.
+    local ENV_FILE
+    while IFS= read -r ENV_FILE; do
+        [ -z "$ENV_FILE" ] && continue
+        [ ! -f "$ENV_FILE" ] && continue
         for VAR_NAME in $aliases; do
             local rc_val
-            # Match `export VAR=val`, `VAR=val`, with optional quotes, ignore comments
-            rc_val=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${VAR_NAME}=" "$rc_file" 2>/dev/null \
+            # Match `export VAR=val`, `VAR=val`, with optional quotes, strip inline comments
+            rc_val=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${VAR_NAME}=" "$ENV_FILE" 2>/dev/null \
                 | grep -vE "^[[:space:]]*#" \
                 | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${VAR_NAME}=//" \
                 | sed -E 's/[[:space:]]*#.*$//' \
                 | head -1 || true)
-            # Strip surrounding quotes
             rc_val="${rc_val%\"}"; rc_val="${rc_val#\"}"
             rc_val="${rc_val%\'}"; rc_val="${rc_val#\'}"
             if [ -n "$rc_val" ]; then
-                echo "    [src: $rc_file.$VAR_NAME]" >&2
+                # Pretty-print path relative to $HOME
+                local pretty="${ENV_FILE/#$HOME_DIR/~}"
+                echo "    [src: $pretty:$VAR_NAME]" >&2
                 echo "$rc_val"
                 return
             fi
         done
-    done
+    done <<EOFLIST
+$MAC_ENV_FILE_LIST
+EOFLIST
 
-    # Sources 2-4: .env files at canonical Mac locations
-    for env_file in "$OC_SECRETS_ENV" "$OC_CONFIG/.env" "$OC_LEGACY_CLAWD/secrets/.env"; do
-        [ ! -f "$env_file" ] && continue
+    # Source 1c (v10.13.3): shell-source fallback. If keys reach the shell via
+    # `source ~/some-other-file` inside .zshrc (and that file isn't itself an
+    # env file we'd recognize), simulate it. Source rc files in a clean subshell
+    # and capture exported vars.
+    for rc_file in "$HOME_DIR/.zshenv" "$HOME_DIR/.zprofile" "$HOME_DIR/.zshrc" "$HOME_DIR/.bash_profile" "$HOME_DIR/.bashrc" "$HOME_DIR/.profile"; do
+        [ ! -f "$rc_file" ] && continue
         for VAR_NAME in $aliases; do
-            local found
-            found=$(grep -E "^${VAR_NAME}=" "$env_file" 2>/dev/null | cut -d'=' -f2- | head -1 || true)
-            if [ -n "$found" ]; then
-                # Strip surrounding quotes if present
-                found="${found%\"}"; found="${found#\"}"
-                found="${found%\'}"; found="${found#\'}"
-                echo "    [src: $env_file.$VAR_NAME]" >&2
-                echo "$found"
+            local sourced_val
+            sourced_val=$(env -i HOME="$HOME_DIR" PATH="/usr/bin:/bin:/usr/local/bin" \
+                bash -c "set +e; source '$rc_file' >/dev/null 2>&1; printf '%s' \"\${$VAR_NAME:-}\"" 2>/dev/null)
+            if [ -n "$sourced_val" ]; then
+                local pretty="${rc_file/#$HOME_DIR/~}"
+                echo "    [src: sourced($pretty):$VAR_NAME]" >&2
+                echo "$sourced_val"
                 return
             fi
         done
@@ -840,8 +900,20 @@ search_env_var() { search_env_var_mac "$@"; }
 build_env_locations() { :; }   # no-op kept for old call sites
 
 discover_all_credentials() {
-    step "Bulletproof Credential Discovery (v10.1.0 — Mac mini)"
-    note "Lookup priority: shell env → shell-rc (.zshrc/.zshenv/.zprofile/.bash_profile/.bashrc/.profile) → ~/.openclaw/secrets/.env → ~/clawd/secrets/.env → openclaw.json env.vars/providers/plugins → auth-profiles.json → secrets.json → deep scan"
+    step "Bulletproof Credential Discovery (v10.1.1 — Mac mini)"
+    note "Lookup priority: shell env → \$HOME-wide .env / secrets / .envrc / shell-rc walk (depth 4) → sourced rc files (subshell) → openclaw.json env.vars/providers/plugins → auth-profiles.json → secrets.json → deep scan"
+    # v10.13.3: emit how many candidate env files we'll search so the operator
+    # can SEE if their file got enumerated (and can grep the log if not).
+    local _file_count
+    _file_count=$(printf '%s\n' "${MAC_ENV_FILE_LIST:-}" | grep -c '^/' 2>/dev/null || true)
+    [ -z "$_file_count" ] && _file_count=0
+    if [ "$_file_count" -eq 0 ]; then
+        # Warm the cache so the count is non-zero. Call once with a dummy var.
+        search_env_var_mac _OPENCLAW_PROBE_NONEXISTENT >/dev/null 2>&1 || true
+        _file_count=$(printf '%s\n' "${MAC_ENV_FILE_LIST:-}" | grep -c '^/' 2>/dev/null || true)
+        [ -z "$_file_count" ] && _file_count=0
+    fi
+    note "Candidate env files discovered under \$HOME: $_file_count"
 
     # Canonical credential names. Aliases are handled inside search_env_var_mac
     # via get_alias_list — extending the alias set requires editing only that.
