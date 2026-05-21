@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.3"
+ONBOARDING_VERSION="v10.13.4"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -516,11 +516,57 @@ PYEOF
     fi
 }
 
+# v10.13.4: Direct Bot API send — bypasses gateway entirely. Reads bot token +
+# allowed chat ID from openclaw.json. Used as the final fallback when the
+# `openclaw message send` gateway path fails. This is what guarantees a paired
+# owner ALWAYS gets the kickoff message, even if the gateway is unresponsive,
+# scopes aren't right, or the CLI hangs.
+tg_send_direct() {
+    local message="$1"
+    local oc_json="$HOME/.openclaw/openclaw.json"
+    [ ! -f "$oc_json" ] && return 1
+    local creds
+    creds=$(python3 - <<PYEOF 2>/dev/null
+import json
+try:
+    d = json.load(open("$oc_json"))
+    tg = d.get("channels", {}).get("telegram", {}) or {}
+    bot = tg.get("botToken") or d.get("env", {}).get("vars", {}).get("TELEGRAM_BOT_TOKEN", "")
+    chat = ""
+    for c in (tg.get("allowFrom") or []):
+        chat = str(c); break
+    if bot and chat:
+        print(f"{bot}|{chat}")
+except Exception:
+    pass
+PYEOF
+)
+    [ -z "$creds" ] && return 1
+    local bot_token chat_id
+    bot_token="${creds%|*}"
+    chat_id="${creds##*|}"
+    [ -z "$bot_token" ] || [ -z "$chat_id" ] && return 1
+    # Send via Bot API; return 0 on ok:true, 1 otherwise
+    local resp
+    resp=$(curl -s --max-time 10 "https://api.telegram.org/bot${bot_token}/sendMessage" \
+        --data-urlencode "chat_id=${chat_id}" \
+        --data-urlencode "text=${message}" 2>/dev/null)
+    case "$resp" in
+        *'"ok":true'*) echo "$resp" >> "$LOG_FILE" 2>/dev/null; return 0 ;;
+        *) echo "tg_send_direct failed: $resp" >> "$LOG_FILE" 2>/dev/null; return 1 ;;
+    esac
+}
+
 send_telegram_progress() {
     local message="$1"
     TELEGRAM_LAST_RESULT="skipped"
 
     if ! command -v openclaw >/dev/null 2>&1; then
+        # v10.13.4: even without CLI, try direct Bot API before giving up
+        if tg_send_direct "$message"; then
+            TELEGRAM_LAST_RESULT="sent:direct-bot-api(no-cli)"
+            return 0
+        fi
         TELEGRAM_LAST_RESULT="no-openclaw-cli"
         return 0
     fi
@@ -552,10 +598,16 @@ send_telegram_progress() {
         return 0
     fi
 
-    # Send failed. Capture for end-of-install diagnostic. Don't retry, don't
-    # touch device scopes, don't prompt the user. Their Telegram is already
-    # paired and working; whatever this transient failure was, it shouldn't
-    # change their setup.
+    # Gateway send failed. v10.13.4: try direct Bot API as final fallback before
+    # giving up. The owner is already paired (bot token + chat ID in
+    # openclaw.json), so this should succeed even when the gateway hiccups.
+    if tg_send_direct "$message"; then
+        TELEGRAM_LAST_RESULT="sent:direct-bot-api(gateway-fallback)"
+        return 0
+    fi
+
+    # Both paths failed. Capture for end-of-install diagnostic. Don't retry,
+    # don't touch device scopes, don't prompt the user.
     TELEGRAM_LAST_RESULT="failed:see-$LOG_FILE"
     return 0   # NEVER kill the install — Telegram is optional
 }
@@ -715,20 +767,36 @@ search_env_var_mac() {
             "$HOME_DIR/.profile"; do
             [ -f "$f" ] && CACHE="${CACHE}${f}"$'\n'
         done
-        # Tier 2: find ANY *.env / *.env.* / *secrets*.env / api-key-like file
-        # under $HOME up to depth 4. Excludes node_modules / .git / Library /
-        # Downloads / .Trash / venv dirs. Sized cap at 2 MB per file (skip huge
-        # ones — they aren't env files).
+        # Tier 2: find ANY *.env / *secrets*.env / *.envrc file under $HOME
+        # up to depth 4. Excludes:
+        #  - heavy dirs: node_modules, .git, Library, Downloads, .Trash,
+        #    .npm-global, .cache, .venv, venv, __pycache__, .pyenv
+        #  - template/example files: .env.example, .env.sample, .env.template,
+        #    .env.dist, .env.test, .env.spec, .env.demo  — v10.13.4 fix for the
+        #    false-positive bug where v10.13.3 scraped placeholder values like
+        #    `OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxx` from `.env.example` files in
+        #    npm packages / SDK example dirs.
+        #  - common project dirs that ship example envs: examples/, samples/,
+        #    fixtures/, test/, tests/, __tests__/, spec/
         local found_extra
         found_extra=$(find "$HOME_DIR" -maxdepth 4 \
             \( -path "*/node_modules" -o -path "*/.git" -o -path "*/Library" \
                -o -path "*/Downloads" -o -path "*/.Trash" -o -path "*/.npm-global" \
                -o -path "*/.cache" -o -path "*/.venv" -o -path "*/venv" \
                -o -path "*/__pycache__" -o -path "*/.pyenv" \
+               -o -path "*/examples" -o -path "*/example" \
+               -o -path "*/samples" -o -path "*/sample" \
+               -o -path "*/fixtures" -o -path "*/fixture" \
+               -o -path "*/test" -o -path "*/tests" -o -path "*/__tests__" \
+               -o -path "*/spec" -o -path "*/specs" \
+               -o -path "*/docs" -o -path "*/doc" \
             \) -prune -o \
-            -type f \( -name "*.env" -o -name "*.env.*" -o -name ".env.*" \
-                       -o -name "secrets.env" -o -name "secrets" \
-                       -o -name "api_keys*" -o -name "*.envrc" \) \
+            -type f \( -name "*.env" -o -name ".env" \
+                       -o -name "secrets.env" -o -name "*.envrc" \) \
+            ! -name "*.example" ! -name "*.sample" ! -name "*.template" \
+            ! -name "*.dist" ! -name "*.test" ! -name "*.spec" \
+            ! -name "*.demo" ! -name "*.tmpl" \
+            ! -name "*.example.*" ! -name "*.sample.*" \
             -size -2048k -print 2>/dev/null | head -200)
         if [ -n "$found_extra" ]; then
             CACHE="${CACHE}${found_extra}"$'\n'
@@ -736,7 +804,35 @@ search_env_var_mac() {
         export MAC_ENV_FILE_LIST="$CACHE"
     fi
 
-    # Iterate alias × file; first match wins.
+    # v10.13.4 helper: is this value a real-looking API key, or a placeholder?
+    # Rejects: xxxxx-only, YOUR_*, REPLACE_ME, <...>, [...], "your_api_key",
+    # "test_key", "dummy", empty after trim, asterisks-only, "abc123" toy values.
+    looks_like_real_key() {
+        local val="$1"
+        local lo
+        # Lowercase for comparison
+        lo=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
+        # Empty / very short
+        [ ${#val} -lt 8 ] && return 1
+        # Common placeholders (substring match, case-insensitive)
+        case "$lo" in
+            *xxxxx*|*your_key*|*your-key*|*your_api*|*your-api*|*yourkey*|*your_token*) return 1 ;;
+            *replace_me*|*replace-me*|*replaceme*|*changeme*|*change_me*|*change-me*) return 1 ;;
+            *_here*|*-here*|*placeholder*|*example*|*sample*|*dummy*|*demo*|*test_key*) return 1 ;;
+            *fake*|*sk-test*|*sk-xxx*|*sk-example*|*sk-replace*) return 1 ;;
+            \<*\>|\[*\]|"*") return 1 ;;
+        esac
+        # All asterisks / dots / dashes (no real entropy)
+        case "$val" in
+            \**|.*|--*) [ $(printf '%s' "$val" | tr -d '*.-' | wc -c) -lt 4 ] && return 1 ;;
+        esac
+        return 0
+    }
+
+    # Iterate alias × file; first match wins. v10.13.4: also validate the value
+    # looks like a real API key, not a placeholder. If the file is a known
+    # template (slipped past the find-exclusion), the value will fail the
+    # looks_like_real_key check and we keep walking.
     local ENV_FILE
     while IFS= read -r ENV_FILE; do
         [ -z "$ENV_FILE" ] && continue
@@ -751,12 +847,16 @@ search_env_var_mac() {
                 | head -1 || true)
             rc_val="${rc_val%\"}"; rc_val="${rc_val#\"}"
             rc_val="${rc_val%\'}"; rc_val="${rc_val#\'}"
-            if [ -n "$rc_val" ]; then
-                # Pretty-print path relative to $HOME
+            if [ -n "$rc_val" ] && looks_like_real_key "$rc_val"; then
                 local pretty="${ENV_FILE/#$HOME_DIR/~}"
                 echo "    [src: $pretty:$VAR_NAME]" >&2
                 echo "$rc_val"
                 return
+            elif [ -n "$rc_val" ]; then
+                # Real-looking var, fake-looking value — log to stderr so the
+                # operator sees we rejected it (instead of silently misreporting).
+                local pretty="${ENV_FILE/#$HOME_DIR/~}"
+                echo "    [skip: $pretty:$VAR_NAME — placeholder value]" >&2
             fi
         done
     done <<EOFLIST
@@ -773,7 +873,7 @@ EOFLIST
             local sourced_val
             sourced_val=$(env -i HOME="$HOME_DIR" PATH="/usr/bin:/bin:/usr/local/bin" \
                 bash -c "set +e; source '$rc_file' >/dev/null 2>&1; printf '%s' \"\${$VAR_NAME:-}\"" 2>/dev/null)
-            if [ -n "$sourced_val" ]; then
+            if [ -n "$sourced_val" ] && looks_like_real_key "$sourced_val"; then
                 local pretty="${rc_file/#$HOME_DIR/~}"
                 echo "    [src: sourced($pretty):$VAR_NAME]" >&2
                 echo "$sourced_val"
@@ -1535,6 +1635,7 @@ success "Extracted to $ONBOARDING_DIR"
 
 SKILL_COUNT=$(discover_skills "$ONBOARDING_DIR")
 success "Skills found: $SKILL_COUNT"
+send_telegram_progress "📦 Extracted onboarding package. ${SKILL_COUNT} skills detected. Installing them now (this takes about 1-2 minutes)…"
 
 # ----------------------------------------------------------
 # Step 5: Install Skills
@@ -1630,6 +1731,7 @@ if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
     chmod +x "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
     success "shared-utils installed to $SKILLS_DIR/shared-utils"
 fi
+send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 
 # ----------------------------------------------------------
 # Step 6: Install Gemini Scripts
@@ -1795,6 +1897,7 @@ configure_active_memory
 # ----------------------------------------------------------
 # Step 8: Exec Security Configuration
 # ----------------------------------------------------------
+send_telegram_progress "✓ AI engines configured. Locking down permissions next so your agent only does what you approve…"
 step "Step 8: Applying Exec Security Configuration"
 
 OPENCLAW_JSON="$OC_JSON"
@@ -1852,6 +1955,7 @@ mkdir -p "$OC_DOWNLOADS/openclaw-master-files/coaching-personas/personas"
 mkdir -p "$OC_DOWNLOADS/openclaw-master-files/project-prds"
 
 success "Backup folders created at $OC_BACKUPS, master files at $OC_DOWNLOADS/openclaw-master-files"
+send_telegram_progress "✓ Security + backups configured. Almost done — finalizing your agent's playbook now…"
 
 # ----------------------------------------------------------
 # Step 10: Write UPDATE PENDING Flag with 5-Phase Processing
@@ -2323,6 +2427,7 @@ fi
 # ----------------------------------------------------------
 # Step 11: Generate Manifest
 # ----------------------------------------------------------
+send_telegram_progress "✓ Memory + playbook seeded. Generating your skill manifest now — last few steps…"
 step "Step 11: Generating Skill Manifest"
 
 MANIFEST_PATH="$SKILLS_DIR/.skill-manifest.json"
@@ -2841,26 +2946,25 @@ That's it. I'll respond within 30 seconds and start setting up your team.
 Total setup time: about an hour. I'll send you updates as I work so you always know what's happening. The most important part is a 30-question interview about your business — that's when you'll need ~35 minutes of focused time. I'll let you know before we get there.
 
 Ready when you are. 🚀"
-    if command -v openclaw >/dev/null 2>&1; then
-        if openclaw message send --message "$tg_msg" 2>/dev/null; then
-            tg_fired="true"
-        else
-            tg_reason="openclaw message send failed (Telegram likely not paired or scopes missing)"
-        fi
+    # v10.13.4: kickoff now has THREE delivery paths (true triple-fire for the
+    # Telegram leg, not just a single attempt with two excuses).
+    # 1) openclaw message send (gateway)
+    # 2) send-telegram.sh helper (if present)
+    # 3) tg_send_direct — direct Bot API curl using bot token + chat ID
+    #    from openclaw.json (bypasses gateway, scopes, CLI entirely)
+    if command -v openclaw >/dev/null 2>&1 && openclaw message send --message "$tg_msg" 2>/dev/null; then
+        tg_fired="true"
+        tg_reason="path:openclaw-cli-gateway"
     else
-        # No CLI yet — try the lowest-level fallback: tg.sh helper if it
-        # exists in the skills dir; otherwise log the reason. The terminal
-        # block (trigger 3) still surfaces the message, which is why
-        # triple-fire is triple-fire and not single-point-of-failure.
         local tg_helper="$skills_dir/scripts/send-telegram.sh"
-        if [ -x "$tg_helper" ]; then
-            if "$tg_helper" "$tg_msg" 2>/dev/null; then
-                tg_fired="true"
-            else
-                tg_reason="openclaw CLI absent; send-telegram.sh helper invocation failed"
-            fi
+        if [ -x "$tg_helper" ] && "$tg_helper" "$tg_msg" 2>/dev/null; then
+            tg_fired="true"
+            tg_reason="path:send-telegram.sh-helper"
+        elif tg_send_direct "$tg_msg"; then
+            tg_fired="true"
+            tg_reason="path:direct-bot-api(final-fallback)"
         else
-            tg_reason="openclaw CLI absent and no send-telegram.sh helper available (Telegram delivery deferred to first post-install agent session)"
+            tg_reason="all three paths failed: gateway, helper, direct Bot API. Bot token or chat ID likely missing from openclaw.json."
         fi
     fi
 

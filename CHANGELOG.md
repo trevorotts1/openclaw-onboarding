@@ -1,3 +1,46 @@
+## [v10.13.4] — 2026-05-21 — Stop scraping .env.example placeholders + true triple-fire Telegram kickoff + per-step progress messages
+
+Two bugs surfaced live on Aurelia's v10.13.3 install:
+
+### Bug 1: v10.13.3 walker pulled placeholder values from `.env.example` / `.env.sample` files and reported them as her real keys
+The walker matched `*.env`, `*.env.*`, `.env.*` — which matches `.env.example`, `.env.sample`, `.env.template`, `.env.dist`. Every npm package / SDK example dir ships with one of those, containing values like `OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx`, `ANTHROPIC_API_KEY=YOUR_KEY_HERE`, `GHL_API_KEY=<replace-me>`. The walker scraped those and reported them as Aurelia's keys. She knew they weren't real — that's a hallucination, not a discovery.
+
+**Fix:**
+- `find` exclusions now drop template/sample names: `*.example`, `*.sample`, `*.template`, `*.dist`, `*.test`, `*.spec`, `*.demo`, `*.tmpl`, and dotted variants (`*.example.*`, `*.sample.*`).
+- `find` path-prune now also skips dirs that conventionally hold examples: `examples/`, `example/`, `samples/`, `sample/`, `fixtures/`, `test/`, `tests/`, `__tests__/`, `spec/`, `specs/`, `docs/`, `doc/`.
+- Tightened `-name "*.env.*"` down to specific real-env names: `.env`, `*.env`, `secrets.env`, `*.envrc` (and the canonical Tier-1 paths still cover `.env.local`, `.env.openclaw` by explicit listing).
+- **New `looks_like_real_key()` validator** runs on EVERY extracted value before reporting it: rejects substring matches for `xxxxx`, `your_key`, `your_api`, `your_token`, `replace_me`, `changeme`, `_here`, `placeholder`, `example`, `sample`, `dummy`, `demo`, `test_key`, `fake`, `sk-test`, `sk-xxx`, `sk-example`, angle/square brackets, asterisks-only, dots-only, dashes-only. Real keys still pass; placeholders don't.
+- Skipped values now log `[skip: <file>:<VAR> — placeholder value]` to stderr so the operator can SEE the rejection (not silent).
+
+### Bug 2: Telegram kickoff failed silently when the gateway hiccuped; per-step progress messages missing
+Mac install.sh previously had only `"Starting..."` and `"Downloaded onboarding package"` — then went silent until the final kickoff. If the kickoff's `openclaw message send` failed (gateway not paired, scopes off, CLI hung), there was NO third fallback. The bot token was right there in `openclaw.json` but never used directly.
+
+**Fix:**
+- **`tg_send_direct()` helper added.** Reads `channels.telegram.botToken` and the first `channels.telegram.allowFrom` chat ID from `openclaw.json` directly, then calls `curl https://api.telegram.org/bot$TOKEN/sendMessage` with `--max-time 10`. Bypasses the gateway entirely. Returns 0 on `"ok":true`, 1 otherwise.
+- **`send_telegram_progress` now falls back to `tg_send_direct` on gateway failure** AND on "no openclaw CLI." Result is logged (`sent:direct-bot-api(gateway-fallback)` vs `sent:direct-bot-api(no-cli)`) so the install summary can show which path delivered.
+- **`fire_install_kickoff_triplet` now has a true triple-fire delivery chain** for the Telegram leg: (1) gateway via openclaw CLI, (2) `send-telegram.sh` helper, (3) `tg_send_direct`. The triplet was previously triple-named but single-pathed. Now it's actually three independent paths.
+- **Per-step progress messages added** between Step 3 and the kickoff, so Aurelia (and every Mac client) hears from her bot every ~30-60s instead of a 5-10 minute silent gap:
+  - After Step 4 Extract → "📦 Extracted onboarding package. N skills detected. Installing them now…"
+  - After Step 5 Install Skills → "✓ Skills + helpers installed. Setting up your AI engines next…"
+  - Before Step 8 → "✓ AI engines configured. Locking down permissions next…"
+  - After Step 9 Backups → "✓ Security + backups configured. Almost done — finalizing your agent's playbook now…"
+  - Before Step 11 Manifest → "✓ Memory + playbook seeded. Generating your skill manifest now — last few steps…"
+
+### Risk: low
+- Walker change is purely subtractive (excludes more, includes none new). Smoke test confirms: 5 planted `.env.example` placeholders no longer reported; real keys at `~/.codex/.env`, `~/legit-project/.env` still found.
+- `tg_send_direct` is an additive fallback. Existing gateway path remains the primary; direct API only fires when gateway fails.
+- Per-step progress messages use existing `send_telegram_progress` (no new code path).
+- Validator rejection logs `[skip: ...]` to stderr — visible to operator but doesn't kill the install.
+
+### Files
+- `install.sh` — `search_env_var_mac` walker (exclusions + validator), `looks_like_real_key`, `tg_send_direct`, `send_telegram_progress` (fallback chain), `fire_install_kickoff_triplet` (true triple-fire), 5 per-step progress sends
+- `version` → `v10.13.4`
+
+### Apology
+v10.13.3 was sold as "bulletproof." It wasn't. I built a filesystem walker without thinking about the entire ecosystem of `.env.example` files that ship in every npm package and SDK example. The right walker excludes templates AND validates value shape. Both are in v10.13.4. Aurelia should not have had to flag "those keys don't exist." That was on me.
+
+---
+
 ## [v10.13.3] — 2026-05-21 — Bulletproof credential discovery — walk ANY env file under $HOME (Aurelia's agent had to find this for us)
 
 ### What went wrong (honest diagnosis)
