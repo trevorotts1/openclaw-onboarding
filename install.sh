@@ -15,8 +15,9 @@ set -euo pipefail
 #    ~/.openclaw/credentials/           — channel allowlists + pairing
 #    ~/.openclaw/agents/<id>/agent/auth-profiles.json  — per-agent creds
 #    ~/.openclaw/secrets/.env           — operator secrets (canonical)
-#    ~/clawd/                           — workspace (most existing clients)
-#    ~/.openclaw/workspace/             — workspace (OpenClaw default for new installs)
+#    ~/.openclaw/workspace/             — workspace (canonical OpenClaw default; v10.13.9+)
+#    ~/clawd/                           — DEAD legacy path. Older clients may have leftover
+#                                        contents but NEVER write here. See v10.13.9 changelog.
 #    ~/Downloads/openclaw-master-files/ — onboarding master files
 #    ~/Downloads/openclaw-backups/      — config backups
 #
@@ -25,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.8"
+ONBOARDING_VERSION="v10.13.9"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -618,7 +619,7 @@ PHASE 3 — Verify:
 8. Wait for confirmation before proceeding.
 
 PHASE 4 — Build the workforce:
-9. Run AI Workforce Interview (Skill 23) with __OWNER_NAME__. ZHC workspace on Mac: ~/clawd/zero-human-company/<slug>/
+9. Run AI Workforce Interview (Skill 23) with __OWNER_NAME__. ZHC workspace on Mac: ~/.openclaw/workspace/zero-human-company/<slug>/
 10. After interview, run __SKILLS_DIR__/23-ai-workforce-blueprint/scripts/create_role_workspaces.py to write per-department governing-personas.md.
 11. Message __OWNER_NAME__ confirming workforce built + list departments created.
 
@@ -2110,12 +2111,12 @@ done
 
 success "$SKILL_COUNT skills installed"
 
-# v10.10.0 P0-007: ensure ~/clawd/ legacy workspace exists unconditionally.
-# Older onboarding only created it when the user selected "legacy mode";
-# new installs need it too for backward-compat (the persona-selector and
-# many skill paths still default to ~/clawd/ when ~/.openclaw/workspace
-# doesn't exist).
-mkdir -p "$OC_LEGACY_CLAWD" 2>/dev/null && note "Ensured legacy workspace exists: $OC_LEGACY_CLAWD"
+# v10.13.9: STOP creating ~/clawd. Clawd is dead — OpenClaw replaced it.
+# Previous behavior (mkdir -p ~/clawd) was actively spreading the legacy
+# path even on fresh installs, causing the agent to read from one place
+# and install.sh to write to another. Now we ENSURE ~/.openclaw/workspace
+# (the canonical OpenClaw default) exists instead.
+mkdir -p "$OC_WORKSPACE_DEFAULT" 2>/dev/null && note "Ensured OpenClaw workspace exists: $OC_WORKSPACE_DEFAULT"
 
 # Copy root files (v10.13.0: added AGENTS.md, INSTALL-CONTRACT.md,
 # ONBOARDING-TRIGGERS.md, direct-to-agent-install.md so the workspace
@@ -2170,7 +2171,10 @@ send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engin
 # ----------------------------------------------------------
 step "Step 6: Installing Gemini Engine Scripts"
 
-SCRIPTS_DIR="$OC_LEGACY_CLAWD/scripts"
+# v10.13.9: Gemini engine scripts go to ~/.openclaw/scripts, not ~/clawd/scripts.
+# Clawd is dead — installing to that path means the agent (which reads from
+# the OpenClaw config root) can't find them.
+SCRIPTS_DIR="$OC_CONFIG/scripts"
 mkdir -p "$SCRIPTS_DIR"
 
 for SCRIPT in gemini-indexer.py gemini-search.py; do
@@ -2394,15 +2398,20 @@ send_telegram_progress "✓ Security + backups configured. Almost done — final
 # ----------------------------------------------------------
 step "Step 10: Writing UPDATE PENDING Flag to AGENTS.md"
 
-# Bulletproof Mac workspace resolver (v10.0.0).
+# Mac workspace resolver (v10.13.9 — Clawd is dead).
 # OpenClaw agents read core .md files from agents.defaults.workspace OR a
 # per-agent override at agents.list[*].workspace. Writing to the wrong path
-# means the agent never sees the UPDATE PENDING flag (this was Floyd's bug).
+# means the agent never sees the UPDATE PENDING flag (this was Floyd's bug
+# AND Aurelia's v10.13.8 bug — install.sh wrote to ~/clawd, agent read from
+# ~/.openclaw/workspace, install looked silently broken).
 # Resolution priority:
 #   1. agents.list[<main>].workspace (per-agent override — wins if set)
 #   2. agents.defaults.workspace via `openclaw config get`
-#   3. ~/clawd (most existing Mac clients have it from older onboarding)
-#   4. ~/.openclaw/workspace (OpenClaw docs default for fresh installs)
+#   3. ~/.openclaw/workspace (canonical OpenClaw default — always)
+# We DO NOT consider ~/clawd as a fallback anymore. If a client has stale
+# data there from a pre-rename install, it stays inert. Step 10 also calls
+# `openclaw config set agents.defaults.workspace` so the canonical path is
+# explicit in openclaw.json from now on.
 WORKSPACE_DIR=""
 
 # Step 1: per-agent workspace override on the "main" agent
@@ -2442,13 +2451,28 @@ except Exception: pass
 " 2>/dev/null) || WORKSPACE_DIR=""
 fi
 
-# Step 3 + 4: disk fallbacks
-if [ -z "$WORKSPACE_DIR" ] || [ ! -d "$WORKSPACE_DIR" ]; then
-    if [ -d "$OC_LEGACY_CLAWD" ]; then
-        WORKSPACE_DIR="$OC_LEGACY_CLAWD"
-    else
-        WORKSPACE_DIR="$OC_WORKSPACE_DEFAULT"
-    fi
+# Step 3: disk fallback. v10.13.9 (Aurelia's bug): the previous code preferred
+# ~/clawd if it existed because some clients still had that directory from the
+# Clawd→OpenClaw rename. That made install.sh write UPDATE PENDING to
+# ~/clawd/AGENTS.md while the agent reads from ~/.openclaw/workspace/AGENTS.md
+# (OpenClaw's documented default). Result: install completes, agent never sees
+# the flag, looks like the install silently failed.
+#
+# Clawd is DEAD. We always default to ~/.openclaw/workspace. The clawd
+# directory existing on disk is no longer a signal to write there — if it's
+# there at all, it's leftover from a pre-rename install and should be ignored.
+WORKSPACE_DIR="${WORKSPACE_DIR:-$OC_WORKSPACE_DEFAULT}"
+if [ ! -d "$WORKSPACE_DIR" ]; then
+    WORKSPACE_DIR="$OC_WORKSPACE_DEFAULT"
+fi
+
+# v10.13.9: also explicitly set agents.defaults.workspace so future installs
+# (and the agent itself when it reads its own config) confirm the canonical
+# path. Without this, the resolver would re-discover from disk fallback every
+# time, and clients with stale ~/clawd directories would keep getting their
+# UPDATE PENDING flag written to the wrong file.
+if command -v openclaw >/dev/null 2>&1; then
+    openclaw config set agents.defaults.workspace "$WORKSPACE_DIR" 2>/dev/null || true
 fi
 
 mkdir -p "$WORKSPACE_DIR"
@@ -2728,7 +2752,7 @@ For EACH skill folder in ~/.openclaw/skills/:
 
 **STEP 4: VERIFY MEMORY ARCHITECTURE**
 ```
-python3 ~/clawd/scripts/gemini-indexer.py --status
+python3 ~/.openclaw/scripts/gemini-indexer.py --status
 # Check DREAMS.md exists in workspace root
 # Check memory-core is configured
 # Check Obsidian Vault path is set
@@ -3488,7 +3512,7 @@ PHASE 3 — Verify everything:
 PHASE 4 — Build the AI workforce:
   8. Run the AI Workforce Interview (Skill 23) to build the company
      structure from my answers. ZHC location:
-     ~/clawd/zero-human-company/<slug>/ (Mac) or
+     ~/.openclaw/workspace/zero-human-company/<slug>/ (Mac) or
      /data/.openclaw/workspace/zero-human-company/<slug>/ (VPS).
   9. After the interview, run create_role_workspaces.py to write
      per-department governing-personas.md.

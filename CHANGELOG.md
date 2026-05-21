@@ -1,3 +1,58 @@
+## [v10.13.9] — 2026-05-21 — Clawd is DEAD: stop writing UPDATE PENDING + scripts + workspace to ~/clawd
+
+### The bug Trevor caught (correctly, with profanity)
+Aurelia's install completed but her agent never saw the UPDATE PENDING flag. Why? install.sh wrote it to `~/clawd/AGENTS.md` (the dead Clawd legacy path) while her agent reads from `~/.openclaw/workspace/AGENTS.md` (the canonical OpenClaw default). Two paths, two files, agent never sees the flag, install looks silently broken.
+
+This was on me. I literally have a memory rule that says **"Clawd is dead, OpenClaw replaced it."** I shipped code that preferred `~/clawd` if it existed on disk — explicitly choosing the dead system over the live one. The previous fix (v10.13.8) addressed pipefail killing Step 10 silently; this one addresses Step 10 writing to the wrong file even when it does run.
+
+### Five places install.sh was writing to the dead ~/clawd path
+
+1. **Step 10 workspace resolver** (the main bug): `if [ -d "$OC_LEGACY_CLAWD" ]; then WORKSPACE_DIR="$OC_LEGACY_CLAWD"` — preferred `~/clawd` if it existed on disk, even on systems where `~/.openclaw/workspace` was the documented OpenClaw default. Aurelia had a stale `~/clawd` directory from a pre-rename install. install.sh saw it, preferred it, wrote there. Agent read from elsewhere.
+2. **Step 5 post-skills**: `mkdir -p "$OC_LEGACY_CLAWD"` — install.sh actively CREATED `~/clawd` on fresh installs that didn't have it. So even brand-new clients ended up with the dead path.
+3. **Step 6 Gemini scripts**: `SCRIPTS_DIR="$OC_LEGACY_CLAWD/scripts"` — Gemini engine scripts (gemini-indexer.py, gemini-search.py) installed to `~/clawd/scripts` instead of `~/.openclaw/scripts`.
+4. **Agent prompt** (paste block / docs): `python3 ~/clawd/scripts/gemini-indexer.py --status` — pointed the agent at a path that wouldn't exist after this fix.
+5. **ZHC workspace docs**: `ZHC location: ~/clawd/zero-human-company/<slug>/` — wrong canonical path documented to the agent.
+
+### Fix
+
+1. **Step 10 resolver**: dropped the `~/clawd` preference. Defaults straight to `~/.openclaw/workspace` (canonical OpenClaw default). `~/clawd` existing on disk is no longer a signal.
+2. **Step 10 also sets `agents.defaults.workspace = ~/.openclaw/workspace`** in openclaw.json via `openclaw config set` so future installs (and the agent itself when reading its own config) confirm the path. No more disk-fallback guessing.
+3. **`mkdir -p ~/clawd` removed.** Replaced with `mkdir -p ~/.openclaw/workspace` so install.sh ensures the CANONICAL path exists, not the dead one.
+4. **`SCRIPTS_DIR="$OC_CONFIG/scripts"`** (= `~/.openclaw/scripts`) — Gemini scripts now install to the OpenClaw config root.
+5. **Doc strings updated**: every reference to `~/clawd/zero-human-company/` and `~/clawd/scripts/` in agent-facing text now points at `~/.openclaw/workspace/` and `~/.openclaw/scripts/`.
+
+### What about clients with stale ~/clawd directories?
+They stay inert. install.sh will not read from or write to them. If a client had content there from a pre-rename install, it's untouched — but no longer canonical. The credential walker still includes `~/clawd/secrets/.env` as a READ fallback (so legacy API keys stored there still get discovered), but no writes go to that tree.
+
+### Aurelia's existing damaged install — one-shot recovery
+She needs the UPDATE PENDING section from `~/clawd/AGENTS.md` copied to `~/.openclaw/workspace/AGENTS.md`. Two options:
+
+**Option A — re-run install.sh** (recommended; v10.13.9 will write to the right place and the agent will see it):
+```bash
+OPENCLAW_OWNER_NAME="Aurelia" curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+```
+
+**Option B — one-shot copy** (if she doesn't want to re-run):
+```bash
+mkdir -p ~/.openclaw/workspace
+sed -n '/## 🔴🔴🔴 UPDATE PENDING - EXECUTE IMMEDIATELY/,$p' ~/clawd/AGENTS.md >> ~/.openclaw/workspace/AGENTS.md
+```
+
+### Risk: low
+- Behavior change is "write to A instead of B" where B was wrong. Anywhere that was incorrectly writing to ~/clawd now writes to the canonical OpenClaw location.
+- Existing clients with `agents.defaults.workspace` already set explicitly: untouched (the resolver's step 2 still wins).
+- The `openclaw config set` call has `|| true` so it's safe if the CLI is missing.
+
+### Files
+- `install.sh` — workspace resolver (kill ~/clawd preference), Step 5 mkdir, Step 6 SCRIPTS_DIR, agent prompt strings (5 places)
+- `version` → `v10.13.9`
+- `README.md` — version reference
+
+### Apology
+This bug was a direct violation of a rule I have in memory ("OpenClaw is the system, not Clawdbot"). I shipped code that preferred the retired system. That's not a regression — that's writing the wrong design from the start. v10.13.9 honors the rule. Sorry.
+
+---
+
 ## [v10.13.8] — 2026-05-21 — Fix Step 10 silent kill: pipefail + `openclaw config get` on fresh install (caught by Aurelia's agent)
 
 ### The bug
