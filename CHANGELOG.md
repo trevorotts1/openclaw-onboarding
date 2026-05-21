@@ -1,3 +1,31 @@
+## [v10.13.2] — 2026-05-21 — Fix Step 4 extraction hang + credential discovery alias gaps + shell-rc scanning (live-fix from Aurelia's install)
+
+Two bugs Trevor caught mid-install on Aurelia's Mac mini:
+
+### Bug 1: Step 4 hung on em-dash filenames
+`unzip -qo` from Info-ZIP on macOS mangles UTF-8 filenames (e.g. `deep-research-specialist-—-sales.md` displays as `deep-research-role-???-...`), partial-writes the bad file, and then prompts `"Continue? (y/n/^C)"` waiting for input. Owners aren't watching the terminal — the install just sat dead. The 4 affected files are under `23-ai-workforce-blueprint/templates/role-library/*/sales/`.
+
+**Fix:** switched `unzip -qo "$TEMP_ZIP" -d "$TEMP_EXTRACT"` to `ditto -x -k "$TEMP_ZIP" "$TEMP_EXTRACT"`. `ditto` is macOS-native, UTF-8 clean, silent, non-interactive. Reproduced the hang on a real Mac mini using this exact code path; `ditto` extracts all 1,350 files cleanly. Fallback to `unzip -qn` (non-interactive) wired in for the (vanishingly unlikely) case `ditto` is missing.
+
+### Bug 2: GEMINI_API_KEY reported "Not configured" while GOOGLE_API_KEY was found (same key)
+Aurelia's environment had `GOOGLE_API_KEY` set (Google's Gemini key — they're literally the same credential). Credential discovery found `GOOGLE_API_KEY` from `auth-profiles.google:default.key` ✓ but then reported `GEMINI_API_KEY` as missing ✗ because the alias list for `GEMINI_API_KEY` didn't include `GOOGLE_API_KEY` (or vice versa).
+
+**Fix:** cross-aliased them — `GEMINI_API_KEY` and `GOOGLE_API_KEY` are now mutual aliases (plus `GOOGLE_GEMINI_API_KEY`, `GOOGLE_AI_STUDIO_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_AI_API_KEY`). Same widening for `OLLAMA_API_KEY` (adds `OLLAMA_CLOUD_API_KEY`, `OLLAMA_KEY`, `OLLAMA_TOKEN`) and `DEEPSEEK_API_KEY` (adds `DEEP_SEEK_API_KEY`).
+
+### Bug 3 (related to #2): printenv misses values in shell-rc files
+The previous lookup chain started with `printenv` (Source 1) — but `printenv` only sees vars *already exported into install.sh's process*. If the operator set keys in `~/.zshrc` / `~/.zshenv` / `~/.zprofile` / `~/.bash_profile` / `~/.bashrc` / `~/.profile` and didn't `source` them into the current shell first, those keys were invisible.
+
+**Fix:** added Source 1b — direct grep-and-parse of all common shell-rc files plus `~/.config/openclaw/secrets.env`, `~/.config/openclaw/.env`, `~/.config/clawd/.env`. Handles `export VAR=val`, `VAR=val`, optional surrounding quotes (`"`, `'`), strips inline comments. Discovery banner updated to advertise the new sources in the lookup priority line. Credential discovery sub-version bumped v10.0.0 → v10.1.0.
+
+### Risk: low
+Step 4 swap is the only behavior change in the install path (extraction). Smoke-tested locally — `ditto` extracted the 1,350-file payload (including all 4 em-dash files) cleanly. Alias + shell-rc changes are purely additive (they discover MORE keys; they cannot accidentally hide a key the v10.13.1 code would have found).
+
+### Files
+- `install.sh` — Step 4 extraction, `get_alias_list`, `search_env_var_mac`, discovery banner
+- `version` — `v10.13.2`
+
+---
+
 ## [v10.13.1] — 2026-05-21 — Personalized owner greeting + wave-progress messaging + plain-English UX (Mac companion to VPS v10.14.4)
 
 UX-focused release. Average client is non-technical and over 60; every screen and message they see needs to read like a friend, not a sysadmin. Companion to VPS repo `openclaw-onboarding-vps` v10.14.4 — same changes, paths adjusted for Mac (`$HOME/.openclaw` vs `/data/.openclaw`).

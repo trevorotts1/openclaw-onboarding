@@ -25,7 +25,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.1"
+ONBOARDING_VERSION="v10.13.2"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -604,9 +604,11 @@ get_alias_list() {
         TELEGRAM_BOT_TOKEN)
             echo "TELEGRAM_BOT_TOKEN TG_BOT_TOKEN BOT_TOKEN" ;;
         GEMINI_API_KEY)
-            echo "GEMINI_API_KEY GOOGLE_GEMINI_API_KEY" ;;
+            # Google's Gemini API key is the SAME credential as GOOGLE_API_KEY — Aurelia
+            # had GOOGLE_API_KEY set and Gemini was reported "Not configured" (10.13.1 bug).
+            echo "GEMINI_API_KEY GOOGLE_API_KEY GOOGLE_GEMINI_API_KEY GOOGLE_AI_STUDIO_API_KEY GOOGLE_GENERATIVE_AI_API_KEY GOOGLE_AI_API_KEY GEMINI_KEY" ;;
         GOOGLE_API_KEY)
-            echo "GOOGLE_API_KEY GOOGLE_CLOUD_API_KEY" ;;
+            echo "GOOGLE_API_KEY GEMINI_API_KEY GOOGLE_GEMINI_API_KEY GOOGLE_AI_STUDIO_API_KEY GOOGLE_GENERATIVE_AI_API_KEY GOOGLE_AI_API_KEY GOOGLE_CLOUD_API_KEY" ;;
         OPENAI_API_KEY)
             echo "OPENAI_API_KEY OPENAI_TOKEN" ;;
         OPENROUTER_API_KEY)
@@ -624,7 +626,7 @@ get_alias_list() {
         KIE_API_KEY)
             echo "KIE_API_KEY KIE_AI_API_KEY" ;;
         OLLAMA_API_KEY)
-            echo "OLLAMA_API_KEY" ;;
+            echo "OLLAMA_API_KEY OLLAMA_CLOUD_API_KEY OLLAMA_KEY OLLAMA_TOKEN" ;;
         SUPABASE_SERVICE_ROLE_KEY)
             echo "SUPABASE_SERVICE_ROLE_KEY SUPABASE_SERVICE_KEY" ;;
         VERCEL_TOKEN)
@@ -638,7 +640,7 @@ get_alias_list() {
         AIRTABLE_TOKEN)
             echo "AIRTABLE_TOKEN AIRTABLE_API_KEY AIRTABLE_PAT" ;;
         DEEPSEEK_API_KEY)
-            echo "DEEPSEEK_API_KEY DEEPSEEK_KEY" ;;
+            echo "DEEPSEEK_API_KEY DEEPSEEK_KEY DEEP_SEEK_API_KEY" ;;
         ELEVENLABS_API_KEY)
             echo "ELEVENLABS_API_KEY ELEVEN_API_KEY" ;;
         BRAVE_API_KEY)
@@ -657,7 +659,7 @@ search_env_var_mac() {
     local aliases
     aliases=$(get_alias_list "$CANONICAL")
 
-    # Source 1: shell env vars
+    # Source 1: shell env vars (printenv — only sees what's been exported into this process)
     for VAR_NAME in $aliases; do
         local env_val
         env_val=$(printenv "$VAR_NAME" 2>/dev/null || true)
@@ -666,6 +668,41 @@ search_env_var_mac() {
             echo "$env_val"
             return
         fi
+    done
+
+    # Source 1b (v10.13.2): shell-rc files. Operators frequently set API keys in
+    # ~/.zshrc / ~/.zshenv / ~/.zprofile / ~/.bash_profile / ~/.bashrc / ~/.profile
+    # without exporting them into the install.sh subshell. Parse those directly.
+    # Supports both `export FOO=bar` and `FOO=bar` lines, with/without quotes.
+    local HOME_DIR="${HOME}"
+    for rc_file in \
+        "$HOME_DIR/.zshrc" \
+        "$HOME_DIR/.zshenv" \
+        "$HOME_DIR/.zprofile" \
+        "$HOME_DIR/.bash_profile" \
+        "$HOME_DIR/.bashrc" \
+        "$HOME_DIR/.profile" \
+        "$HOME_DIR/.config/openclaw/secrets.env" \
+        "$HOME_DIR/.config/openclaw/.env" \
+        "$HOME_DIR/.config/clawd/.env"; do
+        [ ! -f "$rc_file" ] && continue
+        for VAR_NAME in $aliases; do
+            local rc_val
+            # Match `export VAR=val`, `VAR=val`, with optional quotes, ignore comments
+            rc_val=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${VAR_NAME}=" "$rc_file" 2>/dev/null \
+                | grep -vE "^[[:space:]]*#" \
+                | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${VAR_NAME}=//" \
+                | sed -E 's/[[:space:]]*#.*$//' \
+                | head -1 || true)
+            # Strip surrounding quotes
+            rc_val="${rc_val%\"}"; rc_val="${rc_val#\"}"
+            rc_val="${rc_val%\'}"; rc_val="${rc_val#\'}"
+            if [ -n "$rc_val" ]; then
+                echo "    [src: $rc_file.$VAR_NAME]" >&2
+                echo "$rc_val"
+                return
+            fi
+        done
     done
 
     # Sources 2-4: .env files at canonical Mac locations
@@ -803,8 +840,8 @@ search_env_var() { search_env_var_mac "$@"; }
 build_env_locations() { :; }   # no-op kept for old call sites
 
 discover_all_credentials() {
-    step "Bulletproof Credential Discovery (v10.0.0 — Mac mini)"
-    note "Lookup priority: shell env → ~/.openclaw/secrets/.env → ~/clawd/secrets/.env → openclaw.json env.vars/providers/plugins → auth-profiles.json → secrets.json → deep scan"
+    step "Bulletproof Credential Discovery (v10.1.0 — Mac mini)"
+    note "Lookup priority: shell env → shell-rc (.zshrc/.zshenv/.zprofile/.bash_profile/.bashrc/.profile) → ~/.openclaw/secrets/.env → ~/clawd/secrets/.env → openclaw.json env.vars/providers/plugins → auth-profiles.json → secrets.json → deep scan"
 
     # Canonical credential names. Aliases are handled inside search_env_var_mac
     # via get_alias_list — extending the alias set requires editing only that.
@@ -1397,7 +1434,20 @@ send_telegram_progress "Downloaded onboarding package ${ONBOARDING_VERSION}"
 step "Step 4: Extracting Package"
 
 rm -rf "$TEMP_EXTRACT"
-unzip -qo "$TEMP_ZIP" -d "$TEMP_EXTRACT"
+mkdir -p "$TEMP_EXTRACT"
+
+# v10.13.2: switched from `unzip` to `ditto -x -k` — Mac's native extractor.
+# Info-ZIP's `unzip` mangles UTF-8 filenames (em-dashes etc.), partial-writes
+# the bad file, and then prompts "Continue? (y/n/^C)" — which hangs install.sh
+# forever when the operator isn't watching. `ditto` is UTF-8 clean and silent.
+if ditto -x -k "$TEMP_ZIP" "$TEMP_EXTRACT" 2>/dev/null; then
+    : # ditto succeeded
+else
+    # Last-ditch fallback: try unzip with auto-skip of name conflicts (`-n`)
+    # so it can't prompt. Still prefer ditto path above.
+    warn "ditto extraction failed; attempting unzip fallback (non-interactive)"
+    yes n 2>/dev/null | unzip -qn "$TEMP_ZIP" -d "$TEMP_EXTRACT" 2>/dev/null || true
+fi
 
 if [ ! -d "$TEMP_EXTRACT/openclaw-onboarding-main" ]; then
     error "Unexpected archive structure"
