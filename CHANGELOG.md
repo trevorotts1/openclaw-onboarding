@@ -1,3 +1,49 @@
+## [v10.13.11] — 2026-05-21 — Unify Mac kickoff UX to match VPS (one message, scissor lines, friendly closing)
+
+### What Trevor caught
+The Mac kickoff message was structurally worse than VPS:
+
+| | VPS | Mac (v10.13.6-10) |
+|---|---|---|
+| Messages | 1 | 2 (intro + paste block) |
+| Scissor-line delimiters | Yes | None |
+| Friendly closing after paste block | Yes | None |
+| Owner cognitive load | Low | High (which message? all of it? where does the paste end?) |
+
+VPS owners (Maria, Angela T) got a clear one-message UX. Mac owners (Aurelia, future Mac clients) got a confusing two-message UX with no copy boundaries and no warm closing. **Same orchestration, drastically different presentation.**
+
+### Why the Mac UX was worse (the actual reason)
+v10.13.6 measured the Mac kickoff at 4,294 UTF-16 code units, over Telegram's 4,096 limit. I designed a 2-message split (intro + paste block) to avoid Bot API rejection. **But VPS's message is ALSO ~4,305 units** and works fine — its `tg_send_direct` fails on size, then `openclaw message send` (gateway) succeeds because the gateway handles long messages. The same fallback chain exists on Mac; I just didn't trust it.
+
+### Fix
+- **Single unified kickoff message** mirroring VPS structure: friendly opening → scissor line → paste block → scissor line → friendly closing
+- **Scissor-line delimiters** (`✂️━━━━━━━━━ COPY EVERYTHING BELOW THIS LINE ━━━━━━━━━✂️` and matching close) so the owner sees clearly what to copy
+- **Friendly closing**: "Once you paste that back to me here and hit Send, I will respond within a minute and start setting up your team. Total setup takes about an hour..."
+- **Shorter `~/.openclaw` paths** instead of `$HOME/.openclaw` expansion — agent's bash resolves `~` at execution. Saves ~13 chars × ~10 references = ~130 chars
+- **Trimmed redundancy** in the paste block (removed "side-by-side", "Specifically:", "those are for an alternate deployment", "(At config root...)", "(Also at config root.)" — same meaning, fewer chars)
+
+### Size budget
+After substitution: **3,770 UTF-16 units** — 326 chars under the 4,096 Telegram limit. Bot API direct call succeeds; gateway fallback no longer needed but still wired as a safety net.
+
+### Send chain (`send_kickoff_telegram`)
+1. `tg_send_direct` (direct Bot API curl, fastest, no gateway dependency)
+2. `openclaw message send` (gateway fallback — only fires if Bot API somehow fails)
+
+Same chain VPS uses. Mac and VPS now have parity at every layer.
+
+### Risk: very low
+- One message instead of two, but same orchestration content
+- Below Telegram's 4,096 limit by 326 units (substantial headroom)
+- Idempotency guard (`KICKOFF_TG_FIRED`) and three-leg triple-trigger (Telegram + AGENTS.md flag + terminal block) all preserved
+- `build_kickoff_intro_message` removed; `build_kickoff_paste_block` kept as the inner content; new `build_kickoff_telegram_message` wraps it with the friendly opening + scissor lines + closing
+
+### Files
+- `install.sh` — `build_kickoff_telegram_message` rewritten as the unified wrapper; `build_kickoff_paste_block` content trimmed (scissor-line lighter); `build_kickoff_intro_message` removed; `send_kickoff_telegram` simplified back to single-message send + gateway fallback
+- `version` → `v10.13.11`
+- `README.md` — version reference
+
+---
+
 ## [v10.13.10] — 2026-05-21 — Shared operator secrets injector (Podbean OAuth app credentials)
 
 ### Why

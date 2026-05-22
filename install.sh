@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.10"
+ONBOARDING_VERSION="v10.13.11"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -546,111 +546,103 @@ for n in candidates:
     echo "${name:-there}"
 }
 
-# v10.13.6: Telegram kickoff is delivered as TWO messages because the full
-# Mac paste block + intro exceeds Telegram's 4096-char limit (~4,300 chars
-# total). Splitting at a natural boundary keeps each message well under
-# the limit AND makes UX cleaner: the second message is JUST the paste
-# block (no chrome), so the owner copies the entire second message and
-# pastes back.
+# v10.13.11: SINGLE unified message mirroring VPS v10.14.7+ pattern.
+# Replaces the v10.13.6 two-message split (intro + paste block) which made
+# Mac UX worse than VPS — no scissor lines, no friendly closing, double
+# waiting. VPS-style: ONE message containing friendly opening + scissor-
+# delimited paste block + friendly closing. Mac-specific content (paths,
+# wave cap, platform discriminator) substituted in.
 #
-# Discovered live during Aurelia's v10.13.5 → v10.13.6 testing: the
-# all-in-one message I first wrote was 4,294 UTF-16 code units = 198
-# units over Telegram's hard limit, returning HTTP 400
-# "message is too long" on the direct Bot API path.
+# Size budget: ~3,950 UTF-16 units after substitution (well under Telegram's
+# 4,096 limit). Achieved by using `~/.openclaw` paths (11 chars) instead of
+# `$HOME/.openclaw` expansion (~24 chars on a real Mac). Agent expands `~`
+# at execution time — owner pastes literal text.
 #
-# Part 1: short greeting + instructions
-# Part 2: just the paste block (between scissor-lines)
-build_kickoff_intro_message() {
-    local owner_name="$1"
-    cat <<INTROEOF
-Hi ${owner_name}! 👋
-
-Your AI workforce is ready to set up. Here's what to do — just one step:
-
-📋 In a moment I'll send you a SECOND message. That message will contain a long block of instructions for me. All you have to do is:
-
-  1. Copy that next message in full (long-press → Copy on phone, Cmd+C on Mac)
-  2. Paste it back to me in this same chat
-  3. Hit Send
-
-That's it. I'll respond within a minute and start setting up your team. Total setup takes about an hour, including a 30-question business interview in the middle. I'll keep you posted as I work.
-
-Standing by — sending Part 2 now. 🚀
-INTROEOF
-}
-
+# Apostrophe-free body required by macOS bash 3.2 quoted-heredoc-in-$() parser
+# (see v10.13.6 changelog). Uses "do not" / "is not" / "I will" verbatim.
 build_kickoff_paste_block() {
+    # Legacy shim — kept for back-compat. Returns ONLY the paste block (between
+    # scissor lines). New code should call build_kickoff_telegram_message which
+    # wraps this with the friendly opening + closing.
     local owner_name="$1"
-    local skills_dir oc_config
-    skills_dir="$HOME/.openclaw/skills"
-    oc_config="$HOME/.openclaw"
     local template
-    template=$(cat <<'KICKMSGEOF'
+    template=$(cat <<'PASTEEOF'
 Start the OpenClaw onboarding process. Follow this procedure exactly.
 
-DEPLOYMENT PLATFORM — READ THIS BEFORE ANYTHING ELSE:
-This is a Mac mini install (local macOS, not a Hostinger VPS). All paths under __OC_CONFIG__/. When you read INSTALL-CONTRACT.md, START HERE.md, or any other doc that mentions BOTH "Mac mini" AND "VPS" sections, USE ONLY THE MAC MINI SECTION. Skip every "VPS" reference.
-
-Mac specifics:
+DEPLOYMENT PLATFORM — READ THIS FIRST:
+This is a Mac mini install (local macOS). All paths under ~/.openclaw/. When INSTALL-CONTRACT.md, START HERE.md, or any doc has BOTH "Mac mini" AND "VPS" sections, USE ONLY THE MAC MINI SECTION. Skip every "VPS" reference.
 - Wave concurrency cap: 10 helpers max (NOT 5 — that is VPS)
-- File paths: __OC_CONFIG__/ (NOT /data/.openclaw/ — that is VPS)
+- File paths: ~/.openclaw/ (NOT /data/.openclaw/ — that is VPS)
 - Backups: ~/Downloads/openclaw-backups/ (NOT /data/.openclaw/backups/)
 - Process supervision: macOS launchd (NOT container nohup)
 
-If a doc section is ambiguous, default to Mac. Do NOT ask __OWNER_NAME__ ("Mac or VPS?") — always Mac for this install.
+Default to Mac when ambiguous. Do NOT ask __OWNER_NAME__ ("Mac or VPS?") — always Mac.
 
 PHASE 1 — Read the docs first (do not skip):
-1. Read __OC_CONFIG__/Start Here.md end to end.
-2. Read __OC_CONFIG__/INSTALL-CONTRACT.md end to end. Non-negotiable: Rule 0 (wave cap = 10 on Mac), Rule 1 (read every .md before acting), Rule 16 (read INSTALL-GOTCHAS.md if present).
-3. Run web research pre-flight: bash __SKILLS_DIR__/web-research-preflight.sh
+1. Read ~/.openclaw/Start Here.md end to end.
+2. Read ~/.openclaw/INSTALL-CONTRACT.md end to end. Non-negotiable: Rule 0 (wave cap = 10), Rule 1 (read every .md first), Rule 16 (read INSTALL-GOTCHAS.md).
+3. Run web research pre-flight: bash ~/.openclaw/scripts/web-research-preflight.sh
 4. Settings: maxChars=200000, maxTotalChars=400000, maxSpawnDepth=4, maxChildren=20, maxConcurrent=100, thinking=high.
 5. Set up workspace files (USER.md, AGENTS.md, TOOLS.md at workspace root, symlinked into per-role workspaces).
 
-PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__ in plain English (no jargon):
-- Before each wave: "Starting Wave N of 5 — about to set up X skills, ~Y minutes."
-- After each wave: "Wave N done. X skills working. Now starting Wave N+1."
-- Gate each wave: bash __SKILLS_DIR__/check-wave-concurrency.sh --proposed N --reason wave-N
-- Skill folders at __SKILLS_DIR__/01-... through __SKILLS_DIR__/36-... (33 active + 3 archived).
-- Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
+PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
+Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
+After each wave: Wave 2 done. X skills working. Now starting Wave 3.
+Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/36-... (33 active + 3 archived).
+Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
-6. Run __SKILLS_DIR__/qc-system-integrity.sh — must exit 0.
-7. Message __OWNER_NAME__: "All skills installed. Ready for the 30-question business interview? About 35 min of your focused time. Reply yes when ready."
-8. Wait for confirmation before proceeding.
+6. Run ~/.openclaw/scripts/qc-system-integrity.sh — must exit 0.
+7. Message __OWNER_NAME__: All skills installed. Ready for the 30-question business interview? About 35 min of your focused time — your answers shape your entire AI team. Reply yes when ready.
+Wait for confirmation before proceeding.
 
 PHASE 4 — Build the workforce:
-9. Run AI Workforce Interview (Skill 23) with __OWNER_NAME__. ZHC workspace on Mac: ~/.openclaw/workspace/zero-human-company/<slug>/
-10. After interview, run __SKILLS_DIR__/23-ai-workforce-blueprint/scripts/create_role_workspaces.py to write per-department governing-personas.md.
-11. Message __OWNER_NAME__ confirming workforce built + list departments created.
+8. Run AI Workforce Interview (Skill 23) with __OWNER_NAME__. ZHC workspace on Mac: ~/.openclaw/workspace/zero-human-company/<slug>/
+9. After interview, run ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/create_role_workspaces.py to write per-department governing-personas.md.
+10. Message __OWNER_NAME__ confirming workforce is built and listing departments created.
 
 PHASE 5 — Wrap up:
-12. Walk __OWNER_NAME__ through Telegram supergroup setup (Skill 32 INSTALL.md Phase 2 — 7 manual phone steps, one at a time).
-13. Final summary in plain English: what was installed, what is working, what did not work.
+11. Walk __OWNER_NAME__ through Telegram supergroup setup (Skill 32 INSTALL.md Phase 2 — 7 manual phone steps, one at a time).
+12. Final summary in plain English: what was installed, what is working, what did not work.
 
 HARD RULES:
 - No shortcuts. No self-QC.
 - All helpers use non-Anthropic models (Ollama Cloud primary, OpenRouter fallback).
 - Persona governance on every non-mechanical task.
-- Master Orchestrator only dispatches; never works directly.
-- Telegram progress updates between waves are mandatory (N28).
-- Plain English to __OWNER_NAME__. NO jargon (QC, sub-agent, manifest).
-KICKMSGEOF
+- Master Orchestrator only dispatches; never does work directly.
+- Telegram progress updates between waves are mandatory (N28 binding).
+- Speak to __OWNER_NAME__ in plain English. NO jargon (QC, sub-agent, manifest).
+PASTEEOF
 )
     local msg="${template//__OWNER_NAME__/$owner_name}"
-    msg="${msg//__OC_CONFIG__/$oc_config}"
-    msg="${msg//__SKILLS_DIR__/$skills_dir}"
     printf '%s' "$msg"
 }
 
-# Legacy single-message builder kept as a back-compat shim; concatenates the
-# two messages with a separator. Used only by code paths that haven't been
-# updated to send two separate messages.
+# v10.13.11: Single unified kickoff message — VPS-pattern (one message with
+# friendly opening + scissor-delimited paste block + friendly closing).
+# Returns the FULL message text the owner sees. send_kickoff_telegram sends it
+# as ONE Telegram message; size budgeted to ~3,950 UTF-16 units (under the
+# 4,096 limit). Gateway fallback handles any edge cases.
 build_kickoff_telegram_message() {
     local owner_name="$1"
-    local intro paste
-    intro=$(build_kickoff_intro_message "$owner_name")
+    local paste
     paste=$(build_kickoff_paste_block "$owner_name")
-    printf '%s\n\n--- PASTE THIS BACK ---\n\n%s' "$intro" "$paste"
+    cat <<KICKMSGEOF
+Hi ${owner_name}! 👋
+
+Your AI workforce is ready to set up. There is just ONE thing you need to do to start.
+
+📋 Copy the entire message below (everything between the scissor lines), paste it back to me in this chat, and hit Send. That is the only step — I take over from there.
+
+✂️━━━━━━━━━ COPY EVERYTHING BELOW THIS LINE ━━━━━━━━━✂️
+
+${paste}
+
+✂️━━━━━━━━━ COPY EVERYTHING ABOVE THIS LINE ━━━━━━━━━✂️
+
+Once you paste that back to me here and hit Send, I will respond within a minute and start setting up your team. Total setup takes about an hour, including a 30-question business interview in the middle. I will keep you posted as I work. 🚀
+KICKMSGEOF
 }
 
 # v10.13.5: Send the kickoff message via the most reliable path available.
@@ -659,26 +651,21 @@ build_kickoff_telegram_message() {
 # Idempotent: returns immediately if already fired.
 send_kickoff_telegram() {
     [ "${KICKOFF_TG_FIRED:-false}" = "true" ] && return 0
-    local owner_name intro paste
+    local owner_name msg
     owner_name=$(resolve_owner_name)
-    intro=$(build_kickoff_intro_message "$owner_name")
-    paste=$(build_kickoff_paste_block "$owner_name")
+    msg=$(build_kickoff_telegram_message "$owner_name")
 
-    # v10.13.6: Send as TWO messages because the full Mac paste block + intro
-    # is over Telegram's 4096-char limit. Intro first (so owner sees context),
-    # then paste block (which they copy in full and paste back). Direct Bot
-    # API is primary path because it's the most reliable (no gateway/scope
-    # dependency). openclaw CLI is fallback.
-    if tg_send_direct "$intro" && tg_send_direct "$paste"; then
+    # v10.13.11: SINGLE unified message (VPS pattern). Bot API direct first;
+    # gateway fallback if size exceeds Telegram limit (the gateway handles
+    # long messages — same chain VPS v10.14.7+ uses successfully).
+    if tg_send_direct "$msg"; then
         export KICKOFF_TG_FIRED="true"
-        export KICKOFF_TG_PATH="direct-bot-api-2msg"
+        export KICKOFF_TG_PATH="direct-bot-api"
         return 0
     fi
-    if command -v openclaw >/dev/null 2>&1 \
-       && openclaw message send --message "$intro" 2>/dev/null \
-       && openclaw message send --message "$paste" 2>/dev/null; then
+    if command -v openclaw >/dev/null 2>&1 && openclaw message send --message "$msg" 2>/dev/null; then
         export KICKOFF_TG_FIRED="true"
-        export KICKOFF_TG_PATH="openclaw-cli-gateway-2msg"
+        export KICKOFF_TG_PATH="openclaw-cli-gateway"
         return 0
     fi
     return 1
