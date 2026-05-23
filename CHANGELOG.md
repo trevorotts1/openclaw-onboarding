@@ -1,3 +1,24 @@
+## [v10.13.15] — 2026-05-23 — Autonomous workforce-build resume infrastructure (mirror of VPS v10.14.16)
+
+Mirror of VPS v10.14.16. Same fix: post-interview Skill 23 builds now have an autonomous resume layer.
+
+### Why
+Post-interview workforce builds had NO autonomous recovery. If a build session ended after writing N of M departments, the remaining departments sat un-built forever. No cron, no state tracker, no resume invocation. Diagnosed on Evelyn Bethune's VPS: 5 of 6 BPH departments built, then 18 hours of silence. Same pattern would hit Mac installs.
+
+### What changed (Mac repo parity with VPS)
+- New `23-ai-workforce-blueprint/build-state-schema.json` — schema for `.workforce-build-state.json` (lives at `~/.openclaw/workspace/.workforce-build-state.json` on Mac).
+- New `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh` — auto-detects Mac vs VPS via `$HOME/.openclaw` vs `/data/.openclaw`. Same lockfile, attempt-cap, self-ping logic.
+- New `23-ai-workforce-blueprint/resume-prompt.txt` — `[WORKFORCE-RESUME]` cron prompt.
+- `23-ai-workforce-blueprint/INSTRUCTIONS.md` — added "Post-Interview Handoff Protocol" (BINDING) section.
+- `install.sh` — added Step 13: install workforce-build-resume cron (`*/15 * * * *`, America/New_York), modeled on Step 12.
+
+See VPS v10.14.16 CHANGELOG entry for the full root-cause writeup and verification commands.
+
+### Risk: low
+Same as VPS v10.14.16 — pure additive, no-ops cleanly if `jq` or `openclaw` is missing.
+
+---
+
 ## [v10.13.14] — 2026-05-23 — Skill 23 interview redesign (mirror of VPS v10.14.14)
 
 Mirror of VPS v10.14.14. Same persona-driven, drill-down, clarity-agent rewrite of the AI Workforce interview spec.
