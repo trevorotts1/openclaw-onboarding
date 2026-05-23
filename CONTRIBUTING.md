@@ -117,7 +117,7 @@ Every Sunday at 2 AM, the client's machine runs `scripts/update-skills.sh`. It:
 6. **Verify Python syntax** if you modify any .py file: `python3 -c "import ast; ast.parse(open('file.py').read())"`
 7. **Verify JSON syntax** if you modify openclaw.json: `python3 -c "import json; json.load(open('file.json'))"`
 8. **Update BOTH repos** (openclaw-onboarding and openclaw-onboarding-vps) unless the change is platform-specific.
-9. **Never trigger a gateway restart.** Always instruct the user to type /restart in Telegram.
+9. **Master agent CAN trigger `openclaw gateway restart` autonomously when a config edit requires it.** Sub-agents CANNOT — they must return "restart needed" and let the master orchestrator decide. (Rule updated 2026-05-23 — was previously "never restart", lifted after restart safety improvements.)
 10. **Commit messages must be descriptive.** Not "update files" but "Add Skill 31 (Upgraded Memory System), fix Skill 23 options skip"
 
 ---
