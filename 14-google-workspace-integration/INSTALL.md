@@ -433,14 +433,12 @@ During this installation, you may encounter instructions to restart the OpenClaw
 
 YOU ARE FORBIDDEN from triggering gateway restarts yourself.
 
-### Correct Process
+### Correct Process (updated 2026-05-23 — master agent is now trusted)
 When a gateway restart is needed:
-1. STOP - Do NOT execute the restart command
-2. NOTIFY the user: "This installation requires an OpenClaw gateway restart to complete."
-3. INSTRUCT: "Type /restart in Telegram to trigger it"
-4. WAIT for user action - do NOT proceed until confirmed
+1. NOTIFY the user: "This installation requires an OpenClaw gateway restart to complete."
+2. **If you are the master agent**, run the restart yourself: `openclaw gateway restart`. Tell the user "restart complete" after.
+3. **If you are a sub-agent**, do NOT restart. Return "restart needed" to the master and let the master orchestrator handle it.
 
-### Forbidden Actions
-- Do NOT run openclaw gateway restart without explicit user permission
-- Do NOT say "I will restart the gateway now" without asking first
-- Do NOT assume the user wants the restart
+### Forbidden for sub-agents (master agent is free to act)
+- Sub-agents do NOT call `openclaw gateway restart` directly — escalate to master.
+- Master agent may restart freely when a config edit requires it.

@@ -1,3 +1,25 @@
+## [v10.13.13] — 2026-05-23 — Docs/version sync + lift "never restart" rule + git tag/release habit
+
+Mirrors VPS v10.14.13. Two cleanups bundled because both were flagged 2026-05-23:
+
+### Why
+1. **Version drift.** `README.md` "this repo at vX.Y.Z" stuck at v10.13.11 after v10.13.12 shipped, and `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` was way behind at v10.12.0. Neither is tracked by `scripts/bump-version.sh`. Manually synced this release; bump-script extension is a TODO.
+2. **"Never restart" rule lifted.** Old precaution from when restarts broke things. That's fixed now. Master agent CAN restart freely; sub-agents CANNOT. Updated `CONTRIBUTING.md` rule 9, `Start Here.md` line 475, `14-google-workspace-integration/INSTALL.md`, `31-upgraded-memory-system/FULL-DOC.md`.
+
+### What changed
+- `README.md`: v10.13.11 → v10.13.13 + NOTE about bump-script blind spots + post-release tag/release ritual.
+- `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`: header version + body "latest version is **v10.12.0**" → v10.13.13.
+- `CONTRIBUTING.md` rule 9: inverted — master CAN, sub-agents CANNOT.
+- `Start Here.md` line 475: master restarts itself; tells user after.
+- `14-google-workspace-integration/INSTALL.md`: Correct Process + Forbidden Actions rewritten.
+- `31-upgraded-memory-system/FULL-DOC.md`: update-notification template no longer asks user to restart.
+
+### Tag + Release habit
+Mac repo's last tag is v10.13.1 — **11 versions have shipped without tags** (v10.13.2 through v10.13.12). New ritual: `git tag vX.Y.Z && git push --tags && gh release create vX.Y.Z --notes-from-tag` after every merge. Backfilling recent tags as part of this release.
+
+### Risk: low
+Version strings + docs + one rule inversion gated on agent role.
+
 ## [v10.13.12] — 2026-05-23 — Auto-kickoff (BMW-off-the-lot) + dreaming + Gemini embedding model pin
 
 Mirrors VPS v10.14.12. Three install-time changes bundled because they all touch the post-install agent activation flow:

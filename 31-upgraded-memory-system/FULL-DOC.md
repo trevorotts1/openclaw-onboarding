@@ -920,7 +920,7 @@ The agent should check for this file on each heartbeat. If it exists, read it an
 > Your system was updated from [old version] to [new version].
 > Here is what changed: [summary from status file]
 > Backup saved to: [path]
-> [If restart needed]: Type /restart when you are ready.
+> [If restart needed]: Master agent runs `openclaw gateway restart` itself. Old rule said to ask user — lifted 2026-05-23.
 
 After sending, rename the file to `.update-result-sent.json` so it is not sent again.
 

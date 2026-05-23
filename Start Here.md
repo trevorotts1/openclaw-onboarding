@@ -472,7 +472,7 @@ When all 33 active skills are installed (or attempted), the agent MUST:
   "every": "1h"
 }
 ```
-3. Tell the user: "Onboarding complete. I have reset the heartbeat back to hourly checks. Type /restart in Telegram to apply the change."
+3. Restart the gateway yourself (master agent): `openclaw gateway restart`. Then tell the user: "Onboarding complete. I have reset the heartbeat back to hourly checks and restarted the gateway to apply the change."
 
 ### How This Works
 
