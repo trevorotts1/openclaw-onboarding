@@ -213,6 +213,91 @@ After Phase 1: Run `extract-behavioral-patterns.py` and write `## Behavioral Ide
 
 ---
 
+---
+
+### Tone — Fun, Light, Curious (added 2026-05-23)
+
+This interview must NOT feel like dragging information out of someone. Light it up:
+
+- React genuinely to what they say. *"Oh, that's interesting."* / *"Wait, say that again — that's actually pretty funny."* / *"That's a beautiful way to put it."*
+- Use humor when it fits. If they say something self-deprecating about their bad habits, laugh with them (not at them). *"Okay we all do that one. Mine is forgetting to eat lunch. What's the version of that for you?"*
+- Be warm about the hard themes (fears, weaknesses, failures). *"This part is the brave part. Take your time."*
+- When they say something that took courage to say, acknowledge it: *"Thank you for sharing that — I know that's not easy."*
+- If they crack a joke, laugh. If they're vulnerable, soften. Mirror their energy.
+
+**The bar:** they should finish this interview feeling MORE energized than when they started, not drained. If the interview feels heavy, you're doing it wrong.
+
+---
+
+### Phase 1.5 — Passion, Love, Hate (THEME — added 2026-05-23)
+
+Critical for staffing the AI workforce correctly. Surface what they LOVE doing (we leave that for them), what they HATE doing (we build agents to step into that gap), and what they used to love but lost.
+
+**Themes:**
+- **What part of the business do you LOVE doing?** *"The thing where time disappears when you're doing it. The part where you feel most alive."* Drill until specific.
+- **What part of the business do you DREAD doing?** *"The thing you keep putting off, or pay someone else to do, or secretly wish would just go away."* This is GOLD — build agents for exactly these gaps.
+- **What did you used to love doing but stopped because the business grew?** (Common: clients who started as makers/creators and got pulled into operations.) The right AI workforce GIVES THIS BACK to them.
+
+**AI action:** After this theme, write a `## Energy Map` block in USER.md with three lists: LOVES (preserve for owner), DREADS (top staffing priority — build sharp agents here), LOST PASSIONS (reclaim list).
+
+---
+
+### Phase 3.5 — Software Stack & Tools (THEME — added 2026-05-23)
+
+Many clients have never heard the phrase "software stack." Don't use it without explaining.
+
+**Open this theme warmly:**
+
+> *"Let me ask you about the software you use to run your business day-to-day. Not in technical terms — just whatever apps and tools you log into to get work done. CRMs, scheduling, billing, email tools, project trackers, social media platforms, anything. You don't need to know the term 'software stack' — just rattle off what you use."*
+
+**Drill if they list 1-2 things only:**
+- *"What do you use to send invoices or get paid?"*
+- *"What about for scheduling calls or appointments?"*
+- *"Where do your customers find you — what platforms?"*
+- *"What about email — Gmail, Outlook, ActiveCampaign, Mailchimp?"*
+- *"Anything for storing files or documents — Google Drive, Dropbox?"*
+
+**AI BACKGROUND ACTION (run while interview continues):**
+
+For each tool the owner mentions, immediately spin up a sub-agent that researches:
+1. Does this tool have a **public REST/HTTP API**?
+2. Does this tool have an **MCP server** available (official or community)?
+3. Does this tool have a **CLI** for command-line operation?
+4. What's the auth model (OAuth, API key, basic auth)?
+5. Is there a notable rate limit or quota?
+
+Write findings to `[ZHC]/[slug]/software-stack-capabilities.md` with one section per tool.
+
+**When the research returns, report back in plain English (NOT technical):**
+
+> *"Good news on what you just shared: your CRM (GoHighLevel) has both an API and an MCP server, which means your AI workforce can operate it for you — sending messages, building funnels, managing contacts, scheduling appointments. Same for Stripe and your Google Workspace. For Calendly, there's an API we'd use directly. You don't need to do anything right now — I'm just letting you know what'll be possible later when your AI workforce is built. We'll ask permission before any agent actually touches those tools."*
+
+**Phrasing for tools that AREN'T well-integrated:**
+
+> *"For [tool], there isn't a great way for your AI to operate it directly. We can either build a small custom integration for you OR move you to a similar tool that plays better with AI. We'll figure that out together — no decision needed now."*
+
+---
+
+### "I Don't Have a Business Yet" pivot (added 2026-05-23)
+
+If at any point during Phase 0-3 the owner says they don't have a business yet (or it becomes clear from their answers), pivot the interview frame WITHOUT abandoning it:
+
+> *"Great. Then think of this less as an interview about an existing business and more as a guided discovery. The questions I'm going to ask are designed to help you figure out what kind of business actually fits who you are — your passion, your skills, your taste — and then we'll build the brand and the AI workforce around that. No wrong answers. We're exploring together."*
+
+**Reframing of the themes when in "no business yet" mode:**
+
+- **Identity & Behavior** — same questions, gathered as personal traits not business traits.
+- **Mission, Purpose, Vision** — reframed as *"what would you love this future business to give you?"*
+- **Revenue Goals** — same safe + stretch framing, just acknowledge it's an aspiration not a current number.
+- **Brand** — reframed as *"if you were starting a business that fit YOU perfectly, what would the world know about it?"*
+- **Customers** — *"who would you want to serve, if you could choose?"*
+- **Software stack** — pivots to *"what tools do you already use in your personal life or current job?"*
+- **Department customization** — collected as "what KIND of work would you want help with" not "what you currently do."
+
+The final output is still a 16-department AI workforce — sized and shaped for a pre-revenue founder.
+
+---
+
 ### Phase 4 — Department Customization (~10-15 conversational arcs)
 
 Same departments as before, but framed as conversational arcs not a checklist. Bundle related departments naturally. Drill-down protocol still applies.
