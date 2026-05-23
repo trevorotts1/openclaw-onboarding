@@ -1,3 +1,13 @@
+## [v10.13.12] — 2026-05-23 — Auto-kickoff (BMW-off-the-lot) + dreaming + Gemini embedding model pin
+
+Mirrors VPS v10.14.12. Three install-time changes bundled because they all touch the post-install agent activation flow:
+
+1. **Auto-kickoff Stage 2** — install.sh now fires the Wave 1-5 kickoff itself, ~3 minutes after install completes. Owner pastes nothing. Three-mechanism fallback chain (A: `openclaw cron create` one-shot; B: direct Telegram ingress-spool write under `$OC_CONFIG/telegram/ingress-spool-default/`; C: existing manual-paste safety net). Failure of A or B does NOT block install completion.
+2. **Dreaming enabled by default** — new Step 7b sets `plugins.entries.memory-core.config.dreaming.enabled = true`. Cadence stays at the doc default `0 3 * * *`.
+3. **Embedding model pinned** — `agents.defaults.memorySearch.model = "gemini-embedding-001"` (fleet-verified standard on Maria/Evelyn/Angela/Corey).
+
+All 5 version files synced via `./scripts/bump-version.sh v10.13.12`.
+
 ## [v10.13.11] — 2026-05-21 — Unify Mac kickoff UX to match VPS (one message, scissor lines, friendly closing)
 
 ### What Trevor caught
