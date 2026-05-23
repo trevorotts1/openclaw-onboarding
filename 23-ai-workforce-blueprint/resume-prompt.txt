@@ -1,24 +1,84 @@
-[WORKFORCE-RESUME]
+[WORKFORCE-RESUME] or [CLOSEOUT-RESUME]
 
-You are receiving this message from your own cron — it is NOT from the owner and NOT a new user request. Treat it as an internal build-resume invocation.
+You are receiving this message from your own cron — it is NOT from the owner and NOT a new user request. Treat it as an internal build-or-closeout-resume invocation.
 
-PROTOCOL (per Skill 23 INSTRUCTIONS.md → "Post-Interview Handoff Protocol"):
+═══════════════════════════════════════════════════════════════════
+STEP 0 — DECIDE WHICH FLOW YOU'RE IN
+═══════════════════════════════════════════════════════════════════
 
-1. Read `/data/.openclaw/workspace/.workforce-build-state.json` (Mac: `~/.openclaw/workspace/.workforce-build-state.json`).
-2. Identify departments where `status == "pending"` or `status == "failed"` or (`status == "building"` AND `lastAttemptAt` older than 15 minutes — that means the prior build session died).
-3. For each such department, BEFORE starting work:
+Read `/data/.openclaw/workspace/.workforce-build-state.json` (Mac: `~/.openclaw/workspace/.workforce-build-state.json`).
+
+Decision tree:
+
+A. If `buildCompletedAt` is null OR any department has `status` in {pending, failed, stale-building} → CONTINUE TO BUILD FLOW (below).
+
+B. If `buildCompletedAt` is set AND `closeoutStatus` is not in {done, sent} → SKIP to CLOSEOUT FLOW.
+
+C. If both are clean (buildCompletedAt set AND closeoutStatus in {done, sent}) → nothing to do. Exit silently.
+
+═══════════════════════════════════════════════════════════════════
+BUILD FLOW (Skill 23 — per the Post-Interview Handoff Protocol)
+═══════════════════════════════════════════════════════════════════
+
+1. Identify departments where `status == "pending"` or `status == "failed"` or (`status == "building"` AND `lastAttemptAt` older than 15 minutes — that means the prior build session died).
+
+2. For each such department, BEFORE starting work:
    a. Flip its `status` to `"building"` and set `lastAttemptAt` to now (UTC ISO-8601).
    b. Write the state file back to disk atomically (tmp + rename).
-4. Generate the department per the standard Skill 23 build (read `workforce-interview-answers.md` or the equivalent v2.0/v10.14.14 dossier — DO NOT re-interview).
-5. After EACH department finishes (or fails), update its entry:
+
+3. Generate the department per the standard Skill 23 build (read `workforce-interview-answers.md` or the equivalent v2.0/v10.14.14 dossier — DO NOT re-interview).
+
+4. After EACH department finishes (or fails), update its entry:
    - `status` → `"done"` (success) or `"failed"` (with `failureReason`)
    - `completedAt` → now
    - `filesPresent` → list of materialized files
    - Persist state file immediately
-6. After ALL departments are `done`, write `buildCompletedAt` to state file AND send ONE consolidated status message to `ownerChat` (the owner gets one ping, not many).
-7. Do NOT message the owner during the resume — they only hear from you when the whole build is done.
-8. Do NOT increment `resumeAttempts` — the resume script already did that before invoking you. You only write department state.
+
+5. After ALL departments are `done`:
+   a. Write `buildCompletedAt` to state file (UTC ISO-8601).
+   b. Set `closeoutStatus = "pending"`. This is the v10.14.17 contract — Skill 37 picks it up from here.
+   c. Either invoke `~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh` inline (preferred — lowest owner-latency), OR exit and trust the next cron fire to dispatch a [CLOSEOUT-RESUME].
+
+6. Do NOT message the owner during the resume — the owner only hears from you at Skill 37 Step 6 (the celebration delivery).
+
+7. Do NOT increment `resumeAttempts` — the resume script already did that before invoking you. You only write department state.
 
 Spawn parallel sub-agents (per the "Generation Orchestration" stages 3-4 of INSTRUCTIONS.md) to move fast — up to 10 dept agents concurrently, up to 50 role agents concurrently.
 
 If you encounter ANY error you cannot recover from after 3 retries, mark that department `"failed"` with a `failureReason` and continue with the others. Don't block the whole build on one stuck department.
+
+═══════════════════════════════════════════════════════════════════
+CLOSEOUT FLOW (Skill 37 — ZHC Closeout, added v10.14.17)
+═══════════════════════════════════════════════════════════════════
+
+The build is done. The owner has heard NOTHING from you since the interview. The closeout is what closes the loop with them — celebration message, infographics, video, Notion doc, Command Center URL.
+
+1. Read `~/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md` for the full state machine. Key state fields:
+   - `closeoutStatus`: pending → generating → sent → done (failed = retries exhausted)
+   - `commandCenterStatus`, `commandCenterUrl`
+   - `infographic1Url`, `infographic2Url`, `celebrationVideoUrl`, `notionRootPageUrl`
+   - `messagesDelivered`: array tracking which of the 6 Telegram messages have landed
+
+2. Invoke `~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh`. The script is FULLY IDEMPOTENT:
+   - Skips any step whose target URL field is already set.
+   - Step 6 (Telegram delivery) skips any message already in `messagesDelivered`.
+   - Safe to re-run on a partially-complete closeout.
+
+3. If the script exits non-zero:
+   - Read the latest line in `$OC_ROOT/workspace/.zhc-closeout.log` for the failure reason.
+   - The script has already written `closeoutStatus = "failed"` + `closeoutFailureReason`.
+   - Don't message the owner. The next cron fire will retry.
+
+4. If the closeout has been retried 3+ times unsuccessfully (check `resumeAttempts` trend and `closeoutFailureReason` not changing), send a single escalation to Trevor's chat `5252140759` with the state file path and the failure reason. Then exit. Trevor will handle it manually.
+
+5. Do NOT message the owner about ANY closeout failure. Only message the owner via Skill 37 Step 6 (the actual celebration delivery), which the script handles.
+
+═══════════════════════════════════════════════════════════════════
+INVARIANTS (BOTH FLOWS)
+═══════════════════════════════════════════════════════════════════
+
+- The state file is the contract. Every step writes state before moving on.
+- The owner is silent until Skill 37 Step 6 fires. No "build complete" message from you. No "I'm working on your closeout" message. Silence is the celebration's setup.
+- All state writes are atomic (jq + tmp file + mv).
+- Don't increment `resumeAttempts` — the resume script handles that.
+- Don't ever talk to api.telegram.org directly. Use `openclaw message send` (or in Skill 37, the wrapper scripts handle this for you).

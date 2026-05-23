@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Declarative spec for the 9-section Notion closeout page tree. The script create-notion-closeout.sh reads this for high-level structure and renders the actual block content programmatically (templates can't easily express deeply-nested Notion blocks in pure JSON, so the script is the source of truth for block-level content). This file remains the documentation contract for what sections exist and in what order.",
+  "root": {
+    "title": "Your Zero-Human Company — {{COMPANY_NAME}}",
+    "sections": [
+      {
+        "n": 1,
+        "title": "1. What Is a Zero-Human Company?",
+        "summary": "Positive framing — what it IS and is NOT. Owner-led, AI-executed.",
+        "blocks": [
+          "paragraph: definition (freed from execution, not 'no humans involved')",
+          "paragraph: what it is NOT (not a chatbot, not headless)",
+          "paragraph: what it IS (owner-led, AI-executed)"
+        ]
+      },
+      {
+        "n": 2,
+        "title": "2. What Is a Zero-Human Workforce?",
+        "summary": "People-equivalent framing. Departments as teams, agents as employees.",
+        "blocks": [
+          "paragraph: team analogy (never sleep, never quit, trained on your voice)",
+          "paragraph: hierarchy summary (Owner → CEO Agent → Dept Heads → AI Employees)",
+          "paragraph: why this matters for delegation"
+        ]
+      },
+      {
+        "n": 3,
+        "title": "3. Your Workforce Structure",
+        "summary": "Embed infographic #1 + describe the chart.",
+        "blocks": [
+          "paragraph: orientation (read top-down)",
+          "image: {{INFOGRAPHIC_1_URL}}",
+          "paragraph: how to read the chart"
+        ]
+      },
+      {
+        "n": 4,
+        "title": "4. How Your Workforce Runs",
+        "summary": "Embed infographic #2 + walk through the flow.",
+        "blocks": [
+          "paragraph: how the flow works",
+          "image: {{INFOGRAPHIC_2_URL}}",
+          "paragraph: why you usually only talk to the CEO"
+        ]
+      },
+      {
+        "n": 5,
+        "title": "5. Departments & Roles",
+        "summary": "Section index + one sub-page per department.",
+        "subpages_per_department": {
+          "title_pattern": "{{DEPARTMENT_NAME}}",
+          "blocks_per_role": [
+            "Name",
+            "What they do (1-2 sentences)",
+            "Purpose (1 sentence)",
+            "Ideal use cases (3-5 bullet points)",
+            "Trigger phrases (3-5 quoted examples)"
+          ]
+        }
+      },
+      {
+        "n": 6,
+        "title": "6. Communication Hierarchy",
+        "summary": "Owner → CEO → Dept Heads → AI Employees + when to talk to each tier.",
+        "blocks": [
+          "paragraph: the hierarchy",
+          "paragraph: why you talk to the CEO by default",
+          "paragraph: when to talk to a Department Head directly",
+          "paragraph: when NOT to talk to AI Employees directly"
+        ]
+      },
+      {
+        "n": 7,
+        "title": "7. Six Sigma in Your ZHC",
+        "summary": "DMAIC framework + how it applies to the client's specific depts.",
+        "blocks": [
+          "paragraph: Six Sigma framing",
+          "bulleted_list: D — Define",
+          "bulleted_list: M — Measure",
+          "bulleted_list: A — Analyze",
+          "bulleted_list: I — Improve",
+          "bulleted_list: C — Control",
+          "paragraph: Friday DMAIC review cadence"
+        ]
+      },
+      {
+        "n": 8,
+        "title": "8. Book-to-Persona System",
+        "summary": "How book-to-persona governs every task + the decision matrix scoring criteria.",
+        "blocks": [
+          "paragraph: what the persona system is",
+          "paragraph: 5 scoring dimensions (Relevance, Authority, Recency, Depth, Fit)",
+          "paragraph: example mapping (Cialdini, Brené Brown)",
+          "paragraph: see Skill 22 for the full framework"
+        ]
+      },
+      {
+        "n": 9,
+        "title": "9. Your First 7 Days",
+        "summary": "Action checklist for week 1.",
+        "blocks": [
+          "heading: Day 1 — Orientation",
+          "bullets: open Command Center, chat with CEO",
+          "heading: Day 2 — One real task",
+          "bullets: pick one small task, give it to CEO, observe",
+          "heading: Day 3 — Adjust the voice",
+          "bullets: feedback loop with MEMORY.md",
+          "heading: Day 4 — Test a different department",
+          "heading: Day 5 — Delegate a recurring task",
+          "heading: Day 6 — Reflect",
+          "heading: Day 7 — Plan week 2"
+        ]
+      }
+    ]
+  },
+  "placeholders": {
+    "{{COMPANY_NAME}}": "from .companyName state field (fallback: from workforce-interview-answers.md)",
+    "{{OWNER_NAME}}": "from .ownerName state field",
+    "{{AGENT_NAME}}": "from .agentName state field",
+    "{{INFOGRAPHIC_1_URL}}": "from .infographic1Url state field",
+    "{{INFOGRAPHIC_2_URL}}": "from .infographic2Url state field",
+    "{{DEPARTMENT_NAME}}": "iterated from .departments[].name in state",
+    "{{ROLE_COUNT}}": "from sum(.departments[].rolesDone) in state"
+  }
+}
