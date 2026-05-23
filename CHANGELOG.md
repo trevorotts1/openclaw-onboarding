@@ -1,3 +1,26 @@
+## [v10.13.14] — 2026-05-23 — Skill 23 interview redesign (mirror of VPS v10.14.14)
+
+Mirror of VPS v10.14.14. Same persona-driven, drill-down, clarity-agent rewrite of the AI Workforce interview spec.
+
+### What changed (identical to VPS v10.14.14)
+- Persona directive: Katie Couric / Oprah Winfrey
+- Clarity Agent identity (collect AND clarify)
+- Drill-Down Detection Protocol (specificity/emotion/surprise)
+- Themes not scripts (mandatory topics, agent invents questions)
+- Brand depth questions
+- Revenue tiers (safe + stretch)
+- Vulnerability themes (fears, frustrations, real bad habits, real weaknesses, past failures with 4-part drill)
+- Department arcs (reframed from bundled questionnaire)
+- Tone — Fun, Light, Curious section
+- Phase 1.5 — Passion / Love / Hate theme
+- Phase 3.5 — Software Stack & Tools theme with background API/MCP/CLI auto-research
+- "I Don't Have a Business Yet" pivot
+
+### Version files
+All bump-script-tracked + manually-tracked files synced to v10.13.14.
+
+### Risk: medium (same as VPS) — reversible by reverting.
+
 ## [v10.13.13] — 2026-05-23 — Docs/version sync + lift "never restart" rule + git tag/release habit
 
 Mirrors VPS v10.14.13. Two cleanups bundled because both were flagged 2026-05-23:
