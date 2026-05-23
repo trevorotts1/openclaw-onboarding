@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.15"
+ONBOARDING_VERSION="v10.13.16"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -3495,6 +3495,67 @@ install_workforce_resume_cron() {
 }
 
 install_workforce_resume_cron
+
+# ----------------------------------------------------------
+# Step 14: Install Skill 37 (ZHC Closeout) (v10.13.16)
+# ----------------------------------------------------------
+# Why: post-build closeout — fire Skill 32, generate 2 infographics + a
+# celebration video via KIE.AI, build a 9-section Notion page tree in the
+# client's workspace, and deliver 6 paced Telegram messages to the owner.
+# Triggered automatically via the workforce-build-resume cron (Step 13)
+# detecting closeoutStatus dirty state. See:
+#   23-ai-workforce-blueprint/INSTRUCTIONS.md → "Moment 4: Closeout Pipeline"
+#   37-zhc-closeout/INSTRUCTIONS.md
+step "Step 14: Installing Skill 37 (ZHC Closeout) — automatic post-build celebration pipeline"
+
+install_skill_37_zhc_closeout() {
+    local SKILL_SRC="$ONBOARDING_DIR/37-zhc-closeout"
+    local SKILL_DEST="$SKILLS_DIR/37-zhc-closeout"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 37 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    # Idempotent: skip if dest looks current
+    if [ -f "$SKILL_DEST/skill-version.txt" ] && [ -f "$SKILL_DEST/scripts/run-closeout.sh" ]; then
+        local SKILL37_CURRENT
+        SKILL37_CURRENT=$(cat "$SKILL_DEST/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        local SKILL37_SRC_VER
+        SKILL37_SRC_VER=$(cat "$SKILL_SRC/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$SKILL37_CURRENT" ] && [ "$SKILL37_CURRENT" = "$SKILL37_SRC_VER" ]; then
+            success "Skill 37 already installed at v${SKILL37_CURRENT}"
+            chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+            return 0
+        fi
+        note "Skill 37 present at v${SKILL37_CURRENT:-?}, source is v${SKILL37_SRC_VER:-?} — refreshing"
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 37 from $SKILL_SRC → $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+
+    # Env-var preflight (warn-only — Skill 37 no-ops cleanly without these)
+    if [ -z "${KIE_API_KEY:-}" ]; then
+        warn "KIE_API_KEY not set in current env — Skill 37 will no-op when triggered. Set it in your shell rc or ~/.openclaw/config/.env to enable closeout."
+    else
+        success "KIE_API_KEY present — Skill 37 image+video generation enabled"
+    fi
+    if [ -z "${NOTION_API_TOKEN:-}" ]; then
+        warn "NOTION_API_TOKEN not set in current env — Skill 37's Notion step will fail. Set it in your shell rc or ~/.openclaw/config/.env to enable closeout docs."
+    else
+        success "NOTION_API_TOKEN present — Skill 37 Notion page-tree creation enabled"
+    fi
+
+    success "Skill 37 (ZHC Closeout) installed → $SKILL_DEST"
+    note "Skill 37 fires automatically via the workforce-build-resume cron (Step 13) when buildCompletedAt is set + closeoutStatus is dirty. No separate cron needed."
+    return 0
+}
+
+install_skill_37_zhc_closeout
 
 # ----------------------------------------------------------
 # Telegram diagnostic note (v10.0.1)

@@ -489,14 +489,33 @@ This is non-negotiable. The state file is the contract between Skill 23 and the 
 
 The master orchestrator:
 1. Sets `buildCompletedAt` in the state file.
-2. Sends ONE consolidated status message to `ownerChat` — listing what got built, links to key dirs, an invitation to review.
-3. Does NOT keep messaging during the build. The owner only hears from the agent once at the end.
+2. Sets `closeoutStatus = "pending"` in the state file (atomic write). **This is the v10.13.16 contract** — Skill 37 ZHC Closeout reads this field and picks up the celebration handoff.
+3. Either invokes `~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh` inline (preferred — owner gets the celebration faster) OR exits and lets the resume cron fire a `[CLOSEOUT-RESUME]` self-ping on its next 15-minute cycle (safer if you're near a token limit).
+4. **Does NOT message the owner directly about build completion.** The owner has been silent since the interview ended. They stay silent until Skill 37 Step 6 fires the actual celebration delivery. This is intentional — silence is what makes the closeout feel like a moment, not a status update.
+
+### Moment 4 — Closeout Pipeline (BINDING — added v10.13.16)
+
+Once `buildCompletedAt` is set + `closeoutStatus = "pending"` is written, the closeout pipeline owns the rest. See `~/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md` for the full state machine.
+
+Summary of what Skill 37 does:
+1. Fires Skill 32 (Command Center) — captures `commandCenterUrl` into state.
+2. Generates 2 infographics via KIE.AI — writes `infographic1Url`, `infographic2Url`.
+3. Generates a 15-second Veo 3.1 celebration video — writes `celebrationVideoUrl`.
+4. Builds a 9-section Notion page tree in the client's own workspace — writes `notionRootPageUrl`.
+5. Sends a paced 6-message Telegram delivery sequence to the owner — tracks via `messagesDelivered: [1..6]`.
+
+All steps are idempotent. The resume cron (this same `resume-workforce-build.sh`) picks up the closeout if any step dies, via the v10.13.16 dirty-state extension: `buildCompletedAt` set AND `closeoutStatus NOT IN {done, sent}` triggers a `[CLOSEOUT-RESUME]` self-ping.
+
+**Cost cap:** ~$0.60 / client in KIE credits worst-case.
 
 ### How the resume layer uses this
 
 `scripts/resume-workforce-build.sh` runs on cron every 15 minutes. It:
 - Reads `.workforce-build-state.json`.
-- If `interviewComplete: true` AND ANY department is `pending` / `failed` / stale `building` (>15 min since `lastAttemptAt`) → dispatches a `[WORKFORCE-RESUME]` Telegram self-message to a paired chat (owner first, Trevor fallback). That message invokes the agent, who reads `resume-prompt.txt` and continues building.
+- Fires if ANY of:
+  - `interviewComplete: true` AND ANY department is `pending` / `failed` / stale `building` (>15 min since `lastAttemptAt`), OR
+  - `buildCompletedAt` is set AND `closeoutStatus NOT IN {done, sent}` (v10.13.16 closeout-dirty extension).
+- Dispatches a `[WORKFORCE-RESUME]` or `[CLOSEOUT-RESUME]` Telegram self-message to a paired chat (owner first, Trevor fallback). That message invokes the agent, who reads `resume-prompt.txt` and continues building OR closing out.
 - Caps at `maxResumeAttempts` (default 12) to prevent infinite loops. After cap, pings Trevor's chat directly with an escalation instead of continuing to self-ping.
 - Holds a 10-minute lockfile so concurrent cron firings don't double-dispatch.
 

@@ -1,0 +1,28 @@
+A short 15-second cinematic celebration clip for a {{INDUSTRY}} business called "{{COMPANY_NAME}}", marking the launch of their zero-human AI workforce.
+
+VISUAL TREATMENT:
+- Premium corporate aesthetic. Think Apple keynote meets Bloomberg ad spot.
+- Smooth, deliberate camera moves — slow pans, subtle dolly-ins, no jump cuts or chaos.
+- Light-on-dark color grade: deep blacks, warm gold highlights, no neon.
+- 9:16 vertical aspect ratio (formatted for Telegram delivery).
+
+NARRATIVE ARC (15 seconds):
+
+00:00 - 00:03 — Open on a quiet, elegant interior workspace at dawn. Soft golden light through a window. The mood is calm, purposeful, victorious.
+
+00:03 - 00:07 — A subtle particle/light-trail animation forms the words "{{COMPANY_NAME}}" in clean, premium sans-serif type. The particles suggest intelligence — neural-network-like nodes briefly visible behind the type, then dissolving.
+
+00:07 - 00:11 — Cut to abstract visualization of a workforce coming online: glowing departmental nodes lighting up one by one in a soft tree/hierarchy formation. No human figures — just elegant data-art that suggests organized capability.
+
+00:11 - 00:14 — Type fades in below the visualization: "Your zero-human workforce. Built for {{OWNER_NAME}}."
+
+00:14 - 00:15 — Final hold: small "BlackCEO" mark fades in bottom-center, then a gentle fade-out to black.
+
+AUDIO:
+- Triumphant but restrained orchestral score — think Hans Zimmer in a quiet moment, not the climax.
+- No voiceover.
+- One subtle "whoosh" at the 00:07 transition for emphasis.
+
+AVOID: stock-footage office scenes, cartoonish robots, AI-tropes (binary code rain, robot eyes), generic upbeat music, jump cuts, anything that looks like a cheap web banner.
+
+TARGET: makes {{OWNER_NAME}} feel they just got something premium and serious, not gimmicky.

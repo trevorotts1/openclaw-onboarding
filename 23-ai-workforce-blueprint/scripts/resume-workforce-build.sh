@@ -80,14 +80,27 @@ stale_building_count=$(jq --arg min "$STALE_BUILDING_MINUTES" -r '
   ] | length
 ' "$STATE_FILE" 2>/dev/null || echo 0)
 
-total_attention=$(( pending_count + stale_building_count ))
+# v10.14.17 — also fire when build is done but closeout is dirty.
+# closeoutStatus terminal states: "done", "sent". Anything else (or missing,
+# when buildCompletedAt is set) means closeout work is owed.
+build_completed_at=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE")
+closeout_status=$(jq -r '.closeoutStatus // empty' "$STATE_FILE")
+closeout_dirty=0
+if [[ -n "$build_completed_at" ]]; then
+  case "$closeout_status" in
+    done|sent) closeout_dirty=0 ;;
+    *) closeout_dirty=1 ;;
+  esac
+fi
+
+total_attention=$(( pending_count + stale_building_count + closeout_dirty ))
 if (( total_attention == 0 )); then
   done_count=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
   total_count=$(jq -r '.departments | length' "$STATE_FILE")
   if (( done_count == total_count )) && (( total_count > 0 )); then
-    log "ALL ${total_count} departments done — build complete; no resume needed"
+    log "ALL ${total_count} departments done + closeout terminal (status=$closeout_status) — nothing to do"
   else
-    log "no pending/stale departments (pending=$pending_count, stale=$stale_building_count) — nothing to do"
+    log "no pending/stale departments and closeout clean (pending=$pending_count, stale=$stale_building_count, closeout=$closeout_status) — nothing to do"
   fi
   exit 0
 fi
@@ -139,9 +152,16 @@ fi
 # The agent reads it as an internal trigger. We tag with [WORKFORCE-RESUME] so the
 # Skill 23 INSTRUCTIONS.md "Post-Interview Handoff Protocol" knows to treat it as
 # a build-resume invocation (NOT a new interview question and NOT a user message).
-msg="[WORKFORCE-RESUME] ${agent_name}: continue the workforce build per the Post-Interview Handoff Protocol in Skill 23. Read .workforce-build-state.json. Pending: ${pending_list:-none}. Stale: ${stale_list:-none}. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the resume is internal."
+#
+# v10.14.17: tag also drives closeout pickup. When pending/stale are empty but
+# closeout_dirty=1, the agent reads closeoutStatus and skips ahead to Skill 37.
+if (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_count == 0 )); then
+  msg="[CLOSEOUT-RESUME] ${agent_name}: workforce build is done (buildCompletedAt set) but closeout is incomplete (closeoutStatus=${closeout_status:-unset}). Read /data/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md and invoke scripts/run-closeout.sh. The script is idempotent — it picks up from the first un-completed step. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the owner only hears from you when Skill 37 Step 6 fires."
+else
+  msg="[WORKFORCE-RESUME] ${agent_name}: continue the workforce build per the Post-Interview Handoff Protocol in Skill 23. Read .workforce-build-state.json. Pending: ${pending_list:-none}. Stale: ${stale_list:-none}. Closeout status: ${closeout_status:-unset}. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the resume is internal. When all departments are done, set closeoutStatus=pending and either invoke ~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh inline OR exit and let the next cron fire pick up the closeout."
+fi
 
-log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_attempts; pending='$pending_list'; stale='$stale_list')"
+log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_attempts; pending='$pending_list'; stale='$stale_list'; closeout_dirty=$closeout_dirty closeout_status='$closeout_status')"
 if openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" 2>>"$LOG_FILE"; then
   log "resume dispatch ok"
 else
