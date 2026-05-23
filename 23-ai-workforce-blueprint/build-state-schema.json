@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Workforce Build State",
+  "description": "Tracks the post-interview build of every department + role so the build can be autonomously resumed if an agent session is interrupted. Lives at /data/.openclaw/workspace/.workforce-build-state.json (VPS) or ~/.openclaw/workspace/.workforce-build-state.json (Mac). Written by the agent at interview-completion AND after every unit of build work completes.",
+  "type": "object",
+  "required": ["version", "interviewComplete", "ownerChat", "departments"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "interviewComplete": { "type": "boolean" },
+    "interviewCompletedAt": { "type": "string", "format": "date-time" },
+    "interviewVersion": { "type": "string", "description": "e.g. v2.0, v10.14.14" },
+    "ownerChat": { "type": "integer", "description": "Owner Telegram chat ID for final status message" },
+    "ownerName": { "type": "string" },
+    "agentName": { "type": "string", "description": "Master agent name (e.g. Temperance, NEXORA)" },
+    "buildPid": { "type": ["string", "null"], "description": "Optional lock token to prevent concurrent builds" },
+    "buildStartedAt": { "type": ["string", "null"], "format": "date-time" },
+    "buildCompletedAt": { "type": ["string", "null"], "format": "date-time" },
+    "departments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slug", "status"],
+        "properties": {
+          "slug": { "type": "string", "description": "Folder name in departments/ (e.g. marketing-support)" },
+          "name": { "type": "string", "description": "Human-readable department name" },
+          "status": { "type": "string", "enum": ["pending", "building", "done", "failed"] },
+          "lastAttemptAt": { "type": ["string", "null"], "format": "date-time" },
+          "completedAt": { "type": ["string", "null"], "format": "date-time" },
+          "failureReason": { "type": ["string", "null"] },
+          "rolesPlanned": { "type": "integer", "description": "Expected count of role sub-agents" },
+          "rolesDone": { "type": "integer", "description": "Roles materialized so far" },
+          "filesPlanned": { "type": "array", "items": { "type": "string" }, "description": "Expected file list (e.g. README.md, AGENTS.md, SOUL.md, TOOLS.md, USER.md, MEMORY.md, HEARTBEAT.md)" },
+          "filesPresent": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "openItems": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Free-form notes about post-build cleanup, e.g. 'Vertical Pack confirmation pending', 'HITMCN merger decision pending'"
+    },
+    "resumeAttempts": {
+      "type": "integer",
+      "description": "Count of autonomous resume invocations. Capped at maxResumeAttempts to prevent infinite loops."
+    },
+    "maxResumeAttempts": {
+      "type": "integer",
+      "default": 12,
+      "description": "Hard cap. After this, resume-workforce-build.sh stops self-pinging and notifies Trevor instead of the owner."
+    }
+  }
+}

@@ -452,6 +452,58 @@ Owner sees real-time progress at `/onboarding/building` in the Command Center. T
 
 ---
 
+## Post-Interview Handoff Protocol (BINDING — added 2026-05-23 for v10.13.15)
+
+**Why this exists:** Before v10.13.15, an interrupted post-interview build had no autonomous recovery. If the agent session ended after writing 5 of 6 departments (token limit, tool error, network blip, decided "good enough"), the remaining departments sat un-built forever. There was no cron, no state tracker, no resume invocation. The owner had to manually nudge the agent — which they shouldn't have to do. This protocol fixes that.
+
+**The protocol — REQUIRED at three moments:**
+
+### Moment 1 — When `interview-handoff.md` is marked COMPLETE
+
+Before responding to the owner with "build my company" confirmation, the master orchestrator MUST:
+
+1. Write `~/.openclaw/workspace/.workforce-build-state.json` (VPS: `/data/.openclaw/workspace/.workforce-build-state.json`) per `build-state-schema.json`. Required fields: `version: 1`, `interviewComplete: true`, `interviewCompletedAt`, `interviewVersion`, `ownerChat`, `ownerName`, `agentName`, and a `departments` array with EVERY planned department in `status: "pending"`.
+
+2. Verify the resume cron job is registered: `openclaw cron list | grep workforce-resume`. If missing (older install), install it inline via `openclaw cron create --schedule "*/15 * * * *" --name workforce-resume --prompt-file ~/.openclaw/skills/23-ai-workforce-blueprint/resume-prompt.txt`.
+
+3. ONLY THEN start Stage 1 of Generation Orchestration.
+
+### Moment 2 — Before starting EACH department (Stage 3)
+
+For each department, before dispatching the sub-agent:
+1. Read `.workforce-build-state.json`.
+2. Set that department's `status` to `"building"` and `lastAttemptAt` to now (UTC ISO-8601).
+3. Atomic write (tmp + rename) the state back to disk.
+4. Dispatch the sub-agent.
+
+### Moment 3 — When EACH department finishes (or fails)
+
+The sub-agent (or master orchestrator on the sub-agent's behalf) MUST:
+1. Read `.workforce-build-state.json`.
+2. Update that department: `status: "done"` + `completedAt` + `filesPresent: [...]` (success) OR `status: "failed"` + `failureReason` (failure).
+3. Atomic write back.
+
+This is non-negotiable. The state file is the contract between Skill 23 and the resume layer.
+
+### When ALL departments are `done`
+
+The master orchestrator:
+1. Sets `buildCompletedAt` in the state file.
+2. Sends ONE consolidated status message to `ownerChat` — listing what got built, links to key dirs, an invitation to review.
+3. Does NOT keep messaging during the build. The owner only hears from the agent once at the end.
+
+### How the resume layer uses this
+
+`scripts/resume-workforce-build.sh` runs on cron every 15 minutes. It:
+- Reads `.workforce-build-state.json`.
+- If `interviewComplete: true` AND ANY department is `pending` / `failed` / stale `building` (>15 min since `lastAttemptAt`) → dispatches a `[WORKFORCE-RESUME]` Telegram self-message to a paired chat (owner first, Trevor fallback). That message invokes the agent, who reads `resume-prompt.txt` and continues building.
+- Caps at `maxResumeAttempts` (default 12) to prevent infinite loops. After cap, pings Trevor's chat directly with an escalation instead of continuing to self-ping.
+- Holds a 10-minute lockfile so concurrent cron firings don't double-dispatch.
+
+**TL;DR for the agent:** write state after every step. Never assume "I'll finish this in the same session." If your session ends mid-build, the cron will wake you back up and you'll pick up exactly where you left off because the state file knows.
+
+---
+
 ## Assisting Language (PRESERVED FROM v9.6.0 — DO NOT REMOVE)
 
 ### After every ASKED question (not confirmed):

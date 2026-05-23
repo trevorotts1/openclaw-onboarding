@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.14"
+ONBOARDING_VERSION="v10.13.15"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -3411,6 +3411,90 @@ print(f'{account}|{agent_id}')
 }
 
 install_weekly_cron
+
+# ----------------------------------------------------------
+# Step 13: Install workforce-build resume cron (v10.13.15)
+# ----------------------------------------------------------
+# Why: post-interview workforce builds occasionally die mid-way (token limit,
+# tool error, agent thinks it's done). Without a resume layer, the build sits
+# half-built forever. This cron fires every 15 minutes, reads
+# .workforce-build-state.json, and self-pings the agent if there are pending
+# or stale-building departments. See Skill 23 INSTRUCTIONS.md → "Post-Interview
+# Handoff Protocol" for the full contract.
+step "Step 13: Installing workforce-build resume cron (15-min check, fires only if state is dirty)"
+
+install_workforce_resume_cron() {
+    if ! command -v openclaw >/dev/null 2>&1; then
+        warn "openclaw CLI not on PATH — skipping workforce-resume cron. Re-run update-skills.sh later."
+        return 0
+    fi
+
+    if openclaw cron list 2>/dev/null | grep -qi "workforce-build-resume"; then
+        success "Workforce-build resume cron already installed"
+        return 0
+    fi
+
+    local RESUME_PROMPT_FILE="$SKILLS_DIR/23-ai-workforce-blueprint/resume-prompt.txt"
+    if [ ! -f "$RESUME_PROMPT_FILE" ]; then
+        warn "resume-prompt.txt not found at $RESUME_PROMPT_FILE — cron install skipped (older skill bundle?)"
+        return 0
+    fi
+    local RESUME_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+    [ -f "$RESUME_SCRIPT" ] && chmod +x "$RESUME_SCRIPT" 2>/dev/null || true
+
+    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
+        resolve_telegram_target_universal
+    fi
+    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
+    if [ -z "$TG_TARGET" ]; then
+        warn "Telegram target not resolved — skipping workforce-resume cron."
+        return 0
+    fi
+
+    local PROMPT_CONTENT
+    PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
+    local CHANNEL_ACCOUNT="$TELEGRAM_ACCOUNT_CACHED"
+
+    local OUT="" RC=0
+    local BASE=(
+        --name "workforce-build-resume"
+        --cron "*/15 * * * *"
+        --tz "America/New_York"
+        --channel telegram
+        --to "$TG_TARGET"
+    )
+    [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
+    OUT=$(openclaw cron create "${BASE[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
+    echo "$OUT" >> "$LOG_FILE"
+    if [ "$RC" -eq 0 ]; then
+        success "Workforce-build resume cron installed — every 15 min, fires only when build state is dirty"
+        return 0
+    fi
+
+    local BASE_NO_ACCT=(
+        --name "workforce-build-resume"
+        --cron "*/15 * * * *"
+        --tz "America/New_York"
+        --channel telegram
+        --to "$TG_TARGET"
+    )
+    OUT=$(openclaw cron create "${BASE_NO_ACCT[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
+    echo "$OUT" >> "$LOG_FILE"
+    if [ "$RC" -eq 0 ]; then
+        success "Workforce-build resume cron installed (no-account fallback)"
+        return 0
+    fi
+
+    warn "Workforce-build resume cron creation failed. Manual install:"
+    warn "  openclaw cron create --name workforce-build-resume \\"
+    warn "    --cron '*/15 * * * *' --tz America/New_York \\"
+    warn "    --channel telegram --to '$TG_TARGET' \\"
+    [ -n "$CHANNEL_ACCOUNT" ] && warn "    --account $CHANNEL_ACCOUNT \\"
+    warn "    --message \"\$(cat $RESUME_PROMPT_FILE)\""
+    return 0
+}
+
+install_workforce_resume_cron
 
 # ----------------------------------------------------------
 # Telegram diagnostic note (v10.0.1)
