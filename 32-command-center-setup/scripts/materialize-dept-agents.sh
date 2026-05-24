@@ -276,12 +276,67 @@ except Exception as e:
     sys.exit(1)
 
 print(f"added {added} agents, updated {updated} agents, total in agents.list: {total}")
+
+# ─── Emit a machine-readable manifest of discovered agents so the bash
+#     wrapper can call scaffold-agent-files.sh for each one. ────────────────
+manifest_path = os.path.join(os.path.dirname(CONFIG_FILE), ".materialize-dept-agents.manifest")
+try:
+    with open(manifest_path, "w") as f:
+        for slug, workspace_path in discovered.items():
+            agent_id = f"dept-{slug}"
+            name = pretty_name(slug)
+            # Tab-separated: agent_id<TAB>name<TAB>workspace_path<TAB>dept_slug
+            f.write(f"{agent_id}\t{name}\t{workspace_path}\t{slug}\n")
+    print(f"[materialize-dept-agents] wrote scaffolder manifest → {manifest_path}")
+except OSError as e:
+    print(f"[materialize-dept-agents] WARN: could not write scaffolder manifest: {e}", file=sys.stderr)
 PYEOF
 
 RC=$?
 if [[ $RC -ne 0 ]]; then
   echo "[materialize-dept-agents] FATAL: python mutation failed (rc=$RC)" >&2
   exit $RC
+fi
+
+# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + symlinks ───
+# Trevor's agent-file architecture (v10.14.29):
+#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (one copy at
+#     $OC_ROOT/workspace/, each dept-head agent symlinks to them)
+#   - PER-AGENT (each agent has its own): IDENTITY.md, SOUL.md, MEMORY.md,
+#     HEARTBEAT.md (in the agent's workspace folder)
+#   - Sub-agents (role folders inside a dept) are EXCLUDED — they have their
+#     own scaffolder in 23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py
+#
+# This script delegates the actual file writes to scaffold-agent-files.sh so
+# the same code-path also runs from add-department.sh and from inside
+# build-workforce.py.
+SCAFFOLDER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scaffold-agent-files.sh"
+MANIFEST="$OC_ROOT/.materialize-dept-agents.manifest"
+
+if [[ $DRY_RUN -eq 0 && -f "$MANIFEST" && -x "$SCAFFOLDER" ]]; then
+  echo "[materialize-dept-agents] scaffolding per-agent files for each dept…"
+  scaffold_ok=0
+  scaffold_fail=0
+  while IFS=$'\t' read -r agent_id agent_name workspace_path dept_slug; do
+    [[ -z "$agent_id" ]] && continue
+    # Strip "dept-" prefix from agent_id to get the slug for --agent-slug
+    agent_slug="${agent_id#dept-}"
+    if bash "$SCAFFOLDER" \
+        --agent-slug "$agent_slug" \
+        --agent-name "$agent_name" \
+        --department "$dept_slug" \
+        --workspace-dir "$workspace_path" \
+        --shared-root "$OC_ROOT/workspace" >/dev/null 2>&1; then
+      scaffold_ok=$((scaffold_ok+1))
+    else
+      scaffold_fail=$((scaffold_fail+1))
+      echo "  ! scaffold-agent-files failed for $agent_id (continuing)" >&2
+    fi
+  done < "$MANIFEST"
+  echo "[materialize-dept-agents] scaffolded $scaffold_ok agents ($scaffold_fail failures)"
+  rm -f "$MANIFEST"
+elif [[ ! -x "$SCAFFOLDER" ]]; then
+  echo "[materialize-dept-agents] WARN: scaffold-agent-files.sh not executable at $SCAFFOLDER — skipping per-agent file scaffolding" >&2
 fi
 
 exit 0
