@@ -33,9 +33,14 @@
           "rolesPlanned": { "type": "integer", "description": "Expected count of role sub-agents" },
           "rolesDone": { "type": "integer", "description": "Roles materialized so far" },
           "filesPlanned": { "type": "array", "items": { "type": "string" }, "description": "Expected file list (e.g. README.md, AGENTS.md, SOUL.md, TOOLS.md, USER.md, MEMORY.md, HEARTBEAT.md)" },
-          "filesPresent": { "type": "array", "items": { "type": "string" } }
+          "filesPresent": { "type": "array", "items": { "type": "string" } },
+          "agentRegistered": { "type": "boolean", "default": false, "description": "True only when a corresponding entry exists in openclaw.json agents.list[] with id == 'dept-<slug>'. Materialized by Skill 32's materialize-dept-agents.sh. A dept with status=done but agentRegistered=false is a LIE — the role-definition.md files exist but the OpenClaw runtime sees no such agent. Added v10.14.19." }
         }
       }
+    },
+    "agentsMaterializedCount": {
+      "type": "integer",
+      "description": "Count of dept entries actually present in openclaw.json agents.list[] (excludes the default 'main'). Written by Skill 37 Step 1 after running materialize-dept-agents.sh. Cross-check against the number of departments where status==done — a mismatch means the closeout MUST fail rather than send a celebration the runtime can't back up. Added v10.14.19."
     },
     "openItems": {
       "type": "array",

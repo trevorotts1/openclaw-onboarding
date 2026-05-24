@@ -1,0 +1,287 @@
+#!/usr/bin/env bash
+# materialize-dept-agents.sh — turn workspace department folders into REAL agents.
+#
+# The bug this fixes (introduced and lived in for weeks):
+#   Skill 23 "AI Workforce Blueprint" wrote role-definition.md files into
+#   $OC_ROOT/workspace/departments/<slug>/ and flipped the dept's
+#   .workforce-build-state.json status to "done" purely based on file
+#   presence. The OpenClaw runtime never knew about any of these
+#   "departments" — the gateway, dashboard, and Telegram bots all saw a
+#   single agent (the default "main").
+#
+#   Skill 32 INSTALL.md Phase 4 documented "the agent adds an entry to
+#   agents.list[]" — but no script in 32-command-center-setup/scripts/
+#   actually performed that mutation. It was prose, not code. So every
+#   client onboarded under v10.14.12–v10.14.18 ended up with a Telegram
+#   celebration claiming N-department, M-role workforce LIVE while the
+#   runtime saw exactly one agent.
+#
+# What this script does:
+#   - Auto-detects the OpenClaw root ($OC_ROOT — VPS: /data/.openclaw, Mac: $HOME/.openclaw)
+#   - Scans workspace/departments/ AND workspaces/command-center/ for dept folders
+#   - For each dept, adds (or updates) an entry in openclaw.json's agents.list[]
+#     following the schema in 32-command-center-setup/INSTALL.md Phase 4
+#   - Atomic write (tmp file + rename); timestamped backup before mutation
+#   - Idempotent — re-running adds zero duplicates; updates existing entries
+#     in-place if workspace path or pretty name changes
+#   - Hard-fails loud if anything goes wrong
+#
+# All JSON mutation happens in a Python heredoc (Python is on every VPS/Mac).
+# Bash quoting on nested JSON was the previous trap — we deliberately avoid jq.
+#
+# Usage:
+#   bash 32-command-center-setup/scripts/materialize-dept-agents.sh
+#   bash 32-command-center-setup/scripts/materialize-dept-agents.sh --dry-run
+#
+# Exit codes:
+#   0 — success (zero or more agents added/updated)
+#   1 — fatal error (missing openclaw.json, malformed JSON, python missing, etc.)
+
+set -euo pipefail
+
+# ─── Platform detection ──────────────────────────────────────────────────────
+if [[ -d /data/.openclaw ]]; then
+  OC_ROOT="/data/.openclaw"
+elif [[ -d "$HOME/.openclaw" ]]; then
+  OC_ROOT="$HOME/.openclaw"
+else
+  echo "[materialize-dept-agents] FATAL: no OpenClaw root found at /data/.openclaw or \$HOME/.openclaw" >&2
+  exit 1
+fi
+
+CONFIG_FILE="$OC_ROOT/openclaw.json"
+BACKUP_DIR="$OC_ROOT/backups"
+
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=1
+fi
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "[materialize-dept-agents] FATAL: openclaw.json not found at $CONFIG_FILE" >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[materialize-dept-agents] FATAL: python3 not on PATH — required for JSON mutation" >&2
+  exit 1
+fi
+
+# ─── Backup the config first (mirror Skill 32 INSTALL.md Phase 4.1) ──────────
+if [[ $DRY_RUN -eq 0 ]]; then
+  mkdir -p "$BACKUP_DIR"
+  BACKUP_FILE="$BACKUP_DIR/openclaw-backup-$(date -u +%Y%m%dT%H%M%SZ)-pre-materialize.json"
+  cp "$CONFIG_FILE" "$BACKUP_FILE"
+  echo "[materialize-dept-agents] backed up config → $BACKUP_FILE"
+fi
+
+# ─── Discover dept folders ───────────────────────────────────────────────────
+# Skill 23 canonical (per SKILL.md + build-state-schema):
+#   $OC_ROOT/workspace/departments/<slug>/
+# Skill 32 alt (per INSTALL.md Phase 3):
+#   $OC_ROOT/workspaces/command-center/<slug>/
+# Scan BOTH; the alt path wins if both contain the same slug (Skill 32 is
+# the authoritative dept-head workspace).
+DEPT_SCAN_ROOTS=(
+  "$OC_ROOT/workspaces/command-center"
+  "$OC_ROOT/workspace/departments"
+)
+
+# ─── Run the mutation in Python (no bash JSON acrobatics) ────────────────────
+export OC_CONFIG_FILE="$CONFIG_FILE"
+export OC_ROOT_PATH="$OC_ROOT"
+export OC_DRY_RUN="$DRY_RUN"
+export OC_DEPT_ROOTS="${DEPT_SCAN_ROOTS[*]}"
+
+python3 <<'PYEOF'
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+CONFIG_FILE = os.environ["OC_CONFIG_FILE"]
+OC_ROOT = os.environ["OC_ROOT_PATH"]
+DRY_RUN = os.environ.get("OC_DRY_RUN", "0") == "1"
+DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].split()
+
+# Pretty-name map: dept slug → friendly C-suite-style role title.
+# For any slug not listed, we titlecase the slug ('-' → ' ').
+PRETTY_NAMES = {
+    "marketing":            "Chief Marketing Officer",
+    "sales":                "Chief Revenue Officer",
+    "billing-finance":      "Chief Financial Officer",
+    "customer-support":     "Director of Customer Success",
+    "web-development":      "Head of Web Development",
+    "app-development":      "Head of App Development",
+    "graphics":             "Creative Director — Graphics",
+    "video":                "Creative Director — Video",
+    "audio":                "Creative Director — Audio",
+    "research":             "Director of Research",
+    "communications":       "Director of Communications",
+    "crm":                  "Head of CRM",
+    "openclaw-maintenance": "OpenClaw Maintenance Lead",
+    "legal-compliance":     "General Counsel",
+    "social-media":         "Head of Social Media",
+    "paid-advertisement":   "Head of Paid Advertising",
+    "master-orchestrator":  "Master Orchestrator (CEO Agent)",
+}
+
+# Slugs we deliberately skip — these aren't agent-worthy folders.
+SKIP_SLUGS = {
+    ".git", ".cache", ".workforce-build-state.json",
+    "templates", "shared", "_archive", "node_modules",
+}
+
+def pretty_name(slug: str) -> str:
+    if slug in PRETTY_NAMES:
+        return PRETTY_NAMES[slug]
+    # Default: title-case the slug (e.g. "vertical-pack" → "Vertical Pack")
+    return slug.replace("-", " ").title()
+
+def is_valid_dept_dir(p: Path) -> bool:
+    if not p.is_dir():
+        return False
+    name = p.name
+    if name.startswith(".") or name.startswith("_"):
+        return False
+    if name in SKIP_SLUGS:
+        return False
+    return True
+
+# ─── Discover dept slugs (dedup, alt path wins) ─────────────────────────────
+discovered = {}  # slug → absolute workspace path
+for root in DEPT_ROOTS:
+    rp = Path(root)
+    if not rp.is_dir():
+        continue
+    for child in sorted(rp.iterdir()):
+        if not is_valid_dept_dir(child):
+            continue
+        # Skill 32 path wins over Skill 23 path if both have same slug —
+        # because we iterate DEPT_ROOTS in priority order (cc first).
+        discovered.setdefault(child.name, str(child.resolve()))
+
+if not discovered:
+    print(f"[materialize-dept-agents] WARN: no department folders found under {DEPT_ROOTS} — nothing to materialize")
+    print("added 0 agents, updated 0 agents, total in agents.list: <unchanged>")
+    sys.exit(0)
+
+# ─── Load openclaw.json ─────────────────────────────────────────────────────
+try:
+    with open(CONFIG_FILE, "r") as f:
+        cfg = json.load(f)
+except json.JSONDecodeError as e:
+    print(f"[materialize-dept-agents] FATAL: openclaw.json is malformed JSON: {e}", file=sys.stderr)
+    sys.exit(1)
+
+if "agents" not in cfg or not isinstance(cfg["agents"], dict):
+    cfg["agents"] = {"list": []}
+if "list" not in cfg["agents"] or not isinstance(cfg["agents"]["list"], list):
+    cfg["agents"]["list"] = []
+
+agent_list = cfg["agents"]["list"]
+by_id = {a.get("id"): a for a in agent_list if isinstance(a, dict) and a.get("id")}
+
+added = 0
+updated = 0
+
+for slug, workspace_path in discovered.items():
+    agent_id = f"dept-{slug}"
+    name = pretty_name(slug)
+
+    desired_entry = {
+        "id": agent_id,
+        "name": name,
+        "workspace": workspace_path,
+        "memorySearch": {
+            "extraPaths": [],
+            "multimodal": {"enabled": True, "modalities": ["all"]},
+            "fallback": "none",
+        },
+        "wiki": {
+            "enabled": True,
+            "autoSearch": True,
+            "contextInjection": {
+                "onStartup": True,
+                "onTaskSwitch": True,
+                "maxResults": 5,
+            },
+        },
+    }
+
+    existing = by_id.get(agent_id)
+    if existing is None:
+        agent_list.append(desired_entry)
+        by_id[agent_id] = desired_entry
+        added += 1
+        print(f"  + added   {agent_id:40s} → {workspace_path}")
+    else:
+        # Preserve any operator-curated fields on the existing entry that we
+        # don't override (e.g. custom memorySearch.extraPaths, telegram bot
+        # binding). Only update fields where we're authoritative.
+        changed = False
+        if existing.get("name") != name:
+            existing["name"] = name
+            changed = True
+        if existing.get("workspace") != workspace_path:
+            existing["workspace"] = workspace_path
+            changed = True
+        # Ensure memorySearch + wiki blocks exist (don't overwrite curated extras)
+        existing.setdefault("memorySearch", desired_entry["memorySearch"])
+        if "multimodal" not in existing.get("memorySearch", {}):
+            existing["memorySearch"]["multimodal"] = desired_entry["memorySearch"]["multimodal"]
+            changed = True
+        if "fallback" not in existing.get("memorySearch", {}):
+            existing["memorySearch"]["fallback"] = "none"
+            changed = True
+        if "extraPaths" not in existing.get("memorySearch", {}):
+            existing["memorySearch"]["extraPaths"] = []
+            changed = True
+        existing.setdefault("wiki", desired_entry["wiki"])
+        if "autoSearch" not in existing.get("wiki", {}):
+            existing["wiki"]["autoSearch"] = True
+            changed = True
+        if "contextInjection" not in existing.get("wiki", {}):
+            existing["wiki"]["contextInjection"] = desired_entry["wiki"]["contextInjection"]
+            changed = True
+        if changed:
+            updated += 1
+            print(f"  ~ updated {agent_id:40s} → {workspace_path}")
+        else:
+            print(f"  = no-op   {agent_id:40s} (already in sync)")
+
+total = len(agent_list)
+
+if DRY_RUN:
+    print(f"[materialize-dept-agents] DRY RUN — no write performed")
+    print(f"added {added} agents, updated {updated} agents, total in agents.list: {total}")
+    sys.exit(0)
+
+# ─── Atomic write (tmp + rename) ────────────────────────────────────────────
+try:
+    cfg_dir = os.path.dirname(CONFIG_FILE)
+    fd, tmp_path = tempfile.mkstemp(prefix=".openclaw.", suffix=".json.tmp", dir=cfg_dir)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(cfg, f, indent=2)
+            f.write("\n")
+        os.replace(tmp_path, CONFIG_FILE)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+except Exception as e:
+    print(f"[materialize-dept-agents] FATAL: atomic write failed: {e}", file=sys.stderr)
+    sys.exit(1)
+
+print(f"added {added} agents, updated {updated} agents, total in agents.list: {total}")
+PYEOF
+
+RC=$?
+if [[ $RC -ne 0 ]]; then
+  echo "[materialize-dept-agents] FATAL: python mutation failed (rc=$RC)" >&2
+  exit $RC
+fi
+
+exit 0

@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.17"
+ONBOARDING_VERSION="v10.13.18"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -3556,6 +3556,54 @@ install_skill_37_zhc_closeout() {
 }
 
 install_skill_37_zhc_closeout
+
+# ----------------------------------------------------------
+# Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)
+# ----------------------------------------------------------
+# Why: pre-v10.13.18 Skill 23 marked depts "done" purely on file presence,
+# Skill 32 Phase 4 was prose-not-code, and Skill 37 closeout sent a
+# celebration claiming an N-dept M-role workforce was LIVE while the
+# OpenClaw runtime saw exactly one agent (the default "main"). The new
+# materialize-dept-agents.sh actually mutates openclaw.json agents.list[]
+# so dept workspace folders become real runtime agents. Skill 37 v10.13.18
+# invokes it as a binding preflight in Step 1 (Command Center) — this step
+# just guarantees the script is present, executable, and discoverable.
+step "Step 15: Registering Skill 32 materialize-dept-agents.sh (the materialize-dept-agents binding contract)"
+
+install_materialize_dept_agents() {
+    local SRC="$ONBOARDING_DIR/32-command-center-setup/scripts/materialize-dept-agents.sh"
+    local DEST_DIR="$SKILLS_DIR/32-command-center-setup/scripts"
+    local DEST="$DEST_DIR/materialize-dept-agents.sh"
+
+    if [ ! -f "$SRC" ]; then
+        warn "materialize-dept-agents.sh not found in onboarding bundle at $SRC — skipping (older bundle?)"
+        warn "Skill 37 closeout will REFUSE to mark commandCenterStatus=done without this script — onboarding is incomplete."
+        return 0
+    fi
+
+    mkdir -p "$DEST_DIR"
+    cp "$SRC" "$DEST" 2>>"$LOG_FILE" || {
+        warn "Failed to copy materialize-dept-agents.sh → $DEST"
+        return 1
+    }
+    chmod +x "$DEST" 2>/dev/null || true
+
+    # Sanity-check: script must be executable and pass bash -n
+    if [ ! -x "$DEST" ]; then
+        warn "materialize-dept-agents.sh installed but not executable at $DEST"
+        return 1
+    fi
+    if ! bash -n "$DEST" 2>>"$LOG_FILE"; then
+        warn "materialize-dept-agents.sh installed but failed bash syntax check"
+        return 1
+    fi
+
+    success "Skill 32 materialize-dept-agents.sh installed → $DEST"
+    note "Skill 37 closeout's Step 1 will invoke this script automatically and verify agents.list[].length >= 2 before marking commandCenterStatus=done."
+    return 0
+}
+
+install_materialize_dept_agents
 
 # ----------------------------------------------------------
 # Telegram diagnostic note (v10.0.1)
