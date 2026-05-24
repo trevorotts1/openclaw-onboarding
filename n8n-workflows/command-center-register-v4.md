@@ -73,3 +73,72 @@ for t in json.load(sys.stdin).get("result",[]):
 ```
 
 Applied this against Trevor's account on 2026-05-24 — patched 2 broken v3-era tunnels (lyric, evelyn). Both went 503 → 200 after their cloudflared connectors picked up the new remote config.
+
+---
+
+## Option B chosen — credentials inline (Trevor's instance, 2026-05-24)
+
+Trevor's live n8n workflow at `i0P3OWCEsXZxVo0N` uses **Option B**: the Cloudflare account ID + API token are written directly into the SSH command string in the n8n workflow JSON, rather than referenced as `${CLOUDFLARE_ACCOUNT_ID}` / `${CLOUDFLARE_API_TOKEN}` env vars on the SSH target host.
+
+**Tradeoff:** no server-side setup needed (no env vars on `main.blackceoautomations.com`), but the CF token is visible inside the n8n workflow JSON to anyone with read access to the workflow.
+
+### Token rotation playbook
+
+If the Cloudflare API token (currently `cfut_...`) is ever rotated, revoked, or expires, the n8n workflow MUST be updated with the new token value. **Symptom of stale token: new client registrations succeed at the webhook level (tunnel created, DNS routed, token returned) but tunnel ingress is silently empty — the new `<client>.zerohumanworkforce.com` URL returns HTTP 503 from Cloudflare edge.** (Identical to the v3 bug we fixed in v4.)
+
+To re-PUT the workflow with a new token, use the n8n API:
+
+```bash
+N8N_BASE="https://main.blackceoautomations.com"
+N8N_KEY="<n8n API key from Settings → API>"
+WF_ID="i0P3OWCEsXZxVo0N"
+
+# 1. Pull current workflow
+curl -sS "$N8N_BASE/api/v1/workflows/$WF_ID" -H "X-N8N-API-KEY: $N8N_KEY" > /tmp/wf.json
+
+# 2. Edit the SSH node's command — replace the OLD bearer token with the NEW one
+python3 << 'PY'
+import json, urllib.request, urllib.error, os
+NEW_TOKEN = "<new cfut_... token>"  # paste new token here
+wf = json.load(open("/tmp/wf.json"))
+for n in wf["nodes"]:
+    if n.get("name") == "Create Tunnel + DNS + Token":
+        cmd = n["parameters"]["command"]
+        # Replace ANY existing Bearer cfut_... value with new one
+        import re
+        cmd = re.sub(r'Bearer cfut_[A-Za-z0-9]+', f'Bearer {NEW_TOKEN}', cmd)
+        n["parameters"]["command"] = cmd
+        print("patched SSH command")
+        break
+
+# 3. PUT it back
+body = {k: v for k, v in wf.items() if k in {"name","nodes","connections","settings","staticData"}}
+body.setdefault("settings", {})
+req = urllib.request.Request(
+    f"{os.environ['N8N_BASE']}/api/v1/workflows/{os.environ['WF_ID']}",
+    data=json.dumps(body).encode(),
+    method="PUT",
+    headers={"X-N8N-API-KEY": os.environ['N8N_KEY'], "Content-Type": "application/json"})
+print("updatedAt:", json.load(urllib.request.urlopen(req))["updatedAt"])
+PY
+
+# 4. Verify by firing a test webhook + checking ingress on the new tunnel
+curl -sS -X POST "https://main.blackceoautomations.com/webhook/command-center-register-v3" \
+  -H "Content-Type: application/json" \
+  -d '{"clientName":"rotation-test","companyName":"Test","contactEmail":"test@test"}'
+# Then in your CF dashboard: confirm rotation-test tunnel has ingress rule for
+# rotation-test.zerohumanworkforce.com → http://localhost:4000
+```
+
+### Better long-term: migrate to Option A (env vars)
+
+Less risk of credential drift if you migrate. Steps:
+1. On `main.blackceoautomations.com`, set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in `~/.profile` (or `~/.ssh/environment` with `PermitUserEnvironment yes` in sshd_config — non-interactive SSH does NOT source `~/.bashrc`).
+2. Verify: `ssh root@main.blackceoautomations.com 'echo $CLOUDFLARE_ACCOUNT_ID'` returns the value.
+3. Re-PUT the n8n workflow with the original env-var-referencing SSH command (saved at `/tmp/n8n-wf-before-optionB.json` on Trevor's Mac as of 2026-05-24, or reconstruct from the doc above).
+
+### Snapshots saved 2026-05-24 (Trevor's Mac, `/tmp/`)
+
+- `n8n-wf-before.json` — v3 (no ingress curl) — original broken state
+- `n8n-wf-before-optionB.json` — v4 with env-var refs — before going to Option B
+- Live workflow as of 2026-05-24T04:56:37Z — v4 Option B (inline creds)
