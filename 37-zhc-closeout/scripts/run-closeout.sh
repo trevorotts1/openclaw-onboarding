@@ -98,48 +98,59 @@ if [[ "$closeout_status" != "generating" ]]; then
 fi
 
 # ----------------------------------------------------------------------
-# STEP 1 — Skill 32 (Command Center)
+# STEP 1 — Skill 32 (Command Center) — v10.14.19: REAL materialize + verify
 # ----------------------------------------------------------------------
+# For weeks before v10.14.19, this step would silently mark commandCenterStatus
+# = "done" with a fake http://localhost:4000 URL whenever Skill 32's
+# setup-command-center.sh was missing — which it ALWAYS was, because that
+# script never existed. The new contract:
+#   1. Run Skill 32's materialize-dept-agents.sh (registers each workspace
+#      dept folder as a real entry in openclaw.json's agents.list[])
+#   2. Verify agents.list[].length >= 2 (default "main" + at least 1 dept)
+#   3. ONLY THEN mark commandCenterStatus = "done"
+#   4. commandCenterUrl is set only if a Mission Control dashboard is
+#      actually reachable on :4000; otherwise leave null.
+# No more lying.
 log "INFO" "step=1 command-center: starting"
 cc_status=$(state_get '.commandCenterStatus')
-cc_url=$(state_get '.commandCenterUrl')
-if [[ "$cc_status" == "done" && -n "$cc_url" && "$cc_url" != "null" ]]; then
-  log "INFO" "step=1 command-center: already done url=$cc_url — skipping"
+if [[ "$cc_status" == "done" ]]; then
+  log "INFO" "step=1 command-center: already done — skipping"
 else
   state_set '.commandCenterStatus = "building"'
-  # Try to invoke Skill 32. The installer script lives at a known path.
-  cc_install="$OC_ROOT/skills/32-command-center-setup/scripts/setup-command-center.sh"
-  cc_attempt=0
-  while (( cc_attempt < 3 )); do
-    cc_attempt=$((cc_attempt + 1))
-    log "INFO" "step=1 command-center: attempt $cc_attempt/3"
-    if [[ -x "$cc_install" ]]; then
-      if bash "$cc_install" >> "$LOG_FILE" 2>&1; then
-        # Capture URL: prefer state output file, else use canonical default
-        if [[ -f "$OC_ROOT/workspace/.command-center-url" ]]; then
-          cc_url=$(cat "$OC_ROOT/workspace/.command-center-url" | tr -d '\n')
-        else
-          cc_url="http://localhost:4000"
-        fi
-        state_set ".commandCenterStatus = \"done\" | .commandCenterUrl = \"$cc_url\""
-        log "INFO" "step=1 command-center: done url=$cc_url"
-        break
-      else
-        log "WARN" "step=1 command-center: setup-command-center.sh failed attempt $cc_attempt"
-      fi
-    else
-      log "WARN" "step=1 command-center: setup-command-center.sh not found at $cc_install — assuming Command Center is already running"
-      # Optimistic fallback: assume the documented default URL works.
-      cc_url="http://localhost:4000"
-      state_set ".commandCenterStatus = \"done\" | .commandCenterUrl = \"$cc_url\""
-      log "INFO" "step=1 command-center: marked done with default url=$cc_url"
-      break
-    fi
-    sleep $((2 ** cc_attempt))
-  done
-  if [[ "$(state_get '.commandCenterStatus')" != "done" ]]; then
+
+  SKILL32_MATERIALIZE="$OC_ROOT/skills/32-command-center-setup/scripts/materialize-dept-agents.sh"
+  if [[ ! -x "$SKILL32_MATERIALIZE" ]]; then
+    log "ERROR" "step=1 command-center: materialize-dept-agents.sh not executable or missing at $SKILL32_MATERIALIZE — refusing to mark done"
     state_set '.commandCenterStatus = "failed"'
-    fail_closeout "command-center: 3 attempts exhausted"
+    fail_closeout "Skill 32 materialize script not installed"
+  fi
+
+  log "INFO" "step=1 command-center: running materialize-dept-agents.sh"
+  if ! bash "$SKILL32_MATERIALIZE" >> "$LOG_FILE" 2>&1; then
+    log "ERROR" "step=1 command-center: materialize-dept-agents.sh failed (see log)"
+    state_set '.commandCenterStatus = "failed"'
+    fail_closeout "Skill 32 materialize-dept-agents.sh exited non-zero"
+  fi
+
+  # Verify agents.list[] actually got populated (default main + >=1 dept)
+  AGENT_COUNT=$(python3 -c "import json,sys; sys.stdout.write(str(len(json.load(open('$OC_ROOT/openclaw.json'))['agents']['list'])))" 2>>"$LOG_FILE" || echo "0")
+  if [[ -z "$AGENT_COUNT" || "$AGENT_COUNT" -lt 2 ]]; then
+    log "ERROR" "step=1 command-center: agents.list has only ${AGENT_COUNT:-0} entries after materialize — failing closeout"
+    state_set ".commandCenterStatus = \"failed\""
+    fail_closeout "agents.list[] not populated after Skill 32 materialize (count=${AGENT_COUNT:-0})"
+  fi
+  log "INFO" "step=1 command-center: ${AGENT_COUNT} agents materialized in agents.list[]"
+
+  # Also push the agentsMaterializedCount into state for downstream visibility
+  state_set ".agentsMaterializedCount = $AGENT_COUNT"
+
+  # Command Center dashboard URL — set ONLY if real, never fake
+  if curl -sf --max-time 3 http://127.0.0.1:4000/ >/dev/null 2>&1; then
+    state_set '.commandCenterStatus = "done" | .commandCenterUrl = "http://127.0.0.1:4000/"'
+    log "INFO" "step=1 command-center: done — Mission Control dashboard reachable at http://127.0.0.1:4000/"
+  else
+    state_set '.commandCenterStatus = "done" | .commandCenterUrl = null'
+    log "WARN" "step=1 command-center: Mission Control dashboard at :4000 not running — leaving commandCenterUrl null"
   fi
 fi
 

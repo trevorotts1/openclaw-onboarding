@@ -1,3 +1,53 @@
+## [v10.13.18] — 2026-05-23 — Stop the "agent build" lie (mirror of VPS v10.14.19)
+
+### Why (root cause)
+For weeks, Skill 23 has claimed to "build a zero-human workforce" when in fact it only wrote markdown role-definition files into the workspace. The runtime never registered any department as an actual agent. Skill 37's closeout celebration then went out to the owner claiming "your N-department, M-role workforce is LIVE" — when the gateway saw only the default `main` agent. Dashboards showed one agent. Every client onboarded under Mac v10.13.x is in this state.
+
+The specific lie path:
+
+1. Skill 23 wrote `role-definition.md` files into `~/.openclaw/workspace/departments/<dept>/`. Marked the dept `status: "done"` in `.workforce-build-state.json` based on file presence alone.
+2. Skill 32 INSTALL.md Phase 4 said *"the agent adds an entry to `agents.list[]`"* — but no script in `32-command-center-setup/scripts/` actually performed that mutation. Phase 4 was prose, not code.
+3. Skill 37's `run-closeout.sh` looked for a `setup-command-center.sh` that didn't exist, logged a warning, and **lied** — marked `commandCenterStatus: "done"` with a fake `http://localhost:4000` URL.
+4. Telegram celebration fired. Owner heard "workforce is LIVE." Runtime had 1 agent.
+
+This release fixes it both architecturally (Skill 32 gets a real materialize script + Skill 37 verifies before claiming done) and provides a remediation path (run materialize-dept-agents.sh on existing fleet to retroactively register agents).
+
+### What changed
+- **NEW** `32-command-center-setup/scripts/materialize-dept-agents.sh` — scans workspace department folders under `$OC_ROOT/workspaces/command-center/` and `$OC_ROOT/workspace/departments/`, registers each as a properly-shaped entry in `openclaw.json`'s `agents.list[]` (with `memorySearch` multimodal block + `wiki` context-injection block per v2026.5.20 runtime schema). Idempotent. Atomic write. Timestamped backup before mutation. Fails loud on any error. All JSON mutation runs in a Python heredoc to sidestep bash quoting traps.
+- `37-zhc-closeout/scripts/run-closeout.sh` STEP 1 rewritten — preflight now invokes `materialize-dept-agents.sh` and **verifies** `agents.list[].length >= 2` before marking `commandCenterStatus: done`. The previous fake "default url" fallback is removed. `commandCenterUrl` is only set if a Mission Control dashboard is actually reachable on `:4000`; otherwise it's `null`. Closeout fails (and the resume cron retries) if the materialize script is missing, fails, or doesn't populate enough agents.
+- `23-ai-workforce-blueprint/INSTRUCTIONS.md` — new **Moment 3.5** in the Post-Interview Handoff Protocol declares that `status: "done"` alone is insufficient; the master orchestrator MUST invoke `materialize-dept-agents.sh` after every dept flips to done, and treat missing/failed materialize as `"failed"` rather than `"done"`.
+- `23-ai-workforce-blueprint/build-state-schema.json` — adds per-dept `agentRegistered: boolean` and top-level `agentsMaterializedCount: integer` to make the runtime-vs-files mismatch a first-class state field instead of an invisible drift.
+- `install.sh` — new **Step 15** copies `materialize-dept-agents.sh` into `$SKILLS_DIR/32-command-center-setup/scripts/`, chmod+x, syntax-checks. Runs after Step 14 (Skill 37 install).
+- Version bump: v10.13.17 → v10.13.18 via `scripts/bump-version.sh` + manual sweep of README.md and DIRECT-TO-AGENT-UPDATE-MESSAGE.md per the repo version-bump checklist.
+
+### Fleet remediation
+Run on every existing client (Mac or VPS) — this retroactively populates `agents.list[]` for clients onboarded before Mac v10.13.18 / VPS v10.14.19:
+
+```bash
+# Mac:
+bash ~/.openclaw/skills/32-command-center-setup/scripts/materialize-dept-agents.sh
+
+# VPS (Hostinger Docker):
+docker exec -u node <container> bash /data/.openclaw/skills/32-command-center-setup/scripts/materialize-dept-agents.sh
+```
+
+The script is idempotent — re-running on an already-materialized config is a no-op. Verify after with:
+
+```bash
+# Mac:
+python3 -c "import json; cfg=json.load(open('$HOME/.openclaw/openclaw.json')); print('agents:', len(cfg['agents']['list'])); [print(' ', a['id'], '→', a.get('workspace','?')) for a in cfg['agents']['list']]"
+```
+
+### Files modified
+- `32-command-center-setup/scripts/materialize-dept-agents.sh` (NEW)
+- `37-zhc-closeout/scripts/run-closeout.sh` (Step 1 rewritten)
+- `23-ai-workforce-blueprint/INSTRUCTIONS.md` (Moment 3.5 added)
+- `23-ai-workforce-blueprint/build-state-schema.json` (agentRegistered + agentsMaterializedCount)
+- `install.sh` (Step 15 added)
+- `version`, `README.md`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `CHANGELOG.md`, plus the 3 Skill 23 version-bearing files — all to v10.13.18.
+
+---
+
 ## [v10.13.17] — 2026-05-23 — Skill 37 KIE.AI model-name fix + Cloudflare Tunnel hooks brief (mirror of VPS v10.14.18)
 
 ### Why (root cause)

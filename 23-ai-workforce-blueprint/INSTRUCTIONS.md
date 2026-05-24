@@ -485,6 +485,27 @@ The sub-agent (or master orchestrator on the sub-agent's behalf) MUST:
 
 This is non-negotiable. The state file is the contract between Skill 23 and the resume layer.
 
+### Moment 3.5 — Materialize the dept as a real agent (BINDING — added v10.13.18)
+
+A department's `status: "done"` is **NOT sufficient on its own**. The dept is only TRULY done when an entry exists in `openclaw.json`'s `agents.list[]` with `id = "dept-<slug>"`. Until that entry exists, the OpenClaw runtime, gateway, and dashboard see exactly **zero** real department agents — only the default `main` agent. Skill 23's role-definition markdown files are NOT runtime agents on their own; they need to be registered.
+
+**The master orchestrator MUST, immediately after writing `status: "done"` on the dept:**
+
+```bash
+# On Mac:
+bash ~/.openclaw/skills/32-command-center-setup/scripts/materialize-dept-agents.sh
+# On VPS:
+bash /data/.openclaw/skills/32-command-center-setup/scripts/materialize-dept-agents.sh
+```
+
+The script is idempotent — it can be run after EVERY dept flips to `done`, OR once at the end of the build. Either pattern is correct.
+
+**Failure handling:**
+- If the materialize script is missing (older onboarding bundle without v10.13.18 / VPS v10.14.19): set the dept to `"failed"` with `failureReason: "agents.list materialize blocked — Skill 32 materialize script not installed"`. Do NOT mark `"done"`.
+- If the materialize script returns non-zero: set the dept to `"failed"` with the script's stderr captured in `failureReason`.
+
+**Why this is binding:** Pre-v10.13.18, Skill 23 marked depts `"done"` purely on file presence, then Skill 37 sent a celebration to the client claiming an N-dept M-role workforce was "LIVE" — when in reality `agents.list[]` contained one entry (`main`). The materialize step is the contract that makes the celebration honest.
+
 ### When ALL departments are `done`
 
 The master orchestrator:
