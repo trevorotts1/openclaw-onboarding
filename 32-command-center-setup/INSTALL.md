@@ -494,6 +494,16 @@ Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-
 
 **🔴 GATE CHECK: DO NOT proceed to Phase 7 until the URL returns 200. The cloudflare-tunnel PM2 process must be running. Do NOT create a Cloudflare account. Do NOT go to the Cloudflare website. The tunnel is created inside Trevor's Cloudflare account. The token comes directly from Trevor's system in the webhook response.**
 
+### Phase 6c — Make pm2 survive container restarts (added v10.13.22)
+
+**Mac native install — pm2 + launchd already handles persistence via `pm2 startup`; no action required on Mac. This phase is for Hostinger Docker VPS only.**
+
+The VPS install adds a `command:` override to `/docker/<project>/docker-compose.yml` that backgrounds a 45-second delayed `pm2 resurrect` call so the Mission Control dashboard + cloudflared connector survive `docker compose restart`. On Mac, pm2 is managed by launchd via `pm2 startup` and persists across reboots without any docker-compose hook, so the equivalent `scripts/install-pm2-restart-hook.sh` is a no-op on this repo.
+
+If you operate a Hostinger Docker VPS, use the VPS repo's variant of this script and follow the VPS INSTALL.md Phase 6c:
+
+- VPS repo: https://github.com/trevorotts1/openclaw-onboarding-vps
+
 ## Phase 7: Verification (Agent Does This Automatically)
 
 💬 Send Telegram message: "⏳ [Phase 7] Running final verification tests across all departments..."
