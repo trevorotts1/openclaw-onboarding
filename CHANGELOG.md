@@ -1,3 +1,73 @@
+## [v10.13.24] — 2026-05-24 — Skill 35 (social-media-planner): Fish Audio is now optional (mirror of VPS v10.14.31)
+
+### The bug
+
+Three places gate Skill 35 install on Fish Audio (Skill 30) being installed,
+which blocks every client who does NOT use podcasts from getting Skill 35 at
+all. Trevor surfaced this on 2026-05-24: 6 of 7 client boxes have no
+`FISH_AUDIO_API_KEY` and the cron-prompt install loop refuses to mark Skill 35
+complete because of it.
+
+Concrete gates found (mirror of VPS v10.14.31 — see VPS CHANGELOG.md for the
+full file-by-file diagnosis; Mac repo has the identical pattern):
+
+1. `install.sh:2887` — orchestrator-level prereq line literally said
+   `Skill 35: Social Media Planner (requires Skills 22, 30, 31)`.
+2. `35-social-media-planner/INSTALL.md:38-44` — auto-check loop printed
+   `✗ 30-fish-audio-api-reference MISSING` (red X = sub-agent blocker).
+3. `35-social-media-planner/README.md` Requirements list — Skill 30 + Fish
+   Audio API key + Podbean listed without OPTIONAL tag.
+4. `35-social-media-planner/INSTALL.md` Step 7.8 — required human prompt and
+   did not auto-defer.
+
+### The fix
+
+Mirror of VPS v10.14.31. Concrete diffs:
+
+- `install.sh:2887` — softened prereq line to `(requires Skills 22, 31; Skill
+  30 / Fish Audio is OPTIONAL — enables podcast voiceover only)`.
+- `35-social-media-planner/INSTALL.md` — split prereq loop into REQUIRED vs
+  OPTIONAL; added soft-fail contract paragraph; Step 7.8 auto-detect; checklist
+  rows tagged OPTIONAL.
+- `35-social-media-planner/README.md` — REQUIRED / OPTIONAL split + degradation
+  note + podcast cost line softened.
+- `35-social-media-planner/qc-skill35.sh` + `qc-social-media-planner.sh` —
+  Skill 30 INFO detection + auto-`PODCAST_DEFERRED` write.
+
+Fish Audio happy path unchanged.
+
+### Verification
+
+Smoke test: install Skill 35 on a Mac client box with no `FISH_AUDIO_API_KEY`
+and no Skill 30 installed. Expected: `qc-skill35.sh` exits 0; MEMORY.md gets
+`PODCAST_DEFERRED=true`; image/video/blog/carousel/email/GHL pipelines all
+install and pass QC.
+
+Risk: LOW.
+
+### Files changed (manual + bump-script tracked)
+
+- [x] `./version` v10.13.24 (bump-script)
+- [x] `install.sh:ONBOARDING_VERSION` v10.13.24 (bump-script)
+- [x] `install.sh:2887` Skill 35 prereq line softened (manual)
+- [x] `23-ai-workforce-blueprint/skill-version.txt` v10.13.24 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_index.json` v10.13.24 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` v10.13.24 (bump-script)
+- [x] `README.md` v10.13.24 (manual)
+- [x] `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` v10.13.24 (manual)
+- [x] `update-skills.sh:ONBOARDING_VERSION` v10.13.24 (manual — bump-script doesn't cover this)
+- [x] `35-social-media-planner/README.md` — REQUIRED / OPTIONAL split + degradation note (manual)
+- [x] `35-social-media-planner/INSTALL.md` — soft-fail prereq loop, Step 7.8 auto-detect, completion checklist optional tags (manual)
+- [x] `35-social-media-planner/qc-skill35.sh` — Skill 30 INFO detection + auto-PODCAST_DEFERRED (manual)
+- [x] `35-social-media-planner/qc-social-media-planner.sh` — mirror of qc-skill35.sh (manual)
+- [x] `CHANGELOG.md` v10.13.24 entry (manual — this one)
+
+### Co-authored
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+---
+
 ## [v10.13.23] — 2026-05-24 — Per-agent file architecture: IDENTITY/SOUL/MEMORY/HEARTBEAT for every dept-head agent + shared USER/AGENTS/TOOLS via symlink (mirror of VPS v10.14.29)
 
 ### Spec source

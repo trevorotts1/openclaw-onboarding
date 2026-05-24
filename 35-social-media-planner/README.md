@@ -13,7 +13,7 @@ Every week, this skill automatically:
 - Generates platform-specific posts for Facebook, Instagram, LinkedIn, YouTube, TikTok, and Pinterest
 - Creates images at correct ratios (4:5, 2:3, 9:16, 16:9, 1:1) with brand-colored text overlays
 - Produces videos using kie.ai (Veo 3.1 Lite)
-- Writes a blog post, podcast episode (with Fish Audio S2 emotion tags), and email newsletter
+- Writes a blog post and email newsletter (always); podcast episode with Fish Audio S2 emotion tags (only if Fish Audio is configured — otherwise podcast production is skipped gracefully)
 - Creates Thursday carousel posts optimized per platform (including LinkedIn PDF upload)
 - Writes unique, emotionally compelling comments with the client's action link for every post
 - Runs 40+ QC checks (including persona governance) before anything goes live
@@ -23,18 +23,23 @@ Every week, this skill automatically:
 
 ## Requirements
 
+**REQUIRED (skill will not run without these):**
 - OpenClaw instance with core .md files configured
 - Skill 01 (Teach Yourself Protocol)
 - Skill 22 (Book-to-Persona) for persona-governed content
-- Skill 30 (Fish Audio API Reference) for podcast production
 - Skill 31 (Upgraded Memory System) for memory-core integration
 - GoHighLevel (Convert and Flow) account with Private Integration Token and Social Planner API access
 - kie.ai API access (Nano Banana 2 for images, Veo 3.1 Lite for videos)
-- Fish Audio API key and Voice ID
-- Podbean account for podcast hosting
 - Google Sheets (**created automatically via n8n webhook - no client action needed**)
 - Telegram for notifications (email and SMS as fallback)
 - FFmpeg and ImageMagick installed locally
+
+**OPTIONAL (skill installs and runs without these; only podcast production is skipped):**
+- Skill 30 (Fish Audio API Reference) — enables podcast voiceover via Fish Audio S2
+- Fish Audio API key and Voice ID (`FISH_AUDIO_API_KEY`, `FISH_AUDIO_VOICE_ID`)
+- Podbean account for podcast hosting (`PODBEAN_PODCAST_ID`)
+
+> **Without Fish Audio:** Skill 35 still produces images, videos, blog posts, email newsletters, carousels, comments, and full multi-platform scheduling. The podcast pipeline is gracefully skipped and Skill 35 logs `PODCAST_DEFERRED` to MEMORY.md so QC understands the skip is intentional, not a failure. The client can always add Fish Audio later and re-enable podcasts without reinstalling.
 
 ## How Posting Works
 
@@ -59,8 +64,8 @@ https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67
 - ~22 images at 1K resolution (Nano Banana 2): ~$0.88
 - 1 podcast cover at 2K resolution: ~$0.06
 - 2 videos at 60 seconds each (Veo 3.1 Lite): ~$3.00
-- Fish Audio S2 podcast: compute only (self-hosted) or API cost
-- **Total: ~$3.94/week**
+- Fish Audio S2 podcast (OPTIONAL): compute only (self-hosted) or API cost — $0 if Fish Audio is not configured
+- **Total: ~$3.94/week** (or ~$3.94/week minus podcast cost if Fish Audio not configured)
 
 ## File Structure
 

@@ -71,7 +71,22 @@ assert "Skill 02 (BYUP) installed"  "[ -d \"$HOME/.openclaw/skills/02-back-yours
 assert "Skill 22 (Persona) installed" "[ -d \"$HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system\" ] || [ -d \"~/.openclaw/skills/22-book-to-persona-coaching-leadership-system\" ]"
 assert "Skill 31 (Memory) installed" "[ -d \"$HOME/.openclaw/skills/31-upgraded-memory-system\" ] || [ -d \"~/.openclaw/skills/31-upgraded-memory-system\" ]"
 warn_only "Skill 36 (GHL MCP) installed — recommended for MCP-first routing" \
-  "[ -d \"$HOME/.openclaw/skills/36-ghl-mcp-setup\" ] || [ -d \"~/.openclaw/skills/36-ghl-mcp-setup\" ]"
+  "[ -d \"$HOME/.openclaw/skills/36-ghl-mcp-setup\" ]"
+
+# Skill 30 (Fish Audio) is OPTIONAL. We only inform — never fail or warn — on its absence.
+if [ -d "$HOME/.openclaw/skills/30-fish-audio-api-reference" ]; then
+  green "  ✓ INFO  — Skill 30 (Fish Audio) installed (optional — podcast pipeline enabled)"
+else
+  yellow "  ⓘ INFO  — Skill 30 (Fish Audio) not installed (optional — podcast pipeline disabled; all other features run normally)"
+  if [ -f "$WORKSPACE/MEMORY.md" ] && ! grep -qi 'PODCAST_DEFERRED' "$WORKSPACE/MEMORY.md" 2>/dev/null; then
+    {
+      echo ""
+      echo "## Skill 35 — Social Media Planner (auto-written by qc-social-media-planner.sh)"
+      echo "PODCAST_DEFERRED=true   # Fish Audio (Skill 30) not installed at $(date -u +%Y-%m-%dT%H:%M:%SZ). Podcast pipeline is gracefully skipped. To re-enable: install Skill 30, set FISH_AUDIO_API_KEY+VOICE_ID+PODBEAN_PODCAST_ID, remove this line."
+    } >> "$WORKSPACE/MEMORY.md" 2>/dev/null || true
+    yellow "    Wrote PODCAST_DEFERRED=true to $WORKSPACE/MEMORY.md so downstream QC understands the skip is intentional."
+  fi
+fi
 
 echo ""
 echo "── Section B: GHL credentials (canonical names) ──"
