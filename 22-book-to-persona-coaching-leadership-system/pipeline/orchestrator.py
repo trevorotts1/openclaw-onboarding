@@ -240,6 +240,64 @@ BOOKS = [
     {"title": "Good to Great Summary",          "author": "Jim Collins",       "file": "Good to Great Summary - Jim Collins.pdf",              "folder": "collins-good-to-great-summary"},
 ]
 
+# ─── PERSONA CATEGORIES UPDATER (v10.14.27) ──────────────────────────────────
+def _persona_categories_path() -> Path:
+    """Locate persona-categories.json across the canonical install paths."""
+    candidates = [
+        Path("/data/.openclaw/master-files/coaching-personas/persona-categories.json"),
+        Path.home() / ".openclaw" / "workspace" / "data" / "coaching-personas" / "persona-categories.json",
+        Path.home() / "Downloads" / "openclaw-master-files" / "coaching-personas" / "persona-categories.json",
+        BASE / "persona-categories.json",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    # No file found — return the first candidate so we can create it.
+    return candidates[0]
+
+
+def _append_persona_to_categories(book: dict, folder: str) -> None:
+    """Append a new persona entry to persona-categories.json (idempotent).
+
+    Schema 1.0: personas live under data["personas"][slug] with author, book,
+    domain[], perspective[], custom[] fields. We write an empty-tags stub so
+    that (a) the persona becomes visible to v2 selector's list_available_personas
+    (b) the operator gets a clear "no tags yet" signal to fill in domain +
+    perspective tags before the dept-scope filter will include this persona.
+    """
+    cat_path = _persona_categories_path()
+    if not cat_path.exists():
+        # No persona-categories.json yet — create a minimal v1.0 shell.
+        cat_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "schemaVersion": "1.0",
+            "created": datetime.datetime.utcnow().strftime("%Y-%m-%d"),
+            "domainTags": [],
+            "perspectiveTags": [],
+            "personas": {},
+        }
+    else:
+        with open(cat_path) as f:
+            data = json.load(f)
+        if "personas" not in data or not isinstance(data.get("personas"), dict):
+            data["personas"] = {}
+
+    if folder in data["personas"]:
+        return  # Already present — idempotent no-op.
+
+    data["personas"][folder] = {
+        "author": book.get("author", "unknown"),
+        "book": book.get("title", folder),
+        "domain": [],          # Tag manually before dept filter will include this persona
+        "perspective": [],
+        "custom": [],
+        "added": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    with open(cat_path, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"[orchestrator] Appended {folder} to {cat_path} (no tags yet — operator must add domain + perspective).")
+
+
 # ─── LOGGING ──────────────────────────────────────────────────────────────────
 def log(msg):
     timestamp = datetime.datetime.now().strftime("%B %-d at %-I:%M %p")
@@ -1209,10 +1267,21 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         status[folder]["completed"] = datetime.datetime.now().strftime('%B %-d at %-I:%M %p')
         save_status(status)
 
-        # Phase 5: Auto re-index persona in Gemini Engine
-        indexer_path = Path.home() / "clawd/scripts/gemini-indexer.py"
-        if indexer_path.exists():
-            log("Phase 5: Re-indexing persona in Gemini Engine...")
+        # Phase 5: Auto re-index persona in Gemini Engine.
+        # Pre-v10.14.27 hardcoded the legacy ~/clawd/scripts/gemini-indexer.py
+        # path, which doesn't exist on Mac-new (~/.openclaw/...) or VPS
+        # (/data/.openclaw/...) — so the indexer was silently skipped on
+        # every modern install, leaving the new persona's blueprint
+        # un-embedded and invisible to Layer 5 (semantic_task_fit).
+        # Now searches all 3 canonical locations.
+        indexer_candidates = [
+            Path.home() / ".openclaw" / "workspace" / "scripts" / "gemini-indexer.py",
+            Path("/data/.openclaw/workspace/scripts/gemini-indexer.py"),
+            Path.home() / "clawd" / "scripts" / "gemini-indexer.py",  # legacy
+        ]
+        indexer_path = next((p for p in indexer_candidates if p.exists()), None)
+        if indexer_path is not None:
+            log(f"Phase 5: Re-indexing persona in Gemini Engine ({indexer_path})...")
             result_proc = subprocess.run(
                 [sys.executable, str(indexer_path)],
                 capture_output=True,
@@ -1223,7 +1292,17 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
                 log(f"  Warning: gemini-indexer.py exited with code {result_proc.returncode}: {result_proc.stderr[:300]}")
             log("Phase 5: Re-indexing complete.")
         else:
-            log(f"  Warning: gemini-indexer.py not found at {indexer_path}, skipping re-indexing")
+            log(f"  Warning: gemini-indexer.py not found in any of {[str(c) for c in indexer_candidates]}, skipping re-indexing")
+
+        # Phase 6: Append new persona to persona-categories.json so the
+        # selector's list_available_personas() can see it on the next run.
+        # Pre-v10.14.27 only the add-persona-from-source.sh wrapper did
+        # this — direct orchestrator calls (e.g. orchestrator.py --single-book)
+        # left the persona invisible to the v2 selector.
+        try:
+            _append_persona_to_categories(book, folder)
+        except Exception as e:
+            log(f"  Warning: failed to append {folder} to persona-categories.json: {e}")
 
         return True
 

@@ -1,3 +1,75 @@
+## [v10.13.26] — 2026-05-24 — 2-day-learnings cross-pollination from VPS v10.14.34
+
+### Why
+
+Cross-pollinate the Mac-applicable subset of the 25 findings discovered
+on Sat 2026-05-23 and Sun 2026-05-24. Most fixes were patched live on VPSes
+and then ported here; install-time defenses cover the Mac-specific subset.
+
+### What changed
+
+**Skill 23 (`23-ai-workforce-blueprint`) — ported from VPS v10.14.27 + v10.14.30:**
+
+- `scripts/persona-selector-v2.py` — port of (a) `list_available_personas()`
+  schemaversion-meta-key fix (selector was returning "Schemaversion" for
+  every task because it iterated the top-level JSON keys of
+  persona-categories.json instead of `data["personas"]`) and (b) anti-
+  repetition variety logic (24h recency penalty + top-N weighted sampling).
+  Bringing Mac to functional parity with VPS post-v10.14.30. Source-date: Sun.
+
+**Skill 22 (`22-book-to-persona-coaching-leadership-system`) — ported from VPS v10.14.27 + v10.14.32:**
+
+- `pipeline/orchestrator.py` — Phase 5 fix (replaced hardcoded legacy path
+  + Phase 6 `_append_persona_to_categories()` for direct orchestrator calls).
+  Source-date: Sun.
+- `scripts/add-persona-from-source.sh` — full YouTube/video pipeline rewrite
+  (yt-dlp + whisper-cpp + ffmpeg; bootstraps `persona-categories.json` if
+  missing; `set -o pipefail`). Source-date: Sun.
+- `INSTRUCTIONS.md` — N32 note documenting the new YouTube/video tools
+  and pipefail caller-safety guidance.
+
+**Install-time hardening — `scripts/install-hardening.sh` (NEW Mac-tailored):**
+
+| # | Defense |
+|---|---------|
+| 13 | Auto-generate `hooks.token` (64 hex) when `hooks.enabled=true` and token is missing |
+| 16 | brew (not apt) assumption check — warn if brew missing on macOS |
+| 20 | Backfill yt-dlp + whisper-cpp + ffmpeg via brew if missing (Skill 22 needs them) |
+
+Wired into `install.sh` right before the gateway restart. Idempotent + non-blocking.
+
+**`scripts/bump-version.sh`** — expanded from 5-file to 8-file coverage
+(finding #23). New trackers: `README.md`, `update-skills.sh`,
+`DIRECT-TO-AGENT-UPDATE-MESSAGE.md`. `--check` mode now reports all 8.
+
+**Skill 35 (`35-social-media-planner`) — finding #25:**
+
+- `scripts/run-publishing-cycle.sh` — downgraded the exit-5 for missing
+  21-agent roster to a warning by default (the `social-media-planner`
+  role-bundle the script referenced does not exist in the role-library
+  catalog). Operators can re-enable strict 21-agent enforcement with
+  `OPENCLAW_STRICT_ROSTER=1`. Now a fresh install can run basic single-
+  topic publishing in single-orchestrator mode without manual workarounds.
+
+### What did NOT change (already in place or VPS-only)
+
+- #21 n8n workflow ID — already correct in this repo (`i0P3OWCEsXZxVo0N`);
+  no stale `CKn45PNOPiCY3aAM` references exist anywhere
+- #11 doctor --fix — already present in Mac install.sh at line 3803
+- #10, 12, 14, 15, 17, 18, 19, 24 — VPS-only (Hostinger compose, PORT leak,
+  cloudflared pm2, persistent CLI scope, Debian SSL path, pip backfill,
+  unzip absence, state machine verify)
+
+### What was DEFERRED
+
+- #22 Skill 23 ROLE.md substitution — same as VPS bundle. `fill_tokens()`
+  already exists in `create_role_workspaces.py`; the reported failure
+  needs forensic reproduction to determine which call path bypasses it.
+
+Co-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+---
+
 ## [v10.13.25] — 2026-05-24 — Skill 35: build the trigger scripts INSTRUCTIONS.md has always referenced (Mac mirror of VPS v10.14.33)
 
 ### Why

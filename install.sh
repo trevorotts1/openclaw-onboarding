@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.25"
+ONBOARDING_VERSION="v10.13.26"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -3803,6 +3803,22 @@ schedule_auto_kickoff "$TELEGRAM_LAST_RESULT" || true
 if command -v openclaw >/dev/null 2>&1; then
     step "Running openclaw doctor --fix to strip any stale plugin-injected config keys"
     openclaw doctor --fix 2>&1 | tail -5 || warn "doctor --fix had issues — continuing anyway (gateway may complain at start)"
+fi
+
+# ----------------------------------------------------------
+# v10.13.26: 2-day-learnings install hardening (Mac subset)
+# ----------------------------------------------------------
+# Findings cross-pollinated from VPS v10.14.34, scoped to Mac-applicable items:
+#   #13 hooks.token auto-generate when hooks.enabled but no token
+#   #16 brew (not apt) assumption check — warn if brew missing
+#   #20 yt-dlp + whisper-cpp + ffmpeg backfill (Skill 22 needs them)
+# Idempotent + non-blocking.
+_hardening_self="$ONBOARDING_DIR/scripts/install-hardening.sh"
+if [ -f "$_hardening_self" ]; then
+    step "Running install hardening (2-day-learnings defenses, Mac subset)"
+    bash "$_hardening_self" 2>&1 | tail -20 || warn "install-hardening returned non-zero (treated as informational)"
+else
+    note "install-hardening.sh not in bundle — skipping (older onboarding bundle, harmless)"
 fi
 
 # ----------------------------------------------------------
