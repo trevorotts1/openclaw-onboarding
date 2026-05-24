@@ -1,3 +1,30 @@
+## [v10.13.25] — 2026-05-24 — Skill 35: build the trigger scripts INSTRUCTIONS.md has always referenced (Mac mirror of VPS v10.14.33)
+
+### Why
+
+Mirror of VPS v10.14.33. INSTRUCTIONS.md `## How to trigger this skill`
+has documented three trigger paths since v10.12.0; none existed in code.
+Skill 35 was installed but unusable end-to-end. This PR closes the two
+VPS-side gaps on the Mac onboarding repo as well so a Mac-mini install
+ships with the same scripts available.
+
+### What changed
+
+- `35-social-media-planner/scripts/run-publishing-cycle.sh` (NEW — byte-identical to VPS).
+- `35-social-media-planner/scripts/weekly-batch.sh` (NEW — byte-identical to VPS).
+- `35-social-media-planner/scripts/content-calendar.example.json` (NEW).
+- `35-social-media-planner/skill-version.txt`: v2.0.0 → v2.1.0.
+- Version bump v10.13.24 → v10.13.25 via `scripts/bump-version.sh` + manual
+  README/DIRECT-TO-AGENT-UPDATE-MESSAGE/update-skills.sh ONBOARDING_VERSION.
+
+### Risk
+
+Low. Same behavior contract as VPS: dry-run safe, never invents defaults,
+prepares manifest for orchestrator pick-up. No existing Skill 35 behavior
+changes.
+
+---
+
 ## [v10.13.24] — 2026-05-24 — Skill 35 (social-media-planner): Fish Audio is now optional (mirror of VPS v10.14.31)
 
 ### The bug

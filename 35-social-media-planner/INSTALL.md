@@ -307,6 +307,39 @@ Add the LABELED sections from CORE_UPDATES.md ONLY to:
 
 Do NOT touch IDENTITY.md, HEARTBEAT.md, USER.md, or SOUL.md from this skill.
 
+### Step 8.5: (v2.1.0) Set up the content calendar (optional, enables `weekly-batch.sh`)
+
+The cron line documented in `INSTRUCTIONS.md` (`0 9 * * 1 bash …/weekly-batch.sh`) reads `~/.openclaw/config/content-calendar.json` and runs `run-publishing-cycle.sh` once per scheduled topic. The file is **opt-in** — `weekly-batch.sh` exits 0 with an informational message if it's missing.
+
+```bash
+mkdir -p ~/.openclaw/config
+cp ~/.openclaw/skills/35-social-media-planner/scripts/content-calendar.example.json \
+   ~/.openclaw/config/content-calendar.json
+```
+
+**Schema (v1.0):**
+
+```json
+{
+  "version": "v1.0",
+  "entries": [
+    {
+      "date": "2026-05-25",
+      "topic": "...",
+      "platforms": ["linkedin", "medium", "x", "wordpress"],
+      "schedule": "auto"
+    }
+  ]
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `date` | yes | `YYYY-MM-DD` local timezone. |
+| `topic` | yes | Passed to `run-publishing-cycle.sh --topic`. |
+| `platforms` | yes | Same list `run-publishing-cycle.sh --platforms` accepts. |
+| `schedule` | no  | `"auto"`, `"now"`, or ISO 8601 timestamp. |
+
 ### Step 9: Add weekly theme request to HEARTBEAT.md
 
 ```markdown

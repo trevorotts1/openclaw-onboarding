@@ -1,5 +1,18 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.1.0 - May 24, 2026 (Track M — mirror of VPS v10.14.33)
+
+### Added — the three trigger paths INSTRUCTIONS.md has always referenced
+- `scripts/run-publishing-cycle.sh` — single-topic orchestrator with full
+  `--topic / --platforms / --schedule / --dry-run / --help` interface.
+- `scripts/weekly-batch.sh` — cron-driven (`0 9 * * 1`) batch runner.
+- `scripts/content-calendar.example.json` — schema starter.
+
+Mirrors the VPS-side v10.14.33 PR. See the VPS CHANGELOG entry for the
+full rationale + behavior contract.
+
+---
+
 ## v1.4.0 - April 14, 2026
 
 ### Added/Updated
