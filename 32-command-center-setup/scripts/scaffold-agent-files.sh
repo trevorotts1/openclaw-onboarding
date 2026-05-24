@@ -115,10 +115,112 @@ fi
 
 NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# ─── Token substitution (v10.14.35) ──────────────────────────────────────────
+# Load company-config.json so per-agent IDENTITY/SOUL/MEMORY can be personalized
+# with the owner's company name + industry instead of the previous slug-only
+# stubs. Falls back to placeholder strings if the config file isn't present yet
+# (e.g. scaffolder ran before Skill 23 wrote company-config.json — rare).
+#
+# Where company-config.json lives — checked in order:
+#   1. $OC_ROOT/workspace/zero-human-company/<active-company>/company-config.json
+#   2. $OC_ROOT/workspace/zero-human-company/company-config.json (legacy)
+#   3. $OC_ROOT/workspace/company-config.json (very old layout)
+#
+# Token mapping (mirrors fill_tokens() in
+# 23-ai-workforce-blueprint/scripts/create_role_workspaces.py so the dept-head
+# files share the same vocabulary as sub-agent how-to.md files):
+#   COMPANY_NAME       — companyName / company_name / name
+#   COMPANY_INDUSTRY   — companyIndustry / industry / industryVertical
+#   YEARLY_GOAL        — yearlyRevenueGoal / yearly_revenue_goal / revenueGoal
+COMPANY_NAME_VAL=""
+COMPANY_INDUSTRY_VAL=""
+YEARLY_GOAL_VAL=""
+
+if command -v python3 >/dev/null 2>&1; then
+  _SCAFFOLD_TOKENS=$(python3 - "$OC_ROOT" <<'PYEOF' 2>/dev/null || true
+import json
+import os
+import sys
+from pathlib import Path
+
+oc_root = Path(sys.argv[1])
+candidates = []
+
+# 1. Active-company subdir (newest layout)
+zhc_root = oc_root / "workspace" / "zero-human-company"
+if zhc_root.is_dir():
+    for child in sorted(zhc_root.iterdir()):
+        if child.is_dir():
+            candidate = child / "company-config.json"
+            if candidate.exists():
+                candidates.append(candidate)
+# 2. Direct under zero-human-company
+candidates.append(zhc_root / "company-config.json")
+# 3. Very-old workspace root
+candidates.append(oc_root / "workspace" / "company-config.json")
+
+cfg = {}
+for c in candidates:
+    if c.exists():
+        try:
+            cfg = json.loads(c.read_text(encoding="utf-8"))
+            break
+        except Exception:
+            continue
+
+def pick(*keys):
+    for k in keys:
+        v = cfg.get(k)
+        if v:
+            return str(v)
+    return ""
+
+company_name = pick("companyName", "company_name", "name")
+industry = pick("companyIndustry", "industry", "industryVertical")
+yearly = pick("yearlyRevenueGoal", "yearly_revenue_goal", "revenueGoal", "yearlyGoal")
+
+# Emit shell-safe KEY=VAL lines (single-line values, no shell escaping needed
+# because we read them via `eval` of `read -r` below — we use base64 to dodge
+# quoting hazards on company names like "John's Bakery").
+import base64
+def enc(s): return base64.b64encode(s.encode("utf-8")).decode("ascii") if s else ""
+
+print(f"COMPANY_NAME_B64={enc(company_name)}")
+print(f"COMPANY_INDUSTRY_B64={enc(industry)}")
+print(f"YEARLY_GOAL_B64={enc(yearly)}")
+PYEOF
+)
+
+  if [[ -n "$_SCAFFOLD_TOKENS" ]]; then
+    while IFS='=' read -r key val; do
+      [[ -z "$key" ]] && continue
+      case "$key" in
+        COMPANY_NAME_B64)     COMPANY_NAME_VAL=$(echo "$val" | base64 -d 2>/dev/null || true) ;;
+        COMPANY_INDUSTRY_B64) COMPANY_INDUSTRY_VAL=$(echo "$val" | base64 -d 2>/dev/null || true) ;;
+        YEARLY_GOAL_B64)      YEARLY_GOAL_VAL=$(echo "$val" | base64 -d 2>/dev/null || true) ;;
+      esac
+    done <<< "$_SCAFFOLD_TOKENS"
+  fi
+fi
+
+# Allow caller to override (used by add-department.sh when it already has the values)
+[[ -n "${OC_COMPANY_NAME:-}" ]]     && COMPANY_NAME_VAL="$OC_COMPANY_NAME"
+[[ -n "${OC_COMPANY_INDUSTRY:-}" ]] && COMPANY_INDUSTRY_VAL="$OC_COMPANY_INDUSTRY"
+[[ -n "${OC_YEARLY_GOAL:-}" ]]      && YEARLY_GOAL_VAL="$OC_YEARLY_GOAL"
+
+# Final fallbacks for templates (never leave `{{COMPANY_NAME}}` literal in
+# output — that's the bug the substitution is fixing).
+# NB: don't use an apostrophe in the default-value of a "${VAR:-…}" expansion
+# inside double quotes — bash parses the apostrophe as opening a single-quote
+# context and the script won't lex.
+COMPANY_NAME_DISPLAY="${COMPANY_NAME_VAL:-the company}"
+COMPANY_INDUSTRY_DISPLAY="${COMPANY_INDUSTRY_VAL:-the industry}"
+
 echo "[scaffold-agent-files] OC_ROOT=$OC_ROOT"
 echo "[scaffold-agent-files] agent=$AGENT_SLUG  name=\"$AGENT_NAME\"  dept=$DEPARTMENT"
 echo "[scaffold-agent-files] workspace=$WORKSPACE_DIR"
 echo "[scaffold-agent-files] shared-root=$SHARED_ROOT"
+echo "[scaffold-agent-files] company=\"$COMPANY_NAME_DISPLAY\"  industry=\"$COMPANY_INDUSTRY_DISPLAY\""
 
 # ─── Ensure workspace dir exists ─────────────────────────────────────────────
 if [[ ! -d "$WORKSPACE_DIR" ]]; then
@@ -147,6 +249,8 @@ write_if_missing() {
 # ─── Per-agent file templates ────────────────────────────────────────────────
 IDENTITY_CONTENT="# IDENTITY.md — ${AGENT_NAME}
 
+**Company:** ${COMPANY_NAME_DISPLAY}
+**Industry:** ${COMPANY_INDUSTRY_DISPLAY}
 **Department:** ${DEPARTMENT}
 **Agent slug:** ${AGENT_SLUG}
 **Generated:** ${NOW_ISO}
@@ -156,11 +260,12 @@ IDENTITY_CONTENT="# IDENTITY.md — ${AGENT_NAME}
 - **Name:** (assign during first conversation — capture the persona/name the owner gives this agent)
 - **Role:** ${AGENT_NAME}
 - **Department:** ${DEPARTMENT}
+- **Company:** ${COMPANY_NAME_DISPLAY}
 - **Reports to:** Master Orchestrator (CEO Agent)
 
 ## What This Role Owns
 
-The ${DEPARTMENT} department's performance and outputs. See SOUL.md for the
+The ${DEPARTMENT} department's performance and outputs for ${COMPANY_NAME_DISPLAY}. See SOUL.md for the
 department mission, KPIs, and standards. See HEARTBEAT.md for the cadence.
 
 ## Operating Discipline
@@ -186,12 +291,14 @@ from this IDENTITY but write their own role-specific IDENTITY.md.
 
 MEMORY_CONTENT="# MEMORY.md — ${AGENT_NAME}
 
-> Long-term state, decisions, and metrics for the ${DEPARTMENT} department head.
+> Long-term state, decisions, and metrics for the ${DEPARTMENT} department head at ${COMPANY_NAME_DISPLAY}.
 > Updated by this agent after each meaningful work session.
 
 ## ${NOW_ISO%T*} — Agent Scaffolded
 
 - Agent slug: ${AGENT_SLUG}
+- Company: ${COMPANY_NAME_DISPLAY}
+- Industry: ${COMPANY_INDUSTRY_DISPLAY}
 - Per-agent files created via scaffold-agent-files.sh
 - Awaiting first task assignment
 
@@ -215,9 +322,12 @@ MEMORY_CONTENT="# MEMORY.md — ${AGENT_NAME}
 # (e.g. add-department.sh on a live install).
 SOUL_CONTENT="# SOUL.md — ${AGENT_NAME}
 
+**Company:** ${COMPANY_NAME_DISPLAY}
+**Industry:** ${COMPANY_INDUSTRY_DISPLAY}
+
 ## Mission
 
-Serve the ${DEPARTMENT} department by executing this role's responsibilities at
+Serve the ${DEPARTMENT} department at ${COMPANY_NAME_DISPLAY} by executing this role's responsibilities at
 a standard high enough to deserve the trust of the human owner.
 
 ## Voice
