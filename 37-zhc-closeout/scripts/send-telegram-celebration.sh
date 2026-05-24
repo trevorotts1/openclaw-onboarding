@@ -218,10 +218,28 @@ It explains your departments, your AI employees, the communication hierarchy, th
 fi
 
 # ---- Message 6: Command Center URL ----
+#
+# Hardened against the v3-era bugs that hit Lyric + Evelyn:
+#   - commandCenterUrl was null (Lyric) → we'd have sent an empty URL line
+#   - commandCenterUrl was the legacy fake http://localhost:4000 (Evelyn) →
+#     useless to the client; their dashboard lives at a public CF tunnel URL.
+# Real public URL must start with https:// AND not be localhost.
+cc_url_is_real() {
+  local u="$1"
+  [[ -z "$u" || "$u" == "null" ]] && return 1
+  [[ "$u" == "http://localhost:4000" || "$u" == "http://localhost:4000/" ]] && return 1
+  [[ "$u" != https://* ]] && return 1
+  # reject any localhost host even under https://
+  [[ "$u" == https://localhost* ]] && return 1
+  return 0
+}
+
+CC_BOOKMARK_FILE="$OC_ROOT/workspace/.zhc-dashboard-url"
+
 if is_delivered 6; then
   log "INFO" "msg 6: already delivered — skipping"
-elif [[ -z "$CC_URL" || "$CC_URL" == "null" ]]; then
-  log "WARN" "msg 6: commandCenterUrl missing — skipping"
+elif ! cc_url_is_real "$CC_URL"; then
+  log "WARN" "msg 6: commandCenterUrl missing or local-only — skipping Command Center URL message"
   failed_messages+=("msg-6-no-url")
 else
   log "INFO" "msg 6: sending Command Center URL"
@@ -230,20 +248,50 @@ ${CC_URL}
 
 This is where you'll talk to your CEO (${AGENT_NAME}), watch tasks move across the Kanban board, and check in on every department. Open it in your browser and bookmark it.
 
-When you're ready, just message me with the first thing you want done. I'm standing by."
+When you're ready, just message me with the first thing you want done. I'm standing by.
+
+— ${AGENT_NAME}"
   if send_text "$MSG6"; then
     mark_delivered 6
     log "INFO" "msg 6: delivered"
+    # Persist the URL to a local bookmark file for recovery.
+    if printf '%s\n' "$CC_URL" > "$CC_BOOKMARK_FILE" 2>>"$LOG_FILE"; then
+      chmod 600 "$CC_BOOKMARK_FILE" 2>>"$LOG_FILE" || true
+      log "INFO" "msg 6: bookmark file written at $CC_BOOKMARK_FILE"
+    else
+      log "WARN" "msg 6: failed to write bookmark file at $CC_BOOKMARK_FILE"
+    fi
+    sleep 3
   else
     log "ERROR" "msg 6: FAILED — continuing"
     failed_messages+=("msg-6")
   fi
 fi
 
+# ---- Message 7: Dashboard bookmark recovery hint ----
+# Always emitted after the URL attempt (success OR skip), so the client knows
+# where to look for the URL even if the Telegram message scrolls away or msg 6
+# was skipped due to a missing/local URL.
+if is_delivered 7; then
+  log "INFO" "msg 7: already delivered — skipping"
+else
+  log "INFO" "msg 7: sending bookmark hint"
+  MSG7="🔖 Your dashboard URL has been bookmarked at \`${CC_BOOKMARK_FILE}\`. If you ever lose this message, that file has it.
+
+— ${AGENT_NAME}"
+  if send_text "$MSG7"; then
+    mark_delivered 7
+    log "INFO" "msg 7: delivered"
+  else
+    log "ERROR" "msg 7: FAILED — continuing"
+    failed_messages+=("msg-7")
+  fi
+fi
+
 # ---- summary ----
 if (( ${#failed_messages[@]} == 0 )); then
   state_set '.closeoutStatus = "sent"'
-  log "INFO" "all 6 messages delivered — closeoutStatus=sent"
+  log "INFO" "all messages delivered — closeoutStatus=sent"
   exit 0
 else
   reason="telegram-partial: $(IFS=,; echo "${failed_messages[*]}")"
