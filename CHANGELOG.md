@@ -1,3 +1,32 @@
+## [v10.13.22] — 2026-05-24 — Container-restart durability for Mission Control dashboard + cloudflared (mirror of VPS v10.14.23)
+
+### The bug
+After tonight's setup, every `docker compose restart openclaw` killed the Next.js Mission Control dashboard AND the cloudflared connector on Hostinger VPS clients. pm2 saved the process list to `/data/.pm2/dump.pm2` but never resurrected it on container boot. Result: client URLs returned Cloudflare Error 1033 until manual SSH intervention.
+
+This is a VPS-side bug. The Mac native install already handles pm2 persistence via `pm2 startup` + launchd, so the Mac script is intentionally a no-op — but the docs + script ship in this repo for fleet-wide parity.
+
+### What changed
+- `32-command-center-setup/scripts/install-pm2-restart-hook.sh` (NEW) — no-op on Mac, points operators at the VPS repo's equivalent. Exists in this repo so fleet tooling that expects this filename to be present doesn't break on Mac installs.
+- `32-command-center-setup/INSTALL.md` — new Phase 6c documents that Mac native installs require no action, and links to the VPS repo for Hostinger Docker VPS operators.
+
+### Verification
+Tested live on Lyric VPS 2026-05-24 (via VPS repo v10.14.23): applied hook → `docker compose up -d --force-recreate` → at T+60s pm2 had command-center + cloudflare-tunnel both online, external URL = HTTP 200, no manual intervention.
+
+### Risk
+None on Mac. The script is a no-op and the doc only adds a link to the VPS repo.
+
+### Version-bump-tracking checklist
+- [x] `./version` v10.13.22 (bump-script)
+- [x] `install.sh:ONBOARDING_VERSION` v10.13.22 (bump-script)
+- [x] `23-ai-workforce-blueprint/skill-version.txt` v10.13.22 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_index.json` v10.13.22 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` v10.13.22 (bump-script)
+- [x] `README.md` v10.13.22 (manual sweep)
+- [x] `update-skills.sh` v10.13.22 (manual sweep)
+- [x] `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` v10.13.22 (manual sweep)
+
+---
+
 ## [v10.13.21] — 2026-05-24 — Token rotation playbook for Option B (n8n workflow v4) (mirror of VPS v10.14.22)
 
 ### Why
