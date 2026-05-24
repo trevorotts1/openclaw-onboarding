@@ -1,3 +1,26 @@
+## [v10.13.21] — 2026-05-24 — Token rotation playbook for Option B (n8n workflow v4) (mirror of VPS v10.14.22)
+
+### Why
+Trevor's live n8n workflow `i0P3OWCEsXZxVo0N` runs Option B (CF creds inline in the SSH command, not env vars). If the CF API token rotates, the workflow silently keeps using the old token and new tunnel ingress fails. There was no documented rotation path. Now there is.
+
+### What changed
+`n8n-workflows/command-center-register-v4.md` — appended "Option B chosen — credentials inline" section with token-rotation playbook (curl + python one-shot), symptom of stale token, and Option A migration path.
+
+### Risk
+Doc only. No code.
+
+### Version-bump-tracking checklist
+- [x] `./version` v10.13.21 (bump-script)
+- [x] `install.sh:ONBOARDING_VERSION` v10.13.21 (bump-script)
+- [x] `23-ai-workforce-blueprint/skill-version.txt` v10.13.21 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_index.json` v10.13.21 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` v10.13.21 (bump-script)
+- [x] `README.md` v10.13.21 (manual sweep)
+- [x] `update-skills.sh` v10.13.21 (manual sweep)
+- [x] `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` v10.13.21 (manual sweep)
+
+---
+
 ## [v10.13.20] — 2026-05-24 — Closeout actually delivers the Command Center URL to clients (mirror of VPS v10.14.21)
 
 ### The bug
