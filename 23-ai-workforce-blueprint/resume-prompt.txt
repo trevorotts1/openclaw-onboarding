@@ -3,6 +3,26 @@
 You are receiving this message from your own cron — it is NOT from the owner and NOT a new user request. Treat it as an internal build-or-closeout-resume invocation.
 
 ═══════════════════════════════════════════════════════════════════
+STEP -1 (v10.14.36) — RUN THE SHELL GUARD FIRST
+═══════════════════════════════════════════════════════════════════
+
+BEFORE doing anything else, invoke the shell-level resume guard. It has
+defense-in-depth checks (belt: terminal-state self-stop; suspenders:
+max-runs counter) that auto-remove this cron when it's no longer useful.
+Running it costs <1 second and prevents the v10.14.16–v10.14.35 bug where
+this cron kept firing every 15 min on done builds (Lyric/Evelyn incident,
+2026-05-24).
+
+```bash
+bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh 2>/dev/null \
+  || bash "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" 2>/dev/null \
+  || true
+```
+
+If that script already self-removed the cron, you'll receive no more
+messages from it. If it determined there's work to do, continue below.
+
+═══════════════════════════════════════════════════════════════════
 STEP 0 — DECIDE WHICH FLOW YOU'RE IN
 ═══════════════════════════════════════════════════════════════════
 
@@ -14,7 +34,20 @@ A. If `buildCompletedAt` is null OR any department has `status` in {pending, fai
 
 B. If `buildCompletedAt` is set AND `closeoutStatus` is not in {done, sent} → SKIP to CLOSEOUT FLOW.
 
-C. If both are clean (buildCompletedAt set AND closeoutStatus in {done, sent}) → nothing to do. Exit silently.
+C. If both are clean (buildCompletedAt set AND closeoutStatus in {done, sent}) → REMOVE THIS CRON, then exit silently.
+
+   To remove the cron yourself (in case the shell guard at STEP -1 didn't
+   already do it — e.g. older onboarding bundle without the script):
+
+   ```bash
+   CRON_UUID=$(openclaw cron list 2>/dev/null \
+     | awk '/workforce-build-resume/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-fA-F-]{8,}$/) { print $i; exit } }')
+   [ -n "$CRON_UUID" ] && openclaw cron rm "$CRON_UUID"
+   ```
+
+   This is MANDATORY when state is fully terminal. Failing to remove the
+   cron burns DeepSeek-V4-Pro tokens every 15 min for no reason — that is
+   the exact bug v10.14.36 was shipped to prevent. Do not skip this step.
 
 ═══════════════════════════════════════════════════════════════════
 BUILD FLOW (Skill 23 — per the Post-Interview Handoff Protocol)

@@ -1,3 +1,39 @@
+## [v10.13.28] — 2026-05-24 — workforce-build-resume self-stop hotfix (mirrors VPS v10.14.36)
+
+Mac mirror of the VPS v10.14.36 hotfix. See the VPS CHANGELOG for the
+full root-cause and risk analysis. Identical 3-layer defense applied:
+
+- **Belt** — `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh`
+  self-removes the cron when state is terminal (build done + closeout
+  in {done, sent}). UUID resolved by name via `openclaw cron list | awk`.
+
+- **Suspenders** — max-runs counter caps at 24 fires (~6h) regardless
+  of state, escalates to Trevor's chat on trip.
+
+- **Safety net** — `harden_check_cron_loops()` in
+  `scripts/install-hardening.sh` sweeps any `*-resume` cron whose
+  `last_fired > 24h` AND `created > 7d`. Conservative parser; abstains
+  on missing data.
+
+- **Prompt update** — `23-ai-workforce-blueprint/resume-prompt.txt`
+  has a new Step -1 that invokes the shell guard first, and Step 0-C
+  now includes the explicit `openclaw cron rm` block (with the right
+  awk-grep UUID resolver) instead of a soft "exit silently."
+
+### Bug
+
+Reported 2026-05-24: the resume cron was still firing every 15 min
+on Lyric (25 sessions in 6h) and Evelyn after their builds completed
+and closed out. Pure prompt advice ("if clean, exit silently") with no
+enforcement. Manually killed both crons before shipping this fix.
+
+### Risk
+
+LOW. All three layers are defensive no-ops on healthy state. See VPS
+v10.14.36 CHANGELOG for the per-layer risk breakdown.
+
+---
+
 ## [v10.13.27] — 2026-05-24 — Follow-up bundle (mirrors VPS v10.14.35)
 
 Mirror of VPS v10.14.35 follow-up bundle. Clears #89 (ROLE.md substitution
