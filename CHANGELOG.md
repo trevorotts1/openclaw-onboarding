@@ -1,3 +1,25 @@
+## [v10.13.17] — 2026-05-23 — Skill 37 KIE.AI model-name fix + Cloudflare Tunnel hooks brief (mirror of VPS v10.14.18)
+
+### Why (root cause)
+Two bugs bit us on Lyric's Mac mini install today. Both root-causes, both fixed here.
+
+**Bug 1 — Skill 37 `generate-infographics.sh` default model was wrong.** The default `PRIMARY_MODEL` was hardcoded to `gpt-image-1`. KIE.AI does NOT accept that name. Through live API probing (POST `https://api.kie.ai/api/v1/jobs/createTask`), the correct identifier is `gpt-image-2-text-to-image` (dash format). This was returning errors on closeouts until the `nano-banana-pro` fallback path kicked in. Verified `gpt-image-2-text-to-image` returns HTTP 200 + taskId on closeouts tonight.
+
+**Bug 2 — Cloudflare Tunnel paste-brief told operators to flip `hooks.enabled=true` without first setting `hooks.token`.** OpenClaw's gateway validates at startup: `hooks.enabled=true requires non-empty hooks.token`, AND `hooks.token must be distinct from gateway.auth.token`. Lyric's gateway crash-looped for hours because of this. The brief was a paste-ready operator instruction that lived only in chat history — never in the repo. That ends now.
+
+### What changed
+
+- `37-zhc-closeout/scripts/generate-infographics.sh`: default `PRIMARY_MODEL` is now `gpt-image-2-text-to-image` (env-overridable via `ZHC_IMAGE_MODEL`). `FALLBACK_MODEL` remains `nano-banana-pro`. Comment at top of file updated to match.
+- **New doc — `mac-mini-onboarding/connect-openclaw-to-cloudflare-tunnel.md`**: paste-ready operator brief. STEP 4 generates a random `hooks.token` FIRST, sanity-checks it doesn't collide with `gateway.auth.token`, sets path, THEN flips `hooks.enabled=true`. Persists the token to `~/.openclaw/credentials/hooks.token` (600-mode). STEP 6 adds a crash-loop probe.
+- Version bump: v10.13.16 → v10.13.17 via `scripts/bump-version.sh` + manual sweep of README.md, update-skills.sh, and DIRECT-TO-AGENT-UPDATE-MESSAGE.md per the repo version-bump checklist.
+
+### Files modified
+- `37-zhc-closeout/scripts/generate-infographics.sh` (model name fix)
+- `mac-mini-onboarding/connect-openclaw-to-cloudflare-tunnel.md` (NEW)
+- `version`, `install.sh`, `README.md`, `update-skills.sh`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `CHANGELOG.md`, plus the 3 Skill 23 version-bearing files — all to v10.13.17.
+
+---
+
 ## [v10.13.16] — 2026-05-23 — Skill 37 ZHC Closeout: state-machine-driven post-build celebration pipeline (mirror of VPS v10.14.17)
 
 Mirror of VPS v10.14.17. Same fix: post-build closeout is now state-machine-driven, not documentation-driven.

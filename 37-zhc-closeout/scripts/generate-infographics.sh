@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# generate-infographics.sh — KIE.AI gpt-image-1 (fallback nano-banana-pro) call.
+# generate-infographics.sh — KIE.AI gpt-image-2-text-to-image (fallback nano-banana-pro) call.
 #
 # Usage: generate-infographics.sh structure|workflow
 #
@@ -99,7 +99,7 @@ PROMPT=$(printf '%s' "$PROMPT_RAW" \
   | sed "s|{{EXAMPLE_TASK}}|${EXAMPLE_TASK}|g")
 
 # ---- model selection ----
-PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-1}"
+PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-text-to-image}"
 FALLBACK_MODEL="nano-banana-pro"
 
 submit_job() {

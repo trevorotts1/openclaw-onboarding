@@ -1,9 +1,9 @@
 # OpenClaw Onboarding — Mac mini
 
-> **Version:** see `/version` — this repo at v10.13.16.
+> **Version:** see `/version` — this repo at v10.13.17.
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
 >
-> **NOTE (v10.13.16):** Bump-script coverage extended to track README.md and DIRECT-TO-AGENT-UPDATE-MESSAGE.md — both used to drift independently of the 5 originally-tracked files. If you find a NEW version-bearing file in the future, ADD it to `scripts/bump-version.sh` before fixing the drift.
+> **NOTE (v10.13.17):** Bump-script coverage extended to track README.md and DIRECT-TO-AGENT-UPDATE-MESSAGE.md — both used to drift independently of the 5 originally-tracked files. If you find a NEW version-bearing file in the future, ADD it to `scripts/bump-version.sh` before fixing the drift.
 >
 > **After every release:** `git tag vX.Y.Z && git push --tags && gh release create vX.Y.Z --notes-from-tag` so the GitHub Releases page mirrors the CHANGELOG.
 
