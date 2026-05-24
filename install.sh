@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.13.18"
+ONBOARDING_VERSION="v10.13.19"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -3788,6 +3788,22 @@ schedule_auto_kickoff() {
 
 # Fire the auto-kickoff. Failure here never blocks install completion.
 schedule_auto_kickoff "$TELEGRAM_LAST_RESULT" || true
+
+# ----------------------------------------------------------
+# v10.13.19: proactive config heal before gateway restart.
+# ----------------------------------------------------------
+# The Telegram/whatsapp plugin auto-config-append step (which fires on every
+# gateway restart) can write deprecated field names (e.g.
+# messages.groupChat.unmentionedInbound) that fail validation against the
+# current OpenClaw schema. When that happens the gateway exits 0 on next
+# start and the entire bot goes silent — confirmed in the wild 2026-05-23
+# with "Invalid config at openclaw.json. messages.groupChat: Unrecognized
+# key: 'unmentionedInbound'". `openclaw doctor --fix` strips deprecated keys
+# cleanly. Idempotent and safe — no-op when config is already clean.
+if command -v openclaw >/dev/null 2>&1; then
+    step "Running openclaw doctor --fix to strip any stale plugin-injected config keys"
+    openclaw doctor --fix 2>&1 | tail -5 || warn "doctor --fix had issues — continuing anyway (gateway may complain at start)"
+fi
 
 # ----------------------------------------------------------
 # Final: Restart gateway (agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)
