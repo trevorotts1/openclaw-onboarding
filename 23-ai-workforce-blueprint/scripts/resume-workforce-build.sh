@@ -34,6 +34,17 @@ log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"
 }
 
+# ---- v10.13.19: heal config before any gateway interaction ----
+# The Telegram/whatsapp plugin auto-config-append can write deprecated field
+# names (e.g. messages.groupChat.unmentionedInbound) on container restart that
+# crash the gateway on next boot. `openclaw doctor --fix` strips them. If the
+# gateway is wedged for this reason, our `openclaw message send` below would
+# fail silently and the cron's resume-dispatch would never reach the agent.
+# Idempotent — safe to run every cron tick.
+if command -v openclaw >/dev/null 2>&1; then
+  openclaw doctor --fix >/dev/null 2>&1 || true
+fi
+
 # ---- preconditions ----
 if [[ ! -f "$STATE_FILE" ]]; then
   log "no state file at $STATE_FILE — nothing to resume; exiting clean"

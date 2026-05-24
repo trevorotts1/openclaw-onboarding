@@ -98,60 +98,70 @@ if [[ "$closeout_status" != "generating" ]]; then
 fi
 
 # ----------------------------------------------------------------------
-# STEP 1 — Skill 32 (Command Center) — v10.14.19: REAL materialize + verify
+# STEP 1 — Skill 32 (Command Center) — v10.14.20: REAL 8-phase orchestrator
 # ----------------------------------------------------------------------
-# For weeks before v10.14.19, this step would silently mark commandCenterStatus
-# = "done" with a fake http://localhost:4000 URL whenever Skill 32's
-# setup-command-center.sh was missing — which it ALWAYS was, because that
-# script never existed. The new contract:
-#   1. Run Skill 32's materialize-dept-agents.sh (registers each workspace
-#      dept folder as a real entry in openclaw.json's agents.list[])
-#   2. Verify agents.list[].length >= 2 (default "main" + at least 1 dept)
-#   3. ONLY THEN mark commandCenterStatus = "done"
-#   4. commandCenterUrl is set only if a Mission Control dashboard is
-#      actually reachable on :4000; otherwise leave null.
-# No more lying.
-log "INFO" "step=1 command-center: starting"
+# Through v10.14.19, this step invoked only materialize-dept-agents.sh (Phase 4
+# of the INSTALL.md 8-phase plan) and then marked commandCenterStatus=done.
+# Phases 6 (dashboard deploy on :4000), 6b (n8n webhook + cloudflared tunnel),
+# 7 (verification) never ran on any client. That's why no BlackCEO Command
+# Center dashboard came up + Trevor never got n8n notifications for completed
+# builds. The closeout was claiming "done" on a 12.5%-complete install.
+#
+# v10.14.20: delegate to run-full-install.sh which runs all 8 phases in order
+# with idempotent state checkpoints. Closeout still owns the failure path —
+# if Skill 32's orchestrator marks commandCenterStatus=failed with a reason,
+# we fail_closeout with the actual error so the resume cron can pick it up
+# instead of cascading into infographic generation against a broken install.
+log "INFO" "step=1 command-center: starting (delegating to run-full-install.sh)"
 cc_status=$(state_get '.commandCenterStatus')
 if [[ "$cc_status" == "done" ]]; then
   log "INFO" "step=1 command-center: already done — skipping"
 else
-  state_set '.commandCenterStatus = "building"'
+  # v10.14.17 schema extension carries these into state at interview time.
+  COMPANY_NAME_CC=$(state_get '.companyName')
+  OWNER_EMAIL_CC=$(state_get '.ownerEmail')
+  COMPANY_DOMAIN_CC=$(state_get '.companyDomain')
 
-  SKILL32_MATERIALIZE="$OC_ROOT/skills/32-command-center-setup/scripts/materialize-dept-agents.sh"
-  if [[ ! -x "$SKILL32_MATERIALIZE" ]]; then
-    log "ERROR" "step=1 command-center: materialize-dept-agents.sh not executable or missing at $SKILL32_MATERIALIZE — refusing to mark done"
+  if [[ -z "$COMPANY_NAME_CC" ]]; then
+    log "WARN" "step=1 command-center: companyName missing from state — using slug fallback"
+    COMPANY_NAME_CC="$(state_get '.companySlug')"
+    [[ -z "$COMPANY_NAME_CC" ]] && COMPANY_NAME_CC="Unnamed Company"
+  fi
+
+  if [[ -z "$OWNER_EMAIL_CC" ]]; then
+    if [[ -n "$COMPANY_DOMAIN_CC" ]]; then
+      OWNER_EMAIL_CC="noreply@$COMPANY_DOMAIN_CC"
+    else
+      OWNER_EMAIL_CC="noreply@example.com"
+    fi
+    log "WARN" "step=1 command-center: ownerEmail missing from state — using placeholder $OWNER_EMAIL_CC (will not block install)"
+  fi
+
+  # Derive a client slug for the tunnel subdomain — prefer existing
+  # companySlug field, fall back to a sanitized company name.
+  CLIENT_SLUG_CC=$(state_get '.companySlug')
+  if [[ -z "$CLIENT_SLUG_CC" ]]; then
+    CLIENT_SLUG_CC=$(echo "$COMPANY_NAME_CC" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/--*/-/g; s/^-//; s/-$//')
+    [[ -z "$CLIENT_SLUG_CC" ]] && CLIENT_SLUG_CC="client"
+  fi
+
+  RUN_FULL_INSTALL="$OC_ROOT/skills/32-command-center-setup/scripts/run-full-install.sh"
+  if [[ ! -x "$RUN_FULL_INSTALL" ]]; then
+    log "ERROR" "step=1 command-center: run-full-install.sh missing/not-executable at $RUN_FULL_INSTALL"
     state_set '.commandCenterStatus = "failed"'
-    fail_closeout "Skill 32 materialize script not installed"
+    fail_closeout "Skill 32 run-full-install.sh not installed (re-run install.sh or update-skills.sh)"
   fi
 
-  log "INFO" "step=1 command-center: running materialize-dept-agents.sh"
-  if ! bash "$SKILL32_MATERIALIZE" >> "$LOG_FILE" 2>&1; then
-    log "ERROR" "step=1 command-center: materialize-dept-agents.sh failed (see log)"
-    state_set '.commandCenterStatus = "failed"'
-    fail_closeout "Skill 32 materialize-dept-agents.sh exited non-zero"
+  log "INFO" "step=1 command-center: invoking run-full-install.sh $CLIENT_SLUG_CC \"$COMPANY_NAME_CC\" $OWNER_EMAIL_CC"
+  if ! bash "$RUN_FULL_INSTALL" "$CLIENT_SLUG_CC" "$COMPANY_NAME_CC" "$OWNER_EMAIL_CC" >>"$LOG_FILE" 2>&1; then
+    # run-full-install.sh already wrote commandCenterFailureReason into state
+    actual_reason=$(state_get '.commandCenterFailureReason')
+    [[ -z "$actual_reason" ]] && actual_reason="run-full-install.sh exited non-zero (see $LOG_FILE)"
+    log "ERROR" "step=1 command-center: $actual_reason"
+    fail_closeout "Skill 32 orchestrator failed: $actual_reason"
   fi
 
-  # Verify agents.list[] actually got populated (default main + >=1 dept)
-  AGENT_COUNT=$(python3 -c "import json,sys; sys.stdout.write(str(len(json.load(open('$OC_ROOT/openclaw.json'))['agents']['list'])))" 2>>"$LOG_FILE" || echo "0")
-  if [[ -z "$AGENT_COUNT" || "$AGENT_COUNT" -lt 2 ]]; then
-    log "ERROR" "step=1 command-center: agents.list has only ${AGENT_COUNT:-0} entries after materialize — failing closeout"
-    state_set ".commandCenterStatus = \"failed\""
-    fail_closeout "agents.list[] not populated after Skill 32 materialize (count=${AGENT_COUNT:-0})"
-  fi
-  log "INFO" "step=1 command-center: ${AGENT_COUNT} agents materialized in agents.list[]"
-
-  # Also push the agentsMaterializedCount into state for downstream visibility
-  state_set ".agentsMaterializedCount = $AGENT_COUNT"
-
-  # Command Center dashboard URL — set ONLY if real, never fake
-  if curl -sf --max-time 3 http://127.0.0.1:4000/ >/dev/null 2>&1; then
-    state_set '.commandCenterStatus = "done" | .commandCenterUrl = "http://127.0.0.1:4000/"'
-    log "INFO" "step=1 command-center: done — Mission Control dashboard reachable at http://127.0.0.1:4000/"
-  else
-    state_set '.commandCenterStatus = "done" | .commandCenterUrl = null'
-    log "WARN" "step=1 command-center: Mission Control dashboard at :4000 not running — leaving commandCenterUrl null"
-  fi
+  log "INFO" "step=1 command-center: done — commandCenterUrl=$(state_get '.commandCenterUrl')"
 fi
 
 # ----------------------------------------------------------------------
