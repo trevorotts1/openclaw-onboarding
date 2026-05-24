@@ -27,12 +27,105 @@ fi
 STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
 LOCK_FILE="$OC_ROOT/workspace/.workforce-build-state.lock"
 LOG_FILE="$OC_ROOT/workspace/.workforce-build-state.log"
+RUN_COUNT_FILE="$OC_ROOT/workspace/.workforce-build-resume-runs.count"
 MAX_ATTEMPTS_DEFAULT=12
 STALE_BUILDING_MINUTES=15
+# v10.14.36 — defense-in-depth max-runs cap.
+# After 24 fires (6h at 15-min intervals) the cron auto-removes itself
+# regardless of state. A workforce build that hasn't completed in 6 hours
+# is stuck; the cron is no longer useful, kill it.
+MAX_RUNS_BEFORE_SELF_REMOVE=24
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"
 }
+
+# v10.14.36 — locate this cron's UUID by name so we can self-remove.
+# OpenClaw doesn't pass a CRON_UUID env var, so we resolve by --name.
+# Returns empty string if openclaw CLI is unavailable or the cron isn't listed.
+find_self_cron_uuid() {
+  command -v openclaw >/dev/null 2>&1 || { echo ""; return 0; }
+  # `openclaw cron list` typically prints lines like "<uuid>  workforce-build-resume  …".
+  # Be permissive: grab the first UUID-shaped token on the line that mentions our name.
+  openclaw cron list 2>/dev/null \
+    | awk '/workforce-build-resume/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-fA-F-]{8,}$/) { print $i; exit } }' \
+    | head -1
+}
+
+# v10.14.36 — self-remove the workforce-build-resume cron. Tolerates missing
+# UUID/CLI; logs whatever it can. Never errors out the script.
+self_remove_cron() {
+  local reason="$1"
+  local uuid
+  uuid=$(find_self_cron_uuid)
+  if [[ -z "$uuid" ]]; then
+    log "self_remove_cron($reason): could not resolve workforce-build-resume UUID — leaving cron in place"
+    return 0
+  fi
+  log "self_remove_cron($reason): removing cron $uuid"
+  if openclaw cron rm "$uuid" 2>>"$LOG_FILE"; then
+    log "self_remove_cron($reason): removed $uuid"
+    # clean up the runs-count file so a future fresh install starts at zero
+    rm -f "$RUN_COUNT_FILE" 2>/dev/null || true
+  else
+    log "self_remove_cron($reason): openclaw cron rm $uuid FAILED — see errors above"
+  fi
+}
+
+# ---- v10.14.36: BELT — explicit self-stop on terminal state ----
+# If the workforce build state is already done/failed/complete, remove this
+# cron and exit. Avoids the v10.14.16-v10.14.35 bug where the cron kept
+# firing every 15 min on Lyric/Evelyn because the agent's self-stop was
+# advisory and unreliable. The shell is the source of truth now.
+if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+  _build_status=$(jq -r '.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
+  _closeout_status=$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || echo "")
+  _build_completed_at=$(jq -r '.buildCompletedAt // ""' "$STATE_FILE" 2>/dev/null || echo "")
+  # Treat as fully terminal ONLY when build is complete AND closeout has
+  # reached a terminal state (done/sent). Otherwise the closeout-resume
+  # branch below still has legitimate work to do.
+  case "$_build_status" in
+    done|failed|complete)
+      _terminal=1 ;;
+    *)
+      _terminal=0 ;;
+  esac
+  if (( _terminal == 0 )) && [[ -n "$_build_completed_at" ]]; then
+    case "$_closeout_status" in
+      done|sent) _terminal=1 ;;
+    esac
+  fi
+  if (( _terminal == 1 )); then
+    log "BELT: terminal state detected (build_status=$_build_status, closeout=$_closeout_status, completed=$_build_completed_at) — removing self-cron and exiting"
+    self_remove_cron "terminal-state"
+    exit 0
+  fi
+fi
+
+# ---- v10.14.36: SUSPENDERS — max-runs auto-expire ----
+# Increment a counter on each fire. After MAX_RUNS_BEFORE_SELF_REMOVE (default
+# 24, ≈6 hours at 15-min cadence), auto-remove the cron regardless of state.
+# A workforce build that hasn't completed in 6 hours is stuck; further
+# self-pings only burn tokens. The install.sh harden_check_cron_loops sweep
+# is the third layer that catches anything that slips past both belts.
+mkdir -p "$(dirname "$RUN_COUNT_FILE")" 2>/dev/null || true
+_run_count=0
+if [[ -f "$RUN_COUNT_FILE" ]]; then
+  _run_count=$(cat "$RUN_COUNT_FILE" 2>/dev/null | tr -dc '0-9' | head -c 6)
+  [[ -z "$_run_count" ]] && _run_count=0
+fi
+_run_count=$((_run_count + 1))
+echo "$_run_count" > "$RUN_COUNT_FILE" 2>/dev/null || true
+if (( _run_count > MAX_RUNS_BEFORE_SELF_REMOVE )); then
+  log "SUSPENDERS: run #$_run_count exceeds cap of $MAX_RUNS_BEFORE_SELF_REMOVE — auto-removing self-cron"
+  # Escalate to Trevor so a stuck build doesn't silently disappear.
+  if [[ -n "${OPENCLAW_TREVOR_CHAT:-}" ]] && command -v openclaw >/dev/null 2>&1; then
+    openclaw message send --channel telegram -t "$OPENCLAW_TREVOR_CHAT" \
+      -m "⚠️ workforce-build-resume cron auto-removed after $_run_count runs (>6h). State file: $STATE_FILE on $(hostname). Build is stuck — manual intervention required." 2>>"$LOG_FILE" || true
+  fi
+  self_remove_cron "max-runs-exceeded"
+  exit 0
+fi
 
 # ---- v10.13.19: heal config before any gateway interaction ----
 # The Telegram/whatsapp plugin auto-config-append can write deprecated field
