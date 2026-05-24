@@ -18,6 +18,13 @@ This v2 version is a DROP-IN ALTERNATIVE that adds:
    personas (one per mode) instead of one.
 6. Emit task_category in the output so the dashboard / Command Center can
    write to persona_assignment for stickiness on the NEXT task.
+7. Anti-repetition variety (v10.14.28) — overused personas in the last
+   VARIETY_WINDOW_HOURS get a per-use penalty applied to their score, and
+   when the top three candidates are within VARIETY_DOMINANCE_RATIO of each
+   other we sample from them weighted by adjusted score instead of always
+   picking #1. This stops the "Godin every time" failure mode Trevor flagged
+   on 2026-05-24. Quality is preserved (top-1 still wins when it dominates
+   by ≥1.5x). Disable with `--no-variety` for deterministic debugging.
 
 Output: JSON with persona_id, persona_name, score, interaction_mode, breakdown,
 and (if hybrid) secondary_persona_*.
@@ -31,6 +38,7 @@ Usage:
 import argparse
 import json
 import os
+import random
 import sqlite3
 import sys
 from pathlib import Path
@@ -206,6 +214,137 @@ def _ensure_persona_assignment_columns(conn):
 
 ANTI_STALENESS_THRESHOLD = 5  # 5+ consecutive same persona → flag for review
 
+# ─── Anti-repetition variety constants (v10.14.28) ────────────────────────
+# Trevor's complaint, 2026-05-24: "the system did not properly assign persona
+# to the task and some time i just keep using the same on over and over again
+# without any consideration." Fix: recency penalty + top-N weighted sample.
+VARIETY_WINDOW_HOURS = 24      # look-back window for recent-use counts
+VARIETY_PENALTY_PER_USE = 0.08 # 8% score reduction per recent use
+VARIETY_PENALTY_CAP_USES = 5   # penalty saturates at 5 uses (= 40% cap)
+VARIETY_DOMINANCE_RATIO = 1.5  # top-1 must be ≥1.5x top-3 to skip sampling
+VARIETY_SAMPLE_TOP_N = 3       # weighted-sample pool size when sampling
+VARIETY_SAMPLE_SEED_ENV = "PERSONA_VARIETY_SEED"  # set for deterministic tests
+
+
+def read_recent_use_counts(department_id: str, task_category: str,
+                            window_hours: int, db_path: Path) -> dict:
+    """Return {persona_id: count} of selections in last window_hours for this
+    (department, task_category). READS persona_selection_log (which Track A
+    is also using for its history table — additive, no conflict). If the DB
+    is missing or unreadable, returns {} so the variety penalty becomes a
+    no-op and the selector still works."""
+    if not db_path or not db_path.exists():
+        return {}
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        # Match `"task_category":"<cat>"` OR `"task_category": "<cat>"` —
+        # we use whitespace-tolerant separate %-clauses chained together so
+        # both compact (selector-written, v10.14.28+) and pretty-printed
+        # (legacy rows from any external writer) JSON match.
+        cur.execute(
+            """
+            SELECT persona_id, COUNT(*) AS uses
+            FROM persona_selection_log
+            WHERE department_id = ?
+              AND COALESCE(layer_scores, '') LIKE ?
+              AND COALESCE(layer_scores, '') LIKE ?
+              AND selected_at >= datetime('now', ?)
+            GROUP BY persona_id
+            """,
+            (
+                department_id,
+                '%task_category%',
+                f'%{task_category}%',
+                f"-{int(window_hours)} hours",
+            ),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        return {pid: int(uses) for pid, uses in rows if pid}
+    except sqlite3.Error as e:
+        print(f"[persona-selector] WARN: recent_use_counts read failed: {e}",
+              file=sys.stderr)
+        return {}
+
+
+def variety_penalty_factor(recent_use_count: int) -> float:
+    """Return the score multiplier for a persona used N times recently.
+    0 uses → 1.0 (no penalty). 5+ uses → 0.6 (40% penalty, capped)."""
+    capped = min(max(int(recent_use_count), 0), VARIETY_PENALTY_CAP_USES)
+    return 1.0 - VARIETY_PENALTY_PER_USE * capped
+
+
+def pick_with_variety(scored: list) -> tuple:
+    """Pick a persona from `scored` (already sorted desc by adjusted score).
+    Returns (picked_dict, picked_index, was_sampled_bool). If the top score
+    dominates the #3 (or the last in the pool) by ≥VARIETY_DOMINANCE_RATIO,
+    just picks #1 deterministically. Otherwise samples from the top-N
+    weighted by adjusted score so variety shows up over many calls without
+    introducing noise into clear winners."""
+    if not scored:
+        return None, -1, False
+    pool = scored[:VARIETY_SAMPLE_TOP_N]
+    if len(pool) == 1:
+        return pool[0], 0, False
+    top = pool[0]["score"]
+    floor = pool[-1]["score"]
+    # If the bottom of the pool is zero/negative, dominance ratio is undefined;
+    # fall back to deterministic top-1 to avoid divide-by-zero weirdness.
+    if floor <= 0:
+        return pool[0], 0, False
+    if top >= VARIETY_DOMINANCE_RATIO * floor:
+        return pool[0], 0, False
+    weights = [max(s["score"], 1e-6) for s in pool]
+    seed = os.environ.get(VARIETY_SAMPLE_SEED_ENV)
+    rng = random.Random(seed) if seed else random
+    picked = rng.choices(pool, weights=weights, k=1)[0]
+    idx = scored.index(picked)
+    return picked, idx, True
+
+
+def write_persona_selection_log_row(db_path: Path, entry: dict):
+    """Insert a row into persona_selection_log so the next call's variety
+    lookup can see this pick. Idempotent-ish: if task_id is repeated we just
+    append (the table has no UNIQUE on task_id, only an index). Stuffs
+    task_category into layer_scores JSON so read_recent_use_counts can scope
+    by category without a schema change."""
+    if not db_path or not db_path.exists():
+        return
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        # Compact JSON (no spaces) so read_recent_use_counts can LIKE-match
+        # `"task_category":"<cat>"` without worrying about default-pretty-print
+        # whitespace drift. Same row format the variety query expects.
+        layer_json = json.dumps({
+            "task_category":   entry.get("task_category", "general"),
+            "layers":          entry.get("layers", {}),
+            "variety_applied": entry.get("variety_applied", False),
+        }, default=str, separators=(",", ":"))
+        cur.execute(
+            """
+            INSERT INTO persona_selection_log
+                (task_id, persona_id, persona_name, mode, score,
+                 layer_scores, department_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                entry.get("task_id") or f"selector-{os.urandom(4).hex()}",
+                entry["persona_id"],
+                entry.get("persona_name") or entry["persona_id"],
+                entry.get("mode") or "leadership",
+                float(entry.get("score", 0.0)),
+                layer_json,
+                entry.get("department", ""),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"[persona-selector] WARN: persona_selection_log insert failed: {e}",
+              file=sys.stderr)
+
 
 def write_persona_assignment_db(db_path: Path, entry: dict):
     """Upsert into persona_assignment table. Best-effort, never raises.
@@ -321,9 +460,16 @@ def record_selection(selection: dict, task_text: str, department: str, db_path: 
         "persona_version": selection.get("persona_version", 1),
         "score":          selection.get("score", 0.0),
         "reasoning":      reasoning,
+        "layers":         selection.get("layers", {}),
+        "variety_applied": selection.get("variety_applied", False),
     }
     write_selection_log_md(find_selection_log(), entry)
     write_persona_assignment_db(db_path, entry)
+    # v10.14.28: per-pick history row so the NEXT call's variety penalty can
+    # see who's been getting hammered. Track A's perm fix is required for the
+    # write to succeed on locked-down clients; failure is logged and ignored
+    # (variety degrades to baseline behavior — still correct, just stickier).
+    write_persona_selection_log_row(db_path, entry)
 
 
 def record_task_completion(task_id: str, persona_id: str, department: str,
@@ -456,13 +602,37 @@ def read_owner_profile(paths: dict) -> str:
 
 
 def list_available_personas(paths: dict) -> list:
-    """Read persona-categories.json or scan personas dir."""
+    """Read persona-categories.json or scan personas dir.
+
+    Schema 1.0 wraps the 40 persona IDs under a top-level "personas" key alongside
+    metadata fields (schemaVersion, created, domainTags, perspectiveTags). The
+    pre-v10.14.27 version returned `list(data.keys())` which yielded the 5 meta
+    fields instead of the 40 real persona IDs — causing the selector to score
+    "schemaVersion" / "created" / "domainTags" / "perspectiveTags" / "personas"
+    as if they were personas and return the title-cased meta-key
+    ("Schemaversion") as the chosen persona for every task. Fixed in v10.14.27
+    (PR #24); v10.14.28 keeps that fix and adds the variety logic on top.
+    """
     pc_file = paths["persona_categories"]
     if pc_file.exists():
         try:
             data = json.loads(pc_file.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                return list(data.keys())
+                # Schema 1.0 (current): personas live under data["personas"].
+                if isinstance(data.get("personas"), dict):
+                    return list(data["personas"].keys())
+                if isinstance(data.get("personas"), list):
+                    return [
+                        d.get("id") or d.get("name")
+                        for d in data["personas"]
+                        if isinstance(d, dict)
+                    ]
+                # Legacy flat-dict schema: filter out known meta-keys.
+                META_KEYS = {"schemaVersion", "schema_version", "created",
+                             "updated", "domainTags", "domain_tags",
+                             "perspectiveTags", "perspective_tags",
+                             "personas", "metadata", "version"}
+                return [k for k in data.keys() if k not in META_KEYS]
             if isinstance(data, list):
                 return [d.get("id") or d.get("name") for d in data if isinstance(d, dict)]
         except Exception:
@@ -675,8 +845,21 @@ def score_persona(persona_id: str, task_text: str, owner_profile: str,
 
 
 def select_persona(task: str, department: str, mode: str, weights: dict,
-                   paths: dict, db_path: Path) -> dict:
-    """Score all available personas and return the top one."""
+                   paths: dict, db_path: Path, variety: bool = True) -> dict:
+    """Score all available personas and return one.
+
+    With `variety=True` (default), apply the v10.14.28 anti-repetition logic:
+      1. Compute base 5-layer scores for every persona.
+      2. Read recent-use counts from persona_selection_log scoped to
+         (department, task_category) within VARIETY_WINDOW_HOURS.
+      3. Multiply each persona's score by variety_penalty_factor(uses).
+      4. If top-1's adjusted score dominates top-3 by ≥VARIETY_DOMINANCE_RATIO
+         pick top-1 (clear winner). Otherwise weighted-sample from top-N.
+
+    With `variety=False`, behave as the pre-v10.14.28 selector — pure top-1
+    by base score, no penalty, no sampling. Used by `--no-variety` for
+    deterministic debugging / regression testing.
+    """
     personas = list_available_personas(paths)
     owner_profile = read_owner_profile(paths)
 
@@ -690,8 +873,30 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
         }
 
     scored = [score_persona(p, task, owner_profile, department, weights, paths, db_path) for p in personas]
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    top = scored[0]
+
+    task_category = infer_task_category(task)
+
+    if variety:
+        recent_uses = read_recent_use_counts(department, task_category,
+                                              VARIETY_WINDOW_HOURS, db_path)
+        for s in scored:
+            uses = recent_uses.get(s["persona_id"], 0)
+            factor = variety_penalty_factor(uses)
+            s["base_score_pre_variety"] = s["score"]
+            s["recent_use_count"]      = uses
+            s["variety_factor"]        = round(factor, 4)
+            s["score"]                 = round(s["score"] * factor, 4)
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        picked, picked_idx, was_sampled = pick_with_variety(scored)
+        variety_applied = True
+    else:
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        picked = scored[0]
+        picked_idx = 0
+        was_sampled = False
+        variety_applied = False
+
+    top = picked  # selected persona (may not be score-rank #1 if sampled)
 
     result = {
         "persona_id": top["persona_id"],
@@ -701,9 +906,21 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
         "base_score": top["base_score"],
         "override_factor": top["override_factor"],
         "interaction_mode": mode,
-        "task_category": infer_task_category(task),
+        "task_category": task_category,
         "weights_used": weights,
         "layers": top["layers"],
+        "variety_applied": variety_applied,
+        "variety": {
+            "enabled": variety_applied,
+            "was_sampled": was_sampled,
+            "picked_rank": picked_idx + 1,
+            "window_hours": VARIETY_WINDOW_HOURS,
+            "penalty_per_use": VARIETY_PENALTY_PER_USE,
+            "dominance_ratio": VARIETY_DOMINANCE_RATIO,
+            "sample_top_n": VARIETY_SAMPLE_TOP_N,
+            "recent_use_count": top.get("recent_use_count", 0),
+            "variety_factor": top.get("variety_factor", 1.0),
+        },
         "breakdown": {"top_3": scored[:3]},
     }
     if top["score"] < 0.5:
@@ -723,6 +940,10 @@ def main():
     parser.add_argument("--department", required=False)
     parser.add_argument("--format", default="json", choices=["json", "human"])
     parser.add_argument("--skip-stickiness", action="store_true", help="Force fresh selection even if a sticky assignment exists")
+    parser.add_argument("--no-variety", action="store_true",
+                        help="Disable v10.14.28 anti-repetition variety logic "
+                             "(recency penalty + top-N weighted sampling). "
+                             "Use for deterministic debugging / regression tests.")
     # record-completion mode args
     parser.add_argument("--task-id", help="(record-completion) task identifier")
     parser.add_argument("--persona-id", help="(record-completion) persona that governed the task")
@@ -805,10 +1026,12 @@ def main():
     # Fresh selection
     weights = get_weights_for_task(args.task, mode)
 
+    variety_enabled = not args.no_variety
+
     if mode == "hybrid":
-        leader = select_persona(args.task, args.department, "leadership", weights, paths, db_path)
+        leader = select_persona(args.task, args.department, "leadership", weights, paths, db_path, variety=variety_enabled)
         coach = select_persona(args.task, args.department, "coaching",
-                                get_weights_for_task(args.task, "coaching"), paths, db_path)
+                                get_weights_for_task(args.task, "coaching"), paths, db_path, variety=variety_enabled)
         out = {
             "mode": "hybrid",
             "task_category": task_category,
@@ -823,7 +1046,7 @@ def main():
             "layers": leader.get("layers", {}),
         }
     else:
-        out = select_persona(args.task, args.department, mode, weights, paths, db_path)
+        out = select_persona(args.task, args.department, mode, weights, paths, db_path, variety=variety_enabled)
 
     record_selection(out, args.task, args.department, db_path)
     print(json.dumps(out, indent=2) if args.format == "json" else f"{out.get('persona_name','(none)')} ({out.get('score',0):.2f})")

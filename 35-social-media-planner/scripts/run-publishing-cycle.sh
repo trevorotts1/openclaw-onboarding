@@ -287,31 +287,45 @@ else
 fi
 
 if [ "${#MISSING_AGENTS[@]}" -gt 0 ]; then
-  cat >&2 <<EOF
+  # v10.14.34 — finding #25: the `social-media-planner` role-bundle does not
+  # exist in the role-library catalog (only individual roles do). Hard-exit 5
+  # made basic single-topic usage impossible on every install. Downgrade to a
+  # warning by default (single-orchestrator mode); operators who actually want
+  # the full 21-agent pipeline can re-enable the strict check with
+  # OPENCLAW_STRICT_ROSTER=1.
+  if [ "${OPENCLAW_STRICT_ROSTER:-0}" = "1" ]; then
+    cat >&2 <<EOF
 
 ────────────────────────────────────────────────────────────────────
-  Skill 35 needs the 21-agent roster configured before it can run.
+  Skill 35 needs the 21-agent roster (OPENCLAW_STRICT_ROSTER=1).
 ────────────────────────────────────────────────────────────────────
 
 Missing agents (${#MISSING_AGENTS[@]} of 21):
 $(printf '  - %s\n' "${MISSING_AGENTS[@]}")
 
 NEXT STEP — run Skill 23 build-workforce with the social-media-planner
-role-bundle. From the OpenClaw container shell:
-
-  python3 $HOME_DIR/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py \\
-    --role-bundle social-media-planner
-
-Or, if the role-bundle is not yet registered, ask the master orchestrator
-to invoke Skill 23 with the Skill 35 agent roster (see SKILL.md
-"Agent Roster" section for the canonical 15+6 names).
+role-bundle (NOTE: this bundle is not in the role-library catalog yet;
+ask the master orchestrator to compose the bundle from the individual
+social-media/* roles under role-library/social-media/).
 
 After Skill 23 finishes, re-run:
   $SCRIPT_NAME --topic "$TOPIC" --platforms "$PLATFORMS_NORM" --schedule "$SCHEDULE"
 
 ────────────────────────────────────────────────────────────────────
 EOF
-  exit 5
+    exit 5
+  else
+    cat >&2 <<EOF
+
+[Skill 35] WARNING: 21-agent roster not fully provisioned (${#MISSING_AGENTS[@]} of 21 missing).
+[Skill 35] Continuing in single-orchestrator mode — the master agent will fan out work
+[Skill 35] without dedicated per-platform sub-agents. Quality may be lower than the full
+[Skill 35] 21-agent pipeline but a basic publishing cycle CAN still complete.
+[Skill 35] To restore strict mode, set OPENCLAW_STRICT_ROSTER=1 in the environment.
+
+EOF
+    # Continue with the build — fall through to workdir setup below.
+  fi
 fi
 
 # ---------- workdir ----------

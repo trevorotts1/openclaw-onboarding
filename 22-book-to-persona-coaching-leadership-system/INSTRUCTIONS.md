@@ -1,6 +1,6 @@
 # Book-to-Persona Coaching Leadership System — Execution Instructions
 
-**Version:** v10.12.0 (closes Audit Phase 11 + Phase 12 — INSTRUCTIONS.md was missing)
+**Version:** v10.14.32 (YouTube/video pipeline rewrite — Track-I fix)
 **Skill:** 22-book-to-persona-coaching-leadership-system
 **Status:** Required runtime guide. Referenced from `SKILL.md` as part of the TYP read-order.
 
@@ -40,11 +40,16 @@ The skill accepts FOUR source types. Route via `scripts/add-persona-from-source.
 | Source type | File / Identifier | Routes to |
 |-------------|-------------------|-----------|
 | Book (PDF, EPUB, MOBI, AZW, AZW3, KFX) | `~/Downloads/<file>` or absolute path | `pipeline/orchestrator.py` (extraction → analysis → synthesis) |
-| YouTube video | `https://www.youtube.com/watch?v=...` | `scripts/youtube-to-text.sh` → text → same orchestrator |
+| YouTube video | `https://www.youtube.com/watch?v=...` | `scripts/add-persona-from-source.sh` → yt-dlp auto-subs → text → orchestrator |
+| Local video file (mp4/mov/mkv/avi/webm) | absolute path | `scripts/add-persona-from-source.sh` → ffmpeg + whisper-cpp → text → orchestrator |
 | Raw text / transcript | `.txt` file path | Direct to orchestrator, skipping extraction |
 | Existing transcript URL | `https://...` | Fetch → text → orchestrator |
 
 **N26 (Calibre auto-install):** PDF and EPUB use `pdfplumber` / `ebooklib` directly. MOBI/AZW/AZW3/KFX route through Calibre's `ebook-convert`. If Calibre is missing, `_find_calibre()` auto-installs it (Homebrew on Mac, apt-get + upstream installer fallback on Linux). The user never sees an "install Calibre manually" prompt.
+
+**N32 (YouTube/video media tools — v10.14.32+):** YouTube and local-video sources go through `yt-dlp`, `whisper-cpp`, and `ffmpeg`. These are auto-installed by `install.sh` (Step 6.5) and backfilled by `update-skills.sh`. The YouTube branch tries auto-subs first (free, fast) and falls back to audio download + whisper transcription only if the video has no captions. **Pre-v10.14.32 every YouTube source bombed** — the old code shelled out to a non-existent `summarize` CLI. If you see "yt-dlp not installed" on a client box, re-run `update-skills.sh` first.
+
+**Caller bash safety (v10.14.32):** `add-persona-from-source.sh` now uses `set -o pipefail` so failures inside the script can no longer be hidden by `| tee log` chains. If you wrap it in your own pipeline (`bash add-persona... | tee log`), use `${PIPESTATUS[0]}` to read the script's true exit code — `$?` will report `tee`'s status (always 0).
 
 ---
 
