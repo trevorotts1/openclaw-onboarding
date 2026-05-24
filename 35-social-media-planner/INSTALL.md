@@ -35,14 +35,30 @@ If you have not read the contract, STOP and read it now.
 
 **Auto-check the prerequisites:**
 ```bash
-for skill in 01-teach-yourself-protocol 02-back-yourself-up-protocol 22-book-to-persona-coaching-leadership-system 31-upgraded-memory-system 36-ghl-mcp-setup 30-fish-audio-api-reference; do
-  if [ -d "$HOME/.openclaw/skills/$skill" ] || [ -d "~/.openclaw/skills/$skill" ]; then
-    echo "  ✓ $skill installed"
+# Required prerequisites — Skill 35 install BLOCKS if any of these are missing.
+for skill in 01-teach-yourself-protocol 02-back-yourself-up-protocol 22-book-to-persona-coaching-leadership-system 31-upgraded-memory-system; do
+  if [ -d "$HOME/.openclaw/skills/$skill" ]; then
+    echo "  ✓ $skill installed (required)"
   else
-    echo "  ✗ $skill MISSING"
+    echo "  ✗ $skill MISSING (required — install before continuing)"
+  fi
+done
+
+# Optional prerequisites — Skill 35 still installs without these. Missing = info, not error.
+for skill in 36-ghl-mcp-setup 30-fish-audio-api-reference; do
+  if [ -d "$HOME/.openclaw/skills/$skill" ]; then
+    echo "  ✓ $skill installed (optional — feature enabled)"
+  else
+    case "$skill" in
+      36-ghl-mcp-setup)              REASON="MCP-first routing disabled; falls back to direct GHL API";;
+      30-fish-audio-api-reference)   REASON="podcast voiceover production disabled; all other features run normally";;
+    esac
+    echo "  ⓘ $skill not installed (optional — $REASON)"
   fi
 done
 ```
+
+> **Skill 30 (Fish Audio) is OPTIONAL.** If it is not installed, Skill 35 still installs and runs. The podcast production step (`Phase 2 → Audio Generator + Podcast Publisher`) is skipped gracefully and Skill 35 writes `PODCAST_DEFERRED=true` to MEMORY.md so QC, the weekly heartbeat, and downstream agents all know the skip is intentional, not a failure. If Fish Audio is installed later, edit MEMORY.md to remove `PODCAST_DEFERRED` and the next weekly run will re-enable the podcast pipeline.
 
 ---
 
@@ -270,7 +286,17 @@ Store `sheetUrl` and `sheetId` from response in MEMORY.md.
 5. Ask: "What action link should I include in social media comments this week?" → store as `SOCIAL_MEDIA_ACTION_LINK` in MEMORY.md.
 6. Ask: "How many videos per week — 0, 2, or 7?" → store as `VIDEO_PREFERENCE` in MEMORY.md.
 7. Ask: "Where should I send weekly notifications — Telegram, email, or text?" → store as `NOTIFICATION_CHANNEL` in MEMORY.md.
-8. Ask about podcast: "Do you want podcast episodes produced? Needs Fish Audio + Podbean. (yes/no/later)" → handle per response.
+8. Ask about podcast — but FIRST auto-detect Fish Audio availability:
+   ```bash
+   if [ -d "$HOME/.openclaw/skills/30-fish-audio-api-reference" ] && [ -n "${FISH_AUDIO_API_KEY:-}" ] && [ -n "${FISH_AUDIO_VOICE_ID:-}" ]; then
+     PODCAST_AVAILABLE=yes
+   else
+     PODCAST_AVAILABLE=no
+   fi
+   ```
+   - If `PODCAST_AVAILABLE=yes`: ask "Do you want podcast episodes produced? Fish Audio + Podbean are configured. (yes/no/later)" → handle per response.
+   - If `PODCAST_AVAILABLE=no`: do NOT ask. Auto-defer the podcast pipeline by appending `PODCAST_DEFERRED=true` to MEMORY.md (under a `## Skill 35 — Social Media Planner` section). Send the client this informational note:
+     > "Your social media planner is installing without podcast production. Podcasts need Fish Audio (voice) + Podbean (hosting). To add podcasts later, install Skill 30 and set `FISH_AUDIO_API_KEY` + `FISH_AUDIO_VOICE_ID` + `PODBEAN_PODCAST_ID`, then ask me to remove `PODCAST_DEFERRED` from MEMORY.md. Everything else — images, videos, blogs, carousels, emails, comments — runs normally starting this week."
 
 ### Step 8: Apply CORE_UPDATES.md surgically
 
@@ -319,14 +345,15 @@ Send the client this exact summary:
 
 - [ ] INSTALL-CONTRACT.md read this session
 - [ ] All 5 skill files read (Step 0 complete)
-- [ ] Prerequisites verified (skills 01, 02, 22, 31 installed; 30 and 36 detected/handled)
+- [ ] Required prerequisites verified (skills 01, 02, 22, 31 ALL installed)
+- [ ] Optional prerequisites detected and handled (Skill 30 / Fish Audio: present → podcast enabled / absent → `PODCAST_DEFERRED=true` written to MEMORY.md; Skill 36 / GHL MCP: present → MCP-first / absent → direct-api fallback)
 - [ ] Platform detected + canonical paths resolved
 - [ ] `GOHIGHLEVEL_API_KEY` present at `$SECRETS_ENV` (NOT deprecated `GHL_PRIVATE_TOKEN`)
 - [ ] `GOHIGHLEVEL_LOCATION_ID` present at `$SECRETS_ENV`
 - [ ] All required PIT scopes confirmed (smoke test returned 200 + real data, no 403s)
 - [ ] `KIE_API_KEY` present
-- [ ] `FISH_AUDIO_API_KEY` + `FISH_AUDIO_VOICE_ID` present OR podcast deferred
-- [ ] `PODBEAN_PODCAST_ID` present OR podcast deferred
+- [ ] `FISH_AUDIO_API_KEY` + `FISH_AUDIO_VOICE_ID` present OR `PODCAST_DEFERRED=true` in MEMORY.md (OPTIONAL — either state is acceptable, install does not block)
+- [ ] `PODBEAN_PODCAST_ID` present OR `PODCAST_DEFERRED=true` in MEMORY.md (OPTIONAL — either state is acceptable, install does not block)
 - [ ] Skill 36 routing mode detected (mcp-first or direct-api), routing rules applied
 - [ ] FFmpeg ≥4.0 working
 - [ ] ImageMagick working
