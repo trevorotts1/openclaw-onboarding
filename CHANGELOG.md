@@ -1,3 +1,35 @@
+## [v10.13.20] — 2026-05-24 — Closeout actually delivers the Command Center URL to clients (mirror of VPS v10.14.21)
+
+### The bug
+Skill 37's closeout sequence has always included a "Your BlackCEO Command Center → [URL]" Telegram message as message #5 of the 6-message delivery. But Lyric + Evelyn tonight got everything EXCEPT that URL — their `commandCenterUrl` field in state was either null (Lyric) or the fake `http://localhost:4000` placeholder (Evelyn) that v10.13.17's closeout-script lied about. Clients didn't know where their dashboard lived.
+
+This compounded a SECOND bug in Trevor's n8n workflow: the workflow created tunnels but never set the ingress config, so even when a URL was delivered it was 503 from CF edge.
+
+### What changed
+
+1. `37-zhc-closeout/scripts/send-telegram-celebration.sh` — message #5 now reads `commandCenterUrl` from state, skips if missing or matches the legacy `http://localhost:4000` fake, sends the URL with a "bookmark + pin this" prompt + writes it to `~/.openclaw/workspace/.zhc-dashboard-url` (mode 600) for recovery.
+2. New file `n8n-workflows/command-center-register-v4.md` — the documented n8n workflow upgrade that closes the ingress-config gap. Includes the SSH command, env vars required, and the backfill script for v3-era tunnels.
+
+### Risk
+Low. Skill 37 was already in this code path — we're just adding correctness around the URL-source check.
+
+### Files touched
+- `37-zhc-closeout/scripts/send-telegram-celebration.sh` (Command Center URL message hardening + new bookmark recovery message + write `.zhc-dashboard-url` mode 600)
+- **NEW**: `n8n-workflows/command-center-register-v4.md`
+- Version bump v10.13.19 → v10.13.20 via `scripts/bump-version.sh` + manual sweep of README.md, update-skills.sh, DIRECT-TO-AGENT-UPDATE-MESSAGE.md.
+
+### Version-bump-tracking checklist
+- [x] `./version` v10.13.20 (bump-script)
+- [x] `install.sh:ONBOARDING_VERSION` v10.13.20 (bump-script)
+- [x] `23-ai-workforce-blueprint/skill-version.txt` v10.13.20 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_index.json` v10.13.20 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` v10.13.20 (bump-script)
+- [x] `README.md` v10.13.20 (manual sweep)
+- [x] `update-skills.sh` v10.13.20 (manual sweep)
+- [x] `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` v10.13.20 (manual sweep)
+
+---
+
 ## [v10.13.19] — 2026-05-24 — Skill 32 actually runs now + proactive doctor --fix hook (mirror of VPS v10.14.20)
 
 ### Why (root cause)
