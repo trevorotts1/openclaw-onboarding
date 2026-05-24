@@ -1,3 +1,43 @@
+## [v10.13.27] — 2026-05-24 — Follow-up bundle (mirrors VPS v10.14.35)
+
+Mirror of VPS v10.14.35 follow-up bundle. Clears #89 (ROLE.md substitution
+fix), #90 (Mac add-department port — done), #91 (CI version-check
+expansion to 8 files), #92 (hardening smoke test — VPS-only).
+
+### #89 — Per-agent file personalization
+
+`32-command-center-setup/scripts/scaffold-agent-files.sh` now reads
+`company-config.json` (or falls back to
+`workspace/memory/workforce-interview-answers.md`) and personalises
+IDENTITY.md / SOUL.md / MEMORY.md with the owner's company name +
+industry. New `backfill-dept-agent-personalization.sh` script retroactively
+fixes already-installed Mac workforces.
+
+See VPS v10.14.35 CHANGELOG for the full root-cause walkthrough. Mac
+behavior was identical (Mac shares `scaffold-agent-files.sh` with VPS,
+byte-for-byte, since v10.14.29 / v10.13.20).
+
+### #90 — add-department.sh ported
+
+VPS `add-department.sh` ships in the Mac repo as of this release.
+Auto-detects `~/.openclaw` (vs `/data/.openclaw` on VPS) and the same
+dashboard `mission-control.db` path. Lets Mac operators add a new
+department after the initial workforce build (the use case: Trevor adds
+"Podcast Production" to his personal Mac workforce six months in).
+
+### #91 — CI version-check modernization (5 → 8 files)
+
+`.github/workflows/version-consistency.yml` updated to check all 8
+version-bearing files. Same expansion as VPS.
+
+### #92 — install-hardening.sh smoke test
+
+N/A for Mac — `install-hardening.sh` is a VPS-only artifact (covers
+Hostinger Docker-image traps that don't exist on macOS). Mac repo does
+not ship this script.
+
+---
+
 ## [v10.13.26] — 2026-05-24 — 2-day-learnings cross-pollination from VPS v10.14.34
 
 ### Why
