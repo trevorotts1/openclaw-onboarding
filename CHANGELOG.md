@@ -1,3 +1,53 @@
+## [v10.13.23] — 2026-05-24 — Per-agent file architecture: IDENTITY/SOUL/MEMORY/HEARTBEAT for every dept-head agent + shared USER/AGENTS/TOOLS via symlink (mirror of VPS v10.14.29)
+
+### Spec source
+
+Trevor 2026-05-24: "every agent [excluding subagents] gets its own MEMORY and
+SOUL and IDENTITY .md files and HEARTBEAT. when a new agent is created they
+all !!! need to SHARE THE SAME USER, AGENTS, AND TOOLS.md." Apply to BOTH Mac
+and VPS repos.
+
+### What ships (Mac repo)
+
+1. **NEW** `32-command-center-setup/scripts/scaffold-agent-files.sh` — single-
+   responsibility scaffolder. Same code as the VPS repo (auto-detects OC_ROOT
+   between `/data/.openclaw` and `$HOME/.openclaw`). Writes IDENTITY/SOUL/
+   MEMORY/HEARTBEAT if missing, creates/refreshes USER/AGENTS/TOOLS symlinks.
+   Idempotent.
+
+2. **PATCHED** `23-ai-workforce-blueprint/scripts/build-workforce.py` — now
+   also writes `IDENTITY.md` for the dept-head right after SOUL.md. New helper
+   `generate_identity_md()`. Same idempotency contract.
+
+3. **PATCHED** `32-command-center-setup/scripts/materialize-dept-agents.sh` —
+   after the openclaw.json mutation, emits a tab-separated manifest and the
+   bash wrapper invokes scaffolder for each discovered dept.
+
+NOTE: `seed-dashboard-content.py` and `add-department.sh` are VPS-only (the
+Mission Control dashboard ships only on VPS installs) — no Mac equivalent to
+patch. The Mac scaffolder is still present so a future native Mission Control
+install Just Works.
+
+### Risk
+
+LOW. Mac never had any dept-head agents in production (Trevor's personal Mac
+has just "Stefanie" as the main agent — no `/workspace/departments/` tree). The
+new scaffolder is dormant unless Skill 23 actually builds dept workspaces.
+All writes are idempotent and guarded.
+
+### Version-bump-tracking checklist
+- [x] `./version` v10.13.23 (bump-script)
+- [x] `install.sh:ONBOARDING_VERSION` v10.13.23 (bump-script)
+- [x] `23-ai-workforce-blueprint/skill-version.txt` v10.13.23 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_index.json` v10.13.23 (bump-script)
+- [x] `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` v10.13.23 (bump-script)
+- [x] `README.md` v10.13.23 (manual)
+- [x] `update-skills.sh:ONBOARDING_VERSION` v10.13.23 (manual)
+- [x] `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` v10.13.23 (manual)
+- [x] `CHANGELOG.md` v10.13.23 entry (manual — this one)
+
+---
+
 ## [v10.13.22] — 2026-05-24 — Container-restart durability for Mission Control dashboard + cloudflared (mirror of VPS v10.14.23)
 
 ### The bug
