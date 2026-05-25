@@ -383,39 +383,68 @@ Layer 8 consists of two integrated components:
 
 Active Memory MUST be enabled for the 8-layer system to function.
 
-In `~/.openclaw/openclaw.json`, ensure these settings exist:
+**Canonical activation: run the bundled script.** This is the only supported
+activation path on OpenClaw 2026.5.20+ (the schema validator rejects
+`openclaw config set` for deeply-nested paths like
+`agents.defaults.memorySearch.provider` — see `scripts/activate-memory-stack.sh`
+header for the why).
+
+```bash
+cd ~/.openclaw/skills/31-upgraded-memory-system
+./scripts/activate-memory-stack.sh
+```
+
+The script:
+- Deep-merges the canonical `memorySearch` + `memory-core` + `memory.backend`
+  block into `openclaw.json` (auto-detects `$HOME/.openclaw` on Mac vs
+  `/data/.openclaw` on VPS).
+- Canonicalizes `GEMINI_API_KEY` in `secrets/.env` (from
+  `GOOGLE_API_KEY` / `GOOGLE_GEMINI_API_KEY` if needed).
+- Runs `openclaw config validate` and prints `openclaw memory status`.
+- Is idempotent — re-running on an already-activated box is a no-op.
+
+**Success criteria** — `openclaw memory status` must show:
+- `Provider: gemini (requested: gemini)`
+- `Model: gemini-embedding-001` (or just `gemini`)
+- `Dreaming: 0 3 * * *`
+- `openclaw config validate` exits clean.
+
+---
+
+**Reference only — the canonical block the script merges** (do NOT hand-edit
+unless the script can't be used; the script is the source of truth):
 
 ```json
-"memory": {
-  "backend": "builtin"
-},
-"agents": {
-  "defaults": {
-    "memory": {
-      "autoCapture": true,
-      "autoRecall": true
-    },
-    "activeMemory": {
-      "enabled": true,
-      "flushIntervalMinutes": 30,
-      "contextInjection": {
-        "memoryWiki": true,
-        "cognee": true
+{
+  "agents": {
+    "defaults": {
+      "memorySearch": {
+        "enabled": true,
+        "sources": ["memory", "sessions"],
+        "provider": "gemini",
+        "fallback": "openai",
+        "experimental": {"sessionMemory": true},
+        "sync": {"onSessionStart": true, "onSearch": true, "watch": true, "watchDebounceMs": 1200, "sessions": {"deltaBytes": 20000, "deltaMessages": 10}},
+        "model": "gemini-embedding-001",
+        "query": {"maxResults": 50, "minScore": 0.18, "hybrid": {"enabled": true}}
       }
     }
-  }
+  },
+  "plugins": {
+    "entries": {
+      "memory-core": {
+        "enabled": true,
+        "config": {"dreaming": {"enabled": true}}
+      }
+    }
+  },
+  "memory": {"backend": "builtin"}
 }
 ```
 
-**Verify Active Memory is configured:**
-```bash
-openclaw memory status
-```
-
-Expected output should show:
-- Backend: builtin
-- Auto-capture: enabled
-- Auto-recall: enabled
+**Do NOT try** `openclaw config set agents.defaults.memorySearch.provider gemini`
+on 2026.5.20+ — it returns `Invalid input` because the parent path doesn't
+exist yet. The script's JSON merge is the supported pattern.
 
 ### 8.1 Enable Wiki System
 

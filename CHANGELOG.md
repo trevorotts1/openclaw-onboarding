@@ -1,3 +1,54 @@
+## [v10.13.30] — 2026-05-25 — Skill 31 memory-stack auto-activation (mirrors VPS v10.14.38)
+
+Mac mirror of the VPS v10.14.38 release. See the VPS CHANGELOG for the
+full motivation. Same canonical activation script + Phase 8.0 rewrite,
+with one Mac-specific detail: the script auto-detects
+`$HOME/.openclaw/openclaw.json` instead of `/data/.openclaw/openclaw.json`
+when run on a Mac mini host (no container, no chown step).
+
+### Why
+
+The 8-layer memory stack has shipped with Skill 31 for months but every
+fresh Mac install left it inert until someone hand-merged the
+`agents.defaults.memorySearch` block, the `plugins.entries.memory-core`
+toggle, and `memory.backend = "builtin"` into `openclaw.json`. On
+OpenClaw 2026.5.20+ the obvious `openclaw config set …` one-liner fails
+with `Invalid input` because the schema validator rejects deeply nested
+keys when the parent path doesn't exist yet. The supported pattern is a
+direct JSON deep-merge against `openclaw.json` — and until now that
+pattern lived nowhere in this repo.
+
+### What changed
+
+- **New script**: `31-upgraded-memory-system/scripts/activate-memory-stack.sh`.
+  Identical to the VPS script (path-auto-detects between
+  `/data/.openclaw` and `$HOME/.openclaw`). Idempotent — safe to re-run
+  on already-activated boxes.
+- **INSTALL.md Phase 8.0** rewritten to point at the script as the only
+  canonical activation path. Previous hand-merge instructions retained
+  as reference-only with a flag explaining the schema-validator gotcha.
+- **Skill 31 bumped to v7.2.0**
+  (`31-upgraded-memory-system/skill-version.txt`).
+- **Repo bumped to v10.13.30** across all 8 tracked version locations.
+
+### Risk
+
+- Script writes directly to `openclaw.json`. Worst case is a malformed
+  merge that fails `openclaw config validate` — script aborts non-zero
+  before any further damage.
+- Idempotent — re-running on already-activated boxes is a no-op.
+- No live-client changes in this release; existing Mac installs pick up
+  the script via the next `update-skills.sh` weekly run.
+
+### How to apply
+
+```bash
+cd ~/.openclaw/skills/31-upgraded-memory-system
+git pull && ./scripts/activate-memory-stack.sh
+```
+
+---
+
 ## [v10.13.29] — 2026-05-25 — Skill 32 SOP V2 Library (mirrors VPS v10.14.37)
 
 Mac mirror of the VPS v10.14.37 release. See the VPS CHANGELOG for the
