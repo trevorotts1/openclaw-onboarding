@@ -1,3 +1,35 @@
+## [v10.14.0]  -  2026-05-25  -  Skill 23 canonical departments reconciliation (mirrors VPS v10.15.0)
+
+Mac mirror of VPS v10.15.0. See the VPS CHANGELOG for the full motivation
+and Phase 5.5 contract. Same `INSTRUCTIONS.md` patch; no Mac-specific
+divergence  -  the canonical 16 mandatory departments and the reconciliation
+flow apply identically on Mac mini installs as on VPS containers.
+
+### Why
+
+Maria's 2026-05-23 build is the reference case (9 departments shipped of the
+canonical 16). The diagnosis applies to every interview run on either
+runtime: Phase 4's themed bundles can let the owner's current-business
+language override the canonical floor, and there was no reconciliation gate
+before Phase 6 Final Review.
+
+### What
+
+- `23-ai-workforce-blueprint/INSTRUCTIONS.md`  -  new Phase 5.5 Canonical
+  Departments Reconciliation (BINDING) inserted between Phase 5 and
+  Phase 6, with five binding steps: compute gap, show canonical list
+  verbatim, pitch missing departments one by one, hard rules
+  (no-skip/no-auto-decide/no-advance-with-pending), Telegram chunking.
+- Decisions recorded into `.workforce-build-state.json` under
+  `canonicalReconciliation` with the git SHA of the active map file.
+- `department-naming-map.json` unchanged  -  the 16 mandatory entries in
+  v2.1.0 remain canonical.
+
+### Migration
+
+No data migration. Existing builds are not retroactively reconciled by
+this change.
+
 ## [v10.13.31] — 2026-05-25 — Remote Rescue v1: operator chat ID config key + Remote Rescue agent (mirrors VPS v10.14.39)
 
 ### Risk: medium

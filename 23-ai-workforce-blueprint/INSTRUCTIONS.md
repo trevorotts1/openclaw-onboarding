@@ -326,6 +326,96 @@ Same departments as before, but framed as conversational arcs not a checklist. B
 
 ---
 
+### Phase 5.5  -  Canonical Departments Reconciliation (BINDING  -  added v10.15.0 / Mac v10.14.0)
+
+**Why this exists.** Phase 4 conversational arcs (D-1..D-13) bundle 16 canonical departments into themes. When an owner answers in terms of their *current* business language (e.g. *"I do bookkeeping, tax, government contracts, and compliance"*), the agent can lock in those phrases as the dept names and ship a workforce that diverges from the canonical set. Maria Anderson's 2026-05-23 build is the reference case: 9 departments shipped (Executive Office, Accounting, Tax, HR, Risk & Compliance, Operations, Gov Contracting, Marketing, Sales), missing 10 of the canonical 16 (Web Dev, App Dev, Graphics, Video, Audio, Research, Communications, CRM, OpenClaw Maintenance, Customer Support, Social Media, Paid Advertisement, Billing & Finance, Legal  -  with some overlap to her custom names). Clients have blind spots  -  they don't know they need Video Production, Graphics, CRM, or OpenClaw Maintenance until someone shows them the canonical list and asks.
+
+**Run this phase BEFORE Phase 6 Final Review. Never skip. Never let "I think we're good" close it out without showing the actual list.**
+
+#### Step 1  -  Compute the gap
+
+Load `23-ai-workforce-blueprint/department-naming-map.json`. The `mandatory` block is the canonical 16. Build three lists:
+
+- **COVERED**  -  canonical departments the owner already locked in during Phase 4 (match by `display_name`, `folder`, semantic equivalence, or the dept's `one_liner`).
+- **MISSING_MANDATORY**  -  canonical departments NOT yet covered.
+- **CUSTOM_KEEPS**  -  non-canonical departments the owner explicitly asked for (e.g. *Government Contracting*, *Tax*) that don't map to any canonical entry. These stay  -  the canonical 16 is a floor, not a ceiling.
+
+The match step is semantic, not string. Examples of valid coverage:
+- "Bookkeeping" → covers `Billing & Finance`
+- "IT" → covers `OpenClaw Maintenance` (and you should explain the rename in Step 3)
+- "Customer Service" → covers `Customer Support`
+- "Content" → covers `Communications` ONLY IF the owner explicitly described PR/internal comms/announcements; otherwise the canonical Communications stays MISSING.
+
+When in doubt: keep the canonical dept on the MISSING list. Better to over-ask than under-staff.
+
+#### Step 2  -  Show the canonical list verbatim
+
+Send ONE message to the owner that does FOUR things in this order:
+
+1. Names the canonical recommendation: *"Before we close out departments, I want to walk you through our canonical recommendation list  -  the 16 departments every zero-human company gets by default, no matter the industry."*
+2. Lists every canonical dept (`display_name` + `emoji` + `one_liner`), marking each as ALREADY-COVERED or NOT-YET-COVERED based on Step 1.
+3. Names the CUSTOM_KEEPS explicitly so the owner knows the agent isn't trying to delete them: *"You also asked for [Custom1], [Custom2]  -  those stay no matter what."*
+4. Closes with: *"Here are the [N] you do NOT have yet that I want you to consider. For each, I'll give you the one-sentence pitch. Ready to walk through them and decide what to add?"*
+
+The exact format (use real values, never the bracket placeholders):
+
+> *"Before we close out departments, here's our canonical recommendation list of 16 departments most zero-human companies need. Some are already covered by what you told me. Others may be blind spots  -  things you didn't realize you'd want until I name them.*
+>
+> *ALREADY COVERED by what you told me:*
+> *[for each COVERED: emoji DisplayName  -  one_liner]*
+>
+> *NOT YET COVERED  -  want me to walk you through these one at a time?*
+> *[for each MISSING_MANDATORY: emoji DisplayName  -  one_liner]*
+>
+> *AND we're keeping these custom departments you asked for:*
+> *[for each CUSTOM_KEEPS: DisplayName]*
+>
+> *Ready? I'll pitch each missing one in a single sentence and you tell me YES, NO, or LATER."*
+
+Wait for owner reply before continuing.
+
+#### Step 3  -  One-by-one pitch + decision loop
+
+For EACH `MISSING_MANDATORY` dept, send a single message with:
+- The dept's `display_name` and `emoji`
+- The dept's `one_liner` (already written for non-technical owners)
+- A 1-2 sentence concrete example pitch grounded in the owner's actual business (NOT generic). Use what you learned in Phases 1-4 to make it specific.
+- Three explicit options: **YES, add it** / **NO, skip it** / **LATER, ask me again in 90 days**
+
+Example for a coaching client missing Video:
+
+> *"Video  -  production, editing, AI video, YouTube optimization. For your coaching business, this would handle your YouTube channel, course video editing, short-form clips for Reels/TikTok, and the video sales letters for your launches. YES, NO, or LATER?"*
+
+Record each decision into `[ZHC]/[slug]/.workforce-build-state.json` under `canonicalReconciliation`:
+
+```json
+"canonicalReconciliation": {
+  "version": "1.0",
+  "shownAt": "<ISO timestamp>",
+  "listVersion": "<git sha of department-naming-map.json>",
+  "covered": ["marketing", "sales", ...],
+  "customKeeps": ["gov-contracting", "tax", ...],
+  "decisions": {
+    "video": "yes",
+    "audio": "later",
+    "openclaw-maintenance": "no"
+  }
+}
+```
+
+#### Step 4  -  Hard rules
+
+1. **NEVER skip Step 2.** Even if the owner already named 16 departments by hand, show the canonical list and confirm coverage one by one. The point is to surface blind spots  -  you cannot surface a blind spot the owner doesn't know exists.
+2. **NEVER auto-decide for the owner.** If they say *"whatever you think is best"*, respond: *"I'll bias toward YES on all 16  -  but I need you to say it. Want me to add all the missing ones, or do you want to skip something?"*
+3. **NEVER advance to Phase 6 with `MISSING_MANDATORY` items still in `pending` state.** Every canonical dept must have a recorded `yes` / `no` / `later` decision before final review.
+4. **The 16 canonical departments + the owner's CUSTOM_KEEPS + their YES decisions** are the final department list that gets passed to the post-interview build. NOs are excluded. LATERs are written to `90-day-reassessment.md` for a follow-up nudge.
+
+#### Step 5  -  Telegram-friendly chunking
+
+The canonical list message in Step 2 will be long. Send it as ONE message anyway (do not split). It is the most important orienting message in the entire interview  -  splitting it kills the comparison effect. If the owner's chat client truncates, the canonical map file is on disk and the agent can re-send any section on request.
+
+---
+
 ### Phase 6 — Final Review (~2-3 min)
 
 Show a plain-English synthesis of EVERYTHING captured (not raw answers — your synthesis of who they are and what they want to build). Owner confirms or edits any line. Then: *"Build my company."*
