@@ -504,6 +504,22 @@ If you operate a Hostinger Docker VPS, use the VPS repo's variant of this script
 
 - VPS repo: https://github.com/trevorotts1/openclaw-onboarding-vps
 
+## Phase 6c: SOP V2 Library Ingestion (Agent Does This Automatically — v10.13.29+)
+
+The agent runs the new library ingester to pull the canonical V2 SOP
+library asset from this repo's GitHub Release, apply migration 028,
+upsert 2,555 SOPs, and seed 19 platform-default template variables.
+
+```bash
+cd ~/.openclaw/skills/32-command-center-setup
+./scripts/ingest-sop-library.sh "$CLIENT_SLUG" v10.13.29
+```
+
+Expected result: `sops total: 2555`, `v2 sops: 2448`, `v1 sops: 107`,
+`sop_dependencies: 19`, `client_template_vars: 19` for this client.
+
+---
+
 ## Phase 7: Verification (Agent Does This Automatically)
 
 💬 Send Telegram message: "⏳ [Phase 7] Running final verification tests across all departments..."

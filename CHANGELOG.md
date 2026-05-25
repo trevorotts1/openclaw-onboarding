@@ -1,3 +1,50 @@
+## [v10.13.29] — 2026-05-25 — Skill 32 SOP V2 Library (mirrors VPS v10.14.37)
+
+Mac mirror of the VPS v10.14.37 release. See the VPS CHANGELOG for the
+full motivation. The same canonical 2,555-SOP V2 library and Skill 32
+ingestion path are now available on Mac mini installs.
+
+### What changed
+
+- **New release asset**: `sops-library-v2.jsonl.gz` (~14MB) attached to
+  this release tag. Identical content to the VPS v10.14.37 asset.
+- **New skill ingestion script**: `32-command-center-setup/scripts/
+  ingest-sop-library.{sh,py}`. Same idempotent Python ingester as VPS,
+  with the shell wrapper pointed at this repo's release URL instead
+  of the VPS repo.
+- **Migration 028** introduced — same V2 schema additions
+  (`cadence`, `source_role`, `confidence`, `confidence_tier`,
+  `estimated_minutes`, `time_of_day`, `source_file_url`,
+  `prerequisites`, `template_vars_used`, `layer_version` on `sops`;
+  plus `sop_dependencies` and `client_template_vars` tables).
+- **Skill 32 bumped to v6.6.0** in `32-command-center-setup/skill-version.txt`.
+- **Repo bumped to v10.13.29** across all 8 tracked version locations.
+- **Skill 32 INSTALL.md** gets new Phase 6c describing the ingestion.
+
+### Risk
+
+- ~14MB download added to install. Verified curl-able from GitHub
+  release CDN.
+- `INSERT OR REPLACE` semantics mean a re-run of the same release tag
+  is a no-op (same content), but a NEW release tag will overwrite any
+  client edits made directly to `sops` rows. Client edits should be
+  tracked via the `client_template_vars` table — those are preserved.
+- VPS and Mac version sequences remain intentionally independent
+  (v10.14.X vs v10.13.X). This release is the **Mac equivalent** of
+  VPS v10.14.37; both ship the identical SOP library content.
+
+### How to apply
+
+```bash
+cd ~/.openclaw/skills/32-command-center-setup
+git pull && ./scripts/ingest-sop-library.sh <client-slug> v10.13.29
+```
+
+Fresh Mac installs: `install.sh` chains into Skill 32 run-full-install
+which now calls `ingest-sop-library.sh` automatically.
+
+---
+
 ## [v10.13.28] — 2026-05-24 — workforce-build-resume self-stop hotfix (mirrors VPS v10.14.36)
 
 Mac mirror of the VPS v10.14.36 hotfix. See the VPS CHANGELOG for the

@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""Skill 32 — SOP V2 Library ingester (idempotent).
+
+Applies migration 028 (V2 schema additions) if needed, then inserts /
+upserts every SOP from the supplied jsonl file. Resolves upstream
+dependencies by slug. Seeds client_template_vars with platform defaults.
+
+Usage: ingest-sop-library.py <client-slug> <sops.jsonl> [db-path]
+
+Safe to re-run: every write is INSERT OR REPLACE / INSERT OR IGNORE,
+keyed off stable IDs derived from each SOP's slug. Used by Skill 32's
+fresh install AND by client update flows that ship a refreshed library.
+"""
+import sqlite3, json, secrets, sys
+from datetime import datetime, timezone
+
+CLIENT = sys.argv[1]
+JSONL = sys.argv[2]
+DB = sys.argv[3] if len(sys.argv) > 3 else "/data/projects/command-center/mission-control.db"
+
+db = sqlite3.connect(DB)
+db.row_factory = sqlite3.Row
+
+# ---- Migration 028: V2 SOP schema additions ----
+print(f"[{CLIENT}] migration 028: V2 schema")
+sop_cols = [c[1] for c in db.execute("PRAGMA table_info(sops)")]
+add_cols = [
+    ("cadence", "TEXT"),
+    ("source_role", "TEXT"),
+    ("confidence", "REAL"),
+    ("confidence_tier", "TEXT"),
+    ("estimated_minutes", "INTEGER"),
+    ("time_of_day", "TEXT"),
+    ("source_file_url", "TEXT"),
+    ("prerequisites", "TEXT"),
+    ("template_vars_used", "TEXT"),
+    ("layer_version", "TEXT DEFAULT 'v2'"),
+]
+added = 0
+for col, typ in add_cols:
+    if col not in sop_cols:
+        db.execute(f"ALTER TABLE sops ADD COLUMN {col} {typ}")
+        added += 1
+db.execute("CREATE INDEX IF NOT EXISTS idx_sops_cadence ON sops(cadence)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_sops_layer ON sops(layer_version)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_sops_confidence_tier ON sops(confidence_tier)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_sops_source_role ON sops(source_role)")
+
+db.executescript("""
+    CREATE TABLE IF NOT EXISTS sop_dependencies (
+      id TEXT PRIMARY KEY,
+      parent_sop_id TEXT NOT NULL REFERENCES sops(id),
+      prereq_sop_id TEXT NOT NULL REFERENCES sops(id),
+      dependency_type TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(parent_sop_id, prereq_sop_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sop_deps_parent ON sop_dependencies(parent_sop_id);
+    CREATE INDEX IF NOT EXISTS idx_sop_deps_prereq ON sop_dependencies(prereq_sop_id);
+
+    CREATE TABLE IF NOT EXISTS client_template_vars (
+      id TEXT PRIMARY KEY,
+      client_slug TEXT NOT NULL,
+      var_name TEXT NOT NULL,
+      var_value TEXT,
+      default_value TEXT,
+      description TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(client_slug, var_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ctv_client ON client_template_vars(client_slug);
+""")
+
+mig_cols = [c[1] for c in db.execute("PRAGMA table_info(_migrations)")]
+db.execute("DELETE FROM _migrations WHERE id='028'")
+if "name" in mig_cols:
+    db.execute("INSERT INTO _migrations (id, name) VALUES ('028', 'sop_v2_autonomous_execution')")
+else:
+    db.execute("INSERT INTO _migrations (id) VALUES ('028')")
+db.commit()
+print(f"  added {added} columns; dependency + template-var tables ready")
+
+# ---- Pass 1: upsert all SOPs ----
+print(f"[{CLIENT}] pass 1: upsert SOPs")
+slug_to_id = {}
+deps_pending = []
+sop_cols = [c[1] for c in db.execute("PRAGMA table_info(sops)")]
+inserted = 0
+errors = 0
+now = datetime.now(timezone.utc).isoformat()
+
+with open(JSONL) as f:
+    for line in f:
+        sop = json.loads(line)
+        slug = sop.get("slug", "")
+        if not slug:
+            continue
+        sop_id = "sop_" + slug.replace("-", "_")[:60]
+        slug_to_id[slug] = sop_id
+        deps_pending.append((sop_id, slug, sop.get("dependencies_upstream", [])))
+        data = {
+            "id": sop_id,
+            "slug": slug,
+            "name": sop.get("name", ""),
+            "description": sop.get("description") or "",
+            "version": sop.get("version", 1),
+            "department": sop.get("department"),
+            "cadence": sop.get("cadence"),
+            "source_role": sop.get("source_role"),
+            "confidence": sop.get("confidence"),
+            "confidence_tier": sop.get("confidence_tier"),
+            "estimated_minutes": sop.get("estimated_minutes"),
+            "time_of_day": sop.get("time_of_day"),
+            "source_file_url": sop.get("source_file_url"),
+            "task_keywords": sop.get("task_keywords", ""),
+            "steps": json.dumps(sop.get("steps", []), default=str),
+            "success_criteria": sop.get("success_criteria") or "",
+            "prerequisites": sop.get("prerequisites"),
+            "persona_hints": json.dumps(sop.get("persona_hints", [])),
+            "template_vars_used": json.dumps(sop.get("template_vars_used", [])),
+            "layer_version": sop.get("layer_version", "v2"),
+            "created_at": now,
+            "updated_at": now,
+        }
+        cols = [c for c in data if c in sop_cols]
+        sql = f"INSERT OR REPLACE INTO sops ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})"
+        try:
+            db.execute(sql, [data[c] for c in cols])
+            inserted += 1
+        except Exception as e:
+            errors += 1
+            if errors <= 5:
+                print(f"  upsert fail slug={slug}: {e}")
+db.commit()
+print(f"  upserted: {inserted}, errors: {errors}")
+
+# ---- Pass 2: resolve dependencies by slug ----
+print(f"[{CLIENT}] pass 2: resolve upstream dependencies")
+dep_inserted = 0
+dep_unresolved = 0
+for parent_id, parent_slug, upstreams in deps_pending:
+    for prereq_slug in upstreams:
+        prereq_id = slug_to_id.get(prereq_slug)
+        if not prereq_id:
+            dep_unresolved += 1
+            continue
+        try:
+            db.execute(
+                "INSERT OR IGNORE INTO sop_dependencies (id, parent_sop_id, prereq_sop_id, dependency_type) VALUES (?,?,?,?)",
+                (secrets.token_hex(8), parent_id, prereq_id, "upstream"),
+            )
+            dep_inserted += 1
+        except Exception:
+            pass
+db.commit()
+print(f"  inserted: {dep_inserted}, unresolved (aspirational refs): {dep_unresolved}")
+
+# ---- Pass 3: seed client_template_vars defaults ----
+print(f"[{CLIENT}] pass 3: seed client_template_vars defaults")
+DEFAULTS = {
+    "crm_platform": "GoHighLevel",
+    "analytics_platform": "Google Analytics 4",
+    "project_management": "Airtable",
+    "automation_platform": "N8N",
+    "email_platform": "GoHighLevel Email",
+    "cloud_storage": "Google Drive",
+    "notification_channel": "Telegram",
+    "escalation_contact": "owner_email",
+    "design_tool": "Canva",
+    "scheduling_platform": "Google Calendar",
+    "code_repository": "GitHub",
+    "billing_platform": "QuickBooks",
+    "voice_platform": "Fish Audio",
+    "monitoring_service": "UptimeRobot",
+    "monitoring_tool": "Datadog",
+    "ab_testing_platform": "Google Optimize",
+    "payment_processor": "Stripe",
+    "social_platforms": "LinkedIn, X, Facebook",
+    "heatmap_tool": "Hotjar",
+}
+ctv_inserted = 0
+for var, val in DEFAULTS.items():
+    try:
+        db.execute(
+            "INSERT OR IGNORE INTO client_template_vars (id, client_slug, var_name, var_value, default_value) VALUES (?,?,?,?,?)",
+            (secrets.token_hex(8), CLIENT, var, val, val),
+        )
+        ctv_inserted += 1
+    except Exception:
+        pass
+db.commit()
+print(f"  inserted: {ctv_inserted}")
+
+# ---- Verification ----
+total = db.execute('SELECT COUNT(*) FROM sops').fetchone()[0]
+v2 = db.execute("SELECT COUNT(*) FROM sops WHERE layer_version='v2'").fetchone()[0]
+v1 = db.execute("SELECT COUNT(*) FROM sops WHERE layer_version='v1'").fetchone()[0]
+deps = db.execute('SELECT COUNT(*) FROM sop_dependencies').fetchone()[0]
+ctv = db.execute('SELECT COUNT(*) FROM client_template_vars WHERE client_slug=?', (CLIENT,)).fetchone()[0]
+hi = db.execute('SELECT COUNT(*) FROM sops WHERE confidence>=0.85').fetchone()[0]
+print(f"[{CLIENT}] verification:")
+print(f"  sops total:       {total}")
+print(f"  v2 sops:          {v2}")
+print(f"  v1 sops:          {v1}")
+print(f"  sop_dependencies: {deps}")
+print(f"  template vars:    {ctv}")
+print(f"  confidence ≥0.85: {hi}")
+db.close()
+print(f"[{CLIENT}] DONE")
