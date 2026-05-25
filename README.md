@@ -1,9 +1,9 @@
 # OpenClaw Onboarding — Mac mini
 
-> **Version:** see `/version` — this repo at v10.13.29.
+> **Version:** see `/version` — this repo at v10.13.30.
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
 >
-> **NOTE (v10.13.29):** Mac mirror of VPS v10.14.37 — Skill 32 now ships the canonical **SOP V2 Library** (2,555 SOPs across 17 departments) as a GitHub Release asset. New `32-command-center-setup/scripts/ingest-sop-library.sh` downloads + applies migration 028 + upserts into the local `mission-control.db`. Existing Mac clients pick this up via `update-skills.sh`; fresh installs get it automatically. VPS and Mac sequences remain intentionally independent.
+> **NOTE (v10.13.30):** Mac mirror of VPS v10.14.37 — Skill 32 now ships the canonical **SOP V2 Library** (2,555 SOPs across 17 departments) as a GitHub Release asset. New `32-command-center-setup/scripts/ingest-sop-library.sh` downloads + applies migration 028 + upserts into the local `mission-control.db`. Existing Mac clients pick this up via `update-skills.sh`; fresh installs get it automatically. VPS and Mac sequences remain intentionally independent.
 >
 > **After every release:** `git tag vX.Y.Z && git push --tags && gh release create vX.Y.Z --notes-from-tag` so the GitHub Releases page mirrors the CHANGELOG.
 
