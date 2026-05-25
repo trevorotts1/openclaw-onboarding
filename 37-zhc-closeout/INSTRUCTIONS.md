@@ -17,7 +17,11 @@ Before starting Step 1, verify ALL of the following:
 5. `jq` is on PATH.
 6. The 6 scripts in `scripts/` exist and are executable.
 
-If ANY check fails, write `closeoutStatus: "failed"` + `closeoutFailureReason: "preflight: <which check>"` to the state file and STOP. The resume cron will try again on its next fire (every 15 min). If preflight has been failing for 3 consecutive resume invocations, escalate to Trevor's chat (`5252140759`).
+If ANY check fails, write `closeoutStatus: "failed"` + `closeoutFailureReason: "preflight: <which check>"` to the state file and STOP. The resume cron will try again on its next fire (every 15 min). If preflight has been failing for 3 consecutive resume invocations, escalate to the operator's Telegram chat (`env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759`). Resolve via:
+```bash
+source "$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo $HOME/.openclaw; fi)/skills/shared-utils/operator-chat-id.sh"
+openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
+```
 
 ---
 
@@ -269,13 +273,12 @@ Re-running `run-closeout.sh` on a partially-complete closeout is safe.
 ## 7. Failure Escalation
 
 If `closeoutStatus == "failed"` AND the resume cron has retried 3+ times without progress:
-- Send escalation message to Trevor's chat (`5252140759`):
+- Send escalation message to the operator's Telegram chat (`env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759`):
+  ```bash
+  source "$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo $HOME/.openclaw; fi)/skills/shared-utils/operator-chat-id.sh"
+  openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "🚨 Closeout stuck for {{OWNER_NAME}} ({{COMPANY_NAME}}). closeoutStatus=failed, closeoutFailureReason={{REASON}}, resumeAttempts={{N}}. State file: {{STATE_FILE_PATH}}"
   ```
-  🚨 Closeout stuck for {{OWNER_NAME}} ({{COMPANY_NAME}}).
-  closeoutStatus=failed, closeoutFailureReason={{REASON}}, resumeAttempts={{N}}.
-  State file: {{STATE_FILE_PATH}}
-  ```
-- Do NOT send anything to the owner about the failure. They've heard nothing yet (Step 6 hasn't fired) — silence is fine. Trevor handles it.
+- Do NOT send anything to the owner about the failure. They've heard nothing yet (Step 6 hasn't fired) — silence is fine. The operator handles it.
 
 ---
 

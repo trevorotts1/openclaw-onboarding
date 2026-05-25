@@ -3,7 +3,7 @@
 #
 # Reads /data/.openclaw/workspace/.workforce-build-state.json. If the state
 # shows pending or stale-building departments, sends a self-message via
-# `openclaw message send` from the operator's chat (owner OR Trevor) to the
+# `openclaw message send` from the operator's chat (owner OR operator) to the
 # bot's own chat so the agent gets invoked and continues the build.
 #
 # This is the ONLY autonomous-recovery layer in the workforce-build pipeline.
@@ -40,13 +40,34 @@ log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"
 }
 
+# Remote Rescue v1 — resolve the operator's Telegram chat ID for escalations.
+# Lookup order: env.vars.OPERATOR_TELEGRAM_CHAT_ID -> $OPERATOR_TELEGRAM_CHAT_ID
+# -> $OPENCLAW_TREVOR_CHAT (legacy) -> hardcoded 5252140759 (Trevor default).
+resolve_operator_chat_id() {
+  local v=""
+  if command -v openclaw >/dev/null 2>&1; then
+    v="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+    case "$v" in
+      ""|*"not found"*|*"Error"*) v="" ;;
+    esac
+  fi
+  if [[ -z "$v" && -n "${OPERATOR_TELEGRAM_CHAT_ID:-}" ]]; then
+    v="$OPERATOR_TELEGRAM_CHAT_ID"
+  fi
+  if [[ -z "$v" && -n "${OPENCLAW_TREVOR_CHAT:-}" ]]; then
+    v="$OPENCLAW_TREVOR_CHAT"
+  fi
+  if [[ -z "$v" ]]; then
+    v="5252140759"
+  fi
+  printf '%s' "$v"
+}
+
 # v10.14.36 — locate this cron's UUID by name so we can self-remove.
 # OpenClaw doesn't pass a CRON_UUID env var, so we resolve by --name.
 # Returns empty string if openclaw CLI is unavailable or the cron isn't listed.
 find_self_cron_uuid() {
   command -v openclaw >/dev/null 2>&1 || { echo ""; return 0; }
-  # `openclaw cron list` typically prints lines like "<uuid>  workforce-build-resume  …".
-  # Be permissive: grab the first UUID-shaped token on the line that mentions our name.
   openclaw cron list 2>/dev/null \
     | awk '/workforce-build-resume/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-fA-F-]{8,}$/) { print $i; exit } }' \
     | head -1
@@ -65,7 +86,6 @@ self_remove_cron() {
   log "self_remove_cron($reason): removing cron $uuid"
   if openclaw cron rm "$uuid" 2>>"$LOG_FILE"; then
     log "self_remove_cron($reason): removed $uuid"
-    # clean up the runs-count file so a future fresh install starts at zero
     rm -f "$RUN_COUNT_FILE" 2>/dev/null || true
   else
     log "self_remove_cron($reason): openclaw cron rm $uuid FAILED — see errors above"
@@ -73,17 +93,10 @@ self_remove_cron() {
 }
 
 # ---- v10.14.36: BELT — explicit self-stop on terminal state ----
-# If the workforce build state is already done/failed/complete, remove this
-# cron and exit. Avoids the v10.14.16-v10.14.35 bug where the cron kept
-# firing every 15 min on Lyric/Evelyn because the agent's self-stop was
-# advisory and unreliable. The shell is the source of truth now.
 if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
   _build_status=$(jq -r '.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
   _closeout_status=$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || echo "")
   _build_completed_at=$(jq -r '.buildCompletedAt // ""' "$STATE_FILE" 2>/dev/null || echo "")
-  # Treat as fully terminal ONLY when build is complete AND closeout has
-  # reached a terminal state (done/sent). Otherwise the closeout-resume
-  # branch below still has legitimate work to do.
   case "$_build_status" in
     done|failed|complete)
       _terminal=1 ;;
@@ -103,11 +116,6 @@ if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
 fi
 
 # ---- v10.14.36: SUSPENDERS — max-runs auto-expire ----
-# Increment a counter on each fire. After MAX_RUNS_BEFORE_SELF_REMOVE (default
-# 24, ≈6 hours at 15-min cadence), auto-remove the cron regardless of state.
-# A workforce build that hasn't completed in 6 hours is stuck; further
-# self-pings only burn tokens. The install.sh harden_check_cron_loops sweep
-# is the third layer that catches anything that slips past both belts.
 mkdir -p "$(dirname "$RUN_COUNT_FILE")" 2>/dev/null || true
 _run_count=0
 if [[ -f "$RUN_COUNT_FILE" ]]; then
@@ -118,22 +126,18 @@ _run_count=$((_run_count + 1))
 echo "$_run_count" > "$RUN_COUNT_FILE" 2>/dev/null || true
 if (( _run_count > MAX_RUNS_BEFORE_SELF_REMOVE )); then
   log "SUSPENDERS: run #$_run_count exceeds cap of $MAX_RUNS_BEFORE_SELF_REMOVE — auto-removing self-cron"
-  # Escalate to Trevor so a stuck build doesn't silently disappear.
-  if [[ -n "${OPENCLAW_TREVOR_CHAT:-}" ]] && command -v openclaw >/dev/null 2>&1; then
-    openclaw message send --channel telegram -t "$OPENCLAW_TREVOR_CHAT" \
-      -m "⚠️ workforce-build-resume cron auto-removed after $_run_count runs (>6h). State file: $STATE_FILE on $(hostname). Build is stuck — manual intervention required." 2>>"$LOG_FILE" || true
+  if command -v openclaw >/dev/null 2>&1; then
+    _operator_chat="$(resolve_operator_chat_id)"
+    if [[ -n "$_operator_chat" ]]; then
+      openclaw message send --channel telegram -t "$_operator_chat" \
+        -m "⚠️ workforce-build-resume cron auto-removed after $_run_count runs (>6h). State file: $STATE_FILE on $(hostname). Build is stuck — manual intervention required." 2>>"$LOG_FILE" || true
+    fi
   fi
   self_remove_cron "max-runs-exceeded"
   exit 0
 fi
 
-# ---- v10.13.19: heal config before any gateway interaction ----
-# The Telegram/whatsapp plugin auto-config-append can write deprecated field
-# names (e.g. messages.groupChat.unmentionedInbound) on container restart that
-# crash the gateway on next boot. `openclaw doctor --fix` strips them. If the
-# gateway is wedged for this reason, our `openclaw message send` below would
-# fail silently and the cron's resume-dispatch would never reach the agent.
-# Idempotent — safe to run every cron tick.
+# ---- v10.14.20: heal config before any gateway interaction ----
 if command -v openclaw >/dev/null 2>&1; then
   openclaw doctor --fix >/dev/null 2>&1 || true
 fi
@@ -184,9 +188,6 @@ stale_building_count=$(jq --arg min "$STALE_BUILDING_MINUTES" -r '
   ] | length
 ' "$STATE_FILE" 2>/dev/null || echo 0)
 
-# v10.14.17 — also fire when build is done but closeout is dirty.
-# closeoutStatus terminal states: "done", "sent". Anything else (or missing,
-# when buildCompletedAt is set) means closeout work is owed.
 build_completed_at=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE")
 closeout_status=$(jq -r '.closeoutStatus // empty' "$STATE_FILE")
 closeout_dirty=0
@@ -214,9 +215,10 @@ attempts=$(jq -r '.resumeAttempts // 0' "$STATE_FILE")
 max_attempts=$(jq -r ".maxResumeAttempts // $MAX_ATTEMPTS_DEFAULT" "$STATE_FILE")
 if (( attempts >= max_attempts )); then
   log "resumeAttempts ($attempts) >= maxResumeAttempts ($max_attempts) — bailing out, no more self-pings"
-  # Optional: ping Trevor's chat 5252140759 with a final escalation
-  if [[ -n "${OPENCLAW_TREVOR_CHAT:-}" ]]; then
-    openclaw message send --channel telegram -t "$OPENCLAW_TREVOR_CHAT" \
+  # Final escalation to operator (env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759).
+  _operator_chat="$(resolve_operator_chat_id)"
+  if [[ -n "$_operator_chat" ]]; then
+    openclaw message send --channel telegram -t "$_operator_chat" \
       -m "🚨 Workforce build stuck: ${pending_count} pending, ${stale_building_count} stale, ${attempts} resume attempts exhausted. State: $STATE_FILE" 2>>"$LOG_FILE" || true
   fi
   exit 0
@@ -238,27 +240,19 @@ stale_list=$(jq -r --arg min "$STALE_BUILDING_MINUTES" '
     | .slug] | join(", ")
 ' "$STATE_FILE")
 
-# Find a chat the bot CAN reply to. Priority: owner (already paired) > Trevor (operator).
-# A bot can only send to chats that have messaged it first. Operator chat is usually paired during onboarding.
+# Find a chat the bot CAN reply to. Priority: owner (already paired) > operator (Remote Rescue).
 TARGET_CHAT=""
 if [[ -n "$owner_chat" && "$owner_chat" != "null" ]]; then
   TARGET_CHAT="$owner_chat"
-elif [[ -n "${OPENCLAW_TREVOR_CHAT:-}" ]]; then
-  TARGET_CHAT="$OPENCLAW_TREVOR_CHAT"
+else
+  TARGET_CHAT="$(resolve_operator_chat_id)"
 fi
 
 if [[ -z "$TARGET_CHAT" ]]; then
-  log "no usable target chat (ownerChat or OPENCLAW_TREVOR_CHAT) — cannot dispatch resume"
+  log "no usable target chat (ownerChat or operator) — cannot dispatch resume"
   exit 0
 fi
 
-# IMPORTANT: this is a SELF-PING. The bot sends a system-tagged message to a paired chat.
-# The agent reads it as an internal trigger. We tag with [WORKFORCE-RESUME] so the
-# Skill 23 INSTRUCTIONS.md "Post-Interview Handoff Protocol" knows to treat it as
-# a build-resume invocation (NOT a new interview question and NOT a user message).
-#
-# v10.14.17: tag also drives closeout pickup. When pending/stale are empty but
-# closeout_dirty=1, the agent reads closeoutStatus and skips ahead to Skill 37.
 if (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_count == 0 )); then
   msg="[CLOSEOUT-RESUME] ${agent_name}: workforce build is done (buildCompletedAt set) but closeout is incomplete (closeoutStatus=${closeout_status:-unset}). Read /data/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md and invoke scripts/run-closeout.sh. The script is idempotent — it picks up from the first un-completed step. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the owner only hears from you when Skill 37 Step 6 fires."
 else

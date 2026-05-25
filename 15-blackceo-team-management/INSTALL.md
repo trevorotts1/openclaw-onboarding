@@ -144,6 +144,7 @@ Before starting, create this checklist and confirm completion after each step:
 
 ```
 [ ] Step 0: Team Member Intake (collect all team data before touching config)
+[ ] Step 0.5: Operator chat ID + Remote Rescue install
 [ ] Step 1: Back up ~/.openclaw/openclaw.json
 [ ] Step 2: Configure sub-agent settings in openclaw.json
 [ ] Step 3: Add Telegram IDs to channels.telegram.allowFrom
@@ -157,7 +158,7 @@ Before starting, create this checklist and confirm completion after each step:
 [ ] Step 11: Verify gateway is running
 [ ] Step 12: Test routing with each team member
 [ ] Step 13: Confirm message isolation between senders
-[ ] Step 14: Send completion confirmation to Trevor (read IDs back from openclaw.json, confirm all IDs written, send message to chat_id 5252140759)
+[ ] Step 14: Send completion confirmation to the operator (resolves operator chat ID via shared-utils/operator-chat-id.sh — defaults to 5252140759)
 ```
 
 ---
@@ -180,7 +181,54 @@ If TEAM_CONFIG.md has placeholders, the team data is:
 
 **Do NOT ask "How many team members?" or "What is this person's name?" or "What is their Telegram ID?"**
 **Do NOT run Step 0 intake questions.**
-**Use the data above directly and proceed to Step 1.**
+**Use the data above directly and proceed to Step 0.5.**
+
+---
+
+## Step 0.5: Operator Chat ID + Remote Rescue Install
+
+**This step provisions the operator-side "Remote Rescue by T Otts" agent and persists the operator's Telegram chat ID into `env.vars.OPERATOR_TELEGRAM_CHAT_ID` (schema-compliant under the 2026.5.22 openclaw.json schema).**
+
+Why it exists: every escalation in skills 15/23/35/37 + cron-prompt previously hardcoded `5252140759`. That broke on every box that wasn't Trevor's. The single config key `env.vars.OPERATOR_TELEGRAM_CHAT_ID` is now the source of truth, resolved at runtime via `shared-utils/operator-chat-id.sh` (triple-fallback: config -> env var -> hardcoded default of `5252140759`).
+
+### Interactive install (default)
+
+Run from the skill directory (the script auto-locates openclaw.json):
+
+```bash
+bash 15-blackceo-team-management/scripts/install-remote-rescue.sh
+```
+
+The script will:
+1. Prompt for the operator Telegram chat ID (default `5252140759`).
+2. Write it to `env.vars.OPERATOR_TELEGRAM_CHAT_ID` via `openclaw config set ... --strict-json`.
+3. Add operator chat ID + `6663821679` + `6771245262` to `channels.telegram.allowFrom` and `groupAllowFrom` if not already present.
+4. Append a `remote-rescue` entry to `agents.list` with `subagents.allowAgents: ["*"]` (idempotent — no-op if already present).
+5. Send a one-time bootstrap message from the bot to the operator's chat with: client name, persona name, bot username, container name, host info.
+
+### Non-interactive install (rollout automation)
+
+```bash
+NONINTERACTIVE=1 \
+OPERATOR_TELEGRAM_CHAT_ID=5252140759 \
+CLIENT_NAME="<Client Name>" \
+PERSONA="<Persona>" \
+CLIENT_BOT_USERNAME="<bot_username>" \
+CONTAINER_NAME="$(hostname)" \
+bash 15-blackceo-team-management/scripts/install-remote-rescue.sh
+```
+
+Set `SKIP_BOOTSTRAP_MSG=1` to skip the Telegram bootstrap message (for example, when the bot is paired but the operator hasn't DM'd it yet).
+
+### Verification
+
+```bash
+openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID
+openclaw config get agents.list | grep -A2 remote-rescue
+openclaw config validate
+```
+
+All three must succeed before proceeding to Step 1.
 
 ---
 
@@ -457,13 +505,20 @@ Confirm:
 
 ---
 
-## Step 14: Send Completion Confirmation to Trevor
+## Step 14: Send Completion Confirmation to the Operator
 
 **This step is MANDATORY. Do NOT skip. Do NOT mark skill complete without doing this.**
 
-After Steps 1-13 are complete, you MUST send a confirmation message directly to Trevor's Telegram DM (chat_id: 5252140759) that includes:
+After Steps 1-13 are complete, you MUST send a confirmation message to the operator's Telegram DM. Resolve the destination via the shared helper (it reads `env.vars.OPERATOR_TELEGRAM_CHAT_ID`, falls back to the `OPERATOR_TELEGRAM_CHAT_ID` env var, then to the hardcoded default `5252140759`):
 
-1. The exact Telegram IDs that were added to allowFrom (read them back from openclaw.json to confirm they are really there -- do not assume)
+```bash
+source ~/.openclaw/skills/shared-utils/operator-chat-id.sh
+# $OPERATOR_CHAT_ID is now populated.
+```
+
+The message must include:
+
+1. The exact Telegram IDs that were added to allowFrom (read them back from openclaw.json to confirm they are really there — do not assume)
 2. The names matched to those IDs
 3. A statement that the gateway was restarted and is running
 4. Any IDs that could NOT be added and why
@@ -480,6 +535,11 @@ Telegram IDs now approved in allowFrom:
 Gateway restarted and running. All team members above can now message the bot.
 
 [List any issues or IDs that were skipped]
+```
+
+Send it:
+```bash
+openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "<the message above>"
 ```
 
 **Read the IDs back from the actual openclaw.json file before sending.** Do not write from memory. Verify they are actually in the file, then report.
@@ -508,6 +568,7 @@ Use this checklist when setting up this protocol for a new client:
 
 ```
 [ ] Run Step 0 intake - collect all team member names, IDs, roles, types
+[ ] Run Step 0.5 — operator chat ID + Remote Rescue install
 [ ] Copy this SOP to client's master files
 [ ] Copy WORKFLOW_AUTO.md template to client's workspace
 [ ] Generate TEAM_CONFIG.md with client's actual team data

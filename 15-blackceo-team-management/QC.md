@@ -1,5 +1,5 @@
 # QC Checklist - Skill 15: BlackCEO Team Management
-**Version:** v6.5.6
+**Version:** v6.6.0
 
 Run this after installation. Every section must pass before you mark team management complete.
 
@@ -14,7 +14,7 @@ cat "$SKILL_DIR/skill-version.txt"
 ```
 
 - [ ] Required files exist: `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `TEAM_CONFIG.md`, `blackceo-team-management-full.md`, `QC.md`, `skill-version.txt`
-- [ ] `skill-version.txt` returns `v6.5.6`
+- [ ] `skill-version.txt` returns `v6.6.0`
 
 ---
 
@@ -96,17 +96,36 @@ Use two different approved senders.
 
 ---
 
-## 6. Trevor completion message check
+## 6. Operator completion message check
 
-INSTALL.md requires a completion confirmation back to Trevor's DM.
+INSTALL.md requires a completion confirmation back to the operator's DM. The operator chat ID is resolved at runtime via `shared-utils/operator-chat-id.sh` (reads `env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759` for Trevor Otts).
 
-- [ ] Confirmation message was sent to Telegram chat `5252140759`
+```bash
+# Confirm config key is set
+openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID
+```
+
+- [ ] `env.vars.OPERATOR_TELEGRAM_CHAT_ID` is set in openclaw.json
+- [ ] Confirmation message was sent to the resolved operator Telegram chat (default `5252140759` if not overridden)
 - [ ] Message listed the exact IDs read back from `allowFrom`
 - [ ] Message confirmed placeholders were removed
 
 ---
 
-## 7. Failure conditions
+## 7. Remote Rescue agent check
+
+```bash
+openclaw config get agents.list | grep -A2 remote-rescue
+openclaw config validate
+```
+
+- [ ] `agents.list` contains a `remote-rescue` entry with `subagents.allowAgents: ["*"]`
+- [ ] `openclaw config validate` returns `Config valid`
+- [ ] Bootstrap message was sent to the operator chat (or `SKIP_BOOTSTRAP_MSG=1` was explicitly set)
+
+---
+
+## 8. Failure conditions
 
 Fail this skill if any of these happen:
 
@@ -116,6 +135,8 @@ Fail this skill if any of these happen:
 - [ ] Replies go to the wrong sender
 - [ ] One worker leaks another worker's context without explicit dispatch instruction
 - [ ] Core files only store IDs in `WORKFLOW_AUTO.md` and nowhere else
+- [ ] `env.vars.OPERATOR_TELEGRAM_CHAT_ID` is missing
+- [ ] Remote Rescue agent is missing from `agents.list`
 
 ---
 
@@ -128,7 +149,8 @@ Pass only if all of the following are true:
 - [ ] `allowFrom` includes every approved team ID
 - [ ] Core docs preserve the dispatcher rules and team memory
 - [ ] Allowed, blocked, isolation, and directed-send tests all pass
-- [ ] Trevor received the required completion confirmation
+- [ ] Operator received the required completion confirmation
+- [ ] Remote Rescue agent is present and config validates
 
 ---
 

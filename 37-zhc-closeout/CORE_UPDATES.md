@@ -29,7 +29,10 @@ If you observe `closeoutStatus == "failed"` in the state file:
 - Check `closeoutFailureReason` for the specific step that failed.
 - The resume cron will try to recover on its next fire.
 - If you've been seeing the same failure for 3+ cron fires (check resumeAttempts
-  trend), escalate to Trevor's chat: 5252140759.
+  trend), escalate to the operator's chat (env.vars.OPERATOR_TELEGRAM_CHAT_ID,
+  default 5252140759). Resolve via:
+    source "$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo $HOME/.openclaw; fi)/skills/shared-utils/operator-chat-id.sh"
+    openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
 
 The full pipeline is in `~/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md`.
 Read it before you ever touch closeout state.

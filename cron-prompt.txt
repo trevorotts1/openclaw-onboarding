@@ -61,10 +61,10 @@ RULE 6 — If updates ARE available, compose a SUMMARY Telegram message in this 
   • "install command center" — only the Command Center update
   • "install skills 05, 06, 36" — only those specific skill folders from onboarding (numbers from the skill_changes list)
   • "skip this week" — do nothing, ask me again next Sunday
-  • "ping Trevor" — message Trevor on Telegram 5252140759 to ask before I touch anything (USE THIS if you see HIGH risk and aren't sure)
+  • "ping the operator" — message the operator on Telegram (env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759) to ask before I touch anything (USE THIS if you see HIGH risk and aren't sure)
   ──────────────────────────────────────────
 
-RULE 7 — If ANY repo has HIGH risk, automatically add this line at the bottom of the summary: "⚠️ This update is HIGH risk. I recommend you reply 'ping Trevor' so I can confirm with him before doing anything destructive."
+RULE 7 — If ANY repo has HIGH risk, automatically add this line at the bottom of the summary: "⚠️ This update is HIGH risk. I recommend you reply 'ping the operator' so I can confirm with the operator (Trevor by default) before doing anything destructive."
 
 RULE 8 — Send the summary as a single Telegram message to the configured target (telegram allowFrom[0] from openclaw.json).
 
@@ -80,10 +80,13 @@ RULE 10 — Act on the client's response:
   (d) "install skills 05, 06, 36" — run update-skills.sh with --only flag:
         bash <(curl -fsSL .../update-skills.sh) --only "05,06,36"
   (e) "skip this week" — write a note in MEMORY.md under "## System Updates": "[DATE]: client chose to skip weekly update. Pending: [list]." Then exit.
-  (f) "ping Trevor" — send a Telegram message to 5252140759 with: "Client [name from identity.md if available] declined the Sunday update — wants your call. Here's the summary: [paste summary]. Reply 'install' or 'hold' or 'install X only'." Wait for Trevor's response. Then act on Trevor's response per the same rules (a)-(d). If Trevor says "hold", write to client: "Trevor said hold off this week. I'll check again next Sunday."
+  (f) "ping the operator" — resolve the operator chat ID and send a Telegram message there:
+        source "$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo $HOME/.openclaw; fi)/skills/shared-utils/operator-chat-id.sh"
+        openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "Client [name from identity.md if available] declined the Sunday update — wants your call. Here's the summary: [paste summary]. Reply 'install' or 'hold' or 'install X only'."
+      Wait for the operator's response. Then act on the operator's response per the same rules (a)-(d). If the operator says "hold", write to client: "The operator said hold off this week. I'll check again next Sunday."
 
 RULE 11 — High-risk safety check: even if the client says "install all", if the inferred_risk for any item is HIGH and the changelog_excerpt mentions any of [breaking, migration, schema, drop, delete, deprecate], do this BEFORE running the install:
-  Send: "You picked 'install all' but [item name] is marked HIGH risk because [reason]. Are you sure? Reply YES to proceed or 'ping Trevor' to confirm with him first."
+  Send: "You picked 'install all' but [item name] is marked HIGH risk because [reason]. Are you sure? Reply YES to proceed or 'ping the operator' to confirm with the operator first."
   Wait for explicit YES before continuing.
 
 RULE 12 — After install completes, send a final Telegram summary to the client:
@@ -91,11 +94,11 @@ RULE 12 — After install completes, send a final Telegram summary to the client
   Then exit.
 
 RULE 13 — Forbidden:
-  • Do NOT install anything before the client (or Trevor) explicitly says yes
+  • Do NOT install anything before the client (or the operator) explicitly says yes
   • Do NOT use --force, --no-verify, --break-system-packages, or any shortcut flag
   • Do NOT silently auto-update if the client doesn't reply within the 2-hour window — exit cleanly with the "no response, will ask next Sunday" message
   • Do NOT push to GitHub
-  • Do NOT message anyone other than the configured client target and (optionally per Rule 10f) Trevor on 5252140759
+  • Do NOT message anyone other than the configured client target and (optionally per Rule 10f) the operator (resolved via env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759)
 
 RULE 14 — Communication style:
   • Plain English, no acronyms unless explained
@@ -107,7 +110,7 @@ RULE 15 — Sub-agent failure retry (per INSTALL-CONTRACT.md Rule 6):
   If you spawn a sub-agent to do part of this work and it fails (timeout, error, non-zero exit, hang):
   (a) Retry once with the same model. Many failures are transient.
   (b) If second attempt fails, retry with the next fallback model from agents.defaults.subagents.model.fallbacks.
-  (c) If third attempt fails, escalate to yourself (the master orchestrator) — do the task directly or stop and ask Trevor.
+  (c) If third attempt fails, escalate to yourself (the master orchestrator) — do the task directly or stop and ask the operator.
   Never silently abandon a sub-agent's task.
 
 RULE 16 — Gateway restart guard (per INSTALL-CONTRACT.md Rule 5):

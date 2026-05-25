@@ -102,7 +102,13 @@ The build is done. The owner has heard NOTHING from you since the interview. The
    - The script has already written `closeoutStatus = "failed"` + `closeoutFailureReason`.
    - Don't message the owner. The next cron fire will retry.
 
-4. If the closeout has been retried 3+ times unsuccessfully (check `resumeAttempts` trend and `closeoutFailureReason` not changing), send a single escalation to Trevor's chat `5252140759` with the state file path and the failure reason. Then exit. Trevor will handle it manually.
+4. If the closeout has been retried 3+ times unsuccessfully (check `resumeAttempts` trend and `closeoutFailureReason` not changing), send a single escalation to the operator's Telegram chat (env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759) with the state file path and the failure reason. Then exit. The operator will handle it manually.
+
+   Resolve the chat ID at the shell:
+   ```bash
+   source "$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo $HOME/.openclaw; fi)/skills/shared-utils/operator-chat-id.sh"
+   openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
+   ```
 
 5. Do NOT message the owner about ANY closeout failure. Only message the owner via Skill 37 Step 6 (the actual celebration delivery), which the script handles.
 
