@@ -208,7 +208,11 @@ The checks above are CONTENT QC — they run weekly during content production. T
 - **9.5–10.0:** Excellent. Skill is fully active. No follow-up needed.
 - **8.5–9.4:** Pass. The install is complete. Surface the minor items as "pending" in the client summary message.
 - **7.0–8.4:** **DO NOT declare done.** Loop back, fix the items that lost points, re-score. Max 5 loops.
-- **Below 7.0:** Stop. Escalate to Trevor on Telegram `5252140759` with: which section scored what, what failed, what fix you tried, what's blocking.
+- **Below 7.0:** Stop. Escalate to the operator on Telegram (`env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759`) with: which section scored what, what failed, what fix you tried, what's blocking. Resolve via the helper:
+  ```bash
+  source ~/.openclaw/skills/shared-utils/operator-chat-id.sh
+  openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
+  ```
 
 ### Required actions when below 8.5
 

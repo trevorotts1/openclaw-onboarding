@@ -1,3 +1,86 @@
+## [v10.13.31] — 2026-05-25 — Remote Rescue v1: operator chat ID config key + Remote Rescue agent (mirrors VPS v10.14.39)
+
+### Risk: medium
+
+### Why
+
+Every escalation path in skills 15/23/35/37 + cron-prompt previously hardcoded
+chat ID `5252140759` (Trevor Otts). On any client box that wasn't Trevor's, the
+"escalate to Trevor on Telegram" rule was effectively broken — the bot DM target
+was wrong, the message never landed. Until today (Monique incident, 2026-05-25)
+this drift was invisible because Monique's bot happened to be Trevor-paired and
+the gateway silently swallowed `chat not found` errors.
+
+The fix is a single canonical config key the whole repo dereferences instead
+of hardcoding the value.
+
+### What changed
+
+- **New shared utility**: `shared-utils/operator-chat-id.sh` — resolves the
+  operator's Telegram chat ID with triple-fallback (config -> env var ->
+  hardcoded default 5252140759). All skill scripts source this.
+- **New skill 15 installer step**: `15-blackceo-team-management/scripts/install-remote-rescue.sh`.
+  Idempotent. Prompts the operator for their chat ID (default 5252140759),
+  writes it to `env.vars.OPERATOR_TELEGRAM_CHAT_ID` via
+  `openclaw config set --strict-json`, adds operator + 6663821679 + 6771245262
+  to `channels.telegram.allowFrom` and `groupAllowFrom`, appends a `remote-rescue`
+  agent entry to `agents.list` (with `subagents.allowAgents: ["*"]` — "full
+  privileges" in the 2026.5.22 schema), and sends a one-time Telegram bootstrap
+  message from the bot to the operator.
+- **New INSTALL.md Step 0.5** in Skill 15 — wires the new installer into the
+  onboarding flow.
+- **Refactored hardcoded `5252140759` references** in:
+  - `15-blackceo-team-management/INSTALL.md` (Step 14)
+  - `15-blackceo-team-management/QC.md` (operator completion + Remote Rescue checks)
+  - `23-ai-workforce-blueprint/resume-prompt.txt`
+  - `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh`
+  - `35-social-media-planner/QC.md`
+  - `37-zhc-closeout/INSTRUCTIONS.md` (preflight + failure escalation)
+  - `37-zhc-closeout/CORE_UPDATES.md`
+  - `cron-prompt.txt` (Sunday escalation flow)
+  All now resolve via the shared helper. The number `5252140759` remains only
+  as the back-compat default in the helper itself + an env-var example in
+  INSTALL.md + a comment in resume-workforce-build.sh.
+- **Skill 15 bumped to v6.6.0**.
+
+### Schema-key decision
+
+Trevor approved `notifications.operator.telegram.chatId`. The 2026.5.22 schema
+rejects it (`additionalProperties: false` at root, no `notifications` top-level
+key exists). Per the autonomy rule, picked the schema-compliant home:
+`env.vars.OPERATOR_TELEGRAM_CHAT_ID` (string). Validated end-to-end on
+Monique's box with `openclaw config set ... --strict-json` and
+`openclaw config validate`.
+
+### "Full privileges" in 2026.5.22
+
+The 2026.5.22 `agents.list[]` schema has no `privileges` field. "Full
+privileges" maps to:
+- `subagents.allowAgents: ["*"]` (wildcard subagent allow-list)
+- no `sandbox` override (inherit permissive global default)
+- no `tools` restrictions (inherit global)
+- model: agent picks the highest-capability default
+
+The new `remote-rescue` agent entry uses exactly that shape.
+
+### How to apply
+
+```bash
+cd ~/.openclaw/skills/15-blackceo-team-management
+git pull && bash scripts/install-remote-rescue.sh
+```
+
+Non-interactive rollout pattern (for the existing fleet):
+
+```bash
+NONINTERACTIVE=1 OPERATOR_TELEGRAM_CHAT_ID=5252140759 \
+CLIENT_NAME="<client>" PERSONA="<persona>" \
+CLIENT_BOT_USERNAME="<bot>" CONTAINER_NAME="$(hostname)" \
+bash scripts/install-remote-rescue.sh
+```
+
+---
+
 ## [v10.13.30] — 2026-05-25 — Skill 31 memory-stack auto-activation (mirrors VPS v10.14.38)
 
 Mac mirror of the VPS v10.14.38 release. See the VPS CHANGELOG for the
