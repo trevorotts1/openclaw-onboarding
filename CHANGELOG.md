@@ -1,3 +1,30 @@
+## [v10.14.4]  -  2026-05-26  -  Skill 37 closeout v4 (5 production bugs from Evelyn run)
+
+### Why
+
+Mirrors VPS v10.15.4. Five bugs caught when re-firing Evelyn's phantom-completed closeout against Skill 37 v10.14.3. The closeout had marked itself `failed` after celebration-video timed out, even though Notion was buildable and Telegram could have sent text-only. Postmortem against KIE API confirmed model slug and aspect_ratio drift.
+
+### Bugs fixed
+
+A. **Inf #2 model slug.** `gemini-3-1-flash-image` returned 422 "The model name you specified is not supported" from `api.kie.ai/api/v1/jobs/createTask`. Corrected to `nano-banana-2` (confirmed accepted 2026-05-26 against the live KIE registry; KIE returned taskId on probe).
+
+B. **Gemini Omni Video missing aspect_ratio.** `submit_gemini_omni()` in `generate-celebration-video.sh` did not include `aspect_ratio` in the input object, so KIE rejected with 422 "Aspect ratio only supports [16:9, 9:16]". Now baked in (default 16:9). Env override `ZHC_CELEBRATION_VIDEO_ASPECT` accepts `16:9` or `9:16`.
+
+C. **Veo3 poll timeout + transient 500s.** Veo3 jobs commonly take 5-20 min; the hardcoded 900s timeout aborted before completion. Bumped to 1800s, env-overrideable via `ZHC_VIDEO_POLL_TIMEOUT_SEC`. `errorCode: 500` mid-poll (both HTTP 5xx and body-level errorCode) is now treated as transient with a 30s backoff and 3-consecutive-500 ceiling before giving up.
+
+D. **First-failure aborts all subsequent steps.** `run-closeout.sh` called `fail_closeout` on the first non-zero step, blocking Notion + Telegram even though they were buildable. Refactored to step-level idempotency: each of Inf1 / Inf2 / Video / Notion / Telegram records `STEP_<NAME>_STATUS=ok|failed|skipped` and continues. Final closeoutStatus matrix: `failed` if Inf1/Inf2/Telegram failed; `partial` if only Notion and/or Video failed (with `closeoutPartialArtifacts` enumerated); `done` if 5-of-6 or 6-of-6 succeed. Telegram slot 4 now adapts: when `ZHC_VIDEO_STATUS=failed` is exported from `run-closeout.sh`, slot 4 sends a text-only "celebration video deferred, vendor congestion" notice instead of skipping silently.
+
+E. **Notion parent-page discovery had no fallback.** When the BlackCEO / OpenClaw parent-page search came up empty AND `NOTION_CLOSEOUT_PARENT_PAGE_ID` was unset, the script aborted. New fallback chain: (1) env var, (2) BlackCEO search, (3) OpenClaw search, (4) prior-run "Your Zero-Human Company" search, (5) workspace root (`parent.type=workspace, workspace=true`) so a fresh client always gets a closeout even with no pre-existing parent. `PARENT_KIND` is logged so the operator knows which fallback fired.
+
+### Files touched
+
+- `37-zhc-closeout/scripts/generate-infographics.sh`
+- `37-zhc-closeout/scripts/generate-celebration-video.sh`
+- `37-zhc-closeout/scripts/run-closeout.sh`
+- `37-zhc-closeout/scripts/send-telegram-celebration.sh`
+- `37-zhc-closeout/scripts/create-notion-closeout.sh`
+- `37-zhc-closeout/CHANGELOG.md`
+
 ## [v10.14.3]  -  2026-05-26  -  Skill 37 closeout v3 (HTML/Playwright workforce chart, video embed fix, Gemini Omni default)
 
 ### Why

@@ -1,4 +1,24 @@
-# Changelog — Skill 37: ZHC Closeout
+# Changelog - Skill 37: ZHC Closeout
+
+## [1.1.1] - 2026-05-26 - Skill 37 v4 production bug fixes (shipped with onboarding v10.14.4 / v10.15.4)
+
+Five bugs caught when re-firing Evelyn's phantom-completed closeout against v10.X.3.
+
+### A. Inf #2 model slug
+`gemini-3-1-flash-image` returned 422 from KIE; corrected to `nano-banana-2`. Confirmed accepted against `api.kie.ai/api/v1/jobs/createTask` 2026-05-26. Fallback `gpt-image-2-text-to-image` unchanged.
+
+### B. Gemini Omni Video aspect_ratio
+`submit_gemini_omni()` now always includes `aspect_ratio` in input (default `16:9`). KIE was returning 422 "Aspect ratio only supports [16:9, 9:16]" without it. New env override `ZHC_CELEBRATION_VIDEO_ASPECT` accepts `16:9` or `9:16`.
+
+### C. Veo3 poll timeout + transient 500s
+Bumped `poll_veo` and `poll_gemini_omni` timeout 900s -> 1800s (env override `ZHC_VIDEO_POLL_TIMEOUT_SEC`). Treats HTTP 5xx OR body-level `errorCode: 500` as transient with 30s backoff, max 3 consecutive 500s before giving up. New log lines: `step=celebration-video poll for <id>: in-progress (elapsed=Ns)` and `VEO poll got 500 (transient, attempt N/3), retrying in 30s`.
+
+### D. Step-level idempotency in run-closeout.sh
+Each step (Inf1, Inf2, Video, Notion, Telegram) runs independently with its own try/catch. `STEP_<NAME>_STATUS` tracks ok/failed/skipped. Final closeoutStatus = `done` (5-or-6 success), `partial` (only Notion or Video failed, with `closeoutPartialArtifacts` enumerated), or `failed` (any of Inf1/Inf2/Telegram failed). Telegram slot 4 reads exported `ZHC_VIDEO_STATUS` and sends a text-only "deferred for tonight, vendor congestion" notice when video failed.
+
+### E. Notion parent-page fallback
+Was: env var OR BlackCEO/OpenClaw search; otherwise abort. Now: env var -> BlackCEO -> OpenClaw -> prior-run "Your Zero-Human Company" search -> workspace root (`parent.type=workspace, workspace=true`). `PARENT_KIND` is logged for operator visibility.
+
 
 ## [1.1.0] - 2026-05-26 - Skill 37 v3 closeout fixes (shipped with onboarding v10.14.3 / v10.15.3)
 

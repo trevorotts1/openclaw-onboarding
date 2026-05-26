@@ -22,6 +22,15 @@
 #   ZHC_VIDEO_DURATION           default: 4 (Gemini) or 8 (Veo)
 #                                Gemini Omni typically supports 4-8s.
 #                                Veo3 supports 4, 6, or 8s.
+#   ZHC_CELEBRATION_VIDEO_ASPECT default: 16:9. Accepts 16:9 or 9:16.
+#                                (KIE Gemini Omni only supports those two.)
+#   ZHC_VIDEO_POLL_TIMEOUT_SEC   default: 1800 (was 900 in v10.X.3).
+#                                Veo3 jobs commonly take 5-20 min; 900s
+#                                aborted before completion on Evelyn run.
+#
+# v10.X.4 fixes (Evelyn 2026-05-26 closeout postmortem):
+#   - submit_gemini_omni() now always sets aspect_ratio (KIE 422 fix)
+#   - VEO poll timeout bumped to 1800s + transient 500 retry (max 3)
 #
 # CRITICAL (Lesson 2): NEVER pass tempfile.aiquickdraw.com URLs directly to
 # Telegram. The CDN returns content-disposition: attachment, so Telegram
@@ -109,18 +118,31 @@ esac
 # Submit + poll: Gemini Omni Video
 # ----------------------------------------------------------------------
 submit_gemini_omni() {
+  # v10.X.4: KIE rejects requests without aspect_ratio with 422 "Aspect ratio
+  # only supports [16:9, 9:16]". Always inject one. Env override is validated
+  # to those two values to avoid round-tripping a 422 back to the operator.
+  local aspect="${ZHC_CELEBRATION_VIDEO_ASPECT:-16:9}"
+  case "$aspect" in
+    16:9|9:16) ;;
+    *)
+      log "WARN" "ZHC_CELEBRATION_VIDEO_ASPECT='$aspect' not in [16:9, 9:16]; falling back to 16:9"
+      aspect="16:9"
+      ;;
+  esac
   local input_obj
   if [[ -n "$INFOGRAPHIC1_URL" && "$INFOGRAPHIC1_URL" != "null" && "$INFOGRAPHIC1_URL" != file://* ]]; then
     input_obj=$(jq -n \
       --arg prompt "$PROMPT" \
       --arg img "$INFOGRAPHIC1_URL" \
       --arg dur "$DURATION" \
-      '{prompt: $prompt, image_urls: [$img], duration: $dur}')
+      --arg aspect "$aspect" \
+      '{prompt: $prompt, image_urls: [$img], duration: $dur, aspect_ratio: $aspect}')
   else
     input_obj=$(jq -n \
       --arg prompt "$PROMPT" \
       --arg dur "$DURATION" \
-      '{prompt: $prompt, duration: $dur}')
+      --arg aspect "$aspect" \
+      '{prompt: $prompt, duration: $dur, aspect_ratio: $aspect}')
   fi
   local body
   body=$(jq -n \
@@ -137,7 +159,8 @@ poll_gemini_omni() {
   local task_id="$1"
   local elapsed=0
   local wait_sec
-  while (( elapsed < 900 )); do
+  local timeout_sec="${ZHC_VIDEO_POLL_TIMEOUT_SEC:-1800}"
+  while (( elapsed < timeout_sec )); do
     local resp
     resp=$(curl -sS "https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$task_id" \
       -H "Authorization: Bearer $KIE_API_KEY" 2>/dev/null)
@@ -184,10 +207,15 @@ submit_veo() {
 }
 
 poll_veo() {
+  # v10.X.4: timeout 900 -> 1800 (env override ZHC_VIDEO_POLL_TIMEOUT_SEC).
+  # errorCode/HTTP 500 mid-poll is now treated as transient (Veo upstream
+  # blip), backoff 30s, up to 3 consecutive 500s before giving up.
   local task_id="$1"
   local elapsed=0
   local wait_sec
-  while (( elapsed < 900 )); do
+  local timeout_sec="${ZHC_VIDEO_POLL_TIMEOUT_SEC:-1800}"
+  local consecutive_500=0
+  while (( elapsed < timeout_sec )); do
     local resp http_code
     resp=$(curl -sS -w '\n__HTTP_CODE__%{http_code}' \
       "https://api.kie.ai/api/v1/veo/record-info?taskId=$task_id" \
@@ -195,10 +223,29 @@ poll_veo() {
     http_code=$(printf '%s' "$resp" | awk -F'__HTTP_CODE__' 'END{print $2}')
     resp=$(printf '%s' "$resp" | sed 's/__HTTP_CODE__[0-9]*$//')
 
-    if [[ -n "$http_code" && "$http_code" =~ ^[45] ]]; then
-      log "ERROR" "VEO poll HTTP $http_code for $task_id: $(echo "$resp" | head -c 200)"
-      if [[ "$http_code" =~ ^4 ]]; then return 1; fi
+    # Pull body-level errorCode (KIE returns 200 HTTP but errorCode=500 inside
+    # data when its upstream Veo provider has a transient hiccup).
+    local body_err_code
+    body_err_code=$(echo "$resp" | jq -r '.data.errorCode // .errorCode // empty' 2>/dev/null)
+
+    # Treat HTTP 5xx OR body errorCode=500 as transient: backoff + retry.
+    if { [[ -n "$http_code" && "$http_code" =~ ^5 ]] || [[ "$body_err_code" == "500" ]]; }; then
+      consecutive_500=$((consecutive_500 + 1))
+      if (( consecutive_500 > 3 )); then
+        log "ERROR" "VEO poll: 4 consecutive transient 500s for $task_id; giving up"
+        return 1
+      fi
+      log "WARN" "VEO poll got 500 (transient, attempt $consecutive_500/3), retrying in 30s"
+      sleep 30
+      elapsed=$((elapsed + 30))
+      continue
     fi
+    # Any other 4xx is terminal.
+    if [[ -n "$http_code" && "$http_code" =~ ^4 ]]; then
+      log "ERROR" "VEO poll HTTP $http_code for $task_id: $(echo "$resp" | head -c 200)"
+      return 1
+    fi
+    consecutive_500=0
 
     local success_flag
     success_flag=$(echo "$resp" | jq -r '.data.successFlag // empty' 2>/dev/null)
@@ -219,6 +266,7 @@ poll_veo() {
     elif (( elapsed < 300 )); then wait_sec=15
     else wait_sec=30
     fi
+    log "INFO" "step=celebration-video poll for $task_id: in-progress (elapsed=${elapsed}s)"
     sleep "$wait_sec"
     elapsed=$((elapsed + wait_sec))
   done

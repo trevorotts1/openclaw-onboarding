@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# send-telegram-celebration.sh — 6-message paced Telegram delivery to the owner.
+# send-telegram-celebration.sh -- 6-message paced Telegram delivery to the owner.
 #
 # Tracks per-message delivery in state.messagesDelivered = [1,2,3,4,5,6].
-# Each message is idempotent — re-running only sends messages not yet in the
+# Each message is idempotent -- re-running only sends messages not yet in the
 # delivered list. On per-message exhaustion, marks failure but continues.
 
 set -u
@@ -42,7 +42,7 @@ NOTION_URL=$(state_get '.notionRootPageUrl')
 CC_URL=$(state_get '.commandCenterUrl')
 
 if [[ -z "$OWNER_CHAT" || "$OWNER_CHAT" == "null" ]]; then
-  log "ERROR" "ownerChat missing from state — cannot deliver"
+  log "ERROR" "ownerChat missing from state -- cannot deliver"
   exit 1
 fi
 
@@ -153,7 +153,7 @@ failed_messages=()
 
 # ---- Message 1: Announcement ----
 if is_delivered 1; then
-  log "INFO" "msg 1: already delivered — skipping"
+  log "INFO" "msg 1: already delivered -- skipping"
 else
   log "INFO" "msg 1: sending announcement"
   MSG1="🎉 ${OWNER_NAME}, your zero-human company is built.
@@ -167,7 +167,7 @@ Here's what I want to show you:"
     log "INFO" "msg 1: delivered"
     sleep 10
   else
-    log "ERROR" "msg 1: FAILED after 3 attempts — aborting (no point sending celebration if announcement didn't land)"
+    log "ERROR" "msg 1: FAILED after 3 attempts -- aborting (no point sending celebration if announcement didn't land)"
     state_set '.closeoutStatus = "failed" | .closeoutFailureReason = "telegram-message-1: 3 retries exhausted"'
     exit 1
   fi
@@ -175,63 +175,79 @@ fi
 
 # ---- Message 2: Infographic #1 ----
 if is_delivered 2; then
-  log "INFO" "msg 2: already delivered — skipping"
+  log "INFO" "msg 2: already delivered -- skipping"
 elif [[ ( -z "$INFO_1" || "$INFO_1" == "null" ) && ( -z "$INFO_1_LOCAL" || ! -s "$INFO_1_LOCAL" ) ]]; then
-  log "WARN" "msg 2: infographic1Url and infographic1LocalPath both missing — skipping"
+  log "WARN" "msg 2: infographic1Url and infographic1LocalPath both missing -- skipping"
   failed_messages+=("msg-2-no-url")
 else
   log "INFO" "msg 2: sending infographic #1"
-  if send_photo "$INFO_1" "📊 Your workforce structure — how your AI company is organized." "$INFO_1_LOCAL"; then
+  if send_photo "$INFO_1" "📊 Your workforce structure -- how your AI company is organized." "$INFO_1_LOCAL"; then
     mark_delivered 2
     log "INFO" "msg 2: delivered"
     sleep 5
   else
-    log "ERROR" "msg 2: FAILED — continuing"
+    log "ERROR" "msg 2: FAILED -- continuing"
     failed_messages+=("msg-2")
   fi
 fi
 
 # ---- Message 3: Infographic #2 ----
 if is_delivered 3; then
-  log "INFO" "msg 3: already delivered — skipping"
+  log "INFO" "msg 3: already delivered -- skipping"
 elif [[ -z "$INFO_2" || "$INFO_2" == "null" ]]; then
-  log "WARN" "msg 3: infographic2Url missing — skipping"
+  log "WARN" "msg 3: infographic2Url missing -- skipping"
   failed_messages+=("msg-3-no-url")
 else
   log "INFO" "msg 3: sending infographic #2"
-  if send_photo "$INFO_2" "⚙️ How the work flows — from a task you give me, all the way to a finished output."; then
+  if send_photo "$INFO_2" "⚙️ How the work flows -- from a task you give me, all the way to a finished output."; then
     mark_delivered 3
     log "INFO" "msg 3: delivered"
     sleep 5
   else
-    log "ERROR" "msg 3: FAILED — continuing"
+    log "ERROR" "msg 3: FAILED -- continuing"
     failed_messages+=("msg-3")
   fi
 fi
 
 # ---- Message 4: Celebration video ----
+#
+# v10.X.4: when video generation failed (ZHC_VIDEO_STATUS=failed exported by
+# run-closeout.sh), send a text-only "deferred" notice in slot 4 instead of
+# silently skipping. The closeout still completes as `partial` so the resume
+# cron will re-attempt the video tonight when vendor congestion clears.
 if is_delivered 4; then
-  log "INFO" "msg 4: already delivered — skipping"
+  log "INFO" "msg 4: already delivered -- skipping"
+elif [[ "${ZHC_VIDEO_STATUS:-}" == "failed" ]]; then
+  log "INFO" "msg 4: video generation failed upstream -- sending text-only deferred notice"
+  MSG4_DEFERRED="🎬 Your celebration video is queued but deferred for tonight -- the video vendor is hitting congestion right now. It'll show up in this thread automatically when it lands. Everything else below is ready to go."
+  if send_text "$MSG4_DEFERRED"; then
+    mark_delivered 4
+    log "INFO" "msg 4: deferred-notice delivered"
+    sleep 4
+  else
+    log "ERROR" "msg 4: FAILED -- continuing"
+    failed_messages+=("msg-4")
+  fi
 elif [[ ( -z "$VIDEO" || "$VIDEO" == "null" ) && ( -z "$VIDEO_LOCAL" || ! -s "$VIDEO_LOCAL" ) ]]; then
-  log "WARN" "msg 4: celebrationVideoUrl and celebrationVideoLocalPath both missing — skipping"
+  log "WARN" "msg 4: celebrationVideoUrl and celebrationVideoLocalPath both missing -- skipping"
   failed_messages+=("msg-4-no-url")
 else
   log "INFO" "msg 4: sending celebration video"
-  if send_video "$VIDEO" "🎬 A quick celebration — congratulations on launching ${COMPANY_NAME}'s zero-human workforce." "$VIDEO_LOCAL"; then
+  if send_video "$VIDEO" "🎬 A quick celebration -- congratulations on launching ${COMPANY_NAME}'s zero-human workforce." "$VIDEO_LOCAL"; then
     mark_delivered 4
     log "INFO" "msg 4: delivered"
     sleep 8
   else
-    log "ERROR" "msg 4: FAILED — continuing"
+    log "ERROR" "msg 4: FAILED -- continuing"
     failed_messages+=("msg-4")
   fi
 fi
 
 # ---- Message 5: Notion doc link ----
 if is_delivered 5; then
-  log "INFO" "msg 5: already delivered — skipping"
+  log "INFO" "msg 5: already delivered -- skipping"
 elif [[ -z "$NOTION_URL" || "$NOTION_URL" == "null" ]]; then
-  log "WARN" "msg 5: notionRootPageUrl missing — skipping"
+  log "WARN" "msg 5: notionRootPageUrl missing -- skipping"
   failed_messages+=("msg-5-no-url")
 else
   log "INFO" "msg 5: sending Notion doc link"
@@ -244,7 +260,7 @@ It explains your departments, your AI employees, the communication hierarchy, th
     log "INFO" "msg 5: delivered"
     sleep 3
   else
-    log "ERROR" "msg 5: FAILED — continuing"
+    log "ERROR" "msg 5: FAILED -- continuing"
     failed_messages+=("msg-5")
   fi
 fi
@@ -269,9 +285,9 @@ cc_url_is_real() {
 CC_BOOKMARK_FILE="$OC_ROOT/workspace/.zhc-dashboard-url"
 
 if is_delivered 6; then
-  log "INFO" "msg 6: already delivered — skipping"
+  log "INFO" "msg 6: already delivered -- skipping"
 elif ! cc_url_is_real "$CC_URL"; then
-  log "WARN" "msg 6: commandCenterUrl missing or local-only — skipping Command Center URL message"
+  log "WARN" "msg 6: commandCenterUrl missing or local-only -- skipping Command Center URL message"
   failed_messages+=("msg-6-no-url")
 else
   log "INFO" "msg 6: sending Command Center URL"
@@ -282,7 +298,7 @@ This is where you'll talk to your CEO (${AGENT_NAME}), watch tasks move across t
 
 When you're ready, just message me with the first thing you want done. I'm standing by.
 
-— ${AGENT_NAME}"
+-- ${AGENT_NAME}"
   if send_text "$MSG6"; then
     mark_delivered 6
     log "INFO" "msg 6: delivered"
@@ -295,7 +311,7 @@ When you're ready, just message me with the first thing you want done. I'm stand
     fi
     sleep 3
   else
-    log "ERROR" "msg 6: FAILED — continuing"
+    log "ERROR" "msg 6: FAILED -- continuing"
     failed_messages+=("msg-6")
   fi
 fi
@@ -305,17 +321,17 @@ fi
 # where to look for the URL even if the Telegram message scrolls away or msg 6
 # was skipped due to a missing/local URL.
 if is_delivered 7; then
-  log "INFO" "msg 7: already delivered — skipping"
+  log "INFO" "msg 7: already delivered -- skipping"
 else
   log "INFO" "msg 7: sending bookmark hint"
   MSG7="🔖 Your dashboard URL has been bookmarked at \`${CC_BOOKMARK_FILE}\`. If you ever lose this message, that file has it.
 
-— ${AGENT_NAME}"
+-- ${AGENT_NAME}"
   if send_text "$MSG7"; then
     mark_delivered 7
     log "INFO" "msg 7: delivered"
   else
-    log "ERROR" "msg 7: FAILED — continuing"
+    log "ERROR" "msg 7: FAILED -- continuing"
     failed_messages+=("msg-7")
   fi
 fi
@@ -323,7 +339,7 @@ fi
 # ---- summary ----
 if (( ${#failed_messages[@]} == 0 )); then
   state_set '.closeoutStatus = "sent"'
-  log "INFO" "all messages delivered — closeoutStatus=sent"
+  log "INFO" "all messages delivered -- closeoutStatus=sent"
   exit 0
 else
   reason="telegram-partial: $(IFS=,; echo "${failed_messages[*]}")"

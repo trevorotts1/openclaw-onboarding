@@ -12,10 +12,13 @@
 #        Driven by templates/workforce-org-chart/render.mjs.
 #
 #   workflow  (Infographic #2 - How Work Flows)
-#     -> KIE.AI Gemini 3.1 Flash Image (Nano Banana 2). Much better text
+#     -> KIE.AI Nano Banana 2 (Gemini 3.1 Flash Image). Much better text
 #        rendering than GPT Image 2, and the workflow diagram is stylized
 #        enough that AI image gen is fine. Fallback: gpt-image-2-text-to-image.
 #        Override the primary with env var ZHC_IMAGE_MODEL.
+#        v10.X.4: corrected slug from gemini-3-1-flash-image (KIE 422,
+#        not supported) to nano-banana-2. Confirmed accepted by
+#        api.kie.ai/api/v1/jobs/createTask on 2026-05-26.
 #
 # Both shapes of .departments (array AND keyed object) are tolerated, since
 # production state files have been observed using both.
@@ -175,7 +178,7 @@ fi
 
 # ----------------------------------------------------------------------
 # Workflow infographic = KIE.AI (stylized diagram, less text density).
-# Primary model: gemini-3-1-flash-image (Nano Banana 2).
+# Primary model: nano-banana-2 (Gemini 3.1 Flash Image / Nano Banana 2).
 # Fallback:      gpt-image-2-text-to-image (older but reliable).
 # ----------------------------------------------------------------------
 if [[ ! -f "$TEMPLATE" ]]; then
@@ -206,7 +209,7 @@ PROMPT=$(printf '%s' "$PROMPT_RAW" \
   | sed "s|{{INDUSTRY}}|${INDUSTRY}|g" \
   | sed "s|{{EXAMPLE_TASK}}|${EXAMPLE_TASK}|g")
 
-PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gemini-3-1-flash-image}"
+PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-nano-banana-2}"
 FALLBACK_MODEL="gpt-image-2-text-to-image"
 
 submit_job() {
