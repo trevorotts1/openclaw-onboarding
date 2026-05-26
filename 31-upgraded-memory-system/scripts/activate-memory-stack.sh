@@ -105,7 +105,15 @@ CANONICAL = {
                     "minScore": 0.18,
                     "hybrid": {"enabled": True},
                 },
-            }
+            },
+            # v10.x.6 recovery knob: hard agent-turn timeout in SECONDS. Schema
+            # confirmed against dist 2026.5.20 (agents.defaults.timeoutSeconds,
+            # number().int().positive().optional()). 600s = 10 min: generous
+            # enough for legit long-thinking calls (deepseek thinking=high runs
+            # 2-5 min), short enough to recover from a true hang. Also drives the
+            # internal CLI stall watchdog window (noOutputTimeoutRatio scaled,
+            # clamped 180-600s) so a stalled session recovers instead of hanging.
+            "timeoutSeconds": 600,
         }
     },
     "plugins": {

@@ -1,3 +1,17 @@
+## [v10.14.6]  -  2026-05-26  -  Recovery knobs: embeddings fallback + agent stall timeout
+
+### Why
+
+Closeout of the last 2 core failure modes from the 2026-05-26 incident: (1) a rate-limited primary embeddings provider could stall the whole agent loop with no fallback, and (2) a long-thinking model session could stall with no recovery, hanging the turn indefinitely.
+
+### What
+
+- agents.defaults.memorySearch.fallback = "openai" (schema-confirmed string provider name; backup embeddings provider used when the primary fails). Each box references OPENAI_API_KEY from env, never hardcoded.
+- agents.defaults.timeoutSeconds = 600 (schema-confirmed positive int, SECONDS). 600s = 10 min hard agent-turn timeout: long enough for legit deepseek thinking=high runs (2-5 min), short enough to recover from a true hang. Also scales the internal CLI stall watchdog window (noOutputTimeoutRatio, clamped 180-600s), so a stalled long-thinking session recovers automatically instead of hanging.
+- Schema confirmed by grepping the running dist (openclaw 2026.5.20). The prior agent's candidate keys (memorySearch.fallback.{provider,model,apiKey}, agentTimeoutMs, stallWatchdog) were NOT correct: fallback is a plain provider-name string, the timeout key is timeoutSeconds (not agentTimeoutMs), and there is no user-settable stallWatchdog key (the watchdog is internal and driven by timeoutSeconds).
+- Seeded in both the install.sh active-memory config block and 31-upgraded-memory-system/scripts/activate-memory-stack.sh CANONICAL block.
+- Applied to all 8 live fleet boxes via jq deep-merge with backup + config validate + sequential restart + post-restart gateway/Telegram health check.
+
 ## [v10.14.5]  -  2026-05-26  -  Telegram offset self-heal, classifier fallback, phantom-closeout guard, known-issues
 
 ### Why

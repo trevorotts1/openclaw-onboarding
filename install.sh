@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.14.5"
+ONBOARDING_VERSION="v10.14.6"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -2408,6 +2408,13 @@ try:
     # v10.13.12: Pin the embedding model. gemini-embedding-001 is the
     # fleet-confirmed standard (verified on Maria, Evelyn, Angela, Corey).
     ms.setdefault('model', "gemini-embedding-001")
+
+    # v10.x.6 recovery knob: hard agent-turn timeout in SECONDS.
+    # Schema-confirmed (agents.defaults.timeoutSeconds, positive int, dist 2026.5.20).
+    # 600s = 10 min: long enough for legit deepseek thinking=high runs (2-5 min),
+    # short enough to recover from a true hang. Also scales the internal CLI stall
+    # watchdog window so a stalled long-thinking session recovers automatically.
+    defaults.setdefault('timeoutSeconds', 600)
 
     # plugins.slots.memory — point at memory-core (the canonical memory backend)
     slots = plugins.setdefault('slots', {})
