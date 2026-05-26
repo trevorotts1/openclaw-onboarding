@@ -1,5 +1,37 @@
 # Changelog — Skill 37: ZHC Closeout
 
+## [1.1.0] - 2026-05-26 - Skill 37 v3 closeout fixes (shipped with onboarding v10.14.3 / v10.15.3)
+
+Codifies 4 lessons from Maria Anderson / Marico Consulting closeout (2026-05-26):
+
+### 1. Workforce-structure infographic is now HTML + Playwright (no AI image model)
+- New `templates/workforce-org-chart/` directory: `index.html.template`, `render.mjs`, `cluster-classifier.js`, `package.json`, `README.md`.
+- Renders deterministically at 1920x1080 via headless Chromium. Perfect text labels (dept names, role count pills, footer totals), free per render.
+- Cluster classifier maps department slugs into 4 visual clusters with brand-locked colors: Operations (navy `#1B2A4E`), Revenue (gold `#C9A14B`), Creative (teal `#2E8B8B`), Technology (burgundy `#7B2D3A`). Unmapped slugs default to Technology so no department is silently dropped.
+- `generate-infographics.sh structure` no longer hits KIE.AI for Infographic #1.
+
+### 2. Celebration video is downloaded as MP4 bytes before Telegram send
+- `generate-celebration-video.sh` now ALWAYS downloads the result MP4 to `$OC_ROOT/workspace/.zhc-celebration-video.mp4` via `curl -fL --max-time 180` after the KIE job completes.
+- Writes `celebrationVideoLocalPath` into state alongside `celebrationVideoUrl`.
+- `send-telegram-celebration.sh` `send_video` / `send_photo` prefer `--media <local-path>` over `--photo`/`--video` `<url>` so the bot uploads bytes via Telegram's multipart `sendVideo` / `sendPhoto` endpoint. Inline player, not a download card.
+- Root cause: the KIE CDN at `tempfile.aiquickdraw.com` returns `content-disposition: attachment`, which Telegram renders as a download card when given the raw URL.
+
+### 3. Celebration video DEFAULT model switched to Gemini Omni Video
+- `gemini-omni-video` via KIE.ai (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`) is now the default for THIS skill's celebration video. Reason: Gemini Omni accepts an image reference (the just-rendered workforce-chart PNG), so brand carries through into the video.
+- Veo 3.1 / `veo3_fast` remains the general-purpose video model elsewhere in OpenClaw and is the documented fallback for Skill 37 (auto-falls-back on attempt 3 if Gemini Omni is unavailable).
+- Env override: `ZHC_CELEBRATION_VIDEO_MODEL` (default `gemini-omni-video`; accepts `veo3` / `veo3_fast`).
+- Duration is snapped per model (Gemini Omni: 4-8, default 4; Veo: 4/6/8, default 8).
+
+### 4. Workforce chart shows role-count pills + footer totals
+- Per-department role-count pill (`2 roles`, `4 roles`, etc.).
+- Footer center: `<N> Departments · <M> Specialist Roles · Zero Human Company`.
+- Footer right: `Built by BlackCEO · 2026`.
+- CEO agent card now shows agent name + `Routes all work · Reports to <Owner>` sub-line.
+- All sourced from state file at render time; the only hand-edited values are `companyName`, `ownerName`, and `agentName`.
+
+### Cost envelope
+~$0.45 / client in KIE credits (worst case) - Infographic #1 is now free; Infographic #2 + celebration video are the only paid steps.
+
 ## [1.0.0] — 2026-05-23 — Initial release (shipped with onboarding v10.14.17)
 
 ### What's in this release

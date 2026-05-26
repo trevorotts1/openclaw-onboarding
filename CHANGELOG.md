@@ -1,3 +1,38 @@
+## [v10.14.3]  -  2026-05-26  -  Skill 37 closeout v3 (HTML/Playwright workforce chart, video embed fix, Gemini Omni default)
+
+### Why
+
+Codifies 4 lessons from Maria Anderson / Marico Consulting closeout (2026-05-26). Mirrors VPS v10.15.3.
+
+### Lessons landed
+
+1. **Workforce-structure infographic is now rendered via HTML + CSS + Playwright Chromium screenshot at 1920x1080.** Deterministic text, free per render, perfect dept names + role-count labels. The new template lives at `37-zhc-closeout/templates/workforce-org-chart/` (index.html.template, render.mjs, cluster-classifier.js, package.json, README.md). The cluster classifier maps department slugs into 4 brand-locked clusters (Operations navy, Revenue gold, Creative teal, Technology burgundy); unmapped slugs default to Technology. `generate-infographics.sh structure` no longer calls KIE.AI.
+
+2. **Celebration video send always downloads MP4 bytes locally before `openclaw message send --media`.** Root cause: the KIE CDN at tempfile.aiquickdraw.com returns `content-disposition: attachment`, which Telegram renders as a download card instead of an inline player. `generate-celebration-video.sh` now downloads to `$OC_ROOT/workspace/.zhc-celebration-video.mp4` via `curl -fL --max-time 180` and writes `celebrationVideoLocalPath` into state alongside `celebrationVideoUrl`. `send-telegram-celebration.sh` prefers the local path via `--media` so Telegram uses its multipart `sendVideo` upload path, which embeds inline. Same fix is applied to the workforce-chart `sendPhoto` (`infographic1LocalPath`).
+
+3. **Celebration-video DEFAULT model is now Gemini Omni Video** (`gemini-omni-video` via KIE.ai `POST /api/v1/jobs/createTask`). Reason: Gemini Omni accepts an image reference (we hand it the just-rendered workforce-chart PNG via `input.image_urls[0]`), so brand colors + CEO agent name carry through into the video. Veo 3.1 (`veo3_fast`) remains the general-purpose default everywhere else in OpenClaw and is the documented fallback for Skill 37 (auto-falls-back on attempt 3 if Gemini Omni is unavailable). New env: `ZHC_CELEBRATION_VIDEO_MODEL` (default `gemini-omni-video`; accepts `veo3` / `veo3_fast`). Duration is snapped per model (Gemini Omni: 4-8, default 4; Veo: 4/6/8, default 8).
+
+4. **Workforce-chart polish: per-dept role count pills + footer totals + CEO tagline.** Each department card now shows a `<N> roles` pill. Footer center reads `<N> Departments · <M> Specialist Roles · Zero Human Company`; footer right reads `Built by BlackCEO · 2026`. CEO card shows agent name + `Routes all work · Reports to <Owner>` sub-line. All values sourced from `.workforce-build-state.json` at render time.
+
+Also: Infographic #2 (How Work Flows) primary model switched from `gpt-image-2` to `gemini-3-1-flash-image` (Nano Banana 2). Better text rendering; fallback remains `gpt-image-2-text-to-image`.
+
+### Cost envelope (revised)
+
+~$0.45 / client in KIE credits (worst case). Infographic #1 is now free; only Infographic #2 + celebration video hit KIE.
+
+### Files touched
+
+- `37-zhc-closeout/scripts/generate-infographics.sh`
+- `37-zhc-closeout/scripts/generate-celebration-video.sh`
+- `37-zhc-closeout/scripts/send-telegram-celebration.sh`
+- `37-zhc-closeout/SKILL.md`
+- `37-zhc-closeout/INSTRUCTIONS.md`
+- `37-zhc-closeout/CHANGELOG.md`
+- `37-zhc-closeout/skill-version.txt` (1.0.1 -> 1.1.0)
+- `37-zhc-closeout/templates/workforce-org-chart/` (new dir, 5 files)
+
+Plus the 8 versioned files updated by `scripts/bump-version.sh v10.14.3`.
+
 ## [v10.14.2]  -  2026-05-26  -  Skill 37 closeout hot-fix (Maria Anderson run surfaced 4 bugs)
 
 ### Why

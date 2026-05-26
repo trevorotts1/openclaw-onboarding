@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{COMPANY_NAME}} - AI Workforce Org Chart</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #1B2A4E;
+    --navy-deep: #0F1B36;
+    --gold: #C9A14B;
+    --gold-soft: #E5C77A;
+    --teal: #2E8B8B;
+    --burgundy: #7B2D3A;
+    --cream: #F7F3E9;
+    --cream-soft: #FBF8F0;
+    --ink: #1B2A4E;
+    --muted: #6B6357;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background: var(--cream);
+    font-family: 'Inter', system-ui, -apple-system, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .canvas {
+    width: 1920px;
+    height: 1080px;
+    padding: 36px 64px 28px;
+    position: relative;
+    background:
+      radial-gradient(1200px 600px at 50% -200px, rgba(201,161,75,0.10), transparent 60%),
+      linear-gradient(180deg, var(--cream-soft) 0%, var(--cream) 100%);
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 14px;
+    border-bottom: 2px solid rgba(27,42,78,0.12);
+    margin-bottom: 18px;
+  }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .monogram {
+    width: 64px; height: 64px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-deep) 100%);
+    color: var(--gold);
+    font-family: 'Playfair Display', serif; font-weight: 700; font-size: 42px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 14px rgba(27,42,78,0.25); letter-spacing: -1px;
+  }
+  .brand-text .name {
+    font-family: 'Playfair Display', serif; font-size: 26px; letter-spacing: 6px;
+    color: var(--navy); font-weight: 700; text-transform: uppercase;
+  }
+  .brand-text .tag {
+    font-size: 13px; color: var(--muted); letter-spacing: 3px;
+    text-transform: uppercase; margin-top: 2px;
+  }
+  .title-block { text-align: right; }
+  .title-block .title {
+    font-size: 40px; font-weight: 800; color: var(--navy);
+    letter-spacing: -0.5px; line-height: 1;
+  }
+  .title-block .owner {
+    font-family: 'Playfair Display', serif; font-style: italic;
+    font-size: 22px; color: var(--gold); margin-top: 6px;
+  }
+
+  .ceo-wrap { display: flex; justify-content: center; margin: 6px 0 4px; position: relative; }
+  .ceo {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-deep) 100%);
+    color: #fff; padding: 14px 40px; border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(27,42,78,0.35); text-align: center;
+    border: 2px solid var(--gold); min-width: 320px;
+  }
+  .ceo .label {
+    font-size: 11px; letter-spacing: 4px; color: var(--gold);
+    text-transform: uppercase; font-weight: 600;
+  }
+  .ceo .name {
+    font-size: 26px; font-weight: 700; margin-top: 2px; letter-spacing: 0.5px;
+  }
+  .ceo .sub {
+    font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 1px;
+    letter-spacing: 2px; text-transform: uppercase;
+  }
+  .connector {
+    height: 18px; width: 2px; background: var(--navy);
+    opacity: 0.35; margin: 0 auto;
+  }
+
+  .clusters {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 18px; margin-top: 8px;
+  }
+  .cluster {
+    border-radius: 14px; padding: 14px 14px 16px;
+    box-shadow: 0 8px 18px rgba(27,42,78,0.10);
+    position: relative; display: flex; flex-direction: column;
+  }
+  .cluster.ops { background: linear-gradient(180deg, var(--navy) 0%, var(--navy-deep) 100%); color: #fff; }
+  .cluster.rev { background: linear-gradient(180deg, var(--gold-soft) 0%, var(--gold) 100%); color: var(--navy); }
+  .cluster.cre { background: linear-gradient(180deg, #379999 0%, var(--teal) 100%); color: #fff; }
+  .cluster.tec { background: linear-gradient(180deg, #8E384A 0%, var(--burgundy) 100%); color: #fff; }
+
+  .cluster-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.25);
+    margin-bottom: 10px;
+  }
+  .cluster.rev .cluster-header { border-bottom-color: rgba(27,42,78,0.25); }
+  .cluster-header .name {
+    font-size: 20px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+  }
+  .cluster-header .count {
+    font-size: 12px; font-weight: 600; opacity: 0.8; letter-spacing: 1px;
+  }
+
+  .depts {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1;
+  }
+  .dept {
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 8px; padding: 8px 8px 9px;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    backdrop-filter: blur(2px); min-height: 76px; justify-content: center;
+  }
+  .cluster.rev .dept {
+    background: rgba(255,255,255,0.30);
+    border: 1px solid rgba(27,42,78,0.18);
+  }
+  .dept .emoji { font-size: 22px; line-height: 1; margin-bottom: 4px; }
+  .dept .dname { font-size: 13.5px; font-weight: 700; line-height: 1.15; letter-spacing: 0.2px; }
+  .dept .roles {
+    margin-top: 6px; font-size: 10px; font-weight: 700;
+    letter-spacing: 1.2px; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.28);
+  }
+  .cluster.rev .dept .roles {
+    background: rgba(27,42,78,0.10);
+    border: 1px solid rgba(27,42,78,0.20);
+    color: var(--navy);
+  }
+
+  .cluster.ops .depts { grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; }
+
+  .footer {
+    position: absolute; bottom: 16px; left: 64px; right: 64px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: var(--muted); letter-spacing: 2px;
+    text-transform: uppercase; padding-top: 10px;
+    border-top: 1px solid rgba(27,42,78,0.10);
+  }
+  .footer .l { font-weight: 600; color: var(--navy); }
+  .footer .c {
+    font-style: italic; font-family: 'Playfair Display', serif;
+    text-transform: none; letter-spacing: 1px; font-size: 13px; color: var(--gold);
+  }
+  .footer .r { font-weight: 500; }
+
+  .ornament {
+    position: absolute; top: 0; right: 0;
+    width: 220px; height: 6px;
+    background: linear-gradient(90deg, transparent, var(--gold));
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <div class="ornament"></div>
+
+  <div class="header">
+    <div class="brand">
+      <div class="monogram">{{MONOGRAM_LETTER}}</div>
+      <div class="brand-text">
+        <div class="name">{{COMPANY_NAME}}</div>
+        <div class="tag">Zero Human Company</div>
+      </div>
+    </div>
+    <div class="title-block">
+      <div class="title">AI Workforce Org Chart</div>
+      <div class="owner">Owner: {{OWNER_NAME}}</div>
+    </div>
+  </div>
+
+  <div class="ceo-wrap">
+    <div class="ceo">
+      <div class="label">CEO Agent</div>
+      <div class="name">{{CEO_AGENT_NAME}}</div>
+      <div class="sub">{{CEO_AGENT_TAGLINE}}</div>
+    </div>
+  </div>
+  <div class="connector"></div>
+
+  <div class="clusters">
+    <div class="cluster ops" id="cluster-ops">
+      <div class="cluster-header">
+        <div class="name">Operations</div>
+        <div class="count" id="ops-count"></div>
+      </div>
+      <div class="depts" id="ops-depts"></div>
+    </div>
+
+    <div class="cluster rev" id="cluster-rev">
+      <div class="cluster-header">
+        <div class="name">Revenue</div>
+        <div class="count" id="rev-count"></div>
+      </div>
+      <div class="depts" id="rev-depts"></div>
+    </div>
+
+    <div class="cluster cre" id="cluster-cre">
+      <div class="cluster-header">
+        <div class="name">Creative</div>
+        <div class="count" id="cre-count"></div>
+      </div>
+      <div class="depts" id="cre-depts"></div>
+    </div>
+
+    <div class="cluster tec" id="cluster-tec">
+      <div class="cluster-header">
+        <div class="name">Technology</div>
+        <div class="count" id="tec-count"></div>
+      </div>
+      <div class="depts" id="tec-depts"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="l">{{COMPANY_NAME}}</div>
+    <div class="c">{{TOTAL_DEPTS}} Departments &middot; {{TOTAL_ROLES}} Specialist Roles &middot; Zero Human Company</div>
+    <div class="r">Built by BlackCEO &middot; 2026</div>
+  </div>
+</div>
+
+<script>
+  // Department data is injected as JSON literals at render time.
+  // Each cluster array contains { emoji, name, roles } objects.
+  // We build DOM nodes with createElement/textContent (no innerHTML) to keep
+  // rendering deterministic and avoid any markup-injection risk if a future
+  // template variant ever sources dept names from user-provided text.
+  const DEPTS = {
+    ops: {{DEPTS_OPERATIONS_JSON}},
+    rev: {{DEPTS_REVENUE_JSON}},
+    cre: {{DEPTS_CREATIVE_JSON}},
+    tec: {{DEPTS_TECHNOLOGY_JSON}}
+  };
+
+  function rolesLabel(n) {
+    const v = Number(n) || 0;
+    return v === 1 ? '1 role' : v + ' roles';
+  }
+
+  function makeDeptNode(d) {
+    const wrap = document.createElement('div');
+    wrap.className = 'dept';
+    const e = document.createElement('div');
+    e.className = 'emoji';
+    e.textContent = (d && d.emoji) ? d.emoji : '';
+    const n = document.createElement('div');
+    n.className = 'dname';
+    n.textContent = (d && d.name) ? d.name : '';
+    const r = document.createElement('div');
+    r.className = 'roles';
+    r.textContent = rolesLabel(d && d.roles);
+    wrap.appendChild(e);
+    wrap.appendChild(n);
+    wrap.appendChild(r);
+    return wrap;
+  }
+
+  function renderCluster(key) {
+    const list = Array.isArray(DEPTS[key]) ? DEPTS[key] : [];
+    const host = document.getElementById(key + '-depts');
+    const cnt = document.getElementById(key + '-count');
+    cnt.textContent = list.length + ' DEPTS';
+    while (host.firstChild) host.removeChild(host.firstChild);
+    list.forEach(d => host.appendChild(makeDeptNode(d)));
+    if (list.length === 0) {
+      const wrap = document.getElementById('cluster-' + key);
+      if (wrap) wrap.style.visibility = 'hidden';
+    }
+  }
+
+  ['ops','rev','cre','tec'].forEach(renderCluster);
+</script>
+</body>
+</html>

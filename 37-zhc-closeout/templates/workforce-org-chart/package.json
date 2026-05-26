@@ -1,0 +1,18 @@
+{
+  "name": "zhc-workforce-org-chart",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "HTML + Playwright renderer for the workforce-structure infographic shipped by Skill 37 (ZHC Closeout). Produces a deterministic 1920x1080 PNG with perfect text labels.",
+  "main": "render.mjs",
+  "bin": {
+    "zhc-org-chart": "./render.mjs"
+  },
+  "scripts": {
+    "render": "node render.mjs",
+    "postinstall": "node -e \"console.log('[zhc-org-chart] If Chromium is not installed yet, run: npx playwright install chromium')\""
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

@@ -34,8 +34,10 @@ AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="your
 N_DEPTS=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
 N_ROLES=$(jq -r '[.departments[].rolesDone // 0] | add' "$STATE_FILE")
 INFO_1=$(state_get '.infographic1Url')
+INFO_1_LOCAL=$(state_get '.infographic1LocalPath')
 INFO_2=$(state_get '.infographic2Url')
 VIDEO=$(state_get '.celebrationVideoUrl')
+VIDEO_LOCAL=$(state_get '.celebrationVideoLocalPath')
 NOTION_URL=$(state_get '.notionRootPageUrl')
 CC_URL=$(state_get '.commandCenterUrl')
 
@@ -73,23 +75,36 @@ send_text() {
   return 1
 }
 
-# Send a photo with caption via openclaw if it supports --photo, else fall back
-# to a text message that includes the URL. Returns 0 on success.
+# Send a photo with caption. Prefers a LOCAL file path (uploaded via --media
+# as multipart bytes) over a remote URL when both are available -- this is
+# how we guarantee Telegram inlines the image instead of treating it as a
+# download card (Lesson 2 from the Marico closeout).
 send_photo() {
   local url="$1"
   local caption="$2"
+  local local_path="${3:-}"
   local attempt=0
   while (( attempt < 3 )); do
     attempt=$((attempt + 1))
-    # Try openclaw photo flag first (best). If unsupported, fall back to text+URL.
-    if openclaw message send --channel telegram -t "$OWNER_CHAT" --photo "$url" -m "$caption" >> "$LOG_FILE" 2>&1; then
-      return 0
+    # Prefer local file bytes via --media (multipart upload).
+    if [[ -n "$local_path" && -s "$local_path" ]]; then
+      if openclaw message send --channel telegram -t "$OWNER_CHAT" --media "$local_path" -m "$caption" >> "$LOG_FILE" 2>&1; then
+        return 0
+      fi
     fi
-    # Fallback: send caption + URL as plain text
-    if openclaw message send --channel telegram -t "$OWNER_CHAT" -m "${caption}
+    # Fall back to --photo URL if --media unavailable / no local copy.
+    if [[ -n "$url" && "$url" != null && "$url" != file://* ]]; then
+      if openclaw message send --channel telegram -t "$OWNER_CHAT" --photo "$url" -m "$caption" >> "$LOG_FILE" 2>&1; then
+        return 0
+      fi
+    fi
+    # Last resort: send caption + URL as plain text (skip if URL is file://).
+    if [[ -n "$url" && "$url" != file://* ]]; then
+      if openclaw message send --channel telegram -t "$OWNER_CHAT" -m "${caption}
 
 ${url}" >> "$LOG_FILE" 2>&1; then
-      return 0
+        return 0
+      fi
     fi
     log "WARN" "send_photo attempt $attempt failed"
     sleep $((2 ** attempt))
@@ -97,19 +112,36 @@ ${url}" >> "$LOG_FILE" 2>&1; then
   return 1
 }
 
+# CRITICAL (Lesson 2 from Marico closeout): NEVER pass tempfile.aiquickdraw.com
+# URLs directly to Telegram. The CDN returns content-disposition: attachment,
+# so Telegram renders the message as a download card rather than an inline
+# video player. generate-celebration-video.sh ALWAYS downloads the MP4 bytes
+# to disk first and writes .celebrationVideoLocalPath into state -- we send
+# THOSE bytes here via --media so the bot uploads via Telegram's multipart
+# sendVideo endpoint, which embeds inline.
 send_video() {
   local url="$1"
   local caption="$2"
+  local local_path="${3:-}"
   local attempt=0
   while (( attempt < 3 )); do
     attempt=$((attempt + 1))
-    if openclaw message send --channel telegram -t "$OWNER_CHAT" --video "$url" -m "$caption" >> "$LOG_FILE" 2>&1; then
-      return 0
+    if [[ -n "$local_path" && -s "$local_path" ]]; then
+      if openclaw message send --channel telegram -t "$OWNER_CHAT" --media "$local_path" -m "$caption" >> "$LOG_FILE" 2>&1; then
+        return 0
+      fi
     fi
-    if openclaw message send --channel telegram -t "$OWNER_CHAT" -m "${caption}
+    if [[ -n "$url" && "$url" != null && "$url" != file://* ]]; then
+      if openclaw message send --channel telegram -t "$OWNER_CHAT" --video "$url" -m "$caption" >> "$LOG_FILE" 2>&1; then
+        return 0
+      fi
+    fi
+    if [[ -n "$url" && "$url" != file://* ]]; then
+      if openclaw message send --channel telegram -t "$OWNER_CHAT" -m "${caption}
 
 ${url}" >> "$LOG_FILE" 2>&1; then
-      return 0
+        return 0
+      fi
     fi
     log "WARN" "send_video attempt $attempt failed"
     sleep $((2 ** attempt))
@@ -144,12 +176,12 @@ fi
 # ---- Message 2: Infographic #1 ----
 if is_delivered 2; then
   log "INFO" "msg 2: already delivered — skipping"
-elif [[ -z "$INFO_1" || "$INFO_1" == "null" ]]; then
-  log "WARN" "msg 2: infographic1Url missing — skipping"
+elif [[ ( -z "$INFO_1" || "$INFO_1" == "null" ) && ( -z "$INFO_1_LOCAL" || ! -s "$INFO_1_LOCAL" ) ]]; then
+  log "WARN" "msg 2: infographic1Url and infographic1LocalPath both missing — skipping"
   failed_messages+=("msg-2-no-url")
 else
   log "INFO" "msg 2: sending infographic #1"
-  if send_photo "$INFO_1" "📊 Your workforce structure — how your AI company is organized."; then
+  if send_photo "$INFO_1" "📊 Your workforce structure — how your AI company is organized." "$INFO_1_LOCAL"; then
     mark_delivered 2
     log "INFO" "msg 2: delivered"
     sleep 5
@@ -180,12 +212,12 @@ fi
 # ---- Message 4: Celebration video ----
 if is_delivered 4; then
   log "INFO" "msg 4: already delivered — skipping"
-elif [[ -z "$VIDEO" || "$VIDEO" == "null" ]]; then
-  log "WARN" "msg 4: celebrationVideoUrl missing — skipping"
+elif [[ ( -z "$VIDEO" || "$VIDEO" == "null" ) && ( -z "$VIDEO_LOCAL" || ! -s "$VIDEO_LOCAL" ) ]]; then
+  log "WARN" "msg 4: celebrationVideoUrl and celebrationVideoLocalPath both missing — skipping"
   failed_messages+=("msg-4-no-url")
 else
   log "INFO" "msg 4: sending celebration video"
-  if send_video "$VIDEO" "🎬 A quick celebration — congratulations on launching ${COMPANY_NAME}'s zero-human workforce."; then
+  if send_video "$VIDEO" "🎬 A quick celebration — congratulations on launching ${COMPANY_NAME}'s zero-human workforce." "$VIDEO_LOCAL"; then
     mark_delivered 4
     log "INFO" "msg 4: delivered"
     sleep 8

@@ -70,46 +70,63 @@ All steps run via `scripts/run-closeout.sh` as the top-level orchestrator. You C
 
 **Goal:** Produce a branded org-chart visualization for the client.
 
-1. If `infographic1Url` already set, skip.
-2. Read `templates/infographic-1-prompt.md`. Fill placeholders from state file + `workforce-interview-answers.md`:
-   - `{{COMPANY_NAME}}` — from interview answers
-   - `{{OWNER_NAME}}` — `state.ownerName`
-   - `{{AGENT_NAME}}` — `state.agentName` (the CEO agent name)
-   - `{{DEPT_LIST}}` — joined list of `state.departments[].name`
-   - `{{ROLE_COUNT}}` — sum of `state.departments[].rolesDone`
-   - `{{BRAND_COLOR}}` — from interview if asked; else `#1a1a1a` + accent `#D4AF37` (BlackCEO gold)
-3. Invoke `scripts/generate-infographics.sh structure "<filled-prompt>"`. The script POSTs to KIE.AI `/jobs/createTask` with `model: "gpt-image-2"`, `aspect_ratio: "16:9"`, `resolution: "2K"`, polls for completion, and returns the result URL.
-4. On success: write `infographic1Url` to state file, atomic.
-5. **Fallback:** If `gpt-image-2` returns a 422 / model-unavailable error, retry once with `model: "nano-banana-pro"`. Aspect ratio + resolution params are compatible.
+**This step uses local HTML + Playwright Chromium, NOT an AI image model.** Diffusion models cannot reliably render small text labels (Maria Anderson's first two attempts came back with garbled department names). HTML + CSS gives perfect text, is free per render, and is fully deterministic.
 
-**Retries:** 3 total (each retry uses a different seed by appending a random suffix to the prompt). If still failing: `closeoutFailureReason: "infographic-1: <last error>"`, mark `closeoutStatus: "failed"`, STOP.
+1. If `infographic1Url` already set, skip.
+2. Invoke `scripts/generate-infographics.sh structure`. The script:
+   - Reads `companyName`, `ownerName`, `agentName`, and the full department list from `.workforce-build-state.json` (tolerates both array and keyed-object shapes for `.departments`).
+   - Writes a renderer input JSON to `$OC_ROOT/workspace/.zhc-inf1-input.json`.
+   - Invokes `node templates/workforce-org-chart/render.mjs --input <input.json> --output <output.png>`.
+   - The renderer fills `templates/workforce-org-chart/index.html.template`, classifies each department into one of 4 visual clusters via `cluster-classifier.js` (Operations / Revenue / Creative / Technology), and screenshots at 1920x1080 via Playwright Chromium.
+3. On success:
+   - Writes `infographic1Url = "file://<output.png>"` AND `infographic1LocalPath = "<output.png>"` to state, atomic.
+   - The Telegram step prefers the local path and uploads bytes via `openclaw message send --media`, which gets inline rendering on Telegram.
+
+**Prerequisite (one-time, per container):**
+```bash
+(cd ~/.openclaw/skills/37-zhc-closeout/templates/workforce-org-chart && npm install && npx playwright install chromium)
+```
+The install.sh / update-skills.sh paths run this automatically on fresh installs.
+
+**Retries:** the renderer is deterministic - it either succeeds or fails on environment (no Node / no Chromium). On failure: `closeoutFailureReason: "infographic-1: <last error>"`, mark `closeoutStatus: "failed"`, STOP.
 
 ### Step 3 — Generate Infographic #2 (How Work Flows)
 
-Same shape as Step 2 but for the workflow diagram.
+Stylized flow diagram. Less text-heavy than Step 2, so AI image gen is still appropriate.
 
 1. If `infographic2Url` already set, skip.
 2. Fill `templates/infographic-2-prompt.md` with the same placeholders + one extra:
    - `{{EXAMPLE_TASK}}` — pulled from `workforce-interview-answers.md`; if not present, use a generic task seeded by the client's industry (e.g. "Launch a new email campaign" for a marketing-heavy client; "Onboard a new patient" for a healthcare client).
-3. Invoke `scripts/generate-infographics.sh workflow "<filled-prompt>"`.
+3. Invoke `scripts/generate-infographics.sh workflow`. The script POSTs to KIE.AI `/jobs/createTask` with:
+   - Primary model: `gemini-3-1-flash-image` (Nano Banana 2) - much better at text rendering than the prior `gpt-image-2`. Override via env `ZHC_IMAGE_MODEL`.
+   - Fallback model (attempt 3): `gpt-image-2-text-to-image`.
 4. Write `infographic2Url` to state file.
 
-**Retries:** 3 (with same fallback). Failure path same as Step 2.
+**Retries:** 3 total (attempts 1-2 primary, attempt 3 fallback). Failure path same as Step 2.
 
 ### Step 4 — Generate Celebration Video
 
-1. If `celebrationVideoUrl` already set, skip.
-2. Fill `templates/veo-prompt.txt` with `{{COMPANY_NAME}}`, `{{OWNER_NAME}}`, `{{AGENT_NAME}}`, `{{INDUSTRY}}`.
-3. Invoke `scripts/generate-celebration-video.sh "<filled-prompt>"`. The script POSTs to KIE.AI `/veo/generate` with:
-   - `model: "veo3_fast"` (cost-conscious default; ~$0.40)
-   - `prompt`: the filled prompt
-   - `aspect_ratio: "9:16"` (vertical — Telegram delivery target)
-   - `duration: 8` (Veo accepts 4, 6, or 8; default 8). Override via `ZHC_VIDEO_DURATION` env. Invalid values are snapped to 8 with a WARN log.
-   - `generate_audio: true`
-4. Poll `/veo/record-info?taskId=...` per KIE skill polling guidance (2s / 5s / 15s escalation). Max wait: 15 minutes.
-5. On success: write `celebrationVideoUrl` to state file.
+**Model selection (read this carefully):**
 
-**Retries:** 2 (videos are expensive). On exhaustion: `closeoutFailureReason: "celebration-video: <last error>"`, mark `closeoutStatus: "failed"`, STOP.
+- **Default for THIS skill (Skill 37 celebration):** `gemini-omni-video` via KIE.ai. Endpoint: `POST /api/v1/jobs/createTask` + `GET /api/v1/jobs/recordInfo`. Reason: Gemini Omni accepts an image reference (we hand it the just-rendered workforce-chart PNG via `image_urls`), so brand colors and the CEO agent name carry through into the video.
+- **Fallback (and the general-purpose default elsewhere in OpenClaw):** `veo3_fast` (or `veo3`) via KIE.ai. Endpoint: `POST /api/v1/veo/generate` + `GET /api/v1/veo/record-info`. Veo 3.1 cannot accept image guidance, which is why it is the fallback here even though it is the project-wide default everywhere else.
+
+Override via env `ZHC_CELEBRATION_VIDEO_MODEL` (default `gemini-omni-video`; also accepts `veo3` / `veo3_fast`).
+
+1. If `celebrationVideoUrl` already set AND `celebrationVideoLocalPath` exists on disk, skip.
+2. Fill `templates/veo-prompt.txt` with `{{COMPANY_NAME}}`, `{{OWNER_NAME}}`, `{{AGENT_NAME}}`, `{{INDUSTRY}}`.
+3. Invoke `scripts/generate-celebration-video.sh`. The script:
+   - Picks the model based on `ZHC_CELEBRATION_VIDEO_MODEL` (default `gemini-omni-video`).
+   - Snaps `ZHC_VIDEO_DURATION` to a valid value for the chosen model (Gemini Omni: 4-8, default 4; Veo: 4/6/8, default 8).
+   - If using `gemini-omni-video` AND `infographic1Url` is a real public URL (not `file://`), passes it as `input.image_urls[0]` so brand carries through.
+   - Submits the job, polls the appropriate endpoint until success.
+   - On attempt 3, if primary was `gemini-omni-video`, falls back to `veo3_fast`.
+4. **Always downloads the MP4 bytes to disk** at `$OC_ROOT/workspace/.zhc-celebration-video.mp4` via `curl -fL --max-time 180`, verifies size > 0, and (if `file` is on PATH) sniff-checks for `ISO Media`. Writes both `celebrationVideoUrl` (remote) and `celebrationVideoLocalPath` (local) to state.
+5. The Telegram step ALWAYS prefers the local path and uploads bytes via `openclaw message send --media`, which produces an inline `sendVideo` upload rather than a download-card-style link preview.
+
+**Why the local download is mandatory:** the KIE CDN at `tempfile.aiquickdraw.com` returns `content-disposition: attachment`, which makes Telegram render the message as a download card if a URL is passed directly. Uploading bytes via multipart `sendVideo` is the only way to guarantee inline playback.
+
+**Retries:** 3 with model fallback. On exhaustion: `closeoutFailureReason: "celebration-video: <last error>"`, mark `closeoutStatus: "failed"`, STOP.
 
 ### Step 5 — Build the Notion Page Tree
 
@@ -209,9 +226,12 @@ Skill 37 adds these top-level fields to `.workforce-build-state.json`:
   "n8nStatus": "pending|wired|skipped|failed",
   "n8nUrl": "https://client.n8n.cloud",
 
-  "infographic1Url": "https://tempfile.kie.ai/...",
+  "infographic1Url": "file:///data/.openclaw/workspace/.zhc-inf1-output.png",
+  "infographic1LocalPath": "/data/.openclaw/workspace/.zhc-inf1-output.png",
   "infographic2Url": "https://tempfile.kie.ai/...",
   "celebrationVideoUrl": "https://tempfile.kie.ai/...",
+  "celebrationVideoLocalPath": "/data/.openclaw/workspace/.zhc-celebration-video.mp4",
+  "celebrationVideoModel": "gemini-omni-video",
   "notionRootPageUrl": "https://www.notion.so/...",
 
   "messagesDelivered": [1, 2, 3, 4, 5, 6]

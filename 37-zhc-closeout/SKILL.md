@@ -69,9 +69,9 @@ By the end of Skill 37 execution, the client has received **all of the following
 | # | Message | Source |
 |---|---------|--------|
 | 1 | "🎉 Your zero-human company is built!" + summary stats | Composed from state file |
-| 2 | Workforce Structure infographic (Telegram sendPhoto) | KIE.AI gpt-image-2 |
-| 3 | How Work Flows infographic (Telegram sendPhoto) | KIE.AI gpt-image-2 |
-| 4 | 15–30 sec celebration video (Telegram sendVideo) | KIE.AI Veo 3.1 |
+| 2 | Workforce Structure infographic (Telegram sendPhoto) | HTML + Playwright Chromium screenshot (local, deterministic text) |
+| 3 | How Work Flows infographic (Telegram sendPhoto) | KIE.AI Gemini 3.1 Flash Image (Nano Banana 2) |
+| 4 | 4–8 sec celebration video (Telegram sendVideo, bytes uploaded) | KIE.AI Gemini Omni Video (fallback: Veo 3.1) |
 | 5 | "Your full Notion closeout doc → [link]" | Notion API |
 | 6 | "Your BlackCEO Command Center → [URL]" | Skill 32 output |
 
@@ -142,13 +142,37 @@ Same reason Skill 23's build-resume layer is a separate component:
 
 | Item | Model | Approx Cost | Cap |
 |------|-------|-------------|-----|
-| Infographic #1 | `gpt-image-2` (fallback: `nano-banana-pro`) | ~$0.04 / ~$0.09 | 3 retries |
-| Infographic #2 | `gpt-image-2` (fallback: `nano-banana-pro`) | ~$0.04 / ~$0.09 | 3 retries |
-| Celebration video | `veo3_fast` (Veo 3.1) | ~$0.40 | 2 retries |
+| Infographic #1 | Local HTML + Playwright Chromium (no model call) | $0 | 0 retries needed (deterministic) |
+| Infographic #2 | `gemini-3-1-flash-image` (Nano Banana 2; fallback `gpt-image-2-text-to-image`) | ~$0.04 / ~$0.04 | 3 retries |
+| Celebration video | `gemini-omni-video` (fallback `veo3_fast`) | ~$0.40 | 3 retries (with model fallback) |
 | Notion pages | Notion API (free per workspace) | $0 | 3 retries per page |
 | Telegram sends | openclaw message send | $0 | 3 retries per send |
 
-Total worst-case cost per client: **~$0.60 in KIE credits**.
+Total worst-case cost per client: **~$0.45 in KIE credits** (Infographic #1 is now free; only Infographic #2 + celebration video hit KIE).
+
+## Video Model Selection
+
+**Default video model across OpenClaw:** Veo 3.1 via KIE.ai (model slug `veo3` or `veo3_fast`). Any video gen elsewhere in the codebase should default to Veo 3.1.
+
+**For Skill 37 (ZHC closeout) celebration video specifically:** Gemini Omni Video via KIE.ai (model slug `gemini-omni-video`). Reason: Gemini Omni accepts an image reference (we pass the just-rendered workforce-chart PNG), so the company's brand color, monogram, and CEO agent name carry through into the video. Veo 3.1 cannot accept image guidance.
+
+Override via env var `ZHC_CELEBRATION_VIDEO_MODEL`:
+
+```bash
+ZHC_CELEBRATION_VIDEO_MODEL=gemini-omni-video   # default (this skill)
+ZHC_CELEBRATION_VIDEO_MODEL=veo3_fast           # general-purpose fallback
+ZHC_CELEBRATION_VIDEO_MODEL=veo3                # higher-quality Veo
+```
+
+The script also auto-falls-back from `gemini-omni-video` to `veo3_fast` on its third attempt if the Gemini Omni endpoint is unavailable on the KIE account.
+
+## Workforce-Structure Infographic: HTML, not AI image gen
+
+**Infographic #1** is rendered locally via HTML + CSS + a headless Chromium screenshot (Playwright). It is NOT a diffusion-model call.
+
+Why: diffusion models (GPT Image 2, Nano Banana, Imagen) cannot reliably render small text labels. Maria Anderson's first two attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
+
+The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it now uses Nano Banana 2 (`gemini-3-1-flash-image`), which has dramatically better text rendering than the prior `gpt-image-2`.
 
 ## Files in This Folder
 
