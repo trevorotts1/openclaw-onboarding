@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# generate-infographics.sh — KIE.AI gpt-image-2-text-to-image (fallback nano-banana-pro) call.
+# generate-infographics.sh - KIE.AI gpt-image-2 call.
 #
 # Usage: generate-infographics.sh structure|workflow
 #
 # Reads .workforce-build-state.json + workforce-interview-answers.md for
 # placeholders, fills the prompt template, submits to KIE.AI, polls for
 # completion, writes the result URL into state file under the right field.
+#
+# v10.14.2 / v10.15.2 fixes:
+#   - .departments iteration handles BOTH array (schema-declared) and keyed
+#     object (production drift, observed on Maria's 22-dept state file).
+#   - Canonical model is gpt-image-2 (KIE.AI slug). Fallback unchanged.
 
 set -u
 
@@ -58,10 +63,30 @@ OWNER_NAME=$(state_get '.ownerName')
 AGENT_NAME=$(state_get '.agentName')
 [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
 
-DEPT_LIST=$(jq -r '[.departments[].name // .departments[].slug] | join(", ")' "$STATE_FILE" 2>/dev/null)
+# ---- shape-tolerant department enumeration ----
+#
+# Schema declares .departments as an array, but production state files (e.g.
+# Maria's 22-dept box) have it as a keyed object: {marketing: {...}, sales: {...}}.
+# Read both shapes into a uniform [{id, name, rolesDone}] list, then derive
+# DEPT_LIST + ROLE_COUNT from that.
+DEPT_TYPE=$(jq -r '.departments | type' "$STATE_FILE" 2>/dev/null)
+case "$DEPT_TYPE" in
+  array)
+    DEPT_JSON=$(jq -c '[.departments[] | {id: (.slug // .name // "dept"), name: (.name // .slug // "dept"), rolesDone: (.rolesDone // 0)}]' "$STATE_FILE" 2>/dev/null)
+    ;;
+  object)
+    # Keyed object: use the KEY as id; .value.name if present else humanize the key.
+    DEPT_JSON=$(jq -c '[.departments | to_entries[] | {id: .key, name: (.value.name // (.key | gsub("[-_]"; " "))), rolesDone: (.value.rolesDone // 0)}]' "$STATE_FILE" 2>/dev/null)
+    ;;
+  *)
+    DEPT_JSON="[]"
+    ;;
+esac
+
+DEPT_LIST=$(echo "$DEPT_JSON" | jq -r '[.[].name] | join(", ")' 2>/dev/null)
 [[ -z "$DEPT_LIST" ]] && DEPT_LIST="(departments)"
 
-ROLE_COUNT=$(jq -r '[.departments[].rolesDone // 0] | add' "$STATE_FILE" 2>/dev/null)
+ROLE_COUNT=$(echo "$DEPT_JSON" | jq -r '[.[].rolesDone] | add // 0' 2>/dev/null)
 [[ -z "$ROLE_COUNT" || "$ROLE_COUNT" == "null" ]] && ROLE_COUNT="0"
 
 BRAND_COLOR=$(state_get '.brandColor')
@@ -70,7 +95,7 @@ BRAND_COLOR=$(state_get '.brandColor')
 INDUSTRY=$(state_get '.industry')
 [[ -z "$INDUSTRY" ]] && INDUSTRY="the client's industry"
 
-# Example task — used for workflow infographic only
+# Example task, used for workflow infographic only
 EXAMPLE_TASK=$(state_get '.exampleTask')
 if [[ -z "$EXAMPLE_TASK" ]]; then
   case "$INDUSTRY" in
@@ -99,7 +124,7 @@ PROMPT=$(printf '%s' "$PROMPT_RAW" \
   | sed "s|{{EXAMPLE_TASK}}|${EXAMPLE_TASK}|g")
 
 # ---- model selection ----
-PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-text-to-image}"
+PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2}"
 FALLBACK_MODEL="nano-banana-pro"
 
 submit_job() {
@@ -166,7 +191,7 @@ while (( attempt < 3 )); do
   submit_resp=$(submit_job "$model" || true)
   task_id=$(echo "$submit_resp" | jq -r '.data.taskId // empty' 2>/dev/null)
   if [[ -z "$task_id" ]]; then
-    log "WARN" "attempt $attempt: submit failed — response: $(echo "$submit_resp" | head -c 200)"
+    log "WARN" "attempt $attempt: submit failed, response: $(echo "$submit_resp" | head -c 200)"
     sleep $((2 ** attempt))
     continue
   fi

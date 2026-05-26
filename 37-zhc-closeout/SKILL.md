@@ -69,8 +69,8 @@ By the end of Skill 37 execution, the client has received **all of the following
 | # | Message | Source |
 |---|---------|--------|
 | 1 | "🎉 Your zero-human company is built!" + summary stats | Composed from state file |
-| 2 | Workforce Structure infographic (Telegram sendPhoto) | KIE.AI gpt-image-1 |
-| 3 | How Work Flows infographic (Telegram sendPhoto) | KIE.AI gpt-image-1 |
+| 2 | Workforce Structure infographic (Telegram sendPhoto) | KIE.AI gpt-image-2 |
+| 3 | How Work Flows infographic (Telegram sendPhoto) | KIE.AI gpt-image-2 |
 | 4 | 15–30 sec celebration video (Telegram sendVideo) | KIE.AI Veo 3.1 |
 | 5 | "Your full Notion closeout doc → [link]" | Notion API |
 | 6 | "Your BlackCEO Command Center → [URL]" | Skill 32 output |
@@ -142,8 +142,8 @@ Same reason Skill 23's build-resume layer is a separate component:
 
 | Item | Model | Approx Cost | Cap |
 |------|-------|-------------|-----|
-| Infographic #1 | `gpt-image-1` (fallback: `nano-banana-pro`) | ~$0.04 / ~$0.09 | 3 retries |
-| Infographic #2 | `gpt-image-1` (fallback: `nano-banana-pro`) | ~$0.04 / ~$0.09 | 3 retries |
+| Infographic #1 | `gpt-image-2` (fallback: `nano-banana-pro`) | ~$0.04 / ~$0.09 | 3 retries |
+| Infographic #2 | `gpt-image-2` (fallback: `nano-banana-pro`) | ~$0.04 / ~$0.09 | 3 retries |
 | Celebration video | `veo3_fast` (Veo 3.1) | ~$0.40 | 2 retries |
 | Notion pages | Notion API (free per workspace) | $0 | 3 retries per page |
 | Telegram sends | openclaw message send | $0 | 3 retries per send |

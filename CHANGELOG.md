@@ -1,3 +1,45 @@
+## [v10.14.2]  -  2026-05-26  -  Skill 37 closeout hot-fix (Maria Anderson run surfaced 4 bugs)
+
+### Why
+
+Sir Jordan's closeout run for Maria Anderson 2026-05-25 hit three production
+bugs in Skill 37 plus a model-spec drift. All four are fixed here. Mirrors
+VPS v10.15.2.
+
+### Bugs fixed
+
+1. **VEO duration hardcoded to 15.** Veo only accepts 4, 6, or 8 seconds;
+   submission returned 422. Now parameterized via `ZHC_VIDEO_DURATION` env
+   (default 8). Invalid values snap to 8 with a WARN log.
+
+2. **VEO polling endpoint wrong.** Was `/api/v1/veo/task?taskId=...`;
+   correct endpoint is `/api/v1/veo/record-info?taskId=...` with
+   `successFlag` (1 = done, -1 = fail, 0 = in-progress) instead of the
+   `.data.state` field. Added explicit 4xx/5xx HTTP handling so terminal
+   errors no longer get silently retried.
+
+3. **`departments[].name` iteration broke on keyed objects.** Schema declares
+   `departments` as an array, but Maria's state file (22 depts) had it as a
+   keyed object. `{{DEPT_LIST}}` rendered empty in the infographic-1 prompt,
+   so the org chart came out structured but unlabeled. Iteration now
+   detects shape (`jq '.departments | type'`) and normalizes both array
+   and keyed-object forms to `[{id, name, rolesDone}]` before joining.
+
+4. **Model slug aligned to `gpt-image-2`.** SKILL.md, INSTRUCTIONS.md, and
+   INSTALL.md referenced `gpt-image-1`; scripts referenced a third form
+   `gpt-image-2-text-to-image`. Canonical KIE slug is `gpt-image-2`. All
+   four files now agree. Fallback `nano-banana-pro` unchanged.
+
+### Files touched
+
+- `37-zhc-closeout/scripts/generate-celebration-video.sh` (bugs 1, 2)
+- `37-zhc-closeout/scripts/generate-infographics.sh` (bugs 3, 4)
+- `37-zhc-closeout/SKILL.md` (bug 4)
+- `37-zhc-closeout/INSTRUCTIONS.md` (bugs 1, 2, 4)
+- `37-zhc-closeout/INSTALL.md` (bug 4)
+- `37-zhc-closeout/skill-version.txt` (1.0.0 -> 1.0.1)
+- version bump files via `scripts/bump-version.sh v10.14.2`
+
 ## [v10.14.1]  -  2026-05-25  -  Skill 23 per-question build-state writer (counter fix - mirrors VPS v10.15.1)
 
 ### Why

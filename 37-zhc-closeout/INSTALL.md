@@ -56,11 +56,11 @@ If any of those return empty / missing, re-run `update-skills.sh`.
 ## Cost Cap Configuration
 
 By default the skill uses cost-conscious model choices:
-- Images: `gpt-image-1` (~$0.04 each)
+- Images: `gpt-image-2` (~$0.04 each)
 - Video: `veo3_fast` (~$0.40)
 
 To force the higher-quality alternatives, set in the container env BEFORE the closeout fires:
-- `ZHC_IMAGE_MODEL=nano-banana-pro` — overrides gpt-image-1
+- `ZHC_IMAGE_MODEL=nano-banana-pro` — overrides gpt-image-2
 - `ZHC_VIDEO_MODEL=veo3` — overrides veo3_fast (Veo 3.1 Quality, ~$0.80)
 
 Worst-case cost per client closeout: ~$0.60 in KIE credits.

@@ -78,9 +78,9 @@ All steps run via `scripts/run-closeout.sh` as the top-level orchestrator. You C
    - `{{DEPT_LIST}}` — joined list of `state.departments[].name`
    - `{{ROLE_COUNT}}` — sum of `state.departments[].rolesDone`
    - `{{BRAND_COLOR}}` — from interview if asked; else `#1a1a1a` + accent `#D4AF37` (BlackCEO gold)
-3. Invoke `scripts/generate-infographics.sh structure "<filled-prompt>"`. The script POSTs to KIE.AI `/jobs/createTask` with `model: "gpt-image-1"`, `aspect_ratio: "16:9"`, `resolution: "2K"`, polls for completion, and returns the result URL.
+3. Invoke `scripts/generate-infographics.sh structure "<filled-prompt>"`. The script POSTs to KIE.AI `/jobs/createTask` with `model: "gpt-image-2"`, `aspect_ratio: "16:9"`, `resolution: "2K"`, polls for completion, and returns the result URL.
 4. On success: write `infographic1Url` to state file, atomic.
-5. **Fallback:** If `gpt-image-1` returns a 422 / model-unavailable error, retry once with `model: "nano-banana-pro"`. Aspect ratio + resolution params are compatible.
+5. **Fallback:** If `gpt-image-2` returns a 422 / model-unavailable error, retry once with `model: "nano-banana-pro"`. Aspect ratio + resolution params are compatible.
 
 **Retries:** 3 total (each retry uses a different seed by appending a random suffix to the prompt). If still failing: `closeoutFailureReason: "infographic-1: <last error>"`, mark `closeoutStatus: "failed"`, STOP.
 
@@ -104,9 +104,9 @@ Same shape as Step 2 but for the workflow diagram.
    - `model: "veo3_fast"` (cost-conscious default; ~$0.40)
    - `prompt`: the filled prompt
    - `aspect_ratio: "9:16"` (vertical — Telegram delivery target)
-   - `duration: 15` (target 15 sec; will accept up to 30 if the API returns longer)
+   - `duration: 8` (Veo accepts 4, 6, or 8; default 8). Override via `ZHC_VIDEO_DURATION` env. Invalid values are snapped to 8 with a WARN log.
    - `generate_audio: true`
-4. Poll `/veo/task?taskId=...` per KIE skill polling guidance (2s / 5s / 15s escalation). Max wait: 15 minutes.
+4. Poll `/veo/record-info?taskId=...` per KIE skill polling guidance (2s / 5s / 15s escalation). Max wait: 15 minutes.
 5. On success: write `celebrationVideoUrl` to state file.
 
 **Retries:** 2 (videos are expensive). On exhaustion: `closeoutFailureReason: "celebration-video: <last error>"`, mark `closeoutStatus: "failed"`, STOP.

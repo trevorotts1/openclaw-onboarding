@@ -2,7 +2,14 @@
 # generate-celebration-video.sh — KIE.AI Veo 3.1 call (veo3_fast default).
 #
 # Fills templates/veo-prompt.txt with company-specific placeholders, submits to
-# the VEO-specific endpoint, polls, writes celebrationVideoUrl to state.
+# the VEO-specific endpoint, polls /api/v1/veo/record-info, writes
+# celebrationVideoUrl to state.
+#
+# v10.14.2 / v10.15.2 fixes:
+#   - duration is now parameterized via ZHC_VIDEO_DURATION (default 8) and
+#     snapped to a Veo-valid value (4/6/8). Invalid inputs fall back to 8.
+#   - polling endpoint corrected to /api/v1/veo/record-info with
+#     successFlag-based completion detection.
 
 set -u
 
@@ -46,19 +53,23 @@ PROMPT=$(cat "$TEMPLATE" \
 
 MODEL="${ZHC_VIDEO_MODEL:-veo3_fast}"
 
+# ---- duration: snap to a Veo-valid value (4/6/8). Default 8. ----
+DURATION_INPUT="${ZHC_VIDEO_DURATION:-8}"
+case "$DURATION_INPUT" in
+  4|6|8) DURATION="$DURATION_INPUT" ;;
+  *)
+    log "WARN" "ZHC_VIDEO_DURATION='$DURATION_INPUT' is not a valid Veo duration (4/6/8); falling back to 8"
+    DURATION="8"
+    ;;
+esac
+
 submit_veo() {
-  local prompt_json
-  prompt_json=$(jq -Rs . <<< "$PROMPT")
   local body
   body=$(jq -n \
     --arg model "$MODEL" \
-    --argjson prompt "$prompt_json" \
-    '{model: $model, prompt: ($prompt|fromjson? // $prompt), aspect_ratio: "9:16", duration: 15, generate_audio: true}')
-  # The above jq nests prompt back in safely whether it became a string or remained a string.
-  body=$(jq -n \
-    --arg model "$MODEL" \
     --arg prompt "$PROMPT" \
-    '{model: $model, prompt: $prompt, aspect_ratio: "9:16", duration: 15, generate_audio: true}')
+    --argjson duration "$DURATION" \
+    '{model: $model, prompt: $prompt, aspect_ratio: "9:16", duration: $duration, generate_audio: true}')
   curl -sS --fail-with-body -X POST "https://api.kie.ai/api/v1/veo/generate" \
     -H "Authorization: Bearer $KIE_API_KEY" \
     -H "Content-Type: application/json" \
@@ -70,24 +81,39 @@ poll_veo() {
   local elapsed=0
   local wait_sec
   while (( elapsed < 900 )); do  # videos can take 10+ min
-    local resp
-    resp=$(curl -sS "https://api.kie.ai/api/v1/veo/task?taskId=$task_id" \
+    local resp http_code
+    # capture body + status code so 4xx/5xx are handled, not silently retried
+    resp=$(curl -sS -w '\n__HTTP_CODE__%{http_code}' \
+      "https://api.kie.ai/api/v1/veo/record-info?taskId=$task_id" \
       -H "Authorization: Bearer $KIE_API_KEY" 2>/dev/null)
-    local state
-    state=$(echo "$resp" | jq -r '.data.state // .data.status // empty' 2>/dev/null)
-    case "$state" in
-      success)
-        echo "$resp" | jq -r '.data.resultJson' 2>/dev/null \
-          | jq -r '.resultUrls[0] // .videoUrl // .url // empty' 2>/dev/null
+    http_code=$(printf '%s' "$resp" | awk -F'__HTTP_CODE__' 'END{print $2}')
+    resp=$(printf '%s' "$resp" | sed 's/__HTTP_CODE__[0-9]*$//')
+
+    if [[ -n "$http_code" && "$http_code" =~ ^[45] ]]; then
+      log "ERROR" "VEO poll HTTP $http_code for $task_id: $(echo "$resp" | head -c 200)"
+      # transient 5xx: retry; terminal 4xx: bail
+      if [[ "$http_code" =~ ^4 ]]; then
+        return 1
+      fi
+    fi
+
+    # successFlag = 1 (numeric or string) means done; -1 means failed; 0 means in-progress.
+    local success_flag
+    success_flag=$(echo "$resp" | jq -r '.data.successFlag // empty' 2>/dev/null)
+    case "$success_flag" in
+      1|"1")
+        echo "$resp" | jq -r '.data.response.resultUrls[0] // .data.response.videoUrl // .data.resultJson' 2>/dev/null \
+          | { read first; if [[ "$first" == \{* ]]; then echo "$first" | jq -r '.resultUrls[0] // .videoUrl // .url // empty'; else echo "$first"; fi; }
         return 0
         ;;
-      fail)
+      -1|"-1")
         local msg
-        msg=$(echo "$resp" | jq -r '.data.failMsg // .msg // "unknown"')
+        msg=$(echo "$resp" | jq -r '.data.errorMessage // .data.failMsg // .msg // "unknown"')
         log "ERROR" "VEO job $task_id failed: $msg"
         return 1
         ;;
     esac
+
     if (( elapsed < 60 )); then wait_sec=5
     elif (( elapsed < 300 )); then wait_sec=15
     else wait_sec=30
@@ -101,17 +127,17 @@ poll_veo() {
 
 attempt=0
 result_url=""
-while (( attempt < 2 )); do  # videos are expensive — only 2 retries
+while (( attempt < 2 )); do  # videos are expensive; only 2 retries
   attempt=$((attempt + 1))
-  log "INFO" "attempt $attempt/2: submitting VEO job model=$MODEL"
+  log "INFO" "attempt $attempt/2: submitting VEO job model=$MODEL duration=${DURATION}s"
   submit_resp=$(submit_veo || true)
   task_id=$(echo "$submit_resp" | jq -r '.data.taskId // .taskId // empty' 2>/dev/null)
   if [[ -z "$task_id" ]]; then
-    log "WARN" "attempt $attempt: submit failed — response: $(echo "$submit_resp" | head -c 200)"
+    log "WARN" "attempt $attempt: submit failed, response: $(echo "$submit_resp" | head -c 200)"
     sleep $((4 ** attempt))
     continue
   fi
-  log "INFO" "attempt $attempt: submitted taskId=$task_id; polling..."
+  log "INFO" "attempt $attempt: submitted taskId=$task_id; polling /veo/record-info..."
   if result_url=$(poll_veo "$task_id"); then
     if [[ -n "$result_url" && "$result_url" != "null" ]]; then
       log "INFO" "attempt $attempt: success url=$result_url"
