@@ -1,3 +1,48 @@
+## [v10.14.1]  -  2026-05-25  -  Skill 23 per-question build-state writer (counter fix - mirrors VPS v10.15.1)
+
+### Why
+
+Maria Anderson's 2026-05-25 box surfaced the bug. Sir Jordan had run 34
+interview questions; `workforce-interview-answers.md` correctly tracked
+all 34, but `.workforce-build-state.json` still reported
+`lastQuestionNumber: 1`. The dashboard counter froze at 1 and the resume
+cron kept misreading the interview as "stuck at Q1".
+
+Root cause: SKILL.md told the agent to update `interview-handoff.md`
+with snake_case fields, but Sir Jordan's runtime + the dashboard read
+camelCase fields (`lastQuestionNumber`, `lastQuestionPhase`,
+`lastQuestionAskedBy`) from the build-state JSON. Those camelCase fields
+were written nowhere in the repo. The Phase 1 opener invented them
+ad-hoc, then nothing else ever touched them.
+
+Two parallel state surfaces existed; this consolidates the per-question
+update path into the build-state JSON via a new writer script.
+
+### What changed
+
+- New: `23-ai-workforce-blueprint/scripts/update-interview-state.sh` -
+  jq-based atomic writer for `.workforce-build-state.json`. Resolves
+  VPS vs Mac state-dir automatically.
+- `build-state-schema.json` declares `interviewProgress` nested object
+  (`lastQuestionNumber`, `lastQuestionPhase`, `lastQuestionAskedBy`,
+  `lastQuestionAt`, `phasesComplete`). Legacy top-level camelCase fields
+  marked DEPRECATED but tolerated.
+- `SKILL.md` "After EVERY Answered Question" protocol is now 5 steps;
+  step 4 mandates calling the script.
+- `INSTRUCTIONS.md` "Flush After Every Question" updated to match.
+- `INSTRUCTIONS.md` Moment 1 (interview complete) adds the
+  `--complete` hook call.
+
+### Fleet propagation
+
+The new script was pushed to all 8 client VPS containers via SSH +
+`docker exec` immediately after this tag, and Maria's state file was
+patched with a one-time corrective write to align her counter to her
+actual progress (Q34, phase-4-department-customization, 6 phases
+complete). `interviewComplete` was NOT flipped - Phase 5/6 are ahead.
+
+---
+
 ## [v10.14.0]  -  2026-05-25  -  Skill 23 canonical departments reconciliation (mirrors VPS v10.15.0)
 
 Mac mirror of VPS v10.15.0. See the VPS CHANGELOG for the full motivation

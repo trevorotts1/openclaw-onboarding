@@ -3,38 +3,144 @@
   "title": "AI Workforce Build State",
   "description": "Tracks the post-interview build of every department + role so the build can be autonomously resumed if an agent session is interrupted. Lives at /data/.openclaw/workspace/.workforce-build-state.json (VPS) or ~/.openclaw/workspace/.workforce-build-state.json (Mac). Written by the agent at interview-completion AND after every unit of build work completes. Extended in v10.14.17 to also track the post-build CLOSEOUT pipeline (Skill 37 ZHC Closeout).",
   "type": "object",
-  "required": ["version", "interviewComplete", "ownerChat", "departments"],
+  "required": [
+    "version",
+    "interviewComplete",
+    "ownerChat",
+    "departments"
+  ],
   "properties": {
-    "version": { "type": "integer", "const": 1 },
-    "interviewComplete": { "type": "boolean" },
-    "interviewCompletedAt": { "type": "string", "format": "date-time" },
-    "interviewVersion": { "type": "string", "description": "e.g. v2.0, v10.14.14" },
-    "ownerChat": { "type": "integer", "description": "Owner Telegram chat ID for final status message" },
-    "ownerName": { "type": "string" },
-    "companyName": { "type": "string", "description": "Client's company name — used by Skill 37 in prompts + Notion page titles" },
-    "industry": { "type": "string", "description": "Client's industry — used by Skill 37 to pick example tasks" },
-    "brandColor": { "type": "string", "description": "Hex color for infographic prompts (e.g. #1a1a1a)" },
-    "agentName": { "type": "string", "description": "Master agent name (e.g. Temperance, NEXORA)" },
-    "buildPid": { "type": ["string", "null"], "description": "Optional lock token to prevent concurrent builds" },
-    "buildStartedAt": { "type": ["string", "null"], "format": "date-time" },
-    "buildCompletedAt": { "type": ["string", "null"], "format": "date-time" },
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "interviewComplete": {
+      "type": "boolean"
+    },
+    "interviewCompletedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "interviewVersion": {
+      "type": "string",
+      "description": "e.g. v2.0, v10.14.14"
+    },
+    "ownerChat": {
+      "type": "integer",
+      "description": "Owner Telegram chat ID for final status message"
+    },
+    "ownerName": {
+      "type": "string"
+    },
+    "companyName": {
+      "type": "string",
+      "description": "Client's company name — used by Skill 37 in prompts + Notion page titles"
+    },
+    "industry": {
+      "type": "string",
+      "description": "Client's industry — used by Skill 37 to pick example tasks"
+    },
+    "brandColor": {
+      "type": "string",
+      "description": "Hex color for infographic prompts (e.g. #1a1a1a)"
+    },
+    "agentName": {
+      "type": "string",
+      "description": "Master agent name (e.g. Temperance, NEXORA)"
+    },
+    "buildPid": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Optional lock token to prevent concurrent builds"
+    },
+    "buildStartedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "buildCompletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
     "departments": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["slug", "status"],
+        "required": [
+          "slug",
+          "status"
+        ],
         "properties": {
-          "slug": { "type": "string", "description": "Folder name in departments/ (e.g. marketing-support)" },
-          "name": { "type": "string", "description": "Human-readable department name" },
-          "status": { "type": "string", "enum": ["pending", "building", "done", "failed"] },
-          "lastAttemptAt": { "type": ["string", "null"], "format": "date-time" },
-          "completedAt": { "type": ["string", "null"], "format": "date-time" },
-          "failureReason": { "type": ["string", "null"] },
-          "rolesPlanned": { "type": "integer", "description": "Expected count of role sub-agents" },
-          "rolesDone": { "type": "integer", "description": "Roles materialized so far" },
-          "filesPlanned": { "type": "array", "items": { "type": "string" }, "description": "Expected file list (e.g. README.md, AGENTS.md, SOUL.md, TOOLS.md, USER.md, MEMORY.md, HEARTBEAT.md)" },
-          "filesPresent": { "type": "array", "items": { "type": "string" } },
-          "agentRegistered": { "type": "boolean", "default": false, "description": "True only when a corresponding entry exists in openclaw.json agents.list[] with id == 'dept-<slug>'. Materialized by Skill 32's materialize-dept-agents.sh. A dept with status=done but agentRegistered=false is a LIE — the role-definition.md files exist but the OpenClaw runtime sees no such agent. Added v10.14.19." }
+          "slug": {
+            "type": "string",
+            "description": "Folder name in departments/ (e.g. marketing-support)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable department name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "building",
+              "done",
+              "failed"
+            ]
+          },
+          "lastAttemptAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "failureReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rolesPlanned": {
+            "type": "integer",
+            "description": "Expected count of role sub-agents"
+          },
+          "rolesDone": {
+            "type": "integer",
+            "description": "Roles materialized so far"
+          },
+          "filesPlanned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Expected file list (e.g. README.md, AGENTS.md, SOUL.md, TOOLS.md, USER.md, MEMORY.md, HEARTBEAT.md)"
+          },
+          "filesPresent": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agentRegistered": {
+            "type": "boolean",
+            "default": false,
+            "description": "True only when a corresponding entry exists in openclaw.json agents.list[] with id == 'dept-<slug>'. Materialized by Skill 32's materialize-dept-agents.sh. A dept with status=done but agentRegistered=false is a LIE — the role-definition.md files exist but the OpenClaw runtime sees no such agent. Added v10.14.19."
+          }
         }
       }
     },
@@ -44,7 +150,9 @@
     },
     "openItems": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Free-form notes about post-build cleanup, e.g. 'Vertical Pack confirmation pending', 'HITMCN merger decision pending'"
     },
     "resumeAttempts": {
@@ -56,39 +164,151 @@
       "default": 12,
       "description": "Hard cap. After this, resume-workforce-build.sh stops self-pinging and notifies Trevor instead of the owner."
     },
-
     "closeoutStatus": {
       "type": "string",
-      "enum": ["pending", "generating", "sent", "done", "failed"],
+      "enum": [
+        "pending",
+        "generating",
+        "sent",
+        "done",
+        "failed"
+      ],
       "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending → generating → sent → done. failed = retries exhausted; resume cron will retry. Added in v10.14.17."
     },
-    "closeoutStartedAt": { "type": ["string", "null"], "format": "date-time", "description": "When Skill 37 first transitioned pending → generating" },
-    "closeoutCompletedAt": { "type": ["string", "null"], "format": "date-time", "description": "When Skill 37 transitioned sent → done" },
-    "closeoutFailureReason": { "type": ["string", "null"], "description": "Captures the specific step that exhausted retries (e.g. 'command-center: 3 attempts exhausted', 'infographic-1: ...', 'notion: ...')" },
-
+    "closeoutStartedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "When Skill 37 first transitioned pending → generating"
+    },
+    "closeoutCompletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "When Skill 37 transitioned sent → done"
+    },
+    "closeoutFailureReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Captures the specific step that exhausted retries (e.g. 'command-center: 3 attempts exhausted', 'infographic-1: ...', 'notion: ...')"
+    },
     "commandCenterStatus": {
       "type": "string",
-      "enum": ["pending", "building", "done", "failed"],
+      "enum": [
+        "pending",
+        "building",
+        "done",
+        "failed"
+      ],
       "description": "Skill 32 Command Center setup status (tracked by Skill 37 Step 1)"
     },
-    "commandCenterUrl": { "type": ["string", "null"], "description": "Resolved URL of the Command Center (e.g. http://localhost:4000)" },
-
+    "commandCenterUrl": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Resolved URL of the Command Center (e.g. http://localhost:4000)"
+    },
     "n8nStatus": {
       "type": "string",
-      "enum": ["pending", "wired", "skipped", "failed"],
+      "enum": [
+        "pending",
+        "wired",
+        "skipped",
+        "failed"
+      ],
       "description": "n8n integration wire-up status (optional — may be 'skipped' for clients without n8n)"
     },
-    "n8nUrl": { "type": ["string", "null"], "description": "Client's n8n instance URL if wired up" },
-
-    "infographic1Url": { "type": ["string", "null"], "description": "KIE.AI-returned URL for the Workforce Structure infographic" },
-    "infographic2Url": { "type": ["string", "null"], "description": "KIE.AI-returned URL for the How Work Flows infographic" },
-    "celebrationVideoUrl": { "type": ["string", "null"], "description": "KIE.AI Veo 3.1-returned URL for the celebration video" },
-    "notionRootPageUrl": { "type": ["string", "null"], "description": "URL of the root Notion closeout page in the client's workspace" },
-
+    "n8nUrl": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Client's n8n instance URL if wired up"
+    },
+    "infographic1Url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "KIE.AI-returned URL for the Workforce Structure infographic"
+    },
+    "infographic2Url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "KIE.AI-returned URL for the How Work Flows infographic"
+    },
+    "celebrationVideoUrl": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "KIE.AI Veo 3.1-returned URL for the celebration video"
+    },
+    "notionRootPageUrl": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "URL of the root Notion closeout page in the client's workspace"
+    },
     "messagesDelivered": {
       "type": "array",
-      "items": { "type": "integer" },
+      "items": {
+        "type": "integer"
+      },
       "description": "Per-message Telegram delivery tracker for Step 6 of Skill 37. Tracks which of the 6 messages [1..6] have been successfully delivered. Used for idempotent retries of partial deliveries."
+    },
+    "interviewProgress": {
+      "type": "object",
+      "description": "Per-question state updated by update-interview-state.sh. Source of truth for the resume cron and dashboard interview-progress UI. Added in v10.15.1 (VPS) / v10.14.1 (Mac).",
+      "properties": {
+        "lastQuestionNumber": {
+          "type": "integer"
+        },
+        "lastQuestionPhase": {
+          "type": "string"
+        },
+        "lastQuestionAskedBy": {
+          "type": "string"
+        },
+        "lastQuestionAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "phasesComplete": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "lastQuestionNumber": {
+      "type": "integer",
+      "description": "DEPRECATED v10.15.1 / v10.14.1. Use interviewProgress.lastQuestionNumber. Kept tolerated for legacy state files."
+    },
+    "lastQuestionPhase": {
+      "type": "string",
+      "description": "DEPRECATED v10.15.1 / v10.14.1. Use interviewProgress.lastQuestionPhase."
+    },
+    "lastQuestionAskedBy": {
+      "type": "string",
+      "description": "DEPRECATED v10.15.1 / v10.14.1. Use interviewProgress.lastQuestionAskedBy."
+    },
+    "phase1OpeningQuestionSentAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "DEPRECATED v10.15.1 / v10.14.1. Use interviewProgress.lastQuestionAt."
     }
   }
 }

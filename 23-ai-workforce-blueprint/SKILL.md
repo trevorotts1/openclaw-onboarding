@@ -229,7 +229,7 @@ This interview may take hours, days, weeks, or months. The client may stop and c
 
 #### After EVERY Answered Question (No Exceptions)
 
-Do these 4 things IN THIS ORDER before asking the next question:
+Do these 5 things IN THIS ORDER before asking the next question:
 
 1. **Write the answer to disk first.** Append the question number, question text, client's answer, and timestamp to `workforce-interview-answers.md`. This is the safety net. If everything else fails, the answers are on disk.
 
@@ -249,7 +249,24 @@ Do these 4 things IN THIS ORDER before asking the next question:
    - Format: `Skill 23 Interview: IN PROGRESS | Question X/Y answered | Last: YYYY-MM-DD H:MM PM | Handoff: interview-handoff.md`
    - When complete: `Skill 23 Interview: COMPLETE | X/X answered | workforce-interview-answers.md`
 
-4. **Only then ask the next question.**
+4. **Update build-state JSON (MANDATORY, added v10.15.1 / v10.14.1).** Run:
+
+   ```bash
+   # VPS:
+   bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh \
+     --phase "$CURRENT_PHASE" \
+     --question-number "$QUESTION_NUMBER" \
+     --asked-by "$AGENT_NAME"
+   # Mac:
+   bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh \
+     --phase "$CURRENT_PHASE" \
+     --question-number "$QUESTION_NUMBER" \
+     --asked-by "$AGENT_NAME"
+   ```
+
+   This writes `interviewProgress.lastQuestionNumber`, `lastQuestionPhase`, `lastQuestionAskedBy`, and `lastQuestionAt` into `.workforce-build-state.json`. The resume cron and dashboard read these fields. Skipping this step makes the build-state file lie about your progress, and the cron will repeatedly try to "resume" because it thinks the interview is stuck at Q1 forever. This was the v10.15.0 bug; v10.15.1 (VPS) / v10.14.1 (Mac) closes it.
+
+5. **Only then ask the next question.**
 
 #### Resume Logic (Boot-Time and Session-Start)
 
