@@ -228,3 +228,16 @@ Each row above has a remediation recipe in `qc-system-integrity.sh`. The runner 
 - **Ad-hoc:** any time a client reports "it's acting weird"
 
 The runner exits 0 = all green, 1 = one or more checks failed (details in log).
+
+---
+
+## Telegram outbound routing (2026-05-26 lesson)
+
+The bot ALWAYS replies to the originating chat. Neither ownerChat
+(workforce-build-state) nor commands.ownerAllowFrom (operator permission
+list) rewrites outbound destinations. If a client reports "bot not
+responding", run scripts/telegram-offset-healthcheck.sh FIRST. The
+2026-05-26 incident wasted hours chasing a routing rewrite that did not
+exist; the real cause was polling offset corruption (stored lastUpdateId
+advanced past pending updates, so the bot polled above the queue while
+real messages piled below).

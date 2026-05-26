@@ -1,3 +1,34 @@
+## [v10.14.5]  -  2026-05-26  -  Telegram offset self-heal, classifier fallback, phantom-closeout guard, known-issues
+
+### Why
+
+The 2026-05-26 fleet incident: 6 of 8 clients went silently dark on Telegram. Hours were lost chasing an outbound routing rewrite that does not exist. Root cause was polling-offset corruption: the stored lastUpdateId advanced past pending updates, so the bot long-polled above the queue while real owner messages piled below. Separately, Skill 37 closeout could falsely report "done" and the workforce org-chart classifier collapsed non-canonical departments into one cluster.
+
+### P0 - Telegram offset self-heal
+
+- New `scripts/telegram-offset-healthcheck.sh`. Reads the bot token plus the stored offset (accepts both `lastUpdateId` and `offset` keys), calls getUpdates with NO offset to see what is actually pending, and if the oldest pending update_id is below the stored offset (corruption) it rewinds the stored offset to oldest-minus-1, backs up the original, logs to offset-heal.log, touches a restart flag, and attempts `openclaw channels restart telegram`. Idempotent and safe to run on a 15-minute cron.
+
+### P1 - Workforce org-chart classifier fallback
+
+- `37-zhc-closeout/templates/workforce-org-chart/cluster-classifier.js` rewritten. Adds a keyword substring fallback when a client's department slugs do not match the canonical CLUSTER_MAP (this is what collapsed Evelyn's 7 non-canonical departments into the Technology box), plus a lopsidedness guard that falls back to even distribution when one cluster is crammed while another is empty. Verified against Evelyn's 7 departments.
+
+### P2 - Phantom-closeout guard
+
+- `37-zhc-closeout/scripts/run-closeout.sh`. Before claiming `closeoutStatus="done"`, assert the load-bearing artifacts actually exist in state: `infographic1Url` is present and non-null AND at least one Telegram message was delivered (`messagesDelivered` is a non-empty array). If either is missing, record `closeoutStatus="partial"` with `closeoutPartialReason` instead of falsely claiming completion.
+
+### P3 - Docs
+
+- `SYSTEM-DIAGNOSTIC-CHECKLIST.md` gains a "Telegram outbound routing" note: the bot always replies to the originating chat; neither ownerChat nor commands.ownerAllowFrom rewrites outbound destinations. Run the offset healthcheck FIRST when a client reports the bot not responding.
+- New `KNOWN-ISSUES.md` documenting two core OpenClaw defects we cannot patch in onboarding: (1) memory embeddings stall blocking the agent loop, workaround `memorySearch.fallback.{provider,model,apiKey}` plus cache; (2) stalled long-thinking-model session with recovery=none, workaround `agentTimeoutMs`/`agentTimeoutSeconds` plus container restart or faster model. Both to be filed upstream.
+
+### Files touched
+
+- `scripts/telegram-offset-healthcheck.sh` (new)
+- `37-zhc-closeout/templates/workforce-org-chart/cluster-classifier.js`
+- `37-zhc-closeout/scripts/run-closeout.sh`
+- `SYSTEM-DIAGNOSTIC-CHECKLIST.md`
+- `KNOWN-ISSUES.md` (new)
+
 ## [v10.14.4]  -  2026-05-26  -  Skill 37 closeout v4 (5 production bugs from Evelyn run)
 
 ### Why

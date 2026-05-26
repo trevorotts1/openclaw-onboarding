@@ -276,6 +276,38 @@ elif (( ${#soft_failed[@]} > 0 )); then
   log "WARN" "closeout finalize: partial -- soft-failed: ${soft_failed[*]}"
   exit 0
 else
+  # ------------------------------------------------------------------
+  # Phantom-closeout guard (v10.14.5).
+  # A step can return ok while never having written its real artifact
+  # (e.g. an upload helper that exits 0 on a soft error, or a telegram
+  # send that logged but recorded zero delivered messages). Before we
+  # are allowed to claim "done", assert the two load-bearing artifacts
+  # actually exist in state:
+  #   * infographic1Url is present and non-null
+  #   * at least one telegram message was actually delivered
+  #     (.messagesDelivered is a non-empty array)
+  # If either is missing, record "partial" with a closeoutPartialReason
+  # instead of falsely claiming a complete closeout.
+  # ------------------------------------------------------------------
+  guard_reasons=()
+
+  inf1_url=$(state_get '.infographic1Url')
+  if [[ -z "$inf1_url" || "$inf1_url" == "null" ]]; then
+    guard_reasons+=("infographic1Url-missing")
+  fi
+
+  delivered_count=$(state_get '.messagesDelivered | length')
+  if [[ -z "$delivered_count" || "$delivered_count" == "null" || "$delivered_count" == "0" ]]; then
+    guard_reasons+=("telegram-no-messages-delivered")
+  fi
+
+  if (( ${#guard_reasons[@]} > 0 )); then
+    greason="phantom-closeout-guard: $(IFS=,; echo "${guard_reasons[*]}")"
+    state_set ".closeoutStatus = \"partial\" | .closeoutPartialReason = \"$greason\" | .closeoutCompletedAt = \"$(now_iso)\""
+    log "WARN" "closeout finalize: guard blocked done -- $greason"
+    exit 0
+  fi
+
   state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\""
   log "INFO" "closeout complete -- closeoutStatus=done"
   exit 0
