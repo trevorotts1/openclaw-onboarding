@@ -554,6 +554,17 @@ Before responding to the owner with "build my company" confirmation, the master 
 
 1. Write `~/.openclaw/workspace/.workforce-build-state.json` (VPS: `/data/.openclaw/workspace/.workforce-build-state.json`) per `build-state-schema.json`. Required fields: `version: 1`, `interviewComplete: true`, `interviewCompletedAt`, `interviewVersion`, `ownerChat`, `ownerName`, `agentName`, and a `departments` array with EVERY planned department in `status: "pending"`.
 
+   **Then call the interview-complete hook (added v10.15.1 / v10.14.1):**
+
+   ```bash
+   # Mac:
+   bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh --complete
+   # VPS:
+   bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh --complete
+   ```
+
+   This sets `interviewComplete: true` and stamps `interviewCompletedAt`. It is idempotent: safe to re-run.
+
 2. Verify the resume cron job is registered: `openclaw cron list | grep workforce-resume`. If missing (older install), install it inline via `openclaw cron create --schedule "*/15 * * * *" --name workforce-resume --prompt-file ~/.openclaw/skills/23-ai-workforce-blueprint/resume-prompt.txt`.
 
 3. ONLY THEN start Stage 1 of Generation Orchestration.
@@ -687,6 +698,7 @@ After every answered question:
 1. Update `workforce-interview-answers.md` with question + answer
 2. Update `interview-handoff.md` with progress state
 3. Trigger memory flush
+4. **Update `.workforce-build-state.json` via `scripts/update-interview-state.sh`** (added v10.15.1 / v10.14.1). This is what the resume cron + dashboard read. See SKILL.md "After EVERY Answered Question" section for the exact invocation. Without this, `interviewProgress.lastQuestionNumber` freezes at the value the Phase 1 opener wrote and the dashboard counter never advances.
 
 This ensures no progress is ever lost. If session dies, resume via Option C.
 
