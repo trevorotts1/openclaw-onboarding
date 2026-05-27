@@ -125,6 +125,242 @@ def load_non_interactive_config(config_file):
     return config
 
 
+# ============================================================
+# CANONICAL DEPARTMENT FLOOR (N16 standard-unless-declined)
+# ============================================================
+# Every Zero Human Company is built with the 16 mandatory canonical
+# departments UNLESS the client explicitly declined one. The canonical IDs
+# live in department-naming-map.json (the source of truth). Legacy
+# RECOMMENDED_DEPARTMENTS keys differ from canonical IDs (e.g. "billing" vs
+# "billing-finance"); CANONICAL_ID_ALIASES maps canonical -> legacy so we
+# inherit the rich legacy metadata without forking duplicate folders.
+
+# canonical-id -> legacy RECOMMENDED_DEPARTMENTS key (when they differ)
+CANONICAL_ID_ALIASES = {
+    "billing-finance": "billing",
+    "customer-support": "support",
+    "web-development": "webdev",
+    "app-development": "appdev",
+    "communications": "comms",
+    "openclaw-maintenance": "openclaw",
+    "social-media": "social",
+    "paid-advertisement": "paid-ads",
+}
+
+# Canonical IDs that have no separate alias (same key in both lists)
+CANONICAL_DIRECT = [
+    "marketing", "sales", "graphics", "video", "audio", "research",
+    "crm", "legal",
+]
+
+
+def load_canonical_floor():
+    """
+    Read the 16 mandatory canonical departments from department-naming-map.json.
+
+    Returns an ordered dict mapping canonical-id -> dept-info dict in the
+    RECOMMENDED_DEPARTMENTS shape ({name, emoji, head, description}). Each
+    canonical dept inherits its legacy metadata via CANONICAL_ID_ALIASES when
+    a legacy entry exists; otherwise it is built from the naming-map one-liner.
+
+    Falls back to a hardcoded list if the map file cannot be read so the floor
+    is still enforced on a broken install.
+    """
+    map_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "department-naming-map.json",
+    )
+    mandatory = {}
+    try:
+        with open(map_path) as f:
+            data = json.load(f)
+        mandatory = data.get("mandatory", {})
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[CANONICAL] Could not read {map_path}: {e}. Using hardcoded floor.", file=sys.stderr)
+
+    canonical_ids = list(mandatory.keys()) or [
+        "marketing", "sales", "billing-finance", "customer-support",
+        "web-development", "app-development", "graphics", "video", "audio",
+        "research", "communications", "crm", "openclaw-maintenance", "legal",
+        "social-media", "paid-advertisement",
+    ]
+
+    floor = {}
+    for cid in canonical_ids:
+        legacy_key = CANONICAL_ID_ALIASES.get(cid, cid)
+        if legacy_key in RECOMMENDED_DEPARTMENTS:
+            info = RECOMMENDED_DEPARTMENTS[legacy_key].copy()
+        else:
+            m = mandatory.get(cid, {})
+            info = {
+                "name": m.get("display_name", cid.replace("-", " ").title()),
+                "emoji": m.get("emoji", "\U0001f4c1"),
+                "head": m.get("director_title", f"Director of {cid.replace('-', ' ').title()}"),
+                "description": m.get("one_liner", ""),
+            }
+        floor[cid] = info
+    return floor
+
+
+def _canonical_decline_set(build_state):
+    """
+    Return the set of canonical IDs the client EXPLICITLY declined.
+
+    Source of truth: build_state["canonicalReconciliation"]["decisions"], a map
+    of canonical-id -> "yes"|"no". Only an explicit "no" counts as a decline;
+    anything else (absent, "yes", null) means the canonical dept stays.
+    """
+    declined = set()
+    recon = (build_state or {}).get("canonicalReconciliation", {})
+    decisions = recon.get("decisions", {}) if isinstance(recon, dict) else {}
+    if isinstance(decisions, dict):
+        for cid, decision in decisions.items():
+            if str(decision).strip().lower() == "no":
+                declined.add(cid)
+    return declined
+
+
+def _build_state_path():
+    """Resolve the build-state JSON path (VPS first, Mac fallback)."""
+    candidates = [
+        "/data/.openclaw/workspace/.workforce-build-state.json",
+        os.path.join(HOME, ".openclaw", "workspace", ".workforce-build-state.json"),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    # Default to the platform-appropriate path even if it does not exist yet
+    if os.path.isdir("/data/.openclaw"):
+        return "/data/.openclaw/workspace/.workforce-build-state.json"
+    return os.path.join(HOME, ".openclaw", "workspace", ".workforce-build-state.json")
+
+
+def _load_build_state():
+    """Load the build-state JSON (or {} if absent/unreadable). Never raises."""
+    path = _build_state_path()
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_canonical_reconciliation(record):
+    """
+    Write an auditable canonicalReconciliation block into build-state.
+
+    Idempotent + non-destructive: merges into any existing build-state JSON,
+    creating the file + parent dir if needed. The record documents exactly
+    which canonical depts were auto-included (standard-unless-declined) so a
+    later audit can prove no canonical dept was silently dropped.
+    """
+    path = _build_state_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        existing = state.get("canonicalReconciliation", {})
+        if not isinstance(existing, dict):
+            existing = {}
+        # Preserve any operator-set decisions; only refresh the audit fields.
+        existing.setdefault("decisions", record.get("decisions", {}))
+        existing["autoIncluded"] = record.get("autoIncluded", [])
+        existing["clientCustoms"] = record.get("clientCustoms", [])
+        existing["reconciledAt"] = datetime.now().isoformat()
+        existing["floorSize"] = record.get("floorSize", 0)
+        existing["source"] = record.get("source", "build-workforce.py")
+        state["canonicalReconciliation"] = existing
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+        print(f"[CANONICAL] Wrote canonicalReconciliation to {path}", file=sys.stderr)
+    except OSError as e:
+        print(f"[CANONICAL WARNING] Could not write reconciliation to {path}: {e}", file=sys.stderr)
+
+
+def reconcile_canonical_floor(selected_departments, core_answers, departments_config):
+    """
+    Enforce the canonical floor on the client's selected departments.
+
+    Logic (standard-unless-declined):
+      final = (16 canonical MINUS explicit "no" in build-state) UNION client customs
+
+    - If a canonicalReconciliation.decisions block exists in build-state, honor
+      each explicit "no" (drop that canonical dept) and keep everything else.
+    - If NO reconciliation block exists, include all 16 canonical (standard) and
+      write an auditable canonicalReconciliation.autoIncluded record.
+    - Client-named canonical depts keep the client's real description (already in
+      selected_departments); canonical depts the client did NOT name inherit the
+      naming-map one-liner, contextualized with company industry/voice.
+    - Client custom (non-canonical) departments are always preserved.
+    - Idempotent: re-running never duplicates a folder and never overwrites a
+      client-authored description with a generic one.
+
+    Returns the reconciled selected_departments dict (mutated in place + returned).
+    """
+    floor = load_canonical_floor()
+    build_state = _load_build_state()
+    declined = _canonical_decline_set(build_state)
+    had_reconciliation = isinstance(build_state.get("canonicalReconciliation"), dict) \
+        and bool(build_state.get("canonicalReconciliation", {}).get("decisions"))
+
+    industry = core_answers.get("industry", "") or ""
+    company_name = core_answers.get("company_name", "") or ""
+
+    auto_included = []
+    for cid, info in floor.items():
+        if cid in declined:
+            print(f"[CANONICAL] Skipping '{cid}' -- client explicitly declined.", file=sys.stderr)
+            continue
+        if cid in selected_departments:
+            # Client named this canonical dept already -> keep their real
+            # description untouched. Do not clobber.
+            continue
+        legacy_key = CANONICAL_ID_ALIASES.get(cid, cid)
+        if legacy_key in selected_departments:
+            # Client referenced it under the legacy id -> already present.
+            continue
+        # Not named by the client -> inherit the canonical one-liner,
+        # contextualized with the client's industry so it is not bare boilerplate.
+        dept_info = info.copy()
+        base_desc = dept_info.get("description", "").strip()
+        if industry:
+            dept_info["description"] = f"{base_desc} (tailored for {company_name or 'this company'} in {industry})".strip()
+        selected_departments[cid] = dept_info
+        auto_included.append(cid)
+        print(f"[CANONICAL] Auto-included canonical dept '{cid}' (standard-unless-declined).", file=sys.stderr)
+
+    # Client customs = anything in selected_departments that is not a canonical id
+    canonical_ids = set(floor.keys())
+    canonical_legacy = {CANONICAL_ID_ALIASES.get(c, c) for c in canonical_ids}
+    client_customs = [
+        d for d in selected_departments
+        if d not in canonical_ids and d not in canonical_legacy
+    ]
+
+    if not had_reconciliation:
+        _write_canonical_reconciliation({
+            "autoIncluded": auto_included,
+            "clientCustoms": client_customs,
+            "floorSize": len(canonical_ids),
+            "decisions": {},
+            "source": "build-workforce.py reconcile_canonical_floor (no prior reconciliation)",
+        })
+    else:
+        # Refresh the audit fields even when honoring prior decisions.
+        _write_canonical_reconciliation({
+            "autoIncluded": auto_included,
+            "clientCustoms": client_customs,
+            "floorSize": len(canonical_ids),
+            "decisions": build_state.get("canonicalReconciliation", {}).get("decisions", {}),
+            "source": "build-workforce.py reconcile_canonical_floor (honoring prior decisions)",
+        })
+
+    print(f"[CANONICAL] Floor reconciled: {len(selected_departments)} departments "
+          f"({len(auto_included)} auto-included, {len(client_customs)} client customs, "
+          f"{len(declined)} declined).", file=sys.stderr)
+    return selected_departments
+
+
+
 def build_from_config(config):
     """
     Build the full workforce from a non-interactive config JSON.
@@ -197,6 +433,16 @@ def build_from_config(config):
                     "head": dept_config.get("head", f"Chief {dept_id.replace('-', ' ').title()} Officer"),
                     "description": dept_config.get("activities", ""),
                 }
+
+    # v10.x - Enforce the canonical department floor (standard-unless-declined).
+    # Builds all 16 canonical depts (minus any the client explicitly declined in
+    # build-state) UNION the client's customs, then writes an auditable
+    # canonicalReconciliation record. Canonical depts the client named keep their
+    # real description; the rest inherit the naming-map one-liner with client
+    # industry context. Idempotent.
+    selected_departments = reconcile_canonical_floor(
+        selected_departments, core_answers, departments_config
+    )
 
     print(f"[NON-INTERACTIVE] Departments: {', '.join(selected_departments.keys())}", file=sys.stderr)
 

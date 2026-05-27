@@ -1,3 +1,17 @@
+## [v10.14.11]  -  2026-05-27  -  Canonical department floor + Command Center build-state sync + operator closeout summary + conditional GHL media upload
+
+### Why
+
+Existing clients (Maria, Evelyn, Lyric, Corey, Teresa) shipped with fewer than the 16 canonical departments because build-workforce.py only built the client's explicitly-selected subset and never injected the mandatory floor. Phase 5 enforcement was prose, not code. Separately, the Command Center dashboard showed a stale hardcoded department template (config/departments.json shipped non-empty), and the closeout had no success-path operator summary and no GHL media-library upload.
+
+### Fixed / Added
+
+- Fix 1 (canonical floor enforcement) -- 23-ai-workforce-blueprint/scripts/build-workforce.py: new load_canonical_floor(), reconcile_canonical_floor(), _canonical_decline_set(), _load_build_state(), _write_canonical_reconciliation() + a CANONICAL_ID_ALIASES map. reconcile_canonical_floor() is wired into build_from_config() right after selected_departments is built. final = (16 canonical MINUS explicit "no" in build-state canonicalReconciliation.decisions) UNION client customs. If no reconciliation block exists, all 16 canonical are built (standard-unless-declined) and an auditable canonicalReconciliation.autoIncluded record is written. Client-named canonical depts keep their real description; the rest inherit the naming-map one-liner contextualized with company industry/voice. Idempotent.
+- Fix 2 (Command Center build-state sync) -- 32-command-center-setup/scripts/run-full-install.sh gains PHASE 6c which runs the dashboard's new sync-departments-from-build-state.py (shipped in the blackceo-command-center repo) to regenerate config/departments.json from the client's REAL ZHC departments.json + re-seed the workspaces table. The dashboard now always reflects the client's actual build.
+- Fix 3 (docs rubric) -- 37-zhc-closeout/QUALITY-GATE.md Docs rubric + run-closeout.sh Step 5 gate comment now require every canonical AND custom department to be represented in the closeout doc, cross-checked against departments.json / build-state canonicalReconciliation.
+- Fix 4 (operator summary) -- new 37-zhc-closeout/scripts/send-operator-summary.sh, wired into run-closeout.sh success path. Sends Trevor (ZHC_OPERATOR_CHAT_ID, default 5252140759) a single Telegram summary via the OpenClaw gateway with LINKS to dashboard, both infographics, celebration video, and Notion page, after artifacts pass the gate and deliver. Idempotent.
+- Fix 5 (GHL media upload) -- new 37-zhc-closeout/scripts/upload-ghl-media.sh, conditional step in run-closeout.sh. Detects the GHL/Convert-and-Flow skill + a working LOCATION PIT; if present, POSTs the closeout media (real local files only) to medias/upload-file (Version 2021-07-28). Skips gracefully if absent.
+
 ## [v10.14.10]  -  2026-05-27  -  Skill 37 ZHC: mandatory 8.5 quality gate (rate + QC every deliverable before client delivery)
 
 ### Why

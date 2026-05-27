@@ -359,8 +359,10 @@ else
   # RATE + QC + 8.5 GATE: build the Notion closeout doc, then the agent must
   # self-rate it 1-10 against the Docs rubric in QUALITY-GATE.md (all 9 doctrine
   # sections, real client-specific content, no placeholders, DMAIC applied to
-  # this client) and QC it. Loops until >= ZHC_QUALITY_MIN or HOLDS for human
-  # review. Below 8.5 is never delivered.
+  # this client, AND every canonical + custom department represented -- cross-
+  # checked against departments.json / build-state canonicalReconciliation) and
+  # QC it. Loops until >= ZHC_QUALITY_MIN or HOLDS for human review. Below 8.5
+  # is never delivered.
   generate_rate_gate closeout_docs NOTION "$SKILL_DIR/scripts/create-notion-closeout.sh"
 fi
 
@@ -437,6 +439,30 @@ else
     state_set ".closeoutStatus = \"partial\" | .closeoutPartialReason = \"$greason\" | .closeoutCompletedAt = \"$(now_iso)\""
     log "WARN" "closeout finalize: guard blocked done -- $greason"
     exit 0
+  fi
+
+  # ------------------------------------------------------------------
+  # GHL media upload (conditional) -- v10.x.
+  # Only fires if the client has the GHL/Convert-and-Flow skill installed AND
+  # a working LOCATION PIT. Uploads the gate-passed closeout media (real local
+  # files only) to the client's GHL media library. Skips gracefully otherwise.
+  # Runs only on the clean success path -- after every artifact cleared the gate
+  # and the phantom-closeout guard passed.
+  # ------------------------------------------------------------------
+  if [[ -x "$SKILL_DIR/scripts/upload-ghl-media.sh" ]]; then
+    bash "$SKILL_DIR/scripts/upload-ghl-media.sh" || log "WARN" "ghl-media upload step returned non-zero (non-fatal)"
+  fi
+
+  # ------------------------------------------------------------------
+  # Operator success summary -- v10.x.
+  # Sends Trevor a single Telegram message (via the OpenClaw gateway) with LINKS
+  # to every delivered artifact: dashboard, both infographics, celebration video,
+  # Notion closeout page (+ Drive/GHL where present). Idempotent.
+  # ------------------------------------------------------------------
+  ZHC_OPERATOR_CHAT_ID="${ZHC_OPERATOR_CHAT_ID:-5252140759}"
+  export ZHC_OPERATOR_CHAT_ID
+  if [[ -x "$SKILL_DIR/scripts/send-operator-summary.sh" ]]; then
+    bash "$SKILL_DIR/scripts/send-operator-summary.sh" || log "WARN" "operator-summary step returned non-zero (non-fatal)"
   fi
 
   state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\""

@@ -227,6 +227,30 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 6c -- Sync dashboard departments from the client's build-state
+# ----------------------------------------------------------------------
+# config/departments.json ships EMPTY on purpose so the stale 17-row template
+# can never win. This phase regenerates it from the client's REAL ZHC
+# departments.json + .workforce-build-state.json and re-seeds the workspaces
+# table, so the dashboard always reflects what THIS client actually built.
+# Idempotent -- safe to re-run on every install/resume.
+log "INFO" "phase=6c sync-departments: starting"
+SYNC_SCRIPT="$DASHBOARD_DIR/scripts/sync-departments-from-build-state.py"
+if [[ -f "$SYNC_SCRIPT" ]]; then
+  if ( cd "$DASHBOARD_DIR" && COMPANY_SLUG="$CLIENT_SLUG" COMPANY_NAME="$COMPANY_NAME" \
+        python3 "$SYNC_SCRIPT" --company-slug "$CLIENT_SLUG" >>"$LOG_FILE" 2>&1 ); then
+    log "INFO" "phase=6c sync-departments: done -- dashboard synced from build-state"
+    state_set '.commandCenterDepartmentsSynced = true'
+  else
+    log "WARN" "phase=6c sync-departments: sync exited non-zero (dashboard will auto-seed from config/departments.json on next boot)"
+    state_set '.commandCenterDepartmentsSynced = false'
+  fi
+else
+  log "WARN" "phase=6c sync-departments: $SYNC_SCRIPT not found -- skipping (update the dashboard repo)"
+  state_set '.commandCenterDepartmentsSynced = "script-missing"'
+fi
+
+# ----------------------------------------------------------------------
 # PHASE 6b — Tunnel (n8n webhook + cloudflared)
 # ----------------------------------------------------------------------
 log "INFO" "phase=6b tunnel: starting"

@@ -211,6 +211,13 @@ This is the only step that the OWNER sees. **All prior steps were silent.** Goal
    - Set `closeoutStatus: "sent"`, atomic write.
    - Then set `closeoutCompletedAt: <now-ISO-8601>` and `closeoutStatus: "done"`, atomic write.
 
+### Step 7 (success path only) -- Operator summary + conditional GHL media upload
+
+On the clean success path -- after every artifact cleared the 8.5 gate, was delivered, and the phantom-closeout guard passed -- `run-closeout.sh` runs two final steps BEFORE writing `closeoutStatus: "done"`:
+
+1. `scripts/upload-ghl-media.sh` (conditional): if the client has the GHL / Convert-and-Flow skill installed AND a working LOCATION PIT (`GHL_API_KEY` + `GHL_LOCATION_ID`, PIT verified against `/locations/<id>`), it POSTs the real local closeout media (the two infographics + celebration video) to `medias/upload-file` (Version 2021-07-28). It skips gracefully -- writing a `ghlMediaUploaded` reason -- when GHL or a working PIT is absent. Never blocks closeout.
+2. `scripts/send-operator-summary.sh`: sends Trevor (`ZHC_OPERATOR_CHAT_ID`, default `5252140759`) a single Telegram message via the OpenClaw gateway with LINKS to every delivered artifact (dashboard, both infographics, celebration video, Notion page, plus Drive/GHL where present). Idempotent via `operatorSummarySentAt`.
+
 **Retries per message:** 3 (with 2s/4s/8s backoff). If a message fails 3x:
 - If it's Message 1 (the announcement), abort the whole delivery, mark `closeoutStatus: "failed"`, set `closeoutFailureReason: "telegram-message-1: <error>"`. Resume cron will retry on next fire.
 - If it's Messages 2–6, log the failure but CONTINUE to the next message. After all 6 attempted, if any failed, set `closeoutStatus: "failed"` with a summary listing which messages failed. The resume cron will pick up failed messages individually on its next fire (Step 6 is idempotent per-message via a `messagesDelivered: [1,2,3,4,5,6]` array in the state file).

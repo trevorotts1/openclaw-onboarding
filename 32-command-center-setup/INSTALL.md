@@ -365,6 +365,16 @@ Expected output: "Seeding complete. Inserted: [count] | Skipped (already existed
 
 If it says "Could not find mission-control.db" -- verify the dashboard started correctly in step 6.4 before running this.
 
+### 6.5b Sync the dashboard from the client's build-state (PHASE 6c)
+
+The dashboard's `config/departments.json` ships EMPTY on purpose so a stale template can never win. `run-full-install.sh` PHASE 6c (and the closeout) regenerate it from the client's REAL Zero Human Company `departments.json` + `.workforce-build-state.json` and re-seed the workspaces table:
+
+```bash
+python3 ~/projects/command-center/scripts/sync-departments-from-build-state.py --company-slug <client-slug>
+```
+
+This is idempotent and is what guarantees the dashboard shows the client's actual departments, not a 17-row default. Run it any time a client's build changes (e.g. after adding the canonical floor to an existing client).
+
 ### 6.6 Verify Dashboard is Accessible
 The agent checks that the dashboard loads at:
 ```

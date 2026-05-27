@@ -95,6 +95,10 @@ something below the gate just to "finish" the closeout.
   Work Runs (with Infographic #2), Departments & Roles (with per-department
   subpages), Communication Hierarchy, Six Sigma DMAIC, Book-to-Persona, and
   First 7 Days.
+- Every canonical department AND every client custom department is
+  represented in the Departments & Roles section (cross-checked against
+  the client's departments.json / build-state canonicalReconciliation --
+  no canonical dept silently missing from the closeout doc).
 - Real client-specific content throughout. NO placeholders, TODOs, lorem, or
   generic boilerplate.
 - The Six Sigma section is DMAIC applied to the client's SPECIFIC departments
