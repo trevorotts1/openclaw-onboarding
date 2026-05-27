@@ -1,3 +1,25 @@
+## [v10.14.8]  -  2026-05-27  -  Teresa Pelham ZHC launch fixes: Gemini duration string, nano-banana-2 fallback, google-api.js ENOENT note
+
+### Why
+
+Three real issues surfaced during Teresa Pelham's ZHC launch. (1) KIE gemini-omni-video rejected the celebration-video request until duration was passed as a quoted STRING rather than a bare integer. (2) nano-banana-2 returned a 422 "model name not supported" on Teresa's KIE account (it works on other accounts), and the closeout fell back to gpt-image-2-text-to-image. (3) the local-only Mac helper google-api.js threw ENOENT looking for a per-user SA file that does not exist; the working path is the Python SA+DWD pattern.
+
+### What
+
+- 37-zhc-closeout/scripts/generate-celebration-video.sh: documented that KIE gemini-omni-video requires duration as a STRING ("8"), not an integer. The payload already emits it via jq --arg (which always quotes), and aspect_ratio stays "16:9"; added an explicit comment so a future edit does not switch it to --argjson and reintroduce the error.
+- 37-zhc-closeout/scripts/generate-infographics.sh: kept nano-banana-2 as the PRIMARY image model and hardened the retry loop so a submit error matching "model name not supported" / 422 switches to the gpt-image-2-text-to-image safety net EARLY instead of burning both primary attempts. Documented that nano-banana-2 availability is account/region-dependent on KIE.
+- KNOWN-ISSUES.md: new section "KIE nano-banana-2 image slug is account/region-dependent (422)" with symptom, root cause, the wired fallback workaround, and a note that this is KIE provisioning behavior, not an OpenClaw defect.
+- 14-google-workspace-integration/INSTALL.md: Troubleshooting row for "google-api.js throws ENOENT on a gogcli/sa-*.json file", pointing operators to the Python SA+DWD path (GOOGLE_APPLICATION_CREDENTIALS + GCP_IMPERSONATE_USER) documented in TOOLS.md. (google-api.js is a local-only Mac helper and is not shipped in this repo, so this is a docs note, not a code change.)
+- Version bumped to v10.14.8 across all 8 tracked files; resynced the lagging role-library files (skill-version.txt / _index.json / _qc-summary.md were at 10.14.5).
+
+### Files touched
+
+- 37-zhc-closeout/scripts/generate-celebration-video.sh
+- 37-zhc-closeout/scripts/generate-infographics.sh
+- KNOWN-ISSUES.md
+- 14-google-workspace-integration/INSTALL.md
+- version, install.sh, README.md, update-skills.sh, DIRECT-TO-AGENT-UPDATE-MESSAGE.md, 23-ai-workforce-blueprint/{skill-version.txt, templates/role-library/_index.json, templates/role-library/_qc-summary.md}
+
 ## [v10.14.7]  -  2026-05-26  -  Count-agnostic indexing milestone + documented DeepSeek V4 Pro
 
 ### Why

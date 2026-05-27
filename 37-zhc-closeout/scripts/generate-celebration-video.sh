@@ -129,6 +129,9 @@ submit_gemini_omni() {
       aspect="16:9"
       ;;
   esac
+  # KIE gemini-omni-video requires duration as a STRING ("8"), not an integer - returns error otherwise (Teresa launch 2026-05-27).
+  # We use jq --arg (NOT --argjson) for duration so it is always emitted as a
+  # quoted JSON string. aspect_ratio stays "16:9" (validated above).
   local input_obj
   if [[ -n "$INFOGRAPHIC1_URL" && "$INFOGRAPHIC1_URL" != "null" && "$INFOGRAPHIC1_URL" != file://* ]]; then
     input_obj=$(jq -n \

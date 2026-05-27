@@ -19,6 +19,13 @@
 #        v10.X.4: corrected slug from gemini-3-1-flash-image (KIE 422,
 #        not supported) to nano-banana-2. Confirmed accepted by
 #        api.kie.ai/api/v1/jobs/createTask on 2026-05-26.
+#        v10.X.8: nano-banana-2 availability is ACCOUNT/REGION-dependent on
+#        KIE. It returned 422 "model name not supported" on Teresa Pelham's
+#        KIE account on 2026-05-27 even though it worked on other accounts.
+#        This is expected. nano-banana-2 stays the PRIMARY; the retry loop
+#        falls back to gpt-image-2-text-to-image (the proven safety net) on
+#        attempt 3, which produced Teresa's Inf #2 successfully. Do NOT change
+#        the primary slug; the fallback chain is the fix. See KNOWN-ISSUES.md.
 #
 # Both shapes of .departments (array AND keyed object) are tolerated, since
 # production state files have been observed using both.
@@ -275,7 +282,17 @@ while (( attempt < 3 )); do
   submit_resp=$(submit_job "$model" || true)
   task_id=$(echo "$submit_resp" | jq -r '.data.taskId // empty' 2>/dev/null)
   if [[ -z "$task_id" ]]; then
-    log "WARN" "attempt $attempt: submit failed, response: $(echo "$submit_resp" | head -c 200)"
+    submit_err=$(echo "$submit_resp" | head -c 300)
+    log "WARN" "attempt $attempt: submit failed, response: $submit_err"
+    # nano-banana-2 availability is account/region-dependent on KIE. If the
+    # primary slug is rejected as not-supported (422 "model name not
+    # supported"), do not waste a second primary attempt; jump straight to the
+    # gpt-image-2-text-to-image safety net. (Teresa launch 2026-05-27.)
+    if [[ "$model" == "$PRIMARY_MODEL" && "$model" != "$FALLBACK_MODEL" ]] \
+       && echo "$submit_err" | grep -qiE 'model name not supported|not supported|422'; then
+      log "WARN" "attempt $attempt: primary model '$model' not supported on this KIE account; switching to fallback '$FALLBACK_MODEL'"
+      PRIMARY_MODEL="$FALLBACK_MODEL"
+    fi
     sleep $((2 ** attempt))
     continue
   fi

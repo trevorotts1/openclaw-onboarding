@@ -424,6 +424,7 @@ All items checked? Your Google Workspace integration is ready to use.
 | "command not found: gws" | Not installed or not in PATH | Reinstall with npm install -g @googleworkspace/cli. Close and reopen terminal. |
 | Gmail fails but other services work | OAuth Consent Screen missing | Configure OAuth Consent Screen. Wait 15-30 minutes. |
 | Changes not taking effect | Propagation delay | Wait 15 minutes to 24 hours. Gmail scopes are especially slow. |
+| google-api.js throws ENOENT on a `gogcli/sa-*.json` file | The per-user SA export under `~/Library/Application Support/gogcli/sa-<base64-email>.json` is missing (it is a local-only Mac helper artifact, not created by this onboarding) | Do not rely on the per-user SA file. Use the Python SA+DWD path: set `GOOGLE_APPLICATION_CREDENTIALS` to the gcp-service-account.json and `GCP_IMPERSONATE_USER` to the target user, which does not need the per-user file. This path is documented in TOOLS.md and is what succeeds for Drive upload + Gmail send. |
 
 ---
 

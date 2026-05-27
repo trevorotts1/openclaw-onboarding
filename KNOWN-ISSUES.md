@@ -76,6 +76,34 @@ non-`none` recovery instead of merely observing the wedge.
 
 ---
 
+## 3. KIE nano-banana-2 image slug is account/region-dependent (422)
+
+**Symptom:** Skill 37 closeout Infographic #2 (the "How Work Flows" diagram)
+fails on submit with a KIE 422 like `model name not supported` for
+`nano-banana-2`, even though the same slug works on other KIE accounts.
+Seen on Teresa Pelham's KIE account 2026-05-27; it had worked elsewhere in
+a prior release.
+
+**Root cause:** Model availability on KIE is gated per account/region.
+`nano-banana-2` (Gemini 3.1 Flash Image) is not enabled for every KIE
+account, so a request that is valid on one account returns 422 on another.
+This is a KIE provisioning behavior, not a slug typo.
+
+**Workaround (already wired into the repo):**
+`37-zhc-closeout/scripts/generate-infographics.sh` keeps `nano-banana-2` as
+the PRIMARY model and falls back to `gpt-image-2-text-to-image` (the proven
+safety net) when the primary is rejected. As of v10.X.8 the retry loop also
+detects a `model name not supported` / 422 submit error and switches to the
+fallback EARLY instead of burning both primary attempts. Override the primary
+explicitly with `ZHC_IMAGE_MODEL` if a given account has a different preferred
+slug. Do NOT remove `nano-banana-2` as the primary; it works on most accounts
+and renders text better than the fallback.
+
+**Upstream ask:** none (KIE account provisioning, not an OpenClaw defect).
+The fallback chain is the durable fix.
+
+---
+
 ## Filing upstream
 
 Both issues are core-runtime, not onboarding. File against the openclaw
