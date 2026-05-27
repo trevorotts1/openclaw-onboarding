@@ -588,6 +588,35 @@ Setup is complete and ready for use.
 | Perplexity Sonar Pro | research | Deep research, multi-step, fact-checking | Medium |
 | Perplexity Sonar | sonar | Quick web lookups, single questions | Low |
 | Gemini 3.1 Flash Lite | flashlite | Cheapest option, fallback | Very Low |
+| DeepSeek V4 Pro | deepseek-v4 | High-capability reasoning, build-quality work (VERIFIED 2026-05-26) | Low-Medium |
+
+---
+
+## Recommended High-Capability Reasoning Model: DeepSeek V4 Pro
+
+`openrouter/deepseek/deepseek-v4-pro` is a recommended high-capability reasoning model for build-quality work. It was registered, validated, and live-tested working via OpenRouter on 2026-05-26 (returned MODEL_WORKS).
+
+Add it additively to the `agents.defaults.models` section (do NOT remove existing models):
+
+```json
+"openrouter/deepseek/deepseek-v4-pro": {
+  "alias": "DeepSeek V4 Pro",
+  "params": { "temperature": 0.4, "reasoning": { "effort": "high" } }
+}
+```
+
+For build-quality work, set it as the primary model and default thinking to high:
+
+```json
+"agents": {
+  "defaults": {
+    "model": { "primary": "openrouter/deepseek/deepseek-v4-pro" },
+    "thinkingDefault": "high"
+  }
+}
+```
+
+Verified working via OpenRouter 2026-05-26 with thinking=high, temperature 0.4.
 
 ---
 

@@ -1,3 +1,14 @@
+## [v10.14.7]  -  2026-05-26  -  Count-agnostic indexing milestone + documented DeepSeek V4 Pro
+
+### Why
+
+Two doc-rot / coverage fixes. (1) The Gemini Engine INDEXING PROTOCOL "Final" milestone in AGENTS.md hardcoded a skill count ("After ALL 33 active skills complete"). Any hardcoded count goes stale the moment a folder is added, archived, or renumbered. (2) DeepSeek V4 Pro was registered, validated, and live-tested working on a client Mac mini today but was not documented as a recommended model option for future onboardings.
+
+### What
+
+- AGENTS.md (Gemini Engine INDEXING PROTOCOL > Indexing Milestones): replaced the hardcoded "Final | After ALL 33 active skills complete" with a count-agnostic instruction: "After the last active skill in the sequence completes (read the live ~/.openclaw/onboarding/ folder list; skip any folder suffixed -ARCHIVED)". No new number is hardcoded, so it cannot rot.
+- 12-openrouter-setup/INSTALL.md: documented openrouter/deepseek/deepseek-v4-pro as a recommended high-capability reasoning model. Added a Model Reference table row and a dedicated "Recommended High-Capability Reasoning Model: DeepSeek V4 Pro" section with the exact verified config (alias "DeepSeek V4 Pro", temperature 0.4, reasoning effort high) plus guidance to set it as agents.defaults.model.primary with agents.defaults.thinkingDefault "high" for build-quality work. Verified working via OpenRouter 2026-05-26 (returned MODEL_WORKS). Additive only; no existing models removed.
+
 ## [v10.14.6]  -  2026-05-26  -  Recovery knobs: embeddings fallback + agent stall timeout
 
 ### Why

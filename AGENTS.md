@@ -155,7 +155,7 @@ They are not interchangeable, and the audit should NEVER ding the install docs f
 | **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions indexed |
-| **Final** | After ALL 33 active skills complete | Complete system index |
+| **Final** | After the last active skill in the sequence completes (read the live `~/.openclaw/onboarding/` folder list; skip any folder suffixed `-ARCHIVED`) | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Incremental update |
 
 ### Standard Indexing Commands
