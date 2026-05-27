@@ -1,5 +1,19 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.1.3] - 2026-05-27 - Mandatory 8.5 quality gate (shipped with onboarding v10.14.10)
+
+Systemic requirement from Trevor: every ZHC closeout must RATE + QC each deliverable and only deliver to the client when it scores at least 8.5/10.
+
+### A. New QUALITY-GATE.md
+The mandatory 8.5 rubric + per-artifact workflow: generate -> self-rate 1-10 -> QC checks -> if score < 8.5 OR any QC check fails, iterate/regenerate and re-rate -> only when >= 8.5 AND all QC pass, deliver. Org Chart rubric REQUIRES visible connector-line reporting hierarchy (Owner -> CEO -> cluster headers -> department boxes) reading as a true org chart, not a grid of cards (the #1 historical failure), plus legible labels, role pills, full branding, full-canvas no-overflow, deterministic HTML/Playwright render. Flow Diagram rubric: industry-specific imagery, numbered 5-step left-to-right, finished/approved deliverable (no gift box), branding. Docs rubric: all 9 doctrine sections, real client-specific content (no placeholders), client-specific DMAIC, Book-to-Persona scoring matrix, brand voice, resolving links.
+
+### B. Gate wired into run-closeout.sh
+New ZHC_QUALITY_MIN (default 8.5) + ZHC_QUALITY_MAX_ATTEMPTS (default 3) env knobs and a generate_rate_gate() helper. Steps 2 (org chart), 3 (flow diagram), and 5 (Notion docs) now run a RATE + QC + GATE loop: the agent writes .qualityRatings.<org_chart|flow_diagram|closeout_docs>.{score,qc,note}; the artifact is deliver-eligible only at score >= 8.5 with qc=pass; below the bar it regenerates up to the max attempts, then is HELD (added to .qualityHeld, operator escalated) rather than delivered. The Telegram step exports the held list so held artifacts are skipped, never shipped subpar.
+
+### C. generate-infographics.sh + SKILL.md + INSTRUCTIONS.md
+generate-infographics.sh header + both success paths reference QUALITY-GATE.md and log a self-rate reminder. SKILL.md and INSTRUCTIONS.md gained a prominent MANDATORY section pointing to QUALITY-GATE.md. skill-version.txt 1.1.0 -> 1.1.3.
+
+
 ## [1.1.2] - 2026-05-27 - Infographics upgraded to 10/10 (shipped with onboarding v10.14.9 / v10.15.9)
 
 Re-graded the two closeout infographics against a true 10/10 bar after Teresa Pelham's launch.

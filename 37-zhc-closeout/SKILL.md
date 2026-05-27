@@ -6,12 +6,19 @@
 
 Required read order:
 1. SKILL.md (this file)
-2. INSTRUCTIONS.md — runtime execution guide + state machine + 6-step pipeline
-3. INSTALL.md — one-time setup steps (KIE_API_KEY, NOTION_API_TOKEN, budget caps)
-4. CORE_UPDATES.md — what gets appended to AGENTS.md
-5. CHANGELOG.md — change history
+2. QUALITY-GATE.md - the MANDATORY 8.5 rate + QC gate every deliverable must pass
+3. INSTRUCTIONS.md — runtime execution guide + state machine + 6-step pipeline
+4. INSTALL.md — one-time setup steps (KIE_API_KEY, NOTION_API_TOKEN, budget caps)
+5. CORE_UPDATES.md — what gets appended to AGENTS.md
+6. CHANGELOG.md — change history
 
 Per N3 ("read before act"), do not skip. Per N4, follow steps in declared order.
+
+## MANDATORY: The 8.5 Quality Gate
+
+**Rate + QC EVERY closeout deliverable; do not deliver below 8.5; iterate until it passes. See QUALITY-GATE.md.**
+
+This is a systemic, non-optional requirement from Trevor. No closeout artifact (workforce org chart, how-work-flows diagram, Notion closeout docs) may be delivered to a client until the running agent has RATED it 1-10 against the rubric in `QUALITY-GATE.md` and it scores at least **8.5** AND passes its QC checks. If an artifact scores below 8.5, the agent MUST iterate/regenerate (edit the HTML/CSS for the org chart, re-prompt or switch model for the AI flow image, rewrite for docs) and re-rate until it reaches 8.5 or higher, THEN deliver. If it still cannot pass after the max attempts, HOLD the artifact (do not deliver it) and flag for human review. The org-chart rubric's #1 requirement is a TRUE reporting tree with visible connector lines (Owner -> CEO -> clusters -> departments), not a grid of cards. Below 8.5 is never shipped.
 
 ## What This Skill Is About
 
@@ -179,6 +186,7 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 | File | Purpose |
 |------|---------|
 | `SKILL.md` | You are here — overview, pipeline placement, page-tree spec |
+| `QUALITY-GATE.md` | MANDATORY 8.5 rate + QC gate: rubrics + workflow every deliverable must pass before client delivery |
 | `INSTRUCTIONS.md` | Runtime guide: state machine, 6-step pipeline, retry/fail handling |
 | `INSTALL.md` | One-time setup (env checks, skill registration) |
 | `CORE_UPDATES.md` | Lines appended to workspace AGENTS.md |

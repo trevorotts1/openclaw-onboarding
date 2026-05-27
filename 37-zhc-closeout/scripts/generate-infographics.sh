@@ -29,6 +29,17 @@
 #
 # Both shapes of .departments (array AND keyed object) are tolerated, since
 # production state files have been observed using both.
+#
+# 8.5 QUALITY GATE (MANDATORY -- see ../QUALITY-GATE.md): this script GENERATES
+# the artifact. After it returns, the running agent MUST self-rate the artifact
+# 1-10 against the rubric in QUALITY-GATE.md (Org Chart rubric for structure --
+# visible connector-line reporting tree is the #1 requirement; Flow Diagram
+# rubric for workflow -- industry-specific imagery, no gift box) and QC it,
+# writing .qualityRatings.<org_chart|flow_diagram>.{score,qc,note} into state.
+# run-closeout.sh enforces the loop: below ZHC_QUALITY_MIN (default 8.5) means
+# regenerate + re-rate up to ZHC_QUALITY_MAX_ATTEMPTS, else HOLD for human
+# review. Below 8.5 is NEVER delivered to the client. When invoked standalone,
+# the agent is still responsible for rating before any delivery.
 
 set -u
 
@@ -171,6 +182,7 @@ if [[ "$KIND" == "structure" ]]; then
       # rather than a file:// URL (which Telegram cannot fetch).
       state_set ".infographic1LocalPath = \"$OUTPUT_PNG\""
       log "INFO" "wrote ${STATE_FIELD}=file://$OUTPUT_PNG (local path persisted)"
+      log "INFO" "8.5-GATE: org chart generated. Agent must now self-rate 1-10 vs the Org Chart rubric in QUALITY-GATE.md (visible connector-line reporting tree required) + QC, then write .qualityRatings.org_chart.{score,qc,note}. Do NOT deliver below 8.5 -- regenerate (edit index.html.template) and re-rate."
       exit 0
     fi
     log "ERROR" "renderer exited 0 but produced no output at $OUTPUT_PNG"
@@ -339,4 +351,5 @@ fi
 
 state_set ".${STATE_FIELD} = \"$result_url\""
 log "INFO" "wrote ${STATE_FIELD}=$result_url to state file"
+log "INFO" "8.5-GATE: flow diagram generated. Agent must now self-rate 1-10 vs the Flow Diagram rubric in QUALITY-GATE.md (industry-specific imagery, no gift box, branded) + QC, then write .qualityRatings.flow_diagram.{score,qc,note}. Do NOT deliver below 8.5 -- re-prompt/switch model and re-rate."
 exit 0

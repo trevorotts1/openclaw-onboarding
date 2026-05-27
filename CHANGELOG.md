@@ -1,3 +1,26 @@
+## [v10.14.10]  -  2026-05-27  -  Skill 37 ZHC: mandatory 8.5 quality gate (rate + QC every deliverable before client delivery)
+
+### Why
+
+Systemic requirement from Trevor: every ZHC closeout must RATE + QC each deliverable and only deliver to the client when it scores at least 8.5/10. Before this, the closeout pipeline generated the org chart, flow diagram, and Notion docs and shipped them straight to the client with no rating or QC gate, so subpar artifacts (notably the old org chart that read as a grid of cards instead of a true reporting tree) could reach clients. This adds an enforced rate -> QC -> gate -> iterate loop so below-8.5 work is regenerated, and held for human review if it still cannot pass, rather than shipped.
+
+### What
+
+- 37-zhc-closeout/QUALITY-GATE.md: NEW. The mandatory 8.5 rubric + per-artifact workflow (generate -> self-rate 1-10 -> QC -> if < 8.5 or any QC fails, iterate + re-rate -> only when >= 8.5 AND all QC pass, deliver). Org Chart rubric REQUIRES visible connector-line reporting hierarchy (Owner -> CEO -> cluster headers -> department boxes) and a true org chart, not a grid of cards (the #1 historical failure mode); plus legible labels, role pills, full branding, full-canvas no-overflow, deterministic HTML/Playwright render. Flow Diagram rubric requires industry-specific imagery, numbered 5-step left-to-right progression, a finished/approved deliverable (never a gift box), and full branding. Docs rubric requires all 9 doctrine sections, real client-specific content (no placeholders), client-specific Six Sigma DMAIC, the Book-to-Persona scoring matrix, brand-voice writing, and resolving links.
+- 37-zhc-closeout/scripts/run-closeout.sh: wired the gate in. New ZHC_QUALITY_MIN (default 8.5) and ZHC_QUALITY_MAX_ATTEMPTS (default 3) env knobs, a generate_rate_gate() helper, and a RATE + QC + GATE step around the org chart (Step 2), flow diagram (Step 3), and Notion docs (Step 5). Each artifact must clear .qualityRatings.<key>.{score,qc,note} (agent-written) at >= 8.5 with qc=pass before it is deliver-eligible; otherwise it regenerates up to the max attempts, then is HELD (added to .qualityHeld, escalated to the operator) instead of delivered. The Telegram delivery step exports the held list so held artifacts are skipped, never shipped subpar.
+- 37-zhc-closeout/scripts/generate-infographics.sh: header + both success paths now reference QUALITY-GATE.md and log an explicit reminder that the agent must self-rate the just-generated artifact before delivery.
+- 37-zhc-closeout/SKILL.md + INSTRUCTIONS.md: prominent MANDATORY section pointing to QUALITY-GATE.md ("rate + QC every closeout deliverable; do not deliver below 8.5; iterate until it passes").
+- 37-zhc-closeout/skill-version.txt: 1.1.0 -> 1.1.3.
+
+### Files touched
+
+- 37-zhc-closeout/QUALITY-GATE.md (new)
+- 37-zhc-closeout/scripts/run-closeout.sh
+- 37-zhc-closeout/scripts/generate-infographics.sh
+- 37-zhc-closeout/SKILL.md
+- 37-zhc-closeout/INSTRUCTIONS.md
+- 37-zhc-closeout/skill-version.txt
+
 ## [v10.14.9]  -  2026-05-27  -  Skill 37 ZHC infographics upgraded to 10/10: org-chart connector tree + industry-aware flow prompt
 
 ### Why

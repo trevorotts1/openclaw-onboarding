@@ -4,6 +4,14 @@ This is the execution guide. Use it when `.workforce-build-state.json` shows the
 
 ---
 
+## MANDATORY: Rate + QC every deliverable (the 8.5 Quality Gate)
+
+**Rate + QC every closeout deliverable; do not deliver below 8.5; iterate until it passes. See QUALITY-GATE.md.**
+
+Before any artifact reaches the client (Telegram, media library, GHL, Drive), the agent MUST self-rate it 1-10 against the rubric in `QUALITY-GATE.md` and QC it. The per-artifact workflow is: generate -> self-rate 1-10 -> QC checks -> if score < 8.5 OR any QC check fails, iterate/regenerate and re-rate -> only when >= 8.5 AND all QC checks pass, deliver. The agent writes its score + QC verdict + a one-line justification into `.qualityRatings.<org_chart|flow_diagram|closeout_docs>.{score,qc,note}` in the state file; `run-closeout.sh` loops the generator up to `ZHC_QUALITY_MAX_ATTEMPTS` (default 3) and HOLDS (does not deliver) anything that cannot clear `ZHC_QUALITY_MIN` (default 8.5), flagging it for human review. The org chart's #1 requirement is a TRUE reporting tree with visible connector lines (Owner -> CEO -> clusters -> departments), not a grid of cards. Below 8.5 is never shipped.
+
+---
+
 ## 0. Pre-flight Checks
 
 Before starting Step 1, verify ALL of the following:
