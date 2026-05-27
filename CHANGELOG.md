@@ -1,3 +1,21 @@
+## [v10.14.9]  -  2026-05-27  -  Skill 37 ZHC infographics upgraded to 10/10: org-chart connector tree + industry-aware flow prompt
+
+### Why
+
+The two ZHC closeout infographics were shipping at ~6.5/10 (org chart) and ~7.5/10 (flow). Teresa Pelham's assets were re-graded against a true 10/10 bar. The org chart read as four flat category cards with a single stub line under the CEO node and NO visible reporting hierarchy, so it did not read as an org chart at all. The flow diagram was generic (could have been any business) and its final stage used a gift-box icon, which is wrong for almost every client (a grant firm delivers an approved grant, not a present). Both gaps are now fixed systemically so EVERY future closeout produces 10/10 output, not just Teresa's.
+
+### What
+
+- 37-zhc-closeout/templates/workforce-org-chart/index.html.template: full "true-tree" rebuild. The chart now draws VISIBLE connector lines fanning Owner -> CEO -> a horizontal bus -> each cluster header -> a per-cluster branch spine down to every department box, with junction dots. Connectors are drawn by MEASURING real on-screen positions (getBoundingClientRect) after the depts render, so the tree is correct for any client (2 depts or 22, 1 visible cluster or 4) with no hardcoded coordinates. Added a fitDeptCards() pass that auto-sizes department cards so the busiest cluster never overflows the 1080px canvas (stress-tested at 5+ depts per cluster). Department boxes gained an optional head/title line and a legible colored role pill. render.mjs and cluster-classifier.js are unchanged (the JSON-injection contract is preserved).
+- 37-zhc-closeout/templates/infographic-2-prompt.md: rewritten to be INDUSTRY-AWARE. The prompt now templates in {{INDUSTRY}} and {{WHAT_THEY_DELIVER}} and instructs the model to weave industry-specific visual language through every stage. Stage 5 is now an APPROVED / FINISHED deliverable (the real thing the business ships, stamped approved) with an explicit "ABSOLUTELY NO gift box / present / ribbon / wrapped package" directive. Added full-canvas composition and clean single-title directives, plus a reusable "lessons that take this from 7.5 to 10" block.
+- 37-zhc-closeout/scripts/generate-infographics.sh: now derives WHAT_THEY_DELIVER from state (.whatYouDeliver / .whatTheyDeliver / .coreDeliverable) with an industry-keyed fallback (grant -> "approved, funded grant", real estate -> "closed listing package", etc.) and substitutes the new {{WHAT_THEY_DELIVER}} token into the prompt. INDUSTRY already came from .workforce-build-state.json .industry.
+
+### Files touched
+
+- 37-zhc-closeout/templates/workforce-org-chart/index.html.template
+- 37-zhc-closeout/templates/infographic-2-prompt.md
+- 37-zhc-closeout/scripts/generate-infographics.sh
+
 ## [v10.14.8]  -  2026-05-27  -  Teresa Pelham ZHC launch fixes: Gemini duration string, nano-banana-2 fallback, google-api.js ENOENT note
 
 ### Why

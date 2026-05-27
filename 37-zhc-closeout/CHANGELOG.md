@@ -1,5 +1,16 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.1.2] - 2026-05-27 - Infographics upgraded to 10/10 (shipped with onboarding v10.14.9 / v10.15.9)
+
+Re-graded the two closeout infographics against a true 10/10 bar after Teresa Pelham's launch.
+
+### A. Org chart: true reporting tree with visible connector lines
+`templates/workforce-org-chart/index.html.template` rebuilt. Previously four flat cluster cards with a single stub line under the CEO; it read as a grid, not an org chart. Now: Owner -> CEO -> horizontal bus -> each cluster header -> per-cluster branch spine down to every department, with junction dots. Lines are drawn by measuring real positions (getBoundingClientRect) so the tree is correct for any dept count. New fitDeptCards() auto-sizes cards so dense clusters (5+ depts) never overflow the canvas. render.mjs / cluster-classifier.js unchanged.
+
+### B. Flow diagram: industry-aware prompt, no gift box
+`templates/infographic-2-prompt.md` rewritten to template in {{INDUSTRY}} and {{WHAT_THEY_DELIVER}} so imagery is business-specific. Stage 5 is now an APPROVED / FINISHED deliverable with an explicit no-gift-box / no-present directive, plus full-canvas composition and a reusable 7.5-to-10 guidance block. `scripts/generate-infographics.sh` derives WHAT_THEY_DELIVER from state (.whatYouDeliver / .whatTheyDeliver / .coreDeliverable) with an industry-keyed fallback and substitutes the new token.
+
+
 ## [1.1.1] - 2026-05-26 - Skill 37 v4 production bug fixes (shipped with onboarding v10.14.4 / v10.15.4)
 
 Five bugs caught when re-firing Evelyn's phantom-completed closeout against v10.X.3.

@@ -205,6 +205,29 @@ if [[ -z "$EXAMPLE_TASK" ]]; then
   esac
 fi
 
+# What the business actually delivers, used for workflow infographic Stage 5.
+# This is the single biggest driver of "industry-aware vs generic" output: the
+# Stage 5 deliverable icon must be the REAL thing this company ships (an
+# approved grant, a funded proposal, a closed listing, a campaign report) and
+# never a generic gift box. Source order:
+#   1. explicit state field .whatYouDeliver / .whatTheyDeliver / .coreDeliverable
+#   2. industry-derived sensible default (keeps generic clients on-theme)
+#   3. last resort: "finished, approved deliverable"
+WHAT_THEY_DELIVER=$(state_get '.whatYouDeliver')
+[[ -z "$WHAT_THEY_DELIVER" ]] && WHAT_THEY_DELIVER=$(state_get '.whatTheyDeliver')
+[[ -z "$WHAT_THEY_DELIVER" ]] && WHAT_THEY_DELIVER=$(state_get '.coreDeliverable')
+if [[ -z "$WHAT_THEY_DELIVER" ]]; then
+  case "$INDUSTRY" in
+    *grant*|*funding*|*nonprofit*|*non-profit*) WHAT_THEY_DELIVER="approved, funded grant" ;;
+    *healthcare*|*health*|*patient*|*medical*) WHAT_THEY_DELIVER="completed patient deliverable" ;;
+    *real\ estate*|*realtor*|*property*) WHAT_THEY_DELIVER="closed listing package" ;;
+    *coaching*|*consulting*) WHAT_THEY_DELIVER="finished client roadmap" ;;
+    *marketing*|*agency*) WHAT_THEY_DELIVER="published campaign" ;;
+    *legal*|*law*) WHAT_THEY_DELIVER="finalized legal document" ;;
+    *) WHAT_THEY_DELIVER="finished, approved deliverable" ;;
+  esac
+fi
+
 PROMPT_RAW=$(cat "$TEMPLATE")
 PROMPT=$(printf '%s' "$PROMPT_RAW" \
   | sed "s|{{COMPANY_NAME}}|${COMPANY_NAME}|g" \
@@ -214,6 +237,7 @@ PROMPT=$(printf '%s' "$PROMPT_RAW" \
   | sed "s|{{ROLE_COUNT}}|${ROLE_COUNT}|g" \
   | sed "s|{{BRAND_COLOR}}|${BRAND_COLOR}|g" \
   | sed "s|{{INDUSTRY}}|${INDUSTRY}|g" \
+  | sed "s|{{WHAT_THEY_DELIVER}}|${WHAT_THEY_DELIVER}|g" \
   | sed "s|{{EXAMPLE_TASK}}|${EXAMPLE_TASK}|g")
 
 PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-nano-banana-2}"
