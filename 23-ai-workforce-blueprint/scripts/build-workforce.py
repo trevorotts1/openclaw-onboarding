@@ -147,6 +147,41 @@ CANONICAL_ID_ALIASES = {
     "paid-advertisement": "paid-ads",
 }
 
+# BUG 1 FIX (variant-slug phantom duplicate): some clients store a canonical
+# department under a VARIANT slug that is neither the canonical id nor its
+# single CANONICAL_ID_ALIASES value (e.g. "legal-compliance" instead of
+# "legal", "finance-ops" instead of "billing-finance"). Without this map the
+# canonical-floor "already present?" check misses the variant and auto-adds a
+# phantom DUPLICATE department. This map is used ONLY for the membership /
+# "already present?" check below -- never for metadata inheritance.
+# canonical-id -> list of additional equivalent slugs the client might use.
+CANONICAL_VARIANT_SLUGS = {
+    "legal": ["legal-compliance", "compliance"],
+    "billing-finance": ["finance-ops", "finance", "billing-and-finance"],
+    "graphics": ["graphics-design", "design", "graphic-design"],
+    "customer-support": ["customer-service", "support-service", "cust-support"],
+}
+
+
+def _canonical_present(cid, selected_departments):
+    """
+    BUG 1 FIX: return True if a canonical dept `cid` is already represented in
+    `selected_departments` under ANY of its known slugs -- the canonical id
+    itself, its single CANONICAL_ID_ALIASES legacy key, OR any equivalent
+    VARIANT slug in CANONICAL_VARIANT_SLUGS. Used only for the "already
+    present?" membership test in reconcile_canonical_floor so a variant-slugged
+    dept does not trigger a phantom canonical duplicate.
+    """
+    if cid in selected_departments:
+        return True
+    legacy_key = CANONICAL_ID_ALIASES.get(cid, cid)
+    if legacy_key in selected_departments:
+        return True
+    for variant in CANONICAL_VARIANT_SLUGS.get(cid, []):
+        if variant in selected_departments:
+            return True
+    return False
+
 # Canonical IDs that have no separate alias (same key in both lists)
 CANONICAL_DIRECT = [
     "marketing", "sales", "graphics", "video", "audio", "research",
@@ -310,13 +345,11 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
         if cid in declined:
             print(f"[CANONICAL] Skipping '{cid}' -- client explicitly declined.", file=sys.stderr)
             continue
-        if cid in selected_departments:
-            # Client named this canonical dept already -> keep their real
-            # description untouched. Do not clobber.
-            continue
-        legacy_key = CANONICAL_ID_ALIASES.get(cid, cid)
-        if legacy_key in selected_departments:
-            # Client referenced it under the legacy id -> already present.
+        if _canonical_present(cid, selected_departments):
+            # BUG 1 FIX: client already has this canonical dept under its
+            # canonical id, its legacy alias, OR a known variant slug
+            # (e.g. legal-compliance, finance-ops, graphics-design). Keep their
+            # real description untouched -- do NOT auto-add a phantom duplicate.
             continue
         # Not named by the client -> inherit the canonical one-liner,
         # contextualized with the client's industry so it is not bare boilerplate.
@@ -331,9 +364,18 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
     # Client customs = anything in selected_departments that is not a canonical id
     canonical_ids = set(floor.keys())
     canonical_legacy = {CANONICAL_ID_ALIASES.get(c, c) for c in canonical_ids}
+    # BUG 1 FIX: variant slugs are canonical depts under a different name, not
+    # client customs. Fold every known variant of every canonical id into the
+    # canonical set so a variant-slugged dept is not double-counted as a custom.
+    canonical_variants = set()
+    for c in canonical_ids:
+        for v in CANONICAL_VARIANT_SLUGS.get(c, []):
+            canonical_variants.add(v)
     client_customs = [
         d for d in selected_departments
-        if d not in canonical_ids and d not in canonical_legacy
+        if d not in canonical_ids
+        and d not in canonical_legacy
+        and d not in canonical_variants
     ]
 
     if not had_reconciliation:
@@ -2295,19 +2337,49 @@ To regenerate after adding new personas (via Skill 22):
 # AGENTS.LIST MANAGEMENT
 # ============================================================
 
+def _agent_dir_for(agent_id):
+    """
+    BUG 2 FIX: derive the per-agent agentDir from the agent's UNIQUE id.
+
+    The strict OpenClaw 2026.5.22 schema (config/agent-dirs.js) requires every
+    agent in agents.list[] to resolve to a UNIQUE agentDir; sharing one causes
+    a `Duplicate agentDir detected` validation failure (and a gateway crash on
+    restart). The gateway's own default is <stateDir>/agents/<id>/agent, so we
+    mirror that here, anchored to this agent's unique id. Each dept agent gets
+    its OWN directory -- never a shared one.
+    """
+    # Platform-aware state dir: VPS uses /data/.openclaw, Mac uses ~/.openclaw.
+    # Mirrors the gateway's own default of <stateDir>/agents/<id>/agent.
+    state_root = "/data/.openclaw" if os.path.isdir("/data/.openclaw") else os.path.join(HOME, ".openclaw")
+    return os.path.join(state_root, "agents", agent_id, "agent")
+
+
 def add_agent_to_config(config, dept_id, dept_info):
     """
     Add a department head agent to openclaw.json agents.list.
 
-    v9.6.1: Every new department director agent inherits the canonical
-    sub-agent + bootstrap config block. These values are protocol gates,
-    not preferences — every agent in the workforce gets the same.
+    v10.x BUG FIXES:
+      - BUG 2 (duplicate agentDir + shared identity): each dept agent now gets
+        its OWN agentDir derived from its UNIQUE agent id, and its OWN identity
+        name straight from dept_info (per-department, never a shared
+        "Billing/Finance"). A guard refuses to write two agents sharing one
+        agentDir.
+      - BUG 4 (invalid subagents keys): the strict 2026.5.22 schema
+        (AgentEntrySchema.subagents) accepts ONLY `allowAgents` and `model`.
+        The old block wrote thinking / maxChildrenPerAgent / maxConcurrent /
+        maxSpawnDepth / timeoutSeconds (all rejected) plus top-level
+        bootstrapMaxChars / bootstrapTotalMaxChars (also rejected). Writing
+        them made `config validate` / `health` / restart FAIL. We now write
+        only schema-valid keys.
     """
-    agents_list = config.get("agents", {}).get("list", [])
+    config.setdefault("agents", {})
+    if not isinstance(config["agents"].get("list"), list):
+        config["agents"]["list"] = []
+    agents_list = config["agents"]["list"]
     agent_id = f"dept-{dept_id}"
 
-    # Check if already exists
-    existing_ids = {a.get("id") for a in agents_list}
+    # Check if already exists (idempotent)
+    existing_ids = {a.get("id") for a in agents_list if isinstance(a, dict)}
     if agent_id in existing_ids:
         return False  # Already exists, skip
 
@@ -2318,15 +2390,25 @@ def add_agent_to_config(config, dept_id, dept_info):
     # safe default that Anthropic-strips and matches v9.5.x policy.
     model = _resolve_director_model(dept_id) or "ollama/kimi-k2.6:cloud"
     workspace = os.path.join(DEPARTMENTS_DIR, dept_id)
+    agent_dir = _agent_dir_for(agent_id)
 
-    # Canonical sub-agent + bootstrap config (matches the master orchestrator
-    # values written by install.sh Step 0 in v9.4.0+).
+    # BUG 2 FIX: guard against a duplicate agentDir. If any EXISTING agent
+    # already resolves to this agent_dir under a different id, refuse to write
+    # (this is exactly what `Duplicate agentDir detected` would reject).
+    for a in agents_list:
+        if not isinstance(a, dict):
+            continue
+        existing_dir = a.get("agentDir")
+        if existing_dir and os.path.abspath(existing_dir) == os.path.abspath(agent_dir):
+            owner_id = a.get("id")
+            print(f"[CONFIG GUARD] Refusing to add '{agent_id}': agentDir "
+                  f"'{agent_dir}' already owned by '{owner_id}'. Skipping.",
+                  file=sys.stderr)
+            return False
+
+    # BUG 4 FIX: schema-valid subagents block ONLY. The strict 2026.5.22
+    # AgentEntrySchema permits exactly { allowAgents, model } under subagents.
     canonical_subagents = {
-        "thinking": "high",
-        "maxChildrenPerAgent": 20,
-        "maxConcurrent": 100,
-        "maxSpawnDepth": 5,
-        "timeoutSeconds": 1800,
         "allowAgents": ["*"],
         "model": {
             "fallbacks": [
@@ -2340,11 +2422,12 @@ def add_agent_to_config(config, dept_id, dept_info):
 
     agent_entry = {
         "id": agent_id,
+        # BUG 2 FIX: per-department identity name, never a shared one.
         "name": dept_info["head"],
         "workspace": workspace,
+        # BUG 2 FIX: unique per-agent agentDir derived from the unique id.
+        "agentDir": agent_dir,
         "model": model,
-        "bootstrapMaxChars": 200000,
-        "bootstrapTotalMaxChars": 400000,
         "subagents": canonical_subagents,
     }
 

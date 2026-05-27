@@ -1,3 +1,15 @@
+## [v10.14.12]  -  2026-05-27  -  Workforce build pipeline: variant-slug phantom-dup fix + per-agent agentDir/identity + schema-valid subagents block
+
+### Why
+
+Three confirmed bugs surfaced during a live 5-client remediation in the ZHC onboarding build pipeline. All three are fixed in 23-ai-workforce-blueprint/scripts/build-workforce.py (the dept-agent registration path). No prose-only "Phase" enforcement: these are code changes verified against the strict OpenClaw 2026.5.22 config schema.
+
+### Fixed
+
+- Bug 1 (variant-slug phantom duplicate) -- reconcile_canonical_floor() previously tested only the canonical id and its single CANONICAL_ID_ALIASES value when deciding if a canonical dept was already present. A client storing a dept under a VARIANT slug (legal-compliance vs legal, finance-ops vs billing-finance, graphics-design vs graphics, customer-service vs customer-support) matched neither, so the canonical dept was auto-added as a phantom DUPLICATE. Added CANONICAL_VARIANT_SLUGS (canonical-id -> equivalent slugs) and a _canonical_present() helper used ONLY for the "already present?" membership check (never for metadata inheritance). The client-customs computation now also folds variant slugs into the canonical set so a variant dept is not double-counted. The canonical-floor standard-unless-declined behavior is unchanged. Idempotent.
+- Bug 2 (duplicate agentDir + shared identity) -- add_agent_to_config() now writes each dept agent its OWN agentDir derived from its UNIQUE agent id (platform-aware: /data/.openclaw on VPS, ~/.openclaw on Mac, mirroring the gateway default <stateDir>/agents/<id>/agent) and its OWN identity name from dept_info["head"] (never a shared "Billing/Finance"). Added a guard that refuses to write two agents resolving to the same agentDir (the exact condition the gateway rejects with "Duplicate agentDir detected").
+- Bug 4 (invalid subagents config keys, HIGH severity) -- add_agent_to_config() previously wrote a subagents block with thinking / maxChildrenPerAgent / maxConcurrent / maxSpawnDepth / timeoutSeconds plus top-level bootstrapMaxChars / bootstrapTotalMaxChars, all of which the strict 2026.5.22 AgentEntrySchema (.strict()) REJECTS -- making `openclaw config validate` / health / restart fail (a restart crashes the gateway). The block now writes ONLY schema-valid keys (subagents.allowAgents + subagents.model); the bootstrap* keys are removed. Verified: a representative dept-agent entry now passes AgentEntrySchema.safeParse().
+
 ## [v10.14.11]  -  2026-05-27  -  Canonical department floor + Command Center build-state sync + operator closeout summary + conditional GHL media upload
 
 ### Why
