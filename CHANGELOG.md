@@ -1,3 +1,39 @@
+## [v10.15.0]  -  2026-05-28  -  Add Skill 38 — Conversational AI System (v5.14 playbook packaged as installable skill)
+
+### Why
+
+Christy's v5.14 conversational AI playbook (~8,800 lines, 14 version iterations) — the conversational AI BRAIN that runs on top of skill 29 (GHL Convert and Flow) — needed to ship as a real installable skill instead of a standalone document. Skill 38 packages the full v5.14 in the same shape as skills 23/29/37: protocols, templates, scripts, references, plus the standard SKILL.md / INSTALL.md / INSTRUCTIONS.md / EXAMPLES.md / CORE_UPDATES.md / CHANGELOG.md / skill-version.txt.
+
+### Added
+
+- New skill folder `38-conversational-ai-system/` (v1.0.0). Builds the conversational AI BRAIN on top of skill 29 — sales best practices (BANT/MEDDIC/SPICED + 6 objection patterns + buyer-signal scoring + pricing reveal rules), intelligent follow-up (10 touchpoints over 30 days; first 5 in first 72 hours), dual-mode customer service + support, typed knowledge bases (business/products/sales/conversations), intelligent playbook routing, proactive features suite, weekly + monthly self-tuning, model version freshness, PII scrubbing, prompt-injection protection, conversation analytics, smart booking, GHL + Stripe discount codes, Shopify integration.
+- 27 protocol files under `protocols/` (verbatim from v5.14 source playbook). `humanizer-protocol.md` is intentionally NOT shipped — skill 19 owns it; skill 38 references it always-on via AGENTS.md Step 2.8.
+- 8 customer journey templates under `templates/journey-templates/` (`coach/journey.md` fully detailed per playbook Step 9.28-C; e-commerce, saas, service-provider, course-creator, real-estate, consulting, wellness as stubs with verbatim type-specific bullets from playbook Step 9.28-D). Plus `registry.md`.
+- 9 install scripts under `scripts/` (00-verify-prerequisites, 01-locate-master-files-folder, 02-create-knowledgebases, 03-create-journey-templates, 04-register-crons, 05-update-agents-md, 06-append-memory-rules, 07-stripe-setup-wizard, 08-shopify-setup-wizard). All idempotent, OS-aware (Darwin + Linux), executable.
+- 7 reference documents under `references/`: ghl-coupons-api.md, stripe-coupons-api.md, stripe-webhooks-reference.md, shopify-graphql-reference.md, sales-frameworks-deep-dive.md, cloudflare-tunnel-troubleshooting.md, plus the full v5.14 source playbook (`v5.14-source-playbook.md`, 8,797 lines, verbatim) and the strategic roadmap (`conversational-ai-strategic-roadmap.md`).
+- 4 cron jobs registered at install time: `weekly-tune-up` (Sun 2am), `proactive-suggestions-scan` (Sat 11pm), `model-version-freshness` (Sat 11:30pm), `monthly-comprehensive-review` (1st of month 3am).
+- AGENTS.md updates: Steps 1.7, 1.8, 1.9, 2.8 inserted via marker block; Step 1.75 upgraded backward-compatibly.
+- MEMORY.md design rules 6-14 appended via marker block (rules 1-5 stay with skills 19/29).
+- `install.sh`: added `install_skill_38_conversational_ai_system` function + dispatch immediately after `install_skill_37_zhc_closeout`. Idempotent skill-version.txt diff check.
+- README.md inventory table: skill 38 row added.
+
+### Prerequisites (verified at runtime by skill 38's own 00-verify-prerequisites.sh)
+
+- Skill 05 (GHL Setup)
+- Skill 10 (GitHub Setup, latest version)
+- Skill 19 (Humanizer, always-on)
+- Skill 29 (GHL Convert and Flow, Convert and Flow connected to operator's GHL location)
+
+### What this PR does NOT touch
+
+- Skills 17, 18, 31, 19, 29 — left untouched per Christy's relationship-rules table. Each runs independently.
+- shared-utils, .openclaw, .githooks, scripts at repo root — infrastructure, not skill content.
+- Root markdown files NOT in this list — left alone (TERMINOLOGY.md, TOOLS.md, SOUL.md, IDENTITY.md, USER.md, HEARTBEAT.md, MEMORY.md).
+
+### Out of scope (deferred — NOT in v5.14, NOT in skill 38)
+
+- F14 Voice/Phone Integration · F15 Proactive Outreach Campaigns · F16 A/B Testing of Reply Variants · F17 Customer Segmentation Awareness · F18 Webhook Chaining · F21 Multi-Tenant Agent Isolation.
+
 ## [v10.14.12]  -  2026-05-27  -  Workforce build pipeline: variant-slug phantom-dup fix + per-agent agentDir/identity + schema-valid subagents block
 
 ### Why
