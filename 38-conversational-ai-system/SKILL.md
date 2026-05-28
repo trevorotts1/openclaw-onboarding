@@ -14,6 +14,11 @@ Required read order:
 
 Per N3 ("read before act"), do not skip. Per N4, follow steps in declared order.
 
+
+## Governing protocol (binding for this skill and all skills in the repo)
+
+This skill is governed by `../QC-PROTOCOL.md` (repo root) — the Sub-Agent Handoff and Mandatory QC Protocol. Every install, every PR, every multi-file change runs the 10-category QC rubric (8.5 threshold) BEFORE declaring done. Sub-agents receive full instructions (never summaries). See `QC-PROTOCOL.md` Part 5 for the sub-agent contract.
+
 ## What This Skill Is
 
 **Skill 38 is the conversational AI BRAIN that runs on top of skill 29 (GHL Convert and Flow).** Skill 29 installs Convert and Flow and the basic GHL integration. Skill 38 adds the brain layer: sales best practices, intelligent follow-up, dual-mode customer service + support, typed knowledge bases, intelligent routing, weekly + monthly self-tuning, model version freshness checking, and 21 more protocols from v5.14.
