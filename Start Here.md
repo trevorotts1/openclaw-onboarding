@@ -2379,6 +2379,7 @@ wait_for_wave() {
 
 ### Optional Skills (Can Skip on Failure)
 - All platform-specific skills (GHL, Google Workspace, Vercel, etc.) if missing API keys
+- Skill 38: Conversational AI System (v5.14) — INSTALL AFTER skills 05, 10, 19, AND 29 (those are hard prerequisites verified at runtime). Skill 38 is the conversational AI BRAIN on top of skill 29 (GHL Convert and Flow). Sales brain + intelligent follow-up + dual-mode customer service + support + 27 protocols + 8 journey templates + 4 cron jobs. If skills 05/10/19/29 are not all installed, skill 38's 00-verify-prerequisites.sh will refuse to proceed.
 
 ---
 
