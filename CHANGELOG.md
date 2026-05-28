@@ -1,3 +1,28 @@
+## [v10.15.2]  -  2026-05-28  -  Skill 38 ships the School of AI Cloudflare + GoDaddy setup guide IN the skill (verbatim) + Rule 13 halt path now points at it
+
+### Why
+
+When skill 38's `00-verify-prerequisites.sh` halts on a missing Cloudflare API token (QC-PROTOCOL.md Part 3 Rule 13), the client has no way to know what to do next without leaving the skill. Christy authored a comprehensive 4-part School of AI walk-through (Cloudflare account creation, GoDaddy domain + nameserver migration, API token creation with the exact 9 permission scopes the v5.14 playbook needs). This patch ships that guide INSIDE the skill so the Rule 13 halt becomes a self-contained walk-through — no Google Doc lookup required, no external dependency.
+
+### Added
+
+- `38-conversational-ai-system/references/cloudflare-godaddy-setup-guide.md` (361 lines, verbatim from the School of AI source). Four parts: (1) free Cloudflare account, (2) add GoDaddy domain to Cloudflare, (3) update GoDaddy nameservers, (4) create the API token with the 9 permission rows (Account: Cloudflare Tunnel/Zero Trust/Access Apps and Policies/Access Service Tokens/Access Organizations IdPs and Groups/Access SSH Auditing/Account Settings; Zone: DNS/Zone). Each permission row maps 1-to-1 to a v5.14 playbook step (documented in the guide's operator notes section).
+- Fix vs the Christy source: the source said "After adding all 10 permission rows above" but the table actually has 9 — corrected to "9 permission rows" so the client doesn't waste time counting a missing tenth.
+
+### Changed
+
+- `38-conversational-ai-system/scripts/00-verify-prerequisites.sh` Rule 13 halt message now points the client at the in-skill `references/cloudflare-godaddy-setup-guide.md` as the primary walk-through, with the Google Doc kept as the canonical-source backup. Behavior is otherwise unchanged: 10-location search, halt on miss, never auto-generate a placeholder.
+- `38-conversational-ai-system/SKILL.md` + `INSTALL.md` updated to list 8 reference documents (was 7) and mention the new guide.
+- `38-conversational-ai-system/skill-version.txt`: 1.1.0 -> 1.2.0 (feature: ships CF+GoDaddy walk-through).
+
+### Behavior — what the operator now sees on a missing-CF-token halt
+
+`scripts/00-verify-prerequisites.sh` exits with the verbatim Rule 13 message, including a one-line instruction to `cat ~/.openclaw/skills/38-conversational-ai-system/references/cloudflare-godaddy-setup-guide.md` for the full walk-through. The agent (when dispatched) Telegrams the halt message verbatim and waits. The client follows the in-skill guide, adds `CLOUDFLARE_API_TOKEN=...` to their `~/.openclaw/.env`, says "I'm done," and the agent re-runs `00-verify-prerequisites.sh` per QC-PROTOCOL.md Rule 14.
+
+### Verified live
+
+Just before this patch, on Teresa Pelham's Mac mini install, Keez halted at script 00 with the prior Rule 13 message and Telegram'd the verbatim halt to both Teresa (770524308) and Trevor (5252140759). The protocol worked exactly as designed. This patch makes the next such client-side halt fully self-served by pointing at the in-skill guide.
+
 ## [v10.15.1]  -  2026-05-28  -  Skill 38 hardening: Cloudflare API key check + tighter prereq verification + QC-PROTOCOL.md governance file at repo root
 
 ### Why
