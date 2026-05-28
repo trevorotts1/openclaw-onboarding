@@ -1,3 +1,29 @@
+## [v10.15.6]  -  2026-05-28  -  Skill 32: sync-md-content-to-db.py populates agents.*_md from disk; Phase 6d hook
+
+### Why
+
+The dashboard's `agents` table has TEXT columns `identity_md`, `soul_md`, `memory_md`, `heartbeat_md`, `how_to_md`. None of skill 32's seeders write them. The dashboard repo has its own `sync-departments-from-build-state.py` (called from Phase 6c), but when that repo is stale or absent the columns stay NULL. Angeleen's audit showed exactly this: agents existed in the table but every content column was NULL, so the dashboard renderer fell back to empty panels.
+
+### How
+
+New script reads role-folder content from disk and UPSERTs into whatever rows already exist in the `agents` table (or the `dept_agents` / `workspaces` fallback). Idempotent via a sha256 `content_hash` column — second run produces zero writes when content hasn't changed. Wired into `run-full-install.sh` as Phase 6d, immediately after the dashboard repo's own Phase 6c sync, as a fallback safety net.
+
+### Added
+
+- `32-command-center-setup/scripts/sync-md-content-to-db.py` (NEW) — walks every role folder under the active workforce `departments/` tree and populates the dashboard `agents` table content columns from disk. Tolerant of missing columns (does not ALTER schema). Tolerant of missing rows (skips with WARN). Idempotent via sha256 `content_hash`. Discovers the active workforce via vendored `detect_platform` from skill 23.
+
+### Updated
+
+- `32-command-center-setup/scripts/run-full-install.sh` — added Phase 6d immediately after Phase 6c. Logs to the install log, sets `commandCenterMdContentSynced` state, never blocks the install on failure (WARN + continue).
+
+### Migration for existing clients
+
+Re-run `bash ~/.openclaw/skills/32-command-center-setup/scripts/run-full-install.sh` (or just the new script directly: `python3 ~/.openclaw/skills/32-command-center-setup/scripts/sync-md-content-to-db.py`) to populate columns for already-built dashboards.
+
+### Risk + rollback
+
+`sync-md-content-to-db.py` only writes to columns that already exist; no schema mutation. Rows that don't match by `agent_id` / `id` / `slug` / `name` are skipped, not created. Rollback via `git revert <merge>` and `UPDATE agents SET identity_md = NULL, soul_md = NULL, ...` if needed.
+
 ## [v10.15.5]  -  2026-05-28  -  Mutating remediation: reconcile-legacy-tree + robust openclaw resolver + one-shot migrate-existing-workforce.sh
 
 ### Why

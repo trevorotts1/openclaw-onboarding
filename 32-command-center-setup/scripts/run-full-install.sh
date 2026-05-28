@@ -251,6 +251,28 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# PHASE 6d -- Populate agents.*_md columns from on-disk role folders
+# v10.15.6 / v10.16.6 -- closes the Angeleen gap (DB has NULLs for
+# identity_md/soul_md/memory_md/how_to_md/heartbeat_md). Fallback for
+# when the dashboard repo's own sync did not seed content columns.
+# Idempotent via content_hash. Safe to re-run on every install/resume.
+# ----------------------------------------------------------------------
+log "INFO" "phase=6d sync-md-content: starting"
+SYNC_MD_SCRIPT="$SKILL_DIR/scripts/sync-md-content-to-db.py"
+if [[ -f "$SYNC_MD_SCRIPT" ]]; then
+  if python3 "$SYNC_MD_SCRIPT" >>"$LOG_FILE" 2>&1; then
+    log "INFO" "phase=6d sync-md-content: done -- agents.*_md columns populated from disk"
+    state_set '.commandCenterMdContentSynced = true'
+  else
+    log "WARN" "phase=6d sync-md-content: exited non-zero (see $LOG_FILE) -- dashboard will keep showing NULLs"
+    state_set '.commandCenterMdContentSynced = false'
+  fi
+else
+  log "WARN" "phase=6d sync-md-content: $SYNC_MD_SCRIPT not found -- skipping (skill 32 not at v10.15.6/v10.16.6+)"
+  state_set '.commandCenterMdContentSynced = "script-missing"'
+fi
+
+# ----------------------------------------------------------------------
 # PHASE 6b — Tunnel (n8n webhook + cloudflared)
 # ----------------------------------------------------------------------
 log "INFO" "phase=6b tunnel: starting"
