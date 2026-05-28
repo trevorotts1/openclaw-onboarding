@@ -1,3 +1,34 @@
+## [v10.15.4]  -  2026-05-28  -  Silent SOP / role-library failures now LOUD; first-class completeness check runs on install + upgrade
+
+### Why
+
+Audits across 5 clients (Maria 1/222 roles materialized, Corey 146 thin how-to.md, Angeleen 31 specialists stranded at legacy /data/clawd/departments/, Teresa 0/72 SOPs ever scaffolded, Kofi post-build crashed with missing detect_platform import) revealed the same root cause. Skill 23's build pipeline DID call post-build-role-workspaces.py and populate-sops-from-manifest.py, but both calls were wrapped in capture_output=True + try/except that printed one [v2.1 WARN] line and continued. Operators never knew. No completeness check ran during install OR update, so silent failures persisted across version bumps.
+
+### How
+
+Defensive layer first, observability before mutation. Two new scripts plus six patches make every gap visible without changing any workforce content. Mutating remediation lands in v10.15.5.
+
+### Added
+
+- `23-ai-workforce-blueprint/scripts/qc-completeness.sh` (NEW) — first-class "are you done?" check. For every dept on disk, reports role-folder count vs role-library expected, library-fill provenance marker count, IDENTITY.md count, average SOPs per role, stub-remaining count, and legacy-tree presence. Emits a JSON artifact at `~/.openclaw/logs/qc-completeness-<ts>.json` plus a human-readable table. Status PASS / PARTIAL / FAIL / NO_WORKFORCE_FOUND. On != PASS the script Telegrams the operator via `openclaw message send` with a per-dept gap breakdown.
+- `23-ai-workforce-blueprint/lib/detect_platform.py` (NEW, vendored from `shared-utils/`) — closes the Kofi root cause. The previously-installed skill folder had no path to `detect_platform`, causing post-build-role-workspaces.py to crash with ModuleNotFoundError. `post-build-role-workspaces.py` and `create_role_workspaces.py` now resolve the import from `lib/` first, with the repo-root `shared-utils/` retained as fallback for in-repo invocation.
+
+### Updated
+
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` — Stage 6 post-build and Stage 1 SOP populate calls now stream stdout / stderr live (no capture_output). Both return codes are recorded in a new `[BUILD-RESULT] post_build_role_workspaces_rc=N sop_populate_rc=N` log line. At the end of every build, qc-completeness.sh is invoked automatically. PASS = quiet log-only. Non-PASS = operator Telegram with per-dept breakdown.
+- `23-ai-workforce-blueprint/scripts/verify-v2.1-installation.sh` — fixed stale `create-role-workspaces.py` check (the file was renamed to `create_role_workspaces.py` in v10.6.1, and the check has been failing on every install since). Added check that `lib/detect_platform.py` is bundled.
+- `scripts/qc-system-integrity.sh` — added sections 2.11 (per-dept role-folder count vs `_index.json` expected, WARN below 75%), 2.12 (library-fill provenance marker count), 2.13 (IDENTITY.md per role), 2.14 (legacy `/clawd/departments/` tree detection — Angeleen pattern).
+- `update-skills.sh` — after a successful pull, invokes qc-completeness.sh and appends the human-readable STATUS line to the existing "OpenClaw skill update complete" Telegram so the operator sees the workforce posture at every upgrade.
+- `install.sh` — playbook prose updated to direct the agent to invoke qc-completeness.sh after both qc-system-integrity.sh (Phase 3) and the workforce build (Phase 4). On PARTIAL / FAIL the agent must follow the script's remediation hints before declaring install complete.
+
+### Migration for existing clients
+
+No action required. The next `bash update-skills.sh` invocation auto-fires qc-completeness.sh and the operator gets a per-client gap report on Telegram for each non-PASS workforce. The mutating remediation script (`migrate-existing-workforce.sh`) ships in v10.15.5.
+
+### Risk + rollback
+
+Read-only changes only. No mutation of workforce content. Rollback via `git revert <merge>` — nothing on disk to undo.
+
 ## [v10.15.3]  -  2026-05-28  -  Skill 38 v1.3.0 — FULL CLOSEOUT of all 17 audit gaps (CRITICAL + MAJOR + MINOR)
 
 ### Why

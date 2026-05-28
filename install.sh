@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.3"
+ONBOARDING_VERSION="v10.15.4"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -594,13 +594,14 @@ Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10,
 
 PHASE 3 — Verify:
 6. Run ~/.openclaw/scripts/qc-system-integrity.sh — must exit 0.
+6b. After Phase 4 workforce build completes, run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh — read-only check that role-library materialization + IDENTITY.md + SOPs landed for every dept. Status must be PASS. On PARTIAL/FAIL the script Telegrams the operator with a per-dept breakdown; do not declare install complete until at PASS or operator explicitly waives.
 7. Message __OWNER_NAME__: All skills installed. Ready for the 30-question business interview? About 35 min of your focused time — your answers shape your entire AI team. Reply yes when ready.
 Wait for confirmation before proceeding.
 
 PHASE 4 — Build the workforce:
 8. Run AI Workforce Interview (Skill 23) with __OWNER_NAME__. ZHC workspace on Mac: ~/.openclaw/workspace/zero-human-company/<slug>/
 9. After interview, run ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/create_role_workspaces.py to write per-department governing-personas.md.
-10. Message __OWNER_NAME__ confirming workforce is built and listing departments created.
+10. Message __OWNER_NAME__ confirming workforce is built and listing departments created. Then run bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-completeness.sh — if STATUS is PARTIAL or FAIL, follow its Telegram-delivered remediation hints before moving to Phase 5.
 
 PHASE 5 — Wrap up:
 11. Walk __OWNER_NAME__ through Telegram supergroup setup (Skill 32 INSTALL.md Phase 2 — 7 manual phone steps, one at a time).

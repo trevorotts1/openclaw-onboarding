@@ -203,6 +203,100 @@ check "2.10" "ORG-CHART.md at company root" \
   "[ -f \"$COMPANY_DIR/ORG-CHART.md\" ]" \
   "Re-run generate_org_chart() in build-workforce.py"
 
+# v10.15.4 / v10.16.4 — sections 2.11-2.14: role-library materialization coverage.
+# These sections close the silent-failure gap discovered during the 5-client audit
+# (Maria 1/222, Corey 146 thin, Angeleen legacy-tree, Teresa 0 SOPs, Kofi crash).
+# All checks are best-effort — they WARN rather than FAIL so the existing
+# integrity gate is not over-tightened. The dedicated qc-completeness.sh script
+# is the authoritative gate for "are you done?"
+LIB_INDEX="$HOME/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json"
+[ -f "/data/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json" ] && \
+  LIB_INDEX="/data/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json"
+
+# 2.11 — per-dept role-folder count vs library expected
+if [ -d "$COMPANY_DIR/departments" ] && [ -f "$LIB_INDEX" ]; then
+  ROLE_COVERAGE=$(python3 - <<PYEOF 2>/dev/null
+import json, os
+from pathlib import Path
+idx = json.load(open("$LIB_INDEX"))
+expected = idx.get("departments", {})
+total_exp = 0
+total_have = 0
+gaps = []
+for dept_dir in sorted(Path("$COMPANY_DIR/departments").iterdir()):
+    if not dept_dir.is_dir() or dept_dir.name.startswith(("_", ".")):
+        continue
+    exp = expected.get(dept_dir.name, {}).get("role_count", 0)
+    have = sum(1 for r in dept_dir.iterdir() if r.is_dir() and not r.name.startswith(("_", ".")))
+    total_exp += exp
+    total_have += have
+    if exp and have / exp < 0.75:
+        gaps.append(f"{dept_dir.name}={have}/{exp}")
+pct = round(100.0 * total_have / total_exp, 1) if total_exp else 0.0
+print(f"{pct}|{total_have}|{total_exp}|" + ",".join(gaps[:5]))
+PYEOF
+)
+  PCT=$(echo "$ROLE_COVERAGE" | cut -d'|' -f1)
+  GAPS=$(echo "$ROLE_COVERAGE" | cut -d'|' -f4)
+  if python3 -c "import sys; sys.exit(0 if float('$PCT') >= 75 else 1)" 2>/dev/null; then
+    green "  ✓ 2.11 Role-library materialization ${PCT}% (>= 75% threshold)"; PASS=$((PASS+1))
+  else
+    yellow "  ⚠ 2.11 Role-library materialization ${PCT}% (gaps: ${GAPS:-N/A})"; WARN=$((WARN+1))
+    WARNINGS+=("2.11|role-library ${PCT}%|Run qc-completeness.sh for full breakdown then migrate-existing-workforce.sh")
+  fi
+fi
+
+# 2.12 — per-dept library-fill provenance marker count
+if [ -d "$COMPANY_DIR/departments" ]; then
+  LIB_FILLED=$(grep -rl "<!-- Filled from role-library v" "$COMPANY_DIR/departments" 2>/dev/null | wc -l | tr -d ' ')
+  ROLE_FOLDERS=$(find "$COMPANY_DIR/departments" -mindepth 2 -maxdepth 2 -type d \! -name "_*" \! -name ".*" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$ROLE_FOLDERS" -gt 0 ]; then
+    PCT_LIB=$(python3 -c "print(round(100.0 * $LIB_FILLED / $ROLE_FOLDERS, 1))" 2>/dev/null)
+    if python3 -c "import sys; sys.exit(0 if float('${PCT_LIB:-0}') >= 75 else 1)" 2>/dev/null; then
+      green "  ✓ 2.12 how-to.md library provenance ${LIB_FILLED}/${ROLE_FOLDERS} (${PCT_LIB}%)"; PASS=$((PASS+1))
+    else
+      yellow "  ⚠ 2.12 how-to.md library provenance ${LIB_FILLED}/${ROLE_FOLDERS} (${PCT_LIB}%)"; WARN=$((WARN+1))
+      WARNINGS+=("2.12|library-fill ${PCT_LIB}%|Re-run post-build-role-workspaces.py")
+    fi
+  fi
+fi
+
+# 2.13 — IDENTITY.md per role folder
+if [ -d "$COMPANY_DIR/departments" ]; then
+  ID_COUNT=$(find "$COMPANY_DIR/departments" -mindepth 3 -maxdepth 3 -type f -name "IDENTITY.md" 2>/dev/null | wc -l | tr -d ' ')
+  ROLE_FOLDERS=${ROLE_FOLDERS:-$(find "$COMPANY_DIR/departments" -mindepth 2 -maxdepth 2 -type d \! -name "_*" \! -name ".*" 2>/dev/null | wc -l | tr -d ' ')}
+  if [ "$ROLE_FOLDERS" -gt 0 ]; then
+    PCT_ID=$(python3 -c "print(round(100.0 * $ID_COUNT / $ROLE_FOLDERS, 1))" 2>/dev/null)
+    if python3 -c "import sys; sys.exit(0 if float('${PCT_ID:-0}') >= 95 else 1)" 2>/dev/null; then
+      green "  ✓ 2.13 IDENTITY.md per role ${ID_COUNT}/${ROLE_FOLDERS} (${PCT_ID}%)"; PASS=$((PASS+1))
+    else
+      yellow "  ⚠ 2.13 IDENTITY.md per role ${ID_COUNT}/${ROLE_FOLDERS} (${PCT_ID}%)"; WARN=$((WARN+1))
+      WARNINGS+=("2.13|IDENTITY.md ${PCT_ID}%|Re-run post-build-role-workspaces.py")
+    fi
+  fi
+fi
+
+# 2.14 — legacy tree detection (Angeleen pattern)
+LEGACY_FOUND=""
+for cand in /data/clawd/departments "$HOME/clawd/departments"; do
+  if [ -d "$cand" ]; then
+    # Compare with workspace departments dir; if different paths, flag.
+    if [ -n "$COMPANY_DIR" ]; then
+      CANON_DEPT=$(cd "$COMPANY_DIR/departments" 2>/dev/null && pwd -P)
+      CANON_CAND=$(cd "$cand" 2>/dev/null && pwd -P)
+      if [ -n "$CANON_CAND" ] && [ "$CANON_CAND" != "$CANON_DEPT" ]; then
+        LEGACY_FOUND="${LEGACY_FOUND}${cand} "
+      fi
+    fi
+  fi
+done
+if [ -z "$LEGACY_FOUND" ]; then
+  green "  ✓ 2.14 No legacy /clawd/departments tree present"; PASS=$((PASS+1))
+else
+  yellow "  ⚠ 2.14 Legacy tree(s) present: ${LEGACY_FOUND}— content may be stranded"; WARN=$((WARN+1))
+  WARNINGS+=("2.14|legacy tree ${LEGACY_FOUND}|Run reconcile-legacy-tree.py from Release 2 (v10.15.5/v10.16.5)")
+fi
+
 # ─── CHECK 3: Book-to-Persona ────────────────────────────────────────────────
 echo
 blue "── CHECK 3: Book-to-Persona (Skill 22) ──"

@@ -36,7 +36,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# v10.15.4: vendored lib/ ships with the installed skill folder; resolves
+# detect_platform under ~/.openclaw/skills/23-ai-workforce-blueprint/. Repo-root
+# shared-utils/ retained as fallback for in-repo invocation.
+sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "shared-utils"))
 try:
     from detect_platform import get_openclaw_paths
 except ImportError:

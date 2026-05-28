@@ -77,8 +77,10 @@ check_file "Skill 23: skill-version.txt"                     "$SKILL23_DIR/skill
 check_file "Skill 23: universal-how-to-template.md"          "$SKILL23_DIR/templates/universal-how-to-template.md"
 check_file "Skill 23: role-doc-generation-prompt.md"         "$SKILL23_DIR/prompts/role-doc-generation-prompt.md"
 check_file "Skill 23: infer-task-category.py"                "$SKILL23_SCRIPTS/infer-task-category.py"
-check_file "Skill 23: create-role-workspaces.py"             "$SKILL23_SCRIPTS/create-role-workspaces.py"
+check_file "Skill 23: create_role_workspaces.py"             "$SKILL23_SCRIPTS/create_role_workspaces.py"
 check_file "Skill 23: post-build-role-workspaces.py"         "$SKILL23_SCRIPTS/post-build-role-workspaces.py"
+# v10.15.4: vendored lib/ must ride along so detect_platform resolves at install path
+check_file "Skill 23: lib/detect_platform.py (vendored)"     "$SKILL23_DIR/lib/detect_platform.py"
 check_file "Skill 23: persona-selector-v2.py"                "$SKILL23_SCRIPTS/persona-selector-v2.py"
 check_file "Skill 23: gemini-section-indexer.py"             "$SKILL23_SCRIPTS/gemini-section-indexer.py"
 check_file "Skill 23: crm-suggested-roles.md"                "$SKILL23_DIR/suggested-roles/crm-suggested-roles.md"
@@ -98,7 +100,7 @@ for f in \
   "$SHARED_UTILS/devils-advocate.py" \
   "$SHARED_UTILS/nudge-incomplete-interviews.py" \
   "$SKILL23_SCRIPTS/infer-task-category.py" \
-  "$SKILL23_SCRIPTS/create-role-workspaces.py" \
+  "$SKILL23_SCRIPTS/create_role_workspaces.py" \
   "$SKILL23_SCRIPTS/post-build-role-workspaces.py" \
   "$SKILL23_SCRIPTS/persona-selector-v2.py" \
   "$SKILL23_SCRIPTS/gemini-section-indexer.py" \

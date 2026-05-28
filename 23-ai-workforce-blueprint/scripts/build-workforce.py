@@ -558,8 +558,13 @@ def build_from_config(config):
         # actually get filled in (instead of sitting as placeholder files).
         # Runs in the background (sub-agents are spawned in parallel internally),
         # exit code 0 = all populated, 2 = some failed, 3 = no model available.
+        #
+        # v10.15.4: Stream stdout/stderr live (do NOT capture_output) so the
+        # operator sees progress in real time. Record the return code on
+        # _BUILD_RESULT for the [BUILD-RESULT] line at the end of build.
         populate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                         "populate-sops-from-manifest.py")
+        _sop_populate_rc = -1
         if os.path.isfile(populate_script):
             try:
                 rc = subprocess.run(
@@ -567,6 +572,7 @@ def build_from_config(config):
                      "--max-parallel", "10", "--timeout", "1800"],
                     timeout=3600 + 60,  # 60-min cap on the whole batch
                 ).returncode
+                _sop_populate_rc = rc
                 if rc == 0:
                     print(f"[NON-INTERACTIVE] SOPs auto-populated successfully", file=sys.stderr)
                 elif rc == 2:
@@ -579,12 +585,16 @@ def build_from_config(config):
             except subprocess.TimeoutExpired:
                 print(f"[NON-INTERACTIVE] SOP population timed out at 60 min; some SOPs may be "
                       f"partial. Rerun: python3 {populate_script}", file=sys.stderr)
+                _sop_populate_rc = 124
             except Exception as e:
                 print(f"[NON-INTERACTIVE] SOP population error: {e}; rerun manually with: "
                       f"python3 {populate_script}", file=sys.stderr)
+                _sop_populate_rc = 1
         else:
             print(f"[NON-INTERACTIVE] populate-sops-from-manifest.py not found; "
                   f"SOPs remain as DMAIC stubs", file=sys.stderr)
+            _sop_populate_rc = 127
+        globals()["_BUILD_SOP_POPULATE_RC"] = _sop_populate_rc
 
     # v10.7.0: Write company-config.json (schema v2.0) to the ZHC folder.
     # Now includes mission, owner_values, company_kpis, dept_kpis so the
@@ -653,26 +663,62 @@ def build_from_config(config):
     # MEMORY.md, HEARTBEAT.md, how-to.md (universal 18-section template), and
     # AGENTS/TOOLS/USER symlinks to every role folder created above. Master
     # Orchestrator (CEO) gets the CEO variant of the deferral clause. Idempotent.
-    try:
-        import subprocess as _subprocess
-        _script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "post-build-role-workspaces.py")
-        if os.path.isfile(_script):
+    #
+    # v10.15.4: Stream stdout/stderr live (no capture_output). Record return
+    # code for the [BUILD-RESULT] line. On non-zero rc, chain into
+    # qc-completeness.sh at the end so the operator sees the failure surface
+    # AND the per-dept impact, not just a silent WARN line.
+    import subprocess as _subprocess
+    _post_build_rc = -1
+    _script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "post-build-role-workspaces.py")
+    if os.path.isfile(_script):
+        try:
             _result = _subprocess.run(
                 ["python3", _script, "--company-slug", COMPANY_SLUG or ""],
-                capture_output=True, text=True, timeout=300
+                timeout=300
             )
-            print(_result.stdout, file=sys.stderr)
+            _post_build_rc = _result.returncode
             if _result.returncode != 0:
-                print(f"[v2.1 WARN] post-build-role-workspaces.py exited {_result.returncode}", file=sys.stderr)
-        else:
-            print(f"[v2.1 WARN] post-build-role-workspaces.py not found at {_script}", file=sys.stderr)
-    except Exception as _e:
-        print(f"[v2.1 WARN] post-build augmentation failed: {_e}", file=sys.stderr)
+                print(f"[v2.1 ERROR] post-build-role-workspaces.py exited {_result.returncode}", file=sys.stderr)
+        except _subprocess.TimeoutExpired:
+            print(f"[v2.1 ERROR] post-build-role-workspaces.py timed out after 300s", file=sys.stderr)
+            _post_build_rc = 124
+        except Exception as _e:
+            print(f"[v2.1 ERROR] post-build augmentation failed: {_e}", file=sys.stderr)
+            _post_build_rc = 1
+    else:
+        print(f"[v2.1 ERROR] post-build-role-workspaces.py not found at {_script}", file=sys.stderr)
+        _post_build_rc = 127
+
+    # v10.15.4: Emit a single, easy-to-grep BUILD-RESULT line summarising
+    # the two post-build pipelines so silent failures are no longer possible.
+    _sop_rc = globals().get("_BUILD_SOP_POPULATE_RC", -1)
+    print(
+        f"\n[BUILD-RESULT] post_build_role_workspaces_rc={_post_build_rc} "
+        f"sop_populate_rc={_sop_rc}",
+        file=sys.stderr,
+    )
 
     print(f"\n[NON-INTERACTIVE] Build complete!", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Company: {company_name}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Departments: {len(selected_departments)}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Workspace: {DEPARTMENTS_DIR}", file=sys.stderr)
+
+    # v10.15.4: On ANY non-zero rc, invoke qc-completeness.sh so the operator
+    # gets a per-dept breakdown (and a Telegram alert if != PASS). On zero rc
+    # we still invoke qc-completeness.sh but in --quiet mode (PASS = no
+    # Telegram, log-only). Idempotent and read-only.
+    _qc_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qc-completeness.sh")
+    if os.path.isfile(_qc_script):
+        try:
+            _qc_args = ["bash", _qc_script]
+            if _post_build_rc == 0 and (_sop_rc in (0, -1)):
+                _qc_args.append("--quiet")
+            _subprocess.run(_qc_args, timeout=180)
+        except Exception as _e:
+            print(f"[v2.1 WARN] qc-completeness.sh invocation failed: {_e}", file=sys.stderr)
+    else:
+        print(f"[v2.1 WARN] qc-completeness.sh not present at {_qc_script}", file=sys.stderr)
 
 
 # ============================================================

@@ -31,6 +31,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+# v10.15.4: vendored lib/ ships with the installed skill folder so detect_platform
+# resolves under ~/.openclaw/skills/23-ai-workforce-blueprint/. Repo-root
+# shared-utils/ retained as fallback for in-repo invocation.
+sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "shared-utils"))
 
