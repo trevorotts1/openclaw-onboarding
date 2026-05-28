@@ -102,12 +102,37 @@ def resolve_model(skill, purpose_tier="heavy", input_chars=None):
 
 # ─── SUB-AGENT SPAWN ──────────────────────────────────────────────────────────
 
+# v10.15.5: 6-location resolver for the openclaw binary. shutil.which("openclaw")
+# alone fails on macOS non-interactive subprocesses (PATH doesn't include
+# /opt/homebrew/bin without a login shell) and on VPS containers (different
+# canonical paths). Cache the resolution at module load.
+def find_openclaw():
+    explicit = os.environ.get("OPENCLAW_BIN")
+    if explicit and os.access(explicit, os.X_OK):
+        return explicit
+    candidates = [
+        shutil.which("openclaw"),
+        "/opt/homebrew/bin/openclaw",
+        "/usr/local/bin/openclaw",
+        str(Path.home() / ".openclaw" / "bin" / "openclaw"),
+        "/data/.npm-global/bin/openclaw",
+        "/data/linuxbrew/.linuxbrew/bin/openclaw",
+    ]
+    for cand in candidates:
+        if cand and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+
+_OPENCLAW_BIN = find_openclaw()
+
+
 def openclaw_available():
     """Check if `openclaw subagents spawn` is available."""
-    if not shutil.which("openclaw"):
+    if not _OPENCLAW_BIN:
         return False
     try:
-        r = subprocess.run(["openclaw", "subagents", "--help"],
+        r = subprocess.run([_OPENCLAW_BIN, "subagents", "--help"],
                            capture_output=True, text=True, timeout=5)
         return r.returncode == 0
     except Exception:
@@ -128,9 +153,14 @@ def build_subagent_prompt(dept_entry, sub_agent_instructions, model_id):
 
 
 def spawn_via_openclaw(dept_entry, prompt, model_id, timeout):
-    """Use openclaw CLI sub-agent spawn (preferred path)."""
+    """Use openclaw CLI sub-agent spawn (preferred path).
+
+    v10.15.5: uses the resolved absolute path from find_openclaw() so the
+    subprocess does not depend on the spawning shell's PATH.
+    """
+    bin_path = _OPENCLAW_BIN or "openclaw"
     cmd = [
-        "openclaw", "subagents", "spawn",
+        bin_path, "subagents", "spawn",
         "--model", model_id,
         "--purpose-tier", "heavy",
         "--timeout-seconds", str(timeout),

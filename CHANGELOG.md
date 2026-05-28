@@ -1,3 +1,30 @@
+## [v10.15.5]  -  2026-05-28  -  Mutating remediation: reconcile-legacy-tree + robust openclaw resolver + one-shot migrate-existing-workforce.sh
+
+### Why
+
+v10.15.4 made silent failures loud. v10.15.5 ships the mutating remediation operators run after seeing those reports. Three pieces: a legacy-tree reconciler that promotes stranded content from `/data/clawd/departments/` (Angeleen pattern) into the active workspace, a 6-location openclaw binary resolver in populate-sops-from-manifest.py so Kofi-style non-login subprocess PATH gaps stop blocking SOP population, and a one-shot orchestrator that runs the full remediation pipeline against an existing workforce with a `--dry-run` default.
+
+### How
+
+All three scripts default to dry-run / read-only. Mutation requires `--apply` (reconcile-legacy-tree.py) or running migrate-existing-workforce.sh with `--apply`. Per-decision JSON journal lets operators audit what changed; `.pre-reconcile` backups land alongside any promoted file.
+
+### Added
+
+- `23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py` (NEW) — walks every role folder under `/data/clawd/departments/` (VPS) or `~/clawd/departments/` (Mac) and copies curated content into the active workspace. Three decisions per file: `copy_new` when target absent, `promote` when target is a stub (heuristic: matches `STUB`, `[Step 1 - to be personalized]`, or `to be personalized based on research`), `skip_live` when target is curated. Backups stubbed targets to `<name>.pre-reconcile`. Dry-run default; requires `--apply`. Emits `~/.openclaw/logs/reconcile-legacy-<ts>.jsonl` per-decision audit.
+- `23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh` (NEW) — one-shot orchestrator for the 5 audited clients. Runs the full pipeline: baseline qc-completeness -> post-build augmentation -> populate-sops-from-manifest -> reconcile-legacy-tree -> final qc-completeness. Telegrams the operator at start + finish. Dry-run default. Does NOT restart gateways and does NOT modify openclaw.json.
+
+### Updated
+
+- `23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py` — replaced `shutil.which("openclaw")` with a 6-location resolver (`$OPENCLAW_BIN`, `shutil.which`, `/opt/homebrew/bin/openclaw`, `/usr/local/bin/openclaw`, `~/.openclaw/bin/openclaw`, `/data/.npm-global/bin/openclaw`, `/data/linuxbrew/.linuxbrew/bin/openclaw`). Module-level cache (`_OPENCLAW_BIN`) is reused by `spawn_via_openclaw()` so the subprocess invocation no longer relies on the spawning shell's PATH. Closes the macOS non-login-shell PATH gap that left Kofi's SOP queue unconsumed.
+
+### Migration for existing clients
+
+Run `bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh <client> --dry-run` first to see what would change, then re-run with `--apply` once the dry-run looks safe. Recommended order: Kofi, Maria, Corey, Angeleen, Teresa.
+
+### Risk + rollback
+
+`reconcile-legacy-tree.py` writes `.pre-reconcile` backups before any promote operation; revert by restoring the backup. Skip-live heuristic protects curated content. `populate-sops-from-manifest.py` change is a pure refactor of binary lookup; no behavior change for builds where `openclaw` was already on PATH. Rollback via `git revert <merge>`.
+
 ## [v10.15.4]  -  2026-05-28  -  Silent SOP / role-library failures now LOUD; first-class completeness check runs on install + upgrade
 
 ### Why
