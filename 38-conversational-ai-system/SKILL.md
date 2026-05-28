@@ -34,10 +34,10 @@ These two skills are SIBLINGS, not duplicates. **Skill 29 is a hard prerequisite
 
 ## What This Skill Ships
 
-- **27 protocol files** under `protocols/` (humanizer is intentionally NOT here — skill 19 owns it)
+- 31 protocol files under `protocols/` (humanizer is intentionally NOT here — skill 19 owns it)
 - **8 customer journey templates** under `templates/journey-templates/` (coach fully detailed; 7 stubbed)
 - **9 install scripts** under `scripts/` (idempotent, OS-aware: Darwin + Linux)
-- **8 reference documents** under `references/` (6 deep-dives + the full v5.14 source playbook + the **Cloudflare & GoDaddy Setup Guide** from School of AI — the client-facing walk-through for the missing-CF-token halt path)
+- 10 reference documents** under `references/` (6 deep-dives + the full v5.14 source playbook + the **Cloudflare & GoDaddy Setup Guide** from School of AI — the client-facing walk-through for the missing-CF-token halt path)
 - **AGENTS.md updates:** Steps 1.7, 1.8, 1.9, 2.8 inserted; Step 1.75 upgraded
 - **MEMORY.md design rules 6-14** appended
 - **4 cron jobs registered:** Sunday 2am tune-up; Saturday 11pm proactive scan + 11:30pm model freshness; 1st-of-month comprehensive review
