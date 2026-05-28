@@ -499,8 +499,9 @@ That file is the master instruction file. It contains:
 | 34-intelligent-staffing-ARCHIVED | Intelligent Staffing (ARCHIVED) |
 | 35-social-media-planner | Social Media Planner — FFmpeg ≥4.0 + kie.ai key required. Routes GHL operations through skill 36 MCPs when installed. |
 | 36-ghl-mcp-setup | **GHL MCP Setup (v9.0.0)** — 5-tier GHL access chain: Official MCP (36 tools) → Community MCP (588 tools) → REST API (skill 29) → Playwright → Codex Computer Use. Sets `$GHL_COMMUNITY_MCP_URL`, installs launchd plist (macOS), wires cardinal rules into SOUL.md/AGENTS.md/TOOLS.md/MEMORY.md, includes 20-assertion QC script. |
+| 38-conversational-ai-system | **Conversational AI System (v5.14)** — the conversational AI BRAIN on top of skill 29 (GHL Convert and Flow). 27 protocols (sales brain, intelligent follow-up, dual-mode customer service + support, typed knowledge bases, intelligent routing, weekly + monthly self-tuning, model version freshness, etc.). 8 customer journey templates. 9 idempotent OS-aware install scripts. Sunday 2am + Saturday 11pm + 1st-of-month crons. Skills 05/10/19/29 required as prerequisites. |
 
-**Total: 36 numbered skill folders** (33 active + 3 archived: 13, 33, 34).
+**Total: 37 numbered skill folders** (34 active + 3 archived: 13, 33, 34) — note: skill 37 (ZHC Closeout) is shipped but predates this row and is documented in `37-zhc-closeout/SKILL.md`.
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
 
