@@ -1,3 +1,35 @@
+## [v10.15.1]  -  2026-05-28  -  Skill 38 hardening: Cloudflare API key check + tighter prereq verification + QC-PROTOCOL.md governance file at repo root
+
+### Why
+
+Per the Sub-Agent Handoff and Mandatory QC Protocol (now shipped at repo root as `QC-PROTOCOL.md`), the v10.15.0/v10.16.0 release of skill 38 scored 7/10 on Category 10 (prerequisite verification). The protocol's Rule 7 requires fixing any category below 8.5 by looping the rubric. This patch raises Category 10 to 10.
+
+### Added
+
+- `QC-PROTOCOL.md` at repo root (468 lines, verbatim). Governs:
+  - Sub-agent handoff rules (Part 1: full instructions, never summaries; valid modification reasons; sub-agent acknowledgments)
+  - Mandatory QC (Part 2: 10-category 0-10 rubric, 8.5 pass threshold, evidence verification, QC report format)
+  - Cloudflare API key check at install (Part 3, Rules 10-15)
+  - Application to all current + future skills in this repo (Part 4)
+  - Sub-agent contract (Part 5: 8-point checklist)
+- `38-conversational-ai-system/SKILL.md` references `QC-PROTOCOL.md` so any sub-agent reading the skill picks up the protocol.
+
+### Changed
+
+- `38-conversational-ai-system/scripts/00-verify-prerequisites.sh` upgraded (53 lines -> 237 lines):
+  - **STEP A**: Cloudflare API key check per Protocol Part 3 Rules 10-15. Searches the 10 documented locations (~/.openclaw/.env, ~/.openclaw/secrets.env, ~/.openclaw/openclaw.env, MASTER_FILES_DIR/.env, MASTER_FILES_DIR/secrets.env, ~/.cloudflared/.env, ~/.zshrc, ~/.bashrc, ~/.bash_profile, shell env) for any of CLOUDFLARE_API_TOKEN / CF_API_TOKEN / CLOUDFLARE_API_KEY / CF_API_KEY. Validates format (40+ alphanumeric). On miss, emits Rule 13 verbatim error message (including the Google Doc credentials link) and halts the install.
+  - **STEP B**: skill presence check for 05, 10, 19, 29 (unchanged).
+  - **STEP C**: skill 10 LATEST version check — compares installed `10-github-setup/skill-version.txt` against the bundled onboarding's version. Blocks install if behind. **Never auto-updates skill 10** per repo policy; tells operator to re-run skill 10's installer first.
+  - **STEP D**: skill 19 (humanizer) functional check — verifies expected entry points exist (SKILL.md / .skill / humanizer-full.md) so AGENTS.md Step 2.8 reference will resolve.
+  - **STEP E**: skill 29 (GHL Convert and Flow) functional check — confirms BOTH skill bundle present AND Convert and Flow connected (GHL_API_KEY + GHL_LOCATION_ID present in env file or shell env).
+  - bash -n verified clean. chmod +x. Idempotent (read-only; no writes).
+- `38-conversational-ai-system/skill-version.txt`: 1.0.0 -> 1.1.0 (feature: prereq hardening).
+
+### QC outcome
+
+Pre-patch overall QC: 9.1/10 (Cat 10 = 7/10 below 8.5 threshold).
+Post-patch overall QC target: 9.8/10 (Cat 10 = 10/10). Full QC report delivered with this PR.
+
 ## [v10.15.0]  -  2026-05-28  -  Add Skill 38 — Conversational AI System (v5.14 playbook packaged as installable skill)
 
 ### Why
