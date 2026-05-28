@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.14.12"
+ONBOARDING_VERSION="v10.15.0"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -3563,6 +3563,56 @@ install_skill_37_zhc_closeout() {
 }
 
 install_skill_37_zhc_closeout
+
+# ----------------------------------------------------------
+# Step 14b: Installing Skill 38 (Conversational AI System v5.14)
+# ----------------------------------------------------------
+# Why: skill 38 is the conversational AI BRAIN that runs ON TOP of skill 29
+# (GHL Convert and Flow). It packages the v5.14 playbook (~8,800 lines, 14
+# version iterations) as 27 protocols + 8 journey templates + 9 install
+# scripts + 7 references. Requires skills 05, 10, 19, 29 as prerequisites
+# (checked at runtime by the skill's own 00-verify-prerequisites.sh).
+# Idempotent.
+step "Step 14b: Installing Skill 38 (Conversational AI System v5.14) — sales brain + intelligent follow-up + dual-mode CS+support + typed KBs + weekly tune-up + model version freshness"
+
+install_skill_38_conversational_ai_system() {
+    local SKILL_SRC="$ONBOARDING_DIR/38-conversational-ai-system"
+    local SKILL_DEST="$SKILLS_DIR/38-conversational-ai-system"
+
+    if [ ! -d "$SKILL_SRC" ]; then
+        warn "Skill 38 source dir not found at $SKILL_SRC — skipping (older onboarding bundle?)"
+        return 0
+    fi
+
+    # Idempotent: skip if dest version matches src
+    if [ -f "$SKILL_DEST/skill-version.txt" ] && [ -d "$SKILL_DEST/protocols" ]; then
+        local SKILL38_CURRENT
+        SKILL38_CURRENT=$(cat "$SKILL_DEST/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        local SKILL38_SRC_VER
+        SKILL38_SRC_VER=$(cat "$SKILL_SRC/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$SKILL38_CURRENT" ] && [ "$SKILL38_CURRENT" = "$SKILL38_SRC_VER" ]; then
+            success "Skill 38 already installed at v${SKILL38_CURRENT}"
+            chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+            return 0
+        fi
+        note "Skill 38 present at v${SKILL38_CURRENT:-?}, source is v${SKILL38_SRC_VER:-?} — refreshing"
+    fi
+
+    mkdir -p "$SKILL_DEST"
+    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+        warn "Failed to copy Skill 38 from $SKILL_SRC -> $SKILL_DEST"
+        return 0
+    }
+    chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+
+    success "Skill 38 (Conversational AI System v5.14) installed -> $SKILL_DEST"
+    note "Skill 38 brings 27 protocols, 8 journey templates, 9 install scripts, 7 references."
+    note "After this install completes, run: $SKILL_DEST/scripts/00-verify-prerequisites.sh"
+    note "  then 01..08 in order. Skills 05, 10, 19, 29 must be installed FIRST."
+    return 0
+}
+
+install_skill_38_conversational_ai_system
 
 # ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)
