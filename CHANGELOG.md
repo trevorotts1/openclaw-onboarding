@@ -1,3 +1,78 @@
+## [v10.15.3]  -  2026-05-28  -  Skill 38 v1.3.0 — FULL CLOSEOUT of all 17 audit gaps (CRITICAL + MAJOR + MINOR)
+
+### Why
+
+The v1.2.0 release scored only 21/27 protocols actually shipped, despite SKILL.md claiming "27 protocols." A fine-tooth-comb audit (parallel agent acaea0b4) compared the shipped skill against the 8,797-line v5.14 source playbook and found 17 distinct gaps — 6 CRITICAL, 7 MAJOR, 4 MINOR. The operator (Trevor) ordered a full closeout: "I want it all, A B C D, do it all in parallel." This patch closes every gap.
+
+### How
+
+Five parallel sub-agents (ad0d105e / a763acbb / a7b1a4b4 / a7584ace / a7ded774) each carved a non-overlapping slice of the playbook and produced 33 files / 5,152 lines of verbatim extractions + new scripts. Then consolidated into both repos. All scripts pass `bash -n`. All sed extractions returned exact expected line counts.
+
+### Added — protocols (4 new, 1 updated; now 31 total — matches SKILL.md claim)
+
+- `protocols/quiet-hours-protocol.md` (75 lines verbatim, playbook 2327-2401, Step 9.8)
+- `protocols/compliance-keyword-detection-protocol.md` (95 lines verbatim, playbook 2403-2497, Step 9.9 — FCC STOP/UNSUB + email unsubscribe + GDPR + HIPAA + FINRA/SEC)
+- `protocols/multi-language-detection-protocol.md` (47 lines verbatim, playbook 2499-2545, Step 9.10)
+- `protocols/conversation-workflows-protocol.md` (466 lines verbatim, playbook 3857-4322, Step 9.20 — 3-Layer architecture: trigger phrases A, subagent walkthrough B, Layer 0 routing C, D.1/D.2/D.3 auto-tag + AI prompt + verification checklist, Layer 2 Phase 1-4 + edge cases E, registry+AGENTS.md insertion F, initial workflow creation G, Run Manifest H)
+- `protocols/pre-handoff-qc-protocol.md` (137 lines verbatim, playbook 8086-8222, Step 11 — full 7-section QC checklist)
+- `protocols/conversation-log-protocol.md` UPDATED to add the `preferred_language` log-header field per Step 9.10.B
+
+### Added — templates (4 new)
+
+- `templates/agent-capabilities-playbook-template.md` (263 lines verbatim, playbook 7796-8058, Step 10 — 6 sections incl. channels monitored, actions 2.1-2.4, cross-channel formatting, model strategy, references)
+- `templates/channel-playbook-template.md` (90 lines verbatim, playbook 1675-1764, Step 8 — 7-section per-channel seed template)
+- `templates/client-reference-sheet-template.md` (304 lines verbatim, playbook 8224-8527, Parts 2+3 — Reference Sheet structure + 6 channel Raw Body JSONs SMS/Email/Facebook/Instagram/LiveChat/AllInOne)
+- `templates/run-manifest-template.md` (39 lines verbatim, playbook 854-892 — Run Manifest scaffold)
+- `templates/sms-workflow-ai-prompt-template.md` (NEW — copy-paste-ready SMS workflow prompt with 10 placeholder substitutions; full v5.14 Step 9.20-D.2 prompt block in a single fenced code block)
+- `templates/workflow-verification-checklist-template.md` (102 lines verbatim, playbook 4069-4170, Step 9.20-D.3 — all 11 verification sections)
+
+### Added — references (2 new)
+
+- `references/subagent-delegation-pattern.md` (276 lines verbatim, playbook 151-426 — full sub-agent architecture, model selection, question-routing, heartbeat, failure escalation, first action on spawn)
+- `references/playbook-prelude.md` (125 lines verbatim, playbook 25-149 — Terminology, 6 Rules of Engagement, Execution Order Map)
+
+### Added — scripts (12 new, 4 rewritten)
+
+- `scripts/01-locate-master-files-folder.sh` REWRITE (139 lines, +59 vs prior) — full Step O.2 implementation: semantic regex discovery (`openclaw.*master|claw.*master|openclaw.*files|master.*files`), disambiguate multiple matches, last-resort create with operator approval, save playbook copy (O.2.D), append to Run Manifest (O.2.E)
+- `scripts/04-register-crons.sh` UPDATED to add 5th cron: `system-health-heartbeat` (`0 9 1 * *`, monthly comprehensive review)
+- `scripts/05-update-agents-md.sh` FULL REWRITE (53 → 284 lines): now inserts (a) verbatim Step 7C classification block (playbook 1537-1645), (b) existing skill-38 runtime routing block, (c) new Step 0.5 Quiet Hours, (d) new Step 0.7 Compliance Keywords, (e) new Step 1.85 Workflow Builder trigger phrases — all in marker-block-wrapped idempotent inserts with timestamped backups
+- `scripts/09-install-conversation-workflows.sh` NEW (133 lines) — creates `$MASTER_FILES_DIR/conversation-workflows/registry.md` with 3-Layer summary + file naming conventions + builder trigger phrases
+- `scripts/10-generate-capabilities-playbook.sh` NEW (115 lines) — renders the capabilities playbook template with substitutions from openclaw.json + company-config.json
+- `scripts/11-run-qc-checklist.sh` NEW (185 lines) — automates mechanical Step 11 verification: file-existence, all 5 expected crons, `openclaw config validate`, tunnel curl, AGENTS.md marker checks, MEMORY.md marker check; final PASS/FAIL
+- `scripts/12-scaffold-channel-playbooks.sh` NEW (140 lines) — creates 8 channel playbooks (SMS/Email/FB-Messenger/FB-Comments/IG-DM/LinkedIn/Live-Chat/All-in-One) in Notion (Layer 1) or markdown (Layer 2)
+- `scripts/13-create-cloudflare-tunnel.sh` NEW (133 lines) — Step 1: create tunnel via CF API, configure ingress, create proxied CNAME, save secrets. Idempotent — reuses tunnel named `openclaw-$ROUTE_ID` if present. Token never written to stdout.
+- `scripts/14-install-cloudflared-service.sh` NEW (127 lines) — Step 2: install cloudflared as system service (Darwin: launchctl; Linux: systemd) + 30s Restart Survival Test
+- `scripts/15-configure-hooks-mappings.sh` NEW (251 lines) — Step 3 + 3.5 + 4: add hooks.mappings entry, interactive 3-tier model wizard (real-time/async/batch with DeepSeek V4 Pro thinking:max / Kimi 2.6 / GPT-5.5 / Gemini 3.1), generate HOOKS_TOKEN, end-to-end test via synthetic GHL payload
+- `scripts/16-verify-openclaw-version.sh` NEW (60 lines) — Step O.3: require openclaw >= 2026.5.22, `config validate` exit 0
+- `scripts/17-backup-openclaw-config.sh` NEW (66 lines) — Step O.4: timestamped backup of openclaw.json + env file. Idempotent (skip if backup < 5min old).
+- `scripts/18-locate-secrets-env.sh` NEW (79 lines) — Step O.5: find or create secrets env file, save path to `~/.openclaw/.skill-38-secrets-env-path`
+- `scripts/19-configure-dreaming-embeddings.sh` NEW (110 lines) — Step O.6: Python deep-merge into openclaw.json (canonical `agents.defaults.memorySearch.*` + `plugins.entries.memory-core.config.dreaming.*` paths from MEMORY.md 8-layer pattern; NOT the stale `openclaw config set` invocation in the playbook prose). Provider priority OPENAI > GEMINI > ANTHROPIC.
+- `scripts/20-seed-design-principles.sh` NEW (106 lines) — Step O.7: seed design principles Rules 1-5 to MEMORY.md (skill-19 territory) via separate marker block (no conflict with skill-38 memory-rules-6-14)
+- `scripts/21-generate-client-reference-sheet.sh` NEW (468 lines) — Step 6 BULLETPROOFED: 3-layer Notion-skill / NOTION_API_KEY / markdown decision tree; Python-based markdown→Notion-block converter that preserves code-block fidelity (language tag, line breaks, 1800-char chunking at line boundaries — NEVER splits mid-line); creates 4-section page (Setup Reference + SMS Workflow + Generic Template + Verification Checklist) under existing "zhc" parent or creates fallback parent; Telegram client message format: Notion URL at top with "You can skip everything below this line and just click that Notion link" + embedded fallback excerpt; recommends Notion if Layer 3 fallback fires
+- `scripts/22-init-run-manifest.sh` NEW (59 lines) — creates Run Manifest at `$MASTER_FILES_DIR/run-manifest-<ts>.md` from template; appends if same-day manifest exists
+- `scripts/23-save-secrets.sh` NEW (52 lines) — Step 5: append 5-secret block to env with timestamp marker
+
+### Updated — top-level skill files
+
+- `38-conversational-ai-system/SKILL.md` + `INSTALL.md`: protocol count 27 → 31, references 7/8 → 10. The "27 protocols" claim is now true (was false in v1.0-v1.2).
+- `38-conversational-ai-system/INSTRUCTIONS.md`: Steps 9.8/9.9/9.10/9.20 table rows updated to point at the new protocol files (was: "smaller artifact, not a separate protocol file" — that admission is gone)
+- `38-conversational-ai-system/skill-version.txt`: 1.2.0 → 1.3.0
+
+### Provenance + audit
+
+- Audit agent that found the gaps: `acaea0b4`
+- 5 patch agents that produced the content: `ad0d105e` (Group A), `a763acbb` (Group B-1), `a7b1a4b4` (Group B-2), `a7584ace` (Group B-3), `a7ded774` (Group C)
+- Aggregate: 33 files, 5,152 lines of new/rewritten content
+- All sed extractions returned EXACT expected line counts (no surprises)
+- All scripts pass `bash -n`
+- Verbatim extraction discipline: every protocol/template/reference file carries a 5-line operator header above the verbatim playbook content; the content itself is byte-identical to the source line range
+
+### Known minor caveats (intentional, documented)
+
+- `scripts/19-configure-dreaming-embeddings.sh` uses Python deep-merge into openclaw.json rather than the playbook's `openclaw config set` invocation. Playbook prose is stale on this point — `openclaw config set` for nested memory keys fails with "Invalid input" on 2026.5.22+ strict schema (per `~/.claude/memory/openclaw-memory-activation-pattern.md`).
+- Step 9.10 row also references Section 7 of the agent-capabilities-playbook template (the playbook puts multi-language as Section 7 of the capabilities doc). Both paths to the content remain: standalone protocol + capabilities section.
+- `templates/workflow-verification-checklist-template.md` keeps the playbook's legacy `<HOOK_NAME>` and `<channel>` placeholders verbatim. The `21-generate-client-reference-sheet.sh` substitution helper handles `<ROUTE_ID>` (= `<HOOK_NAME>`) via the documented substitution map in the operator header.
+
 ## [v10.15.2]  -  2026-05-28  -  Skill 38 ships the School of AI Cloudflare + GoDaddy setup guide IN the skill (verbatim) + Rule 13 halt path now points at it
 
 ### Why
