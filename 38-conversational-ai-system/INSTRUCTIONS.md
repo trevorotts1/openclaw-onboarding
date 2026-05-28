@@ -68,9 +68,9 @@ This is where the 27 protocols ship. The mapping table:
 | 9.5  | `conversational-safeguards.md` (high-volume, long-conversation pause, bot-detection) |
 | 9.6  | `sentiment-monitoring-protocol.md` |
 | 9.7  | `pii-scrubbing-protocol.md` |
-| 9.8  | Quiet Hours (smaller artifact in master-files folder, not a separate protocol file) |
-| 9.9  | Compliance Keyword Detection (smaller artifact) |
-| 9.10 | Multi-Language Detection (Section 7 of agent-capabilities-playbook.md, not a separate protocol file) |
+| 9.8  | `protocols/quiet-hours-protocol.md` (verbatim from playbook lines 2327-2401); AGENTS.md Step 0.5 inserted by `scripts/05-update-agents-md.sh` |
+| 9.9  | `protocols/compliance-keyword-detection-protocol.md` (verbatim from playbook lines 2403-2497, FCC STOP/UNSUB + email unsubscribe + GDPR + HIPAA + FINRA/SEC blocks); AGENTS.md Step 0.7 inserted by `scripts/05-update-agents-md.sh` |
+| 9.10 | `protocols/multi-language-detection-protocol.md` (verbatim from playbook lines 2499-2545); also `protocols/conversation-log-protocol.md` adds the `preferred_language` header field; also surfaced as Section 7 of `templates/agent-capabilities-playbook-template.md` |
 | 9.11 | `confidence-threshold-protocol.md` |
 | 9.12 | `conversation-export-protocol.md` |
 | 9.13 | `drift-detection-protocol.md` |
@@ -80,7 +80,7 @@ This is where the 27 protocols ship. The mapping table:
 | 9.17 | `conversation-analytics-protocol.md` |
 | 9.18 | `document-generation-protocol.md` |
 | 9.19 | `smart-booking-protocol.md` |
-| 9.20 | Conversation Workflow Builder 3-layer (covered across `intelligent-routing-protocol.md` + GHL workflow registry; not a separate protocol file) |
+| 9.20 | `protocols/conversation-workflows-protocol.md` (verbatim 3-Layer architecture from playbook lines 3857-4322); registry scaffolded by `scripts/09-install-conversation-workflows.sh`; trigger phrases wired into AGENTS.md Step 1.85 by `scripts/05-update-agents-md.sh` |
 | 9.21 | **Humanizer** — skill 19 (NOT shipped here; ALWAYS-ON via skill 38's AGENTS.md Step 2.8) |
 | 9.22 | `typed-knowledge-bases-protocol.md` |
 | 9.23 | `sales-best-practices-protocol.md` + `references/sales-frameworks-deep-dive.md` |

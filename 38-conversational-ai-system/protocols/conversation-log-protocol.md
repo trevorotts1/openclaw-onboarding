@@ -1,3 +1,9 @@
+<!-- OPERATOR HEADER (5 lines) — DO NOT EDIT BELOW -->
+<!-- Source: openclaw-cloudflare-tunnel-prompt (1).md v5.14 — lines 1804-1993 (verbatim) -->
+<!-- Section: Step 9.4 — Install Conversation Log Protocol, PLUS preferred_language header field per Step 9.10.B -->
+<!-- ONLY ADDITION to the verbatim source: one `Preferred language:` line inserted into the File Anatomy header block. -->
+<!-- Patch source: skill-38-patch-1 agent — 2026-05-28 -->
+
 # Conversation Log Protocol
 
 This document defines the rules for logging, summarizing, and purging
@@ -20,6 +26,7 @@ Each contact's log file has this structure, top to bottom:
 Contact ID: <id>
 First contact: <ISO date>
 Last activity: <ISO date>
+Preferred language: <BCP-47 code, e.g. en, es, fr-CA — populated on first contact per Step 9.10 multi-language detection. The agent reads this on every reply turn so a returning customer keeps getting replies in the language they originally wrote in.>
 
 ## Historical Summary (older than 14 days)
 [Rolled-up summaries of all activity older than 14 days. Never deleted.
@@ -187,4 +194,3 @@ Add to the Client Reference Sheet and the final chat summary:
 - Protocol: `<MASTER_FILES_DIR>/conversation-log-protocol.md`
 - Cron: runs nightly at 11:30 PM
 - Retention: 72 hours verbatim → 14 days daily summary → 90 days historical summary (summaries kept forever)
-
