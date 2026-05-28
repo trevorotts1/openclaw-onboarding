@@ -119,9 +119,15 @@ I checked these locations and found no Cloudflare API key:
   - ~/.zshrc, ~/.bashrc, ~/.bash_profile
   - Current shell environment
 
-To proceed, follow these instructions to get your credentials:
+To proceed, follow the walk-through guide shipped INSIDE this skill:
 
-  https://docs.google.com/document/d/1A_U-H-MMLh2mQ_zhzLxK_tKmFyPNb7i0FNvxjJ4SVpo/edit?usp=sharing
+  cat ~/.openclaw/skills/38-conversational-ai-system/references/cloudflare-godaddy-setup-guide.md
+
+(That guide is the verbatim School of AI step-by-step: 4 parts, ~30 minutes,
+walks you through the Cloudflare account, GoDaddy nameservers, and the
+9-permission API token creation. The Google Doc version
+https://docs.google.com/document/d/1A_U-H-MMLh2mQ_zhzLxK_tKmFyPNb7i0FNvxjJ4SVpo/edit?usp=sharing
+is the canonical source if you prefer to view it in Google Docs.)
 
 Once you have your Cloudflare API key:
 
