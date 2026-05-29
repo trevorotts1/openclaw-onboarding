@@ -1,3 +1,32 @@
+## [1.4.5] - 2026-05-29 - v6.0 clean comprehensive playbook; de-staled
+
+### Why
+The source playbook is replaced with the **clean, conflict-free v6.0** single-source-of-truth build. All GHL
+hook guidance now matches the settled standard everywhere: **23-key FLAT** Raw Body, the body's own
+`messageTemplate` value is **placeholder-free**, `deliver` is **`false`**, mapping-level `fallbacks` is
+**never** a key (the `.strict()` schema rejects it; fallbacks live on the model-routing config only), and no
+nested bodies / no stripped sub-23-key bodies anywhere. Every passage that disagreed with that standard was
+removed or corrected upstream in the v6.0 content, so the repo carries **no stale or conflicting playbook
+content**. The standards docs (`GHL-INBOUND-AND-PLAYBOOKS.md`, `communications-playbook-standard.md`,
+`workflow-ai-instructions-standard.md`) remain their own reference docs; the playbook references them rather
+than duplicating them. `skill-version.txt` bumped 1.4.4 → 1.4.5.
+
+### Changed
+- `references/v5.14-source-playbook.md` → **renamed** to `references/v6.0-source-playbook.md` (git mv) and its
+  content replaced with the clean v6.0 comprehensive playbook (9,430 lines / ~452 KB). The header now stamps
+  **Version 6.0 (CLEAN, CONFLICT-FREE)** and declares itself the single source of truth superseding v5.x.
+- Updated every live pointer/cross-link from `v5.14-source-playbook.md` to `v6.0-source-playbook.md`:
+  `scripts/01-locate-master-files-folder.sh` (both `PLAYBOOK_SRC` and the `DEST_PLAYBOOK` copy target),
+  `INSTALL.md`, `INSTRUCTIONS.md`, and the reference cross-links in `GHL-INBOUND-AND-PLAYBOOKS.md`,
+  `stripe-coupons-api.md`, `stripe-webhooks-reference.md`, `shopify-graphql-reference.md`,
+  `sales-frameworks-deep-dive.md`, `ghl-coupons-api.md`, `cloudflare-tunnel-troubleshooting.md`,
+  `cloudflare-godaddy-setup-guide.md`.
+- Conflict sweep across the Skill 38 folder (nested GHL body, sub-23-key body, `deliver:true`, mapping-level
+  `fallbacks`, conflicting "DATA ONLY / no messageTemplate" phrasing): **no contradictions found**. The only
+  remaining `deliver:true` / "no stripped bodies" mentions are corrective prose that debunks the old patterns,
+  and the standards docs already match the corrected structure — no surgical edits were needed beyond the
+  playbook content + filename pointers above.
+
 ## [1.4.4] - 2026-05-29 - THE TRINITY + Communications Playbook & Workflow-AI standards
 
 ### Why

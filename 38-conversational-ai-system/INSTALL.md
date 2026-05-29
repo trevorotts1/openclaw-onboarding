@@ -31,7 +31,7 @@ This skill REFUSES to install until all 4 prerequisites are satisfied. The `00-v
 
 ## Estimated install time
 
-60-90 minutes per the v5.14 playbook (see `references/v5.14-source-playbook.md` for the full Phase-by-Phase walkthrough). The install scripts handle the mechanical parts; INSTRUCTIONS.md walks the operator through the interactive parts (model selection wizard, master files folder discovery, Notion playbook scaffolding, etc.).
+60-90 minutes per the v5.14 playbook (see `references/v6.0-source-playbook.md` for the full Phase-by-Phase walkthrough). The install scripts handle the mechanical parts; INSTRUCTIONS.md walks the operator through the interactive parts (model selection wizard, master files folder discovery, Notion playbook scaffolding, etc.).
 
 ## Install order (run the scripts in this order; each is idempotent)
 
@@ -62,5 +62,5 @@ After scripts run, follow INSTRUCTIONS.md for the interactive Phases 0-7 of the 
 
 - `INSTRUCTIONS.md` — the operator-facing v5.14 walkthrough (Phase 0 through Phase 7).
 - `protocols/` — the 27 v5.14 protocol files, verbatim from the source playbook.
-- `references/v5.14-source-playbook.md` — the full 8,797-line source playbook (canonical source of truth).
+- `references/v6.0-source-playbook.md` — the full 8,797-line source playbook (canonical source of truth).
 - `references/conversational-ai-strategic-roadmap.md` — strategic context (✅ shipped vs 📋 pending).

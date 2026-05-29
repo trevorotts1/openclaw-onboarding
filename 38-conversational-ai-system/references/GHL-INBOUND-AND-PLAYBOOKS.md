@@ -4,7 +4,7 @@
 > inbound messages into OpenClaw and building the agent's conversation playbooks, **for the
 > Mac-mini / Homebrew install** (paths `~/clawd/…` and `~/.openclaw/…`, `cloudflared` via launchd).
 > It is derived from a live build and supersedes any conflicting prose in
-> `v5.14-source-playbook.md`. Where the source playbook and this doc disagree, **this doc wins.**
+> `v6.0-source-playbook.md`. Where the source playbook and this doc disagree, **this doc wins.**
 >
 > **Mac vs VPS divergences are flagged inline.** The biggest two:
 > 1. `cloudflared` runs via **launchd** (`sudo cloudflared service install`) — needs **interactive sudo**.
@@ -16,7 +16,7 @@
 ## CORRECTED GHL HOOK STRUCTURE (2026-05-29)
 
 > Verified LIVE on Corey / Explore Growth, OpenClaw **2026.5.27**. This **supersedes** any older nested-body
-> or in-body-`messageTemplate` example anywhere in this skill (this doc, `v5.14-source-playbook.md`, the
+> or in-body-`messageTemplate` example anywhere in this skill (this doc, `v6.0-source-playbook.md`, the
 > scripts, and the templates).
 
 **CARDINAL RULE — the GHL Custom Webhook RAW BODY is FLAT (no nesting) and carries ALL 23 keys** (owner
@@ -26,7 +26,7 @@ OpenClaw `hooks.mappings` entry in `openclaw.json` is configured separately; the
 
 **0) THE GHL RAW BODY MUST CONTAIN ALL 23 KEYS (OWNER DIRECTIVE — NON-NEGOTIABLE).** 23 is the MINIMUM.
 No stripped/short bodies (no 8-key, 11-key, or 13-key versions) are allowed ANYWHERE in this skill. Every GHL
-Custom Webhook RAW BODY example — in this doc, in `v5.14-source-playbook.md`, in the scripts, the templates,
+Custom Webhook RAW BODY example — in this doc, in `v6.0-source-playbook.md`, in the scripts, the templates,
 and the protocols — MUST be the full 23-key body below. Do NOT reduce, "simplify," or drop keys. Where a
 smaller body appears, replace it with this 23-key body. **The 23 keys (exact):** `id`, `match`, `action`,
 `agent_id`, `model`, `wakeMode`, `name`, `session_key`, `messageTemplate`, `deliver`, `timeoutSeconds`,

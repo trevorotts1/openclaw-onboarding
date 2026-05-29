@@ -3,7 +3,7 @@
 > Deep-dive reference for `protocols/sales-best-practices-protocol.md`. The protocol
 > file is the behavioral contract; this file is the framework-by-framework breakdown
 > the agent picks from per Conversation Workflow. Consolidated from v5.14 playbook
-> Step 9.23. See `references/v5.14-source-playbook.md` for the canonical block.
+> Step 9.23. See `references/v6.0-source-playbook.md` for the canonical block.
 
 ## The three frameworks shipped in v5.14
 

@@ -2,7 +2,7 @@
 
 > Deep-dive reference for `protocols/discount-code-protocol.md` AND
 > `protocols/stripe-integration-protocol.md`. Consolidated from v5.14 playbook
-> (see `references/v5.14-source-playbook.md` Steps 9.26 + 9.27 for canonical blocks).
+> (see `references/v6.0-source-playbook.md` Steps 9.26 + 9.27 for canonical blocks).
 
 ## Two related Stripe concepts
 

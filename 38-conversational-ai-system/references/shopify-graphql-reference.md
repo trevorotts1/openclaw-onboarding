@@ -1,7 +1,7 @@
 # Shopify Admin GraphQL — Reference
 
 > Deep-dive reference for `protocols/shopify-integration-protocol.md`. Consolidated from
-> v5.14 playbook Step 9.31. See `references/v5.14-source-playbook.md` for the canonical block.
+> v5.14 playbook Step 9.31. See `references/v6.0-source-playbook.md` for the canonical block.
 
 ## API choice — GraphQL only
 

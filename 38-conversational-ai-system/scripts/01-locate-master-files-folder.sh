@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PLAYBOOK_SRC="$SKILL_ROOT/references/v5.14-source-playbook.md"
+PLAYBOOK_SRC="$SKILL_ROOT/references/v6.0-source-playbook.md"
 OS="$(uname -s)"
 TS="$(date +%Y%m%d-%H%M%S)"
 
@@ -97,7 +97,7 @@ fi
 printf '%s\n' "$MASTER_FILES_DIR" > "$STATE_FILE"
 
 # ---------- O.2.D — Save playbook copy (idempotent) ----------
-DEST_PLAYBOOK="$MASTER_FILES_DIR/v5.14-source-playbook.md"
+DEST_PLAYBOOK="$MASTER_FILES_DIR/v6.0-source-playbook.md"
 if [ -f "$PLAYBOOK_SRC" ]; then
   if [ ! -f "$DEST_PLAYBOOK" ] || [ "$PLAYBOOK_SRC" -nt "$DEST_PLAYBOOK" ]; then
     cp "$PLAYBOOK_SRC" "$DEST_PLAYBOOK"
