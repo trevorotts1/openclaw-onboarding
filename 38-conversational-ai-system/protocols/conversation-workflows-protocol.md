@@ -253,23 +253,31 @@ ACTIONS (in this exact order):
   - Headers:
     - Authorization: Bearer <HOOKS_TOKEN>
     - Content-Type: application/json
-  - Body (Raw JSON — FLAT, no nested objects, NO messageTemplate):
+  - Body (Raw JSON — FLAT, no nested objects, ALL 23 keys, placeholder-free messageTemplate):
     {
+      "id": "<HOOK_NAME>",
+      "match": "<HOOK_NAME>",
+      "action": "agent",
+      "agent_id": "<ROUTING_AGENT_ID>",
+      "model": "ollama/deepseek-v4-flash:cloud",
+      "wakeMode": "now",
+      "name": "GHL Sales Inbound",
+      "session_key": "hook:ghl:<channel>:{{contact.id}}",
+      "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+      "deliver": false,
+      "timeoutSeconds": 300,
       "channel": "<channel name>",
+      "to": "{{contact.phone}}",
+      "thinking": "medium",
       "contact_id": "{{contact.id}}",
       "first_name": "{{contact.first_name}}",
       "last_name": "{{contact.last_name}}",
       "email": "{{contact.email}}",
       "phone": "{{contact.phone}}",
-      "tags": "{{contact.tags}}",
       "subject": "{{message.subject}}",
       "message_body": "{{message.body}}",
-      "match": "<HOOK_NAME>",
-      "session_key": "hook:ghl:<channel>:{{contact.id}}",
-      "agent_id": "<ROUTING_AGENT_ID>",
       "location_id": "{{location.id}}",
-      "location_name": "{{location.name}}",
-      "workflow_id": "<workflow-id>"
+      "location_name": "{{location.name}}"
     }
 
 PUBLISH: Yes, publish the workflow when done — don't leave it as draft.
@@ -277,14 +285,14 @@ PUBLISH: Yes, publish the workflow when done — don't leave it as draft.
 
 Each field is filled in with the EXACT values from the operator's setup (`PUBLIC_HOSTNAME`, `HOOK_NAME`, `HOOKS_TOKEN`, channel name, tag names from D.1). Because Build-with-AI gets the SHAPE right but often mis-sets the token/JSON, the prompt's closing line instructs the operator to confirm the webhook URL and the `Authorization: Bearer <HOOKS_TOKEN>` header by hand after it builds.
 
-> **⚠️ CORRECTED GHL HOOK STRUCTURE (2026-05-29) — verified live on Corey/Explore Growth (OpenClaw 2026.5.27).**
-> The body MUST be **FLAT** — no nested `contact:{…}` / `customer_message:{…}` (a nested body makes EVERY field
-> arrive EMPTY at the hook, even a hardcoded `"channel"`). The body is **DATA ONLY and must NOT contain a
-> `messageTemplate`** — GHL expands the template's `{{…}}` as its own merge fields, fails, mangles them to
-> `##{}##`, and the webhook is Skipped ("Error while parsing the object to JSON"). The `messageTemplate` lives
-> ONLY on the server `hooks.mappings` entry, where it references the FLAT body key names (`{{contact_id}}`,
-> `{{message_body}}`, …) and MUST include the reply-via-GHL-Conversations-API instruction. Set `deliver:false`.
-> Insert each `{{…}}` value via GHL's Custom Values picker (typed-as-text tokens send empty). See
+> **⚠️ GHL HOOK STRUCTURE (owner directive — 23 keys, FLAT) — verified live on Corey/Explore Growth (OpenClaw 2026.5.27).**
+> The body MUST have **ALL 23 keys** (23 is the minimum — no stripped bodies) and be **FLAT** — no nested
+> `contact:{…}` / `customer_message:{…}` (a nested body makes EVERY field arrive EMPTY at the hook, even a
+> hardcoded `"channel"`). The body's `messageTemplate` VALUE MUST stay **placeholder-free** (no `{{…}}`) — if it
+> carried `{{…}}` tokens, GHL would expand them as its own merge fields, fail, mangle them to `##{}##`, and the
+> webhook would be Skipped ("Error while parsing the object to JSON"). Use the exact placeholder-free
+> `messageTemplate` string from the 23-key body. Set `deliver:false`. Insert each `{{…}}` value via GHL's
+> Custom Values picker (typed-as-text tokens send empty). See
 > `references/GHL-INBOUND-AND-PLAYBOOKS.md` → **CORRECTED GHL HOOK STRUCTURE (2026-05-29)** for the full spec.
 
 The agent then tells the operator:
@@ -370,18 +378,41 @@ check EACH item below. If any item is wrong, the fix is listed right there.
 - [ ] Content-Type dropdown is "application/json"
   - FIX IF WRONG: Change dropdown
 
-- [ ] Raw Body matches the JSON below EXACTLY (whitespace doesn't
-       matter, but every field, every quote, every brace must match):
+- [ ] Raw Body has ALL 23 keys, is FLAT, and matches the JSON below
+       EXACTLY (whitespace doesn't matter, but every key, every quote,
+       every brace must match). 23 is the MINIMUM — a shorter body is WRONG.
 
 ```json
 {
+  "id": "<HOOK_NAME>",
+  "match": "<HOOK_NAME>",
+  "action": "agent",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "model": "ollama/deepseek-v4-flash:cloud",
+  "wakeMode": "now",
+  "name": "GHL Sales Inbound",
+  "session_key": "hook:ghl:<channel>:{{contact.id}}",
+  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+  "deliver": false,
+  "timeoutSeconds": 300,
   "channel": "<channel>",
-  ... [full body from D.2 prompt] ...
+  "to": "{{contact.phone}}",
+  "thinking": "medium",
+  "contact_id": "{{contact.id}}",
+  "first_name": "{{contact.first_name}}",
+  "last_name": "{{contact.last_name}}",
+  "email": "{{contact.email}}",
+  "phone": "{{contact.phone}}",
+  "subject": "{{message.subject}}",
+  "message_body": "{{message.body}}",
+  "location_id": "{{location.id}}",
+  "location_name": "{{location.name}}"
 }
 ```
-  - Common Build-with-AI mistake: skips fields, uses wrong variable
-    syntax (e.g., `{contact.id}` instead of `{{contact.id}}`)
-  - FIX IF WRONG: Click Raw Body → replace entirely with the JSON above
+  - Common Build-with-AI mistake: skips one of the 23 keys, uses wrong
+    variable syntax (e.g., `{contact.id}` instead of `{{contact.id}}`),
+    or inserts merge tokens into the placeholder-free `messageTemplate`.
+  - FIX IF WRONG: Click Raw Body → replace entirely with the 23-key JSON above
 
 ## Publish
 

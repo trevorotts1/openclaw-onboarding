@@ -67,18 +67,42 @@ If any item is wrong, the fix is listed right there.
 - [ ] Content-Type dropdown is "application/json"
   - FIX IF WRONG: Change dropdown
 
-- [ ] Raw Body matches the JSON below EXACTLY (whitespace doesn't
-       matter, but every field, every quote, every brace must match):
+- [ ] Raw Body has ALL 23 keys, is FLAT, and matches the JSON below
+       EXACTLY (whitespace doesn't matter, but every key, every quote,
+       every brace must match). 23 is the MINIMUM — a shorter body is WRONG.
+       Only `channel` + the `session_key` prefix change per channel.
 
 ```json
 {
+  "id": "<HOOK_NAME>",
+  "match": "<HOOK_NAME>",
+  "action": "agent",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "model": "ollama/deepseek-v4-flash:cloud",
+  "wakeMode": "now",
+  "name": "GHL Sales Inbound",
+  "session_key": "hook:ghl:<channel>:{{contact.id}}",
+  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+  "deliver": false,
+  "timeoutSeconds": 300,
   "channel": "<channel>",
-  ... [full body from D.2 prompt] ...
+  "to": "{{contact.phone}}",
+  "thinking": "medium",
+  "contact_id": "{{contact.id}}",
+  "first_name": "{{contact.first_name}}",
+  "last_name": "{{contact.last_name}}",
+  "email": "{{contact.email}}",
+  "phone": "{{contact.phone}}",
+  "subject": "{{message.subject}}",
+  "message_body": "{{message.body}}",
+  "location_id": "{{location.id}}",
+  "location_name": "{{location.name}}"
 }
 ```
-  - Common Workflow AI mistake: skips fields, uses wrong variable
-    syntax (e.g., `{contact.id}` instead of `{{contact.id}}`)
-  - FIX IF WRONG: Click Raw Body → replace entirely with the JSON above
+  - Common Workflow AI mistake: skips one of the 23 keys, uses wrong
+    variable syntax (e.g., `{contact.id}` instead of `{{contact.id}}`),
+    or inserts merge tokens into the placeholder-free `messageTemplate`.
+  - FIX IF WRONG: Click Raw Body → replace entirely with the 23-key JSON above
 
 ## Publish
 

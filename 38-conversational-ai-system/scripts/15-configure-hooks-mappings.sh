@@ -244,10 +244,14 @@ fi
 # STEP 4 — End-to-end test through the public tunnel
 # =============================================================================
 echo "==> Step 4: end-to-end test" >&2
-# CORRECTED GHL HOOK STRUCTURE (2026-05-29): FLAT body, no nested objects. session_key is flat and
-# starts with the allowed "hook:ghl:" prefix; the mapping reads contact_id/message_body/etc. directly.
+# CORRECTED GHL HOOK STRUCTURE (2026-05-29): FLAT body, no nested objects, ALL 23 keys (owner directive —
+# 23 is the minimum, no stripped bodies). session_key is flat and starts with the allowed "hook:ghl:" prefix;
+# the mapping reads contact_id/message_body/etc. directly. The body's messageTemplate is placeholder-free so
+# GHL never mangles it. 23 keys: id, match, action, agent_id, model, wakeMode, name, session_key,
+# messageTemplate, deliver, timeoutSeconds, channel, to, thinking, contact_id, first_name, last_name, email,
+# phone, subject, message_body, location_id, location_name.
 ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"  # may be unset if the mapping already existed (set -u guard)
-PAYLOAD='{"channel":"sms","contact_id":"e2e-test-001","first_name":"E2E","last_name":"Test","email":"e2e@example.com","phone":"+15555550100","subject":"","message_body":"End-to-end setup verification.","match":"'"$ROUTE_ID"'","session_key":"hook:ghl:sms:e2e-test-001","agent_id":"'"$ROUTING_AGENT_ID"'","location_id":"e2e-loc-001","location_name":"E2E Test Location"}'
+PAYLOAD='{"id":"'"$ROUTE_ID"'","match":"'"$ROUTE_ID"'","action":"agent","agent_id":"'"$ROUTING_AGENT_ID"'","model":"ollama/deepseek-v4-flash:cloud","wakeMode":"now","name":"GHL Sales Inbound","session_key":"hook:ghl:sms:e2e-test-001","messageTemplate":"Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md","deliver":false,"timeoutSeconds":300,"channel":"sms","to":"+15555550100","thinking":"medium","contact_id":"e2e-test-001","first_name":"E2E","last_name":"Test","email":"e2e@example.com","phone":"+15555550100","subject":"","message_body":"End-to-end setup verification.","location_id":"e2e-loc-001","location_name":"E2E Test Location"}'
 
 HTTP_CODE="$(curl -sS -o /tmp/.hooks-e2e-body.$$ -w '%{http_code}' \
   --max-time 30 \
