@@ -65,6 +65,7 @@ This is the SINGLE skill that builds a client's entire AI company. It replaces w
 7. **Generates the org chart** (ORG-CHART.md in the CEO workspace)
 8. **Creates the Devil's Advocate** in every department automatically
 9. **Generates the Command Center config** (departments.json for the dashboard)
+10. **Pulls the ROLE LIBRARY + authors the SOP LIBRARY for every role — ENFORCED (v10.15.8).** Filling each role's `how-to.md` from `templates/role-library/` and authoring its SOPs is a GATED build step, not optional cleanup. State fields `roleLibraryStatus` / `sopLibraryStatus` (+ per-dept `roleLibraryFilled` / `sopLibraryFilled`) plus the verify/resume gate `scripts/verify-library-gate.sh` mean a workforce is **NOT complete** (no `buildCompletedAt`, no closeout) until BOTH libraries are populated. The 15-min resume cron fires `[LIBRARY-RESUME]` until they are. See INSTRUCTIONS.md "Moment 3.6 — ROLE LIBRARY + SOP LIBRARY auto-pull gate".
 
 ## How It Connects to the System
 

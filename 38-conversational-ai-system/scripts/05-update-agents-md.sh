@@ -297,6 +297,20 @@ GHL note: Automations have NO API/MCP — the only build path is the
 prompt, the operator clicks + pastes. The prompt nails the SHAPE; the
 operator pastes tokens after — always ship the verification checklist.
 
+THE TRINITY: a GHL workflow/automation, a communications playbook, and a
+workflow-AI prompt travel together — building one implies the other two.
+See protocols/conversation-workflows-protocol.md (Section "THE TRINITY").
+
+Standards (full content in reference docs — do NOT inline here):
+- Communications playbook format + must-appear checklist + storage + the
+  Notion→Google Docs→plain-text fallback order:
+  references/communications-playbook-standard.md
+- Workflow-AI prompt must-appear checklist + WHERE (Build-with-AI button in
+  Automations) + field-by-field Custom Webhook (EVENT/METHOD/URL/AUTH=None/
+  HEADERS via Add item/Content-Type/23-key flat RAW BODY via Custom Values) +
+  multi-action (if/else, Add-Tag, tag-check) + verification checklist:
+  references/workflow-ai-instructions-standard.md
+
 Cross-refs: Step 9.33 (Intelligent Playbook Routing — cross-playbook
 transitions, max 3 switches) and Step 9.34 (Proactive Features Suite —
 pattern-based "want a playbook?" engine). See protocol Section K.

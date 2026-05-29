@@ -1,3 +1,27 @@
+## [v10.15.8]  -  2026-05-29  -  Skill 38 Trinity + workflow-AI/comms standards; Skill 23 role/SOP library gate
+
+### Why
+Two hardening tracks shipped together. (1) **Skill 38 (v1.4.4)** — taught THE TRINITY (a GHL
+workflow/automation, a communications playbook, and a workflow-AI prompt travel together; one implies the
+other two) and added two reference/protocol standards: the COMMUNICATIONS PLAYBOOK STANDARD (format +
+must-appear checklist + storage in `conversation-workflows/` + registry + the Notion→Google Docs→plain-text
+client-copy fallback order) and the WORKFLOW-AI INSTRUCTIONS STANDARD (must-appear checklist; WHERE = GHL
+Automations "Build with AI" button; field-by-field Custom Webhook incl. EVENT=CUSTOM, METHOD=POST, real
+URL, AUTHORIZATION=None, HEADERS via Add item → Authorization Bearer + Content-Type json, RAW BODY = full
+23-key flat JSON via Custom Values picker; MULTI-ACTION teaching: if/else, Add-Tag, tag-check, multiple
+actions, create-tag-via-GHL-skill-first; + the Build-with-AI verification checklist). CORE md files get
+concise pointers only — full content lives in the references. All GHL bodies honor the 23-key rule (flat,
+placeholder-free `messageTemplate`, no `\n`, no nesting, no stripped bodies). (2) **Skill 23 (v10.15.8)** —
+ENFORCED role-library + SOP-library auto-pull: new state fields (`roleLibraryStatus`, `sopLibraryStatus`,
+per-dept `roleLibraryFilled`/`sopLibraryFilled`) + a verify gate (`scripts/verify-library-gate.sh`) + a
+resume gate (`[LIBRARY-RESUME]`) so a workforce is never complete until both libraries are populated
+(last-night Kofi/Teresa/Evelyn/Maria/Lyric incident — scaffolded but libraries never connected).
+
+### Version
+- Repo-wide bump v10.15.7 → v10.15.8 via `scripts/bump-version.sh` (all 8 version locations agree).
+- Skill 38 per-skill semver bumped 1.4.3 → 1.4.4 (independent of the repo-wide version).
+- See `38-conversational-ai-system/CHANGELOG.md` and `23-ai-workforce-blueprint/CHANGELOG.md` for per-skill detail.
+
 ## [v10.15.7]  -  2026-05-28  -  Skill 38 v1.4.0: GHL Build-with-AI hardening + calendar-sync (Mac)
 
 ### Why

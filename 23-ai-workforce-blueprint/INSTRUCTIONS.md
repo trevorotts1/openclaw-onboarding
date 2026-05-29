@@ -552,7 +552,7 @@ Owner sees real-time progress at `/onboarding/building` in the Command Center. T
 
 Before responding to the owner with "build my company" confirmation, the master orchestrator MUST:
 
-1. Write `~/.openclaw/workspace/.workforce-build-state.json` (VPS: `/data/.openclaw/workspace/.workforce-build-state.json`) per `build-state-schema.json`. Required fields: `version: 1`, `interviewComplete: true`, `interviewCompletedAt`, `interviewVersion`, `ownerChat`, `ownerName`, `agentName`, and a `departments` array with EVERY planned department in `status: "pending"`.
+1. Write `~/.openclaw/workspace/.workforce-build-state.json` (VPS: `/data/.openclaw/workspace/.workforce-build-state.json`) per `build-state-schema.json`. Required fields: `version: 1`, `interviewComplete: true`, `interviewCompletedAt`, `interviewVersion`, `ownerChat`, `ownerName`, `agentName`, and a `departments` array with EVERY planned department in `status: "pending"`. **Also seed `roleLibraryStatus: "pending"` and `sopLibraryStatus: "pending"`** (v10.15.8) so the library gate (Moment 3.6) is enforced from the outset — the resume cron treats unset/non-`done` as not-yet-done.
 
    **Then call the interview-complete hook (added v10.15.1 / v10.14.1):**
 
@@ -607,9 +607,34 @@ The script is idempotent — it can be run after EVERY dept flips to `done`, OR 
 
 **Why this is binding:** Pre-v10.13.18, Skill 23 marked depts `"done"` purely on file presence, then Skill 37 sent a celebration to the client claiming an N-dept M-role workforce was "LIVE" — when in reality `agents.list[]` contained one entry (`main`). The materialize step is the contract that makes the celebration honest.
 
-### When ALL departments are `done`
+### Moment 3.6 — ROLE LIBRARY + SOP LIBRARY auto-pull gate (BINDING — added v10.15.8)
 
-The master orchestrator:
+**Why this exists:** last night (Kofi / Teresa / Evelyn / Maria / Lyric) several workforces were *scaffolded* — department folders and role folders existed, the depts even flipped to `status: "done"` — but the **role library was never pulled into the `how-to.md` files** AND the **SOP placeholders were never authored**. The build still "looked done." A `status: "done"` department with empty role-library `how-to.md` files and unfilled SOP stubs is INCOMPLETE.
+
+**Prose is not enforcement.** A line that says "AUTOMATIC NEXT STEP: also pull the role library" does NOT enforce anything (same lesson as the v10.14.16 build-resume fix). Enforcement = a **state field** + a **verify/resume gate**. v10.15.8 adds both:
+
+- **State fields** (`build-state-schema.json`): `roleLibraryStatus` (`pending`→`pulling`→`done`/`failed`), `sopLibraryStatus` (`pending`→`authoring`→`done`/`failed`), `libraryFailureReason`, and per-department `roleLibraryFilled` / `sopLibraryFilled` booleans.
+- **Verify gate** (`scripts/verify-library-gate.sh`): runs `qc-completeness.sh` (read-only), then writes the gate fields and exits non-zero unless **every** dept has `library_pct == 100` (role library pulled into every `how-to.md`) AND `sop_stubs_remaining == 0` with `avg_sop_per_role > 0` (SOPs authored). `build-workforce.py` invokes it automatically at the end of the build.
+- **Resume gate** (`scripts/resume-workforce-build.sh`): once all depts are `done` but `roleLibraryStatus != done` OR `sopLibraryStatus != done`, the 15-min cron fires a `[LIBRARY-RESUME]` self-ping (BEFORE the closeout gate) so the agent re-pulls.
+
+**The master orchestrator MUST, after all departments are `done` and BEFORE writing `buildCompletedAt`:**
+
+1. Confirm the role library was pulled into every role's `how-to.md`. If not, re-run `scripts/post-build-role-workspaces.py` (it fills `how-to.md` from `templates/role-library/`).
+2. Confirm SOPs were authored for every role (no `to be personalized` stubs). If not, re-run `scripts/populate-sops-from-manifest.py`.
+3. Run the gate and require a clean pass:
+   ```bash
+   # Mac:
+   bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/verify-library-gate.sh
+   # VPS:
+   bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/verify-library-gate.sh
+   ```
+   Exit `0` = both libraries `done` (gate PASSES). Exit `2` = role library not done, `3` = SOP library not done, `4` = both not done, `5` = no workforce / qc could not run. Re-pull and re-run until it exits `0`.
+
+**A workforce is NOT complete — and `buildCompletedAt` / `closeoutStatus=pending` MUST NOT be written — until `roleLibraryStatus == done` AND `sopLibraryStatus == done`.** This gate runs BEFORE the closeout gate. Skill 37 must never fire a celebration for a workforce whose roles have empty `how-to.md` files or stub SOPs.
+
+### When ALL departments are `done` AND the library gate passes
+
+The master orchestrator (ONLY after Moment 3.6's `verify-library-gate.sh` exits 0):
 1. Sets `buildCompletedAt` in the state file.
 2. Sets `closeoutStatus = "pending"` in the state file (atomic write). **This is the v10.13.16 contract** — Skill 37 ZHC Closeout reads this field and picks up the celebration handoff.
 3. Either invokes `~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh` inline (preferred — owner gets the celebration faster) OR exits and lets the resume cron fire a `[CLOSEOUT-RESUME]` self-ping on its next 15-minute cycle (safer if you're near a token limit).
@@ -636,8 +661,9 @@ All steps are idempotent. The resume cron (this same `resume-workforce-build.sh`
 - Reads `.workforce-build-state.json`.
 - Fires if ANY of:
   - `interviewComplete: true` AND ANY department is `pending` / `failed` / stale `building` (>15 min since `lastAttemptAt`), OR
+  - all departments `done` AND (`roleLibraryStatus NOT IN {done}` OR `sopLibraryStatus NOT IN {done}`) (v10.15.8 library-dirty extension — fires BEFORE closeout), OR
   - `buildCompletedAt` is set AND `closeoutStatus NOT IN {done, sent}` (v10.13.16 closeout-dirty extension).
-- Dispatches a `[WORKFORCE-RESUME]` or `[CLOSEOUT-RESUME]` Telegram self-message to a paired chat (owner first, Trevor fallback). That message invokes the agent, who reads `resume-prompt.txt` and continues building OR closing out.
+- Dispatches a `[WORKFORCE-RESUME]`, `[LIBRARY-RESUME]`, or `[CLOSEOUT-RESUME]` Telegram self-message to a paired chat (owner first, Trevor fallback). That message invokes the agent, who reads `resume-prompt.txt` and continues building, re-pulls the role/SOP libraries, OR closes out.
 - Caps at `maxResumeAttempts` (default 12) to prevent infinite loops. After cap, pings Trevor's chat directly with an escalation instead of continuing to self-ping.
 - Holds a 10-minute lockfile so concurrent cron firings don't double-dispatch.
 

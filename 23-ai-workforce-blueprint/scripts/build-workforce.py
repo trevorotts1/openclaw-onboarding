@@ -720,6 +720,30 @@ def build_from_config(config):
     else:
         print(f"[v2.1 WARN] qc-completeness.sh not present at {_qc_script}", file=sys.stderr)
 
+    # v10.15.8: ENFORCED ROLE LIBRARY + SOP LIBRARY gate. Runs verify-library-gate.sh,
+    # which measures coverage and writes roleLibraryStatus / sopLibraryStatus +
+    # per-dept roleLibraryFilled / sopLibraryFilled into the build-state file. A
+    # workforce is NOT complete until both are 'done'. The master orchestrator MUST
+    # NOT write buildCompletedAt / closeoutStatus=pending while this gate fails (rc != 0);
+    # the resume cron fires a [LIBRARY-RESUME] self-ping until it passes.
+    _gate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verify-library-gate.sh")
+    if os.path.isfile(_gate_script):
+        try:
+            _gate_rc = _subprocess.run(["bash", _gate_script], timeout=240).returncode
+            if _gate_rc == 0:
+                print("[v10.15.8] LIBRARY GATE PASS — roleLibraryStatus=done AND sopLibraryStatus=done. "
+                      "Workforce may proceed to closeout.", file=sys.stderr)
+            else:
+                print(f"[v10.15.8] LIBRARY GATE FAIL (rc={_gate_rc}) — role library and/or SOP library "
+                      f"NOT populated. Do NOT write buildCompletedAt / closeoutStatus=pending. Re-run "
+                      f"post-build-role-workspaces.py and/or populate-sops-from-manifest.py, then re-run "
+                      f"verify-library-gate.sh until it exits 0. The resume cron will fire [LIBRARY-RESUME] "
+                      f"until both libraries are done.", file=sys.stderr)
+        except Exception as _e:
+            print(f"[v10.15.8 WARN] verify-library-gate.sh invocation failed: {_e}", file=sys.stderr)
+    else:
+        print(f"[v10.15.8 WARN] verify-library-gate.sh not present at {_gate_script}", file=sys.stderr)
+
 
 # ============================================================
 # CONFIGURATION

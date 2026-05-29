@@ -15,6 +15,32 @@
 
 The Conversation Playbook Builder is the system's biggest single differentiator. Other conversational AI platforms make operators BUILD workflows in visual node-based UIs (n8n, Zapier, GHL/Convert and Flow Workflow Builder, CloseBot). This system makes operators TALK through workflows — the agent asks intelligent questions, synthesizes a Conversation Playbook, AND auto-builds the GHL routing layer the customer needs to reach the AI in the first place.
 
+### THE TRINITY — three artifacts travel together (binding connection rule)
+
+A GHL **workflow/automation**, a **communications playbook**, and a **workflow-AI prompt** are ONE unit
+of three parts. They are inseparable — building or creating any one of them implies the other two:
+
+- If you build a **GHL workflow/automation**, you MUST also have its **communications playbook** (Layer 2,
+  `conversation-workflows/<id>.md`) AND its **workflow-AI prompt** (`<id>--workflow-ai-prompt.md`).
+- If you create a **communications playbook**, you MUST create the matching **workflow-AI prompt** AND the
+  **GHL workflow** (or confirm existing routing covers it per the Layer 0 check).
+- If you create a **workflow-AI prompt**, you MUST have its **communications playbook** AND build the
+  **GHL workflow** it constructs.
+
+One implies the other two. A playbook with no workflow-AI prompt, or a workflow with no playbook, is an
+incomplete build — do not register it and do not declare it live. The TRINITY maps onto the 3-PART build
+(below): Part 1 = the workflow-AI prompt (+ the GHL workflow it builds), Part 2 = the communications
+playbook. The physical link at runtime is the **hook path** (see Section F).
+
+**Full standards for two of the three legs live in dedicated reference docs (keep them out of the core md
+files):**
+
+- **Communications playbook** — format + must-appear checklist + storage + the Notion→Google Docs→plain-text
+  fallback order: `references/communications-playbook-standard.md`.
+- **Workflow-AI prompt** — must-appear checklist + WHERE (Build-with-AI button in Automations) + the
+  field-by-field Custom Webhook steps + multi-action teaching + the Build-with-AI verification checklist:
+  `references/workflow-ai-instructions-standard.md`.
+
 ### The 3-PART build — every time, no exceptions
 
 Every "build me a conversation playbook" request produces all three of these. Do not skip a part; do not
@@ -247,13 +273,16 @@ FILTERS (in this exact order):
 - [etc.]
 
 ACTIONS (in this exact order):
-- Action 1: [e.g., "Send Custom Webhook"]
-  - URL: https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>
-  - Method: POST
-  - Headers:
-    - Authorization: Bearer <HOOKS_TOKEN>
-    - Content-Type: application/json
-  - Body (Raw JSON — FLAT, no nested objects, ALL 23 keys, placeholder-free messageTemplate):
+- Action 1: Send Custom Webhook  (field-by-field — Build-with-AI fumbles these)
+  - EVENT: CUSTOM
+  - METHOD: POST  (from the dropdown — not GET/PUT)
+  - URL: https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>  (exact — NOT the sample-url placeholder; no trailing slash; keep /hooks/)
+  - AUTHORIZATION dropdown: None  (the token goes in HEADERS, NOT this dropdown — the #1 mistake)
+  - HEADERS (click "Add item" for each):
+    - Key: Authorization   Value: Bearer <HOOKS_TOKEN>
+    - Key: Content-Type    Value: application/json
+  - CONTENT-TYPE: application/json
+  - RAW BODY (Raw JSON — FLAT, no nested objects, ALL 23 keys, placeholder-free messageTemplate; insert each {{…}} via the Custom Values picker):
     {
       "id": "<HOOK_NAME>",
       "match": "<HOOK_NAME>",
@@ -284,6 +313,13 @@ PUBLISH: Yes, publish the workflow when done — don't leave it as draft.
 ```
 
 Each field is filled in with the EXACT values from the operator's setup (`PUBLIC_HOSTNAME`, `HOOK_NAME`, `HOOKS_TOKEN`, channel name, tag names from D.1). Because Build-with-AI gets the SHAPE right but often mis-sets the token/JSON, the prompt's closing line instructs the operator to confirm the webhook URL and the `Authorization: Bearer <HOOKS_TOKEN>` header by hand after it builds.
+
+> **Standard reference.** The full field-by-field Custom Webhook spec (EVENT=CUSTOM, METHOD=POST, real
+> URL, AUTHORIZATION=None, HEADERS via Add item, CONTENT-TYPE, 23-key flat RAW BODY via Custom Values
+> picker) AND the multi-action teaching (if/else branches, Add-Tag, tag-check, multiple sequential
+> actions) live in `references/workflow-ai-instructions-standard.md`. Use that as the authoritative
+> "must-appear" checklist when generating any workflow-AI prompt — the block above is the SMS starter
+> shape; the standard covers every channel + multi-action funnel.
 
 > **⚠️ GHL HOOK STRUCTURE (owner directive — 23 keys, FLAT) — verified live on Corey/Explore Growth (OpenClaw 2026.5.27).**
 > The body MUST have **ALL 23 keys** (23 is the minimum — no stripped bodies) and be **FLAT** — no nested
@@ -443,7 +479,7 @@ Each verification item is generated from the same source-of-truth as the prompt 
 
 ### E. Layer 2 — OpenClaw Side (always built)
 
-After Layer 1 is done (or skipped per Layer 0), the agent builds the conversation playbook itself at `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>.md`:
+After Layer 1 is done (or skipped per Layer 0), the agent builds the conversation playbook itself at `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>.md`. This is the **communications playbook** leg of the TRINITY — it MUST satisfy the must-appear checklist and storage rules in `references/communications-playbook-standard.md` (slug/id, owner agent id, channel, trigger phrases/intent, goal, step-by-step flow, the GHL Conversations-API reply mechanism per TOOLS.md, cross-playbook transition rules, edge cases incl. frustration/refund/legal escalation, on-success/tagging, tone, honesty floor). Save the FILE under `conversation-workflows/`, register it in `registry.md`, AND place a human-readable copy in the CLIENT's account in the order **Notion → Google Docs → plain text** (Section 4 of that standard). The template below is the canonical shape:
 
 ```markdown
 # Conversation Workflow: <Workflow Name>
