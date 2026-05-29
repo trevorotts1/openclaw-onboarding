@@ -41,8 +41,23 @@ If any item is wrong, the fix is listed right there.
 ## Trigger
 
 - [ ] Trigger is set to EXACTLY "<exact trigger name>"
+  - WHERE: open the workflow → click the Trigger node at the top
   - WRONG VALUES TO WATCH FOR: <common Build with AI mistakes>
   - FIX IF WRONG: Click the trigger node → change to "<exact value>"
+
+- [ ] If the trigger (or any filter) references a TAG, that tag ACTUALLY EXISTS
+       and is the intended one
+  - WHERE: open the Trigger node → look at any "tag is" / "tag contains" /
+    "tag does not contain" filter; then cross-check GHL **Settings → Tags**
+  - WHAT YOU SHOULD SEE: a REAL tag name in the filter — the exact tag created
+    FIRST (per the create-tags-first rule), listed under Settings → Tags
+  - KNOWN BUG (Teresa): Build with AI created a filter like
+    **"does not contain `<blank>`"** where the referenced tag was blank or never
+    created, so the filter silently matched nothing — the workflow never fired
+    for the right contacts
+  - FIX IF WRONG: select/create the correct tag so the filter points at a REAL
+    tag (it must appear under Settings → Tags), OR remove the bad filter if it
+    should not be there
 
 ## Filters
 

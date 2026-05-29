@@ -27,6 +27,22 @@
 #   - at least one ```json fenced code block (opening fence, line-anchored)
 #   - a hook URL of the form https://.../hooks/<id>
 #
+# REQUIRED ADDITIONAL MARKERS under --require-manual-fill (the bulletproof set):
+#   - a section literally named "🚀 Quick Start" (heading)
+#   - a COMPLETE explanation/reference section AFTER Quick Start ("📖 Full
+#     Reference & Explanation" heading, appearing later in the file)
+#   - the manual Custom-Webhook fill instructions ("Custom Webhook" + a
+#     "manually"/"paste" verb + the "Build with AI will NOT fill" line)
+#   - SEPARATE Authorization header code blocks: one fenced block whose ONLY
+#     content is "Authorization" (the key) and one fenced block whose content is
+#     "Bearer <token>" (the value) — NEVER combined on one line
+#   - the create-tags-FIRST instruction (create the tag before building, check
+#     Settings -> Tags)
+#   - the POST-BUILD verification section (verify trigger/tag-exists + custom
+#     webhook + publish AFTER Build with AI runs)
+#   - lead-with-values ORDER (Webhook URL before the ```json Raw Body; manual
+#     fill before the Workflow-AI prompt pointer)
+#
 # Exit codes: 0 = sheet carries all required markers;
 #             1 = one or more markers missing;
 #             2 = could not produce/locate a reference sheet to check (the
@@ -177,6 +193,58 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
     MISSING+=('a "manually"/"paste" instruction for the Custom Webhook fields')
   grep -qiE 'Build with AI will[[:space:]]+(not|n.t)[[:space:]]+fill' "$SHEET" || \
     MISSING+=('the explicit "Build with AI will NOT fill these for you" instruction')
+
+  # --- Quick Start first, then a full explanation AFTER it (BOTH required) ---
+  # The sheet MUST lead with a section literally named "🚀 Quick Start", AND it
+  # MUST carry a complete explanation/reference section that appears AFTER it.
+  grep -qE '^#+[[:space:]]*🚀[[:space:]]*Quick Start[[:space:]]*$' "$SHEET" || \
+    MISSING+=('a section literally named "🚀 Quick Start"')
+  QS_LN="$(grep -nE '^#+[[:space:]]*🚀[[:space:]]*Quick Start[[:space:]]*$' "$SHEET" | head -1 | cut -d: -f1)"
+  EXPL_LN="$(grep -niE '^#+[[:space:]].*(Full Reference|Reference &amp;? Explanation|Reference & Explanation|How it works|How the .* works)' "$SHEET" | head -1 | cut -d: -f1)"
+  if [ -z "$QS_LN" ] || [ -z "$EXPL_LN" ] || [ "$EXPL_LN" -le "$QS_LN" ]; then
+    MISSING+=('a complete explanation/reference section AFTER the "🚀 Quick Start" section')
+  fi
+
+  # --- SEPARATE Authorization key + value code blocks (own copy buttons) ---
+  # One fenced code block whose ONLY content is the literal header KEY
+  # "Authorization" (on its own line, between two fences), and a separate fenced
+  # block whose content is the VALUE "Bearer <token>". They must NEVER be combined
+  # into one "Authorization: Bearer <token>" line — 50+ clients copy each field
+  # individually. We detect a standalone "Authorization" fenced block via awk:
+  # inside a ``` fence, a line that is exactly "Authorization".
+  HAS_AUTH_KEY_BLOCK="$(awk '
+    /^[[:space:]]*```/ { infence = !infence; next }
+    infence && $0 ~ /^[[:space:]]*Authorization[[:space:]]*$/ { found=1 }
+    END { print (found ? "yes" : "no") }
+  ' "$SHEET")"
+  [ "$HAS_AUTH_KEY_BLOCK" = "yes" ] || \
+    MISSING+=('a SEPARATE code block containing ONLY the header key "Authorization" (its own copy button)')
+  # A separate "Bearer <token>" value block (inside a fence, a line starting with Bearer).
+  HAS_BEARER_VALUE_BLOCK="$(awk '
+    /^[[:space:]]*```/ { infence = !infence; next }
+    infence && $0 ~ /^[[:space:]]*Bearer[[:space:]]+/ { found=1 }
+    END { print (found ? "yes" : "no") }
+  ' "$SHEET")"
+  [ "$HAS_BEARER_VALUE_BLOCK" = "yes" ] || \
+    MISSING+=('a SEPARATE code block containing the header value "Bearer <token>" (its own copy button)')
+
+  # --- create-tags-FIRST instruction (the Teresa blank-tag bug) ---
+  grep -qiE 'create (the |your )?tag.*(first|before)|tag.*(first|before).*(build|workflow)' "$SHEET" || \
+    MISSING+=('the create-tags-FIRST instruction (create the tag before building the workflow)')
+  grep -qiE 'Settings[[:space:]]*(->|→|>)[[:space:]]*Tags' "$SHEET" || \
+    MISSING+=('a "Settings -> Tags" pointer for where to check tags')
+
+  # --- POST-BUILD verification section (verify trigger/tag + webhook + publish) ---
+  grep -qiE '^#+[[:space:]].*(Verify|Verification|Post-build).*(Build with AI|after)' "$SHEET" || \
+  grep -qiE '^#+[[:space:]].*(Verify AFTER|verify after Build)' "$SHEET" || \
+    MISSING+=('a POST-BUILD verification section (verify AFTER Build with AI runs)')
+  # The post-build verification MUST cover the trigger tag-existence bug, the
+  # custom webhook fields, and publish — and tell the client what to do if wrong.
+  grep -qiE 'does not contain|contains.*tag|tag.*(exist|real|blank)|references a (real|blank)' "$SHEET" || \
+    MISSING+=('the post-build TRIGGER tag-existence check (a blank/non-existent tag in a contains/does-not-contain filter is the bug)')
+  grep -qiE 'Publish(ed)?,? not Draft|not[[:space:]]+Draft|Draft.*Publish' "$SHEET" || \
+    MISSING+=('the post-build PUBLISH check (confirm Published, not Draft)')
+
   # Lead-with-values ORDER: the Webhook-URL line must come before the ```json Raw Body,
   # and the manual-fill section must come before the Workflow-AI-prompt pointer.
   URL_LN="$(grep -nE '^#+[[:space:]].*Webhook URL' "$SHEET" | head -1 | cut -d: -f1)"

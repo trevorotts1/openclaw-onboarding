@@ -99,14 +99,14 @@ Build-with-AI only builds the workflow SHAPE (the trigger + an EMPTY Custom Webh
 **Build with AI will not fill these for you.** Do it yourself:
 
 1. Open the **Custom Webhook** action in the workflow Build with AI just made.
-2. **Method** = `POST`.
-3. **URL** = `https://<PUBLIC_HOSTNAME>/hooks/<ROUTE_ID>` (no trailing slash; keep the `/hooks/` segment).
+2. **Method dropdown** = `POST`.
+3. **URL box** = `https://<PUBLIC_HOSTNAME>/hooks/<ROUTE_ID>` (no trailing slash; keep the `/hooks/` segment).
 4. **AUTHORIZATION dropdown** = `None`.
-5. **Headers** — click **"Add item"** once per header:
-   - `Authorization` : `Bearer <HOOKS_TOKEN>`
-   - `Content-Type` : `application/json`
-6. **Content-Type** = `application/json`.
-7. **Raw Body** = paste the full 23-key FLAT JSON from the prompt above (Body type = Raw JSON; insert each
+5. Under **HEADERS**, click **"Add item"**, then fill **Key box** = `Authorization` and **Value box** =
+   `Bearer <HOOKS_TOKEN>`. Click **"Add item"** AGAIN, then **Key box** = `Content-Type` and **Value box** =
+   `application/json`.
+6. **Content-Type field** = `application/json`.
+7. **RAW BODY box** = paste the full 23-key FLAT JSON from the prompt above (Body type = Raw JSON; insert each
    `{{…}}` via GHL's Custom Values picker).
 8. **Save**, then **Publish**.
 
