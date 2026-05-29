@@ -177,21 +177,18 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 ```json
 {
   "channel": "sms",
-  "contact": {
-    "id": "{{contact.id}}",
-    "first_name": "{{contact.first_name}}",
-    "last_name": "{{contact.last_name}}",
-    "email": "{{contact.email}}",
-    "phone": "{{contact.phone}}"
-  },
-  "location": {
-    "id": "{{location.id}}",
-    "name": "{{location.name}}"
-  },
-  "customer_message": {
-    "body": "{{message.body}}",
-    "subject": "{{message.subject}}"
-  }
+  "contact_id": "{{contact.id}}",
+  "first_name": "{{contact.first_name}}",
+  "last_name": "{{contact.last_name}}",
+  "email": "{{contact.email}}",
+  "phone": "{{contact.phone}}",
+  "subject": "{{message.subject}}",
+  "message_body": "{{message.body}}",
+  "match": "<HOOK_NAME>",
+  "session_key": "hook:ghl:sms:{{contact.id}}",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "location_id": "{{location.id}}",
+  "location_name": "{{location.name}}"
 }
 ```
 
@@ -200,21 +197,18 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 ```json
 {
   "channel": "email",
-  "contact": {
-    "id": "{{contact.id}}",
-    "first_name": "{{contact.first_name}}",
-    "last_name": "{{contact.last_name}}",
-    "email": "{{contact.email}}",
-    "phone": "{{contact.phone}}"
-  },
-  "location": {
-    "id": "{{location.id}}",
-    "name": "{{location.name}}"
-  },
-  "customer_message": {
-    "body": "{{message.body}}",
-    "subject": "{{message.subject}}"
-  }
+  "contact_id": "{{contact.id}}",
+  "first_name": "{{contact.first_name}}",
+  "last_name": "{{contact.last_name}}",
+  "email": "{{contact.email}}",
+  "phone": "{{contact.phone}}",
+  "subject": "{{message.subject}}",
+  "message_body": "{{message.body}}",
+  "match": "<HOOK_NAME>",
+  "session_key": "hook:ghl:email:{{contact.id}}",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "location_id": "{{location.id}}",
+  "location_name": "{{location.name}}"
 }
 ```
 
@@ -223,21 +217,18 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 ```json
 {
   "channel": "facebook",
-  "contact": {
-    "id": "{{contact.id}}",
-    "first_name": "{{contact.first_name}}",
-    "last_name": "{{contact.last_name}}",
-    "email": "{{contact.email}}",
-    "phone": "{{contact.phone}}"
-  },
-  "location": {
-    "id": "{{location.id}}",
-    "name": "{{location.name}}"
-  },
-  "customer_message": {
-    "body": "{{message.body}}",
-    "subject": "{{message.subject}}"
-  }
+  "contact_id": "{{contact.id}}",
+  "first_name": "{{contact.first_name}}",
+  "last_name": "{{contact.last_name}}",
+  "email": "{{contact.email}}",
+  "phone": "{{contact.phone}}",
+  "subject": "{{message.subject}}",
+  "message_body": "{{message.body}}",
+  "match": "<HOOK_NAME>",
+  "session_key": "hook:ghl:facebook:{{contact.id}}",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "location_id": "{{location.id}}",
+  "location_name": "{{location.name}}"
 }
 ```
 
@@ -246,21 +237,18 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 ```json
 {
   "channel": "instagram",
-  "contact": {
-    "id": "{{contact.id}}",
-    "first_name": "{{contact.first_name}}",
-    "last_name": "{{contact.last_name}}",
-    "email": "{{contact.email}}",
-    "phone": "{{contact.phone}}"
-  },
-  "location": {
-    "id": "{{location.id}}",
-    "name": "{{location.name}}"
-  },
-  "customer_message": {
-    "body": "{{message.body}}",
-    "subject": "{{message.subject}}"
-  }
+  "contact_id": "{{contact.id}}",
+  "first_name": "{{contact.first_name}}",
+  "last_name": "{{contact.last_name}}",
+  "email": "{{contact.email}}",
+  "phone": "{{contact.phone}}",
+  "subject": "{{message.subject}}",
+  "message_body": "{{message.body}}",
+  "match": "<HOOK_NAME>",
+  "session_key": "hook:ghl:instagram:{{contact.id}}",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "location_id": "{{location.id}}",
+  "location_name": "{{location.name}}"
 }
 ```
 
@@ -269,21 +257,18 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 ```json
 {
   "channel": "livechat",
-  "contact": {
-    "id": "{{contact.id}}",
-    "first_name": "{{contact.first_name}}",
-    "last_name": "{{contact.last_name}}",
-    "email": "{{contact.email}}",
-    "phone": "{{contact.phone}}"
-  },
-  "location": {
-    "id": "{{location.id}}",
-    "name": "{{location.name}}"
-  },
-  "customer_message": {
-    "body": "{{message.body}}",
-    "subject": "{{message.subject}}"
-  }
+  "contact_id": "{{contact.id}}",
+  "first_name": "{{contact.first_name}}",
+  "last_name": "{{contact.last_name}}",
+  "email": "{{contact.email}}",
+  "phone": "{{contact.phone}}",
+  "subject": "{{message.subject}}",
+  "message_body": "{{message.body}}",
+  "match": "<HOOK_NAME>",
+  "session_key": "hook:ghl:livechat:{{contact.id}}",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "location_id": "{{location.id}}",
+  "location_name": "{{location.name}}"
 }
 ```
 
@@ -292,21 +277,18 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 ```json
 {
   "channel": "allinone",
-  "contact": {
-    "id": "{{contact.id}}",
-    "first_name": "{{contact.first_name}}",
-    "last_name": "{{contact.last_name}}",
-    "email": "{{contact.email}}",
-    "phone": "{{contact.phone}}"
-  },
-  "location": {
-    "id": "{{location.id}}",
-    "name": "{{location.name}}"
-  },
-  "customer_message": {
-    "body": "{{message.body}}",
-    "subject": "{{message.subject}}"
-  }
+  "contact_id": "{{contact.id}}",
+  "first_name": "{{contact.first_name}}",
+  "last_name": "{{contact.last_name}}",
+  "email": "{{contact.email}}",
+  "phone": "{{contact.phone}}",
+  "subject": "{{message.subject}}",
+  "message_body": "{{message.body}}",
+  "match": "<HOOK_NAME>",
+  "session_key": "hook:ghl:allinone:{{contact.id}}",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "location_id": "{{location.id}}",
+  "location_name": "{{location.name}}"
 }
 ```
 

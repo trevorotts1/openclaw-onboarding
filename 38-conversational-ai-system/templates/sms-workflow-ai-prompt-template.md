@@ -46,25 +46,22 @@ ACTIONS (in this exact order):
     - Content-Type: application/json
   - Content-Type dropdown: application/json
   - Body type: Raw JSON
-  - Body (Raw JSON):
+  - Body (Raw JSON — FLAT, no nested objects, NO messageTemplate):
     {
       "channel": "sms",
-      "contact": {
-        "id": "{{contact.id}}",
-        "first_name": "{{contact.first_name}}",
-        "last_name": "{{contact.last_name}}",
-        "email": "{{contact.email}}",
-        "phone": "{{contact.phone}}",
-        "tags": "{{contact.tags}}"
-      },
-      "location": {
-        "id": "{{location.id}}",
-        "name": "{{location.name}}"
-      },
-      "customer_message": {
-        "body": "{{message.body}}",
-        "subject": "{{message.subject}}"
-      },
+      "contact_id": "{{contact.id}}",
+      "first_name": "{{contact.first_name}}",
+      "last_name": "{{contact.last_name}}",
+      "email": "{{contact.email}}",
+      "phone": "{{contact.phone}}",
+      "tags": "{{contact.tags}}",
+      "subject": "{{message.subject}}",
+      "message_body": "{{message.body}}",
+      "match": "<ROUTE_ID>",
+      "session_key": "hook:ghl:sms:{{contact.id}}",
+      "agent_id": "<ROUTING_AGENT_ID>",
+      "location_id": "{{location.id}}",
+      "location_name": "{{location.name}}",
       "workflow_id": "<WORKFLOW_ID>"
     }
 
@@ -92,8 +89,15 @@ Workflow AI is helpful but has known failure modes. The most common ones:
 - Puts the bearer token in the **AUTHORIZATION dropdown** instead of in the **Headers** section. The dropdown must be "None" — the `Authorization: Bearer <HOOKS_TOKEN>` line goes in Headers.
 - Adds a trailing slash to the webhook URL, or drops the `/hooks/` path segment.
 - Uses single curly-brace variables (`{contact.id}`) instead of GHL double-brace syntax (`{{contact.id}}`).
+- **Re-nests the body** into `contact:{…}` / `customer_message:{…}` objects. The body MUST stay FLAT — a
+  nested body makes EVERY field arrive EMPTY at the hook (verified live, even a hardcoded `"channel"` came
+  through blank). Keep the flat keys exactly as shown above.
+- **Injects a `messageTemplate` into the body.** The body is DATA ONLY — never put a `messageTemplate` in it
+  (GHL mangles it and the webhook is Skipped). The `messageTemplate` lives only on the server `hooks.mappings`.
+- Types the `{{…}}` tokens as plain text instead of inserting them via GHL's **Custom Values picker**
+  (typed-as-text tokens send empty).
 - Saves the workflow as **Draft** instead of **Published**.
-- Skips one of the JSON body fields (most often `location` or `workflow_id`).
+- Skips one of the FLAT JSON body fields (most often `location_id`/`location_name` or `workflow_id`).
 - Sets the wrong run schedule (e.g., business hours only when you wanted 24/7).
 
 Each of these failure modes is covered in **Section 4 — Workflow Verification Checklist** with the exact click-by-click fix. Run the checklist top-to-bottom after Workflow AI finishes. Don't publish until every item is checked.
@@ -105,7 +109,8 @@ When this template is rendered for a real client, the following placeholders are
 - `<CLIENT_BUSINESS_NAME>` — e.g., "The Winning Formula Course"
 - `<CLIENT_FIRST_NAME>` — e.g., "Christy"
 - `<PUBLIC_HOSTNAME>` — e.g., `claw.thewinningformulacourse.com`
-- `<ROUTE_ID>` — e.g., `ZHC` (the hooks.mappings key configured in Step 3)
+- `<ROUTE_ID>` — e.g., `ZHC` (the hooks.mappings key configured in Step 3; also the flat body's `match` value)
+- `<ROUTING_AGENT_ID>` — the agent the hook routes to (e.g., `main` or `sales`); also the flat body's `agent_id`
 - `<HOOKS_TOKEN>` — the bearer token from `SECRETS_ENV_FILE`
 - `<WORKFLOW_ID>` — `sms-inquiry-responder` (or the matching workflow file under `conversation-workflows/`)
 - `<INDUSTRY_CONTEXT>` — e.g., "grants writing", "real estate", "coaching"
