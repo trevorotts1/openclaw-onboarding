@@ -79,6 +79,7 @@ SCRIPT_FILES=(
   "scripts/qc-trinity-registry.sh"
   "scripts/qc-send-directive.sh"
   "scripts/qc-conversation-memory.sh"
+  "scripts/qc-playbook-doc.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -232,6 +233,23 @@ if [ -f "$QC_MEM" ]; then
   fi
 else
   report_fail "qc-conversation-memory.sh not found (looked in scripts/)"
+fi
+
+# -------- Per-playbook human-facing doc gate (machine-enforced) --------
+section "Per-playbook human-facing doc gate (qc-playbook-doc.sh)"
+QC_PBDOC="$SCRIPT_DIR/qc-playbook-doc.sh"
+[ -f "$QC_PBDOC" ] || QC_PBDOC="$SKILL38_ROOT/scripts/qc-playbook-doc.sh"
+if [ -f "$QC_PBDOC" ]; then
+  PBDOC_RC=0
+  bash "$QC_PBDOC" >/dev/null 2>&1 || PBDOC_RC=$?
+  case "$PBDOC_RC" in
+    0) report_pass "every registered conversation playbook has a recorded human-facing doc (Notion → Google Docs → text) in the client's account" ;;
+    2) echo "  [SKIP] no conversation playbooks registered yet (nothing to check) — gate fires once the first playbook is built" ;;
+    3) echo "  [SKIP] no conversation-workflows folder yet (run 09-install-conversation-workflows.sh)" ;;
+    *) report_fail "qc-playbook-doc.sh found a registered playbook with NO recorded human-facing doc (the Notion→Docs→text deliverable was skipped) — run it directly for detail" ;;
+  esac
+else
+  report_fail "qc-playbook-doc.sh not found (looked in scripts/)"
 fi
 
 # -------- conversational-logs dir presence + writability --------

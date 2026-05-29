@@ -465,6 +465,17 @@ Customer asks to book / schedule / set up a meeting, demo, consultation, or appo
 Register it in `conversation-workflows/registry.md` and add its hook-path entry to the Reusable Tunnel
 Values hook-path registry (Section 6).
 
+**MANDATORY (gated) — create the human-facing doc for this first playbook in the CLIENT's account.** The
+base install is NOT complete until the appointment-booking playbook ALSO has a human-readable copy in the
+client's OWN account, created in the fallback order **Notion → Google Docs → plain-text**, with its URL/path
+recorded in the registry's `Doc (Notion/Docs/text)` column (and the run manifest). This is the exact step an
+agent skipped on a live client — files scaffolded locally, install reported "clean," but no client doc. It is
+NOT optional prose: it is machine-enforced by `scripts/qc-playbook-doc.sh` (wired into
+`scripts/11-run-qc-checklist.sh` + CI `.github/workflows/qc-static.yml`), and the installer
+`scripts/09-install-conversation-workflows.sh` creates + records it automatically (Notion via
+`NOTION_API_KEY` + the client's designated parent page → Google Docs → a `.md` in
+`<MASTER_FILES_DIR>/playbook-docs/`). See `references/communications-playbook-standard.md` §4.
+
 ---
 
 ## 11. Mac cloudflared (launchd) — interactive-sudo blocker
