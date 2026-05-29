@@ -1,3 +1,38 @@
+## [1.4.7] - 2026-05-29 - Close the 2 QC gaps: TRINITY registry format match + 23-key linter now covers the v6.0 playbook
+
+Two QC checks that *looked* like they were enforcing invariants were silently no-op'ing on real inputs.
+Both are now genuinely enforced, with fixture coverage.
+
+### Fixed
+- **GAP 1 — TRINITY registry format mismatch.** `scripts/qc-trinity-registry.sh` parsed the
+  conversation-workflows registry only as a markdown TABLE, but `scripts/09-install-conversation-workflows.sh`
+  documents/emits the active-workflow list as BULLETS (`- <id>: <desc>`). On a real installed (bullet)
+  registry the table-only parser saw ZERO rows, so registry-vs-disk reconciliation
+  (registered-but-no-files / files-but-not-registered) never fired and registered slugs were even
+  mis-flagged "not registered". The validator now parses BOTH shapes (table rows scoped anywhere; bullet
+  rows scoped under "## Active workflows", ignoring `<placeholder>`/backtick doc lines and quoted trigger
+  phrases). Bullet rows carry no Layer-1 column → disposition recorded as unknown (still counts as
+  registered). `scripts/09-install-conversation-workflows.sh` now seeds the canonical TABLE shape (matching
+  protocol §F + the validator) while the validator still tolerates the legacy bullet form for older installs.
+- **GAP 2 — 23-key linter excluded the v6.0 playbook.** `scripts/qc-23-key-bodies.sh` skipped
+  `references/v6.0-source-playbook.md` (~9,430 lines) by name — the file holding the LARGEST set of GHL RAW
+  BODY examples (per-channel curl smoke tests, Build-with-AI prompt bodies, verification-checklist bodies).
+  Exclusion removed; the playbook is now scanned. The single-DOTALL `FENCE_RE` was also mis-pairing fences
+  across that large multi-language document (it found only 1 of the file's 12 bodies), so the fence scanner
+  was rewritten as a line-state iterator that pairs `` ``` `` open/close correctly regardless of language
+  tag — now catching object-A bodies in ```json, ```text, no-language Build-with-AI blocks, AND ```bash
+  `curl -d '{…}'` smoke tests. Object-B server `hooks.mappings` blocks (camelCase `agentId`) are still
+  skipped by the snake_case `agent_id` discriminator — not by file exclusion. Linter result on the playbook:
+  **all 12 of its bodies PASS**; repo-wide **RESULT: PASS — 23 object-A bodies across 6 files** (was 10/5).
+
+### Added
+- `scripts/qc-trinity-registry.test.sh` — fixture tests proving reconciliation catches a
+  registered-but-missing-files row AND a file-present-but-unregistered slug on BOTH the bullet and table
+  registry forms (and that a clean bullet registry PASSes). Wired into CI (`.github/workflows/qc-static.yml`).
+
+### Version
+- `skill-version.txt` → `1.4.7`.
+
 ## [1.4.6] - 2026-05-29 - 8 rated improvements (port of VPS #47): machine-enforced 23-key + TRINITY, Build-with-AI label fix, real self-counts, fleshed journeys, Skill 23 chain
 
 Part of repo `v10.15.9`. Six of the eight rated improvements land in this skill; the other two

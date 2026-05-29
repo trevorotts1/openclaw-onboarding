@@ -126,9 +126,23 @@ operator through the 3-Layer setup end-to-end.
 
 ## Active workflows
 
-(Append one bullet per installed workflow — `<workflow-id>: <one-line description>`.)
+Append one ROW per installed workflow to the table below. This is the canonical
+registry shape (matches `protocols/conversation-workflows-protocol.md` §F and the
+`qc-trinity-registry.sh` validator). The `Layer 1?` column tells the validator
+whether a Build-with-AI prompt is legitimately absent ("No (uses existing
+inbound)") or required ("Yes").
+
+| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist |
+|---|---|---|---|---|---|---|
 
 <!-- workflows: none yet -->
+
+<!--
+  Legacy bullet form (- <workflow-id>: <one-line description>) is still
+  understood by qc-trinity-registry.sh for older installed registries, but new
+  registrations should use the table row above so the Layer-1 disposition is
+  recorded.
+-->
 REG_EOF
 
 echo "[09-install-conversation-workflows] registry created → $REGISTRY"
