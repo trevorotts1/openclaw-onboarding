@@ -13,16 +13,20 @@
 #      throws "Error while parsing the object to JSON" and Skips the webhook.
 #   5. No literal "\n" sequence inside the JSON (single-line JSON values only).
 #
-# WHAT COUNTS AS AN OBJECT-A BODY: a fenced ```json / ```text block whose JSON
+# WHAT COUNTS AS AN OBJECT-A BODY: any fenced code block (```json, ```text,
+# ```bash curl bodies, or no-language Build-with-AI prompt blocks) whose JSON
 # object contains the snake_case key "agent_id". The OpenClaw server
 # `hooks.mappings` entry (object B) uses camelCase "agentId" + a NESTED
 # "match": { "path": ... } + a TEMPLATED messageTemplate, and is intentionally
 # NOT a 23-key flat body — those are skipped by the agent_id discriminator.
 #
-# DELIBERATE EXCLUSION: references/v6.0-source-playbook.md is the VERBATIM
-# historical source extract ("Do not summarize"); §14 of GHL-INBOUND explicitly
-# SUPERSEDES its older nested/stripped bodies. Linting it would flag history
-# that is preserved on purpose, so it is excluded by name (logged, not silent).
+# COVERAGE: every file under references/, templates/, scripts/ is scanned —
+# INCLUDING references/v6.0-source-playbook.md, which holds the largest set of
+# GHL RAW BODY examples (per-channel curl smoke tests, Build-with-AI prompt
+# bodies, and verification-checklist canonical bodies). The §14 canonical 23-key
+# spec is what those bodies already follow; the linter proves it instead of
+# trusting it. (The file's older object-B server-mapping blocks use camelCase
+# "agentId" and are correctly skipped by the discriminator — not by exclusion.)
 #
 # Exit codes: 0 = all bodies pass; 1 = one or more violations; 2 = no bodies
 # found (treated as failure — the scan target moved and the linter went blind).
@@ -62,8 +66,11 @@ JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
 # Directories to scan (relative to the skill root).
 SCAN_DIRS = ["references", "templates", "scripts"]
 
-# Files excluded by name — verbatim historical archives superseded by §14.
-EXCLUDE_NAMES = {"v6.0-source-playbook.md"}
+# No files are excluded by name. The v6.0 source playbook is scanned too — its
+# per-channel GHL RAW BODY examples must obey the same 23-key rule, and its
+# object-B server-mapping blocks (camelCase "agentId") are skipped by the
+# agent_id discriminator, not by a blanket file exclusion.
+EXCLUDE_NAMES = set()
 
 EXPECTED_KEYS = [
     "id", "match", "action", "agent_id", "model", "wakeMode", "name",
@@ -73,7 +80,12 @@ EXPECTED_KEYS = [
 ]
 EXPECTED_SET = set(EXPECTED_KEYS)
 
-FENCE_RE = re.compile(r"```(?:json|text)?[ \t]*\n(.*?)```", re.DOTALL)
+# Fenced-block boundaries. Matched line-by-line (NOT as one big DOTALL regex)
+# so fences never mis-pair across a large multi-language document like the v6.0
+# playbook, where a `bash`/`markdown` fence opening could otherwise be consumed
+# as the close of a prior block and silently swallow every body after it.
+FENCE_OPEN = re.compile(r"^[ \t]*```([A-Za-z0-9._+-]*)[ \t]*$")
+FENCE_CLOSE = re.compile(r"^[ \t]*```[ \t]*$")
 # GHL merge token like {{contact.id}} or template marker like <HOOK_NAME>.
 MERGE_RE = re.compile(r"\{\{[^}]*\}\}")
 PLACEHOLDER_RE = re.compile(r"<[A-Za-z0-9_./:-]+>")
@@ -124,12 +136,36 @@ def _extract_balanced_object(body, anchor):
     return None
 
 
+def iter_fenced_blocks(text):
+    """Yield (lang, body) for every fenced code block, tracked by line state so
+    fences pair correctly regardless of language tag. A fence opens on a line
+    that is ``` optionally followed by a language tag, and closes on the next
+    bare ``` line."""
+    lines = text.splitlines(keepends=True)
+    i, n = 0, len(lines)
+    while i < n:
+        m = FENCE_OPEN.match(lines[i].rstrip("\n"))
+        if m:
+            lang = m.group(1)
+            j = i + 1
+            buf = []
+            while j < n and not FENCE_CLOSE.match(lines[j].rstrip("\n")):
+                buf.append(lines[j])
+                j += 1
+            yield lang, "".join(buf)
+            i = j + 1  # skip the closing fence (or run off the end if unclosed)
+        else:
+            i += 1
+
+
 def find_object_a_blocks(text):
     """Yield the JSON object text for fenced blocks that look like object-A GHL
-    bodies (contain the snake_case key "agent_id"). Object-B server mappings use
-    camelCase "agentId" and are skipped by the discriminator."""
-    for m in FENCE_RE.finditer(text):
-        body = m.group(1)
+    bodies (contain the snake_case key "agent_id"). This includes bodies embedded
+    in ```json, ```text, no-language Build-with-AI prompt blocks, AND ```bash
+    `curl -d '{…}'` smoke tests — all are real GHL RAW BODIES that must obey the
+    23-key rule. Object-B server mappings use camelCase "agentId" (no snake_case
+    "agent_id") and are skipped by the discriminator."""
+    for _lang, body in iter_fenced_blocks(text):
         idx = body.find('"agent_id"')
         if idx == -1:
             continue

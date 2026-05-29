@@ -99,25 +99,68 @@ def has_prompt(slug):
     return False
 
 
-# Parse the registry table to learn each row's Layer-1 disposition.
-# Columns (from 09-install-conversation-workflows.sh / SKILL.md §F):
-#   | ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | ... |
+# Parse the registry to learn each row's Layer-1 disposition. The registry can
+# be written in EITHER of two shapes, and a real installed registry mixes them:
+#
+#   (A) the TABLE form (protocol §F / SKILL.md §F), which carries a "Layer 1?"
+#       column so we know whether a Build-with-AI prompt is legitimately absent:
+#         | ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | ... |
+#
+#   (B) the BULLET form actually emitted under the "## Active workflows" heading
+#       by 09-install-conversation-workflows.sh, one line per installed workflow:
+#         - <workflow-id>: <one-line description>
+#       This form has no Layer-1 column, so layer1_needed is UNKNOWN (None) — the
+#       row still counts as "registered" for files-vs-registry reconciliation.
+#
+# Parsing BOTH is what makes registered-but-no-files / files-but-not-registered
+# reconciliation actually fire against the registry the installer writes (the
+# old table-only parser silently no-op'd on a real bullet registry).
 registry_rows = {}
+
+# Bullet form: "- <slug>: <desc>" where <slug> is a bare kebab-case id (NOT an
+# <ANGLE_PLACEHOLDER>, NOT a `backtick example`, NOT a quoted trigger phrase).
+BULLET_RE = re.compile(r"^[-*]\s+([a-z0-9][a-z0-9-]*)\s*:\s+\S")
+
 reg = WF_DIR / "registry.md"
 if reg.is_file():
+    in_active = False
     for line in reg.read_text(errors="ignore").splitlines():
-        if not line.strip().startswith("|"):
+        stripped = line.strip()
+
+        # Track whether we're inside the "Active workflows" section so bullet
+        # parsing never grabs the unrelated bullets (trigger phrases, naming
+        # conventions) elsewhere in the registry.
+        if stripped.startswith("#"):
+            heading = stripped.lstrip("#").strip().lower()
+            in_active = heading.startswith("active workflow")
             continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 4:
+
+        # (A) Table rows.
+        if stripped.startswith("|"):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if len(cells) < 4:
+                continue
+            rid = cells[0]
+            # Strip optional backtick wrapping around the id cell.
+            rid = rid.strip("`")
+            if not rid or rid.lower() in ("id", ":---", "---") or set(rid) <= set("-: "):
+                continue
+            layer1 = cells[3].lower() if len(cells) > 3 else ""
+            # "No (uses existing inbound)" => prompt legitimately absent.
+            layer1_needed = layer1.startswith("yes")
+            registry_rows[rid] = {"layer1_needed": layer1_needed, "raw": cells}
             continue
-        rid = cells[0]
-        if not rid or rid.lower() in ("id", ":---", "---") or set(rid) <= set("-: "):
-            continue
-        layer1 = cells[3].lower() if len(cells) > 3 else ""
-        # "No (uses existing inbound)" => prompt legitimately absent.
-        layer1_needed = layer1.startswith("yes")
-        registry_rows[rid] = {"layer1_needed": layer1_needed, "raw": cells}
+
+        # (B) Bullet rows under "## Active workflows".
+        if in_active:
+            # Skip the template's own documentation/placeholder lines.
+            if "<" in stripped or "`" in stripped:
+                continue
+            m = BULLET_RE.match(stripped)
+            if m:
+                rid = m.group(1)
+                # Bullet form carries no Layer-1 column → disposition unknown.
+                registry_rows.setdefault(rid, {"layer1_needed": None, "raw": [rid]})
 
 # Discover on-disk slugs from playbook files AND from orphan prompt files.
 playbook_slugs = set()
