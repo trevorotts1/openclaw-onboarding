@@ -196,22 +196,33 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-reference-sheet.sh
           echo "✓ Skill 38 client reference sheet carries the bearer token + copyable GHL Raw Body JSON + hook URL"
 
-      - name: Skill 38 reference sheet leads with copy-paste values (manual-fill order)
+      - name: Skill 38 reference sheet is bulletproof (Quick Start + tag-first + post-build verify)
         shell: bash
         run: |
           set -uo pipefail
-          # Machine-enforce that the generated reference sheet LEADS with the
-          # copy-paste values in order (URL → Bearer token → Raw Body JSON → manual
-          # Custom-Webhook fill steps → Workflow-AI prompt) and carries the mandatory
-          # "Build-with-AI will NOT fill these — do it yourself" manual-fill
-          # instructions. GHL's Build-with-AI only builds the workflow SHAPE; it does
-          # not reliably populate the Custom Webhook URL / Authorization header /
-          # Content-Type / Raw Body, so the client MUST open the action and paste them
-          # by hand. This drives the generator offline and FAILs if the manual-fill
-          # text or the lead-with-values order is missing. BASH (grep core) — respects
-          # the .py claude-/anthropic ban.
+          # Machine-enforce the BULLETPROOF reference sheet (belt-and-suspenders):
+          #   • a section literally named "🚀 Quick Start" FIRST, and a COMPLETE
+          #     explanation/reference section AFTER it (both — Quick Start does not
+          #     replace the explanation)
+          #   • the copy-paste values LEAD, in order: URL → Authorization header
+          #     (key + value in SEPARATE code blocks, each its own copy button) →
+          #     Content-Type header → Raw Body JSON → manual Custom-Webhook fill
+          #     steps → post-build verification → Workflow-AI prompt
+          #   • the create-tags-FIRST instruction (+ Settings → Tags pointer): tags
+          #     must exist before the workflow is built (Teresa: Build-with-AI made a
+          #     "does not contain <blank>" filter against a never-created tag)
+          #   • the POST-BUILD verification section (verify trigger/tag-exists +
+          #     custom webhook + Published-not-Draft AFTER Build with AI runs)
+          #   • the mandatory "Build-with-AI will NOT fill these — do it yourself"
+          #     manual-fill instructions
+          # GHL's Build-with-AI only builds the workflow SHAPE; it does not reliably
+          # populate the Custom Webhook URL / Authorization header / Content-Type /
+          # Raw Body, nor does it create the tags its filters reference, so the client
+          # MUST paste the values and create the tags by hand. This drives the
+          # generator offline (Layer-3 markdown) and FAILs if any of the above is
+          # missing. BASH (grep/awk core) — respects the .py claude-/anthropic ban.
           bash 38-conversational-ai-system/scripts/qc-reference-sheet.sh --require-manual-fill
-          echo "✓ Skill 38 reference sheet leads with copy-paste values and carries the manual Custom-Webhook fill instructions"
+          echo "✓ Skill 38 reference sheet is bulletproof: 🚀 Quick Start + explanation, separate Authorization key/value blocks, tag-first, manual-fill, post-build verification"
 
       - name: Skill 38 install-script config-key gate
         shell: bash

@@ -52,20 +52,22 @@ the checklist. A workflow-AI instruction set is INCOMPLETE until ALL of these ap
 ## 3. Custom Webhook — explicit field-by-field (Build-with-AI fumbles these)
 
 Build-with-AI repeatedly fails to populate the webhook fields. The prompt MUST instruct each field by
-name, and the verification checklist MUST re-confirm each one:
+name — naming the EXACT box in the GHL Custom Webhook UI so a non-technical client can follow — and the
+verification checklist MUST re-confirm each one:
 
 - **EVENT** = `CUSTOM` (a Custom Webhook, not a templated integration webhook).
-- **METHOD** = `POST` (choose from the dropdown — not GET/PUT).
-- **URL** = the EXACT hook URL: `https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`. Do **NOT** leave the
+- **Method dropdown** = `POST` (choose POST from the dropdown — not GET/PUT).
+- **URL box** = the EXACT hook URL: `https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`. Do **NOT** leave the
   sample-url placeholder, do not add a trailing slash, do not drop the `/hooks/` segment.
 - **AUTHORIZATION dropdown** = `None`. (The bearer token goes in HEADERS, not in this dropdown — the
   single most common Build-with-AI mistake.)
-- **HEADERS** — click **"Add item"** for each header:
-  - Key = `Authorization`, Value = `Bearer <HOOKS_TOKEN>`
-  - Key = `Content-Type`, Value = `application/json`
-  - (add any other header the scenario needs the same way)
-- **CONTENT-TYPE** = `application/json`.
-- **RAW BODY** = the FULL **23-key FLAT JSON** below, inserted with each `{{…}}` value placed via GHL's
+- **HEADERS** — under the HEADERS section click **"Add item"**, then fill the **Key box** and the **Value
+  box** for that row; click **"Add item"** AGAIN for the second header:
+  - Row 1: **Key box** = `Authorization`, **Value box** = `Bearer <HOOKS_TOKEN>`
+  - Row 2: **Key box** = `Content-Type`, **Value box** = `application/json`
+  - (add any other header the scenario needs the same way — one **"Add item"** per header)
+- **CONTENT-TYPE field** = `application/json`.
+- **RAW BODY box** = the FULL **23-key FLAT JSON** below, inserted with each `{{…}}` value placed via GHL's
   **Custom Values picker** (typed-as-text tokens send empty). Do NOT shorten to 4 keys (or 8/11/13/16) —
   23 is the MINIMUM. Keep it FLAT (no nested `contact:{…}` / `customer_message:{…}` — a nested body makes
   EVERY field arrive EMPTY at the hook). Keep `messageTemplate` placeholder-free (no `{{…}}` inside its
@@ -131,10 +133,17 @@ the client's hook name + routing agent.
 ## 4. BUILD-WITH-AI VERIFICATION CHECKLIST
 
 Because Build-with-AI populates poorly, run this AFTER it finishes (even when it reports success) and
-fix any item before publishing. (Per-workflow, brutally-specific version generated alongside the prompt
+fix any item before publishing. For each item, the doc states WHERE to go, WHAT you should SEE, and WHAT
+to put if it is missing/wrong. (Per-workflow, brutally-specific version generated alongside the prompt
 — see `templates/workflow-verification-checklist-template.md`.)
 
-- [ ] **Trigger type + filter** correct (matches the spec).
+- [ ] **Trigger type + filter** correct (matches the spec). **WHERE:** open the workflow → the Trigger
+      node. **SEE:** the correct trigger TYPE + the intended filters. **If a filter references a TAG**
+      (a "tag is/contains/does not contain" condition), confirm that tag ACTUALLY EXISTS and is the
+      intended one — a **blank or non-existent tag in a "does not contain"/"contains" filter is the known
+      bug** (Teresa: Build-with-AI made a "does not contain `<blank>`" filter where the tag was never
+      created, so it matched nothing). **PUT IF WRONG:** select/create the correct tag (it must appear under
+      **Settings → Tags**), or remove the bad filter if it should not be there.
 - [ ] **Exactly the intended action(s)** exist (no extra/missing nodes; branches as designed).
 - [ ] Custom Webhook **EVENT = CUSTOM**.
 - [ ] Custom Webhook **METHOD = POST** (not GET/PUT).
@@ -187,13 +196,23 @@ needs it. The prompt template supports: **trigger + (optional if/else) + one-or-
 Every Custom Webhook in a multi-action workflow uses the SAME 23-key flat-body rule from Section 3 — no
 stripped bodies in any branch.
 
-## 6. Tags: create FIRST via the GHL skill
+## 6. Tags: create the tag FIRST, then use it
 
-If a workflow references a tag, the agent CREATES the tag via the GHL skill BEFORE building the workflow
-(do not tell the operator to navigate Settings → Tags by hand), then references the tag by name in the
-prompt. If the GHL skill lacks a create-tag method, fall back to the direct API call documented in
-`protocols/conversation-workflows-protocol.md` Section D.1. Record created tag names + IDs in the
-workflow's `--ghl-side.md` file.
+**If the workflow uses ANY tag — a trigger or If/Else filter ("tag is" / "contains" / "does not contain")
+or an Add-Tag action — the tag(s) MUST be CREATED FIRST, BEFORE the workflow is built, so the filter
+references a REAL, existing tag.** This is non-negotiable: Build-with-AI will happily create a filter that
+points at a tag that does not exist (e.g. `does not contain <blank>`), and that filter then silently
+matches nothing (or everything). That blank/non-existent-tag filter is a confirmed live-client bug
+(Teresa) — see the post-build verification in Section 4 and `templates/workflow-verification-checklist-template.md`.
+
+- **Agent path (preferred):** the agent CREATES the tag(s) via the GHL skill BEFORE building the workflow,
+  then references each tag BY NAME in the Build-with-AI prompt. If the GHL skill lacks a create-tag method,
+  fall back to the direct API call documented in `protocols/conversation-workflows-protocol.md` Section D.1.
+- **Client/operator path (where to check):** in GHL, tags live under **Settings → Tags**. Tell the client
+  to open **Settings → Tags** and confirm they SEE every tag the workflow uses, spelled exactly as the
+  workflow references it. A tag in a filter that is NOT listed under Settings → Tags is the bug — create it
+  there (or via the agent) before the filter will work.
+- Record created tag names + IDs in the workflow's `--ghl-side.md` file.
 
 ## 7. Templates this standard governs
 

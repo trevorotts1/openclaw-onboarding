@@ -1,3 +1,58 @@
+## [1.4.14] - 2026-05-29 - Bulletproof Quick-Start + workflow-AI (where-to-paste, tag-first, post-build verify)
+
+Belt-and-suspenders hardening of the client reference-sheet generator, the workflow-AI standard/templates,
+and the QC gates — driven by live client pain (Teresa + Maria). The reference sheet now leads with an
+actionable Quick Start AND keeps a full explanation, splits every copyable value into its own copy block,
+teaches create-the-tag-FIRST, and adds a post-build verification that catches the blank-tag trigger bug.
+
+### Changed — `scripts/21-generate-client-reference-sheet.sh` (the generated reference sheet, now bulletproof)
+- **Quick Start FIRST, then full explanation (BOTH).** The sheet now LEADS with a section literally named
+  **"🚀 Quick Start"** (the actionable copy-paste items, in order) and then, AFTER it, a complete
+  **"📖 Full Reference & Explanation"** section (how the inbound pipe works, what each piece is, and
+  troubleshooting). Quick Start does NOT replace the explanation — both are present.
+- **Every copyable value gets its OWN fenced code block (its own copy button).** The Authorization header is
+  now TWO separate code blocks — one containing exactly `Authorization` (the key) and one containing exactly
+  `Bearer <token>` (the value), NEVER combined. The Content-Type header is likewise split into `Content-Type`
+  and `application/json`. (50+ clients copy each field individually.) The Webhook URL and the FLAT 23-key
+  Raw Body JSON each keep their own block.
+- **Create-tags-FIRST (new Section 0).** If the workflow uses any tag (a trigger/If-Else filter or an
+  Add-Tag action), the sheet directs the client to CREATE the tag(s) FIRST (via the agent's GHL skill, or in
+  GHL **Settings → Tags**) so the filter references a REAL existing tag — and tells them WHERE to check
+  (Settings → Tags) and WHAT they should see.
+- **Post-build VERIFICATION (new Section 5).** After Build-with-AI runs, the sheet walks the client through
+  three checks, each stating WHERE to go, WHAT they should SEE, and WHAT to put if missing/wrong:
+  TRIGGER (incl. the **blank/non-existent-tag-in-a-"does not contain"-filter** bug from Teresa), CUSTOM
+  WEBHOOK (Method=POST, URL, both headers, all 23 Raw-Body keys — Build-with-AI does NOT fill these), and
+  PUBLISH (Published, not Draft).
+- **Manual Custom-Webhook fill (Section 4)** now names each GHL UI box precisely (Method dropdown / URL box /
+  HEADERS → Add item → Key box + Value box, twice / Content-Type field / RAW BODY box).
+
+### Changed — workflow-AI standard + templates (explicit + bulletproof)
+- **`references/workflow-ai-instructions-standard.md`** — Custom-Webhook field-by-field now names the exact
+  GHL UI boxes (Method dropdown, URL box, Key/Value boxes via "Add item", RAW BODY box); Section 6 rewritten
+  as **"create the tag FIRST, then use it"** with the agent path + the client path (where to check:
+  Settings → Tags, what they should see); Section 4 verification gains the trigger tag-existence check
+  (WHERE/SEE/PUT) calling out the blank-tag "does not contain" bug.
+- **`templates/sms-workflow-ai-prompt-template.md`** — manual-fill steps name the precise GHL boxes.
+- **`templates/workflow-verification-checklist-template.md`** — Trigger section gains a tag-EXISTS check
+  (cross-check Settings → Tags; the Teresa blank-tag "does not contain" bug + the fix).
+
+### Changed — QC enforcement (machine-enforced, BASH)
+- **`scripts/qc-reference-sheet.sh --require-manual-fill`** now additionally FAILS unless the generated sheet
+  contains: a literal **"🚀 Quick Start"** section, a complete explanation/reference section AFTER it, the
+  SEPARATE `Authorization` key code block + `Bearer <token>` value code block (detected inside fences via
+  awk), the create-tags-FIRST instruction + a `Settings → Tags` pointer, and the POST-BUILD verification
+  section (trigger tag-existence + Published-not-Draft) — on top of the existing Bearer/```json/hook-URL/
+  manual-fill/lead-order checks. Negative-tested: removing any marker fails the gate.
+- **`.github/workflows/qc-static.yml`** — the manual-fill CI step is updated to describe + enforce the
+  bulletproof set (it already invoked `--require-manual-fill`).
+
+### Version
+- **`skill-version.txt`** 1.4.13 → 1.4.14; **`SKILL.md`** SELF-COUNTS note re-verified (protocols/=32,
+  scripts/=34, references/=14, journeys=8 — unchanged, no files added/removed) + qc-reference-sheet ship line
+  updated. No repo-tracked version file changed, so the repo version (8-location) is unaffected and
+  `scripts/bump-version.sh` is not run.
+
 ## [1.4.13] - 2026-05-29 - v1.4.11 install-script bug fixes (config-validity) + MANDATORY manual Custom-Webhook fill instructions
 
 Two classes of fix, both verified against a live openclaw 2026.5.27 box.
