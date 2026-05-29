@@ -35,13 +35,24 @@
 #     "manually"/"paste" verb + the "Build with AI will NOT fill" line)
 #   - SEPARATE Authorization header code blocks: one fenced block whose ONLY
 #     content is "Authorization" (the key) and one fenced block whose content is
-#     "Bearer <token>" (the value) — NEVER combined on one line
+#     "Bearer <token>" (the value) — NEVER combined on one line. The VALUE block
+#     must be ONLY "Bearer <token>" and must NOT contain the word "Authorization"
+#     (no combined "Authorization: Bearer <token>" copy block).
 #   - the create-tags-FIRST instruction (create the tag before building, check
 #     Settings -> Tags)
 #   - the POST-BUILD verification section (verify trigger/tag-exists + custom
 #     webhook + publish AFTER Build with AI runs)
 #   - lead-with-values ORDER (Webhook URL before the ```json Raw Body; manual
 #     fill before the Workflow-AI prompt pointer)
+#   - the enriched "Your Communication Playbooks" section: WHERE playbooks are
+#     stored (conversation-workflows/ + mirrored to Notion); the "Want another
+#     communication playbook? Just ask me!" CTA with a copyable "Help me build a
+#     [purpose] playbook" example + more examples (missed-call/appointment-
+#     reminder/lead-nurture/review-request); the build WALKTHROUGH (brainstorm →
+#     create → store → matching Workflow AI prompt wired to the client's Convert
+#     and Flow account); the Convert-and-Flow abilities (create TAGS, update the
+#     CALENDAR, create/book APPOINTMENTS); and the explicit "connected to your
+#     Convert and Flow account ... just ask" statement
 #
 # Exit codes: 0 = sheet carries all required markers;
 #             1 = one or more markers missing;
@@ -227,6 +238,19 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
   ' "$SHEET")"
   [ "$HAS_BEARER_VALUE_BLOCK" = "yes" ] || \
     MISSING+=('a SEPARATE code block containing the header value "Bearer <token>" (its own copy button)')
+  # NEGATIVE GUARD: the header VALUE copy block must be JUST "Bearer <token>" — it
+  # must NOT repeat the header KEY. The exact bug is a copy block whose line is
+  # "Authorization: Bearer <token>" (the second block emitted combined), so the
+  # client pastes "Authorization: Bearer ..." into the VALUE box. We FAIL if any
+  # COPY LINE is of the form "Authorization:" + "Bearer ..." — matched whether the
+  # line sits in a real ``` fence or in the template's illustrative
+  # "[code block ...]" markup. We anchor on a line that STARTS with optional
+  # whitespace then "Authorization:" and also contains "Bearer", so plain prose
+  # that merely names both words (e.g. "Re-check the Authorization header ...
+  # Bearer token wrong") is NOT flagged.
+  if grep -Eq '^[[:space:]]*Authorization:[[:space:]]*Bearer' "$SHEET"; then
+    MISSING+=('the Authorization VALUE code block must be ONLY "Bearer <token>" — it must NOT be a combined "Authorization: Bearer <token>" copy block (the second copy block repeats the header key)')
+  fi
 
   # --- create-tags-FIRST instruction (the Teresa blank-tag bug) ---
   grep -qiE 'create (the |your )?tag.*(first|before)|tag.*(first|before).*(build|workflow)' "$SHEET" || \
@@ -249,24 +273,52 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
   #     the deep Full Reference) — answers the client's first question:
   #     "where are my workflows / communication playbooks?" It must be prominent
   #     (a heading) and tell them (a) WHERE they live — the conversation-workflows/
-  #     folder + human-facing copies in Notion (→ Google Docs → text) — and (b)
-  #     HOW to build a new one in BIG BOLD ("Want a NEW communications playbook?
-  #     Start here") with the "just tell your AI 'help me build a [purpose]
-  #     playbook'" CTA + the 3-part trinity it builds.
-  grep -qiE '^#+[[:space:]].*Communication Playbooks' "$SHEET" || \
+  #     folder + human-facing copies in Notion (→ Google Docs → text); (b) the
+  #     "just ask me" CTA with a copyable "Help me build a [purpose] playbook"
+  #     example; (c) the build WALKTHROUGH (brainstorm with you using known
+  #     business context, then create the playbook, store it in
+  #     conversation-workflows/ mirrored to Notion, help create the matching
+  #     Workflow AI prompt wired to the client's Convert and Flow / GoHighLevel
+  #     account); and (d) that the AI is connected to the client's Convert and Flow
+  #     account and can take real actions on their behalf — create TAGS, update the
+  #     CALENDAR, and create/book APPOINTMENTS.
+  grep -qiE '^#+[[:space:]].*Communication Playbooks?' "$SHEET" || \
     MISSING+=('a prominent "Your Communication Playbooks" section (where the client'\''s playbooks live)')
   grep -qiE 'conversation-workflows' "$SHEET" || \
-    MISSING+=('the "Communication Playbooks" section must say playbooks live in the conversation-workflows/ folder')
+    MISSING+=('the "Communication Playbooks" section must say playbooks live in (and are stored in) the conversation-workflows/ folder')
   grep -qi 'Notion' "$SHEET" || \
-    MISSING+=('the "Communication Playbooks" section must point to the human-facing copies in Notion')
-  grep -qiE 'Want a NEW communications? playbook' "$SHEET" || \
-    MISSING+=('the BIG BOLD "Want a NEW communications playbook? Start here" call-to-action')
+    MISSING+=('the "Communication Playbooks" section must point to the human-facing copies in (mirrored to) Notion')
+  # The "just ask me" call-to-action — "Want another communication playbook? Just
+  # ask me!" (the older "Want a NEW communications playbook? Start here" wording
+  # also satisfies this).
+  grep -qiE 'Want another communications? playbook|Want a NEW communications? playbook|just ask me' "$SHEET" || \
+    MISSING+=('the "Want another communication playbook? Just ask me!" call-to-action')
+  # A copyable, concrete example: "Help me build a [purpose] playbook" (the
+  # missed-call follow-up example, or the literal [purpose] form).
   grep -qiE 'help me build a .*playbook' "$SHEET" || \
-    MISSING+=('the "just tell your AI: help me build a [purpose] playbook" instruction')
+    MISSING+=('a concrete copyable example: "Help me build a [purpose] playbook" (e.g. missed-call follow-up)')
+  grep -qiE 'missed-call|appointment-reminder|lead-nurture|review-request' "$SHEET" || \
+    MISSING+=('at least one additional playbook example (missed-call / appointment-reminder / lead-nurture / review-request)')
   grep -qiE 'brainstorm' "$SHEET" || \
-    MISSING+=('an explanation that the AI will brainstorm with the client before building')
-  grep -qiE '3 parts|three parts|all 3|workflow-AI prompt.*conversation playbook|trinity' "$SHEET" || \
-    MISSING+=('an explanation that the AI builds all 3 parts (workflow-AI prompt + conversation playbook + GHL automation)')
+    MISSING+=('the build walkthrough must say the AI will brainstorm it with the client (using known business context, not a 50-question interrogation)')
+  # The matching Workflow AI prompt, wired to the client's Convert and Flow
+  # (GoHighLevel) account.
+  grep -qiE 'Workflow AI prompt|Workflow-AI prompt' "$SHEET" || \
+    MISSING+=('the build walkthrough must say the AI helps create the matching Workflow AI prompt')
+  grep -qiE 'Convert and Flow' "$SHEET" || \
+    MISSING+=('the build walkthrough must say the Workflow AI prompt is wired to the client'\''s Convert and Flow (GoHighLevel) account')
+  # The AI can take real actions in Convert and Flow on the client's behalf:
+  # create TAGS, update the CALENDAR, create/book APPOINTMENTS.
+  grep -qiE 'tag' "$SHEET" || \
+    MISSING+=('the Convert and Flow abilities must include creating/applying TAGS')
+  grep -qiE 'calendar' "$SHEET" || \
+    MISSING+=('the Convert and Flow abilities must include updating the CALENDAR')
+  grep -qiE 'appointment' "$SHEET" || \
+    MISSING+=('the Convert and Flow abilities must include creating/booking APPOINTMENTS')
+  # Explicit: the AI is connected to the client's Convert and Flow account and can
+  # do these things for them — just ask.
+  grep -qiE 'connected to your Convert and Flow' "$SHEET" || \
+    MISSING+=('the explicit "you have an AI that is connected to your Convert and Flow account and can do these things for you — just ask" statement')
   # The Communication Playbooks section must sit AFTER Quick Start and BEFORE the
   # deep Full Reference & Explanation (the "where are my playbooks" answer should
   # be high up, not buried in the deep reference).

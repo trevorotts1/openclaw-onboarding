@@ -128,10 +128,17 @@ the client in Notion or as markdown) is the doc the client opens to wire OpenCla
 always** contain BOTH of the following as real, copy-paste-ready fenced code blocks — never as prose,
 never omitted:
 
-- [ ] **Authorization Header / Bearer Token** — a literal `Authorization: Bearer <token>` block, with the
-      ACTUAL `hooks.token` (read from `HOOKS_TOKEN` / `OPENCLAW_HOOKS_TOKEN` / `hooks.token` in
-      `openclaw.json` at generation time) inside a fenced code block. If the token cannot be resolved, the
-      generator emits a clearly-marked PLACEHOLDER and warns — it never silently omits the section.
+- [ ] **Authorization Header — TWO separate copy blocks (Key + Value, NEVER combined).** A GHL custom-webhook
+      header has a **Key** box and a **Value** box, so the Authorization header MUST be emitted as TWO separate
+      copyable code blocks: block 1 contains exactly `Authorization` (paste into the **Key** / header-name box)
+      and block 2 contains exactly `Bearer <token>` (paste into the **Value** box), with the ACTUAL `hooks.token`
+      (read from `HOOKS_TOKEN` / `OPENCLAW_HOOKS_TOKEN` / `hooks.token` in `openclaw.json` at generation time)
+      inside the value block. **The VALUE block must be ONLY `Bearer <token>` — it must NOT repeat the word
+      `Authorization`.** A combined `Authorization: Bearer <token>` copy block is the bug (the client pastes the
+      whole string into the Value box) and is machine-FAILED. Apply the SAME Key/Value split to the Content-Type
+      header (block 1 = `Content-Type`, block 2 = `application/json` — never a combined `Content-Type: application/json`
+      value block). If the token cannot be resolved, the generator emits a clearly-marked PLACEHOLDER value block
+      and warns — it never silently omits the section.
 - [ ] **GHL Custom Webhook — Raw Body** — the canonical FLAT 23-key body as a ` ```json ` fenced code block
       (copyable), plus the **Method (POST)**, the **hook URL** (`https://<host>/hooks/<id>`), and
       **Content-Type** (`application/json`), each as a copyable code block. The body stays placeholder-free
@@ -191,21 +198,32 @@ prominent **"Your Communication Playbooks"** section, placed **AFTER the Quick S
 Full Reference & Explanation.** It exists to answer — high up, where the client will actually see it — the
 FIRST question every client asks on their first test: *"where are my workflows / communication playbooks?"*
 
-The section MUST contain, prominently (a heading + a callout + a BIG BOLD CTA):
+The section MUST contain, prominently (a heading + a callout + a BIG BOLD CTA), and teach the client how the
+AI helps them build ADDITIONAL communication playbooks (friendly tone, generous emojis 💬🚀🛠️📅🏷️✅):
 
-- [ ] **WHERE they live** — the working copies are in the client's OpenClaw master-files
+- [ ] **WHERE they live / are stored** — the working copies are in the client's OpenClaw master-files
       **`conversation-workflows/`** folder (the source of truth the agent reads on every reply), and the
-      human-facing copies are in their **Notion** (Notion → Google Docs → text). Both stay in sync; each
-      playbook is recorded in `conversation-workflows/registry.md`.
-- [ ] **In BIG BOLD: "Want a NEW communications playbook? Start here:"** — then: the client just tells their
-      AI **"help me build a [purpose] playbook"** and the AI does the rest. Tell them what happens next: the
-      AI **brainstorms** with them (a short friendly back-and-forth using known business context — NOT a
-      50-question form), then builds **all 3 parts** (THE TRINITY: the workflow-AI prompt + the conversation
-      playbook + the GHL automation), writes a human-facing copy to Notion (→ Google Docs → text), registers
-      it, and tells them where everything is.
+      human-facing copies are **mirrored to their Notion** (Notion → Google Docs → text). Both stay in sync;
+      each playbook is recorded in `conversation-workflows/registry.md`.
+- [ ] **A "Want another communication playbook? Just ask me!" call-to-action** with a concrete COPYABLE
+      example — the client just tells their AI **"Help me build a [purpose] playbook"** (e.g.
+      *"Help me build a missed-call follow-up playbook"*), and also surfaces more examples:
+      **appointment-reminder, lead-nurture, review-request.**
+- [ ] **A walkthrough of WHAT THE AI WILL DO when they ask:** (1) **brainstorm it with you** using what it
+      already knows about your business (NOT a 50-question interrogation); (2) **create the communication
+      playbook** for you; (3) **store it** for you — the working copy in the master-files
+      `conversation-workflows/` folder, mirrored to Notion; (4) **help you create the matching Workflow AI
+      prompt** (what you paste into Convert and Flow → Build with AI), wired to **YOUR** Convert and Flow
+      (GoHighLevel) account; and (5) that **the AI can take real actions in Convert and Flow on your behalf** —
+      it CAN **create tags 🏷️, update your calendar 📅, create/book appointments 🗓️,** and similar automations.
+- [ ] **The explicit statement:** *"You have an AI that is connected to your Convert and Flow account and can
+      do these things for you — just ask."*
 
 This section is **machine-enforced by `scripts/qc-reference-sheet.sh --require-manual-fill`** (CI +
-pre-handoff QC): the gate FAILS unless the generated doc carries the "Communication Playbooks" heading, the
-`conversation-workflows` + Notion location facts, the "Want a NEW communications playbook" CTA, the
-"help me build a [purpose] playbook" instruction, the brainstorm explanation, and the 3-part trinity note —
-and unless that section sits after Quick Start and before the deep reference.
+pre-handoff QC): the gate FAILS unless the generated doc carries the "Communication Playbooks" heading; the
+`conversation-workflows` + Notion (stored/mirrored) location facts; the "Want another communication playbook?
+Just ask me!" CTA; the copyable "Help me build a [purpose] playbook" example + at least one of the
+missed-call/appointment-reminder/lead-nurture/review-request examples; the brainstorm explanation; the matching
+Workflow AI prompt wired to the client's Convert and Flow account; the Convert-and-Flow abilities (create
+**tags**, update the **calendar**, create/book **appointments**); the explicit "connected to your Convert and
+Flow account … just ask" statement — and unless that section sits after Quick Start and before the deep reference.
