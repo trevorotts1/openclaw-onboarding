@@ -1,3 +1,19 @@
+## [1.4.8] - 2026-05-29 - add Skill 23 cross-reference (role/SOP gate + comms hand-off) to v6.0 playbook
+
+### Added
+- **Skill 23 cross-reference in the v6.0 playbook.** Added a "🔗 How this connects to the AI Workforce
+  Blueprint (Skill 23)" section to `references/v6.0-source-playbook.md`, placed right after the TRINITY /
+  standards area (Communications Playbook Standard + Workflow-AI Instructions Standard). It documents the two
+  enforced connections between Skill 38 and Skill 23: the **Role Library + SOP Library auto-pull gate**
+  (build-state field + verify/resume gate; multiple Six Sigma DMAIC SOPs per role under
+  `departments/<dept>/sops/`, never empty/stub) and the **comms-automation hand-off** (Skill 23 → Skill 38
+  via a `commsAutomationStatus` state field + resume self-ping when a Communications/Sales/Customer-Support
+  department is built), and ties both back to THE TRINITY keeping every workflow, playbook, and prompt in
+  lockstep.
+
+### Version
+- `skill-version.txt` → `1.4.8`.
+
 ## [1.4.7] - 2026-05-29 - Close the 2 QC gaps: TRINITY registry format match + 23-key linter now covers the v6.0 playbook
 
 Two QC checks that *looked* like they were enforcing invariants were silently no-op'ing on real inputs.
