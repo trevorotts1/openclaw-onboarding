@@ -78,6 +78,7 @@ SCRIPT_FILES=(
   "scripts/qc-23-key-bodies.sh"
   "scripts/qc-trinity-registry.sh"
   "scripts/qc-send-directive.sh"
+  "scripts/qc-conversation-memory.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -217,6 +218,37 @@ if [ -f "$QC_SEND" ]; then
   fi
 else
   report_fail "qc-send-directive.sh not found (looked in scripts/)"
+fi
+
+# -------- Conversation-memory read/append gate (machine-enforced) --------
+section "Conversation-memory gate (qc-conversation-memory.sh)"
+QC_MEM="$SCRIPT_DIR/qc-conversation-memory.sh"
+[ -f "$QC_MEM" ] || QC_MEM="$SKILL38_ROOT/scripts/qc-conversation-memory.sh"
+if [ -f "$QC_MEM" ]; then
+  if bash "$QC_MEM" >/dev/null 2>&1; then
+    report_pass "every GHL inbound SERVER messageTemplate carries the conversation-memory read-before + append-after steps (single-turn sessions remember via the per-contact log)"
+  else
+    report_fail "qc-conversation-memory.sh found a GHL inbound server template missing the read-before/append-after conversation-log steps — run it directly for detail"
+  fi
+else
+  report_fail "qc-conversation-memory.sh not found (looked in scripts/)"
+fi
+
+# -------- conversational-logs dir presence + writability --------
+section "conversational-logs dir (per-contact memory store)"
+if [ -n "${MASTER_FILES_DIR:-}" ]; then
+  LOGS_DIR="$MASTER_FILES_DIR/conversational-logs"
+  if [ -d "$LOGS_DIR" ]; then
+    if [ -w "$LOGS_DIR" ]; then
+      report_pass "conversational-logs dir exists and is writable by this user: $LOGS_DIR"
+    else
+      report_fail "conversational-logs dir exists but is NOT writable (agent cannot append = silent memory loss): $LOGS_DIR — chown to the gateway runtime user"
+    fi
+  else
+    report_fail "conversational-logs dir MISSING: $LOGS_DIR — run 09-install-conversation-workflows.sh"
+  fi
+else
+  echo "  [SKIP] MASTER_FILES_DIR not resolved; cannot check conversational-logs dir"
 fi
 
 # -------- Final summary --------

@@ -1,3 +1,58 @@
+## [1.4.10] - 2026-05-29 - enforce conversation-memory (read-before + append-after) so single-turn hook agents never lose context
+
+Root cause fixed: GHL inbound hook sessions are SINGLE-TURN / stateless (confirmed: every hook run is a fresh
+session, user-turns = 1). The agent has NO in-session memory of prior messages — its ONLY memory of a contact
+across messages is that contact's per-contact conversation log file
+(`<MASTER_FILES_DIR>/conversational-logs/<contact_id>__<name>.md`), which it must READ before replying and
+APPEND to after sending. On a live client (Corey) this broke because the canonical `messageTemplate` was
+"simplified" during testing and lost the read/append steps, the `conversational-logs/` dir was never created
+(and was root-owned, so even when present the `node` gateway could not write it), and AGENTS.md had no memory
+protocol — so the agent had ZERO memory ("didn't remember anything" mid-booking). The send-directive gate
+(`qc-send-directive.sh`) did NOT catch it because it only checks the SEND instruction. Conversation-memory is
+now enforced exactly like the send-directive, in four layers, not left optional.
+
+### The canonical conversation-memory steps
+Every GHL inbound SERVER `messageTemplate` must contain all of: the **conversational-logs** path, a
+**READ**-before-replying instruction (recover prior conversation + any in-progress booking/topic and CONTINUE
+it; if missing, treat as new), and an **APPEND**-after-sending instruction (append inbound + reply to the log,
+create if missing). The directive lives ONLY on the SERVER mapping — the in-GHL-body `messageTemplate` stays
+placeholder-free per the 23-key rule.
+
+### Added
+- **LAYER 4 — machine-enforced QC gate.** New `scripts/qc-conversation-memory.sh` (bash; mirrors
+  `qc-send-directive.sh`) scans every GHL INBOUND SERVER-mapping `messageTemplate` (installer canonical
+  template + reference examples) and FAILS (exit non-zero) if any is missing the conversational-logs path, the
+  READ-before instruction, or the APPEND-after instruction. It SKIPS the placeholder-free 23-key bodies and
+  non-GHL (Stripe/Shopify/n8n) mappings, and exits 2 (FAIL) if zero GHL inbound server templates are found so
+  it never goes silently blind. Wired into BOTH `scripts/11-run-qc-checklist.sh` (pre-handoff QC, plus a new
+  conversational-logs dir presence+writability check) AND `.github/workflows/qc-static.yml` (CI on every push/PR).
+
+### Changed
+- **CHANGE 1 — installer canonical template (fail-closed).** `scripts/15-configure-hooks-mappings.sh` now
+  writes the read-before + append-after conversation-log steps into the GHL inbound mapping's `messageTemplate`
+  (alongside the send-directive), and a second fail-closed guard refuses to write the config (exit 9) if the
+  built template is missing the conversational-logs path, the read element, or the append element — it is no
+  longer possible to install a GHL hook whose server `messageTemplate` lacks the read/append steps.
+- **CHANGE 2 — installer creates + chowns the conversational-logs dir.** `scripts/09-install-conversation-workflows.sh`
+  (Step 9 "Set up conversation log system") now `mkdir -p`s `<MASTER_FILES_DIR>/conversational-logs/` and chowns
+  it to the runtime/gateway user (`node` on VPS/Docker, the login user on Mac/Homebrew; override via
+  `OPENCLAW_RUNTIME_USER`) so the agent can actually write logs — runs before the registry early-exit and warns
+  loudly with the exact `sudo chown` command if it cannot.
+- **CHANGE 3 — AGENTS.md Conversation Memory Protocol base rule.** `scripts/05-update-agents-md.sh` now emits a
+  concise standing rule (new `CONVERSATION_MEMORY_PROTOCOL` marker block): GHL inbound is single-turn; memory =
+  per-contact logs; READ before replying + CONTINUE in-progress topics + APPEND after sending; a reply that
+  ignores or fails to update the log is a failure. Pointer-style, no bloat.
+- **v6.0 playbook + authoritative spec.** `references/v6.0-source-playbook.md` (canonical server mapping, Step 3)
+  and `references/GHL-INBOUND-AND-PLAYBOOKS.md` (canonical mapping §4 + new §4b) now carry the read-before +
+  append-after steps in their canonical server `messageTemplate`, replacing the simplified template that lacked
+  them. 23-key rule, FLAT bodies, no nesting, no `\n`, placeholder-free in-body templates all preserved.
+- **Standards.** `references/communications-playbook-standard.md` (new conversation-memory must-appear item) and
+  `references/workflow-ai-instructions-standard.md` (new machine-enforced conversation-memory callout) now state
+  the read/append steps are mandatory on the SERVER mapping and how to verify them (`scripts/qc-conversation-memory.sh`).
+
+### Version
+- `skill-version.txt` → `1.4.10`; SKILL.md self-counts updated (scripts/ 29 → 30; four QC linters).
+
 ## [1.4.9] - 2026-05-29 - enforce the mandatory GHL send-directive (drafting != sending) for every client
 
 Root cause fixed: if a GHL inbound hook's SERVER-mapping `messageTemplate` does not EXPLICITLY order the

@@ -101,7 +101,7 @@ correct mapping (`openclaw.json` `hooks.mappings` entry):
   "wakeMode": "now",
   "name": "GHL Sales Inbound",
   "sessionKey": "{{session_key}}",
-  "messageTemplate": "Contact {{contact_id}}: {{message_body}} -- You are the Sales agent (check conversation-workflows for the matching playbook). MANDATORY — SEND, do not just draft: You MUST send your reply by calling the GHL Conversations API (POST conversations/messages) for contact {{contact_id}} on the {{channel}} channel, per TOOLS.md. Composing or drafting a reply is NOT sending — the customer receives nothing unless you make the API call. Do NOT end your turn until the send call returns a messageId/conversationId.",
+  "messageTemplate": "Contact {{contact_id}}: {{message_body}} -- You are the Sales agent (check conversation-workflows for the matching playbook). CONVERSATION MEMORY — THIS HOOK SESSION IS SINGLE-TURN AND STATELESS, your only memory of this contact is the log file. FIRST, before drafting anything, READ this contact's conversation log at <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md for the full prior conversation and any in-progress booking/context (see AGENTS.md Conversation Memory Protocol); if it is missing, treat as a new contact, and CONTINUE any in-progress topic/booking from the log instead of restarting. MANDATORY — SEND, do not just draft: You MUST send your reply by calling the GHL Conversations API (POST conversations/messages) for contact {{contact_id}} on the {{channel}} channel, per TOOLS.md. Composing or drafting a reply is NOT sending — the customer receives nothing unless you make the API call. Do NOT end your turn until the send call returns a messageId/conversationId. AFTER the send returns a messageId, APPEND both this inbound message and your reply to <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md (create the file if missing) — a reply that does not update the log loses this contact's memory and is a failure.",
   "deliver": false,
   "timeoutSeconds": 300
 }
@@ -109,6 +109,20 @@ correct mapping (`openclaw.json` `hooks.mappings` entry):
 
 The `messageTemplate` references the FLAT body key names (`{{contact_id}}`, `{{message_body}}`), and
 `sessionKey:"{{session_key}}"` pulls the flat `session_key` the body sends.
+
+**4b) The server `messageTemplate` MUST also include the CONVERSATION-MEMORY read-before / append-after
+steps.** GHL inbound hook sessions are **single-turn / stateless** (confirmed: every hook run is a fresh
+session, user-turns = 1). The agent has NO in-session memory of prior messages — its ONLY memory of a
+contact across messages is that contact's conversation log file
+(`<MASTER_FILES_DIR>/conversational-logs/<contact_id>__<name>.md`). The server `messageTemplate` MUST order
+the agent to **READ** that log BEFORE drafting (and **CONTINUE** any in-progress booking/topic) and to
+**APPEND** the inbound + reply AFTER sending. On a live client this broke because the template was
+"simplified" during testing and lost the read/append steps — the agent had zero memory mid-booking. The
+template MUST contain all of: the **conversational-logs** path, a **READ**-before-replying instruction, and
+an **APPEND**-after-sending instruction (the canonical mapping above shows them). This is machine-enforced by
+`scripts/qc-conversation-memory.sh` (CI + pre-handoff QC), the same way `scripts/qc-send-directive.sh`
+enforces the send-directive. The read/append directive lives ONLY on this SERVER mapping — the in-GHL-body
+`messageTemplate` stays placeholder-free per the 23-key rule.
 
 **5) `deliver` MUST be `false`.** `deliver:true` makes OpenClaw ALSO try to push the reply to a channel,
 conflicting with the agent's own GHL-API reply.

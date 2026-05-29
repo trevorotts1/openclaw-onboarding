@@ -140,3 +140,19 @@ jobs:
           # template that lacks the directive (or if none are found).
           bash 38-conversational-ai-system/scripts/qc-send-directive.sh
           echo "✓ All Skill 38 GHL inbound server templates carry the mandatory send-directive"
+
+      - name: Skill 38 conversation-memory read-before/append-after
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce that EVERY GHL inbound SERVER-mapping messageTemplate
+          # (installer canonical template + reference examples) carries the
+          # conversation-memory steps: the conversational-logs path, a READ-before-
+          # replying instruction, and an APPEND-after-sending instruction. GHL
+          # inbound hook sessions are single-turn / stateless — the agent's only
+          # memory of a contact across messages is the per-contact log it must read
+          # before replying and append to after sending. Dropping these steps left a
+          # live client mid-booking with no memory. Exits non-zero on any GHL inbound
+          # template that lacks them (or if none are found).
+          bash 38-conversational-ai-system/scripts/qc-conversation-memory.sh
+          echo "✓ All Skill 38 GHL inbound server templates carry the conversation-memory read-before/append-after steps"

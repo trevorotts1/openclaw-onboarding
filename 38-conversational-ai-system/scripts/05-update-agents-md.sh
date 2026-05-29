@@ -182,6 +182,41 @@ send call and confirm a messageId/conversationId before ending the turn.
 BLOCK_A2
 
 # -----------------------------------------------------------------------------
+# (a3) CONVERSATION_MEMORY_PROTOCOL — standing base rule. GHL inbound hook
+#      sessions are SINGLE-TURN / stateless; the agent's only cross-message
+#      memory is the per-contact conversation log. READ before replying, APPEND
+#      after sending. Concise, pointer-style — full retention rules live in
+#      conversation-log-protocol.md, NOT inline here.
+# -----------------------------------------------------------------------------
+append_block "CONVERSATION_MEMORY_PROTOCOL" <<'BLOCK_A3'
+
+## Conversation Memory Protocol — GHL inbound is SINGLE-TURN (base rule)
+
+Every GHL inbound hook turn is a FRESH, STATELESS session (user-turns = 1).
+You do NOT remember the previous message in-session. Your ONLY memory of a
+contact across messages is that contact's conversation log file:
+
+  <MASTER_FILES_DIR>/conversational-logs/<contact_id>__<name>.md
+
+On EVERY inbound, in this order:
+
+1. READ <MASTER_FILES_DIR>/conversational-logs/<contact_id>__<name>.md BEFORE
+   drafting anything — recover the full prior conversation and any in-progress
+   booking/topic. If the file is missing, treat the contact as new.
+2. CONTINUE any in-progress booking/topic from the log — do not restart or
+   re-ask what the log already answers.
+3. After the reply is SENT (a messageId/conversationId returned), APPEND both
+   this inbound message and your reply to that same log file (create it if
+   missing).
+
+A reply that ignores the log, or fails to append to it after sending, loses
+this contact's memory and is a FAILURE — the exact regression that left a live
+client mid-booking with no memory. Full retention/summarization rules:
+<MASTER_FILES_DIR>/conversation-log-protocol.md (see also Step 1.5 + Step 1.9).
+
+BLOCK_A3
+
+# -----------------------------------------------------------------------------
 # (b) SKILL38_RUNTIME_ROUTING — preserves the existing 53-line script's content
 #     (Steps 1.7 / 1.75 / 1.8 / 1.9 / 2.8) inside a single marker block
 # -----------------------------------------------------------------------------

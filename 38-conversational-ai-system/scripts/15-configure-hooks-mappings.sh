@@ -76,6 +76,13 @@ else
   #  - messageTemplate MUST include the MANDATORY SEND-DIRECTIVE (the canonical clause below) or the agent
   #    drafts but never sends (zero GHL API calls => customer gets nothing). Drafting is NOT sending. This is
   #    LAYER 1 of the 3-layer send enforcement (Layer 2 = AGENTS.md standing rule; Layer 3 = qc-send-directive.sh).
+  #  - messageTemplate MUST ALSO include the CONVERSATION-MEMORY read-before/append-after steps. GHL inbound hook
+  #    sessions are SINGLE-TURN / stateless — every hook run is a fresh session, so the agent's ONLY memory of a
+  #    contact across messages is the per-contact conversation log (conversational-logs/<contact_id>__<name>.md).
+  #    The template orders the agent to READ that log BEFORE replying (continue any in-progress booking/topic) and
+  #    APPEND inbound+reply AFTER sending. Without it the agent has zero memory mid-conversation — the exact
+  #    regression that left a live client mid-booking with "no memory." Enforced like the send-directive: fail-closed
+  #    guard below + qc-conversation-memory.sh (Layer 3, CI + pre-handoff QC).
   #  - deliver MUST be false (deliver:true makes OpenClaw ALSO push to a channel, conflicting with the agent's
   #    own GHL-API reply).
   #  - NO `fallbacks` key (schema is .strict() and rejects it; fallbacks belong on a model-routing config only).
@@ -90,7 +97,7 @@ else
     '{
       id:$id, match:{path:$path}, action:"agent", agentId:$agent,
       wakeMode:"now", name:"GHL Inbound", sessionKey:$sk,
-      messageTemplate:"INBOUND MESSAGE FROM GOHIGHLEVEL — {{channel}} channel From: {{first_name}} {{last_name}} Phone: {{phone}} Email: {{email}} Contact ID: {{contact_id}} Location ID: {{location_id}} Location name: {{location_name}} Customer message subject: {{subject}} Customer message body: {{message_body}} Before drafting your reply, check the contact'\''s conversation log at <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md for prior context (see AGENTS.md for full conversation-log protocol) and the matching playbook in conversation-workflows. MANDATORY — SEND, do not just draft: You MUST send your reply by calling the GHL Conversations API (POST conversations/messages) for contact {{contact_id}} on the {{channel}} channel, per TOOLS.md. Composing or drafting a reply is NOT sending — the customer receives nothing unless you make the API call. Do NOT end your turn until the send call returns a messageId/conversationId.",
+      messageTemplate:"INBOUND MESSAGE FROM GOHIGHLEVEL — {{channel}} channel From: {{first_name}} {{last_name}} Phone: {{phone}} Email: {{email}} Contact ID: {{contact_id}} Location ID: {{location_id}} Location name: {{location_name}} Customer message subject: {{subject}} Customer message body: {{message_body}} CONVERSATION MEMORY — THIS HOOK SESSION IS SINGLE-TURN AND STATELESS, your only memory of this contact is the log file. FIRST, before drafting anything, READ this contact'\''s conversation log at <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md for the full prior conversation and any in-progress booking/context (see AGENTS.md Conversation Memory Protocol); if the file is missing, treat this as a new contact. CONTINUE any in-progress topic/booking from the log instead of restarting. Also check the matching playbook in conversation-workflows. MANDATORY — SEND, do not just draft: You MUST send your reply by calling the GHL Conversations API (POST conversations/messages) for contact {{contact_id}} on the {{channel}} channel, per TOOLS.md. Composing or drafting a reply is NOT sending — the customer receives nothing unless you make the API call. Do NOT end your turn until the send call returns a messageId/conversationId. AFTER the send returns a messageId, APPEND both this inbound message and your reply to <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md (create the file if it is missing) — a reply that does not update the log loses this contact'\''s memory and is a failure.",
       deliver:false, timeoutSeconds:300
     }')"
 
@@ -101,6 +108,19 @@ else
     if ! printf '%s' "$GUARD_MT" | grep -qi -- "$needle"; then
       echo "REFUSED: installer messageTemplate is missing send-directive element '$needle' — refusing to write a hook that lets the agent draft-but-not-send." >&2
       exit 8
+    fi
+  done
+  # FAIL-CLOSED GUARD (conversation memory): GHL inbound hook sessions are single-turn/stateless — the agent's
+  # only memory across messages is the per-contact conversation log. The messageTemplate MUST tell the agent to
+  # READ the log BEFORE replying AND APPEND to it AFTER replying. It must NOT be possible to install a GHL hook
+  # whose messageTemplate lacks the conversation-log read-before OR append-after step (otherwise the agent has
+  # zero memory mid-conversation — this is the exact regression that broke a live client). The read+append
+  # directive lives ONLY on this SERVER mapping (the in-GHL-body messageTemplate stays placeholder-free per the
+  # 23-key rule).
+  for needle in "conversational-logs" "read" "append"; do
+    if ! printf '%s' "$GUARD_MT" | grep -qi -- "$needle"; then
+      echo "REFUSED: installer messageTemplate is missing conversation-log element '$needle' — refusing to write a hook whose agent cannot read-before/append-after and would lose this contact's memory." >&2
+      exit 9
     fi
   done
   UPDATED="$(jq \

@@ -141,6 +141,17 @@ fix any item before publishing. (Per-workflow, brutally-specific version generat
 > returned."** Without it the agent drafts a reply and stops — the customer gets nothing. This is verified by
 > `scripts/qc-send-directive.sh` (CI + pre-handoff QC); see `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4 for
 > the canonical server mapping.
+>
+> **CONVERSATION MEMORY — read-before / append-after (machine-enforced).** The in-GHL-body `messageTemplate`
+> stays placeholder-free, but the SERVER-mapping `messageTemplate` MUST ALSO carry the conversation-memory
+> steps: GHL inbound hook sessions are **single-turn / stateless**, so the agent's only memory of a contact
+> across messages is that contact's conversation log
+> (`<MASTER_FILES_DIR>/conversational-logs/<contact_id>__<name>.md`). The template MUST contain the
+> **conversational-logs** path, a **READ**-before-replying instruction (continue any in-progress
+> booking/topic), and an **APPEND**-after-sending instruction. Dropping these left a live client mid-booking
+> with no memory. This is verified by `scripts/qc-conversation-memory.sh` (CI + pre-handoff QC); the
+> `conversational-logs/` dir is created + made writable by the runtime/gateway user in Step 9
+> (`scripts/09-install-conversation-workflows.sh`). See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4b.
 
 ## 5. MULTI-ACTION workflows (not just one action)
 
