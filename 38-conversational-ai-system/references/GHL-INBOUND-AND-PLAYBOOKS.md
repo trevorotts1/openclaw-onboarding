@@ -83,9 +83,13 @@ placeholder-free string from the canonical 23-key body above.
 **3) The server mapping REQUIRES a `messageTemplate`.** With none, the hook returns
 `{"ok":false,"error":"hook mapping requires message"}`.
 
-**4) The server `messageTemplate` MUST include the instruction to reply via the GHL Conversations API**, or
-the agent drafts a reply but never sends it (zero GHL API calls ⇒ customer gets nothing). Canonical correct
-mapping (`openclaw.json` `hooks.mappings` entry):
+**4) The server `messageTemplate` MUST include the MANDATORY SEND-DIRECTIVE**, or the agent drafts a reply
+but never sends it (zero GHL API calls ⇒ customer gets nothing). Drafting/composing is NOT sending. A
+soft "reply via the GHL Conversations API per TOOLS.md" phrasing is NOT enough — the template MUST contain
+all of: the word **SEND**, the **GHL Conversations API** (POST `conversations/messages`), the
+**drafting-is-NOT-sending** clause, and **"do not end your turn until a messageId/conversationId is
+returned."** This is machine-enforced by `scripts/qc-send-directive.sh` (CI + pre-handoff QC). Canonical
+correct mapping (`openclaw.json` `hooks.mappings` entry):
 
 ```json
 {
@@ -97,7 +101,7 @@ mapping (`openclaw.json` `hooks.mappings` entry):
   "wakeMode": "now",
   "name": "GHL Sales Inbound",
   "sessionKey": "{{session_key}}",
-  "messageTemplate": "Contact {{contact_id}}: {{message_body}} -- You are the Sales agent. Reply to contact {{contact_id}} via the GHL Conversations API per TOOLS.md (check conversation-workflows for the matching playbook).",
+  "messageTemplate": "Contact {{contact_id}}: {{message_body}} -- You are the Sales agent (check conversation-workflows for the matching playbook). MANDATORY — SEND, do not just draft: You MUST send your reply by calling the GHL Conversations API (POST conversations/messages) for contact {{contact_id}} on the {{channel}} channel, per TOOLS.md. Composing or drafting a reply is NOT sending — the customer receives nothing unless you make the API call. Do NOT end your turn until the send call returns a messageId/conversationId.",
   "deliver": false,
   "timeoutSeconds": 300
 }

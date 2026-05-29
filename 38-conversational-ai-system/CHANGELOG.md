@@ -1,3 +1,52 @@
+## [1.4.9] - 2026-05-29 - enforce the mandatory GHL send-directive (drafting != sending) for every client
+
+Root cause fixed: if a GHL inbound hook's SERVER-mapping `messageTemplate` does not EXPLICITLY order the
+agent to SEND its reply via the GHL Conversations API, the model drafts a reply and STOPS — drafting is NOT
+sending — and the customer receives nothing. This is now enforced in three layers, not left optional.
+
+### The canonical send-directive
+The exact mandatory clause every GHL inbound SERVER `messageTemplate` must contain (all elements required:
+the word SEND, the GHL Conversations API, the contact id, the channel, the drafting-is-NOT-sending clause,
+and "do not end your turn until a messageId/conversationId is returned"):
+
+> MANDATORY — SEND, do not just draft: You MUST send your reply by calling the GHL Conversations API (POST
+> conversations/messages) for contact {{contact_id}} on the {{channel}} channel, per TOOLS.md. Composing or
+> drafting a reply is NOT sending — the customer receives nothing unless you make the API call. Do NOT end
+> your turn until the send call returns a messageId/conversationId.
+
+### Added
+- **LAYER 3 — machine-enforced QC gate.** New `scripts/qc-send-directive.sh` scans every GHL INBOUND
+  SERVER-mapping `messageTemplate` (the installer's canonical template + the reference examples) and FAILS
+  (exit non-zero) if any is missing the send-directive elements (SEND, GHL Conversations API /
+  `conversations/messages`, drafting-is-not-sending, do-not-end-turn-until-messageId). It deliberately
+  SKIPS the placeholder-free object-A 23-key bodies (those stay placeholder-free per the 23-key rule — the
+  send-directive lives ONLY on the server mapping) and non-GHL server mappings (Stripe/Shopify/n8n). Exits
+  2 (FAIL) if zero GHL inbound server templates are found so it never goes silently blind. Wired into BOTH
+  `scripts/11-run-qc-checklist.sh` (pre-handoff QC) AND `.github/workflows/qc-static.yml` (CI on every push/PR).
+
+### Changed
+- **LAYER 1 — installer canonical template (fail-closed).** `scripts/15-configure-hooks-mappings.sh` now
+  writes the strengthened send-directive into the GHL inbound mapping's `messageTemplate`, and a fail-closed
+  guard refuses to write the config (exit 8) if the built template is missing any send-directive element —
+  it is no longer possible to install a GHL hook whose server `messageTemplate` lacks the send-directive.
+  The in-GHL-body messageTemplate (the Step-4 E2E FLAT body) stays placeholder-free per the 23-key rule.
+- **LAYER 2 — AGENTS.md standing base rule (belt-and-suspenders).** `scripts/05-update-agents-md.sh` now
+  emits a concise standing rule (new `GHL_SEND_MANDATORY` marker block) + strengthens Step 7C "Send the
+  reply": for ANY GHL inbound hook, SENDING via the GHL Conversations API is MANDATORY; a drafted-but-unsent
+  reply is a failure; always confirm a messageId/conversationId before ending the turn.
+- **v6.0 playbook + authoritative spec.** `references/v6.0-source-playbook.md` (canonical server mapping,
+  Step 3) and `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4 (the doc that wins) now show the strengthened
+  send-directive in their canonical server `messageTemplate`, replacing the softer "reply via the GHL
+  Conversations API per TOOLS.md" phrasing. 23-key rule, FLAT bodies, no nesting, no `\n`, placeholder-free
+  in-body templates all preserved.
+- **Standards + checklist.** `references/communications-playbook-standard.md` (GHL reply mechanism item),
+  `references/workflow-ai-instructions-standard.md` (new machine-enforced send-directive callout), and
+  `templates/workflow-verification-checklist-template.md` (new Webhook-Action verification item) now state
+  the send-directive is mandatory on the SERVER mapping and how to verify it (`scripts/qc-send-directive.sh`).
+
+### Version
+- `skill-version.txt` → `1.4.9`; SKILL.md self-counts updated (scripts/ 28 → 29; three QC linters).
+
 ## [1.4.8] - 2026-05-29 - add Skill 23 cross-reference (role/SOP gate + comms hand-off) to v6.0 playbook
 
 ### Added

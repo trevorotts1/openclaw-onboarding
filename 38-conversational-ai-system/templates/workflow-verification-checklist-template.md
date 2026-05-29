@@ -117,6 +117,19 @@ If any item is wrong, the fix is listed right there.
     run it if you edit any embedded body.)
   - FIX IF WRONG: Click Raw Body → replace entirely with the 23-key JSON above
 
+- [ ] SERVER mapping carries the MANDATORY SEND-DIRECTIVE — the
+       `hooks.mappings` entry in `~/.openclaw/openclaw.json` (NOT the GHL body)
+       has a `messageTemplate` that ORDERS the agent to SEND: it must contain
+       the word SEND, the GHL Conversations API (POST conversations/messages),
+       the "drafting/composing is NOT sending" clause, and "do not end your turn
+       until a messageId/conversationId is returned." Without it the agent
+       drafts a reply and stops — the customer gets nothing.
+  - MACHINE-CHECK: `scripts/qc-send-directive.sh` must PASS.
+  - FIX IF WRONG: open `~/.openclaw/openclaw.json`, edit the mapping's
+    `messageTemplate` to include the send-directive (the in-GHL-body
+    `messageTemplate` stays placeholder-free — the directive lives on the
+    SERVER mapping only), then `openclaw config validate`.
+
 ## Tags & multi-action
 
 - [ ] Every `{{…}}` token in the Raw Body was inserted via GHL's Custom Values
