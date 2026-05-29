@@ -85,7 +85,7 @@ contract is the THREE PARTS below:
 |---|---|---|---|
 | **Part 1** | **Workflow AI instruction set** (the Build-with-AI prompt) | (a) the AI prompt, (b) a manual-build fallback, (c) a verification checklist | `conversation-workflows/<id>--workflow-ai-prompt.md` + `<id>--verification-checklist.md` |
 | **Part 2** | **The conversation playbook itself** (Layer 2 markdown) | the agent's behavior once the conversation lands | `conversation-workflows/<id>.md`, registered in `conversation-workflows/registry.md` |
-| **Part 3** | **The brainstorm trigger** | the friendly, proactive Q&A that KICKS OFF Parts 1 + 2 | runtime behavior wired into AGENTS.md Step 1.85 (see Section J) |
+| **Part 3** | **The brainstorm trigger** | the trigger-word offer (first build) + the "I Do / You Do" overview + the friendly, proactive Q&A that KICKS OFF Parts 1 + 2 | runtime behavior wired into AGENTS.md Step 1.85 (see Section J) |
 
 **Part 1 — Workflow AI instruction set (the Build-with-AI prompt).**
 PRIMARY JOB: get the **SHAPE** of the funnel right — trigger, if/else branches, tags, Custom Webhook
@@ -103,9 +103,11 @@ the two halves connect: GHL fires the Custom Webhook → OpenClaw receives it on
 the agent loads this playbook.
 
 **Part 3 — The brainstorm trigger.**
-When the operator says "help me create a conversation playbook" (or close), the agent runs a FRIENDLY
-proactive Q&A. Full rules in Section B and Section J. The non-negotiable rules: **DO NOT dump 50
-questions.** USE what the agent already knows (business, products, services, calendars, who they are,
+When the operator says "help me create a conversation playbook" (or close) — or says their **personal
+trigger word** (offered on the FIRST build, "Alexa"/"Hey Siri" style; Section I.1a) — the agent presents the
+short **"I Do / You Do"** overview (Section I.1b: who does what + a great playbook takes ~15-30 min) and then
+runs a FRIENDLY proactive Q&A. Full rules in Section B, Section I, and Section J. The non-negotiable rules:
+**DO NOT dump 50 questions.** USE what the agent already knows (business, products, services, calendars, who they are,
 habits — from Typed Knowledge Bases (Step 9.22) + USER.md + MEMORY.md) and ask ONLY the smart gaps, like
 brainstorming. Then regurgitate a **CONCISE** summary — "is this what you want to happen?" — as the final
 confirmation. On YES → build Part 1 → build Part 2 → decide + write a pointer into AGENTS.md / TOOLS.md /
@@ -702,6 +704,63 @@ When the operator (NOT a customer) says any of these or a close variant, start t
 - "Let's build a funnel for <X>"
 - "I want a workflow that does <X>"
 - "Build me a playbook for <X>"
+- "Help me build a [purpose] playbook" (the client-facing phrasing taught in the reference sheet)
+
+#### I.1a — Offer a PERSONAL TRIGGER WORD (on the client's FIRST playbook build)
+
+The VERY FIRST time a client asks to build a communication playbook (or hits the proactive
+brainstorm trigger in Step 9.34), and BEFORE diving into the brainstorm, the agent OFFERS to set a
+**personal trigger word** — a word or short phrase that instantly tells the AI the client wants to
+build a playbook. Frame it exactly the way people already understand wake words:
+
+> "Quick thing before we start — want to set a personal **trigger word** for this? It works just like
+> **"Alexa"** or **"Hey Siri"**: a word or short phrase that instantly tells me you want to build a
+> communication playbook, so you never have to explain it. A lot of people use something fun like
+> **"Playbook time!"** — what would you like yours to be? (Totally optional — you can always just say
+> *"Help me build a [purpose] playbook"*.)"
+
+Then:
+
+1. **Ask for it.** Let the client pick anything memorable ("Playbook time!", "Build mode", "New funnel", etc.).
+2. **Confirm it back.** Play it back so they know it's set: *"Got it — from now on, whenever you say
+   **"<trigger word>"**, I'll know you want to build a communication playbook and I'll kick this off."*
+3. **REMEMBER it (persist it).** Store the trigger word so future builds recognize it — write it to the
+   client's **`USER.md`** (the durable who-they-are/preferences file) AND record it in the playbook
+   config at `<MASTER_FILES_DIR>/conversation-workflows/registry.md` (a small `<!-- trigger-word: "<phrase>" -->`
+   header comment at the top of the registry, or a `Trigger word:` line in the run manifest). It is a
+   durable preference, so the natural home is `USER.md`; the registry copy keeps it next to the playbooks
+   it triggers. **Never co-mingle clients** — the trigger word lives in THAT client's own workspace files.
+4. **On every LATER build, recognize it.** AGENTS.md Step 1.85 (Section J) reads the stored trigger word
+   on each operator turn; when the client says their trigger word, the agent treats it exactly like the
+   Section I.1 trigger phrases and starts THIS flow. (The standard "Help me build a [purpose] playbook"
+   phrasing always works too — the trigger word is an additional, personalized shortcut, never a
+   replacement.)
+
+If the client declines, that's fine — note it and move on; the standard trigger phrases still work.
+
+#### I.1b — Present the "I Do / You Do" process (so the client knows responsibilities + timing)
+
+When a build actually starts, the agent presents a short **"I Do / You Do"** overview FIRST, so the
+client knows what to expect, who does what, and that **a good playbook takes about 15-30 minutes** to get
+right (it is a collaboration, not an instant button). Keep it friendly and brief — this is orientation,
+not a contract:
+
+> "Here's how we'll build this together — it usually takes about **15-30 minutes** to get a great one:
+>
+> 1. **YOU** — trigger it (your trigger word, or *"Help me build a [purpose] playbook"*).
+> 2. **I (your AI) DO** — ask you a few quick brainstorm questions, using what I already know about your
+>    business (NOT a 50-question interrogation).
+> 3. **YOU** — answer them (goal, audience, channel, offer, tone).
+> 4. **I DO** — draft the full playbook + conversation flow for your approval.
+> 5. **YOU** — review it and tell me any tweaks.
+> 6. **I DO** — finalize it, store it (your `conversation-workflows/` folder, mirrored to Notion), and
+>    build the matching **Workflow AI prompt** wired to your Convert and Flow account.
+> 7. **I DO** — wire the actions: create tags, update your calendar, create/book appointments.
+> 8. **YOU** — approve, and we go live."
+
+This sets the expectation (collaboration + ~15-30 min) and maps cleanly onto I.2 (the brainstorm) → I.3
+(the build/store/register sequence). Don't recite it verbatim every time once a client knows the rhythm;
+always present it on a client's FIRST build.
 
 #### I.2 — Friendly proactive Q&A — DO NOT dump 50 questions
 
@@ -722,6 +781,23 @@ it already knows about the business and asks ONLY the smart gaps:
    first?" Treat it like brainstorming with a smart colleague who already knows the business, not like a
    form. (This is the explicit anti-pattern: never fire all 8 of Section B's questions verbatim when the
    answers are already in the Knowledge Bases.)
+
+   **The agent's JOB here is to BRAINSTORM with the client to land the PERFECT playbook** — not to extract
+   a form. Frame the gaps you ask around the **things to think about**, and reassure the client that
+   uncertainty is fine because that is literally what the brainstorm is for. The things to think about:
+   - **The goal** — what should this playbook accomplish? (book a call / recover a sale / get a review /
+     answer an FAQ — pick the ONE primary win.)
+   - **Who it's for** — the audience (new lead, returning customer, hot prospect, cold/dormant, existing client).
+   - **The channel(s)** — where it runs (SMS, email, Facebook/Instagram DM, WhatsApp, Live Chat).
+   - **The offer / hook** — what's the pitch, the value, or the reason they'll respond?
+   - **The tone / brand voice** — how it should sound (layered on top of the channel's baseline voice).
+   - **Timing & follow-up cadence** — when it fires and how persistently it follows up (e.g. the
+     intelligent-followup touchpoints, quiet hours).
+   - **The "win" action** — what fires on success: booked / replied / tagged / purchased.
+
+   Always reassure: *"If you're not sure about any of these, that's exactly what I'm here to brainstorm —
+   we'll figure it out together."* The agent only asks the things it genuinely cannot infer from the
+   Knowledge Bases / USER.md / MEMORY.md; the list above is the brainstorm's COMPASS, not a questionnaire to read aloud.
 
 3. **Regurgitate a CONCISE summary and ask for confirmation.** Before building anything, the agent plays
    back a short, plain-language summary — NOT the full spec — and asks:
@@ -761,12 +837,17 @@ it already knows about the business and asks ONLY the smart gaps:
 ### J. AGENTS.md Step 1.85 — the runtime hook for Part 3
 
 Step 1.85 (installed by `scripts/05-update-agents-md.sh`, marker `STEP_1_85_WORKFLOW_BUILDER_TRIGGERS`)
-is what makes Part 3 fire at runtime. It recognizes the operator-side trigger phrases (I.1) and hands
-control to this protocol's brainstorm flow (Section I). Confirm the full 3-PART build completed — Part 1
-(prompt + fallback + checklist), Part 2 (playbook + registry), Part 3 (brainstorm → concise confirmation →
-human-facing doc) — before declaring the playbook live. The human-facing doc (Notion → Google Docs → text,
-§I.3 step 4) is MANDATORY and machine-enforced by `scripts/qc-playbook-doc.sh`: a playbook with no recorded
-doc URL/path in its registry row is NOT live.
+is what makes Part 3 fire at runtime. It recognizes the operator-side trigger phrases (I.1) **AND the
+client's stored personal trigger word (I.1a)** and hands control to this protocol's brainstorm flow
+(Section I). On each operator turn it reads the stored trigger word (from `USER.md` / the
+`conversation-workflows/registry.md` `trigger-word` header) and, if the message matches it, kicks off the
+flow exactly as a Section I.1 phrase would. On a client's FIRST build it OFFERS the trigger word (I.1a) and
+presents the "I Do / You Do" overview (I.1b) before the brainstorm. Confirm the full 3-PART build completed
+— Part 1 (prompt + fallback + checklist), Part 2 (playbook + registry), Part 3 (trigger-word offer on first
+build → "I Do / You Do" overview → brainstorm → concise confirmation → human-facing doc) — before declaring
+the playbook live. The human-facing doc (Notion → Google Docs → text, §I.3 step 4) is MANDATORY and
+machine-enforced by `scripts/qc-playbook-doc.sh`: a playbook with no recorded doc URL/path in its registry
+row is NOT live.
 
 ### K. Cross-references — builder ↔ router ↔ proactive engine
 

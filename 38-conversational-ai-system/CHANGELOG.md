@@ -1,3 +1,58 @@
+## [1.4.17] - 2026-05-29 - New-playbook creation experience: trigger word + "I Do / You Do" + brainstorm prep (agent behavior + client doc + QC)
+
+Adds the AGENT BEHAVIOR and client-facing content for how a NEW communication playbook gets created.
+Three pieces, in the agent-behavior files AND the generated client doc, and machine-enforced.
+
+### Added — agent behavior in the playbook-CREATION flow (Step 9.20 Part 3)
+- **`protocols/conversation-workflows-protocol.md`** — extended the Part 3 brainstorm flow (not duplicated):
+  - **§I.1a (NEW) — personal TRIGGER WORD.** On the client's FIRST playbook build, the agent OFFERS to set a
+    personal trigger word, explained like **"Alexa" / "Hey Siri"** (e.g. *"Playbook time!"*): asks for it,
+    confirms it back, and **REMEMBERS it** — persists it to the client's `USER.md` AND the
+    `conversation-workflows/registry.md` `trigger-word` header so future builds recognize it (never co-mingle
+    clients). The standard *"Help me build a [purpose] playbook"* phrasing always still works.
+  - **§I.1b (NEW) — the "I Do / You Do" process.** When a build starts the agent presents the 8-step
+    YOU/AI-DO overview so the client knows responsibilities + that a good playbook takes **~15-30 minutes**
+    (trigger → AI brainstorms a few Qs → YOU answer → AI drafts → YOU review → AI finalizes/stores/wires the
+    Workflow AI prompt → AI wires actions → YOU approve, go live).
+  - **§I.2 — brainstorm "what to think about".** The agent's JOB is to BRAINSTORM the PERFECT playbook; gives
+    the client the things to think about — **goal** (book a call / recover a sale / get a review / FAQ),
+    **who it's for**, the **channel(s)**, the **offer/hook**, the **tone/brand voice**, **timing & follow-up
+    cadence**, and the **"win" action** (booked / replied / tagged / purchased) — with the reassurance
+    *"if you're unsure, that's what I'm here to brainstorm."*
+  - **§J + the 3-PART build table + Part 3 prose** — AGENTS.md Step 1.85 now also recognizes the stored
+    trigger word; the table/prose reflect the trigger-word offer + "I Do / You Do".
+- **`INSTRUCTIONS.md`** (Step 9.20 row) + **`references/communications-playbook-standard.md`** §6 (Build
+  sequence) + **`references/workflow-ai-instructions-standard.md`** §7 — mirror the trigger-word offer, the
+  "I Do / You Do" process, and the brainstorm "what to think about" so every entry point describes them the
+  same way; they point at the canonical detail in §I.1a/§I.1b/§I.2.
+
+### Added — client-facing explanation in the generated client doc
+- **`scripts/21-generate-client-reference-sheet.sh`** — inside the "🗂️ Your Communication Playbooks" section
+  (after Quick Start, before the deep reference), three new friendly sub-sections with emojis:
+  **🔑 a personal trigger word** ("Alexa"/"Hey Siri" style, e.g. "Playbook time!"); **🤝 the "I Do / You Do"
+  process ⏱️** (who does what + a good playbook takes ~15-30 minutes); and **🧠 what to think about** before
+  you ask (goal/audience/channel/offer/tone/timing/win action + *"if you're unsure, that's exactly what your
+  AI is here to brainstorm"*). FLAT 23-key body + Quick-Start-first ordering kept intact.
+
+### Changed — QC enforces all three in the client doc
+- **`scripts/qc-reference-sheet.sh --require-manual-fill`** now ALSO FAILS the build when the generated doc is
+  missing: the **trigger-word concept** + its **"Alexa"/"Hey Siri" analogy**; the **"I Do / You Do" process**
+  + the **~15-30 minute** expectation; and the brainstorm **"what to think about"** prep + its reassurance.
+  Negative-tested: removing any one of these from the generated sheet FAILs the gate (six negative cases,
+  all FAIL as expected); the positive (full) sheet PASSes.
+
+### QC
+- All Skill 38 CI gates pass locally: `qc-23-key-bodies.sh`, `qc-trinity-registry.test.sh`,
+  `qc-send-directive.sh`, `qc-conversation-memory.sh`, `qc-playbook-doc.test.sh`, `qc-reference-sheet.sh`
+  (default + `--require-manual-fill`), `qc-config-keys.sh`, `qc-notify-client-doc.sh`. Six negative tests
+  confirm the new enforcement checks FAIL when their content is removed.
+
+### Version
+- **`skill-version.txt`** 1.4.16 → 1.4.17; **`SKILL.md`** SELF-COUNTS re-verified (protocols/=32, scripts/=36,
+  references/=14, journeys=8 — unchanged; this release edited existing files only, added no new files) +
+  the `qc-reference-sheet.sh` bullet updated. No repo-tracked (8-location) version file changed, so the repo
+  version is unaffected and `scripts/bump-version.sh` is not run (matches the v1.4.15 / v1.4.16 precedent).
+
 ## [1.4.16] - 2026-05-29 - Authorization two-block bug fix + enriched "build another playbook" section + tightened QC
 
 Two client-doc fixes driven by live pain, mirrored into the standards, and machine-enforced.

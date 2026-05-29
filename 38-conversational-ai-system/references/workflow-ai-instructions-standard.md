@@ -232,8 +232,17 @@ answers it the same way (friendly tone, generous emojis 💬🚀🛠️📅🏷�
 - **"Want another communication playbook? Just ask me!"** — a clear CTA with a concrete COPYABLE example: the
   client just tells their AI **"Help me build a [purpose] playbook"** (e.g. *"Help me build a missed-call
   follow-up playbook"*), with more examples surfaced — **appointment-reminder, lead-nurture, review-request.**
+- **A personal TRIGGER WORD (offered on the first build)** — explained like **"Alexa" / "Hey Siri"**: a
+  word/phrase (e.g. *"Playbook time!"*) that instantly tells the AI the client wants to build a playbook. The
+  AI offers it, confirms it, and remembers it so future builds recognize it.
+- **The "I Do / You Do" process + ~15-30 min expectation** — so the client knows who does what and that a
+  good playbook takes about 15-30 minutes to get right (YOU trigger → AI brainstorms a few questions → YOU
+  answer → AI drafts → YOU review → AI finalizes/stores/wires the Workflow AI prompt → AI wires the actions →
+  YOU approve, go live).
 - **WHAT THE AI WILL DO when they ask:** (1) **brainstorm it with you** using what it already knows about
-  your business (not a 50-question interrogation); (2) **create the communication playbook** for you;
+  your business (not a 50-question interrogation) — the AI's job is to brainstorm the PERFECT playbook with
+  you (think: goal, who it's for, channel, offer, tone, timing/follow-up, the win action — "if you're unsure,
+  that's what I'm here to brainstorm"); (2) **create the communication playbook** for you;
   (3) **store it** — the working copy in the master-files `conversation-workflows/` folder, mirrored to Notion;
   (4) **help you create the matching Workflow AI prompt** (Section 1 above), wired to **YOUR** Convert and Flow
   (GoHighLevel) account; and (5) that **the AI can take real actions in Convert and Flow on your behalf** — it
@@ -242,7 +251,9 @@ answers it the same way (friendly tone, generous emojis 💬🚀🛠️📅🏷�
   these things for you — just ask."*
 
 Machine-enforced by `scripts/qc-reference-sheet.sh --require-manual-fill` and detailed in
-`references/communications-playbook-standard.md` §9.
+`references/communications-playbook-standard.md` §9. The agent-behavior detail (trigger-word offer +
+"I Do / You Do" + brainstorm "what to think about") lives in `protocols/conversation-workflows-protocol.md`
+§I.1a/§I.1b/§I.2.
 
 ## 8. Templates this standard governs
 
