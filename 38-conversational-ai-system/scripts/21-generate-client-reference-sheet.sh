@@ -503,7 +503,13 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   # Full Reference & Explanation. This answers the FIRST question every client
   # asks on their first test: "where are my workflows / communication playbooks?"
   # It is prominent (a top-level heading + a callout + a BIG BOLD "build a new
-  # one" CTA) and machine-enforced by qc-reference-sheet.sh.
+  # one" CTA) and machine-enforced by qc-reference-sheet.sh. It ALSO teaches the
+  # NEW-playbook creation experience: a personal TRIGGER WORD (🔑 Alexa/Hey Siri
+  # style), the "I Do / You Do" process (🤝 who does what + a great playbook takes
+  # ~15-30 min ⏱️), and the brainstorm PREP (🧠 the "things to think about": goal,
+  # audience, channel, offer/hook, tone, timing/follow-up, win action + "if you're
+  # unsure that's what I'm here to brainstorm"). All three are machine-enforced by
+  # qc-reference-sheet.sh --require-manual-fill.
   # ============================================================================
   printf '# 🗂️ Your Communication Playbooks\n\n'
   printf '> **Where are my workflows / communication playbooks?** 💬 Right here is the answer — read this before your first test.\n\n'
@@ -522,6 +528,35 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf -- '- 📅 *"Help me build an appointment-reminder playbook"*\n'
   printf -- '- 🌱 *"Help me build a lead-nurture playbook"*\n'
   printf -- '- ⭐ *"Help me build a review-request playbook"*\n\n'
+
+  # ---- 🔑 Personal trigger word (Alexa / Hey Siri style) ----
+  printf '## 🔑 Set a personal trigger word (like "Alexa" or "Hey Siri")\n\n'
+  printf 'The first time you build a playbook, your AI will offer to set you a **personal trigger word** — a word or short phrase that instantly tells it you want to build a communication playbook, **just like saying "Alexa" or "Hey Siri."** 🗣️ Pick anything memorable — lots of people use something fun like **"Playbook time!"** Once it'\''s set, your AI remembers it, so any time you say it, it knows exactly what you mean and kicks off the build. ✅ (You can always just say *"Help me build a [purpose] playbook"* instead — the trigger word is just a fun shortcut.)\n\n'
+
+  # ---- 🤝 The "I Do / You Do" process + ~15-30 min expectation ----
+  printf '## 🤝 How we build it together — the "I Do / You Do" process ⏱️\n\n'
+  printf 'Building a great playbook is a quick collaboration — it usually takes about **15-30 minutes** ⏱️ to get one really dialed in. Here'\''s who does what:\n\n'
+  printf -- '1. **YOU** 🗣️ — trigger it (your trigger word, or *"Help me build a [purpose] playbook"*).\n'
+  printf -- '2. **Your AI** 🧠 — asks you a few quick brainstorm questions, using what it already knows about your business (NOT a 50-question interrogation).\n'
+  printf -- '3. **YOU** ✍️ — answer them (goal, audience, channel, offer, tone).\n'
+  printf -- '4. **Your AI** 📝 — drafts the full playbook + conversation flow for your approval.\n'
+  printf -- '5. **YOU** 👀 — review it and tell it any tweaks.\n'
+  printf -- '6. **Your AI** 🗂️ — finalizes it, stores it (your `conversation-workflows/` folder, mirrored to Notion), and builds the matching **Workflow AI prompt** wired to your Convert and Flow account.\n'
+  printf -- '7. **Your AI** ⚡ — wires the actions: creates tags 🏷️, updates your calendar 📅, creates/books appointments 🗓️.\n'
+  printf -- '8. **YOU** ✅ — approve, and you go live!\n\n'
+
+  # ---- 🧠 What to think about (the brainstorm prep) ----
+  printf '## 🧠 What to think about before you ask (your AI will brainstorm the rest with you)\n\n'
+  printf 'Your AI'\''s job is to **brainstorm with you to land the PERFECT playbook** — so you don'\''t need to have it all figured out. 💡 Just have a rough idea of these, and it will help you with the rest:\n\n'
+  printf -- '- 🎯 **The goal** — what should this playbook do? (book a call, recover a sale, get a review, answer an FAQ)\n'
+  printf -- '- 👥 **Who it'\''s for** — new leads, returning customers, hot prospects, cold/dormant contacts, existing clients?\n'
+  printf -- '- 💬 **The channel(s)** — where it runs (SMS, email, Facebook/Instagram DM, WhatsApp, Live Chat).\n'
+  printf -- '- 🪝 **The offer / hook** — what'\''s the pitch or the reason they'\''ll respond?\n'
+  printf -- '- 🎙️ **The tone / brand voice** — how it should sound.\n'
+  printf -- '- ⏰ **Timing & follow-up** — when it fires and how persistently it follows up.\n'
+  printf -- '- 🏆 **The "win" action** — what counts as success (booked / replied / tagged / purchased).\n\n'
+  printf '> **If you'\''re unsure about any of these, that'\''s exactly what your AI is here to brainstorm.** 🧠 You bring the idea, it asks the smart questions, and together you land the perfect playbook. 🚀\n\n'
+
   printf '**What your AI will DO when you ask (it does all of it WITH you):** 🛠️\n\n'
   printf -- '1. 🧠 **It brainstorms it with you** — a short, friendly back-and-forth (NOT a 50-question interrogation). It already knows your business, so it only asks what it genuinely needs, then shows you a quick "is this what you want?" summary to confirm.\n'
   printf -- '2. ✍️ **It creates the communication playbook for you** — written out, ready to run.\n'

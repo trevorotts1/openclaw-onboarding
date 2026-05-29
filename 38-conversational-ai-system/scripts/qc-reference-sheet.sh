@@ -53,6 +53,11 @@
 #     and Flow account); the Convert-and-Flow abilities (create TAGS, update the
 #     CALENDAR, create/book APPOINTMENTS); and the explicit "connected to your
 #     Convert and Flow account ... just ask" statement
+#   - the NEW-playbook creation experience: a personal TRIGGER WORD (explained
+#     like "Alexa"/"Hey Siri"); the "I DO / YOU DO" process (who does what + a
+#     good playbook takes ~15-30 minutes); and the brainstorm PREP ("what to think
+#     about" — goal/audience/channel/offer/tone/timing/win action + "if you're
+#     unsure, that's what I'm here to brainstorm")
 #
 # Exit codes: 0 = sheet carries all required markers;
 #             1 = one or more markers missing;
@@ -319,6 +324,26 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
   # do these things for them — just ask.
   grep -qiE 'connected to your Convert and Flow' "$SHEET" || \
     MISSING+=('the explicit "you have an AI that is connected to your Convert and Flow account and can do these things for you — just ask" statement')
+
+  # --- NEW-playbook creation experience: trigger word + "I Do / You Do" + brainstorm prep ---
+  # (1) A personal TRIGGER WORD, explained like "Alexa" / "Hey Siri". Require the
+  #     "trigger word" concept AND the Alexa/Siri analogy so it is taught the way
+  #     people already understand wake words.
+  grep -qiE 'trigger word' "$SHEET" || \
+    MISSING+=('the personal "trigger word" concept (a word/phrase that tells the AI you want to build a playbook)')
+  grep -qiE 'Alexa|Hey Siri|Siri' "$SHEET" || \
+    MISSING+=('the trigger word must be explained like "Alexa" / "Hey Siri" (the wake-word analogy)')
+  # (2) The "I DO / YOU DO" process — who does what + a good playbook takes ~15-30 min.
+  grep -qiE 'I Do.*You Do|You Do.*I Do|I do / you do' "$SHEET" || \
+    MISSING+=('the "I Do / You Do" process (who does what when building a playbook)')
+  grep -qiE '15[[:space:]]*[-–to]+[[:space:]]*30[[:space:]]*min|15 to 30 min|about (15|fifteen)' "$SHEET" || \
+    MISSING+=('the expectation that a good playbook takes about 15-30 minutes')
+  # (3) The brainstorm PREP — the "what to think about" list + the reassurance.
+  grep -qiE 'think about|things to think' "$SHEET" || \
+    MISSING+=('the brainstorm prep: the "what to think about" before you ask')
+  grep -qiE 'if you.{0,3}re (not )?(un)?sure.*brainstorm|that.{0,3}s (what|why).*brainstorm|here to brainstorm' "$SHEET" || \
+    MISSING+=('the brainstorm reassurance ("if you'\''re unsure, that'\''s what I'\''m here to brainstorm")')
+
   # The Communication Playbooks section must sit AFTER Quick Start and BEFORE the
   # deep Full Reference & Explanation (the "where are my playbooks" answer should
   # be high up, not buried in the deep reference).
