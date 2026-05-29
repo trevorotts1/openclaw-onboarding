@@ -18,6 +18,14 @@
 > checklist — sometimes Build with AI gets the scaffolding right but
 > misses critical pieces."
 
+> **MANDATORY — manually fill the Custom Webhook AFTER Build with AI runs.** Build-with-AI only builds the
+> workflow SHAPE (the trigger + an EMPTY Custom Webhook action). It does **NOT** fill in the URL, the
+> Authorization/Bearer header, the Content-Type header, or the Raw Body JSON. **Build with AI will not fill
+> these for you.** Before you run the checklist below, open the Custom Webhook action and MANUALLY enter:
+> Method = POST; the URL `https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`; Headers via **Add item** →
+> `Authorization: Bearer <HOOKS_TOKEN>` and `Content-Type: application/json`; the Raw Body JSON (23-key flat);
+> then **Save + Publish**. **Verify every field is non-empty before publishing.**
+
 #### D.3 — Generate the brutally-specific verification checklist
 
 The agent writes a verification checklist tailored to the EXACT specifications the prompt was supposed to produce. Saved as: `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--verification-checklist.md`.

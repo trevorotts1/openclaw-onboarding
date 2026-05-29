@@ -109,6 +109,25 @@ Per-channel variants keep ALL 23 keys; only `channel` and the `session_key` pref
 (`hook:ghl:<channel>:{{contact.id}}`) change. The per-client `id`/`match`/`agent_id` are substituted to
 the client's hook name + routing agent.
 
+## 3b. MANDATORY — manually fill the Custom Webhook AFTER Build-with-AI runs (it will NOT do it for you)
+
+> **AFTER Build-with-AI runs, you MUST open the Custom Webhook action and MANUALLY enter every field
+> below.** Build-with-AI only builds the workflow SHAPE (the trigger + an EMPTY Custom Webhook action) —
+> it does **NOT** reliably populate the URL, the Authorization/Bearer header, the Content-Type header, or
+> the Raw Body JSON. **Build-with-AI will NOT fill these for you.**
+>
+> Open the Custom Webhook action and enter, by hand:
+> - **Method** = `POST`
+> - **URL** = `https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>` (no trailing slash; keep the `/hooks/` segment)
+> - **Headers** — click **"Add item"** for each: `Authorization: Bearer <HOOKS_TOKEN>` and
+>   `Content-Type: application/json` (the AUTHORIZATION dropdown stays `None`)
+> - **Raw Body JSON** = the full 23-key FLAT body from Section 3 (insert each `{{…}}` via the Custom
+>   Values picker)
+>
+> Then **Save + Publish**. **Verify every field is non-empty before publishing** — an empty URL, a missing
+> Authorization header, or an empty Raw Body means the webhook silently does nothing and the customer gets
+> no reply. This manual fill is MANDATORY in every client setup.
+
 ## 4. BUILD-WITH-AI VERIFICATION CHECKLIST
 
 Because Build-with-AI populates poorly, run this AFTER it finishes (even when it reports success) and

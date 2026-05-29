@@ -1,3 +1,66 @@
+## [1.4.13] - 2026-05-29 - v1.4.11 install-script bug fixes (config-validity) + MANDATORY manual Custom-Webhook fill instructions
+
+Two classes of fix, both verified against a live openclaw 2026.5.27 box.
+
+### Fixed — install-script bugs that broke/degraded fresh installs (PART A)
+- **`scripts/15-configure-hooks-mappings.sh` (Model Wizard + hooks merge):**
+  - No longer writes `agents.defaults.async` / `agents.defaults.batch` — those keys are REJECTED by the
+    2026.5.27 `.strict()` schema, so `openclaw config validate` FAILED on a fresh install. The real-time
+    model is the only one written to `openclaw.json` (on the main agent's `agents.list[].model`); the
+    async + batch tier CHOICES are persisted to `SECRETS_ENV_FILE` as `ASYNC_MODEL`/`BATCH_MODEL` (read by
+    `04-register-crons.sh`).
+  - The hooks merge `jq` no longer uses the top-level `.hooks //= {};` form, which jq 1.7+ REJECTS
+    (`syntax error, unexpected ';'`). Rewritten to the valid `.hooks = (.hooks // {}) | …` form (same
+    semantics). The corrected SERVER `messageTemplate` (read-before + append-after + mandatory SEND) is
+    preserved and still validates clean.
+  - The inline `system-health-heartbeat` cron is now registered via `openclaw cron add` (not the invalid
+    `cron.jobs` JSON block).
+- **`scripts/04-register-crons.sh`:** rewritten to register all 5 crons via `openclaw cron add` (gateway
+  cron store), idempotent by name via `openclaw cron list`. The legacy `cron.jobs` JSON config block does
+  NOT validate on 2026.5.27 — the script no longer touches `openclaw.json` at all. Reads `BATCH_MODEL` from
+  `SECRETS_ENV_FILE` (set by the Model Wizard).
+- **`scripts/02-create-knowledgebases.sh` + `scripts/03-create-journey-templates.sh`:** stop `source`-ing
+  the master-files POINTER file. The pointer holds a bare PATH (a directory), so `. <pointer>` errored
+  "Is a directory". Now READ it with `head -n1` into `MASTER_FILES_DIR`.
+- **`scripts/12-scaffold-channel-playbooks.sh`:** resolves the skill root DYNAMICALLY from the script's own
+  location instead of hardcoding the legacy `~/clawd/skills/38-openclaw-cloudflare-tunnel` path (which no
+  longer exists). Same dynamic-resolution fix applied to `scripts/11-run-qc-checklist.sh`, whose expected
+  cron-name list was also corrected to the names `04-register-crons.sh` actually registers.
+
+### Added
+- **`scripts/qc-config-keys.sh`** (pure BASH) — new machine-enforced QC gate that scans `scripts/*.sh` and
+  FAILs (exit 1) if any install script would invalidate the 2026.5.27 config or trip the known install
+  bugs: `agents.defaults.async/.batch` writes, a `cron.jobs` JSON config block, the jq-1.7-invalid
+  `//= … ;` form, sourcing the master-files pointer, or a hardcoded legacy skill path. Wired into
+  `scripts/11-run-qc-checklist.sh` and CI `.github/workflows/qc-static.yml`.
+- **`scripts/qc-reference-sheet.sh --require-manual-fill`** — new flag that additionally enforces the
+  manual Custom-Webhook fill instructions and the lead-with-values ordering on the generated reference
+  sheet (CI runs both default + `--require-manual-fill`).
+
+### Fixed — MANDATORY manual Custom-Webhook fill (PART B)
+GHL's "Build with AI" only builds the workflow SHAPE (the trigger + an EMPTY Custom Webhook action); it
+does NOT reliably populate the URL, the Authorization/Bearer header, the Content-Type header, or the Raw
+Body JSON. The client MUST open the Custom Webhook action and paste those values by hand. Made explicit and
+mandatory:
+- **`scripts/21-generate-client-reference-sheet.sh`** — the generated reference sheet now LEADS with the
+  copy-paste values in this exact order: (1) Webhook URL, (2) Authorization/Bearer token (revealed real
+  value), (3) Raw Body JSON (fenced `json`, flat 23-key), (4) the manual Custom-Webhook fill steps
+  ("Build with AI will not fill it — do it yourself"), (5) the Workflow-AI prompt. All explanation/
+  reference now follows AFTER those values.
+- **`references/workflow-ai-instructions-standard.md`**, **`templates/sms-workflow-ai-prompt-template.md`**,
+  **`templates/workflow-verification-checklist-template.md`** — each gains a prominent "AFTER Build-with-AI
+  runs, you MUST open the Custom Webhook action and MANUALLY enter Method/URL/Headers/Raw Body, then
+  Save + Publish — Build with AI will NOT fill these for you; verify every field is non-empty before
+  publishing" section.
+- **`references/communications-playbook-standard.md`** — notes the manual-fill step is MANDATORY in every
+  client doc, machine-enforced by `qc-reference-sheet.sh --require-manual-fill`.
+
+### Changed
+- **`.github/workflows/qc-static.yml`** — adds CI steps for `qc-config-keys.sh` and for
+  `qc-reference-sheet.sh --require-manual-fill`.
+- **`SKILL.md`** — self-counts updated (scripts 33 → 34; new `qc-config-keys.sh`); QC-linter description
+  extended.
+
 ## [1.4.12] - 2026-05-29 - client reference sheet MUST include the bearer token + a copyable GHL Raw Body JSON (machine-enforced)
 
 Root cause fixed: on a live client (Teresa), the generated Client Reference Sheet

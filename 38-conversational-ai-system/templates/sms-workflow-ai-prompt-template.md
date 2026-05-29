@@ -91,6 +91,29 @@ After you paste the prompt above, **Build with AI** should produce a workflow wi
 
 If the workflow Build with AI produced doesn't match this shape, that's normal — Build with AI is a helper, not infallible. Use the verification checklist (Section 4) to fix the gaps.
 
+## MANDATORY — manually fill the Custom Webhook AFTER Build with AI runs
+
+**AFTER Build-with-AI runs, you MUST open the Custom Webhook action and MANUALLY enter the values below.**
+Build-with-AI only builds the workflow SHAPE (the trigger + an EMPTY Custom Webhook action) — it does
+**NOT** fill in the URL, the Authorization/Bearer header, the Content-Type header, or the Raw Body JSON.
+**Build with AI will not fill these for you.** Do it yourself:
+
+1. Open the **Custom Webhook** action in the workflow Build with AI just made.
+2. **Method** = `POST`.
+3. **URL** = `https://<PUBLIC_HOSTNAME>/hooks/<ROUTE_ID>` (no trailing slash; keep the `/hooks/` segment).
+4. **AUTHORIZATION dropdown** = `None`.
+5. **Headers** — click **"Add item"** once per header:
+   - `Authorization` : `Bearer <HOOKS_TOKEN>`
+   - `Content-Type` : `application/json`
+6. **Content-Type** = `application/json`.
+7. **Raw Body** = paste the full 23-key FLAT JSON from the prompt above (Body type = Raw JSON; insert each
+   `{{…}}` via GHL's Custom Values picker).
+8. **Save**, then **Publish**.
+
+**Verify every field above is non-empty before publishing.** An empty URL, a missing Authorization header,
+or an empty Raw Body means the webhook silently does nothing and the customer gets no reply. This manual
+Custom-Webhook fill is MANDATORY — do not skip it.
+
 ## Multi-action note (this template is the single-action starter)
 
 The prompt above is the simplest shape: trigger + 2 filters + one Custom Webhook action. Real funnels are

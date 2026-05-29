@@ -45,12 +45,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 JSON_MODE=0
 SHEET=""
+REQUIRE_MANUAL_FILL=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --skill-dir) SKILL_DIR="$2"; shift 2 ;;
     --sheet)     SHEET="$2"; shift 2 ;;
     --json)      JSON_MODE=1; shift ;;
+    # --require-manual-fill: ALSO require the manual Custom-Webhook fill instructions
+    # (Build with AI only builds the SHAPE; the client must paste URL/headers/body by
+    # hand) AND that the sheet LEADS with the copy-paste values in spec order
+    # (URL → Bearer → Raw Body JSON → manual fill steps).
+    --require-manual-fill) REQUIRE_MANUAL_FILL=1; shift ;;
     -h|--help)   sed -n '1,52p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -155,6 +161,35 @@ grep -Eq '^[[:space:]]*```json[[:space:]]*$' "$SHEET" || \
 # A hook URL of the form https://.../hooks/<id>
 grep -Eq 'https://[^[:space:]]+/hooks/[A-Za-z0-9._-]+' "$SHEET" || \
   MISSING+=('a hook URL (https://<host>/hooks/<id>)')
+
+# --require-manual-fill: the sheet MUST also carry the mandatory manual
+# Custom-Webhook fill instructions AND lead with the copy-paste values in order.
+# GHL's Build-with-AI only builds the workflow SHAPE; it does NOT fill the URL /
+# Authorization header / Content-Type / Raw Body — the client must paste those by
+# hand. We require: a "Custom Webhook" mention, a "manually"/"paste" verb, and the
+# explicit "Build with AI will not fill" instruction; plus the lead-with-values
+# ordering (URL heading before the Raw Body json fence, and the manual-fill heading
+# before the Workflow-AI-prompt pointer).
+if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
+  grep -qi "Custom Webhook" "$SHEET" || \
+    MISSING+=('a "Custom Webhook" mention in the manual-fill instructions')
+  grep -qiE 'manually|paste' "$SHEET" || \
+    MISSING+=('a "manually"/"paste" instruction for the Custom Webhook fields')
+  grep -qiE 'Build with AI will[[:space:]]+(not|n.t)[[:space:]]+fill' "$SHEET" || \
+    MISSING+=('the explicit "Build with AI will NOT fill these for you" instruction')
+  # Lead-with-values ORDER: the Webhook-URL line must come before the ```json Raw Body,
+  # and the manual-fill section must come before the Workflow-AI-prompt pointer.
+  URL_LN="$(grep -nE '^#+[[:space:]].*Webhook URL' "$SHEET" | head -1 | cut -d: -f1)"
+  JSON_LN="$(grep -nE '^[[:space:]]*```json[[:space:]]*$' "$SHEET" | head -1 | cut -d: -f1)"
+  MANUAL_LN="$(grep -niE '^#+[[:space:]].*(Manually fill|manual.*fill)' "$SHEET" | head -1 | cut -d: -f1)"
+  WAIPROMPT_LN="$(grep -niE '^#+[[:space:]].*Workflow-AI prompt' "$SHEET" | head -1 | cut -d: -f1)"
+  if [ -z "$URL_LN" ] || [ -z "$JSON_LN" ] || [ "$URL_LN" -ge "$JSON_LN" ]; then
+    MISSING+=('the Webhook URL must LEAD (appear before the ```json Raw Body)')
+  fi
+  if [ -z "$MANUAL_LN" ] || [ -z "$WAIPROMPT_LN" ] || [ "$MANUAL_LN" -ge "$WAIPROMPT_LN" ]; then
+    MISSING+=('the manual Custom-Webhook fill steps must come before the Workflow-AI prompt')
+  fi
+fi
 
 if [ "$JSON_MODE" = "1" ]; then
   miss_json="["
