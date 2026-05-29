@@ -1,12 +1,55 @@
-<!-- OPERATOR HEADER (5 lines) — DO NOT EDIT BELOW -->
+<!-- OPERATOR HEADER (6 lines) — DO NOT EDIT BELOW -->
 <!-- Source: openclaw-cloudflare-tunnel-prompt (1).md v5.14 — lines 3857-4322 -->
-<!-- Section: Step 9.20 — Install Conversation Workflow Builder (3-Layer Architecture) -->
-<!-- This file is a VERBATIM extraction from the v5.14 playbook. Do not summarize. -->
-<!-- Patch source: skill-38-patch-1 agent — 2026-05-28 -->
+<!-- Section: Step 9.20 — Conversation Playbook Builder (3-PART, communication-driven) -->
+<!-- This file is a VERBATIM extraction from the v5.14 playbook, hardened by the v1.4.1 -->
+<!-- conversation-playbook-builder enhancement. Do not summarize. -->
+<!-- Patch source: skill-38-patch-1 agent — 2026-05-28; builder enhancement — 2026-05-28 -->
 
-## Step 9.20 — Install Conversation Workflow Builder (3-Layer Architecture)
+## Step 9.20 — Conversation Playbook Builder (the system's differentiator)
 
-The Conversation Workflow Builder is the system's biggest single differentiator. Other conversational AI platforms make operators BUILD workflows in visual node-based UIs (n8n, Zapier, GHL/Convert and Flow Workflow Builder). This system makes operators TALK through workflows — the agent asks intelligent questions, synthesizes a Conversation Playbook, AND auto-builds the GHL routing layer the customer needs to reach the AI in the first place.
+> **What this step is, in one line:** the recurring, bulletproof flow for when the operator says
+> "help me build a conversation playbook." It is ALWAYS a **3-PART build** (below). This is the system's
+> USP: **communication-driven funnels / communication-driven automations** — the operator and the agent
+> BUILD by talking and brainstorming, NOT by clicking and dragging nodes. This is what beats CloseBot and
+> every visual-node competitor.
+
+The Conversation Playbook Builder is the system's biggest single differentiator. Other conversational AI platforms make operators BUILD workflows in visual node-based UIs (n8n, Zapier, GHL/Convert and Flow Workflow Builder, CloseBot). This system makes operators TALK through workflows — the agent asks intelligent questions, synthesizes a Conversation Playbook, AND auto-builds the GHL routing layer the customer needs to reach the AI in the first place.
+
+### The 3-PART build — every time, no exceptions
+
+Every "build me a conversation playbook" request produces all three of these. Do not skip a part; do not
+collapse them. They map onto the historical 3-layer architecture (Layer 0/1/2) but the operator-facing
+contract is the THREE PARTS below:
+
+| Part | Name | What it produces | Where it goes |
+|---|---|---|---|
+| **Part 1** | **Workflow AI instruction set** (the Build-with-AI prompt) | (a) the AI prompt, (b) a manual-build fallback, (c) a verification checklist | `conversation-workflows/<id>--workflow-ai-prompt.md` + `<id>--verification-checklist.md` |
+| **Part 2** | **The conversation playbook itself** (Layer 2 markdown) | the agent's behavior once the conversation lands | `conversation-workflows/<id>.md`, registered in `conversation-workflows/registry.md` |
+| **Part 3** | **The brainstorm trigger** | the friendly, proactive Q&A that KICKS OFF Parts 1 + 2 | runtime behavior wired into AGENTS.md Step 1.85 (see Section J) |
+
+**Part 1 — Workflow AI instruction set (the Build-with-AI prompt).**
+PRIMARY JOB: get the **SHAPE** of the funnel right — trigger, if/else branches, tags, Custom Webhook
+step(s). Bonus if the AI also plugs in tokens/JSON correctly, but it often **WON'T** set tokens correctly,
+so the operator pastes those after. Design the prompt to nail the STRUCTURE, then explicitly tell the
+operator to paste their own values (HOOKS_TOKEN, PUBLIC_HOSTNAME, etc.). Part 1 always includes:
+(a) the AI prompt, (b) a **manual-build fallback** (multi-step is fine — if-scenarios, tags, multiple
+webhooks), and (c) a **verification checklist** giving the exact places to click to confirm settings even
+when the AI built it.
+
+**Part 2 — The conversation playbook itself (Layer 2 markdown).**
+Saved to `conversation-workflows/<id>.md` and registered in `conversation-workflows/registry.md`.
+The hook path is what wires the GHL automation (Part 1) → this playbook (Part 2). That hook path is how
+the two halves connect: GHL fires the Custom Webhook → OpenClaw receives it on the mapped hook path →
+the agent loads this playbook.
+
+**Part 3 — The brainstorm trigger.**
+When the operator says "help me create a conversation playbook" (or close), the agent runs a FRIENDLY
+proactive Q&A. Full rules in Section B and Section J. The non-negotiable rules: **DO NOT dump 50
+questions.** USE what the agent already knows (business, products, services, calendars, who they are,
+habits — from Typed Knowledge Bases (Step 9.22) + USER.md + MEMORY.md) and ask ONLY the smart gaps, like
+brainstorming. Then regurgitate a **CONCISE** summary — "is this what you want to happen?" — as the final
+confirmation. On YES → build Part 1 → build Part 2 → decide + write a pointer into AGENTS.md / TOOLS.md /
+MEMORY.md → create a NEW Notion doc for that playbook → register it.
 
 ### How this differs from Communication Playbooks (Step 8)
 
@@ -16,6 +59,18 @@ These are complementary, not redundant:
 - **Conversation Workflow** = specific scenario behavior override. Many per client. Applies only when its trigger fires (pricing inquiry, booking request, FAQ, etc.).
 
 When a Conversation Workflow fires, the agent uses its specific instructions for that scenario's phases, while still honoring the Communication Playbook's baseline tone/signature for the channel. Both inform every reply, but at different levels of specificity.
+
+### How the 3 PARTS map to the historical 3 layers
+
+The 3 PARTS above are the operator-facing contract. Under the hood they are built with the 3-layer
+architecture below. The mapping:
+
+- **Part 1 (Workflow AI instruction set)** = **Layer 0 routing check** + **Layer 1 GHL side**. Layer 0
+  decides whether a new GHL automation is even needed; if it is, Layer 1 produces the Build-with-AI prompt,
+  the manual-build fallback, and the verification checklist.
+- **Part 2 (conversation playbook)** = **Layer 2 OpenClaw side** — always built.
+- **Part 3 (brainstorm trigger)** = the operator-invoked entry point (Section B + Section J) that produces
+  Parts 1 and 2 in the first place.
 
 ### Three layers per Conversation Workflow
 
@@ -28,7 +83,7 @@ Every workflow has potentially three layers. The agent decides which layers appl
 
 **Layer 1 — GHL Side (how the conversation gets to OpenClaw)**
 - Tags the customer needs (auto-created by the agent via GHL skill — NOT manually by the operator)
-- Workflow AI prompt (generated by the agent, copy-pasteable for the operator)
+- Build-with-AI prompt (generated by the agent, copy-pasteable for the operator)
 - Verification checklist (brutally specific, matches what the prompt should have produced)
 - Saved as separate file: `<workflow-id>--ghl-side.md`
 
@@ -111,7 +166,7 @@ After gathering the workflow's scenario details, the subagent determines whether
 >
 > [If yes:] Here's what needs to happen:
 > - [Specific reason]
-> - I'll build the GHL side (tags + Workflow AI prompt + verification checklist)
+> - I'll build the GHL side (tags + Build-with-AI prompt + verification checklist)
 > - Then I'll build the OpenClaw playbook.
 >
 > [If no:] Good news — this workflow uses existing routing. I'll build
@@ -162,9 +217,20 @@ After creating all tags, the agent reports back to the operator:
 
 The agent saves the tag list (names + IDs) to the workflow's `--ghl-side.md` file for reference.
 
-#### D.2 — Generate the Workflow AI prompt
+#### D.2 — Generate the Build-with-AI prompt (Part 1a)
 
-The agent writes a precise prompt the operator can paste into Convert and Flow's built-in Workflow AI builder. The prompt is saved as its own file: `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--workflow-ai-prompt.md`.
+> **CRITICAL — no API, no MCP.** GHL / Convert and Flow Automations have **NO API and NO MCP** for
+> building automations. The ONLY path is the **"Build with AI" button** (top-right of the Automations
+> section): the operator clicks it, then pastes the prompt the agent generates here. (Future: Playwright /
+> browser-control auto-paste; right now it is a manual paste.) Do NOT write code that "calls the GHL
+> Automations API" — it does not exist. See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
+
+The agent writes a precise prompt the operator pastes into the GHL **Build with AI** button. The prompt's
+PRIMARY JOB is to get the **SHAPE** right — trigger, if/else branches, filters, tags, and the Custom
+Webhook step(s). It is a BONUS if Build-with-AI also fills in the tokens/JSON correctly; it frequently
+**won't** (especially the HOOKS_TOKEN header and the exact webhook URL), so the prompt's closing lines tell
+the operator to paste their own values afterward. The prompt is saved as its own file:
+`<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--workflow-ai-prompt.md`.
 
 The prompt structure:
 
@@ -212,45 +278,63 @@ ACTIONS (in this exact order):
 PUBLISH: Yes, publish the workflow when done — don't leave it as draft.
 ```
 
-Each field is filled in with the EXACT values from the operator's setup (`PUBLIC_HOSTNAME`, `HOOK_NAME`, `HOOKS_TOKEN`, channel name, tag names from D.1).
+Each field is filled in with the EXACT values from the operator's setup (`PUBLIC_HOSTNAME`, `HOOK_NAME`, `HOOKS_TOKEN`, channel name, tag names from D.1). Because Build-with-AI gets the SHAPE right but often mis-sets the token/JSON, the prompt's closing line instructs the operator to confirm the webhook URL and the `Authorization: Bearer <HOOKS_TOKEN>` header by hand after it builds.
 
 The agent then tells the operator:
 
-> "✓ Workflow AI prompt ready. Two things to do:
+> "✓ Build-with-AI prompt ready. Here's how to use it:
 >
 > 1. Open your Convert and Flow account
-> 2. Click Automations on the left menu
-> 3. Create a new workflow → Use Workflow AI
+> 2. Click **Automations** on the left menu
+> 3. Click the **Build with AI** button (top-right of Automations) — this
+>    is the ONLY way to build a GHL automation; there is no API for it
 > 4. Paste the prompt I saved at:
 >    `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--workflow-ai-prompt.md`
-> 5. Let Workflow AI build it
+> 5. Let Build with AI build the structure
 >
 > Once it's built, come back and tell me. I'll give you a verification
-> checklist — sometimes Workflow AI gets the scaffolding right but
-> misses critical pieces."
+> checklist — Build with AI gets the SHAPE (trigger, branches, tags,
+> webhook step) right, but it often fumbles the token and the exact
+> webhook URL, so you'll paste those values in yourself."
 
-#### D.3 — Generate the brutally-specific verification checklist
+#### D.2b — Manual-build fallback (Part 1b)
 
-The agent writes a verification checklist tailored to the EXACT specifications the prompt was supposed to produce. Saved as: `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--verification-checklist.md`.
+If Build-with-AI is unavailable, mangles the structure beyond a quick fix, or the operator prefers to build
+by hand, the agent ALSO ships a manual-build fallback in the same `--workflow-ai-prompt.md` file (under a
+`## Manual-build fallback` heading). The fallback is a numbered, click-by-click build of the SAME shape —
+and it is fine for the fallback to be multi-step:
+
+- **If/else scenarios** — branch on tag, channel, or field value before the webhook step.
+- **Tags** — which tags to add at which branch (names from D.1; the agent already created them).
+- **Multiple webhooks** — when different branches need different hook paths (e.g. one path for booking,
+  another for support), list each Custom Webhook step with its own URL + headers + body.
+
+Each manual step names: the node type to add, the exact field values, and the connecting branch condition.
+The manual fallback and the Build-with-AI prompt describe the SAME workflow — they are two routes to one
+shape — so the verification checklist (D.3) validates either one.
+
+#### D.3 — Generate the brutally-specific verification checklist (Part 1c)
+
+The agent writes a verification checklist tailored to the EXACT specifications the prompt was supposed to produce. Saved as: `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--verification-checklist.md`. This checklist is REQUIRED **even when Build-with-AI reports success** — it gets the shape right but silently mangles tokens, URLs, or the Authorization dropdown. The checklist gives the operator the EXACT places to click to confirm every setting, whether Build-with-AI or the manual fallback produced the workflow.
 
 The checklist follows this pattern — every item names the specific failure mode and the specific fix:
 
 ```markdown
 # Verification Checklist — <Workflow Name>
 
-After Workflow AI builds the workflow, open it and check EACH item below.
-If any item is wrong, the fix is listed right there.
+After Build with AI (or the manual build) finishes, open the workflow and
+check EACH item below. If any item is wrong, the fix is listed right there.
 
 ## Trigger
 
 - [ ] Trigger is set to EXACTLY "<exact trigger name>"
-  - WRONG VALUES TO WATCH FOR: <common Workflow AI mistakes>
+  - WRONG VALUES TO WATCH FOR: <common Build-with-AI mistakes>
   - FIX IF WRONG: Click the trigger node → change to "<exact value>"
 
 ## Filters
 
 - [ ] Filter 1: <field> equals "<exact value>"
-  - WRONG VALUES TO WATCH FOR: <variants Workflow AI may pick>
+  - WRONG VALUES TO WATCH FOR: <variants Build-with-AI may pick>
   - FIX IF WRONG: <specific click-by-click fix>
 
 - [ ] Filter 2: <field> equals "<exact value>"
@@ -260,14 +344,14 @@ If any item is wrong, the fix is listed right there.
 ## Webhook Action
 
 - [ ] Webhook URL is EXACTLY: `https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`
-  - Common mistake: Workflow AI adds trailing slash or wrong path
+  - Common mistake: Build-with-AI adds trailing slash or wrong path
   - FIX IF WRONG: Click the webhook action → URL field → paste exact URL
 
 - [ ] Method is POST (not GET, not PUT)
   - FIX IF WRONG: Change Method dropdown to POST
 
 - [ ] AUTHORIZATION dropdown is set to "None" (NOT "Bearer Token" — the
-       token goes in Headers, not in this dropdown — common Workflow AI
+       token goes in Headers, not in this dropdown — common Build-with-AI
        mistake)
   - FIX IF WRONG: AUTHORIZATION dropdown → None
 
@@ -288,13 +372,13 @@ If any item is wrong, the fix is listed right there.
   ... [full body from D.2 prompt] ...
 }
 ```
-  - Common Workflow AI mistake: skips fields, uses wrong variable
+  - Common Build-with-AI mistake: skips fields, uses wrong variable
     syntax (e.g., `{contact.id}` instead of `{{contact.id}}`)
   - FIX IF WRONG: Click Raw Body → replace entirely with the JSON above
 
 ## Publish
 
-- [ ] Workflow status is "Published" (NOT "Draft" — Workflow AI often
+- [ ] Workflow status is "Published" (NOT "Draft" — Build-with-AI often
        saves as draft)
   - FIX IF WRONG: Click the toggle at top right of the workflow → Publish
 
@@ -408,7 +492,7 @@ contains:
 - GHL routing built: [yes | no — uses existing inbound routing]
 - If yes:
   - Tags created: <list with IDs>
-  - Workflow AI prompt file: <path>
+  - Build-with-AI prompt file: <path>
   - Verification checklist file: <path>
 ```
 
@@ -426,7 +510,17 @@ The agent maintains a registry at `<MASTER_FILES_DIR>/conversation-workflows/reg
 | ... | ... | ... | ... | ... | ... | ... |
 ```
 
-AGENTS.md Step 1.75 (already inserted in v5.3) reads this registry on every reply turn to determine which workflow (if any) applies. The 1.75 step also recognizes operator-side workflow-builder trigger phrases (see Section A above) and starts the builder flow.
+The registry is the single source of truth the agent reads on every reply turn (via AGENTS.md Step 1.75)
+to decide which workflow (if any) applies. AGENTS.md **Step 1.85** (see Section A + Section J) recognizes
+the operator-side workflow-builder trigger phrases and starts the builder flow.
+
+**How Parts 1 and 2 connect (the hook path).** The registry's `GHL prompt` column points at the Part 1
+artifact; the `OpenClaw playbook` column points at the Part 2 artifact. The thing that physically links
+them at runtime is the **hook path**: the GHL automation's Custom Webhook (Part 1) POSTs to
+`https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`; OpenClaw's `hooks.mappings` maps that path to a session; the
+agent then loads the matching Part 2 playbook from the registry. Record the hook path in the Reusable Tunnel
+Values hook-path registry (see `references/GHL-INBOUND-AND-PLAYBOOKS.md` §6) so the GHL side and the
+OpenClaw side never drift apart.
 
 ### G. Initial workflow creation during setup
 
@@ -454,7 +548,7 @@ Loop until operator is done.
 Workflows created during setup:
 - <workflow-1-id>: <name>
   - Layer 0: <existing routing | new routing required>
-  - Layer 1: [tags created: <list> | Workflow AI prompt: <path> | verification checklist: <path>] (or "skipped")
+  - Layer 1: [tags created: <list> | Build-with-AI prompt: <path> | verification checklist: <path>] (or "skipped")
   - Layer 2: <path to OpenClaw playbook>
 - ...
 
@@ -470,3 +564,105 @@ GHL design principle: smaller workflows beat massive workflows. The agent
 split layered work across multiple focused GHL workflows where applicable
 (per MEMORY.md Design Principle Rule 1, seeded in O.7).
 ```
+
+---
+
+### I. Part 3 — The brainstorm trigger (the recurring "build me a playbook" flow)
+
+This is the operator-invoked entry point that, post-setup, produces a NEW conversation playbook on demand.
+It is what makes the system **communication-driven**: the operator BRAINSTORMS the funnel into existence
+instead of dragging nodes.
+
+#### I.1 — Recognize the trigger
+
+When the operator (NOT a customer) says any of these or a close variant, start the brainstorm flow
+(the recognition rule lives in AGENTS.md Step 1.85 — see Section A):
+
+- "Help me create a conversation playbook"
+- "Help me build a conversation playbook / workflow / flow"
+- "Let's build a funnel for <X>"
+- "I want a workflow that does <X>"
+- "Build me a playbook for <X>"
+
+#### I.2 — Friendly proactive Q&A — DO NOT dump 50 questions
+
+This is the single most important rule of Part 3. **The agent runs a FRIENDLY, brainstorm-style Q&A — it
+does NOT interrogate the operator with a wall of questions.** Before asking anything, the agent LOADS what
+it already knows about the business and asks ONLY the smart gaps:
+
+1. **Pull existing context first.** Read, in this order:
+   - Typed Knowledge Bases (Step 9.22) — products, services, pricing, policies, FAQs already captured
+   - `USER.md` — who the operator is, their preferences, their voice
+   - `MEMORY.md` — habits, prior decisions, design rules, established facts
+   - existing entries in `conversation-workflows/registry.md` — so it doesn't rebuild something that exists
+   - calendars / Smart Booking config (Step 9.19) if the scenario is booking-shaped
+
+2. **Ask ONLY the gaps.** If the agent already knows the product, the price, the calendar, and the brand
+   voice, it does NOT ask about them again. It asks the 2-5 things it genuinely cannot infer — e.g.
+   "When this fires, do you want me to book straight into your discovery calendar, or qualify budget
+   first?" Treat it like brainstorming with a smart colleague who already knows the business, not like a
+   form. (This is the explicit anti-pattern: never fire all 8 of Section B's questions verbatim when the
+   answers are already in the Knowledge Bases.)
+
+3. **Regurgitate a CONCISE summary and ask for confirmation.** Before building anything, the agent plays
+   back a short, plain-language summary — NOT the full spec — and asks:
+
+   > "Here's what I think you want to happen:
+   > • When **<trigger>**, I'll **<action>**, then **<next action>**, and if **<edge case>** I'll **<escalate/branch>**.
+   > Is this what you want to happen?"
+
+   Keep it to a few bullets. The operator says YES, tweaks it, or says no.
+
+#### I.3 — On YES, execute in this exact order
+
+1. **Build Part 1** — the Workflow AI instruction set: Layer 0 routing check → (if needed) the
+   Build-with-AI prompt (D.2) + manual-build fallback (D.2b) + verification checklist (D.3).
+2. **Build Part 2** — the conversation playbook (Section E) at `conversation-workflows/<id>.md`.
+3. **Decide + write the pointer.** Decide which bootstrap file should point at the new playbook and write
+   a ONE-LINE pointer there — NOT the whole playbook (keep the bootstrap layer un-bloated):
+   - **AGENTS.md** — if it changes runtime routing behavior (new trigger the agent must recognize).
+   - **TOOLS.md** — if it introduces a new tool/hook path / Reusable Tunnel Values hook entry.
+   - **MEMORY.md** — if it establishes a durable business rule the agent must always remember.
+   (Most playbooks need only the registry entry + the existing Step 1.75 read. Add a bootstrap pointer
+   ONLY when one of the three conditions above is genuinely met.)
+4. **Create a NEW Notion doc for that playbook** — in the CLIENT's own Notion workspace (never co-mingle
+   with another client's workspace). The Notion doc mirrors the Part 2 playbook plus the Part 1 prompt +
+   verification checklist so the operator has a shareable, human-readable copy.
+5. **Register it** — add the row to `conversation-workflows/registry.md` (Section F), and add the hook-path
+   entry to Reusable Tunnel Values (`references/GHL-INBOUND-AND-PLAYBOOKS.md` §6) if Part 1 created a new
+   hook path.
+
+### J. AGENTS.md Step 1.85 — the runtime hook for Part 3
+
+Step 1.85 (installed by `scripts/05-update-agents-md.sh`, marker `STEP_1_85_WORKFLOW_BUILDER_TRIGGERS`)
+is what makes Part 3 fire at runtime. It recognizes the operator-side trigger phrases (I.1) and hands
+control to this protocol's brainstorm flow (Section I). Confirm the full 3-PART build completed — Part 1
+(prompt + fallback + checklist), Part 2 (playbook + registry), Part 3 (brainstorm → concise confirmation →
+Notion doc) — before declaring the playbook live.
+
+### K. Cross-references — builder ↔ router ↔ proactive engine
+
+The Conversation Playbook Builder does not stand alone. It is one corner of a triangle:
+
+- **Step 9.20 (this protocol) — the BUILDER.** Operator-invoked. Brainstorms ONE playbook into existence
+  (Parts 1-3).
+- **Step 9.33 — Intelligent Playbook Routing** (`intelligent-routing-protocol.md`). Runtime, cross-playbook
+  TRANSITIONS: a customer who starts in one playbook can be moved to another based on their responses. The
+  agent detects the topic shift after every customer message, caps at **max 3 switches** per conversation,
+  and uses **soft transition** phrasing ("Sounds like this is more about X now — let me switch gears").
+  Every playbook the BUILDER creates becomes a routable destination the ROUTER can switch into.
+- **Step 9.34 — Proactive Features Suite** (`proactive-suggestions-protocol.md`). The pattern-based engine:
+  sub-feature 34.1 watches for "I've seen N customers ask about X with no playbook — want one?" and, on
+  YES, drafts a new playbook *via this very builder* (Step 9.20) into `conversation-workflows/drafts/`.
+
+So the flow is circular: the **proactive engine (9.34)** notices a gap and proposes a build → the
+**builder (9.20)** creates the playbook → the **router (9.33)** transitions live conversations into it.
+When editing any one of the three, check the other two for consistency.
+
+### L. Mac env note (where keys live)
+
+When the brainstorm flow (or any Part 1/Part 2 step) needs a secret (HOOKS_TOKEN, GHL PIT, etc.) on a
+**Mac** install, the keys live in **`~/clawd/secrets/.env`** AND/OR **`~/.openclaw/.env`** — check BOTH
+before claiming a key is missing. This differs from a VPS (Docker) install, where env lives in
+`/docker/<project>/.env`. See Step O.5 and `references/GHL-INBOUND-AND-PLAYBOOKS.md` §1 for the full
+token map. Never tell the operator a key is missing without first checking both Mac locations.

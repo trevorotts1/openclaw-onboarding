@@ -1,3 +1,74 @@
+## [1.4.1] - 2026-05-28 - Conversation Playbook Builder enhancement (the differentiator) (repo v10.15.7)
+
+### Why
+The recurring "build me a conversation playbook" flow is the system's USP — communication-driven funnels /
+automations, built by talking and brainstorming instead of click-and-drag (this is what beats CloseBot).
+Step 9.20 needed to be explicitly bulletproof every time, and the MEMORY.md rules + Mac env handling needed
+to back it. Content-only addition; no version files touched (repo stays v10.15.7).
+
+### Added / Changed
+- `protocols/conversation-workflows-protocol.md` — Step 9.20 reframed as an explicit **3-PART build**:
+  Part 1 (Workflow AI instruction set = Build-with-AI prompt + new **manual-build fallback** D.2b +
+  verification checklist, with the SHAPE-first / operator-pastes-tokens guidance); Part 2 (the conversation
+  playbook → registered in registry.md, with the hook-path "how the two halves connect" note); Part 3 (new
+  Section I — the friendly **brainstorm trigger**: use Typed KBs + USER.md + MEMORY.md, ask ONLY smart gaps,
+  NEVER 50 questions, concise "is this what you want?" confirmation → build → Notion doc → register). New
+  Section J (AGENTS.md Step 1.85 runtime hook), Section K (builder ↔ router ↔ proactive cross-references),
+  Section L (Mac env note). Removed ambiguous "Workflow AI" usage referring to the GHL feature (now
+  "Build with AI") and the implication that GHL Automations have an API.
+- `scripts/06-append-memory-rules.sh` — adds a second idempotent block: **builder design rules 15-19**
+  (Terminology, No-GHL-API, 3-PART Build, Brainstorm-Not-50-Questions, Mac Env).
+- `scripts/05-update-agents-md.sh` — Step 1.85 block expanded with the communication-driven USP, the
+  brainstorm-not-50-questions rule, the 3-PART build, the no-GHL-API note, and the router/proactive cross-refs.
+- `scripts/18-locate-secrets-env.sh` — Step O.5: Mac now searches BOTH `~/clawd/secrets/.env` and
+  `~/.openclaw/.env`; added the Mac-vs-VPS env clarity note.
+- `protocols/intelligent-routing-protocol.md` (Step 9.33) + `protocols/proactive-suggestions-protocol.md`
+  (Step 9.34) — reciprocal triangle cross-references to the builder.
+- `INSTRUCTIONS.md` — Step 9.20 row rewritten (3-PART build, USP, no-API note); 9.33/9.34 rows annotated;
+  Phase 0 Step O.5 Mac env note added.
+- `CORE_UPDATES.md` — documents builder design rules 15-19 so install writes them.
+
+## [1.4.0] - 2026-05-28 - GHL Build-with-AI hardening + calendar-sync (repo v10.15.7)
+
+### Why
+A live Mac-mini build surfaced several traps that every future Mac client would otherwise hit:
+token confusion (4 distinct secrets), `deliver: true` silently breaking GHL API replies, the
+`cron.jobs` JSON block failing validation on openclaw 2026.5.27, GHL having no API/MCP for building
+automations (Build-with-AI is the only path), and the Mac-specific `cloudflared` launchd install
+needing interactive sudo. Baked all the fixes into the skill so no Mac client stalls on them.
+
+### Added
+- `references/GHL-INBOUND-AND-PLAYBOOKS.md` (NEW) — authoritative Mac reference: 4-token table,
+  one-tunnel-many-hooks model, copy-paste **Build-with-AI prompt** template (placeholders
+  PUBLIC_HOSTNAME / HOOK_PATH / HOOKS_TOKEN / CHANNEL), post-build verification checklist (incl.
+  real-inbound-test caveat), Reusable Tunnel Values storage rule (AGENTS.md + TOOLS.md + client
+  Notion), JSON one-value-per-key rule, verified channel→`type` enum (valid: SMS/Email/FB/IG/
+  WhatsApp/Live_Chat; invalid: TikTok/Call/GMB + long-forms), Conversations reply recipe, Calendar
+  recipe (free-slots epoch-MILLIS, book/reschedule/cancel), first playbook = appointment booking.
+- `scripts/skill38-calendar-sync.sh` (NEW) — weekly GHL calendar refresh; rewrites the
+  `<!-- GHL_CALENDARS_START/END -->` block in TOOLS.md. Auto-detects Mac vs VPS env/paths. Generic
+  per-client. Registered via `openclaw cron add --name skill38-calendar-sync --cron "0 9 * * 0" ...`.
+
+### Changed (surgical edits to references/v5.14-source-playbook.md)
+- Step 3C + Step 3.5G: `deliver: true` → `deliver: false` on GHL reply hooks, with corrected
+  rationale (true makes the gateway try to deliver to a non-existent default chatId → reply never sends).
+- Step 3A: added the 4-token disambiguation table; Mac note (no Hostinger wrapper → hooks.token in
+  openclaw.json is stable; no OPENCLAW_HOOKS_TOKEN env trick).
+- All cron registrations → `openclaw cron add` CLI flag form, with a banner that `cron.jobs` JSON
+  does not validate on openclaw 2026.5.27.
+- Step 9.20 D.2: "Workflow AI prompt" → "Build-with-AI prompt"; Build-with-AI is PRIMARY, manual
+  node-build demoted to FALLBACK; verification checklist required even on success; F.6 Reusable Tunnel
+  Values; F.7 base SMS automation also creates the first appointment-booking playbook and wires the
+  hook to it.
+- Part 2 (Client Reference Sheet / Notion-doc spec) rewritten ordering: Reusable Tunnel Values →
+  Build-with-AI prompt per channel → verification checklist; manual webhook build moved to fallback.
+- Rules of Engagement: added Rule 7 (one value per key — proper JSON structure).
+- Standardized `GHL_PRIVATE_INTEGRATION_TOKEN` + `Version: 2021-04-15` on the Conversations/Calendar
+  path (was `<GHL_PIT_TOKEN>`). `GOHIGHLEVEL_AGENCY_PIT` is not present in this repo.
+- Calendar action: verified endpoints (free-slots epoch-millis; appointments required fields; PUT/DELETE).
+- Mac cloudflared step: kept launchd `sudo cloudflared service install` but flagged the
+  interactive-sudo requirement prominently (cannot run over non-interactive rescue SSH).
+
 # Skill 38 — Conversational AI System: Changelog
 
 ## [1.0.0] - 2026-05-28 - Initial release (packages v5.14 playbook)

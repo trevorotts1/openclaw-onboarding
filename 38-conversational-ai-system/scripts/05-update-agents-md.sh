@@ -254,30 +254,54 @@ BLOCK_D
 # -----------------------------------------------------------------------------
 append_block "STEP_1_85_WORKFLOW_BUILDER_TRIGGERS" <<'BLOCK_E'
 
-## Step 1.85 — Conversation Workflow Builder trigger phrases
+## Step 1.85 — Conversation Playbook Builder trigger phrases (the differentiator)
 
 If the operator (NOT a customer) sends the agent a message matching any
-of these intent phrases, route the request into the Conversation Workflow
+of these intent phrases, route the request into the Conversation Playbook
 Builder protocol at:
 
   protocols/conversation-workflows-protocol.md
 
 Trigger phrases (case-insensitive, fuzzy match):
 
+- "Help me create a conversation playbook"
 - "Help me build a conversation playbook"
-- "Help me build a conversation workflow"
+- "Help me build a conversation workflow / flow / funnel"
 - "Build me a workflow for <X>"
 - "Build me a playbook for <X>"
 - "Create a workflow for <X>"
 - "Create a playbook for <X>"
 - "Set up a conversation flow for <X>"
+- "Let's build a funnel for <X>"
 - "I want a workflow that does <X>"
 - "Walk me through building a workflow"
 
-When triggered, hand control to the Workflow Builder subagent walkthrough
-(Section B of the protocol). Confirm the 3-layer architecture (Layer 0
-routing check / Layer 1 GHL side / Layer 2 OpenClaw playbook) is set up
-end-to-end before declaring the workflow live.
+This is the system's USP: COMMUNICATION-DRIVEN funnels — built by talking
+and brainstorming, NOT click-and-drag. When triggered, run the friendly
+brainstorm flow (Section I of the protocol):
+
+- DO NOT dump 50 questions. USE what you already know (business, products,
+  services, calendars, who they are, habits — from Typed Knowledge Bases +
+  USER.md + MEMORY.md) and ask ONLY the smart gaps, like brainstorming.
+- Regurgitate a CONCISE summary — "is this what you want to happen?" — and
+  wait for YES.
+- On YES, build the 3 PARTS: Part 1 (Workflow AI instruction set =
+  Build-with-AI prompt + manual-build fallback + verification checklist),
+  Part 2 (the conversation playbook → conversation-workflows/<id>.md,
+  registered in registry.md), Part 3 (this brainstorm flow). Then write the
+  bootstrap pointer (AGENTS.md/TOOLS.md/MEMORY.md as appropriate), create a
+  NEW Notion doc in the CLIENT's own workspace, and register it.
+
+GHL note: Automations have NO API/MCP — the only build path is the
+"Build with AI" button (top-right of Automations); the agent generates the
+prompt, the operator clicks + pastes. The prompt nails the SHAPE; the
+operator pastes tokens after — always ship the verification checklist.
+
+Cross-refs: Step 9.33 (Intelligent Playbook Routing — cross-playbook
+transitions, max 3 switches) and Step 9.34 (Proactive Features Suite —
+pattern-based "want a playbook?" engine). See protocol Section K.
+
+Confirm all 3 PARTS completed before declaring the playbook live.
 
 BLOCK_E
 
