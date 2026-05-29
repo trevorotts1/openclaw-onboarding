@@ -1,3 +1,64 @@
+## [v10.15.7]  -  2026-05-28  -  Skill 38 v1.4.0: GHL Build-with-AI hardening + calendar-sync (Mac)
+
+### Why
+
+A live Mac-mini conversational-AI build hit a string of traps that every future Mac client would
+otherwise hit. This release bakes the fixes into Skill 38 so no Mac client stalls on them. (Mac
+sequence v10.15.x — independent of the VPS v10.16.x sequence.)
+
+### Added
+
+- `38-conversational-ai-system/references/GHL-INBOUND-AND-PLAYBOOKS.md` (NEW) — authoritative Mac
+  reference. The 4 distinct secrets (CLOUDFLARE_API_TOKEN, tunnel connector token, HOOKS_TOKEN,
+  GHL_PRIVATE_INTEGRATION_TOKEN) with directions + create-once/reuse; one-tunnel-many-hooks model;
+  copy-paste **Build-with-AI prompt** template (GHL has no API/MCP to build automations) with
+  placeholders PUBLIC_HOSTNAME / HOOK_PATH / HOOKS_TOKEN / CHANNEL; post-build verification checklist
+  (URL/method/auth/Content-Type/Raw-Body field-for-field/Published + real-inbound-test caveat);
+  Reusable Tunnel Values storage rule (AGENTS.md + TOOLS.md + client Notion); JSON one-value-per-key
+  rule; verified channel→`type` enum (VALID: SMS/Email/FB/IG/WhatsApp/Live_Chat; INVALID:
+  TikTok/Call/GMB + long-forms); Conversations reply recipe; Calendar recipe (free-slots epoch-MILLIS;
+  book/reschedule/cancel with required fields); first conversation playbook = appointment booking.
+- `38-conversational-ai-system/scripts/skill38-calendar-sync.sh` (NEW) — weekly GHL calendar refresh.
+  Rewrites the `<!-- GHL_CALENDARS_START/END -->` block in TOOLS.md (adds new calendars, removes gone
+  ones). Auto-detects Mac vs VPS env/paths. Generic per-client. Registered via
+  `openclaw cron add --name skill38-calendar-sync --cron "0 9 * * 0" --agent main --light-context
+  --best-effort-deliver --message "run ~/clawd/scripts/skill38-calendar-sync.sh
+  ~/.openclaw/workspace/TOOLS.md and report calendar count"`.
+
+### Changed
+
+- `38-conversational-ai-system/references/v5.14-source-playbook.md` — surgical edits:
+  - `deliver: true` → `deliver: false` on GHL reply hooks (Step 3C + Step 3.5G). `true` makes the
+    gateway try to deliver to a non-existent default chatId (`Delivering to Telegram requires target
+    <chatId>`) and the agent's real OUTBOUND reply never sends.
+  - Step 3A: 4-token disambiguation table + Mac note (no Hostinger wrapper → hooks.token in
+    openclaw.json is stable; no OPENCLAW_HOOKS_TOKEN env trick — diverges from the VPS repo).
+  - All cron registrations → `openclaw cron add` CLI flag form; banner that `cron.jobs` JSON does not
+    validate on openclaw 2026.5.27.
+  - Step 9.20 D.2: "Workflow AI prompt" → "Build-with-AI prompt"; Build-with-AI is PRIMARY, manual
+    node-build is FALLBACK; verification checklist required even on success; base SMS automation also
+    creates the first appointment-booking playbook and wires the hook to it.
+  - Part 2 Client Reference Sheet rewritten: Reusable Tunnel Values → Build-with-AI prompt per channel
+    → verification checklist; manual webhook build demoted to fallback.
+  - Rules of Engagement: new Rule 7 (one value per key — proper JSON structure).
+  - Standardized `GHL_PRIVATE_INTEGRATION_TOKEN` + `Version: 2021-04-15`; verified Calendar endpoints.
+  - Mac cloudflared step: kept launchd `sudo cloudflared service install` but flagged the
+    interactive-sudo requirement prominently (cannot run over non-interactive rescue SSH).
+- `38-conversational-ai-system/skill-version.txt` → 1.4.0
+- `38-conversational-ai-system/CHANGELOG.md` → [1.4.0] entry.
+- Version bumped to v10.15.7 across all 8 tracked files (version, install.sh, skill-version.txt,
+  _index.json, _qc-summary.md, README.md, update-skills.sh, DIRECT-TO-AGENT-UPDATE-MESSAGE.md).
+
+### Migration for existing Mac clients
+
+`update-skills.sh` pulls the new reference doc + script. To activate the weekly calendar sync, register
+the Sunday 9am cron (command above). No config schema change; no migration required.
+
+### Risk + rollback
+
+Documentation + one additive script + version bumps. The `deliver: false` change is a fix, not a
+regression — it makes GHL API replies actually send. Rollback via `git revert <merge>`.
+
 ## [v10.15.6]  -  2026-05-28  -  Skill 32: sync-md-content-to-db.py populates agents.*_md from disk; Phase 6d hook
 
 ### Why

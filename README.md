@@ -1,9 +1,9 @@
 # OpenClaw Onboarding — Mac mini
 
-> **Version:** see `/version` - this repo at v10.15.6.
+> **Version:** see `/version` - this repo at v10.15.7.
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
 >
-> **NOTE (v10.15.6):** Mac mirror of VPS v10.14.37 — Skill 32 now ships the canonical **SOP V2 Library** (2,555 SOPs across 17 departments) as a GitHub Release asset. New `32-command-center-setup/scripts/ingest-sop-library.sh` downloads + applies migration 028 + upserts into the local `mission-control.db`. Existing Mac clients pick this up via `update-skills.sh`; fresh installs get it automatically. VPS and Mac sequences remain intentionally independent.
+> **NOTE (v10.15.7):** Skill 38 → v1.4.0. Hardened the GHL conversational-AI build from a live build: new authoritative reference `38-conversational-ai-system/references/GHL-INBOUND-AND-PLAYBOOKS.md` (4-token disambiguation, one-tunnel-many-hooks, copy-paste **Build-with-AI prompt** template + post-build verification checklist, Reusable Tunnel Values rule, JSON one-value-per-key rule, verified channel→type enum, Conversations + Calendar recipes, first-playbook = appointment booking). Playbook fixes: `deliver: false` on reply hooks (true breaks replies), `openclaw cron add` CLI (cron.jobs JSON doesn't validate on 2026.5.27), Build-with-AI primary / manual fallback, Mac interactive-sudo `cloudflared` blocker flagged, `GHL_PRIVATE_INTEGRATION_TOKEN` + `Version: 2021-04-15` standardized. New `38-conversational-ai-system/scripts/skill38-calendar-sync.sh` (weekly Sunday cron maintains the GHL calendar table in TOOLS.md). VPS and Mac sequences remain intentionally independent.
 >
 > **After every release:** `git tag vX.Y.Z && git push --tags && gh release create vX.Y.Z --notes-from-tag` so the GitHub Releases page mirrors the CHANGELOG.
 
