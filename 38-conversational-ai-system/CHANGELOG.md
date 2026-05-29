@@ -1,3 +1,28 @@
+## [1.4.2] - 2026-05-29 - GHL inbound hook correction: FLAT body, no nesting, server-only messageTemplate
+
+### Why
+Verified LIVE on Corey/Explore Growth (OpenClaw 2026.5.27): the GHL Custom Webhook RAW BODY must be FLAT
+(data-only). A nested `contact:{…}` / `customer_message:{…}` body makes EVERY field arrive EMPTY at the hook
+(even a hardcoded `"channel"`), and a `messageTemplate` placed in the GHL body gets mangled by GHL's own
+merge-field parser → webhook Skipped ("Error while parsing the object to JSON"). The `messageTemplate` is
+server-side only and MUST include the reply-via-GHL-Conversations-API instruction or the agent drafts but
+never sends. Content + script correction; `skill-version.txt` bumped 1.4.1 → 1.4.2.
+
+### Added / Changed
+- `references/GHL-INBOUND-AND-PLAYBOOKS.md` — new top-of-doc **CORRECTED GHL HOOK STRUCTURE (2026-05-29)**
+  section (the 12-point canonical spec); Section 4 Build-with-AI body flattened; Section 5 verification
+  checklist updated to demand a FLAT, no-`messageTemplate`, Custom-Values-picker body.
+- `references/v5.14-source-playbook.md` — every GHL Raw Body flattened (Step 3C smoke test, Step 4 E2E test,
+  Step 9.20-D.2 + multi-channel Build-with-AI prompts, all six Part 3 channel blocks); mapping `messageTemplate`
+  rewritten to reference FLAT body keys + reply-via-GHL-API instruction; `deliver:false`; `sessionKey:"{{session_key}}"`;
+  removed invalid `fallbacks` key from the mapping (schema is `.strict()`); schema-fields list + Checkpoint C corrected.
+- `scripts/15-configure-hooks-mappings.sh` — mapping `messageTemplate` now uses FLAT body keys + GHL-API reply
+  instruction; `deliver:false`; `sessionKey` default is `{{session_key}}`; E2E test PAYLOAD flattened.
+- `protocols/conversation-workflows-protocol.md` — Build-with-AI Raw Body flattened + corrected-structure note.
+- `templates/sms-workflow-ai-prompt-template.md` — SMS Raw Body flattened; mistakes list + placeholders updated.
+- `templates/client-reference-sheet-template.md` — all six channel Raw Body blocks flattened.
+- `skill-version.txt` — 1.4.1 → 1.4.2.
+
 ## [1.4.1] - 2026-05-28 - Conversation Playbook Builder enhancement (the differentiator) (repo v10.15.7)
 
 ### Why

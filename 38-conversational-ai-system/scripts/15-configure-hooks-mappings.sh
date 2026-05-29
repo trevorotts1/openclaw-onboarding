@@ -13,7 +13,11 @@ GATEWAY_PORT="${GATEWAY_PORT:-18789}"
 
 : "${ROUTE_ID:?ROUTE_ID missing — set in env or in secrets.env}"
 : "${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME missing — run 13-create-cloudflare-tunnel.sh first}"
-SESSION_KEY="${SESSION_KEY:-hook:ghl:{{channel}}:{{contact.id}}}"
+# CORRECTED GHL HOOK STRUCTURE (2026-05-29): the GHL body sends a FLAT `session_key`
+# (e.g. "hook:ghl:sms:<contact-id>"); the mapping just references it as {{session_key}}.
+# Do NOT template channel/contact.id into the sessionKey here — those are nested merge
+# tokens that the flat body already resolved before sending.
+SESSION_KEY="${SESSION_KEY:-{{session_key}}}"
 
 command -v jq >/dev/null 2>&1 || { echo "jq required" >&2; exit 3; }
 
@@ -66,6 +70,14 @@ if [[ "$HAS_MAPPING" == "true" ]]; then
 else
   backup_config
   ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"
+  # CORRECTED GHL HOOK STRUCTURE (2026-05-29) — verified live on Corey/Explore Growth (OpenClaw 2026.5.27):
+  #  - messageTemplate references the FLAT body key names ({{contact_id}}, {{message_body}}, {{channel}}, etc.)
+  #    that the FLAT GHL body sends — NOT nested {{contact.id}}/{{customer_message.body}} (those arrive empty).
+  #  - messageTemplate MUST include the reply-via-GHL-Conversations-API instruction or the agent drafts but
+  #    never sends (zero GHL API calls => customer gets nothing).
+  #  - deliver MUST be false (deliver:true makes OpenClaw ALSO push to a channel, conflicting with the agent's
+  #    own GHL-API reply).
+  #  - NO `fallbacks` key (schema is .strict() and rejects it; fallbacks belong on a model-routing config only).
   NEW_MAPPING="$(jq -n \
     --arg id "$ROUTE_ID" \
     --arg path "$ROUTE_ID" \
@@ -74,8 +86,8 @@ else
     '{
       id:$id, match:{path:$path}, action:"agent", agentId:$agent,
       wakeMode:"now", name:"GHL Inbound", sessionKey:$sk,
-      messageTemplate:"INBOUND MESSAGE FROM GOHIGHLEVEL — {{channel}} channel From: {{contact.first_name}} {{contact.last_name}} Phone: {{contact.phone}} Email: {{contact.email}} Contact ID: {{contact.id}} Location ID: {{location.id}} Location name: {{location.name}} Customer message subject: {{customer_message.subject}} Customer message body: {{customer_message.body}} INSTRUCTION: Reply on the {{channel}} channel using your installed GHL skill (typically skill #50s). Use the Contact ID and Location ID above when calling the GHL Conversations API. Before drafting your reply, check the contact'\''s conversation log at <MASTER_FILES_DIR>/conversational-logs/{{contact.id}}__<name>.md for prior context (see AGENTS.md for full conversation-log protocol).",
-      deliver:true, timeoutSeconds:180
+      messageTemplate:"INBOUND MESSAGE FROM GOHIGHLEVEL — {{channel}} channel From: {{first_name}} {{last_name}} Phone: {{phone}} Email: {{email}} Contact ID: {{contact_id}} Location ID: {{location_id}} Location name: {{location_name}} Customer message subject: {{subject}} Customer message body: {{message_body}} INSTRUCTION: Reply to contact {{contact_id}} on the {{channel}} channel via the GHL Conversations API per TOOLS.md (using your installed GHL skill, typically skill #50s). Before drafting your reply, check the contact'\''s conversation log at <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md for prior context (see AGENTS.md for full conversation-log protocol) and the matching playbook in conversation-workflows.",
+      deliver:false, timeoutSeconds:300
     }')"
   UPDATED="$(jq \
     --arg tok "$HOOKS_TOKEN" \
@@ -232,7 +244,10 @@ fi
 # STEP 4 — End-to-end test through the public tunnel
 # =============================================================================
 echo "==> Step 4: end-to-end test" >&2
-PAYLOAD='{"channel":"sms","contact":{"id":"e2e-test-001","first_name":"E2E","last_name":"Test","email":"e2e@example.com","phone":"+15555550100"},"location":{"id":"e2e-loc-001","name":"E2E Test Location"},"customer_message":{"body":"End-to-end setup verification.","subject":""}}'
+# CORRECTED GHL HOOK STRUCTURE (2026-05-29): FLAT body, no nested objects. session_key is flat and
+# starts with the allowed "hook:ghl:" prefix; the mapping reads contact_id/message_body/etc. directly.
+ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"  # may be unset if the mapping already existed (set -u guard)
+PAYLOAD='{"channel":"sms","contact_id":"e2e-test-001","first_name":"E2E","last_name":"Test","email":"e2e@example.com","phone":"+15555550100","subject":"","message_body":"End-to-end setup verification.","match":"'"$ROUTE_ID"'","session_key":"hook:ghl:sms:e2e-test-001","agent_id":"'"$ROUTING_AGENT_ID"'","location_id":"e2e-loc-001","location_name":"E2E Test Location"}'
 
 HTTP_CODE="$(curl -sS -o /tmp/.hooks-e2e-body.$$ -w '%{http_code}' \
   --max-time 30 \
