@@ -62,9 +62,14 @@ verification checklist MUST re-confirm each one:
 - **AUTHORIZATION dropdown** = `None`. (The bearer token goes in HEADERS, not in this dropdown — the
   single most common Build-with-AI mistake.)
 - **HEADERS** — under the HEADERS section click **"Add item"**, then fill the **Key box** and the **Value
-  box** for that row; click **"Add item"** AGAIN for the second header:
-  - Row 1: **Key box** = `Authorization`, **Value box** = `Bearer <HOOKS_TOKEN>`
-  - Row 2: **Key box** = `Content-Type`, **Value box** = `application/json`
+  box** for that row; click **"Add item"** AGAIN for the second header. Each header is split into TWO
+  separate copy blocks (Key + Value) on the client reference sheet — NEVER one combined block:
+  - Row 1: **Key box** = `Authorization`, **Value box** = `Bearer <HOOKS_TOKEN>`. The Value box is ONLY
+    `Bearer ` + the token — it must **NOT** repeat the word `Authorization` (a combined
+    `Authorization: Bearer <token>` in the Value box is the bug, and is machine-FAILED by
+    `scripts/qc-reference-sheet.sh`).
+  - Row 2: **Key box** = `Content-Type`, **Value box** = `application/json` (the Value box is ONLY
+    `application/json` — not `Content-Type: application/json`).
   - (add any other header the scenario needs the same way — one **"Add item"** per header)
 - **CONTENT-TYPE field** = `application/json`.
 - **RAW BODY box** = the FULL **23-key FLAT JSON** below, inserted with each `{{…}}` value placed via GHL's
@@ -218,16 +223,23 @@ matches nothing (or everything). That blank/non-existent-tag filter is a confirm
 
 The generated Client Reference Sheet carries a prominent **"Your Communication Playbooks"** section
 (after the Quick Start, before the deep reference) that tells the client WHERE their playbooks live and HOW
-to build a new one. This is part of the standard so every client doc answers it the same way:
+the AI helps them build ADDITIONAL communication playbooks. This is part of the standard so every client doc
+answers it the same way (friendly tone, generous emojis 💬🚀🛠️📅🏷️✅):
 
-- **WHERE they live** — the working copies are in the client's OpenClaw master-files
+- **WHERE they live / are stored** — the working copies are in the client's OpenClaw master-files
   **`conversation-workflows/`** folder (the source of truth the agent reads on every reply); the
-  human-facing copies are in their **Notion** (Notion → Google Docs → text). Both stay in sync.
-- **HOW to build a new one (BIG BOLD: "Want a NEW communications playbook? Start here")** — the client just
-  tells their AI **"help me build a [purpose] playbook."** The AI brainstorms with them (friendly, uses
-  known business context — not a 50-question form), then builds **all 3 parts of THE TRINITY**: the
-  **workflow-AI prompt** (Section 1 above) + the **communications playbook** (Layer 2) + the **GHL
-  automation** — writes a human-facing copy to Notion, registers it, and tells them where it is.
+  human-facing copies are **mirrored to their Notion** (Notion → Google Docs → text). Both stay in sync.
+- **"Want another communication playbook? Just ask me!"** — a clear CTA with a concrete COPYABLE example: the
+  client just tells their AI **"Help me build a [purpose] playbook"** (e.g. *"Help me build a missed-call
+  follow-up playbook"*), with more examples surfaced — **appointment-reminder, lead-nurture, review-request.**
+- **WHAT THE AI WILL DO when they ask:** (1) **brainstorm it with you** using what it already knows about
+  your business (not a 50-question interrogation); (2) **create the communication playbook** for you;
+  (3) **store it** — the working copy in the master-files `conversation-workflows/` folder, mirrored to Notion;
+  (4) **help you create the matching Workflow AI prompt** (Section 1 above), wired to **YOUR** Convert and Flow
+  (GoHighLevel) account; and (5) that **the AI can take real actions in Convert and Flow on your behalf** — it
+  CAN **create tags 🏷️, update your calendar 📅, create/book appointments 🗓️,** and similar automations.
+- **The explicit statement:** *"You have an AI that is connected to your Convert and Flow account and can do
+  these things for you — just ask."*
 
 Machine-enforced by `scripts/qc-reference-sheet.sh --require-manual-fill` and detailed in
 `references/communications-playbook-standard.md` §9.
