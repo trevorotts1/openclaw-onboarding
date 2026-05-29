@@ -73,11 +73,15 @@ else
   # CORRECTED GHL HOOK STRUCTURE (2026-05-29) — verified live on Corey/Explore Growth (OpenClaw 2026.5.27):
   #  - messageTemplate references the FLAT body key names ({{contact_id}}, {{message_body}}, {{channel}}, etc.)
   #    that the FLAT GHL body sends — NOT nested {{contact.id}}/{{customer_message.body}} (those arrive empty).
-  #  - messageTemplate MUST include the reply-via-GHL-Conversations-API instruction or the agent drafts but
-  #    never sends (zero GHL API calls => customer gets nothing).
+  #  - messageTemplate MUST include the MANDATORY SEND-DIRECTIVE (the canonical clause below) or the agent
+  #    drafts but never sends (zero GHL API calls => customer gets nothing). Drafting is NOT sending. This is
+  #    LAYER 1 of the 3-layer send enforcement (Layer 2 = AGENTS.md standing rule; Layer 3 = qc-send-directive.sh).
   #  - deliver MUST be false (deliver:true makes OpenClaw ALSO push to a channel, conflicting with the agent's
   #    own GHL-API reply).
   #  - NO `fallbacks` key (schema is .strict() and rejects it; fallbacks belong on a model-routing config only).
+  #  NOTE: the SEND-DIRECTIVE lives ONLY on this SERVER mapping's messageTemplate (object-B, where {{…}}
+  #  placeholders resolve). It must NEVER appear in the in-GHL-body messageTemplate — that one stays
+  #  placeholder-free per the 23-key rule (qc-23-key-bodies.sh).
   NEW_MAPPING="$(jq -n \
     --arg id "$ROUTE_ID" \
     --arg path "$ROUTE_ID" \
@@ -86,9 +90,19 @@ else
     '{
       id:$id, match:{path:$path}, action:"agent", agentId:$agent,
       wakeMode:"now", name:"GHL Inbound", sessionKey:$sk,
-      messageTemplate:"INBOUND MESSAGE FROM GOHIGHLEVEL — {{channel}} channel From: {{first_name}} {{last_name}} Phone: {{phone}} Email: {{email}} Contact ID: {{contact_id}} Location ID: {{location_id}} Location name: {{location_name}} Customer message subject: {{subject}} Customer message body: {{message_body}} INSTRUCTION: Reply to contact {{contact_id}} on the {{channel}} channel via the GHL Conversations API per TOOLS.md (using your installed GHL skill, typically skill #50s). Before drafting your reply, check the contact'\''s conversation log at <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md for prior context (see AGENTS.md for full conversation-log protocol) and the matching playbook in conversation-workflows.",
+      messageTemplate:"INBOUND MESSAGE FROM GOHIGHLEVEL — {{channel}} channel From: {{first_name}} {{last_name}} Phone: {{phone}} Email: {{email}} Contact ID: {{contact_id}} Location ID: {{location_id}} Location name: {{location_name}} Customer message subject: {{subject}} Customer message body: {{message_body}} Before drafting your reply, check the contact'\''s conversation log at <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md for prior context (see AGENTS.md for full conversation-log protocol) and the matching playbook in conversation-workflows. MANDATORY — SEND, do not just draft: You MUST send your reply by calling the GHL Conversations API (POST conversations/messages) for contact {{contact_id}} on the {{channel}} channel, per TOOLS.md. Composing or drafting a reply is NOT sending — the customer receives nothing unless you make the API call. Do NOT end your turn until the send call returns a messageId/conversationId.",
       deliver:false, timeoutSeconds:300
     }')"
+
+  # FAIL-CLOSED GUARD: the messageTemplate we just built MUST carry the mandatory send-directive elements.
+  # It must NOT be possible to install a GHL hook whose messageTemplate lacks the send-directive (Layer 1).
+  GUARD_MT="$(printf '%s' "$NEW_MAPPING" | jq -r '.messageTemplate')"
+  for needle in "MANDATORY" "SEND" "GHL Conversations API" "drafting" "NOT sending" "messageId"; do
+    if ! printf '%s' "$GUARD_MT" | grep -qi -- "$needle"; then
+      echo "REFUSED: installer messageTemplate is missing send-directive element '$needle' — refusing to write a hook that lets the agent draft-but-not-send." >&2
+      exit 8
+    fi
+  done
   UPDATED="$(jq \
     --arg tok "$HOOKS_TOKEN" \
     --arg agent "$ROUTING_AGENT_ID" \

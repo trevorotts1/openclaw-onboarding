@@ -77,6 +77,7 @@ SCRIPT_FILES=(
   "scripts/12-scaffold-channel-playbooks.sh"
   "scripts/qc-23-key-bodies.sh"
   "scripts/qc-trinity-registry.sh"
+  "scripts/qc-send-directive.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -202,6 +203,20 @@ if [ -f "$QC_TRINITY" ]; then
   esac
 else
   report_fail "qc-trinity-registry.sh not found (looked in scripts/)"
+fi
+
+# -------- Mandatory GHL send-directive gate (machine-enforced) --------
+section "GHL send-directive gate (qc-send-directive.sh)"
+QC_SEND="$SCRIPT_DIR/qc-send-directive.sh"
+[ -f "$QC_SEND" ] || QC_SEND="$SKILL38_ROOT/scripts/qc-send-directive.sh"
+if [ -f "$QC_SEND" ]; then
+  if bash "$QC_SEND" >/dev/null 2>&1; then
+    report_pass "every GHL inbound SERVER messageTemplate carries the mandatory send-directive (SEND/Conversations API/drafting-is-not-sending/do-not-end-turn)"
+  else
+    report_fail "qc-send-directive.sh found a GHL inbound server template missing the send-directive — run it directly for detail"
+  fi
+else
+  report_fail "qc-send-directive.sh not found (looked in scripts/)"
 fi
 
 # -------- Final summary --------

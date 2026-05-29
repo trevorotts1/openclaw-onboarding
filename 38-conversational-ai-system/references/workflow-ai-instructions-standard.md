@@ -133,6 +133,14 @@ fix any item before publishing. (Per-workflow, brutally-specific version generat
 > `messageTemplate`, no nested objects, and no literal `\n` — and exits non-zero on any violation (it also
 > runs in CI). THE TRINITY (this prompt ⇄ its communications playbook ⇄ its registry row) is enforced by
 > `scripts/qc-trinity-registry.sh`. The 23-key rule is a check, not just a human checklist item.
+>
+> **MANDATORY SEND-DIRECTIVE (machine-enforced).** The in-GHL-body `messageTemplate` stays placeholder-free,
+> but the SERVER-mapping `messageTemplate` (the `hooks.mappings` entry in `openclaw.json`) MUST carry the
+> send-directive — the word **SEND**, the **GHL Conversations API** (POST `conversations/messages`), the
+> **drafting-is-NOT-sending** clause, and **"do not end your turn until a messageId/conversationId is
+> returned."** Without it the agent drafts a reply and stops — the customer gets nothing. This is verified by
+> `scripts/qc-send-directive.sh` (CI + pre-handoff QC); see `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4 for
+> the canonical server mapping.
 
 ## 5. MULTI-ACTION workflows (not just one action)
 

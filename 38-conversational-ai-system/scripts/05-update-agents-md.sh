@@ -141,11 +141,16 @@ corresponding communication playbook in `<MASTER_FILES_DIR>/communication-playbo
 Read the matching playbook before drafting your reply. It contains the
 tone, signature, escalation triggers, and brand voice for that channel.
 
-### Step 3 — Send the reply via the GHL skill
+### Step 3 — Send the reply via the GHL skill (SENDING IS MANDATORY)
 
 Use the installed GHL skill (`openclaw skills | grep ghl`) to send the
 reply back on the same channel. Do NOT post directly to the GHL API
 yourself — the skill handles auth, rate limits, and retries.
+
+SENDING is mandatory. Composing or drafting a reply is NOT sending — the
+customer receives nothing unless you actually call the GHL Conversations
+API. Do NOT end your turn until the send call returns a
+messageId/conversationId. A drafted-but-unsent reply is a FAILURE.
 
 ### Pointers (always-read references)
 
@@ -160,6 +165,21 @@ yourself — the skill handles auth, rate limits, and retries.
   and Payments APIs (installed on every client by default)
 
 BLOCK_A
+
+# -----------------------------------------------------------------------------
+# (a2) GHL_SEND_MANDATORY — standing base rule (belt-and-suspenders Layer 2 of
+#      the 3-layer send enforcement). Concise, pointer-style, no bloat.
+# -----------------------------------------------------------------------------
+append_block "GHL_SEND_MANDATORY" <<'BLOCK_A2'
+
+## GHL inbound — SENDING the reply is MANDATORY (base rule)
+
+For ANY GHL inbound hook, SENDING the reply via the GHL Conversations API
+is MANDATORY — a drafted-but-unsent reply is a failure. Always make the
+send call and confirm a messageId/conversationId before ending the turn.
+(See Step 7C "Send the reply" + the hook's own messageTemplate send-directive.)
+
+BLOCK_A2
 
 # -----------------------------------------------------------------------------
 # (b) SKILL38_RUNTIME_ROUTING — preserves the existing 53-line script's content
