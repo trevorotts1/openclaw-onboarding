@@ -119,15 +119,31 @@ I checked these locations and found no Cloudflare API key:
   - ~/.zshrc, ~/.bashrc, ~/.bash_profile
   - Current shell environment
 
-To proceed, follow the walk-through guide shipped INSIDE this skill:
+The walk-through content lives in the guide shipped INSIDE this skill:
 
-  cat ~/.openclaw/skills/38-conversational-ai-system/references/cloudflare-godaddy-setup-guide.md
+  references/cloudflare-godaddy-setup-guide.md
 
 (That guide is the verbatim School of AI step-by-step: 4 parts, ~30 minutes,
 walks you through the Cloudflare account, GoDaddy nameservers, and the
 9-permission API token creation. The Google Doc version
 https://docs.google.com/document/d/1A_U-H-MMLh2mQ_zhzLxK_tKmFyPNb7i0FNvxjJ4SVpo/edit?usp=sharing
 is the canonical source if you prefer to view it in Google Docs.)
+
+>>> AGENT — DO NOT just dump a `cat` of the guide. When the client has NO
+>>> Cloudflare API token, PROACTIVELY OFFER the client a choice of TWO paths,
+>>> then act on whichever they pick:
+>>>
+>>>   (a) NOTION DOC — create a NEW Notion doc IN THE CLIENT'S OWN Notion
+>>>       workspace (never another client's, never a shared/operator
+>>>       workspace) containing the full content of
+>>>       references/cloudflare-godaddy-setup-guide.md, then send the client
+>>>       the link so they can follow it at their own pace; OR
+>>>
+>>>   (b) MANUAL WALKTHROUGH — walk the client through the guide step by step,
+>>>       live, answering questions as they go.
+>>>
+>>> Ask which they prefer, then do it. Only fall back to printing the guide
+>>> inline if the client explicitly asks for the raw text.
 
 Once you have your Cloudflare API key:
 

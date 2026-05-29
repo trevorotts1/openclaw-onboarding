@@ -12,7 +12,7 @@ MEM_MD="$WS/MEMORY.md"
 [ -f "$MEM_MD" ] || { echo "[skill 38] $MEM_MD not found — skipping"; exit 0; }
 
 MARKER_BEGIN="<!-- BEGIN skill-38 memory-rules v5.14 -->"
-BUILDER_MARKER="<!-- BEGIN skill-38 builder-design-rules v1.4.0 -->"
+BUILDER_MARKER="<!-- BEGIN skill-38 builder-design-rules v1.4.1 -->"
 
 if grep -qF "$MARKER_BEGIN" "$MEM_MD" && grep -qF "$BUILDER_MARKER" "$MEM_MD"; then
   echo "[skill 38] MEMORY.md already contains skill 38 rules (incl. builder rules) — preserved"
@@ -51,12 +51,12 @@ cat >> "$MEM_MD" <<'BLOCK'
 BLOCK
 fi
 
-# Block 2 — Conversation Playbook Builder design rules (v1.4.0 enhancement)
+# Block 2 — Conversation Playbook Builder design rules (v1.4.1 enhancement)
 if ! grep -qF "$BUILDER_MARKER" "$MEM_MD"; then
 cat >> "$MEM_MD" <<'BLOCK'
 
-<!-- BEGIN skill-38 builder-design-rules v1.4.0 -->
-## Skill 38 — Conversation Playbook Builder: design rules (v1.4.0)
+<!-- BEGIN skill-38 builder-design-rules v1.4.1 -->
+## Skill 38 — Conversation Playbook Builder: design rules (v1.4.1)
 
 These rules make the recurring "build me a conversation playbook" flow bulletproof.
 The system's USP is COMMUNICATION-DRIVEN funnels / automations — built by talking and
@@ -90,7 +90,7 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
     **~/clawd/secrets/.env** AND/OR **~/.openclaw/.env** — check BOTH before ever claiming
     a key is missing. (VPS keeps env in /docker/<project>/.env; Mac does not.)
 
-<!-- END skill-38 builder-design-rules v1.4.0 -->
+<!-- END skill-38 builder-design-rules v1.4.1 -->
 BLOCK
 fi
 

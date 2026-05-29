@@ -1,7 +1,7 @@
 <!-- OPERATOR HEADER (6 lines) — DO NOT EDIT BELOW -->
 <!-- Source: openclaw-cloudflare-tunnel-prompt (1).md v5.14 — lines 3857-4322 -->
 <!-- Section: Step 9.20 — Conversation Playbook Builder (3-PART, communication-driven) -->
-<!-- This file is a VERBATIM extraction from the v5.14 playbook, hardened by the v1.4.0 -->
+<!-- This file is a VERBATIM extraction from the v5.14 playbook, hardened by the v1.4.1 -->
 <!-- conversation-playbook-builder enhancement. Do not summarize. -->
 <!-- Patch source: skill-38-patch-1 agent — 2026-05-28; builder enhancement — 2026-05-28 -->
 

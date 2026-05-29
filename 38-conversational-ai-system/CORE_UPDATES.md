@@ -28,7 +28,7 @@ Key behaviors added:
 
 The script appends TWO marker blocks (idempotent, each behind its own BEGIN/END marker):
 **(1)** core v5.14 design rules 6-14 (`<!-- BEGIN skill-38 memory-rules v5.14 -->`), and
-**(2)** Conversation Playbook Builder design rules 15-19 (`<!-- BEGIN skill-38 builder-design-rules v1.4.0 -->`).
+**(2)** Conversation Playbook Builder design rules 15-19 (`<!-- BEGIN skill-38 builder-design-rules v1.4.1 -->`).
 
 Rules 6-14 of the 14 v5.14 MEMORY.md design principles. (Rules 1-5 belong to skill 19/29.)
 
@@ -42,7 +42,7 @@ Rules 6-14 of the 14 v5.14 MEMORY.md design principles. (Rules 1-5 belong to ski
 13. **Intelligent Routing Rule** — Conversation Workflows override channel playbooks per context routing.
 14. **Tune-up Rule** — Sunday 2am weekly + Saturday 11pm proactive + 1st-of-month review crons are the heartbeat. Never disable without operator approval.
 
-### Conversation Playbook Builder design rules 15-19 (v1.4.0)
+### Conversation Playbook Builder design rules 15-19 (v1.4.1)
 
 The system's USP is **communication-driven funnels / automations** — built by talking and brainstorming, NOT click-and-drag (this is what beats CloseBot). These five rules make the recurring "build me a conversation playbook" flow (Step 9.20) bulletproof:
 
