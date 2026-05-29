@@ -611,16 +611,26 @@ The agent maintains a registry at `<MASTER_FILES_DIR>/conversation-workflows/reg
 ```markdown
 # Conversation Workflows Registry
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist |
-|---|---|---|---|---|---|---|
-| pricing-inquiry | New lead asks about pricing | "price", "cost", "how much" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a |
-| webinar-followup | Lead from Tuesday webinar | New tag `webinar-attendee` | Yes | webinar-followup.md | webinar-followup--workflow-ai-prompt.md | webinar-followup--verification-checklist.md |
-| ... | ... | ... | ... | ... | ... | ... |
+| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+|---|---|---|---|---|---|---|---|
+| pricing-inquiry | New lead asks about pricing | "price", "cost", "how much" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | https://www.notion.so/client/pricing-inquiry-abc123 |
+| webinar-followup | Lead from Tuesday webinar | New tag `webinar-attendee` | Yes | webinar-followup.md | webinar-followup--workflow-ai-prompt.md | webinar-followup--verification-checklist.md | https://docs.google.com/document/d/xyz/edit |
+| ... | ... | ... | ... | ... | ... | ... | ... |
 ```
 
 The registry is the single source of truth the agent reads on every reply turn (via AGENTS.md Step 1.75)
 to decide which workflow (if any) applies. AGENTS.md **Step 1.85** (see Section A + Section J) recognizes
 the operator-side workflow-builder trigger phrases and starts the builder flow.
+
+**The `Doc (Notion/Docs/text)` column is MANDATORY and machine-enforced.** Every registered playbook MUST
+carry a recorded human-facing doc — a Notion URL, a Google Docs URL, or a `.md`/`.txt` path the client can
+reach — created in the client's OWN account in the fallback order Notion → Google Docs → plain-text (see
+`references/communications-playbook-standard.md` §4). A row whose doc cell is empty / `n/a` / a placeholder
+FAILS `scripts/qc-playbook-doc.sh` (wired into `scripts/11-run-qc-checklist.sh` + CI `qc-static.yml`); the
+install is NOT complete until the doc is created and its URL/path recorded here. The installer
+`scripts/09-install-conversation-workflows.sh` creates + records this doc automatically for every on-disk
+playbook. This is NOT optional prose — it is a gated deliverable, like the send-directive and
+conversation-memory gates.
 
 **How Parts 1 and 2 connect (the hook path).** The registry's `GHL prompt` column points at the Part 1
 artifact; the `OpenClaw playbook` column points at the Part 2 artifact. The thing that physically links
@@ -658,6 +668,7 @@ Workflows created during setup:
   - Layer 0: <existing routing | new routing required>
   - Layer 1: [tags created: <list> | Build-with-AI prompt: <path> | verification checklist: <path>] (or "skipped")
   - Layer 2: <path to OpenClaw playbook>
+  - Human-facing doc (Notion → Google Docs → text): <recorded URL or path>  ← MANDATORY, gated by qc-playbook-doc.sh
 - ...
 
 Registry: <MASTER_FILES_DIR>/conversation-workflows/registry.md
@@ -733,12 +744,19 @@ it already knows about the business and asks ONLY the smart gaps:
    - **MEMORY.md** — if it establishes a durable business rule the agent must always remember.
    (Most playbooks need only the registry entry + the existing Step 1.75 read. Add a bootstrap pointer
    ONLY when one of the three conditions above is genuinely met.)
-4. **Create a NEW Notion doc for that playbook** — in the CLIENT's own Notion workspace (never co-mingle
-   with another client's workspace). The Notion doc mirrors the Part 2 playbook plus the Part 1 prompt +
-   verification checklist so the operator has a shareable, human-readable copy.
-5. **Register it** — add the row to `conversation-workflows/registry.md` (Section F), and add the hook-path
-   entry to Reusable Tunnel Values (`references/GHL-INBOUND-AND-PLAYBOOKS.md` §6) if Part 1 created a new
-   hook path.
+4. **Create the human-facing doc for that playbook in the CLIENT's account — MANDATORY, GATED (Notion →
+   Google Docs → plain-text).** Create a human-readable copy in the CLIENT's OWN account (never co-mingle
+   with another client's workspace), in this EXACT fallback order: **(a) Notion** (a new subpage under the
+   client's designated parent page), **(b) if no Notion → Google Docs**, **(c) if neither → a plain-text
+   `.md` the client can access**. The doc mirrors the Part 2 playbook plus the Part 1 prompt + verification
+   checklist. **This is NOT optional prose — it is machine-enforced by `scripts/qc-playbook-doc.sh`**: the
+   playbook is INCOMPLETE (do NOT declare it live) until this doc exists and its URL/path is recorded in the
+   registry's `Doc (Notion/Docs/text)` column (step 5) and the run manifest. The installer
+   `scripts/09-install-conversation-workflows.sh` performs this fallback + recording automatically for
+   on-disk playbooks; a doc that fails to create is RETRIED (verify/resume), never silently skipped.
+5. **Register it (with the recorded doc URL/path)** — add the row to `conversation-workflows/registry.md`
+   (Section F) INCLUDING the `Doc (Notion/Docs/text)` cell from step 4, and add the hook-path entry to
+   Reusable Tunnel Values (`references/GHL-INBOUND-AND-PLAYBOOKS.md` §6) if Part 1 created a new hook path.
 
 ### J. AGENTS.md Step 1.85 — the runtime hook for Part 3
 
@@ -746,7 +764,9 @@ Step 1.85 (installed by `scripts/05-update-agents-md.sh`, marker `STEP_1_85_WORK
 is what makes Part 3 fire at runtime. It recognizes the operator-side trigger phrases (I.1) and hands
 control to this protocol's brainstorm flow (Section I). Confirm the full 3-PART build completed — Part 1
 (prompt + fallback + checklist), Part 2 (playbook + registry), Part 3 (brainstorm → concise confirmation →
-Notion doc) — before declaring the playbook live.
+human-facing doc) — before declaring the playbook live. The human-facing doc (Notion → Google Docs → text,
+§I.3 step 4) is MANDATORY and machine-enforced by `scripts/qc-playbook-doc.sh`: a playbook with no recorded
+doc URL/path in its registry row is NOT live.
 
 ### K. Cross-references — builder ↔ router ↔ proactive engine
 

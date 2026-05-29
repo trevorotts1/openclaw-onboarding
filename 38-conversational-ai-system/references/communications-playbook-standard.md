@@ -42,6 +42,7 @@ A playbook is INCOMPLETE (do not register it, do not declare it live) until ALL 
 - [ ] **On-success / tagging** — the action that fires on success (book / invoice / tag / send document / trigger downstream) and which tag(s) get applied (tags must be created via the GHL skill FIRST — see the workflow-AI standard).
 - [ ] **Tone** — the specific tone for THIS scenario, layered on top of the channel communication playbook's baseline voice.
 - [ ] **Honesty floor** — the agent never invents discount codes, never promises refunds/exceptions without operator approval, never bluffs below the confidence threshold, escalates instead.
+- [ ] **HUMAN-FACING DOC created in the CLIENT's account + URL recorded (MANDATORY, machine-enforced)** — a human-readable copy of this playbook MUST be created in the client's OWN account in the fallback order **Notion → Google Docs → plain-text** (Section 4), and its URL/path MUST be recorded in the playbook's `registry.md` row (the `Doc (Notion/Docs/text)` column) and the run manifest. A playbook with no recorded human-facing doc is INCOMPLETE — the customer is left with no shareable reference of what was set up. **This item is MACHINE-ENFORCED by `scripts/qc-playbook-doc.sh`** (wired into `scripts/11-run-qc-checklist.sh` + CI `.github/workflows/qc-static.yml`): the gate FAILs (exit 1) any registered playbook whose doc cell is empty / `n/a` / placeholder, and exits 2 (never a blind PASS) if no playbooks exist. The installer `scripts/09-install-conversation-workflows.sh` creates + records this doc automatically for every on-disk playbook (Notion → Google Docs → text). It is no longer optional prose.
 
 ## 3. STORAGE — where the playbook FILE lives (master-files folder)
 
@@ -61,11 +62,15 @@ but is NOT in the registry is invisible to the runtime — registration is manda
 > path). The playbook BODY never goes into a core md file — that bloats the bootstrap layer. The
 > registry + the existing Step 1.8/1.75 read are how the runtime finds it.
 
-## 4. STORAGE ORDER — the human-readable copy in the CLIENT's account (fallback chain)
+## 4. STORAGE ORDER — the human-readable copy in the CLIENT's account (fallback chain) — MANDATORY, MACHINE-ENFORCED
 
 In ADDITION to the master-files file above, every new communications playbook gets a human-readable
-copy placed in the CLIENT's own account so the operator has a shareable, editable record. Place it in
-this EXACT fallback order (never co-mingle clients — always the client's OWN workspace):
+copy placed in the CLIENT's own account so the operator has a shareable, editable record. **This is a
+MANDATORY deliverable, not optional prose** — it is the deliverable an agent skipped on a live client
+(files scaffolded locally, install reported "clean," but no client doc), leaving the customer stranded
+with no human-facing reference. It is now machine-enforced exactly like the send-directive and
+conversation-memory gates. Place it in this EXACT fallback order (never co-mingle clients — always the
+client's OWN workspace):
 
 1. **(a) The client's Notion account first.** If the client has a Notion workspace connected, create a
    new Notion doc in THAT client's workspace (never a generic/operator or another client's workspace).
@@ -76,8 +81,25 @@ this EXACT fallback order (never co-mingle clients — always the client's OWN w
    Google Docs is available, write a plain `.txt` / `.md` file to a location the client can reach
    (e.g. their master-files folder root or an agreed shared path) and tell the operator exactly where it is.
 
-Always in that order: Notion → Google Docs → plain text. Record which destination was used in the
-playbook's registry row / run manifest so it is auditable.
+Always in that order: Notion → Google Docs → plain text. **Record the resulting URL/path** in the
+playbook's `registry.md` row — the `Doc (Notion/Docs/text)` column (Section §F of
+`protocols/conversation-workflows-protocol.md`) — AND in the run manifest, so it is auditable.
+
+**ENFORCEMENT (un-skippable).** This step is gated three ways, mirroring the send-directive /
+conversation-memory enforcement:
+- **Installer action** — `scripts/09-install-conversation-workflows.sh` runs the Notion → Google Docs →
+  plain-text fallback for every on-disk playbook that has no recorded doc, records the URL/path into the
+  registry's doc column, and emits a clear operator-facing line stating WHERE the doc was created (or which
+  fallback was used). For Notion it creates a subpage under the client's designated parent page via
+  `NOTION_API_KEY` (the integration must be shared with that parent; set `NOTION_PARENT_PAGE_ID` or
+  `NOTION_PARENT_SEARCH`). If the key/parent is missing or Notion errors, it falls to Google Docs, then to a
+  plain-text `.md` in `<MASTER_FILES_DIR>/playbook-docs/`.
+- **QC gate** — `scripts/qc-playbook-doc.sh` FAILs (exit 1) if any registered playbook has no recorded doc,
+  PASSes (exit 0) when all do, and exits 2 (never a blind PASS) if no playbooks exist. Wired into
+  `scripts/11-run-qc-checklist.sh` and CI `.github/workflows/qc-static.yml` (via its fixture test
+  `qc-playbook-doc.test.sh`).
+- **Binding install step** — the install is NOT complete until the doc URL/path is recorded; an incomplete
+  doc is retried by the installer's verify/resume loop, not silently skipped.
 
 ## 5. Distinction — communications playbook vs channel communication playbook
 

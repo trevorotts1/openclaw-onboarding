@@ -156,3 +156,24 @@ jobs:
           # template that lacks them (or if none are found).
           bash 38-conversational-ai-system/scripts/qc-conversation-memory.sh
           echo "✓ All Skill 38 GHL inbound server templates carry the conversation-memory read-before/append-after steps"
+
+      - name: Skill 38 per-playbook human-facing doc gate (fixture tests)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the MANDATORY per-playbook human-facing doc deliverable
+          # (Notion → Google Docs → plain-text). When a conversation playbook is
+          # created (the base install creates the FIRST one — appointment booking),
+          # the agent must ALSO create a human-facing copy in the CLIENT's own
+          # account and record its URL/path in the registry. On a live client this
+          # step was SKIPPED — files scaffolded locally, install reported "clean",
+          # but no client doc, leaving the customer with no human-facing reference.
+          # qc-playbook-doc.sh is a RUNTIME gate (it reads the client's installed
+          # conversation-workflows/registry.md) so CI exercises it via its fixture
+          # tests, which prove it: FAILs a registered playbook with no recorded doc
+          # (table + bullet forms), PASSes when a Notion/Docs/text doc is recorded,
+          # exits 2 (NOT a blind PASS) when no playbooks exist, and catches an
+          # on-disk-but-unregistered playbook. qc-static bans claude-/anthropic
+          # strings in .py under 22/23, so this gate is BASH (with an inline py core).
+          bash 38-conversational-ai-system/scripts/qc-playbook-doc.test.sh
+          echo "✓ qc-playbook-doc per-playbook human-facing doc gate fixtures pass"
