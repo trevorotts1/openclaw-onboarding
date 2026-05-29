@@ -172,11 +172,28 @@ These are the Raw Body blocks the operator pastes into GHL's Custom Webhook acti
 
 All six blocks have the same structure. Only the `channel` value changes. The operator copies the block matching the channel they're setting up.
 
+> **ALL 23 KEYS REQUIRED (owner directive).** Each block below has all 23 keys. 23 is the MINIMUM — never
+> paste a shorter body. Only `channel` + the `session_key` prefix differ between channels. The body's
+> `messageTemplate` is placeholder-free so GHL never mangles it.
+
 ### SMS workflow — Raw Body
 
 ```json
 {
+  "id": "<HOOK_NAME>",
+  "match": "<HOOK_NAME>",
+  "action": "agent",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "model": "ollama/deepseek-v4-flash:cloud",
+  "wakeMode": "now",
+  "name": "GHL Sales Inbound",
+  "session_key": "hook:ghl:sms:{{contact.id}}",
+  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+  "deliver": false,
+  "timeoutSeconds": 300,
   "channel": "sms",
+  "to": "{{contact.phone}}",
+  "thinking": "medium",
   "contact_id": "{{contact.id}}",
   "first_name": "{{contact.first_name}}",
   "last_name": "{{contact.last_name}}",
@@ -184,9 +201,6 @@ All six blocks have the same structure. Only the `channel` value changes. The op
   "phone": "{{contact.phone}}",
   "subject": "{{message.subject}}",
   "message_body": "{{message.body}}",
-  "match": "<HOOK_NAME>",
-  "session_key": "hook:ghl:sms:{{contact.id}}",
-  "agent_id": "<ROUTING_AGENT_ID>",
   "location_id": "{{location.id}}",
   "location_name": "{{location.name}}"
 }
@@ -196,7 +210,20 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 
 ```json
 {
+  "id": "<HOOK_NAME>",
+  "match": "<HOOK_NAME>",
+  "action": "agent",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "model": "ollama/deepseek-v4-flash:cloud",
+  "wakeMode": "now",
+  "name": "GHL Sales Inbound",
+  "session_key": "hook:ghl:email:{{contact.id}}",
+  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+  "deliver": false,
+  "timeoutSeconds": 300,
   "channel": "email",
+  "to": "{{contact.phone}}",
+  "thinking": "medium",
   "contact_id": "{{contact.id}}",
   "first_name": "{{contact.first_name}}",
   "last_name": "{{contact.last_name}}",
@@ -204,9 +231,6 @@ All six blocks have the same structure. Only the `channel` value changes. The op
   "phone": "{{contact.phone}}",
   "subject": "{{message.subject}}",
   "message_body": "{{message.body}}",
-  "match": "<HOOK_NAME>",
-  "session_key": "hook:ghl:email:{{contact.id}}",
-  "agent_id": "<ROUTING_AGENT_ID>",
   "location_id": "{{location.id}}",
   "location_name": "{{location.name}}"
 }
@@ -216,7 +240,20 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 
 ```json
 {
-  "channel": "facebook",
+  "id": "<HOOK_NAME>",
+  "match": "<HOOK_NAME>",
+  "action": "agent",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "model": "ollama/deepseek-v4-flash:cloud",
+  "wakeMode": "now",
+  "name": "GHL Sales Inbound",
+  "session_key": "hook:ghl:fb:{{contact.id}}",
+  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+  "deliver": false,
+  "timeoutSeconds": 300,
+  "channel": "fb",
+  "to": "{{contact.phone}}",
+  "thinking": "medium",
   "contact_id": "{{contact.id}}",
   "first_name": "{{contact.first_name}}",
   "last_name": "{{contact.last_name}}",
@@ -224,9 +261,6 @@ All six blocks have the same structure. Only the `channel` value changes. The op
   "phone": "{{contact.phone}}",
   "subject": "{{message.subject}}",
   "message_body": "{{message.body}}",
-  "match": "<HOOK_NAME>",
-  "session_key": "hook:ghl:facebook:{{contact.id}}",
-  "agent_id": "<ROUTING_AGENT_ID>",
   "location_id": "{{location.id}}",
   "location_name": "{{location.name}}"
 }
@@ -236,7 +270,20 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 
 ```json
 {
+  "id": "<HOOK_NAME>",
+  "match": "<HOOK_NAME>",
+  "action": "agent",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "model": "ollama/deepseek-v4-flash:cloud",
+  "wakeMode": "now",
+  "name": "GHL Sales Inbound",
+  "session_key": "hook:ghl:instagram:{{contact.id}}",
+  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+  "deliver": false,
+  "timeoutSeconds": 300,
   "channel": "instagram",
+  "to": "{{contact.phone}}",
+  "thinking": "medium",
   "contact_id": "{{contact.id}}",
   "first_name": "{{contact.first_name}}",
   "last_name": "{{contact.last_name}}",
@@ -244,9 +291,6 @@ All six blocks have the same structure. Only the `channel` value changes. The op
   "phone": "{{contact.phone}}",
   "subject": "{{message.subject}}",
   "message_body": "{{message.body}}",
-  "match": "<HOOK_NAME>",
-  "session_key": "hook:ghl:instagram:{{contact.id}}",
-  "agent_id": "<ROUTING_AGENT_ID>",
   "location_id": "{{location.id}}",
   "location_name": "{{location.name}}"
 }
@@ -256,7 +300,20 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 
 ```json
 {
-  "channel": "livechat",
+  "id": "<HOOK_NAME>",
+  "match": "<HOOK_NAME>",
+  "action": "agent",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "model": "ollama/deepseek-v4-flash:cloud",
+  "wakeMode": "now",
+  "name": "GHL Sales Inbound",
+  "session_key": "hook:ghl:live_chat:{{contact.id}}",
+  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+  "deliver": false,
+  "timeoutSeconds": 300,
+  "channel": "live_chat",
+  "to": "{{contact.phone}}",
+  "thinking": "medium",
   "contact_id": "{{contact.id}}",
   "first_name": "{{contact.first_name}}",
   "last_name": "{{contact.last_name}}",
@@ -264,9 +321,6 @@ All six blocks have the same structure. Only the `channel` value changes. The op
   "phone": "{{contact.phone}}",
   "subject": "{{message.subject}}",
   "message_body": "{{message.body}}",
-  "match": "<HOOK_NAME>",
-  "session_key": "hook:ghl:livechat:{{contact.id}}",
-  "agent_id": "<ROUTING_AGENT_ID>",
   "location_id": "{{location.id}}",
   "location_name": "{{location.name}}"
 }
@@ -276,7 +330,20 @@ All six blocks have the same structure. Only the `channel` value changes. The op
 
 ```json
 {
+  "id": "<HOOK_NAME>",
+  "match": "<HOOK_NAME>",
+  "action": "agent",
+  "agent_id": "<ROUTING_AGENT_ID>",
+  "model": "ollama/deepseek-v4-flash:cloud",
+  "wakeMode": "now",
+  "name": "GHL Sales Inbound",
+  "session_key": "hook:ghl:allinone:{{contact.id}}",
+  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",
+  "deliver": false,
+  "timeoutSeconds": 300,
   "channel": "allinone",
+  "to": "{{contact.phone}}",
+  "thinking": "medium",
   "contact_id": "{{contact.id}}",
   "first_name": "{{contact.first_name}}",
   "last_name": "{{contact.last_name}}",
@@ -284,9 +351,6 @@ All six blocks have the same structure. Only the `channel` value changes. The op
   "phone": "{{contact.phone}}",
   "subject": "{{message.subject}}",
   "message_body": "{{message.body}}",
-  "match": "<HOOK_NAME>",
-  "session_key": "hook:ghl:allinone:{{contact.id}}",
-  "agent_id": "<ROUTING_AGENT_ID>",
   "location_id": "{{location.id}}",
   "location_name": "{{location.name}}"
 }

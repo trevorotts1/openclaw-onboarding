@@ -1,3 +1,34 @@
+## [1.4.3] - 2026-05-29 - Enforce 23-key GHL body everywhere (no stripped bodies)
+
+### Why
+Owner directive (non-negotiable): EVERY GHL Custom Webhook RAW BODY example in this skill must contain ALL 23
+keys. 23 is the MINIMUM — no stripped/short bodies (8/11/13/16-key versions) are allowed anywhere. The prior
+13/16-key bodies are replaced with the full 23-key canonical body. The body stays FLAT, the body's
+`messageTemplate` value is kept placeholder-free (no `{{…}}`) so GHL never mangles the JSON, and there are no
+`\n` escapes inside any JSON example. Per-channel variants keep all 23 keys; only `channel` + the `session_key`
+prefix differ. `skill-version.txt` bumped 1.4.2 → 1.4.3.
+
+### The 23 keys (exact)
+`id`, `match`, `action`, `agent_id`, `model`, `wakeMode`, `name`, `session_key`, `messageTemplate`, `deliver`,
+`timeoutSeconds`, `channel`, `to`, `thinking`, `contact_id`, `first_name`, `last_name`, `email`, `phone`,
+`subject`, `message_body`, `location_id`, `location_name`.
+
+### Added / Changed
+- `references/GHL-INBOUND-AND-PLAYBOOKS.md` — new rule (0) mandating all 23 keys (23 = minimum); canonical body
+  upgraded to 23 keys + per-channel variant list; Section 4 Build-with-AI body upgraded; Section 5 checklist now
+  demands all 23 keys; cardinal-rule + corrected-structure prose rewritten (body now carries a placeholder-free
+  `messageTemplate` instead of "no messageTemplate").
+- `references/v5.14-source-playbook.md` — every GHL Raw Body upgraded to 23 keys (Step 3C smoke test, Step 4 E2E
+  test, Step 9.20-D.2 + multi-channel Build-with-AI prompts, the D.3 verification stub, all six Part 3 channel
+  blocks); stripped `tags`/`workflow_id` extra-keys removed; corrected-structure notes rewritten.
+- `scripts/15-configure-hooks-mappings.sh` — Step 4 E2E test PAYLOAD upgraded to the full 23-key body.
+- `protocols/conversation-workflows-protocol.md` — Build-with-AI Raw Body + D.3 verification stub upgraded to 23
+  keys; corrected-structure note rewritten.
+- `templates/sms-workflow-ai-prompt-template.md` — SMS Raw Body upgraded to 23 keys; mistakes list updated.
+- `templates/client-reference-sheet-template.md` — all six channel Raw Body blocks upgraded to 23 keys.
+- `templates/workflow-verification-checklist-template.md` — Raw Body stub upgraded to the full 23-key body.
+- `skill-version.txt` — 1.4.2 → 1.4.3.
+
 ## [1.4.2] - 2026-05-29 - GHL inbound hook correction: FLAT body, no nesting, server-only messageTemplate
 
 ### Why
