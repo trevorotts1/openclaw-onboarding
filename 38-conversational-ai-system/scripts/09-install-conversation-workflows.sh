@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 # 09-install-conversation-workflows.sh
 #
-# Creates the conversation-workflows registry under MASTER_FILES_DIR.
+# Step 9 — "Set up conversation log system" + the conversation-workflows registry.
+#
+# Creates the conversation-workflows registry AND the conversational-logs dir
+# under MASTER_FILES_DIR.
 #
 # What this does:
 #   1. Reads MASTER_FILES_DIR from ~/.openclaw/.skill-38-master-files-dir
 #      (this pointer file is written by 01-locate-master-files-folder.sh).
-#   2. Creates `$MASTER_FILES_DIR/conversation-workflows/` if missing.
-#   3. Writes `$MASTER_FILES_DIR/conversation-workflows/registry.md` with the
+#   2. Creates `$MASTER_FILES_DIR/conversational-logs/` if missing AND ensures it
+#      is OWNED BY THE RUNTIME USER (the gateway user — `node` on VPS/docker; the
+#      login user on a Mac/Homebrew install) so the agent can WRITE to it. This is
+#      mandatory: the per-contact conversation log is the ONLY memory a single-turn
+#      GHL hook session has. On a live client the dir was created root-owned and the
+#      agent could not append until it was chowned to `node` — the agent silently
+#      "lost memory" mid-conversation. Read-before/append-after is dead without a
+#      writable dir.
+#   3. Creates `$MASTER_FILES_DIR/conversation-workflows/` if missing.
+#   4. Writes `$MASTER_FILES_DIR/conversation-workflows/registry.md` with the
 #      3-Layer architecture summary, file-naming conventions, and trigger
 #      phrases — ONLY IF the registry does not already exist (idempotent).
 #
@@ -36,6 +47,51 @@ fi
 
 WORKFLOWS_DIR="$MASTER_FILES_DIR/conversation-workflows"
 REGISTRY="$WORKFLOWS_DIR/registry.md"
+LOGS_DIR="$MASTER_FILES_DIR/conversational-logs"
+
+# -----------------------------------------------------------------------------
+# Conversation-log system (Step 9): create the per-contact conversational-logs
+# dir and make it WRITABLE BY THE RUNTIME (gateway) USER.
+#
+# GHL inbound hook sessions are single-turn / stateless. The agent's only memory
+# of a contact across messages is the per-contact log file in this dir, which it
+# must READ before replying and APPEND to after sending. If this dir does not
+# exist, or exists but is owned by root while the gateway runs as `node`, the
+# agent silently cannot persist memory — exactly the live-client regression this
+# step prevents. So: mkdir -p, then chown to the runtime user.
+# -----------------------------------------------------------------------------
+mkdir -p "$LOGS_DIR"
+
+# Determine the gateway runtime user and chown the logs dir to it so the agent
+# can write. On VPS/Docker the gateway runs as `node`; on a Mac/Homebrew install
+# it runs as the login user (no chown needed there). Best-effort: never fail the
+# install if chown is not permitted — but always report what was (or wasn't) done.
+RUNTIME_USER="${OPENCLAW_RUNTIME_USER:-}"
+if [[ -z "$RUNTIME_USER" ]]; then
+  OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
+  if [[ "$OS_NAME" == "Linux" ]]; then
+    # VPS/Docker default gateway user.
+    RUNTIME_USER="node"
+  else
+    # Mac/Homebrew: the gateway runs as the current login user already.
+    RUNTIME_USER="$(id -un 2>/dev/null || echo "$USER")"
+  fi
+fi
+
+CURRENT_OWNER="$(stat -f '%Su' "$LOGS_DIR" 2>/dev/null || stat -c '%U' "$LOGS_DIR" 2>/dev/null || echo "")"
+if [[ -n "$RUNTIME_USER" && "$CURRENT_OWNER" != "$RUNTIME_USER" ]]; then
+  if chown -R "$RUNTIME_USER" "$LOGS_DIR" 2>/dev/null; then
+    echo "[09-install-conversation-workflows] conversational-logs dir chowned to runtime user '$RUNTIME_USER' → $LOGS_DIR"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n chown -R "$RUNTIME_USER" "$LOGS_DIR" 2>/dev/null; then
+    echo "[09-install-conversation-workflows] conversational-logs dir chowned (sudo) to runtime user '$RUNTIME_USER' → $LOGS_DIR"
+  else
+    echo "[09-install-conversation-workflows] WARNING: could not chown $LOGS_DIR to '$RUNTIME_USER' (current owner: '${CURRENT_OWNER:-unknown}')." >&2
+    echo "[09-install-conversation-workflows] The gateway user MUST own this dir or the agent cannot append conversation logs (= silent memory loss)." >&2
+    echo "[09-install-conversation-workflows] Run manually:  sudo chown -R $RUNTIME_USER \"$LOGS_DIR\"" >&2
+  fi
+else
+  echo "[09-install-conversation-workflows] conversational-logs dir ready (owner '$CURRENT_OWNER') → $LOGS_DIR"
+fi
 
 mkdir -p "$WORKFLOWS_DIR"
 
