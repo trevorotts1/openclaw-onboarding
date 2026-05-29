@@ -1,3 +1,42 @@
+## [1.4.4] - 2026-05-29 - THE TRINITY + Communications Playbook & Workflow-AI standards
+
+### Why
+Two recurring failure surfaces hardened, with full content kept in reference/protocol docs (CORE md files
+get concise pointers only — no bloat): (1) operators were building a GHL workflow OR a playbook OR a
+workflow-AI prompt in isolation, leaving the other two missing; (2) GHL's Build-with-AI repeatedly fails to
+populate the Custom Webhook fields, and there was no single standard spelling them out field-by-field. All
+new GHL RAW BODY examples honor the 23-key rule (flat, placeholder-free `messageTemplate`, no `\n`, no
+nesting, no stripped bodies). `skill-version.txt` bumped 1.4.3 → 1.4.4.
+
+### Added
+- `references/communications-playbook-standard.md` — the COMMUNICATIONS PLAYBOOK STANDARD: standardized
+  format + a "must appear in EVERY playbook" checklist (slug/id, owner agent id, channel, trigger
+  phrases/intent, goal, step-by-step flow, GHL Conversations-API reply mechanism per TOOLS.md,
+  cross-playbook transition rules, edge cases incl. frustration/refund/legal escalation, on-success/tagging,
+  tone, honesty floor); STORAGE in `conversation-workflows/` + register in `registry.md`; and the client-side
+  human-readable copy fallback order **Notion → Google Docs → plain text**.
+- `references/workflow-ai-instructions-standard.md` — the WORKFLOW-AI INSTRUCTIONS STANDARD: must-appear
+  checklist; WHERE it goes (GHL Automations **Build with AI** button when creating a NEW automation); the
+  explicit field-by-field Custom Webhook steps (EVENT=CUSTOM, METHOD=POST, real URL not sample-url,
+  AUTHORIZATION=None, HEADERS via Add item → Authorization Bearer token + Content-Type json, RAW BODY = full
+  23-key flat JSON via the Custom Values picker); MULTI-ACTION teaching (if/else branches, Add-Tag, tag-check,
+  multiple sequential actions, create-tag-via-GHL-skill-first); and the BUILD-WITH-AI VERIFICATION CHECKLIST.
+
+### Changed
+- `protocols/conversation-workflows-protocol.md` — added **THE TRINITY** connection rule (workflow ⇄
+  communications playbook ⇄ workflow-AI prompt; one implies the other two) + pointers to the two new
+  standards; D.2 Build-with-AI prompt block upgraded to the field-by-field Custom Webhook format
+  (EVENT/METHOD/AUTHORIZATION=None/HEADERS via Add item/Content-Type); Section E now points at the
+  communications-playbook standard's checklist + Notion→Google Docs→plain-text storage order.
+- `templates/sms-workflow-ai-prompt-template.md` — Action 1 rewritten to the precise field-by-field format
+  (EVENT=CUSTOM, METHOD via dropdown, real URL, HEADERS via Add item, Custom Values picker) + a MULTI-ACTION
+  note (if/else, Add-Tag, tag-check, multiple actions; tags created via GHL skill first).
+- `templates/workflow-verification-checklist-template.md` — extended with EVENT=CUSTOM, real-URL-not-sample,
+  "exactly the intended action(s)" count check, Custom-Values-picker check, and a tags/multi-action item.
+- `scripts/05-update-agents-md.sh` (AGENTS.md guidance, Step 1.85) — added concise 1-2 line pointers to THE
+  TRINITY + the two new standard reference docs (full content stays in the references, not inline in CORE md).
+- `INSTRUCTIONS.md` — Step 9.20 row notes THE TRINITY + the two standards.
+
 ## [1.4.3] - 2026-05-29 - Enforce 23-key GHL body everywhere (no stripped bodies)
 
 ### Why

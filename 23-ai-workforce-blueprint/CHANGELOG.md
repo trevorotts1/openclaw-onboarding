@@ -1,3 +1,45 @@
+## [v10.15.8] — 2026-05-29 — ENFORCED Role Library + SOP Library auto-pull gate
+
+### Why
+Last night several clients (Kofi / Teresa / Evelyn / Maria / Lyric) had workforces *scaffolded* —
+department + role folders existed, depts even flipped to `status: "done"` — but the **role library was
+never pulled into the `how-to.md` files** AND the **SOP placeholders were never authored**. Nothing GATED
+on those two libraries being populated, so the build "looked done." Prose like "AUTOMATIC NEXT STEP: also
+pull the role library" is NOT enforcement (same lesson as the v10.14.16 build-resume fix). Enforcement =
+a STATE FIELD + a VERIFY/RESUME GATE. This release adds both. A workforce is now NOT complete (no
+`buildCompletedAt`, no closeout) until both libraries are populated.
+
+### Added
+- `scripts/verify-library-gate.sh` — the verify gate. Runs `qc-completeness.sh` (read-only), then writes
+  `roleLibraryStatus` / `sopLibraryStatus` + per-dept `roleLibraryFilled` / `sopLibraryFilled` +
+  `libraryFailureReason` into `.workforce-build-state.json` and exits non-zero unless every dept has the
+  role library pulled into every `how-to.md` (library_pct == 100) AND SOPs authored (sop_stubs_remaining
+  == 0, avg_sop_per_role > 0). Exit codes: 0 = both done, 2 = role library not done, 3 = SOP library not
+  done, 4 = both not done, 5 = no workforce / qc could not run.
+
+### Changed
+- `build-state-schema.json` — new enforced gate fields: top-level `roleLibraryStatus`
+  (`pending`→`pulling`→`done`/`failed`), `sopLibraryStatus` (`pending`→`authoring`→`done`/`failed`),
+  `libraryFailureReason`; per-department `roleLibraryFilled` / `sopLibraryFilled` booleans. `closeoutStatus`
+  description updated: the library gate runs BEFORE the closeout gate.
+- `scripts/build-workforce.py` — after `qc-completeness.sh`, the build now invokes `verify-library-gate.sh`
+  and logs LIBRARY GATE PASS/FAIL; on FAIL it instructs to re-pull and re-run before writing
+  `buildCompletedAt` / `closeoutStatus=pending`.
+- `scripts/resume-workforce-build.sh` — the 15-min resume cron now computes `library_dirty` (all depts done
+  but `roleLibraryStatus != done` OR `sopLibraryStatus != done`) and fires a `[LIBRARY-RESUME]` self-ping
+  (BEFORE the closeout gate) instructing the agent to re-run `post-build-role-workspaces.py` /
+  `populate-sops-from-manifest.py` then re-run the gate until it passes.
+- `resume-prompt.txt` — added a LIBRARY FLOW + decision-tree branch A2 + a gate step in BUILD FLOW step 5.
+- `INSTRUCTIONS.md` — new "Moment 3.6 — ROLE LIBRARY + SOP LIBRARY auto-pull gate (BINDING)"; Moment 1 now
+  seeds `roleLibraryStatus`/`sopLibraryStatus = pending`; resume-layer section lists the library-dirty
+  trigger; "When ALL departments are done" renamed to require the gate first.
+- `SKILL.md` — item 10 documents the enforced role/SOP library gate.
+
+### Version
+- Repo-wide bump v10.15.7 → v10.15.8 via `scripts/bump-version.sh` (all 8 version locations agree).
+
+---
+
 ## [v10.6.2] — 2026-05-19 — Role Library Version Realigned + verify-role-library.sh
 
 ### Added

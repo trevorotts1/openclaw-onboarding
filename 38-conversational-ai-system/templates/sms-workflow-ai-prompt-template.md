@@ -37,16 +37,17 @@ FILTERS (in this exact order):
 - Filter 2: Message Direction equals "Inbound"
 
 ACTIONS (in this exact order):
-- Action 1: Send Custom Webhook
-  - URL: https://<PUBLIC_HOSTNAME>/hooks/<ROUTE_ID>
-  - Method: POST
+- Action 1: Send Custom Webhook  (set EVERY field below — Build-with-AI fumbles these)
+  - EVENT: CUSTOM
+  - METHOD: POST  (choose from the dropdown — not GET/PUT)
+  - URL: https://<PUBLIC_HOSTNAME>/hooks/<ROUTE_ID>  (paste this EXACT url — do NOT leave the sample-url placeholder; no trailing slash; keep the /hooks/ segment)
   - AUTHORIZATION dropdown: None  (the token goes in Headers, NOT in the Authorization dropdown — leave the dropdown set to None)
-  - Headers:
-    - Authorization: Bearer <HOOKS_TOKEN>
-    - Content-Type: application/json
-  - Content-Type dropdown: application/json
+  - HEADERS (click "Add item" once per header):
+    - Key: Authorization   Value: Bearer <HOOKS_TOKEN>
+    - Key: Content-Type    Value: application/json
+  - CONTENT-TYPE: application/json
   - Body type: Raw JSON
-  - Body (Raw JSON — FLAT, no nested objects, ALL 23 keys, placeholder-free messageTemplate):
+  - RAW BODY (Raw JSON — FLAT, no nested objects, ALL 23 keys, placeholder-free messageTemplate; insert each {{…}} via GHL's Custom Values picker, not typed as plain text):
     {
       "id": "<ROUTE_ID>",
       "match": "<ROUTE_ID>",
@@ -89,6 +90,23 @@ After you paste the prompt above, Workflow AI should produce a workflow with:
 - **Run schedule**: All Day.
 
 If the workflow Workflow AI produced doesn't match this shape, that's normal — Workflow AI is a helper, not infallible. Use the verification checklist (Section 4) to fix the gaps.
+
+## Multi-action note (this template is the single-action starter)
+
+The prompt above is the simplest shape: trigger + 2 filters + one Custom Webhook action. Real funnels are
+often MULTI-ACTION. The same Build-with-AI prompt format supports **trigger + (optional if/else) +
+one-or-more actions**:
+
+- **If/else (if-else) branches** — branch on a tag, channel, or field value before the webhook (e.g. "if
+  contact has tag `vip` → branch A, else → branch B").
+- **Add-Tag actions** — apply a tag at a branch (e.g. tag `discovery-scheduled` after a booking step).
+- **Tag-check conditions** — gate a branch on an existing tag ("only continue if contact has tag `lead`").
+- **Multiple sequential actions** — e.g. Add-Tag → Custom Webhook → Add-Tag, or a different Custom Webhook
+  per branch (each with its own URL + headers + the SAME 23-key flat body — no stripped bodies in any branch).
+
+If a workflow needs a tag, the agent CREATES the tag first via the GHL skill (before building the
+workflow), then references it by name in the prompt. Full multi-action spec + the field-by-field Custom
+Webhook standard: `references/workflow-ai-instructions-standard.md`.
 
 ## Common Workflow AI mistakes to verify against the checklist
 

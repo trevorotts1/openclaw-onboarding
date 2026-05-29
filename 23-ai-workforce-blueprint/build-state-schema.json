@@ -140,6 +140,16 @@
             "type": "boolean",
             "default": false,
             "description": "True only when a corresponding entry exists in openclaw.json agents.list[] with id == 'dept-<slug>'. Materialized by Skill 32's materialize-dept-agents.sh. A dept with status=done but agentRegistered=false is a LIE — the role-definition.md files exist but the OpenClaw runtime sees no such agent. Added v10.14.19."
+          },
+          "roleLibraryFilled": {
+            "type": "boolean",
+            "default": false,
+            "description": "True only when EVERY role folder in this dept has its how-to.md filled from the role library (carries the '<!-- Filled from role-library v' marker), as verified by qc-completeness.sh (library_pct == 100). A dept with status=done but roleLibraryFilled=false is INCOMPLETE — the role scaffolds exist but the role library was never pulled in. Added v10.15.8. ENFORCED: see roleLibraryStatus + the verify/resume gate."
+          },
+          "sopLibraryFilled": {
+            "type": "boolean",
+            "default": false,
+            "description": "True only when EVERY role folder in this dept has its SOP files authored/pulled (no remaining 'to be personalized' stubs), as verified by qc-completeness.sh (sop_stubs_remaining == 0 and avg_sop_per_role > 0). A dept with status=done but sopLibraryFilled=false is INCOMPLETE — the SOP placeholders were never authored. Added v10.15.8. ENFORCED: see sopLibraryStatus + the verify/resume gate."
           }
         }
       }
@@ -164,6 +174,33 @@
       "default": 12,
       "description": "Hard cap. After this, resume-workforce-build.sh stops self-pinging and notifies Trevor instead of the owner."
     },
+    "roleLibraryStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "pulling",
+        "done",
+        "failed"
+      ],
+      "description": "ENFORCED build gate (added v10.15.8). Tracks whether the ROLE LIBRARY has been pulled into every role folder (how-to.md filled from templates/role-library/ via post-build-role-workspaces.py). Set to 'pending' the moment the build starts; 'pulling' while post-build augmentation runs; 'done' only when qc-completeness.sh reports library_pct == 100 across ALL on-disk depts (every per-dept roleLibraryFilled == true); 'failed' if the pull errored or coverage < 100. A workforce is NOT complete (buildCompletedAt MUST NOT be set, closeout MUST NOT fire) until roleLibraryStatus == done. The resume cron fires a [LIBRARY-RESUME] self-ping while this is pending/pulling/failed. Last-night incident (Kofi/Teresa/Evelyn/Maria/Lyric): workforces were scaffolded but the role library was never connected — this field + gate prevent that."
+    },
+    "sopLibraryStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "authoring",
+        "done",
+        "failed"
+      ],
+      "description": "ENFORCED build gate (added v10.15.8). Tracks whether the SOP LIBRARY has been authored/pulled for every role (SOP files written, no 'to be personalized' stubs remaining), via populate-sops-from-manifest.py. Set to 'pending' at build start; 'authoring' while SOP population runs; 'done' only when qc-completeness.sh reports sop_stubs_remaining == 0 and avg_sop_per_role > 0 across ALL on-disk depts (every per-dept sopLibraryFilled == true); 'failed' if population errored or stubs remain. A workforce is NOT complete until sopLibraryStatus == done. The resume cron fires a [LIBRARY-RESUME] self-ping while this is pending/authoring/failed. Same last-night incident class as roleLibraryStatus."
+    },
+    "libraryFailureReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Captures the specific reason role/SOP library population failed or is incomplete (e.g. 'role-library: marketing 4/12 how-to.md filled', 'sop: 18 stubs remaining', 'populate-sops-from-manifest.py rc=3 owner-input-required'). Added v10.15.8."
+    },
     "closeoutStatus": {
       "type": "string",
       "enum": [
@@ -173,7 +210,7 @@
         "done",
         "failed"
       ],
-      "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending → generating → sent → done. failed = retries exhausted; resume cron will retry. Added in v10.14.17."
+      "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending → generating → sent → done. failed = retries exhausted; resume cron will retry. Added in v10.14.17. NOTE (v10.15.8): the master orchestrator MUST NOT write buildCompletedAt or set closeoutStatus=pending until roleLibraryStatus == done AND sopLibraryStatus == done. The library gate runs BEFORE the closeout gate."
     },
     "closeoutStartedAt": {
       "type": [

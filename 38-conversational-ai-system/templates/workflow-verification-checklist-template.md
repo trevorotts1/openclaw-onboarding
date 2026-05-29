@@ -45,10 +45,20 @@ If any item is wrong, the fix is listed right there.
   - WRONG VALUES TO WATCH FOR: ...
   - FIX IF WRONG: ...
 
+## Actions (count + identity)
+
+- [ ] Exactly the intended action(s) exist — no extra nodes, no missing nodes,
+       and any if/else branches + Add-Tag actions are present as designed.
+  - FIX IF WRONG: Add/remove nodes so the action list matches the prompt spec.
+
 ## Webhook Action
 
+- [ ] Event is CUSTOM (a Custom Webhook, not a templated integration webhook)
+  - FIX IF WRONG: Webhook action → Event → CUSTOM
+
 - [ ] Webhook URL is EXACTLY: `https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`
-  - Common mistake: Workflow AI adds trailing slash or wrong path
+  - Common mistake: Workflow AI leaves the SAMPLE-URL placeholder, adds a
+    trailing slash, or drops the `/hooks/` path segment
   - FIX IF WRONG: Click the webhook action → URL field → paste exact URL
 
 - [ ] Method is POST (not GET, not PUT)
@@ -103,6 +113,18 @@ If any item is wrong, the fix is listed right there.
     variable syntax (e.g., `{contact.id}` instead of `{{contact.id}}`),
     or inserts merge tokens into the placeholder-free `messageTemplate`.
   - FIX IF WRONG: Click Raw Body → replace entirely with the 23-key JSON above
+
+## Tags & multi-action
+
+- [ ] Every `{{…}}` token in the Raw Body was inserted via GHL's Custom Values
+       picker (NOT typed as plain text — typed tokens send empty)
+  - FIX IF WRONG: Click into the body → delete the typed token → re-insert via
+    the Custom Values picker
+
+- [ ] Any tags this workflow applies were created/applied (tags are created
+       FIRST via the GHL skill, then referenced by name)
+  - FIX IF WRONG: Have the agent create the tag via the GHL skill, then add the
+    Add-Tag action / select the existing tag
 
 ## Publish
 
