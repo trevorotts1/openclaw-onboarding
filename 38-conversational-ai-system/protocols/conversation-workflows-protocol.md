@@ -15,6 +15,26 @@
 
 The Conversation Playbook Builder is the system's biggest single differentiator. Other conversational AI platforms make operators BUILD workflows in visual node-based UIs (n8n, Zapier, GHL/Convert and Flow Workflow Builder, CloseBot). This system makes operators TALK through workflows — the agent asks intelligent questions, synthesizes a Conversation Playbook, AND auto-builds the GHL routing layer the customer needs to reach the AI in the first place.
 
+### DISTINCTION MAP — four terms operators confuse (read this first)
+
+These four terms are correct but were spread across three files. This is the one canonical table. Skim
+it before building anything; the rest of this protocol uses these terms precisely.
+
+| Term | What it is | Where it lives | Who it's for | One per… |
+|---|---|---|---|---|
+| **Channel communication playbook** | The baseline tone/voice/signature for ONE channel (SMS, email, FB, IG, WhatsApp, Live Chat, etc.). Applies to EVERY reply on that channel. | `<MASTER_FILES_DIR>/` channel playbooks (scaffolded by `scripts/12-scaffold-channel-playbooks.sh`); pointer in AGENTS.md Step 4. | The AI (read at reply time) | channel |
+| **Communications playbook** (a.k.a. Layer 2 conversation-workflow playbook) | A SCENARIO-specific behavior override (pricing inquiry, booking, refund, FAQ…). Phases + edge cases + on-success/escalation. Overrides the channel playbook's body when its trigger fires, but still honors the channel's tone. | `<MASTER_FILES_DIR>/conversation-workflows/<slug>.md`, registered in `registry.md`. Standard: `references/communications-playbook-standard.md`. | The AI (read at reply time when the scenario fires) | scenario (many per client) |
+| **Workflow-AI prompt** (a.k.a. Build-with-AI prompt) | A natural-language INSTRUCTION SET the OPERATOR pastes into GHL to build the routing. It is text the human copies; it is NOT what the AI runs. | `<MASTER_FILES_DIR>/conversation-workflows/<slug>--build-with-ai-prompt.md`. Standard: `references/workflow-ai-instructions-standard.md`. | The HUMAN operator (paste-once) | scenario needing new GHL routing |
+| **GHL automation / workflow** | The actual built thing inside GHL (Convert and Flow) Automations — trigger + filters + Custom Webhook — that DELIVERS the inbound conversation to OpenClaw. Built by pasting the workflow-AI prompt into **Automations → "Build with AI"** (no API, no MCP). | Inside the client's GHL account (Automations area). Mirrored for reference in `<slug>--ghl-side.md`. | The GHL platform (runs server-side) | scenario / channel route |
+
+**The relationship in one line:** the operator pastes the **workflow-AI (Build-with-AI) prompt** to
+build the **GHL automation**, which routes inbound messages to OpenClaw, where the AI runs the
+**communications playbook** (scenario override) on top of the **channel communication playbook**
+(baseline tone). THE TRINITY below binds three of these (GHL automation + communications playbook +
+workflow-AI prompt) so they always ship together.
+
+---
+
 ### THE TRINITY — three artifacts travel together (binding connection rule)
 
 A GHL **workflow/automation**, a **communications playbook**, and a **workflow-AI prompt** are ONE unit
@@ -40,6 +60,20 @@ files):**
 - **Workflow-AI prompt** — must-appear checklist + WHERE (Build-with-AI button in Automations) + the
   field-by-field Custom Webhook steps + multi-action teaching + the Build-with-AI verification checklist:
   `references/workflow-ai-instructions-standard.md`.
+
+**Machine-enforced:** `scripts/qc-trinity-registry.sh` scans the client's
+`conversation-workflows/registry.md` + files and FAILS any row that has a communications playbook but no
+matching Build-with-AI prompt (or an orphan prompt with no playbook). THE TRINITY is a check, not just a
+checklist item. (A registry row marked Layer 1 = "No (uses existing inbound routing)" is legitimately
+prompt-free and passes.) The 23-key GHL body authority (`references/GHL-INBOUND-AND-PLAYBOOKS.md` §14) is
+likewise machine-enforced by `scripts/qc-23-key-bodies.sh`.
+
+> **Upstream — Skill 23 triggers this.** When **Skill 23 (AI Workforce Blueprint)** builds a
+> Communications / Sales / Customer-Support department, its closeout hands off here to scaffold these
+> automations (ENFORCED via Skill 23's `commsAutomationStatus` state field + `[COMMS-AUTOMATION-RESUME]`
+> gate in its `resume-workforce-build.sh`). If you were invoked off a `[COMMS-AUTOMATION-RESUME]` ping,
+> build the trinity for the appointment-booking starter + the department-matched scenario, then run
+> `qc-trinity-registry.sh`. See `23-ai-workforce-blueprint/INSTRUCTIONS.md → "Moment 3.8"`.
 
 ### The 3-PART build — every time, no exceptions
 

@@ -11,6 +11,20 @@
 #                                   DIRECT-TO-AGENT-UPDATE-MESSAGE.md
 #                                   (per 2-day forensics finding #23)
 #
+# VERSION-BUMP CHECKLIST — SKILL 38 SELF-COUNT RE-VERIFICATION (added 2026-05-29):
+#   Skill 38's SKILL.md "What This Skill Ships" hard-codes file counts
+#   (protocols/, scripts/, references/, journey templates). They drift silently
+#   whenever a file is added/removed. On EVERY Skill-38 bump (its own
+#   38-conversational-ai-system/skill-version.txt — NOT one of the 8 files
+#   above), re-verify and correct those counts. The exact command:
+#     ( cd 38-conversational-ai-system && \
+#       echo "protocols=$(ls -1 protocols/*.md | wc -l)" && \
+#       echo "scripts=$(ls -1 scripts/*.sh | wc -l)" && \
+#       echo "references=$(ls -1 references/*.md | wc -l)" && \
+#       echo "journeys=$(ls -1d templates/journey-templates/*/ | wc -l)" )
+#   Then make SKILL.md's SELF-COUNTS comment + bullets match. The 23-key linter
+#   qc-23-key-bodies.sh + trinity qc-trinity-registry.sh are part of scripts/.
+#
 # Usage:
 #   ./scripts/bump-version.sh v10.6.2          # update all 8 files
 #   ./scripts/bump-version.sh v10.6.2 --tag    # also create a git tag

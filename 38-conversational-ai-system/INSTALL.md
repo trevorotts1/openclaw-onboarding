@@ -4,10 +4,10 @@
 
 The **conversational AI BRAIN** that runs on top of skill 29 (GHL Convert and Flow). Specifically:
 
-- 27 v5.14 protocols (sales brain, intelligent follow-up, dual-mode customer service + support, typed knowledge bases, intelligent playbook routing, proactive features suite, weekly + monthly self-tuning, model version freshness, PII scrubbing, prompt-injection protection, conversation analytics, smart booking, discount codes for GHL + Stripe, Shopify integration, and more).
-- 8 customer journey templates (coach fully detailed; e-commerce, SaaS, service-provider, course-creator, real-estate, consulting, wellness as stubs operator fills in).
-- 9 idempotent install scripts (OS-aware: Darwin and Linux).
-- 10 reference documents under `references/` (6 deep-dives + the full v5.14 source playbook + the strategic roadmap + the **Cloudflare & GoDaddy Setup Guide** from School of AI — shipped INSIDE the skill so that when `scripts/00-verify-prerequisites.sh` halts on a missing CF API token per QC-PROTOCOL.md Rule 13, the client can be walked through Cloudflare account creation, GoDaddy nameserver migration, and API token scope selection without leaving the skill folder).
+- 32 v5.14 protocols (sales brain, intelligent follow-up, dual-mode customer service + support, typed knowledge bases, intelligent playbook routing, proactive features suite, weekly + monthly self-tuning, model version freshness, PII scrubbing, prompt-injection protection, conversation analytics, smart booking, discount codes for GHL + Stripe, Shopify integration, and more).
+- 8 customer journey templates (coach + all 7 verticals fully detailed: e-commerce, SaaS, service-provider, course-creator, real-estate, consulting, wellness).
+- 24 idempotent numbered install scripts (`00`–`23`, OS-aware: Darwin and Linux), plus `skill38-calendar-sync.sh` and the QC linters `qc-23-key-bodies.sh` + `qc-trinity-registry.sh` (27 `.sh` files total).
+- 14 reference documents under `references/` (deep-dives + the full v6.0 source playbook + the strategic roadmap + the communications-playbook & workflow-AI/Build-with-AI standards + the **Cloudflare & GoDaddy Setup Guide** from School of AI — shipped INSIDE the skill so that when `scripts/00-verify-prerequisites.sh` halts on a missing CF API token per QC-PROTOCOL.md Rule 13, the client can be walked through Cloudflare account creation, GoDaddy nameserver migration, and API token scope selection without leaving the skill folder).
 - AGENTS.md updates (Steps 1.7, 1.8, 1.9, 2.8 added; Step 1.75 upgraded).
 - MEMORY.md design rules 6-14.
 - 4 cron jobs: Sunday 2am weekly tune-up, Saturday 11pm proactive scan + 11:30pm model freshness, 1st-of-month comprehensive review.
@@ -61,6 +61,6 @@ After scripts run, follow INSTRUCTIONS.md for the interactive Phases 0-7 of the 
 ## Where to read next
 
 - `INSTRUCTIONS.md` — the operator-facing v5.14 walkthrough (Phase 0 through Phase 7).
-- `protocols/` — the 27 v5.14 protocol files, verbatim from the source playbook.
+- `protocols/` — the 32 v5.14 protocol files, verbatim from the source playbook.
 - `references/v6.0-source-playbook.md` — the full 8,797-line source playbook (canonical source of truth).
 - `references/conversational-ai-strategic-roadmap.md` — strategic context (✅ shipped vs 📋 pending).

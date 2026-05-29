@@ -72,7 +72,17 @@ This is the SINGLE skill that builds a client's entire AI company. It replaces w
 ### Skill Pipeline
 Skill 22 (Book-to-Persona Coaching Leadership System) builds coaching personas
 --> **Skill 23 (AI Workforce Blueprint)** interviews, creates departments, creates agents, assigns personas, generates org chart
+--> **Skill 38 (Conversational AI System)** scaffolds the matching comms automations when a Communications / Sales / Customer-Support department was built
 --> BlackCEO Command Center displays and manages everything
+
+### Cross-skill chain → Skill 38 (Conversational AI System) — ENFORCED
+When this skill builds a **Communications, Sales, or Customer-Support** department, the closeout MUST
+hand off to **Skill 38** to scaffold the matching conversational automations (channel/communications
+playbooks + their Build-with-AI prompts, starting with appointment booking). This is NOT optional prose:
+it is enforced by the `commsAutomationStatus` state field in `build-state-schema.json` + the
+`[COMMS-AUTOMATION-RESUME]` gate in `scripts/resume-workforce-build.sh` (same shape as the role/SOP
+library gate). See **INSTRUCTIONS.md → "Moment 3.8 — Comms-automation handoff to Skill 38"**. A
+Sales/Support workforce shipped with zero conversational automations is half-delivered.
 
 ### What Skill 22 Provides
 Skill 22 converts books into persona blueprints. These personas are organized by category:

@@ -1,20 +1,21 @@
 <!-- OPERATOR HEADER -->
-<!-- Skill 38 template: Workflow AI verification checklist (VERBATIM from playbook v5.14 Step 9.20-D.3, lines 4069-4170). -->
+<!-- Skill 38 template: Build-with-AI verification checklist (from playbook v5.14 Step 9.20-D.3, lines 4069-4170; operator-instruction location corrected to Automations → "Build with AI"). -->
 <!-- The pattern: every checklist item names the failure mode + the click-by-click fix. -->
 <!-- Substitution placeholders: <PUBLIC_HOSTNAME>, <ROUTE_ID>, <CHANNEL>, <HOOKS_TOKEN>. -->
 <!-- Rendered per-workflow by scripts/21-generate-client-reference-sheet.sh. -->
 
-> "✓ Workflow AI prompt ready. Two things to do:
+> "✓ Build-with-AI prompt ready. Two things to do:
 >
 > 1. Open your Convert and Flow account
-> 2. Click Automations on the left menu
-> 3. Create a new workflow → Use Workflow AI
+> 2. Click **Automations** on the left menu (GHL Automations have no API
+>    and no MCP — the **Build with AI** button is the only programmatic path)
+> 3. Create a **new** automation/workflow → click **Build with AI** (top-right)
 > 4. Paste the prompt I saved at:
->    `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--workflow-ai-prompt.md`
-> 5. Let Workflow AI build it
+>    `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--build-with-ai-prompt.md`
+> 5. Let Build with AI build it
 >
 > Once it's built, come back and tell me. I'll give you a verification
-> checklist — sometimes Workflow AI gets the scaffolding right but
+> checklist — sometimes Build with AI gets the scaffolding right but
 > misses critical pieces."
 
 #### D.3 — Generate the brutally-specific verification checklist
@@ -26,19 +27,19 @@ The checklist follows this pattern — every item names the specific failure mod
 ```markdown
 # Verification Checklist — <Workflow Name>
 
-After Workflow AI builds the workflow, open it and check EACH item below.
+After Build with AI builds the workflow, open it and check EACH item below.
 If any item is wrong, the fix is listed right there.
 
 ## Trigger
 
 - [ ] Trigger is set to EXACTLY "<exact trigger name>"
-  - WRONG VALUES TO WATCH FOR: <common Workflow AI mistakes>
+  - WRONG VALUES TO WATCH FOR: <common Build with AI mistakes>
   - FIX IF WRONG: Click the trigger node → change to "<exact value>"
 
 ## Filters
 
 - [ ] Filter 1: <field> equals "<exact value>"
-  - WRONG VALUES TO WATCH FOR: <variants Workflow AI may pick>
+  - WRONG VALUES TO WATCH FOR: <variants Build with AI may pick>
   - FIX IF WRONG: <specific click-by-click fix>
 
 - [ ] Filter 2: <field> equals "<exact value>"
@@ -57,7 +58,7 @@ If any item is wrong, the fix is listed right there.
   - FIX IF WRONG: Webhook action → Event → CUSTOM
 
 - [ ] Webhook URL is EXACTLY: `https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`
-  - Common mistake: Workflow AI leaves the SAMPLE-URL placeholder, adds a
+  - Common mistake: Build with AI leaves the SAMPLE-URL placeholder, adds a
     trailing slash, or drops the `/hooks/` path segment
   - FIX IF WRONG: Click the webhook action → URL field → paste exact URL
 
@@ -65,7 +66,7 @@ If any item is wrong, the fix is listed right there.
   - FIX IF WRONG: Change Method dropdown to POST
 
 - [ ] AUTHORIZATION dropdown is set to "None" (NOT "Bearer Token" — the
-       token goes in Headers, not in this dropdown — common Workflow AI
+       token goes in Headers, not in this dropdown — common Build with AI
        mistake)
   - FIX IF WRONG: AUTHORIZATION dropdown → None
 
@@ -109,9 +110,11 @@ If any item is wrong, the fix is listed right there.
   "location_name": "{{location.name}}"
 }
 ```
-  - Common Workflow AI mistake: skips one of the 23 keys, uses wrong
+  - Common Build with AI mistake: skips one of the 23 keys, uses wrong
     variable syntax (e.g., `{contact.id}` instead of `{{contact.id}}`),
     or inserts merge tokens into the placeholder-free `messageTemplate`.
+    (The skill's body EXAMPLES are machine-checked by `scripts/qc-23-key-bodies.sh` —
+    run it if you edit any embedded body.)
   - FIX IF WRONG: Click Raw Body → replace entirely with the 23-key JSON above
 
 ## Tags & multi-action
@@ -128,7 +131,7 @@ If any item is wrong, the fix is listed right there.
 
 ## Publish
 
-- [ ] Workflow status is "Published" (NOT "Draft" — Workflow AI often
+- [ ] Workflow status is "Published" (NOT "Draft" — Build with AI often
        saves as draft)
   - FIX IF WRONG: Click the toggle at top right of the workflow → Publish
 
@@ -136,6 +139,16 @@ If any item is wrong, the fix is listed right there.
        includes the times you want (e.g., All Day, or specific business
        hours)
   - FIX IF WRONG: Click workflow settings → adjust schedule
+
+## THE TRINITY (registry completeness)
+
+- [ ] This workflow has its communications playbook (`<slug>.md`) AND its
+       Build-with-AI prompt (`<slug>--build-with-ai-prompt.md`) AND a row in
+       `conversation-workflows/registry.md`.
+  - MACHINE-CHECK: `scripts/qc-trinity-registry.sh` must PASS (a registry row
+    with a playbook but no Build-with-AI prompt — or an orphan prompt — is
+    flagged INCOMPLETE; a Layer-1 "No (uses existing inbound routing)" row is
+    legitimately prompt-free and passes).
 
 ## End-to-end test
 

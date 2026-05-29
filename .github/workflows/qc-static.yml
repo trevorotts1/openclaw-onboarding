@@ -105,3 +105,12 @@ jobs:
           assert len(k) == 64
           print('✓ llm_score module imports + cache key generation OK')
           "
+
+      - name: Skill 38 GHL RAW BODY 23-key rule
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the 23-key flat placeholder-free GHL body rule across
+          # every object-A example in references/ + templates/ + scripts/.
+          bash 38-conversational-ai-system/scripts/qc-23-key-bodies.sh
+          echo "✓ All Skill 38 GHL RAW BODY examples satisfy the 23-key rule"

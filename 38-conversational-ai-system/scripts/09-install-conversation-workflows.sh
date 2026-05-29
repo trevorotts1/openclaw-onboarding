@@ -98,8 +98,9 @@ hyphens only):
 - `<workflow-id>.md` — Layer 2 OpenClaw playbook (Phase 1-4 + edge cases)
 - `<workflow-id>--ghl-side.md` — Layer 1 GHL routing mirror (tags,
   triggers, workflow IDs)
-- `<workflow-id>--workflow-ai-prompt.md` — the Workflow AI prompt used
-  to build the GHL side
+- `<workflow-id>--build-with-ai-prompt.md` — the Build-with-AI prompt
+  (pasted into GHL Automations -> "Build with AI") used to build the GHL side
+  (legacy name `<workflow-id>--workflow-ai-prompt.md` still accepted by QC)
 - `<workflow-id>--verification-checklist.md` — operator-runnable
   verification checklist confirming the workflow is live end-to-end
 
