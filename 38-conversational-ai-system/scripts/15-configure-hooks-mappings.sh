@@ -123,11 +123,16 @@ else
       exit 9
     fi
   done
+  # NOTE (2026-05-29): jq 1.7+ REJECTS the `.hooks //= {};` update-assignment as
+  # a TOP-LEVEL statement (the trailing `;` is parsed as a program separator and
+  # jq errors "syntax error, unexpected ';'"). Use the valid `.hooks = (.hooks // {})`
+  # form piped into the rest of the program — same semantics (ensure .hooks is an
+  # object before mutating it), valid on jq 1.6 AND jq 1.7+.
   UPDATED="$(jq \
     --arg tok "$HOOKS_TOKEN" \
     --arg agent "$ROUTING_AGENT_ID" \
     --argjson mapping "$NEW_MAPPING" \
-    '.hooks //= {};
+    '.hooks = (.hooks // {}) |
      .hooks.enabled = true |
      .hooks.token = $tok |
      .hooks.path = (.hooks.path // "/hooks") |
@@ -151,10 +156,19 @@ fi
 # =============================================================================
 echo "==> Step 3.5: Model Selection Wizard" >&2
 
-# Skip if all three tiers already set
+# Skip if all three tiers already set.
+# SCHEMA NOTE (2026-05-29): `agents.defaults.async.model` and `agents.defaults.batch.model`
+# are NOT valid keys in the 2026.5.27 config schema (.strict() — writing them makes
+# `openclaw config validate` FAIL). The real-time model is the only one that lives in
+# openclaw.json (on the agent's `agents.list[].model`). The async + batch tier CHOICES are
+# persisted to SECRETS_ENV_FILE as ASYNC_MODEL / BATCH_MODEL so downstream consumers
+# (e.g. 04-register-crons.sh, which reads $BATCH_MODEL) honor the operator's selection
+# WITHOUT writing an invalid config key.
 RT_SET="$(jq -r '(.agents.list // []) | map(select(.id=="main")) | .[0].model // empty' "$CONFIG_FILE")"
-ASYNC_SET="$(jq -r '.agents.defaults.async.model // empty' "$CONFIG_FILE")"
-BATCH_SET="$(jq -r '.agents.defaults.batch.model // empty' "$CONFIG_FILE")"
+ASYNC_SET="$( { grep -E '^ASYNC_MODEL=' "$SECRETS_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- ; } || true)"
+ASYNC_SET="${ASYNC_SET:-${ASYNC_MODEL:-}}"
+BATCH_SET="$( { grep -E '^BATCH_MODEL=' "$SECRETS_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- ; } || true)"
+BATCH_SET="${BATCH_SET:-${BATCH_MODEL:-}}"
 
 if [[ -n "$RT_SET" && -n "$ASYNC_SET" && -n "$BATCH_SET" ]]; then
   echo "all three tiers already configured — skipping wizard (rt=$RT_SET async=$ASYNC_SET batch=$BATCH_SET)" >&2
@@ -239,39 +253,55 @@ else
   done
 
   backup_config
+  # SCHEMA-SAFE WRITE (2026-05-29): only the real-time model goes into openclaw.json
+  # (on the main agent's `agents.list[].model`). We DO NOT write
+  # `agents.defaults.async`/`agents.defaults.batch` — those keys are rejected by the
+  # 2026.5.27 .strict() schema and would make `openclaw config validate` FAIL. The
+  # async/batch tier choices are persisted to SECRETS_ENV_FILE instead (read by crons).
+  # `.agents = (.agents // {})` / `.agents.list = (.agents.list // [])` replace the
+  # jq-1.7-invalid `//=` top-level form (see the hooks-merge note above).
   UPDATED="$(jq \
-    --arg rt "$RT_SET" --arg as "$ASYNC_SET" --arg bt "$BATCH_SET" \
-    '.agents //= {} |
-     .agents.list //= [] |
+    --arg rt "$RT_SET" \
+    '.agents = (.agents // {}) |
+     .agents.list = (.agents.list // []) |
      (if (.agents.list | map(.id == "main") | any) then
         .agents.list |= map(if .id == "main" then .model = $rt else . end)
       else
         .agents.list += [{id:"main", model:$rt}]
-      end) |
-     .agents.defaults //= {} |
-     .agents.defaults.async //= {} | .agents.defaults.async.model = $as |
-     .agents.defaults.batch //= {} | .agents.defaults.batch.model = $bt' "$CONFIG_FILE")"
+      end)' "$CONFIG_FILE")"
   write_config "$UPDATED"
-  echo "models saved: realtime=$RT_SET  async=$ASYNC_SET  batch=$BATCH_SET" >&2
+  # Persist the async + batch tier choices to the secrets env file (NOT to the
+  # config) so 04-register-crons.sh and other consumers honor them.
+  append_secret "ASYNC_MODEL" "$ASYNC_SET"
+  append_secret "BATCH_MODEL" "$BATCH_SET"
+  echo "models saved: realtime=$RT_SET (config)  async=$ASYNC_SET batch=$BATCH_SET (secrets.env, not config — invalid schema keys)" >&2
 fi
 
-# System Health Heartbeat cron (idempotent)
-HAS_CRON="$(jq --arg id "system-health-heartbeat" '(.cron.jobs // []) | map(.id == $id) | any' "$CONFIG_FILE")"
-if [[ "$HAS_CRON" != "true" ]]; then
-  backup_config
-  UPDATED="$(jq \
-    '.cron //= {jobs: []} |
-     .cron.jobs //= [] |
-     .cron.jobs += [{
-       id:"system-health-heartbeat",
-       schedule:"0 9 1 * *",
-       agentId:"main",
-       message:"Run the Monthly Comprehensive Review per protocols/monthly-comprehensive-review-protocol.md — 30-day audit across playbooks, GHL workflows, knowledge bases, model configs, tune-ups, bug log."
-     }]' "$CONFIG_FILE")"
-  write_config "$UPDATED"
-  echo "registered cron: system-health-heartbeat (0 9 1 * *)" >&2
+# System Health Heartbeat cron (idempotent).
+# CRON REGISTRATION (2026-05-29): the legacy `cron.jobs` JSON config block does NOT
+# validate on 2026.5.27 (writing it makes `openclaw config validate` FAIL). Register
+# crons through the gateway cron store via `openclaw cron add` (see
+# references/GHL-INBOUND-AND-PLAYBOOKS.md §13). Idempotency is by name via
+# `openclaw cron list`. If the CLI is absent, we skip (non-fatal) rather than write an
+# invalid config block.
+if command -v openclaw >/dev/null 2>&1; then
+  if openclaw cron list 2>/dev/null | grep -q "system-health-heartbeat"; then
+    echo "cron system-health-heartbeat already registered — skipping" >&2
+  else
+    if openclaw cron add \
+        --name system-health-heartbeat \
+        --cron "0 9 1 * *" \
+        --agent main \
+        --light-context \
+        --best-effort-deliver \
+        --message "Run the Monthly Comprehensive Review per protocols/monthly-comprehensive-review-protocol.md — 30-day audit across playbooks, GHL workflows, knowledge bases, model configs, tune-ups, bug log." >&2; then
+      echo "registered cron: system-health-heartbeat (0 9 1 * *) via openclaw cron add" >&2
+    else
+      echo "WARN: 'openclaw cron add system-health-heartbeat' failed — register it manually (cron.jobs JSON is invalid on 2026.5.27)" >&2
+    fi
+  fi
 else
-  echo "cron system-health-heartbeat already registered — skipping" >&2
+  echo "WARN: openclaw CLI not on PATH — cannot register system-health-heartbeat cron (do NOT write cron.jobs JSON; it is invalid on 2026.5.27)" >&2
 fi
 
 # =============================================================================

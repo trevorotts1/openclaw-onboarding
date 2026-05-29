@@ -33,16 +33,12 @@ report_fail() { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); }
 section()     { echo ""; echo "=== $* ==="; }
 
 # -------- Resolve skill 38 root --------
-SKILL38_ROOT="${SKILL38_ROOT:-${HOME}/clawd/skills/38-openclaw-cloudflare-tunnel}"
-if [ ! -d "$SKILL38_ROOT" ]; then
-  # try a few common alternates
-  for cand in \
-    "${HOME}/.openclaw/skills/38-openclaw-cloudflare-tunnel" \
-    "${HOME}/clawd/skills/38" \
-    "${HOME}/.claude/skills/38-openclaw-cloudflare-tunnel"; do
-    [ -d "$cand" ] && SKILL38_ROOT="$cand" && break
-  done
-fi
+# Resolve DYNAMICALLY from this script's own location — this script lives at
+# <skill-root>/scripts/11-run-qc-checklist.sh, so the skill root is SCRIPT_DIR's parent.
+# Do NOT hardcode a legacy path (~/clawd/skills/38-openclaw-cloudflare-tunnel no longer
+# exists; the skill is 38-conversational-ai-system under whatever skills root it was
+# installed to). SKILL38_ROOT may still be overridden via env for tests.
+SKILL38_ROOT="${SKILL38_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 section "Skill 38 root"
 if [ -d "$SKILL38_ROOT" ]; then
@@ -95,12 +91,15 @@ for f in "${REFERENCE_FILES[@]}"; do
 done
 
 # -------- openclaw cron list --------
+# These are the exact names 04-register-crons.sh registers via `openclaw cron add`
+# (model-version-freshness is BUNDLED into proactive-suggestions-scan; the monthly
+# comprehensive review IS system-health-heartbeat — there is no separate cron for them).
 section "openclaw cron list — 5 expected crons"
 EXPECTED_CRONS=(
+  "conversation-log-summarizer"
+  "analytics-weekly-digest"
   "weekly-tune-up"
   "proactive-suggestions-scan"
-  "model-version-freshness"
-  "monthly-comprehensive-review"
   "system-health-heartbeat"
 )
 if command -v openclaw >/dev/null 2>&1; then
@@ -265,6 +264,20 @@ if [ -f "$QC_REF" ]; then
   fi
 else
   report_fail "qc-reference-sheet.sh not found (looked in scripts/)"
+fi
+
+# -------- install-script config-invalidating pattern gate (machine-enforced) --------
+section "Install-script config-key gate (qc-config-keys.sh)"
+QC_CFG="$SCRIPT_DIR/qc-config-keys.sh"
+[ -f "$QC_CFG" ] || QC_CFG="$SKILL38_ROOT/scripts/qc-config-keys.sh"
+if [ -f "$QC_CFG" ]; then
+  if bash "$QC_CFG" >/dev/null 2>&1; then
+    report_pass "no install script writes a config-invalidating shape (no agents.defaults.async/.batch, no cron.jobs JSON, no jq-1.7-invalid '//= ;', no pointer-sourcing, no hardcoded legacy skill path)"
+  else
+    report_fail "qc-config-keys.sh found an install script that would invalidate the config or break a fresh install — run it directly for detail"
+  fi
+else
+  report_fail "qc-config-keys.sh not found (looked in scripts/)"
 fi
 
 # -------- conversational-logs dir presence + writability --------

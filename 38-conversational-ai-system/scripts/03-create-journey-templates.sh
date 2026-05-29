@@ -4,7 +4,15 @@
 # into <MASTER_FILES_DIR>/journey-templates/. Idempotent (does NOT overwrite).
 
 set -euo pipefail
-[ -f "$HOME/.openclaw/.skill-38-master-files-dir" ] && . "$HOME/.openclaw/.skill-38-master-files-dir"
+# The pointer file written by 01-locate-master-files-folder.sh contains a BARE PATH
+# (one line: the master-files directory), NOT shell `KEY=value` assignments. It must be
+# READ, never `source`d — `. <file>` tries to EXECUTE its contents, and when the path is
+# a directory bash errors "Is a directory" (or runs the path as a command). Read it into
+# MASTER_FILES_DIR with cat instead.
+MASTER_FILES_POINTER="$HOME/.openclaw/.skill-38-master-files-dir"
+if [ -z "${MASTER_FILES_DIR:-}" ] && [ -f "$MASTER_FILES_POINTER" ]; then
+  MASTER_FILES_DIR="$(head -n1 "$MASTER_FILES_POINTER" | tr -d '\r')"
+fi
 : "${MASTER_FILES_DIR:?MASTER_FILES_DIR not set — run 01-locate-master-files-folder.sh first}"
 
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"

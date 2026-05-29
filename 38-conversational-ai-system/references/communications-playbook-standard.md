@@ -136,6 +136,19 @@ never omitted:
       (copyable), plus the **Method (POST)**, the **hook URL** (`https://<host>/hooks/<id>`), and
       **Content-Type** (`application/json`), each as a copyable code block. The body stays placeholder-free
       in `messageTemplate` and is never nested or stripped below 23 keys.
+- [ ] **Manual Custom-Webhook fill instructions (MANDATORY in EVERY client doc)** — an explicit, prominent
+      statement that AFTER Build-with-AI runs the client MUST open the Custom Webhook action and MANUALLY
+      enter the Method, URL, the `Authorization: Bearer <token>` + `Content-Type: application/json` headers
+      (via **Add item**), and the Raw Body JSON, then Save + Publish — because **Build with AI will NOT fill
+      these for you** (it only builds the workflow SHAPE / an empty Custom Webhook action). The reference
+      sheet LEADS with the copy-paste values (URL → Bearer token → Raw Body JSON → manual-fill steps →
+      Workflow-AI prompt); explanation/reference follows after. This is machine-enforced by
+      `scripts/qc-reference-sheet.sh --require-manual-fill` (CI + pre-handoff QC).
+
+> The manual Custom-Webhook fill step is MANDATORY in every client doc, not optional prose. GHL's
+> Build-with-AI only constructs the workflow SHAPE (trigger + an empty Custom Webhook action) and does NOT
+> reliably populate the URL / Authorization / Content-Type / Raw Body, so every client must paste those by
+> hand. The generated reference sheet (Section above) makes this explicit and is gated in CI.
 
 A live client (Teresa) was stranded by a reference sheet that had NEITHER the bearer token NOR a copyable
 Raw Body JSON — there was nothing to paste into GHL's Build-with-AI. This is now **machine-enforced by

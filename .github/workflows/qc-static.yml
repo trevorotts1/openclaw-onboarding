@@ -195,3 +195,40 @@ jobs:
           # inline grep core), so it respects the .py claude-/anthropic ban.
           bash 38-conversational-ai-system/scripts/qc-reference-sheet.sh
           echo "✓ Skill 38 client reference sheet carries the bearer token + copyable GHL Raw Body JSON + hook URL"
+
+      - name: Skill 38 reference sheet leads with copy-paste values (manual-fill order)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce that the generated reference sheet LEADS with the
+          # copy-paste values in order (URL → Bearer token → Raw Body JSON → manual
+          # Custom-Webhook fill steps → Workflow-AI prompt) and carries the mandatory
+          # "Build-with-AI will NOT fill these — do it yourself" manual-fill
+          # instructions. GHL's Build-with-AI only builds the workflow SHAPE; it does
+          # not reliably populate the Custom Webhook URL / Authorization header /
+          # Content-Type / Raw Body, so the client MUST open the action and paste them
+          # by hand. This drives the generator offline and FAILs if the manual-fill
+          # text or the lead-with-values order is missing. BASH (grep core) — respects
+          # the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-reference-sheet.sh --require-manual-fill
+          echo "✓ Skill 38 reference sheet leads with copy-paste values and carries the manual Custom-Webhook fill instructions"
+
+      - name: Skill 38 install-script config-key gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce that NO install script writes a config shape that
+          # invalidates the openclaw 2026.5.27 config (so a fresh install can't ship a
+          # config that fails `openclaw config validate`), and that none trips the
+          # known jq-1.7 / pointer-sourcing install bugs. Specifically FAILS on:
+          #   • agents.defaults.async / agents.defaults.batch WRITES (rejected by the
+          #     .strict() 2026.5.27 schema)
+          #   • a legacy cron.jobs JSON config block (does not validate on 2026.5.27 —
+          #     crons must be registered via `openclaw cron add`)
+          #   • the jq-1.7-invalid top-level `.x //= {};` update-assignment
+          #   • sourcing the master-files POINTER (a bare path / directory) with `.`
+          #   • a hardcoded legacy skill path (~/clawd/skills/38-openclaw-cloudflare-tunnel)
+          # All five were verified live on a 2026.5.27 box (v1.4.11). BASH — respects
+          # the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-config-keys.sh
+          echo "✓ No Skill 38 install script writes a config-invalidating shape or trips the known install bugs"
