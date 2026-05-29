@@ -243,3 +243,23 @@ jobs:
           # the .py claude-/anthropic ban.
           bash 38-conversational-ai-system/scripts/qc-config-keys.sh
           echo "✓ No Skill 38 install script writes a config-invalidating shape or trips the known install bugs"
+
+      - name: Skill 38 mandatory Telegram doc-delivery gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the MANDATORY Telegram delivery of the client's
+          # setup-doc LINK. Every client gets their link via Telegram, no matter
+          # what — the operator was tired of repeating this, so it's a gated step,
+          # not prose. The install is NOT complete until the client has been SENT
+          # their Quick-Start / Notion doc link via the OpenClaw gateway
+          # (openclaw message send --channel telegram). qc-notify-client-doc.sh
+          # statically asserts that scripts/22-notify-client-doc.sh exists, sends
+          # via the gateway (never curl api.telegram.org), DISCOVERS the chat from
+          # the TRANSCRIPTS (agents/*/sessions/*.jsonl — the four shapes, most-
+          # frequent non-operator id — the Teresa lesson, NOT just sessions.json
+          # keys), LOUD-fails (clientDocDelivered=false + non-zero) when no chat is
+          # found, and is wired into INSTRUCTIONS.md + the v6.0 playbook + the comms
+          # standard. BASH (grep/awk core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-notify-client-doc.sh
+          echo "✓ Skill 38 mandatory Telegram doc-delivery is wired (22-notify-client-doc.sh + binding instructions)"

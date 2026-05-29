@@ -1,3 +1,55 @@
+## [1.4.15] - 2026-05-29 - Mandatory Telegram doc-delivery + Communication Playbooks location section + readiness gates
+
+Three belt-and-suspenders + machine-enforced hardenings driven by repeated live-client pain.
+
+### Added — MANDATORY Telegram delivery of the client doc (un-skippable, state-gated)
+- **`scripts/22-notify-client-doc.sh` (NEW).** Every client gets their setup-doc LINK via Telegram, NO
+  MATTER WHAT — the install is not complete until the client has been SENT their Quick-Start / Notion doc
+  link via `openclaw message send --channel telegram`. The script (a) resolves the client's chat id —
+  `CLIENT_TELEGRAM_CHAT_ID` first, else DISCOVERS it by GREPPING THE TRANSCRIPTS `agents/*/sessions/*.jsonl`
+  for the four shapes (`"chat":{"id":<n>`, `telegram:direct:<n>`, `"chatId":<n>`, `"from":{"id":<n>`) and
+  taking the most-frequent NON-operator id (the Teresa lesson — `sessions.json` keys alone miss paired
+  chats); (b) sends the link via the gateway (never `api.telegram.org`); (c) on no chat FLAGS LOUDLY
+  (stderr banner + `clientDocDelivered=false` in the run-state) and exits non-zero — NEVER silently skips.
+  On success it records `clientDocDelivered=true` + chat id + link.
+- **`scripts/qc-notify-client-doc.sh` (NEW QC gate).** Statically asserts 22-notify-client-doc.sh exists,
+  parses, sends via the gateway (not curl to telegram), discovers from the transcripts (all four shapes,
+  most-frequent non-operator), LOUD-fails on no chat, and is wired into INSTRUCTIONS.md + the v6.0 playbook
+  + the comms standard. Wired into `scripts/11-run-qc-checklist.sh` AND CI `.github/workflows/qc-static.yml`.
+- **Binding install step.** INSTRUCTIONS.md gains **Step 6.5**; `references/v6.0-source-playbook.md` gains a
+  binding "Step 6.5 — deliver the doc LINK to the client via Telegram" section + Checkpoint D / Step 11 QC
+  items; `references/communications-playbook-standard.md` gains §8. The pre-handoff checklist
+  (`11-run-qc-checklist.sh`) asserts the run-state field `clientDocDelivered=true` at runtime.
+
+### Added — DOC + BACKEND READINESS as completion gates (testing happens only after BOTH pass)
+- **`scripts/11-run-qc-checklist.sh`** gains a backend-ready check: a live `hooks.mappings` entry (matched
+  to `HOOK_NAME`, else any agent mapping) with `deliver:false` and a working `model`, AND `/healthz`
+  returns 200 (public `PUBLIC_HOSTNAME` or localhost). The doc-structure side is already gated
+  (`qc-reference-sheet.sh --require-manual-fill` + `qc-23-key-bodies.sh` assert the FLAT 23-key body +
+  Quick-Start). v6.0 playbook Step 11 gains a "DOC + BACKEND READINESS" block: never test inbound before
+  the doc is delivered AND the backend is confirmed receiving.
+
+### Added — "YOUR COMMUNICATION PLAYBOOKS" section in the generated client doc
+- **`scripts/21-generate-client-reference-sheet.sh`** now emits a prominent **"🗂️ Your Communication
+  Playbooks"** section AFTER the Quick Start and BEFORE the deep Full Reference. It answers the client's
+  first-test question — "where are my workflows / communication playbooks?" — with: WHERE they live (the
+  `conversation-workflows/` master-files folder + human-facing copies in Notion → Google Docs → text), and
+  in BIG BOLD **"⭐ Want a NEW communications playbook? Start here:"** the steps (just tell your AI
+  "help me build a [purpose] playbook"; it brainstorms with you and builds all 3 parts — the workflow-AI
+  prompt + the conversation playbook + the GHL automation — then documents + registers it).
+- **`scripts/qc-reference-sheet.sh --require-manual-fill`** now also FAILS unless the generated doc carries
+  the "Communication Playbooks" heading, the `conversation-workflows` + Notion location facts, the "Want a
+  NEW communications playbook" CTA, the "help me build a [purpose] playbook" instruction, the brainstorm
+  explanation, and the 3-part trinity note — and unless the section sits after Quick Start and before the
+  deep reference. Negative-tested. Standardized in `communications-playbook-standard.md` §9 +
+  `workflow-ai-instructions-standard.md` §7.
+
+### Version
+- **`skill-version.txt`** 1.4.14 → 1.4.15; **`SKILL.md`** SELF-COUNTS re-verified (protocols/=32,
+  scripts/=34 → **36** (+`22-notify-client-doc.sh`, +`qc-notify-client-doc.sh`), references/=14, journeys=8)
+  + the scripts bullet updated (eight QC linters now). No repo-tracked (8-location) version file changed, so
+  the repo version is unaffected and `scripts/bump-version.sh` is not run.
+
 ## [1.4.14] - 2026-05-29 - Bulletproof Quick-Start + workflow-AI (where-to-paste, tag-first, post-build verify)
 
 Belt-and-suspenders hardening of the client reference-sheet generator, the workflow-AI standard/templates,
