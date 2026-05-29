@@ -346,7 +346,7 @@ Helping you put AI to work — one careful step at a time.
 
 Per the OpenClaw QC-PROTOCOL.md (Part 3 Rule 13), when `scripts/00-verify-prerequisites.sh` cannot find a Cloudflare API token in any of the 10 documented locations, the agent halts and points the client at THIS document. The four parts of this guide map to the install flow:
 
-- Parts 1-3 (account + domain + nameservers) prepare Cloudflare to manage the client's domain. Skill 38's Phase 1 (per `references/v5.14-source-playbook.md` Steps 1-2) then creates the Cloudflare Tunnel via API and installs `cloudflared` as a persistent system service. Without the Cloudflare account + active domain, that Phase will fail.
+- Parts 1-3 (account + domain + nameservers) prepare Cloudflare to manage the client's domain. Skill 38's Phase 1 (per `references/v6.0-source-playbook.md` Steps 1-2) then creates the Cloudflare Tunnel via API and installs `cloudflared` as a persistent system service. Without the Cloudflare account + active domain, that Phase will fail.
 - Part 4 (API token creation) produces the credential the agent reads from `~/.openclaw/.env` as `CLOUDFLARE_API_TOKEN`. The 9 permission rows map 1-to-1 to what the v5.14 playbook actually calls into:
   - **Cloudflare Tunnel Edit** — create + configure the tunnel (Step 1)
   - **Zero Trust Edit** — for the broader Access integration

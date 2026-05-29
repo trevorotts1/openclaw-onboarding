@@ -1,7 +1,7 @@
 # Cloudflare Tunnel — Troubleshooting (Phase 1-2)
 
 > Deep-dive reference for the v5.14 playbook Phase 1 (Build Network Plumbing) +
-> Phase 2 (Configure OpenClaw). See `references/v5.14-source-playbook.md` Steps 1, 2,
+> Phase 2 (Configure OpenClaw). See `references/v6.0-source-playbook.md` Steps 1, 2,
 > 3, 3.5, 4 for the canonical setup steps. This file is the failure-mode map.
 
 ## The 4 layers between GHL and OpenClaw
