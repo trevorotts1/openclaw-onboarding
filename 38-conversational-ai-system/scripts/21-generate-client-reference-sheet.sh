@@ -295,6 +295,116 @@ substitute_template "$SMS_TEMPLATE"      > "$SEC2"
 substitute_template "$GENERIC_TEMPLATE"  > "$SEC3"
 substitute_template "$CHECKLIST_TEMPLATE" > "$SEC4"
 
+# ============================================================================
+# MANDATORY copy-paste artifacts — Bearer token + GHL Custom Webhook Raw Body.
+# These are APPENDED to the rendered reference sheet (SEC1) directly by this
+# script so they ALWAYS appear as real, copyable fenced code blocks regardless
+# of how the template wraps its prose. A live client (Teresa) opened a reference
+# sheet that had NO bearer token and NO copyable Raw Body JSON — there was no
+# `Authorization: Bearer <token>` to paste and no ```json body to drop into
+# GHL's Build-with-AI, which stranded the client. qc-reference-sheet.sh
+# machine-enforces that this output contains "Bearer", a ```json fence, and the
+# hook URL.
+# ============================================================================
+
+# Resolve the actual hooks bearer token, in priority order:
+#   1. HOOKS_TOKEN env (already :?-required above, so normally set)
+#   2. OPENCLAW_HOOKS_TOKEN env
+#   3. hooks.token read from the live openclaw.json config
+# If none resolve, emit a clearly-marked placeholder AND warn loudly (non-fatal
+# so the rest of the sheet still renders, but the operator is told the token is
+# missing and must be filled in before hand-off).
+RESOLVED_HOOKS_TOKEN="${HOOKS_TOKEN:-}"
+if [ -z "$RESOLVED_HOOKS_TOKEN" ]; then
+  RESOLVED_HOOKS_TOKEN="${OPENCLAW_HOOKS_TOKEN:-}"
+fi
+if [ -z "$RESOLVED_HOOKS_TOKEN" ]; then
+  for cfg in "${OPENCLAW_CONFIG:-}" "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
+    [ -n "$cfg" ] || continue
+    [ -f "$cfg" ] || continue
+    TOK="$(python3 - "$cfg" <<'PY_TOK_EOF' 2>/dev/null || true
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+hooks = d.get("hooks") or {}
+tok = hooks.get("token") or ""
+if isinstance(tok, str) and tok.strip():
+    sys.stdout.write(tok.strip())
+PY_TOK_EOF
+)"
+    if [ -n "$TOK" ]; then
+      RESOLVED_HOOKS_TOKEN="$TOK"
+      break
+    fi
+  done
+fi
+
+TOKEN_IS_PLACEHOLDER=0
+if [ -z "$RESOLVED_HOOKS_TOKEN" ]; then
+  RESOLVED_HOOKS_TOKEN="REPLACE_ME__hooks_token_not_resolved_at_generation_time"
+  TOKEN_IS_PLACEHOLDER=1
+  echo "[21-generate-client-reference-sheet] WARN: could not resolve the hooks bearer token (HOOKS_TOKEN / OPENCLAW_HOOKS_TOKEN / hooks.token in openclaw.json all empty). Emitting a clearly-marked PLACEHOLDER — fill it in before hand-off." >&2
+fi
+
+# Derive the hook route + routing agent id in a way that works across both
+# repo variants (Mac uses ROUTING_AGENT_ID; VPS uses HOOK_NAME/AGENT_ID).
+REF_HOOK_NAME="${HOOK_NAME:-$ROUTE_ID}"
+REF_AGENT_ID="${AGENT_ID:-${ROUTING_AGENT_ID:-main}}"
+REF_ENDPOINT_URL="https://${PUBLIC_HOSTNAME}/hooks/${REF_HOOK_NAME}"
+
+{
+  printf '\n\n---\n\n'
+  printf '## Authorization Header / Bearer Token\n\n'
+  if [ "$TOKEN_IS_PLACEHOLDER" = "1" ]; then
+    printf '> WARNING: the hooks bearer token could not be read at generation time. The block below is a PLACEHOLDER — replace it with your real `hooks.token` (from `~/.openclaw/openclaw.json`) before using this sheet.\n\n'
+  fi
+  printf 'Add this as a manual header on every GHL Custom Webhook (leave the AUTHORIZATION dropdown set to "None"). Copy it exactly — no leading/trailing spaces:\n\n'
+  printf '```\n'
+  printf 'Authorization: Bearer %s\n' "$RESOLVED_HOOKS_TOKEN"
+  printf '```\n\n'
+  printf 'And the content-type header:\n\n'
+  printf '```\n'
+  printf 'Content-Type: application/json\n'
+  printf '```\n\n'
+  printf '## GHL Custom Webhook — Raw Body\n\n'
+  printf '**Method:** POST\n\n'
+  printf '**Hook URL** (copy into the Custom Webhook URL field):\n\n'
+  printf '```\n'
+  printf '%s\n' "$REF_ENDPOINT_URL"
+  printf '```\n\n'
+  printf '**Content-Type:** `application/json`\n\n'
+  printf 'Paste this **RAW BODY** into the GHL Custom Webhook action (and into Build-with-AI when it asks for the webhook body). It is the canonical FLAT 23-key body — never paste a shorter one, never nest it, and keep `messageTemplate` placeholder-free so GHL does not mangle the JSON. Only `channel` + the `session_key` prefix change per channel (this is the SMS body):\n\n'
+  printf '```json\n'
+  printf '{\n'
+  printf '  "id": "%s",\n' "$REF_HOOK_NAME"
+  printf '  "match": "%s",\n' "$REF_HOOK_NAME"
+  printf '  "action": "agent",\n'
+  printf '  "agent_id": "%s",\n' "$REF_AGENT_ID"
+  printf '  "model": "ollama/deepseek-v4-flash:cloud",\n'
+  printf '  "wakeMode": "now",\n'
+  printf '  "name": "GHL Sales Inbound",\n'
+  printf '  "session_key": "hook:ghl:sms:{{contact.id}}",\n'
+  printf '  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",\n'
+  printf '  "deliver": false,\n'
+  printf '  "timeoutSeconds": 300,\n'
+  printf '  "channel": "sms",\n'
+  printf '  "to": "{{contact.phone}}",\n'
+  printf '  "thinking": "medium",\n'
+  printf '  "contact_id": "{{contact.id}}",\n'
+  printf '  "first_name": "{{contact.first_name}}",\n'
+  printf '  "last_name": "{{contact.last_name}}",\n'
+  printf '  "email": "{{contact.email}}",\n'
+  printf '  "phone": "{{contact.phone}}",\n'
+  printf '  "subject": "{{message.subject}}",\n'
+  printf '  "message_body": "{{message.body}}",\n'
+  printf '  "location_id": "{{location.id}}",\n'
+  printf '  "location_name": "{{location.name}}"\n'
+  printf '}\n'
+  printf '```\n'
+} >> "$SEC1"
+
 # ----- detect Notion availability -----
 LAYER="3"
 NOTION_FALLBACK_REASON=""

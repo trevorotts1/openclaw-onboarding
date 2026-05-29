@@ -177,3 +177,21 @@ jobs:
           # strings in .py under 22/23, so this gate is BASH (with an inline py core).
           bash 38-conversational-ai-system/scripts/qc-playbook-doc.test.sh
           echo "✓ qc-playbook-doc per-playbook human-facing doc gate fixtures pass"
+
+      - name: Skill 38 client reference sheet copy-paste artifacts
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce that the generated CLIENT REFERENCE SHEET always
+          # carries the two copy-paste artifacts a client cannot proceed without:
+          # the Authorization Bearer token and the GHL Custom Webhook RAW BODY as a
+          # real ```json fenced code block (plus the hook URL). On a live client
+          # (Teresa) the generated sheet had NO bearer token and NO copyable JSON —
+          # nothing to paste into GHL's Build-with-AI — which stranded the client.
+          # qc-reference-sheet.sh drives 21-generate-client-reference-sheet.sh in a
+          # sandbox (no openclaw on PATH → offline Layer-3 markdown) and FAILS if the
+          # rendered sheet lacks "Bearer", a ```json fence, or the hook URL, so a
+          # template/script regression that drops them fails the build. BASH (with an
+          # inline grep core), so it respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-reference-sheet.sh
+          echo "✓ Skill 38 client reference sheet carries the bearer token + copyable GHL Raw Body JSON + hook URL"

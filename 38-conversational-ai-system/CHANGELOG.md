@@ -1,3 +1,45 @@
+## [1.4.12] - 2026-05-29 - client reference sheet MUST include the bearer token + a copyable GHL Raw Body JSON (machine-enforced)
+
+Root cause fixed: on a live client (Teresa), the generated Client Reference Sheet
+(`scripts/21-generate-client-reference-sheet.sh`) had NEITHER the hooks Bearer token NOR the GHL Custom
+Webhook Raw Body as a copyable ` ```json ` fenced code block. The client opened their reference doc and
+the token was simply missing, and there was no JSON to copy into GHL's Build-with-AI — which stranded the
+client. The reference sheet's content came entirely from the template wrapper, where the bearer token
+appeared only inside `[code block, copy button]` pseudo-markers (not a real fence) and the per-channel
+Raw Body JSONs lived in a separate Part 3 documentation section, not in the reference sheet body. The
+sheet MUST contain both, ALWAYS — now enforced, not left to the template.
+
+### Fixed
+- **`scripts/21-generate-client-reference-sheet.sh`** now APPENDS two authoritative, always-present
+  sections to the rendered reference sheet (so they survive regardless of template wrapping):
+  - **Authorization Header / Bearer Token** — resolves the real `hooks.token` in priority order
+    `HOOKS_TOKEN` → `OPENCLAW_HOOKS_TOKEN` → `hooks.token` read from `openclaw.json`
+    (`$OPENCLAW_CONFIG`, `~/.openclaw/openclaw.json`, `/data/.openclaw/openclaw.json`), and renders it as
+    `Authorization: Bearer <token>` inside a real fenced code block. If the token cannot be resolved it
+    emits a clearly-marked `REPLACE_ME__…` PLACEHOLDER and WARNs to stderr (never silently omits it).
+  - **GHL Custom Webhook — Raw Body** — the canonical FLAT 23-key body as a copyable ` ```json ` fenced
+    code block, plus the Method (POST), the hook URL (`https://<host>/hooks/<id>`), and Content-Type
+    (`application/json`) as copyable code blocks. Body stays placeholder-free in `messageTemplate`, not
+    nested, not stripped below 23 keys.
+
+### Added
+- **`scripts/qc-reference-sheet.sh`** (pure BASH, mirrors the other `qc-*.sh`) — new machine-enforced QC
+  gate. Default mode drives `21-generate-client-reference-sheet.sh` in an offline sandbox (strips
+  `openclaw` from PATH → Layer-3 markdown, no network/Telegram) and FAILs (exit 1) if the rendered sheet
+  lacks the word `Bearer`, a line-anchored ` ```json ` fence, or a hook URL; `--sheet FILE` statically
+  checks an existing sheet; exit 2 (never a blind PASS) if no sheet can be produced/located. BASH (not
+  Python) so it respects qc-static's ban on claude-/anthropic strings in `.py` under 22/23.
+
+### Changed
+- **`scripts/11-run-qc-checklist.sh`** — wires `qc-reference-sheet.sh` in as a mechanical gate (and adds
+  it to the script-existence list).
+- **`.github/workflows/qc-static.yml`** — new CI step "Skill 38 client reference sheet copy-paste
+  artifacts" runs `qc-reference-sheet.sh` on every push/PR so a template/script regression that drops the
+  bearer token or the copyable Raw Body JSON fails the build.
+- **`references/communications-playbook-standard.md`** — new section documenting that the bearer token +
+  copyable Raw Body JSON are MANDATORY in every client reference sheet, machine-enforced by
+  `qc-reference-sheet.sh`.
+
 ## [1.4.11] - 2026-05-29 - enforce the per-playbook human-facing doc deliverable (Notion → Google Docs → text) so a created playbook never ships without a client-facing reference
 
 Root cause fixed: when a communications/conversation playbook is created (the base install creates the FIRST

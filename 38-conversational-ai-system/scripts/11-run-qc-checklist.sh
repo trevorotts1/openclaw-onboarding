@@ -80,6 +80,7 @@ SCRIPT_FILES=(
   "scripts/qc-send-directive.sh"
   "scripts/qc-conversation-memory.sh"
   "scripts/qc-playbook-doc.sh"
+  "scripts/qc-reference-sheet.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -250,6 +251,20 @@ if [ -f "$QC_PBDOC" ]; then
   esac
 else
   report_fail "qc-playbook-doc.sh not found (looked in scripts/)"
+fi
+
+# -------- Client reference sheet copy-paste artifacts (machine-enforced) --------
+section "Client reference sheet copy-paste artifacts (qc-reference-sheet.sh)"
+QC_REF="$SCRIPT_DIR/qc-reference-sheet.sh"
+[ -f "$QC_REF" ] || QC_REF="$SKILL38_ROOT/scripts/qc-reference-sheet.sh"
+if [ -f "$QC_REF" ]; then
+  if bash "$QC_REF" >/dev/null 2>&1; then
+    report_pass "generated client reference sheet carries the bearer token, a copyable \`\`\`json GHL Raw Body, and the hook URL"
+  else
+    report_fail "qc-reference-sheet.sh: the generated reference sheet is MISSING the bearer token and/or the copyable \`\`\`json GHL Raw Body and/or the hook URL (this strands the client) — run it directly for detail"
+  fi
+else
+  report_fail "qc-reference-sheet.sh not found (looked in scripts/)"
 fi
 
 # -------- conversational-logs dir presence + writability --------
