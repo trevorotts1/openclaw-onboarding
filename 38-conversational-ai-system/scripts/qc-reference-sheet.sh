@@ -245,6 +245,39 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
   grep -qiE 'Publish(ed)?,? not Draft|not[[:space:]]+Draft|Draft.*Publish' "$SHEET" || \
     MISSING+=('the post-build PUBLISH check (confirm Published, not Draft)')
 
+  # --- "Your Communication Playbooks" section (placed AFTER Quick Start, BEFORE
+  #     the deep Full Reference) — answers the client's first question:
+  #     "where are my workflows / communication playbooks?" It must be prominent
+  #     (a heading) and tell them (a) WHERE they live — the conversation-workflows/
+  #     folder + human-facing copies in Notion (→ Google Docs → text) — and (b)
+  #     HOW to build a new one in BIG BOLD ("Want a NEW communications playbook?
+  #     Start here") with the "just tell your AI 'help me build a [purpose]
+  #     playbook'" CTA + the 3-part trinity it builds.
+  grep -qiE '^#+[[:space:]].*Communication Playbooks' "$SHEET" || \
+    MISSING+=('a prominent "Your Communication Playbooks" section (where the client'\''s playbooks live)')
+  grep -qiE 'conversation-workflows' "$SHEET" || \
+    MISSING+=('the "Communication Playbooks" section must say playbooks live in the conversation-workflows/ folder')
+  grep -qi 'Notion' "$SHEET" || \
+    MISSING+=('the "Communication Playbooks" section must point to the human-facing copies in Notion')
+  grep -qiE 'Want a NEW communications? playbook' "$SHEET" || \
+    MISSING+=('the BIG BOLD "Want a NEW communications playbook? Start here" call-to-action')
+  grep -qiE 'help me build a .*playbook' "$SHEET" || \
+    MISSING+=('the "just tell your AI: help me build a [purpose] playbook" instruction')
+  grep -qiE 'brainstorm' "$SHEET" || \
+    MISSING+=('an explanation that the AI will brainstorm with the client before building')
+  grep -qiE '3 parts|three parts|all 3|workflow-AI prompt.*conversation playbook|trinity' "$SHEET" || \
+    MISSING+=('an explanation that the AI builds all 3 parts (workflow-AI prompt + conversation playbook + GHL automation)')
+  # The Communication Playbooks section must sit AFTER Quick Start and BEFORE the
+  # deep Full Reference & Explanation (the "where are my playbooks" answer should
+  # be high up, not buried in the deep reference).
+  CP_LN="$(grep -nE '^#+[[:space:]].*Communication Playbooks' "$SHEET" | head -1 | cut -d: -f1)"
+  if [ -n "$QS_LN" ] && [ -n "$CP_LN" ] && [ "$CP_LN" -le "$QS_LN" ]; then
+    MISSING+=('the "Your Communication Playbooks" section must come AFTER the Quick Start')
+  fi
+  if [ -n "$CP_LN" ] && [ -n "$EXPL_LN" ] && [ "$CP_LN" -ge "$EXPL_LN" ]; then
+    MISSING+=('the "Your Communication Playbooks" section must come BEFORE the deep Full Reference & Explanation')
+  fi
+
   # Lead-with-values ORDER: the Webhook-URL line must come before the ```json Raw Body,
   # and the manual-fill section must come before the Workflow-AI-prompt pointer.
   URL_LN="$(grep -nE '^#+[[:space:]].*Webhook URL' "$SHEET" | head -1 | cut -d: -f1)"

@@ -54,8 +54,9 @@ Source: `references/v6.0-source-playbook.md` Steps 3, 3.5, 4.
 Source: `references/v6.0-source-playbook.md` Steps 5-6.
 
 - Step 5 — Save secrets to the env file (per the v5.14 playbook block).
-- Step 6 — Generate the Client Reference Sheet (Notion-first; fall back to markdown if no Notion).
-- Checkpoint D — operator has copy-paste materials.
+- Step 6 — Generate the Client Reference Sheet (Notion-first; fall back to markdown if no Notion). `scripts/21-generate-client-reference-sheet.sh` builds it AND delivers the link to the client over Telegram.
+- Step 6.5 — **MANDATORY TELEGRAM DOC-DELIVERY (un-skippable, state-gated).** Every client gets their setup-doc LINK via Telegram, NO MATTER WHAT. The install is NOT complete until the client has been SENT their Quick-Start / Notion doc link via Telegram (`openclaw message send --channel telegram -t <chat>`). `scripts/22-notify-client-doc.sh` resolves the client's chat id (the `CLIENT_TELEGRAM_CHAT_ID` env first; if empty it DISCOVERS the chat by GREPPING THE TRANSCRIPTS `agents/*/sessions/*.jsonl` — the `"chat":{"id":<n>` / `telegram:direct:<n>` / `"chatId":<n>` / `"from":{"id":<n>` shapes, taking the most-frequent NON-operator id; reading `sessions.json` keys alone misses paired chats — the Teresa lesson), sends the link, and records `clientDocDelivered=true` in the run-state file. If NO chat is found it FLAGS LOUDLY (stderr banner + `clientDocDelivered=false`) and exits non-zero — the install is marked incomplete; it NEVER silently skips. Machine-enforced at QC by `scripts/qc-notify-client-doc.sh`.
+- Checkpoint D — operator has copy-paste materials AND the client has been sent their doc link via Telegram (`clientDocDelivered=true`).
 
 ## Phase 4 — Install Agent Behavior (Steps 7-9)
 
@@ -114,7 +115,11 @@ Generates the agent-capabilities-playbook.md the operator references during day-
 
 Source: `references/v6.0-source-playbook.md` Step 11 (Checkpoint F).
 
-Full pre-handoff QC checklist. Do NOT declare done until every item passes. Refer to the playbook for the checklist contents — verbatim, no summarization, no condensation. `scripts/11-run-qc-checklist.sh` runs the machine-enforced gates, including `scripts/qc-playbook-doc.sh` — every registered conversation playbook MUST have a recorded human-facing doc (Notion → Google Docs → text) in the client's account or QC FAILS (the install is not complete).
+Full pre-handoff QC checklist. Do NOT declare done until every item passes. Refer to the playbook for the checklist contents — verbatim, no summarization, no condensation. `scripts/11-run-qc-checklist.sh` runs the machine-enforced gates, including:
+
+- `scripts/qc-playbook-doc.sh` — every registered conversation playbook MUST have a recorded human-facing doc (Notion → Google Docs → text) in the client's account or QC FAILS.
+- `scripts/qc-notify-client-doc.sh` — the **mandatory Telegram doc-delivery** step (Step 6.5) MUST be present + wired (`scripts/22-notify-client-doc.sh` exists, sends via the gateway, discovers the chat from the transcripts, LOUD-fails on no chat) or QC FAILS. At runtime the checklist ALSO asserts the run-state field `clientDocDelivered=true` — if the client was never sent their link, the install is not complete.
+- **DOC + BACKEND READINESS gates (completion, not just file existence).** The install isn't "complete" until BOTH pass: (1) the client doc exists with the canonical FLAT 23-key body + Quick-Start structure (`scripts/qc-reference-sheet.sh --require-manual-fill`, and `scripts/qc-23-key-bodies.sh` asserts the 23-key flat body), AND (2) the backend is ready to RECEIVE — `hooks.mappings` live with `deliver:false`, a working `model`, and `/healthz` returns 200. `scripts/11-run-qc-checklist.sh` runs the backend-ready check. **Testing only happens AFTER both pass** — never test an inbound flow before the doc is delivered and the backend is confirmed receiving.
 
 ---
 

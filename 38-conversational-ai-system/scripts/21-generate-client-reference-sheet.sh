@@ -498,6 +498,36 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf 'Use the **Workflow-AI prompt** (the SMS Inquiry Responder Build-with-AI prompt) in **Section 2 — Your First Workflow** further down this page. Paste it into GHL Automations → **Build with AI** to build the workflow SHAPE, then come back and do Section 4 (fill the empty Custom Webhook by hand) and Section 5 (verify) above.\n\n'
   printf -- '---\n\n'
 
+  # ============================================================================
+  # YOUR COMMUNICATION PLAYBOOKS — placed AFTER the Quick Start, BEFORE the deep
+  # Full Reference & Explanation. This answers the FIRST question every client
+  # asks on their first test: "where are my workflows / communication playbooks?"
+  # It is prominent (a top-level heading + a callout + a BIG BOLD "build a new
+  # one" CTA) and machine-enforced by qc-reference-sheet.sh.
+  # ============================================================================
+  printf '# 🗂️ Your Communication Playbooks\n\n'
+  printf '> **Where are my workflows / communication playbooks?** Right here is the answer — read this before your first test.\n\n'
+  printf '**Your communication playbooks live in two places, and they stay in sync:**\n\n'
+  printf -- '- **The working copies** are stored in your OpenClaw master-files **`conversation-workflows/`** folder. That is the folder your AI reads on every reply to decide how to handle a conversation — it is the source of truth the agent runs from.\n'
+  printf -- '- **The human-facing copies** (the ones YOU read) are in your **Notion** — and from Notion you can export to **Google Docs → plain text** any time. Same content, formatted for people instead of for the agent.\n\n'
+  printf 'So: the agent runs from `conversation-workflows/`, and you read/share the Notion copy. Every playbook you have is recorded in your `conversation-workflows/registry.md` with a link to its human-facing doc.\n\n'
+  printf -- '---\n\n'
+  printf '## ⭐ Want a NEW communications playbook? Start here:\n\n'
+  printf '**You do NOT build playbooks by hand. Just tell your AI what you want and it does the rest.** In your chat with your AI, say:\n\n'
+  printf '```\n'
+  printf 'help me build a [purpose] playbook\n'
+  printf '```\n\n'
+  printf 'For example: *"help me build a missed-call follow-up playbook"* or *"help me build a quote-request playbook."*\n\n'
+  printf '**What happens next (your AI does all of it WITH you):**\n\n'
+  printf -- '1. **It brainstorms with you** — a short, friendly back-and-forth (NOT a 50-question form). It already knows your business, so it only asks what it genuinely needs, then shows you a quick "is this what you want?" summary to confirm.\n'
+  printf -- '2. **It builds all 3 parts** (THE TRINITY — they always travel together):\n'
+  printf -- '   - the **Workflow-AI prompt** (what you paste into GHL Automations → Build with AI),\n'
+  printf -- '   - the **conversation playbook** (how the agent behaves once that conversation lands), and\n'
+  printf -- '   - the **GHL automation** itself.\n'
+  printf -- '3. **It writes a human-facing copy** to your Notion (→ Google Docs → text), **registers** the playbook in your `conversation-workflows/registry.md`, and **tells you where everything is** — so your new playbook shows up right alongside this one.\n\n'
+  printf 'That is the whole loop: you describe the goal, your AI brainstorms, builds the trinity, documents it, and hands you the link. Build as many as you want — that is the point of the system.\n\n'
+  printf -- '---\n\n'
+
   # ---- THE FULL EXPLANATION / REFERENCE — comes AFTER Quick Start (both, not either) ----
   printf '# 📖 Full Reference & Explanation\n\n'
   printf 'Quick Start above is all you need to get live. This section explains HOW it works, WHAT each piece is, and HOW to troubleshoot — read it when you want the why behind the steps. **The Quick Start does not replace this; both are here on purpose.**\n\n'

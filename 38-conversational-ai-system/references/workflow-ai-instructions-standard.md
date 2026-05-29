@@ -214,7 +214,25 @@ matches nothing (or everything). That blank/non-existent-tag filter is a confirm
   there (or via the agent) before the filter will work.
 - Record created tag names + IDs in the workflow's `--ghl-side.md` file.
 
-## 7. Templates this standard governs
+## 7. "YOUR COMMUNICATION PLAYBOOKS" — where they live + how the client builds a new one
+
+The generated Client Reference Sheet carries a prominent **"Your Communication Playbooks"** section
+(after the Quick Start, before the deep reference) that tells the client WHERE their playbooks live and HOW
+to build a new one. This is part of the standard so every client doc answers it the same way:
+
+- **WHERE they live** — the working copies are in the client's OpenClaw master-files
+  **`conversation-workflows/`** folder (the source of truth the agent reads on every reply); the
+  human-facing copies are in their **Notion** (Notion → Google Docs → text). Both stay in sync.
+- **HOW to build a new one (BIG BOLD: "Want a NEW communications playbook? Start here")** — the client just
+  tells their AI **"help me build a [purpose] playbook."** The AI brainstorms with them (friendly, uses
+  known business context — not a 50-question form), then builds **all 3 parts of THE TRINITY**: the
+  **workflow-AI prompt** (Section 1 above) + the **communications playbook** (Layer 2) + the **GHL
+  automation** — writes a human-facing copy to Notion, registers it, and tells them where it is.
+
+Machine-enforced by `scripts/qc-reference-sheet.sh --require-manual-fill` and detailed in
+`references/communications-playbook-standard.md` §9.
+
+## 8. Templates this standard governs
 
 - `templates/sms-workflow-ai-prompt-template.md` — the copy-paste Build-with-AI prompt (field-by-field + multi-action note).
 - `templates/workflow-verification-checklist-template.md` — the per-workflow verification checklist.

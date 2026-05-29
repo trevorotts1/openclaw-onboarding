@@ -156,3 +156,56 @@ Raw Body JSON — there was nothing to paste into GHL's Build-with-AI. This is n
 `.github/workflows/qc-static.yml`): the gate drives the generator in an offline sandbox and FAILS the
 build if the rendered sheet lacks the word `Bearer`, a ` ```json ` fenced code block, or the hook URL. It
 is no longer optional prose.
+
+## 8. MANDATORY — deliver the doc LINK to the client via Telegram (un-skippable, machine-enforced)
+
+**Every client gets their setup-doc LINK via Telegram, no matter what.** The install is NOT complete until
+the client has been SENT their Quick-Start / Notion doc link via Telegram
+(`openclaw message send --channel telegram -t <chat>`). Drafting/generating the doc is NOT delivering it —
+this is a separate, GATED step. The operator was tired of repeating this, so it is now enforced exactly
+like the send-directive / conversation-memory / playbook-doc gates.
+
+- [ ] **Doc LINK delivered via Telegram, state-recorded.** `scripts/22-notify-client-doc.sh` sends the
+      Quick-Start / Notion doc link to the client and records `clientDocDelivered=true` in the run-state
+      file. The reference-sheet generator (`scripts/21-generate-client-reference-sheet.sh`) already sends
+      the link as part of Step 6; the dedicated notify script makes the delivery a re-runnable, gated step.
+
+**Chat-id resolution — grep the TRANSCRIPTS, not just `sessions.json`.** `22-notify-client-doc.sh` uses
+`CLIENT_TELEGRAM_CHAT_ID` when the operator captured it; when it is empty, it DISCOVERS the chat by
+grepping `agents/*/sessions/*.jsonl` for every shape a paired chat appears in — `"chat":{"id":<n>`,
+`telegram:direct:<n>`, `"chatId":<n>`, and `"from":{"id":<n>` — and takes the **most-frequent NON-operator
+id**. Reading `sessions.json` keys alone MISSES paired chats (the Teresa lesson). If NO chat is found, the
+script FLAGS LOUDLY (stderr banner + `clientDocDelivered=false`) and exits non-zero so the install is
+marked incomplete — it NEVER silently skips.
+
+**ENFORCEMENT.** Machine-enforced by `scripts/qc-notify-client-doc.sh` (wired into
+`scripts/11-run-qc-checklist.sh` AND CI `.github/workflows/qc-static.yml`): the gate FAILS unless the
+notify script exists, sends via the gateway (never `api.telegram.org`), discovers the chat from the
+transcripts, LOUD-fails on no chat, and is wired into the binding instructions. The pre-handoff checklist
+ALSO asserts the run-state field `clientDocDelivered=true` at runtime.
+
+## 9. "YOUR COMMUNICATION PLAYBOOKS" section — MANDATORY in the generated client doc (machine-enforced)
+
+The generated Client Reference Sheet (`scripts/21-generate-client-reference-sheet.sh`) MUST carry a
+prominent **"Your Communication Playbooks"** section, placed **AFTER the Quick Start and BEFORE the deep
+Full Reference & Explanation.** It exists to answer — high up, where the client will actually see it — the
+FIRST question every client asks on their first test: *"where are my workflows / communication playbooks?"*
+
+The section MUST contain, prominently (a heading + a callout + a BIG BOLD CTA):
+
+- [ ] **WHERE they live** — the working copies are in the client's OpenClaw master-files
+      **`conversation-workflows/`** folder (the source of truth the agent reads on every reply), and the
+      human-facing copies are in their **Notion** (Notion → Google Docs → text). Both stay in sync; each
+      playbook is recorded in `conversation-workflows/registry.md`.
+- [ ] **In BIG BOLD: "Want a NEW communications playbook? Start here:"** — then: the client just tells their
+      AI **"help me build a [purpose] playbook"** and the AI does the rest. Tell them what happens next: the
+      AI **brainstorms** with them (a short friendly back-and-forth using known business context — NOT a
+      50-question form), then builds **all 3 parts** (THE TRINITY: the workflow-AI prompt + the conversation
+      playbook + the GHL automation), writes a human-facing copy to Notion (→ Google Docs → text), registers
+      it, and tells them where everything is.
+
+This section is **machine-enforced by `scripts/qc-reference-sheet.sh --require-manual-fill`** (CI +
+pre-handoff QC): the gate FAILS unless the generated doc carries the "Communication Playbooks" heading, the
+`conversation-workflows` + Notion location facts, the "Want a NEW communications playbook" CTA, the
+"help me build a [purpose] playbook" instruction, the brainstorm explanation, and the 3-part trinity note —
+and unless that section sits after Quick Start and before the deep reference.

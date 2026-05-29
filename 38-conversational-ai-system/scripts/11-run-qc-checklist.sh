@@ -77,6 +77,8 @@ SCRIPT_FILES=(
   "scripts/qc-conversation-memory.sh"
   "scripts/qc-playbook-doc.sh"
   "scripts/qc-reference-sheet.sh"
+  "scripts/22-notify-client-doc.sh"
+  "scripts/qc-notify-client-doc.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -264,6 +266,120 @@ if [ -f "$QC_REF" ]; then
   fi
 else
   report_fail "qc-reference-sheet.sh not found (looked in scripts/)"
+fi
+
+# -------- Mandatory Telegram doc-delivery gate (machine-enforced) --------
+section "Mandatory Telegram doc-delivery gate (qc-notify-client-doc.sh)"
+QC_NOTIFY="$SCRIPT_DIR/qc-notify-client-doc.sh"
+[ -f "$QC_NOTIFY" ] || QC_NOTIFY="$SKILL38_ROOT/scripts/qc-notify-client-doc.sh"
+if [ -f "$QC_NOTIFY" ]; then
+  if bash "$QC_NOTIFY" >/dev/null 2>&1; then
+    report_pass "mandatory Telegram doc-delivery is wired (22-notify-client-doc.sh sends via gateway, discovers chat from transcripts, LOUD-fails on no chat)"
+  else
+    report_fail "qc-notify-client-doc.sh: the mandatory Telegram doc-delivery step is missing/unwired (every client gets their link via Telegram, no matter what) — run it directly for detail"
+  fi
+else
+  report_fail "qc-notify-client-doc.sh not found (looked in scripts/)"
+fi
+
+# -------- Runtime assertion: the client doc link was actually delivered --------
+# Step 6.5 records clientDocDelivered=true in the run-state file once the link is
+# sent. At pre-handoff QC the install is NOT complete unless this is true. The
+# state file lives next to the master files (or in the OpenClaw data dir).
+section "Client doc delivered via Telegram (clientDocDelivered=true)"
+RUN_STATE_CANDIDATES=()
+[ -n "${RUN_STATE_FILE:-}" ] && RUN_STATE_CANDIDATES+=("$RUN_STATE_FILE")
+[ -n "${MASTER_FILES_DIR:-}" ] && RUN_STATE_CANDIDATES+=("$MASTER_FILES_DIR/.skill38-run-state.env")
+RUN_STATE_CANDIDATES+=("${HOME}/.openclaw/.skill38-run-state.env" "/data/.openclaw/.skill38-run-state.env")
+STATE_FOUND=""
+for sf in "${RUN_STATE_CANDIDATES[@]}"; do
+  [ -f "$sf" ] && { STATE_FOUND="$sf"; break; }
+done
+if [ -n "$STATE_FOUND" ]; then
+  if grep -q '^clientDocDelivered=true' "$STATE_FOUND"; then
+    report_pass "clientDocDelivered=true (client was sent their setup-doc link via Telegram) — $STATE_FOUND"
+  else
+    report_fail "clientDocDelivered is NOT true in $STATE_FOUND — the client was never sent their doc link via Telegram (run scripts/22-notify-client-doc.sh; the install is not complete)"
+  fi
+else
+  echo "  [SKIP] run-state file not found; cannot assert clientDocDelivered (run scripts/22-notify-client-doc.sh during the live install)"
+fi
+
+# -------- Backend-ready gate: the agent is ready to RECEIVE --------
+# The install is not "complete" until the backend can RECEIVE inbound: a live
+# hooks.mappings entry for HOOK_NAME with deliver:false and a working model, AND
+# /healthz returns 200. Testing only happens after BOTH the doc AND this pass.
+section "Backend ready to receive (hooks.mappings live + deliver:false + model + /healthz 200)"
+OC_CONFIG=""
+for cfg in "${OPENCLAW_CONFIG:-}" "${HOME}/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json" "/root/.openclaw/openclaw.json"; do
+  [ -n "$cfg" ] && [ -f "$cfg" ] && { OC_CONFIG="$cfg"; break; }
+done
+if [ -n "$OC_CONFIG" ] && command -v python3 >/dev/null 2>&1; then
+  BACKEND_OUT="$(HOOK_NAME="${HOOK_NAME:-${ROUTE_ID:-}}" python3 - "$OC_CONFIG" <<'PY_BACKEND_EOF' 2>/dev/null || true
+import json, os, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception as e:
+    print("ERR:cannot-parse-config"); sys.exit(0)
+hooks = d.get("hooks") or {}
+maps = hooks.get("mappings") or []
+if isinstance(maps, dict):
+    maps = list(maps.values())
+want = (os.environ.get("HOOK_NAME") or "").strip()
+chosen = None
+for m in maps:
+    if not isinstance(m, dict):
+        continue
+    mid = str(m.get("id") or m.get("match") or "")
+    if want and mid == want:
+        chosen = m; break
+if chosen is None and maps:
+    # No HOOK_NAME provided (or no exact match): assert at least one agent mapping is live.
+    for m in maps:
+        if isinstance(m, dict) and (m.get("action") == "agent" or m.get("agent_id")):
+            chosen = m; break
+if chosen is None:
+    print("ERR:no-live-hooks-mapping"); sys.exit(0)
+deliver = chosen.get("deliver", None)
+model = (chosen.get("model") or "").strip()
+problems = []
+if deliver is not False:
+    problems.append("deliver-not-false")
+if not model:
+    problems.append("no-model")
+if problems:
+    print("ERR:" + ",".join(problems)); sys.exit(0)
+print("OK")
+PY_BACKEND_EOF
+)"
+  case "$BACKEND_OUT" in
+    OK) report_pass "hooks.mappings is live with deliver:false and a model set ($OC_CONFIG)" ;;
+    ERR:no-live-hooks-mapping) report_fail "no live hooks.mappings agent entry — the backend cannot RECEIVE inbound (run scripts/15-configure-hooks-mappings.sh)" ;;
+    ERR:*) report_fail "hooks.mappings is not receive-ready: ${BACKEND_OUT#ERR:} (need deliver:false + a working model)" ;;
+    *) report_fail "could not evaluate hooks.mappings readiness from $OC_CONFIG" ;;
+  esac
+else
+  echo "  [SKIP] openclaw.json not found (or python3 missing); cannot assert hooks.mappings readiness"
+fi
+
+# /healthz 200 — the gateway is up and ready to receive.
+if [ -n "${PUBLIC_HOSTNAME:-}" ]; then
+  HZ_URL="https://${PUBLIC_HOSTNAME}/healthz"
+  HZ_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$HZ_URL" 2>/dev/null || echo 000)"
+  if [ "$HZ_CODE" = "200" ]; then
+    report_pass "/healthz returns 200 ($HZ_URL) — gateway is up and ready to receive"
+  else
+    report_fail "/healthz did not return 200 ($HZ_URL → HTTP $HZ_CODE) — gateway not confirmed receiving; do NOT test inbound yet"
+  fi
+elif command -v openclaw >/dev/null 2>&1; then
+  LOCAL_HZ="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${OPENCLAW_PORT:-3000}/healthz" 2>/dev/null || echo 000)"
+  if [ "$LOCAL_HZ" = "200" ]; then
+    report_pass "/healthz returns 200 (localhost) — gateway is up and ready to receive"
+  else
+    echo "  [SKIP] PUBLIC_HOSTNAME unset and localhost /healthz not 200 (HTTP $LOCAL_HZ); cannot assert gateway readiness here"
+  fi
+else
+  echo "  [SKIP] PUBLIC_HOSTNAME unset and openclaw CLI not on PATH; cannot probe /healthz"
 fi
 
 # -------- install-script config-invalidating pattern gate (machine-enforced) --------
