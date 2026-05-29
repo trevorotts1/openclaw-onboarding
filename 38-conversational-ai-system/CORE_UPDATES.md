@@ -26,6 +26,10 @@ Key behaviors added:
 
 ## [ADD TO MEMORY.md] — appended by `scripts/06-append-memory-rules.sh`
 
+The script appends TWO marker blocks (idempotent, each behind its own BEGIN/END marker):
+**(1)** core v5.14 design rules 6-14 (`<!-- BEGIN skill-38 memory-rules v5.14 -->`), and
+**(2)** Conversation Playbook Builder design rules 15-19 (`<!-- BEGIN skill-38 builder-design-rules v1.4.0 -->`).
+
 Rules 6-14 of the 14 v5.14 MEMORY.md design principles. (Rules 1-5 belong to skill 19/29.)
 
 6. **Conversation Log Rule** — log every inbound + outbound, real-time.
@@ -37,6 +41,16 @@ Rules 6-14 of the 14 v5.14 MEMORY.md design principles. (Rules 1-5 belong to ski
 12. **Discount Code Rule** — only per per-product policy; never invent codes.
 13. **Intelligent Routing Rule** — Conversation Workflows override channel playbooks per context routing.
 14. **Tune-up Rule** — Sunday 2am weekly + Saturday 11pm proactive + 1st-of-month review crons are the heartbeat. Never disable without operator approval.
+
+### Conversation Playbook Builder design rules 15-19 (v1.4.0)
+
+The system's USP is **communication-driven funnels / automations** — built by talking and brainstorming, NOT click-and-drag (this is what beats CloseBot). These five rules make the recurring "build me a conversation playbook" flow (Step 9.20) bulletproof:
+
+15. **Terminology Rule** — "workflow" / "automation" / "Workflow AI" all mean a **GHL Automations-section workflow** unless the operator says otherwise.
+16. **No-GHL-API Rule** — GHL Automations have **NO API/MCP**; the only build path is the **"Build with AI" button** (top-right of Automations) — the agent generates the prompt, the operator clicks + pastes. (Future: Playwright auto-paste; today manual.) Never claim a GHL Automations API exists.
+17. **3-PART Build Rule** — every build ships Part 1 (Workflow AI instruction set: Build-with-AI prompt + manual-build fallback + verification checklist), Part 2 (the conversation playbook → registered in `conversation-workflows/registry.md`), and Part 3 (the brainstorm trigger). The prompt nails the SHAPE; tokens are pasted by the operator after — always ship the verification checklist.
+18. **Brainstorm-Not-50-Questions Rule** — run a friendly proactive Q&A: USE what's already known (Typed KBs + USER.md + MEMORY.md), ask ONLY the smart gaps, then regurgitate a CONCISE "is this what you want?" confirmation. On YES → build Part 1 → Part 2 → pointer into AGENTS.md/TOOLS.md/MEMORY.md → NEW Notion doc (client's own workspace) → register.
+19. **Mac Env Rule** — on Mac, secrets live in **`~/clawd/secrets/.env`** AND/OR **`~/.openclaw/.env`** — check BOTH before claiming a key is missing (VPS uses `/docker/<project>/.env`; Mac does not).
 
 ## [ADD TO TOOLS.md] — no automated update; operator manually documents
 

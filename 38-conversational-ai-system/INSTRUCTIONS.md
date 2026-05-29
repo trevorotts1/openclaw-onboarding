@@ -21,6 +21,12 @@ Key automation in skill 38:
 
 - `scripts/00-verify-prerequisites.sh` — Step O.1 prerequisite verification (skills 05, 10, 19, 29).
 - `scripts/01-locate-master-files-folder.sh` — Step O.2 hardened semantic master-folder discovery. If multiple candidates exist, disambiguate; only CREATE a new folder as a last resort with operator approval.
+- `scripts/18-locate-secrets-env.sh` — Step O.5 secrets/env discovery.
+
+> **Step O.5 — Mac env note.** Unlike a VPS (Docker), which keeps env in `/docker/<project>/.env`, a **Mac**
+> install stores secrets in **BOTH `~/clawd/secrets/.env` AND `~/.openclaw/.env`**. Check (and add keys to)
+> BOTH — never claim a key is missing without checking both. `scripts/18-locate-secrets-env.sh` searches
+> both Mac locations; see `references/GHL-INBOUND-AND-PLAYBOOKS.md` §1 for the full 4-token map.
 
 After Phase 0: you have `MASTER_FILES_DIR` set, prerequisites verified, embeddings configured per O.6.
 
@@ -80,7 +86,7 @@ This is where the 27 protocols ship. The mapping table:
 | 9.17 | `conversation-analytics-protocol.md` |
 | 9.18 | `document-generation-protocol.md` |
 | 9.19 | `smart-booking-protocol.md` |
-| 9.20 | `protocols/conversation-workflows-protocol.md` (verbatim 3-Layer architecture from playbook lines 3857-4322); registry scaffolded by `scripts/09-install-conversation-workflows.sh`; trigger phrases wired into AGENTS.md Step 1.85 by `scripts/05-update-agents-md.sh` |
+| 9.20 | **Conversation Playbook Builder** (the system's differentiator) — `protocols/conversation-workflows-protocol.md`. Now an explicit **3-PART build** every time: Part 1 = Workflow AI instruction set (Build-with-AI prompt + manual-build fallback + verification checklist), Part 2 = the conversation playbook (Layer 2 markdown → `conversation-workflows/<id>.md`, registered in `registry.md`), Part 3 = the brainstorm trigger (friendly proactive Q&A — NOT 50 questions — using Typed KBs + USER.md + MEMORY.md, then a concise "is this what you want?" confirmation → build → Notion doc → register). Registry scaffolded by `scripts/09-install-conversation-workflows.sh`; brainstorm trigger phrases wired into AGENTS.md Step 1.85 by `scripts/05-update-agents-md.sh`. **Cross-refs:** Step 9.33 (router) + Step 9.34 (proactive engine) — see protocol Section K. **GHL note:** Automations have NO API/MCP — the only build path is the **Build with AI** button. |
 | 9.21 | **Humanizer** — skill 19 (NOT shipped here; ALWAYS-ON via skill 38's AGENTS.md Step 2.8) |
 | 9.22 | `typed-knowledge-bases-protocol.md` |
 | 9.23 | `sales-best-practices-protocol.md` + `references/sales-frameworks-deep-dive.md` |
@@ -93,8 +99,8 @@ This is where the 27 protocols ship. The mapping table:
 | 9.30 | `customer-service-support-protocol.md` (dual-mode) |
 | 9.31 | `shopify-integration-protocol.md` + `references/shopify-graphql-reference.md` (operator opt-in via `scripts/08-shopify-setup-wizard.sh`) |
 | 9.32 | `weekly-tune-up-protocol.md` (Sunday 2am cron via `scripts/04-register-crons.sh`) |
-| 9.33 | `intelligent-routing-protocol.md` |
-| 9.34 | `proactive-suggestions-protocol.md` (Saturday 11pm cron) |
+| 9.33 | `intelligent-routing-protocol.md` — **Intelligent Playbook Routing**: cross-playbook TRANSITIONS (a customer who starts in one playbook gets moved to another based on responses; agent detects the shift each message, max 3 switches, soft transitions). The destinations are the playbooks built by Step 9.20. Cross-ref Step 9.20 Section K. |
+| 9.34 | `proactive-suggestions-protocol.md` (Saturday 11pm cron) — **Proactive Features Suite**: sub-feature 34.1 is the pattern-based "I've seen N customers ask about X with no playbook — want one?" engine; on YES it drafts a playbook *via the Step 9.20 builder*. Cross-ref Step 9.20 Section K. |
 | 9.35 | `monthly-comprehensive-review-protocol.md` (1st-of-month cron) |
 | 9.36 | `model-version-freshness-protocol.md` (bundled into Saturday 11:30pm cron) |
 

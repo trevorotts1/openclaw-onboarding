@@ -1,8 +1,17 @@
-# Intelligent Playbook Routing Protocol
+# Intelligent Playbook Routing Protocol (Step 9.33)
+
+> **Triangle cross-reference (builder ↔ router ↔ proactive engine):** This protocol is the **ROUTER**
+> corner. The destinations it transitions between are the playbooks created by **Step 9.20 — Conversation
+> Playbook Builder** (`conversation-workflows-protocol.md`). The **Step 9.34 — Proactive Features Suite**
+> (`proactive-suggestions-protocol.md`) proposes NEW playbooks the builder then creates, which immediately
+> become routable destinations here. See Step 9.20 Section K for the full triangle.
 
 The agent re-evaluates workflow match after EVERY customer message,
 not just at conversation start. Routes to a different workflow when
-the conversation has clearly moved to a different topic.
+the conversation has clearly moved to a different topic. This is
+cross-playbook TRANSITIONS: a customer who starts in one playbook gets
+moved to another based on their responses; the agent detects the shift,
+caps switches at 3 per conversation, and uses soft transition language.
 
 ## When routing evaluation runs
 

@@ -1,4 +1,11 @@
-# Proactive Features Suite Protocol
+# Proactive Features Suite Protocol (Step 9.34)
+
+> **Triangle cross-reference (builder ↔ router ↔ proactive engine):** This protocol is the **PROACTIVE
+> ENGINE** corner. Sub-feature 34.1 below is the pattern-based "I've seen N customers ask about X with no
+> playbook — want one?" engine; on YES it drafts a playbook *via the Step 9.20 builder*
+> (`conversation-workflows-protocol.md`) into `conversation-workflows/drafts/`. Once built, those playbooks
+> become routable destinations for **Step 9.33 — Intelligent Playbook Routing**
+> (`intelligent-routing-protocol.md`). See Step 9.20 Section K for the full triangle.
 
 Seven proactive capabilities, each independently triggerable. Each
 analyzes recent conversation logs / workflow outcomes / escalation

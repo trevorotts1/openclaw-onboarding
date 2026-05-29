@@ -1,3 +1,33 @@
+## [1.4.1] - 2026-05-28 - Conversation Playbook Builder enhancement (the differentiator) (repo v10.15.7)
+
+### Why
+The recurring "build me a conversation playbook" flow is the system's USP — communication-driven funnels /
+automations, built by talking and brainstorming instead of click-and-drag (this is what beats CloseBot).
+Step 9.20 needed to be explicitly bulletproof every time, and the MEMORY.md rules + Mac env handling needed
+to back it. Content-only addition; no version files touched (repo stays v10.15.7).
+
+### Added / Changed
+- `protocols/conversation-workflows-protocol.md` — Step 9.20 reframed as an explicit **3-PART build**:
+  Part 1 (Workflow AI instruction set = Build-with-AI prompt + new **manual-build fallback** D.2b +
+  verification checklist, with the SHAPE-first / operator-pastes-tokens guidance); Part 2 (the conversation
+  playbook → registered in registry.md, with the hook-path "how the two halves connect" note); Part 3 (new
+  Section I — the friendly **brainstorm trigger**: use Typed KBs + USER.md + MEMORY.md, ask ONLY smart gaps,
+  NEVER 50 questions, concise "is this what you want?" confirmation → build → Notion doc → register). New
+  Section J (AGENTS.md Step 1.85 runtime hook), Section K (builder ↔ router ↔ proactive cross-references),
+  Section L (Mac env note). Removed ambiguous "Workflow AI" usage referring to the GHL feature (now
+  "Build with AI") and the implication that GHL Automations have an API.
+- `scripts/06-append-memory-rules.sh` — adds a second idempotent block: **builder design rules 15-19**
+  (Terminology, No-GHL-API, 3-PART Build, Brainstorm-Not-50-Questions, Mac Env).
+- `scripts/05-update-agents-md.sh` — Step 1.85 block expanded with the communication-driven USP, the
+  brainstorm-not-50-questions rule, the 3-PART build, the no-GHL-API note, and the router/proactive cross-refs.
+- `scripts/18-locate-secrets-env.sh` — Step O.5: Mac now searches BOTH `~/clawd/secrets/.env` and
+  `~/.openclaw/.env`; added the Mac-vs-VPS env clarity note.
+- `protocols/intelligent-routing-protocol.md` (Step 9.33) + `protocols/proactive-suggestions-protocol.md`
+  (Step 9.34) — reciprocal triangle cross-references to the builder.
+- `INSTRUCTIONS.md` — Step 9.20 row rewritten (3-PART build, USP, no-API note); 9.33/9.34 rows annotated;
+  Phase 0 Step O.5 Mac env note added.
+- `CORE_UPDATES.md` — documents builder design rules 15-19 so install writes them.
+
 ## [1.4.0] - 2026-05-28 - GHL Build-with-AI hardening + calendar-sync (repo v10.15.7)
 
 ### Why

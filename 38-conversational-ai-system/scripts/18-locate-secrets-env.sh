@@ -4,6 +4,12 @@
 # Searches the canonical OpenClaw env locations. If multiple exist, asks
 # the operator to disambiguate. If none, creates the default with mode 600.
 # Persists the path to $HOME/.openclaw/.skill-38-secrets-env-path.
+#
+# MAC ENV NOTE (Step O.5): unlike a VPS (Docker), which keeps env in
+# /docker/<project>/.env, a Mac install stores secrets in BOTH
+# ~/clawd/secrets/.env AND ~/.openclaw/.env. Check (and add keys to) BOTH —
+# never claim a key is missing without checking both. This script searches
+# both Mac locations below.
 set -euo pipefail
 
 OS="$(uname -s)"
@@ -11,7 +17,9 @@ mkdir -p "$HOME/.openclaw"
 STATE_FILE="$HOME/.openclaw/.skill-38-secrets-env-path"
 
 if [ "$OS" = "Darwin" ]; then
+  # Mac: env lives in BOTH ~/clawd/secrets/.env and ~/.openclaw/.env (check both).
   CANDIDATES_LIST=(
+    "$HOME/clawd/secrets/.env"
     "$HOME/.openclaw/.env"
     "$HOME/.openclaw/secrets.env"
     "$HOME/.openclaw/secrets/.env"
