@@ -216,14 +216,32 @@ if (( pending_count == 0 )) && (( stale_building_count == 0 )) \
   case "$sop_library_status"  in done) : ;; *) library_dirty=1 ;; esac
 fi
 
-total_attention=$(( pending_count + stale_building_count + library_dirty + closeout_dirty ))
+# ---- v10.15.9: ENFORCED cross-skill chain to Skill 38 (comms automations) ----
+# When the built workforce includes a Communications, Sales, or Customer-Support
+# department, the closeout MUST hand off to Skill 38 to scaffold the matching
+# comms automations. Enforced the SAME way as the library gate: a state field
+# (commsAutomationStatus) + this verify/resume dirty check, NOT prose. Dirty when
+# all departments are done AND libraries are clean but commsAutomationStatus is
+# neither 'done' nor 'not-applicable'. Fires AFTER libraries are clean (comms
+# automations sit on top of a complete workforce) and may run alongside closeout.
+comms_automation_status=$(jq -r '.commsAutomationStatus // "pending"' "$STATE_FILE")
+comms_automation_dirty=0
+if (( pending_count == 0 )) && (( stale_building_count == 0 )) && (( library_dirty == 0 )) \
+   && (( total_count_now > 0 )) && (( done_count_now == total_count_now )); then
+  case "$comms_automation_status" in
+    done|not-applicable) comms_automation_dirty=0 ;;
+    *) comms_automation_dirty=1 ;;
+  esac
+fi
+
+total_attention=$(( pending_count + stale_building_count + library_dirty + comms_automation_dirty + closeout_dirty ))
 if (( total_attention == 0 )); then
   done_count=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
   total_count=$(jq -r '.departments | length' "$STATE_FILE")
   if (( done_count == total_count )) && (( total_count > 0 )); then
-    log "ALL ${total_count} departments done + closeout terminal (status=$closeout_status) — nothing to do"
+    log "ALL ${total_count} departments done + libraries done (role=$role_library_status sop=$sop_library_status) + comms-automations terminal (status=$comms_automation_status) + closeout terminal (status=$closeout_status) — nothing to do"
   else
-    log "no pending/stale departments and closeout clean (pending=$pending_count, stale=$stale_building_count, closeout=$closeout_status) — nothing to do"
+    log "no pending/stale departments, comms-automations clean (status=$comms_automation_status), closeout clean (pending=$pending_count, stale=$stale_building_count, closeout=$closeout_status) — nothing to do"
   fi
   exit 0
 fi
@@ -234,12 +252,43 @@ max_attempts=$(jq -r ".maxResumeAttempts // $MAX_ATTEMPTS_DEFAULT" "$STATE_FILE"
 if (( attempts >= max_attempts )); then
   log "resumeAttempts ($attempts) >= maxResumeAttempts ($max_attempts) — bailing out, no more self-pings"
   # Final escalation to operator (env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759).
+  # v10.15.9: name the library status explicitly so a persistently-failing
+  # library pull is visible in the final escalation, not buried as "stuck".
   _operator_chat="$(resolve_operator_chat_id)"
   if [[ -n "$_operator_chat" ]]; then
+    _lib_note=""
+    if (( library_dirty == 1 )); then
+      _lib_note=" LIBRARIES NEVER REACHED 100% (roleLibraryStatus=${role_library_status}, sopLibraryStatus=${sop_library_status}) — the role-library pull / SOP authoring kept failing; run scripts/verify-library-gate.sh on $(hostname) to see which dept(s) are short."
+    fi
     openclaw message send --channel telegram -t "$_operator_chat" \
-      -m "🚨 Workforce build stuck: ${pending_count} pending, ${stale_building_count} stale, ${attempts} resume attempts exhausted. State: $STATE_FILE" 2>>"$LOG_FILE" || true
+      -m "🚨 Workforce build stuck: ${pending_count} pending, ${stale_building_count} stale, ${attempts} resume attempts exhausted.${_lib_note} State: $STATE_FILE" 2>>"$LOG_FILE" || true
   fi
   exit 0
+fi
+
+# ---- v10.15.9: OPERATOR-FACING library-gate status surfacing (near-cap) ----
+# A persistently-failing library pull would otherwise just keep self-pinging
+# silently until the hard cap. When libraries are dirty AND we're within the
+# last 2 attempts of the cap, emit ONE operator-facing status line so the
+# stuck-library condition becomes visible BEFORE the cap is hit. Throttled to a
+# single emission per build via .librariesNearCapNotified in the state file.
+near_cap_threshold=$(( max_attempts - 2 ))
+(( near_cap_threshold < 1 )) && near_cap_threshold=1
+if (( library_dirty == 1 )) && (( attempts >= near_cap_threshold )); then
+  already_notified=$(jq -r '.librariesNearCapNotified // false' "$STATE_FILE")
+  if [[ "$already_notified" != "true" ]]; then
+    _operator_chat="$(resolve_operator_chat_id)"
+    _agent_name=$(jq -r '.agentName // "the workforce build"' "$STATE_FILE")
+    _company=$(jq -r '.companyName // ""' "$STATE_FILE")
+    STATUS_LINE="⚠️ Library gate not closing: ${_company:+$_company — }${_agent_name} has all departments done but roleLibraryStatus=${role_library_status} / sopLibraryStatus=${sop_library_status} after ${attempts}/${max_attempts} resume attempts. The role-library pull or SOP authoring keeps failing — it will hit the cap soon and stop retrying. Check scripts/verify-library-gate.sh on $(hostname). State: $STATE_FILE"
+    log "OPERATOR-STATUS (near-cap, libraries dirty): $STATUS_LINE"
+    if [[ -n "$_operator_chat" ]]; then
+      openclaw message send --channel telegram -t "$_operator_chat" -m "$STATUS_LINE" 2>>"$LOG_FILE" || true
+    fi
+    # Mark notified so we surface this once, not on every remaining cycle.
+    _tmp_notif=$(mktemp)
+    jq '.librariesNearCapNotified = true' "$STATE_FILE" > "$_tmp_notif" && mv "$_tmp_notif" "$STATE_FILE"
+  fi
 fi
 
 # ---- bump attempt counter atomically ----
@@ -273,13 +322,20 @@ fi
 
 if (( library_dirty == 1 )) && (( closeout_dirty == 0 )); then
   msg="[LIBRARY-RESUME] ${agent_name}: every department is built but the ROLE LIBRARY and/or SOP LIBRARY are NOT populated (roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}). The workforce is NOT complete until BOTH are done. Run scripts/verify-library-gate.sh to measure; if role library < 100% re-run scripts/post-build-role-workspaces.py (pulls how-to.md from templates/role-library/); if SOPs have stubs re-run scripts/populate-sops-from-manifest.py. Re-run verify-library-gate.sh until it exits 0 (roleLibraryStatus=done AND sopLibraryStatus=done) — ONLY THEN write buildCompletedAt + closeoutStatus=pending. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the resume is internal."
+elif (( comms_automation_dirty == 1 )); then
+  # v10.15.9: cross-skill chain to Skill 38 — fires AFTER libraries are clean.
+  # A workforce that built a Communications / Sales / Customer-Support department
+  # is NOT fully delivered until Skill 38 has scaffolded the matching comms
+  # automations (THE TRINITY: playbook + Build-with-AI prompt + registry row).
+  comms_depts=$(jq -r '(.commsAutomationDepartments // []) | join(", ")' "$STATE_FILE")
+  msg="[COMMS-AUTOMATION-RESUME] ${agent_name}: all departments + libraries are done, but the comms-automation handoff to Skill 38 is incomplete (commsAutomationStatus=${comms_automation_status}). This workforce built a comms/sales/support department (${comms_depts:-communications/sales/customer-support}) — per the Skill 23 -> Skill 38 cross-skill chain, you MUST scaffold the matching conversational automations. DO THIS: (1) read ~/.openclaw/skills/38-conversational-ai-system/SKILL.md + protocols/conversation-workflows-protocol.md; (2) set commsAutomationStatus=scaffolding; (3) build at MINIMUM the appointment-booking starter via THE TRINITY — communications playbook + its Build-with-AI prompt + a registry row in the client's conversation-workflows/ (plus a pricing/FAQ or lead-followup playbook matching the department that triggered this); (4) run ~/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh — it must PASS (every registered workflow has its playbook + prompt); (5) ONLY THEN set commsAutomationStatus=done + commsAutomationVerifiedAt in .workforce-build-state.json. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — this is internal; the owner hears from you via Skill 37 Step 6 only."
 elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_count == 0 )); then
   msg="[CLOSEOUT-RESUME] ${agent_name}: workforce build is done (buildCompletedAt set) but closeout is incomplete (closeoutStatus=${closeout_status:-unset}). Read /data/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md and invoke scripts/run-closeout.sh. The script is idempotent — it picks up from the first un-completed step. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the owner only hears from you when Skill 37 Step 6 fires."
 else
   msg="[WORKFORCE-RESUME] ${agent_name}: continue the workforce build per the Post-Interview Handoff Protocol in Skill 23. Read .workforce-build-state.json. Pending: ${pending_list:-none}. Stale: ${stale_list:-none}. Closeout status: ${closeout_status:-unset}. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the resume is internal. When all departments are done, set closeoutStatus=pending and either invoke ~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh inline OR exit and let the next cron fire pick up the closeout."
 fi
 
-log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_attempts; pending='$pending_list'; stale='$stale_list'; library_dirty=$library_dirty roleLib='$role_library_status' sopLib='$sop_library_status'; closeout_dirty=$closeout_dirty closeout_status='$closeout_status')"
+log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_attempts; pending='$pending_list'; stale='$stale_list'; library_dirty=$library_dirty roleLib='$role_library_status' sopLib='$sop_library_status'; comms_automation_dirty=$comms_automation_dirty comms_automation_status='$comms_automation_status'; closeout_dirty=$closeout_dirty closeout_status='$closeout_status')"
 if openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" 2>>"$LOG_FILE"; then
   log "resume dispatch ok"
 else

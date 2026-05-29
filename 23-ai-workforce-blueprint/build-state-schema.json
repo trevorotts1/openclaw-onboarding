@@ -201,6 +201,38 @@
       ],
       "description": "Captures the specific reason role/SOP library population failed or is incomplete (e.g. 'role-library: marketing 4/12 how-to.md filled', 'sop: 18 stubs remaining', 'populate-sops-from-manifest.py rc=3 owner-input-required'). Added v10.15.8."
     },
+    "librariesNearCapNotified": {
+      "type": "boolean",
+      "default": false,
+      "description": "Throttle flag (added v10.15.9). Set true the FIRST time resume-workforce-build.sh emits an OPERATOR-FACING 'library gate not closing' status line — i.e. when the libraries are still dirty AND resumeAttempts has reached within 2 of maxResumeAttempts. Surfacing this near-cap (instead of only at the hard cap) makes a persistently-failing role-library/SOP pull visible before the cron stops retrying. Once true, the status is not re-emitted on every remaining cycle."
+    },
+    "commsAutomationStatus": {
+      "type": "string",
+      "enum": [
+        "not-applicable",
+        "pending",
+        "scaffolding",
+        "done",
+        "failed"
+      ],
+      "default": "pending",
+      "description": "ENFORCED cross-skill chain to Skill 38 (added v10.15.9). When the built workforce includes a Communications, Sales, or Customer-Support department, the closeout MUST hand off to Skill 38 (conversational AI system) to scaffold the matching comms automations — the same enforcement shape as the role/SOP library gate (state field + verify/resume self-ping), NOT prose. Set by the Skill 23 master orchestrator at Moment 3.8 once all departments are done: 'not-applicable' if NONE of Communications/Sales/Customer-Support was built (no comms department => no handoff needed); otherwise 'pending'. Skill 38 transitions pending → scaffolding → done. 'done' ONLY when the client's conversation-workflows/ has at least the appointment-booking starter playbook + its Build-with-AI prompt registered (THE TRINITY) — verifiable via Skill 38 scripts/qc-trinity-registry.sh. A workforce with a comms/sales/support department but commsAutomationStatus NOT IN {done, not-applicable} is NOT fully delivered — resume-workforce-build.sh treats it as dirty and dispatches a [COMMS-AUTOMATION-RESUME] self-ping. Last-night incident class (siblings with zero cross-references): a Sales/Support workforce shipped with no conversational automations wired."
+    },
+    "commsAutomationDepartments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The department slugs that triggered the Skill 38 handoff (e.g. ['communications','sales','customer-support']). Written by Skill 23 alongside commsAutomationStatus so the resume self-ping can name exactly which department(s) need comms automations. Added v10.15.9."
+    },
+    "commsAutomationVerifiedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "When the Skill 38 trinity check (qc-trinity-registry.sh) last confirmed the matching comms automations are registered. Written when commsAutomationStatus is set to 'done'. Added v10.15.9."
+    },
     "closeoutStatus": {
       "type": "string",
       "enum": [

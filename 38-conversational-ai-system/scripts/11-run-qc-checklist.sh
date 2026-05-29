@@ -8,6 +8,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # -------- OS detection --------
 OS_KERNEL="$(uname -s 2>/dev/null || echo unknown)"
 case "$OS_KERNEL" in
@@ -73,6 +75,8 @@ section "File existence — scripts/ (install + QC)"
 SCRIPT_FILES=(
   "scripts/11-run-qc-checklist.sh"
   "scripts/12-scaffold-channel-playbooks.sh"
+  "scripts/qc-23-key-bodies.sh"
+  "scripts/qc-trinity-registry.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -168,6 +172,36 @@ if [ -f "$MEMORY_MD" ]; then
   fi
 else
   report_fail "MEMORY.md not found"
+fi
+
+# -------- 23-key GHL body linter (machine-enforced) --------
+section "23-key GHL RAW BODY linter (qc-23-key-bodies.sh)"
+QC_23="$SCRIPT_DIR/qc-23-key-bodies.sh"
+[ -f "$QC_23" ] || QC_23="$SKILL38_ROOT/scripts/qc-23-key-bodies.sh"
+if [ -f "$QC_23" ]; then
+  if bash "$QC_23" >/dev/null 2>&1; then
+    report_pass "all GHL RAW BODY examples are 23-key, flat, placeholder-free"
+  else
+    report_fail "qc-23-key-bodies.sh found 23-key-rule violation(s) — run it directly for detail"
+  fi
+else
+  report_fail "qc-23-key-bodies.sh not found (looked in scripts/)"
+fi
+
+# -------- THE TRINITY registry completeness (machine-enforced) --------
+section "THE TRINITY registry completeness (qc-trinity-registry.sh)"
+QC_TRINITY="$SCRIPT_DIR/qc-trinity-registry.sh"
+[ -f "$QC_TRINITY" ] || QC_TRINITY="$SKILL38_ROOT/scripts/qc-trinity-registry.sh"
+if [ -f "$QC_TRINITY" ]; then
+  TRINITY_RC=0
+  bash "$QC_TRINITY" >/dev/null 2>&1 || TRINITY_RC=$?
+  case "$TRINITY_RC" in
+    0) report_pass "every registered workflow has its playbook + Build-with-AI prompt" ;;
+    3) echo "  [SKIP] no conversation-workflows folder yet (nothing to check)" ;;
+    *) report_fail "qc-trinity-registry.sh found incomplete trinity row(s) — run it directly for detail" ;;
+  esac
+else
+  report_fail "qc-trinity-registry.sh not found (looked in scripts/)"
 fi
 
 # -------- Final summary --------

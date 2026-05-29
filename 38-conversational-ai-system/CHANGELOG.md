@@ -1,3 +1,40 @@
+## [1.4.6] - 2026-05-29 - 8 rated improvements (port of VPS #47): machine-enforced 23-key + TRINITY, Build-with-AI label fix, real self-counts, fleshed journeys, Skill 23 chain
+
+Part of repo `v10.15.9`. Six of the eight rated improvements land in this skill; the other two
+(cross-skill chain enforcement + library-gate status surfacing) land in Skill 23 but reference this skill.
+No stripped GHL bodies introduced — the 10 embedded object-A bodies all pass the new linter (23-key, flat,
+placeholder-free).
+
+### Added
+- `scripts/qc-23-key-bodies.sh` — machine-enforces the 23-key GHL RAW BODY rule across references/ +
+  templates/ + scripts/ (exactly 23 flat keys, placeholder-free `messageTemplate`, no nesting, no `\n`).
+  Wired into `scripts/11-run-qc-checklist.sh` and into CI (`.github/workflows/qc-static.yml`). Excludes the
+  verbatim `v6.0-source-playbook.md`; skips object-B server mappings.
+- `scripts/qc-trinity-registry.sh` — machine-enforces THE TRINITY: a registry row with a communications
+  playbook but no Build-with-AI prompt (or an orphan prompt) is flagged INCOMPLETE; honors the
+  Layer-1-not-needed exemption. Wired into `11-run-qc-checklist.sh`; referenced from the verification
+  checklist + standards.
+
+### Changed
+- **Mislabel fix (the failure this standard set out to kill):** `templates/sms-workflow-ai-prompt-template.md`,
+  `templates/workflow-verification-checklist-template.md`, `scripts/21-generate-client-reference-sheet.sh`,
+  `scripts/09-install-conversation-workflows.sh`, and `scripts/20-seed-design-principles.sh` now name the
+  authoritative location — GHL **Automations → "Build with AI"** (top-right) on a NEW automation — instead
+  of "Use Workflow AI" / "Create workflow → Workflow AI".
+- **Real self-counts:** `SKILL.md` + `INSTALL.md` now state protocols=32, scripts=27, references=14,
+  journeys=8 with a `SELF-COUNTS` re-verify comment; a re-verification note was added to the repo
+  `scripts/bump-version.sh`.
+- **7 stub journey templates fleshed out** to ≥ coach depth with vertical-specific triggers / conversation
+  phases / success actions: consulting, course-creator, e-commerce, real-estate, saas, service-provider,
+  wellness (107–121 lines each).
+- **Distinction-map table** added at the top of `protocols/conversation-workflows-protocol.md` (channel
+  communication playbook vs communications playbook vs workflow-AI prompt vs GHL automation).
+- **Skill 23 upstream cross-reference** added to `SKILL.md` + the protocol's TRINITY note (Skill 23's
+  comms/sales/support build now hands off here via the enforced `commsAutomationStatus` chain).
+
+### Version
+- `skill-version.txt` → `1.4.6`.
+
 ## [1.4.5] - 2026-05-29 - v6.0 clean comprehensive playbook; de-staled
 
 ### Why

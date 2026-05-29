@@ -1,3 +1,28 @@
+## [v10.15.9] — 2026-05-29 — Cross-skill chain to Skill 38 (ENFORCED) + library-gate status surfacing
+
+Part of repo `v10.15.9` (the 8 rated improvements, port of VPS #47). Two improvements land here:
+
+### Added
+- **commsAutomationStatus** state field (+ `commsAutomationDepartments`, `commsAutomationVerifiedAt`,
+  `librariesNearCapNotified`) in `build-state-schema.json`. Enforces the Skill 23 → Skill 38 cross-skill
+  chain: when the workforce builds a Communications / Sales / Customer-Support department, the build is
+  not fully delivered until Skill 38 has scaffolded the matching comms automations.
+- New binding **Moment 3.8 — Comms-automation handoff to Skill 38** in `INSTRUCTIONS.md`, plus a
+  reciprocal cross-reference in `SKILL.md` (the two siblings previously had zero cross-references).
+
+### Changed
+- `scripts/resume-workforce-build.sh`:
+  - Treats the build as dirty (and dispatches a `[COMMS-AUTOMATION-RESUME]` self-ping) when all
+    departments + libraries are done but `commsAutomationStatus NOT IN {done, not-applicable}`. The
+    self-ping points at Skill 38 + `qc-trinity-registry.sh`. Fires after `[LIBRARY-RESUME]`.
+  - **Library-gate status surfacing:** emits a one-line OPERATOR-FACING status when libraries stay dirty
+    into the last 2 resume attempts (throttled via `librariesNearCapNotified`), and names the library
+    status in the hard-cap escalation — a persistently-failing library pull is now visible instead of
+    silently retrying to the cap.
+- Repo version bumped to `v10.15.9` via `bump-version.sh` (skill-version.txt + the other 7 locations).
+
+---
+
 ## [v10.15.8] — 2026-05-29 — ENFORCED Role Library + SOP Library auto-pull gate
 
 ### Why

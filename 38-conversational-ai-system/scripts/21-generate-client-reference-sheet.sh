@@ -224,7 +224,7 @@ if parent_id is None:
 section_titles = [
     ("1. Setup Reference Sheet", os.environ["SEC1"]),
     ("2. Your First Workflow - SMS Inquiry Responder", os.environ["SEC2"]),
-    ("3. Generic Workflow AI Prompt Template", os.environ["SEC3"]),
+    ("3. Generic Build-with-AI Prompt Template", os.environ["SEC3"]),
     ("4. Workflow Verification Checklist", os.environ["SEC4"]),
 ]
 all_blocks = []
@@ -326,7 +326,7 @@ if [ "$LAYER" = "1" ]; then
     cat "$SEC1"
     printf '\n\n# 2. Your First Workflow - SMS Inquiry Responder\n\n'
     cat "$SEC2"
-    printf '\n\n# 3. Generic Workflow AI Prompt Template\n\n'
+    printf '\n\n# 3. Generic Build-with-AI Prompt Template\n\n'
     cat "$SEC3"
     printf '\n\n# 4. Workflow Verification Checklist\n\n'
     cat "$SEC4"
@@ -394,14 +394,14 @@ if [ -n "$NOTION_PAGE_URL" ]; then
     printf 'Hi %s, your conversational AI brain is set up.\n\n' "$CLIENT_FIRST_NAME"
     printf 'I made you a clean, copy-paste-ready setup page in Notion:\n\n'
     printf '    %s\n\n' "$NOTION_PAGE_URL"
-    printf 'You can skip everything below this line and just click that Notion link. Every piece you need (the webhook URL, the SMS workflow prompt you paste into Convert and Flow Workflow AI, the verification checklist) is laid out for you in one readable page with code blocks you can copy with one click.\n\n'
+    printf 'You can skip everything below this line and just click that Notion link. Every piece you need (the webhook URL, the SMS workflow prompt you paste into Convert and Flow Automations -> Build with AI, the verification checklist) is laid out for you in one readable page with code blocks you can copy with one click.\n\n'
     printf 'Below is the same information in this chat, in case the Notion link does not open or you want a quick scan:\n\n'
     printf -- '--- begin embedded fallback ---\n'
     printf 'Webhook URL: https://%s/hooks/%s\n' "$PUBLIC_HOSTNAME" "$ROUTE_ID"
     printf 'Authorization header: Bearer %s\n' "$HOOKS_TOKEN"
     printf 'Content-Type header: application/json\n'
     printf 'First workflow to build: %s (SMS Inquiry Responder).\n' "$WORKFLOW_ID"
-    printf 'In Convert and Flow: Automations -> Create workflow -> Use Workflow AI -> paste Section 2 of the Notion page.\n'
+    printf 'In Convert and Flow: Automations -> new automation -> click "Build with AI" (top-right) -> paste Section 2 of the Notion page.\n'
     printf 'Then open Section 4 (Verification Checklist) and walk top-to-bottom before publishing.\n'
     printf -- '--- end embedded fallback ---\n\n'
     printf 'Anything you do not understand: screenshot it and message me. - Keez\n'
@@ -412,7 +412,7 @@ else
     printf 'I put your setup reference here on your Mac:\n\n'
     printf '    %s\n\n' "$MD_FALLBACK_PATH"
     printf 'Heads up - I recommend you get Notion (notion.so) and ask me to push these into a Notion page next time. It is free and much easier to copy-paste from than markdown files.\n\n'
-    printf 'You can read the four files in that folder in order (01, 02, 03, 04). 02 is the prompt you paste into Convert and Flow Workflow AI. 04 is the checklist you walk after Workflow AI builds the workflow.\n\n'
+    printf 'You can read the four files in that folder in order (01, 02, 03, 04). 02 is the prompt you paste into Convert and Flow Automations -> Build with AI. 04 is the checklist you walk after Build with AI builds the workflow.\n\n'
     printf 'Quick reference if you just want the essentials:\n\n'
     printf 'Webhook URL: https://%s/hooks/%s\n' "$PUBLIC_HOSTNAME" "$ROUTE_ID"
     printf 'Authorization header: Bearer %s\n' "$HOOKS_TOKEN"

@@ -128,6 +128,12 @@ fix any item before publishing. (Per-workflow, brutally-specific version generat
 - [ ] **Workflow Published** (not Draft); run schedule correct.
 - [ ] **End-to-end test** passes (execution log shows 2xx; message lands in the conversation log).
 
+> **Machine-enforced.** Every GHL RAW BODY example in this skill (references/ + templates/ + scripts/) is
+> scanned by `scripts/qc-23-key-bodies.sh`, which asserts exactly 23 flat keys, a placeholder-free
+> `messageTemplate`, no nested objects, and no literal `\n` — and exits non-zero on any violation (it also
+> runs in CI). THE TRINITY (this prompt ⇄ its communications playbook ⇄ its registry row) is enforced by
+> `scripts/qc-trinity-registry.sh`. The 23-key rule is a check, not just a human checklist item.
+
 ## 5. MULTI-ACTION workflows (not just one action)
 
 Teach Build-with-AI (and the manual fallback) to build more than a single webhook step when the scenario

@@ -59,7 +59,7 @@ Why this matters:
 - Smaller workflows isolate failures to a specific concern
 - Smaller workflows are easier to test in isolation
 - Smaller workflows are easier to update without breaking other paths
-- Workflow AI builds smaller workflows more reliably than massive ones
+- GHL's Build with AI (Automations -> Build with AI) builds smaller workflows more reliably than massive ones
 
 When the agent designs a GHL workflow as part of a Conversation
 Workflow build (Step 9.20), it splits the workflow if it would
