@@ -127,14 +127,16 @@ cat >> "$MEM_MD" <<'BLOCK'
     Multiple triggers: highest priority first, queue the rest. Tags `ZHC-interrupt-handled`
     / `ZHC-faq-detoured` / `ZHC-aggression-handled-and-resumed`. See
     `<MASTER_FILES_DIR>/smart-playbook-switching-protocol.md`.
-23. Geo-Qualification Rule (F45, OFF by default) — when ON, location signals (pixel/IP →
+23. Geo-Qualification Rule (F45, OFF by default; per-product opt-in via
+    `geo_qualification.per_product`) — when ON, location signals (pixel/IP →
     phone area code → form address → explicit ask) are HINTS only. ALWAYS ASK to confirm
-    before ANY disqualification or out-of-area handling — never disqualify on a guess.
-    Out-of-area handling is operator-configured (decline+referral / limited-remote /
-    waitlist / full decline). Service areas per product in
-    `KnowledgeBases/sales/service-areas.md`. Tags `ZHC-out-of-service-area` /
-    `ZHC-service-area-confirmed` / `ZHC-service-area-flexible`. See
-    `<MASTER_FILES_DIR>/geo-qualification-protocol.md`.
+    before ANY disqualification or out-of-area handling — never disqualify on a guess, and
+    never on "vacation," "moving," or a non-answer (all do-not-disqualify). Only a CONFIRMED,
+    genuinely out-of-area service location triggers out-of-area handling, which is
+    operator-configured (decline+referral / limited-remote / waitlist / full decline).
+    Service areas per product in `KnowledgeBases/sales/service-areas.md`. Tags
+    `ZHC-out-of-service-area` / `ZHC-service-area-confirmed` / `ZHC-service-area-flexible`.
+    See `<MASTER_FILES_DIR>/geo-qualification-protocol.md`.
 24. CRM Field-Write Rule (F46) — the agent writes ANY GHL contact custom field mid-convo,
     type-aware (text/number/date/dropdown), discovering via GET /locations/{id}/customFields
     and validating before write. CREATE-IF-MISSING: if no matching field exists, create one

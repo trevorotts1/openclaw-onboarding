@@ -485,14 +485,24 @@ append_block "STEP_2_0_GEO_QUALIFICATION" <<'BLOCK_I'
 ## Step 2.0 — Geo-qualification (F45, OFF by default)
 
 Only active when `skill38.geo_qualification.enabled` is true (default FALSE —
-per-client opt-in for location-bound businesses).
+per-client opt-in for location-bound businesses). A mixed catalog can gate SOME
+products and not others via `skill38.geo_qualification.per_product` (e.g. an
+in-person consult `true`, a digital course `false`) without disabling the feature
+globally; a product with no `per_product` entry falls back to its presence in
+`service-areas.md`.
 
   Skill reference: protocols/geo-qualification-protocol.md (Step 9.39)
 
 Detect location by priority: pixel/IP (if F49) → phone area code → form address →
 explicit ask. **CRITICAL — signals are HINTS, never proof. ALWAYS ASK to confirm
 before ANY disqualification or out-of-area handling. Never disqualify on a guess.**
-Use the best hint to PRE-FILL the confirmation question, then wait for the answer.
+Use the best hint to PRE-FILL the confirmation question ("Looks like you might be
+calling from outside our usual service area — just to be sure, what ZIP code would
+the service be at?"), then wait for the answer. Branch on the CONFIRMED answer:
+**here** (in-area → qualify, `ZHC-service-area-confirmed`); **elsewhere** (confirmed
+out-of-area → apply the mode, `ZHC-out-of-service-area`); **vacation / moving / no
+clear engagement → do NOT disqualify** (`ZHC-service-area-flexible` or continue;
+a non-answer is not a confirmed out-of-area location).
 Service areas live per product in
 `<MASTER_FILES_DIR>/KnowledgeBases/sales/service-areas.md` (ZIP/county/state/radius).
 Out-of-area handling is operator-configured (decline+referral / limited-remote /

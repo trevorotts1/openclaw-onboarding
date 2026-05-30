@@ -277,6 +277,35 @@ jobs:
           rm -rf "$ng"
           echo "✓ Skill 38 F52 data contract enforced (5 JSONL logs documented + seeded); fails closed on an undocumented log"
 
+      - name: Skill 38 F45 + F47 behavioral substance (v1.5.4)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the BEHAVIORAL substance of F45 (geo-qualification) and
+          # F47 (smart FAQ) from the protocol files alone — the roadmap spec points
+          # qc-feature-logs.sh and qc-zhc-tag-prefix.sh do NOT cover. F47: parallel
+          # FAQ layer alongside the workflow, a SENTENCE not a sub-flow, the "By the
+          # way…Coming back to" handoff, sales-vs-ops faq-scope, faqs.md match, the
+          # explicit F44-vs-F47 difference, ZHC-faq-detoured hand-off for bigger
+          # questions, ZHC-faq-answered, faq-detour-log.jsonl + schema. F45:
+          # default-OFF + per-product toggle, pixel/IP->area-code->form->ask priority,
+          # ALWAYS-confirm + the exact confirmation question + all five branches
+          # (here/elsewhere/vacation/moving/no-engagement=do-not-disqualify), the 4
+          # out-of-area modes, service-areas.md (radius/zips/states/counties), the 3
+          # ZHC tags, and the geo-qualification-log.jsonl confirmed_with_customer
+          # invariant. BASH only.
+          bash 38-conversational-ai-system/scripts/qc-f45-f47-substance.sh
+          # Negative self-test: strip the F45 per-product toggle => FAIL (exit 1).
+          ng="$(mktemp -d)"
+          cp -r 38-conversational-ai-system "$ng/skill"
+          grep -v 'per_product' "$ng/skill/protocols/geo-qualification-protocol.md" > "$ng/skill/protocols/geo.tmp"
+          mv "$ng/skill/protocols/geo.tmp" "$ng/skill/protocols/geo-qualification-protocol.md"
+          rc=0
+          bash "$ng/skill/scripts/qc-f45-f47-substance.sh" --skill-dir "$ng/skill" >/dev/null 2>&1 || rc=$?
+          [ "$rc" -eq 1 ] || { echo "✗ F45/F47 substance gate should FAIL (exit 1) when the per-product toggle is stripped, got $rc"; exit 1; }
+          rm -rf "$ng"
+          echo "✓ Skill 38 F45 + F47 substance enforced (every roadmap spec point present); fails closed on a stripped substance point"
+
       - name: Skill 38 AI backend self-test gate (static wiring)
         shell: bash
         run: |
