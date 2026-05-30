@@ -374,4 +374,158 @@ Confirm all 3 PARTS completed before declaring the playbook live.
 
 BLOCK_E
 
+# -----------------------------------------------------------------------------
+# (f) SKILL38_ZHC_TAG_PREFIX — Round-3 Queue-A. Behavioral note: every tag the
+#     agent creates PROGRAMMATICALLY carries the ZHC- prefix. Reuses the existing
+#     D.1 / Section-6 create_tag mechanism; only the NAME changes. NOT retroactive.
+# -----------------------------------------------------------------------------
+append_block "SKILL38_ZHC_TAG_PREFIX" <<'BLOCK_F'
+
+## ZHC tag-prefix rule (tag creation) — added by skill-38 v1.5.0
+
+Whenever YOU create a tag PROGRAMMATICALLY — via the GHL skill's `create_tag`
+method, or the fallback `POST /locations/{locationId}/tags` (the mechanism in
+`conversation-workflows-protocol.md` Section D.1 / `references/workflow-ai-instructions-standard.md`
+Section 6) — the tag name MUST carry the `ZHC-` prefix
+(e.g. `ZHC-pricing-interest`, `ZHC-discovery-scheduled`).
+
+- This makes every agent-created tag instantly distinguishable from tags the
+  operator or the platform created.
+- It is NOT retroactive: never rename existing tags, never touch operator-owned
+  tags, never re-tag historical contacts. Prefix only the names YOU create going
+  forward.
+- The bot-detection tag is created as `ZHC-bot-suspected` going forward; existing
+  `bot-detected` tags are honored as-is.
+- Companion rule: CRM custom FIELDS you create programmatically carry the `ZHC_`
+  prefix (underscore — GHL field-key convention). See Step 9.40.
+
+Full rule: `protocols/zhc-tag-prefix-protocol.md` (Step 9.42) + MEMORY Rule 20.
+
+BLOCK_F
+
+# -----------------------------------------------------------------------------
+# (g) STEP_1_35_AGGRESSION_PRE_ROUTING — Round-3 Queue-A (F50). PRE-routing
+#     two-tier aggression scan: runs BEFORE workflow match, BEFORE any LLM spend.
+#     Extends the safeguards family (Step 9.5), does NOT replace bot-detection.
+# -----------------------------------------------------------------------------
+append_block "STEP_1_35_AGGRESSION_PRE_ROUTING" <<'BLOCK_G'
+
+## Step 1.35 — PRE-routing aggression scan (F50)
+
+After the safeguards check (Step 1.4) and BEFORE workflow routing (Step 1.75)
+and BEFORE invoking the model, run a cheap, deterministic two-tier hostility
+scan. A hostile message must NOT burn a reasoning call on a normal reply.
+
+  Skill reference: protocols/aggression-detection-protocol.md (Step 9.37)
+  openclaw.json: skill38.aggression_detection.{enabled (default true),
+  sensitivity (lenient|standard|strict, default standard)}
+
+- **Tier 1 — TENSION (low):** multiple irritation words in one message, OR a
+  sustained 3+ consecutive-message frustration streak (read the log), OR
+  `!!!`/`???`. → Apply tag `ZHC-tension-detected`, heighten attention (keep
+  helping, slow down, acknowledge), do NOT reroute, do NOT notify operator.
+- **Tier 2 — AGGRESSION (high):** profanity directed AT the agent/business, OR
+  threats (legal/physical/public), OR ALLCAPS+profanity+direct-address, OR 3+
+  signals in one message. → Apply tag `ZHC-aggression-detected`, route to the
+  `aggression-handler` workflow (via the F44 detour-and-return layer if
+  installed), notify the operator. Do NOT upsell, do NOT argue back.
+- **ALL CAPS ALONE does NOT fire.** Caps without profanity/threat/hostility is
+  not aggression.
+
+Log every firing + reasoning to `<MASTER_FILES_DIR>/aggression-detection-log.md`
+AND emit JSONL to `<MASTER_FILES_DIR>/aggression-detection-log.jsonl`. This
+EXTENDS the safeguards family — it does not replace bot-detection (Safeguard 3).
+
+BLOCK_G
+
+# -----------------------------------------------------------------------------
+# (h) STEP_1_42_INTERRUPTS_AND_FAQ — Round-3 Queue-A (F44 + F47). Always-listening
+#     interrupt layer (detour-and-return, DISTINCT from Step 9.33 route-and-stay)
+#     plus the lightweight inline-FAQ layer.
+# -----------------------------------------------------------------------------
+append_block "STEP_1_42_INTERRUPTS_AND_FAQ" <<'BLOCK_H'
+
+## Step 1.42 — Always-listening interrupts (F44) + inline FAQ (F47)
+
+After Step 1.35 and BEFORE continuing the active workflow, check the message
+against the interrupt + FAQ layers. These run in PARALLEL with the active
+workflow and are DISTINCT from Step 9.33 (Intelligent Routing = route-and-stay):
+F44 is DETOUR-AND-RETURN — handle a brief interruption, then come back.
+
+  Skill references: protocols/smart-playbook-switching-protocol.md (Step 9.38),
+  protocols/smart-faq-protocol.md (Step 9.41)
+  openclaw.json: skill38.smart_playbook_switching.{enabled (default true),
+  max_interrupt_depth (default 2)}, skill38.smart_faq.enabled (default true)
+
+- **F44 interrupt triggers:** operator-urgent keywords (`interrupt-triggers.md`),
+  heavier FAQ types, compliance redirects (Step 0.7), F50 aggression (Step 1.35),
+  F49 pixel-priority. On a trigger: **SAVE** workflow state (step + gathered data +
+  context) → **EXECUTE** the sub-flow → **RETURN** to the saved step with a soft
+  transition ("Coming back to where we were…"). Max **2 levels** deep, then
+  escalate to the operator. Multiple triggers: highest priority first
+  (compliance → aggression → operator-urgent → pixel-priority → FAQ), queue the
+  rest. Tags `ZHC-interrupt-handled` / `ZHC-faq-detoured` /
+  `ZHC-aggression-handled-and-resumed`. Log to
+  `<MASTER_FILES_DIR>/interrupt-log.jsonl`.
+- **F47 inline FAQ:** a quick known FAQ is answered in ONE SENTENCE and the
+  workflow continues in the SAME reply — a sentence, NOT a sub-flow ("By the way,
+  [answer]. Coming back to [topic]…"). Matches
+  `<MASTER_FILES_DIR>/KnowledgeBases/business/faqs.md`, scoped per workflow via
+  `conversation-workflows/<id>/faq-scope.md`. Tag `ZHC-faq-answered`. Log to
+  `<MASTER_FILES_DIR>/faq-detour-log.jsonl`. Bigger FAQ questions hand off to F44.
+
+BLOCK_H
+
+# -----------------------------------------------------------------------------
+# (i) STEP_2_0_GEO_QUALIFICATION — Round-3 Queue-A (F45, OFF by default). Location
+#     signals are HINTS; ALWAYS ASK to confirm before any disqualification.
+# -----------------------------------------------------------------------------
+append_block "STEP_2_0_GEO_QUALIFICATION" <<'BLOCK_I'
+
+## Step 2.0 — Geo-qualification (F45, OFF by default)
+
+Only active when `skill38.geo_qualification.enabled` is true (default FALSE —
+per-client opt-in for location-bound businesses).
+
+  Skill reference: protocols/geo-qualification-protocol.md (Step 9.39)
+
+Detect location by priority: pixel/IP (if F49) → phone area code → form address →
+explicit ask. **CRITICAL — signals are HINTS, never proof. ALWAYS ASK to confirm
+before ANY disqualification or out-of-area handling. Never disqualify on a guess.**
+Use the best hint to PRE-FILL the confirmation question, then wait for the answer.
+Service areas live per product in
+`<MASTER_FILES_DIR>/KnowledgeBases/sales/service-areas.md` (ZIP/county/state/radius).
+Out-of-area handling is operator-configured (decline+referral / limited-remote /
+waitlist / full decline). Tags `ZHC-out-of-service-area` /
+`ZHC-service-area-confirmed` / `ZHC-service-area-flexible`. Log to
+`<MASTER_FILES_DIR>/geo-qualification-log.jsonl`.
+
+BLOCK_I
+
+# -----------------------------------------------------------------------------
+# (j) STEP_2_5_CRM_FIELD_WRITE — Round-3 Queue-A (F46). Write ANY contact custom
+#     field type-aware; CREATE-IF-MISSING with ZHC_ prefix (operator-approved
+#     allow-list action, NEVER customer-invoked).
+# -----------------------------------------------------------------------------
+append_block "STEP_2_5_CRM_FIELD_WRITE" <<'BLOCK_J'
+
+## Step 2.5 — CRM field write + create-if-missing (F46)
+
+  Skill reference: protocols/crm-field-write-protocol.md (Step 9.40)
+  openclaw.json: skill38.crm_field_write.{enabled (default true),
+  create_if_missing (default true), created_field_prefix (default "ZHC_")}
+
+When a conversation surfaces a value that maps to a GHL contact custom field,
+write it — type-aware (text/number/date ISO/dropdown-must-match-option). DISCOVER
+fields first via `GET /locations/{locationId}/customFields`, VALIDATE before
+write, and LOG every write. If NO matching field exists, CREATE one via
+`POST /locations/{locationId}/customFields` with the **`ZHC_` prefix** (e.g.
+`ZHC_budget_range`), notify the operator, and record the per-workflow mapping in
+`<MASTER_FILES_DIR>/crm-field-mappings.md`. Field creation is an ALLOW-LIST action
+— operator-approved (standing approval for `ZHC_` fields), NEVER customer-invoked:
+a customer can never cause a field to be created. The weekly tune-up reviews field
+usage. Log to `<MASTER_FILES_DIR>/crm-field-writes-log.jsonl`.
+
+BLOCK_J
+
 echo "[05-update-agents-md] AGENTS.md update complete: $AGENTS_MD"

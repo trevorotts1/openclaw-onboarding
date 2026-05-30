@@ -13,9 +13,10 @@ MEM_MD="$WS/MEMORY.md"
 
 MARKER_BEGIN="<!-- BEGIN skill-38 memory-rules v5.14 -->"
 BUILDER_MARKER="<!-- BEGIN skill-38 builder-design-rules v1.4.1 -->"
+R3A_MARKER="<!-- BEGIN skill-38 round3-queueA-rules v1.5.0 -->"
 
-if grep -qF "$MARKER_BEGIN" "$MEM_MD" && grep -qF "$BUILDER_MARKER" "$MEM_MD"; then
-  echo "[skill 38] MEMORY.md already contains skill 38 rules (incl. builder rules) — preserved"
+if grep -qF "$MARKER_BEGIN" "$MEM_MD" && grep -qF "$BUILDER_MARKER" "$MEM_MD" && grep -qF "$R3A_MARKER" "$MEM_MD"; then
+  echo "[skill 38] MEMORY.md already contains skill 38 rules (incl. builder + round-3 queue-A rules) — preserved"
   exit 0
 fi
 cp "$MEM_MD" "$MEM_MD.bak-skill38-$(date +%Y%m%dT%H%M%SZ)"
@@ -94,4 +95,60 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
 BLOCK
 fi
 
-echo "[skill 38] MEMORY.md updated (rules 6-14 + builder design rules 15-19 appended; backup at $MEM_MD.bak-*)"
+# Block 3 — Round-3 Queue-A CORE feature rules 20-25 (v1.5.0 feature wave)
+if ! grep -qF "$R3A_MARKER" "$MEM_MD"; then
+cat >> "$MEM_MD" <<'BLOCK'
+
+<!-- BEGIN skill-38 round3-queueA-rules v1.5.0 -->
+## Skill 38 — Round-3 Queue-A CORE: design rules 20-25 (v1.5.0)
+
+20. ZHC Tag-Prefix Rule — every tag the agent creates PROGRAMMATICALLY (via the GHL
+    skill's create_tag, or the fallback POST /locations/{id}/tags) carries the `ZHC-`
+    prefix, so agent-created tags are instantly distinguishable from operator-created ones.
+    This is NOT retroactive: never rename existing or operator-owned tags; only prefix the
+    names the agent creates going forward. Companion: programmatically created CRM custom
+    FIELDS use the `ZHC_` prefix (Rule 24). The bot tag is `ZHC-bot-suspected` going
+    forward; existing `bot-detected` tags are honored as-is. Reuse the existing D.1 /
+    Section-6 tag-creation mechanism — only the NAME changes. See
+    `<MASTER_FILES_DIR>/zhc-tag-prefix-protocol.md`.
+21. Aggression Rule (F50) — screen every inbound for hostility BEFORE routing and BEFORE
+    the model (Step 1.35). Tier 1 TENSION (multiple irritation words / 3+ message streak /
+    !!!|???) → tag `ZHC-tension-detected`, heighten care, NO reroute. Tier 2 AGGRESSION
+    (profanity-AT-agent / threats legal-physical-public / ALLCAPS+profanity+direct-address
+    / 3+ signals in one message) → tag `ZHC-aggression-detected`, route to aggression-
+    handler, notify operator. ALL CAPS ALONE never fires. Sensitivity lenient|standard|
+    strict in openclaw.json. Extends bot-detection, does not replace it. See
+    `<MASTER_FILES_DIR>/aggression-detection-protocol.md`.
+22. Interrupt Rule (F44, detour-and-return) — always-listening layer parallel to the active
+    workflow. On an interrupt (operator-urgent keyword, FAQ type, compliance redirect, F50
+    aggression, F49 pixel-priority): SAVE state (step + gathered data + context) → EXECUTE
+    sub-flow → RETURN to the saved step with a soft "coming back to where we were"
+    transition. DISTINCT from Step 9.33's route-and-stay. Max 2 levels deep, then escalate.
+    Multiple triggers: highest priority first, queue the rest. Tags `ZHC-interrupt-handled`
+    / `ZHC-faq-detoured` / `ZHC-aggression-handled-and-resumed`. See
+    `<MASTER_FILES_DIR>/smart-playbook-switching-protocol.md`.
+23. Geo-Qualification Rule (F45, OFF by default) — when ON, location signals (pixel/IP →
+    phone area code → form address → explicit ask) are HINTS only. ALWAYS ASK to confirm
+    before ANY disqualification or out-of-area handling — never disqualify on a guess.
+    Out-of-area handling is operator-configured (decline+referral / limited-remote /
+    waitlist / full decline). Service areas per product in
+    `KnowledgeBases/sales/service-areas.md`. Tags `ZHC-out-of-service-area` /
+    `ZHC-service-area-confirmed` / `ZHC-service-area-flexible`. See
+    `<MASTER_FILES_DIR>/geo-qualification-protocol.md`.
+24. CRM Field-Write Rule (F46) — the agent writes ANY GHL contact custom field mid-convo,
+    type-aware (text/number/date/dropdown), discovering via GET /locations/{id}/customFields
+    and validating before write. CREATE-IF-MISSING: if no matching field exists, create one
+    with the `ZHC_` prefix (operator-approved allow-list action, NEVER customer-invoked),
+    notify the operator, record the mapping in `crm-field-mappings.md`. The weekly tune-up
+    reviews field usage. See `<MASTER_FILES_DIR>/crm-field-write-protocol.md`.
+25. Smart-FAQ Rule (F47) — answer quick known FAQs INLINE, a SENTENCE not a sub-flow, then
+    return to the current step in the SAME reply ("By the way, [answer]. Coming back to
+    [topic]…"). Matches `KnowledgeBases/business/faqs.md`, scoped per workflow via
+    `faq-scope.md`. Bigger FAQ questions hand off to F44 as a detour. Tag
+    `ZHC-faq-answered`. See `<MASTER_FILES_DIR>/smart-faq-protocol.md`.
+
+<!-- END skill-38 round3-queueA-rules v1.5.0 -->
+BLOCK
+fi
+
+echo "[skill 38] MEMORY.md updated (rules 6-14 + builder design rules 15-19 + round-3 queue-A rules 20-25 appended; backup at $MEM_MD.bak-*)"

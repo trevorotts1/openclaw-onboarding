@@ -176,7 +176,7 @@ section "AGENTS.md marker blocks"
 AGENTS_MD="${AGENTS_MD:-${HOME}/.openclaw/AGENTS.md}"
 [ -f "$AGENTS_MD" ] || AGENTS_MD="${MASTER_FILES_DIR:-}/AGENTS.md"
 if [ -f "$AGENTS_MD" ]; then
-  for marker in "INBOUND_WEBHOOK_CLASSIFICATION" "SKILL38_RUNTIME_ROUTING" "workflow-builder"; do
+  for marker in "INBOUND_WEBHOOK_CLASSIFICATION" "SKILL38_RUNTIME_ROUTING" "workflow-builder" "SKILL38_ZHC_TAG_PREFIX" "STEP_1_35_AGGRESSION_PRE_ROUTING" "STEP_1_42_INTERRUPTS_AND_FAQ" "STEP_2_0_GEO_QUALIFICATION" "STEP_2_5_CRM_FIELD_WRITE"; do
     if grep -q "$marker" "$AGENTS_MD"; then
       report_pass "AGENTS.md contains marker: $marker"
     else
@@ -495,6 +495,20 @@ if [ -f "$QC_NOPII" ]; then
   fi
 else
   report_fail "qc-no-personal-data.sh not found (looked in scripts/)"
+fi
+
+# -------- ZHC programmatic-tag-prefix gate (machine-enforced, Round-3 Queue-A) --------
+section "ZHC tag-prefix rule (qc-zhc-tag-prefix.sh)"
+QC_ZHC="$SCRIPT_DIR/qc-zhc-tag-prefix.sh"
+[ -f "$QC_ZHC" ] || QC_ZHC="$SKILL38_ROOT/scripts/qc-zhc-tag-prefix.sh"
+if [ -f "$QC_ZHC" ]; then
+  if bash "$QC_ZHC" >/dev/null 2>&1; then
+    report_pass "every programmatically created tag example uses the ZHC- prefix (MEMORY Rule 20 + AGENTS block + protocol + Round-3 Queue-A tags)"
+  else
+    report_fail "qc-zhc-tag-prefix.sh found a programmatic-tag example missing the ZHC- prefix (or a missing rule doc) — run it directly for detail"
+  fi
+else
+  report_fail "qc-zhc-tag-prefix.sh not found (looked in scripts/)"
 fi
 
 # -------- Runtime assertion: the backend self-test PASSED (selfTestPassed=true) --------
