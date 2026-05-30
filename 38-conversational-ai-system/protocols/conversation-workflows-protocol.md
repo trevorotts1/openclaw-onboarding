@@ -241,7 +241,7 @@ If Layer 1 is needed, the agent does THREE things in sequence:
 
 #### D.1 — Auto-create required tags via the GHL skill
 
-Per Christy's design preference (automation over operator manual steps), the agent creates tags programmatically using the GHL skill rather than telling the operator to navigate Settings → Tags.
+Per the operator's design preference (automation over operator manual steps), the agent creates tags programmatically using the GHL skill rather than telling the operator to navigate Settings → Tags.
 
 The agent identifies what tags this workflow needs (e.g., `pricing-interest`, `discovery-scheduled`, `quoted`). For each tag, it calls the GHL skill:
 
@@ -357,7 +357,7 @@ Each field is filled in with the EXACT values from the operator's setup (`PUBLIC
 > "must-appear" checklist when generating any workflow-AI prompt — the block above is the SMS starter
 > shape; the standard covers every channel + multi-action funnel.
 
-> **⚠️ GHL HOOK STRUCTURE (owner directive — 23 keys, FLAT) — verified live on Corey/Explore Growth (OpenClaw 2026.5.27).**
+> **⚠️ GHL HOOK STRUCTURE (owner directive — 23 keys, FLAT) — verified live on a live client (OpenClaw 2026.5.27).**
 > The body MUST have **ALL 23 keys** (23 is the minimum — no stripped bodies) and be **FLAT** — no nested
 > `contact:{…}` / `customer_message:{…}` (a nested body makes EVERY field arrive EMPTY at the hook, even a
 > hardcoded `"channel"`). The body's `messageTemplate` VALUE MUST stay **placeholder-free** (no `{{…}}`) — if it

@@ -15,7 +15,7 @@
 #      (`openclaw message send --channel telegram`) — NOT curl to api.telegram.org.
 #   3. It DISCOVERS the chat from the TRANSCRIPTS (agents/*/sessions/*.jsonl) —
 #      grepping the four shapes ("chat":{"id" / telegram:direct: / "chatId": /
-#      "from":{"id") and the most-frequent NON-operator id (the Teresa lesson),
+#      "from":{"id") and the most-frequent NON-operator id (a hard-won live-client lesson),
 #      NOT just sessions.json keys.
 #   4. The LOUD-failure contract: on no-chat it writes clientDocDelivered=false
 #      and exits non-zero (never silently skips).

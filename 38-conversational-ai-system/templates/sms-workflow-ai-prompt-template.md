@@ -74,9 +74,14 @@ ACTIONS (in this exact order):
       "location_name": "{{location.name}}"
     }
 
+SETTINGS:
+- ALLOW RE-ENTRY: ON (the workflow MUST be allowed to re-enter / fire repeatedly per contact — a contact who texts today and again next week must re-trigger it. If Allow Re-entry is OFF the workflow fires once per contact and silently drops every later message.)
+
 PUBLISH: Yes, publish the workflow when done — don't leave it as draft.
 
 RUN SCHEDULE: All Day (so the AI can respond at any hour the customer texts in).
+
+SAVE ORDER: Save the action, then flip the top-right Publish toggle to Published, then Save again.
 ```
 
 ## What Build with AI will build
@@ -86,6 +91,7 @@ After you paste the prompt above, **Build with AI** should produce a workflow wi
 - **One trigger node**: "Customer Replied" with sub-option "On Reply" and channel filter "SMS".
 - **Two filter nodes** (in order): Channel = SMS, Message Direction = Inbound.
 - **One action node**: "Send Custom Webhook" pointing at `https://<PUBLIC_HOSTNAME>/hooks/<ROUTE_ID>` with the two headers above and the Raw JSON body above.
+- **Settings -> Allow Re-entry**: ON.
 - **Status**: Published (NOT draft).
 - **Run schedule**: All Day.
 
@@ -108,7 +114,9 @@ Build-with-AI only builds the workflow SHAPE (the trigger + an EMPTY Custom Webh
 6. **Content-Type field** = `application/json`.
 7. **RAW BODY box** = paste the full 23-key FLAT JSON from the prompt above (Body type = Raw JSON; insert each
    `{{…}}` via GHL's Custom Values picker).
-8. **Save**, then **Publish**.
+8. Open **Settings** (top of the workflow) and turn **Allow Re-entry = ON** (so the workflow re-fires every
+   time a contact replies — OFF makes it run once per contact and silently drop every later message).
+9. **Save**, then flip the top-right toggle to **Publish**, then **Save** again.
 
 **Verify every field above is non-empty before publishing.** An empty URL, a missing Authorization header,
 or an empty Raw Body means the webhook silently does nothing and the customer gets no reply. This manual
@@ -157,9 +165,9 @@ Each of these failure modes is covered in **Section 4 — Workflow Verification 
 
 When this template is rendered for a real client, the following placeholders are substituted with concrete values:
 
-- `<CLIENT_BUSINESS_NAME>` — e.g., "The Winning Formula Course"
-- `<CLIENT_FIRST_NAME>` — e.g., "Christy"
-- `<PUBLIC_HOSTNAME>` — e.g., `claw.thewinningformulacourse.com`
+- `<CLIENT_BUSINESS_NAME>` — e.g., "Acme Coaching Co."
+- `<CLIENT_FIRST_NAME>` — e.g., "Alex"
+- `<PUBLIC_HOSTNAME>` — e.g., `claw.example.com`
 - `<ROUTE_ID>` — e.g., `ZHC` (the hooks.mappings key configured in Step 3; also the flat body's `match` value)
 - `<ROUTING_AGENT_ID>` — the agent the hook routes to (e.g., `main` or `sales`); also the flat body's `agent_id`
 - `<HOOKS_TOKEN>` — the bearer token from `SECRETS_ENV_FILE`

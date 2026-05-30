@@ -2,10 +2,13 @@
 # 22-notify-client-doc.sh
 # Skill 38 — MANDATORY Telegram delivery of the client's setup doc LINK.
 #
-# THE RULE (un-skippable): the install is NOT complete until the client has been
-# SENT their Quick-Start / Notion doc LINK via Telegram. Every client gets their
-# link via Telegram, no matter what. The operator is tired of repeating this — so
-# it is a GATED, machine-enforced step, not optional prose.
+# THE RULE (un-skippable, HARD BLOCK): the install is NOT complete — every QC gate
+# exits non-zero — until the client doc was BOTH (1) created (Quick Start + 23-key
+# body + split Authorization key/value + playbooks/trigger/I-Do-You-Do + VPS-vs-Mac
+# + the How-to-test section; enforced by qc-reference-sheet.sh --require-manual-fill)
+# AND (2) DELIVERED to the client via Telegram (this script + qc-notify-client-doc.sh).
+# Every client gets their link via Telegram, no matter what. This is a GATED,
+# machine-enforced step, not optional prose.
 #
 # WHAT THIS SCRIPT DOES
 #   (a) Resolves the client's Telegram chat id. PREFERRED source: the CLIENT_TELEGRAM_CHAT_ID
@@ -16,7 +19,7 @@
 #         telegram:direct:<n>     (OpenClaw session key)
 #         "chatId":<n>            (some gateway log lines)
 #         "from":{"id":<n>        (Telegram message author)
-#       and takes the MOST-FREQUENT NON-OPERATOR id. This is the Teresa lesson:
+#       and takes the MOST-FREQUENT NON-OPERATOR id. This is a hard-won live-client lesson:
 #       reading sessions.json keys alone MISSES paired chats — the source of truth
 #       is the transcripts.
 #   (b) Sends the doc LINK to that chat via the OpenClaw gateway
@@ -43,7 +46,7 @@
 #   DOC_LINK                  (required unless --print-chat) the link to deliver
 #   CLIENT_TELEGRAM_CHAT_ID   (optional) preferred chat id; skips discovery when set+non-empty
 #   CLIENT_FIRST_NAME         (optional, default "there")
-#   OPERATOR_TELEGRAM_CHAT_ID (optional, default 5252140759 — Trevor) — excluded from discovery
+#   OPERATOR_TELEGRAM_CHAT_ID (optional, default <OPERATOR_TELEGRAM_CHAT_ID> — the operator) — excluded from discovery
 #   OPENCLAW_DATA_DIR         (optional) override the OpenClaw data dir to scan/resolve from
 #   MASTER_FILES_DIR          (optional) where the run-state file is written
 #   RUN_STATE_FILE            (optional) explicit path to the run-state file
@@ -65,7 +68,7 @@ done
 
 CLIENT_TELEGRAM_CHAT_ID="${CLIENT_TELEGRAM_CHAT_ID:-}"
 CLIENT_FIRST_NAME="${CLIENT_FIRST_NAME:-there}"
-OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-}"
 DOC_LINK="${DOC_LINK:-}"
 
 # ---- resolve the OpenClaw data dir we scan for transcripts ----
@@ -102,7 +105,7 @@ write_state() {
   printf '%s=%s\n' "$key" "$val" >> "$STATE_FILE"
 }
 
-# ---- transcript-based chat discovery (the Teresa lesson) ----
+# ---- transcript-based chat discovery (a hard-won live-client lesson) ----
 # Greps agents/*/sessions/*.jsonl for every shape a chat id appears in, drops the
 # operator id, and returns the MOST-FREQUENT remaining id. sessions.json keys
 # alone miss paired chats, so we scan the transcripts.

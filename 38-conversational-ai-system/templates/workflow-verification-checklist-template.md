@@ -51,7 +51,7 @@ If any item is wrong, the fix is listed right there.
     "tag does not contain" filter; then cross-check GHL **Settings → Tags**
   - WHAT YOU SHOULD SEE: a REAL tag name in the filter — the exact tag created
     FIRST (per the create-tags-first rule), listed under Settings → Tags
-  - KNOWN BUG (Teresa): Build with AI created a filter like
+  - KNOWN BUG (a live client): Build with AI created a filter like
     **"does not contain `<blank>`"** where the referenced tag was blank or never
     created, so the filter silently matched nothing — the workflow never fired
     for the right contacts

@@ -15,7 +15,7 @@
 
 ## CORRECTED GHL HOOK STRUCTURE (2026-05-29)
 
-> Verified LIVE on Corey / Explore Growth, OpenClaw **2026.5.27**. This **supersedes** any older nested-body
+> Verified LIVE on a live client, OpenClaw **2026.5.27**. This **supersedes** any older nested-body
 > or in-body-`messageTemplate` example anywhere in this skill (this doc, `v6.0-source-playbook.md`, the
 > scripts, and the templates).
 
@@ -276,7 +276,7 @@ ACTIONS (in this exact order):
 PUBLISH: Yes, publish the workflow when done — do not leave it as a draft.
 ```
 
-> **CRITICAL (owner directive + verified live on Corey/Explore Growth 2026-05-29, OpenClaw 2026.5.27):** the
+> **CRITICAL (owner directive + verified live on a live client 2026-05-29, OpenClaw 2026.5.27):** the
 > GHL RAW BODY MUST have ALL 23 keys (23 is the minimum — no stripped bodies) and be FLAT — no nested
 > `contact:{…}` / `customer_message:{…}` objects. A nested body makes EVERY field resolve EMPTY at the hook
 > (even a hardcoded `"channel":"sms"` arrived blank when nested). The body's `messageTemplate` VALUE MUST stay
@@ -535,3 +535,42 @@ openclaw cron add --name skill38-calendar-sync --cron "0 9 * * 0" --agent main \
 `<!-- GHL_CALENDARS_START -->` … `<!-- GHL_CALENDARS_END -->` table in TOOLS.md (adds new calendars, removes
 ones that no longer exist). It auto-detects Mac vs VPS env/paths. Install it to `~/clawd/scripts/` and register
 the Sunday 9am cron per Section 13.
+
+---
+
+## 15. BACKEND SELF-TEST STANDARD — the agent tests ITSELF before the client (MANDATORY, gated)
+
+After the agent configures the hook, and **BEFORE the client is ever told to test**, the agent MUST
+self-test the full inbound -> reply chain **by ground truth** — not by self-report. Setup is **NOT** marked
+complete and the client is **NOT** told to test until the self-test passes. This is executed by
+`scripts/12-self-test-hook.sh`, statically enforced by `scripts/qc-self-test.sh`, and wired as a BLOCKING
+readiness gate in `scripts/11-run-qc-checklist.sh` (which asserts `selfTestPassed=true`).
+
+**(a) Readiness** — the backend must be prepared to RECEIVE: `hooks.enabled` true; a live `hooks.mappings`
+entry for `HOOK_NAME` with `action:agent`, `deliver:false`, and a working `model`; GHL creds in
+`secrets/.env` (`GHL_PRIVATE_INTEGRATION_TOKEN` + `GHL_LOCATION_ID` — the location IS set); the
+`conversational-logs/` dir present + writable (node-owned); `/healthz` 200.
+
+**(b) Synthetic inbound** — POST a SYNTHETIC GHL inbound to the agent's OWN public hook URL
+(`https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`) with the **FLAT 23-key body** (§0/§1), `channel:"sms"`, a
+DEDICATED throwaway test contact id, and the REAL `Authorization: Bearer <HOOKS_TOKEN>`. The self-test builds
+the body field-by-field at runtime (it is NOT a fenced ```json block) so it carries the live values and is
+not double-scanned by `qc-23-key-bodies.sh`. The exact synthetic payload (23 flat keys; `deliver:false`;
+`messageTemplate` placeholder-free; a reserved `+1555` test phone; `selftest@example.com`) is emitted by
+`scripts/12-self-test-hook.sh`.
+
+**(c) Verify by ground truth (pass criteria):**
+1. the hook returns **HTTP 200** and `{"ok":true}`;
+2. the agent session ran on the **configured model with NO 401/429** (read the gateway/session transcript
+   for the run, not a self-report);
+3. the agent **READ the conversation log** for the test contact;
+4. the agent **called the GHL Conversations API** (`POST conversations/messages`) and got **200/201** with a
+   `messageId`. If a real contact is required, the self-test **CREATES a temporary test contact via the GHL
+   API**, confirms the send returns a `messageId`, then **DELETES the temp contact + the test conversation
+   log** (cleanup).
+
+**(d) Fix-and-retest** — on ANY failure the script prints the exact remediation (creds; location id; model;
+DND on the contact; `secrets/.env` placement) and exits non-zero. The agent FIXES it and RE-RUNS until green.
+
+**(e) Gate** — `selfTestPassed=true|false` is written to the run-state file. The install is **NOT** complete
+and the client is **NOT** told to test (Section 7 of their doc) until `selfTestPassed=true`.

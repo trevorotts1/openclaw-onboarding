@@ -93,9 +93,9 @@ The agent operates from a FIXED ALLOW-LIST of actions per the prompt
 injection protection protocol. New capabilities require explicit
 addition to the allow-list. Default-refuse for anything outside.
 
-### Rule 5 — Christy's verification standards
+### Rule 5 — the operator's verification standards
 
-Christy reads documentation carefully and verifies claims. Never
+The operator reads documentation carefully and verifies claims. Never
 overstate evidence as "proof" when it is inference. Cite sources
 literally; never paraphrase a doc and call it proof. When she pushes
 back, concede honestly the first time rather than doubling down.

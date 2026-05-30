@@ -8,7 +8,7 @@
 #   2. The GHL Custom Webhook RAW BODY as a real ```json fenced code block
 #      (copyable), plus the hook URL (`https://<host>/hooks/<id>`).
 #
-# ROOT CAUSE this gate kills: on a live client (Teresa) the generated reference
+# ROOT CAUSE this gate kills: on a live client the generated reference
 # sheet had NO bearer token and NO copyable ```json Raw Body. The client opened
 # their reference doc, the token was missing, and there was no JSON to copy into
 # GHL's Build-with-AI. That stranded the client. The reference sheet MUST contain
@@ -268,7 +268,7 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
     MISSING+=('the Authorization VALUE code block must be ONLY "Bearer <token>" — it must NOT be a combined "Authorization: Bearer <token>" copy block (the second copy block repeats the header key)')
   fi
 
-  # --- create-tags-FIRST instruction (the Teresa blank-tag bug) ---
+  # --- create-tags-FIRST instruction (the blank-tag bug) ---
   grep -qiE 'create (the |your )?tag.*(first|before)|tag.*(first|before).*(build|workflow)' "$SHEET" || \
     MISSING+=('the create-tags-FIRST instruction (create the tag before building the workflow)')
   grep -qiE 'Settings[[:space:]]*(->|→|>)[[:space:]]*Tags' "$SHEET" || \
@@ -425,6 +425,21 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
   if [ -n "$VM_LN" ] && [ -n "$EXPL_LN" ] && [ "$VM_LN" -ge "$EXPL_LN" ]; then
     MISSING+=('the "VPS vs Mac" install-considerations section must come BEFORE the deep Full Reference & Explanation')
   fi
+
+
+  # --- REQ 1: Allow Re-entry = ON must appear (workflow must re-fire per contact) ---
+  grep -qiE 'Allow Re-?entry' "$SHEET" || \
+    MISSING+=('the Allow Re-entry = ON instruction (the workflow must re-fire per contact)')
+
+  # --- REQ 3: the concise per-area verification uses "if you do not see it, paste this" copy-block format ---
+  grep -qiE 'if you do not see' "$SHEET" || \
+    MISSING+=('the 60-second verification must use the "if you do not see it, paste this" per-line format')
+
+  # --- REQ 4: the "How to test your system" client self-test section ---
+  grep -qiE '^#+[[:space:]].*How to test your system' "$SHEET" || \
+    MISSING+=('a "How to test your system" section (Contacts -> search -> record -> text -> reply -> Automations -> Execution Logs)')
+  grep -qiE 'Execution Logs?' "$SHEET" || \
+    MISSING+=('the test section must tell the client to open Execution Logs and look for green/red steps')
 
   # Lead-with-values ORDER: the Webhook-URL line must come before the ```json Raw Body,
   # and the manual-fill section must come before the Workflow-AI-prompt pointer.

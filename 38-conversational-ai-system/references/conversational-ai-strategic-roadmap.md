@@ -2,7 +2,7 @@
 
 This document tracks the features built into the Convert and Flow conversational AI system, plus the remaining features under consideration.
 
-**Audience:** Christy (system owner) and her AI agents reading this for context on what's done, what's coming, and why.
+**Audience:** the operator (system owner) and their AI agents reading this for context on what's done, what's coming, and why.
 
 **Status legend:**
 - ✅ **Implemented** — feature is live in v5.4

@@ -143,29 +143,21 @@ The agent reads these on every reply turn. Open each one and fill in the section
 
 The agent will use professional defaults until you fill these in. Filling them in is what makes replies sound like YOUR business.
 
-## 🧪 How to test your live system
+## 🧪 How to test your system
 
-After you've built your GHL workflow(s) and published them, run this end-to-end test for at least one channel (SMS is the easiest):
+When everything is built and published, test it end-to-end yourself. Do these in order:
 
-1. **Open GHL → Conversations → New conversation**
-2. **Send a test text to your own phone**: type your own mobile number, write "test message", and send it through GHL
-3. **From your phone, REPLY to that text** (don't just open it — actually reply with something like "hello, is anyone there?")
-4. **Switch back to GHL → Automation → Workflows → [your OpenClaw workflow] → Execution Log tab**
-5. **Look for your execution**: it should appear within a few seconds. Click on it to expand the details.
-6. **Check the webhook response code**:
-   - ✅ **200** → OpenClaw received it. Continue to step 7.
-   - ❌ **401** → Bearer token wrong. Re-check the Authorization header in your GHL workflow (no extra spaces).
-   - ❌ **404** → URL wrong. Re-check the webhook URL (should end in `/hooks/<HOOK_NAME>`).
-   - ❌ **500** → OpenClaw error. Check OpenClaw logs: `openclaw logs --tail 50`.
-7. **Switch to your AI agent (the one that runs your OpenClaw)** and ask: "Did you receive a webhook from GHL? Did you process it?"
-8. **Verify the agent's reply came through**: within a few seconds of step 3, your phone should have received an SMS response from the agent (sent via GHL's Conversations API using the installed GHL skill).
+1. **Go to Contacts** (left menu).
+2. **Search your own name** in the search box at the top.
+3. **Open your own contact record** (click your name).
+4. **Send yourself a text (SMS)** from inside that contact record.
+5. **On your phone, REPLY to that text** — write a normal message like "hi, can you help me?" (don't just open it; actually reply).
+6. **Go to Automations** (left menu) and **open the workflow you built**.
+7. **Click the Execution Logs tab.**
+8. **Every step should show green / success — ESPECIALLY the Custom Webhook step.** Within a few seconds your phone should also get the AI's reply back.
 
-If the agent received the webhook but didn't reply, check:
-- Was your test message classified as spam/marketing by the agent? (If you typed "I want to sell you something", it would correctly ignore that. Use a normal-sounding message like "Hi, can you help me with something?")
-- Is the GHL skill installed and enabled? Confirm with: `openclaw skills list | grep -i ghl`
-- Is your GHL Private Integration Token (PIT) configured for the skill? Check the skill's settings.
+**If anything is red = that step FAILED.** A red Custom Webhook step is the most common one — it means the URL, the Authorization header, or the Raw Body is wrong. Re-run the verification checklist (re-paste the URL, the two header blocks, and the 23-key Raw Body), or contact support.
 
-If the agent replied but the reply sounds robotic or generic, that's expected — go fill in your Communication Playbooks (above) with your tone, examples, and brand voice. The agent will sound like YOUR business after that.
 
 ## 🔄 Recall prompt — save this somewhere durable
 

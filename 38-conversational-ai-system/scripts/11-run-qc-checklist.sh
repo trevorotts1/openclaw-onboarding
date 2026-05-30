@@ -433,6 +433,54 @@ else
   echo "  [SKIP] MASTER_FILES_DIR not resolved; cannot check conversational-logs dir"
 fi
 
+
+# -------- Backend self-test gate (machine-enforced, REQ 5) --------
+section "Backend self-test standard (qc-self-test.sh)"
+QC_SELFTEST="$SCRIPT_DIR/qc-self-test.sh"
+[ -f "$QC_SELFTEST" ] || QC_SELFTEST="$SKILL38_ROOT/scripts/qc-self-test.sh"
+if [ -f "$QC_SELFTEST" ]; then
+  if bash "$QC_SELFTEST" >/dev/null 2>&1; then
+    report_pass "backend self-test is wired (12-self-test-hook.sh POSTs a synthetic flat-23-key inbound, verifies 200/{ok:true} + model + log read + GHL send, cleans up, and is a blocking readiness gate)"
+  else
+    report_fail "qc-self-test.sh: the backend self-test is missing/unwired (the agent must self-test by ground truth BEFORE the client) — run it directly for detail"
+  fi
+else
+  report_fail "qc-self-test.sh not found (looked in scripts/)"
+fi
+
+# -------- No-personal-data gate (machine-enforced, REQ 7) --------
+section "UNIVERSAL skill — no personal/client data (qc-no-personal-data.sh)"
+QC_NOPII="$SCRIPT_DIR/qc-no-personal-data.sh"
+[ -f "$QC_NOPII" ] || QC_NOPII="$SKILL38_ROOT/scripts/qc-no-personal-data.sh"
+if [ -f "$QC_NOPII" ]; then
+  if bash "$QC_NOPII" --no-gen >/dev/null 2>&1; then
+    report_pass "no real personal/client identifiers in the skill tree (UNIVERSAL)"
+  else
+    report_fail "qc-no-personal-data.sh found a real personal/client identifier in the skill — run it directly for detail"
+  fi
+else
+  report_fail "qc-no-personal-data.sh not found (looked in scripts/)"
+fi
+
+# -------- Runtime assertion: the backend self-test PASSED (selfTestPassed=true) --------
+# REQ 5(e): the install is NOT complete until the agent's own backend self-test
+# passed by ground truth. Same run-state file as clientDocDelivered.
+section "Backend self-test passed (selfTestPassed=true)"
+ST_STATE_FOUND=""
+for sf in "${RUN_STATE_CANDIDATES[@]:-}"; do
+  [ -n "$sf" ] && [ -f "$sf" ] && { ST_STATE_FOUND="$sf"; break; }
+done
+[ -n "$ST_STATE_FOUND" ] || { for sf in "${HOME}/.openclaw/.skill38-run-state.env" "/data/.openclaw/.skill38-run-state.env" "${MASTER_FILES_DIR:-}/.skill38-run-state.env"; do [ -f "$sf" ] && { ST_STATE_FOUND="$sf"; break; }; done; }
+if [ -n "$ST_STATE_FOUND" ]; then
+  if grep -q '^selfTestPassed=true' "$ST_STATE_FOUND"; then
+    report_pass "selfTestPassed=true (the agent self-tested the backend by ground truth before any client test) — $ST_STATE_FOUND"
+  else
+    report_fail "selfTestPassed is NOT true in $ST_STATE_FOUND — run scripts/12-self-test-hook.sh until it passes; do NOT mark complete or tell the client to test"
+  fi
+else
+  echo "  [SKIP] run-state file not found; cannot assert selfTestPassed (run scripts/12-self-test-hook.sh during the live install)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

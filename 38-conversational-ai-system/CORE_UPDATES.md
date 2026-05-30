@@ -69,5 +69,5 @@ All four cron jobs are idempotent — `04-register-crons.sh` skips entries that 
 
 ## What does NOT get touched
 
-- Skill 17, 18, 31, 29, 19 SOUL/IDENTITY/AGENTS files — left untouched per Christy.
+- Skill 17, 18, 31, 29, 19 SOUL/IDENTITY/AGENTS files — left untouched per the operator.
 - Operator's existing TOOLS.md, SOUL.md, IDENTITY.md, USER.md, HEARTBEAT.md — only AGENTS.md and MEMORY.md are appended to, behind clear `<!-- BEGIN/END skill-38 -->` markers, with backups before any edit.

@@ -194,7 +194,7 @@ never omitted:
 > reliably populate the URL / Authorization / Content-Type / Raw Body, so every client must paste those by
 > hand. The generated reference sheet (Section above) makes this explicit and is gated in CI.
 
-A live client (Teresa) was stranded by a reference sheet that had NEITHER the bearer token NOR a copyable
+A live client was stranded by a reference sheet that had NEITHER the bearer token NOR a copyable
 Raw Body JSON — there was nothing to paste into GHL's Build-with-AI. This is now **machine-enforced by
 `scripts/qc-reference-sheet.sh`** (wired into `scripts/11-run-qc-checklist.sh` AND CI
 `.github/workflows/qc-static.yml`): the gate drives the generator in an offline sandbox and FAILS the
@@ -218,7 +218,7 @@ like the send-directive / conversation-memory / playbook-doc gates.
 `CLIENT_TELEGRAM_CHAT_ID` when the operator captured it; when it is empty, it DISCOVERS the chat by
 grepping `agents/*/sessions/*.jsonl` for every shape a paired chat appears in — `"chat":{"id":<n>`,
 `telegram:direct:<n>`, `"chatId":<n>`, and `"from":{"id":<n>` — and takes the **most-frequent NON-operator
-id**. Reading `sessions.json` keys alone MISSES paired chats (the Teresa lesson). If NO chat is found, the
+id**. Reading `sessions.json` keys alone MISSES paired chats (a hard-won live-client lesson). If NO chat is found, the
 script FLAGS LOUDLY (stderr banner + `clientDocDelivered=false`) and exits non-zero so the install is
 marked incomplete — it NEVER silently skips.
 
