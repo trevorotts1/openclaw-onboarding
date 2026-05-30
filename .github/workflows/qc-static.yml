@@ -502,6 +502,43 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-segmentation.test.sh
           echo "✓ qc-segmentation negative test passes (the gate fails on each broken invariant)"
 
+      - name: Skill 38 Proactive Outreach Campaigns (F15) invariant gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the Proactive Outreach Campaigns feature (F15, OFF by
+          # default): the protocol substance — the campaign-definitions dir
+          # (outreach-campaigns/), BOTH trigger kinds (time-based cron + event-based),
+          # the GHL-tag audience filter, the message rendered THROUGH the Communication
+          # Playbook (same brand voice as a reactive reply), the frequency cap, opt-out
+          # respect (ZHC-outreach-opted-out, global), the ZHC-outreach-<campaign> tag, the
+          # STRICT quiet-hours respect (Step 9.8 — a quiet-window touch queues/defers), the
+          # reactive-vs-proactive separation (direction:proactive on every log line), the
+          # operator-only/never-customer-invoked SEND guard (outbound-injection), the F29
+          # Intelligent-Follow-up migration relationship, and the honest "reuses GHL send +
+          # openclaw cron + Communication Playbooks, NOT a new sending service/scheduler/CRM"
+          # scope; the engine is CRON/EVENT-DRIVEN so there is intentionally NO inbound
+          # AGENTS.md step (no STEP_9_46 marker — the cron+event wiring is documented in the
+          # protocol instead) + MEMORY Rule 28; the PII-free F52 log outreach-events.jsonl
+          # (event_type campaign_fired) documented in the protocol + INSTRUCTIONS.md + seeded
+          # by script 25 (which also seeds the outreach-campaigns/ dir + the example campaign);
+          # and the default-OFF toggle skill38.proactive_outreach.enabled. BASH (grep core)
+          # — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-proactive-outreach.sh
+          echo "✓ Skill 38 Proactive Outreach Campaigns (F15) invariants hold"
+
+      - name: Skill 38 Proactive Outreach gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-proactive-outreach.sh actually FAILS when an F15 invariant is broken (a
+          # green gate that never fails is worthless). Copies the skill to a temp dir and
+          # breaks three different invariants (the STRICT quiet-hours Step 9.8 cross-reference,
+          # the operator-only/outbound-injection SEND guard, and the outreach-events.jsonl
+          # seeding), asserting the gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-proactive-outreach.test.sh
+          echo "✓ qc-proactive-outreach negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
         shell: bash
         run: |

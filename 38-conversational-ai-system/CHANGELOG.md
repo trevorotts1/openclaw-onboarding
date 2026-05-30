@@ -1,3 +1,70 @@
+## [1.5.9] - 2026-05-30 - Round-2 backlog F15: Proactive Outreach Campaigns (scheduled/event-driven outbound, OFF by default)
+
+### Why
+Round-2 backlog feature 3 of 6. The agent can now run SCHEDULED OUTBOUND campaigns — re-engage cold leads,
+appointment reminders, post-purchase follow-ups, win-back, birthday/anniversary touches — not just reactive
+replies. This is the OUTBOUND counterpart to the inbound reply system: it reuses the existing Communication
+Playbooks (tone/voice), the existing `openclaw cron` mechanism, the existing GHL tag/contact APIs, and the
+existing quiet-hours + compliance hard-gates. Toggle default OFF (opt-in advanced feature — it is the only
+part of the conversational system that reaches OUT to people who did not message first). Canonical content is
+byte-identical across `openclaw-onboarding` (Mac) and `openclaw-onboarding-vps`; only repo-specific env
+(paths, INSTRUCTIONS layout, qc-static line positions) diverges.
+
+### Added — `protocols/proactive-outreach-protocol.md` (F15, Step 9.46), byte-identical across both repos
+- The full campaign engine: campaign definitions under `<MASTER_FILES_DIR>/outreach-campaigns/<id>.md`, each
+  with six parts — a TRIGGER (time-based `cron` registered as an `openclaw cron` job, OR event-based, e.g. a
+  tag applied / appointment booked / purchase completed), a GHL-TAG AUDIENCE filter (`include_tags`/`exclude_tags`,
+  opt-out implicit), a MESSAGE template rendered THROUGH the matching Communication Playbook (same brand voice
+  as a reactive reply — never a raw blast), a FREQUENCY CAP (anti-fatigue, across ALL campaigns; default 7
+  days per contact), and OPT-OUT respect (`ZHC-outreach-opted-out`, global; fed by the Step 9.9 compliance
+  keyword gate).
+- STRICT quiet-hours respect (Step 9.8 / AGENTS Step 0.5) — a proactive touch due in a quiet window QUEUES for
+  the next valid window, never drops. Reactive vs proactive are tracked SEPARATELY: every outreach log line
+  carries `direction: proactive` so outbound performance analyzes apart from inbound handling.
+- Agent-created tags `ZHC-outreach-<campaign-id>` / `ZHC-outreach-opted-out` (operator-owned audience tags are
+  READ, never renamed). The engine is CRON/EVENT-DRIVEN — there is intentionally NO AGENTS.md inbound-reply
+  step (no `STEP_9_46` marker); the cron + event wiring is documented in the protocol.
+- **F29 migration relationship:** F29 Intelligent Follow-up's own "Pre-Feature-15 implementation" note says it
+  schedules its 10-touchpoint stalled-lead cadence with direct cron calls until F15 ships, then migrates. F15
+  IS that infrastructure — F29's cadence becomes an event-triggered campaign. F15 does not rip F29 out; it is
+  the destination F29 moves to, on F29's own schedule.
+- **Operator-only / never customer-invoked:** creating/enabling a campaign and firing a real SEND are
+  allow-list actions, gated by `require_operator_approval_to_send` (default true). A customer asking to "send a
+  campaign to everyone" / "blast my list" is IGNORED (outbound-injection vector). All standing hard-gates
+  (quiet hours, compliance, honesty floor, mandatory-SEND-confirmation) apply to every proactive send.
+- **Honest scope:** reuses the GHL Conversations API send path + `openclaw cron` + the Communication Playbooks
+  + the existing quiet-hours/compliance hard-gates — NOT a new email/SMS sending service, a new scheduler, or
+  a new CRM.
+
+### Added — QC gate + negative test, byte-identical across both repos
+- `scripts/qc-proactive-outreach.sh` — asserts the load-bearing F15 substance (the campaign-definitions dir,
+  both trigger kinds, the GHL-tag audience, the Communication-Playbook-rendered message, the frequency cap,
+  opt-out respect, the ZHC-outreach- tag, the STRICT quiet-hours Step 9.8 respect, the reactive-vs-proactive
+  separation via `direction:proactive`, the operator-only/outbound-injection SEND guard, the F29 migration
+  relationship, the honest scope, the NO-inbound-AGENTS-step invariant, the PII-free `outreach-events.jsonl`
+  contract documented+seeded with the `outreach-campaigns/` dir + example campaign, the default-OFF toggle).
+  Wired into `scripts/11-run-qc-checklist.sh` + `.github/workflows/qc-static.yml`.
+- `scripts/qc-proactive-outreach.test.sh` — negative self-test: proves the gate PASSES intact and FAILS when
+  each of three invariants is broken (the STRICT quiet-hours Step 9.8 cross-reference, the operator-only/
+  outbound-injection SEND guard, the `outreach-events.jsonl` seeding).
+
+### Wiring
+- `scripts/06-append-memory-rules.sh` — MEMORY Rule 28 (Proactive Outreach Rule) in a new marker-guarded
+  Round-2 block, backup-before-write, idempotent (does not renumber rules 6-27).
+- `scripts/25-seed-round3-feature-files.sh` — seeds the empty `outreach-events.jsonl` sink + the
+  `outreach-campaigns/` dir with a universal example campaign (`cold-lead-reengagement.md`) + the dir README
+  (existence-guarded, never overwrites operator files).
+- `scripts/qc-feature-logs.sh` — F15 added to the F52 ROWS (the JSONL + PII guard now also covers
+  `outreach-events.jsonl` / `campaign_fired`).
+- `INSTRUCTIONS.md` — Step 9.46 row + the Phase-5 F52 data-contract table row for `outreach-events.jsonl`.
+- `scripts/05-update-agents-md.sh` — intentionally UNCHANGED: F15 is cron/event-driven, not an inbound-reply
+  step, so it adds no AGENTS.md marker block (the cron + event hooks are documented in the protocol instead).
+
+### Version
+- skill38 1.5.8 → **1.5.9** (`skill-version.txt`, SKILL.md self-counts: protocols 41→42, scripts 59→61).
+- Mac/VPS skill38 sequences are intentionally independent — this bump is the same number on both because both
+  were at 1.5.8; the repo-level v10.x versions are untouched.
+
 ## [1.5.8] - 2026-05-30 - Round-2 backlog F17: Customer Segmentation Awareness (segment-aware tone/priority/escalation, OFF by default)
 
 ### Why

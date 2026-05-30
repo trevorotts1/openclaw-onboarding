@@ -663,6 +663,20 @@ else
   report_fail "qc-segmentation.sh not found (looked in scripts/)"
 fi
 
+# -------- Proactive Outreach Campaigns (F15) invariant gate (machine-enforced) --------
+section "Proactive outreach campaigns rule (qc-proactive-outreach.sh)"
+QC_OUTREACH="$SCRIPT_DIR/qc-proactive-outreach.sh"
+[ -f "$QC_OUTREACH" ] || QC_OUTREACH="$SKILL38_ROOT/scripts/qc-proactive-outreach.sh"
+if [ -f "$QC_OUTREACH" ]; then
+  if bash "$QC_OUTREACH" >/dev/null 2>&1; then
+    report_pass "F15 proactive outreach invariants hold (protocol + MEMORY Rule 28, NO inbound AGENTS step — cron/event-driven, campaign-definition format cron|event trigger + GHL-tag audience + Communication-Playbook-rendered message + frequency cap + opt-out + ZHC-outreach- tag, STRICT quiet-hours respect Step 9.8, reactive-vs-proactive tracked separately via direction:proactive, operator-only/never-customer-invoked SEND, F29 migrates onto this infra, PII-free outreach-events.jsonl seeded with the outreach-campaigns/ dir + example campaign, toggle default OFF)"
+  else
+    report_fail "qc-proactive-outreach.sh found an F15 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-proactive-outreach.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

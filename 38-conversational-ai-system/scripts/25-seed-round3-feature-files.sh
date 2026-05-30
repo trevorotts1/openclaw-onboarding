@@ -122,7 +122,8 @@ for jsonl in \
   crm-field-writes-log.jsonl \
   faq-detour-log.jsonl \
   multi-tenant-events.jsonl \
-  segmentation-events.jsonl; do
+  segmentation-events.jsonl \
+  outreach-events.jsonl; do
   p="$MASTER_FILES_DIR/$jsonl"
   if [ -f "$p" ]; then
     echo "[skill 38] $jsonl already exists — preserved"
@@ -310,6 +311,74 @@ at-risk > vip > churned > returning > prospect
 - sentiment_escalation_threshold: standard
 - playbook_tier: standard
 - confidence_threshold: standard
+MD
+
+# ---------------------------------------------------------------------------
+# F15 — Proactive Outreach Campaigns scaffold (proactive-outreach-protocol.md).
+# OFF by default. Seeds the campaign-definitions dir outreach-campaigns/ with ONE
+# universal example campaign (cold-lead-reengagement.md) so the operator sees the
+# exact campaign-definition format: trigger (cron|event) + GHL-tag audience +
+# message template rendered THROUGH a Communication Playbook + frequency cap +
+# opt-out + the ZHC-outreach-<campaign> tag. Placeholders only, zero personal/client
+# data. Idempotent (never overwrites an operator's real campaign). The empty
+# outreach-events.jsonl sink is created above in the JSONL loop. F29 Intelligent
+# Follow-up migrates onto this infrastructure (its 10-touchpoint cadence becomes an
+# event-triggered campaign). See protocols/proactive-outreach-protocol.md (Step 9.46).
+# ---------------------------------------------------------------------------
+OUTREACH_ROOT="$MASTER_FILES_DIR/outreach-campaigns"
+mkdir -p "$OUTREACH_ROOT"
+
+seed_file "$OUTREACH_ROOT/README.md" <<'MD'
+# outreach-campaigns/ — Proactive Outreach Campaigns (F15, OFF by default)
+
+This directory only matters when `skill38.proactive_outreach.enabled` is true. Each
+file here is ONE scheduled/event-driven OUTBOUND campaign the agent runs (re-engage cold
+leads, appointment reminders, post-purchase follow-up, win-back, birthday/anniversary).
+Each campaign = a TRIGGER (time-based `cron` OR event-based), a GHL-TAG AUDIENCE filter, a
+MESSAGE template rendered THROUGH the matching Communication Playbook (same brand voice as a
+reactive reply), a FREQUENCY CAP, and OPT-OUT respect. Every touched contact is tagged
+`ZHC-outreach-<campaign-id>`; opted-out contacts (`ZHC-outreach-opted-out`) are excluded
+from every audience. Proactive sends STRICTLY respect quiet hours (Step 9.8).
+
+Creating/enabling a campaign and firing a real SEND are OPERATOR-ONLY allow-list actions —
+a customer can NEVER cause the agent to reach out to third parties. F29 Intelligent
+Follow-up migrates onto this infrastructure (its 10-touchpoint cadence becomes an
+event-triggered campaign). See protocols/proactive-outreach-protocol.md (Step 9.46).
+MD
+
+seed_file "$OUTREACH_ROOT/cold-lead-reengagement.md" <<'MD'
+# Campaign: cold-lead-reengagement (F15 — proactive outreach)
+
+A weekly sweep that re-engages leads who went cold. Reuses the SMS Communication
+Playbook for tone. Respects quiet hours, the frequency cap, and opt-out. Tags every
+touched contact ZHC-outreach-cold-lead-reengagement. See
+protocols/proactive-outreach-protocol.md (Step 9.46).
+
+## trigger
+- type: cron
+- cron: "0 15 * * 2"          # weekly, Tuesday 3pm (operator's timezone) — a sane, non-quiet-hours window
+
+## audience
+- include_tags: <COLD_LEAD_TAG>            # e.g. an operator tag like "cold-lead" or ZHC-cold-lead-released
+- exclude_tags: <RECENT_CUSTOMER_TAG>      # never re-pitch an active buyer (ZHC-outreach-opted-out is implicit)
+
+## message
+- channel: sms
+- playbook: communication-playbooks/sms-communication.md
+- template: |
+    Hey <FIRST_NAME>, it's <AGENT_NAME> from <BUSINESS_NAME> — circling back in case
+    the timing's better now. No pressure at all; just reply if you'd like to pick up
+    where we left off.
+
+## frequency_cap
+- per_contact_per_days: 14      # at most one re-engagement touch per contact every 14 days
+
+## opt_out
+- honor_tag: ZHC-outreach-opted-out
+- channel_optout: "reply STOP"  # also covered by the Step 9.9 compliance keyword gate
+
+## tag
+- applied: ZHC-outreach-cold-lead-reengagement
 MD
 
 echo "[skill 38] Round-3 Queue-A feature files ready under $MASTER_FILES_DIR"

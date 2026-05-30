@@ -64,6 +64,7 @@ ROWS=(
   "crm-field-writes-log.jsonl|crm-field-write-protocol.md|crm_field_write"
   "faq-detour-log.jsonl|smart-faq-tool-protocol.md|faq_answered"
   "segmentation-events.jsonl|customer-segmentation-protocol.md|segment_detected"
+  "outreach-events.jsonl|proactive-outreach-protocol.md|campaign_fired"
 )
 
 for row in "${ROWS[@]}"; do
