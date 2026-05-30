@@ -1,6 +1,6 @@
 # Skill 38 — Conversational AI System: Operator Instructions
 
-These instructions walk an operator through the v5.14 conversational AI setup on a fresh OpenClaw install. The full source playbook lives at `references/v6.0-source-playbook.md` (8,797 lines, verbatim from Christy's v5.14 work). Treat that file as the canonical source of truth. This INSTRUCTIONS.md is the navigational guide — it tells you which Phase to do when and which file owns the detail.
+These instructions walk an operator through the conversational AI setup on a fresh OpenClaw install. The full source playbook lives at `references/v6.0-source-playbook.md` (the canonical source of truth, verbatim from Christy's playbook work). Treat that file as the canonical source of truth. This INSTRUCTIONS.md is the navigational guide — it tells you which Phase to do when and which file owns the detail.
 
 > **Read first:**
 > 1. `SKILL.md` (you read it)

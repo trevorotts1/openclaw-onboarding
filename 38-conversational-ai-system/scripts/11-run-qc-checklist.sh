@@ -48,24 +48,44 @@ else
 fi
 
 # -------- File existence: protocols / templates / scripts / references --------
-section "File existence — protocols/"
+# NOTE (v1.4.18): the QC/handoff protocol is the REPO-ROOT ../QC-PROTOCOL.md
+# (the governing Sub-Agent Handoff + Mandatory QC Protocol) plus the skill's own
+# protocols/pre-handoff-qc-protocol.md. There is no protocols/qc-protocol.md or
+# protocols/handoff-protocol.md in this skill (those phantom entries used to FAIL
+# on every clean install). Check the files that actually ship.
+section "File existence — protocols/ (skill QC protocol + repo-root governing protocol)"
 PROTOCOL_FILES=(
   "protocols/pre-handoff-qc-protocol.md"
-  "protocols/qc-protocol.md"
-  "protocols/handoff-protocol.md"
 )
 for f in "${PROTOCOL_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
 done
+# The governing QC protocol lives at the repo root (one level above the skill).
+if [ -f "$SKILL38_ROOT/../QC-PROTOCOL.md" ]; then
+  report_pass "../QC-PROTOCOL.md (repo-root governing Sub-Agent Handoff + Mandatory QC Protocol)"
+else
+  echo "  [SKIP] ../QC-PROTOCOL.md not found relative to the skill root (expected when the skill is installed standalone, outside the onboarding repo)"
+fi
 
 section "File existence — templates/ (journey + channel)"
+# Journey templates live under templates/journey-templates/ (8 per-vertical dirs,
+# each with journey.md, plus a registry.md) — NOT a single templates/journey-template.md
+# (that phantom path used to FAIL on every clean install).
 TEMPLATE_FILES=(
   "templates/channel-playbook-template.md"
-  "templates/journey-template.md"
+  "templates/client-reference-sheet-template.md"
+  "templates/journey-templates/registry.md"
 )
 for f in "${TEMPLATE_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
 done
+# Assert the 8 customer-journey templates are present (coach + 7 verticals).
+JOURNEY_COUNT="$(find "$SKILL38_ROOT/templates/journey-templates" -mindepth 2 -name 'journey.md' 2>/dev/null | wc -l | tr -d ' ')"
+if [ "${JOURNEY_COUNT:-0}" -ge 8 ]; then
+  report_pass "templates/journey-templates/ has $JOURNEY_COUNT journey.md files (coach + 7 verticals)"
+else
+  report_fail "templates/journey-templates/ has only ${JOURNEY_COUNT:-0} journey.md files (expected 8: coach + 7 verticals)"
+fi
 
 section "File existence — scripts/ (install + QC)"
 SCRIPT_FILES=(
