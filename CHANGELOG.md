@@ -1,3 +1,48 @@
+## [v10.15.12]  -  2026-05-30  -  Skill 38 v1.5.2 (Round-3 Queue-A + 3 QC-enforced standards + F49 ZHC Pixel) + NEW Skill 39 Real Estate Playbook + NEW Skill 40 ZHC Public Records Scraper
+
+### Why
+This release ships the accumulated Skill 38 (Conversational AI System) Round-3 work plus two brand-new
+universal verticals. Skill 38 reaches v1.5.2 with its Round-3 Queue-A feature pack, the three QC-enforced
+build standards, and the ZHC Pixel. Skills 39 and 40 join the catalog as new universal verticals available
+to every client.
+
+### Added / Changed
+
+**Skill 38 — Conversational AI System (→ v1.5.2)**
+- **Round-3 Queue-A feature pack:**
+  - **ZHC tag-prefix rule** — ZHC-emitted CRM tags carry a consistent prefix so client-owned tags and
+    ZHC-managed tags never collide.
+  - **F50 aggression two-tier** — a two-tier conversational aggression model (measured vs assertive) so the
+    agent's push intensity matches the lead's stage instead of a single fixed tone.
+  - **F44 detour-and-return interrupts** — the agent can handle an off-script interrupt (a side question),
+    answer it, then return the lead to the active playbook step without losing place.
+  - **F45 geo-qualification** — qualify or disqualify a lead by geography before booking/handoff.
+  - **F46 CRM field write/create** — the agent can write to (and create) CRM custom fields, not just read
+    them, so captured data lands structured in the CRM.
+  - **F47 inline smart-FAQ** — answer common questions inline from a per-client FAQ source without breaking
+    the conversation flow.
+  - **F49 ZHC Pixel** — a per-client visitor-signal pixel plus the Pixel Concierge that acts on those
+    signals (shipped initially at v1.5.1 → v1.5.2).
+- **Three QC-enforced standards** — now ship and are machine-checked, not advisory:
+  - **Communication-Playbook standard** (ELEVATED) — the conversation playbook shape is enforced.
+  - **GHL Raw-Body-JSON standard** (NEW) — the GHL Custom Webhook Raw Body must be a flat JSON shape the
+    hook can consume; enforced by QC.
+  - **Notion Client-Doc standard** (NEW) — the client reference doc delivered to Notion is enforced.
+
+**Skill 39 — Real Estate Playbook & Property Intelligence (NEW)**
+- New universal vertical: a real-estate conversational playbook + property-intelligence layer available to
+  every client.
+
+**Skill 40 — ZHC Public Records Scraper (NEW)**
+- New universal vertical: a ZHC public-records scraper for enrichment/lead-intelligence workflows.
+
+### Version
+- Repo-wide bump v10.15.11 → v10.15.12 via `scripts/bump-version.sh` (all 8 version locations agree).
+- Skill 38 per-skill semver is at 1.5.2 (independent of the repo-wide version; tracked in
+  `38-conversational-ai-system/skill-version.txt`).
+- Mac sequence v10.15.x remains intentionally independent of the VPS v10.16.x sequence.
+- See `38-conversational-ai-system/CHANGELOG.md` for per-skill detail.
+
 ## [v10.15.11]  -  2026-05-30  -  Skill 38 v1.4.18→v1.4.21: Workflow-AI standardization, exhaustive Build-with-AI Custom Webhook, self-tests, GHL API quick-ref, universal personal-data scrub
 
 ### Why
