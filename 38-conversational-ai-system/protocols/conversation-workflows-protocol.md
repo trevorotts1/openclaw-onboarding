@@ -243,12 +243,14 @@ If Layer 1 is needed, the agent does THREE things in sequence:
 
 Per the operator's design preference (automation over operator manual steps), the agent creates tags programmatically using the GHL skill rather than telling the operator to navigate Settings → Tags.
 
-The agent identifies what tags this workflow needs (e.g., `pricing-interest`, `discovery-scheduled`, `quoted`). For each tag, it calls the GHL skill:
+> **ZHC tag-prefix rule (MEMORY Rule 20 / `zhc-tag-prefix-protocol.md`):** every tag the agent creates PROGRAMMATICALLY carries the `ZHC-` prefix (e.g. `ZHC-pricing-interest`), so agent-created tags are instantly distinguishable from operator-created ones. This is NOT retroactive — the agent never renames existing or operator-owned tags; it only prefixes the names it creates here. The mechanism below is unchanged; only the NAME passed to `create_tag` carries the prefix.
+
+The agent identifies what tags this workflow needs (e.g., `ZHC-pricing-interest`, `ZHC-discovery-scheduled`, `ZHC-quoted`). For each tag, it calls the GHL skill:
 
 ```
 ghl_skill.create_tag(
   location_id=<client's location ID>,
-  name=<tag name>,
+  name=<tag name, ZHC- prefixed for agent-created tags>,
   color=<color, optional>
 )
 ```
@@ -271,9 +273,9 @@ Body:
 After creating all tags, the agent reports back to the operator:
 
 > "✓ Created these tags in your Convert and Flow account:
->  - `pricing-interest` (ID: abc123)
->  - `discovery-scheduled` (ID: def456)
->  - `quoted` (ID: ghi789)
+>  - `ZHC-pricing-interest` (ID: abc123)
+>  - `ZHC-discovery-scheduled` (ID: def456)
+>  - `ZHC-quoted` (ID: ghi789)
 >
 > You don't need to create them manually — they're already there."
 

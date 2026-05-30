@@ -248,7 +248,7 @@ needs it. The prompt template supports: **trigger + (optional if/else) + one-or-
 
 - **If/else (if-else) branches** — branch on tag, channel, or field value for additional filtering BEFORE
   the webhook step. Each branch lists its condition and its own action(s).
-- **Add-Tag actions** — apply a tag at a branch (e.g. tag `discovery-scheduled` after booking).
+- **Add-Tag actions** — apply a tag at a branch (e.g. tag `ZHC-discovery-scheduled` after booking; agent-created tags carry the `ZHC-` prefix per MEMORY Rule 20).
 - **Tag-check conditions** — "only continue if contact has tag `vip`" style gates.
 - **Multiple sequential actions** — e.g. Add-Tag → Custom Webhook → Add-Tag; or different Custom Webhooks
   per branch (each with its own URL + headers + 23-key body).
@@ -268,6 +268,9 @@ matches nothing (or everything). That blank/non-existent-tag filter is a confirm
 - **Agent path (preferred):** the agent CREATES the tag(s) via the GHL skill BEFORE building the workflow,
   then references each tag BY NAME in the Build-with-AI prompt. If the GHL skill lacks a create-tag method,
   fall back to the direct API call documented in `protocols/conversation-workflows-protocol.md` Section D.1.
+  **Every tag the agent creates programmatically carries the `ZHC-` prefix** (e.g. `ZHC-discovery-scheduled`)
+  per the ZHC tag-prefix rule (MEMORY Rule 20 / `protocols/zhc-tag-prefix-protocol.md`) — NOT retroactive;
+  operator-created tags keep their existing names.
 - **Client/operator path (where to check):** in GHL, tags live under **Settings → Tags**. Tell the client
   to open **Settings → Tags** and confirm they SEE every tag the workflow uses, spelled exactly as the
   workflow references it. A tag in a filter that is NOT listed under Settings → Tags is the bug — create it

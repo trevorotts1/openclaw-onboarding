@@ -286,3 +286,34 @@ jobs:
           # — respects the .py claude-/anthropic ban.
           bash 38-conversational-ai-system/scripts/qc-tools-md-ghl-ref.sh
           echo "✓ Skill 38 GHL TOOLS.md quick-reference is complete, concise, and free of personal/client data"
+
+      - name: Skill 38 ZHC programmatic-tag-prefix rule (Round-3 Queue-A)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the ZHC tag-prefix rule (v1.5.0): every tag the agent
+          # creates PROGRAMMATICALLY carries the `ZHC-` prefix, so operators can tell
+          # agent-created tags apart from their own. qc-zhc-tag-prefix.sh asserts:
+          # MEMORY Rule 20 is appended (06-append-memory-rules.sh), the
+          # SKILL38_ZHC_TAG_PREFIX behavioral block is inserted (05-update-agents-md.sh),
+          # the dedicated protocol (zhc-tag-prefix-protocol.md) exists + states "NOT
+          # retroactive" + reuses the existing D.1/Section-6 create_tag mechanism, every
+          # Round-3 Queue-A feature tag (ZHC-tension-detected, ZHC-aggression-detected,
+          # ZHC-interrupt-handled, ZHC-faq-detoured, ZHC-aggression-handled-and-resumed,
+          # ZHC-out-of-service-area/-confirmed/-flexible, ZHC-faq-answered,
+          # ZHC-bot-suspected) is present + ZHC-prefixed, and the D.1 + Section-6 example
+          # tags were updated to the ZHC- form with no bare agent-created example left
+          # behind. BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh
+          echo "✓ Skill 38 ZHC tag-prefix rule enforced: every programmatic-tag example uses the ZHC- prefix"
+
+      - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The skill is UNIVERSAL — ZERO real personal/client identifiers anywhere
+          # in the tree (the Round-3 Queue-A protocols + scripts must use generic
+          # placeholders only). Runs the static (--no-gen) scan in CI so a leaked
+          # name in any new file fails the build. BASH (grep core).
+          bash 38-conversational-ai-system/scripts/qc-no-personal-data.sh --no-gen
+          echo "✓ Skill 38 carries no personal/client data (UNIVERSAL)"
