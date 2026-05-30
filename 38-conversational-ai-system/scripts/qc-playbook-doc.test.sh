@@ -134,7 +134,7 @@ cat > "$C/registry.md" <<'EOF'
 | ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
 |---|---|---|---|---|---|---|---|
 | appointment-booking | First playbook | "book" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appt-abc |
-| pricing-inquiry | Lead asks pricing | "price" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | /Users/client/master-files/conversation-workflows/pricing-inquiry-doc.md |
+| pricing-inquiry | Lead asks pricing | "price" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | /Users/<user>/master-files/conversation-workflows/pricing-inquiry-doc.md |
 EOF
 printf '# appt\n'    > "$C/appointment-booking.md"
 printf '# pricing\n' > "$C/pricing-inquiry.md"

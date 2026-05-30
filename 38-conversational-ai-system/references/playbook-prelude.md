@@ -2,17 +2,17 @@
 <!-- Skill 38 reference: VERBATIM extraction from openclaw-cloudflare-tunnel-prompt v5.14 (lines 25-149). -->
 <!-- Contains: Terminology, Rules of Engagement (6 rules), Execution Order Map (7 phases). -->
 <!-- Read this BEFORE executing any phase. The Rules of Engagement are gates, not suggestions. -->
-<!-- Source: /Users/blackceomacmini/Downloads/openclaw-cloudflare-tunnel-prompt (1).md -->
+<!-- Source: the operator's original cloudflare-tunnel prompt -->
 
 ## 🏷️ Terminology
 
 This system has a few distinct components with distinct names. Getting them right matters:
 
-- **Convert and Flow** = Christy's white-label version of GoHighLevel. It IS GHL, with Convert and Flow branding on top. Client-facing materials should refer to "Convert and Flow" rather than "GoHighLevel" when speaking to her clients. Functionally it's identical to GHL — same API endpoints (`services.leadconnectorhq.com`), same workflow builder, same Conversations system. The brand differs; the technology doesn't.
+- **Convert and Flow** = the operator's white-label version of GoHighLevel. It IS GHL, with Convert and Flow branding on top. Client-facing materials should refer to "Convert and Flow" rather than "GoHighLevel" when speaking to the operator's clients. Functionally it's identical to GHL — same API endpoints (`services.leadconnectorhq.com`), same workflow builder, same Conversations system. The brand differs; the technology doesn't.
 
 - **OpenClaw** = the AI agent platform that runs the conversational AI. Receives webhooks from Convert and Flow, processes them, replies via the installed GHL skill, takes actions like booking and invoicing.
 
-- **The Conversational AI System** = the complete deployed setup. This is what this playbook builds — OpenClaw + Convert and Flow + the playbooks, protocols, and capabilities documents created during setup. There's no consumer-facing brand name for this whole stack; it's just "the conversational AI system" or "Christy's AI" when talking to a client.
+- **The Conversational AI System** = the complete deployed setup. This is what this playbook builds — OpenClaw + Convert and Flow + the playbooks, protocols, and capabilities documents created during setup. There's no consumer-facing brand name for this whole stack; it's just "the conversational AI system" or "the operator's AI" when talking to a client.
 
 When the agent is writing client-facing artifacts (Client Reference Sheet, communication playbooks, the overview PDF), it uses **Convert and Flow** to refer to the CRM layer. When writing AI-facing technical instructions (curl commands, API endpoints, JSON schemas), it uses **GHL** or **GoHighLevel** because those are the literal technical names at the API layer. Both refer to the same product — just different audiences.
 

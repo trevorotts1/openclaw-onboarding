@@ -17,6 +17,41 @@ populate), and how to teach MULTI-ACTION workflows.
 > prompt you MUST also have its matching **communications playbook** (Layer 2) and the **GHL
 > workflow/automation** it builds. One implies the other two.
 
+
+## 0. EVERY workflow-AI instruction set MUST INCLUDE ALL OF THE FOLLOWING
+
+> **THIS IS THE STANDARD. NON-NEGOTIABLE. NO EXCEPTIONS.** The workflow-AI output was wildly different
+> every run — that is the bug this section kills. Every workflow-AI instruction set the agent generates —
+> for EVERY client, EVERY run, the STARTER SMS responder and EVERY custom playbook alike — MUST contain
+> ALL of the numbered items below, in this order, with these exact structural pieces. The generator
+> (`scripts/21-generate-client-reference-sheet.sh`) and the template
+> (`templates/sms-workflow-ai-prompt-template.md`) emit this EXACT structure so every client gets the SAME
+> experience. A workflow-AI instruction set that is missing ANY of these is INCOMPLETE and is machine-FAILED
+> by `scripts/qc-reference-sheet.sh --require-manual-fill`.
+
+1. **Workflow NAME + an explicit PUBLISH instruction.** Name the workflow, and end with "publish when done —
+   do not leave it as a draft." (Build-with-AI loves to leave workflows in Draft.)
+2. **TRIGGER — type + sub-option + filters, in this EXACT order.** State the trigger TYPE (for the SMS
+   starter: **Customer Replied**), its SUB-OPTION (**On Reply**), and its FILTERS in the exact order they go
+   in: **Filter 1: Channel = SMS**, then **Filter 2: Message Direction = Inbound**. If a filter references a
+   TAG, that tag is created FIRST (item 6).
+3. **SETTINGS — ALLOW RE-ENTRY = ON.** The workflow MUST be allowed to re-enter / fire repeatedly per
+   contact. A contact who texts in today and again next week must re-trigger the workflow. If Allow Re-entry
+   is OFF, the workflow fires ONCE per contact and every later message is silently dropped — the customer
+   gets no reply and the failure is invisible. Set **Settings -> Allow Re-entry = ON** explicitly, every time.
+4. **CUSTOM WEBHOOK — every field, the exact value (Section 3 verbatim).** EVENT = CUSTOM; METHOD = POST;
+   URL = the exact hook URL; AUTHORIZATION dropdown = None; HEADERS via **Add item** (Authorization: Bearer
+   <HOOKS_TOKEN>, then Content-Type: application/json); RAW BODY = the full FLAT 23-key JSON. No hand-waving —
+   the prompt names every box and the exact value. See Section 3.
+5. **SAVE -> PUBLISH toggle ON -> SAVE.** Save the action, flip the top-right Publish toggle from Draft to
+   **Published**, then hit Save again. (Yes — Save, then Publish, then Save. The publish toggle does not
+   persist without the final Save.)
+
+> **Plus (carried from the original must-appear list, still required):** every action's fields spelled out
+> (item 4 covers the Custom Webhook); multi-action support when the scenario needs it (Section 5); tags
+> created FIRST (Section 6); a numbered manual-build fallback for when Build-with-AI is unavailable or mangles
+> the structure; and a closing pointer to the verification checklist (Section 4).
+
 ---
 
 ## 1. WHERE it goes (do not guess)
@@ -77,6 +112,10 @@ verification checklist MUST re-confirm each one:
   23 is the MINIMUM. Keep it FLAT (no nested `contact:{…}` / `customer_message:{…}` — a nested body makes
   EVERY field arrive EMPTY at the hook). Keep `messageTemplate` placeholder-free (no `{{…}}` inside its
   value, or GHL mangles the JSON and the webhook is Skipped). No `\n` escapes inside the JSON.
+- **Settings -> ALLOW RE-ENTRY = ON** (workflow-level, not a webhook field — but set it in the SAME build).
+  The workflow must be allowed to re-enter / fire repeatedly per contact. With Allow Re-entry OFF the
+  workflow fires ONCE per contact and silently drops every later message — the customer gets no reply and
+  the failure is invisible. Turn it ON every time (Section 0, item 3).
 
 ### Canonical 23-key RAW BODY (embed this exactly)
 
@@ -146,7 +185,7 @@ to put if it is missing/wrong. (Per-workflow, brutally-specific version generate
       node. **SEE:** the correct trigger TYPE + the intended filters. **If a filter references a TAG**
       (a "tag is/contains/does not contain" condition), confirm that tag ACTUALLY EXISTS and is the
       intended one — a **blank or non-existent tag in a "does not contain"/"contains" filter is the known
-      bug** (Teresa: Build-with-AI made a "does not contain `<blank>`" filter where the tag was never
+      bug** (a live client: Build-with-AI made a "does not contain `<blank>`" filter where the tag was never
       created, so it matched nothing). **PUT IF WRONG:** select/create the correct tag (it must appear under
       **Settings → Tags**), or remove the bad filter if it should not be there.
 - [ ] **Exactly the intended action(s)** exist (no extra/missing nodes; branches as designed).
@@ -157,6 +196,7 @@ to put if it is missing/wrong. (Per-workflow, brutally-specific version generate
 - [ ] **HEADERS** contains `Authorization: Bearer <HOOKS_TOKEN>` (added via Add item) and `Content-Type: application/json`.
 - [ ] **CONTENT-TYPE = application/json.**
 - [ ] **RAW BODY = all 23 keys, FLAT**, placeholder-free `messageTemplate`, `{{…}}` inserted via Custom Values picker.
+- [ ] **Settings -> Allow Re-entry = ON** (the workflow must re-fire per contact; OFF = it runs once per contact and silently drops every later message).
 - [ ] **Tags** created/applied as designed (created via GHL skill first).
 - [ ] **Workflow Published** (not Draft); run schedule correct.
 - [ ] **End-to-end test** passes (execution log shows 2xx; message lands in the conversation log).
@@ -208,7 +248,7 @@ or an Add-Tag action — the tag(s) MUST be CREATED FIRST, BEFORE the workflow i
 references a REAL, existing tag.** This is non-negotiable: Build-with-AI will happily create a filter that
 points at a tag that does not exist (e.g. `does not contain <blank>`), and that filter then silently
 matches nothing (or everything). That blank/non-existent-tag filter is a confirmed live-client bug
-(Teresa) — see the post-build verification in Section 4 and `templates/workflow-verification-checklist-template.md`.
+(a live client) — see the post-build verification in Section 4 and `templates/workflow-verification-checklist-template.md`.
 
 - **Agent path (preferred):** the agent CREATES the tag(s) via the GHL skill BEFORE building the workflow,
   then references each tag BY NAME in the Build-with-AI prompt. If the GHL skill lacks a create-tag method,

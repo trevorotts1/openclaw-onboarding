@@ -21,14 +21,14 @@ TEMPLATES_DIR="${SKILL38_TEMPLATES_DIR:-$TEMPLATES_DIR_DEFAULT}"
 
 # ----- required inputs -----
 : "${MASTER_FILES_DIR:?MASTER_FILES_DIR must be set}"
-: "${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME must be set (e.g., claw.thewinningformulacourse.com)}"
+: "${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME must be set (e.g., claw.example.com)}"
 : "${ROUTE_ID:?ROUTE_ID must be set (e.g., ZHC)}"
 : "${HOOKS_TOKEN:?HOOKS_TOKEN must be set}"
 : "${CLIENT_BUSINESS_NAME:?CLIENT_BUSINESS_NAME must be set}"
 : "${CLIENT_TELEGRAM_CHAT_ID:?CLIENT_TELEGRAM_CHAT_ID must be set}"
 
 # ----- optional / defaulted inputs -----
-OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-}"
 CLIENT_FIRST_NAME="${CLIENT_FIRST_NAME:-there}"
 INDUSTRY_CONTEXT="${INDUSTRY_CONTEXT:-your industry}"
 DESIRED_OUTCOME="${DESIRED_OUTCOME:-book a discovery call}"
@@ -314,14 +314,14 @@ substitute_template "$CHECKLIST_TEMPLATE" > "$SEC4"
 # individually. They ALWAYS appear as real, copyable fenced code blocks
 # regardless of how the template wraps its prose.
 #
-# A live client (Teresa) opened a reference sheet that had NO bearer token and NO
+# A live client opened a reference sheet that had NO bearer token and NO
 # copyable Raw Body JSON — there was no `Authorization: Bearer <token>` to paste
 # and no ```json body to drop into GHL's Build-with-AI, which stranded the client.
 # AND: GHL's "Build with AI" only builds the workflow SHAPE (trigger + an EMPTY
 # Custom Webhook action) — it does NOT reliably populate the URL, the
 # Authorization/Bearer header, the Content-Type header, or the Raw Body JSON. So
 # the client MUST open the Custom Webhook action and paste those values BY HAND.
-# AND (the Teresa tag gotcha): Build-with-AI created a trigger filter like "does
+# AND (the blank-tag gotcha): Build-with-AI created a trigger filter like "does
 # not contain <tag>" but the referenced tag was blank / never created, so the
 # filter silently matched nothing — the client MUST create the tag(s) FIRST and
 # verify the built trigger references a REAL existing tag.
@@ -388,7 +388,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '> READ THIS FIRST: GHL'\''s **"Build with AI"** only builds the workflow SHAPE (the trigger + an EMPTY Custom Webhook action). It does **NOT** fill in the URL, the Authorization/Bearer header, the Content-Type header, or the Raw Body JSON for you. You **MUST** open the Custom Webhook action yourself and paste the values below by hand. Build with AI will not fill these for you.\n\n'
   printf -- '---\n\n'
 
-  # (0) Create tags FIRST (the Teresa gotcha: a filter referenced a blank/never-created tag)
+  # (0) Create tags FIRST (the a live client gotcha: a filter referenced a blank/never-created tag)
   printf '## 0. Create your tag(s) FIRST (before you build the workflow)\n\n'
   printf 'If this workflow uses ANY tag — a trigger or If/Else filter like "tag is" / "contains" / "does not contain", or an Add-Tag action — **create that tag FIRST so the filter references a REAL, existing tag.** Build with AI will happily create a filter that points at a tag that does not exist (e.g. "does not contain `<blank>`"), and that filter then silently matches nothing or everything — this is a known live-client bug.\n\n'
   printf -- '- **Preferred:** ask your AI agent to create the tag(s) for you via the GHL skill — name the exact tag(s) you want.\n'
@@ -475,27 +475,80 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '8. **Save**, then **Publish** the workflow (not Draft).\n\n'
   printf '> **Build with AI will NOT fill these for you.** It only builds the trigger + an empty Custom Webhook action. **Verify every field above is non-empty before publishing** — an empty URL / missing Authorization header / empty Raw Body means the webhook silently does nothing and the customer gets no reply.\n\n'
 
-  # (5) POST-BUILD VERIFICATION — for EACH item: WHERE to go, WHAT to see, WHAT to put if wrong
-  printf '## 5. Verify AFTER Build with AI runs (where to go, what to see, what to put)\n\n'
-  printf 'After Build with AI builds the workflow, walk these THREE checks before you publish. For each one: WHERE to go, WHAT you should SEE, and WHAT to put if it is missing or wrong.\n\n'
-  printf '### 5a. TRIGGER (and its tag filter — the known Build-with-AI bug)\n\n'
-  printf -- '- **Where:** open the workflow → click the **Trigger** node at the top.\n'
-  printf -- '- **What you should see:** the correct trigger TYPE (for the SMS starter: **Customer Replied**, channel SMS). If the trigger has ANY filter that references a tag (e.g. "tag **does not contain** `X`" / "tag **contains** `X`"), you should see a REAL tag name in that filter — the exact tag you created in Section 0, listed in **Settings → Tags**.\n'
-  printf -- '- **The bug to catch:** Build with AI sometimes creates a tag filter like **"does not contain `<blank>`"** where the referenced tag is blank or was never created — so the filter silently matches nothing (or everything). A blank/non-existent tag in a "contains" / "does not contain" filter is the known live-client bug.\n'
-  printf -- '- **What to put if blank/wrong:** select (or create) the correct tag so the filter points at a REAL tag from **Settings → Tags** — or, if the filter should not be there at all, remove the bad filter. The starter SMS workflow needs NO tag filter.\n\n'
-  printf '### 5b. CUSTOM WEBHOOK action\n\n'
-  printf -- '- **Where:** open the workflow → click the **Custom Webhook** action.\n'
-  printf -- '- **What you should see:** **Method = POST**; the **URL** filled (Section 1); **both headers present** — `Authorization` and `Content-Type` (Sections 2 + 2b); the **Raw Body** filled with all 23 keys (Section 3).\n'
-  printf -- '- **The reality:** Build with AI does **NOT** fill these — it leaves them blank. \n'
-  printf -- '- **What to put if blank:** the values from this Quick Start — Method=POST, the Section 1 URL, the Section 2/2b header Key+Value blocks (via **Add item**), and the Section 3 Raw Body JSON. (Section 4 is the step-by-step.)\n\n'
-  printf '### 5c. PUBLISH\n\n'
-  printf -- '- **Where:** top-right of the workflow editor.\n'
-  printf -- '- **What you should see:** the status toggle reads **Published** — not **Draft**. Build with AI often leaves it as Draft.\n'
-  printf -- '- **What to put if wrong:** flip the toggle from **Draft** to **Published**, then Save.\n\n'
+  # (5) POST-BUILD VERIFICATION — DEAD SIMPLE, per area. One short line per
+  # check + the exact value in a COPY CODE BLOCK + a one-line "if you do not
+  # see it, paste this." Built for a 60-year-old: no essays, no 300-word
+  # paragraphs. Order: open workflow; Trigger; Allow Re-entry; URL; Headers;
+  # Raw Body; Save; Publish; Save.
+  printf '## 5. Verify it after Build with AI runs (do each line, in order)\n\n'
+  printf 'Each step is one line. Look for the thing. If you do not see it, copy the code block under that step and paste it in. That is the whole job.\n\n'
+  printf '### 5.1 — Open the workflow you just built.\n\n'
+  printf '### 5.2 — Click the **Trigger** at the top. You should see: **Customer Replied** / On Reply / Channel = SMS / Inbound.\n'
+  printf 'If you do not see them, set them to:\n\n'
+  printf '```\nCustomer Replied (On Reply) | Channel = SMS | Message Direction = Inbound\n```\n\n'
+  printf '### 5.3 — Open **Settings**. **Allow Re-entry** should be **ON**.\n'
+  printf 'If it is OFF, turn it ON (this lets the workflow run every time a contact texts, not just once).\n\n'
+  printf '### 5.4 — Click the **Custom Webhook**. The **URL** should be:\n\n'
+  printf '```\n%s\n```\n\n' "$REF_ENDPOINT_URL"
+  printf 'If you do not see it, paste that into the URL box.\n\n'
+  printf '### 5.5 — **Headers** should show two rows: `Authorization = Bearer ...` and `Content-Type = application/json`.\n'
+  printf 'If you do not see them, click **Add item** and paste the **Key** then the **Value**:\n\n'
+  printf '```\nAuthorization\n```\n\n'
+  printf '```\nBearer %s\n```\n\n' "$RESOLVED_HOOKS_TOKEN"
+  printf '```\nContent-Type\n```\n\n'
+  printf '```\napplication/json\n```\n\n'
+  printf '### 5.6 — The **Raw Body** should be the JSON below (all 23 lines).\n'
+  printf 'If you do not see it, paste this into the Raw Body box (it is the same body as Section 3):\n\n'
+  printf '```json\n'
+  printf '{\n'
+  printf '  "id": "%s",\n' "$REF_HOOK_NAME"
+  printf '  "match": "%s",\n' "$REF_HOOK_NAME"
+  printf '  "action": "agent",\n'
+  printf '  "agent_id": "%s",\n' "$REF_AGENT_ID"
+  printf '  "model": "ollama/deepseek-v4-flash:cloud",\n'
+  printf '  "wakeMode": "now",\n'
+  printf '  "name": "GHL Sales Inbound",\n'
+  printf '  "session_key": "hook:ghl:sms:{{contact.id}}",\n'
+  printf '  "messageTemplate": "Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md",\n'
+  printf '  "deliver": false,\n'
+  printf '  "timeoutSeconds": 300,\n'
+  printf '  "channel": "sms",\n'
+  printf '  "to": "{{contact.phone}}",\n'
+  printf '  "thinking": "medium",\n'
+  printf '  "contact_id": "{{contact.id}}",\n'
+  printf '  "first_name": "{{contact.first_name}}",\n'
+  printf '  "last_name": "{{contact.last_name}}",\n'
+  printf '  "email": "{{contact.email}}",\n'
+  printf '  "phone": "{{contact.phone}}",\n'
+  printf '  "subject": "{{message.subject}}",\n'
+  printf '  "message_body": "{{message.body}}",\n'
+  printf '  "location_id": "{{location.id}}",\n'
+  printf '  "location_name": "{{location.name}}"\n'
+  printf '}\n'
+  printf '```\n\n'
+  printf '### 5.7 — Click **Save**.\n\n'
+  printf '### 5.8 — Top-right: flip the toggle to **Publish** (it should read **Published**, not **Draft**).\n\n'
+  printf '### 5.9 — Click **Save** again.\n\n'
 
   # (6) pointer to the Workflow-AI prompt (Section 2 of the full sheet)
   printf '## 6. Workflow-AI prompt\n\n'
   printf 'Use the **Workflow-AI prompt** (the SMS Inquiry Responder Build-with-AI prompt) in **Section 2 — Your First Workflow** further down this page. Paste it into GHL Automations → **Build with AI** to build the workflow SHAPE, then come back and do Section 4 (fill the empty Custom Webhook by hand) and Section 5 (verify) above.\n\n'
+  printf -- '---\n\n'
+
+  # (7) HOW TO TEST YOUR SYSTEM (REQ 4) — Contacts -> search self -> open
+  # record -> text self -> reply on phone -> Automations -> open workflow ->
+  # Execution Logs -> every step green (esp. Custom Webhook); red = failure.
+  printf '## 7. How to test your system\n\n'
+  printf 'When everything is built and published, test it end-to-end yourself. Do these in order:\n\n'
+  printf -- '1. Go to **Contacts** (left menu).\n'
+  printf -- '2. Type **your own name** in the search box.\n'
+  printf -- '3. Open **your own contact record**.\n'
+  printf -- '4. **Send yourself a text (SMS)** from inside that record.\n'
+  printf -- '5. On your phone, **REPLY** to that text (a normal message like "hi, can you help me?").\n'
+  printf -- '6. Go to **Automations** and **open the workflow you built**.\n'
+  printf -- '7. Click **Execution Logs**.\n'
+  printf -- '8. **Every step should show green / success — ESPECIALLY the Custom Webhook step.** Within a few seconds your phone should also get the AI reply back.\n\n'
+  printf '> **Anything red = that step FAILED.** A red Custom Webhook is the most common one (URL, Authorization header, or Raw Body is wrong). Re-run the verification in Section 5, or contact support.\n\n'
   printf -- '---\n\n'
 
   # ============================================================================
@@ -744,7 +797,7 @@ if [ -n "$NOTION_PAGE_URL" ]; then
     printf 'In Convert and Flow: Automations -> new automation -> click "Build with AI" (top-right) -> paste Section 2 of the Notion page.\n'
     printf 'Then open Section 4 (Verification Checklist) and walk top-to-bottom before publishing.\n'
     printf -- '--- end embedded fallback ---\n\n'
-    printf 'Anything you do not understand: screenshot it and message me. - Keez\n'
+    printf 'Anything you do not understand: screenshot it and message me. - your setup admin\n'
   } > "$CLIENT_MSG_FILE"
 else
   {
@@ -757,7 +810,7 @@ else
     printf 'Webhook URL: https://%s/hooks/%s\n' "$PUBLIC_HOSTNAME" "$ROUTE_ID"
     printf 'Authorization header: Bearer %s\n' "$HOOKS_TOKEN"
     printf 'Content-Type header: application/json\n\n'
-    printf 'Anything you do not understand: screenshot it and message me. - Keez\n'
+    printf 'Anything you do not understand: screenshot it and message me. - your setup admin\n'
   } > "$CLIENT_MSG_FILE"
 fi
 

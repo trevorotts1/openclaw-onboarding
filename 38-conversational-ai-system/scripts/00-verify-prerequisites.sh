@@ -186,7 +186,7 @@ echo "$PASS_PREFIX presence OK (skills 05, 10, 19, 29 all installed)"
 # Per Protocol Cat 10 score 7+: validate skill 10 is at latest. We READ-ONLY
 # compare the installed skill-version.txt against the bundled onboarding's
 # skill-version.txt. If installed < bundled, tell operator to update skill 10
-# first; this skill REFUSES to auto-update skill 10 (per Christy's rules).
+# first; this skill REFUSES to auto-update skill 10 (per the operator's rules).
 SKILL10_INSTALLED="$SKILLS_DIR/10-github-setup/skill-version.txt"
 # The bundled source lives one level up from this skill's scripts dir
 ONBOARDING_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

@@ -70,7 +70,7 @@ if [[ "$HAS_MAPPING" == "true" ]]; then
 else
   backup_config
   ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"
-  # CORRECTED GHL HOOK STRUCTURE (2026-05-29) — verified live on Corey/Explore Growth (OpenClaw 2026.5.27):
+  # CORRECTED GHL HOOK STRUCTURE (2026-05-29) — verified live on a live client (OpenClaw 2026.5.27):
   #  - messageTemplate references the FLAT body key names ({{contact_id}}, {{message_body}}, {{channel}}, etc.)
   #    that the FLAT GHL body sends — NOT nested {{contact.id}}/{{customer_message.body}} (those arrive empty).
   #  - messageTemplate MUST include the MANDATORY SEND-DIRECTIVE (the canonical clause below) or the agent

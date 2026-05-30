@@ -4,7 +4,7 @@
 
 Everything you need to do BEFORE your AI agent sets up your OpenClaw tunnel
 
-> **Where this lives:** This guide is shipped INSIDE skill 38 (`references/cloudflare-godaddy-setup-guide.md`). When a client's install hits the missing-Cloudflare-API-token halt in `scripts/00-verify-prerequisites.sh` (Rule 13 of QC-PROTOCOL.md), the agent points the client at THIS document — locally, no external link required. The Google Doc credentials reference remains the canonical source for any updates Christy makes; this in-skill copy is the embedded fallback so the install can walk a client through the entire flow without leaving the skill.
+> **Where this lives:** This guide is shipped INSIDE skill 38 (`references/cloudflare-godaddy-setup-guide.md`). When a client's install hits the missing-Cloudflare-API-token halt in `scripts/00-verify-prerequisites.sh` (Rule 13 of QC-PROTOCOL.md), the agent points the client at THIS document — locally, no external link required. The Google Doc credentials reference remains the canonical source for any updates the operator makes; this in-skill copy is the embedded fallback so the install can walk a client through the entire flow without leaving the skill.
 
 You'll do four things in this guide:
 

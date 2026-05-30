@@ -53,7 +53,7 @@ Check:
   `shopify-events` if those integrations are active).
 
 Fix:
-- `openclaw gateway restart` — Trevor's Mac is master-agent-restartable (see his
+- `openclaw gateway restart` — the operator's Mac is master-agent-restartable (see his
   memory rules). Client gateways need owner approval.
 
 ## Layer 4 — agent
@@ -70,10 +70,10 @@ Fix:
 - If the agent is stuck on a cron, check `openclaw cron list` for stuck `weekly-tune-up`
   or `proactive-suggestions-scan` jobs.
 
-## The Cloudflare OTP suppression on blackceo.com (operator-specific)
+## The Cloudflare OTP suppression on an operator domain (environment-specific)
 
-Per Trevor's memory: CF Access PIN emails to blackceo.com are silently blocked
+Per the operator's notes: CF Access PIN emails to some operator domains can be silently blocked
 (suppression list separate from general CF notifications). When wiring CF Access for
-this skill's Command Center handoff, use `trevelynotts@gmail.com` for fleet
-operator-access, NOT blackceo.com addresses.
+this skill's Command Center handoff, use a known-deliverable address (e.g. a Gmail) for fleet
+operator-access, NOT the suppressed operator-domain addresses.
 
