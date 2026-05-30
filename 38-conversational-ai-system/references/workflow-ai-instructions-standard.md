@@ -155,6 +155,11 @@ Per-channel variants keep ALL 23 keys; only `channel` and the `session_key` pref
 (`hook:ghl:<channel>:{{contact.id}}`) change. The per-client `id`/`match`/`agent_id` are substituted to
 the client's hook name + routing agent.
 
+> **Note (threading):** the inbound `{{channel}}` key is what the agent mirrors when it picks the reply
+> `type`; `contact_id` + `location_id` are already keys. On the OUTBOUND send, GHL preserves the thread BY
+> `contactId` — `conversationId` is never sent, it is looked up only to READ prior history. (No key changes:
+> the 23-key set above is unchanged.)
+
 ## 3b. MANDATORY — manually fill the Custom Webhook AFTER Build-with-AI runs (it will NOT do it for you)
 
 > **AFTER Build-with-AI runs, you MUST open the Custom Webhook action and MANUALLY enter every field
@@ -214,6 +219,16 @@ to put if it is missing/wrong. (Per-workflow, brutally-specific version generate
 > returned."** Without it the agent drafts a reply and stops — the customer gets nothing. This is verified by
 > `scripts/qc-send-directive.sh` (CI + pre-handoff QC); see `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4 for
 > the canonical server mapping.
+>
+> **CRITICAL DESIGN PATTERN — one endpoint, mirror the channel, thread by `contactId`.** Replies go through
+> exactly ONE endpoint — `POST /conversations/messages`. The reply `type` MIRRORS the inbound channel
+> (SMS→`SMS`, Email→`Email`, Facebook→`FB`, Instagram→`IG`, WhatsApp→`WhatsApp`, Live Chat→`Live_Chat`) — do
+> NOT hardcode `SMS`. The send body is `{type, contactId, locationId, message}` (Email also adds
+> `subject`/`html`/`emailFrom`/`emailTo`); GHL threads the reply into the contact's conversation BY
+> `contactId` automatically. **`conversationId` is read-only** — it is NOT a send-body field; use it only to
+> read thread history (GET `/conversations/search?locationId=&contactId=` → GET
+> `/conversations/{conversationId}/messages`). See `references/ghl-api-quick-reference.md` (MESSAGING) and
+> `references/GHL-INBOUND-AND-PLAYBOOKS.md` §7-8.
 >
 > **CONVERSATION MEMORY — read-before / append-after (machine-enforced).** The in-GHL-body `messageTemplate`
 > stays placeholder-free, but the SERVER-mapping `messageTemplate` MUST ALSO carry the conversation-memory
