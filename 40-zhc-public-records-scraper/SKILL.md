@@ -35,7 +35,7 @@ Auto-detection routes every query through the tiers in order: **address/ZIP → 
 
 ### Tier 1 counties shipped (curated configs)
 
-A curated set of major-population counties spanning the largest metros. Each ships a Tier-1 config (`references/tier1-counties/<slug>.json`) with the portal URL, the platform it runs on (which links it to a Tier-2 adapter where applicable), the record types available, and the result selectors:
+A curated set of 21 major-population counties spanning the largest metros. Each ships a Tier-1 config (`references/tier1-counties/<slug>.json`) with the portal URL, the platform it runs on (which links it to a Tier-2 adapter where applicable), the record types available, and the result selectors:
 
 1. Cook County, IL (Chicago)
 2. Los Angeles County, CA
@@ -55,6 +55,9 @@ A curated set of major-population counties spanning the largest metros. Each shi
 16. Broward County, FL
 17. Bexar County, TX (San Antonio)
 18. Sacramento County, CA
+19. San Bernardino County, CA
+20. Hillsborough County, FL (Tampa)
+21. Pierce County, WA (Tacoma)
 
 > **Honest status note:** the Tier-1 configs ship the routing metadata, record-type map, and selector contract for each county. Live retrieval requires the operator to (a) accept the target's robots.txt + ToS and (b) run the Tier-1 config validator (`05-validate-target.sh`) against the live portal — county portals change their markup, and a stale selector must surface as a Tier-4 honest gap, never as fabricated data. The configs are the curated starting point; they are NOT a promise that every selector is live-valid on install day.
 
@@ -119,7 +122,7 @@ Skill 40 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/public-rec
 | `CORE_UPDATES.md` | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | `EXAMPLES.md` | Worked example queries (UNIVERSAL placeholders, honest gaps shown) |
 | `CHANGELOG.md` | Version history |
-| `skill-version.txt` | Currently `1.0.0` |
+| `skill-version.txt` | Currently `1.0.1` |
 | `scripts/00-verify-prerequisites.sh` | MASTER_FILES_DIR, jq, curl; reports Skill 39 + browser presence |
 | `scripts/01-locate-master-files-folder.sh` | Resolves + persists MASTER_FILES_DIR (reuses Skill 38/39 selection) |
 | `scripts/02-init-cache.sh` | Creates the 30-day cache dir + the event log + schema sidecar |

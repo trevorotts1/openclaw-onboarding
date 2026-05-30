@@ -13,6 +13,22 @@ libs) is unchanged.
   `references/tier2-adapters/`, so the adapters are runnable, not just documented.
 - `references/master-files-event-contract-F52.md` — the F52 event-contract reference doc (from the
   sibling repo).
+- Tier-1 county UNION reconcile: added 3 curated per-county configs —
+  `references/tier1-counties/san-bernardino-county-ca.json` (FIPS 06071),
+  `hillsborough-county-fl.json` (FIPS 12057), `pierce-county-wa.json` (FIPS 53053). The shipped
+  Tier-1 set is now **21** counties (was 18), matching the sibling VPS repo's curated set exactly.
+  SKILL.md county list + count updated accordingly.
+
+### Fixed
+- **Single log contract (no internal contradiction):** rewrote
+  `references/master-files-event-contract-F52.md` to document the canonical PII-free event schema
+  (opaque `query_ref`/`target_ref`; event enum `cache_init`/`tier_decision`/`cache_hit`/`force_refresh`/
+  `query`/`compliance_block`/`cost_estimate`/`cost_block`/`rate_limit_wait`/`honest_gap`) so it matches
+  `INSTRUCTIONS.md`, `SKILL.md`, and `templates/public-records-queries.schema.json`. It previously
+  documented the OLD `records_query` event that embedded a raw input `address`/`zip` — that PII-bearing
+  schema is removed. There is now exactly ONE log contract in the skill.
+- `install.sh` `install_skill_40_*` now `chmod +x`'s `scripts/adapters/*.sh` as well as `scripts/*.sh`
+  (the v1.0.1 executable Tier-2 adapters were not being made executable on install).
 
 ## [1.0.0] - 2026-05-30 - Initial release
 
