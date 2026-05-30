@@ -1,0 +1,24 @@
+{
+  "_comment": "Skill 40 Tier-3 operator-buildable scraper config TEMPLATE. Built + validated by scripts/06-build-tier3-config.sh (which runs 05-validate-target.sh before the config can be used live). Fill every <...>. The config MUST carry a tos_url (you reference the target's Terms of Service) and selectors; robots.txt is checked at validation. An invalid/unvalidated config is treated as a Tier-4 honest gap. NO client data; NO fabricated values.",
+  "tier": "tier3",
+  "slug": "<county-st-or-target-slug>",
+  "county_fips": "<5-digit-FIPS-optional>",
+  "state": "<2-digit-state-FIPS-optional>",
+  "platform": "custom",
+  "portal_url": "<https://target-portal>",
+  "search_path": "/<search-endpoint>",
+  "tos_url": "<https://target-portal/terms>",
+  "record_types": ["ownership", "deeds", "tax", "tax_delinquency", "permits", "pre_foreclosure"],
+  "search_form_fields": {
+    "address": "<form-field-name-or-fill-instruction>",
+    "parcel_or_apn": "<form-field-name-or-fill-instruction>"
+  },
+  "selectors": {
+    "result_row": "<css-selector-for-each-result-row>",
+    "owner": "<css-selector>",
+    "recorded_date": "<css-selector>",
+    "amount": "<css-selector-optional>"
+  },
+  "validated": false,
+  "notes": "Run scripts/05-validate-target.sh --tier3 <this-file> before live use. If validation fails, treat the target as a Tier-4 honest gap. NEVER fabricate records."
+}

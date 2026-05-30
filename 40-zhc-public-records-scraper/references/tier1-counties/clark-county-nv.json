@@ -1,0 +1,30 @@
+{
+  "slug": "clark-county-nv",
+  "county_name": "Clark County",
+  "state_abbr": "NV",
+  "county_fips": "32003",
+  "state": "32",
+  "platform": "custom",
+  "portal_url": "<OPERATOR_FILLS_PORTAL_URL>",
+  "search_path": "/",
+  "tos_url": "<OPERATOR_FILLS_TOS_URL>",
+  "record_types": [
+    "ownership",
+    "deeds",
+    "tax",
+    "tax_delinquency",
+    "permits",
+    "pre_foreclosure"
+  ],
+  "search_form_fields": {
+    "address": "<how-to-fill>",
+    "parcel_or_apn": "<how-to-fill>"
+  },
+  "selectors": {
+    "result_row": "<css-selector>",
+    "owner": "<css-selector>",
+    "recorded_date": "<css-selector>"
+  },
+  "validated": false,
+  "notes": "Tier-1 curated routing config. Run 05-validate-target.sh before live use; fill portal_url/tos_url/selectors. A stale selector => Tier-4 honest gap, never fabricated data."
+}
