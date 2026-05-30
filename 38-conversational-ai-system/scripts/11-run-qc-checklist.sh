@@ -635,6 +635,20 @@ else
   report_fail "qc-notion-doc-standard.sh not found (looked in scripts/)"
 fi
 
+# -------- Multi-Tenant Agent Isolation (F21) invariant gate (machine-enforced) --------
+section "Multi-tenant isolation rule (qc-multi-tenant.sh)"
+QC_MT="$SCRIPT_DIR/qc-multi-tenant.sh"
+[ -f "$QC_MT" ] || QC_MT="$SKILL38_ROOT/scripts/qc-multi-tenant.sh"
+if [ -f "$QC_MT" ]; then
+  if bash "$QC_MT" >/dev/null 2>&1; then
+    report_pass "F21 multi-tenant isolation invariants hold (protocol + AGENTS Step 0.8 + MEMORY Rule 26, per-tenant scoping/namespacing + tenant.md config + hooks.mappings tenant_id convention, PII-free multi-tenant-events.jsonl seeded, per-tenant root scaffolded, toggle default OFF)"
+  else
+    report_fail "qc-multi-tenant.sh found an F21 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-multi-tenant.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

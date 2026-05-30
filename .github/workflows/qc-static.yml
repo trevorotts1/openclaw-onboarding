@@ -435,6 +435,39 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-zhc-pixel.test.sh
           echo "✓ qc-zhc-pixel negative test passes (the gate fails on a broken invariant)"
 
+      - name: Skill 38 Multi-Tenant Agent Isolation (Feature 21) invariants
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the F21 multi-tenant agent-isolation invariants from the repo
+          # alone: the protocol (multi-tenant-isolation-protocol.md) carries the opaque
+          # tenant_id, the hooks.mappings tenant_id routing convention, the per-tenant root
+          # tenants/<tenant_id>/ scoping ALL FOUR surfaces (conversation logs, Knowledge
+          # Sources, Communication Playbooks, Conversation Workflows), the tenant.md
+          # "which tenant am I serving" config directive, the ZHC-<tenant_id>- tag
+          # namespace, the operator-only/never-customer-invoked guard (cross-tenant
+          # injection), the "Client A never leaks to Client B" isolation invariant, and the
+          # honest "NOT a runtime DB migration" scope; AGENTS.md Step 0.8
+          # (STEP_0_8_MULTI_TENANT_ISOLATION) + MEMORY Rule 26; the PII-free F52 log
+          # multi-tenant-events.jsonl (event_type tenant_routing) documented in the
+          # protocol + INSTRUCTIONS.md + seeded by script 25 (which also scaffolds the
+          # per-tenant root); and the default-OFF toggle skill38.multi_tenant.enabled.
+          # BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-multi-tenant.sh
+          echo "✓ Skill 38 Multi-Tenant Agent Isolation (F21) invariants hold"
+
+      - name: Skill 38 Multi-Tenant gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-multi-tenant.sh actually FAILS when an F21 invariant is broken (a green
+          # gate that never fails is worthless). Copies the skill to a temp dir and breaks
+          # three different invariants (the hooks.mappings tenant_id convention, the
+          # operator-only guard, and the multi-tenant-events.jsonl seeding), asserting the
+          # gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-multi-tenant.test.sh
+          echo "✓ qc-multi-tenant negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
         shell: bash
         run: |

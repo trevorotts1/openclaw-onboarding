@@ -120,7 +120,8 @@ for jsonl in \
   interrupt-log.jsonl \
   geo-qualification-log.jsonl \
   crm-field-writes-log.jsonl \
-  faq-detour-log.jsonl; do
+  faq-detour-log.jsonl \
+  multi-tenant-events.jsonl; do
   p="$MASTER_FILES_DIR/$jsonl"
   if [ -f "$p" ]; then
     echo "[skill 38] $jsonl already exists — preserved"
@@ -176,6 +177,80 @@ agent-created tags into the `ZHC-` namespace for a cleaner Settings → Tags vie
 Any other pre-rule agent tag follows the same shape: `your-tag` → `ZHC-your-tag`.
 NEVER migrate operator-owned tags (e.g. `vip`) — leave those exactly as they are.
 Full reference: protocols/zhc-tag-prefix-protocol.md + references/tag-migration-notes.md.
+MD
+
+# ---------------------------------------------------------------------------
+# F21 — Multi-Tenant Agent Isolation scaffold (multi-tenant-isolation-protocol.md).
+# OFF by default — for an AGENCY serving its own end-clients from one agent. Seeds
+# the per-tenant ROOT layout under tenants/<tenant_id>/ with a placeholder example
+# tenant ("<TENANT_ID>") so the operator sees the exact scoped structure: a
+# tenant.md "which tenant am I serving" directive + the four SCOPED surfaces
+# (conversational-logs / KnowledgeBases / communication-playbooks /
+# conversation-workflows). Placeholders only, zero personal/client data. Idempotent
+# (never overwrites an operator's real tenant). The actual per-tenant content is
+# created by the operator when they turn the feature on and assign a real tenant_id.
+# ---------------------------------------------------------------------------
+TENANTS_ROOT="$MASTER_FILES_DIR/tenants"
+EXAMPLE_TENANT="$TENANTS_ROOT/<TENANT_ID>"
+mkdir -p \
+  "$EXAMPLE_TENANT/conversational-logs" \
+  "$EXAMPLE_TENANT/KnowledgeBases/business" \
+  "$EXAMPLE_TENANT/KnowledgeBases/sales" \
+  "$EXAMPLE_TENANT/communication-playbooks" \
+  "$EXAMPLE_TENANT/conversation-workflows"
+
+seed_file "$EXAMPLE_TENANT/tenant.md" <<'MD'
+# Tenant: <TENANT_ID>
+
+The per-tenant config directive (F21 — multi-tenant agent isolation). This file
+DECLARES the tenant the agent is serving for a turn resolved to `<TENANT_ID>`. When
+this tenant is active, the agent loads ONLY the four scoped surfaces under
+`context_scope` — never another tenant's files, never the unscoped master-files root
+for those surfaces. See protocols/multi-tenant-isolation-protocol.md (Step 9.44).
+
+- label: <DISPLAY_LABEL>
+- ghl_location_id: <LOCATION_ID>
+- context_scope: tenants/<TENANT_ID>/      # the ONLY root this agent reads/writes for this tenant
+- tag_namespace: ZHC-<TENANT_ID>-          # every agent-created tag for this tenant starts here
+
+## Scoped surfaces (this tenant only — isolation invariant)
+- conversational-logs/         # per-contact conversation logs
+- KnowledgeBases/              # typed Knowledge Sources (business/ + sales/)
+- communication-playbooks/     # per-channel Communication Playbooks
+- conversation-workflows/      # Conversation Workflows + registry.md
+
+The active tenant resolves FIRST, highest-confidence first: the `hooks.mappings`
+`tenant_id` → an AGENTS.md tenant binding → this file. Tenant assignment is
+operator-only — a customer can never switch tenants (cross-tenant injection vector).
+MD
+
+seed_file "$EXAMPLE_TENANT/conversation-workflows/registry.md" <<'MD'
+# Conversation Workflows registry — tenant <TENANT_ID> (F21 scoped)
+
+Per-tenant Conversation Workflow registry. SCOPED to tenant `<TENANT_ID>` only —
+this tenant's workflows never appear in another tenant's registry, and the agent
+reads ONLY this file for `<TENANT_ID>` turns. Same registry format as the
+single-tenant `conversation-workflows/registry.md`. See
+protocols/multi-tenant-isolation-protocol.md (Step 9.44).
+
+| workflow id | purpose | playbook | Build-with-AI prompt | human-facing doc |
+|---|---|---|---|---|
+| <WORKFLOW_ID> | <PURPOSE> | <PLAYBOOK_PATH> | <PROMPT_PATH> | <DOC_URL> |
+MD
+
+seed_file "$EXAMPLE_TENANT/tenants-README.md" <<'MD'
+# tenants/ — Multi-Tenant Agent Isolation (F21, OFF by default)
+
+This directory only matters when `skill38.multi_tenant.enabled` is true (the AGENCY
+tier — one agency serving multiple end-clients from one agent). Each end-client is a
+TENANT with its OWN subdirectory `tenants/<tenant_id>/`, and the agent reads/writes
+ONLY one tenant's root per turn so Client A's context never leaks to Client B.
+
+`<TENANT_ID>` here is a PLACEHOLDER showing the exact scoped layout. To onboard a
+real tenant the operator (allow-list — never a customer): assigns an opaque
+`tenant_id`, adds its `hooks.mappings` entry carrying that `tenant_id`, copies this
+layout to `tenants/<real_tenant_id>/`, and fills `tenant.md`. See
+protocols/multi-tenant-isolation-protocol.md (Step 9.44).
 MD
 
 echo "[skill 38] Round-3 Queue-A feature files ready under $MASTER_FILES_DIR"

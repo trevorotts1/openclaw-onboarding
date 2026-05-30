@@ -1,3 +1,48 @@
+## [1.5.7] - 2026-05-30 - Round-2 backlog F21: Multi-Tenant Agent Isolation (the AGENCY tier, OFF by default)
+
+### Why
+Round-2 backlog feature 1 of 6. For an AGENCY running ON TOP of Convert-and-Flow (a client who serves
+their OWN end-clients), each end-client now gets an ISOLATED agent context — Client A's data,
+conversations, Knowledge Sources, Communication Playbooks, and Conversation Workflows NEVER leak to
+Client B's agent. Unlocks the agency-tier sale; an operator running their own multi-tenant agency benefits first.
+Toggle default OFF — most clients are single-tenant. Canonical content is byte-identical across
+`openclaw-onboarding` (Mac) and `openclaw-onboarding-vps`; only repo-specific env (paths, qc-static line
+positions) diverges.
+
+### Added — `protocols/multi-tenant-isolation-protocol.md` (F21, Step 9.44), byte-identical across both repos
+- The full isolation protocol: the opaque `tenant_id`; the `hooks.mappings` `tenant_id` routing convention
+  (the authoritative "which tenant" source per turn); the per-tenant root `<MASTER_FILES_DIR>/tenants/<tenant_id>/`
+  scoping ALL FOUR surfaces (conversation logs, typed Knowledge Sources, Communication Playbooks, Conversation
+  Workflows); the per-tenant `tenant.md` config directive (declares the active tenant so the agent loads only
+  that tenant's context); tenant resolution order (mapping `tenant_id` → AGENTS.md binding → `tenant.md`, else
+  ESCALATE — never guess); per-tenant tag namespacing `ZHC-<tenant_id>-…`; the operator-only/never-customer-invoked
+  guard (a customer can never switch tenants — cross-tenant injection vector); and the PII-free F52 log.
+- **Honest scope:** the isolation protocol + the scoping/namespacing scheme + the per-tenant config mechanism +
+  the `hooks.mappings` `tenant_id` convention — an architecture/protocol feature, NOT a runtime DB migration.
+
+### Added — QC gate + negative test, byte-identical across both repos
+- `scripts/qc-multi-tenant.sh` — asserts the load-bearing F21 substance (protocol substance, AGENTS Step 0.8 block,
+  MEMORY Rule 26, the PII-free `multi-tenant-events.jsonl` contract documented+seeded, the per-tenant root scaffold,
+  the default-OFF toggle). Wired into `scripts/11-run-qc-checklist.sh` + `.github/workflows/qc-static.yml`.
+- `scripts/qc-multi-tenant.test.sh` — negative self-test: proves the gate PASSES intact and FAILS when each of
+  three invariants is broken (the `hooks.mappings` `tenant_id` convention, the operator-only guard, the
+  `multi-tenant-events.jsonl` seeding).
+
+### Changed — wiring (canonical additions byte-identical; host-script scaffolding repo-local)
+- `scripts/05-update-agents-md.sh` — new marker block `STEP_0_8_MULTI_TENANT_ISOLATION` (AGENTS.md Step 0.8,
+  early context-setup region: resolve the active tenant FIRST so the rest of the turn loads only that tenant's
+  scope). Idempotent BEGIN/END marker.
+- `scripts/06-append-memory-rules.sh` — appends MEMORY Rule 26 (Multi-Tenant Isolation Rule) in a new
+  Round-2 marker block (does NOT renumber rules 6-25), marker-guarded + backup-before-write.
+- `scripts/25-seed-round3-feature-files.sh` — seeds the empty `multi-tenant-events.jsonl` sink + scaffolds the
+  per-tenant root `tenants/<TENANT_ID>/` (a `tenant.md` directive + the four scoped surfaces + a tenants README),
+  existence-guarded (never overwrites operator files).
+- `INSTRUCTIONS.md` — new Step 9.44 row + the Phase-5 F52 data-contract row for `multi-tenant-events.jsonl`
+  (`event_type` `tenant_routing`, PII-free).
+
+### openclaw.json toggle (documentation-only default — no destructive write)
+- `skill38.multi_tenant.enabled` default **false** (OFF); `skill38.multi_tenant.tenants{}` optional per-tenant map.
+
 ## [1.5.6] - 2026-05-30 - ZHC Tag-Prefix Rule substance QC fix (byte-identical across both onboarding repos)
 
 ### Why
