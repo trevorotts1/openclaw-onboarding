@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 25-verify-pixel-prerequisites.sh — ZHC Pixel (Feature 49) scope precheck.
+# 26-verify-pixel-prerequisites.sh — ZHC Pixel (Feature 49) scope precheck.
 #
 # Inspects the operator's Cloudflare API token via the API and HALTS with a clear
 # message if the scopes the per-client pixel DEPLOY needs are missing:
@@ -18,7 +18,7 @@
 # ships, the deploy is GATED (owner directive).
 #
 # On full pass it records ZHC_PIXEL_SCOPES_OK=1 in the run-state so
-# 28-deploy-pixel-cloudflare.sh will proceed.
+# 29-deploy-pixel-cloudflare.sh will proceed.
 #
 # UNIVERSAL. BASH only. Never echoes the CF token.
 # Exit codes: 0 = all prerequisites present (deploy may proceed);
@@ -166,9 +166,9 @@ These are the SAME scopes Feature 52 needs. Add them to the token (or re-create 
 Step-by-step (incl. the "Cloudflare Pages/Workers permissions" section):
   $TOKEN_DOC
 
-The pixel CODE is installed and the JS can still be rendered (26-render-pixel-js.sh) and
-the hook configured (27-configure-pixel-hook.sh). Only the live Cloudflare DEPLOY
-(28-deploy-pixel-cloudflare.sh) is gated until the scopes are present. NOTHING fails
+The pixel CODE is installed and the JS can still be rendered (27-render-pixel-js.sh) and
+the hook configured (28-configure-pixel-hook.sh). Only the live Cloudflare DEPLOY
+(29-deploy-pixel-cloudflare.sh) is gated until the scopes are present. NOTHING fails
 silently.
 ERR
   upsert_state "ZHC_PIXEL_SCOPES_OK" "0"
@@ -180,7 +180,7 @@ if [ "${DOMAIN_MISSING:-0}" = "1" ]; then upsert_state "ZHC_PIXEL_SCOPES_OK" "0"
 
 if [ "$FAIL" -eq 0 ]; then
   upsert_state "ZHC_PIXEL_SCOPES_OK" "1"
-  echo "RESULT: PASS — all prerequisites present. 28-deploy-pixel-cloudflare.sh may proceed." >&2
+  echo "RESULT: PASS — all prerequisites present. 29-deploy-pixel-cloudflare.sh may proceed." >&2
   exit 0
 else
   upsert_state "ZHC_PIXEL_SCOPES_OK" "0"

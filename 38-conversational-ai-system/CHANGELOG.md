@@ -1,3 +1,72 @@
+## [1.5.3] - 2026-05-30 - Round-3 canonical reconciliation (Mac ↔ VPS): markers, MEMORY rules, QC superset, F52 seeding, roadmap traceability
+
+Aligns this (Mac) onboarding repo's Round-3 artifacts with the sibling VPS onboarding repo so both
+ship the SAME canonical Round-3 decisions (only intentional Mac-vs-VPS path/OS differences remain).
+Universal — zero personal/client data (`qc-no-personal-data.sh --no-gen` passes). The repo-root
+version/CHANGELOG are untouched — this is a per-skill bump (1.5.2 → 1.5.3); the repo-wide bump is the
+Cap phase.
+
+### Protocols — merged to the canonical (superset) bodies, all cross-references aligned
+- `protocols/smart-faq-protocol.md` → **renamed** `protocols/smart-faq-tool-protocol.md` (the canonical
+  filename every other protocol + the F52 gate already point at); all in-repo references rewritten.
+- `zhc-tag-prefix-protocol.md` — canonical body (scope table, naming form, why, operator-facing note)
+  with the H1 Step 9.42 anchor and the canonical AGENTS marker `SKILL38_ZHC_TAG_PREFIX`.
+- `aggression-detection-protocol.md` (F50) — canonical body (turn-order diagram, sensitivity threshold
+  table, JSONL schema table) + the dedicated MEMORY Rule 21 section; AGENTS marker corrected to
+  `STEP_1_35_AGGRESSION_PRE_ROUTING`; JSONL event_type `aggression_detected`/`tension_detected`.
+- `smart-playbook-switching-protocol.md` (F44) — canonical body (F33-vs-F44 table, JSONL schema table)
+  + the `skill38.smart_playbook_switching.{enabled,max_interrupt_depth}` toggle block + the dedicated
+  MEMORY Rule 22 section + the `interrupt-triggers.md` operator-config reference; AGENTS cross-ref
+  corrected to Step 1.42 / `STEP_1_42_INTERRUPTS_AND_FAQ`; JSONL event_type `interrupt_detour`.
+- `geo-qualification-protocol.md` (F45) — canonical body (service-areas template, out-of-area mode
+  table, JSONL schema table, the `in_area:false ⇒ confirmed_with_customer:true` invariant) + the nested
+  `skill38.geo_qualification.enabled` toggle + the MEMORY Rule 23 section + pre-fill-confirmation
+  guidance; AGENTS cross-ref corrected to Step 2.0 / `STEP_2_0_GEO_QUALIFICATION`; JSONL event_type
+  `geo_qualification`.
+- `crm-field-write-protocol.md` (F46) — canonical body (dataType table incl. PHONE/E.164,
+  MULTIPLE_OPTIONS, MONETARY; mapping-record example; F35 reads the write-log) + the three JSONL event
+  types `field_write`/`field_created`/`field_write_skipped` (the `crm_field_write` family) + the full
+  `skill38.crm_field_write.{enabled,create_if_missing,created_field_prefix}` toggle block + the MEMORY
+  Rule 24 section; AGENTS cross-ref corrected to Step 2.5 / `STEP_2_5_CRM_FIELD_WRITE`.
+- `smart-faq-tool-protocol.md` (F47) — canonical body (faqs.md + faq-scope.md templates, F44-vs-F47
+  table, confidence-threshold cross-ref) + the `skill38.smart_faq.enabled` toggle + the MEMORY Rule 25
+  section; JSONL event_type `faq_answered`.
+- `conversational-safeguards.md` — Safeguard-4 (F50 extension) merged to be self-contained: the inline
+  Tier-1/Tier-2/ALL-CAPS bullets + the nested `skill38.aggression_detection.{enabled,sensitivity}`
+  toggle path + both log paths.
+- `zhc-pixel-protocol.md` + `templates/zhc-pixel/zhc-pixel.template.js` — pixel script-number
+  references renumbered 25→26, 26→27, 27→28, 28→29; both are now byte-identical to the sibling repo.
+
+### Scripts — numbering + the F52 seeder
+- **NEW `scripts/25-seed-round3-feature-files.sh`** (canonical, from the sibling repo): idempotently
+  seeds `KnowledgeBases/sales/service-areas.md` (F45), `KnowledgeBases/business/faqs.md` (F47),
+  `crm-field-mappings.md` (F46), the five JSONL sinks, and the F50 human-readable log — never
+  overwriting operator content. Documented + wired in INSTRUCTIONS.md.
+- Pixel scripts renumbered to the canonical scheme: `25→26-verify-pixel-prerequisites.sh`,
+  `26→27-render-pixel-js.sh`, `27→28-configure-pixel-hook.sh`, `28→29-deploy-pixel-cloudflare.sh`;
+  the self-test hook renumbered `12→24-self-test-hook.sh`. Every in-repo reference rewritten.
+
+### QC gates — converged to the canonical SUPERSET (wired into 11-run-qc-checklist.sh + CI)
+- **NEW `scripts/qc-feature-logs.sh`** — the F52 JSONL data-contract gate (5 logs documented in
+  protocol + INSTRUCTIONS.md + seeded by script 25).
+- **NEW `scripts/qc-backend-ready.sh`** — the "backend ready to RECEIVE" live gate (exits 3/SKIP with
+  no install).
+- `qc-config-keys.sh` → **renamed** `scripts/qc-config-schema-safety.sh` (the canonical name), VPS
+  content + this repo's checks 4 (pointer-sourcing) and 5 (hardcoded legacy skill path) merged back IN
+  so no check is lost.
+- `qc-zhc-tag-prefix.sh` — now the UNION of both repos' checks (this repo's MEMORY/AGENTS/example-tag
+  checks + the sibling's bare-create-tag-literal parser).
+- `qc-no-personal-data.sh` — banned-identifier list expanded to the superset of both repos
+  (six additional fleet client first-names) while keeping the `--no-gen`-aware structure.
+- `qc-self-test.sh` retargeted to `24-self-test-hook.sh`. CI now wires `qc-feature-logs.sh`,
+  `qc-backend-ready.sh`, `qc-self-test.sh`, and the renamed config gate.
+
+### References
+- `references/conversational-ai-strategic-roadmap.md` — adopted the v6.0 base and ADDED a Round-3
+  section indexing the System Rule + F44/F45/F46/F47/F49/F50/F52 + Skill 39 + Skill 40 + the three
+  QC-enforced standards (each expanded from its in-repo protocol/skill file), and a corrected
+  Implementation-status footer (39 protocol files).
+
 ## [1.5.2] - 2026-05-30 - F49 ZHC Pixel (flagship): per-client private visitor-signal pixel + Pixel Concierge agent + scope-gated Cloudflare deploy
 
 A new flagship capability. Every client gets THEIR OWN private pixel that POSTs anonymous-but-persistent
@@ -13,12 +82,12 @@ above the concurrent #57 standards wave which had also taken 1.5.1).
   survival hint, skipped under DNT), watchers for pages/time/scroll/clicks/return-visits, a buffered batch
   flush every ~5s (sendBeacon on unload), and the public API `window.ZHCPixel.{grantConsent, denyConsent,
   optOut, flush}`. Placeholders `__ZHC_PIXEL_ENDPOINT__` / `__ZHC_PIXEL_SITE_ID__` / `__ZHC_PIXEL_AGENT_ID__`.
-- `scripts/26-render-pixel-js.sh` — renders a per-client `<MASTER_FILES_DIR>/pixel/zhc-pixel.js` (their tunnel
+- `scripts/27-render-pixel-js.sh` — renders a per-client `<MASTER_FILES_DIR>/pixel/zhc-pixel.js` (their tunnel
   URL / `<SITE_ID>` / `<AGENT_ID>` baked in), guards against any unresolved placeholder leaking, records the
   site id/hostname/agent to the run-state, and prints the one-line `<script>` paste snippet.
 
 ### Added — the hook + Pixel Concierge agent
-- `scripts/27-configure-pixel-hook.sh` — registers the `pixel-visitor-signal` hooks.mappings entry
+- `scripts/28-configure-pixel-hook.sh` — registers the `pixel-visitor-signal` hooks.mappings entry
   (`deliver:false`, a real model, a bot-gate-FIRST messageTemplate that drops bot traffic with ZERO reasoning,
   appends to the F52 JSONL, evaluates the trigger rules, and NEVER fabricates identity) and a SEPARATE scoped
   **Pixel Concierge** agent (`agents.list` + `hooks.allowedAgentIds` + `hooks.allowedSessionKeyPrefixes`
@@ -44,11 +113,11 @@ above the concurrent #57 standards wave which had also taken 1.5.1).
   IP→person.
 
 ### Added — scope-gated Cloudflare deploy + precheck
-- `scripts/25-verify-pixel-prerequisites.sh` — inspects the CF token via the API and HALTS if Pages:Edit /
+- `scripts/26-verify-pixel-prerequisites.sh` — inspects the CF token via the API and HALTS if Pages:Edit /
   Workers Scripts:Edit / Workers Routes:Edit are missing (the SAME scopes F52 needs), pointing the operator to
   the token-instructions Google Doc's "Cloudflare Pages/Workers permissions" section. Also confirms an existing
   tunnel + an identified domain. Records `ZHC_PIXEL_SCOPES_OK` in the run-state. Never echoes the token.
-- `scripts/28-deploy-pixel-cloudflare.sh` — GATED on `ZHC_PIXEL_SCOPES_OK=1` (or `--force` + operator confirm):
+- `scripts/29-deploy-pixel-cloudflare.sh` — GATED on `ZHC_PIXEL_SCOPES_OK=1` (or `--force` + operator confirm):
   (a) adds `pixel.<CLIENT_DOMAIN>` to the EXISTING tunnel + proxied CNAME; (b) creates/reuses a CF Pages
   project; (c) deploys the rendered JS via the API; (d) optionally deploys a minimal edge Worker (batching/
   rate-limit, attaches the bearer token server-side) + a Workers Route. No silent failure — exits non-zero with
@@ -190,7 +259,7 @@ programmatically now carry the `ZHC-` prefix.
   create_if_missing (default true), created_field_prefix (default "ZHC_")}`. Logs to `crm-field-writes-log.jsonl`.
 
 ### Added — F47 Smart FAQ Tool (lightweight sibling of F44: a SENTENCE, not a sub-flow)
-- `protocols/smart-faq-protocol.md` (Step 9.41) — a parallel FAQ-match layer matching
+- `protocols/smart-faq-tool-protocol.md` (Step 9.41) — a parallel FAQ-match layer matching
   `KnowledgeBases/business/faqs.md`; a confident match yields a brief inline answer then RETURNs to the current
   step in the SAME reply ("By the way, [answer]. Coming back to [topic]…"). Per-workflow scope in
   `conversation-workflows/<id>/faq-scope.md`. Bigger FAQ questions hand off to F44. Tag `ZHC-faq-answered`.
@@ -343,7 +412,7 @@ a UNIVERSAL skill. The GHL body stays EXACTLY 23 keys, flat (non-negotiable).
 - **CLIENT SELF-TEST SECTION (REQ 4).** The generated client doc now has a "How to test your system" section:
   Contacts -> search your name -> open your record -> text yourself -> reply on your phone -> Automations ->
   open the workflow -> Execution Logs -> every step green (especially the Custom Webhook); red = failure.
-- **AI BACKEND SELF-TEST (REQ 5).** New `scripts/12-self-test-hook.sh`: after the agent configures the hook
+- **AI BACKEND SELF-TEST (REQ 5).** New `scripts/24-self-test-hook.sh`: after the agent configures the hook
   and BEFORE the client is told to test, the agent self-tests the full chain by ground truth — readiness
   (hooks.enabled, live mapping deliver:false + model, GHL creds + location in secrets/.env,
   conversational-logs writable, /healthz 200); POST a SYNTHETIC flat 23-key inbound (channel sms, throwaway

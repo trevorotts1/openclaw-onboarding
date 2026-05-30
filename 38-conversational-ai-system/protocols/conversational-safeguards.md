@@ -93,34 +93,34 @@ extremely strong signal (like "I am an AI assistant"), the agent must:
 If only one weak signal is present, continue replying but log the
 suspicion. Two weak signals = escalate.
 
-> **Tag note (ZHC prefix, MEMORY Rule 20):** going forward the agent
-> creates the bot tag as `ZHC-bot-suspected` (the programmatic-tag prefix
-> rule). Existing `bot-detected` tags are honored as-is — the rule is NOT
-> retroactive. See `zhc-tag-prefix-protocol.md`.
+> **Tag note (v1.5.0).** Bot detection is NOT rebuilt by the aggression work —
+> this Safeguard 3 logic is unchanged. The only change going forward is the tag:
+> NEW bot-suspicion firings apply `ZHC-bot-suspected` (the reserved `ZHC-`
+> namespace, per `protocols/zhc-tag-prefix-protocol.md`). The legacy
+> `bot-detected` tag is not migrated (the prefix rule is not retroactive).
 
-## Safeguard 4 — Aggression two-tier classifier (EXTENDS this family)
+## Safeguard 4 — Aggression detection (two-tier) — F50 extension
 
-This safeguard family is EXTENDED by the **Aggression Detection Protocol**
-(F50, `aggression-detection-protocol.md`, Step 9.37). It adds a two-tier
-hostility classifier that runs **PRE-routing** (AGENTS.md Step 1.35 —
-before workflow match, before any LLM spend):
+The safeguard family is EXTENDED (not rebuilt) with a two-tier aggression
+classifier that runs PRE-routing, before any workflow match and before any
+reply-drafting LLM spend (AGENTS.md Step 1.35). It does NOT replace bot-detection
+(Safeguard 3) — the two are independent.
 
-- **Tier 1 — TENSION (low):** multiple irritation words, a sustained 3+
-  message frustration streak, or `!!!`/`???` → tag `ZHC-tension-detected`,
-  heighten attention, NO reroute, no operator notify.
+- **Tier 1 — TENSION (low):** multiple irritation words, a sustained 3+ message
+  frustration streak, or `!!!`/`???` → tag `ZHC-tension-detected`, heighten
+  attention, NO reroute, no operator notify.
 - **Tier 2 — AGGRESSION (high):** profanity directed AT the agent, threats
-  (legal/physical/public), ALLCAPS+profanity+direct-address, or 3+ signals
-  in one message → tag `ZHC-aggression-detected`, route to the
-  `aggression-handler` workflow, notify the operator.
+  (legal/physical/public), ALLCAPS+profanity+direct-address, or 3+ signals in one
+  message → tag `ZHC-aggression-detected`, route to the `aggression-handler`
+  workflow (an F44 detour-and-return), notify the operator.
 - **ALL CAPS ALONE does NOT fire.** Sensitivity is operator-tunable
   (`lenient`/`standard`/`strict`) in `openclaw.json`
-  (`skill38.aggression_detection`). Firings + reasoning are logged to
-  `<MASTER_FILES_DIR>/aggression-detection-log.md` AND emitted as JSONL to
-  `<MASTER_FILES_DIR>/aggression-detection-log.jsonl`.
+  (`skill38.aggression_detection.{enabled,sensitivity}`). Firings + reasoning are
+  logged to `<MASTER_FILES_DIR>/aggression-detection-log.md` AND emitted as JSONL
+  to `<MASTER_FILES_DIR>/aggression-detection-log.jsonl`.
 
-Aggression detection does NOT replace bot-detection (Safeguard 3) — the two
-are independent. Full detail (signals, sensitivity thresholds, log schema)
-lives in `aggression-detection-protocol.md`.
+Full rules, signals, the sensitivity threshold table, and the JSONL data
+contract: `protocols/aggression-detection-protocol.md` (Step 9.37).
 
 ## Safeguard ordering
 
@@ -128,13 +128,13 @@ The agent checks safeguards in this order on every reply turn:
 
 1. Is contact flagged as bot? → if yes, don't reply, exit.
 2. Is contact paused (50+ messages)? → if yes, don't reply, exit.
-3. Does this turn trip bot-detection signals? → if yes, stop, log, tag,
-   notify, exit.
-3a. PRE-routing aggression scan (Safeguard 4 / F50, AGENTS.md Step 1.35):
-   Tier 2 → tag `ZHC-aggression-detected`, route to aggression-handler,
-   notify operator (do NOT spend a normal-reply model call). Tier 1 → tag
-   `ZHC-tension-detected`, heighten attention, continue. ALL CAPS alone
-   never fires. (Runs before workflow routing / LLM spend.)
+3. Does this turn trip bot-detection signals? → if yes, stop, log, tag
+   (`ZHC-bot-suspected` going forward), notify, exit.
+3.5. Does this turn trip AGGRESSION (Safeguard 4 / Step 1.35,
+   aggression-detection-protocol.md)? Tier 2 → tag `ZHC-aggression-detected`,
+   route to the aggression-handler sub-flow (F44 detour), notify operator. Tier 1
+   → tag `ZHC-tension-detected`, continue with heightened attention. ALL CAPS
+   ALONE never fires. This runs PRE-routing, before LLM spend.
 4. Has this contact hit 20+ messages in past hour? → if yes, reply
    normally but queue a warning to operator after reply.
 5. Has this contact hit 50+ total messages with this reply? → if yes,

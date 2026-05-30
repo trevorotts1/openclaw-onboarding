@@ -241,8 +241,57 @@ jobs:
           #   • a hardcoded legacy skill path (~/clawd/skills/38-openclaw-cloudflare-tunnel)
           # All five were verified live on a 2026.5.27 box (v1.4.11). BASH — respects
           # the .py claude-/anthropic ban.
-          bash 38-conversational-ai-system/scripts/qc-config-keys.sh
+          bash 38-conversational-ai-system/scripts/qc-config-schema-safety.sh
           echo "✓ No Skill 38 install script writes a config-invalidating shape or trips the known install bugs"
+
+      - name: Skill 38 backend-ready gate SKIPs cleanly with no install
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The backend-ready gate (hooks.mappings live + deliver:false + a working
+          # model + healthz 200) is a LIVE check. In CI there is no install, so it
+          # must exit 3 (NO_CONFIG) — a SKIP, never a false failure. Assert that.
+          rc=0
+          bash 38-conversational-ai-system/scripts/qc-backend-ready.sh --config /nonexistent/openclaw.json >/dev/null 2>&1 || rc=$?
+          [ "$rc" -eq 3 ] || { echo "✗ backend-ready with no config should exit 3 (SKIP), got $rc"; exit 1; }
+          echo "✓ Skill 38 backend-ready gate exits 3 (SKIP) when no install is present"
+
+      - name: Skill 38 F52 JSONL data contract (v1.5.0)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the F52 data contract: each of the five Round-3
+          # feature logs is JSONL with timestamp + event_type, documented in its
+          # protocol (path + a timestamp+event_type example line) AND in
+          # INSTRUCTIONS.md (path + event_type), and seeded by
+          # 25-seed-round3-feature-files.sh. BASH only.
+          bash 38-conversational-ai-system/scripts/qc-feature-logs.sh
+          # Negative self-test: drop a JSONL path from INSTRUCTIONS.md => FAIL (exit 1).
+          ng="$(mktemp -d)"
+          cp -r 38-conversational-ai-system "$ng/skill"
+          grep -v 'interrupt-log.jsonl' "$ng/skill/INSTRUCTIONS.md" > "$ng/skill/INSTRUCTIONS.md.tmp"
+          mv "$ng/skill/INSTRUCTIONS.md.tmp" "$ng/skill/INSTRUCTIONS.md"
+          rc=0
+          bash "$ng/skill/scripts/qc-feature-logs.sh" --skill-dir "$ng/skill" >/dev/null 2>&1 || rc=$?
+          [ "$rc" -eq 1 ] || { echo "✗ F52 gate should FAIL (exit 1) when a JSONL path is undocumented, got $rc"; exit 1; }
+          rm -rf "$ng"
+          echo "✓ Skill 38 F52 data contract enforced (5 JSONL logs documented + seeded); fails closed on an undocumented log"
+
+      - name: Skill 38 AI backend self-test gate (static wiring)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The agent self-tests the FULL inbound->reply chain by GROUND TRUTH BEFORE
+          # the client ever tests (readiness -> synthetic flat-23-key POST to its OWN
+          # public hook -> verify 200/{ok:true} + configured model + log read + GHL
+          # Conversations API messageId, with temp-contact create/delete + cleanup).
+          # The live run needs an install; CI runs the STATIC wiring gate
+          # (qc-self-test.sh asserts scripts/24-self-test-hook.sh exists, is bash -n
+          # clean, POSTs a synthetic flat-23-key body with the real Bearer token,
+          # verifies by ground truth, does temp-contact cleanup, writes selfTestPassed,
+          # and is wired as a BLOCKING gate in 11-run-qc-checklist.sh). BASH only.
+          bash 38-conversational-ai-system/scripts/qc-self-test.sh
+          echo "✓ Skill 38 AI backend self-test exists, documents the full chain + cleanup, and is wired as a blocking gate"
 
       - name: Skill 38 mandatory Telegram doc-delivery gate
         shell: bash

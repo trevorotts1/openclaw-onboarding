@@ -1,87 +1,10 @@
 # Geo-Qualification Protocol (F45) — Step 9.39
 
-> **OFF by default.** This is a per-client toggle. Many businesses serve everyone
-> everywhere; geo-qualification only makes sense for location-bound services (in-person
-> trades, local service-area businesses, regional licensing). The operator turns it on.
-
-When enabled, the agent figures out WHERE a prospect is located so it can route, qualify,
-or (carefully) decline out-of-area leads — while NEVER disqualifying anyone on a guess.
-
-## CRITICAL RULE — signals are HINTS, always ASK to confirm
-
-Every location signal below is a HINT, never a verdict. The agent NEVER disqualifies,
-declines, or routes a prospect out-of-area on a signal alone. Before ANY disqualification
-or out-of-area handling, the agent **asks the customer to confirm** their location in a
-natural way ("Just to make sure I point you to the right team — what city/ZIP are you
-in?"). A phone area code can be a moved-away number; a pixel/IP can be a VPN or a
-traveler; a form address can be a billing address. ASK FIRST. Disqualifying a real
-in-area lead because of a stale area code is the exact failure this rule prevents.
-
-## Location detection priority
-
-The agent gathers the best available hint in this priority order, then confirms:
-
-1. **Pixel / IP geolocation** — only if F49 (pixel/intent) is installed and provides it.
-   Strongest as a first hint, weakest as proof (VPN/traveler). HINT only.
-2. **Phone area code** — the contact's phone number's area code maps to a region. HINT only
-   (numbers move with people).
-3. **Form address** — a city/state/ZIP the contact entered on a form. HINT only (could be
-   billing/work address).
-4. **Explicit ask** — the agent asks directly. This is the CONFIRMATION step and the only
-   basis for an actual qualification decision.
-
-The agent uses the highest-priority available hint to PRE-FILL its confirmation question
-("Looks like you might be near [city] — is that right?"), then waits for the answer.
-
-## Service areas knowledge base
-
-Per-product service areas live in:
-
-```
-<MASTER_FILES_DIR>/KnowledgeBases/sales/service-areas.md
-```
-
-Each product/service defines its area by any of: **ZIP code list, county list, state
-list, or radius** (miles from one or more anchor points). A product with no entry is
-treated as **served everywhere** (no geo gate for that product).
-
-## Out-of-area handling (operator-configured)
-
-When the customer's CONFIRMED location is outside a product's service area, the agent
-follows the operator-chosen handling mode (set in `service-areas.md` per product, with a
-client-wide default):
-
-- **decline + referral** — politely decline and refer to a partner/competitor/directory
-  the operator listed.
-- **limited-remote** — offer the remote/virtual version of the service if one exists.
-- **waitlist** — capture the lead onto an expansion waitlist (tag + note) for when the
-  business reaches that area.
-- **full decline** — politely decline with no referral.
-
-The agent always stays warm and helpful regardless of mode — an out-of-area prospect is a
-future customer or a referrer.
-
-## Tags this protocol creates (all ZHC-prefixed, per MEMORY Rule 20)
-
-- `ZHC-out-of-service-area` — confirmed outside the service area (after ASK).
-- `ZHC-service-area-confirmed` — confirmed inside the service area.
-- `ZHC-service-area-flexible` — in-area for the remote/virtual version, or a borderline/
-  radius-edge case the operator wants flagged for judgment.
-
-Tags are created programmatically with the `ZHC-` prefix (D.1 mechanism, MEMORY Rule 20).
-
-## Geo-qualification log (JSONL data contract, F52)
-
-Every geo decision is appended to
-`<MASTER_FILES_DIR>/geo-qualification-log.jsonl` — one JSON object per line:
-
-```json
-{"timestamp":"2026-05-30T15:01:00Z","event_type":"geo_qualified","contact_id":"<contact_id>","product":"<product>","signal_used":"phone_area_code","signal_value_hint":"<area-region>","confirmed_by_ask":true,"confirmed_location_hint":"<city/zip>","in_area":false,"handling_mode":"decline_referral","tag":"ZHC-out-of-service-area"}
-```
-
-`confirmed_by_ask` is ALWAYS true on any disqualifying decision — a record with
-`in_area:false` and `confirmed_by_ask:false` is a protocol violation. The JSONL schema is
-documented in `INSTRUCTIONS.md` (Phase 5 data contract table).
+Detects whether a customer is in the business's service area and qualifies (or
+gently disqualifies) them accordingly — **always confirming with the customer
+before any disqualification**. This is a per-client toggle, OFF by default,
+because many businesses serve everyone everywhere (digital products, nationwide
+shipping) and geo-qualification would only get in the way.
 
 ## openclaw.json toggles
 
@@ -95,8 +18,140 @@ documented in `INSTRUCTIONS.md` (Phase 5 data contract table).
 }
 ```
 
-- `geo_qualification.enabled` — default **false** (OFF). Per-client opt-in; the operator
-  enables it only for location-bound businesses.
+- `geo_qualification.enabled` — default **false** (OFF). When `false`, this
+  protocol is a no-op and no location detection or qualification happens. The
+  operator turns it ON only for location-bound businesses (local services,
+  regional providers, in-person appointments).
+
+## Detection signal priority (HINTS only)
+
+When enabled, the agent gathers location HINTS in this priority order and uses
+the highest-confidence one available:
+
+1. **Pixel/IP location** — if F49 (pixel/tracking priority) is enabled and a
+   pixel event carries an approximate IP-geolocation, use it as the first hint.
+2. **Phone area code** — derive a rough region from the contact's phone number
+   area code.
+3. **Form address** — any address fields already captured (GHL contact address,
+   a form submission).
+4. **Explicit ask** — if none of the above yields a usable hint, ASK the customer
+   directly ("Whereabouts are you located? I want to make sure we serve your
+   area."). This is the CONFIRMATION step and the only basis for an actual
+   qualification decision.
+
+The agent uses the highest-priority available hint to PRE-FILL its confirmation
+question ("Looks like you might be near [city] — is that right?"), then waits for
+the answer.
+
+## CRITICAL — signals are HINTS; ALWAYS ASK before disqualifying
+
+A pixel IP can be a VPN. An area code follows the phone, not the person (people
+keep numbers when they move). A form address can be stale or a billing address.
+**None of these is ground truth.** Therefore:
+
+> The agent NEVER disqualifies a customer on a hint alone. Before ANY
+> out-of-area handling, the agent CONFIRMS the customer's actual service location
+> with the customer.
+
+Example confirm-before-disqualify:
+
+> "Looks like you might be calling from outside our usual service area — just to
+> be sure, what ZIP code would the service be at? I don't want to turn you away
+> if we actually can help."
+
+Only after the customer confirms a location that is genuinely out of area does
+the agent move to out-of-area handling. A hint is a reason to ASK, never a reason
+to decline.
+
+## Service-area definition
+
+Per-product service areas live in
+`<MASTER_FILES_DIR>/KnowledgeBases/sales/service-areas.md`. The agent reads this
+file to decide in/out. It supports per-product definitions by ZIP, county,
+state, and/or radius:
+
+```markdown
+# Service Areas
+
+## Product: In-Home Consultation
+- type: radius
+- center: <CENTER_ZIP_OR_CITY>
+- radius_miles: 30
+
+## Product: Regional Delivery
+- type: zips
+- zips: <ZIP_LIST>            # e.g. comma-separated ZIP codes
+
+## Product: Statewide Service
+- type: states
+- states: <STATE_LIST>        # e.g. two-letter state codes
+
+## Product: County Coverage
+- type: counties
+- counties: <COUNTY_LIST>
+```
+
+A single client can mix types across products (radius for in-home, statewide for
+remote). If a product has no entry, treat it as "served everywhere" (no geo-gate
+for that product).
+
+## Out-of-area handling (operator-configured)
+
+When the customer CONFIRMS an out-of-area location, the agent follows the
+operator's configured out-of-area mode (set per client; default is the gentlest,
+`decline_plus_referral`):
+
+| mode | behavior |
+|---|---|
+| `decline_plus_referral` | politely decline and, if the operator provided a referral list/partner, point the customer to an alternative. Tag `ZHC-out-of-service-area`. |
+| `limited_remote` | offer the subset of products/services that CAN be delivered remotely (consults, digital), decline the in-person ones. |
+| `waitlist` | capture the customer for a future-expansion waitlist (note the location), tell them you'll reach out if you expand there. |
+| `full_decline` | politely decline with no referral (operator has none). Tag `ZHC-out-of-service-area`. |
+
+All decline copy stays warm and non-dismissive (honesty floor + brand voice) —
+an out-of-area prospect is a future customer or a referrer.
+
+## Tags
+
+Applied programmatically → `ZHC-` prefix (zhc-tag-prefix-protocol.md):
+
+- `ZHC-out-of-service-area` — customer CONFIRMED a location outside the service
+  area; out-of-area handling applied.
+- `ZHC-service-area-confirmed` — customer confirmed an IN-area location; qualified.
+- `ZHC-service-area-flexible` — borderline / customer is flexible on location
+  (e.g. willing to travel to a covered ZIP, or eligible for `limited_remote`).
+
+## Logging (the data contract — F52)
+
+Every qualification decision is recorded as JSONL, one line appended to
+`<MASTER_FILES_DIR>/geo-qualification-log.jsonl`:
+
+```json
+{"timestamp":"2026-05-30T16:12:44Z","event_type":"geo_qualification","contact_id":"<CONTACT_ID>","channel":"sms","hint_source":"phone_area_code","hint_value":"<REGION_HINT>","confirmed_with_customer":true,"confirmed_location":"<CONFIRMED_LOCATION>","product":"In-Home Consultation","in_area":false,"out_of_area_mode":"decline_plus_referral","tag_applied":"ZHC-out-of-service-area"}
+```
+
+JSONL schema (one object per line):
+
+| field | type | meaning |
+|---|---|---|
+| `timestamp` | string (ISO-8601 UTC) | when the decision was made |
+| `event_type` | string | `geo_qualification` (always, for F45 firings) |
+| `contact_id` | string | GHL contact id |
+| `channel` | string | inbound channel |
+| `hint_source` | string | `pixel_ip` / `phone_area_code` / `form_address` / `explicit_ask` |
+| `hint_value` | string | the region the hint suggested (coarse — no precise PII) |
+| `confirmed_with_customer` | boolean | MUST be `true` before any disqualification |
+| `confirmed_location` | string | the location the customer confirmed (coarse) |
+| `product` | string | which product's service area was checked |
+| `in_area` | boolean | whether the confirmed location is in the service area |
+| `out_of_area_mode` | string | the operator-configured mode applied (if out of area) |
+| `tag_applied` | string | `ZHC-out-of-service-area` / `ZHC-service-area-confirmed` / `ZHC-service-area-flexible` |
+
+> Invariant: a JSONL line with `in_area:false` and a `ZHC-out-of-service-area`
+> tag MUST have `confirmed_with_customer:true` — the agent never disqualifies on
+> a hint alone.
+
+The JSONL schema is also documented in `INSTRUCTIONS.md` (Phase 5 data contract table).
 
 ## MEMORY.md (Rule 23)
 
@@ -105,4 +160,12 @@ explicit ask) are HINTS only. The agent ALWAYS ASKS to confirm before any
 disqualification or out-of-area handling — never disqualify on a guess. Out-of-area
 handling is operator-configured (decline+referral / limited-remote / waitlist / full
 decline). Service areas live in `KnowledgeBases/sales/service-areas.md` per product. See
-`<MASTER_FILES_DIR>/geo-qualification-protocol.md`.
+MEMORY Rule 23, appended by `scripts/06-append-memory-rules.sh`.
+
+## Cross-references
+
+- Knowledge base: `<MASTER_FILES_DIR>/KnowledgeBases/sales/service-areas.md`.
+- Optional hint source: F49 pixel-priority.
+- Tag namespace: `protocols/zhc-tag-prefix-protocol.md`.
+- AGENTS.md Step 2.0: `scripts/05-update-agents-md.sh` (marker `STEP_2_0_GEO_QUALIFICATION`).
+- INSTRUCTIONS.md Step 9.39.

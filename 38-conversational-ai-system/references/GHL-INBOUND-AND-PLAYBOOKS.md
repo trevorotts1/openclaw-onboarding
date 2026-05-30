@@ -568,7 +568,7 @@ the Sunday 9am cron per Section 13.
 After the agent configures the hook, and **BEFORE the client is ever told to test**, the agent MUST
 self-test the full inbound -> reply chain **by ground truth** — not by self-report. Setup is **NOT** marked
 complete and the client is **NOT** told to test until the self-test passes. This is executed by
-`scripts/12-self-test-hook.sh`, statically enforced by `scripts/qc-self-test.sh`, and wired as a BLOCKING
+`scripts/24-self-test-hook.sh`, statically enforced by `scripts/qc-self-test.sh`, and wired as a BLOCKING
 readiness gate in `scripts/11-run-qc-checklist.sh` (which asserts `selfTestPassed=true`).
 
 **(a) Readiness** — the backend must be prepared to RECEIVE: `hooks.enabled` true; a live `hooks.mappings`
@@ -582,7 +582,7 @@ DEDICATED throwaway test contact id, and the REAL `Authorization: Bearer <HOOKS_
 the body field-by-field at runtime (it is NOT a fenced ```json block) so it carries the live values and is
 not double-scanned by `qc-23-key-bodies.sh`. The exact synthetic payload (23 flat keys; `deliver:false`;
 `messageTemplate` placeholder-free; a reserved `+1555` test phone; `selftest@example.com`) is emitted by
-`scripts/12-self-test-hook.sh`.
+`scripts/24-self-test-hook.sh`.
 
 **(c) Verify by ground truth (pass criteria):**
 1. the hook returns **HTTP 200** and `{"ok":true}`;

@@ -18,10 +18,15 @@
 #
 # BANNED IDENTIFIERS (case-insensitive, word-ish boundaries where it matters):
 #   real names ........ Trevor, Teresa, Keez, Christy, Corey, Maria, Angeleen,
-#                       Beverly, Candace, Marico, Sir Jordan
+#                       Beverly, Evelyn, Monique, Lyric, Kofi, Pelham, Candace,
+#                       Marico, Sir Jordan
 #   businesses ........ Grants Boutique, Explore Growth, "The Winning Formula
 #                       Course", Winning Formula
 #   hostnames/domains . thewinningformulacourse, growthriveprosper, blackceo
+#   (NOTE: the client-domain token "zerohumanworkforce" is intentionally NOT in the
+#    BANNED list — it is a string that the qc-tools-md-ghl-ref.sh gate uses inside a
+#    leak-DETECTION regex, so banning it here would false-positive against our own
+#    tooling; the operator-domain space is already covered by blackceo/growthriveprosper.)
 #   operator chat id .. 5252140759
 #   operator emails ... trevelynotts
 #   real home paths ... /Users/christy, /Users/blackceomacmini, /Users/client
@@ -59,7 +64,7 @@ done
 # The banned patterns. Kept as an ERE alternation. Each token here is a REAL
 # identifier that must never appear in a universal skill. (This file is excluded
 # from the scan, so naming them here is fine.)
-BANNED='Trevor|Teresa|Keez|Christy|Corey|Angeleen|Beverly|Candace|Marico|Sir Jordan|Grants Boutique|Explore Growth|The Winning Formula Course|Winning Formula|thewinningformulacourse|growthriveprosper|blackceo|5252140759|trevelynotts|/Users/christy|/Users/blackceomacmini|/Users/client'
+BANNED='Trevor|Teresa|Keez|Christy|Corey|Maria|Angeleen|Beverly|Evelyn|Monique|Lyric|Kofi|Pelham|Candace|Marico|Sir Jordan|Grants Boutique|Explore Growth|The Winning Formula Course|Winning Formula|thewinningformulacourse|growthriveprosper|blackceo|5252140759|trevelynotts|/Users/christy|/Users/blackceomacmini|/Users/client'
 
 HITS=0
 

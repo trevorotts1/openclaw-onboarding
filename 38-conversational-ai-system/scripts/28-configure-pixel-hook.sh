@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 27-configure-pixel-hook.sh — ZHC Pixel (Feature 49).
+# 28-configure-pixel-hook.sh — ZHC Pixel (Feature 49).
 # Registers the `pixel-visitor-signal` hooks.mappings entry and the scoped
 # Pixel Concierge agent in openclaw.json. Idempotent. jq-1.7-safe.
 #
@@ -143,4 +143,4 @@ if command -v openclaw >/dev/null 2>&1; then
 fi
 
 echo "OK: pixel-visitor-signal hook + Pixel Concierge agent configured." >&2
-echo "Next: scripts/25-verify-pixel-prerequisites.sh then scripts/28-deploy-pixel-cloudflare.sh (scope-gated)." >&2
+echo "Next: scripts/26-verify-pixel-prerequisites.sh then scripts/29-deploy-pixel-cloudflare.sh (scope-gated)." >&2

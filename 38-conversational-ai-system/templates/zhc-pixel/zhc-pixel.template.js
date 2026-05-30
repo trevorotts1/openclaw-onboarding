@@ -2,7 +2,7 @@
  * ZHC Pixel (Feature 49) — per-client visitor-signal pixel.
  * ----------------------------------------------------------------------------
  * TEMPLATE. This file ships with placeholders. The generator
- * scripts/26-render-pixel-js.sh renders a per-client copy by substituting:
+ * scripts/27-render-pixel-js.sh renders a per-client copy by substituting:
  *
  *   __ZHC_PIXEL_ENDPOINT__   the client's OWN tunnel ingest URL, e.g.
  *                            https://pixel.<CLIENT_DOMAIN>/hooks/pixel-visitor-signal
@@ -36,7 +36,7 @@
   "use strict";
 
   // --------------------------------------------------------------------------
-  // Rendered config (placeholders replaced by 26-render-pixel-js.sh)
+  // Rendered config (placeholders replaced by 27-render-pixel-js.sh)
   // --------------------------------------------------------------------------
   var ENDPOINT = "__ZHC_PIXEL_ENDPOINT__";
   var SITE_ID = "__ZHC_PIXEL_SITE_ID__";

@@ -1,5 +1,14 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
+## [1.0.1] - 2026-05-30 - Round-3 canonical reconciliation: add the F52 event-contract reference
+
+Aligns Skill 39 with the canonical Round-3 decision (this repo's build is the canonical base; the
+sibling VPS repo's named capability is merged IN). No behavioral change; additive only.
+
+### Added
+- `references/master-files-event-contract-F52.md` — the F52 event-contract reference doc (from the
+  sibling repo) so the real-estate events log is documented against the same data contract as Skill 38.
+
 ## [1.0.0] - 2026-05-30 - Initial release
 
 First release of the real-estate VERTICAL on top of Skill 38 (Conversational AI System). Shipped as

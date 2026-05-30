@@ -1,111 +1,137 @@
-# Smart Playbook Switching — Always-Listening Interrupts Protocol (F44) — Step 9.38
+# Smart Playbook Switching / Always-Listening Interrupts Protocol (F44) — Step 9.38
 
-> **DISTINCT from Step 9.33 (Intelligent Playbook Routing, `intelligent-routing-protocol.md`).**
-> F33 is **ROUTE-AND-STAY**: the conversation has clearly and permanently pivoted to a new
-> topic, so the agent switches workflows and continues there (it does NOT come back).
-> **F44 is DETOUR-AND-RETURN**: the agent handles a short interruption (an urgent operator
-> keyword, an FAQ, a compliance redirect, an aggression incident, a pixel-priority event)
-> and then **returns to exactly where it was** in the original workflow. The original
-> workflow is paused and resumed, never abandoned. The two coexist: F33 decides the
-> long-run topic; F44 services brief interrupts without losing the long-run topic.
+> **This is NOT F33 (Intelligent Playbook Routing).** F33
+> (`intelligent-routing-protocol.md`, Step 9.33) is **route-and-stay**: the
+> conversation has genuinely pivoted to a new topic, so the agent SWITCHES the
+> active workflow and stays there. F44 is **detour-and-return**: the active
+> workflow is still the customer's real goal, but something urgent must be
+> handled *right now* without abandoning it — so the agent SAVES the current
+> state, runs a short sub-flow, and RETURNS to exactly where it left off. F33
+> changes the destination; F44 takes a detour and comes back. They are distinct
+> and both ship.
 
-## The always-listening layer
+## The model — an always-listening layer parallel to the active workflow
 
-In parallel with whatever workflow is currently active, the agent maintains an
-"always-listening" interrupt layer. On EVERY inbound message, after the safeguards check
-(Step 1.4) and the aggression scan (Step 1.35, F50), the agent checks the message against
-the interrupt trigger set BEFORE continuing the active workflow.
+While ANY conversation workflow is active, a lightweight **always-listening
+layer** runs in parallel on every inbound. It does NOT draft the reply; it only
+asks: "does this inbound contain something that must interrupt the current
+workflow?" If yes, it fires a DETOUR:
 
-### Interrupt triggers (what fires a detour)
+```
+SAVE workflow state  →  EXECUTE the interrupt sub-flow  →  RETURN to saved state (soft transition)
+```
 
-1. **Operator urgent keywords** — operator-configured words that mean "stop and handle
-   this now" (e.g. an internal escalation phrase, "URGENT", a VIP code). Operator-defined
-   in `<MASTER_FILES_DIR>/interrupt-triggers.md`.
-2. **FAQ types** — a question that the FAQ layer (F47, `smart-faq-protocol.md`) can answer
-   in one sentence. (F47 is the LIGHTWEIGHT sibling: a SENTENCE, not a sub-flow. F47
-   handles single-sentence FAQ detours itself; F44 handles heavier FAQ types that need a
-   short sub-flow.)
-3. **Compliance redirects** — a compliance trigger (`compliance-keyword-detection-protocol.md`,
-   Step 9.9) that must be serviced immediately (e.g. a data-deletion request mid-booking),
-   then control returns to the original flow.
+The active workflow's step, gathered data, and context are preserved across the
+detour, so the customer never has to repeat themselves.
+
+## Interrupt triggers (what the always-listening layer watches for)
+
+A detour fires when the inbound matches any of:
+
+1. **Operator urgent keywords** — operator-configured words that mean "stop and
+   handle this" (e.g. "urgent", "emergency", "cancel my order now", or custom
+   per-client words). Operator-defined in `<MASTER_FILES_DIR>/interrupt-triggers.md`.
+2. **FAQ types** — a question that the FAQ layer (F47,
+   `smart-faq-tool-protocol.md`) can answer in one sentence. NOTE: F47 is the
+   *lightweight sibling* — a SENTENCE, not a sub-flow — and is the preferred,
+   cheapest detour for a simple factual question. F44 owns the heavier
+   sub-flow detours; F47 handles the one-liner case (see "Relationship to F47").
+3. **Compliance redirects** — a mid-workflow message that trips a compliance
+   keyword (Step 0.7) requiring an immediate compliance response before anything
+   else.
 4. **F50 aggression** — a Tier-2 aggression firing
-   (`aggression-detection-protocol.md`) detours to the `aggression-handler` sub-flow, then
-   returns with `ZHC-aggression-handled-and-resumed`.
-5. **F49 pixel-priority** — a high-value pixel/intent signal (when F49 is installed) that
-   warrants an immediate priority sub-flow, then a return to the original topic.
+   (`aggression-detection-protocol.md`) routes to the aggression-handler sub-flow
+   as a detour, then returns (tag `ZHC-aggression-handled-and-resumed`).
+5. **F49 pixel-priority** — if pixel/tracking-priority signals are enabled, a
+   high-priority pixel event can interrupt to capture the moment, then return.
 
-## DETOUR-AND-RETURN mechanics
-
-When an interrupt fires, the agent does this, in order:
+## State save / execute / return
 
 ### 1. SAVE workflow state
 
-Snapshot the active workflow so it can be resumed verbatim:
+Before executing the sub-flow, the agent writes a state snapshot (to the contact
+log header and the interrupt JSONL) capturing:
 
-- `workflow_id` — the active conversation workflow.
-- `step` — the exact step/phase the customer was on.
-- `gathered_data` — everything collected so far (name, slots, answers, partial booking).
-- `context` — the in-progress topic + the last agent turn.
+- `active_workflow_id`
+- `active_step` (which phase/step of the workflow the customer was in)
+- `gathered_data` (everything collected so far — name, package interest, dates,
+  answers — so nothing is re-asked)
+- `context` (a one-line summary of where the conversation was)
 
-Persist this snapshot to the interrupt stack in the contact's conversation log header AND
-emit it to the interrupt JSONL (below). The stack is per-contact and ordered (LIFO).
+Persist this snapshot to the interrupt stack in the contact's conversation log
+header AND emit it to the interrupt JSONL (below). The stack is per-contact and
+ordered (LIFO).
 
-### 2. EXECUTE the sub-flow
+### 2. EXECUTE the interrupt sub-flow
 
-Run the interrupt's handler (FAQ answer, compliance action, aggression handler, pixel
-priority sub-flow, or operator-urgent sub-flow). The sub-flow is itself a workflow and
-follows all normal rules (safeguards, send-directive, conversation-log append).
+Run the triggering sub-flow (operator-urgent handler, compliance response,
+aggression-handler, etc.) to completion or to a natural handoff point. The
+sub-flow is itself a workflow and follows all normal rules (safeguards,
+send-directive, conversation-log append).
 
 ### 3. RETURN to the saved state with a SOFT transition
 
-When the sub-flow resolves, pop the stack and resume the saved workflow at the saved step
-with a soft, natural re-entry line so the customer feels continuity, e.g.:
+Restore the saved workflow + step + gathered data, and re-enter with a soft,
+human transition so the customer feels the agent never lost the thread:
 
-- "Coming back to where we were — you were telling me about [topic]…"
-- "Okay, handled. Back to your [booking/quote] — we were on [step]."
-- "Thanks for bearing with me. Picking back up: [the next question]."
+- "Coming back to where we were…"
+- "Okay — back to your booking. You'd told me [gathered_data], so the next thing
+  is…"
+- "Thanks for your patience on that — picking up the [topic] we were working on…"
 
-Restore `gathered_data` so the agent never re-asks what it already had.
+Apply the tag matching the detour kind (see Tags) on return.
 
-## Depth limit
+## Depth and multiple triggers
 
-**Maximum 2 levels deep.** An interrupt may itself be interrupted once (e.g. an FAQ detour
-during which a compliance request arrives). After 2 levels, a third interrupt is NOT
-nested — the agent escalates to the operator (it does not silently drop it, and it does
-not keep nesting). The depth counter lives on the interrupt stack.
+- **Max 2 levels deep.** A detour may itself be interrupted once (level 2). A
+  THIRD nested interrupt is not allowed — at that point the agent **escalates to
+  a human** (the conversation is too tangled to keep auto-detouring) and notifies
+  the operator. This prevents infinite nesting / state-stack blowups.
+- **Multiple triggers in one inbound → highest priority first, queue the rest.**
+  Priority order (highest → lowest):
+  1. Compliance redirect (hard-gate, always wins)
+  2. F50 aggression (Tier 2)
+  3. Operator urgent keyword
+  4. F49 pixel-priority
+  5. FAQ type (→ usually handed to F47 as a one-liner, not a full detour)
 
-## Multiple simultaneous triggers
+  The highest-priority trigger detours first; the others queue and fire in order
+  after the current detour returns (subject to the 2-level cap — if firing a
+  queued trigger would exceed depth 2, escalate instead).
 
-If more than one interrupt fires on the same message:
+## Tags
 
-1. Handle them **highest priority first**. Priority order (highest → lowest):
-   **compliance redirect → F50 aggression → operator urgent keyword → F49 pixel-priority
-   → FAQ type.**
-2. **Queue the rest** behind the first. After the highest-priority detour returns, drain
-   the queue in priority order, each as its own detour-and-return, respecting the 2-level
-   depth cap.
-3. Only after the queue is empty does the agent resume the original saved workflow.
+All applied programmatically → `ZHC-` prefix (zhc-tag-prefix-protocol.md):
 
-## Tags this protocol creates (all ZHC-prefixed, per MEMORY Rule 20)
+- `ZHC-interrupt-handled` — a detour fired and returned cleanly.
+- `ZHC-faq-detoured` — the detour was an FAQ-type interrupt.
+- `ZHC-aggression-handled-and-resumed` — an F50 aggression detour ran and the
+  conversation returned to its saved state.
 
-- `ZHC-interrupt-handled` — a generic interrupt was serviced and the original flow resumed.
-- `ZHC-faq-detoured` — an FAQ-type interrupt (heavier than a one-sentence F47 answer) was
-  serviced via a short sub-flow and the original flow resumed.
-- `ZHC-aggression-handled-and-resumed` — a Tier-2 aggression detour (F50) was serviced and
-  the original flow resumed.
+## Relationship to F47 (smart FAQ tool)
 
-## Interrupt log (JSONL data contract, F52)
+F47 (`smart-faq-tool-protocol.md`) is the **lightweight sibling**: a SENTENCE,
+not a sub-flow. When the interrupt is a simple factual question the FAQ knowledge
+base can answer in one line, the always-listening layer hands it to F47, which
+answers inline ("By the way, [answer]. Coming back to [topic]…") and the
+conversation continues on the same step — no state save/restore needed. F44 owns
+the heavier case where the interrupt needs an actual sub-flow (operator-urgent
+handler, compliance response, aggression-handler). Use F47 for one-liners; use
+F44 for sub-flows.
 
-Every save / execute / return is appended to
-`<MASTER_FILES_DIR>/interrupt-log.jsonl` — one JSON object per line:
+## Relationship to F33 (intelligent routing) — the disambiguation
 
-```json
-{"timestamp":"2026-05-30T14:30:00Z","event_type":"interrupt_saved","contact_id":"<contact_id>","trigger":"compliance_redirect","priority":1,"depth":1,"saved_workflow":"appointment-booking","saved_step":"collect-time-slot","gathered_data_keys":["name","service"]}
-{"timestamp":"2026-05-30T14:30:18Z","event_type":"interrupt_executed","contact_id":"<contact_id>","trigger":"compliance_redirect","sub_flow":"gdpr-data-deletion","depth":1}
-{"timestamp":"2026-05-30T14:30:40Z","event_type":"interrupt_returned","contact_id":"<contact_id>","resumed_workflow":"appointment-booking","resumed_step":"collect-time-slot","soft_transition":true,"tag":"ZHC-interrupt-handled"}
-```
+| | F33 — Intelligent Routing (route-and-stay) | F44 — Smart Switching (detour-and-return) |
+|---|---|---|
+| Trigger | the conversation genuinely PIVOTED to a new topic | something urgent must be handled, but the original goal stands |
+| Action | SWITCH the active workflow; stay there | SAVE state → run sub-flow → RETURN to the saved workflow |
+| State | the old workflow is left behind | the old workflow's step + data are preserved and resumed |
+| Soft transition | "Sounds like this is more about X now — switching gears" | "Coming back to where we were…" |
+| Cap | max 3 switches / conversation | max 2 detour levels deep, then escalate |
+| Step | 9.33 | 9.38 |
 
-The JSONL schema is documented in `INSTRUCTIONS.md` (Phase 5 data contract table).
+If a customer permanently moves on, that is F33. If they need a quick aside and
+then want to finish what they started, that is F44.
 
 ## openclaw.json toggles
 
@@ -124,6 +150,37 @@ The JSONL schema is documented in `INSTRUCTIONS.md` (Phase 5 data contract table
 - `smart_playbook_switching.max_interrupt_depth` — default **2**; beyond it, escalate to
   the operator rather than nest further.
 
+## Logging (the data contract — F52)
+
+Every interrupt is recorded as JSONL, one line appended to
+`<MASTER_FILES_DIR>/interrupt-log.jsonl`:
+
+```json
+{"timestamp":"2026-05-30T15:01:12Z","event_type":"interrupt_detour","contact_id":"<CONTACT_ID>","channel":"sms","trigger_kind":"operator_urgent","priority":3,"depth":1,"saved_workflow_id":"appointment-booking","saved_step":"phase-2-gather-context","gathered_data_keys":["name","preferred_day"],"subflow":"urgent-cancellation-handler","queued_triggers":[],"tag_applied":"ZHC-interrupt-handled","returned":true,"escalated":false}
+```
+
+JSONL schema (one object per line):
+
+| field | type | meaning |
+|---|---|---|
+| `timestamp` | string (ISO-8601 UTC) | when the interrupt fired |
+| `event_type` | string | `interrupt_detour` (always, for F44 firings) |
+| `contact_id` | string | GHL contact id |
+| `channel` | string | inbound channel |
+| `trigger_kind` | string | `operator_urgent` / `faq_type` / `compliance_redirect` / `aggression` / `pixel_priority` |
+| `priority` | number | 1 (highest) … 5 (lowest), per the priority order above |
+| `depth` | number | nesting depth at firing (1 or 2; 3 = escalate, not allowed) |
+| `saved_workflow_id` | string | the workflow paused for the detour |
+| `saved_step` | string | the step within that workflow |
+| `gathered_data_keys` | array of string | the keys of the preserved gathered data (NOT the values — keeps PII out of the log) |
+| `subflow` | string | the interrupt sub-flow that ran |
+| `queued_triggers` | array of string | any other triggers queued behind this one |
+| `tag_applied` | string | `ZHC-interrupt-handled` / `ZHC-faq-detoured` / `ZHC-aggression-handled-and-resumed` |
+| `returned` | boolean | whether the conversation returned to the saved state |
+| `escalated` | boolean | whether the 2-level cap was hit and the agent escalated to a human |
+
+The JSONL schema is also documented in `INSTRUCTIONS.md` (Phase 5 data contract table).
+
 ## MEMORY.md (Rule 22)
 
 The agent always listens for interrupts in parallel with the active workflow. On an
@@ -131,5 +188,14 @@ interrupt (operator-urgent keyword, FAQ type, compliance redirect, F50 aggressio
 pixel-priority) it SAVES the workflow state, EXECUTES the sub-flow, then RETURNS to the
 saved step with a soft "coming back to where we were" transition. This is
 DETOUR-AND-RETURN, distinct from Step 9.33's route-and-stay. Max 2 levels deep, then
-escalate. Multiple triggers: highest priority first, queue the rest. See
-`<MASTER_FILES_DIR>/smart-playbook-switching-protocol.md`.
+escalate. Multiple triggers: highest priority first, queue the rest. See MEMORY Rule 22,
+appended by `scripts/06-append-memory-rules.sh`.
+
+## Cross-references
+
+- Distinct from: `protocols/intelligent-routing-protocol.md` (F33, Step 9.33).
+- Lightweight sibling: `protocols/smart-faq-tool-protocol.md` (F47, Step 9.41).
+- Feeds aggression detours: `protocols/aggression-detection-protocol.md` (F50, Step 9.37).
+- Tag namespace: `protocols/zhc-tag-prefix-protocol.md`.
+- AGENTS.md Step 1.42: `scripts/05-update-agents-md.sh` (marker `STEP_1_42_INTERRUPTS_AND_FAQ`).
+- INSTRUCTIONS.md Step 9.38.

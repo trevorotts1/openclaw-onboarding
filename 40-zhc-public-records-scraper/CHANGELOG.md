@@ -1,5 +1,19 @@
 # Changelog - Skill 40: ZHC Public Records Scraper
 
+## [1.0.1] - 2026-05-30 - Round-3 canonical reconciliation: add executable Tier-2 adapters + F52 contract
+
+Aligns Skill 40 with the canonical Round-3 decision (this repo's build is the canonical base; the
+sibling VPS repo's named capabilities are merged IN). Additive only — this repo's richer build
+(qc-compliance + qc-no-fabrication gates, cost-cap + cache protocols, per-county JSON configs, helper
+libs) is unchanged.
+
+### Added
+- `scripts/adapters/govos-landmark.sh` + `scripts/adapters/tyler-technologies.sh` — the executable
+  Tier-2 vendor adapter shells (from the sibling repo) alongside the existing adapter DOCS under
+  `references/tier2-adapters/`, so the adapters are runnable, not just documented.
+- `references/master-files-event-contract-F52.md` — the F52 event-contract reference doc (from the
+  sibling repo).
+
 ## [1.0.0] - 2026-05-30 - Initial release
 
 First release of the tiered, compliance-first public-records intelligence layer. The data SIBLING of

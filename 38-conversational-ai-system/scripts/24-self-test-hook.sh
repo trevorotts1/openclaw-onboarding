@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 12-self-test-hook.sh — Skill 38 BACKEND SELF-TEST (the agent tests ITSELF
+# 24-self-test-hook.sh — Skill 38 BACKEND SELF-TEST (the agent tests ITSELF
 # before the client ever does).
 #
 # THE STANDARD (REQ 5): after the agent configures the OpenClaw hook, and BEFORE
@@ -42,8 +42,8 @@
 # so qc-static's claude-/anthropic .py ban does not apply.
 #
 # Usage:
-#   HOOK_NAME=ghl-inbound-sms PUBLIC_HOSTNAME=claw.example.com bash scripts/12-self-test-hook.sh
-#   bash scripts/12-self-test-hook.sh --dry-run    # readiness checks only, no POST
+#   HOOK_NAME=ghl-inbound-sms PUBLIC_HOSTNAME=claw.example.com bash scripts/24-self-test-hook.sh
+#   bash scripts/24-self-test-hook.sh --dry-run    # readiness checks only, no POST
 #
 # Env:
 #   PUBLIC_HOSTNAME   (required) the public host the hook is exposed on
