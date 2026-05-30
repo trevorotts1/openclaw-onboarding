@@ -1,3 +1,26 @@
+## [v10.15.13]  -  2026-05-30  -  Round-3 cross-repo reconciliation + roadmap spec committed; Skill 38 v1.5.3
+
+### Why
+This release packages the Skill 38 (Conversational AI System) **Round-3 canonical reconciliation** that
+aligns the Mac onboarding repo with the VPS onboarding repo, and commits the conversational-AI strategic
+roadmap spec alongside it. Skill 38 reaches **v1.5.3**. The skill content itself landed in PR #61; this is
+the accompanying repo-wide version bump that ships it.
+
+### Added / Changed
+
+**Skill 38 — Conversational AI System (→ v1.5.3)**
+- **Round-3 cross-repo reconciliation (Mac ↔ VPS)** — canonical alignment of the Skill 38 surface between
+  the Mac and VPS onboarding repos: protocols, install/QC scripts, INSTRUCTIONS, INSTALL, and the QC-static
+  CI workflow are reconciled so both repos ship the same authoritative Round-3 behavior.
+- **Strategic roadmap spec committed** — `references/conversational-ai-strategic-roadmap.md` (the ✅ shipped
+  vs 📋 pending strategic context) is committed as part of the canonical surface.
+- **Self-counts corrected** — `scripts/` moved 51 → 54 (`25-seed-round3-feature-files.sh`,
+  `qc-backend-ready.sh`, `qc-feature-logs.sh`); SKILL.md "What This Skill Ships" self-counts re-verified per
+  the bump-version.sh checklist (protocols/=39, scripts/=54, references/=18, journeys=8).
+
+### Version
+- Repo-wide bump v10.15.12 → v10.15.13 via `scripts/bump-version.sh` (all 8 version locations agree).
+
 ## [v10.15.12]  -  2026-05-30  -  Skill 38 v1.5.2 (Round-3 Queue-A + 3 QC-enforced standards + F49 ZHC Pixel) + NEW Skill 39 Real Estate Playbook + NEW Skill 40 ZHC Public Records Scraper
 
 ### Why
