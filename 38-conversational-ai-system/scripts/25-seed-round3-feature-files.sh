@@ -124,7 +124,8 @@ for jsonl in \
   multi-tenant-events.jsonl \
   segmentation-events.jsonl \
   outreach-events.jsonl \
-  ab-test-events.jsonl; do
+  ab-test-events.jsonl \
+  voice-call-events.jsonl; do
   p="$MASTER_FILES_DIR/$jsonl"
   if [ -f "$p" ]; then
     echo "[skill 38] $jsonl already exists — preserved"

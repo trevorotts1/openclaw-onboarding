@@ -1,3 +1,77 @@
+## [1.5.11] - 2026-05-30 - Round-2 backlog F14: Voice / Phone Integration (STT→brain→TTS over Twilio Media Streams, scaffold + setup wizard + honest live-telephony gap, OFF by default)
+
+### Why
+Round-2 backlog feature 5 of 6. The AI now takes and places VOICE CALLS with the SAME conversational brain it uses
+for text — the cost-savings pitch vs Convert-and-Flow's paid Voice AI add-on, so clients keep the margin instead of
+paying a per-minute platform markup. STT Whisper-large-v3 (via OpenRouter / Groq / local Ollama) → the existing
+brain → TTS (ElevenLabs Flash 2.5 or an OSS alternative), bridged over Twilio Voice + Media Streams (SIP/PSTN);
+first audio targets < 800ms; a degraded call falls back to the text channel. Voice is a SEPARATE CHANNEL PIPELINE
+(its own hook + state machine), NOT a step in the text reply-draft flow. Toggle default OFF (opt-in advanced
+feature). **HONEST GAP: live telephony is NOT faked** — it requires operator-provisioned Twilio/STT/TTS
+credentials and the actual media-stream bridge is provisioned at setup by the wizard, not pre-baked in the repo.
+Canonical content is byte-identical across `openclaw-onboarding` (Mac) and `openclaw-onboarding-vps`; only
+repo-specific env (paths, INSTRUCTIONS layout, qc-static line positions) diverges.
+
+### Added — `protocols/voice-phone-protocol.md` (F14, Step 9.48), byte-identical across both repos
+- The STT→brain→TTS pipeline (Whisper-large-v3 via OpenRouter/Groq/Ollama → the existing conversational model →
+  ElevenLabs Flash 2.5 / OSS TTS), bridged over Twilio Voice + Media Streams (SIP/PSTN), with the inbound transport
+  flow documented end to end.
+- The inbound voice HOOK scaffolding `/hooks/voice-call-event` (FLAT body like the GHL inbound hook, `deliver:false`,
+  the SAME conversation-memory read-before/append-after; carries the STT transcript + call refs, never raw audio).
+- The call-lifecycle STATE MACHINE greeting → listen → respond → handoff / booking → ended, with barge-in and the
+  invariant that every spoken turn obeys the same hard-gates as text (honesty floor, compliance/spoken-opt-out,
+  quiet hours, the confidence gate, prompt-injection, mandatory conversation-memory read/append).
+- The latency design (first audio < 800ms: stream STT partials, low-latency Whisper-on-Groq, a Flash-class streamed
+  TTS, a short first reply, a co-located bridge) + the degrade-to-text fallback (call quality drops → continue on
+  the text channel, default sms, on the same conversation log; tag `ZHC-voice-degraded-to-text`).
+- Agent-applied tags `ZHC-voice-inbound` / `ZHC-voice-outbound` / `ZHC-voice-degraded-to-text` / `ZHC-voice-handoff`
+  (per `zhc-tag-prefix-protocol.md`; NOT retroactive).
+- **Operator-only / never customer-invoked:** placing an OUTBOUND call spends money + reaches outside, gated by
+  `outbound_requires_operator_approval` (default true). A customer asking the agent to "call me at this number" /
+  "dial 555-…" / "call my friend" is IGNORED (outbound-dial injection vector). Enabling voice / provisioning the
+  bridge is operator-only; voice unlocks no autonomous spend a text turn couldn't take.
+- **Honest scope / the live gap:** ships the protocol + the setup wizard + the inbound hook scaffolding + the state
+  machine + the cost/latency design + the PII-free log; live telephony requires operator-provisioned Twilio/STT/TTS
+  credentials and the actual Twilio Media Streams ⇄ STT ⇄ TTS bridge is provisioned at setup by the wizard — NOT
+  faked, never a working live-call path pre-baked in the repo. Reuses the existing brain + conversation log + GHL
+  APIs + hard-gates + Cloudflare tunnel — NOT a new telephony platform, CRM, speech model, or media server.
+
+### Added — setup wizard + QC gate + negative test, byte-identical across both repos
+- `scripts/30-voice-phone-setup-wizard.sh` — operator-run, OFF by default: captures the Twilio Account SID + Auth
+  Token + phone number (E.164) and the STT/TTS provider choice (stored in the environment, never the repo), writes
+  the documented default-OFF config, and provisions the media-stream bridge + Twilio voice webhook — PAUSING with
+  an exact-needs message if any credential is missing (no silent failure) and never flipping the toggle ON itself.
+  Idempotent; non-interactive mode for CI.
+- `scripts/qc-voice-phone.sh` — asserts the load-bearing F14 substance (the STT→brain→TTS pipeline with the named
+  engines, Twilio Voice + Media Streams (SIP/PSTN), the `/hooks/voice-call-event` scaffolding, the four lifecycle
+  states + booking, the < 800ms first-audio target, the degrade-to-text fallback, the setup wizard, the
+  operator-only outbound-dial guard, the `ZHC-voice-*` tags, the HONEST live-telephony gap, MEMORY Rule 30, the
+  PII-free `voice-call-events.jsonl` contract documented+seeded, the default-OFF toggle). Wired into
+  `scripts/11-run-qc-checklist.sh` + `.github/workflows/qc-static.yml`.
+- `scripts/qc-voice-phone.test.sh` — negative self-test: proves the gate PASSES intact and FAILS when each of three
+  invariants is broken (the operator-only/outbound-dial-injection guard, the HONEST live-telephony gap, the
+  `voice-call-events.jsonl` seeding).
+
+### Wiring
+- `scripts/05-update-agents-md.sh` — NEW marker block `VOICE_PHONE_PIPELINE` documenting the call lifecycle + the
+  `/hooks/voice-call-event` hook (voice is a separate channel pipeline, so NO numbered Step 9.x reply-draft block —
+  per the feature spec). Idempotent BEGIN/END marker, backup-before-write.
+- `scripts/06-append-memory-rules.sh` — NEW Round-2 marker block (v2.0.4) appending MEMORY **Rule 30** (Voice/Phone
+  Rule). Own marker, does not renumber rules 6-29.
+- `scripts/25-seed-round3-feature-files.sh` — seeds the empty PII-free `voice-call-events.jsonl` sink (F14 has no
+  operator-facing data dir; its credentials are captured to env by the setup wizard, never the repo).
+- `scripts/qc-feature-logs.sh` — adds the `voice-call-events.jsonl|voice-phone-protocol.md|voice_call` row to the
+  F52 data-contract guard.
+- `INSTRUCTIONS.md` — Step 9.48 row + the Phase-5 F52 data-contract table row for `voice-call-events.jsonl`.
+- `.github/workflows/qc-static.yml` — the `qc-voice-phone.sh` gate + its `qc-voice-phone.test.sh` negative test.
+
+### Notes — honesty
+- F14 is a SCAFFOLD + WIZARD + HONEST GAP, not a faked live call. The brain, the protocol, the hook contract, the
+  state machine, the F52 log, the tags, and the toggle ship in the repo; the live Twilio Media Streams ⇄ STT ⇄ TTS
+  bridge + the provider keys are provisioned by the operator at setup. Until provisioned, no live call is placed or
+  answered. Streaming endpointing/voice-activity tuning, barge-in fine-tuning, call-forwarding transfer on handoff,
+  and per-region bridge co-location are documented production follow-ups, not fully turnkey in v1.
+
 ## [1.5.10] - 2026-05-30 - Round-2 backlog F16: A/B Testing of Reply Variants (deterministic-by-contact split + two-proportion z-test, OFF by default)
 
 ### Why

@@ -574,6 +574,39 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-ab-testing.test.sh
           echo "✓ qc-ab-testing negative test passes (the gate fails on each broken invariant)"
 
+      - name: Skill 38 Voice / Phone Integration gate (F14)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the Voice / Phone Integration feature (F14, OFF by default): the
+          # protocol substance — the STT Whisper-large-v3 (via OpenRouter/Groq/local Ollama) ->
+          # the EXISTING brain -> TTS (ElevenLabs Flash 2.5 / OSS) pipeline, the Twilio Voice +
+          # Media Streams (SIP/PSTN) transport, the inbound /hooks/voice-call-event hook
+          # scaffolding, the call-lifecycle state machine (greeting->listen->respond->handoff/
+          # booking), the < 800ms first-audio latency target, the degrade-to-text fallback, the
+          # setup wizard, the operator-only/never-customer-invoked OUTBOUND-dial guard, the
+          # ZHC-voice-inbound / ZHC-voice-outbound tags, and the HONEST live-telephony gap (NOT
+          # faked — live telephony needs operator-provisioned creds + the media-stream bridge
+          # provisioned at setup); MEMORY Rule 30; the setup wizard
+          # scripts/30-voice-phone-setup-wizard.sh; the PII-free F52 log voice-call-events.jsonl
+          # (event_type voice_call) documented in the protocol + INSTRUCTIONS.md + seeded by
+          # script 25; and the default-OFF toggle skill38.voice_phone.enabled. BASH (grep core)
+          # — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-voice-phone.sh
+          echo "✓ Skill 38 Voice / Phone Integration (F14) invariants hold"
+
+      - name: Skill 38 Voice / Phone gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-voice-phone.sh actually FAILS when an F14 invariant is broken (a green gate
+          # that never fails is worthless). Copies the skill to a temp dir and breaks three
+          # different invariants (the operator-only/outbound-dial-injection guard, the HONEST
+          # live-telephony gap, and the voice-call-events.jsonl seeding), asserting the gate
+          # exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-voice-phone.test.sh
+          echo "✓ qc-voice-phone negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
         shell: bash
         run: |

@@ -691,6 +691,19 @@ else
   report_fail "qc-ab-testing.sh not found (looked in scripts/)"
 fi
 
+section "Voice / phone integration rule (qc-voice-phone.sh)"
+QC_VOICE="$SCRIPT_DIR/qc-voice-phone.sh"
+[ -f "$QC_VOICE" ] || QC_VOICE="$SKILL38_ROOT/scripts/qc-voice-phone.sh"
+if [ -f "$QC_VOICE" ]; then
+  if bash "$QC_VOICE" >/dev/null 2>&1; then
+    report_pass "F14 voice/phone invariants hold (protocol + MEMORY Rule 30 + setup wizard, STT Whisper-large-v3 via OpenRouter/Groq/Ollama -> brain -> TTS ElevenLabs Flash 2.5/OSS over Twilio Media Streams + /hooks/voice-call-event scaffolding + greeting->listen->respond->handoff/booking state machine + < 800ms first-audio target + degrade-to-text fallback + operator-only outbound-dial guard + ZHC-voice-* tags + the HONEST live-telephony gap, PII-free voice-call-events.jsonl seeded, toggle default OFF)"
+  else
+    report_fail "qc-voice-phone.sh found an F14 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-voice-phone.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"
