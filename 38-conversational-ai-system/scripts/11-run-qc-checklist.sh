@@ -514,6 +514,20 @@ else
   report_fail "qc-zhc-tag-prefix.sh not found (looked in scripts/)"
 fi
 
+# -------- ZHC Pixel (F49) invariant gate (machine-enforced) --------
+section "ZHC Pixel rule (qc-zhc-pixel.sh)"
+QC_PIXEL="$SCRIPT_DIR/qc-zhc-pixel.sh"
+[ -f "$QC_PIXEL" ] || QC_PIXEL="$SKILL38_ROOT/scripts/qc-zhc-pixel.sh"
+if [ -f "$QC_PIXEL" ]; then
+  if bash "$QC_PIXEL" >/dev/null 2>&1; then
+    report_pass "F49 ZHC Pixel invariants hold (hook pixel-visitor-signal registered, Pixel Concierge protocol + AGENTS Step 1.45, ZHC-/ZHC_ prefixes, GDPR/CCPA/DNT/deletion privacy controls, scope precheck + gated deploy, no personal data)"
+  else
+    report_fail "qc-zhc-pixel.sh found an F49 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-zhc-pixel.sh not found (looked in scripts/)"
+fi
+
 # -------- Runtime assertion: the backend self-test PASSED (selfTestPassed=true) --------
 # REQ 5(e): the install is NOT complete until the agent's own backend self-test
 # passed by ground truth. Same run-state file as clientDocDelivered.

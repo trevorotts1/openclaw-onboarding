@@ -307,6 +307,36 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh
           echo "✓ Skill 38 ZHC tag-prefix rule enforced: every programmatic-tag example uses the ZHC- prefix"
 
+      - name: Skill 38 ZHC Pixel (Feature 49) invariants
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the ZHC Pixel (F49) invariants from the repo alone: the
+          # pixel JS template + its three placeholders + the generator that substitutes
+          # them; the OpenClaw `pixel-visitor-signal` hook (deliver:false, bot-gate-first
+          # messageTemplate, scoped Pixel Concierge agent + hook:pixel: allow-list); the
+          # Pixel Concierge AGENTS.md Step 1.45 block + the protocol doc; the ZHC- tag
+          # prefixes (ZHC-pixel-visitor/-returning-visitor/-high-intent) and ZHC_ field
+          # prefixes (ZHC_first_visit_date/_total_visits/_pages_viewed/_high_intent_signal);
+          # the privacy controls documented in the protocol AND enforced in the browser
+          # bundle (GDPR consent deferral, CCPA opt-out, Do-Not-Track hard-stop, deletion
+          # via delete_request); the CF scope precheck that names Pages:Edit / Workers
+          # Scripts:Edit / Workers Routes:Edit and points at the token-instructions Google
+          # Doc; the scope-GATED deploy; and ZERO personal/client data in any F49 file.
+          # BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-zhc-pixel.sh
+          echo "✓ Skill 38 ZHC Pixel (F49) invariants hold"
+
+      - name: Skill 38 ZHC Pixel gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-zhc-pixel.sh actually FAILS when an F49 invariant is broken (a green
+          # gate that never fails is worthless). Copies the skill to a temp dir, removes
+          # the pixel-visitor-signal hook registration, and asserts the gate exits non-zero.
+          bash 38-conversational-ai-system/scripts/qc-zhc-pixel.test.sh
+          echo "✓ qc-zhc-pixel negative test passes (the gate fails on a broken invariant)"
+
       - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
         shell: bash
         run: |

@@ -1,3 +1,84 @@
+## [1.5.2] - 2026-05-30 - F49 ZHC Pixel (flagship): per-client private visitor-signal pixel + Pixel Concierge agent + scope-gated Cloudflare deploy
+
+A new flagship capability. Every client gets THEIR OWN private pixel that POSTs anonymous-but-persistent
+visitor signals to THEIR OpenClaw via THEIR existing Cloudflare tunnel — NOT a shared collector. Universal
+(zero personal/client data — `qc-no-personal-data.sh` + `qc-zhc-pixel.sh` pass). The behavioral protocol goes
+through `scripts/05-update-agents-md.sh` marker blocks (AGENTS.md Step 1.45, never inline); the new INSTRUCTIONS
+step is 9.43. The repo-root version/CHANGELOG are untouched — this is a per-skill bump (1.5.1 → 1.5.2, rebased
+above the concurrent #57 standards wave which had also taken 1.5.1).
+
+### Added — the pixel (browser bundle + generator)
+- `templates/zhc-pixel/zhc-pixel.template.js` (~250 lines) — first-party anonymous cookie + persistent
+  random `visitor_id` (NOT derived from any personal attribute), a privacy-bounded soft fingerprint (cookie
+  survival hint, skipped under DNT), watchers for pages/time/scroll/clicks/return-visits, a buffered batch
+  flush every ~5s (sendBeacon on unload), and the public API `window.ZHCPixel.{grantConsent, denyConsent,
+  optOut, flush}`. Placeholders `__ZHC_PIXEL_ENDPOINT__` / `__ZHC_PIXEL_SITE_ID__` / `__ZHC_PIXEL_AGENT_ID__`.
+- `scripts/26-render-pixel-js.sh` — renders a per-client `<MASTER_FILES_DIR>/pixel/zhc-pixel.js` (their tunnel
+  URL / `<SITE_ID>` / `<AGENT_ID>` baked in), guards against any unresolved placeholder leaking, records the
+  site id/hostname/agent to the run-state, and prints the one-line `<script>` paste snippet.
+
+### Added — the hook + Pixel Concierge agent
+- `scripts/27-configure-pixel-hook.sh` — registers the `pixel-visitor-signal` hooks.mappings entry
+  (`deliver:false`, a real model, a bot-gate-FIRST messageTemplate that drops bot traffic with ZERO reasoning,
+  appends to the F52 JSONL, evaluates the trigger rules, and NEVER fabricates identity) and a SEPARATE scoped
+  **Pixel Concierge** agent (`agents.list` + `hooks.allowedAgentIds` + `hooks.allowedSessionKeyPrefixes`
+  `hook:pixel:`). jq-1.7-safe (`.x = (.x // {})`, never `//= ;`); reuses HOOKS_TOKEN (never the gateway token);
+  runs `openclaw config validate`. Fail-closed guard on the messageTemplate.
+- AGENTS.md `STEP_1_45_PIXEL_CONCIERGE` block (free slot 1.45 — after Step 1.42 interrupts, before Step 1.5/1.7
+  routing; no collision) via `scripts/05-update-agents-md.sh` marker block (BLOCK_K).
+
+### Added — behavioral trigger rules (operator-configurable)
+- Bot-like → silently DROP with zero model spend (FIRST); pricing-page >3min → chat widget; 4th return to the
+  same page → soft outreach; contact-click → preempt with widget; known customer on an account page → no
+  engagement; cart abandonment → +1h email; comparison-shopping (3+ service pages) → consultation offer.
+  Toggles under `openclaw.json` `skill38.zhc_pixel.{enabled, triggers.*}`.
+- Tags (ZHC- prefix, per Step 9.42): `ZHC-pixel-visitor`, `ZHC-pixel-returning-visitor`,
+  `ZHC-pixel-high-intent`, `ZHC-pixel-bot-suspected`.
+- Custom fields (ZHC_ prefix, per Step 9.40 create-if-missing): `ZHC_first_visit_date` (date),
+  `ZHC_total_visits` (number), `ZHC_pages_viewed` (text), `ZHC_high_intent_signal` (text).
+
+### Added — identification (legally compliant; documented possible vs NOT)
+- Possible: first-party form linkage (ever-filled-a-form → `visitor_id` tied to a GHL contact forever),
+  cross-device (same email = same person), anonymous→known retroactive backfill.
+- NOT possible (the agent NEVER fabricates): cold-anonymous name lookup, Gmail/Facebook/social direct lookup,
+  IP→person.
+
+### Added — scope-gated Cloudflare deploy + precheck
+- `scripts/25-verify-pixel-prerequisites.sh` — inspects the CF token via the API and HALTS if Pages:Edit /
+  Workers Scripts:Edit / Workers Routes:Edit are missing (the SAME scopes F52 needs), pointing the operator to
+  the token-instructions Google Doc's "Cloudflare Pages/Workers permissions" section. Also confirms an existing
+  tunnel + an identified domain. Records `ZHC_PIXEL_SCOPES_OK` in the run-state. Never echoes the token.
+- `scripts/28-deploy-pixel-cloudflare.sh` — GATED on `ZHC_PIXEL_SCOPES_OK=1` (or `--force` + operator confirm):
+  (a) adds `pixel.<CLIENT_DOMAIN>` to the EXISTING tunnel + proxied CNAME; (b) creates/reuses a CF Pages
+  project; (c) deploys the rendered JS via the API; (d) optionally deploys a minimal edge Worker (batching/
+  rate-limit, attaches the bearer token server-side) + a Workers Route. No silent failure — exits non-zero with
+  the Google-Doc pointer on a missing scope. **Code ships; the live per-client deploy is GATED** (owner directive).
+
+### Added — privacy compliance (non-negotiable, enforced in code)
+- GDPR consent deferral (built-in banner or host CMP — no cookie/fingerprint/POST until `grantConsent()`),
+  CCPA opt-out (`optOut()` clears state + POSTs `delete_request`), Do-Not-Track hard-stop (DNT=1 → no
+  fingerprint, no cookie, nothing sent), data deletion path, privacy-policy reminder. The hooks bearer token is
+  NEVER baked into the browser bundle (edge Worker attaches it server-side, or the gateway requires it at ingress).
+
+### Added — F52 data contract
+- `<MASTER_FILES_DIR>/pixel-events/YYYY-MM-DD.jsonl` — one JSON object/line; `timestamp` + `event_type`
+  (`pageview`/`scroll`/`click`/`page_hidden`/`delete_request`) + the envelope identity + `data`. Schema +
+  worked example in `protocols/zhc-pixel-protocol.md` §7 and the INSTRUCTIONS F52 table.
+
+### Added — QC
+- `scripts/qc-zhc-pixel.sh` — asserts the hook is registered, the Pixel Concierge protocol is present (AGENTS
+  Step 1.45 + protocol doc), the ZHC-/ZHC_ prefixes are used, the privacy controls are documented AND enforced
+  in the bundle, the scope precheck names the three scopes + the Google Doc and the deploy is gated, and there
+  is no personal/client data. Wired into `scripts/11-run-qc-checklist.sh` + `.github/workflows/qc-static.yml`.
+- `scripts/qc-zhc-pixel.test.sh` — negative test: proves the gate PASSES intact and FAILS when each of three
+  invariants is broken (hook removed / required ZHC_ field dropped / a required scope name removed). Also in CI.
+
+### Honest MVP/scaffold status
+- The live per-client Cloudflare deploy is GATED, not auto-run (requires the CF Pages/Workers scopes).
+- The edge Worker is a minimal MVP (production rate-limit/abuse/KV-dedup are follow-ups).
+- Server-side identity resolution / cross-device email-collapse is specified for the agent; the nightly
+  backfill + `delete_request` purge are light scaffolds (F52 territory), not a hardened DSAR pipeline.
+
 ## [1.5.1] - 2026-05-30 - Three QC-enforced standards (mirror the workflow-AI standard's rigor): Communication Playbook Standard (ELEVATED) + GHL Raw Body JSON Standard (NEW) + Notion Client-Doc Standard (NEW)
 
 Three formal, machine-enforced standards, each leading with a hard "MUST INCLUDE ALL OF THE FOLLOWING"
