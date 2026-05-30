@@ -407,18 +407,50 @@ else
   echo "  [SKIP] PUBLIC_HOSTNAME unset and openclaw CLI not on PATH; cannot probe /healthz"
 fi
 
+# -------- Backend ready to RECEIVE (live gate; SKIPs with no install) --------
+# hooks.mappings live + deliver:false + a working model + healthz 200. On a box
+# with no install this exits 3 (SKIP).
+section "Backend ready to RECEIVE (qc-backend-ready.sh)"
+QC_BACKEND="$SCRIPT_DIR/qc-backend-ready.sh"
+[ -f "$QC_BACKEND" ] || QC_BACKEND="$SKILL38_ROOT/scripts/qc-backend-ready.sh"
+if [ -f "$QC_BACKEND" ]; then
+  BACKEND_RC=0
+  bash "$QC_BACKEND" >/dev/null 2>&1 || BACKEND_RC=$?
+  case "$BACKEND_RC" in
+    0) report_pass "backend ready to receive: hooks.mappings live + deliver:false + a working model + healthz 200 (testing may proceed once the client doc gate also passes)" ;;
+    3) echo "  [SKIP] no openclaw.json on this box — cannot verify backend readiness here" ;;
+    *) report_fail "qc-backend-ready.sh: backend NOT ready to receive (hooks.mappings / deliver:false / model / healthz) — do NOT test, do NOT hand off; run it directly for detail" ;;
+  esac
+else
+  report_fail "qc-backend-ready.sh not found (looked in scripts/)"
+fi
+
 # -------- install-script config-invalidating pattern gate (machine-enforced) --------
-section "Install-script config-key gate (qc-config-keys.sh)"
-QC_CFG="$SCRIPT_DIR/qc-config-keys.sh"
-[ -f "$QC_CFG" ] || QC_CFG="$SKILL38_ROOT/scripts/qc-config-keys.sh"
+section "Config schema-safety — no config-invalidating install scripts (qc-config-schema-safety.sh)"
+QC_CFG="$SCRIPT_DIR/qc-config-schema-safety.sh"
+[ -f "$QC_CFG" ] || QC_CFG="$SKILL38_ROOT/scripts/qc-config-schema-safety.sh"
 if [ -f "$QC_CFG" ]; then
   if bash "$QC_CFG" >/dev/null 2>&1; then
     report_pass "no install script writes a config-invalidating shape (no agents.defaults.async/.batch, no cron.jobs JSON, no jq-1.7-invalid '//= ;', no pointer-sourcing, no hardcoded legacy skill path)"
   else
-    report_fail "qc-config-keys.sh found an install script that would invalidate the config or break a fresh install — run it directly for detail"
+    report_fail "qc-config-schema-safety.sh found an install script that would invalidate the config or break a fresh install — run it directly for detail"
   fi
 else
-  report_fail "qc-config-keys.sh not found (looked in scripts/)"
+  report_fail "qc-config-schema-safety.sh not found (looked in scripts/)"
+fi
+
+# -------- F52 JSONL data contract (machine-enforced) --------
+section "F52 JSONL data contract (qc-feature-logs.sh)"
+QC_LOGS="$SCRIPT_DIR/qc-feature-logs.sh"
+[ -f "$QC_LOGS" ] || QC_LOGS="$SKILL38_ROOT/scripts/qc-feature-logs.sh"
+if [ -f "$QC_LOGS" ]; then
+  if bash "$QC_LOGS" >/dev/null 2>&1; then
+    report_pass "all five Round-3 feature logs are JSONL (timestamp+event_type), documented in protocol + INSTRUCTIONS.md, and seeded by the installer"
+  else
+    report_fail "qc-feature-logs.sh found an F52 data-contract violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-feature-logs.sh not found (looked in scripts/)"
 fi
 
 # -------- GHL TOOLS.md quick-reference gate (machine-enforced) --------
@@ -478,7 +510,7 @@ QC_SELFTEST="$SCRIPT_DIR/qc-self-test.sh"
 [ -f "$QC_SELFTEST" ] || QC_SELFTEST="$SKILL38_ROOT/scripts/qc-self-test.sh"
 if [ -f "$QC_SELFTEST" ]; then
   if bash "$QC_SELFTEST" >/dev/null 2>&1; then
-    report_pass "backend self-test is wired (12-self-test-hook.sh POSTs a synthetic flat-23-key inbound, verifies 200/{ok:true} + model + log read + GHL send, cleans up, and is a blocking readiness gate)"
+    report_pass "backend self-test is wired (24-self-test-hook.sh POSTs a synthetic flat-23-key inbound, verifies 200/{ok:true} + model + log read + GHL send, cleans up, and is a blocking readiness gate)"
   else
     report_fail "qc-self-test.sh: the backend self-test is missing/unwired (the agent must self-test by ground truth BEFORE the client) — run it directly for detail"
   fi
@@ -541,10 +573,10 @@ if [ -n "$ST_STATE_FOUND" ]; then
   if grep -q '^selfTestPassed=true' "$ST_STATE_FOUND"; then
     report_pass "selfTestPassed=true (the agent self-tested the backend by ground truth before any client test) — $ST_STATE_FOUND"
   else
-    report_fail "selfTestPassed is NOT true in $ST_STATE_FOUND — run scripts/12-self-test-hook.sh until it passes; do NOT mark complete or tell the client to test"
+    report_fail "selfTestPassed is NOT true in $ST_STATE_FOUND — run scripts/24-self-test-hook.sh until it passes; do NOT mark complete or tell the client to test"
   fi
 else
-  echo "  [SKIP] run-state file not found; cannot assert selfTestPassed (run scripts/12-self-test-hook.sh during the live install)"
+  echo "  [SKIP] run-state file not found; cannot assert selfTestPassed (run scripts/24-self-test-hook.sh during the live install)"
 fi
 
 # -------- Communication Playbook Standard gate (machine-enforced) --------

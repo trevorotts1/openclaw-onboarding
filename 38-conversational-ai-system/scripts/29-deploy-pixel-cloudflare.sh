@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 28-deploy-pixel-cloudflare.sh — ZHC Pixel (Feature 49) scope-gated Cloudflare deploy.
+# 29-deploy-pixel-cloudflare.sh — ZHC Pixel (Feature 49) scope-gated Cloudflare deploy.
 #
-# GATED: refuses to run unless 25-verify-pixel-prerequisites.sh recorded
+# GATED: refuses to run unless 26-verify-pixel-prerequisites.sh recorded
 # ZHC_PIXEL_SCOPES_OK=1 (or --force + operator confirmation). The deploy CODE ships;
 # the live per-client deploy is gated on the operator's CF token carrying
 # Pages:Edit + Workers Scripts:Edit + Workers Routes:Edit (owner directive).
@@ -57,7 +57,7 @@ if [ "${ZHC_PIXEL_SCOPES_OK:-0}" != "1" ] && [ "$FORCE" != "1" ]; then
   cat >&2 <<ERR
 
 GATED — the live per-client Cloudflare deploy is blocked.
-Run scripts/25-verify-pixel-prerequisites.sh first; it records ZHC_PIXEL_SCOPES_OK=1
+Run scripts/26-verify-pixel-prerequisites.sh first; it records ZHC_PIXEL_SCOPES_OK=1
 once the CF token carries Pages:Edit + Workers Scripts:Edit + Workers Routes:Edit.
 If the precheck halted, add the scopes per: $TOKEN_DOC
 (Override with --force ONLY after the operator confirms the scopes are present.)
@@ -77,7 +77,7 @@ if [ -z "${ZHC_PIXEL_HOSTNAME:-}" ]; then
 fi
 PARENT_DOMAIN="${CLIENT_DOMAIN:-${ZHC_PIXEL_HOSTNAME#*.}}"
 PIXEL_JS="${MASTER_FILES_DIR:-$HOME/.openclaw}/pixel/zhc-pixel.js"
-[ -f "$PIXEL_JS" ] || { echo "rendered pixel not found: $PIXEL_JS — run scripts/26-render-pixel-js.sh first" >&2; exit 21; }
+[ -f "$PIXEL_JS" ] || { echo "rendered pixel not found: $PIXEL_JS — run scripts/27-render-pixel-js.sh first" >&2; exit 21; }
 
 cf() { curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$@"; }
 

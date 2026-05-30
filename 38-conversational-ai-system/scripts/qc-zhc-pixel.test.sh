@@ -52,7 +52,7 @@ run_should_fail() {
 # (B1) Remove the hook registration id.
 D1="$(make_copy)"
 # Strip the literal pixel-visitor-signal token from the hook configurator.
-TMP="$(mktemp)"; grep -v 'pixel-visitor-signal' "$D1/scripts/27-configure-pixel-hook.sh" > "$TMP"; mv "$TMP" "$D1/scripts/27-configure-pixel-hook.sh"
+TMP="$(mktemp)"; grep -v 'pixel-visitor-signal' "$D1/scripts/28-configure-pixel-hook.sh" > "$TMP"; mv "$TMP" "$D1/scripts/28-configure-pixel-hook.sh"
 run_should_fail "$D1" "the pixel-visitor-signal hook registration is removed"
 
 # (B2) Drop a required ZHC_ field from the protocol.
@@ -64,7 +64,7 @@ run_should_fail "$D2" "a required ZHC_ field (ZHC_high_intent_signal) is dropped
 
 # (B3) Neuter the scope precheck (remove a required scope name).
 D3="$(make_copy)"
-TMP="$(mktemp)"; sed 's/Workers Routes:Edit/Workers Routes Edit REMOVED/g' "$D3/scripts/25-verify-pixel-prerequisites.sh" > "$TMP"; mv "$TMP" "$D3/scripts/25-verify-pixel-prerequisites.sh"
+TMP="$(mktemp)"; sed 's/Workers Routes:Edit/Workers Routes Edit REMOVED/g' "$D3/scripts/26-verify-pixel-prerequisites.sh" > "$TMP"; mv "$TMP" "$D3/scripts/26-verify-pixel-prerequisites.sh"
 run_should_fail "$D3" "the precheck no longer names the Workers Routes:Edit scope"
 
 echo ""

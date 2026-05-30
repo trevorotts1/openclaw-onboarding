@@ -453,7 +453,7 @@ workflow and are DISTINCT from Step 9.33 (Intelligent Routing = route-and-stay):
 F44 is DETOUR-AND-RETURN — handle a brief interruption, then come back.
 
   Skill references: protocols/smart-playbook-switching-protocol.md (Step 9.38),
-  protocols/smart-faq-protocol.md (Step 9.41)
+  protocols/smart-faq-tool-protocol.md (Step 9.41)
   openclaw.json: skill38.smart_playbook_switching.{enabled (default true),
   max_interrupt_depth (default 2)}, skill38.smart_faq.enabled (default true)
 

@@ -1,130 +1,161 @@
 # Aggression Detection Protocol (F50) — Step 9.37
 
-> **This EXTENDS the Conversational Safeguards family** (`conversational-safeguards.md`,
-> Step 9.5). It does NOT replace the existing **bot-detection** (Safeguard 3) — bot
-> detection stays exactly as-is, now tagging `ZHC-bot-suspected` going forward (per the
-> ZHC tag-prefix rule, MEMORY Rule 20). Aggression detection is a NEW, parallel
-> two-tier classifier that runs **PRE-routing** — before any workflow match, before any
-> LLM spend (AGENTS.md Step 1.35). A hostile message must not burn a model call.
+This protocol **extends** the bot/abuse safeguard family in
+`protocols/conversational-safeguards.md`. It does NOT rebuild bot detection —
+Safeguard 3 there already owns bot detection (now emitting `ZHC-bot-suspected`
+going forward; see "Reuse" below). This protocol adds a **two-tier aggression
+classifier** that runs PRE-routing, before any workflow match and before any LLM
+spend, so a hostile inbound is caught and handled cheaply at the front door.
 
-The agent classifies every inbound for hostility on a cheap, deterministic keyword/pattern
-pass FIRST. Only if the message is benign does it proceed to routing and the model.
+## Where it runs in the turn
 
-## When it runs
+AGENTS.md **Step 1.35** (inserted by `scripts/05-update-agents-md.sh`, marker
+`STEP_1_35_AGGRESSION_PRE_ROUTING`) — AFTER the Step 0.7 compliance hard-gate and
+the Step 1.4 safeguard check, but BEFORE Step 1.75 workflow match / routing and
+BEFORE the agent spends a reply-drafting LLM call. The classifier itself is a
+cheap keyword/pattern pass over the raw inbound text — it does not require a model call.
 
-AGENTS.md **Step 1.35 — PRE-routing aggression scan**, after the safeguards check
-(Step 1.4) and BEFORE workflow routing (Step 1.75) and BEFORE the model is invoked.
-This ordering is deliberate: a Tier-2 hostile message is routed to the aggression handler
-WITHOUT spending a reasoning call on a normal reply.
+```
+Step 0.5 quiet hours → Step 0.7 compliance → Step 1.4 safeguards (bot/paused)
+   → Step 1.35 AGGRESSION (this protocol)  ← PRE-routing, pre-LLM-spend
+   → Step 1.75 workflow match / routing → draft + send
+```
 
 ## The two tiers
 
-### Tier 1 — TENSION (low severity)
+### Tier 1 — Tension (LOW)
 
-The customer is irritated / frustrated but NOT abusive. Signals (the agent counts them):
+Heightened attention; NO reroute. The customer is irritated but still engaging
+in good faith. Signals (any of):
 
-- **Multiple irritation words** in one message ("annoyed", "frustrated", "ridiculous",
-  "unacceptable", "fed up", "come on", "seriously", "this is a joke", "waste of time").
-- **Sustained tone across 3+ consecutive messages** (rising frustration, terse replies,
-  repeated complaints) — read the conversation log to confirm the streak.
-- **Emphatic punctuation**: `!!!` or `???` (one or more clusters).
+- **Multiple irritation words** in one message (e.g. "frustrated", "annoyed",
+  "ridiculous", "fed up", "come on", "seriously", "ugh", "this is a joke").
+- **Sustained irritation across 3+ consecutive messages** (read the conversation
+  log — a rising-tone pattern over the last 3 inbounds, not just this one).
+- **Emphatic punctuation**: `!!!` or `???` (repeated `!`/`?`).
 
-**Tier-1 firing rule:** fires when ANY ONE of the three signals is present
-(multiple irritation words in a single message, OR a 3+ message frustration streak,
-OR `!!!`/`???`).
+On a Tier-1 firing:
 
-**Tier-1 actions (NO reroute — keep helping, just more carefully):**
+1. Apply the tag `ZHC-tension-detected` to the contact (created programmatically
+   → `ZHC-` prefix per zhc-tag-prefix-protocol.md).
+2. Continue the NORMAL reply path (no reroute) but with **heightened attention**:
+   slow down, acknowledge the frustration explicitly, lead with empathy, avoid
+   anything that reads as dismissive or scripted.
+3. Log the firing (see "Logging").
+4. Do NOT notify the operator for Tier 1 alone (avoid alert fatigue).
 
-1. Apply the tag `ZHC-tension-detected` to the contact (GHL skill; per the ZHC
-   tag-prefix rule the tag is created programmatically with the `ZHC-` prefix).
-2. Heighten attention: the agent continues the CURRENT workflow/reply but with extra
-   care — acknowledge the frustration, slow down, confirm understanding, avoid upsell.
-3. Do NOT reroute. Do NOT notify the operator. Do NOT pause.
-4. Log the firing + reasoning (which signal(s) fired) to the aggression log (below).
+### Tier 2 — Aggression (HIGH)
 
-### Tier 2 — AGGRESSION (high severity)
+Route to the dedicated aggression-handler sub-flow and notify the operator.
+Signals (any of):
 
-The customer is hostile toward the agent or the business. Signals:
+- **Profanity directed AT the agent** (profanity + a direct address: "you", "your
+  company", the agent's/brand's name) — profanity ABOUT a third party is not this.
+- **Threats** — legal ("my lawyer", "I'll sue", "small claims"), physical, or
+  public ("I'll post this everywhere", "blast you on social", "1-star review
+  campaign", "report you to the BBB/FTC").
+- **ALLCAPS + profanity + direct-address** in the same message.
+- **3+ aggression signals in a single message** (any combination of the above).
 
-- **Profanity directed AT the agent / business** (profanity + a second-person address:
-  "you people are…", "your company is…", "screw you", a slur aimed at the agent).
-- **Threats** — legal ("I'll sue", "my lawyer", "report you to the FTC/BBB"),
-  physical ("I'll come down there", any violence), or public ("I'll post this
-  everywhere", "blast you on social", "1-star review bomb").
-- **ALLCAPS + profanity + direct address** in the same message (shouting a hostile
-  message at the agent).
+On a Tier-2 firing:
 
-**Tier-2 firing rule:** fires when ANY of the named Tier-2 signals is present, OR when
-**3+ signals fire in a single message** (any mix of Tier-1 and Tier-2 signals reaching
-a count of 3 in one message escalates straight to Tier 2).
+1. Apply the tag `ZHC-aggression-detected`.
+2. **Route to the aggression-handler workflow** — this is a DETOUR (F44 smart
+   playbook switching, `smart-playbook-switching-protocol.md`): SAVE the current
+   workflow state, hand the turn to the aggression-handler sub-flow (de-escalate,
+   set boundaries, offer a human), and on resolution RETURN to the saved state
+   (tag `ZHC-aggression-handled-and-resumed`) OR escalate to a human if
+   unresolved. If no aggression-handler workflow is registered yet, fall back to:
+   send a calm de-escalation holding reply and hand to the operator.
+3. **Notify the operator** immediately (primary admin channel) with: contact name
+   + ID, channel, the triggering message, and which signals fired.
+4. Log the firing.
 
-> **ALL CAPS ALONE DOES NOT FIRE.** A message in all caps with no profanity, no threat,
-> and no direct hostility is NOT aggression (some people just type in caps). All-caps is
-> only a signal when combined with profanity AND direct address.
+### CRITICAL — ALL CAPS ALONE does NOT fire
 
-**Tier-2 actions:**
-
-1. Apply the tag `ZHC-aggression-detected` to the contact (GHL skill, `ZHC-` prefix).
-2. **Route to the `aggression-handler` workflow** (the de-escalation sub-flow). If the
-   F44 interrupt layer is installed, this routes via DETOUR-AND-RETURN
-   (`smart-playbook-switching-protocol.md`): save state → run the aggression handler →
-   on resolution return with `ZHC-aggression-handled-and-resumed`. If F44 is not
-   installed, route directly and hold the original topic in the conversation log.
-3. **Notify the operator** via the configured operator-notify channel with: contact name
-   + ID, channel, the triggering message verbatim, and which signals fired.
-4. Do NOT match a sales/marketing workflow. Do NOT upsell. Do NOT argue back.
-5. Log the firing + full reasoning to the aggression log (below).
+A message in all caps with NO profanity, NO threat, and NO other aggression
+signal is **not** aggression — many people shout in caps when excited, on mobile
+with caps-lock on, or out of habit. ALLCAPS only contributes when combined with
+profanity + direct-address (a Tier-2 signal) or counts toward the 3+-signals
+rule. On its own it fires neither tier.
 
 ## Severity is per-message, but tension can accumulate
 
-The classifier reads the conversation log so a sustained 3+-message frustration streak
-escalates Tier-1 even when no single message is loud. A single Tier-2 signal always wins
-over Tier-1.
+The classifier reads the conversation log so a sustained 3+-message frustration
+streak escalates Tier-1 even when no single message is loud. A single Tier-2
+signal always wins over Tier-1.
 
-## openclaw.json toggles
+## Reuse — bot detection is NOT rebuilt here
 
-```json
+Bot detection already lives in `conversational-safeguards.md` Safeguard 3
+(AGENTS.md Step 1.4, Step 9.5). This protocol does not touch that logic. The only
+change is the **tag**: NEW bot-suspicion firings tag `ZHC-bot-suspected` (the
+`ZHC-` namespace, per zhc-tag-prefix-protocol.md). The legacy `bot-detected` tag
+is not migrated (the prefix rule is not retroactive); going forward the agent
+creates and applies `ZHC-bot-suspected`.
+
+## openclaw.json configuration
+
+```jsonc
 {
   "skill38": {
     "aggression_detection": {
-      "enabled": true,
-      "sensitivity": "standard"
+      "enabled": true,                 // default true — on for every client
+      "sensitivity": "standard"        // "lenient" | "standard" | "strict"
     }
   }
 }
 ```
 
-- `aggression_detection.enabled` — default **true**. Universal default-on safeguard.
-- `aggression_detection.sensitivity` — `lenient` | `standard` (default) | `strict`.
-  Documented thresholds:
-  - **lenient** — Tier 1 requires 2+ of its signals (not just 1); Tier 2 requires a named
-    Tier-2 signal OR 4+ combined signals. Fewer false positives; for high-volume,
-    rough-talking audiences.
-  - **standard** (default) — the firing rules above (Tier 1 = any 1 signal; Tier 2 = any
-    named signal OR 3+ combined).
-  - **strict** — Tier 1 fires on a single irritation word; Tier 2 fires on profanity even
-    without a direct address. For brands that want zero tolerance.
+- **`enabled`** (default `true`) — master switch. If `false`, Step 1.35 is a no-op
+  and the turn proceeds straight to routing.
+- **`sensitivity`** (default `"standard"`) — tunes the firing thresholds:
 
-## Aggression log (dual: human-readable + JSONL data contract)
+| sensitivity | Tier 1 (tension) fires when… | Tier 2 (aggression) fires when… |
+|---|---|---|
+| `lenient`  | 2+ irritation words in one msg, OR `!!!`/`???` sustained over 4+ msgs | profanity-AT-agent + 1 more signal, OR an explicit threat, OR 4+ signals in one msg |
+| `standard` | multiple irritation words in one msg, OR sustained irritation over 3+ msgs, OR `!!!`/`???` | profanity-AT-agent, OR a threat (legal/physical/public), OR ALLCAPS+profanity+direct-address, OR 3+ signals in one msg |
+| `strict`   | a single irritation word, OR any `!`/`?` doubling | profanity-AT-agent, OR a threat, OR ALLCAPS+direct-address (even without profanity), OR 2+ signals in one msg |
 
-Every Tier-1 and Tier-2 firing is logged to BOTH:
+Defaults documented so the operator can dial the classifier per their audience
+(a B2B SaaS line may want `lenient`; a high-emotion support line may want
+`strict`). ALL-CAPS-alone still never fires Tier 2 at any sensitivity.
 
-1. **Human-readable:** `<MASTER_FILES_DIR>/aggression-detection-log.md` — a dated entry
-   with the contact, tier, signals that fired, the agent's reasoning, and the action taken.
-2. **Machine-readable JSONL** (F52 data contract):
-   `<MASTER_FILES_DIR>/aggression-detection-log.jsonl` — one JSON object per line:
+## Logging (the data contract — F52)
 
-```json
-{"timestamp":"2026-05-30T14:22:05Z","event_type":"aggression_detected","tier":2,"contact_id":"<contact_id>","channel":"sms","signals":["profanity_at_agent","threat_legal"],"sensitivity":"standard","reasoning":"profanity directed at agent plus legal threat in one message","action":"routed_to_aggression_handler;operator_notified;tag=ZHC-aggression-detected"}
-```
+Every firing (both tiers) is recorded in TWO places:
 
-Tier-1 example:
+1. **Human-readable log** — appended to
+   `<MASTER_FILES_DIR>/aggression-detection-log.md` with the firing, the tier,
+   the signals, and the agent's reasoning (one short paragraph per firing).
+2. **Structured JSONL** — one line appended to
+   `<MASTER_FILES_DIR>/aggression-detection-log.jsonl`:
 
 ```json
-{"timestamp":"2026-05-30T14:25:11Z","event_type":"tension_detected","tier":1,"contact_id":"<contact_id>","channel":"sms","signals":["multiple_irritation_words"],"sensitivity":"standard","reasoning":"three irritation words in one message, no profanity or threat","action":"heightened_attention;tag=ZHC-tension-detected"}
+{"timestamp":"2026-05-30T14:22:07Z","event_type":"aggression_detected","tier":2,"contact_id":"<CONTACT_ID>","channel":"sms","signals":["profanity_at_agent","threat_legal"],"tag_applied":"ZHC-aggression-detected","action":"route_aggression_handler","operator_notified":true,"sensitivity":"standard","reasoning":"profanity directed at the agent plus an explicit legal threat in one message"}
 ```
 
-The JSONL schema is documented in `INSTRUCTIONS.md` (Phase 5 data contract table).
+```json
+{"timestamp":"2026-05-30T14:25:41Z","event_type":"tension_detected","tier":1,"contact_id":"<CONTACT_ID>","channel":"email","signals":["multiple_irritation_words","emphatic_punctuation"],"tag_applied":"ZHC-tension-detected","action":"heightened_attention","operator_notified":false,"sensitivity":"standard","reasoning":"two irritation words and repeated question marks; customer still engaging"}
+```
+
+JSONL schema (one object per line):
+
+| field | type | meaning |
+|---|---|---|
+| `timestamp` | string (ISO-8601 UTC) | when the firing occurred |
+| `event_type` | string | `tension_detected` (Tier 1) or `aggression_detected` (Tier 2) |
+| `tier` | number | `1` or `2` |
+| `contact_id` | string | GHL contact id |
+| `channel` | string | inbound channel (sms/email/facebook/instagram/whatsapp/live_chat) |
+| `signals` | array of string | which signals fired |
+| `tag_applied` | string | `ZHC-tension-detected` / `ZHC-aggression-detected` |
+| `action` | string | `heightened_attention` / `route_aggression_handler` |
+| `operator_notified` | boolean | whether the operator was alerted |
+| `sensitivity` | string | the configured sensitivity at firing time |
+| `reasoning` | string | one-line natural-language justification |
+
+The JSONL schema is also documented in `INSTRUCTIONS.md` (Phase 5 data contract table).
 
 ## Tags this protocol creates (all ZHC-prefixed, per MEMORY Rule 20)
 
@@ -133,10 +164,25 @@ The JSONL schema is documented in `INSTRUCTIONS.md` (Phase 5 data contract table
 
 Reuses existing bot detection's tag, now `ZHC-bot-suspected` going forward.
 
+## Operator override
+
+The operator can clear an aggression flag the same way as the other safeguards
+(conversational-safeguards.md "Operator override"): edit the contact log header
+to remove the `ZHC-aggression-detected` line, or tell the agent "resume contact
+<id>". The agent updates the log accordingly.
+
 ## MEMORY.md (Rule 21)
 
 A hostile message is screened BEFORE routing and BEFORE the model. Tension (irritation,
 not abuse) heightens care without rerouting; aggression (profanity-at-agent, threats,
 shouting-with-profanity) routes to the de-escalation handler and notifies the operator.
-ALL CAPS alone is never aggression. See
-`<MASTER_FILES_DIR>/aggression-detection-protocol.md`.
+ALL CAPS alone is never aggression. See MEMORY Rule 21, appended by
+`scripts/06-append-memory-rules.sh`.
+
+## Cross-references
+
+- Extends: `protocols/conversational-safeguards.md` (Safeguard family, Step 9.5).
+- Routing detour mechanism: `protocols/smart-playbook-switching-protocol.md` (F44).
+- Tag namespace: `protocols/zhc-tag-prefix-protocol.md`.
+- AGENTS.md Step 1.35: `scripts/05-update-agents-md.sh` (marker `STEP_1_35_AGGRESSION_PRE_ROUTING`).
+- INSTRUCTIONS.md Step 9.37.

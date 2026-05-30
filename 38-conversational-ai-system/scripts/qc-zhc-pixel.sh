@@ -4,8 +4,8 @@
 #
 # Asserts:
 #   1. The pixel JS template exists with the three placeholders, and the generator
-#      (26-render-pixel-js.sh) substitutes them.
-#   2. The OpenClaw hook `pixel-visitor-signal` is REGISTERED by 27-configure-pixel-hook.sh
+#      (27-render-pixel-js.sh) substitutes them.
+#   2. The OpenClaw hook `pixel-visitor-signal` is REGISTERED by 28-configure-pixel-hook.sh
 #      (deliver:false, the bot-gate-first messageTemplate, the scoped Pixel Concierge agent
 #      + allow-list prefix hook:pixel:).
 #   3. The Pixel Concierge AGENTS.md protocol is present (STEP_1_45_PIXEL_CONCIERGE block
@@ -13,7 +13,7 @@
 #   4. ZHC- tag prefixes + ZHC_ field prefixes are used (the F49 tag/field set).
 #   5. Privacy controls are documented (GDPR consent, CCPA opt-out, DNT, deletion) in
 #      BOTH the protocol and the pixel template.
-#   6. The scope precheck (25-verify-pixel-prerequisites.sh) exists, names the three
+#   6. The scope precheck (26-verify-pixel-prerequisites.sh) exists, names the three
 #      scopes, and points at the token-instructions Google Doc; the deploy is GATED.
 #   7. No personal/client data in any F49 file (delegates to the BANNED list shape).
 #
@@ -42,10 +42,10 @@ fail() { echo "  [FAIL] $1"; FAIL=1; }
 
 PROTO="$SKILL_DIR/protocols/zhc-pixel-protocol.md"
 TEMPLATE="$SKILL_DIR/templates/zhc-pixel/zhc-pixel.template.js"
-GEN="$SKILL_DIR/scripts/26-render-pixel-js.sh"
-HOOKCFG="$SKILL_DIR/scripts/27-configure-pixel-hook.sh"
-PRECHECK="$SKILL_DIR/scripts/25-verify-pixel-prerequisites.sh"
-DEPLOY="$SKILL_DIR/scripts/28-deploy-pixel-cloudflare.sh"
+GEN="$SKILL_DIR/scripts/27-render-pixel-js.sh"
+HOOKCFG="$SKILL_DIR/scripts/28-configure-pixel-hook.sh"
+PRECHECK="$SKILL_DIR/scripts/26-verify-pixel-prerequisites.sh"
+DEPLOY="$SKILL_DIR/scripts/29-deploy-pixel-cloudflare.sh"
 AGENTS="$SKILL_DIR/scripts/05-update-agents-md.sh"
 
 echo "=== qc-zhc-pixel: ZHC Pixel (F49) invariant gate ==="
@@ -62,7 +62,7 @@ else
   fail "pixel template MISSING: templates/zhc-pixel/zhc-pixel.template.js"
 fi
 if [ -f "$GEN" ]; then
-  pass "scripts/26-render-pixel-js.sh exists (generator)"
+  pass "scripts/27-render-pixel-js.sh exists (generator)"
   grep -q '__ZHC_PIXEL_ENDPOINT__' "$GEN" && grep -q '__ZHC_PIXEL_SITE_ID__' "$GEN" && grep -q '__ZHC_PIXEL_AGENT_ID__' "$GEN" \
     && pass "generator substitutes all three placeholders" \
     || fail "generator does not substitute all three placeholders"
@@ -70,13 +70,13 @@ if [ -f "$GEN" ]; then
   grep -q 'unresolved placeholder' "$GEN" && pass "generator guards against unresolved placeholders" \
     || fail "generator must guard against unresolved placeholders remaining in output"
 else
-  fail "generator MISSING: scripts/26-render-pixel-js.sh"
+  fail "generator MISSING: scripts/27-render-pixel-js.sh"
 fi
 
 # 2. Hook registration.
 if [ -f "$HOOKCFG" ]; then
-  pass "scripts/27-configure-pixel-hook.sh exists"
-  grep -q 'pixel-visitor-signal' "$HOOKCFG" && pass "hook id pixel-visitor-signal registered" || fail "hook id pixel-visitor-signal NOT registered in 27-configure-pixel-hook.sh"
+  pass "scripts/28-configure-pixel-hook.sh exists"
+  grep -q 'pixel-visitor-signal' "$HOOKCFG" && pass "hook id pixel-visitor-signal registered" || fail "hook id pixel-visitor-signal NOT registered in 28-configure-pixel-hook.sh"
   grep -q 'deliver:false' "$HOOKCFG" && pass "pixel hook is deliver:false" || fail "pixel hook must be deliver:false"
   grep -q 'hook:pixel:' "$HOOKCFG" && pass "allowed sessionKey prefix hook:pixel: set" || fail "hook:pixel: sessionKey prefix not set"
   grep -qi 'ZERO further reasoning' "$HOOKCFG" && pass "messageTemplate has bot-gate-first (zero reasoning)" || fail "messageTemplate must drop bots with zero reasoning FIRST"
@@ -84,7 +84,7 @@ if [ -f "$HOOKCFG" ]; then
   grep -q 'allowedAgentIds' "$HOOKCFG" && pass "Pixel Concierge added to hooks.allowedAgentIds (scoped allow-list)" || fail "Pixel Concierge must be added to hooks.allowedAgentIds"
   grep -q 'pixel-events' "$HOOKCFG" && pass "F52 data-contract dir (pixel-events) ensured" || fail "27-configure must ensure the pixel-events data-contract dir"
 else
-  fail "hook configurator MISSING: scripts/27-configure-pixel-hook.sh"
+  fail "hook configurator MISSING: scripts/28-configure-pixel-hook.sh"
 fi
 
 # 3. AGENTS.md Pixel Concierge protocol + protocol doc.
@@ -125,20 +125,20 @@ fi
 
 # 6. Scope precheck + gated deploy.
 if [ -f "$PRECHECK" ]; then
-  pass "scripts/25-verify-pixel-prerequisites.sh exists (precheck)"
+  pass "scripts/26-verify-pixel-prerequisites.sh exists (precheck)"
   for scope in "Pages:Edit" "Workers Scripts:Edit" "Workers Routes:Edit"; do
     grep -qF "$scope" "$PRECHECK" && pass "precheck names required scope: $scope" || fail "precheck must name required scope: $scope"
   done
   grep -q '1A_U-H-MMLh2mQ_zhzLxK_tKmFyPNb7i0FNvxjJ4SVpo' "$PRECHECK" && pass "precheck points to the token-instructions Google Doc" || fail "precheck must point to the token-instructions Google Doc"
   grep -q 'ZHC_PIXEL_SCOPES_OK' "$PRECHECK" && pass "precheck records ZHC_PIXEL_SCOPES_OK gate flag" || fail "precheck must record the ZHC_PIXEL_SCOPES_OK gate flag"
 else
-  fail "scope precheck MISSING: scripts/25-verify-pixel-prerequisites.sh"
+  fail "scope precheck MISSING: scripts/26-verify-pixel-prerequisites.sh"
 fi
 if [ -f "$DEPLOY" ]; then
-  pass "scripts/28-deploy-pixel-cloudflare.sh exists (deploy)"
+  pass "scripts/29-deploy-pixel-cloudflare.sh exists (deploy)"
   grep -q 'ZHC_PIXEL_SCOPES_OK' "$DEPLOY" && grep -qi 'GATED' "$DEPLOY" && pass "deploy is GATED on the precheck flag" || fail "deploy must be GATED on ZHC_PIXEL_SCOPES_OK"
 else
-  fail "deploy MISSING: scripts/28-deploy-pixel-cloudflare.sh"
+  fail "deploy MISSING: scripts/29-deploy-pixel-cloudflare.sh"
 fi
 
 # 7. No personal/client data in F49 files. The authoritative banned-identifier scan is

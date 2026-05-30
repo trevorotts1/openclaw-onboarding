@@ -5,7 +5,7 @@ Pixel Concierge agent + AGENTS.md protocol, the behavioral trigger rules, the pr
 controls, the JSONL data contract, the scope precheck, and the scope-gated Cloudflare
 deploy are all SHIPPED in this skill. The one thing that is deliberately **GATED, not
 auto-run** is the **live per-client Cloudflare deploy** — it requires the operator's CF
-token to carry Pages/Workers scopes; `scripts/25-verify-pixel-prerequisites.sh` HALTS
+token to carry Pages/Workers scopes; `scripts/26-verify-pixel-prerequisites.sh` HALTS
 with a clear message if they are missing. See "MVP vs production follow-ups" at the end.
 
 UNIVERSAL — zero personal/client data. Every concrete value below is a placeholder:
@@ -39,7 +39,7 @@ in the client's own GHL.
 
 The pixel template lives at `templates/zhc-pixel/zhc-pixel.template.js` with the
 placeholders `__ZHC_PIXEL_ENDPOINT__` / `__ZHC_PIXEL_SITE_ID__` / `__ZHC_PIXEL_AGENT_ID__`.
-The generator `scripts/26-render-pixel-js.sh` renders a per-client file.
+The generator `scripts/27-render-pixel-js.sh` renders a per-client file.
 
 ---
 
@@ -80,7 +80,7 @@ fill out anything, I'll connect the dots."* **Never guess a name.**
 
 ## 3. The OpenClaw hook — `pixel-visitor-signal`
 
-`scripts/27-configure-pixel-hook.sh` registers a `hooks.mappings` entry (idempotent,
+`scripts/28-configure-pixel-hook.sh` registers a `hooks.mappings` entry (idempotent,
 same jq-safe pattern as `15-configure-hooks-mappings.sh`):
 
 - `id` / `match.path`: `pixel-visitor-signal`
@@ -148,7 +148,7 @@ Field discovery/validation/create reuse the F46 CRM-field-write mechanism
 ## 5. The Pixel Concierge agent
 
 A NEW dedicated agent (`<AGENT_ID>`, e.g. `pixel-concierge`) registered by
-`scripts/27-configure-pixel-hook.sh`. Why a separate agent and not `main`:
+`scripts/28-configure-pixel-hook.sh`. Why a separate agent and not `main`:
 
 - **Scoped allow-list.** The Pixel Concierge is allowed to act ONLY on chats it is
   triggering — its hook session keys (`hook:pixel:*`) and the widget/GHL actions the
@@ -170,7 +170,7 @@ The agent's allow-list (`hooks.allowedAgentIds` includes the Pixel Concierge id;
 The deploy is CODE that ships; running it live is GATED on the operator's CF token
 carrying the right scopes. Two scripts:
 
-### `scripts/25-verify-pixel-prerequisites.sh` — the precheck (run FIRST)
+### `scripts/26-verify-pixel-prerequisites.sh` — the precheck (run FIRST)
 
 Inspects the CF token via the API (`GET /user/tokens/verify` + a permissions probe) and
 HALTS with a clear operator message if any of these are missing:
@@ -185,7 +185,7 @@ operator to the token-instructions Google Doc:
 (the "Cloudflare Pages/Workers permissions" section). It also confirms the prerequisites
 the deploy needs: an existing tunnel (from Step 1) and an identified domain.
 
-### `scripts/28-deploy-pixel-cloudflare.sh` — the deploy (scope-gated, idempotent)
+### `scripts/29-deploy-pixel-cloudflare.sh` — the deploy (scope-gated, idempotent)
 
 Refuses to run unless the precheck passed (`ZHC_PIXEL_SCOPES_OK=1` in the run-state, or
 `--force` with operator confirmation). When authorized, it:
@@ -268,11 +268,11 @@ path the Worker fronts. The browser bundle posts the signal envelope only.
 
 ## 9. Auto-install flow
 
-`scripts/25-verify-pixel-prerequisites.sh` decides the path:
+`scripts/26-verify-pixel-prerequisites.sh` decides the path:
 
 - If `CLOUDFLARE_API_TOKEN` present + an existing tunnel detected (from Step 1) + a domain
   identified + the Pages/Workers scopes present → the operator can run
-  `27-configure-pixel-hook.sh` then `26-render-pixel-js.sh` then `28-deploy-pixel-cloudflare.sh`
+  `28-configure-pixel-hook.sh` then `27-render-pixel-js.sh` then `29-deploy-pixel-cloudflare.sh`
   to auto-provision end-to-end.
 - If ANY prerequisite is missing → the precheck PAUSES and tells the operator EXACTLY
   what is needed (no silent failure), with the Google-Doc pointer for the CF scopes.
@@ -283,7 +283,7 @@ After deploy, the operator gets a one-line `<script>` snippet to paste on their 
 <script src="https://pixel.<CLIENT_DOMAIN>/zhc-pixel.js" async></script>
 ```
 
-(`26-render-pixel-js.sh` prints the exact snippet with the client's hostname filled in.)
+(`27-render-pixel-js.sh` prints the exact snippet with the client's hostname filled in.)
 
 ---
 
@@ -306,13 +306,13 @@ SHIPPED (working code in this skill):
 
 - Pixel JS template + generator (renders per-client, placeholder substitution).
 - OpenClaw `pixel-visitor-signal` hook registration + Pixel Concierge agent + scoped
-  allow-list (`27-configure-pixel-hook.sh`).
+  allow-list (`28-configure-pixel-hook.sh`).
 - AGENTS.md `STEP_1_45_PIXEL_CONCIERGE` behavioral protocol (via 05-update-agents-md.sh).
 - Behavioral trigger rules + `openclaw.json` toggles.
 - Privacy controls (GDPR/CCPA/DNT/deletion) in the browser bundle.
 - JSONL data contract (F52) + documented schema.
-- Scope precheck (`25-verify-pixel-prerequisites.sh`) + scope-gated CF deploy
-  (`28-deploy-pixel-cloudflare.sh`).
+- Scope precheck (`26-verify-pixel-prerequisites.sh`) + scope-gated CF deploy
+  (`29-deploy-pixel-cloudflare.sh`).
 - QC gate `qc-zhc-pixel.sh` (CI + pre-handoff).
 
 STUBBED / GATED / production follow-ups (honest):
@@ -320,7 +320,7 @@ STUBBED / GATED / production follow-ups (honest):
 - **Live per-client Cloudflare deploy is GATED, not auto-run.** It requires the operator's
   CF token to carry Pages/Workers scopes; the precheck HALTS otherwise. This is by design
   (owner directive) — the deploy code ships but is not executed without scopes.
-- **Edge Worker batching/rate-limit is OPTIONAL and minimal.** `28-deploy-pixel-cloudflare.sh`
+- **Edge Worker batching/rate-limit is OPTIONAL and minimal.** `29-deploy-pixel-cloudflare.sh`
   ships a small inline Worker; production tuning (rate-limit thresholds, abuse rules,
   KV-backed dedup) is a follow-up.
 - **Server-side identity resolution / cross-device email-collapse is documented and the

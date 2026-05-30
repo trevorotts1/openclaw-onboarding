@@ -132,9 +132,48 @@ else
   fail "references/workflow-ai-instructions-standard.md MISSING (cannot check Section 6)"
 fi
 
+# 6. No "bare" programmatic-creation tag EXAMPLE (the load-bearing literal parser).
+#    Scan the create-tag mechanism docs + the v1.5.0 protocols for create_tag(...)
+#    name= and "name": literals, and the POST .../tags body "name": literals that
+#    sit in a create-tag context. Any quoted literal value that is NOT a placeholder
+#    (<...> / $...) and NOT already ZHC-prefixed is a violation. An Add-Tag / add_tag
+#    action APPLYING an operator's pre-existing tag verbatim is NOT flagged.
+SCAN_FILES=(
+  "$SKILL_DIR/protocols/conversation-workflows-protocol.md"
+  "$SKILL_DIR/references/workflow-ai-instructions-standard.md"
+  "$SKILL_DIR/protocols/zhc-tag-prefix-protocol.md"
+  "$SKILL_DIR/protocols/aggression-detection-protocol.md"
+  "$SKILL_DIR/protocols/smart-playbook-switching-protocol.md"
+  "$SKILL_DIR/protocols/geo-qualification-protocol.md"
+  "$SKILL_DIR/protocols/smart-faq-tool-protocol.md"
+)
+bare_hits=0
+for f in "${SCAN_FILES[@]}"; do
+  [ -f "$f" ] || continue
+  while IFS= read -r line; do
+    # Skip apply/Add-Tag context (applying an existing tag verbatim is allowed).
+    printf '%s\n' "$line" | grep -qiE 'add_tag|add-tag|apply' && continue
+    # Extract the quoted value after name= or "name":
+    val="$(printf '%s\n' "$line" | sed -nE 's/.*(name=|"name"[[:space:]]*:)[[:space:]]*"([^"]*)".*/\2/p')"
+    [ -z "$val" ] && val="$(printf '%s\n' "$line" | sed -nE "s/.*name=[[:space:]]*'([^']*)'.*/\1/p")"
+    [ -z "$val" ] && continue
+    # Allowed: a placeholder (<...> or $...) or a ZHC- value.
+    case "$val" in
+      "<"*|"\$"*|ZHC-*) : ;;  # ok
+      *)
+        fail "bare programmatic create-tag literal in $(basename "$f"): name=\"$val\" (must be ZHC- or a placeholder)"
+        bare_hits=$((bare_hits+1))
+        ;;
+    esac
+  done < <(grep -nE '(create_tag|/tags)' "$f" 2>/dev/null | grep -E '(name=|"name"[[:space:]]*:)' )
+done
+if [ "$bare_hits" -eq 0 ]; then
+  pass "no bare programmatic create-tag examples (all are ZHC- or placeholders)"
+fi
+
 echo ""
 if [ "$FAIL" -eq 0 ]; then
-  echo "RESULT: PASS — the ZHC tag-prefix rule is documented (MEMORY Rule 20 + AGENTS block + protocol) and every programmatic-tag example uses the ZHC- prefix."
+  echo "RESULT: PASS — the ZHC tag-prefix rule is documented (MEMORY Rule 20 + AGENTS block + protocol), every programmatic-tag example uses the ZHC- prefix, and no bare programmatic create-tag literal survives."
   exit 0
 else
   echo "RESULT: FAIL — a ZHC tag-prefix-rule violation was found (see above)."

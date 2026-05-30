@@ -145,7 +145,7 @@ cat >> "$MEM_MD" <<'BLOCK'
     return to the current step in the SAME reply ("By the way, [answer]. Coming back to
     [topic]…"). Matches `KnowledgeBases/business/faqs.md`, scoped per workflow via
     `faq-scope.md`. Bigger FAQ questions hand off to F44 as a detour. Tag
-    `ZHC-faq-answered`. See `<MASTER_FILES_DIR>/smart-faq-protocol.md`.
+    `ZHC-faq-answered`. See `<MASTER_FILES_DIR>/smart-faq-tool-protocol.md`.
 
 <!-- END skill-38 round3-queueA-rules v1.5.0 -->
 BLOCK

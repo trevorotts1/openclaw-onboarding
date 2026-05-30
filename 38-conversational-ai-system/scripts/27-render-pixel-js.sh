@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 26-render-pixel-js.sh — ZHC Pixel (Feature 49) per-client generator.
+# 27-render-pixel-js.sh — ZHC Pixel (Feature 49) per-client generator.
 #
 # Renders templates/zhc-pixel/zhc-pixel.template.js into a per-client pixel JS by
 # substituting the three placeholders with this client's OWN values:
@@ -28,7 +28,7 @@ if [ -z "${MASTER_FILES_DIR:-}" ] && [ -f "$MASTER_FILES_POINTER" ]; then
 fi
 : "${MASTER_FILES_DIR:?MASTER_FILES_DIR not set (run 01-locate-master-files-folder.sh first)}"
 
-[ -f "$TEMPLATE" ] || { echo "[26-render-pixel-js] template not found: $TEMPLATE" >&2; exit 2; }
+[ -f "$TEMPLATE" ] || { echo "[27-render-pixel-js] template not found: $TEMPLATE" >&2; exit 2; }
 
 # -------- Resolve per-client inputs --------
 # CLIENT_DOMAIN: the apex/registered domain (e.g. <CLIENT_DOMAIN>). The pixel host is
@@ -69,7 +69,7 @@ render > "$OUT_FILE"
 
 # Guard: no placeholder may remain in the rendered output.
 if grep -q '__ZHC_PIXEL_' "$OUT_FILE"; then
-  echo "[26-render-pixel-js] ERROR: unresolved placeholder remains in $OUT_FILE" >&2
+  echo "[27-render-pixel-js] ERROR: unresolved placeholder remains in $OUT_FILE" >&2
   grep -n '__ZHC_PIXEL_' "$OUT_FILE" >&2
   exit 3
 fi
@@ -90,13 +90,13 @@ upsert_state "ZHC_PIXEL_HOSTNAME" "$PIXEL_HOSTNAME"
 upsert_state "ZHC_PIXEL_AGENT_ID" "$AGENT_ID"
 upsert_state "ZHC_PIXEL_RENDERED" "true"
 
-echo "[26-render-pixel-js] rendered: $OUT_FILE" >&2
-echo "[26-render-pixel-js]   site_id : $ZHC_PIXEL_SITE_ID" >&2
-echo "[26-render-pixel-js]   agent   : $AGENT_ID" >&2
-echo "[26-render-pixel-js]   endpoint: $ENDPOINT" >&2
+echo "[27-render-pixel-js] rendered: $OUT_FILE" >&2
+echo "[27-render-pixel-js]   site_id : $ZHC_PIXEL_SITE_ID" >&2
+echo "[27-render-pixel-js]   agent   : $AGENT_ID" >&2
+echo "[27-render-pixel-js]   endpoint: $ENDPOINT" >&2
 echo "" >&2
-echo "[26-render-pixel-js] Operator paste-snippet for the client's site (<head>):" >&2
+echo "[27-render-pixel-js] Operator paste-snippet for the client's site (<head>):" >&2
 echo "  <script src=\"https://${PIXEL_HOSTNAME}/zhc-pixel.js\" async></script>" >&2
 echo "" >&2
-echo "[26-render-pixel-js] Next: scripts/27-configure-pixel-hook.sh (register the hook + Pixel Concierge agent)," >&2
-echo "[26-render-pixel-js]       then scripts/25-verify-pixel-prerequisites.sh + scripts/28-deploy-pixel-cloudflare.sh (scope-gated deploy)." >&2
+echo "[27-render-pixel-js] Next: scripts/28-configure-pixel-hook.sh (register the hook + Pixel Concierge agent)," >&2
+echo "[27-render-pixel-js]       then scripts/26-verify-pixel-prerequisites.sh + scripts/29-deploy-pixel-cloudflare.sh (scope-gated deploy)." >&2
