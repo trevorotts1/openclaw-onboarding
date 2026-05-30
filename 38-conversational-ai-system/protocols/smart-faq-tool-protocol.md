@@ -1,5 +1,7 @@
 # Smart FAQ Tool Protocol (F47) — Step 9.41
 
+> F47 is the lightweight sibling of F44 — a SENTENCE, not a sub-flow.
+
 F47 is the **lightweight sibling** of F44 (smart-playbook-switching-protocol.md).
 Where F44 runs a heavy interrupt SUB-FLOW (save state → run sub-flow → return),
 F47 answers a quick factual question in **one SENTENCE inline** and immediately
@@ -7,13 +9,21 @@ continues the current step — no state save/restore, no sub-flow, no workflow
 switch. It is the cheapest, most common detour: the customer asks a simple known
 question mid-workflow, gets a one-line answer, and the workflow keeps going.
 
-## The model — a parallel FAQ-match layer
+**The one-line rule:** if the honest answer fits in one sentence and changes
+nothing about where the conversation is, it is an **F47 sentence**. If answering
+it well needs a follow-up question, a calculation, a quote, or a mini-flow, it is
+an **F44 sub-flow** (`ZHC-faq-detoured`) — never an inline cram.
 
-While any workflow is active, a parallel FAQ-match layer runs on every inbound
-(alongside the F44 always-listening layer, after safeguards Step 1.4, aggression
-Step 1.35, and the F44 interrupt check Step 1.42). It asks: "is this a simple
-factual question I already have an answer to?" If yes, and the answer is short
-enough to state in a sentence, F47 handles it inline.
+## The model — a parallel FAQ-match layer alongside the active workflow
+
+While ANY workflow is active, a parallel FAQ-match layer runs on every inbound
+**alongside the F44 always-listening layer** (both live in AGENTS.md Step 1.42:
+after safeguards Step 1.4, aggression Step 1.35, and the F44 interrupt check). It
+asks one question of every inbound: "is this a simple factual question I already
+have an answer to?" If yes, and the answer is short enough to state in a sentence,
+F47 handles it inline and the active workflow is never paused. F44 and F47 are the
+TWO halves of the same always-listening layer — F44 owns the heavy detours, F47
+owns the one-sentence asides.
 
 ## FAQ source
 
@@ -61,13 +71,21 @@ Examples:
 > "Quick answer — yep, full refunds within 30 days. Now, back to your order…"
 
 Because there is no sub-flow, there is nothing to save or restore — the workflow
-step is unchanged; the agent simply prepended a one-line answer.
+step is unchanged; the agent simply prepended a one-line answer and continued the
+SAME step in the SAME reply.
 
-If the FAQ question is bigger than one sentence (it needs follow-up, a
-calculation, or a mini-flow), the agent does NOT cram it inline — it hands off to
-the F44 interrupt layer as an FAQ-type detour (`ZHC-faq-detoured`).
+## When the question is bigger than one sentence → hand to F44
 
-## Per-workflow FAQ scope
+If the FAQ question is bigger than one sentence — it needs a follow-up, a
+calculation, a quote, or a mini-flow — the agent does NOT cram it inline. It hands
+off to the F44 interrupt layer as an FAQ-type detour (save state → run the
+sub-flow → return), tagged `ZHC-faq-detoured` (F44's tag, NOT F47's). The split is
+deliberate: F47 keeps replies fast and the customer on-task; F44 gives heavier
+questions the room they need without losing the customer's place. A deep
+pricing-negotiation question is an F33 route or an F44 detour, never an F47
+sentence.
+
+## Per-workflow FAQ scope (sales-relevant vs ops-relevant)
 
 Each conversation workflow can scope WHICH FAQs are in-bounds for it, in:
 
@@ -75,12 +93,21 @@ Each conversation workflow can scope WHICH FAQs are in-bounds for it, in:
 <MASTER_FILES_DIR>/conversation-workflows/<workflow-id>/faq-scope.md
 ```
 
+The scope sorts the client's FAQs into the ones this workflow may answer inline
+(its **in-scope** topics) and the ones it must NOT inline (its **out-of-scope**
+topics — defer or hand to F44). The practical split is **sales-relevant vs
+ops-relevant**: a sales workflow inlines sales-relevant one-liners (pricing tiers,
+guarantees, what's included) and defers ops questions (order status, returns
+mechanics); an ops/booking workflow inlines ops-relevant one-liners (hours,
+location, what to bring) and defers a deep sales/pricing-negotiation answer to the
+sales workflow.
+
 Format:
 
 ```markdown
 # FAQ scope for workflow: <workflow-id>
 
-## In-scope FAQ topics (answer inline during this workflow)
+## In-scope FAQ topics (answer inline during this workflow — sales-relevant or ops-relevant for THIS flow)
 - hours
 - refunds
 - shipping
@@ -94,25 +121,29 @@ answer that really deserves the sales workflow's full treatment (that is an F33
 route or an F44 detour, not an F47 sentence). If no `faq-scope.md` exists for a
 workflow, the default is "all FAQs are in-scope as one-liners."
 
-## Relationship to F44
+## Relationship to F44 — sub-flow vs sentence (the explicit difference)
 
 | | F44 — Smart Switching | F47 — Smart FAQ Tool |
 |---|---|---|
 | Weight | a SUB-FLOW (save → execute → return) | a SENTENCE (inline answer, no state change) |
-| When | the interrupt needs real handling (operator-urgent, compliance, aggression) | the interrupt is a simple known factual question |
-| State | saves + restores workflow state | none — the step is unchanged |
+| Trigger | the interrupt needs real handling (operator-urgent, compliance, aggression, a heavier FAQ) | the interrupt is a simple known factual question answerable in one line |
+| State | SAVES + RESTORES workflow state (step + gathered data + context) | NONE — the step is unchanged; the answer is prepended in the same reply |
+| Reply shape | "…handling the aside… Coming back to where we were…" (state restored) | "By the way, [answer]. Coming back to [topic]…" (step never left) |
 | Tag | `ZHC-interrupt-handled` / `ZHC-faq-detoured` / `ZHC-aggression-handled-and-resumed` | `ZHC-faq-answered` |
 | Step | 9.38 | 9.41 |
 
-The F44 always-listening layer hands a simple-factual-question interrupt to F47
-(the cheaper path); F44 keeps the heavier sub-flow detours.
+The F44 always-listening layer hands a simple-factual-question interrupt DOWN to
+F47 (the cheaper path); F44 keeps the heavier sub-flow detours. The reverse is
+also true: when F47 sees a question that is bigger than one sentence, it hands it
+UP to F44 as a detour (`ZHC-faq-detoured`).
 
 ## Tag
 
 Applied programmatically → `ZHC-` prefix (zhc-tag-prefix-protocol.md):
 
 - `ZHC-faq-answered` — an FAQ was answered inline during a workflow. (Distinct
-  from F44's `ZHC-faq-detoured`, which marks a heavier FAQ sub-flow.)
+  from F44's `ZHC-faq-detoured`, which marks a heavier FAQ sub-flow handed up to
+  F44 — the inline sentence and the sub-flow detour carry DIFFERENT tags.)
 
 ## openclaw.json toggles
 
@@ -158,9 +189,10 @@ The JSONL schema is also documented in `INSTRUCTIONS.md` (Phase 5 data contract 
 
 The agent answers quick known FAQs INLINE — a SENTENCE, not a sub-flow — then returns to
 the current step in the same reply ("By the way, [answer]. Coming back to [topic]…").
-Matches `KnowledgeBases/business/faqs.md`, scoped per workflow via `faq-scope.md`. Bigger
-FAQ questions hand off to F44 as a detour. Tag `ZHC-faq-answered`. See MEMORY Rule 25,
-appended by `scripts/06-append-memory-rules.sh`.
+Matches `KnowledgeBases/business/faqs.md`, scoped per workflow via `faq-scope.md`
+(sales-relevant vs ops-relevant). Bigger FAQ questions hand off to F44 as a detour
+(`ZHC-faq-detoured`). Tag `ZHC-faq-answered`. See MEMORY Rule 25, appended by
+`scripts/06-append-memory-rules.sh`.
 
 ## Cross-references
 

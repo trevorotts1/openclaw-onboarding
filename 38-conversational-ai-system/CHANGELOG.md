@@ -1,3 +1,58 @@
+## [1.5.4] - 2026-05-30 - F47 (Smart FAQ) + F45 (Geo-Qualification) substance deep-fix (byte-identical across both onboarding repos)
+
+### Why
+F47 and F45 shipped at v1.5.0 and were reconciled to a canonical superset at v1.5.3, but several roadmap
+(`references/conversational-ai-strategic-roadmap.md`, Features 45 + 47) SUBSTANCE points were thin or
+missing in the protocol bodies — and the two protocol files had drifted apart between the Mac and VPS repos.
+This release deep-fills every spec gap and makes the two protocol files (and the new QC gate) **byte-identical**
+across `openclaw-onboarding` (Mac) and `openclaw-onboarding-vps`. UNIVERSAL — zero personal/client data;
+`qc-no-personal-data.sh` passes.
+
+### Changed — `protocols/smart-faq-tool-protocol.md` (F47), made byte-identical across both repos
+- Crisp one-line **sentence-vs-sub-flow rule** at the top (one sentence + nothing changes → F47; needs a
+  follow-up/calc/quote/mini-flow → F44 `ZHC-faq-detoured`).
+- The parallel FAQ-match layer is stated to run **alongside the active workflow AND the F44 always-listening
+  layer** (Step 1.42), as the two halves of one layer.
+- Restored the explicit **"bigger than one sentence → hand to F44"** section with the `ZHC-faq-detoured` tag
+  (this is F44's tag, distinct from F47's `ZHC-faq-answered`).
+- `faq-scope.md` reframed as the task's **sales-relevant vs ops-relevant** split, with worked guidance.
+- Expanded the **F44(sub-flow) vs F47(sentence)** table (added trigger + reply-shape rows) and the bidirectional
+  hand-off (F44 hands simple questions DOWN to F47; F47 hands bigger ones UP to F44).
+- Keeps: `KnowledgeBases/business/faqs.md` match, the "By the way, [answer]. Coming back to [topic]…" handoff,
+  `ZHC-faq-answered`, `faq-detour-log.jsonl` schema.
+
+### Changed — `protocols/geo-qualification-protocol.md` (F45), made byte-identical across both repos
+- Added the **per-product toggle** `skill38.geo_qualification.per_product` (in ADDITION to the global default-OFF
+  `enabled`), with the explicit resolution order (global OFF wins → per-product override → fall back to
+  `service-areas.md` presence) and a mixed-catalog example (gate an in-person consult, never gate a digital course).
+- Added the **exact confirmation question** ("…what ZIP code would the service be at? I don't want to turn you
+  away if we actually can help.") and a complete **all-response-branches** table — **here** (in-area, qualify),
+  **elsewhere** (confirmed out-of-area, apply mode), **vacation** (do-not-disqualify), **moving** (clarify
+  timing, do-not-disqualify if pending/unclear), **no clear engagement** (do-NOT-disqualify; a non-answer is not
+  a confirmed out-of-area location).
+- The 4 out-of-area modes now name their tags (`decline_plus_referral`/`waitlist`/`full_decline` →
+  `ZHC-out-of-service-area`; `limited_remote` → `ZHC-service-area-flexible`).
+- Strengthened the JSONL invariant note: the vacation/moving/no-engagement branches never produce an
+  `in_area:false` + `ZHC-out-of-service-area` line.
+- Keeps: HINTS-only priority (pixel/IP → area code → form address → explicit ask), `service-areas.md`
+  (ZIP/county/state/radius per product), the 3 ZHC tags, `geo-qualification-log.jsonl` schema.
+
+### Changed — supporting touchpoints (so the new substance reaches the running agent), applied identically to both repos
+- **`scripts/05-update-agents-md.sh`** (`STEP_2_0_GEO_QUALIFICATION` block) — added the per-product toggle,
+  the exact confirmation question, and the here/elsewhere/vacation/moving/no-engagement branch summary.
+- **`scripts/06-append-memory-rules.sh`** (Rule 23) — added the per-product opt-in and the
+  do-not-disqualify-on-vacation/moving/no-answer rule.
+- **`scripts/25-seed-round3-feature-files.sh`** (`service-areas.md` seed) — documents the per-product toggle
+  and the do-not-disqualify branches.
+
+### Added — QC gate (the "update QC gates to verify these" requirement)
+- **`scripts/qc-f45-f47-substance.sh`** (NEW, byte-identical across both repos) — machine-verifies all 41
+  F45/F47 substance points listed above from the protocol files alone; fails closed on a stripped point.
+  Wired into `scripts/11-run-qc-checklist.sh` AND `.github/workflows/qc-static.yml` (with a per-product-toggle
+  negative self-test). `SKILL.md` self-counts bumped (scripts 54→55).
+
+---
+
 ## [1.5.3] - 2026-05-30 - Round-3 canonical reconciliation (Mac ↔ VPS): markers, MEMORY rules, QC superset, F52 seeding, roadmap traceability
 
 Aligns this (Mac) onboarding repo's Round-3 artifacts with the sibling VPS onboarding repo so both

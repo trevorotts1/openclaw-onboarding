@@ -453,6 +453,20 @@ else
   report_fail "qc-feature-logs.sh not found (looked in scripts/)"
 fi
 
+# -------- F45 + F47 behavioral substance (machine-enforced) --------
+section "F45 + F47 substance (qc-f45-f47-substance.sh)"
+QC_F45F47="$SCRIPT_DIR/qc-f45-f47-substance.sh"
+[ -f "$QC_F45F47" ] || QC_F45F47="$SKILL38_ROOT/scripts/qc-f45-f47-substance.sh"
+if [ -f "$QC_F45F47" ]; then
+  if bash "$QC_F45F47" >/dev/null 2>&1; then
+    report_pass "F45 (geo) + F47 (smart FAQ) carry every roadmap substance point: F47 = parallel layer alongside the workflow, a SENTENCE not a sub-flow, the 'By the way…Coming back to' handoff, sales-vs-ops faq-scope, faqs.md match, the F44-vs-F47 difference, ZHC-faq-detoured hand-off, ZHC-faq-answered, faq-detour-log.jsonl; F45 = default-OFF + per-product toggle, pixel/IP->area-code->form->ask priority, ALWAYS-confirm + exact question + all 5 branches (here/elsewhere/vacation/moving/no-engagement=do-not-disqualify), 4 out-of-area modes, service-areas.md (radius/zips/states/counties), the 3 ZHC tags, geo-qualification-log.jsonl + confirmed_with_customer invariant"
+  else
+    report_fail "qc-f45-f47-substance.sh found a missing F45/F47 substance point — run it directly for detail"
+  fi
+else
+  report_fail "qc-f45-f47-substance.sh not found (looked in scripts/)"
+fi
+
 # -------- GHL TOOLS.md quick-reference gate (machine-enforced) --------
 section "GHL TOOLS.md quick-reference gate (qc-tools-md-ghl-ref.sh)"
 QC_TOOLS="$SCRIPT_DIR/qc-tools-md-ghl-ref.sh"

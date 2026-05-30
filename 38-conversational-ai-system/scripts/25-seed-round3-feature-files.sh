@@ -48,8 +48,11 @@ seed_file "$KB_ROOT/sales/service-areas.md" <<'MD'
 Per-product service-area definitions the agent checks when
 `geo_qualification.enabled` is true. Supports type `radius` / `zips` / `states` /
 `counties`. A product with NO entry here is treated as "served everywhere" (no
-geo-gate). Signals are HINTS — the agent ALWAYS confirms with the customer before
-any out-of-area handling. See protocols/geo-qualification-protocol.md.
+geo-gate); the per-product `skill38.geo_qualification.per_product` toggle can also
+force a product on/off (e.g. gate an in-person consult, never gate a digital
+course) without disabling the feature globally. Signals are HINTS — the agent
+ALWAYS confirms with the customer before any out-of-area handling, and "vacation,"
+"moving," or a non-answer never disqualify. See protocols/geo-qualification-protocol.md.
 
 ## Out-of-area mode (operator-configured)
 mode: decline_plus_referral   # decline_plus_referral | limited_remote | waitlist | full_decline
