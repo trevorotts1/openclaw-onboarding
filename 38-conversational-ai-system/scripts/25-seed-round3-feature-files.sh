@@ -121,7 +121,8 @@ for jsonl in \
   geo-qualification-log.jsonl \
   crm-field-writes-log.jsonl \
   faq-detour-log.jsonl \
-  multi-tenant-events.jsonl; do
+  multi-tenant-events.jsonl \
+  segmentation-events.jsonl; do
   p="$MASTER_FILES_DIR/$jsonl"
   if [ -f "$p" ]; then
     echo "[skill 38] $jsonl already exists — preserved"
@@ -251,6 +252,64 @@ real tenant the operator (allow-list — never a customer): assigns an opaque
 `tenant_id`, adds its `hooks.mappings` entry carrying that `tenant_id`, copies this
 layout to `tenants/<real_tenant_id>/`, and fills `tenant.md`. See
 protocols/multi-tenant-isolation-protocol.md (Step 9.44).
+MD
+
+# ---------------------------------------------------------------------------
+# F17 — Customer Segmentation Awareness companion map (customer-segmentation-protocol.md).
+# OFF by default. The human-readable companion to skill38.segmentation.tag_map: the
+# operator's per-client GHL tag → segment mapping the agent reads at the start of a
+# turn. Placeholders only, zero personal/client data. Idempotent (never overwrites the
+# operator's real map). The actual tags are owned by the operator's GHL/automations;
+# this feature READS that membership and adjusts behavior, it never assigns segments.
+# ---------------------------------------------------------------------------
+seed_file "$MASTER_FILES_DIR/segment-map.md" <<'MD'
+# Customer Segment Map (F17 — customer segmentation awareness, OFF by default)
+
+The per-client GHL tag → segment mapping the agent consults BEFORE drafting a reply
+(AGENTS.md Step 1.85) when `skill38.segmentation.enabled` is true. This is the
+human-readable companion to `skill38.segmentation.tag_map` in openclaw.json — keep
+the two in sync. Segments are read from the operator's GHL tags; a CUSTOMER can never
+claim a segment. See protocols/customer-segmentation-protocol.md (Step 9.45).
+
+## default_segment
+default_segment: prospect   # the segment an un-tagged contact falls into
+
+## Precedence (when a contact carries tags for multiple segments)
+at-risk > vip > churned > returning > prospect
+
+## Segment: vip
+- tags: ZHC-segment-vip, <OPERATOR_VIP_TAG>          # e.g. platinum-member, vip
+- response_priority: highest
+- sentiment_escalation_threshold: lowered            # escalate on a smaller dip
+- playbook_tier: white-glove
+- confidence_threshold: raised                       # be more certain before answering autonomously
+
+## Segment: at-risk
+- tags: ZHC-segment-at-risk, <OPERATOR_AT_RISK_TAG>  # e.g. lapsing, complaint-open
+- response_priority: high
+- sentiment_escalation_threshold: lowered
+- playbook_tier: retention
+- confidence_threshold: raised
+
+## Segment: churned
+- tags: ZHC-segment-churned, <OPERATOR_CHURNED_TAG>  # e.g. cancelled, lapsed
+- response_priority: elevated
+- sentiment_escalation_threshold: standard
+- playbook_tier: win-back
+- confidence_threshold: standard
+
+## Segment: returning
+- tags: ZHC-segment-returning, <OPERATOR_RETURNING_TAG>  # e.g. repeat-customer
+- response_priority: standard-plus
+- sentiment_escalation_threshold: standard
+- playbook_tier: familiar
+- confidence_threshold: standard
+
+## Segment: prospect (the default — needs no tags)
+- response_priority: standard
+- sentiment_escalation_threshold: standard
+- playbook_tier: standard
+- confidence_threshold: standard
 MD
 
 echo "[skill 38] Round-3 Queue-A feature files ready under $MASTER_FILES_DIR"

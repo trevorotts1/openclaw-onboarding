@@ -1,3 +1,57 @@
+## [1.5.8] - 2026-05-30 - Round-2 backlog F17: Customer Segmentation Awareness (segment-aware tone/priority/escalation, OFF by default)
+
+### Why
+Round-2 backlog feature 2 of 6. The agent now recognizes the customer's SEGMENT — `vip` / `prospect` /
+`returning` / `at-risk` / `churned` — and adjusts its tone, response priority, and escalation thresholds
+accordingly. A 5-year VIP must NOT be treated like a cold Google-ad stranger, and a churned customer trying
+to come back must NOT be handled like a brand-new prospect. Segments are defined PER CLIENT from GHL tags the
+operator maps; the feature READS that membership and OVERRIDES four existing behavior knobs. Toggle default
+OFF (opt-in advanced feature). Canonical content is byte-identical across `openclaw-onboarding` (Mac) and
+`openclaw-onboarding-vps`; only repo-specific env (paths, INSTRUCTIONS layout, qc-static line positions) diverges.
+
+### Added — `protocols/customer-segmentation-protocol.md` (F17, Step 9.45), byte-identical across both repos
+- The full segmentation protocol: the five canonical segments (vip/prospect/returning/at-risk/churned); the
+  per-client GHL tag → segment mapping (`skill38.segmentation.tag_map` + the human-readable companion
+  `segment-map.md`); the multi-tag precedence (at-risk > vip > churned > returning > prospect; un-tagged →
+  `default_segment`, default `prospect`); the FOUR behavior overrides — response priority, the F4/Step 9.6
+  sentiment-escalation threshold (lowered for vip + at-risk), the Communication Playbook tier (white-glove /
+  retention / win-back / familiar / standard), and the Step 9.11 confidence threshold (raised for vip +
+  at-risk); the BEFORE-reply-draft AGENTS Step 1.85 placement; the `ZHC-segment-` agent-tag prefix; the
+  operator-only/never-customer-invoked guard (a customer can never self-promote into a segment); and the
+  PII-free F52 log.
+- **Honest scope:** the segmentation protocol + the per-client GHL-tag → segment mapping + the four behavior
+  overrides + the before-reply-draft placement — a behavior-layer feature that READS segment membership from
+  the operator's GHL tags, NOT a new CRM, scoring engine, or lifecycle-automation system. Overrides tune the
+  dial but NEVER disable a hard-gate (compliance / quiet hours / honesty floor / mandatory SEND apply to every
+  segment; a `vip` never unlocks autonomous spend).
+
+### Added — QC gate + negative test, byte-identical across both repos
+- `scripts/qc-segmentation.sh` — asserts the load-bearing F17 substance (the five segments, the tag_map +
+  segment-map.md mapping, the multi-tag precedence, all four overrides, the before-reply-draft Step 1.85
+  placement, the ZHC-segment- prefix, the operator-only guard, the honest scope, the PII-free
+  `segmentation-events.jsonl` contract documented+seeded with the segment-map.md companion, the default-OFF
+  toggle). Wired into `scripts/11-run-qc-checklist.sh` + `.github/workflows/qc-static.yml`.
+- `scripts/qc-segmentation.test.sh` — negative self-test: proves the gate PASSES intact and FAILS when each of
+  three invariants is broken (the multi-tag precedence, the operator-only/self-promotion guard, the
+  `segmentation-events.jsonl` seeding).
+
+### Wiring
+- `scripts/05-update-agents-md.sh` — new marker block `STEP_1_85_SEGMENTATION_AWARENESS` (segment lookup BEFORE
+  the reply draft; coexists with the operator-side Workflow-Builder triggers in the same 1.85 region — different
+  marker, different concern).
+- `scripts/06-append-memory-rules.sh` — MEMORY Rule 27 (Customer Segmentation Rule) in a new marker-guarded
+  Round-2 block, backup-before-write, idempotent (does not renumber rules 6-26).
+- `scripts/25-seed-round3-feature-files.sh` — seeds the empty `segmentation-events.jsonl` sink + the
+  `segment-map.md` companion (existence-guarded, never overwrites operator files).
+- `scripts/qc-feature-logs.sh` — F17 added to the F52 ROWS (the JSONL + PII guard now also covers
+  `segmentation-events.jsonl` / `segment_detected`).
+- `INSTRUCTIONS.md` — Step 9.45 row + the Phase-5 F52 data-contract table row for `segmentation-events.jsonl`.
+
+### Version
+- skill38 1.5.7 → **1.5.8** (`skill-version.txt`, SKILL.md self-counts: protocols 40→41, scripts 57→59).
+- Mac/VPS skill38 sequences are intentionally independent — this bump is the same number on both because both
+  were at 1.5.7; the repo-level v10.x versions are untouched.
+
 ## [1.5.7] - 2026-05-30 - Round-2 backlog F21: Multi-Tenant Agent Isolation (the AGENCY tier, OFF by default)
 
 ### Why

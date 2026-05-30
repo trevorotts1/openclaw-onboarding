@@ -63,6 +63,7 @@ ROWS=(
   "geo-qualification-log.jsonl|geo-qualification-protocol.md|geo_qualification"
   "crm-field-writes-log.jsonl|crm-field-write-protocol.md|crm_field_write"
   "faq-detour-log.jsonl|smart-faq-tool-protocol.md|faq_answered"
+  "segmentation-events.jsonl|customer-segmentation-protocol.md|segment_detected"
 )
 
 for row in "${ROWS[@]}"; do

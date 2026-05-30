@@ -468,6 +468,40 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-multi-tenant.test.sh
           echo "✓ qc-multi-tenant negative test passes (the gate fails on each broken invariant)"
 
+      - name: Skill 38 Customer Segmentation Awareness (F17) invariant gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the Customer Segmentation Awareness feature (F17, OFF by
+          # default): the protocol substance — the five canonical segments
+          # (vip/prospect/returning/at-risk/churned), the per-client GHL-tag → segment
+          # mapping (tag_map + segment-map.md), the multi-tag precedence
+          # (at-risk > vip > churned > returning > prospect), ALL FOUR behavior overrides
+          # (response priority, the F4/Step 9.6 sentiment-escalation threshold, the
+          # Communication Playbook tier, the Step 9.11 confidence threshold), the
+          # BEFORE-reply-draft Step 1.85 placement, the ZHC-segment- tag prefix, the
+          # operator-only/never-customer-invoked (self-promotion) guard, and the honest
+          # "READS membership / NOT a new CRM or scoring engine" scope; AGENTS.md Step 1.85
+          # (STEP_1_85_SEGMENTATION_AWARENESS) + MEMORY Rule 27; the PII-free F52 log
+          # segmentation-events.jsonl (event_type segment_detected) documented in the
+          # protocol + INSTRUCTIONS.md + seeded by script 25 (which also seeds the
+          # segment-map.md companion); and the default-OFF toggle skill38.segmentation.enabled.
+          # BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-segmentation.sh
+          echo "✓ Skill 38 Customer Segmentation Awareness (F17) invariants hold"
+
+      - name: Skill 38 Segmentation gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-segmentation.sh actually FAILS when an F17 invariant is broken (a green
+          # gate that never fails is worthless). Copies the skill to a temp dir and breaks
+          # three different invariants (the multi-tag precedence, the operator-only/
+          # self-promotion guard, and the segmentation-events.jsonl seeding), asserting the
+          # gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-segmentation.test.sh
+          echo "✓ qc-segmentation negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
         shell: bash
         run: |

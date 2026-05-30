@@ -649,6 +649,20 @@ else
   report_fail "qc-multi-tenant.sh not found (looked in scripts/)"
 fi
 
+# -------- Customer Segmentation Awareness (F17) invariant gate (machine-enforced) --------
+section "Customer segmentation rule (qc-segmentation.sh)"
+QC_SEG="$SCRIPT_DIR/qc-segmentation.sh"
+[ -f "$QC_SEG" ] || QC_SEG="$SKILL38_ROOT/scripts/qc-segmentation.sh"
+if [ -f "$QC_SEG" ]; then
+  if bash "$QC_SEG" >/dev/null 2>&1; then
+    report_pass "F17 customer segmentation invariants hold (protocol + AGENTS Step 1.85 + MEMORY Rule 27, five segments + per-client tag_map/segment-map.md mapping + multi-tag precedence + the four behavior overrides + before-reply-draft placement + ZHC-segment- tag prefix + operator-only guard, PII-free segmentation-events.jsonl seeded with the segment-map.md companion, toggle default OFF)"
+  else
+    report_fail "qc-segmentation.sh found an F17 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-segmentation.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"
