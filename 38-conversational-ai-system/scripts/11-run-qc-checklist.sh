@@ -704,6 +704,19 @@ else
   report_fail "qc-voice-phone.sh not found (looked in scripts/)"
 fi
 
+section "Webhook chaining rule (qc-webhook-chaining.sh)"
+QC_WEBHOOK="$SCRIPT_DIR/qc-webhook-chaining.sh"
+[ -f "$QC_WEBHOOK" ] || QC_WEBHOOK="$SKILL38_ROOT/scripts/qc-webhook-chaining.sh"
+if [ -f "$QC_WEBHOOK" ]; then
+  if bash "$QC_WEBHOOK" >/dev/null 2>&1; then
+    report_pass "F18 webhook-chaining invariants hold (protocol + AGENTS Step 2.9 STEP_2_9_WEBHOOK_CHAINING + MEMORY Rule 31, the operator-defined webhook-chains/ registry + the four allow-listed trigger events booking_completed/invoice_sent/escalation_raised/transcript_exported + the https-only target + the PII-free payload (opaque contact_ref) + the exponential-backoff/max-attempts retry policy + the async/never-block-the-reply invariant + the operator-only/never-customer-invoked outbound SSRF/exfiltration guard + the ZHC-webhook-chain-fired/-failed tags, PII-free webhook-chain-events.jsonl seeded with the registry + example chain, toggle default OFF)"
+  else
+    report_fail "qc-webhook-chaining.sh found an F18 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-webhook-chaining.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

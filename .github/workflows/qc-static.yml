@@ -607,6 +607,39 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-voice-phone.test.sh
           echo "✓ qc-voice-phone negative test passes (the gate fails on each broken invariant)"
 
+      - name: Skill 38 Webhook Chaining gate (F18)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the Webhook Chaining feature (F18, OFF by default): the protocol
+          # substance — the OUTBOUND post-action front-door framing, the operator-defined
+          # webhook-chains/ registry, the FOUR allow-listed trigger events (booking_completed /
+          # invoice_sent / escalation_raised / transcript_exported, others ignored), the
+          # https-only target, the PII-free payload (opaque contact_ref + action ids, never a
+          # name/email/phone/address or the transcript body), the retry policy (exponential
+          # backoff + max_attempts), the async/never-block-the-reply invariant, the operator-only/
+          # never-customer-invoked OUTBOUND guard (SSRF / exfiltration — a customer can never
+          # name/add/trigger a target), and the ZHC-webhook-chain-fired / ZHC-webhook-chain-failed
+          # tags; AGENTS.md Step 2.9 (STEP_2_9_WEBHOOK_CHAINING) + MEMORY Rule 31; the PII-free F52
+          # log webhook-chain-events.jsonl (event_type webhook_chain) documented in the protocol +
+          # INSTRUCTIONS.md + seeded by script 25 (which also seeds the webhook-chains/ registry +
+          # the example chain); and the default-OFF toggle skill38.webhook_chaining.enabled. BASH
+          # (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-webhook-chaining.sh
+          echo "✓ Skill 38 Webhook Chaining (F18) invariants hold"
+
+      - name: Skill 38 Webhook Chaining gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-webhook-chaining.sh actually FAILS when an F18 invariant is broken (a green
+          # gate that never fails is worthless). Copies the skill to a temp dir and breaks three
+          # different invariants (the operator-only/SSRF-exfiltration outbound guard, the retry
+          # policy (exponential backoff + max attempts), and the webhook-chain-events.jsonl
+          # seeding), asserting the gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-webhook-chaining.test.sh
+          echo "✓ qc-webhook-chaining negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
         shell: bash
         run: |

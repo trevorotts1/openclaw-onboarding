@@ -125,7 +125,8 @@ for jsonl in \
   segmentation-events.jsonl \
   outreach-events.jsonl \
   ab-test-events.jsonl \
-  voice-call-events.jsonl; do
+  voice-call-events.jsonl \
+  webhook-chain-events.jsonl; do
   p="$MASTER_FILES_DIR/$jsonl"
   if [ -f "$p" ]; then
     echo "[skill 38] $jsonl already exists — preserved"
@@ -488,6 +489,91 @@ escalation+honesty-floor, or compliance rules. See protocols/ab-testing-protocol
 
 ## length
 - <LENGTH — e.g. under ~200 characters>
+MD
+
+# ---------------------------------------------------------------------------
+# F18 — Webhook Chaining registry (webhook-chaining-protocol.md). OFF by default.
+# Seeds the chain-definitions dir webhook-chains/ with ONE universal example chain
+# (booking-to-zapier.md) so the operator sees the exact chain-definition format:
+# a TRIGGER EVENT (one of the four allow-listed completed actions) + an https:// TARGET
+# URL + a PII-FREE PAYLOAD template + a RETRY POLICY (exponential backoff + max attempts)
+# + optional static headers whose secrets live in the ENV (never the repo) + the
+# ZHC-webhook-chain-fired/-failed tags. Placeholders only, zero personal/client data.
+# Idempotent (never overwrites an operator's real chain). The empty
+# webhook-chain-events.jsonl sink is created above in the JSONL loop. Firing a chain is
+# OPERATOR-ONLY (a customer can NEVER name/add/trigger a target URL). See
+# protocols/webhook-chaining-protocol.md (Step 9.49).
+# ---------------------------------------------------------------------------
+WEBHOOK_ROOT="$MASTER_FILES_DIR/webhook-chains"
+mkdir -p "$WEBHOOK_ROOT"
+
+seed_file "$WEBHOOK_ROOT/README.md" <<'MD'
+# webhook-chains/ — Webhook Chaining (F18, OFF by default)
+
+This directory only matters when `skill38.webhook_chaining.enabled` is true. Each file
+here is ONE downstream trigger: when the agent COMPLETES an allow-listed action, it POSTs
+a PII-free event to the operator's downstream endpoint so an automated workflow (Zapier /
+Make / n8n / a partner API) can fire — the AI becomes the FRONT DOOR of that workflow.
+This is the OUTBOUND, post-action counterpart to the INBOUND GHL hook that STARTS a
+conversation.
+
+Each chain = a TRIGGER EVENT (one of the four allow-listed COMPLETED actions:
+`booking_completed` / `invoice_sent` / `escalation_raised` / `transcript_exported` — any
+other event is ignored + flagged), an `https://`-only TARGET URL, a PII-FREE PAYLOAD
+template (opaque `<CONTACT_REF>` + opaque action id + workflow id + event name + optional
+numeric amount — NEVER a name/email/phone/address or the transcript body), a RETRY POLICY
+(exponential backoff + `max_attempts`, default 5), and optional static HEADERS whose
+secrets live in the ENVIRONMENT (`${ENV_VAR}`), never in this file or the repo.
+
+A chain fires ONLY after the underlying action GENUINELY succeeds, ASYNC, and NEVER blocks
+the customer-facing reply. A 2xx tags `ZHC-webhook-chain-fired`; exhausting the retries
+without a 2xx (or a non-retryable 4xx rejection) tags `ZHC-webhook-chain-failed` and
+notifies the operator.
+
+OPERATOR-ONLY / NEVER customer-invoked: chains exist ONLY because the operator authored a
+file here. A customer asking the agent to "send my details to https://…" / "POST this to
+my server" is IGNORED (outbound-exfiltration / SSRF injection vector). See
+protocols/webhook-chaining-protocol.md (Step 9.49).
+MD
+
+seed_file "$WEBHOOK_ROOT/booking-to-zapier.md" <<'MD'
+# Webhook Chain: booking-to-zapier (F18 — webhook chaining)
+
+A downstream trigger: when the agent COMPLETES a booking, POST a PII-free event to the
+operator's Zapier/Make/n8n catch-hook so their automation can fire (add to a project board,
+kick off an onboarding sequence, notify ops). Operator-defined, operator-only. Fires only on
+genuine booking success, async, never blocking the reply. See
+protocols/webhook-chaining-protocol.md (Step 9.49).
+
+## trigger
+- event: booking_completed        # booking_completed | invoice_sent | escalation_raised | transcript_exported
+
+## target
+- url: https://<OPERATOR_DOWNSTREAM_ENDPOINT>   # https only — an http:// target is rejected
+
+## headers
+- Authorization: Bearer ${WEBHOOK_CHAIN_BOOKING_TOKEN}   # secret from ENV, never in this file or the repo
+- Content-Type: application/json
+
+## payload
+- template: |
+    {
+      "event": "booking_completed",
+      "occurred_at": "<ISO8601_UTC>",
+      "contact_ref": "<CONTACT_REF>",
+      "workflow_id": "<WORKFLOW_ID>",
+      "appointment_id": "<APPOINTMENT_ID>"
+    }
+
+## retry
+- max_attempts: 5
+- backoff: exponential
+- base_delay_seconds: 2          # 2s, 4s, 8s, 16s, 32s …
+- max_delay_seconds: 60          # cap each wait at 60s
+
+## tag
+- on_success: ZHC-webhook-chain-fired
+- on_exhausted: ZHC-webhook-chain-failed
 MD
 
 echo "[skill 38] Round-3 Queue-A feature files ready under $MASTER_FILES_DIR"

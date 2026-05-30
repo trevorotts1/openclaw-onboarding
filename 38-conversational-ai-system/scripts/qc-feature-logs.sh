@@ -67,6 +67,7 @@ ROWS=(
   "outreach-events.jsonl|proactive-outreach-protocol.md|campaign_fired"
   "ab-test-events.jsonl|ab-testing-protocol.md|variant_assigned"
   "voice-call-events.jsonl|voice-phone-protocol.md|voice_call"
+  "webhook-chain-events.jsonl|webhook-chaining-protocol.md|webhook_chain"
 )
 
 for row in "${ROWS[@]}"; do
