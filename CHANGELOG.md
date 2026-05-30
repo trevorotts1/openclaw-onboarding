@@ -1,3 +1,39 @@
+## [v10.15.11]  -  2026-05-30  -  Skill 38 v1.4.18→v1.4.21: Workflow-AI standardization, exhaustive Build-with-AI Custom Webhook, self-tests, GHL API quick-ref, universal personal-data scrub
+
+### Why
+This release ships the morning's Skill 38 (Conversational AI System) hardening, bumping the skill from
+v1.4.18 → v1.4.21. The goal: a non-technical operator (think a 60-year-old client) can stand up and verify
+the full inbound→AI→reply loop without an engineer, and no client/personal data can ever leak into the repo.
+
+### Added / Changed (Skill 38 v1.4.18 → v1.4.21)
+- **Workflow-AI standardization** — the GHL "Build with AI" prompt now specifies the Custom Webhook
+  end-to-end so the workflow SHAPE is built consistently every time: URL → headers (Bearer token +
+  Content-Type) → Raw Body JSON → Allow-Re-entry. The prompt builds the shape; the client still pastes the
+  URL/token/body by hand (Build-with-AI will not fill them) and verifies every field is non-empty.
+- **60-year-old-friendly verification** — verification steps rewritten in plain English with literal
+  copy code blocks the client can paste verbatim. No jargon, no assumed CLI fluency.
+- **Client self-test section + AI backend self-test** — new `12-self-test-hook.sh` (client-facing inbound
+  loop test) and `24-self-test-hook.sh` (AI backend self-test) let the client prove the loop works on
+  their own. Both live in `38-conversational-ai-system/scripts/`.
+- **Heavily-enforced Notion doc delivery** — the client reference doc must be delivered (Notion, with the
+  Google-Docs→plain-text fallback order); delivery is machine-checked, not advisory.
+- **VPS-vs-Mac install considerations** — documented inline so a Mac client and a VPS client each get the
+  right path (Mac env searches both `~/clawd/secrets/.env` and `~/.openclaw/.env`; VPS uses host `.env`).
+- **GHL API quick-reference preloaded into the client's TOOLS.md** — all channels send through ONE endpoint
+  (`/conversations/messages`), plus calendars/appointments/invoices recipes and the exact OAuth scopes
+  required. The client agent has the API surface at its fingertips from day one.
+- **Channel-mirroring reply** — replies mirror the inbound channel as the message `type`, send by
+  `contactId`, and treat `conversationId` as read-only (do not set it on send).
+- **UNIVERSAL personal-data scrub + `qc-no-personal-data` gate** — a full repo-wide scrub of any
+  client/personal data, backed by a new QC gate that blocks personal data from shipping in any future PR.
+
+### Version
+- Repo-wide bump v10.15.10 → v10.15.11 via `scripts/bump-version.sh` (all 8 version locations agree).
+- Skill 38 per-skill semver bumped 1.4.18 → 1.4.21 (independent of the repo-wide version; tracked in
+  `38-conversational-ai-system/skill-version.txt`).
+- Mac sequence v10.15.x remains intentionally independent of the VPS v10.16.x sequence.
+- See `38-conversational-ai-system/CHANGELOG.md` for per-skill detail.
+
 ## [v10.15.8]  -  2026-05-29  -  Skill 38 Trinity + workflow-AI/comms standards; Skill 23 role/SOP library gate
 
 ### Why
