@@ -1,0 +1,28 @@
+{
+  "_comment": "Skill 39 agent-specialty roster TEMPLATE. The operator fills this with their real agents. Use opaque agent_ref handles (NOT names/emails/phones) so the PII-free event log stays clean. specialties: any of buyer, listing, luxury, investment, first_time, relocation, commercial. areas: free-form area labels the agent covers. capacity_weight: relative round-robin load (higher = takes more). Fair-housing: route on specialty + availability + area ONLY, never on protected class.",
+  "version": "1.0.0",
+  "agents": [
+    {
+      "agent_ref": "<AGENT_REF_1>",
+      "active": true,
+      "specialties": ["buyer", "first_time"],
+      "areas": ["<AREA_LABEL_A>", "<AREA_LABEL_B>"],
+      "capacity_weight": 1.0
+    },
+    {
+      "agent_ref": "<AGENT_REF_2>",
+      "active": true,
+      "specialties": ["listing", "luxury"],
+      "areas": ["<AREA_LABEL_A>"],
+      "capacity_weight": 1.0
+    },
+    {
+      "agent_ref": "<AGENT_REF_3>",
+      "active": true,
+      "specialties": ["investment", "commercial"],
+      "areas": ["<AREA_LABEL_C>"],
+      "capacity_weight": 0.5
+    }
+  ],
+  "fallback_queue": "<BROKER_GENERAL_QUEUE_REF>"
+}

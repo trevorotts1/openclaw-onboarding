@@ -1,0 +1,25 @@
+{
+  "_comment": "Skill 39 showing-scheduler config TEMPLATE. The operator fills lockbox + MLS showing rules. Used by protocols/showing-scheduler-protocol.md. No client data.",
+  "version": "1.0.0",
+  "defaults": {
+    "lockbox_type": "supra",
+    "mls_confirmation_required": true,
+    "agent_must_accompany": false,
+    "min_notice_hours": 2,
+    "reminder_offsets_hours": [24, 2],
+    "showing_window": {
+      "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      "start": "09:00",
+      "end": "19:00"
+    }
+  },
+  "per_listing_overrides": [
+    {
+      "listing_ref": "<LISTING_REF>",
+      "lockbox_type": "agent_accompanied",
+      "agent_must_accompany": true,
+      "notes": "<OPERATOR_NOTE>"
+    }
+  ],
+  "lockbox_types_supported": ["supra", "sentrilock", "combo", "agent_accompanied", "none"]
+}

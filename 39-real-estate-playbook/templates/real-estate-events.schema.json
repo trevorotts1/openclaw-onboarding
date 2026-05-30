@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Skill 39 real-estate-events.jsonl event",
+  "description": "One JSON object per line in <MASTER_FILES_DIR>/real-estate-events.jsonl. F52 master-files event contract. Records field NAMES + counts + an opaque lead_ref, NEVER raw property PII.",
+  "type": "object",
+  "required": ["ts", "skill", "event"],
+  "properties": {
+    "ts": { "type": "string", "description": "ISO-8601 UTC timestamp" },
+    "skill": { "type": "string", "const": "39-real-estate-playbook" },
+    "event": {
+      "type": "string",
+      "enum": [
+        "log_initialized",
+        "geocode",
+        "property_lookup",
+        "comps",
+        "streetview",
+        "qualify",
+        "showing",
+        "disclosure_surfaced",
+        "lead_route",
+        "open_house",
+        "pre_foreclosure_touch",
+        "sales_brain_extension_installed"
+      ]
+    },
+    "lead_ref": { "type": "string", "description": "Opaque local lead handle (NOT PII)" },
+    "source": { "type": "string", "description": "Data origin: provider slug, 'operator', 'census', or 'none'" },
+
+    "matched": { "type": "boolean" },
+    "county_fips": { "type": ["string", "null"] },
+    "state": { "type": ["string", "null"] },
+    "available": { "type": "boolean" },
+    "provider": { "type": "string" },
+    "fields_returned": { "type": "array", "items": { "type": "string" }, "description": "field NAMES only, never values" },
+    "comp_count": { "type": "integer" },
+    "role": { "type": "string", "enum": ["buyer", "seller", "investor"] },
+    "tag": { "type": "string" },
+    "lockbox_type": { "type": "string" },
+    "reminders_set": { "type": "boolean" },
+    "matrix_pointer_id": { "type": "string" },
+    "agent_specialty": { "type": "string" },
+    "reason": { "type": "string" },
+    "tie_broken_by": { "type": "string" },
+    "stage": { "type": "string", "enum": ["registered", "followup", "feedback"] },
+    "record_type": { "type": "string", "enum": ["NOD", "pre_foreclosure", "tax_delinquency"] },
+    "outreach_stage": { "type": "string", "enum": ["initial", "options", "handoff"] },
+    "from_skill_40": { "type": "boolean" },
+    "target_skill38_path": { "type": "string" },
+    "marker_added": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}
