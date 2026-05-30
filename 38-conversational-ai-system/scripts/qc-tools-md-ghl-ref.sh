@@ -121,6 +121,45 @@ for label, pred in REQUIRED_OPS.items():
         failures.append(f"MISSING OPERATION: {label}")
 
 # ---------------------------------------------------------------------------
+# 1b) SEND ENUM uses the SHORT CODES (FB / IG) — never the long-forms as a send
+#     `type`, and the SEND BODY does NOT carry conversationId (it threads by
+#     contactId; conversationId is the READ key only). Verified facts: the GHL
+#     SendMessageBodyDto enum is SMS/RCS/Email/WhatsApp/IG/FB/Custom/Live_Chat/
+#     TIKTOK — there is no `Facebook`/`Instagram` send type — and the send body
+#     accepts contactId, NOT conversationId.
+# ---------------------------------------------------------------------------
+# (a) FB / IG short codes must appear as send types in the channel table rows.
+if not in_channel_row("fb"):
+    failures.append("SEND ENUM: Facebook send type must be the short code `FB` in a channel row (not the long-form `Facebook`)")
+if not in_channel_row("ig"):
+    failures.append("SEND ENUM: Instagram send type must be the short code `IG` in a channel row (not the long-form `Instagram`)")
+# (b) A long-form used AS a send `type` value (backtick-wrapped) is the bug.
+for badtype in ("`facebook`", "`instagram`", "`webchat`"):
+    # Allow it ONLY when explicitly called out as INVALID/long-form. Flag a bare
+    # appearance as a send-type code anywhere it is presented as valid.
+    for ln in low.splitlines():
+        if badtype in ln and ("invalid" not in ln) and ("long-form" not in ln) and ("reject" not in ln) and ("not a send" not in ln):
+            failures.append(f"SEND ENUM: long-form send type {badtype} presented as valid (use the short code) — line: {ln.strip()[:80]}")
+            break
+# (c) conversationId must NEVER be shown as a SEND body field. The send body is
+#     {type, contactId, locationId, message}. conversationId is read-only.
+#     Catch it inside any conversations/messages POST body / send-body shape.
+SEND_BODY_RE = re.compile(r'/conversations/messages[^\n]*\n(?:[^\n]*\n){0,12}', re.IGNORECASE)
+send_ctx = "".join(SEND_BODY_RE.findall(text))
+# Also scan the curl POST body lines directly for a conversationId send field.
+for m in re.finditer(r'"conversationid"\s*:', low):
+    failures.append("SEND BODY: conversationId appears as a send-body field — the send threads BY contactId; conversationId is the READ key only")
+    break
+# READ endpoints must be present (find-thread by contact + read history) so the
+# READ path for conversationId is documented (scope conversations.readonly).
+if "/conversations/search" not in low:
+    failures.append("MISSING OPERATION: conversations READ — GET /conversations/search (find the thread by contact)")
+if "/conversations/<conversationid>/messages" not in low and "/conversations/{conversationid}/messages" not in low:
+    failures.append("MISSING OPERATION: conversations READ — GET /conversations/<conversationId>/messages (read history)")
+if "conversations.readonly" not in low:
+    failures.append("MISSING SCOPE: conversations.readonly (required for the conversation READ ops)")
+
+# ---------------------------------------------------------------------------
 # 2) REQUIRED SCOPES — the summary line + per-op scopes.
 # ---------------------------------------------------------------------------
 REQUIRED_SCOPES = [
@@ -141,7 +180,13 @@ for sc in REQUIRED_SCOPES:
 #    block grew toward "the whole API" (the exact thing we said NOT to do).
 # ---------------------------------------------------------------------------
 LINE_BUDGET = 120
-CHAR_BUDGET = 6000
+# 6500 (was 6000 at v1.4.20): v1.4.21 added the MESSAGING (READ) ops
+# (GET /conversations/search + GET /conversations/<id>/messages, scope
+# conversations.readonly), the channel-mirror map, and the SendMessageBodyDto
+# enum note. ~500 chars of headroom keeps the block a concise cheat sheet (the
+# 120-line guard is the real anti-bloat gate) without tripping on the legitimate
+# new READ content.
+CHAR_BUDGET = 6500
 nlines = text.count("\n") + 1
 nchars = len(text)
 if nlines > LINE_BUDGET:

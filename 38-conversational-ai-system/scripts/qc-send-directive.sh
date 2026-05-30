@@ -32,6 +32,14 @@
 #   2. the GHL Conversations API (or POST conversations/messages)
 #   3. the "drafting/composing is NOT sending" clause
 #   4. "do not end your turn until a messageId/conversationId is returned"
+#   5. CHANNEL-MIRRORING — the directive must reply on the SAME channel the
+#      message arrived on (it references the mirrored `type` values, NOT a
+#      hardcoded SMS): the mirroring map (sms->sms, email->email, facebook->fb,
+#      instagram->ig, whatsapp->whatsapp, live chat->live_chat).
+#   6. SEND-BY-contactId — the send is threaded by contactId (the send body
+#      carries contactId, NOT conversationId on the send).
+#   7. READ-BY-search — to read prior thread history, GET conversations/search
+#      (find the thread by contact) is referenced.
 #
 # Exit codes: 0 = all GHL inbound server templates carry the directive;
 #             1 = one or more are missing element(s);
@@ -89,11 +97,37 @@ def _has_no_end_turn(t):
     has_id = ("messageid" in t) or ("conversationid" in t)
     return has_end and has_id
 
+def _has_channel_mirroring(t):
+    # Replies on the SAME channel the message arrived on — the directive
+    # references the mirrored `type` values (NOT a hardcoded SMS-only reply).
+    # We require the mirroring intent ("same channel" / "mirror") AND at least
+    # the non-SMS mirrored type values, so a directive that only ever says SMS
+    # cannot pass. "do not hardcode sms" is the canonical phrasing.
+    has_intent = ("same channel" in t) or ("mirror" in t) or ("do not hardcode" in t)
+    # The mirrored target types beyond SMS must be present (proves it is not
+    # SMS-only): email->email, facebook->fb, instagram->ig, whatsapp, live_chat.
+    has_targets = ("->fb" in t.replace(" ", "")) or ("→fb" in t.replace(" ", "")) \
+        or (("fb" in t) and ("ig" in t) and ("live_chat" in t) and ("whatsapp" in t))
+    return has_intent and has_targets
+
+def _has_send_by_contactid(t):
+    # The send is threaded BY contactId — the send body carries contactId.
+    # (conversationId is read-only and must NOT be the send key.)
+    return "contactid" in t or "contact_id" in t
+
+def _has_read_by_search(t):
+    # To read prior thread history, GET conversations/search (find the thread by
+    # contact) is referenced.
+    return "conversations/search" in t
+
 REQUIRED = [
     ("SEND keyword", _has_send),
     ("GHL Conversations API / conversations/messages", _has_api),
     ("drafting-is-not-sending clause", _has_draft_clause),
     ("do-not-end-turn-until-messageId clause", _has_no_end_turn),
+    ("channel-mirroring (reply on the same channel; mirrored type values, not hardcoded SMS)", _has_channel_mirroring),
+    ("send-by-contactId (the send is threaded by contactId)", _has_send_by_contactid),
+    ("read-by-search (GET conversations/search to find the thread by contact)", _has_read_by_search),
 ]
 
 # A GHL INBOUND SERVER template is one whose messageTemplate VALUE both:

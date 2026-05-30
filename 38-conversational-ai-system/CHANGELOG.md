@@ -1,3 +1,57 @@
+## [1.4.21] - 2026-05-30 - Reply on the SAME channel the message arrived on: channel-mirroring + contactId-threaded send-directive (no hardcoded SMS, no conversationId-on-send) + conversation READ endpoints + extended QC gates
+
+Surgical correction to how the conversational agent SENDS its reply, against the authoritative GoHighLevel
+official OpenAPI `SendMessageBodyDto`. Universal, zero personal/client data. The send goes through ONE
+endpoint (`POST /conversations/messages`), the reply `type` MIRRORS the inbound channel (NOT a hardcoded
+SMS), and the send is threaded into the contact's conversation BY `contactId` — `conversationId` is the
+READ key only, never a send-body field.
+
+### Changed — the MANDATORY send-directive (channel-mirroring, contactId-threaded)
+- `scripts/15-configure-hooks-mappings.sh` canonical SERVER-mapping `messageTemplate` (Layer 1) rewritten:
+  "SEND on the SAME channel the message arrived on, do not just draft: read the inbound channel
+  (`{{channel}}`) and SEND via the GHL Conversations API — `POST conversations/messages` — with `type` = the
+  MIRRORED channel value (SMS→SMS, Email→Email, Facebook→FB, Instagram→IG, WhatsApp→WhatsApp,
+  Live Chat→Live_Chat); do NOT hardcode SMS. Send body = `{type:<mirrored>, contactId:{{contact_id}},
+  locationId:{{location_id}}, message:<reply>}` (Email also subject+html+emailFrom+emailTo). GHL threads it
+  into the contact's conversation BY `contactId`." Adds the READ path for prior thread history
+  (GET `conversations/search?locationId=&contactId=` → GET `conversations/{conversationId}/messages`).
+  Preserves the existing drafting-is-NOT-sending clause, the do-not-end-turn-until-messageId clause, and the
+  READ-before / APPEND-after conversation-log memory steps.
+- The installer's FAIL-CLOSED guard now also refuses any hook whose `messageTemplate` lacks
+  `SAME channel` / `do NOT hardcode SMS` / `conversations/search`.
+- Same correction applied to the two reference SERVER-mapping examples
+  (`references/GHL-INBOUND-AND-PLAYBOOKS.md` §4, `references/v6.0-source-playbook.md`).
+
+### Changed — `references/ghl-api-quick-reference.md` (MESSAGING)
+- MESSAGING section retitled "MIRROR the inbound channel's `type`"; adds the explicit mirror map and the
+  complete `SendMessageBodyDto` enum note (`SMS`/`Email`/`FB`/`IG`/`WhatsApp`/`Live_Chat`; also valid but
+  rare `RCS`/`Custom`/`TIKTOK`). GMB is **inbound-only** (not a send type — cannot reply via this endpoint);
+  TikTok inbound is workflow-action-only. Send body shows `{type, contactId, locationId, message}` (NEVER
+  `conversationId`). Adds a **MESSAGING (READ)** sub-table — GET `/conversations/search` (find the thread by
+  contact) + GET `/conversations/<conversationId>/messages` (read history), scope `conversations.readonly`
+  (added to the scopes summary). Enum already used the short codes `FB`/`IG`.
+- `references/GHL-INBOUND-AND-PLAYBOOKS.md` §7-8 mirrored to the same enum + READ ops + threading note.
+
+### Changed — `references/workflow-ai-instructions-standard.md`
+- Adds a concise **Critical Design Pattern** subsection (one endpoint, mirror the inbound channel as the
+  reply `type`, send by `contactId` — GHL threads automatically, `conversationId` is read-only for history)
+  and a one-line threading note next to the canonical 23-key RAW BODY. **The 23-key body is UNCHANGED** (no
+  key changes); the note just records that the thread is preserved by `contactId` on send and `conversationId`
+  is looked up only to READ history.
+
+### Changed — QC gates (extended + negative-tested)
+- `scripts/qc-send-directive.sh` now also asserts each GHL inbound SERVER `messageTemplate` is
+  channel-mirroring (references the mirrored `type` values / "same channel" / "do not hardcode" — not
+  SMS-only), threads the send BY `contactId`, and references GET `conversations/search` for reads.
+- `scripts/qc-tools-md-ghl-ref.sh` now also asserts the send enum uses the short codes `FB`/`IG` (and FAILS
+  on a long-form `Facebook`/`Instagram`/`Webchat` presented as a valid send `type`), FAILS if
+  `conversationId` appears as a send-body field, and requires the READ ops (`/conversations/search` +
+  `/conversations/<conversationId>/messages`) and the `conversations.readonly` scope. CHAR_BUDGET 6000→6500
+  for the legitimate new READ content (120-line guard unchanged).
+- Negative-tested: each new assertion was proven to FAIL when its target is regressed (hardcoded SMS,
+  dropped search read, long-form `Facebook` send type, `conversationId` in the send body, dropped
+  `conversations.readonly` scope, dropped search op).
+
 ## [1.4.20] - 2026-05-30 - Preload the CLIENT TOOLS.md with a concise, verified GHL Convert-and-Flow API quick-reference (faster agent replies; core-context request shapes) + installer step + machine-enforced QC gate
 
 The conversational agent now ships with the exact GHL request shapes in its CORE context, so it replies FAST
