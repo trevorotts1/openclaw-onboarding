@@ -1,3 +1,46 @@
+## [1.4.20] - 2026-05-30 - Preload the CLIENT TOOLS.md with a concise, verified GHL Convert-and-Flow API quick-reference (faster agent replies; core-context request shapes) + installer step + machine-enforced QC gate
+
+The conversational agent now ships with the exact GHL request shapes in its CORE context, so it replies FAST
+without digging through the dense full reference at runtime. The block goes into the client **TOOLS.md** (NOT
+AGENTS.md) — AGENTS.md = WHAT-TO-DO (rules/behavior); TOOLS.md = WHERE-THINGS-LIVE (tools, endpoints, API
+reference), which is where request shapes belong. Universal, zero personal/client data, machine-enforced.
+
+### Added — `references/ghl-api-quick-reference.md` (the canonical, concise block)
+- The single source of truth the installer injects verbatim. Grouped: **MESSAGING** (one
+  `POST /conversations/messages` endpoint, one row per channel `type` — SMS, Email, FB, IG, Live Chat, Chat
+  Widget→Live_Chat, WhatsApp — plus the explicit **All-in-One unified-inbox note** that EVERY channel flows
+  through the same endpoint, and the VALID/INVALID `type` enum: GMB is NOT a send type) / **CALENDARS** (list,
+  get, create, free-slots) / **APPOINTMENTS** (book, reschedule, cancel) / **INVOICES** (create + send). A
+  one-line **Required PIT scopes** summary at the top: `conversations/message.write`, `calendars.readonly`,
+  `calendars.write`, `calendars/events.readonly`, `calendars/events.write`, `invoices.write`. Every op carries
+  method + full URL + the 3 headers + the JSON body shape (placeholder fields) + the required scope.
+- **Verified, not invented.** Shapes confirmed against `references/GHL-INBOUND-AND-PLAYBOOKS.md` §7-9 and
+  `29-ghl-convert-and-flow/references/{conversations,calendars,payments}.md`. Notable corrections vs. naive
+  seeds: the `Version` header is **`2021-04-15`** (not `2021-07-28`); EVERY send requires **`locationId`**;
+  the 6 valid send types are `SMS`/`Email`/`FB`/`IG`/`WhatsApp`/`Live_Chat` (**GMB is rejected** as a send
+  type; the website Chat Widget routes through `Live_Chat` — there is no distinct widget type); Email requires
+  `subject`/`html`/`emailFrom`/`emailTo`; reschedule = `PUT /calendars/events/appointments/<eventId>`, cancel
+  = `DELETE /calendars/events/<eventId>`; free-slots takes epoch **milliseconds**.
+
+### Added — `scripts/24-update-tools-md.sh` (installer step that injects the block into the client TOOLS.md)
+- OS-aware target (Darwin `$HOME/clawd/TOOLS.md`, Linux `/data/clawd/TOOLS.md`; override via `$TOOLS_MD` /
+  `$OPENCLAW_WORKSPACE`), mirroring `06-append-memory-rules.sh`. **Idempotent** (skips if the
+  `SKILL38: GHL_API_QUICK_REFERENCE` marker is already present), **append-only** (never overwrites operator
+  content), timestamped backup before any write, creates TOOLS.md if absent. Emits `$PUBLIC_HOSTNAME` ONLY as
+  an orientation comment — never a token, never client data. Wired into `INSTRUCTIONS.md` as **Step 7.5**
+  (Phase 4) and into the install QC checklist.
+
+### Added — `scripts/qc-tools-md-ghl-ref.sh` (machine-enforced gate, negative-tested)
+- FAILS if the block is missing any listed operation (each messaging channel type SMS/Email/FB/IG/Live_Chat —
+  **row-anchored** so prose short codes can't mask a dropped channel row — plus calendars list/get/create,
+  free-slots, appointment book/reschedule/cancel, send invoice) or any required scope; if it exceeds the
+  concise size budget (120 lines / 6000 chars — guards against core-file bloat); or if any personal/client
+  identifier appears (real email, real phone, a concrete `contactId`/`locationId`/etc. value, or a real
+  client host). Wired into `scripts/11-run-qc-checklist.sh` (gate + a runtime assertion that the block is
+  present in the installed client TOOLS.md) and into `.github/workflows/qc-static.yml`. Negative-tested:
+  drop-operation, drop-scope, bloat, and three personal-data variants all FAIL; the shipped block PASSes
+  (76 lines / 5308 chars; zero personal data).
+
 ## v1.4.19 — standardized workflow-AI output + AI backend self-test + UNIVERSAL (zero personal data)
 
 Driven by operator feedback: the workflow-AI output was (a) not standardized (wildly different each run),
