@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Mac mini
 
-> **Version:** see `/version` - this repo at v10.15.12.
+> **Version:** see `/version` - this repo at v10.15.13.
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
+>
+> **NOTE (v10.15.13):** **Round-3 cross-repo reconciliation + roadmap spec committed; Skill 38 → v1.5.3.** Canonical alignment of the Skill 38 surface between the Mac and VPS onboarding repos (protocols, install/QC scripts, INSTRUCTIONS, INSTALL, and the QC-static CI workflow), plus the conversational-AI strategic roadmap spec (`references/conversational-ai-strategic-roadmap.md`) committed as part of the canonical surface. `scripts/` self-counts re-verified 51 → 54 (`25-seed-round3-feature-files`, `qc-backend-ready`, `qc-feature-logs`). VPS (10.16.x) and Mac (10.15.x) sequences remain intentionally independent.
 >
 > **NOTE (v10.15.12):** **Skill 38 v1.5.2 (Round-3 Queue-A) + two NEW universal verticals.** Skill 38 ships its Round-3 Queue-A feature pack: the ZHC tag-prefix rule, F50 two-tier aggression, F44 detour-and-return interrupts, F45 geo-qualification, F46 CRM field write/create, F47 inline smart-FAQ, and F49 ZHC Pixel (per-client visitor-signal pixel + Pixel Concierge); the three QC-enforced standards now ship and are machine-checked — the Communication-Playbook standard, the GHL Raw-Body-JSON standard, and the Notion Client-Doc standard. **NEW Skill 39 — Real Estate Playbook & Property Intelligence** and **NEW Skill 40 — ZHC Public Records Scraper** join the catalog as two new universal verticals. VPS (10.16.x) and Mac (10.15.x) sequences remain intentionally independent.
 >
