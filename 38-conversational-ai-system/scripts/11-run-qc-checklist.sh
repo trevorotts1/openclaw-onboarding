@@ -677,6 +677,20 @@ else
   report_fail "qc-proactive-outreach.sh not found (looked in scripts/)"
 fi
 
+# -------- A/B Testing of Reply Variants (F16) invariant gate (machine-enforced) --------
+section "A/B testing of reply variants rule (qc-ab-testing.sh)"
+QC_ABTEST="$SCRIPT_DIR/qc-ab-testing.sh"
+[ -f "$QC_ABTEST" ] || QC_ABTEST="$SKILL38_ROOT/scripts/qc-ab-testing.sh"
+if [ -f "$QC_ABTEST" ]; then
+  if bash "$QC_ABTEST" >/dev/null 2>&1; then
+    report_pass "F16 A/B testing invariants hold (protocol + AGENTS Step 1.87 + MEMORY Rule 29, two variants a/b per channel + experiments/ab-experiments mapping + deterministic-by-contact sticky assignment + at-draft-time placement + the three outcome metrics booked/converted/sentiment + the two-proportion z-test with default N=30/arm + auto-promote-with-operator-notify + ZHC-abtest-variant- tags + operator-only/A-B-injection guard, PII-free ab-test-events.jsonl seeded with the ab-experiments/ scaffold, toggle default OFF)"
+  else
+    report_fail "qc-ab-testing.sh found an F16 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-ab-testing.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

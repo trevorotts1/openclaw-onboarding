@@ -65,6 +65,7 @@ ROWS=(
   "faq-detour-log.jsonl|smart-faq-tool-protocol.md|faq_answered"
   "segmentation-events.jsonl|customer-segmentation-protocol.md|segment_detected"
   "outreach-events.jsonl|proactive-outreach-protocol.md|campaign_fired"
+  "ab-test-events.jsonl|ab-testing-protocol.md|variant_assigned"
 )
 
 for row in "${ROWS[@]}"; do

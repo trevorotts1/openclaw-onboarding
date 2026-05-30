@@ -123,7 +123,8 @@ for jsonl in \
   faq-detour-log.jsonl \
   multi-tenant-events.jsonl \
   segmentation-events.jsonl \
-  outreach-events.jsonl; do
+  outreach-events.jsonl \
+  ab-test-events.jsonl; do
   p="$MASTER_FILES_DIR/$jsonl"
   if [ -f "$p" ]; then
     echo "[skill 38] $jsonl already exists — preserved"
@@ -379,6 +380,113 @@ protocols/proactive-outreach-protocol.md (Step 9.46).
 
 ## tag
 - applied: ZHC-outreach-cold-lead-reengagement
+MD
+
+# ---------------------------------------------------------------------------
+# F16 — A/B Testing of Reply Variants scaffold (ab-testing-protocol.md).
+# OFF by default. Seeds the experiments dir ab-experiments/ with ONE universal
+# example experiment (sms.md = the per-channel definition's human-readable companion
+# to skill38.ab_testing.experiments) + the TWO variant overlays it references
+# (sms-variant-a.md / sms-variant-b.md, each a tone/structure overlay ON TOP of the
+# channel Communication Playbook — never a new playbook) + the dir README.
+# Placeholders only, zero personal/client data. Idempotent (never overwrites an
+# operator's real experiment). The empty ab-test-events.jsonl sink is created above
+# in the JSONL loop. Variant selection happens at draft time (AGENTS.md Step 1.87);
+# the winner is decided by a two-proportion z-test after N=30/arm conversations and
+# auto-promotes (operator-notified). See protocols/ab-testing-protocol.md (Step 9.47).
+# ---------------------------------------------------------------------------
+ABTEST_ROOT="$MASTER_FILES_DIR/ab-experiments"
+mkdir -p "$ABTEST_ROOT"
+
+seed_file "$ABTEST_ROOT/README.md" <<'MD'
+# ab-experiments/ — A/B Testing of Reply Variants (F16, OFF by default)
+
+This directory only matters when `skill38.ab_testing.enabled` is true. Each `<channel>.md`
+file here is the human-readable companion to `skill38.ab_testing.experiments.<channel>` in
+openclaw.json — keep the two in sync. An experiment names exactly TWO variants (`a`/`b`),
+each a tone/structure/CTA OVERLAY (`<channel>-variant-<arm>.md`) layered ON TOP of the
+channel Communication Playbook — an overlay shifts only HOW the reply reads, it NEVER
+overrides the playbook's mandatory SEND, conversation memory, escalation+honesty-floor, or
+compliance.
+
+Each inbound conversation is assigned an arm DETERMINISTICALLY BY CONTACT (a stable hash of
+`experiment_id:contact_id mod 2`, sticky to the first recorded assignment) — a contact stays
+in one arm for the experiment's life. Variant selection happens AT DRAFT TIME (AGENTS.md
+Step 1.87). Outcomes (`booked` / `converted` / `sentiment_trajectory`) are tracked per
+conversation; after BOTH arms hit `min_conversations_per_arm` (default N=30/arm) a
+two-proportion z-test on the `primary_metric` declares a winner, which auto-promotes
+(operator-notified). Agent-applied arm tags are `ZHC-abtest-variant-a` /
+`ZHC-abtest-variant-b`.
+
+Defining/starting/stopping/promoting an experiment and choosing an arm are OPERATOR-ONLY —
+a customer can NEVER control the experiment. See protocols/ab-testing-protocol.md (Step 9.47).
+MD
+
+seed_file "$ABTEST_ROOT/sms.md" <<'MD'
+# A/B Experiment: sms (F16 — A/B testing of reply variants)
+
+The human-readable companion to `skill38.ab_testing.experiments.sms` in openclaw.json — keep
+the two in sync. Two reply-style variants on the SMS channel; each inbound conversation is
+assigned an arm deterministically by contact and stays in it. The winner is decided by a
+two-proportion z-test on the primary metric after both arms hit min_per_arm, then
+auto-promotes (operator-notified). See protocols/ab-testing-protocol.md (Step 9.47).
+
+## experiment
+- status: paused                 # paused | running | decided (OPERATOR sets this; default paused so no live assignment until the operator opts in)
+- primary_metric: booked         # booked | converted — the ONE metric the significance test decides on
+- min_per_arm: 30                # default N per arm before a winner can be declared
+
+## variant_a
+- label: <VARIANT_A_LABEL>       # e.g. warm-concise
+- overlay: ab-experiments/sms-variant-a.md
+
+## variant_b
+- label: <VARIANT_B_LABEL>       # e.g. direct-cta
+- overlay: ab-experiments/sms-variant-b.md
+
+## assignment
+- rule: deterministic_by_contact # stable_hash(experiment_id ":" contact_id) mod 2 → a/b; sticky to the first recorded arm
+- tags: ZHC-abtest-variant-a / ZHC-abtest-variant-b
+MD
+
+seed_file "$ABTEST_ROOT/sms-variant-a.md" <<'MD'
+# SMS Variant A — "<VARIANT_A_LABEL>" (F16 — A/B testing)
+
+A tone/structure OVERLAY on communication-playbooks/sms-communication.md. It shifts ONLY how
+the reply reads — it does NOT override the playbook's mandatory SEND, conversation memory,
+escalation+honesty-floor, or compliance rules. See protocols/ab-testing-protocol.md (Step 9.47).
+
+## opening
+- <OPENING_STYLE — e.g. warm, first-name greeting; acknowledge their message in one clause>
+
+## structure
+- <STRUCTURE — e.g. 2 short sentences max; no bullet lists on SMS>
+
+## cta
+- <CTA_STYLE — e.g. soft invite: "happy to grab a time whenever suits you">
+
+## length
+- <LENGTH — e.g. under ~280 characters>
+MD
+
+seed_file "$ABTEST_ROOT/sms-variant-b.md" <<'MD'
+# SMS Variant B — "<VARIANT_B_LABEL>" (F16 — A/B testing)
+
+A tone/structure OVERLAY on communication-playbooks/sms-communication.md. It shifts ONLY how
+the reply reads — it does NOT override the playbook's mandatory SEND, conversation memory,
+escalation+honesty-floor, or compliance rules. See protocols/ab-testing-protocol.md (Step 9.47).
+
+## opening
+- <OPENING_STYLE — e.g. brief, get-to-the-point greeting>
+
+## structure
+- <STRUCTURE — e.g. one sentence + a single clear next step>
+
+## cta
+- <CTA_STYLE — e.g. direct CTA: "want me to book you in for <TIME>?">
+
+## length
+- <LENGTH — e.g. under ~200 characters>
 MD
 
 echo "[skill 38] Round-3 Queue-A feature files ready under $MASTER_FILES_DIR"

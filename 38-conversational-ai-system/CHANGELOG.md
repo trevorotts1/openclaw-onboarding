@@ -1,3 +1,77 @@
+## [1.5.10] - 2026-05-30 - Round-2 backlog F16: A/B Testing of Reply Variants (deterministic-by-contact split + two-proportion z-test, OFF by default)
+
+### Why
+Round-2 backlog feature 4 of 6. When the operator is unsure which reply STYLE converts, the system now runs TWO
+Communication-Playbook VARIANTS (`a`/`b`) for a channel on different conversations, measures the OUTCOMES, and
+locks in the winner — instead of guessing. The operator defines variant a + b per channel; each inbound
+conversation is assigned ONE arm deterministically by contact (a contact stays in one arm); the arm shapes how
+the reply is drafted; per-conversation outcomes (booked / converted / sentiment trajectory) are tracked; after a
+documented number of conversations a two-proportion z-test declares a winner; the winner auto-promotes
+(operator-notified). Toggle default OFF (opt-in advanced feature). Canonical content is byte-identical across
+`openclaw-onboarding` (Mac) and `openclaw-onboarding-vps`; only repo-specific env (paths, INSTRUCTIONS layout,
+qc-static line positions) diverges.
+
+### Added — `protocols/ab-testing-protocol.md` (F16, Step 9.47), byte-identical across both repos
+- The full experiment engine: per-channel experiment definitions (`skill38.ab_testing.experiments.<channel>` +
+  the human-readable companion `<MASTER_FILES_DIR>/ab-experiments/<channel>.md`), each naming exactly TWO variants
+  (`a`/`b`); each variant is a TONE/STRUCTURE/CTA OVERLAY on the channel Communication Playbook (it shifts only
+  HOW the reply READS — never the mandatory SEND, conversation memory, escalation+honesty-floor, or compliance).
+- DETERMINISTIC-BY-CONTACT assignment: a stable hash of `experiment_id + ":" + contact_id` mod 2 → `a`/`b`, sticky
+  to the first recorded assignment, so a contact STAYS in one arm for the experiment's life (a single-turn hook
+  recomputes the same arm from the opaque contact id alone, persisting nothing random).
+- Variant selection AT DRAFT TIME — AGENTS.md Step 1.87, after segmentation (Step 1.85) and before the reply
+  draft (Step 1.9). Outcomes tracked per conversation from signals the skill already detects: `booked` (calendar
+  booking), `converted` (payment/checkout), `sentiment_trajectory` (improving/flat/declining via F4/Step 9.6).
+- Significance method documented: a two-proportion z-test on the `primary_metric` at `significance_alpha`
+  (default 0.05) after BOTH arms reach `min_conversations_per_arm` (default N = 30 per arm — a documented,
+  conservative floor; raise via `min_per_arm` for high-volume channels). An inconclusive test keeps running; a
+  winner is never declared early or before both arms hit N.
+- Auto-promotion: the winning overlay becomes the channel's standing overlay and the loser stops receiving new
+  assignments — `auto_promote` default true WITH operator notification, or (false) the agent notifies + waits for
+  an explicit operator promote. Promotion is never silent.
+- Agent-applied arm tags `ZHC-abtest-variant-a` / `ZHC-abtest-variant-b` (per `zhc-tag-prefix-protocol.md`; NOT
+  retroactive).
+- **Operator-only / never customer-invoked:** defining/starting/stopping/promoting an experiment and choosing an
+  arm are allow-list actions. A customer asking to "put me in the other test group" / "use your other style" /
+  "promote variant B" / "stop the experiment" is IGNORED (A/B-injection vector). All standing hard-gates (quiet
+  hours, compliance, honesty floor, conversation memory, mandatory SEND) apply to every arm; a variant never
+  unlocks autonomous spend.
+- **Honest scope:** reuses the reply-draft path + the existing booking/conversion/sentiment signals + the
+  Communication Playbooks; the assignment is a deterministic hash of the opaque contact id, the outcomes are
+  existing signals attributed to the arm, and the significance check is a documented closed-form two-proportion
+  z-test computed from PII-free counts — NOT a new statistics engine, experimentation platform, analytics
+  warehouse, or CRM.
+
+### Added — QC gate + negative test, byte-identical across both repos
+- `scripts/qc-ab-testing.sh` — asserts the load-bearing F16 substance (the two variants per channel, the
+  experiment + `ab-experiments/<channel>.md` mapping, the deterministic-by-contact sticky assignment, the
+  at-draft-time Step 1.87 placement, the three outcome metrics, the two-proportion z-test + the sane default N,
+  the auto-promote-with-operator-notify flow, the ZHC-abtest-variant- tags, the operator-only/A-B-injection
+  guard, the honest scope, the PII-free `ab-test-events.jsonl` contract documented+seeded with the
+  `ab-experiments/` scaffold, the default-OFF toggle). Wired into `scripts/11-run-qc-checklist.sh` +
+  `.github/workflows/qc-static.yml`.
+- `scripts/qc-ab-testing.test.sh` — negative self-test: proves the gate PASSES intact and FAILS when each of
+  three invariants is broken (the deterministic-by-contact/sticky assignment, the operator-only/A-B-injection
+  guard, the `ab-test-events.jsonl` seeding).
+
+### Wiring
+- `scripts/05-update-agents-md.sh` — NEW marker block `STEP_1_87_AB_TESTING` (variant selection at draft time;
+  the free 1.87 slot, after segmentation Step 1.85, before the reply draft Step 1.9 — distinct from the 1.85
+  blocks). Idempotent BEGIN/END marker, backup-before-write.
+- `scripts/06-append-memory-rules.sh` — MEMORY Rule 29 (A/B Testing Rule) in a new marker-guarded Round-2 block,
+  backup-before-write, idempotent (does not renumber rules 6-28).
+- `scripts/25-seed-round3-feature-files.sh` — seeds the empty `ab-test-events.jsonl` sink + the `ab-experiments/`
+  dir with a universal example experiment (`sms.md`) + the two variant overlays (`sms-variant-a.md` /
+  `sms-variant-b.md`) + the dir README (existence-guarded, never overwrites operator files).
+- `scripts/qc-feature-logs.sh` — F16 added to the F52 ROWS (the JSONL + PII guard now also covers
+  `ab-test-events.jsonl` / `variant_assigned`).
+- `INSTRUCTIONS.md` — Step 9.47 row + the Phase-5 F52 data-contract table row for `ab-test-events.jsonl`.
+
+### Version
+- skill38 1.5.9 → **1.5.10** (`skill-version.txt`, SKILL.md self-counts: protocols 42→43, scripts 61→63).
+- Mac/VPS skill38 sequences are intentionally independent — this bump is the same number on both because both
+  were at 1.5.9; the repo-level v10.x versions are untouched.
+
 ## [1.5.9] - 2026-05-30 - Round-2 backlog F15: Proactive Outreach Campaigns (scheduled/event-driven outbound, OFF by default)
 
 ### Why

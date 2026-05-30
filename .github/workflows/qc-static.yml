@@ -539,6 +539,41 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-proactive-outreach.test.sh
           echo "✓ qc-proactive-outreach negative test passes (the gate fails on each broken invariant)"
 
+      - name: Skill 38 A/B Testing of Reply Variants (F16) invariant gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the A/B Testing of Reply Variants feature (F16, OFF by default):
+          # the protocol substance — TWO Communication-Playbook variants (a/b) per channel, the
+          # per-channel experiment definition (experiments + ab-experiments/<channel>.md), the
+          # DETERMINISTIC-BY-CONTACT assignment (a contact stays in one arm — sticky), the
+          # AT-DRAFT-TIME Step 1.87 placement (after segmentation Step 1.85, before the reply
+          # draft Step 1.9), ALL THREE outcome metrics (booked / converted / sentiment
+          # trajectory), the documented two-proportion z-test + the sane default N (30/arm), the
+          # auto-promote-with-operator-notify flow, the ZHC-abtest-variant- tag prefix, the
+          # operator-only/never-customer-invoked (A/B-injection) guard, and the honest "REUSES
+          # the reply-draft path + existing booking/conversion/sentiment signals / NOT a new
+          # statistics engine or platform" scope; AGENTS.md Step 1.87 (STEP_1_87_AB_TESTING) +
+          # MEMORY Rule 29; the PII-free F52 log ab-test-events.jsonl (event_type
+          # variant_assigned) documented in the protocol + INSTRUCTIONS.md + seeded by script 25
+          # (which also seeds the ab-experiments/ scaffold — the example experiment + the two
+          # variant overlays); and the default-OFF toggle skill38.ab_testing.enabled. BASH
+          # (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-ab-testing.sh
+          echo "✓ Skill 38 A/B Testing of Reply Variants (F16) invariants hold"
+
+      - name: Skill 38 A/B Testing gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-ab-testing.sh actually FAILS when an F16 invariant is broken (a green gate
+          # that never fails is worthless). Copies the skill to a temp dir and breaks three
+          # different invariants (the deterministic-by-contact/sticky assignment, the
+          # operator-only/A-B-injection guard, and the ab-test-events.jsonl seeding), asserting
+          # the gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-ab-testing.test.sh
+          echo "✓ qc-ab-testing negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
         shell: bash
         run: |
