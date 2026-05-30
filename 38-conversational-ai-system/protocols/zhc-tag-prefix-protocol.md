@@ -8,7 +8,15 @@ created by hand.
 
 This protocol does NOT rename or migrate any tag that already exists — it is
 **not retroactive**. It governs only NEW programmatic tag creation from this
-version forward.
+version forward. An OPTIONAL, operator-driven cleanup reference (legacy bare tag
+→ `ZHC-` equivalent) lives in `references/tag-migration-notes.md` — nothing is
+required of the operator; it exists only for those who want a tidy namespace.
+
+> **Canonical name.** This rule's canonical name is the **"ZHC Tag-Prefix
+> Rule"**. It is appended to a client's `MEMORY.md` as a numbered design rule
+> (this skill ships it as Rule 20, because Rules 15-18 are reserved for the
+> builder rules); the exact number may differ per client's MEMORY.md, so always
+> refer to it by name, not by number.
 
 ## Scope — what the rule covers
 
@@ -35,6 +43,7 @@ Examples (canonical, used across this skill's protocols and references):
 - `ZHC-interrupt-handled` / `ZHC-faq-detoured` / `ZHC-aggression-handled-and-resumed` (F44, smart-playbook-switching-protocol.md)
 - `ZHC-out-of-service-area` / `ZHC-service-area-confirmed` / `ZHC-service-area-flexible` (F45, geo-qualification-protocol.md)
 - `ZHC-faq-answered` (F47, smart-faq-tool-protocol.md)
+- `ZHC-stalled-sales` / `ZHC-followup-cadence-1` … `ZHC-followup-cadence-10` / `ZHC-cold-lead-released` / `ZHC-followup-opted-out` (F29, intelligent-followup-protocol.md)
 
 > CRM custom **fields** the agent creates use the parallel `ZHC_` (underscore)
 > prefix (F46, crm-field-write-protocol.md) — fields and tags are different GHL
@@ -92,6 +101,13 @@ account:
 
 - AGENTS.md tag-creation behavioral note: inserted by
   `scripts/05-update-agents-md.sh` (marker `SKILL38_ZHC_TAG_PREFIX`).
-- MEMORY.md Rule 20: appended by `scripts/06-append-memory-rules.sh`.
+- MEMORY.md "ZHC Tag-Prefix Rule" (shipped as Rule 20): appended by
+  `scripts/06-append-memory-rules.sh`.
+- F29 follow-up cadence tags (`ZHC-stalled-sales`, `ZHC-followup-cadence-1..10`,
+  `ZHC-cold-lead-released`, `ZHC-followup-opted-out`):
+  `protocols/intelligent-followup-protocol.md`.
+- Optional, operator-driven cleanup mapping (legacy → `ZHC-`):
+  `references/tag-migration-notes.md` (seeded idempotently into the operator's
+  master-files dir by `scripts/25-seed-round3-feature-files.sh`).
 - Machine-enforced (programmatic tag EXAMPLES use the `ZHC-` prefix) by
   `scripts/qc-zhc-tag-prefix.sh`, wired into `scripts/11-run-qc-checklist.sh` + CI.

@@ -112,7 +112,8 @@ Yes → move to close. No or hesitation → back to discovery.
 ### Phase 6 — Follow up
 If conversation ends without closing → hand off to Intelligent Follow-up
 (Feature 29 when shipped). Until F29 ships, agent tags contact as
-`stalled-sales` for operator visibility.
+`ZHC-stalled-sales` for operator visibility (agent-created tag → `ZHC-`
+prefixed per `protocols/zhc-tag-prefix-protocol.md`).
 
 ## Buyer signal recognition
 
@@ -154,7 +155,7 @@ Hand off to Intelligent Follow-up (Feature 29) when:
 - Customer says "I'll think about it" without committing to a next step
 - Customer asks for a quote but doesn't respond within 48 hours
 
-Until F29 ships, agent tags contact with `stalled-sales` and notifies
+Until F29 ships, agent tags contact with `ZHC-stalled-sales` and notifies
 operator per notification-routing-protocol.md.
 
 ## Reading from Sales Knowledge base

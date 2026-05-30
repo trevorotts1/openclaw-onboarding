@@ -90,6 +90,11 @@ EXPECTED_TAGS=(
   "ZHC-service-area-flexible"
   "ZHC-faq-answered"
   "ZHC-bot-suspected"
+  "ZHC-stalled-sales"
+  "ZHC-followup-cadence-1"
+  "ZHC-followup-cadence-10"
+  "ZHC-cold-lead-released"
+  "ZHC-followup-opted-out"
 )
 for t in "${EXPECTED_TAGS[@]}"; do
   if grep -rqF "$t" "$SKILL_DIR/protocols" 2>/dev/null; then
@@ -98,6 +103,25 @@ for t in "${EXPECTED_TAGS[@]}"; do
     fail "expected ZHC-prefixed tag not found in protocols/: $t"
   fi
 done
+
+# 4b. The F29 follow-up protocol must NOT leave a BARE agent-created tag behind.
+#     This protocol APPLIES tags in prose ("tag contact as <x>") rather than via a
+#     create_tag(...) literal, so the Section-6 literal parser below cannot see it.
+#     These four tags are agent-created (per the single test) and MUST be ZHC- form.
+FUP="$SKILL_DIR/protocols/intelligent-followup-protocol.md"
+if [ -f "$FUP" ]; then
+  fup_bare=0
+  for bare in 'stalled-sales' 'cold-lead-released' 'followup-opted-out' 'followup-cadence-'; do
+    # A bare hit = the token in back-ticks WITHOUT the ZHC- prefix immediately before it.
+    if grep -nE "\`${bare}" "$FUP" | grep -vE "ZHC-${bare}" >/dev/null 2>&1; then
+      fail "intelligent-followup-protocol.md applies a BARE agent-created tag \`${bare}…\` — must be ZHC-${bare}…"
+      fup_bare=1
+    fi
+  done
+  [ "$fup_bare" -eq 0 ] && pass "intelligent-followup-protocol.md: all agent-created follow-up tags are ZHC- prefixed (no bare stalled-sales/cold-lead-released/followup-opted-out/followup-cadence-N)"
+else
+  fail "protocols/intelligent-followup-protocol.md MISSING (cannot check F29 follow-up tags)"
+fi
 
 # 5. The D.1 example tags + the Section-6 Add-Tag example were updated to ZHC- form.
 #    Catch a regression that reintroduces a BARE agent-created example tag in those
@@ -146,6 +170,7 @@ SCAN_FILES=(
   "$SKILL_DIR/protocols/smart-playbook-switching-protocol.md"
   "$SKILL_DIR/protocols/geo-qualification-protocol.md"
   "$SKILL_DIR/protocols/smart-faq-tool-protocol.md"
+  "$SKILL_DIR/protocols/intelligent-followup-protocol.md"
 )
 bare_hits=0
 for f in "${SCAN_FILES[@]}"; do

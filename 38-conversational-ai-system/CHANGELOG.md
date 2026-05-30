@@ -1,3 +1,51 @@
+## [1.5.5] - 2026-05-30 - ZHC Tag-Prefix Rule substance QC fix (byte-identical across both onboarding repos)
+
+### Why
+A QC re-score of the "ZHC Tag-Prefix Convention" system rule found four real substance gaps and a
+doc-parity gap. This release closes all of them so the rule is self-consistent end-to-end and the gate
+genuinely catches a regression. The shared docs/scripts are made **byte-identical** across
+`openclaw-onboarding` (Mac) and `openclaw-onboarding-vps`. UNIVERSAL — zero personal/client data.
+
+### Changed — `protocols/intelligent-followup-protocol.md` (F29), byte-identical across both repos
+- The three agent-created follow-up tags are now `ZHC-` prefixed (per the rule's single test "did the AGENT
+  create this tag?"): `cold-lead-released` → `ZHC-cold-lead-released`, `followup-opted-out` →
+  `ZHC-followup-opted-out`, `stalled-sales` → `ZHC-stalled-sales`.
+- Wired the 10-touchpoint sequence so each touch applies `ZHC-followup-cadence-1` … `ZHC-followup-cadence-10`
+  (added to each T1…T10 heading + the cron pseudocode), so the operator can see exactly how far a contact got.
+- Added a "Tags this protocol creates" table at the top documenting the full ZHC- tag set + CREATE-TAG-FIRST.
+
+### Changed — `protocols/sales-best-practices-protocol.md`, byte-identical across both repos
+- The same agent-created `stalled-sales` tag is now `ZHC-stalled-sales` (the F29 entry signal also surfaces here).
+
+### Added — `references/tag-migration-notes.md` (the spec-required deliverable), byte-identical across both repos
+- New optional, operator-driven migration reference: explains the not-retroactive posture and gives a
+  legacy-bare-tag → `ZHC-` mapping table. Cross-linked from `zhc-tag-prefix-protocol.md`. Seeded idempotently
+  into the operator's master-files dir (`KnowledgeBases/business/tag-migration-notes.md`) by
+  `scripts/25-seed-round3-feature-files.sh` (existence-guarded, never overwrites).
+
+### Changed — `scripts/qc-zhc-tag-prefix.sh` (close the enforcement hole), both repos
+- Added `intelligent-followup-protocol.md` to the SCAN_FILES list.
+- Added the F29 tags (`ZHC-stalled-sales`, `ZHC-followup-cadence-1`/`-10`, `ZHC-cold-lead-released`,
+  `ZHC-followup-opted-out`) to the expected-tags list.
+- Added a dedicated check (4b) that fails on a BARE prose-applied follow-up tag in that file (the prose
+  "tag contact as `x`" form the create_tag literal parser cannot see). Proven with a negative test.
+- CI (`.github/workflows/qc-static.yml`) now plants a bare F29 follow-up tag and asserts the gate fails closed
+  (in addition to the existing bare-create_tag negative test).
+
+### Changed — Skill 39 real-estate carve-out contradiction (Mac repo) + journey template (both repos)
+- `39-real-estate-playbook/references/real-estate-tags.md` (Mac): the "Supporting (non-ZHC) status tags"
+  carve-out is removed; those agent-created lifecycle tags are now `ZHC-` prefixed
+  (`ZHC-listing-alert-engaged`, `ZHC-showing-confirmed`, `ZHC-offer-active`, `ZHC-under-contract`,
+  `ZHC-closed`, `ZHC-post-close-nurture`, `ZHC-sphere-reactivation`) — no undocumented contradiction left.
+- `38-conversational-ai-system/templates/journey-templates/real-estate/journey.md` (both repos): the lifecycle
+  tags it applies are `ZHC-` prefixed to match (incl. `ZHC-buyer-lead`/`ZHC-seller-lead`).
+
+### Changed — `protocols/zhc-tag-prefix-protocol.md` doc parity + self-consistency, byte-identical across both repos
+- VPS now carries the "NOT retroactive — bot-detection continuity" section so both protocols match (gap 5).
+- Added a canonical-name note: the rule's canonical name is the "ZHC Tag-Prefix Rule" (shipped as Rule 20;
+  number may vary per client MEMORY.md) — refer to it by name, not number (gap 6; no renumber).
+- Documented the F29 tags + the new migration-notes reference in Naming-form examples + Cross-references.
+
 ## [1.5.4] - 2026-05-30 - F47 (Smart FAQ) + F45 (Geo-Qualification) substance deep-fix (byte-identical across both onboarding repos)
 
 ### Why
