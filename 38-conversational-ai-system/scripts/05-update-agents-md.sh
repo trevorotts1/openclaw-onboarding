@@ -528,4 +528,49 @@ usage. Log to `<MASTER_FILES_DIR>/crm-field-writes-log.jsonl`.
 
 BLOCK_J
 
+# -----------------------------------------------------------------------------
+# (k) STEP_1_45_PIXEL_CONCIERGE — Feature 49 (ZHC Pixel). The Pixel Concierge agent's
+#     behavioral protocol: ingest visitor-signal batches, drop bots with ZERO spend,
+#     evaluate trigger rules, NEVER fabricate identity, act least-intrusively. Concise
+#     pointer block — the full ruleset lives in protocols/zhc-pixel-protocol.md. Free
+#     slot 1.45 (after Step 1.42 interrupts, before Step 1.5/1.7 routing) — no collision.
+# -----------------------------------------------------------------------------
+append_block "STEP_1_45_PIXEL_CONCIERGE" <<'BLOCK_K'
+
+## Step 1.45 — Pixel Concierge (F49 ZHC Pixel)
+
+Applies ONLY when you are the **Pixel Concierge** agent handling a
+`pixel-visitor-signal` hook session (`hook:pixel:*`). These are anonymous-or-known
+WEBSITE VISITOR behavior batches — NOT chat messages. Do them in order:
+
+  Skill reference: protocols/zhc-pixel-protocol.md (Step 9.43)
+  openclaw.json: skill38.zhc_pixel.{enabled (default true),
+  triggers.* (per-rule toggles + thresholds)}
+
+1. **Bot gate FIRST — drop with ZERO model spend.** Sub-2-second pageview cadence,
+   impossible scroll velocity, headless/known-bot UA → DROP (append nothing, engage
+   no one, end the turn). Junk traffic must never cost a reasoning call.
+2. **Append to the F52 data contract.** Write every event to
+   `<MASTER_FILES_DIR>/pixel-events/YYYY-MM-DD.jsonl` (one JSON object/line; timestamp
+   + event_type + data) per the protocol §7.
+3. **Evaluate the trigger rules** (protocol §4): pricing dwell > N min → chat widget;
+   contact-click → preempt widget; 4th return to same page → soft outreach; cart
+   abandonment → +1h email (known contacts only); comparison-shopping (3+ service
+   pages) → consultation offer; known customer on an account page → NO engagement.
+4. **NEVER fabricate a visitor identity.** Anonymous = behavior only. Resolve identity
+   ONLY by first-party form linkage (protocol §2). No cold-anonymous name lookup, no
+   Gmail/Facebook/social lookup, no IP→person. If asked who an anonymous visitor is,
+   say they haven't identified themselves yet.
+5. **Engage least-intrusively** only on a firing rule — chat-widget directive, GHL
+   tag (`ZHC-pixel-visitor` / `ZHC-pixel-returning-visitor` / `ZHC-pixel-high-intent`)
+   + field write (`ZHC_first_visit_date` / `ZHC_total_visits` / `ZHC_pages_viewed` /
+   `ZHC_high_intent_signal`, via the F46 create-if-missing mechanism), or a scheduled
+   follow-up. Respect quiet hours (Step 0.5), compliance keywords (Step 0.7), and the
+   honesty floor. You act ONLY on pixel sessions — never as a general operator agent.
+
+Privacy is enforced in the browser bundle (GDPR consent deferral, CCPA opt-out,
+Do-Not-Track hard-stop, deletion via `delete_request`) — protocol §8.
+
+BLOCK_K
+
 echo "[05-update-agents-md] AGENTS.md update complete: $AGENTS_MD"
