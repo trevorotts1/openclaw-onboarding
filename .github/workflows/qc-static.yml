@@ -317,3 +317,51 @@ jobs:
           # name in any new file fails the build. BASH (grep core).
           bash 38-conversational-ai-system/scripts/qc-no-personal-data.sh --no-gen
           echo "✓ Skill 38 carries no personal/client data (UNIVERSAL)"
+
+      - name: Skill 38 Communication Playbook Standard
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the COMMUNICATION PLAYBOOK STANDARD: assert
+          # references/communications-playbook-standard.md carries the hard leading
+          # "EVERY COMMUNICATION PLAYBOOK MUST INCLUDE ALL OF THE FOLLOWING" mandatory
+          # checklist and every required item (a)-(i): channel/persona, opening behavior,
+          # conversation goal, mandatory SEND (Conversations API + mirror + drafting!=sending),
+          # conversation-memory read-before/append-after, escalation+honesty-floor,
+          # quiet-hours/compliance, ZHC- tag-prefix, per-channel formatting — plus the 8
+          # channels named and the SKILL.md/INSTRUCTIONS.md pointer. Removing any mandatory
+          # item FAILS the build. BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-communications-playbook-standard.sh
+          echo "✓ Skill 38 communication playbook standard carries the mandatory checklist + items (a)-(i)"
+
+      - name: Skill 38 GHL Raw Body JSON Standard
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the GHL RAW BODY JSON STANDARD: assert
+          # references/ghl-raw-body-json-standard.md carries the hard "EVERY GHL CUSTOM
+          # WEBHOOK RAW BODY MUST BE THE FULL 23-KEY FLAT JSON" headline (23 is the minimum
+          # AND the standard, never fewer, never nested), the FLAT/placeholder-free/deliver:false
+          # rules, the exact 23-key list, the canonical body, and the references to
+          # GHL-INBOUND-AND-PLAYBOOKS.md (source of truth) + qc-23-key-bodies.sh. The gate
+          # COMPOSES qc-23-key-bodies.sh so the standard's own canonical body is proven
+          # 23-key/flat/placeholder-free. BASH (grep core) — respects the .py ban.
+          bash 38-conversational-ai-system/scripts/qc-ghl-raw-body-standard.sh
+          echo "✓ Skill 38 GHL raw body JSON standard codifies the FLAT 23-key body + the canonical body is lint-clean"
+
+      - name: Skill 38 Notion Client-Doc Standard
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the NOTION CLIENT-DOC STANDARD: assert
+          # references/notion-client-doc-standard.md carries the hard "EVERY CLIENT NOTION
+          # SETUP DOC MUST INCLUDE ALL OF THE FOLLOWING, IN THIS ORDER" headline and the full
+          # ordered mandatory list (1-12): Quick-Start-first → URL block → two-block
+          # Authorization (block1 "Authorization", block2 value-only "Bearer <token>", never
+          # combined) → Content-Type split → FLAT 23-key body → tags-first + manual-fill +
+          # Build-with-AI-shape-only + post-build VERIFY → Communication Playbooks → VPS-vs-Mac
+          # → how-it-works LAST → every-value-its-own-block → Telegram delivery → UNIVERSAL.
+          # The gate COMPOSES qc-reference-sheet.sh --require-manual-fill so the generator is
+          # proven to match the standard's order. BASH (grep core) — respects the .py ban.
+          bash 38-conversational-ai-system/scripts/qc-notion-doc-standard.sh
+          echo "✓ Skill 38 Notion client-doc standard codifies the ordered structure (1-12) + the generator matches it"

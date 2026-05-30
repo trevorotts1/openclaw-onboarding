@@ -101,6 +101,9 @@ SCRIPT_FILES=(
   "scripts/qc-notify-client-doc.sh"
   "scripts/24-update-tools-md.sh"
   "scripts/qc-tools-md-ghl-ref.sh"
+  "scripts/qc-communications-playbook-standard.sh"
+  "scripts/qc-ghl-raw-body-standard.sh"
+  "scripts/qc-notion-doc-standard.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -528,6 +531,48 @@ if [ -n "$ST_STATE_FOUND" ]; then
   fi
 else
   echo "  [SKIP] run-state file not found; cannot assert selfTestPassed (run scripts/12-self-test-hook.sh during the live install)"
+fi
+
+# -------- Communication Playbook Standard gate (machine-enforced) --------
+section "Communication Playbook Standard (qc-communications-playbook-standard.sh)"
+QC_COMMS_STD="$SCRIPT_DIR/qc-communications-playbook-standard.sh"
+[ -f "$QC_COMMS_STD" ] || QC_COMMS_STD="$SKILL38_ROOT/scripts/qc-communications-playbook-standard.sh"
+if [ -f "$QC_COMMS_STD" ]; then
+  if bash "$QC_COMMS_STD" >/dev/null 2>&1; then
+    report_pass "communications-playbook-standard.md carries the 'EVERY COMMUNICATION PLAYBOOK MUST INCLUDE ALL OF THE FOLLOWING' mandatory checklist + every required item (a)-(i)"
+  else
+    report_fail "qc-communications-playbook-standard.sh found a missing mandatory item in the communication playbook standard — run it directly for detail"
+  fi
+else
+  report_fail "qc-communications-playbook-standard.sh not found (looked in scripts/)"
+fi
+
+# -------- GHL Raw Body JSON Standard gate (machine-enforced) --------
+section "GHL Raw Body JSON Standard (qc-ghl-raw-body-standard.sh)"
+QC_BODY_STD="$SCRIPT_DIR/qc-ghl-raw-body-standard.sh"
+[ -f "$QC_BODY_STD" ] || QC_BODY_STD="$SKILL38_ROOT/scripts/qc-ghl-raw-body-standard.sh"
+if [ -f "$QC_BODY_STD" ]; then
+  if bash "$QC_BODY_STD" >/dev/null 2>&1; then
+    report_pass "ghl-raw-body-json-standard.md codifies the FLAT 23-key body (23 is the minimum AND the standard) + the canonical body is lint-clean (composes qc-23-key-bodies.sh)"
+  else
+    report_fail "qc-ghl-raw-body-standard.sh found a missing rule or a body violating the 23-key/flat rule — run it directly for detail"
+  fi
+else
+  report_fail "qc-ghl-raw-body-standard.sh not found (looked in scripts/)"
+fi
+
+# -------- Notion Client-Doc Standard gate (machine-enforced) --------
+section "Notion Client-Doc Standard (qc-notion-doc-standard.sh)"
+QC_NOTION_STD="$SCRIPT_DIR/qc-notion-doc-standard.sh"
+[ -f "$QC_NOTION_STD" ] || QC_NOTION_STD="$SKILL38_ROOT/scripts/qc-notion-doc-standard.sh"
+if [ -f "$QC_NOTION_STD" ]; then
+  if bash "$QC_NOTION_STD" >/dev/null 2>&1; then
+    report_pass "notion-client-doc-standard.md codifies the ordered client-doc structure (1-12) + the generator matches it (composes qc-reference-sheet.sh --require-manual-fill)"
+  else
+    report_fail "qc-notion-doc-standard.sh found a missing ordered mandatory item or a generator mismatch — run it directly for detail"
+  fi
+else
+  report_fail "qc-notion-doc-standard.sh not found (looked in scripts/)"
 fi
 
 # -------- Final summary --------

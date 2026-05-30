@@ -1,3 +1,47 @@
+## [1.5.1] - 2026-05-30 - Three QC-enforced standards (mirror the workflow-AI standard's rigor): Communication Playbook Standard (ELEVATED) + GHL Raw Body JSON Standard (NEW) + Notion Client-Doc Standard (NEW)
+
+Three formal, machine-enforced standards, each leading with a hard "MUST INCLUDE ALL OF THE FOLLOWING"
+mandatory checklist mirroring `references/workflow-ai-instructions-standard.md`. Skill 38 only. Universal
+(zero personal/client data — `qc-no-personal-data.sh` passes). Each standard gets its own QC gate that
+FAILS the build if the standard is violated; all three are wired into `scripts/11-run-qc-checklist.sh` +
+CI `.github/workflows/qc-static.yml` and were negative-tested (removing a mandatory item FAILS).
+
+### Added / Elevated — the three standards
+- **Communication Playbook Standard (ELEVATED in place, NOT duplicated)** —
+  `references/communications-playbook-standard.md` now LEADS with a new **Section 0 "EVERY COMMUNICATION
+  PLAYBOOK MUST INCLUDE ALL OF THE FOLLOWING"** mandatory checklist (NON-NEGOTIABLE), covering the 8 channels
+  (SMS, Email, FB Messenger, FB comments, IG DM, LinkedIn, Live Chat, All-in-One / Chat Widget) and items
+  (a)-(i): (a) channel + persona/voice, (b) opening behavior + greeting, (c) conversation goal, (d) mandatory
+  SEND rule (Conversations API + mirror inbound channel + thread by contactId + drafting-is-NOT-sending),
+  (e) conversation-memory read-before/append-after, (f) escalation/handoff + honesty floor, (g) quiet-hours +
+  compliance-keyword respect, (h) ZHC- tag-prefix for programmatic tags, (i) per-channel formatting. The
+  existing Sections 1-9 are unchanged (the field-by-field expansion of Section 0).
+- **GHL Raw Body JSON Standard (NEW)** — `references/ghl-raw-body-json-standard.md` codifies the FLAT 23-key
+  body as THE single standard ("23 is the minimum AND the standard, never fewer, never nested"), with the
+  exact 23 keys + a one-line purpose each, the canonical body once, the FLAT / placeholder-free-messageTemplate
+  / deliver:false rules, and per-channel variants (only `channel` + `session_key` prefix change). References
+  `references/GHL-INBOUND-AND-PLAYBOOKS.md` §0-§2 as source-of-truth + `qc-23-key-bodies.sh` as the enforcer.
+- **Notion Client-Doc Standard (NEW)** — `references/notion-client-doc-standard.md` codifies the client
+  Quick-Start Notion doc structure with a hard **"EVERY CLIENT NOTION SETUP DOC MUST INCLUDE ALL OF THE
+  FOLLOWING, IN THIS ORDER"** list (items 1-12): Quick-Start FIRST → Webhook URL block → Authorization as TWO
+  blocks (block1 "Authorization", block2 value-only "Bearer <token>", never combined) → Content-Type split →
+  FLAT 23-key Raw Body → tags-first + manual Custom-Webhook fill + "Build-with-AI builds the SHAPE only" +
+  post-build VERIFY → "Your Communication Playbooks" (CTA + trigger word + I-Do/You-Do + brainstorm) →
+  VPS-vs-Mac → how-it-works LAST → every-value-its-own-block → Telegram delivery → UNIVERSAL.
+
+### Added — three QC gates (each machine-checked, negative-tested, wired into 11-run-qc-checklist.sh + qc-static.yml)
+- `scripts/qc-communications-playbook-standard.sh` — asserts the Section 0 mandatory-checklist headline + the
+  8 channels + items (a)-(i) + the SKILL.md/INSTRUCTIONS.md pointer.
+- `scripts/qc-ghl-raw-body-standard.sh` — asserts the 23-key list + FLAT/placeholder-free/deliver:false rules +
+  canonical body; COMPOSES `qc-23-key-bodies.sh` so the standard's own canonical body is proven lint-clean.
+- `scripts/qc-notion-doc-standard.sh` — asserts the ordered mandatory list (1-12); COMPOSES
+  `qc-reference-sheet.sh --require-manual-fill` so the generator is proven to match the standard's order.
+
+### Changed
+- `SKILL.md` + `INSTRUCTIONS.md` (Step 9.20 **Standards:** clause) gain 1-line pointers to all three standards
+  (pointer only — standard bodies are never inlined into AGENTS.md/SKILL.md). SKILL.md self-counts updated:
+  scripts/ 42 → 45, references/ prose 15 → 17.
+
 ## [1.5.0] - 2026-05-30 - Round-3 Queue-A CORE feature wave: ZHC tag-prefix rule + F50 aggression (two-tier, extends safeguards) + F44 smart playbook switching (DETOUR-AND-RETURN interrupts) + F45 geo-qualification (off by default) + F46 CRM field write/create-if-missing + F47 smart FAQ tool + F52 JSONL data contract
 
 A coherent feature wave that ships the Round-3 Queue-A CORE conversational-AI capabilities in one minor

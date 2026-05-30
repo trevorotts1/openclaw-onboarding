@@ -18,6 +18,60 @@ and the order in which a human-readable copy is placed in the client's account.
 
 ---
 
+## 0. EVERY COMMUNICATION PLAYBOOK MUST INCLUDE ALL OF THE FOLLOWING
+
+> **THIS IS THE STANDARD. NON-NEGOTIABLE. NO EXCEPTIONS.** A communication playbook governs how the
+> agent speaks and behaves on a given channel/scenario, and its output drifted run-to-run — that is the
+> bug this section kills. EVERY communication playbook the agent generates — for EVERY client, EVERY
+> channel (**SMS, Email, FB Messenger, FB comments, IG DM, LinkedIn, Live Chat, All-in-One / Chat
+> Widget**), EVERY run, the STARTER channel playbook and EVERY scenario playbook alike — MUST contain
+> ALL of the lettered items below. A playbook missing ANY of these is INCOMPLETE: do NOT register it, do
+> NOT declare it live. This list is **machine-enforced** by `scripts/qc-communications-playbook-standard.sh`
+> (wired into `scripts/11-run-qc-checklist.sh` + CI `.github/workflows/qc-static.yml`) — removing any
+> mandatory item FAILS the build. Universal: zero personal/client data.
+
+- [ ] **(a) Channel + persona / voice identity.** Name the channel (one of the 8) and the agent's
+      persona/voice on it — formality, personality, on-brand phrases to USE, phrases to NEVER use.
+- [ ] **(b) Opening behavior + how to greet.** How the agent opens the conversation / greets the
+      contact on this channel (first-touch vs returning contact), and the channel's greeting constraints.
+- [ ] **(c) The conversation GOAL / desired outcome.** One sentence: what success looks like for this
+      scenario (book / recover / review / answer / qualify).
+- [ ] **(d) MANDATORY SEND rule.** The agent replies via the **GHL Conversations API per TOOLS.md**
+      (never post directly to the GHL API), **mirrors the inbound channel** as the send `type`
+      (SMS→`SMS`, Email→`Email`, Facebook→`FB`, Instagram→`IG`, WhatsApp→`WhatsApp`, Live Chat→`Live_Chat`
+      — never hardcode SMS), and threads **by `contactId`** (`conversationId` is READ-only — never a
+      send-body field). **Drafting/composing is NOT sending** — the agent MUST call the Conversations API
+      and MUST NOT end its turn until a `messageId`/`conversationId` is returned. (The hook's SERVER-mapping
+      `messageTemplate` carries this directive — verified by `scripts/qc-send-directive.sh`; the in-GHL-body
+      `messageTemplate` stays placeholder-free.)
+- [ ] **(e) Conversation-memory protocol — read-before / append-after.** GHL inbound hook sessions are
+      **single-turn / stateless**, so the agent's only memory of a contact is that contact's log at
+      `<MASTER_FILES_DIR>/conversational-logs/<contact_id>__<name>.md`. **READ the log BEFORE drafting**
+      (recover any in-progress booking/topic and CONTINUE it; if missing, treat as new) and **APPEND the
+      inbound + reply AFTER sending** (create if missing). Verified by `scripts/qc-conversation-memory.sh`.
+- [ ] **(f) Escalation / handoff rules + HONESTY FLOOR.** When to hand off (frustration → sentiment
+      escalation; refund request → no promise without operator approval; legal threat / "speak to a human"
+      → NEEDS_HUMAN), WHO gets the alert, and HOW. **Honesty floor:** the agent NEVER fabricates — never
+      invents discount codes, never promises refunds/exceptions without operator approval, never bluffs
+      below the confidence threshold; it escalates instead.
+- [ ] **(g) Quiet-hours + compliance-keyword respect.** Honor the client's quiet hours / send windows,
+      and NEVER reply to compliance opt-out keywords (e.g. SMS `STOP` / `UNSUBSCRIBE`) — those are handled
+      by the platform, not answered by the agent.
+- [ ] **(h) ZHC- tag-prefix for any programmatic tags.** Any tag the playbook tells the agent to create
+      PROGRAMMATICALLY carries the `ZHC-` prefix (e.g. `ZHC-discovery-scheduled`) per MEMORY Rule 20 /
+      `protocols/zhc-tag-prefix-protocol.md`. NOT retroactive; operator-owned tags keep their names.
+- [ ] **(i) Per-channel formatting constraints.** The channel's hard formatting rules — SMS ≤160 chars
+      where possible; Email 2-4 short paragraphs + subject mirroring; FB/IG 1-3 conversational sentences +
+      the 24-hour reply window; LinkedIn professional concise; Live Chat / Chat Widget short real-time turns.
+
+> **Plus (the full per-item detail still required):** the must-appear checklist in Section 2 (slug/id,
+> owner agent, trigger phrases, step-by-step flow, cross-playbook transitions, edge cases, on-success
+> tagging, tone), the storage rules (Sections 3-4 — master-files file + the MANDATORY human-facing client
+> doc in the Notion → Google Docs → plain-text fallback order), and the client-doc delivery (Sections 7-9).
+> Section 0 is the headline contract; Sections 1-9 are the field-by-field expansion of it.
+
+---
+
 ## 1. Standardized format
 
 Every communications playbook uses the canonical Layer-2 template in
