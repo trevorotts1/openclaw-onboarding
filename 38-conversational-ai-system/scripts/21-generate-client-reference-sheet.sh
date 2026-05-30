@@ -570,6 +570,47 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '> **You have an AI that is connected to your Convert and Flow account and can do these things for you — just ask.** 🚀 You describe the goal, your AI brainstorms it, creates the playbook, stores it (`conversation-workflows/` + Notion), wires the matching Workflow AI prompt to your Convert and Flow account, and can act in Convert and Flow on your behalf. Build as many as you want — that is the point of the system. ✅\n\n'
   printf -- '---\n\n'
 
+  # ============================================================================
+  # ⚙️ THINGS TO CONSIDER WHEN INSTALLING: VPS (Hostinger Docker) vs Mac mini
+  # Placed AFTER the Quick Start + Communication Playbooks, BEFORE the deep Full
+  # Reference. Two install targets diverge in WHERE env vars live, HOW to apply
+  # them, HOW to restart, and HOW the public hook is exposed. Getting this wrong
+  # is the single most common fleet install failure (env var written in the wrong
+  # place, plain `restart` not reloading env_file, hooks.token rewritten on boot,
+  # provider key not in the openclaw.json env block on Mac). Machine-enforced by
+  # qc-reference-sheet.sh --require-manual-fill: the gate FAILs unless the doc
+  # carries BOTH the VPS points (host /docker/<project>/.env + force-recreate +
+  # container /data/.openclaw/secrets/.env + the hooks.token rewrite-on-boot
+  # /OPENCLAW_HOOKS_TOKEN persistence point) AND the Mac points (provider keys in
+  # the openclaw.json top-level env block + launchctl kickstart).
+  # ============================================================================
+  printf '# ⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac mini\n\n'
+  printf 'OpenClaw runs on two kinds of box, and they handle config in **different places**. Most install failures come from doing a VPS step on a Mac (or vice-versa). Use the table that matches YOUR box. (If you do not know which you have: a **Hostinger Docker VPS** is a Linux server managed in the Hostinger panel with a `/docker/<project>/` folder; a **Mac mini** is a physical/virtual Mac running OpenClaw via Homebrew + launchd.)\n\n'
+
+  printf '## 🐧 VPS (Hostinger Docker)\n\n'
+  printf -- '- 🔑 **Env vars (API keys, tokens) live in the HOST file** `/docker/<project>/.env`. The Hostinger Docker Manager UI writes there — NOT to files inside the container under `/data/`.\n'
+  printf -- '- 🔁 **Apply env changes with `docker compose up -d --force-recreate`** (run from `/docker/<project>/`). A plain `docker compose restart` does **NOT** reload `env_file` changes — the new vars never reach the running container. Always `up -d --force-recreate` after editing `.env`.\n'
+  printf -- '- 🔐 **GHL + provider creds ALSO go in the container** `/data/.openclaw/secrets/.env` — that is where the GHL skill reads them. (The host `.env` is the canonical place for keys like Anthropic/OpenAI/Gemini; the GHL/secrets the skill reads at runtime live in the container `secrets/.env`. Both persist via the bind mount.)\n'
+  printf -- '- 🪝 **The hooks token gets REWRITTEN on every boot.** The `/hostinger/server.mjs` wrapper rewrites `hooks.token` to `hooks_${OPENCLAW_GATEWAY_TOKEN}` on every container boot — so a token you set by hand silently reverts. **To make your hooks token persistent, set `OPENCLAW_HOOKS_TOKEN` in the host `/docker/<project>/.env`** (then `up -d --force-recreate`); the wrapper honors it instead of rewriting.\n'
+  printf -- '- 🔌 **The gateway port is often NOT 18789.** Read the actual `PORT` env var (or run `openclaw gateway status`) before assuming a port — Hostinger frequently maps a different one.\n'
+  printf -- '- 🌐 **Public hook URL** is exposed either via a **`cloudflared` tunnel** (run it under **PM2** and `pm2 save` so it survives reboot) **OR** via an existing **Traefik route** (`*.hstgr.cloud`). You do NOT need `sudo cloudflared service install` on a VPS.\n'
+  printf -- '- 📦 **`apt` is a brew shim** on these containers (and brew is off PATH). Install packages with the full path: `/data/linuxbrew/.linuxbrew/bin/brew install <pkg>` — `apt`/`apt-get` will not do what you expect.\n\n'
+
+  printf '## 🍎 Mac mini (Homebrew / launchd)\n\n'
+  printf -- '- 🔑 **PROVIDER keys (e.g. `OLLAMA_API_KEY`) MUST go in the `openclaw.json` TOP-LEVEL `env` block.** The launchd service-env file does **NOT** carry provider keys to the gateway, and putting the key in `~/.openclaw/.env` alone is **insufficient** — the provider will fail to authenticate. Add provider keys to the `env` object at the top level of `~/.openclaw/openclaw.json`.\n'
+  printf -- '- 🔐 **GHL creds still live in** `~/.openclaw/secrets/.env` (same as the VPS — the GHL skill reads `secrets/.env`).\n'
+  printf -- '- 🔁 **Restart the gateway with** `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`. (There is NO Hostinger wrapper on a Mac, so the `hooks.token` in `openclaw.json` is **stable** — it is not rewritten on boot, and you do NOT need the `OPENCLAW_HOOKS_TOKEN` trick.)\n'
+  printf -- '- 🛰️ **Remote access** is via a **Cloudflare tunnel + Access service token** (SSH in as the user'\''s own login; wrap remote commands in `zsh -lc "..."` or `node` is off PATH).\n'
+  printf -- '- 🌐 **Public hook URL** is exposed via `sudo cloudflared service install <connector-token>` (installs a launchd LaunchDaemon). ⚠️ `sudo` prompts for the admin password and needs an interactive Terminal — it cannot run over a non-interactive rescue SSH session.\n\n'
+
+  printf '## 🤝 Common to BOTH (do not skip regardless of box)\n\n'
+  printf -- '- 📨 **The GHL Custom Webhook RAW BODY is the FLAT 23-key body** (Section 3 of the Quick Start) — never a shorter/stripped body, never nested.\n'
+  printf -- '- 🔐 **GHL creds are read from `secrets/.env`** (container `/data/.openclaw/secrets/.env` on VPS, `~/.openclaw/secrets/.env` on Mac).\n'
+  printf -- '- 📁 **The `conversational-logs/` directory is node-owned** (the gateway process creates + appends the per-contact conversation logs there) — do not chown it away from the node user or memory writes fail.\n'
+  printf -- '- 🚫 **The inbound hook mapping uses `deliver: false`** (the agent sends its own reply via the GHL Conversations API; `deliver: true` double-sends and breaks).\n'
+  printf -- '- 🧠 **Ollama Cloud `:cloud` models hard-cap `maxTokens` at 65536** — set `maxTokens: 65536` (a 384k value returns HTTP 400 on every call and silently breaks your primary model).\n\n'
+  printf -- '---\n\n'
+
   # ---- THE FULL EXPLANATION / REFERENCE — comes AFTER Quick Start (both, not either) ----
   printf '# 📖 Full Reference & Explanation\n\n'
   printf 'Quick Start above is all you need to get live. This section explains HOW it works, WHAT each piece is, and HOW to troubleshoot — read it when you want the why behind the steps. **The Quick Start does not replace this; both are here on purpose.**\n\n'

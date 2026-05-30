@@ -1,3 +1,76 @@
+## [1.4.18] - 2026-05-30 - Audit + prune (phantom-file QC bug, stale counts/line-numbers, stale version pin) + new VPS-vs-Mac install-considerations section (client doc + reference doc + QC gate)
+
+Full audit + prune of Skill 38, plus a new prominent "⚙️ Things to consider when installing: VPS (Hostinger
+Docker) vs Mac mini" section in the generated client doc, mirrored to a reference doc and machine-enforced.
+The 23-key FLAT GHL RAW BODY rule, the split Authorization (Key/Value) blocks, the Quick-Start-first ordering,
+the "Your Communication Playbooks" section (trigger word + "I Do / You Do" + brainstorm), and the mandatory
+Telegram doc-delivery are all preserved intact.
+
+### Fixed — `scripts/11-run-qc-checklist.sh` referenced THREE files that do not ship (phantom-file FAILs)
+- The install QC checklist hard-listed `protocols/qc-protocol.md`, `protocols/handoff-protocol.md`, and
+  `templates/journey-template.md` as required files — **none of which exist in the skill** — so a clean
+  install reported 3 spurious `[FAIL] MISSING:` lines every time. Replaced them with the files that actually
+  ship: the skill's own `protocols/pre-handoff-qc-protocol.md` + the repo-root governing `../QC-PROTOCOL.md`
+  (SKIP, not FAIL, when the skill is installed standalone outside the onboarding repo); and, for journey
+  templates, `templates/journey-templates/registry.md` + a count assertion that all 8 per-vertical `journey.md`
+  files are present (coach + 7 verticals). Also added `templates/client-reference-sheet-template.md` to the
+  template existence check. The file-existence section now reports all PASS on a clean checkout.
+
+### Fixed — stale counts + line-numbers + a stale version pin (audit/prune)
+- **`SKILL.md`** — removed the stale **`(v5.14)`** version pin from the H1 title (the skill ships at 1.4.18 and
+  the source playbook was long-since renamed to `v6.0-source-playbook.md`; the title pinned a number that
+  contradicts both). The lineage references to Christy's v5.14 playbook work elsewhere are accurate history and
+  are kept.
+- **`INSTALL.md`** — corrected the install-script counts that contradicted `SKILL.md`: "24 numbered scripts …
+  (27 `.sh` files total)" → **25 numbered install scripts** (`00`–`23`, noting the TWO `22-` scripts:
+  `22-init-run-manifest.sh` + `22-notify-client-doc.sh`) and **36 `.sh` files total**, with the full list of
+  the 10 QC linters/fixtures (the old text named only 2). Removed the stale **"8,797-line"** source-playbook
+  line count (the file is now ~9,490 lines — replaced with a version-agnostic description).
+- **`INSTRUCTIONS.md`** — removed the same stale **"8,797 lines"** source-playbook line count.
+
+### Added — "⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac mini" section
+- **`scripts/21-generate-client-reference-sheet.sh`** — emits a new section into the generated client doc,
+  placed AFTER the Quick Start + "Your Communication Playbooks" and BEFORE the deep Full Reference. It covers
+  BOTH install targets — **VPS:** env vars in host `/docker/<project>/.env`; apply with
+  `docker compose up -d --force-recreate` (plain `restart` ignores `env_file`); GHL/provider creds ALSO in
+  container `/data/.openclaw/secrets/.env`; the `/hostinger/server.mjs` wrapper rewrites `hooks.token` to
+  `hooks_${OPENCLAW_GATEWAY_TOKEN}` each boot UNLESS `OPENCLAW_HOOKS_TOKEN` is set in the host `.env`; the
+  gateway port is often NOT 18789 (read `PORT` / `openclaw gateway status`); public hook via a `cloudflared`
+  tunnel (PM2 + `pm2 save`) OR an existing Traefik `*.hstgr.cloud` route; `apt` is a brew shim (use
+  `/data/linuxbrew/.linuxbrew/bin/brew`). **Mac mini:** PROVIDER keys MUST go in the `openclaw.json` TOP-LEVEL
+  `env` block (the launchd service-env file does NOT carry them; `~/.openclaw/.env` alone is insufficient); GHL
+  creds still in `~/.openclaw/secrets/.env`; restart via `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`;
+  remote access via Cloudflare tunnel + Access service token (`zsh -lc` wrap); public hook via
+  `sudo cloudflared service install <token>`. **Common to both:** FLAT 23-key body; conversational-logs
+  node-owned; GHL creds in `secrets/.env`; `deliver:false`; Ollama Cloud `:cloud` models hard-cap `maxTokens`
+  at 65536.
+- **`references/vps-vs-mac-install-considerations.md` (NEW)** — the authoritative reference doc the generated
+  section mirrors (references/=14 → **15**). Cross-linked from `references/communications-playbook-standard.md`
+  §7 (a new MANDATORY, machine-enforced checklist item).
+
+### Changed — QC enforces the VPS-vs-Mac section
+- **`scripts/qc-reference-sheet.sh --require-manual-fill`** now ALSO FAILS the build when the generated doc is
+  missing the VPS-vs-Mac section or any of its load-bearing points: the section heading; the VPS
+  `/docker/<project>/.env` + `docker compose up -d --force-recreate` (plain-restart-ignores-env_file) +
+  container `/data/.openclaw/secrets/.env` + `hooks.token` rewrite-on-boot + `OPENCLAW_HOOKS_TOKEN` points; the
+  Mac `openclaw.json` TOP-LEVEL `env` block + `launchctl kickstart` points; the COMMON FLAT-23-key /
+  node-owned-logs / `deliver:false` / 65536 points; and the AFTER-Quick-Start / BEFORE-Full-Reference ordering.
+  **Negative-tested:** removing any one of these from the generated sheet FAILs the gate (six negative cases,
+  all FAIL as expected); the positive (full) sheet PASSes.
+
+### QC
+- All Skill 38 CI gates pass locally: `qc-23-key-bodies.sh` (23 bodies, 0 failures), `qc-trinity-registry.test.sh`,
+  `qc-send-directive.sh`, `qc-conversation-memory.sh`, `qc-playbook-doc.test.sh`, `qc-reference-sheet.sh`
+  (default + `--require-manual-fill`), `qc-config-keys.sh`, `qc-notify-client-doc.sh`. `11-run-qc-checklist.sh`
+  file-existence section reports all PASS on a clean checkout. Six negative tests confirm the new VPS-vs-Mac
+  enforcement FAILs when its content is removed.
+
+### Version
+- **`skill-version.txt`** 1.4.17 → 1.4.18; **`SKILL.md`** SELF-COUNTS re-verified (protocols/=32, scripts/=36,
+  references/=**15** — added `references/vps-vs-mac-install-considerations.md`, journeys=8). No repo-tracked
+  (8-location) version file changed, so the repo version is unaffected and `scripts/bump-version.sh` is not run
+  (matches the v1.4.15 / v1.4.16 / v1.4.17 precedent).
+
 ## [1.4.17] - 2026-05-29 - New-playbook creation experience: trigger word + "I Do / You Do" + brainstorm prep (agent behavior + client doc + QC)
 
 Adds the AGENT BEHAVIOR and client-facing content for how a NEW communication playbook gets created.

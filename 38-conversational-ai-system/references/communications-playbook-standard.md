@@ -175,6 +175,19 @@ never omitted:
       sheet LEADS with the copy-paste values (URL → Bearer token → Raw Body JSON → manual-fill steps →
       Workflow-AI prompt); explanation/reference follows after. This is machine-enforced by
       `scripts/qc-reference-sheet.sh --require-manual-fill` (CI + pre-handoff QC).
+- [ ] **"⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac mini" section (MANDATORY,
+      machine-enforced).** After the Quick Start + "Your Communication Playbooks" and BEFORE the deep Full
+      Reference, the client doc MUST carry a VPS-vs-Mac considerations section covering BOTH targets. The
+      authoritative content lives in `references/vps-vs-mac-install-considerations.md` (keep the generated
+      section and that doc in sync). It MUST cover — VPS: host `/docker/<project>/.env` for env vars, apply
+      with `docker compose up -d --force-recreate` (plain `restart` ignores `env_file`), GHL/provider creds
+      ALSO in container `/data/.openclaw/secrets/.env`, and the `/hostinger/server.mjs` `hooks.token`
+      rewrite-on-boot + `OPENCLAW_HOOKS_TOKEN` persistence point; Mac: provider keys in the `openclaw.json`
+      TOP-LEVEL `env` block (`~/.openclaw/.env` alone is insufficient) + restart via
+      `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`; COMMON: FLAT 23-key body, conversational-logs
+      node-owned, `deliver:false`, Ollama Cloud `:cloud` maxTokens hard-cap 65536. Machine-enforced by
+      `scripts/qc-reference-sheet.sh --require-manual-fill` (FAILs unless both the VPS and the Mac points are
+      present).
 
 > The manual Custom-Webhook fill step is MANDATORY in every client doc, not optional prose. GHL's
 > Build-with-AI only constructs the workflow SHAPE (trigger + an empty Custom Webhook action) and does NOT

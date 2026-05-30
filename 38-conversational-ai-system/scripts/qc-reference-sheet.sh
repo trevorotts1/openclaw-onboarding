@@ -58,6 +58,17 @@
 #     good playbook takes ~15-30 minutes); and the brainstorm PREP ("what to think
 #     about" — goal/audience/channel/offer/tone/timing/win action + "if you're
 #     unsure, that's what I'm here to brainstorm")
+#   - the "⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac
+#     mini" section (after Quick Start, before the deep Full Reference) covering
+#     BOTH targets: the VPS points (host /docker/<project>/.env; `docker compose
+#     up -d --force-recreate`, NOT plain restart; GHL/provider creds ALSO in
+#     container /data/.openclaw/secrets/.env; the /hostinger/server.mjs hooks.token
+#     rewrite-on-boot + OPENCLAW_HOOKS_TOKEN persistence point); the Mac points
+#     (provider keys in the openclaw.json TOP-LEVEL env block — ~/.openclaw/.env
+#     alone is insufficient; restart via `launchctl kickstart -k
+#     gui/$(id -u)/ai.openclaw.gateway`); and the COMMON points (FLAT 23-key body;
+#     conversational-logs node-owned; deliver:false; Ollama Cloud :cloud maxTokens
+#     hard-cap 65536)
 #
 # Exit codes: 0 = sheet carries all required markers;
 #             1 = one or more markers missing;
@@ -353,6 +364,66 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
   fi
   if [ -n "$CP_LN" ] && [ -n "$EXPL_LN" ] && [ "$CP_LN" -ge "$EXPL_LN" ]; then
     MISSING+=('the "Your Communication Playbooks" section must come BEFORE the deep Full Reference & Explanation')
+  fi
+
+  # --- ⚙️ VPS (Hostinger Docker) vs Mac mini install-considerations section ---
+  # The generated doc MUST carry a prominent "Things to consider when installing:
+  # VPS (Hostinger Docker) vs Mac mini" section that covers BOTH targets. Getting
+  # the box-specific steps wrong (env var in the wrong place, plain `restart` not
+  # reloading env_file, hooks.token rewritten on boot, provider key not in the
+  # openclaw.json env block on Mac) is the most common fleet install failure, so
+  # the section is machine-enforced here. We require:
+  #   • a heading naming the VPS-vs-Mac consideration
+  #   • the VPS points: host /docker/<project>/.env; `docker compose up -d
+  #     --force-recreate` (plain restart does NOT reload env_file); GHL/provider
+  #     creds ALSO in container /data/.openclaw/secrets/.env; the hooks.token
+  #     rewrite-on-boot + OPENCLAW_HOOKS_TOKEN persistence point
+  #   • the Mac points: provider keys in the openclaw.json TOP-LEVEL env block
+  #     (~/.openclaw/.env alone is insufficient); `launchctl kickstart -k
+  #     gui/$(id -u)/ai.openclaw.gateway`
+  #   • the COMMON points: FLAT 23-key body; conversational-logs node-owned;
+  #     deliver:false; Ollama Cloud :cloud maxTokens cap 65536
+  # The section must sit AFTER Quick Start and BEFORE the deep Full Reference.
+  grep -qiE '^#+[[:space:]].*(Things to consider when installing|VPS \(Hostinger Docker\) vs Mac|VPS .* vs Mac mini)' "$SHEET" || \
+    MISSING+=('a "⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac mini" section (covering BOTH install targets)')
+  # VPS point 1: host /docker/<project>/.env env-var location.
+  grep -qF '/docker/<project>/.env' "$SHEET" || \
+    MISSING+=('the VPS point: env vars live in the HOST /docker/<project>/.env')
+  # VPS point 2: docker compose up -d --force-recreate (plain restart ignored).
+  grep -qiE 'docker compose up -d --force-recreate' "$SHEET" || \
+    MISSING+=('the VPS point: apply env changes with `docker compose up -d --force-recreate` (plain restart ignores env_file)')
+  grep -qiE 'restart.*(does not|not).*(reload|env_file)|plain.*restart' "$SHEET" || \
+    MISSING+=('the VPS point: a plain `docker compose restart` does NOT reload env_file changes')
+  # VPS point 3: GHL/provider creds ALSO in container /data/.openclaw/secrets/.env.
+  grep -qF '/data/.openclaw/secrets/.env' "$SHEET" || \
+    MISSING+=('the VPS point: GHL/provider creds ALSO go in the container /data/.openclaw/secrets/.env (the GHL skill reads there)')
+  # VPS point 4: hooks.token rewritten on boot + OPENCLAW_HOOKS_TOKEN to persist.
+  grep -qiE 'hooks.token.*(rewrit|rewrite)|rewrit.*hooks.token|hooks_\$\{?OPENCLAW_GATEWAY_TOKEN' "$SHEET" || \
+    MISSING+=('the VPS point: the /hostinger/server.mjs wrapper REWRITES hooks.token each boot')
+  grep -qF 'OPENCLAW_HOOKS_TOKEN' "$SHEET" || \
+    MISSING+=('the VPS point: set OPENCLAW_HOOKS_TOKEN in the host .env to make the hooks token persist')
+  # Mac point 1: provider keys in the openclaw.json TOP-LEVEL env block.
+  grep -qiE 'openclaw\.json.*top-level.*env|top-level[[:space:]]+`?env`?[[:space:]]+block|TOP-LEVEL `?env`? block' "$SHEET" || \
+    MISSING+=('the Mac point: provider keys MUST go in the openclaw.json TOP-LEVEL env block (~/.openclaw/.env alone is insufficient)')
+  # Mac point 2: launchctl kickstart restart.
+  grep -qiE 'launchctl kickstart -k gui/.*ai\.openclaw\.gateway' "$SHEET" || \
+    MISSING+=('the Mac point: restart via `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`')
+  # COMMON points.
+  grep -qiE 'FLAT 23-key|23-key.*FLAT|flat.*23 key' "$SHEET" || \
+    MISSING+=('the COMMON point: the FLAT 23-key body applies to both targets')
+  grep -qiE 'conversational-logs.*node-owned|node-owned.*conversational-logs|node-owned' "$SHEET" || \
+    MISSING+=('the COMMON point: the conversational-logs directory is node-owned')
+  grep -qiE 'deliver:?[[:space:]]*false' "$SHEET" || \
+    MISSING+=('the COMMON point: the inbound hook mapping uses deliver:false')
+  grep -qF '65536' "$SHEET" || \
+    MISSING+=('the COMMON point: Ollama Cloud :cloud models hard-cap maxTokens at 65536')
+  # Ordering: VPS-vs-Mac section sits AFTER Quick Start, BEFORE the deep Full Reference.
+  VM_LN="$(grep -nE '^#+[[:space:]].*(Things to consider when installing|VPS .* vs Mac)' "$SHEET" | head -1 | cut -d: -f1)"
+  if [ -n "$QS_LN" ] && [ -n "$VM_LN" ] && [ "$VM_LN" -le "$QS_LN" ]; then
+    MISSING+=('the "VPS vs Mac" install-considerations section must come AFTER the Quick Start')
+  fi
+  if [ -n "$VM_LN" ] && [ -n "$EXPL_LN" ] && [ "$VM_LN" -ge "$EXPL_LN" ]; then
+    MISSING+=('the "VPS vs Mac" install-considerations section must come BEFORE the deep Full Reference & Explanation')
   fi
 
   # Lead-with-values ORDER: the Webhook-URL line must come before the ```json Raw Body,
