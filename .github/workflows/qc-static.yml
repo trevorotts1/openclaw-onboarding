@@ -263,3 +263,26 @@ jobs:
           # standard. BASH (grep/awk core) — respects the .py claude-/anthropic ban.
           bash 38-conversational-ai-system/scripts/qc-notify-client-doc.sh
           echo "✓ Skill 38 mandatory Telegram doc-delivery is wired (22-notify-client-doc.sh + binding instructions)"
+
+      - name: Skill 38 GHL TOOLS.md quick-reference (complete + concise + zero personal data)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the GHL API quick-reference block that
+          # scripts/24-update-tools-md.sh injects into the CLIENT TOOLS.md so the
+          # agent has the exact request shapes in its CORE context and replies fast
+          # (no digging through the dense full reference at runtime). The gate scans
+          # the canonical source (references/ghl-api-quick-reference.md, injected
+          # verbatim) and FAILS if it is missing any listed operation (each
+          # messaging channel type SMS/Email/FB/IG/Live_Chat, calendars
+          # list/get/create, free-slots, appointment book/reschedule/cancel, send
+          # invoice) or any required PIT scope, if it exceeds the concise size
+          # budget (no core-file bloat), or if any personal/client identifier
+          # (real email/phone, concrete id, real client host) appears in this
+          # UNIVERSAL artifact. Verified shapes per Skill 38
+          # references/GHL-INBOUND-AND-PLAYBOOKS.md §7-9 (Version: 2021-04-15; the
+          # 6 valid send types; GMB is NOT a send type) + 29-ghl-convert-and-flow
+          # references/{conversations,calendars,payments}.md. BASH (inline py core)
+          # — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-tools-md-ghl-ref.sh
+          echo "✓ Skill 38 GHL TOOLS.md quick-reference is complete, concise, and free of personal/client data"

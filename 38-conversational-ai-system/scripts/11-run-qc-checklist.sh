@@ -99,6 +99,8 @@ SCRIPT_FILES=(
   "scripts/qc-reference-sheet.sh"
   "scripts/22-notify-client-doc.sh"
   "scripts/qc-notify-client-doc.sh"
+  "scripts/24-update-tools-md.sh"
+  "scripts/qc-tools-md-ghl-ref.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -414,6 +416,39 @@ if [ -f "$QC_CFG" ]; then
   fi
 else
   report_fail "qc-config-keys.sh not found (looked in scripts/)"
+fi
+
+# -------- GHL TOOLS.md quick-reference gate (machine-enforced) --------
+section "GHL TOOLS.md quick-reference gate (qc-tools-md-ghl-ref.sh)"
+QC_TOOLS="$SCRIPT_DIR/qc-tools-md-ghl-ref.sh"
+[ -f "$QC_TOOLS" ] || QC_TOOLS="$SKILL38_ROOT/scripts/qc-tools-md-ghl-ref.sh"
+if [ -f "$QC_TOOLS" ]; then
+  if bash "$QC_TOOLS" >/dev/null 2>&1; then
+    report_pass "GHL API quick-reference (injected into client TOOLS.md by 24-update-tools-md.sh) carries every messaging channel type + calendar/appointment/invoice op + required scopes, is concise, and is free of personal/client data"
+  else
+    report_fail "qc-tools-md-ghl-ref.sh found a missing operation/scope, a bloated block, or personal/client data in the GHL TOOLS.md quick-reference — run it directly for detail"
+  fi
+else
+  report_fail "qc-tools-md-ghl-ref.sh not found (looked in scripts/)"
+fi
+
+# Also assert the block is actually present in the installed client TOOLS.md.
+section "GHL quick-reference present in client TOOLS.md"
+case "$OS" in
+  mac)   WS_DEFAULT_TOOLS="$HOME/clawd/TOOLS.md" ;;
+  linux) WS_DEFAULT_TOOLS="/data/clawd/TOOLS.md" ;;
+  *)     WS_DEFAULT_TOOLS="$HOME/clawd/TOOLS.md" ;;
+esac
+TOOLS_MD_CHECK="${TOOLS_MD:-${OPENCLAW_WORKSPACE:+$OPENCLAW_WORKSPACE/TOOLS.md}}"
+[ -n "$TOOLS_MD_CHECK" ] || TOOLS_MD_CHECK="$WS_DEFAULT_TOOLS"
+if [ -f "$TOOLS_MD_CHECK" ]; then
+  if grep -qF "SKILL38: GHL_API_QUICK_REFERENCE" "$TOOLS_MD_CHECK"; then
+    report_pass "client TOOLS.md contains the GHL API quick-reference block: $TOOLS_MD_CHECK"
+  else
+    report_fail "client TOOLS.md is MISSING the GHL API quick-reference block ($TOOLS_MD_CHECK) — run scripts/24-update-tools-md.sh"
+  fi
+else
+  echo "  [SKIP] client TOOLS.md not found at $TOOLS_MD_CHECK; cannot assert the GHL quick-reference block (run scripts/24-update-tools-md.sh during the live install)"
 fi
 
 # -------- conversational-logs dir presence + writability --------
