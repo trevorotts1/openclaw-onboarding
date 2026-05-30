@@ -41,6 +41,27 @@ For each Conversation Workflow:
 - Any workflow firing zero times (potentially obsolete)
 - Any workflow firing too often (potentially over-broad)
 
+### 5. CRM auto-created field usage (F46)
+
+Reads `<MASTER_FILES_DIR>/crm-field-mappings.md` (the per-workflow field map) and
+`<MASTER_FILES_DIR>/crm-field-writes-log.jsonl` (the F46 write log — field
+NAME/ID + metadata only, never the raw customer value), and reports, for each
+`ZHC_`-prefixed field the agent auto-created (create-if-missing, F46):
+
+- **Written vs ignored** — how many `field_write` lines targeted it this week vs
+  zero. A `ZHC_` field that was created but never written is an **unused field**:
+  flag it for operator review (a candidate to prune).
+- **Collision with an operator field** — a `ZHC_` field whose name/purpose
+  overlaps an existing operator-owned field (a candidate to consolidate).
+- **Validation-skip patterns** — repeated `field_write_skipped` lines for the
+  same field (its `dataType` keeps rejecting values — maybe it should be a
+  different type).
+
+This closes the F46↔F35 loop: F46 creates fields and logs every write/skip; F35
+reads that log + the mapping and surfaces which auto-created fields earned their
+keep. Findings go into the report's "Adjustments to consider" (no field is
+pruned without operator approval).
+
 ## Output
 
 A weekly tune-up report saved to `<MASTER_FILES_DIR>/tune-ups/YYYY-MM-DD-weekly.md`

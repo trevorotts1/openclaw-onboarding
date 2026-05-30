@@ -3697,7 +3697,7 @@ install_skill_40_zhc_public_records_scraper() {
         SKILL40_SRC_VER=$(cat "$SKILL_SRC/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
         if [ -n "$SKILL40_CURRENT" ] && [ "$SKILL40_CURRENT" = "$SKILL40_SRC_VER" ]; then
             success "Skill 40 already installed at v${SKILL40_CURRENT}"
-            chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+            chmod +x "$SKILL_DEST/scripts/"*.sh "$SKILL_DEST/scripts/adapters/"*.sh 2>/dev/null || true
             return 0
         fi
         note "Skill 40 present at v${SKILL40_CURRENT:-?}, source is v${SKILL40_SRC_VER:-?} — refreshing"
@@ -3708,7 +3708,7 @@ install_skill_40_zhc_public_records_scraper() {
         warn "Failed to copy Skill 40 from $SKILL_SRC -> $SKILL_DEST"
         return 0
     }
-    chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+    chmod +x "$SKILL_DEST/scripts/"*.sh "$SKILL_DEST/scripts/adapters/"*.sh 2>/dev/null || true
 
     success "Skill 40 (ZHC Public Records Scraper) installed -> $SKILL_DEST"
     note "Skill 40 is tiered + compliance-first: robots.txt respected, ToS referenced per target, every record attributed; cost/rate caps with bulk cost confirm; 30-day cache. NEVER fabricates a record (no source -> Tier 4 honest gap)."

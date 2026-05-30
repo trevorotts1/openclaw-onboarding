@@ -1,4 +1,4 @@
-## [1.5.5] - 2026-05-30 - ZHC Tag-Prefix Rule substance QC fix (byte-identical across both onboarding repos)
+## [1.5.6] - 2026-05-30 - ZHC Tag-Prefix Rule substance QC fix (byte-identical across both onboarding repos)
 
 ### Why
 A QC re-score of the "ZHC Tag-Prefix Convention" system rule found four real substance gaps and a
@@ -45,6 +45,59 @@ genuinely catches a regression. The shared docs/scripts are made **byte-identica
 - Added a canonical-name note: the rule's canonical name is the "ZHC Tag-Prefix Rule" (shipped as Rule 20;
   number may vary per client MEMORY.md) — refer to it by name, not number (gap 6; no renumber).
 - Documented the F29 tags + the new migration-notes reference in Naming-form examples + Cross-references.
+
+## [1.5.5] - 2026-05-30 - F46 (Conversational CRM Field Write + Create-If-Missing) QC deep-fix + Mac↔VPS reconciliation
+
+### Why
+F46 shipped at v1.5.0 but a QC re-score surfaced four gaps, all on or around the F46 logging contract:
+a **PII leak** on the VPS side (the canonical JSONL example logged `value_written` — raw customer PII —
+directly contradicting the same doc's PII note), a **cross-repo schema divergence** (VPS carried TWO
+competing JSONL schemas — a per-event `field_key/field_type/value_written/workflow_id` form AND a combined
+`crm_field_write` summary — while Mac shipped ONE clean PII-free schema), the **F35 weekly tune-up not
+actually wired** (F46 + AGENTS Step 2.5 + MEMORY Rule 24 all claimed the tune-up reviews auto-created-field
+usage, but `weekly-tune-up-protocol.md` had no such review item), and an **inaccurate cross-reference**
+(F46 pointed at `references/ghl-api-quick-reference.md` for the discover/write shapes, but that file never
+documented the `customFields` endpoints). The Mac `crm-field-write-protocol.md` was the correct, PII-safe
+reference; the VPS doc was reconciled toward it. UNIVERSAL — zero personal/client data; `qc-no-personal-data.sh`
+passes both repos.
+
+### Fixed — PII leak + single JSONL schema (VPS `protocols/crm-field-write-protocol.md`, reconciled to Mac)
+- **Removed the `value_written` raw-customer-value key** from the canonical JSONL example AND deleted the
+  competing `crm_field_write` summary schema + its `field_key/field_type/workflow_id` per-event form. The VPS
+  protocol now ships Mac's ONE PII-free contract: `event_type` `field_write` / `field_created` /
+  `field_write_skipped` with keys `contact_id`, `workflow`, `field_name`, `field_id`, `data_type`,
+  `created_now`, `validated`, `reason` (skip), `operator_notified` — collectively the `crm_field_write`
+  event family, NEVER the raw value (PII stays in GHL + the conversation log).
+- INSTRUCTIONS.md F46 data-contract row + the strategic-roadmap F46 entry on VPS updated to the same event
+  family + key fields (dropped the "summary form" reference); the F46 event-type values + key data fields are
+  now identical across both repos.
+
+### Added — F46↔F35 wiring made bidirectional (`protocols/weekly-tune-up-protocol.md`, identical both repos)
+- New "What it analyzes" item **5. CRM auto-created field usage (F46)**: reads `crm-field-mappings.md` +
+  `crm-field-writes-log.jsonl` (field NAME/ID + metadata only, never the raw value) and reports, per
+  `ZHC_`-prefixed auto-created field, written-vs-ignored counts (flag unused fields for operator review),
+  operator-field collisions (consolidate candidates), and repeated `field_write_skipped` patterns (wrong
+  dataType). Closes the loop the F46 protocol + AGENTS Step 2.5 + MEMORY Rule 24 already claimed.
+
+### Added — accurate cross-reference (`references/ghl-api-quick-reference.md`, both repos)
+- New **CUSTOM FIELDS (F46)** section documenting the real shapes: `GET /locations/<LOCATION_ID>/customFields`
+  (returns `id`/`name`/`fieldKey`/`dataType`) and `POST /locations/<LOCATION_ID>/customFields` (create with
+  `name`/`dataType`, `ZHC_` prefix, operator-approved never customer-invoked), Version `2021-07-28`. The F46
+  protocol's pointer to this file is now accurate.
+
+### Changed — QC gate tightened (`scripts/qc-feature-logs.sh`, identical both repos)
+- Added a **PII guard**: any Round-3 protocol's JSONL example line carrying a raw-value key
+  (`value_written` / `"value"` / `field_value` / `raw_value`) is now a hard FAIL. Negative-tested — it
+  catches the exact `value_written` leak this release removed.
+- `scripts/qc-tools-md-ghl-ref.sh` size budget bumped for the legitimate new CUSTOM FIELDS section (Mac
+  CHAR_BUDGET 6500→7000; VPS MAX_LINES 185→195), documented as a deliberate bump (same rationale as prior
+  bumps; the line guard remains the real anti-bloat gate).
+
+### Verification
+- `bash -n` clean on all changed scripts. `scripts/qc-feature-logs.sh` PASS both repos (incl. new PII guard).
+  `scripts/qc-tools-md-ghl-ref.sh` + `qc-no-personal-data.sh` PASS both repos. Full `11-run-qc-checklist.sh`
+  introduces ZERO new failures vs clean main (remaining FAILs are environmental — live-install paths absent
+  in a bare clone). VPS↔Mac version sequences kept independent (not converged).
 
 ## [1.5.4] - 2026-05-30 - F47 (Smart FAQ) + F45 (Geo-Qualification) substance deep-fix (byte-identical across both onboarding repos)
 

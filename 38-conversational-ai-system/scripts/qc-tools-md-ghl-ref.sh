@@ -186,7 +186,12 @@ LINE_BUDGET = 120
 # enum note. ~500 chars of headroom keeps the block a concise cheat sheet (the
 # 120-line guard is the real anti-bloat gate) without tripping on the legitimate
 # new READ content.
-CHAR_BUDGET = 6500
+# 7000 (was 6500): the F46 CRM-field fix added the CUSTOM FIELDS section (GET +
+# POST /locations/<id>/customFields, the dataType enum, the ZHC_ create rule,
+# Version 2021-07-28) — a required new API surface, kept to a 2-row table + one
+# note. Same rationale as the 6000->6500 bump; the 120-line guard (90 lines used)
+# remains the real anti-bloat gate.
+CHAR_BUDGET = 7000
 nlines = text.count("\n") + 1
 nchars = len(text)
 if nlines > LINE_BUDGET:
