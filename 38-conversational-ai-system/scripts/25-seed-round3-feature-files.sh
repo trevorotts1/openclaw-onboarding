@@ -139,4 +139,43 @@ agent's reasoning. The machine-readable counterpart is
 aggression-detection-log.jsonl. See protocols/aggression-detection-protocol.md.
 MD
 
+# ---------------------------------------------------------------------------
+# ZHC Tag-Prefix Rule — optional, operator-driven migration reference.
+# Seeded so the operator has the legacy-tag → ZHC- mapping on hand if they ever
+# choose a tidy-namespace cleanup. The rule is NOT retroactive, so this is purely
+# optional. Idempotent (never overwrites the operator's edited copy).
+# Mirrors references/tag-migration-notes.md in the skill repo.
+# ---------------------------------------------------------------------------
+seed_file "$MASTER_FILES_DIR/KnowledgeBases/business/tag-migration-notes.md" <<'MD'
+# Tag Migration Notes — ZHC Tag-Prefix Rule (optional, operator-driven)
+
+The ZHC Tag-Prefix Rule (every tag the AGENT creates is `ZHC-` prefixed) is
+**NOT retroactive** — it never renames or migrates an existing tag. Nothing is
+required of you. This file is here only if you *choose* to consolidate older bare
+agent-created tags into the `ZHC-` namespace for a cleaner Settings → Tags view.
+
+## Mapping: legacy bare tag → `ZHC-` equivalent (optional cleanup)
+
+| Legacy / bare tag | `ZHC-` equivalent | Source feature |
+|---|---|---|
+| bot-detected | ZHC-bot-suspected | F50 / conversational-safeguards |
+| stalled-sales | ZHC-stalled-sales | F29 / follow-up + sales-best-practices |
+| cold-lead-released | ZHC-cold-lead-released | F29 / follow-up (T10 release) |
+| followup-opted-out | ZHC-followup-opted-out | F29 / follow-up (negative signal) |
+| pricing-interest | ZHC-pricing-interest | conversation-workflows D.1 example |
+| discovery-scheduled | ZHC-discovery-scheduled | conversation-workflows D.1 example |
+| buyer-lead / seller-lead | ZHC-buyer-lead / ZHC-seller-lead | real-estate journey / Skill 39 |
+| listing-alert-engaged | ZHC-listing-alert-engaged | real-estate journey (Skill 38) |
+| showing-confirmed | ZHC-showing-confirmed | real-estate journey (Skill 38) |
+| offer-active | ZHC-offer-active | real-estate journey (Skill 38) |
+| under-contract | ZHC-under-contract | real-estate journey (Skill 38) |
+| closed | ZHC-closed | real-estate journey (Skill 38) |
+| post-close-nurture | ZHC-post-close-nurture | real-estate journey (Skill 38) |
+| sphere-reactivation | ZHC-sphere-reactivation | real-estate journey (Skill 38) |
+
+Any other pre-rule agent tag follows the same shape: `your-tag` → `ZHC-your-tag`.
+NEVER migrate operator-owned tags (e.g. `vip`) — leave those exactly as they are.
+Full reference: protocols/zhc-tag-prefix-protocol.md + references/tag-migration-notes.md.
+MD
+
 echo "[skill 38] Round-3 Queue-A feature files ready under $MASTER_FILES_DIR"

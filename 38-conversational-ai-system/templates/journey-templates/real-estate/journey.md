@@ -18,8 +18,8 @@ buyer vs seller, timeline, financing/price
 - Phase 2 — Qualify: area, price band, timeline, pre-approval (buyer) or
   reason/timeline (seller)
 - Phase 3 — Offer the next step (buyer consult / listing appointment)
-**Success action:** Consult/listing appointment booked; tag `buyer-lead` or
-`seller-lead`; brief the agent
+**Success action:** Consult/listing appointment booked; tag `ZHC-buyer-lead` or
+`ZHC-seller-lead`; brief the agent
 
 ### 2. Listing Update Alerts (buyers)
 **Trigger:** A new/updated listing matches a buyer's saved criteria
@@ -28,7 +28,7 @@ buyer vs seller, timeline, financing/price
 - Phase 1 — Send the matching listing(s) with the key facts
 - Phase 2 — Ask if they want to tour; gauge interest level
 **Success action:** Showing requested or feedback captured to refine criteria;
-tag `listing-alert-engaged`
+tag `ZHC-listing-alert-engaged`
 
 ## Purchase moment / transaction workflows
 
@@ -39,7 +39,7 @@ tag `listing-alert-engaged`
 - Phase 1 — Confirm date/time/address + access details
 - Phase 2 — Reminder 24h and 2h before; capture cancellations early
 **Success action:** Showing confirmed; post-showing feedback prompt queued; tag
-`showing-confirmed`
+`ZHC-showing-confirmed`
 
 ### 4. Offer Status Updates
 **Trigger:** An offer is submitted, countered, accepted, or rejected
@@ -49,7 +49,7 @@ negotiation
 - Phase 1 — Plain-language status of where the offer stands and what's next
 - Phase 2 — On counter → set expectations + route decision to the agent fast
 **Success action:** Client informed; decision points escalated to the agent;
-tag `offer-active`
+tag `ZHC-offer-active`
 
 ## Onboarding / under-contract workflows
 
@@ -61,7 +61,7 @@ deadlines so the deal doesn't fall through
 - Phase 1 — Lay out the timeline and each deadline
 - Phase 2 — Nudge on upcoming milestones (inspection, appraisal, final loan)
 - Phase 3 — Flag any at-risk deadline to the agent immediately
-**Success action:** Milestones tracked + reminders firing; tag `under-contract`
+**Success action:** Milestones tracked + reminders firing; tag `ZHC-under-contract`
 
 ## Engagement workflows
 
@@ -72,7 +72,7 @@ deadlines so the deal doesn't fall through
 - Phase 1 — Day-of logistics (time, place, what to bring)
 - Phase 2 — Congratulations + immediate "what now" (keys, utilities, move-in)
 **Success action:** Closing logistics confirmed + congratulations sent; tag
-`closed`; queue the review/testimonial ask
+`ZHC-closed`; queue the review/testimonial ask
 
 ## Retention workflows
 
@@ -84,7 +84,7 @@ estate is a long-cycle referral business)
 - Phase 1 — Check-in + an annual home-value / market update they'd care about
 - Phase 2 — Light, no-pressure "know anyone buying or selling?" referral ask
 **Success action:** Value/market touch delivered; referral captured if offered;
-tag `post-close-nurture`
+tag `ZHC-post-close-nurture`
 
 ## Win-back / sphere workflows
 
@@ -95,7 +95,7 @@ tag `post-close-nurture`
 **Conversation phases:**
 - Phase 1 — Relevant reason to reach out (market move, anniversary)
 - Phase 2 — Offer a no-obligation home valuation or buyer consult
-**Success action:** Valuation/consult offered; tag `sphere-reactivation`
+**Success action:** Valuation/consult offered; tag `ZHC-sphere-reactivation`
 
 ## Notes on Real-Estate-specific tone
 

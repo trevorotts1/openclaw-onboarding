@@ -383,7 +383,27 @@ jobs:
           # tags were updated to the ZHC- form with no bare agent-created example left
           # behind. BASH (grep core) — respects the .py claude-/anthropic ban.
           bash 38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh
-          echo "✓ Skill 38 ZHC tag-prefix rule enforced: every programmatic-tag example uses the ZHC- prefix"
+          # Negative self-test 1: a planted bare create-tag example MUST FAIL (exit 1).
+          ng="$(mktemp -d)"
+          cp -r 38-conversational-ai-system "$ng/skill"
+          printf '\nghl_skill.create_tag(location_id=<LOCATION_ID>, name="hot-lead")\n' \
+            >> "$ng/skill/protocols/aggression-detection-protocol.md"
+          rc=0
+          bash "$ng/skill/scripts/qc-zhc-tag-prefix.sh" --skill-dir "$ng/skill" >/dev/null 2>&1 || rc=$?
+          [ "$rc" -eq 1 ] || { echo "✗ ZHC- gate should FAIL (exit 1) on a planted bare create-tag, got $rc"; exit 1; }
+          rm -rf "$ng"
+          # Negative self-test 2: a planted BARE F29 follow-up tag (prose "tag contact
+          # as `cold-lead-released`") MUST FAIL (exit 1) — proves the new follow-up
+          # coverage genuinely bites, not just the create_tag literal parser.
+          ng2="$(mktemp -d)"
+          cp -r 38-conversational-ai-system "$ng2/skill"
+          printf '\nAfter T10, tag contact as `cold-lead-released` and stop.\n' \
+            >> "$ng2/skill/protocols/intelligent-followup-protocol.md"
+          rc2=0
+          bash "$ng2/skill/scripts/qc-zhc-tag-prefix.sh" --skill-dir "$ng2/skill" >/dev/null 2>&1 || rc2=$?
+          [ "$rc2" -eq 1 ] || { echo "✗ ZHC- gate should FAIL (exit 1) on a planted bare F29 follow-up tag, got $rc2"; exit 1; }
+          rm -rf "$ng2"
+          echo "✓ Skill 38 ZHC tag-prefix rule enforced: every programmatic-tag example uses the ZHC- prefix; fails closed on a bare create-tag AND a bare F29 follow-up tag"
 
       - name: Skill 38 ZHC Pixel (Feature 49) invariants
         shell: bash
