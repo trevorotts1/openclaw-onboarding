@@ -47,7 +47,7 @@ upstream is Skill 23: read its `INSTRUCTIONS.md → "Moment 3.8"`, then build th
 ## What This Skill Ships
 
 <!-- SELF-COUNTS: re-verify on EVERY version bump — see scripts/bump-version.sh "Skill 38 self-count
-     re-verification" note. Counts as of v1.5.4 (Round-3 canonical reconciliation Mac ↔ VPS): protocols/=39
+     re-verification" note. Counts as of v1.5.5 (F46 CRM-field QC deep-fix — no file count change): protocols/=39
      (*.md — v1.5.2 added zhc-pixel-protocol.md for F49; v1.5.0 added the 6 Round-3 Queue-A CORE protocols:
      aggression-detection, smart-playbook-switching (F44 detour-and-return), geo-qualification,
      crm-field-write, smart-faq, zhc-tag-prefix), scripts/=55 (*.sh — v1.5.4 added qc-f45-f47-substance;

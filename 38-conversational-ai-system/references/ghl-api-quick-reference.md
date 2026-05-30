@@ -78,5 +78,12 @@ curl -s -X POST 'https://services.leadconnectorhq.com/calendars/events/appointme
 
 > Exact body fields: `29-ghl-convert-and-flow/references/payments.md`. SCHEDULED invoices also need scope `invoices/schedule.write`.
 
+### CUSTOM FIELDS (F46 — Step 9.40, `crm-field-write-protocol.md`)
+LOCATION-scoped discover/create; the VALUE is written onto the contact via `PUT /contacts/<contactId>` `customFields` (see protocol). **Version `2021-07-28`** (NOT `2021-04-15`).
+| Op | Method + URL | Returns / Body |
+|---|---|---|
+| Discover | `GET /locations/<LOCATION_ID>/customFields` | each field's `id`, `name`, `fieldKey`, `dataType` (TEXT/LARGE_TEXT/NUMERICAL/MONETARY/DATE/PHONE/SINGLE_OPTIONS/RADIO/MULTIPLE_OPTIONS/CHECKBOX); option types also return `options` |
+| Create (if missing) | `POST /locations/<LOCATION_ID>/customFields` | `{"name":"ZHC_<lower_snake>","dataType":"<TYPE>","locationId":"<LOCATION_ID>"}` → new field `id`. Operator-approved, NEVER customer-invoked; always `ZHC_` prefix |
+
 **Common 400/401 causes:** missing the `Version: 2021-04-15` header; a missing required field (esp. `locationId`); expired/wrong-type token. Deeper detail: `29-ghl-convert-and-flow/references/{conversations,calendars,payments}.md`.
 <!-- END SKILL38: GHL_API_QUICK_REFERENCE -->

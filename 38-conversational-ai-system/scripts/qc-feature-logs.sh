@@ -13,6 +13,11 @@
 #   2. INSTRUCTIONS.md documents every JSONL path + its event_type (the data
 #      contract is centralized there per the task).
 #   3. The installer (25-seed-round3-feature-files.sh) seeds every JSONL sink.
+#   4. PII GUARD: no protocol's JSONL example line may carry a RAW customer-value
+#      key (value_written / "value" / field_value / raw_value). The structured
+#      logs record field NAME/ID + metadata only — the raw value is PII and must
+#      stay out of the contract (lives in GHL + the conversation log). This is a
+#      hard FAIL — it would have caught the F46 value_written leak.
 #
 # The five logs + their protocols + event_types:
 #   aggression-detection-log.jsonl  aggression-detection-protocol.md      aggression_detected/tension_detected
@@ -110,6 +115,21 @@ for row in "${ROWS[@]}"; do
   else
     echo "  [FAIL] scripts/25-seed-round3-feature-files.sh not found"
     FAIL=1
+  fi
+
+  # 4. PII guard — no JSONL example line in the protocol may carry a RAW
+  #    customer-value key. The contract is field NAME/ID + metadata only; the
+  #    raw value is PII (lives in GHL + the conversation log, never the log).
+  if [ -f "$proto_path" ]; then
+    # only inspect lines that ARE JSONL examples (timestamp + event_type present)
+    if grep -E '"timestamp"' "$proto_path" \
+         | grep '"event_type"' \
+         | grep -Eq '"(value_written|value|field_value|raw_value)"[[:space:]]*:'; then
+      echo "  [FAIL] protocols/$proto JSONL example leaks a RAW customer value (value_written/\"value\"/field_value/raw_value) — PII must stay out of the structured log (field NAME/ID + metadata only)"
+      FAIL=1
+    else
+      echo "  [PASS] protocols/$proto JSONL example is PII-free (no raw-value key)"
+    fi
   fi
 done
 
