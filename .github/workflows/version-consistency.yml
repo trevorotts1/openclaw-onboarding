@@ -1,9 +1,9 @@
 name: Version consistency
 
-# Fails the build if any of the 8 version locations disagree.
+# Fails the build if any of the 9 version markers disagree.
 # Triggered on every push to main and every PR targeting main.
 #
-# Locations checked (expanded from 5 -> 8 in v10.14.35, matching bump-version.sh):
+# Markers checked (5 -> 8 in v10.14.35; 8 -> 9 in v10.15.16, matching bump-version.sh):
 #   1. /version
 #   2. /install.sh ONBOARDING_VERSION=
 #   3. /update-skills.sh ONBOARDING_VERSION=
@@ -12,6 +12,10 @@ name: Version consistency
 #   6. /23-ai-workforce-blueprint/templates/role-library/_qc-summary.md
 #   7. /README.md (this repo at vX.Y.Z)
 #   8. /DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)
+#   9. /README.md (Current Version: vX.Y.Z) — added v10.15.16. A SECOND marker
+#      in README.md, separate from #7. It drifted to v10.15.15 (one patch behind
+#      /version) because nothing rolled or checked it. Now both rolled by
+#      bump-version.sh and gated here.
 #
 # Security note: this workflow consumes only repo file content (no
 # untrusted GitHub event fields like PR title/body/commit message),
@@ -25,7 +29,7 @@ on:
 
 jobs:
   check-version-drift:
-    name: Verify all 8 version locations agree
+    name: Verify all 9 version markers agree
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -77,8 +81,13 @@ jobs:
             V_README=$(grep -oE 'this repo at v[0-9]+\.[0-9]+\.[0-9]+' README.md \
               | head -1 | sed 's/this repo at //' || true)
             [ -z "$V_README" ] && V_README="MISSING"
+            # Loc 9: /README.md "Current Version: vX.Y.Z" marker (added v10.15.16)
+            V_README_CURRENT=$(grep -oE 'Current Version: v[0-9]+\.[0-9]+\.[0-9]+' README.md \
+              | head -1 | sed 's/Current Version: //' || true)
+            [ -z "$V_README_CURRENT" ] && V_README_CURRENT="MISSING"
           else
             V_README="MISSING"
+            V_README_CURRENT="MISSING"
           fi
 
           # Loc 8: /DIRECT-TO-AGENT-UPDATE-MESSAGE.md "**vX.Y.Z**" boldface
@@ -99,6 +108,7 @@ jobs:
           N_INDEX=$(norm "$V_INDEX")
           N_QC=$(norm "$V_QC")
           N_README=$(norm "$V_README")
+          N_README_CURRENT=$(norm "$V_README_CURRENT")
           N_DIRECT=$(norm "$V_DIRECT")
 
           echo ""
@@ -110,6 +120,7 @@ jobs:
           printf "  %-55s %s\n" "/.../templates/role-library/_index.json [version]"       "$V_INDEX"
           printf "  %-55s %s\n" "/.../templates/role-library/_qc-summary.md heading"      "$V_QC"
           printf "  %-55s %s\n" "/README.md (this repo at vX.Y.Z)"                        "$V_README"
+          printf "  %-55s %s\n" "/README.md (Current Version: vX.Y.Z)"                    "$V_README_CURRENT"
           printf "  %-55s %s\n" "/DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)"         "$V_DIRECT"
           echo ""
 
@@ -120,7 +131,8 @@ jobs:
           [ "$N_ROOT" = "$N_SKILL"          ] || FAIL="$FAIL skill-version.txt($N_SKILL)"
           [ "$N_ROOT" = "$N_INDEX"          ] || FAIL="$FAIL _index.json($N_INDEX)"
           [ "$N_ROOT" = "$N_QC"             ] || FAIL="$FAIL _qc-summary.md($N_QC)"
-          [ "$N_ROOT" = "$N_README"         ] || FAIL="$FAIL README.md($N_README)"
+          [ "$N_ROOT" = "$N_README"         ] || FAIL="$FAIL README.md:this-repo-at($N_README)"
+          [ "$N_ROOT" = "$N_README_CURRENT" ] || FAIL="$FAIL README.md:Current-Version($N_README_CURRENT)"
           [ "$N_ROOT" = "$N_DIRECT"         ] || FAIL="$FAIL DIRECT-TO-AGENT-UPDATE-MESSAGE.md($N_DIRECT)"
 
           if [ -n "$FAIL" ]; then
@@ -133,4 +145,4 @@ jobs:
             exit 1
           fi
 
-          echo "All 8 version locations agree at $V_ROOT"
+          echo "All 9 version markers agree at $V_ROOT"
