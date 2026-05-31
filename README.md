@@ -9,7 +9,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
-**Current Version: v10.15.15** — See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v10.15.16** — See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 
 This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
 

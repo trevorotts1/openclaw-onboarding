@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # bump-version.sh — atomically bump the OpenClaw version across ALL files.
 #
-# The problem this solves: "the version" is encoded in 8 separate files. Drift
-# is mathematically guaranteed unless one tool updates all 8 in one shot.
+# The problem this solves: "the version" is encoded in 9 separate markers
+# (across 8 files — README.md carries 2). Drift is mathematically guaranteed
+# unless one tool updates all of them in one shot.
 #
 # Coverage history:
 #   v10.14.0 and earlier: 5 files (version, install.sh, skill-version.txt,
@@ -10,6 +11,13 @@
 #   v10.14.34+:           8 files — added README.md, update-skills.sh,
 #                                   DIRECT-TO-AGENT-UPDATE-MESSAGE.md
 #                                   (per 2-day forensics finding #23)
+#   v10.15.16+:           9 markers — added the README.md "Current Version:
+#                                   vX.Y.Z" prose line (a SECOND marker in
+#                                   README.md, separate from the "this repo at
+#                                   vX.Y.Z" marker). It drifted to v10.15.15
+#                                   one patch behind /version because no script
+#                                   or CI check rolled it. Now rolled here AND
+#                                   CI-tracked in version-consistency.yml.
 #
 # VERSION-BUMP CHECKLIST — SKILL 38 SELF-COUNT RE-VERIFICATION (added 2026-05-29):
 #   Skill 38's SKILL.md "What This Skill Ships" hard-codes file counts
@@ -26,7 +34,7 @@
 #   qc-23-key-bodies.sh + trinity qc-trinity-registry.sh are part of scripts/.
 #
 # Usage:
-#   ./scripts/bump-version.sh v10.6.2          # update all 8 files
+#   ./scripts/bump-version.sh v10.6.2          # update all version markers
 #   ./scripts/bump-version.sh v10.6.2 --tag    # also create a git tag
 #   ./scripts/bump-version.sh v10.6.2 --tag --push   # also push the tag
 #   ./scripts/bump-version.sh --check          # exit 1 if drift; print state
@@ -69,8 +77,13 @@ read_current() {
   if [ -f "$F_README" ]; then
     V_README=$(grep -oE 'this repo at v[0-9]+\.[0-9]+\.[0-9]+' "$F_README" 2>/dev/null | head -1 | sed 's/this repo at //' || echo "MISSING")
     if [ -z "$V_README" ]; then V_README="MISSING"; fi
+    # Marker #9 (v10.15.16) — the README "Current Version: vX.Y.Z" prose line.
+    # A SECOND marker in the same file; drifted to v10.15.15 because nothing rolled it.
+    V_README_CURRENT=$(grep -oE 'Current Version: v[0-9]+\.[0-9]+\.[0-9]+' "$F_README" 2>/dev/null | head -1 | sed 's/Current Version: //' || echo "MISSING")
+    if [ -z "$V_README_CURRENT" ]; then V_README_CURRENT="MISSING"; fi
   else
     V_README="MISSING"
+    V_README_CURRENT="MISSING"
   fi
   if [ -f "$F_UPDATE_SKILLS" ]; then
     V_UPDATE_SKILLS=$(grep -E '^ONBOARDING_VERSION=' "$F_UPDATE_SKILLS" 2>/dev/null | head -1 | sed -E 's/^ONBOARDING_VERSION="?([^"]*)"?.*/\1/' || echo "MISSING")
@@ -99,6 +112,7 @@ print_state() {
   printf "  %-50s %s\n" "templates/role-library/_index.json [version]" "$V_INDEX"
   printf "  %-50s %s\n" "templates/role-library/_qc-summary.md heading" "$V_QC"
   printf "  %-50s %s\n" "README.md (this repo at vX.Y.Z)" "$V_README"
+  printf "  %-50s %s\n" "README.md (Current Version: vX.Y.Z)" "$V_README_CURRENT"
   printf "  %-50s %s\n" "update-skills.sh ONBOARDING_VERSION" "$V_UPDATE_SKILLS"
   printf "  %-50s %s\n" "DIRECT-TO-AGENT-UPDATE-MESSAGE.md (**vX.Y.Z**)" "$V_DIRECT"
 }
@@ -111,12 +125,13 @@ check_drift() {
   N_INDEX=$(norm "$V_INDEX")
   N_QC=$(norm "$V_QC")
   N_README=$(norm "$V_README")
+  N_README_CURRENT=$(norm "$V_README_CURRENT")
   N_UPDATE=$(norm "$V_UPDATE_SKILLS")
   N_DIRECT=$(norm "$V_DIRECT")
   if [ "$N_ROOT" = "$N_INSTALL" ] && [ "$N_ROOT" = "$N_SKILL" ] && \
      [ "$N_ROOT" = "$N_INDEX" ] && [ "$N_ROOT" = "$N_QC" ] && \
-     [ "$N_ROOT" = "$N_README" ] && [ "$N_ROOT" = "$N_UPDATE" ] && \
-     [ "$N_ROOT" = "$N_DIRECT" ]; then
+     [ "$N_ROOT" = "$N_README" ] && [ "$N_ROOT" = "$N_README_CURRENT" ] && \
+     [ "$N_ROOT" = "$N_UPDATE" ] && [ "$N_ROOT" = "$N_DIRECT" ]; then
     return 0
   fi
   return 1
@@ -127,7 +142,7 @@ if [ "${1:-}" = "--check" ]; then
   print_state
   if check_drift; then
     echo ""
-    echo "All 8 locations agree."
+    echo "All 9 version markers agree."
     exit 0
   else
     echo ""
@@ -208,6 +223,12 @@ content = open(p).read()
 # Replace "this repo at vX.Y.Z." patterns
 new = re.sub(r'(this repo at )v[0-9]+\.[0-9]+\.[0-9]+',
              r'\1' + target, content)
+# Marker #9 (v10.15.16): "Current Version: vX.Y.Z" prose line. This is a
+# SECOND, independent version marker in README.md. It silently drifted to
+# v10.15.15 (one patch behind /version) because no script rolled it. Roll it
+# here on every bump so it can never drift again.
+new = re.sub(r'(Current Version: )v[0-9]+\.[0-9]+\.[0-9]+',
+             r'\1' + target, new)
 # Replace any "(vX.Y.Z)" heading suffix that matches the prior version
 # (heuristic: only first 200 lines, to avoid rewriting CHANGELOG entries)
 lines = new.split('\n')
@@ -258,7 +279,7 @@ if ! check_drift; then
 fi
 
 echo ""
-echo "All 8 locations agree at $TARGET"
+echo "All 9 version markers agree at $TARGET"
 
 # ─── Optional: tag + push ───────────────────────────────────────────────────
 if [ "${2:-}" = "--tag" ] || [ "${3:-}" = "--tag" ]; then
