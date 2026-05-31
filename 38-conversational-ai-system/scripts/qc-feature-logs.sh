@@ -63,6 +63,11 @@ ROWS=(
   "geo-qualification-log.jsonl|geo-qualification-protocol.md|geo_qualification"
   "crm-field-writes-log.jsonl|crm-field-write-protocol.md|crm_field_write"
   "faq-detour-log.jsonl|smart-faq-tool-protocol.md|faq_answered"
+  "segmentation-events.jsonl|customer-segmentation-protocol.md|segment_detected"
+  "outreach-events.jsonl|proactive-outreach-protocol.md|campaign_fired"
+  "ab-test-events.jsonl|ab-testing-protocol.md|variant_assigned"
+  "voice-call-events.jsonl|voice-phone-protocol.md|voice_call"
+  "webhook-chain-events.jsonl|webhook-chaining-protocol.md|webhook_chain"
 )
 
 for row in "${ROWS[@]}"; do

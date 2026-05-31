@@ -635,6 +635,88 @@ else
   report_fail "qc-notion-doc-standard.sh not found (looked in scripts/)"
 fi
 
+# -------- Multi-Tenant Agent Isolation (F21) invariant gate (machine-enforced) --------
+section "Multi-tenant isolation rule (qc-multi-tenant.sh)"
+QC_MT="$SCRIPT_DIR/qc-multi-tenant.sh"
+[ -f "$QC_MT" ] || QC_MT="$SKILL38_ROOT/scripts/qc-multi-tenant.sh"
+if [ -f "$QC_MT" ]; then
+  if bash "$QC_MT" >/dev/null 2>&1; then
+    report_pass "F21 multi-tenant isolation invariants hold (protocol + AGENTS Step 0.8 + MEMORY Rule 26, per-tenant scoping/namespacing + tenant.md config + hooks.mappings tenant_id convention, PII-free multi-tenant-events.jsonl seeded, per-tenant root scaffolded, toggle default OFF)"
+  else
+    report_fail "qc-multi-tenant.sh found an F21 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-multi-tenant.sh not found (looked in scripts/)"
+fi
+
+# -------- Customer Segmentation Awareness (F17) invariant gate (machine-enforced) --------
+section "Customer segmentation rule (qc-segmentation.sh)"
+QC_SEG="$SCRIPT_DIR/qc-segmentation.sh"
+[ -f "$QC_SEG" ] || QC_SEG="$SKILL38_ROOT/scripts/qc-segmentation.sh"
+if [ -f "$QC_SEG" ]; then
+  if bash "$QC_SEG" >/dev/null 2>&1; then
+    report_pass "F17 customer segmentation invariants hold (protocol + AGENTS Step 1.85 + MEMORY Rule 27, five segments + per-client tag_map/segment-map.md mapping + multi-tag precedence + the four behavior overrides + before-reply-draft placement + ZHC-segment- tag prefix + operator-only guard, PII-free segmentation-events.jsonl seeded with the segment-map.md companion, toggle default OFF)"
+  else
+    report_fail "qc-segmentation.sh found an F17 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-segmentation.sh not found (looked in scripts/)"
+fi
+
+# -------- Proactive Outreach Campaigns (F15) invariant gate (machine-enforced) --------
+section "Proactive outreach campaigns rule (qc-proactive-outreach.sh)"
+QC_OUTREACH="$SCRIPT_DIR/qc-proactive-outreach.sh"
+[ -f "$QC_OUTREACH" ] || QC_OUTREACH="$SKILL38_ROOT/scripts/qc-proactive-outreach.sh"
+if [ -f "$QC_OUTREACH" ]; then
+  if bash "$QC_OUTREACH" >/dev/null 2>&1; then
+    report_pass "F15 proactive outreach invariants hold (protocol + MEMORY Rule 28, NO inbound AGENTS step — cron/event-driven, campaign-definition format cron|event trigger + GHL-tag audience + Communication-Playbook-rendered message + frequency cap + opt-out + ZHC-outreach- tag, STRICT quiet-hours respect Step 9.8, reactive-vs-proactive tracked separately via direction:proactive, operator-only/never-customer-invoked SEND, F29 migrates onto this infra, PII-free outreach-events.jsonl seeded with the outreach-campaigns/ dir + example campaign, toggle default OFF)"
+  else
+    report_fail "qc-proactive-outreach.sh found an F15 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-proactive-outreach.sh not found (looked in scripts/)"
+fi
+
+# -------- A/B Testing of Reply Variants (F16) invariant gate (machine-enforced) --------
+section "A/B testing of reply variants rule (qc-ab-testing.sh)"
+QC_ABTEST="$SCRIPT_DIR/qc-ab-testing.sh"
+[ -f "$QC_ABTEST" ] || QC_ABTEST="$SKILL38_ROOT/scripts/qc-ab-testing.sh"
+if [ -f "$QC_ABTEST" ]; then
+  if bash "$QC_ABTEST" >/dev/null 2>&1; then
+    report_pass "F16 A/B testing invariants hold (protocol + AGENTS Step 1.87 + MEMORY Rule 29, two variants a/b per channel + experiments/ab-experiments mapping + deterministic-by-contact sticky assignment + at-draft-time placement + the three outcome metrics booked/converted/sentiment + the two-proportion z-test with default N=30/arm + auto-promote-with-operator-notify + ZHC-abtest-variant- tags + operator-only/A-B-injection guard, PII-free ab-test-events.jsonl seeded with the ab-experiments/ scaffold, toggle default OFF)"
+  else
+    report_fail "qc-ab-testing.sh found an F16 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-ab-testing.sh not found (looked in scripts/)"
+fi
+
+section "Voice / phone integration rule (qc-voice-phone.sh)"
+QC_VOICE="$SCRIPT_DIR/qc-voice-phone.sh"
+[ -f "$QC_VOICE" ] || QC_VOICE="$SKILL38_ROOT/scripts/qc-voice-phone.sh"
+if [ -f "$QC_VOICE" ]; then
+  if bash "$QC_VOICE" >/dev/null 2>&1; then
+    report_pass "F14 voice/phone invariants hold (protocol + MEMORY Rule 30 + setup wizard, STT Whisper-large-v3 via OpenRouter/Groq/Ollama -> brain -> TTS ElevenLabs Flash 2.5/OSS over Twilio Media Streams + /hooks/voice-call-event scaffolding + greeting->listen->respond->handoff/booking state machine + < 800ms first-audio target + degrade-to-text fallback + operator-only outbound-dial guard + ZHC-voice-* tags + the HONEST live-telephony gap, PII-free voice-call-events.jsonl seeded, toggle default OFF)"
+  else
+    report_fail "qc-voice-phone.sh found an F14 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-voice-phone.sh not found (looked in scripts/)"
+fi
+
+section "Webhook chaining rule (qc-webhook-chaining.sh)"
+QC_WEBHOOK="$SCRIPT_DIR/qc-webhook-chaining.sh"
+[ -f "$QC_WEBHOOK" ] || QC_WEBHOOK="$SKILL38_ROOT/scripts/qc-webhook-chaining.sh"
+if [ -f "$QC_WEBHOOK" ]; then
+  if bash "$QC_WEBHOOK" >/dev/null 2>&1; then
+    report_pass "F18 webhook-chaining invariants hold (protocol + AGENTS Step 2.9 STEP_2_9_WEBHOOK_CHAINING + MEMORY Rule 31, the operator-defined webhook-chains/ registry + the four allow-listed trigger events booking_completed/invoice_sent/escalation_raised/transcript_exported + the https-only target + the PII-free payload (opaque contact_ref) + the exponential-backoff/max-attempts retry policy + the async/never-block-the-reply invariant + the operator-only/never-customer-invoked outbound SSRF/exfiltration guard + the ZHC-webhook-chain-fired/-failed tags, PII-free webhook-chain-events.jsonl seeded with the registry + example chain, toggle default OFF)"
+  else
+    report_fail "qc-webhook-chaining.sh found an F18 invariant violation — run it directly for detail"
+  fi
+else
+  report_fail "qc-webhook-chaining.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"

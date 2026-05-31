@@ -1,3 +1,68 @@
+## [v10.15.16]  -  2026-05-30  -  Skill 38 Round-2 backlog shipped (6 advanced features, all default-OFF) + advertising rolled forward in the same merge
+
+### Why
+The Skill 38 Round-2 backlog (PR #68, branch `feat/round2-backlog`) was QC-passed (all 6 features ≥ 8.5) and
+CI-green, but `main` moved under it when the v10.15.15 version-surface reconcile (#67) merged first. Rather than
+merge the features and leave the README/version surfaces advertising the prior state (a drift window), this
+release merges `main` into the branch, rolls the 8 version-tracked surfaces forward **in the same merge**, and
+ships features + advertising together so the merged `main` is immediately consistent. Skill 38 advances
+**1.5.6 → 1.5.12** (one minor per feature: F21 → 1.5.7, F17 → 1.5.8, F15 → 1.5.9, F16 → 1.5.10, F14 → 1.5.11,
+F18 → 1.5.12).
+
+### Added — Skill 38 Round-2 backlog (6 NEW features, ALL default-OFF / opt-in; the installer never flips one ON)
+- **F21 Multi-Tenant Agent Isolation (the AGENCY tier)** — `protocols/multi-tenant-isolation-protocol.md`,
+  INSTRUCTIONS Step 9.44, AGENTS.md Step 0.8, MEMORY Rule 26. Each end-client is an isolated TENANT
+  (opaque `tenant_id` in `hooks.mappings`; the four scoped surfaces under `<MASTER_FILES_DIR>/tenants/<tenant_id>/`);
+  cross-tenant access by a customer is IGNORED. Toggle `skill38.multi_tenant.enabled` (default false).
+- **F17 Customer Segmentation Awareness** — `protocols/customer-segmentation-protocol.md`, INSTRUCTIONS
+  Step 9.45, AGENTS.md Step 1.85, MEMORY Rule 27. Resolves a segment (`vip`/`prospect`/`returning`/`at-risk`/
+  `churned`) from operator GHL tags and tunes tone/priority/escalation/confidence — never disables a hard-gate.
+  Toggle `skill38.segmentation.enabled` (default false).
+- **F15 Proactive Outreach Campaigns** — `protocols/proactive-outreach-protocol.md`, INSTRUCTIONS Step 9.46,
+  MEMORY Rule 28 (cron/event-driven, no Step 9.x reply block). Scheduled/event outbound through the matching
+  Communication Playbook, frequency-capped, quiet-hours-respecting, opt-out-aware; SEND gated by operator
+  approval. Toggle `skill38.proactive_outreach.enabled` (default false).
+- **F16 A/B Testing of Reply Variants** — `protocols/ab-testing-protocol.md`, INSTRUCTIONS Step 9.47,
+  AGENTS.md Step 1.87, MEMORY Rule 29. Two playbook variants per channel, deterministic-by-contact sticky
+  assignment, a two-proportion z-test (default N=30/arm, α=0.05) picks the winner, auto-promote with operator
+  notify. Toggle `skill38.ab_testing.enabled` (default false).
+- **F14 Voice / Phone Integration** — `protocols/voice-phone-protocol.md`, INSTRUCTIONS Step 9.48, AGENTS.md
+  `VOICE_PHONE_PIPELINE` block, MEMORY Rule 30, setup wizard `scripts/30-voice-phone-setup-wizard.sh`. STT →
+  brain → TTS over Twilio Media Streams; same hard-gates as text; degrade-to-text fallback. **Honest gap:** live
+  telephony needs operator-provisioned Twilio/STT/TTS creds + the media-stream bridge provisioned at setup (NOT
+  faked / not pre-baked). Toggle `skill38.voice_phone.enabled` (default false).
+- **F18 Webhook Chaining** — `protocols/webhook-chaining-protocol.md`, INSTRUCTIONS Step 9.49, AGENTS.md
+  Step 2.9, MEMORY Rule 31. After an allow-listed COMPLETED action (`booking_completed`/`invoice_sent`/
+  `escalation_raised`/`transcript_exported`) fires an operator-defined OUTBOUND webhook (`https://`-only,
+  PII-free payload, exponential-backoff retry); async, never blocks the reply; SSRF/exfiltration guarded
+  (customer can never name/add/trigger a target). Toggle `skill38.webhook_chaining.enabled` (default false).
+- Each feature ships a QC gate `scripts/qc-<feature>.sh` + a negative test `qc-<feature>.test.sh` wired into
+  `scripts/11-run-qc-checklist.sh` and the `qc-static.yml` CI workflow, a PII-free F52 JSONL log, and a
+  documentation-only OFF toggle. Skill 38 on-disk counts after Round-2: **45 protocols / 68 scripts /
+  19 references / 8 journey templates** (SKILL.md SELF-COUNTS re-verified against `ls`).
+
+### Changed (advertising surfaces — rolled forward in this same merge)
+- **Repo version v10.15.15 → v10.15.16** across all 8 CI-tracked locations via `scripts/bump-version.sh`
+  (`/version`, `install.sh`, `update-skills.sh`, `23-ai-workforce-blueprint/skill-version.txt`, role-library
+  `_index.json` + `_qc-summary.md`, README "this repo at vX.Y.Z", `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`).
+- **README NOTE/headline** rewritten to the live shipped tree: Skill 38 → **v1.5.12**, the 6 Round-2 features
+  listed (all default-OFF). The Skill 38 inventory row now reads **v1.5.12 / 45 protocols / 68 scripts** with
+  the Round-2 features named (the `bump-version.sh` `(vX.Y.Z)` heuristic mis-stamped the Skill 38/39/40 skill
+  pills to the repo version; all three restored to their true skill versions v1.5.12 / v1.0.0 / v1.0.1).
+
+### Not changed
+- **No Round-2 feature content was modified by this release** — the 6 protocols/scripts/gates/tests were
+  already QC-passed on the branch; this release only merged `main` in (clean — only `CHANGELOG.md`,
+  `23-…/skill-version.txt`, `_index.json`, `_qc-summary.md`, `DIRECT-TO-AGENT…`, `README.md`, `install.sh`,
+  `update-skills.sh`, `version` reconciled, auto-merged with no conflict markers), rolled the version surfaces,
+  and updated advertising prose.
+- **Skill 38's own `skill-version.txt`** stays on its independent line at **1.5.12** (NOT one of the 8
+  CI-tracked files; the Mac 10.15.x / VPS 10.16.x independence convention is preserved).
+
+### Version
+- Repo-wide bump v10.15.15 → v10.15.16 via `scripts/bump-version.sh` (all 8 locations agree; CI
+  `version-consistency.yml` green). Tag v10.15.16 cut at the post-merge `main` HEAD with a mirroring Release.
+
 ## [v10.15.15]  -  2026-05-30  -  Version-surface reconcile (advertising rolled forward to match shipped tree)
 
 ### Why

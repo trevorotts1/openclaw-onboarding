@@ -435,6 +435,211 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-zhc-pixel.test.sh
           echo "✓ qc-zhc-pixel negative test passes (the gate fails on a broken invariant)"
 
+      - name: Skill 38 Multi-Tenant Agent Isolation (Feature 21) invariants
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the F21 multi-tenant agent-isolation invariants from the repo
+          # alone: the protocol (multi-tenant-isolation-protocol.md) carries the opaque
+          # tenant_id, the hooks.mappings tenant_id routing convention, the per-tenant root
+          # tenants/<tenant_id>/ scoping ALL FOUR surfaces (conversation logs, Knowledge
+          # Sources, Communication Playbooks, Conversation Workflows), the tenant.md
+          # "which tenant am I serving" config directive, the ZHC-<tenant_id>- tag
+          # namespace, the operator-only/never-customer-invoked guard (cross-tenant
+          # injection), the "Client A never leaks to Client B" isolation invariant, and the
+          # honest "NOT a runtime DB migration" scope; AGENTS.md Step 0.8
+          # (STEP_0_8_MULTI_TENANT_ISOLATION) + MEMORY Rule 26; the PII-free F52 log
+          # multi-tenant-events.jsonl (event_type tenant_routing) documented in the
+          # protocol + INSTRUCTIONS.md + seeded by script 25 (which also scaffolds the
+          # per-tenant root); and the default-OFF toggle skill38.multi_tenant.enabled.
+          # BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-multi-tenant.sh
+          echo "✓ Skill 38 Multi-Tenant Agent Isolation (F21) invariants hold"
+
+      - name: Skill 38 Multi-Tenant gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-multi-tenant.sh actually FAILS when an F21 invariant is broken (a green
+          # gate that never fails is worthless). Copies the skill to a temp dir and breaks
+          # three different invariants (the hooks.mappings tenant_id convention, the
+          # operator-only guard, and the multi-tenant-events.jsonl seeding), asserting the
+          # gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-multi-tenant.test.sh
+          echo "✓ qc-multi-tenant negative test passes (the gate fails on each broken invariant)"
+
+      - name: Skill 38 Customer Segmentation Awareness (F17) invariant gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the Customer Segmentation Awareness feature (F17, OFF by
+          # default): the protocol substance — the five canonical segments
+          # (vip/prospect/returning/at-risk/churned), the per-client GHL-tag → segment
+          # mapping (tag_map + segment-map.md), the multi-tag precedence
+          # (at-risk > vip > churned > returning > prospect), ALL FOUR behavior overrides
+          # (response priority, the F4/Step 9.6 sentiment-escalation threshold, the
+          # Communication Playbook tier, the Step 9.11 confidence threshold), the
+          # BEFORE-reply-draft Step 1.85 placement, the ZHC-segment- tag prefix, the
+          # operator-only/never-customer-invoked (self-promotion) guard, and the honest
+          # "READS membership / NOT a new CRM or scoring engine" scope; AGENTS.md Step 1.85
+          # (STEP_1_85_SEGMENTATION_AWARENESS) + MEMORY Rule 27; the PII-free F52 log
+          # segmentation-events.jsonl (event_type segment_detected) documented in the
+          # protocol + INSTRUCTIONS.md + seeded by script 25 (which also seeds the
+          # segment-map.md companion); and the default-OFF toggle skill38.segmentation.enabled.
+          # BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-segmentation.sh
+          echo "✓ Skill 38 Customer Segmentation Awareness (F17) invariants hold"
+
+      - name: Skill 38 Segmentation gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-segmentation.sh actually FAILS when an F17 invariant is broken (a green
+          # gate that never fails is worthless). Copies the skill to a temp dir and breaks
+          # three different invariants (the multi-tag precedence, the operator-only/
+          # self-promotion guard, and the segmentation-events.jsonl seeding), asserting the
+          # gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-segmentation.test.sh
+          echo "✓ qc-segmentation negative test passes (the gate fails on each broken invariant)"
+
+      - name: Skill 38 Proactive Outreach Campaigns (F15) invariant gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the Proactive Outreach Campaigns feature (F15, OFF by
+          # default): the protocol substance — the campaign-definitions dir
+          # (outreach-campaigns/), BOTH trigger kinds (time-based cron + event-based),
+          # the GHL-tag audience filter, the message rendered THROUGH the Communication
+          # Playbook (same brand voice as a reactive reply), the frequency cap, opt-out
+          # respect (ZHC-outreach-opted-out, global), the ZHC-outreach-<campaign> tag, the
+          # STRICT quiet-hours respect (Step 9.8 — a quiet-window touch queues/defers), the
+          # reactive-vs-proactive separation (direction:proactive on every log line), the
+          # operator-only/never-customer-invoked SEND guard (outbound-injection), the F29
+          # Intelligent-Follow-up migration relationship, and the honest "reuses GHL send +
+          # openclaw cron + Communication Playbooks, NOT a new sending service/scheduler/CRM"
+          # scope; the engine is CRON/EVENT-DRIVEN so there is intentionally NO inbound
+          # AGENTS.md step (no STEP_9_46 marker — the cron+event wiring is documented in the
+          # protocol instead) + MEMORY Rule 28; the PII-free F52 log outreach-events.jsonl
+          # (event_type campaign_fired) documented in the protocol + INSTRUCTIONS.md + seeded
+          # by script 25 (which also seeds the outreach-campaigns/ dir + the example campaign);
+          # and the default-OFF toggle skill38.proactive_outreach.enabled. BASH (grep core)
+          # — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-proactive-outreach.sh
+          echo "✓ Skill 38 Proactive Outreach Campaigns (F15) invariants hold"
+
+      - name: Skill 38 Proactive Outreach gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-proactive-outreach.sh actually FAILS when an F15 invariant is broken (a
+          # green gate that never fails is worthless). Copies the skill to a temp dir and
+          # breaks three different invariants (the STRICT quiet-hours Step 9.8 cross-reference,
+          # the operator-only/outbound-injection SEND guard, and the outreach-events.jsonl
+          # seeding), asserting the gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-proactive-outreach.test.sh
+          echo "✓ qc-proactive-outreach negative test passes (the gate fails on each broken invariant)"
+
+      - name: Skill 38 A/B Testing of Reply Variants (F16) invariant gate
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the A/B Testing of Reply Variants feature (F16, OFF by default):
+          # the protocol substance — TWO Communication-Playbook variants (a/b) per channel, the
+          # per-channel experiment definition (experiments + ab-experiments/<channel>.md), the
+          # DETERMINISTIC-BY-CONTACT assignment (a contact stays in one arm — sticky), the
+          # AT-DRAFT-TIME Step 1.87 placement (after segmentation Step 1.85, before the reply
+          # draft Step 1.9), ALL THREE outcome metrics (booked / converted / sentiment
+          # trajectory), the documented two-proportion z-test + the sane default N (30/arm), the
+          # auto-promote-with-operator-notify flow, the ZHC-abtest-variant- tag prefix, the
+          # operator-only/never-customer-invoked (A/B-injection) guard, and the honest "REUSES
+          # the reply-draft path + existing booking/conversion/sentiment signals / NOT a new
+          # statistics engine or platform" scope; AGENTS.md Step 1.87 (STEP_1_87_AB_TESTING) +
+          # MEMORY Rule 29; the PII-free F52 log ab-test-events.jsonl (event_type
+          # variant_assigned) documented in the protocol + INSTRUCTIONS.md + seeded by script 25
+          # (which also seeds the ab-experiments/ scaffold — the example experiment + the two
+          # variant overlays); and the default-OFF toggle skill38.ab_testing.enabled. BASH
+          # (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-ab-testing.sh
+          echo "✓ Skill 38 A/B Testing of Reply Variants (F16) invariants hold"
+
+      - name: Skill 38 A/B Testing gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-ab-testing.sh actually FAILS when an F16 invariant is broken (a green gate
+          # that never fails is worthless). Copies the skill to a temp dir and breaks three
+          # different invariants (the deterministic-by-contact/sticky assignment, the
+          # operator-only/A-B-injection guard, and the ab-test-events.jsonl seeding), asserting
+          # the gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-ab-testing.test.sh
+          echo "✓ qc-ab-testing negative test passes (the gate fails on each broken invariant)"
+
+      - name: Skill 38 Voice / Phone Integration gate (F14)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the Voice / Phone Integration feature (F14, OFF by default): the
+          # protocol substance — the STT Whisper-large-v3 (via OpenRouter/Groq/local Ollama) ->
+          # the EXISTING brain -> TTS (ElevenLabs Flash 2.5 / OSS) pipeline, the Twilio Voice +
+          # Media Streams (SIP/PSTN) transport, the inbound /hooks/voice-call-event hook
+          # scaffolding, the call-lifecycle state machine (greeting->listen->respond->handoff/
+          # booking), the < 800ms first-audio latency target, the degrade-to-text fallback, the
+          # setup wizard, the operator-only/never-customer-invoked OUTBOUND-dial guard, the
+          # ZHC-voice-inbound / ZHC-voice-outbound tags, and the HONEST live-telephony gap (NOT
+          # faked — live telephony needs operator-provisioned creds + the media-stream bridge
+          # provisioned at setup); MEMORY Rule 30; the setup wizard
+          # scripts/30-voice-phone-setup-wizard.sh; the PII-free F52 log voice-call-events.jsonl
+          # (event_type voice_call) documented in the protocol + INSTRUCTIONS.md + seeded by
+          # script 25; and the default-OFF toggle skill38.voice_phone.enabled. BASH (grep core)
+          # — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-voice-phone.sh
+          echo "✓ Skill 38 Voice / Phone Integration (F14) invariants hold"
+
+      - name: Skill 38 Voice / Phone gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-voice-phone.sh actually FAILS when an F14 invariant is broken (a green gate
+          # that never fails is worthless). Copies the skill to a temp dir and breaks three
+          # different invariants (the operator-only/outbound-dial-injection guard, the HONEST
+          # live-telephony gap, and the voice-call-events.jsonl seeding), asserting the gate
+          # exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-voice-phone.test.sh
+          echo "✓ qc-voice-phone negative test passes (the gate fails on each broken invariant)"
+
+      - name: Skill 38 Webhook Chaining gate (F18)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the Webhook Chaining feature (F18, OFF by default): the protocol
+          # substance — the OUTBOUND post-action front-door framing, the operator-defined
+          # webhook-chains/ registry, the FOUR allow-listed trigger events (booking_completed /
+          # invoice_sent / escalation_raised / transcript_exported, others ignored), the
+          # https-only target, the PII-free payload (opaque contact_ref + action ids, never a
+          # name/email/phone/address or the transcript body), the retry policy (exponential
+          # backoff + max_attempts), the async/never-block-the-reply invariant, the operator-only/
+          # never-customer-invoked OUTBOUND guard (SSRF / exfiltration — a customer can never
+          # name/add/trigger a target), and the ZHC-webhook-chain-fired / ZHC-webhook-chain-failed
+          # tags; AGENTS.md Step 2.9 (STEP_2_9_WEBHOOK_CHAINING) + MEMORY Rule 31; the PII-free F52
+          # log webhook-chain-events.jsonl (event_type webhook_chain) documented in the protocol +
+          # INSTRUCTIONS.md + seeded by script 25 (which also seeds the webhook-chains/ registry +
+          # the example chain); and the default-OFF toggle skill38.webhook_chaining.enabled. BASH
+          # (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-webhook-chaining.sh
+          echo "✓ Skill 38 Webhook Chaining (F18) invariants hold"
+
+      - name: Skill 38 Webhook Chaining gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-webhook-chaining.sh actually FAILS when an F18 invariant is broken (a green
+          # gate that never fails is worthless). Copies the skill to a temp dir and breaks three
+          # different invariants (the operator-only/SSRF-exfiltration outbound guard, the retry
+          # policy (exponential backoff + max attempts), and the webhook-chain-events.jsonl
+          # seeding), asserting the gate exits non-zero on each.
+          bash 38-conversational-ai-system/scripts/qc-webhook-chaining.test.sh
+          echo "✓ qc-webhook-chaining negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 UNIVERSAL no-personal-data gate (Round-3 Queue-A additions)
         shell: bash
         run: |
