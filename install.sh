@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.16"
+ONBOARDING_VERSION="v10.15.17"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -2303,14 +2303,27 @@ fi
 # Mac: Homebrew cask (the canonical Mac install path). Falls back gracefully
 # if brew is missing or the install fails — Skill 22 has graceful degradation
 # for missing Calibre.
+# v10.15.17: Guard every `ebook-convert --version` with a hard timeout.
+# On a headless Mac, `ebook-convert --version` can wedge forever (Calibre tries
+# to spin up a Qt/GUI subsystem with no display), which stalls the whole install
+# at this gate. Resolve a timeout wrapper up front: GNU coreutils ships
+# `gtimeout` on Mac (via Homebrew coreutils); fall back to a plain `timeout` if
+# present; if neither exists, run bare (the `|| true` keeps the gate non-fatal).
+if command -v gtimeout >/dev/null 2>&1; then
+    EBOOK_TIMEOUT="gtimeout 20"
+elif command -v timeout >/dev/null 2>&1; then
+    EBOOK_TIMEOUT="timeout 20"
+else
+    EBOOK_TIMEOUT=""
+fi
 if command -v ebook-convert >/dev/null 2>&1; then
-    success "Calibre (ebook-convert) already installed: $(ebook-convert --version 2>&1 | head -1)"
+    success "Calibre (ebook-convert) already installed: $($EBOOK_TIMEOUT ebook-convert --version 2>&1 | head -1 || true)"
 else
     note "Installing Calibre (ebook-convert) for Skill 22 ebook extraction..."
     if command -v brew >/dev/null 2>&1; then
         if brew install --cask calibre 2>&1 | tee -a "$LOG_FILE" | tail -3; then
             if command -v ebook-convert >/dev/null 2>&1; then
-                success "Calibre installed: $(ebook-convert --version 2>&1 | head -1)"
+                success "Calibre installed: $($EBOOK_TIMEOUT ebook-convert --version 2>&1 | head -1 || true)"
             else
                 # Calibre installs to /Applications/calibre.app on Mac; ebook-convert is inside
                 CALIBRE_BIN="/Applications/calibre.app/Contents/MacOS/ebook-convert"
