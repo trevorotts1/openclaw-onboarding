@@ -1,3 +1,39 @@
+## [v10.15.15]  -  2026-05-30  -  Version-surface reconcile (advertising rolled forward to match shipped tree)
+
+### Why
+The repo version line (`/version` + the 8 CI-tracked locations) sat at **v10.15.14**, but the
+**v10.15.14 git tag pointed at an older commit (3 commits behind `main`)** and carried no GitHub Release,
+while the README still advertised a fossil state (`Current Version: v10.3.0`, "36 skill folders", Skill 38
+"v5.14", a "Total: 39 numbered skill folders" footer, and a stale v2.1 PRD block presented as current). Real
+shipped work had also landed after the v10.15.14 tag — Skill 38 advanced **1.5.4 → 1.5.6**, Skill 40's
+county-set / Tier-1 reconcile, and the F45/F46/F47 + ZHC Tag-Prefix-Rule QC fix wave — none of which was
+reflected in any tag or Release. This release rolls the **advertised** state forward so it tells the truth
+about the shipped tree, cuts a tag at the real `main` HEAD, and publishes a mirroring Release.
+
+### Changed (advertising surfaces only — NO skill content touched)
+- **Repo version v10.15.14 → v10.15.15** across all 8 CI-tracked locations via `scripts/bump-version.sh`
+  (`/version`, `install.sh`, `update-skills.sh`, `23-ai-workforce-blueprint/skill-version.txt`,
+  role-library `_index.json` + `_qc-summary.md`, README "this repo at vX.Y.Z", `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`).
+- **README headline + NOTE** rewritten to live state: Skill 38 → **v1.5.6** (was advertised as v1.5.3/v1.5.2/v5.14),
+  Skills 39 + 40 present, Round-3 + fix-wave shipped. Replaced the fossil `Current Version: v10.3.0` headline
+  with **v10.15.15** and the "36 skill folders" prose with the real **40 numbered (37 active + 3 archived)**.
+- **README skill inventory** corrected to the live tree: added the missing **Skill 37 (ZHC Closeout)** row,
+  refreshed the Skill 38 row to v1.5.6 with accurate counts (39 protocols / 55 scripts / 19 references /
+  8 journey templates), dropped the stale per-skill `(v9.0.0)` / `(v5.14)` tags, and fixed the footer to
+  **"Total: 40 numbered skill folders (37 active + 3 archived: 13, 33, 34)"**.
+- **Stripped fossil README blocks**: the v2.1 PRD "Zero-Human Company Spec" section and the long inline
+  "What's New in v10.3.0 … v6.0.7" changelog wall — both now point to this CHANGELOG.md as the single
+  history record. README shows live state only.
+
+### Not changed
+- **No skill content** (protocols/scripts/templates inside skill folders) was modified.
+- **Skill 38's own `skill-version.txt` stays at 1.5.6** — it versions independently of the repo line and is
+  NOT one of the 8 CI-tracked files (per the Mac 10.15.x / VPS 10.16.x independence convention).
+
+### Version
+- Repo-wide bump v10.15.14 → v10.15.15 via `scripts/bump-version.sh` (all 8 version locations agree; CI
+  `version-consistency.yml` green). Tag v10.15.15 cut at the post-merge `main` HEAD with a mirroring Release.
+
 ## [v10.15.13]  -  2026-05-30  -  Round-3 cross-repo reconciliation + roadmap spec committed; Skill 38 v1.5.3
 
 ### Why
