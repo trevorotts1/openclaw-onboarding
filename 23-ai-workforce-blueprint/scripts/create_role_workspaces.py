@@ -210,37 +210,162 @@ def _resolve_skill_dir():
         return Path(__file__).resolve().parent.parent
 
 
-def library_lookup(role_slug, dept_slug):
+# ─── ROLE-NAME NORMALIZER (WS-2: 58% naive match → ~100% normalized) ──────────
+#
+# WS-1 archaeology proved that naive `slugify(role_name)` exact-matches only
+# 124/214 (58%) of suggested-roles against the role-library slugs, because the
+# two name-spaces drifted: the library slugs encode `&`→drop-or-`and`, `/`→space,
+# em-dash variants, and the suggested-roles names carry decorations
+# (`**`, `⭐`, `FLAGSHIP ROLE`) plus employment-type qualifiers
+# (`(full-time-permanent or on-call)`). A single deterministic normalizer that
+# generates MULTIPLE candidate keys per name and matches against keys derived
+# from BOTH the library `title` and `slug` reaches 215/215 (100%) on both repos
+# with zero collisions. This is the function that makes the build INSTANTIATE
+# the 991 pre-written SOPs instead of LLM-regenerating them from empty stubs.
+
+# Department-name aliases: suggested-roles dept id / workspace dept folder name
+# → role-library `dept` value in _index.json. Identity for the 16 canonical
+# depts; aliases cover historical/workspace-folder spellings.
+_LIBRARY_DEPT_ALIASES = {
+    "legal": "legal-compliance",
+    "legal-compliance": "legal-compliance",
+    "billing-finance": "billing",
+    "billing": "billing",
+    "video-production": "video",
+    "video": "video",
+    "audio-production": "audio",
+    "audio": "audio",
+}
+
+# Employment / availability qualifier tokens — describe schedule, not the role.
+# Dropped wherever they appear so `Reddit Specialist (full-time-permanent or
+# on-call)` normalizes to the same key as the library's `reddit-specialist`.
+_EMPLOYMENT_TOKENS = {
+    "full", "time", "permanent", "part", "on", "call", "temporary",
+    "contract", "seasonal", "unless", "audience", "justifies", "depending",
+    "or",
+}
+
+
+def normalize_dept(dept_slug):
+    """Map a workspace/suggested-roles dept id to the role-library dept value."""
+    key = str(dept_slug or "").replace("-dept", "").replace("dept-", "").strip().lower()
+    return _LIBRARY_DEPT_ALIASES.get(key, key)
+
+
+def _strip_role_decorations(s):
+    s = s.replace("**", "").replace("⭐", "").replace("★", "").replace("🌟", "")
+    s = re.sub(r"(?i)\bflagship\s+role\b", " ", s)
+    s = re.sub(r"(?i)\bflagship\b", " ", s)
+    return s
+
+
+def _clean_role_key(s, amp):
+    """amp in {'and','drop'} — the library is internally inconsistent about `&`,
+    so we generate both and match if either hits."""
+    s = s.replace("—", "-").replace("–", "-")
+    s = s.replace("&", " and ") if amp == "and" else s.replace("&", " ")
+    s = s.replace("/", " ").lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    toks = [t for t in s.split() if t not in _EMPLOYMENT_TOKENS]
+    return " ".join(toks)
+
+
+def normalize_role_variants(name):
     """
-    Return (library_doc_path, role_entry_dict) or (None, None) if no match.
-    Reads templates/role-library/_index.json from the installed skill folder.
+    Return the set of candidate normalized keys for a role name. Generated for
+    BOTH suggested-role names AND library titles/slugs so they meet in the
+    middle. Two parenthetical strategies (drop-from-`(` vs keep-paren-words) ×
+    two `&` strategies (`and` vs drop) = up to 4 keys.
     """
-    skill_dir = _resolve_skill_dir()
+    out = set()
+    base = _strip_role_decorations(str(name or "")).strip()
+    a = base.split("(", 1)[0] if "(" in base else base        # drop from first '('
+    b = base.replace("(", " ").replace(")", " ")              # keep paren words
+    for raw in (a, b):
+        for amp in ("and", "drop"):
+            v = _clean_role_key(raw, amp)
+            if v:
+                out.add(v)
+    return out
+
+
+# Cache: skill_dir -> {dept: {normalized_key: role_entry}}
+_LIBRARY_INDEX_CACHE = {}
+
+
+def _build_library_index(skill_dir):
+    """Read _index.json and build {dept: {normalized_key: role_entry}}."""
+    skill_dir = Path(skill_dir)
+    cache_key = str(skill_dir)
+    if cache_key in _LIBRARY_INDEX_CACHE:
+        return _LIBRARY_INDEX_CACHE[cache_key]
+
     index_path = skill_dir / "templates" / "role-library" / "_index.json"
+    by_dept = {}
     if not index_path.exists():
-        return None, None
+        _LIBRARY_INDEX_CACHE[cache_key] = by_dept
+        return by_dept
     try:
         index = json.loads(index_path.read_text(encoding="utf-8"))
     except Exception as e:
-        print(f"  [Wave 5b] WARN: could not parse _index.json: {e}", file=sys.stderr)
-        return None, None
-
-    # Normalize dept slug (strip "-dept" suffix, lowercase)
-    dept_key = dept_slug.replace("-dept", "").strip().lower()
+        print(f"  [WS-2] WARN: could not parse _index.json: {e}", file=sys.stderr)
+        _LIBRARY_INDEX_CACHE[cache_key] = by_dept
+        return by_dept
 
     for role_entry in index.get("roles", []):
-        if (role_entry.get("dept", "").lower() == dept_key
-                and role_entry.get("slug", "").lower() == role_slug.lower()):
-            doc_rel = role_entry.get("path", "")
-            doc_abs = skill_dir / doc_rel
-            if doc_abs.exists():
-                return doc_abs, role_entry
-            # Fallback: built from convention
-            fallback = skill_dir / "templates" / "role-library" / role_entry["dept"] / f"{role_entry['slug']}.md"
-            if fallback.exists():
-                return fallback, role_entry
-            return None, role_entry
-    return None, None
+        dept = role_entry.get("dept", "").lower()
+        if not dept:
+            continue
+        title = role_entry.get("title", "")
+        slug = role_entry.get("slug", "")
+        keys = set()
+        # title may be a token placeholder ({{ROLE_TITLE}}) — fall back to slug
+        if title and "{{" not in title:
+            keys |= normalize_role_variants(title)
+        keys |= normalize_role_variants(slug.replace("-", " "))
+        d = by_dept.setdefault(dept, {})
+        for k in keys:
+            d.setdefault(k, role_entry)  # first writer wins (stable, no clobber)
+
+    _LIBRARY_INDEX_CACHE[cache_key] = by_dept
+    return by_dept
+
+
+def library_lookup(role_slug, dept_slug):
+    """
+    Return (library_doc_path, role_entry_dict) or (None, None) if no match.
+
+    WS-2: matches via the normalizer (variant keys) against keys derived from
+    BOTH the library title and slug, so the 42% of roles that the old naive
+    exact-slug match dropped now resolve. `role_slug` may be a raw role NAME or
+    a slug — both normalize to the same candidate keys.
+    """
+    skill_dir = _resolve_skill_dir()
+    by_dept = _build_library_index(skill_dir)
+    dept_key = normalize_dept(dept_slug)
+    dept_map = by_dept.get(dept_key, {})
+    if not dept_map:
+        return None, None
+
+    role_entry = None
+    for cand in normalize_role_variants(str(role_slug).replace("-", " ")):
+        if cand in dept_map:
+            role_entry = dept_map[cand]
+            break
+    if role_entry is None:
+        return None, None
+
+    doc_rel = role_entry.get("path", "")
+    doc_abs = skill_dir / doc_rel
+    if doc_abs.exists():
+        return doc_abs, role_entry
+    # Fallback: built from convention
+    fallback = (skill_dir / "templates" / "role-library"
+                / role_entry["dept"] / f"{role_entry['slug']}.md")
+    if fallback.exists():
+        return fallback, role_entry
+    return None, role_entry
 
 
 def _load_company_config():
@@ -311,6 +436,7 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
         "DEPARTMENT_NAME": dept_name,
         "DIRECTOR_OR_MASTER_ORCHESTRATOR": director,
         "ISO_DATE": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "GENERATION_DATE": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "ASSIGNED_PERSONA": "—",
         'CURRENTLY_ASSIGNED_PERSONA or "—"': "—",
         "full-time-permanent": "full-time-permanent",
@@ -333,10 +459,11 @@ def try_library_fill(role_name, dept_path, is_ceo):
     the filled content. Returns None if no library match (caller falls back
     to stub_how_to).
     """
-    role_slug = slugify(role_name)
+    # WS-2: pass the RAW role name (not the naive slug) so the normalizer can
+    # strip decorations / employment qualifiers and reach ~100% match coverage.
     dept_slug = dept_path.name.replace("-dept", "").strip().lower()
 
-    doc_path, role_entry = library_lookup(role_slug, dept_slug)
+    doc_path, role_entry = library_lookup(role_name, dept_slug)
     if not doc_path:
         return None
 
