@@ -158,7 +158,9 @@ Override via env `ZHC_CELEBRATION_VIDEO_MODEL` (default `gemini-omni-video`; als
 
 This is the only step that the OWNER sees. **All prior steps were silent.** Goal: paced, celebratory, not a spam dump.
 
-1. Invoke `scripts/send-telegram-celebration.sh`. The script reads state and sends 6 sequenced messages to `ownerChat`:
+**Every artifact resolves to a REAL openable LINK in the message — never "we saved it in folder X."** Each image and the video are sent as INLINE media (local bytes via multipart, so they render in-thread, not as a download card), and each one ALSO carries a durable "🔗 Open it directly:" link — the GHL media-library PUBLIC URL (`storage.googleapis.com/msgsndr/...`, openable with no GHL login) when the client has GHL, falling back to the remote artifact URL otherwise. The Notion page, Command Center, and GHL media library are posted as plain openable URLs.
+
+1. Invoke `scripts/send-telegram-celebration.sh`. The script reads state and sends 6 sequenced messages to `ownerChat`. Every image/video slot prefers the durable GHL public URL as its openable link (`openable_link()` resolves GHL public URL → remote http URL → none):
 
    **Message 1 — Announcement (10-second pause after):**
    ```
@@ -194,7 +196,7 @@ This is the only step that the OWNER sees. **All prior steps were silent.** Goal
    First 7 Days action plan. Read it when you have 15 minutes.
    ```
 
-   **Message 6 — Command Center URL (sendMessage):**
+   **Message 6 — Command Center URL + GHL media links (sendMessage):**
    ```
    🎛️ Your BlackCEO Command Center:
    {{COMMAND_CENTER_URL}}
@@ -203,21 +205,38 @@ This is the only step that the OWNER sees. **All prior steps were silent.** Goal
    the Kanban board, and check in on every department. Open it in your
    browser and bookmark it.
 
+   📁 Your celebration media is also saved in your Convert and Flow media
+   library — open any of these directly:
+   - 🎬 Celebration video: {{GHL_VIDEO_PUBLIC_URL}}
+   - 📊 Workforce structure: {{GHL_INFOGRAPHIC1_PUBLIC_URL}}
+   - ⚙️ How work flows: {{GHL_INFOGRAPHIC2_PUBLIC_URL}}
+   (Browse them all in your account: {{GHL_MEDIA_LIBRARY_URL}})
+
    When you're ready, just message me with the first thing you want done.
    I'm standing by.
    ```
+   The GHL block is appended ONLY when the media upload produced public URLs (client has GHL). With no GHL, the message is just the Command Center URL + the standing-by close.
 
 2. After Message 6 successfully delivers (each message records a REAL gateway messageId):
    - Set `closeoutStatus: "sent"`, atomic write.
    - **Delivery confirmation gate (anti-faking):** `run-closeout.sh` then runs `scripts/verify-telegram-delivery.sh`, which cross-checks every required captured `messageId` against the gateway sent-registry (`agents/main/sessions/sessions.json.telegram-sent-messages.json`). `done` may be written ONLY when every required messageId is confirmed present (or has legitimately aged out of the rolling window). If any required messageId is missing-and-recent, the closeout is marked `failed` with `closeoutFailureReason: "telegram-unconfirmed: msg <n>"` and the resume cron retries. A 0-exit `openclaw message send` is NOT proof of delivery.
    - Only then set `closeoutCompletedAt: <now-ISO-8601>` and `closeoutStatus: "done"`, atomic write.
 
-### Step 7 (success path only) -- Operator summary + conditional GHL media upload
+### Step 5.5 — Conditional GHL media upload (runs BEFORE Telegram)
 
-On the clean success path -- after every artifact cleared the 8.5 gate, was delivered, and the phantom-closeout guard passed -- `run-closeout.sh` runs two final steps BEFORE writing `closeoutStatus: "done"`:
+`run-closeout.sh` runs `scripts/upload-ghl-media.sh` at Step 5.5 — **before** the Telegram step — so the durable per-file public URLs are in state in time to be posted as the openable links in the celebration messages.
 
-1. `scripts/upload-ghl-media.sh` (conditional): if the client has the GHL / Convert-and-Flow skill installed AND a working LOCATION PIT (`GHL_API_KEY` + `GHL_LOCATION_ID`, PIT verified against `/locations/<id>`), it POSTs the real local closeout media (the two infographics + celebration video) to `medias/upload-file` (Version 2021-07-28). It skips gracefully -- writing a `ghlMediaUploaded` reason -- when GHL or a working PIT is absent. Never blocks closeout.
-2. `scripts/send-operator-summary.sh`: sends Trevor (`ZHC_OPERATOR_CHAT_ID`, default `5252140759`) a single Telegram message via the OpenClaw gateway with LINKS to every delivered artifact (dashboard, both infographics, celebration video, Notion page, plus Drive/GHL where present). Idempotent via `operatorSummarySentAt`.
+- **Trigger:** the client has the GHL / Convert-and-Flow skill installed OR a LOCATION PIT/location id is present. It resolves the LOCATION PIT from `GOHIGHLEVEL_API_KEY` (canonical) or `GHL_API_KEY` (legacy alias), and the location id from `GOHIGHLEVEL_LOCATION_ID` / `GHL_LOCATION_ID` / build-state `.ghlLocationId`. The PIT is verified against `GET /locations/<id>` before any upload. Media uploads REQUIRE the LOCATION PIT (the Agency PIT 401s on media ops).
+- **Upload:** POSTs the real local closeout media (the two infographics + celebration video) to `POST /medias/upload-file` (`Version: 2021-07-28`) with form fields `file`, `locationId`, `name`, `hosted=false`, and `parentId=<folder>` when a folder id is set.
+- **Folder:** GHL **folder CREATE via API is broken** (TOOLS.md ground truth) — the script never POSTs a folder-create. To group the media, pre-create a "ZHC Closeout — <Company>" folder in the Convert and Flow UI and export its id as `GHL_MEDIA_FOLDER_ID`; the field name on the upload is **`parentId`** (NOT `folderId`). With no folder id, files land in the media root (still fully shareable).
+- **Output:** each upload returns `{"fileId","url":"https://storage.googleapis.com/msgsndr/..."}`. That `url` is a PUBLIC, openable GCS link. The script writes `ghlVideoPublicUrl`, `ghlInfographic1PublicUrl`, `ghlInfographic2PublicUrl`, `ghlMediaUrls[]`, `ghlMediaFileIds[]`, and the in-app `ghlMediaLibraryUrl` to state.
+- **Skips gracefully** — writing a `ghlMediaUploaded` reason (`skipped-no-ghl` / `skipped-no-pit` / `skipped-pit-verify-failed` / `skipped-no-files`) — when GHL or a working PIT is absent. Never blocks closeout.
+
+### Step 7 (success path only) -- Operator summary
+
+After every artifact cleared the 8.5 gate, was delivered, the phantom-closeout guard passed, AND the Telegram delivery was confirmed against the sent-registry, `run-closeout.sh` runs one final step BEFORE writing `closeoutStatus: "done"`:
+
+1. `scripts/send-operator-summary.sh`: sends Trevor (`ZHC_OPERATOR_CHAT_ID`, default `5252140759`) a single Telegram message via the OpenClaw gateway with the DURABLE openable LINK to every delivered artifact — preferring the GHL public URL, then Drive, then the remote URL — (dashboard, both infographics, celebration video, Notion page, GHL media library). Idempotent via `operatorSummarySentAt`.
 
 **Retries per message:** 3 (with 2s/4s/8s backoff). If a message fails 3x:
 - If it's Message 1 (the announcement), abort the whole delivery, mark `closeoutStatus: "failed"`, set `closeoutFailureReason: "telegram-message-1: <error>"`. Resume cron will retry on next fire.

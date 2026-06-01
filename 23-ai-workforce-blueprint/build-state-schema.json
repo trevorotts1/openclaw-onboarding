@@ -320,7 +320,62 @@
         "string",
         "null"
       ],
-      "description": "KIE.AI Veo 3.1-returned URL for the celebration video"
+      "description": "KIE.AI-returned URL for the celebration video (Gemini Omni Video, model id gemini-omni-video; Veo 3.1 fallback). This is the EPHEMERAL vendor CDN URL (aiquickdraw) -- not durable. The bytes are downloaded to celebrationVideoLocalPath and, where GHL is present, re-hosted to a durable public URL in ghlVideoPublicUrl."
+    },
+    "celebrationVideoLocalPath": {
+      "type": ["string", "null"],
+      "description": "Local on-disk path to the downloaded celebration MP4 (workspace/.zhc-celebration-video.mp4). Sent inline to Telegram via multipart and uploaded to the GHL media library."
+    },
+    "celebrationVideoModel": {
+      "type": ["string", "null"],
+      "description": "The KIE model that actually produced the celebration video (gemini-omni-video | veo3 | veo3_fast)."
+    },
+    "infographic1LocalPath": {
+      "type": ["string", "null"],
+      "description": "Local on-disk path to the rendered Workforce Structure org-chart PNG (workspace/.zhc-inf1-output.png). Sent inline to Telegram and uploaded to GHL."
+    },
+    "infographic2LocalPath": {
+      "type": ["string", "null"],
+      "description": "Local on-disk path to the How-Work-Flows infographic PNG, when downloaded for GHL re-hosting."
+    },
+    "ghlLocationId": {
+      "type": ["string", "null"],
+      "description": "Convert and Flow / GHL LOCATION (sub-account) id for this client, if provisioned. Closeout media uploads target this location. Empty when the client has no GHL location (do NOT fabricate)."
+    },
+    "ghlMediaUploaded": {
+      "type": ["boolean", "string"],
+      "description": "true when closeout media was uploaded to the client's GHL media library; otherwise a skip/failure reason string (skipped-no-ghl | skipped-no-pit | skipped-pit-verify-failed | skipped-no-files | failed-no-files-accepted)."
+    },
+    "ghlMediaFileIds": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "GHL fileIds of every closeout media file accepted by /medias/upload-file."
+    },
+    "ghlMediaUrls": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "PUBLIC (storage.googleapis.com/msgsndr/...) URLs of every uploaded closeout media file -- openable without a GHL login."
+    },
+    "ghlMediaLibraryUrl": {
+      "type": ["string", "null"],
+      "description": "In-app Convert and Flow media-storage link (behind GHL login) where the closeout media lives. Convenience 'browse them all' link -- NOT the openable artifact link."
+    },
+    "ghlVideoPublicUrl": {
+      "type": ["string", "null"],
+      "description": "Durable, openable PUBLIC URL of the celebration video re-hosted in the GHL media library. Posted to Telegram as the video's 'open it directly' link."
+    },
+    "ghlInfographic1PublicUrl": {
+      "type": ["string", "null"],
+      "description": "Durable, openable PUBLIC URL of the Workforce Structure infographic re-hosted in the GHL media library."
+    },
+    "ghlInfographic2PublicUrl": {
+      "type": ["string", "null"],
+      "description": "Durable, openable PUBLIC URL of the How-Work-Flows infographic re-hosted in the GHL media library."
+    },
+    "ghlMediaUploadedAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Timestamp the GHL media upload completed."
     },
     "notionRootPageUrl": {
       "type": [

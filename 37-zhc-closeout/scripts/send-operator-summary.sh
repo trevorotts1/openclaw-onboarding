@@ -70,19 +70,27 @@ DRIVE1="$(state_get '.infographic1DriveUrl')"
 DRIVE2="$(state_get '.infographic2DriveUrl')"
 DRIVE_VID="$(state_get '.celebrationVideoDriveUrl')"
 GHL="$(state_get '.ghlMediaUploaded')"
+GHL_LIB="$(state_get '.ghlMediaLibraryUrl')"
+# v10.x: durable, openable per-file public URLs from the GHL media upload.
+GHL_VID="$(state_get '.ghlVideoPublicUrl')"
+GHL_INF1="$(state_get '.ghlInfographic1PublicUrl')"
+GHL_INF2="$(state_get '.ghlInfographic2PublicUrl')"
 HELD="$(state_get '.qualityHeld | join(", ")')"
 
 line() { local label="$1" val="$2"; [[ -n "$val" && "$val" != "null" ]] && printf -- '- %s: %s\n' "$label" "$val"; }
 
+# Prefer the DURABLE link for each artifact: GHL public URL > Drive URL > the
+# (ephemeral) KIE/remote URL. So the operator summary links match what the client
+# can actually open.
 MSG="$(
   printf 'ZHC Closeout COMPLETE -- %s\n\n' "${COMPANY:-(unnamed company)}"
   printf 'Every artifact passed the 8.5 quality gate and was delivered to the client. Links:\n\n'
   line "Command Center dashboard" "$DASH"
-  line "Infographic 1 (Workforce Structure)" "${DRIVE1:-$INF1}"
-  line "Infographic 2 (How Work Flows)" "${DRIVE2:-$INF2}"
-  line "Celebration video" "${DRIVE_VID:-$VIDEO}"
+  line "Infographic 1 (Workforce Structure)" "${GHL_INF1:-${DRIVE1:-$INF1}}"
+  line "Infographic 2 (How Work Flows)" "${GHL_INF2:-${DRIVE2:-$INF2}}"
+  line "Celebration video" "${GHL_VID:-${DRIVE_VID:-$VIDEO}}"
   line "Notion closeout page" "$NOTION"
-  if [[ -n "$GHL" && "$GHL" == "true" ]]; then printf -- '- GHL media library: uploaded\n'; fi
+  if [[ -n "$GHL" && "$GHL" == "true" ]]; then line "GHL media library" "$GHL_LIB"; fi
   if [[ -n "$HELD" && "$HELD" != "null" ]]; then printf '\nHELD (not delivered, needs review): %s\n' "$HELD"; fi
 )"
 
