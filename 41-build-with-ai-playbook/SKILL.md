@@ -1,0 +1,166 @@
+# Skill 41: Build With AI Playbook Generator
+
+## MANDATORY - Teach Yourself Protocol (TYP)
+
+**Before using this skill, complete the Teach Yourself Protocol (Skill 01) on this folder.**
+
+Required read order:
+1. SKILL.md (this file) -- overview, component map, honest MVP status
+2. INSTALL.md -- one-time setup: prerequisites + the numbered install scripts (00--05) + provider env keys
+3. INSTRUCTIONS.md -- runtime guide: the full build protocol, brainstorm flow, dependency-first rule, standardized output template, verification checklist
+4. CORE_UPDATES.md -- what gets appended to AGENTS.md + MEMORY.md + TOOLS.md
+5. EXAMPLES.md -- worked, copy-pasteable example flows (UNIVERSAL placeholders only)
+6. CHANGELOG.md -- version history
+
+Per N3 ("read before act"), do not skip. Per N4, follow steps in declared order.
+
+## Governing protocol (binding for this skill and all skills in the repo)
+
+This skill is governed by ../QC-PROTOCOL.md (repo root) -- the Sub-Agent Handoff and Mandatory QC Protocol. Every install, every PR, every multi-file change runs the 10-category QC rubric (8.5 threshold) BEFORE declaring done. Sub-agents receive full instructions (never summaries). See QC-PROTOCOL.md Part 5 for the sub-agent contract.
+
+## What This Skill Is
+
+**Skill 41 is the GoHighLevel / Convert and Flow Workflow AI Builder playbook generator.** It turns an operator's natural-language request into a complete, ready-to-paste Build With AI prompt that generates a working GHL workflow. The skill enforces the dependency-first rule: tags, custom fields, and custom values must be created BEFORE the workflow references them. It also ships the full verification checklist, webhook configuration protocol, and the standardized output template that every Build With AI prompt must follow.
+
+This skill is a SIBLING of Skill 38 (Conversational AI System) and Skill 39 (Real Estate Playbook). Skill 38 owns the conversation engine; Skill 41 owns the workflow-automation domain knowledge that the engine reasons over when the operator asks to "build a workflow" or "create an automation."
+
+## Honest MVP status (real vs stubbed)
+
+This skill is shipped as an MVP. Every component is marked below as REAL (works today), PROVIDER-GATED (works only when the operator supplies the relevant API key; honest gap otherwise -- NEVER fabricated), or STUB (scaffold + documented contract, no live integration yet). The skill NEVER fabricates workflow capabilities. When a GHL feature is absent or an API call fails, the agent reports the honest gap and offers the operator the manual path.
+
+| Component | Status | Notes |
+|---|---|---|
+| Build With AI prompt template (standardized 8-section) | REAL | templates/build-with-ai-prompt-template.md -- the canonical output format |
+| Dependency-first protocol (tags/fields/values FIRST) | REAL | protocols/dependency-creation-protocol.md -- enforced before every build |
+| GHL triggers catalog | REAL | references/ghl-triggers-catalog.md -- 14 categories, 80+ triggers |
+| GHL actions catalog | REAL | references/ghl-actions-catalog.md -- 14 categories, 100+ actions |
+| GHL conditions reference | REAL | references/ghl-conditions-reference.md -- If/Else + trigger filters |
+| GHL Workflow AI Builder guide | REAL | references/ghl-workflow-ai-builder.md -- how the AI builder works |
+| Webhook configuration protocol | REAL | protocols/webhook-configuration-protocol.md -- Custom Webhook action deep-dive |
+| Verification checklist | REAL | protocols/verification-checklist.md -- 12-point post-build checklist |
+| F52 data contract | REAL | references/f52-data-contract.md -- event log schema for build sessions |
+| Conversation playbook template | REAL | templates/conversation-playbook-template.md -- pairs with Skill 38 workflows |
+| QC rubric | REAL | references/qc-rubric.md -- 10-category QC for every generated prompt |
+| Install scripts (00--05) | REAL | scripts/ -- prerequisite verify, master-files locate, seed playbook, init JSONL sinks, update core files |
+| Library scripts | REAL | scripts/lib-master-files.sh -- shared helpers for master-files resolution |
+
+## How Skill 41 fits in the pipeline
+
+```
+Operator says: "Build me a workflow that tags new leads and sends a welcome email"
+   |
+   v
+Skill 41 Build With AI Playbook Generator
+   |
+   |-- Step 1: Brainstorm flow (friendly, concise, uses what we already know)
+   |-- Step 2: Dependency audit (what tags/fields/values must exist FIRST)
+   |-- Step 3: Create dependencies via GHL API (ZHC- prefixed tags, ZHC_ prefixed fields)
+   |-- Step 4: Generate standardized Build With AI prompt (8 sections)
+   |-- Step 5: Operator pastes into GHL Workflow AI Builder (Automations > Build using AI)
+   |-- Step 6: Post-build verification (12-point checklist)
+   |-- Step 7: Log to build-with-ai-events.jsonl (F52 contract)
+   v
+Working GHL workflow published + conversation playbook registered (if applicable)
+```
+
+## The standardized output template (8 sections)
+
+Every Build With AI prompt generated by this skill MUST contain these 8 sections in this order:
+
+1. **Workflow name** -- clear, descriptive name for the workflow
+2. **Trigger specification** -- trigger type + any filters
+3. **Dependency list** -- tags, custom fields, custom values that must exist FIRST
+4. **Action sequence** -- numbered steps with exact configuration
+5. **Conditions** -- If/Else logic with explicit branches
+6. **Webhook configuration** -- if applicable: method, URL, headers, body
+7. **Settings** -- re-entry, stop on response, time windows, sender details
+8. **Post-build verification checklist** -- 12-point checklist the operator runs after building
+
+The template lives at templates/build-with-ai-prompt-template.md and is referenced in every example.
+
+## The dependency-first rule (critical)
+
+The Workflow AI Builder inserts placeholder syntax like {{custom_values.office_phone}} but does NOT create the underlying objects. If a tag, custom field, or custom value does not exist, the workflow will fail at runtime. Therefore:
+
+**ALWAYS create dependencies FIRST, THEN build the workflow.**
+
+The dependency-creation protocol (protocols/dependency-creation-protocol.md) specifies:
+- Tags: POST /locations/{locationId}/tags with ZHC- prefix
+- Custom fields: POST /locations/{locationId}/customFields with ZHC_ prefix
+- Custom values: POST /locations/{locationId}/customValues
+- Verification: GET the object back before declaring it created
+- Logging: emit a dependency_created event to build-with-ai-events.jsonl
+
+## ZHC tags and ZHC_ fields this skill emits
+
+Agent-created tags carry the ZHC- prefix (e.g., ZHC-new-lead, ZHC-welcome-sent).
+Agent-created custom fields carry the ZHC_ prefix (e.g., ZHC_lead_source, ZHC_appointment_date).
+
+Full vocabulary and fire conditions: references/ghl-dependency-protocol.md.
+
+## Security & honesty note
+
+All GHL API calls use the operator's Private Integration Token (PIT) -- never shipped in the skill. The skill is UNIVERSAL: no client name, business, location id, or phone appears anywhere in the source. scripts/qc-no-personal-data.sh machine-enforces this. The skill never fabricates GHL capabilities -- if a trigger or action is not available in the operator's plan tier, the agent reports the honest gap.
+
+## Prerequisites
+
+| Prerequisite | Required | Why |
+|---|---|---|
+| Skill 38 (Conversational AI System) installed | RECOMMENDED | Skill 41 pairs with Skill 38 for conversation-playbook registration |
+| MASTER_FILES_DIR resolvable (Skill 38 Step O.2 or 01-locate-master-files-folder.sh) | MANDATORY | The build-with-ai-events.jsonl log lives there |
+| jq on PATH | MANDATORY | Scripts parse JSON + append events |
+| curl on PATH | MANDATORY | GHL API calls |
+| GOHIGHLEVEL_API_KEY (Location PIT) | MANDATORY | Creating tags, fields, values via GHL API |
+| GOHIGHLEVEL_LOCATION_ID | MANDATORY | All GHL API calls need locationId |
+
+## Files in This Folder
+
+| File | Purpose |
+|---|---|
+| SKILL.md | You are here -- overview, component map, honest MVP status, F52 contract |
+| INSTALL.md | One-time setup: prerequisites, numbered install scripts 00--04 + runtime helper, env keys |
+| INSTRUCTIONS.md | Runtime guide: the full build protocol, brainstorm flow, dependency-first rule, standardized output template, verification checklist |
+| CORE_UPDATES.md | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
+| EXAMPLES.md | Worked example flows (UNIVERSAL placeholders) |
+| CHANGELOG.md | Version history |
+| skill-version.txt | Currently 1.2.0 |
+| scripts/00-verify-prerequisites.sh | Verifies jq, curl, GHL PIT, locationId; reports env state |
+| scripts/01-locate-master-files-folder.sh | Resolves + persists MASTER_FILES_DIR |
+| scripts/02-seed-playbook-doc.sh | Creates the canonical build-with-ai-playbook.md in master files |
+| scripts/03-init-jsonl-sinks.sh | Creates build-with-ai-events.jsonl + .schema.json sidecar |
+| scripts/04-update-core-files.sh | Appends AGENTS.md / MEMORY.md / TOOLS.md pointers (idempotent markers) |
+| scripts/dependency-creation.sh | Creates tags, custom fields, custom values via GHL API (ZHC- / ZHC_ prefixed) |
+| scripts/11-run-qc-checklist.sh | QC runner: composes every qc-*.sh gate; refuses to seal on any failure |
+| scripts/qc-no-fabrication.sh | UNIVERSAL: no-fabrication floor + honest-gap path are documented |
+| scripts/qc-zhc-tag-prefix.sh | Asserts agent-created tags use ZHC-, custom fields use ZHC_ |
+| scripts/qc-catalog-usecases.sh | Asserts triggers/actions carry use cases and If/Else + trigger-filter depth exist |
+| scripts/qc-*.test.sh | Paired negative tests: each PASSES intact, FAILS when its invariant is removed |
+| scripts/lib-master-files.sh | Shared helpers: resolve MASTER_FILES_DIR, append JSONL, backup core files |
+| scripts/qc-no-personal-data.sh | UNIVERSAL-skill identifier gate (zero client/personal data) |
+| scripts/qc-prompt-completeness.sh | Asserts every generated prompt has all 8 required sections |
+| scripts/qc-dependency-order.sh | Asserts dependencies are created before workflow build step |
+| protocols/build-with-ai-protocol.md | The master protocol: brainstorm -> dependencies -> build -> verify |
+| protocols/verification-checklist.md | 12-point post-build verification checklist |
+| protocols/dependency-creation-protocol.md | How to create tags, fields, values via GHL API in correct order |
+| protocols/webhook-configuration-protocol.md | Custom Webhook action: method, URL, headers, raw body, merge fields |
+| protocols/trigger-filters-protocol.md | How to set trigger filters correctly: per-trigger fields, Any of / None of, re-fire guards |
+| references/ghl-triggers-catalog.md | 14 categories, 80+ triggers, each with a use case and its filters |
+| references/ghl-actions-catalog.md | 14 categories, 100+ actions, each with a use case |
+| references/ghl-conditions-reference.md | Deep If/Else: branches, AND/OR, None fallback, dynamic values, filtering use cases |
+| references/ghl-workflow-ai-builder.md | How the GHL Workflow AI Builder works (v3 features, limitations) |
+| references/ghl-webhook-reference.md | Webhook action deep reference: CUSTOM/POST/GET modes, headers, raw JSON |
+| references/ghl-dependency-protocol.md | Tags, custom fields, custom values: API endpoints, scopes, body shapes |
+| references/qc-rubric.md | 10-category QC rubric for every generated prompt |
+| references/f52-data-contract.md | F52 event log contract for build-with-ai sessions |
+| references/platform-differences.md | Mac mini vs VPS Docker differences (paths, headless TTY, persistence) |
+| templates/build-with-ai-prompt-template.md | The canonical 8-section prompt template |
+| templates/verification-checklist-template.md | Copy-pasteable checklist for operator to run post-build |
+| templates/conversation-playbook-template.md | Pairs with Skill 38: conversation playbook for workflow-triggered chats |
+
+## Support
+
+- INSTRUCTIONS.md -- runtime
+- INSTALL.md -- one-time setup
+- CHANGELOG.md -- version history
+- https://docs.openclaw.ai -- platform docs
+- https://help.gohighlevel.com -- GHL Workflow AI Builder docs
