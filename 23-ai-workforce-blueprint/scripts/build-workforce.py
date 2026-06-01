@@ -44,6 +44,7 @@ FORBIDDEN CLIENT-FACING LANGUAGE:
 import os
 import sys
 import json
+import re
 import argparse
 import shutil
 from datetime import datetime
@@ -429,6 +430,264 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
     return selected_departments
 
 
+def _load_vertical_packs():
+    """
+    Read the vertical_packs block from department-naming-map.json.
+
+    Returns the dict {pack_id: {auto_add_keywords, auto_add_departments}} or {}
+    if the map cannot be read. Same source of truth as load_canonical_floor()
+    and build_dept_to_suggested_roles().
+    """
+    map_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "department-naming-map.json",
+    )
+    try:
+        with open(map_path) as f:
+            data = json.load(f)
+        return data.get("vertical_packs", {}) or {}
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[VERTICAL] Could not read {map_path}: {e}. No vertical packs applied.", file=sys.stderr)
+        return {}
+
+
+def _detect_vertical_packs(core_answers, vertical_packs):
+    """
+    Match the client's industry/business context to vertical packs by keyword.
+
+    Scans the concatenation of industry + company_description + biggest_challenge
+    + tools (lowercased) for each pack's auto_add_keywords. A pack matches if ANY
+    of its keywords appears as a whole word / phrase in the haystack.
+
+    Returns an ordered list of (pack_id, matched_keywords) for every matched pack,
+    preserving the naming-map declaration order so the result is deterministic
+    and identical across clients with the same industry signal.
+    """
+    haystack = " ".join([
+        str(core_answers.get("industry", "") or ""),
+        str(core_answers.get("company_description", "") or ""),
+        str(core_answers.get("biggest_challenge", "") or ""),
+        str(core_answers.get("tools", "") or ""),
+    ]).lower()
+    matched = []
+    for pack_id, pack in vertical_packs.items():
+        if not isinstance(pack, dict):
+            continue
+        hits = []
+        for kw in pack.get("auto_add_keywords", []) or []:
+            k = str(kw).strip().lower()
+            if not k:
+                continue
+            # Word-boundary match for single tokens; substring for multi-word
+            # phrases (which are already specific enough not to false-match).
+            if " " in k:
+                if k in haystack:
+                    hits.append(kw)
+            else:
+                if re.search(r"\b" + re.escape(k) + r"\b", haystack):
+                    hits.append(kw)
+        if hits:
+            matched.append((pack_id, hits))
+    return matched
+
+
+def _write_vertical_pack_record(record):
+    """
+    Write an auditable verticalPacks block into build-state (idempotent merge).
+
+    Documents which packs were detected, the keywords that triggered them, and
+    every department added (with its base roles file + de-dup decisions) so a
+    later audit can prove the industry add-ons were research-grounded and that
+    no overlapping/conflicting department was introduced.
+    """
+    path = _build_state_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        state["verticalPacks"] = {
+            "detectedPacks": record.get("detectedPacks", []),
+            "addedDepartments": record.get("addedDepartments", []),
+            "skippedDuplicates": record.get("skippedDuplicates", []),
+            "researchManifest": record.get("researchManifest", ""),
+            "appliedAt": datetime.now().isoformat(),
+            "source": "build-workforce.py apply_vertical_packs",
+        }
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+        print(f"[VERTICAL] Wrote verticalPacks audit record to {path}", file=sys.stderr)
+    except OSError as e:
+        print(f"[VERTICAL WARNING] Could not write verticalPacks record to {path}: {e}", file=sys.stderr)
+
+
+def _write_industry_org_design_manifest(matched_packs, added_departments, core_answers):
+    """
+    Write an industry-org-design research manifest the Research department's
+    `industry-analysis-specialist-mckinsey-style` role consumes to GROUND the
+    auto-added vertical departments in real org-design research (Porter / Mintzberg
+    / McKinsey-style), not a blind static list.
+
+    The build adds the base (canonical roles file) departments deterministically;
+    this manifest is the research hook that lets the Research dept VALIDATE the
+    add-on set against the client's real industry structure, propose any
+    industry-specific role specializations, and flag any add-on that does not
+    fit -- so the final department set is research-driven, not just keyword-driven.
+
+    Returns the manifest path (or "" if it could not be written).
+    """
+    if not DEPARTMENTS_DIR:
+        return ""
+    manifest = {
+        "schemaVersion": "1.0",
+        "purpose": (
+            "Industry org-design validation for the vertical-pack departments "
+            "auto-added to this company. The Research dept's "
+            "industry-analysis-specialist-mckinsey-style role MUST review this "
+            "manifest, validate each added department against the real structure "
+            "of the client's industry using consulting-grade frameworks (Porter's "
+            "Five Forces, value-chain / profit-pool analysis, strategic group "
+            "mapping, Mintzberg organizational configurations), and either confirm "
+            "the department, recommend an industry-specific specialization of it, "
+            "or flag it for removal. Cite every source with a URL + retrieval date. "
+            "Never invent a department that overlaps the canonical 16 or another "
+            "vertical-pack department."
+        ),
+        "company": {
+            "name": core_answers.get("company_name", ""),
+            "industry": core_answers.get("industry", ""),
+            "description": core_answers.get("company_description", ""),
+        },
+        "researchRole": "research/industry-analysis-specialist-mckinsey-style",
+        "detectedPacks": [
+            {"pack": pid, "matchedKeywords": kws} for pid, kws in matched_packs
+        ],
+        "departmentsToValidate": [
+            {
+                "id": d["id"],
+                "name": d["name"],
+                "baseSuggestedRoles": d.get("_base_suggested_roles", ""),
+                "validationQuestions": [
+                    "Does this department reflect a real value-chain stage / profit pool in the client's industry?",
+                    "Should any role inside it be specialized for this industry (name the role + the specialization)?",
+                    "Does it overlap or conflict with any canonical-16 department or another added department? If so, recommend merge/drop.",
+                ],
+            }
+            for d in added_departments
+        ],
+        "generatedAt": datetime.now().isoformat(),
+    }
+    manifest_path = os.path.join(DEPARTMENTS_DIR, "industry-org-design-research-manifest.json")
+    try:
+        os.makedirs(DEPARTMENTS_DIR, exist_ok=True)
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+        print(f"[VERTICAL] Wrote industry-org-design research manifest: {manifest_path}", file=sys.stderr)
+        return manifest_path
+    except OSError as e:
+        print(f"[VERTICAL WARNING] Could not write org-design manifest: {e}", file=sys.stderr)
+        return ""
+
+
+def apply_vertical_packs(selected_departments, core_answers):
+    """
+    WS-4: auto-add industry vertical-pack departments to the workforce.
+
+    Standard set (the 16 canonical floor) is already applied by
+    reconcile_canonical_floor(). This sibling step adds the RESEARCH-DRIVEN
+    industry add-ons:
+
+      1. Detect which vertical packs match the client's industry/business
+         context (via auto_add_keywords in department-naming-map.json).
+      2. Add each matched pack's departments to selected_departments,
+         DE-DUPED against (a) the canonical floor — under any canonical id,
+         legacy alias, or variant slug — and (b) departments already added by
+         an earlier-matched pack (so personal-pro-dev's `podcast` and
+         content-creator's `podcast` never double-add), and (c) any client
+         custom already present. No overlapping or conflicting department.
+      3. Each added department inherits its base_suggested_roles file so it
+         ships with real roles + SOPs (never hard-fails assert_dept_map_resolves).
+      4. Write a McKinsey-style industry-org-design research manifest so the
+         Research dept GROUNDS the add-on set in real org-design research, and
+         an auditable verticalPacks record into build-state.
+
+    Returns the mutated selected_departments dict.
+    """
+    vertical_packs = _load_vertical_packs()
+    if not vertical_packs:
+        return selected_departments
+
+    matched_packs = _detect_vertical_packs(core_answers, vertical_packs)
+    if not matched_packs:
+        print("[VERTICAL] No vertical pack matched the client's industry signal — "
+              "canonical floor only.", file=sys.stderr)
+        return selected_departments
+
+    # Build the canonical/alias/variant id set so a vertical dept can never
+    # shadow a canonical-16 department (no overlap with the standard set).
+    floor = load_canonical_floor()
+    canonical_block = set(floor.keys())
+    canonical_block |= {CANONICAL_ID_ALIASES.get(c, c) for c in floor.keys()}
+    for c in floor.keys():
+        canonical_block |= set(CANONICAL_VARIANT_SLUGS.get(c, []))
+
+    added_departments = []
+    skipped_duplicates = []
+    seen_added = set()
+
+    for pack_id, _hits in matched_packs:
+        pack = vertical_packs.get(pack_id, {})
+        for dept in pack.get("auto_add_departments", []) or []:
+            if not isinstance(dept, dict):
+                continue
+            did = dept.get("id")
+            if not did:
+                continue
+            # De-dup: against canonical floor, already-present (custom or prior
+            # pack), and any dept already added in THIS pass.
+            if did in canonical_block:
+                skipped_duplicates.append({"id": did, "reason": f"overlaps canonical floor", "pack": pack_id})
+                print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}' — overlaps canonical floor.", file=sys.stderr)
+                continue
+            if did in selected_departments or did in seen_added:
+                skipped_duplicates.append({"id": did, "reason": "already present", "pack": pack_id})
+                print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}' — already present.", file=sys.stderr)
+                continue
+            base = dept.get("base_suggested_roles", "")
+            info = {
+                "name": dept.get("name", did.replace("-", " ").title()),
+                "emoji": dept.get("emoji", "\U0001f4c1"),
+                "head": f"Director of {dept.get('name', did.replace('-', ' ').title())}",
+                "description": dept.get("one_liner", ""),
+                "vertical_pack": pack_id,
+                "base_suggested_roles": base,
+            }
+            selected_departments[did] = info
+            seen_added.add(did)
+            added_departments.append({
+                "id": did,
+                "name": info["name"],
+                "pack": pack_id,
+                "_base_suggested_roles": base,
+            })
+            print(f"[VERTICAL] Added industry dept '{did}' (pack '{pack_id}', base roles '{base}').",
+                  file=sys.stderr)
+
+    manifest_path = ""
+    if added_departments:
+        manifest_path = _write_industry_org_design_manifest(matched_packs, added_departments, core_answers)
+
+    _write_vertical_pack_record({
+        "detectedPacks": [{"pack": pid, "matchedKeywords": kws} for pid, kws in matched_packs],
+        "addedDepartments": added_departments,
+        "skippedDuplicates": skipped_duplicates,
+        "researchManifest": manifest_path,
+    })
+
+    print(f"[VERTICAL] Vertical packs applied: {len(matched_packs)} pack(s) matched, "
+          f"{len(added_departments)} department(s) added, "
+          f"{len(skipped_duplicates)} de-duped.", file=sys.stderr)
+    return selected_departments
+
+
 
 def build_from_config(config):
     """
@@ -512,6 +771,15 @@ def build_from_config(config):
     selected_departments = reconcile_canonical_floor(
         selected_departments, core_answers, departments_config
     )
+
+    # WS-4: research-driven industry add-ons. After the standard floor, detect
+    # the client's industry from the naming-map vertical_packs keywords and add
+    # the matching industry departments — de-duped against the canonical 16 and
+    # each other (no overlap), each inheriting a real base roles file, and
+    # grounded by a McKinsey-style industry-org-design research manifest the
+    # Research dept consumes. Runs BEFORE assert_dept_map_resolves so every
+    # auto-added dept is proven to resolve to an existing roles file.
+    selected_departments = apply_vertical_packs(selected_departments, core_answers)
 
     print(f"[NON-INTERACTIVE] Departments: {', '.join(selected_departments.keys())}", file=sys.stderr)
 
@@ -1585,6 +1853,21 @@ def build_dept_to_suggested_roles():
 
     _ingest(data.get("mandatory", {}))
     _ingest(data.get("vertical_packs", {}))
+
+    # WS-4: vertical-pack departments live as a LIST under each pack's
+    # `auto_add_departments` (not as a {suggested_roles_file} dict), so the
+    # recursive `_ingest` above does NOT reach them. Map each vertical-pack
+    # dept id to its `base_suggested_roles` file (the closest canonical roles
+    # file) so an auto-added industry department ALWAYS resolves in
+    # assert_dept_map_resolves() and ships with real roles + SOPs. The Research
+    # dept's industry-analysis-specialist-mckinsey-style role then refines the
+    # base via the industry-org-design research manifest.
+    for pack in (data.get("vertical_packs", {}) or {}).values():
+        if not isinstance(pack, dict):
+            continue
+        for dept in pack.get("auto_add_departments", []) or []:
+            if isinstance(dept, dict) and dept.get("id") and dept.get("base_suggested_roles"):
+                result.setdefault(dept["id"], dept["base_suggested_roles"])
     # Master orchestrator / CEO is not in the naming map's department list but
     # is always built; ensure it resolves.
     result.setdefault("master-orchestrator", "master-orchestrator-suggested-roles.md")
@@ -2504,11 +2787,44 @@ def write_company_config_json(company_name, industry, brand_colors=None,
 def generate_departments_json(departments):
     """
     Generate departments.json for the BlackCEO Command Center.
-    Schema: [{ "id": str, "emoji": str, "name": str, "headTitle": str, "workspacePath": str }]
+    Schema: [{ "id": str, "emoji": str, "name": str, "headTitle": str,
+               "workspacePath": str, "slug"?: str }]
     IDs use "dept-" prefix to match Command Center expectations.
+
+    WS-4: the FIRST entry is always the CEO department so the Command Center
+    renders it at the TOP of the Kanban / department rail. The CEO is the
+    Master Orchestrator (the main agent above the worker departments) surfaced
+    as a board column — it does NOT overlap the worker departments (it is not
+    one of the keys in `departments`, which carries only the worker depts).
+
+    The CEO entry is emitted with id `dept-ceo` AND slug `ceo` so it matches
+    every Command Center CEO-first guarantee:
+      - migrations.ts autoSeedFromDepartmentsJson: isCeo when slug/id is
+        'ceo'/'dept-ceo' -> seeds sort_order 0.
+      - migration 046 pin_ceo_department_first: keys on lower(slug)='ceo' (or
+        name) -> re-pins sort_order 0 (the sync script strips the 'dept-'
+        prefix, so an explicit slug 'ceo' is what migration 046 catches).
+      - AgentsSidebar hoist: id ('ceo'/'dept-ceo') or name match -> front of rail.
     """
     entries = []
+    # CEO column first (top of the Kanban). Master Orchestrator surfaced as a board column.
+    ceo_meta = RECOMMENDED_DEPARTMENTS.get("ceo", {
+        "name": "CEO", "emoji": "\U0001f454", "head": "Chief Executive Officer",
+    })
+    entries.append({
+        "id": "dept-ceo",
+        "slug": "ceo",
+        "emoji": ceo_meta.get("emoji", "\U0001f454"),
+        "name": ceo_meta.get("name", "CEO"),
+        "headTitle": ceo_meta.get("head", "Chief Executive Officer"),
+        "workspacePath": "departments/master-orchestrator",
+        "isCeo": True,
+    })
     for dept_id, dept_info in departments.items():
+        # Guard: never double-emit a CEO/master-orchestrator worker column —
+        # the CEO is already the prepended top column.
+        if dept_id in ("ceo", "master-orchestrator", "dept-ceo"):
+            continue
         entries.append({
             "id": f"dept-{dept_id}",
             "emoji": dept_info["emoji"],
