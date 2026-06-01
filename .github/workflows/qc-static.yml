@@ -744,3 +744,19 @@ jobs:
           # upload + per-file public-URL capture + the Telegram openable_link
           # resolver, and that the anti-faking messageId gate is still intact.
           bash 37-zhc-closeout/scripts/test-closeout-openable-links.sh
+
+      - name: Skill 23 WS-4 department selection (CEO column + vertical-pack auto-add)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # WS-4 invariants, detectable from the repo alone:
+          #   1. generate_departments_json() emits the CEO department FIRST
+          #      (id=dept-ceo, slug=ceo) so the Command Center Kanban renders it
+          #      on top, and never double-emits a worker CEO column.
+          #   2. Every vertical-pack department in department-naming-map.json
+          #      carries a base_suggested_roles file that EXISTS, so an
+          #      auto-added industry dept resolves in assert_dept_map_resolves()
+          #      instead of hard-failing the build; apply_vertical_packs() is
+          #      wired in, de-dups across packs, and writes the McKinsey-style
+          #      industry-org-design research manifest.
+          bash 23-ai-workforce-blueprint/scripts/test-ws4-departments.sh
