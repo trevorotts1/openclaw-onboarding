@@ -473,7 +473,9 @@ else
     guard_reasons+=("infographic1Url-missing")
   fi
 
-  delivered_count=$(state_get '.messagesDelivered | length')
+  # Count ONLY messages that carry a real (non-empty) messageId -- a bare slot
+  # record with status:"send-failed" must not satisfy the guard.
+  delivered_count=$(state_get '(.messagesDelivered // []) | map(select((.messageId // "") | tostring | length > 0)) | length')
   if [[ -z "$delivered_count" || "$delivered_count" == "null" || "$delivered_count" == "0" ]]; then
     guard_reasons+=("telegram-no-messages-delivered")
   fi
@@ -483,6 +485,39 @@ else
     state_set ".closeoutStatus = \"partial\" | .closeoutPartialReason = \"$greason\" | .closeoutCompletedAt = \"$(now_iso)\""
     log "WARN" "closeout finalize: guard blocked done -- $greason"
     exit 0
+  fi
+
+  # ------------------------------------------------------------------
+  # TELEGRAM DELIVERY CONFIRMATION GATE (anti-faking, the load-bearing layer).
+  #
+  # The phantom guard above only proves we *recorded* messageIds. It does NOT
+  # prove the gateway actually delivered them -- `openclaw message send` can
+  # exit 0 (and even hand back a messageId) while the message never reaches
+  # Telegram (silent offset-corruption; fresh-VPS "scope upgrade pending
+  # approval"). So before we may write closeoutStatus=done, cross-check every
+  # required captured messageId against the gateway sent-registry via
+  # verify-telegram-delivery.sh. If ANY required id is missing-and-recent (or a
+  # required slot never produced an id), this FAILS the closeout with a
+  # telegram-unconfirmed reason and the recurring resume cron retries -- we
+  # never claim done on an unconfirmed delivery.
+  # ------------------------------------------------------------------
+  VERIFY_TG="$SKILL_DIR/scripts/verify-telegram-delivery.sh"
+  if [[ -x "$VERIFY_TG" || -f "$VERIFY_TG" ]]; then
+    if bash "$VERIFY_TG" >>"$LOG_FILE" 2>&1; then
+      log "INFO" "closeout finalize: telegram delivery CONFIRMED against sent-registry"
+    else
+      tg_rc=$?
+      # Pull the first unconfirmed slot for a precise reason string.
+      bad_slot=$(state_get '.telegramDeliveryVerification.results | map(select(.required == true and (.verdict | startswith("fail")))) | (.[0].n // "?")')
+      reason="telegram-unconfirmed: msg ${bad_slot} (verify rc=$tg_rc; messageId not present in gateway sent-registry)"
+      state_set ".closeoutStatus = \"failed\" | .closeoutFailureReason = \"$reason\" | .closeoutCompletedAt = \"$(now_iso)\""
+      log "ERROR" "closeout finalize: $reason -- resume cron will retry (never-stop)"
+      exit 1
+    fi
+  else
+    log "WARN" "closeout finalize: verify-telegram-delivery.sh not found at $VERIFY_TG -- cannot confirm delivery against registry; refusing to claim done"
+    state_set ".closeoutStatus = \"failed\" | .closeoutFailureReason = \"telegram-unconfirmed: verifier missing\" | .closeoutCompletedAt = \"$(now_iso)\""
+    exit 1
   fi
 
   # NOTE (v10.x): the GHL media-library upload now runs at STEP 5.5 (BEFORE the

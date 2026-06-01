@@ -1,5 +1,22 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.1.4] - 2026-05-31 - Telegram delivery confirmed against the gateway sent-registry (anti-faking) (shipped with onboarding v10.15.19)
+
+The closeout could be marked `done`/`sent` purely on the `openclaw message send` COMMAND EXIT CODE. But that command can exit 0 while the message never reaches Telegram (silent Telegram-offset-corruption; fresh-VPS "scope upgrade pending approval"). So a closeout could claim delivery that never happened — the exact "faked closeout" we forbid. This release makes delivery PROVABLE end-to-end.
+
+### A. Capture the REAL messageId on every send — `send-telegram-celebration.sh`
+Every `openclaw message send` now runs with `--json` and a new `extract_message_id()` pulls the real gateway `messageId` (`.messageId` → `.payload.messageId` → `.result/.data.messageId`, with a best-effort regex fallback for installs where `--json` is absent/garbled — but ALWAYS requiring a non-empty id; never exit-code-only). `state.messagesDelivered` is now an **array of objects** `{n, messageId, chatId, ts}` instead of bare integers. A send that returns no messageId records `{n, status:"send-failed", reason}` and is **not** counted delivered; `is_delivered()` only treats a slot as delivered when it carries a non-empty messageId, so a retry upgrades a `send-failed` slot. (Backward-safe: `verify-zhc-standard.sh` reads `.messagesDelivered | length`, which still works for the object array.)
+
+### B. NEW `verify-telegram-delivery.sh` — cross-check against the sent-registry
+After the sends, this reads the gateway sent-registry `agents/main/sessions/sessions.json.telegram-sent-messages.json` (`{ "<chatId>": { "<messageId>": <ts-ms> } }`; resolves Mac `~/.openclaw` vs VPS `/data/.openclaw`) and requires EACH required messageId be present under the owner's chatId. Accounts for the rolling-window/aging behavior: a missing-but-recent id (younger than `ZHC_TG_REGISTRY_TTL_SEC`, default 86400s) is a real FAIL (rc 3); a missing-but-aged-out id is treated as legitimately rotated (PASS). A required slot with no captured id at all → rc 4. Required slots default to the three must-land text messages (1,6,7; override `ZHC_TG_REQUIRED_SLOTS`); media/Notion slots are verified-if-present. Writes a per-id pass/fail breakdown to `state.telegramDeliveryVerification`. Env overrides (`ZHC_STATE_FILE`/`ZHC_LOG_FILE`/`ZHC_TG_REGISTRY`) let it run against a fixture with no live install.
+
+### C. Gate `done` on confirmation — `run-closeout.sh`
+The phantom-closeout guard now counts only messages with a real (non-empty) messageId. A NEW delivery-confirmation gate then runs `verify-telegram-delivery.sh` before `closeoutStatus=done` may be written: if any required messageId is unconfirmed, the closeout is marked `failed` with `closeoutFailureReason="telegram-unconfirmed: msg <n>"` and the recurring resume cron retries (never-stop). The phantom guard is kept as an additional layer.
+
+### D. Smoke test + CI — `test-verify-telegram-delivery.sh`
+New self-contained smoke test proves: required id present in registry → pass; missing+recent → fail(3); no captured id → fail(4); missing+aged-out → pass; send-failed-only records count as 0 real deliveries. Wired into `qc-static.yml` as the "Skill 37 Telegram delivery-confirmation gate (anti-faking)" step, which also statically asserts `--json` usage, the non-empty-messageId requirement, the verify invocation, and the `telegram-unconfirmed` failure path so the anti-faking wiring can never silently regress. skill-version.txt 1.1.3 → 1.1.4.
+
+
 ## [1.1.3] - 2026-05-27 - Mandatory 8.5 quality gate (shipped with onboarding v10.14.10)
 
 Systemic requirement from Trevor: every ZHC closeout must RATE + QC each deliverable and only deliver to the client when it scores at least 8.5/10.
