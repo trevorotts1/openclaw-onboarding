@@ -160,6 +160,36 @@ TS = os.environ["TS"]
 LIBRARY_MARKER = re.compile(r"<!--\s*Filled from role-library v", re.IGNORECASE)
 STUB_PATTERN = re.compile(r"to be personalized based on research", re.IGNORECASE)
 
+# v10.15.18 SUBSTANCE GATE. A SOP file counts as "substantive" ONLY if it is a
+# real, authored DMAIC SOP — not a thin/hollow file and not a placeholder stub.
+# Three conditions, all required:
+#   1. size >= SUBSTANTIVE_MIN_BYTES (7 KB)
+#   2. all five DMAIC section headers present (## DEFINE / MEASURE / ANALYZE /
+#      IMPROVE / CONTROL — the exact headers the SOP-population manifest mandates)
+#   3. no remaining "[Step N - to be personalized ...]" placeholder
+# This is what stops a 1 KB hollow SOP (or a stub with the placeholder string
+# deleted) from being counted as "done" — the documented Maria-thin / Evelyn-stub
+# / Sheila-empty failure.
+SUBSTANTIVE_MIN_BYTES = 7168  # 7 KB
+DMAIC_HEADERS = ("define", "measure", "analyze", "improve", "control")
+PLACEHOLDER_STEP = re.compile(r"\[\s*step\s+\d+\s*[-–—]\s*to be personalized", re.IGNORECASE)
+DMAIC_HEADER_RE = re.compile(r"^#{1,4}\s*(define|measure|analyze|improve|control)\b", re.IGNORECASE | re.MULTILINE)
+
+
+def sop_is_substantive(path):
+    """Return True iff a SOP file is a real, authored DMAIC SOP per the gate."""
+    try:
+        size = path.stat().st_size
+        if size < SUBSTANTIVE_MIN_BYTES:
+            return False
+        text = path.read_text(errors="ignore")
+    except Exception:
+        return False
+    if STUB_PATTERN.search(text) or PLACEHOLDER_STEP.search(text):
+        return False
+    found = {m.group(1).lower() for m in DMAIC_HEADER_RE.finditer(text)}
+    return all(h in found for h in DMAIC_HEADERS)
+
 
 def emit(line):
     with LOG_FILE.open("a") as fh:
@@ -175,8 +205,17 @@ if INDEX_JSON.is_file():
         idx = json.load(INDEX_JSON.open())
         library_total_roles = idx.get("total_roles", 0)
         for dept_id, dept in idx.get("departments", {}).items():
+            # v10.15.18: the _index.json schema uses "count" per dept; older
+            # readers looked for "role_count" and ALWAYS got 0 -> expected_roles
+            # was 0 -> the canonical-role-count check was a silent no-op. Accept
+            # both keys, and fall back to len(roles) so expected is never wrongly 0.
+            _expected = dept.get("count")
+            if _expected is None:
+                _expected = dept.get("role_count")
+            if _expected is None and isinstance(dept.get("roles"), list):
+                _expected = len(dept["roles"])
             library_depts[dept_id] = {
-                "expected_roles": dept.get("role_count", 0),
+                "expected_roles": _expected or 0,
                 "library_version": idx.get("version", "unknown"),
             }
     except Exception as e:
@@ -223,6 +262,12 @@ for dept_dir in on_disk_depts:
     library_filled_count = 0
     sop_total = 0
     stub_remaining = 0
+    # v10.15.18 SUBSTANCE GATE counters
+    substantive_sop_total = 0          # SOPs that pass sop_is_substantive()
+    roles_with_min_sops = 0            # roles meeting their own min substantive SOP floor
+    min_sop_per_role = None            # smallest substantive-SOP count across roles
+    per_role_substantive = []          # for diagnostics
+    SOP_FLOOR = 4                      # every role needs >= 4 substantive SOPs (matches "Core SOPs to build" floor)
     for r in role_folders:
         howto = r / "how-to.md"
         if howto.is_file():
@@ -234,16 +279,28 @@ for dept_dir in on_disk_depts:
                 pass
         sop_files = sorted(r.glob("0[1-9]-*.md"))
         sop_total += len(sop_files)
+        role_substantive = 0
         for sf in sop_files:
             try:
                 if STUB_PATTERN.search(sf.read_text(errors="ignore")):
                     stub_remaining += 1
             except Exception:
                 pass
+            if sop_is_substantive(sf):
+                role_substantive += 1
+        substantive_sop_total += role_substantive
+        per_role_substantive.append(role_substantive)
+        if role_substantive >= SOP_FLOOR:
+            roles_with_min_sops += 1
+        if min_sop_per_role is None or role_substantive < min_sop_per_role:
+            min_sop_per_role = role_substantive
+    if min_sop_per_role is None:
+        min_sop_per_role = 0
     materialized_pct = (role_count / expected * 100.0) if expected else 0.0
     library_pct = (library_filled_count / role_count * 100.0) if role_count else 0.0
     identity_pct = (identity_count / role_count * 100.0) if role_count else 0.0
     avg_sop_per_role = (sop_total / role_count) if role_count else 0.0
+    avg_substantive_sop_per_role = (substantive_sop_total / role_count) if role_count else 0.0
     # Per-dept status
     if role_count == 0:
         dept_status = "FAIL"
@@ -268,6 +325,13 @@ for dept_dir in on_disk_depts:
         "sop_files_total": sop_total,
         "avg_sop_per_role": round(avg_sop_per_role, 2),
         "sop_stubs_remaining": stub_remaining,
+        # v10.15.18 SUBSTANCE GATE fields
+        "substantive_sop_count": substantive_sop_total,
+        "avg_substantive_sop_per_role": round(avg_substantive_sop_per_role, 2),
+        "min_sop_per_role": min_sop_per_role,
+        "sop_floor": SOP_FLOOR,
+        "roles_with_min_sops": roles_with_min_sops,
+        "roles_below_min_sops": role_count - roles_with_min_sops,
         "materialized_pct": round(materialized_pct, 1),
         "library_pct": round(library_pct, 1),
         "identity_pct": round(identity_pct, 1),
@@ -311,12 +375,14 @@ emit(f"Library version expected: {report['library_version']} ({library_total_rol
 emit(f"On disk: {report['depts_on_disk']} depts ({report['depts_passing']} PASS, "
      f"{report['depts_partial']} PARTIAL, {report['depts_failing']} FAIL)")
 emit("")
-emit(f"{'DEPT':<28} {'ROLES':>6} {'EXPECT':>7} {'LIB%':>6} {'ID%':>6} {'SOP/role':>9} {'STATUS':>8}")
-emit("-" * 80)
+emit(f"{'DEPT':<26} {'ROLES':>5} {'EXP':>4} {'LIB%':>5} {'ID%':>5} "
+     f"{'SOP/r':>6} {'SUBST':>6} {'minSOP':>6} {'<min':>5} {'STATUS':>8}")
+emit("-" * 92)
 for d in dept_reports:
-    emit(f"{d['dept_id']:<28} {d['role_folders']:>6} {d['expected_roles']:>7} "
-         f"{d['library_pct']:>6.1f} {d['identity_pct']:>6.1f} "
-         f"{d['avg_sop_per_role']:>9.2f} {d['status']:>8}")
+    emit(f"{d['dept_id']:<26} {d['role_folders']:>5} {d['expected_roles']:>4} "
+         f"{d['library_pct']:>5.1f} {d['identity_pct']:>5.1f} "
+         f"{d['avg_sop_per_role']:>6.2f} {d.get('substantive_sop_count', 0):>6} "
+         f"{d.get('min_sop_per_role', 0):>6} {d.get('roles_below_min_sops', 0):>5} {d['status']:>8}")
 if legacy_detected:
     emit("")
     emit(f"LEGACY TREE PRESENT (Angeleen pattern):")

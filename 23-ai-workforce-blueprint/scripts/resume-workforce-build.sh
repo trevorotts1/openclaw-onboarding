@@ -115,7 +115,15 @@ if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-# ---- v10.14.36: SUSPENDERS — max-runs auto-expire ----
+# ---- v10.15.18: NEVER-STOP run accounting (Rule 8) ----
+# PRIOR BEHAVIOR (v10.14.36): after MAX_RUNS_BEFORE_SELF_REMOVE the cron
+# auto-REMOVED itself — a stall trap that let a half-built workforce sit forever
+# while the client never found out. Rule 8 forbids stopping: the only legitimate
+# terminal state is a REAL completion (build done + closeout confirmed), which is
+# handled by the BELT terminal-state check above (self_remove_cron). When we
+# instead just hit the run cap WITHOUT completing, we ESCALATE to Rescue Rangers
+# (once) and KEEP RETRYING in a slow-backoff posture — we never self-remove on a
+# run count.
 mkdir -p "$(dirname "$RUN_COUNT_FILE")" 2>/dev/null || true
 _run_count=0
 if [[ -f "$RUN_COUNT_FILE" ]]; then
@@ -125,16 +133,33 @@ fi
 _run_count=$((_run_count + 1))
 echo "$_run_count" > "$RUN_COUNT_FILE" 2>/dev/null || true
 if (( _run_count > MAX_RUNS_BEFORE_SELF_REMOVE )); then
-  log "SUSPENDERS: run #$_run_count exceeds cap of $MAX_RUNS_BEFORE_SELF_REMOVE — auto-removing self-cron"
+  # Backoff: only ACT every Nth fire past the cap so we slow down (preserving
+  # tokens / avoiding 429 churn) but NEVER stop. With a */15 cron, acting every
+  # 8th fire ≈ once every 2 hours (the spec's 2h-backoff-retry).
+  _over=$(( _run_count - MAX_RUNS_BEFORE_SELF_REMOVE ))
+  if (( _over % 8 != 1 )); then
+    log "NEVER-STOP: run #$_run_count past cap ($MAX_RUNS_BEFORE_SELF_REMOVE) — in 2h-backoff slow mode, skipping this fire (will act on the next 2h boundary). NOT self-removing."
+    exit 0
+  fi
+  log "NEVER-STOP: run #$_run_count past cap — slow-retry fire. Escalating to Rescue Rangers (once) and continuing; will NOT self-remove on run count."
   if command -v openclaw >/dev/null 2>&1; then
-    _operator_chat="$(resolve_operator_chat_id)"
-    if [[ -n "$_operator_chat" ]]; then
-      openclaw message send --channel telegram -t "$_operator_chat" \
-        -m "⚠️ workforce-build-resume cron auto-removed after $_run_count runs (>6h). State file: $STATE_FILE on $(hostname). Build is stuck — manual intervention required." 2>>"$LOG_FILE" || true
+    _already_escalated=$(jq -r '.rescueRangersEscalated // false' "$STATE_FILE" 2>/dev/null)
+    if [[ "$_already_escalated" != "true" ]]; then
+      _rr_chat="${RESCUE_RANGERS_HELP_CHAT_ID:-}"
+      if [[ -n "$_rr_chat" ]]; then
+        openclaw message send --channel telegram -t "$_rr_chat" \
+          -m "🆘 [Rescue Rangers] workforce-build-resume on $(hostname) has run $_run_count times without reaching a real completion. roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}. Now in 2h-backoff slow-retry (NOT stopped — Rule 8). Run scripts/verify-zhc-standard.sh + verify-library-gate.sh on the box. State: $STATE_FILE" 2>>"$LOG_FILE" || true
+      fi
+      _operator_chat="$(resolve_operator_chat_id)"
+      if [[ -n "$_operator_chat" ]]; then
+        openclaw message send --channel telegram -t "$_operator_chat" \
+          -m "⚠️ workforce-build-resume on $(hostname) hit $_run_count runs without completing — escalated to Rescue Rangers and switched to 2h-backoff slow-retry. It will KEEP retrying until libraries + closeout are real (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
+      fi
+      _tmp_esc=$(mktemp)
+      jq '.rescueRangersEscalated = true' "$STATE_FILE" > "$_tmp_esc" 2>/dev/null && mv "$_tmp_esc" "$STATE_FILE" || rm -f "$_tmp_esc"
     fi
   fi
-  self_remove_cron "max-runs-exceeded"
-  exit 0
+  # fall through and keep working — do NOT self_remove_cron on a run count
 fi
 
 # ---- v10.14.20: heal config before any gateway interaction ----
@@ -246,24 +271,46 @@ if (( total_attention == 0 )); then
   exit 0
 fi
 
-# ---- attempt cap ----
+# ---- attempt cap (v10.15.18: escalate-and-CONTINUE, never hard-stop) ----
+# PRIOR BEHAVIOR: at maxResumeAttempts the cron bailed and stopped self-pinging
+# (exit 0, never to retry) — a half-built workforce then sat forever and the
+# client never found out. Rule 8: NEVER STOP. We now escalate to the operator +
+# Rescue Rangers ONCE at the cap, then KEEP RETRYING in slow-backoff. The cron
+# only stops on a REAL terminal state (handled by the BELT check above).
 attempts=$(jq -r '.resumeAttempts // 0' "$STATE_FILE")
 max_attempts=$(jq -r ".maxResumeAttempts // $MAX_ATTEMPTS_DEFAULT" "$STATE_FILE")
 if (( attempts >= max_attempts )); then
-  log "resumeAttempts ($attempts) >= maxResumeAttempts ($max_attempts) — bailing out, no more self-pings"
-  # Final escalation to operator (env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759).
-  # v10.15.9: name the library status explicitly so a persistently-failing
-  # library pull is visible in the final escalation, not buried as "stuck".
-  _operator_chat="$(resolve_operator_chat_id)"
-  if [[ -n "$_operator_chat" ]]; then
+  _cap_already=$(jq -r '.resumeCapEscalated // false' "$STATE_FILE")
+  if [[ "$_cap_already" != "true" ]]; then
+    log "resumeAttempts ($attempts) >= maxResumeAttempts ($max_attempts) — escalating (operator + Rescue Rangers) and switching to slow-retry. NOT stopping (Rule 8)."
+    _operator_chat="$(resolve_operator_chat_id)"
     _lib_note=""
     if (( library_dirty == 1 )); then
-      _lib_note=" LIBRARIES NEVER REACHED 100% (roleLibraryStatus=${role_library_status}, sopLibraryStatus=${sop_library_status}) — the role-library pull / SOP authoring kept failing; run scripts/verify-library-gate.sh on $(hostname) to see which dept(s) are short."
+      _lib_note=" LIBRARIES NOT done (roleLibraryStatus=${role_library_status}, sopLibraryStatus=${sop_library_status}) — the role-library pull / SOP authoring keeps failing; run scripts/verify-library-gate.sh on $(hostname)."
     fi
-    openclaw message send --channel telegram -t "$_operator_chat" \
-      -m "🚨 Workforce build stuck: ${pending_count} pending, ${stale_building_count} stale, ${attempts} resume attempts exhausted.${_lib_note} State: $STATE_FILE" 2>>"$LOG_FILE" || true
+    if [[ -n "$_operator_chat" ]]; then
+      openclaw message send --channel telegram -t "$_operator_chat" \
+        -m "⚠️ Workforce build slow: ${pending_count} pending, ${stale_building_count} stale after ${attempts} resume attempts.${_lib_note} Now in slow-retry (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
+    fi
+    _rr_chat="${RESCUE_RANGERS_HELP_CHAT_ID:-}"
+    if [[ -n "$_rr_chat" ]]; then
+      openclaw message send --channel telegram -t "$_rr_chat" \
+        -m "🆘 [Rescue Rangers] workforce build on $(hostname) past ${attempts} resume attempts without completing.${_lib_note} Now slow-retrying (Rule 8 never-stop). Run scripts/verify-zhc-standard.sh on the box. State: $STATE_FILE" 2>>"$LOG_FILE" || true
+    fi
+    _tmp_cap=$(mktemp)
+    jq '.resumeCapEscalated = true' "$STATE_FILE" > "$_tmp_cap" 2>/dev/null && mv "$_tmp_cap" "$STATE_FILE" || rm -f "$_tmp_cap"
   fi
-  exit 0
+  # Slow-backoff past the cap: act roughly every 2h (every 8th */15 fire) but
+  # NEVER stop. The MAX_RUNS slow-mode above already throttles the overall cron;
+  # here we just avoid spamming a self-ping every 15 min once we're past the cap.
+  _attempts_over=$(( attempts - max_attempts ))
+  if (( _attempts_over % 8 != 0 )); then
+    log "slow-retry: attempt $attempts past cap — backoff skip this fire (will dispatch on the next ~2h boundary)."
+    # still bump the counter so backoff advances
+    _tmp_a=$(mktemp); jq ".resumeAttempts = $((attempts + 1))" "$STATE_FILE" > "$_tmp_a" && mv "$_tmp_a" "$STATE_FILE"
+    exit 0
+  fi
+  log "slow-retry: attempt $attempts past cap — dispatching a resume self-ping (2h boundary)."
 fi
 
 # ---- v10.15.9: OPERATOR-FACING library-gate status surfacing (near-cap) ----

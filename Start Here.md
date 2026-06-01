@@ -45,22 +45,24 @@ If you are reading this file, the user has triggered onboarding by saying someth
 
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
-**0.1: Confirm AGENTS.md has ONBOARDING PENDING flag**
+**0.1: Confirm AGENTS.md has the install kickoff flag (UPDATE PENDING or ONBOARDING PENDING)**
+
+> ⚠️ FLAG NAME: `install.sh` writes a `## 🔴🔴🔴 UPDATE PENDING - EXECUTE IMMEDIATELY` section to the top of AGENTS.md. Older docs/installs used `ONBOARDING PENDING`. BOTH are valid kickoff flags — match EITHER. (Grepping for only `ONBOARDING PENDING` used to make a fresh install stall here because install.sh writes `UPDATE PENDING`.)
 
 Search ALL possible AGENTS.md locations. The path differs between Mac and VPS:
 ```bash
-# Try all possible locations
-grep -r "ONBOARDING PENDING" ~/clawd/AGENTS.md 2>/dev/null || \
-grep -r "ONBOARDING PENDING" ~/.openclaw/workspace/AGENTS.md 2>/dev/null || \
-grep -r "ONBOARDING PENDING" /data/.openclaw/workspace/AGENTS.md 2>/dev/null || \
-find / -name "AGENTS.md" -exec grep -l "ONBOARDING PENDING" {} \; 2>/dev/null | head -3
+# Try all possible locations — match EITHER "UPDATE PENDING" OR "ONBOARDING PENDING"
+grep -rE "UPDATE PENDING|ONBOARDING PENDING" ~/clawd/AGENTS.md 2>/dev/null || \
+grep -rE "UPDATE PENDING|ONBOARDING PENDING" ~/.openclaw/workspace/AGENTS.md 2>/dev/null || \
+grep -rE "UPDATE PENDING|ONBOARDING PENDING" /data/.openclaw/workspace/AGENTS.md 2>/dev/null || \
+find / -name "AGENTS.md" -exec grep -lE "UPDATE PENDING|ONBOARDING PENDING" {} \; 2>/dev/null | head -3
 ```
 
 **Mac path:** `~/clawd/AGENTS.md`
 **VPS/container path:** `/data/.openclaw/workspace/AGENTS.md`
 
-If found in ANY location: Proceed with installation.  
-If NOT found anywhere: Stop and tell user: "I don't see an ONBOARDING PENDING flag. Please run the install script first."
+If found in ANY location (either flag): Proceed with installation.  
+If NOT found anywhere: ALSO check the standalone recovery file `~/.openclaw/onboarding/UPDATE-PENDING.md` (and `/data/.openclaw/onboarding/UPDATE-PENDING.md`). If still nothing, Stop and tell user: "I don't see an UPDATE PENDING / ONBOARDING PENDING flag. Please run the install script first."
 
 **0.2: Check for partial/resume state**
 ```bash

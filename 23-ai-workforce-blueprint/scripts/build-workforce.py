@@ -488,6 +488,11 @@ def build_from_config(config):
 
     print(f"[NON-INTERACTIVE] Departments: {', '.join(selected_departments.keys())}", file=sys.stderr)
 
+    # v10.15.18: HARD-FAIL the build if ANY selected department does not resolve
+    # to an existing suggested-roles file. This makes the "zero-role department"
+    # variance bug impossible — no department can silently ship with 0 roles/SOPs.
+    assert_dept_map_resolves(list(selected_departments.keys()))
+
     # Create department workspaces
     specialists_by_dept = {}
     for dept_id, dept_info in selected_departments.items():
@@ -582,6 +587,16 @@ def build_from_config(config):
                     print(f"[NON-INTERACTIVE] Model selector returned owner-input-required; "
                           f"SOPs not populated. The AI agent must ask the owner which model "
                           f"to use, then rerun: python3 {populate_script}", file=sys.stderr)
+                elif rc == 4:
+                    # v10.15.18: inline-queue mode wrote work files but did NOT
+                    # author the SOPs. This is NOT done. The library gate must
+                    # stay failed and the resume cron must re-fire until the
+                    # substance gate confirms real DMAIC SOPs on disk.
+                    print(f"[NON-INTERACTIVE] SOP population ran in INLINE-QUEUE mode (no openclaw "
+                          f"sub-agents available) — work files were written but NO SOPs are authored "
+                          f"yet. sopLibraryStatus=authoring. The AI agent MUST execute each dept's "
+                          f".sop-write-queue/ job, then re-run verify-library-gate.sh until it exits 0. "
+                          f"Do NOT write buildCompletedAt while the SOP library is empty.", file=sys.stderr)
             except subprocess.TimeoutExpired:
                 print(f"[NON-INTERACTIVE] SOP population timed out at 60 min; some SOPs may be "
                       f"partial. Rerun: python3 {populate_script}", file=sys.stderr)
@@ -1465,26 +1480,147 @@ def generate_devils_advocate_sop_md(dept_id, dept_info, interview_answers):
 # ROLE WORKSPACE CREATION (Phase: post-department, pre-specialist)
 # ============================================================
 
-# Mapping from department ID to suggested-roles filename
-DEPT_TO_SUGGESTED_ROLES = {
-    "marketing": "marketing-suggested-roles.md",
-    "sales": "sales-suggested-roles.md",
+# ============================================================
+# DEPT -> SUGGESTED-ROLES FILE MAP (canonical, single-source-of-truth)
+# ============================================================
+# v10.15.18 BUG FIX (zero-role-department): the previous hardcoded map keyed
+# on LEGACY ids (support/operations/creative/hr/it) that DO NOT match the
+# canonical 16-dept folder ids (customer-support/crm/graphics/openclaw-
+# maintenance/...), and several of its files (operations-/creative-/hr-people-/
+# it-tech-suggested-roles.md) DO NOT EXIST in the repo. For any dept that
+# resolved through a missing/mismatched entry, role parsing silently warned
+# and produced ZERO roles -> ZERO SOPs for that whole department. That is one
+# of the documented variance drivers (whole departments at ~0).
+#
+# THE FIX: derive the map from department-naming-map.json (the SAME source of
+# truth load_canonical_floor() uses), so the canonical ids ALWAYS resolve to a
+# real file. We also keep the legacy ids as aliases (for any client whose
+# departments.json still stores a legacy slug). build_dept_to_suggested_roles()
+# is the canonical builder; LEGACY_DEPT_ALIASES bridges old slugs.
+
+# Legacy slug -> the suggested-roles filename it should resolve to. These are
+# ONLY for backward compatibility with old departments.json files; canonical
+# ids come from the naming map. (creative/operations/hr/it intentionally map to
+# the closest real file so a stale slug never yields zero roles.)
+LEGACY_DEPT_ALIASES = {
     "billing": "billing-suggested-roles.md",
     "support": "customer-support-suggested-roles.md",
-    "operations": "operations-suggested-roles.md",
-    "creative": "creative-suggested-roles.md",
-    "hr": "hr-people-suggested-roles.md",
-    "legal": "legal-compliance-suggested-roles.md",
-    "it": "it-tech-suggested-roles.md",
     "webdev": "web-development-suggested-roles.md",
     "appdev": "app-development-suggested-roles.md",
-    "graphics": "graphics-suggested-roles.md",
-    "video": "video-suggested-roles.md",
-    "audio": "audio-suggested-roles.md",
-    "research": "research-suggested-roles.md",
     "comms": "communications-suggested-roles.md",
+    "openclaw": "openclaw-maintenance-suggested-roles.md",
+    "social": "social-media-suggested-roles.md",
+    "paid-ads": "paid-advertisement-suggested-roles.md",
     "ceo": "master-orchestrator-suggested-roles.md",
+    "master-orchestrator": "master-orchestrator-suggested-roles.md",
 }
+
+
+def build_dept_to_suggested_roles():
+    """
+    Build the canonical dept-id -> suggested-roles filename map from
+    department-naming-map.json (mandatory + vertical_packs), then layer the
+    legacy aliases on top. The naming map is the SINGLE SOURCE OF TRUTH so the
+    map can never drift from the canonical 16-dept floor again.
+    """
+    map_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "department-naming-map.json",
+    )
+    result = {}
+    try:
+        with open(map_path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[DEPT-MAP] Could not read {map_path}: {e}. Using legacy aliases only.", file=sys.stderr)
+        data = {}
+
+    def _ingest(node):
+        if not isinstance(node, dict):
+            return
+        for k, v in node.items():
+            if isinstance(v, dict) and v.get("suggested_roles_file"):
+                result[k] = v["suggested_roles_file"]
+            elif isinstance(v, dict):
+                _ingest(v)  # nested (vertical_packs)
+
+    _ingest(data.get("mandatory", {}))
+    _ingest(data.get("vertical_packs", {}))
+    # Master orchestrator / CEO is not in the naming map's department list but
+    # is always built; ensure it resolves.
+    result.setdefault("master-orchestrator", "master-orchestrator-suggested-roles.md")
+    result.setdefault("ceo", "master-orchestrator-suggested-roles.md")
+    # Layer legacy aliases LAST so they never overwrite a canonical id.
+    for legacy, fname in LEGACY_DEPT_ALIASES.items():
+        result.setdefault(legacy, fname)
+    return result
+
+
+# Mapping from department ID to suggested-roles filename (canonical-derived)
+DEPT_TO_SUGGESTED_ROLES = build_dept_to_suggested_roles()
+
+
+def assert_dept_map_resolves(dept_ids):
+    """
+    BUILD-TIME HARD ASSERTION (v10.15.18): every dept id we are about to build
+    MUST resolve to a suggested-roles file that ACTUALLY EXISTS on disk.
+    Previously a missing/mismatched entry produced a silent WARNING and a
+    zero-role department. Now the build HARD-FAILS so the gap is impossible to
+    ship. The resume cron re-fires and the operator sees the failure.
+
+    Raises SystemExit(78) listing every unresolved dept. Returns the resolved
+    {dept_id: abspath} map on success.
+    """
+    # Locate the suggested-roles directory (same search order as parse_suggested_roles)
+    search_paths = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "suggested-roles"),
+        os.path.join(WORKSPACE_ROOT, "23-ai-workforce-blueprint", "suggested-roles"),
+    ]
+    if MASTER_FILES:
+        search_paths.insert(0, os.path.join(MASTER_FILES, "23-ai-workforce-blueprint", "suggested-roles"))
+    roles_dir = next((sp for sp in search_paths if os.path.isdir(sp)), None)
+    if not roles_dir:
+        raise SystemExit(
+            "[DEPT-MAP ASSERT] FATAL: no suggested-roles/ directory found in any of: "
+            + "; ".join(search_paths)
+        )
+
+    resolved = {}
+    unresolved = []
+    for did in dept_ids:
+        fname = DEPT_TO_SUGGESTED_ROLES.get(did)
+        if not fname:
+            # last-resort pattern + fuzzy match (mirrors parse_suggested_roles)
+            cand = os.path.join(roles_dir, f"{did}-suggested-roles.md")
+            if os.path.isfile(cand):
+                resolved[did] = cand
+                continue
+            fuzzy = None
+            for f in os.listdir(roles_dir):
+                if did.replace("-", "") in f.replace("-", "").replace("_", ""):
+                    fuzzy = os.path.join(roles_dir, f)
+                    break
+            if fuzzy:
+                resolved[did] = fuzzy
+                continue
+            unresolved.append(f"{did} (no map entry, no {did}-suggested-roles.md, no fuzzy match)")
+            continue
+        path = os.path.join(roles_dir, fname)
+        if not os.path.isfile(path):
+            unresolved.append(f"{did} -> {fname} (FILE MISSING)")
+        else:
+            resolved[did] = path
+
+    if unresolved:
+        print("[DEPT-MAP ASSERT] FATAL: the following departments do NOT resolve to an "
+              "existing suggested-roles file. The build is HARD-FAILING so no department "
+              "ships with ZERO roles. Fix the map / add the file, then re-run:", file=sys.stderr)
+        for u in unresolved:
+            print(f"  - {u}", file=sys.stderr)
+        raise SystemExit(78)
+    print(f"[DEPT-MAP ASSERT] OK — all {len(resolved)} departments resolve to an existing "
+          f"suggested-roles file in {roles_dir}", file=sys.stderr)
+    return resolved
 
 
 def parse_suggested_roles(dept_id):

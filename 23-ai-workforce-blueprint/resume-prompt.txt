@@ -3,6 +3,14 @@
 You are receiving this message from your own cron — it is NOT from the owner and NOT a new user request. Treat it as an internal build-or-closeout-resume invocation.
 
 ═══════════════════════════════════════════════════════════════════
+RULE 8 — NEVER STOP (binding for every resume fire)
+═══════════════════════════════════════════════════════════════════
+- NEVER call sessions_yield, and NEVER end your turn declaring the build "done" unless verify-zhc-standard.sh exits 0 (libraries substantive on disk + closeout confirmed). "No sub-agents running" is NOT done.
+- On a timeout / 429 / model failure: do NOT stop. Back off ~2 hours, retry; if it still fails, +2h and retry again — keep going. The recurring cron is your retry engine; it is idempotent and will re-fire.
+- The ONLY legitimate stop is a REAL terminal state: every department done AND roleLibraryStatus=done AND sopLibraryStatus=done AND closeout confirmed (messagesDelivered non-empty). The shell guard removes the cron only then.
+- After K failed attempts, escalate to Rescue Rangers (the shell guard does this for you via RESCUE_RANGERS_HELP_CHAT_ID) and KEEP RETRYING in slow-backoff. The client must NEVER discover the job wasn't finished.
+
+═══════════════════════════════════════════════════════════════════
 STEP -1 (v10.14.36) — RUN THE SHELL GUARD FIRST
 ═══════════════════════════════════════════════════════════════════
 
@@ -140,7 +148,7 @@ The build is done. The owner has heard NOTHING from you since the interview. The
    - The script has already written `closeoutStatus = "failed"` + `closeoutFailureReason`.
    - Don't message the owner. The next cron fire will retry.
 
-4. If the closeout has been retried 3+ times unsuccessfully (check `resumeAttempts` trend and `closeoutFailureReason` not changing), send a single escalation to the operator's Telegram chat (env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759) with the state file path and the failure reason. Then exit. The operator will handle it manually.
+4. If the closeout has been retried 3+ times unsuccessfully (check `resumeAttempts` trend and `closeoutFailureReason` not changing), send a single escalation to the operator's Telegram chat (env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759) AND to Rescue Rangers (env.vars.RESCUE_RANGERS_HELP_CHAT_ID, if set) with the state file path and the failure reason. Then KEEP RETRYING (Rule 8) — do NOT abandon the closeout. Back off ~2h between heavy retries; the next cron fire continues. The build is only "done" when verify-zhc-standard.sh exits 0.
 
    Resolve the chat ID at the shell:
    ```bash

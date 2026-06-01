@@ -95,23 +95,40 @@ if [[ ${#TO_UPLOAD[@]} -eq 0 ]]; then
   exit 0
 fi
 
+# ---- optional target folder ----
+# Per TOOLS.md ground truth: GHL media-FOLDER CREATION VIA API IS BROKEN — a
+# folder must be created in the UI and its id passed as folderId on the upload.
+# So we do NOT attempt to create a folder over the API (that would 404/no-op).
+# If the operator pre-created a "ZHC Closeout — <Company>" folder in the UI and
+# set GHL_MEDIA_FOLDER_ID, we upload INTO it; otherwise files land in the root
+# media library (still fully shareable). Either way we capture the public URL of
+# every uploaded file and surface a shareable link to the Telegram closeout.
+GHL_FOLDER_ID="${GHL_MEDIA_FOLDER_ID:-}"
+[[ -n "$GHL_FOLDER_ID" ]] && log "INFO" "ghl-media: uploading into pre-created folder id=$GHL_FOLDER_ID"
+
 uploaded=0
 declare -a UPLOADED_IDS=()
+declare -a UPLOADED_URLS=()
 for f in "${TO_UPLOAD[@]}"; do
   fname="$(basename "$f")"
   log "INFO" "ghl-media: uploading $fname -> $GHL_BASE/medias/upload-file (location $GHL_LOCATION_ID)"
+  _folder_arg=()
+  [[ -n "$GHL_FOLDER_ID" ]] && _folder_arg=(-F "folderId=$GHL_FOLDER_ID")
   resp=$(curl -s --max-time 120 \
     -H "Authorization: Bearer $GHL_API_KEY" \
     -H "Version: $GHL_VERSION" \
     -F "file=@$f" \
     -F "locationId=$GHL_LOCATION_ID" \
     -F "hosted=false" \
+    "${_folder_arg[@]}" \
     "$GHL_BASE/medias/upload-file" 2>>"$LOG_FILE") || resp=""
   file_id=$(printf '%s' "$resp" | jq -r '.fileId // .id // empty' 2>/dev/null)
+  file_url=$(printf '%s' "$resp" | jq -r '.url // empty' 2>/dev/null)
   if [[ -n "$file_id" ]]; then
     uploaded=$((uploaded + 1))
     UPLOADED_IDS+=("$file_id")
-    log "INFO" "ghl-media: uploaded $fname -> fileId=$file_id"
+    [[ -n "$file_url" ]] && UPLOADED_URLS+=("$file_url")
+    log "INFO" "ghl-media: uploaded $fname -> fileId=$file_id url=${file_url:-<none>}"
   else
     log "WARN" "ghl-media: upload of $fname did not return a fileId (resp: $(printf '%s' "$resp" | head -c 200))"
   fi
@@ -119,8 +136,17 @@ done
 
 if [[ "$uploaded" -gt 0 ]]; then
   ids_json=$(printf '%s\n' "${UPLOADED_IDS[@]}" | jq -R . | jq -s -c .)
-  state_set ".ghlMediaUploaded = true | .ghlMediaFileIds = $ids_json | .ghlMediaUploadedAt = \"$(now_iso)\""
-  log "INFO" "ghl-media: done -- $uploaded/${#TO_UPLOAD[@]} files uploaded to GHL media library"
+  urls_json='[]'
+  [[ ${#UPLOADED_URLS[@]} -gt 0 ]] && urls_json=$(printf '%s\n' "${UPLOADED_URLS[@]}" | jq -R . | jq -s -c .)
+  # Shareable media-library link the client can open in the Convert and Flow app.
+  # (Folder deep-link if a folder id was provided, else the media-storage root.)
+  if [[ -n "$GHL_FOLDER_ID" ]]; then
+    media_lib_url="https://app.gohighlevel.com/location/$GHL_LOCATION_ID/media-storage?folderId=$GHL_FOLDER_ID"
+  else
+    media_lib_url="https://app.gohighlevel.com/location/$GHL_LOCATION_ID/media-storage"
+  fi
+  state_set ".ghlMediaUploaded = true | .ghlMediaFileIds = $ids_json | .ghlMediaUrls = $urls_json | .ghlMediaLibraryUrl = \"$media_lib_url\" | .ghlMediaUploadedAt = \"$(now_iso)\""
+  log "INFO" "ghl-media: done -- $uploaded/${#TO_UPLOAD[@]} files uploaded; media library link: $media_lib_url"
 else
   state_set '.ghlMediaUploaded = "failed-no-files-accepted"'
   log "WARN" "ghl-media: no files accepted by GHL -- check PIT scope (medias.write)"

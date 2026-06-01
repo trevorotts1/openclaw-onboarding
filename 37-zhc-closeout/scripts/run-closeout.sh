@@ -85,6 +85,34 @@ if [[ -z "$build_completed_at" || "$build_completed_at" == "null" ]]; then
   exit 0
 fi
 
+# ---- v10.x: ZHC-STANDARD PREFLIGHT (libraries must be REAL on disk) -------
+# buildCompletedAt alone is not proof: an agent could have written it while the
+# role/SOP libraries are empty/thin. Re-verify the disk substance via Skill 23's
+# verify-zhc-standard.sh (the single source of truth) BEFORE generating ANY
+# closeout artifact. If the role/SOP library is not substantive, REFUSE to
+# close out and let the resume cron re-fire the library build — never deliver a
+# celebration for an empty workforce.
+ZHC_STD_SCRIPT=""
+for cand in \
+  "$OC_ROOT/skills/23-ai-workforce-blueprint/scripts/verify-zhc-standard.sh" \
+  "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/verify-zhc-standard.sh" \
+  "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/verify-zhc-standard.sh"; do
+  [[ -f "$cand" ]] && ZHC_STD_SCRIPT="$cand" && break
+done
+if [[ -n "$ZHC_STD_SCRIPT" ]]; then
+  bash "$ZHC_STD_SCRIPT" >> "$LOG_FILE" 2>&1
+  ZHC_STD_RC=$?
+  # rc 4 = role library not done, rc 5 = SOP library not done. Both block closeout.
+  if [[ "$ZHC_STD_RC" == "4" || "$ZHC_STD_RC" == "5" ]]; then
+    log "ERROR" "ZHC-standard preflight FAILED (rc=$ZHC_STD_RC): role/SOP library not substantive on disk. REFUSING to close out an empty workforce. The resume cron will re-fire the library build."
+    state_set ".closeoutStatus = \"blocked-libraries-incomplete\" | .closeoutBlockReason = \"verify-zhc-standard rc=$ZHC_STD_RC (role/SOP library not substantive)\""
+    exit 0
+  fi
+  log "INFO" "ZHC-standard preflight rc=$ZHC_STD_RC (libraries verified substantive enough to close out)"
+else
+  log "WARN" "verify-zhc-standard.sh not found -- proceeding on buildCompletedAt alone (older Skill 23 bundle)"
+fi
+
 closeout_status=$(state_get '.closeoutStatus')
 if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]]; then
   log "INFO" "closeoutStatus=$closeout_status -- already complete; nothing to do"
@@ -367,12 +395,28 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# STEP 5.5 -- GHL media-library upload (conditional) -- v10.x
+#
+# Moved BEFORE the Telegram step (v10.x) so the shareable media-library link is
+# in state (.ghlMediaLibraryUrl) when the celebration messages are composed.
+# Uploads the gate-passed closeout media (real local files only) to the client's
+# Convert and Flow / GHL media library. Skips gracefully when GHL is absent or
+# the LOCATION PIT does not verify. Never blocks closeout.
+# ----------------------------------------------------------------------
+if [[ -x "$SKILL_DIR/scripts/upload-ghl-media.sh" ]]; then
+  bash "$SKILL_DIR/scripts/upload-ghl-media.sh" || log "WARN" "ghl-media upload step returned non-zero (non-fatal)"
+fi
+
+# ----------------------------------------------------------------------
 # STEP 6 -- Telegram Delivery
 #
 # Exports ZHC_VIDEO_STATUS to send-telegram-celebration.sh so slot 4 can
 # substitute a text-only "video deferred" message when the video step failed.
 # ----------------------------------------------------------------------
 export ZHC_VIDEO_STATUS="$STEP_VIDEO_STATUS"
+# v10.x: expose the GHL media-library shareable link to the Telegram step so it
+# can include it in the closeout message sequence.
+export ZHC_GHL_MEDIA_URL="$(state_get '.ghlMediaLibraryUrl')"
 # 8.5 GATE enforcement on delivery: any artifact that did not clear the gate is
 # HELD and must NOT be delivered to the client. Export the per-artifact gate
 # results + the held list so the Telegram step skips held artifacts (it sends a
@@ -441,17 +485,9 @@ else
     exit 0
   fi
 
-  # ------------------------------------------------------------------
-  # GHL media upload (conditional) -- v10.x.
-  # Only fires if the client has the GHL/Convert-and-Flow skill installed AND
-  # a working LOCATION PIT. Uploads the gate-passed closeout media (real local
-  # files only) to the client's GHL media library. Skips gracefully otherwise.
-  # Runs only on the clean success path -- after every artifact cleared the gate
-  # and the phantom-closeout guard passed.
-  # ------------------------------------------------------------------
-  if [[ -x "$SKILL_DIR/scripts/upload-ghl-media.sh" ]]; then
-    bash "$SKILL_DIR/scripts/upload-ghl-media.sh" || log "WARN" "ghl-media upload step returned non-zero (non-fatal)"
-  fi
+  # NOTE (v10.x): the GHL media-library upload now runs at STEP 5.5 (BEFORE the
+  # Telegram step) so the shareable .ghlMediaLibraryUrl is in state in time to be
+  # included in the client's celebration messages. It is no longer invoked here.
 
   # ------------------------------------------------------------------
   # Operator success summary -- v10.x.
