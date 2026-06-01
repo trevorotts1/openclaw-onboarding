@@ -760,3 +760,61 @@ jobs:
           #      wired in, de-dups across packs, and writes the McKinsey-style
           #      industry-org-design research manifest.
           bash 23-ai-workforce-blueprint/scripts/test-ws4-departments.sh
+
+      - name: Skill 23 build-workforce.py has a module-level subprocess import (BUG 1)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # build_from_config() (SOP-populate step) calls bare subprocess.run /
+          # subprocess.TimeoutExpired. The only `import subprocess` statements used
+          # to be FUNCTION-LOCAL inside OTHER functions, so those bare references
+          # raised `NameError: name 'subprocess' is not defined` and crashed the
+          # build at the SOP-populate step on every client. Assert: (1) the file
+          # parses, and (2) EVERY subprocess / _subprocess attribute access resolves
+          # to a module-level OR enclosing-function import (no bare unresolved use).
+          python3 - <<'PY'
+          import ast, sys
+          path = "23-ai-workforce-blueprint/scripts/build-workforce.py"
+          tree = ast.parse(open(path).read())
+          module_names = set()
+          for node in tree.body:
+              if isinstance(node, ast.Import):
+                  for n in node.names:
+                      module_names.add(n.asname or n.name.split('.')[0])
+          assert "subprocess" in module_names, "MISSING module-level `import subprocess` (BUG 1 regressed)"
+          issues = []
+          class V(ast.NodeVisitor):
+              def __init__(self): self.stack = []
+              def _local(self, body):
+                  names = set()
+                  for n in ast.walk(ast.Module(body=body, type_ignores=[])):
+                      if isinstance(n, ast.Import):
+                          for a in n.names:
+                              names.add(a.asname or a.name.split('.')[0])
+                  return names
+              def visit_FunctionDef(self, node):
+                  self.stack.append(self._local(node.body)); self.generic_visit(node); self.stack.pop()
+              def visit_Attribute(self, node):
+                  if isinstance(node.value, ast.Name) and node.value.id in ("subprocess", "_subprocess"):
+                      nm = node.value.id
+                      ok = nm in module_names or any(nm in f for f in self.stack)
+                      if not ok: issues.append((node.lineno, f"{nm}.{node.attr}"))
+                  self.generic_visit(node)
+          V().visit(tree)
+          if issues:
+              print("UNRESOLVED subprocess references:")
+              for ln, ref in issues: print(f"  L{ln}: {ref}")
+              sys.exit(1)
+          print("✓ build-workforce.py: subprocess import present; all subprocess references resolve in scope")
+          PY
+
+      - name: Skill 23 SOP substance gate accepts BOTH SOP models (BUG 2)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The qc gate must count BOTH the standalone-SOP model and the WS-2
+          # embedded-Section-9 model as substantive, so fully-instantiated
+          # workforces (Teresa/Corey/Maria/Kofi) are NOT false-FAILED into a
+          # regenerate-from-scratch loop — WITHOUT weakening the gate against
+          # stubs / {{token}} leaks / <7KB / missing-Section-9 garbage.
+          bash 23-ai-workforce-blueprint/scripts/test-sop-substance-models.sh

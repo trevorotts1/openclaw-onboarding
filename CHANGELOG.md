@@ -1,3 +1,19 @@
+## [v10.15.25]  -  2026-06-01  -  Skill 23 re-instantiation crons unblocked: build-workforce.py `subprocess` NameError fixed + qc-gate accepts the embedded-Section-9 SOP model (two repo bugs that blocked / false-failed the fleet)
+
+### Why
+Both bugs were found on live client boxes during the 2026-06-01 fleet rollout (Corey hot-patch, Teresa gate-mismatch) and were verified present in BOTH onboarding mains. They block or false-fail the never-stop re-instantiation crons for every not-yet-completed client build.
+
+1. **`subprocess` NameError crashes every build at the SOP-populate step.** `23-ai-workforce-blueprint/scripts/build-workforce.py` calls bare `subprocess.run(...)` / `except subprocess.TimeoutExpired:` inside `build_from_config()` (the SOP auto-populate step, ~L882/L907), but the ONLY `import subprocess` statements were FUNCTION-LOCAL inside OTHER functions (`import subprocess as _subprocess` ~L993; `import subprocess` ~L3117). So `subprocess` was never bound at module scope and the bare references raised `NameError: name 'subprocess' is not defined`, crashing the build.
+2. **qc-gate false-FAILS fully-instantiated workforces.** `qc-completeness.sh` (and the gates that delegate to it, `verify-library-gate.sh` + `verify-zhc-standard.sh`) only counted a SOP "substantive" when a STANDALONE `0[1-9]-*.md` file was ≥7KB with the five `## DEFINE/MEASURE/ANALYZE/IMPROVE/CONTROL` headers. But the WS-2 instantiate model embeds SOPs in `how-to.md` Section 9 as `### SOP 9.x` blocks (When-to-run / Frequency / Inputs / Steps / Outputs / Hand-to / Failure-mode). So substantive instantiated workforces (Teresa/Corey/Maria/Kofi) were marked INCOMPLETE → the never-stop crons looped forever or fell back to regenerate-from-scratch.
+
+### What
+- **BUG 1 — `build-workforce.py`:** added a single TOP-LEVEL `import subprocess` with the other module imports (after `import shutil`). Every `subprocess.` / `_subprocess.` reference now resolves in scope; the function-local re-imports become harmless. Verified via `ast.parse` + an AST in-scope check (no unresolved `subprocess` attribute access anywhere).
+- **BUG 2 — `qc-completeness.sh`:** the substance gate now accepts EITHER model as substantive, per role:
+  - **Standalone-SOP (existing, unchanged):** `0[1-9]-*.md` ≥7KB + all 5 DMAIC headers + no `to be personalized` / `[Step N…]` stub; role floor = 4 such files.
+  - **Embedded-Section-9 (NEW):** a role's `how-to.md` ≥7KB AND a `## 9.` SOP section with ≥1 `### SOP 9.` block carrying ≥5 of the When/Frequency/Inputs/Steps/Outputs/Hand-to/Failure-mode fields AND no `{{token}}` leak; role floor = 1 such block (the consolidated Section-9 SOP system). Embedded SOP blocks count toward `substantive_sop_count`; new `embedded_model_roles` diagnostic field.
+  - A role/dept PASSES if EITHER model is satisfied. Strictness preserved: still FAIL on `[Step N…]` stubs, `to be personalized` stubs, `{{token}}` leaks, <7KB, or a missing Section-9. `verify-library-gate.sh` + `verify-zhc-standard.sh` inherit the fix automatically (they derive their verdicts from the qc JSON fields). Exit codes unchanged, so the never-stop crons still loop on genuinely-incomplete builds.
+- **Smoke test + CI:** NEW `23-ai-workforce-blueprint/scripts/test-sop-substance-models.sh` extracts the REAL shipped `sop_is_substantive()` / `embedded_sop_count()` functions out of `qc-completeness.sh` and asserts instantiated-embedded → PASS and stub/leak/<7KB/no-Section-9 → FAIL, plus a standalone-model regression guard (18 checks). Two new `qc-static.yml` steps run it and statically assert the module-level `subprocess` import.
+
 ## [v10.15.24]  -  2026-06-01  -  CEO department at the TOP of the Command Center Kanban + research-driven industry vertical-pack auto-add (WS-4 department standardization)
 
 ### Why

@@ -47,6 +47,10 @@ import json
 import re
 import argparse
 import shutil
+import subprocess  # v10.15.25: module-level so bare subprocess.run / subprocess.TimeoutExpired
+                   # in build_from_config (SOP-populate step) resolve. Previously the only
+                   # `import subprocess` statements were function-local in OTHER functions, so the
+                   # bare references crashed the build with NameError: name 'subprocess' is not defined.
 from datetime import datetime
 from pathlib import Path
 
