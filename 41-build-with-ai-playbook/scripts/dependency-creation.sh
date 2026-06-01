@@ -34,25 +34,51 @@ HEADERS=(-H "Authorization: Bearer $API_KEY" -H "Version: 2021-07-28" -H "Conten
 create_tag() {
   local name="$1"
   echo "[skill 41] Creating tag: $name"
-  
-  # Check if exists
-  local existing
-  existing=$(curl -sS "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/tags?limit=100" | jq -r ".tags[]? | select(.name == \"$name\") | .id")
-  
+
+  # Fix 5a: enforce ZHC- prefix at runtime
+  if [[ "$name" != ZHC-* ]]; then
+    echo "[skill 41] ERROR: tag name must start with 'ZHC-' (got: '$name')"
+    exit 1
+  fi
+
+  # Fix 3: paginated existence check -- loop until a page returns fewer than limit
+  local existing="" page=1 limit=100
+  while true; do
+    local page_resp page_ids page_count
+    page_resp=$(curl -sS "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/tags?limit=${limit}&page=${page}")
+    page_ids=$(echo "$page_resp" | jq -r ".tags[]? | select(.name == $(jq -rn --arg n "$name" '$n')) | .id")
+    if [[ -n "$page_ids" ]]; then
+      existing="$page_ids"
+      break
+    fi
+    page_count=$(echo "$page_resp" | jq '.tags | length // 0')
+    if (( page_count < limit )); then break; fi
+    (( page++ ))
+  done
+
   if [[ -n "$existing" ]]; then
     echo "[skill 41] Tag '$name' already exists (id: $existing) -- skipping"
     return 0
   fi
-  
+
+  # Fix 1: build request body with jq to prevent injection
+  local body
+  body=$(jq -nc --arg name "$name" '{name:$name}')
   local resp
-  resp=$(curl -sS -X POST "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/tags" -d "{\"name\": \"$name\"}")
-  
+  resp=$(curl -sS -X POST "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/tags" -d "$body")
+
   local tag_id
   tag_id=$(echo "$resp" | jq -r '.id // empty')
-  
+
   if [[ -n "$tag_id" ]]; then
     echo "[skill 41] Tag created: $name (id: $tag_id)"
-    append_jsonl "dependency_created" "{\"object_type\":\"tag\",\"object_name\":\"$name\",\"zhc_prefixed\":true}"
+    # Fix 5b: zhc_prefixed computed dynamically; Fix 1: jq-built JSONL
+    local zhc_prefixed
+    [[ "$name" == ZHC-* ]] && zhc_prefixed=true || zhc_prefixed=false
+    append_jsonl "dependency_created" \
+      '{object_type:"tag",object_name:$obj_name,zhc_prefixed:($zhc_p=="true")}' \
+      --arg obj_name "$name" \
+      --arg zhc_p "$zhc_prefixed"
   else
     echo "[skill 41] ERROR creating tag '$name': $resp"
     return 1
@@ -63,25 +89,51 @@ create_field() {
   local name="$1"
   local dtype="${2:-text}"
   echo "[skill 41] Creating custom field: $name (type: $dtype)"
-  
-  # Check if exists
-  local existing
-  existing=$(curl -sS "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/customFields?limit=100" | jq -r ".customFields[]? | select(.name == \"$name\") | .id")
-  
+
+  # Fix 5a: enforce ZHC_ prefix at runtime
+  if [[ "$name" != ZHC_* ]]; then
+    echo "[skill 41] ERROR: custom field name must start with 'ZHC_' (got: '$name')"
+    exit 1
+  fi
+
+  # Fix 3: paginated existence check
+  local existing="" page=1 limit=100
+  while true; do
+    local page_resp page_ids page_count
+    page_resp=$(curl -sS "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/customFields?limit=${limit}&page=${page}")
+    page_ids=$(echo "$page_resp" | jq -r ".customFields[]? | select(.name == $(jq -rn --arg n "$name" '$n')) | .id")
+    if [[ -n "$page_ids" ]]; then
+      existing="$page_ids"
+      break
+    fi
+    page_count=$(echo "$page_resp" | jq '.customFields | length // 0')
+    if (( page_count < limit )); then break; fi
+    (( page++ ))
+  done
+
   if [[ -n "$existing" ]]; then
     echo "[skill 41] Custom field '$name' already exists (id: $existing) -- skipping"
     return 0
   fi
-  
+
+  # Fix 1: build request body with jq to prevent injection
+  local body
+  body=$(jq -nc --arg name "$name" --arg dtype "$dtype" '{name:$name,dataType:$dtype,group:"contact"}')
   local resp
-  resp=$(curl -sS -X POST "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/customFields" -d "{\"name\": \"$name\", \"dataType\": \"$dtype\", \"group\": \"contact\"}")
-  
+  resp=$(curl -sS -X POST "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/customFields" -d "$body")
+
   local field_id
   field_id=$(echo "$resp" | jq -r '.id // empty')
-  
+
   if [[ -n "$field_id" ]]; then
     echo "[skill 41] Custom field created: $name (id: $field_id)"
-    append_jsonl "dependency_created" "{\"object_type\":\"field\",\"object_name\":\"$name\",\"zhc_prefixed\":true}"
+    # Fix 5b: zhc_prefixed computed dynamically; Fix 1: jq-built JSONL
+    local zhc_prefixed
+    [[ "$name" == ZHC_* ]] && zhc_prefixed=true || zhc_prefixed=false
+    append_jsonl "dependency_created" \
+      '{object_type:"field",object_name:$obj_name,zhc_prefixed:($zhc_p=="true")}' \
+      --arg obj_name "$name" \
+      --arg zhc_p "$zhc_prefixed"
   else
     echo "[skill 41] ERROR creating custom field '$name': $resp"
     return 1
@@ -92,25 +144,42 @@ create_value() {
   local name="$1"
   local val="$2"
   echo "[skill 41] Creating custom value: $name = $val"
-  
-  # Check if exists
-  local existing
-  existing=$(curl -sS "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/customValues?limit=100" | jq -r ".customValues[]? | select(.name == \"$name\") | .id")
-  
+
+  # Fix 3: paginated existence check
+  local existing="" page=1 limit=100
+  while true; do
+    local page_resp page_ids page_count
+    page_resp=$(curl -sS "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/customValues?limit=${limit}&page=${page}")
+    page_ids=$(echo "$page_resp" | jq -r ".customValues[]? | select(.name == $(jq -rn --arg n "$name" '$n')) | .id")
+    if [[ -n "$page_ids" ]]; then
+      existing="$page_ids"
+      break
+    fi
+    page_count=$(echo "$page_resp" | jq '.customValues | length // 0')
+    if (( page_count < limit )); then break; fi
+    (( page++ ))
+  done
+
   if [[ -n "$existing" ]]; then
     echo "[skill 41] Custom value '$name' already exists (id: $existing) -- skipping"
     return 0
   fi
-  
+
+  # Fix 1: build request body with jq to prevent injection
+  local body
+  body=$(jq -nc --arg name "$name" --arg val "$val" '{name:$name,value:$val}')
   local resp
-  resp=$(curl -sS -X POST "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/customValues" -d "{\"name\": \"$name\", \"value\": \"$val\"}")
-  
+  resp=$(curl -sS -X POST "${HEADERS[@]}" "$BASE_URL/locations/$LOCATION_ID/customValues" -d "$body")
+
   local value_id
   value_id=$(echo "$resp" | jq -r '.id // empty')
-  
+
   if [[ -n "$value_id" ]]; then
     echo "[skill 41] Custom value created: $name (id: $value_id)"
-    append_jsonl "dependency_created" "{\"object_type\":\"value\",\"object_name\":\"$name\",\"zhc_prefixed\":false}"
+    # Fix 1: jq-built JSONL; zhc_prefixed:false is correct for values (Fix 5c -- no change)
+    append_jsonl "dependency_created" \
+      '{object_type:"value",object_name:$obj_name,zhc_prefixed:false}' \
+      --arg obj_name "$name"
   else
     echo "[skill 41] ERROR creating custom value '$name': $resp"
     return 1

@@ -1,7 +1,7 @@
-## [v10.15.27]  -  2026-06-01  -  Add Skill 41 — Build With AI Playbook Generator v1.2.1
+## [v10.15.27]  -  2026-06-01  -  Add Skill 41 — Build With AI Playbook Generator v1.2.2
 
 ### What changed
-- NEW skill `41-build-with-ai-playbook` (v1.2.1) at repo root: GHL "Build With AI" conversation-playbook generator (6 QC gates each with a passing negative self-test; OS-aware install scripts 00-04, client-install-time only).
+- NEW skill `41-build-with-ai-playbook` (v1.2.2) at repo root: GHL "Build With AI" conversation-playbook generator (6 QC gates each with a passing negative self-test; OS-aware install scripts 00-04, client-install-time only).
 - README Skill Inventory + headline counts updated (40 -> 41 folders; 37 -> 38 active).
 - Repo version rolled to v10.15.27 (Mac 10.15.x / VPS 10.16.x lanes kept independent).
 

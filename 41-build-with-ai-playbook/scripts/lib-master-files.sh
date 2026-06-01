@@ -27,16 +27,36 @@ resolve_master_files_dir() {
 
 append_jsonl() {
   local event_type="$1"
-  local payload="$2"
+  # Remaining positional args are jq --arg key value pairs, last arg is the jq object expression
+  # Caller passes discrete fields; we build the JSONL line with jq to avoid injection.
+  # Usage: append_jsonl <event_type> <jq-object-expr> [--arg key val ...]
+  # We use a different calling convention: caller passes a pre-built jq object string and
+  # extra --arg pairs via eval-safe approach.  For backward compat the second arg is
+  # interpreted as a jq expression that may reference $-variables supplied in remaining args.
+  local jq_expr="$2"
+  shift 2
   local master_dir
   master_dir="$(resolve_master_files_dir)"
   local events_file="$master_dir/build-with-ai-events.jsonl"
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   local session_ref
-  session_ref="${SESSION_REF:-sess_$(date +%s%N | tail -c 6)}"
+  if [[ -n "${SESSION_REF:-}" ]]; then
+    session_ref="$SESSION_REF"
+  elif [[ "$(uname -s)" == "Darwin" ]]; then
+    local _ns
+    _ns="$(python3 -c 'import time;print(int(time.time()*1000)%1000000)' 2>/dev/null || true)"
+    session_ref="sess_${_ns:-$RANDOM$RANDOM}"
+  else
+    session_ref="sess_$(date +%s%N | tail -c 6)"
+  fi
   local line
-  line="{\"ts\":\"$ts\",\"skill\":\"41-build-with-ai-playbook\",\"event\":\"$event_type\",\"session_ref\":\"$session_ref\",\"source\":\"script\",$payload}"
+  line="$(jq -nc \
+    --arg ts "$ts" \
+    --arg event_type "$event_type" \
+    --arg session_ref "$session_ref" \
+    "$@" \
+    "{ts:\$ts,skill:\"41-build-with-ai-playbook\",event:\$event_type,session_ref:\$session_ref,source:\"script\"} + ($jq_expr)")"
   echo "$line" >> "$events_file"
 }
 

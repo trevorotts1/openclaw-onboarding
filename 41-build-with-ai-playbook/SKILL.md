@@ -41,7 +41,7 @@ This skill is shipped as an MVP. Every component is marked below as REAL (works 
 | F52 data contract | REAL | references/f52-data-contract.md -- event log schema for build sessions |
 | Conversation playbook template | REAL | templates/conversation-playbook-template.md -- pairs with Skill 38 workflows |
 | QC rubric | REAL | references/qc-rubric.md -- 10-category QC for every generated prompt |
-| Install scripts (00--05) | REAL | scripts/ -- prerequisite verify, master-files locate, seed playbook, init JSONL sinks, update core files |
+| Install scripts (00--04) | REAL | scripts/ -- prerequisite verify, master-files locate, seed playbook, init JSONL sinks, update core files |
 | Library scripts | REAL | scripts/lib-master-files.sh -- shared helpers for master-files resolution |
 
 ## How Skill 41 fits in the pipeline
@@ -123,7 +123,7 @@ All GHL API calls use the operator's Private Integration Token (PIT) -- never sh
 | CORE_UPDATES.md | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | EXAMPLES.md | Worked example flows (UNIVERSAL placeholders) |
 | CHANGELOG.md | Version history |
-| skill-version.txt | Currently 1.2.0 |
+| skill-version.txt | Currently 1.2.2 |
 | scripts/00-verify-prerequisites.sh | Verifies jq, curl, GHL PIT, locationId; reports env state |
 | scripts/01-locate-master-files-folder.sh | Resolves + persists MASTER_FILES_DIR |
 | scripts/02-seed-playbook-doc.sh | Creates the canonical build-with-ai-playbook.md in master files |

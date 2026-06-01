@@ -1,3 +1,32 @@
+## [1.2.2] - 2026-06-01 - Hardening: injection safety, macOS compat, pagination, idempotency, prefix enforcement
+
+### Fixed
+- **Fix 1 (HIGH) Shell/JSON injection** -- `dependency-creation.sh`: all three `curl -d` bodies
+  (tag, field, value) are now built with `jq -nc --arg` instead of direct shell interpolation.
+  `lib-master-files.sh` `append_jsonl`: JSONL line is now assembled by `jq` from discrete
+  `--arg` fields; callers pass a jq object expression + named `--arg` pairs, never a raw
+  concatenated string.
+- **Fix 2 (HIGH) `date +%s%N` macOS breakage** -- `lib-master-files.sh` `append_jsonl`:
+  `session_ref` fallback now branches on `uname -s`; Darwin path uses
+  `python3 -c 'import time;print(int(time.time()*1000)%1000000)'` with a `$RANDOM$RANDOM`
+  fallback; Linux keeps `date +%s%N | tail -c 6`.
+- **Fix 3 (HIGH) Pagination blind spot** -- `dependency-creation.sh`: all three existence-check
+  GETs now loop incrementing `?page=N` until a page returns fewer than `limit` results before
+  concluding the object does not exist. A single 100-item page no longer hides objects beyond it.
+- **Fix 4 (MED) Stale idempotency marker** -- `scripts/04-update-core-files.sh`: MEMORY.md and
+  TOOLS.md block markers are now built from `skill-version.txt` at runtime. On re-run with an
+  older marker in the file, the stale block is removed and the current-version block is appended;
+  if the current-version marker is already present the script skips (idempotent).
+- **Fix 5 (MED) ZHC prefix not enforced at runtime** -- `dependency-creation.sh`: `create_tag`
+  now rejects (exit 1) any name not starting with `ZHC-`; `create_field` rejects any name not
+  starting with `ZHC_`. The logged `zhc_prefixed` field is now computed dynamically from the
+  actual name instead of being hardcoded `true`. Custom values carry no prefix requirement and
+  keep `zhc_prefixed:false` unchanged.
+
+### Meta
+- `skill-version.txt` bumped to `1.2.2`.
+- `SKILL.md`: corrected "(00--05)" → "(00--04)" and version table cell `1.2.0` → `1.2.2`.
+
 ## [1.2.1] - 2026-06-01 - GHL accuracy pass (web-confirmed)
 
 ### Fixed
