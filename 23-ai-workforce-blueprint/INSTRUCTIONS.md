@@ -632,6 +632,23 @@ The script is idempotent — it can be run after EVERY dept flips to `done`, OR 
 
 **A workforce is NOT complete — and `buildCompletedAt` / `closeoutStatus=pending` MUST NOT be written — until `roleLibraryStatus == done` AND `sopLibraryStatus == done`.** This gate runs BEFORE the closeout gate. Skill 37 must never fire a celebration for a workforce whose roles have empty `how-to.md` files or stub SOPs.
 
+### Moment 3.7 — SOP-Writer role + self-building-SOP trigger (BINDING — added this release)
+
+**Why this exists:** an agent must NEVER be unable to do a task because there is no SOP. The build pre-fills every role's `how-to.md` from the role-library (Moment 3.6), but live work eventually surfaces a task the library never anticipated. When that happens the answer is NOT "guess", NOT "skip", and NOT "make every agent re-derive a procedure from scratch and burn the owner's tokens." The answer is a dedicated **SOP-Writer** that researches the task (including pulling real API documentation/structure when the task needs an API), authors a DMAIC `how-to.md`, QC-gates it, and files it into **this company's own** SOP library.
+
+**Decision — universal role, instantiated per department (NOT one global writer):** the SOP-Writer is defined ONCE as a single canonical template (`templates/role-library/_sop-writer.md`) and registered against **every** department in `_index.json` (slug `sop-writer`, `role_type: on-call`). The build instantiates one SOP-Writer **into each department** so each company owns its own per-department writers. Rationale: a per-department writer inherits that department's domain context + `governing-personas.md` and writes into the right role folder, while still being a single template to maintain (no duplication, no drift). A single global writer would lack department context and become a serial bottleneck; defining N separate templates would drift. One template → N instances is the lean win.
+
+**The runtime trigger (what the Director does when an agent hits a no-SOP task):**
+1. **Detect.** Before an agent executes a task, the Director confirms a procedure exists (a role `how-to.md`, a matching `### SOP 9.x`, or a knowledge-base file). If NONE → it is a no-SOP event. Do NOT let the agent proceed by guessing.
+2. **Trigger the SOP-Writer.** The Director files the blocked task into `<dept>/sop-requests/` and dispatches the department's **SOP-Writer** (its `how-to.md` is `sop-writer.md`, instantiated from the library). The Director does NOT write the SOP themselves (directors route, they don't execute).
+3. **Research + API pull.** The SOP-Writer runs web research for the authoritative procedure and, if the task hits an external service, pulls the LIVE API reference (auth, base URL, endpoints, request/response schema, rate limits, error codes) via Context7 MCP / WebFetch — checking the workspace TOOLS.md first per the toolbox doctrine. Every API claim cites a fetched doc URL + retrieval date. NEVER write an API contract from memory.
+4. **Author the DMAIC `how-to.md`.** Start from `templates/universal-how-to-template.md`; fill all 18 sections + the standard SOP shape (When/Frequency/Inputs/Steps/Outputs/Hand-to/Failure-mode); embody the per-task governing persona.
+5. **QC gate (binding).** The SOP MUST clear the project floor before it ships: **≥7KB of real DMAIC content, all sections filled (no stubs / no `[Step 1 — to be ...]`), zero uncited API claims, and ≥8.5** on the role rubric (`templates/role-library/_rubric.md`). Loop with surgical fixes until it passes; stamp `<!-- passed-qc: <score> -->`.
+6. **File + register.** Save into the requesting role's folder, add it to the role's `00-START-HERE.md` "When-to" reference map, and register it in the company library so the gap never reopens.
+7. **Upstream candidate.** If a written SOP is clearly universal (not company-specific) or has been re-authored 3+ times, flag it to the Master Orchestrator as a candidate to contribute back to the shipped role-library so future clients get it pre-built.
+
+This is the role-based, QC-gated successor to the inline "ESCALATION + RESEARCH RULE" that is still pasted into every SOP and to the Master Orchestrator's "create the missing knowledge base file" duty — those remain valid as the always-on safety net; the SOP-Writer is the dedicated specialist that does it well, with API research and a substance gate. (Full role spec: `templates/role-library/_sop-writer.md`.)
+
 ### Moment 3.8 — Comms-automation handoff to Skill 38 (ENFORCED cross-skill chain — added v10.15.9)
 
 If the built workforce includes a **Communications**, **Sales**, or **Customer-Support** department,
