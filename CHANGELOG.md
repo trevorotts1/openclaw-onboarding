@@ -1,3 +1,15 @@
+## [v10.15.22]  -  2026-06-01  -  ZHC closeout (Skill 37) is beautiful + LINKED: every artifact resolves to a REAL openable URL in Telegram (WS-9 closeout UX)
+
+### Why
+The closeout Telegram experience was messy and unlinked — the durable "where do I find this later" link was missing or a login-gated GHL app deep-link ("we saved it in this folder"). And the GHL media upload silently skipped on every box that uses the canonical `GOHIGHLEVEL_*` env names, so no media links ever reached the client.
+
+### What
+- **`upload-ghl-media.sh`:** accepts both `GOHIGHLEVEL_API_KEY`/`GOHIGHLEVEL_LOCATION_ID` (canonical) and `GHL_API_KEY`/`GHL_LOCATION_ID` (legacy) + build-state `.ghlLocationId`; uses the documented `parentId` folder field (NOT the broken `folderId`); never folder-creates (broken per TOOLS.md — folder pre-made in the UI, id via `GHL_MEDIA_FOLDER_ID`); captures each file's PUBLIC `storage.googleapis.com/msgsndr/...` URL into `ghlVideoPublicUrl`/`ghlInfographic1/2PublicUrl`.
+- **`send-telegram-celebration.sh`:** new `openable_link()` resolver (GHL public → remote → none); every image/video carries a durable `🔗 Open it directly:` link; msg 6 posts the per-file public links + browse-all link. Graceful no-GHL fallback. The 1.1.4 anti-faking messageId gate is fully preserved.
+- **`send-operator-summary.sh`:** prefers the GHL public URL per artifact.
+- **`build-state-schema.json`:** documents the new GHL/local-path/model fields.
+- NEW `test-closeout-openable-links.sh` + `qc-static.yml` step. KIE celebration model `gemini-omni-video` re-verified against docs.kie.ai (unchanged, not swapped). Skill 37 1.1.4 → 1.1.5.
+
 ## [v10.15.21]  -  2026-06-01  -  Builds INSTANTIATE the pre-written role/SOP library (copy + personalize) instead of LLM-regenerating from empty stubs
 
 ### Why

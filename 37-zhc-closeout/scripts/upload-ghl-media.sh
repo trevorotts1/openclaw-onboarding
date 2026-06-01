@@ -4,16 +4,32 @@
 # If (and only if) the client has the GHL / Convert-and-Flow skill installed AND
 # a working LOCATION-scoped Private Integration Token (PIT), this uploads the
 # closeout media (the two infographics + the celebration video) into the client's
-# GHL media library via POST /medias/upload-file (Version: 2021-07-28).
+# Convert and Flow / GHL media library via POST /medias/upload-file
+# (Version: 2021-07-28) and captures each file's REAL, publicly-shareable URL so
+# the Telegram closeout can post an OPENABLE LINK per artifact (not "saved in a
+# folder").
 #
 # Skips gracefully -- exits 0 with a log line -- when GHL is absent or the PIT
 # does not resolve / verify. Never blocks closeout.
 #
-# CONVENTIONS (per Skill 29 GHL Convert-and-Flow INSTALL.md / TOOLS.md):
-#   - Auth: Authorization: Bearer $GHL_API_KEY  (PIT, not deprecated API key)
-#   - Scope: LOCATION PIT only -- requires $GHL_LOCATION_ID
+# CONVENTIONS (verified against ~/clawd/TOOLS.md "Convert and Flow (GHL)" +
+# docs: marketplace.gohighlevel.com/docs/ghl/medias/upload-media-content):
+#   - Auth: Authorization: Bearer <LOCATION PIT>   (PIT, not a deprecated key)
+#   - ENV: canonical names are GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID
+#          (the closeout also accepts the legacy aliases GHL_API_KEY /
+#          GHL_LOCATION_ID so an older box still works). Media uploads REQUIRE
+#          the LOCATION PIT -- the Agency PIT returns 401 for media ops.
 #   - Base:  https://services.leadconnectorhq.com
 #   - Header: Version: 2021-07-28
+#   - Upload form fields (per the official spec): file, locationId, hosted,
+#     name, parentId (the FOLDER id -- the field is `parentId`, NOT `folderId`).
+#   - FOLDER CREATION VIA API IS BROKEN (TOOLS.md ground truth): a folder must be
+#     pre-created in the Convert and Flow UI and its id passed via
+#     GHL_MEDIA_FOLDER_ID. We never POST a folder-create (it 404s). With no
+#     folder id the files land in the media root (still fully shareable).
+#   - Response: {"fileId":"...","url":"https://storage.googleapis.com/msgsndr/..."}
+#     The `url` is a PUBLIC GCS object URL -- openable without a GHL login. That
+#     public URL is what we surface to Telegram as the durable openable link.
 #
 # Only uploads REAL files that exist on disk (the *LocalPath state fields written
 # by generate-infographics.sh / generate-celebration-video.sh). Never uploads a
@@ -50,15 +66,26 @@ GHL_SKILL_PRESENT=0
 for d in "$OC_ROOT/skills/29-ghl-convert-and-flow" "$OC_ROOT/skills/05-ghl-setup" "$OC_ROOT/skills/36-ghl-mcp-setup"; do
   [[ -d "$d" ]] && GHL_SKILL_PRESENT=1 && break
 done
-if [[ "$GHL_SKILL_PRESENT" -eq 0 ]]; then
-  log "INFO" "ghl-media: no GHL/Convert-and-Flow skill installed -- skipping (not an error)"
-  state_set '.ghlMediaUploaded = "skipped-no-ghl-skill"'
+
+# ---- resolve the LOCATION PIT + location id ----
+# Canonical env names (TOOLS.md): GOHIGHLEVEL_API_KEY / GOHIGHLEVEL_LOCATION_ID.
+# Legacy aliases still accepted so an older box keeps working: GHL_API_KEY /
+# GHL_LOCATION_ID. A build-state .ghlLocationId (set at interview time) is the
+# final fallback for the location id. The PIT MUST come from the environment.
+GHL_PIT="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-}}"
+GHL_LOC="${GOHIGHLEVEL_LOCATION_ID:-${GHL_LOCATION_ID:-}}"
+[[ -z "$GHL_LOC" ]] && GHL_LOC="$(state_get '.ghlLocationId')"
+
+# If there is no GHL presence signal at all (no skill AND no creds AND no
+# location in state), this client simply has no GHL -- skip silently (not error).
+if [[ "$GHL_SKILL_PRESENT" -eq 0 && -z "$GHL_PIT" && -z "$GHL_LOC" ]]; then
+  log "INFO" "ghl-media: no GHL/Convert-and-Flow skill, PIT, or location -- skipping (client has no GHL; not an error)"
+  state_set '.ghlMediaUploaded = "skipped-no-ghl"'
   exit 0
 fi
 
-# ---- detection: do we have a LOCATION PIT + location id? ----
-if [[ -z "${GHL_API_KEY:-}" || -z "${GHL_LOCATION_ID:-}" ]]; then
-  log "INFO" "ghl-media: GHL_API_KEY / GHL_LOCATION_ID not both set -- skipping (no working LOCATION PIT)"
+if [[ -z "$GHL_PIT" || -z "$GHL_LOC" ]]; then
+  log "INFO" "ghl-media: LOCATION PIT (GOHIGHLEVEL_API_KEY/GHL_API_KEY) and/or LOCATION id (GOHIGHLEVEL_LOCATION_ID/GHL_LOCATION_ID/.ghlLocationId) not both resolvable -- skipping (no working LOCATION PIT)"
   state_set '.ghlMediaUploaded = "skipped-no-pit"'
   exit 0
 fi
@@ -70,24 +97,28 @@ fi
 
 # ---- verify the LOCATION PIT actually works before uploading ----
 verify_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-  -H "Authorization: Bearer $GHL_API_KEY" \
+  -H "Authorization: Bearer $GHL_PIT" \
   -H "Version: $GHL_VERSION" \
-  "$GHL_BASE/locations/$GHL_LOCATION_ID" 2>/dev/null || echo "000")
+  "$GHL_BASE/locations/$GHL_LOC" 2>/dev/null || echo "000")
 if [[ ! "$verify_code" =~ ^2 ]]; then
   log "WARN" "ghl-media: LOCATION PIT verify returned HTTP $verify_code -- skipping upload (PIT not working for this location)"
   state_set '.ghlMediaUploaded = "skipped-pit-verify-failed"'
   exit 0
 fi
-log "INFO" "ghl-media: LOCATION PIT verified (HTTP $verify_code) -- proceeding with uploads"
+log "INFO" "ghl-media: LOCATION PIT verified (HTTP $verify_code) for location $GHL_LOC -- proceeding with uploads"
 
 # ---- collect the real local media files written by the generators ----
+# Each entry is "label|path" so we can attach a human-friendly name + map the
+# returned public URL back to the right artifact in state for the Telegram step.
 declare -a TO_UPLOAD=()
 INF1_PATH="$(state_get '.infographic1LocalPath')"
 INF2_PATH="$(state_get '.infographic2LocalPath')"
 VIDEO_PATH="$(state_get '.celebrationVideoLocalPath')"
-[[ -n "$INF1_PATH"  && -s "$INF1_PATH"  ]] && TO_UPLOAD+=("$INF1_PATH")
-[[ -n "$INF2_PATH"  && -s "$INF2_PATH"  ]] && TO_UPLOAD+=("$INF2_PATH")
-[[ -n "$VIDEO_PATH" && -s "$VIDEO_PATH" ]] && TO_UPLOAD+=("$VIDEO_PATH")
+COMPANY_NAME="$(state_get '.companyName')"; [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="$(state_get '.companySlug')"
+[[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="ZHC"
+[[ -n "$INF1_PATH"  && -s "$INF1_PATH"  ]] && TO_UPLOAD+=("infographic1|Workforce Structure|$INF1_PATH")
+[[ -n "$INF2_PATH"  && -s "$INF2_PATH"  ]] && TO_UPLOAD+=("infographic2|How Work Flows|$INF2_PATH")
+[[ -n "$VIDEO_PATH" && -s "$VIDEO_PATH" ]] && TO_UPLOAD+=("celebrationVideo|Celebration Video|$VIDEO_PATH")
 
 if [[ ${#TO_UPLOAD[@]} -eq 0 ]]; then
   log "WARN" "ghl-media: no real local media files found to upload -- skipping"
@@ -96,41 +127,57 @@ if [[ ${#TO_UPLOAD[@]} -eq 0 ]]; then
 fi
 
 # ---- optional target folder ----
-# Per TOOLS.md ground truth: GHL media-FOLDER CREATION VIA API IS BROKEN — a
-# folder must be created in the UI and its id passed as folderId on the upload.
-# So we do NOT attempt to create a folder over the API (that would 404/no-op).
-# If the operator pre-created a "ZHC Closeout — <Company>" folder in the UI and
-# set GHL_MEDIA_FOLDER_ID, we upload INTO it; otherwise files land in the root
-# media library (still fully shareable). Either way we capture the public URL of
-# every uploaded file and surface a shareable link to the Telegram closeout.
+# Folder CREATE via API is broken (TOOLS.md). If the operator pre-created a
+# "ZHC Closeout -- <Company>" folder in the UI and exported GHL_MEDIA_FOLDER_ID,
+# we upload INTO it (field name is `parentId`); otherwise files land in the media
+# root. Either way we capture each file's PUBLIC url for the Telegram closeout.
 GHL_FOLDER_ID="${GHL_MEDIA_FOLDER_ID:-}"
-[[ -n "$GHL_FOLDER_ID" ]] && log "INFO" "ghl-media: uploading into pre-created folder id=$GHL_FOLDER_ID"
+[[ -n "$GHL_FOLDER_ID" ]] && log "INFO" "ghl-media: uploading into pre-created folder parentId=$GHL_FOLDER_ID"
 
 uploaded=0
 declare -a UPLOADED_IDS=()
 declare -a UPLOADED_URLS=()
-for f in "${TO_UPLOAD[@]}"; do
+# Per-artifact public URL fields written back to state so the Telegram step can
+# post a real openable link for each one.
+GHL_VIDEO_PUBLIC_URL=""
+GHL_INF1_PUBLIC_URL=""
+GHL_INF2_PUBLIC_URL=""
+
+for entry in "${TO_UPLOAD[@]}"; do
+  key="${entry%%|*}"; rest="${entry#*|}"; label="${rest%%|*}"; f="${rest#*|}"
   fname="$(basename "$f")"
-  log "INFO" "ghl-media: uploading $fname -> $GHL_BASE/medias/upload-file (location $GHL_LOCATION_ID)"
+  # A clean, human-readable media-library name: "<Company> -- <Label>.<ext>"
+  ext="${fname##*.}"; [[ "$ext" == "$fname" ]] && ext=""
+  nice_name="$COMPANY_NAME -- $label"; [[ -n "$ext" ]] && nice_name="$nice_name.$ext"
+  log "INFO" "ghl-media: uploading '$nice_name' ($fname) -> $GHL_BASE/medias/upload-file (location $GHL_LOC)"
   _folder_arg=()
-  [[ -n "$GHL_FOLDER_ID" ]] && _folder_arg=(-F "folderId=$GHL_FOLDER_ID")
-  resp=$(curl -s --max-time 120 \
-    -H "Authorization: Bearer $GHL_API_KEY" \
+  # Documented folder field is `parentId` (NOT `folderId`).
+  [[ -n "$GHL_FOLDER_ID" ]] && _folder_arg=(-F "parentId=$GHL_FOLDER_ID")
+  resp=$(curl -s --max-time 300 \
+    -H "Authorization: Bearer $GHL_PIT" \
     -H "Version: $GHL_VERSION" \
     -F "file=@$f" \
-    -F "locationId=$GHL_LOCATION_ID" \
+    -F "locationId=$GHL_LOC" \
+    -F "name=$nice_name" \
     -F "hosted=false" \
     "${_folder_arg[@]}" \
     "$GHL_BASE/medias/upload-file" 2>>"$LOG_FILE") || resp=""
   file_id=$(printf '%s' "$resp" | jq -r '.fileId // .id // empty' 2>/dev/null)
-  file_url=$(printf '%s' "$resp" | jq -r '.url // empty' 2>/dev/null)
+  file_url=$(printf '%s' "$resp" | jq -r '.url // .fileUrl // empty' 2>/dev/null)
   if [[ -n "$file_id" ]]; then
     uploaded=$((uploaded + 1))
     UPLOADED_IDS+=("$file_id")
-    [[ -n "$file_url" ]] && UPLOADED_URLS+=("$file_url")
-    log "INFO" "ghl-media: uploaded $fname -> fileId=$file_id url=${file_url:-<none>}"
+    if [[ -n "$file_url" ]]; then
+      UPLOADED_URLS+=("$file_url")
+      case "$key" in
+        celebrationVideo) GHL_VIDEO_PUBLIC_URL="$file_url" ;;
+        infographic1)     GHL_INF1_PUBLIC_URL="$file_url" ;;
+        infographic2)     GHL_INF2_PUBLIC_URL="$file_url" ;;
+      esac
+    fi
+    log "INFO" "ghl-media: uploaded '$nice_name' -> fileId=$file_id publicUrl=${file_url:-<none>}"
   else
-    log "WARN" "ghl-media: upload of $fname did not return a fileId (resp: $(printf '%s' "$resp" | head -c 200))"
+    log "WARN" "ghl-media: upload of '$nice_name' did not return a fileId (resp: $(printf '%s' "$resp" | head -c 200))"
   fi
 done
 
@@ -138,15 +185,26 @@ if [[ "$uploaded" -gt 0 ]]; then
   ids_json=$(printf '%s\n' "${UPLOADED_IDS[@]}" | jq -R . | jq -s -c .)
   urls_json='[]'
   [[ ${#UPLOADED_URLS[@]} -gt 0 ]] && urls_json=$(printf '%s\n' "${UPLOADED_URLS[@]}" | jq -R . | jq -s -c .)
-  # Shareable media-library link the client can open in the Convert and Flow app.
-  # (Folder deep-link if a folder id was provided, else the media-storage root.)
+  # The in-app media-library link (folder deep-link if a folder id was provided,
+  # else the media-storage root). NOTE: this app link is behind a GHL login, so
+  # it is NOT the openable artifact link -- the PER-FILE PUBLIC urls above are.
+  # We keep the app link as a "browse them all in your account" convenience.
   if [[ -n "$GHL_FOLDER_ID" ]]; then
-    media_lib_url="https://app.gohighlevel.com/location/$GHL_LOCATION_ID/media-storage?folderId=$GHL_FOLDER_ID"
+    media_lib_url="https://app.gohighlevel.com/location/$GHL_LOC/media-storage?parentId=$GHL_FOLDER_ID"
   else
-    media_lib_url="https://app.gohighlevel.com/location/$GHL_LOCATION_ID/media-storage"
+    media_lib_url="https://app.gohighlevel.com/location/$GHL_LOC/media-storage"
   fi
-  state_set ".ghlMediaUploaded = true | .ghlMediaFileIds = $ids_json | .ghlMediaUrls = $urls_json | .ghlMediaLibraryUrl = \"$media_lib_url\" | .ghlMediaUploadedAt = \"$(now_iso)\""
-  log "INFO" "ghl-media: done -- $uploaded/${#TO_UPLOAD[@]} files uploaded; media library link: $media_lib_url"
+  state_set "
+    .ghlMediaUploaded = true
+    | .ghlMediaFileIds = $ids_json
+    | .ghlMediaUrls = $urls_json
+    | .ghlMediaLibraryUrl = \"$media_lib_url\"
+    | .ghlVideoPublicUrl = \"$GHL_VIDEO_PUBLIC_URL\"
+    | .ghlInfographic1PublicUrl = \"$GHL_INF1_PUBLIC_URL\"
+    | .ghlInfographic2PublicUrl = \"$GHL_INF2_PUBLIC_URL\"
+    | .ghlMediaUploadedAt = \"$(now_iso)\"
+  "
+  log "INFO" "ghl-media: done -- $uploaded/${#TO_UPLOAD[@]} files uploaded; per-file public URLs captured; media library link: $media_lib_url"
 else
   state_set '.ghlMediaUploaded = "failed-no-files-accepted"'
   log "WARN" "ghl-media: no files accepted by GHL -- check PIT scope (medias.write)"

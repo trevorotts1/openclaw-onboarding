@@ -729,3 +729,18 @@ jobs:
           grep -q 'sent-messages.json' "$verify" || { echo "  ✗ $verify does not read the sent-registry"; exit 1; }
           bash "$test"
           echo "✓ Skill 37 closeout confirms real messageIds against the sent-registry before claiming done"
+
+      - name: Skill 37 closeout posts REAL openable links (WS-9 closeout UX)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # WS-9 invariant: every closeout artifact (celebration video, both
+          # infographics, Notion, Command Center, GHL media) must resolve to a
+          # REAL openable LINK in the Telegram message -- never "saved in folder X".
+          # The durable openable link is the GHL media-library PUBLIC URL
+          # (storage.googleapis.com/msgsndr/...), captured via /medias/upload-file
+          # using the documented `parentId` folder field (folder-CREATE is broken,
+          # so folders are pre-made in the UI). The smoke test proves the GHL
+          # upload + per-file public-URL capture + the Telegram openable_link
+          # resolver, and that the anti-faking messageId gate is still intact.
+          bash 37-zhc-closeout/scripts/test-closeout-openable-links.sh

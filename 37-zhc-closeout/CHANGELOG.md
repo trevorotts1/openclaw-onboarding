@@ -1,5 +1,30 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.1.5] - 2026-06-01 - Beautiful, LINKED closeout: every artifact resolves to a REAL openable URL in Telegram (WS-9 closeout UX) (shipped with onboarding v10.15.20)
+
+The closeout messaging was messy and unlinked — images/video were sent inline but the durable "where do I find this later" link was either missing or a login-gated GHL app deep-link ("we saved it in this folder"). This release makes the celebration message BEAUTIFUL + LINKED: every artifact (celebration video, both infographics, Notion, Command Center, GHL media) resolves to a REAL openable URL posted IN the message. The anti-faking messageId-confirmation gate (1.1.4) is fully preserved.
+
+### A. GHL media upload captures durable, openable PUBLIC URLs — `upload-ghl-media.sh`
+- **Env-name fix (the silent-skip bug):** resolves the LOCATION PIT from `GOHIGHLEVEL_API_KEY` (TOOLS.md canonical) with `GHL_API_KEY` as a legacy alias, and the location id from `GOHIGHLEVEL_LOCATION_ID` / `GHL_LOCATION_ID` / build-state `.ghlLocationId`. Previously the script ONLY read `GHL_API_KEY`/`GHL_LOCATION_ID`, so on every box that uses the canonical names the upload silently skipped and no media links ever reached the client.
+- **Folder field fix:** the documented upload form field for the target folder is **`parentId`**, not `folderId` (verified against marketplace.gohighlevel.com/docs/ghl/medias/upload-media-content). Folder CREATE via API is broken (TOOLS.md) so the script still never POSTs a folder-create — a folder is pre-made in the Convert and Flow UI and its id passed via `GHL_MEDIA_FOLDER_ID`.
+- **Per-file public URLs:** each `/medias/upload-file` response returns `{"fileId","url":"https://storage.googleapis.com/msgsndr/..."}` — a PUBLIC, openable GCS URL (no GHL login). The script now maps each upload back to its artifact and writes `ghlVideoPublicUrl`, `ghlInfographic1PublicUrl`, `ghlInfographic2PublicUrl` (plus `ghlMediaUrls[]`, `ghlMediaFileIds[]`, `ghlMediaLibraryUrl`) to state. Uploads get a clean human name `"<Company> -- <Label>.<ext>"`.
+
+### B. Telegram posts the ACTUAL openable LINKS — `send-telegram-celebration.sh`
+- New `openable_link()` resolver: durable GHL public URL → remote http URL → none (rejects `file://`/`null`/empty).
+- Each image and the video is still sent INLINE (local bytes via `--media`, so it renders in-thread) AND now carries a `🔗 Open it directly:` line with its durable GHL public URL — so the client always has a real openable link even after the inline media scrolls away.
+- Message 4 (video) treats a GHL public video URL as a valid source, not just local bytes/remote URL.
+- Message 6 posts the durable per-file public links (video, both graphics) + the "browse them all in your account" media-library link, replacing the old login-gated-only deep-link.
+- Graceful no-GHL degradation proven: with no GHL the messages fall back to inline media + remote URLs, with no broken/empty "Open it directly" lines and no empty GHL block.
+
+### C. Operator summary uses durable links — `send-operator-summary.sh`
+Prefers the GHL public URL (then Drive, then remote) for each artifact so the operator's links match what the client can actually open.
+
+### D. Schema + smoke test + CI
+- `build-state-schema.json`: documented the new fields (`ghlVideoPublicUrl`, `ghlInfographic1/2PublicUrl`, `ghlMediaUrls`, `ghlMediaFileIds`, `ghlMediaLibraryUrl`, `ghlMediaUploaded`, `ghlLocationId`, `celebrationVideoLocalPath`, `celebrationVideoModel`, `infographic1/2LocalPath`, `ghlMediaUploadedAt`).
+- NEW `test-closeout-openable-links.sh`: proves the GHL upload accepts both env-name forms, uses `parentId` (never `folderId`), never folder-creates, captures per-file public URLs, and that the Telegram script's `openable_link()` resolver behaves (GHL > remote > none) and the messageId gate is intact. Wired into `qc-static.yml`.
+- KIE celebration video model verified unchanged: `gemini-omni-video` (createTask `/api/v1/jobs/createTask`, recordInfo `/api/v1/jobs/recordInfo`, result at `data.resultJson.resultUrls[0]`) per docs.kie.ai. Not swapped.
+- skill-version.txt 1.1.4 → 1.1.5.
+
 ## [1.1.4] - 2026-05-31 - Telegram delivery confirmed against the gateway sent-registry (anti-faking) (shipped with onboarding v10.15.19)
 
 The closeout could be marked `done`/`sent` purely on the `openclaw message send` COMMAND EXIT CODE. But that command can exit 0 while the message never reaches Telegram (silent Telegram-offset-corruption; fresh-VPS "scope upgrade pending approval"). So a closeout could claim delivery that never happened — the exact "faked closeout" we forbid. This release makes delivery PROVABLE end-to-end.

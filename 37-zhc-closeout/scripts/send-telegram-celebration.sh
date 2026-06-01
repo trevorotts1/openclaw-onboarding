@@ -59,6 +59,26 @@ CC_URL=$(state_get '.commandCenterUrl')
 # v10.x: shareable Convert and Flow / GHL media-library link (set by run-closeout
 # STEP 5.5 via upload-ghl-media.sh). Empty when the client has no GHL location.
 GHL_MEDIA_URL="${ZHC_GHL_MEDIA_URL:-$(state_get '.ghlMediaLibraryUrl')}"
+# v10.x: per-artifact REAL public URLs from the GHL media upload
+# (storage.googleapis.com/msgsndr/... -- openable without a GHL login). These are
+# the DURABLE openable links posted alongside each artifact so a real link is in
+# the message even after the inline Telegram media ages out of view. Empty when
+# the client has no GHL location or the upload was skipped.
+GHL_VIDEO_PUBLIC_URL=$(state_get '.ghlVideoPublicUrl')
+GHL_INF1_PUBLIC_URL=$(state_get '.ghlInfographic1PublicUrl')
+GHL_INF2_PUBLIC_URL=$(state_get '.ghlInfographic2PublicUrl')
+
+# openable_link <ghl-public-url> <kie-remote-url> -- choose the best REAL,
+# openable link for an artifact: prefer the durable GHL public URL, fall back to
+# the (ephemeral) KIE/remote URL, and emit nothing for a file:// or empty value.
+openable_link() {
+  local ghl="$1" remote="$2"
+  if [[ -n "$ghl" && "$ghl" == https://* ]]; then printf '%s' "$ghl"; return 0; fi
+  if [[ -n "$remote" && "$remote" != "null" && "$remote" == http* && "$remote" != file://* ]]; then
+    printf '%s' "$remote"; return 0
+  fi
+  printf ''
+}
 
 if [[ -z "$OWNER_CHAT" || "$OWNER_CHAT" == "null" ]]; then
   log "ERROR" "ownerChat missing from state -- cannot deliver"
@@ -185,18 +205,29 @@ send_text() {
 # a remote URL (Lesson 2: inline image, not a download card), then falls back to
 # --photo URL, then caption+URL text. Each variant goes through send_confirmed so
 # a real messageId is required regardless of which path lands.
+#
+# v10.x: arg 5 = a durable openable link (the GHL public URL). When present it is
+# appended to the caption as an "Open it directly:" line so a REAL openable link
+# rides along with the inline image -- not just an image the client can't re-find.
 send_photo() {
-  local n="$1" url="$2" caption="$3" local_path="${4:-}"
+  local n="$1" url="$2" caption="$3" local_path="${4:-}" open_link="${5:-}"
+  local cap="$caption"
+  [[ -n "$open_link" && "$open_link" == https://* ]] && cap="${caption}
+
+🔗 Open it directly: ${open_link}"
   if [[ -n "$local_path" && -s "$local_path" ]]; then
-    send_confirmed "$n" --media "$local_path" -m "$caption" && return 0
+    send_confirmed "$n" --media "$local_path" -m "$cap" && return 0
   fi
   if [[ -n "$url" && "$url" != null && "$url" != file://* ]]; then
-    send_confirmed "$n" --photo "$url" -m "$caption" && return 0
+    send_confirmed "$n" --photo "$url" -m "$cap" && return 0
   fi
-  if [[ -n "$url" && "$url" != file://* ]]; then
+  # text-only fallback: caption + whatever openable link we have (GHL or remote).
+  local link
+  link=$(openable_link "$open_link" "$url")
+  if [[ -n "$link" ]]; then
     send_confirmed "$n" -m "${caption}
 
-${url}" && return 0
+🔗 ${link}" && return 0
   fi
   return 1
 }
@@ -205,18 +236,28 @@ ${url}" && return 0
 # sendVideo, inline) over --video URL, then caption+URL text. (Lesson 2:
 # tempfile.aiquickdraw.com URLs render as download cards, so video bytes are
 # downloaded to disk by generate-celebration-video.sh and sent here.)
+#
+# v10.x: arg 5 = a durable openable link (the GHL public URL). Appended to the
+# caption as an "Open it directly:" line so the celebration video always carries
+# a REAL openable link even after the inline player ages out of the thread.
 send_video() {
-  local n="$1" url="$2" caption="$3" local_path="${4:-}"
+  local n="$1" url="$2" caption="$3" local_path="${4:-}" open_link="${5:-}"
+  local cap="$caption"
+  [[ -n "$open_link" && "$open_link" == https://* ]] && cap="${caption}
+
+🔗 Open it directly: ${open_link}"
   if [[ -n "$local_path" && -s "$local_path" ]]; then
-    send_confirmed "$n" --media "$local_path" -m "$caption" && return 0
+    send_confirmed "$n" --media "$local_path" -m "$cap" && return 0
   fi
   if [[ -n "$url" && "$url" != null && "$url" != file://* ]]; then
-    send_confirmed "$n" --video "$url" -m "$caption" && return 0
+    send_confirmed "$n" --video "$url" -m "$cap" && return 0
   fi
-  if [[ -n "$url" && "$url" != file://* ]]; then
+  local link
+  link=$(openable_link "$open_link" "$url")
+  if [[ -n "$link" ]]; then
     send_confirmed "$n" -m "${caption}
 
-${url}" && return 0
+🔗 ${link}" && return 0
   fi
   return 1
 }
@@ -253,7 +294,7 @@ elif [[ ( -z "$INFO_1" || "$INFO_1" == "null" ) && ( -z "$INFO_1_LOCAL" || ! -s 
   failed_messages+=("msg-2-no-url")
 else
   log "INFO" "msg 2: sending infographic #1"
-  if send_photo 2 "$INFO_1" "📊 Your workforce structure -- how your AI company is organized." "$INFO_1_LOCAL"; then
+  if send_photo 2 "$INFO_1" "📊 Your workforce structure -- how your AI company is organized." "$INFO_1_LOCAL" "$GHL_INF1_PUBLIC_URL"; then
     log "INFO" "msg 2: delivered"
     sleep 5
   else
@@ -271,7 +312,7 @@ elif [[ -z "$INFO_2" || "$INFO_2" == "null" ]]; then
   failed_messages+=("msg-3-no-url")
 else
   log "INFO" "msg 3: sending infographic #2"
-  if send_photo 3 "$INFO_2" "⚙️ How the work flows -- from a task you give me, all the way to a finished output."; then
+  if send_photo 3 "$INFO_2" "⚙️ How the work flows -- from a task you give me, all the way to a finished output." "" "$GHL_INF2_PUBLIC_URL"; then
     log "INFO" "msg 3: delivered"
     sleep 5
   else
@@ -300,12 +341,12 @@ elif [[ "${ZHC_VIDEO_STATUS:-}" == "failed" ]]; then
     log "ERROR" "msg 4: FAILED -- continuing"
     failed_messages+=("msg-4")
   fi
-elif [[ ( -z "$VIDEO" || "$VIDEO" == "null" ) && ( -z "$VIDEO_LOCAL" || ! -s "$VIDEO_LOCAL" ) ]]; then
-  log "WARN" "msg 4: celebrationVideoUrl and celebrationVideoLocalPath both missing -- skipping"
+elif [[ ( -z "$VIDEO" || "$VIDEO" == "null" ) && ( -z "$VIDEO_LOCAL" || ! -s "$VIDEO_LOCAL" ) && ( -z "$GHL_VIDEO_PUBLIC_URL" || "$GHL_VIDEO_PUBLIC_URL" != https://* ) ]]; then
+  log "WARN" "msg 4: celebrationVideoUrl, celebrationVideoLocalPath, and ghlVideoPublicUrl all missing -- skipping"
   failed_messages+=("msg-4-no-url")
 else
   log "INFO" "msg 4: sending celebration video"
-  if send_video 4 "$VIDEO" "🎬 A quick celebration -- congratulations on launching ${COMPANY_NAME}'s zero-human workforce." "$VIDEO_LOCAL"; then
+  if send_video 4 "$VIDEO" "🎬 A quick celebration -- congratulations on launching ${COMPANY_NAME}'s zero-human workforce." "$VIDEO_LOCAL" "$GHL_VIDEO_PUBLIC_URL"; then
     log "INFO" "msg 4: delivered"
     sleep 8
   else
@@ -363,10 +404,29 @@ elif ! cc_url_is_real "$CC_URL"; then
   failed_messages+=("msg-6-no-url")
 else
   log "INFO" "msg 6: sending Command Center URL"
-  # v10.x: append the Convert and Flow media-library link if the closeout media
-  # was uploaded to the client's GHL location (org chart + video + infographics).
+  # v10.x: append the Convert and Flow media links if the closeout media was
+  # uploaded to the client's GHL location. We post the DURABLE, openable PUBLIC
+  # per-file links (storage.googleapis.com/msgsndr/... -- no login needed) so the
+  # client can open the exact video/graphic any time, then the media-library app
+  # link as a "browse them all in your account" convenience.
   GHL_MEDIA_LINE=""
-  if [[ -n "$GHL_MEDIA_URL" && "$GHL_MEDIA_URL" == https://* ]]; then
+  GHL_PUBLIC_LINES=""
+  [[ -n "$GHL_VIDEO_PUBLIC_URL" && "$GHL_VIDEO_PUBLIC_URL" == https://* ]] && GHL_PUBLIC_LINES="${GHL_PUBLIC_LINES}
+- 🎬 Celebration video: ${GHL_VIDEO_PUBLIC_URL}"
+  [[ -n "$GHL_INF1_PUBLIC_URL" && "$GHL_INF1_PUBLIC_URL" == https://* ]] && GHL_PUBLIC_LINES="${GHL_PUBLIC_LINES}
+- 📊 Workforce structure: ${GHL_INF1_PUBLIC_URL}"
+  [[ -n "$GHL_INF2_PUBLIC_URL" && "$GHL_INF2_PUBLIC_URL" == https://* ]] && GHL_PUBLIC_LINES="${GHL_PUBLIC_LINES}
+- ⚙️ How work flows: ${GHL_INF2_PUBLIC_URL}"
+  if [[ -n "$GHL_PUBLIC_LINES" ]]; then
+    GHL_MEDIA_LINE="
+
+📁 Your celebration media is also saved in your Convert and Flow media library -- open any of these directly:${GHL_PUBLIC_LINES}"
+    if [[ -n "$GHL_MEDIA_URL" && "$GHL_MEDIA_URL" == https://* ]]; then
+      GHL_MEDIA_LINE="${GHL_MEDIA_LINE}
+
+(Browse them all in your account: ${GHL_MEDIA_URL})"
+    fi
+  elif [[ -n "$GHL_MEDIA_URL" && "$GHL_MEDIA_URL" == https://* ]]; then
     GHL_MEDIA_LINE="
 
 📁 Your celebration video and graphics are also in your Convert and Flow media library:
