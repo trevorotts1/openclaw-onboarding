@@ -24,6 +24,19 @@ else
   exit 0
 fi
 
+# v10.15.26 / v10.16.25: resolve this script's own dir so the BELT can run the
+# sibling department-floor.py (on-disk HARD floor) before honoring a terminal
+# build-state. Prefer BASH_SOURCE; fall back to the canonical install paths.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+if [[ -z "$SCRIPT_DIR" || ! -f "$SCRIPT_DIR/department-floor.py" ]]; then
+  for _cand in \
+    "$OC_ROOT/skills/23-ai-workforce-blueprint/scripts" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts"; do
+    [[ -f "$_cand/department-floor.py" ]] && SCRIPT_DIR="$_cand" && break
+  done
+fi
+
 STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
 LOCK_FILE="$OC_ROOT/workspace/.workforce-build-state.lock"
 LOG_FILE="$OC_ROOT/workspace/.workforce-build-state.log"
@@ -93,12 +106,24 @@ self_remove_cron() {
 }
 
 # ---- v10.14.36: BELT — explicit self-stop on terminal state ----
+# v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
+# (status=done / closeoutStatus=done|sent) is NO LONGER trusted as proof on its
+# own. A hand-seeded build-state (Cassandra's 3-dept fiction) used to flip the
+# JSON to done and the cron would self-remove, leaving a HEAVILY-REDUCED
+# workforce as the final result with the never-stop machinery quit. We now run
+# department-floor.py against the REAL folders on disk: if the floor is NOT met
+# (rc=3), we REFUSE to honor the terminal state, keep the cron alive, and drive
+# the build to instantiate the missing mandatory/vertical departments. Only a
+# terminal JSON state that ALSO passes the on-disk floor (or genuinely has no
+# workforce / explicit declines) is allowed to self-remove the cron.
 if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
   _build_status=$(jq -r '.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
   _closeout_status=$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || echo "")
   _build_completed_at=$(jq -r '.buildCompletedAt // ""' "$STATE_FILE" 2>/dev/null || echo "")
   case "$_build_status" in
-    done|failed|complete)
+    done|complete)
+      _terminal=1 ;;
+    failed)
       _terminal=1 ;;
     *)
       _terminal=0 ;;
@@ -109,9 +134,24 @@ if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
     esac
   fi
   if (( _terminal == 1 )); then
-    log "BELT: terminal state detected (build_status=$_build_status, closeout=$_closeout_status, completed=$_build_completed_at) — removing self-cron and exiting"
-    self_remove_cron "terminal-state"
-    exit 0
+    # HARD FLOOR guard: a 'done'/'complete'/'sent' terminal state must ALSO pass
+    # the on-disk department floor before we self-remove. 'failed' is allowed to
+    # self-remove regardless (it is an explicit non-completion the operator set).
+    _allow_remove=1
+    _floor_script="$SCRIPT_DIR/department-floor.py"
+    if [[ "$_build_status" != "failed" ]] && [[ -f "$_floor_script" ]] && command -v python3 >/dev/null 2>&1; then
+      python3 "$_floor_script" >/dev/null 2>&1
+      _floor_rc=$?
+      if [[ "$_floor_rc" == "3" ]]; then
+        _allow_remove=0
+        log "BELT: terminal JSON state (build_status=$_build_status, closeout=$_closeout_status) but DEPARTMENT FLOOR NOT MET on disk (department-floor.py rc=3). REFUSING to self-remove — a seeded/reduced build-state will not end the build. Driving the floor instead."
+      fi
+    fi
+    if (( _allow_remove == 1 )); then
+      log "BELT: terminal state detected + floor satisfied (build_status=$_build_status, closeout=$_closeout_status, completed=$_build_completed_at) — removing self-cron and exiting"
+      self_remove_cron "terminal-state"
+      exit 0
+    fi
   fi
 fi
 

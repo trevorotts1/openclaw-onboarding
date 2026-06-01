@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# verify-zhc-standard.sh — v10.15.18
+# verify-zhc-standard.sh — v10.15.26
 #
 # ONE source of truth for "is this Zero-Human Company built to the McDonald's
 # standard?" Callable from Skill 23 close AND Skill 37 closeout preflight. It
@@ -25,7 +25,9 @@
 # EXIT CODES:
 #   0 = FULL STANDARD MET (build may close out / closeout may finalize)
 #   2 = interview incomplete
-#   3 = department floor not met (missing canonical depts)
+#   3 = department floor not met ON DISK (missing mandatory or matched-vertical
+#       depts — measured by department-floor.py against real folders, NOT the
+#       build-state JSON; closeout MUST refuse on this code)
 #   4 = role library not done
 #   5 = SOP library not done
 #   6 = closeout not confirmed
@@ -97,9 +99,44 @@ else
   echo "[1/5] interview: COMPLETE (interviewComplete=true)"
 fi
 
-# ---- 2. CANONICAL DEPARTMENT FLOOR --------------------------------------
-DEPT_CHECK="$(python3 - "$NAMING_MAP" "$STATE_FILE" <<'PYEOF'
-import json, sys, os
+# ---- 2. HARD DEPARTMENT FLOOR (DISK, not build-state JSON) --------------
+# v10.15.26 / v10.16.25 — the floor is now measured by department-floor.py
+# against the REAL department directories ON DISK, NOT the build-state JSON's
+# .departments[] array. This kills the seeded-build-state bypass: a hand-written
+# build-state claiming "done" with 3 fake dept entries used to pass step 2;
+# now a 3-dept-on-disk workforce FAILS because the 16 mandatory + the
+# industry-matched vertical-pack departments are not present as real folders.
+# The ONLY way to be below the mandatory floor is an EXPLICIT recorded decline
+# (canonicalReconciliation.decisions[cid]=="no" or declinedDepartments[]).
+FLOOR_SCRIPT="$SCRIPT_DIR/department-floor.py"
+if [ -f "$FLOOR_SCRIPT" ]; then
+  FLOOR_JSON="$(python3 "$FLOOR_SCRIPT" --json 2>/dev/null)"
+  FLOOR_RC=$?
+  if [ "$FLOOR_RC" = "7" ] || [ -z "$FLOOR_JSON" ]; then
+    note_gap 7 "department-floor: no workforce on disk to verify"
+    echo "[2/5] departments: NO WORKFORCE ON DISK (cannot verify floor)"
+  else
+    DF_EXPECTED="$(printf '%s' "$FLOOR_JSON" | jq -r '.expected_floor_count')"
+    DF_ONDISK="$(printf '%s' "$FLOOR_JSON" | jq -r '.on_disk_count')"
+    DF_MISS_M="$(printf '%s' "$FLOOR_JSON" | jq -r '.missing_mandatory | join(", ")')"
+    DF_MISS_V="$(printf '%s' "$FLOOR_JSON" | jq -r '.missing_vertical | join(", ")')"
+    DF_DECLINED="$(printf '%s' "$FLOOR_JSON" | jq -r '.declined | join(", ")')"
+    if [ "$FLOOR_RC" = "0" ]; then
+      echo "[2/5] departments: FLOOR MET on disk ($DF_ONDISK depts >= floor $DF_EXPECTED; declined: ${DF_DECLINED:-none})"
+    else
+      _msg="floor NOT met on disk ($DF_ONDISK depts vs expected $DF_EXPECTED)"
+      [ -n "$DF_MISS_M" ] && _msg="$_msg; missing mandatory: $DF_MISS_M"
+      [ -n "$DF_MISS_V" ] && _msg="$_msg; missing matched-vertical: $DF_MISS_V"
+      note_gap 3 "$_msg"
+      echo "[2/5] departments: $_msg"
+    fi
+  fi
+else
+  # No floor script present (older bundle): fall back to the legacy build-state
+  # check so the gate is not weaker than before, but warn loudly.
+  echo "[2/5] departments: WARN — department-floor.py missing; falling back to build-state JSON check (weaker)" >&2
+  DEPT_CHECK="$(python3 - "$NAMING_MAP" "$STATE_FILE" <<'PYEOF'
+import json, sys
 naming_map_path, state_path = sys.argv[1], sys.argv[2]
 try:
     nm = json.load(open(naming_map_path))
@@ -110,17 +147,13 @@ try:
     st = json.load(open(state_path))
 except Exception:
     st = {}
-# departments on disk / in state
-depts = st.get("departments", [])
 present = set()
-for d in depts:
+for d in st.get("departments", []):
     for k in ("slug", "dept_id", "id", "name"):
         if d.get(k):
             present.add(str(d[k]).lower())
-# explicit declines
 declined = set()
-recon = st.get("canonicalReconciliation", {}) or {}
-for cid, dec in (recon.get("decisions", {}) or {}).items():
+for cid, dec in ((st.get("canonicalReconciliation", {}) or {}).get("decisions", {}) or {}).items():
     if str(dec).lower() == "no":
         declined.add(cid)
 missing = []
@@ -131,17 +164,14 @@ for cid in mandatory:
     if cid.lower() in present or any(norm == p.replace("-", "") for p in present):
         continue
     missing.append(cid)
-print(json.dumps({"mandatory": len(mandatory), "present": len(present),
-                  "declined": sorted(declined), "missing": missing}))
+print(json.dumps({"mandatory": len(mandatory), "missing": missing}))
 PYEOF
 )"
-DEPT_MISSING="$(printf '%s' "$DEPT_CHECK" | jq -r '.missing | join(", ")')"
-DEPT_N_MAND="$(printf '%s' "$DEPT_CHECK" | jq -r '.mandatory')"
-if [ -n "$DEPT_MISSING" ]; then
-  note_gap 3 "missing canonical departments: $DEPT_MISSING"
-  echo "[2/5] departments: MISSING ($DEPT_MISSING)"
-else
-  echo "[2/5] departments: all $DEPT_N_MAND canonical depts present (or explicitly declined)"
+  DEPT_MISSING="$(printf '%s' "$DEPT_CHECK" | jq -r '.missing | join(", ")')"
+  if [ -n "$DEPT_MISSING" ]; then
+    note_gap 3 "missing canonical departments: $DEPT_MISSING"
+    echo "[2/5] departments: MISSING ($DEPT_MISSING)"
+  fi
 fi
 
 # ---- 3 + 4. ROLE LIBRARY + SOP LIBRARY (delegate to the disk-QC gate) ----

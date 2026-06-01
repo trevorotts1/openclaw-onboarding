@@ -102,13 +102,24 @@ done
 if [[ -n "$ZHC_STD_SCRIPT" ]]; then
   bash "$ZHC_STD_SCRIPT" >> "$LOG_FILE" 2>&1
   ZHC_STD_RC=$?
-  # rc 4 = role library not done, rc 5 = SOP library not done. Both block closeout.
+  # v10.x HARD FLOOR: rc 3 = department floor not met ON DISK (fewer than the 16
+  # mandatory + industry vertical-pack departments, minus explicit declines —
+  # measured against real folders, NOT the build-state JSON). rc 4 = role library
+  # not done, rc 5 = SOP library not done. ALL THREE block closeout so a
+  # HEAVILY-REDUCED workforce (Cassandra 3-dept / Kofi-style 6-dept / a seeded
+  # build-state fiction) can never reach a celebration. The resume cron keeps
+  # driving (never-stop) until the floor is instantiated + the libraries fill.
+  if [[ "$ZHC_STD_RC" == "3" ]]; then
+    log "ERROR" "ZHC-standard preflight FAILED (rc=3): DEPARTMENT FLOOR NOT MET ON DISK. The 16 mandatory + matched vertical-pack departments are not all present as real folders (and were not explicitly declined). REFUSING to close out a HEAVILY-REDUCED workforce. The resume cron will re-fire the department floor + the build."
+    state_set ".closeoutStatus = \"blocked-floor-incomplete\" | .closeoutBlockReason = \"verify-zhc-standard rc=3 (department floor not met on disk)\""
+    exit 0
+  fi
   if [[ "$ZHC_STD_RC" == "4" || "$ZHC_STD_RC" == "5" ]]; then
     log "ERROR" "ZHC-standard preflight FAILED (rc=$ZHC_STD_RC): role/SOP library not substantive on disk. REFUSING to close out an empty workforce. The resume cron will re-fire the library build."
     state_set ".closeoutStatus = \"blocked-libraries-incomplete\" | .closeoutBlockReason = \"verify-zhc-standard rc=$ZHC_STD_RC (role/SOP library not substantive)\""
     exit 0
   fi
-  log "INFO" "ZHC-standard preflight rc=$ZHC_STD_RC (libraries verified substantive enough to close out)"
+  log "INFO" "ZHC-standard preflight rc=$ZHC_STD_RC (department floor + libraries verified substantive enough to close out)"
 else
   log "WARN" "verify-zhc-standard.sh not found -- proceeding on buildCompletedAt alone (older Skill 23 bundle)"
 fi
