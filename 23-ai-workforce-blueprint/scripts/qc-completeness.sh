@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# qc-completeness.sh - v10.15.4 (Mac) / v10.16.4 (VPS)
+# qc-completeness.sh - v10.15.26 (Mac) / v10.16.25 (VPS)
 #
 # First-class "are you done?" check for the active workforce. Runs after every
 # build / install / update. Reports PASS / PARTIAL / FAIL per dept and emits a
@@ -437,6 +437,34 @@ for candidate in [
         except Exception:
             legacy_detected.append(str(candidate))
 
+# ---- v10.15.26 / v10.16.25: HARD DEPARTMENT FLOOR (counts REAL depts on disk)
+# Before this, qc-completeness measured per-dept STAFFING of whatever was on
+# disk but had NO floor concept: a 3-dept workforce where those 3 were fully
+# staffed returned PASS (the Cassandra-3-dept / Kofi-6-dept bug). Now we compute
+# the expected floor = 16 mandatory + the industry vertical-pack departments
+# matched to the client, MINUS any explicitly declined dept, and FAIL the whole
+# QC if disk is below that floor. department-floor.py is the single source of
+# truth (same naming-map + matched-vertical logic as build-workforce.py); we
+# import it so there is exactly one definition. The build-state JSON is NEVER
+# trusted as floor proof — only real folders count.
+floor_verdict = {"floor_met": True, "reason": "floor module unavailable (skipped)", "rc": 0}
+try:
+    sys.path.insert(0, str(SKILL_DIR / "scripts"))
+    from importlib import import_module
+    _fm = import_module("department-floor") if False else None
+    # module name has a hyphen -> load via spec
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("department_floor", str(SKILL_DIR / "scripts" / "department-floor.py"))
+    if _spec and _spec.loader:
+        _dfmod = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_dfmod)
+        floor_verdict = _dfmod.evaluate_floor(departments_dir=DEPARTMENTS_DIR)
+except Exception as _e:
+    floor_verdict = {"floor_met": True, "reason": f"floor module error: {_e} (not enforced)", "rc": 0}
+
+if not floor_verdict.get("floor_met", True) and floor_verdict.get("rc") == 3:
+    overall_status = "FAIL"
+
 # Build the final report
 report = {
     "status": overall_status,
@@ -450,6 +478,15 @@ report = {
     "depts_partial": sum(1 for d in dept_reports if d["status"] == "PARTIAL"),
     "depts_failing": sum(1 for d in dept_reports if d["status"] == "FAIL"),
     "legacy_tree_present": legacy_detected,
+    "departmentFloor": {
+        "floorMet": floor_verdict.get("floor_met", True),
+        "expectedFloorCount": floor_verdict.get("expected_floor_count", 0),
+        "onDiskCount": floor_verdict.get("on_disk_count", len(on_disk_depts)),
+        "missingMandatory": floor_verdict.get("missing_mandatory", []),
+        "missingVertical": floor_verdict.get("missing_vertical", []),
+        "declined": floor_verdict.get("declined", []),
+        "reason": floor_verdict.get("reason", ""),
+    },
     "departments": dept_reports,
 }
 JSON_FILE.write_text(json.dumps(report, indent=2))
@@ -473,6 +510,14 @@ if legacy_detected:
     emit(f"LEGACY TREE PRESENT (Angeleen pattern):")
     for p in legacy_detected:
         emit(f"  - {p}  (run reconcile-legacy-tree.py from Release 2 to merge)")
+emit("")
+_fv = report.get("departmentFloor", {})
+if _fv:
+    if _fv.get("floorMet", True):
+        emit(f"DEPARTMENT FLOOR: MET ({_fv.get('onDiskCount')} on disk >= floor {_fv.get('expectedFloorCount')})")
+    else:
+        emit(f"DEPARTMENT FLOOR: NOT MET ({_fv.get('onDiskCount')} on disk vs floor {_fv.get('expectedFloorCount')}) "
+             f"-> {_fv.get('reason')} -> overall FAIL")
 emit("")
 emit(f"STATUS: {overall_status}")
 PYEOF

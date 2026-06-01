@@ -273,17 +273,27 @@ def _canonical_decline_set(build_state):
     """
     Return the set of canonical IDs the client EXPLICITLY declined.
 
-    Source of truth: build_state["canonicalReconciliation"]["decisions"], a map
-    of canonical-id -> "yes"|"no". Only an explicit "no" counts as a decline;
-    anything else (absent, "yes", null) means the canonical dept stays.
+    EXPLICIT-DECLINE MODEL (v10.15.26 / v10.16.25): the ONLY sanctioned way for a
+    workforce to land below the 16 mandatory floor is a RECORDED explicit decline.
+    Two equivalent recordings are honored (and kept in sync with the on-disk
+    enforcer department-floor.py.declined_set()):
+      1. build_state["canonicalReconciliation"]["decisions"][cid] == "no"
+         (the per-dept yes/no map written at interview/reconcile time)
+      2. build_state["declinedDepartments"] = [cid, ...]
+         (a flat list the interview/config may set directly)
+    Anything else (absent, "yes", null) means the canonical dept STAYS — there is
+    no implicit/silent way to drop a mandatory department.
     """
     declined = set()
-    recon = (build_state or {}).get("canonicalReconciliation", {})
+    bs = build_state or {}
+    recon = bs.get("canonicalReconciliation", {})
     decisions = recon.get("decisions", {}) if isinstance(recon, dict) else {}
     if isinstance(decisions, dict):
         for cid, decision in decisions.items():
             if str(decision).strip().lower() == "no":
                 declined.add(cid)
+    for cid in (bs.get("declinedDepartments", []) or []):
+        declined.add(str(cid).strip())
     return declined
 
 
