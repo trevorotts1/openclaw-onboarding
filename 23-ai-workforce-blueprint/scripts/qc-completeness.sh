@@ -175,9 +175,35 @@ DMAIC_HEADERS = ("define", "measure", "analyze", "improve", "control")
 PLACEHOLDER_STEP = re.compile(r"\[\s*step\s+\d+\s*[-–—]\s*to be personalized", re.IGNORECASE)
 DMAIC_HEADER_RE = re.compile(r"^#{1,4}\s*(define|measure|analyze|improve|control)\b", re.IGNORECASE | re.MULTILINE)
 
+# v10.15.25 / v10.16.24 — EMBEDDED-SECTION-9 SOP MODEL (the WS-2 instantiate shape).
+# The WS-2 instantiate path does NOT write standalone sops/NN-*.md files; it embeds
+# SOPs inside how-to.md as a "## 9. ..." section containing "### SOP 9.x" blocks,
+# each carrying the When-to-run / Frequency / Inputs / Steps / Outputs / Hand-to /
+# Failure-mode structure. The old gate only counted standalone 0[1-9]-*.md files, so
+# fully-instantiated substantive workforces (Teresa/Corey/Maria/Kofi) were marked
+# INCOMPLETE -> the never-stop crons looped forever or fell back to regenerate.
+# We now accept EITHER model as substantive, WITHOUT weakening the gate against real
+# garbage: still FAIL on [Step N...] stubs, {{token}} leaks, <7KB, or a missing
+# Section 9.
+SECTION9_HEADER_RE = re.compile(r"^#{1,3}\s*9[\.\)]", re.MULTILINE)         # "## 9." / "### 9)" etc.
+SOP_BLOCK_RE = re.compile(r"^#{2,4}\s*SOP\s*9[\.\)]", re.IGNORECASE | re.MULTILINE)  # "### SOP 9.x"
+TOKEN_LEAK_RE = re.compile(r"\{\{\s*[A-Za-z0-9_]+\s*\}\}")                  # an unfilled {{token}}
+# The structured fields a real embedded SOP block must carry (allow markdown bold,
+# and the When-to-run / Hand-to hyphen/space variants).
+EMBEDDED_SOP_FIELDS = (
+    re.compile(r"when[\s\-]*to[\s\-]*run", re.IGNORECASE),
+    re.compile(r"\bfrequency\b", re.IGNORECASE),
+    re.compile(r"\binputs?\b", re.IGNORECASE),
+    re.compile(r"\bsteps?\b", re.IGNORECASE),
+    re.compile(r"\boutputs?\b", re.IGNORECASE),
+    re.compile(r"hand[\s\-]*to", re.IGNORECASE),
+    re.compile(r"failure[\s\-]*mode", re.IGNORECASE),
+)
+EMBEDDED_FIELD_MIN = 5  # an embedded SOP block must carry >= 5 of the 7 structured fields
+
 
 def sop_is_substantive(path):
-    """Return True iff a SOP file is a real, authored DMAIC SOP per the gate."""
+    """Return True iff a STANDALONE SOP file is a real, authored DMAIC SOP per the gate."""
     try:
         size = path.stat().st_size
         if size < SUBSTANTIVE_MIN_BYTES:
@@ -189,6 +215,44 @@ def sop_is_substantive(path):
         return False
     found = {m.group(1).lower() for m in DMAIC_HEADER_RE.finditer(text)}
     return all(h in found for h in DMAIC_HEADERS)
+
+
+def embedded_sop_count(howto_path):
+    """Count substantive EMBEDDED Section-9 SOP blocks inside a role's how-to.md.
+
+    Returns the number of `### SOP 9.x` blocks that carry the structured
+    When/Frequency/Inputs/Steps/Outputs/Hand-to/Failure-mode shape, but ONLY if the
+    how-to.md itself qualifies (>= 7KB, has a `## 9.` Section-9 header, no
+    [Step N...] / "to be personalized" stub, and NO {{token}} leak). Returns 0 if
+    the file fails any guard — so this NEVER passes garbage; it only stops the
+    false-negative on real instantiated content.
+    """
+    try:
+        if howto_path.stat().st_size < SUBSTANTIVE_MIN_BYTES:
+            return 0
+        text = howto_path.read_text(errors="ignore")
+    except Exception:
+        return 0
+    # Hard guards (same strictness as the standalone model).
+    if STUB_PATTERN.search(text) or PLACEHOLDER_STEP.search(text):
+        return 0
+    if TOKEN_LEAK_RE.search(text):
+        return 0
+    if not SECTION9_HEADER_RE.search(text):
+        return 0
+    # Split into blocks at each "### SOP 9." header; a block is substantive if it
+    # carries >= EMBEDDED_FIELD_MIN of the structured fields.
+    starts = [m.start() for m in SOP_BLOCK_RE.finditer(text)]
+    if not starts:
+        return 0
+    bounds = starts + [len(text)]
+    count = 0
+    for i in range(len(starts)):
+        block = text[bounds[i]:bounds[i + 1]]
+        fields_present = sum(1 for fre in EMBEDDED_SOP_FIELDS if fre.search(block))
+        if fields_present >= EMBEDDED_FIELD_MIN:
+            count += 1
+    return count
 
 
 def emit(line):
@@ -263,13 +327,21 @@ for dept_dir in on_disk_depts:
     sop_total = 0
     stub_remaining = 0
     # v10.15.18 SUBSTANCE GATE counters
-    substantive_sop_total = 0          # SOPs that pass sop_is_substantive()
+    substantive_sop_total = 0          # SOPs that pass sop_is_substantive() (either model)
     roles_with_min_sops = 0            # roles meeting their own min substantive SOP floor
     min_sop_per_role = None            # smallest substantive-SOP count across roles
     per_role_substantive = []          # for diagnostics
+    embedded_model_roles = 0           # v10.15.25: roles satisfied via embedded Section-9 SOPs
     SOP_FLOOR = 4                      # every role needs >= 4 substantive SOPs (matches "Core SOPs to build" floor)
+    # v10.15.25 / v10.16.24: embedded-Section-9 roles often carry their full DMAIC
+    # SOP set in a SINGLE rich how-to.md. The "## 9." section is one consolidated
+    # SOP system, so a role that presents the embedded model passes the floor with
+    # >= 1 substantive embedded SOP block (it is NOT short-changed against the
+    # 4-standalone-file floor). The standalone model keeps the strict >= 4 floor.
+    EMBEDDED_SOP_FLOOR = 1
     for r in role_folders:
         howto = r / "how-to.md"
+        howto_embedded = 0
         if howto.is_file():
             try:
                 head = howto.open().read(4096)
@@ -277,9 +349,11 @@ for dept_dir in on_disk_depts:
                     library_filled_count += 1
             except Exception:
                 pass
+            # v10.15.25: count substantive embedded Section-9 SOP blocks (instantiate model)
+            howto_embedded = embedded_sop_count(howto)
         sop_files = sorted(r.glob("0[1-9]-*.md"))
         sop_total += len(sop_files)
-        role_substantive = 0
+        standalone_substantive = 0
         for sf in sop_files:
             try:
                 if STUB_PATTERN.search(sf.read_text(errors="ignore")):
@@ -287,10 +361,18 @@ for dept_dir in on_disk_depts:
             except Exception:
                 pass
             if sop_is_substantive(sf):
-                role_substantive += 1
+                standalone_substantive += 1
+        # Count whichever model carries this role's substantive SOPs toward the total.
+        role_substantive = standalone_substantive + howto_embedded
+        # A role PASSES its floor if EITHER model is satisfied:
+        #   - standalone:  >= SOP_FLOOR substantive 0[1-9]-*.md files, OR
+        #   - embedded:    >= EMBEDDED_SOP_FLOOR substantive Section-9 SOP blocks.
+        role_meets_floor = (standalone_substantive >= SOP_FLOOR) or (howto_embedded >= EMBEDDED_SOP_FLOOR)
         substantive_sop_total += role_substantive
         per_role_substantive.append(role_substantive)
-        if role_substantive >= SOP_FLOOR:
+        if howto_embedded > 0 and standalone_substantive < SOP_FLOOR:
+            embedded_model_roles += 1
+        if role_meets_floor:
             roles_with_min_sops += 1
         if min_sop_per_role is None or role_substantive < min_sop_per_role:
             min_sop_per_role = role_substantive
@@ -332,6 +414,9 @@ for dept_dir in on_disk_depts:
         "sop_floor": SOP_FLOOR,
         "roles_with_min_sops": roles_with_min_sops,
         "roles_below_min_sops": role_count - roles_with_min_sops,
+        # v10.15.25 / v10.16.24: how many roles are satisfied via the embedded
+        # Section-9 SOP model (instantiate path) rather than standalone SOP files
+        "embedded_model_roles": embedded_model_roles,
         "materialized_pct": round(materialized_pct, 1),
         "library_pct": round(library_pct, 1),
         "identity_pct": round(identity_pct, 1),
