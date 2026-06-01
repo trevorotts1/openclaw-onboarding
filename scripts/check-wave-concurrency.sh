@@ -17,10 +17,24 @@ set -u
 # Platform detect
 if [ -d "/data/.openclaw" ]; then
   PLATFORM=vps
+  OC_ROOT=/data/.openclaw
   CAP=5
 else
   PLATFORM=mac
+  OC_ROOT="$HOME/.openclaw"
   CAP=10
+fi
+
+# WS-8: prefer the hardware-derived cap from .capacity-profile.json (written by
+# capacity-monitor.sh) over the static Mac=10/VPS=5 fallback. The profile knows
+# this box's real CPU/RAM; the static numbers don't. Falls back silently to the
+# platform default if the profile is missing or unreadable.
+_PROFILE="$OC_ROOT/.capacity-profile.json"
+if [ -f "$_PROFILE" ] && command -v python3 >/dev/null 2>&1; then
+  _PCAP=$(python3 -c "import json,sys;print(json.load(open('$_PROFILE')).get('maxConcurrentAgents',''))" 2>/dev/null || true)
+  if [[ "$_PCAP" =~ ^[0-9]+$ ]] && [ "$_PCAP" -gt 0 ]; then
+    CAP="$_PCAP"
+  fi
 fi
 
 # Args: --proposed <n>  [--reason "<short string>"]

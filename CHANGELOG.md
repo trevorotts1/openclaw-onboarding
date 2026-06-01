@@ -1,3 +1,32 @@
+## [v10.15.20]  -  2026-06-01  -  WS-8 hardware-aware concurrency cap + heartbeat stagger (capacity-monitor)
+
+### Why
+`install.sh` hard-wrote `agents.defaults.subagents.maxConcurrent = 100` on EVERY box regardless of strength,
+while `force-update.sh` prose said "Max 10 on Mac / 5 on VPS" and `check-wave-concurrency.sh` hard-coded a
+binary Mac=10/VPS=5 — three conflicting numbers, none tied to the box's real CPU/RAM. A weak Mac mini told to
+run 100 concurrent agents, each with its own heartbeat firing on the same cadence, collides / thrashes RAM /
+crashes the gateway (the exact failure WS-8 exists to prevent).
+
+### Added
+- **`scripts/capacity-monitor.sh` (NEW)** — host-level, idempotent monitor (mirrors `telegram-offset-healthcheck.sh`).
+  Detects real CPU cores + RAM (`sysctl` on Mac), computes a safe `maxConcurrent` from a RAM-first model
+  `min(floor((ram-reserve)/ram_per_agent), cores*cores_mult)` clamped to [2, 12 Mac] and a heartbeat
+  stagger `max(20s, window/safe)`. Reconciles `agents.defaults.subagents.maxConcurrent` ONLY when it differs
+  (timestamped backup + atomic write) and always writes `.capacity-profile.json` as the single source of truth.
+  Graceful non-fatal exit (2) on unreadable/malformed config or missing hardware data. All tunables env-overridable (`OC_CAP_*`).
+
+### Changed
+- **`scripts/check-wave-concurrency.sh`** — now PREFERS `maxConcurrentAgents` from `.capacity-profile.json`,
+  falling back silently to the Mac=10/VPS=5 default when the profile is absent (zero behavior change pre-monitor).
+- **`scripts/install-hardening.sh`** — new best-effort `harden_capacity_profile()` runs the monitor once at
+  install so the box gets a hardware-derived cap immediately instead of the blanket 100. No-ops if unreadable.
+  Documents the optional 15-min watchdog cron (`openclaw cron create --name capacity-monitor --cron '*/15 * * * *'`).
+
+### Verified
+- 12c/24G Mac → safe=12, stagger=150s. Sandbox config maxConcurrent:100 → reconciled to 12 (backup + profile written, idempotent).
+- Wave gate reading profile cap=3 → allows 3, rejects 7 (rc=1); no profile → falls back to Mac=10. All scripts pass `bash -n`.
+- WS-7 audit: shared USER/AGENTS/TOOLS (symlinked) + per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + lean pointer core files + 200k/400k bootstrap defaults are ALREADY correct — no change needed.
+
 ## [v10.15.19]  -  2026-05-31  -  ZHC closeout proves Telegram delivery against the gateway sent-registry before it may claim done (anti-faking)
 
 ### Why

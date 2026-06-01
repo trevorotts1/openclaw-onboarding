@@ -181,6 +181,50 @@ PY
     return 0
 }
 
+# ─── WS-8: hardware-aware concurrency cap (capacity-monitor) ─────────────────
+# install.sh hard-writes agents.defaults.subagents.maxConcurrent=100 on EVERY
+# box regardless of strength. A weak Mac mini told to run 100 concurrent agents
+# (each with its own heartbeat) collides and crashes the gateway. capacity-
+# monitor.sh detects real CPU/RAM and reconciles maxConcurrent down to a safe,
+# hardware-derived value, and writes a .capacity-profile.json (heartbeat
+# stagger + safe cap) that the wave-concurrency gate and heartbeat scheduler
+# read as the single source of truth.
+#
+# Best-effort + idempotent: if the script is missing or hardware can't be read,
+# it no-ops and the box keeps the install.sh default. Operators can install a
+# 15-minute watchdog cron so resizes are picked up automatically:
+#   openclaw cron create --name capacity-monitor --cron '*/15 * * * *' --tz UTC \
+#     --shell "bash $HOME/Downloads/openclaw-master-files/scripts/capacity-monitor.sh"
+harden_capacity_profile() {
+    local oc_root
+    oc_root="$(_oc_root)"
+    [ -z "$oc_root" ] && return 0
+    [ -f "$oc_root/openclaw.json" ] || return 0
+
+    # Locate capacity-monitor.sh next to this hardening script (scripts/).
+    local mon
+    mon="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/capacity-monitor.sh"
+    if [ ! -f "$mon" ]; then
+        _log "capacity-monitor.sh not found next to install-hardening.sh — skipping concurrency cap"
+        return 0
+    fi
+
+    _log "Computing hardware-aware concurrency cap (WS-8 capacity-monitor)…"
+    bash "$mon" >/dev/null 2>&1 || _log "  capacity-monitor returned non-zero (non-blocking)"
+    if [ -f "$oc_root/.capacity-profile.json" ] && command -v python3 >/dev/null 2>&1; then
+        local summary
+        summary=$(python3 - "$oc_root/.capacity-profile.json" <<'PY' 2>/dev/null || true
+import json,sys
+d=json.load(open(sys.argv[1]))
+print(f"maxConcurrent={d.get('maxConcurrentAgents')} stagger={d.get('heartbeatStaggerSeconds')}s "
+      f"(cores={d.get('cores')} ram={d.get('ramGB')}GB)")
+PY
+)
+        [ -n "$summary" ] && _log "  capacity profile: $summary"
+    fi
+    return 0
+}
+
 # ─── Composite entrypoint ────────────────────────────────────────────────────
 run_install_hardening() {
     _log "Running install hardening (Mac, 2-day forensics from 2026-05-23/24)..."
@@ -188,6 +232,7 @@ run_install_hardening() {
     harden_hooks_token
     harden_skill22_media_tools
     harden_check_cron_loops
+    harden_capacity_profile
     _log "Install hardening complete (best-effort; non-blocking)."
     return 0
 }
