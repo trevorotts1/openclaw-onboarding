@@ -49,6 +49,33 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+# ── WS-2: import the role-library instantiation helpers from the sibling
+# create_role_workspaces module so the PRIMARY build INSTANTIATES the 991
+# pre-written SOPs (copy + token-personalize) instead of writing empty
+# `[Step 1 - to be personalized]` stubs that then get LLM-regenerated. The
+# normalizer (normalize_role_variants/normalize_dept) takes naive slug match
+# from ~58% to ~100% coverage. Best-effort import: if it fails for any reason
+# the build degrades gracefully to the legacy stub+LLM path.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from create_role_workspaces import (
+        library_lookup as _crw_library_lookup,
+        fill_tokens as _crw_fill_tokens,
+        normalize_dept as _crw_normalize_dept,
+    )
+    _LIBRARY_FILL_AVAILABLE = True
+except Exception as _e:  # pragma: no cover - defensive
+    _LIBRARY_FILL_AVAILABLE = False
+    print(f"[ROLE-LIBRARY WARNING] create_role_workspaces import failed "
+          f"({_e}); falling back to stub+LLM SOP path", file=sys.stderr)
+
+# WS-2: build-wide tally of how roles were staffed, for the visible ratio log.
+_LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0}
+# Set of role folder names (absolute paths) instantiated from the library, so
+# write_sop_research_manifest() can SKIP them (their SOPs are already authored
+# inside how-to.md — no LLM regeneration needed).
+_LIBRARY_INSTANTIATED_ROLE_DIRS = set()
+
 
 # ============================================================
 # ARGUMENT PARSING
@@ -526,6 +553,18 @@ def build_from_config(config):
         # Determine specialists
         specialists, decision_ctx = determine_specialists(dept_id, dept_info, dept_answers)
         specialists_by_dept[dept_id] = specialists
+
+    # WS-2: visible instantiated-from-library vs LLM-generated ratio. This is
+    # the metric that proves the build is INSTANTIATING the pre-written library
+    # (deterministic, identical across clients) rather than regenerating SOPs.
+    _inst = _LIBRARY_FILL_STATS["instantiated_from_library"]
+    _llm = _LIBRARY_FILL_STATS["llm_generated"]
+    _tot = _inst + _llm
+    _pct = (100 * _inst // _tot) if _tot else 0
+    print(f"[ROLE-LIBRARY SUMMARY] Roles staffed: {_tot} | "
+          f"instantiated-from-library: {_inst} ({_pct}%) | "
+          f"LLM-generated (no template): {_llm} ({100 - _pct if _tot else 0}%)",
+          file=sys.stderr)
 
     # Load persona categories and create governing personas
     persona_categories = load_persona_categories()
@@ -1739,6 +1778,88 @@ def parse_suggested_roles(dept_id):
     return roles
 
 
+def _instantiate_role_from_library(role_name, dept_id, interview_answers):
+    """
+    WS-2: PRIMARY-PATH library instantiation.
+
+    Look up the pre-written role-library template for (role_name, dept_id) via
+    the normalizer. If found, copy it and token-personalize it with this
+    client's interview context ({{COMPANY_NAME}} / {{COMPANY_INDUSTRY}} /
+    {{ASSIGNED_PERSONA}} / {{GENERATION_DATE}} and the rest). The returned
+    string is the role's full how-to.md INCLUDING its pre-written Section 9
+    SOPs — so no empty `[Step 1 ...]` stubs and no LLM regeneration are needed.
+
+    Returns the personalized content string, or None when no template matches
+    (genuinely missing role → caller keeps the legacy stub+LLM path).
+
+    Deterministic: same template + same interview context → byte-identical
+    output across clients (this is what makes Kofi == Lyric == everyone).
+    """
+    if not _LIBRARY_FILL_AVAILABLE:
+        return None
+    try:
+        doc_path, role_entry = _crw_library_lookup(role_name, dept_id)
+    except Exception as e:
+        print(f"[ROLE-LIBRARY WARNING] lookup failed for '{role_name}' "
+              f"({dept_id}): {e}", file=sys.stderr)
+        return None
+    if not doc_path:
+        return None
+
+    try:
+        raw = Path(doc_path).read_text(encoding="utf-8")
+    except Exception as e:
+        print(f"[ROLE-LIBRARY WARNING] read failed for {doc_path}: {e}",
+              file=sys.stderr)
+        return None
+
+    company_name = interview_answers.get("company_name", "")
+    industry = interview_answers.get("industry", "")
+    try:
+        dept_lib = _crw_normalize_dept(dept_id)
+    except Exception:
+        dept_lib = dept_id
+    dept_display = dept_lib.replace("-", " ").title()
+    gen_date = datetime.now().strftime("%Y-%m-%d")
+
+    # Direct, deterministic fill of the canonical PRD tokens first so we never
+    # depend on company-config.json existing on disk yet at build time.
+    out = raw
+    primary_tokens = {
+        "COMPANY_NAME": company_name,
+        "COMPANY_INDUSTRY": industry,
+        "INDUSTRY_VERTICAL": industry,
+        "ROLE_TITLE": role_name,
+        "DEPARTMENT_NAME": dept_display,
+        "GENERATION_DATE": gen_date,
+        "ISO_DATE": gen_date,
+        # ASSIGNED_PERSONA is selected per-task at dispatch by persona-selector;
+        # leave a neutral placeholder so the doc reads cleanly until then.
+        "ASSIGNED_PERSONA": "(selected per task by persona-selector)",
+    }
+    for key, val in primary_tokens.items():
+        if val:
+            out = out.replace("{{" + key + "}}", str(val))
+
+    # Backstop: run create_role_workspaces.fill_tokens for revenue cascade /
+    # director title / any remaining tokens it can source from company-config.
+    if _crw_fill_tokens is not None:
+        try:
+            is_ceo = (dept_lib == "master-orchestrator")
+            out = _crw_fill_tokens(out, role_name, dept_display, is_ceo,
+                                   role_entry=role_entry)
+        except Exception as e:
+            print(f"[ROLE-LIBRARY WARNING] token backstop failed: {e}",
+                  file=sys.stderr)
+
+    header = (f"<!-- WS-2: instantiated from role-library "
+              f"v{role_entry.get('version', '?') if role_entry else '?'} "
+              f"({role_entry.get('slug', '?') if role_entry else '?'}) on "
+              f"{gen_date}. Pre-written Section-9 SOPs included — not "
+              f"LLM-regenerated. -->\n")
+    return header + out
+
+
 def create_role_workspace(dept_id, dept_info, interview_answers):
     """
     Create role subfolders inside a department workspace.
@@ -1787,6 +1908,28 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         folder_name = f"{role['number']:02d}-{role_slug}"
         role_dir = os.path.join(dept_dir, folder_name)
         os.makedirs(role_dir, exist_ok=True)
+
+        # ── WS-2: INSTANTIATE from the pre-written role-library (the fix) ──────
+        # Before writing any empty `[Step 1 ...]` SOP stub, try to copy +
+        # token-personalize the role's pre-written library template (which
+        # already carries its full Section-9 SOPs). If it matches, write it as
+        # how-to.md, mark the folder instantiated (so the SOP-research manifest
+        # skips it and no LLM regeneration runs), and SKIP the stub loop below.
+        # LLM generation is reserved for genuinely missing roles only.
+        library_how_to = _instantiate_role_from_library(
+            role['name'], dept_id, interview_answers)
+        if library_how_to is not None:
+            how_to_path = os.path.join(role_dir, "how-to.md")
+            with open(how_to_path, 'w') as f:
+                f.write(library_how_to)
+            _LIBRARY_INSTANTIATED_ROLE_DIRS.add(os.path.abspath(role_dir))
+            _LIBRARY_FILL_STATS["instantiated_from_library"] += 1
+            print(f"[ROLE-LIBRARY] INSTANTIATED {folder_name} ({dept_id}) "
+                  f"← role-library (SOPs included, no LLM regen)", file=sys.stderr)
+        else:
+            _LIBRARY_FILL_STATS["llm_generated"] += 1
+            print(f"[ROLE-LIBRARY] NO TEMPLATE for {folder_name} ({dept_id}) "
+                  f"— falling back to stub + LLM SOP generation", file=sys.stderr)
 
         # 1. Create 00-START-HERE.md
         start_here_path = os.path.join(role_dir, "00-START-HERE.md")
@@ -1860,8 +2003,13 @@ This file adds role-specific filtering on top of the department pool.
             with open(personas_path, 'w') as f:
                 f.write(personas_content)
 
-        # 3. Create SOP stub files
-        for sop_filename in role['sops']:
+        # 3. Create SOP stub files — ONLY for roles with no library template.
+        # WS-2: when the role was instantiated from the library, its full
+        # Section-9 SOPs already live inside how-to.md; writing empty
+        # `[Step 1 ...]` stubs here would re-introduce the LLM-regeneration bug.
+        role_was_instantiated = (
+            os.path.abspath(role_dir) in _LIBRARY_INSTANTIATED_ROLE_DIRS)
+        for sop_filename in ([] if role_was_instantiated else role['sops']):
             sop_path = os.path.join(role_dir, sop_filename)
             if not os.path.isfile(sop_path):
                 sop_name = sop_filename.replace('.md', '').replace('-', ' ').title()
@@ -1969,6 +2117,12 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
         for entry in os.listdir(dept_dir):
             role_dir = os.path.join(dept_dir, entry)
             if not os.path.isdir(role_dir) or entry == "memory" or entry == "devils-advocate":
+                continue
+            # WS-2: skip roles instantiated from the library — their Section-9
+            # SOPs already live in how-to.md, so they must NOT be queued for
+            # LLM regeneration. (They also have no `0N-...md` stub files, but
+            # this guard makes the intent explicit and robust to re-runs.)
+            if os.path.abspath(role_dir) in _LIBRARY_INSTANTIATED_ROLE_DIRS:
                 continue
             for fname in os.listdir(role_dir):
                 if fname.startswith(("01-", "02-", "03-", "04-", "05-", "06-", "07-", "08-", "09-")) and fname.endswith(".md"):

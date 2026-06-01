@@ -1,3 +1,52 @@
+## [v10.15.21]  -  2026-06-01  -  Builds INSTANTIATE the pre-written role/SOP library (copy + personalize) instead of LLM-regenerating from empty stubs
+
+### Why
+The standardized role library (216 templates / 991 embedded Section-9 SOPs at
+`23-ai-workforce-blueprint/templates/role-library/`) was written but never wired
+into the PRIMARY build. `build-workforce.py` `create_role_workspace()` wrote empty
+`[Step 1 - to be personalized]` SOP stubs and then `write_sop_research_manifest()` +
+`populate-sops-from-manifest.py` LLM-regenerated all 991 SOPs from zero — burning
+client tokens re-authoring standard material and producing inconsistent output per
+client. A working instantiation path existed (`create_role_workspaces.library_lookup`/
+`try_library_fill`/`fill_tokens`) but was only an augmentation pass; the primary build
+never called it. WS-1 archaeology proved naive slug-matching covered only 124/214 (58%)
+of roles, so even the augmentation pass silently fell through to stub+LLM for ~42%.
+
+### Fixed
+- **PRIMARY build now instantiates (`23-ai-workforce-blueprint/scripts/build-workforce.py`):**
+  new `_instantiate_role_from_library()` (called per role inside `create_role_workspace()`)
+  copies the matching role-library template and token-personalizes it
+  (`{{COMPANY_NAME}}`/`{{COMPANY_INDUSTRY}}`/`{{INDUSTRY_VERTICAL}}`/`{{ROLE_TITLE}}`/
+  `{{DEPARTMENT_NAME}}`/`{{GENERATION_DATE}}`/`{{ASSIGNED_PERSONA}}` + the
+  `create_role_workspaces.fill_tokens` revenue-cascade backstop) and writes it as the
+  role's `how-to.md` — INCLUDING its pre-written Section-9 SOPs. When a template matches,
+  the empty `[Step 1 ...]` SOP-stub loop is SKIPPED and `write_sop_research_manifest()`
+  skips that role, so no LLM regeneration runs. LLM generation is now the exception
+  (genuinely-missing roles only), not the rule.
+- **Slug normalizer (`23-ai-workforce-blueprint/scripts/create_role_workspaces.py`):**
+  rebuilt `library_lookup()` on a deterministic normalizer
+  (`normalize_role_variants`/`normalize_dept`) that generates candidate keys from BOTH
+  the library `title` and `slug` — handling `&`→`and`/drop, `/`→space, em-dash variants,
+  decorations (`**`/`⭐`/`FLAGSHIP ROLE`), and employment qualifiers
+  (`(full-time-permanent or on-call)`). Coverage went from 124/215 (58%) to **215/215
+  (100%) on both repos with zero collisions** (verified on disk). Added `GENERATION_DATE`
+  to `fill_tokens`; `try_library_fill` now passes the RAW role name.
+- **Visible ratio log:** `[ROLE-LIBRARY SUMMARY]` prints
+  instantiated-from-library vs LLM-generated counts/percentages per build, plus a
+  per-role `[ROLE-LIBRARY] INSTANTIATED / NO TEMPLATE` line.
+- **Deterministic + identical across clients:** same template + same interview context →
+  byte-identical personalized output (this is what makes Kofi == Lyric == everyone).
+  Import is best-effort: if `create_role_workspaces` can't load, the build degrades
+  gracefully to the legacy stub+LLM path.
+
+### Risk
+Low. Additive and backward-safe: roles with no matching template keep the exact legacy
+stub+LLM behavior; the disk-QC library gate (v10.15.18) remains the authority on
+completeness. Integration-tested on 52 roles across 4 departments per repo: 52/52
+instantiated, company token filled, 0 empty stub files, 0 instantiated roles queued for
+LLM regeneration.
+
+
 ## [v10.15.20]  -  2026-06-01  -  WS-8 hardware-aware concurrency cap + heartbeat stagger (capacity-monitor)
 
 ### Why
@@ -26,6 +75,7 @@ crashes the gateway (the exact failure WS-8 exists to prevent).
 - 12c/24G Mac → safe=12, stagger=150s. Sandbox config maxConcurrent:100 → reconciled to 12 (backup + profile written, idempotent).
 - Wave gate reading profile cap=3 → allows 3, rejects 7 (rc=1); no profile → falls back to Mac=10. All scripts pass `bash -n`.
 - WS-7 audit: shared USER/AGENTS/TOOLS (symlinked) + per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + lean pointer core files + 200k/400k bootstrap defaults are ALREADY correct — no change needed.
+
 
 ## [v10.15.19]  -  2026-05-31  -  ZHC closeout proves Telegram delivery against the gateway sent-registry before it may claim done (anti-faking)
 
