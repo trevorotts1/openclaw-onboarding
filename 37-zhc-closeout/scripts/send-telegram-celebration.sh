@@ -1,9 +1,25 @@
 #!/usr/bin/env bash
 # send-telegram-celebration.sh -- 6-message paced Telegram delivery to the owner.
 #
-# Tracks per-message delivery in state.messagesDelivered = [1,2,3,4,5,6].
-# Each message is idempotent -- re-running only sends messages not yet in the
-# delivered list. On per-message exhaustion, marks failure but continues.
+# DELIVERY CONFIRMATION (anti-faking, hardened):
+#   `openclaw message send` can exit 0 while the message never reached Telegram
+#   (silent Telegram-offset-corruption; fresh-VPS "scope upgrade pending
+#   approval"). Exit-code-only "delivery" is therefore a LIE waiting to happen.
+#   So every send here captures the REAL gateway messageId (`--json` -> .messageId,
+#   with a best-effort stdout parse fallback) and a message is only counted
+#   delivered when a NON-EMPTY messageId comes back.
+#
+#   state.messagesDelivered is an ARRAY OF OBJECTS:
+#     { "n": <slot 1-7>, "messageId": "<id>", "chatId": "<owner chat>", "ts": "<iso>" }
+#   A send that returns no messageId records { "n": <slot>, "status": "send-failed" }
+#   and is NOT counted delivered. Idempotent -- re-running only sends slots not
+#   yet confirmed-delivered (a slot with status:"send-failed" is retried).
+#
+#   The captured messageIds are later cross-checked against the gateway
+#   sent-registry by verify-telegram-delivery.sh (invoked from run-closeout.sh)
+#   before the closeout may be marked done. THIS script proves "the gateway
+#   accepted and returned an id"; verify-telegram-delivery.sh proves "the id is
+#   actually in the sent-registry". Both layers must pass.
 
 set -u
 
@@ -49,106 +65,159 @@ if [[ -z "$OWNER_CHAT" || "$OWNER_CHAT" == "null" ]]; then
   exit 1
 fi
 
-# Initialize messagesDelivered if not present
+# Initialize messagesDelivered if not present (array of objects).
 if ! jq -e '.messagesDelivered' "$STATE_FILE" >/dev/null 2>&1; then
   state_set '.messagesDelivered = []'
 fi
 
+# ----------------------------------------------------------------------
+# Delivery bookkeeping -- objects, not bare integers.
+# A slot is "delivered" ONLY when it has a non-empty messageId recorded.
+# ----------------------------------------------------------------------
 is_delivered() {
   local n="$1"
-  jq -e --argjson n "$n" '.messagesDelivered | index($n) != null' "$STATE_FILE" >/dev/null 2>&1
-}
-mark_delivered() {
-  local n="$1"
-  state_set ".messagesDelivered = (.messagesDelivered + [$n] | unique)"
+  jq -e --argjson n "$n" \
+    '(.messagesDelivered // []) | any(.[]; (.n == $n) and ((.messageId // "") | tostring | length > 0))' \
+    "$STATE_FILE" >/dev/null 2>&1
 }
 
-# Send a text message with retry. Returns 0 on success.
+# record_delivered <n> <messageId> -- store a confirmed delivery object. Removes
+# any prior placeholder/failed record for the same slot first (so a retried slot
+# is upgraded from send-failed to delivered).
+record_delivered() {
+  local n="$1" mid="$2" ts
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  state_set "
+    .messagesDelivered = ((.messagesDelivered // []) | map(select(.n != $n)))
+    + [{\"n\": $n, \"messageId\": \"$mid\", \"chatId\": \"$OWNER_CHAT\", \"ts\": \"$ts\"}]
+  "
+}
+
+# record_failed <n> <reason> -- record a non-delivered slot (no messageId). Does
+# NOT overwrite an already-confirmed delivery for that slot.
+record_failed() {
+  local n="$1" reason="${2:-no-messageId}" ts
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if is_delivered "$n"; then return 0; fi
+  state_set "
+    .messagesDelivered = ((.messagesDelivered // []) | map(select(.n != $n)))
+    + [{\"n\": $n, \"status\": \"send-failed\", \"reason\": \"$reason\", \"chatId\": \"$OWNER_CHAT\", \"ts\": \"$ts\"}]
+  "
+}
+
+# ----------------------------------------------------------------------
+# extract_message_id <raw-output> -- pull a real Telegram messageId out of an
+# `openclaw message send --json` result. Tries, in order:
+#   1. JSON .messageId        (top-level, current 2026.5.x shape)
+#   2. JSON .payload.messageId
+#   3. JSON .result.messageId / .data.messageId (defensive for shape drift)
+#   4. best-effort regex on raw text  ("messageId":"123" or messageId: 123)
+# Prints the id on success (empty on failure). Never trusts ok:true alone -- a
+# non-empty id is mandatory.
+# ----------------------------------------------------------------------
+extract_message_id() {
+  local raw="$1" mid="" jq_expr='(.messageId // .payload.messageId // .result.messageId // .data.messageId // empty) | tostring'
+  # 1) Clean --json output IS a valid JSON document -- parse the raw output first.
+  mid=$(printf '%s' "$raw" | jq -r "$jq_expr" 2>/dev/null)
+  # 2) If the gateway wrapped the JSON in log noise, isolate the object and retry.
+  if [[ -z "$mid" || "$mid" == "null" ]]; then
+    local json
+    json=$(printf '%s' "$raw" | sed -n '/{/,/}/p' 2>/dev/null)
+    [[ -n "$json" ]] && mid=$(printf '%s' "$json" | jq -r "$jq_expr" 2>/dev/null)
+  fi
+  # 3) Best-effort regex fallback for installs where --json is absent/garbled.
+  #    Require a non-empty id; never regress to exit-code-only.
+  if [[ -z "$mid" || "$mid" == "null" ]]; then
+    mid=$(printf '%s' "$raw" | grep -oE '"messageId"[[:space:]]*:[[:space:]]*"?[0-9]+"?' | head -1 | grep -oE '[0-9]+' | head -1)
+    [[ -z "$mid" ]] && mid=$(printf '%s' "$raw" | grep -oiE 'message[_ ]?id[[:space:]]*[:=][[:space:]]*"?[0-9]+' | head -1 | grep -oE '[0-9]+' | head -1)
+  fi
+  [[ "$mid" == "null" ]] && mid=""
+  printf '%s' "$mid"
+}
+
+# ----------------------------------------------------------------------
+# do_send <slot-n> <build-the-args-fn> -- generic confirmed sender.
+# Calls `openclaw message send --json <args...>`, extracts a real messageId,
+# and on a NON-EMPTY id records the delivery + returns 0. Retries with backoff.
+# Returns 1 (and the caller records a failed slot) if no id ever comes back.
+#
+# The args are produced by a per-message builder passed as remaining params,
+# so text/photo/video share identical confirmation logic.
+# ----------------------------------------------------------------------
+_oc_send_json() {
+  # _oc_send_json <args...> -- run the send, echo raw output, return cmd rc.
+  openclaw message send --json --channel telegram -t "$OWNER_CHAT" "$@" 2>&1
+}
+
+# send_confirmed <slot-n> <send-arg> ... -- args after slot-n are passed verbatim
+# to `openclaw message send`. Returns 0 only when a real messageId is captured
+# AND recorded. Logs the captured id.
+send_confirmed() {
+  local n="$1"; shift
+  local attempt=0 raw mid rc
+  while (( attempt < 3 )); do
+    attempt=$((attempt + 1))
+    raw=$(_oc_send_json "$@"); rc=$?
+    printf '%s\n' "$raw" >> "$LOG_FILE"
+    if (( rc == 0 )); then
+      mid=$(extract_message_id "$raw")
+      if [[ -n "$mid" ]]; then
+        record_delivered "$n" "$mid"
+        log "INFO" "msg $n: gateway returned messageId=$mid (attempt $attempt) -- recorded delivered"
+        return 0
+      fi
+      log "WARN" "msg $n: send exited 0 but NO messageId in result (attempt $attempt) -- NOT counting delivered"
+    else
+      log "WARN" "msg $n: send rc=$rc (attempt $attempt)"
+    fi
+    sleep $((2 ** attempt))
+  done
+  return 1
+}
+
+# Build a TEXT send for slot n. Returns 0 on confirmed delivery.
 send_text() {
-  local text="$1"
-  local attempt=0
-  while (( attempt < 3 )); do
-    attempt=$((attempt + 1))
-    if openclaw message send --channel telegram -t "$OWNER_CHAT" -m "$text" >> "$LOG_FILE" 2>&1; then
-      return 0
-    fi
-    log "WARN" "send_text attempt $attempt failed"
-    sleep $((2 ** attempt))
-  done
-  return 1
+  local n="$1" text="$2"
+  send_confirmed "$n" -m "$text"
 }
 
-# Send a photo with caption. Prefers a LOCAL file path (uploaded via --media
-# as multipart bytes) over a remote URL when both are available -- this is
-# how we guarantee Telegram inlines the image instead of treating it as a
-# download card (Lesson 2 from the Marico closeout).
+# Build a PHOTO send for slot n. Prefers LOCAL bytes via --media (multipart) over
+# a remote URL (Lesson 2: inline image, not a download card), then falls back to
+# --photo URL, then caption+URL text. Each variant goes through send_confirmed so
+# a real messageId is required regardless of which path lands.
 send_photo() {
-  local url="$1"
-  local caption="$2"
-  local local_path="${3:-}"
-  local attempt=0
-  while (( attempt < 3 )); do
-    attempt=$((attempt + 1))
-    # Prefer local file bytes via --media (multipart upload).
-    if [[ -n "$local_path" && -s "$local_path" ]]; then
-      if openclaw message send --channel telegram -t "$OWNER_CHAT" --media "$local_path" -m "$caption" >> "$LOG_FILE" 2>&1; then
-        return 0
-      fi
-    fi
-    # Fall back to --photo URL if --media unavailable / no local copy.
-    if [[ -n "$url" && "$url" != null && "$url" != file://* ]]; then
-      if openclaw message send --channel telegram -t "$OWNER_CHAT" --photo "$url" -m "$caption" >> "$LOG_FILE" 2>&1; then
-        return 0
-      fi
-    fi
-    # Last resort: send caption + URL as plain text (skip if URL is file://).
-    if [[ -n "$url" && "$url" != file://* ]]; then
-      if openclaw message send --channel telegram -t "$OWNER_CHAT" -m "${caption}
+  local n="$1" url="$2" caption="$3" local_path="${4:-}"
+  if [[ -n "$local_path" && -s "$local_path" ]]; then
+    send_confirmed "$n" --media "$local_path" -m "$caption" && return 0
+  fi
+  if [[ -n "$url" && "$url" != null && "$url" != file://* ]]; then
+    send_confirmed "$n" --photo "$url" -m "$caption" && return 0
+  fi
+  if [[ -n "$url" && "$url" != file://* ]]; then
+    send_confirmed "$n" -m "${caption}
 
-${url}" >> "$LOG_FILE" 2>&1; then
-        return 0
-      fi
-    fi
-    log "WARN" "send_photo attempt $attempt failed"
-    sleep $((2 ** attempt))
-  done
+${url}" && return 0
+  fi
   return 1
 }
 
-# CRITICAL (Lesson 2 from Marico closeout): NEVER pass tempfile.aiquickdraw.com
-# URLs directly to Telegram. The CDN returns content-disposition: attachment,
-# so Telegram renders the message as a download card rather than an inline
-# video player. generate-celebration-video.sh ALWAYS downloads the MP4 bytes
-# to disk first and writes .celebrationVideoLocalPath into state -- we send
-# THOSE bytes here via --media so the bot uploads via Telegram's multipart
-# sendVideo endpoint, which embeds inline.
+# Build a VIDEO send for slot n. Prefers LOCAL bytes via --media (multipart
+# sendVideo, inline) over --video URL, then caption+URL text. (Lesson 2:
+# tempfile.aiquickdraw.com URLs render as download cards, so video bytes are
+# downloaded to disk by generate-celebration-video.sh and sent here.)
 send_video() {
-  local url="$1"
-  local caption="$2"
-  local local_path="${3:-}"
-  local attempt=0
-  while (( attempt < 3 )); do
-    attempt=$((attempt + 1))
-    if [[ -n "$local_path" && -s "$local_path" ]]; then
-      if openclaw message send --channel telegram -t "$OWNER_CHAT" --media "$local_path" -m "$caption" >> "$LOG_FILE" 2>&1; then
-        return 0
-      fi
-    fi
-    if [[ -n "$url" && "$url" != null && "$url" != file://* ]]; then
-      if openclaw message send --channel telegram -t "$OWNER_CHAT" --video "$url" -m "$caption" >> "$LOG_FILE" 2>&1; then
-        return 0
-      fi
-    fi
-    if [[ -n "$url" && "$url" != file://* ]]; then
-      if openclaw message send --channel telegram -t "$OWNER_CHAT" -m "${caption}
+  local n="$1" url="$2" caption="$3" local_path="${4:-}"
+  if [[ -n "$local_path" && -s "$local_path" ]]; then
+    send_confirmed "$n" --media "$local_path" -m "$caption" && return 0
+  fi
+  if [[ -n "$url" && "$url" != null && "$url" != file://* ]]; then
+    send_confirmed "$n" --video "$url" -m "$caption" && return 0
+  fi
+  if [[ -n "$url" && "$url" != file://* ]]; then
+    send_confirmed "$n" -m "${caption}
 
-${url}" >> "$LOG_FILE" 2>&1; then
-        return 0
-      fi
-    fi
-    log "WARN" "send_video attempt $attempt failed"
-    sleep $((2 ** attempt))
-  done
+${url}" && return 0
+  fi
   return 1
 }
 
@@ -156,7 +225,7 @@ failed_messages=()
 
 # ---- Message 1: Announcement ----
 if is_delivered 1; then
-  log "INFO" "msg 1: already delivered -- skipping"
+  log "INFO" "msg 1: already delivered (has messageId) -- skipping"
 else
   log "INFO" "msg 1: sending announcement"
   MSG1="🎉 ${OWNER_NAME}, your zero-human company is built.
@@ -165,13 +234,13 @@ Over the past few hours your AI workforce has been getting itself set up.
 ${N_DEPTS} departments. ${N_ROLES} AI employees. All hired, briefed, and ready to work for you.
 
 Here's what I want to show you:"
-  if send_text "$MSG1"; then
-    mark_delivered 1
+  if send_text 1 "$MSG1"; then
     log "INFO" "msg 1: delivered"
     sleep 10
   else
-    log "ERROR" "msg 1: FAILED after 3 attempts -- aborting (no point sending celebration if announcement didn't land)"
-    state_set '.closeoutStatus = "failed" | .closeoutFailureReason = "telegram-message-1: 3 retries exhausted"'
+    record_failed 1 "no-messageId-after-3-attempts"
+    log "ERROR" "msg 1: FAILED -- no messageId after 3 attempts -- aborting (no point sending celebration if announcement didn't land)"
+    state_set '.closeoutStatus = "failed" | .closeoutFailureReason = "telegram-message-1: no messageId after 3 retries"'
     exit 1
   fi
 fi
@@ -184,11 +253,11 @@ elif [[ ( -z "$INFO_1" || "$INFO_1" == "null" ) && ( -z "$INFO_1_LOCAL" || ! -s 
   failed_messages+=("msg-2-no-url")
 else
   log "INFO" "msg 2: sending infographic #1"
-  if send_photo "$INFO_1" "📊 Your workforce structure -- how your AI company is organized." "$INFO_1_LOCAL"; then
-    mark_delivered 2
+  if send_photo 2 "$INFO_1" "📊 Your workforce structure -- how your AI company is organized." "$INFO_1_LOCAL"; then
     log "INFO" "msg 2: delivered"
     sleep 5
   else
+    record_failed 2 "no-messageId"
     log "ERROR" "msg 2: FAILED -- continuing"
     failed_messages+=("msg-2")
   fi
@@ -202,11 +271,11 @@ elif [[ -z "$INFO_2" || "$INFO_2" == "null" ]]; then
   failed_messages+=("msg-3-no-url")
 else
   log "INFO" "msg 3: sending infographic #2"
-  if send_photo "$INFO_2" "⚙️ How the work flows -- from a task you give me, all the way to a finished output."; then
-    mark_delivered 3
+  if send_photo 3 "$INFO_2" "⚙️ How the work flows -- from a task you give me, all the way to a finished output."; then
     log "INFO" "msg 3: delivered"
     sleep 5
   else
+    record_failed 3 "no-messageId"
     log "ERROR" "msg 3: FAILED -- continuing"
     failed_messages+=("msg-3")
   fi
@@ -223,11 +292,11 @@ if is_delivered 4; then
 elif [[ "${ZHC_VIDEO_STATUS:-}" == "failed" ]]; then
   log "INFO" "msg 4: video generation failed upstream -- sending text-only deferred notice"
   MSG4_DEFERRED="🎬 Your celebration video is queued but deferred for tonight -- the video vendor is hitting congestion right now. It'll show up in this thread automatically when it lands. Everything else below is ready to go."
-  if send_text "$MSG4_DEFERRED"; then
-    mark_delivered 4
+  if send_text 4 "$MSG4_DEFERRED"; then
     log "INFO" "msg 4: deferred-notice delivered"
     sleep 4
   else
+    record_failed 4 "no-messageId"
     log "ERROR" "msg 4: FAILED -- continuing"
     failed_messages+=("msg-4")
   fi
@@ -236,11 +305,11 @@ elif [[ ( -z "$VIDEO" || "$VIDEO" == "null" ) && ( -z "$VIDEO_LOCAL" || ! -s "$V
   failed_messages+=("msg-4-no-url")
 else
   log "INFO" "msg 4: sending celebration video"
-  if send_video "$VIDEO" "🎬 A quick celebration -- congratulations on launching ${COMPANY_NAME}'s zero-human workforce." "$VIDEO_LOCAL"; then
-    mark_delivered 4
+  if send_video 4 "$VIDEO" "🎬 A quick celebration -- congratulations on launching ${COMPANY_NAME}'s zero-human workforce." "$VIDEO_LOCAL"; then
     log "INFO" "msg 4: delivered"
     sleep 8
   else
+    record_failed 4 "no-messageId"
     log "ERROR" "msg 4: FAILED -- continuing"
     failed_messages+=("msg-4")
   fi
@@ -258,11 +327,11 @@ else
 ${NOTION_URL}
 
 It explains your departments, your AI employees, the communication hierarchy, the Six Sigma framework we'll use to keep improving, the Book-to-Persona system that picks how each task is handled, and your First 7 Days action plan. Read it when you have 15 minutes."
-  if send_text "$MSG5"; then
-    mark_delivered 5
+  if send_text 5 "$MSG5"; then
     log "INFO" "msg 5: delivered"
     sleep 3
   else
+    record_failed 5 "no-messageId"
     log "ERROR" "msg 5: FAILED -- continuing"
     failed_messages+=("msg-5")
   fi
@@ -311,8 +380,7 @@ This is where you'll talk to your CEO (${AGENT_NAME}), watch tasks move across t
 When you're ready, just message me with the first thing you want done. I'm standing by.
 
 -- ${AGENT_NAME}"
-  if send_text "$MSG6"; then
-    mark_delivered 6
+  if send_text 6 "$MSG6"; then
     log "INFO" "msg 6: delivered"
     # Persist the URL to a local bookmark file for recovery.
     if printf '%s\n' "$CC_URL" > "$CC_BOOKMARK_FILE" 2>>"$LOG_FILE"; then
@@ -323,6 +391,7 @@ When you're ready, just message me with the first thing you want done. I'm stand
     fi
     sleep 3
   else
+    record_failed 6 "no-messageId"
     log "ERROR" "msg 6: FAILED -- continuing"
     failed_messages+=("msg-6")
   fi
@@ -339,10 +408,10 @@ else
   MSG7="🔖 Your dashboard URL has been bookmarked at \`${CC_BOOKMARK_FILE}\`. If you ever lose this message, that file has it.
 
 -- ${AGENT_NAME}"
-  if send_text "$MSG7"; then
-    mark_delivered 7
+  if send_text 7 "$MSG7"; then
     log "INFO" "msg 7: delivered"
   else
+    record_failed 7 "no-messageId"
     log "ERROR" "msg 7: FAILED -- continuing"
     failed_messages+=("msg-7")
   fi
@@ -351,7 +420,7 @@ fi
 # ---- summary ----
 if (( ${#failed_messages[@]} == 0 )); then
   state_set '.closeoutStatus = "sent"'
-  log "INFO" "all messages delivered -- closeoutStatus=sent"
+  log "INFO" "all messages delivered (each has a captured messageId) -- closeoutStatus=sent"
   exit 0
 else
   reason="telegram-partial: $(IFS=,; echo "${failed_messages[*]}")"

@@ -1,3 +1,36 @@
+## [v10.15.19]  -  2026-05-31  -  ZHC closeout proves Telegram delivery against the gateway sent-registry before it may claim done (anti-faking)
+
+### Why
+The closeout could mark `closeoutStatus=done`/`sent` purely on the `openclaw message send` COMMAND EXIT CODE.
+That command can exit 0 while the message never reaches Telegram (silent Telegram-offset-corruption; fresh-VPS
+"scope upgrade pending approval"), so a closeout could claim a delivery that never happened — the exact
+"faked closeout" we forbid. `state.messagesDelivered` stored bare integers and nothing cross-checked the
+gateway's own ground truth.
+
+### Fixed
+- **Capture the REAL messageId (`37-zhc-closeout/scripts/send-telegram-celebration.sh`):** every send now uses
+  `--json`; `extract_message_id()` pulls the real gateway `messageId` (`.messageId`/`.payload.messageId`/…,
+  regex fallback, ALWAYS requiring a non-empty id — never exit-code-only). `messagesDelivered` is now an array
+  of objects `{n, messageId, chatId, ts}`. No messageId → `{n, status:"send-failed"}`, NOT counted delivered.
+- **Cross-check against the sent-registry (NEW `37-zhc-closeout/scripts/verify-telegram-delivery.sh`):** reads
+  `agents/main/sessions/sessions.json.telegram-sent-messages.json` and requires each required messageId be
+  present under the owner's chatId. Handles rolling-window aging (missing+recent = fail rc3; missing+aged-out
+  past `ZHC_TG_REGISTRY_TTL_SEC` = pass). Writes `state.telegramDeliveryVerification`.
+- **Gate done on confirmation (`37-zhc-closeout/scripts/run-closeout.sh`):** the phantom guard now counts only
+  real-messageId deliveries; a new gate runs the verifier before writing `done`, else marks `failed` with
+  `closeoutFailureReason="telegram-unconfirmed: msg <n>"` so the never-stop resume cron retries.
+- **Smoke test + CI (NEW `37-zhc-closeout/scripts/test-verify-telegram-delivery.sh`):** present→pass,
+  missing/empty→fail; wired into `qc-static.yml` (asserts `--json`, non-empty-id requirement, verify wiring,
+  `telegram-unconfirmed` path). Skill 37 skill-version.txt 1.1.3 → 1.1.4.
+
+### Risk
+Low. Backward-safe: `verify-zhc-standard.sh` reads `.messagesDelivered | length` which still holds for the
+object array. If `--json` is unavailable the send falls back to a best-effort parse but still requires a
+non-empty messageId. A genuinely-delivered closeout whose registry entries have aged out past the TTL still
+passes (it was confirmed at send time). The only behavior change is that an UNCONFIRMED delivery can no longer
+be reported as `done`.
+
+
 ## [v10.15.18]  -  2026-05-31  -  Role + SOP libraries are now ALWAYS real (no more build-state lie): disk-QC substance gate, hard dept-map assertion, non-skippable SOP population, never-stop resume, GHL media link in closeout
 
 ### Why

@@ -332,9 +332,46 @@
     "messagesDelivered": {
       "type": "array",
       "items": {
-        "type": "integer"
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["n"],
+            "properties": {
+              "n": { "type": "integer", "description": "Message slot 1-7." },
+              "messageId": { "type": "string", "description": "Real gateway Telegram messageId returned by `openclaw message send --json`. Non-empty == confirmed-accepted by the gateway. A slot is only counted delivered when this is present and non-empty." },
+              "chatId": { "type": "string" },
+              "ts": { "type": "string" },
+              "status": { "type": "string", "description": "Set to 'send-failed' when the gateway returned no messageId; such a slot is NOT counted delivered and is retried." },
+              "reason": { "type": "string" }
+            }
+          },
+          { "type": "integer", "description": "Legacy (pre-v10.15.19/v10.16.18) bare-integer form. Still accepted for backward compatibility." }
+        ]
       },
-      "description": "Per-message Telegram delivery tracker for Step 6 of Skill 37. Tracks which of the 6 messages [1..6] have been successfully delivered. Used for idempotent retries of partial deliveries."
+      "description": "Per-message Telegram delivery tracker for Step 6 of Skill 37. As of v10.15.19/v10.16.18 each entry is an OBJECT { n, messageId, chatId, ts } carrying the REAL gateway messageId so the closeout can cross-check delivery against the sent-registry (verify-telegram-delivery.sh) before claiming done. A slot with no messageId is recorded { n, status:'send-failed' } and is not counted delivered. Bare integers from older runs are still accepted."
+    },
+    "telegramDeliveryVerification": {
+      "type": "object",
+      "description": "Result of verify-telegram-delivery.sh cross-checking captured messageIds against the gateway sent-registry. closeoutStatus=done is gated on status=='pass'.",
+      "properties": {
+        "status": { "type": "string", "enum": ["pass", "fail"] },
+        "rc": { "type": "integer" },
+        "verifiedAt": { "type": "string" },
+        "requiredSlots": { "type": "string" },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "n": { "type": "integer" },
+              "messageId": { "type": "string" },
+              "required": { "type": "boolean" },
+              "verdict": { "type": "string" },
+              "note": { "type": "string" }
+            }
+          }
+        }
+      }
     },
     "interviewProgress": {
       "type": "object",

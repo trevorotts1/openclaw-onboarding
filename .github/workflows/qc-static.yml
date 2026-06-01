@@ -698,3 +698,34 @@ jobs:
           # proven to match the standard's order. BASH (grep core) — respects the .py ban.
           bash 38-conversational-ai-system/scripts/qc-notion-doc-standard.sh
           echo "✓ Skill 38 Notion client-doc standard codifies the ordered structure (1-12) + the generator matches it"
+
+      - name: Skill 37 Telegram delivery-confirmation gate (anti-faking)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Anti-faking invariant: the ZHC closeout must capture the REAL gateway
+          # messageId on every send and cross-check it against the sent-registry
+          # before it may claim "done" -- `openclaw message send` can exit 0 while
+          # the message never reaches Telegram. Three checks:
+          #   1. send-telegram-celebration.sh requests --json and requires a
+          #      non-empty messageId (no exit-code-only delivery).
+          #   2. run-closeout.sh gates done on verify-telegram-delivery.sh and
+          #      fails the closeout with telegram-unconfirmed when a required
+          #      messageId is not present in the registry.
+          #   3. The smoke test (present -> pass, missing/empty -> fail) passes.
+          send=37-zhc-closeout/scripts/send-telegram-celebration.sh
+          run=37-zhc-closeout/scripts/run-closeout.sh
+          verify=37-zhc-closeout/scripts/verify-telegram-delivery.sh
+          test=37-zhc-closeout/scripts/test-verify-telegram-delivery.sh
+          for f in "$send" "$run" "$verify" "$test"; do
+            bash -n "$f" || { echo "  ✗ syntax: $f"; exit 1; }
+          done
+          grep -q -- '--json' "$send" || { echo "  ✗ $send does not request --json"; exit 1; }
+          grep -q 'extract_message_id' "$send" || { echo "  ✗ $send missing extract_message_id"; exit 1; }
+          grep -q 'NON-EMPTY id\|non-empty messageId\|NOT counting delivered\|no messageId' "$send" \
+            || { echo "  ✗ $send does not require a non-empty messageId"; exit 1; }
+          grep -q 'verify-telegram-delivery.sh' "$run" || { echo "  ✗ $run does not invoke verify-telegram-delivery.sh"; exit 1; }
+          grep -q 'telegram-unconfirmed' "$run" || { echo "  ✗ $run missing telegram-unconfirmed failure reason"; exit 1; }
+          grep -q 'sent-messages.json' "$verify" || { echo "  ✗ $verify does not read the sent-registry"; exit 1; }
+          bash "$test"
+          echo "✓ Skill 37 closeout confirms real messageIds against the sent-registry before claiming done"

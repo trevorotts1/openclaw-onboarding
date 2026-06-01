@@ -207,9 +207,10 @@ This is the only step that the OWNER sees. **All prior steps were silent.** Goal
    I'm standing by.
    ```
 
-2. After Message 6 successfully delivers:
+2. After Message 6 successfully delivers (each message records a REAL gateway messageId):
    - Set `closeoutStatus: "sent"`, atomic write.
-   - Then set `closeoutCompletedAt: <now-ISO-8601>` and `closeoutStatus: "done"`, atomic write.
+   - **Delivery confirmation gate (anti-faking):** `run-closeout.sh` then runs `scripts/verify-telegram-delivery.sh`, which cross-checks every required captured `messageId` against the gateway sent-registry (`agents/main/sessions/sessions.json.telegram-sent-messages.json`). `done` may be written ONLY when every required messageId is confirmed present (or has legitimately aged out of the rolling window). If any required messageId is missing-and-recent, the closeout is marked `failed` with `closeoutFailureReason: "telegram-unconfirmed: msg <n>"` and the resume cron retries. A 0-exit `openclaw message send` is NOT proof of delivery.
+   - Only then set `closeoutCompletedAt: <now-ISO-8601>` and `closeoutStatus: "done"`, atomic write.
 
 ### Step 7 (success path only) -- Operator summary + conditional GHL media upload
 
@@ -220,7 +221,7 @@ On the clean success path -- after every artifact cleared the 8.5 gate, was deli
 
 **Retries per message:** 3 (with 2s/4s/8s backoff). If a message fails 3x:
 - If it's Message 1 (the announcement), abort the whole delivery, mark `closeoutStatus: "failed"`, set `closeoutFailureReason: "telegram-message-1: <error>"`. Resume cron will retry on next fire.
-- If it's Messages 2–6, log the failure but CONTINUE to the next message. After all 6 attempted, if any failed, set `closeoutStatus: "failed"` with a summary listing which messages failed. The resume cron will pick up failed messages individually on its next fire (Step 6 is idempotent per-message via a `messagesDelivered: [1,2,3,4,5,6]` array in the state file).
+- If it's Messages 2–6, log the failure but CONTINUE to the next message. After all attempted, if any failed, set `closeoutStatus: "failed"` with a summary listing which messages failed. The resume cron will pick up failed messages individually on its next fire (Step 6 is idempotent per-message via the `messagesDelivered` array). Each delivered slot is recorded as an OBJECT carrying its real gateway messageId — `{ "n": 1, "messageId": "51678", "chatId": "<owner>", "ts": "<iso>" }` — and a slot that the gateway accepted-but-returned-no-id is recorded as `{ "n": <slot>, "status": "send-failed" }` and is NOT counted delivered (so it is retried). A slot is "delivered" only when it carries a non-empty messageId.
 
 ---
 
@@ -249,9 +250,21 @@ Skill 37 adds these top-level fields to `.workforce-build-state.json`:
   "celebrationVideoModel": "gemini-omni-video",
   "notionRootPageUrl": "https://www.notion.so/...",
 
-  "messagesDelivered": [1, 2, 3, 4, 5, 6]
+  "messagesDelivered": [
+    { "n": 1, "messageId": "51678", "chatId": "5252140759", "ts": "2026-05-23T20:44:00Z" },
+    { "n": 6, "messageId": "51690", "chatId": "5252140759", "ts": "2026-05-23T20:44:40Z" }
+  ],
+  "telegramDeliveryVerification": {
+    "status": "pass",
+    "rc": 0,
+    "verifiedAt": "2026-05-23T20:45:00Z",
+    "requiredSlots": "1,6,7",
+    "results": [ { "n": 1, "messageId": "51678", "required": true, "verdict": "pass-present", "note": "..." } ]
+  }
 }
 ```
+
+> v10.15.19/v10.16.18: `messagesDelivered` is an ARRAY OF OBJECTS (was bare integers). Each object carries the REAL gateway `messageId` so the closeout can be cross-checked against the sent-registry before claiming `done`. `verify-zhc-standard.sh` still reads `.messagesDelivered | length`, which holds for the object array.
 
 See `23-ai-workforce-blueprint/build-state-schema.json` for the JSON-schema source of truth.
 
@@ -299,7 +312,8 @@ Every step is idempotent by-construction:
 | 3 (Infographic #2) | Skip if `infographic2Url` set |
 | 4 (Celebration video) | Skip if `celebrationVideoUrl` set |
 | 5 (Notion page tree) | Skip if `notionRootPageUrl` set, OR if a Notion search finds the exact title already |
-| 6 (Telegram delivery) | Track `messagesDelivered: [1,2,...]`. Each message in [1..6] is sent only if its number isn't in that array. |
+| 6 (Telegram delivery) | Track `messagesDelivered` (array of `{n, messageId, chatId, ts}` objects). A slot is sent only if it has no object carrying a non-empty `messageId`; a `status:"send-failed"` slot is retried. |
+| 6.5 (Delivery confirmation) | `verify-telegram-delivery.sh` cross-checks each required messageId against the sent-registry. `done` is gated on this passing; an unconfirmed required messageId → `failed` (`telegram-unconfirmed: msg <n>`) and the cron retries. |
 
 Re-running `run-closeout.sh` on a partially-complete closeout is safe.
 
