@@ -40,6 +40,9 @@ VIDEO=$(state_get '.celebrationVideoUrl')
 VIDEO_LOCAL=$(state_get '.celebrationVideoLocalPath')
 NOTION_URL=$(state_get '.notionRootPageUrl')
 CC_URL=$(state_get '.commandCenterUrl')
+# v10.x: shareable Convert and Flow / GHL media-library link (set by run-closeout
+# STEP 5.5 via upload-ghl-media.sh). Empty when the client has no GHL location.
+GHL_MEDIA_URL="${ZHC_GHL_MEDIA_URL:-$(state_get '.ghlMediaLibraryUrl')}"
 
 if [[ -z "$OWNER_CHAT" || "$OWNER_CHAT" == "null" ]]; then
   log "ERROR" "ownerChat missing from state -- cannot deliver"
@@ -291,10 +294,19 @@ elif ! cc_url_is_real "$CC_URL"; then
   failed_messages+=("msg-6-no-url")
 else
   log "INFO" "msg 6: sending Command Center URL"
+  # v10.x: append the Convert and Flow media-library link if the closeout media
+  # was uploaded to the client's GHL location (org chart + video + infographics).
+  GHL_MEDIA_LINE=""
+  if [[ -n "$GHL_MEDIA_URL" && "$GHL_MEDIA_URL" == https://* ]]; then
+    GHL_MEDIA_LINE="
+
+📁 Your celebration video and graphics are also in your Convert and Flow media library:
+${GHL_MEDIA_URL}"
+  fi
   MSG6="🎛️ Your BlackCEO Command Center:
 ${CC_URL}
 
-This is where you'll talk to your CEO (${AGENT_NAME}), watch tasks move across the Kanban board, and check in on every department. Open it in your browser and bookmark it.
+This is where you'll talk to your CEO (${AGENT_NAME}), watch tasks move across the Kanban board, and check in on every department. Open it in your browser and bookmark it.${GHL_MEDIA_LINE}
 
 When you're ready, just message me with the first thing you want done. I'm standing by.
 

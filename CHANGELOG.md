@@ -1,3 +1,61 @@
+## [v10.15.18]  -  2026-05-31  -  Role + SOP libraries are now ALWAYS real (no more build-state lie): disk-QC substance gate, hard dept-map assertion, non-skippable SOP population, never-stop resume, GHL media link in closeout
+
+### Why
+Builds were reporting "done" while the role library / SOP library were empty or thin on disk (Sheila empty,
+Maria 72 thin, Evelyn stubs). Four root causes: (1) the library gate accepted empty/thin SOPs
+(`stubs==0 AND avg>0`) — no size/DMAIC/per-role-minimum floor; (2) a stale `DEPT_TO_SUGGESTED_ROLES` map
+keyed on legacy ids (`support`/`operations`/`creative`/`hr`/`it`) that pointed at files that DON'T EXIST,
+so whole departments silently built ZERO roles; (3) SOP population's inline fallback wrote a work file and
+returned 0 ("done") without authoring anything; (4) the resume cron self-REMOVED after a run cap, stranding
+half-built workforces while the client never found out.
+
+### Fixed
+- **Substance gate (`qc-completeness.sh` + `verify-library-gate.sh`):** a SOP now counts as substantive
+  ONLY if it is ≥7KB AND contains all 5 DMAIC headers (DEFINE/MEASURE/ANALYZE/IMPROVE/CONTROL) AND has no
+  `[Step N - to be personalized]` placeholder. New per-dept fields `substantive_sop_count`,
+  `min_sop_per_role`, `roles_below_min_sops`, `avg_substantive_sop_per_role`. The gate's SOP "done" rule is
+  now "every role has ≥ its floor (4) substantive SOPs"; the ROLE "done" rule now also requires every dept
+  to meet its **canonical role count** (`role_folders >= expected_roles`). Disk-QC is the ONLY authority that
+  may write `roleLibraryStatus=done` / `sopLibraryStatus=done`.
+- **`_index.json` count key bug:** qc read `role_count` but the schema key is `count` → `expected_roles` was
+  always 0 → the canonical-role-count check was a silent no-op. Now reads `count` (falls back to
+  `len(roles)`), so the per-dept floor actually enforces.
+- **Dept-map hard assertion (`build-workforce.py`):** `DEPT_TO_SUGGESTED_ROLES` is now DERIVED from
+  `department-naming-map.json` (single source of truth) + legacy aliases. New `assert_dept_map_resolves()`
+  HARD-FAILS the build (exit 78) if any selected department does not resolve to an existing suggested-roles
+  file — no department can ever silently ship with 0 roles again.
+- **Non-skippable SOP population (`populate-sops-from-manifest.py`):** inline-queue mode (no openclaw
+  sub-agents) now returns rc=4 (queued-not-authored) instead of 0. The caller keeps `sopLibraryStatus=authoring`
+  and the resume cron re-fires until the substance gate passes — the "write a work file and hope" terminal
+  state is removed.
+- **`verify-zhc-standard.sh` (NEW):** one idempotent end-to-end standard verifier (interview → 16 depts →
+  role library done → substantive SOP library done → closeout confirmed). Wired into Skill 37 `run-closeout.sh`
+  as a preflight that REFUSES to close out (status `blocked-libraries-incomplete`) when the libraries aren't
+  substantive on disk — never celebrates an empty workforce.
+- **Rule 8 never-stop (`resume-workforce-build.sh` + `resume-prompt.txt`):** the resume cron no longer
+  self-removes on a run/attempt cap. On the cap it escalates to Rescue Rangers + operator (once) and switches
+  to a ~2h slow-backoff retry, continuing forever until a REAL terminal state (libraries done + closeout
+  confirmed). The prompt forbids `sessions_yield` and declaring "done" before `verify-zhc-standard.sh` exits 0.
+- **Media → GHL closeout (`upload-ghl-media.sh` + `run-closeout.sh` + `send-telegram-celebration.sh`):** GHL
+  upload moved BEFORE the Telegram step; captures each file's public URL + writes a shareable media-library
+  link (`ghlMediaLibraryUrl`) that is now included in the client's celebration message. Honors a
+  pre-created `GHL_MEDIA_FOLDER_ID` (TOOLS.md: GHL folder-creation API is broken — folder is made in UI).
+- **Start Here flag mismatch (`Start Here.md`):** Step 0.1 grepped only `ONBOARDING PENDING` but install.sh
+  writes `UPDATE PENDING`, so a fresh install stalled at the kickoff gate. Now matches EITHER flag + the
+  standalone `UPDATE-PENDING.md` recovery file.
+- **`update-skills.sh` em-dash filename fix:** switched the update download from `curl | unzip` to `git clone`
+  (with hard remote verification + a UTF-8-safe zip fallback). Info-ZIP `unzip` mangles the role-library's
+  em-dash filenames (`qc-specialist-—-sales.md` etc.); git clone preserves them byte-for-byte.
+
+### Verified present on main (prior fixes)
+- `install.sh` ebook-convert probes are guarded with `gtimeout 20 … || true` (v10.15.17).
+- `install.sh` package extraction uses Mac-native `ditto` (UTF-8-safe), not Info-ZIP unzip.
+
+### Version
+- 9 version markers rolled `v10.15.17 → v10.15.18` via `scripts/bump-version.sh`.
+
+---
+
 ## [v10.15.17]  -  2026-05-31  -  Fix: guard every `ebook-convert --version` call with a hard timeout (headless-Mac install hang)
 
 ### Why

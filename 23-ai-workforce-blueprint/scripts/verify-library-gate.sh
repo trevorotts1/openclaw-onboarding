@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# verify-library-gate.sh — v10.15.8
+# verify-library-gate.sh — v10.15.18 (SUBSTANCE GATE)
 #
 # ENFORCED build gate for the ROLE LIBRARY + SOP LIBRARY auto-pull.
+#
+# v10.15.18: the SOP verdict now uses a SUBSTANCE floor (>=7KB + all DMAIC
+# headers + no placeholder, every role >= 4 substantive SOPs) and the ROLE
+# verdict requires every dept to meet its canonical role count — not the old
+# "stubs==0 AND avg>0" rule that accepted empty/thin builds.
 #
 # Why this exists: last night (Kofi/Teresa/Evelyn/Maria/Lyric) several workforces
 # were scaffolded — department folders + role folders existed — but the role
@@ -81,8 +86,20 @@ if [ -z "$QC_JSON" ] || [ ! -f "$QC_JSON" ]; then
 fi
 
 # ---- derive role/SOP library verdicts from the qc artifact ----
-# role done  := every dept library_pct == 100 (and at least one dept on disk)
-# sop done   := every dept sop_stubs_remaining == 0 AND avg_sop_per_role > 0
+# v10.15.18 SUBSTANCE GATE. The old SOP rule (stubs==0 AND avg_sop_per_role>0)
+# accepted empty/thin builds: a role with ZERO SOPs passed as long as the dept
+# average was >0, and a 1 KB hollow SOP with the placeholder string deleted
+# counted as done. That is the Maria-thin / Evelyn-stub / Sheila-empty bug.
+#
+# New rule — a dept's SOP library is done ONLY when:
+#   * roles_below_min_sops == 0  (EVERY role has >= its floor of SUBSTANTIVE
+#     SOPs; substantive = >=7KB AND all DMAIC headers AND no placeholder, as
+#     measured by qc-completeness.sh sop_is_substantive())
+#   * substantive_sop_count > 0
+# New rule — a dept's ROLE library is done ONLY when:
+#   * library_pct == 100  (how-to.md filled from role-library), AND
+#   * role_folders >= expected_roles when an expected (canonical) count exists
+#     (no department may ship below its canonical role count).
 GATE_JSON="$(python3 - "$QC_JSON" <<'PYEOF'
 import json, sys
 qc = json.load(open(sys.argv[1]))
@@ -95,17 +112,23 @@ per_dept = {}
 for d in depts:
     did = d.get("dept_id", "?")
     libpct = d.get("library_pct", 0)
-    stubs = d.get("sop_stubs_remaining", 0)
-    avg_sop = d.get("avg_sop_per_role", 0)
-    rfilled = (libpct >= 100.0)
-    sfilled = (stubs == 0 and avg_sop > 0)
+    role_folders = d.get("role_folders", 0)
+    expected = d.get("expected_roles", 0)
+    substantive = d.get("substantive_sop_count", 0)
+    below_min = d.get("roles_below_min_sops", role_folders)
+    min_sop = d.get("min_sop_per_role", 0)
+    floor = d.get("sop_floor", 4)
+    # ROLE library: how-to filled to 100% AND dept meets its canonical role count
+    rfilled = (libpct >= 100.0) and (expected == 0 or role_folders >= expected)
+    # SOP library: every role meets its substantive-SOP floor and there is real content
+    sfilled = (below_min == 0 and substantive > 0 and role_folders > 0)
     per_dept[did] = {"roleLibraryFilled": rfilled, "sopLibraryFilled": sfilled}
     if not rfilled:
         role_done = False
-        role_gaps.append(f"{did} lib%={libpct}")
+        role_gaps.append(f"{did} lib%={libpct} roles={role_folders}/{expected}")
     if not sfilled:
         sop_done = False
-        sop_gaps.append(f"{did} stubs={stubs} sop/role={avg_sop}")
+        sop_gaps.append(f"{did} substantive={substantive} minSOP/role={min_sop}<{floor} rolesBelowFloor={below_min}")
 print(json.dumps({
     "role_done": role_done,
     "sop_done": sop_done,

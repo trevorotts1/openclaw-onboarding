@@ -26,6 +26,11 @@ EXIT CODES:
   1 = manifest missing or malformed
   2 = one or more sub-agents failed (manifest unchanged, can re-run)
   3 = no models available (selector returned Tier 5 owner-input-required)
+  4 = inline-queue mode: work files were WRITTEN but SOPs are NOT yet authored.
+      This is NOT success. Returning 0 here was the "write a work file and hope"
+      terminal-state lie that let the library gate pass with empty SOPs. The
+      caller MUST keep sopLibraryStatus=authoring and let the resume cron
+      re-fire until the substance gate (verify-library-gate.sh) actually passes.
 """
 
 import argparse
@@ -320,10 +325,22 @@ def main():
             print(f"  FAIL: {dept_id} (rc={rc})", file=sys.stderr)
         return 2
 
-    print(f"\n[POPULATE-SOPS] All {total} departments queued/completed.", file=sys.stderr)
     if not use_openclaw:
-        print(f"[POPULATE-SOPS] Inline queue files written. The AI agent running this install should "
-              f"pick them up from each dept's .sop-write-queue/ folder and execute them.", file=sys.stderr)
+        # v10.15.18: inline mode only WROTE work files — it did NOT author any
+        # SOPs. Returning 0 here used to mark the SOP library "done" and let the
+        # gate pass on empty files (the Sheila/Evelyn-stub failure). We now
+        # return 4 = "queued, NOT authored" so the caller keeps the status at
+        # authoring and the resume cron re-fires until verify-library-gate.sh
+        # confirms real, substantive SOPs on disk.
+        print(f"\n[POPULATE-SOPS] {total} departments QUEUED via inline work files — but NO SOPs are "
+              f"authored yet. The AI agent running this install MUST pick up each dept's "
+              f".sop-write-queue/ folder and write the real DMAIC SOPs. Returning rc=4 "
+              f"(queued-not-authored): the SOP library is NOT done until the substance gate passes.",
+              file=sys.stderr)
+        return 4
+
+    print(f"\n[POPULATE-SOPS] All {total} departments completed (openclaw sub-agents reported success).",
+          file=sys.stderr)
     return 0
 
 

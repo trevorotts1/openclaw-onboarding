@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.17"
+ONBOARDING_VERSION="v10.15.18"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -323,25 +323,50 @@ main() {
   echo ""
   echo "  Downloading latest skills from GitHub..."
 
-  # Download and extract
+  # v10.15.18: clone instead of curl|unzip. Info-ZIP's `unzip` MANGLES UTF-8
+  # filenames (the role-library has em-dash filenames like
+  # `qc-specialist-—-sales.md` and `deep-research-role-—-openclaw-maintenance.md`)
+  # and silently partial-writes them, so a zip-based update would drop or
+  # corrupt those role docs. `git clone` preserves every filename byte-for-byte.
   TEMP_ZIP="/tmp/openclaw-onboarding-update.zip"
   TEMP_EXTRACT="/tmp/openclaw-onboarding-update"
-
-  curl -fSL --progress-bar "https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/main.zip" -o "$TEMP_ZIP"
-
-  rm -rf "$TEMP_EXTRACT"
-  unzip -qo "$TEMP_ZIP" -d "$TEMP_EXTRACT"
-
-  # Find extracted folder
+  rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
   EXTRACTED_DIR=""
-  if [ -d "$TEMP_EXTRACT/openclaw-onboarding-main" ]; then
-    EXTRACTED_DIR="$TEMP_EXTRACT/openclaw-onboarding-main"
-  else
-    EXTRACTED_DIR=$(find "$TEMP_EXTRACT" -maxdepth 1 -mindepth 1 -type d | head -1)
+
+  if command -v git >/dev/null 2>&1; then
+    if git clone --depth 1 "https://github.com/trevorotts1/openclaw-onboarding.git" "$TEMP_EXTRACT" 2>/dev/null; then
+      # HARD verify the remote is exactly the intended repo (no leftover-clone mix-up)
+      _origin="$(git -C "$TEMP_EXTRACT" remote get-url origin 2>/dev/null)"
+      case "$_origin" in
+        https://github.com/trevorotts1/openclaw-onboarding.git|https://github.com/trevorotts1/openclaw-onboarding)
+          EXTRACTED_DIR="$TEMP_EXTRACT" ;;
+        *)
+          echo "ERROR: cloned remote ($_origin) is NOT trevorotts1/openclaw-onboarding — refusing to use it."
+          rm -rf "$TEMP_EXTRACT"; EXTRACTED_DIR="" ;;
+      esac
+    fi
+  fi
+
+  # Fallback ONLY if git is unavailable or the clone failed: zip + Mac-native
+  # `ditto` (NOT Info-ZIP unzip) which handles UTF-8 filenames correctly.
+  if [ -z "$EXTRACTED_DIR" ]; then
+    echo "  (git clone unavailable/failed — falling back to zip + ditto)"
+    curl -fSL --progress-bar "https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/main.zip" -o "$TEMP_ZIP"
+    rm -rf "$TEMP_EXTRACT"; mkdir -p "$TEMP_EXTRACT"
+    if command -v ditto >/dev/null 2>&1; then
+      ditto -x -k "$TEMP_ZIP" "$TEMP_EXTRACT" 2>/dev/null || true
+    else
+      unzip -qo "$TEMP_ZIP" -d "$TEMP_EXTRACT" 2>/dev/null || true
+    fi
+    if [ -d "$TEMP_EXTRACT/openclaw-onboarding-main" ]; then
+      EXTRACTED_DIR="$TEMP_EXTRACT/openclaw-onboarding-main"
+    else
+      EXTRACTED_DIR=$(find "$TEMP_EXTRACT" -maxdepth 1 -mindepth 1 -type d | head -1)
+    fi
   fi
 
   if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
-    echo "ERROR: Could not find extracted folder"
+    echo "ERROR: Could not obtain the latest skills (git clone + zip fallback both failed)"
     rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
     exit 1
   fi
