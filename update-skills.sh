@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.30"
+ONBOARDING_VERSION="v10.15.31"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -223,11 +223,16 @@ check_update_pending() {
 
 # ----------------------------------------------------------
 # Check .onboarding-version — search multiple paths
+# Priority MUST match discover_skills_dir() (active dir first, legacy second)
+# so the version we READ is the same location we WRITE to. If the legacy
+# Downloads path is checked first the script sees the old stale marker even
+# after a successful update → perpetual "needs update" false-positive (Bug B).
 # ----------------------------------------------------------
 get_current_version() {
+  # Active dir first (mirrors discover_skills_dir priority)
   local VERSION_PATHS=(
-    "$HOME/Downloads/openclaw-master-files/.onboarding-version"
     "$HOME/.openclaw/skills/.onboarding-version"
+    "$HOME/Downloads/openclaw-master-files/.onboarding-version"
     "$HOME/.openclaw/onboarding/.onboarding-version"
   )
 
@@ -483,8 +488,19 @@ main() {
     echo "    Updated: $SKILL_NAME"
   done
 
-  # Write version file
+  # Write version file to active dir (the canonical location)
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
+
+  # Sync version marker to legacy locations if they exist, so get_current_version
+  # always reads the same value regardless of which path it finds first.
+  # This prevents the stale-legacy-marker false-positive on re-runs (Bug B).
+  for _LEGACY_MARKER in \
+      "$HOME/Downloads/openclaw-master-files/.onboarding-version" \
+      "$HOME/.openclaw/onboarding/.onboarding-version"; do
+    if [ -f "$_LEGACY_MARKER" ]; then
+      echo "$ONBOARDING_VERSION" > "$_LEGACY_MARKER" 2>/dev/null || true
+    fi
+  done
 
   # ----------------------------------------------------------
   # VERIFICATION: confirm the active dir was actually updated.

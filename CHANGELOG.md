@@ -1,3 +1,34 @@
+## [v10.15.31]  -  2026-06-02  -  fix(update-skills): Bug B — version marker path mismatch causing stale-marker false-positive; Bug A cross-repo label
+
+### Why
+Two confirmed-in-field bugs in `update-skills.sh`:
+
+**Bug B (Cassandra's Mac):** `get_current_version()` read from `~/Downloads/openclaw-master-files/.onboarding-version`
+(legacy path) first, while the marker WRITE went to `~/.openclaw/skills/.onboarding-version` (active path).
+On legacy installs with a `~/Downloads` marker, the script saw the old version on every invocation and
+re-ran the skill copy, but because `set -euo pipefail` caused the "already up-to-date" flow to exit before
+writing the active-dir marker, the legacy marker never advanced. Field evidence: Cassandra ran update-skills.sh,
+skill content updated, but `.onboarding-version` appeared stuck at the old value.
+
+**Bug A label (VPS):** `update-skills.sh` printed "OpenClaw Skills Updater (Mac)" in the VPS repo (copy-paste
+drift from the Mac repo's template). Cosmetic but confusing and a signal of potential deeper cross-repo drift.
+
+### What changed (Mac repo only for Bug B; VPS also had the Mac label bug)
+- `update-skills.sh` — `get_current_version()` path order reversed to match `discover_skills_dir()`:
+  active dir (`~/.openclaw/skills/`) checked **first**, legacy Downloads checked second. Priority must
+  match so READ and WRITE targets are the same location.
+- `update-skills.sh` — after writing the marker to active dir, also sync to any **existing** legacy
+  marker paths (`~/Downloads/openclaw-master-files/.onboarding-version`,
+  `~/.openclaw/onboarding/.onboarding-version`) so stale legacy markers never diverge again.
+- `update-skills.sh` — VPS banner corrected from "Skills Updater (Mac)" → "Skills Updater (VPS)".
+
+### Verification
+- `bash -n update-skills.sh` syntax check passes.
+- Simulated install: 38 numbered skill dirs installed, zero loose root files, marker correctly written.
+- Second-run simulation: get_current_version returns new version → "already up to date" branch taken correctly.
+
+---
+
 ## [v10.15.30]  -  2026-06-02  -  ZHC wiring: read-the-SOP protocol + machine-readable ROSTER/ROUTING + PENDING-SOPS manifest + buildout doc
 
 ### Why
