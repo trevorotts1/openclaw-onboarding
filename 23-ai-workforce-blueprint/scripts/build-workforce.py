@@ -1608,10 +1608,12 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 # specialist sub-agent) to READ its role folder BEFORE working. The read-first
 # rule lived only in the shared AGENTS.md + INSTRUCTIONS.md prose, so an agent
 # that skipped AGENTS.md had no read-the-SOP directive in its OWN first-read
-# files. These two constants are written verbatim into the director's
-# IDENTITY.md/SOUL.md (generate_identity_md/generate_soul_md) AND into the
-# master-orchestrator/CEO instructions, so the protocol is present in the files
-# the agent reads first — not dependent on the shared AGENTS.md being installed.
+# files. DIRECTOR_OPERATING_PROTOCOL below is written verbatim into the
+# director's IDENTITY.md/SOUL.md (generate_identity_md/generate_soul_md), so the
+# protocol is present in the files the agent reads first — not dependent on the
+# shared AGENTS.md being installed. The CEO / Master Orchestrator variant lives
+# in create_role_workspaces.py (CEO_OPERATING_PROTOCOL there is the single source
+# of truth, embedded by stub_identity/stub_soul via post-build-role-workspaces.py).
 
 DIRECTOR_OPERATING_PROTOCOL = """## Operating Protocol — Read the SOP Before You Work (binding)
 
@@ -1634,26 +1636,6 @@ Before executing ANY task, follow these steps IN ORDER. Do not skip a step.
 4. **Review against the how-to before reporting.** When the sub-agent returns,
    review its output against the same how-to/SOP it was supposed to follow.
    Only then report results upward.
-"""
-
-CEO_OPERATING_PROTOCOL = """## Operating Protocol — Route, Then Read the SOP (binding)
-
-Before executing or dispatching ANY task, follow these steps IN ORDER.
-
-1. **Route to the right department.** From my workspace
-   (`departments/master-orchestrator/`) read `../../universal-sops/00-ROUTING.md`
-   (company-root `universal-sops/00-ROUTING.md`) to map the task to the owning
-   department, then that department's `ROSTER.md` to pick the specialist role.
-2. **Delegate or spawn with full role adoption.** Hand the task to the
-   department director, OR spawn a sub-agent directly and instruct it to read
-   the chosen role folder IN ORDER: `00-START-HERE.md` -> `IDENTITY.md` ->
-   `SOUL.md` -> `how-to.md` -> `governing-personas.md`, then execute per the
-   how-to. The sub-agent acts AS IF it IS that role for the task.
-3. **No procedure, no guessing.** If no SOP/how-to covers the task, author the
-   missing SOP first (or direct the owning department's SOP-Writer to) — never
-   let an agent proceed by guessing.
-4. **Review against the how-to before reporting.** Verify each result against
-   the SOP it was supposed to follow before reporting to the owner.
 """
 
 

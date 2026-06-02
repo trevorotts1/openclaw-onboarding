@@ -111,8 +111,8 @@ CEO_OPERATING_PROTOCOL = """
 ## Operating Protocol — Route, Then Read the SOP (binding)
 
 Before executing or dispatching ANY task, in this order:
-1. From my workspace (`departments/master-orchestrator/`) read
-   `../../universal-sops/00-ROUTING.md` (company-root `universal-sops/00-ROUTING.md`)
+1. From my workspace (`master-orchestrator/`, at the company root) read
+   `../universal-sops/00-ROUTING.md` (company-root `universal-sops/00-ROUTING.md`)
    to map the task to the owning department, then that department's `ROSTER.md`
    to pick the specialist role.
 2. Hand the task to the department director, OR spawn a sub-agent directly and

@@ -19,10 +19,12 @@ build PRODUCES and what makes it actually WORK at runtime:
 
 ### What changed (BOTH repos, identical logic)
 - `23-ai-workforce-blueprint/scripts/build-workforce.py`:
-  - Added `DIRECTOR_OPERATING_PROTOCOL` + `CEO_OPERATING_PROTOCOL` constants and
-    embedded the read-the-SOP / route-then-read protocol into the generated
-    director `IDENTITY.md` + `SOUL.md`, so the rule lives in the agent's OWN
-    first-read files (not dependent on the shared AGENTS.md).
+  - Added the `DIRECTOR_OPERATING_PROTOCOL` constant and embedded the
+    read-the-SOP protocol into the generated director `IDENTITY.md` + `SOUL.md`,
+    so the rule lives in the agent's OWN first-read files (not dependent on the
+    shared AGENTS.md). The CEO / Master Orchestrator route-then-read variant lives
+    in `create_role_workspaces.py` (`CEO_OPERATING_PROTOCOL`, the single source of
+    truth, embedded by `stub_identity`/`stub_soul` via post-build).
   - NEW `write_department_roster()` -> `<dept>/ROSTER.md` (the machine-readable
     When-to Reference Map: one row per role folder + a when-to-use line + the
     exact `00-START-HERE -> IDENTITY -> SOUL -> how-to -> governing-personas`
@@ -41,6 +43,26 @@ build PRODUCES and what makes it actually WORK at runtime:
   5-stage ZHC experience + a checkbox BUILDOUT CHECKLIST (ONE-question-at-a-time
   interview hard rule; 16-dept floor; library token-fill over LLM doc-writing;
   rosters/routing/read-the-SOP; closeout delivery; self-disabling build crons).
+
+### QC remediation (same version)
+- **Broken CEO routing path fixed.** The CEO `CEO_OPERATING_PROTOCOL` in
+  `create_role_workspaces.py` pointed at `../../universal-sops/00-ROUTING.md`,
+  which escapes the company tree. The Master Orchestrator workspace is created
+  at `<company_root>/master-orchestrator/` (one level below root) by
+  `post-build-role-workspaces.py`, and the routing file is written to
+  `<company_root>/universal-sops/00-ROUTING.md` by `write_universal_routing_map`,
+  so the correct relative path is `../universal-sops/00-ROUTING.md`. Verified by
+  execution: the generated CEO `IDENTITY.md`/`SOUL.md` now resolve to the real
+  ROUTING file inside the company tree.
+- **Wrong workspace-location text fixed.** The protocol text said "From my
+  workspace (`departments/master-orchestrator/`)"; the master-orchestrator is at
+  the company root, not under `departments/`. Corrected to "(`master-orchestrator/`,
+  at the company root)".
+- **Dead constant removed.** The unreferenced `CEO_OPERATING_PROTOCOL` in
+  `build-workforce.py` (which carried both the broken path AND a stale read-order)
+  was deleted; `create_role_workspaces.py` is now the single source of truth for
+  the CEO protocol. The comment above `DIRECTOR_OPERATING_PROTOCOL` was corrected
+  to reflect that only the director protocol is embedded by `build-workforce.py`.
 
 ### Risk
 Additive only. New build-time files (ROSTER.md / 00-ROUTING.md / PENDING-SOPS.md)
