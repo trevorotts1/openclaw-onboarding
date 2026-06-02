@@ -85,8 +85,8 @@ Before touching skills, make sure the infrastructure scripts and dependencies fr
 - These model entries go under `agents.defaults.models` in openclaw.json. NOT under the top-level `models` key.
 - Exact JSON path: `config.agents.defaults.models`
 - Check openclaw.json for the model allow list. It should have these 8 models:
-  - moonshot/kimi-k2.5
-  - openrouter/moonshot/kimi-k2.5
+  - moonshot/kimi-k2.6
+  - openrouter/moonshot/kimi-k2.6
   - openrouter/xiaomi/mimo-v2-pro
   - openrouter/xiaomi/mimo-v2-omni
   - openrouter/minimax/minimax-m2.7

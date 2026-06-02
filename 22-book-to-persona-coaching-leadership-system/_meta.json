@@ -1,7 +1,7 @@
 {
   "name": "book-to-persona",
   "displayName": "Book Intelligence Pipeline",
-  "description": "Converts any bestselling book PDF into a dual-purpose persona blueprint — coaches humans AND governs AI agents. 3-phase pipeline. Model selection is DYNAMIC per phase via shared-utils/select_model.py — picks the latest available Kimi (Ollama Cloud preferred), falls back to OpenRouter Kimi, then OAuth GPT, then DeepSeek V4+. Never Anthropic. Stops and asks the owner if nothing matches.",
+  "description": "Converts any bestselling book PDF into a dual-purpose persona blueprint — coaches humans AND governs AI agents. 3-phase pipeline. Model selection is DYNAMIC per phase via shared-utils/select_model.py — picks the latest available DeepSeek V4 Pro (Ollama Cloud preferred), falls back to OpenRouter DeepSeek V4 Pro, then Kimi, then cheapest. Never Anthropic. Stops and asks the owner if nothing matches.",
   "version": "2.0.0",
   "author": "BlackCEO / Trevor Otts",
   "requires": {
@@ -11,8 +11,8 @@
   },
   "models": {
     "_comment": "Dynamic selection — see PIPELINE.md and shared-utils/select_model.py. The strings below describe the SELECTION INTENT per phase, NOT hardcoded model IDs. The selector resolves them at install/run time against whatever the client has in openclaw.json.",
-    "phase1": "kimi-latest-preferred",
-    "phase2": "kimi-latest-preferred",
+    "phase1": "deepseek-v4-pro-latest-preferred",
+    "phase2": "deepseek-v4-pro-latest-preferred",
     "phase3": "oauth-gpt-preferred-with-kimi-fallback",
     "selector": "shared-utils/select_model.py",
     "forbidden_prefixes": ["anthropic/", "claude-"]

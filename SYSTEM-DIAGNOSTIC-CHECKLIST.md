@@ -113,7 +113,7 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 | 3.3 | Coaching half present (sections 1-3, 8-11) | Same blueprint | Author Intelligence, Core Methodology, Coaching Framework, Voice, Quote Library, Question Library, Tools/Exercises present |
 | 3.4 | Governance half present (sections 4-7, 12-14) | Same | Agent Governance Framework, Foundational Principles, Problem-Solution Map, Trigger Detection, Objections, Session/Task Structure, Routing Rules present |
 | 3.5 | persona-categories.json maintained | `cat ~/Downloads/openclaw-master-files/coaching-personas/persona-categories.json` | Valid JSON, every blueprint tagged with domain + perspective tags |
-| 3.6 | Model selection is dynamic (not hardcoded) | `grep "moonshot/kimi-k2.5\|gpt-5.3-codex\|deepseek-v3.2" 22-*/_meta.json 22-*/PIPELINE.md` | **Empty result** (v9.5.0+ — selector-driven) |
+| 3.6 | Model selection is dynamic (not hardcoded) | `grep "moonshot/kimi-k2.6\|gpt-5.3-codex\|deepseek-v3.2" 22-*/_meta.json 22-*/PIPELINE.md` | **Empty result** (v9.5.0+ — selector-driven) |
 | 3.7 | No Anthropic refs in active code paths | `grep -rn "anthropic/\|claude-opus\|claude-sonnet" 22-*/pipeline/*.py` | **Empty result** |
 | 3.8 | Per-book context-aware model resolution | Read `orchestrator.py:resolve_phase_model` | Function exists, takes `input_chars` arg, returns DeepSeek-pro for `>800K` chars |
 

@@ -46,7 +46,7 @@ jq -r '.agents.defaults.model.fallbacks[]' ~/.openclaw/openclaw.json
 - [ ] Fallback list includes at least these models:
   - `openrouter/xiaomi/mimo-v2-pro`
   - `openrouter/google/gemini-3.1-flash-lite-preview`
-  - `openrouter/moonshotai/kimi-k2.5`
+  - `openrouter/moonshotai/kimi-k2.6`
   - `openrouter/google/gemini-3-flash-preview`
 - [ ] No fallback entry uses `openrouter/auto`
 
@@ -65,7 +65,7 @@ Verify these keys exist inside `.agents.defaults.models`:
 - [ ] `openrouter/google/gemini-3-flash-preview`
 - [ ] `openrouter/google/gemini-3.1-pro-preview`
 - [ ] `openrouter/google/gemini-3.1-flash-lite-preview`
-- [ ] `openrouter/moonshotai/kimi-k2.5`
+- [ ] `openrouter/moonshotai/kimi-k2.6`
 - [ ] `openrouter/z-ai/glm-5`
 - [ ] `openrouter/deepseek/deepseek-v3.2`
 - [ ] `openrouter/deepseek/deepseek-r1-0528:free`

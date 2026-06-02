@@ -125,10 +125,10 @@ def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
     # itself unreachable) is now Gemini Flash Lite, not GPT/Kimi. This
     # matches PRD §5.4 (the 'book-to-persona' chain ends at Flash Lite) and
     # closes audit Phase 14.4 finding ("Phase 3 = GPT-5.3 Codex").
-    if input_chars is None or input_chars <= 800_000:
-        fallback = "ollama/kimi-k2.6:cloud"
-    else:
-        fallback = "ollama/deepseek-v4-pro:cloud"
+    # Trevor 2026-06-01: book-to-persona runs on the fleet-standard DeepSeek V4 Pro
+    # chain (the latest). Primary = Ollama Cloud deepseek-v4-pro:cloud; the selector
+    # falls to OpenRouter deepseek/deepseek-v4-pro if Ollama isn't on the box. No kimi.
+    fallback = "ollama/deepseek-v4-pro:cloud"
     # Tier-5 (no Ollama, no OpenRouter, no models matching) falls to
     # Gemini Flash Lite per PRD §5.4 position 5 — this is the LAST RESORT.
     last_resort = "openrouter/google/gemini-3.1-flash-lite-preview"
@@ -736,6 +736,7 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
             {"role": "user", "content": user},
         ],
         "stream": False,
+        "think": True,  # Trevor 2026-06-01: thinking ON (high) for DeepSeek V4 Pro reasoning
         "options": {
             "temperature": 1.0,
             "num_predict": max_tokens,
@@ -789,7 +790,7 @@ async def call_moonshot(session: aiohttp.ClientSession, system: str, user: str) 
     }
     
     payload = {
-        "model": "kimi-k2.5",
+        "model": "kimi-k2.6",
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user}
@@ -838,7 +839,8 @@ async def call_openrouter(session: aiohttp.ClientSession, model: str, system: st
             {"role": "user", "content": user}
         ],
         "max_tokens": max_tokens,
-        "temperature": 1.0
+        "temperature": 1.0,
+        "reasoning": {"effort": "high"}  # Trevor 2026-06-01: thinking HIGH (OpenRouter reasoning effort)
     }
 
     for attempt in range(1, MAX_RETRIES + 1):

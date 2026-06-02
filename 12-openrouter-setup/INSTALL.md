@@ -303,7 +303,7 @@ Agent adds this configuration:
           "openrouter/google/gemini-3.1-flash-lite-preview",
           "openrouter/openrouter/free",
           "openrouter/minimax/minimax-m2.7",
-          "openrouter/moonshotai/kimi-k2.5",
+          "openrouter/moonshotai/kimi-k2.6",
           "openrouter/google/gemini-3-flash-preview",
           "openrouter/qwen/qwen3.5-plus-02-15",
           "openrouter/z-ai/glm-5",
@@ -334,7 +334,7 @@ Agent adds this configuration:
         },
         },
         },
-        "openrouter/moonshotai/kimi-k2.5": {
+        "openrouter/moonshotai/kimi-k2.6": {
           "params": {
             "temperature": 1.0
           }
@@ -409,7 +409,7 @@ NEW_MODELS='{
   "openrouter/google/gemini-3.1-pro-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3-flash-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3.1-flash-lite-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-  "openrouter/moonshotai/kimi-k2.5": {"params": {"temperature": 1.0}},
+  "openrouter/moonshotai/kimi-k2.6": {"params": {"temperature": 1.0}},
   "openrouter/minimax/minimax-m2.7": {"params": {"temperature": 0.3, "reasoning": true}},
   "openrouter/qwen/qwen3.5-plus-02-15": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/z-ai/glm-5": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
@@ -425,7 +425,7 @@ NEW_MODELS='{
 # Additive merge: existing models are preserved, new models are added/updated
 jq --argjson new "$NEW_MODELS" '
   .agents.defaults.model.primary = "openrouter/minimax/minimax-m2.7" |
-  .agents.defaults.model.fallbacks = ["openrouter/xiaomi/mimo-v2-pro", "openrouter/google/gemini-3.1-flash-lite-preview", "openrouter/openrouter/free", "openrouter/minimax/minimax-m2.7", "openrouter/moonshotai/kimi-k2.5", "openrouter/google/gemini-3-flash-preview", "openrouter/qwen/qwen3.5-plus-02-15", "openrouter/z-ai/glm-5", "openrouter/deepseek/deepseek-v3.2", "openrouter/deepseek/deepseek-v3.2-speciale", "openrouter/deepseek/deepseek-r1-0528:free", "openrouter/xiaomi/mimo-v2-omni", "openrouter/nvidia/nemotron-3-super-120b-a12b:free"] |
+  .agents.defaults.model.fallbacks = ["openrouter/xiaomi/mimo-v2-pro", "openrouter/google/gemini-3.1-flash-lite-preview", "openrouter/openrouter/free", "openrouter/minimax/minimax-m2.7", "openrouter/moonshotai/kimi-k2.6", "openrouter/google/gemini-3-flash-preview", "openrouter/qwen/qwen3.5-plus-02-15", "openrouter/z-ai/glm-5", "openrouter/deepseek/deepseek-v3.2", "openrouter/deepseek/deepseek-v3.2-speciale", "openrouter/deepseek/deepseek-r1-0528:free", "openrouter/xiaomi/mimo-v2-omni", "openrouter/nvidia/nemotron-3-super-120b-a12b:free"] |
   .agents.defaults.thinkingDefault = "medium" |
   .agents.defaults.models = ((.agents.defaults.models // {}) * $new)
 ' ~/.openclaw/openclaw.json > ~/.openclaw/openclaw.json.tmp && mv ~/.openclaw/openclaw.json.tmp ~/.openclaw/openclaw.json
@@ -559,7 +559,7 @@ Actions completed:
 8. ✓ Added summaries to AGENTS.md and TOOLS.md
 
 Primary model: openrouter/minimax/minimax-m2.7
-Fallback models: openrouter/xiaomi/mimo-v2-pro, openrouter/google/gemini-3.1-flash-lite-preview, openrouter/openrouter/free, openrouter/minimax/minimax-m2.7, openrouter/moonshotai/kimi-k2.5, (+ 12 more)
+Fallback models: openrouter/xiaomi/mimo-v2-pro, openrouter/google/gemini-3.1-flash-lite-preview, openrouter/openrouter/free, openrouter/minimax/minimax-m2.7, openrouter/moonshotai/kimi-k2.6, (+ 12 more)
 
 Config file: ~/.openclaw/openclaw.json
 Backup location: ~/openclaw-backup-configs/

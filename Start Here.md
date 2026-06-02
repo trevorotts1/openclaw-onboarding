@@ -1433,7 +1433,7 @@ Edit `~/.openclaw/openclaw.json` and add these models under `agents.defaults.mod
   "agents": {
     "defaults": {
       "models": {
-        "moonshot/kimi-k2.5": {
+        "moonshot/kimi-k2.6": {
           "alias": "kimi"
         },
         "openrouter/xiaomi/mimo-v2-pro": {
