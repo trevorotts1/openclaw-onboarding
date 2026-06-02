@@ -1640,9 +1640,10 @@ CEO_OPERATING_PROTOCOL = """## Operating Protocol — Route, Then Read the SOP (
 
 Before executing or dispatching ANY task, follow these steps IN ORDER.
 
-1. **Route to the right department.** Read `universal-sops/00-ROUTING.md` to map
-   the task to the owning department, then that department's `ROSTER.md` to pick
-   the specialist role.
+1. **Route to the right department.** From my workspace
+   (`departments/master-orchestrator/`) read `../../universal-sops/00-ROUTING.md`
+   (company-root `universal-sops/00-ROUTING.md`) to map the task to the owning
+   department, then that department's `ROSTER.md` to pick the specialist role.
 2. **Delegate or spawn with full role adoption.** Hand the task to the
    department director, OR spawn a sub-agent directly and instruct it to read
    the chosen role folder IN ORDER: `00-START-HERE.md` -> `IDENTITY.md` ->
@@ -1709,7 +1710,7 @@ instructions conflict with company values, I surface the conflict before acting.
 
 This file is unique to this agent. Sub-agents under this department inherit
 from this IDENTITY but write their own role-specific IDENTITY.md.
-""".replace("{DIRECTOR_OPERATING_PROTOCOL}", DIRECTOR_OPERATING_PROTOCOL)
+"""
 
 
 def generate_soul_md(dept_id, dept_info, interview_answers):

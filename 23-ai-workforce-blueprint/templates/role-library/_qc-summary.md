@@ -1,34 +1,34 @@
 # Stage 2 QC Summary — Role Library v10.15.30
 
 **Generated:** 2026-05-19 17:01 UTC
-**Total roles:** 216 / 216
+**Total roles:** 233 / 233
 **Stage 2 verdict:** ALL PASS
 
 ## Department Breakdown
 
 | Department | Roles | Status |
 |---|---|---|
-| app-development | 13 | ✓ PASS |
-| audio | 14 | ✓ PASS |
-| billing | 12 | ✓ PASS |
-| communications | 12 | ✓ PASS |
-| crm | 9 | ✓ PASS |
-| customer-support | 13 | ✓ PASS |
-| graphics | 14 | ✓ PASS |
-| legal-compliance | 14 | ✓ PASS |
-| marketing | 14 | ✓ PASS |
-| master-orchestrator | 1 | ✓ PASS |
-| openclaw-maintenance | 12 | ✓ PASS |
-| paid-advertisement | 20 | ✓ PASS |
-| research | 9 | ✓ PASS |
-| sales | 13 | ✓ PASS |
-| social-media | 16 | ✓ PASS |
-| video | 16 | ✓ PASS |
-| web-development | 14 | ✓ PASS |
+| app-development | 14 | ✓ PASS |
+| audio | 15 | ✓ PASS |
+| billing | 13 | ✓ PASS |
+| communications | 13 | ✓ PASS |
+| crm | 10 | ✓ PASS |
+| customer-support | 14 | ✓ PASS |
+| graphics | 15 | ✓ PASS |
+| legal-compliance | 15 | ✓ PASS |
+| marketing | 15 | ✓ PASS |
+| master-orchestrator | 2 | ✓ PASS |
+| openclaw-maintenance | 13 | ✓ PASS |
+| paid-advertisement | 21 | ✓ PASS |
+| research | 10 | ✓ PASS |
+| sales | 14 | ✓ PASS |
+| social-media | 17 | ✓ PASS |
+| video | 17 | ✓ PASS |
+| web-development | 15 | ✓ PASS |
 
 ## QC Dimensions Verified
 
-All 216 roles scored PASS across all 11 dimensions:
+All 233 roles scored PASS across all 11 dimensions:
 
 | Dim | Name | Threshold |
 |---|---|---|
@@ -60,4 +60,4 @@ All 216 roles scored PASS across all 11 dimensions:
 
 ## Library Ready
 
-All 216 role documents are production-ready. Next step: run `verify-role-library.sh` and push to `role-library-v10.6.0` branch.
+All 233 role documents are production-ready. Next step: run `verify-role-library.sh` and push to `role-library-v10.6.0` branch.

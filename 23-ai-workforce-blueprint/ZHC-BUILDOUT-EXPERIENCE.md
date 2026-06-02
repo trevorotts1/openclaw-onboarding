@@ -51,7 +51,7 @@ reduced workforce.
   specialist is a folder under its department (`NN-role-slug/`) with
   `IDENTITY.md / SOUL.md / MEMORY.md / HEARTBEAT.md / how-to.md / SOP/` and
   symlinked `AGENTS/TOOLS/USER`. Their `how-to.md` is **token-filled from the
-  216-template role library + SOP library** — minimal token burn, identical
+  233-template role library + SOP library** — minimal token burn, identical
   across clients. **Do NOT regenerate a doc with an LLM when a template exists.**
   LLM/free-form writing is reserved ONLY for roles with no comparable template
   (and those are tracked — see Stage 3, PENDING-SOPS.md).

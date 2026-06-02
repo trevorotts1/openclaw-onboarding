@@ -111,11 +111,14 @@ CEO_OPERATING_PROTOCOL = """
 ## Operating Protocol — Route, Then Read the SOP (binding)
 
 Before executing or dispatching ANY task, in this order:
-1. Read `../universal-sops/00-ROUTING.md` to map the task to the owning
-   department, then that department's `ROSTER.md` to pick the specialist role.
+1. From my workspace (`departments/master-orchestrator/`) read
+   `../../universal-sops/00-ROUTING.md` (company-root `universal-sops/00-ROUTING.md`)
+   to map the task to the owning department, then that department's `ROSTER.md`
+   to pick the specialist role.
 2. Hand the task to the department director, OR spawn a sub-agent directly and
-   instruct it to read the chosen role folder IN ORDER: `00-START-HERE.md` ->
-   `IDENTITY.md` -> `SOUL.md` -> `how-to.md` -> `governing-personas.md`, then
+   instruct it to read the chosen role folder IN ORDER: `IDENTITY.md` ->
+   `SOUL.md` -> `how-to.md`, then consult the department-level
+   `governing-personas.md` (one level up, in the department folder), then
    execute per the how-to (act AS IF it IS that role for the task).
 3. No SOP for the task? Author it first (SOP-Writer, INSTRUCTIONS.md Moment 3.7)
    — never let an agent proceed by guessing.
