@@ -154,7 +154,15 @@ echo "[apply-fleet-standards] config standards applied"
 # ─── 5. Append BIG PROJECT MODE standard to the agent's active AGENTS.md ──────
 # Universal operating standard (see BIG-PROJECT-MODE.md at repo root). This is
 # appended to the SAME active-workspace AGENTS.md that install.sh / update-skills
-# target — not a per-role copy. Idempotent: skipped if the heading already exists.
+# target — not a per-role copy.
+#
+# IDEMPOTENCY (v2): the block is versioned via the heading
+#   "## BIG PROJECT MODE (v2)"
+# If the file contains ONLY the old v1 heading ("## BIG PROJECT MODE" without
+# "(v2)"), the v1 block is replaced in-place with the v2 block.
+# If v2 is already present, the run is a no-op.
+# This ensures existing clients who received the v1 block get the updated
+# Rule 0 (ECHO-BACK GATE) on the next apply-fleet-standards run.
 #
 # Workspace resolution mirrors install.sh Step 10 exactly:
 #   1. agents.list[main].workspace (per-agent override — wins if set)
@@ -203,13 +211,25 @@ mkdir -p "$WORKSPACE_DIR"
 AGENTS_FILE="$WORKSPACE_DIR/AGENTS.md"
 touch "$AGENTS_FILE"
 
-BPM_HEADING="## BIG PROJECT MODE"
-if grep -qF "$BPM_HEADING" "$AGENTS_FILE"; then
-  echo "[apply-fleet-standards] BIG PROJECT MODE already present in $AGENTS_FILE — no-op"
-else
+BPM_V2_HEADING="## BIG PROJECT MODE (v2)"
+BPM_V1_HEADING="## BIG PROJECT MODE"
+
+if grep -qF "$BPM_V2_HEADING" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] BIG PROJECT MODE (v2) already present in $AGENTS_FILE — no-op"
+elif grep -qF "$BPM_V1_HEADING" "$AGENTS_FILE"; then
+  # Upgrade v1 block to v2: strip everything from the v1 heading to end-of-file,
+  # then append the v2 block. (v1 heading is always last — appended at end.)
+  echo "[apply-fleet-standards] upgrading BIG PROJECT MODE v1 → v2 in $AGENTS_FILE"
+  # Find line number of v1 heading and truncate file there (keep content before it).
+  V1_LINE=$(grep -n "^## BIG PROJECT MODE$" "$AGENTS_FILE" | tail -1 | cut -d: -f1)
+  if [ -n "$V1_LINE" ]; then
+    # Keep lines BEFORE the v1 heading (trim the blank line before it too).
+    head -n "$((V1_LINE - 2))" "$AGENTS_FILE" > "${AGENTS_FILE}.v2tmp"
+    mv "${AGENTS_FILE}.v2tmp" "$AGENTS_FILE"
+  fi
   cat >> "$AGENTS_FILE" <<'BPMEOF'
 
-## BIG PROJECT MODE
+## BIG PROJECT MODE (v2)
 
 **Trigger:** the owner says "big project mode" or hands you a large, multi-part
 build/document with many deliverables. On per-token caching models (DeepSeek
@@ -217,6 +237,11 @@ direct ~1/120th on cache hits; Anthropic; OpenAI) this cuts input cost 80-95%;
 on flat-rate routes (Ollama Cloud) it is still faster with fewer timeouts and
 cleaner QC. It is never wrong to use it.
 
+0. **ECHO-BACK GATE (always first).** Before spawning ANYTHING, reply to the
+   owner with: every rule restated in your own words (one line each) + the full
+   work-slice list + the EXACT model strings you will use for writers and QC.
+   Wait for GO. If you think a different model/route/approach would be better —
+   you don't decide that. Ask.
 1. **Orchestrator pastes; owners send files.** The owner sends the project
    document as a file. Read it ONCE and embed the FULL TEXT, word-for-word, at
    the TOP of every worker's birth instructions. Never tell workers to "read the
@@ -247,7 +272,54 @@ worker, hits should cover the shared document.
 
 Full reference: `BIG-PROJECT-MODE.md` in the onboarding repo.
 BPMEOF
-  echo "[apply-fleet-standards] BIG PROJECT MODE appended to $AGENTS_FILE"
+  echo "[apply-fleet-standards] BIG PROJECT MODE (v2) written to $AGENTS_FILE"
+else
+  cat >> "$AGENTS_FILE" <<'BPMEOF'
+
+## BIG PROJECT MODE (v2)
+
+**Trigger:** the owner says "big project mode" or hands you a large, multi-part
+build/document with many deliverables. On per-token caching models (DeepSeek
+direct ~1/120th on cache hits; Anthropic; OpenAI) this cuts input cost 80-95%;
+on flat-rate routes (Ollama Cloud) it is still faster with fewer timeouts and
+cleaner QC. It is never wrong to use it.
+
+0. **ECHO-BACK GATE (always first).** Before spawning ANYTHING, reply to the
+   owner with: every rule restated in your own words (one line each) + the full
+   work-slice list + the EXACT model strings you will use for writers and QC.
+   Wait for GO. If you think a different model/route/approach would be better —
+   you don't decide that. Ask.
+1. **Orchestrator pastes; owners send files.** The owner sends the project
+   document as a file. Read it ONCE and embed the FULL TEXT, word-for-word, at
+   the TOP of every worker's birth instructions. Never tell workers to "read the
+   file" (that is one full-price read PER agent instead of per fleet).
+2. **Identical bytes first, unique assignment last.** Every spawn = [shared
+   document, byte-identical] + [that worker's assignment at the very bottom].
+   Never paraphrase the shared block; never put the assignment first. One changed
+   character at the front re-prices everything behind it.
+3. **Warm-up then fleet.** Spawn ONE worker, let it finish (warms the cache),
+   then launch the rest in batches.
+4. **Workers live short.** End every assignment with: "everything you need is
+   above — do not read other files; write your deliverable, save it, return a
+   one-line status." Foraging workers cost 20-50x.
+5. **Skinny orchestrator.** Track progress in a LEDGER FILE on disk;
+   deliverables go to disk; only one-line statuses flow through the orchestrator
+   conversation. Nothing bulky ever lives in the transcript.
+6. **Independent QC, real scores.** QC runs on a DIFFERENT model than the
+   writers, scores 0-10 against a rubric, gates >= 8.5, defect-loops on fails
+   (max 3); numeric scores recorded — never free-text "PASS" stamps.
+7. **No worker dies silently.** Ledger + watchdog; restart once -> fresh worker
+   -> flag. The completion gate counts delivered files, not hopes.
+8. **Tokens only** in any template/master content — never real owner/client data
+   the agent happens to know.
+
+**Verify caching worked:** on DeepSeek direct the usage fields
+`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` — after the warm-up
+worker, hits should cover the shared document.
+
+Full reference: `BIG-PROJECT-MODE.md` in the onboarding repo.
+BPMEOF
+  echo "[apply-fleet-standards] BIG PROJECT MODE (v2) appended to $AGENTS_FILE"
 fi
 
 # Chown AGENTS.md back to the runtime user on VPS container layout.

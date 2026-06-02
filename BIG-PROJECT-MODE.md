@@ -28,7 +28,28 @@ front of every worker**, and let the cache (or just clean structure) carry it.
 
 ---
 
-## THE EIGHT RULES
+## THE NINE RULES
+
+### RULE 0 — THE ECHO-BACK GATE
+Before executing ANY big-project mission, the orchestrator must reply to the
+owner **FIRST** with:
+**(a)** every execution rule restated in its own words, one line each;
+**(b)** the full work-slice list;
+**(c)** the EXACT model strings it will use for writers and QC.
+
+It does **NOT** spawn anything until the owner replies **GO**.
+
+**Why each element:** paraphrasing the rules is a comprehension test — parroting
+back the words without understanding breaks on the first edge case; restating in
+your own words proves you understood. Exact model strings let the owner verify
+character-by-character — "deepseek-chat" vs "deepseek-coder" is a silent wrong
+turn caught when it costs one message, not a failed run. The work-slice list
+makes scope visible before any resources are committed. And the echoed plan
+becomes a standing contract in-context for the whole run — the orchestrator
+cannot silently drift from it mid-project.
+
+**If the orchestrator believes a different model, route, or approach would be
+better — it does not decide that. It asks.**
 
 ### RULE 1 — ORCHESTRATOR PASTES; OWNERS SEND FILES
 The owner sends the project document as a **file** (a Telegram attachment is
@@ -87,7 +108,9 @@ worker. If hits stay at zero, the shared prefix is drifting — re-check Rule 2
 
 ## ONE-PARAGRAPH SUMMARY
 
-Owner sends a file. Orchestrator reads it once and pastes the full text,
+**Before anything else:** echo back every rule in your own words + the full
+work-slice list + the exact model strings you will use — and wait for GO.
+Then: owner sends a file. Orchestrator reads it once and pastes the full text,
 byte-identical, at the top of every worker — assignment last. Warm one worker,
 then fan out in batches. Workers write one deliverable and die. The orchestrator
 stays skinny (ledger + deliverables on disk, one-line statuses only). A

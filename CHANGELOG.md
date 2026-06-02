@@ -1,3 +1,20 @@
+## [v10.15.35]  -  2026-06-02  -  ECHO-BACK GATE: Rule 0 of Big Project Mode + idempotency upgrade to v2
+
+### Why
+Live field test revealed that agents entering Big Project Mode could start spawning workers without demonstrating they had understood the rules — parroting confirmation is cheap; restating in your own words is a comprehension test. Adding RULE 0 (THE ECHO-BACK GATE) forces the orchestrator to: (a) restate every rule in its own words, one line each; (b) state the full work-slice list; (c) name the EXACT model strings it will use for writers and QC — and wait for GO before spawning anything. This catches drift (wrong model, wrong scope, misunderstood rule) when it costs one message, not a failed run. The echoed plan also becomes a standing in-context contract for the whole run.
+
+### What changed
+- `BIG-PROJECT-MODE.md` — "THE EIGHT RULES" → "THE NINE RULES"; RULE 0 (ECHO-BACK GATE) inserted before Rule 1; ONE-PARAGRAPH SUMMARY updated to lead with the echo-back requirement.
+- `scripts/apply-fleet-standards.sh` — idempotency upgraded from v1 heading (`## BIG PROJECT MODE`) to v2 heading (`## BIG PROJECT MODE (v2)`). Existing clients with the v1 block are upgraded in-place on next apply run (v1 block stripped, v2 block appended); second run is a byte-identical no-op. New installs get v2 directly. Rule 0 added to the compact append-block.
+- All 9 version markers → v10.15.35.
+
+### Verification
+- `bash -n scripts/apply-fleet-standards.sh` clean.
+- Idempotency QC run: v1 block present → first run upgrades to v2 (SHA changes), second run is SHA-identical no-op. PASS.
+- Version-consistency CI passes: all 9 markers agree at v10.15.35.
+
+---
+
 ## [v10.15.34]  -  2026-06-02  -  BIG PROJECT MODE: universal AGENTS.md standard (new installs + existing clients via update)
 
 ### Why
