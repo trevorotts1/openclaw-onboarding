@@ -89,11 +89,45 @@ You are the protector of the mission. Personas are tools you use, not authoritie
 you serve.
 """
 
+# Read-the-SOP operating protocol embedded in EVERY specialist's own first-read
+# files (IDENTITY.md + SOUL.md). The wiring gap this closes: the read-first rule
+# lived only in the shared AGENTS.md + the department ROSTER; a spawned sub-agent
+# that did not load AGENTS.md had no read-the-SOP directive in its own files.
+SPECIALIST_OPERATING_PROTOCOL = """
+## Operating Protocol — Read the SOP Before You Work (binding)
+
+Before executing ANY task you are spawned for, in this order:
+1. Read this folder's `how-to.md` — it is the entry point to your SOPs.
+2. Open the matching procedure: the Section-9 SOP in `how-to.md` OR the file in
+   `SOP/` indexed by `SOP/00-INDEX.md` that covers this task. Read it FIRST.
+3. Execute the SOP step by step. Do not improvise around it.
+4. If NO SOP covers the task, do NOT guess — escalate to your department head so
+   the SOP-Writer can author one (INSTRUCTIONS.md Moment 3.7).
+"""
+
+# CEO / Master Orchestrator variant: route first, then enforce read-the-SOP on
+# whomever it dispatches to.
+CEO_OPERATING_PROTOCOL = """
+## Operating Protocol — Route, Then Read the SOP (binding)
+
+Before executing or dispatching ANY task, in this order:
+1. Read `../universal-sops/00-ROUTING.md` to map the task to the owning
+   department, then that department's `ROSTER.md` to pick the specialist role.
+2. Hand the task to the department director, OR spawn a sub-agent directly and
+   instruct it to read the chosen role folder IN ORDER: `00-START-HERE.md` ->
+   `IDENTITY.md` -> `SOUL.md` -> `how-to.md` -> `governing-personas.md`, then
+   execute per the how-to (act AS IF it IS that role for the task).
+3. No SOP for the task? Author it first (SOP-Writer, INSTRUCTIONS.md Moment 3.7)
+   — never let an agent proceed by guessing.
+4. Review each result against the SOP it was supposed to follow before reporting.
+"""
+
 
 # ─── STUB GENERATORS (used as fallback when library has no match) ────────────
 
 def stub_identity(role_name, dept_name, is_ceo):
     deferral = CEO_DEFERRAL if is_ceo else STANDARD_DEFERRAL
+    protocol = CEO_OPERATING_PROTOCOL if is_ceo else SPECIALIST_OPERATING_PROTOCOL
     return f"""# {role_name} — IDENTITY
 
 **Department:** {dept_name}
@@ -107,12 +141,13 @@ See symlinked `TOOLS.md` (shared across company).
 
 ## Behavior Rules
 See symlinked `AGENTS.md` (shared across company).
-{deferral}
+{protocol}{deferral}
 """
 
 
 def stub_soul(role_name, dept_name, is_ceo):
     deferral = CEO_DEFERRAL if is_ceo else STANDARD_DEFERRAL
+    protocol = CEO_OPERATING_PROTOCOL if is_ceo else SPECIALIST_OPERATING_PROTOCOL
     return f"""# {role_name} — SOUL
 
 ## Mission
@@ -128,7 +163,7 @@ Identity Profile). Plain, direct, no jargon unless the task domain requires it.
 - Honor the persona when assigned; honor the mission always
 - Surface uncertainty rather than guess
 - Document what you learn in MEMORY.md
-{deferral}
+{protocol}{deferral}
 """
 
 
@@ -167,17 +202,31 @@ Dept: {dept_name}
 
 
 def stub_how_to(role_name, dept_name, is_ceo):
-    """Placeholder used when the library has no matching doc."""
+    """Placeholder used when the library has no matching doc.
+
+    Gap-3: NOT a silent empty stub. Headed PENDING with the EXACT one-shot
+    token-fill instruction (fill FROM the nearest library template family, NOT a
+    free-form essay). The 'how-to.md (stub)' marker is what PENDING-SOPS.md scans
+    for so the orchestrator gets a manifest of everything still to fill.
+    """
     deferral = CEO_DEFERRAL if is_ceo else STANDARD_DEFERRAL
-    return f"""# {role_name} — how-to.md (stub)
+    return f"""# {role_name} — how-to.md (stub)  [PENDING — FILL FROM LIBRARY]
 
 **Department:** {dept_name}
-**Status:** STUB — no pre-written library doc matched. Sub-agent should regenerate.
+**Status:** PENDING — no pre-written library doc matched this role.
 **Generated:** {_now_iso()}
 
-> This file is a placeholder. The role-doc-generation sub-agent will replace it
-> with the full 19-section how-to.md per the universal template at
-> `23-ai-workforce-blueprint/templates/universal-how-to-template.md`.
+> ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
+> 1. Find the nearest template family in
+>    `23-ai-workforce-blueprint/templates/role-library/` for the
+>    `{dept_name}` department (closest role title). If this department has no
+>    library docs, use the closest department's family.
+> 2. Copy that template and TOKEN-FILL only the placeholders (role =
+>    `{role_name}`, department = `{dept_name}`, plus the company/industry tokens).
+> 3. Keep the template's Section-9 SOP structure intact. Reserve free-form
+>    generation with `templates/universal-how-to-template.md` ONLY if there is
+>    genuinely no comparable library template.
+> 4. Once filled, remove this PENDING header so this role drops off PENDING-SOPS.md.
 
 ## 1. Role Identity
 
@@ -185,12 +234,12 @@ def stub_how_to(role_name, dept_name, is_ceo):
 {role_name} in {dept_name}.
 
 ### What This Role Is NOT
-(Pending sub-agent generation.)
+(Pending fill — see the one-shot instruction above.)
 
 ## 2. Persona Governance Override
 {deferral}
 
-## 3-19. Pending sub-agent generation
+## 3-19. Pending fill — read the one-shot instruction at the top of this file.
 """
 
 
