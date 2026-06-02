@@ -54,23 +54,41 @@ show_error() { echo "  ✗ $1" >&3; }
 log_ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
 # ── DISCOVER SKILLS DIRECTORY ──
+# Active-dir-first: prefer the directory the running agent actually loads.
+#   VPS  (/data exists) → /data/.openclaw/skills
+#   Mac               → ~/.openclaw/skills
+# Falls back to ~/Downloads/openclaw-master-files only when the active
+# dir is absent.  Updating the Downloads copy while the active dir is
+# untouched is a silent no-op and must never be reported as success.
 discover_skills_dir() {
-  CANDIDATES=(
-    "$HOME/Downloads/openclaw-master-files"
-    "$HOME/.openclaw/skills"
-    "$HOME/.openclaw/onboarding"
-    "$HOME/openclaw-onboarding"
-  )
-  for DIR in "${CANDIDATES[@]}"; do
-    if [ -d "$DIR" ]; then
-      SKILL_COUNT=$(ls -d "$DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
-      if [ "$SKILL_COUNT" -gt "0" ]; then
-        echo "$DIR"
-        return
-      fi
+  if [ -d /data ]; then
+    ACTIVE_DIR="/data/.openclaw/skills"
+  else
+    ACTIVE_DIR="$HOME/.openclaw/skills"
+  fi
+
+  if [ -d "$ACTIVE_DIR" ]; then
+    SKILL_COUNT=$(ls -d "$ACTIVE_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$SKILL_COUNT" -gt "0" ]; then
+      echo "$ACTIVE_DIR"
+      return
     fi
-  done
-  echo "$HOME/Downloads/openclaw-master-files"
+    # Exists but empty — still prefer it for fresh installs
+    echo "$ACTIVE_DIR"
+    return
+  fi
+
+  # Legacy fallback: Downloads copy
+  LEGACY_DIR="$HOME/Downloads/openclaw-master-files"
+  if [ -d "$LEGACY_DIR" ]; then
+    SKILL_COUNT=$(ls -d "$LEGACY_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$SKILL_COUNT" -gt "0" ]; then
+      echo "$LEGACY_DIR"
+      return
+    fi
+  fi
+
+  echo "$ACTIVE_DIR"
 }
 
 SKILLS_DIR=$(discover_skills_dir)
@@ -261,23 +279,12 @@ for SNAME in "${SKILL_NAMES[@]}"; do
   idx=$((idx + 1))
 done
 
-# ── Migrate to canonical path if needed ──
-CANONICAL="$HOME/Downloads/openclaw-master-files"
-if [ "$SKILLS_DIR" != "$CANONICAL" ]; then
-  show_info "Migrating skills to standard location..."
-  mkdir -p "$CANONICAL"
-  for SDIR in "$SKILLS_DIR"/[0-9]*/; do
-    [ -d "$SDIR" ] || continue
-    SNAME=$(basename "$SDIR")
-    if [ ! -d "$CANONICAL/$SNAME" ]; then
-      cp -r "$SDIR" "$CANONICAL/$SNAME"
-    fi
-  done
-  if [ -f "$SKILLS_DIR/.onboarding-version" ]; then
-    cp "$SKILLS_DIR/.onboarding-version" "$CANONICAL/.onboarding-version" 2>/dev/null || true
-  fi
-  SKILLS_DIR="$CANONICAL"
-fi
+# ── Migration to canonical path removed ──
+# Previously this block forced SKILLS_DIR back to ~/Downloads/openclaw-master-files
+# even when the active dir was ~/.openclaw/skills (Mac) or /data/.openclaw/skills
+# (VPS), causing the Downloads copy to be updated while the running agent's active
+# dir was silently left on old versions.  discover_skills_dir() now correctly
+# targets the active dir from the start; no post-apply migration needed.
 
 # ── Copy root files and scripts ──
 for RF in "Start Here.md" README.md CHANGELOG.md version; do
@@ -293,6 +300,29 @@ fi
 # ── Update installed version ──
 echo "$REMOTE_VER" > "$SKILLS_DIR/.onboarding-version"
 show_success "Version updated to $REMOTE_VER"
+
+# ── VERIFICATION: confirm active dir was actually updated ──
+# If the version file in SKILLS_DIR does not match what we just wrote,
+# something is wrong — fail loudly instead of reporting false success.
+VERIFY_VER=$(cat "$SKILLS_DIR/.onboarding-version" 2>/dev/null | tr -d '[:space:]')
+if [ "$VERIFY_VER" != "$REMOTE_VER" ]; then
+  show_error "FAILURE: active skills dir was NOT updated!"
+  echo "  Expected version : $REMOTE_VER" >&3
+  echo "  Found version    : ${VERIFY_VER:-<missing>}" >&3
+  echo "  Active dir       : $SKILLS_DIR" >&3
+  echo "  The running agent is still on the OLD skills." >&3
+  rm -rf "$STAGE_DIR" "$STAGE_ZIP"
+  exit 1
+fi
+VERIFY_SKILL_COUNT=$(ls -d "$SKILLS_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
+if [ "$VERIFY_SKILL_COUNT" -eq 0 ]; then
+  show_error "FAILURE: no skill folders found in active dir after update!"
+  echo "  Active dir : $SKILLS_DIR" >&3
+  echo "  The running agent is still on the OLD skills." >&3
+  rm -rf "$STAGE_DIR" "$STAGE_ZIP"
+  exit 1
+fi
+show_success "Verified: $VERIFY_SKILL_COUNT skill folders confirmed in $SKILLS_DIR"
 
 # ── Smart credential discovery ──
 search_all_env_files() {
