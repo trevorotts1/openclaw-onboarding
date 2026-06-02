@@ -1,6 +1,6 @@
 {
-  "version": "2.2.0",
-  "description": "Department naming and tier map for AI Workforce Blueprint v2.2. Mandatory departments auto-build for every company (standard-unless-declined). Vertical packs auto-add when the client's industry matches auto_add_keywords (WS-4: wired into build-workforce.py apply_vertical_packs(), de-duped against the canonical floor and each other). Each vertical-pack department carries a base_suggested_roles file (the closest canonical roles file) so it ships with real roles + SOPs and never hard-fails assert_dept_map_resolves; the Research dept's industry-analysis-specialist-mckinsey-style role then refines it via the industry-org-design research manifest. Custom departments are added by owner request.",
+  "version": "2.3.0",
+  "description": "Department naming and tier map for AI Workforce Blueprint v2.3 (23-department standard). Mandatory departments auto-build for every company (standard-unless-declined). Each vertical pack has a universal_primary department (the first dept in auto_add_departments, marked universal_primary=true) that is auto-added to EVERY client regardless of industry — this is what makes 16+7=23 the universal floor. Remaining pack departments (universal_primary=false or absent) still require an industry keyword match and serve as flavor/extras on top of the 23. WS-4: wired into build-workforce.py apply_vertical_packs() and department-floor.py evaluate_floor(). Each vertical-pack department carries a base_suggested_roles file so it ships with real roles + SOPs and never hard-fails assert_dept_map_resolves; the Research dept's industry-analysis-specialist-mckinsey-style role refines it via the industry-org-design research manifest. Custom departments are added by owner request. TODO: Personal Assistant department pending proposal — when approved it will bring the floor to 24.",
 
   "mandatory": {
     "marketing": {
@@ -138,7 +138,7 @@
     "personal-pro-dev": {
       "auto_add_keywords": ["coach", "mentor", "speaker", "thought leader", "consultant", "mastermind", "course", "training", "keynote", "workshop", "transformation"],
       "auto_add_departments": [
-        {"id": "presentations", "name": "Presentations", "emoji": "🎤", "one_liner": "Slides, decks, keynote prep, talking points", "base_suggested_roles": "graphics-suggested-roles.md"},
+        {"id": "presentations", "name": "Presentations", "emoji": "🎤", "one_liner": "Slides, decks, keynote prep, talking points", "base_suggested_roles": "graphics-suggested-roles.md", "universal_primary": true},
         {"id": "client-coaches", "name": "Client Coaches", "emoji": "🧠", "one_liner": "Coaches who work directly with your coaching clients", "base_suggested_roles": "customer-support-suggested-roles.md"},
         {"id": "course-creator", "name": "Course Creator", "emoji": "🎓", "one_liner": "Curriculum design, course operations, student success", "base_suggested_roles": "video-suggested-roles.md"},
         {"id": "podcast", "name": "Podcast", "emoji": "🎧", "one_liner": "Production, guest booking, show notes, distribution", "base_suggested_roles": "audio-suggested-roles.md"},
@@ -148,7 +148,7 @@
     "real-estate": {
       "auto_add_keywords": ["realtor", "real estate", "broker", "listings", "mls", "property", "homes for sale", "rental"],
       "auto_add_departments": [
-        {"id": "listings", "name": "Listings Management", "emoji": "🏘️", "one_liner": "MLS, photos, descriptions, syndication", "base_suggested_roles": "marketing-suggested-roles.md"},
+        {"id": "listings", "name": "Listings Management", "emoji": "🏘️", "one_liner": "MLS, photos, descriptions, syndication", "base_suggested_roles": "marketing-suggested-roles.md", "universal_primary": true},
         {"id": "lead-generation", "name": "Lead Generation", "emoji": "📍", "one_liner": "Zillow, Realtor.com, FB lead ads, local SEO", "base_suggested_roles": "paid-advertisement-suggested-roles.md"},
         {"id": "showings", "name": "Showings Coordinator", "emoji": "🔑", "one_liner": "Scheduling, follow-up, feedback collection", "base_suggested_roles": "customer-support-suggested-roles.md"},
         {"id": "open-house", "name": "Open House", "emoji": "🚪", "one_liner": "Marketing, host coordination, lead capture", "base_suggested_roles": "marketing-suggested-roles.md"},
@@ -159,7 +159,7 @@
     "service-industry": {
       "auto_add_keywords": ["spa", "salon", "plumber", "electrician", "maid", "cleaning service", "lawn care", "hvac", "pest control", "auto repair", "restaurant"],
       "auto_add_departments": [
-        {"id": "scheduling-dispatch", "name": "Scheduling & Dispatch", "emoji": "📅", "one_liner": "Booking, routing, technician/staff scheduling", "base_suggested_roles": "customer-support-suggested-roles.md"},
+        {"id": "scheduling-dispatch", "name": "Scheduling & Dispatch", "emoji": "📅", "one_liner": "Booking, routing, technician/staff scheduling", "base_suggested_roles": "customer-support-suggested-roles.md", "universal_primary": true},
         {"id": "field-operations", "name": "Field Operations", "emoji": "🚐", "one_liner": "Service quality, on-site procedures, customer satisfaction", "base_suggested_roles": "customer-support-suggested-roles.md"},
         {"id": "reviews-management", "name": "Reviews Management", "emoji": "⭐", "one_liner": "Google, Yelp, industry-specific reviews — request, monitor, respond", "base_suggested_roles": "customer-support-suggested-roles.md"},
         {"id": "recurring-service", "name": "Recurring Service Coordinator", "emoji": "🔄", "one_liner": "Memberships, subscriptions, retention", "base_suggested_roles": "crm-suggested-roles.md"}
@@ -168,14 +168,14 @@
     "ecommerce": {
       "auto_add_keywords": ["shop", "store", "products", "shipping", "skus", "inventory", "shopify", "amazon", "etsy"],
       "auto_add_departments": [
-        {"id": "logistics-fulfillment", "name": "Logistics & Fulfillment", "emoji": "📦", "one_liner": "Inventory, shipping, returns", "base_suggested_roles": "customer-support-suggested-roles.md"},
+        {"id": "logistics-fulfillment", "name": "Logistics & Fulfillment", "emoji": "📦", "one_liner": "Inventory, shipping, returns", "base_suggested_roles": "customer-support-suggested-roles.md", "universal_primary": true},
         {"id": "merchandising", "name": "Merchandising", "emoji": "🛍️", "one_liner": "Product listings, pricing, promotions", "base_suggested_roles": "marketing-suggested-roles.md"}
       ]
     },
     "saas": {
       "auto_add_keywords": ["software", "platform", "subscription", "users", "freemium", "trial", "api", "integrations"],
       "auto_add_departments": [
-        {"id": "engineering", "name": "Engineering", "emoji": "⚙️", "one_liner": "Core product development", "base_suggested_roles": "app-development-suggested-roles.md"},
+        {"id": "engineering", "name": "Engineering", "emoji": "⚙️", "one_liner": "Core product development", "base_suggested_roles": "app-development-suggested-roles.md", "universal_primary": true},
         {"id": "devops", "name": "DevOps", "emoji": "🚀", "one_liner": "Deployment, infrastructure, monitoring", "base_suggested_roles": "openclaw-maintenance-suggested-roles.md"},
         {"id": "product-management", "name": "Product Management", "emoji": "🗂️", "one_liner": "Roadmap, user research, feature prioritization", "base_suggested_roles": "research-suggested-roles.md"}
       ]
@@ -183,14 +183,14 @@
     "agency": {
       "auto_add_keywords": ["agency", "clients", "client work", "campaigns", "white label", "fractional", "done for you"],
       "auto_add_departments": [
-        {"id": "account-management", "name": "Account Management", "emoji": "💼", "one_liner": "Client relationships, deliverables, retention", "base_suggested_roles": "crm-suggested-roles.md"},
+        {"id": "account-management", "name": "Account Management", "emoji": "💼", "one_liner": "Client relationships, deliverables, retention", "base_suggested_roles": "crm-suggested-roles.md", "universal_primary": true},
         {"id": "project-management", "name": "Project Management", "emoji": "📊", "one_liner": "Scope, timeline, resource allocation", "base_suggested_roles": "communications-suggested-roles.md"}
       ]
     },
     "content-creator": {
       "auto_add_keywords": ["influencer", "creator", "youtube channel", "podcast host", "blogger"],
       "auto_add_departments": [
-        {"id": "podcast", "name": "Podcast", "emoji": "🎧", "one_liner": "Production, distribution, sponsor management", "base_suggested_roles": "audio-suggested-roles.md"},
+        {"id": "podcast", "name": "Podcast", "emoji": "🎧", "one_liner": "Production, distribution, sponsor management", "base_suggested_roles": "audio-suggested-roles.md", "universal_primary": true},
         {"id": "community-management", "name": "Community Management", "emoji": "👥", "one_liner": "Cross-platform engagement", "base_suggested_roles": "social-media-suggested-roles.md"},
         {"id": "brand-partnerships", "name": "Brand Partnerships", "emoji": "🤝", "one_liner": "Sponsor outreach, contract negotiation", "base_suggested_roles": "sales-suggested-roles.md"}
       ]

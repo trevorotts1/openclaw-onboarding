@@ -158,11 +158,14 @@ def load_non_interactive_config(config_file):
 
 
 # ============================================================
-# CANONICAL DEPARTMENT FLOOR (N16 standard-unless-declined)
+# CANONICAL DEPARTMENT FLOOR (N23 standard: 16 mandatory + 7 universal-primary-vertical)
 # ============================================================
-# Every Zero Human Company is built with the 16 mandatory canonical
-# departments UNLESS the client explicitly declined one. The canonical IDs
-# live in department-naming-map.json (the source of truth). Legacy
+# Every Zero Human Company is built with the 16 mandatory canonical departments
+# PLUS the 7 universal primary vertical-pack departments (one primary per pack,
+# always added regardless of industry) = 23 departments minimum. The canonical
+# floor is further expanded by keyword-matched industry extras (flavor/additive,
+# never reducing). Explicit client declines are the ONLY way to go below 23.
+# Canonical IDs live in department-naming-map.json (the source of truth). Legacy
 # RECOMMENDED_DEPARTMENTS keys differ from canonical IDs (e.g. "billing" vs
 # "billing-finance"); CANONICAL_ID_ALIASES maps canonical -> legacy so we
 # inherit the rich legacy metadata without forking duplicate folders.
@@ -603,36 +606,39 @@ def _write_industry_org_design_manifest(matched_packs, added_departments, core_a
 
 def apply_vertical_packs(selected_departments, core_answers):
     """
-    WS-4: auto-add industry vertical-pack departments to the workforce.
+    WS-4 (23-DEPT STANDARD): auto-add vertical-pack departments to the workforce.
 
     Standard set (the 16 canonical floor) is already applied by
-    reconcile_canonical_floor(). This sibling step adds the RESEARCH-DRIVEN
-    industry add-ons:
+    reconcile_canonical_floor(). This sibling step adds the 7 universal primary
+    vertical departments (one per pack) PLUS keyword-matched extras:
 
-      1. Detect which vertical packs match the client's industry/business
-         context (via auto_add_keywords in department-naming-map.json).
-      2. Add each matched pack's departments to selected_departments,
-         DE-DUPED against (a) the canonical floor — under any canonical id,
-         legacy alias, or variant slug — and (b) departments already added by
-         an earlier-matched pack (so personal-pro-dev's `podcast` and
-         content-creator's `podcast` never double-add), and (c) any client
-         custom already present. No overlapping or conflicting department.
-      3. Each added department inherits its base_suggested_roles file so it
-         ships with real roles + SOPs (never hard-fails assert_dept_map_resolves).
-      4. Write a McKinsey-style industry-org-design research manifest so the
-         Research dept GROUNDS the add-on set in real org-design research, and
-         an auditable verticalPacks record into build-state.
+      PHASE 1 — UNIVERSAL PRIMARIES (23-dept floor, fires for ALL clients):
+        Every vertical pack exposes exactly one universal_primary department
+        (marked universal_primary=true in department-naming-map.json; defaults to
+        the first dept in the pack if the flag is absent). These 7 departments are
+        added to EVERY client regardless of industry — giving 16+7=23 as the
+        minimum floor. Industry matching does NOT gate these.
+
+      PHASE 2 — KEYWORD-MATCHED EXTRAS (flavor on top of the 23 floor):
+        Detect which packs match the client's industry/business context via
+        auto_add_keywords. For each matching pack, add remaining (non-universal-
+        primary) departments to selected_departments. These extras are ADDITIVE
+        and do NOT reduce the floor — they push the final count to 23+.
+
+      DE-DUP: all adds are de-duped against (a) the canonical floor under any
+        canonical id/alias/variant, (b) a prior universal-primary already added,
+        and (c) any dept already added in THIS pass.
+
+      Each added department inherits its base_suggested_roles file so it ships
+      with real roles + SOPs (never hard-fails assert_dept_map_resolves).
+
+      Write a McKinsey-style industry-org-design research manifest and an
+      auditable verticalPacks record into build-state.
 
     Returns the mutated selected_departments dict.
     """
     vertical_packs = _load_vertical_packs()
     if not vertical_packs:
-        return selected_departments
-
-    matched_packs = _detect_vertical_packs(core_answers, vertical_packs)
-    if not matched_packs:
-        print("[VERTICAL] No vertical pack matched the client's industry signal — "
-              "canonical floor only.", file=sys.stderr)
         return selected_departments
 
     # Build the canonical/alias/variant id set so a vertical dept can never
@@ -647,43 +653,77 @@ def apply_vertical_packs(selected_departments, core_answers):
     skipped_duplicates = []
     seen_added = set()
 
-    for pack_id, _hits in matched_packs:
-        pack = vertical_packs.get(pack_id, {})
-        for dept in pack.get("auto_add_departments", []) or []:
-            if not isinstance(dept, dict):
-                continue
-            did = dept.get("id")
-            if not did:
-                continue
-            # De-dup: against canonical floor, already-present (custom or prior
-            # pack), and any dept already added in THIS pass.
-            if did in canonical_block:
-                skipped_duplicates.append({"id": did, "reason": f"overlaps canonical floor", "pack": pack_id})
-                print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}' — overlaps canonical floor.", file=sys.stderr)
-                continue
-            if did in selected_departments or did in seen_added:
-                skipped_duplicates.append({"id": did, "reason": "already present", "pack": pack_id})
-                print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}' — already present.", file=sys.stderr)
-                continue
-            base = dept.get("base_suggested_roles", "")
-            info = {
-                "name": dept.get("name", did.replace("-", " ").title()),
-                "emoji": dept.get("emoji", "\U0001f4c1"),
-                "head": f"Director of {dept.get('name', did.replace('-', ' ').title())}",
-                "description": dept.get("one_liner", ""),
-                "vertical_pack": pack_id,
-                "base_suggested_roles": base,
-            }
-            selected_departments[did] = info
-            seen_added.add(did)
-            added_departments.append({
-                "id": did,
-                "name": info["name"],
-                "pack": pack_id,
-                "_base_suggested_roles": base,
-            })
-            print(f"[VERTICAL] Added industry dept '{did}' (pack '{pack_id}', base roles '{base}').",
-                  file=sys.stderr)
+    def _add_dept(dept, pack_id, label=""):
+        """Try to add a vertical dept; return True if added, False if skipped."""
+        if not isinstance(dept, dict):
+            return False
+        did = dept.get("id")
+        if not did:
+            return False
+        if did in canonical_block:
+            skipped_duplicates.append({"id": did, "reason": "overlaps canonical floor", "pack": pack_id})
+            print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}'{label} — overlaps canonical floor.", file=sys.stderr)
+            return False
+        if did in selected_departments or did in seen_added:
+            skipped_duplicates.append({"id": did, "reason": "already present", "pack": pack_id})
+            print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}'{label} — already present.", file=sys.stderr)
+            return False
+        base = dept.get("base_suggested_roles", "")
+        info = {
+            "name": dept.get("name", did.replace("-", " ").title()),
+            "emoji": dept.get("emoji", "\U0001f4c1"),
+            "head": f"Director of {dept.get('name', did.replace('-', ' ').title())}",
+            "description": dept.get("one_liner", ""),
+            "vertical_pack": pack_id,
+            "base_suggested_roles": base,
+        }
+        selected_departments[did] = info
+        seen_added.add(did)
+        added_departments.append({
+            "id": did,
+            "name": info["name"],
+            "pack": pack_id,
+            "_base_suggested_roles": base,
+        })
+        print(f"[VERTICAL] Added dept '{did}' (pack '{pack_id}'{label}, base roles '{base}').",
+              file=sys.stderr)
+        return True
+
+    # PHASE 1 — universal primaries: one from every pack, always fires.
+    universal_count = 0
+    for pack_id, pack in vertical_packs.items():
+        if not isinstance(pack, dict):
+            continue
+        depts = pack.get("auto_add_departments", []) or []
+        if not depts:
+            continue
+        primary = None
+        for d in depts:
+            if isinstance(d, dict) and d.get("universal_primary"):
+                primary = d
+                break
+        if primary is None:
+            primary = depts[0] if isinstance(depts[0], dict) else None
+        if primary and _add_dept(primary, pack_id, " [universal-primary]"):
+            universal_count += 1
+
+    print(f"[VERTICAL] Universal primaries added: {universal_count} of {len(vertical_packs)} packs "
+          f"(23-dept floor: 16 mandatory + {universal_count} universal)", file=sys.stderr)
+
+    # PHASE 2 — keyword-matched extras (flavor on top of the 23 floor).
+    matched_packs = _detect_vertical_packs(core_answers, vertical_packs)
+    if not matched_packs:
+        print("[VERTICAL] No vertical pack matched the client's industry signal — "
+              "no extras beyond the 23-dept floor.", file=sys.stderr)
+    else:
+        for pack_id, _hits in matched_packs:
+            pack = vertical_packs.get(pack_id, {})
+            for dept in pack.get("auto_add_departments", []) or []:
+                if not isinstance(dept, dict):
+                    continue
+                if dept.get("universal_primary"):
+                    continue  # Already added in Phase 1.
+                _add_dept(dept, pack_id, " [industry-extra]")
 
     manifest_path = ""
     if added_departments:
@@ -696,8 +736,8 @@ def apply_vertical_packs(selected_departments, core_answers):
         "researchManifest": manifest_path,
     })
 
-    print(f"[VERTICAL] Vertical packs applied: {len(matched_packs)} pack(s) matched, "
-          f"{len(added_departments)} department(s) added, "
+    print(f"[VERTICAL] Total vertical depts added: {len(added_departments)} "
+          f"({universal_count} universal + {len(added_departments)-universal_count} industry extras), "
           f"{len(skipped_duplicates)} de-duped.", file=sys.stderr)
     return selected_departments
 

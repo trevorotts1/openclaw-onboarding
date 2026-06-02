@@ -40,10 +40,14 @@ activities / KPIs / tools / challenges for each department the client confirms.
 `build-workforce.py` stands up the company tree against a HARD floor — never a
 reduced workforce.
 
-- **16 mandatory departments (canonical floor)** + any matched **industry vertical
-  packs**, MINUS only departments the client explicitly declined. The floor is
-  enforced on DISK by `department-floor.py` (build-state JSON is never trusted as
-  proof). A 3-dept or 6-dept ship is a bug, not a "lean build."
+- **23-department minimum** (16 mandatory canonical + 7 universal primary vertical-pack
+  departments, one per pack — fires for EVERY client regardless of industry),
+  MINUS only departments the client explicitly declined. Industry keyword matching
+  adds additional vertical extras on top of the 23 floor but never reduces it.
+  The floor is enforced on DISK by `department-floor.py` (build-state JSON is
+  never trusted as proof). A 3-dept, 6-dept, or 16-dept ship is a bug, not a
+  "lean build." See `department-naming-map.json` vertical_packs for the 7 packs
+  and their universal_primary departments.
 - **Directors are real agents.** Each department gets a first-class OpenClaw agent
   registered in `openclaw.json` `agents.list[]` (id `dept-<id>`, own workspace,
   own `agentDir`, model, and a `subagents` block so it can spawn at runtime).
@@ -131,7 +135,8 @@ Follow top to bottom; QC your build against the same list.
 - [ ] Captured per-department activities / KPIs / tools / challenges
 
 **Stage 2 — Build**
-- [ ] 16 mandatory departments present on DISK (+ matched vertical packs)
+- [ ] 23 departments minimum present on DISK (16 mandatory + 7 universal-primary vertical-pack depts) — run `department-floor.py --json` to verify
+- [ ] Industry keyword matching added any extras on top of the 23 (check `verticalPacks.addedDepartments` in build-state)
 - [ ] No department declined except where the client explicitly declined it
 - [ ] Each department has a real director agent in `openclaw.json` agents.list[]
 - [ ] Specialists are role folders instantiated FROM the role library (token-fill)

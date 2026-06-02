@@ -294,7 +294,7 @@ If at any point during Phase 0-3 the owner says they don't have a business yet (
 - **Software stack** — pivots to *"what tools do you already use in your personal life or current job?"*
 - **Department customization** — collected as "what KIND of work would you want help with" not "what you currently do."
 
-The final output is still a 16-department AI workforce — sized and shaped for a pre-revenue founder.
+The final output is still a 23-department AI workforce (16 mandatory + 7 universal-primary vertical-pack departments) — sized and shaped for a pre-revenue founder.
 
 ---
 
@@ -794,7 +794,7 @@ This ensures no progress is ever lost. If session dies, resume via Option C.
 ## What Gets Built After the Interview
 
 ### Department Workspaces
-For each of the 16 mandatory departments + vertical pack departments, `create_department_workspace()` creates:
+For each of the 23 departments (16 mandatory + 7 universal-primary vertical-pack depts) + any keyword-matched extras, `create_department_workspace()` creates:
 - SOUL.md (generated from interview, NOT a template — includes the deferral clause)
 - MEMORY.md (empty)
 - HEARTBEAT.md (department priorities)

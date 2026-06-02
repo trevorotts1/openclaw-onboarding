@@ -18,12 +18,23 @@ counting REAL departments on disk:
 
 THE FIX (this module): compute the EXPECTED floor =
     16 mandatory canonical departments
-    + the vertical-pack departments matched to the client's industry
+    + the 7 universal primary vertical-pack departments (one per pack,
+      marked universal_primary=true in department-naming-map.json — these
+      fire for EVERY client regardless of industry, giving a 23-dept floor)
     − any department the client EXPLICITLY declined (recorded as an explicit
       decline in build-state canonicalReconciliation.decisions == "no")
+
+    Industry keyword matching STILL adds additional pack departments on top of
+    the 23 floor, but those extras are not gating — the gate only checks for
+    the 7 universal primaries (plus the 16 mandatory). The minimum floor is
+    23 departments. exit 3 fires when disk is below 23 or a specific
+    mandatory/universal-primary dept is missing. Exit 3 never fires for missing
+    EXTRA (keyword-matched) pack depts — those are flavor, not floor.
+
 …and then count the REAL department directories ON DISK and FAIL hard when disk
-is below the floor or a mandatory/vertical dept is missing from disk. The
-build-state JSON is NEVER trusted as proof of floor compliance — only disk is.
+is below the floor or a mandatory/universal-primary dept is missing from disk.
+The build-state JSON is NEVER trusted as proof of floor compliance — only disk
+is.
 
 Reads the SAME source of truth as build-workforce.py:
     23-ai-workforce-blueprint/department-naming-map.json  (.mandatory + .vertical_packs)
@@ -32,8 +43,8 @@ USAGE
   python3 department-floor.py --json            # machine-readable verdict to stdout
   python3 department-floor.py                   # human summary to stderr
 EXIT CODES
-  0  floor met (on disk >= mandatory(−declines) + matched vertical packs)
-  3  floor NOT met (missing mandatory or matched-vertical depts on disk)
+  0  floor met (on disk >= 23: all mandatory(−declines) + all 7 universal primaries(−declines))
+  3  floor NOT met (below 23 or a specific mandatory/universal-primary dept missing)
   7  no workforce / cannot resolve company on disk
 
 This module is import-safe: `from department_floor import evaluate_floor`
@@ -95,11 +106,52 @@ def mandatory_ids(nm):
     return m or list(HARDCODED_MANDATORY)
 
 
+def universal_primary_vertical_departments(nm):
+    """
+    Return the list of universal primary vertical-pack department ids — one per
+    pack, the department marked universal_primary=true (always the first dept in
+    auto_add_departments). These are added to EVERY client regardless of industry,
+    giving the 16+7=23 mandatory floor.
+
+    If a pack has no dept marked universal_primary=true, the first dept in
+    auto_add_departments is treated as the universal primary (backward-compatible
+    with naming maps that predate the universal_primary field).
+    """
+    packs = nm.get("vertical_packs") or {}
+    primary_ids = []
+    seen = set()
+    for pack_id, pack in packs.items():
+        if not isinstance(pack, dict):
+            continue
+        depts = pack.get("auto_add_departments", []) or []
+        if not depts:
+            continue
+        # Find the universal_primary dept; fall back to first if not flagged.
+        primary = None
+        for dept in depts:
+            if isinstance(dept, dict) and dept.get("universal_primary"):
+                primary = dept
+                break
+        if primary is None:
+            primary = depts[0] if isinstance(depts[0], dict) else None
+        if primary:
+            did = primary.get("id")
+            if did and did not in seen:
+                seen.add(did)
+                primary_ids.append(did)
+    return primary_ids
+
+
 def matched_vertical_pack_departments(nm, core_answers):
     """
-    Return the list of vertical-pack department ids that match the client's
-    industry signal, using the SAME keyword-match logic as
-    build-workforce._detect_vertical_packs(). Deterministic + de-duped.
+    Return the list of vertical-pack department ids for the client — includes:
+      1. ALL 7 universal primary departments (one per pack, always present for
+         every client — these are the 7 that make 16+7=23 the floor).
+      2. Additional pack departments that match the client's industry keywords
+         (flavor/extras on top of the 23 floor, not gating).
+
+    De-duped. Deterministic. Uses the SAME keyword-match logic as
+    build-workforce._detect_vertical_packs().
     """
     packs = nm.get("vertical_packs") or {}
     haystack = " ".join([
@@ -108,8 +160,30 @@ def matched_vertical_pack_departments(nm, core_answers):
         str(core_answers.get("biggest_challenge", "") or ""),
         str(core_answers.get("tools", "") or ""),
     ]).lower()
-    matched_dept_ids = []
+
+    # Phase 1: always add the universal primary from every pack.
+    all_dept_ids = []
     seen = set()
+    for pack_id, pack in packs.items():
+        if not isinstance(pack, dict):
+            continue
+        depts = pack.get("auto_add_departments", []) or []
+        if not depts:
+            continue
+        primary = None
+        for dept in depts:
+            if isinstance(dept, dict) and dept.get("universal_primary"):
+                primary = dept
+                break
+        if primary is None:
+            primary = depts[0] if isinstance(depts[0], dict) else None
+        if primary:
+            did = primary.get("id") if isinstance(primary, dict) else None
+            if did and did not in seen:
+                seen.add(did)
+                all_dept_ids.append(did)
+
+    # Phase 2: keyword-match extras (additional pack depts beyond the primary).
     for pack_id, pack in packs.items():
         if not isinstance(pack, dict):
             continue
@@ -131,8 +205,8 @@ def matched_vertical_pack_departments(nm, core_answers):
             did = dept.get("id") if isinstance(dept, dict) else None
             if did and did not in seen:
                 seen.add(did)
-                matched_dept_ids.append(did)
-    return matched_dept_ids
+                all_dept_ids.append(did)
+    return all_dept_ids
 
 
 def declined_set(build_state):
@@ -250,19 +324,26 @@ def load_build_state():
 
 def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
     """
-    Compute the HARD department floor and compare it to REAL on-disk departments.
+    Compute the HARD department floor (23-department standard) and compare it to
+    REAL on-disk departments.
+
+    The floor is 16 mandatory + 7 universal primary vertical-pack departments = 23.
+    Additional keyword-matched pack departments are tracked but do NOT gate the
+    floor — they are flavor/extras on top of the 23.
 
     Returns a verdict dict:
       {
         "rc": 0|3|7,
         "departments_dir": str|None,
-        "mandatory": [...], "declined": [...],
-        "matched_vertical_departments": [...],
-        "expected_floor": [...],            # mandatory(−declined) + matched verticals
-        "expected_floor_count": int,
+        "mandatory": [...],              # 16 canonical mandatory dept ids
+        "declined": [...],
+        "universal_primary_vertical": [...],  # 7 universal pack primaries (always required)
+        "matched_vertical_departments": [...],  # universal primaries + keyword extras
+        "expected_floor": [...],         # mandatory(−declined) + universal primaries(−declined)
+        "expected_floor_count": int,     # should be 23 minus any explicit declines
         "on_disk_count": int,
-        "missing_mandatory": [...],         # mandatory not found on disk (not declined)
-        "missing_vertical": [...],          # matched-vertical not found on disk
+        "missing_mandatory": [...],      # mandatory not found on disk (not declined)
+        "missing_universal_primary": [...],  # universal-primary depts missing from disk
         "floor_met": bool,
         "reason": str,
       }
@@ -276,9 +357,10 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
         return {
             "rc": 7, "departments_dir": None, "floor_met": False,
             "reason": "no workforce / cannot resolve departments dir on disk",
-            "mandatory": [], "declined": [], "matched_vertical_departments": [],
+            "mandatory": [], "declined": [], "universal_primary_vertical": [],
+            "matched_vertical_departments": [],
             "expected_floor": [], "expected_floor_count": 0, "on_disk_count": 0,
-            "missing_mandatory": [], "missing_vertical": [],
+            "missing_mandatory": [], "missing_universal_primary": [],
         }
 
     if core_answers is None:
@@ -286,26 +368,28 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
 
     mand = mandatory_ids(nm)
     declined = declined_set(build_state)
+    universal_primaries = universal_primary_vertical_departments(nm)
     matched_verticals = matched_vertical_pack_departments(nm, core_answers)
     present = departments_on_disk(departments_dir)
 
     expected_mand = [c for c in mand if _norm(c) not in declined]
-    expected_verticals = [v for v in matched_verticals if _norm(v) not in declined]
-    expected_floor = expected_mand + expected_verticals
+    # Floor gate: only the 7 universal primaries (not all matched extras).
+    expected_universal_primary = [v for v in universal_primaries if _norm(v) not in declined]
+    expected_floor = expected_mand + expected_universal_primary
 
     missing_mandatory = [c for c in expected_mand if not _present(c, present)]
-    missing_vertical = [v for v in expected_verticals if not _present(v, present)]
+    missing_universal_primary = [v for v in expected_universal_primary if not _present(v, present)]
 
-    floor_met = (not missing_mandatory) and (not missing_vertical)
+    floor_met = (not missing_mandatory) and (not missing_universal_primary)
     rc = 0 if floor_met else 3
 
-    reason = "floor met"
+    reason = "floor met (23-department standard)"
     if not floor_met:
         bits = []
         if missing_mandatory:
             bits.append("missing mandatory: " + ", ".join(missing_mandatory))
-        if missing_vertical:
-            bits.append("missing matched-vertical: " + ", ".join(missing_vertical))
+        if missing_universal_primary:
+            bits.append("missing universal-primary vertical: " + ", ".join(missing_universal_primary))
         reason = " | ".join(bits)
 
     return {
@@ -313,12 +397,13 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
         "departments_dir": str(departments_dir),
         "mandatory": mand,
         "declined": sorted(declined),
+        "universal_primary_vertical": universal_primaries,
         "matched_vertical_departments": matched_verticals,
         "expected_floor": expected_floor,
         "expected_floor_count": len(expected_floor),
         "on_disk_count": len(present),
         "missing_mandatory": missing_mandatory,
-        "missing_vertical": missing_vertical,
+        "missing_universal_primary": missing_universal_primary,
         "floor_met": floor_met,
         "reason": reason,
     }
@@ -336,16 +421,17 @@ def main(argv):
         print(json.dumps(verdict, indent=2))
     else:
         print("============================================", file=sys.stderr)
-        print("department-floor.py — HARD floor verdict", file=sys.stderr)
+        print("department-floor.py — HARD floor verdict (23-department standard)", file=sys.stderr)
         print(f"departments_dir = {verdict['departments_dir']}", file=sys.stderr)
         print(f"expected floor  = {verdict['expected_floor_count']} "
-              f"({len(verdict['mandatory'])} mandatory − {len(verdict['declined'])} declined "
-              f"+ {len(verdict['matched_vertical_departments'])} matched-vertical)", file=sys.stderr)
+              f"({len(verdict['mandatory'])} mandatory "
+              f"+ {len(verdict['universal_primary_vertical'])} universal-primary-vertical "
+              f"− {len(verdict['declined'])} declined)", file=sys.stderr)
         print(f"on disk         = {verdict['on_disk_count']} departments", file=sys.stderr)
         if verdict["missing_mandatory"]:
-            print(f"MISSING mandatory: {', '.join(verdict['missing_mandatory'])}", file=sys.stderr)
-        if verdict["missing_vertical"]:
-            print(f"MISSING vertical : {', '.join(verdict['missing_vertical'])}", file=sys.stderr)
+            print(f"MISSING mandatory         : {', '.join(verdict['missing_mandatory'])}", file=sys.stderr)
+        if verdict["missing_universal_primary"]:
+            print(f"MISSING universal-primary : {', '.join(verdict['missing_universal_primary'])}", file=sys.stderr)
         print(f"RESULT: {'FLOOR MET' if verdict['floor_met'] else 'FLOOR NOT MET'} "
               f"(rc={verdict['rc']})", file=sys.stderr)
     return verdict["rc"]

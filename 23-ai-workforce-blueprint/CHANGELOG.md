@@ -1,3 +1,39 @@
+## [v10.15.32] — 2026-06-02 — 23-department standard (N23): universal vertical-pack primaries
+
+### Why
+Clients were shipping with 17 departments (Sheila: 16 mandatory + CEO counted as custom = 17) instead
+of the intended 23-25. Root cause: `apply_vertical_packs()` only fired for clients whose industry
+keywords matched a pack — a client with no matching keyword got 0 vertical departments added,
+landing at 16. Trevor's stated standard is 23-25 = 16 mandatory + 7 vertical packs. The fix makes
+one primary department per pack (the `universal_primary` dept) fire for EVERY client regardless of
+industry, giving a guaranteed 23-dept floor. Industry keyword matching is preserved for ADDITIONAL
+flavor departments on top of the 23 — it no longer acts as a gate reducer.
+
+### Changed
+- `department-naming-map.json` v2.2.0 → v2.3.0: each vertical pack's first department is marked
+  `"universal_primary": true`; description updated to document the 23-dept standard. 7 packs, 7
+  universal primaries: `presentations` (personal-pro-dev), `listings` (real-estate),
+  `scheduling-dispatch` (service-industry), `logistics-fulfillment` (ecommerce), `engineering` (saas),
+  `account-management` (agency), `podcast` (content-creator). TODO comment: PA dept pending proposal
+  will bring floor to 24.
+- `scripts/department-floor.py`: new `universal_primary_vertical_departments()` function returns the 7
+  universal primaries from the naming map; `matched_vertical_pack_departments()` now always includes all
+  7 universal primaries (Phase 1) before adding keyword-matched extras (Phase 2); `evaluate_floor()`
+  gates on 16 mandatory + 7 universal primaries = 23 minimum (exit 3 when below 23); verdict dict adds
+  `universal_primary_vertical` and `missing_universal_primary` fields; docstring and stderr output
+  updated to say "23-department standard".
+- `scripts/build-workforce.py`: `apply_vertical_packs()` runs Phase 1 (universal primaries, always) then
+  Phase 2 (keyword extras, flavor); canonical floor comment updated to N23; log lines show universal
+  vs extras count.
+- `ZHC-BUILDOUT-EXPERIENCE.md` Stage 2 prose updated to "23-department minimum"; Stage 2 checklist item
+  updated from "16 mandatory" to "23 departments minimum — run `department-floor.py --json`".
+- `INSTRUCTIONS.md`: "I Don't Have a Business" pivot and "What Gets Built" section updated to 23-dept.
+
+### Repo
+- Repo version bumped to `v10.15.32`.
+
+---
+
 ## [v10.15.9] — 2026-05-29 — Cross-skill chain to Skill 38 (ENFORCED) + library-gate status surfacing
 
 Part of repo `v10.15.9` (the 8 rated improvements, port of VPS #47). Two improvements land here:
