@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.32"
+ONBOARDING_VERSION="v10.15.33"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -4278,4 +4278,16 @@ HARD RULES (v10.13.1+):
 ═══════════════════════════════════════════════════════════════════════
 TERMEOF
 }
+
+# Apply fleet standards (sub-agents fully permitted + Telegram media limit 50MB)
+echo ""
+note "Applying fleet standards (sub-agents fully permitted, Telegram media 50MB)..."
+if [ -f "$ONBOARDING_DIR/scripts/apply-fleet-standards.sh" ]; then
+    bash "$ONBOARDING_DIR/scripts/apply-fleet-standards.sh" || warn "Fleet standards application reported errors (install continues)"
+    success "Fleet standards applied"
+else
+    warn "Fleet standards script not found at $ONBOARDING_DIR/scripts/apply-fleet-standards.sh"
+fi
+echo ""
+
 fire_install_kickoff_triplet
