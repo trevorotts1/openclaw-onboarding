@@ -1,3 +1,28 @@
+## [v10.15.33]  -  2026-06-02  -  fleet standards: sub-agent permissions + Telegram media 50MB + version-marker reconciliation
+
+### Why
+The fleet-standards commit (bb3fa3f) shipped `apply-fleet-standards.sh` (sub-agents fully permitted + Telegram media cap 50 MB) wired into install/update, and bumped only `update-skills.sh`'s internal `ONBOARDING_VERSION` to v10.15.33 — leaving the remaining 8 version markers (version, README ×2, DIRECT-TO-AGENT, skill-version.txt, _index.json, _qc-summary.md) still at v10.15.32. Client machines running `update-skills.sh` already received the v10.15.33 marker. This release reconciles all 9 markers to v10.15.33 so the tag is non-hollow and CI passes.
+
+### What changed
+- `apply-fleet-standards.sh` — sub-agents fully permitted + Telegram media cap raised to 50 MB; wired into install and update flows (from prior commit bb3fa3f).
+- `version` → v10.15.33
+- `README.md` — "this repo at" + "Current Version:" + NOTE heading + skill-table version refs all advanced to v10.15.33.
+- `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` — boldface version advanced to **v10.15.33**.
+- `23-ai-workforce-blueprint/skill-version.txt` → 10.15.33
+- `23-ai-workforce-blueprint/templates/role-library/_index.json` version field → 10.15.33
+- `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` heading → v10.15.33
+
+### Verification
+- Version-consistency CI (`version-consistency.yml`) passes: all 9 markers agree at v10.15.33.
+- `install.sh` ONBOARDING_VERSION was already v10.15.33 (from the fleet-standards commit).
+- `update-skills.sh` ONBOARDING_VERSION was already v10.15.33 (from the fleet-standards commit).
+
+---
+
+## [v10.15.32]  -  2026-06-02  -  N23 standard: 23-department floor (previously listed as v10.15.32 release)
+
+---
+
 ## [v10.15.31]  -  2026-06-02  -  fix(update-skills): Bug B — version marker path mismatch causing stale-marker false-positive; Bug A cross-repo label
 
 ### Why
