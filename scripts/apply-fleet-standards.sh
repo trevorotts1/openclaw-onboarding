@@ -149,6 +149,114 @@ if ! openclaw config validate; then
 fi
 
 echo ""
+echo "[apply-fleet-standards] config standards applied"
+
+# ─── 5. Append BIG PROJECT MODE standard to the agent's active AGENTS.md ──────
+# Universal operating standard (see BIG-PROJECT-MODE.md at repo root). This is
+# appended to the SAME active-workspace AGENTS.md that install.sh / update-skills
+# target — not a per-role copy. Idempotent: skipped if the heading already exists.
+#
+# Workspace resolution mirrors install.sh Step 10 exactly:
+#   1. agents.list[main].workspace (per-agent override — wins if set)
+#   2. agents.defaults.workspace via `openclaw config get`
+#   3. $OC_ROOT/workspace (canonical OpenClaw default — Mac or VPS)
+# Clawd is dead; ~/clawd is never a fallback.
+
+WORKSPACE_DIR=""
+
+# Step 1: per-agent workspace override on the "main" agent
+WORKSPACE_DIR=$(OC_JSON="$OC_CONFIG" python3 -c "
+import json, os
+try:
+    cfg = json.load(open(os.environ['OC_JSON']))
+    for ag in cfg.get('agents', {}).get('list', []) or []:
+        if isinstance(ag, dict) and ag.get('id') == 'main':
+            ws = ag.get('workspace')
+            if ws:
+                print(os.path.expanduser(ws)); break
+except Exception:
+    pass
+" 2>/dev/null) || WORKSPACE_DIR=""
+
+# Step 2: agents.defaults.workspace via CLI (non-zero exit on unset key must not
+# abort under set -e — wrap with || WORKSPACE_DIR="")
+if [ -z "$WORKSPACE_DIR" ] && command -v openclaw >/dev/null 2>&1; then
+  WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace 2>/dev/null \
+    | head -1 | python3 -c "
+import sys, json, os
+try:
+    raw = sys.stdin.read().strip()
+    print(os.path.expanduser(json.loads(raw) if raw.startswith('\"') else raw))
+except Exception:
+    pass
+" 2>/dev/null) || WORKSPACE_DIR=""
+fi
+
+# Step 3: canonical default for this layout ($OC_ROOT is /data/.openclaw on VPS
+# or $HOME/.openclaw on Mac — both detected at the top of this script).
+WORKSPACE_DIR="${WORKSPACE_DIR:-$OC_ROOT/workspace}"
+if [ ! -d "$WORKSPACE_DIR" ]; then
+  WORKSPACE_DIR="$OC_ROOT/workspace"
+fi
+
+mkdir -p "$WORKSPACE_DIR"
+AGENTS_FILE="$WORKSPACE_DIR/AGENTS.md"
+touch "$AGENTS_FILE"
+
+BPM_HEADING="## BIG PROJECT MODE"
+if grep -qF "$BPM_HEADING" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] BIG PROJECT MODE already present in $AGENTS_FILE — no-op"
+else
+  cat >> "$AGENTS_FILE" <<'BPMEOF'
+
+## BIG PROJECT MODE
+
+**Trigger:** the owner says "big project mode" or hands you a large, multi-part
+build/document with many deliverables. On per-token caching models (DeepSeek
+direct ~1/120th on cache hits; Anthropic; OpenAI) this cuts input cost 80-95%;
+on flat-rate routes (Ollama Cloud) it is still faster with fewer timeouts and
+cleaner QC. It is never wrong to use it.
+
+1. **Orchestrator pastes; owners send files.** The owner sends the project
+   document as a file. Read it ONCE and embed the FULL TEXT, word-for-word, at
+   the TOP of every worker's birth instructions. Never tell workers to "read the
+   file" (that is one full-price read PER agent instead of per fleet).
+2. **Identical bytes first, unique assignment last.** Every spawn = [shared
+   document, byte-identical] + [that worker's assignment at the very bottom].
+   Never paraphrase the shared block; never put the assignment first. One changed
+   character at the front re-prices everything behind it.
+3. **Warm-up then fleet.** Spawn ONE worker, let it finish (warms the cache),
+   then launch the rest in batches.
+4. **Workers live short.** End every assignment with: "everything you need is
+   above — do not read other files; write your deliverable, save it, return a
+   one-line status." Foraging workers cost 20-50x.
+5. **Skinny orchestrator.** Track progress in a LEDGER FILE on disk;
+   deliverables go to disk; only one-line statuses flow through the orchestrator
+   conversation. Nothing bulky ever lives in the transcript.
+6. **Independent QC, real scores.** QC runs on a DIFFERENT model than the
+   writers, scores 0-10 against a rubric, gates >= 8.5, defect-loops on fails
+   (max 3); numeric scores recorded — never free-text "PASS" stamps.
+7. **No worker dies silently.** Ledger + watchdog; restart once -> fresh worker
+   -> flag. The completion gate counts delivered files, not hopes.
+8. **Tokens only** in any template/master content — never real owner/client data
+   the agent happens to know.
+
+**Verify caching worked:** on DeepSeek direct the usage fields
+`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` — after the warm-up
+worker, hits should cover the shared document.
+
+Full reference: `BIG-PROJECT-MODE.md` in the onboarding repo.
+BPMEOF
+  echo "[apply-fleet-standards] BIG PROJECT MODE appended to $AGENTS_FILE"
+fi
+
+# Chown AGENTS.md back to the runtime user on VPS container layout.
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
+echo ""
 echo "[apply-fleet-standards] DONE"
 echo "[apply-fleet-standards] Backup: $OC_BACKUP"
 echo "[apply-fleet-standards] Current: $OC_CONFIG"
+echo "[apply-fleet-standards] AGENTS.md: $AGENTS_FILE"

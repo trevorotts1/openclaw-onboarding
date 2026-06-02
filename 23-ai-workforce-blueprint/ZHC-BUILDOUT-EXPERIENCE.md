@@ -120,6 +120,11 @@ identical closeout (per the ZHC closeout doctrine):
   is done is the **token-runaway failure mode** — it silently burns the client's
   budget. Each such cron checks a disk-verified completion gate and removes itself
   once met (the "BELT" pattern). Verify this before you walk away.
+- **Big Project Mode.** Any large multi-part build or document the owner hands
+  off afterward runs under the BIG PROJECT MODE standard appended to the agent's
+  AGENTS.md (shared document pasted byte-identical at the top of every worker,
+  warm-up then fan-out, skinny orchestrator, independent QC). Full reference:
+  `BIG-PROJECT-MODE.md`.
 
 ---
 
@@ -158,3 +163,4 @@ Follow top to bottom; QC your build against the same list.
 - [ ] Triad Rule active on the Command Center board
 - [ ] Auto-SOP drafting path in place (no guessing on missing SOPs)
 - [ ] EVERY build/library/resume cron self-disables on completion (token-runaway guard)
+- [ ] BIG PROJECT MODE section present in the agent's AGENTS.md (see `BIG-PROJECT-MODE.md`)
