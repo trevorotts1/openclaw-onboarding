@@ -863,6 +863,19 @@ def build_from_config(config):
         f.write(org_chart)
     print(f"[NON-INTERACTIVE] Created ORG-CHART.md at {org_chart_path}", file=sys.stderr)
 
+    # Machine-readable director->specialist map (the wiring fix). Emit, per
+    # department, a ROSTER.md (When-to Reference Map the director consults before
+    # dispatch), then the company-wide universal-sops/00-ROUTING.md the CEO reads
+    # first. These were documented but never generated until now.
+    for dept_id, dept_info in selected_departments.items():
+        write_department_roster(dept_id, dept_info)
+    write_universal_routing_map(selected_departments)
+
+    # Gap-3: collect every NO_TEMPLATE role (PENDING how-to.md) into a single
+    # company-root manifest so the orchestrator knows exactly what to fill — a
+    # missing template is never a silent empty stub.
+    write_pending_sops_manifest(selected_departments)
+
     # v9.6.0: write the SOP research manifest so the AI agent can fan out
     # parallel sub-agents (one per department) to write real Lean Six Sigma
     # SOPs to replace the [Step X — to be personalized] placeholders.
@@ -1588,6 +1601,44 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
     return dept_dir
 
 
+# ============================================================
+# READ-THE-SOP OPERATING PROTOCOL (canonical, embedded in every agent)
+# ============================================================
+# The wiring gap this closes: nothing previously told a director (or a spawned
+# specialist sub-agent) to READ its role folder BEFORE working. The read-first
+# rule lived only in the shared AGENTS.md + INSTRUCTIONS.md prose, so an agent
+# that skipped AGENTS.md had no read-the-SOP directive in its OWN first-read
+# files. DIRECTOR_OPERATING_PROTOCOL below is written verbatim into the
+# director's IDENTITY.md/SOUL.md (generate_identity_md/generate_soul_md), so the
+# protocol is present in the files the agent reads first — not dependent on the
+# shared AGENTS.md being installed. The CEO / Master Orchestrator variant lives
+# in create_role_workspaces.py (CEO_OPERATING_PROTOCOL there is the single source
+# of truth, embedded by stub_identity/stub_soul via post-build-role-workspaces.py).
+
+DIRECTOR_OPERATING_PROTOCOL = """## Operating Protocol — Read the SOP Before You Work (binding)
+
+Before executing ANY task, follow these steps IN ORDER. Do not skip a step.
+
+1. **Pick the right specialist.** Consult this department's `ROSTER.md` (the
+   When-to Reference Map for this department) to choose the specialist role
+   whose when-to-use line matches the task. If no role matches, escalate to the
+   CEO / Master Orchestrator rather than guessing.
+2. **Spawn a sub-agent and have it FULLY ADOPT the role.** Spawn an OpenClaw
+   sub-agent and instruct it to read the chosen role folder's files IN ORDER:
+   `00-START-HERE.md` -> `IDENTITY.md` -> `SOUL.md` -> `how-to.md` (the SOPs)
+   -> `governing-personas.md`. The sub-agent acts AS IF it IS that role for the
+   duration of the task and executes per the how-to (its Section-9 SOPs / the
+   matching `SOP/` file indexed by `SOP/00-INDEX.md`).
+3. **No procedure, no guessing.** If the role folder has no SOP/how-to that
+   covers the task, do NOT let the sub-agent proceed by guessing — fire the
+   department SOP-Writer (INSTRUCTIONS.md Moment 3.7) to author the missing SOP
+   first, or escalate.
+4. **Review against the how-to before reporting.** When the sub-agent returns,
+   review its output against the same how-to/SOP it was supposed to follow.
+   Only then report results upward.
+"""
+
+
 def generate_identity_md(dept_id, dept_info, interview_answers):
     """
     Generate IDENTITY.md for the dept head agent.
@@ -1636,6 +1687,7 @@ When the owner assigns me a persona, I adopt its voice and style while still
 honoring the mission in SOUL.md and the values in USER.md. If a persona's
 instructions conflict with company values, I surface the conflict before acting.
 
+{DIRECTOR_OPERATING_PROTOCOL}
 ---
 
 This file is unique to this agent. Sub-agents under this department inherit
@@ -1701,15 +1753,17 @@ You own the {dept_info['name'].lower()} department's performance. You receive ta
     soul += """
 ## Responsibilities
 1. Monitor department KPIs and metrics
-2. Assign tasks to specialist team members
-3. Review and approve outputs before delivery
+2. Assign tasks to specialist team members (consult ROSTER.md to pick the role)
+3. Confirm a procedure exists and review outputs against it before delivery
 4. Generate weekly performance summaries
 5. Escalate blockers to the CEO
 6. Operate under the Act As If Protocol - select the right persona for each task
 
 ## Communication Style
 Direct, data-driven, results-focused. Always cite specific numbers. Never vague.
+
 """
+    soul += DIRECTOR_OPERATING_PROTOCOL
     return soul
 
 
@@ -2226,7 +2280,45 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         else:
             _LIBRARY_FILL_STATS["llm_generated"] += 1
             print(f"[ROLE-LIBRARY] NO TEMPLATE for {folder_name} ({dept_id}) "
-                  f"— falling back to stub + LLM SOP generation", file=sys.stderr)
+                  f"— writing PENDING how-to.md stub (collected in PENDING-SOPS.md)",
+                  file=sys.stderr)
+            # Gap-3: NO_TEMPLATE roles must NOT leave a silent empty stub. Write a
+            # how-to.md clearly headed PENDING, carrying the EXACT one-shot
+            # instruction to populate it FROM the nearest role-library template
+            # family (token-fill, NOT a free-form LLM essay). It is also collected
+            # into the company-root PENDING-SOPS.md manifest so the orchestrator
+            # knows what to fill — never silent.
+            how_to_path = os.path.join(role_dir, "how-to.md")
+            if not os.path.isfile(how_to_path):
+                pending_how_to = f"""# {role['name']} — how-to.md  [PENDING — FILL FROM LIBRARY]
+
+**Department:** {dept_info['name']} ({dept_info['emoji']})
+**Company:** {company_name}
+**Industry:** {industry}
+**Status:** PENDING — no role-library template matched this role.
+
+> ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
+> 1. Look in `23-ai-workforce-blueprint/templates/role-library/{dept_id}/` for the
+>    nearest template family (same department, closest role title). If this
+>    department has no library docs, use the closest department's family.
+> 2. Copy that template and TOKEN-FILL only the placeholders:
+>    company = `{company_name}`, role = `{role['name']}`, department =
+>    `{dept_info['name']}`, industry = `{industry}`.
+> 3. Keep the template's Section-9 SOP structure intact. Reserve free-form
+>    generation ONLY if there is genuinely no comparable template.
+> 4. Once filled, remove this PENDING header and this role drops off PENDING-SOPS.md.
+
+## What This Role Does
+{role['description'] if role['description'] else '(see 00-START-HERE.md)'}
+
+## SOPs (read-first)
+The numbered `0N-*.md` files in this folder are step-by-step instruction sets.
+Read the matching SOP BEFORE executing a task it covers. No improvising. If no
+SOP covers the task, do not guess — escalate to the {dept_info['head']} so the
+SOP-Writer can author one (INSTRUCTIONS.md Moment 3.7).
+"""
+                with open(how_to_path, 'w') as f:
+                    f.write(pending_how_to)
 
         # 1. Create 00-START-HERE.md
         start_here_path = os.path.join(role_dir, "00-START-HERE.md")
@@ -2710,6 +2802,244 @@ def generate_org_chart(departments, specialists_by_dept):
         content += "\n"
 
     return content
+
+
+# ============================================================
+# MACHINE-READABLE DIRECTOR -> SPECIALIST MAP (ROSTER + ROUTING)
+# ============================================================
+# The wiring gap this closes: determine_specialists() output previously flowed
+# ONLY to the org chart, and the per-department When-to Reference Map +
+# universal-sops/00-ROUTING.md were documented (INSTALL.md/ai-workforce-blueprint-
+# full.md) but NEVER generated by the build. A director therefore had no
+# build-emitted, machine-readable list of which specialist owns which kind of
+# work — the director->specialist dispatch lived only in runtime LLM reasoning.
+# These generators emit, at build time:
+#   - <dept>/ROSTER.md            (one row per role folder + a when-to-use line;
+#                                  the director's OPERATING PROTOCOL references it)
+#   - universal-sops/00-ROUTING.md (company-wide task-type -> department map)
+# They are derived from the SAME parse_suggested_roles() the folder builder uses,
+# so the roster role slugs always match the on-disk NN-role-slug/ folders.
+
+
+def _role_folder_slug(role):
+    """Reproduce the NN-role-slug/ folder name create_role_workspace() writes."""
+    role_slug = role['name'].lower()
+    role_slug = role_slug.replace(' ', '-').replace('(', '').replace(')', '').replace('/', '-')
+    role_slug = role_slug.replace('--', '-').strip('-')
+    return f"{role.get('number', 0):02d}-{role_slug}"
+
+
+def _when_to_use_line(role):
+    """One-line when-to-use trigger for a role, derived from its description.
+
+    Falls back to the role name so the cell is never empty. Kept to a single
+    line (first sentence / first 160 chars) so ROSTER.md stays scannable.
+    """
+    desc = (role.get('description') or '').strip()
+    if not desc:
+        return f"Tasks owned by the {role['name']}."
+    # First sentence, capped, single line.
+    first = desc.replace('\n', ' ').split('. ')[0].strip()
+    if len(first) > 160:
+        first = first[:157].rstrip() + '...'
+    if not first.endswith('.'):
+        first += '.'
+    return first
+
+
+def write_department_roster(dept_id, dept_info):
+    """Write <dept>/ROSTER.md — the machine-readable When-to Reference Map the
+    director consults (per its OPERATING PROTOCOL) before dispatching a task.
+
+    Lists every specialist role folder in this department with a one-line
+    when-to-use and the exact read-in-order path the spawned sub-agent follows.
+    Returns the absolute path written, or None if the dept folder is missing.
+    """
+    if not DEPARTMENTS_DIR:
+        return None
+    dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
+    if not os.path.isdir(dept_dir):
+        print(f"[ROSTER] dept dir missing for {dept_id}; skipping", file=sys.stderr)
+        return None
+
+    roles = parse_suggested_roles(dept_id)
+    lines = [
+        f"# ROSTER — {dept_info['name']} ({dept_info.get('emoji', '')})",
+        "",
+        f"**Department head:** {dept_info.get('head', dept_id)}",
+        "**This is the When-to Reference Map for this department.** Before you "
+        "dispatch ANY task, find the row whose *When to use* matches the task, "
+        "then spawn a sub-agent and have it read that role folder IN ORDER: "
+        "`00-START-HERE.md` -> `IDENTITY.md` -> `SOUL.md` -> `how-to.md` -> "
+        "`governing-personas.md`, then execute per the how-to. If no row matches, "
+        "escalate to the CEO — do not guess.",
+        "",
+        "| Role | Role folder | Type | When to use |",
+        "| --- | --- | --- | --- |",
+    ]
+    if roles:
+        for role in roles:
+            folder = _role_folder_slug(role)
+            rtype = "QC" if role.get('is_qc') else ("Head" if role.get('number') == 0 else "Specialist")
+            lines.append(
+                f"| {role['name']} | `{folder}/` | {rtype} | {_when_to_use_line(role)} |"
+            )
+    else:
+        lines.append("| _(no roles resolved — investigate dept->menu mapping)_ |  |  |  |")
+
+    lines += [
+        "",
+        "## How the director dispatches",
+        "1. Match the task to a row above (When to use).",
+        "2. Spawn a sub-agent; instruct it to read that role folder in order and "
+        "act AS IF it IS that role.",
+        "3. If the role's `how-to.md` / `SOP/` does not cover the task, fire the "
+        "department SOP-Writer (INSTRUCTIONS.md Moment 3.7) before proceeding — "
+        "never guess.",
+        "4. Review the sub-agent's output against the same how-to before reporting.",
+        "",
+        f"*Generated by build-workforce.py (Skill 23) on "
+        f"{datetime.now().strftime('%B %d, %Y at %I:%M %p')}.*",
+        "",
+    ]
+    roster_path = os.path.join(dept_dir, "ROSTER.md")
+    with open(roster_path, 'w') as f:
+        f.write("\n".join(lines))
+    print(f"[ROSTER] Wrote {roster_path} ({len(roles)} roles)", file=sys.stderr)
+    return roster_path
+
+
+def write_universal_routing_map(departments):
+    """Write universal-sops/00-ROUTING.md — the company-wide master routing file
+    that maps a task to its owning department, then points at that department's
+    ROSTER.md for role-level selection.
+
+    Documented in INSTALL.md (5-BUILD-D) + ai-workforce-blueprint-full.md as the
+    canonical routing file but never previously generated by the build. The CEO /
+    Master Orchestrator's OPERATING PROTOCOL reads this file first.
+    """
+    if not COMPANY_DIR:
+        print("[ROUTING] COMPANY_DIR not resolved; skipping 00-ROUTING.md", file=sys.stderr)
+        return None
+    universal_dir = os.path.join(COMPANY_DIR, "universal-sops")
+    os.makedirs(universal_dir, exist_ok=True)
+
+    lines = [
+        "# 00-ROUTING.md — Master Task Routing",
+        "",
+        "The CEO / Master Orchestrator reads this FIRST for every task: find the "
+        "department whose *Handles* matches the task, open that department's "
+        "`departments/<dept>/ROSTER.md` to pick the specialist role, then spawn a "
+        "sub-agent that reads the role folder in order and executes per its "
+        "`how-to.md`. If no department matches, ask the owner — do not guess.",
+        "",
+        "| Department | Folder | Director | Handles |",
+        "| --- | --- | --- | --- |",
+    ]
+    for dept_id, dept_info in departments.items():
+        if dept_id in ("ceo", "master-orchestrator", "dept-ceo"):
+            continue
+        handles = (dept_info.get('description') or dept_info.get('name', dept_id)).replace('\n', ' ').strip()
+        if len(handles) > 160:
+            handles = handles[:157].rstrip() + '...'
+        lines.append(
+            f"| {dept_info.get('emoji', '')} {dept_info['name']} | "
+            f"`departments/{dept_id}/` | {dept_info.get('head', '')} | {handles} |"
+        )
+    lines += [
+        "",
+        "## Read-the-SOP rule (binding)",
+        "Routing is not the work. After routing, the owning director (or the CEO) "
+        "MUST follow the read-the-SOP Operating Protocol: pick the role from the "
+        "department ROSTER.md, spawn a sub-agent that reads "
+        "`00-START-HERE.md -> IDENTITY.md -> SOUL.md -> how-to.md -> "
+        "governing-personas.md`, execute per the how-to, and review the result "
+        "against the how-to before reporting. No SOP for the task? Author it first "
+        "(SOP-Writer, INSTRUCTIONS.md Moment 3.7) — never guess.",
+        "",
+        f"*Generated by build-workforce.py (Skill 23) on "
+        f"{datetime.now().strftime('%B %d, %Y at %I:%M %p')}.*",
+        "",
+    ]
+    routing_path = os.path.join(universal_dir, "00-ROUTING.md")
+    with open(routing_path, 'w') as f:
+        f.write("\n".join(lines))
+    print(f"[ROUTING] Wrote {routing_path} ({len(departments)} departments)", file=sys.stderr)
+    return routing_path
+
+
+def write_pending_sops_manifest(departments):
+    """Write PENDING-SOPS.md at the company root — the human/orchestrator-readable
+    manifest of every role whose how-to.md is a PENDING stub (no library template
+    matched), so the orchestrator knows exactly what still needs filling.
+
+    Closes the 'silent empty stub' gap: a NO_TEMPLATE role is no longer a quiet
+    placeholder — it is headed PENDING in its own how-to.md AND collected here.
+    Scans the on-disk role folders for how-to.md files that carry the PENDING
+    marker (written by create_role_workspace / create_role_workspaces.stub_how_to).
+    """
+    if not COMPANY_DIR or not DEPARTMENTS_DIR:
+        return None
+    pending = []  # (dept_id, role_folder, how_to_path)
+    if os.path.isdir(DEPARTMENTS_DIR):
+        for dept_id in sorted(departments.keys()):
+            dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
+            if not os.path.isdir(dept_dir):
+                continue
+            for entry in sorted(os.listdir(dept_dir)):
+                role_dir = os.path.join(dept_dir, entry)
+                if not os.path.isdir(role_dir) or entry in ("memory", "devils-advocate"):
+                    continue
+                how_to = os.path.join(role_dir, "how-to.md")
+                if not os.path.isfile(how_to):
+                    continue
+                try:
+                    head = open(how_to).read(600)
+                except OSError:
+                    continue
+                if "PENDING — FILL FROM LIBRARY" in head or "how-to.md (stub)" in head:
+                    pending.append((dept_id, entry, how_to))
+
+    lines = [
+        "# PENDING-SOPS.md — Role how-to.md files awaiting library fill",
+        "",
+        f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}",
+        "",
+    ]
+    if not pending:
+        lines += [
+            "All role `how-to.md` files were instantiated from the role-library "
+            "(token-fill). Nothing pending. ✅",
+            "",
+        ]
+    else:
+        lines += [
+            f"**{len(pending)} role(s) have a PENDING how-to.md** — no role-library "
+            "template matched, so each carries a PENDING header with a one-shot "
+            "fill instruction. Populate each FROM the nearest library template "
+            "family (token-fill style, NOT a free-form LLM essay). Do NOT mark the "
+            "workforce complete until this list is empty.",
+            "",
+            "| Department | Role folder | how-to.md |",
+            "| --- | --- | --- |",
+        ]
+        for dept_id, role_folder, how_to in pending:
+            lines.append(f"| {dept_id} | `{role_folder}/` | `{how_to}` |")
+        lines += [
+            "",
+            "## How to fill each (one-shot, token-fill)",
+            "For each row: open the role's `how-to.md`, read its PENDING header for "
+            "the exact instruction, find the nearest matching template family in "
+            "`23-ai-workforce-blueprint/templates/role-library/<dept>/`, copy it, "
+            "and token-fill the company/role/industry placeholders. Reserve "
+            "free-form generation only for roles with NO comparable template.",
+            "",
+        ]
+    manifest_path = os.path.join(COMPANY_DIR, "PENDING-SOPS.md")
+    with open(manifest_path, 'w') as f:
+        f.write("\n".join(lines))
+    print(f"[PENDING-SOPS] Wrote {manifest_path} ({len(pending)} pending)", file=sys.stderr)
+    return manifest_path
 
 
 # ============================================================
