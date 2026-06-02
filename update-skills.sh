@@ -136,40 +136,54 @@ COREMDEOF
 }
 
 # ----------------------------------------------------------
-# SKILLS DIRECTORY SECTION — How to find skills on Mac
+# SKILLS DIRECTORY SECTION — Active-dir-first detection
 # ----------------------------------------------------------
-# Primary Mac location:   ~/Downloads/openclaw-master-files/
-# Secondary location:     ~/.openclaw/skills/
-# Fallback search:        Any folder matching *openclaw* + *master*
-#
-# The updater will:
-# 1. Check if skills exist at known locations
-# 2. Search for skills using fuzzy matching if not found
-# 3. Default to ~/Downloads/openclaw-master-files/ for new installs
+# Platform detection:
+#   VPS  (Hostinger Docker) → active dir is /data/.openclaw/skills
+#   Mac                     → active dir is ~/.openclaw/skills
+# We ALWAYS prefer the directory the running agent actually loads,
+# falling back to ~/Downloads/openclaw-master-files only when the
+# active dir doesn't exist.  Updating a stale Downloads copy while
+# the active dir is untouched is a silent no-op (the classic bug).
 # ----------------------------------------------------------
 
 # ----------------------------------------------------------
-# Discover skills directory — smarter search for Mac
+# Discover skills directory — active dir first
 # ----------------------------------------------------------
 discover_skills_dir() {
-  # Primary Mac location first
-  local CANDIDATES=(
-    "$HOME/Downloads/openclaw-master-files"
-    "$HOME/.openclaw/skills"
-    "$HOME/.openclaw/onboarding"
-    "$HOME/openclaw-onboarding"
-  )
+  # Detect platform: VPS has /data, Mac does not
+  if [ -d /data ]; then
+    # VPS (Hostinger Docker) — active path is /data/.openclaw/skills
+    local ACTIVE_DIR="/data/.openclaw/skills"
+  else
+    # Mac — active path is ~/.openclaw/skills
+    local ACTIVE_DIR="$HOME/.openclaw/skills"
+  fi
 
-  # Check exact known paths first
-  for DIR in "${CANDIDATES[@]}"; do
-    if [ -d "$DIR" ]; then
-      local SKILL_COUNT=$(ls -d "$DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
-      if [ "$SKILL_COUNT" -gt "0" ]; then
-        echo "$DIR"
-        return
-      fi
+  # Use the active dir whenever it exists and is non-empty
+  if [ -d "$ACTIVE_DIR" ]; then
+    local SKILL_COUNT=$(ls -d "$ACTIVE_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$SKILL_COUNT" -gt "0" ]; then
+      echo "$ACTIVE_DIR"
+      return
     fi
-  done
+  fi
+
+  # Active dir exists but is empty (first-install into it) — still prefer it
+  if [ -d "$ACTIVE_DIR" ]; then
+    echo "$ACTIVE_DIR"
+    return
+  fi
+
+  # Fallback: check Downloads copy (legacy / pre-active-dir installs)
+  local LEGACY_DIR="$HOME/Downloads/openclaw-master-files"
+  if [ -d "$LEGACY_DIR" ]; then
+    local SKILL_COUNT=$(ls -d "$LEGACY_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$SKILL_COUNT" -gt "0" ]; then
+      echo "$LEGACY_DIR"
+      return
+    fi
+  fi
 
   # Fuzzy search for folders with "openclaw" and "master" in name (case-insensitive)
   local FUZZY_DIR=$(find "$HOME" -maxdepth 2 -type d -iname "*openclaw*" 2>/dev/null | grep -i "master" | head -1)
@@ -181,8 +195,8 @@ discover_skills_dir() {
     fi
   fi
 
-  # Default to Mac canonical location
-  echo "$HOME/Downloads/openclaw-master-files"
+  # Last resort: create and target the active dir (fresh install)
+  echo "$ACTIVE_DIR"
 }
 
 # ----------------------------------------------------------
@@ -465,6 +479,37 @@ main() {
   # Write version file
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 
+  # ----------------------------------------------------------
+  # VERIFICATION: confirm the active dir was actually updated.
+  # If SKILLS_DIR's .onboarding-version does not match what we
+  # just wrote, something redirected writes away from the active
+  # dir — fail loudly instead of reporting false success.
+  # ----------------------------------------------------------
+  VERIFY_VER=$(cat "$SKILLS_DIR/.onboarding-version" 2>/dev/null | tr -d '[:space:]')
+  if [ "$VERIFY_VER" != "$ONBOARDING_VERSION" ]; then
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "  FAILURE: active skills dir was NOT updated!"
+    echo "  Expected version : $ONBOARDING_VERSION"
+    echo "  Found version    : ${VERIFY_VER:-<missing>}"
+    echo "  Active dir       : $SKILLS_DIR"
+    echo "  The running agent is still on the OLD skills."
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+    exit 1
+  fi
+  VERIFY_SKILL_COUNT=$(ls -d "$SKILLS_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$VERIFY_SKILL_COUNT" -eq 0 ]; then
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "  FAILURE: no skill folders found in active dir after update!"
+    echo "  Active dir : $SKILLS_DIR"
+    echo "  The running agent is still on the OLD skills."
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+    exit 1
+  fi
+
   # Cleanup
   rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 
@@ -473,6 +518,7 @@ main() {
   echo "   Skills updated successfully!"
   echo "   Version: $ONBOARDING_VERSION"
   echo "   Location: $SKILLS_DIR"
+  echo "   Verified: $VERIFY_SKILL_COUNT skill folders confirmed in active dir"
   if [ -n "$ONLY_SKILLS" ]; then
     echo "   Mode: SELECTIVE — only [$ONLY_SKILLS]"
     echo "   Skipped: $SKIPPED_COUNT other skills (not in --only list)"
