@@ -181,15 +181,16 @@ CHAINS = {
         "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
     },
 
-    # §5.4 Book-to-Persona pipeline — large-context preference; cheapest
-    #   fallback at the end
-    #   1. Kimi cloud  →  2. Kimi OR  →  3. DeepSeek cloud  →  4. DeepSeek OR  →  5. Gemini Flash Lite
+    # §5.4 Book-to-Persona pipeline — Trevor 2026-06-01: DeepSeek V4 Pro FIRST
+    #   (the latest; Ollama Cloud preferred -> OpenRouter DeepSeek fallback). Kimi
+    #   demoted to tertiary; cheapest fallback at the end.
+    #   1. DeepSeek cloud -> 2. DeepSeek OR -> 3. Kimi cloud -> 4. Kimi OR -> 5. Gemini Flash Lite
     "book-to-persona": {
         "normal": [
-            KIMI_OLLAMA,                # 1. Ollama Cloud Kimi
-            KIMI_OPENROUTER,            # 2. OpenRouter Kimi
-            DEEPSEEK_PRO_OLLAMA,        # 3. Ollama Cloud DeepSeek V4 Pro
-            DEEPSEEK_PRO_OPENROUTER,    # 4. OpenRouter DeepSeek V4 Pro
+            DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4 Pro (latest, preferred)
+            DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4 Pro (fallback)
+            KIMI_OLLAMA,                # 3. Ollama Cloud Kimi
+            KIMI_OPENROUTER,            # 4. OpenRouter Kimi
             GEMINI_FLASH_LITE,          # 5. Cheapest fallback
         ],
         "large": [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_FLASH_LITE],

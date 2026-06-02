@@ -23,7 +23,7 @@ If this exists, models routed via OpenRouter are available. This can substitute 
 **OPTIONAL for:** Skill 22
 **Check ALL of these names:**
 - MOONSHOT_API_KEY
-**Note:** This is NOT required if OPENROUTER_API_KEY exists, because Kimi K2.5 is available via openrouter/moonshot/kimi-k2.5. Only flag as missing if NEITHER Moonshot NOR OpenRouter keys exist.
+**Note:** This is NOT required if OPENROUTER_API_KEY exists, because Kimi K2.5 is available via openrouter/moonshot/kimi-k2.6. Only flag as missing if NEITHER Moonshot NOR OpenRouter keys exist.
 
 ## GoHighLevel / Convert and Flow
 **Required by:** Skill 5, Skill 6, Skill 29

@@ -1230,23 +1230,23 @@ def _verify_departments_against_dashboard_config() -> None:
 # Technical departments use GPT 5.4 (strong at code and systems)
 # Legal/operations use Sonnet (careful, precise reasoning)
 DEFAULT_MODEL_ASSIGNMENTS = {
-    "creative": "moonshot/kimi-k2.5",
-    "marketing": "moonshot/kimi-k2.5",
-    "graphics": "moonshot/kimi-k2.5",
-    "video": "moonshot/kimi-k2.5",
-    "audio": "moonshot/kimi-k2.5",
-    "research": "moonshot/kimi-k2.5",
-    "comms": "moonshot/kimi-k2.5",
-    "ceo": "moonshot/kimi-k2.5",
+    "creative": "ollama/kimi-k2.6:cloud",
+    "marketing": "ollama/kimi-k2.6:cloud",
+    "graphics": "ollama/kimi-k2.6:cloud",
+    "video": "ollama/kimi-k2.6:cloud",
+    "audio": "ollama/kimi-k2.6:cloud",
+    "research": "ollama/kimi-k2.6:cloud",
+    "comms": "ollama/kimi-k2.6:cloud",
+    "ceo": "ollama/kimi-k2.6:cloud",
     "sales": "openai-codex/gpt-5.4",
     "it": "openai-codex/gpt-5.4",
     "webdev": "openai-codex/gpt-5.4",
     "appdev": "openai-codex/gpt-5.4",
     "operations": "anthropic/claude-sonnet-4-6",
     "legal": "anthropic/claude-sonnet-4-6",
-    "support": "moonshot/kimi-k2.5",
-    "billing": "moonshot/kimi-k2.5",
-    "hr": "moonshot/kimi-k2.5",
+    "support": "ollama/kimi-k2.6:cloud",
+    "billing": "ollama/kimi-k2.6:cloud",
+    "hr": "ollama/kimi-k2.6:cloud",
 }
 
 
@@ -2572,7 +2572,12 @@ def determine_specialists(dept_id, dept_info, interview_answers):
                 'id': role_slug,
                 'name': role_name,
                 'type': role_type,
-                'model': 'moonshot/kimi-k2.5',
+                # Route specialists through the SAME model selector the department
+                # director uses (resolves to kimi-k2.6+/deepseek), floored at the
+                # fleet-standard default. Never the deprecated moonshot/kimi-k2.5 —
+                # that hardcode caused fleet-wide "Unknown model" on routed dept-agent
+                # calls (directors were already fixed; specialists were missed).
+                'model': _resolve_director_model(dept_id) or 'ollama/kimi-k2.6:cloud',
                 'reason': f'From suggested roles for {dept_id}, type={role_type} based on activity signals'
             })
     else:

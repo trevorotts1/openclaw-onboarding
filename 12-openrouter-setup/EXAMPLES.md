@@ -285,7 +285,7 @@ For example, if this guide says MiniMax M2.7 costs $0.30 per million input token
 
 CORRECT format (always use this):
       openrouter/minimax/minimax-m2.7
-   openrouter/moonshotai/kimi-k2.5
+   openrouter/moonshotai/kimi-k2.6
 
 WRONG format (will break routing):
    anthropic/claude-opus-4.6      (missing openrouter/ prefix)
@@ -295,6 +295,6 @@ WRONG format (will break routing):
 ## Quick Reference: Temperature Settings
 
 ALL models: temperature 0.3
-ONE EXCEPTION: Kimi K2.5 (openrouter/moonshotai/kimi-k2.5): temperature 1.0
+ONE EXCEPTION: Kimi K2.5 (openrouter/moonshotai/kimi-k2.6): temperature 1.0
 
 No model gets temperature 0. No model other than Kimi gets temperature 1.0. If in doubt, use 0.3.

@@ -228,7 +228,7 @@ Valid model entry examples:
   }
 }
 
-"openrouter/moonshotai/kimi-k2.5": {
+"openrouter/moonshotai/kimi-k2.6": {
   "params": {
     "temperature": 1.0
   }
@@ -246,7 +246,7 @@ If you add ANY key that is not alias, params, or streaming, the config will fail
 
 Rule 12: Temperature Settings
 
-Temperature should be set at 0.3 for ALL models, with one single exception: Kimi K2.5 (openrouter/moonshotai/kimi-k2.5) which should be set to 1.0. No other model gets temperature 1.0. No model gets temperature 0. If in doubt, use 0.3.
+Temperature should be set at 0.3 for ALL models, with one single exception: Kimi K2.5 (openrouter/moonshotai/kimi-k2.6) which should be set to 1.0. No other model gets temperature 1.0. No model gets temperature 0. If in doubt, use 0.3.
 
 Rule 14: THINKING MODEL COST WARNING PROTOCOL
 
@@ -482,7 +482,7 @@ Model ID Reference Table
 |---------------|------------|---------------------|
 | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | google/gemini-3.1-pro |
 | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | google/gemini-3-flash |
-| Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | moonshot/kimi-k2.5 |
+| Kimi K2.5 | openrouter/moonshotai/kimi-k2.6 | moonshot/kimi-k2.6 |
 | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | minimax/minimax-m2.7 |
 | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | qwen/qwen3.5-plus |
 | GLM-5 | openrouter/z-ai/glm-5 | z-ai/glm-5 |
@@ -541,7 +541,7 @@ These models are cost-effective and fast. They handle the majority of day-to-day
 | 2nd | MiMo V2 Omni | openrouter/xiaomi/mimo-v2-omni | mimo-omni | YES (always on, supports text+images+video+audio) | Multimodal tasks. Cheaper than Gemini for media analysis. Joint audio-visual processing. |
 | 3rd | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | flash | YES (thinkingLevel) | Fast responses, large context tasks. |
 | 4th | 5th | 6th | 7th | DeepSeek V3.2 | openrouter/deepseek/deepseek-v3.2 | deepseek | YES (reasoning toggle, default: MEDIUM) | Value workhorse, also suitable for heartbeat. |
-| 8th | Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | kimi | YES (built-in, no config param) | Coding and chat ONLY. See critical limitation below. |
+| 8th | Kimi K2.5 | openrouter/moonshotai/kimi-k2.6 | kimi | YES (built-in, no config param) | Coding and chat ONLY. See critical limitation below. |
 
 CRITICAL: Kimi K2.5 Limitations and Strengths
 
@@ -714,7 +714,7 @@ IMPORTANT: These specifications are verified from OpenRouter's live provider pag
 |-------|---------------|----------------|------------|-----------|------------|----------|------|
 | Gemini 3.1 Pro Preview | openrouter/google/gemini-3.1-pro-preview | 1,048,576 | 65,536 | $2.00 | $12.00 | YES (thinkingLevel: minimal/low/med/high) | 0.3 |
 | Gemini 3 Flash Preview | openrouter/google/gemini-3-flash-preview | 1,048,576 | 65,536 | $0.50 | $3.00 | YES (thinkingLevel) | 0.3 |
-| Kimi K2.5 | openrouter/moonshotai/kimi-k2.5 | 262,144 | 262,144 | $0.23 | $3.00 | YES (built-in, no config param). NO TOOL CALLS. | 1.0 |
+| Kimi K2.5 | openrouter/moonshotai/kimi-k2.6 | 262,144 | 262,144 | $0.23 | $3.00 | YES (built-in, no config param). NO TOOL CALLS. | 1.0 |
 | MiniMax M2.7 | openrouter/minimax/minimax-m2.7 | 204,800 | 131,072 | $0.30 | $1.10 | YES (opt-in via reasoning param, no levels) | 0.3 |
 | Qwen 3.5 Plus | openrouter/qwen/qwen3.5-plus-02-15 | 1,000,000 | 65,536 | $0.40 | $2.40 | YES | 0.3 |
 | GLM-5 | openrouter/z-ai/glm-5 | 204,800 | 131,072 | $0.30 | $2.55 | YES | 0.3 |
@@ -992,7 +992,7 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
           "openrouter/google/gemini-3.1-flash-lite-preview",
           "openrouter/openrouter/free",
           "openrouter/minimax/minimax-m2.7",
-          "openrouter/moonshotai/kimi-k2.5",
+          "openrouter/moonshotai/kimi-k2.6",
           "openrouter/google/gemini-3-flash-preview",
           "openrouter/qwen/qwen3.5-plus-02-15",
           "openrouter/z-ai/glm-5",
@@ -1026,7 +1026,7 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
         },
         },
         },
-        "openrouter/moonshotai/kimi-k2.5": {
+        "openrouter/moonshotai/kimi-k2.6": {
           "params": {
             "temperature": 1.0
           }
@@ -1114,7 +1114,7 @@ Add your OpenRouter API key and the complete model roster to ~/.openclaw/opencla
 Temperature Settings Summary
 
 ALL models: temperature 0.3
-EXCEPTION: Kimi K2.5 (openrouter/moonshotai/kimi-k2.5): temperature 1.0
+EXCEPTION: Kimi K2.5 (openrouter/moonshotai/kimi-k2.6): temperature 1.0
 
 Thinking/Reasoning Settings Summary
 
@@ -1304,7 +1304,7 @@ OpenClaw uses the format openrouter/<author>/<slug> for OpenRouter models:
 
 openrouter/google/gemini-3.1-pro-preview
 openrouter/google/gemini-3-flash-preview
-openrouter/moonshotai/kimi-k2.5
+openrouter/moonshotai/kimi-k2.6
 openrouter/minimax/minimax-m2.7
 openrouter/qwen/qwen3.5-plus-02-15
 openrouter/z-ai/glm-5
@@ -1331,7 +1331,7 @@ Multiple Models with Fallbacks
           "openrouter/google/gemini-3.1-flash-lite-preview",
           "openrouter/openrouter/free",
           "openrouter/minimax/minimax-m2.7",
-          "openrouter/moonshotai/kimi-k2.5",
+          "openrouter/moonshotai/kimi-k2.6",
           "openrouter/google/gemini-3-flash-preview",
           "openrouter/qwen/qwen3.5-plus-02-15",
           "openrouter/z-ai/glm-5",
@@ -1344,7 +1344,7 @@ Multiple Models with Fallbacks
       },
       "models": {
         "openrouter/minimax/minimax-m2.7": {},
-        "openrouter/moonshotai/kimi-k2.5": {},
+        "openrouter/moonshotai/kimi-k2.6": {},
         "openrouter/deepseek/deepseek-r1-0528:free": {}
       }
     }

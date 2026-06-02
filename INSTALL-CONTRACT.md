@@ -98,7 +98,7 @@ You may NEVER use these flags or commands during an install:
 - `--break-system-packages` (pip)
 - `--no-verify` (git commits, npm)
 - `--no-gpg-sign` (git)
-- Model name substitution (don't swap `kimi-k2.6` for `kimi-k2.5` because "I think the older one is more stable")
+- Model name substitution (don't swap `kimi-k2.6` for `kimi-k2.6` because "I think the older one is more stable")
 - Invented steps (don't add a step that's not in INSTALL.md)
 - Destructive git ops without explicit owner consent: `git push --force`, `git reset --hard origin/main` (on shared branches), `git branch -D`
 - `rm -rf` outside `/tmp/` or other clearly-scratch locations

@@ -1,3 +1,11 @@
+## [v10.15.28]  -  2026-06-01  -  Fix: kimi-k2.5 forced onto specialist agents (fleet-wide "Unknown model")
+
+### What changed
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`: department SPECIALIST agents no longer hardcode the deprecated `moonshot/kimi-k2.5`. They now route through the same `_resolve_director_model()` selector the directors use (resolves to kimi-k2.6+/deepseek), floored at `ollama/kimi-k2.6:cloud`. Directors were already fixed two weeks ago; the specialist builder was the missed path that re-stamped kimi-k2.5 onto every client build.
+- Neutralized the dead `DEFAULT_MODEL_ASSIGNMENTS` dict (was 11x `moonshot/kimi-k2.5`, never read) -> `ollama/kimi-k2.6:cloud`.
+- book-to-persona now runs on the fleet-standard DeepSeek V4 Pro chain (Ollama Cloud primary -> OpenRouter fallback, thinking HIGH): select_model.py `book-to-persona` chain flipped DeepSeek-first + orchestrator fallback/payloads updated. Skill-12 OpenRouter-setup docs + active root docs: `kimi-k2.5` -> `kimi-k2.6`.
+- Historical CHANGELOG entries + per-persona extraction-notes intentionally left as-is (historical record).
+
 ## [v10.15.27]  -  2026-06-01  -  Add Skill 41 — Build With AI Playbook Generator v1.2.2
 
 ### What changed
