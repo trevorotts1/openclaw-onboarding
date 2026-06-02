@@ -1,3 +1,23 @@
+## [v10.15.34]  -  2026-06-02  -  BIG PROJECT MODE: universal AGENTS.md standard (new installs + existing clients via update)
+
+### Why
+Large multi-part builds and documents were being orchestrated ad hoc, with workers told to "read the file yourself" (one full-price read per agent), shared blocks paraphrased per worker (cache prefix broken), and no warm-up/skinny-orchestrator discipline. On per-token caching models this wastes 80-95% of input spend; on flat-rate routes it causes slow runs, timeouts, and noisy QC. BIG PROJECT MODE codifies the correct structure as a fleet-universal standard so every agent — new installs AND existing clients via the update path — gets it.
+
+### What changed
+- **NEW `BIG-PROJECT-MODE.md`** (repo root) — the client-universal standard: trigger, why (DeepSeek direct ~1/120th on cache hits; Anthropic/OpenAI cache reads; flat-rate Ollama Cloud still wins), the 8 rules (orchestrator pastes/owners send files; identical-bytes-first/assignment-last; warm-up then fleet; workers live short; skinny orchestrator; independent numeric QC gate 8.5; no-silent-death watchdog; tokens-only in templates), and a caching-verification note (`prompt_cache_hit_tokens`/`prompt_cache_miss_tokens`).
+- `scripts/apply-fleet-standards.sh` — extended to idempotently append a `## BIG PROJECT MODE` section (compact 8 rules + "full reference: BIG-PROJECT-MODE.md") to the agent's ACTIVE-workspace `AGENTS.md`. Workspace resolved exactly as `install.sh` Step 10 does (per-agent `main` override → `agents.defaults.workspace` → canonical `$OC_ROOT/workspace`, Mac or VPS). Skipped if the heading already exists. Runs on every install AND update (already wired into both flows).
+- `FLEET-STANDARDS.md` — documents Big Project Mode as standard #3 + the AGENTS.md append step.
+- `23-ai-workforce-blueprint/ZHC-BUILDOUT-EXPERIENCE.md` — Stage 5 (Operations) bullet + checklist item referencing the standard.
+- All 9 version markers → v10.15.34.
+
+### Verification
+- `bash -n scripts/apply-fleet-standards.sh` clean.
+- Append logic run twice against a temp fake `AGENTS.md`: appends once (exactly 1 heading), second run is a byte-identical no-op (same shasum), pre-existing content preserved, all 8 rules + reference line present.
+- Workspace-resolution Python snippets exercised across per-agent override / quoted-JSON / bare-path / no-main-agent cases.
+- Version-consistency CI passes: all 9 markers agree at v10.15.34.
+
+---
+
 ## [v10.15.33]  -  2026-06-02  -  fleet standards: sub-agent permissions + Telegram media 50MB + version-marker reconciliation
 
 ### Why
