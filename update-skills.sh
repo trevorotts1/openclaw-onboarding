@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.27"
+ONBOARDING_VERSION="v10.15.29"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -471,8 +471,15 @@ main() {
     # Remove old version if exists
     rm -rf "$SKILLS_DIR/$SKILL_NAME"
 
-    # Copy new version
-    cp -r "$SKILL_DIR" "$SKILLS_DIR/"
+    # Copy new version.
+    # IMPORTANT: strip the trailing slash from SKILL_DIR before passing to cp.
+    # The glob pattern [0-9]*/ always appends a trailing slash.
+    # `cp -r "path/01-skill/" dest/` copies the CONTENTS of 01-skill/ flat
+    # into dest/ (the dir itself is not created) — this is the root cause of
+    # the "132 loose files dumped into ~/.openclaw/skills/" flatten bug.
+    # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
+    # named subdirectory, producing dest/01-skill/ as intended.
+    cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
     echo "    Updated: $SKILL_NAME"
   done
 
