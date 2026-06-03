@@ -1,0 +1,31 @@
+{
+  "fixture_id": "defect-D7-pii-in-log",
+  "description": "Seeded defect D7: a log_preview line carries raw PII (a synthetic email + a synthetic phone). Per the f52 PII discipline, the event log NEVER records raw contact data, phone numbers, or emails. All values here are fabricated test data, NOT real contacts. The Big-Brother core MUST catch the PII leak before any line is appended.",
+  "expect_defects": ["D7_PII_IN_LOG"],
+  "workflow_name": "ZHC Intake",
+  "references": ["ZHC-new-lead"],
+  "created_dependencies": ["ZHC-new-lead"],
+  "created_objects": [
+    { "type": "tag", "name": "ZHC-new-lead", "created_by": "agent" }
+  ],
+  "triggers": [
+    {
+      "name": "Contact Tag Added",
+      "repeat_capable": true,
+      "refire_guard": true,
+      "allow_everyone": false,
+      "filters": [ { "field": "tag", "operator": "any_of", "value": "ZHC-new-lead" } ]
+    }
+  ],
+  "conditions": [
+    { "name": "Did the lead reply?",
+      "branches": [ { "name": "Replied" }, { "name": "None", "is_none": true } ] }
+  ],
+  "actions": [
+    { "type": "send_email", "name": "Welcome" }
+  ],
+  "log_preview": [
+    "{\"event\":\"build_completed\",\"contact_email\":\"sample.lead@example-fake.test\"}",
+    "{\"event\":\"note\",\"phone\":\"+15555550199\"}"
+  ]
+}

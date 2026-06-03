@@ -41,7 +41,7 @@ This skill is shipped as an MVP. Every component is marked below as REAL (works 
 | F52 data contract | REAL | references/f52-data-contract.md -- event log schema for build sessions |
 | Conversation playbook template | REAL | templates/conversation-playbook-template.md -- pairs with Skill 38 workflows |
 | QC rubric | REAL | references/qc-rubric.md -- 10-category QC for every generated prompt |
-| Install scripts (00--04) | REAL | scripts/ -- prerequisite verify, master-files locate, seed playbook, init JSONL sinks, update core files |
+| Install scripts (00--06) | REAL | scripts/ -- prerequisite verify, master-files locate, seed playbook, init JSONL sinks, update core files |
 | Library scripts | REAL | scripts/lib-master-files.sh -- shared helpers for master-files resolution |
 
 ## How Skill 41 fits in the pipeline
@@ -118,17 +118,27 @@ All GHL API calls use the operator's Private Integration Token (PIT) -- never sh
 | File | Purpose |
 |---|---|
 | SKILL.md | You are here -- overview, component map, honest MVP status, F52 contract |
-| INSTALL.md | One-time setup: prerequisites, numbered install scripts 00--04 + runtime helper, env keys |
+| INSTALL.md | One-time setup: prerequisites, numbered install scripts 00--06 + runtime helper, env keys |
 | INSTRUCTIONS.md | Runtime guide: the full build protocol, brainstorm flow, dependency-first rule, standardized output template, verification checklist |
 | CORE_UPDATES.md | Lines appended to AGENTS.md / MEMORY.md / TOOLS.md |
 | EXAMPLES.md | Worked example flows (UNIVERSAL placeholders) |
 | CHANGELOG.md | Version history |
-| skill-version.txt | Currently 1.2.2 |
+| skill-version.txt | Currently 1.3.0 |
 | scripts/00-verify-prerequisites.sh | Verifies jq, curl, GHL PIT, locationId; reports env state |
 | scripts/01-locate-master-files-folder.sh | Resolves + persists MASTER_FILES_DIR |
 | scripts/02-seed-playbook-doc.sh | Creates the canonical build-with-ai-playbook.md in master files |
 | scripts/03-init-jsonl-sinks.sh | Creates build-with-ai-events.jsonl + .schema.json sidecar |
 | scripts/04-update-core-files.sh | Appends AGENTS.md / MEMORY.md / TOOLS.md pointers (idempotent markers) |
+| scripts/05-configure-executor-model.sh | Executor-model preflight: configures agents.defaults.subagents.executorModel for MiniMax M3 (Ollama Cloud primary / OpenRouter fallback) (gap #4) |
+| scripts/06-verify-agent-browser.sh | Agent Browser preflight: Node/npm check, conditional install, headless Chrome CDP probe, vault check, writes preflight result record (gap #5) |
+| scripts/12-run-browser-harness.sh | L1-L5 live browser-execution harness runner; tallies results, computes publish decision, emits f52 qc_result (gap #6) |
+| scripts/12-run-browser-harness.test.sh | Negative self-test: proves the runner ESCALATES (publish=false) on a sabotaged Big-Brother core (gap #6) |
+| scripts/qc-browser-harness.sh | L0 STATIC gate for the harness; auto-picked up by 11-run-qc-checklist.sh's qc-*.sh glob (gap #6) |
+| scripts/qc-browser-harness.test.sh | Negative self-test for the L0 static harness gate (gap #6) |
+| scripts/test/lib-harness.sh | Shared harness lib: platform detection, loopback mock GHL server, PII/log helpers, Big-Brother seeded-defect scanner core (gap #6) |
+| scripts/test/L1-auth-session.sh ... L5-forced-failure.sh | The five live levels: auth/session, build-execution, seeded-defect, safety, forced-failure -> escalation (gap #6) |
+| scripts/test/fixtures/ | Seeded-defect fixtures: clean control + D1-D7 + INDEX.md defect-class map (gap #6) |
+| protocols/agent-browser-preflight-protocol.md | Operator-readable Agent Browser preflight protocol: steps, failure fixes, vault states, escalation language (gap #5) |
 | scripts/dependency-creation.sh | Creates tags, custom fields, custom values via GHL API (ZHC- / ZHC_ prefixed) |
 | scripts/11-run-qc-checklist.sh | QC runner: composes every qc-*.sh gate; refuses to seal on any failure |
 | scripts/qc-no-fabrication.sh | UNIVERSAL: no-fabrication floor + honest-gap path are documented |

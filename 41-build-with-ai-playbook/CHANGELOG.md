@@ -1,3 +1,43 @@
+## [1.3.0] - 2026-06-03 - Executor stack + live L1-L5 browser-execution harness + version-marker reconciliation
+
+### Added
+- **Gap #4 -- MiniMax executor preflight** -- `scripts/05-configure-executor-model.sh`: detects
+  Ollama Cloud and/or OpenRouter providers in `openclaw.json`, discovers the newest MiniMax M3
+  model live (with fallback), and writes `agents.defaults.subagents.executorModel`
+  (Ollama `ollama/minimax-m3:cloud` primary @ 512K ctx / OpenRouter `openrouter/minimax/minimax-m3`
+  fallback @ 1M ctx). Removes stale `minimax-m2*` / `minimax-2.*` entries, sets `allowAgents:["*"]`,
+  is platform-aware (Mac `$HOME/.openclaw` / VPS `/data/.openclaw` + `chown node:node`), idempotent,
+  and validates with `openclaw config validate` (no silent corruption). `--dry-run` supported.
+- **Gap #5 -- Agent Browser preflight** -- `scripts/06-verify-agent-browser.sh` +
+  `protocols/agent-browser-preflight-protocol.md`: six hard-gate steps (Node>=18, npm, conditional
+  platform-aware install, real headless Chrome CDP probe asserting `1+1==2`, encrypted auth-vault
+  check, result record `skill-41-agent-browser-preflight.json`). Never fails silently -- every
+  failure prints a loud banner + human-escalation directive. Exit 0 pass / 1 fail / 2 unsupported OS.
+- **Gap #6 -- Live L1-L5 browser-execution harness** -- executable proof that build/browser
+  execution works end-to-end, not docs-only. `scripts/12-run-browser-harness.sh` runs five levels
+  (L1 auth/session fail-closed, L2 build-execution of the shipped `dependency-creation.sh`,
+  L3 seeded-defect Big-Brother core, L4 safety/allowlist/headless-silent/PII-free logging,
+  L5 forced-failure -> escalation), tallies results, computes the publish decision, and emits the
+  f52 `qc_result` event (`--no-emit` in CI). Ships `scripts/test/lib-harness.sh`, the five `L*.sh`
+  levels, seeded-defect fixtures (clean control + D1-D7 + INDEX), the L0 static gate
+  `scripts/qc-browser-harness.sh` (auto-run by `11-run-qc-checklist.sh`'s `qc-*.sh` glob -> L0 goes
+  6/6 -> 7/7), and negative self-tests for both the runner and the static gate. Safe: loopback mock
+  GHL server only, no real credentials, no live external calls.
+- **Gap #3 -- f52 `qc_result` event** -- `references/f52-data-contract.md`: added the `qc_result`
+  event schema (counts + publish decision), PII-compliant (counts + boolean only).
+
+### Changed
+- **Gap #2 -- version-marker reconciliation** -- `CORE_UPDATES.md`: title + MEMORY.md / TOOLS.md
+  block markers rolled `v1.2.1` -> `v1.3.0`.
+- `SKILL.md`, `INSTALL.md`: install sequence extended 00--04 -> 00--06; new files added to the
+  Files-in-This-Folder table and install order.
+- `.github/workflows/qc-static.yml`: added a Skill 41 CI block (L0 checklist + browser-harness
+  static gate & negative test + dynamic L1-L5 runner & negative test).
+
+### Meta
+- `skill-version.txt` bumped to `1.3.0`.
+- Gap #1 (v1.2.2 injection hardening) confirmed present in main and preserved unchanged.
+
 ## [1.2.2] - 2026-06-01 - Hardening: injection safety, macOS compat, pagination, idempotency, prefix enforcement
 
 ### Fixed
