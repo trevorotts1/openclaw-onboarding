@@ -1,3 +1,26 @@
+## [v10.15.36]  -  2026-06-03  -  TYP hardening: explicit storage path, pointer format, mandatory no-paste rule in skill + shared bootstrap files
+
+### Why
+Bootstrap file bloat was traced to two root causes: (1) the TYP skill never specified a canonical, non-negotiable storage path — leaving "master-files folder" vague enough that agents pasted large documents inline instead of storing them; (2) no mandatory rule existed in the shared bootstrap files (AGENTS.md, TOOLS.md, USER.md, SOUL.md, IDENTITY.md) that agents and sub-agents read on every session. Vagueness was the root cause; this release eliminates it.
+
+### What changed
+- `01-teach-yourself-protocol/INSTRUCTIONS.md` — Step 5 now declares the canonical storage path (Mac: `~/Downloads/openclaw-master-files/<typ-subfolder>/`; VPS: `/data/.openclaw/master-files/<typ-subfolder>/`) and the mandatory pointer format (full path + "when to go deeper" trigger). Added MANDATORY NO-PASTE RULE section (long docs never pasted into bootstrap files). Common Mistakes list expanded: vague storage path (new #2) and missing/incomplete pointer (new #3).
+- `01-teach-yourself-protocol/teach-yourself-protocol-full.md` — Section 13 (Anti-Bloat Rules) expanded with three new mandatory blocks: MANDATORY STORAGE PATH, MANDATORY POINTER FORMAT, and MANDATORY NO-PASTE RULE. Section 17 (Self-Installation) Step 4 now specifies the platform-correct path and explicitly forbids pasting the document into any bootstrap file.
+- `01-teach-yourself-protocol/skill-version.txt` → v6.5.7
+- `AGENTS.md` — new "MANDATORY — Teach Yourself Protocol (TYP) Storage Rule" block in the Memory section: never paste long docs into bootstrap files, canonical paths for Mac and VPS, pointer requirements, reference to the skill.
+- `TOOLS.md` — new MANDATORY TYP Storage Rule section: same no-paste rule, paths, pointer requirement, skill reference.
+- `USER.md` — new MANDATORY TYP Storage Rule section: same no-paste rule, skill reference.
+- `IDENTITY.md` — one-line mandatory note in the Notes section: never paste long documents; store in master-files TYP subfolder + pointer.
+- `SOUL.md` — one-line mandatory note in the Continuity section: never paste long playbooks; long content belongs in master-files TYP subfolder.
+- All 9 version markers → v10.15.36.
+
+### Verification
+- `bash /tmp/th-onb/scripts/bump-version.sh --check` passes: all 9 markers agree at v10.15.36.
+- INSTRUCTIONS.md, teach-yourself-protocol-full.md, AGENTS.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md all contain the new mandatory language.
+- TYP skill-version.txt advanced to v6.5.7.
+
+---
+
 ## [v10.15.35]  -  2026-06-02  -  ECHO-BACK GATE: Rule 0 of Big Project Mode + idempotency upgrade to v2
 
 ### Why

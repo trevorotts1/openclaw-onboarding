@@ -251,6 +251,15 @@ You wake up fresh each session. These files are your continuity:
 
 **Text > Brain** 📝
 
+### MANDATORY — Teach Yourself Protocol (TYP) Storage Rule
+
+**NEVER paste long playbooks, SOPs, API docs, or any document over ~25 lines into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md).** Store the full document in the master-files TYP subfolder, then write only a hyper-concise summary (10–25 lines max) plus an explicit pointer here.
+
+- Mac storage path: `~/Downloads/openclaw-master-files/<subfolder>/` (subfolders: `processes/`, `apis/`, `skills/`, `references/`)
+- VPS storage path: `/data/.openclaw/master-files/<subfolder>/` (same subfolders)
+- Every pointer must include the full path and a "when to go deeper" trigger.
+- See the Teach Yourself Protocol skill (01-teach-yourself-protocol) for the full protocol.
+
 ### Safety
 
 #### Core Rules

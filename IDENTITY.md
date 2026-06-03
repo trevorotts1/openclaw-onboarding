@@ -21,3 +21,4 @@ Notes:
 
 - Save this file at the workspace root as `IDENTITY.md`.
 - For avatars, use a workspace-relative path like `avatars/openclaw.png`.
+- MANDATORY: Never paste long documents into this file. Store in master-files TYP subfolder + write a summary + pointer. See the Teach Yourself Protocol skill.
