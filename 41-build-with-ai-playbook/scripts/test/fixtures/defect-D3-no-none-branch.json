@@ -1,0 +1,34 @@
+{
+  "fixture_id": "defect-D3-no-none-branch",
+  "description": "Seeded defect D3: an If/Else condition has real branches but no None/fallback branch. Per the conditions reference, the auto-created None branch must always get a sensible fallback so contacts cannot silently fall through. The Big-Brother core MUST catch the missing fallback.",
+  "expect_defects": ["D3_NO_NONE_BRANCH"],
+  "workflow_name": "ZHC Lead Router",
+  "references": ["ZHC-hot-lead"],
+  "created_dependencies": ["ZHC-hot-lead"],
+  "created_objects": [
+    { "type": "tag", "name": "ZHC-hot-lead", "created_by": "agent" }
+  ],
+  "triggers": [
+    {
+      "name": "Form Submitted",
+      "repeat_capable": false,
+      "allow_everyone": false,
+      "filters": [ { "field": "form", "operator": "is", "value": "contact-us" } ]
+    }
+  ],
+  "conditions": [
+    {
+      "name": "Score over 80?",
+      "branches": [
+        { "name": "Hot",  "is_none": false },
+        { "name": "Warm", "is_none": false }
+      ]
+    }
+  ],
+  "actions": [
+    { "type": "add_tag", "name": "ZHC-hot-lead" }
+  ],
+  "log_preview": [
+    "{\"event\":\"build_completed\",\"workflow_name\":\"ZHC Lead Router\"}"
+  ]
+}

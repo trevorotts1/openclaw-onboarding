@@ -1,0 +1,29 @@
+{
+  "fixture_id": "defect-D2-unfiltered-trigger",
+  "description": "Seeded defect D2: the trigger has an empty filters array and does NOT set allow_everyone:true. Per build-with-ai-protocol Step 4, a trigger must never be unfiltered by omission. The Big-Brother core MUST catch the silent fire-on-everyone.",
+  "expect_defects": ["D2_UNFILTERED_TRIGGER"],
+  "workflow_name": "ZHC Broadcast",
+  "references": ["ZHC-broadcast"],
+  "created_dependencies": ["ZHC-broadcast"],
+  "created_objects": [
+    { "type": "tag", "name": "ZHC-broadcast", "created_by": "agent" }
+  ],
+  "triggers": [
+    {
+      "name": "Contact Created",
+      "repeat_capable": false,
+      "allow_everyone": false,
+      "filters": []
+    }
+  ],
+  "conditions": [
+    { "name": "Has phone?",
+      "branches": [ { "name": "Yes" }, { "name": "None", "is_none": true } ] }
+  ],
+  "actions": [
+    { "type": "send_sms", "name": "Blast" }
+  ],
+  "log_preview": [
+    "{\"event\":\"build_completed\",\"workflow_name\":\"ZHC Broadcast\"}"
+  ]
+}

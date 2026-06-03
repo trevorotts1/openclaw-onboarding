@@ -1,0 +1,31 @@
+{
+  "fixture_id": "defect-D4-missing-zhc-prefix",
+  "description": "Seeded defect D4: the agent created a tag named 'new-lead' (no ZHC- prefix) and a field named 'lead_source' (no ZHC_ prefix). v1.2.2 Fix 5 enforces the prefix at creation; the Big-Brother core MUST still catch any agent-created object that slipped through without the prefix, so operators can always tell agent objects from their own.",
+  "expect_defects": ["D4_MISSING_ZHC_PREFIX"],
+  "workflow_name": "ZHC Intake",
+  "references": ["new-lead", "lead_source"],
+  "created_dependencies": ["new-lead", "lead_source"],
+  "created_objects": [
+    { "type": "tag",   "name": "new-lead",    "created_by": "agent" },
+    { "type": "field", "name": "lead_source", "created_by": "agent" }
+  ],
+  "triggers": [
+    {
+      "name": "Contact Tag Added",
+      "repeat_capable": true,
+      "refire_guard": true,
+      "allow_everyone": false,
+      "filters": [ { "field": "tag", "operator": "any_of", "value": "new-lead" } ]
+    }
+  ],
+  "conditions": [
+    { "name": "Did the lead reply?",
+      "branches": [ { "name": "Replied" }, { "name": "None", "is_none": true } ] }
+  ],
+  "actions": [
+    { "type": "add_tag", "name": "new-lead" }
+  ],
+  "log_preview": [
+    "{\"event\":\"build_completed\",\"workflow_name\":\"ZHC Intake\"}"
+  ]
+}

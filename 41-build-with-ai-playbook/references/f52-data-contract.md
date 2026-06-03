@@ -125,6 +125,21 @@ Emitted when a workflow is paired with a Skill 38 conversation playbook.
 {"ts":"2026-05-30T20:06:00Z","skill":"41-build-with-ai-playbook","event":"conversation_playbook_paired","session_ref":"sess_a1b2","source":"operator","workflow_id":"new-lead-welcome","playbook_path":"conversation-workflows/new-lead-welcome.md"}
 ```
 
+### qc_result
+Emitted by the harness QC runner after all checks complete for a build session. Records counts, the auto-fix outcome, and the publish decision.
+
+| Field | Type | Meaning |
+|---|---|---|
+| total | integer | Total number of QC checks evaluated |
+| pass_count | integer | Number of checks that passed without intervention |
+| fixed_count | integer | Number of checks that failed but were auto-fixed by the harness |
+| escalated_count | integer | Number of checks that failed and could not be auto-fixed (escalated to operator) |
+| publish_decision | boolean | True if the build is approved for publish (pass_count + fixed_count == total and escalated_count == 0) |
+
+```
+{"ts":"2026-05-30T20:07:00Z","skill":"41-build-with-ai-playbook","event":"qc_result","session_ref":"sess_a1b2","source":"script","total":7,"pass_count":6,"fixed_count":1,"escalated_count":0,"publish_decision":true}
+```
+
 ## PII Discipline
 
 The event log records:

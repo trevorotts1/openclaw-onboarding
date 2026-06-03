@@ -818,3 +818,26 @@ jobs:
           # regenerate-from-scratch loop — WITHOUT weakening the gate against
           # stubs / {{token}} leaks / <7KB / missing-Section-9 garbage.
           bash 23-ai-workforce-blueprint/scripts/test-sop-substance-models.sh
+
+      - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 41-build-with-ai-playbook/scripts/11-run-qc-checklist.sh
+          echo "✓ Skill 41 L0 static checklist green (incl. browser-harness gate auto-swept by qc-*.sh)"
+
+      - name: Skill 41 browser-harness static gate (L0) + negative self-test
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 41-build-with-ai-playbook/scripts/qc-browser-harness.sh
+          bash 41-build-with-ai-playbook/scripts/qc-browser-harness.test.sh
+          echo "✓ Skill 41 L1-L5 harness present, valid, safe, wired; static gate bites"
+
+      - name: Skill 41 L1-L5 live browser harness (dynamic) + runner negative self-test
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 41-build-with-ai-playbook/scripts/12-run-browser-harness.sh --no-emit
+          bash 41-build-with-ai-playbook/scripts/12-run-browser-harness.test.sh
+          echo "✓ Skill 41 closed loop PROVEN: L1-L5 green + runner escalates on a broken core"

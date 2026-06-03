@@ -1,0 +1,29 @@
+{
+  "fixture_id": "defect-D1-missing-dependency",
+  "description": "Seeded defect D1: the workflow references tag ZHC-welcome-sent in an action, but that tag was never created in the dependency-first step. The Big-Brother core MUST catch this BEFORE publish (the dependency-first rule is the core promise of Skill 41).",
+  "expect_defects": ["D1_MISSING_DEPENDENCY"],
+  "workflow_name": "ZHC New Lead Welcome Sequence",
+  "references": ["ZHC-new-lead", "ZHC-welcome-sent"],
+  "created_dependencies": ["ZHC-new-lead"],
+  "created_objects": [
+    { "type": "tag", "name": "ZHC-new-lead", "created_by": "agent" }
+  ],
+  "triggers": [
+    {
+      "name": "Contact Tag Added",
+      "repeat_capable": true,
+      "refire_guard": true,
+      "filters": [ { "field": "tag", "operator": "any_of", "value": "ZHC-new-lead" } ]
+    }
+  ],
+  "conditions": [
+    { "name": "Did the lead reply?",
+      "branches": [ { "name": "Replied" }, { "name": "None", "is_none": true } ] }
+  ],
+  "actions": [
+    { "type": "add_tag", "name": "ZHC-welcome-sent" }
+  ],
+  "log_preview": [
+    "{\"event\":\"build_completed\",\"workflow_name\":\"ZHC New Lead Welcome Sequence\"}"
+  ]
+}

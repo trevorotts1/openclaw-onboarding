@@ -1,0 +1,30 @@
+{
+  "fixture_id": "defect-D5-refire-unguarded",
+  "description": "Seeded defect D5: a repeat-capable trigger (Contact Tag Added can fire every time the tag is re-applied) has no re-fire guard. Per build-with-ai-protocol Step 4, a re-fire guard is mandatory where a trigger can fire repeatedly. The Big-Brother core MUST catch the unguarded loop risk (duplicate emails/SMS to the same contact).",
+  "expect_defects": ["D5_REFIRE_UNGUARDED"],
+  "workflow_name": "ZHC Re-engage",
+  "references": ["ZHC-cold"],
+  "created_dependencies": ["ZHC-cold"],
+  "created_objects": [
+    { "type": "tag", "name": "ZHC-cold", "created_by": "agent" }
+  ],
+  "triggers": [
+    {
+      "name": "Contact Tag Added",
+      "repeat_capable": true,
+      "refire_guard": false,
+      "allow_everyone": false,
+      "filters": [ { "field": "tag", "operator": "any_of", "value": "ZHC-cold" } ]
+    }
+  ],
+  "conditions": [
+    { "name": "Opened last email?",
+      "branches": [ { "name": "Opened" }, { "name": "None", "is_none": true } ] }
+  ],
+  "actions": [
+    { "type": "send_email", "name": "Re-engage" }
+  ],
+  "log_preview": [
+    "{\"event\":\"build_completed\",\"workflow_name\":\"ZHC Re-engage\"}"
+  ]
+}

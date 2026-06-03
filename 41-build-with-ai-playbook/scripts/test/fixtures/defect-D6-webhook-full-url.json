@@ -1,0 +1,31 @@
+{
+  "fixture_id": "defect-D6-webhook-full-url",
+  "description": "Seeded defect D6: a webhook action stores a FULL URL containing a token in the query string. The f52 contract requires logging url_domain only, never a full URL with tokens. The Big-Brother core MUST catch a stored URL that embeds a secret (here a fabricated, non-functional token) so it never reaches a log or a published config.",
+  "expect_defects": ["D6_WEBHOOK_FULL_URL"],
+  "workflow_name": "ZHC External Sync",
+  "references": ["ZHC-sync"],
+  "created_dependencies": ["ZHC-sync"],
+  "created_objects": [
+    { "type": "tag", "name": "ZHC-sync", "created_by": "agent" }
+  ],
+  "triggers": [
+    {
+      "name": "Contact Tag Added",
+      "repeat_capable": true,
+      "refire_guard": true,
+      "allow_everyone": false,
+      "filters": [ { "field": "tag", "operator": "any_of", "value": "ZHC-sync" } ]
+    }
+  ],
+  "conditions": [
+    { "name": "Sync ok?",
+      "branches": [ { "name": "Ok" }, { "name": "None", "is_none": true } ] }
+  ],
+  "actions": [
+    { "type": "webhook", "method": "POST",
+      "stored_url": "https://hooks.example.com/in?token=FAKE_PLACEHOLDER_NOT_A_REAL_SECRET&sig=demo" }
+  ],
+  "log_preview": [
+    "{\"event\":\"build_completed\",\"workflow_name\":\"ZHC External Sync\"}"
+  ]
+}

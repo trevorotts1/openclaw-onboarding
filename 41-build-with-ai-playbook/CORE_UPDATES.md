@@ -1,4 +1,4 @@
-# Core File Updates -- Skill 41 (Build With AI Playbook Generator v1.2.1)
+# Core File Updates -- Skill 41 (Build With AI Playbook Generator v1.3.0)
 
 These blocks are appended to the workspace's AGENTS.md, MEMORY.md, and TOOLS.md at install time by
 `scripts/04-update-core-files.sh`. Every block sits behind a clearly-named BEGIN/END marker and is
@@ -36,7 +36,7 @@ at write time.
 
 ## [ADD TO MEMORY.md] -- appended by scripts/04-update-core-files.sh
 
-Behind `<!-- BEGIN skill-41 memory-rules v1.2.1 -->` / `<!-- END skill-41 memory-rules v1.2.1 -->`:
+Behind `<!-- BEGIN skill-41 memory-rules v1.3.0 -->` / `<!-- END skill-41 memory-rules v1.3.0 -->`:
 
 Build With AI design rules:
 1. Dependency-First Rule -- never generate a workflow prompt that references a tag, custom field, or
@@ -56,7 +56,7 @@ Build With AI design rules:
 
 ## [ADD TO TOOLS.md] -- appended by scripts/04-update-core-files.sh
 
-Behind `<!-- BEGIN skill-41 tools v1.2.1 -->` / `<!-- END skill-41 tools v1.2.1 -->`:
+Behind `<!-- BEGIN skill-41 tools v1.3.0 -->` / `<!-- END skill-41 tools v1.3.0 -->`:
 
 Build With AI quick reference:
 - Prompt template: templates/build-with-ai-prompt-template.md (8 sections)

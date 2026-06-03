@@ -1,0 +1,41 @@
+{
+  "fixture_id": "clean-workflow",
+  "description": "A fully correct built-workflow snapshot. The Big-Brother core MUST find ZERO defects here. This is the positive control: if the scanner flags this, the scanner itself is broken.",
+  "expect_defects": [],
+  "workflow_name": "ZHC New Lead Welcome Sequence",
+  "references": ["ZHC-new-lead", "ZHC_lead_source", "office_phone"],
+  "created_dependencies": ["ZHC-new-lead", "ZHC_lead_source", "office_phone"],
+  "created_objects": [
+    { "type": "tag",   "name": "ZHC-new-lead",   "created_by": "agent" },
+    { "type": "field", "name": "ZHC_lead_source", "created_by": "agent" },
+    { "type": "value", "name": "office_phone",     "created_by": "agent" }
+  ],
+  "triggers": [
+    {
+      "name": "Contact Tag Added",
+      "repeat_capable": true,
+      "refire_guard": true,
+      "allow_everyone": false,
+      "filters": [
+        { "field": "tag", "operator": "any_of", "value": "ZHC-new-lead" }
+      ]
+    }
+  ],
+  "conditions": [
+    {
+      "name": "Did the lead reply?",
+      "branches": [
+        { "name": "Replied",  "is_none": false },
+        { "name": "None",     "is_none": true  }
+      ]
+    }
+  ],
+  "actions": [
+    { "type": "send_email", "name": "Welcome email" },
+    { "type": "webhook", "method": "POST", "stored_url": "https://api.example.com/hook" }
+  ],
+  "log_preview": [
+    "{\"event\":\"build_completed\",\"workflow_name\":\"ZHC New Lead Welcome Sequence\",\"verification_score\":12}",
+    "{\"event\":\"webhook_configured\",\"method\":\"POST\",\"url_domain\":\"api.example.com\",\"save_response_enabled\":true}"
+  ]
+}

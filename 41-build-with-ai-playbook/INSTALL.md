@@ -44,6 +44,8 @@ cd ~/.openclaw/skills/41-build-with-ai-playbook/scripts
 ./02-seed-playbook-doc.sh              # create canonical build-with-ai-playbook.md in master files
 ./03-init-jsonl-sinks.sh               # create build-with-ai-events.jsonl + .schema.json sidecar
 ./04-update-core-files.sh              # append AGENTS.md / MEMORY.md / TOOLS.md pointers (idempotent markers)
+./05-configure-executor-model.sh       # configure MiniMax M3 executor model (Ollama Cloud primary / OpenRouter fallback)
+./06-verify-agent-browser.sh           # Agent Browser preflight: Node/npm, conditional install, headless Chrome CDP probe, vault check
 ```
 
 After scripts run, follow INSTRUCTIONS.md for the runtime flows (brainstorm, dependency audit, prompt generation, verification) and the build-with-ai-events.jsonl schema.

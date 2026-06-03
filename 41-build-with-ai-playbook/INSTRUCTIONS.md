@@ -1,6 +1,6 @@
 # Skill 41 -- Build With AI Playbook Generator: Runtime Instructions
 
-This is the operator-facing runtime guide. It assumes the install scripts (00--04) have run. Read it top to bottom before acting (N3).
+This is the operator-facing runtime guide. It assumes the install scripts (00--06) have run. Read it top to bottom before acting (N3).
 
 ## The non-fabrication floor (read first)
 
@@ -206,12 +206,13 @@ Event types and type-specific payload fields:
 | verification_failed | failed_items (array), fix_suggested (string) |
 | webhook_configured | method, url_domain (string, not full URL), save_response_enabled (bool) |
 | conversation_playbook_paired | workflow_id, playbook_path |
+| qc_result | total (int), pass_count (int), fixed_count (int), escalated_count (int), publish_decision (bool) |
 
 **PII discipline:** the event log records object names and counts, never raw contact data or full URLs with tokens.
 
 ## Idempotency & re-runs
 
-All 00--04 scripts are idempotent (version/marker compare, then act). dependency-creation.sh checks for existence before creating (GET first, POST only if missing). Re-running the installer never double-appends core-file blocks (BEGIN/END markers).
+All 00--06 scripts are idempotent (version/marker compare, then act) -- including 05-configure-executor-model.sh (config deep-merge, skip if current-version marker present) and 06-verify-agent-browser.sh (skips install when the binary is already found, re-runs the probe). dependency-creation.sh checks for existence before creating (GET first, POST only if missing). Re-running the installer never double-appends core-file blocks (BEGIN/END markers).
 
 ## Verification checklist (post-install)
 
