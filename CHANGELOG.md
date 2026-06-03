@@ -1,3 +1,17 @@
+## [v10.15.40]  -  2026-06-03  -  Add Skill 42 Personal Assistant Library v1.0.0
+
+### Why
+The Personal Assistant Library (29 personal-life specialists) was built and QC'd as a standalone production artifact. It belongs as a new top-level skill, not inside Skill 23's flat `templates/role-library/` — each PA specialist is a full sub-workspace spec (6 role files + a DMAIC `SOP/` folder), a richer structure than a single flat role `.md`, and the personal-life domain (inbox, coaching, therapy, travel, finance, relationships) is a different taxonomy from Skill 23's business departments. Skill 23's `department-naming-map.json` already positioned this as an addendum ("Personal Assistant department pending proposal — when approved it will bring the floor to 24"). Shipping it as Skill 42 follows the standalone domain-vertical precedent of Skills 39/41. Bumping the repo line to v10.15.40 makes every fleet client detect "update available" and pull the new skill.
+
+### What changed
+- **New skill `42-personal-assistant-library/`** — SKILL.md (skills 39/41 manifest format: name/description/triggers/version), INSTRUCTIONS.md (runtime select + materialize + placeholder fill + Skill 22 persona integration + coaching-scope safety), INSTALL.md (prereqs, verify, materialization workflow, optional naming-map patch), CORE_UPDATES.md (AGENTS/TOOLS/MEMORY appends), EXAMPLES.md, CHANGELOG.md, `skill-version.txt` = 1.0.0.
+- **29 specialists** under `specialists/` — 174 role files, 162 DMAIC SOPs (`PA-NN-NN.md`), 29 `SOP/00-INDEX.md`, plus a score-free `specialists/_index.md` navigation aid.
+- **QC**: `qc-personal-assistant-library.sh` (mirrors `qc-ai-workforce-blueprint.sh`: `lib-shared.sh` → `resolve_platform_paths`, asserts all 29 folders / 6 role files each / SOP presence, warns on Skill 22/23 absence) + `scripts/verify-pa-install.sh`. Both pass against a simulated install (266 PASS / 0 FAIL).
+- **Additive to Skill 23** — Skill 23 content unchanged. The `department-naming-map.json` auto-build patch is documented (INSTALL.md §5) but intentionally NOT applied; it is a product decision.
+- **PII/artifact hygiene** — scrubbed the one real PII leak in `PA-14-03` (`impersonates trevor@` → `impersonates {{OWNER_EMAIL}}`). Excluded all `*.bak`, `*.tmp`, `QC-READY.txt`, `QC-OUTPUT/`, `QC-SCORES.md`, `FIX-LEDGER.md`, timestamp markers. `{{TOKEN}}` placeholders only. Crisis-hotline numbers (988 / NAMI / DV Hotline) are public resources, not PII.
+- `README.md` — added the Skill 42 row; total raised to 42 folders (39 active + 3 archived).
+- All 9 version markers rolled atomically by `scripts/bump-version.sh` to v10.15.40.
+
 ## [v10.15.39]  -  2026-06-03  -  Propagate Skill 41 Build-With-AI Playbook v1.3.0
 
 ### Why
