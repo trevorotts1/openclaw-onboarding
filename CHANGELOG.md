@@ -1,3 +1,35 @@
+## [v10.15.37]  -  2026-06-03  -  TYP self-heal migration: detect + fix bloat and misplaced docs in existing fleet clients
+
+### Why
+Prevention was shipped in v10.15.36 (mandatory storage paths, no-paste rule, pointer format). Existing fleet clients onboarded before that release still have bloated bootstrap files and/or docs stored in wrong locations. A self-heal migration script + procedure is needed so those clients get fixed, not just prevented from getting worse.
+
+### What changed
+- `scripts/typ-migrate.sh` — new script: platform-aware (Mac vs VPS detection mirrors apply-fleet-standards.sh), detects bootstrap bloat (whole-file >400 lines + per-section >25 lines), detects misplaced TYP docs in wrong locations, relocates + summarizes + leaves pointers, confirms subagent rule is in AGENTS.md, idempotent, backup-first, supports --dry-run and --verbose.
+- `01-teach-yourself-protocol/MIGRATION-TYP.md` — complete migration procedure: when to run, platform detection logic (quoted), all 7 automated steps, agent actions required after script, idempotency, backup file handling, subagent inheritance principle.
+- `01-teach-yourself-protocol/SKILL.md` — added Self-Heal Migration section + MIGRATION-TYP.md to the files list.
+- `01-teach-yourself-protocol/INSTRUCTIONS.md` — added Self-Heal Migration section after Common Mistakes, including the two-command quickstart + platform-detection summary.
+- `01-teach-yourself-protocol/skill-version.txt` → v6.5.8
+- All 9 version markers → v10.15.37.
+
+### Platform detection (canonical quote from typ-migrate.sh)
+```bash
+if [ -f /data/.openclaw/openclaw.json ]; then
+  PLATFORM="vps"
+  MASTER_FILES_ROOT="/data/.openclaw/master-files"
+else
+  PLATFORM="mac"
+  MASTER_FILES_ROOT="$HOME/Downloads/openclaw-master-files"
+fi
+```
+
+### Verification
+- `bash scripts/typ-migrate.sh --dry-run` exits 0 on a clean workspace (idempotent).
+- `bash scripts/typ-migrate.sh --check` equivalent: all 9 version markers agree at v10.15.37.
+- MIGRATION-TYP.md, SKILL.md, INSTRUCTIONS.md all contain migration references.
+- skill-version.txt advanced to v6.5.8.
+
+---
+
 ## [v10.15.36]  -  2026-06-03  -  TYP hardening: explicit storage path, pointer format, mandatory no-paste rule in skill + shared bootstrap files
 
 ### Why

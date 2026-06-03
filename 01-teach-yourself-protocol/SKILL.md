@@ -62,7 +62,21 @@ Read them in this order:
 4. **INSTALL.md** - how to install TYP into a new agent's workspace
 5. **EXAMPLES.md** - worked examples showing TYP in action
 6. **CORE_UPDATES.md** - the lightweight summaries to add to each core workspace file
-7. **teach-yourself-protocol.skill** - the skill definition file
+7. **MIGRATION-TYP.md** - self-heal migration procedure for existing clients with bloat
+8. **teach-yourself-protocol.skill** - the skill definition file
+
+## Self-Heal Migration (for Existing Clients)
+
+If an existing client workspace was set up before v10.15.37 (Mac) / v10.16.36 (VPS),
+it may have bootstrap file bloat or documents stored in wrong locations. Run the
+migration script to detect and fix:
+
+```bash
+bash scripts/typ-migrate.sh --dry-run    # preview what would change
+bash scripts/typ-migrate.sh              # apply remediation
+```
+
+See **MIGRATION-TYP.md** for the full procedure and platform-detection logic.
 
 ## Prerequisites
 
