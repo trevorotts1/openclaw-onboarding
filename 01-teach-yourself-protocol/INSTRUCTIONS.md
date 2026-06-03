@@ -106,3 +106,20 @@ Report:
 8. Not checking for existing knowledge (always search first)
 9. Over-summarizing (if the agent would be stuck with just the summary, it is too thin)
 10. Under-summarizing (if the summary is 30+ lines, it is too thick)
+
+## Self-Heal Migration (Existing Clients)
+
+If the workspace was created before the mandatory storage path rules were introduced
+(v10.15.37+ Mac / v10.16.36+ VPS), run the migration script to fix bloat and
+misplaced documents:
+
+```bash
+bash scripts/typ-migrate.sh --dry-run    # preview issues
+bash scripts/typ-migrate.sh              # apply fixes
+```
+
+**Platform detection** (automatic, same logic as apply-fleet-standards.sh):
+- `/data/.openclaw/openclaw.json` exists → VPS → `MASTER_FILES_ROOT=/data/.openclaw/master-files`
+- else → Mac → `MASTER_FILES_ROOT=$HOME/Downloads/openclaw-master-files`
+
+See `MIGRATION-TYP.md` in this folder for the complete procedure.
