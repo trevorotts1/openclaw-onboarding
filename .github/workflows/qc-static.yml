@@ -841,3 +841,42 @@ jobs:
           bash 41-build-with-ai-playbook/scripts/12-run-browser-harness.sh --no-emit
           bash 41-build-with-ai-playbook/scripts/12-run-browser-harness.test.sh
           echo "✓ Skill 41 closed loop PROVEN: L1-L5 green + runner escalates on a broken core"
+
+      - name: Skill 42 Personal Assistant Library install QC (simulated install)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # qc-personal-assistant-library.sh resolves $SKILLS_DIR_DEFAULT/42-personal-assistant-library
+          # ($HOME/.openclaw/skills/... when no live install supplies resolve_platform_paths).
+          # CI has no install, so stage a simulated one by symlinking the repo's skill folder
+          # into that path, then run the skill's own QC: 29 specialist folders, the standard
+          # 6 role files each (Specialist 19 exempted — sub-specialist roster), SOP/00-INDEX.md
+          # per specialist, 162 PA-NN-NN-slug.md SOPs total, 29 SOP indexes, and the
+          # no-working-artifacts (.bak/.tmp/QC-READY.txt) invariant.
+          mkdir -p "$HOME/.openclaw/skills"
+          ln -snf "$GITHUB_WORKSPACE/42-personal-assistant-library" "$HOME/.openclaw/skills/42-personal-assistant-library"
+          bash 42-personal-assistant-library/qc-personal-assistant-library.sh
+          echo "✓ Skill 42 install QC green (29 specialists / 162 SOPs / structure intact / no artifacts)"
+
+      - name: Skill 42 SOP naming convention is consistent (PA-NN-NN-slug.md)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # D3 regression guard: EVERY SOP under specialists/*/SOP/ (excluding 00-INDEX.md)
+          # must match PA-NN-NN-<slug>.md — a hyphen-separated descriptive slug (the
+          # convention used by all 29 specialists; slug case is intentionally mixed
+          # across the library, so this accepts both Title-Case and lowercase). It
+          # REJECTS the two patterns D3 flagged: bare PA-NN-NN.md (no slug) and
+          # underscore-separated PA-NN-NN_Title.md filenames. This is the gate that was
+          # missing: the install/verify scripts only check PRESENCE + count (162), not
+          # naming, so a regression to a bare/underscore name would pass them silently.
+          bad=$(find 42-personal-assistant-library/specialists -path '*/SOP/*.md' \
+                  -not -name '00-INDEX.md' -print \
+                | sed 's#.*/##' \
+                | grep -Ev '^PA-[0-9]{2}-[0-9]{2}-[A-Za-z0-9]+(-[A-Za-z0-9]+)*\.md$' || true)
+          if [ -n "$bad" ]; then
+            echo "✗ Non-conforming SOP filename(s) (expected PA-NN-NN-slug.md):"
+            echo "$bad" | sed 's/^/    /'
+            exit 1
+          fi
+          echo "✓ All 162 Skill 42 SOPs follow PA-NN-NN-slug.md"
