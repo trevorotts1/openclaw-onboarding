@@ -1,3 +1,13 @@
+## [v10.15.39]  -  2026-06-03  -  Propagate Skill 41 Build-With-AI Playbook v1.3.0
+
+### Why
+Skill 41 (`41-build-with-ai-playbook`) was already merged to main at v1.3.0, but the repo-level `version` marker still read v10.15.38, so the fleet's weekly update check (`scripts/update-skills.sh` compares the locally-stored `.onboarding-version` against the repo-root `/version` file) saw no change and never pulled the new skill content. Bumping the repo line to v10.15.39 makes every fleet client detect "update available" and pull Skill 41 v1.3.0.
+
+### What changed
+- `version` — bumped to v10.15.39 (the authoritative fleet-detection marker; read as `REMOTE_VER` by `scripts/update-skills.sh`).
+- Propagate Skill 41 Build-With-AI Playbook v1.3.0: MiniMax executor preflight, Agent Browser preflight, L1–L5 live harness, f52 qc_result event.
+- All 9 version markers rolled atomically by `scripts/bump-version.sh` (version, install.sh, update-skills.sh, skill-version.txt, _index.json, _qc-summary.md, README ×2, DIRECT-TO-AGENT-UPDATE-MESSAGE.md).
+
 ## [v10.15.38]  -  2026-06-03  -  Preventive safety rule N28: no destructive teardown or kill scripts
 
 ### Why
