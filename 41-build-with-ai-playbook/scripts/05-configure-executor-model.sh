@@ -170,12 +170,16 @@ discover_ollama_minimax() {
 discover_openrouter_minimax() {
   local model_id=""
   local url="https://openrouter.ai/api/v1/models"
-  local auth_header=""
-  [[ -n "${OPENROUTER_API_KEY:-}" ]] && auth_header="-H Authorization: Bearer ${OPENROUTER_API_KEY}"
+  # Build the auth header as an ARRAY so curl receives the flag and its value as TWO
+  # separate argv entries. A single "-H Authorization: Bearer KEY" string would be passed
+  # to curl as ONE argument and the header would never be sent (silent auth failure).
+  local auth_header=()
+  [[ -n "${OPENROUTER_API_KEY:-}" ]] && auth_header=(-H "Authorization: Bearer ${OPENROUTER_API_KEY}")
 
   local body
-  # shellcheck disable=SC2086
-  if body="$(curl -fsSL --max-time 15 ${auth_header:+"$auth_header"} "$url" 2>/dev/null)"; then
+  # "${auth_header[@]+...}" guard keeps the empty-array case safe under `set -u` on bash 3.2
+  # (macOS default): no key -> zero curl args; key present -> two args (-H and its value).
+  if body="$(curl -fsSL --max-time 15 "${auth_header[@]+"${auth_header[@]}"}" "$url" 2>/dev/null)"; then
     # Find latest minimax model — prefer m3 over older versions
     model_id="$(echo "$body" | python3 -c "
 import json, sys, re

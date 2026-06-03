@@ -26,16 +26,32 @@ c="$(mktemp -d)"; cp -a "$SKILL_ROOT/." "$c/"
 sed -i.bak 's/D1_MISSING_DEPENDENCY/D1_BROKEN_BY_TEST/' "$c/scripts/test/lib-harness.sh"
 out2="$(bash "$c/scripts/12-run-browser-harness.sh" --no-emit 2>&1)"; rc2=$?
 echo "$out2" | grep -q 'publish=ESCALATED' || { rm -rf "$c"; fail "sabotaged core did not report publish=ESCALATED"; }
-echo "$out2" | grep -q '"publish_decision":"ESCALATED"' || { rm -rf "$c"; fail "qc_result event did not record ESCALATED"; }
+line2="$(echo "$out2" | grep -oE '\{.*"event":"qc_result".*\}' | head -1)"
+if command -v jq >/dev/null 2>&1; then
+  # The escalated qc_result must record publish_decision as a real boolean === false
+  # (not the string "ESCALATED"). This is what catches a regression to the old string field.
+  echo "$line2" | jq -e '(.publish_decision|type=="boolean") and (.publish_decision==false) and (.escalated_count>=1)' >/dev/null 2>&1 \
+    || { rm -rf "$c"; fail "escalated qc_result did not record publish_decision:false (boolean) + escalated_count>=1"; }
+fi
 [[ "$rc2" -eq 2 ]] || { rm -rf "$c"; fail "sabotaged run exit was $rc2, expected 2"; }
 rm -rf "$c"
 
-# (c) The clean qc_result event must be valid JSON with the required counts.
+# (c) The clean qc_result event must be valid JSON matching the f52 contract: the *_count
+#     fields are numbers and publish_decision is a REAL boolean (jq type=="boolean") === true.
+#     Asserting the names + boolean type is what makes this test CATCH a schema regression.
 line="$(echo "$out" | grep -oE '\{.*"event":"qc_result".*\}' | head -1)"
 if command -v jq >/dev/null 2>&1; then
-  echo "$line" | jq -e '.total and (.pass!=null) and (.fixed!=null) and (.escalated!=null) and .publish_decision' >/dev/null 2>&1 \
-    || fail "qc_result event missing required fields"
+  echo "$line" | jq -e '
+      (.total|type=="number")
+      and (.pass_count|type=="number")
+      and (.fixed_count|type=="number")
+      and (.escalated_count|type=="number")
+      and (.publish_decision|type=="boolean")
+      and (.publish_decision==true)
+      and (.escalated_count==0)
+      and ((.pass_count + .fixed_count)==.total)' >/dev/null 2>&1 \
+    || fail "qc_result event does not match f52 contract (*_count numbers + publish_decision boolean true)"
 fi
 
-echo "[TEST PASS] 12-run-browser-harness bites (clean=PASS/0, sabotaged core=ESCALATED/2, qc_result well-formed)"
+echo "[TEST PASS] 12-run-browser-harness bites (clean=PASS/0+boolean-true, sabotaged core=ESCALATED/2+boolean-false, qc_result matches f52 contract)"
 exit 0

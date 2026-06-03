@@ -2,9 +2,10 @@
 # 12-run-browser-harness.sh -- Skill 41 v1.3.0 browser-execution harness runner.
 #
 # Executes the live L1-L5 harness (the proof that browser/build execution works end-to-end)
-# and emits the f52 `qc_result` event: counts (total / PASS / FIXED / ESCALATED) plus the
-# PUBLISH DECISION. This is the closed-loop runner: L0 (the static gate, 11-run-qc-checklist.sh)
-# proves the skill is well-formed; THIS runner proves the executor actually works.
+# and emits the f52 `qc_result` event per references/f52-data-contract.md: the count fields
+# total / pass_count / fixed_count / escalated_count plus publish_decision as a real boolean.
+# This is the closed-loop runner: L0 (the static gate, 11-run-qc-checklist.sh) proves the skill
+# is well-formed; THIS runner proves the executor actually works.
 #
 # Sits alongside 11-run-qc-checklist.sh in scripts/. The level scripts live in scripts/test/.
 #
@@ -81,19 +82,27 @@ echo "[skill 41 harness] results: $(IFS=', '; echo "${RESULTS[*]}")"
 echo "[skill 41 harness] total=$TOTAL pass=$PASS fixed=$FIXED escalated=$ESCALATED skipped=$SKIPPED -> publish=$DECISION"
 
 # --- emit the f52 qc_result event ---------------------------------------------
-# Schema (added to references/f52-data-contract.md by gap #5): event=qc_result with
-# total / pass / fixed / escalated counts + publish decision + platform. PII-free.
-# We prefer the skill's append_jsonl (jq-built, injection-safe) so the line lands in the
-# real build-with-ai-events.jsonl. If lib-master-files is unavailable, we print the line.
+# Schema (references/f52-data-contract.md): event=qc_result with the count fields
+# total / pass_count / fixed_count / escalated_count + publish_decision as a real
+# boolean. PII-free. The contract is the source of truth, so the emit carries ONLY
+# those fields (plus the common ts/skill/event/session_ref/source) -- no extra
+# levels/platform/skipped keys that the contract does not declare.
+# publish_decision (boolean): true iff nothing escalated AND every counted level
+# passed or was auto-fixed (escalated_count==0 AND pass_count+fixed_count==total).
+# A SKIP leaves pass_count+fixed_count < total -> publish_decision=false (the WARN
+# path), which is correct: a skipped level is not a proven-green level.
+if [[ $ESCALATED -eq 0 && $((PASS + FIXED)) -eq $TOTAL ]]; then
+  PUBLISH_BOOL="true"
+else
+  PUBLISH_BOOL="false"
+fi
 EVENT_LINE="$(jq -nc \
   --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg platform "$(uname -s)" \
-  --argjson total "$TOTAL" --argjson pass "$PASS" --argjson fixed "$FIXED" \
-  --argjson escalated "$ESCALATED" --argjson skipped "$SKIPPED" \
-  --arg decision "$DECISION" \
+  --argjson total "$TOTAL" --argjson pass_count "$PASS" --argjson fixed_count "$FIXED" \
+  --argjson escalated_count "$ESCALATED" \
+  --argjson publish_decision "$PUBLISH_BOOL" \
   '{ts:$ts,skill:"41-build-with-ai-playbook",event:"qc_result",session_ref:"harness",source:"script",
-    levels:["L1","L2","L3","L4","L5"],platform:$platform,
-    total:$total,pass:$pass,fixed:$fixed,escalated:$escalated,skipped:$skipped,publish_decision:$decision}')"
+    total:$total,pass_count:$pass_count,fixed_count:$fixed_count,escalated_count:$escalated_count,publish_decision:$publish_decision}')"
 
 # Emit guard: CI and self-tests set HARNESS_EMIT=0 (or pass --no-emit) so the qc_result line
 # is PRINTED, never appended to a real master-files dir. Operator/agent runs leave it unset
@@ -109,9 +118,9 @@ elif [[ -f "$LIBMF" ]] && command -v jq >/dev/null 2>&1; then
   source "$LIBMF"
   if declare -f append_jsonl >/dev/null 2>&1 && declare -f resolve_master_files_dir >/dev/null 2>&1; then
     SESSION_REF="harness" append_jsonl "qc_result" \
-      '{levels:["L1","L2","L3","L4","L5"],platform:$platform,total:($total|tonumber),pass:($pass|tonumber),fixed:($fixed|tonumber),escalated:($escalated|tonumber),skipped:($skipped|tonumber),publish_decision:$decision}' \
-      --arg platform "$(uname -s)" --arg total "$TOTAL" --arg pass "$PASS" --arg fixed "$FIXED" \
-      --arg escalated "$ESCALATED" --arg skipped "$SKIPPED" --arg decision "$DECISION" 2>/dev/null \
+      '{total:($total|tonumber),pass_count:($pass_count|tonumber),fixed_count:($fixed_count|tonumber),escalated_count:($escalated_count|tonumber),publish_decision:($publish_decision=="true")}' \
+      --arg total "$TOTAL" --arg pass_count "$PASS" --arg fixed_count "$FIXED" \
+      --arg escalated_count "$ESCALATED" --arg publish_decision "$PUBLISH_BOOL" 2>/dev/null \
       && echo "[skill 41 harness] qc_result appended to $(resolve_master_files_dir)/build-with-ai-events.jsonl" \
       || echo "[skill 41 harness] qc_result (not persisted -- no master-files dir): $EVENT_LINE"
   else

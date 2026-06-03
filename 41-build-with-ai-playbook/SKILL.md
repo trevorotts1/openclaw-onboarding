@@ -6,7 +6,7 @@
 
 Required read order:
 1. SKILL.md (this file) -- overview, component map, honest MVP status
-2. INSTALL.md -- one-time setup: prerequisites + the numbered install scripts (00--05) + provider env keys
+2. INSTALL.md -- one-time setup: prerequisites + the numbered install scripts (00--06) + provider env keys
 3. INSTRUCTIONS.md -- runtime guide: the full build protocol, brainstorm flow, dependency-first rule, standardized output template, verification checklist
 4. CORE_UPDATES.md -- what gets appended to AGENTS.md + MEMORY.md + TOOLS.md
 5. EXAMPLES.md -- worked, copy-pasteable example flows (UNIVERSAL placeholders only)

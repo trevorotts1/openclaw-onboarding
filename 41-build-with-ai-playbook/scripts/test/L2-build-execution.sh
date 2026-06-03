@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 # L2-build-execution.sh -- Skill 41 v1.3.0 browser-execution harness, Level 2.
 #
-# PROPERTY PROVEN: the executor actually EXECUTES a build (dependency-first creation, then the
-# workflow assembly) rather than merely emitting a prompt. We drive the real
-# dependency-creation.sh from the skill against the LOCAL loopback mock GHL server by pointing
-# its BASE_URL at the mock, and then assert the mock's recorded store proves the build ran in
-# the correct order with the correct objects.
+# PROPERTIES PROVEN (NOT end-to-end create -- see the escalation note below):
+#   1. Dependency-first ORDERING -- the shipped dependency-creation.sh issues the paginated
+#      existence-check GET BEFORE any POST (deps-first / idempotency), and that GET is
+#      authenticated. We run the SKILL's own code against a LOCAL loopback mock GHL server (its
+#      BASE_URL overridden to the mock) with a fake key + fake location -- never real GHL.
+#   2. ZHC-PREFIX enforcement at build time -- a non-prefixed tag is REJECTED (exit 1). This
+#      guard runs before the existence check, so it is independent of property 3's bug.
+#   3. CORRECT ESCALATION of a broken build -- on this code the full create does NOT complete:
+#      the pre-existing `jq -rn` bug in dependency-creation.sh (gap #1 owner's, pre-existing in
+#      main, OUT OF SCOPE for this harness) means no object lands in the store. L2's contract is
+#      that such a build MUST escalate (publish=false) and MUST NOT silently publish -- and that
+#      is exactly what this level asserts. So this is NOT a proof of end-to-end create; it is a
+#      proof that a build broken upstream fails closed (human-last).
 #
-# Why this proves the property (not just describes it):
-#   * We run the SKILL's own dependency-creation.sh (the code that ships), with a fake key, a
-#     fake location, and the GHL base URL overridden to the loopback mock. No real GHL.
-#   * After the run, the mock's store + request log show: a paginated existence-check GET ran
-#     BEFORE the POST (dependency-first / idempotency), the POST created the object, and the
-#     ZHC prefix enforcement fired (a non-prefixed tag is REJECTED, exit 1).
-#   * We then build a "built-workflow" snapshot from what was created and assert it is
-#     structurally complete (the 8-section contract's load-bearing parts: named workflow,
-#     a filtered trigger, created dependencies, a None branch). A real run would hand this
-#     snapshot to L3's Big-Brother core.
+# It then assembles a structurally complete "built-workflow" snapshot (named workflow, filtered
+# trigger, created dependencies, a None branch) -- the hand-off shape L3's Big-Brother core
+# consumes -- so the contract between L2 and L3 is always exercised regardless of the upstream bug.
 #
 # Usage: bash L2-build-execution.sh
 # Exit:  0 = pass, 1 = fail, 3 = SKIP (python3 unavailable).

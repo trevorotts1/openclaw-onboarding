@@ -10,7 +10,7 @@
 #   2 = unsupported OS
 #
 # Pairs with: protocols/agent-browser-preflight-protocol.md
-# Called from: install sequence after 05-setup-minimax-executor.sh (gap #4)
+# Called from: install sequence after 05-configure-executor-model.sh (gap #4)
 set -uo pipefail
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -341,7 +341,7 @@ _info "CDP probe:     PASSED"
 _info "Vault:         ${VAULT_STATUS:-UNKNOWN} at $VAULT_DIR"
 echo ""
 _info "The browser execution rung is READY."
-_info "Next: run 05-setup-minimax-executor.sh if not already done,"
+_info "Next: run 05-configure-executor-model.sh if not already done,"
 _info "then proceed to the skill QC gate (11-run-qc-checklist.sh)."
 
 exit 0

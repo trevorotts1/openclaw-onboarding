@@ -14,7 +14,7 @@ This protocol ensures the stack is present and proven before any live build run.
 
 | Trigger | Action |
 |---|---|
-| First-time Skill 41 install | Run 06-verify-agent-browser.sh as part of the install sequence (after 05-setup-minimax-executor.sh) |
+| First-time Skill 41 install | Run 06-verify-agent-browser.sh as part of the install sequence (after 05-configure-executor-model.sh) |
 | OpenClaw upgrade on any client machine | Re-run to confirm Agent Browser survives the upgrade |
 | Browser execution fails at runtime | Re-run immediately to confirm install state before diagnosing runtime |
 | Client machine OS upgrade (macOS or VPS image) | Re-run — Chromium linkage can break across OS versions |
@@ -196,7 +196,7 @@ Safe to run as part of every skill update or routine health check.
 
 ## Relationship to MiniMax executor preflight (gap #4)
 
-Gap #4 (`05-setup-minimax-executor.sh`) configures the **model** (MiniMax M3 via Ollama
+Gap #4 (`05-configure-executor-model.sh`) configures the **model** (MiniMax M3 via Ollama
 Cloud or OpenRouter). Gap #5 (this protocol + `06-verify-agent-browser.sh`) verifies the
 **browser**. Together they form the complete executor stack:
 
@@ -205,7 +205,7 @@ Executor stack = Agent Browser (gap #5) + MiniMax M3 (gap #4)
 ```
 
 Run order during install:
-1. `05-setup-minimax-executor.sh` -- configure the MiniMax model
+1. `05-configure-executor-model.sh` -- configure the MiniMax model
 2. `06-verify-agent-browser.sh` -- install + verify the browser (this script)
 
 Both must pass before the skill's QC runner (`11-run-qc-checklist.sh`) proceeds to
@@ -214,7 +214,7 @@ the live harness tests (L1-L5, gap #6).
 ## See also
 
 - `scripts/06-verify-agent-browser.sh` -- the runnable implementation of this protocol
-- `scripts/05-setup-minimax-executor.sh` -- MiniMax executor preflight (gap #4)
+- `scripts/05-configure-executor-model.sh` -- MiniMax executor preflight (gap #4)
 - `references/platform-differences.md` -- Mac vs VPS path layout
 - `protocols/build-with-ai-protocol.md` -- the master protocol governing automated builds
 - `INSTALL.md` -- full install sequence (scripts 00 through 06)
