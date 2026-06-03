@@ -44,7 +44,7 @@ Each of the 29 specialists is a full sub-workspace spec, not a flat role file. E
 - `governing-personas.md` -- the 5-layer persona alignment (integrates with Skill 22's persona library)
 - `how-to.md` -- the operating playbook
 - `ROSTER.md` -- summon conditions: when this specialist activates and what it does
-- `SOP/` -- DMAIC standard operating procedures (`00-INDEX.md` + the `PA-NN-NN.md` procedures)
+- `SOP/` -- DMAIC standard operating procedures (`00-INDEX.md` + the `PA-NN-NN-slug.md` procedures, named consistently across all 29 specialists)
 
 ## Relationship to Skill 23 (AI Workforce Blueprint)
 
@@ -76,7 +76,7 @@ Skill 42 is **additive**, not a replacement. It extends Skill 23 by adding the o
 | 16 | Motivation & Momentum | 4 | Monday ignition, mid-week boosts, post-setback bounce-back |
 | 17 | The Challenger | 4 | Hard-mirror sessions, excuse audits, comfort-zone stretch |
 | 18 | Family & Life-Stage | 6 | Family rhythms, life-stage transitions, caregiving coordination |
-| 19 | Study Partner | 5 | Snippet curation, reflection, book curation, accountability (sub-specialist roster) |
+| 19 | Study Partner | 5 | Snippet curation, reflection, book curation, accountability (sub-specialist roster: ships 6 sub-role files — `01-snippet-curator` … `06-study-partner-director` — in addition to the standard 6-file set, for 12 role files total) |
 | 20 | Passion & Purpose | 4 | Purpose clarity, passion mapping, alignment |
 | 21 | Clarity Specialist | 5 | Decision clarity, thought untangling, next-step naming |
 | 22 | YouTube Teacher | 4 | Curated learning, channel/video curation, study plans |
@@ -113,4 +113,4 @@ Several specialists (09 Emotional Support, 24 Superwoman, 26 Therapeutic Support
     ├── 01-inbox-manager/  ...  29-greatness-agent/
 ```
 
-29 specialists × 6 role files = 174 role files, plus 162 `PA-NN-NN.md` SOPs, plus 29 `SOP/00-INDEX.md`, plus `_index.md`. (Specialist 19 also ships 6 sub-specialist role files in place of a single flat IDENTITY/SOUL set.)
+28 specialists × 6 role files + Specialist 19's 12 role files = 180 role files, plus 162 `PA-NN-NN-slug.md` SOPs, plus 29 `SOP/00-INDEX.md`, plus `_index.md`. (Specialist 19 ships 6 sub-specialist role files **in addition to** its standard 6-file set — its `IDENTITY.md` and `SOUL.md` are present alongside the sub-roles, not replaced by them. This is an intentional structural exception: the Study Partner is a roster of 6 sub-specialists rather than one specialist, so it carries both the standard orientation set and a sub-role file per member. The QC script (`qc-personal-assistant-library.sh`) and `scripts/verify-pa-install.sh` exempt Specialist 19 from the per-file role check for this reason.)

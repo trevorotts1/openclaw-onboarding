@@ -159,14 +159,14 @@ All SOPs are now standalone files in the `SOP/` subdirectory. Each file contains
 
 | SOP ID | Name | When To Use | File |
 |--------|------|-------------|------|
-| PA-01-01 | Inbox Triage | Every processing sweep — sort mail into 4-D destinations | [SOP/PA-01-01.md](SOP/PA-01-01.md) |
-| PA-01-02 | Reply Drafting & Voice Matching | Email needs a reply — draft in {{OWNER_NAME}}'s voice | [SOP/PA-01-02.md](SOP/PA-01-02.md) |
-| PA-01-03 | VIP & Urgent Escalation | VIP or urgent email hits the inbox | [SOP/PA-01-03.md](SOP/PA-01-03.md) |
-| PA-01-04 | Follow-Up Tracking | Sent email requires a response by a deadline | [SOP/PA-01-04.md](SOP/PA-01-04.md) |
-| PA-01-05 | Unsubscribe & Declutter | Daily during triage + weekly Friday sweep | [SOP/PA-01-05.md](SOP/PA-01-05.md) |
-| PA-01-06 | Newsletter Digest | Morning sweep — after triage, before briefing | [SOP/PA-01-06.md](SOP/PA-01-06.md) |
-| PA-01-07 | Attachment & Document Filing | Real-time when attachment arrives during triage | [SOP/PA-01-07.md](SOP/PA-01-07.md) |
-| PA-01-08 | End-of-Day Inbox Zero | Last 20 minutes of every workday | [SOP/PA-01-08.md](SOP/PA-01-08.md) |
+| PA-01-01 | Inbox Triage | Every processing sweep — sort mail into 4-D destinations | [SOP/PA-01-01-inbox-triage.md](SOP/PA-01-01-inbox-triage.md) |
+| PA-01-02 | Reply Drafting & Voice Matching | Email needs a reply — draft in {{OWNER_NAME}}'s voice | [SOP/PA-01-02-reply-drafting-voice-matching.md](SOP/PA-01-02-reply-drafting-voice-matching.md) |
+| PA-01-03 | VIP & Urgent Escalation | VIP or urgent email hits the inbox | [SOP/PA-01-03-vip-urgent-escalation.md](SOP/PA-01-03-vip-urgent-escalation.md) |
+| PA-01-04 | Follow-Up Tracking | Sent email requires a response by a deadline | [SOP/PA-01-04-follow-up-tracking.md](SOP/PA-01-04-follow-up-tracking.md) |
+| PA-01-05 | Unsubscribe & Declutter | Daily during triage + weekly Friday sweep | [SOP/PA-01-05-unsubscribe-declutter.md](SOP/PA-01-05-unsubscribe-declutter.md) |
+| PA-01-06 | Newsletter Digest | Morning sweep — after triage, before briefing | [SOP/PA-01-06-newsletter-digest.md](SOP/PA-01-06-newsletter-digest.md) |
+| PA-01-07 | Attachment & Document Filing | Real-time when attachment arrives during triage | [SOP/PA-01-07-attachment-document-filing.md](SOP/PA-01-07-attachment-document-filing.md) |
+| PA-01-08 | End-of-Day Inbox Zero | Last 20 minutes of every workday | [SOP/PA-01-08-end-of-day-inbox-zero.md](SOP/PA-01-08-end-of-day-inbox-zero.md) |
 
 **SOP index with dependency map and reading order:** [SOP/00-INDEX.md](SOP/00-INDEX.md)
 

@@ -23,7 +23,7 @@ The Inbox Manager is the front door of {{COMPANY_NAME}}'s communication system. 
 | `how-to.md` | Operating playbook — daily rhythm, handoffs, escalation paths, quality gates |
 | `ROSTER.md` | When to summon this specialist |
 | `SOP/00-INDEX.md` | Full SOP index with dependency map and reading order |
-| `SOP/PA-01-01.md` through `SOP/PA-01-08.md` | 8 individual DMAIC SOP files |
+| `SOP/PA-01-01-inbox-triage.md` through `SOP/PA-01-08-end-of-day-inbox-zero.md` | 8 individual DMAIC SOP files |
 
 ## How To Use This Role
 
@@ -45,13 +45,13 @@ The Inbox Manager is the front door of {{COMPANY_NAME}}'s communication system. 
 
 | SOP ID | Name | When To Use | File |
 |--------|------|-------------|------|
-| PA-01-01 | Inbox Triage | Every morning and every processing sweep — sort incoming mail into action, read-later, delegate, and delete | [SOP/PA-01-01.md](SOP/PA-01-01.md) |
-| PA-01-02 | Reply Drafting & Voice Matching | An email needs a reply — draft it in {{OWNER_NAME}}'s voice, ready for review or send | [SOP/PA-01-02.md](SOP/PA-01-02.md) |
-| PA-01-03 | VIP & Urgent Escalation | A message from a VIP contact or an urgent situation hits the inbox — escalate with context, not just a forward | [SOP/PA-01-03.md](SOP/PA-01-03.md) |
-| PA-01-04 | Follow-Up Tracking | A sent email requires a response by a deadline — track it, nudge it, and never let a follow-up slip | [SOP/PA-01-04.md](SOP/PA-01-04.md) |
-| PA-01-05 | Unsubscribe & Declutter | Daily and weekly — reduce noise by unsubscribing, filtering, and archiving low-value senders | [SOP/PA-01-05.md](SOP/PA-01-05.md) |
-| PA-01-06 | Newsletter Digest | Morning sweep — distill subscribed newsletters into a 3-bullet digest so {{OWNER_NAME}} stays informed in 60 seconds | [SOP/PA-01-06.md](SOP/PA-01-06.md) |
-| PA-01-07 | Attachment & Document Filing | An attachment arrives — save it to the right place, name it properly, and confirm it is findable | [SOP/PA-01-07.md](SOP/PA-01-07.md) |
-| PA-01-08 | End-of-Day Inbox Zero | Last processing sweep of the day — ensure every email has been touched, flagged, or filed so the inbox closes at zero | [SOP/PA-01-08.md](SOP/PA-01-08.md) |
+| PA-01-01 | Inbox Triage | Every morning and every processing sweep — sort incoming mail into action, read-later, delegate, and delete | [SOP/PA-01-01-inbox-triage.md](SOP/PA-01-01-inbox-triage.md) |
+| PA-01-02 | Reply Drafting & Voice Matching | An email needs a reply — draft it in {{OWNER_NAME}}'s voice, ready for review or send | [SOP/PA-01-02-reply-drafting-voice-matching.md](SOP/PA-01-02-reply-drafting-voice-matching.md) |
+| PA-01-03 | VIP & Urgent Escalation | A message from a VIP contact or an urgent situation hits the inbox — escalate with context, not just a forward | [SOP/PA-01-03-vip-urgent-escalation.md](SOP/PA-01-03-vip-urgent-escalation.md) |
+| PA-01-04 | Follow-Up Tracking | A sent email requires a response by a deadline — track it, nudge it, and never let a follow-up slip | [SOP/PA-01-04-follow-up-tracking.md](SOP/PA-01-04-follow-up-tracking.md) |
+| PA-01-05 | Unsubscribe & Declutter | Daily and weekly — reduce noise by unsubscribing, filtering, and archiving low-value senders | [SOP/PA-01-05-unsubscribe-declutter.md](SOP/PA-01-05-unsubscribe-declutter.md) |
+| PA-01-06 | Newsletter Digest | Morning sweep — distill subscribed newsletters into a 3-bullet digest so {{OWNER_NAME}} stays informed in 60 seconds | [SOP/PA-01-06-newsletter-digest.md](SOP/PA-01-06-newsletter-digest.md) |
+| PA-01-07 | Attachment & Document Filing | An attachment arrives — save it to the right place, name it properly, and confirm it is findable | [SOP/PA-01-07-attachment-document-filing.md](SOP/PA-01-07-attachment-document-filing.md) |
+| PA-01-08 | End-of-Day Inbox Zero | Last processing sweep of the day — ensure every email has been touched, flagged, or filed so the inbox closes at zero | [SOP/PA-01-08-end-of-day-inbox-zero.md](SOP/PA-01-08-end-of-day-inbox-zero.md) |
 
 **Full SOP index with dependency map:** [SOP/00-INDEX.md](SOP/00-INDEX.md)

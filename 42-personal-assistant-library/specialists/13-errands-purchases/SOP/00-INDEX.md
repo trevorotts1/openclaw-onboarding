@@ -11,10 +11,10 @@
 
 | SOP ID | Name | Frequency | Trigger | Page |
 |--------|------|-----------|---------|------|
-| PA-13-01 | Order & Purchase Execution | On-demand, 1-10x weekly | {{OWNER_NAME}} says "order," "buy," "grab," or sends a product link | [PA-13-01](PA-13-01.md) |
-| PA-13-02 | Returns & Refunds | On-demand, 1-5x monthly | Item arrives damaged, wrong, or {{OWNER_NAME}} wants to return | [PA-13-02](PA-13-02.md) |
-| PA-13-03 | Comparison Shopping | On-demand, 2-8x monthly | {{OWNER_NAME}} wants pricing research before committing to buy | [PA-13-03](PA-13-03.md) |
-| PA-13-04 | Home & Service-Appointment Scheduling | On-demand, 2-6x monthly | {{OWNER_NAME}} needs a plumber, cleaner, installer, or personal service | [PA-13-04](PA-13-04.md) |
+| PA-13-01 | Order & Purchase Execution | On-demand, 1-10x weekly | {{OWNER_NAME}} says "order," "buy," "grab," or sends a product link | [PA-13-01](PA-13-01-order-purchase-execution.md) |
+| PA-13-02 | Returns & Refunds | On-demand, 1-5x monthly | Item arrives damaged, wrong, or {{OWNER_NAME}} wants to return | [PA-13-02](PA-13-02-returns-refunds.md) |
+| PA-13-03 | Comparison Shopping | On-demand, 2-8x monthly | {{OWNER_NAME}} wants pricing research before committing to buy | [PA-13-03](PA-13-03-comparison-shopping.md) |
+| PA-13-04 | Home & Service-Appointment Scheduling | On-demand, 2-6x monthly | {{OWNER_NAME}} needs a plumber, cleaner, installer, or personal service | [PA-13-04](PA-13-04-home-service-appointment-scheduling.md) |
 
 ---
 

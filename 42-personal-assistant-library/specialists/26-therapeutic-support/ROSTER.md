@@ -14,28 +14,28 @@
 
 | SOP ID | SOP Name | File | Owner | Type |
 |--------|----------|------|-------|------|
-| PA-26-01 | Active Listening & Validation Session | `track-i/SOP/PA-26-01__Active_Listening___Validation_Session.md` | TS-01 | On-Demand |
-| PA-26-02 | Emotional Check-In Protocol | `track-i/SOP/PA-26-02__Emotional_Check_In_Protocol.md` | TS-01 | Recurring, Daily |
-| PA-26-03 | Stress Inventory & Triage | `track-i/SOP/PA-26-03__Stress_Inventory___Triage.md` | TS-01 | On-Demand |
+| PA-26-01 | Active Listening & Validation Session | `PA-26-01-active-listening-validation-session.md` | TS-01 | On-Demand |
+| PA-26-02 | Emotional Check-In Protocol | `PA-26-02-emotional-check-in-protocol.md` | TS-01 | Recurring, Daily |
+| PA-26-03 | Stress Inventory & Triage | `PA-26-03-stress-inventory-triage.md` | TS-01 | On-Demand |
 
 ## Track II — Therapeutic Modalities
 
 | SOP ID | SOP Name | File | Owner | Type |
 |--------|----------|------|-------|------|
-| PA-26-04 | Grounding Protocol | `track-ii/SOP/PA-26-04-grounding-protocol.md` | TS-02 | On-Demand Intervention |
-| PA-26-05 | CBT Thought Reframing | `track-ii/SOP/PA-26-05-cbt-thought-reframing.md` | TS-03 | On-Demand / Scheduled |
-| PA-26-06 | Journaling Protocol | `track-ii/SOP/PA-26-06-journaling-protocol.md` | TS-03 | On-Demand / Between-Session |
-| PA-26-07 | Breathwork Delivery | `track-ii/SOP/PA-26-07-breathwork-delivery.md` | TS-02 | On-Demand Intervention |
-| PA-26-08 | Overwhelm De-Escalation Script | `track-ii/SOP/PA-26-08-overwhelm-deescalation-script.md` | TS-02 | On-Demand Intervention |
+| PA-26-04 | Grounding Protocol | `PA-26-04-grounding-protocol.md` | TS-02 | On-Demand Intervention |
+| PA-26-05 | CBT Thought Reframing | `PA-26-05-cbt-thought-reframing.md` | TS-03 | On-Demand / Scheduled |
+| PA-26-06 | Journaling Protocol | `PA-26-06-journaling-protocol.md` | TS-03 | On-Demand / Between-Session |
+| PA-26-07 | Breathwork Delivery | `PA-26-07-breathwork-delivery.md` | TS-02 | On-Demand Intervention |
+| PA-26-08 | Overwhelm De-Escalation Script | `PA-26-08-overwhelm-deescalation-script.md` | TS-02 | On-Demand Intervention |
 
 ## Track III — Black-Women-Specific Support
 
 | SOP ID | SOP Name | File | Owner | Type |
 |--------|----------|------|-------|------|
-| PA-26-09 | Racial Stress Acknowledgment Protocol | `track-iii/SOP/PA-26-09__Racial_Stress_Acknowledgment_Protocol.md` | TS-04 | On-Demand Intervention |
-| PA-26-10 | Faith-Compatible Support Framework | `track-iii/SOP/PA-26-10__Faith-Compatible_Support_Framework.md` | TS-04 | On-Demand / Scheduled |
-| PA-26-11 | Early-Warning Monitoring SOP | `track-iii/SOP/PA-26-11__Early-Warning_Monitoring_SOP.md` | TS-04, TS-05 | Recurring, Weekly |
-| PA-26-12 | Crisis Referral & Warm Handoff Protocol | `track-iii/SOP/PA-26-12__Crisis_Referral___Warm_Handoff_Protocol.md` | TS-05 | Boundary Protocol / Crisis Gateway |
+| PA-26-09 | Racial Stress Acknowledgment Protocol | `PA-26-09-racial-stress-acknowledgment-protocol.md` | TS-04 | On-Demand Intervention |
+| PA-26-10 | Faith-Compatible Support Framework | `PA-26-10-faith-compatible-support-framework.md` | TS-04 | On-Demand / Scheduled |
+| PA-26-11 | Early-Warning Monitoring SOP | `PA-26-11-early-warning-monitoring-sop.md` | TS-04, TS-05 | Recurring, Weekly |
+| PA-26-12 | Crisis Referral & Warm Handoff Protocol | `PA-26-12-crisis-referral-warm-handoff-protocol.md` | TS-05 | Boundary Protocol / Crisis Gateway |
 
 ## SOP Usage Matrix by Scenario
 

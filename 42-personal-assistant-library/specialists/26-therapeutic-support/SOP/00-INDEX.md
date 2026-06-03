@@ -17,7 +17,7 @@ Track III is not a separate lane from Tracks I and II. It integrates with them. 
 ## SOP Catalog
 
 ### PA-26-09: Racial Stress Acknowledgment Protocol
-- **File:** `PA-26-09__Racial_Stress_Acknowledgment_Protocol.md`
+- **File:** `PA-26-09-racial-stress-acknowledgment-protocol.md`
 - **Type:** On-Demand Intervention
 - **Purpose:** Name, validate, and hold space for the specific stress {{TOKEN}} carries as a Black woman in professional spaces — the microaggressions, the code-switching, the hypervisibility, the representational burden, the toll of being the Only One. This SOP ensures that what general support misses gets acknowledged with cultural precision.
 - **When to use:** {{TOKEN}} describes a racialized workplace experience, signals code-switching fatigue, uses "only one" language, or her emotional check-in reveals stress with a clear racial-professional nexus.
@@ -25,7 +25,7 @@ Track III is not a separate lane from Tracks I and II. It integrates with them. 
 - **Key deliverable:** Validated experience, named labor, decompression space, and a re-centering ritual that affirms her identity and worth.
 
 ### PA-26-10: Faith-Compatible Support Framework
-- **File:** `PA-26-10__Faith-Compatible_Support_Framework.md`
+- **File:** `PA-26-10-faith-compatible-support-framework.md`
 - **Type:** On-Demand / Scheduled
 - **Purpose:** Integrate {{TOKEN}}'s Christian faith and spiritual practice into therapeutic support when spirituality is her primary coping language — naturally, reverently, and without imposing, over-spiritualizing, or bypassing real emotional pain with platitudes.
 - **When to use:** {{TOKEN}} references scripture, prayer, or faith language unprompted; she explicitly asks for spiritually-integrated support; or her coping framework is clearly anchored in her Christian practice.
@@ -33,7 +33,7 @@ Track III is not a separate lane from Tracks I and II. It integrates with them. 
 - **Key deliverable:** Faith-integrated reflection, scripture or practice that supports (not bypasses) her emotional reality, and a spiritual grounding ritual.
 
 ### PA-26-11: Early-Warning Monitoring SOP
-- **File:** `PA-26-11__Early-Warning_Monitoring_SOP.md`
+- **File:** `PA-26-11-early-warning-monitoring-sop.md`
 - **Type:** Recurring, Weekly
 - **Purpose:** Track emotional check-in scores, session themes, de-escalation frequency, and modality usage over time to detect downward trends before they become crises. This SOP is the dashboard that sees the pattern before {{TOKEN}} can articulate it.
 - **When to use:** Weekly review of all PA-26-02 check-in scores, plus on-demand when a pattern suspicion arises.
@@ -41,7 +41,7 @@ Track III is not a separate lane from Tracks I and II. It integrates with them. 
 - **Key deliverable:** Trend report with flags at 2-week downward pattern (yellow alert) and 3-week (red alert), recommended interventions, and specialist notifications.
 
 ### PA-26-12: Crisis Referral & Warm Handoff Protocol
-- **File:** `PA-26-12__Crisis_Referral___Warm_Handoff_Protocol.md`
+- **File:** `PA-26-12-crisis-referral-warm-handoff-protocol.md`
 - **Type:** Boundary Protocol / Crisis Gateway
 - **Purpose:** The firewall. When {{TOKEN}}'s needs cross from coaching into clinical territory — suicidal ideation, self-harm, clinical emergency, safety threats — this SOP executes the warm, non-abandoning handoff to professional crisis and clinical resources. The boundary IS the care.
 - **When to use:** ANY crisis trigger fires (see Hard Gate in how-to.md). This SOP is not optional — it activates automatically when triggers are detected.

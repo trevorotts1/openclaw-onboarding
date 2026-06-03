@@ -11,14 +11,14 @@
 
 | SOP ID | Name | Frequency | Trigger | Page |
 |--------|------|-----------|---------|------|
-| PA-01-01 | Inbox Triage | 3x daily (morning, mid-day, end-of-day) | Every processing sweep | [PA-01-01](PA-01-01.md) |
-| PA-01-02 | Reply Drafting & Voice Matching | On-demand, 5-15x daily | {{OWNER_NAME}} request or triage identifies reply-needed email | [PA-01-02](PA-01-02.md) |
-| PA-01-03 | VIP & Urgent Escalation | On-demand | VIP sender email or urgent content detected | [PA-01-03](PA-01-03.md) |
-| PA-01-04 | Follow-Up Tracking | Continuous (tracking) + daily (review) | Email sent that requires a response by deadline | [PA-01-04](PA-01-04.md) |
-| PA-01-05 | Unsubscribe & Declutter | Daily (quick) + weekly (full audit) | Every triage sweep and Friday close-out | [PA-01-05](PA-01-05.md) |
-| PA-01-06 | Newsletter Digest | Daily (weekday mornings) | After inbox triage, before daily briefing | [PA-01-06](PA-01-06.md) |
-| PA-01-07 | Attachment & Document Filing | Continuous (real-time during triage) + weekly audit | Email with attachment arrives | [PA-01-07](PA-01-07.md) |
-| PA-01-08 | End-of-Day Inbox Zero | Daily (last 20 min of workday) | End-of-day processing sweep | [PA-01-08](PA-01-08.md) |
+| PA-01-01 | Inbox Triage | 3x daily (morning, mid-day, end-of-day) | Every processing sweep | [PA-01-01](PA-01-01-inbox-triage.md) |
+| PA-01-02 | Reply Drafting & Voice Matching | On-demand, 5-15x daily | {{OWNER_NAME}} request or triage identifies reply-needed email | [PA-01-02](PA-01-02-reply-drafting-voice-matching.md) |
+| PA-01-03 | VIP & Urgent Escalation | On-demand | VIP sender email or urgent content detected | [PA-01-03](PA-01-03-vip-urgent-escalation.md) |
+| PA-01-04 | Follow-Up Tracking | Continuous (tracking) + daily (review) | Email sent that requires a response by deadline | [PA-01-04](PA-01-04-follow-up-tracking.md) |
+| PA-01-05 | Unsubscribe & Declutter | Daily (quick) + weekly (full audit) | Every triage sweep and Friday close-out | [PA-01-05](PA-01-05-unsubscribe-declutter.md) |
+| PA-01-06 | Newsletter Digest | Daily (weekday mornings) | After inbox triage, before daily briefing | [PA-01-06](PA-01-06-newsletter-digest.md) |
+| PA-01-07 | Attachment & Document Filing | Continuous (real-time during triage) + weekly audit | Email with attachment arrives | [PA-01-07](PA-01-07-attachment-document-filing.md) |
+| PA-01-08 | End-of-Day Inbox Zero | Daily (last 20 min of workday) | End-of-day processing sweep | [PA-01-08](PA-01-08-end-of-day-inbox-zero.md) |
 
 ---
 
