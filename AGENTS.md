@@ -98,6 +98,7 @@ This is the single canonical index of the N1–N27 non-negotiables. Every other 
 | N25 | **Skill-version-pinning + reproducibility.** Every skill has `skill-version.txt`. The Sunday update check compares remote against local and writes per-skill changes into `skill_changes[]` in the detection JSON. | `check-updates.sh` | Audit Phase 20.7 |
 | N26 | **Calibre auto-install for Book-to-Persona.** `_find_calibre()` in `22-book-to-persona/pipeline/orchestrator.py` auto-installs Calibre when missing — Homebrew on Mac, apt-get on Linux (with upstream installer fallback). User never sees an "install Calibre manually" prompt. | `22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py` | Audit Phase 14 |
 | N27 | **No lying / no shortcuts / proof required.** End-to-end completion is the only completion. Every claimed fix needs a verifiable artifact (commit hash, curl-against-HEAD output, exit code). The 20% not done gets disclosed, not buried. | This file + owner directive | Audit retro on every release |
+| N28 | **No destructive teardown or kill scripts — ever.** Agents MUST NOT create or schedule any script or cron that removes the toolchain (`~/clawd`, `~/.openclaw`, Homebrew, Node, or OpenClaw itself). Cleanup must be scoped (remove a specific cron by ID), reversible (rename to `.QUARANTINED-<ts>` before deleting), and never self-deleting via a cron-scheduled kill script. Applies to build-cleanup, post-build teardown, SOP-backfill abort, and any "clean up after yourself" pattern. Root cause: 2026-05 Kofi incident — autonomous agent created `kofi-sop-build-kill.sh` during Skill 23 to abort a runaway SOP build; script wiped Homebrew/Node/OpenClaw/clawd. No script that touches core toolchain paths may be spawned by an agent without explicit owner approval. | This file + forensic post-mortem 2026-06-03 | Cron audit gate: any cron payload containing `rm -rf`, `brew uninstall`, `npm uninstall -g openclaw`, or paths `~/clawd` / `~/.openclaw` must be rejected |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
 
@@ -276,6 +277,14 @@ You wake up fresh each session. These files are your continuity:
 
 #### Security Changes
 **Never implement security changes without explicit approval.** Propose, explain, wait for green light.
+
+#### No Destructive Teardown or Kill Scripts (N28)
+**Agents MUST NOT create or schedule any script or cron that removes the toolchain** (`~/clawd`, `~/.openclaw`, Homebrew, Node, or OpenClaw itself). This includes build-cleanup, post-build teardown, SOP-backfill abort, or any "clean up after yourself" pattern.
+- Cleanup must be **scoped**: remove a specific cron by ID only
+- Cleanup must be **reversible**: rename files to `.QUARANTINED-<ts>` — never `rm`
+- **Never** schedule a cron whose payload contains `rm -rf`, `brew uninstall`, `npm uninstall -g openclaw`, or any path under `~/clawd` / `~/.openclaw`
+- Any script touching core toolchain paths requires explicit owner approval before creation
+See N28 in the rules index above.
 
 ### External vs Internal
 
