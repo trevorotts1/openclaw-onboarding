@@ -27,7 +27,12 @@ Search ALL core files and the master files folder BEFORE creating anything new.
 - If not found: proceed to create new
 
 ### 5. Create Deep File (If Needed)
-Save COMPLETE, UNABRIDGED content to master files folder with this header:
+
+**STORAGE PATH (canonical, non-negotiable):**
+- Mac: `~/Downloads/openclaw-master-files/<typ-subfolder>/` (e.g., `processes/`, `apis/`, `skills/`, `references/`)
+- VPS: `/data/.openclaw/master-files/<typ-subfolder>/` (same subfolder names)
+
+Save COMPLETE, UNABRIDGED content to that path with this header:
 ```
 # [Topic Name]
 - Source: [where this came from]
@@ -36,6 +41,15 @@ Save COMPLETE, UNABRIDGED content to master files folder with this header:
 - Referenced by: [which core files point to this]
 ```
 NEVER truncate the deep file. It is the full reference.
+
+**POINTER FORMAT (required in every core file that references a deep file):**
+```
+- Full reference: ~/Downloads/openclaw-master-files/<subfolder>/<filename>.md
+- When to go deeper: [specific trigger — e.g., first use, hitting errors, complex task]
+```
+
+### MANDATORY — NO-PASTE RULE
+**Long playbooks, SOPs, API docs, and any document over ~25 lines MUST NEVER be pasted into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md).** Store the full document in the master-files TYP subfolder. Add only a hyper-concise summary (10–25 lines max) plus the explicit pointer to the file. Vagueness about storage path or pointer format is what causes bloat — this rule is absolute.
 
 ### 6. Write Core File Summaries
 Add lightweight summaries (10-25 lines based on priority) to relevant core files.
@@ -82,11 +96,13 @@ Report:
 
 ## Common Mistakes
 
-1. Dumping full content into core files (causes bloat, burns tokens)
-2. Creating deep file but not referencing it from any core file (orphan file, invisible)
-3. Creating duplicate master files folders (search first)
-4. Skipping the announcement (user must know TYP is active)
-5. Summarizing the deep file (deep file is COMPLETE, never truncate)
-6. Not checking for existing knowledge (always search first)
-7. Over-summarizing (if the agent would be stuck with just the summary, it is too thin)
-8. Under-summarizing (if the summary is 30+ lines, it is too thick)
+1. Dumping full content into core files (causes bloat, burns tokens) — **the #1 root cause of bootstrap file inflation**
+2. Vague storage path — "somewhere in master-files" is not a path; use the canonical path (Mac: `~/Downloads/openclaw-master-files/<subfolder>/`; VPS: `/data/.openclaw/master-files/<subfolder>/`)
+3. Missing or incomplete pointer in the core file — every deep file reference needs the full path AND a "when to go deeper" trigger
+4. Creating deep file but not referencing it from any core file (orphan file, invisible)
+5. Creating duplicate master files folders (search first)
+6. Skipping the announcement (user must know TYP is active)
+7. Summarizing the deep file (deep file is COMPLETE, never truncate)
+8. Not checking for existing knowledge (always search first)
+9. Over-summarizing (if the agent would be stuck with just the summary, it is too thin)
+10. Under-summarizing (if the summary is 30+ lines, it is too thick)

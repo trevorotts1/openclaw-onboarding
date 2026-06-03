@@ -541,6 +541,19 @@ One source of truth. The deep file is authoritative. Core file summaries point T
 Clean up dead references. If a deep file is deleted or moved, immediately update all core files that pointed to it.
 No "just in case" entries. Don't add lightweight summaries for knowledge that has zero chance of being needed. Not everything needs to be in the core files.
 
+MANDATORY STORAGE PATH — NON-NEGOTIABLE:
+Mac installs: ~/Downloads/openclaw-master-files/<subfolder>/ (subfolders: apis/, skills/, processes/, references/)
+VPS installs: /data/.openclaw/master-files/<subfolder>/ (same subfolder names)
+The path must be written EXACTLY as shown above when creating deep files and when writing pointers into core files. "Somewhere in master-files" is not a path — it is vagueness that causes the agent to recreate the file or fail to find it. Every pointer in a core file must include the full absolute path to the deep file.
+
+MANDATORY POINTER FORMAT — every core file entry that references a deep file MUST include:
+- Full reference: [full absolute path to the deep file]
+- When to go deeper: [specific trigger — e.g., "first use of this API, hitting auth errors, complex task"]
+A pointer without a "when to go deeper" trigger teaches nothing. A pointer without the full path leads nowhere.
+
+MANDATORY NO-PASTE RULE — this is the root cause of all bootstrap bloat:
+Long playbooks, SOPs, API docs, and any document over ~25 lines MUST NEVER be pasted into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md, HEARTBEAT.md). Store the full document in the master-files TYP subfolder. Add only a hyper-concise summary (10–25 lines max) plus the explicit pointer. This rule applies even when the user says "add this to AGENTS.md" for a large document — acknowledge, store the full doc properly, write the summary + pointer into AGENTS.md, and explain what you did.
+
 14. Maintenance and Updates
 When Knowledge Changes
 If the user provides updated information about something already learned:
@@ -664,8 +677,10 @@ Step-by-Step: What to Do When You Receive This Document
 Step 1: Evaluate - You are learning an operational protocol for how to learn new things.
 Step 2: Assess size - This document is large (800+ lines, 37,000+ characters). It is too big for any single core file. It needs its own .md file.
 Step 3: Check/create the master files folder - Search ~/Downloads/ for any existing folder that serves as the master knowledge storage. Look for folders named openclaw-master-files, openclaw-master-docs, openclaw-docs, master-files, master-docs, or any similar variation containing "openclaw," "master," "docs," or "files." If found, use that folder. If nothing exists, create ~/Downloads/openclaw-master-files/. Then check for a processes/ subfolder inside it. If it does not exist, create it.
-Step 4: Store the full document - Save this entire document (untruncated, nothing removed) as:
-~/Downloads/openclaw-master-files/processes/teach-yourself-protocol.md
+Step 4: Store the full document - Save this entire document (untruncated, nothing removed) to the canonical TYP subfolder:
+Mac: ~/Downloads/openclaw-master-files/processes/teach-yourself-protocol.md
+VPS: /data/.openclaw/master-files/processes/teach-yourself-protocol.md
+Use the path that matches your platform. NEVER paste this document into any bootstrap file — store it here and write a summary + pointer into the core files.
 Step 5: Determine which core files need updates - This protocol affects how you BEHAVE (AGENTS.md), what TOOLS you use (TOOLS.md), what you KNOW (MEMORY.md), and what you're CAPABLE of (IDENTITY.md).
 Step 6: Write lightweight summaries in each core file
 Add the following to AGENTS.md:
