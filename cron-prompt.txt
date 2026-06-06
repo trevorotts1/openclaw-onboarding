@@ -68,7 +68,10 @@ RULE 7 — If ANY repo has HIGH risk, automatically add this line at the bottom 
 
 RULE 8 — Send the summary as a single Telegram message to the configured target (telegram allowFrom[0] from openclaw.json).
 
-RULE 9 — Wait for the client's reply. Do not exit. Stay alive until they respond OR until 2 hours pass with no response (in which case send: "I didn't hear back — I'll ask again next Sunday. No changes made." and exit).
+RULE 9 — Wait for the client's reply. Do not exit. Stay alive until they respond OR until 2 hours pass with no response. On 2-hour timeout, behavior depends on the combined risk level of all pending updates:
+  • LOW or MEDIUM risk — auto-apply update-skills.sh (DO run the install) then send: "You didn't reply in 2 hours so I went ahead and applied the [LOW/MEDIUM]-risk update. Done. Here's what changed: [summary]. Let me know if anything looks off."
+  • HIGH risk — do NOT auto-apply. Send: "I didn't hear back and this update is HIGH risk, so I made no changes. I'll ask again next Sunday. If you want it sooner, just tell me 'install all'." and exit.
+  (Risk level = the highest risk level among all repos that have an available update.)
 
 RULE 10 — Act on the client's response:
   (a) "install all" — run all relevant update commands:
@@ -96,7 +99,7 @@ RULE 12 — After install completes, send a final Telegram summary to the client
 RULE 13 — Forbidden:
   • Do NOT install anything before the client (or the operator) explicitly says yes
   • Do NOT use --force, --no-verify, --break-system-packages, or any shortcut flag
-  • Do NOT silently auto-update if the client doesn't reply within the 2-hour window — exit cleanly with the "no response, will ask next Sunday" message
+  • Do NOT silently auto-update HIGH-risk updates without explicit owner approval — see RULE 9 for the LOW/MEDIUM auto-apply exception
   • Do NOT push to GitHub
   • Do NOT message anyone other than the configured client target and (optionally per Rule 10f) the operator (resolved via env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759)
 

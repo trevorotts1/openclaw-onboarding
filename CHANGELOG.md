@@ -1,3 +1,17 @@
+## [v10.15.42]  -  2026-06-05  -  Wire deploy: migrate script + PA mandatory + cron auto-apply + probe-fleet version check
+
+### Why
+Repo updates were not automatically installing into client workforce trees after `update-skills.sh` ran — the `cp -r` loop copied skill folders but never called `migrate-existing-workforce.sh` to wire them into the live department tree. Separately, Personal Assistant department was approved as mandatory (Skill 42 PA Library shipped in v10.15.40) but `department-naming-map.json` still had it as a pending TODO. The Sunday cron also silently abandoned non-responsive clients even on LOW/MEDIUM risk updates. This release closes all three gaps and adds a version-check step to the fleet heartbeat probe.
+
+### What changed
+- **`update-skills.sh`**: After the `cp -r` skill-copy loop and before writing `.onboarding-version`, calls `bash "$SKILLS_DIR/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh" "$(hostname)" --apply` if the script is executable, logging output to `$LOG_FILE`. Non-executable or missing = soft-skip with a warning, never a hard failure.
+- **`23-ai-workforce-blueprint/department-naming-map.json`**: `personal-assistant` department promoted from "pending proposal" to the `mandatory` block. Description updated from "23-department standard (TODO: PA pending)" to "24-department standard". Universal floor raised from 16+7=23 to 17+7=24.
+- **`cron-prompt.txt` RULE 9**: Changed 2-hour no-reply behavior — LOW/MEDIUM risk now auto-applies `update-skills.sh` and reports; HIGH risk still waits for explicit yes. RULE 13 updated to match (removed the unconditional "exit cleanly" clause, replaced with "no silent HIGH-risk auto-update — see RULE 9").
+- All 9 version markers rolled atomically to v10.15.42 via `scripts/bump-version.sh`.
+
+### Risk
+MEDIUM-additive. `migrate-existing-workforce.sh` is guarded by `-x` check, additive-only (never deletes), and its output is captured to log — it cannot break an update if it errors. The cron rule change means non-responsive clients on LOW/MEDIUM updates get their box updated autonomously; HIGH risk unchanged.
+
 ## [v10.15.41]  -  2026-06-05  -  Kill interview fabrication — no autonomous Option B
 
 ### Why

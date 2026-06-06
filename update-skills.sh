@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.41"
+ONBOARDING_VERSION="v10.15.42"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -487,6 +487,25 @@ main() {
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
     echo "    Updated: $SKILL_NAME"
   done
+
+  # ----------------------------------------------------------
+  # v10.15.42: Run migrate-existing-workforce.sh so copied skills
+  # actually install into the client's live department tree.
+  # This script is idempotent and additive — it never deletes or
+  # overwrites existing departments, only fills gaps.
+  # ----------------------------------------------------------
+  MIGRATE_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
+  if [ -x "$MIGRATE_SCRIPT" ]; then
+    echo ""
+    echo "  Running workforce migration (installs copied skills into department tree)..."
+    if bash "$MIGRATE_SCRIPT" "$(hostname)" --apply >> "$LOG_FILE" 2>&1; then
+      echo "  migrate-existing-workforce.sh: OK"
+    else
+      echo "  migrate-existing-workforce.sh: completed with warnings (see $LOG_FILE)"
+    fi
+  else
+    echo "  (migrate-existing-workforce.sh not found or not executable — skipping)"
+  fi
 
   # Write version file to active dir (the canonical location)
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
