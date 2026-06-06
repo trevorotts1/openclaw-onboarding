@@ -1,7 +1,18 @@
 ---
+# CANONICAL OpenClaw skill name — this is the field OpenClaw uses to register
+# the skill, derive its slash command, and key its allowlist (docs.openclaw.ai
+# /tools/skills: "The skill's name, slash command, and allowlist key all come
+# from the `name` frontmatter field"). It MUST stay identical across the Mac
+# (openclaw-onboarding) and VPS (openclaw-onboarding-vps) repos. Canonical name
+# reconciled to `social-media-planner` on BOTH repos (v10.15.48). Do NOT rename.
 name: social-media-planner
 description: Multi-agent content publishing engine that researches, creates, produces, schedules, and publishes content across 8 platforms (WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook) — handles text, images, videos, podcasts, and HTML email newsletters using a 15+6 agent model.
-skill_name: content-publishing-engine
+# `workflow_id` is the INTERNAL antfarm CLI workflow identifier used by
+# `cli.js workflow run content-publishing-engine ...` — it is NOT the OpenClaw
+# skill name and OpenClaw never registers from it. Renamed from the legacy
+# `skill_name` key (v10.15.48) so it can never be mistaken for the registration
+# name again. The antfarm workflow id stays `content-publishing-engine`.
+workflow_id: content-publishing-engine
 version: v1.4.0
 author: Stefanie
 created_date: 2026-04-14

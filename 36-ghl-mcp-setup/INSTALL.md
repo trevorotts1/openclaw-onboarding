@@ -356,6 +356,22 @@ openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_P
 
 #### 5.5 Install service — macOS (launchd)
 
+> **v10.15.48 — AUTOSTART IS NOW EXECUTED, NOT PROSE.** The steps in 5.1–5.7
+> below are the canonical reference, but you no longer have to run them by hand:
+> `install.sh` (Step 14a) and `update-skills.sh` (GHL MCP wiring) both run
+> `scripts/ghl-mcp-autostart.sh`, which builds the server if needed, writes this
+> exact `com.clawd.ghl-mcp` launchd plist, boots it with KeepAlive on :8765,
+> health-checks `/health`, and registers the MCP. It is idempotent and prints a
+> `STATUS:` line. Run it manually only to re-verify:
+>
+> ```bash
+> bash ~/.openclaw/onboarding/scripts/ghl-mcp-autostart.sh
+> # STATUS: ghl-mcp-autostart=HEALTHY (server on :8765 healthy + registered ...)
+> ```
+>
+> Registration WITHOUT a running server = GHL tools that never resolve. The
+> server MUST be up (this is what 5.5 starts) AND registered (5.7).
+
 ```bash
 if [ "$PLATFORM" = "desktop" ]; then
   mkdir -p ~/Library/Logs/ghl-mcp

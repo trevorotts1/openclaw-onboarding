@@ -426,6 +426,67 @@ If the operator asks "what scopes do I need" or similar, the agent
 points them to the Google Doc rather than answering from memory.
 The doc may have been updated since the skill was built.
 
+## PART 3.5 — THE ONBOARDING VERIFICATION GATE (binding definition of "installed/done")
+
+**Added v10.15.48 (FIX 1: ONBOARDING HONESTY).** The #1 reported failure was
+agents reporting a skill "installed / done / onboarded" when it had only been
+DOWNLOADED to disk — install.sh copies files + pastes activation PROSE into
+AGENTS.md (never executed), and the old "complete" Telegram fired
+unconditionally. There is now a real STATE MACHINE + GATE.
+
+### Rule 16: A skill is INSTALLED only when the gate passes
+
+State file: `~/.openclaw/workspace/.onboarding-state.json` — every non-archived
+skill is seeded `pending` and advances:
+
+```
+pending → downloaded → wired → qc-passed | qc-failed     (+ park: interview-pending)
+```
+
+Gate library: `~/.openclaw/scripts/onboarding-state.sh` (also at
+`~/.openclaw/onboarding/scripts/onboarding-state.sh`). A skill counts INSTALLED
+only when **all applicable checks pass**:
+
+  (a) `openclaw skills info <name>` returns the skill as Ready/visible (the
+      `name` is the SKILL.md frontmatter `name:` field), AND
+  (b) its CORE_UPDATES sentinel `<!-- skill:<folder>:core-update-applied -->`
+      is present in the workspace core files — only required if the skill ships
+      a `CORE_UPDATES.md`, AND
+  (c) its `qc-*.sh` exits 0 — only required if it ships one.
+
+Usage:
+
+```bash
+source ~/.openclaw/scripts/onboarding-state.sh
+obs_verify_skill 36-ghl-mcp-setup      # sets qc-passed | qc-failed, echoes reason
+obs_gate_summary                       # "X/Y verified-installed, Z NOT verified: <list>"; rc=0 only when all pass
+```
+
+### Rule 17: "Onboarding complete" is gate + closeout, never a flag
+
+Onboarding/update is **complete** ONLY when `obs_gate_summary` returns success
+(every non-archived skill is `qc-passed` OR an explicit `interview-pending`
+park) AND closeout (Skill 37) has fired where applicable. A `✅ complete` /
+"Skills updated successfully" message is now CONDITIONAL on this gate in both
+`install.sh` and `update-skills.sh`, and the `qc-completeness.sh` exit code is
+HONORED (was ignored). If the gate is not met, report the TRUTH — "wave N: X/Y
+verified-installed, Z failed: <list>" — never "done".
+
+### Rule 18: INTERVIEW_PENDING is a park, not "done"
+
+A skill that legitimately awaits owner input may be parked
+`interview-pending` (`obs_set_status <folder> interview-pending`). The
+`onboarding-resume` cron re-pings the owner on backoff. It is NOT a terminal
+"done" and must never be reported to the owner as installed.
+
+### Rule 19: The onboarding-resume cron is the retry engine
+
+`onboarding-resume` (every 15 min) runs the gate and, while any skill is
+`pending|downloaded|wired|qc-failed`, self-pings the agent to activate + verify.
+It NEVER stops on a self-declared "done" — only on a real gate-pass (shell guard
+`scripts/resume-onboarding.sh`), with max-runs + Rescue-Rangers escalation
+identical to the workforce-build-resume cron.
+
 ## PART 4 — APPLICATION TO ALL SKILLS
 
 These rules apply to:

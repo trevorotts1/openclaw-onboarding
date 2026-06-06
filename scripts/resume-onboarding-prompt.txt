@@ -1,0 +1,58 @@
+[ONBOARDING-RESUME]
+
+You are receiving this message from your own cron — it is NOT from the owner and NOT a new user request. Treat it as an internal onboarding-resume invocation.
+
+═══════════════════════════════════════════════════════════════════
+RULE 8 — NEVER STOP (binding for every resume fire)
+═══════════════════════════════════════════════════════════════════
+- NEVER end your turn declaring onboarding "done" unless the VERIFICATION GATE passes. "Files are on disk" is NOT done. "No sub-agents running" is NOT done. A skill you merely READ about is NOT installed.
+- The ONLY legitimate stop is a REAL gate-pass: every non-archived skill is qc-passed (or an explicit interview-pending park) AND closeout has fired where applicable. The shell guard removes this cron only then.
+- On a timeout / 429 / model failure: do NOT stop. Back off ~2 hours, retry; the recurring cron is your retry engine — it is idempotent and will re-fire.
+- The client must NEVER discover that onboarding wasn't actually finished.
+
+═══════════════════════════════════════════════════════════════════
+STEP -1 — RUN THE SHELL GUARD FIRST
+═══════════════════════════════════════════════════════════════════
+BEFORE anything else, invoke the shell-level resume guard. It runs the
+verification gate, self-removes this cron if the gate already passes,
+handles the max-runs/Rescue-Rangers escalation, re-pings the owner about any
+interview-pending parks, and computes the not-yet-passed work list. Costs <1s.
+
+```bash
+bash "$HOME/.openclaw/scripts/resume-onboarding.sh" 2>/dev/null \
+  || bash /data/.openclaw/scripts/resume-onboarding.sh 2>/dev/null \
+  || bash "$HOME/.openclaw/onboarding/scripts/resume-onboarding.sh" 2>/dev/null \
+  || true
+```
+
+If that script already self-removed the cron, you'll receive no more messages
+from it. If it determined there is work, continue below.
+
+═══════════════════════════════════════════════════════════════════
+STEP 0 — SOURCE THE GATE + READ STATE
+═══════════════════════════════════════════════════════════════════
+```bash
+source "$HOME/.openclaw/scripts/onboarding-state.sh" 2>/dev/null \
+  || source /data/.openclaw/scripts/onboarding-state.sh 2>/dev/null
+obs_gate_summary    # prints GATE-HUMAN: X/Y verified-installed, Z NOT verified: <list>
+```
+State file: `~/.openclaw/workspace/.onboarding-state.json` (per-skill:
+pending → downloaded → wired → qc-passed | qc-failed; plus interview-pending park).
+
+═══════════════════════════════════════════════════════════════════
+STEP 1 — DRIVE EVERY NOT-PASSED SKILL TO qc-passed
+═══════════════════════════════════════════════════════════════════
+For EACH skill folder under `~/.openclaw/skills/` whose status is NOT qc-passed:
+1. READ all files (Teach Yourself Protocol): SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md, references/*.md
+2. CHECK prerequisites + search credential locations (~/.openclaw/secrets/.env, openclaw.json env.vars). Don't re-ask the owner for values that already exist.
+3. EXECUTE the INSTALL.md activation steps (read ≠ execute). Run the skill's own *.sh installer if it ships one, merge CORE_UPDATES.md surgically, install brew prereqs, `openclaw mcp set` where required.
+4. RUN the gate: `obs_verify_skill <folder>`. Loop activate→verify until it returns qc-passed.
+5. A skill that GENUINELY needs owner input may be parked: `obs_set_status <folder> interview-pending`, then ask the owner the specific question. That is the ONLY non-passed terminal state — and it is NOT "done"; the cron will keep reminding the owner on backoff.
+
+Discipline (binding): Skills 22-23 MAIN ORCHESTRATOR ONLY; tier order in tiered skills (no skipping); no `--force`/`--no-verify`/`--break-system-packages`.
+
+═══════════════════════════════════════════════════════════════════
+STEP 2 — REPORT HONESTLY, THEN CLEAN UP ONLY ON GATE-PASS
+═══════════════════════════════════════════════════════════════════
+- Tell the owner the TRUTH in plain English: how many skills are verified-installed, and what (if anything) remains. NEVER say installed/done/onboarded for a skill that is not qc-passed.
+- When `obs_gate_summary` returns success: remove the UPDATE PENDING section from AGENTS.md, add the "verification gate PASSED" line to MEMORY.md, and let the shell guard self-remove this cron on its next fire.

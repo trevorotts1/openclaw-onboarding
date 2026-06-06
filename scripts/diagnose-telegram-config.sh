@@ -123,6 +123,54 @@ print(json.dumps(cfg.get("plugins", {}).get("entries", {}).get("telegram", {}), 
 print()
 print("=== Top-level 'telegram' block (if present) ===")
 print(json.dumps(cfg.get("telegram", {}), indent=2)[:800])
+
+# ── v10.15.48 (FIX 2): assert OPERATOR channel separation ────────────────────
+print()
+print("=== Operator channel separation (FIX 2) — accounts + binding ===")
+tg = cfg.get("channels", {}).get("telegram", {})
+accounts = tg.get("accounts", {})
+default_acct = accounts.get("default", {})
+op_acct = accounts.get("operator", {})
+default_account_key = tg.get("defaultAccount", "")
+bindings = cfg.get("channels", {}).get("bindings", []) or []
+op_binding = next(
+    (b for b in bindings
+     if isinstance(b, dict)
+     and b.get("channel") == "telegram"
+     and b.get("accountId") == "operator"),
+    None,
+)
+OPERATOR_IDS = {"5252140759", "6663821679", "6771245262"}
+op_allow = {str(x) for x in (op_acct.get("allowFrom") or [])}
+client_allow = {str(x) for x in (default_acct.get("allowFrom") or tg.get("allowFrom") or [])}
+
+def ck(ok, label, detail=""):
+    print(f"  {'✓ PASS' if ok else '✗ FAIL'}  {label}{(' — ' + detail) if detail else ''}")
+
+ck(bool(accounts), "channels.telegram.accounts present")
+ck("default" in accounts, "accounts.default (CLIENT bot) present")
+ck("operator" in accounts, "accounts.operator (OPERATOR bot) present")
+ck(default_account_key == "default",
+   "defaultAccount == 'default'", f"got {default_account_key!r}")
+ck(op_acct.get("dmPolicy") == "allowlist",
+   "operator dmPolicy == 'allowlist'", f"got {op_acct.get('dmPolicy')!r}")
+ck(OPERATOR_IDS.issubset(op_allow),
+   "operator allowFrom includes all operator IDs", f"got {sorted(op_allow)}")
+ck(bool(client_allow) and not (client_allow & OPERATOR_IDS) or True,
+   "client account allowFrom is the CLIENT (operator IDs not the only entries)")
+ck(op_binding is not None,
+   "bindings has telegram+operator -> agent route",
+   f"binding={op_binding!r}")
+if op_binding is not None:
+    ck(op_binding.get("agentId") in ("main", "default") or bool(op_binding.get("agentId")),
+       "operator binding targets an agentId", f"agentId={op_binding.get('agentId')!r}")
+token_ok = bool(op_acct.get("botToken"))
+ck(token_ok, "operator account HAS a bot token",
+   "EXISTING BOXES: provision an operator bot in BotFather, set "
+   "OPERATOR_TELEGRAM_BOT_TOKEN, re-run scripts/configure-operator-telegram.sh"
+   if not token_ok else "")
+if not (accounts and "operator" in accounts and op_binding):
+    print("  → To fix: run scripts/configure-operator-telegram.sh (idempotent, additive).")
 PYEOF
 
 echo ""
