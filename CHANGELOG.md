@@ -1,3 +1,15 @@
+## [v10.15.45]  -  2026-06-05  -  Add personal-assistant suggested-roles manifest to satisfy mandatory-floor QC (WS-4)
+
+### Why
+When Personal Assistant was promoted to mandatory (v10.15.42), `department-naming-map.json` registered `suggested_roles_file: personal-assistant-suggested-roles.md` but the file was never created. The WS-4 CI invariant (`test-ws4-departments.sh` → `assert_dept_map_resolves`) hard-fails when any mandatory department's `suggested_roles_file` is missing on disk, so every push to main after v10.15.42 failed CI with "personal-assistant -> personal-assistant-suggested-roles.md (FILE MISSING)".
+
+### Fix
+- `23-ai-workforce-blueprint/suggested-roles/personal-assistant-suggested-roles.md` — created. Format matches all other department suggested-roles files (v2.1 header, department purpose, universal-roles note, specialist expansion note, numbered role entries with What/SOPs/Persona for every role). Roles: Director of Personal Assistance (#0) + 29 Skill-42 PA specialists (Inbox Manager … Greatness Agent, numbered 1–29) + QC Specialist (#30) + Deep Research Specialist (#31).
+- All 9 version markers rolled atomically to v10.15.45 via `scripts/bump-version.sh`.
+
+### Risk
+Low. Additive only — a new file in an existing directory. No logic changed. WS-4 now passes (`assert_dept_map_resolves` — all 28 departments resolve to an existing suggested-roles file). No other invariants affected.
+
 ## [v10.15.44]  -  2026-06-05  -  Fix qc-completeness false rc=4 masking successful additive runs
 
 ### Why
