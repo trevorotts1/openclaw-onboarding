@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Mac mini
 
-> **Version:** see `/version` - this repo at v10.15.49.
+> **Version:** see `/version` - this repo at v10.15.50.
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
+>
+> **NOTE (v10.15.50) — fix: safe_json_edit validate/rollback guard added (parity with VPS v10.16.49 skills.path fix).** The VPS updater was writing `skills.path` into `openclaw.json` — rejected by OpenClaw 2026.5.x — which aborted the entire VPS updater before writing `.onboarding-version`. Mac updater had no such write but equally lacked a validate/rollback harness. `safe_json_edit()` added as a forward-defense guard for any future direct json edits. See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v10.15.49) — TYP hardening: explicit storage path, pointer format, mandatory no-paste rule.** `01-teach-yourself-protocol` INSTRUCTIONS.md and the full doc (Section 13 + Section 17) now specify the canonical Mac storage path (`~/Downloads/openclaw-master-files/<subfolder>/`), mandatory pointer format (full path + "when to go deeper"), and a non-negotiable no-paste rule: long docs are NEVER pasted into bootstrap files. Shared bootstrap templates (AGENTS.md, TOOLS.md, USER.md, SOUL.md, IDENTITY.md) all carry a short mandatory TYP rule so every agent reads it on session start. TYP skill-version.txt → v6.5.7. Per-release version history lives in [CHANGELOG.md](CHANGELOG.md). VPS (10.16.x) and Mac (10.15.x) sequences remain intentionally independent.
 >
@@ -9,7 +11,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
 
-**Current Version: v10.15.49** — See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v10.15.50** — See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 
 This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
 

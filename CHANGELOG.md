@@ -1,3 +1,15 @@
+## [v10.15.50]  -  2026-06-06  -  fix: add safe_json_edit validate/rollback guard on openclaw.json edits (parity with VPS skills.path fix)
+
+### Why
+The VPS `update-skills.sh` was writing `skills.path` into `openclaw.json` — a key OpenClaw 2026.5.x rejects with "skills Unrecognized key path / skills Invalid input". Under `set -euo pipefail` this aborted the entire VPS updater before writing `.onboarding-version` / running migrate / qc / cron-create, breaking Corey + Maria's updates (hand-fixed per-box). The Mac updater had no `skills.path` write, but equally lacked any validate/rollback harness around future json edits.
+
+### What changed
+- New `safe_json_edit()` helper added: backs up `openclaw.json`, runs the transform function, calls `openclaw config validate`, and rolls back on failure — so one bad key can never abort the Mac updater under `set -e`. No current callers (Mac updater already uses `openclaw mcp set` CLI for all json writes); forward-defense only.
+- VPS fix (skills.path removal + same `safe_json_edit()` guard) shipped independently as v10.16.49 per the intentionally-separate version sequence.
+
+### Risk
+Low — purely additive hardening. No behavior change on the current code path; protects future edits.
+
 ## [v10.15.49]  -  2026-06-06  -  docs: HOW-IT-ALL-CONNECTS.md — architecture doc for Skill 22/23/31/32 pipeline
 
 ### Why

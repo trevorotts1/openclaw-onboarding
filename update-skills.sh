@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.49"
+ONBOARDING_VERSION="v10.15.50"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -280,6 +280,69 @@ get_current_version() {
 
   # Return empty if not found
   echo ""
+}
+
+# ----------------------------------------------------------
+# v10.15.50 — safe_json_edit
+# Harden any direct write to openclaw.json: back up, apply the
+# python3 transform, validate with `openclaw config validate`,
+# and ROLL BACK from the backup on failure so one bad key can
+# never abort the updater under set -euo pipefail.
+#
+# The root-cause bug that aborted Corey + Maria's update was
+# skills.path written into openclaw.json on VPS (2026.5.x rejects
+# the key with "skills Unrecognized key path / skills Invalid input").
+# This helper ensures any future json edits are validated before they
+# can corrupt the config and kill the run.
+#
+# Usage:
+#   safe_json_edit OCJSON_PATH DESCRIPTION python3_transform_func
+# where python3_transform_func is a bash function that:
+#   - receives OCJSON_PATH as $1
+#   - edits the file in-place
+#   - exits 0 on success, non-zero on failure
+#
+# Note: the Mac updater has NO direct json.dump writes today —
+# GHL MCP wiring uses `openclaw mcp set` which validates its own
+# input. This helper is provided here as a forward-defense guard
+# so future changes are forced to go through validation + rollback.
+# ----------------------------------------------------------
+safe_json_edit() {
+  local OCJSON="$1"
+  local DESCRIPTION="${2:-openclaw.json edit}"
+  local EDIT_FUNC="$3"
+
+  if [ ! -f "$OCJSON" ]; then
+    echo "  [safe_json_edit] $OCJSON not found — skipping $DESCRIPTION"
+    return 0
+  fi
+
+  local BACKUP="${OCJSON}.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -f "$OCJSON" "$BACKUP" 2>/dev/null || {
+    echo "  [safe_json_edit] WARN: could not create backup — skipping $DESCRIPTION"
+    return 0
+  }
+
+  # Run the edit function
+  if ! "$EDIT_FUNC" "$OCJSON"; then
+    echo "  [safe_json_edit] WARN: edit function failed — rolling back $DESCRIPTION"
+    cp -f "$BACKUP" "$OCJSON" 2>/dev/null || true
+    rm -f "$BACKUP" 2>/dev/null || true
+    return 0
+  fi
+
+  # Validate with the CLI if available
+  if command -v openclaw >/dev/null 2>&1; then
+    if ! openclaw config validate >> "$LOG_FILE" 2>&1; then
+      echo "  [safe_json_edit] WARN: openclaw config validate FAILED after $DESCRIPTION — rolling back"
+      cp -f "$BACKUP" "$OCJSON" 2>/dev/null || true
+      rm -f "$BACKUP" 2>/dev/null || true
+      return 0
+    fi
+  fi
+
+  rm -f "$BACKUP" 2>/dev/null || true
+  echo "  [safe_json_edit] $DESCRIPTION applied and validated OK"
 }
 
 # ----------------------------------------------------------
