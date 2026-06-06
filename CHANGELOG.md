@@ -1,3 +1,16 @@
+## [v10.15.49]  -  2026-06-06  -  docs: HOW-IT-ALL-CONNECTS.md — architecture doc for Skill 22/23/31/32 pipeline
+
+### Why
+Trevor needed a single document he can hand to anyone that explains how the four core build skills relate: what each one does, the concrete data files that flow between them, and the non-obvious dependencies that cause silent failures when skipped. This was previously undocumented.
+
+### What changed
+- Added `docs/HOW-IT-ALL-CONNECTS.md`: full architecture doc sourced from Skill 22/23/31/32 SKILL.md + INSTRUCTIONS.md + GEMINI-RETRIEVAL-GUIDE.md, cross-referenced against the committed graphify knowledge map (commit 8e664a85). Covers: system roles, end-to-end data flow with the exact files written at each step, 8 non-obvious cross-skill connections, skill dependency order, and known gaps.
+
+### Risk
+Docs-only. No code changes, no config changes, no behavioral changes.
+
+---
+
 ## [v10.15.48]  -  2026-06-06  -  Systemic fix: onboarding honesty state-machine + gate, operator Telegram channel separation, GHL-MCP autostart, Skill-35 name reconcile
 
 ### Why
