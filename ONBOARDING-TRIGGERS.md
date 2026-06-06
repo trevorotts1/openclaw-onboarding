@@ -157,6 +157,18 @@ Wait about 30 seconds after Terminal finishes (gateway needs to restart), then a
 
 You should get back a list of skills with statuses. If anything failed, your agent will tell you and propose a fix.
 
+**What "done" actually means (v10.15.48 — onboarding honesty gate).** Files on
+disk are NOT "installed". Onboarding tracks every skill in a state file
+`~/.openclaw/workspace/.onboarding-state.json` (`pending → downloaded → wired →
+qc-passed`) and a skill counts INSTALLED only when it is registered
+(`openclaw skills info`), its CORE_UPDATES landed, and its QC passes. The `✅`
+message is now sent ONLY when that gate passes — otherwise you get an honest
+"X/Y verified, Z still being activated" message. An `onboarding-resume` cron
+re-fires activation + QC every 15 minutes until every skill passes, so an
+interrupted install finishes itself. To see the live truth, ask your agent:
+
+> *"Run the onboarding verification gate (obs_gate_summary) and tell me the exact verified count."*
+
 ---
 
 ## BLOCK 2 — Mac, Full Onboarding, via Telegram

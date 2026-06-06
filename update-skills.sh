@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.47"
+ONBOARDING_VERSION="v10.15.48"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -55,14 +55,43 @@ write_update_pending_flag() {
   local version="$1"
   local new_skills="$2"
 
-  local WORKSPACE_DIR="$HOME/clawd"
-  [ ! -d "$WORKSPACE_DIR" ] && WORKSPACE_DIR="$HOME/.openclaw/workspace"
+  # v10.15.48: resolve the canonical workspace the agent ACTUALLY reads from.
+  # Prefer the OBS-resolved workspace (per-agent override -> defaults ->
+  # canonical default). NEVER prefer the dead ~/clawd — writing the flag there
+  # while the agent reads ~/.openclaw/workspace is the classic "agent never sees
+  # the flag" bug. Falls back to the canonical default only.
+  local WORKSPACE_DIR=""
+  if command -v obs_resolve_workspace >/dev/null 2>&1; then
+    WORKSPACE_DIR="$(obs_resolve_workspace)"
+  fi
+  [ -z "$WORKSPACE_DIR" ] && WORKSPACE_DIR="$HOME/.openclaw/workspace"
   mkdir -p "$WORKSPACE_DIR"
   local AGENTS_FILE="$WORKSPACE_DIR/AGENTS.md"
 
   touch "$AGENTS_FILE"
-  grep -v "UPDATE PENDING\|ONBOARDING PENDING" "$AGENTS_FILE" > "$AGENTS_FILE.tmp" 2>/dev/null || true
-  mv "$AGENTS_FILE.tmp" "$AGENTS_FILE" 2>/dev/null || true
+  # FIX 1: FULLY strip ALL prior UPDATE PENDING / ONBOARDING PENDING SECTIONS
+  # (header → next "## " heading or EOF). The old `grep -v "UPDATE PENDING"`
+  # only removed the single header LINE, leaving the multi-line body behind and
+  # STACKING a fresh full flag on every run — duplicates accreted forever.
+  AGENTS_FILE="$AGENTS_FILE" python3 - <<'PYEOF' 2>/dev/null || true
+import os, re
+p = os.environ["AGENTS_FILE"]
+try:
+    text = open(p, encoding="utf-8", errors="replace").read()
+except Exception:
+    text = ""
+# Remove any "## ... UPDATE PENDING ..." or "## ... ONBOARDING PENDING ..."
+# section: from its "## " header up to (but not including) the next top-level
+# "## " heading, or EOF. Non-greedy, multiline.
+pattern = re.compile(
+    r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*\n'   # the header
+    r'(?:(?!^##\s).*\n?)*',                                         # body until next "## "
+)
+new = pattern.sub("", text)
+# Collapse >2 blank lines left behind.
+new = re.sub(r'\n{3,}', '\n\n', new)
+open(p, "w", encoding="utf-8").write(new)
+PYEOF
 
   local DATE_STAMP
   DATE_STAMP=$(date +%Y-%m-%d)
@@ -75,19 +104,25 @@ write_update_pending_flag() {
 
 A skill update was applied via update-skills.sh on ${DATE_STAMP}. Process the activation steps now.
 
+### 🔴 THE GATE IS THE TRUTH — NOT THIS PROSE, NOT YOUR OWN "done"
+This update is **NOT complete** until the VERIFICATION GATE passes. Files on disk = DOWNLOADED, not installed. Source the gate and check state:
+- State file: \`~/.openclaw/workspace/.onboarding-state.json\` (per-skill: pending → downloaded → wired → qc-passed | qc-failed)
+- Gate library: \`~/.openclaw/scripts/onboarding-state.sh\` (or the onboarding repo's \`scripts/\`)
+- Run: source the library, then \`obs_gate_summary\`. A skill counts INSTALLED only when (a) \`openclaw skills info <name>\` shows it, (b) its CORE_UPDATES sentinel is present (if it ships CORE_UPDATES.md), and (c) its \`qc-*.sh\` exits 0 (if it ships one).
+- **NEVER tell the owner "installed / done / onboarded" for any skill that is not \`qc-passed\` (or an explicit INTERVIEW_PENDING park).**
+
 ### What changed in this update
 - Onboarding version: ${version}
-- New skills installed (require ACTIVATION): ${new_skills:-none — updates only}
+- New skills installed (require ACTIVATION + GATE): ${new_skills:-none — updates only}
 
-### How to process each NEW skill (only NEW ones, updates are already in place)
-
-For each new skill folder under \`~/.openclaw/skills/\`:
+### How to process each skill that is NOT yet qc-passed
+For each such skill folder under \`~/.openclaw/skills/\`:
 1. READ all files (Teach Yourself Protocol): SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md, plus any \`references/*.md\` files
 2. CHECK prerequisites and search ALL standard credential locations (canonical: \`~/.openclaw/secrets/.env\` on Mac, \`/data/.openclaw/secrets/.env\` on VPS, plus \`openclaw.json\` env.vars). Skip asking the owner if values already exist.
 3. EXECUTE the activation steps in INSTALL.md (read ≠ execute)
 4. APPLY CORE_UPDATES.md surgically — add to AGENTS.md / TOOLS.md / MEMORY.md / SOUL.md only the sections explicitly labeled in that file
-5. RUN the bundled QC checks; do not declare done until QC reaches a pass score (skills with a \`qc-*.sh\` script must exit 0)
-6. REPORT to owner what was activated and any items pending owner input
+5. RUN the gate (\`obs_verify_skill <folder>\`); loop activate→verify until it returns \`qc-passed\`. Skills that legitimately await owner input may be parked \`interview-pending\` (re-ping the owner; do NOT treat as terminal "done").
+6. REPORT to owner ONLY what is verified-installed, plus what remains gated.
 
 ### Discipline (binding)
 - Skills 22-23: MAIN ORCHESTRATOR ONLY, never delegate
@@ -95,13 +130,13 @@ For each new skill folder under \`~/.openclaw/skills/\`:
 - Disclosure headers (e.g. \`[GHL tier used: N — tool_name]\`) required per any skill's SOUL-level rules
 - No destructive shortcuts: no \`--force\`, no \`--no-verify\`, no \`--break-system-packages\` unless explicitly instructed
 
-### When activation is complete
+### When the GATE passes (and ONLY then)
 - Remove this entire UPDATE PENDING section from AGENTS.md
 - Add to MEMORY.md under "## System Updates":
-  "${version} update applied on ${DATE_STAMP}. New skills activated: ${new_skills:-none}."
+  "${version} update applied on ${DATE_STAMP}. Verification gate PASSED. Skills activated: ${new_skills:-none}."
 
 FLAGCONTENT
-  echo "  ✓ UPDATE PENDING flag written to $AGENTS_FILE"
+  echo "  ✓ UPDATE PENDING flag written (deduped) to $AGENTS_FILE"
 
   # Seed Core.md terminology into MEMORY.md (idempotent)
   local MEMORY_FILE="$WORKSPACE_DIR/MEMORY.md"
@@ -390,6 +425,35 @@ main() {
     exit 1
   fi
 
+  # v10.15.48: canonical onboarding dir for the freshly-pulled repo. Root-level
+  # scripts/ (apply-fleet-standards.sh, ghl-mcp-autostart.sh, the new
+  # resume-onboarding wiring) live here. Previously $ONBOARDING_DIR was
+  # referenced (fleet-standards call) but never set under `set -u` — a latent
+  # bug. Define it once here so every downstream script reference resolves.
+  ONBOARDING_DIR="$EXTRACTED_DIR"
+  export ONBOARDING_DIR
+
+  # v10.15.48 (FIX 1): source the onboarding STATE MACHINE + verification GATE.
+  # Seed the state file with every non-archived skill at "pending" from the
+  # freshly-pulled source. Statuses then advance downloaded -> wired -> qc-passed
+  # as the run progresses; the "complete" report is GATED on these (below).
+  if [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$ONBOARDING_DIR/scripts/onboarding-state.sh"
+    obs_seed_state "$ONBOARDING_VERSION" "$EXTRACTED_DIR" || echo "  ⚠ onboarding-state seed reported an issue (continuing)"
+    # Make the gate library + helper scripts available to the running agent at
+    # the canonical ~/.openclaw/scripts/ (where install.sh also lands them).
+    _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
+    [ -d "/data/.openclaw" ] && _OC_SCRIPTS_DEST="/data/.openclaw/scripts"
+    mkdir -p "$_OC_SCRIPTS_DEST" 2>/dev/null || true
+    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh resume-onboarding.sh apply-fleet-standards.sh diagnose-telegram-config.sh; do
+      [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
+      [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
+    done
+  else
+    echo "  ⚠ onboarding-state.sh not found in pulled repo — honesty gate disabled for this run (older bundle?)"
+  fi
+
   # Backup existing skills
   if [ -d "$SKILLS_DIR" ] && [ "$(ls -A "$SKILLS_DIR" 2>/dev/null)" ]; then
     BACKUP_DIR="$HOME/Downloads/openclaw-backups/skills-backup-$(date +%Y%m%d-%H%M%S)"
@@ -486,6 +550,8 @@ main() {
     # named subdirectory, producing dest/01-skill/ as intended.
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
     echo "    Updated: $SKILL_NAME"
+    # FIX 1: state transition — files are on disk = DOWNLOADED (NOT installed).
+    command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
   done
 
   # ----------------------------------------------------------
@@ -684,6 +750,18 @@ except:
     else
       echo "    GHL MCP: registration attempt completed (see $LOG_FILE for details)"
     fi
+
+    # FIX 3 (v10.15.48): registration alone NEVER starts the local server, so
+    # the GHL tools don't resolve. Run the EXECUTED autostart (launchd KeepAlive
+    # on :8765 + healthcheck + auto-restart). Idempotent — no-op if already
+    # healthy + registered; honest SKIP line if GHL creds are absent.
+    local AUTOSTART="$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"
+    if [ -x "$AUTOSTART" ]; then
+      echo "    Starting GHL MCP server as a persistent service (launchd :${GHL_MCP_PORT})..."
+      GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" 2>&1 | tee -a "$LOG_FILE" | grep -E '^STATUS:|^  \[ghl-mcp-autostart\]' || true
+    else
+      echo "    (ghl-mcp-autostart.sh not found at $AUTOSTART — server NOT started; GHL tools will not resolve until it is run)"
+    fi
   }
 
   # ---- Main wiring loop ----
@@ -743,6 +821,9 @@ except:
 
     # Mark skill as wired for this version
     touch "$WIRED_SENTINEL" 2>/dev/null || true
+    # FIX 1: state transition — installer + CORE_UPDATES merge ran = WIRED
+    # (still NOT "installed" until the verification gate passes below).
+    command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "wired"
     WIRED_COUNT=$((WIRED_COUNT + 1))
   done
 
@@ -815,12 +896,53 @@ except:
   # Cleanup
   rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 
+  # ----------------------------------------------------------
+  # FIX 1: VERIFICATION GATE — run the gate on EVERY non-archived skill.
+  # A skill counts INSTALLED only if (a) openclaw skills info shows it,
+  # (b) its CORE_UPDATES sentinel is present (if it ships one), and (c) its
+  # qc-*.sh exits 0 (if it ships one). We DO NOT claim "installed/onboarded"
+  # for un-registered skills. The "complete" Telegram below is CONDITIONAL on
+  # this gate. ONBOARDING_GATE_OK / _SUMMARY drive the honest report.
+  # ----------------------------------------------------------
+  ONBOARDING_GATE_OK="unknown"
+  ONBOARDING_GATE_SUMMARY=""
+  if command -v obs_verify_skill >/dev/null 2>&1; then
+    echo ""
+    echo "  Running the per-skill VERIFICATION GATE (skills info + CORE_UPDATES sentinel + qc-*.sh)..."
+    for _gskill in "$SKILLS_DIR"/[0-9]*/; do
+      [ -d "$_gskill" ] || continue
+      _gname="$(basename "$_gskill")"
+      case "$_gname" in *ARCHIVED*) continue ;; esac
+      if _greason="$(obs_verify_skill "$_gname" "$SKILLS_DIR")"; then
+        echo "    ✓ verified-installed: $_gname"
+      else
+        echo "    ✗ NOT verified: $_gname — ${_greason}"
+      fi
+    done
+    ONBOARDING_GATE_SUMMARY="$(obs_gate_summary "$SKILLS_DIR" 2>/dev/null | grep '^GATE-HUMAN:' | sed 's/^GATE-HUMAN: //')"
+    if obs_gate_summary "$SKILLS_DIR" >/dev/null 2>&1; then
+      ONBOARDING_GATE_OK="yes"
+    else
+      ONBOARDING_GATE_OK="no"
+    fi
+  else
+    echo "  ⚠ verification gate unavailable (onboarding-state.sh not sourced) — cannot honestly verify; will report file-sync only."
+  fi
+
   echo ""
   echo "============================================"
-  echo "   Skills updated successfully!"
+  if [ "$ONBOARDING_GATE_OK" = "yes" ]; then
+    echo "   Skills updated AND verified-installed."
+  elif [ "$ONBOARDING_GATE_OK" = "no" ]; then
+    echo "   Skills FILE-SYNCED to disk — NOT all verified-installed yet."
+    echo "   ${ONBOARDING_GATE_SUMMARY:-(gate summary unavailable)}"
+    echo "   (The onboarding-resume cron will re-fire wiring + QC until all pass.)"
+  else
+    echo "   Skills file-synced to disk (verification gate did not run)."
+  fi
   echo "   Version: $ONBOARDING_VERSION"
   echo "   Location: $SKILLS_DIR"
-  echo "   Verified: $VERIFY_SKILL_COUNT skill folders confirmed in active dir"
+  echo "   Files on disk: $VERIFY_SKILL_COUNT skill folders confirmed in active dir"
   if [ -n "$ONLY_SKILLS" ]; then
     echo "   Mode: SELECTIVE — only [$ONLY_SKILLS]"
     echo "   Skipped: $SKIPPED_COUNT other skills (not in --only list)"
@@ -905,12 +1027,13 @@ except: pass
   # ----------------------------------------------------------
   QC_COMPLETENESS_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/qc-completeness.sh"
   QC_STATUS_LINE=""
+  QC_COMPLETENESS_RC=0   # FIX 1: HONOR this exit code (was ignored). 0=PASS, 2=PARTIAL, 3=FAIL, 4=NO_WORKFORCE
   if [ -x "$QC_COMPLETENESS_SCRIPT" ]; then
     echo ""
     echo "  Running qc-completeness.sh against live workforce..."
-    QC_OUTPUT="$(bash "$QC_COMPLETENESS_SCRIPT" 2>&1 || true)"
+    QC_OUTPUT="$(bash "$QC_COMPLETENESS_SCRIPT" 2>&1)" || QC_COMPLETENESS_RC=$?
     QC_STATUS_LINE="$(printf '%s\n' "$QC_OUTPUT" | grep -E '^STATUS:' | tail -1)"
-    echo "  ${QC_STATUS_LINE:-qc-completeness ran (no STATUS line captured)}"
+    echo "  ${QC_STATUS_LINE:-qc-completeness ran (no STATUS line captured)} (exit $QC_COMPLETENESS_RC)"
   fi
 
   # ----------------------------------------------------------
@@ -921,15 +1044,37 @@ except: pass
   write_update_pending_flag "$ONBOARDING_VERSION" "$NEW_SKILLS_CSV"
 
   echo "  Sending Telegram notification..."
-  send_telegram_progress "✅ OpenClaw skill update ${ONBOARDING_VERSION} complete.
+  # ----------------------------------------------------------
+  # FIX 1: HONEST REPORTING CONTRACT. The headline is CONDITIONAL on the
+  # verification gate (ONBOARDING_GATE_OK) AND the workforce qc-completeness
+  # exit code (QC_COMPLETENESS_RC, previously ignored). We NEVER say
+  # "complete/installed/onboarded" unless BOTH gates pass. Otherwise we report
+  # the truth: how many skills are verified vs. not, and that resume will retry.
+  # ----------------------------------------------------------
+  _TG_HEADLINE=""
+  if [ "$ONBOARDING_GATE_OK" = "yes" ] && { [ "${QC_COMPLETENESS_RC:-0}" -eq 0 ] || [ "${QC_COMPLETENESS_RC:-0}" -eq 4 ]; }; then
+    # Gate passed (qc=PASS, or NO_WORKFORCE which is not an install failure).
+    _TG_HEADLINE="✅ OpenClaw skill update ${ONBOARDING_VERSION} verified-installed.
+
+${ONBOARDING_GATE_SUMMARY:-all skills verified}."
+  else
+    # Honest partial. NEVER claim done.
+    _TG_HEADLINE="⏳ OpenClaw skill update ${ONBOARDING_VERSION}: files synced, NOT all verified yet.
+
+${ONBOARDING_GATE_SUMMARY:-verification gate did not produce a summary}.
+
+The onboarding-resume cron will keep re-firing wiring + QC until every skill passes (it does NOT stop on a self-declared 'done')."
+  fi
+
+  send_telegram_progress "${_TG_HEADLINE}
 
 New skills (need activation): ${NEW_SKILLS_CSV:-none — updates only}.
 
-Workforce QC: ${QC_STATUS_LINE:-not run}
+Workforce QC: ${QC_STATUS_LINE:-not run} (exit ${QC_COMPLETENESS_RC:-?})
 
 Paste this to your agent:
 
-▶ \"I just ran update-skills.sh. There is an UPDATE PENDING flag at the top of my AGENTS.md describing what changed. Please follow the activation steps for any new skills listed. Run QC after each one. Send me a summary when complete.\"
+▶ \"I just ran update-skills.sh. There is an UPDATE PENDING flag at the top of my AGENTS.md describing what changed. Check .onboarding-state.json and run the verification gate (scripts/onboarding-state.sh). Activate + QC every skill that is not yet qc-passed. Do NOT report done until the gate passes. Send me a summary when the gate is green.\"
 
 (If you didn't get THIS Telegram note, the same instructions are also printed in your Terminal.)"
 
