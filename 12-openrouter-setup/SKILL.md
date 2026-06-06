@@ -1,3 +1,7 @@
+---
+name: openrouter-setup
+description: Configure OpenRouter inside OpenClaw to give the agent access to many AI models (Claude, GPT, Gemini, DeepSeek, and others) through a single API key — includes model selection rules and cost-management guidance. Must run last in the onboarding sequence.
+---
 
 ## 🔴 ORDER LOCK (SOVEREIGN)
 - OpenRouter setup must run LAST in onboarding sequence.

@@ -1,3 +1,8 @@
+---
+name: teach-yourself-protocol
+description: Structured protocol for an OpenClaw agent to learn new skills, APIs, and business processes — reads all files in a skill folder in declared order, extracts key facts, and stores them correctly so knowledge persists across sessions.
+---
+
 # Teach Yourself Protocol (TYP)
 
 ## What This Skill Is About

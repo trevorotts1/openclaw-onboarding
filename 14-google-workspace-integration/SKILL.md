@@ -1,3 +1,8 @@
+---
+name: google-workspace-integration
+description: Connect the OpenClaw agent to Google Workspace (Gmail, Calendar, Drive, Docs, Sheets) using the official Google Workspace CLI (gws). Supports both personal Gmail (OAuth) and Google Workspace business accounts (service account with Domain-Wide Delegation).
+---
+
 # Skill 14: Google Workspace Integration
 
 ## What This Skill Is About

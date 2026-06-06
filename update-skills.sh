@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.46"
+ONBOARDING_VERSION="v10.15.47"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -487,6 +487,266 @@ main() {
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
     echo "    Updated: $SKILL_NAME"
   done
+
+  # ----------------------------------------------------------
+  # v10.15.47: WIRING PHASE — per-skill executed steps (not prose).
+  # For every installed skill folder, this phase:
+  #   1. Runs the skill's own installer (wire.sh > install.sh > setup-*.sh) if present, idempotent.
+  #   2. Idempotently merges CORE_UPDATES.md into workspace AGENTS/TOOLS/MEMORY/SOUL files.
+  #   3. Installs OS prereqs (imagemagick/ffmpeg) via brew (Mac) idempotently.
+  #   4. Wires skill 36's GHL MCP under nested mcp.servers via `openclaw mcp set`.
+  #
+  # State guard: each skill writes a sentinel file $SKILLS_DIR/<skill>/.wired-<version>
+  # so the loop is safe to re-run — it skips already-wired skills.
+  #
+  # Scope: additive only. Never edits IDENTITY.md, never rebuilds workforce,
+  # never clobbers existing AGENTS.md sections — only appends new ones.
+  # ----------------------------------------------------------
+
+  # Resolve workspace directory (mirrors write_update_pending_flag)
+  WIRE_WORKSPACE_DIR="$HOME/clawd"
+  [ ! -d "$WIRE_WORKSPACE_DIR" ] && WIRE_WORKSPACE_DIR="$HOME/.openclaw/workspace"
+  mkdir -p "$WIRE_WORKSPACE_DIR"
+
+  # Brew path (Mac only; VPS branch kept out, VPS uses update-skills-vps.sh)
+  BREW_CMD="$(command -v brew 2>/dev/null || echo '')"
+
+  # ---- Helper: idempotent CORE_UPDATES.md merger ----
+  wire_core_updates() {
+    local SKILL_FOLDER="$1"   # e.g. "36-ghl-mcp-setup"
+    local CU_FILE="$SKILLS_DIR/$SKILL_FOLDER/CORE_UPDATES.md"
+    [ -f "$CU_FILE" ] || return 0
+
+    # Map section headers to workspace target files
+    local AGENTS_FILE="$WIRE_WORKSPACE_DIR/AGENTS.md"
+    local TOOLS_FILE="$WIRE_WORKSPACE_DIR/TOOLS.md"
+    local MEMORY_FILE="$WIRE_WORKSPACE_DIR/MEMORY.md"
+    local SOUL_FILE="$WIRE_WORKSPACE_DIR/SOUL.md"
+    touch "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" 2>/dev/null || true
+
+    # Sentinel: skip if this skill's core updates are already merged
+    local SENTINEL="<!-- skill:${SKILL_FOLDER}:core-update-applied -->"
+    if grep -qF "$SENTINEL" "$AGENTS_FILE" 2>/dev/null || \
+       grep -qF "$SENTINEL" "$TOOLS_FILE" 2>/dev/null || \
+       grep -qF "$SENTINEL" "$MEMORY_FILE" 2>/dev/null; then
+      return 0
+    fi
+
+    # Parse CORE_UPDATES.md: extract each labeled section and append to the right file.
+    # Sections are delimited by lines matching: ## <TARGET>.md — UPDATE REQUIRED
+    # or: ## <TARGET>.md — NO UPDATE NEEDED  (skip those).
+    # We use python3 (always present on Mac) for safe multi-line extraction.
+    python3 - "$CU_FILE" "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" "$SENTINEL" <<'PYEOF'
+import sys, re
+
+cu_path, agents_f, tools_f, memory_f, soul_f, sentinel = sys.argv[1:]
+
+target_map = {
+    'agents': agents_f,
+    'tools':  tools_f,
+    'memory': memory_f,
+    'soul':   soul_f,
+}
+
+try:
+    text = open(cu_path, encoding='utf-8', errors='replace').read()
+except Exception:
+    sys.exit(0)
+
+# Split on section headers like: ## AGENTS.md — UPDATE REQUIRED
+# or ## AGENTS.md — NO UPDATE NEEDED
+header_re = re.compile(
+    r'^##\s+(AGENTS|TOOLS|MEMORY|SOUL)\.md\s*[—–-]+\s*(.*?)$',
+    re.IGNORECASE | re.MULTILINE
+)
+
+sections = list(header_re.finditer(text))
+if not sections:
+    sys.exit(0)
+
+for i, m in enumerate(sections):
+    key = m.group(1).lower()
+    directive = m.group(2).strip().lower()
+    if 'no update' in directive:
+        continue
+    target_file = target_map.get(key)
+    if not target_file:
+        continue
+
+    # Content is between this header and the next (or EOF)
+    start = m.end()
+    end = sections[i+1].start() if i+1 < len(sections) else len(text)
+    block = text[start:end].strip()
+    if not block:
+        continue
+
+    # Check sentinel in target file before appending
+    try:
+        existing = open(target_file, encoding='utf-8', errors='replace').read()
+    except Exception:
+        existing = ''
+    if sentinel in existing:
+        continue
+
+    # Append block + sentinel
+    with open(target_file, 'a', encoding='utf-8') as fh:
+        fh.write('\n\n')
+        fh.write(block)
+        fh.write('\n')
+
+# Write sentinel to AGENTS.md (primary guard file)
+try:
+    existing = open(agents_f, encoding='utf-8', errors='replace').read()
+except Exception:
+    existing = ''
+if sentinel not in existing:
+    with open(agents_f, 'a', encoding='utf-8') as fh:
+        fh.write('\n' + sentinel + '\n')
+
+PYEOF
+    echo "    Wired CORE_UPDATES.md: $SKILL_FOLDER"
+  }
+
+  # ---- Helper: install OS prereqs for a skill (idempotent) ----
+  wire_prereqs() {
+    local SKILL_FOLDER="$1"
+    # Skills 25/26/27/28 need ffmpeg + imagemagick; 16 needs nothing extra.
+    # We detect by folder prefix; adding explicit cases is safer than parsing INSTALL.md.
+    local NEED_FFMPEG=0
+    local NEED_IMAGEMAGICK=0
+    case "$SKILL_FOLDER" in
+      25-video-creator|26-caption-creator|27-video-editor|28-cinematic-forge)
+        NEED_FFMPEG=1; NEED_IMAGEMAGICK=1 ;;
+    esac
+
+    [ "$NEED_FFMPEG" -eq 0 ] && [ "$NEED_IMAGEMAGICK" -eq 0 ] && return 0
+    [ -z "$BREW_CMD" ] && { echo "    (brew not found — skipping prereqs for $SKILL_FOLDER)"; return 0; }
+
+    if [ "$NEED_FFMPEG" -eq 1 ]; then
+      if command -v ffmpeg >/dev/null 2>&1; then
+        echo "    ffmpeg: already installed"
+      else
+        echo "    Installing ffmpeg via brew..."
+        "$BREW_CMD" install ffmpeg >> "$LOG_FILE" 2>&1 && echo "    ffmpeg: installed" || echo "    ffmpeg: install failed (see $LOG_FILE)"
+      fi
+    fi
+
+    if [ "$NEED_IMAGEMAGICK" -eq 1 ]; then
+      if command -v convert >/dev/null 2>&1 || command -v magick >/dev/null 2>&1; then
+        echo "    imagemagick: already installed"
+      else
+        echo "    Installing imagemagick via brew..."
+        "$BREW_CMD" install imagemagick >> "$LOG_FILE" 2>&1 && echo "    imagemagick: installed" || echo "    imagemagick: install failed (see $LOG_FILE)"
+      fi
+    fi
+  }
+
+  # ---- Helper: wire skill 36 GHL MCP under nested mcp.servers (idempotent) ----
+  wire_ghl_mcp() {
+    local SKILL_FOLDER="$1"
+    [ "$SKILL_FOLDER" = "36-ghl-mcp-setup" ] || return 0
+
+    if ! command -v openclaw >/dev/null 2>&1; then
+      echo "    (openclaw CLI not found — skipping GHL MCP registration)"
+      return 0
+    fi
+
+    # Check if ghl-mcp is already registered under nested mcp.servers
+    local OCJSON="$HOME/.openclaw/openclaw.json"
+    if [ -f "$OCJSON" ] && python3 -c "
+import json, sys
+try:
+    cfg = json.load(open('$OCJSON'))
+    servers = cfg.get('mcp', {}).get('servers', {})
+    if 'ghl-mcp' in servers or 'ghl-community-mcp' in servers:
+        sys.exit(0)
+    sys.exit(1)
+except:
+    sys.exit(1)
+" 2>/dev/null; then
+      echo "    GHL MCP: already registered under mcp.servers"
+      return 0
+    fi
+
+    # Read GHL MCP URL from skill's INSTALL.md or default to the community server
+    # The canonical CLI path per audit finding (d): openclaw mcp set
+    local GHL_MCP_PORT=8765
+    local GHL_MCP_INSTALL_MD="$SKILLS_DIR/36-ghl-mcp-setup/INSTALL.md"
+    if [ -f "$GHL_MCP_INSTALL_MD" ]; then
+      local DETECTED_PORT
+      DETECTED_PORT=$(grep -oE 'localhost:[0-9]+' "$GHL_MCP_INSTALL_MD" 2>/dev/null | head -1 | cut -d: -f2)
+      [ -n "$DETECTED_PORT" ] && GHL_MCP_PORT="$DETECTED_PORT"
+    fi
+
+    echo "    Registering GHL community MCP under mcp.servers (port $GHL_MCP_PORT)..."
+    if openclaw mcp set ghl-community-mcp "{\"type\":\"streamable-http\",\"url\":\"http://localhost:${GHL_MCP_PORT}/mcp\"}" >> "$LOG_FILE" 2>&1; then
+      echo "    GHL MCP: registered under mcp.servers (ghl-community-mcp → localhost:${GHL_MCP_PORT})"
+    else
+      echo "    GHL MCP: registration attempt completed (see $LOG_FILE for details)"
+    fi
+  }
+
+  # ---- Main wiring loop ----
+  echo ""
+  echo "  Wiring installed skills (CORE_UPDATES, prereqs, MCP registration)..."
+  WIRED_COUNT=0
+  SKIPPED_WIRED_COUNT=0
+
+  for SKILL_DIR in "$SKILLS_DIR"/[0-9]*/; do
+    [ -d "$SKILL_DIR" ] || continue
+    SKILL_NAME=$(basename "$SKILL_DIR")
+    case "$SKILL_NAME" in *ARCHIVED*) continue ;; esac
+
+    # Per-skill idempotency sentinel
+    WIRED_SENTINEL="$SKILL_DIR/.wired-${ONBOARDING_VERSION}"
+    if [ -f "$WIRED_SENTINEL" ]; then
+      SKIPPED_WIRED_COUNT=$((SKIPPED_WIRED_COUNT + 1))
+      continue
+    fi
+
+    # Step 1: Run the skill's own executable installer if present
+    # Priority: wire.sh > install.sh > setup-*.sh (first match)
+    SKILL_INSTALLER=""
+    for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh"; do
+      if [ -x "$_candidate" ]; then
+        SKILL_INSTALLER="$_candidate"
+        break
+      fi
+    done
+    # Also check for setup-*.sh pattern
+    if [ -z "$SKILL_INSTALLER" ]; then
+      for _candidate in "$SKILL_DIR"/setup-*.sh "$SKILL_DIR"/scripts/setup-*.sh; do
+        if [ -x "$_candidate" ]; then
+          SKILL_INSTALLER="$_candidate"
+          break
+        fi
+      done
+    fi
+
+    if [ -n "$SKILL_INSTALLER" ]; then
+      echo "    Running installer: $(basename "$SKILL_INSTALLER") for $SKILL_NAME..."
+      if bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1; then
+        echo "    Installer OK: $SKILL_NAME"
+      else
+        echo "    Installer reported warnings for $SKILL_NAME (see $LOG_FILE) — continuing"
+      fi
+    fi
+
+    # Step 2: Idempotently merge CORE_UPDATES.md into workspace files
+    wire_core_updates "$SKILL_NAME"
+
+    # Step 3: Install OS prereqs (ffmpeg/imagemagick for video skills)
+    wire_prereqs "$SKILL_NAME"
+
+    # Step 4: Wire GHL MCP (skill 36 only)
+    wire_ghl_mcp "$SKILL_NAME"
+
+    # Mark skill as wired for this version
+    touch "$WIRED_SENTINEL" 2>/dev/null || true
+    WIRED_COUNT=$((WIRED_COUNT + 1))
+  done
+
+  echo "  Wiring complete: $WIRED_COUNT skill(s) wired, $SKIPPED_WIRED_COUNT already wired (idempotent skip)"
 
   # ----------------------------------------------------------
   # v10.15.42: Run migrate-existing-workforce.sh so copied skills

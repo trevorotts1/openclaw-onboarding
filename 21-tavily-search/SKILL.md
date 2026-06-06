@@ -1,3 +1,8 @@
+---
+name: tavily-search
+description: Imported upstream skill that gives the OpenClaw agent real-time web search via the Tavily API — use when the agent needs current information, news, or facts not in training data.
+---
+
 # tavily-search (Imported)
 
 ## Purpose

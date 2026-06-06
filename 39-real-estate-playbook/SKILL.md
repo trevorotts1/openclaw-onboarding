@@ -1,3 +1,8 @@
+---
+name: real-estate-playbook
+description: Property intelligence and real estate automation playbook — property lookup, lead qualification scripts, showing scheduler, lead routing, and real-estate-events.jsonl schema. Integrates with GHL for pipeline management and Telegram for agent notifications.
+---
+
 # Skill 39: Real Estate Playbook & Property Intelligence
 
 ## MANDATORY - Teach Yourself Protocol (TYP)

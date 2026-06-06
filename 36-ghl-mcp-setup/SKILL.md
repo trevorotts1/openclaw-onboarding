@@ -1,3 +1,8 @@
+---
+name: ghl-mcp-setup
+description: Install and configure the 5-tier GoHighLevel access chain — Official MCP (36 tools), Community MCP (586 tools), direct REST API, Playwright browser, and Codex Computer Use — so the agent always picks the cheapest path first and falls back gracefully. Registers ghl-mcp under nested mcp.servers via the openclaw mcp set CLI.
+---
+
 # GHL MCP Setup — Multi-Tier Access for GoHighLevel
 
 ## What This Is

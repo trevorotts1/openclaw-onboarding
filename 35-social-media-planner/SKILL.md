@@ -1,4 +1,6 @@
 ---
+name: social-media-planner
+description: Multi-agent content publishing engine that researches, creates, produces, schedules, and publishes content across 8 platforms (WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook) — handles text, images, videos, podcasts, and HTML email newsletters using a 15+6 agent model.
 skill_name: content-publishing-engine
 version: v1.4.0
 author: Stefanie

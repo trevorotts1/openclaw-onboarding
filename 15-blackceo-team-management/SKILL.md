@@ -1,3 +1,8 @@
+---
+name: blackceo-team-management
+description: Multi-user Telegram dispatcher that routes each team member's messages to their own dedicated sub-agent worker — configurable template for any client deployment, team size, or member set. Includes WORKFLOW_AUTO.md routing table and Telegram ID allowlist configuration.
+---
+
 # Skill 15: BlackCEO Team Management
 
 ## What This Skill Is About

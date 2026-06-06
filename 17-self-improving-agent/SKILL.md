@@ -1,3 +1,8 @@
+---
+name: self-improving-agent
+description: Imported upstream skill that enables an OpenClaw agent to identify gaps in its own performance, propose improvements, and apply them — includes self-evaluation routines and improvement cycle protocols.
+---
+
 # Self-Improving Agent (Imported)
 
 ## Purpose

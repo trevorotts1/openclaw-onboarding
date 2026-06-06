@@ -1,3 +1,8 @@
+---
+name: humanizer
+description: Imported upstream skill that rewrites AI-generated text to sound natural and human — removes robotic phrasing, varies sentence structure, and matches the owner's voice and style.
+---
+
 # Humanizer (Imported)
 
 ## Purpose

@@ -1,3 +1,8 @@
+---
+name: command-center-setup
+description: Deploy the ZeroHumanWorkforce Command Center dashboard for a client — one deployment per client with its own Vercel deployment, CloudFlare Access app, Telegram supergroup with topics, and data store. Includes one-time install, runtime execution guide, and QC rubric (gate 8.5).
+---
+
 # Skill 32: Command Center Setup
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
