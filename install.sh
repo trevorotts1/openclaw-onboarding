@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.45"
+ONBOARDING_VERSION="v10.15.46"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -589,7 +589,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/42-... (39 active + 3 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/43-... (40 active + 3 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -2538,6 +2538,152 @@ else
 fi
 
 # ----------------------------------------------------------
+# Step 8b: Tiered Speech-to-Text (faster-whisper LOCAL + OpenAI fallback)
+# ----------------------------------------------------------
+# This is the MAC installer (Apple Silicon). On Mac, audio transcription runs
+# LOCALLY via faster-whisper (CTranslate2 backend) on the Neural Engine:
+#   • model "medium" — the balanced default (fast on Apple Silicon, free, private)
+#   • runs on-box → no token cost, no audio ever leaves the client's machine
+#   • OpenAI cloud (gpt-4o-mini-transcribe) is the FINAL fallback so transcription
+#     never hard-fails if the local model is missing or errors.
+#
+# The VPS installer (openclaw-onboarding-vps) does NOT bake a local model — it
+# uses the cloud (Groq) config only. Keep these platform-correct: do not copy
+# this local-model block into the VPS repo.
+#
+# OpenClaw schema (docs.openclaw.ai/gateway/config-tools, verified):
+#   tools.media.audio = { enabled, maxBytes, models:[ ...entries ] }
+#   The FIRST entry in models[] is primary; later entries are fallbacks.
+#   CLI entry  : { type:"cli", command, args:[... "{{MediaPath}}"], timeoutSeconds }
+#   Cloud entry: { provider, model }
+#   {{MediaPath}} is substituted with the local audio file path at run time.
+#   The CLI must exit 0 and print the transcript as PLAIN TEXT on stdout.
+step "Step 8b: Configuring tiered Speech-to-Text (local faster-whisper 'medium' + OpenAI cloud fallback)"
+
+# 8b.1 — Ensure a faster-whisper CLI is installed locally on this Mac.
+# We standardize on a thin wrapper named `oc-faster-whisper` so the openclaw.json
+# `command` is deterministic regardless of which underlying CLI shipped. The
+# wrapper drives faster-whisper (via whisper-ctranslate2, the CTranslate2/
+# faster-whisper engine) and prints the transcript text to stdout (model "medium").
+OC_BIN_DIR="$OC_CONFIG/bin"
+FW_WRAPPER="$OC_BIN_DIR/oc-faster-whisper"
+mkdir -p "$OC_BIN_DIR"
+
+install_faster_whisper() {
+    # Already have a working faster-whisper engine CLI? Then we're done.
+    if command -v whisper-ctranslate2 >/dev/null 2>&1 || command -v faster-whisper >/dev/null 2>&1; then
+        note "faster-whisper engine CLI already present"
+        return 0
+    fi
+    note "Installing faster-whisper locally (Apple Silicon, runs on the Neural Engine)…"
+    # Preferred: uv tool install (isolated, fast). The whisper-ctranslate2 package
+    # exposes the faster-whisper (CTranslate2) engine through a `whisper`-compatible
+    # CLI and supports `--model medium`.
+    if command -v uv >/dev/null 2>&1; then
+        if uv tool install whisper-ctranslate2 2>&1 | tee -a "$LOG_FILE" | tail -3; then
+            note "Installed faster-whisper via 'uv tool install whisper-ctranslate2'"
+            return 0
+        fi
+        # Secondary uv attempt: the SYSTRAN faster-whisper library + faster-whisper-cli front-end.
+        uv tool install faster-whisper-cli 2>&1 | tee -a "$LOG_FILE" | tail -3 && {
+            note "Installed faster-whisper via 'uv tool install faster-whisper-cli'"; return 0; }
+    fi
+    # Fallback: pipx (also isolated).
+    if command -v pipx >/dev/null 2>&1; then
+        pipx install whisper-ctranslate2 2>&1 | tee -a "$LOG_FILE" | tail -3 && {
+            note "Installed faster-whisper via 'pipx install whisper-ctranslate2'"; return 0; }
+    fi
+    # Last resort: pip3 --user.
+    if command -v pip3 >/dev/null 2>&1; then
+        pip3 install --user whisper-ctranslate2 2>&1 | tee -a "$LOG_FILE" | tail -3 && {
+            note "Installed faster-whisper via 'pip3 install --user whisper-ctranslate2'"; return 0; }
+    fi
+    warn "Could not auto-install faster-whisper. Local transcription will fall back to OpenAI cloud."
+    warn "To install manually: 'uv tool install whisper-ctranslate2' (or 'pipx install whisper-ctranslate2')."
+    return 1
+}
+install_faster_whisper || true
+
+# 8b.2 — Write the deterministic wrapper. It resolves whichever faster-whisper
+# CLI is present, forces model "medium", and emits PLAIN TEXT on stdout (the form
+# OpenClaw's CLI transcriber expects). Exits non-zero on failure so OpenClaw
+# advances to the OpenAI cloud fallback entry.
+cat > "$FW_WRAPPER" <<'WRAPEOF'
+#!/usr/bin/env bash
+# oc-faster-whisper — deterministic local transcription wrapper (model: medium).
+# Usage: oc-faster-whisper <audio-file>
+# Prints the transcript as plain text to stdout. Exit 0 on success.
+# Drives the faster-whisper (CTranslate2) engine on Apple Silicon. Free + private.
+set -euo pipefail
+MEDIA="${1:?usage: oc-faster-whisper <audio-file>}"
+MODEL="${OC_WHISPER_MODEL:-medium}"
+# Surface common Homebrew + uv/pipx tool bins for non-login shells.
+export PATH="/opt/homebrew/bin:$HOME/.local/bin:$HOME/.openclaw/bin:$PATH"
+
+if command -v whisper-ctranslate2 >/dev/null 2>&1; then
+  TMPDIR_OUT="$(mktemp -d)"
+  trap 'rm -rf "$TMPDIR_OUT"' EXIT
+  # CTranslate2/faster-whisper engine; write plain-text transcript, then cat it.
+  whisper-ctranslate2 "$MEDIA" --model "$MODEL" --output_format txt \
+    --output_dir "$TMPDIR_OUT" >/dev/null 2>&1
+  TXT="$(find "$TMPDIR_OUT" -name '*.txt' | head -1)"
+  [ -n "$TXT" ] && cat "$TXT" && exit 0
+  exit 1
+elif command -v faster-whisper >/dev/null 2>&1; then
+  # faster-whisper-cli front-end prints transcript to stdout.
+  faster-whisper --model "$MODEL" "$MEDIA"
+  exit $?
+else
+  echo "oc-faster-whisper: no local faster-whisper CLI found" >&2
+  exit 127
+fi
+WRAPEOF
+chmod +x "$FW_WRAPPER"
+note "Wrote local transcription wrapper: $FW_WRAPPER (model: medium)"
+
+# 8b.3 — Bake tools.media.audio into openclaw.json (local primary + OpenAI fallback).
+OPENCLAW_JSON="$OC_JSON"
+if [ -f "$OPENCLAW_JSON" ]; then
+    backup_config_file "$OPENCLAW_JSON"
+    OPENCLAW_JSON="$OPENCLAW_JSON" FW_WRAPPER="$FW_WRAPPER" python3 << 'PYEOF'
+import json, os, sys
+path = os.environ['OPENCLAW_JSON']
+wrapper = os.environ['FW_WRAPPER']
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+    tools = cfg.setdefault('tools', {})
+    media = tools.setdefault('media', {})
+    # Mac-correct tiered transcription:
+    #   1) LOCAL faster-whisper (model "medium") via the deterministic wrapper — primary.
+    #   2) OpenAI cloud (gpt-4o-mini-transcribe) — FINAL fallback (never hard-fail).
+    media['audio'] = {
+        'enabled': True,
+        'maxBytes': 26214400,  # 25MB — comfortably above OpenClaw's 20MB default
+        'models': [
+            {
+                'type': 'cli',
+                'command': wrapper,
+                'args': ['{{MediaPath}}'],
+                'timeoutSeconds': 300
+            },
+            {
+                'provider': 'openai',
+                'model': 'gpt-4o-mini-transcribe'
+            }
+        ]
+    }
+    with open(path, 'w') as f:
+        json.dump(cfg, f, indent=2)
+    print("  ✓ tools.media.audio: LOCAL faster-whisper 'medium' (primary) → OpenAI cloud (fallback)")
+except Exception as e:
+    print(f"  ✗ Could not configure tools.media.audio: {e}", file=sys.stderr)
+PYEOF
+else
+    note "openclaw.json not found - tiered STT config will apply on next run"
+fi
+
+# ----------------------------------------------------------
 # Step 9: Setup Backup Folders
 # ----------------------------------------------------------
 step "Step 9: Setting Up Backup Folders"
@@ -2689,7 +2835,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 39 active skills install in 5 dependency-aware waves, not by number order.
+The 40 active skills install in 5 dependency-aware waves, not by number order.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -2710,7 +2856,7 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 - 12-openrouter-setup
 - 14-google-workspace-integration
 
-**Wave 3 — CONTENT + SERVICE TOOLS (parallel, up to 20 sub-agents — 14 skills in this wave, all within the maxChildrenPerAgent cap):**
+**Wave 3 — CONTENT + SERVICE TOOLS (parallel, up to 20 sub-agents — 15 skills in this wave, all within the maxChildrenPerAgent cap):**
 - 15-blackceo-team-management
 - 16-summarize-youtube
 - 17-self-improving-agent
@@ -2725,6 +2871,7 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 - 28-cinematic-forge
 - 29-ghl-convert-and-flow
 - 30-fish-audio-api-reference
+- 43-graphify-knowledge-graph  (maps the client's OWN workforce/code with the CLIENT'S OWN model; semantic pass owner-triggered, AST hook free/automatic — see skill INSTALL.md)
 
 **Wave 4 — INFRASTRUCTURE (sequential — Memory, then MCP, then Command Center):**
 - 31-upgraded-memory-system  (memory architecture must be ready before persona/CC)

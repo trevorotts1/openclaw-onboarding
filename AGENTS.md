@@ -4,6 +4,25 @@
 
 ---
 
+## 🔴🔴🔴 N0 — NO CO-MINGLING OF CLIENTS (HARD VIOLATION — READ FIRST, BINDING FOREVER) 🔴🔴🔴
+
+**EVERY client gets their OWN isolated resources — own Notion workspace/page, own GoHighLevel location, own Google Drive/Workspace, own Telegram bot, own Command Center, own KIE/API keys, own everything. NEVER share, reuse, borrow, or default to ANOTHER client's resource for any reason. If a client does not yet have a given resource, STOP and WAIT — do NOT substitute another client's as a placeholder. Co-mingling client data/resources is a HARD VIOLATION.**
+
+This rule outranks convenience, speed, and "just for now." It applies to EVERY agent, EVERY sub-agent, EVERY skill, EVERY install, and EVERY runtime action — at build time and forever. There are NO exceptions.
+
+- ❌ NEVER share one client's resource with another client.
+- ❌ NEVER reuse a resource created for client A when working for client B.
+- ❌ NEVER borrow "temporarily" from another client's workspace, location, bot, key, or page.
+- ❌ NEVER default to another client's resource as a placeholder/scaffold/example container.
+- ❌ NEVER co-mingle any client's data, files, credentials, contacts, or outputs with another's.
+- ✅ If the client's own resource does not exist yet → **STOP and WAIT.** Escalate the gap. Do NOT substitute.
+
+A missing resource is a blocker to escalate, never a reason to co-mingle. Co-mingling — for ANY reason, even briefly, even "just to test" — means the work is discarded and redone correctly.
+
+**Full rule + rationale + enforcement map:** see [`NO-COMINGLING-RULE.md`](NO-COMINGLING-RULE.md) at the repo root.
+
+---
+
 ## 🔴 N2 — MASTER ORCHESTRATOR DOES NO WORK
 
 **The Master Orchestrator does NOT perform installation work, file edits, API calls, or any other domain operation. The Master Orchestrator coordinates. Sub-agents do the work.**

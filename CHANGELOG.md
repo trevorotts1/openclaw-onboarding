@@ -1,3 +1,28 @@
+## [v10.15.46]  -  2026-06-06  -  Tiered local faster-whisper STT + Skill 43 (Graphify Knowledge Graph) + binding NO-COMINGLING rule
+
+### Why
+Three cohesive client-experience upgrades for Mac (Apple Silicon) installs:
+1. **Audio transcription was unconfigured** — OpenClaw fell back to auto-detection with no platform-correct policy. Mac clients have a Neural Engine, so transcription should run LOCALLY (free + private) by default, with a cloud safety net.
+2. **No knowledge-graph capability** — owners ask "how is my workforce wired / what depends on what / where does X live," and the agent had to grep or spawn explore agents every time (expensive, slow). A persistent, queryable graph answers these cheaply.
+3. **The no-co-mingling expectation lived only in operator memory** — there was no binding, build-time-visible rule in the repo. A near-miss (one client's reference material placed in another client's Notion workspace) proved this needs to be impossible to miss.
+
+### What changed
+- **Tiered Speech-to-Text (Mac-local) — `install.sh` Step 8b (new):**
+  - Installs a local faster-whisper CLI (`uv tool install whisper-ctranslate2`, with `pipx` / `pip3 --user` fallbacks).
+  - Writes `~/.openclaw/bin/oc-faster-whisper` — a deterministic wrapper that forces model **`medium`** and prints plain text to stdout.
+  - Bakes `tools.media.audio` into `openclaw.json`: LOCAL faster-whisper `medium` as the **first** (primary) model entry, OpenAI cloud (`gpt-4o-mini-transcribe`) as the **final fallback**. Schema verified against docs.openclaw.ai/gateway/config-tools.
+  - New doc `docs/STT-TRANSCRIPTION.md`; README STT section added. (VPS repo stays cloud-only / Groq — local model is Mac-correct only; do not co-mingle the configs.)
+- **Skill 43 — Graphify Knowledge Graph (new folder `43-graphify-knowledge-graph/`):** SKILL.md / INSTALL.md / INSTRUCTIONS.md / CORE_UPDATES.md / CHANGELOG.md / `skill-version.txt`=1.0.0 / `references/GRAPHIFY-COMMANDS.md` / `scripts/verify-graphify-install.sh` / `qc-graphify-knowledge-graph.sh` (20-assertion, passes). Installs graphify (`uv tool install "graphifyy[all]"`), registers the OpenClaw skill (`graphify install --platform claw`), maps the client's OWN workforce ONCE with the CLIENT'S OWN model (`deepseek-v4-pro:cloud` via their Ollama, `--backend ollama` — NEVER the operator's keys), installs the FREE AST auto-rebuild hook (`graphify hook install`), and wires `/graphify` (query/path/explain). Two tiers made explicit: semantic pass is on-demand/owner-triggered; AST rebuild is free + automatic per commit. Added to every skill enumeration (install.sh skill list + Wave 3, `Start Here.md` Wave 6 + spawn loop, README inventory + counts, ONBOARDING-TRIGGERS count).
+- **NO-COMINGLING rule (new, hyper-explicit):** top-level `NO-COMINGLING-RULE.md` + a prominent binding `🔴🔴🔴 N0` block injected at the very top of `AGENTS.md` (impossible to miss at build time) + referenced in Skill 23 (AI Workforce) and Skill 32 (Command Center) SKILL.md. Rule: every client gets their OWN Notion/GHL/Drive/Telegram/Command Center/keys/everything; never share, reuse, borrow, or default to another client's resource; if a resource doesn't exist yet, STOP and WAIT — never substitute. Co-mingling is a hard violation.
+- **Version:** all 9 markers rolled atomically to v10.15.46 via `scripts/bump-version.sh`; skill 43 `skill-version.txt`=1.0.0; git tag `v10.15.46`.
+
+### Risk
+Low. Additive throughout.
+- STT: new install step + new config key (`tools.media.audio`) with a cloud fallback, so transcription never hard-fails; if local install fails it WARNs and falls through to OpenAI. No existing config keys changed.
+- Skill 43: a new self-contained folder; modifies no other skill. The semantic pass is owner-triggered (no surprise model spend); the auto-hook is AST-only (free).
+- NO-COMINGLING: documentation/guardrail only — new files + a prominent rule block; no logic changed.
+- Skill counts updated consistently (43 numbered / 40 active / 3 archived). Version-consistency CI still green (9 markers agree). Mac (10.15.x) and VPS (10.16.x) sequences remain independent.
+
 ## [v10.15.45]  -  2026-06-05  -  Add personal-assistant suggested-roles manifest to satisfy mandatory-floor QC (WS-4)
 
 ### Why

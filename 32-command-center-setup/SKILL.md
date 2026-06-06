@@ -13,6 +13,10 @@ Required read order:
 
 Per N3 ("read before act"), do not skip any of the above. Per N4, follow steps in declared order. Per N5, QC runs in a different sub-agent than the installer.
 
+## 🔴 NO CO-MINGLING (binding)
+
+Each client gets their **OWN** Command Center: own deployment, own dashboard URL, own CF Access app, own Telegram bot/supergroup/topics, own data store. NEVER point a client's Command Center at another client's deployment, bot, or workspace, and NEVER reuse another client's URL/topic/bot as a placeholder. If a client's own resource does not exist yet, **STOP and WAIT** — do not substitute. See [`../NO-COMINGLING-RULE.md`](../NO-COMINGLING-RULE.md) and AGENTS.md N0. Co-mingling is a hard violation.
+
 ## What This Skill Is About
 
 The Command Center Setup activates your AI workforce as a live, operational system. It takes the department structure you created in Skill 23 (AI Workforce Blueprint) and makes it real with persistent department agents, a Telegram control room with organized topics, and a visual Kanban dashboard for task management.

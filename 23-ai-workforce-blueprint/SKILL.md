@@ -36,6 +36,12 @@ Do NOT claim the skill is installed until CORE_UPDATES.md has been applied.
 
 ---
 
+## 🔴 NO CO-MINGLING (binding)
+
+This skill builds **this client's** company and nothing else. Every department, workspace, role file, persona, and resource it creates belongs to **this one client** and is provisioned in **this client's own** workspace/Notion/GHL/Drive/Telegram/keys. NEVER reuse, borrow, or default to another client's resource. If a needed resource does not exist yet, **STOP and WAIT** — do not substitute another client's as a placeholder. See [`../NO-COMINGLING-RULE.md`](../NO-COMINGLING-RULE.md) and AGENTS.md N0. Co-mingling is a hard violation.
+
+---
+
 # AI Workforce Blueprint
 
 ## The Philosophy
