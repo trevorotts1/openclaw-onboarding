@@ -198,7 +198,7 @@ RULE 7 — Phase A: parallel install of all skills in 5 waves. Timeout: 600 seco
 
 RULE 8 — Phase B: activate foundation skills (Skill 31 Upgraded Memory System and Skill 22 Book-to-Persona). Timeout: 900 seconds.
 
-RULE 9 — Phase C: process interactive skills (Skill 23 AI Workforce Blueprint, Skill 35 Social Media Planner). Timeout: 1200 seconds.
+RULE 9 — Phase C: process interactive skills (Skill 23 AI Workforce Blueprint, Skill 35 Social Media Planner). Timeout: 1200 seconds. EXCEPTION: Skill 23 requires live owner answers — if the owner is not actively present in this session when Skill 23 runs, write INTERVIEW_PENDING to interview-handoff.md and move to the next skill. NEVER run Option B autonomously. NEVER fabricate interview answers.
 
 RULE 10 — Phase D: validate all skill installations and run QC. Timeout: 1800 seconds.
 
@@ -363,7 +363,7 @@ RULE 6 — When the install finishes, an UPDATE PENDING flag is written to the t
 RULE 7 — Follow the 5-Phase Processing Order in the flag EXACTLY:
   Phase A: parallel install in 5 waves (timeout 600s)
   Phase B: activate foundation skills 31 + 22 (timeout 900s)
-  Phase C: process interactive skills 23 + 35 (timeout 1200s)
+  Phase C: process interactive skills 23 + 35 (timeout 1200s) — EXCEPTION: Skill 23 needs live owner answers; if owner not present, write INTERVIEW_PENDING to interview-handoff.md and skip to Phase D. Never run Option B. Never fabricate.
   Phase D: validate + QC (timeout 1800s)
   Phase E: final QC + report (no timeout)
 

@@ -1,3 +1,19 @@
+## [v10.15.41]  -  2026-06-05  -  Kill interview fabrication — no autonomous Option B
+
+### Why
+The system previously allowed a cron-driven "+7d nudge YES" path to auto-run Option B (Quick Setup) and write best-guess defaults into `workforce-interview-answers.md` without the owner being live in the current session. This is fabrication: the AI invents client interview answers from a website and treats an unanswered message as consent. This patch permanently closes every code path that could fabricate a client interview.
+
+### What changed
+- **`23-ai-workforce-blueprint/INSTRUCTIONS.md`**: Replaced "+7d idle → Reply YES → auto-run Option B" with a RESUME INVITATION ONLY nudge. Added binding NO-FABRICATION RULE block after the nudge section. Added HARD RULE consent gate at the top of the Option B description.
+- **`23-ai-workforce-blueprint/SKILL.md`**: Added ABSOLUTE RULE — NO INTERVIEW FABRICATION block after the existing model ABSOLUTE RULE. Added CONSENT GATE note inside the Option B description.
+- **`shared-utils/nudge-incomplete-interviews.py`**: Updated module docstring to state the no-fabrication policy explicitly (this script sends reminders only, never triggers Option B). Changed `nudge_168h` message_template from "best-guess defaults / Reply YES" to a plain resume invitation with no action promise.
+- **`ONBOARDING-TRIGGERS.md`**: Added EXCEPTION clause to RULE 9 (Block 2) and the Phase C compact lines (Block 4) — Skill 23 needs live owner answers; write INTERVIEW_PENDING and skip to Phase D if owner not present; never run Option B; never fabricate.
+
+### Risk
+Low — additive text changes only. No logic removed from code paths that do run (the nudge script already had no Option B trigger code; the INSTRUCTIONS/SKILL changes add prohibitions). Fully reversible by revering this commit. Applies to both Mac (10.15.x) and VPS (10.16.x) repos independently.
+
+---
+
 ## [v10.15.40]  -  2026-06-03  -  Add Skill 42 Personal Assistant Library v1.0.0
 
 ### Why

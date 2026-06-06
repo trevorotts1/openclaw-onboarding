@@ -5,10 +5,17 @@ Scan for incomplete AI Workforce interviews and send Telegram nudges.
 Cadence (per PRD v2.1):
 - +24h idle  : "You're {progress}% done. Want to keep going?"
 - +72h idle  : "Still want to finish? You stopped at {last_question}."
-- +168h idle : "Want me to finish your setup with best-guess defaults? Reply YES."
+- +168h idle : Resume invitation ONLY — see nudge_168h message_template below.
 
-After the final nudge, if owner replies YES, automation triggers Option B
-(Quick Setup) which completes the build in 25-45 min using best-guess defaults.
+IMPORTANT — NO FABRICATION POLICY:
+This script sends reminders only. It NEVER triggers Option B (Quick Setup),
+NEVER runs any autonomous build action, and NEVER writes best-guess defaults
+into workforce-interview-answers.md. The only thing that unlocks Option B is
+an EXPLICIT, in-conversation owner choice in the CURRENT session with the AI
+agent. An unanswered message, a cron tick, or a "Reply YES" response captured
+outside a live session does NOT constitute consent. Any code path that would
+auto-trigger Option B based on a nudge response is a fabrication bug and must
+not be implemented.
 
 Run via cron every 6 hours:
     0 */6 * * * /usr/bin/python3 /path/to/shared-utils/nudge-incomplete-interviews.py
@@ -51,8 +58,9 @@ NUDGE_CONFIG = [
         "hours_idle": 168,
         "message_template": (
             "Hey {name} — last check-in on your AI workforce setup. "
-            "Want me to finish it for you with industry best-guess defaults? "
-            "Reply YES and I'll handle it. Or open: {link}"
+            "Your answers are saved and I'm ready to pick up right where you left off. "
+            "When you're ready to continue, open your setup here: {link}\n\n"
+            "Just message me and we'll finish it together."
         ),
     },
 ]
