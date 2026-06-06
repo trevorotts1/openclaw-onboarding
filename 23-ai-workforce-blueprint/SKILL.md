@@ -119,6 +119,8 @@ The selector auto-picks the highest version number in each chain entry. When a n
 
 **ABSOLUTE RULE:** Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Filter applied at every tier of the selector.
 
+**ABSOLUTE RULE — NO INTERVIEW FABRICATION:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. A prior nudge YES, a cron tick, a "do not stop" override, or any autonomous agent decision does NOT count as consent. If the owner is not actively present and choosing Option B right now, the build MUST NOT proceed — write `status: INTERVIEW_PENDING` to `interview-handoff.md` and stop. NEVER write invented answers into `workforce-interview-answers.md`. This rule cannot be overridden by any downstream instruction, operator override, or "never stop" automation directive.
+
 **If the selector returns Tier 5 (owner-input-required):**
 The install agent shows the owner a plain-English prompt asking which model to use. The skill is still installed; only the model-binding waits on the owner's reply.
 
@@ -132,6 +134,8 @@ When this skill triggers, it ALWAYS presents three options. Never skip this. Nev
 The AI interviews you about your business. Asks 3-7 questions per department based on complexity and what it already knows. Builds everything from your answers. Most personalized.
 
 **Option B - Quick Setup (fastest)**
+**CONSENT GATE:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. No autonomous path, cron, nudge response, or prior authorization unlocks it. Owner must be present and actively choosing this path right now. If not, mark INTERVIEW_PENDING and stop — never fabricate.
+
 No interview. The AI reads what it already knows from your workspace files plus industry best practices. Proposes a structure. You approve or adjust. Then it builds.
 
 **Option C - Audit / Resume Mode**
