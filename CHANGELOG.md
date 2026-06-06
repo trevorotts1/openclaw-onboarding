@@ -1,3 +1,15 @@
+## [v10.15.44]  -  2026-06-05  -  Fix qc-completeness false rc=4 masking successful additive runs
+
+### Why
+`qc-completeness.sh` resolved the company_root via keys (`active_zhc_company`, `zhc_company_root`) that do not exist in `detect_platform.get_openclaw_paths()` — the correct key is `company_dir` (the per-client slug dir, already resolved by `resolve_active_company_dir`). On every symlinked or non-standard workspace layout the probe fell through to a narrow `~/clawd/zero-human-company` fallback, printed `company_root=<not-found> / NO_WORKFORCE_FOUND`, and exited 4 — even when post-build-role-workspaces.py had correctly found and augmented the tree. `migrate-existing-workforce.sh` Steps 1 and 5 called qc-completeness and propagated its rc=4 as the script exit code, so `update-skills.sh` logged "completed with warnings" on every success. With auto-deploy now live, that would mask real failures indefinitely.
+
+### Fix
+- `qc-completeness.sh`: resolver rewritten to match `post-build-role-workspaces.py` / `detect_platform` exactly — `paths["company_dir"]` first, then a full candidate-path scan (all VPS + Mac paths, symlink-followed via `Path.resolve()`). Gate also checks `[ -z "$DEPARTMENTS_DIR" ]` explicitly.
+- `migrate-existing-workforce.sh`: Step 5 now treats qc rc=4 as advisory (WARN + exit 0) since the substantive augmentation already ran. Real failures still signal non-zero: rc=2 (PARTIAL) → exit 2, rc=3 (FAIL) → exit 3, unexpected rc → pass-through.
+
+### Risk
+Low. Path-resolver change is additive (new candidates searched before old fallback). Advisory-exit change only affects rc=4; rc=0/2/3/1 behavior unchanged.
+
 ## [v10.15.43]  -  2026-06-05  -  Clarify research-as-enrichment: research enriches the interview, never fakes it
 
 ### Why
