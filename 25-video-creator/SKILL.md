@@ -1,3 +1,8 @@
+---
+name: video-creator
+description: Create videos from text prompts, scripts, images, and existing clips using Python scripts — supports text-to-video, image-to-video, clip assembly, audio mixing, export/resize, and template-based video production. Requires ffmpeg and imagemagick.
+---
+
 # Video Creator (Skill 25)
 
 Create videos from text prompts, simple scripts, images, and existing clips.

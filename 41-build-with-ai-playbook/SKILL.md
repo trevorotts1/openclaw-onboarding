@@ -1,3 +1,8 @@
+---
+name: build-with-ai-playbook
+description: Generates GHL Build-with-AI workflow instructions for conversational funnel nodes — dependency-first build order, standardized output template, brainstorm flow, and verification checklist. Produces Layer 0 compile-time GHL prompts distinct from run-time OpenClaw playbooks.
+---
+
 # Skill 41: Build With AI Playbook Generator
 
 ## MANDATORY - Teach Yourself Protocol (TYP)

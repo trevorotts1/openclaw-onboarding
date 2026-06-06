@@ -1,3 +1,8 @@
+---
+name: proactive-agent
+description: Imported upstream skill that enables an OpenClaw agent to act proactively — monitors triggers, surfaces insights, and takes initiative without waiting to be asked, within defined safety boundaries.
+---
+
 # Proactive Agent (Imported)
 
 ## Purpose

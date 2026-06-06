@@ -1,3 +1,8 @@
+---
+name: ghl-convert-and-flow
+description: Domain-specific reference files for the GoHighLevel (Convert and Flow) API v2 — Tier 3 direct REST API access covering contacts, conversations, pipelines, calendars, payments, and more. Use after trying Tier 1 (official MCP) and Tier 2 (community MCP) per skill 36's 5-tier escalation rules.
+---
+
 # GHL API Skill - GoHighLevel / Convert and Flow API v2
 
 > **TYP Note:** This skill pack replaces direct use of the 430K master reference.

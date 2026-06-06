@@ -1,3 +1,8 @@
+---
+name: caption-creator
+description: Add professional captions burned into a video or export an SRT subtitle file — uses Whisper for local speech-to-text and FFmpeg for rendering. Supports minimal, full, and animated caption styles.
+---
+
 # Caption Creator (Skill 26)
 
 Add professional captions to a video (burned into the video), or export an SRT subtitle file.

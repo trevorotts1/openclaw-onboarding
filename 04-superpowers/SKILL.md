@@ -1,3 +1,8 @@
+---
+name: superpowers
+description: A set of thinking-discipline rules (14 sub-skills) that stop AI agents from common coding mistakes — forces planning before building, evidence-based debugging, and verified completion before claiming done.
+---
+
 # Superpowers - Thinking Discipline for AI Agents
 
 ## What This Is

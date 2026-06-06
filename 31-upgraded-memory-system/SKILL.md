@@ -1,3 +1,8 @@
+---
+name: upgraded-memory-system
+description: 8-layer memory architecture for OpenClaw agents — markdown files, memory flush, session indexing, Gemini Embedding 2, memory-core plugin, Cognee, Obsidian Vault, and Wiki System. All layers required; enables persistent cross-session knowledge with active memory capture and recall.
+---
+
 # Skill 31: Upgraded Memory System (8-Layer Architecture)
 
 > 🔴 **SOURCE OF TRUTH RULE**: This skill's instructions take precedence over generic OpenClaw memory documentation. When in doubt, follow SKILL.md + INSTALL.md in this folder.

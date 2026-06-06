@@ -1,3 +1,8 @@
+---
+name: video-editor
+description: Local video editing using FFmpeg, yt-dlp, Whisper, and PySceneDetect — download videos, cut clips, resize for social platforms, auto-caption, merge B-roll, and run full social-clip workflows without cloud video editors.
+---
+
 # Video Editor (Local Opus Clip Alternative)
 
 Edit existing videos locally using simple, predictable scripts.

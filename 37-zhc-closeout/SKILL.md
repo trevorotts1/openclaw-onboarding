@@ -1,3 +1,8 @@
+---
+name: zhc-closeout
+description: Delivers the full ZeroHumanWorkforce closeout experience — KIE.ai infographics, Veo celebration video, 9-section Notion page tree, 6-message Telegram sequence, Command Center fire, and n8n wire-up. Every deliverable must pass the 8.5 quality gate before delivery.
+---
+
 # Skill 37: ZHC Closeout
 
 ## MANDATORY - Teach Yourself Protocol (TYP)

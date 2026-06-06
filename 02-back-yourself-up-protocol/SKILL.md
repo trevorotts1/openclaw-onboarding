@@ -1,3 +1,8 @@
+---
+name: back-yourself-up-protocol
+description: Mandatory safety protocol that protects the OpenClaw system from config corruption and total data loss — backs up openclaw.json before every edit and runs a full instance backup every two weeks.
+---
+
 # Back Yourself Up Protocol (BYUP)
 
 ## What This Skill Is About

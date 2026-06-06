@@ -1,3 +1,8 @@
+---
+name: fish-audio-api-reference
+description: Complete working knowledge of the Fish Audio API — text-to-speech generation, voice cloning, real-time streaming audio via WebSocket, and speech-to-text transcription. Installs a full API reference into master files indexed with Gemini Engine for at-query-time lookup.
+---
+
 # Fish Audio API Reference - Skill 31
 
 > **TYP Required:** Read this entire SKILL.md before executing any install steps or making any Fish Audio API calls.

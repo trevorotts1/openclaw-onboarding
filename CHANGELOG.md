@@ -1,3 +1,27 @@
+## [v10.15.47]  -  2026-06-06  -  Systemic skill-wiring fix: conformant SKILL.md frontmatter + executed wiring loop in update-skills.sh
+
+### Why
+Two compounding fleet problems discovered in audit:
+1. **27 of 40 active SKILL.md files had no YAML frontmatter** (`name:` + `description:` missing). OpenClaw uses these fields to register skills in its catalog; without them the skill copies to disk but is invisible to the agent's skill-lookup and trigger system.
+2. **update-skills.sh was copy-only** — after `cp -r`, the Phase A-F activation recipe was printed as prose and written as an UPDATE PENDING flag, but never executed by the script. CORE_UPDATES.md merges, OS prereq installs, and MCP registration were deferred entirely to a downstream human/agent actor, making fleet-wide skill activation inconsistent and manual.
+
+### What changed
+- **FRONTMATTER REPAIR (27 files):** Added `name:` + `description:` YAML frontmatter block to every non-conformant active SKILL.md. Conformant files (03, 06-11, 16, 22-24, 42, 43) untouched. Skills 35 had existing keys (`skill_name`/`version`/`author`) preserved; the required `name:` + `description:` were added above them. All 40 active skills now parse with valid `name:` + `description:`.
+  Fixed: 01-teach-yourself-protocol, 02-back-yourself-up-protocol, 04-superpowers, 05-ghl-setup, 12-openrouter-setup, 14-google-workspace-integration, 15-blackceo-team-management, 17-self-improving-agent, 18-proactive-agent, 19-humanizer, 20-youtube-watcher, 21-tavily-search, 25-video-creator, 26-caption-creator, 27-video-editor, 28-cinematic-forge, 29-ghl-convert-and-flow, 30-fish-audio-api-reference, 31-upgraded-memory-system, 32-command-center-setup, 35-social-media-planner, 36-ghl-mcp-setup, 37-zhc-closeout, 38-conversational-ai-system, 39-real-estate-playbook, 40-zhc-public-records-scraper, 41-build-with-ai-playbook.
+- **update-skills.sh — WIRING PHASE (new executed section after cp loop):** Converts the printed Phase A-F prose into a real executed loop. Per-skill, guarded by a `.wired-<version>` sentinel (idempotent — re-runs skip already-wired skills):
+  - **Step 1:** Runs the skill's own executable installer (`wire.sh` > `install.sh` > `scripts/install.sh` > `setup-*.sh`) with `--idempotent` flag if present. Treats non-zero exit as warning, never aborts the loop.
+  - **Step 2:** `wire_core_updates()` — uses python3 to parse CORE_UPDATES.md labeled sections (`## AGENTS.md — UPDATE REQUIRED`, etc.) and append each block to the matching workspace file (`$HOME/clawd/{AGENTS,TOOLS,MEMORY,SOUL}.md`). Guarded by a per-skill sentinel comment so blocks are never double-applied.
+  - **Step 3:** `wire_prereqs()` — detects skills 25/26/27/28 (video skills) and installs `ffmpeg` + `imagemagick` via the system `brew` (Mac-native, idempotent `command -v` guard). Never calls `apt` (Hostinger shim trap). Logs to `$LOG_FILE`.
+  - **Step 4:** `wire_ghl_mcp()` — for skill 36 only: checks if `ghl-mcp` or `ghl-community-mcp` already exists under nested `mcp.servers` in `openclaw.json`; if not, calls `openclaw mcp set ghl-community-mcp '{"type":"streamable-http","url":"http://localhost:<port>/mcp"}'` (canonical CLI path per audit, writes nested form, not deprecated `mcpServers` root). Port auto-detected from INSTALL.md, defaults to 8765.
+- **Scope guards:** No IDENTITY.md edits, no workforce rebuild, no AGENTS.md clobber. UPDATE PENDING flag still written (for NEW-skill activation steps the agent must handle); wiring replaces the copy-only gap, not the flag.
+- **Version:** all 9 markers rolled atomically to v10.15.47 via `scripts/bump-version.sh`; git tag `v10.15.47`.
+
+### Risk
+Medium-additive.
+- Frontmatter: YAML blocks prepended to 27 files; no existing content removed. Parser-verified via `grep ^name:` / `grep ^description:` on all 40 active skills.
+- Wiring loop: additive and idempotent (sentinel-guarded). Installer step is best-effort (warning-only on non-zero exit). CORE_UPDATES merge uses sentinel to prevent double-apply. Prereq install is `brew install` (idempotent). MCP registration checks existing config before writing. Nothing destructive.
+- The `$ONBOARDING_DIR` latent bug (variable never set in update-skills.sh, so `apply-fleet-standards.sh` call at line 634 was already dead) is left as-is — it was pre-existing and fixing it is a separate concern.
+
 ## [v10.15.46]  -  2026-06-06  -  Tiered local faster-whisper STT + Skill 43 (Graphify Knowledge Graph) + binding NO-COMINGLING rule
 
 ### Why

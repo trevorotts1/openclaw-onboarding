@@ -1,3 +1,8 @@
+---
+name: zhc-public-records-scraper
+description: 4-tier public records lookup system — auto-detects and routes queries through cached results, free public APIs, paid data providers, and Playwright scraping as last resort. Enforces cost caps, rate limits, and compliance rules with a public-records-queries.jsonl audit trail.
+---
+
 # Skill 40: ZHC Public Records Scraper
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
