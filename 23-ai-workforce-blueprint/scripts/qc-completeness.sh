@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# qc-completeness.sh - v10.15.26 (Mac) / v10.16.25 (VPS)
+# qc-completeness.sh - v10.15.44 (Mac) / v10.16.43 (VPS)
 #
 # First-class "are you done?" check for the active workforce. Runs after every
 # build / install / update. Reports PASS / PARTIAL / FAIL per dept and emits a
@@ -56,73 +56,116 @@ log "json_file=${JSON_FILE}"
 log "============================================"
 
 # ----- Resolve active company via vendored detect_platform -----
+# v10.15.44 / v10.16.43 FIX: use the same resolver as post-build-role-workspaces.py.
+# detect_platform.get_openclaw_paths() returns "company_dir" (the resolved active
+# company slug dir) and "company_root" (the parent zero-human-company/ dir), NOT
+# "active_zhc_company" or "zhc_company_root". Previous code always fell through to
+# the ~/clawd fallback and failed on symlinked or non-standard workspace layouts,
+# emitting company_root=<not-found> / NO_WORKFORCE_FOUND even on fully built workforces.
+# Fix: use paths["company_dir"] first, follow symlinks when testing existence, and
+# scan all candidate paths the working pipeline knows about.
+export SCRIPT_DIR
 COMPANY_INFO="$(python3 - <<'PYEOF' 2>>"$LOG_FILE"
-import json
-import os
-import sys
+import json, os, sys
 from pathlib import Path
-script_dir = Path(os.environ.get("SCRIPT_DIR", "."))
-skill_dir = script_dir.parent
-for p in (skill_dir / "lib", skill_dir.parent.parent / "shared-utils", skill_dir / "shared-utils"):
+
+script_dir = Path(os.environ.get("SCRIPT_DIR", ".")).resolve()
+skill_dir = script_dir.parent.resolve()
+# Mirror the sys.path setup from post-build-role-workspaces.py
+for p in (skill_dir / "lib",
+          skill_dir.parent.parent / "shared-utils",
+          skill_dir / "shared-utils",
+          script_dir):
     sys.path.insert(0, str(p))
+
 try:
     from detect_platform import get_openclaw_paths
-except ImportError:
-    print(json.dumps({"error": "detect_platform import failed"}))
+except ImportError as e:
+    print(json.dumps({"error": f"detect_platform import failed: {e}"}))
     sys.exit(0)
+
 try:
     paths = get_openclaw_paths()
 except Exception as e:
     print(json.dumps({"error": f"detect_platform: {e}"}))
     sys.exit(0)
-zhc_root = paths.get("active_zhc_company") or paths.get("zhc_company_root")
-if not zhc_root:
-    # Fall back to picking the most recently modified company dir under ~/clawd/zero-human-company/
-    workspace = paths.get("workspace_root") or paths.get("clawd_root") or os.path.expanduser("~/clawd")
-    zhc_dir = Path(workspace) / "zero-human-company"
-    if zhc_dir.is_dir():
-        candidates = sorted(
-            (d for d in zhc_dir.iterdir() if d.is_dir() and not d.name.startswith("_")),
-            key=lambda d: d.stat().st_mtime,
-            reverse=True,
-        )
-        if candidates:
-            zhc_root = str(candidates[0])
-print(json.dumps({
-    "company_root": zhc_root,
-    "departments_dir": str(Path(zhc_root) / "departments") if zhc_root else None,
-    "departments_json": str(Path(zhc_root) / "departments.json") if zhc_root else None,
-}))
-PYEOF
-)"
 
-SCRIPT_DIR="$SCRIPT_DIR" # ensure exported into python heredoc above? actually above used os.environ, env not exported — patch:
-# (re-run if needed via env-prefix)
-if echo "$COMPANY_INFO" | grep -q '"error"'; then
-  # Try once more with SCRIPT_DIR exported
-  export SCRIPT_DIR
-  COMPANY_INFO="$(python3 - <<'PYEOF' 2>>"$LOG_FILE"
-import json, os, sys
-from pathlib import Path
-script_dir = Path(os.environ.get("SCRIPT_DIR", "."))
-skill_dir = script_dir.parent
-for p in (skill_dir / "lib", skill_dir.parent.parent / "shared-utils", skill_dir / "shared-utils"):
-    sys.path.insert(0, str(p))
-try:
-    from detect_platform import get_openclaw_paths
-    paths = get_openclaw_paths()
-except Exception as e:
-    print(json.dumps({"error": str(e)}))
-    sys.exit(0)
-zhc_root = paths.get("active_zhc_company") or paths.get("zhc_company_root")
+# "company_dir" is the resolved active company slug dir (same key post-build uses).
+# "company_root" is the parent zero-human-company/ dir.
+# Previous code looked for non-existent keys "active_zhc_company"/"zhc_company_root".
+zhc_root = None
+
+# Priority 1: detect_platform's already-resolved active company dir
+company_dir = paths.get("company_dir")
+if company_dir and Path(company_dir).resolve().is_dir():
+    zhc_root = str(Path(company_dir).resolve())
+
+# Priority 2: scan well-known candidate paths (follow symlinks)
+if not zhc_root:
+    slug = os.environ.get("OPENCLAW_COMPANY_SLUG", "")
+    candidates = []
+    if slug:
+        candidates += [
+            Path("/data/.openclaw/workspace/zero-human-company") / slug,
+            Path.home() / ".openclaw" / "workspace" / "zero-human-company" / slug,
+            Path("/data/clawd/zero-human-company") / slug,
+            Path.home() / "clawd" / "zero-human-company" / slug,
+        ]
+    # Also scan parent dirs and pick the most-recently-modified child
+    parent_candidates = [
+        paths.get("company_root"),
+        Path("/data/.openclaw/workspace/zero-human-company"),
+        Path("/data/.openclaw/workspace/departments"),
+        Path("/data/clawd/zero-human-company"),
+        Path.home() / ".openclaw" / "workspace" / "zero-human-company",
+        Path.home() / "clawd" / "zero-human-company",
+    ]
+    for cand in candidates:
+        if cand and Path(cand).resolve().is_dir():
+            zhc_root = str(Path(cand).resolve())
+            break
+    if not zhc_root:
+        for parent in parent_candidates:
+            if not parent:
+                continue
+            p = Path(parent).resolve()
+            # If the candidate IS the departments dir directly (non-standard layout)
+            if p.is_dir() and (p / "departments").resolve().is_dir():
+                zhc_root = str(p)
+                break
+            # Scan for per-company subdirs
+            if p.is_dir():
+                subdirs = sorted(
+                    (d for d in p.iterdir() if d.is_dir() and not d.name.startswith(("_", "."))),
+                    key=lambda d: d.stat().st_mtime, reverse=True
+                )
+                if subdirs:
+                    zhc_root = str(subdirs[0].resolve())
+                    break
+
+# Resolve departments dir — follow symlinks
+departments_dir = None
+departments_json = None
+if zhc_root:
+    # Standard layout: <company_root>/departments/
+    dept_candidate = Path(zhc_root) / "departments"
+    if dept_candidate.resolve().is_dir():
+        departments_dir = str(dept_candidate.resolve())
+        departments_json = str(Path(zhc_root) / "departments.json")
+    else:
+        # Non-standard: zhc_root itself may be the departments dir
+        if Path(zhc_root).resolve().is_dir():
+            # Check if it contains role-like subdirs directly
+            departments_dir = str(Path(zhc_root).resolve())
+            departments_json = str(Path(zhc_root).parent / "departments.json")
+
 print(json.dumps({
     "company_root": zhc_root,
-    "departments_dir": str(Path(zhc_root) / "departments") if zhc_root else None,
-    "departments_json": str(Path(zhc_root) / "departments.json") if zhc_root else None,
+    "departments_dir": departments_dir,
+    "departments_json": departments_json,
 }))
 PYEOF
 )"
-fi
 
 COMPANY_ROOT="$(printf '%s' "$COMPANY_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('company_root') or '')" 2>>"$LOG_FILE")"
 DEPARTMENTS_DIR="$(printf '%s' "$COMPANY_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('departments_dir') or '')" 2>>"$LOG_FILE")"
@@ -132,7 +175,7 @@ log "company_root=${COMPANY_ROOT:-<not-found>}"
 log "departments_dir=${DEPARTMENTS_DIR:-<not-found>}"
 log "departments_json=${DEPARTMENTS_JSON:-<not-found>}"
 
-if [ -z "$COMPANY_ROOT" ] || [ ! -d "$DEPARTMENTS_DIR" ]; then
+if [ -z "$COMPANY_ROOT" ] || [ -z "$DEPARTMENTS_DIR" ] || [ ! -d "$DEPARTMENTS_DIR" ]; then
   log "NO_WORKFORCE_FOUND — no active zero-human-company on disk. Nothing to QC."
   printf '{"status":"NO_WORKFORCE_FOUND","ts":"%s"}\n' "$TS" > "$JSON_FILE"
   exit 4
