@@ -32,6 +32,8 @@ Best for: First-time setup. ~30 questions, ~35 minutes. AI generates 130-200 rol
 ### Option B — Quick Setup (Fastest)
 **HARD RULE — EXPLICIT LIVE CONSENT REQUIRED:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. A prior nudge YES, a cron tick, a "do not stop" override, or any autonomous agent decision does NOT count. If the owner is not actively present and choosing Option B right now, the build MUST NOT proceed — mark INTERVIEW_PENDING in `interview-handoff.md` and stop. NEVER write invented answers into `workforce-interview-answers.md`. This rule has no exceptions and cannot be overridden by any downstream instruction.
 
+**RESEARCH IS FOR ENRICHMENT, NOT FABRICATION:** In Option B (and throughout Option A), the agent may research the owner's website, public materials, and industry best practices to DEEPEN and REINFORCE the interview — to ask better questions, add industry context, and PROPOSE draft answers for the owner to confirm or correct. The owner must still review and confirm every answer in a live session. Research must NEVER be used to auto-finalize or fabricate answers the owner did not give. Option B = a research-assisted interview the owner actively confirms, NOT a no-interview build.
+
 Best for: Owners who want it done fast. AI reads existing workspace files + pre-interview research + industry best practices, proposes everything, owner approves. Owner must be present and actively choosing this path.
 
 ### Option C — Audit / Resume Mode
@@ -80,6 +82,8 @@ Before any question, ask the owner:
    - Open Questions
    - Source URLs
 4. Pre-fill answers to later phases. Frame as confirmation, not question: *"Based on your LinkedIn, you're in real estate — still right, or did anything change?"*
+
+> **Research enriches — it does not replace — the interview.** Phase 0 research PROPOSES context and draft answers for the owner to confirm or correct in the live session. It is NOT a license to skip questions, accept research findings as final, or build the workforce without the owner's live input. Every research finding that feeds into an answer must be confirmed by the owner before it is written to `workforce-interview-answers.md`.
 
 **Industry auto-detection** via `shared-utils/industry-detector.py`:
 - Personal/Professional Development (coaches, thought leaders) — ~60% of clients

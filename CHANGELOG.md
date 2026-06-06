@@ -1,3 +1,18 @@
+## [v10.15.43]  -  2026-06-05  -  Clarify research-as-enrichment: research enriches the interview, never fakes it
+
+### Why
+The v10.15.41 fabrication-kill correctly removed the autonomous Option B path but added no language explaining what research IS legitimately for. A reader could see strong "NEVER fabricate" language and correctly infer that research is forbidden from auto-finalizing answers — but nowhere was it explicitly stated that research is meant to DEEPEN and REINFORCE the live interview: fetching the owner's website/materials to ask better questions, add industry context, and propose draft answers the owner then confirms. The enrichment intent was implied in Phase 0 mechanics and the Pull-Forward Rule but never named. This release adds explicit enrichment language so the two rules (research enriches / research never fabricates) sit side-by-side and are unambiguous.
+
+### What changed
+- **`23-ai-workforce-blueprint/INSTRUCTIONS.md`**: Added a "RESEARCH IS FOR ENRICHMENT, NOT FABRICATION" block inside the Option B description (immediately after the HARD RULE consent gate). Added a blockquote after Phase 0 step 4 ("Pre-fill answers…") clarifying that research proposes context and draft answers — the owner must confirm each one before it enters `workforce-interview-answers.md`.
+- **`23-ai-workforce-blueprint/SKILL.md`**: Added a "RESEARCH IS FOR ENRICHMENT, NOT FABRICATION" block immediately after the "Research model:" line in the Model Requirements section. Explicitly names research's role as enrichment + proposal, and notes this is the positive complement to the NO INTERVIEW FABRICATION rule.
+- All 9 version markers rolled atomically to v10.15.43 via `scripts/bump-version.sh`.
+
+### Risk
+Low — doc-only. No logic changed. The no-fabrication hard rule (v10.15.41) is fully preserved and not weakened. The enrichment language adds the missing positive framing that was always the intent.
+
+---
+
 ## [v10.15.42]  -  2026-06-05  -  Wire deploy: migrate script + PA mandatory + cron auto-apply + probe-fleet version check
 
 ### Why

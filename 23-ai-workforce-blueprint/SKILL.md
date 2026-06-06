@@ -126,6 +126,8 @@ The install agent shows the owner a plain-English prompt asking which model to u
 
 **Research model:** When the AI offers to research industry best practices, it uses `openrouter/perplexity/sonar-pro-search` for the research pass — that model is purpose-built for live web research and is kept separate from the reasoning chain above.
 
+**RESEARCH IS FOR ENRICHMENT, NOT FABRICATION:** The agent may research the owner's website, public materials, and industry best practices to DEEPEN and REINFORCE the interview — to ask better questions, add industry context, and PROPOSE draft answers for the owner to confirm or correct. The owner must still review and confirm every answer in a live session. Research must NEVER be used to auto-finalize or fabricate answers the owner did not give. Option B = a research-assisted interview the owner actively confirms, NOT a no-interview build. This is the positive complement to the NO INTERVIEW FABRICATION rule above — both rules are binding and neither weakens the other.
+
 ## The Three Options
 
 When this skill triggers, it ALWAYS presents three options. Never skip this. Never auto-select.
