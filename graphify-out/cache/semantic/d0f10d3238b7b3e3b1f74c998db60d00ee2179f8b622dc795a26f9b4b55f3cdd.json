@@ -1,0 +1,1 @@
+{"nodes": [], "edges": [{"source": "typ_protocol", "target": "summarize_youtube_summarize_cli", "relation": "required_by", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "16-summarize-youtube/INSTALL.md", "source_location": null, "weight": 1.0}], "hyperedges": []}
