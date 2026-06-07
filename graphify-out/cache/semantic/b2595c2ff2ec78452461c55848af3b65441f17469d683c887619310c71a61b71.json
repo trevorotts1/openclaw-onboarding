@@ -1,0 +1,1 @@
+{"nodes": [], "edges": [{"source": "dept_09_emotional_support", "target": "dept_08_my_coach", "relation": "conceptually_related_to", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "42-personal-assistant-library/specialists/09-emotional-support-wellbeing/ROSTER.md"}], "hyperedges": []}

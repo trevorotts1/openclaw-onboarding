@@ -1,0 +1,1 @@
+{"nodes": [], "edges": [{"source": "video_editor", "target": "whisper", "relation": "uses", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "27-video-editor/scripts/caption.sh", "source_location": null, "weight": 1.0}], "hyperedges": []}

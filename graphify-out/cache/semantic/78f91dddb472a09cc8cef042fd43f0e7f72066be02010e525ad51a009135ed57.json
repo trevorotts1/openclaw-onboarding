@@ -1,0 +1,1 @@
+{"nodes": [], "edges": [{"source": "08_vercel_setup_vercel_setup_skill", "target": "07_kie_setup_kie_setup_skill", "relation": "related_to", "confidence": "AMBIGUOUS", "confidence_score": 0.5, "source_file": "08-vercel-setup/CORE_UPDATES.md", "source_location": null, "weight": 0.5}], "hyperedges": []}

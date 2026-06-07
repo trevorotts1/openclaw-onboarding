@@ -1,0 +1,1 @@
+{"nodes": [], "edges": [{"source": "typ_protocol", "target": "self_improving_agent_self_improving_agent", "relation": "required_by", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "17-self-improving-agent/INSTALL.md", "source_location": null, "weight": 1.0}], "hyperedges": []}

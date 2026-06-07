@@ -1,0 +1,1 @@
+{"nodes": [], "edges": [{"source": "humanizer_skill", "target": "teach_yourself_protocol", "relation": "implements", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "19-humanizer/INSTALL.md", "weight": 1.0}], "hyperedges": []}
