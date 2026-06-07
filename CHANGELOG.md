@@ -1,3 +1,16 @@
+## [v10.15.52]  -  2026-06-07  -  feat: Rescue Rangers resolution / loop-stop protocol (client side)
+
+### Why
+The Rescue Rangers escalation loop had only ONE stop condition: a 25-exchanges-per-client-per-day hard cap. So even a problem that got fixed on turn 1 could keep generating fixes/acknowledgements until the cap, wasting tokens and burning the weekly budget. We are adding an n8n early-stop that ends a thread the moment it is RESOLVED; the agents on BOTH sides must cooperate with that signal. This release teaches the CLIENT agent (the one being rescued) its half of the protocol so it ships fleet-wide via onboarding.
+
+### What changed
+- **New `AGENTS.md` section "🔴 Rescue Rangers — when you're rescued (resolution / loop-stop)"** in the deployed template. It tells the client agent: when the rescue fix works, post `✅ RESOLVED: <one-line>` to the Rescue Rangers thread and STOP escalating — do not keep messaging; if still broken after the rescue agent replies, send ONE focused follow-up; hard cap 25 exchanges/client/day remains the backstop.
+- **Resolution-signal definition (identical to the operator/rescue side and the n8n early-stop):** a message is a resolution signal (case-insensitive) if it contains the sentinel `✅ RESOLVED` OR any of: "resolved", "problem solved", "problem complete", "problem completed", "problem done", "issue resolved", "issue fixed", "it's fixed", "fixed it", "working now", "back to working", "all good now", "we're good", "no longer needed". On a resolution signal the back-and-forth ENDS — neither side produces another fix.
+- All 9 version markers bumped v10.15.51 → v10.15.52 via `scripts/bump-version.sh`.
+
+### Risk
+None. Documentation/protocol only — adds one operating-rules section to the deployed `AGENTS.md`; no install/runtime code paths changed.
+
 ## [v10.15.51]  -  2026-06-07  -  feat: shared core-file unification (Zero-Human-Workforce file model) + QC 9.9
 
 ### Why
