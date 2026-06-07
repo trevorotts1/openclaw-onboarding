@@ -118,8 +118,46 @@ This is the single canonical index of the N1–N27 non-negotiables. Every other 
 | N26 | **Calibre auto-install for Book-to-Persona.** `_find_calibre()` in `22-book-to-persona/pipeline/orchestrator.py` auto-installs Calibre when missing — Homebrew on Mac, apt-get on Linux (with upstream installer fallback). User never sees an "install Calibre manually" prompt. | `22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py` | Audit Phase 14 |
 | N27 | **No lying / no shortcuts / proof required.** End-to-end completion is the only completion. Every claimed fix needs a verifiable artifact (commit hash, curl-against-HEAD output, exit code). The 20% not done gets disclosed, not buried. | This file + owner directive | Audit retro on every release |
 | N28 | **No destructive teardown or kill scripts — ever.** Agents MUST NOT create or schedule any script or cron that removes the toolchain (`~/clawd`, `~/.openclaw`, Homebrew, Node, or OpenClaw itself). Cleanup must be scoped (remove a specific cron by ID), reversible (rename to `.QUARANTINED-<ts>` before deleting), and never self-deleting via a cron-scheduled kill script. Applies to build-cleanup, post-build teardown, SOP-backfill abort, and any "clean up after yourself" pattern. Root cause: 2026-05 Kofi incident — autonomous agent created `kofi-sop-build-kill.sh` during Skill 23 to abort a runaway SOP build; script wiped Homebrew/Node/OpenClaw/clawd. No script that touches core toolchain paths may be spawned by an agent without explicit owner approval. | This file + forensic post-mortem 2026-06-03 | Cron audit gate: any cron payload containing `rm -rf`, `brew uninstall`, `npm uninstall -g openclaw`, or paths `~/clawd` / `~/.openclaw` must be rejected |
+| N29 | **Shared core files (Zero-Human-Workforce file model).** On every box, ALL of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via **symlink** (not duplicated). Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files. The symlink target is ALWAYS the LOCAL box's own canonical (the default agent workspace resolved from THIS box's `openclaw.json`) — NEVER a hardcoded or cross-box/cross-account path (co-mingling guard, N0). Ant Farm internal workflow micro-agents (`*/workflows/*/agents/*`) are EXEMPT. Real files are backed up (`*.bak-unify-<ts>`, never deleted) + unique content preserved additively into the agent's own `IDENTITY.md` before linking. Idempotent. | This file (Shared Core Files section) + [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md) | `link_shared_core_files()` in `install.sh` (Step 10a) + `update-skills.sh`; QC check 9.9 in `scripts/qc-system-integrity.sh` |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
+
+---
+
+## 🔴 N29 — Shared Core Files (Zero-Human-Workforce File Model)
+
+On **every box**, **all** of that account's agents and sub-agents **SHARE the
+box's ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md`** — via **symlink**,
+not by duplicating the files. Each agent keeps its **own** `IDENTITY.md`,
+`SOUL.md`, `MEMORY.md`, and `HEARTBEAT.md` (its real, per-agent files).
+
+| File | Scope |
+|------|-------|
+| `AGENTS.md`, `TOOLS.md`, `USER.md` | **SHARED** — one canonical per box; each agent workspace symlinks to it |
+| `IDENTITY.md`, `SOUL.md`, `MEMORY.md`, `HEARTBEAT.md` | **per-agent** — each agent's own real files (never replaced) |
+
+**CANON_DIR** (the symlink target) = the box's **default agent workspace**,
+resolved with the standard precedence (per-agent `main` override →
+`agents.defaults.workspace` → `~/.openclaw/workspace`).
+
+- 🔴 **Co-mingling guard (N0):** the symlink target is **ALWAYS the LOCAL box's
+  own canonical**, resolved from **THIS box's own `openclaw.json`** — NEVER a
+  hardcoded path and NEVER a cross-box / cross-account path. A client box links
+  to the **client's own** files. The client is the USER. Never link a client
+  agent to Trevor's or another account's files.
+- 🐜 **Ant Farm exemption:** internal workflow micro-agents — any workspace path
+  matching `*/workflows/*/agents/*` — are **EXEMPT** and **never touched**.
+- 💾 **Non-destructive:** a real file is backed up to `<file>.bak-unify-<ts>`
+  (never deleted), its unique content is appended (additive only) to that
+  agent's own `IDENTITY.md` under a guarded marker, then it is replaced with the
+  symlink. Absent files are left absent.
+- 🔁 **Idempotent:** correct symlinks are no-ops; a second run makes no new
+  backups and no churn.
+
+Runs at install (`install.sh` Step 10a) and update (`update-skills.sh`).
+Enforced by QC check **9.9** in `scripts/qc-system-integrity.sh`. Full rule:
+[`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md). This is the box-wide
+generalization of **N19** (the ZHC `agents/` layout).
 
 ---
 

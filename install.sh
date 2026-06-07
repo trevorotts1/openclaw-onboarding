@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.50"
+ONBOARDING_VERSION="v10.15.51"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -1652,6 +1652,223 @@ discover_skills() {
 }
 
 # ----------------------------------------------------------
+# v10.15.51 — link_shared_core_files (Zero-Human-Workforce file model)
+# ----------------------------------------------------------
+# On EVERY box, ALL of that account's agents + sub-agents SHARE the box's ONE
+# canonical AGENTS.md / TOOLS.md / USER.md via symlink (NOT duplicated). Per-agent
+# files (IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT.md) stay each agent's OWN.
+#
+# CANON_DIR = the box's DEFAULT AGENT WORKSPACE (agents.defaults.workspace, same
+# resolver as install.sh Step 10 / obs_resolve_workspace). The symlink target is
+# ALWAYS THIS LOCAL box's own canonical — NEVER a hardcoded or cross-box/cross-
+# account path. The client is the USER: a client box links to the CLIENT's own
+# files only (co-mingling guard, N0).
+#
+# Ant Farm EXEMPTION: any workspace path matching */workflows/*/agents/* (internal
+# workflow micro-agents) is NEVER touched.
+#
+# Idempotent: a correct existing symlink is a no-op; an absent file stays absent;
+# a second run produces no new backups and no churn. Every action logs with the
+# [link-shared] prefix. A real file is BACKED UP (never deleted) to
+# <file>.bak-unify-<ts>, and any of its content not already in the canonical file
+# is APPENDED (additive only) to the agent's OWN IDENTITY.md under a guarded marker
+# before the file is replaced with the symlink.
+# ----------------------------------------------------------
+link_shared_core_files() {
+  local CANON_DIR="${1:-}"
+
+  # Resolve CANON_DIR = THIS box's own default agent workspace. Read THIS box's
+  # openclaw.json only (co-mingling guard) — never a foreign/hardcoded path.
+  local _OCJSON="$OC_JSON"
+  [ -f "/data/.openclaw/openclaw.json" ] && _OCJSON="/data/.openclaw/openclaw.json"
+  if [ -z "$CANON_DIR" ]; then
+    if command -v obs_resolve_workspace >/dev/null 2>&1; then
+      CANON_DIR="$(obs_resolve_workspace)"
+    elif [ -f "$_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+      CANON_DIR="$(OC_JSON="$_OCJSON" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    for ag in cfg.get("agents", {}).get("list", []) or []:
+        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
+            print(os.path.expanduser(ag["workspace"])); break
+    else:
+        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
+        if ws:
+            print(os.path.expanduser(ws))
+except Exception:
+    pass
+PYEOF
+)"
+    fi
+  fi
+  if [ -z "$CANON_DIR" ]; then
+    if [ -d "/data/.openclaw" ]; then
+      CANON_DIR="/data/.openclaw/workspace"
+    else
+      CANON_DIR="$OC_WORKSPACE_DEFAULT"
+    fi
+  fi
+
+  note "[link-shared] Zero-Human-Workforce file unification"
+  note "[link-shared] CANON_DIR (this box's own canonical) = $CANON_DIR"
+  mkdir -p "$CANON_DIR" 2>/dev/null || true
+
+  local f
+  for f in AGENTS.md TOOLS.md USER.md; do
+    [ -e "$CANON_DIR/$f" ] || { touch "$CANON_DIR/$f" 2>/dev/null || true; }
+  done
+
+  local CANON_REAL
+  CANON_REAL="$(cd "$CANON_DIR" 2>/dev/null && pwd -P || echo "$CANON_DIR")"
+
+  local TS
+  TS="$(date +%Y%m%d-%H%M%S)"
+
+  # Enumerate agent workspaces: openclaw.json agents[].workspace + scan dirs.
+  local WS_LIST_FILE
+  WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
+  : > "$WS_LIST_FILE"
+
+  if [ -f "$_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+    OC_JSON="$_OCJSON" python3 - >> "$WS_LIST_FILE" 2>/dev/null <<'PYEOF' || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    for ag in cfg.get("agents", {}).get("list", []) or []:
+        if isinstance(ag, dict):
+            ws = ag.get("workspace")
+            if ws:
+                print(os.path.expanduser(ws))
+except Exception:
+    pass
+PYEOF
+  fi
+
+  local OC_ROOT="$HOME/.openclaw"
+  [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
+  local _scan
+  for _scan in \
+      "$OC_ROOT/workspaces" \
+      "$CANON_REAL/agents" \
+      "$CANON_REAL/departments"; do
+    [ -d "$_scan" ] || continue
+    find "$_scan" -type d -print 2>/dev/null \
+      | while IFS= read -r d; do
+          if [ -e "$d/AGENTS.md" ] || [ -e "$d/IDENTITY.md" ] || [ -e "$d/SOUL.md" ]; then
+            echo "$d"
+          fi
+        done >> "$WS_LIST_FILE" 2>/dev/null || true
+  done
+
+  local LINKED=0 REPOINTED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0
+
+  local W
+  while IFS= read -r W; do
+    [ -n "$W" ] || continue
+    W="$(printf '%s' "$W" | sed 's:/*$::')"
+    [ -d "$W" ] || continue
+
+    local W_REAL
+    W_REAL="$(cd "$W" 2>/dev/null && pwd -P || echo "$W")"
+
+    # Skip the canonical workspace itself — it OWNS the real files.
+    [ "$W_REAL" = "$CANON_REAL" ] && continue
+
+    # Ant Farm EXEMPTION: never touch */workflows/*/agents/* micro-agents.
+    case "$W_REAL/" in
+      */workflows/*/agents/*)
+        note "[link-shared] SKIP (Ant Farm exempt): $W_REAL"
+        SKIPPED_ANT=$((SKIPPED_ANT + 1))
+        continue
+        ;;
+    esac
+
+    for f in AGENTS.md TOOLS.md USER.md; do
+      local TARGET="$CANON_REAL/$f"
+      local LINKPATH="$W_REAL/$f"
+
+      if [ -L "$LINKPATH" ]; then
+        local CUR
+        CUR="$(readlink "$LINKPATH" 2>/dev/null || echo '')"
+        local CUR_REAL
+        CUR_REAL="$(cd "$(dirname "$LINKPATH")" 2>/dev/null && cd "$(dirname "$CUR")" 2>/dev/null && pwd -P 2>/dev/null)/$(basename "$CUR")"
+        if [ "$CUR" = "$TARGET" ] || [ "$CUR_REAL" = "$TARGET" ]; then
+          NOOP=$((NOOP + 1))
+        else
+          ln -sfn "$TARGET" "$LINKPATH" 2>/dev/null \
+            && { note "[link-shared] REPOINT $LINKPATH -> $TARGET (was: $CUR)"; REPOINTED=$((REPOINTED + 1)); } \
+            || warn "[link-shared] could not repoint $LINKPATH"
+        fi
+
+      elif [ -f "$LINKPATH" ]; then
+        local BAK="$LINKPATH.bak-unify-$TS"
+        cp -p "$LINKPATH" "$BAK" 2>/dev/null \
+          && { note "[link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
+          || { warn "[link-shared] backup failed for $LINKPATH — leaving file untouched"; continue; }
+
+        local AGENT_NAME
+        AGENT_NAME="$(basename "$W_REAL")"
+        local IDFILE="$W_REAL/IDENTITY.md"
+        local PMARK="<!-- PRESERVED FROM ${AGENT_NAME} ${f} (unification ${TS}) -->"
+        local PMARK_PREFIX="<!-- PRESERVED FROM ${AGENT_NAME} ${f} (unification "
+        if ! grep -qF "$PMARK_PREFIX" "$IDFILE" 2>/dev/null; then
+          AGENT_F="$LINKPATH" CANON_F="$TARGET" ID_F="$IDFILE" PMARK="$PMARK" \
+            python3 - <<'PYEOF' 2>/dev/null || true
+import os
+src   = os.environ["AGENT_F"]
+canon = os.environ["CANON_F"]
+idf   = os.environ["ID_F"]
+mark  = os.environ["PMARK"]
+try:
+    src_text = open(src, encoding="utf-8", errors="replace").read()
+except Exception:
+    src_text = ""
+try:
+    canon_text = open(canon, encoding="utf-8", errors="replace").read()
+except Exception:
+    canon_text = ""
+blocks, cur = [], []
+for line in src_text.splitlines():
+    if line.strip() == "":
+        if cur:
+            blocks.append("\n".join(cur)); cur = []
+    else:
+        cur.append(line)
+if cur:
+    blocks.append("\n".join(cur))
+unique = [b for b in blocks if b.strip() and b.strip() not in canon_text]
+if unique:
+    with open(idf, "a", encoding="utf-8") as fh:
+        fh.write("\n\n" + mark + "\n")
+        fh.write("\n\n".join(unique))
+        fh.write("\n")
+    print("PRESERVED")
+PYEOF
+          if grep -qF "$PMARK" "$IDFILE" 2>/dev/null; then
+            note "[link-shared] PRESERVE unique $f content -> $IDFILE"
+            PRESERVED=$((PRESERVED + 1))
+          fi
+        fi
+
+        rm -f "$LINKPATH" 2>/dev/null
+        ln -sfn "$TARGET" "$LINKPATH" 2>/dev/null \
+          && { note "[link-shared] LINK $LINKPATH -> $TARGET"; LINKED=$((LINKED + 1)); } \
+          || warn "[link-shared] could not create symlink $LINKPATH"
+
+      else
+        :  # absent → leave absent (no churn)
+      fi
+    done
+  done < <(sort -u "$WS_LIST_FILE")
+
+  rm -f "$WS_LIST_FILE" 2>/dev/null || true
+
+  note "[link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED ant-farm-skipped=$SKIPPED_ANT already-ok=$NOOP"
+  note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
+}
+
+# ----------------------------------------------------------
 # Concurrency Configuration
 # ----------------------------------------------------------
 configure_concurrency_LEGACY_UNUSED() {
@@ -3205,6 +3422,18 @@ else
     error "  Or send via gateway: openclaw message send --channel telegram --message \"\$(cat \"$UPDATE_PENDING_FILE\")\""
     error "Please report with this log: $LOG_FILE"
 fi
+
+# ----------------------------------------------------------
+# Step 10a: Shared core-file unification (Zero-Human-Workforce file model)
+# Now that the workspace is resolved + the bootstrap files exist in
+# CANON_DIR ($WORKSPACE_DIR), symlink every agent/sub-agent's AGENTS.md /
+# TOOLS.md / USER.md to THIS box's own canonical. Per-agent IDENTITY/SOUL/
+# MEMORY/HEARTBEAT stay each agent's own. Ant Farm exempt. Idempotent.
+# CANON_DIR is THIS box's own workspace (co-mingling guard) — passed explicitly
+# as the resolved $WORKSPACE_DIR so it matches the path the agent actually reads.
+# ----------------------------------------------------------
+step "Step 10a: Unifying shared core files (AGENTS/TOOLS/USER symlinked to this box's canonical)"
+link_shared_core_files "$WORKSPACE_DIR" || warn "link_shared_core_files reported warnings (install continues)"
 
 # ----------------------------------------------------------
 # Step 10b: Seed Core.md Terminology into MEMORY.md (idempotent)

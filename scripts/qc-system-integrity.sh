@@ -430,6 +430,83 @@ check "9.8" "Master AGENTS.md / TOOLS.md / USER.md exist at workspace root" \
   "[ -f \"$WORKSPACE/AGENTS.md\" ] && [ -f \"$WORKSPACE/TOOLS.md\" ] && [ -f \"$WORKSPACE/USER.md\" ]" \
   "Bootstrap missing — re-run install.sh"
 
+# 9.9 (v10.15.51) — Shared core-file unification (Zero-Human-Workforce file model):
+# every NON-Ant-Farm agent workspace's AGENTS.md / TOOLS.md / USER.md MUST be a
+# symlink resolving to THIS box's canonical (agents.defaults.workspace). Per-agent
+# IDENTITY/SOUL/MEMORY/HEARTBEAT are NOT checked here (they stay each agent's own).
+# Ant Farm micro-agents (*/workflows/*/agents/*) are EXEMPT. The expected target is
+# resolved from THIS box's own openclaw.json — never a foreign/hardcoded path.
+UNIFY_BAD=$(OCJSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null || echo "ERR"
+import json, os
+ocjson = os.environ["OCJSON"]
+try:
+    cfg = json.load(open(ocjson))
+except Exception:
+    print("ERR"); raise SystemExit
+agents = cfg.get("agents", {})
+
+# CANON_DIR = box's own default agent workspace (per-agent main override ->
+# agents.defaults.workspace), resolved to a real path.
+canon = ""
+for ag in agents.get("list", []) or []:
+    if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
+        canon = os.path.expanduser(ag["workspace"]); break
+if not canon:
+    ws = agents.get("defaults", {}).get("workspace")
+    if ws:
+        canon = os.path.expanduser(ws)
+if not canon:
+    canon = "/data/.openclaw/workspace" if os.path.isdir("/data/.openclaw") else os.path.expanduser("~/.openclaw/workspace")
+canon_real = os.path.realpath(canon)
+
+# Enumerate candidate agent workspaces: openclaw.json agents[].workspace plus a
+# scan of the workspace's agents/ + departments/ trees.
+cands = set()
+for ag in agents.get("list", []) or []:
+    if isinstance(ag, dict) and ag.get("workspace"):
+        cands.add(os.path.expanduser(ag["workspace"]))
+for sub in ("agents", "departments"):
+    base = os.path.join(canon_real, sub)
+    if os.path.isdir(base):
+        for root, dirs, files in os.walk(base):
+            if os.path.exists(os.path.join(root, "AGENTS.md")) \
+               or os.path.exists(os.path.join(root, "IDENTITY.md")) \
+               or os.path.exists(os.path.join(root, "SOUL.md")):
+                cands.add(root)
+
+bad = []
+for w in cands:
+    wr = os.path.realpath(w)
+    if wr == canon_real:
+        continue
+    # Ant Farm EXEMPTION.
+    if "/workflows/" in (wr + "/") and "/agents/" in (wr + "/").split("/workflows/", 1)[1]:
+        continue
+    for f in ("AGENTS.md", "TOOLS.md", "USER.md"):
+        p = os.path.join(wr, f)
+        if not os.path.exists(p):
+            continue  # absent is allowed (left absent by the unifier)
+        if not os.path.islink(p):
+            bad.append("%s/%s NOT a symlink" % (wr, f)); continue
+        if os.path.realpath(p) != os.path.join(canon_real, f):
+            bad.append("%s/%s -> %s (expected canonical)" % (wr, f, os.path.realpath(p)))
+print(len(bad))
+for b in bad[:10]:
+    print("    "+b)
+PYEOF
+)
+UNIFY_COUNT=$(printf '%s\n' "$UNIFY_BAD" | head -1)
+if [ "$UNIFY_COUNT" = "0" ]; then
+  green "  ✓ 9.9  All non-Ant-Farm agent workspaces share AGENTS/TOOLS/USER via canonical symlink"; PASS=$((PASS+1))
+elif [ "$UNIFY_COUNT" = "ERR" ]; then
+  warn_check "9.9" "Shared core-file unification (could not read openclaw.json — skipped)" "false" \
+    "openclaw.json unreadable; re-run after install completes"
+else
+  red "  ✗ 9.9  $UNIFY_COUNT non-Ant-Farm core file(s) not symlinked to canonical:"; FAIL=$((FAIL+1))
+  printf '%s\n' "$UNIFY_BAD" | tail -n +2
+  FAILURES+=("9.9|Shared core files not unified (AGENTS/TOOLS/USER must symlink to canonical workspace)|Run link_shared_core_files (re-run update-skills.sh or install.sh Step 10a)")
+fi
+
 # ─── CROSS-CUTTING ───────────────────────────────────────────────────────────
 echo
 blue "── CROSS-CUTTING ──"

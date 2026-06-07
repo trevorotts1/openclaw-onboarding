@@ -6,7 +6,7 @@ set -euo pipefail
 #  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.50"
+ONBOARDING_VERSION="v10.15.51"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -283,7 +283,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v10.15.50 — safe_json_edit
+# v10.15.51 — safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -343,6 +343,257 @@ safe_json_edit() {
 
   rm -f "$BACKUP" 2>/dev/null || true
   echo "  [safe_json_edit] $DESCRIPTION applied and validated OK"
+}
+
+# ----------------------------------------------------------
+# v10.15.51 — link_shared_core_files
+# ----------------------------------------------------------
+# Zero-Human-Workforce file model: on EVERY box, ALL of that account's agents
+# + sub-agents SHARE the box's ONE canonical AGENTS.md / TOOLS.md / USER.md
+# (symlinked, NOT duplicated). Per-agent files (IDENTITY.md, SOUL.md, MEMORY.md,
+# HEARTBEAT.md) stay each agent's OWN real files — never touched here (except
+# additive content preservation into IDENTITY.md, see below).
+#
+# CANON_DIR = the box's DEFAULT AGENT WORKSPACE (agents.defaults.workspace, with
+# the same resolver as obs_resolve_workspace / install.sh Step 10). The canonical
+# AGENTS.md/TOOLS.md/USER.md live there. The symlink target is ALWAYS this LOCAL
+# box's own canonical — NEVER a hardcoded path and NEVER a cross-box/cross-account
+# path. The client is the USER; a client box links to the CLIENT's own files only.
+# This is the co-mingling guard (N0): we read THIS box's openclaw.json and resolve
+# THIS box's workspace — we never write a foreign path into a client's symlink.
+#
+# Ant Farm EXEMPTION: any workspace path matching */workflows/*/agents/* is an
+# internal workflow micro-agent and is NEVER touched.
+#
+# Idempotent: a second run produces no new backups and no churn — a symlink that
+# already points at CANON_DIR/<f> is a no-op; an absent file is left absent.
+# Every action is logged with the [link-shared] prefix.
+# ----------------------------------------------------------
+link_shared_core_files() {
+  local CANON_DIR="${1:-}"
+
+  # --- Resolve CANON_DIR (box's own default agent workspace) ---------------
+  # Precedence mirrors obs_resolve_workspace / install.sh Step 10:
+  #   per-agent main override -> agents.defaults.workspace -> ~/.openclaw/workspace.
+  # We ALWAYS read THIS box's openclaw.json — never a foreign/hardcoded path.
+  local OCJSON="$HOME/.openclaw/openclaw.json"
+  [ -f "/data/.openclaw/openclaw.json" ] && OCJSON="/data/.openclaw/openclaw.json"
+  if [ -z "$CANON_DIR" ]; then
+    if command -v obs_resolve_workspace >/dev/null 2>&1; then
+      CANON_DIR="$(obs_resolve_workspace)"
+    elif [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+      CANON_DIR="$(OC_JSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    for ag in cfg.get("agents", {}).get("list", []) or []:
+        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
+            print(os.path.expanduser(ag["workspace"])); break
+    else:
+        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
+        if ws:
+            print(os.path.expanduser(ws))
+except Exception:
+    pass
+PYEOF
+)"
+    fi
+  fi
+  # Final fallback: the canonical OpenClaw default for this box. (Clawd is dead;
+  # only fall back to ~/clawd as an absolute last resort if it is the workspace.)
+  if [ -z "$CANON_DIR" ]; then
+    if [ -d "/data/.openclaw" ]; then
+      CANON_DIR="/data/.openclaw/workspace"
+    else
+      CANON_DIR="$HOME/.openclaw/workspace"
+    fi
+  fi
+
+  echo "  [link-shared] Zero-Human-Workforce file unification"
+  echo "  [link-shared] CANON_DIR (this box's own canonical) = $CANON_DIR"
+  mkdir -p "$CANON_DIR" 2>/dev/null || true
+
+  # The canonical files must exist before we can link to them. touch ensures a
+  # symlink target is always present (empty is fine; later wiring fills them).
+  local f
+  for f in AGENTS.md TOOLS.md USER.md; do
+    [ -e "$CANON_DIR/$f" ] || { touch "$CANON_DIR/$f" 2>/dev/null || true; }
+  done
+
+  # Resolve CANON_DIR to an absolute, symlink-free real path so comparisons and
+  # link targets are stable + correct.
+  local CANON_REAL
+  CANON_REAL="$(cd "$CANON_DIR" 2>/dev/null && pwd -P || echo "$CANON_DIR")"
+
+  local TS
+  TS="$(date +%Y%m%d-%H%M%S)"
+
+  # --- Enumerate agent workspaces ------------------------------------------
+  # Sources: (a) every agents[].workspace declared in THIS box's openclaw.json,
+  # (b) a scan of the workspaces/ dir (immediate children + agents/* role dirs).
+  # We only ever operate on dirs under this box. Dedup; skip CANON; skip Ant Farm.
+  local WS_LIST_FILE
+  WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
+  : > "$WS_LIST_FILE"
+
+  if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+    OC_JSON="$OCJSON" python3 - >> "$WS_LIST_FILE" 2>/dev/null <<'PYEOF' || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    for ag in cfg.get("agents", {}).get("list", []) or []:
+        if isinstance(ag, dict):
+            ws = ag.get("workspace")
+            if ws:
+                print(os.path.expanduser(ws))
+except Exception:
+    pass
+PYEOF
+  fi
+
+  # Scan the workspaces dir tree for agent-shaped dirs. The canonical default
+  # parent is .openclaw/ (or /data/.openclaw); also scan the workspace's own
+  # departments/ + agents/ trees where role workspaces live.
+  local OC_ROOT="$HOME/.openclaw"
+  [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
+  local _scan
+  for _scan in \
+      "$OC_ROOT/workspaces" \
+      "$CANON_REAL/agents" \
+      "$CANON_REAL/departments"; do
+    [ -d "$_scan" ] || continue
+    # Any dir that already carries one of the shared files (real or link) is an
+    # agent workspace candidate. find -type d then filter in the loop below.
+    find "$_scan" -type d \( -name 'AGENTS.md' -prune \) -o -type d -print 2>/dev/null \
+      | while IFS= read -r d; do
+          if [ -e "$d/AGENTS.md" ] || [ -e "$d/IDENTITY.md" ] || [ -e "$d/SOUL.md" ]; then
+            echo "$d"
+          fi
+        done >> "$WS_LIST_FILE" 2>/dev/null || true
+  done
+
+  local LINKED=0 REPOINTED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0
+
+  # Dedup workspace list, then process each.
+  local W
+  while IFS= read -r W; do
+    [ -n "$W" ] || continue
+    W="$(printf '%s' "$W" | sed 's:/*$::')"   # strip trailing slashes
+    [ -d "$W" ] || continue
+
+    # Resolve to absolute real path for a correct CANON comparison.
+    local W_REAL
+    W_REAL="$(cd "$W" 2>/dev/null && pwd -P || echo "$W")"
+
+    # Skip the canonical workspace itself — it OWNS the real files.
+    if [ "$W_REAL" = "$CANON_REAL" ]; then
+      continue
+    fi
+
+    # Ant Farm EXEMPTION: never touch */workflows/*/agents/* micro-agents.
+    case "$W_REAL/" in
+      */workflows/*/agents/*)
+        echo "  [link-shared] SKIP (Ant Farm exempt): $W_REAL"
+        SKIPPED_ANT=$((SKIPPED_ANT + 1))
+        continue
+        ;;
+    esac
+
+    for f in AGENTS.md TOOLS.md USER.md; do
+      local TARGET="$CANON_REAL/$f"
+      local LINKPATH="$W_REAL/$f"
+
+      if [ -L "$LINKPATH" ]; then
+        # Already a symlink — repoint ONLY if it points somewhere wrong.
+        local CUR
+        CUR="$(readlink "$LINKPATH" 2>/dev/null || echo '')"
+        # Resolve current target to a real path for comparison.
+        local CUR_REAL
+        CUR_REAL="$(cd "$(dirname "$LINKPATH")" 2>/dev/null && cd "$(dirname "$CUR")" 2>/dev/null && pwd -P 2>/dev/null)/$(basename "$CUR")"
+        if [ "$CUR" = "$TARGET" ] || [ "$CUR_REAL" = "$TARGET" ]; then
+          NOOP=$((NOOP + 1))   # idempotent: correct link, no churn
+        else
+          ln -sfn "$TARGET" "$LINKPATH" 2>/dev/null \
+            && { echo "  [link-shared] REPOINT $LINKPATH -> $TARGET (was: $CUR)"; REPOINTED=$((REPOINTED + 1)); } \
+            || echo "  [link-shared] WARN: could not repoint $LINKPATH"
+        fi
+
+      elif [ -f "$LINKPATH" ]; then
+        # A REAL file. Back it up (NEVER delete), preserve unique content into
+        # this agent's OWN IDENTITY.md (additive only), then replace with a link.
+        local BAK="$LINKPATH.bak-unify-$TS"
+        cp -p "$LINKPATH" "$BAK" 2>/dev/null \
+          && { echo "  [link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
+          || { echo "  [link-shared] WARN: backup failed for $LINKPATH — leaving file untouched"; continue; }
+
+        # Best-effort PRESERVE: append any content NOT already in CANON/<f> to
+        # this agent's OWN IDENTITY.md under a guarded marker (only ADD; create
+        # IDENTITY.md if absent). Guard prevents duplicate preservation on re-run.
+        local AGENT_NAME
+        AGENT_NAME="$(basename "$W_REAL")"
+        local IDFILE="$W_REAL/IDENTITY.md"
+        local PMARK="<!-- PRESERVED FROM ${AGENT_NAME} ${f} (unification ${TS}) -->"
+        # Marker prefix (sans timestamp) used to detect prior preservation of the
+        # same agent+file so re-runs never re-append.
+        local PMARK_PREFIX="<!-- PRESERVED FROM ${AGENT_NAME} ${f} (unification "
+        if ! grep -qF "$PMARK_PREFIX" "$IDFILE" 2>/dev/null; then
+          AGENT_F="$LINKPATH" CANON_F="$TARGET" ID_F="$IDFILE" PMARK="$PMARK" \
+            python3 - <<'PYEOF' 2>/dev/null || true
+import os
+src   = os.environ["AGENT_F"]
+canon = os.environ["CANON_F"]
+idf   = os.environ["ID_F"]
+mark  = os.environ["PMARK"]
+try:
+    src_text = open(src, encoding="utf-8", errors="replace").read()
+except Exception:
+    src_text = ""
+try:
+    canon_text = open(canon, encoding="utf-8", errors="replace").read()
+except Exception:
+    canon_text = ""
+# Split the agent's file into blank-line-delimited blocks; keep only blocks
+# whose stripped text is non-empty AND not already present in the canonical file.
+blocks, cur = [], []
+for line in src_text.splitlines():
+    if line.strip() == "":
+        if cur:
+            blocks.append("\n".join(cur)); cur = []
+    else:
+        cur.append(line)
+if cur:
+    blocks.append("\n".join(cur))
+unique = [b for b in blocks if b.strip() and b.strip() not in canon_text]
+if unique:
+    with open(idf, "a", encoding="utf-8") as fh:
+        fh.write("\n\n" + mark + "\n")
+        fh.write("\n\n".join(unique))
+        fh.write("\n")
+    print("PRESERVED")
+PYEOF
+          if grep -qF "$PMARK" "$IDFILE" 2>/dev/null; then
+            echo "  [link-shared] PRESERVE unique $f content -> $IDFILE"
+            PRESERVED=$((PRESERVED + 1))
+          fi
+        fi
+
+        # Replace the real file with a symlink to the box's own canonical.
+        rm -f "$LINKPATH" 2>/dev/null
+        ln -sfn "$TARGET" "$LINKPATH" 2>/dev/null \
+          && { echo "  [link-shared] LINK $LINKPATH -> $TARGET"; LINKED=$((LINKED + 1)); } \
+          || echo "  [link-shared] WARN: could not create symlink $LINKPATH"
+
+      else
+        # Absent → leave absent. (No churn.)
+        :
+      fi
+    done
+  done < <(sort -u "$WS_LIST_FILE")
+
+  rm -f "$WS_LIST_FILE" 2>/dev/null || true
+
+  echo "  [link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED ant-farm-skipped=$SKIPPED_ANT already-ok=$NOOP"
+  echo "  [link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 }
 
 # ----------------------------------------------------------
@@ -910,6 +1161,18 @@ except:
   else
     echo "  (migrate-existing-workforce.sh not found or not executable — skipping)"
   fi
+
+  # ----------------------------------------------------------
+  # v10.15.51: SHARED CORE FILE UNIFICATION (Zero-Human-Workforce file model).
+  # AFTER skills + workspaces + CORE_UPDATES wiring + workforce migration, every
+  # agent/sub-agent on THIS box shares the box's ONE canonical AGENTS.md /
+  # TOOLS.md / USER.md via symlink. Per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT stay
+  # each agent's own. Ant Farm micro-agents exempt. Idempotent. Reads THIS box's
+  # openclaw.json only (co-mingling guard) — never a foreign/hardcoded target.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Unifying shared core files (AGENTS/TOOLS/USER symlinked to this box's canonical)..."
+  link_shared_core_files || echo "  ⚠ link_shared_core_files reported warnings (update continues)"
 
   # Write version file to active dir (the canonical location)
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
