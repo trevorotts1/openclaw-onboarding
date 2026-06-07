@@ -1,3 +1,18 @@
+## [v10.15.53]  -  2026-06-07  -  feat: client agents escalate via the n8n webhook, not the broken bot-to-bot Telegram group post
+
+### Why
+The old Rescue Rangers escalation path had client agents `openclaw message send -t ${RESCUE_RANGERS_HELP_CHAT_ID}` into a shared Telegram group. That NEVER worked: bots cannot read other bots' messages, so the post never reached the rescue agent. The rescue answer now flows through n8n, which CAN read the group and post fixes back. Client gateways can reach the public webhook URL outbound, so escalation becomes a simple authenticated HTTP POST.
+
+### What changed
+- **`AGENTS.md` "🔴 Rescue Rangers" section** now opens with the ONLY supported escalation method — a `curl -X POST "$RESCUE_RANGERS_WEBHOOK_URL"` with a JSON body `{"action":"escalate","client":...,"agent":...,"message":"<problem + what you tried + EXACT OpenClaw version>"}` — and explicitly forbids the old `openclaw message send -t <group>` bot-to-bot post. The existing "when rescued, reply `✅ RESOLVED` + STOP" loop-stop rule is unchanged; the 25-exchanges/client/day hard cap remains the backstop.
+- **`install.sh` (`inject_shared_operator_secrets`)** now seeds `RESCUE_RANGERS_WEBHOOK_URL` (default `https://main.blackceoautomations.com/webhook/rescue-rangers`, overridable via the operator env var of the same name) into BOTH `secrets/.env` and the `openclaw.json` env.vars block, so every new install gets it — alongside where the operator help/chat ids are seeded.
+- **Cron resume guards** (`scripts/resume-onboarding.sh`, `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh`) now escalate to Rescue Rangers by POSTing to `$RESCUE_RANGERS_WEBHOOK_URL` instead of `openclaw message send -t "$RESCUE_RANGERS_HELP_CHAT_ID"`. The separate operator-notification sends (to the operator's own chat) are unchanged. Each payload includes the box's EXACT OpenClaw version.
+- **`23-ai-workforce-blueprint/resume-prompt.txt`** updated so the prose tells the agent to escalate via the webhook, not the chat id.
+- All 9 version markers bumped v10.15.52 → v10.15.53 via `scripts/bump-version.sh`.
+
+### Risk
+Low. The webhook URL is public/outbound and not a secret; the escalation curl is wrapped in `|| true` and guarded by `command -v curl`, so a missing webhook never blocks a build. Operator-notification Telegram sends are untouched. No client-bot routing changes.
+
 ## [v10.15.52]  -  2026-06-07  -  feat: Rescue Rangers resolution / loop-stop protocol (client side)
 
 ### Why

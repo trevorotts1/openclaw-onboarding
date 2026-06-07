@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v10.15.52"
+ONBOARDING_VERSION="v10.15.53"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -839,6 +839,18 @@ PYEOF
     elif [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] || [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
         warn "Only one of OPENCLAW_PODBEAN_CLIENT_ID / OPENCLAW_PODBEAN_CLIENT_SECRET set — both required. Skipping Podbean injection."
     fi
+
+    # Rescue Rangers escalation webhook (n8n). Client agents escalate unsolvable
+    # problems by POSTing to this URL (see AGENTS.md "Rescue Rangers"). It is NOT a
+    # secret — it is a public, outbound-reachable webhook — but it IS seeded into
+    # the agent's env so the escalation command can reference $RESCUE_RANGERS_WEBHOOK_URL
+    # rather than a hardcoded URL. Overridable via the operator env var of the same name.
+    local RR_WEBHOOK_DEFAULT="https://main.blackceoautomations.com/webhook/rescue-rangers"
+    local RR_WEBHOOK="${RESCUE_RANGERS_WEBHOOK_URL:-$RR_WEBHOOK_DEFAULT}"
+    _shared_write_env "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
+    _shared_write_ocjson "RESCUE_RANGERS_WEBHOOK_URL" "$RR_WEBHOOK"
+    success "Rescue Rangers escalation webhook seeded (RESCUE_RANGERS_WEBHOOK_URL=$RR_WEBHOOK)"
+    injected_count=$((injected_count + 1))
 
     # (future shared secrets get added here — same pattern)
 
