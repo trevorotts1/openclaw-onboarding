@@ -185,10 +185,14 @@ if (( _run_count > MAX_RUNS_BEFORE_SELF_REMOVE )); then
   if command -v openclaw >/dev/null 2>&1; then
     _already_escalated=$(jq -r '.rescueRangersEscalated // false' "$STATE_FILE" 2>/dev/null)
     if [[ "$_already_escalated" != "true" ]]; then
-      _rr_chat="${RESCUE_RANGERS_HELP_CHAT_ID:-}"
-      if [[ -n "$_rr_chat" ]]; then
-        openclaw message send --channel telegram -t "$_rr_chat" \
-          -m "🆘 [Rescue Rangers] workforce-build-resume on $(hostname) has run $_run_count times without reaching a real completion. roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}. Now in 2h-backoff slow-retry (NOT stopped — Rule 8). Run scripts/verify-zhc-standard.sh + verify-library-gate.sh on the box. State: $STATE_FILE" 2>>"$LOG_FILE" || true
+      # Escalate via the n8n Rescue Rangers webhook (NOT bot-to-bot Telegram —
+      # bots can't read other bots, so the old group post never reached the rescue agent).
+      _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+      if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
+        _rr_msg="workforce-build-resume on $(hostname) has run $_run_count times without reaching a real completion. roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}. Now in 2h-backoff slow-retry (NOT stopped — Rule 8). Run scripts/verify-zhc-standard.sh + verify-library-gate.sh on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
+        _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
+          '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
+        curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
       fi
       _operator_chat="$(resolve_operator_chat_id)"
       if [[ -n "$_operator_chat" ]]; then
@@ -332,10 +336,13 @@ if (( attempts >= max_attempts )); then
       openclaw message send --channel telegram -t "$_operator_chat" \
         -m "⚠️ Workforce build slow: ${pending_count} pending, ${stale_building_count} stale after ${attempts} resume attempts.${_lib_note} Now in slow-retry (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
     fi
-    _rr_chat="${RESCUE_RANGERS_HELP_CHAT_ID:-}"
-    if [[ -n "$_rr_chat" ]]; then
-      openclaw message send --channel telegram -t "$_rr_chat" \
-        -m "🆘 [Rescue Rangers] workforce build on $(hostname) past ${attempts} resume attempts without completing.${_lib_note} Now slow-retrying (Rule 8 never-stop). Run scripts/verify-zhc-standard.sh on the box. State: $STATE_FILE" 2>>"$LOG_FILE" || true
+    # Escalate via the n8n Rescue Rangers webhook (NOT bot-to-bot Telegram).
+    _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+    if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
+      _rr_msg="workforce build on $(hostname) past ${attempts} resume attempts without completing.${_lib_note} Now slow-retrying (Rule 8 never-stop). Run scripts/verify-zhc-standard.sh on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
+      _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
+        '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
+      curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
     fi
     _tmp_cap=$(mktemp)
     jq '.resumeCapEscalated = true' "$STATE_FILE" > "$_tmp_cap" 2>/dev/null && mv "$_tmp_cap" "$STATE_FILE" || rm -f "$_tmp_cap"

@@ -163,11 +163,17 @@ if (( _run_count > MAX_RUNS_BEFORE_ESCALATE )); then
   _already="$(command -v jq >/dev/null 2>&1 && jq -r '.resumeEscalated // false' "$STATE_FILE" 2>/dev/null || echo false)"
   if [[ "$_already" != "true" ]]; then
     _op="$(resolve_operator_chat_id)"
-    _rr="${RESCUE_RANGERS_HELP_CHAT_ID:-}"
     [[ -n "$_op" ]] && openclaw message send --channel telegram -t "$_op" \
       -m "⚠️ onboarding-resume on $(hostname) hit $_run_count runs without the verification gate passing (${GATE_HUMAN:-skills still un-verified}). Now slow-retrying (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
-    [[ -n "$_rr" ]] && openclaw message send --channel telegram -t "$_rr" \
-      -m "🆘 [Rescue Rangers] onboarding on $(hostname) past $_run_count resume runs without a gate-pass. Run scripts/onboarding-state.sh -> obs_gate_summary on the box. State: $STATE_FILE" 2>>"$LOG_FILE" || true
+    # Escalate via the n8n Rescue Rangers webhook (NOT bot-to-bot Telegram —
+    # bots can't read other bots, so the old group post never reached the rescue agent).
+    _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+    if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
+      _rr_msg="onboarding on $(hostname) past $_run_count resume runs without a gate-pass. Run scripts/onboarding-state.sh -> obs_gate_summary on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
+      _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
+        '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
+      curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
+    fi
     if command -v jq >/dev/null 2>&1; then
       _tmp="$(mktemp)"; jq '.resumeEscalated = true' "$STATE_FILE" > "$_tmp" 2>/dev/null && mv "$_tmp" "$STATE_FILE" || rm -f "$_tmp"
     fi

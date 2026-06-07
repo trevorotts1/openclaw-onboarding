@@ -276,13 +276,24 @@ After these events, **ALWAYS** run: `python3 ~/clawd/scripts/gemini-indexer.py`
 
 ---
 
-## 🔴 Rescue Rangers — when you're rescued (resolution / loop-stop)
+## 🔴 Rescue Rangers — how to escalate + resolution / loop-stop
 
-When you escalate a problem into the **Rescue Rangers** thread and a rescue agent helps you, you MUST cooperate with the resolution protocol so the thread ends as soon as the problem is fixed (and never loops to the cap unnecessarily):
+**HOW TO ESCALATE (the ONLY supported method).** When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound. Do **NOT** use `openclaw message send -t <group/chat>` to escalate — bots cannot read other bots, so the old bot-to-bot Telegram group post NEVER reached the rescue agent.
 
-- **When the rescue fix works:** post `✅ RESOLVED: <one-line what fixed it>` to the Rescue Rangers thread and **STOP escalating.** Do NOT keep messaging, do NOT re-describe the problem, do NOT thank-then-continue. Posting the resolution closes the thread.
+```bash
+curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" -H "Content-Type: application/json" \
+  -d '{"action":"escalate","client":"<CLIENT_NAME>","agent":"<AGENT_NAME>","message":"<concise problem + what you already tried + your EXACT OpenClaw version>"}'
+```
+
+- `RESCUE_RANGERS_WEBHOOK_URL` is seeded into your env on install (default `https://main.blackceoautomations.com/webhook/rescue-rangers`). Reference the env var, never a hardcoded URL.
+- Your `message` MUST be concise and include: the problem, what you already tried, and your **EXACT** OpenClaw version (`openclaw --version`).
+- The rescue answer posts back into the Rescue Rangers group; apply the fix, and when it works reply the resolution signal (below) to close the loop.
+
+Once a rescue agent helps you, you MUST cooperate with the resolution protocol so the loop ends as soon as the problem is fixed (and never runs to the cap unnecessarily):
+
+- **When the rescue fix works:** post `✅ RESOLVED: <one-line what fixed it>` to the Rescue Rangers group and **STOP escalating.** Do NOT keep messaging, do NOT re-describe the problem, do NOT thank-then-continue. Posting the resolution closes the loop.
 - **A message is a RESOLUTION SIGNAL** (case-insensitive) if it contains the sentinel `✅ RESOLVED` OR any of: "resolved", "problem solved", "problem complete", "problem completed", "problem done", "issue resolved", "issue fixed", "it's fixed", "fixed it", "working now", "back to working", "all good now", "we're good", "no longer needed". Once a resolution signal is posted, the back-and-forth is OVER — neither side produces another fix.
-- **If still broken after the rescue agent replies:** send ONE focused follow-up (what's still failing + the exact new error), then wait. Do not spam.
+- **If still broken after the rescue agent replies:** POST ONE focused follow-up to the same `$RESCUE_RANGERS_WEBHOOK_URL` (what's still failing + the exact new error), then wait. Do not spam.
 - **Hard cap: 25 exchanges per client per day** — the backstop for conversations that never resolve / loop. Resolve early; don't run to the cap.
 
 ---
