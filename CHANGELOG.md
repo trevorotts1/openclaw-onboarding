@@ -1,3 +1,22 @@
+## [v10.15.51]  -  2026-06-07  -  feat: shared core-file unification (Zero-Human-Workforce file model) + QC 9.9
+
+### Why
+On a Zero-Human-Workforce box, every agent and sub-agent runs the SAME operating rules (`AGENTS.md`), the SAME local tool notes (`TOOLS.md`), and serves the SAME human (`USER.md`). Until now those three were duplicated per agent workspace, so a single edit had to be re-applied N times and drift was guaranteed. Each agent's identity/personality/memory/heartbeat, by contrast, IS per-agent and must stay distinct. N19 already mandated this layout for ZHC role workspaces; this release generalizes it to every agent + sub-agent on the box and makes it install/update-time automatic and QC-enforced.
+
+### What changed
+- **New `link_shared_core_files()`** (in both `install.sh` Step 10a and `update-skills.sh`, matching each script's existing style): on every box, all of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via **symlink** (not duplicated). Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files.
+  - **CANON_DIR** = the box's default agent workspace, resolved with the standard precedence (per-agent `main` override → `agents.defaults.workspace` → `~/.openclaw/workspace`), read from THIS box's own `openclaw.json`.
+  - **Co-mingling guard (N0):** the symlink target is ALWAYS the LOCAL box's own canonical — NEVER a hardcoded or cross-box/cross-account path. A client box links to the CLIENT's own files (the client is the USER).
+  - **Ant Farm exemption:** any workspace path matching `*/workflows/*/agents/*` is NEVER touched.
+  - **Non-destructive:** a real file is backed up to `<file>.bak-unify-<ts>` (never deleted); any of its content not already in the canonical file is appended (additive only) to that agent's OWN `IDENTITY.md` under a guarded `<!-- PRESERVED FROM <agent> <file> (unification <ts>) -->` marker; then the file is replaced with the symlink. Absent files are left absent.
+  - **Idempotent:** correct symlinks are no-ops; a second run makes no new backups and no churn. Every action logs with the `[link-shared]` prefix.
+  - Wired at install AFTER the workspace is resolved and bootstrap files exist in CANON_DIR (`install.sh` Step 10a), and at update AFTER skills/workspaces are set up, `CORE_UPDATES.md` is merged, and the workforce migration runs (`update-skills.sh`).
+- **New QC check 9.9** in `scripts/qc-system-integrity.sh`: for every NON-Ant-Farm agent workspace, `AGENTS.md` / `TOOLS.md` / `USER.md` MUST be symlinks resolving to CANON_DIR; otherwise it emits a QC failure line in the existing format. Absent files are allowed.
+- **Docs:** new `docs/SHARED-CORE-FILES.md`; new **N29** rule + a dedicated section in the deployed `AGENTS.md` template; README "Shared Core Files" section. All cover shared-vs-per-agent, the co-mingling guard, the Ant Farm exemption, and backups/idempotency.
+
+### Risk
+Low. Additive and non-destructive: no file is ever deleted (real files are backed up + their unique content preserved into the agent's own `IDENTITY.md`), the canonical workspace is never modified by the linker, Ant Farm micro-agents are skipped, and the operation is idempotent. CANON_DIR is always THIS box's own workspace, so no cross-account linking is possible.
+
 ## [v10.15.50]  -  2026-06-06  -  fix: add safe_json_edit validate/rollback guard on openclaw.json edits (parity with VPS skills.path fix)
 
 ### Why
