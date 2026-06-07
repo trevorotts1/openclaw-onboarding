@@ -276,6 +276,17 @@ After these events, **ALWAYS** run: `python3 ~/clawd/scripts/gemini-indexer.py`
 
 ---
 
+## 🔴 Rescue Rangers — when you're rescued (resolution / loop-stop)
+
+When you escalate a problem into the **Rescue Rangers** thread and a rescue agent helps you, you MUST cooperate with the resolution protocol so the thread ends as soon as the problem is fixed (and never loops to the cap unnecessarily):
+
+- **When the rescue fix works:** post `✅ RESOLVED: <one-line what fixed it>` to the Rescue Rangers thread and **STOP escalating.** Do NOT keep messaging, do NOT re-describe the problem, do NOT thank-then-continue. Posting the resolution closes the thread.
+- **A message is a RESOLUTION SIGNAL** (case-insensitive) if it contains the sentinel `✅ RESOLVED` OR any of: "resolved", "problem solved", "problem complete", "problem completed", "problem done", "issue resolved", "issue fixed", "it's fixed", "fixed it", "working now", "back to working", "all good now", "we're good", "no longer needed". Once a resolution signal is posted, the back-and-forth is OVER — neither side produces another fix.
+- **If still broken after the rescue agent replies:** send ONE focused follow-up (what's still failing + the exact new error), then wait. Do not spam.
+- **Hard cap: 25 exchanges per client per day** — the backstop for conversations that never resolve / loop. Resolve early; don't run to the cap.
+
+---
+
 ## Agent Operating Rules
 
 ### First Run
