@@ -1,16 +1,16 @@
-# Graph Report - openclaw-onboarding  (2026-06-06)
+# Graph Report - openclaw-onboarding  (2026-06-07)
 
 ## Corpus Check
-- 1873 files · ~6,128,565 words
+- 1874 files · ~6,134,690 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 48907 nodes · 60344 edges · 3338 communities (3175 shown, 163 thin omitted)
+- 49350 nodes · 60340 edges · 3449 communities (3287 shown, 162 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 412 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e92b8df7`
+- Built from commit: `d52230dc`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -3308,18 +3308,129 @@
 - [[_COMMUNITY_Community 3326|Community 3326]]
 - [[_COMMUNITY_Community 3327|Community 3327]]
 - [[_COMMUNITY_Community 3328|Community 3328]]
+- [[_COMMUNITY_Community 3338|Community 3338]]
+- [[_COMMUNITY_Community 3339|Community 3339]]
+- [[_COMMUNITY_Community 3340|Community 3340]]
+- [[_COMMUNITY_Community 3341|Community 3341]]
+- [[_COMMUNITY_Community 3342|Community 3342]]
+- [[_COMMUNITY_Community 3343|Community 3343]]
+- [[_COMMUNITY_Community 3344|Community 3344]]
+- [[_COMMUNITY_Community 3345|Community 3345]]
+- [[_COMMUNITY_Community 3346|Community 3346]]
+- [[_COMMUNITY_Community 3347|Community 3347]]
+- [[_COMMUNITY_Community 3348|Community 3348]]
+- [[_COMMUNITY_Community 3349|Community 3349]]
+- [[_COMMUNITY_Community 3350|Community 3350]]
+- [[_COMMUNITY_Community 3351|Community 3351]]
+- [[_COMMUNITY_Community 3352|Community 3352]]
+- [[_COMMUNITY_Community 3353|Community 3353]]
+- [[_COMMUNITY_Community 3354|Community 3354]]
+- [[_COMMUNITY_Community 3355|Community 3355]]
+- [[_COMMUNITY_Community 3356|Community 3356]]
+- [[_COMMUNITY_Community 3357|Community 3357]]
+- [[_COMMUNITY_Community 3358|Community 3358]]
+- [[_COMMUNITY_Community 3359|Community 3359]]
+- [[_COMMUNITY_Community 3360|Community 3360]]
+- [[_COMMUNITY_Community 3361|Community 3361]]
+- [[_COMMUNITY_Community 3362|Community 3362]]
+- [[_COMMUNITY_Community 3363|Community 3363]]
+- [[_COMMUNITY_Community 3364|Community 3364]]
+- [[_COMMUNITY_Community 3365|Community 3365]]
+- [[_COMMUNITY_Community 3366|Community 3366]]
+- [[_COMMUNITY_Community 3367|Community 3367]]
+- [[_COMMUNITY_Community 3368|Community 3368]]
+- [[_COMMUNITY_Community 3369|Community 3369]]
+- [[_COMMUNITY_Community 3370|Community 3370]]
+- [[_COMMUNITY_Community 3371|Community 3371]]
+- [[_COMMUNITY_Community 3372|Community 3372]]
+- [[_COMMUNITY_Community 3373|Community 3373]]
+- [[_COMMUNITY_Community 3374|Community 3374]]
+- [[_COMMUNITY_Community 3375|Community 3375]]
+- [[_COMMUNITY_Community 3376|Community 3376]]
+- [[_COMMUNITY_Community 3377|Community 3377]]
+- [[_COMMUNITY_Community 3378|Community 3378]]
+- [[_COMMUNITY_Community 3379|Community 3379]]
+- [[_COMMUNITY_Community 3380|Community 3380]]
+- [[_COMMUNITY_Community 3381|Community 3381]]
+- [[_COMMUNITY_Community 3382|Community 3382]]
+- [[_COMMUNITY_Community 3383|Community 3383]]
+- [[_COMMUNITY_Community 3384|Community 3384]]
+- [[_COMMUNITY_Community 3385|Community 3385]]
+- [[_COMMUNITY_Community 3386|Community 3386]]
+- [[_COMMUNITY_Community 3387|Community 3387]]
+- [[_COMMUNITY_Community 3388|Community 3388]]
+- [[_COMMUNITY_Community 3389|Community 3389]]
+- [[_COMMUNITY_Community 3390|Community 3390]]
+- [[_COMMUNITY_Community 3391|Community 3391]]
+- [[_COMMUNITY_Community 3392|Community 3392]]
+- [[_COMMUNITY_Community 3393|Community 3393]]
+- [[_COMMUNITY_Community 3394|Community 3394]]
+- [[_COMMUNITY_Community 3395|Community 3395]]
+- [[_COMMUNITY_Community 3396|Community 3396]]
+- [[_COMMUNITY_Community 3397|Community 3397]]
+- [[_COMMUNITY_Community 3398|Community 3398]]
+- [[_COMMUNITY_Community 3399|Community 3399]]
+- [[_COMMUNITY_Community 3400|Community 3400]]
+- [[_COMMUNITY_Community 3401|Community 3401]]
+- [[_COMMUNITY_Community 3402|Community 3402]]
+- [[_COMMUNITY_Community 3403|Community 3403]]
+- [[_COMMUNITY_Community 3404|Community 3404]]
+- [[_COMMUNITY_Community 3405|Community 3405]]
+- [[_COMMUNITY_Community 3406|Community 3406]]
+- [[_COMMUNITY_Community 3407|Community 3407]]
+- [[_COMMUNITY_Community 3408|Community 3408]]
+- [[_COMMUNITY_Community 3409|Community 3409]]
+- [[_COMMUNITY_Community 3410|Community 3410]]
+- [[_COMMUNITY_Community 3411|Community 3411]]
+- [[_COMMUNITY_Community 3412|Community 3412]]
+- [[_COMMUNITY_Community 3413|Community 3413]]
+- [[_COMMUNITY_Community 3414|Community 3414]]
+- [[_COMMUNITY_Community 3415|Community 3415]]
+- [[_COMMUNITY_Community 3416|Community 3416]]
+- [[_COMMUNITY_Community 3417|Community 3417]]
+- [[_COMMUNITY_Community 3418|Community 3418]]
+- [[_COMMUNITY_Community 3419|Community 3419]]
+- [[_COMMUNITY_Community 3420|Community 3420]]
+- [[_COMMUNITY_Community 3421|Community 3421]]
+- [[_COMMUNITY_Community 3422|Community 3422]]
+- [[_COMMUNITY_Community 3423|Community 3423]]
+- [[_COMMUNITY_Community 3424|Community 3424]]
+- [[_COMMUNITY_Community 3425|Community 3425]]
+- [[_COMMUNITY_Community 3426|Community 3426]]
+- [[_COMMUNITY_Community 3427|Community 3427]]
+- [[_COMMUNITY_Community 3428|Community 3428]]
+- [[_COMMUNITY_Community 3429|Community 3429]]
+- [[_COMMUNITY_Community 3430|Community 3430]]
+- [[_COMMUNITY_Community 3431|Community 3431]]
+- [[_COMMUNITY_Community 3432|Community 3432]]
+- [[_COMMUNITY_Community 3433|Community 3433]]
+- [[_COMMUNITY_Community 3434|Community 3434]]
+- [[_COMMUNITY_Community 3435|Community 3435]]
+- [[_COMMUNITY_Community 3436|Community 3436]]
+- [[_COMMUNITY_Community 3437|Community 3437]]
+- [[_COMMUNITY_Community 3438|Community 3438]]
+- [[_COMMUNITY_Community 3439|Community 3439]]
+- [[_COMMUNITY_Community 3440|Community 3440]]
+- [[_COMMUNITY_Community 3441|Community 3441]]
+- [[_COMMUNITY_Community 3442|Community 3442]]
+- [[_COMMUNITY_Community 3443|Community 3443]]
+- [[_COMMUNITY_Community 3444|Community 3444]]
+- [[_COMMUNITY_Community 3445|Community 3445]]
+- [[_COMMUNITY_Community 3446|Community 3446]]
+- [[_COMMUNITY_Community 3447|Community 3447]]
+- [[_COMMUNITY_Community 3448|Community 3448]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `ANALYSIS DATE: March 7, 2025` - 124 edges
 2. `Deep Research Specialist (Sales)` - 95 edges
-3. `Back Yourself Up Protocol (BYUP)` - 72 edges
-4. `Head of Video Production` - 68 edges
-5. `Changed` - 65 edges
-6. `Director of Social Media` - 64 edges
-7. `SOP-Writer` - 63 edges
-8. `Deep Research Specialist — App Development` - 62 edges
-9. `Memory Hygiene Specialist` - 61 edges
-10. `QA Tester (App)` - 61 edges
+3. `Back Yourself Up Protocol (BYUP)` - 73 edges
+4. `Head of Video Production` - 67 edges
+5. `Head of Customer Success` - 66 edges
+6. `Changed` - 65 edges
+7. `Lead Magnet Specialist` - 64 edges
+8. `Director of Social Media` - 64 edges
+9. `SOP-Writer` - 63 edges
+10. `Deep Research Specialist — App Development` - 62 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Read .env-style values from ~/.openclaw/openclaw.json into a dict.` --rationale_for--> `OpenClaw`  [EXTRACTED]
@@ -3336,15 +3447,15 @@
 ## Import Cycles
 - None detected.
 
-## Communities (3338 total, 163 thin omitted)
+## Communities (3449 total, 162 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.02
-Nodes (134): Added, Added, Added, Added, Added, Added, Added, Added (+126 more)
+Cohesion: 0.01
+Nodes (159): Added, Added, Added, Added, Added, Added, Added, Added (+151 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.08
-Nodes (39): ANALYSIS DATE: March 7, DIMENSION 10 - Department and Role Application Map, DIMENSION 11 - Routing Intelligence, DIMENSION 12 - The Single Most Important Insight, DIMENSION 1 - The True Operating System, DIMENSION 2 - The Root Cause Architecture, DIMENSION 3 - The Amateur-to-Expert Gap (Most Critical), DIMENSION 4 - Failure Pattern Taxonomy (+31 more)
+Nodes (39): ANALYSIS DATE: March 8, 2025, DIMENSION 10 - Department and Role Application Map, DIMENSION 11 - Routing Intelligence, DIMENSION 12 - The Single Most Important Insight, DIMENSION 1 - The True Operating System, DIMENSION 2 - The Root Cause Architecture, DIMENSION 3 - The Amateur-to-Expert Gap (Most Critical), DIMENSION 4 - Failure Pattern Taxonomy (+31 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.03
@@ -3352,15 +3463,15 @@ Nodes (114): 1. Open Extensions (Cmd+Shift+X), 2. Search "SuperDesign", 3. Insta
 
 ### Community 3 - "Community 3"
 Cohesion: 0.02
-Nodes (124): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 17. Edge Cases, 18. Update Triggers (+116 more)
+Nodes (121): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+113 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.02
-Nodes (109): 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases, 18. Update Triggers (+101 more)
+Cohesion: 0.06
+Nodes (39): 12. Escalation Paths, 15. Common Mistakes, 18. Update Triggers, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations, 8. Tools You Use (+31 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.02
-Nodes (108): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+100 more)
+Nodes (107): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+99 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.02
@@ -3368,59 +3479,59 @@ Nodes (102): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation 
 
 ### Community 7 - "Community 7"
 Cohesion: 0.02
-Nodes (94): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+86 more)
+Nodes (102): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+94 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.05
-Nodes (49): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+41 more)
+Cohesion: 0.04
+Nodes (50): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+42 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.02
-Nodes (97): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+89 more)
+Nodes (98): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+90 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.04
-Nodes (52): Governing protocol (binding for this skill and all skills in the repo), MANDATORY - Teach Yourself Protocol (TYP), Prerequisites (ALL required; install scripts check at runtime), Skill 38: Conversational AI System, Upstream trigger — Skill 23 (AI Workforce Blueprint) hands off to this skill, What This Skill Does NOT Do, What This Skill Is, What This Skill Ships (+44 more)
+Cohesion: 0.03
+Nodes (74): Governing protocol (binding for this skill and all skills in the repo), MANDATORY - Teach Yourself Protocol (TYP), Prerequisites (ALL required; install scripts check at runtime), Skill 38: Conversational AI System, Upstream trigger — Skill 23 (AI Workforce Blueprint) hands off to this skill, What This Skill Does NOT Do, What This Skill Is, What This Skill Ships (+66 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.02
-Nodes (95): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+87 more)
+Cohesion: 0.03
+Nodes (90): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+82 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.04
-Nodes (54): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+46 more)
+Cohesion: 0.03
+Nodes (56): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+48 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.03
-Nodes (85): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+77 more)
+Cohesion: 0.02
+Nodes (96): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+88 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.02
-Nodes (106): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+98 more)
+Nodes (96): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+88 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.03
-Nodes (103): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+95 more)
+Nodes (95): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19.A — "Deep-Dive Analyst" (Research and Data Specialist) (+87 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.02
-Nodes (100): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+92 more)
+Nodes (97): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+89 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.02
-Nodes (97): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+89 more)
+Nodes (93): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+85 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.02
-Nodes (99): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+91 more)
+Cohesion: 0.03
+Nodes (92): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+84 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.03
-Nodes (86): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+78 more)
+Cohesion: 0.02
+Nodes (96): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+88 more)
 
 ### Community 20 - "Community 20"
 Cohesion: 0.03
-Nodes (86): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+78 more)
+Nodes (91): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+83 more)
 
 ### Community 21 - "Community 21"
 Cohesion: 0.02
@@ -3432,23 +3543,23 @@ Nodes (97): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 23 - "Community 23"
 Cohesion: 0.02
-Nodes (98): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+90 more)
+Nodes (96): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+88 more)
 
 ### Community 24 - "Community 24"
 Cohesion: 0.02
 Nodes (98): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+90 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.03
-Nodes (91): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+83 more)
+Cohesion: 0.05
+Nodes (54): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override (+46 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.03
-Nodes (79): Bugs fixed, Bugs fixed, Cost envelope (revised), Files touched, Files touched, Files touched, Files touched, Files touched (+71 more)
+Cohesion: 0.02
+Nodes (106): Bugs fixed, Bugs fixed, Bugs fixed, Cost envelope (revised), Files touched, Files touched, Files touched, Files touched (+98 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.02
-Nodes (98): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+90 more)
+Cohesion: 0.03
+Nodes (88): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+80 more)
 
 ### Community 28 - "Community 28"
 Cohesion: 0.02
@@ -3456,7 +3567,7 @@ Nodes (100): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation 
 
 ### Community 29 - "Community 29"
 Cohesion: 0.03
-Nodes (93): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+85 more)
+Nodes (94): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+86 more)
 
 ### Community 30 - "Community 30"
 Cohesion: 0.03
@@ -3467,8 +3578,8 @@ Cohesion: 0.02
 Nodes (96): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+88 more)
 
 ### Community 32 - "Community 32"
-Cohesion: 0.03
-Nodes (92): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+84 more)
+Cohesion: 0.02
+Nodes (97): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+89 more)
 
 ### Community 33 - "Community 33"
 Cohesion: 0.03
@@ -3476,63 +3587,63 @@ Nodes (88): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Outp
 
 ### Community 34 - "Community 34"
 Cohesion: 0.02
-Nodes (105): 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases, 18. Update Triggers (+97 more)
+Nodes (95): 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 17. Edge Cases, 18. Update Triggers, 1. Role Identity (+87 more)
 
 ### Community 35 - "Community 35"
-Cohesion: 0.02
-Nodes (101): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+93 more)
+Cohesion: 0.03
+Nodes (91): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+83 more)
 
 ### Community 36 - "Community 36"
 Cohesion: 0.12
 Nodes (20): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+12 more)
 
 ### Community 37 - "Community 37"
-Cohesion: 0.03
-Nodes (85): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+77 more)
+Cohesion: 0.11
+Nodes (22): 12. Escalation Paths, 15. Common Mistakes, 16. Research Sources, 18. Update Triggers, 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+14 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.03
-Nodes (90): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+82 more)
+Cohesion: 0.02
+Nodes (96): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+88 more)
 
 ### Community 39 - "Community 39"
 Cohesion: 0.03
-Nodes (90): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+82 more)
+Nodes (90): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+82 more)
 
 ### Community 40 - "Community 40"
 Cohesion: 0.03
 Nodes (60): Monday Ignition Specialist (16-001), Mid-Week Momentum Keeper (16-002), Bounce-Back Coach (16-003), Win-Streak Curator (16-004), Daily Motivation Anchor (16-006), Energy Rhythm Tracker, Setback Log, Streak Blueprint (+52 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.02
-Nodes (96): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+88 more)
+Cohesion: 0.03
+Nodes (91): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+83 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.03
-Nodes (81): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+73 more)
+Cohesion: 0.02
+Nodes (96): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+88 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.03
-Nodes (85): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+77 more)
+Cohesion: 0.02
+Nodes (95): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+87 more)
 
 ### Community 44 - "Community 44"
-Cohesion: 0.03
-Nodes (69): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+61 more)
+Cohesion: 0.04
+Nodes (63): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+55 more)
 
 ### Community 45 - "Community 45"
 Cohesion: 0.03
-Nodes (80): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+72 more)
+Nodes (75): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+67 more)
 
 ### Community 46 - "Community 46"
-Cohesion: 0.03
-Nodes (75): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+67 more)
+Cohesion: 0.10
+Nodes (23): 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+15 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.03
-Nodes (85): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+77 more)
+Cohesion: 0.02
+Nodes (95): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+87 more)
 
 ### Community 48 - "Community 48"
-Cohesion: 0.02
-Nodes (118): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+110 more)
+Cohesion: 0.03
+Nodes (103): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+95 more)
 
 ### Community 49 - "Community 49"
 Cohesion: 0.12
@@ -3540,15 +3651,15 @@ Nodes (20): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research
 
 ### Community 50 - "Community 50"
 Cohesion: 0.03
-Nodes (87): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+79 more)
+Nodes (88): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+80 more)
 
 ### Community 51 - "Community 51"
 Cohesion: 0.03
 Nodes (86): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+78 more)
 
 ### Community 52 - "Community 52"
-Cohesion: 0.05
-Nodes (52): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+44 more)
+Cohesion: 0.04
+Nodes (53): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+45 more)
 
 ### Community 53 - "Community 53"
 Cohesion: 0.03
@@ -3560,11 +3671,11 @@ Nodes (81): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Outp
 
 ### Community 55 - "Community 55"
 Cohesion: 0.03
-Nodes (80): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+72 more)
+Nodes (90): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+82 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.11
-Nodes (17): 10. Renewal Reminder (for ongoing/recurring engagements), 11. Renewal Incentive, 12. Lapsed-Customer Outreach, 1. Discovery / Consultation Booking, 2. Pricing Inquiry, 3. Post-Consultation Follow-Up, 6. Welcome / Kickoff, 7. First-Session Preparation (+9 more)
+Cohesion: 0.03
+Nodes (71): 10. Renewal Reminder (for ongoing/recurring engagements), 11. Renewal Incentive, 12. Lapsed-Customer Outreach, 1. Discovery / Consultation Booking, 2. Pricing Inquiry, 3. Post-Consultation Follow-Up, 6. Welcome / Kickoff, 7. First-Session Preparation (+63 more)
 
 ### Community 57 - "Community 57"
 Cohesion: 0.12
@@ -3572,7 +3683,7 @@ Nodes (22): brand, accent, primary, text, _comment, company_kpis, connected_syst
 
 ### Community 58 - "Community 58"
 Cohesion: 0.02
-Nodes (94): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+86 more)
+Nodes (95): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+87 more)
 
 ### Community 59 - "Community 59"
 Cohesion: 0.04
@@ -3580,11 +3691,11 @@ Nodes (68): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 60 - "Community 60"
 Cohesion: 0.05
-Nodes (49): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19.1 — "SignalMiner" (Competitive & Market Intelligence Specialist) (+41 more)
+Nodes (53): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19.1 — "SignalMiner" (Competitive & Market Intelligence Specialist) (+45 more)
 
 ### Community 61 - "Community 61"
 Cohesion: 0.03
-Nodes (71): 10. Quality Gates, 11. Handoffs, 12. Escalation, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases, 18. Update Triggers (+63 more)
+Nodes (72): 10. Quality Gates, 11. Handoffs, 12. Escalation, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases, 18. Update Triggers (+64 more)
 
 ### Community 62 - "Community 62"
 Cohesion: 0.05
@@ -3592,15 +3703,15 @@ Nodes (66): 1. File exists and has content, 2. File is valid JSON, 3. File conta
 
 ### Community 63 - "Community 63"
 Cohesion: 0.03
-Nodes (77): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+69 more)
+Nodes (74): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+66 more)
 
 ### Community 64 - "Community 64"
 Cohesion: 0.12
 Nodes (23): PA-27-02 Task Completion Tracking, Analyze, Control, CTQ (Critical to Quality)  --  Binary Checks, Daily Setup (1 minute), Define, Definition of Done, DMAIC Procedure (+15 more)
 
 ### Community 65 - "Community 65"
-Cohesion: 0.22
-Nodes (13): 11. Handoffs, 12. Escalation Paths, 15. Common Mistakes, 18. Update Triggers, 2. Persona Governance -- CEO Mode, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+5 more)
+Cohesion: 0.03
+Nodes (60): Added, Added, Added, Added, Added, Added, Audited (confirmed correct), Bug 1: Step 4 hung on em-dash filenames (+52 more)
 
 ### Community 66 - "Community 66"
 Cohesion: 0.04
@@ -3612,43 +3723,43 @@ Nodes (95): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 68 - "Community 68"
 Cohesion: 0.03
-Nodes (104): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+96 more)
+Nodes (102): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+94 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.03
-Nodes (63): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+55 more)
+Nodes (62): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+54 more)
 
 ### Community 70 - "Community 70"
-Cohesion: 0.04
-Nodes (59): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+51 more)
+Cohesion: 0.03
+Nodes (70): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+62 more)
 
 ### Community 71 - "Community 71"
-Cohesion: 0.04
-Nodes (68): Travel & Logistics Coordinator, 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice) (+60 more)
+Cohesion: 0.05
+Nodes (46): 10. Quality Gates, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. File Map (+38 more)
 
 ### Community 72 - "Community 72"
-Cohesion: 0.04
-Nodes (65): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+57 more)
+Cohesion: 0.06
+Nodes (43): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases, 18. Update Triggers (+35 more)
 
 ### Community 73 - "Community 73"
 Cohesion: 0.04
 Nodes (70): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+62 more)
 
 ### Community 74 - "Community 74"
-Cohesion: 0.03
-Nodes (97): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+89 more)
+Cohesion: 0.02
+Nodes (110): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+102 more)
 
 ### Community 75 - "Community 75"
 Cohesion: 0.02
-Nodes (119): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+111 more)
+Nodes (113): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+105 more)
 
 ### Community 76 - "Community 76"
 Cohesion: 0.02
-Nodes (111): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+103 more)
+Nodes (108): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+100 more)
 
 ### Community 77 - "Community 77"
-Cohesion: 0.03
-Nodes (94): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 18. Update Triggers (+86 more)
+Cohesion: 0.02
+Nodes (109): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+101 more)
 
 ### Community 78 - "Community 78"
 Cohesion: 0.02
@@ -3656,35 +3767,35 @@ Nodes (108): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation 
 
 ### Community 79 - "Community 79"
 Cohesion: 0.02
-Nodes (118): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+110 more)
+Nodes (102): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+94 more)
 
 ### Community 80 - "Community 80"
 Cohesion: 0.03
-Nodes (76): Added, Aliases left alone from v10.13.2, Apology, Apology, Apology, Apology, Audited (confirmed correct), Aurelia's existing damaged install — one-shot recovery (+68 more)
+Nodes (62): Aliases left alone from v10.13.2, Apology, Apology, Apology, Apology, Apology, Apology, Apology (+54 more)
 
 ### Community 81 - "Community 81"
 Cohesion: 0.04
 Nodes (59): Prerequisites, Step 1: Find or Create the Master Files Folder, Step 2: Place the Skill Files, Step 3: Copy Skill to Skills Folder, Step 4: Read the Full Protocol, Step 5: Update Core Workspace Files, Step 6: Verify Installation, Teach Yourself Protocol - Installation (+51 more)
 
 ### Community 82 - "Community 82"
-Cohesion: 0.04
-Nodes (54): Added, Added, Added, Added, Added, Added, Changed, Changed (+46 more)
+Cohesion: 0.02
+Nodes (86): Added, Added, Added, Added, Added, Added, Added, Added (+78 more)
 
 ### Community 83 - "Community 83"
 Cohesion: 0.06
 Nodes (30): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+22 more)
 
 ### Community 84 - "Community 84"
-Cohesion: 0.03
-Nodes (65): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+57 more)
+Cohesion: 0.15
+Nodes (11): 10. Quality Gates, 17. Edge Cases, 5. Monthly Operations, Edge Case 1: A Vendor Overcharges by a Significant Amount, Edge Case 2: A Customer Files for Bankruptcy (PROACTIVE), Edge Case 3: A Data Entry Error Causes a $0.01 Reconciliation Discrepancy (PROACTIVE), Gate 1: Self-Check (Bookkeeping Specialist), Gate 2: Master Orchestrator Review (+3 more)
 
 ### Community 85 - "Community 85"
-Cohesion: 0.04
-Nodes (63): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+55 more)
+Cohesion: 0.08
+Nodes (35): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (+27 more)
 
 ### Community 86 - "Community 86"
-Cohesion: 0.08
-Nodes (23): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override (+15 more)
+Cohesion: 0.07
+Nodes (42): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+34 more)
 
 ### Community 87 - "Community 87"
 Cohesion: 0.04
@@ -3692,23 +3803,23 @@ Nodes (60): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 88 - "Community 88"
 Cohesion: 0.02
-Nodes (110): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+102 more)
+Nodes (105): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+97 more)
 
 ### Community 89 - "Community 89"
 Cohesion: 0.04
-Nodes (54): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+46 more)
+Nodes (55): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+47 more)
 
 ### Community 90 - "Community 90"
 Cohesion: 0.04
 Nodes (54): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+46 more)
 
 ### Community 91 - "Community 91"
-Cohesion: 0.22
-Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Daily Deliverability Health Check, SOP 9.2 -- Weekly Campaign Performance Review, SOP 9.3 -- Monthly Segmentation Refresh, SOP 9.4 -- Deliverability Incident Response, SOP 9.5 -- New Automated Workflow Deployment, SOP 9.6 -- Quarterly CRM Platform Audit, SOP 9.7 -- Customer Win-Back Campaign Execution (+1 more)
+Cohesion: 0.05
+Nodes (39): Added, Added, Added, Added, Added, Added, Added, Added (+31 more)
 
 ### Community 92 - "Community 92"
-Cohesion: 0.03
-Nodes (59): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 18. Update Triggers (+51 more)
+Cohesion: 0.04
+Nodes (53): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+45 more)
 
 ### Community 93 - "Community 93"
 Cohesion: 0.03
@@ -3720,47 +3831,47 @@ Nodes (19): 10. Quality Gates, 12. Escalation Paths, 15. Common Mistakes (Pre-Em
 
 ### Community 95 - "Community 95"
 Cohesion: 0.04
-Nodes (70): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+62 more)
+Nodes (55): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+47 more)
 
 ### Community 96 - "Community 96"
-Cohesion: 0.16
-Nodes (18): Book Cover Designer, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (Named Roles Within the Graphics Department) (+10 more)
+Cohesion: 0.02
+Nodes (101): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+93 more)
 
 ### Community 97 - "Community 97"
 Cohesion: 0.03
-Nodes (78): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+70 more)
+Nodes (70): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+62 more)
 
 ### Community 98 - "Community 98"
-Cohesion: 0.05
-Nodes (54): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+46 more)
+Cohesion: 0.02
+Nodes (99): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+91 more)
 
 ### Community 99 - "Community 99"
 Cohesion: 0.03
-Nodes (63): Conversation Workflows Protocol, Discount Code Protocol, Agent behavior — generating a code, Allow-list action, Cart abandonment recovery deployment, Choosing GHL vs Stripe, Discount Code Generation Protocol, GHL Discount Codes (Coupons API) (+55 more)
+Nodes (64): Compliance Keywords Protocol, Conversation Workflows Protocol, Conversational Safeguards Protocol, Category 1 — Sexual content (ZERO TOLERANCE), Category 2 — Inappropriate questions, Category 3 — Hostile cursing, Conversational Drift Detection Protocol, Important: Drift detection runs FIRST (+56 more)
 
 ### Community 100 - "Community 100"
-Cohesion: 0.06
-Nodes (50): 1. Memory Architecture, 2. Security Hardening, 3. Self-Healing, 4. Verify Before Reporting (VBR), 5. Alignment Systems, 6. Proactive Surprise, Agent Tracking, Architecture Overview (+42 more)
+Cohesion: 0.07
+Nodes (45): 1. Memory Architecture, 2. Security Hardening, 3. Self-Healing, 4. Verify Before Reporting (VBR), 5. Alignment Systems, 6. Proactive Surprise, Agent Tracking, Architecture Overview (+37 more)
 
 ### Community 101 - "Community 101"
-Cohesion: 0.06
-Nodes (37): Escalation, 12. Escalation, Escalation Protocol, Escalation Triggers and Routing, The Listener, PA-26-01 Active Listening & Validation Session, 18. Definition of Done, Escalation (+29 more)
+Cohesion: 0.07
+Nodes (32): Escalation, 12. Escalation, Escalation Protocol, Escalation Triggers and Routing, The Listener, PA-26-01 Active Listening & Validation Session, 18. Definition of Done, 1. Purpose (+24 more)
 
 ### Community 102 - "Community 102"
 Cohesion: 0.04
 Nodes (47): 1. Memory Architecture, 2. Security Hardening, 3. Self-Healing, 4. Verify Before Reporting (VBR), 5. Alignment Systems, 6. Proactive Surprise, ADL Protocol (Anti-Drift Limits), Architecture Overview (+39 more)
 
 ### Community 103 - "Community 103"
-Cohesion: 0.04
-Nodes (62): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+54 more)
+Cohesion: 0.06
+Nodes (38): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity (+30 more)
 
 ### Community 104 - "Community 104"
 Cohesion: 0.04
 Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+44 more)
 
 ### Community 105 - "Community 105"
-Cohesion: 0.05
-Nodes (47): format, type, description, type, description, type, type, type (+39 more)
+Cohesion: 0.06
+Nodes (45): type, type, description, type, type, description, type, description (+37 more)
 
 ### Community 106 - "Community 106"
 Cohesion: 0.04
@@ -3771,20 +3882,20 @@ Cohesion: 0.02
 Nodes (107): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+99 more)
 
 ### Community 108 - "Community 108"
-Cohesion: 0.03
-Nodes (102): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+94 more)
+Cohesion: 0.02
+Nodes (106): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+98 more)
 
 ### Community 109 - "Community 109"
 Cohesion: 0.04
-Nodes (60): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist or Temporary Research Support, 1. Role Identity (+52 more)
+Nodes (56): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist or Temporary Research Support, 2. Persona Governance Override (+48 more)
 
 ### Community 110 - "Community 110"
 Cohesion: 0.05
 Nodes (54): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+46 more)
 
 ### Community 111 - "Community 111"
-Cohesion: 0.02
-Nodes (109): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+101 more)
+Cohesion: 0.03
+Nodes (87): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+79 more)
 
 ### Community 112 - "Community 112"
 Cohesion: 0.05
@@ -3795,36 +3906,36 @@ Cohesion: 0.04
 Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+44 more)
 
 ### Community 114 - "Community 114"
-Cohesion: 0.04
-Nodes (58): 10. Quality Gates, 11. Handoffs, 12. Escalation, 14. Bad Output Examples, 16. Research Sources, 17. Edge Cases, 18. Update Triggers, 19. When to Spawn a Sub-Specialist (+50 more)
+Cohesion: 0.33
+Nodes (6): 9. SOPs, SOP-01: Audio Ad Campaign Creation and Launch, SOP-02: Creative Fatigue Rotation, SOP-03: Audience Segment Performance Analysis, SOP-04: Budget Pacing and Bid Optimization, SOP-05: A/B Test Execution and Analysis
 
 ### Community 115 - "Community 115"
-Cohesion: 0.03
-Nodes (77): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+69 more)
+Cohesion: 0.04
+Nodes (55): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+47 more)
 
 ### Community 116 - "Community 116"
 Cohesion: 0.07
-Nodes (48): Decision-Making Philosophy, Default Voice, Emotional Intelligence Markers, Forbidden Language, Open Line Rule, Operating Protocol (binding), Task & Priority Manager  --  SOUL, Voice by Context (+40 more)
+Nodes (47): Decision-Making Philosophy, Default Voice, Emotional Intelligence Markers, Forbidden Language, Open Line Rule, Operating Protocol (binding), Task & Priority Manager  --  SOUL, Voice by Context (+39 more)
 
 ### Community 117 - "Community 117"
-Cohesion: 0.06
-Nodes (40): A/B Testing of Reply Variants Protocol, A/B Testing of Reply Variants Protocol (F16) — Step 9.47, Cross-references, Deterministic-by-contact assignment — a contact STAYS in one arm, Experiment definition — per-channel, two variants (operator-owned), Logging (the data contract — F52), MEMORY.md (Rule 29), openclaw.json toggle — default OFF (+32 more)
+Cohesion: 0.19
+Nodes (14): Geo-Qualification Protocol (F45), All response branches (what the agent does with each answer), CRITICAL — signals are HINTS; ALWAYS ASK before disqualifying, Cross-references, Detection signal priority (HINTS only), Geo-Qualification Protocol (F45) — Step 9.39, Logging (the data contract — F52), MEMORY.md (Rule 23) (+6 more)
 
 ### Community 118 - "Community 118"
 Cohesion: 0.04
 Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+44 more)
 
 ### Community 119 - "Community 119"
-Cohesion: 0.05
-Nodes (53): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+45 more)
+Cohesion: 0.03
+Nodes (90): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+82 more)
 
 ### Community 120 - "Community 120"
-Cohesion: 0.03
-Nodes (72): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+64 more)
+Cohesion: 0.04
+Nodes (59): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override (+51 more)
 
 ### Community 121 - "Community 121"
 Cohesion: 0.04
-Nodes (61): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good vs. Bad Output Examples, 14. Common Mistakes and Mitigations, 15. Research Sources and Methodology, 16. Edge Cases, 17. Update Triggers (+53 more)
+Nodes (60): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good vs. Bad Output Examples, 14. Common Mistakes and Mitigations, 15. Research Sources and Methodology, 16. Edge Cases, 17. Update Triggers (+52 more)
 
 ### Community 122 - "Community 122"
 Cohesion: 0.33
@@ -3835,16 +3946,16 @@ Cohesion: 0.05
 Nodes (42): 5-Wave INSTALL structure (used by `Start Here.md` orchestration), 7-Wave AUDIT structure (used by audit Phases 1–22), After AI Workforce Setup Complete, Agent Operating Rules, AGENTS.md - Agent Operating Guide, Blockers — Research Before Giving Up, 🔴 CEO_DEFERRAL — Persona Governance Override (Master Orchestrator Mode), Collections (+34 more)
 
 ### Community 124 - "Community 124"
-Cohesion: 0.18
-Nodes (10): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+2 more)
+Cohesion: 0.08
+Nodes (24): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+16 more)
 
 ### Community 125 - "Community 125"
 Cohesion: 0.05
-Nodes (48): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+40 more)
+Nodes (49): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+41 more)
 
 ### Community 126 - "Community 126"
 Cohesion: 0.05
-Nodes (32): 40 — ZHC Public Records Scraper, Compliance Protocol, County → Platform Map, GovOS/Landmark Tier-2 Adapter, Cache Protocol, Force refresh, Location & key, TTL & hits (+24 more)
+Nodes (33): 40 — ZHC Public Records Scraper, Compliance Protocol, County → Platform Map, GovOS/Landmark Tier-2 Adapter, Pre-Foreclosure Outreach Protocol, Cache Protocol, Force refresh, Location & key (+25 more)
 
 ### Community 127 - "Community 127"
 Cohesion: 0.05
@@ -3855,76 +3966,76 @@ Cohesion: 0.05
 Nodes (73): find_master_files(), add_agent_to_config(), _agent_dir_for(), assert_dept_map_resolves(), backup_config(), build_dept_to_suggested_roles(), build_from_config(), copy_departments_to_command_center() (+65 more)
 
 ### Community 129 - "Community 129"
-Cohesion: 0.08
-Nodes (33): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (+25 more)
+Cohesion: 0.05
+Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (+39 more)
 
 ### Community 130 - "Community 130"
 Cohesion: 0.04
 Nodes (50): BLACK CEO Dispatcher - Message Routing, BLACK CEO Team Telegram IDs (Permanent), BLACK CEO Team - Telegram Routing (Dispatcher Protocol), Client Rules, Client Team (Customize Per Deployment), Contact Directory (People We Message), Dispatcher Pattern (ACTIVE), Dispatcher Rules (+42 more)
 
 ### Community 131 - "Community 131"
-Cohesion: 0.06
-Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+39 more)
+Cohesion: 0.11
+Nodes (24): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override (+16 more)
 
 ### Community 132 - "Community 132"
-Cohesion: 0.05
+Cohesion: 0.04
 Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+44 more)
 
 ### Community 133 - "Community 133"
-Cohesion: 0.05
-Nodes (40): Added, Added, Added, Added, Added, Added, Changed, Changed (+32 more)
+Cohesion: 0.04
+Nodes (49): Added, Added, Added, Added, Added, Added, Added, Added (+41 more)
 
 ### Community 134 - "Community 134"
 Cohesion: 0.04
 Nodes (51): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+43 more)
 
 ### Community 135 - "Community 135"
-Cohesion: 0.05
-Nodes (40): Bigger lesson, Changes, Credit, Files, Files, Files, Files touched, Fix (+32 more)
+Cohesion: 0.04
+Nodes (58): Bigger lesson, Changes, Credit, Files, Files, Files, Files, Files (+50 more)
 
 ### Community 136 - "Community 136"
-Cohesion: 0.04
-Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+44 more)
+Cohesion: 0.02
+Nodes (104): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+96 more)
 
 ### Community 137 - "Community 137"
-Cohesion: 0.03
-Nodes (103): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+95 more)
+Cohesion: 0.02
+Nodes (96): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+88 more)
 
 ### Community 138 - "Community 138"
-Cohesion: 0.05
-Nodes (53): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+45 more)
+Cohesion: 0.02
+Nodes (100): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+92 more)
 
 ### Community 139 - "Community 139"
 Cohesion: 0.04
-Nodes (46): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+38 more)
+Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+44 more)
 
 ### Community 140 - "Community 140"
 Cohesion: 0.18
 Nodes (10): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+2 more)
 
 ### Community 141 - "Community 141"
-Cohesion: 0.06
-Nodes (38): KnowledgeBases/business/faqs.md, INSTRUCTIONS.md, Smart FAQ Tool Protocol (F47), Smart Playbook Switching / Always-Listening Interrupts Protocol (F44), 1. SAVE workflow state, 2. EXECUTE the interrupt sub-flow, 3. RETURN to the saved state with a SOFT transition, Cross-references (+30 more)
+Cohesion: 0.08
+Nodes (31): KnowledgeBases/business/faqs.md, Smart FAQ Tool Protocol (F47), Behavior — brief answer, then RETURN to the current step, Cross-references, FAQ source, Logging (the data contract — F52), MEMORY.md (Rule 25), openclaw.json toggles (+23 more)
 
 ### Community 142 - "Community 142"
-Cohesion: 0.03
-Nodes (93): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+85 more)
+Cohesion: 0.02
+Nodes (105): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+97 more)
 
 ### Community 143 - "Community 143"
-Cohesion: 0.05
-Nodes (51): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+43 more)
+Cohesion: 0.11
+Nodes (21): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+13 more)
 
 ### Community 144 - "Community 144"
-Cohesion: 0.04
-Nodes (46): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+38 more)
+Cohesion: 0.12
+Nodes (13): 11. Handoffs (Value Stream Map), 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 1. Role Identity, Anti-Pattern A — Agent with No Boundaries, Anti-Pattern B — Outbound Campaign Without Consent Verification, Cross-department coordination:, Example A — Agent Charter (Abbreviated) (+5 more)
 
 ### Community 145 - "Community 145"
-Cohesion: 0.03
-Nodes (101): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+93 more)
+Cohesion: 0.02
+Nodes (100): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+92 more)
 
 ### Community 146 - "Community 146"
 Cohesion: 0.03
-Nodes (101): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+93 more)
+Nodes (100): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+92 more)
 
 ### Community 147 - "Community 147"
 Cohesion: 0.04
@@ -3936,43 +4047,43 @@ Nodes (51): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Outp
 
 ### Community 149 - "Community 149"
 Cohesion: 0.03
-Nodes (101): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+93 more)
+Nodes (100): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+92 more)
 
 ### Community 150 - "Community 150"
-Cohesion: 0.23
-Nodes (12): 12. Escalation, 18. Update Triggers, 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations, 8. Tools You Use (+4 more)
+Cohesion: 0.11
+Nodes (22): 12. Escalation, 18. Update Triggers, 19. When to Spawn a Sub-Specialist, 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+14 more)
 
 ### Community 151 - "Community 151"
 Cohesion: 0.40
 Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 152 - "Community 152"
-Cohesion: 0.03
-Nodes (76): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+68 more)
+Cohesion: 0.04
+Nodes (56): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity, 2. Persona Governance Override (+48 more)
 
 ### Community 153 - "Community 153"
-Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
+Cohesion: 0.07
+Nodes (32): Conversation Export Protocol, Conversation Log Protocol, Communication playbook insights, Conversation Analytics Dashboard Protocol, Implementation, Monthly comprehensive report, Output format, Quality metrics (+24 more)
 
 ### Community 154 - "Community 154"
 Cohesion: 0.04
-Nodes (59): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+51 more)
+Nodes (65): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+57 more)
 
 ### Community 155 - "Community 155"
-Cohesion: 0.05
-Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+44 more)
+Cohesion: 0.07
+Nodes (31): Files modified, Files modified, Files modified, Files touched, Files touched, Fleet remediation, Hot-patches needed on existing fleet, Remediation (+23 more)
 
 ### Community 156 - "Community 156"
-Cohesion: 0.04
-Nodes (51): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+43 more)
+Cohesion: 0.33
+Nodes (6): 4. Weekly Operations, Friday -- Pipeline Week-in-Review, Monday -- Pipeline Review Preparation, Thursday -- Forecast Alignment, Tuesday -- Deal Inspection, Wednesday -- Process Optimization
 
 ### Community 157 - "Community 157"
 Cohesion: 0.04
 Nodes (51): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+43 more)
 
 ### Community 158 - "Community 158"
-Cohesion: 0.05
-Nodes (51): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+43 more)
+Cohesion: 0.02
+Nodes (93): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+85 more)
 
 ### Community 159 - "Community 159"
 Cohesion: 0.04
@@ -3991,16 +4102,16 @@ Cohesion: 0.06
 Nodes (39): AGENTS.md - UPDATE REQUIRED, Google Workspace Integration - Core File Updates, HEARTBEAT.md - NO UPDATE NEEDED, IDENTITY.md - NO UPDATE NEEDED, MEMORY.md - UPDATE REQUIRED, SOUL.md - NO UPDATE NEEDED, TOOLS.md - UPDATE REQUIRED, USER.md - NO UPDATE NEEDED (+31 more)
 
 ### Community 163 - "Community 163"
-Cohesion: 0.04
-Nodes (61): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+53 more)
+Cohesion: 0.06
+Nodes (40): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+32 more)
 
 ### Community 164 - "Community 164"
 Cohesion: 0.03
-Nodes (102): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+94 more)
+Nodes (98): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+90 more)
 
 ### Community 165 - "Community 165"
-Cohesion: 0.08
-Nodes (34): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist or Temporary QC Support (+26 more)
+Cohesion: 0.06
+Nodes (46): 19. When to Spawn a Sub-Specialist or Temporary QC Support, 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice) (+38 more)
 
 ### Community 166 - "Community 166"
 Cohesion: 0.05
@@ -4008,19 +4119,19 @@ Nodes (37): BlackCEO System Update Playbook, Conflict Resolution, Credential Dep
 
 ### Community 167 - "Community 167"
 Cohesion: 0.02
-Nodes (105): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+97 more)
+Nodes (104): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+96 more)
 
 ### Community 168 - "Community 168"
 Cohesion: 0.09
 Nodes (35): Business request, Business request, Business request, Business request, Business request, Business request, Business request, Suggested process (+27 more)
 
 ### Community 169 - "Community 169"
-Cohesion: 0.05
-Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+44 more)
+Cohesion: 0.09
+Nodes (22): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists You May Spawn, 1. Role Identity (+14 more)
 
 ### Community 170 - "Community 170"
-Cohesion: 0.17
-Nodes (11): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+3 more)
+Cohesion: 0.06
+Nodes (34): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (+26 more)
 
 ### Community 171 - "Community 171"
 Cohesion: 0.11
@@ -4028,11 +4139,11 @@ Nodes (24): Sentiment Monitoring Protocol, Customer Segmentation Awareness Proto
 
 ### Community 172 - "Community 172"
 Cohesion: 0.03
-Nodes (81): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+73 more)
+Nodes (70): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+62 more)
 
 ### Community 173 - "Community 173"
 Cohesion: 0.03
-Nodes (91): 11. Handoffs, 12. Escalation, 13. Good Output Examples, 14. Bad Output Examples, 16. Research Sources, 17. Edge Cases, 18. Update Triggers, 19. When to Spawn a Sub-Specialist (+83 more)
+Nodes (96): 10. Quality Gates, 11. Handoffs, 12. Escalation, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+88 more)
 
 ### Community 174 - "Community 174"
 Cohesion: 0.04
@@ -4040,35 +4151,35 @@ Nodes (50): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 175 - "Community 175"
 Cohesion: 0.05
-Nodes (52): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+44 more)
+Nodes (57): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+49 more)
 
 ### Community 176 - "Community 176"
-Cohesion: 0.13
-Nodes (21): Emotional Support & Wellbeing Companion Department, The Emotional Wellness Companion, The Resilience & Code-Switch Navigator, PA-09-03 Gratitude & Grounding, Analyze, Control, CTQ (Critical to Quality) — Binary Checks, Define (+13 more)
+Cohesion: 0.17
+Nodes (17): PA-09-03 Gratitude & Grounding, Analyze, Control, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, Escalation, Improve (+9 more)
 
 ### Community 177 - "Community 177"
 Cohesion: 0.05
 Nodes (50): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+42 more)
 
 ### Community 178 - "Community 178"
-Cohesion: 0.10
-Nodes (23): CRM Field Write Protocol, CREATE-IF-MISSING (operator-approved, never customer-invoked), CRM Field Write + Create-If-Missing Protocol (F46) — Step 9.40, Cross-references, Discover before you write, F35 weekly tune-up reviews field usage, Logging (the data contract — F52), Mapping record (+15 more)
+Cohesion: 0.07
+Nodes (37): A/B Testing of Reply Variants Protocol, CRM Field Write Protocol, A/B Testing of Reply Variants Protocol (F16) — Step 9.47, Cross-references, Deterministic-by-contact assignment — a contact STAYS in one arm, Experiment definition — per-channel, two variants (operator-owned), Logging (the data contract — F52), MEMORY.md (Rule 29) (+29 more)
 
 ### Community 179 - "Community 179"
-Cohesion: 0.03
-Nodes (81): description, type, description, type, description, type, description, type (+73 more)
+Cohesion: 0.06
+Nodes (32): description, type, description, type, description, type, description, description (+24 more)
 
 ### Community 180 - "Community 180"
 Cohesion: 0.04
-Nodes (62): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override (+54 more)
+Nodes (55): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+47 more)
 
 ### Community 181 - "Community 181"
-Cohesion: 0.04
-Nodes (72): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+64 more)
+Cohesion: 0.15
+Nodes (20): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+12 more)
 
 ### Community 182 - "Community 182"
-Cohesion: 0.04
-Nodes (48): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+40 more)
+Cohesion: 0.07
+Nodes (28): Access permissions, Adding sources later (post-setup), Confidence interaction, Indexed mode (for large or static sources), Knowledge Sources Protocol, Live query flow (runs during AGENTS.md Step 1.7), Operator override, Source registry (+20 more)
 
 ### Community 183 - "Community 183"
 Cohesion: 0.15
@@ -4079,8 +4190,8 @@ Cohesion: 0.04
 Nodes (62): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+54 more)
 
 ### Community 185 - "Community 185"
-Cohesion: 0.08
-Nodes (24): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (Named Roles Within the Graphics Department) (+16 more)
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 186 - "Community 186"
 Cohesion: 0.04
@@ -4103,8 +4214,8 @@ Cohesion: 0.14
 Nodes (12): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources, 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+4 more)
 
 ### Community 191 - "Community 191"
-Cohesion: 0.12
-Nodes (37): add_to_list(), auto_repair_cli_scopes(), backup_config_file(), configure_active_memory(), configure_concurrency_LEGACY_UNUSED(), configure_dreaming(), discover_all_credentials(), error() (+29 more)
+Cohesion: 0.13
+Nodes (39): add_to_list(), auto_repair_cli_scopes(), backup_config_file(), configure_active_memory(), configure_concurrency_LEGACY_UNUSED(), configure_dreaming(), discover_all_credentials(), error() (+31 more)
 
 ### Community 192 - "Community 192"
 Cohesion: 0.14
@@ -4167,24 +4278,24 @@ Cohesion: 0.04
 Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+39 more)
 
 ### Community 207 - "Community 207"
-Cohesion: 0.04
-Nodes (68): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+60 more)
+Cohesion: 0.03
+Nodes (70): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+62 more)
 
 ### Community 208 - "Community 208"
-Cohesion: 0.08
-Nodes (32): Cash Flow Forecasting Specialist, 10. Quality Gates, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 17. Edge Cases, 18. Update Triggers (+24 more)
+Cohesion: 0.06
+Nodes (49): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases, 18. Update Triggers, 1. Role Identity (+41 more)
 
 ### Community 209 - "Community 209"
-Cohesion: 0.04
-Nodes (61): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+53 more)
+Cohesion: 0.03
+Nodes (63): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+55 more)
 
 ### Community 210 - "Community 210"
 Cohesion: 0.04
 Nodes (48): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+40 more)
 
 ### Community 211 - "Community 211"
-Cohesion: 0.03
-Nodes (72): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+64 more)
+Cohesion: 0.05
+Nodes (54): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+46 more)
 
 ### Community 212 - "Community 212"
 Cohesion: 0.04
@@ -4199,28 +4310,28 @@ Cohesion: 0.40
 Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 215 - "Community 215"
-Cohesion: 0.04
-Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+39 more)
+Cohesion: 0.24
+Nodes (7): 11. Handoffs (Value Stream Map), 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Legal Shield Statement, Anti-Pattern B — The Disappearing Act, Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 216 - "Community 216"
 Cohesion: 0.06
 Nodes (48): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+40 more)
 
 ### Community 217 - "Community 217"
-Cohesion: 0.13
-Nodes (14): 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations (+6 more)
+Cohesion: 0.08
+Nodes (27): description, type, description, type, description, type, description, type (+19 more)
 
 ### Community 218 - "Community 218"
-Cohesion: 0.16
-Nodes (18): 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity, 2. Persona Governance Override (+10 more)
+Cohesion: 0.03
+Nodes (79): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+71 more)
 
 ### Community 219 - "Community 219"
 Cohesion: 0.04
 Nodes (63): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+55 more)
 
 ### Community 220 - "Community 220"
-Cohesion: 0.04
-Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+44 more)
+Cohesion: 0.05
+Nodes (43): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+35 more)
 
 ### Community 221 - "Community 221"
 Cohesion: 0.04
@@ -4236,7 +4347,7 @@ Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 224 - "Community 224"
 Cohesion: 0.08
-Nodes (25): AUTO-START RULE - READ THIS BEFORE INSTALLING ANYTHING, BEFORE YOU DO ANYTHING - MANDATORY FIRST STEP, Core.md Files - PROTECT AT ALL COSTS, Dispatch protocol for Skills 22 + 23, FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This), 🔴 GOOGLE WORKSPACE - SAVE FOR LAST, How This Works, IMPORTED SKILLS (16-30) - AUTHORITATIVE INSTALL RULES (+17 more)
+Nodes (25): AUTO-START RULE - READ THIS BEFORE INSTALLING ANYTHING, BEFORE YOU DO ANYTHING - MANDATORY FIRST STEP, 🔴 CORE .MD FILE PROTECTION - DO NOT BLOAT (PERMANENT RULE), Core.md Files - PROTECT AT ALL COSTS, Dispatch protocol for Skills 22 + 23, FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This), How This Works, IMPORTED SKILLS (16-30) - AUTHORITATIVE INSTALL RULES (+17 more)
 
 ### Community 225 - "Community 225"
 Cohesion: 0.25
@@ -4252,23 +4363,23 @@ Nodes (10): Decision Quick-Reference, GOVERNING PERSONAS -- Imposter Syndrome Sp
 
 ### Community 228 - "Community 228"
 Cohesion: 0.04
-Nodes (45): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good vs. Bad Output Examples, 14. Common Mistakes and Mitigations, 16. Edge Cases, 17. Update Triggers, 18. Governance and Compliance (+37 more)
+Nodes (51): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good vs. Bad Output Examples, 14. Common Mistakes and Mitigations, 15. Research Sources and Methodology, 16. Edge Cases, 17. Update Triggers (+43 more)
 
 ### Community 229 - "Community 229"
-Cohesion: 0.02
-Nodes (108): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+100 more)
+Cohesion: 0.13
+Nodes (22): Deep Research Specialist — Billing, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists You May Spawn (+14 more)
 
 ### Community 230 - "Community 230"
-Cohesion: 0.02
-Nodes (109): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+101 more)
+Cohesion: 0.03
+Nodes (100): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+92 more)
 
 ### Community 231 - "Community 231"
-Cohesion: 0.07
-Nodes (39): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+31 more)
+Cohesion: 0.06
+Nodes (51): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+43 more)
 
 ### Community 232 - "Community 232"
-Cohesion: 0.04
-Nodes (65): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+57 more)
+Cohesion: 0.05
+Nodes (54): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 17. Edge Cases, 18. Update Triggers (+46 more)
 
 ### Community 233 - "Community 233"
 Cohesion: 0.06
@@ -4276,15 +4387,15 @@ Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 234 - "Community 234"
 Cohesion: 0.03
-Nodes (97): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+89 more)
+Nodes (96): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+88 more)
 
 ### Community 235 - "Community 235"
 Cohesion: 0.04
 Nodes (46): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+38 more)
 
 ### Community 236 - "Community 236"
-Cohesion: 0.04
-Nodes (46): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+38 more)
+Cohesion: 0.09
+Nodes (21): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists You May Spawn, 1. Role Identity (+13 more)
 
 ### Community 237 - "Community 237"
 Cohesion: 0.04
@@ -4316,55 +4427,55 @@ Nodes (22): Conversation Playbook Template, business/, conversations/, products/
 
 ### Community 244 - "Community 244"
 Cohesion: 0.06
-Nodes (44): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+36 more)
+Nodes (41): 10. Quality Gates, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases, 18. Update Triggers (+33 more)
 
 ### Community 245 - "Community 245"
 Cohesion: 0.04
 Nodes (48): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+40 more)
 
 ### Community 246 - "Community 246"
-Cohesion: 0.06
-Nodes (33): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+25 more)
+Cohesion: 0.15
+Nodes (11): 14. Bad Output Examples (Anti-Patterns), 19. When to Spawn a Sub-Specialist, 9. Standard Operating Procedures (Numbered), Anti-Pattern A — The Price-Only Closer, Anti-Pattern B — The Ghost Closer, Named Sub-Specialists, SOP 9.1 — Deal Takeover From AE, SOP 9.2 — Blocking Issue Resolution (+3 more)
 
 ### Community 247 - "Community 247"
-Cohesion: 0.06
-Nodes (33): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist or Temporary QC Support (+25 more)
+Cohesion: 0.04
+Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+39 more)
 
 ### Community 248 - "Community 248"
-Cohesion: 0.05
-Nodes (54): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+46 more)
+Cohesion: 0.06
+Nodes (46): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (+38 more)
 
 ### Community 249 - "Community 249"
 Cohesion: 0.03
-Nodes (99): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+91 more)
+Nodes (92): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+84 more)
 
 ### Community 250 - "Community 250"
-Cohesion: 0.03
-Nodes (99): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+91 more)
+Cohesion: 0.10
+Nodes (24): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (Named Roles Within the Graphics Department), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+16 more)
 
 ### Community 251 - "Community 251"
 Cohesion: 0.05
 Nodes (49): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+41 more)
 
 ### Community 252 - "Community 252"
-Cohesion: 0.04
-Nodes (57): Added — `23-ai-workforce-blueprint/scripts/verify-role-library.sh`, Added — `.github/workflows/version-consistency.yml`, Added — `scripts/bump-version.sh`, Bump path, Bump path, Bump path, Bump path, Companion dashboard release (`blackceo-command-center` v3.2.0) (+49 more)
+Cohesion: 0.03
+Nodes (69): Added — `23-ai-workforce-blueprint/scripts/verify-role-library.sh`, Added — `.github/workflows/version-consistency.yml`, Added — `scripts/bump-version.sh`, Bump path, Bump path, Bump path, Bump path, Bump path (+61 more)
 
 ### Community 253 - "Community 253"
-Cohesion: 0.03
-Nodes (71): Agent Capabilities Playbook, AGENTS.md (Core Workspace File), Communication Playbooks, openclaw.json, Access permissions, Adding sources later (post-setup), Confidence interaction, Indexed mode (for large or static sources) (+63 more)
+Cohesion: 0.04
+Nodes (48): Agent Capabilities Playbook, AGENTS.md (Core Workspace File), Communication Playbooks, openclaw.json, AGENTS.md Step 1.75 update, Ambiguous pivot, Customer asks 3 questions in 1 message, Customer pivots back to original topic (+40 more)
 
 ### Community 254 - "Community 254"
-Cohesion: 0.07
-Nodes (41): Adding new external services to the same OpenClaw, Backup Protocol and Teach Yourself Protocol, Changelog (condensed), ✅ Checkpoint A — Orientation complete, ✅ Checkpoint B — Tunnel verified end-to-end (Phase 1 complete), ✅ Checkpoint F — Advanced features active (Phase 5 complete), ✅ Checkpoint G — Capabilities documented (Phase 6 complete), Fallback: depth-2 HEAD crawl (+33 more)
+Cohesion: 0.05
+Nodes (53): Add the safeguards check to the System Health Heartbeat (Step 3.5H), All-in-One Chat workflow — Raw Body, Changelog (condensed), ✅ Checkpoint A — Orientation complete, ✅ Checkpoint B — Tunnel verified end-to-end (Phase 1 complete), ✅ Checkpoint C — OpenClaw responds to inbound webhooks (Phase 2 complete), ✅ Checkpoint E — Agent is safety-ready and memory-ready (Phase 4 complete), ✅ Checkpoint F — Advanced features active (Phase 5 complete) (+45 more)
 
 ### Community 255 - "Community 255"
 Cohesion: 0.11
 Nodes (43): augment_all_existing_role_folders(), augment_role_folder(), build_all_roles_for_dept(), _build_library_index(), _clean_role_key(), _compute_revenue_cascade(), create_role_workspace(), fill_tokens() (+35 more)
 
 ### Community 256 - "Community 256"
-Cohesion: 0.05
-Nodes (49): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+41 more)
+Cohesion: 0.06
+Nodes (43): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases, 18. Update Triggers (+35 more)
 
 ### Community 257 - "Community 257"
 Cohesion: 0.40
@@ -4375,12 +4486,12 @@ Cohesion: 0.12
 Nodes (23): PA-27-05 Weekly WIN Accounting, Analyze, Control, CTQ (Critical to Quality)  --  Binary Checks, Define, Definition of Done, DMAIC, Edge Cases (+15 more)
 
 ### Community 259 - "Community 259"
-Cohesion: 0.04
-Nodes (44): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+36 more)
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 260 - "Community 260"
-Cohesion: 0.04
-Nodes (66): 10. Quality Gates, 11. Handoffs, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases, 18. Update Triggers, 19. When to Spawn a Sub-Specialist (+58 more)
+Cohesion: 0.03
+Nodes (60): 10. Quality Gates, 11. Handoffs, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 18. Update Triggers, 19. When to Spawn a Sub-Specialist, 1. Role Identity (+52 more)
 
 ### Community 261 - "Community 261"
 Cohesion: 0.04
@@ -4388,15 +4499,15 @@ Nodes (56): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 262 - "Community 262"
 Cohesion: 0.03
-Nodes (99): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+91 more)
+Nodes (88): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+80 more)
 
 ### Community 263 - "Community 263"
-Cohesion: 0.05
-Nodes (52): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override (+44 more)
+Cohesion: 0.06
+Nodes (45): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 1. Role Identity (+37 more)
 
 ### Community 264 - "Community 264"
-Cohesion: 0.04
-Nodes (54): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+46 more)
+Cohesion: 0.05
+Nodes (50): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+42 more)
 
 ### Community 265 - "Community 265"
 Cohesion: 0.05
@@ -4404,67 +4515,67 @@ Nodes (43): 13A - Coaching Session Structure, 13B - Task Execution Structure, 4A
 
 ### Community 266 - "Community 266"
 Cohesion: 0.06
-Nodes (53): _defaults, extras, is_flagship, min_edge_cases, min_sops, min_tier1_citations, director-of-crm, extras (+45 more)
+Nodes (56): _defaults, extras, is_flagship, min_edge_cases, min_sops, min_tier1_citations, director-of-crm, extras (+48 more)
 
 ### Community 267 - "Community 267"
-Cohesion: 0.04
-Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+39 more)
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Real-time, during chat), Gate 2 — Peer Review (Weekly, sampling 10 transcripts), Gate 3 — Devil's Advocate Review (for chat responses to angry customers, public-figure customers, conversations about outages/bugs/security, or anything that could be screenshotted and shared), Gate 4 — Owner Approval
 
 ### Community 268 - "Community 268"
 Cohesion: 0.04
 Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+39 more)
 
 ### Community 269 - "Community 269"
-Cohesion: 0.06
-Nodes (29): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19.1 -- Brand Identity Architect, 19.2 -- Creative Operations (DesignOps) Lead (+21 more)
+Cohesion: 0.17
+Nodes (10): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+2 more)
 
 ### Community 270 - "Community 270"
 Cohesion: 0.06
 Nodes (33): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+25 more)
 
 ### Community 271 - "Community 271"
-Cohesion: 0.03
-Nodes (97): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+89 more)
+Cohesion: 0.02
+Nodes (99): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+91 more)
 
 ### Community 272 - "Community 272"
-Cohesion: 0.07
-Nodes (38): Closer, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+30 more)
+Cohesion: 0.06
+Nodes (43): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+35 more)
 
 ### Community 273 - "Community 273"
-Cohesion: 0.08
-Nodes (34): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+26 more)
+Cohesion: 0.05
+Nodes (49): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+41 more)
 
 ### Community 274 - "Community 274"
-Cohesion: 0.04
-Nodes (48): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+40 more)
+Cohesion: 0.05
+Nodes (38): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+30 more)
 
 ### Community 275 - "Community 275"
-Cohesion: 0.03
-Nodes (88): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+80 more)
+Cohesion: 0.05
+Nodes (59): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+51 more)
 
 ### Community 276 - "Community 276"
 Cohesion: 0.07
-Nodes (31): 41 — Build With AI Playbook Generator, Build With AI Prompt Template, Build With AI Protocol, GHL Actions Catalog, GHL If/Else Conditions Reference, Platform Differences, How trigger filters work, Rules the agent must follow when generating a trigger (+23 more)
+Nodes (33): 41 — Build With AI Playbook Generator, Build With AI Prompt Template, Build With AI Protocol, GHL Actions Catalog, GHL If/Else Conditions Reference, GHL Triggers Catalog, Platform Differences, How trigger filters work (+25 more)
 
 ### Community 277 - "Community 277"
 Cohesion: 0.04
 Nodes (42): ANALYSIS AGENT: DeepSeek V3.2-Speciale, ANALYSIS DATE: March 7, 2025, ANALYSIS NOTES - Crucial Conversations, AUTHOR: Joseph Grenny, Kerry Patterson, Ron McMillan, Al Switzler, Emily Gregory, BOOK: Crucial Conversations, DIMENSION 10 - Department and Role Application Map, DIMENSION 11 - Routing Intelligence, DIMENSION 12 - The Single Most Important Insight (+34 more)
 
 ### Community 278 - "Community 278"
-Cohesion: 0.04
-Nodes (45): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+37 more)
+Cohesion: 0.05
+Nodes (36): 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 18. Update Triggers, 19. When to Spawn a Sub-Specialist, 1. Role Identity (+28 more)
 
 ### Community 279 - "Community 279"
 Cohesion: 0.13
 Nodes (22): PA-27-01 ONE-Thing Focus Block Setup, Rubinstein, Meyer, Evans (2001) Task Switching Study, Analyze, Control, CTQ (Critical to Quality)  --  Binary Checks, Define, Definition of Done, DMAIC Procedure (+14 more)
 
 ### Community 280 - "Community 280"
-Cohesion: 0.06
-Nodes (47): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+39 more)
+Cohesion: 0.05
+Nodes (43): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+35 more)
 
 ### Community 281 - "Community 281"
-Cohesion: 0.04
-Nodes (49): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+41 more)
+Cohesion: 0.05
+Nodes (39): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+31 more)
 
 ### Community 282 - "Community 282"
 Cohesion: 0.04
@@ -4475,40 +4586,40 @@ Cohesion: 0.04
 Nodes (48): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+40 more)
 
 ### Community 284 - "Community 284"
-Cohesion: 0.06
-Nodes (43): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+35 more)
+Cohesion: 0.05
+Nodes (42): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+34 more)
 
 ### Community 285 - "Community 285"
-Cohesion: 0.04
-Nodes (55): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+47 more)
+Cohesion: 0.08
+Nodes (23): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity (+15 more)
 
 ### Community 286 - "Community 286"
-Cohesion: 0.02
-Nodes (103): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 17. Edge Cases, 18. Update Triggers (+95 more)
+Cohesion: 0.04
+Nodes (61): 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes, 18. Update Triggers, 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations (+53 more)
 
 ### Community 287 - "Community 287"
-Cohesion: 0.08
-Nodes (30): 10. Quality Gates, Gate 1 — Self-check (Bluesky Specialist), Gate 2 — Director of Social Media Review (for sensitive or strategic content), Gate 3 — Devil's Advocate Review (for hot takes, industry commentary), Gate 4 — Owner Approval (posts referencing owner, major announcements), 10. Quality Gates, Gate 1 — Self-check (Threads Specialist), Gate 2 — Director of Social Media Review (for controversial topics, competitive positioning) (+22 more)
+Cohesion: 0.06
+Nodes (40): 10. Quality Gates, Gate 1 — Self-check (Bluesky Specialist), Gate 2 — Director of Social Media Review (for sensitive or strategic content), Gate 3 — Devil's Advocate Review (for hot takes, industry commentary), Gate 4 — Owner Approval (posts referencing owner, major announcements), 10. Quality Gates, Gate 1 — Self-check (Facebook Specialist), Gate 2 — Director of Social Media Review (for campaign content, sensitive topics, major announcements) (+32 more)
 
 ### Community 288 - "Community 288"
-Cohesion: 0.06
-Nodes (31): 13. Good Output Examples, 14. Bad Output Examples, 16. Research Sources, 17. Edge Cases, 1. Role Identity, Edge Case 1 (PROACTIVE): Product Outage Discovered Through Ticket Pattern, Edge Case 2 (PROACTIVE): Customer Threatens to Cancel Publicly on Social Media, Edge Case 3 (REACTIVE): Customer Reports a Security Vulnerability (+23 more)
+Cohesion: 0.50
+Nodes (4): 16. Research Sources, Tier 1 -- Authoritative Strategic, Tier 2 -- Trade & Vendor, Tier 3 -- Competitive Context
 
 ### Community 289 - "Community 289"
 Cohesion: 0.09
 Nodes (21): INSTALL CONTRACT — Binding Discipline for Skill Installation, 🔴 Rule 0 — Wave concurrency caps (v10.8.0 P0-8), 🔴 Rule 10 — Model selection priority (cost-aware), 🔴 Rule 11 — Sub-agent settings (set FIRST in any install), 🔴 Rule 11a — Sub-agent timeout floor (v9.5.2), 🔴 Rule 12 — Recommend `/new` session, don't require it, 🔴 Rule 13 — Owner-facing communication style, 🔴 Rule 14 — Acknowledge this contract before EACH skill (+13 more)
 
 ### Community 290 - "Community 290"
-Cohesion: 0.08
-Nodes (36): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+28 more)
+Cohesion: 0.04
+Nodes (64): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+56 more)
 
 ### Community 291 - "Community 291"
 Cohesion: 0.40
 Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 292 - "Community 292"
-Cohesion: 0.05
-Nodes (43): Get All Tags for a Location, Get Location Info, Locations (Sub-Accounts), Common Setup Workflow, Create Custom Field, Create Custom Value, Create Recurring Task, Create Sub-Account (+35 more)
+Cohesion: 0.07
+Nodes (28): Common Setup Workflow, Create Custom Field, Create Custom Value, Create Recurring Task, Custom Fields, Custom Values, Delete Custom Field, Delete Custom Value (+20 more)
 
 ### Community 293 - "Community 293"
 Cohesion: 0.11
@@ -4527,44 +4638,44 @@ Cohesion: 0.04
 Nodes (39): 1. Warm + Anchored, 2. Present + Unrushed, 3. Action-Biased, 4. Believing but Honest, Communication Rhythm, Language Rules, Signature Closings, SOUL.md — My Coach Voice and Stance (+31 more)
 
 ### Community 297 - "Community 297"
-Cohesion: 0.06
-Nodes (29): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (+21 more)
+Cohesion: 0.05
+Nodes (35): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+27 more)
 
 ### Community 298 - "Community 298"
-Cohesion: 0.22
-Nodes (8): Greatness Agent Department (Specialist 29), CTQ Quality Checks, Definition of Done, DMAIC Procedure, Escalation, Metrics, PA-29-02: Living Resume Build & Maintenance, Tone & Persona Note
+Cohesion: 0.04
+Nodes (43): Greatness Agent Department (Specialist 29), CTQ Quality Checks, Definition of Done, DMAIC Procedure, Escalation, Metrics, PA-29-01: Accomplishment Intake Interview, Tone & Persona Note (+35 more)
 
 ### Community 299 - "Community 299"
-Cohesion: 0.10
-Nodes (26): Aggression Detection (Feature 50), Conversational AI Strategic Roadmap, Intelligent Playbook Routing (Feature 33), Conversational AI System — Strategic Feature Roadmap, Cross-Cutting Conversational AI Features (Features 32-34), Customer Experience Cluster (Features 40-42), ✅ Feature 32 — Humanizer Skill Integration (shipped in v5.5), ✅ Feature 33 — Intelligent Playbook Routing (shipped in v5.13) (+18 more)
+Cohesion: 0.08
+Nodes (33): Aggression Detection (Feature 50), Conversational AI Strategic Roadmap, Intelligent Playbook Routing (Feature 33), Conversational AI System — Strategic Feature Roadmap, Cross-Cutting Conversational AI Features (Features 32-34), Customer Experience Cluster (Features 40-42), 📋 Feature 14 — Voice/Phone Integration, 📋 Feature 15 — Proactive Outreach Campaigns (+25 more)
 
 ### Community 300 - "Community 300"
-Cohesion: 0.05
-Nodes (39): App Development, Director of Web Development, DMAIC, Head of App Development, PWA Specialist, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns) (+31 more)
+Cohesion: 0.04
+Nodes (49): 8. Handoffs (Value Stream Map), We hand work off to:, We receive work from:, App Development, 11. Handoffs (Value Stream Map), Cross-department coordination:, You receive work from:, Director of Web Development (+41 more)
 
 ### Community 301 - "Community 301"
 Cohesion: 0.06
 Nodes (35): 13A - Coaching Session Structure, 13B - Task Execution Structure, 4A - The Execution Standard, 4B - Quality Control Protocol, 4C - Failure Pattern Recognition, 4D - Task Mode Activation Language, 7A - Coaching Mode Triggers, 7B - Task Mode Triggers (+27 more)
 
 ### Community 302 - "Community 302"
-Cohesion: 0.10
-Nodes (18): Comparison to the terminal `install.sh` path, END AGENT INSTRUCTIONS, How to use, Comparison to the terminal `install.sh` path, Direct-to-Agent OpenClaw Install, END AGENT INSTRUCTIONS, How to use, When to use which (+10 more)
+Cohesion: 0.14
+Nodes (12): Comparison to the terminal `install.sh` path, END AGENT INSTRUCTIONS, How to use, Comparison to the terminal `install.sh` path, Direct-to-Agent OpenClaw Install, END AGENT INSTRUCTIONS, How to use, When to use which (+4 more)
 
 ### Community 303 - "Community 303"
 Cohesion: 0.05
 Nodes (38): Adding a New Team Member, BlackCEO Team Management - Usage Instructions, Client, Client Sub-Agents, Client vs. Worker Distinction, Cross-Posting, Decision Tree, Dispatcher (Main Session) (+30 more)
 
 ### Community 304 - "Community 304"
-Cohesion: 0.05
-Nodes (53): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+45 more)
+Cohesion: 0.06
+Nodes (44): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+36 more)
 
 ### Community 305 - "Community 305"
 Cohesion: 0.09
 Nodes (21): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 1. Role Identity (+13 more)
 
 ### Community 306 - "Community 306"
-Cohesion: 0.05
-Nodes (48): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+40 more)
+Cohesion: 0.03
+Nodes (71): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+63 more)
 
 ### Community 307 - "Community 307"
 Cohesion: 0.06
@@ -4576,7 +4687,7 @@ Nodes (38): Personal Assistant Department, 0. Director of Personal Assistance, 1
 
 ### Community 309 - "Community 309"
 Cohesion: 0.06
-Nodes (29): GoHighLevel (GHL), GHL Build with AI, GHL Workflow AI Builder, Beta Limitations, Critical Facts for Playbook, Enabling/Disabling, Entry Points, GHL Workflow AI Builder Reference -- Skill 41 (+21 more)
+Nodes (29): GoHighLevel (GHL), GHL Workflow AI Builder, Playbook Prelude, Beta Limitations, Critical Facts for Playbook, Enabling/Disabling, Entry Points, GHL Workflow AI Builder Reference -- Skill 41 (+21 more)
 
 ### Community 310 - "Community 310"
 Cohesion: 0.05
@@ -4591,24 +4702,24 @@ Cohesion: 0.10
 Nodes (20): 10. Quality Gates, Gate 1 — Platform Specialist Self-check, Gate 2 — Director of Social Media Review (for campaign content, high-reach posts, sensitive topics), Gate 3 — Devil's Advocate Review (controversial topics, real-time responses during crises, humor/edgy content), Gate 4 — Owner Approval (posts from the owner's personal accounts if managed by the team, content referencing owner's story or likeness, crisis responses Level 2+), 10. Quality Gates, Gate 1 — Self-check (Instagram Specialist), Gate 2 — Director of Social Media Review (for campaign content, high-reach Reels, sensitive topics) (+12 more)
 
 ### Community 313 - "Community 313"
-Cohesion: 0.15
-Nodes (18): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity, 2. Persona Governance Override (+10 more)
+Cohesion: 0.03
+Nodes (94): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+86 more)
 
 ### Community 314 - "Community 314"
-Cohesion: 0.13
-Nodes (14): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations (+6 more)
+Cohesion: 0.09
+Nodes (20): Discount Code Protocol, Agent behavior — generating a code, Allow-list action, Cart abandonment recovery deployment, Choosing GHL vs Stripe, Discount Code Generation Protocol, GHL Discount Codes (Coupons API), Honesty floor (from Sales Brain Rule 8) (+12 more)
 
 ### Community 315 - "Community 315"
-Cohesion: 0.08
-Nodes (32): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+24 more)
+Cohesion: 0.04
+Nodes (67): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+59 more)
 
 ### Community 316 - "Community 316"
-Cohesion: 0.12
-Nodes (19): paid-advertisement, social-media, director_title, display_name, emoji, one_liner, suggested_roles_file, v2_1_specialists (+11 more)
+Cohesion: 0.14
+Nodes (14): paid-advertisement, social-media, director_title, display_name, emoji, one_liner, suggested_roles_file, v2_1_specialists (+6 more)
 
 ### Community 317 - "Community 317"
-Cohesion: 0.05
-Nodes (38): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+30 more)
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 318 - "Community 318"
 Cohesion: 0.04
@@ -4623,64 +4734,64 @@ Cohesion: 0.05
 Nodes (37): 0. Head of App Development, 10. QA Tester (App), 11. QC Specialist — App Development, 12. Deep Research Specialist — App Development, 1. Desktop App Specialist, 2. iOS Specialist, 3. Android Specialist, 4. PWA (Progressive Web App) Specialist (+29 more)
 
 ### Community 321 - "Community 321"
-Cohesion: 0.06
-Nodes (44): 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 18. Update Triggers, 1. Role Identity (+36 more)
+Cohesion: 0.04
+Nodes (69): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+61 more)
 
 ### Community 322 - "Community 322"
-Cohesion: 0.11
-Nodes (25): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (Named Roles Within the Graphics Department), 1. Role Identity (+17 more)
+Cohesion: 0.07
+Nodes (41): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (Named Roles Within the Graphics Department), 1. Role Identity (+33 more)
 
 ### Community 323 - "Community 323"
-Cohesion: 0.06
-Nodes (30): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists, 1. Role Identity (+22 more)
+Cohesion: 0.05
+Nodes (35): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (+27 more)
 
 ### Community 324 - "Community 324"
-Cohesion: 0.09
-Nodes (21): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+13 more)
+Cohesion: 0.05
+Nodes (36): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+28 more)
 
 ### Community 325 - "Community 325"
 Cohesion: 0.06
-Nodes (38): Code-Switching, DMAIC Framework, Emotional Wellness Companion, Resilience & Code-Switch Navigator, PA-09-07 Code-Switching Fatigue Reset, Analyze, Control, CTQ (Critical to Quality) — Binary Checks (+30 more)
+Nodes (43): Code-Switching, Emotional Support & Wellbeing Companion Department, DMAIC Framework, Emotional Wellness Companion, The Emotional Wellness Companion, The Resilience & Code-Switch Navigator, Resilience & Code-Switch Navigator, PA-09-07 Code-Switching Fatigue Reset (+35 more)
 
 ### Community 326 - "Community 326"
-Cohesion: 0.05
-Nodes (55): type, type, type, type, enum, type, description, items (+47 more)
+Cohesion: 0.06
+Nodes (45): type, type, type, type, description, items, type, type (+37 more)
 
 ### Community 327 - "Community 327"
-Cohesion: 0.03
-Nodes (61): 2. `contacts.md`, 3. `conversations.md`, 5. `opportunities.md`, 6. `payments.md`, 8. `locations.md`, API v2 Base URL, Authentication Method, Base URL and Authentication (+53 more)
+Cohesion: 0.04
+Nodes (59): What to Do Next, 1. Never guess at endpoint syntax, 2. Never paste the master reference into context, 3. `conversations.md`, 3. Treat secrets like passwords, 4. Be careful with financial actions, 5. Be careful with phone number changes, 6. `payments.md` (+51 more)
 
 ### Community 328 - "Community 328"
 Cohesion: 0.06
-Nodes (51): Added, Added, Added, Added, Added, Added, Added — root, Added — scripts/ (+43 more)
+Nodes (52): Added, Added, Added, Added, Added, Added, Added — root, Added — scripts/ (+44 more)
 
 ### Community 329 - "Community 329"
 Cohesion: 0.11
 Nodes (16): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+8 more)
 
 ### Community 330 - "Community 330"
-Cohesion: 0.12
-Nodes (16): The non-fabrication floor (read first), 30-day cache, Compliance gate (runs before any live fetch), Cost cap + rate limits, Idempotency & re-runs, Pairing with Skill 39, `public-records-queries.jsonl` schema, Real-estate use cases (prioritized) (+8 more)
+Cohesion: 0.15
+Nodes (11): The non-fabrication floor (read first), 30-day cache, Compliance gate (runs before any live fetch), Cost cap + rate limits, Idempotency & re-runs, Pairing with Skill 39, `public-records-queries.jsonl` schema, Real-estate use cases (prioritized) (+3 more)
 
 ### Community 331 - "Community 331"
-Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Quantitative Analysis Request Execution, SOP 9.2 -- Predictive Model Development and Maintenance, SOP 9.3 -- Peer Quantitative Review, SOP 9.4 -- A/B Test Design and Analysis, SOP 9.5 -- Monthly Quantitative Research Digest
+Cohesion: 0.12
+Nodes (16): 1. Prerequisites, 2. Verify the skill landed, 3. Materialize a specialist (on demand), 4. Optional: run a specialist full-time as its own agent, 5. Optional: auto-build for every client (Skill 23 naming-map patch), 6. Core file updates, Skill 42 — INSTALL (One-Time Setup), 1. Prerequisites (+8 more)
 
 ### Community 332 - "Community 332"
-Cohesion: 0.06
-Nodes (41): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+33 more)
+Cohesion: 0.03
+Nodes (69): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+61 more)
 
 ### Community 333 - "Community 333"
-Cohesion: 0.04
-Nodes (51): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 18. Update Triggers (+43 more)
+Cohesion: 0.05
+Nodes (51): 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 18. Update Triggers, 1. Role Identity, 2. Persona Governance -- CEO Mode (+43 more)
 
 ### Community 334 - "Community 334"
 Cohesion: 0.05
-Nodes (41): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+33 more)
+Nodes (37): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+29 more)
 
 ### Community 335 - "Community 335"
-Cohesion: 0.05
-Nodes (45): 12. Escalation Paths, 14. Common Mistakes and Mitigations, 17. Update Triggers, 18. Governance and Compliance, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+37 more)
+Cohesion: 0.06
+Nodes (38): 12. Escalation Paths, 14. Common Mistakes and Mitigations, 17. Update Triggers, 18. Governance and Compliance, 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+30 more)
 
 ### Community 336 - "Community 336"
 Cohesion: 0.08
@@ -4707,27 +4818,27 @@ Cohesion: 0.11
 Nodes (28): 9. Standard Operating Procedures, SOP 9.1 — A/B Testing: Hypothesis Development, Execution, and Analysis, SOP 9.2 — Lead Scoring Model Design and Calibration, SOP 9.3 — Full-Funnel Conversion Audit and Optimization Prioritization, SOP 9.4 — Landing Page Optimization Framework, 9. Standard Operating Procedures, SOP 1 -- Episode Lead Capture Setup, SOP 2 -- Audio Listener Segmentation (+20 more)
 
 ### Community 342 - "Community 342"
-Cohesion: 0.06
-Nodes (42): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 17. Edge Cases, 18. Update Triggers (+34 more)
+Cohesion: 0.04
+Nodes (59): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 17. Edge Cases, 18. Update Triggers (+51 more)
 
 ### Community 343 - "Community 343"
-Cohesion: 0.07
-Nodes (38): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+30 more)
+Cohesion: 0.04
+Nodes (71): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+63 more)
 
 ### Community 344 - "Community 344"
-Cohesion: 0.12
-Nodes (16): 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists (Named Roles Within the Graphics Department), 2. Persona Governance Override, 4. Weekly Operations (+8 more)
+Cohesion: 0.14
+Nodes (10): Path, Main Video Creator interface.          Provides a unified API for all video crea, Initialize Video Creator.                  Args:             config_path: Path t, Load configuration from file., Generate video from text description., Convert script to video., Animate image to video., Assemble multiple clips. (+2 more)
 
 ### Community 345 - "Community 345"
 Cohesion: 0.14
 Nodes (9): get_or_create_master_files(), read_ghl_location_id(), read_ghl_pit(), resolve_platform_paths(), get_or_create_master_files(), read_ghl_location_id(), read_ghl_pit(), resolve_platform_paths() (+1 more)
 
 ### Community 346 - "Community 346"
-Cohesion: 0.09
-Nodes (30): The Equipper, The Guardian, Therapeutic Support Specialist Department 26, Focus & Completion Specialist Department 27, The Focus Guardian (Default Persona), The Celebrant, Celebration Agent Department 28, Celebration Agent (28) (+22 more)
+Cohesion: 0.12
+Nodes (18): Focus & Completion Specialist Department 27, The Focus Guardian (Default Persona), The Celebrant, Celebration Agent Department 28, The Chronicler, The Defender, The Evidence-Builder, The Gentle Observer (+10 more)
 
 ### Community 347 - "Community 347"
-Cohesion: 0.07
+Cohesion: 0.06
 Nodes (35): analyze-video.sh, KIE.AI, merge-broll.sh, Seed Dance, Sora 2, Sora 2 Pro (1080P), Sora 2 Pro (720P), Sora 2 Storyboard (+27 more)
 
 ### Community 348 - "Community 348"
@@ -4740,23 +4851,23 @@ Nodes (35): [1.0.0] — 2026-05-23 — Initial release (shipped with onboarding 
 
 ### Community 350 - "Community 350"
 Cohesion: 0.11
-Nodes (27): Deep Search Tool, Research & Answers Department, PA-06-01 Quick Lookup, PA-06-02 Comparison & Recommendation, PA-06-03 Vendor/Service Research, PA-06-04 Document & Video Summarization, PA-08-04 Decision Coaching, Analyze (+19 more)
+Nodes (26): Deep Search Tool, Research & Answers Department, PA-06-01 Quick Lookup, PA-06-02 Comparison & Recommendation, PA-06-03 Vendor/Service Research, PA-06-04 Document & Video Summarization, PA-08-04 Decision Coaching, Analyze (+18 more)
 
 ### Community 351 - "Community 351"
 Cohesion: 0.10
 Nodes (34): find_company_info(), find_db(), find_departments_config(), Fall back: scan Skill 23 workspace folders to build department list.      v9.6.1, Find company name + brand colors + industry. Returns dict:       { "name": str,, v9.6.1: company_info is now a dict (name + slug + industry + brand colors)     i, All possible Zero Human Company root locations, in priority order., Return list of (slug, zhc_root_path) tuples for every company found. (+26 more)
 
 ### Community 352 - "Community 352"
-Cohesion: 0.05
-Nodes (41): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required"), 10. Quality Gates, Gate 1 — Self-check (Builder), Gate 2 — Peer Review (Another Builder or {{DIRECTOR_TITLE}}) (+33 more)
+Cohesion: 0.09
+Nodes (25): 10. Quality Gates, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required"), 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes") (+17 more)
 
 ### Community 353 - "Community 353"
 Cohesion: 0.07
 Nodes (29): My Coach (08), PA-17-01 Hard-Mirror Session, PA-17-02 Excuse Audit, PA-17-03 Commitment Callout, PA-17-04 Comfort-Zone Stretch Assignment, SOP Index (The Challenger), The Mirror (CH-01), The Auditor (CH-02) (+21 more)
 
 ### Community 354 - "Community 354"
-Cohesion: 0.05
-Nodes (39): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+31 more)
+Cohesion: 0.03
+Nodes (58): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+50 more)
 
 ### Community 355 - "Community 355"
 Cohesion: 0.06
@@ -4783,8 +4894,8 @@ Cohesion: 0.06
 Nodes (41): curl command line tool, jq JSON processor, 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN), Critical Things to Know, Files in This Folder (Reading Order), Prerequisites, Vercel Setup, What This Skill Covers (+33 more)
 
 ### Community 361 - "Community 361"
-Cohesion: 0.23
-Nodes (20): Emotional Support & Wellbeing (09), PA-19-01 Daily Learning Snippet Delivery, SOP Index (Study Partner), Study Partner / Daily Learning Department, Study Partner Director (SP-00), Snippet Curator (SP-01), Reflection Guide (SP-02), Book Curator (SP-03) (+12 more)
+Cohesion: 0.09
+Nodes (35): Emotional Support & Wellbeing (09), Persona: The Enforcer, PA-19-01 Daily Learning Snippet Delivery, SOP Index (Study Partner), Study Partner / Daily Learning Department, Continuous Improvement, Department 19  --  Study Partner / Daily Learning · How-To, Quality Standards (+27 more)
 
 ### Community 362 - "Community 362"
 Cohesion: 0.06
@@ -4792,7 +4903,7 @@ Nodes (32): Cloning a Full Page, Cloning a Single Component, Design Best Practic
 
 ### Community 363 - "Community 363"
 Cohesion: 0.05
-Nodes (46): About [Human Name], Active Projects, BEGIN assets/ONBOARDING.md, BEGIN assets/TOOLS.md, BEGIN assets/USER.md, BEGIN references/onboarding-flow.md, BEGIN references/security-patterns.md, BEGIN SKILL-v2.3-backup.md (+38 more)
+Nodes (43): About [Human Name], Active Projects, BEGIN assets/ONBOARDING.md, BEGIN assets/TOOLS.md, BEGIN assets/USER.md, BEGIN references/onboarding-flow.md, BEGIN SKILL-v2.3-backup.md, Boundaries (+35 more)
 
 ### Community 364 - "Community 364"
 Cohesion: 0.07
@@ -4824,7 +4935,7 @@ Nodes (41): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation P
 
 ### Community 371 - "Community 371"
 Cohesion: 0.03
-Nodes (82): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+74 more)
+Nodes (80): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+72 more)
 
 ### Community 372 - "Community 372"
 Cohesion: 0.05
@@ -4832,7 +4943,7 @@ Nodes (42): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Outp
 
 ### Community 373 - "Community 373"
 Cohesion: 0.02
-Nodes (116): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good vs. Bad Output Examples, 14. Common Mistakes and Mitigations, 15. Reference Standards and Specifications, 16. Edge Cases, 17. Update Triggers (+108 more)
+Nodes (108): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good vs. Bad Output Examples, 14. Common Mistakes and Mitigations, 15. Reference Standards and Specifications, 16. Edge Cases, 17. Update Triggers (+100 more)
 
 ### Community 374 - "Community 374"
 Cohesion: 0.04
@@ -4855,28 +4966,28 @@ Cohesion: 0.14
 Nodes (21): My Coach Department 08, The Anchor (Stability & Emotional Processing), The Champion (Belief & Momentum), The Mirror (Reflection & Self-Discovery), The Strategist (Planning & Execution), The Truth-Teller (Honest Accountability), Master Orchestrator, PA-08-02 Persona Selection Procedure (+13 more)
 
 ### Community 379 - "Community 379"
-Cohesion: 0.07
-Nodes (34): AGENTS.md - Operating Rules, BEGIN assets/HEARTBEAT.md, Blockers — Research Before Giving Up, Core Rules, Deletion Confirmation, END assets/AGENTS.md, Every Session, External vs Internal (+26 more)
+Cohesion: 0.06
+Nodes (42): AGENTS.md - Operating Rules, BEGIN assets/HEARTBEAT.md, BEGIN assets/MEMORY.md, Blockers — Research Before Giving Up, Core Rules, Deletion Confirmation, END assets/AGENTS.md, END assets/HEARTBEAT.md (+34 more)
 
 ### Community 380 - "Community 380"
 Cohesion: 0.06
 Nodes (33): A Simple Analogy: The Real Office, About the CRM Specialist Role, About the Web Development and App Development Departments, Bad Examples File, Companion Documents, Complete Example: Start Here File (Appointment Setter), Core Departments (most businesses need these), Cross-Department References (+25 more)
 
 ### Community 381 - "Community 381"
-Cohesion: 0.05
-Nodes (50): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+42 more)
+Cohesion: 0.04
+Nodes (49): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources, 17. Edge Cases for This Role (+41 more)
 
 ### Community 382 - "Community 382"
-Cohesion: 0.07
-Nodes (25): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+17 more)
+Cohesion: 0.06
+Nodes (30): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+22 more)
 
 ### Community 383 - "Community 383"
 Cohesion: 0.11
 Nodes (19): 0. Operating system, 1. OpenClaw is installed and running, 1. Package manager - replace `brew` with `apt-get`, 2. Playwright runs headless - no visible browser window, 2. Workspace files exist, 3. Find or create the master files folder, 3. Master files folder - use home directory, not Downloads, 4. Replace `open` command with `xdg-open` (+11 more)
 
 ### Community 384 - "Community 384"
-Cohesion: 0.17
-Nodes (18): 10. Deliverable Standards, 11. Cross-Department Handoffs, 12. Handling Pushback — The Gentle Insistence Protocol, 13. Escalation, 14. Quality Standards, 15. Session Activation, 16. Your Most Important Rule, 1. Welcome (+10 more)
+Cohesion: 0.11
+Nodes (18): Added, Added, Added, Added, Changed, Changed, Changed, Changed (+10 more)
 
 ### Community 385 - "Community 385"
 Cohesion: 0.07
@@ -4899,48 +5010,48 @@ Cohesion: 0.06
 Nodes (33): DELETE /contacts/{contactId}/campaigns/{campaignId} - Remove Contact From Campaign, DELETE /contacts/{contactId}/campaigns/removeAll - Remove Contact From Every Campaign, DELETE /contacts/{contactId} - Delete Contact, DELETE /contacts/{contactId}/followers - Remove Followers, DELETE /contacts/{contactId}/notes/{id} - Delete Note, DELETE /contacts/{contactId}/tags - Remove Tags, DELETE /contacts/{contactId}/tasks/{taskId} - Delete Task, DELETE /contacts/{contactId}/workflow/{workflowId} - Delete Contact from Workflow (+25 more)
 
 ### Community 390 - "Community 390"
-Cohesion: 0.06
-Nodes (34): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+26 more)
+Cohesion: 0.05
+Nodes (41): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+33 more)
 
 ### Community 391 - "Community 391"
 Cohesion: 0.07
 Nodes (29): Available Thinking Levels, Common Config Mistakes to Avoid, Context Window Management, Cost Impact of Thinking, Cost Management, Cost-Saving Tips, Default Thinking Levels Per Model, For the Full Reference (+21 more)
 
 ### Community 392 - "Community 392"
-Cohesion: 0.07
-Nodes (31): Persona: The Enforcer, 1. **Persistent Identity**, 2. **Dedicated Workspaces**, 3. **Chain of Command**, 4. **Accountability**, 5. **Scalable Delegation**, Why Department Heads Need to Be Permanent Agents, Accountability (+23 more)
+Cohesion: 0.10
+Nodes (21): 100M Offers, 40% Rule, Alex Hormozi, AMPP Skill, Can't Hurt Me, Cleaner, Cookie Jar, Crucial Conversations (+13 more)
 
 ### Community 393 - "Community 393"
 Cohesion: 0.05
 Nodes (63): director_title, display_name, emoji, one_liner, suggested_roles_file, director_title, display_name, emoji (+55 more)
 
 ### Community 394 - "Community 394"
-Cohesion: 0.03
-Nodes (92): 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases, 18. Update Triggers (+84 more)
+Cohesion: 0.02
+Nodes (112): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+104 more)
 
 ### Community 395 - "Community 395"
-Cohesion: 0.07
-Nodes (26): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+18 more)
+Cohesion: 0.05
+Nodes (38): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+30 more)
 
 ### Community 396 - "Community 396"
 Cohesion: 0.07
-Nodes (29): A/B Testing Different Intros, Advanced Workflows, AI Avatar Videos, App Demo Video, Automated Weekly Content, Batch Processing, Edit audio externally, then recombine, Educational Content (+21 more)
+Nodes (34): A/B Testing Different Intros, Advanced Workflows, AI Avatar Videos, App Demo Video, Automated Weekly Content, Batch Processing, Edit audio externally, then recombine, Educational Content (+26 more)
 
 ### Community 397 - "Community 397"
 Cohesion: 0.06
-Nodes (30): Add a Note to a Contact, Add a Task for a Contact, Book an Appointment, Calendars and Appointments, Contacts, Conversations and Messages, Create a New Contact, Create an Invoice (+22 more)
+Nodes (34): Book an Appointment, Calendars and Appointments, Conversations and Messages, Create an Invoice, Get a Specific User, Get All Calendars for a Location, Get All Conversations for a Location, Get All Tags for a Location (+26 more)
 
 ### Community 398 - "Community 398"
 Cohesion: 0.06
-Nodes (31): Cost Envelope (Default Caps), Files in This Folder, MANDATORY - Teach Yourself Protocol (TYP), MANDATORY: The 8.5 Quality Gate, Philosophy: Why a Skill, Not Inline Code, Prerequisites, Skill 37: ZHC Closeout, Support (+23 more)
+Nodes (30): Cost Envelope (Default Caps), Files in This Folder, MANDATORY - Teach Yourself Protocol (TYP), MANDATORY: The 8.5 Quality Gate, Philosophy: Why a Skill, Not Inline Code, Prerequisites, Skill 37: ZHC Closeout, Support (+22 more)
 
 ### Community 399 - "Community 399"
-Cohesion: 0.09
-Nodes (27): Proactive Outreach Campaigns Protocol (F15), Campaign definitions — `<MASTER_FILES_DIR>/outreach-campaigns/`, Cron + event wiring (no AGENTS.md inbound-reply step — this engine is cron/event-driven), Cross-references, Example campaign definition (the seeded `cold-lead-reengagement.md`), Frequency cap + opt-out (anti-fatigue, non-negotiable), Logging (the data contract — F52), MEMORY.md (Rule 28) (+19 more)
+Cohesion: 0.06
+Nodes (37): INSTRUCTIONS.md, Proactive Outreach Campaigns Protocol (F15), Campaign definitions — `<MASTER_FILES_DIR>/outreach-campaigns/`, Cron + event wiring (no AGENTS.md inbound-reply step — this engine is cron/event-driven), Cross-references, Example campaign definition (the seeded `cold-lead-reengagement.md`), Frequency cap + opt-out (anti-fatigue, non-negotiable), Logging (the data contract — F52) (+29 more)
 
 ### Community 400 - "Community 400"
-Cohesion: 0.06
-Nodes (34): Files touched, Files touched, Fix #1 — `maxSpawnDepth` 5 → 4 in `install.sh` (N14 wave concurrency), Fix #2 — Remove N2-contradicting "orchestrator installs Skills 22-23" language from `Start Here.md`, Fix #3 — Add CEO_DEFERRAL clause to `AGENTS.md` (persona governance override), Fix #4 — Standardize skill count to "33 active skills" across all docs, Fix #5 — Add Linux installer to `_find_calibre()` (N26 — Calibre auto-install on VPS), P0-001 — install.sh FLAGCONTENT template no longer contradicts N2 (+26 more)
+Cohesion: 0.05
+Nodes (38): Files touched, Files touched, Files touched, Files touched, Fix #1 — `maxSpawnDepth` 5 → 4 in `install.sh` (N14 wave concurrency), Fix #2 — Remove N2-contradicting "orchestrator installs Skills 22-23" language from `Start Here.md`, Fix #3 — Add CEO_DEFERRAL clause to `AGENTS.md` (persona governance override), Fix #4 — Standardize skill count to "33 active skills" across all docs (+30 more)
 
 ### Community 401 - "Community 401"
 Cohesion: 0.15
@@ -4963,8 +5074,8 @@ Cohesion: 0.07
 Nodes (30): associations (10 endpoints), blogs (7 endpoints), businesses (5 endpoints), campaigns (1 endpoint), companies (1 endpoint), courses (1 endpoint), custom-fields (8 endpoints), custom-menus (5 endpoints) (+22 more)
 
 ### Community 406 - "Community 406"
-Cohesion: 0.10
-Nodes (21): 🔗 How this connects to the AI Workforce Blueprint (Skill 23), PHASE 5 — Install Advanced Features (v5.0), Step 9.10 — Install Multi-Language Detection, Step 9.11 — Install Confidence Threshold Escalation, Step 9.12 — Install Conversation Export on Customer Request, Step 9.13 — Install Conversational Drift Detection, Step 9.14 — Install Knowledge Sources System, Step 9.15 — Install Prompt Injection Protection (+13 more)
+Cohesion: 0.07
+Nodes (30): 1. WHERE it goes (do not guess), 2. MUST-APPEAR checklist — every workflow-AI instruction set, 3. Custom Webhook — explicit field-by-field (Build-with-AI fumbles these), 4. BUILD-WITH-AI VERIFICATION CHECKLIST, 5. MULTI-ACTION workflows (not just one action), 6. Tags: create FIRST via the GHL skill, 7. Templates this standard governs, Canonical 23-key RAW BODY (embed this exactly) (+22 more)
 
 ### Community 407 - "Community 407"
 Cohesion: 0.09
@@ -5003,16 +5114,16 @@ Cohesion: 0.08
 Nodes (27): 🔴 ORDER LOCK (SOVEREIGN), Files in This Folder and Reading Order, Key Things the AI Agent Needs to Know, OpenRouter Setup - SKILL.md, 🔴 ORDER LOCK (SOVEREIGN), Prerequisites, What This Skill Covers, What This Skill Is About (+19 more)
 
 ### Community 416 - "Community 416"
-Cohesion: 0.14
-Nodes (17): author, description, displayName, models, _comment, forbidden_prefixes, phase1, phase2 (+9 more)
+Cohesion: 0.10
+Nodes (24): author, description, displayName, models, _comment, forbidden_prefixes, phase1, phase2 (+16 more)
 
 ### Community 417 - "Community 417"
-Cohesion: 0.07
-Nodes (27): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 18. Update Triggers, 19. When to Spawn a Sub-Specialist, 1. Role Identity, 2. Persona Governance Override (+19 more)
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 418 - "Community 418"
-Cohesion: 0.07
-Nodes (28): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+20 more)
+Cohesion: 0.08
+Nodes (23): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 1. Role Identity (+15 more)
 
 ### Community 419 - "Community 419"
 Cohesion: 0.10
@@ -5039,44 +5150,44 @@ Cohesion: 0.09
 Nodes (21): AI Workforce Blueprint — Build Instructions, CEO Clause (Master Orchestrator only), Flush After Every Question, Generation Orchestration (After Interview), Industry Vertical Packs (Auto-Added Based on Phase 0 Detection), Option A — Full Interview (Recommended), Option B — Quick Setup (Fastest), Option C — Audit / Resume Mode (+13 more)
 
 ### Community 425 - "Community 425"
-Cohesion: 0.11
-Nodes (16): Evidence Ledger, 1. Sub-Agents Fully Permitted, 2. Telegram Media Limit 50 MB, 3. Big Project Mode (universal operating standard), Integration, Policy, Source of Truth, 1. Purpose (+8 more)
+Cohesion: 0.18
+Nodes (10): Evidence Ledger, 1. Purpose, 2. Scope Boundary, 4. Deliverables, 5. Integration, 6. Outcome Metrics, CTQ Checks, Definition of Done (+2 more)
 
 ### Community 426 - "Community 426"
-Cohesion: 0.11
-Nodes (20): 10. Quality Gates, Gate 1 — Self-check (TikTok Specialist), Gate 2 — Director of Social Media Review (for sensitive topics, controversial takes, major brand announcements), Gate 3 — Devil's Advocate Review (for edgy humor, controversial industry opinions, sensitive topics), Gate 4 — Owner Approval (videos featuring owner personally, major announcements), 10. Quality Gates, Gate 1 — Self-check (TikTok Specialist), Gate 2 — Director of Social Media Review (for sensitive topics, controversial takes, major brand announcements) (+12 more)
+Cohesion: 0.07
+Nodes (30): 10. Quality Gates, Gate 1 — Self-check (TikTok Specialist), Gate 2 — Director of Social Media Review (for sensitive topics, controversial takes, major brand announcements), Gate 3 — Devil's Advocate Review (for edgy humor, controversial industry opinions, sensitive topics), Gate 4 — Owner Approval (videos featuring owner personally, major announcements), 10. Quality Gates, Gate 1 — Self-check (TikTok Specialist), Gate 2 — Director of Social Media Review (for sensitive topics, controversial takes, major brand announcements) (+22 more)
 
 ### Community 427 - "Community 427"
 Cohesion: 0.06
 Nodes (32): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity (+24 more)
 
 ### Community 428 - "Community 428"
-Cohesion: 0.10
-Nodes (21): After-Hours and Voicemail Handling, Appointment Confirmation, Bad News Delivery, Booking Flow, Good News Delivery, Hold and Transfer Patterns, Inbound Answering Greetings, Inbound Call Pattern Templates (+13 more)
+Cohesion: 0.22
+Nodes (9): Appointment Confirmation, Bad News Delivery, Booking Flow, Good News Delivery, Phone Call Pattern Templates, Processing / Data Retrieval, Recovery / Restatement, Standard Call Opening (+1 more)
 
 ### Community 429 - "Community 429"
-Cohesion: 0.08
-Nodes (34): BlackCEO Standard Settings, Emotion Tags (S2-Pro Natural Language), Files in This Skill, Fish Audio API Reference - Skill 31, Fish Audio Voice Behavior (S2 / S2-Pro), Long-Form Content (Over 15,000 Characters), Pending Setup Behavior, Quick Reference Card (+26 more)
+Cohesion: 0.06
+Nodes (41): BlackCEO Standard Settings, Emotion Tags (S2-Pro Natural Language), Files in This Skill, Fish Audio API Reference - Skill 31, Fish Audio Voice Behavior (S2 / S2-Pro), Long-Form Content (Over 15,000 Characters), Pending Setup Behavior, Quick Reference Card (+33 more)
 
 ### Community 430 - "Community 430"
-Cohesion: 0.05
-Nodes (48): 2.1 Update the flush prompt in openclaw.json, 2.2 Set the soft threshold, 3.1 Enable session memory, 3.2 Configure sync behavior, Completion Checklist, Layer 2: Memory Flush (Improved Compaction), Layer 3: Session Indexing (Past Conversations Searchable), Prerequisite Check (+40 more)
+Cohesion: 0.09
+Nodes (22): 2.1 Update the flush prompt in openclaw.json, 2.2 Set the soft threshold, 3.1 Enable session memory, 3.2 Configure sync behavior, Completion Checklist, Layer 2: Memory Flush (Improved Compaction), Layer 3: Session Indexing (Past Conversations Searchable), Prerequisite Check (+14 more)
 
 ### Community 431 - "Community 431"
-Cohesion: 0.12
+Cohesion: 0.11
 Nodes (16): 30-day cache, Compliance posture (enforced, not advisory), Cost & rate controls (default caps), Files in This Folder, Governing protocol (binding for this skill and all skills in the repo), MANDATORY - Teach Yourself Protocol (TYP), Prerequisites, Security & honesty note (+8 more)
 
 ### Community 432 - "Community 432"
 Cohesion: 0.04
-Nodes (50): 5-Wave INSTALL structure (used by `Start Here.md` orchestration), 7-Wave AUDIT structure (used by audit Phases 1–22), After AI Workforce Setup Complete, AGENTS.md - Agent Operating Guide, 🔴 CEO_DEFERRAL — Persona Governance Override (Master Orchestrator Mode), Collections, Critical Rules, External Actions (+42 more)
+Nodes (48): 5-Wave INSTALL structure (used by `Start Here.md` orchestration), 7-Wave AUDIT structure (used by audit Phases 1–22), After AI Workforce Setup Complete, AGENTS.md - Agent Operating Guide, 🔴 CEO_DEFERRAL — Persona Governance Override (Master Orchestrator Mode), External Actions, Gemini Engine Indexing, Learned Lessons (+40 more)
 
 ### Community 433 - "Community 433"
 Cohesion: 0.08
 Nodes (27): A/B Testing, Evan Miller's A/B Test Calculator / ABTestGuide, Facebook Ad Library / Google Ads Transparency Center / TikTok Ad Library, Canva / Figma, Creative / Content Department, CRM ({{CRM_PLATFORM_NAME}}), paid-advertisement, Director of Paid Advertisement (+19 more)
 
 ### Community 434 - "Community 434"
-Cohesion: 0.04
-Nodes (42): Compliance Keywords Protocol, Conversational Safeguards Protocol, Category 1 — Sexual content (ZERO TOLERANCE), Category 2 — Inappropriate questions, Category 3 — Hostile cursing, Conversational Drift Detection Protocol, Important: Drift detection runs FIRST, Operator notification format (+34 more)
+Cohesion: 0.12
+Nodes (15): Buyer signal recognition, Honesty floor, Per-client customization, Phase 1 — Open, Phase 2 — Discover, Phase 3 — Present, Phase 4 — Handle objections, Phase 5 — Close (+7 more)
 
 ### Community 435 - "Community 435"
 Cohesion: 0.07
@@ -5096,19 +5207,19 @@ Nodes (20): Collections to Index, 🔴 COMPLETE ALL DEPENDENCIES - NO PARTIAL IN
 
 ### Community 439 - "Community 439"
 Cohesion: 0.06
-Nodes (32): 13. Em Dash Overuse, 14. Overuse of Boldface, 15. Inline-Header Vertical Lists, 16. Title Case in Headings, 17. Emojis, 18. Curly Quotation Marks, 19. Collaborative Communication Artifacts, 1. Undue Emphasis on Significance, Legacy, and Broader Trends (+24 more)
+Nodes (33): 10. Rule of Three Overuse, 11. Elegant Variation (Synonym Cycling), 12. False Ranges, 19. Collaborative Communication Artifacts, 1. Undue Emphasis on Significance, Legacy, and Broader Trends, 20. Knowledge-Cutoff Disclaimers, 21. Sycophantic/Servile Tone, 22. Filler Phrases (+25 more)
 
 ### Community 440 - "Community 440"
-Cohesion: 0.07
-Nodes (40): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+32 more)
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check (QC reviewer's own quality check), Gate 2 — Peer QC Review (for QC's own high-stakes reviews), Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 441 - "Community 441"
 Cohesion: 0.16
 Nodes (14): GHL Coupons API Reference, Fair-housing, Honesty floors, Inputs (from the config), Showing Scheduler Protocol, Steps, When this protocol activates, Agent usage pattern (governed by `discount-code-protocol.md`) (+6 more)
 
 ### Community 442 - "Community 442"
-Cohesion: 0.06
-Nodes (33): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 1. Role Identity (+25 more)
+Cohesion: 0.05
+Nodes (36): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 1. Role Identity (+28 more)
 
 ### Community 443 - "Community 443"
 Cohesion: 0.11
@@ -5219,8 +5330,8 @@ Cohesion: 0.07
 Nodes (25): 10. Author Voice and Language, 11. Direct Quotes, 12. The Repeatable Execution System, 13. The Quality Bar, 14. Non-Negotiable Execution Rules, 15. Failure Patterns, 16. Decision Logic, 17. Self-Review Protocol (+17 more)
 
 ### Community 470 - "Community 470"
-Cohesion: 0.10
-Nodes (20): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day, 3. Daily Operations, End of Day, Morning (First 30 Minutes), Throughout the Day (+12 more)
+Cohesion: 0.08
+Nodes (24): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day, 3. Daily Operations, End of Day, Morning (First 30 Minutes), Throughout the Day (+16 more)
 
 ### Community 471 - "Community 471"
 Cohesion: 0.07
@@ -5235,20 +5346,20 @@ Cohesion: 0.06
 Nodes (34): Best Practices, Add reference to agent files AGENTS.md, CLAUDE.md, or .github/copilot-instructions.md to remind yourself to log learnings. (this is an alternative to hook-based reminders), Area Tags, Automatic Skill Extraction, Available Hook Scripts, Detection Triggers, Error Entry, Extraction Detection Triggers (+26 more)
 
 ### Community 474 - "Community 474"
-Cohesion: 0.11
-Nodes (16): 1. Ollama Cloud models, 2. Ollama local models, 3. OpenRouter models, 4. Direct API models, 5. Embedding model freshness, Allow-list, Backups, Cron registration (+8 more)
+Cohesion: 0.10
+Nodes (15): 10. Quality Gates, 11. Handoffs (Value Stream Map), 17. Edge Cases for This Role, 1. Role Identity, Cross-Department Coordination, Edge Case 17.1 — A Competitor Starts Answering the Same Questions, Edge Case 17.2 — Quora Answer Ranks #1 on Google for a High-Value Keyword, Gate 1 — Self-check (Quora Specialist) (+7 more)
 
 ### Community 475 - "Community 475"
-Cohesion: 0.09
-Nodes (21): Any, Path, AIProvider, Generate video using Runway ML API., Unified interface for AI video generation providers., Generate video using Pika Labs API., Initialize AI provider.                  Args:             provider_name: Name o, Generate a mock video for testing without API calls. (+13 more)
+Cohesion: 0.23
+Nodes (8): Video Creator Skill  Create videos from scratch using AI models and basic editin, create_placeholder_video(), load_config(), main(), Load optional configuration., Generate video from text description.          Args:         prompt: Text descri, Create a placeholder video when AI generation fails., text_to_video()
 
 ### Community 476 - "Community 476"
 Cohesion: 0.08
 Nodes (24): Cron schedule shipped by skill 38, Hard rules (NON-NEGOTIABLE), Phase 0 — Self-orientation (Steps O.1 through O.7), Phase 1 — Build Network Plumbing (Steps 1-2), Phase 2 — Configure OpenClaw (Steps 3 through 4), Phase 3 — Persist Credentials + Deliverables (Steps 5-6), Phase 4 — Install Agent Behavior (Steps 7-9), Phase 5 data contract — JSONL event logs (F52) (+16 more)
 
 ### Community 477 - "Community 477"
-Cohesion: 0.11
-Nodes (17): 1. New Inquiry → Intake & Booking, 2. Consult Follow-Up, 3. Payment / Insurance & Package Confirmation, 4. Welcome & First-Session Prep, 5. Appointment Confirmations & Reminders, 6. Post-Session Check-in, 7. Treatment-Plan / Program Adherence, 8. Membership / Renewal & Re-book (+9 more)
+Cohesion: 0.14
+Nodes (13): Travel & Logistics Coordinator, Decision-Making Philosophy, Default Voice, Emotional Intelligence Markers, Forbidden Language, Open Line Rule, Operating Protocol (binding), The Curator's Motto (+5 more)
 
 ### Community 478 - "Community 478"
 Cohesion: 0.11
@@ -5284,31 +5395,31 @@ Nodes (23): 1. File and version checks, 2. Core file update checks, 3. CLI insta
 
 ### Community 486 - "Community 486"
 Cohesion: 0.09
-Nodes (29): Add reference to agent files AGENTS.md, CLAUDE.md, or .github/copilot-instructions.md to remind yourself to log learnings. (this is an alternative to hook-based reminders), Area Tags, Automatic Skill Extraction, Available Hook Scripts, Best Practices, Extraction Detection Triggers, Extraction Workflow, Full Setup (With Error Detection) (+21 more)
+Nodes (30): Add reference to agent files AGENTS.md, CLAUDE.md, or .github/copilot-instructions.md to remind yourself to log learnings. (this is an alternative to hook-based reminders), Area Tags, Automatic Skill Extraction, Available Hook Scripts, Best Practices, Extraction Detection Triggers, Extraction Workflow, Full Setup (With Error Detection) (+22 more)
 
 ### Community 487 - "Community 487"
 Cohesion: 0.12
 Nodes (18): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Technology Evaluation Research, SOP 9.2 — Competitor Intelligence Brief (Weekly), SOP 9.3 — Platform Policy Change Impact Assessment, SOP 9.4 — Deep-Dive Competitor Analysis (Monthly Rotating Focus), SOP 9.5 — Ad-Hoc Research Request (Micro-Research Note), SOP 9.6 — Quarterly Technology Radar Reassessment, 9. Standard Operating Procedures (SOPs) (+10 more)
 
 ### Community 488 - "Community 488"
-Cohesion: 0.12
-Nodes (17): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Contract QC Review, SOP 9.1 — Standard Document QC Review, SOP 9.2 — Contract Redline Verification, SOP 9.2 — Regulatory Filing QC Review, SOP 9.3 — Privacy Policy and Data Protection Document QC Review, SOP 9.3 — Public-Facing Document Review (Enhanced Scrutiny), SOP 9.4 — Policy and Procedure Document QC Review (+9 more)
+Cohesion: 0.08
+Nodes (26): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Contract QC Review, SOP 9.1 — Standard Document QC Review, SOP 9.2 — Contract Redline Verification, SOP 9.2 — Regulatory Filing QC Review, SOP 9.3 — Privacy Policy and Data Protection Document QC Review, SOP 9.3 — Public-Facing Document Review (Enhanced Scrutiny), SOP 9.4 — Policy and Procedure Document QC Review (+18 more)
 
 ### Community 489 - "Community 489"
-Cohesion: 0.06
-Nodes (32): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity (+24 more)
+Cohesion: 0.05
+Nodes (37): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+29 more)
 
 ### Community 490 - "Community 490"
 Cohesion: 0.13
 Nodes (15): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review (Self-Review), Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required"), 10. Quality Gates, Gate 1 — Self-check (SOP 9.3), Gate 2 — Department QC Review (+7 more)
 
 ### Community 491 - "Community 491"
-Cohesion: 0.05
-Nodes (37): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+29 more)
+Cohesion: 0.06
+Nodes (32): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist (+24 more)
 
 ### Community 492 - "Community 492"
-Cohesion: 0.08
-Nodes (33): YouTube Ads Specialist, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+25 more)
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 493 - "Community 493"
 Cohesion: 0.08
@@ -5316,7 +5427,7 @@ Nodes (23): Correct Process, Done, "ffmpeg not found", Forbidden Actions, 🔴 G
 
 ### Community 494 - "Community 494"
 Cohesion: 0.07
-Nodes (28): 1.1 Check Node.js Version, 1.2 Check Git Installation, 1.3 Check PM2 Installation, 1.4 Verify Skill 23 Is Complete, 3.1 Create Base Directory, 3.2 Create Department Subdirectories, 3.3 Create Symlinks to Shared Files, 5.1 Create Department Topics (+20 more)
+Nodes (26): 1.1 Check Node.js Version, 1.2 Check Git Installation, 1.3 Check PM2 Installation, 1.4 Verify Skill 23 Is Complete, 3.1 Create Base Directory, 3.2 Create Department Subdirectories, 3.3 Create Symlinks to Shared Files, 4.1 Backup Your Config First (+18 more)
 
 ### Community 495 - "Community 495"
 Cohesion: 0.07
@@ -5343,16 +5454,16 @@ Cohesion: 0.07
 Nodes (23): "Can you squeeze in a 15-minute call today?", Common Scenarios, Daily Rhythm, End of Day, Escalation Rules, HOW-TO — Calendar & Scheduling Manager Operating Playbook, "I need to move my 3 PM.", Midday Check (+15 more)
 
 ### Community 501 - "Community 501"
-Cohesion: 0.13
-Nodes (17): 1. Time Is Sacred, 2. Proactive, Not Reactive, 3. Warm Efficiency, 4. Firm on Principles, Flexible on Details, 5. Quiet Competence, Core Principles, How You Show Up, Remember (+9 more)
+Cohesion: 0.09
+Nodes (22): 1. Time Is Sacred, 2. Proactive, Not Reactive, 3. Warm Efficiency, 4. Firm on Principles, Flexible on Details, 5. Quiet Competence, Core Principles, How You Show Up, Remember (+14 more)
 
 ### Community 502 - "Community 502"
 Cohesion: 0.08
 Nodes (22): "A client asks for notes from a meeting they missed.", After Host Approval, "An attendee keeps no-showing.", Common Scenarios, Daily Rhythm, During Meeting, End of Day, Escalation Rules (+14 more)
 
 ### Community 503 - "Community 503"
-Cohesion: 0.05
-Nodes (35): 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN), Context7 Setup, Files in This Folder, How to Execute This Skill, Key Things the AI Agent Needs to Know, Prerequisites, What This Skill Covers, When to Use This Skill (+27 more)
+Cohesion: 0.08
+Nodes (19): 🔴 API-ONLY EXECUTION LOCK (SOVEREIGN), Context7 Setup, Files in This Folder, How to Execute This Skill, Key Things the AI Agent Needs to Know, Prerequisites, What This Skill Covers, When to Use This Skill (+11 more)
 
 ### Community 504 - "Community 504"
 Cohesion: 0.07
@@ -5371,32 +5482,32 @@ Cohesion: 0.10
 Nodes (25): 1. Install the Skill, 2. Install the Hook (Optional), 3. Create Learning Files, AGENTS.md, Available Hook Events, Capturing Learnings, Detection Triggers, Detection Triggers (+17 more)
 
 ### Community 508 - "Community 508"
-Cohesion: 0.10
-Nodes (23): BEGIN assets/SKILL-TEMPLATE.md, BEGIN hooks/openclaw/HOOK.md, BEGIN .learnings/LEARNINGS.md, BEGIN SKILL.md, END assets/LEARNINGS.md, END .learnings/ERRORS.md, END .learnings/LEARNINGS.md, Errors Log (+15 more)
+Cohesion: 0.09
+Nodes (23): BEGIN assets/SKILL-TEMPLATE.md, BEGIN hooks/openclaw/HOOK.md, BEGIN .learnings/LEARNINGS.md, BEGIN SKILL.md, END assets/LEARNINGS.md, END hooks/openclaw/HOOK.md, END .learnings/ERRORS.md, END .learnings/LEARNINGS.md (+15 more)
 
 ### Community 509 - "Community 509"
 Cohesion: 0.06
-Nodes (34): Completion Criteria, Detection, Drip Mode, Handling Interruption, Interactive Mode, Mid-Question Interruption, Modes, Multi-Day Gap (+26 more)
+Nodes (37): BEGIN references/security-patterns.md, Completion Criteria, Detection, Drip Mode, END references/onboarding-flow.md, Handling Interruption, Interactive Mode, Mid-Question Interruption (+29 more)
 
 ### Community 510 - "Community 510"
 Cohesion: 0.20
 Nodes (15): AGENTS.md, HEARTBEAT.md (if section exists in file), MEMORY.md, SECTION 2 — Core File Update Checks, SOUL.md, TOOLS.md, 3a. AGENTS.md, 3b. TOOLS.md (+7 more)
 
 ### Community 511 - "Community 511"
-Cohesion: 0.05
-Nodes (39): 2a. Python 3 Check, 2b. OpenClaw Running Check, 2c. Workspace Access Check, 7a. Structure Verification, 7b. Content Verification, 7c. Self-Score, 8a. AGENTS.md Update, 8b. TOOLS.md Update (+31 more)
+Cohesion: 0.06
+Nodes (35): 2a. Python 3 Check, 2b. OpenClaw Running Check, 2c. Workspace Access Check, 8a. AGENTS.md Update, 8b. TOOLS.md Update, 8c. MEMORY.md Update, 8d. Pending Setup Rule, 🔴 AUTOMATIC NEXT STEP — SKILL 32 (COMMAND CENTER SETUP) (+27 more)
 
 ### Community 512 - "Community 512"
 Cohesion: 0.12
 Nodes (16): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Full Asset QC Review, SOP 9.2 -- Pre-Launch Campaign Asset Batch QC, SOP 9.3 -- Post-Publication Live Asset Audit, SOP 9.4 -- New Specialist Onboarding QC Calibration, SOP 9.5 -- Accessibility Compliance Audit, SOP 9.6 -- Print-Ready File Verification, SOP 9.7 -- Emergency QC (Critical Asset, Same-Hour Turnaround) (+8 more)
 
 ### Community 513 - "Community 513"
-Cohesion: 0.10
-Nodes (23): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+15 more)
+Cohesion: 0.05
+Nodes (52): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+44 more)
 
 ### Community 514 - "Community 514"
-Cohesion: 0.14
-Nodes (21): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override (+13 more)
+Cohesion: 0.06
+Nodes (42): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+34 more)
 
 ### Community 515 - "Community 515"
 Cohesion: 0.08
@@ -5411,8 +5522,8 @@ Cohesion: 0.09
 Nodes (23): Bad Pattern, Correct Pattern, Example: Pauses in Action (Phone Call), Example: Pauses in Action (Podcast), PART 2: Universal Operating Rules, Pause Taxonomy, Phone Call Examples, Podcast Examples (+15 more)
 
 ### Community 518 - "Community 518"
-Cohesion: 0.07
-Nodes (25): Quality Standards (All SOPs), SOP Catalog, SOP Selection Guide, PA-06-02 Comparison & Recommendation, PA-06-03 Vendor/Service Research, PA-06-04 Document & Video Summarization, PA-06-01 -- Quick Lookup, PA-06-02 -- Comparison & Recommendation (+17 more)
+Cohesion: 0.13
+Nodes (14): 3.1 Define, 3.2 Measure, 3.3 Analyze, 3.4 Improve, 3.5 Control, CTQ (Critical to Quality) — Binary Checks, Definition of Done, Escalation (+6 more)
 
 ### Community 519 - "Community 519"
 Cohesion: 0.12
@@ -5424,11 +5535,11 @@ Nodes (30): Act As If Protocol, Interview Persistence Protocol, Persona Governan
 
 ### Community 521 - "Community 521"
 Cohesion: 0.08
-Nodes (29): Coaching Personas Collection, Active Memory, Cognee, Gemini Embedding 2, memory-core, Obsidian Vault, Wiki System, Cloudflare Tunnel (+21 more)
+Nodes (28): Coaching Personas Collection, Active Memory, Cognee, Gemini Embedding 2, memory-core, Obsidian Vault, Wiki System, Cloudflare Tunnel (+20 more)
 
 ### Community 522 - "Community 522"
-Cohesion: 0.06
-Nodes (32): A. Trigger phrases — how the operator invokes the builder, B. Subagent walks the operator through INITIAL workflow creation, C. Layer 0 — Routing check, D.1 — Auto-create required tags via the GHL skill, D.2 — Generate the Build-with-AI prompt (Part 1a), D.2b — Manual-build fallback (Part 1b), D.3 — Generate the brutally-specific verification checklist (Part 1c), D. Layer 1 — GHL Side (if needed) (+24 more)
+Cohesion: 0.08
+Nodes (23): A. Trigger phrases — how the operator invokes the builder, B. Subagent walks the operator through INITIAL workflow creation, C. Layer 0 — Routing check, DISTINCTION MAP — four terms operators confuse (read this first), E. Layer 2 — OpenClaw Side (always built), F. Registry and AGENTS.md insertion, G. Initial workflow creation during setup, H. Append to Run Manifest (+15 more)
 
 ### Community 523 - "Community 523"
 Cohesion: 0.05
@@ -5447,28 +5558,28 @@ Cohesion: 0.08
 Nodes (21): 1. Clarity Over Volume, 2. Warmth Is Momentum, 3. Structure Sets People Free, 4. Connect the Dots, 5. Gentle Accountability, Core Principles, How You Show Up, Remember (+13 more)
 
 ### Community 527 - "Community 527"
-Cohesion: 0.08
-Nodes (32): 10. Rule of Three Overuse, 11. Elegant Variation (Synonym Cycling), 12. False Ranges, 19. Collaborative Communication Artifacts, 20. Knowledge-Cutoff Disclaimers, 21. Sycophantic/Servile Tone, 22. Filler Phrases, 23. Excessive Hedging (+24 more)
+Cohesion: 0.06
+Nodes (39): 19. Collaborative Communication Artifacts, 20. Knowledge-Cutoff Disclaimers, 21. Sycophantic/Servile Tone, 22. Filler Phrases, 23. Excessive Hedging, 24. Generic Positive Conclusions, 24 Patterns Detected, After (has a pulse): (+31 more)
 
 ### Community 528 - "Community 528"
 Cohesion: 0.14
 Nodes (13): 16. Research Sources, Tier 1 -- Authoritative Strategic, Tier 2 -- Trade and Vendor, Tier 3 -- Academic and Industry, Tier 4 -- Competitive Context, Citation Format in Section 16, Research Mandate — Tier 1/2/3/4 Sources, Tier 1 — Authoritative Strategic Sources (REQUIRED, every doc, ≥3 distinct URLs) (+5 more)
 
 ### Community 529 - "Community 529"
-Cohesion: 0.10
-Nodes (20): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override (+12 more)
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 530 - "Community 530"
-Cohesion: 0.11
-Nodes (22): 12. Escalation Paths, 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+14 more)
+Cohesion: 0.04
+Nodes (61): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers, 2. Persona Governance Override, 4. Weekly Operations (+53 more)
 
 ### Community 531 - "Community 531"
-Cohesion: 0.08
-Nodes (31): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+23 more)
+Cohesion: 0.04
+Nodes (61): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+53 more)
 
 ### Community 532 - "Community 532"
-Cohesion: 0.19
-Nodes (16): Path, assemble_clips(), generate_scene_clip(), load_config(), main(), Convert script to video.          Args:         script_path: Path to script file, Generate video clip for a single scene., Represents a single scene in the script. (+8 more)
+Cohesion: 0.09
+Nodes (27): Path, Path, AIProvider, Generate video using Runway ML API., Unified interface for AI video generation providers., Generate video using Pika Labs API., Generate a mock video for testing without API calls., Poll for job completion and download result.                  Args: (+19 more)
 
 ### Community 533 - "Community 533"
 Cohesion: 0.09
@@ -5487,8 +5598,8 @@ Cohesion: 0.10
 Nodes (22): Canary Deployment, OpenClaw Maintenance Department, Director of OpenClaw Maintenance, QC (Quality Control) Specialist, Skill Update and Patch Specialist, Agent Output Evaluator, Automated Regression Test Suite, Canary Analysis Engine (+14 more)
 
 ### Community 537 - "Community 537"
-Cohesion: 0.15
-Nodes (11): 0. Chief Creative Officer, 1. Copywriter, 2. Blog and Article Writer, 3. Speech and Keynote Writer, 4. Presentation Writer, 5. Podcast and Video Script Writer, 6. CRM Specialist (Creative Version), Department Purpose (+3 more)
+Cohesion: 0.08
+Nodes (22): 0. Chief Creative Officer, 1. Copywriter, 2. Blog and Article Writer, 3. Speech and Keynote Writer, 4. Presentation Writer, 5. Podcast and Video Script Writer, 6. CRM Specialist (Creative Version), Department Purpose (+14 more)
 
 ### Community 538 - "Community 538"
 Cohesion: 0.25
@@ -5496,7 +5607,7 @@ Nodes (13): PA-03-02 Evening Debrief, Control, CTQ (Critical to Quality) — Bin
 
 ### Community 539 - "Community 539"
 Cohesion: 0.15
-Nodes (12): Analyze, Control, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, Escalation — Named Partners, Improve, Measure (+4 more)
+Nodes (18): PA-20-01: Passion Discovery Interview, PA-20-02: Purpose Statement Drafting, PA-20-03: Passion-to-Action Bridge, PA-20-04: Passion Check-In (Monthly), Analyze, Control, CTQ (Critical to Quality) — Binary Checks, Define (+10 more)
 
 ### Community 540 - "Community 540"
 Cohesion: 0.12
@@ -5543,12 +5654,12 @@ Cohesion: 0.09
 Nodes (20): 1. After `git pull` on a fresh install, 2. After `git pull` on an EXISTING install (upgrading), 3. Verify the install, 4. Day-to-day scripts, 5. The hand-touch list (manual integrations recommended), 6. Persona stickiness — how it actually flows, 7. Cron entries (recommended), 8. When something breaks (+12 more)
 
 ### Community 551 - "Community 551"
-Cohesion: 0.11
-Nodes (21): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+13 more)
+Cohesion: 0.03
+Nodes (89): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+81 more)
 
 ### Community 552 - "Community 552"
-Cohesion: 0.08
-Nodes (25): 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+17 more)
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
 
 ### Community 553 - "Community 553"
 Cohesion: 0.09
@@ -5575,8 +5686,8 @@ Cohesion: 0.11
 Nodes (22): 1) Identity Audit: Artist vs Salesperson, 1) Motivating Sequence Build, 2) 4 U Headline Governance, 2) Features-to-Benefits Translation Drill, 3) 4 S Clarity Pass, 3) 4 U Headline Lab, 4) Copy Platform Gate, 4) Proof Ladder Builder (+14 more)
 
 ### Community 559 - "Community 559"
-Cohesion: 0.05
-Nodes (42): Added / Changed, Added / Changed, Added / Changed (Skill 38 v1.4.18 → v1.4.21), Added — Skill 38 Round-2 backlog (6 NEW features, ALL default-OFF / opt-in; the installer never flips one ON), Changed — `23-ai-workforce-blueprint/scripts/build-workforce.py`, Changed — `23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py`, Changed (advertising surfaces only — NO skill content touched), Changed (advertising surfaces — rolled forward in this same merge) (+34 more)
+Cohesion: 0.03
+Nodes (62): Added / Changed, Added / Changed, Added / Changed, Added / Changed (Skill 38 v1.4.18 → v1.4.21), Added — Skill 38 Round-2 backlog (6 NEW features, ALL default-OFF / opt-in; the installer never flips one ON), Changed — `23-ai-workforce-blueprint/scripts/build-workforce.py`, Changed — `23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py`, Changed (advertising surfaces only — NO skill content touched) (+54 more)
 
 ### Community 560 - "Community 560"
 Cohesion: 0.10
@@ -5587,8 +5698,8 @@ Cohesion: 0.11
 Nodes (23): Cloudflare API Token, Cloudflare GoDaddy Setup Guide, Add permissions (this is the important part), Add the domain on Cloudflare, All Done. What's Next?, Back to Cloudflare — tell it you're done, Before You Start, Change the nameservers (+15 more)
 
 ### Community 562 - "Community 562"
-Cohesion: 0.12
-Nodes (15): 10. Lapsed-Buyer Win-Back, 3. Order Confirmation, 4. Shipping Updates, 5. Delivery Confirmation, 6. Review Request, 7. Returns / Exchange Handling, 8. Reorder / Replenishment, 9. VIP / Loyalty (+7 more)
+Cohesion: 0.09
+Nodes (21): 4. Payment Confirmation, 5. Cart Abandonment Recovery, Purchase moment workflows, 10. Lapsed-Buyer Win-Back, 1. Product Question / Pre-Sale, 2. Cart Abandonment Recovery, 3. Order Confirmation, 4. Shipping Updates (+13 more)
 
 ### Community 563 - "Community 563"
 Cohesion: 0.10
@@ -5603,8 +5714,8 @@ Cohesion: 0.10
 Nodes (21): 10. Author Voice and Language, 11. Direct Quotes, 12. The Repeatable Execution System, 13. The Quality Bar, 14. Non-Negotiable Execution Rules, 15. Failure Patterns, 16. Decision Logic, 17. Self-Review Protocol (+13 more)
 
 ### Community 566 - "Community 566"
-Cohesion: 0.09
-Nodes (21): PA-25-04: Credentials-to-Confidence Translation, 1. Purpose, 2. Scope Boundary, 4. Deliverables, 5. Integration, 6. Outcome Metrics, CTQ Checks, Definition of Done (+13 more)
+Cohesion: 0.17
+Nodes (11): 1. Purpose, 2. Scope Boundary, 4. Deliverables, 5. Integration, 6. Outcome Metrics, CTQ Checks, Definition of Done, Escalation (+3 more)
 
 ### Community 567 - "Community 567"
 Cohesion: 0.09
@@ -5619,16 +5730,16 @@ Cohesion: 0.10
 Nodes (21): 10. Author Voice and Language, 11. Direct Quotes, 12. The Repeatable Execution System, 13. The Quality Bar, 14. Non-Negotiable Execution Rules, 15. Failure Patterns, 16. Decision Logic, 17. Self-Review Protocol (+13 more)
 
 ### Community 570 - "Community 570"
-Cohesion: 0.10
-Nodes (21): 10. Author Voice and Language, 11. Direct Quotes, 12. The Repeatable Execution System, 13. The Quality Bar, 14. Non-Negotiable Execution Rules, 15. Failure Patterns, 16. Decision Logic, 17. Self-Review Protocol (+13 more)
+Cohesion: 0.08
+Nodes (24): 10. Author Voice and Language, 11. Direct Quotes, 12. The Repeatable Execution System, 13. The Quality Bar, 14. Non-Negotiable Execution Rules, 15. Failure Patterns, 16. Decision Logic, 17. Self-Review Protocol (+16 more)
 
 ### Community 571 - "Community 571"
 Cohesion: 0.10
 Nodes (21): 10. Author Voice and Language, 11. Direct Quotes, 12. The Repeatable Execution System, 13. The Quality Bar, 14. Non-Negotiable Execution Rules, 15. Failure Patterns, 16. Decision Logic, 17. Self-Review Protocol (+13 more)
 
 ### Community 572 - "Community 572"
-Cohesion: 0.11
-Nodes (28): Authentication, Concurrent Request Limits, Content Types Accepted, Content Types Accepted, curl Example, curl Example, Endpoint, Endpoint (+20 more)
+Cohesion: 0.17
+Nodes (20): Content Types Accepted, Content Types Accepted, curl Example, curl Example, Endpoint, Endpoint, Full curl Example (JSON), Full curl Example with MessagePack (Zero-Shot Cloning) (+12 more)
 
 ### Community 573 - "Community 573"
 Cohesion: 0.09
@@ -5700,7 +5811,7 @@ Nodes (21): Anti-Staleness Guards, Core Principle, Edge Cases, How Personas Are 
 
 ### Community 590 - "Community 590"
 Cohesion: 0.03
-Nodes (91): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+83 more)
+Nodes (86): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19.1 — "Vault" (Cloud Security and Identity Posture Specialist) (+78 more)
 
 ### Community 591 - "Community 591"
 Cohesion: 0.10
@@ -5711,8 +5822,8 @@ Cohesion: 0.09
 Nodes (22): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Creative Brief Intake and Qualification, SOP 9.2 -- Creative Production and Internal Review, SOP 9.3 -- Stakeholder Review and Approval, SOP 9.4 -- Asset Distribution and DAM Archival, SOP 9.5 -- Revision Loop Escalation, SOP 9.6 -- Brand Emergency Response, SOP 9.7 -- AI-Assisted Creative Production (+14 more)
 
 ### Community 593 - "Community 593"
-Cohesion: 0.04
-Nodes (45): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+37 more)
+Cohesion: 0.12
+Nodes (16): 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+8 more)
 
 ### Community 594 - "Community 594"
 Cohesion: 0.06
@@ -5723,8 +5834,8 @@ Cohesion: 0.10
 Nodes (19): 0. Pre-flight Checks, 1. State Machine, 2. The 6-Step Pipeline, 3. State-File Schema Additions (v10.14.17), 4. Atomic State Writes (REQUIRED), 5. How the Resume Cron Picks Up a Stalled Closeout, 6. Idempotency Guarantees, 7. Failure Escalation (+11 more)
 
 ### Community 596 - "Community 596"
-Cohesion: 0.11
-Nodes (19): [1.0.0] - 2026-05-28 - Initial release (packages v5.14 playbook), [1.4.11] - 2026-05-29 - enforce the per-playbook human-facing doc deliverable (Notion → Google Docs → text) so a created playbook never ships without a client-facing reference, [1.4.8] - 2026-05-29 - add Skill 23 cross-reference (role/SOP gate + comms hand-off) to v6.0 playbook, [1.4.9] - 2026-05-29 - enforce the mandatory GHL send-directive (drafting != sending) for every client, Added, Added, Added, Added (+11 more)
+Cohesion: 0.09
+Nodes (22): [1.0.0] - 2026-05-28 - Initial release (packages v5.14 playbook), [1.4.0] - 2026-05-28 - GHL Build-with-AI hardening + calendar-sync (repo v10.15.7), [1.4.11] - 2026-05-29 - enforce the per-playbook human-facing doc deliverable (Notion → Google Docs → text) so a created playbook never ships without a client-facing reference, [1.4.13] - 2026-05-29 - v1.4.11 install-script bug fixes (config-validity) + MANDATORY manual Custom-Webhook fill instructions, [1.4.8] - 2026-05-29 - add Skill 23 cross-reference (role/SOP gate + comms hand-off) to v6.0 playbook, Added, Added, Added (+14 more)
 
 ### Community 597 - "Community 597"
 Cohesion: 0.10
@@ -5759,8 +5870,8 @@ Cohesion: 0.10
 Nodes (20): 10. Author Voice and Language, 11. Direct Quotes, 12. The Repeatable Execution System, 13. The Quality Bar, 14. Non-Negotiable Execution Rules, 15. Failure Patterns, 16. Decision Logic, 17. Self-Review Protocol (+12 more)
 
 ### Community 605 - "Community 605"
-Cohesion: 0.15
-Nodes (13): A. Trigger phrases — how the operator invokes the builder, B. Subagent walks the operator through INITIAL workflow creation, C. Layer 0 — Routing check, E. Layer 2 — OpenClaw Side (always built), F.5 — Build-with-AI is PRIMARY. Manual node-building is the FALLBACK., F.6 — Reusable Tunnel Values (BINDING — store every time, keep updated), F.7 — The base SMS automation ALSO creates the first conversation playbook (appointment booking) and wires the hook to it, F. Registry and AGENTS.md insertion (+5 more)
+Cohesion: 0.10
+Nodes (22): D.1 — Auto-create required tags via the GHL skill, D.2 — Generate the Build-with-AI prompt (Part 1a), D.2b — Manual-build fallback (Part 1b), D.3 — Generate the brutally-specific verification checklist (Part 1c), D. Layer 1 — GHL Side (if needed), A. Trigger phrases — how the operator invokes the builder, B. Subagent walks the operator through INITIAL workflow creation, C. Layer 0 — Routing check (+14 more)
 
 ### Community 606 - "Community 606"
 Cohesion: 0.05
@@ -5879,8 +5990,8 @@ Cohesion: 0.09
 Nodes (20): 1. File and version checks, 2. Installed routing file checks, 2A. Placeholder check, 3. Allowlist checks, 4. Core file update checks, 5. Functional routing tests, 5A. Allowed sender test, 5B. Isolation test (+12 more)
 
 ### Community 635 - "Community 635"
-Cohesion: 0.06
-Nodes (33): 8a - Verify text extraction works, 8b - Verify model connectivity (Ollama Cloud preferred, OpenRouter fallback), 8c - Verify Phase 2 model connectivity (same Ollama-first chain), 8d - Verify Phase 3 model connectivity (Codex OAuth), 8e - Verify output directory structure, 8f - Confirm pipeline is operational, Correct Process, Forbidden Actions (+25 more)
+Cohesion: 0.07
+Nodes (28): 8a - Verify text extraction works, 8b - Verify model connectivity (Ollama Cloud preferred, OpenRouter fallback), 8c - Verify Phase 2 model connectivity (same Ollama-first chain), 8d - Verify Phase 3 model connectivity (Codex OAuth), 8e - Verify output directory structure, 8f - Confirm pipeline is operational, Correct Process, Forbidden Actions (+20 more)
 
 ### Community 636 - "Community 636"
 Cohesion: 0.26
@@ -5911,12 +6022,12 @@ Cohesion: 0.11
 Nodes (18): Platform-specific gotchas, 10. Disaster Recovery Specialist (full-time-permanent), 11. QC Role — OpenClaw Maintenance (full-time-permanent), 12. Deep Research Role — OpenClaw Maintenance (on-call), 1. Director of OpenClaw Maintenance (full-time-permanent), 2. System Health / Uptime Specialist (full-time-permanent), 3. Skill Update & Patch Specialist (full-time-permanent), 4. Memory Hygiene Specialist (full-time-permanent) (+10 more)
 
 ### Community 643 - "Community 643"
-Cohesion: 0.06
-Nodes (30): 11.A The QC routine — what it checks, 11.B The bundled QC script — ships as `qc-ghl-mcp-setup.sh` in this folder, 11.C How to run, 11.D Pass/fail thresholds, 11.E Self-audit — agent's own honesty check, 11. FINAL QC & COMPLETION VERIFICATION — RUN THIS BEFORE DECLARING DONE, 3. PHASE 2 — IF NOT FOUND, ASK THE CLIENT, 4. PHASE 3 — WEB RESEARCH REFRESH (DO THIS EVEN IF YOU "KNOW") (+22 more)
+Cohesion: 0.08
+Nodes (24): 11.A The QC routine — what it checks, 11.B The bundled QC script — ships as `qc-ghl-mcp-setup.sh` in this folder, 11.C How to run, 11.D Pass/fail thresholds, 11.E Self-audit — agent's own honesty check, 11. FINAL QC & COMPLETION VERIFICATION — RUN THIS BEFORE DECLARING DONE, 3. PHASE 2 — IF NOT FOUND, ASK THE CLIENT, 4. PHASE 3 — WEB RESEARCH REFRESH (DO THIS EVEN IF YOU "KNOW") (+16 more)
 
 ### Community 644 - "Community 644"
-Cohesion: 0.12
-Nodes (19): Anti-Patterns (DO NOT do these), Common Cross-Tier Workflows, Contact lookup + payment history (Tier 1 + Tier 2), Disclosure Header Format, GHL MCP — How to Use It Day to Day, Health Check Cheatsheet, Product → Invoice → Subscription (Tier 2 only), 🔴 Rate-Limit Protocol — 429 is NOT a fallthrough trigger (+11 more)
+Cohesion: 0.14
+Nodes (12): Anti-Patterns (DO NOT do these), Common Cross-Tier Workflows, Contact lookup + payment history (Tier 1 + Tier 2), Disclosure Header Format, GHL MCP — How to Use It Day to Day, Health Check Cheatsheet, Product → Invoice → Subscription (Tier 2 only), 🔴 Rate-Limit Protocol — 429 is NOT a fallthrough trigger (+4 more)
 
 ### Community 645 - "Community 645"
 Cohesion: 0.10
@@ -5924,7 +6035,7 @@ Nodes (18): 1.0.0 — 2026-06-03, Skill 42 — Personal Assistant Library — Ch
 
 ### Community 646 - "Community 646"
 Cohesion: 0.12
-Nodes (12): AUTHOR: Robert B. Cialdini, Ph.D., BOOK: Influence: The Psychology of Persuasion, EXTRACTION DATE: 2024, EXTRACTION NOTES - Influence, AUTHOR: Charles Duhigg, BOOK: The Power of Habit: Why We Do What We Do in Life and Business, EXTRACTION DATE: 2024-01-15, EXTRACTION NOTES - The Power of Habit (+4 more)
+Nodes (12): AUTHOR: Janet Bray Attwood and Chris Attwood, BOOK: The Passion Test: The Effortless Path to Discovering Your Destiny, EXTRACTION DATE: 2024-11-26, EXTRACTION NOTES - The Passion Test, AUTHOR: Robert B. Cialdini, Ph.D., BOOK: Influence: The Psychology of Persuasion, EXTRACTION DATE: 2024, EXTRACTION NOTES - Influence (+4 more)
 
 ### Community 647 - "Community 647"
 Cohesion: 0.29
@@ -5976,11 +6087,11 @@ Nodes (19): county_fips, county_name, notes, platform, portal_url, record_types,
 
 ### Community 659 - "Community 659"
 Cohesion: 0.16
-Nodes (18): county_fips, county_name, notes, platform, portal_url, search_form_fields, address, parcel_or_apn (+10 more)
+Nodes (19): county_fips, county_name, notes, platform, portal_url, record_types, search_form_fields, address (+11 more)
 
 ### Community 660 - "Community 660"
-Cohesion: 0.08
-Nodes (27): Action 1: Retrieve GHL Credentials, Action 2: Configure OpenClaw with GHL Credentials, Action 3: Verify Required Headers for All GHL API Requests, Action 4: Execute Self-Tests, Action 5: Update Core .md Files, Action 6: Completion Verification, Autonomous Setup Execution, Pre-Action: Environment Credential Check (+19 more)
+Cohesion: 0.10
+Nodes (21): Action 1: Retrieve GHL Credentials, Action 2: Configure OpenClaw with GHL Credentials, Action 3: Verify Required Headers for All GHL API Requests, Action 4: Execute Self-Tests, Action 5: Update Core .md Files, Action 6: Completion Verification, Autonomous Setup Execution, Pre-Action: Environment Credential Check (+13 more)
 
 ### Community 661 - "Community 661"
 Cohesion: 0.11
@@ -6015,8 +6126,8 @@ Cohesion: 0.09
 Nodes (24): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Android Feature Implementation (Story to Merged PR), SOP 9.2 — Android Release Candidate Preparation and Play Store Submission, SOP 9.3 — Android Performance Regression Investigation, 9. Standard Operating Procedures, SOP 5.1 — Crisis Declaration and Initial Response, SOP 5.2 — Crisis Communication Plan Maintenance, SOP 5.3 — Post-Crisis After-Action Review (+16 more)
 
 ### Community 669 - "Community 669"
-Cohesion: 0.11
-Nodes (17): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+9 more)
+Cohesion: 0.04
+Nodes (50): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+42 more)
 
 ### Community 670 - "Community 670"
 Cohesion: 0.11
@@ -6199,8 +6310,8 @@ Cohesion: 0.11
 Nodes (16): 1. File and version checks, 2. Installed skill folder checks, 3. Upstream asset and hook checks, 4. Writability and smoke tests, 4A. Writable learnings folder, 4B. Workspace learnings location, 4C. Installer smoke test, 5. Core file policy checks (+8 more)
 
 ### Community 715 - "Community 715"
-Cohesion: 0.17
-Nodes (10): 00  --  START HERE · Study Partner / Daily Learning, 🏷 Department Mantra, Every Session Checklist, First-Time Setup (5 minutes), 🗺 How to Use This Department, Integration Map, 🧭 Quick Start, 📋 Roles at a Glance (+2 more)
+Cohesion: 0.11
+Nodes (16): 00  --  START HERE · Study Partner / Daily Learning, 🏷 Department Mantra, Every Session Checklist, First-Time Setup (5 minutes), 🗺 How to Use This Department, Integration Map, 🧭 Quick Start, 📋 Roles at a Glance (+8 more)
 
 ### Community 716 - "Community 716"
 Cohesion: 0.50
@@ -6216,11 +6327,11 @@ Nodes (19): SECTION 4 — Live Behavior Test, Test 4A — Persona Reflex (Task M
 
 ### Community 719 - "Community 719"
 Cohesion: 0.12
-Nodes (16): 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+8 more)
+Nodes (16): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations (+8 more)
 
 ### Community 720 - "Community 720"
-Cohesion: 0.04
-Nodes (45): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+37 more)
+Cohesion: 0.11
+Nodes (16): 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+8 more)
 
 ### Community 721 - "Community 721"
 Cohesion: 0.11
@@ -6231,20 +6342,20 @@ Cohesion: 0.11
 Nodes (16): Core Purpose, Department Structure, Function 1: Evidence Historian (PA-25-01), Function 2: Thought Pattern Auditor (PA-25-02), Function 3: Presence & Preparation Coach (PA-25-03), Function 4: Credentials Translation Specialist (PA-25-04), Function 5: Win Capture & Amplification Coach (PA-25-05), Function 6: Scope Guardian & Referral Steward (PA-25-06) (+8 more)
 
 ### Community 723 - "Community 723"
-Cohesion: 0.04
-Nodes (48): 1. Check Department Directories, 2. Check SOUL.md Files, 3. Check Agent Entries in Config, 4. Restart OpenClaw, 5. Test a Department Head, Overview, Prerequisites, Running the Install (+40 more)
+Cohesion: 0.03
+Nodes (64): 1. Check Department Directories, 2. Check SOUL.md Files, 3. Check Agent Entries in Config, 4. Restart OpenClaw, 5. Test a Department Head, Overview, Prerequisites, Running the Install (+56 more)
 
 ### Community 724 - "Community 724"
-Cohesion: 0.20
-Nodes (18): Path, AudioFileClip, extract-audio.sh script, add_music(), extract_audio(), get_genre_music(), load_music(), main() (+10 more)
+Cohesion: 0.12
+Nodes (30): Path, Path, AudioFileClip, extract-audio.sh script, add_music(), extract_audio(), get_genre_music(), load_music() (+22 more)
 
 ### Community 725 - "Community 725"
-Cohesion: 0.09
-Nodes (21): Path, Path, Main Video Creator interface.          Provides a unified API for all video crea, Initialize Video Creator.                  Args:             config_path: Path t, Load configuration from file., Generate video from text description., Convert script to video., Animate image to video. (+13 more)
+Cohesion: 0.21
+Nodes (11): Path, list_transitions(), main(), preview_transition(), Apply specified transition between two clips.                  Args:, Collection of video transition effects., Create a preview video showing the transition.          Args:         transition, Display available transitions. (+3 more)
 
 ### Community 726 - "Community 726"
 Cohesion: 0.10
-Nodes (19): 1. Persistent Department Agents, 2. Telegram Command Center, 3. Visual Kanban Dashboard, Active Memory Note, Files in This Folder and Reading Order, How Department Heads Work, MANDATORY - Teach Yourself Protocol (TYP), 🔴 NO CO-MINGLING (binding) (+11 more)
+Nodes (18): 1. Persistent Department Agents, 2. Telegram Command Center, 3. Visual Kanban Dashboard, Active Memory Note, Files in This Folder and Reading Order, How Department Heads Work, MANDATORY - Teach Yourself Protocol (TYP), 🔴 NO CO-MINGLING (binding) (+10 more)
 
 ### Community 727 - "Community 727"
 Cohesion: 0.10
@@ -6263,8 +6374,8 @@ Cohesion: 0.20
 Nodes (14): verify-role-library.sh script, send-telegram-celebration.sh script, cc_url_is_real(), is_delivered(), log(), record_delivered(), record_failed(), send_confirmed() (+6 more)
 
 ### Community 731 - "Community 731"
-Cohesion: 0.06
-Nodes (39): Added, Added, Added, Added, Added — protocols (4 new, 1 updated; now 31 total — matches SKILL.md claim), Added — references (2 new), Added — scripts (12 new, 4 rewritten), Added — templates (4 new) (+31 more)
+Cohesion: 0.04
+Nodes (60): Added, Added, Added, Added, Added, Added, Added, Added (+52 more)
 
 ### Community 732 - "Community 732"
 Cohesion: 0.11
@@ -6291,8 +6402,8 @@ Cohesion: 0.12
 Nodes (17): ANALYSIS DATE: March 7, 2025, **Communication Failures** (Faulty Marketing/Sales), DIMENSION 10 - Department and Role Application Map, DIMENSION 11 - Routing Intelligence, DIMENSION 12 - The Single Most Important Insight, DIMENSION 1 - The True Operating System, DIMENSION 2 - The Root Cause Architecture, DIMENSION 3 - The Amateur-to-Expert Gap (+9 more)
 
 ### Community 738 - "Community 738"
-Cohesion: 0.12
-Nodes (16): 1. New Lead → Speed-to-Lead Qualify, 2. Listing Update Alerts (buyers), 3. Showing Confirmations, 4. Offer Status Updates, 5. Under Contract → Closing Checklist, 6. Closing Day, 7. Post-Close Anniversary & Home-Value Nurture, 8. Past-Client & Sphere Reactivation (+8 more)
+Cohesion: 0.14
+Nodes (14): 9. SOPs, SOP-001: Daily Reputation Monitoring, SOP-002: Campaign Pre-Flight Check, SOP-003: List Hygiene Audit, SOP-004: DNS Authentication Audit, SOP-005: Domain and IP Warmup, SOP-006: Complaint Spike Response, SOP-007: Apple Mail Privacy Protection (MPP) Adaptation (+6 more)
 
 ### Community 739 - "Community 739"
 Cohesion: 0.11
@@ -6303,8 +6414,8 @@ Cohesion: 0.16
 Nodes (18): PA-07-03 Idea Evaluation & Scoring, 3.1 Prepare the Candidates, 3.2 Score Across Four Dimensions, 3.3 Run the Risk Filter, 3.4 Deliver the Ranking, 3.5 Document the Rejects, Anti-Patterns, CTQ (Critical to Quality) — Binary Checks (+10 more)
 
 ### Community 741 - "Community 741"
-Cohesion: 0.12
-Nodes (17): 10. Bluesky Specialist (full-time-permanent), 11. Community Manager (full-time-permanent), 12. Reddit Specialist (full-time-permanent or on-call), 13. Quora Specialist (on-call), 14. Discord Community Specialist (full-time-permanent or on-call), 15. QC Role — Social Media (full-time-permanent), 16. Deep Research Role — Social Media (on-call), 1. Director of Social Media (full-time-permanent) (+9 more)
+Cohesion: 0.10
+Nodes (20): 10. Bluesky Specialist (full-time-permanent), 11. Community Manager (full-time-permanent), 12. Reddit Specialist (full-time-permanent or on-call), 13. Quora Specialist (on-call), 14. Discord Community Specialist (full-time-permanent or on-call), 15. QC Role — Social Media (full-time-permanent), 16. Deep Research Role — Social Media (on-call), 1. Director of Social Media (full-time-permanent) (+12 more)
 
 ### Community 742 - "Community 742"
 Cohesion: 0.12
@@ -6319,24 +6430,24 @@ Cohesion: 0.12
 Nodes (15): Common Scenarios, Escalation Rules, "Find me the best [item] — I trust your judgment.", "Gift for [person] — [occasion] — [budget] — I have no idea what to get.", HOW-TO — Errands & Purchases Operating Playbook, "I need a [service person] today.", Quality Standards, "The item arrived damaged." (+7 more)
 
 ### Community 745 - "Community 745"
-Cohesion: 0.20
-Nodes (10): CREDENTIAL CHECK - RUN THIS BEFORE OPENING ANY BROWSER, PATH A COMPLETE, PATH A: GOOGLE WORKSPACE (Custom Domain - Service Account + DWD), Step A10: GOG CLI Setup (Executes Automatically After Test Passes), Step A1: Create a Google Cloud Project, Step A3: Set Up the OAuth Consent Screen, Step A4: Create a Service Account, Step A5: Create a JSON Key File (+2 more)
+Cohesion: 0.14
+Nodes (14): 9. SOPs, SOP-001: Daily Reputation Monitoring, SOP-002: Campaign Pre-Flight Check, SOP-003: List Hygiene Audit, SOP-004: DNS Authentication Audit, SOP-005: Domain and IP Warmup, SOP-006: Complaint Spike Response, SOP-007: Apple Mail Privacy Protection (MPP) Adaptation (+6 more)
 
 ### Community 746 - "Community 746"
 Cohesion: 0.22
 Nodes (9): Agent-Agnostic Guidance, BEGIN .learnings/FEATURE_REQUESTS.md, Claude Code, Codex CLI, Copilot Chat Integration, END SKILL.md, GitHub Copilot, Multi-Agent Support (+1 more)
 
 ### Community 747 - "Community 747"
-Cohesion: 0.12
-Nodes (16): Entry Examples, Error Entry, Error Entry, Error Entry: Recurring Issue, Feature Request, Feature Request Entry, Feature Request: Resolved, Learning: Correction (+8 more)
+Cohesion: 0.10
+Nodes (20): BEGIN .learnings/ERRORS.md, END .learnings/FEATURE_REQUESTS.md, Entry Examples, Error Entry, Error Entry, Error Entry: Recurring Issue, Feature Request, Feature Request Entry (+12 more)
 
 ### Community 748 - "Community 748"
 Cohesion: 0.13
 Nodes (18): Claude Code Setup, Codex CLI Setup, Disabling Hooks, Dry Run Extract Script, END references/hooks-setup.md, GitHub Copilot Setup, Hook Output Budget, Hook Setup Guide (+10 more)
 
 ### Community 749 - "Community 749"
-Cohesion: 0.09
-Nodes (25): BEGIN assets/MEMORY.md, Behavioral Integrity, Browser Tab Hygiene, Close Unused Apps, Desktop Cleanup, Diagnose & Fix, END assets/HEARTBEAT.md, HEARTBEAT.md - Periodic Self-Improvement (+17 more)
+Cohesion: 0.11
+Nodes (18): Behavioral Integrity, Browser Tab Hygiene, Close Unused Apps, Desktop Cleanup, Diagnose & Fix, HEARTBEAT.md - Periodic Self-Improvement, Injection Scan, Log Review (+10 more)
 
 ### Community 750 - "Community 750"
 Cohesion: 0.11
@@ -6367,8 +6478,8 @@ Cohesion: 0.10
 Nodes (20): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19.1 — "CacheSmith" (Service Worker and Offline Strategy Specialist), 19.2 — "PushPilot" (Web Push Notifications Specialist), 19. Named Sub-Specialists (On-Demand) (+12 more)
 
 ### Community 757 - "Community 757"
-Cohesion: 0.17
-Nodes (12): 15. Research Sources and Methodology, Research Methodology Principles, Tier 1: Primary Sources (Highest Trust), Tier 2: Secondary Sources (High Trust, Requires Corroboration), Tier 3: Supplementary Sources (Moderate Trust, Use for Signals), Tier 4: Contextual Sources (Low Trust, Use for Awareness Only), 15. Research Sources and Methodology, Research Methodology Principles (+4 more)
+Cohesion: 0.33
+Nodes (6): 15. Research Sources and Methodology, Research Methodology Principles, Tier 1: Primary Sources (Highest Trust), Tier 2: Secondary Sources (High Trust, Requires Corroboration), Tier 3: Supplementary Sources (Moderate Trust, Use for Signals, Not Decisions), Tier 4: Contextual Sources (Low Trust, Use for Awareness Only)
 
 ### Community 758 - "Community 758"
 Cohesion: 0.33
@@ -6380,15 +6491,15 @@ Nodes (17): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Daily Campai
 
 ### Community 760 - "Community 760"
 Cohesion: 0.07
-Nodes (28): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity (+20 more)
+Nodes (43): 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override (+35 more)
 
 ### Community 761 - "Community 761"
 Cohesion: 0.17
 Nodes (12): 9. Standard Operating Procedures (Numbered), SOP 9.1 — The 90-Second Cold Call Pitch, SOP 9.2 — BANT Qualification Framework, SOP 9.3 — Multi-Channel Outreach Cadence, SOP 9.4 — Appointment Confirmation and AE Handoff, SOP 9.5 — Objection Handling Framework, 9. Standard Operating Procedures (Numbered), SOP 9.1 — The 90-Second Cold Call Pitch (+4 more)
 
 ### Community 762 - "Community 762"
-Cohesion: 0.18
-Nodes (11): 13. Good vs. Bad Output Examples, Bad Output Example (Fails Quality Gate 1 -- Unverifiable Claims), Bad Output Example (Fails Quality Gate 4 -- Not Actionable), Good Output Example: Critical Vulnerability Impact Assessment, Good Output Example: Technology Comparison Brief, Bad Output Example (Fails Quality Gate 3 -- Not Actionable), 13. Good vs. Bad Output Examples, Bad Output Example (Fails Quality Gate 1 -- Unverifiable Claims) (+3 more)
+Cohesion: 0.40
+Nodes (5): 13. Good vs. Bad Output Examples, Bad Output Example (Fails Quality Gate 1 -- Unverifiable Claims), Bad Output Example (Fails Quality Gate 4 -- Not Actionable), Good Output Example: Critical Vulnerability Impact Assessment, Good Output Example: Technology Comparison Brief
 
 ### Community 763 - "Community 763"
 Cohesion: 0.11
@@ -6407,8 +6518,8 @@ Cohesion: 0.21
 Nodes (11): decision_rule, permanent, subagent, departments, description, version, 2. PHASE 1 — HUNT FOR EXISTING CREDENTIALS BEFORE ASKING, Decision (+3 more)
 
 ### Community 767 - "Community 767"
-Cohesion: 0.11
-Nodes (23): [1.4.0] - 2026-05-28 - GHL Build-with-AI hardening + calendar-sync (repo v10.15.7), [1.4.1] - 2026-05-28 - Conversation Playbook Builder enhancement (the differentiator) (repo v10.15.7), [1.4.2] - 2026-05-29 - GHL inbound hook correction: FLAT body, no nesting, server-only messageTemplate, [1.4.3] - 2026-05-29 - Enforce 23-key GHL body everywhere (no stripped bodies), [1.4.4] - 2026-05-29 - THE TRINITY + Communications Playbook & Workflow-AI standards, [1.4.5] - 2026-05-29 - v6.0 clean comprehensive playbook; de-staled, Added, Added (+15 more)
+Cohesion: 0.12
+Nodes (18): [1.4.1] - 2026-05-28 - Conversation Playbook Builder enhancement (the differentiator) (repo v10.15.7), [1.4.2] - 2026-05-29 - GHL inbound hook correction: FLAT body, no nesting, server-only messageTemplate, [1.4.3] - 2026-05-29 - Enforce 23-key GHL body everywhere (no stripped bodies), [1.5.5] - 2026-05-30 - F46 (Conversational CRM Field Write + Create-If-Missing) QC deep-fix + Mac↔VPS reconciliation, Added — accurate cross-reference (`references/ghl-api-quick-reference.md`, both repos), Added / Changed, Added / Changed, Added / Changed (+10 more)
 
 ### Community 768 - "Community 768"
 Cohesion: 0.12
@@ -6423,12 +6534,12 @@ Cohesion: 0.12
 Nodes (15): Quality Gates Per SOP, SOP Dependency Map, SOP Quick Reference, SOP Taxonomy, Coordination & Logistics (Triggered by Service Need), Core Execution (Triggered by {{OWNER_NAME}} Request), Key Cross-References, PA-13-01 — Before clicking "Place Order": (+7 more)
 
 ### Community 771 - "Community 771"
-Cohesion: 0.08
-Nodes (23): 38 — Conversational AI System, Client Reference Sheet, GHL Custom Webhook Action, SMS Channel Raw Body (23-key JSON), OpenClaw Platform, Configuration, Self-Improvement Hook, What It Does (+15 more)
+Cohesion: 0.12
+Nodes (15): Client Reference Sheet, GHL Custom Webhook Action, SMS Channel Raw Body (23-key JSON), Configuration, Self-Improvement Hook, What It Does, All-in-One Chat workflow — Raw Body, Email workflow — Raw Body (+7 more)
 
 ### Community 772 - "Community 772"
 Cohesion: 0.15
-Nodes (9): Marketing Department, Social Media Department, Department Purpose, Suggested Roles — marketing-dept, v10.5.2 Specialist Expansion, v2.1 Universal Roles (every department has these 4), Critical Distinction: Organic vs Paid, Department Handoffs (+1 more)
+Nodes (11): 1. Role Identity, 2. Persona Governance Override, 3. Scope & Boundaries, 4. Core Principles, 5. Tools & Resources, 6. Quality Standards, Inbox Manager — IDENTITY, What This Role Is NOT (+3 more)
 
 ### Community 773 - "Community 773"
 Cohesion: 0.12
@@ -6551,24 +6662,24 @@ Cohesion: 0.20
 Nodes (14): Correct Process, Forbidden Actions, 🔴 GATEWAY RESTART PROTOCOL - NEVER TRIGGER AUTONOMOUSLY, Purpose, Step 1, Step 10, Step 2, Step 3 (+6 more)
 
 ### Community 803 - "Community 803"
-Cohesion: 0.12
-Nodes (16): 1. Trial Signup → Activation Tracking, 2. Pre-Sale / Plan Question, 3. Feature Discovery / Onboarding Sequence, 4. Trial-to-Paid Conversion, 5. Usage-Drop / Health Alert, 6. Expansion / Upsell Signal, 7. Renewal & Subscription Pause/Resume, 8. Churned-Account Win-Back (+8 more)
+Cohesion: 0.15
+Nodes (13): QC remediation (same version), Result, Risk, Risk, [v10.15.26]  -  2026-06-01  -  HARD department/role/SOP FLOOR — kill the seeded-build-state bypass; gates count REAL depts on disk against the 16-mandatory + vertical-pack floor, [v10.15.30]  -  2026-06-02  -  ZHC wiring: read-the-SOP protocol + machine-readable ROSTER/ROUTING + PENDING-SOPS manifest + buildout doc, What changed (BOTH repos, identical logic), What changed (BOTH repos, identical logic) (+5 more)
 
 ### Community 804 - "Community 804"
 Cohesion: 0.12
 Nodes (17): Checklist, How to Find References, Tool Migration Checklist ⭐ NEW, Verification, CHECKLIST.md - Book Intelligence Pipeline Build Checklist, Completion Criteria, Gemini Multimodal Indexing Checklist, Phase 1 - Extraction Checklist (Smart Model Selection) (+9 more)
 
 ### Community 805 - "Community 805"
-Cohesion: 0.13
-Nodes (14): BEGIN README.md, BEGIN SKILL.md, END README.md, File manifest, Full Example, Humanizer, humanizer - full recreation, Installation (+6 more)
+Cohesion: 0.15
+Nodes (12): Ant Farm exemption, Backups & content preservation (never destructive), CANON_DIR — what the symlinks point at, Co-mingling guard (CRITICAL — N0), Idempotency, QC enforcement, Relationship to N19, Shared Core Files — Zero-Human-Workforce File Model (+4 more)
 
 ### Community 806 - "Community 806"
 Cohesion: 0.22
 Nodes (9): 19. When to Spawn a Sub-Specialist, Conditions for spawning a dedicated Crisis Communications QC Specialist, Conditions for spawning a dedicated Social Media QC Specialist, How to spawn, Conditions for spawning a dedicated Contract QC Specialist, 19. When to Spawn a Sub-Specialist, Conditions for spawning a dedicated Crisis Communications QC Specialist, Conditions for spawning a dedicated Social Media QC Specialist (+1 more)
 
 ### Community 807 - "Community 807"
-Cohesion: 0.05
-Nodes (49): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+41 more)
+Cohesion: 0.04
+Nodes (55): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+47 more)
 
 ### Community 808 - "Community 808"
 Cohesion: 0.14
@@ -6603,8 +6714,8 @@ Cohesion: 0.33
 Nodes (14): Path, Connection, file_hash(), find_db(), find_id_column(), get_openclaw_paths(), list_columns(), list_tables() (+6 more)
 
 ### Community 816 - "Community 816"
-Cohesion: 0.12
-Nodes (14): After Installation, Agent Configuration, Assign Work Through the CEO, Direct Department Queries, Directory Structure, How to Use Department Heads, Integration with Other Skills, Maintenance (+6 more)
+Cohesion: 0.09
+Nodes (20): 1. **Persistent Identity**, 2. **Dedicated Workspaces**, 3. **Chain of Command**, 4. **Accountability**, 5. **Scalable Delegation**, After Installation, Agent Configuration, Assign Work Through the CEO (+12 more)
 
 ### Community 817 - "Community 817"
 Cohesion: 0.12
@@ -6627,8 +6738,8 @@ Cohesion: 0.21
 Nodes (16): PA-03-04 Weekly Review, Analyze, Control, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, Escalation, Improve (+8 more)
 
 ### Community 822 - "Community 822"
-Cohesion: 0.33
-Nodes (6): 3. Procedure (DMAIC), Analyze, Control, Define, Improve, Measure
+Cohesion: 0.12
+Nodes (16): PA-25-04: Credentials-to-Confidence Translation, 1. Purpose, 2. Scope Boundary, 3. Procedure (DMAIC), 4. Deliverables, 5. Integration, 6. Outcome Metrics, Analyze (+8 more)
 
 ### Community 823 - "Community 823"
 Cohesion: 0.17
@@ -6659,8 +6770,8 @@ Cohesion: 0.13
 Nodes (15): ALREADY-INSTALLED DETECTION (MANDATORY), API KEY DISCOVERY (MANDATORY BEFORE ASKING USER), BROWSER SESSION PERSISTENCE (MANDATORY - ALL SKILLS), DEFERRED KEYS - PENDING LIST, EXECUTION STRATEGY (MANDATORY), Files Inside Each Skill Folder, For Each Skill, Follow This Process, GOOGLE ACCOUNT BRANCHING (MANDATORY) (+7 more)
 
 ### Community 830 - "Community 830"
-Cohesion: 0.13
-Nodes (15): 0. Chief Marketing Officer, 10. Email Campaign Strategist, 11. Affiliate / Referral Specialist, 12. QC Specialist — Marketing, 13. Deep Research Specialist — Marketing, 1. Brand Positioning Specialist, 2. Content Strategist, 3. Content Marketing Strategist (+7 more)
+Cohesion: 0.10
+Nodes (19): 0. Chief Marketing Officer, 10. Email Campaign Strategist, 11. Affiliate / Referral Specialist, 12. QC Specialist — Marketing, 13. Deep Research Specialist — Marketing, 1. Brand Positioning Specialist, 2. Content Strategist, 3. Content Marketing Strategist (+11 more)
 
 ### Community 831 - "Community 831"
 Cohesion: 0.12
@@ -6703,8 +6814,8 @@ Cohesion: 0.13
 Nodes (13): Example 10: Deploying to Go High Level (GHL) Step by Step, Example 11: Asking the Right Questions Before Designing, Example 1: Design a Landing Page from Scratch (Web App), Example 2: Clone a Website and Redesign It (Chrome Extension), Example 3: Build a Complete Sales Funnel (CLI), Example 4: Generate Three Variations of a Page (CLI), Example 5: Hand Off to OpenClaw for Content Injection, Example 6: Use the style.md to Build Additional Pages (+5 more)
 
 ### Community 841 - "Community 841"
-Cohesion: 0.27
-Nodes (10): BEGIN references/hooks-setup.md, Hook not firing, Hook Not Triggering, Learnings not persisting, Permission Denied, Script Not Found, Skill not loading, Too Much Overhead (+2 more)
+Cohesion: 0.13
+Nodes (18): BEGIN references/examples.md, BEGIN references/hooks-setup.md, BEGIN references/openclaw-integration.md, Configuration, END references/examples.md, END references/openclaw-integration.md, Extracted Skill Example, Hook not firing (+10 more)
 
 ### Community 842 - "Community 842"
 Cohesion: 0.13
@@ -6755,12 +6866,12 @@ Cohesion: 0.28
 Nodes (13): Path, call_llm_for_adherence(), ensure_verification_column(), find_dashboard_db(), main(), _manual_call(), Update persona_assignment row with the latest verification result., Try Ollama Cloud → OpenRouter DeepSeek → OpenRouter Gemini Flash Lite. (+5 more)
 
 ### Community 854 - "Community 854"
-Cohesion: 0.29
-Nodes (7): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Rubber-Stamp QC Review, Anti-Pattern B — QC Review With Vague, Unactionable Feedback, Anti-Pattern A — The Rubber Stamp Review, 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Rubber-Stamp Review, Anti-Pattern B — QC as Blocker Without Solutions
+Cohesion: 0.22
+Nodes (9): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Rubber-Stamp QC Review, Anti-Pattern B — QC Review With Vague, Unactionable Feedback, 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Rubber Stamp Review, Anti-Pattern B — The Scope-Creep Fixer, 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Rubber-Stamp Review (+1 more)
 
 ### Community 855 - "Community 855"
-Cohesion: 0.15
-Nodes (11): Continuous Improvement, Department 19  --  Study Partner / Daily Learning · How-To, Quality Standards, Session Protocol, Cross-Functional Handoffs, Department 19  --  Study Partner / Daily Learning · Roster, Specialists, Department 19  --  Study Partner / Daily Learning · Soul (+3 more)
+Cohesion: 0.17
+Nodes (11): GHL Build with AI, SMS Workflow AI Prompt, Common Build with AI mistakes to verify against the checklist, How to use this, MANDATORY — manually fill the Custom Webhook AFTER Build with AI runs, Multi-action note (this template is the single-action starter), Placeholders used in this template, The copy-paste prompt (+3 more)
 
 ### Community 856 - "Community 856"
 Cohesion: 0.12
@@ -6771,20 +6882,20 @@ Cohesion: 0.18
 Nodes (13): Confidence Threshold Protocol, Below-threshold action, Confidence scoring, Confidence Threshold Protocol, Operator override, Step 2.5 — Confidence threshold check, Thresholds (operator-configurable), Capabilities playbook integration (+5 more)
 
 ### Community 858 - "Community 858"
-Cohesion: 0.15
-Nodes (19): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+11 more)
+Cohesion: 0.03
+Nodes (59): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+51 more)
 
 ### Community 859 - "Community 859"
 Cohesion: 0.21
 Nodes (14): Audiogram for Social Media, Full Episode with Chapters, Podcast Clips, Generate podcast clip/audiogram., audio_file, background, duration, episode (+6 more)
 
 ### Community 860 - "Community 860"
-Cohesion: 0.19
-Nodes (14): Path, Animate an image into video.                  Args:             image_path: Path, Create video from image using MoviePy effects., apply_ken_burns(), apply_pan(), apply_zoom(), image_to_video(), load_config() (+6 more)
+Cohesion: 0.24
+Nodes (13): Path, Create video from image using MoviePy effects., apply_ken_burns(), apply_pan(), apply_zoom(), image_to_video(), load_config(), main() (+5 more)
 
 ### Community 861 - "Community 861"
-Cohesion: 0.26
-Nodes (12): Path, add_background_music(), apply_transition(), assemble_clips(), get_music_by_genre(), get_resolution(), main(), Assemble multiple clips into single video.          Args:         clip_paths: Li (+4 more)
+Cohesion: 0.17
+Nodes (11): Build With AI Prompt Template -- Skill 41, Instructions, Notes for the Operator, Section 1: Workflow Name, Section 2: Trigger Specification, Section 3: Dependency List, Section 4: Action Sequence, Section 5: Conditions (+3 more)
 
 ### Community 862 - "Community 862"
 Cohesion: 0.13
@@ -6799,8 +6910,8 @@ Cohesion: 0.12
 Nodes (14): 1. File Structure + Version Check, 2. Environment + Tool Checks, 3. Core Knowledge Verification, 4.1 Location-read test, 4.2 Contacts-read behavior check, 4. Live Smoke Test, 5. Special Rule Checks, 6. Anti-Pattern Checks (+6 more)
 
 ### Community 865 - "Community 865"
-Cohesion: 0.07
-Nodes (33): Add to AGENTS.md, Add to HEARTBEAT.md, Add to MEMORY.md, Add to TOOLS.md, === CORE_UPDATES.md ===, Do NOT modify these files:, Example: memory-core Auto-Capture, Example: Memory Flush Output (+25 more)
+Cohesion: 0.11
+Nodes (23): === CORE_UPDATES.md ===, Example: memory-core Auto-Capture, Example: Memory Flush Output, Example: Memory Search, Example: Prerequisite Pending, Example: Session Indexing, === EXAMPLES.md ===, Files in This Folder and Reading Order (+15 more)
 
 ### Community 866 - "Community 866"
 Cohesion: 0.16
@@ -6831,7 +6942,7 @@ Cohesion: 0.10
 Nodes (17): [ADD TO AGENTS.md] — appended by `scripts/08-update-core-files.sh`, [ADD TO AGENTS.md — Sales-Brain RE extension pointer] — appended by `scripts/05-install-sales-brain-extension.sh`, [ADD TO MEMORY.md] — appended by `scripts/08-update-core-files.sh`, [ADD TO TOOLS.md] — appended by `scripts/08-update-core-files.sh`, Core File Updates — Skill 39 (Real Estate Playbook & Property Intelligence v1.0.0), What does NOT get touched, [ADD TO AGENTS.md] — appended by `scripts/07-update-core-files.sh`, [ADD TO MEMORY.md] — appended by `scripts/07-update-core-files.sh` (+9 more)
 
 ### Community 873 - "Community 873"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (13): Files in This Folder, Governing protocol (binding for this skill and all skills in the repo), Honest MVP status (real vs stubbed), How Skill 41 fits in the pipeline, MANDATORY - Teach Yourself Protocol (TYP), Prerequisites, Security & honesty note, Skill 41: Build With AI Playbook Generator (+5 more)
 
 ### Community 874 - "Community 874"
@@ -6847,8 +6958,8 @@ Cohesion: 0.14
 Nodes (13): ONE-PARAGRAPH SUMMARY, RULE 0 — THE ECHO-BACK GATE, RULE 1 — ORCHESTRATOR PASTES; OWNERS SEND FILES, RULE 2 — IDENTICAL BYTES FIRST, UNIQUE ASSIGNMENT LAST, RULE 3 — WARM-UP THEN FLEET, RULE 4 — WORKERS LIVE SHORT, RULE 5 — SKINNY ORCHESTRATOR, RULE 6 — INDEPENDENT QC, REAL SCORES (+5 more)
 
 ### Community 877 - "Community 877"
-Cohesion: 0.13
-Nodes (13): CRM Department, 1. Director of CRM (full-time-permanent), 2. CRM Platform Administrator (full-time-permanent), 3. **Email Deliverability & Optimization Specialist** ⭐ FLAGSHIP ROLE (full-time-permanent), 4. SMS / WhatsApp / DM Sequence Specialist (full-time-permanent), 5. Tag / Segmentation Specialist (full-time-permanent), 6. Automation Workflow Specialist (full-time-permanent), 7. Pipeline / Stage Specialist (full-time-permanent) (+5 more)
+Cohesion: 0.11
+Nodes (15): CRM Department, Marketing Department, Social Media Department, 1. Director of CRM (full-time-permanent), 2. CRM Platform Administrator (full-time-permanent), 3. **Email Deliverability & Optimization Specialist** ⭐ FLAGSHIP ROLE (full-time-permanent), 4. SMS / WhatsApp / DM Sequence Specialist (full-time-permanent), 5. Tag / Segmentation Specialist (full-time-permanent) (+7 more)
 
 ### Community 878 - "Community 878"
 Cohesion: 0.14
@@ -6899,8 +7010,8 @@ Cohesion: 0.23
 Nodes (15): PA-28-06 Spontaneous Recognition Trigger, Analyze, Control, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, Escalation, Improve (+7 more)
 
 ### Community 890 - "Community 890"
-Cohesion: 0.13
-Nodes (13): AGENTS.md Step 1.75 update, Ambiguous pivot, Customer asks 3 questions in 1 message, Customer pivots back to original topic, Edge cases, Implementation, Intelligent Playbook Routing Protocol (Step 9.33), MEMORY.md Rule 12 (+5 more)
+Cohesion: 0.17
+Nodes (12): enum, type, enum, type, event, outreach_stage, role, stage (+4 more)
 
 ### Community 891 - "Community 891"
 Cohesion: 0.13
@@ -6911,8 +7022,8 @@ Cohesion: 0.12
 Nodes (15): 3. Weekly Production Workflow (Step-by-Step), Agent Architecture, Step-by-Step Process, 10-minute heartbeat protocol (subagent path), Failure escalation, Progress update protocol, Question-routing protocol, Spawning the subagent (main agent's only Phase 0 task) (+7 more)
 
 ### Community 893 - "Community 893"
-Cohesion: 0.14
-Nodes (14): A. Show the cost-vs-speed advisory FIRST, B. Ask the operator about REAL-TIME channels, C. Ask the operator about ASYNC channels, ✅ Checkpoint C — OpenClaw responds to inbound webhooks (Phase 2 complete), D. Ask about the batch/summarization model, E. Verify API keys for chosen providers, F. Verify the chosen models exist in OpenClaw's catalog, G. Write the model preferences into the hooks.mappings entry (+6 more)
+Cohesion: 0.20
+Nodes (10): A. Show the cost-vs-speed advisory FIRST, B. Ask the operator about REAL-TIME channels, C. Ask the operator about ASYNC channels, D. Ask about the batch/summarization model, E. Verify API keys for chosen providers, F. Verify the chosen models exist in OpenClaw's catalog, G. Write the model preferences into the hooks.mappings entry, H. Set up the 30-day System Health Heartbeat cron (+2 more)
 
 ### Community 894 - "Community 894"
 Cohesion: 0.13
@@ -6943,8 +7054,8 @@ Cohesion: 0.13
 Nodes (14): 3.1 Define, 3.2 Measure, 3.3 Analyze, 3.4 Improve, 3.5 Control, CTQ (Critical to Quality) — Binary Checks, Definition of Done, Escalation (+6 more)
 
 ### Community 901 - "Community 901"
-Cohesion: 0.13
-Nodes (14): 3.1 Define, 3.2 Measure, 3.3 Analyze, 3.4 Improve, 3.5 Control, CTQ (Critical to Quality) — Binary Checks, Definition of Done, Escalation (+6 more)
+Cohesion: 0.07
+Nodes (25): Quality Standards (All SOPs), SOP Catalog, SOP Selection Guide, PA-06-02 Comparison & Recommendation, PA-06-03 Vendor/Service Research, PA-06-04 Document & Video Summarization, PA-06-01 -- Quick Lookup, PA-06-02 -- Comparison & Recommendation (+17 more)
 
 ### Community 902 - "Community 902"
 Cohesion: 0.21
@@ -6975,8 +7086,8 @@ Cohesion: 0.11
 Nodes (20): 3. Dependency Checks, 2. Core file update checks, 1. File Structure Checks, 2. Script Executability Checks, 3. Core File Update Checks, 4. Dependency Checks, 5. Knowledge Verification Questions, 7. Anti-Pattern Checks (+12 more)
 
 ### Community 909 - "Community 909"
-Cohesion: 0.14
-Nodes (14): Advanced Troubleshooting - Organization Policy Fix (Detailed), CREDENTIAL CHECK - RUN THIS BEFORE OPENING ANY BROWSER, KNOWN GAPS IN THIS DOCUMENT, PATH B COMPLETE, PATH B: PERSONAL GMAIL (OAuth 2.0 Desktop Credentials), SECURITY NOTES, Step B1: Create a Google Cloud Project, Step B2: Enable the Required APIs (+6 more)
+Cohesion: 0.05
+Nodes (42): ACCOUNT TYPE DETECTION, Advanced Troubleshooting - Organization Policy Fix (Detailed), BROWSER TOOL INITIALIZATION, Correct Process, CREDENTIAL CHECK - RUN THIS BEFORE OPENING ANY BROWSER, CREDENTIAL CHECK - RUN THIS BEFORE OPENING ANY BROWSER, EXISTING-SETUP DETECTION (MANDATORY BEFORE INSTALL), Forbidden Actions (+34 more)
 
 ### Community 910 - "Community 910"
 Cohesion: 0.14
@@ -7083,7 +7194,7 @@ Cohesion: 0.15
 Nodes (13): GHL Calendars API, GHL Contacts API, GHL Conversations API, GHL Locations API, GHL Opportunities API, GHL Payments API, GHL Phone Numbers API, GHL Users API (+5 more)
 
 ### Community 936 - "Community 936"
-Cohesion: 0.15
+Cohesion: 0.14
 Nodes (12): Gemini Engine-First Workflow, GHL API Skill - GoHighLevel / Convert and Flow API v2, Module Stats (from master reference), Quick Reference, Rate Limits, Required Headers (every call), Safety Rules for This Skill, Skill File Map (+4 more)
 
 ### Community 937 - "Community 937"
@@ -7131,8 +7242,8 @@ Cohesion: 0.08
 Nodes (24): Behavioral Integrity, Browser Tab Hygiene, Close Unused Apps, Desktop Cleanup, HEARTBEAT.md - Periodic Self-Improvement, Injection Scan, 🧠 Memory Flush (Before Long Sessions End), 🔄 Memory Maintenance (+16 more)
 
 ### Community 948 - "Community 948"
-Cohesion: 0.13
-Nodes (15): Net effect for clients, Net effect for clients, Safety net at end of install, Self-healing guide added to AGENTS.md flag, The bug, The real bug Floyd found, v10.0.1 - May 14, 2026 - Stop breaking Telegram with rotation, v10.0.3 - May 14, 2026 - CLI scope auto-repair (the real root cause) (+7 more)
+Cohesion: 0.12
+Nodes (17): Net effect for clients, Net effect for clients, Net effect for clients, Safety net at end of install, Self-healing guide added to AGENTS.md flag, The bug, The bug, The real bug Floyd found (+9 more)
 
 ### Community 949 - "Community 949"
 Cohesion: 0.13
@@ -7143,8 +7254,8 @@ Cohesion: 0.15
 Nodes (13): Analysis Notes - Cialdini, Robert B. Cialdini, Influence: The Psychology of Persuasion, Authority, Click-Whirr Influence OS, Commitment and Consistency, Liking, Reciprocity (+5 more)
 
 ### Community 951 - "Community 951"
-Cohesion: 0.14
-Nodes (13): GHL Triggers Catalog, Affiliate Triggers, Appointments Triggers, Communities Triggers, Contact Triggers, Conversations and Social Triggers, Courses / Memberships Triggers, Ecommerce Stores Triggers (+5 more)
+Cohesion: 0.18
+Nodes (11): Add a Note to a Contact, Add a Task for a Contact, Contacts, Create a New Contact, Search Contacts by Email, Update Contact Tags, Create a blog post, Get location info (+3 more)
 
 ### Community 952 - "Community 952"
 Cohesion: 0.20
@@ -7235,12 +7346,12 @@ Cohesion: 0.14
 Nodes (14): 0. Chief Sales Officer, 10. CRM Specialist (Sales Version), 11. QC Specialist — Sales, 12. Deep Research Specialist — Sales, 1. SDR (Sales Development Rep), 2. Appointment Setter, 3. Discovery Call Specialist, 4. Closer (+6 more)
 
 ### Community 974 - "Community 974"
-Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Producer), Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for episodes marked "high stakes"), Gate 4 — Host Approval (required for every episode)
+Cohesion: 0.18
+Nodes (10): 10. Quality Gates, 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required"), Primary KPIs -- graded weekly (+2 more)
 
 ### Community 975 - "Community 975"
-Cohesion: 0.06
-Nodes (30): 1. Role Identity, 2. Persona Governance Override, 3. Scope & Boundaries, 4. Core Principles, 5. Tools & Resources, 6. Quality Standards, Inbox Manager — IDENTITY, What This Role Is NOT (+22 more)
+Cohesion: 0.07
+Nodes (37): 10. Anti-Minimization Triggers, 11. Celebration Delivery Guidelines, 12. Handling Resistance, 13. Escalation, 14. No-Guessing Rule, 15. Cross-Department Handoffs, 16. Quality Standards, 17. Session Activation (+29 more)
 
 ### Community 976 - "Community 976"
 Cohesion: 0.15
@@ -7251,7 +7362,7 @@ Cohesion: 0.15
 Nodes (11): 1. Role Identity, 2. Persona Governance Override, 3. Scope & Boundaries, 4. Core Principles, 5. Tools & Resources, 6. Quality Standards, Task & Priority Manager  --  IDENTITY, What This Role Is NOT (+3 more)
 
 ### Community 978 - "Community 978"
-Cohesion: 0.26
+Cohesion: 0.23
 Nodes (12): Critical Things Your Agent Must Know, Files in This Folder and Reading Order, GHL / Convert and Flow Setup, Important Rules, Prerequisites, Priority Operations to Test First, What This Is, What This Skill Covers (+4 more)
 
 ### Community 979 - "Community 979"
@@ -7315,12 +7426,12 @@ Cohesion: 0.20
 Nodes (13): SOP PA-22-04: Channel Audit & Rotation (DMAIC), 3.1 Define, 3.2 Measure, 3.3 Analyze, 3.4 Improve, 3.5 Control, CTQ Checks, Definition of Done (+5 more)
 
 ### Community 994 - "Community 994"
-Cohesion: 0.07
-Nodes (37): description, items, type, items, type, description, items, type (+29 more)
+Cohesion: 0.09
+Nodes (23): description, items, type, items, type, items, items, description (+15 more)
 
 ### Community 995 - "Community 995"
-Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for segments marked "high stakes"), Gate 4 — Owner Approval (only for segments marked "owner-required")
+Cohesion: 0.20
+Nodes (10): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for segments marked "high stakes"), Gate 4 — Owner Approval (only for segments marked "owner-required"), 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review (+2 more)
 
 ### Community 996 - "Community 996"
 Cohesion: 0.15
@@ -7355,28 +7466,28 @@ Cohesion: 0.15
 Nodes (11): 11. Handoffs, 12. Escalation Paths, 15. Common Mistakes, 18. Update Triggers, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+3 more)
 
 ### Community 1004 - "Community 1004"
-Cohesion: 0.11
-Nodes (20): 10. Quality Gates, Gate 1 — Self-check (LinkedIn Specialist), Gate 2 — Director of Social Media Review (for strategic thought leadership, sensitive industry topics, major announcements), Gate 3 — Devil's Advocate Review (for controversial industry opinions, competitive positioning, sensitive topics), Gate 4 — Owner Approval (content referencing owner's professional story, major company strategy announcements), 10. Quality Gates, Gate 1 — Self-check (LinkedIn Specialist), Gate 2 — Director of Social Media Review (for strategic thought leadership, sensitive industry topics, major announcements) (+12 more)
+Cohesion: 0.14
+Nodes (15): 10. Quality Gates, Gate 1 — Self-check (LinkedIn Specialist), Gate 2 — Director of Social Media Review (for strategic thought leadership, sensitive industry topics, major announcements), Gate 3 — Devil's Advocate Review (for controversial industry opinions, competitive positioning, sensitive topics), Gate 4 — Owner Approval (content referencing owner's professional story, major company strategy announcements), 10. Quality Gates, Gate 1 — Self-check (LinkedIn Specialist), Gate 2 — Director of Social Media Review (for strategic thought leadership, sensitive industry topics, major announcements) (+7 more)
 
 ### Community 1005 - "Community 1005"
 Cohesion: 0.04
-Nodes (49): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases, 18. Update Triggers (+41 more)
+Nodes (52): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes, 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases (+44 more)
 
 ### Community 1006 - "Community 1006"
 Cohesion: 0.03
-Nodes (73): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+65 more)
+Nodes (71): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+63 more)
 
 ### Community 1007 - "Community 1007"
-Cohesion: 0.18
-Nodes (17): 10. Quality Gates, 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes, 18. Update Triggers, 19. Sub-Specialists, 1. Role Identity, 2. Persona Governance Override (+9 more)
+Cohesion: 0.25
+Nodes (13): 10. Quality Gates, 12. Escalation Paths, 15. Common Mistakes, 18. Update Triggers, 19. Sub-Specialists, 1. Role Identity, 2. Persona Governance Override, 3. Daily Operations (+5 more)
 
 ### Community 1008 - "Community 1008"
-Cohesion: 0.15
-Nodes (12): 10. Quality Gates, 12. Escalation Paths, 15. Common Mistakes, 18. Update Triggers, 19. Sub-Specialists, 1. Role Identity, 2. Persona Governance Override, 3. Daily Operations (+4 more)
+Cohesion: 0.04
+Nodes (55): 10. Quality Gates, 11. Handoffs, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples, 15. Common Mistakes, 16. Research Sources, 17. Edge Cases (+47 more)
 
 ### Community 1009 - "Community 1009"
 Cohesion: 0.12
-Nodes (16): 10. Quality Gates, 12. Escalation Paths, 14. Bad Output Examples, 15. Common Mistakes, 18. Update Triggers, 19. Sub-Specialists, 1. Role Identity, 2. Persona Governance Override (+8 more)
+Nodes (16): 10. Quality Gates, 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes, 18. Update Triggers, 19. Sub-Specialists, 1. Role Identity, 2. Persona Governance Override (+8 more)
 
 ### Community 1010 - "Community 1010"
 Cohesion: 0.15
@@ -7391,7 +7502,7 @@ Cohesion: 0.29
 Nodes (12): Path, avatar_video(), _generate_local(), _generate_with_provider(), list_avatars(), main(), parse_avatar_script(), Generate locally using MoviePy with text slides. (+4 more)
 
 ### Community 1013 - "Community 1013"
-Cohesion: 0.17
+Cohesion: 0.15
 Nodes (11): 1) Export an SRT file, 2) Create a captioned video (burn-in captions), Caption Creator (Skill 26), Caption styles, Core updates policy, Files in this skill, Output notes, Quick start (+3 more)
 
 ### Community 1014 - "Community 1014"
@@ -7423,8 +7534,8 @@ Cohesion: 0.17
 Nodes (12): How They Work Together, How Your AI Memory System Works, If Something Seems Wrong, Layer 1: Your Files, Layer 2: Smart Saving, Layer 3: Conversation History Search, Layer 4: Intelligent Search, Layer 5: Automatic Memory (memory-core) (+4 more)
 
 ### Community 1021 - "Community 1021"
-Cohesion: 0.17
-Nodes (12): 🚀 ACTIVATION (REQUIRED - DO NOT SKIP), ACTIVATION Steps, Prerequisites, Step 1: CREATE DREAMS.md, Step 2: CONFIGURE active-memory in openclaw.json, Step 3: UPDATE memory backend to "builtin", Step 4: VERIFY directory structure, Step 5: RESTART gateway (ask user first) (+4 more)
+Cohesion: 0.18
+Nodes (10): 10. Quality Gates, 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, Gate 1: Self-Check (Before Opening a PR), Gate 2: Department QC Review (PR Review by iOS QC Specialist), Gate 3: Devil's Advocate Review (Director of App Development, or peer iOS Specialist if available), Gate 4: Owner Approval (Before App Store Submission), How to spawn (+2 more)
 
 ### Community 1022 - "Community 1022"
 Cohesion: 0.15
@@ -7503,20 +7614,20 @@ Cohesion: 0.17
 Nodes (10): Backfill for tunnels created under v3 (one-time, on main.blackceoautomations.com), Better long-term: migrate to Option A (env vars), n8n Workflow: command-center-register (v4), Option B chosen — credentials inline (Trevor's instance, 2026-05-24), Required env vars on main.blackceoautomations.com (the n8n SSH target), Snapshots saved 2026-05-24 (Trevor's Mac, `/tmp/`), The bug we found in v3 (fixed in v4 — 2026-05-24), The complete v4 SSH command (+2 more)
 
 ### Community 1041 - "Community 1041"
-Cohesion: 0.18
-Nodes (11): Marketing Department, Brand guidelines document + voice/tone guide, BrowserStack / LambdaTest, Figma / design review mode, Google Sheets / Airtable, Grammarly / LanguageTool, Hemingway App, QC Specialist — Marketing (+3 more)
+Cohesion: 0.17
+Nodes (12): Marketing Department, Brand guidelines document + voice/tone guide, BrowserStack / LambdaTest, Figma / design review mode, Google Sheets / Airtable, Grammarly / LanguageTool, Hemingway App, QC Specialist — Marketing (+4 more)
 
 ### Community 1042 - "Community 1042"
-Cohesion: 0.10
-Nodes (24): Before you start, Before you start, Before you start, Before you start, BLOCK 4 — VPS, Full Onboarding, via Telegram, BLOCK 6 — Mac, Update, via Telegram, BLOCK 8 — VPS, Update, via Telegram, If something looks wrong (+16 more)
+Cohesion: 0.13
+Nodes (16): Before you start, Before you start, BLOCK 6 — Mac, Update, via Telegram, BLOCK 8 — VPS, Update, via Telegram, If something looks wrong, Step 1 — Open Telegram, Step 1 — Open Telegram, Step 1 — Open Telegram (+8 more)
 
 ### Community 1043 - "Community 1043"
 Cohesion: 0.18
 Nodes (14): PA-26-03 Stress Inventory & Triage, 0. Scope Boundary — COACHING ONLY, 1. DMAIC Procedure, 2. CTQ Checks (Critical-to-Quality), 3. Metrics, 4. Escalation, 5. Definition of Done, 6. Tone & Persona Note (+6 more)
 
 ### Community 1044 - "Community 1044"
-Cohesion: 0.21
-Nodes (4): update-skills.sh script, main(), send_telegram_progress(), write_update_pending_flag()
+Cohesion: 0.20
+Nodes (6): update-skills.sh script, update-skills.sh script, link_shared_core_files(), main(), send_telegram_progress(), write_update_pending_flag()
 
 ### Community 1045 - "Community 1045"
 Cohesion: 0.17
@@ -7599,8 +7710,8 @@ Cohesion: 0.15
 Nodes (12): Analyze, Bridge Delivery Format, Control, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, Escalation — Named Partners, Improve (+4 more)
 
 ### Community 1065 - "Community 1065"
-Cohesion: 0.15
-Nodes (12): 3.1 Define, 3.2 Measure, 3.3 Analyze, 3.4 Improve, 3.5 Control, CTQ Checks, Definition of Done, Escalation (+4 more)
+Cohesion: 0.11
+Nodes (17): PA-22-01: Goal-to-Channel Matching, PA-22-02: Learning Playlist Build, PA-22-03: Weekly Video Drop, PA-22-04: Channel Audit & Rotation, 3.1 Define, 3.2 Measure, 3.3 Analyze, 3.4 Improve (+9 more)
 
 ### Community 1066 - "Community 1066"
 Cohesion: 0.10
@@ -7659,12 +7770,12 @@ Cohesion: 0.17
 Nodes (10): Core Competencies, Definition of Done, Department Escalation Routes, Identity Card, IDENTITY.md — Clarity Specialist, Identity Statement, Operating Protocol (binding), Professional Standards (+2 more)
 
 ### Community 1080 - "Community 1080"
-Cohesion: 0.23
-Nodes (13): 🚀 ACTIVATION (REQUIRED - DO NOT SKIP), ACTIVATION Steps, Prerequisites, Step 1: COPY Gemini scripts to workspace, Step 2: INSTALL Python dependencies, Step 3: INDEX pre-built personas, Step 4: VERIFY index status, Step 5: APPLY CORE_UPDATES.md (+5 more)
+Cohesion: 0.26
+Nodes (12): 🚀 ACTIVATION (REQUIRED - DO NOT SKIP), ACTIVATION Steps, Prerequisites, Step 1: COPY Gemini scripts to workspace, Step 2: INSTALL Python dependencies, Step 3: INDEX pre-built personas, Step 4: VERIFY index status, Step 5: APPLY CORE_UPDATES.md (+4 more)
 
 ### Community 1081 - "Community 1081"
-Cohesion: 0.08
-Nodes (26): format, type, description, format, type, description, format, type (+18 more)
+Cohesion: 0.07
+Nodes (29): format, type, description, format, type, description, format, type (+21 more)
 
 ### Community 1082 - "Community 1082"
 Cohesion: 0.18
@@ -7679,8 +7790,8 @@ Cohesion: 0.41
 Nodes (10): Path, file_files(), get_openclaw_paths(), is_stub(), main(), Yield (dept_dir, role_dir) tuples for every role folder under root., List the curated files inside a role folder worth reconciling., resolve_legacy_roots() (+2 more)
 
 ### Community 1085 - "Community 1085"
-Cohesion: 0.22
-Nodes (9): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Opinion Piece Disguised as Research, Anti-Pattern B — The Data Dump, 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The Data Wall, Anti-Pattern B -- The Decorated Data (Chartjunk Overload), 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The Data Dump (+1 more)
+Cohesion: 0.17
+Nodes (12): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Opinion Piece Disguised as Research, Anti-Pattern B — The Data Dump, 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The Data Wall, Anti-Pattern B -- The Decorated Data (Chartjunk Overload), 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Opinion Piece Disguised as Research (+4 more)
 
 ### Community 1086 - "Community 1086"
 Cohesion: 0.17
@@ -7755,16 +7866,16 @@ Cohesion: 0.17
 Nodes (12): qc-specialist-\342\200\224-sales.md, 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+4 more)
 
 ### Community 1104 - "Community 1104"
-Cohesion: 0.12
-Nodes (23): 10. Quality Gates, 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 3. Daily Operations (+15 more)
+Cohesion: 0.15
+Nodes (19): 11. Handoffs (Value Stream Map), 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 1. Role Identity, 2. Persona Governance Override, 4. Weekly Operations (+11 more)
 
 ### Community 1105 - "Community 1105"
-Cohesion: 0.17
-Nodes (11): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. Sub-Specialists, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+3 more)
+Cohesion: 0.06
+Nodes (35): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+27 more)
 
 ### Community 1106 - "Community 1106"
-Cohesion: 0.17
-Nodes (11): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations (+3 more)
+Cohesion: 0.07
+Nodes (26): 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document), 19. When to Spawn a Sub-Specialist, 1. Role Identity (+18 more)
 
 ### Community 1107 - "Community 1107"
 Cohesion: 0.18
@@ -7779,8 +7890,8 @@ Cohesion: 0.17
 Nodes (10): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+2 more)
 
 ### Community 1110 - "Community 1110"
-Cohesion: 0.23
-Nodes (15): PA-02-03 Buffer & Focus-Block Protection, Analyze, Control, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, Escalation, Improve (+7 more)
+Cohesion: 0.12
+Nodes (26): PA-02-01 Meeting Booking, PA-02-03 Buffer & Focus-Block Protection, Control, CTQ (Critical to Quality) — Binary Checks, Definition of Done, Diagnose, Escalation, Improve (+18 more)
 
 ### Community 1111 - "Community 1111"
 Cohesion: 0.18
@@ -7811,7 +7922,7 @@ Cohesion: 0.40
 Nodes (5): List key decisions from a conversation, Manual Memory Operations, Review what was saved today, Save something important right now, Search for something specific
 
 ### Community 1118 - "Community 1118"
-Cohesion: 0.18
+Cohesion: 0.17
 Nodes (10): Active Memory Configuration (Layer 8), Config Parameters, Files in This Folder and Reading Order, Key Things the AI Agent Must Know, Prerequisite Handling, Prerequisites, Skill 31: Upgraded Memory System (8-Layer Architecture), The 8 Layers (+2 more)
 
 ### Community 1119 - "Community 1119"
@@ -7828,7 +7939,7 @@ Nodes (21): Book-to-Persona Coaching Leadership System, Find Your Why, Golden Ci
 
 ### Community 1122 - "Community 1122"
 Cohesion: 0.02
-Nodes (88): Added, Added, Added, Added, Added, Added, Added, Added (+80 more)
+Nodes (98): Added, Added, Added, Added, Added, Added, Added, Added (+90 more)
 
 ### Community 1123 - "Community 1123"
 Cohesion: 0.16
@@ -7863,8 +7974,8 @@ Cohesion: 0.18
 Nodes (11): 1) Capacity Lock Drill, 1) Phase-Gate Campaign Planner, 2) Signal-First Content Engine, 2) Signal Stack Builder, 3) Scripted Sales Follow-Through, 3) With-or-Without-You Energy Rehearsal, 4) Remarkable Audit Sprint, 4) Remarkable Delivery Loop (+3 more)
 
 ### Community 1131 - "Community 1131"
-Cohesion: 0.11
-Nodes (15): BEGIN .learnings/ERRORS.md, END .learnings/FEATURE_REQUESTS.md, Feature Requests, Feature Requests, Entry Examples, Error Entry, Error Entry: Recurring Issue, Extracted Skill Example (+7 more)
+Cohesion: 0.15
+Nodes (11): Entry Examples, Error Entry, Error Entry: Recurring Issue, Extracted Skill Example, Feature Request, Feature Request: Resolved, Learning: Correction, Learning: Knowledge Gap (Resolved) (+3 more)
 
 ### Community 1132 - "Community 1132"
 Cohesion: 0.18
@@ -7875,12 +7986,12 @@ Cohesion: 0.17
 Nodes (11): BANT — Budget · Authority · Need · Timeline, Buyer-signal recognition (the agent surfaces these in the analytics dashboard), Honesty floor (NON-NEGOTIABLE), How the agent picks one, MEDDIC — Metrics · Economic buyer · Decision criteria · Decision process · Identify pain · Champion, Pricing reveal timing rules, Sales Frameworks — BANT / MEDDIC / SPICED Deep-Dive, SPICED — Situation · Pain · Impact · Critical event · Decision (+3 more)
 
 ### Community 1134 - "Community 1134"
-Cohesion: 0.18
-Nodes (11): Add the safeguards check to the System Health Heartbeat (Step 3.5H), C. Update AGENTS.md to reference the conversation log protocol, ✅ Checkpoint E — Agent is safety-ready and memory-ready (Phase 4 complete), Conversation Log — <Full Name>, D. Schedule the daily summarization cron job, Daily Summaries (3 to 14 days ago), E. Tell the operator what was set up, Historical Summary (older than 14 days) (+3 more)
+Cohesion: 0.50
+Nodes (4): C. Update AGENTS.md to reference the conversation log protocol, D. Schedule the daily summarization cron job, E. Tell the operator what was set up, Verbatim — Last 72 Hours
 
 ### Community 1135 - "Community 1135"
-Cohesion: 0.09
-Nodes (21): 1. WHERE it goes (do not guess), 2. MUST-APPEAR checklist — every workflow-AI instruction set, 3. Custom Webhook — explicit field-by-field (Build-with-AI fumbles these), 4. BUILD-WITH-AI VERIFICATION CHECKLIST, 5. MULTI-ACTION workflows (not just one action), 6. Tags: create FIRST via the GHL skill, 7. Templates this standard governs, Canonical 23-key RAW BODY (embed this exactly) (+13 more)
+Cohesion: 0.15
+Nodes (12): 0. EVERY workflow-AI instruction set MUST INCLUDE ALL OF THE FOLLOWING, 1. WHERE it goes (do not guess), 2. MUST-APPEAR checklist — every workflow-AI instruction set, 3. Custom Webhook — explicit field-by-field (Build-with-AI fumbles these), 3b. MANDATORY — manually fill the Custom Webhook AFTER Build-with-AI runs (it will NOT do it for you), 4. BUILD-WITH-AI VERIFICATION CHECKLIST, 5. MULTI-ACTION workflows (not just one action), 6. Tags: create the tag FIRST, then use it (+4 more)
 
 ### Community 1136 - "Community 1136"
 Cohesion: 0.18
@@ -8035,12 +8146,12 @@ Cohesion: 0.09
 Nodes (30): auto_add_departments, auto_add_keywords, auto_add_departments, auto_add_keywords, deprecated, creative, hr-people, it-tech (+22 more)
 
 ### Community 1174 - "Community 1174"
-Cohesion: 0.17
-Nodes (12): 🚀 ACTIVATION (REQUIRED - DO NOT SKIP), ACTIVATION Steps, Prerequisites, Step 1: COPY skill to OpenClaw skills folder, Step 2: VERIFY blueprint file integrity, Step 3: LOCATE/CREATE master files folder, Step 4: RUN build-workforce.py (Option A, B, or C), Step 5: VERIFY department folders created (+4 more)
+Cohesion: 0.09
+Nodes (22): 🚀 ACTIVATION (REQUIRED - DO NOT SKIP), ACTIVATION Steps, Prerequisites, Step 1: COPY skill to OpenClaw skills folder, Step 2: VERIFY blueprint file integrity, Step 3: LOCATE/CREATE master files folder, Step 4: RUN build-workforce.py (Option A, B, or C), Step 5: VERIFY department folders created (+14 more)
 
 ### Community 1175 - "Community 1175"
-Cohesion: 0.19
-Nodes (15): PA-09-02 Stress De-Escalation, Control, Conversation Script, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, DMAIC, Escalation (+7 more)
+Cohesion: 0.22
+Nodes (9): 9. Standard Operating Procedures, SOP 1 -- Episode Lead Capture Setup, SOP 2 -- Audio Listener Segmentation, SOP 3 -- Audio Lead Scoring Configuration and Calibration, SOP 4 -- Cross-Channel Audio Attribution, SOP 5 -- Weekly Audio Data Quality Audit, SOP 6 -- Guest Booking CRM Workflow, SOP 7 -- Sponsorship and Advertising CRM Tracking (+1 more)
 
 ### Community 1176 - "Community 1176"
 Cohesion: 0.15
@@ -8055,20 +8166,20 @@ Cohesion: 0.04
 Nodes (53): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+45 more)
 
 ### Community 1179 - "Community 1179"
-Cohesion: 0.18
-Nodes (10): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+2 more)
+Cohesion: 0.04
+Nodes (51): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+43 more)
 
 ### Community 1180 - "Community 1180"
 Cohesion: 0.18
 Nodes (10): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+2 more)
 
 ### Community 1181 - "Community 1181"
-Cohesion: 0.04
-Nodes (53): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+45 more)
+Cohesion: 0.18
+Nodes (10): 12. Escalation Paths, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document), 2. Persona Governance Override, 4. Weekly Operations, 5. Monthly Operations, 6. Quarterly Operations (+2 more)
 
 ### Community 1182 - "Community 1182"
-Cohesion: 0.04
-Nodes (51): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+43 more)
+Cohesion: 0.07
+Nodes (28): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+20 more)
 
 ### Community 1183 - "Community 1183"
 Cohesion: 0.17
@@ -8099,8 +8210,8 @@ Cohesion: 0.18
 Nodes (9): Deliverable Naming Convention, Escalation Thresholds, Information Sources, Key Contacts, Maintenance Notes, Owner, Recurring Commitments, ROSTER — The Greatness Agent (+1 more)
 
 ### Community 1190 - "Community 1190"
-Cohesion: 0.10
-Nodes (23): Critical Tag Rules, Emotions (use 1 per line max), Final Standard, Fish Audio S2 Voice Behavior Training SOP v3.0, Free-Form Descriptive (examples — write your own), How Inline Tags Work, Key Principles, Narrative / Performance (+15 more)
+Cohesion: 0.08
+Nodes (28): Critical Tag Rules, Emotions (use 1 per line max), Final Standard, Fish Audio S2 Voice Behavior Training SOP v3.0, Free-Form Descriptive (examples — write your own), How Inline Tags Work, Key Principles, Narrative / Performance (+20 more)
 
 ### Community 1191 - "Community 1191"
 Cohesion: 0.18
@@ -8143,8 +8254,8 @@ Cohesion: 0.18
 Nodes (9): Cross-Reference Map, SOP Dependency Map, SOP Quick Reference, SOP Taxonomy, Delivery & Sustainment (Scheduled), Discovery & Curation (On-Demand), Reading Order for New Curators, SOP Index — YouTube Teacher / Curator (+1 more)
 
 ### Community 1201 - "Community 1201"
-Cohesion: 0.20
-Nodes (8): CORE_UPDATES.md (Graphify Core File Appends), Graphify Knowledge Graph Skill (Skill 43), INSTALL.md (Graphify Setup), INSTRUCTIONS.md (Graphify Runtime Guide), api_key_utils.py, Available Modules, OpenClaw Shared Utilities, Version History
+Cohesion: 0.33
+Nodes (4): api_key_utils.py, Available Modules, OpenClaw Shared Utilities, Version History
 
 ### Community 1202 - "Community 1202"
 Cohesion: 0.40
@@ -8155,12 +8266,12 @@ Cohesion: 0.12
 Nodes (15): 1. Purpose, 2. Trigger, 3. Inputs / Prerequisites, 4. DMAIC Procedure, 5. CTQ Checks, 6. Metrics, 7. Escalation, 8. Definition of Done (+7 more)
 
 ### Community 1204 - "Community 1204"
-Cohesion: 0.12
-Nodes (16): Added, Changed, Changed, Changed, Changed (Skill 22 SKILL.md), Dependencies introduced, Durable log location, No functional changes to the install itself (+8 more)
+Cohesion: 0.09
+Nodes (22): Added, Added, Changed, Changed, Changed, Changed, Changed, Changed (+14 more)
 
 ### Community 1205 - "Community 1205"
-Cohesion: 0.24
-Nodes (11): Cloudflare Tunnel, Cloudflare Tunnel Troubleshooting, Pixel Concierge Agent, Cloudflare Tunnel — Troubleshooting (Phase 1-2), Layer 1 — Cloudflare DNS, Layer 2 — cloudflared tunnel, Layer 3 — OpenClaw gateway, Layer 4 — agent (+3 more)
+Cohesion: 0.36
+Nodes (8): Cloudflare Tunnel Troubleshooting, Cloudflare Tunnel — Troubleshooting (Phase 1-2), Layer 1 — Cloudflare DNS, Layer 2 — cloudflared tunnel, Layer 3 — OpenClaw gateway, Layer 4 — agent, The 4 layers between GHL and OpenClaw, The Cloudflare OTP suppression on an operator domain (environment-specific)
 
 ### Community 1206 - "Community 1206"
 Cohesion: 0.18
@@ -8176,7 +8287,7 @@ Nodes (15): 1. Purpose, 2. Trigger, 3. Inputs / Prerequisites, 4. DMAIC Procedur
 
 ### Community 1209 - "Community 1209"
 Cohesion: 0.14
-Nodes (16): Before you start, BLOCK 1 — Mac, Full Onboarding, via Terminal, BLOCK 5 — Mac, Update, via Terminal, How to verify it worked, If something looks wrong, If something looks wrong, Step 1 — Open Terminal, Step 1 — Open Terminal on your Mac (+8 more)
+Nodes (16): Before you start, Before you start, BLOCK 1 — Mac, Full Onboarding, via Terminal, BLOCK 5 — Mac, Update, via Terminal, How to verify it worked, If something looks wrong, Step 1 — Open Terminal, Step 1 — Open Terminal on your Mac (+8 more)
 
 ### Community 1210 - "Community 1210"
 Cohesion: 0.29
@@ -8243,16 +8354,16 @@ Cohesion: 0.18
 Nodes (10): CTQ (Critical to Quality) — Binary Checks, Definition of Done, DMAIC Phase: Control, Escalation, Metrics, Output Artifacts, Purpose, SOP PA-10-05: Travel Debrief & Expense Capture (+2 more)
 
 ### Community 1226 - "Community 1226"
-Cohesion: 0.18
-Nodes (10): CTQ Checks, Definition of Done, DMAIC Procedure, Escalation, Inputs / Prerequisites, Metrics, PA-24-01: Cape Inventory — Uncovering Compressed Responsibilities, Purpose (+2 more)
+Cohesion: 0.14
+Nodes (13): Cape Inventory Grid, PA-24-01: Cape Inventory, PA-24-03: Delegation Permission Protocol, CTQ Checks, Definition of Done, DMAIC Procedure, Escalation, Inputs / Prerequisites (+5 more)
 
 ### Community 1227 - "Community 1227"
 Cohesion: 0.18
 Nodes (10): CTQ Checks, Definition of Done, DMAIC Procedure, Escalation, Inputs / Prerequisites, Metrics, PA-24-02: Permission to Receive — Unlocking the Inflow Valve, Purpose (+2 more)
 
 ### Community 1228 - "Community 1228"
-Cohesion: 0.14
-Nodes (13): Cape Inventory Grid, PA-24-01: Cape Inventory, PA-24-03: Delegation Permission Protocol, CTQ Checks, Definition of Done, DMAIC Procedure, Escalation, Inputs / Prerequisites (+5 more)
+Cohesion: 0.18
+Nodes (10): CTQ Checks, Definition of Done, DMAIC Procedure, Escalation, Inputs / Prerequisites, Metrics, PA-24-03: Delegation Permission Protocol — Systematic Release of Non-Essential Tasks, Purpose (+2 more)
 
 ### Community 1229 - "Community 1229"
 Cohesion: 0.18
@@ -8339,8 +8450,8 @@ Cohesion: 0.20
 Nodes (8): AGENTS.md - UPDATE REQUIRED, HEARTBEAT.md - NO UPDATE NEEDED, IDENTITY.md - NO UPDATE NEEDED, MEMORY.md - UPDATE REQUIRED, OpenRouter Setup - Core File Updates, SOUL.md - NO UPDATE NEEDED, TOOLS.md - UPDATE REQUIRED, USER.md - NO UPDATE NEEDED
 
 ### Community 1250 - "Community 1250"
-Cohesion: 0.40
-Nodes (4): ACCOUNT TYPE DETECTION, EXISTING-SETUP DETECTION (MANDATORY BEFORE INSTALL), GOOGLE ACCOUNT ROUTING + BROWSER PERSISTENCE (SOVEREIGN), Google Workspace + Gmail Setup - Autonomous Installation Guide
+Cohesion: 0.22
+Nodes (9): 9. Standard Operating Procedures, SOP 6.1 — Press Release Fact-Checking, SOP 6.2 — Journalist & Publication Intelligence Brief, SOP 6.3 — Competitive Communications Monitoring, SOP 6.4 — Message Testing & Audience Research, SOP 6.5 — Crisis Communications Precedent Research, SOP 6.6 — Executive Thought Leadership Research, SOP 6.7 — Source Quality Tiering for Communications Research (+1 more)
 
 ### Community 1251 - "Community 1251"
 Cohesion: 0.20
@@ -8359,8 +8470,8 @@ Cohesion: 0.20
 Nodes (8): 00-START-HERE — The Challenger Department, Department Mantra, Handoff with Department 16 (Motivation & Momentum), Quick Reference, Welcome, Challenger, What This Department Does, Your Files, Your First Steps
 
 ### Community 1255 - "Community 1255"
-Cohesion: 0.19
-Nodes (14): PA-26-12 Crisis Referral & Warm Handoff Protocol, Analyze, Control, CTQ Checks (Critical-to-Quality), Define, Definition of Done, DMAIC, Escalation (+6 more)
+Cohesion: 0.11
+Nodes (25): The Equipper, The Guardian, Therapeutic Support Specialist Department 26, Celebration Agent (28), Christian Spiritual Life Companion Department 15, Imposter Syndrome Specialist Department 25, PA-26-05 CBT Thought Reframing, PA-26-12 Crisis Referral & Warm Handoff Protocol (+17 more)
 
 ### Community 1256 - "Community 1256"
 Cohesion: 0.29
@@ -8375,8 +8486,8 @@ Cohesion: 0.22
 Nodes (9): Annotated Hierarchy Notes, Step 1: Check for an Existing Master Folder, Step 2: Create Department Folders, Step 2A: Create the Master Orchestrator Department (Big Boss), Step 3: Create the Department Overview File, Step 4: Create Role Folders Inside Each Department, Step 5: Add Files Inside Each Role Folder, The Complete Hierarchy (+1 more)
 
 ### Community 1259 - "Community 1259"
-Cohesion: 0.09
-Nodes (23): description, enum, type, description, enum, type, description, enum (+15 more)
+Cohesion: 0.10
+Nodes (21): description, enum, type, description, enum, type, description, enum (+13 more)
 
 ### Community 1260 - "Community 1260"
 Cohesion: 0.20
@@ -8464,7 +8575,7 @@ Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Daily Social
 
 ### Community 1281 - "Community 1281"
 Cohesion: 0.22
-Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Morning CRM Hygiene Scan, SOP 9.2 — New Project Intake and Pipeline Setup, SOP 9.3 — Stage Advancement Validation, SOP 9.4 — Dashboard Refresh and Verification, SOP 9.5 — Weekly Video Operations Report, SOP 9.6 — Resource Allocation and Capacity Management, SOP 9.7 — Cross-Department Video Data Requests (+1 more)
+Nodes (9): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Corporate Deflector" Response, Anti-Pattern B — The "Defensive Brand Warrior", 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Corporate Deflector" Response, Anti-Pattern B — The "Defensive Brand Warrior", 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Corporate Press Release" Post (+1 more)
 
 ### Community 1282 - "Community 1282"
 Cohesion: 0.22
@@ -8475,8 +8586,8 @@ Cohesion: 0.22
 Nodes (9): 9. Standard Operating Procedures, SOP 1 -- Script-to-Storyboard Translation, SOP 2 -- Shot List Creation, SOP 3 -- Storyboard Review and Revision Cycle, SOP 4 -- Asset Request and Resource Planning, SOP 5 -- Pre-Visualization (Animatic) for Complex Sequences, SOP 6 -- Production Day Observation and Learning Capture, SOP 7 -- Location Scouting Documentation (+1 more)
 
 ### Community 1284 - "Community 1284"
-Cohesion: 0.19
-Nodes (13): What to Do Next, Likely causes, Likely causes, Likely causes, Likely causes, Problem: 400 Bad Request, Problem: 401 Unauthorized, Problem: 403 Forbidden (+5 more)
+Cohesion: 0.22
+Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Research Request Intake and Scoping, SOP 9.2 — Standard Research Brief Production (Level 1-2), SOP 9.3 — Deep Research Report Production (Level 3), SOP 9.4 — External Environment Monitoring and Proactive Flagging, SOP 9.5 — Competitive Billing Practices Benchmark, SOP 9.6 — Vendor and Tool Evaluation Research, SOP 9.7 — Regulatory Impact Analysis (+1 more)
 
 ### Community 1285 - "Community 1285"
 Cohesion: 0.40
@@ -8488,7 +8599,7 @@ Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Morning CRM 
 
 ### Community 1287 - "Community 1287"
 Cohesion: 0.22
-Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Daily Video Intelligence Scan, SOP 9.2 -- Competitor Video Strategy Deep-Dive, SOP 9.3 -- Technology Evaluation and Recommendation, SOP 9.4 -- Platform Algorithm Change Response, SOP 9.5 -- Source Pack Creation for Scriptwriters, SOP 9.6 -- Quarterly Video Landscape Analysis, SOP 9.7 -- Research Knowledge Base Maintenance (+1 more)
+Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Standard Deliverable QC Review, SOP 9.2 — CRM Configuration Change QC Review, SOP 9.3 — Monthly Financial Package QC Review, SOP 9.4 — Tax Filing Data Package QC Review, SOP 9.5 — Collections Communication QC Review, SOP 9.6 — Weekly Department Quality Scorecard Production, SOP 9.7 — Defect Root Cause Analysis (5 Whys) (+1 more)
 
 ### Community 1288 - "Community 1288"
 Cohesion: 0.22
@@ -8543,16 +8654,16 @@ Cohesion: 0.22
 Nodes (9): 6b.1 Choose the Client Subdomain Name, 6b.2 Install cloudflared (if not already installed), 6b.3 Send Webhook to Trevor's System and Capture the Token Response, 6b.4 Save the Token Locally, 6b.5 Connect This Machine to the Tunnel, 6b.6 Verify the URL is Live, 6b.7 Report the Live URL to the Client, Phase 6b: Domain Registration + Tunnel Connection (+1 more)
 
 ### Community 1301 - "Community 1301"
-Cohesion: 0.38
-Nodes (8): ghl-mcp-autostart.sh script, already_registered(), ensure_built(), health_ok(), log(), report(), start_service_mac(), start_service_vps()
+Cohesion: 0.47
+Nodes (9): ghl-mcp-autostart.sh script, already_registered(), ensure_built(), _get_env_var(), health_ok(), log(), report(), start_service_mac() (+1 more)
 
 ### Community 1302 - "Community 1302"
-Cohesion: 0.09
-Nodes (22): [1.4.13] - 2026-05-29 - v1.4.11 install-script bug fixes (config-validity) + MANDATORY manual Custom-Webhook fill instructions, [1.4.6] - 2026-05-29 - 8 rated improvements (port of VPS #47): machine-enforced 23-key + TRINITY, Build-with-AI label fix, real self-counts, fleshed journeys, Skill 23 chain, [1.5.0] - 2026-05-30 - Round-3 Queue-A CORE feature wave: ZHC tag-prefix rule + F50 aggression (two-tier, extends safeguards) + F44 smart playbook switching (DETOUR-AND-RETURN interrupts) + F45 geo-qualification (off by default) + F46 CRM field write/create-if-missing + F47 smart FAQ tool + F52 JSONL data contract, [1.5.1] - 2026-05-30 - Three QC-enforced standards (mirror the workflow-AI standard's rigor): Communication Playbook Standard (ELEVATED) + GHL Raw Body JSON Standard (NEW) + Notion Client-Doc Standard (NEW), Added, Added / Elevated — the three standards, Added — F44 Smart Playbook Switching / Always-Listening Interrupts (DETOUR-AND-RETURN, distinct from F33), Added — F45 Geo-Qualification (OFF by default, signals-are-hints / always-ask) (+14 more)
+Cohesion: 0.10
+Nodes (21): [1.4.4] - 2026-05-29 - THE TRINITY + Communications Playbook & Workflow-AI standards, [1.4.5] - 2026-05-29 - v6.0 clean comprehensive playbook; de-staled, [1.5.0] - 2026-05-30 - Round-3 Queue-A CORE feature wave: ZHC tag-prefix rule + F50 aggression (two-tier, extends safeguards) + F44 smart playbook switching (DETOUR-AND-RETURN interrupts) + F45 geo-qualification (off by default) + F46 CRM field write/create-if-missing + F47 smart FAQ tool + F52 JSONL data contract, [1.5.1] - 2026-05-30 - Three QC-enforced standards (mirror the workflow-AI standard's rigor): Communication Playbook Standard (ELEVATED) + GHL Raw Body JSON Standard (NEW) + Notion Client-Doc Standard (NEW), Added, Added / Elevated — the three standards, Added — F44 Smart Playbook Switching / Always-Listening Interrupts (DETOUR-AND-RETURN, distinct from F33), Added — F45 Geo-Qualification (OFF by default, signals-are-hints / always-ask) (+13 more)
 
 ### Community 1303 - "Community 1303"
-Cohesion: 0.24
-Nodes (10): Pre-foreclosure outreach (pairs with Skill 40), Pre-Foreclosure Outreach Protocol, Event fields, Hard guardrails (non-negotiable), Inputs, Pre-Foreclosure Outreach Protocol (pairs with Skill 40), Stage 1 — `initial`, Stage 2 — `options` (+2 more)
+Cohesion: 0.27
+Nodes (9): Pre-foreclosure outreach (pairs with Skill 40), Event fields, Hard guardrails (non-negotiable), Inputs, Pre-Foreclosure Outreach Protocol (pairs with Skill 40), Stage 1 — `initial`, Stage 2 — `options`, Stage 3 — `handoff` (+1 more)
 
 ### Community 1304 - "Community 1304"
 Cohesion: 0.23
@@ -8587,8 +8698,8 @@ Cohesion: 0.20
 Nodes (10): CATEGORY 1: Mindset Failures (Faulty Belief Systems), CATEGORY 2: Process Failures (Incomplete Execution), CATEGORY 3: Quality Failures (Poor Output Standards), CATEGORY 4: Communication/Relationship Failures, DIMENSION 4 - Failure Pattern Taxonomy, Category 1: Mindset Failures (Corrupted Internal Software), Category 2: Process Failures (Breaking the Execution Sequence), Category 3: Quality Failures (Substandard Output) (+2 more)
 
 ### Community 1312 - "Community 1312"
-Cohesion: 0.03
-Nodes (96): Bug, Bulletproof credential discovery — 10 sources, Bulletproof Telegram chat ID resolver — 23 sources, Bulletproof workspace resolver, Companion repo, Files modified, Files modified, Files touched (+88 more)
+Cohesion: 0.02
+Nodes (119): Bug, Files touched, Files touched, How to apply, How to apply, How to apply, How to apply, How to apply (+111 more)
 
 ### Community 1313 - "Community 1313"
 Cohesion: 0.20
@@ -8615,8 +8726,8 @@ Cohesion: 0.42
 Nodes (8): L4-safety.sh script, blocked(), detector_bites(), headless_silent_check(), host_allowed(), pii_scan(), refused(), token_absent()
 
 ### Community 1319 - "Community 1319"
-Cohesion: 0.33
-Nodes (6): onboarding-state.sh script, obs_gate_summary(), obs_log(), obs_seed_state(), obs_set_status(), obs_verify_skill()
+Cohesion: 0.44
+Nodes (8): onboarding-state.sh script, obs_gate_summary(), obs_get_status(), obs_log(), obs_resolve_workspace(), obs_seed_state(), obs_set_status(), obs_verify_skill()
 
 ### Community 1320 - "Community 1320"
 Cohesion: 0.20
@@ -8723,7 +8834,7 @@ Cohesion: 0.64
 Nodes (7): assert(), green(), red(), resolve_platform_paths(), warn_only(), yellow(), qc-openrouter-setup.sh script
 
 ### Community 1346 - "Community 1346"
-Cohesion: 0.25
+Cohesion: 0.22
 Nodes (7): Files in This Folder and Reading Order, Key Things the AI Agent Must Know, Prerequisites, Skill 14: Google Workspace Integration, What This Skill Covers, What This Skill Is About, When to Use This Skill
 
 ### Community 1347 - "Community 1347"
@@ -8731,7 +8842,7 @@ Cohesion: 0.22
 Nodes (7): Daily Rhythm Reference, Key Contacts, Maintenance Notes, Monthly Rhythm Reference, ROSTER — Life-Admin Archivist, Weekly Rhythm Reference, When to Use Each SOP
 
 ### Community 1348 - "Community 1348"
-Cohesion: 0.25
+Cohesion: 0.22
 Nodes (7): Files in This Folder and Reading Order, Key Things the AI Agent Must Know, Prerequisites, Skill 15: BlackCEO Team Management, What This Skill Covers, What This Skill Is About, When to Use This Skill
 
 ### Community 1349 - "Community 1349"
@@ -8816,15 +8927,15 @@ Nodes (13): author, book, custom, domain, perspective, author, book, custom (+5 
 
 ### Community 1369 - "Community 1369"
 Cohesion: 0.04
-Nodes (58): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role (+50 more)
+Nodes (54): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+46 more)
 
 ### Community 1370 - "Community 1370"
-Cohesion: 0.25
-Nodes (8): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Daily Interaction Audit Cycle, SOP 9.2 — Weekly Trend Analysis and Reporting, SOP 9.3 — Monthly Calibration Session, SOP 9.4 — Knowledge Base Accuracy Audit, SOP 9.5 — Critical Quality Failure Response, SOP 9.6 — Specialist Performance Trend Analysis, SOP 9.7 — Cross-Channel Consistency Audit
+Cohesion: 0.22
+Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Daily Deliverability Health Check, SOP 9.2 -- Weekly Campaign Performance Review, SOP 9.3 -- Monthly Segmentation Refresh, SOP 9.4 -- Deliverability Incident Response, SOP 9.5 -- New Automated Workflow Deployment, SOP 9.6 -- Quarterly CRM Platform Audit, SOP 9.7 -- Customer Win-Back Campaign Execution (+1 more)
 
 ### Community 1371 - "Community 1371"
-Cohesion: 0.22
-Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Quick-Lookup Research Request Fulfillment, SOP 9.2 -- Competitive Deep-Dive Research, SOP 9.3 -- Customer Research Project (Survey), SOP 9.4 -- Market Sizing and Opportunity Assessment, SOP 9.5 -- Industry Trend Monitoring and Reporting, SOP 9.6 -- Messaging and Positioning Research, SOP 9.7 -- Channel Effectiveness Research (+1 more)
+Cohesion: 0.11
+Nodes (18): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Research Request Intake and Scoping, SOP 9.2 — Standard Research Brief Production (Level 1-2), SOP 9.3 — Deep Research Report Production (Level 3), SOP 9.4 — External Environment Monitoring and Proactive Flagging, SOP 9.5 — Competitive Billing Practices Benchmark, SOP 9.6 — Vendor and Tool Evaluation Research, SOP 9.7 — Regulatory Impact Analysis (+10 more)
 
 ### Community 1372 - "Community 1372"
 Cohesion: 0.22
@@ -8867,7 +8978,7 @@ Cohesion: 0.64
 Nodes (7): assert(), green(), red(), resolve_platform_paths(), warn_only(), yellow(), qc-video-editor.sh script
 
 ### Community 1382 - "Community 1382"
-Cohesion: 0.25
+Cohesion: 0.22
 Nodes (7): B-roll workflow (talking head to professional B-roll cut), File structure, Notes about analysis output, Quick start (most common workflow), Requirements, Video Editor (Local Opus Clip Alternative), What you can do
 
 ### Community 1383 - "Community 1383"
@@ -8880,7 +8991,7 @@ Nodes (7): 00 — START HERE · Celebration Agent, Core Rule, How This Departmen
 
 ### Community 1385 - "Community 1385"
 Cohesion: 0.22
-Nodes (7): CTQ Quality Checks, Definition of Done, DMAIC Procedure, Escalation, Metrics, PA-29-06: Skills & Experience Gap Analysis, Tone & Persona Note
+Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Standard Marketing Output QC Review, SOP 9.2 -- Pre-Send Email Campaign QC, SOP 9.3 -- Landing Page Pre-Launch QC, SOP 9.4 -- Ad Creative Pre-Launch QC, SOP 9.5 -- Post-Publication Live Content Audit, SOP 9.6 -- Brand Voice Consistency Audit, SOP 9.7 -- Compliance and Legal Review Escalation (+1 more)
 
 ### Community 1386 - "Community 1386"
 Cohesion: 0.22
@@ -8939,8 +9050,8 @@ Cohesion: 0.20
 Nodes (10): Coaching Objections Table (6), Section 12 - Objections, Resistance, and Failure Modes, Task Governance Failures, Coaching - Objections Table, Counterintuitive Truths (4), Section 12 - Objections, Resistance, and Failure Modes, Task Governance - Execution Failures, Coaching Objections Table (+2 more)
 
 ### Community 1400 - "Community 1400"
-Cohesion: 0.15
-Nodes (13): Added, Behavior — what the operator now sees on a missing-CF-token halt, Changed, Changed, Fixed (v9.7.10), Strategy order on Hostinger Docker (after this fix), The miss, [v10.15.2]  -  2026-05-28  -  Skill 38 ships the School of AI Cloudflare + GoDaddy setup guide IN the skill (verbatim) + Rule 13 halt path now points at it (+5 more)
+Cohesion: 0.11
+Nodes (18): Added, Added, Behavior — what the operator now sees on a missing-CF-token halt, Changed, Changed, Changed, Changed, Fixed (v9.7.10) (+10 more)
 
 ### Community 1401 - "Community 1401"
 Cohesion: 0.25
@@ -8975,7 +9086,7 @@ Cohesion: 0.25
 Nodes (7): 🔴🔴🔴 NO-COMINGLING RULE — BINDING, NON-NEGOTIABLE, REPO-WIDE 🔴🔴🔴, → **STOP and WAIT.**, THE RULE, WHAT IS FORBIDDEN, WHAT TO DO WHEN A RESOURCE DOES NOT EXIST YET, WHERE THIS RULE IS ENFORCED / REFERENCED, WHY THIS RULE EXISTS
 
 ### Community 1409 - "Community 1409"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (13): 🔴 Before you trigger GHL work — read this, Getting help, "How do I tell if I'm using the right block?", How to Trigger OpenClaw Onboarding, "I didn't get a Telegram notification at the end", "It says `openclaw: command not found`", "My agent didn't see the UPDATE PENDING flag in AGENTS.md", 🔴 N22 — Triple-Fire Trigger Semantics (Unconditional) (+5 more)
 
 ### Community 1410 - "Community 1410"
@@ -8991,12 +9102,12 @@ Cohesion: 0.40
 Nodes (7): qc-trinity-registry.sh script, qc-trinity-registry.test.sh script, assert_pass(), assert_reconciles(), bad(), note(), ok()
 
 ### Community 1413 - "Community 1413"
-Cohesion: 0.10
-Nodes (23): Aggression Detection Protocol, Aggression Detection Protocol (F50) — Step 9.37, CRITICAL — ALL CAPS ALONE does NOT fire, Cross-references, Logging (the data contract — F52), MEMORY.md (Rule 21), openclaw.json configuration, Operator override (+15 more)
+Cohesion: 0.22
+Nodes (9): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Functional QC Review (Standard Items), SOP 9.2 -- Visual Design QC Review, SOP 9.3 -- Cross-Browser and Cross-Device QC, SOP 9.4 -- Performance QC Review, SOP 9.5 -- Accessibility (A11y) QC Review, SOP 9.6 -- Security QC Review, SOP 9.7 -- Deployment Gate QC (Pre-Production Final Check) (+1 more)
 
 ### Community 1414 - "Community 1414"
-Cohesion: 0.25
-Nodes (7): Next Step After Install, Notes, OpenClaw Onboarding — Mac mini, Quick Install (Recommended), Skill Inventory (Folder Names), Speech-to-Text (Audio Transcription) — tiered, Mac-local, What Is Inside a Skill Folder
+Cohesion: 0.22
+Nodes (8): Next Step After Install, Notes, OpenClaw Onboarding — Mac mini, Quick Install (Recommended), Shared Core Files (Zero-Human-Workforce file model), Skill Inventory (Folder Names), Speech-to-Text (Audio Transcription) — tiered, Mac-local, What Is Inside a Skill Folder
 
 ### Community 1415 - "Community 1415"
 Cohesion: 0.22
@@ -9031,8 +9142,8 @@ Cohesion: 0.36
 Nodes (8): qc-multi-tenant.sh script, qc-multi-tenant.test.sh script, fail(), pass(), make_copy(), ng(), ok(), run_should_fail()
 
 ### Community 1423 - "Community 1423"
-Cohesion: 0.15
-Nodes (11): Interdepartmental Relationships, Quality Control Agent — creative-dept, 0. Chief People Officer, 1. Recruiter, 2. Team Onboarding Specialist, 3. People Manager, Department Purpose, Interdepartmental Relationships (+3 more)
+Cohesion: 0.22
+Nodes (9): Bulletproof credential discovery — 10 sources, Bulletproof Telegram chat ID resolver — 23 sources, Bulletproof workspace resolver, Companion repo, Hard split (no shared code with VPS repo), Skills sweep, v10.0.0 - May 14, 2026 - The split: Mac-only repo, bulletproof discovery, What changed (+1 more)
 
 ### Community 1424 - "Community 1424"
 Cohesion: 0.47
@@ -9187,8 +9298,8 @@ Cohesion: 0.15
 Nodes (11): Critical Rules, 🔴 OPENCLAW MODEL CHECK — Run Every Sunday (and on updates), 🔴 POST-UPDATE QC LOOP — Run After Every Update, Step 1: QC ALL Updated Skills, Step 1: Research Current Models, Step 2: Compare Against Client's Config, Step 2: Fix Failed Skills, Step 3: Apply Safe Updates (+3 more)
 
 ### Community 1462 - "Community 1462"
-Cohesion: 0.14
-Nodes (16): 8. Handoffs (Value Stream Map), We hand work off to:, We receive work from:, 11. Handoffs, Cross-Department Routing Scenarios, Value Stream Map, You Hand Work To:, You Receive Work From: (+8 more)
+Cohesion: 0.33
+Nodes (6): 11. Handoffs, Cross-Department Routing Scenarios, Value Stream Map, You Hand Work To:, You Receive Work From:, You hand work off to:
 
 ### Community 1463 - "Community 1463"
 Cohesion: 0.61
@@ -9231,7 +9342,7 @@ Cohesion: 0.25
 Nodes (6): Cross-Functional Handoffs, Role Assignments, ROSTER.md — Clarity Specialist SOP Catalog, SOP Catalog, SOP Flow Map, Versioning
 
 ### Community 1473 - "Community 1473"
-Cohesion: 0.18
+Cohesion: 0.17
 Nodes (9): Conflict Rule, MANDATORY Teach Yourself Protocol step, Purpose, Source, tavily-search (Imported), Conflict Resolution, Context, MANDATORY — Teach Yourself Protocol (TYP) Storage Rule (+1 more)
 
 ### Community 1474 - "Community 1474"
@@ -9247,8 +9358,8 @@ Cohesion: 0.29
 Nodes (7): Example: Bad Examples File, Example: Department Overview (Sales), Example: Good Examples File, Example: Knowledge Base File (How to Set an Appointment), Example: Sales Department Structure, Example: Start Here (Appointment Setter), Examples
 
 ### Community 1477 - "Community 1477"
-Cohesion: 0.15
-Nodes (13): ANALYSIS DATE: March 8, 2025, DIMENSION 10 - Department and Role Application Map, DIMENSION 11 - Routing Intelligence, DIMENSION 12 - The Single Most Important Insight, DIMENSION 1 - The True Operating System, DIMENSION 2 - The Root Cause Architecture, DIMENSION 3 - The Amateur-to-Expert Gap (Most Critical), DIMENSION 4 - Failure Pattern Taxonomy (+5 more)
+Cohesion: 0.22
+Nodes (8): Cross-references, How the agent applies it (at tag-creation time), Naming form, NOT retroactive — bot-detection continuity note, Operator-facing note, Scope — what the rule covers, Why, ZHC Tag-Prefix Protocol — Step 9.42
 
 ### Community 1478 - "Community 1478"
 Cohesion: 0.61
@@ -9259,16 +9370,16 @@ Cohesion: 0.33
 Nodes (6): 13. Good Output Examples, Example A -- Sprint-End Release Summary Report, Example B -- Postmortem for a P0 Incident, 13. Good Output Examples, Example A -- Sprint-End Release Summary Report, Example B -- Postmortem for a P0 Incident
 
 ### Community 1480 - "Community 1480"
-Cohesion: 0.22
-Nodes (9): 13. Good Output Examples, Example A — Pre-Interview Research Brief, Example B — Editorial Markup (Structural Edit Map excerpt), 13. Good Output Examples, Example A — Pre-Interview Research Brief, Example B — Editorial Markup (Structural Edit Map excerpt), 13. Good Output Examples, Example A — Pre-Interview Journalist Brief (+1 more)
+Cohesion: 0.25
+Nodes (8): 7. KPIs (Your Scoreboard), Daily Metrics, Primary KPIs, Weekly Metrics (reported Friday to Director of Audio), 7. KPIs (Your Scoreboard), Daily Metrics, Primary KPIs, Weekly Metrics (reported Friday to Director of Video)
 
 ### Community 1481 - "Community 1481"
 Cohesion: 0.20
 Nodes (10): created, domainTags, author, book, custom, domain, perspective, godin-this-is-marketing (+2 more)
 
 ### Community 1482 - "Community 1482"
-Cohesion: 0.17
-Nodes (12): rc, requiredSlots, results, telegramDeliveryVerification, verifiedAt, type, type, type (+4 more)
+Cohesion: 0.20
+Nodes (10): rc, requiredSlots, telegramDeliveryVerification, verifiedAt, type, type, description, properties (+2 more)
 
 ### Community 1483 - "Community 1483"
 Cohesion: 0.29
@@ -9295,16 +9406,16 @@ Cohesion: 0.29
 Nodes (7): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Technology Evaluation Research, SOP 9.2 — Competitor Intelligence Brief (Weekly), SOP 9.3 — Platform Policy Change Impact Assessment, SOP 9.4 — Deep-Dive Competitor Analysis (Monthly Rotating Focus), SOP 9.5 — Ad-Hoc Research Request (Micro-Research Note), SOP 9.6 — Quarterly Technology Radar Reassessment
 
 ### Community 1489 - "Community 1489"
-Cohesion: 0.09
-Nodes (22): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Sprint Planning and Kickoff, SOP 9.2 -- Production Deployment and Staged Rollout, SOP 9.3 -- Production Incident Response (P0/P1), SOP 9.4 -- Quarterly App Store Optimization (ASO) Audit and Refresh, SOP 9.5 -- Technical Debt Triage and Remediation, SOP 9.6 -- New Engineer Onboarding, SOP 9.7 -- Third-Party SDK and Dependency Evaluation (+14 more)
+Cohesion: 0.14
+Nodes (14): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Sprint Planning and Kickoff, SOP 9.2 -- Production Deployment and Staged Rollout, SOP 9.3 -- Production Incident Response (P0/P1), SOP 9.4 -- Quarterly App Store Optimization (ASO) Audit and Refresh, SOP 9.5 -- Technical Debt Triage and Remediation, SOP 9.6 -- New Engineer Onboarding, SOP 9.7 -- Third-Party SDK and Dependency Evaluation (+6 more)
 
 ### Community 1490 - "Community 1490"
 Cohesion: 0.29
 Nodes (11): Dependency Creation Protocol, API endpoints, Creation order, Data types for custom fields, Dependency Creation Protocol -- Skill 41, Error handling, Idempotency, Logging (+3 more)
 
 ### Community 1491 - "Community 1491"
-Cohesion: 0.27
-Nodes (11): PA-02-01 Meeting Booking, Control, CTQ (Critical to Quality) — Binary Checks, Definition of Done, Diagnose, Escalation, Improve, Metrics (+3 more)
+Cohesion: 0.25
+Nodes (8): 19. When to Spawn a Sub-Specialist, Conditions for spawning a dedicated Accessibility QC Specialist (Audio), Conditions for spawning a dedicated Loudness and Format Compliance Specialist, How to spawn, 19. When to Spawn a Sub-Specialist, Conditions for spawning a dedicated Accessibility QC Specialist, Conditions for spawning a dedicated Performance QC Specialist, How to spawn
 
 ### Community 1492 - "Community 1492"
 Cohesion: 0.29
@@ -9319,16 +9430,16 @@ Cohesion: 0.29
 Nodes (11): PA-05-04 Follow-Up Distribution, CTQ Checks, Definition of Done, DMAIC Procedure, Escalation, Inputs / Prerequisites, Metrics, PA-05-04 — Follow-Up Distribution (+3 more)
 
 ### Community 1495 - "Community 1495"
-Cohesion: 0.29
-Nodes (7): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Structured Change Review (Pre-Deployment), SOP 9.2 — Post-Deployment Spot Check (Emergency and Expedited Changes), SOP 9.3 — Monthly Department Quality Audit, SOP 9.4 — Quality Gate Effectiveness Review and Calibration, SOP 9.5 — Incident-Triggered Root Cause QC Analysis, SOP 9.6 — Cross-Department QC Coordination and Best Practice Sharing
+Cohesion: 0.21
+Nodes (8): 10. Quality Gates, 3. Daily Operations, End of Day, Gate 1 — Self-check, Gate 2 — Legal Review, Gate 3 — Master Orchestrator Sign-off, Morning (First 25 Minutes), Throughout the Day
 
 ### Community 1496 - "Community 1496"
 Cohesion: 0.29
 Nodes (7): 17. Edge Cases, Edge Case 1 -- Script Changes After Storyboard Is Approved and Production Has Begun, Edge Case 2 -- Production Must Start Without a Full Storyboard for a Specific Section, Edge Case 3 -- Talent/Subject Has Strong Visual Preferences That Conflict With Storyboard Direction, Edge Case 4 -- Multi-Platform Versioning Where One Platform's Requirements Fundamentally Conflict With Another's, Edge Case 5 -- Stock Footage Specified in Storyboard Is No Longer Available When Editor Begins Work, Edge Case 6 -- Script Contains Sensitive, Confidential, or Controversial Content That Affects Visualization Choices
 
 ### Community 1497 - "Community 1497"
-Cohesion: 0.22
-Nodes (9): 13. Good Output Examples, Example A — VSL Section: Problem Agitation, Example B — A/B Test Documentation, 13. Good Output Examples, Example A — Landing Page Build Completion Report, Example B — A/B Test Variant Documentation, 13. Good Output Examples, Example A — VSL Section: Problem Agitation (+1 more)
+Cohesion: 0.25
+Nodes (8): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Sprint Planning and Kickoff, SOP 9.2 -- Production Deployment and Staged Rollout, SOP 9.3 -- Production Incident Response (P0/P1), SOP 9.4 -- Quarterly App Store Optimization (ASO) Audit and Refresh, SOP 9.5 -- Technical Debt Triage and Remediation, SOP 9.6 -- New Engineer Onboarding, SOP 9.7 -- Third-Party SDK and Dependency Evaluation
 
 ### Community 1498 - "Community 1498"
 Cohesion: 0.29
@@ -9375,8 +9486,8 @@ Cohesion: 0.61
 Nodes (7): assert(), green(), red(), resolve_platform_paths(), warn_only(), yellow(), qc-cinematic-forge.sh script
 
 ### Community 1509 - "Community 1509"
-Cohesion: 0.29
-Nodes (7): 1. Never guess at endpoint syntax, 2. Never paste the master reference into context, 3. Treat secrets like passwords, 4. Be careful with financial actions, 5. Be careful with phone number changes, 6. Respect user intent, Safe Working Rules
+Cohesion: 0.25
+Nodes (8): Phase 2: Telegram Setup (You Do This Manually), Step 1: Open Telegram and Start a New Group, Step 2: Add Your Bot to the Group, Step 3: Name Your Group, Step 4: Enable Topics (Converts to Supergroup), Step 5: Promote Your Bot to Admin, Step 6: Enable Required Permissions, Step 7: Activate the Group
 
 ### Community 1510 - "Community 1510"
 Cohesion: 0.61
@@ -9467,8 +9578,8 @@ Cohesion: 0.25
 Nodes (6): SOP Catalog, CRISIS RESOURCES — MANDATORY FOR ALL SOPs, Quality Checklist, SOP 00-INDEX — Superwoman Syndrome Specialist, SOP Flow Map, Versioning
 
 ### Community 1532 - "Community 1532"
-Cohesion: 0.29
-Nodes (7): Account Executive (Full-Cycle), Customer Success Department, Marketing Department, Product Department, Sales Department, Sales Director, Sales Engineering
+Cohesion: 0.25
+Nodes (6): Convert and Flow IS GoHighLevel, Done When, GHL MCP Setup — Installation Guide, GHL Uses a Private Integration Token, NOT an API Key, Important Things to Know Before You Start, Where Credentials Get Stored (CANONICAL — overrides any older skill)
 
 ### Community 1533 - "Community 1533"
 Cohesion: 0.22
@@ -9479,8 +9590,8 @@ Cohesion: 0.25
 Nodes (6): Credentials Location, [Tool Name], TOOLS.md - Tool Configuration & Notes, What Goes Here, Why Separate?, Writing Preferences
 
 ### Community 1535 - "Community 1535"
-Cohesion: 0.18
-Nodes (11): Added, Added — Skill 23 (AI Workforce Blueprint), Changed, Changed, Changed (Skill 15 — BlackCEO Team Management), Changed (Skill 22 — Book-to-Persona), Changed (Skill 23 — AI Workforce Blueprint), Changed — Skill 23 Interview Flow (+3 more)
+Cohesion: 0.14
+Nodes (14): Added, Added, Added — Skill 23 (AI Workforce Blueprint), Changed, Changed, Changed, Changed, Changed (Skill 15 — BlackCEO Team Management) (+6 more)
 
 ### Community 1536 - "Community 1536"
 Cohesion: 0.18
@@ -9491,8 +9602,8 @@ Cohesion: 0.18
 Nodes (9): Decision Quick-Reference, GOVERNING PERSONAS — Relationships & Important-Dates Concierge, How to Use Personas, Persona 1: The Gardener, Persona 2: The Curator, Persona 3: The Lighthouse Keeper, Persona 4: The Host, Persona 5: The Confidant (+1 more)
 
 ### Community 1538 - "Community 1538"
-Cohesion: 0.08
-Nodes (23): real-estate-events.jsonl (Skill 39), 39 — Real Estate Playbook & Property Intelligence, public-records-queries.jsonl (Skill 40), build-with-ai-events.jsonl (Skill 41), Lead Routing Protocol, F52 Master-Files Event Contract, Fallbacks, Honesty floor (+15 more)
+Cohesion: 0.06
+Nodes (28): 38 — Conversational AI System, real-estate-events.jsonl (Skill 39), 39 — Real Estate Playbook & Property Intelligence, public-records-queries.jsonl (Skill 40), build-with-ai-events.jsonl (Skill 41), Cloudflare Tunnel, Lead Routing Protocol, F52 Master-Files Event Contract (+20 more)
 
 ### Community 1539 - "Community 1539"
 Cohesion: 0.67
@@ -9539,16 +9650,16 @@ Cohesion: 0.29
 Nodes (7): 9. Carousel Strategy (Thursdays), Carousel Image Costs, Carousel Image Reuse Strategy (Cost Optimization), Carousel Slide Structure (7-9 slides), Carousel Specs Per Platform (Quick Reference), LinkedIn Carousel: Additional Considerations, Thursday Carousel Content
 
 ### Community 1550 - "Community 1550"
-Cohesion: 0.16
-Nodes (11): 10. Quality Gates, 9. Standard Operating Procedures, Gate 1 — Self-check, Gate 2 — Business Owner Review, Gate 3 — CLO Review (Tier 3 vendors or any agreement with non-standard terms), Gate 4 — Owner Approval (vendor agreements with >$100K annual value, multi-year commitments, IP creation that is core to the business, or critical infrastructure vendors), SOP 9.1 — Vendor Contract Intake and Triage, SOP 9.2 — Inbound Vendor Agreement Review (Vendor's Paper) (+3 more)
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures, SOP 9.1 — Vendor Contract Intake and Triage, SOP 9.2 — Inbound Vendor Agreement Review (Vendor's Paper), SOP 9.3 — Outbound Vendor Agreement Drafting ({{COMPANY_NAME}} Template for Contractors, Freelancers, Consultants), SOP 9.4 — Vendor Contract Renewal and Termination Management, SOP 9.5 — Vendor Risk and Due Diligence Program
 
 ### Community 1551 - "Community 1551"
 Cohesion: 0.38
 Nodes (8): qc-proactive-outreach.sh script, qc-proactive-outreach.test.sh script, fail(), pass(), make_copy(), ng(), ok(), run_should_fail()
 
 ### Community 1552 - "Community 1552"
-Cohesion: 0.64
-Nodes (7): qc-system-integrity.sh script, blue(), check(), green(), red(), warn_check(), yellow()
+Cohesion: 0.67
+Nodes (8): qc-system-integrity.sh script, qc-system-integrity.sh script, blue(), check(), green(), red(), warn_check(), yellow()
 
 ### Community 1553 - "Community 1553"
 Cohesion: 0.38
@@ -9571,20 +9682,20 @@ Cohesion: 0.25
 Nodes (6): Captured values, Checkpoint results, Deviations, Phase progress, Run Manifest — Convert and Flow Setup, Step log
 
 ### Community 1558 - "Community 1558"
+Cohesion: 0.25
+Nodes (8): Before you start, BLOCK 4 — VPS, Full Onboarding, via Telegram, If something looks wrong, Step 1 — Open Telegram, Success looks like this, What this does, What you'll see while it runs, What you'll see while it runs
+
+### Community 1559 - "Community 1559"
 Cohesion: 0.29
 Nodes (7): 10. Rule of Three Overuse, 11. Elegant Variation (Synonym Cycling), 12. False Ranges, 7. Overused "AI Vocabulary" Words, 8. Avoidance of "is"/"are" (Copula Avoidance), 9. Negative Parallelisms, LANGUAGE AND GRAMMAR PATTERNS
 
-### Community 1559 - "Community 1559"
-Cohesion: 0.20
-Nodes (7): AUTHOR: Janet Bray Attwood and Chris Attwood, BOOK: The Passion Test: The Effortless Path to Discovering Your Destiny, EXTRACTION DATE: 2024-11-26, EXTRACTION NOTES - The Passion Test, AUTHOR: Daniel H. Pink, EXTRACTION DATE: [Current Date], EXTRACTION NOTES - Drive
-
 ### Community 1560 - "Community 1560"
-Cohesion: 0.24
-Nodes (5): Available business-type templates, Custom templates, Customer Journey Templates Library — Registry, How business type is determined, Customer Journey Templates (8)
+Cohesion: 0.29
+Nodes (7): 17. Edge Cases, Edge Case 1 -- Podcast Appearance on a Major External Show Drives a Lead Spike, Edge Case 2 -- Audio Lead Opts Out After Long-Term Engagement, Edge Case 3 -- CRM Automation Fails During a Major Episode Launch, Edge Case 4 -- GDPR/CCPA Deletion Request From a Long-Time Audio Listener, Edge Case 5 -- Podcast Changes Hosting Platform or RSS Feed, Edge Case 6 -- Episode Generates Negative Sentiment or Controversy
 
 ### Community 1561 - "Community 1561"
-Cohesion: 0.18
-Nodes (10): HOW IT ALL CONNECTS: The Zero-Human Company Build Chain, Quick Reference: Skill Dependency Order, Skill 22 — Book-to-Persona Coaching Leadership System, Skill 23 — AI Workforce Blueprint, Skill 31 — Upgraded Memory System, Skill 32 — Command Center Setup, System Roles, The End-to-End Data Flow (+2 more)
+Cohesion: 0.08
+Nodes (23): CORE_UPDATES.md (Graphify Core File Appends), Graphify Knowledge Graph Skill (Skill 43), INSTALL.md (Graphify Setup), INSTRUCTIONS.md (Graphify Runtime Guide), 1. Skill 22 must exist BEFORE Skill 23 runs persona assignment, 2. persona-categories.json is the bridge between Skill 22 and Skill 23, 3. Skill 32 reads config files Skill 23 writes — not the workspace directly, 4. Skill 31's Gemini Embedding 2 serves TWO separate indexes (+15 more)
 
 ### Community 1562 - "Community 1562"
 Cohesion: 0.29
@@ -9635,19 +9746,19 @@ Cohesion: 0.33
 Nodes (6): Command Line Options, --extract-only Option, --format Option, --language Option, --length Option, --youtube Option
 
 ### Community 1574 - "Community 1574"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (5): Core file policy for this skill, MANDATORY TYP STEP (NON-OPTIONAL), Purpose, Self-Improving Agent (Imported), What is preserved
 
 ### Community 1575 - "Community 1575"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (5): Core file policy for this skill, MANDATORY TYP STEP (NON-OPTIONAL), Proactive Agent (Imported), Purpose, What is preserved
 
 ### Community 1576 - "Community 1576"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (5): Core file policy for this skill, Humanizer (Imported), MANDATORY TYP STEP (NON-OPTIONAL), Purpose, What is preserved
 
 ### Community 1577 - "Community 1577"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (5): Core file policy for this skill, MANDATORY TYP STEP (NON-OPTIONAL), Purpose, What is preserved, YouTube Watcher (Imported)
 
 ### Community 1578 - "Community 1578"
@@ -9699,12 +9810,12 @@ Cohesion: 0.33
 Nodes (6): 9. SOPs (Standard Operating Procedures), SOP-1: New API Endpoint Implementation, SOP-2: Production Incident Response (Backend), SOP-3: Database Migration, SOP-4: Third-Party API Integration, SOP-5: API Performance Tuning
 
 ### Community 1590 - "Community 1590"
-Cohesion: 0.48
-Nodes (7): 9. Standard Operating Procedures (Quick Reference), 9. Standard Operating Procedures (Reference), SOP PA-07-01: Structured Brainstorm Session, SOP PA-07-02: Idea Capture & Parking Lot, SOP PA-07-03: Idea Evaluation & Scoring, SOP PA-07-04: Pivot & What-If Exploration, SOP PA-07-05: Naming & Wordsmithing
+Cohesion: 0.29
+Nodes (7): Sub-Specialist 19.1 -- Email Deliverability & Optimization Specialist, Sub-Specialist 19.2 -- CRM Campaign Specialist, Sub-Specialist 19.3 -- CRM Data Analyst, Sub-Specialist 19.4 -- CRM Administrator, 19.B — "Quality Auditor" (Standards and Compliance Reviewer), Promotion Rule, Spawn Mechanism
 
 ### Community 1591 - "Community 1591"
-Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New Service Environment Provisioning, SOP 9.2 — Production Database Backup Verification and Test Restore, SOP 9.3 — Infrastructure Incident Response (P1/P2), SOP 9.4 — Monthly Cost Optimization Sprint, SOP 9.5 — Quarterly Disaster Recovery Failover Drill
+Cohesion: 0.16
+Nodes (11): 10. Quality Gates, 9. Standard Operating Procedures (Numbered), Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required"), SOP 9.1 — New Service Environment Provisioning, SOP 9.2 — Production Database Backup Verification and Test Restore (+3 more)
 
 ### Community 1592 - "Community 1592"
 Cohesion: 0.31
@@ -9731,52 +9842,52 @@ Cohesion: 0.33
 Nodes (6): 4. Weekly Operations, Friday -- Cleanup & Prep, Monday -- Reconciliation Day, Thursday -- Financial Review, Tuesday -- Accounts Payable, Wednesday -- Payroll (if in-house)
 
 ### Community 1598 - "Community 1598"
-Cohesion: 0.33
-Nodes (6): 9. SOPs (Standard Operating Procedures), SOP-1: Weekly Bank Reconciliation, SOP-2: Month-End Close, SOP-3: Accounts Receivable Collections, SOP-4: New Vendor Setup, SOP-5: Sales Tax Filing
+Cohesion: 0.29
+Nodes (7): 9. Standard Operating Procedures, SOP 9.1 — Question Selection and Prioritization, SOP 9.2 — Writing High-Performing Quora Answers, SOP 9.3 — Quora Topic Authority Building, SOP 9.1 — Question Selection and Prioritization, SOP 9.4 — Continuous Improvement Review, SOP 9.5 — Escalation and Handoff Protocol
 
 ### Community 1599 - "Community 1599"
 Cohesion: 0.33
 Nodes (6): 9. SOPs, SOP-01: Daily Cash Position Reconciliation, SOP-02: 13-Week Rolling Cash Flow Forecast Update, SOP-03: Scenario-Based Liquidity Stress Test, SOP-04: AR Aging-Based Collection Forecast Adjustment, SOP-05: Month-End Cash Forecast Accuracy Analysis
 
 ### Community 1600 - "Community 1600"
-Cohesion: 0.33
-Nodes (6): 17. Edge Cases, Edge Case 1: Sudden Revenue Drop — Key Customer Churns Without Warning, Edge Case 2: Bank Account Freeze or Fraud Alert, Edge Case 3: Payroll Funding Gap — Cash Insufficient for Upcoming Payroll, Edge Case 4: Revenue Recognition Dispute — Customer Disputes a Charge or Contract Value, Edge Case 5: Department Head Ignores Repeated Budget Variance Warnings
+Cohesion: 0.29
+Nodes (7): 17. Edge Cases, Edge Case 1 -- Podcast Appearance on a Major External Show Drives a Lead Spike, Edge Case 2 -- Audio Lead Opts Out After Long-Term Engagement, Edge Case 3 -- CRM Automation Fails During a Major Episode Launch, Edge Case 4 -- GDPR/CCPA Deletion Request From a Long-Time Audio Listener, Edge Case 5 -- Podcast Changes Hosting Platform or RSS Feed, Edge Case 6 -- Episode Generates Negative Sentiment or Controversy
 
 ### Community 1601 - "Community 1601"
-Cohesion: 0.20
-Nodes (9): Decision-Making Philosophy, Default Voice, Emotional Intelligence Markers, Forbidden Language, Open Line Rule, Operating Protocol (binding), Travel & Logistics Coordinator -- SOUL, Voice by Context (+1 more)
+Cohesion: 0.29
+Nodes (7): After-Hours and Voicemail Handling, Hold and Transfer Patterns, Inbound Answering Greetings, Inbound Call Pattern Templates, Inbound: Caller Is Already Upset When They Call, Intent Discovery — Finding Out Why They Called, Phone Call: Inbound Call Handling
 
 ### Community 1602 - "Community 1602"
-Cohesion: 0.18
-Nodes (10): 19. When to Spawn a Sub-Specialist, 7. KPIs (Your Scoreboard), Common sub-specialists for this role, Daily Pulse Metrics — Checked Every Morning, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance, Primary KPIs — Graded Weekly (+2 more)
+Cohesion: 0.29
+Nodes (7): 8.0 Configure Active Memory (REQUIRED), 8.1 Enable Wiki System, 8.1 Enable wiki system, 8.2 Initialize wiki vault, 8.3 Configure wiki sync, 8.4 Verify wiki system, Layer 8: Active Memory + Wiki System (REQUIRED)
 
 ### Community 1603 - "Community 1603"
 Cohesion: 0.33
 Nodes (6): 10. Quality Gates, Gate 1 — Self-Check (Mandatory, Every Output), Gate 2 — Department QC Review, Gate 3 — Legal/Compliance Review (Conditional — Required for Specified Categories), Gate 4 — Devil's Advocate Review (Only for Outputs Marked "High Stakes"), Gate 5 — Owner Approval (Only for Outputs Marked "Owner-Required")
 
 ### Community 1604 - "Community 1604"
-Cohesion: 0.20
-Nodes (10): 10. Quality Gates, Gate 1 — Self-check (Facebook Specialist), Gate 2 — Director of Social Media Review (for campaign content, sensitive topics, major announcements), Gate 3 — Devil's Advocate Review (for controversial topics, political/social commentary, humor), Gate 4 — Owner Approval (posts referencing owner, major company announcements), 10. Quality Gates, Gate 1 — Self-check (Facebook Specialist), Gate 2 — Director of Social Media Review (for campaign content, sensitive topics, major announcements) (+2 more)
+Cohesion: 0.48
+Nodes (7): Tier 1 — Official GHL MCP (`ghl-mcp`), Tier 2 — Community GHL MCP (`ghl-community-mcp`), Tier 3 — Direct REST API + skill 29 reference, Tier 4 — Playwright browser, Tier 5 — Codex Computer Use, When to Use Which Tier, When to use which
 
 ### Community 1605 - "Community 1605"
-Cohesion: 0.20
-Nodes (10): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Content Submission QC Review, SOP 9.2 — Cross-Platform Brand Voice Consistency Audit, SOP 9.3 — Community Interaction Tone Audit, SOP 9.4 — Recurring Quality Issue Pattern Tracking, SOP 9.5 — QC Log Maintenance, SOP 9.6 — Weekly QC Scorecard Compilation, SOP 9.7 — Pre-Publication Crisis Content Review (+2 more)
+Cohesion: 0.29
+Nodes (7): Collections, Critical Rules, Gemini Engine INDEXING PROTOCOL, Indexing Milestones, See Also, Standard Indexing Commands, Verification Steps
 
 ### Community 1606 - "Community 1606"
 Cohesion: 0.20
 Nodes (10): Before you start, BLOCK 3 — VPS, Full Onboarding, via Terminal, How to verify it worked, If something looks wrong, Step 1 — Open Terminal locally and SSH into your VPS, Step 2 — Paste the VPS install command and press Return, Success looks like this, What this does (+2 more)
 
 ### Community 1607 - "Community 1607"
-Cohesion: 0.44
-Nodes (10): PA-20-01: Passion Discovery Interview, PA-20-02: Purpose Statement Drafting, PA-20-03: Passion-to-Action Bridge, PA-20-04: Passion Check-In (Monthly), PA-22-01: Goal-to-Channel Matching, PA-22-02: Learning Playlist Build, PA-22-03: Weekly Video Drop, PA-22-04: Channel Audit & Rotation (+2 more)
+Cohesion: 0.29
+Nodes (7): Risk, Risk, [v10.15.49]  -  2026-06-06  -  docs: HOW-IT-ALL-CONNECTS.md — architecture doc for Skill 22/23/31/32 pipeline, What changed, What changed, Why, Why
 
 ### Community 1608 - "Community 1608"
 Cohesion: 0.33
 Nodes (6): 17. Edge Cases for This Role, Edge Case 17.1 — Perfect Audit Day (Zero Defects Found), Edge Case 17.2 — Specialist Disputes QC Score, Edge Case 17.3 — New Product/Feature Launch with No QC Standards, Edge Case 17.4 — Suspected Specialist Burnout Affecting Quality, Edge Case 17.5 — QC Platform Data Loss or Corruption
 
 ### Community 1609 - "Community 1609"
-Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures, SOP 9.1 — Standard Refund Request Processing, SOP 9.2 — Chargeback Response and Dispute Management, SOP 9.3 — Billing Error Investigation and Proactive Resolution, SOP 9.4 — Continuous Improvement Review, SOP 9.5 — Escalation and Handoff Protocol
+Cohesion: 0.29
+Nodes (6): 🤝 Common to BOTH (do not skip regardless of box), 🍎 Mac mini (Homebrew / launchd), ⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac mini, 🐧 VPS (Hostinger Docker), VPS Hostinger Docker Platform, VPS vs Mac Install Considerations
 
 ### Community 1610 - "Community 1610"
 Cohesion: 0.33
@@ -9795,20 +9906,20 @@ Cohesion: 0.33
 Nodes (6): 17. Edge Cases for This Role, Edge Case 17.1 -- The Owner's Family Member Requests Design Work, Edge Case 17.2 -- Competitor Copies {{COMPANY_NAME}}'s Visual Identity, Edge Case 17.3 -- A-List Designer Wants to Break Brand Rules for "Creative Reasons", Edge Case 17.4 -- Stakeholder Gives Contradictory Feedback Between Rounds, Edge Case 17.5 -- AI Tool Produces Work That Passes All Gates but "Feels Soulless"
 
 ### Community 1614 - "Community 1614"
-Cohesion: 0.16
-Nodes (11): 17. Edge Cases for This Role, 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Edge Case 17.1 -- Asset Passes QC But Is Challenged by the Devil's Advocate on Strategic Grounds, Edge Case 17.2 -- Two Specialists Submit Conflicting Versions of the Same Asset, Edge Case 17.3 -- Asset Contains Content in a Language You Do Not Speak, Edge Case 17.4 -- New Platform or Format With No Established QC Standards, Edge Case 17.5 -- Specialist Repeatedly Resubmits Without Fixing the Reported Issues (+3 more)
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 1615 - "Community 1615"
 Cohesion: 0.20
 Nodes (9): Allow-list update, Capabilities, Check inventory for a product, Common operations, Look up an order by number, Look up customer by email, Per-customer Shopify customer linkage, Shopify Integration Protocol (+1 more)
 
 ### Community 1616 - "Community 1616"
-Cohesion: 0.22
-Nodes (9): BEGIN references/examples.md, BEGIN references/openclaw-integration.md, Configuration, END hooks/openclaw/HOOK.md, END references/examples.md, END references/openclaw-integration.md, Extracted Skill Example, Self-Improvement Hook (+1 more)
+Cohesion: 0.29
+Nodes (7): 13. Em Dash Overuse, 14. Overuse of Boldface, 15. Inline-Header Vertical Lists, 16. Title Case in Headings, 17. Emojis, 18. Curly Quotation Marks, STYLE PATTERNS
 
 ### Community 1617 - "Community 1617"
-Cohesion: 0.22
-Nodes (9): pink-when, sinek-start-with-why, domain, perspective, author, book, custom, domain (+1 more)
+Cohesion: 0.33
+Nodes (6): sinek-start-with-why, author, book, custom, domain, perspective
 
 ### Community 1618 - "Community 1618"
 Cohesion: 0.33
@@ -9876,7 +9987,7 @@ Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New YouTube 
 
 ### Community 1634 - "Community 1634"
 Cohesion: 0.33
-Nodes (6): 9. SOPs, SOP-1: Research Intake Triage and Prioritization, SOP-2: Research Output Quality Review, SOP-3: Strategic Deep-Dive Analysis, SOP-4: Knowledge Base Maintenance and Audit, SOP-5: Quarterly Research ROI Analysis
+Nodes (6): 17. Edge Cases for This Role, Edge Case 17.1 -- App Store Policy Change Forces Emergency Compliance Update, Edge Case 17.2 -- App Store Review Rejection for a Subjective Policy Interpretation, Edge Case 17.3 -- Critical Third-Party SDK Deprecated or Vendor Shuts Down, Edge Case 17.4 -- Data Breach or Security Vulnerability Discovered in Production App, Edge Case 17.5 -- Platform-Level Breaking Change (OS Update Deprecates Critical API)
 
 ### Community 1635 - "Community 1635"
 Cohesion: 0.33
@@ -9899,8 +10010,8 @@ Cohesion: 0.33
 Nodes (6): 9. SOPs, SOP-01: New Opportunity Qualification and Pipeline Entry, SOP-02: Discovery Call Execution, SOP-03: Product Demonstration, SOP-04: Proposal, Negotiation, and Close, SOP-05: Outbound Pipeline Generation Cadence
 
 ### Community 1640 - "Community 1640"
-Cohesion: 0.18
-Nodes (10): 10. Quality Gates, 15. Common Mistakes, Gate 1: Sales Handoff Acceptance, Gate 2: QBR Readiness, Gate 3: Renewal Forecast Accuracy, Mistake 1: Treating Accounts as a Portfolio, Not as Individual Relationships, Mistake 2: Confusing Activity with Outcomes, Mistake 3: Avoiding Difficult Conversations (+2 more)
+Cohesion: 0.33
+Nodes (6): 9. SOPs, SOP-1: Crash Triage and Hotfix Response, SOP-2: App Store Submission and Phased Release, SOP-3: Performance Regression Profiling, SOP-4: API Contract Negotiation with Backend, SOP-5: Third-Party SDK Upgrade
 
 ### Community 1641 - "Community 1641"
 Cohesion: 0.33
@@ -9919,8 +10030,8 @@ Cohesion: 0.22
 Nodes (9): 17. Edge Cases for This Role, Edge Case 17.1 — Conflicting Instructions (Business Team Wants Speed, Legal Team Wants Full Review), Edge Case 17.1 — QC Review of a Document in a Foreign Language, Edge Case 17.2 — Document in a Foreign Language or Foreign Jurisdiction, Edge Case 17.2 — Rush QC Review With Insufficient Time for Thoroughness, Edge Case 17.3 — QC Reveals a Pattern Suggesting Deliberate Misconduct, Edge Case 17.3 — Urgent Amendment or Correction of an Already-Executed Document, Edge Case 17.4 — AI-Assisted or AI-Generated Legal Document (+1 more)
 
 ### Community 1645 - "Community 1645"
-Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures, SOP 9.1 — Comment and DM Engagement Protocol, SOP 9.2 — Brand Advocate Identification and Nurturing, SOP 9.3 — Community Conflict De-escalation and Management, SOP 9.4 — Community Guidelines Development and Enforcement, SOP 9.5 — Community Feedback to Internal Teams
+Cohesion: 0.09
+Nodes (18): 10. Quality Gates, 11. Handoffs (Value Stream Map), 17. Edge Cases for This Role, 9. Standard Operating Procedures, Cross-Department Coordination, Edge Case 17.1 — A Community Member Threatens Self-Harm or Displays Signs of Crisis, Edge Case 17.2 — High-Profile Person or Influencer Joins the Community, Edge Case 17.3 — Community Member Becomes a Competitor's Advocate (+10 more)
 
 ### Community 1646 - "Community 1646"
 Cohesion: 0.29
@@ -9931,8 +10042,8 @@ Cohesion: 0.29
 Nodes (7): 9. Standard Operating Procedures, SOP 9.1 — TikTok Video Creation and Publishing (Daily Content Engine), SOP 9.2 — TikTok Trend Identification and Adaptation, SOP 9.3 — TikTok Community Engagement, SOP 9.4 — Continuous Improvement Review, SOP 9.5 — Escalation and Handoff Protocol, SOP 9.1 — TikTok Video Creation and Publishing (Daily Content Engine)
 
 ### Community 1648 - "Community 1648"
-Cohesion: 0.22
-Nodes (9): 9. SOPs (Standard Operating Procedures), SOP-01: Month-End Close, SOP-02: 13-Week Cash Flow Forecast Update, SOP-03: Expenditure Approval, SOP-04: Financial Variance Investigation, SOP-05: Quarterly Reforecast, SOP-06: Investor / Stakeholder Financial Update, SOP-07: Budget-to-Actual Department Review (+1 more)
+Cohesion: 0.33
+Nodes (6): 4. Weekly Operations, Friday -- Deliverable Handoff & Next Week Prep, Monday -- Priority Processing, Thursday -- Tool & Process Improvement, Tuesday -- Deep Quality Work, Wednesday -- Mid-Week Quality Audit
 
 ### Community 1649 - "Community 1649"
 Cohesion: 0.22
@@ -9943,8 +10054,8 @@ Cohesion: 0.33
 Nodes (7): Activity Log Template - Master Orchestrator, Activity Log Template — Master Orchestrator, Example Daily Log, Gemini Engine Embed Schedule, Log Entry Format, Log Retention Policy, Purpose
 
 ### Community 1651 - "Community 1651"
-Cohesion: 0.22
-Nodes (9): 1. Skill 22 must exist BEFORE Skill 23 runs persona assignment, 2. persona-categories.json is the bridge between Skill 22 and Skill 23, 3. Skill 32 reads config files Skill 23 writes — not the workspace directly, 4. Skill 31's Gemini Embedding 2 serves TWO separate indexes, 5. The role library and SOP library are GATED — interview alone is not enough, 6. Persona assignment is per-TASK, not per-role — the governing-personas.md is a pool, not a fixed assignment, 7. The Devil's Advocate also uses the persona system — and rotates personas per challenge, 8. Memory wiki pages are the connective tissue between all four skills (+1 more)
+Cohesion: 0.33
+Nodes (6): 9. SOPs (Standard Operating Procedures), SOP-AUDIO-001: Audio Mastering Chain Application, SOP-AUDIO-002: Mastering QC Checklist, SOP-AUDIO-003: Source File Quality Triage, SOP-AUDIO-004: Multi-Format Deliverable Export, SOP-AUDIO-005: Mastering Chain Preset Maintenance
 
 ### Community 1652 - "Community 1652"
 Cohesion: 0.22
@@ -9975,32 +10086,32 @@ Cohesion: 0.33
 Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Workflow Build and Deployment, SOP 9.2 — Automation Registry Entry, SOP 9.3 — Automation Failure Response, SOP 9.4 — Quarterly Workflow Audit, SOP 9.5 — Stakeholder Automation Consultation
 
 ### Community 1659 - "Community 1659"
-Cohesion: 0.22
-Nodes (7): CTQ Quality Checks, Definition of Done, DMAIC Procedure, Escalation, Metrics, PA-29-01: Accomplishment Intake Interview, Tone & Persona Note
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Standard Audio Transcription (Podcast, Interview, Course), SOP 9.2 — Caption and Subtitle File Production (SRT/VTT), SOP 9.3 — Customer Call Transcription and Insight Extraction, SOP 9.4 — Continuous Improvement Review, SOP 9.5 — Escalation and Handoff Protocol
 
 ### Community 1660 - "Community 1660"
-Cohesion: 0.33
-Nodes (6): 9. SOPs, SOP-01: Ticket Triage and Categorization, SOP-02: Escalation to Tier 2, SOP-03: Handling an Angry or Upset Customer, SOP-04: Product Bug Report to App Development, SOP-05: Knowledge Base Article Creation
+Cohesion: 0.19
+Nodes (9): 13. Good Output Examples, 9. SOPs, Example A -- Complete Escalation Note, Example B -- Customer Empathy Response, SOP-01: Ticket Triage and Categorization, SOP-02: Escalation to Tier 2, SOP-03: Handling an Angry or Upset Customer, SOP-04: Product Bug Report to App Development (+1 more)
 
 ### Community 1661 - "Community 1661"
 Cohesion: 0.33
 Nodes (6): 9. Standard Operating Procedures, SOP 9.1 — Bug Reproduction and Engineering Handoff, SOP 9.2 — Integration Failure Diagnosis, SOP 9.3 — Recurring Issue Pattern Detection and Resolution, SOP 9.4 — Tier 1 Escalation Coaching and Capability Building, SOP 9.5 — Production Incident Investigation (P0/P1)
 
 ### Community 1662 - "Community 1662"
-Cohesion: 0.22
-Nodes (7): CTQ Quality Checks, Definition of Done, DMAIC Procedure, Escalation, Metrics, PA-29-03: Bio Suite (3 Versions), Tone & Persona Note
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Press Release Drafting (Standard Announcement), SOP 9.2 — Reactive Statement (Crisis or Controversy Response), SOP 9.3 — Press Release Distribution, SOP 9.4 — Journalist Inquiry Response (Non-Crisis), SOP 9.5 — Weekly Press Performance Reporting
 
 ### Community 1663 - "Community 1663"
-Cohesion: 0.22
-Nodes (7): CTQ Quality Checks, Definition of Done, DMAIC Procedure, Escalation, Metrics, PA-29-04: Talking Points Library, Tone & Persona Note
+Cohesion: 0.33
+Nodes (6): 17. Edge Cases for This Role, Edge Case 17.1 -- Sudden Spam Complaint Spike from a Legacy Automated Workflow, Edge Case 17.2 -- Merger or Acquisition Requires CRM Platform Consolidation, Edge Case 17.3 -- Major Mailbox Provider Delivery Suspension, Edge Case 17.4 -- Privacy Regulation Change Affects CRM Data Practices, Edge Case 17.5 -- Key CRM Team Member Sudden Departure
 
 ### Community 1664 - "Community 1664"
-Cohesion: 0.22
-Nodes (7): CTQ Quality Checks, Definition of Done, DMAIC Procedure, Escalation, Metrics, PA-29-05: Under-Claim Detection & Correction, Tone & Persona Note
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Brand Identity Compliance Review, SOP 9.2 -- Brand Guideline Creation or Update, SOP 9.3 -- Brand Emergency Response (Identity-Specific), SOP 9.4 -- Weekly Brand Compliance Reporting, SOP 9.5 -- Designer Brand Education Intervention
 
 ### Community 1665 - "Community 1665"
 Cohesion: 0.05
-Nodes (40): 10. Quality Gates, 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+32 more)
+Nodes (39): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 18. Update Triggers (When to Revise This Document) (+31 more)
 
 ### Community 1666 - "Community 1666"
 Cohesion: 0.36
@@ -10008,7 +10119,7 @@ Nodes (6): SOP Index (Family & Life-Stage), DMAIC Compliance, Reading Order, Ver
 
 ### Community 1667 - "Community 1667"
 Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Event Planning and Topic Validation, SOP 9.2 — Speaker Recruitment, Prep, and Management, SOP 9.3 — Event Promotion Sequence, SOP 9.4 — Live Event Execution and Moderation, SOP 9.5 — Post-Event Data Processing and Handoff
+Nodes (6): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 2 — Department QC Review (This role), Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 1668 - "Community 1668"
 Cohesion: 0.43
@@ -10027,16 +10138,16 @@ Cohesion: 0.33
 Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Daily Search Term Mining and Negative Keyword Management, SOP 9.2 -- Weekly Quality Score Audit and Improvement, SOP 9.3 -- Monthly Keyword Portfolio Audit, SOP 9.4 -- PMax Asset Group Optimization, SOP 9.5 -- Bid Strategy Management and Budget Pacing
 
 ### Community 1672 - "Community 1672"
-Cohesion: 0.25
-Nodes (8): 16. Research Sources, Tier 1 — Authoritative Strategic, Tier 2 — Trade & Vendor, Tier 3 — Anti-Failure & Competitive Context, 16. Research Sources, Tier 1 — Authoritative Strategic, Tier 2 — Trade and Vendor, Tier 3 — Competitive Context
+Cohesion: 0.15
+Nodes (13): 16. Research Sources, Tier 1 — Authoritative Strategic, Tier 2 — Trade & Vendor, Tier 3 — Anti-Failure & Competitive Context, 16. Research Sources, Tier 1 -- Authoritative Strategic, Tier 2 -- Trade & Vendor, Tier 3 -- Competitive Context (+5 more)
 
 ### Community 1673 - "Community 1673"
 Cohesion: 0.33
 Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New YouTube Campaign Launch, SOP 9.2 — Placement Exclusion and Brand Safety Audit, SOP 9.3 — Audience Testing and Expansion, SOP 9.4 — Creative Performance Management and Refresh Cycle, SOP 9.5 — Budget Pacing and Bid Strategy Optimization
 
 ### Community 1674 - "Community 1674"
-Cohesion: 0.25
-Nodes (8): 17. Edge Cases, Case 1: Apple Mail Privacy Protection (MPP) Causes False "Opened" Signals, Case 2: Sudden Volume Spike from a Third-Party Integration, Case 3: ISP-Specific Rendering Bug Causes Invisible Unsubscribe Link, Case 4: Google Postmaster Tools "No Data" During Critical Monitoring Period, Case 5: Subdomain Spoofing Attack, Case 6: "Sign in with Apple" Email Delivery Failure, Case 7: Legal/Compliance Hold on List Deletion
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — The Discovery Call Structure (60 Minutes), SOP 9.2 — Discovery Brief Documentation, SOP 9.3 — AE Warm Handoff, SOP 9.4 — MEDDIC Discovery Framework Application, SOP 9.5 — Discovery Disqualification Protocol
 
 ### Community 1675 - "Community 1675"
 Cohesion: 0.25
@@ -10068,7 +10179,7 @@ Nodes (8): 1. TYP Compliance, 2. Core.md Files Protection, 3. Master Files Creat
 
 ### Community 1682 - "Community 1682"
 Cohesion: 0.25
-Nodes (8): Before you start, BLOCK 2 — Mac, Full Onboarding, via Telegram, If something looks wrong, Step 2 — Paste this exact message to your agent, Success looks like this, What this does, What you'll see while it runs, What you'll see while it runs
+Nodes (8): Before you start, BLOCK 2 — Mac, Full Onboarding, via Telegram, If something looks wrong, If something looks wrong, Step 2 — Paste this exact message to your agent, Success looks like this, What this does, What you'll see while it runs
 
 ### Community 1683 - "Community 1683"
 Cohesion: 0.40
@@ -10116,35 +10227,35 @@ Nodes (7): BEGIN assets/AGENTS.md, BEGIN SKILL.md, END SKILL.md, END SKILL-v3-dr
 
 ### Community 1694 - "Community 1694"
 Cohesion: 0.33
-Nodes (6): 11. Handoffs, Contractor Handoff (You to Freelance Editor/Animator), Course Content Handoff (Education/Product to You), Creative Brief Handoff (Marketing to You), Post-Production Handoff (You to Marketing/Distribution), VSL Handoff (Marketing/Sales to You)
+Nodes (6): 9. Standard Operating Procedures, SOP 9.1 — Facebook Page Content Calendar and Publishing, SOP 9.2 — Facebook Group Management and Moderation, SOP 9.3 — Facebook Event Creation and Promotion, SOP 9.4 — Facebook Organic Video Strategy, SOP 9.1 — Facebook Page Content Calendar and Publishing
 
 ### Community 1695 - "Community 1695"
 Cohesion: 0.33
-Nodes (6): 16. Research Sources, Tier 1 — Premium Consulting and Business Publications, Tier 2 — Analyst Firms and Research Institutions, Tier 3 — Role-Specific Industry Sources, Tier 4 — Anti-Failure and Problem Analysis, Tier 5 — Job Marketplace and Practitioner Sources
+Nodes (6): 9. SOPs (Standard Operating Procedures), SOP-1: New API Endpoint Implementation, SOP-2: Production Incident Response (Backend), SOP-3: Database Migration, SOP-4: Third-Party API Integration, SOP-5: API Performance Tuning
 
 ### Community 1696 - "Community 1696"
 Cohesion: 0.33
-Nodes (6): 17. Edge Cases, Edge Case 1: Algorithm Reset After Posting Gap, Edge Case 2: Course Video Becomes Outdated Post-Launch, Edge Case 3: VSL Underperforms Despite Strong Creative, Edge Case 4: Stakeholder Requests Misaligned with Platform Best Practices, Edge Case 5: Raw Footage Loss or Corruption
+Nodes (6): 17. Edge Cases for This Role, Edge Case 17.1 -- App Store Policy Change Forces Emergency Compliance Update, Edge Case 17.2 -- App Store Review Rejection for a Subjective Policy Interpretation, Edge Case 17.3 -- Critical Third-Party SDK Deprecated or Vendor Shuts Down, Edge Case 17.4 -- Data Breach or Security Vulnerability Discovered in Production App, Edge Case 17.5 -- Platform-Level Breaking Change (OS Update Deprecates Critical API)
 
 ### Community 1697 - "Community 1697"
 Cohesion: 0.33
-Nodes (6): 7. KPIs, Cross-Format Production KPIs, Online Course Video KPIs, Revenue Cascade (YouTube Channel), VSL / Sales Video KPIs, YouTube KPIs
+Nodes (6): 9. SOPs, SOP-1: Crash Triage and Hotfix Response, SOP-2: App Store Submission and Phased Release, SOP-3: Performance Regression Profiling, SOP-4: API Contract Negotiation with Backend, SOP-5: Third-Party SDK Upgrade
 
 ### Community 1698 - "Community 1698"
 Cohesion: 0.33
-Nodes (6): 9. SOPs, SOP-01: YouTube Long-Form Video Production (Full Pipeline), SOP-02: Online Course Video Production, SOP-03: Video Sales Letter (VSL) Production, SOP-04: Retention Engineering for Long-Form Video, SOP-05: Multi-Format Content Repurposing (Atomization)
+Nodes (6): 9. SOPs, SOP-1: Manuscript Intake and Pronunciation Research, SOP-2: Recording Session Management and Real-Time Direction, SOP-3: Narrator Casting and Audition, SOP-4: Post-Production Editing, Proofing, and Mastering Pipeline, SOP-5: Distribution Platform Submission
 
 ### Community 1699 - "Community 1699"
-Cohesion: 0.29
-Nodes (7): personal-assistant, director_title, display_name, emoji, one_liner, suggested_roles_file, v2_3_note
+Cohesion: 0.33
+Nodes (6): 4. Weekly Operations, Friday -- Cleanup & Prep, Monday -- Reconciliation Day, Thursday -- Financial Review, Tuesday -- Accounts Payable, Wednesday -- Payroll (if in-house)
 
 ### Community 1700 - "Community 1700"
 Cohesion: 0.29
 Nodes (7): 9. Standard Operating Procedures, SOP 9.1 — Annual Marketing Strategy & Budget Planning, SOP 9.2 — Campaign Approval, Launch, and Monitoring, SOP 9.3 — Marketing-Sales Alignment and Lead Handoff SLA Audit, SOP 9.4 — Brand Crisis Response (Marketing-Led Levels 1-2), SOP 9.5 — Quarterly Competitive Intelligence and Market Positioning Review, SOP 9.6 — Marketing Budget Pacing and Dynamic Reallocation
 
 ### Community 1701 - "Community 1701"
-Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Cohesion: 0.11
+Nodes (15): 16. Research Sources, 19. When to Spawn a Sub-Specialist, 9. SOPs, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance, SOP-01: Conducting a Weekly Usability Test (+7 more)
 
 ### Community 1702 - "Community 1702"
 Cohesion: 0.33
@@ -10183,8 +10294,8 @@ Cohesion: 0.33
 Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Comprehensive Security Audit, SOP 9.2 -- Vulnerability Remediation and Verification, SOP 9.3 -- Web Application Firewall (WAF) Management, SOP 9.4 -- Secure Code Review, SOP 9.5 -- Security Incident Response
 
 ### Community 1711 - "Community 1711"
-Cohesion: 0.11
-Nodes (15): 17. Edge Cases for This Role, 7. KPIs (Your Scoreboard), 9. Standard Operating Procedures (Numbered), Daily Pulse Metrics, Edge Case 17.1 — Critical Plugin Abandoned by Developer, Edge Case 17.2 — WordPress Database Corruption, Edge Case 17.3 — Conflicting Requirements from SEO and Design Teams, Primary KPIs — Graded Weekly (+7 more)
+Cohesion: 0.13
+Nodes (13): 17. Edge Cases for This Role, 3. Daily Operations, 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Edge Case 17.1 — Critical Plugin Abandoned by Developer, Edge Case 17.2 — WordPress Database Corruption, Edge Case 17.3 — Conflicting Requirements from SEO and Design Teams, End of Day (+5 more)
 
 ### Community 1712 - "Community 1712"
 Cohesion: 0.29
@@ -10199,8 +10310,8 @@ Cohesion: 0.29
 Nodes (5): Core .md files this skill is allowed to update, MEMORY.md, Skill 26: Caption Creator - CORE_UPDATES, TOOLS.md, What to add (exact text)
 
 ### Community 1715 - "Community 1715"
-Cohesion: 0.29
-Nodes (5): How You Show Up, Remember, SOUL — Goal Setter, Your Internal Monologue, Your Voice
+Cohesion: 0.33
+Nodes (6): 9. SOPs (Standard Operating Procedures), SOP-1: Weekly Bank Reconciliation, SOP-2: Month-End Close, SOP-3: Accounts Receivable Collections, SOP-4: New Vendor Setup, SOP-5: Sales Tax Filing
 
 ### Community 1716 - "Community 1716"
 Cohesion: 0.25
@@ -10223,12 +10334,12 @@ Cohesion: 0.33
 Nodes (6): 6.1 Check Docker availability, 6.2 Install Cognee, 6.3 Configure Cognee, 6.4 Start Cognee container, 6.5 Verify Cognee is running, Layer 6: Cognee (Graph-Based Knowledge)
 
 ### Community 1721 - "Community 1721"
-Cohesion: 0.43
-Nodes (7): AI Image Generator Specialist, Chief Design Officer, Deep Research Specialist - Graphics, Director of Graphics, Graphics Department, Quality Control Specialist (Graphics), SOP-Writer (Graphics)
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Invoice Generation and Delivery, SOP 9.2 — Daily Payment Reconciliation and Cash Application, SOP 9.3 — AR Aging Review and Overdue Account Follow-Up, SOP 9.4 — Customer Master Data Maintenance, SOP 9.5 — Monthly Customer Statement Distribution
 
 ### Community 1722 - "Community 1722"
-Cohesion: 0.33
-Nodes (6): 6.1 Check Docker availability, 6.2 Install Cognee, 6.3 Configure Cognee, 6.4 Start Cognee container, 6.5 Verify Cognee is running, Layer 6: Cognee (Graph-Based Knowledge)
+Cohesion: 0.08
+Nodes (24): 2.1 Update the flush prompt in openclaw.json, 2.2 Set the soft threshold, 6.1 Check Docker availability, 6.2 Install Cognee, 6.3 Configure Cognee, 6.4 Start Cognee container, 6.5 Verify Cognee is running, 7.1 Check if Obsidian is installed (Mac) (+16 more)
 
 ### Community 1723 - "Community 1723"
 Cohesion: 0.29
@@ -10236,7 +10347,7 @@ Nodes (7): Collections to Index, Forbidden Actions, 🔴 Gemini Engine INDEXING 
 
 ### Community 1724 - "Community 1724"
 Cohesion: 0.33
-Nodes (6): 4.1 Backup Your Config First, 4.2 Add Department Agents, 4.2b Wiki Context Injection, 4.3 Add Telegram Group to Channels, 4.4 Validate Configuration, Phase 4: Agent Configuration (Agent Does This Automatically)
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Daily Nexus Watchlist Review, SOP 9.2 — Monthly Sales Tax Filing Preparation, SOP 9.3 — Estimated Tax Payment Calculation (Quarterly), SOP 9.4 — Annual 1099 Preparation and Filing, SOP 9.5 — Tax Notice Response and Resolution
 
 ### Community 1725 - "Community 1725"
 Cohesion: 0.29
@@ -10251,8 +10362,8 @@ Cohesion: 0.25
 Nodes (7): Docs rubric (>= 8.5 requires), Flow Diagram rubric (>= 8.5 requires), Org Chart rubric (>= 8.5 requires ALL of the following), Per-Artifact Workflow (apply to EACH artifact), Skill 37 - The 8.5 Quality Gate (MANDATORY), Where the gate runs, Quality Gates
 
 ### Community 1728 - "Community 1728"
-Cohesion: 0.29
-Nodes (7): [1.5.5] - 2026-05-30 - F46 (Conversational CRM Field Write + Create-If-Missing) QC deep-fix + Mac↔VPS reconciliation, Added — accurate cross-reference (`references/ghl-api-quick-reference.md`, both repos), Added — F46↔F35 wiring made bidirectional (`protocols/weekly-tune-up-protocol.md`, identical both repos), Changed — QC gate tightened (`scripts/qc-feature-logs.sh`, identical both repos), Fixed — PII leak + single JSONL schema (VPS `protocols/crm-field-write-protocol.md`, reconciled to Mac), Verification, Why
+Cohesion: 0.33
+Nodes (6): 9. SOPs (Standard Operating Procedures), SOP-1: Daily Pipeline Health Check, SOP-2: Stage Definition and Enforcement, SOP-3: Full Pipeline Audit, SOP-4: Forecast Compilation, SOP-5: New Deal Creation Workflow
 
 ### Community 1729 - "Community 1729"
 Cohesion: 0.22
@@ -10284,11 +10395,11 @@ Nodes (4): generate-infographics.sh script, log(), poll_job(), state_set()
 
 ### Community 1736 - "Community 1736"
 Cohesion: 0.33
-Nodes (6): Calendar Specialist NOT added, [v10.5.2] — 2026-05-17 — Wave 4.5: Specialist Coverage Expansion, v2.1 Baseline Brought Forward, Versions, What changed per department, Why this matters for the role library generation (PRD v2.3)
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Brand Identity Compliance Review, SOP 9.2 -- Brand Guideline Creation or Update, SOP 9.3 -- Brand Emergency Response (Identity-Specific), SOP 9.4 -- Weekly Brand Compliance Reporting, SOP 9.5 -- Designer Brand Education Intervention
 
 ### Community 1737 - "Community 1737"
-Cohesion: 0.05
-Nodes (45): Added, Changed, Changed, Changed, Changed, Changed, Co-authored, Failure-path messaging (+37 more)
+Cohesion: 0.03
+Nodes (65): Added, Added, Changed, Changed, Changed, Changed, Changed, Changed (+57 more)
 
 ### Community 1738 - "Community 1738"
 Cohesion: 0.33
@@ -10339,8 +10450,8 @@ Cohesion: 0.62
 Nodes (5): extract-skill.sh script, log_error(), log_info(), log_warn(), usage()
 
 ### Community 1750 - "Community 1750"
-Cohesion: 0.62
-Nodes (5): resume-workforce-build.sh script, find_self_cron_uuid(), log(), resolve_operator_chat_id(), self_remove_cron()
+Cohesion: 0.57
+Nodes (6): resume-workforce-build.sh script, resume-workforce-build.sh script, find_self_cron_uuid(), log(), resolve_operator_chat_id(), self_remove_cron()
 
 ### Community 1751 - "Community 1751"
 Cohesion: 0.62
@@ -10367,16 +10478,16 @@ Cohesion: 0.67
 Nodes (5): bump-version.sh script, check_drift(), norm(), print_state(), read_current()
 
 ### Community 1757 - "Community 1757"
-Cohesion: 0.53
-Nodes (3): resume-onboarding.sh script, log(), self_remove_cron()
+Cohesion: 0.52
+Nodes (4): resume-onboarding.sh script, resume-onboarding.sh script, log(), self_remove_cron()
 
 ### Community 1758 - "Community 1758"
 Cohesion: 0.33
 Nodes (6): 13. Email Newsletter (Tuesday 9 AM), Email Sending, Email Structure, Email Tone, Email Word Count Target, Release Schedule
 
 ### Community 1759 - "Community 1759"
-Cohesion: 0.29
-Nodes (7): 📋 Feature 14 — Voice/Phone Integration, 📋 Feature 15 — Proactive Outreach Campaigns, 📋 Feature 16 — A/B Testing of Reply Variants, 📋 Feature 17 — Customer Segmentation Awareness, 📋 Feature 18 — Webhook Chaining (downstream triggers), 📋 Feature 21 — Multi-Tenant Agent Isolation, Remaining Round 2 Features (lower priority — DEFERRED, NOT in the v6.0 playbook)
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Social Media Graphic Production (Single Graphic), SOP 9.2 -- Carousel / Multi-Slide Graphic Production, SOP 9.3 -- Social Media Graphic Template Creation and Maintenance, SOP 9.4 -- Social Media Graphic Performance Review, SOP 9.5 -- Urgent Social Media Graphic Request (Expedited)
 
 ### Community 1760 - "Community 1760"
 Cohesion: 0.29
@@ -10387,8 +10498,8 @@ Cohesion: 0.29
 Nodes (5): The 4-Tier Model (in depth), Tier 1 — Curated county scrapers, Tier 2 — Platform-adapter framework, Tier 3 — Operator-buildable config, Tier 4 — Honest gap
 
 ### Community 1762 - "Community 1762"
-Cohesion: 0.48
-Nodes (6): Department Breakdown, Library Ready, QC Dimensions Verified, Stage 2 QC Summary — Role Library v10.15.46, Stage 2 QC Summary — Role Library v10.15.50, Wave History
+Cohesion: 0.54
+Nodes (7): Department Breakdown, Library Ready, QC Dimensions Verified, Stage 2 QC Summary — Role Library v10.15.46, Stage 2 QC Summary — Role Library v10.15.50, Stage 2 QC Summary — Role Library v10.15.53, Wave History
 
 ### Community 1763 - "Community 1763"
 Cohesion: 0.24
@@ -10423,12 +10534,12 @@ Cohesion: 0.29
 Nodes (7): ✅ Feature 26 — Conversational Sales AI Best Practices Module (shipped in v5.7), ✅ Feature 27 — Product Knowledge Layer (subsumed by Feature 38 in v5.6), ✅ Feature 28 — Discount Code Generation (GHL + Stripe) (shipped in v5.10), ✅ Feature 29 — Intelligent Follow-up (shipped in v5.9), ✅ Feature 30 — Stripe Integration (full) (shipped in v5.10), ✅ Feature 31 — Shopify Integration (shipped in v5.12), Sales AI Cluster (Features 26-31) — TOP PRIORITY
 
 ### Community 1771 - "Community 1771"
-Cohesion: 0.16
-Nodes (17): PA-09-01 Daily Emotional Check-In, Analyze, Control, Conversation Script, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, DMAIC Framework (+9 more)
+Cohesion: 0.09
+Nodes (32): PA-09-01 Daily Emotional Check-In, Analyze, Control, Conversation Script, CTQ (Critical to Quality) — Binary Checks, Define, Definition of Done, DMAIC Framework (+24 more)
 
 ### Community 1772 - "Community 1772"
-Cohesion: 0.29
-Nodes (7): All-in-One Chat workflow — Raw Body, Email workflow — Raw Body, Facebook Messenger workflow — Raw Body, Instagram DM workflow — Raw Body, Live Chat workflow — Raw Body, Part 3 — Six channel-specific Raw Body JSONs, SMS workflow — Raw Body
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- New Native Campaign Launch, SOP 9.2 -- Native Campaign Optimization Pass, SOP 9.3 -- Publisher Blocklist Maintenance, SOP 9.4 -- Native Creative Refresh Cycle, SOP 9.5 -- Native to Retargeting Handoff
 
 ### Community 1773 - "Community 1773"
 Cohesion: 0.16
@@ -10667,8 +10778,8 @@ Cohesion: 0.33
 Nodes (6): author, book, custom, domain, perspective, grenny-crucial-conversations
 
 ### Community 1832 - "Community 1832"
-Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Quantitative Analysis Request Execution, SOP 9.2 -- Predictive Model Development and Maintenance, SOP 9.3 -- Peer Quantitative Review, SOP 9.4 -- A/B Test Design and Analysis, SOP 9.5 -- Monthly Quantitative Research Digest
 
 ### Community 1833 - "Community 1833"
 Cohesion: 0.40
@@ -10735,8 +10846,8 @@ Cohesion: 0.33
 Nodes (6): author, book, custom, domain, perspective, obama-light-we-carry
 
 ### Community 1849 - "Community 1849"
-Cohesion: 0.40
-Nodes (5): 16. Research Sources, Tier 1 -- Authoritative Strategic, Tier 2 -- Trade & Vendor, Tier 3 -- Competitive Context, Tier 4 -- Additional Context
+Cohesion: 0.33
+Nodes (6): 7. KPIs, Activity and Productivity KPIs, Compensation Structure (Typical US SaaS, 2026), Pipeline Health KPIs, Primary Revenue KPIs, Revenue Cascade Example
 
 ### Community 1850 - "Community 1850"
 Cohesion: 0.40
@@ -10751,8 +10862,8 @@ Cohesion: 0.33
 Nodes (6): pink-to-sell-is-human, author, book, custom, domain, perspective
 
 ### Community 1853 - "Community 1853"
-Cohesion: 0.40
-Nodes (5): 6. Quarterly Operations, Q1 -- Year-End Cleanup & 1099s, Q2 -- Mid-Year Review, Q3 -- Budget Preparation, Q4 -- Year-End Preparation
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures, SOP 9.1 — Comment and DM Engagement Protocol, SOP 9.2 — Brand Advocate Identification and Nurturing, SOP 9.3 — Community Conflict De-escalation and Management, SOP 9.4 — Community Guidelines Development and Enforcement, SOP 9.5 — Community Feedback to Internal Teams
 
 ### Community 1854 - "Community 1854"
 Cohesion: 0.33
@@ -10779,32 +10890,32 @@ Cohesion: 0.33
 Nodes (6): sharma-5am-club, author, book, custom, domain, perspective
 
 ### Community 1860 - "Community 1860"
-Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Cohesion: 0.33
+Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — WordPress Core, Theme, and Plugin Update Procedure, SOP 9.2 — New Plugin Evaluation and Installation, SOP 9.3 — WordPress Security Hardening and Monitoring, SOP 9.4 — WordPress Performance Optimization, SOP 9.5 — Content Publishing Infrastructure and Support
 
 ### Community 1861 - "Community 1861"
-Cohesion: 0.33
-Nodes (6): sinek-find-your-why, author, book, custom, domain, perspective
+Cohesion: 0.13
+Nodes (15): pink-when, sinek-find-your-why, tawwab-set-boundaries-find-peace, domain, perspective, author, book, custom (+7 more)
 
 ### Community 1862 - "Community 1862"
 Cohesion: 0.33
-Nodes (6): tawwab-set-boundaries-find-peace, author, book, custom, domain, perspective
+Nodes (6): API v2 Base URL, Authentication Method, Base URL and Authentication, Content-Type Header, Required Version Header, Standard Header Set
 
 ### Community 1863 - "Community 1863"
 Cohesion: 0.33
 Nodes (6): voss-never-split-difference, author, book, custom, domain, perspective
 
 ### Community 1864 - "Community 1864"
-Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for high-stakes pitches — exclusive stories, sensitive topics, CEO interviews), Gate 4 — Owner Approval (only for pitches that involve the CEO personally, or pitches about major strategic announcements)
+Cohesion: 0.33
+Nodes (6): How to Use This Skill Correctly, Step 1: Identify the business domain, Step 2: Open only the matching reference file, Step 3: Find the exact endpoint and requirements, Step 4: Build the request carefully, Step 5: Execute safely
 
 ### Community 1865 - "Community 1865"
 Cohesion: 0.40
 Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 1866 - "Community 1866"
-Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
+Cohesion: 0.33
+Nodes (6): Add to AGENTS.md, Add to HEARTBEAT.md, Add to MEMORY.md, Add to TOOLS.md, Do NOT modify these files:, Upgraded Memory System - Core File Updates
 
 ### Community 1867 - "Community 1867"
 Cohesion: 0.40
@@ -10819,8 +10930,8 @@ Cohesion: 0.33
 Nodes (6): Company-Level Files, Department Workspaces, Master Orchestrator (CEO Agent), Role-Level Folders (NEW in v2.1), What Gets Built After the Interview, Department Workspace Structure
 
 ### Community 1870 - "Community 1870"
-Cohesion: 0.33
-Nodes (6): email-deliverability-optimization-specialist, extras, is_flagship, min_edge_cases, min_sops, min_tier1_citations
+Cohesion: 0.05
+Nodes (43): chief-financial-officer, extras, min_edge_cases, min_sops, min_tier1_citations, chief-legal-officer, extras, min_edge_cases (+35 more)
 
 ### Community 1871 - "Community 1871"
 Cohesion: 0.33
@@ -10847,8 +10958,8 @@ Cohesion: 0.33
 Nodes (6): 9. Standard Operating Procedures, SOP 5.1 — Keynote Speech Development, SOP 5.2 — Media Interview Talking Points, SOP 5.3 — Speech Material Bank Maintenance, SOP 5.4 — Continuous Improvement Review, SOP 5.5 — Escalation and Handoff Protocol
 
 ### Community 1877 - "Community 1877"
-Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Cohesion: 0.33
+Nodes (6): 8.1 What to add to SOUL.md (cardinal rule — survives across all sessions), 8.2 What to add to AGENTS.md (operating block — the WHAT-TO-DO), 8.3 What to add to TOOLS.md (WHERE-THINGS-LIVE — reference material), 8.4 What to add to MEMORY.md (durable facts about THIS client's GHL setup), 8.5 What to add to USER.md (optional, if the file exists), 8. PHASE 7 — WIRE THE 5-TIER CHAIN INTO THE CLIENT'S CORE `.md` FILES
 
 ### Community 1878 - "Community 1878"
 Cohesion: 0.33
@@ -10884,7 +10995,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 1886 - "Community 1886"
 Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Presentation Build from Content Brief, SOP 9.2 -- Presentation Revision Cycle, SOP 9.3 -- Urgent / Last-Minute Presentation Request, SOP 9.4 -- Content Rescue (Restructuring Presenter Content), SOP 9.5 -- Revision Loop Escalation (3+ Rounds)
+Nodes (4): AUTHOR: Charles Duhigg, BOOK: The Power of Habit: Why We Do What We Do in Life and Business, EXTRACTION DATE: 2024-01-15, EXTRACTION NOTES - The Power of Habit
 
 ### Community 1887 - "Community 1887"
 Cohesion: 0.33
@@ -10892,7 +11003,7 @@ Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Daily Signal
 
 ### Community 1888 - "Community 1888"
 Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Daily Pipeline Data Integrity Audit, SOP 9.2 — Weekly Forecast Data Pack Preparation, SOP 9.3 — Monthly Commission Calculation, SOP 9.4 — Territory Performance Analysis, SOP 9.5 — Sales Tool Adoption & Health Monitoring
+Nodes (5): Escalation, Fair-Housing Guardrails, Language to avoid, The rule, What this means in each flow
 
 ### Community 1889 - "Community 1889"
 Cohesion: 0.40
@@ -10903,20 +11014,20 @@ Cohesion: 0.40
 Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 1891 - "Community 1891"
-Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Cohesion: 0.53
+Nodes (5): Public Records Queries Event Schema, additionalProperties, required, $schema, title
 
 ### Community 1892 - "Community 1892"
 Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures, SOP 9.1 — LinkedIn Content Calendar and Publishing, SOP 9.2 — LinkedIn Carousel Document Creation, SOP 9.3 — LinkedIn Thought Leadership Article Publishing, SOP 9.4 — LinkedIn Strategic Engagement and Networking, SOP 9.1 — LinkedIn Content Calendar and Publishing
+Nodes (6): Adding new external services to the same OpenClaw, Backup Protocol and Teach Yourself Protocol, GHL Conversations API — fallback reference (for agents without the GHL skill), Part 6 — Operator notes (for the operator, not for clients), Per-client setup hygiene, Why `allowRequestSessionKey: true` with prefix allowlist
 
 ### Community 1893 - "Community 1893"
 Cohesion: 0.40
 Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 1894 - "Community 1894"
-Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures, SOP 9.1 — Standard Inbound Call Handling, SOP 9.2 — Angry or Escalated Customer Call, SOP 9.3 — Scheduled Outbound Callback (Ticket Follow-Up), SOP 9.4 — Complex Troubleshooting Call (Screen-Share or Walkthrough)
+Cohesion: 0.60
+Nodes (5): Autonomous vs Prompted Crons ⭐ NEW, Example: Memory Freshener, The Failure Mode, Two Architectures, Autonomous vs Prompted Crons
 
 ### Community 1895 - "Community 1895"
 Cohesion: 0.40
@@ -10940,11 +11051,11 @@ Nodes (6): 17. Edge Cases for This Role, Edge Case 17.1 — Content in a Languag
 
 ### Community 1900 - "Community 1900"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
+Nodes (5): Google Gemini (Required for Multimodal Embeddings), GPT-5.3 Codex (Phase 3), Phase 1 — Large-context model (Ollama Cloud preferred, OpenRouter fallback), Phase 2 — Heavy reasoning model (same chain as Phase 1), Step 4 - Verify Model Access
 
 ### Community 1901 - "Community 1901"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Book Cover Concept Development, SOP 9.2 -- Cover Refinement and Finalization, SOP 9.3 -- Print and Digital Cover File Production, SOP 9.4 -- Series Cover System Design
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 1902 - "Community 1902"
 Cohesion: 0.33
@@ -10963,8 +11074,8 @@ Cohesion: 0.33
 Nodes (6): 17. Edge Cases for This Role, Edge Case 17.1 -- Asset Passes QC But Is Challenged by the Devil's Advocate on Strategic Grounds, Edge Case 17.2 -- Two Specialists Submit Conflicting Versions of the Same Asset, Edge Case 17.3 -- Asset Contains Content in a Language You Do Not Speak, Edge Case 17.4 -- New Platform or Format With No Established QC Standards, Edge Case 17.5 -- Specialist Repeatedly Resubmits Without Fixing the Reported Issues
 
 ### Community 1906 - "Community 1906"
-Cohesion: 0.33
-Nodes (6): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- A/B Test Design and Launch, SOP 9.2 -- A/B Test Analysis and Conclusion, SOP 9.3 -- Creative Pattern Analysis and Playbook Update, SOP 9.4 -- Creative Fatigue Monitoring and Refresh Trigger, SOP 9.5 -- Cross-Platform Creative Insight Transfer
+Cohesion: 0.40
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Cloud Provider Regional Outage, Edge Case 17.2 — Terraform State File Corruption or Lock Contention, Edge Case 17.3 — Unexpectedly Large Cloud Bill, Edge Case 17.4 — Deprecated Instance Type or Database Engine Version
 
 ### Community 1907 - "Community 1907"
 Cohesion: 0.33
@@ -10991,16 +11102,16 @@ Cohesion: 0.33
 Nodes (6): 15. Common Mistakes, Mistake 1: Neglecting the First 5 Seconds of the Script, Mistake 2: Using Background Music with Vocals, Mistake 3: Setting and Forgetting Campaigns, Mistake 4: Testing Multiple Variables Simultaneously, Mistake 5: Over-Reliance on Spotify's Default Recommendations
 
 ### Community 1913 - "Community 1913"
-Cohesion: 0.33
-Nodes (6): 10. Quality Gates, Gate 1 — Self-check (completed by originating specialist BEFORE submitting for QC), Gate 2 — QC Specialist Review (YOU perform this gate), Gate 3 — Chief Research Officer Sign-off (for deliverables marked "director-review-required"), Gate 4 — Devil's Advocate Review (for deliverables marked "high-stakes"), Gate 5 — Owner Approval (for deliverables marked "owner-required")
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review, Gate 3 -- Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 -- Owner Approval (only for outputs marked "owner-required")
 
 ### Community 1914 - "Community 1914"
 Cohesion: 0.40
 Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 1915 - "Community 1915"
-Cohesion: 0.33
-Nodes (6): 9. SOPs, SOP-01: New Opportunity Qualification and Pipeline Entry, SOP-02: Discovery Call Execution, SOP-03: Product Demonstration, SOP-04: Proposal, Negotiation, and Close, SOP-05: Outbound Pipeline Generation Cadence
+Cohesion: 0.40
+Nodes (5): 19.1 -- "Archie" (Mobile App Architect), 19.2 -- "Piper" (CI/CD and Release Pipeline Specialist), 19.3 -- "Qualia" (QA Automation and Test Strategy Specialist), 19.4 -- "Cruz" (App Store Optimization and Release Intelligence Analyst), 19. Named Sub-Specialists (On-Demand)
 
 ### Community 1916 - "Community 1916"
 Cohesion: 0.40
@@ -11008,11 +11119,11 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 1917 - "Community 1917"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 1918 - "Community 1918"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New Dispute Intake and Triage, SOP 9.2 — Dispute Investigation, SOP 9.3 — Resolution Strategy and Settlement Negotiation, SOP 9.4 — Litigation Handoff Management
+Nodes (5): 10. Quality Gates, Gate 1: Self-Check (Before Opening a PR), Gate 2: Department QC Review (PR Review by iOS QC Specialist), Gate 3: Devil's Advocate Review (Director of App Development, or peer iOS Specialist if available), Gate 4: Owner Approval (Before App Store Submission)
 
 ### Community 1919 - "Community 1919"
 Cohesion: 0.40
@@ -11031,8 +11142,8 @@ Cohesion: 0.40
 Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 1923 - "Community 1923"
-Cohesion: 0.33
-Nodes (6): 17. Edge Cases for This Role, Edge Case 17.1 — Content in a Language You Do Not Speak, Edge Case 17.2 — Specialist Disputes Your Rejection, Edge Case 17.3 — Time-Sensitive Content Submitted Just Before a Holiday or Weekend, Edge Case 17.4 — Content That Is Technically Correct But Strategically Misaligned, Edge Case 17.5 — AI-Generated Content Detection
+Cohesion: 0.40
+Nodes (5): 17. Edge Cases, Edge Case 1: App Store Review Rejects Build for Privacy Manifest Issue in a Third-Party SDK, Edge Case 2: Phased Release Reveals a Crash That Did NOT Appear in Testing, Edge Case 3: iOS Major Version Upgrade Breaks Existing Functionality (PROACTIVE), Edge Case 4: App Size Exceeds 200 MB Cellular Download Threshold (PROACTIVE)
 
 ### Community 1924 - "Community 1924"
 Cohesion: 0.40
@@ -11143,8 +11254,8 @@ Cohesion: 0.33
 Nodes (6): [1.5.7] - 2026-05-30 - Round-2 backlog F21: Multi-Tenant Agent Isolation (the AGENCY tier, OFF by default), Added — `protocols/multi-tenant-isolation-protocol.md` (F21, Step 9.44), byte-identical across both repos, Added — QC gate + negative test, byte-identical across both repos, Changed — wiring (canonical additions byte-identical; host-script scaffolding repo-local), openclaw.json toggle (documentation-only default — no destructive write), Why
 
 ### Community 1951 - "Community 1951"
-Cohesion: 0.33
-Nodes (6): 4. Payment Confirmation, 5. Cart Abandonment Recovery, Purchase moment workflows, 1. Product Question / Pre-Sale, 2. Cart Abandonment Recovery, Pre-purchase workflows
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 1952 - "Community 1952"
 Cohesion: 0.33
@@ -11199,8 +11310,8 @@ Cohesion: 0.33
 Nodes (5): Examples, MANDATORY — Teach Yourself Protocol (TYP) Storage Rule, TOOLS.md - Local Notes, What Goes Here, Why Separate?
 
 ### Community 1965 - "Community 1965"
-Cohesion: 0.47
-Nodes (5): Per-customer GHL ↔ Stripe linkage, Stripe Webhooks — Reference, Verification, Webhook endpoint exposed by OpenClaw, Stripe Webhooks Reference
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 1966 - "Community 1966"
 Cohesion: 0.40
@@ -11296,7 +11407,7 @@ Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Revi
 
 ### Community 1989 - "Community 1989"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 16. Research Sources, Tier 1 — Authoritative Strategic, Tier 2 — Trade & Vendor, Tier 3 — Competitive Context, Tier 4 — Anti-Failure Research
 
 ### Community 1990 - "Community 1990"
 Cohesion: 0.33
@@ -11436,7 +11547,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morn
 
 ### Community 2024 - "Community 2024"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1: Self-Check (Researcher, applies to every deliverable before submission), Gate 2: Department QC Review (Director or Backup Reviewer, applies to every deliverable), Gate 3: Devil's Advocate Review (Peer, applies to Priority-1 deliverables and all deep-dives), Gate 4: Owner Approval (CEO, applies to strategic deep-dives and quarterly ROI reports)
+Nodes (5): 17. Edge Cases, Edge Case 1: Narrator Becomes Unavailable Mid-Title, Edge Case 2: Proofreader Identifies Systemic Pronunciation Error Across All Recorded Chapters, Edge Case 3: Manuscript Contains Potentially Defamatory or Legally Risky Content Discovered During Recording, Edge Case 4: ACX Submission Fails Repeatedly for the Same Title Despite Files Passing Internal QC
 
 ### Community 2025 - "Community 2025"
 Cohesion: 0.33
@@ -11456,11 +11567,11 @@ Nodes (6): Agent-Agnostic Guidance, Claude Code, Codex CLI, Copilot Chat Integra
 
 ### Community 2029 - "Community 2029"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- Checked Every Morning, Primary KPIs -- Graded Weekly, Revenue Contribution Link, Secondary KPIs -- Graded Monthly
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2030 - "Community 2030"
 Cohesion: 0.40
-Nodes (5): chief-financial-officer, extras, min_edge_cases, min_sops, min_tier1_citations
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review (This role), Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2031 - "Community 2031"
 Cohesion: 0.40
@@ -11480,15 +11591,15 @@ Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Porter's Five
 
 ### Community 2035 - "Community 2035"
 Cohesion: 0.40
-Nodes (5): chief-legal-officer, extras, min_edge_cases, min_sops, min_tier1_citations
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Creative Intent vs. Technical Standard Conflict, Edge Case 17.2 — Emergency Re-Release for Critical Content Error, Edge Case 17.3 — Multi-Language Audio QC, Edge Case 17.4 — Audio Restoration QC (Archive / Legacy Content)
 
 ### Community 2036 - "Community 2036"
 Cohesion: 0.40
-Nodes (5): cross-platform-attribution-specialist, extras, min_edge_cases, min_sops, min_tier1_citations
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2037 - "Community 2037"
 Cohesion: 0.40
-Nodes (5): director-of-paid-advertisement, extras, min_edge_cases, min_sops, min_tier1_citations
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2038 - "Community 2038"
 Cohesion: 0.40
@@ -11496,11 +11607,11 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 2039 - "Community 2039"
 Cohesion: 0.40
-Nodes (5): head-of-customer-success, extras, min_edge_cases, min_sops, min_tier1_citations
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2040 - "Community 2040"
 Cohesion: 0.40
-Nodes (5): video-seo-specialist, extras, min_edge_cases, min_sops, min_tier1_citations
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2041 - "Community 2041"
 Cohesion: 0.40
@@ -11536,7 +11647,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 2049 - "Community 2049"
 Cohesion: 0.40
-Nodes (5): 6. Quarterly Operations, Q1 -- Standards Refresh & Goal Setting, Q2 -- Efficiency Review, Q3 -- New Format/Platform Preparation, Q4 -- Annual Review & Archive
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New Voice Agent Design and Build, SOP 9.2 — Agent Prompt Engineering and Optimization, SOP 9.3 — Agent Monitoring and Incident Response, SOP 9.4 — Outbound Voice Agent Campaign
 
 ### Community 2050 - "Community 2050"
 Cohesion: 0.40
@@ -11544,15 +11655,15 @@ Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this r
 
 ### Community 2051 - "Community 2051"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Producer), Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for episodes marked "high stakes"), Gate 4 — Host Approval (required for every episode)
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2052 - "Community 2052"
 Cohesion: 0.40
 Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for sequences marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2053 - "Community 2053"
-Cohesion: 0.18
-Nodes (10): 7. KPIs (Your Scoreboard), 9. Standard Operating Procedures (Numbered), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly, SOP 9.1 — New Sequence Design and Deployment, SOP 9.2 — Stalled Prospect Rescue Protocol (+2 more)
+Cohesion: 0.40
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Research Reveals a Problem Nobody Wants to Hear, Edge Case 17.2 — Research Request with Unethical or Legally Risky Methods, Edge Case 17.3 — Conflicting Research Findings Across Multiple Projects, Edge Case 17.4 — Research Project Scope Becomes Obsolete Mid-Project
 
 ### Community 2054 - "Community 2054"
 Cohesion: 0.40
@@ -11583,12 +11694,12 @@ Cohesion: 0.40
 Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2061 - "Community 2061"
-Cohesion: 0.09
-Nodes (20): 10. Quality Gates, 7. KPIs (Your Scoreboard), 9. Standard Operating Procedures (Numbered), Daily Pulse Metrics — checked every morning, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required") (+12 more)
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2062 - "Community 2062"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Peer Review (For chargeback responses involving >$500 or precedent-setting policy interpretations), Gate 3 — Devil's Advocate Review (For chargeback responses, high-value refund denials, or communications that could be used against {{COMPANY_NAME}} in a regulatory complaint), Gate 4 — Owner Approval
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2063 - "Community 2063"
 Cohesion: 0.40
@@ -11596,7 +11707,7 @@ Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Discord Community Specialis
 
 ### Community 2064 - "Community 2064"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1: Self-Check (before resolving or escalating any ticket), Gate 2: Peer Review (weekly, 5 random tickets reviewed by another agent or team lead), Gate 3: Escalation Quality Audit (monthly, Head of Customer Success reviews 20 escalated tickets), Gate 4: Customer Feedback Review
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2065 - "Community 2065"
 Cohesion: 0.40
@@ -11611,12 +11722,12 @@ Cohesion: 0.40
 Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Reddit Specialist), Gate 2 — Director of Social Media Review (for AMAs, major posts, controversial topics), Gate 3 — Devil's Advocate Review (for AMAs or posts likely to generate controversy or tough questions), Gate 4 — Owner Approval (AMAs with owner as host, posts about sensitive company topics)
 
 ### Community 2068 - "Community 2068"
-Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Cohesion: 0.14
+Nodes (12): 11. Handoffs (Value Stream Map), 13. Good Output Examples, 7. KPIs (Your Scoreboard), Cross-Department Coordination, Daily Pulse Metrics, Example A — Genuinely Helpful Comment, Example B — Valuable Original Post (Non-Promotional), Primary KPIs — Graded Weekly (+4 more)
 
 ### Community 2069 - "Community 2069"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 9. Standard Operating Procedures, SOP 6.1 — Copy Review and Approval, SOP 6.2 — Quarterly Messaging Audit, SOP 6.3 — New Product/Feature Messaging Development, SOP 6.4 — Competitive Messaging Response
 
 ### Community 2070 - "Community 2070"
 Cohesion: 0.40
@@ -11640,11 +11751,11 @@ Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Brand Identity Rev
 
 ### Community 2075 - "Community 2075"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review (for all covers before final file delivery), Gate 3 -- Devil's Advocate Review (only for books with high commercial stakes or controversial content), Gate 4 -- Owner Approval (only for books by or about the owner)
+Nodes (5): 10. Quality Gates, Gate 1: Self-Check (Before any deliverable leaves your desk), Gate 2: Department QC Review (PR Manager or Internal Comms Manager reviews), Gate 3: Devil's Advocate Review (A different team member, or the CCO stepping into adversary mindset), Gate 4: Owner Approval (for communications that carry the CEO's voice or represent the company's official position)
 
 ### Community 2076 - "Community 2076"
 Cohesion: 0.40
-Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Mid-Series Cover Redesign, Edge Case 17.2 -- Cover Features a Real Person or Recognizable Likeness, Edge Case 17.3 -- Audiobook Cover Adaptation, Edge Case 17.4 -- Book Title Changes After Cover Is Approved
+Nodes (5): 17. Edge Cases, Edge Case 1: The CEO Goes Off-Message During a Live Interview (Reactive), Edge Case 2: A Competitor's Crisis Spills Over to Your Category (Proactive), Edge Case 3: An Employee Goes Viral for the Wrong Reasons (Reactive + Proactive), Edge Case 4: A Media Inquiry Arrives 15 Minutes Before Publication Deadline (Reactive)
 
 ### Community 2077 - "Community 2077"
 Cohesion: 0.40
@@ -11668,7 +11779,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 2082 - "Community 2082"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2083 - "Community 2083"
 Cohesion: 0.40
@@ -11716,7 +11827,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 2094 - "Community 2094"
 Cohesion: 0.40
-Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Specialist Challenges Your QC Decision, Edge Case 17.2 — Deliverable Contains Proprietary or Confidential Source Material, Edge Case 17.3 — QC Process Is the Bottleneck — Backlog Growing Beyond SLA, Edge Case 17.4 — Suspected Data Fabrication or Deliberate Misrepresentation
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2095 - "Community 2095"
 Cohesion: 0.40
@@ -11756,7 +11867,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Grad
 
 ### Community 2104 - "Community 2104"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2105 - "Community 2105"
 Cohesion: 0.40
@@ -11764,7 +11875,7 @@ Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this r
 
 ### Community 2106 - "Community 2106"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for high-stakes pitches — exclusive stories, sensitive topics, CEO interviews), Gate 4 — Owner Approval (only for pitches that involve the CEO personally, or pitches about major strategic announcements)
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — A Journalist Publishes a Story With a Significant Factual Error About {{COMPANY_NAME}}, Edge Case 17.2 — A Journalist Asks for an "Off the Record" Conversation, Then Publishes the Information, Edge Case 17.3 — A Friendly Journalist Leaves Their Outlet for a Competitor Publication, Edge Case 17.4 — A Breaking News Story Creates an Immediate, Time-Sensitive Pitch Opportunity
 
 ### Community 2107 - "Community 2107"
 Cohesion: 0.40
@@ -11776,15 +11887,15 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 2109 - "Community 2109"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Pitch Hook Development & Testing, SOP 9.2 — Subject Line A/B Testing, SOP 9.3 — Journalist Persona Mapping & Pitch Customization, SOP 9.4 — Pitch Follow-Up Optimization
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Daily Media Outreach & Pitch Execution, SOP 9.2 — Inbound Media Inquiry Management, SOP 9.3 — Media Relationship Building (Non-Pitch Engagement), SOP 9.4 — Coverage Monitoring & Reporting
 
 ### Community 2110 - "Community 2110"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2111 - "Community 2111"
-Cohesion: 0.09
-Nodes (19): 10. Quality Gates, 17. Edge Cases for This Role, 3. Daily Operations, 9. Standard Operating Procedures (Numbered), Edge Case 17.1 — A Journalist Publishes a Story With a Significant Factual Error About {{COMPANY_NAME}}, Edge Case 17.2 — A Journalist Asks for an "Off the Record" Conversation, Then Publishes the Information, Edge Case 17.3 — A Friendly Journalist Leaves Their Outlet for a Competitor Publication, Edge Case 17.4 — A Breaking News Story Creates an Immediate, Time-Sensitive Pitch Opportunity (+11 more)
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2112 - "Community 2112"
 Cohesion: 0.40
@@ -11795,12 +11906,12 @@ Cohesion: 0.40
 Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2114 - "Community 2114"
-Cohesion: 0.18
-Nodes (10): 17. Edge Cases for This Role, 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Edge Case 17.1 — Journalist Breaches Embargo, Edge Case 17.2 — Press Release Contains a Factual Error Discovered Post-Distribution, Edge Case 17.3 — Multiple Competing Journalist Inquiries for an Exclusive, Edge Case 17.4 — Press Leak Before Scheduled Announcement, Primary KPIs — Graded Weekly (+2 more)
+Cohesion: 0.40
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Journalist Breaches Embargo, Edge Case 17.2 — Press Release Contains a Factual Error Discovered Post-Distribution, Edge Case 17.3 — Multiple Competing Journalist Inquiries for an Exclusive, Edge Case 17.4 — Press Leak Before Scheduled Announcement
 
 ### Community 2115 - "Community 2115"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review (This role), Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2116 - "Community 2116"
 Cohesion: 0.40
@@ -11828,11 +11939,11 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morn
 
 ### Community 2122 - "Community 2122"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Last-Minute Message from an Executive That Skips the Queue, Edge Case 17.2 — Communication in a Highly Polarized or Emotional Context, Edge Case 17.3 — Translation and Localization QC, Edge Case 17.4 — AI-Generated or AI-Assisted Communications
 
 ### Community 2123 - "Community 2123"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures, SOP 6.1 — Weekly Company-Wide Update, SOP 6.2 — Process Change Communication, SOP 6.3 — Knowledge Base Maintenance, SOP 6.4 — Crisis Internal Communication
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2124 - "Community 2124"
 Cohesion: 0.40
@@ -11844,7 +11955,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 2126 - "Community 2126"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1: Self-Check (before resolving or escalating any ticket), Gate 2: Peer Review (weekly, 5 random tickets reviewed by another agent or team lead), Gate 3: Escalation Quality Audit (monthly, Head of Customer Success reviews 20 escalated tickets), Gate 4: Customer Feedback Review
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Urgent Campaign with Known Issues, Edge Case 17.2 — Disagreement About Issue Severity, Edge Case 17.3 — QC Reviewer Availability Gap, Edge Case 17.4 — New Deliverable Type with No QC Checklist
 
 ### Community 2127 - "Community 2127"
 Cohesion: 0.40
@@ -11860,11 +11971,11 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Grad
 
 ### Community 2130 - "Community 2130"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Peer Review (by QC Specialist -- Graphics or Chief Design Officer), Gate 3 -- Devil's Advocate Review (only for research that will inform high-stakes strategic decisions), Gate 4 -- Owner Approval (only for research that will inform owner-level strategic decisions)
+Nodes (5): 10. Quality Gates, Gate 1 -- Self-check (Brand Identity Specialist), Gate 2 -- Department QC Review (Senior Designer or Chief Design Officer), Gate 3 -- Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 -- Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2131 - "Community 2131"
 Cohesion: 0.40
-Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Research Reveals a Major Problem With a Recently Launched Creative Direction, Edge Case 17.2 -- Conflicting Data From Different Sources, Edge Case 17.3 -- Research Request That Requires Tools or Data You Do Not Have Access To, Edge Case 17.4 -- Research Question That Has Ethical Dimensions
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Partner or Affiliate Requests to Use {{COMPANY_NAME}} Brand Assets, Edge Case 17.2 -- The Owner Wants to "Tweak" the Logo, Edge Case 17.3 -- Acquisitions or Mergers Impact Brand Architecture, Edge Case 17.4 -- Fan/Customer Creates Unauthorized Brand Merchandise
 
 ### Community 2132 - "Community 2132"
 Cohesion: 0.40
@@ -11876,19 +11987,19 @@ Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Keyword Rese
 
 ### Community 2134 - "Community 2134"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 -- Specialist Self-check (performed by the creating specialist), Gate 2 -- Department QC Review (performed by YOU -- QC Specialist), Gate 3 -- Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 -- Owner Approval (only for outputs marked "owner-required")
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2135 - "Community 2135"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Monthly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 19.1 -- Brand Identity Architect, 19.2 -- Creative Operations (DesignOps) Lead, 19.3 -- Visual Storytelling Director, 19.4 -- AI-Enhanced Design Specialist, 19. Sub-Specialists (Named Roles Within the Graphics Department)
 
 ### Community 2136 - "Community 2136"
 Cohesion: 0.40
-Nodes (5): 16. Research Sources, Tier 1 — Authoritative Strategic, Tier 2 — Trade & Vendor, Tier 3 — Competitive Context, Tier 4 — Anti-Failure & Technical
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2137 - "Community 2137"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2138 - "Community 2138"
 Cohesion: 0.40
@@ -11940,23 +12051,23 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morn
 
 ### Community 2150 - "Community 2150"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Peer Review (For chargeback responses involving >$500 or precedent-setting policy interpretations), Gate 3 — Devil's Advocate Review (For chargeback responses, high-value refund denials, or communications that could be used against {{COMPANY_NAME}} in a regulatory complaint), Gate 4 — Owner Approval
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — CLO Review, Gate 3 — Business Owner Review (for audit findings and corrective actions affecting their department), Gate 4 — Owner Approval (for compliance incidents with material regulatory exposure, or audit findings indicating systemic failure)
 
 ### Community 2151 - "Community 2151"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Quarterly, Revenue Contribution Link, Secondary KPIs — Graded Quarterly
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Monthly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2152 - "Community 2152"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 9. Standard Operating Procedures, SOP 9.1 — Compliance Calendar Management and Monitoring, SOP 9.2 — Internal Compliance Audit Execution, SOP 9.3 — Compliance Incident Investigation, SOP 9.4 — Regulatory Change Impact Assessment and Implementation Tracking
 
 ### Community 2153 - "Community 2153"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Post-call reflection), Gate 2 — Peer / Manager Review (Weekly, sampling 3-5 recorded calls), Gate 3 — Devil's Advocate Review (for calls involving legal threats, public-figure customers, incidents discussed publicly, or commitments with significant financial/legal implications), Gate 4 — Owner Approval
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Research Request That Requires Practicing Law (Unauthorized Practice of Law Risk), Edge Case 17.2 — Research Request on an Unfamiliar Area of Law, Edge Case 17.3 — Research Reveals {{COMPANY_NAME}} Is Likely in Violation of Law, Edge Case 17.4 — Research Database Access Is Temporarily Unavailable
 
 ### Community 2154 - "Community 2154"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 9. Standard Operating Procedures, SOP 9.1 — New Hire Offer Letter and Employment Agreement Drafting, SOP 9.2 — Independent Contractor Classification Assessment, SOP 9.3 — Employee Separation and Release Agreement, SOP 9.4 — Employment Law Compliance Monitoring and Response
 
 ### Community 2155 - "Community 2155"
 Cohesion: 0.40
@@ -11972,7 +12083,7 @@ Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Revi
 
 ### Community 2158 - "Community 2158"
 Cohesion: 0.40
-Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Research Findings Contradict Current Strategy, Edge Case 17.2 -- Research Request from Outside Marketing Department, Edge Case 17.3 -- Rapid Competitive Response Required, Edge Case 17.4 -- Research Participant or Data Source Ethics Concern
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2159 - "Community 2159"
 Cohesion: 0.40
@@ -11996,23 +12107,23 @@ Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- AI Tool Outage During
 
 ### Community 2164 - "Community 2164"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2165 - "Community 2165"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review (for all covers before final file delivery), Gate 3 -- Devil's Advocate Review (only for books with high commercial stakes or controversial content), Gate 4 -- Owner Approval (only for books by or about the owner)
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Customer Journey Architect), Gate 2 — CMO Review, Gate 3 — Devil's Advocate Review (for journey redesigns affecting >20% of customers or requiring significant process/technology investment), Gate 4 — Owner Approval (for journey changes that fundamentally alter the customer experience or the company's relationship model with customers)
 
 ### Community 2166 - "Community 2166"
 Cohesion: 0.40
-Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Mid-Series Cover Redesign, Edge Case 17.2 -- Cover Features a Real Person or Recognizable Likeness, Edge Case 17.3 -- Audiobook Cover Adaptation, Edge Case 17.4 -- Book Title Changes After Cover Is Approved
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2167 - "Community 2167"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2168 - "Community 2168"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Book Cover Concept Development, SOP 9.2 -- Cover Refinement and Finalization, SOP 9.3 -- Print and Digital Cover File Production, SOP 9.4 -- Series Cover System Design
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Pinterest Specialist), Gate 2 — Director of Social Media Review (for campaign-specific pins, major product launches, sensitive content), Gate 3 — Devil's Advocate Review (for controversial topics, product claims), Gate 4 — Owner Approval (pins referencing owner, major announcements)
 
 ### Community 2169 - "Community 2169"
 Cohesion: 0.40
@@ -12024,7 +12135,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morni
 
 ### Community 2171 - "Community 2171"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Marketing/Business Owner Review, Gate 3 — CLO Review (non-standard partnerships, JV agreements, high-value partnerships, or novel regulatory questions), Gate 4 — Owner Approval (partnerships involving >$50K anticipated annual value, exclusivity, or IP licensing that is core to the business)
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2172 - "Community 2172"
 Cohesion: 0.40
@@ -12032,19 +12143,19 @@ Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — CLO Review, Gate
 
 ### Community 2173 - "Community 2173"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures, SOP 9.1 — Trademark Clearance and Registration, SOP 9.2 — Infringement Detection and Response, SOP 9.3 — Content Protection and DMCA Enforcement, SOP 9.4 — Trade Secret Identification and Protection
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2174 - "Community 2174"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New Data Asset Backup Onboarding, SOP 9.2 — Backup Failure Investigation and Remediation, SOP 9.3 — Ad-Hoc Data Restore, SOP 9.4 — Weekly Restore Drill
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2175 - "Community 2175"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2176 - "Community 2176"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review, Gate 3 -- Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 -- Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2177 - "Community 2177"
 Cohesion: 0.40
@@ -12092,7 +12203,7 @@ Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Retargeting Audience 
 
 ### Community 2188 - "Community 2188"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 19.1 -- "Archie" (Mobile App Architect), 19.2 -- "Piper" (CI/CD and Release Pipeline Specialist), 19.3 -- "Qualia" (QA Automation and Test Strategy Specialist), 19.4 -- "Cruz" (App Store Optimization and Release Intelligence Analyst), 19. Named Sub-Specialists (On-Demand)
 
 ### Community 2189 - "Community 2189"
 Cohesion: 0.40
@@ -12112,7 +12223,7 @@ Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Re
 
 ### Community 2193 - "Community 2193"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2194 - "Community 2194"
 Cohesion: 0.04
@@ -12136,19 +12247,19 @@ Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — The Prospect Refuses
 
 ### Community 2199 - "Community 2199"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
+Nodes (5): 10. Quality Gates, Gate 1: Self-Check (Narrator / Editor), Gate 2: Department QC Review (Audiobook Production Specialist — YOU), Gate 3: Proofreader Verification, Gate 4: Final Mastering QC (Pre-Submission)
 
 ### Community 2200 - "Community 2200"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 16. Research Sources, Tier 1 — Authoritative Strategic, Tier 2 — Trade & Vendor, Tier 3 — Competitive Context, Tier 4 — Anti-Failure Research
 
 ### Community 2201 - "Community 2201"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Video SEO Specialist), Gate 2 — Head of Video Production / Content Team Review, Gate 3 — Devil's Advocate Review (for content making claims about rankings, performance, or competitive positioning), Gate 4 — Owner Approval (for SEO strategy shifting significant content investment toward new topics/keywords)
+Nodes (5): 17. Edge Cases, Edge Case 1: Narrator Becomes Unavailable Mid-Title, Edge Case 2: Proofreader Identifies Systemic Pronunciation Error Across All Recorded Chapters, Edge Case 3: Manuscript Contains Potentially Defamatory or Legally Risky Content Discovered During Recording, Edge Case 4: ACX Submission Fails Repeatedly for the Same Title Despite Files Passing Internal QC
 
 ### Community 2202 - "Community 2202"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2203 - "Community 2203"
 Cohesion: 0.40
@@ -12156,7 +12267,7 @@ Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Revi
 
 ### Community 2204 - "Community 2204"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2205 - "Community 2205"
 Cohesion: 0.40
@@ -12172,7 +12283,7 @@ Nodes (5): 19.1 Paid Search Specialist (PPC), 19.2 Paid Social Specialist (Meta,
 
 ### Community 2208 - "Community 2208"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Captioning / Subtitling Specialist), Gate 2 — Video Editor / Content Owner Review, Gate 3 — Devil's Advocate Review (for translated subtitles on high-stakes content), Gate 4 — Owner Approval (for subtitled content in new languages representing the brand for the first time)
+Nodes (5): 16. Research Sources, Tier 1 -- Authoritative Strategic, Tier 2 -- Trade & Vendor, Tier 3 -- Competitive Context, Tier 4 -- Anti-Failure Research
 
 ### Community 2209 - "Community 2209"
 Cohesion: 0.40
@@ -12180,23 +12291,23 @@ Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Revi
 
 ### Community 2210 - "Community 2210"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2211 - "Community 2211"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review, Gate 3 -- Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 -- Owner Approval (only for outputs marked "owner-required")
+Nodes (5): 6. Quarterly Operations, Q1 -- Year-End Cleanup & 1099s, Q2 -- Mid-Year Review, Q3 -- Budget Preparation, Q4 -- Year-End Preparation
 
 ### Community 2212 - "Community 2212"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 10. Quality Gates, Gate 1: Self-Check (before any forecast is shared), Gate 2: Peer Review (CFO or designated finance team member), Gate 3: Devil's Advocate Review, Gate 4: CFO / Owner Approval (for forecasts going to external stakeholders)
 
 ### Community 2213 - "Community 2213"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2214 - "Community 2214"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- Instagram Placement Performance Optimization, SOP 9.2 -- Instagram Reels Ads Creative Strategy, SOP 9.3 -- Instagram Stories Ads Optimization, SOP 9.4 -- Instagram Shopping Ads and Product Tag Management
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Research Reveals a Problem Nobody Wants to Hear, Edge Case 17.2 — Research Request with Unethical or Legally Risky Methods, Edge Case 17.3 — Conflicting Research Findings Across Multiple Projects, Edge Case 17.4 — Research Project Scope Becomes Obsolete Mid-Project
 
 ### Community 2215 - "Community 2215"
 Cohesion: 0.40
@@ -12216,11 +12327,11 @@ Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- LinkedIn Audi
 
 ### Community 2219 - "Community 2219"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review, Gate 3 -- Peer Research Review (for major reports: Quarterly Landscape, Competitor Deep-Dives, Technology Recommendations), Gate 4 -- Director Review (for all HIGH-impact and strategy-affecting outputs)
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2220 - "Community 2220"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2221 - "Community 2221"
 Cohesion: 0.40
@@ -12248,7 +12359,7 @@ Nodes (5): 4. `calendars.md`, Main topics inside, Plain-English summary, Use thi
 
 ### Community 2227 - "Community 2227"
 Cohesion: 0.40
-Nodes (5): 7. `campaigns.md`, Main topics inside, Plain-English summary, Use this file when, What it covers
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Audit Initiation, Edge Case 17.2 — Back-Tax Exposure Discovery, Edge Case 17.3 — Multi-Jurisdiction Employee (Remote Work Nexus), Edge Case 17.4 — Expiring Tax Credits or Incentives
 
 ### Community 2228 - "Community 2228"
 Cohesion: 0.40
@@ -12268,7 +12379,7 @@ Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this r
 
 ### Community 2232 - "Community 2232"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1: Self-Check (Researcher, applies to every deliverable before submission), Gate 2: Department QC Review (Director or Backup Reviewer, applies to every deliverable), Gate 3: Devil's Advocate Review (Peer, applies to Priority-1 deliverables and all deep-dives), Gate 4: Owner Approval (CEO, applies to strategic deep-dives and quarterly ROI reports)
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2233 - "Community 2233"
 Cohesion: 0.40
@@ -12368,7 +12479,7 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Grad
 
 ### Community 2257 - "Community 2257"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures, SOP 9.1 — LinkedIn Content Calendar and Publishing, SOP 9.2 — LinkedIn Carousel Document Creation, SOP 9.3 — LinkedIn Thought Leadership Article Publishing, SOP 9.4 — LinkedIn Strategic Engagement and Networking
+Nodes (5): 9. Standard Operating Procedures, SOP 6.1 — Copy Review and Approval, SOP 6.2 — Quarterly Messaging Audit, SOP 6.3 — New Product/Feature Messaging Development, SOP 6.4 — Competitive Messaging Response
 
 ### Community 2258 - "Community 2258"
 Cohesion: 0.40
@@ -12380,31 +12491,31 @@ Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Reddit Specialist), Gate 2 
 
 ### Community 2260 - "Community 2260"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2261 - "Community 2261"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — A Journalist Publishes a Story With a Significant Factual Error About {{COMPANY_NAME}}, Edge Case 17.2 — A Journalist Asks for an "Off the Record" Conversation, Then Publishes the Information, Edge Case 17.3 — A Friendly Journalist Leaves Their Outlet for a Competitor Publication, Edge Case 17.4 — A Breaking News Story Creates an Immediate, Time-Sensitive Pitch Opportunity
 
 ### Community 2262 - "Community 2262"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Director Review (for pipeline changes and new reports), Gate 4 — Devil's Advocate Review (only for outputs marked "high stakes")
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Daily Media Outreach & Pitch Execution, SOP 9.2 — Inbound Media Inquiry Management, SOP 9.3 — Media Relationship Building (Non-Pitch Engagement), SOP 9.4 — Coverage Monitoring & Reporting
 
 ### Community 2263 - "Community 2263"
 Cohesion: 0.40
-Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Project Changes Type Mid-Production, Edge Case 17.2 — Team Member Leaves Mid-Project, Edge Case 17.3 — CRM Automation Creates a Cascading Error, Edge Case 17.4 — Director Requests a Dashboard for a Metric the CRM Does Not Track
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2264 - "Community 2264"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2265 - "Community 2265"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — International Contact Compliance Conflict, Edge Case 17.2 — WhatsApp Quality Rating Crash During High-Volume Campaign, Edge Case 17.3 — SMS Carrier Filtering Cascade During Time-Sensitive Send, Edge Case 17.4 — Opt-Out Processing Outage
 
 ### Community 2266 - "Community 2266"
-Cohesion: 0.05
-Nodes (40): 10. Quality Gates, 11. Handoffs (Value Stream Map), 12. Escalation Paths, 13. Good Output Examples, 15. Common Mistakes (Pre-Empted), 16. Research Sources (Where to Look for Best Practice), 17. Edge Cases for This Role, 18. Update Triggers (When to Revise This Document) (+32 more)
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review, Gate 3 -- Peer Research Review (for major reports: Quarterly Landscape, Competitor Deep-Dives, Technology Recommendations), Gate 4 -- Director Review (for all HIGH-impact and strategy-affecting outputs)
 
 ### Community 2267 - "Community 2267"
 Cohesion: 0.40
@@ -12463,12 +12574,12 @@ Cohesion: 0.40
 Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New Sales Funnel Build (End-to-End), SOP 9.2 — Funnel Step Optimization, SOP 9.3 — A/B Test Implementation for Funnels, SOP 9.4 — Funnel Payment Testing and Failure Recovery
 
 ### Community 2281 - "Community 2281"
-Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Cohesion: 0.18
+Nodes (10): 7. KPIs (Your Scoreboard), 9. Standard Operating Procedures (Numbered), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly, SOP 9.1 — New Landing Page Build (End-to-End), SOP 9.2 — A/B Test Variant Build (+2 more)
 
 ### Community 2282 - "Community 2282"
 Cohesion: 0.40
-Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New Landing Page Build (End-to-End), SOP 9.2 — A/B Test Variant Build, SOP 9.3 — Landing Page Conversion Optimization (Reactive), SOP 9.4 — Landing Page Decommissioning and Archival
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2283 - "Community 2283"
 Cohesion: 0.40
@@ -12516,19 +12627,19 @@ Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — grad
 
 ### Community 2294 - "Community 2294"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Director Review (for pipeline changes and new reports), Gate 4 — Devil's Advocate Review (only for outputs marked "high stakes")
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New Message Sequence Build and Deployment, SOP 9.2 — Monthly Sequence Audit and Optimization, SOP 9.3 — A/B Test Execution for Message Sequences, SOP 9.4 — Compliance Breach Response
 
 ### Community 2295 - "Community 2295"
 Cohesion: 0.40
-Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Project Changes Type Mid-Production, Edge Case 17.2 — Team Member Leaves Mid-Project, Edge Case 17.3 — CRM Automation Creates a Cascading Error, Edge Case 17.4 — Director Requests a Dashboard for a Metric the CRM Does Not Track
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Partner or Affiliate Requests to Use {{COMPANY_NAME}} Brand Assets, Edge Case 17.2 -- The Owner Wants to "Tweak" the Logo, Edge Case 17.3 -- Acquisitions or Mergers Impact Brand Architecture, Edge Case 17.4 -- Fan/Customer Creates Unauthorized Brand Merchandise
 
 ### Community 2296 - "Community 2296"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2297 - "Community 2297"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
+Nodes (5): 9. Standard Operating Procedures, SOP 9.1 — Compliance Calendar Management and Monitoring, SOP 9.2 — Internal Compliance Audit Execution, SOP 9.3 — Compliance Incident Investigation, SOP 9.4 — Regulatory Change Impact Assessment and Implementation Tracking
 
 ### Community 2298 - "Community 2298"
 Cohesion: 0.40
@@ -12544,7 +12655,7 @@ Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this r
 
 ### Community 2301 - "Community 2301"
 Cohesion: 0.40
-Nodes (5): 8. Tools, AI Pipeline Tools (2026 Standard), Core Production Stack, Format-Specific Tools, Tool Discipline
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Cross-Functional Review, Gate 3 — CLO Review, Gate 4 — Owner Approval (only for material changes to core documents)
 
 ### Community 2302 - "Community 2302"
 Cohesion: 0.40
@@ -12556,15 +12667,15 @@ Nodes (5): 4A - The Execution Standard, 4B - Quality Control Protocol, 4C - Fail
 
 ### Community 2304 - "Community 2304"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 -- Self-Review (before showing anyone the storyboard), Gate 2 -- Director of Video Creative Review, Gate 3 -- Production Feasibility Check, Gate 4 -- Pre-Production Package Completeness (Final Gate Before Production)
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 — Research Request That Requires Practicing Law (Unauthorized Practice of Law Risk), Edge Case 17.2 — Research Request on an Unfamiliar Area of Law, Edge Case 17.3 — Research Reveals {{COMPANY_NAME}} Is Likely in Violation of Law, Edge Case 17.4 — Research Database Access Is Temporarily Unavailable
 
 ### Community 2305 - "Community 2305"
 Cohesion: 0.40
-Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
+Nodes (5): 17. Edge Cases, Edge Case 1: ISP or Domain Blacklisting, Edge Case 2: GDPR/CCPA Data Deletion Request Received After Campaign Is Scheduled, Edge Case 3: Competitor Email Spoofing {{COMPANY_NAME}}, Edge Case 4: Automated Flow Becomes Revenue-Negative
 
 ### Community 2306 - "Community 2306"
 Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check (VSL Specialist), Gate 2 — Funnel Strategist / Copywriter Review, Gate 3 — Devil's Advocate Review (mandatory for all VSLs), Gate 4 — Owner Approval (mandatory for all VSLs for offers above $1K, or any VSL using the owner's name/likeness)
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Lead Magnet Specialist), Gate 2 — CMO Review (for net-new lead magnets in strategic topic areas or campaign-critical assets), Gate 3 — Devil's Advocate Review (for lead magnets making specific claims about results, savings, or ROI), Gate 4 — Owner Approval (for lead magnets that represent the company's core methodology, use the owner's name or story, or make specific financial claims)
 
 ### Community 2307 - "Community 2307"
 Cohesion: 0.40
@@ -12631,8 +12742,8 @@ Cohesion: 0.40
 Nodes (5): 10. Quality Gates, Gate 1 — Self-check (SOP 9.3), Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for SOPs governing "high stakes" work — money, legal, irreversible sends), Gate 4 — Owner Approval (only when the SOP encodes a brand/compliance/irreversible decision)
 
 ### Community 2323 - "Community 2323"
-Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Technical SEO Specialist), Gate 2 — Google Search Console Verification, Gate 3 — SEO Specialist Verification, Gate 4 — Post-Deployment Verification
+Cohesion: 0.14
+Nodes (12): 10. Quality Gates, 11. Handoffs (Value Stream Map), 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Block All The Things" Robots.txt, Anti-Pattern B — The "Canonical Chaos", Cross-department coordination:, Gate 1 — Self-check (Technical SEO Specialist), Gate 2 — Google Search Console Verification (+4 more)
 
 ### Community 2324 - "Community 2324"
 Cohesion: 0.40
@@ -12723,12 +12834,12 @@ Cohesion: 0.33
 Nodes (4): [ADD TO AGENTS.md], [ADD TO MEMORY.md], [ADD TO TOOLS.md], Core File Updates — Skill 37
 
 ### Community 2346 - "Community 2346"
-Cohesion: 0.40
-Nodes (5): [1.4.21] - 2026-05-30 - Reply on the SAME channel the message arrived on: channel-mirroring + contactId-threaded send-directive (no hardcoded SMS, no conversationId-on-send) + conversation READ endpoints + extended QC gates, Changed — QC gates (extended + negative-tested), Changed — `references/ghl-api-quick-reference.md` (MESSAGING), Changed — `references/workflow-ai-instructions-standard.md`, Changed — the MANDATORY send-directive (channel-mirroring, contactId-threaded)
+Cohesion: 0.17
+Nodes (11): [1.4.21] - 2026-05-30 - Reply on the SAME channel the message arrived on: channel-mirroring + contactId-threaded send-directive (no hardcoded SMS, no conversationId-on-send) + conversation READ endpoints + extended QC gates, [1.5.3] - 2026-05-30 - Round-3 canonical reconciliation (Mac ↔ VPS): markers, MEMORY rules, QC superset, F52 seeding, roadmap traceability, Changed — QC gates (extended + negative-tested), Changed — `references/ghl-api-quick-reference.md` (MESSAGING), Changed — `references/workflow-ai-instructions-standard.md`, Changed — the MANDATORY send-directive (channel-mirroring, contactId-threaded), Protocols — merged to the canonical (superset) bodies, all cross-references aligned, QC gates — converged to the canonical SUPERSET (wired into 11-run-qc-checklist.sh + CI) (+3 more)
 
 ### Community 2347 - "Community 2347"
 Cohesion: 0.40
-Nodes (5): [1.5.3] - 2026-05-30 - Round-3 canonical reconciliation (Mac ↔ VPS): markers, MEMORY rules, QC superset, F52 seeding, roadmap traceability, Protocols — merged to the canonical (superset) bodies, all cross-references aligned, QC gates — converged to the canonical SUPERSET (wired into 11-run-qc-checklist.sh + CI), References, Scripts — numbering + the F52 seeder
+Nodes (5): 9. Standard Operating Procedures, SOP 9.1 — Lead Magnet Strategy and Brief Development, SOP 9.2 — Lead Magnet Landing Page Optimization, SOP 9.3 — Lead Magnet Message Match Audit, SOP 9.4 — Lead Magnet Portfolio Audit and Retirement
 
 ### Community 2348 - "Community 2348"
 Cohesion: 0.33
@@ -12756,7 +12867,7 @@ Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this r
 
 ### Community 2354 - "Community 2354"
 Cohesion: 0.40
-Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs
+Nodes (5): 10. Quality Gates, Gate 1: Self-Check (Before any output leaves your desk), Gate 2: Devil's Advocate Review (For decisions with >{{WEEKLY_TARGET}} impact), Gate 3: Department Director Sanity Check (For cross-department decisions), Gate 4: Owner Alignment (For strategic/financial decisions above threshold)
 
 ### Community 2355 - "Community 2355"
 Cohesion: 0.11
@@ -12771,12 +12882,12 @@ Cohesion: 0.33
 Nodes (4): AUTHOR: Brené Brown, BOOK: Atlas of the Heart, EXTRACTION DATE: [Current Date], EXTRACTION NOTES - Atlas of the Heart
 
 ### Community 2358 - "Community 2358"
-Cohesion: 0.03
-Nodes (75): #89 — Per-agent file personalization, #90 — add-department.sh ported, #91 — CI version-check modernization (5 → 8 files), #92 — install-hardening.sh smoke test, Added, Added, Added — shared-utils, Added — Skill 23 scripts (+67 more)
+Cohesion: 0.02
+Nodes (106): #89 — Per-agent file personalization, #90 — add-department.sh ported, #91 — CI version-check modernization (5 → 8 files), #92 — install-hardening.sh smoke test, Added, Added, Added, Added (+98 more)
 
 ### Community 2359 - "Community 2359"
-Cohesion: 0.50
-Nodes (4): BROWSER TOOL INITIALIZATION, Priority 1: agent-browser (Vercel) - USE THIS IF AVAILABLE, Priority 2: Playwright with launchPersistentContext - FALLBACK, Priority 3: OpenClaw browser tool - LAST RESORT ONLY
+Cohesion: 0.40
+Nodes (5): 16. Research Sources, Tier 1 -- Authoritative Strategic, Tier 2 -- Trade & Vendor, Tier 3 -- Competitive Context, Tier 4 -- AI Agent Ecosystem
 
 ### Community 2360 - "Community 2360"
 Cohesion: 0.40
@@ -12791,8 +12902,8 @@ Cohesion: 0.40
 Nodes (5): Direct Quotes (ATTRIBUTION REQUIRED), Key Metaphors and Analogies, Section 9 - Quote Library, Signature One-Liners (no attribution needed), Task Governance Standards Phrases
 
 ### Community 2363 - "Community 2363"
-Cohesion: 0.18
-Nodes (10): 10. Quality Gates, 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, Gate 1 — Self-check (SOP 9.3), Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for SOPs governing "high stakes" work — money, legal, irreversible sends), Gate 4 — Owner Approval (only when the SOP encodes a brand/compliance/irreversible decision), How to spawn (+2 more)
+Cohesion: 0.10
+Nodes (17): 11. Handoffs (Value Stream Map), 19. When to Spawn a Sub-Specialist, 3. Daily Operations, 9. Standard Operating Procedures (Numbered), Common sub-specialists for this role, Cross-department coordination:, End of day, How to spawn (+9 more)
 
 ### Community 2364 - "Community 2364"
 Cohesion: 0.50
@@ -12819,8 +12930,8 @@ Cohesion: 0.40
 Nodes (5): Direct Quotes (Attribution Required), Metaphors, Section 9 - Quote Library, Signature One-Liners, Task Governance Standards Phrases
 
 ### Community 2370 - "Community 2370"
-Cohesion: 0.33
-Nodes (4): ANALYSIS AGENT: DeepSeek V3.2-Speciale, ANALYSIS NOTES - Code of the Extraordinary Mind, AUTHOR: Vishen Lakhiani, BOOK: Code of the Extraordinary Mind
+Cohesion: 0.11
+Nodes (17): ANALYSIS AGENT: DeepSeek V3.2-Speciale, ANALYSIS DATE: March 7, ANALYSIS NOTES - Code of the Extraordinary Mind, AUTHOR: Vishen Lakhiani, BOOK: Code of the Extraordinary Mind, DIMENSION 10 - Department and Role Application Map, DIMENSION 11 - Routing Intelligence, DIMENSION 12 - The Single Most Important Insight (+9 more)
 
 ### Community 2371 - "Community 2371"
 Cohesion: 0.40
@@ -12887,8 +12998,8 @@ Cohesion: 0.67
 Nodes (4): verify-pa-install.sh script, bad(), note(), ok()
 
 ### Community 2387 - "Community 2387"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Google Play Store Rejection for "Stalkerware" or "Deceptive Behavior" Policy, Edge Case 17.2 — Critical Crash on a Specific Device Model Not in the Device Lab, Edge Case 17.3 — New Android OS Version Released with Breaking Behavioral Changes
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2388 - "Community 2388"
 Cohesion: 0.50
@@ -13155,20 +13266,20 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2456 - "Community 2456"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination:, You Hand Work Off To:, You Receive Work From:
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2457 - "Community 2457"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Customer Files a Chargeback While Still Actively Using the Product, Edge Case 17.2 — Refund Request from a Deceased Customer's Family Member, Edge Case 17.3 — Refund Request Tied to an Alleged Accessibility or Discrimination Issue
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — Checked Every Morning, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2458 - "Community 2458"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2459 - "Community 2459"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases, Edge Case 1 (PROACTIVE): Product Outage Discovered Through Ticket Pattern, Edge Case 2 (PROACTIVE): Customer Threatens to Cancel Publicly on Social Media, Edge Case 3 (REACTIVE): Customer Reports a Security Vulnerability
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2460 - "Community 2460"
 Cohesion: 0.50
@@ -13179,32 +13290,32 @@ Cohesion: 0.50
 Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — iOS Safari Auto-Evicts PWA Storage After 7 Days of Inactivity, Edge Case 17.2 — Service Worker Registration Fails Due to a 302 Redirect on sw.js, Edge Case 17.3 — Push Notification Subscription Expires or Becomes Invalid
 
 ### Community 2462 - "Community 2462"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination:, You Hand Work Off To:, You Receive Work From:
+Cohesion: 0.40
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — New Threat Assessment and DR Plan Creation, SOP 9.2 — Quarterly DR Drill Execution, SOP 9.3 — DR Plan Maintenance Cycle, SOP 9.4 — Real Disaster Activation
 
 ### Community 2463 - "Community 2463"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Customer Refuses to Provide Account Verification Information, Edge Case 17.2 — Customer Becomes Emotionally Distraught (Crying, Panic Attack Indicators), Edge Case 17.3 — Third-Party Caller Claiming to Represent the Customer
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2464 - "Community 2464"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2465 - "Community 2465"
 Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of Day, Morning (first 60 minutes), Throughout the Day
 
 ### Community 2466 - "Community 2466"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review, Gate 3 -- Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 -- Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2467 - "Community 2467"
-Cohesion: 0.50
-Nodes (4): 16. Research Sources, Tier 1 -- Authoritative Strategic, Tier 2 -- Trade & Vendor, Tier 3 -- Competitive Context
+Cohesion: 0.40
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Campaign Receives High Impressions But Near-Zero Clicks, Edge Case 17.2 -- Native Campaign Outperforms All Other Channels But Cannot Scale, Edge Case 17.3 -- Ad Disapproval Wave Across Multiple Campaigns, Edge Case 17.4 -- Zero Conversions Attributed Despite Strong Engagement Metrics
 
 ### Community 2468 - "Community 2468"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases, Edge Case 1 (PROACTIVE): Major Customer Enters Financial Distress, Edge Case 2 (PROACTIVE): Payroll Date Falls on a Forecasted Low-Cash Day, Edge Case 3 (REACTIVE): Unexplained Large Bank Withdrawal
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2469 - "Community 2469"
 Cohesion: 0.50
@@ -13219,32 +13330,32 @@ Cohesion: 0.50
 Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The "That'll Do" Syndrome, Anti-Pattern B -- Prompt Laziness (Generic Prompts, Generic Outputs), Anti-Pattern C -- Tool Monogamy
 
 ### Community 2472 - "Community 2472"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (first 60 minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2473 - "Community 2473"
 Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2474 - "Community 2474"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 16. Research Sources, Tier 1 -- Authoritative Strategic, Tier 2 -- Trade & Vendor, Tier 3 -- Competitive Context, Tier 4 -- Anti-Failure
 
 ### Community 2475 - "Community 2475"
 Cohesion: 0.50
 Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2476 - "Community 2476"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2477 - "Community 2477"
 Cohesion: 0.50
 Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — A Pitch That Underperforms Across ALL Journalist Segments Simultaneously, Edge Case 17.2 — A Journalist Responds Positively to a Pitch, Then Publishes a Negative Story, Edge Case 17.3 — Your A/B Test Data Indicates a Clear Winner, But the PR Specialist Disagrees Based on Relationship Intelligence
 
 ### Community 2478 - "Community 2478"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2479 - "Community 2479"
 Cohesion: 0.50
@@ -13255,16 +13366,16 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
 
 ### Community 2481 - "Community 2481"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 -- TikTok Creative Performance and Fatigue Management, SOP 9.2 -- TikTok Trend Intelligence and Creative Briefing, SOP 9.3 -- Spark Ads (Creator Content) Management, SOP 9.4 -- TikTok Shop Ads Optimization
 
 ### Community 2482 - "Community 2482"
 Cohesion: 0.50
 Nodes (4): 7. KPIs (Your Scoreboard), Daily Pulse Metrics (Checked Every Morning), Primary KPIs -- Graded Weekly, Secondary KPIs -- Graded Monthly
 
 ### Community 2483 - "Community 2483"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout-Day Recurring Actions
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- Department QC Review, Gate 3 -- Devil's Advocate Review (only for high-stakes outputs), Gate 4 -- Owner Approval (only for owner-required outputs)
 
 ### Community 2484 - "Community 2484"
 Cohesion: 0.50
@@ -13283,8 +13394,8 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2488 - "Community 2488"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Simultaneous Disasters (Compound Failure), Edge Case 17.2 — DR Plan Activated by Mistake (False Activation), Edge Case 17.3 — DR Drill Reveals a Previously Unknown Catastrophic Vulnerability
+Cohesion: 0.19
+Nodes (9): 10. Quality Gates, 17. Edge Cases for This Role, Edge Case 17.1 — Simultaneous Disasters (Compound Failure), Edge Case 17.2 — DR Plan Activated by Mistake (False Activation), Edge Case 17.3 — DR Drill Reveals a Previously Unknown Catastrophic Vulnerability, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes") (+1 more)
 
 ### Community 2489 - "Community 2489"
 Cohesion: 0.50
@@ -13635,12 +13746,12 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of Day, Morning (first 60 minutes), Throughout the Day
 
 ### Community 2576 - "Community 2576"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination, You Hand Work Off To, You Receive Work From
+Cohesion: 0.14
+Nodes (12): 11. Handoffs (Value Stream Map), 17. Edge Cases for This Role, 3. Daily Operations, Cross-Department Coordination, Edge Case 17.1 — Facebook Group Member Posts Controversial Content, Edge Case 17.2 — Facebook Organic Reach Suddenly Plummets, Edge Case 17.3 — Competitor Creates a "Clone" Facebook Group, End of Day (+4 more)
 
 ### Community 2577 - "Community 2577"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Facebook Group Member Posts Controversial Content, Edge Case 17.2 — Facebook Organic Reach Suddenly Plummets, Edge Case 17.3 — Competitor Creates a "Clone" Facebook Group
+Cohesion: 0.40
+Nodes (5): 19. When to Spawn a Sub-Specialist, Common sub-specialists for this role, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2578 - "Community 2578"
 Cohesion: 0.50
@@ -13659,8 +13770,8 @@ Cohesion: 0.50
 Nodes (4): 8. Tools, AI Copilot Tools (2026 Standard), Core Stack (Required), Tool Discipline Rules
 
 ### Community 2582 - "Community 2582"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs
 
 ### Community 2583 - "Community 2583"
 Cohesion: 0.50
@@ -13691,8 +13802,8 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2590 - "Community 2590"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
+Cohesion: 0.40
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Deal Takeover From AE, SOP 9.2 — Blocking Issue Resolution, SOP 9.3 — Executive-to-Executive Call, SOP 9.4 — Deal Loss Autopsy
 
 ### Community 2591 - "Community 2591"
 Cohesion: 0.50
@@ -13731,12 +13842,12 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 2600 - "Community 2600"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2601 - "Community 2601"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 — Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2602 - "Community 2602"
 Cohesion: 0.50
@@ -13755,8 +13866,8 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2606 - "Community 2606"
-Cohesion: 0.50
-Nodes (4): 10. Quality Gates, Gate 1 — Self-check (Every Interaction), Gate 2 — Internal QA (Weekly Review), Gate 3 — Director of Social Media Review (for crisis responses, policy-sensitive interactions)
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics — checked every morning, Primary KPIs — graded weekly, Revenue Contribution Link, Secondary KPIs — graded monthly
 
 ### Community 2607 - "Community 2607"
 Cohesion: 0.50
@@ -13775,20 +13886,20 @@ Cohesion: 0.50
 Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Corporate Jargon Press Release, Anti-Pattern B — Defensive Crisis Statement, Anti-Pattern C — The "Bury the Lead" Release
 
 ### Community 2611 - "Community 2611"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination, You Hand Work Off To, You Receive Work From
+Cohesion: 0.40
+Nodes (5): 9. Standard Operating Procedures, SOP 9.1 — Discord Server Setup and Channel Architecture, SOP 9.2 — Daily Community Engagement and Conversation Seeding, SOP 9.3 — Community Event Planning and Hosting, SOP 9.4 — Discord Moderation and Community Guideline Enforcement
 
 ### Community 2612 - "Community 2612"
 Cohesion: 0.50
 Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2613 - "Community 2613"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2614 - "Community 2614"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination, You Hand Work Off To, You Receive Work From
+Cohesion: 0.40
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Research Question Cannot Be Answered with Available Sources, Edge Case 17.2 -- Competitor Launches a Directly Competitive Video Series Targeting {{COMPANY_NAME}}'s Core Audience, Edge Case 17.3 -- Major Platform Deprecates a Feature {{COMPANY_NAME}}'s Video Strategy Depends On, Edge Case 17.4 -- Research Findings Contradict the Director's Stated Strategy
 
 ### Community 2615 - "Community 2615"
 Cohesion: 0.50
@@ -13835,32 +13946,32 @@ Cohesion: 0.50
 Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2626 - "Community 2626"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- Checked Every Morning, Primary KPIs -- Graded Weekly, Revenue Contribution Link, Secondary KPIs -- Graded Monthly
 
 ### Community 2627 - "Community 2627"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination:, You Hand Work Off To:, You Receive Work From:
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 -- Self-check, Gate 2 -- QC Peer Calibration (for HIGH and BLOCKER findings), Gate 3 -- Devil's Advocate Review (only for outputs marked "high stakes"), Gate 4 -- Owner Approval (only for outputs marked "owner-required")
 
 ### Community 2628 - "Community 2628"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Conflicting QC Results (Different Browsers, Different Behavior), Edge Case 17.2 -- QC Review of Emergency Hotfix, Edge Case 17.3 -- Unclear or Missing Acceptance Criteria, Edge Case 17.4 -- Production Bug Discovered During Scheduled QC
 
 ### Community 2629 - "Community 2629"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Customer Files a Chargeback While Still Actively Using the Product, Edge Case 17.2 — Refund Request from a Deceased Customer's Family Member, Edge Case 17.3 — Refund Request Tied to an Alleged Accessibility or Discrimination Issue
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2630 - "Community 2630"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Keyword Research and Content Topic Selection, SOP 9.2 — On-Page SEO Optimization (New Content and Content Refreshes), SOP 9.3 — Link Building and Digital PR, SOP 9.4 — SEO Performance Analysis and Reporting
 
 ### Community 2631 - "Community 2631"
-Cohesion: 0.50
-Nodes (4): 9. Standard Operating Procedures, SOP 9.1 — Standard Refund Request Processing, SOP 9.2 — Chargeback Response and Dispute Management, SOP 9.3 — Billing Error Investigation and Proactive Resolution
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Technical SEO Specialist), Gate 2 — Google Search Console Verification, Gate 3 — SEO Specialist Verification, Gate 4 — Post-Deployment Verification
 
 ### Community 2632 - "Community 2632"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination:, You Hand Work Off To:, You Receive Work From:
+Cohesion: 0.40
+Nodes (5): 17. Edge Cases for This Role, Edge Case 17.1 -- Zero-Day Vulnerability in Critical Dependency, Edge Case 17.2 -- False Positive Security Flag from External Party, Edge Case 17.3 -- Security Tool Causes Production Outage, Edge Case 17.4 -- Regulatory Investigation or Legal Hold
 
 ### Community 2633 - "Community 2633"
 Cohesion: 0.50
@@ -13879,12 +13990,12 @@ Cohesion: 0.50
 Nodes (4): 9. Standard Operating Procedures (Numbered), SOP 9.1 — PWA Feature Implementation (Web-to-App Feature Delivery), SOP 9.2 — Service Worker Deploy and Rollback Strategy, SOP 9.3 — PWA Performance Regression Investigation
 
 ### Community 2637 - "Community 2637"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Customer Refuses to Provide Account Verification Information, Edge Case 17.2 — Customer Becomes Emotionally Distraught (Crying, Panic Attack Indicators), Edge Case 17.3 — Third-Party Caller Claiming to Represent the Customer
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics -- checked every morning, Primary KPIs -- graded weekly, Revenue Contribution Link, Secondary KPIs -- graded monthly
 
 ### Community 2638 - "Community 2638"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2639 - "Community 2639"
 Cohesion: 0.50
@@ -13899,16 +14010,16 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2642 - "Community 2642"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1: Source Verifiability, Gate 2: Decision-Matrix Completeness, Gate 3: Reproducibility, Gate 4: Actionability
 
 ### Community 2643 - "Community 2643"
 Cohesion: 0.50
 Nodes (4): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Requester Review, Gate 3 — Department QC Review (for customer-facing or compliance transcripts)
 
 ### Community 2644 - "Community 2644"
-Cohesion: 0.50
-Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The "That'll Do" Syndrome, Anti-Pattern B -- Prompt Laziness (Generic Prompts, Generic Outputs), Anti-Pattern C -- Tool Monogamy
+Cohesion: 0.40
+Nodes (5): 13. Good vs. Bad Output Examples, Bad Output Example (Fails Quality Gate 1 -- Unverifiable Claims), Bad Output Example (Fails Quality Gate 4 -- Not Actionable), Good Output Example: Critical Vulnerability Impact Assessment, Good Output Example: Technology Comparison Brief
 
 ### Community 2645 - "Community 2645"
 Cohesion: 0.50
@@ -13923,28 +14034,28 @@ Cohesion: 0.50
 Nodes (4): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Standard Audio Transcription (Podcast, Interview, Course), SOP 9.2 — Caption and Subtitle File Production (SRT/VTT), SOP 9.3 — Customer Call Transcription and Insight Extraction
 
 ### Community 2648 - "Community 2648"
-Cohesion: 0.40
-Nodes (5): 10. Quality Gates, Gate 1 — Self-check (Builder), Gate 2 — Peer Review (Another Builder or {{DIRECTOR_TITLE}}), Gate 3 — Stakeholder Acceptance Testing, Gate 4 — Compliance Review (for customer-facing agents handling personal data)
+Cohesion: 0.10
+Nodes (21): Gate 1 — Self-check, 10. Quality Gates, Gate 1 — Self-check (Builder), Gate 2 — Peer Review (Another Builder or {{DIRECTOR_TITLE}}), Gate 3 — Stakeholder Acceptance Testing, Gate 4 — Compliance Review (for customer-facing agents handling personal data), 10. Quality Gates, Gate 1 — Self-check (Builder) (+13 more)
 
 ### Community 2649 - "Community 2649"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 19. Sub-Specialist and Successor Persona Spawning, Persona Inheritance Language, Promotion Rule, Sub-Specialist Spawning Table, 19.2 — "Insight Analyst" (Cross-Functional Data and Business Intelligence Specialist)
 
 ### Community 2650 - "Community 2650"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Caller with Speech Impediment or Strong Accent, Edge Case 17.2 — Agent Becomes a Target for Prank/Troll Calls, Edge Case 17.3 — Emergency or Safety-Critical Call
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check (SEO Specialist), Gate 2 — Content Review, Gate 3 — Technical SEO Verification, Gate 4 — Post-Publish Verification
 
 ### Community 2651 - "Community 2651"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2652 - "Community 2652"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Keyword Research and Content Topic Selection, SOP 9.2 — On-Page SEO Optimization (New Content and Content Refreshes), SOP 9.3 — Link Building and Digital PR, SOP 9.4 — SEO Performance Analysis and Reporting
 
 ### Community 2653 - "Community 2653"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (first 60 minutes), Throughout the Day
+Cohesion: 0.40
+Nodes (3): Any, Initialize AI provider.                  Args:             provider_name: Name o, Get default endpoint for provider.
 
 ### Community 2654 - "Community 2654"
 Cohesion: 0.50
@@ -13955,16 +14066,16 @@ Cohesion: 0.50
 Nodes (4): 9. Standard Operating Procedures, SOP 6.1 — Monthly Investor Update Production, SOP 6.2 — Board Meeting Material Preparation, SOP 6.3 — Sensitive/Confidential Investor Communication
 
 ### Community 2656 - "Community 2656"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): 2. `contacts.md`, Main topics inside, Plain-English summary, Use this file when, What it covers
 
 ### Community 2657 - "Community 2657"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — A Pitch That Underperforms Across ALL Journalist Segments Simultaneously, Edge Case 17.2 — A Journalist Responds Positively to a Pitch, Then Publishes a Negative Story, Edge Case 17.3 — Your A/B Test Data Indicates a Clear Winner, But the PR Specialist Disagrees Based on Relationship Intelligence
+Cohesion: 0.40
+Nodes (5): 5. `opportunities.md`, Main topics inside, Plain-English summary, Use this file when, What it covers
 
 ### Community 2658 - "Community 2658"
-Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
+Cohesion: 0.40
+Nodes (5): 8. `locations.md`, Main topics inside, Plain-English summary, Use this file when, What it covers
 
 ### Community 2659 - "Community 2659"
 Cohesion: 0.50
@@ -13983,8 +14094,8 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2663 - "Community 2663"
-Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Cohesion: 0.40
+Nodes (5): [1.4.9] - 2026-05-29 - enforce the mandatory GHL send-directive (drafting != sending) for every client, Added, Changed, The canonical send-directive, Version
 
 ### Community 2664 - "Community 2664"
 Cohesion: 0.50
@@ -13995,8 +14106,8 @@ Cohesion: 0.50
 Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Undocumented Production Deployment, Anti-Pattern B — Automation Built from Verbal Spec Only, Anti-Pattern C — Over-Automation (Automating the Human Out)
 
 ### Community 2666 - "Community 2666"
-Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 -- Research Request With Impossible Deadline or Scope, Edge Case 17.2 -- Research Finds the Company's Current Strategy Is Fundamentally Wrong, Edge Case 17.3 -- Conflicting Data From Equally Authoritative Sources
+Cohesion: 0.40
+Nodes (5): 10. Quality Gates, Gate 1 — Self-check (SOP 9.3), Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for SOPs governing "high stakes" work — money, legal, irreversible sends), Gate 4 — Owner Approval (only when the SOP encodes a brand/compliance/irreversible decision)
 
 ### Community 2667 - "Community 2667"
 Cohesion: 0.50
@@ -14008,7 +14119,7 @@ Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You 
 
 ### Community 2669 - "Community 2669"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2670 - "Community 2670"
 Cohesion: 0.50
@@ -14016,23 +14127,23 @@ Nodes (4): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs -- grade
 
 ### Community 2671 - "Community 2671"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination:, You Hand Work Off To:, You Receive Work From:
+Nodes (4): 7a. Structure Verification, 7b. Content Verification, 7c. Self-Score, PHASE 7 - VERIFICATION
 
 ### Community 2672 - "Community 2672"
 Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Bug That Only Occurs in Production (Cannot Reproduce in Staging), Edge Case 17.2 — Customer-Reported Issue That Turns Out to Be a Security Vulnerability, Edge Case 17.3 — The "Heisenbug" — Issue That Disappears When You Try to Investigate
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2673 - "Community 2673"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2674 - "Community 2674"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 2675 - "Community 2675"
 Cohesion: 0.50
-Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The Data Dump Masquerading as Research, Anti-Pattern B -- Outdated or Cached Knowledge Presented as Current Research, Anti-Pattern C -- Research That Confirms What the Requestor Wants to Hear
+Nodes (4): 11. Handoffs, Cross-Department Routing Scenarios, Value Stream Map: You Receive Work From, You Hand Work To
 
 ### Community 2676 - "Community 2676"
 Cohesion: 0.50
@@ -14044,11 +14155,11 @@ Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Througho
 
 ### Community 2678 - "Community 2678"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 2679 - "Community 2679"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
+Nodes (4): 7. KPIs (Your Scoreboard), Daily Pulse Metrics (Checked Every Morning), Primary KPIs — Graded Weekly, Secondary KPIs — Graded Monthly
 
 ### Community 2680 - "Community 2680"
 Cohesion: 0.50
@@ -14056,7 +14167,7 @@ Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You 
 
 ### Community 2681 - "Community 2681"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2682 - "Community 2682"
 Cohesion: 0.50
@@ -14068,7 +14179,7 @@ Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You 
 
 ### Community 2684 - "Community 2684"
 Cohesion: 0.50
-Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Generic Discovery Brief, Anti-Pattern B — The Product Pitch Disguised as Discovery, Anti-Pattern C — The Unqualified Pass-Through
+Nodes (4): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Speaker Review, Gate 3 — Rehearsal Validation
 
 ### Community 2685 - "Community 2685"
 Cohesion: 0.50
@@ -14080,7 +14191,7 @@ Nodes (5): [1.4.15] - 2026-05-29 - Mandatory Telegram doc-delivery + Communicati
 
 ### Community 2687 - "Community 2687"
 Cohesion: 0.50
-Nodes (4): 9. Standard Operating Procedures, SOP 9.1 — Video Production Pipeline (Ideation to Published), SOP 9.2 — YouTube SEO (Per-Video and Ongoing), SOP 9.3 — YouTube Community Engagement and Tab Management
+Nodes (4): 19. When to Spawn a Sub-Specialist, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2688 - "Community 2688"
 Cohesion: 0.50
@@ -14100,11 +14211,11 @@ Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), 
 
 ### Community 2692 - "Community 2692"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
+Nodes (4): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Requester Review, Gate 3 — Department QC Review (for customer-facing or compliance transcripts)
 
 ### Community 2693 - "Community 2693"
 Cohesion: 0.50
-Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Vague Hygiene Alert, Anti-Pattern B — Dashboard with Silent Data Source Failure, Anti-Pattern C — Resource Assignment Without Capacity Check
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2694 - "Community 2694"
 Cohesion: 0.50
@@ -14152,15 +14263,15 @@ Nodes (4): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Author a Mis
 
 ### Community 2705 - "Community 2705"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
+Nodes (4): 19. When to Spawn a Sub-Specialist, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2706 - "Community 2706"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2707 - "Community 2707"
 Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 -- Instagram Reels Ad Delivery Constrained by Inventory, Edge Case 17.2 -- Instagram Ad Triggers Negative Comment Storm, Edge Case 17.3 -- Instagram Shopping Product Feed Failure During Promotion
+Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Caller with Speech Impediment or Strong Accent, Edge Case 17.2 — Agent Becomes a Target for Prank/Troll Calls, Edge Case 17.3 — Emergency or Safety-Critical Call
 
 ### Community 2708 - "Community 2708"
 Cohesion: 0.50
@@ -14232,15 +14343,15 @@ Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You 
 
 ### Community 2725 - "Community 2725"
 Cohesion: 0.50
-Nodes (4): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes")
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 2726 - "Community 2726"
 Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2727 - "Community 2727"
-Cohesion: 0.21
-Nodes (8): 13. Good Output Examples, 3. Daily Operations, End of Day, Example A — Discovery Brief Executive Summary, Example B — AE Warm Handoff Script (Actual Conversation), Example C — SDR Qualification Feedback After Disqualification, Morning Routine (First 60 Minutes), Throughout the Day
+Cohesion: 0.50
+Nodes (4): 13. Good Output Examples, Example A — Discovery Brief Executive Summary, Example B — AE Warm Handoff Script (Actual Conversation), Example C — SDR Qualification Feedback After Disqualification
 
 ### Community 2728 - "Community 2728"
 Cohesion: 0.50
@@ -14276,11 +14387,11 @@ Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You 
 
 ### Community 2736 - "Community 2736"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination, You Hand Work Off To, You Receive Work From
+Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Data Dump Disguised as Research, Anti-Pattern B — The Confirmation-Bias Brief, Anti-Pattern C — The Overconfident Single-Source Conclusion
 
 ### Community 2737 - "Community 2737"
 Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Employee Posts Something That Contradicts Company Position, Edge Case 17.2 — Competitor Engages Aggressively on {{COMPANY_NAME}}'s Posts, Edge Case 17.3 — LinkedIn Article Goes Viral in Unexpected Ways
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2738 - "Community 2738"
 Cohesion: 0.50
@@ -14288,11 +14399,11 @@ Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Througho
 
 ### Community 2739 - "Community 2739"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination, You Hand Work Off To, You Receive Work From
+Nodes (4): 10. Quality Gates, Gate 1 — Self-check (before approving any copy), Gate 2 — Customer Language Validation, Gate 3 — Multi-Channel Consistency Check
 
 ### Community 2740 - "Community 2740"
 Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — {{COMPANY_NAME}} Becomes the Subject of a Top-Page Negative Reddit Post, Edge Case 17.2 — Brand Account Banned from a Key Subreddit, Edge Case 17.3 — Reddit Account Gets Shadowbanned
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 30 Minutes), Throughout the Day
 
 ### Community 2741 - "Community 2741"
 Cohesion: 0.50
@@ -14300,23 +14411,23 @@ Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Througho
 
 ### Community 2742 - "Community 2742"
 Cohesion: 0.50
-Nodes (4): 9. Standard Operating Procedures, SOP 9.1 — Reddit Account Setup and Maintenance, SOP 9.2 — Subreddit Identification and Community Participation, SOP 9.3 — Reddit AMA (Ask Me Anything) Execution
+Nodes (4): 16. Research Sources, Tier 1 — Authoritative Strategic, Tier 2 — Trade & Vendor, Tier 3 — Competitive Context
 
 ### Community 2743 - "Community 2743"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination, You Hand Work Off To, You Receive Work From
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2744 - "Community 2744"
 Cohesion: 0.50
-Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Video Gets "False Reported" or Wrongly Flagged, Edge Case 17.2 — A Video Goes Massively Viral (1M+ views), Edge Case 17.3 — Trending Sound Is Copyright-Claimed or Removed After Posting
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 30 Minutes), Throughout the Day
 
 ### Community 2745 - "Community 2745"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2746 - "Community 2746"
 Cohesion: 0.50
-Nodes (4): 9. Standard Operating Procedures, SOP 9.1 — TikTok Video Creation and Publishing (Daily Content Engine), SOP 9.2 — TikTok Trend Identification and Adaptation, SOP 9.3 — TikTok Community Engagement
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2747 - "Community 2747"
 Cohesion: 0.50
@@ -14324,15 +14435,15 @@ Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Througho
 
 ### Community 2748 - "Community 2748"
 Cohesion: 0.50
-Nodes (4): 13. Good Output Examples, Example A — Morning Hygiene Scan Post in #video-ops, Example B — Resource Overallocation Alert to Director, Example C — Monthly Video Operations Report Executive Summary
+Nodes (4): 3. Daily Operations, End of Day, Morning (first 60 minutes), Throughout the Day
 
 ### Community 2749 - "Community 2749"
 Cohesion: 0.50
-Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Vague Hygiene Alert, Anti-Pattern B — Dashboard with Silent Data Source Failure, Anti-Pattern C — Resource Assignment Without Capacity Check
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2750 - "Community 2750"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2751 - "Community 2751"
 Cohesion: 0.50
@@ -14387,8 +14498,8 @@ Cohesion: 0.50
 Nodes (4): 19. Sub-Specialist and Successor Persona Spawning, Persona Inheritance Language, Promotion Rule, Sub-Specialist Spawning Table
 
 ### Community 2764 - "Community 2764"
-Cohesion: 0.15
-Nodes (11): 11. Handoffs, 1. Role Identity, 3. Daily Operations, Cross-Department Handoffs, Delivering Handoffs (Downstream), End-of-Day Routine (17:00-17:30), Morning Routine (First 60 Minutes), Receiving Handoffs (Upstream) (+3 more)
+Cohesion: 0.50
+Nodes (4): 11. Handoffs, Cross-Department Handoffs, Delivering Handoffs (Downstream), Receiving Handoffs (Upstream)
 
 ### Community 2765 - "Community 2765"
 Cohesion: 0.50
@@ -14399,8 +14510,8 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2767 - "Community 2767"
-Cohesion: 0.19
-Nodes (9): 17. Edge Cases for This Role, 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Edge Case 17.1 — Payment Gateway Outage During High-Volume Launch, Edge Case 17.2 — Customer Exploits Funnel Logic Flaw, Edge Case 17.3 — Subscriptions Renewing After Customer Cancellation, Primary KPIs — Graded Weekly, Revenue Contribution Link (+1 more)
+Cohesion: 0.40
+Nodes (5): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs — Graded Weekly, Revenue Contribution Link, Secondary KPIs — Graded Monthly
 
 ### Community 2768 - "Community 2768"
 Cohesion: 0.50
@@ -14464,19 +14575,19 @@ Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You 
 
 ### Community 2783 - "Community 2783"
 Cohesion: 0.50
-Nodes (4): 13. Good Output Examples, Example A — Morning Hygiene Scan Post in #video-ops, Example B — Resource Overallocation Alert to Director, Example C — Monthly Video Operations Report Executive Summary
+Nodes (4): 3. Daily Operations, End of Day, Morning (first 60 minutes), Throughout the Day
 
 ### Community 2784 - "Community 2784"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2785 - "Community 2785"
 Cohesion: 0.50
-Nodes (4): 13. Good Output Examples, Example 1: YouTube Video Script Opening (Hook Section), Example 2: Course Video Module Structure, Example 3: VSL Opening (Cold Traffic, Mid-Ticket Offer)
+Nodes (4): 17. Edge Cases, Edge Case 17.1 — Whistleblower Report Alleging Fraud or Illegal Activity, Edge Case 17.2 — Regulator Requests On-Site Audit or Inspection, Edge Case 17.3 — Compliance Audit Reveals Widespread Non-Compliance (Systemic Failure)
 
 ### Community 2786 - "Community 2786"
 Cohesion: 0.50
-Nodes (4): 14. Bad Output Examples, Example 1: Weak YouTube Hook (Will Be Skipped), Example 2: Lecture-Only Course Video (Will Lose Learners), Example 3: Feature-Dump VSL (Will Not Convert)
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day
 
 ### Community 2787 - "Community 2787"
 Cohesion: 0.50
@@ -14484,23 +14595,23 @@ Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You 
 
 ### Community 2788 - "Community 2788"
 Cohesion: 0.50
-Nodes (4): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The Vague Storyboard (Most Common Failure Mode), Anti-Pattern B -- The Hollywood Storyboard (Over-Production in Pre-Production), Anti-Pattern C -- The Un-producible Masterpiece
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2789 - "Community 2789"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day (Last 30 Minutes), Morning Routine (First 45 Minutes), Throughout the Day
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-Department Coordination, You Hand Work Off To, You Receive Work From
 
 ### Community 2790 - "Community 2790"
 Cohesion: 0.50
-Nodes (4): 7. KPIs (Your Scoreboard), Daily Metrics, Primary KPIs, Weekly Metrics (reported Friday to Director of Video)
+Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Server Growth Outpaces Moderation Capacity, Edge Case 17.2 — Community Member Becomes Toxic or Disruptive Influencer, Edge Case 17.3 — Discord Server Experiences Coordinated Raid or Spam Attack
 
 ### Community 2791 - "Community 2791"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day
 
 ### Community 2792 - "Community 2792"
 Cohesion: 0.50
-Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2793 - "Community 2793"
 Cohesion: 0.50
@@ -14520,7 +14631,7 @@ Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Througho
 
 ### Community 2797 - "Community 2797"
 Cohesion: 0.50
-Nodes (4): 13. Good Output Examples, Example 1: Membership Tier Access Matrix Documentation, Example 2: Payment Recovery Dashboard (Monthly Report), Example 3: Member Onboarding Flow (Technical Specification)
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2798 - "Community 2798"
 Cohesion: 0.50
@@ -14543,16 +14654,16 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2803 - "Community 2803"
-Cohesion: 0.67
-Nodes (3): Correct Process, Forbidden Actions, 🔴 GATEWAY RESTART PROTOCOL - NEVER TRIGGER AUTONOMOUSLY
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 2804 - "Community 2804"
-Cohesion: 0.08
-Nodes (18): 11. Handoffs (Value Stream Map), 14. Bad Output Examples (Anti-Patterns), 17. Edge Cases for This Role, 1. Role Identity, 3. Daily Operations, Anti-Pattern A — The "ARIA Will Fix It" Fallacy, Anti-Pattern B — The "Accessibility Overlay" Quick Fix, Cross-department coordination: (+10 more)
+Cohesion: 0.11
+Nodes (14): 13. Good Output Examples, 14. Bad Output Examples (Anti-Patterns), 17. Edge Cases for This Role, 3. Daily Operations, Anti-Pattern A — The "ARIA Will Fix It" Fallacy, Anti-Pattern B — The "Accessibility Overlay" Quick Fix, Edge Case 17.1 — Accessibility Legal Complaint or Demand Letter Received, Edge Case 17.2 — Third-Party Embedded Content Creating Accessibility Barriers (+6 more)
 
 ### Community 2805 - "Community 2805"
-Cohesion: 0.67
-Nodes (3): IF TEST FAILS:, IF TEST PASSES:, Step A9: Test the Connection
+Cohesion: 0.50
+Nodes (4): 7. KPIs (Your Scoreboard), Daily Pulse Metrics (Checked Every Morning), Primary KPIs — Graded Weekly, Secondary KPIs — Graded Monthly
 
 ### Community 2806 - "Community 2806"
 Cohesion: 0.50
@@ -14571,8 +14682,8 @@ Cohesion: 0.50
 Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2810 - "Community 2810"
-Cohesion: 0.67
-Nodes (3): Part A - In Google Cloud Console, Part B - In Google Workspace Admin Console, Step A7: Enable Domain-Wide Delegation
+Cohesion: 0.50
+Nodes (4): 19. When to Spawn a Sub-Specialist, How to spawn, Owner-discoverable sub-specialists (promotion rule), Persona inheritance
 
 ### Community 2811 - "Community 2811"
 Cohesion: 0.67
@@ -14636,19 +14747,19 @@ Nodes (4): Phase 1 - Assessment (Find the Click), Phase 2 - Challenge (Expose th
 
 ### Community 2826 - "Community 2826"
 Cohesion: 0.50
-Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+Nodes (4): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Speech / Keynote Writing, SOP 9.2 — Video Script Writing, SOP 9.3 — Podcast Host Narration and Scripted Segments
 
 ### Community 2827 - "Community 2827"
 Cohesion: 0.50
-Nodes (4): 9. Standard Operating Procedures (Numbered), SOP 9.1 — Author a Missing SOP (the no-SOP trigger response), SOP 9.2 — API Documentation Pull (for tasks that need an API), SOP 9.3 — SOP Self-QC Gate (substance + completeness + integrity)
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 2828 - "Community 2828"
 Cohesion: 0.40
 Nodes (3): Deprecated `suggested-roles` Files (v2.1 cleanup), Don't reference these in new INSTRUCTIONS.md flows., Why preserve them at all?
 
 ### Community 2829 - "Community 2829"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Policy Robot, Anti-Pattern B — The Chargeback Response That Admits Fault (Unintentionally)
+Cohesion: 0.50
+Nodes (4): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs -- Graded Monthly, Secondary KPIs -- Graded Monthly
 
 ### Community 2830 - "Community 2830"
 Cohesion: 0.50
@@ -14771,8 +14882,8 @@ Cohesion: 0.50
 Nodes (4): Phase 1 - Assessment: “From Fog to Facts”, Phase 2 - Challenge: “From Stories to Pattern”, Phase 3 - Support: “From Insight to Practice”, Section 3 - Coaching Framework
 
 ### Community 2861 - "Community 2861"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Script Reader, Anti-Pattern B — The Rushed Resolution
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases, Edge Case 1 (PROACTIVE): Major Customer Enters Financial Distress, Edge Case 2 (PROACTIVE): Payroll Date Falls on a Forecasted Low-Cash Day, Edge Case 3 (REACTIVE): Unexplained Large Bank Withdrawal
 
 ### Community 2862 - "Community 2862"
 Cohesion: 0.50
@@ -14787,8 +14898,8 @@ Cohesion: 0.50
 Nodes (4): Part A: Sub-Agent Concurrency, Part B: Model Allow List, STEP 2.5: UPDATE SUB-AGENT SETTINGS AND MODEL ALLOW LIST, STEP 2: INSTALL THE BACKUP PROTOCOL SECOND
 
 ### Community 2865 - "Community 2865"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2866 - "Community 2866"
 Cohesion: 0.50
@@ -14807,8 +14918,8 @@ Cohesion: 0.67
 Nodes (3): Mode 1: Web App (Browser Automation), Mode 2: CLI (Terminal Commands), Two Operating Modes
 
 ### Community 2870 - "Community 2870"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- Nonfiction Business Book Cover, Example B -- Series Cover System for a Multi-Book Program
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2873 - "Community 2873"
 Cohesion: 0.67
@@ -14831,40 +14942,40 @@ Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 2878 - "Community 2878"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2879 - "Community 2879"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- Weekly CEO Directive, Example B -- Decision Log Entry (Strategic Decision)
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2880 - "Community 2880"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples, Example C -- Vague CEO Directive (BAD), Example D -- Decision Without Exit Criteria (BAD)
+Cohesion: 0.50
+Nodes (4): 10. Quality Gates, Gate 1 — Self-check (before approving any copy), Gate 2 — Customer Language Validation, Gate 3 — Multi-Channel Consistency Check
 
 ### Community 2881 - "Community 2881"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2882 - "Community 2882"
 Cohesion: 0.67
 Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Service Worker That Caches Everything by Default, Anti-Pattern B — Web App Manifest Served as text/html
 
 ### Community 2883 - "Community 2883"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — Memory Quality Audit Report (Excerpt), Example B — Contradiction Resolution Entry
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases, Edge Case 9.1 — Owner Disagrees With Approved Messaging, Edge Case 9.2 — Two Departments Request Conflicting Messaging for the Same Thing, Edge Case 9.3 — Crisis Requires Immediate Messaging Shift
 
 ### Community 2884 - "Community 2884"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — Data-Driven Pitch With A/B Subject Line Test, Example B — Contrarian Hook Pitch
+Cohesion: 0.50
+Nodes (4): 10. Quality Gates, Gate 1 — Self-check (before any crisis communication is published), Gate 2 — CCO and Legal Approval (Level 1 and 2 crises), Gate 3 — Post-Publication Monitoring (first 60 minutes)
 
 ### Community 2885 - "Community 2885"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Spray and Pray" Pitch, Anti-Pattern B — The Over-Personalized Creepy Pitch
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 30 Minutes), Throughout the Day
 
 ### Community 2886 - "Community 2886"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 9. Standard Operating Procedures, SOP 5.1 — Crisis Declaration and Initial Response, SOP 5.2 — Crisis Communication Plan Maintenance, SOP 5.3 — Post-Crisis After-Action Review
 
 ### Community 2887 - "Community 2887"
 Cohesion: 0.67
@@ -14907,8 +15018,8 @@ Cohesion: 0.67
 Nodes (3): 13. Good Output Examples, Example 1: Strong Weekly Performance Report, Example 2: Strong Creative Brief
 
 ### Community 2897 - "Community 2897"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 30 Minutes), Throughout the Day
 
 ### Community 2898 - "Community 2898"
 Cohesion: 0.67
@@ -15215,40 +15326,40 @@ Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 2974 - "Community 2974"
-Cohesion: 0.67
-Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — CRM Data Corruption During Business Hours, Edge Case 17.2 — Rep Insists on Using Their Own Spreadsheet Instead of CRM
+Cohesion: 0.50
+Nodes (4): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Legal Review, Gate 3 — Master Orchestrator Sign-off
 
 ### Community 2975 - "Community 2975"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 9. Standard Operating Procedures, SOP 5.1 — Op-Ed Development From Idea to Publication, SOP 5.2 — Voice-of-Owner Interview and Voice Bank Maintenance, SOP 5.3 — LinkedIn Thought Leadership Management
 
 ### Community 2976 - "Community 2976"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — Genuinely Helpful Comment, Example B — Valuable Original Post (Non-Promotional)
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2977 - "Community 2977"
 Cohesion: 0.67
 Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Drive-By Link Drop", Anti-Pattern B — The "Fake User" Astroturfing
 
 ### Community 2978 - "Community 2978"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 2979 - "Community 2979"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 10. Quality Gates, Gate 1 — Self-check, Gate 2 — Department QC Review, Gate 3 — Devil's Advocate Review (only for outputs marked "high stakes")
 
 ### Community 2980 - "Community 2980"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — New Member Welcome (High-Impact), Example B — Community Event AMA Announcement
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 2981 - "Community 2981"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — Educational "Insider Secret" TikTok, Example B — "Day in the Life" / Behind-the-Scenes Content
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases, Edge Case 1 (PROACTIVE): Product Outage Discovered Through Ticket Pattern, Edge Case 2 (PROACTIVE): Customer Threatens to Cancel Publicly on Social Media, Edge Case 3 (REACTIVE): Customer Reports a Security Vulnerability
 
 ### Community 2982 - "Community 2982"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Instagram Cross-Post" with Watermark, Anti-Pattern B — The "Feature Dump" Product Video
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2983 - "Community 2983"
 Cohesion: 0.67
@@ -15279,28 +15390,28 @@ Cohesion: 0.67
 Nodes (3): 19.1 — "KeywordForge" (Keyword Research and SEO/ASO Semantics Specialist), 19.2 — "CreativeLab" (App Store Creative Optimization Specialist), 19. Named Sub-Specialists (On-Demand)
 
 ### Community 2990 - "Community 2990"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — Data-Driven Pitch With A/B Subject Line Test, Example B — Contrarian Hook Pitch
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning (first 60 minutes), Throughout the Day
 
 ### Community 2991 - "Community 2991"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Spray and Pray" Pitch, Anti-Pattern B — The Over-Personalized Creepy Pitch
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 2992 - "Community 2992"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases, Edge Case 17.1 — Whistleblower Report Alleging Fraud or Illegal Activity, Edge Case 17.2 — Regulator Requests On-Site Audit or Inspection, Edge Case 17.3 — Compliance Audit Reveals Widespread Non-Compliance (Systemic Failure)
 
 ### Community 2993 - "Community 2993"
 Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 2994 - "Community 2994"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- Rapid Research Answer That Saves a Design Mistake, Example B -- Deep-Dive Research That Shapes a Rebrand Decision
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 45 Minutes), Throughout the Day
 
 ### Community 2995 - "Community 2995"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 2996 - "Community 2996"
 Cohesion: 0.67
@@ -15315,12 +15426,12 @@ Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 2999 - "Community 2999"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- Quick-Lookup Response, Example B -- Competitive Intelligence Alert (Rapid Flag)
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 3000 - "Community 3000"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 3001 - "Community 3001"
 Cohesion: 0.67
@@ -15331,28 +15442,28 @@ Cohesion: 0.67
 Nodes (3): 7. KPIs (Your Scoreboard), Daily Metrics, Primary KPIs
 
 ### Community 3003 - "Community 3003"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — Refund Approval Communication, Example B — Chargeback Rebuttal Letter (Excerpt)
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 3004 - "Community 3004"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 3005 - "Community 3005"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — Engineering Bug Report, Example B — Customer Communication for a Complex Technical Resolution
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 3006 - "Community 3006"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- Weekly Instagram Ads Performance Report, Example B -- Instagram Creative DNA (Quarterly Retrospective Extract)
+Cohesion: 0.50
+Nodes (4): 10. Quality Gates, Gate 1: Creative Quality (pre-production), Gate 2: Campaign Configuration (pre-launch), Gate 3: Launch Day Monitoring (first 4 hours)
 
 ### Community 3007 - "Community 3007"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- Facebook Creative Ported to Instagram, Anti-Pattern B -- Ignoring Instagram's Content Review Nuances
+Cohesion: 0.50
+Nodes (4): 14. Bad Output Examples, Example 1: Vague Campaign Setup (FAIL), Example 2: Overstuffed Script (FAIL), Example 3: Ignoring Creative Fatigue (FAIL)
 
 ### Community 3008 - "Community 3008"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases, Edge Case 1: Audio Ad Triggers Platform-Wide Listener Complaint Spike, Edge Case 2: Pixel Conversion Tracking Breaks Mid-Campaign, Edge Case 3: Competitor Launches Aggressive Audio Campaign in Same Audience
 
 ### Community 3009 - "Community 3009"
 Cohesion: 0.67
@@ -15367,24 +15478,24 @@ Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 3012 - "Community 3012"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Not Reproducible, Closing Ticket" Dismissal, Anti-Pattern B — The Overly Technical Customer Response
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 45 Minutes), Throughout the Day
 
 ### Community 3013 - "Community 3013"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — De-escalating an Angry Customer (Call Transcript Snippet), Example B — Post-Call CRM Documentation
+Cohesion: 0.50
+Nodes (4): 7. KPIs (Your Scoreboard), Daily Pulse Metrics, Primary KPIs -- graded weekly, Secondary KPIs -- graded monthly
 
 ### Community 3014 - "Community 3014"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- Photorealistic Product Imagery for Ad Campaign, Example B -- Consistent Character Series for Online Course
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 -- TikTok Ad Goes Viral Organically, Edge Case 17.2 -- TikTok Shop Product Goes Viral, Inventory Sells Out, Edge Case 17.3 -- TikTok Account Warning or "Shadowban" (Delivery Restriction)
 
 ### Community 3015 - "Community 3015"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 3016 - "Community 3016"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 3017 - "Community 3017"
 Cohesion: 0.67
@@ -15399,32 +15510,32 @@ Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 3020 - "Community 3020"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A — Genuinely Helpful Comment, Example B — Valuable Original Post (Non-Promotional)
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 3021 - "Community 3021"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Drive-By Link Drop", Anti-Pattern B — The "Fake User" Astroturfing
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases, Edge Case 1: Client Is Acquired or Merged, Edge Case 2: Client Requests a Feature That Conflicts with the Product Roadmap, Edge Case 3: Client Goes Silent After a Negative Experience
 
 ### Community 3022 - "Community 3022"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 3023 - "Community 3023"
 Cohesion: 0.67
 Nodes (3): 13. Good Output Examples, Example A -- Monthly Attribution Model Comparison Report, Example B -- Conversion Path Analysis Revealing Channel Synergy
 
 ### Community 3024 - "Community 3024"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- VSL Storyboard Package (High-Complexity Production), Example B -- Multi-Platform Content Storyboard (Format Adaptation)
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 3025 - "Community 3025"
 Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 3026 - "Community 3026"
-Cohesion: 0.17
-Nodes (9): 14. Bad Output Examples (Anti-Patterns), 17. Edge Cases for This Role, 1. Role Identity, Anti-Pattern A — The "Product Tour" VSL, Anti-Pattern B — The "Over-Produced" VSL, Edge Case 17.1 — VSL Converts Well But Attracts Wrong Customers (High Refund Rate), Edge Case 17.2 — Offer Changes After VSL Is Live, What This Role Is NOT (+1 more)
+Cohesion: 0.67
+Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — VSL Converts Well But Attracts Wrong Customers (High Refund Rate), Edge Case 17.2 — Offer Changes After VSL Is Live
 
 ### Community 3027 - "Community 3027"
 Cohesion: 0.67
@@ -15435,24 +15546,24 @@ Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 3029 - "Community 3029"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- VSL Storyboard Package (High-Complexity Production), Example B -- Multi-Platform Content Storyboard (Format Adaptation)
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 3030 - "Community 3030"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning Routine (First 60 Minutes), Throughout the Day
 
 ### Community 3031 - "Community 3031"
-Cohesion: 0.67
-Nodes (3): 13. Good Output Examples, Example A -- Cart Abandonment Retargeting Sequence, Example B -- B2B Content-to-Demo Retargeting Funnel
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 3032 - "Community 3032"
-Cohesion: 0.67
-Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- Spray-and-Pray Retargeting, Anti-Pattern B -- Static Retargeting Creative Running Indefinitely
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Traffic Too Low for Statistically Significant A/B Testing, Edge Case 17.2 — Test Result Conflicts with Strong Stakeholder Belief, Edge Case 17.3 — Test Shows Unexpected Negative Result in a Segment
 
 ### Community 3033 - "Community 3033"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End-of-Day Routine (17:00-17:30), Morning Routine (First 60 Minutes), Throughout the Day (10:00-17:00)
 
 ### Community 3034 - "Community 3034"
 Cohesion: 0.67
@@ -15614,6 +15725,10 @@ Nodes (3): 05-update-agents-md.sh script, append_block(), have_marker()
 Cohesion: 0.70
 Nodes (3): 14-install-cloudflared-service.sh script, install_binary(), verify_running()
 
+### Community 3086 - "Community 3086"
+Cohesion: 0.70
+Nodes (3): configure-operator-telegram.sh script, _get_var(), log()
+
 ### Community 3087 - "Community 3087"
 Cohesion: 0.80
 Nodes (3): migrate-existing-workforce.sh script, log(), tg()
@@ -15683,8 +15798,8 @@ Cohesion: 0.67
 Nodes (3): Routing Rules, Scope Limits, Section 14 - Routing Rules and Scope Limits
 
 ### Community 3119 - "Community 3119"
-Cohesion: 0.12
-Nodes (17): additionalProperties, description, properties, type, description, type, format, type (+9 more)
+Cohesion: 0.10
+Nodes (20): additionalProperties, description, properties, type, description, type, format, type (+12 more)
 
 ### Community 3181 - "Community 3181"
 Cohesion: 0.67
@@ -15703,24 +15818,24 @@ Cohesion: 0.67
 Nodes (3): 19.B — "Quality Auditor" (Standards and Compliance Reviewer), Promotion Rule, Spawn Mechanism
 
 ### Community 3217 - "Community 3217"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (5): ⚠️ EXISTING BOXES NEED AN OPERATOR BOT TOKEN, Operator Maintenance & Telegram Channel Separation (FIX 2), The fix: two Telegram accounts + a binding, The operator-drive contract (maintenance must NOT use the client chat), The problem this fixes
 
 ### Community 3254 - "Community 3254"
-Cohesion: 0.67
-Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — The "task" is actually a missing ROLE or missing TOOL, not a missing SOP, Edge Case 17.2 — A shipped role-library SOP already covers this, but the instantiation missed it
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
 
 ### Community 3255 - "Community 3255"
-Cohesion: 0.67
-Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Payment Gateway Outage During High-Volume Launch, Edge Case 17.2 — Customer Exploits Funnel Logic Flaw, Edge Case 17.3 — Subscriptions Renewing After Customer Cancellation
 
 ### Community 3256 - "Community 3256"
-Cohesion: 0.67
-Nodes (3): 🔴 CORE .MD FILE PROTECTION - DO NOT BLOAT (PERMANENT RULE), Protection Rules, Why This Matters
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
 
 ### Community 3258 - "Community 3258"
-Cohesion: 0.67
-Nodes (3): 19.B — "Quality Auditor" (Standards and Compliance Reviewer), Promotion Rule, Spawn Mechanism
+Cohesion: 0.50
+Nodes (4): 13. Good Output Examples, Example 1: Membership Tier Access Matrix Documentation, Example 2: Payment Recovery Dashboard (Monthly Report), Example 3: Member Onboarding Flow (Technical Specification)
 
 ### Community 3259 - "Community 3259"
 Cohesion: 0.67
@@ -15831,8 +15946,8 @@ Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
 ### Community 3286 - "Community 3286"
-Cohesion: 0.67
-Nodes (3): record_type, enum, type
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of day, Morning (first 60 minutes), Throughout the day
 
 ### Community 3287 - "Community 3287"
 Cohesion: 0.67
@@ -15858,6 +15973,450 @@ Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — The "task" is actual
 Cohesion: 0.67
 Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
 
+### Community 3338 - "Community 3338"
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+
+### Community 3339 - "Community 3339"
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
+
+### Community 3340 - "Community 3340"
+Cohesion: 0.50
+Nodes (4): 14. Bad Output Examples, Example 1: Broken Payment Webhook (Silent Access Failure), Example 2: Publicly Accessible Premium Content, Example 3: Confusing Checkout Flow
+
+### Community 3341 - "Community 3341"
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — Sudden Algorithm Update Impacts {{COMPANY_NAME}} Rankings, Edge Case 17.2 — Negative SEO Attack (Spammy Links Pointed at {{COMPANY_NAME}}), Edge Case 17.3 — High-Value Keyword Requires Content Type {{COMPANY_NAME}} Can't Easily Produce
+
+### Community 3342 - "Community 3342"
+Cohesion: 0.50
+Nodes (4): 17. Edge Cases for This Role, Edge Case 17.1 — JavaScript Framework Update Changes URL Structure, Edge Case 17.2 — Google Announces Mandatory Technical Requirement, Edge Case 17.3 — Site Migrated to New Domain Without SEO Involvement
+
+### Community 3343 - "Community 3343"
+Cohesion: 0.50
+Nodes (4): 11. Handoffs (Value Stream Map), Cross-department coordination:, You hand work off to:, You receive work from:
+
+### Community 3344 - "Community 3344"
+Cohesion: 0.50
+Nodes (4): 3. Daily Operations, End of Day, Morning (First 60 Minutes), Throughout the Day
+
+### Community 3345 - "Community 3345"
+Cohesion: 0.50
+Nodes (4): Maintaining Your Memory, Monthly: Review daily logs, Weekly: Clean up MEMORY.md, When things feel off: Test the search
+
+### Community 3346 - "Community 3346"
+Cohesion: 0.50
+Nodes (4): 5.1 Verify memory-core is enabled, 5.2 Configure auto-capture, 5.3 Verify memory-core status, Layer 5: memory-core (Native Memory System)
+
+### Community 3347 - "Community 3347"
+Cohesion: 0.50
+Nodes (4): [1.4.6] - 2026-05-29 - 8 rated improvements (port of VPS #47): machine-enforced 23-key + TRINITY, Build-with-AI label fix, real self-counts, fleshed journeys, Skill 23 chain, Added, Changed, Version
+
+### Community 3348 - "Community 3348"
+Cohesion: 0.67
+Nodes (3): description, type, brandColor
+
+### Community 3349 - "Community 3349"
+Cohesion: 0.67
+Nodes (3): format, type, buildCompletedAt
+
+### Community 3350 - "Community 3350"
+Cohesion: 0.67
+Nodes (3): description, type, celebrationVideoModel
+
+### Community 3351 - "Community 3351"
+Cohesion: 0.67
+Nodes (3): description, type, celebrationVideoUrl
+
+### Community 3352 - "Community 3352"
+Cohesion: 0.67
+Nodes (3): description, type, closeoutFailureReason
+
+### Community 3353 - "Community 3353"
+Cohesion: 0.67
+Nodes (3): description, type, commandCenterUrl
+
+### Community 3354 - "Community 3354"
+Cohesion: 0.67
+Nodes (3): description, type, companyName
+
+### Community 3355 - "Community 3355"
+Cohesion: 0.67
+Nodes (3): description, type, ghlMediaLibraryUrl
+
+### Community 3356 - "Community 3356"
+Cohesion: 0.67
+Nodes (3): description, type, ghlVideoPublicUrl
+
+### Community 3357 - "Community 3357"
+Cohesion: 0.67
+Nodes (3): description, type, infographic1LocalPath
+
+### Community 3358 - "Community 3358"
+Cohesion: 0.67
+Nodes (3): description, type, infographic2LocalPath
+
+### Community 3359 - "Community 3359"
+Cohesion: 0.67
+Nodes (3): format, type, interviewCompletedAt
+
+### Community 3360 - "Community 3360"
+Cohesion: 0.67
+Nodes (3): description, type, n8nUrl
+
+### Community 3361 - "Community 3361"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — PR Description for a User-Facing Feature, Example B — Postmortem for an Android-Specific Crash
+
+### Community 3362 - "Community 3362"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Hardcoded String Literals Instead of Resource References, Anti-Pattern B — Blocking the Main Thread for I/O in a ViewModel Initialization
+
+### Community 3363 - "Community 3363"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples, Example A — Vague Crash Investigation Report, Example B — Undocumented API Contract Change
+
+### Community 3364 - "Community 3364"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3365 - "Community 3365"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Pronunciation Guide Excerpt, Example B — Pickup Report for Narrator
+
+### Community 3366 - "Community 3366"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples, Example A — Session Direction Notes (Bad), Example B — Editor Handoff (Bad)
+
+### Community 3367 - "Community 3367"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3368 - "Community 3368"
+Cohesion: 0.67
+Nodes (3): 11. Handoffs (Value Stream Map), You hand work off to:, You receive work from:
+
+### Community 3369 - "Community 3369"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Keynote Opening (Excerpt), Example B — Podcast Ad Read (Host Voice)
+
+### Community 3370 - "Community 3370"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Written-for-the-Eye Speech, Anti-Pattern B — Speaker Voice Mismatch
+
+### Community 3371 - "Community 3371"
+Cohesion: 0.67
+Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — Speaker Wants to Ad-Lib a Scripted Speech, Edge Case 17.2 — AI-Generated Voice Script
+
+### Community 3372 - "Community 3372"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3373 - "Community 3373"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Podcast Show Notes Transcript (Excerpt), Example B — Customer Call Summary
+
+### Community 3374 - "Community 3374"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Raw AI Output Delivered as Finished Transcript, Anti-Pattern B — Transcript That Changes Meaning
+
+### Community 3375 - "Community 3375"
+Cohesion: 0.67
+Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — Transcription of Heavily Accented or Dialect-Heavy Speech, Edge Case 17.2 — Transcription of Overlapping Speech
+
+### Community 3376 - "Community 3376"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3377 - "Community 3377"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Personalized Media Pitch, Example B — Media Inquiry Acknowledgment and Response
+
+### Community 3378 - "Community 3378"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3379 - "Community 3379"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A -- Brand Guideline Page for Instagram Stories, Example B -- Quarterly Brand Identity Health Report
+
+### Community 3380 - "Community 3380"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The Subjective Rejection, Anti-Pattern B -- The Guideline Encyclopedia
+
+### Community 3381 - "Community 3381"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3382 - "Community 3382"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A -- Campaign Visual Identity System, Example B -- Monthly Brand Compliance Report
+
+### Community 3383 - "Community 3383"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The "Make It Pop" Creative Direction, Anti-Pattern B -- The Orphaned Brand Deviation
+
+### Community 3384 - "Community 3384"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3385 - "Community 3385"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Compliance Audit Finding Report (Abridged), Example B — Compliance Incident Report Summary
+
+### Community 3386 - "Community 3386"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Checklist Audit" Without Substance, Anti-Pattern B — The "Everything Is a Finding" Audit Report
+
+### Community 3387 - "Community 3387"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3388 - "Community 3388"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Generic DR Plan, Anti-Pattern B — Plan Not Updated After Architecture Change
+
+### Community 3389 - "Community 3389"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3390 - "Community 3390"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3391 - "Community 3391"
+Cohesion: 0.67
+Nodes (3): 11. Handoffs (Value Stream Map), You hand work off to:, You receive work from:
+
+### Community 3392 - "Community 3392"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Closer Takeover Email to Prospect, Example B — Post-Loss Autopsy (CRM Entry)
+
+### Community 3393 - "Community 3393"
+Cohesion: 0.67
+Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — Deal Assigned Is Already Dead, Edge Case 17.2 — Two Deals Competing for Your Time, Both Closing This Week
+
+### Community 3394 - "Community 3394"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3395 - "Community 3395"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3396 - "Community 3396"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3397 - "Community 3397"
+Cohesion: 0.67
+Nodes (3): 11. Handoffs (Value Stream Map), You hand work off to:, You receive work from:
+
+### Community 3398 - "Community 3398"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Keynote Opening (Excerpt), Example B — Podcast Ad Read (Host Voice)
+
+### Community 3399 - "Community 3399"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — Written-for-the-Eye Speech, Anti-Pattern B — Speaker Voice Mismatch
+
+### Community 3400 - "Community 3400"
+Cohesion: 0.67
+Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — Speaker Wants to Ad-Lib a Scripted Speech, Edge Case 17.2 — AI-Generated Voice Script
+
+### Community 3401 - "Community 3401"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3402 - "Community 3402"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Podcast Show Notes Transcript (Excerpt), Example B — Customer Call Summary
+
+### Community 3403 - "Community 3403"
+Cohesion: 0.67
+Nodes (3): 17. Edge Cases for This Role, Edge Case 17.1 — Transcription of Heavily Accented or Dialect-Heavy Speech, Edge Case 17.2 — Transcription of Overlapping Speech
+
+### Community 3404 - "Community 3404"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A -- Weekly Cash Position Update, Example B -- Month-End Close Variance Note
+
+### Community 3405 - "Community 3405"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples, Example A -- Vague Cash Position Update, Example B -- Miscategorized Transaction
+
+### Community 3406 - "Community 3406"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3407 - "Community 3407"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Messaging Architecture Refresh That Sharpenes Conversion, Example B — Competitive Messaging Response That Defends Market Position
+
+### Community 3408 - "Community 3408"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3409 - "Community 3409"
+Cohesion: 0.67
+Nodes (3): 7. KPIs (Your Scoreboard), Daily Metrics, Primary KPIs
+
+### Community 3410 - "Community 3410"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Data Breach Response That Preserves Trust, Example B — Product Failure Communication That Strengthens Brand Loyalty
+
+### Community 3411 - "Community 3411"
+Cohesion: 0.67
+Nodes (3): 17. Edge Cases, Edge Case 8.1 — The Crisis IS the Owner/CEO, Edge Case 8.2 — Crisis Occurs During a Total System Outage
+
+### Community 3412 - "Community 3412"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3413 - "Community 3413"
+Cohesion: 0.67
+Nodes (3): 7. KPIs (Your Scoreboard), Daily Metrics, Primary KPIs
+
+### Community 3414 - "Community 3414"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Monthly Investor Update, Example B — Quarterly Board Deck Executive Summary
+
+### Community 3415 - "Community 3415"
+Cohesion: 0.67
+Nodes (3): 17. Edge Cases, Edge Case 9.1 — Investor Requests Information You Can't Share, Edge Case 9.2 — Negative Story About {{COMPANY_NAME}} Reaches an Investor Before Your Communication Does
+
+### Community 3416 - "Community 3416"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3417 - "Community 3417"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Personalized Media Pitch, Example B — Media Inquiry Acknowledgment and Response
+
+### Community 3418 - "Community 3418"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The Mass-Blasted, Unpersonalized Pitch, Anti-Pattern B — Missing the Journalist's Deadline
+
+### Community 3419 - "Community 3419"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3420 - "Community 3420"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Product Launch Press Release, Example B — Crisis Response Statement
+
+### Community 3421 - "Community 3421"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3422 - "Community 3422"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — QC Finding That Caught a Reputation Risk, Example B — QC PASSED Confirmation for a Press Release
+
+### Community 3423 - "Community 3423"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "This Looks Fine" Review, Anti-Pattern B — The Over-Correction That Sanitizes Voice
+
+### Community 3424 - "Community 3424"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3425 - "Community 3425"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples, Example A -- Vague Escalation Note, Example B -- Defensive Customer Response
+
+### Community 3426 - "Community 3426"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3427 - "Community 3427"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A -- Brand Guideline Page for Instagram Stories, Example B -- Quarterly Brand Identity Health Report
+
+### Community 3428 - "Community 3428"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- The Subjective Rejection, Anti-Pattern B -- The Guideline Encyclopedia
+
+### Community 3429 - "Community 3429"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3430 - "Community 3430"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Compliance Audit Finding Report (Abridged), Example B — Compliance Incident Report Summary
+
+### Community 3431 - "Community 3431"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Checklist Audit" Without Substance, Anti-Pattern B — The "Everything Is a Finding" Audit Report
+
+### Community 3432 - "Community 3432"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3433 - "Community 3433"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples, Example C -- Vague CEO Directive (BAD), Example D -- Decision Without Exit Criteria (BAD)
+
+### Community 3434 - "Community 3434"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3435 - "Community 3435"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A -- Native Campaign Launch Package for a B2B Lead Magnet, Example B -- Blocklist Management After Detecting Bot Traffic
+
+### Community 3436 - "Community 3436"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A -- Launching Without Creative Variation, Anti-Pattern B -- Treating Native Like Display Advertising
+
+### Community 3437 - "Community 3437"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3438 - "Community 3438"
+Cohesion: 0.67
+Nodes (3): 11. Handoffs, What You Hand Off (Outbound), What You Receive (Inbound)
+
+### Community 3439 - "Community 3439"
+Cohesion: 0.67
+Nodes (3): 19. When to Spawn a Sub-Specialist, Sub-Specialist 1: Audio Ad Creative Scriptwriter, Sub-Specialist 2: Audio Ad Audience & Data Analyst
+
+### Community 3440 - "Community 3440"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3441 - "Community 3441"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Technical SEO Audit Executive Summary, Example B — Schema Markup Implementation (JSON-LD for Course Page)
+
+### Community 3442 - "Community 3442"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3443 - "Community 3443"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3444 - "Community 3444"
+Cohesion: 0.67
+Nodes (3): 13. Good Output Examples, Example A — Plugin Evaluation Report, Example B — Content Publishing Documentation (Excerpt)
+
+### Community 3445 - "Community 3445"
+Cohesion: 0.67
+Nodes (3): 14. Bad Output Examples (Anti-Patterns), Anti-Pattern A — The "Update All" Without Testing, Anti-Pattern B — The Plugin Graveyard
+
+### Community 3446 - "Community 3446"
+Cohesion: 0.67
+Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
+
+### Community 3447 - "Community 3447"
+Cohesion: 0.67
+Nodes (3): 🔴 GOOGLE WORKSPACE - SAVE FOR LAST, Install Order, Why Last?
+
+### Community 3448 - "Community 3448"
+Cohesion: 0.67
+Nodes (3): 19.B — "Quality Auditor" (Standards and Compliance Reviewer), Promotion Rule, Spawn Mechanism
+
 ## Ambiguous Edges - Review These
 - `Vercel Setup` → `KIE Setup Skill`  [AMBIGUOUS]
   08-vercel-setup/CORE_UPDATES.md · relation: related_to
@@ -15871,9 +16430,9 @@ Nodes (3): 1. Role Identity, What This Role Is NOT, Who You Are
   23-ai-workforce-blueprint/templates/role-library/_stage1_drafts/graphics/chief-design-officer.md · relation: reports_to
 
 ## Knowledge Gaps
-- **29645 isolated node(s):** `REMINDER_CONTENT`, `error-detector.sh script`, `args`, `urls`, `apiKey` (+29640 more)
+- **30353 isolated node(s):** `REMINDER_CONTENT`, `error-detector.sh script`, `args`, `urls`, `apiKey` (+30348 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **163 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **162 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
@@ -15888,7 +16447,7 @@ _Questions this graph is uniquely positioned to answer:_
   _Edge tagged AMBIGUOUS (relation: reports_to) - confidence is low._
 - **What is the exact relationship between `Chief Design Officer` and `Director or Master Orchestrator`?**
   _Edge tagged AMBIGUOUS (relation: reports_to) - confidence is low._
-- **Why does `Master Orchestrator` connect `Community 266` to `Community 520`, `Community 394`, `Community 16`, `Community 148`, `Community 152`, `Community 284`, `Community 169`, `Community 300`, `Community 175`, `Community 48`, `Community 53`, `Community 65`, `Community 68`, `Community 74`, `Community 77`, `Community 333`, `Community 1104`, `Community 84`, `Community 87`, `Community 346`, `Community 110`?**
-  _High betweenness centrality (0.156) - this node is a cross-community bridge._
-- **Why does `Head of Video Production` connect `Community 175` to `Community 1026`, `Community 8`, `Community 9`, `Community 266`, `Community 12`, `Community 13`, `Community 142`, `Community 531`, `Community 21`, `Community 22`, `Community 23`, `Community 30`, `Community 290`, `Community 59`, `Community 76`, `Community 77`, `Community 88`, `Community 98`, `Community 236`, `Community 109`, `Community 1006`, `Community 112`, `Community 373`, `Community 121`, `Community 378`?**
-  _High betweenness centrality (0.104) - this node is a cross-community bridge._
+- **Why does `Master Orchestrator` connect `Community 266` to `Community 520`, `Community 394`, `Community 271`, `Community 148`, `Community 152`, `Community 284`, `Community 169`, `Community 300`, `Community 175`, `Community 48`, `Community 53`, `Community 68`, `Community 74`, `Community 77`, `Community 1870`, `Community 333`, `Community 1104`, `Community 342`, `Community 87`, `Community 346`, `Community 110`?**
+  _High betweenness centrality (0.175) - this node is a cross-community bridge._
+- **Why does `Teach Yourself Protocol` connect `Community 81` to `Community 162`, `Community 130`, `Community 1474`, `Community 706`, `Community 100`, `Community 360`, `Community 521`, `Community 59`, `Community 399`, `Community 639`, `Community 239`, `Community 254`, `Community 503`, `Community 1275`, `Community 508`, `Community 253`, `Community 62`, `Community 415`?**
+  _High betweenness centrality (0.096) - this node is a cross-community bridge._
