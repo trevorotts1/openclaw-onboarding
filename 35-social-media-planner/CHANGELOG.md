@@ -2,6 +2,8 @@
 
 ## v2.2.0 - June 8, 2026
 
+follow-up: fixed QC accounts-grep false positive + added --announce delivery to weekly cron
+
 ### Fix #1 — Connection status: LIVE GHL check only (no guessing)
 **Why:** An agent told a client "nothing is connected" when their GHL Social Planner had channels live. The root cause was reporting connection status from memory/vault absence rather than a live API call.
 **What:** Added a `## Reporting connection status — LIVE GHL CHECK ONLY (no guessing)` section to INSTRUCTIONS.md with (a) an explicit ban on guessing/memory-based status, (b) a `check-social-connections` query block for both MCP-first and direct-API routing modes, and (c) clear notes that GHL Social Planner is the primary path, direct-platform tokens are optional add-ons, and Fish Audio / podcast is also optional and never blocks the skill. Added QC assertion in Section I of both `qc-skill35.sh` and `qc-social-media-planner.sh` to verify the rule is present in INSTRUCTIONS.md.

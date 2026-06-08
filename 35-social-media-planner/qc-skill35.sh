@@ -113,7 +113,7 @@ if [ -n "$MCP_URL" ] && curl -sS -m 5 "$MCP_URL/health" 2>/dev/null | grep -q "h
   TEST=$(curl -sS -m 10 -X POST "$MCP_URL/execute" -H "Content-Type: application/json" \
     -d '{"name":"get_platform_accounts","arguments":{"limit":1}}' 2>/dev/null)
   warn_only "MCP get_platform_accounts returns data (any platform connected in GHL Social Planner)" \
-    "echo \"$TEST\" | grep -qE '\"success\":\\s*true|\"result\"|accounts'"
+    "echo \"$TEST\" | grep -qE '\"success\":\\s*true|\"accounts\":\\s*\\['"
 else
   RESP=$(curl -sS -m 10 \
     -H "Authorization: Bearer ${GOHIGHLEVEL_API_KEY:-}" \
@@ -168,6 +168,10 @@ assert "INSTRUCTIONS.md contains skill35-weekly-theme cron registration (Fix #2 
 # FIX #2 corollary: weekly trigger is NOT solely heartbeat-driven
 warn_only "INSTRUCTIONS.md explicitly warns against heartbeat-only weekly trigger (Fix #2 — enforcement note present)" \
   "grep -qiE 'not.*heartbeat|CRON.*not.*heartbeat|heartbeat.*drift|silently skips' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+
+# FIX #2 delivery: --announce present in cron registration (ensures delivery fires, not just best-effort)
+assert "skill35-weekly-theme cron uses --announce delivery (Fix #2 — delivery enforcement)" \
+  "grep -A5 'skill35-weekly-theme' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null | grep -q -- '--announce'"
 
 echo ""
 echo "═══════════════════════════════════════════════"

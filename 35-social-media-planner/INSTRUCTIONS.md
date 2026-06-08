@@ -236,6 +236,8 @@ else
     --cron "0 8 * * 6" \
     --agent main \
     --light-context \
+    --announce \
+    --channel last \
     --best-effort-deliver \
     --message "Skill 35 weekly theme prompt: Ask the owner — 'What's the theme for next week's social media content?' If no response by 12:00 PM, ask again. If no response by 6:00 PM, ask again. If no response by Sunday 7:00 AM, use the evergreen theme. After the theme is confirmed (or defaulted), run the weekly social planning batch: bash ~/.openclaw/skills/35-social-media-planner/scripts/weekly-batch.sh. Write the chosen theme and run timestamp to ~/.openclaw/data/skill35/weekly-theme-last-run.json for idempotency (skip if already ran this Saturday)." \
     && echo "registered cron: $CRON_NAME (0 8 * * 6 — Saturdays 8 AM)" \
