@@ -111,7 +111,7 @@ if [ -n "$MCP_URL" ] && curl -sS -m 5 "$MCP_URL/health" 2>/dev/null | grep -q "h
   TEST=$(curl -sS -m 10 -X POST "$MCP_URL/execute" -H "Content-Type: application/json" \
     -d '{"name":"get_platform_accounts","arguments":{"limit":1}}' 2>/dev/null)
   warn_only "MCP get_platform_accounts returns data (any platform connected in GHL Social Planner)" \
-    "echo \"$TEST\" | grep -qE '\"success\":\\s*true|\"result\"|accounts'"
+    "echo \"$TEST\" | grep -qE '\"success\":\\s*true|\"accounts\":\\s*\\['"
 else
   RESP=$(curl -sS -m 10 \
     -H "Authorization: Bearer ${GOHIGHLEVEL_API_KEY:-}" \
@@ -149,6 +149,27 @@ warn_only "HEARTBEAT.md has Saturday theme request"    "grep -qiE 'Saturday.*the
 echo ""
 echo "── Section H: Security ──"
 assert "PIT not present in any workspace .md file" "! grep -rE 'pit-[a-f0-9]{8}-[a-f0-9]{4}' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'pit-XXX\\|pit-xxx\\|pit-x'"
+
+echo ""
+echo "── Section I: Fix assertions (v2.2.0) ──"
+SKILL35_DIR="$HOME/.openclaw/skills/35-social-media-planner"
+[ ! -d "$SKILL35_DIR" ] && SKILL35_DIR="$(dirname "$0")"
+
+# FIX #1: connection-status rule (live GHL query, no guessing) present in INSTRUCTIONS.md
+assert "INSTRUCTIONS.md contains live-GHL-check connection-status rule (Fix #1)" \
+  "grep -qiE 'LIVE GHL CHECK|live query|check-social-connections' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+
+# FIX #2: weekly trigger is a hard cron (grep activation step in INSTRUCTIONS.md)
+assert "INSTRUCTIONS.md contains skill35-weekly-theme cron registration (Fix #2 — cron not heartbeat)" \
+  "grep -qE 'skill35-weekly-theme|openclaw cron (add|create).*skill35' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+
+# FIX #2 corollary: weekly trigger is NOT solely heartbeat-driven
+warn_only "INSTRUCTIONS.md explicitly warns against heartbeat-only weekly trigger (Fix #2 — enforcement note present)" \
+  "grep -qiE 'not.*heartbeat|CRON.*not.*heartbeat|heartbeat.*drift|silently skips' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+
+# FIX #2 delivery: --announce present in cron registration (ensures delivery fires, not just best-effort)
+assert "skill35-weekly-theme cron uses --announce delivery (Fix #2 — delivery enforcement)" \
+  "grep -A5 'skill35-weekly-theme' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null | grep -q -- '--announce'"
 
 echo ""
 echo "═══════════════════════════════════════════════"

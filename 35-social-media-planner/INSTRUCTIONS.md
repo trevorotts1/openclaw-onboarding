@@ -173,6 +173,82 @@ The Marketing department in the dashboard has a "Publish" button on each campaig
 
 ---
 
+## Reporting connection status — LIVE GHL CHECK ONLY (no guessing)
+Before you tell the owner which platforms are or are not connected, you MUST run a LIVE query of their GHL Social Planner connected accounts (via the GHL API for the client's location). You may NOT say "connected" or "not connected" for any channel without that live result. Reporting connection status from an assumption, from the absence of a direct-platform token in the vault, or from memory is a BANNED failure (it is exactly the mistake that told a client "nothing is connected" when their GHL Social Planner had channels live).
+- GHL Social Planner is the PRIMARY publishing path. The client connects their social accounts inside GHL, and you publish through GHL. ONE connected channel is enough to start. The client does NOT need all platforms.
+- The direct-publish destinations (WordPress, Medium, Substack, LinkedIn, YouTube, X/Twitter, Facebook, email newsletter) are OPTIONAL add-ons for posting outside GHL. They are NEVER requirements, and their absence NEVER blocks Skill 35.
+- Fish Audio / podcast (Skill 30) is OPTIONAL too. Skill 35 runs fully without it, it just skips podcast production.
+- Run the check-social-connections step (the live GHL query) at status time, every time, and report only what it returns.
+
+### check-social-connections — the live GHL query to run
+
+When reporting connection status, run this live query and use ONLY its output:
+
+**If Skill 36 (GHL MCP) is installed (`ROUTING_MODE=mcp-first`):**
+```bash
+# Query all connected Social Planner accounts via MCP
+MCP_URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
+curl -sS -m 15 -X POST "$MCP_URL/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"get_platform_accounts","arguments":{"limit":50}}' | python3 -m json.tool
+```
+
+**If Skill 36 is NOT installed (`ROUTING_MODE=direct-api`):**
+```bash
+# Query each major platform directly against the GHL Social Planner API
+. "$HOME/.openclaw/secrets/.env"
+for PLATFORM in facebook instagram linkedin twitter google_business tiktok; do
+  echo "--- $PLATFORM ---"
+  curl -sS -m 10 \
+    -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+    -H "Version: 2021-07-28" \
+    "https://services.leadconnectorhq.com/social-media-posting/oauth/$GOHIGHLEVEL_LOCATION_ID/$PLATFORM/accounts" \
+    | python3 -m json.tool
+done
+```
+
+Report the exact platforms returned by the live query. If the query returns empty results for a platform, say so — do NOT assume the platform is disconnected without confirming the query succeeded (200 OK with an empty list is different from a 403 scope error).
+
+---
+
+## Weekly trigger — CRON, not heartbeat (enforcement)
+The weekly content-theme question and the weekly social-planning run MUST be driven by a hard cron, NOT the heartbeat checklist. Heartbeat timing drifts and silently skips the weekly prompt (this is exactly why a client's Saturday theme question never fired). At activation, install a weekly cron (default Saturday 8:00 AM client-local time) that (a) asks the owner the content-theme question and (b) runs the weekly social plan, backed by a state field so it is idempotent and catches up if a fire is missed. Do NOT rely on heartbeat prose for any weekly trigger.
+
+The cron is installed as part of the activation step below. The HEARTBEAT.md Saturday-theme entry (added by INSTALL.md Step 9) is informational context only — the cron is the enforcement mechanism.
+
+### Activation — install the weekly theme cron
+
+Run this at the end of INSTALL.md (after Step 9, before Step 10). It is idempotent: it skips if the cron name already exists.
+
+```bash
+# State/marker file for idempotency — prevents double-firing if cron is missed+caught-up
+CRON_MARKER_DIR="$HOME/.openclaw/data/skill35"
+mkdir -p "$CRON_MARKER_DIR"
+
+CRON_NAME="skill35-weekly-theme"
+
+# Check idempotency
+if openclaw cron list 2>/dev/null | grep -q "$CRON_NAME"; then
+  echo "cron $CRON_NAME already registered — skipping"
+else
+  openclaw cron add \
+    --name "$CRON_NAME" \
+    --cron "0 8 * * 6" \
+    --agent main \
+    --light-context \
+    --announce \
+    --channel last \
+    --best-effort-deliver \
+    --message "Skill 35 weekly theme prompt: Ask the owner — 'What's the theme for next week's social media content?' If no response by 12:00 PM, ask again. If no response by 6:00 PM, ask again. If no response by Sunday 7:00 AM, use the evergreen theme. After the theme is confirmed (or defaulted), run the weekly social planning batch: bash ~/.openclaw/skills/35-social-media-planner/scripts/weekly-batch.sh. Write the chosen theme and run timestamp to ~/.openclaw/data/skill35/weekly-theme-last-run.json for idempotency (skip if already ran this Saturday)." \
+    && echo "registered cron: $CRON_NAME (0 8 * * 6 — Saturdays 8 AM)" \
+    || echo "ERROR: openclaw cron add failed — register manually (cron.jobs JSON is invalid on 2026.5.27+)"
+fi
+```
+
+If `openclaw cron add` is not available on this install, fall back to `openclaw cron create` with identical flags. Do NOT write a `cron.jobs` JSON block — it does not validate on OpenClaw 2026.5.27+.
+
+---
+
 ## Cross-references
 
 - `SKILL.md` — agent roster and key principles
