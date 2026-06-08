@@ -79,13 +79,15 @@ CANONICAL_VARIANT_SLUGS = {
     "customer-support": ["support", "customer-service", "cs", "client-success"],
     "web-development": ["web-dev", "webdev", "website", "web"],
     "app-development": ["app-dev", "appdev", "mobile", "application-development"],
-    "legal": ["legal-compliance", "compliance", "legal-ops"],
+    "legal": ["legal-compliance", "compliance", "legal-ops", "risk-compliance"],
     "graphics": ["graphics-design", "design", "creative", "graphic-design"],
     "openclaw-maintenance": ["openclaw", "maintenance", "ops", "platform-maintenance"],
     "paid-advertisement": ["paid-ads", "paid-advertising", "ads", "advertising", "paid-media"],
     "social-media": ["social", "smm", "social-media-management"],
     "crm": ["crm-ops", "customer-relationship-management"],
     "communications": ["comms", "communication", "pr", "public-relations"],
+    "video": ["video-production", "video-content", "video-editing"],
+    "audio": ["audio-production", "audio-content", "sound", "podcast"],
 }
 
 
@@ -231,19 +233,45 @@ def resolve_departments_dir():
     Resolve the active company's departments/ dir ON DISK. Uses detect_platform
     when available, else falls back to the most-recently-modified company under
     ~/clawd/zero-human-company/. Returns Path or None.
+
+    BUG FIX: use detect_platform keys "company_dir" / "company_root" (the keys
+    the working qc-completeness.sh uses), NOT the stale "active_zhc_company" /
+    "zhc_company_root" keys that never existed. When configured company_root does
+    NOT exist, prefer a directly-present <workspace>/departments/ dir rather than
+    descending into the first subdir (which may be a single dept folder like
+    personal-assistant, causing the whole departments/ tree to be walked as if it
+    were the company root -> false floor fail).
     """
     for libp in (SKILL_DIR / "lib", SKILL_DIR.parent / "shared-utils", SKILL_DIR / "shared-utils"):
         sys.path.insert(0, str(libp))
     zhc_root = None
+    workspace = None
     try:
         from detect_platform import get_openclaw_paths  # type: ignore
         paths = get_openclaw_paths()
-        zhc_root = paths.get("active_zhc_company") or paths.get("zhc_company_root")
+        # Priority: already-resolved active company dir (same key qc-completeness uses)
+        company_dir = paths.get("company_dir")
+        if company_dir and Path(company_dir).resolve().is_dir():
+            zhc_root = str(Path(company_dir).resolve())
+        # Fallback: parent zero-human-company/ + slug scan
+        if not zhc_root:
+            zhc_root = paths.get("company_root")
+            if zhc_root and not Path(zhc_root).is_dir():
+                zhc_root = None
         workspace = paths.get("workspace_root") or paths.get("clawd_root")
     except Exception:
-        workspace = None
+        pass
     if not zhc_root:
         ws = Path(workspace) if workspace else Path(os.path.expanduser("~/clawd"))
+        # Prefer a directly-present departments/ dir under the workspace root.
+        # This avoids descending into a single dept folder (e.g. personal-assistant)
+        # and mistaking it for the company root -> false floor fail.
+        for direct_depts in (ws / "departments",
+                             ws / "zero-human-company" / "departments",
+                             Path("/data/.openclaw/workspace/departments")):
+            if direct_depts.is_dir():
+                return direct_depts
+        # Fall back to most-recently-modified subdir under zero-human-company/
         zhc_dir = ws / "zero-human-company"
         if zhc_dir.is_dir():
             cands = sorted(
@@ -255,7 +283,21 @@ def resolve_departments_dir():
     if not zhc_root:
         return None
     dd = Path(zhc_root) / "departments"
-    return dd if dd.is_dir() else None
+    if dd.is_dir():
+        return dd
+    # Non-standard layout: zhc_root itself may be the departments dir
+    # (e.g. when detect_platform returns the departments/ path directly)
+    zp = Path(zhc_root)
+    if zp.is_dir():
+        # Only treat it as a departments dir if it contains role-like subdirs,
+        # NOT if it looks like a single department (contains role folders only).
+        # Heuristic: if it has at least 2 non-hidden subdirs and no how-to.md
+        # directly inside, treat as departments root.
+        subdirs = [d for d in zp.iterdir() if d.is_dir() and not d.name.startswith((".", "_"))]
+        how_to_direct = (zp / "how-to.md").exists()
+        if len(subdirs) >= 2 and not how_to_direct:
+            return zp
+    return None
 
 
 def departments_on_disk(departments_dir):

@@ -1069,10 +1069,13 @@ except:
     # the GHL tools don't resolve. Run the EXECUTED autostart (launchd KeepAlive
     # on :8765 + healthcheck + auto-restart). Idempotent — no-op if already
     # healthy + registered; honest SKIP line if GHL creds are absent.
+    # BUG FIX (v10.15.49): run NON-BLOCKING so the wiring loop + .onboarding-version
+    # stamp always complete. macOS has no `timeout`, so backgrounding is the safe
+    # cross-platform fix. The MCP still starts; the updater no longer waits on it.
     local AUTOSTART="$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"
     if [ -x "$AUTOSTART" ]; then
-      echo "    Starting GHL MCP server as a persistent service (launchd :${GHL_MCP_PORT})..."
-      GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" 2>&1 | tee -a "$LOG_FILE" | grep -E '^STATUS:|^  \[ghl-mcp-autostart\]' || true
+      echo "    Starting GHL MCP server in background (launchd :${GHL_MCP_PORT}) — log: /tmp/ghl-mcp-autostart.log"
+      ( GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" >/tmp/ghl-mcp-autostart.log 2>&1 & )
     else
       echo "    (ghl-mcp-autostart.sh not found at $AUTOSTART — server NOT started; GHL tools will not resolve until it is run)"
     fi
