@@ -1,5 +1,14 @@
 #!/bin/bash
-# add-persona-from-source.sh — v10.14.33
+# add-persona-from-source.sh — v10.14.34
+#
+# v10.14.34 — G1: Mac platform resolver added (mirrors persona-inbox-watcher.sh:51-57
+#   and pipeline/orchestrator.py:52-60). Previously hardcoded VPS paths
+#   (WORKSPACE=/data/.openclaw/workspace, MASTER=/data/.openclaw/master-files)
+#   caused silent failure on every Mac client box. Now resolves:
+#     VPS: OC_ROOT=/data/.openclaw
+#     Mac: OC_ROOT=~/.openclaw
+#   PERSONA_DIR, WORKSPACE, MASTER, ORCHESTRATOR, INDEXER, and the final
+#   gemini-search hint message are all derived from $OC_ROOT.
 #
 # v10.14.33 — Skill 22 v6.6.1 source-ingestion bug fixes:
 #   1. EPUB/MOBI/AZW3 ebook extraction mis-wire fixed: old code forced pdfplumber on
@@ -83,11 +92,31 @@ if [ -z "$SOURCE" ]; then
   exit 1
 fi
 
-# ─── CANONICAL PATHS (Hostinger Docker VPS) ──────────────────────────────────
-WORKSPACE=/data/.openclaw/workspace
-MASTER=/data/.openclaw/master-files
+# ─── PLATFORM RESOLVER ───────────────────────────────────────────────────────
+# Mirrors persona-inbox-watcher.sh:51-57 and pipeline/orchestrator.py:52-60
+# VPS (Hostinger Docker):  /data/.openclaw
+# Mac (homebrew openclaw): ~/.openclaw
+if [ -d /data/.openclaw ]; then
+  OC_ROOT="/data/.openclaw"
+elif [ -d "$HOME/.openclaw" ]; then
+  OC_ROOT="$HOME/.openclaw"
+else
+  # Legacy fallback kept for backward compat
+  OC_ROOT="$HOME/.openclaw"
+fi
 
-PERSONA_DIR="$MASTER/coaching-personas"
+WORKSPACE="$OC_ROOT/workspace"
+MASTER="$OC_ROOT/master-files"
+
+# Skill 22 pipeline location mirrors how orchestrator.py resolves itself
+# VPS: /data/.openclaw/master-files/coaching-personas
+# Mac: ~/.openclaw/workspace/data/coaching-personas
+if [ -d "$OC_ROOT/master-files" ]; then
+  PERSONA_DIR="$OC_ROOT/master-files/coaching-personas"
+else
+  PERSONA_DIR="$OC_ROOT/workspace/data/coaching-personas"
+fi
+
 TEXT_DIR="$PERSONA_DIR/text"
 mkdir -p "$TEXT_DIR"
 
@@ -483,8 +512,13 @@ green "  Persona folder ready: $PERSONA_FOLDER"
 echo "  Text input:          $TEXT_FILE"
 
 # ─── INVOKE PIPELINE ─────────────────────────────────────────────────────────
-ORCHESTRATOR="/data/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
-[ ! -f "$ORCHESTRATOR" ] && ORCHESTRATOR="/data/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
+# Resolve orchestrator path from $OC_ROOT (platform-resolved above)
+ORCHESTRATOR="$OC_ROOT/skills/22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py"
+# Fallback: try relative to this script's own location (works for dev/repo runs)
+if [ ! -f "$ORCHESTRATOR" ]; then
+  SCRIPT_DIR_APS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ORCHESTRATOR="$(cd "$SCRIPT_DIR_APS/.." && pwd)/pipeline/orchestrator.py"
+fi
 
 if [ ! -f "$ORCHESTRATOR" ]; then
   yellow "  Skill 22 orchestrator not found at expected path."
@@ -510,7 +544,7 @@ green "  Pipeline complete. Blueprint at: $PERSONA_FOLDER/persona-blueprint.md"
 if [ "$SKIP_INDEX" = "false" ]; then
   blue "── Re-indexing Gemini Engine (coaching-personas + workspace) ──"
   INDEXER=""
-  for c in "$WORKSPACE/scripts/gemini-indexer.py" "/data/.openclaw/workspace/scripts/gemini-indexer.py"; do
+  for c in "$WORKSPACE/scripts/gemini-indexer.py" "$OC_ROOT/workspace/scripts/gemini-indexer.py"; do
     [ -f "$c" ] && INDEXER="$c" && break
   done
   if [ -n "$INDEXER" ]; then
@@ -518,7 +552,7 @@ if [ "$SKIP_INDEX" = "false" ]; then
     green "  Gemini index refreshed. New persona is now searchable."
   else
     yellow "  gemini-indexer.py not found; persona blueprint written but not yet indexed."
-    yellow "  Run manually: python3 /data/.openclaw/scripts/gemini-indexer.py"
+    yellow "  Run manually: python3 $OC_ROOT/workspace/scripts/gemini-indexer.py"
   fi
 fi
 
@@ -691,7 +725,7 @@ green "  ✓ Persona added: $SLUG"
 green "═══════════════════════════════════════════════════"
 echo "  Blueprint:          $PERSONA_FOLDER/persona-blueprint.md"
 echo "  Source text:        $TEXT_FILE"
-echo "  Searchable via:     python3 /data/.openclaw/scripts/gemini-search.py --query \"<task>\""
+echo "  Searchable via:     python3 $OC_ROOT/workspace/scripts/gemini-search.py --query \"<task>\""
 echo ""
 yellow "  NEXT STEP (optional): review domain[] and perspective[] tags in persona-categories.json"
 yellow "  for $SLUG.  Auto-classification has assigned initial tags from title/author/slug —"
