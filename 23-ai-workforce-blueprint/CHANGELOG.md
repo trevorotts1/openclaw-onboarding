@@ -26,15 +26,14 @@ production skills. (2) The canonical fleet-wide SOP-00 routing procedure (classi
     suggested-roles/graphics-suggested-roles.md — "Imani"/"Amani" do not exist in the library)
   - Cross-platform: identical file in both Mac and VPS repos
 
-- **Skill 23 version: 11.0.1 → 11.0.2** (skill-version.txt)
-
 ### Files touched (merge coordination)
 - `23-ai-workforce-blueprint/scripts/build-workforce.py` — ONLY `add_agent_to_config()` function
   (the `agent_entry` dict + the `is_ceo_agent` guard that follows it). Skill-22 branch touches
   `create_role_workspaces.py` and `install.sh` — zero overlap.
 - `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-00-Owner-Task-Routing.md` — NEW FILE
 - `23-ai-workforce-blueprint/CHANGELOG.md`
-- `23-ai-workforce-blueprint/skill-version.txt`
+
+Note: umbrella version bump deferred to Step 4 (bump-version.sh --tag with all 9 markers).
 
 ## [v10.15.34] — 2026-06-09 — master-orchestrator: hard owner-task routing protocol (SOP-00)
 
