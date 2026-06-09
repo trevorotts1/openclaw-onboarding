@@ -119,6 +119,8 @@ This is the single canonical index of the N1–N27 non-negotiables. Every other 
 | N27 | **No lying / no shortcuts / proof required.** End-to-end completion is the only completion. Every claimed fix needs a verifiable artifact (commit hash, curl-against-HEAD output, exit code). The 20% not done gets disclosed, not buried. | This file + owner directive | Audit retro on every release |
 | N28 | **No destructive teardown or kill scripts — ever.** Agents MUST NOT create or schedule any script or cron that removes the toolchain (`~/clawd`, `~/.openclaw`, Homebrew, Node, or OpenClaw itself). Cleanup must be scoped (remove a specific cron by ID), reversible (rename to `.QUARANTINED-<ts>` before deleting), and never self-deleting via a cron-scheduled kill script. Applies to build-cleanup, post-build teardown, SOP-backfill abort, and any "clean up after yourself" pattern. Root cause: 2026-05 Kofi incident — autonomous agent created `kofi-sop-build-kill.sh` during Skill 23 to abort a runaway SOP build; script wiped Homebrew/Node/OpenClaw/clawd. No script that touches core toolchain paths may be spawned by an agent without explicit owner approval. | This file + forensic post-mortem 2026-06-03 | Cron audit gate: any cron payload containing `rm -rf`, `brew uninstall`, `npm uninstall -g openclaw`, or paths `~/clawd` / `~/.openclaw` must be rejected |
 | N29 | **Shared core files (Zero-Human-Workforce file model).** On every box, ALL of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via **symlink** (not duplicated). Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files. The symlink target is ALWAYS the LOCAL box's own canonical (the default agent workspace resolved from THIS box's `openclaw.json`) — NEVER a hardcoded or cross-box/cross-account path (co-mingling guard, N0). Nested workflow agents (`*/workflows/*/agents/*`) are EXEMPT. Real files are backed up (`*.bak-unify-<ts>`, never deleted) + unique content preserved additively into the agent's own `IDENTITY.md` before linking. Idempotent. | This file (Shared Core Files section) + [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md) | `link_shared_core_files()` in `install.sh` (Step 10a) + `update-skills.sh`; QC check 9.9 in `scripts/qc-system-integrity.sh` |
+| N30 | **Ollama Cloud HARD RULE: `OLLAMA_BASE_URL` MUST be `https://ollama.com` for `:cloud` models. NEVER `http://127.0.0.1` or `http://localhost:11434`.** `:cloud`-tagged models (e.g. `deepseek-v4-pro:cloud`, `kimi-k2.6:cloud`) are routed through the Ollama Cloud API, NOT a local daemon. Setting `OLLAMA_BASE_URL` to a loopback address → immediate ECONNREFUSED on every client box (no local Ollama daemon runs there). Any script, config, or install step that writes or defaults `OLLAMA_BASE_URL` to `127.0.0.1` or `localhost` for a cloud model is a HARD VIOLATION. Local Ollama probes (health-checks, model-list queries against a local daemon) are exempt — they must NEVER be confused with the model-routing URL used for actual inference. | This file (N30 section) | `build-workforce.py` provider setup; `install.sh` model config step; `scripts/qc-system-integrity.sh` Ollama-URL check |
+| N31 | **Agent model field MUST be an object `{primary, fallbacks:[...]}`, NEVER a bare string.** Writing `"model": "ollama/deepseek-v4-pro:cloud"` in `agents.list[]` bypasses all fallback chains — if Ollama Cloud is over-capacity the agent dies silently. Every agent entry written by `build-workforce.py` or any install script MUST use the canonical object form: `{"primary": "ollama/deepseek-v4-pro:cloud", "fallbacks": ["openrouter/deepseek/deepseek-v4-pro", ...]}`. Bare strings are only permissible in temporary draft states during development; NEVER in production `openclaw.json`. | This file (N31 section) + `build-workforce.py add_agent_to_config()` | `scripts/qc-system-integrity.sh` model-object check |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
 
@@ -158,6 +160,97 @@ Runs at install (`install.sh` Step 10a) and update (`update-skills.sh`).
 Enforced by QC check **9.9** in `scripts/qc-system-integrity.sh`. Full rule:
 [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md). This is the box-wide
 generalization of **N19** (the ZHC `agents/` layout).
+
+---
+
+## 🔴 N30 — Ollama Cloud HARD RULE: `OLLAMA_BASE_URL` = `https://ollama.com` for `:cloud` models
+
+**`OLLAMA_BASE_URL` MUST be `https://ollama.com` for `:cloud`-tagged models. NEVER `http://127.0.0.1` or `http://localhost:11434`.**
+
+Client boxes do NOT run a local Ollama daemon. Setting `OLLAMA_BASE_URL` to a loopback address → immediate `ECONNREFUSED` on every client box. This is a silent model failure, not a retried error.
+
+### What applies vs what is exempt
+
+| Situation | Rule |
+|-----------|------|
+| Inference call to `:cloud` model (deepseek-v4-pro:cloud, kimi-k2.6:cloud, etc.) | MUST use `https://ollama.com` as base URL |
+| Local daemon health-check (`/api/tags`, `/api/version`, etc.) | May use `127.0.0.1:11434` — it's a probe, not inference routing |
+| Graphify (Skill 43) running on operator's own Mac with local daemon | Exempt — graphify uses local Ollama by design |
+| `generate-role-library.py` pre-flight model availability probe | Exempt — line 183 is a probe, not a routing URL |
+
+### HARD VIOLATIONS (any of these = reject the commit)
+
+- `OLLAMA_BASE_URL=http://127.0.0.1:11434` in any `.env`, config block, or script that feeds into inference routing
+- `OLLAMA_BASE_URL=http://localhost:11434` in any inference routing path
+- Any `openclaw config set` writing `models.providers.ollama.baseUrl` to a loopback address
+- Any install script that copies a loopback `OLLAMA_BASE_URL` into a client box's env
+
+### Correct form
+
+```bash
+# In any env file or config block that routes :cloud model calls
+OLLAMA_BASE_URL="https://ollama.com"
+```
+
+```json
+// In openclaw.json providers block
+{
+  "models": {
+    "providers": {
+      "ollama": {
+        "baseUrl": "https://ollama.com",
+        "apiKey": "{{OLLAMA_API_KEY}}"
+      }
+    }
+  }
+}
+```
+
+Enforced by `scripts/qc-system-integrity.sh` Ollama-URL check. Added v11.1.0.
+
+---
+
+## 🔴 N31 — Agent Model Field MUST Be an Object, NEVER a Bare String
+
+**Every `"model"` field in `agents.list[]` entries written to `openclaw.json` MUST use the full object form with `primary` and `fallbacks`. A bare string bypasses all fallback chains.**
+
+### HARD VIOLATION
+
+```json
+// WRONG — bare string, no fallbacks
+{ "id": "dept-marketing", "model": "ollama/deepseek-v4-pro:cloud" }
+```
+
+### Correct form
+
+```json
+// CORRECT — object with primary + fallbacks
+{
+  "id": "dept-marketing",
+  "model": {
+    "primary": "ollama/deepseek-v4-pro:cloud",
+    "fallbacks": [
+      "openrouter/deepseek/deepseek-v4-pro",
+      "ollama/kimi-k2.6:cloud",
+      "openrouter/moonshotai/kimi-k2.6"
+    ]
+  }
+}
+```
+
+### Why this matters
+
+- Ollama Cloud may be over-capacity for a specific model — fallback to OpenRouter keeps the agent alive
+- A bare string on an agent that serves a client's Telegram messages → total silence on Ollama outage
+- The subagents block already uses the object form (`canonical_subagents` in `build-workforce.py`) — the top-level model must match
+
+### Enforcement
+
+- `build-workforce.py add_agent_to_config()` MUST produce the object form (N31 fix applied v11.1.0)
+- `scripts/qc-system-integrity.sh` model-object check validates every entry in `agents.list[]`
+- Any PR that writes bare-string model fields to `openclaw.json` is blocked
+
+Added v11.1.0.
 
 ---
 

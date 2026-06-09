@@ -1,3 +1,49 @@
+## [v11.1.0-step3] — 2026-06-09 — Auto-wire detection + Ollama HARD RULE + model-object enforcement (v11.1.0 pre-bump)
+
+### Why
+Three gaps in the system needed closing before the v11.1.0 release:
+(1) No mechanism to detect and register new skills/departments added post-build — client boxes
+would stay frozen even after the role library grew. (2) No hard rule preventing agents from
+routing `:cloud` model calls to `127.0.0.1` (local daemon) — every client box → ECONNREFUSED.
+(3) `build-workforce.py` wrote bare-string `"model"` fields with no fallbacks — a single Ollama
+Cloud outage silences ALL department agents.
+
+### Changed
+
+#### Auto-wire / extension detection (Skill 32)
+- `32-command-center-setup/scripts/sync-extensions.sh` — NEW master idempotent orchestrator:
+  detects delta via `detect-extensions.py`, registers new depts, materializes workspaces,
+  updates `last-sync.json`, sends Telegram summary
+- `32-command-center-setup/scripts/detect-extensions.py` — NEW manifest-diff detector:
+  diffs current `_index.json` against `last-sync.json`; emits `NEW: <slug>` / `SKIP: <slug>`
+- `32-command-center-setup/scripts/register-routing-dept.py` — NEW routing registration:
+  writes dept into `extension_registry.departments[]` in `openclaw.json`; idempotent;
+  N31-compliant model objects; atomic backup+write
+- `32-command-center-setup/EXTENSIBILITY.md` — NEW operator doc: manual + auto paths,
+  script reference, rollback, model rules cross-reference
+- `universal-sops/adding-capability-after-build.md` — NEW SOP for PAO/General Task agents
+
+#### Ollama HARD RULE (N30 + N31)
+- `AGENTS.md` — added N30 (Ollama Cloud URL must be `https://ollama.com`; NEVER 127.0.0.1) and
+  N31 (model field must be object `{primary, fallbacks:[...]}`) to the canonical N-rule index
+  AND as full expanded sections with violation examples and correct forms
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` — N31 FIX: `add_agent_to_config()`
+  now writes model as object `{"primary": ..., "fallbacks": [...]}` instead of bare string;
+  fallback chain: kimi-k2.6:cloud → openrouter/moonshotai/kimi-k2.6 →
+  deepseek-v4-pro:cloud → openrouter/deepseek/deepseek-v4-pro
+
+### Files touched
+- `32-command-center-setup/scripts/sync-extensions.sh` — NEW
+- `32-command-center-setup/scripts/detect-extensions.py` — NEW
+- `32-command-center-setup/scripts/register-routing-dept.py` — NEW
+- `32-command-center-setup/EXTENSIBILITY.md` — NEW
+- `universal-sops/adding-capability-after-build.md` — NEW
+- `AGENTS.md` — N30 + N31 added (index rows + full expanded sections)
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` — N31 model-object fix
+- `23-ai-workforce-blueprint/CHANGELOG.md`
+
+Note: umbrella version bump deferred to Step 4 (bump-version.sh --tag with all 9 markers).
+
 ## [v11.1.0-step2] — 2026-06-09 — General Task + Project Architecture Office departments (v11.1.0 pre-bump)
 
 ### Why
