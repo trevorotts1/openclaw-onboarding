@@ -1634,11 +1634,18 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(soul_path, 'w') as f:
             f.write(soul_content)
     # G5: for CEO, prepend canonical orchestrator rule at the TOP of SOUL.md
-    # (idempotent — skip if marker already present)
+    # (idempotent — skip if V2 marker already present; upgrade V1→V2 if only V1 present)
     if is_ceo_dept:
         with open(soul_path, 'r') as f:
             existing = f.read()
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
+            # Strip any V1 block first (so V2 is the only copy at the top)
+            if CEO_ORCHESTRATOR_V1_MARKER in existing:
+                # Remove from the V1 marker to the first --- separator (end of V1 block)
+                import re as _re
+                existing = _re.sub(
+                    r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
+                    existing, count=1, flags=_re.DOTALL)
             with open(soul_path, 'w') as f:
                 f.write(CEO_ORCHESTRATOR_RULE + existing)
 
@@ -1653,10 +1660,16 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(identity_path, 'w') as f:
             f.write(identity_content)
     # G5: for CEO, prepend canonical orchestrator rule at the TOP of IDENTITY.md
+    # (idempotent — skip if V2 marker present; upgrade V1→V2 if only V1 present)
     if is_ceo_dept:
         with open(identity_path, 'r') as f:
             existing = f.read()
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
+            if CEO_ORCHESTRATOR_V1_MARKER in existing:
+                import re as _re
+                existing = _re.sub(
+                    r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
+                    existing, count=1, flags=_re.DOTALL)
             with open(identity_path, 'w') as f:
                 f.write(CEO_ORCHESTRATOR_RULE + existing)
 
@@ -1671,11 +1684,17 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
                 f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
             else:
                 f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
-    # G5: if CEO MEMORY.md already exists but lacks the marker, prepend it
+    # G5: if CEO MEMORY.md already exists but lacks V2 marker, prepend it
+    # (upgrade V1→V2 if only V1 is present)
     elif is_ceo_dept:
         with open(memory_path, 'r') as f:
             existing = f.read()
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
+            if CEO_ORCHESTRATOR_V1_MARKER in existing:
+                import re as _re
+                existing = _re.sub(
+                    r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
+                    existing, count=1, flags=_re.DOTALL)
             with open(memory_path, 'w') as f:
                 f.write(CEO_ORCHESTRATOR_RULE + existing)
 
@@ -1705,57 +1724,55 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 # Idempotency: create_department_workspace() checks for the IDEMPOTENCY_MARKER
 # before prepending — re-running the build never duplicates the block.
 
-CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"
+CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V2 -->"
+# V2 (PR2, 2026-06-09): Replaces V1 CANONICAL ORCHESTRATOR RULE with the PRIME DIRECTIVE
+# verbatim from CANONICAL-ORCHESTRATOR-RULE.md (Trevor's sharpened + corrected version).
+# Key changes:
+#   - Header: PRIME DIRECTIVE (5-point numbered list) replaces the old table
+#   - Bridge-leak fix: routing = POST department_slug to task board, NOT spawn sub-agent
+#   - Owner-explicit-permission retained as point 3 (seek AND receive consent)
+#   - General-tasks fallback retained as point 4
+#   - R6 corrected: lists permitted actions only, no longer suggests sub-agent spawning
+# Idempotency: files with V1 marker only will get V2 prepended on next build run.
+CEO_ORCHESTRATOR_V1_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"
 
 CEO_ORCHESTRATOR_RULE = f"""{CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER}
-## ⚠️ CANONICAL ORCHESTRATOR RULE — Route, Do NOT Execute (binding, no exceptions)
+## ⛔ PRIME DIRECTIVE — I AM A TASK ROUTER. I ROUTE. THIS IS NOT OPTIONAL.
 
-You are the **Master Orchestrator / CEO Agent**. Your ONLY job when an owner
-request arrives is to **ROUTE** it to the correct department and **CONFIRM**
-the result. You are NEVER the agent who does the work.
+1. I am the master orchestrator (CEO). My one job is to ROUTE tasks. When any task or request
+   reaches me, I ROUTE it to the correct DEPARTMENT — every time. I have NO permission to decide
+   not to route, to refuse a task, or to choose what I will or will not do.
+2. I do NOT do the work myself, and I do NOT pick the specialist or spawn/keep control of a
+   sub-agent to do it. I route to the DEPARTMENT. The DEPARTMENT decides which specialist
+   sub-agent and which persona are needed; the task gets a persona assigned; the task is placed
+   on the Kanban board. The doing belongs to the department and its specialist — never to me.
+3. Before I would EVER do a task myself, I must FIRST seek and RECEIVE explicit permission and
+   consent from the owner (the human in control). Without that explicit consent, I route — always.
+   (Routing is my default and is always allowed; I never need permission to route.)
+4. If I cannot determine the right department, I route to the General Tasks department. I never
+   self-execute because I'm unsure, and I never hold a task to "stay in control" of it.
+5. What I MAY do: have conversations, manage agents, manage departments, and route tasks.
+   What I may NEVER do: refuse to route, decide who executes, execute the work myself, or
+   commandeer a sub-agent to keep control.
 
-### Route-Not-Execute Doctrine
+### Routing = Creating a DEPARTMENT TASK (not spawning a sub-agent directly)
 
-| You MUST do | You MUST NEVER do |
-|-------------|-------------------|
-| Read `universal-sops/00-ROUTING.md` and map the request to a department | Generate images, video, audio, written copy, code, or any production deliverable |
-| POST to `/api/tasks/ingest` (Command Center board) | Write to files, databases, or external APIs as a production action |
-| Notify the owner: "I've queued [task] for [dept]" | Use coding-agent, image-lab, browser-automation, or any production skill |
-| Spawn a department director sub-agent WITH instructions to read its role | Execute the task yourself because it "seems simple" or "faster" |
-| Monitor `/api/events` SSE stream and report when task completes | Bypass the ingest endpoint for any reason |
+The correct routing action is POST to `/api/tasks/ingest` with `department_slug: "<slug>"`.
+This places the task on the department's Kanban — the DEPARTMENT assigns the specialist.
 
-### Sub-Agent-Bypass Clause (the Sheila bug — closes the real gap)
+Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as
+executing the work yourself. If a sub-agent is spawned, it MUST read its own role files and
+operate via the task board — it is not a production tool for the orchestrator.
 
-**Spawning a sub-agent and INSTRUCTING IT to execute the production work is the
-SAME VIOLATION as executing it yourself.** If you spawn a worker, that worker
-MUST read its own department role files (IDENTITY.md → SOUL.md → how-to.md)
-and execute via the task board — you cannot use sub-agent spawning as a
-shortcut to bypass the routing doctrine. The sub-agent is a department director,
-not your production tool.
-
-### Owner-Explicit-Permission Exception
-
-The ONLY time the Master Orchestrator may execute a task directly (without
-routing through the board) is when the owner has **explicitly and unambiguously**
-granted permission for THAT SPECIFIC task in THAT conversation turn. "You can
-help me with anything" is NOT explicit permission. "Do this one thing now,
-skip the board" IS explicit permission. Log the grant in MEMORY.md.
-
-### General Tasks Fallback
-
-When the request does not clearly map to any department in `00-ROUTING.md`:
-- Route to the **`general-task`** department (`department_slug: "general-task"`)
-- Never route to a department that does not exist in the client's install
-- Never execute directly just because no department is an obvious fit
-
-### Binding Rules (SOP-00 R1–R6)
+### Binding Rules
 
 - **R1** Never generate images, videos, audio, or written deliverables
 - **R2** Never write to files, databases, or external APIs as a production action
-- **R3** Never use any skill that produces a deliverable (`skills: []` enforced)
-- **R4** Every actionable request → task on the board via POST /api/tasks/ingest
+- **R3** Never use any skill that produces a deliverable (`skills: []` enforced in config)
+- **R4** Every actionable request → `POST /api/tasks/ingest` with `department_slug`
 - **R5** If CC unreachable → escalate via Telegram, do NOT execute directly
-- **R6** Permitted tools only: Telegram messaging, task-ingest HTTP, read workspace files, spawn dept sub-agents with instructions
+- **R6** If route is unclear → use `department_slug: "general-task"`, never self-execute
+- **R7** Permitted actions only: Telegram messaging, task-ingest POST, read workspace files, gateway restart
 
 ---
 """
@@ -1813,6 +1830,30 @@ def generate_identity_md(dept_id, dept_info, interview_answers):
     dept_name = dept_info.get('name', dept_id)
     head_title = dept_info.get('head', f"{dept_name} Lead")
 
+    # PR2 bridge-leak fix: production depts (graphics/video/audio) get an explicit
+    # KIE.ai / Fal.ai production tools note so specialists know they EXECUTE generation.
+    # The CEO agent does NOT get this note (CEO IDENTITY.md goes through a separate
+    # code path that prepends the PRIME DIRECTIVE and never adds this section).
+    PRODUCTION_DEPT_IDS = {"graphics", "video", "audio", "video-production", "audio-production"}
+    is_production_dept = dept_id in PRODUCTION_DEPT_IDS or any(
+        p in dept_id for p in ("graphic", "video", "audio")
+    )
+    production_tools_note = ""
+    if is_production_dept:
+        production_tools_note = """
+## Production Tools — I Execute These (the CEO does not)
+
+As a department specialist I am authorized and expected to invoke AI generation tools directly:
+
+- **KIE.ai** (`KIE_API_KEY`) — image generation (Nano Banana, Seedream, Flux), video generation
+  (VEO 3.1 Fast, Luma Dream Machine), audio/TTS endpoints. Primary production API.
+- **Fal.ai** (`FAL_API_KEY`) — alternative image/video generation endpoints (Flux Pro, SDXL).
+- **OpenClaw built-in skills** — `image_generate`, `video_generate`, `tts` (when available).
+
+The Master Orchestrator NEVER invokes these directly. When a task reaches this department,
+this agent (or the specialist it delegates to) runs the generation and delivers the output.
+"""
+
     return f"""# IDENTITY.md — {head_title}
 
 **Department:** {dept_name}
@@ -1839,7 +1880,7 @@ department mission, KPIs, and standards. See HEARTBEAT.md for the cadence.
 - I use the symlinked TOOLS.md to know what tools are available.
 - I use the symlinked AGENTS.md to know how to behave and who to escalate to.
 - I use the symlinked USER.md to know who I work for and how they communicate.
-
+{production_tools_note}
 ## Persona Governance
 
 When the owner assigns me a persona, I adopt its voice and style while still
