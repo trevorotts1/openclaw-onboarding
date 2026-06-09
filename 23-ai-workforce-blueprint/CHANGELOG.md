@@ -1,3 +1,79 @@
+## [v10.15.33] — 2026-06-09 — command-center pipeline fixes: 9 RC repairs to persona selection, governing-personas gate, slug hygiene, build-state backfill, and role-library path
+
+### Why
+Live builds exposed 9 pipeline failures in the AI-Workforce → Command Center flow: the
+persona scorer crashed on DeepSeek V4 Pro's `content: null` thinking-model response;
+governing-personas.md was a soft operator self-report with no enforcement; `departments.json`
+lacked a canonical `slug` field; `soul_md` DB column was always empty; `company-config.json`
+had no upgrade path to the v2.0 schema the 5-layer scorer needs; legacy clients missing gate
+fields in `.workforce-build-state.json`; the stale-persona-index marker was written but never
+consumed; Skill 22 absence was a soft warning instead of a hard stop; and the role-library
+importer had no env-var escape hatch when the default path yielded an empty templates tree.
+
+### Changed
+- **`shared-utils/llm_score.py` — persona-selector null-content crash (CRITICAL, Fix 1)**
+  - `_extract_message()`: null-guard + three-level fallback chain
+    (`content` → `reasoning_details` list → `reasoning` string). DeepSeek V4 Pro as a
+    THINKING model returns `content: null`; old code did `.strip()` on `None` → AttributeError.
+  - `_attempt_openrouter()`: added `"reasoning": {"exclude": True}` to request body to ask
+    OpenRouter to suppress thinking tokens upfront; widened except clause to also catch
+    `AttributeError`, `KeyError`, `TypeError`.
+- **`scripts/generate-governing-personas.sh` — NEW (Fix 2 / build RC-1)**
+  New script that writes stub `governing-personas.md` files for any department missing one,
+  then exits 0 only when every department has a valid file. Exit 1 = hard fail; exit 2 =
+  departments dir unresolvable. Auto-detects ZHC tree (canonical → Mac fallback → VPS
+  fallback). Supports `--dry-run`.
+- **`INSTALL.md` — Phase 0a HARD STOP + Phase 5-PERSONA HARD gate (Fix 8 / RC-2, Fix 2)**
+  - Phase 0a: changed from soft warning to HARD exit 1 when `coaching-personas` Gemini
+    collection / `coaching-personas/personas` dir is absent. Operator action item printed.
+  - Phase 5-PERSONA gate: replaced soft grep count with call to `generate-governing-personas.sh`
+    as a HARD gate; non-zero exit blocks progress to Phase 5-ORG.
+- **`INSTALL.md` — Phase 5-BUILD-A2 upgrade-company-config step (Fix 3 / Runtime D)**
+  New Phase 5-BUILD-A2 documents and wires `upgrade-company-config.py` into the build
+  immediately after config safety and before department workspace creation.
+- **`INSTALL.md` — ROLE_LIBRARY_PATH env var documentation (Fix 9 / SOP-pull RC-3)**
+  Step 4 of ACTIVATION now documents `$ROLE_LIBRARY_PATH` and `$OPENCLAW_WORKSPACE_PATH`
+  overrides for operators whose default skill install templates tree is empty.
+- **`scripts/upgrade-company-config.py` — NEW (Fix 3 / Runtime D)**
+  Generates or upgrades `company-config.json` to schema v2.0 (adds `mission`,
+  `owner_values`, `company_kpis`, `dept_kpis`). Idempotent. CLI: `--upgrade`, `--output`,
+  `--dry-run`. Exit 0/1/2.
+- **`scripts/sync-md-content-to-db.py` — NEW (Fix 4 / build E)**
+  Reads per-dept `SOUL.md` files and writes to `agents.soul_md` in `mission-control.db`.
+  Idempotent (skips non-empty rows unless `--force`). Exit 0/1/2.
+- **`scripts/build-workforce.py` — explicit `slug` field in departments.json (Fix 5 / RC-3)**
+  `generate_departments_json()` now emits `"slug": dept_id` (bare slug) alongside the
+  existing `"id": "dept-{dept_id}"` entry. Eliminates runtime string-stripping in CC
+  slug-based lookups.
+- **`scripts/backfill-build-state.py` — NEW (Fix 6 / build RC-6)**
+  Stamps missing gate fields (`sopLibraryStatus`, `roleLibraryStatus`,
+  `commsAutomationStatus`, `canonicalReconciliation`, per-dept `roleLibraryFilled` /
+  `sopLibraryFilled`) into `.workforce-build-state.json` for pre-v10.16.8 clients.
+  Idempotent; heuristic detection. `--force` overwrites existing values. Exit 0/1.
+- **`scripts/select-persona-for-task.py` — stale marker consumer (Fix 7 / build RC-5)**
+  `_consume_persona_stale_marker()` called at start of `main()`: if `.persona-index-stale`
+  exists AND coaching-personas collection is present, re-runs `gemini-indexer.py` then
+  deletes the marker. Closes the add-department → stale-persona-index → re-index loop.
+- **`scripts/create_role_workspaces.py` — ROLE_LIBRARY_PATH env var (Fix 9 / SOP-pull RC-3)**
+  `_resolve_skill_dir()` now checks `$ROLE_LIBRARY_PATH` (validates index exists; warns +
+  falls back if not) then `$OPENCLAW_WORKSPACE_PATH/skills/23-ai-workforce-blueprint`
+  before the standard detect_platform path. Operators can point the library importer at
+  a live ZHC departments tree.
+
+### Also fixed (Skill 32 — seed-workspaces.py)
+- **`32-command-center-setup/scripts/seed-workspaces.py` — `dept-` prefix strip (Fix 5 / RC-3)**
+  `scan_skill23_workspaces()`: added `dept_id = re.sub(r'^dept-', '', dept_id)` after the
+  existing `-dept` suffix stripping so both `dept-marketing` (prefix) and `marketing-dept`
+  (suffix) normalize to the bare canonical slug.
+
+### Risk
+Low. All new scripts are additive and idempotent. No existing scripts deleted. INSTALL.md
+changes only add Phase 5-BUILD-A2 and ROLE_LIBRARY_PATH documentation. Gate changes
+(Phase 0a + Phase 5-PERSONA) enforce constraints that were already operator-documented
+best-practice — hard-failing only helps operators catch gaps earlier.
+
+---
+
 ## [v10.15.32] — 2026-06-02 — 23-department standard (N23): universal vertical-pack primaries
 
 ### Why

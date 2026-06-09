@@ -159,8 +159,11 @@ def scan_skill23_workspaces():
         for folder in sorted(ws_dir.iterdir()):
             if folder.is_dir() and not folder.name.startswith('.'):
                 raw_name = folder.name.lower().replace(' ', '-')
-                # Strip "-dept" suffix that Skill 23 uses (e.g., "marketing-dept" -> "marketing")
+                # Strip "-dept" suffix or "dept-" prefix (legacy Skill 23 folder naming)
+                # RC-3: canonical bare slugs never have a dept- prefix; these guards
+                # handle any old folder that still uses the legacy compound form.
                 dept_id = re.sub(r'-dept$', '', raw_name)
+                dept_id = re.sub(r'^dept-', '', dept_id)
                 dept_name = dept_id.replace('-', ' ').replace('_', ' ').title()
                 # Try to read name from SOUL.md if it exists
                 soul = folder / "SOUL.md"

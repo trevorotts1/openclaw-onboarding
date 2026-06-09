@@ -343,7 +343,86 @@ def handle_mid_task_mode_switch(
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
+def _consume_persona_stale_marker():
+    """RC-5: If .persona-index-stale exists AND coaching-personas collection is
+    present, re-run gemini-indexer.py then delete the marker.
+    Written by add-department.sh but was never consumed — this wires it up.
+    Best-effort: any failure is logged to stderr and the selector proceeds."""
+    skill_dirs = [
+        Path("/data/.openclaw/skills/23-ai-workforce-blueprint"),
+        Path.home() / ".openclaw/skills/23-ai-workforce-blueprint",
+    ]
+    marker = None
+    for d in skill_dirs:
+        candidate = d / ".persona-index-stale"
+        if candidate.exists():
+            marker = candidate
+            break
+    if not marker:
+        return  # no stale marker, nothing to do
+
+    # Check that the coaching-personas collection is present so we don't try to
+    # re-index an empty library that hasn't been installed yet.
+    personas_present = False
+    for d in skill_dirs:
+        personas_dir = d / "coaching-personas" / "personas"
+        if personas_dir.is_dir() and any(personas_dir.iterdir()):
+            personas_present = True
+            break
+    # Also check workspace path (post-install location)
+    workspace_paths = [
+        Path("/data/.openclaw/workspace/coaching-personas/personas"),
+        Path.home() / ".openclaw/workspace/coaching-personas/personas",
+        Path.home() / "clawd/coaching-personas/personas",
+    ]
+    for wp in workspace_paths:
+        if wp.is_dir() and any(wp.iterdir()):
+            personas_present = True
+            break
+
+    if not personas_present:
+        print("[select-persona-for-task] RC-5: .persona-index-stale found but "
+              "coaching-personas collection not present — skipping re-index", file=sys.stderr)
+        return
+
+    # Locate gemini-indexer.py
+    indexer_candidates = [
+        Path(__file__).parent / "gemini-indexer.py",
+        Path("/data/.openclaw/workspace/scripts/gemini-indexer.py"),
+        Path.home() / ".openclaw/workspace/scripts/gemini-indexer.py",
+        Path.home() / "clawd/scripts/gemini-indexer.py",
+    ]
+    indexer = next((p for p in indexer_candidates if p.is_file()), None)
+    if not indexer:
+        print("[select-persona-for-task] RC-5: gemini-indexer.py not found; "
+              "cannot re-index — leaving .persona-index-stale in place", file=sys.stderr)
+        return
+
+    print(f"[select-persona-for-task] RC-5: .persona-index-stale detected — "
+          f"re-running {indexer.name} for coaching-personas collection", file=sys.stderr)
+    try:
+        result = subprocess.run(
+            [sys.executable, str(indexer), "--collection", "coaching-personas"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode == 0:
+            print("[select-persona-for-task] RC-5: gemini-indexer re-index completed", file=sys.stderr)
+            try:
+                marker.unlink()
+                print(f"[select-persona-for-task] RC-5: deleted {marker}", file=sys.stderr)
+            except OSError as e:
+                print(f"[select-persona-for-task] RC-5: WARN could not delete marker: {e}", file=sys.stderr)
+        else:
+            print(f"[select-persona-for-task] RC-5: gemini-indexer exited rc={result.returncode}; "
+                  f"leaving stale marker in place. stderr: {result.stderr[:200]}", file=sys.stderr)
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"[select-persona-for-task] RC-5: gemini-indexer failed: {e}; leaving marker", file=sys.stderr)
+
+
 def main():
+    # RC-5: Persona-stale reader — re-index if add-department.sh dropped the marker.
+    _consume_persona_stale_marker()
+
     print(
         "[select-persona-for-task v1] DEPRECATION NOTICE: this entry point still "
         "uses flat-constant scoring for Layers 1-4. Use persona-selector-v2.py "

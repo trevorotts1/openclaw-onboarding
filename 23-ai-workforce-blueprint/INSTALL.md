@@ -70,37 +70,67 @@ WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 
 ---
 
-## 🔴 PHASE 0a - SKILL 22 PRE-FLIGHT CHECK (GRACEFUL DEGRADATION)
+## 🔴 PHASE 0a - SKILL 22 PRE-FLIGHT CHECK (RC-2: HARD STOP)
 
-**Skill 22 (Book-to-Persona) is recommended but not required.** If installed, coaching personas are wired into department workspaces automatically. If not installed, the workforce structure builds clean and personas can be added later via Option C.
+**Skill 22 (Book-to-Persona) is REQUIRED before running the persona-selection pipeline.**  
+The 5-layer persona selector (Layers 1-2) is powered by the `coaching-personas` Gemini collection
+that Skill 22 installs. Without it, persona selection silently falls back to heuristics and the
+governing-personas.md files are stubs.
 
-**Pre-flight check - verify and proceed either way:**
+**Pre-flight check — HARD STOP if coaching-personas collection is absent:**
 
 ```bash
-# Check if coaching-personas Gemini Vector Database exists
+# RC-2: Check if coaching-personas Gemini Vector Database exists
 
-> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+SKILL22_OK=false
 
+# Check 1: Gemini index status
 if python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status 2>/dev/null | grep -q "indexed"; then
+  SKILL22_OK=true
+fi
+
+# Check 2: personas directory exists and is non-empty (fallback check)
+if [[ "$SKILL22_OK" == "false" ]]; then
+  for PDIR in \
+      ~/.openclaw/workspace/coaching-personas/personas \
+      ~/clawd/coaching-personas/personas \
+      ~/Downloads/openclaw-master-files/coaching-personas/personas
+  do
+    if [[ -d "$PDIR" ]] && [[ -n "$(ls -A "$PDIR" 2>/dev/null)" ]]; then
+      SKILL22_OK=true
+      break
+    fi
+  done
+fi
+
+if [[ "$SKILL22_OK" == "true" ]]; then
   echo "✅ Skill 22 verified: coaching-personas collection found"
   SKILL22_INSTALLED=true
 else
-  echo "⚠️  Skill 22 NOT installed: coaching-personas collection not found"
+  echo "❌ HARD STOP: Skill 22 NOT installed — coaching-personas collection not found."
   echo ""
-  echo "Skill 23 will build your AI workforce WITHOUT coaching personas."
-  echo "Your departments, team leaders, and workspaces will be fully functional."
-  echo "The only difference: tasks will not have persona-guided methodology."
+  echo "ACTION REQUIRED:"
+  echo "  1. Stop this install."
+  echo "  2. Install Skill 22 (Book-to-Persona & Coaching & Leadership System)."
+  echo "     Use at least one book to populate the coaching-personas collection."
+  echo "  3. Verify: python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status"
+  echo "  4. Return to this INSTALL.md Phase 0a and re-run."
   echo ""
-  echo "When you are ready to add coaching personas:"
-  echo "  1. Install Skill 22 (Book-to-Persona)"
-  echo "  2. Re-run Skill 23 in Option C (Audit/Resume) to wire them in"
+  echo "Why this is required: the 5-layer persona-selector's Layers 1+2 (Mission +"
+  echo "Owner Values pre-qualification) depend on the coaching-personas Gemini"
+  echo "collection. Without it, every task gets the same fallback heuristic score"
+  echo "and the governing-personas.md files in each department are empty stubs."
+  echo "The workforce will appear built but persona guidance will be non-functional."
   echo ""
-  SKILL22_INSTALLED=false
-  # Continue — do NOT exit. Graceful degradation.
+  # RC-2: HARD STOP — do NOT proceed without Skill 22
+  exit 1
 fi
 ```
 
-**If this check fails:** Skill 23 proceeds with generic AI personas. You can add custom coaching personas later by installing Skill 22 and re-running in Option C (audit mode).
+**If this check exits 1:** Do NOT proceed. Install Skill 22 first, then return to Phase 0a.  
+The workforce will build and run without Skill 22, but the persona pipeline will be non-functional
+until the coaching-personas collection exists. The hard stop prevents a misleading "build complete"
+state that would require a full Option C re-audit to fix later.
 
 ---
 
@@ -392,6 +422,27 @@ Before touching openclaw.json:
 4. Only then proceed with edits
 5. After every edit, validate JSON is parseable
 
+### 5-BUILD-A2. Upgrade company-config.json to v2.0 (Runtime D)
+
+After capturing interview answers but before building department workspaces, generate or
+upgrade `company-config.json` to schema v2.0 (adds `mission`, `owner_values`,
+`company_kpis`, `dept_kpis` fields that the 5-layer persona scoring needs at runtime).
+
+```bash
+# Generate fresh company-config.json from interview answers + departments.json:
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/upgrade-company-config.py
+
+# For a client who already has company-config.json at v1.0 — upgrade in-place:
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/upgrade-company-config.py --upgrade
+
+# Dry-run to preview without writing:
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/upgrade-company-config.py --dry-run
+```
+
+Exit 0 = success. Exit 1 = fatal (check output). Exit 2 = soft warning (empty fields —
+review and populate manually, then re-run). The script is idempotent: if
+company-config.json already has all v2.0 fields it reports "already current" and exits 0.
+
 ### 5-BUILD-B. Create Department Workspaces
 
 For EACH department the client chose, use build-workforce.py create_department_workspace():
@@ -638,18 +689,23 @@ Personas are selected PER TASK using the 5-layer alignment:
 5. Task Fit
 ```
 
-### Gate Check — DO NOT Proceed Until Verified
+### Gate Check — HARD STOP — DO NOT Proceed Until This Exits 0
 
-After creating all governing-personas.md files, run this check:
+After creating all governing-personas.md files, run the gate script. **This is a HARD gate — non-zero exit means DO NOT proceed to Phase 5-ORG:**
 
 ```bash
-# Count departments with real governing-personas.md content
-ACTUAL=$(grep -rl 'Primary Persona' ~/.openclaw/workspace/departments/*/governing-personas.md 2>/dev/null | wc -l | tr -d ' ')
-EXPECTED=$(ls -d ~/.openclaw/workspace/departments/*/ 2>/dev/null | wc -l | tr -d ' ')
-echo "Departments with governing-personas.md content: $ACTUAL / $EXPECTED"
+# RC-1 HARD GATE — exits 0 only when every dept has a valid governing-personas.md
+bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/generate-governing-personas.sh
 ```
 
-**DO NOT proceed to Phase 5-ORG until `$ACTUAL` equals `$EXPECTED`.** Every department must have a governing-personas.md with the "Primary Persona" heading and all required fields filled in. Empty stubs, placeholder text, or missing files must be fixed before continuing.
+If the script exits non-zero it will:
+- List every department that is still missing a valid governing-personas.md
+- Print the exact fix action needed
+- Exit 1 — the build MUST NOT continue to Phase 5-ORG
+
+The script is idempotent — re-run it after fixing gaps. It writes stubs for any missing file using the built-in persona-hint map, then re-checks. If it still exits non-zero after a write attempt, inspect the listed departments and manually add the `## Primary Persona` heading with the required fields.
+
+**DO NOT proceed to Phase 5-ORG until the script exits 0.** Every department must have a governing-personas.md with the "Primary Persona" heading and all required fields filled in.
 
 ### Persona Runtime Behavior
 
@@ -1163,6 +1219,25 @@ python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py 
 # Option C: Audit/Resume existing
 python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/build-workforce.py --option C
 ```
+
+**SOP-pull RC-3 — Optional env vars for role-library importer:**
+
+The role-library importer (`create_role_workspaces.py`) defaults to the pre-written
+library shipped with this skill at `~/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/`.
+If your client uses a custom template tree or the default yields an empty library, set
+`ROLE_LIBRARY_PATH` before running:
+
+```bash
+# Point importer at a custom ZHC departments tree (must contain
+# templates/role-library/_index.json):
+export ROLE_LIBRARY_PATH=~/clawd/zero-human-company/<slug>/departments
+
+# Alternative: override the whole workspace root
+export OPENCLAW_WORKSPACE_PATH=~/.openclaw/workspace
+```
+
+Neither variable is required on a standard install; the skill ships a full
+`templates/role-library/` tree in the installed skill folder.
 
 #### Step 5: VERIFY department folders created
 ```bash

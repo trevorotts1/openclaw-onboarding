@@ -3214,8 +3214,14 @@ def generate_departments_json(departments):
         # the CEO is already the prepended top column.
         if dept_id in ("ceo", "master-orchestrator", "dept-ceo"):
             continue
+        # RC-3: emit explicit bare canonical slug so CC canonical-map + migration
+        # 046 can key on slug without stripping the "dept-" prefix at runtime.
+        # dept_id is always a bare canonical slug (marketing, sales, billing-finance,
+        # etc.) — never a dept-X compound.  The "id" field keeps the dept- prefix
+        # for legacy CC compatibility; "slug" is the authoritative bare form.
         entries.append({
             "id": f"dept-{dept_id}",
+            "slug": dept_id,
             "emoji": dept_info["emoji"],
             "name": dept_info["name"],
             "headTitle": dept_info["head"],

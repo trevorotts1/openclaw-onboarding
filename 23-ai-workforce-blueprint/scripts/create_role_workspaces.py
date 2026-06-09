@@ -253,7 +253,46 @@ def _now_iso():
 
 
 def _resolve_skill_dir():
-    """Return absolute path to 23-ai-workforce-blueprint inside the install."""
+    """Return absolute path to 23-ai-workforce-blueprint inside the install.
+
+    SOP-pull RC-3 (Fix 9): ROLE_LIBRARY_PATH env var lets an operator point the
+    role-library importer at a custom ZHC departments tree OR a non-default skill
+    install dir when the default path yields an empty templates/role-library/.
+    Resolution order:
+        1. $ROLE_LIBRARY_PATH — operator/env override (must contain
+           templates/role-library/_index.json; warning printed if not)
+        2. $OPENCLAW_WORKSPACE_PATH / skills / 23-ai-workforce-blueprint — legacy
+           workspace-root override
+        3. Standard detect_platform paths["skills"] / "23-ai-workforce-blueprint"
+        4. Fallback: __file__ parent.parent (in-repo / dev execution)
+
+    On live VPS the canonical ZHC departments tree lives at
+    /data/clawd/zero-human-company/<slug>/departments; operators who keep their
+    role templates there should set ROLE_LIBRARY_PATH to that departments tree and
+    maintain a templates/role-library/_index.json inside it.
+    """
+    import os
+    rl_path_env = os.environ.get("ROLE_LIBRARY_PATH", "").strip()
+    if rl_path_env:
+        p = Path(rl_path_env)
+        # Validate it contains the index so a misconfigured var gets a clear warning
+        index_candidate = p / "templates" / "role-library" / "_index.json"
+        if not index_candidate.exists():
+            print(
+                f"  [ROLE_LIBRARY_PATH] WARN: $ROLE_LIBRARY_PATH={rl_path_env} "
+                f"but templates/role-library/_index.json not found there. "
+                f"Falling back to install-dir skill templates.",
+                file=sys.stderr,
+            )
+        else:
+            return p
+
+    ws_path_env = os.environ.get("OPENCLAW_WORKSPACE_PATH", "").strip()
+    if ws_path_env:
+        candidate = Path(ws_path_env) / "skills" / "23-ai-workforce-blueprint"
+        if (candidate / "templates" / "role-library" / "_index.json").exists():
+            return candidate
+
     try:
         paths = get_openclaw_paths()
         return paths["skills"] / "23-ai-workforce-blueprint"

@@ -223,9 +223,39 @@ def _post_chat(url: str, headers: dict, body: dict, timeout: int = HTTP_TIMEOUT_
 
 
 def _extract_message(payload: dict) -> str:
+    """Extract text from an OpenAI-compatible chat-completion payload.
+
+    DeepSeek V4 Pro (and other thinking/reasoning models) may return
+    ``content: null`` and put the actual text in ``reasoning_details`` or
+    ``reasoning``.  Crash-guard order:
+      1. content  — non-null, non-empty string → use it
+      2. reasoning_details (list of {text}|{thinking} blocks) → concat text
+      3. reasoning (str) — DeepSeek legacy field → use it
+      4. "" — all fields missing / null → caller treats as unparseable
+    """
     try:
-        return payload["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, TypeError):
+        msg = payload["choices"][0]["message"]
+        # Primary: standard content field
+        content = msg.get("content")
+        if content is not None and str(content).strip():
+            return str(content).strip()
+        # Fallback 1: reasoning_details (array of typed blocks)
+        rd = msg.get("reasoning_details")
+        if rd and isinstance(rd, list):
+            parts = []
+            for block in rd:
+                if isinstance(block, dict):
+                    text = block.get("text") or block.get("thinking") or ""
+                    if text:
+                        parts.append(str(text))
+            if parts:
+                return " ".join(parts).strip()
+        # Fallback 2: reasoning (plain string, DeepSeek legacy)
+        reasoning = msg.get("reasoning")
+        if reasoning and str(reasoning).strip():
+            return str(reasoning).strip()
+        return ""
+    except (KeyError, IndexError, TypeError, AttributeError):
         return ""
 
 
@@ -305,6 +335,10 @@ def _attempt_openrouter(prompt: str, model_id: str) -> dict:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": 200,
+        # Ask OpenRouter thinking models to suppress reasoning tokens so content
+        # is always a plain string — avoids the content=null crash.
+        # Non-thinking models silently ignore this field.
+        "reasoning": {"exclude": True},
     }
     try:
         payload = _post_chat(url, headers, body)
@@ -314,7 +348,8 @@ def _attempt_openrouter(prompt: str, model_id: str) -> dict:
             return {"ok": False, "error": f"unparseable: {parsed['reasoning']}", "model": model_id}
         return {"ok": True, "score": parsed["score"], "reasoning": parsed["reasoning"],
                 "model": model_id}
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError) as e:
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
+            TimeoutError, AttributeError, KeyError, TypeError) as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}", "model": model_id}
 
 
