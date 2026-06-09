@@ -1,5 +1,5 @@
 # SOP-00 — Owner Task Routing
-**Version:** 1.0.0 | 2026-06-09
+**Version:** 1.1.0 | 2026-06-09
 **Applies to:** Master Orchestrator / CEO Agent (all installs — Mac and VPS)
 **Status:** CANONICAL — cross-platform fleet standard
 
@@ -23,6 +23,9 @@ Any temptation to "just handle it this once" is a violation of this SOP. If the 
 | **R4** | Every actionable owner request becomes a task on the Command Center board via `POST /api/tasks/ingest`. |
 | **R5** | If the Command Center is unreachable, escalate via Telegram — do NOT execute the task directly. |
 | **R6** | The orchestrator's tools are: messaging (Telegram/channels), task-ingest HTTP call, reading workspace files, spawning department sub-agents with instructions. Nothing else. |
+| **R7** | **Sub-agent-bypass clause:** Spawning a sub-agent and instructing it to execute the production work IS the same violation as executing it yourself. The sub-agent must read its own department role files and operate via the task board — it is not a production tool for the orchestrator. |
+| **R8** | **General Tasks fallback:** When the request does not map clearly to any installed department, route to `general-task` (`department_slug: "general-task"`). NEVER execute directly because no department is an obvious fit. |
+| **R9** | **Owner-explicit-permission exception:** The ONLY time the orchestrator may execute directly (without routing through the board) is when the owner has explicitly and unambiguously granted permission for THAT SPECIFIC task in THAT conversation turn. "You can help with anything" is NOT explicit permission. Log any grant in MEMORY.md. |
 
 ---
 
@@ -191,4 +194,5 @@ This is the role #0 entry in `suggested-roles/graphics-suggested-roles.md` in bo
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.1.0 | 2026-06-09 | G5 alignment: added R7 sub-agent-bypass clause (spawning a worker to execute is the same violation as executing yourself — this was the Sheila bug), R8 General Tasks fallback (route to general-task when no dept is obvious, never execute directly), R9 owner-explicit-permission exception. These three rules were present in the CEO_ORCHESTRATOR_RULE injected into MEMORY.md/SOUL.md/IDENTITY.md by build-workforce.py but absent from this SOP — now aligned. |
 | 1.0.0 | 2026-06-09 | Initial canonical SOP. Adds route-not-execute doctrine, tool-lock enforcement explanation, ingest endpoint call spec, escalation path when CC unreachable. Fleet-wide: both Mac (openclaw-onboarding) and VPS (openclaw-onboarding-vps) repos. |

@@ -1607,12 +1607,26 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
                   file=sys.stderr)
             shutil.copy2(src, dst)
 
+    # G5: detect CEO dept — canonical orchestrator rule is PREPENDED to its
+    # MEMORY.md / SOUL.md / IDENTITY.md (NOT to AGENTS.md/TOOLS.md which are
+    # shared). Idempotent: CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER guards against
+    # duplicate injection on re-runs.
+    is_ceo_dept = dept_id in ("ceo", "master-orchestrator", "dept-ceo")
+
     # Create SOUL.md (generated from interview, not a template)
     soul_path = os.path.join(dept_dir, "SOUL.md")
     if not os.path.isfile(soul_path):
         soul_content = generate_soul_md(dept_id, dept_info, interview_answers)
         with open(soul_path, 'w') as f:
             f.write(soul_content)
+    # G5: for CEO, prepend canonical orchestrator rule at the TOP of SOUL.md
+    # (idempotent — skip if marker already present)
+    if is_ceo_dept:
+        with open(soul_path, 'r') as f:
+            existing = f.read()
+        if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
+            with open(soul_path, 'w') as f:
+                f.write(CEO_ORCHESTRATOR_RULE + existing)
 
     # v10.13.23 — Create IDENTITY.md for the dept head (Trevor's agent-file
     # architecture). Per the spec: every top-level agent gets its own
@@ -1624,12 +1638,32 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         identity_content = generate_identity_md(dept_id, dept_info, interview_answers)
         with open(identity_path, 'w') as f:
             f.write(identity_content)
+    # G5: for CEO, prepend canonical orchestrator rule at the TOP of IDENTITY.md
+    if is_ceo_dept:
+        with open(identity_path, 'r') as f:
+            existing = f.read()
+        if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
+            with open(identity_path, 'w') as f:
+                f.write(CEO_ORCHESTRATOR_RULE + existing)
 
-    # Create empty MEMORY.md
+    # Create MEMORY.md
     memory_path = os.path.join(dept_dir, "MEMORY.md")
     if not os.path.isfile(memory_path):
         with open(memory_path, 'w') as f:
-            f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
+            if is_ceo_dept:
+                # G5: CEO MEMORY.md leads with the canonical orchestrator rule
+                # so the rule is present even in the first file the CEO reads.
+                f.write(CEO_ORCHESTRATOR_RULE)
+                f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
+            else:
+                f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
+    # G5: if CEO MEMORY.md already exists but lacks the marker, prepend it
+    elif is_ceo_dept:
+        with open(memory_path, 'r') as f:
+            existing = f.read()
+        if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
+            with open(memory_path, 'w') as f:
+                f.write(CEO_ORCHESTRATOR_RULE + existing)
 
     # Create HEARTBEAT.md with department-specific priorities
     heartbeat_path = os.path.join(dept_dir, "HEARTBEAT.md")
@@ -1640,6 +1674,77 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 
     return dept_dir
 
+
+# ============================================================
+# CEO / MASTER ORCHESTRATOR CANONICAL RULE (G5 — Trevor's "make it permanent")
+# ============================================================
+# This block is PREPENDED to the TOP of the CEO agent's MEMORY.md, SOUL.md,
+# and IDENTITY.md by create_department_workspace() when dept_id is in the CEO
+# set. NOT written to AGENTS.md or TOOLS.md (shared by all agents).
+#
+# Required clauses (per Opus audit + SOP-00 alignment):
+#   1. Route-not-execute doctrine
+#   2. Sub-agent-bypass clause (spawning a worker to do it = same violation)
+#   3. Owner-explicit-permission exception
+#   4. General Tasks fallback when department is unclear
+#
+# Idempotency: create_department_workspace() checks for the IDEMPOTENCY_MARKER
+# before prepending — re-running the build never duplicates the block.
+
+CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"
+
+CEO_ORCHESTRATOR_RULE = f"""{CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER}
+## ⚠️ CANONICAL ORCHESTRATOR RULE — Route, Do NOT Execute (binding, no exceptions)
+
+You are the **Master Orchestrator / CEO Agent**. Your ONLY job when an owner
+request arrives is to **ROUTE** it to the correct department and **CONFIRM**
+the result. You are NEVER the agent who does the work.
+
+### Route-Not-Execute Doctrine
+
+| You MUST do | You MUST NEVER do |
+|-------------|-------------------|
+| Read `universal-sops/00-ROUTING.md` and map the request to a department | Generate images, video, audio, written copy, code, or any production deliverable |
+| POST to `/api/tasks/ingest` (Command Center board) | Write to files, databases, or external APIs as a production action |
+| Notify the owner: "I've queued [task] for [dept]" | Use coding-agent, image-lab, browser-automation, or any production skill |
+| Spawn a department director sub-agent WITH instructions to read its role | Execute the task yourself because it "seems simple" or "faster" |
+| Monitor `/api/events` SSE stream and report when task completes | Bypass the ingest endpoint for any reason |
+
+### Sub-Agent-Bypass Clause (the Sheila bug — closes the real gap)
+
+**Spawning a sub-agent and INSTRUCTING IT to execute the production work is the
+SAME VIOLATION as executing it yourself.** If you spawn a worker, that worker
+MUST read its own department role files (IDENTITY.md → SOUL.md → how-to.md)
+and execute via the task board — you cannot use sub-agent spawning as a
+shortcut to bypass the routing doctrine. The sub-agent is a department director,
+not your production tool.
+
+### Owner-Explicit-Permission Exception
+
+The ONLY time the Master Orchestrator may execute a task directly (without
+routing through the board) is when the owner has **explicitly and unambiguously**
+granted permission for THAT SPECIFIC task in THAT conversation turn. "You can
+help me with anything" is NOT explicit permission. "Do this one thing now,
+skip the board" IS explicit permission. Log the grant in MEMORY.md.
+
+### General Tasks Fallback
+
+When the request does not clearly map to any department in `00-ROUTING.md`:
+- Route to the **`general-task`** department (`department_slug: "general-task"`)
+- Never route to a department that does not exist in the client's install
+- Never execute directly just because no department is an obvious fit
+
+### Binding Rules (SOP-00 R1–R6)
+
+- **R1** Never generate images, videos, audio, or written deliverables
+- **R2** Never write to files, databases, or external APIs as a production action
+- **R3** Never use any skill that produces a deliverable (`skills: []` enforced)
+- **R4** Every actionable request → task on the board via POST /api/tasks/ingest
+- **R5** If CC unreachable → escalate via Telegram, do NOT execute directly
+- **R6** Permitted tools only: Telegram messaging, task-ingest HTTP, read workspace files, spawn dept sub-agents with instructions
+
+---
+"""
 
 # ============================================================
 # READ-THE-SOP OPERATING PROTOCOL (canonical, embedded in every agent)
