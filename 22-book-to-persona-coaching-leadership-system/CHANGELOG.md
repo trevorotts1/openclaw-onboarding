@@ -4,6 +4,46 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.6.1] - 2026-06-09
+
+### Fixed (critical — EPUB/MOBI/AZW3 ebook extraction)
+- **add-persona-from-source.sh: EPUB/MOBI/AZW3 front-door mis-wire** (primary bug).
+  The `book` branch previously ran pdfplumber on every book format, which always
+  produced empty or garbage text for non-PDF files.  Fix: PDF still gets inline
+  pdfplumber pre-extraction; EPUB/MOBI/AZW3/KFX now skip shell-side pre-extraction
+  entirely — `source.json` is written with an empty `text_file` field, which causes
+  `run_extraction()` in the orchestrator to skip the `_pre_text_path` shortcut
+  (L1010) and fall through to the correct multi-format `extract_book_text()` dispatch
+  (ebooklib for EPUB, `mobi` library for MOBI, Calibre `ebook-convert` for
+  AZW/AZW3/KFX).  The orchestrator already had this logic; the script was just
+  short-circuiting it with a broken pre-extracted file.
+
+### Fixed (minor — generic web URLs)
+- **add-persona-from-source.sh: HTTP branch** now supported.  Generic `http(s)://`
+  URLs (non-YouTube) are fetched via `curl` and HTML is parsed to readable text via
+  BeautifulSoup (`<article>` / `<main>` / `<body>` extraction with script/style/nav
+  stripped).  Previously the HTTP branch exited with an error telling users to
+  "download the page manually".
+
+### Fixed (minor — new personas invisible to dept selector)
+- **add-persona-from-source.sh: auto-classification** of `domain[]` and
+  `perspective[]` tags.  New personas were written to `persona-categories.json`
+  with empty `domain[]`/`perspective[]` arrays, making them invisible to
+  `write_governing_personas_md`'s dept-scope filter until hand-tagged.  The update
+  section now performs keyword-based classification against the canonical tag
+  taxonomy (12 domain tags, 6 perspective tags) using title+author+slug as the
+  probe string.  No LLM or API call — pure keyword matching, instant, free.  Falls
+  back to `["coaching"]` / `[]` if nothing matches.  Existing entries with empty
+  `domain[]` are also backfilled on first run.
+
+### Changed
+- Script version bumped to v10.14.33 (header + banner).
+- `unknown/missing` error message now lists generic web URLs as a supported type.
+- Closing `NEXT STEP` note updated: auto-classification handles initial tagging;
+  user only needs to review/refine rather than fill from scratch.
+- SKILL.md `When To Use This Skill` and `Supported Input Formats` updated to
+  include generic web URL as a first-class supported source type.
+
 ## [v6.6.0] - 2026-06-09
 
 ### Fixed (critical — new sources never processed)
