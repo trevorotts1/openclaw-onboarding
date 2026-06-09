@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v11.3.0"
+ONBOARDING_VERSION="v11.3.1"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -2279,17 +2279,13 @@ print(f"  ✓ subagents.maxConcurrent → {sub['maxConcurrent']} (min-clamp 50)"
 print(f"  ✓ subagents.maxSpawnDepth → 4")
 print(f"  ✓ subagents.thinking → high")
 
-# PR1: Full execution policy for ALL spawned sub-agents (PR1 — sub-agents unlocked for execution).
-# agents.defaults.tools.exec = {security: "full", ask: "off"} is the canonical way to grant
-# every spawned sub-agent the ability to run any tool (image_generate, video_generate, tts,
-# coding-agent, exec, file-write, etc.) without per-call approval prompts.
-# Without this the platform default narrows the spawned sub-agent to a minimal read-only set.
-# Idempotent: always hard-set (protocol gate, not a preference).
-defaults.setdefault('tools', {}).setdefault('exec', {}).update({
-    'security': 'full',
-    'ask': 'off',
-})
-print("  ✓ agents.defaults.tools.exec: security=full, ask=off (spawned sub-agents fully unlocked)")
+# NOTE (v11.3.1 fix): agents.defaults.tools.exec is NOT a valid key on
+# OpenClaw 2026.6.1+ — the schema validator rejects it with
+# "agents.defaults: Invalid input" and openclaw doctor --fix auto-reverts it.
+# The correct exec policy lives at TOP-LEVEL tools.exec (set in Step 8 below).
+# Generation departments (graphics/video/audio) get explicit per-agent
+# tools.allow so they can invoke image_generate/video_generate/music_generate
+# even if a parent deny list is in effect. (Set in build-workforce.py.)
 
 # Wildcard allowAgents on every agents.list entry
 agent_list = agents.get('list', [])
@@ -3456,8 +3452,8 @@ python3 ~/.openclaw/scripts/gemini-indexer.py --status
 **STEP 6: CLEAN UP openclaw.json**
 - Remove deprecated model IDs
 - Ensure subagent config under agents.defaults.subagents
-- Verify tools.exec has security=full, ask=off (top-level AND agents.defaults.tools.exec)
-- Verify agents.defaults.tools.exec.security=full, ask=off (PR1: spawned sub-agents fully unlocked)
+- Verify tools.exec has security=full, ask=off (TOP-LEVEL only — agents.defaults.tools.exec is INVALID on 2026.6.1+)
+- Verify agents.defaults.subagents.allowAgents=["*"] (spawned sub-agents fully permitted)
 
 **STEP 7: SURGICAL CORE FILE UPDATES**
 For each skill's CORE_UPDATES.md:

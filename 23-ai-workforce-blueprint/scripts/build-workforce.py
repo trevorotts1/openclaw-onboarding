@@ -1027,18 +1027,13 @@ def build_from_config(config):
 
             config_data = load_openclaw_config()
 
-            # PR1 — Sub-agents unlocked for execution (idempotent).
-            # Set agents.defaults.tools.exec so every spawned sub-agent (department
-            # specialist, QC agent, researcher, etc.) can run any tool including
-            # image_generate, video_generate, tts, coding-agent, and exec without
-            # per-call approval. Without this, the platform default narrows spawned
-            # sub-agents to a minimal read-only tool set.
-            _defs = config_data.setdefault("agents", {}).setdefault("defaults", {})
-            _defs.setdefault("tools", {}).setdefault("exec", {}).update({
-                "security": "full",
-                "ask": "off",
-            })
-            print("[NON-INTERACTIVE] agents.defaults.tools.exec: security=full, ask=off (PR1: spawned sub-agents unlocked)", file=sys.stderr)
+            # v11.3.1 FIX: agents.defaults.tools.exec is REMOVED.
+            # On OpenClaw 2026.6.1+ the schema validator rejects it with
+            # "agents.defaults: Invalid input" and doctor --fix auto-reverts it.
+            # The effective exec policy is the TOP-LEVEL tools.exec set in
+            # install.sh Step 8. Per-department generation tools are unlocked
+            # via explicit tools.allow on each generation dept agent (see
+            # add_agent_to_config below).
 
             for dept_id, dept_info in selected_departments.items():
                 add_agent_to_config(config_data, dept_id, dept_info)
@@ -3677,7 +3672,29 @@ def add_agent_to_config(config, dept_id, dept_info):
     # unrestricted default (no skills key → agents.defaults.skills or platform
     # default). See docs.openclaw.ai/tools/skills-config for the skills override
     # spec: agent-level skills REPLACES defaults, so [] = zero skills allowed.
+    #
+    # v11.3.1: Generation departments (graphics, video, audio) get an explicit
+    # tools.allow so generation tools survive any parent-deny inheritance.
+    # Verified tool names from live Sheila Reynolds box (2026.6.1):
+    #   image_generate, video_generate, music_generate (confirmed in tools.deny
+    #   on main agent). tts, exec, read, write, edit, web_fetch, web_search
+    #   confirmed in docs.openclaw.ai/gateway/security.
+    GENERATION_DEPT_IDS = {"graphics", "video", "audio"}
+    GENERATION_TOOLS_ALLOW = [
+        "image_generate",
+        "video_generate",
+        "music_generate",
+        "tts",
+        "exec",
+        "read",
+        "write",
+        "edit",
+        "web_fetch",
+        "web_search",
+    ]
+
     is_ceo_agent = dept_id in ("ceo", "master-orchestrator", "dept-ceo")
+    is_generation_dept = dept_id in GENERATION_DEPT_IDS
     agent_entry = {
         "id": agent_id,
         # BUG 2 FIX: per-department identity name, never a shared one.
@@ -3692,6 +3709,12 @@ def add_agent_to_config(config, dept_id, dept_info):
         # Enforce orchestrator-only posture: no production skills.
         # The CEO routes via messaging + task-ingest API calls only.
         agent_entry["skills"] = []
+    if is_generation_dept:
+        # Explicit tools.allow so generation tools survive any parent-deny
+        # inheritance. The dept agent runs under its own tool policy but a
+        # parent deny on main (e.g. image_generate denied) would otherwise
+        # shadow these tools when the dept agent is invoked as a sub-agent.
+        agent_entry["tools"] = {"allow": GENERATION_TOOLS_ALLOW}
 
     agents_list.append(agent_entry)
     config["agents"]["list"] = agents_list
