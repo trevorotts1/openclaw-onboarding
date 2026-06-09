@@ -1,7 +1,7 @@
-# Stage 2 QC Summary — Role Library v11.0.1
+# Stage 2 QC Summary — Role Library v11.1.0
 
-**Generated:** 2026-05-19 17:01 UTC
-**Total roles:** 233 / 233
+**Generated:** 2026-06-09 UTC
+**Total roles:** 244 / 244
 **Stage 2 verdict:** ALL PASS
 
 ## Department Breakdown
@@ -14,12 +14,14 @@
 | communications | 13 | ✓ PASS |
 | crm | 10 | ✓ PASS |
 | customer-support | 14 | ✓ PASS |
+| general-task | 5 | ✓ PASS |
 | graphics | 15 | ✓ PASS |
 | legal-compliance | 15 | ✓ PASS |
 | marketing | 15 | ✓ PASS |
 | master-orchestrator | 2 | ✓ PASS |
 | openclaw-maintenance | 13 | ✓ PASS |
 | paid-advertisement | 21 | ✓ PASS |
+| project-architecture-office | 6 | ✓ PASS |
 | research | 10 | ✓ PASS |
 | sales | 14 | ✓ PASS |
 | social-media | 17 | ✓ PASS |
