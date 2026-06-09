@@ -1,5 +1,25 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.4.0 - June 9, 2026
+
+### Fix — Autonomous podcast audio generation via Fish Audio S2-Pro; removes "record yourself" punt
+
+Mirrors the same problem fixed for video in v2.3.0 — the podcast step had no autonomous audio generation pipeline, only a vague "Synthesize MP3 via Fish Audio" instruction that caused agents to punt with "audio generation didn't produce a file — you can record it yourself." Agent now executes the full pipeline end-to-end. Client self-recording is a hard last resort only.
+
+**What:**
+- **references/playbook.md Section 15** — Added "Autonomous Audio Generation Pipeline" subsection with:
+  - Verified Fish Audio API facts (model `s2-pro`, endpoint `POST https://api.fish.audio/v1/tts`, auth `Authorization: Bearer`, model via header `model: s2-pro`, synchronous binary stream response — no polling).
+  - Step-by-step pipeline: write script → tag heavily with S2-Pro emotion tags → select model (default s2-pro, check for newer) → generate via helper script → ffprobe verify (duration 600-900s, non-zero size, no errors) → retry/diagnose on failure → last-resort fallback message only after 3 attempts and operator notified.
+  - Verified S2-Pro emotion tag syntax: [square brackets], 64+ categories, free-form natural language supported. S1 used parentheses — never mix syntax.
+  - 4 concrete tagged-script examples demonstrating expressive delivery.
+  - Client self-record fallback message to send only as last resort.
+- **CORE_UPDATES.md — Podcast Publishing Process** — Rewrote the 14-step list to match the full autonomous pipeline (tag → model → generate → verify → retry → diagnose) with inline API call reference.
+- **scripts/generate_podcast_audio.sh** (new, chmod +x) — Parameterized script: `bash generate_podcast_audio.sh <script_file> <voice_id> [model] [output_mp3]`. Sources `secrets/.env` if `FISH_AUDIO_API_KEY` not in env. Makes up to 3 attempts with per-failure diagnosis (401/403/404/422/429/503/network). ffprobe verifies duration (≥30s check; caller should confirm 600-900s). Exits 0 on success, 1 after 3 failures with diagnostic checklist, 2 on bad args/missing key.
+
+**Risk:** Low. Additive documentation and new helper script. No scheduling, posting, or publish-webhook logic altered.
+
+---
+
 ## v2.3.0 - June 9, 2026
 
 ### Fix — Multi-clip storyboard + FFmpeg merge for full-length Reels; removes false "record yourself" punt

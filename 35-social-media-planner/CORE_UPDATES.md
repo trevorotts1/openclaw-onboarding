@@ -72,20 +72,51 @@ Use `bash ~/.openclaw/skills/35-social-media-planner/scripts/merge_reel.sh clips
 
 ### Podcast Publishing Process (Skill 35)
 
-1. Write 1500-2000 word script covering 7 days
-2. Embed Fish Audio [emotion] tags
-3. Synthesize MP3 via Fish Audio (192kbps)
-4. Generate 1400x1400 cover JPEG via kie.ai
-5. Upload audio+cover to GHL Media Library
-6. Prepare webhook payload with [from secrets/.env: PODBEAN_PODCAST_ID], audio_url, image_url
-7. Set publish_date Day 7 ISO (e.g. 2026-04-19T09:00:00-04:00)
-8. POST to n8n webhook `https://main.blackceoautomations.com/webhook/podbean-publish`
-9. Verify response: episode_id, status=draft
-10. Update to publish: PATCH /episodes/[episode_id] status=published
-11. Log to Google Sheet Podcast tab
-12. Notify client via Telegram
-13. ffprobe audio.mp3: bitrate=192kbps, no errors
-14. Check Podbean dashboard for live episode
+The agent produces every podcast episode end-to-end. It NEVER asks the client to record audio. Client self-recording is a last-resort fallback only after all retries are exhausted and the operator has been notified via Telegram.
+
+**Full pipeline (mandatory primary path):**
+
+1. **Write script** — 1,500-2,000 word script covering all 7 days of content. Save as `podcast_script_draft.txt`.
+
+2. **Tag the script heavily** — annotate every paragraph shift, reveal, fact, and CTA with Fish Audio S2-Pro emotion tags in [square brackets] before TTS. Minimum: one tag per paragraph. Goal: the script reads like a director's script. Save tagged version as `podcast_script_tagged.txt`.
+   - Examples: `[warm, conversational tone]`, `[excited]`, `[pause]`, `[whispering]`, `[passionate, building energy]`, `[leaning in, like sharing something important]`, `[the calm confidence of someone who has seen this work]`, `[urgent but caring]`
+   - S2-Pro uses [square brackets] — NOT parentheses (that is S1 syntax and produces poor results on s2-pro)
+
+3. **Select model** — use `s2-pro` (current Fish Audio recommended model as of June 2026). Specified via HTTP header `model: s2-pro`. Default to `s2-pro` if model detection fails.
+
+4. **Generate audio autonomously** — run the helper script which calls Fish Audio `/v1/tts` (synchronous binary stream, no polling needed), writes MP3, verifies file, retries up to 3x:
+   ```bash
+   bash ~/.openclaw/skills/35-social-media-planner/scripts/generate_podcast_audio.sh \
+     podcast_script_tagged.txt \
+     [from secrets/.env: FISH_AUDIO_VOICE_ID] \
+     s2-pro \
+     podcast_audio.mp3
+   ```
+   Fish Audio API: `POST https://api.fish.audio/v1/tts` with `Authorization: Bearer [FISH_AUDIO_API_KEY]`, `Content-Type: application/json`, `model: s2-pro` headers. Body: `{"text": "...", "reference_id": "[FISH_AUDIO_VOICE_ID]", "format": "mp3", "latency": "normal", "normalize": true, "chunk_length": 300}`.
+
+5. **Verify file** — `ffprobe -v error -show_entries format=duration -of csv=p=0 podcast_audio.mp3` must return 600-900 seconds (10-15 min). File must exist and be non-zero. No ffprobe errors. Script handles this automatically.
+
+6. **On failure: diagnose and retry** — the script diagnoses common causes (invalid API key, invalid voice ID, network error, rate limit, model unavailable) and retries up to 3x. After 3 failures: notify operator via Telegram with diagnostic output, then (only then) offer client the self-record fallback.
+
+7. **Generate 1,400x1,400 cover JPEG** via kie.ai Nano Banana 2 (2K resolution required for Podbean minimum). JPEG only — never WebP (Apple Podcasts rejects it). If over 500 KB: `convert input.png -resize 1400x1400 -quality 85 output.jpg`.
+
+8. **Upload audio + cover to GHL Media Library** — NEVER send Fish Audio URLs directly to the webhook.
+
+9. **Prepare webhook payload** with `[from secrets/.env: PODBEAN_PODCAST_ID]`, `audio_url` (GHL), `image_url` (GHL).
+
+10. **Set publish_date** — Day 7 ISO 8601 with time (e.g. `2026-04-19T09:00:00-04:00`). Date-only strings error.
+
+11. **POST to n8n webhook** `https://main.blackceoautomations.com/webhook/podbean-publish`
+
+12. **Verify response: 200 OK** — retry once after 30s on non-200. If still failing, notify client via Telegram.
+
+13. **Log to Google Sheet Podcast tab.**
+
+14. **Notify client via Telegram** with episode number and scheduled publish date.
+
+15. **ffprobe audio.mp3** — confirm no errors and bitrate ≥ 128kbps.
+
+16. **Check Podbean dashboard** for live episode within 15 minutes of webhook confirmation.
 
 ### Email Newsletter Process (Skill 35)
 

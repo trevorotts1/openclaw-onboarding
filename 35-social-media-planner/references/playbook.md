@@ -1015,8 +1015,151 @@ The image should visually represent the weekly theme and include the client's br
 
 - Format: MP3
 - Bitrate: 192 kbps (required for Podbean quality standards)
-- Generated via Fish Audio S2 text-to-speech with inline emotion tags
+- Generated via Fish Audio S2-Pro text-to-speech with inline emotion tags (fully autonomous — agent never asks client to record)
 - Target length: 10-15 minutes (~1,500-2,000 word script)
+
+### Autonomous Audio Generation Pipeline (MANDATORY — agent executes end-to-end)
+
+The agent NEVER asks the client to record the podcast themselves. Client self-recording is a hard last resort only after all retries are exhausted and the operator has been notified. The default is always the agent generating the audio autonomously.
+
+#### Fish Audio API — Verified Facts (docs.fish.audio, confirmed June 2026)
+
+**Model:** Use `s2-pro` — the current recommended model, specified via HTTP header `model: s2-pro`. Do not hardcode `s1` (previous generation, uses parenthesis tags and is less capable). If future model detection is needed, check Fish Audio docs; default to `s2-pro` until a newer model is confirmed.
+
+**API call (generate → stream → save):**
+```bash
+curl -sS -X POST "https://api.fish.audio/v1/tts" \
+  -H "Authorization: Bearer $FISH_AUDIO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "model: s2-pro" \
+  -o podcast_audio.mp3 \
+  -d '{
+    "text": "[tagged script text here]",
+    "reference_id": "[FISH_AUDIO_VOICE_ID]",
+    "format": "mp3",
+    "latency": "normal",
+    "normalize": true,
+    "chunk_length": 300
+  }'
+```
+
+The response is a **binary audio stream** (Transfer-Encoding: chunked). `-o podcast_audio.mp3` writes it directly. There is no separate polling step — it is synchronous streaming.
+
+**Use the helper script** (implements the full pipeline with retry and ffprobe verification):
+```bash
+bash ~/.openclaw/skills/35-social-media-planner/scripts/generate_podcast_audio.sh \
+  podcast_script_tagged.txt \
+  [from secrets/.env: FISH_AUDIO_VOICE_ID] \
+  s2-pro \
+  podcast_audio.mp3
+```
+
+#### Step-by-Step Podcast Audio Pipeline
+
+**Step 1 — Write the script**
+
+Write a 1,500-2,000 word podcast script following the structure in "Podcast Script Construction Instructions" below. Save as `podcast_script_draft.txt`.
+
+**Step 2 — Tag the script heavily with emotion tags**
+
+Annotate the script with Fish Audio S2-Pro emotion tags before sending to TTS. Tags use [square brackets]. They affect everything after them until a new tag appears. Place tags wherever a live podcast host would naturally shift delivery.
+
+**Verified S2-Pro tag categories (64+ supported):**
+
+| Category | Example tags |
+|----------|-------------|
+| Basic emotions | `[happy]`, `[sad]`, `[excited]`, `[calm]`, `[nervous]`, `[confident]`, `[surprised]`, `[satisfied]`, `[curious]`, `[sarcastic]` |
+| Advanced emotions | `[empathetic]`, `[proud]`, `[nostalgic]`, `[determined]`, `[hopeful]`, `[anxious]` |
+| Delivery style | `[whispering]`, `[shouting]`, `[soft tone]`, `[in a hurry tone]` |
+| Audio effects | `[laughing]`, `[chuckling]`, `[sighing]`, `[gasping]` |
+| Pacing | `[break]`, `[long-break]` |
+
+S2-Pro also accepts free-form natural language descriptions within brackets: `[building intensity]`, `[warm smile in voice]`, `[leaning in like sharing a secret]`, `[the calm confidence of someone who has been here before]`. Use these freely — S2-Pro supports 15,000+ tag variations.
+
+**Important:** S2-Pro uses [square brackets]. S1 used (parentheses). Never use S1 syntax with s2-pro.
+
+**Concrete examples of heavily-tagged script lines:**
+
+```
+[warm, conversational tone] Welcome back to the [Brand Name] podcast. [break] This week we went deep on something most people haven't heard before.
+
+[leaning in, like sharing something important] Here's what stopped us cold. [break] A study from the American Psychological Association found that [excited] sixty-seven percent of people feel completely unprepared for this exact challenge.
+
+[letting that sink in] Sixty-seven percent.
+
+[passionate, building energy] That number tells us something. It tells us people need real, structured, intentional support. [break] Not another blog post. Not another quick tip. [emphasis] Real guidance.
+
+[serious but warm] And if you've been following our series this week, the research from Day 1 and Day 2 painted a picture most people never see. [building excitement] But what we found on Day 4 and Day 5? [break] That changed everything.
+
+[the calm confidence of someone who has seen this work] This is exactly why [Brand Name] exists.
+
+[urgent but caring] If any of this landed for you — [break] don't let it be just another thing you scrolled past. [warm smile in voice] Book a conversation. Seriously. It could change everything.
+
+[excited, teasing] And next week? [long-break] We're diving into something you do NOT want to miss.
+```
+
+**Goal:** Every paragraph shift, every reveal, every serious fact, every CTA should have a tag. The script should read like a director's script, not plain prose.
+
+Save the tagged script as `podcast_script_tagged.txt`.
+
+**Step 3 — Select model (always check, default s2-pro)**
+
+Use `s2-pro` unless Fish Audio has released a newer recommended model (check docs.fish.audio/developer-guide/models-pricing/models-overview before each run if you want to confirm). If detection fails or docs are unreachable, default to `s2-pro`.
+
+**Step 4 — Generate the audio**
+
+Run the helper script:
+```bash
+bash ~/.openclaw/skills/35-social-media-planner/scripts/generate_podcast_audio.sh \
+  podcast_script_tagged.txt \
+  [from secrets/.env: FISH_AUDIO_VOICE_ID] \
+  s2-pro \
+  podcast_audio.mp3
+```
+
+The script makes up to 3 attempts. On each attempt it calls the Fish Audio `/v1/tts` endpoint, streams the MP3, and verifies the file on success.
+
+**Step 5 — Verify the file**
+
+After generation, confirm:
+```bash
+# File exists and is non-zero
+ls -lh podcast_audio.mp3
+
+# Valid duration (ffprobe — should be 10-15 minutes = 600-900 seconds)
+ffprobe -v error -show_entries format=duration -of csv=p=0 podcast_audio.mp3
+
+# No errors in the file
+ffprobe -v error podcast_audio.mp3
+```
+
+Pass criteria: file exists, size > 0, duration between 600-900 seconds (10-15 minutes), no ffprobe errors.
+
+**Step 6 — On failure: diagnose, retry, escalate**
+
+The helper script runs 3 retries automatically with diagnosis on each failure. If all 3 fail:
+
+1. Check FISH_AUDIO_API_KEY — is it set and valid?
+   ```bash
+   curl -sS -H "Authorization: Bearer $FISH_AUDIO_API_KEY" https://api.fish.audio/v1/me
+   ```
+2. Check FISH_AUDIO_VOICE_ID — is the voice ID valid?
+   ```bash
+   curl -sS -H "Authorization: Bearer $FISH_AUDIO_API_KEY" "https://api.fish.audio/v1/model/[FISH_AUDIO_VOICE_ID]"
+   ```
+3. Check network connectivity to api.fish.audio
+4. Check that the tagged script is valid text (no binary chars, non-empty)
+5. Try model `s2-pro` explicitly if default failed
+6. Notify operator via Telegram with failure details and diagnostic output
+
+**Only after 3 retries exhausted AND operator notified**, emit this message to the client:
+> "I ran into a technical issue generating the podcast audio this week — I retried 3 times and the Fish Audio API did not return a valid file. I'm looking into it now. In the meantime, if you have a recording setup, you can record using the script I'll share with you — but I'm still working on the automated version."
+
+This message is the last resort, not the default. The default is always the agent completing the audio end-to-end.
+
+**Step 7 — Feed into the publish step**
+
+Once `podcast_audio.mp3` is verified, proceed to the Podcast Publishing flow (via n8n webhook to Podbean) in the section below. Upload the verified MP3 to GHL Media Library first, then send the webhook payload.
 
 ### Podcast Script Construction Instructions
 
