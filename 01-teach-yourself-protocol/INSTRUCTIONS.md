@@ -7,7 +7,7 @@ Tell the user: "I am activating the Teach Yourself Protocol to permanently retai
 Never execute TYP silently. The user must always know when it is running.
 
 ### 2. Understand What You Are Learning
-- What category? (tool, API, process, preference, contact, credential)
+- What category? (tool, API, process, preference, contact, credential, playbook/SOP)
 - How often will you use it? (daily, weekly, rarely)
 - What priority? (CRITICAL, HIGH, STANDARD, REFERENCE)
 
@@ -29,8 +29,24 @@ Search ALL core files and the master files folder BEFORE creating anything new.
 ### 5. Create Deep File (If Needed)
 
 **STORAGE PATH (canonical, non-negotiable):**
-- Mac: `~/Downloads/openclaw-master-files/<typ-subfolder>/` (e.g., `processes/`, `apis/`, `skills/`, `references/`)
+- Mac: `~/Downloads/openclaw-master-files/<typ-subfolder>/` (e.g., `playbooks/`, `processes/`, `apis/`, `skills/`, `references/`)
 - VPS: `/data/.openclaw/master-files/<typ-subfolder>/` (same subfolder names)
+
+**PERSISTENCE NOTE (VPS — MANDATORY CHECK):**
+On a Hostinger Docker VPS, ALL files MUST live under `/data/.openclaw/` (the bind-mounted
+persistent volume). Files written anywhere else — `/tmp/`, the container's root filesystem,
+or any path NOT under `/data/` — are EPHEMERAL and will be WIPED on container restart. Before
+saving any deep file or playbook, confirm the path starts with `/data/.openclaw/`.
+
+**DEDICATED PLAYBOOK SUBFOLDER — ENFORCED:**
+When the user invokes TYP on a playbook, book, SOP, or process document (e.g., "use
+the Teach Yourself Protocol on this playbook"), the content MUST be placed in a dedicated
+subfolder named `playbooks/` inside the master files root:
+- Mac:  `~/Downloads/openclaw-master-files/playbooks/`
+- VPS:  `/data/.openclaw/master-files/playbooks/`
+
+If this subfolder does not exist yet, CREATE it before saving the file. Never store
+playbooks loose in the master files root or inside a different subfolder type.
 
 Save COMPLETE, UNABRIDGED content to that path with this header:
 ```
@@ -51,10 +67,21 @@ NEVER truncate the deep file. It is the full reference.
 ### MANDATORY — NO-PASTE RULE
 **Long playbooks, SOPs, API docs, and any document over ~25 lines MUST NEVER be pasted into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md).** Store the full document in the master-files TYP subfolder. Add only a hyper-concise summary (10–25 lines max) plus the explicit pointer to the file. Vagueness about storage path or pointer format is what causes bloat — this rule is absolute.
 
-### 6. Write Core File Summaries
-Add lightweight summaries (10-25 lines based on priority) to relevant core files.
+### 6. Write Core File Summaries (HYPER-CONCISE BLOCK — ENFORCED)
 
-Every summary must pass the Five Question Test:
+Add lightweight summaries (10-25 lines based on priority) to the relevant core file(s).
+The agent decides whether AGENTS.md, TOOLS.md, or both should get the entry — but at
+minimum ONE of them MUST receive it. Every summary block MUST answer all four of these:
+
+1. **WHAT it is** — one sentence description
+2. **WHEN to use it** — the explicit trigger(s) that cause the agent to reach for it
+3. **WHY / what it does** — the outcome or value it delivers
+4. **POINTER REFERENCE** — the EXACT file path to the playbook/deep file so the agent
+   can find, read, and execute it (full absolute path, no vagueness)
+
+If any of the four are missing, the block does NOT earn its place in the bootstrap file.
+
+Every summary must also pass the Five Question Test:
 1. What is this? (one sentence)
 2. When do I use it? (triggers)
 3. What do I need to know right now? (key facts)
@@ -64,9 +91,10 @@ Every summary must pass the Five Question Test:
 ### 7. Confirm to User
 Report:
 - What you learned
-- Where the full document is stored
-- Which core files were updated
-- What was added to each
+- Where the full document is stored (exact path)
+- Which core files were updated and what was added to each
+- Confirmation that the playbook subfolder was created/used (if applicable)
+- Confirmation that the path is persistence-safe (VPS: under /data/.openclaw/)
 
 ## Priority Tags
 
@@ -93,6 +121,7 @@ Report:
 | Recurring tasks | HEARTBEAT.md | MEMORY.md |
 | Contact info | USER.md | MEMORY.md |
 | Lessons learned | MEMORY.md | IDENTITY.md |
+| Playbook/SOP/Process | AGENTS.md or TOOLS.md | MEMORY.md |
 
 ## Common Mistakes
 
@@ -106,6 +135,9 @@ Report:
 8. Not checking for existing knowledge (always search first)
 9. Over-summarizing (if the agent would be stuck with just the summary, it is too thin)
 10. Under-summarizing (if the summary is 30+ lines, it is too thick)
+11. **Storing a playbook in the wrong subfolder** — playbooks/SOPs always go in `playbooks/`, not loosely in the master-files root or in `processes/` by default
+12. **Writing a 4-part pointer block that omits the trigger or exact path** — all four elements (WHAT, WHEN, WHY, POINTER) are required for the block to earn its place
+13. **VPS: writing files outside /data/.openclaw/** — any path not under the bind-mount is wiped on container restart; always verify the storage path before writing
 
 ## Self-Heal Migration (Existing Clients)
 
