@@ -195,8 +195,10 @@ Podcast episodes are published via n8n webhook.
 
 - Installed: [date]
 - Video preference: [0, 2, or 7 per week]
-- Google Sheet: [client's sheet URL]
+- content_sheet_id: [Google Sheet ID — agent reads this to answer "what's my content sheet?"]
+- content_sheet_url: [Full Google Sheet URL — agent surfaces this on demand, NEVER says "I don't have the link"]
 - Current action link: [confirmed weekly]
 - Content persona: [auto-selected via 5-layer alignment, or client's personal tone]
 - Weekly themes log: [AI logs themes here each week]
 - Performance notes: [AI logs engagement insights here for Dreaming to process]
+- Media delivery: GHL CDN (https://assets.cdn.filesafe.space/[LOCATION_ID]/media/...) — all finished media uploaded here, delivered as public links
