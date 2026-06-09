@@ -162,6 +162,84 @@ fi
 echo ""
 echo "[apply-fleet-standards] config standards applied"
 
+# ─── 5a. Inject ROLE DISCIPLINE into the agent's active AGENTS.md (PR2) ────────
+# This is the role-scoped governance block from CANONICAL-ORCHESTRATOR-RULE.md.
+# It is injected at the TOP of AGENTS.md (before existing content) so every
+# agent — CEO and specialists alike — sees the role mandate on first read.
+# Idempotent: guarded by <!-- ROLE_DISCIPLINE_V1 --> marker.
+#
+# Workspace resolution mirrors section 5 below.
+
+WORKSPACE_DIR=""
+if [ -f "$OC_CONFIG" ]; then
+  WORKSPACE_DIR=$(OC_JSON="$OC_CONFIG" python3 -c "
+import json, os
+try:
+    cfg = json.load(open(os.environ['OC_JSON']))
+    for ag in cfg.get('agents', {}).get('list', []) or []:
+        if isinstance(ag, dict) and ag.get('id') == 'main':
+            ws = ag.get('workspace')
+            if ws:
+                print(os.path.expanduser(ws)); break
+except Exception:
+    pass
+" 2>/dev/null) || WORKSPACE_DIR=""
+fi
+if [ -z "$WORKSPACE_DIR" ] && command -v openclaw >/dev/null 2>&1; then
+  WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace 2>/dev/null \
+    | head -1 | python3 -c "
+import sys, json, os
+try:
+    raw = sys.stdin.read().strip()
+    print(os.path.expanduser(json.loads(raw) if raw.startswith('\"') else raw))
+except Exception:
+    pass
+" 2>/dev/null) || WORKSPACE_DIR=""
+fi
+WORKSPACE_DIR="${WORKSPACE_DIR:-$OC_ROOT/workspace}"
+if [ ! -d "$WORKSPACE_DIR" ]; then
+  WORKSPACE_DIR="$OC_ROOT/workspace"
+fi
+mkdir -p "$WORKSPACE_DIR"
+AGENTS_FILE_EARLY="$WORKSPACE_DIR/AGENTS.md"
+touch "$AGENTS_FILE_EARLY"
+
+ROLE_DISC_MARKER="<!-- ROLE_DISCIPLINE_V1 -->"
+if grep -qF "$ROLE_DISC_MARKER" "$AGENTS_FILE_EARLY"; then
+  echo "[apply-fleet-standards] ROLE DISCIPLINE already present in $AGENTS_FILE_EARLY — no-op"
+else
+  echo "[apply-fleet-standards] injecting ROLE DISCIPLINE at top of $AGENTS_FILE_EARLY"
+  ORIGINAL_CONTENT=$(cat "$AGENTS_FILE_EARLY")
+  cat > "$AGENTS_FILE_EARLY" <<'RDEOF'
+<!-- ROLE_DISCIPLINE_V1 -->
+## ROLE DISCIPLINE (non-negotiable — every agent, every level)
+
+No agent decides what it will or will not do.
+
+- The **CEO / master-orchestrator** is a ROUTER: it routes every task to a department by posting
+  to `/api/tasks/ingest` with `department_slug`; it does not execute work, pick specialists,
+  or commandeer sub-agents to keep control. Before doing any task itself it must seek and
+  receive explicit owner permission — routing is always allowed without permission.
+- A **department specialist** EXECUTES the task assigned to it against its SOP — including
+  generating graphics/video via KIE.ai / Fal.ai — and does not refuse, redefine, or bounce
+  its assigned role.
+- An agent that overrides its defined role gets flagged. Persistent non-compliance (>20 flags)
+  = the agent is reset (identity + soul deleted and rebuilt fresh).
+
+This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
+specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
+
+---
+
+RDEOF
+  printf '%s' "$ORIGINAL_CONTENT" >> "$AGENTS_FILE_EARLY"
+  echo "[apply-fleet-standards] ROLE DISCIPLINE injected at top of $AGENTS_FILE_EARLY"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
+fi
+
 # ─── 5. Append BIG PROJECT MODE standard to the agent's active AGENTS.md ──────
 # Universal operating standard (see BIG-PROJECT-MODE.md at repo root). This is
 # appended to the SAME active-workspace AGENTS.md that install.sh / update-skills

@@ -4,6 +4,26 @@
 
 ---
 
+<!-- ROLE_DISCIPLINE_V1 -->
+## ROLE DISCIPLINE (non-negotiable — every agent, every level)
+
+No agent decides what it will or will not do.
+
+- The **CEO / master-orchestrator** is a ROUTER: it routes every task to a department by posting
+  to `/api/tasks/ingest` with `department_slug`; it does not execute work, pick specialists,
+  or commandeer sub-agents to keep control. Before doing any task itself it must seek and
+  receive explicit owner permission — routing is always allowed without permission.
+- A **department specialist** EXECUTES the task assigned to it against its SOP — including
+  generating graphics/video via KIE.ai / Fal.ai — and does not refuse, redefine, or bounce
+  its assigned role.
+- An agent that overrides its defined role gets flagged. Persistent non-compliance (>20 flags)
+  = the agent is reset (identity + soul deleted and rebuilt fresh).
+
+This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
+specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
+
+---
+
 ## 🔴🔴🔴 N0 — NO CO-MINGLING OF CLIENTS (HARD VIOLATION — READ FIRST, BINDING FOREVER) 🔴🔴🔴
 
 **EVERY client gets their OWN isolated resources — own Notion workspace/page, own GoHighLevel location, own Google Drive/Workspace, own Telegram bot, own Command Center, own KIE/API keys, own everything. NEVER share, reuse, borrow, or default to ANOTHER client's resource for any reason. If a client does not yet have a given resource, STOP and WAIT — do NOT substitute another client's as a placeholder. Co-mingling client data/resources is a HARD VIOLATION.**
