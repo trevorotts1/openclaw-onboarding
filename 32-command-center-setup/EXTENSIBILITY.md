@@ -59,10 +59,15 @@ bash 32-command-center-setup/scripts/sync-extensions.sh --dry-run --verbose
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/sync-extensions.sh` | Master orchestrator — detect → register → materialize → notify |
+| `scripts/sync-extensions.sh` | Master orchestrator — detect → routing registration → materialize → **CC workspaces row + QC specialist** → notify |
 | `scripts/detect-extensions.py` | Diffs current `_index.json` against `last-sync.json`, emits NEW: lines |
 | `scripts/register-routing-dept.py` | Writes dept into `extension_registry` in `openclaw.json` (idempotent) |
 | `scripts/materialize-dept-agents.sh` | Creates agent workspace dirs for a new dept (idempotent, pre-existing) |
+| `scripts/add-department.sh` | **Full manual-path dept add:** CC workspaces row + head agent + QC specialist + routing registration + role-library entry. Use when adding a dept NOT in `_index.json`, or for post-build manual additions. Idempotent. |
+| `scripts/seed-workspaces.py` | Seeds ALL departments from `departments.json` into the CC DB. Run during initial install; also use to re-seed from scratch if the DB is wiped. |
+| `scripts/ingest-sop-library.py` | Syncs SOP markdown files into the CC database for search and routing. Run after adding any new SOP. |
+| `23-ai-workforce-blueprint/scripts/generate-governing-personas.sh` | Regenerates `governing-personas.md` for all departments from the current persona index. Run after adding a new persona or updating persona tags. |
+| `23-ai-workforce-blueprint/scripts/add-role.sh` | **Post-build single-role add:** creates one specialist role under an existing dept — role workspace + agent row + persona governance. No full rebuild needed. |
 
 ---
 
@@ -114,4 +119,4 @@ The registration is additive only (`extension_registry.departments[]` append). T
 
 ## SOP Cross-Reference
 
-See also: `../universal-sops/adding-capability-after-build.md` for the full step-by-step SOP used by the General Task and PAO departments when they need to add capabilities to a live client box.
+See also: `../universal-sops/adding-capability-after-build.md` (v2.0.0) for the full step-by-step SOP covering all 6 events: new book/video/persona, new department, new role/specialist, new SOP, new skill, and persona governance updates. Includes CC verification gates (SELECT from workspaces, loadDepartments, sample route) — not just openclaw.json checks.
