@@ -116,9 +116,10 @@ Confirm by saying: "TYP complete - ready to run Book Intelligence Pipeline."
 
 ## When To Use This Skill
 
-- You have a new book PDF, EPUB, MOBI, or AZW3 to add to the persona library
+- You have a new book PDF, EPUB, MOBI, AZW3, or KFX to add to the persona library
 - You have a YouTube link (talk, podcast, lecture, interview) that contains the same kind of teaching as a book
 - You have a local video file (seminar recording, course session, keynote)
+- You have a generic web URL (article, blog post, interview transcript, sales page) — `http://` or `https://` non-YouTube
 - You have already-transcribed text from any of the above
 - You want to rebuild an existing persona with updated extraction
 - You are setting up the pipeline for the first time on a new workspace
@@ -144,22 +145,29 @@ bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/ad
 bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
     --source "/path/to/seminar.mp4" --title "Seth Godin Keynote" --author "Seth Godin"
 
+# Generic web URL (article, blog post, interview transcript — any http/https non-YouTube):
+bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
+    --source "https://somesite.com/article-about-leadership" \
+    --title "Leadership Article" --author "Site Author"
+
 # Already-transcribed text:
 bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
     --source "/path/to/transcript.txt" --title "Foo" --author "Bar"
 ```
 
 The script will:
-1. Detect source type (book / YouTube / video / text)
+1. Detect source type (book / YouTube / video / web URL / text)
 2. Extract text via the right tool:
-   - Books → pdfplumber (PDF), ebooklib (EPUB), Calibre (MOBI/AZW3/KFX)
+   - PDF books → pdfplumber (script-side pre-extraction)
+   - EPUB/MOBI/AZW3/KFX books → orchestrator `extract_book_text()` (ebooklib for EPUB, mobi lib for MOBI, Calibre for AZW/AZW3/KFX)
    - YouTube → yt-dlp auto-subs (free/fast); falls back to yt-dlp audio + whisper-cpp
    - Local video → ffmpeg audio extract → whisper-cpp transcript
+   - Generic web URL → curl download + BeautifulSoup HTML→text
    - Text/MD → copied directly
 3. Drop the text into the persona library and register a `source.json` marker
 4. Invoke Skill 22's 3-phase pipeline (Extraction → Analysis → Synthesis)
 5. Re-index Gemini Engine so the new persona is immediately searchable
-6. Add a stub entry to `persona-categories.json` (you tag manually after first use)
+6. Add an entry to `persona-categories.json` with auto-classified `domain[]`/`perspective[]` tags (keyword-based, instant, no LLM required)
 
 **Dependencies for non-book sources:**
 - YouTube: `yt-dlp` (auto-installed by install.sh). Uses yt-dlp auto-subs (free, no API key) first; falls back to yt-dlp audio + whisper-cpp transcription. Skill 16 is NOT used.

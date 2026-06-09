@@ -1,5 +1,16 @@
 #!/bin/bash
-# add-persona-from-source.sh — v10.14.32
+# add-persona-from-source.sh — v10.14.33
+#
+# v10.14.33 — Skill 22 v6.6.1 source-ingestion bug fixes:
+#   1. EPUB/MOBI/AZW3 ebook extraction mis-wire fixed: old code forced pdfplumber on
+#      every book format (always produced empty/garbage for non-PDF files).  PDF keeps
+#      inline pdfplumber.  EPUB/MOBI/AZW3/KFX skip pre-extraction; source.json gets
+#      empty text_file so orchestrator extract_book_text() does the right dispatch
+#      (ebooklib for EPUB, mobi lib for MOBI, Calibre ebook-convert for AZW/KFX).
+#   2. Generic HTTP(S) URLs now supported via curl + BeautifulSoup HTML→text.
+#   3. New personas auto-classified: domain/perspective tags derived from title/author/slug
+#      via keyword matching; no longer written as empty arrays that make personas
+#      invisible to the dept-scope filter.
 #
 # v10.14.32 — YouTube + local-video branches rewritten to use yt-dlp / whisper-cpp
 # directly. Pre-v10.14.32 the YouTube branch shelled out to a `summarize` CLI
@@ -123,7 +134,7 @@ else
 fi
 
 blue "═══════════════════════════════════════════════════"
-blue "  Add Persona From Source — v10.14.32"
+blue "  Add Persona From Source — v10.14.33"
 blue "═══════════════════════════════════════════════════"
 echo "Source: $SOURCE"
 echo "Type:   $TYPE"
@@ -137,34 +148,61 @@ SLUG=""
 
 case "$TYPE" in
   book)
-    blue "── Extracting book text (pdfplumber for PDF; ebooklib for EPUB; Calibre for MOBI/AZW3) ──"
     # Slug = author-title (or fall back to filename)
     BASENAME=$(basename "$SOURCE")
     BASENAME_NO_EXT="${BASENAME%.*}"
+    EXT_LC=$(echo "${BASENAME##*.}" | tr '[:upper:]' '[:lower:]')
     if [ -n "$AUTHOR" ] && [ -n "$TITLE" ]; then
       SLUG=$(echo "$AUTHOR-$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//')
     else
       SLUG=$(echo "$BASENAME_NO_EXT" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//')
     fi
-    TEXT_FILE="$TEXT_DIR/$SLUG.txt"
-    python3 - <<PYEOF
-import sys
+
+    if [ "$EXT_LC" = "pdf" ]; then
+      # v6.6.1 FIX: PDF gets inline pdfplumber pre-extraction (keeps existing behaviour).
+      blue "── Extracting PDF text via pdfplumber ──"
+      TEXT_FILE="$TEXT_DIR/$SLUG.txt"
+      SOURCE_ENV="$SOURCE" TEXT_FILE_ENV="$TEXT_FILE" python3 <<'PYEOF'
+import sys, os
+src = os.environ["SOURCE_ENV"]
+dst = os.environ["TEXT_FILE_ENV"]
 try:
     import pdfplumber
 except ImportError:
     print("ERROR: pdfplumber not installed. Run: pip install pdfplumber")
     sys.exit(1)
 text = ""
-with pdfplumber.open("$SOURCE") as pdf:
+with pdfplumber.open(src) as pdf:
     for page in pdf.pages:
         t = page.extract_text()
         if t:
             text += t + "\n"
-with open("$TEXT_FILE", "w") as f:
+if not text.strip():
+    # pdfplumber produced nothing — fall through without writing so orchestrator handles it
+    print(f"WARNING: pdfplumber returned empty text for {src}; orchestrator will use pypdf fallback")
+    sys.exit(0)
+with open(dst, "w") as f:
     f.write(text)
-print(f"Wrote {len(text):,} chars to $TEXT_FILE")
+print(f"Wrote {len(text):,} chars to {dst}")
 PYEOF
-    [ $? -ne 0 ] && { red "Book extraction failed"; exit 2; }
+      PYRC=$?
+      [ "$PYRC" -ne 0 ] && { red "PDF pre-extraction failed"; exit 2; }
+      # If pdfplumber wrote nothing, leave TEXT_FILE empty/absent so orchestrator falls back
+      [ ! -s "$TEXT_FILE" ] && TEXT_FILE=""
+    else
+      # v6.6.1 FIX (primary): EPUB / MOBI / AZW3 / KFX — skip shell-side pre-extraction
+      # entirely.  The old branch forced pdfplumber on every ebook format, which always
+      # produced empty/garbage text for non-PDF files.  Instead we pass the raw source file
+      # directly to the orchestrator, which already has a correct multi-format dispatch in
+      # extract_book_text(): ebooklib for EPUB, mobi library for MOBI, Calibre ebook-convert
+      # for AZW/AZW3/KFX.  TEXT_FILE is intentionally left blank here so that source.json
+      # has an empty "text_file" field, and run_extraction() will skip the _pre_text_path
+      # branch (L1010) and fall through to the book-file extraction path (L1026+).
+      blue "── EPUB/MOBI/AZW3: delegating text extraction to orchestrator (ebooklib/mobi/Calibre) ──"
+      yellow "  File: $SOURCE  (format: .$EXT_LC)"
+      yellow "  Pre-extraction SKIPPED in script — orchestrator extract_book_text() will handle it."
+      TEXT_FILE=""
+    fi
     ;;
 
   youtube)
@@ -347,16 +385,73 @@ PYEOF
     ;;
 
   http)
-    red "ERROR: Generic HTTP URLs not supported yet (only YouTube URLs)."
-    red "Workaround: download the page text and pass as a local .txt file."
-    exit 1
+    # v6.6.1 FIX: generic web URL — fetch page + extract readable text via BeautifulSoup.
+    blue "── Fetching generic web URL ──"
+    echo "  URL: $SOURCE"
+    if [ -z "$TITLE" ]; then
+      # Extract title from URL path
+      TITLE=$(echo "$SOURCE" | sed -E 's|https?://[^/]+/||; s/[?#].*//; s|/$||; s|/|-|g; s/[^a-zA-Z0-9 -]//g' | head -c 80)
+      [ -z "$TITLE" ] && TITLE="web-page"
+    fi
+    if [ -z "$AUTHOR" ]; then
+      # Use the hostname as a stand-in for author
+      AUTHOR=$(echo "$SOURCE" | sed -E 's|https?://([^/]+).*|\1|; s/^www\.//')
+    fi
+    SLUG=$(echo "$AUTHOR-$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//')
+    TEXT_FILE="$TEXT_DIR/$SLUG.txt"
+
+    # Step 1: download with curl (follow redirects, 30s timeout)
+    HTML_TMP="/tmp/persona-web-$SLUG-$$.html"
+    curl -fsSL --max-time 30 -A "Mozilla/5.0" -o "$HTML_TMP" "$SOURCE" 2>/tmp/persona-curl-$$.err
+    if [ ! -s "$HTML_TMP" ]; then
+      red "ERROR: curl failed to fetch URL: $SOURCE"
+      cat /tmp/persona-curl-$$.err
+      exit 4
+    fi
+    green "  Downloaded $(wc -c < "$HTML_TMP" | tr -d ' ') bytes"
+
+    # Step 2: extract readable text via BeautifulSoup (already installed per dep audit)
+    HTML_TMP_ENV="$HTML_TMP" TEXT_FILE_ENV="$TEXT_FILE" python3 <<'PYEOF'
+import sys, os
+html_path = os.environ["HTML_TMP_ENV"]
+txt_path  = os.environ["TEXT_FILE_ENV"]
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("ERROR: beautifulsoup4 not installed. Run: pip3 install beautifulsoup4")
+    sys.exit(1)
+with open(html_path, "rb") as f:
+    raw = f.read()
+soup = BeautifulSoup(raw, "html.parser")
+# Remove script, style, nav, header, footer, ads
+for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript", "iframe"]):
+    tag.decompose()
+# Try <article> or <main> first; fall back to <body>
+article = soup.find("article") or soup.find("main") or soup.find("body") or soup
+text = article.get_text(separator="\n")
+# Collapse blank lines
+import re
+text = re.sub(r"\n{3,}", "\n\n", text).strip()
+if not text:
+    print("ERROR: BeautifulSoup extracted empty text from page")
+    sys.exit(2)
+with open(txt_path, "w", encoding="utf-8") as f:
+    f.write(text + "\n")
+print(f"  Extracted {len(text):,} chars to {txt_path}")
+PYEOF
+    PYRC=$?
+    rm -f "$HTML_TMP" /tmp/persona-curl-$$.err
+    [ "$PYRC" -ne 0 ] && { red "Web page text extraction failed"; exit 4; }
+    [ ! -s "$TEXT_FILE" ] && { red "Web text extraction produced empty file"; exit 4; }
+    green "  Web page text saved: $TEXT_FILE ($(wc -c < "$TEXT_FILE" | tr -d ' ') chars)"
     ;;
 
   unknown|missing)
     red "ERROR: Source type unrecognized or file missing."
     red "  Got: $SOURCE"
     red "  Supported: .pdf .epub .mobi .azw3 (books), .mp4 .mov .mkv .avi .webm (video),"
-    red "             .txt .md (already-transcribed text), youtube.com / youtu.be URLs."
+    red "             .txt .md (already-transcribed text), youtube.com / youtu.be URLs,"
+    red "             http(s):// generic web URLs."
     exit 1
     ;;
 esac
@@ -366,7 +461,11 @@ blue "── Registering in Skill 22 pipeline ──"
 PERSONA_FOLDER="$PERSONA_DIR/personas/$SLUG"
 mkdir -p "$PERSONA_FOLDER"
 
-# Write a marker file the pipeline can pick up
+# Write a marker file the pipeline can pick up.
+# v6.6.1: for EPUB/MOBI/AZW3 book types TEXT_FILE is intentionally empty —
+# the orchestrator's extract_book_text() handles those formats via its own
+# multi-format dispatch.  An empty "text_file" field tells run_extraction()
+# to skip the _pre_text_path shortcut and go straight to book-file extraction.
 cat > "$PERSONA_FOLDER/source.json" <<JSONEOF
 {
   "slug": "$SLUG",
@@ -445,34 +544,122 @@ JSON_EOF
 fi
 
 if [ -f "$CAT_FILE" ]; then
-  blue "── Updating persona-categories.json ──"
-  # v6.6.0 SCHEMA FIX: use canonical field names domain/perspective/custom
-  # (NOT domain_tags/perspective_tags). The dept-scope filter in
-  # create_role_workspaces.py reads data["personas"][slug]["domain"] — any
-  # persona written with the old _tags suffix is invisible to that filter.
+  blue "── Updating persona-categories.json (with auto-classification) ──"
+  # v6.6.1 FIX: auto-classify domain/perspective from slug+title+author so new
+  # personas are immediately visible to the dept-scope filter.  Uses keyword
+  # matching against the canonical tag taxonomy — no LLM, no API call, no cost.
+  # Falls back to ["coaching"] / [] if nothing matches; always safe.
   python3 - <<PYEOF
-import json, datetime
+import json, re
 cat_file = "$CAT_FILE"
 slug = "$SLUG"
+title = "${TITLE:-$SLUG}".lower()
+author = "${AUTHOR:-}".lower()
+text_probe = slug.replace("-", " ") + " " + title + " " + author
+
+# ── Domain classification: keyword → domain-tag mapping ──────────────────────
+# NOTE: order matters — more specific tags first so they're not swamped by "coaching" fallback.
+DOMAIN_KEYWORDS = {
+    "sales":                ["sell", "sales", "closing", "close deals", "offers", "spin",
+                             "persuasion", "prospect", "revenue", "pitch", "cold call", "crm",
+                             "conversion", "client acquisition", "negotiat", "never split",
+                             "split the difference", "voss"],
+    "marketing":            ["marketing", "brand", "audience", "content", "social media", "hook",
+                             "attraction", "funnel", "storybrand", "traffic", "advertising",
+                             "permission", "tribe", "oversubscribed", "kane", "godin",
+                             "this is marketing", "100m", "million dollar"],
+    "copywriting":          ["copy", "copywriter", "write", "words", "message", "headline",
+                             "conversion copy", "email", "letters", "hack", "wiebe",
+                             "jones", "exactly what to say", "charvet"],
+    "leadership":           ["leader", "leadership", "management", "team", "vision", "culture",
+                             "good to great", "legacy", "executive", "ceo", "influence",
+                             "authority", "command", "sinek", "start with why", "collins",
+                             "find your why", "pink drive", "crucial conversation", "grenny"],
+    "finance":              ["finance", "financial", "money", "profit", "cash", "wealth", "rich",
+                             "invest", "budget", "income", "revenue", "pricing", "michalowicz",
+                             "profit first", "100m", "dollar", "hormozi"],
+    "operations":           ["operations", "process", "system", "workflow", "procedure", "efficiency",
+                             "optimize", "build", "para method", "second brain", "organization",
+                             "forte", "12 week year", "moran"],
+    "communication":        ["communicat", "speak", "listen", "conversation", "dialogue", "words",
+                             "language", "influence", "impact", "rapport", "connection", "crucial",
+                             "negotiat", "never split", "exactly what to say", "jones", "charvet",
+                             "grenny"],
+    "mindset":              ["mindset", "belief", "mental", "attitude", "limit", "growth mindset",
+                             "winner", "champion", "relentless", "unstoppable", "discipline",
+                             "motivation", "can t hurt", "cant hurt", "goggins", "grover",
+                             "drive", "five second", "let them", "boundaries", "habits"],
+    "productivity-systems": ["productiv", "habit", "routine", "schedule", "time management",
+                             "focus", "goal", "execution", "12 week", "5am", "morning",
+                             "deep work", "atomic", "second brain", "para", "pkm", "forte",
+                             "clear", "james clear", "sharma"],
+    "coaching":             ["coach", "mentor", "guidance", "transform", "change", "potential",
+                             "develop", "passion test", "five second rule", "let them theory",
+                             "attwood", "robbins", "tawwab", "set boundaries"],
+    "strategy-innovation":  ["strategy", "strateg", "innovation", "disrupt", "pivot", "model",
+                             "competitive", "advantage", "blue ocean", "extraordinary mind",
+                             "lakhiani", "samit", "oversubscribed", "priestley"],
+    "personal-development": ["personal development", "self develop", "self improve", "becoming",
+                             "growth", "purpose", "why", "meaning", "happiness", "joy", "soul",
+                             "instinct", "passion", "jakes", "sinek"],
+}
+
+# ── Perspective classification: keyword → perspective-tag mapping ─────────────
+PERSPECTIVE_KEYWORDS = {
+    "african-american-experience": ["african american", "black", "obama", "jakes", "goggins",
+                                    "grover", "tawwab", "brown", "colored", "minority"],
+    "womens-challenges":           ["women", "woman", "female", "feminine", "girl", "lady",
+                                    "obama", "brown", "brene", "mel robbins", "robbins",
+                                    "attwood", "janet", "wiebe", "joanna", "tawwab", "nedra"],
+    "mens-challenges":             ["men", "man", "male", "masculine", "boy", "guy",
+                                    "goggins", "grover", "hormozi", "voss"],
+    "family-relationships":        ["family", "parent", "child", "marriage", "relationship",
+                                    "home", "belong", "grenny", "crucial", "boundaries",
+                                    "let them", "obama"],
+    "faith-spirituality":          ["faith", "spirit", "god", "church", "bible", "pray",
+                                    "belief", "divine", "purpose", "jakes", "instinct"],
+    "love-romantic-relationships": ["love", "romance", "romantic", "partner", "dating",
+                                    "heart", "atlas", "boundaries", "let them"],
+}
+
+def classify(probe):
+    domain = []
+    for tag, kws in DOMAIN_KEYWORDS.items():
+        if any(kw in probe for kw in kws):
+            domain.append(tag)
+    if not domain:
+        domain = ["coaching"]  # safe default — everyone can use a coaching persona
+    perspective = []
+    for tag, kws in PERSPECTIVE_KEYWORDS.items():
+        if any(kw in probe for kw in kws):
+            perspective.append(tag)
+    return domain, perspective
+
 with open(cat_file) as f:
     data = json.load(f)
 personas = data.get("personas", {})
 if not isinstance(personas, dict):
     personas = {}
     data["personas"] = personas
+
 if slug not in personas:
+    domain_tags, perspective_tags = classify(text_probe)
     personas[slug] = {
         "author":      "$AUTHOR",
         "book":        "${TITLE:-$SLUG}",
-        "domain":      [],   # Fill manually: domain tags for dept-scope filter
-        "perspective": [],   # Fill manually: perspective tags
+        "domain":      domain_tags,
+        "perspective": perspective_tags,
         "custom":      [],
         "source_type": "$TYPE",
         "added":       "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     }
     with open(cat_file, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"  Added {slug} to persona-categories.json (domain/perspective empty — add tags to activate dept-scope filter)")
+    print(f"  Added {slug} to persona-categories.json")
+    print(f"    domain:      {domain_tags}")
+    print(f"    perspective: {perspective_tags}")
+    if domain_tags == ["coaching"]:
+        print("    NOTE: only default domain matched — review persona-categories.json and refine tags if needed")
 else:
     # Migrate legacy domain_tags → domain, perspective_tags → perspective if needed
     entry = personas[slug]
@@ -483,12 +670,18 @@ else:
     if "perspective_tags" in entry and "perspective" not in entry:
         entry["perspective"] = entry.pop("perspective_tags")
         migrated = True
+    # If existing entry has empty domain, backfill with auto-classification
+    if not entry.get("domain"):
+        domain_tags, _ = classify(text_probe)
+        entry["domain"] = domain_tags
+        migrated = True
+        print(f"  Auto-filled empty domain for {slug}: {domain_tags}")
     if migrated:
         with open(cat_file, "w") as f:
             json.dump(data, f, indent=2)
-        print(f"  Migrated {slug}: domain_tags→domain, perspective_tags→perspective")
+        print(f"  Updated {slug} in persona-categories.json")
     else:
-        print(f"  {slug} already in persona-categories.json")
+        print(f"  {slug} already in persona-categories.json (domain/perspective present)")
 PYEOF
 fi
 
@@ -500,10 +693,6 @@ echo "  Blueprint:          $PERSONA_FOLDER/persona-blueprint.md"
 echo "  Source text:        $TEXT_FILE"
 echo "  Searchable via:     python3 /data/.openclaw/scripts/gemini-search.py --query \"<task>\""
 echo ""
-yellow "  NEXT STEP: open persona-categories.json and fill in the domain[] and perspective[]"
-yellow "  arrays for $SLUG.  Without domain/perspective tags, the dept-scope filter in"
-yellow "  create_role_workspaces.py / select-persona-for-task.py won't include this persona"
-yellow "  in dept-scoped candidate pools."
-yellow "  Example entry (fill with real values from PERSONA-ROUTER.md §Domain Tags):"
-yellow "    \"domain\": [\"sales\", \"communication\"],"
-yellow "    \"perspective\": [\"growth-mindset\"]"
+yellow "  NEXT STEP (optional): review domain[] and perspective[] tags in persona-categories.json"
+yellow "  for $SLUG.  Auto-classification has assigned initial tags from title/author/slug —"
+yellow "  verify they match the content and add any extras from PERSONA-ROUTER.md §Domain Tags."
