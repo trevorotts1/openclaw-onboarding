@@ -61,6 +61,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$SKILL_ROOT/.." && pwd)"
+ADD_DEPT_SH="$SCRIPT_DIR/add-department.sh"
 
 if [[ -f "/data/.openclaw/openclaw.json" ]]; then
   OC_ROOT="/data/.openclaw"
@@ -169,6 +170,33 @@ while IFS= read -r dept; do
     else
       info "  [DRY-RUN] would materialize workspace for: $dept"
     fi
+  fi
+
+  # 2c. (G2 fix) Create CC workspaces row + QC specialist via add-department.sh.
+  #     The routing registration (2a) writes openclaw.json only — it NEVER
+  #     creates the SQLite workspaces row that loadDepartments() reads.
+  #     add-department.sh is idempotent: if the row already exists it returns
+  #     {"status":"already_exists"} and exits 0.
+  if [[ -f "$ADD_DEPT_SH" ]]; then
+    # Derive a human-readable display name from the slug:
+    #   "project-architecture-office" → "Project Architecture Office"
+    DEPT_DISPLAY=$(echo "$dept" | sed -E 's/-/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2); print}')
+    if [[ $DRY_RUN -eq 0 ]]; then
+      ADOUT=$(bash "$ADD_DEPT_SH" --slug "$dept" --name "$DEPT_DISPLAY" 2>&1)
+      ADD_RC=$?
+      # Parse the ---SUMMARY--- JSON block to detect created vs already_exists
+      ADD_STATUS=$(echo "$ADOUT" | awk '/^---SUMMARY---/{found=1; next} found{print; exit}' | python3 -c "import json,sys; d=json.loads(sys.stdin.read().strip()); print(d.get('status','unknown'))" 2>/dev/null || echo "unknown")
+      if [[ $ADD_RC -eq 0 ]]; then
+        ok "  CC workspace row: $dept ($ADD_STATUS)"
+      else
+        warn "  CC workspace row failed for: $dept (rc=$ADD_RC) — continuing"
+        warn "  Output: $(echo "$ADOUT" | tail -5)"
+      fi
+    else
+      info "  [DRY-RUN] would create CC workspace row for: $dept"
+    fi
+  else
+    warn "  add-department.sh not found — CC workspaces row NOT created for: $dept (orphan risk)"
   fi
 
   REGISTERED+=("$dept")

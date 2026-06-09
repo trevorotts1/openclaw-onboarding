@@ -186,9 +186,11 @@ def main():
         if existing:
             ws_id = existing[0]
             print(f"[add-department] workspace already exists: id={ws_id}")
-            # Still update the role-library + persona-stale marker so re-runs heal them
-            role_lib_changed = upsert_role_library(SLUG, NAME)
+            # Heal idempotently: role-library, persona-stale, and routing
+            # (routing may have been missing if this dept was created before G3 fix)
+            upsert_role_library(SLUG, NAME)
             mark_persona_stale()
+            register_routing_dept(SLUG)
             emit_summary({"slug": SLUG, "workspace_id": ws_id, "status": "already_exists"})
             return
 
@@ -233,6 +235,33 @@ def main():
         sql = f"INSERT INTO agents ({','.join(insert_cols)}) VALUES ({','.join('?'*len(insert_cols))})"
         db.execute(sql, [ag_data[c] for c in insert_cols])
         print(f"  + agent          {head_agent_id}  ({HEAD_NAME})")
+
+        # ─── 2b. (G3 fix) INSERT dedicated QC specialist agent ───────────────
+        # The per-dept QC gate (built CC-side) needs an agent row to resolve to.
+        # Without this row, the CC QC gate has no agent and the dept is effectively
+        # unverifiable. Idempotent: the workspaces idempotency guard above means
+        # we only reach here on a fresh INSERT, so this is always safe.
+        qc_agent_id = secrets.token_hex(8)
+        qc_name = f"QC Specialist — {NAME}"
+        qc_data = {
+            "id": qc_agent_id,
+            "workspace_id": ws_id,
+            "name": qc_name,
+            "role": f"QC Specialist",
+            "role_type": "QC Specialist",
+            "persona": f"qc-specialist-{SLUG}",
+            "description": f"Quality control gate for the {NAME} department. Reviews all deliverables before sign-off.",
+            "specialist_type": "permanent",
+            "status": "standby",
+            "avatar_emoji": "🔍",
+            "is_master": 0,
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+        insert_cols = [c for c in qc_data if c in ag_cols]
+        sql = f"INSERT INTO agents ({','.join(insert_cols)}) VALUES ({','.join('?'*len(insert_cols))})"
+        db.execute(sql, [qc_data[c] for c in insert_cols])
+        print(f"  + agent (QC)     {qc_agent_id}  ({qc_name})")
 
         # ─── 3. INSERT starter task ──────────────────────────────────────────
         task_id = secrets.token_hex(8)
@@ -280,10 +309,18 @@ def main():
     # Subagents excluded — Skill 23 handles those.
     scaffold_agent_files(SLUG, HEAD_NAME)
 
+    # ─── 9. (G3 fix) Register routing entry in openclaw.json ─────────────────
+    # add-department.sh previously wrote the CC workspaces row + agent but
+    # never called register-routing-dept.py → the dept existed in the CC board
+    # but messages were never routed there because openclaw.json had no routing
+    # entry. Now register routing idempotently for the manual path too.
+    register_routing_dept(SLUG)
+
     emit_summary({
         "slug": SLUG,
         "workspace_id": ws_id,
         "head_agent_id": head_agent_id,
+        "qc_agent_id": qc_agent_id,
         "starter_task_id": task_id,
         "status": "created",
     })
@@ -479,6 +516,38 @@ def mark_persona_stale():
             except OSError as e:
                 print(f"  [persona-stale] WARN {marker}: {e}", file=sys.stderr)
     print(f"  [persona-stale] skill 23 dir not present on disk; no-op")
+
+
+def register_routing_dept(slug):
+    """(G3 fix) Call register-routing-dept.py so openclaw.json gets a routing
+    entry for this department. Without this, the CC board shows the dept but
+    owner messages are never routed there (the routing universe is openclaw.json,
+    NOT the workspaces table).
+
+    Idempotent: register-routing-dept.py itself is idempotent (it checks before
+    inserting). Best-effort — never fails the parent."""
+    oc_json = Path(OC_ROOT) / "openclaw.json"
+    register_py = Path(SCRIPT_DIR) / "register-routing-dept.py"
+    if not register_py.is_file():
+        print(f"  [routing] register-routing-dept.py not found at {register_py} — skipping",
+              file=sys.stderr)
+        return
+    if not oc_json.is_file():
+        print(f"  [routing] openclaw.json not found at {oc_json} — skipping",
+              file=sys.stderr)
+        return
+    try:
+        result = subprocess.run(
+            ["python3", str(register_py), "--dept", slug, "--config", str(oc_json)],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            print(f"  ~ routing        registered dept '{slug}' in openclaw.json")
+        else:
+            print(f"  [routing] WARN: register-routing-dept.py exited rc={result.returncode}: "
+                  f"{result.stderr.strip()[:300]}", file=sys.stderr)
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"  [routing] WARN: routing registration failed: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
