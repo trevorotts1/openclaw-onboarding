@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # apply-fleet-standards.sh — Idempotent enforcer for the OpenClaw fleet standard:
 #   • Sub-agents fully permitted (spawn + exec + read/write across all agents)
-#   • agents.defaults.tools.exec: security=full, ask=off (PR1: spawned sub-agents unlocked)
+#   • tools.exec: security=full, ask=off (TOP-LEVEL only — valid on 2026.6.1+)
 #   • Telegram media limit 50 MB (inbound + outbound)
+#
+# NOTE (v11.3.1): agents.defaults.tools.exec is INVALID on OpenClaw 2026.6.1+
+#   and causes "agents.defaults: Invalid input" / auto-revert by doctor --fix.
+#   Only the top-level tools.exec is valid. Generation depts get per-agent
+#   tools.allow set by build-workforce.py, not by this canonical block.
 #
 # Why a script and not `openclaw config set`:
 #   Per-agent overrides in agents.list[] override global defaults. The schema
 #   validator (2026.5.20+) rejects deep nested keys via CLI. The supported
 #   pattern is direct JSON merge against openclaw.json, then validate. This
-#   script ships the canonical block verified on Sheila Reynolds' Mac (2026.5.28).
+#   script ships the canonical block verified on Sheila Reynolds' Mac (2026.6.1).
 #
 # Idempotent: re-running is a no-op if config already matches canonical block.
 #
@@ -61,16 +66,19 @@ before_json = json.dumps(cfg, sort_keys=True, indent=2)
 #   - docs.openclaw.ai/tools/subagents (allowAgents wildcard, per-agent override)
 #   - docs.openclaw.ai/gateway/security (exec.security, exec.ask, sandbox)
 #   - docs.openclaw.ai/tools/multi-agent-sandbox-tools (agent-specific policy)
-#   - Live test on OpenClaw 2026.5.28 (Sheila Reynolds' Mac mini, session logs)
-#   - PR1 (2026-06-09): agents.defaults.tools.exec added so SPAWNED sub-agents
-#     also inherit full execution policy (without this the platform default
-#     narrows spawned sub-agents to a minimal read-only tool set).
+#   - Live test on OpenClaw 2026.6.1 (Sheila Reynolds' Mac mini, v11.3.1 fix)
+#
+# v11.3.1 FIX: agents.defaults.tools.exec is REMOVED from this block.
+#   On OpenClaw 2026.6.1 the schema validator rejects it with
+#   "agents.defaults: Invalid input" and openclaw doctor --fix auto-reverts it.
+#   The exec policy lives at TOP-LEVEL tools.exec only.
+#   Generation departments get per-agent tools.allow via build-workforce.py.
 #
 # Key insight: per-agent settings override global defaults. So we must:
-#   1. Set the global default to ["*"]
-#   2. Iterate all agents and set their explicit allowAgents to ["*"] OR
+#   1. Set top-level tools.exec for the gateway-wide exec policy.
+#   2. Set agents.defaults.subagents.allowAgents to ["*"] for full spawn perm.
+#   3. Iterate all agents and set their explicit allowAgents to ["*"] OR
 #      delete their per-agent allowAgents so they inherit the global default.
-#   3. Set agents.defaults.tools.exec so ALL spawned sub-agents run at full exec.
 
 CANONICAL = {
     "tools": {
@@ -81,12 +89,6 @@ CANONICAL = {
     },
     "agents": {
         "defaults": {
-            "tools": {
-                "exec": {
-                    "security": "full",
-                    "ask": "off"
-                }
-            },
             "subagents": {
                 "allowAgents": ["*"],
                 "requireAgentId": False
