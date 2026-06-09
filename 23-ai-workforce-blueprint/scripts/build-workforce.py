@@ -3491,6 +3491,15 @@ def add_agent_to_config(config, dept_id, dept_info):
         },
     }
 
+    # CEO / Master Orchestrator agent — pure router, NEVER executes production work.
+    # Setting skills:[] blocks ALL installed OpenClaw skills for this agent so it
+    # cannot invoke image_generate, tts, video_generate, file-write production
+    # tools, coding-agent, or any other skill-backed production capability.
+    # Other department agents (graphics, video, audio, etc.) inherit the
+    # unrestricted default (no skills key → agents.defaults.skills or platform
+    # default). See docs.openclaw.ai/tools/skills-config for the skills override
+    # spec: agent-level skills REPLACES defaults, so [] = zero skills allowed.
+    is_ceo_agent = dept_id in ("ceo", "master-orchestrator", "dept-ceo")
     agent_entry = {
         "id": agent_id,
         # BUG 2 FIX: per-department identity name, never a shared one.
@@ -3501,6 +3510,10 @@ def add_agent_to_config(config, dept_id, dept_info):
         "model": model,
         "subagents": canonical_subagents,
     }
+    if is_ceo_agent:
+        # Enforce orchestrator-only posture: no production skills.
+        # The CEO routes via messaging + task-ingest API calls only.
+        agent_entry["skills"] = []
 
     agents_list.append(agent_entry)
     config["agents"]["list"] = agents_list
