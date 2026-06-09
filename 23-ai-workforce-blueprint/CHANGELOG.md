@@ -1,3 +1,21 @@
+## [v10.15.34] — 2026-06-09 — master-orchestrator: hard owner-task routing protocol (SOP-00)
+
+### Why
+The master-orchestrator (CEO) template lacked an explicit, binding rule preventing it from
+executing owner tasks directly. Without SOP-00 the CEO would perform department-level work
+itself when an owner sent a task via Telegram — bypassing the routing system, bypassing SOP
+coverage, and breaking the AI-workforce model entirely.
+
+### Changed
+- **`23-ai-workforce-blueprint/templates/role-library/master-orchestrator/master-orchestrator.md`**
+  - Added hard "You are NOT an executor" binding at the top of the "What This Role Is NOT" section
+  - Added **SOP-00: Owner Task Routing (HARD PROTOCOL — NO EXCEPTIONS)** immediately before SOP-01
+    - 7-step dispatch protocol: receive → classify to THIS client's dept roster → identify specialist → pull SOP → dispatch with full context → confirm to Owner → log
+    - Explicit semantic matching: dept names matched by MEANING (e.g. "Brand Storytelling Lab" = brand narrative work), not by canonical keyword
+    - Hard "NEVER" list: never draft deliverables, never route to a dept not in THIS client's roster, never dump to CEO/COM as a catch-all
+    - Failure-mode handling: one clarifying question OR sub-route to dept director for sub-classification (never self-execute)
+  - This is a behavioral document update — **umbrella version NOT bumped** (cut separately per standing policy)
+
 ## [v10.15.33] — 2026-06-09 — command-center pipeline fixes: 9 RC repairs to persona selection, governing-personas gate, slug hygiene, build-state backfill, and role-library path
 
 ### Why
