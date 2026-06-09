@@ -2521,6 +2521,81 @@ else
 fi
 
 # ----------------------------------------------------------
+# v6.6.0 / Step 6.4: Skill 22 Python pipeline dependencies (Mac)
+# ----------------------------------------------------------
+# Install pdfplumber, pypdf, ebooklib, mobi, beautifulsoup4, aiohttp, numpy.
+# Each verified individually; failures LOUDLY warn (not silently swallowed).
+# Mac install order: uv → pip3 --break-system-packages → pip3 → pipx fallback.
+# ────────────────────────────────────────────────────────────────────────────
+
+step "Step 6.4: Installing Skill 22 Python pipeline dependencies (Mac)"
+
+_install_py_pkg_mac() {
+    local pkg="$1"
+    local import="$2"
+    local display="${3:-$pkg}"
+
+    if python3 -c "import $import" 2>/dev/null; then
+        success "$display already installed"
+        return 0
+    fi
+    note "Installing $display..."
+
+    # Attempt 1: uv pip install
+    if command -v uv >/dev/null 2>&1; then
+        if uv pip install "$pkg" >> "$LOG_FILE" 2>&1; then
+            if python3 -c "import $import" 2>/dev/null; then
+                success "$display installed via uv"
+                return 0
+            fi
+        fi
+    fi
+
+    # Attempt 2: pip3 --break-system-packages (macOS 13+ externally-managed python)
+    if pip3 install --user "$pkg" --break-system-packages >> "$LOG_FILE" 2>&1; then
+        if python3 -c "import $import" 2>/dev/null; then
+            success "$display installed via pip3 --break-system-packages"
+            return 0
+        fi
+    fi
+
+    # Attempt 3: pip3 without the flag (older macOS pip)
+    if pip3 install --user "$pkg" >> "$LOG_FILE" 2>&1; then
+        if python3 -c "import $import" 2>/dev/null; then
+            success "$display installed via pip3"
+            return 0
+        fi
+    fi
+
+    warn "WARN: $display installation failed after all attempts."
+    warn "      Skill 22 book extraction may fail for formats requiring $display."
+    warn "      Manual fix: pip3 install --user $pkg --break-system-packages"
+    return 1
+}
+
+_install_py_pkg_mac "pdfplumber"     "pdfplumber"  "pdfplumber (PDF extraction primary)"
+_install_py_pkg_mac "pypdf"          "pypdf"       "pypdf (PDF extraction fallback)"
+_install_py_pkg_mac "ebooklib"       "ebooklib"    "ebooklib (EPUB extraction)"
+_install_py_pkg_mac "lxml"           "lxml"        "lxml (XML/HTML parser)"
+_install_py_pkg_mac "mobi"           "mobi"        "mobi (MOBI Python extractor)"
+_install_py_pkg_mac "beautifulsoup4" "bs4"         "beautifulsoup4 (HTML parser)"
+_install_py_pkg_mac "aiohttp"        "aiohttp"     "aiohttp (async HTTP client)"
+_install_py_pkg_mac "numpy"          "numpy"       "numpy (embeddings math)"
+
+_s22_deps_ok_mac=true
+for _dep_check in "pdfplumber" "pypdf" "ebooklib" "bs4" "aiohttp" "numpy"; do
+    if ! python3 -c "import $_dep_check" 2>/dev/null; then
+        warn "  MISSING after install attempts: $_dep_check"
+        _s22_deps_ok_mac=false
+    fi
+done
+if [ "$_s22_deps_ok_mac" = "true" ]; then
+    success "All Skill 22 Python deps verified (pdfplumber, pypdf, ebooklib, mobi, bs4, aiohttp, numpy)"
+else
+    warn "One or more Skill 22 Python deps are missing. See $LOG_FILE for details."
+fi
+
+# ----------------------------------------------------------
 # v10.3.0: Install Calibre (ebook-convert) for Skill 22 book extraction
 # ----------------------------------------------------------
 # Skill 22 needs `ebook-convert` to handle MOBI, AZW, AZW3, KFX formats.
@@ -2572,6 +2647,44 @@ else
         warn "Homebrew not found on this Mac. Skill 22 ebook extraction will be limited to PDF/EPUB."
         warn "To install Calibre manually: install Homebrew (https://brew.sh), then run: brew install --cask calibre"
     fi
+fi
+
+# ----------------------------------------------------------
+# v6.6.0 / Step 6.7: Install Skill 22 persona-inbox-watcher cron (Mac)
+# ----------------------------------------------------------
+# Installs a */10 launchctl-backed cron for the Mac so new files dropped into
+# coaching-personas/inbox/ are automatically converted to personas.
+# TOKEN-SAFE: MAX_PER_RUN=5 cap, lock files, stale-lock reaping, self-disables.
+# ────────────────────────────────────────────────────────────────────────────
+step "Step 6.7: Installing persona-inbox-watcher cron (Skill 22 auto-processing, Mac)"
+
+# On Mac, skills live at ~/.openclaw/skills/
+_MAC_SKILLS_DIR="$HOME/.openclaw/skills"
+_INBOX_WATCHER_SCRIPT_MAC="$_MAC_SKILLS_DIR/22-book-to-persona-coaching-leadership-system/scripts/persona-inbox-watcher.sh"
+
+if [ -f "$_INBOX_WATCHER_SCRIPT_MAC" ]; then
+    chmod +x "$_INBOX_WATCHER_SCRIPT_MAC" 2>/dev/null || true
+
+    # Resolve canonical log path (Mac)
+    _WATCHER_LOG_MAC="$HOME/.openclaw/logs/persona-inbox-watcher.log"
+    mkdir -p "$(dirname "$_WATCHER_LOG_MAC")"
+    _CRON_LINE_MAC="*/10 * * * * bash $_INBOX_WATCHER_SCRIPT_MAC >> $_WATCHER_LOG_MAC 2>&1"
+
+    if crontab -l 2>/dev/null | grep -qF "persona-inbox-watcher.sh"; then
+        success "persona-inbox-watcher cron already installed — skipping"
+    else
+        ( crontab -l 2>/dev/null | grep -v "persona-inbox-watcher"; echo "$_CRON_LINE_MAC" ) | crontab - 2>/dev/null \
+            && success "persona-inbox-watcher cron installed (*/10 min)" \
+            || warn "crontab install failed. Run manually: crontab -e and add: $_CRON_LINE_MAC"
+    fi
+
+    # Create inbox dir
+    _INBOX_DIR_MAC="$HOME/.openclaw/workspace/data/coaching-personas/inbox"
+    mkdir -p "$_INBOX_DIR_MAC" "$_INBOX_DIR_MAC/processed" "$_INBOX_DIR_MAC/.locks"
+    success "Persona inbox ready: $_INBOX_DIR_MAC"
+    note "Drop PDF/EPUB/video/text files here and the watcher will auto-convert them to personas."
+else
+    warn "persona-inbox-watcher.sh not found at $_INBOX_WATCHER_SCRIPT_MAC — cron NOT installed."
 fi
 
 # ----------------------------------------------------------

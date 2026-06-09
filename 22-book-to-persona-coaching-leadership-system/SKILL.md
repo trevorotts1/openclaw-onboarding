@@ -134,7 +134,7 @@ Confirm by saying: "TYP complete - ready to run Book Intelligence Pipeline."
 bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
     --source "/path/to/Atomic Habits - James Clear.pdf"
 
-# YouTube video (uses Skill 16 — Summarize YouTube — for transcript):
+# YouTube video (uses yt-dlp auto-subs → whisper-cpp fallback — NOT Skill 16):
 bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh \
     --source "https://youtube.com/watch?v=abc123" \
     --title "Hormozi Million Dollar Offers Talk" \
@@ -152,17 +152,18 @@ bash ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/scripts/ad
 The script will:
 1. Detect source type (book / YouTube / video / text)
 2. Extract text via the right tool:
-   - Books → pdfplumber
-   - YouTube → Skill 16 (Summarize YouTube) for transcript
-   - Local video → ffmpeg + Whisper for transcript
+   - Books → pdfplumber (PDF), ebooklib (EPUB), Calibre (MOBI/AZW3/KFX)
+   - YouTube → yt-dlp auto-subs (free/fast); falls back to yt-dlp audio + whisper-cpp
+   - Local video → ffmpeg audio extract → whisper-cpp transcript
+   - Text/MD → copied directly
 3. Drop the text into the persona library and register a `source.json` marker
 4. Invoke Skill 22's 3-phase pipeline (Extraction → Analysis → Synthesis)
 5. Re-index Gemini Engine so the new persona is immediately searchable
 6. Add a stub entry to `persona-categories.json` (you tag manually after first use)
 
 **Dependencies for non-book sources:**
-- YouTube: Skill 16 (Summarize YouTube) installed; `OPENAI_API_KEY` or `GEMINI_API_KEY` in `~/.openclaw/secrets/.env`
-- Video: `ffmpeg` + `whisper` (or `whisper-cli`). Mac: `brew install ffmpeg && pip install openai-whisper`. Linux: `apt install ffmpeg && pip install openai-whisper`.
+- YouTube: `yt-dlp` (auto-installed by install.sh). Uses yt-dlp auto-subs (free, no API key) first; falls back to yt-dlp audio + whisper-cpp transcription. Skill 16 is NOT used.
+- Video: `ffmpeg` + `whisper-cpp` (or `whisper`). Mac: `brew install ffmpeg whisper-cpp`. Linux: `apt install ffmpeg` + `pip3 install openai-whisper`. Auto-installed by install.sh v10.14.32+.
 
 ---
 
@@ -244,11 +245,13 @@ These two skills are separate but work together automatically.
 - Same persona blueprints, same Gemini Engine search, just without dept folder wiring
 
 **Categorization:**
-Every persona is auto-tagged in `persona-categories.json` after generation:
-- 12 domain tags (Marketing, Sales, Leadership, Finance, etc.)
-- 6 perspective tags (African American experience, Women's challenges, etc.)
-- Business stage and ideal user metadata
-This file is the bridge: Skill 23 reads it to build department-specific persona pools.
+Every persona is registered in `persona-categories.json` after generation with:
+- A stub `domain: []` array (MUST be filled manually — see PERSONA-ROUTER.md §Domain Tags)
+- A stub `perspective: []` array (fill manually)
+- `author`, `book`, `source_type`, `added` fields (auto-populated)
+The dept-scope filter in Skill 23 reads `domain` and `perspective` — until those arrays
+are filled, the persona will NOT appear in dept-scoped candidate pools. Run Skill 22,
+then open `persona-categories.json` and fill in the tags for the new persona.
 
 **Cross-reference path:** `~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/PERSONA-ROUTER.md`
 
