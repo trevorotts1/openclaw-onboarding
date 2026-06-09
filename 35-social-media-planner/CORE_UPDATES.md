@@ -36,13 +36,39 @@ This skill produces a 7-part weekly content series across Facebook, Instagram, L
 
 ### Video Production Process (Skill 35)
 
-1. Generate 5x 15s video segments via kie.ai (`video_generate model=google/veo-3.1-lite-preview durationSeconds=15`)
-2. Write per-segment voiceover scripts with [emotion] tags
-3. Synthesize audio segments via Fish Audio (`sag --voice [from secrets/.env: FISH_AUDIO_VOICE_ID]`)
-4. FFmpeg mux segment 1: `ffmpeg -i video_seg1.mp4 -i audio_seg1.mp3 -c:v copy -c:a aac -shortest seg1_final.mp4`
-5. FFmpeg crossfade segments: `ffmpeg -f concat -safe 0 -i segments.txt -c copy video_pre_final.mp4` (with crossfade filter_complex)
-6. Add brand intro/outro: `ffmpeg -i intro.mp4 -i pre_final.mp4 -filter_complex "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]" -map "[outv]" -map "[outa]" final.mp4`
-7. ffprobe final.mp4: verify duration=60s, resolution=1080x1920, codec=H.264, 30fps, no errors
+The agent produces every 55-60s Reel end-to-end. It NEVER asks the client to record video. Client self-recording is a last-resort fallback only after all clip generation retries are exhausted.
+
+**Full pipeline (mandatory primary path):**
+
+1. **Storyboard:** compute `scene_count = ceil(target_seconds / 8)` (e.g. ceil(60/8) = 8 scenes). For each scene write a visual prompt with continuity cues (consistent subject, wardrobe, setting, color grade, camera style). Mark each scene's incoming transition as `cut` or `crossfade`.
+2. **Generate clips:** one clip per scene via kie.ai (`video_generate model=google/veo-3.1-lite-preview durationSeconds=8`), 9:16 vertical. Retry any failed clip up to 3 times before marking it failed.
+3. **Voiceover:** generate ONE continuous 55-60s VO from the full script via Fish Audio (`sag --voice [from secrets/.env: FISH_AUDIO_VOICE_ID]`). Save as `voiceover.mp3`.
+4. **Normalize every clip** (mandatory before concat — prevents codec/resolution mismatch failures):
+   ```bash
+   ffmpeg -i raw_scene_N.mp4 \
+     -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30,setsar=1" \
+     -c:v libx264 -pix_fmt yuv420p -c:a aac -ar 48000 \
+     norm_scene_N.mp4
+   ```
+5. **Merge — jump cuts** (hard cuts, energetic; storyboard says `cut`): list normalized files in `clips.txt` as `file 'norm_scene_N.mp4'`, then:
+   ```bash
+   ffmpeg -f concat -safe 0 -i clips.txt -c copy merged.mp4
+   ```
+   **Merge — crossfades** (smoother; storyboard says `crossfade`): chain xfade filters (`offset = clip_duration - xfade_duration = 8 - 0.5 = 7.5` for each additional clip):
+   ```bash
+   ffmpeg -i norm_scene_01.mp4 -i norm_scene_02.mp4 \
+     -filter_complex "[0][1]xfade=transition=fade:duration=0.5:offset=7.5,format=yuv420p" \
+     -c:a aac merged.mp4
+   ```
+6. **Lay voiceover over merged video:**
+   ```bash
+   ffmpeg -i merged.mp4 -i voiceover.mp3 \
+     -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -shortest \
+     final_reel.mp4
+   ```
+7. **QC:** `ffprobe -v error -show_entries format=duration -of csv=p=0 final_reel.mp4` must be within 55-60s; resolution must be 1080x1920; codec must be h264. If a clip failed after retries, assemble from passing clips or offer client a shorter cut before considering self-record.
+
+Use `bash ~/.openclaw/skills/35-social-media-planner/scripts/merge_reel.sh clips.txt voiceover.mp3 final_reel.mp4` to run steps 4-7 in one command.
 
 ### Podcast Publishing Process (Skill 35)
 

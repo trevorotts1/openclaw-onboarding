@@ -1,5 +1,31 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.3.0 - June 9, 2026
+
+### Fix — Multi-clip storyboard + FFmpeg merge for full-length Reels; removes false "record yourself" punt
+
+**Why:** The previous video pipeline was ambiguous about how to handle the fact that AI video tools generate clips of at most 8-10 seconds. An agent could (and did) tell clients "the AI video tools have a hard limit of 8-12 seconds per clip, so a 55-60 second Reel can't be generated in one pass — you should record the video yourself." This is wrong behavior. The agent is capable of handling the full pipeline end-to-end.
+
+**What:**
+
+- **references/playbook.md Section 16** — Replaced the vague "generate 7-8 segments, merge with FFmpeg" instructions with a fully explicit, agent-followable pipeline:
+  - **Step A: Storyboard** — compute `scene_count = ceil(target_seconds / clip_limit_seconds)` (e.g. ceil(60/8) = 8), write a visual prompt per scene with continuity cues (consistent subject, wardrobe, setting, color grade, camera style), and mark each scene's incoming transition as `cut` or `crossfade`.
+  - **Step B: Generate clips** — one clip per scene via kie.ai Veo 3.1 Lite, retry any failed clip up to 3 times.
+  - **Step C: Voiceover** — ONE continuous VO track from the full script via Fish Audio S2 (preferred for natural delivery).
+  - **Step D: Normalize (mandatory)** — run every raw clip through a normalize pass (`scale=1080:1920, fps=30, libx264, yuv420p, aac 48kHz`) before any concat to prevent codec/resolution mismatch failures.
+  - **Step E: Merge** — Recipe 2a (jump cuts via concat demuxer) or Recipe 2b (crossfades via xfade filter with `offset = clip_duration - xfade_duration`); storyboard declares the choice.
+  - **Step F: VO overlay** — `ffmpeg -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -shortest`.
+  - **Step G: QC** — ffprobe checks duration (55-60s), resolution (1080x1920), codec (h264); retry failed clips before declaring failure.
+  - Moved client self-recording to an explicit last-resort fallback (only after all clip retries exhausted), with a specific message the agent must send instead of a silent punt.
+
+- **CORE_UPDATES.md — Video Production Process** — Rewrote the step list to match the new pipeline (storyboard → generate → normalize → merge → VO → QC), with inline FFmpeg commands and a reference to `merge_reel.sh`.
+
+- **scripts/merge_reel.sh** (new, chmod +x) — Parameterized shell script implementing Steps D-G: normalizes all raw clips, merges (cut or crossfade), overlays voiceover, runs ffprobe QC checks. Usage: `bash merge_reel.sh clips_list.txt voiceover.mp3 final_reel.mp4 [cut|crossfade]`.
+
+**Risk:** Low. Additive changes to documentation and a new helper script. No scheduling, posting, or API logic altered.
+
+---
+
 ## v2.2.0 - June 8, 2026
 
 follow-up: fixed QC accounts-grep false positive + added --announce delivery to weekly cron

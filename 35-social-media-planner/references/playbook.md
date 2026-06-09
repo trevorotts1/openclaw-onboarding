@@ -1111,9 +1111,13 @@ Content-Type: application/json
 ## 16. Video Production Pipeline (kie.ai + FFmpeg)
 
 ### Video Standard
-- **Duration:** 60 seconds
+- **Duration:** 55-60 seconds (target window; ffprobe must confirm)
 - **Ratio:** 9:16 (1080 x 1920 pixels)
 - **Output:** MP4, H.264 codec, 30fps
+
+### Key constraint: AI video tools generate clips up to ~8-10 seconds each
+
+The kie.ai video tool (Veo 3.1 Lite) generates individual clips of up to 8-10 seconds. A 55-60 second Reel requires multiple sequential clips. The agent MUST handle this entirely autonomously using the storyboard + generate + FFmpeg merge pipeline below. **The agent NEVER asks the client to record the video themselves.** Client self-recording is a hard fallback of last resort only when clip generation has failed after all retries (see Fallback at end of this section).
 
 ### Cost Comparison of Video Models on kie.ai (Verified April 2026)
 
@@ -1141,54 +1145,170 @@ The number of videos per week is configured during First Run (0, 2, or 7). Defau
 
 The remaining 5 days (Days 2-6) use static images with text for feed posts, plus the 9:16 images for Stories.
 
-### Recommended Pipeline: Image-to-Video + Audio Overlay
+### Primary Pipeline: Storyboard → Generate → FFmpeg Merge (MANDATORY — agent handles end-to-end)
 
-**Primary approach:** Generate B-roll video segments from Nano Banana 2 images using Veo 3.1 Fast, then merge with podcast/narration audio using FFmpeg.
+This is the required path. The agent executes every step. No step is delegated to the client.
 
-**Step-by-step process:**
+#### Step A: Build the Storyboard
 
-1. **Generate 7-8 Nano Banana 2 images** as B-roll frames for the day's video at 9:16 (1080x1920). Cost: ~$0.28-$0.32
-2. **Generate 7-8 video segments** at 8 seconds each using Veo 3.1 Lite image-to-video on kie.ai. Each image becomes an 8-second motion clip. Cost: $0.15 x 8 = $1.20
-3. **Generate or extract the audio track.** Use Fish Audio S2 text-to-speech with emotion tags to produce a 60-second narration at 192 kbps (required for Podbean).
-4. **Merge video segments using FFmpeg on OpenClaw:**
-   ```
-   ffmpeg -f concat -safe 0 -i segments.txt -i audio.wav -c:v libx264 -c:a aac -b:a 192k -shortest -y output.mp4
-   ```
-5. **Total cost per 60-second video (Veo 3.1 Lite):** ~$1.48-$1.52 (images + video segments)
-6. **Weekly cost for 2 videos (Day 1 + Day 7):** ~$2.96-$3.04
+Compute the number of scenes needed:
+```
+clip_limit_seconds = 8   (Veo 3.1 Lite per-clip max)
+scene_count = ceil(target_seconds / clip_limit_seconds)
+# Example: ceil(60 / 8) = 8 scenes
+```
+
+For each scene, write a visual prompt that includes:
+- The specific content for that beat of the script (what is happening, what is being shown)
+- Continuity cues so all clips read as one continuous piece:
+  - Consistent subject appearance (same wardrobe, same face/figure description if a person is on screen)
+  - Consistent setting and color grade (same environment, lighting quality, color temperature)
+  - Consistent camera style (same focal length language: wide/medium/close, same movement language: static/slow push/pan)
+- The transition type INTO this scene: `cut` (hard jump cut) or `crossfade` (smooth blend)
+  - Use `cut` for high-energy, fast-paced Reels (default)
+  - Use `crossfade` for smoother, more cinematic Reels
+  - The storyboard decides per scene; most Reels are all-cuts or all-crossfades for consistency
+
+**Storyboard format per scene:**
+```
+Scene N of M | Transition into: [cut | crossfade] | Duration: ~8s
+Script beat: [the portion of the script this scene covers]
+Visual prompt: [detailed, continuity-consistent prompt]
+```
+
+#### Step B: Generate Each Clip
+
+Generate one clip per scene using the existing kie.ai video tool:
+- Model: Veo 3.1 Lite (image-to-video from a Nano Banana 2 source image, OR text-to-video)
+- Aspect ratio: 9:16 (vertical, 1080x1920 where supported)
+- Duration: ~8 seconds per clip
+- Naming: `raw_scene_01.mp4`, `raw_scene_02.mp4`, ... `raw_scene_N.mp4`
+
+If a clip fails to generate, retry up to 3 times before marking it failed. Log each failure. Do not fall back to client self-recording until ALL retries for ALL failed clips are exhausted (see Fallback).
+
+#### Step C: Generate the Voiceover
+
+Generate ONE continuous voiceover track from the full 55-60 second script using Fish Audio S2 (`sag --voice [from secrets/.env: FISH_AUDIO_VOICE_ID]`). A single continuous track is preferred over per-scene tracks because it preserves natural delivery, pacing, and breath phrasing across the full Reel.
+
+If per-scene VO is needed (e.g., the scene timings differ significantly from the script rhythm), generate per-scene audio aligned to each scene's duration and merge them in order using:
+```bash
+ffmpeg -f concat -safe 0 -i vo_parts.txt -c copy voiceover_combined.mp3
+```
+
+Save the final VO as `voiceover.mp3`.
+
+#### Step D: Normalize Every Clip to Identical Reel Spec (MANDATORY before any concat)
+
+Before merging, normalize every raw clip to prevent codec/resolution/framerate mismatches that cause concat failures or visual glitches. Run this command on each raw clip:
+```bash
+ffmpeg -i raw_scene_01.mp4 \
+  -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30,setsar=1" \
+  -c:v libx264 -pix_fmt yuv420p \
+  -c:a aac -ar 48000 \
+  norm_scene_01.mp4
+```
+Repeat for every clip: `norm_scene_01.mp4`, `norm_scene_02.mp4`, ... `norm_scene_N.mp4`.
+
+This step is not optional. Skipping it is the most common cause of FFmpeg concat errors.
+
+#### Step E: Merge Clips with FFmpeg
+
+Choose the merge recipe based on the storyboard's transition type.
+
+**Recipe 2a — Jump Cuts (hard cuts, fast/energetic Reels):**
+
+Create `clips.txt` listing each normalized file:
+```
+file 'norm_scene_01.mp4'
+file 'norm_scene_02.mp4'
+file 'norm_scene_03.mp4'
+file 'norm_scene_04.mp4'
+file 'norm_scene_05.mp4'
+file 'norm_scene_06.mp4'
+file 'norm_scene_07.mp4'
+file 'norm_scene_08.mp4'
+```
+
+Merge with concat demuxer (fast, lossless copy — works because all clips are normalized to identical spec):
+```bash
+ffmpeg -f concat -safe 0 -i clips.txt -c copy merged.mp4
+```
+
+**Recipe 2b — Crossfade transitions (smoother, more cinematic Reels):**
+
+For each pair of adjacent clips, compute `offset = clip_A_duration - xfade_duration`. For 8-second clips with 0.5-second crossfades: `offset = 8 - 0.5 = 7.5`. Chain xfade filters for all scenes (example for 3 clips; extend the pattern for more):
+```bash
+ffmpeg -i norm_scene_01.mp4 -i norm_scene_02.mp4 -i norm_scene_03.mp4 \
+  -filter_complex \
+    "[0][1]xfade=transition=fade:duration=0.5:offset=7.5,format=yuv420p[ab]; \
+     [ab][2]xfade=transition=fade:duration=0.5:offset=15.0,format=yuv420p[v]" \
+  -map "[v]" -c:v libx264 -c:a aac merged.mp4
+```
+The offset for each subsequent xfade increases by `clip_duration - xfade_duration` per clip added (e.g., 7.5, 15.0, 22.5, 30.0, ...).
+
+**Which recipe to use:** Jump cuts (2a) = default for social Reels; crossfades (2b) = use when the storyboard calls for a smoother feel. The storyboard (Step A) declares the choice per scene.
+
+#### Step F: Lay Voiceover Over the Merged Video
+
+Replace or mix the video audio with the continuous voiceover track:
+```bash
+ffmpeg -i merged.mp4 -i voiceover.mp3 \
+  -map 0:v:0 -map 1:a:0 \
+  -c:v copy -c:a aac -shortest \
+  final_reel.mp4
+```
+
+This replaces any audio from the generated clips with the Fish Audio voiceover.
+
+#### Step G: QC — Verify Final Output
+
+```bash
+# Verify duration is within target window (55-60 seconds):
+ffprobe -v error -show_entries format=duration -of csv=p=0 final_reel.mp4
+
+# Verify resolution is 1080x1920:
+ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x final_reel.mp4
+
+# Verify codec is H.264:
+ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 final_reel.mp4
+```
+
+Pass criteria:
+- Duration: within 55-60 seconds (or the configured target window)
+- Resolution: 1080x1920
+- Codec: h264
+
+If any check fails: diagnose and re-run the failed step (e.g., if duration is short, a clip likely failed to generate — retry that clip). Do NOT deliver a failing video.
+
+The helper script `scripts/merge_reel.sh` implements Steps D-G in a parameterized, reusable form. Use it: `bash scripts/merge_reel.sh clips.txt voiceover.mp3 final_reel.mp4`.
+
+#### Step H: Cost Summary
+
+- Images for scenes (Nano Banana 2 at 1K): 8 x $0.04 = ~$0.32
+- Video clips (Veo 3.1 Lite at 8 sec each): 8 x $0.15 = $1.20
+- **Total per 60-second video:** ~$1.52
+- **Weekly cost for 2 videos (Day 1 + Day 7):** ~$3.04
 
 ### Alternative Pipeline: Text-to-Video (Simpler, Slightly More Expensive)
 
-If image-to-video quality is insufficient:
+If image-to-video quality is insufficient, generate each scene from text prompts instead of source images:
 
-1. Write 7-8 text prompts describing each 8-second scene.
+1. Write a detailed text-to-video prompt per scene (use the storyboard visual prompts from Step A directly).
 2. Generate each segment using Veo 3.1 Fast text-to-video on kie.ai.
-3. Merge with FFmpeg as above.
-4. Cost: Same ($0.40 per segment).
+3. Proceed through Steps D-G above (normalize, merge, VO overlay, QC) — identical process.
+4. Cost: $0.30 per segment x 8 = $2.40 per video (vs $1.52 for image-to-video).
 
-### FFmpeg Merge Commands
+### Fallback (LAST RESORT — client self-recording)
 
-**Create a segments list file (segments.txt):**
-```
-file 'segment_01.mp4'
-file 'segment_02.mp4'
-file 'segment_03.mp4'
-file 'segment_04.mp4'
-file 'segment_05.mp4'
-file 'segment_06.mp4'
-file 'segment_07.mp4'
-file 'segment_08.mp4'
-```
+This path is only reached when ALL of the following are true:
+- Clip generation has been retried 3 times for every failed scene
+- The agent cannot produce enough passing clips to assemble a complete Reel
+- The agent has notified the owner via Telegram with the specific failure details
 
-**Merge segments + add audio:**
-```
-ffmpeg -f concat -safe 0 -i segments.txt -i narration.wav -c:v libx264 -c:a aac -map 0:v -map 1:a -shortest -y final_video.mp4
-```
+Only at that point, send the client this message:
+> "I ran into a technical issue generating clips for this week's video — I retried each scene 3 times and [N] scenes still failed. I can either (a) produce a shorter version using the clips that did succeed, or (b) if you'd like to record a 60-second video yourself, send it to me and I'll add the voiceover and produce the final Reel. Which would you prefer?"
 
-**Add fade transitions between segments (optional):**
-```
-ffmpeg -i segment_01.mp4 -i segment_02.mp4 -filter_complex "[0:v][1:v]xfade=transition=fade:duration=0.5:offset=7.5" -y merged.mp4
-```
+This message is the fallback, not the default. The default is always the agent completing the video end-to-end.
 
 ---
 
