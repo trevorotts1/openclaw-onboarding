@@ -273,15 +273,38 @@ Read brand info from core files, then ask only what's missing:
 1. Read `identity.md`, `soul.md`, `memory.md`, `agents.md`, `heartbeat.md`
 2. Extract: brand name, founder, target audience, brand colors, tone, voice, products/services
 3. Ask ONLY for items not found in core files
-4. Create the client's Google Sheet via n8n webhook:
+4. Establish the client's content Google Sheet — **ADOPT EXISTING SHEET FIRST, then create**:
 
-```bash
-curl -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \
-  -H "Content-Type: application/json" \
-  -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\"}"
-```
+   **4a. Check MEMORY.md** for an existing `content_sheet_id` or `content_sheet_url`. If found, use it — never create a duplicate. Skip to step 4d.
 
-Store `sheetUrl` and `sheetId` from response in MEMORY.md.
+   **4b. Check if an existing sheet ID was provided during onboarding** (e.g. Angeleen's is `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c`). If yes, adopt it — skip to 4d.
+
+   **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account):
+   ```bash
+   RESPONSE=$(curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \
+     -H "Content-Type: application/json" \
+     -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\"}")
+   SHEET_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetId'])")
+   SHEET_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetUrl'])")
+   ```
+   If the webhook fails after 3 retries: use Angeleen's template ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back.
+
+   **4d. Record `content_sheet_id` and `content_sheet_url` in MEMORY.md and skill config:**
+   ```bash
+   # Write to MEMORY.md (under ## Skill 35 — Social Media Planner section)
+   # content_sheet_id: $SHEET_ID
+   # content_sheet_url: $SHEET_URL
+
+   # Wire into openclaw config so the agent can read it at runtime
+   openclaw config set env.vars.SKILL35_CONTENT_SHEET_ID "$SHEET_ID"
+   openclaw config set env.vars.SKILL35_CONTENT_SHEET_URL "$SHEET_URL"
+   ```
+
+   **4e. Verify the agent knows the link:**
+   After writing config, the agent MUST be able to answer "what is my social media planner link?" by reading `content_sheet_url` from MEMORY.md. Test this before proceeding.
+
+   **4f. Google Sheets write auth — how this skill reads/writes the sheet:**
+   The agent does NOT use Google Workspace OAuth or a `client_secret.json`. Sheet creation and initial writes go through the `https://main.blackceoautomations.com/webhook/social-planner-sheet-create` n8n webhook (service account on the BlackCEO Automations side). **The agent itself never calls the Google Sheets API directly** — all sheet logging goes through the same webhook or through GHL's content system as a fallback. If the agent cannot reach the webhook, it logs to a local file at `~/.openclaw/data/skill35/content-log.jsonl` and queues the webhook call for retry. The agent NEVER responds "gws is not authenticated" or "I don't have a client_secret.json" — if the webhook is unavailable, it degrades gracefully to local logging.
 
 5. Ask: "What action link should I include in social media comments this week?" → store as `SOCIAL_MEDIA_ACTION_LINK` in MEMORY.md.
 6. Ask: "How many videos per week — 0, 2, or 7?" → store as `VIDEO_PREFERENCE` in MEMORY.md.
@@ -362,8 +385,9 @@ Send the client this exact summary:
 
 > ✅ Social Media Planner activated.
 >
-> • Google Sheet created and shared with you: [link]
+> • Content calendar sheet: [content_sheet_url from MEMORY.md]
 > • GHL Social Planner connected via [MCP / direct API]
+> • Finished media delivered as public links (GHL CDN — no attachment size limits)
 > • Weekly theme heartbeat scheduled (Saturdays 8 AM)
 > • Video preference: [0/2/7] per week
 > • Podcast: [enabled / deferred]
@@ -391,6 +415,10 @@ Send the client this exact summary:
 - [ ] FFmpeg ≥4.0 working
 - [ ] ImageMagick working
 - [ ] First-Run Protocol complete (brand info, Google Sheet, action link, video preference, notifications)
+- [ ] `content_sheet_id` present in MEMORY.md and `openclaw config env.vars.SKILL35_CONTENT_SHEET_ID`
+- [ ] `content_sheet_url` present in MEMORY.md and `openclaw config env.vars.SKILL35_CONTENT_SHEET_URL`
+- [ ] Agent can answer "what is my social media planner link?" without error
+- [ ] Finished media delivery verified: upload to GHL Media Library → return CDN link → no raw Telegram file attachment for files >10 MB
 - [ ] CORE_UPDATES.md applied surgically to AGENTS.md / TOOLS.md / MEMORY.md
 - [ ] HEARTBEAT.md updated with Saturday theme-request schedule
 - [ ] QC.md run with score 8.5/10+ (or loop completed)

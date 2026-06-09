@@ -7,12 +7,10 @@
 # reconciled to `social-media-planner` on BOTH repos (v10.15.48). Do NOT rename.
 name: social-media-planner
 description: Multi-agent content publishing engine that researches, creates, produces, schedules, and publishes content across 8 platforms (WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook) — handles text, images, videos, podcasts, and HTML email newsletters using a 15+6 agent model.
-# `workflow_id` is the INTERNAL antfarm CLI workflow identifier used by
-# `cli.js workflow run content-publishing-engine ...` — it is NOT the OpenClaw
-# skill name and OpenClaw never registers from it. Renamed from the legacy
-# `skill_name` key (v10.15.48) so it can never be mistaken for the registration
-# name again. The antfarm workflow id stays `content-publishing-engine`.
-workflow_id: content-publishing-engine
+# `pipeline_id` is the internal identifier for the content publishing pipeline
+# run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
+# registers from it.
+pipeline_id: content-publishing-engine
 version: v1.4.0
 author: Stefanie
 created_date: 2026-04-14
@@ -112,16 +110,54 @@ QC: Performance.
 QC: Final.
 
 ## Usage
-Spawn via Antfarm or TaskFlow:
+
+Spawn the Content Publishing Engine via OpenClaw subagent runtime (model must be from the Ollama-Cloud-first chain — see `shared-utils/select_model.py --purpose-tier mid`):
+
 ```
-node ~/.openclaw/workspace/antfarm/dist/cli/cli.js workflow run content-publishing-engine "Publish: [topic]" --vars="brand=[from identity.md: brand name]"
+sessions_spawn task="Run Content Publishing Engine on [topic]" runtime="subagent" model="ollama/minimax-m2.7:cloud"
 ```
-Or subagent (model must be from the Ollama-Cloud-first chain — see `shared-utils/select_model.py --purpose-tier mid`):
-`sessions_spawn task="Run Content Publishing Engine on [topic]" runtime="subagent" model="ollama/minimax-m2.7:cloud"`
+
 Fallback if Ollama Cloud Minimax isn't available: `model="openrouter/xiaomi/mimo-v2-pro"`. Never hardcode the OpenRouter option as the primary.
+
+The subagent will read `identity.md`, pull credentials from `[from secrets/.env: GHL_LOCATION_ID]`, run the 15+6 agent pipeline (Research → Create → Produce → Schedule → Publish), upload finished media to the client's GHL Media Library, and return public CDN links — it does NOT require any external CLI tools.
+
+## Config Fields
+
+The following fields are stored in the skill config and MUST be populated during setup. The agent reads them before every run.
+
+| Field | Description | Where set |
+|-------|-------------|-----------|
+| `content_sheet_id` | Google Sheet ID for the client's content calendar (e.g. `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c`) | MEMORY.md + `openclaw config set` during INSTALL.md Step 7 |
+| `content_sheet_url` | Full Google Sheet URL the agent uses to answer "what's my social media planner link?" | MEMORY.md during INSTALL.md Step 7 |
+
+**The agent can always answer "what is my social media planner link?"** by reading `content_sheet_url` from MEMORY.md. It never responds "gws is not authenticated" or "I don't have the link."
+
+## Media Delivery Contract
+
+All finished media (assembled Reels, podcast MP3s, image sets) MUST be delivered via a public link — never as a raw Telegram file attachment (Telegram's Bot API cap is 50 MB send / 20 MB receive for bots; large files silently fail). The canonical delivery path:
+
+1. **Produce** the file locally (FFmpeg merge, Fish Audio generation, etc.).
+2. **Upload to the client's own GHL Media Library** via:
+   ```bash
+   curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
+     -H "Authorization: Bearer [from secrets/.env: GOHIGHLEVEL_API_KEY]" \
+     -H "Version: 2021-07-28" \
+     -F "file=@/path/to/file.mp4" \
+     -F "hosted=true" \
+     -F "fileProcessingOpts={\"forceReprocess\": true}"
+   ```
+   The response body contains a `url` field with a permanent public CDN link of the form `https://assets.cdn.filesafe.space/[LOCATION_ID]/media/[filename]`. This is the authoritative GHL media URL — confirmed from Skill 28 (cinematic-forge) which documents the same endpoint and CDN format.
+3. **Extract the `url` field** from the response JSON.
+4. **Log a row** in the content sheet (`content_sheet_id`) with: CDN link, title, type (video/audio/image), platform, date, status=`published`.
+5. **Reply to owner** with the CDN link only — never attach the raw file to Telegram.
+
+**Size threshold:** Any file over 10 MB MUST go through GHL CDN delivery. Files under 10 MB MAY be attached directly only if the operator explicitly configures `direct_attach_under_10mb=true` in MEMORY.md; default is always link delivery.
+
+**If GHL upload fails:** retry once after 30 seconds. If still failing, notify owner via Telegram that media is queued for retry, log the error, and do NOT send the raw file attachment.
 
 ## Variable Reference
 - `[from identity.md: brand name]`, `[from identity.md: brand voice]`
-- `[from secrets/.env: GHL_LOCATION_ID]`, `[from secrets/.env: WORDPRESS_URL]`, `[from secrets/.env: MEDIUM_TOKEN]`, etc.
+- `[from secrets/.env: GOHIGHLEVEL_API_KEY]`, `[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]`, `[from secrets/.env: WORDPRESS_URL]`, `[from secrets/.env: MEDIUM_TOKEN]`, etc.
 - `[from config: video specs]`, `[from config: image model]`, `[from config: monitor_interval]`
+- `[from memory.md: content_sheet_id]`, `[from memory.md: content_sheet_url]`
 - Pull via `read` tools before agent prompts.
