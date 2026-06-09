@@ -1,3 +1,42 @@
+## [v11.1.0] — 2026-06-09 — General Task + PAO departments, auto-wire detection, Ollama HARD RULE, model-object enforcement
+
+### Overview
+
+This is a **minor release** — new functionality (2 new mandatory departments, post-build extension detection, N30/N31 hard rules) built on top of v11.0.1 with zero breaking changes to existing client installs.
+
+### Highlights
+
+#### Step 1 (merged pre-bump)
+- **Skill 22 (Book-to-Persona):** argparse `--single-book`, path unification, inbox watcher, headless Calibre, schema fix
+- **Skill 23 (CEO = orchestrator-only):** `build-workforce.py` production tool lock (CEO agents get `"skills": []`) + SOP-00 canonical Owner Task Routing document
+
+#### Step 2 — Two new mandatory departments (floor 23→26)
+- **General Task** (`general-task`): 5 roles — head-of-general-task, generalist-operator, triage-classifier, qc-specialist-general-task, sop-writer. Routing priority 1 (lowest, fallback-only). Zero-drop catch-all for tasks that fail all routing.
+- **Project Architecture Office** (`project-architecture-office`): 6 roles — chief-project-architect, research-agent, code-monitor, code-editor, qc-agent, sop-writer. Loop engineering harness: max 12 loops, 72h deadline, ≥8.5 gate, pao-reaper cron.
+- **PRD folder templates**: PRD.md, checklist.md, CHANGELOG.md, todo.md, QC.md, loop-state.json
+- `department-naming-map.json` v2.3.0→v2.4.0 (mandatory block updated, 26-dept floor)
+- `department-floor.py` HARDCODED_MANDATORY + evaluate_floor() updated (23→26)
+- `_index.json`: total_roles 233→244, total_departments 17→19
+- 2x `suggested-roles/` files added
+
+#### Step 3 — Auto-wire detection + Ollama hard rules
+- `32-command-center-setup/scripts/sync-extensions.sh`: master idempotent post-build orchestrator
+- `32-command-center-setup/scripts/detect-extensions.py`: manifest-diff detector (last-sync.json)
+- `32-command-center-setup/scripts/register-routing-dept.py`: routing registration (N31-compliant)
+- `32-command-center-setup/EXTENSIBILITY.md`: operator runbook
+- `universal-sops/adding-capability-after-build.md`: DMAIC SOP for agents
+- **N30 HARD RULE**: `OLLAMA_BASE_URL` MUST be `https://ollama.com` for `:cloud` models — NEVER `127.0.0.1`
+- **N31 HARD RULE**: agent model field MUST be object `{primary, fallbacks:[...]}` — never bare string
+- `build-workforce.py` N31 FIX: `add_agent_to_config()` now writes model as object
+
+#### Step 4 — Version bump (this commit)
+- `bump-version.sh v11.1.0` run atomically — all 9 markers agree at v11.1.0
+
+### Files touched (complete list)
+See individual step CHANGELOG entries below (v11.1.0-step2, v11.1.0-step3) for per-file details.
+
+---
+
 ## [v11.1.0-step3] — 2026-06-09 — Auto-wire detection + Ollama HARD RULE + model-object enforcement (v11.1.0 pre-bump)
 
 ### Why
