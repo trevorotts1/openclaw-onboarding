@@ -303,8 +303,11 @@ Read brand info from core files, then ask only what's missing:
    **4e. Verify the agent knows the link:**
    After writing config, the agent MUST be able to answer "what is my social media planner link?" by reading `content_sheet_url` from MEMORY.md. Test this before proceeding.
 
-   **4f. Google Sheets write auth — how this skill reads/writes the sheet:**
-   The agent does NOT use Google Workspace OAuth or a `client_secret.json`. Sheet creation and initial writes go through the `https://main.blackceoautomations.com/webhook/social-planner-sheet-create` n8n webhook (service account on the BlackCEO Automations side). **The agent itself never calls the Google Sheets API directly** — all sheet logging goes through the same webhook or through GHL's content system as a fallback. If the agent cannot reach the webhook, it logs to a local file at `~/.openclaw/data/skill35/content-log.jsonl` and queues the webhook call for retry. The agent NEVER responds "gws is not authenticated" or "I don't have a client_secret.json" — if the webhook is unavailable, it degrades gracefully to local logging.
+   **4f. Google Sheets write auth — TWO webhooks, TWO purposes (do NOT confuse them):**
+   - **`social-planner-sheet-create`** (`POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`): used ONCE at install time to create a new Google Sheet for the client (copies the template, sets permissions). Payload: `{brandName, clientEmail}`. Never call this for row logging.
+   - **`social-planner-row-append`** (`POST https://main.blackceoautomations.com/webhook/social-planner-row-append`): used on EVERY publish cycle to append a content row to the client's existing sheet. Payload: `{sheetId, row: {Week Of, Theme of the Week, Core Content, ..., Notes}}`. This is the row-log step in the Media Delivery Contract.
+
+   The agent does NOT use Google Workspace OAuth or a `client_secret.json`. Both webhooks run on the BlackCEO Automations operator n8n and use the operator's Google service account — clients need no Google credentials. **The agent itself never calls the Google Sheets API directly.** If either webhook is unavailable, log to `~/.openclaw/data/skill35/content-log.jsonl` and queue for retry. The agent NEVER responds "gws is not authenticated" or "I don't have a client_secret.json".
 
 5. Ask: "What action link should I include in social media comments this week?" → store as `SOCIAL_MEDIA_ACTION_LINK` in MEMORY.md.
 6. Ask: "How many videos per week — 0, 2, or 7?" → store as `VIDEO_PREFERENCE` in MEMORY.md.

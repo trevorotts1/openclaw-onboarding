@@ -1,5 +1,27 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.6.0 - June 9, 2026
+
+### Fix — Wire row-logging to new social-planner-row-append webhook (fleet-wide planner bug fix)
+
+**Why:** Content never landed in clients' Google Sheet planners. The only n8n webhook (`social-planner-sheet-create`) CREATES a new sheet on every call and has no row-append path. After produce → GHL upload → get CDN link, the row-log step had nowhere to write.
+
+**What:**
+- Built new n8n workflow `social-planner-row-append` (ID: `myXde6jbIIkaG5zW`) on `main.blackceoautomations.com`:
+  - `POST /webhook/social-planner-row-append` with body `{sheetId, row: {Week Of, Theme of the Week, ..., Notes}}`
+  - Code node maps `body.row.*` fields to the 20-column order of the **Weekly Overview** tab
+  - HTTP Request node calls `sheets.googleapis.com/v4/spreadsheets/{sheetId}/values/Weekly%20Overview!A:T:append` with the operator's Google Sheets OAuth2 credential (`4IoTZHAybRblm172` — management blackceo Google Sheets account)
+  - Returns `{success: true, sheetId, updatedRange}` on success
+  - Workflow is ACTIVE; webhook path is production-ready
+- **SKILL.md Media Delivery Contract step 4**: rewrote from vague "Log a row" to explicit `social-planner-row-append` curl call with full payload contract. Added clear note: `social-planner-sheet-create` is for first-time creation ONLY.
+- **INSTALL.md Step 7 section 4f**: Clarified the two-webhook architecture — `sheet-create` (once, at install) vs `row-append` (every publish cycle). Explicit payload contract for each. No client Google credentials required — both run via operator service account.
+
+**Verified:** Test row successfully appended to Angeleen's sheet `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` Row 6 `'Weekly Overview'!A6:T6` — all 20 columns correctly populated.
+
+**Risk:** Low. Additive webhook + documentation change. No existing publish, schedule, or GHL logic altered.
+
+---
+
 ## v2.5.0 - June 9, 2026
 
 ### Fix 1 — Remove private operator tool reference; replace with OpenClaw subagent runtime
