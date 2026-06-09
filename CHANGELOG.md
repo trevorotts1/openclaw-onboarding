@@ -1,3 +1,14 @@
+## [v11.0.0]  -  2026-06-09  -  milestone: command-center pipeline repair, Skill 01 v6.5.9, Skill 35 v2.5.0, antfarm purge, graphify-out removed
+
+- **Command-center pipeline repair (Skill 23 / Skill 32):** canonical dept-slug routing, master-agent wiring, SOP-into-dispatch, persona null-guard + governing-personas + company-config v2, build-state backfill, `ROLE_LIBRARY_PATH` env resolution.
+- **Skill 01 Teach-Yourself-Protocol v6.5.9** — independent per-skill version; umbrella does not track its internals.
+- **Skill 35 Social Media Planner v2.5.0** — autonomous video multi-clip + ffmpeg pipeline, podcast Fish Audio Season 2, webhook content-sheet, GHL link delivery; private "Ant Farm" CLI removed from skill.
+- **Antfarm purge:** private operator tool name removed from all code, comments, docs, and changelogs (except Skill 35 CHANGELOG which retains context). "Ant Farm exemption" renamed to "nested workflow agent exemption" throughout; shell variable `skipped_antfarm` → `skipped_workflow_agent`.
+- **graphify-out removed + gitignored:** generated knowledge-graph artifacts deleted; `graphify-out/` added to `.gitignore` so they can never be re-committed.
+- All 9 umbrella version markers bumped v10.15.53 → v11.0.0 via `scripts/bump-version.sh`. Per-skill `skill-version.txt` files (Skill 01 v6.5.9, Skill 35 v2.5.0, etc.) are NOT touched by the umbrella bump.
+
+---
+
 ## [v10.15.53]  -  2026-06-07  -  feat: client agents escalate via the n8n webhook, not the broken bot-to-bot Telegram group post
 
 ### Why
