@@ -137,7 +137,7 @@ SLUG=""
 
 case "$TYPE" in
   book)
-    blue "── Extracting book text via pdfplumber ──"
+    blue "── Extracting book text (pdfplumber for PDF; ebooklib for EPUB; Calibre for MOBI/AZW3) ──"
     # Slug = author-title (or fall back to filename)
     BASENAME=$(basename "$SOURCE")
     BASENAME_NO_EXT="${BASENAME%.*}"
@@ -446,29 +446,49 @@ fi
 
 if [ -f "$CAT_FILE" ]; then
   blue "── Updating persona-categories.json ──"
+  # v6.6.0 SCHEMA FIX: use canonical field names domain/perspective/custom
+  # (NOT domain_tags/perspective_tags). The dept-scope filter in
+  # create_role_workspaces.py reads data["personas"][slug]["domain"] — any
+  # persona written with the old _tags suffix is invisible to that filter.
   python3 - <<PYEOF
-import json
+import json, datetime
 cat_file = "$CAT_FILE"
 slug = "$SLUG"
 with open(cat_file) as f:
     data = json.load(f)
-personas = data.get("personas", {}) if "personas" in data else data
+personas = data.get("personas", {})
+if not isinstance(personas, dict):
+    personas = {}
+    data["personas"] = personas
 if slug not in personas:
     personas[slug] = {
-        "domain_tags": [],   # Tag manually or via post-processor
-        "perspective_tags": [],
+        "author":      "$AUTHOR",
+        "book":        "${TITLE:-$SLUG}",
+        "domain":      [],   # Fill manually: domain tags for dept-scope filter
+        "perspective": [],   # Fill manually: perspective tags
+        "custom":      [],
         "source_type": "$TYPE",
-        "added": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        "added":       "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     }
-    if "personas" in data:
-        data["personas"] = personas
-    else:
-        data.update(personas)
     with open(cat_file, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"  Added $SLUG to persona-categories.json (no tags yet — review and tag)")
+    print(f"  Added {slug} to persona-categories.json (domain/perspective empty — add tags to activate dept-scope filter)")
 else:
-    print(f"  $SLUG already in persona-categories.json")
+    # Migrate legacy domain_tags → domain, perspective_tags → perspective if needed
+    entry = personas[slug]
+    migrated = False
+    if "domain_tags" in entry and "domain" not in entry:
+        entry["domain"] = entry.pop("domain_tags")
+        migrated = True
+    if "perspective_tags" in entry and "perspective" not in entry:
+        entry["perspective"] = entry.pop("perspective_tags")
+        migrated = True
+    if migrated:
+        with open(cat_file, "w") as f:
+            json.dump(data, f, indent=2)
+        print(f"  Migrated {slug}: domain_tags→domain, perspective_tags→perspective")
+    else:
+        print(f"  {slug} already in persona-categories.json")
 PYEOF
 fi
 
@@ -480,6 +500,10 @@ echo "  Blueprint:          $PERSONA_FOLDER/persona-blueprint.md"
 echo "  Source text:        $TEXT_FILE"
 echo "  Searchable via:     python3 /data/.openclaw/scripts/gemini-search.py --query \"<task>\""
 echo ""
-yellow "  NEXT STEP: open persona-categories.json and add domain_tags + perspective_tags for $SLUG."
-yellow "  Without tags, the keyword filter in select-persona-for-task.py won't include this persona"
+yellow "  NEXT STEP: open persona-categories.json and fill in the domain[] and perspective[]"
+yellow "  arrays for $SLUG.  Without domain/perspective tags, the dept-scope filter in"
+yellow "  create_role_workspaces.py / select-persona-for-task.py won't include this persona"
 yellow "  in dept-scoped candidate pools."
+yellow "  Example entry (fill with real values from PERSONA-ROUTER.md §Domain Tags):"
+yellow "    \"domain\": [\"sales\", \"communication\"],"
+yellow "    \"perspective\": [\"growth-mindset\"]"

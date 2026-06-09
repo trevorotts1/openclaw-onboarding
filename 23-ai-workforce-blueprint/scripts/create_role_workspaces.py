@@ -36,8 +36,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# v10.15.4: vendored lib/ ships with the installed skill folder; resolves
-# detect_platform under ~/.openclaw/skills/23-ai-workforce-blueprint/. Repo-root
+# v10.16.4: vendored lib/ ships with the installed skill folder; resolves
+# detect_platform under /data/.openclaw/skills/23-ai-workforce-blueprint/. Repo-root
 # shared-utils/ retained as fallback for in-repo invocation.
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
@@ -995,6 +995,52 @@ def build_all_roles_for_dept(dept_path, dept_id, roles, workspace_root):
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
+def refresh_all_governing_personas_md(workspace_root: Path) -> int:
+    """
+    v6.6.0 — --refresh-personas-only: walk every dept folder under workspace_root
+    and re-write governing-personas.md from the current persona-categories.json.
+
+    Cheap, idempotent, no LLM calls. Called by orchestrator.py Phase 6b after
+    a new persona is appended to persona-categories.json so the command-center
+    dashboard picks it up without a full workspace rebuild.
+
+    Returns the number of dept folders refreshed.
+    """
+    refreshed = 0
+    # Dept folders are direct children of workspace_root that look like depts
+    # (contain a governing-personas.md OR have role sub-folders).
+    for child in sorted(workspace_root.iterdir()):
+        if not child.is_dir():
+            continue
+        # Heuristic: dept folders contain role sub-folders or an existing
+        # governing-personas.md. Skip obvious non-dept dirs.
+        skip_names = {"node_modules", ".git", "scripts", "templates", "shared-utils",
+                      "lib", "agent-prompts", "personas", "books", "text", "logs",
+                      "backups", "credentials", "secrets", "media"}
+        if child.name.startswith(".") or child.name in skip_names:
+            continue
+        governing_md = child / "governing-personas.md"
+        # Only refresh if the file already exists (don't create for non-dept dirs)
+        if not governing_md.exists():
+            # Check if it has role sub-folders
+            has_roles = any(
+                (sub / "IDENTITY.md").exists() or (sub / "how-to.md").exists()
+                for sub in child.iterdir()
+                if sub.is_dir()
+            )
+            if not has_roles:
+                continue
+        dept_id = child.name
+        try:
+            out = write_governing_personas_md(child, dept_id)
+            if out:
+                refreshed += 1
+        except Exception as e:
+            print(f"  Warning: could not refresh governing-personas.md for {dept_id}: {e}",
+                  file=sys.stderr)
+    return refreshed
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Create or augment role-level workspaces inside a department.")
@@ -1004,17 +1050,43 @@ def main():
     parser.add_argument("--augment", action="store_true",
                         help="Augment all existing role folders in --dept-path")
     parser.add_argument("--dry-run", action="store_true")
+    # v6.6.0: --refresh-personas-only
+    # Called by orchestrator.py Phase 6b after a new persona is added.
+    # Re-writes governing-personas.md for all dept folders — cheap + idempotent.
+    # Does NOT require --dept-path (operates on the full workspace).
+    parser.add_argument(
+        "--refresh-personas-only", action="store_true",
+        help=(
+            "Re-write governing-personas.md for every dept folder under "
+            "--workspace-root (or auto-detected workspace root). "
+            "No LLM calls, no role creation — idempotent refresh only. "
+            "Called automatically by orchestrator.py Phase 6b after a new persona "
+            "is added to persona-categories.json."
+        ),
+    )
     args = parser.parse_args()
-
-    if not args.dept_path:
-        parser.error("--dept-path is required")
-    dept_path = Path(args.dept_path)
 
     if args.workspace_root:
         workspace_root = Path(args.workspace_root)
     else:
-        paths = get_openclaw_paths()
-        workspace_root = paths["workspace"]
+        try:
+            paths = get_openclaw_paths()
+            workspace_root = Path(paths["workspace"])
+        except Exception as e:
+            print(f"ERROR: could not detect workspace root: {e}", file=sys.stderr)
+            print("Pass --workspace-root explicitly.", file=sys.stderr)
+            return 1
+
+    # ── --refresh-personas-only: re-write governing-personas.md everywhere ──
+    if args.refresh_personas_only:
+        print(f"[create_role_workspaces] --refresh-personas-only: scanning {workspace_root}")
+        n = refresh_all_governing_personas_md(workspace_root)
+        print(f"[create_role_workspaces] Refreshed governing-personas.md in {n} dept folder(s).")
+        return 0
+
+    if not args.dept_path:
+        parser.error("--dept-path is required (unless --refresh-personas-only is used)")
+    dept_path = Path(args.dept_path)
 
     if args.augment:
         results = augment_all_existing_role_folders(dept_path, workspace_root,
@@ -1023,7 +1095,7 @@ def main():
         return 0
 
     if not args.roles_json:
-        parser.error("--roles-json is required unless --augment is used")
+        parser.error("--roles-json is required unless --augment or --refresh-personas-only is used")
     with open(args.roles_json, encoding="utf-8") as f:
         roles = json.load(f)
 

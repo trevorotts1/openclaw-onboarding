@@ -17,8 +17,22 @@ Pipeline (v10.10.0 — PRD §5.4 'book-to-persona' chain):
 Anthropic models are FORBIDDEN by policy (N1). Filter applied at every tier.
 
 Runs up to 4 books in parallel per phase. Manages queue automatically.
+
+v6.6.0 additions:
+  --single-book --slug SLUG  Run ONLY the named slug through phases 1-3;
+                             reads its source.json to build a one-element BOOKS
+                             entry (the #1 fix — without this, new sources added
+                             via add-persona-from-source.sh never process).
+  --source-json PATH         Alternate path for the source.json marker file.
+  Path unification: BASE / BOOKS_DIR / PERSONAS_DIR and gemini-indexer.py
+    PERSONAS_DIR all resolve to ONE canonical root so script-write = orchestrator-
+    read = indexer-scan across VPS (/data/.openclaw/master-files/coaching-personas)
+    and Mac (~/.openclaw/workspace/data/coaching-personas).
+  Phase 6: after _append_persona_to_categories, invoke create_role_workspaces.py
+    --refresh-personas-only so governing-personas.md auto-regenerates.
 """
 
+import argparse
 import os
 import json
 import sys
@@ -30,14 +44,28 @@ import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
-# ─── PATHS ────────────────────────────────────────────────────────────────────
-BASE = Path.home() / "Downloads/openclaw-master-files/coaching-personas"
+# ─── PATHS ─────────────────────────────────────────────────────────────────────
+# v6.6.0: Unified canonical root.
+# VPS  → /data/.openclaw/master-files/coaching-personas
+# Mac  → ~/.openclaw/workspace/data/coaching-personas
+# The old ~/Downloads/openclaw-master-files path is kept as last-resort legacy.
+def _resolve_canonical_base() -> Path:
+    vps_root = Path("/data/.openclaw/master-files/coaching-personas")
+    if vps_root.parent.exists():  # /data/.openclaw/master-files exists
+        return vps_root
+    mac_root = Path.home() / ".openclaw" / "workspace" / "data" / "coaching-personas"
+    if mac_root.parent.parent.exists():  # ~/.openclaw/workspace exists
+        return mac_root
+    # Legacy path kept for backward compat on old setups
+    return Path.home() / "Downloads" / "openclaw-master-files" / "coaching-personas"
+
+BASE = _resolve_canonical_base()
 BOOKS_DIR = BASE / "books"
 PERSONAS_DIR = BASE / "personas"
-PROJECT_DIR = Path.home() / "clawd/projects/coaching-personas-matrix"
-PROMPTS_DIR = PROJECT_DIR / "agent-prompts"
-STATUS_FILE = PROJECT_DIR / "pipeline-status.json"
-LOG_FILE = PROJECT_DIR / "pipeline-log.txt"
+PROJECT_DIR = BASE  # status + log live alongside the personas, not in ~/clawd
+PROMPTS_DIR = Path(__file__).parent.parent / "agent-prompts"
+STATUS_FILE = BASE / "pipeline-status.json"
+LOG_FILE = BASE / "pipeline-log.txt"
 
 # ─── MODEL IDs (v10.10.0: PRD §5.4 'book-to-persona' chain) ──────────────────
 # Model selection is dynamic via shared-utils/select_model.py with the
@@ -55,9 +83,6 @@ LOG_FILE = PROJECT_DIR / "pipeline-log.txt"
 # Anthropic models are FORBIDDEN. Filter applied at every tier.
 # The fallback strings below are last-resort defaults only used if
 # select_model.py itself is unreachable.
-import subprocess
-from pathlib import Path as _Path
-
 def _resolve_model(skill: str, purpose: str, purpose_tier: str,
                    fallback: str, input_chars: int = None) -> str:
     """Call shared-utils/select_model.py with purpose-tier + optional input_chars.
@@ -66,11 +91,13 @@ def _resolve_model(skill: str, purpose: str, purpose_tier: str,
     inputs that won't fit in Kimi's 262K window. Default behavior with no
     input_chars uses Kimi-first (smartest thinker).
     """
-    selector = _Path(__file__).resolve().parents[2] / "shared-utils" / "select_model.py"
+    selector = Path(__file__).resolve().parents[2] / "shared-utils" / "select_model.py"
     if not selector.exists():
-        selector = _Path.home() / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py"
+        selector = Path("/data/.openclaw/skills/shared-utils/select_model.py")
     if not selector.exists():
-        selector = _Path("~/Downloads/openclaw-master-files/shared-utils/select_model.py")
+        selector = Path.home() / ".openclaw" / "skills" / "shared-utils" / "select_model.py"
+    if not selector.exists():
+        selector = Path.home() / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py"
     if not selector.exists():
         return fallback
     cmd = ["python3", str(selector),
@@ -310,8 +337,11 @@ def log(msg):
 def load_status():
     status = {}
     if STATUS_FILE.exists():
-        status = json.loads(STATUS_FILE.read_text())
-    
+        try:
+            status = json.loads(STATUS_FILE.read_text())
+        except Exception:
+            status = {}
+
     for book in BOOKS:
         if book["folder"] not in status:
             status[book["folder"]] = {
@@ -324,6 +354,8 @@ def load_status():
                 "completed": None,
                 "errors": []
             }
+    # Write only if the status dir exists (don't create dirs at module import time)
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATUS_FILE.write_text(json.dumps(status, indent=2))
     return status
 
@@ -930,47 +962,94 @@ async def call_codex(session: aiohttp.ClientSession, user: str, max_tokens: int 
 
 # ─── LOAD PROMPTS ─────────────────────────────────────────────────────────────
 def load_prompt(filename: str) -> str:
-    path = PROMPTS_DIR / filename
-    if not path.exists():
-        raise FileNotFoundError(f"Prompt file not found: {path}")
-    return path.read_text()
+    """Load a prompt file. Searches PROMPTS_DIR and fallback locations."""
+    candidates = [PROMPTS_DIR / filename]
+    # Additional search paths: skill folder agent-prompts/, legacy location
+    skill_dir = Path(__file__).parent.parent
+    candidates.append(skill_dir / "agent-prompts" / filename)
+    for path in candidates:
+        if path.exists():
+            return path.read_text()
+    raise FileNotFoundError(
+        f"Prompt file not found: {filename}\n"
+        f"Searched: {[str(c) for c in candidates]}"
+    )
 
-EXTRACTION_SYSTEM = load_prompt("extraction-agent-prompt.md")
-ANALYSIS_SYSTEM   = load_prompt("analysis-agent-prompt.md")
-SYNTHESIS_SYSTEM  = load_prompt("synthesis-agent-prompt.md")
+# Lazy-loaded — evaluated when first used, not at import time.
+# This allows `--single-book` to run even if the agent-prompts dir is temporarily
+# unavailable (the orchestrator errors with a clear message at the right callsite).
+_PROMPT_CACHE: dict = {}
+
+def _get_prompt(filename: str) -> str:
+    if filename not in _PROMPT_CACHE:
+        _PROMPT_CACHE[filename] = load_prompt(filename)
+    return _PROMPT_CACHE[filename]
+
+def _extraction_system() -> str:  return _get_prompt("extraction-agent-prompt.md")
+def _analysis_system()   -> str:  return _get_prompt("analysis-agent-prompt.md")
+def _synthesis_system()  -> str:  return _get_prompt("synthesis-agent-prompt.md")
 
 # ─── PHASE 1 - EXTRACTION ─────────────────────────────────────────────────────
 async def run_extraction(session: aiohttp.ClientSession, book: dict, status: dict) -> bool:
     folder = book["folder"]
     output_path = PERSONAS_DIR / folder / "extraction-notes.md"
+    (PERSONAS_DIR / folder).mkdir(parents=True, exist_ok=True)
 
-    # Resolve book file - supports PDF, EPUB, MOBI, AZW, AZW3, KFX
-    book_file = book["file"]
-    book_path = BOOKS_DIR / book_file
-    if not book_path.exists():
-        # Try finding the book in any supported format
-        stem = Path(book_file).stem
-        found = None
-        for ext in SUPPORTED_FORMATS.keys():
-            candidate = BOOKS_DIR / (stem + ext)
-            if candidate.exists():
-                found = candidate
-                break
-        if found:
-            book_path = found
-            log(f"  Note: Using {found.name} (original file not found)")
-        else:
-            log(f"  [PHASE 1 FAILED] {book['title']}: Book file not found: {book_path}")
-            mark_phase(status, folder, 1, "FAILED", f"File not found: {book_file}")
-            return False
-
-    fmt = SUPPORTED_FORMATS.get(book_path.suffix.lower(), "UNKNOWN")
-    log(f"[PHASE 1] Starting extraction: {book['title']} [{fmt}]")
+    log(f"[PHASE 1] Starting extraction: {book['title']}")
     mark_phase(status, folder, 1, "IN_PROGRESS")
 
     try:
-        text = extract_book_text(book_path)
-        log(f"  {fmt} extracted: {len(text):,} characters")
+        # v6.6.0: Check for pre-extracted text FIRST (YouTube/video/text sources
+        # write their transcript to a text file via add-persona-from-source.sh
+        # before calling the orchestrator; we must consume it here, not re-invoke
+        # whisper).  Two possible locations:
+        #   a) book["_text_file"] — stashed by _build_book_from_source_json()
+        #   b) BASE/text/<slug>.txt — the canonical location written by the script
+        text = ""
+        _pre_text_path = None
+        if book.get("_text_file") and Path(book["_text_file"]).exists():
+            _pre_text_path = Path(book["_text_file"])
+        else:
+            for _candidate in [
+                BASE / "text" / f"{folder}.txt",
+                PERSONAS_DIR / folder / "text" / f"{folder}.txt",
+            ]:
+                if _candidate.exists() and _candidate.stat().st_size > 0:
+                    _pre_text_path = _candidate
+                    break
+
+        if _pre_text_path:
+            text = _pre_text_path.read_text(encoding="utf-8", errors="ignore")
+            log(f"  Using pre-extracted text ({_pre_text_path}): {len(text):,} chars")
+        else:
+            # Standard book extraction path: resolve file → extract text
+            book_file = book["file"]
+            book_path = BOOKS_DIR / book_file
+            if not book_path.exists():
+                # Try finding the book in any supported format
+                stem = Path(book_file).stem
+                found = None
+                for ext in SUPPORTED_FORMATS.keys():
+                    candidate = BOOKS_DIR / (stem + ext)
+                    if candidate.exists():
+                        found = candidate
+                        break
+                if found:
+                    book_path = found
+                    log(f"  Note: Using {found.name} (original file not found)")
+                else:
+                    log(f"  [PHASE 1 FAILED] {book['title']}: Book file not found: {book_path}")
+                    mark_phase(status, folder, 1, "FAILED", f"File not found: {book_file}")
+                    return False
+
+            fmt = SUPPORTED_FORMATS.get(book_path.suffix.lower(), "UNKNOWN")
+            text = extract_book_text(book_path)
+            log(f"  {fmt} extracted: {len(text):,} characters")
+
+        if not text.strip():
+            log(f"  [PHASE 1 FAILED] {book['title']}: text extraction produced empty result")
+            mark_phase(status, folder, 1, "FAILED", "Empty text after extraction")
+            return False
 
         # v9.5.1: re-resolve model PER BOOK based on its actual char count.
         # Books > 800K chars switch from Kimi (262K ctx) to DeepSeek V4-pro (1M ctx).
@@ -996,34 +1075,35 @@ Here is the complete book text. Extract all 20 items as specified in your instru
         # fallback second, OAuth GPT third. Moonshot direct API is no longer
         # in the routing chain (Kimi 2.6 + DeepSeek V4-pro both available
         # via Ollama Cloud and OpenRouter — no need for the direct route).
+        _ext_sys = _extraction_system()
         if folder in OPENROUTER_FALLBACK_FOLDERS:
             log(f"  Using OpenRouter fallback for {book['title']} (content filter)")
             or_model = per_book_model.replace("ollama/", "").replace("openrouter/", "")
-            result = await call_openrouter(session, or_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            result = await call_openrouter(session, or_model, _ext_sys, user_prompt, max_tokens=16000)
         elif per_book_route == "ollama":
             # PRIMARY route — strip the "ollama/" prefix and call Ollama Cloud
             ollama_model = per_book_model.replace("ollama/", "", 1)
             try:
-                result = await call_ollama_cloud(session, ollama_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+                result = await call_ollama_cloud(session, ollama_model, _ext_sys, user_prompt, max_tokens=16000)
             except Exception as e:
                 # Ollama Cloud failed — fall back to OpenRouter same model
                 log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
                 fallback_model = per_book_model.replace("ollama/", "openrouter/").replace(":cloud", "")
-                result = await call_openrouter(session, fallback_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+                result = await call_openrouter(session, fallback_model, _ext_sys, user_prompt, max_tokens=16000)
         elif per_book_route == "openrouter":
             or_model = per_book_model.replace("openrouter/", "", 1)
-            result = await call_openrouter(session, or_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            result = await call_openrouter(session, or_model, _ext_sys, user_prompt, max_tokens=16000)
         elif per_book_route == "openai-responses":
             # OAuth GPT — uses existing OpenAI client path
             if "call_openai_responses" in globals():
-                result = await call_openai_responses(session, per_book_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+                result = await call_openai_responses(session, per_book_model, _ext_sys, user_prompt, max_tokens=16000)
             else:
                 result = await call_codex(session, user_prompt, max_tokens=16000)
         else:
             # Unknown route — try OpenRouter as a safe default
             log(f"  WARN: unknown route '{per_book_route}' for model {per_book_model}; trying OpenRouter")
             or_model = per_book_model.replace("ollama/", "openrouter/").replace(":cloud", "").replace("openrouter/", "", 1)
-            result = await call_openrouter(session, or_model, EXTRACTION_SYSTEM, user_prompt, max_tokens=16000)
+            result = await call_openrouter(session, or_model, _ext_sys, user_prompt, max_tokens=16000)
 
         header = f"# EXTRACTION NOTES - {book['title']}\n**Author:** {book['author']}\n**Extracted:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}\n**Model:** {MODEL_EXTRACTION}\n\n---\n\n"
         output_path.write_text(header + result)
@@ -1076,23 +1156,24 @@ A final synthesis pass will combine all chunk analyses.
                 # v9.6.2: resolve model per chunk based on chunk size, route accordingly
             per_chunk_model, per_chunk_route = resolve_phase_model("phase2", input_chars=len(chunk))
             log(f"    Model for chunk {i}: {per_chunk_model} via {per_chunk_route}")
+            _ana_sys = _analysis_system()
             if per_chunk_route == "openai-responses":
                 if "call_openai_responses" in globals():
-                    chunk_result = await call_openai_responses(session, per_chunk_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                    chunk_result = await call_openai_responses(session, per_chunk_model, _ana_sys, user_prompt, max_tokens=16000)
                 else:
                     chunk_result = await call_codex(session, user_prompt, max_tokens=16000)
             elif per_chunk_route == "ollama":
                 # v10.3.0: Ollama Cloud is now a real route
                 ollama_model = per_chunk_model.replace("ollama/", "", 1)
                 try:
-                    chunk_result = await call_ollama_cloud(session, ollama_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                    chunk_result = await call_ollama_cloud(session, ollama_model, _ana_sys, user_prompt, max_tokens=16000)
                 except Exception as e:
                     log(f"    Ollama Cloud chunk call failed ({e}); falling back to OpenRouter")
                     fallback_model = per_chunk_model.replace("ollama/", "openrouter/").replace(":cloud", "")
-                    chunk_result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                    chunk_result = await call_openrouter(session, fallback_model, _ana_sys, user_prompt, max_tokens=16000)
             else:
                 or_model = per_chunk_model.replace("openrouter/", "", 1)
-                chunk_result = await call_openrouter(session, or_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                chunk_result = await call_openrouter(session, or_model, _ana_sys, user_prompt, max_tokens=16000)
             chunk_analyses.append(f"## CHUNK {i} ANALYSIS\n\n{chunk_result}")
             await asyncio.sleep(2)  # Brief pause between chunks
 
@@ -1114,29 +1195,30 @@ Produce the final structured analysis document.
             combined_size = sum(len(ca) for ca in chunk_analyses)
             synth_model, synth_route = resolve_phase_model("phase2", input_chars=combined_size)
             log(f"  Synthesis model: {synth_model} via {synth_route}")
+            _ana_sys2 = _analysis_system()
             if synth_route == "openai-responses":
                 if "call_openai_responses" in globals():
-                    result = await call_openai_responses(session, synth_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                    result = await call_openai_responses(session, synth_model, _ana_sys2, synthesis_prompt, max_tokens=16000)
                 else:
                     result = await call_codex(session, synthesis_prompt, max_tokens=16000)
             elif synth_route == "ollama":
                 # v10.3.0: Ollama Cloud is now a real route
                 ollama_model = synth_model.replace("ollama/", "", 1)
                 try:
-                    result = await call_ollama_cloud(session, ollama_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                    result = await call_ollama_cloud(session, ollama_model, _ana_sys2, synthesis_prompt, max_tokens=16000)
                 except Exception as e:
                     log(f"  Ollama Cloud synthesis call failed ({e}); falling back to OpenRouter")
                     fallback_model = synth_model.replace("ollama/", "openrouter/").replace(":cloud", "")
-                    result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                    result = await call_openrouter(session, fallback_model, _ana_sys2, synthesis_prompt, max_tokens=16000)
             else:
                 or_model = synth_model.replace("openrouter/", "", 1)
-                result = await call_openrouter(session, or_model, ANALYSIS_SYSTEM, synthesis_prompt, max_tokens=16000)
+                result = await call_openrouter(session, or_model, _ana_sys2, synthesis_prompt, max_tokens=16000)
 
         else:
             user_prompt = f"""BOOK: {book['title']}
 AUTHOR: {book['author']}
 
-Here are the complete extraction notes from Phase 1. 
+Here are the complete extraction notes from Phase 1.
 Analyze across all 12 analytical dimensions as specified.
 
 ---
@@ -1146,23 +1228,24 @@ Analyze across all 12 analytical dimensions as specified.
             # v9.6.2: resolve model per book size
             single_model, single_route = resolve_phase_model("phase2", input_chars=len(extraction_text))
             log(f"  Single-pass model: {single_model} via {single_route}")
+            _ana_sys3 = _analysis_system()
             if single_route == "openai-responses":
                 if "call_openai_responses" in globals():
-                    result = await call_openai_responses(session, single_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                    result = await call_openai_responses(session, single_model, _ana_sys3, user_prompt, max_tokens=16000)
                 else:
                     result = await call_codex(session, user_prompt, max_tokens=16000)
             elif single_route == "ollama":
                 # v10.3.0: Ollama Cloud is now a real route
                 ollama_model = single_model.replace("ollama/", "", 1)
                 try:
-                    result = await call_ollama_cloud(session, ollama_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                    result = await call_ollama_cloud(session, ollama_model, _ana_sys3, user_prompt, max_tokens=16000)
                 except Exception as e:
                     log(f"  Ollama Cloud single-pass call failed ({e}); falling back to OpenRouter")
                     fallback_model = single_model.replace("ollama/", "openrouter/").replace(":cloud", "")
-                    result = await call_openrouter(session, fallback_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                    result = await call_openrouter(session, fallback_model, _ana_sys3, user_prompt, max_tokens=16000)
             else:
                 or_model = single_model.replace("openrouter/", "", 1)
-                result = await call_openrouter(session, or_model, ANALYSIS_SYSTEM, user_prompt, max_tokens=16000)
+                result = await call_openrouter(session, or_model, _ana_sys3, user_prompt, max_tokens=16000)
 
         header = f"# ANALYSIS NOTES - {book['title']}\n**Author:** {book['author']}\n**Analyzed:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}\n**Model:** {MODEL_ANALYSIS}\n\n---\n\n"
         output_path.write_text(header + result)
@@ -1191,8 +1274,16 @@ async def run_synthesis(session: aiohttp.ClientSession, book: dict, status: dict
         analysis_text = analysis_path.read_text()
 
         # Read the SKILL.md spec to include in synthesis prompt
-        skill_path = PROJECT_DIR / "SKILL.md"
-        skill_spec = skill_path.read_text() if skill_path.exists() else ""
+        # v6.6.0: look in the skill folder, not PROJECT_DIR (which is now BASE)
+        skill_path_candidates = [
+            Path(__file__).parent.parent / "SKILL.md",
+            BASE / "SKILL.md",
+        ]
+        skill_spec = ""
+        for sp in skill_path_candidates:
+            if sp.exists():
+                skill_spec = sp.read_text()
+                break
 
         user_prompt = f"""BOOK: {book['title']}
 AUTHOR: {book['author']}
@@ -1231,7 +1322,8 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         phase3_model, phase3_route = resolve_phase_model("phase3", input_chars=phase3_input_size)
         log(f"  Phase 3 synthesis model: {phase3_model} via {phase3_route} (input ~{phase3_input_size:,} chars)")
 
-        full_input = f"{SYNTHESIS_SYSTEM}\n\n---\n\n{user_prompt}"
+        _syn_sys = _synthesis_system()
+        full_input = f"{_syn_sys}\n\n---\n\n{user_prompt}"
         if phase3_route == "openai-responses":
             # OAuth GPT route — preferred for Phase 3 synthesis (no per-call cost)
             result = await call_codex(session, full_input, max_tokens=120000)
@@ -1239,15 +1331,15 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
             # v10.3.0: Ollama Cloud is now a real route — call it directly
             ollama_model = phase3_model.replace("ollama/", "", 1)
             try:
-                result = await call_ollama_cloud(session, ollama_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
+                result = await call_ollama_cloud(session, ollama_model, _syn_sys, user_prompt, max_tokens=120000)
             except Exception as e:
                 log(f"  Ollama Cloud call failed ({e}); falling back to OpenRouter same model")
                 fallback_model = phase3_model.replace("ollama/", "openrouter/").replace(":cloud", "")
-                result = await call_openrouter(session, fallback_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
+                result = await call_openrouter(session, fallback_model, _syn_sys, user_prompt, max_tokens=120000)
         else:
             # OpenRouter route (e.g. OpenRouter Kimi / OpenRouter DeepSeek-pro)
             or_model = phase3_model.replace("openrouter/", "", 1)
-            result = await call_openrouter(session, or_model, SYNTHESIS_SYSTEM, user_prompt, max_tokens=120000)
+            result = await call_openrouter(session, or_model, _syn_sys, user_prompt, max_tokens=120000)
 
         header = f"""# PERSONA BLUEPRINT - {book['title']}
 **Source Book:** {book['title']} by {book['author']}
@@ -1306,6 +1398,33 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
         except Exception as e:
             log(f"  Warning: failed to append {folder} to persona-categories.json: {e}")
 
+        # Phase 6b: v6.6.0 — auto-regenerate governing-personas.md for every
+        # department so the command-center dashboard picks up the new persona
+        # without a manual `create_role_workspaces.py` run.
+        # Uses the --refresh-personas-only flag added in this same PR.
+        # Non-fatal: the new persona is still fully usable even if this step fails.
+        try:
+            crw_candidates = [
+                Path(__file__).resolve().parents[2] / "23-ai-workforce-blueprint" / "scripts" / "create_role_workspaces.py",
+                Path("/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/create_role_workspaces.py"),
+                Path.home() / ".openclaw" / "skills" / "23-ai-workforce-blueprint" / "scripts" / "create_role_workspaces.py",
+            ]
+            crw_path = next((p for p in crw_candidates if p.exists()), None)
+            if crw_path:
+                log(f"Phase 6b: Refreshing governing-personas.md for all departments ({crw_path})...")
+                crw_proc = subprocess.run(
+                    [sys.executable, str(crw_path), "--refresh-personas-only"],
+                    capture_output=True, text=True, check=False, timeout=60,
+                )
+                if crw_proc.returncode == 0:
+                    log("Phase 6b: governing-personas.md refresh complete.")
+                else:
+                    log(f"  Warning: --refresh-personas-only exited {crw_proc.returncode}: {crw_proc.stderr[:200]}")
+            else:
+                log("  Phase 6b: create_role_workspaces.py not found — governing-personas.md NOT refreshed (non-fatal).")
+        except Exception as e:
+            log(f"  Warning: Phase 6b refresh failed: {e}")
+
         return True
 
     except Exception as e:
@@ -1345,8 +1464,168 @@ async def process_book(session: aiohttp.ClientSession, book: dict, status: dict)
     if s["phase3"] not in ("COMPLETE",):
         await run_synthesis(session, book, status)
 
+# ─── PARSE ARGS ───────────────────────────────────────────────────────────────
+def _parse_args():
+    """
+    v6.6.0: argparse so callers can run a single slug instead of the full list.
+
+    --single-book / --slug SLUG
+        Build a ONE-element BOOKS entry from the slug's source.json marker
+        (written by add-persona-from-source.sh) and run ONLY that folder
+        through phases 1-3. This is the #1 fix: without it, every source
+        added via add-persona-from-source.sh silently never runs through
+        the pipeline because the slug isn't in the hardcoded BOOKS list.
+
+    --source-json PATH
+        Explicit path to source.json (overrides the default search).
+    """
+    parser = argparse.ArgumentParser(
+        prog="orchestrator.py",
+        description="BlackCEO Coaching Personas Matrix — 3-phase book-to-persona pipeline.",
+    )
+    parser.add_argument(
+        "--single-book", action="store_true",
+        help="Run only the single slug specified by --slug (used by add-persona-from-source.sh).",
+    )
+    parser.add_argument(
+        "--slug", metavar="SLUG",
+        help="Slug to process when --single-book is given.",
+    )
+    parser.add_argument(
+        "--source-json", metavar="PATH",
+        help="Explicit path to source.json for --single-book mode.",
+    )
+    return parser.parse_args()
+
+
+def _build_book_from_source_json(slug: str, source_json_path: str = None) -> dict:
+    """
+    Build a BOOKS-compatible dict from a slug's source.json marker file.
+    Searches the canonical personas/<slug>/source.json location when no
+    explicit path is given.
+
+    source.json schema (written by add-persona-from-source.sh):
+      {
+        "slug":        "hormozi-100m-offers",
+        "title":       "100M Offers",
+        "author":      "Alex Hormozi",
+        "source_type": "book",          # book / youtube / video / text
+        "source_path": "/path/to/file",
+        "text_file":   "/path/to/text/hormozi-100m-offers.txt",
+        "added":       "2026-06-01T12:00:00Z",
+        "pipeline_status": "PENDING"
+      }
+    """
+    if source_json_path:
+        sj_path = Path(source_json_path)
+    else:
+        sj_path = PERSONAS_DIR / slug / "source.json"
+
+    if not sj_path.exists():
+        raise FileNotFoundError(
+            f"source.json not found for slug '{slug}'.\n"
+            f"Expected: {sj_path}\n"
+            "Run add-persona-from-source.sh to register the source first."
+        )
+
+    with open(sj_path) as f:
+        data = json.load(f)
+
+    source_type = data.get("source_type", "text")
+    # For book types, the file field should point to the book file.
+    # For video/youtube/text, the pipeline will use the pre-extracted text_file.
+    book_file = data.get("source_path", "")
+    if source_type != "book":
+        # Non-book: the text file is the canonical input; use a dummy "file"
+        # that the extraction phase will skip in favour of the pre-extracted text.
+        book_file = data.get("text_file", "")
+
+    return {
+        "title":  data.get("title", slug),
+        "author": data.get("author", "unknown"),
+        "file":   str(Path(book_file).name) if book_file else f"{slug}.txt",
+        "folder": slug,
+        # Stash the full text_file path so run_extraction can pick it up.
+        "_text_file": data.get("text_file", ""),
+        "_source_type": source_type,
+    }
+
+
+def _ensure_status_entry(status: dict, book: dict) -> dict:
+    """
+    Guarantee a status entry exists for this book's folder.
+    Used by --single-book mode where load_status() only iterates BOOKS.
+    """
+    folder = book["folder"]
+    if folder not in status:
+        status[folder] = {
+            "title":   book["title"],
+            "author":  book["author"],
+            "phase1":  "PENDING",
+            "phase2":  "PENDING",
+            "phase3":  "PENDING",
+            "started":   None,
+            "completed": None,
+            "errors":    [],
+        }
+        save_status(status)
+    return status
+
+
 # ─── MAIN ORCHESTRATOR ────────────────────────────────────────────────────────
-async def main():
+async def main(args=None):
+    if args is None:
+        args = _parse_args()
+
+    # ── Single-book mode (--single-book --slug SLUG) ──────────────────────────
+    if args.single_book:
+        if not args.slug:
+            print("ERROR: --single-book requires --slug SLUG", file=sys.stderr)
+            sys.exit(1)
+
+        log("\n" + "="*60)
+        log(f"Skill 22 Pipeline — Single-book mode: {args.slug}")
+        log("="*60 + "\n")
+
+        try:
+            book = _build_book_from_source_json(args.slug, args.source_json)
+        except FileNotFoundError as e:
+            log(f"ERROR: {e}")
+            sys.exit(1)
+
+        # Load status, ensure entry for this slug
+        status = {}
+        if STATUS_FILE.exists():
+            try:
+                status = json.loads(STATUS_FILE.read_text())
+            except Exception:
+                status = {}
+        _ensure_status_entry(status, book)
+
+        log(f"  Title:  {book['title']}")
+        log(f"  Author: {book['author']}")
+        log(f"  Folder: {book['folder']}")
+        log(f"  Source type: {book.get('_source_type', 'book')}")
+        s = status[book["folder"]]
+        log(f"  Status: P1={s['phase1']} P2={s['phase2']} P3={s['phase3']}")
+
+        if s["phase3"] == "COMPLETE":
+            log("  Persona already COMPLETE. Use --force to re-run (not yet implemented).")
+            log("  Blueprint at: " + str(PERSONAS_DIR / book["folder"] / "persona-blueprint.md"))
+            return
+
+        connector = aiohttp.TCPConnector(limit=5)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            await process_book(session, book, status)
+
+        final = status[book["folder"]]
+        log("\n" + "="*60)
+        log(f"Single-book pipeline complete: {args.slug}")
+        log(f"  P1={final['phase1']}  P2={final['phase2']}  P3={final['phase3']}")
+        log("="*60)
+        return
+
+    # ── Full-batch mode (default: process all pending books in BOOKS list) ────
     log("\n" + "="*60)
     log("BlackCEO Coaching Personas Matrix - Pipeline Starting")
     log(f"Books to process: {len(BOOKS)}")
@@ -1421,5 +1700,8 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
-# Fallback list - books that hit Kimi direct content filter, route via OpenRouter
-OPENROUTER_FALLBACK_FOLDERS = {"samit-disrupt-yourself", "attwood-passion-test"}
+# Fallback list — books that hit Kimi direct content filter, route via OpenRouter
+# NOTE: This duplicate definition (also at line ~153) is kept here to avoid
+# breaking any callers that access it via module inspection. The set at line ~153
+# is the canonical one used at runtime; this one is a no-op (already defined).
+# OPENROUTER_FALLBACK_FOLDERS = {"samit-disrupt-yourself", "attwood-passion-test"}
