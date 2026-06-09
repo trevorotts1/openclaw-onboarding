@@ -1241,24 +1241,30 @@ CONTEXT_FILES = ["USER.md", "MEMORY.md", "AGENTS.md", "TOOLS.md"]
 # still chooses which subset they need. But no department OUTSIDE this list
 # may be invented by the script. The interview output IS the source of truth
 # for which subset is enabled in the dashboard.
+# PR3 (2026-06-09): head values aligned to canonical role #0 names from
+# 23-ai-workforce-blueprint/suggested-roles/<dept>-suggested-roles.md.
+# The agent's "name" in openclaw.json agents.list is set to dept_info["head"] by
+# add_agent_to_config(), so this dict is the SINGLE SOURCE OF TRUTH for the name
+# that appears in the Command Center sidebar's head-agent row.
+# Changed: sales, support, graphics, research, comms, crm, social, paid-ads.
 RECOMMENDED_DEPARTMENTS = {
     "ceo": {"name": "CEO", "emoji": "👔", "head": "Chief Executive Officer", "description": "Executive strategy, vision, high-level decisions"},
     "marketing": {"name": "Marketing", "emoji": "📢", "head": "Chief Marketing Officer", "description": "Getting the word out about your business - social media, ads, email, content"},
-    "sales": {"name": "Sales", "emoji": "💰", "head": "Chief Revenue Officer", "description": "Turning interested people into paying customers"},
+    "sales": {"name": "Sales", "emoji": "💰", "head": "Chief Sales Officer", "description": "Turning interested people into paying customers"},
     "billing": {"name": "Billing / Finance", "emoji": "💳", "head": "Chief Financial Officer", "description": "Invoices, payments, tracking your money"},
-    "support": {"name": "Customer Support", "emoji": "🛟", "head": "Chief Support Officer", "description": "Helping your existing customers when they need it"},
+    "support": {"name": "Customer Support", "emoji": "🛟", "head": "Head of Customer Success", "description": "Helping your existing customers when they need it"},
     "webdev": {"name": "Web Development", "emoji": "🌐", "head": "Head of Web Development", "description": "Your website, landing pages, funnels"},
     "appdev": {"name": "App Development", "emoji": "🛠️", "head": "Head of App Development", "description": "Mobile apps, software applications"},
-    "graphics": {"name": "Graphics", "emoji": "🖼️", "head": "Head of Graphics", "description": "Visual content - logos, images, brand assets"},
+    "graphics": {"name": "Graphics", "emoji": "🖼️", "head": "Chief Design Officer", "description": "Visual content - logos, images, brand assets"},
     "video": {"name": "Video Production", "emoji": "🎬", "head": "Head of Video Production", "description": "Video production, editing, AI video"},
     "audio": {"name": "Audio Production", "emoji": "🎵", "head": "Head of Audio Production", "description": "Podcasts, voiceovers, music, audio production"},
-    "research": {"name": "Research", "emoji": "🔬", "head": "Head of Research", "description": "Market research, competitor analysis, data insights"},
-    "comms": {"name": "Communications", "emoji": "📡", "head": "Head of Communications", "description": "PR, announcements, internal and external messaging"},
-    "crm": {"name": "CRM", "emoji": "📇", "head": "Head of CRM", "description": "Customer data, lead lifecycle, pipeline hygiene (GHL-focused)"},
+    "research": {"name": "Research", "emoji": "🔬", "head": "Chief Research Officer", "description": "Market research, competitor analysis, data insights"},
+    "comms": {"name": "Communications", "emoji": "📡", "head": "Chief Communications Officer", "description": "PR, announcements, internal and external messaging"},
+    "crm": {"name": "CRM", "emoji": "📇", "head": "Director of CRM", "description": "Customer data, lead lifecycle, pipeline hygiene (GHL-focused)"},
     "openclaw": {"name": "OpenClaw Maintenance", "emoji": "🦾", "head": "Head of OpenClaw Maintenance", "description": "Sunday updates, skill bumps, system QC, internal tooling"},
     "legal": {"name": "Legal / Compliance", "emoji": "⚖️", "head": "Chief Legal Officer", "description": "Contracts, regulations, keeping you protected"},
-    "social": {"name": "Social Media", "emoji": "📱", "head": "Head of Social Media", "description": "Organic channels — LinkedIn, X, Instagram, TikTok, YouTube"},
-    "paid-ads": {"name": "Paid Advertisement", "emoji": "🎯", "head": "Head of Paid Advertisement", "description": "Meta / Google / YouTube / TikTok paid acquisition — ROAS, CPA, retargeting"},
+    "social": {"name": "Social Media", "emoji": "📱", "head": "Director of Social Media", "description": "Organic channels — LinkedIn, X, Instagram, TikTok, YouTube"},
+    "paid-ads": {"name": "Paid Advertisement", "emoji": "🎯", "head": "Director of Paid Advertisement", "description": "Meta / Google / YouTube / TikTok paid acquisition — ROAS, CPA, retargeting"},
 }
 
 # N17 runtime guard — if config/departments.json is reachable from the workspace,
