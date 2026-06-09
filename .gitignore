@@ -3,4 +3,4 @@
 __pycache__/
 *.pyc
 
-graphify-out/cost.json
+graphify-out/

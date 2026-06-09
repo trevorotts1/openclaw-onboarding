@@ -1,1 +1,0 @@
-{"nodes": [], "edges": [{"source": "tavily_search_skill", "target": "teach_yourself_protocol", "relation": "implements", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "21-tavily-search/INSTALL.md", "weight": 1.0}], "hyperedges": []}

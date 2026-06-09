@@ -1,1 +1,0 @@
-{"nodes": [], "edges": [{"source": "master_files_event_contract_f52", "target": "40_event_log", "relation": "references", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "40-zhc-public-records-scraper/references/master-files-event-contract-F52.md", "source_location": null, "weight": 1.0}], "hyperedges": []}

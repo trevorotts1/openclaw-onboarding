@@ -362,8 +362,8 @@ safe_json_edit() {
 # This is the co-mingling guard (N0): we read THIS box's openclaw.json and resolve
 # THIS box's workspace — we never write a foreign path into a client's symlink.
 #
-# Ant Farm EXEMPTION: any workspace path matching */workflows/*/agents/* is an
-# internal workflow micro-agent and is NEVER touched.
+# NESTED WORKFLOW AGENT EXEMPTION: any workspace path matching */workflows/*/agents/*
+# is an internal workflow micro-agent and is NEVER touched.
 #
 # Idempotent: a second run produces no new backups and no churn — a symlink that
 # already points at CANON_DIR/<f> is a no-op; an absent file is left absent.
@@ -431,7 +431,7 @@ PYEOF
   # --- Enumerate agent workspaces ------------------------------------------
   # Sources: (a) every agents[].workspace declared in THIS box's openclaw.json,
   # (b) a scan of the workspaces/ dir (immediate children + agents/* role dirs).
-  # We only ever operate on dirs under this box. Dedup; skip CANON; skip Ant Farm.
+  # We only ever operate on dirs under this box. Dedup; skip CANON; skip nested workflow agents.
   local WS_LIST_FILE
   WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
   : > "$WS_LIST_FILE"
@@ -490,10 +490,10 @@ PYEOF
       continue
     fi
 
-    # Ant Farm EXEMPTION: never touch */workflows/*/agents/* micro-agents.
+    # NESTED WORKFLOW AGENT EXEMPTION: never touch */workflows/*/agents/* micro-agents.
     case "$W_REAL/" in
       */workflows/*/agents/*)
-        echo "  [link-shared] SKIP (Ant Farm exempt): $W_REAL"
+        echo "  [link-shared] SKIP (nested workflow agent exempt): $W_REAL"
         SKIPPED_ANT=$((SKIPPED_ANT + 1))
         continue
         ;;
@@ -592,7 +592,7 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" 2>/dev/null || true
 
-  echo "  [link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED ant-farm-skipped=$SKIPPED_ANT already-ok=$NOOP"
+  echo "  [link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP"
   echo "  [link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 }
 
@@ -1170,7 +1170,7 @@ except:
   # AFTER skills + workspaces + CORE_UPDATES wiring + workforce migration, every
   # agent/sub-agent on THIS box shares the box's ONE canonical AGENTS.md /
   # TOOLS.md / USER.md via symlink. Per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT stay
-  # each agent's own. Ant Farm micro-agents exempt. Idempotent. Reads THIS box's
+  # each agent's own. Nested workflow agents exempt. Idempotent. Reads THIS box's
   # openclaw.json only (co-mingling guard) — never a foreign/hardcoded target.
   # ----------------------------------------------------------
   echo ""

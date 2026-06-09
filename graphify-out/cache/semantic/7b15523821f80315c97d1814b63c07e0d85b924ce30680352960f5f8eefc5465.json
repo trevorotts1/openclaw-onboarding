@@ -1,1 +1,0 @@
-{"nodes": [], "edges": [{"source": "book_to_persona_skill", "target": "persona_reflex", "relation": "implements", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "22-book-to-persona-coaching-leadership-system/CORE_UPDATES.md", "weight": 1.0}], "hyperedges": []}

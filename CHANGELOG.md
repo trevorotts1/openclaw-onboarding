@@ -35,15 +35,15 @@ On a Zero-Human-Workforce box, every agent and sub-agent runs the SAME operating
 - **New `link_shared_core_files()`** (in both `install.sh` Step 10a and `update-skills.sh`, matching each script's existing style): on every box, all of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via **symlink** (not duplicated). Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files.
   - **CANON_DIR** = the box's default agent workspace, resolved with the standard precedence (per-agent `main` override → `agents.defaults.workspace` → `~/.openclaw/workspace`), read from THIS box's own `openclaw.json`.
   - **Co-mingling guard (N0):** the symlink target is ALWAYS the LOCAL box's own canonical — NEVER a hardcoded or cross-box/cross-account path. A client box links to the CLIENT's own files (the client is the USER).
-  - **Ant Farm exemption:** any workspace path matching `*/workflows/*/agents/*` is NEVER touched.
+  - **Nested workflow agent exemption:** any workspace path matching `*/workflows/*/agents/*` is NEVER touched.
   - **Non-destructive:** a real file is backed up to `<file>.bak-unify-<ts>` (never deleted); any of its content not already in the canonical file is appended (additive only) to that agent's OWN `IDENTITY.md` under a guarded `<!-- PRESERVED FROM <agent> <file> (unification <ts>) -->` marker; then the file is replaced with the symlink. Absent files are left absent.
   - **Idempotent:** correct symlinks are no-ops; a second run makes no new backups and no churn. Every action logs with the `[link-shared]` prefix.
   - Wired at install AFTER the workspace is resolved and bootstrap files exist in CANON_DIR (`install.sh` Step 10a), and at update AFTER skills/workspaces are set up, `CORE_UPDATES.md` is merged, and the workforce migration runs (`update-skills.sh`).
-- **New QC check 9.9** in `scripts/qc-system-integrity.sh`: for every NON-Ant-Farm agent workspace, `AGENTS.md` / `TOOLS.md` / `USER.md` MUST be symlinks resolving to CANON_DIR; otherwise it emits a QC failure line in the existing format. Absent files are allowed.
-- **Docs:** new `docs/SHARED-CORE-FILES.md`; new **N29** rule + a dedicated section in the deployed `AGENTS.md` template; README "Shared Core Files" section. All cover shared-vs-per-agent, the co-mingling guard, the Ant Farm exemption, and backups/idempotency.
+- **New QC check 9.9** in `scripts/qc-system-integrity.sh`: for every non-workflow-agent workspace, `AGENTS.md` / `TOOLS.md` / `USER.md` MUST be symlinks resolving to CANON_DIR; otherwise it emits a QC failure line in the existing format. Absent files are allowed.
+- **Docs:** new `docs/SHARED-CORE-FILES.md`; new **N29** rule + a dedicated section in the deployed `AGENTS.md` template; README "Shared Core Files" section. All cover shared-vs-per-agent, the co-mingling guard, the nested workflow agent exemption, and backups/idempotency.
 
 ### Risk
-Low. Additive and non-destructive: no file is ever deleted (real files are backed up + their unique content preserved into the agent's own `IDENTITY.md`), the canonical workspace is never modified by the linker, Ant Farm micro-agents are skipped, and the operation is idempotent. CANON_DIR is always THIS box's own workspace, so no cross-account linking is possible.
+Low. Additive and non-destructive: no file is ever deleted (real files are backed up + their unique content preserved into the agent's own `IDENTITY.md`), the canonical workspace is never modified by the linker, nested workflow agents are skipped, and the operation is idempotent. CANON_DIR is always THIS box's own workspace, so no cross-account linking is possible.
 
 ## [v10.15.50]  -  2026-06-06  -  fix: add safe_json_edit validate/rollback guard on openclaw.json edits (parity with VPS skills.path fix)
 
@@ -88,7 +88,7 @@ Four compounding systemic problems, the first being the #1 reported concern:
   - QC-PROTOCOL.md Part 3.5 (Rules 16-19) + ONBOARDING-TRIGGERS.md document the gate as the binding definition of "installed/done".
 - **FIX 2 — Operator Telegram channel separation:** new `scripts/configure-operator-telegram.sh` (idempotent JSON deep-merge, modeled on apply-fleet-standards.sh) writes `channels.telegram.accounts.{default,operator}` (default=client bot/pairing; operator=separate bot, dmPolicy=allowlist, allowFrom=operator IDs 5252140759/6663821679/6771245262 ONLY — client id never added), `defaultAccount:"default"`, and a `bindings` route `{channel:telegram, accountId:operator}→agentId main`. Writes `OPERATOR_HELP_CHAT_ID` env var. `diagnose-telegram-config.sh` extended to assert the operator account + binding exist. New `docs/OPERATOR-MAINTENANCE.md` documents the operator-drive contract (`--session-key agent:main:operator`, `--reply-to OPERATOR_HELP_CHAT_ID` / `--no-deliver`). The repo encodes the STRUCTURE; an empty operator botToken is flagged `STRUCTURE_ONLY_NEEDS_TOKEN` (honest), never claimed live without a token.
 - **FIX 3 — GHL MCP autostart:** new `scripts/ghl-mcp-autostart.sh` is the EXECUTED form of Skill 36 INSTALL.md §5.1-5.7 — builds if needed, writes the canonical `com.clawd.ghl-mcp` launchd KeepAlive plist on :8765, health-checks `/health`, registers the MCP. Wired into both install.sh (Step 14a) and update-skills.sh `wire_ghl_mcp`. Idempotent (no double-start; no-op when already healthy + registered); honest SKIP when GHL creds absent.
-- **FIX 4 — Skill 35 name reconcile:** confirmed + kept `name: social-media-planner` (the field OpenClaw registers from, per docs.openclaw.ai/tools/skills) on BOTH repos. Renamed the non-standard `skill_name:` key to `workflow_id:` (the internal antfarm CLI workflow id `content-publishing-engine`, unchanged) so it can never be mistaken for the registration name. The `cli.js workflow run content-publishing-engine` invocation is untouched.
+- **FIX 4 — Skill 35 name reconcile:** confirmed + kept `name: social-media-planner` (the field OpenClaw registers from, per docs.openclaw.ai/tools/skills) on BOTH repos. Renamed the non-standard `skill_name:` key to `workflow_id:` (the internal workflow id `content-publishing-engine`, unchanged) so it can never be mistaken for the registration name. The `cli.js workflow run content-publishing-engine` invocation is untouched.
 
 ### Risk
 Medium-additive. All changes are additive + idempotent: new scripts, conditional reporting, additive JSON merges (validate + rollback on failure), and an additive cron. Nothing destructive; no force/no-verify; existing client account + allowlist never narrowed. **Operator caveat:** existing boxes need an operator bot token (BotFather) provisioned + `OPERATOR_TELEGRAM_BOT_TOKEN` set before operator-channel separation is live (until then it is `STRUCTURE_ONLY_NEEDS_TOKEN`). Prose-only skill steps that can't be mechanized remain GATED (surfaced as not-yet-passed), never silently "done".
@@ -3807,7 +3807,7 @@ Bumped to `10.4.1`.
 - Existing `gemini-index.sqlite` should be re-indexed at section level when v2.0 Chapter 13 ships (separate work item)
 
 ### Documentation
-- PRD v2.1 saved at user's local Downloads: `onboarding ant farm PRD v2.1.md`
+- PRD v2.1 saved at user's local Downloads: `onboarding PRD v2.1.md`
 - Supersedes PRD v1.1 (foundation) and v2.0 (intelligence layer)
 - Execution order remains: v1.1 → v2.0 → v2.1
 

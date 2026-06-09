@@ -431,10 +431,10 @@ check "9.8" "Master AGENTS.md / TOOLS.md / USER.md exist at workspace root" \
   "Bootstrap missing — re-run install.sh"
 
 # 9.9 (v10.15.51) — Shared core-file unification (Zero-Human-Workforce file model):
-# every NON-Ant-Farm agent workspace's AGENTS.md / TOOLS.md / USER.md MUST be a
+# every non-workflow-agent workspace's AGENTS.md / TOOLS.md / USER.md MUST be a
 # symlink resolving to THIS box's canonical (agents.defaults.workspace). Per-agent
 # IDENTITY/SOUL/MEMORY/HEARTBEAT are NOT checked here (they stay each agent's own).
-# Ant Farm micro-agents (*/workflows/*/agents/*) are EXEMPT. The expected target is
+# Nested workflow agents (*/workflows/*/agents/*) are EXEMPT. The expected target is
 # resolved from THIS box's own openclaw.json — never a foreign/hardcoded path.
 UNIFY_BAD=$(OCJSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null || echo "ERR"
 import json, os
@@ -479,7 +479,7 @@ for w in cands:
     wr = os.path.realpath(w)
     if wr == canon_real:
         continue
-    # Ant Farm EXEMPTION.
+    # NESTED WORKFLOW AGENT EXEMPTION.
     if "/workflows/" in (wr + "/") and "/agents/" in (wr + "/").split("/workflows/", 1)[1]:
         continue
     for f in ("AGENTS.md", "TOOLS.md", "USER.md"):
@@ -497,12 +497,12 @@ PYEOF
 )
 UNIFY_COUNT=$(printf '%s\n' "$UNIFY_BAD" | head -1)
 if [ "$UNIFY_COUNT" = "0" ]; then
-  green "  ✓ 9.9  All non-Ant-Farm agent workspaces share AGENTS/TOOLS/USER via canonical symlink"; PASS=$((PASS+1))
+  green "  ✓ 9.9  All non-workflow-agent workspaces share AGENTS/TOOLS/USER via canonical symlink"; PASS=$((PASS+1))
 elif [ "$UNIFY_COUNT" = "ERR" ]; then
   warn_check "9.9" "Shared core-file unification (could not read openclaw.json — skipped)" "false" \
     "openclaw.json unreadable; re-run after install completes"
 else
-  red "  ✗ 9.9  $UNIFY_COUNT non-Ant-Farm core file(s) not symlinked to canonical:"; FAIL=$((FAIL+1))
+  red "  ✗ 9.9  $UNIFY_COUNT non-workflow-agent core file(s) not symlinked to canonical:"; FAIL=$((FAIL+1))
   printf '%s\n' "$UNIFY_BAD" | tail -n +2
   FAILURES+=("9.9|Shared core files not unified (AGENTS/TOOLS/USER must symlink to canonical workspace)|Run link_shared_core_files (re-run update-skills.sh or install.sh Step 10a)")
 fi

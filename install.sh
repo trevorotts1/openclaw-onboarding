@@ -1676,8 +1676,8 @@ discover_skills() {
 # account path. The client is the USER: a client box links to the CLIENT's own
 # files only (co-mingling guard, N0).
 #
-# Ant Farm EXEMPTION: any workspace path matching */workflows/*/agents/* (internal
-# workflow micro-agents) is NEVER touched.
+# NESTED WORKFLOW AGENT EXEMPTION: any workspace path matching */workflows/*/agents/*
+# (internal workflow micro-agents) is NEVER touched.
 #
 # Idempotent: a correct existing symlink is a no-op; an absent file stays absent;
 # a second run produces no new backups and no churn. Every action logs with the
@@ -1787,10 +1787,10 @@ PYEOF
     # Skip the canonical workspace itself — it OWNS the real files.
     [ "$W_REAL" = "$CANON_REAL" ] && continue
 
-    # Ant Farm EXEMPTION: never touch */workflows/*/agents/* micro-agents.
+    # NESTED WORKFLOW AGENT EXEMPTION: never touch */workflows/*/agents/* micro-agents.
     case "$W_REAL/" in
       */workflows/*/agents/*)
-        note "[link-shared] SKIP (Ant Farm exempt): $W_REAL"
+        note "[link-shared] SKIP (nested workflow agent exempt): $W_REAL"
         SKIPPED_ANT=$((SKIPPED_ANT + 1))
         continue
         ;;
@@ -1876,7 +1876,7 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" 2>/dev/null || true
 
-  note "[link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED ant-farm-skipped=$SKIPPED_ANT already-ok=$NOOP"
+  note "[link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 }
 
@@ -3440,7 +3440,7 @@ fi
 # Now that the workspace is resolved + the bootstrap files exist in
 # CANON_DIR ($WORKSPACE_DIR), symlink every agent/sub-agent's AGENTS.md /
 # TOOLS.md / USER.md to THIS box's own canonical. Per-agent IDENTITY/SOUL/
-# MEMORY/HEARTBEAT stay each agent's own. Ant Farm exempt. Idempotent.
+# MEMORY/HEARTBEAT stay each agent's own. Nested workflow agents exempt. Idempotent.
 # CANON_DIR is THIS box's own workspace (co-mingling guard) — passed explicitly
 # as the resolved $WORKSPACE_DIR so it matches the path the agent actually reads.
 # ----------------------------------------------------------

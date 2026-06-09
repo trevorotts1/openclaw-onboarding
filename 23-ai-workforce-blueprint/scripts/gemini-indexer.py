@@ -31,7 +31,7 @@ except ImportError:
     openai_pkg = None
 
 # Workspace Root Configuration (Mac default → VPS fallback). Legacy ~/clawd
-# was removed in v10.12.0 per memory: "OpenClaw is the system (not Clawdbot, not Ant Farm)".
+# was removed in v10.12.0 per memory: "OpenClaw is the system."
 WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
 if not os.path.isdir(WORKSPACE_ROOT):
     VPS_WORKSPACE = "/data/.openclaw/workspace"

@@ -1,1 +1,0 @@
-{"nodes": [], "edges": [{"source": "pa_23_01_goal_definition_sprint", "target": "goal_map", "relation": "conceptually_related_to", "confidence": "INFERRED", "confidence_score": 0.7, "source_file": "42-personal-assistant-library/specialists/23-goal-setter/how-to.md", "source_location": null, "weight": 1.0}], "hyperedges": []}

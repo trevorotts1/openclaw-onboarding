@@ -61,7 +61,7 @@ files, or to another client's files. The resolver reads only the local box's
 never be written into a client's symlink. This is the
 [NO-COMINGLING-RULE](../NO-COMINGLING-RULE.md) applied at the filesystem layer.
 
-## Ant Farm exemption
+## Nested workflow agent exemption
 
 Internal **workflow micro-agents** — any workspace path matching
 `*/workflows/*/agents/*` (for example `workflows/bug-fix/agents/triager`) — are
@@ -112,7 +112,7 @@ with the `[link-shared]` prefix.
 ## QC enforcement
 
 `scripts/qc-system-integrity.sh` check **9.9** asserts that, for **every
-non-Ant-Farm agent workspace**, `AGENTS.md` / `TOOLS.md` / `USER.md` are
+non-workflow-agent workspace**, `AGENTS.md` / `TOOLS.md` / `USER.md` are
 **symlinks resolving to `CANON_DIR`**. Any that are real files (or point
 elsewhere) emit a QC failure line. Absent files are allowed.
 

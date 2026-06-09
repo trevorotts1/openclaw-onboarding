@@ -1,1 +1,0 @@
-{"nodes": [], "edges": [{"source": "36_qc_ghl_mcp_setup_sh", "target": "36_ghl_mcp_setup", "relation": "references", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "36-ghl-mcp-setup/QC.md", "source_location": null, "weight": 1.0}], "hyperedges": []}
