@@ -1026,6 +1026,20 @@ def build_from_config(config):
             print(f"[NON-INTERACTIVE] Config backed up to: {backup_path}", file=sys.stderr)
 
             config_data = load_openclaw_config()
+
+            # PR1 — Sub-agents unlocked for execution (idempotent).
+            # Set agents.defaults.tools.exec so every spawned sub-agent (department
+            # specialist, QC agent, researcher, etc.) can run any tool including
+            # image_generate, video_generate, tts, coding-agent, and exec without
+            # per-call approval. Without this, the platform default narrows spawned
+            # sub-agents to a minimal read-only tool set.
+            _defs = config_data.setdefault("agents", {}).setdefault("defaults", {})
+            _defs.setdefault("tools", {}).setdefault("exec", {}).update({
+                "security": "full",
+                "ask": "off",
+            })
+            print("[NON-INTERACTIVE] agents.defaults.tools.exec: security=full, ask=off (PR1: spawned sub-agents unlocked)", file=sys.stderr)
+
             for dept_id, dept_info in selected_departments.items():
                 add_agent_to_config(config_data, dept_id, dept_info)
             save_openclaw_config(config_data)

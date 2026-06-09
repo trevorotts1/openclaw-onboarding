@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # apply-fleet-standards.sh — Idempotent enforcer for the OpenClaw fleet standard:
 #   • Sub-agents fully permitted (spawn + exec + read/write across all agents)
+#   • agents.defaults.tools.exec: security=full, ask=off (PR1: spawned sub-agents unlocked)
 #   • Telegram media limit 50 MB (inbound + outbound)
 #
 # Why a script and not `openclaw config set`:
@@ -61,11 +62,15 @@ before_json = json.dumps(cfg, sort_keys=True, indent=2)
 #   - docs.openclaw.ai/gateway/security (exec.security, exec.ask, sandbox)
 #   - docs.openclaw.ai/tools/multi-agent-sandbox-tools (agent-specific policy)
 #   - Live test on OpenClaw 2026.5.28 (Sheila Reynolds' Mac mini, session logs)
+#   - PR1 (2026-06-09): agents.defaults.tools.exec added so SPAWNED sub-agents
+#     also inherit full execution policy (without this the platform default
+#     narrows spawned sub-agents to a minimal read-only tool set).
 #
 # Key insight: per-agent settings override global defaults. So we must:
 #   1. Set the global default to ["*"]
 #   2. Iterate all agents and set their explicit allowAgents to ["*"] OR
 #      delete their per-agent allowAgents so they inherit the global default.
+#   3. Set agents.defaults.tools.exec so ALL spawned sub-agents run at full exec.
 
 CANONICAL = {
     "tools": {
@@ -76,6 +81,12 @@ CANONICAL = {
     },
     "agents": {
         "defaults": {
+            "tools": {
+                "exec": {
+                    "security": "full",
+                    "ask": "off"
+                }
+            },
             "subagents": {
                 "allowAgents": ["*"],
                 "requireAgentId": False
