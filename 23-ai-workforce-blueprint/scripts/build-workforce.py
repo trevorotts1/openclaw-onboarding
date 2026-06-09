@@ -3459,7 +3459,19 @@ def add_agent_to_config(config, dept_id, dept_info):
     # The selector picks Ollama Kimi 2.6+ first, with fallbacks.
     # If select_model.py is unreachable at install time, fall back to a
     # safe default that Anthropic-strips and matches v9.5.x policy.
-    model = _resolve_director_model(dept_id) or "ollama/kimi-k2.6:cloud"
+    #
+    # N31 FIX (v11.1.0): model MUST be an object {primary, fallbacks:[...]},
+    # NEVER a bare string. Bare strings bypass all fallback chains — if Ollama
+    # Cloud is over-capacity the agent dies silently. See AGENTS.md N31.
+    _primary = _resolve_director_model(dept_id) or "ollama/kimi-k2.6:cloud"
+    model = {
+        "primary": _primary,
+        "fallbacks": [
+            "openrouter/moonshotai/kimi-k2.6",
+            "ollama/deepseek-v4-pro:cloud",
+            "openrouter/deepseek/deepseek-v4-pro",
+        ],
+    }
     workspace = os.path.join(DEPARTMENTS_DIR, dept_id)
     agent_dir = _agent_dir_for(agent_id)
 
