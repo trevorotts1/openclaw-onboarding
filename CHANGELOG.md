@@ -1,3 +1,12 @@
+## [v11.0.1]  -  2026-06-09  -  fix: gemini-indexer hang bug — explicit 30 s timeout + bounded 429/quota retry (Skill 22 v6.5.8, Skill 23 v11.0.1)
+
+- **gemini-indexer.py (all 4 copies):** `genai.Client` now constructed with `http_options=types.HttpOptions(timeout=30000)` (30 s, milliseconds per SDK). Without this, a 429/quota-exhausted response stalled the HTTPS socket indefinitely (root cause of Cassandra's 1-hour persona-index hang). Added `_is_quota_or_timeout()` helper that matches 429, quota, rate, resource_exhausted, timed out, timeout in exception text. `get_embedding()` now retries quota/timeout errors up to 2 times with exponential backoff, then calls `sys.exit(2)` with `"ERROR: embedding quota exhausted / request timed out — semantic index not built, keyword fallback in effect"`. All other exceptions follow the existing retry logic. The indexer can never hang indefinitely again.
+- **SDK param confirmed:** `types.HttpOptions.timeout` is `Optional[int]` in milliseconds. Source: `https://raw.githubusercontent.com/googleapis/python-genai/main/google/genai/types.py`
+- **Skill 22 (book-to-persona):** skill-version.txt bumped v6.5.7 → v6.5.8.
+- **Skill 23 (ai-workforce-blueprint):** skill-version.txt bumped 11.0.0 → 11.0.1 (via umbrella bump).
+
+---
+
 ## [v11.0.0]  -  2026-06-09  -  milestone: command-center pipeline repair, Skill 01 v6.5.9, Skill 35 v2.5.0, antfarm purge, graphify-out removed
 
 - **Command-center pipeline repair (Skill 23 / Skill 32):** canonical dept-slug routing, master-agent wiring, SOP-into-dispatch, persona null-guard + governing-personas + company-config v2, build-state backfill, `ROLE_LIBRARY_PATH` env resolution.

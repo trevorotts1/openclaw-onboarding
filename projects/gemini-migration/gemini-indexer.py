@@ -33,7 +33,10 @@ def get_client():
     if not api_key:
         print("ERROR: GOOGLE_API_KEY not found in ~/clawd/secrets/.env")
         sys.exit(1)
-    return genai.Client(api_key=api_key)
+    # Explicit 30 s request timeout (units: milliseconds per SDK HttpOptions).
+    # Without this the HTTPS socket stalls indefinitely on 429/quota exhaustion.
+    # Ref: https://raw.githubusercontent.com/googleapis/python-genai/main/google/genai/types.py
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=30000))
 
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -59,8 +62,22 @@ def chunk_text(text):
         start = end - CHUNK_OVERLAP
     return chunks
 
+_QUOTA_RETRIES = 2  # max retries on 429/quota/timeout before giving up
+
+def _is_quota_or_timeout(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return ("429" in msg or "quota" in msg or "rate" in msg
+            or "resource_exhausted" in msg or "timed out" in msg
+            or "timeout" in msg)
+
 def get_embedding(client, text, retries=5):
+    """
+    On 429 / RESOURCE_EXHAUSTED / timeout: retries up to _QUOTA_RETRIES times
+    with exponential backoff, then exits non-zero with a clear message so the
+    caller falls back to keyword mode. The indexer can never hang indefinitely.
+    """
     delay = 2
+    quota_attempts = 0
     for attempt in range(retries):
         try:
             response = client.models.embed_content(
@@ -70,7 +87,20 @@ def get_embedding(client, text, retries=5):
             )
             return np.array(response.embeddings[0].values, dtype=np.float32)
         except Exception as e:
-            if "429" in str(e).lower() or "quota" in str(e).lower():
+            if _is_quota_or_timeout(e):
+                quota_attempts += 1
+                if quota_attempts > _QUOTA_RETRIES:
+                    print(
+                        "ERROR: embedding quota exhausted / request timed out — "
+                        "semantic index not built, keyword fallback in effect",
+                        file=sys.stderr,
+                    )
+                    sys.exit(2)
+                print(
+                    f"[gemini-indexer] WARN: quota/timeout (attempt {quota_attempts}/{_QUOTA_RETRIES}), "
+                    f"retrying in {delay}s …",
+                    file=sys.stderr,
+                )
                 time.sleep(delay)
                 delay *= 2
             else:
