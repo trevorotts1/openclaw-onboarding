@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-05-19T18:33:40.873593+00:00",
+  "generated_at": "2026-06-09T21:20:09.959606+00:00",
   "version": "11.0.1",
-  "total_roles": 233,
+  "total_roles": 244,
   "departments": {
     "app-development": {
       "count": 14,
@@ -319,6 +319,27 @@
         "web-designer",
         "web-security-specialist",
         "wordpress-specialist"
+      ]
+    },
+    "general-task": {
+      "count": 5,
+      "roles": [
+        "head-of-general-task",
+        "generalist-operator",
+        "triage-classifier",
+        "qc-specialist-general-task",
+        "sop-writer"
+      ]
+    },
+    "project-architecture-office": {
+      "count": 6,
+      "roles": [
+        "chief-project-architect",
+        "research-agent",
+        "code-monitor",
+        "code-editor",
+        "qc-agent",
+        "sop-writer"
       ]
     }
   },
@@ -2652,6 +2673,117 @@
       "sop_count": 3,
       "sop_min": 3,
       "path": "templates/role-library/web-development/sop-writer.md"
+    },
+    {
+      "slug": "head-of-general-task",
+      "dept": "general-task",
+      "title": "Head Of General Task",
+      "role_type": "leadership",
+      "word_count": 3410,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/general-task/head-of-general-task.md"
+    },
+    {
+      "slug": "generalist-operator",
+      "dept": "general-task",
+      "title": "Generalist Operator",
+      "role_type": "specialist",
+      "word_count": 1505,
+      "sop_count": 2,
+      "sop_min": 2,
+      "path": "templates/role-library/general-task/generalist-operator.md"
+    },
+    {
+      "slug": "triage-classifier",
+      "dept": "general-task",
+      "title": "Triage Classifier",
+      "role_type": "specialist",
+      "word_count": 1153,
+      "sop_count": 1,
+      "sop_min": 1,
+      "path": "templates/role-library/general-task/triage-classifier.md"
+    },
+    {
+      "slug": "qc-specialist-general-task",
+      "dept": "general-task",
+      "title": "QC Specialist General Task",
+      "role_type": "qc",
+      "word_count": 1409,
+      "sop_count": 2,
+      "sop_min": 2,
+      "path": "templates/role-library/general-task/qc-specialist-general-task.md"
+    },
+    {
+      "slug": "sop-writer",
+      "dept": "general-task",
+      "title": "SOP Writer",
+      "role_type": "on-call",
+      "word_count": 1246,
+      "sop_count": 2,
+      "sop_min": 2,
+      "path": "templates/role-library/general-task/sop-writer.md"
+    },
+    {
+      "slug": "chief-project-architect",
+      "dept": "project-architecture-office",
+      "title": "Chief Project Architect",
+      "role_type": "leadership",
+      "word_count": 3599,
+      "sop_count": 8,
+      "sop_min": 8,
+      "path": "templates/role-library/project-architecture-office/chief-project-architect.md"
+    },
+    {
+      "slug": "research-agent",
+      "dept": "project-architecture-office",
+      "title": "Research Agent",
+      "role_type": "specialist",
+      "word_count": 1120,
+      "sop_count": 1,
+      "sop_min": 1,
+      "path": "templates/role-library/project-architecture-office/research-agent.md"
+    },
+    {
+      "slug": "code-monitor",
+      "dept": "project-architecture-office",
+      "title": "Code Monitor",
+      "role_type": "specialist",
+      "word_count": 892,
+      "sop_count": 1,
+      "sop_min": 1,
+      "path": "templates/role-library/project-architecture-office/code-monitor.md"
+    },
+    {
+      "slug": "code-editor",
+      "dept": "project-architecture-office",
+      "title": "Code Editor",
+      "role_type": "specialist",
+      "word_count": 1347,
+      "sop_count": 2,
+      "sop_min": 2,
+      "path": "templates/role-library/project-architecture-office/code-editor.md"
+    },
+    {
+      "slug": "qc-agent",
+      "dept": "project-architecture-office",
+      "title": "QC Agent",
+      "role_type": "qc",
+      "word_count": 1169,
+      "sop_count": 2,
+      "sop_min": 2,
+      "path": "templates/role-library/project-architecture-office/qc-agent.md"
+    },
+    {
+      "slug": "sop-writer",
+      "dept": "project-architecture-office",
+      "title": "SOP Writer",
+      "role_type": "on-call",
+      "word_count": 722,
+      "sop_count": 2,
+      "sop_min": 2,
+      "path": "templates/role-library/project-architecture-office/sop-writer.md"
     }
-  ]
+  ],
+  "total_departments": 19
 }

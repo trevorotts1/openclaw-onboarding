@@ -1,3 +1,59 @@
+## [v11.1.0-step2] — 2026-06-09 — General Task + Project Architecture Office departments (v11.1.0 pre-bump)
+
+### Why
+Two mandatory departments were missing from the 26-department floor: (1) General Task — a
+zero-drop catch-all for tasks that fail keyword + semantic routing; (2) Project Architecture
+Office (PAO) — a bounded execution department that governs any project from PRD to verifiable
+completion. Without General Task, low-confidence fallback tasks vanish silently. Without PAO,
+there is no canonical loop-engineering harness (max 12 loops, 72h deadline, ≥8.5 gate) for
+cross-department projects.
+
+### Changed
+
+#### New department: General Task (`general-task`)
+- **5 roles** added to `templates/role-library/general-task/`:
+  - `head-of-general-task.md` — leadership/triage; SOP-03 recurrence detection with ≥4/month dept recommendation trigger
+  - `generalist-operator.md` — on-call execution with QC gate
+  - `triage-classifier.md` — on-call re-classifier returning `{task_id, dept_slug, confidence, reason}`
+  - `qc-specialist-general-task.md` — dedicated QC (Rule 6: different model from writer)
+  - `sop-writer.md` — SOP codification for recurring novel task types
+- **Routing priority: 1** (lowest); intentionally no keywords — reached only via explicit fallback path
+- `suggested-roles/general-task-suggested-roles.md` — NEW
+
+#### New department: Project Architecture Office (`project-architecture-office`)
+- **6 roles** added to `templates/role-library/project-architecture-office/`:
+  - `chief-project-architect.md` — leadership/orchestrator with 8 SOPs; owns PRD folder lifecycle, loop-state.json, pao-reaper cron
+  - `research-agent.md` — deep-research; Context7 primary; mandatory source citations
+  - `code-monitor.md` — CI/build watcher; NEVER edits code; short-lived
+  - `code-editor.md` — implementation agent; elevated reasoning; no self-approval
+  - `qc-agent.md` — QC gatekeeper; `{task_id, round, score, dimension_scores, pass, fix_directives, model_used, writer_model}`; max 3 rounds
+  - `sop-writer.md` — SOP authoring for reusable project patterns
+- **PRD folder template** added at `templates/prd-folder/`:
+  - `PRD.md`, `checklist.md`, `CHANGELOG.md`, `todo.md`, `QC.md`, `loop-state.json`
+  - `loop-state.json` schema: `{project, goal_ref, loop, max_loops:12, deadline_iso, last_qc_score, gate:8.5, cron_id, status, started_iso, active_agents[]}`
+- **Routing priority: 7**; keywords: `prd`, `project requirements`, `spec`, `scope`, `milestone`, `project plan`, `architecture`, `build plan`, `requirements doc`, `project architecture`
+- `suggested-roles/project-architecture-office-suggested-roles.md` — NEW
+
+#### Config updates
+- `department-naming-map.json` — version 2.3.0 → 2.4.0; both departments added to `mandatory` block; description updated to "26-department standard" (floor 17+7+2=26)
+- `scripts/department-floor.py` — `HARDCODED_MANDATORY` + `evaluate_floor()` updated to include `general-task` and `project-architecture-office`; all "23-department standard" refs updated to "26-department standard"; floor math 23→26
+- `templates/role-library/_index.json` — total_roles 233→244, total_departments 17→19; 11 new role entries + 2 new department blocks
+- `templates/role-library/_qc-summary.md` — heading updated to v11.1.0, total 233/233→244/244, rows added for both new departments
+
+### Files touched
+- `23-ai-workforce-blueprint/templates/role-library/general-task/` — 5 NEW files
+- `23-ai-workforce-blueprint/templates/role-library/project-architecture-office/` — 6 NEW files
+- `23-ai-workforce-blueprint/templates/prd-folder/` — 6 NEW files
+- `23-ai-workforce-blueprint/suggested-roles/general-task-suggested-roles.md` — NEW
+- `23-ai-workforce-blueprint/suggested-roles/project-architecture-office-suggested-roles.md` — NEW
+- `23-ai-workforce-blueprint/department-naming-map.json`
+- `23-ai-workforce-blueprint/scripts/department-floor.py`
+- `23-ai-workforce-blueprint/templates/role-library/_index.json`
+- `23-ai-workforce-blueprint/templates/role-library/_qc-summary.md`
+- `23-ai-workforce-blueprint/CHANGELOG.md`
+
+Note: umbrella version bump deferred to Step 4 (bump-version.sh --tag with all 9 markers).
+
 ## [v10.15.35] — 2026-06-09 — CEO = orchestrator-only: production tool lock + canonical SOP-00 Owner Task Routing
 
 ### Why

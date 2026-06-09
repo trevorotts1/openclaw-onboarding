@@ -1,0 +1,14 @@
+{
+  "project": "{{project-slug}}",
+  "goal_ref": "checklist.md",
+  "loop": 0,
+  "max_loops": 12,
+  "deadline_iso": "{{ISO_DATE_PLUS_72H}}",
+  "last_qc_score": 0.0,
+  "gate": 8.5,
+  "cron_id": "pao-{{project-slug}}",
+  "status": "running",
+  "started_iso": "{{ISO_DATE}}",
+  "active_agents": [],
+  "_comment": "status values: running | done | stopped | failed. Auto-kill triggers when status != running OR loop >= max_loops OR now > deadline_iso. pao-reaper scans this file daily at 04:00."
+}

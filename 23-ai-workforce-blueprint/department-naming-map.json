@@ -1,90 +1,94 @@
 {
-  "version": "2.3.0",
-  "description": "Department naming and tier map for AI Workforce Blueprint v2.3 (24-department standard). Mandatory departments auto-build for every company (standard-unless-declined). Each vertical pack has a universal_primary department (the first dept in auto_add_departments, marked universal_primary=true) that is auto-added to EVERY client regardless of industry — this is what makes 17+7=24 the universal floor. Remaining pack departments (universal_primary=false or absent) still require an industry keyword match and serve as flavor/extras on top of the 24. WS-4: wired into build-workforce.py apply_vertical_packs() and department-floor.py evaluate_floor(). Each vertical-pack department carries a base_suggested_roles file so it ships with real roles + SOPs and never hard-fails assert_dept_map_resolves; the Research dept's industry-analysis-specialist-mckinsey-style role refines it via the industry-org-design research manifest. Custom departments are added by owner request. Personal Assistant is now mandatory (floor raised to 24 — approved v10.15.42).",
-
+  "version": "2.4.0",
+  "description": "Department naming and tier map for AI Workforce Blueprint v2.3 (26-department standard). Mandatory departments auto-build for every company (standard-unless-declined). Each vertical pack has a universal_primary department (the first dept in auto_add_departments, marked universal_primary=true) that is auto-added to EVERY client regardless of industry \u2014 this is what makes 17+7+2=26 the universal floor. Remaining pack departments (universal_primary=false or absent) still require an industry keyword match and serve as flavor/extras on top of the 24. WS-4: wired into build-workforce.py apply_vertical_packs() and department-floor.py evaluate_floor(). Each vertical-pack department carries a base_suggested_roles file so it ships with real roles + SOPs and never hard-fails assert_dept_map_resolves; the Research dept's industry-analysis-specialist-mckinsey-style role refines it via the industry-org-design research manifest. Custom departments are added by owner request. Personal Assistant is now mandatory (floor raised to 24 \u2014 approved v10.15.42). General Task (catch-all routing fallback) + Project Architecture Office (PAO, project governance) added as mandatory depts, raising the floor to 26 (v11.1.0).",
   "mandatory": {
     "marketing": {
       "display_name": "Marketing",
-      "emoji": "📣",
+      "emoji": "\ud83d\udce3",
       "one_liner": "Getting the word out about your business",
       "director_title": "Director of Marketing",
       "suggested_roles_file": "marketing-suggested-roles.md"
     },
     "sales": {
       "display_name": "Sales",
-      "emoji": "💰",
+      "emoji": "\ud83d\udcb0",
       "one_liner": "Turning interested people into paying customers",
       "director_title": "Director of Sales",
       "suggested_roles_file": "sales-suggested-roles.md"
     },
     "billing-finance": {
       "display_name": "Billing & Finance",
-      "emoji": "🧾",
+      "emoji": "\ud83e\uddfe",
       "one_liner": "Invoices, payments, tracking your money",
       "director_title": "Director of Finance",
       "suggested_roles_file": "billing-suggested-roles.md"
     },
     "customer-support": {
       "display_name": "Customer Support",
-      "emoji": "🤝",
+      "emoji": "\ud83e\udd1d",
       "one_liner": "Helping your existing customers when they need it",
       "director_title": "Director of Customer Support",
       "suggested_roles_file": "customer-support-suggested-roles.md"
     },
     "web-development": {
       "display_name": "Web Development",
-      "emoji": "🌐",
+      "emoji": "\ud83c\udf10",
       "one_liner": "Your website, funnels, landing pages, SEO",
       "director_title": "Director of Web Development",
       "suggested_roles_file": "web-development-suggested-roles.md",
-      "v2_1_additions": ["SEO Specialist", "Technical SEO Specialist"]
+      "v2_1_additions": [
+        "SEO Specialist",
+        "Technical SEO Specialist"
+      ]
     },
     "app-development": {
       "display_name": "App Development",
-      "emoji": "📱",
+      "emoji": "\ud83d\udcf1",
       "one_liner": "Desktop apps, mobile apps, PWAs",
       "director_title": "Director of App Development",
       "suggested_roles_file": "app-development-suggested-roles.md"
     },
     "graphics": {
       "display_name": "Graphics",
-      "emoji": "🎨",
-      "one_liner": "Visual content — logos, images, ads, slides",
+      "emoji": "\ud83c\udfa8",
+      "one_liner": "Visual content \u2014 logos, images, ads, slides",
       "director_title": "Director of Graphics",
       "suggested_roles_file": "graphics-suggested-roles.md"
     },
     "video": {
       "display_name": "Video",
-      "emoji": "🎬",
+      "emoji": "\ud83c\udfac",
       "one_liner": "Video production, editing, AI video, YouTube optimization",
       "director_title": "Director of Video",
       "suggested_roles_file": "video-suggested-roles.md",
-      "v2_1_additions": ["Video SEO Specialist"]
+      "v2_1_additions": [
+        "Video SEO Specialist"
+      ]
     },
     "audio": {
       "display_name": "Audio",
-      "emoji": "🎙️",
+      "emoji": "\ud83c\udf99\ufe0f",
       "one_liner": "Podcasts, voiceovers, AI voice, music, sound design",
       "director_title": "Director of Audio",
       "suggested_roles_file": "audio-suggested-roles.md"
     },
     "research": {
       "display_name": "Research",
-      "emoji": "🔬",
+      "emoji": "\ud83d\udd2c",
       "one_liner": "Market research, competitor analysis, data insights",
       "director_title": "Director of Research",
       "suggested_roles_file": "research-suggested-roles.md"
     },
     "communications": {
       "display_name": "Communications",
-      "emoji": "📨",
+      "emoji": "\ud83d\udce8",
       "one_liner": "PR, announcements, internal and external messaging",
       "director_title": "Director of Communications",
       "suggested_roles_file": "communications-suggested-roles.md"
     },
     "crm": {
       "display_name": "CRM",
-      "emoji": "🔗",
+      "emoji": "\ud83d\udd17",
       "one_liner": "Manages your contact management, email, automations",
       "director_title": "Director of CRM",
       "suggested_roles_file": "crm-suggested-roles.md",
@@ -92,122 +96,369 @@
     },
     "openclaw-maintenance": {
       "display_name": "OpenClaw Maintenance",
-      "emoji": "🛠️",
+      "emoji": "\ud83d\udee0\ufe0f",
       "one_liner": "Keeps your AI system healthy and up to date",
       "director_title": "Director of OpenClaw Maintenance",
       "suggested_roles_file": "openclaw-maintenance-suggested-roles.md"
     },
     "legal": {
       "display_name": "Legal",
-      "emoji": "⚖️",
+      "emoji": "\u2696\ufe0f",
       "one_liner": "Contracts, regulations, keeping you protected",
       "director_title": "Director of Legal",
       "suggested_roles_file": "legal-compliance-suggested-roles.md"
     },
     "social-media": {
       "display_name": "Social Media",
-      "emoji": "📲",
+      "emoji": "\ud83d\udcf2",
       "one_liner": "Organic posting and community across all platforms",
       "director_title": "Director of Social Media",
       "suggested_roles_file": "social-media-suggested-roles.md",
       "v2_1_specialists": [
-        "Facebook Specialist", "Instagram Specialist", "TikTok Specialist",
-        "LinkedIn Specialist", "Twitter/X Specialist", "Pinterest Specialist",
-        "YouTube Channel Specialist", "Threads Specialist", "Bluesky Specialist",
+        "Facebook Specialist",
+        "Instagram Specialist",
+        "TikTok Specialist",
+        "LinkedIn Specialist",
+        "Twitter/X Specialist",
+        "Pinterest Specialist",
+        "YouTube Channel Specialist",
+        "Threads Specialist",
+        "Bluesky Specialist",
         "Community Manager"
       ]
     },
     "paid-advertisement": {
       "display_name": "Paid Advertisement",
-      "emoji": "🎯",
-      "one_liner": "Paid ads across every platform — search, social, audio",
+      "emoji": "\ud83c\udfaf",
+      "one_liner": "Paid ads across every platform \u2014 search, social, audio",
       "director_title": "Director of Paid Advertisement",
       "suggested_roles_file": "paid-advertisement-suggested-roles.md",
       "v2_1_specialists": [
-        "Google Ads Specialist", "Bing Ads Specialist",
-        "Facebook Ads Specialist", "Instagram Ads Specialist",
-        "TikTok Ads Specialist", "LinkedIn Ads Specialist",
-        "Twitter/X Ads Specialist", "Pinterest Ads Specialist",
-        "YouTube Ads Specialist", "Spotify Audio Ads Specialist",
-        "Snapchat Ads Specialist", "Native Ads Specialist"
+        "Google Ads Specialist",
+        "Bing Ads Specialist",
+        "Facebook Ads Specialist",
+        "Instagram Ads Specialist",
+        "TikTok Ads Specialist",
+        "LinkedIn Ads Specialist",
+        "Twitter/X Ads Specialist",
+        "Pinterest Ads Specialist",
+        "YouTube Ads Specialist",
+        "Spotify Audio Ads Specialist",
+        "Snapchat Ads Specialist",
+        "Native Ads Specialist"
       ]
     },
     "personal-assistant": {
       "display_name": "Personal Assistant",
-      "emoji": "🙋",
-      "one_liner": "Inbox, scheduling, travel, personal life — the owner's right hand",
+      "emoji": "\ud83d\ude4b",
+      "one_liner": "Inbox, scheduling, travel, personal life \u2014 the owner's right hand",
       "director_title": "Director of Personal Assistance",
       "suggested_roles_file": "personal-assistant-suggested-roles.md",
       "v2_3_note": "Promoted to mandatory in v10.15.42 (Skill 42 PA Library approved). Raises the universal floor to 24 departments."
+    },
+    "general-task": {
+      "display_name": "General Task",
+      "emoji": "\ud83d\uddc2\ufe0f",
+      "one_liner": "Catches any task that doesn't fit a dedicated department, so nothing is ever dropped",
+      "director_title": "Head of General Task",
+      "suggested_roles_file": "general-task-suggested-roles.md"
+    },
+    "project-architecture-office": {
+      "display_name": "Project Architecture Office",
+      "emoji": "\ud83c\udfdb\ufe0f",
+      "one_liner": "Governs every project from trigger to verifiable completion \u2014 creates PRDs, runs loops, hands off to building departments",
+      "director_title": "Chief Project Architect",
+      "suggested_roles_file": "project-architecture-office-suggested-roles.md"
     }
   },
-
   "vertical_packs": {
     "personal-pro-dev": {
-      "auto_add_keywords": ["coach", "mentor", "speaker", "thought leader", "consultant", "mastermind", "course", "training", "keynote", "workshop", "transformation"],
+      "auto_add_keywords": [
+        "coach",
+        "mentor",
+        "speaker",
+        "thought leader",
+        "consultant",
+        "mastermind",
+        "course",
+        "training",
+        "keynote",
+        "workshop",
+        "transformation"
+      ],
       "auto_add_departments": [
-        {"id": "presentations", "name": "Presentations", "emoji": "🎤", "one_liner": "Slides, decks, keynote prep, talking points", "base_suggested_roles": "graphics-suggested-roles.md", "universal_primary": true},
-        {"id": "client-coaches", "name": "Client Coaches", "emoji": "🧠", "one_liner": "Coaches who work directly with your coaching clients", "base_suggested_roles": "customer-support-suggested-roles.md"},
-        {"id": "course-creator", "name": "Course Creator", "emoji": "🎓", "one_liner": "Curriculum design, course operations, student success", "base_suggested_roles": "video-suggested-roles.md"},
-        {"id": "podcast", "name": "Podcast", "emoji": "🎧", "one_liner": "Production, guest booking, show notes, distribution", "base_suggested_roles": "audio-suggested-roles.md"},
-        {"id": "community-management", "name": "Community Management", "emoji": "👥", "one_liner": "Facebook Groups, Skool, Circle, Discord, Slack", "base_suggested_roles": "social-media-suggested-roles.md"}
+        {
+          "id": "presentations",
+          "name": "Presentations",
+          "emoji": "\ud83c\udfa4",
+          "one_liner": "Slides, decks, keynote prep, talking points",
+          "base_suggested_roles": "graphics-suggested-roles.md",
+          "universal_primary": true
+        },
+        {
+          "id": "client-coaches",
+          "name": "Client Coaches",
+          "emoji": "\ud83e\udde0",
+          "one_liner": "Coaches who work directly with your coaching clients",
+          "base_suggested_roles": "customer-support-suggested-roles.md"
+        },
+        {
+          "id": "course-creator",
+          "name": "Course Creator",
+          "emoji": "\ud83c\udf93",
+          "one_liner": "Curriculum design, course operations, student success",
+          "base_suggested_roles": "video-suggested-roles.md"
+        },
+        {
+          "id": "podcast",
+          "name": "Podcast",
+          "emoji": "\ud83c\udfa7",
+          "one_liner": "Production, guest booking, show notes, distribution",
+          "base_suggested_roles": "audio-suggested-roles.md"
+        },
+        {
+          "id": "community-management",
+          "name": "Community Management",
+          "emoji": "\ud83d\udc65",
+          "one_liner": "Facebook Groups, Skool, Circle, Discord, Slack",
+          "base_suggested_roles": "social-media-suggested-roles.md"
+        }
       ]
     },
     "real-estate": {
-      "auto_add_keywords": ["realtor", "real estate", "broker", "listings", "mls", "property", "homes for sale", "rental"],
+      "auto_add_keywords": [
+        "realtor",
+        "real estate",
+        "broker",
+        "listings",
+        "mls",
+        "property",
+        "homes for sale",
+        "rental"
+      ],
       "auto_add_departments": [
-        {"id": "listings", "name": "Listings Management", "emoji": "🏘️", "one_liner": "MLS, photos, descriptions, syndication", "base_suggested_roles": "marketing-suggested-roles.md", "universal_primary": true},
-        {"id": "lead-generation", "name": "Lead Generation", "emoji": "📍", "one_liner": "Zillow, Realtor.com, FB lead ads, local SEO", "base_suggested_roles": "paid-advertisement-suggested-roles.md"},
-        {"id": "showings", "name": "Showings Coordinator", "emoji": "🔑", "one_liner": "Scheduling, follow-up, feedback collection", "base_suggested_roles": "customer-support-suggested-roles.md"},
-        {"id": "open-house", "name": "Open House", "emoji": "🚪", "one_liner": "Marketing, host coordination, lead capture", "base_suggested_roles": "marketing-suggested-roles.md"},
-        {"id": "closing-coordinator", "name": "Closing Coordinator", "emoji": "📋", "one_liner": "Transaction management, document tracking, deadline compliance", "base_suggested_roles": "legal-compliance-suggested-roles.md"},
-        {"id": "local-market-intelligence", "name": "Local Market Intelligence", "emoji": "🗺️", "one_liner": "Comps, trends, neighborhood data", "base_suggested_roles": "research-suggested-roles.md"}
+        {
+          "id": "listings",
+          "name": "Listings Management",
+          "emoji": "\ud83c\udfd8\ufe0f",
+          "one_liner": "MLS, photos, descriptions, syndication",
+          "base_suggested_roles": "marketing-suggested-roles.md",
+          "universal_primary": true
+        },
+        {
+          "id": "lead-generation",
+          "name": "Lead Generation",
+          "emoji": "\ud83d\udccd",
+          "one_liner": "Zillow, Realtor.com, FB lead ads, local SEO",
+          "base_suggested_roles": "paid-advertisement-suggested-roles.md"
+        },
+        {
+          "id": "showings",
+          "name": "Showings Coordinator",
+          "emoji": "\ud83d\udd11",
+          "one_liner": "Scheduling, follow-up, feedback collection",
+          "base_suggested_roles": "customer-support-suggested-roles.md"
+        },
+        {
+          "id": "open-house",
+          "name": "Open House",
+          "emoji": "\ud83d\udeaa",
+          "one_liner": "Marketing, host coordination, lead capture",
+          "base_suggested_roles": "marketing-suggested-roles.md"
+        },
+        {
+          "id": "closing-coordinator",
+          "name": "Closing Coordinator",
+          "emoji": "\ud83d\udccb",
+          "one_liner": "Transaction management, document tracking, deadline compliance",
+          "base_suggested_roles": "legal-compliance-suggested-roles.md"
+        },
+        {
+          "id": "local-market-intelligence",
+          "name": "Local Market Intelligence",
+          "emoji": "\ud83d\uddfa\ufe0f",
+          "one_liner": "Comps, trends, neighborhood data",
+          "base_suggested_roles": "research-suggested-roles.md"
+        }
       ]
     },
     "service-industry": {
-      "auto_add_keywords": ["spa", "salon", "plumber", "electrician", "maid", "cleaning service", "lawn care", "hvac", "pest control", "auto repair", "restaurant"],
+      "auto_add_keywords": [
+        "spa",
+        "salon",
+        "plumber",
+        "electrician",
+        "maid",
+        "cleaning service",
+        "lawn care",
+        "hvac",
+        "pest control",
+        "auto repair",
+        "restaurant"
+      ],
       "auto_add_departments": [
-        {"id": "scheduling-dispatch", "name": "Scheduling & Dispatch", "emoji": "📅", "one_liner": "Booking, routing, technician/staff scheduling", "base_suggested_roles": "customer-support-suggested-roles.md", "universal_primary": true},
-        {"id": "field-operations", "name": "Field Operations", "emoji": "🚐", "one_liner": "Service quality, on-site procedures, customer satisfaction", "base_suggested_roles": "customer-support-suggested-roles.md"},
-        {"id": "reviews-management", "name": "Reviews Management", "emoji": "⭐", "one_liner": "Google, Yelp, industry-specific reviews — request, monitor, respond", "base_suggested_roles": "customer-support-suggested-roles.md"},
-        {"id": "recurring-service", "name": "Recurring Service Coordinator", "emoji": "🔄", "one_liner": "Memberships, subscriptions, retention", "base_suggested_roles": "crm-suggested-roles.md"}
+        {
+          "id": "scheduling-dispatch",
+          "name": "Scheduling & Dispatch",
+          "emoji": "\ud83d\udcc5",
+          "one_liner": "Booking, routing, technician/staff scheduling",
+          "base_suggested_roles": "customer-support-suggested-roles.md",
+          "universal_primary": true
+        },
+        {
+          "id": "field-operations",
+          "name": "Field Operations",
+          "emoji": "\ud83d\ude90",
+          "one_liner": "Service quality, on-site procedures, customer satisfaction",
+          "base_suggested_roles": "customer-support-suggested-roles.md"
+        },
+        {
+          "id": "reviews-management",
+          "name": "Reviews Management",
+          "emoji": "\u2b50",
+          "one_liner": "Google, Yelp, industry-specific reviews \u2014 request, monitor, respond",
+          "base_suggested_roles": "customer-support-suggested-roles.md"
+        },
+        {
+          "id": "recurring-service",
+          "name": "Recurring Service Coordinator",
+          "emoji": "\ud83d\udd04",
+          "one_liner": "Memberships, subscriptions, retention",
+          "base_suggested_roles": "crm-suggested-roles.md"
+        }
       ]
     },
     "ecommerce": {
-      "auto_add_keywords": ["shop", "store", "products", "shipping", "skus", "inventory", "shopify", "amazon", "etsy"],
+      "auto_add_keywords": [
+        "shop",
+        "store",
+        "products",
+        "shipping",
+        "skus",
+        "inventory",
+        "shopify",
+        "amazon",
+        "etsy"
+      ],
       "auto_add_departments": [
-        {"id": "logistics-fulfillment", "name": "Logistics & Fulfillment", "emoji": "📦", "one_liner": "Inventory, shipping, returns", "base_suggested_roles": "customer-support-suggested-roles.md", "universal_primary": true},
-        {"id": "merchandising", "name": "Merchandising", "emoji": "🛍️", "one_liner": "Product listings, pricing, promotions", "base_suggested_roles": "marketing-suggested-roles.md"}
+        {
+          "id": "logistics-fulfillment",
+          "name": "Logistics & Fulfillment",
+          "emoji": "\ud83d\udce6",
+          "one_liner": "Inventory, shipping, returns",
+          "base_suggested_roles": "customer-support-suggested-roles.md",
+          "universal_primary": true
+        },
+        {
+          "id": "merchandising",
+          "name": "Merchandising",
+          "emoji": "\ud83d\udecd\ufe0f",
+          "one_liner": "Product listings, pricing, promotions",
+          "base_suggested_roles": "marketing-suggested-roles.md"
+        }
       ]
     },
     "saas": {
-      "auto_add_keywords": ["software", "platform", "subscription", "users", "freemium", "trial", "api", "integrations"],
+      "auto_add_keywords": [
+        "software",
+        "platform",
+        "subscription",
+        "users",
+        "freemium",
+        "trial",
+        "api",
+        "integrations"
+      ],
       "auto_add_departments": [
-        {"id": "engineering", "name": "Engineering", "emoji": "⚙️", "one_liner": "Core product development", "base_suggested_roles": "app-development-suggested-roles.md", "universal_primary": true},
-        {"id": "devops", "name": "DevOps", "emoji": "🚀", "one_liner": "Deployment, infrastructure, monitoring", "base_suggested_roles": "openclaw-maintenance-suggested-roles.md"},
-        {"id": "product-management", "name": "Product Management", "emoji": "🗂️", "one_liner": "Roadmap, user research, feature prioritization", "base_suggested_roles": "research-suggested-roles.md"}
+        {
+          "id": "engineering",
+          "name": "Engineering",
+          "emoji": "\u2699\ufe0f",
+          "one_liner": "Core product development",
+          "base_suggested_roles": "app-development-suggested-roles.md",
+          "universal_primary": true
+        },
+        {
+          "id": "devops",
+          "name": "DevOps",
+          "emoji": "\ud83d\ude80",
+          "one_liner": "Deployment, infrastructure, monitoring",
+          "base_suggested_roles": "openclaw-maintenance-suggested-roles.md"
+        },
+        {
+          "id": "product-management",
+          "name": "Product Management",
+          "emoji": "\ud83d\uddc2\ufe0f",
+          "one_liner": "Roadmap, user research, feature prioritization",
+          "base_suggested_roles": "research-suggested-roles.md"
+        }
       ]
     },
     "agency": {
-      "auto_add_keywords": ["agency", "clients", "client work", "campaigns", "white label", "fractional", "done for you"],
+      "auto_add_keywords": [
+        "agency",
+        "clients",
+        "client work",
+        "campaigns",
+        "white label",
+        "fractional",
+        "done for you"
+      ],
       "auto_add_departments": [
-        {"id": "account-management", "name": "Account Management", "emoji": "💼", "one_liner": "Client relationships, deliverables, retention", "base_suggested_roles": "crm-suggested-roles.md", "universal_primary": true},
-        {"id": "project-management", "name": "Project Management", "emoji": "📊", "one_liner": "Scope, timeline, resource allocation", "base_suggested_roles": "communications-suggested-roles.md"}
+        {
+          "id": "account-management",
+          "name": "Account Management",
+          "emoji": "\ud83d\udcbc",
+          "one_liner": "Client relationships, deliverables, retention",
+          "base_suggested_roles": "crm-suggested-roles.md",
+          "universal_primary": true
+        },
+        {
+          "id": "project-management",
+          "name": "Project Management",
+          "emoji": "\ud83d\udcca",
+          "one_liner": "Scope, timeline, resource allocation",
+          "base_suggested_roles": "communications-suggested-roles.md"
+        }
       ]
     },
     "content-creator": {
-      "auto_add_keywords": ["influencer", "creator", "youtube channel", "podcast host", "blogger"],
+      "auto_add_keywords": [
+        "influencer",
+        "creator",
+        "youtube channel",
+        "podcast host",
+        "blogger"
+      ],
       "auto_add_departments": [
-        {"id": "podcast", "name": "Podcast", "emoji": "🎧", "one_liner": "Production, distribution, sponsor management", "base_suggested_roles": "audio-suggested-roles.md", "universal_primary": true},
-        {"id": "community-management", "name": "Community Management", "emoji": "👥", "one_liner": "Cross-platform engagement", "base_suggested_roles": "social-media-suggested-roles.md"},
-        {"id": "brand-partnerships", "name": "Brand Partnerships", "emoji": "🤝", "one_liner": "Sponsor outreach, contract negotiation", "base_suggested_roles": "sales-suggested-roles.md"}
+        {
+          "id": "podcast",
+          "name": "Podcast",
+          "emoji": "\ud83c\udfa7",
+          "one_liner": "Production, distribution, sponsor management",
+          "base_suggested_roles": "audio-suggested-roles.md",
+          "universal_primary": true
+        },
+        {
+          "id": "community-management",
+          "name": "Community Management",
+          "emoji": "\ud83d\udc65",
+          "one_liner": "Cross-platform engagement",
+          "base_suggested_roles": "social-media-suggested-roles.md"
+        },
+        {
+          "id": "brand-partnerships",
+          "name": "Brand Partnerships",
+          "emoji": "\ud83e\udd1d",
+          "one_liner": "Sponsor outreach, contract negotiation",
+          "base_suggested_roles": "sales-suggested-roles.md"
+        }
       ]
     }
   },
-
   "deprecated": {
     "creative": "Folded into Graphics + Video + Audio departments",
-    "hr-people": "No longer mandatory — zero-human company has no human employees to manage",
+    "hr-people": "No longer mandatory \u2014 zero-human company has no human employees to manage",
     "it-tech": "Replaced by OpenClaw Maintenance department",
     "operations": "Operations responsibilities distributed across each department"
   }
