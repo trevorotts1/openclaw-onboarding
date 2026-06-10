@@ -40,10 +40,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
 from detect_platform import get_openclaw_paths  # type: ignore
-
-
-# Reuse env-driven config as gemini-indexer.py does
-GEMINI_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2-preview")
+# PRD 1.8: GEMINI_MODEL is the single pinned constant in embedding_engine.py.
+# Import it here so a model change in one place propagates everywhere.
+from embedding_engine import GEMINI_MODEL  # type: ignore
 MIN_SECTION_WORDS = int(os.environ.get("OPENCLAW_MIN_SECTION_WORDS", "30"))
 
 

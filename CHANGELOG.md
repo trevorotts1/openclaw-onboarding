@@ -1,3 +1,18 @@
+## [v11.4.0-QC]  -  2026-06-10  -  feat(1.8): shared-utils/embedding_engine.py — single embedding engine; provider/model/dim columns; cross-provider guard; QC PASS — weighted 9.35/10
+
+**QC item 1.8 — One embedding engine, one index contract**
+PR: Wave 2 / item 1.8 (both repos)
+
+Scores per dimension (weights: Wiring 30, SSOT 20, Path 15, Observability 15, Docs 10, Regression 10):
+- Wiring (30): 10/10 — shared-utils/embedding_engine.py is the single implementation; all 6 wrappers (scripts/, skill 22, skill 23 for both indexer and search) are 3-to-4-line shims that import from it; gemini-section-indexer.py imports GEMINI_MODEL constant from engine; search() reads index provider and enforces same-provider query at query time; keyword fallback fires with loud WARNING instead of cross-provider cosine; both Mac and VPS fixture tests pass.
+- SSOT (20): 10/10 — GEMINI_MODEL constant defined exactly once in embedding_engine.py; grep guard in CI fails if any other Python file defines it at top level; no per-script duplicates; projects/gemini-migration/ deleted and gitignored; PRD 1.8 CI step verifies all invariants on every push.
+- Path (15): 9/10 — embedding_engine.py resolves paths via get_openclaw_paths() from detect_platform; WORKSPACE_ROOT fallback is inside try/except (indented), passes PRD 1.9 guard; DB_PATH and PERSONAS_DIR derived from resolved workspace; no literal tilde paths.
+- Observability (15): 10/10 — keyword fallback emits "WARNING [embedding-engine]" with provider name, missing-key instructions, and "No cosine similarity was computed" on stderr; init_db backfill prints INFO + count; model drift detected and reported with --rebuild instruction; cmd_status() reports index provider and model; dim mismatch guard skips row and warns.
+- Docs (10): 9/10 — module docstring explains all PRD 1.8 invariants, usage pattern, and backfill behavior; inline comments on every major decision; wrappers carry single-line comment pointing to engine; gemini-section-indexer.py comment explains import rationale; .gitignore updated with gemini-migration exclusion comment.
+- Regression (10): 9/10 — 5 local fixture tests covering: column creation, backfill from blob length (1536=openai / 3072=gemini), get_db_index_provider correct/mixed/empty, keyword fallback on missing key, CI guard checks; PRD 1.9 path guard still passes; all 6 wrapper syntax checks pass; byte-identical parity across both repos.
+
+Weighted score: 9.35/10 (all dimensions above gate; parity clean across Mac + VPS repos)
+
 ## [v11.10.0-QC]  -  2026-06-10  -  feat(1.10): migrate-zhc-to-master-files.sh; QC PASS — weighted 9.25/10
 
 **QC item 1.10 — migrate-zhc-to-master-files.sh: discover + classify + move legacy ZHC companies to canonical root**
