@@ -8,3 +8,8 @@ graphify-out/
 
 # PRD 1.8: finished migration artifact — deleted from repo, excluded from future tracking
 projects/gemini-migration/
+
+# PRD 3.3: repo hygiene — runtime/scratch dirs and backup files never belong in version control
+tmp/
+.openclaw/
+*.TRUNCATED-BACKUP
