@@ -1,0 +1,155 @@
+{
+    "_description": "Configuration file for non-interactive AI Workforce Blueprint build",
+    "_usage": "python3 build-workforce.py --non-interactive --config-file workforce-config.json",
+
+    "company_name": "Your Company Name",
+    "company_description": "One sentence describing what your business does",
+    "industry": "e-commerce",
+    "tools": "Stripe, Convert and Flow, Shopify",
+    "biggest_challenge": "Your biggest current business challenge",
+
+    "option": "A",
+
+    "departments": {
+        "marketing": {
+            "enabled": true,
+            "name": "Marketing",
+            "emoji": "\ud83d\udce2",
+            "head": "Chief Marketing Officer",
+            "activities": "What your marketing department does regularly",
+            "kpis": "What success looks like for marketing",
+            "tools": "Tools marketing uses",
+            "challenges": "What is not working well right now"
+        },
+        "sales": {
+            "enabled": true,
+            "name": "Sales",
+            "emoji": "\ud83d\udcb0",
+            "head": "Chief Sales Officer",
+            "activities": "What your sales department does regularly",
+            "kpis": "What success looks like for sales",
+            "tools": "Tools sales uses",
+            "challenges": "What is not working well right now"
+        },
+        "billing": {
+            "enabled": true,
+            "name": "Billing / Finance",
+            "emoji": "\ud83d\udcb3",
+            "head": "Chief Financial Officer",
+            "activities": "What your billing/finance department does",
+            "kpis": "What success looks like for billing",
+            "tools": "Tools billing uses",
+            "challenges": "What is not working well right now"
+        },
+        "support": {
+            "enabled": true,
+            "name": "Customer Support",
+            "emoji": "\ud83c\udfa7",
+            "head": "Chief Customer Officer",
+            "activities": "What your support department does",
+            "kpis": "What success looks like for support",
+            "tools": "Tools support uses",
+            "challenges": "What is not working well right now"
+        },
+        "operations": {
+            "enabled": true,
+            "name": "Operations",
+            "emoji": "\u2699\ufe0f",
+            "head": "Chief Operating Officer",
+            "activities": "What your operations department does",
+            "kpis": "What success looks like for operations",
+            "tools": "Tools operations uses",
+            "challenges": "What is not working well right now"
+        },
+        "creative": {
+            "enabled": false,
+            "name": "Creative",
+            "emoji": "\u270d\ufe0f",
+            "head": "Chief Creative Officer",
+            "activities": "What your creative department does",
+            "kpis": "What success looks like for creative",
+            "tools": "Tools creative uses",
+            "challenges": "What is not working well right now"
+        },
+        "hr": {
+            "enabled": false,
+            "name": "HR / People",
+            "emoji": "\ud83d\udc65",
+            "head": "Chief People Officer",
+            "activities": "What your HR department does",
+            "kpis": "What success looks like for HR",
+            "tools": "Tools HR uses",
+            "challenges": "What is not working well right now"
+        },
+        "legal": {
+            "enabled": false,
+            "name": "Legal / Compliance",
+            "emoji": "\u2696\ufe0f",
+            "head": "General Counsel",
+            "activities": "What your legal department does",
+            "kpis": "What success looks like for legal",
+            "tools": "Tools legal uses",
+            "challenges": "What is not working well right now"
+        },
+        "it": {
+            "enabled": false,
+            "name": "IT / Tech",
+            "emoji": "\ud83d\udcbb",
+            "head": "Chief Technology Officer",
+            "activities": "What your IT department does",
+            "kpis": "What success looks like for IT",
+            "tools": "Tools IT uses",
+            "challenges": "What is not working well right now"
+        },
+        "webdev": {
+            "enabled": false,
+            "name": "Web Development",
+            "emoji": "\ud83c\udf10",
+            "head": "Chief Web Officer",
+            "activities": "What your webdev department does",
+            "kpis": "What success looks like for webdev",
+            "tools": "Tools webdev uses",
+            "challenges": "What is not working well right now"
+        },
+        "graphics": {
+            "enabled": false,
+            "name": "Graphics",
+            "emoji": "\ud83c\udfa8",
+            "head": "Chief Graphics Officer",
+            "activities": "What your graphics department does",
+            "kpis": "What success looks like for graphics",
+            "tools": "Tools graphics uses",
+            "challenges": "What is not working well right now"
+        },
+        "video": {
+            "enabled": false,
+            "name": "Video",
+            "emoji": "\ud83c\udfac",
+            "head": "Chief Video Officer",
+            "activities": "What your video department does",
+            "kpis": "What success looks like for video",
+            "tools": "Tools video uses",
+            "challenges": "What is not working well right now"
+        },
+        "research": {
+            "enabled": false,
+            "name": "Research",
+            "emoji": "\ud83d\udd2c",
+            "head": "Chief Research Officer",
+            "activities": "What your research department does",
+            "kpis": "What success looks like for research",
+            "tools": "Tools research uses",
+            "challenges": "What is not working well right now"
+        },
+        "ceo": {
+            "enabled": false,
+            "name": "CEO / COM",
+            "emoji": "\ud83d\udc54",
+            "head": "Chief Executive Officer",
+            "activities": "What your CEO department does",
+            "kpis": "What success looks like for CEO",
+            "tools": "Tools CEO uses",
+            "challenges": "What is not working well right now"
+        }
+    }
+}

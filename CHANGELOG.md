@@ -1,3 +1,33 @@
+## [v11.8.1]  -  2026-06-10  -  feat(prd-2.1): unified Mac+VPS repo — G3 skill-version.txt bumps + platform/ overlays
+
+**PRD 2.1 — Unified Mac+VPS repo (attempt 2, G3 fix)**
+Branch: prd-2.1-unified-repo. Resolves G3 CI MERGE BLOCKER.
+
+**What changed:**
+- `platform/mac/bootstrap.sh`, `platform/vps/bootstrap.sh`: platform-specific overlays for Mac (Homebrew/launchd) and VPS (Hostinger Docker container re-exec + disk pre-flight). Both sourced by `install.sh` before `set -euo pipefail`.
+- `platform/vps/`: VPS-only files — `VPS-ENVIRONMENT-SETUP.md`, `INSTALL-GOTCHAS.md`, `STT-TRANSCRIPTION.md`, `vps-onboarding/connect-openclaw-to-cloudflare-tunnel.md`, `36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh`, `skills/markitdown-skill/`.
+- `platform/mac/STT-TRANSCRIPTION.md`: Mac-specific speech-to-text setup.
+- `lib-onboarding-state.sh`: merged canonical onboarding state machine (feature-newest VPS body, one canonical name sourced from both bootstraps).
+- `lib-shared.sh`: VPS fix applied — `/data/.openclaw/workspace` (was stale `/data/clawd`); `resolve_platform_paths()` correct on both platforms.
+- `shared-utils/key_resolver.py`: union from VPS repo.
+- Skill union files (additive VPS-only docs/protocols from VPS repo):
+  - `22-book-to-persona-coaching-leadership-system/GAI-SEARCH-GUIDE.md`
+  - `23-ai-workforce-blueprint/scripts/workforce-config.json`
+  - `32-command-center-setup/scripts/seed-dashboard-content.py`
+  - `35-social-media-planner/scripts/register-weekly-cron.sh`
+  - `38-conversational-ai-system/references/HOSTINGER-DOCKER-ENV.md` + `VPS-VS-MAC-INSTALL.md`
+  - `39-real-estate-playbook/protocols/` (3 files) + `references/` (2 files) + `scripts/` (2 files) + `templates/`
+  - `43-graphify-knowledge-graph/EXAMPLES.md` + `references/GRAPHIFY-COMMANDS.md`
+- **G3 fix**: all 7 affected skill-version.txt files bumped (22: v6.6.2, 23: 11.8.1, 32: v6.6.1, 35: v2.6.1, 38: 1.5.13, 39: 1.0.2, 43: 1.0.1).
+- All 9 version markers bumped v11.8.0 → v11.8.1 (required for skill-23/version-consistency alignment).
+- `cc-compat.json.onboardingVersion`: v11.8.0 → v11.8.1.
+- `scripts/fix-dual-cli.sh`, `scripts/onboarding-state.sh`, `scripts/resume-onboarding.sh`: consolidated from VPS.
+- Phase-1/2 fixes preserved byte-identical: persona-selector-v2.py BUG1 word-boundary, resolve_db.py SSOT, embedding_engine.py gemini-embedding-2, canonical_slug.py, build_from_config MASTER_FILES_DIR BUG3.
+
+**Version bump:** v11.8.0 → v11.8.1 (all 9 markers + cc-compat.json).
+
+---
+
 ## [v11.8.0]  -  2026-06-10  -  fix(onb-gemini): migrate Gemini embedding model to GA slug; add model-drift detection + backfill path
 
 **PRD [[gemini-embedding-model-migration]] — Gemini embedding GA migration**

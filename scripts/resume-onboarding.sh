@@ -37,12 +37,15 @@ fi
 # Resolve this script's dir so it can source the gate library sibling.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 GATE_LIB=""
+# PRD 2.1 unified: canonical lib is lib-onboarding-state.sh at repo root,
+# with scripts/onboarding-state.sh as a compat shim. Search canonical first.
 for _cand in \
+  "$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || echo "")/lib-onboarding-state.sh" \
   "$SCRIPT_DIR/onboarding-state.sh" \
   "$OC_ROOT/scripts/onboarding-state.sh" \
   "$OC_ROOT/onboarding/scripts/onboarding-state.sh" \
   "$HOME/.openclaw/scripts/onboarding-state.sh"; do
-  [[ -f "$_cand" ]] && GATE_LIB="$_cand" && break
+  [[ -n "$_cand" && -f "$_cand" ]] && GATE_LIB="$_cand" && break
 done
 
 WS="$OC_ROOT/workspace"
