@@ -1,3 +1,41 @@
+## [v11.12.1]  -  2026-06-10  -  fix(AF1): sweep stale openclaw-onboarding-vps pointers from client-facing install/deploy/onboarding paths
+
+**AF1 — Remove all stale openclaw-onboarding-vps references from every client-facing install, deploy, and onboarding path**
+Branch: af1-fix-stale-vps-repo-pointers. Merged PR #149.
+
+**What changed (36 files):**
+- **ONBOARDING-TRIGGERS.md**: Block 3/4 VPS install curl + Block 7/8 VPS update-skills curl now point to unified repo (openclaw-onboarding)
+- **check-updates.sh**: VPS platform-detection block sets REPO_NAME=openclaw-onboarding (was openclaw-onboarding-vps)
+- **force-update.sh**: VPS platform-detection block sets REPO_NAME=openclaw-onboarding (was openclaw-onboarding-vps)
+- **update-skills.sh**: VPS REPO_URL override removed; unified repo URL used for both platforms
+- **platform/vps/VPS-ENVIRONMENT-SETUP.md** + **platform/vps/INSTALL-GOTCHAS.md**: curl install commands updated
+- **37-zhc-closeout/INSTALL.md**: hot-patch curl + issues link updated to unified repo
+- **32-command-center-setup/INSTALL.md** + **install-pm2-restart-hook.sh**: Phase 6c VPS link updated
+- **CONTRIBUTING.md**: "update BOTH repos" rule replaced with unified repo guidance; two-repo table replaced; archive notice added
+- **SOP-00-Owner-Task-Routing.md**: inline VPS repo reference updated to "unified repo"
+- **docs/STT-TRANSCRIPTION.md, platform/mac/STT-TRANSCRIPTION.md, 35-social-media-planner/SKILL.md, HEARTBEAT.md, FLEET-STANDARDS.md, SYSTEM-DIAGNOSTIC-CHECKLIST.md, direct-to-agent-install.md, cron-prompt.txt**, and 8 additional files updated
+- **23-ai-workforce-blueprint/skill-version.txt**: 11.12.0 → 11.12.1; **_index.json** version field updated
+- **README.md + version** + all 9 version markers: v11.12.0 → v11.12.1
+
+**3 allowable archive/history mentions preserved:**
+1. README.md: "Previously the VPS installer was a separate repo (trevorotts1/openclaw-onboarding-vps)"
+2. CONTRIBUTING.md: "The openclaw-onboarding-vps repo is archived. All work goes here."
+3. SOP-00-Owner-Task-Routing.md CHANGELOG row v1.0.0 (historical fleet-wide note)
+
+**Verify:**
+- grep returns exactly 3 lines (excl. CHANGELOG.md): PASS
+- ONBOARDING-TRIGGERS.md Blocks 3/4/7/8 all reference openclaw-onboarding/main: PASS
+- check-updates.sh VPS REPO_NAME=openclaw-onboarding: PASS
+- force-update.sh VPS REPO_NAME=openclaw-onboarding: PASS
+- update-skills.sh no VPS REPO_URL override, single unified URL: PASS
+- 37-zhc-closeout/INSTALL.md hot-patch curl points to unified repo: PASS
+- All 6 CI checks green (G1 skipped — correct; G2/G3/QC/version-consistency pass): PASS
+
+**QC Score: 9.2/10 — PASS** (independent QC 2026-06-10)
+Wiring 9/10 (all 7 verify targets confirmed; 36 files; no stale paths in + lines) | SSOT 9/10 (exactly 3 archive refs remain; grep spec met; CONTRIBUTING correctly updated) | Path 9/10 (fresh install + update paths both verified; cron-prompt.txt fixed) | Observability 8/10 (no fixture test — correct for maintenance fix; skill-version.txt bumped for SOP-00 content change) | Docs 10/10 (PR description complete; CHANGELOG entry comprehensive; SOP-00 language clean) | Regression 9/10 (CI all green; version-consistency passes; G3 triggers + passes on skill-version.txt bump)
+
+Merged: 5ef81862a4ab7a456178f37cd4f8ae257f5fbc90 — Tag: v11.12.1
+
 ## [v11.12.0]  -  2026-06-10  -  feat(prd-2.13): loop-engineer install — per-wave goals, watchdog cron, 3-strike escalation, loop registry, self-kill on overall goal pass
 
 **PRD 2.13 — Loop-engineer the install so it keeps itself going with no stalls between waves**
