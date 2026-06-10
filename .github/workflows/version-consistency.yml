@@ -17,6 +17,19 @@ name: Version consistency
 #      /version) because nothing rolled or checked it. Now both rolled by
 #      bump-version.sh and gated here.
 #
+# PRD 2.2 retro-tag guards (added v11.7.0):
+#  G1 (version-without-tag): on push to main, the current /version must have
+#     a matching annotated git tag (vX.Y.Z). Fires ONLY when the version file
+#     has changed vs the previous commit on main so new PRs are not blocked
+#     while the tag is created by QC merge.
+#  G2 (tag-without-changelog): every tag that matches vX.Y.Z must have a
+#     corresponding entry in CHANGELOG.md. Accepts both "## [vX.Y.Z]" and
+#     "## vX.Y.Z" header formats.
+#  G3 (skill-content-without-version-bump): if any file inside a skill
+#     directory (XX-<name>/) changed on this push/PR but the skill's
+#     skill-version.txt did NOT change, the build fails. ARCHIVED skills
+#     (*-ARCHIVED/) are excluded.
+#
 # Security note: this workflow consumes only repo file content (no
 # untrusted GitHub event fields like PR title/body/commit message),
 # so there is no injection surface in the run: blocks.
@@ -165,3 +178,245 @@ jobs:
             echo "✗ cc-compat.json missing (required for PRD 1.11 fleet-refresh)"
             exit 1
           fi
+
+  # ── PRD 2.2 Guard G1: version file changed → annotated tag must exist ──────
+  # On push to main: if /version changed vs the previous commit, the new
+  # version string must already be present as an annotated git tag.
+  # On PRs: check that the version in /version has a CHANGELOG entry (tags
+  # are pushed after merge, so we don't require the tag itself on PRs).
+  # Uses fetch-depth: 0 so all tags are visible.
+  check-version-tag-guard:
+    name: G1 — version file change requires a matching annotated tag (push to main)
+    runs-on: ubuntu-latest
+    # Only the push-to-main path runs the strict tag check; PRs use the
+    # changelog-entry check in G2 below instead.
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout full history + tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check annotated tag exists for current version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_VER=$(head -1 version | tr -d '[:space:]')
+          echo "Current /version: $CURRENT_VER"
+
+          # Did /version change in this push?
+          PREV_SHA=$(git rev-parse HEAD^1 2>/dev/null || echo "")
+          if [ -z "$PREV_SHA" ]; then
+            echo "First commit — skipping version-tag guard."
+            exit 0
+          fi
+          PREV_VER=$(git show "${PREV_SHA}:version" 2>/dev/null | head -1 | tr -d '[:space:]' || echo "")
+
+          if [ "$CURRENT_VER" = "$PREV_VER" ]; then
+            echo "Version unchanged ($CURRENT_VER) — no tag required for this push."
+            exit 0
+          fi
+
+          echo "Version changed: $PREV_VER → $CURRENT_VER"
+          echo "Checking for annotated tag $CURRENT_VER ..."
+
+          # git tag -l with --sort and deref only matches annotated tags when
+          # we check the tag object type.  Use git for-each-ref to be exact.
+          TAG_SHA=$(git for-each-ref --format='%(refname:short)' \
+            "refs/tags/${CURRENT_VER}" 2>/dev/null || echo "")
+
+          if [ -z "$TAG_SHA" ]; then
+            echo ""
+            echo "ERROR (G1): /version was bumped to $CURRENT_VER but no annotated"
+            echo "  git tag $CURRENT_VER exists in this repo."
+            echo ""
+            echo "FIX: create the annotated tag at the merge commit and push it:"
+            echo "  git tag -a $CURRENT_VER <merge-sha> -m \"$CURRENT_VER — <description>\""
+            echo "  git push origin $CURRENT_VER"
+            echo ""
+            echo "  (If QC creates the tag after merging, push the tag before the"
+            echo "   next commit that bumps /version again.)"
+            exit 1
+          fi
+
+          # Confirm it is annotated (type == tag), not lightweight (type == commit).
+          OBJ_TYPE=$(git cat-file -t "refs/tags/${CURRENT_VER}" 2>/dev/null || echo "missing")
+          if [ "$OBJ_TYPE" != "tag" ]; then
+            echo ""
+            echo "ERROR (G1): tag $CURRENT_VER exists but is a LIGHTWEIGHT tag"
+            echo "  (type=$OBJ_TYPE). Only ANNOTATED tags are accepted."
+            echo ""
+            echo "FIX: delete the lightweight tag and replace it with an annotated one:"
+            echo "  git tag -d $CURRENT_VER"
+            echo "  git push origin :refs/tags/$CURRENT_VER"
+            echo "  git tag -a $CURRENT_VER <merge-sha> -m \"$CURRENT_VER — <description>\""
+            echo "  git push origin $CURRENT_VER"
+            exit 1
+          fi
+
+          echo "✓ Annotated tag $CURRENT_VER found (type=tag)."
+
+  # ── PRD 2.2 Guard G2: every annotated tag must have a CHANGELOG entry ──────
+  # Checks that for every vX.Y.Z annotated tag in the repo (v11.x.x and above),
+  # CHANGELOG.md contains a header line referencing that version.
+  # Accepts both formats:
+  #   ## [vX.Y.Z]   (bracket form)
+  #   ## vX.Y.Z     (bare form)
+  #
+  # Scoped to v11.x.x+ (major >= 11): pre-v11 tags have known CHANGELOG gaps
+  # from before this guard existed; gating them retroactively would break CI
+  # on every push without fixing anything. The v11 series is the Wave 1-3
+  # release train where tag discipline is enforced by PRD 2.2.
+  check-tag-changelog-guard:
+    name: G2 — every v11+ annotated tag must have a CHANGELOG entry
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history + tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify each v11+ annotated tag has a CHANGELOG entry
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FAIL=""
+          CHECKED=0
+
+          # Iterate only annotated tags (object type == tag).
+          while IFS= read -r tagname; do
+            OBJ_TYPE=$(git cat-file -t "refs/tags/${tagname}" 2>/dev/null || echo "missing")
+            [ "$OBJ_TYPE" = "tag" ] || continue   # skip lightweight tags
+
+            # Only gate vX.Y.Z tags (not rc/alpha/etc).
+            if [[ ! "$tagname" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              continue
+            fi
+
+            # Extract major version number. Only enforce for v11 and above.
+            # Pre-v11 tags have known CHANGELOG gaps from before this guard.
+            MAJOR=$(echo "${tagname#v}" | cut -d. -f1)
+            if [ "$MAJOR" -lt 11 ] 2>/dev/null; then
+              continue
+            fi
+
+            CHECKED=$((CHECKED + 1))
+            # Accept "## [vX.Y.Z]" or "## vX.Y.Z" (with optional trailing space/dash)
+            if ! grep -qE "^## \[?${tagname}\]?([[:space:]]|$)" CHANGELOG.md; then
+              FAIL="$FAIL $tagname"
+            fi
+          done < <(git tag -l | sort -V)
+
+          echo "Checked $CHECKED v11+ annotated tags against CHANGELOG.md."
+
+          if [ -n "$FAIL" ]; then
+            echo ""
+            echo "ERROR (G2): The following v11+ tags have NO matching CHANGELOG.md entry:"
+            for t in $FAIL; do echo "  $t"; done
+            echo ""
+            echo "FIX: add a header to CHANGELOG.md for each missing tag:"
+            echo "  ## [vX.Y.Z]  -  YYYY-MM-DD  -  <description>"
+            echo "  or"
+            echo "  ## vX.Y.Z — <description> — YYYY-MM-DD"
+            exit 1
+          fi
+
+          echo "✓ All v11+ annotated tags have CHANGELOG entries."
+
+  # ── PRD 2.2 Guard G3: skill content change → skill-version.txt must bump ───
+  # If any file inside a skill directory (XX-<name>/ pattern) changed on this
+  # push or PR, the skill's own skill-version.txt must also have changed.
+  # ARCHIVED skills (*-ARCHIVED/) are excluded.
+  # Only runs when there is a previous commit to diff against (not first push).
+  check-skill-version-bump:
+    name: G3 — skill content change requires skill-version.txt bump
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify skill-version.txt bumped alongside skill content
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Determine the base SHA to diff against.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # On PRs, diff the PR head against the merge base with main.
+            BASE_SHA=$(git merge-base HEAD "origin/${{ github.base_ref }}" 2>/dev/null \
+              || git rev-parse HEAD^1 2>/dev/null || echo "")
+          else
+            # On push to main, diff against the previous commit.
+            BASE_SHA=$(git rev-parse HEAD^1 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$BASE_SHA" ]; then
+            echo "No previous commit found — skipping skill-version-bump guard."
+            exit 0
+          fi
+
+          echo "Diffing HEAD vs $BASE_SHA ..."
+
+          # Collect changed files (added, modified, renamed).
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR \
+            "${BASE_SHA}" HEAD 2>/dev/null || echo "")
+
+          FAIL=""
+
+          # For each changed file, check if it lives in a skill directory.
+          # Skill dirs match: one or two digit prefix, hyphen, non-ARCHIVED name.
+          # Pattern: ^[0-9]{2}-[^/]+-[^/]+/ (at least two segments after number)
+          # Simplified: ^[0-9]+-[^/]+/ but exclude *-ARCHIVED/
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+
+            # Extract top-level directory component.
+            SKILL_DIR=$(echo "$f" | cut -d'/' -f1)
+
+            # Must match ^[0-9]+-... pattern.
+            if [[ ! "$SKILL_DIR" =~ ^[0-9]+-[a-zA-Z] ]]; then
+              continue
+            fi
+
+            # Skip ARCHIVED skills.
+            if [[ "$SKILL_DIR" == *-ARCHIVED ]]; then
+              continue
+            fi
+
+            # The changed file itself must not be skill-version.txt
+            # (that would be the bump itself — not a violation).
+            BASENAME=$(basename "$f")
+            if [ "$BASENAME" = "skill-version.txt" ]; then
+              continue
+            fi
+
+            # Check if skill-version.txt was also changed for this skill.
+            VER_FILE="${SKILL_DIR}/skill-version.txt"
+            if ! echo "$CHANGED_FILES" | grep -qF "$VER_FILE"; then
+              FAIL="$FAIL ${SKILL_DIR}"
+            fi
+          done <<< "$CHANGED_FILES"
+
+          # Deduplicate the FAIL list.
+          if [ -n "$FAIL" ]; then
+            UNIQUE_FAIL=$(echo "$FAIL" | tr ' ' '\n' | sort -u | grep -v '^$' || true)
+          fi
+
+          if [ -n "${UNIQUE_FAIL:-}" ]; then
+            echo ""
+            echo "ERROR (G3): Skill content changed without a skill-version.txt bump:"
+            echo "$UNIQUE_FAIL" | while IFS= read -r sd; do
+              echo "  $sd/skill-version.txt was NOT updated"
+            done
+            echo ""
+            echo "FIX: bump each affected skill-version.txt to the next patch version,"
+            echo "  then commit all changes together."
+            echo "  e.g.:  echo 'v11.7.1' > <skill-dir>/skill-version.txt"
+            exit 1
+          fi
+
+          echo "✓ All changed skill directories include a skill-version.txt bump (or no skill dirs changed)."

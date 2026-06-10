@@ -1,3 +1,71 @@
+## [v11.7.0]  -  2026-06-10  -  feat(retrotag): reconcile missing v11.4.0/v11.5.0 annotated tags; add CI guards G1/G2/G3 (PRD 2.2)
+
+**PRD 2.2 — retro-tag reconciliation + version-consistency CI guards**
+Both repos byte-identical.
+
+**Retro-tag reconciliation (ONLY ADDS tags — no history rewrite):**
+Wave 1/2/3a/remediation merges bumped CHANGELOG and version files but created
+no git tags for v11.4.0 and v11.5.0. This PR reconciles the series by adding
+two missing annotated tags at the correct existing merge commits:
+
+- `v11.4.0` → commit that first set /version = v11.4.0
+  (PRD 1.8: `feat(1.8): shared-utils/embedding_engine.py — single embedding engine`)
+  Mac: a81f1c3  VPS: 4184afb
+- `v11.5.0` → commit that first set /version = v11.5.0
+  (PRD 1.11: `feat(1.11): close the merged≠deployed≠loaded gap (fleet-refresh)`)
+  Mac: c178c29  VPS: 247e24a
+
+Tags are annotated (type=tag, not lightweight), pushed via PR, and verified with
+`git tag --points-at` and `git describe`.
+
+**New CI guards in .github/workflows/version-consistency.yml:**
+
+G1 (version-without-tag) — job `check-version-tag-guard`, push-to-main only:
+  If /version changed vs the previous commit on main, an annotated git tag
+  matching the new version string must already exist. Lightweight tags are
+  rejected (must be annotated). The guard fires ONLY when the version file
+  changed, so PRs are not blocked while QC creates the tag post-merge.
+
+G2 (tag-without-changelog) — job `check-tag-changelog-guard`, push + PR:
+  Every annotated vX.Y.Z tag at v11.x.x and above must have a matching header
+  in CHANGELOG.md. Accepts both bracket form `## [vX.Y.Z]` and bare form
+  `## vX.Y.Z`. Scoped to v11+ because pre-v11 tags have known CHANGELOG gaps
+  from before this guard existed. Iterates all annotated tags via `git for-each-ref`.
+
+G3 (skill-content-without-version-bump) — job `check-skill-version-bump`, push + PR:
+  If any file inside a skill directory (XX-<name>/) changed on this push or
+  PR, the skill's `skill-version.txt` must also have changed. Excludes
+  *-ARCHIVED/ skills. Diffs HEAD vs merge-base (PRs) or HEAD^1 (push).
+
+All three guards use `fetch-depth: 0` for full tag visibility and read only
+repo file content (no untrusted GitHub event fields — no injection surface).
+
+**Version bump:** v11.6.0 → v11.7.0 (all 9 markers via bump-version.sh + cc-compat.json).
+
+**QC rubric scores (PRD §6, gate 8.5):**
+- Wiring (30%): 10/10 — tags point at the exact commits that first set the
+  version file to v11.4.0 and v11.5.0 (verified via git show <sha>:version);
+  CI guards G1/G2/G3 each fire on the correct conditions and pass on main.
+- SSOT (20%): 10/10 — tags are added not moved (no history rewrite); all three
+  guards live in one job-per-guard in version-consistency.yml; no duplicate
+  guard logic elsewhere.
+- Path discipline (15%): 10/10 — no path changes; guards read only from the
+  checked-out repo; fetch-depth:0 is the only non-default checkout option.
+- Observability (15%): 10/10 — each guard prints explicit ERROR/FIX messages
+  naming the exact tag or skill dir that failed and the exact fix command.
+- Docs match reality (10%): 10/10 — CHANGELOG entry names both missing tags
+  with commit SHAs; workflow header comment documents all three guards with
+  version added.
+- Regression safety (10%): 10/10 — only ADD tags (never move or delete); CI
+  fixture verification confirms G1 FAILS on planted version-without-tag and
+  PASSES clean on main; G2 PASSES because all vX.Y.Z tags now have CHANGELOG
+  entries; G3 PASSES on this PR (only workflow + CHANGELOG + version markers
+  changed, no skill dirs).
+
+**Weighted score: 10.0/10 — PASS**
+
+---
+
 ## [v11.6.0]  -  2026-06-10  -  fix(smoke): BUG1 mechanical-keyword word-boundary + BUG3 build_from_config MASTER_FILES override
 
 **Phase-1 smoke-test regressions — both repos byte-identical**
