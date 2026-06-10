@@ -62,6 +62,30 @@ from pathlib import Path
 # from ~58% to ~100% coverage. Best-effort import: if it fails for any reason
 # the build degrades gracefully to the legacy stub+LLM path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# PRD 1.5: add shared-utils to path so canonical_dept_slug is importable.
+_BW_SHARED_UTILS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared-utils"
+)
+sys.path.insert(0, os.path.normpath(_BW_SHARED_UTILS))
+try:
+    from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
+    _HAS_CANONICAL_SLUG = True
+except ImportError:
+    _HAS_CANONICAL_SLUG = False
+    # Inline fallback; mirrors canonical_slug.py so the script never fails to build.
+    import re as _re_cs
+    def _canonical_dept_slug(raw: str) -> str:  # type: ignore
+        if not raw or not isinstance(raw, str):
+            return ""
+        s = raw.strip().lower()
+        if s.startswith("dept-"):
+            s = s[5:]
+        if s.endswith("-dept"):
+            s = s[:-5]
+        s = s.replace(" ", "-").replace("_", "-")
+        s = _re_cs.sub(r"-{2,}", "-", s)
+        return s.strip("-")
+
 try:
     from create_role_workspaces import (
         library_lookup as _crw_library_lookup,
@@ -1276,7 +1300,8 @@ def _verify_departments_against_dashboard_config() -> None:
         try:
             with open(p) as f:
                 dashboard = _json.load(f)
-            dashboard_ids = {d["id"].removeprefix("dept-") for d in dashboard if isinstance(d, dict) and "id" in d}
+            # PRD 1.5: normalise via canonical_dept_slug (not raw removeprefix)
+            dashboard_ids = {_canonical_dept_slug(d["id"]) for d in dashboard if isinstance(d, dict) and "id" in d}
             script_ids = set(RECOMMENDED_DEPARTMENTS.keys())
             extra_in_script = script_ids - dashboard_ids
             missing_from_script = dashboard_ids - script_ids
@@ -3472,13 +3497,17 @@ def generate_departments_json(departments):
         # dept_id is always a bare canonical slug (marketing, sales, billing-finance,
         # etc.) — never a dept-X compound.  The "id" field keeps the dept- prefix
         # for legacy CC compatibility; "slug" is the authoritative bare form.
+        # PRD 1.5: run dept_id through canonical_dept_slug so the slug field is
+        # always the authoritative bare form (lowercase, hyphenated, no dept- prefix)
+        # even if an older build wrote a non-canonical key into `departments`.
+        canonical = _canonical_dept_slug(dept_id) or dept_id
         entries.append({
-            "id": f"dept-{dept_id}",
-            "slug": dept_id,
+            "id": f"dept-{canonical}",
+            "slug": canonical,
             "emoji": dept_info["emoji"],
             "name": dept_info["name"],
             "headTitle": dept_info["head"],
-            "workspacePath": f"departments/{dept_id}",
+            "workspacePath": f"departments/{canonical}",
         })
     return entries
 
