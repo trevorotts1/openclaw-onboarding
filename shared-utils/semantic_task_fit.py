@@ -85,16 +85,29 @@ def _get_google_api_key(paths: dict) -> str:
 
 
 def _embed_text(text: str, api_key: str):
-    """Embed text via Gemini Embedding 2. Returns numpy array or None."""
+    """Embed text via Gemini Embedding 2 (GA). Returns numpy array or None.
+
+    Imports GEMINI_MODEL and GEMINI_OUTPUT_DIM from the canonical
+    shared-utils/embedding_engine.py so the model slug is never duplicated.
+    Any future GA model bump in embedding_engine.py propagates here automatically.
+    """
     try:
         from google import genai
         from google.genai import types
         import numpy as np
+        import sys as _sys, os as _os
+        _su = _os.path.dirname(__file__)
+        if _su not in _sys.path:
+            _sys.path.insert(0, _su)
+        from embedding_engine import GEMINI_MODEL as _GEMINI_MODEL
+        from embedding_engine import GEMINI_OUTPUT_DIM as _OUT_DIM
         client = genai.Client(api_key=api_key)
         response = client.models.embed_content(
-            model="gemini-embedding-2-preview",
+            model=_GEMINI_MODEL,
             contents=text,
-            config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
+            config=types.EmbedContentConfig(
+                task_type="RETRIEVAL_QUERY",
+                output_dimensionality=_OUT_DIM),
         )
         return np.array(response.embeddings[0].values, dtype="float32")
     except Exception as e:

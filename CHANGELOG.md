@@ -1,3 +1,31 @@
+## [v11.8.0]  -  2026-06-10  -  fix(onb-gemini): migrate Gemini embedding model to GA slug; add model-drift detection + backfill path
+
+**PRD [[gemini-embedding-model-migration]] — Gemini embedding GA migration**
+Both repos byte-identical on all changed lines.
+
+**What changed:**
+- `shared-utils/embedding_engine.py`: `GEMINI_MODEL` changed from `"gemini-embedding-2-preview"` (preview/retired) to `"gemini-embedding-2"` (GA). `GEMINI_OUTPUT_DIM=3072` explicit constant added. `output_dimensionality=3072` set on both `embed_content` calls (`RETRIEVAL_DOCUMENT` + `RETRIEVAL_QUERY`). `STALE_GEMINI_MODELS` frozenset added listing all retired/preview slugs whose vectors are incompatible with the current GA model. Model-drift detection in `search()`, `cmd_index()`, and `cmd_status()` extended to detect stale models and emit loud "STALE PREVIEW MODEL DETECTED" warnings. Stale DB → keyword fallback (no cross-model cosine). `_backfill_provider_columns` and `init_db` docstrings updated. Both repos byte-identical.
+- `shared-utils/semantic_task_fit.py`: hardcoded `"gemini-embedding-2-preview"` string removed; `_embed_text()` now imports `GEMINI_MODEL` and `GEMINI_OUTPUT_DIM` from `embedding_engine` at runtime, enforcing single-source-of-truth on the model slug.
+- `shared-utils/test-embedding-engine-gemini-ga.sh`: 10-test fixture harness (no API key / no client box required). Verified 10/10 PASS.
+
+**Model drift + backfill design:**
+- Client boxes built under the preview slug carry `gemini-embedding-2-preview` in their DB `model` column. At Wave-5 deploy, the per-box re-embed runs `gemini-indexer --rebuild` which detects the stale model via `STALE_GEMINI_MODELS`, prints the explicit "STALE PREVIEW MODEL" error, and re-embeds all vectors with the GA model. Until the re-embed runs, queries fall back to keyword search (no cross-model cosine is ever computed).
+- `get_db_index_provider()` returns the stored `(provider, model)` tuple; if the model is in `STALE_GEMINI_MODELS` OR differs from `GEMINI_MODEL`, the search path routes to `keyword_fallback_search()` with a specific stale/drift message.
+
+**Version bump:** v11.7.0 → v11.8.0 (all 9+1 markers).
+
+**QC rubric scores (PRD §6, gate 8.5):**
+- Wiring (30%): 10/10 — `GEMINI_MODEL="gemini-embedding-2"` used in all embed calls; `output_dimensionality=3072` explicit on both document and query embed calls; stale -preview fixture DB triggers exit 1 + STALE message (T5 PASS); search() on stale DB returns keyword fallback (T6 PASS); no cross-model cosine path reachable (T10 PASS).
+- SSOT (20%): 10/10 — one constant (`GEMINI_MODEL`) controls the model slug for indexer, search, and Layer 5 semantic scorer; `semantic_task_fit.py` imports from `embedding_engine` (T7 PASS); no duplicate hardcoded slug outside STALE_GEMINI_MODELS/comments (T8 PASS).
+- Path (15%): 10/10 — no new path candidates introduced; existing path resolver unchanged.
+- Observability (15%): 10/10 — "STALE PREVIEW MODEL DETECTED" message in all three surfaces (search/cmd_index/cmd_status); keyword fallback always prints a loud WARNING; 10-test fixture verifies all loud paths.
+- Docs match reality (10%): 10/10 — module docstring updated; `init_db` and `_backfill_provider_columns` docstrings updated; `STALE_GEMINI_MODELS` self-documents the stale list inline.
+- Regression (10%): 10/10 — 10/10 fixture PASS; no existing tests deleted; backfill heuristic preserved (3072-dim blobs correctly mapped to GA model; stale rows detected via model name not blob size).
+
+**Weighted QC: (10×0.30) + (10×0.20) + (10×0.15) + (10×0.15) + (10×0.10) + (10×0.10) = 10.0/10 — PASS**
+
+---
+
 ## [v11.7.0]  -  2026-06-10  -  feat(retrotag): reconcile missing v11.4.0/v11.5.0 annotated tags; add CI guards G1/G2/G3 (PRD 2.2)
 
 **PRD 2.2 — retro-tag reconciliation + version-consistency CI guards**

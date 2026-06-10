@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v11.7.0"
+ONBOARDING_VERSION="v11.8.0"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
