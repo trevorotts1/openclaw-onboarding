@@ -174,6 +174,36 @@ Or from a terminal that already has the repo cloned locally:
 EOF
 
 # ----------------------------------------------------------
+# 3d. PRD 1.10: run migrate-zhc-to-master-files.sh --dry-run automatically
+#     on every update so the operator sees the migration manifest.
+#     --apply only runs on operator confirmation (never autonomously).
+# ----------------------------------------------------------
+MIGRATE_SCRIPT="$SKILLS_DIR/scripts/migrate-zhc-to-master-files.sh"
+if [ -f "$MIGRATE_SCRIPT" ]; then
+  echo ""
+  echo "═══════════════════════════════════════════════════════════════════════"
+  echo "  PRD 1.10: ZHC Migration Manifest (dry-run — nothing will move)"
+  echo "═══════════════════════════════════════════════════════════════════════"
+  bash "$MIGRATE_SCRIPT" --dry-run 2>&1 || true
+  echo ""
+  echo "  To migrate, run: bash $MIGRATE_SCRIPT --apply"
+  echo "  (Operator confirmation required before passing --apply)"
+  echo "═══════════════════════════════════════════════════════════════════════"
+  echo ""
+  # Telegram the manifest summary to the operator
+  if [ "$TELEGRAM_FIRED" = "true" ] && command -v openclaw >/dev/null 2>&1; then
+    MANIFEST_SUMMARY=$(bash "$MIGRATE_SCRIPT" --dry-run 2>/dev/null | grep -E 'noop|simple move|conflict|companies found' | head -5 || true)
+    if [ -n "$MANIFEST_SUMMARY" ]; then
+      openclaw message send --message "📋 ZHC Migration manifest (dry-run):
+
+$MANIFEST_SUMMARY
+
+Run --apply to migrate: bash ~/.openclaw/skills/scripts/migrate-zhc-to-master-files.sh --apply" 2>/dev/null || true
+    fi
+  fi
+fi
+
+# ----------------------------------------------------------
 # 4. Emit the final JSON status (for the cron / dispatcher to parse)
 # ----------------------------------------------------------
 cat <<EOF
