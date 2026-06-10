@@ -1066,32 +1066,29 @@ jobs:
             || { echo "✗ test-fleet-refresh.sh has bash syntax errors"; exit 1; }
           echo "✓ PRD 1.11 bash scripts syntax OK"
 
-          # 4. cc-compat.json is valid JSON and satisfies schema
-          python3 -c "
-          import json, sys, re
-          d = json.load(open('cc-compat.json'))
-          assert d.get('schemaVersion') == 1, 'schemaVersion must be 1'
-          cc = d.get('commandCenter', {})
-          assert re.match(r'^v\d+\.\d+\.\d+', d.get('onboardingVersion', '')), 'onboardingVersion must be vX.Y.Z'
-          assert re.match(r'^v\d+\.\d+\.\d+', cc.get('minVersion', '')), 'minVersion must be vX.Y.Z'
-          pinned = cc.get('pinnedTag')
-          if pinned:
-              def sv(v):
-                  m = re.match(r'^v?(\d+)\.(\d+)\.(\d+)', v)
-                  return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-              assert sv(pinned) >= sv(cc['minVersion']), f'pinnedTag {pinned} < minVersion {cc[\"minVersion\"]}'
-          print('✓ cc-compat.json schema valid')
-          "
-
-          # 5. cc-compat.json onboardingVersion == /version
-          CC_VER=\$(python3 -c "import json; d=json.load(open('cc-compat.json')); print(d['onboardingVersion'])")
-          REPO_VER=\$(head -1 version | tr -d '[:space:]')
-          if [ "\$CC_VER" != "\$REPO_VER" ]; then
-            echo "✗ cc-compat.json onboardingVersion (\$CC_VER) != /version (\$REPO_VER)"
-            echo "Fix: update cc-compat.json onboardingVersion when bumping the repo version."
-            exit 1
-          fi
-          echo "✓ cc-compat.json onboardingVersion matches /version (\$REPO_VER)"
+          # 4. cc-compat.json is valid JSON and satisfies schema; onboardingVersion == /version
+          python3 << 'CCVALIDATE'
+import json, re, sys
+d = json.load(open('cc-compat.json'))
+assert d.get('schemaVersion') == 1, 'schemaVersion must be 1'
+cc = d.get('commandCenter', {})
+assert re.match(r'^v\d+\.\d+\.\d+', d.get('onboardingVersion', '')), 'onboardingVersion must be vX.Y.Z'
+assert re.match(r'^v\d+\.\d+\.\d+', cc.get('minVersion', '')), 'minVersion must be vX.Y.Z'
+pinned = cc.get('pinnedTag')
+def sv(ver):
+    m = re.match(r'^v?(\d+)\.(\d+)\.(\d+)', ver)
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+if pinned:
+    assert sv(pinned) >= sv(cc['minVersion']), f'pinnedTag {pinned} < minVersion {cc["minVersion"]}'
+# onboardingVersion must equal /version
+repo_ver = open('version').read().strip()
+ov = d.get('onboardingVersion', '')
+if ov != repo_ver:
+    print(f'VERSION DRIFT: cc-compat.json onboardingVersion={ov!r} != /version={repo_ver!r}')
+    print('Fix: update cc-compat.json onboardingVersion when bumping the repo version.')
+    sys.exit(1)
+print(f'cc-compat.json schema valid; onboardingVersion={ov} matches /version')
+CCVALIDATE
 
           echo "✓ PRD 1.11 fleet-refresh artefacts pass all checks"
 
