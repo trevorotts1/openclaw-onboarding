@@ -2,9 +2,10 @@
 """
 Persona Selector v2 — v2.1-aware persona selection.
 
-The v1.x `select-persona-for-task.py` still works for backward compatibility.
-This v2 version is a DROP-IN ALTERNATIVE that adds:
+This is THE canonical persona selector (PRD item 1.1, v11.3.x+).
+select-persona-for-task.py (v1) is a deprecated shim that delegates here.
 
+Features:
 1. Stickiness check — looks at the `persona_assignment` table (Command Center DB)
    first. If a sticky assignment exists for (department, task_category) with
    score ≥0.5, returns it without re-scoring.
@@ -25,6 +26,14 @@ This v2 version is a DROP-IN ALTERNATIVE that adds:
    picking #1. This stops the "Godin every time" failure mode Trevor flagged
    on 2026-05-24. Quality is preserved (top-1 still wins when it dominates
    by ≥1.5x). Disable with `--no-variety` for deterministic debugging.
+8. PRE-SCORING FUNNEL (PRD item 1.1 ports from v1):
+   Stage A — governing-personas.md pool (dept pre-qualified list, or all personas).
+   Stage B — DEPT_DOMAIN_TAGS keyword filter (narrows to domain-relevant candidates).
+   Stage C — gemini-search semantic candidate retrieval (top-10, intersected with B).
+   Stage D — existing 5-layer scoring on survivors only.
+   Output JSON includes "funnel": {"pool": N, "after_keyword": N, "after_semantic": N}
+   so the dashboard and QC can see the funnel working. Never filters to zero: each
+   stage falls back to the previous stage's output if it would eliminate everything.
 
 Output: JSON with persona_id, persona_name, score, interaction_mode, breakdown,
 and (if hybrid) secondary_persona_*.
@@ -224,6 +233,178 @@ VARIETY_PENALTY_CAP_USES = 5   # penalty saturates at 5 uses (= 40% cap)
 VARIETY_DOMINANCE_RATIO = 1.5  # top-1 must be ≥1.5x top-3 to skip sampling
 VARIETY_SAMPLE_TOP_N = 3       # weighted-sample pool size when sampling
 VARIETY_SAMPLE_SEED_ENV = "PERSONA_VARIETY_SEED"  # set for deterministic tests
+
+# ─── PRE-SCORING FUNNEL (PRD item 1.1 — ported from v1) ──────────────────────
+# Stage A: governing-personas.md → candidate pool
+# Stage B: DEPT_DOMAIN_TAGS keyword filter
+# Stage C: gemini-search semantic candidate retrieval (top-10 intersected)
+# Stage D: existing 5-layer scoring on survivors
+# Never filters to zero: fall back to previous stage if intersection is empty.
+
+DEPT_DOMAIN_TAGS = {
+    "marketing": ["Marketing", "Copywriting", "Communication"],
+    "sales": ["Sales", "Communication", "Strategy/Innovation"],
+    "billing": ["Finance", "Operations"],
+    "customer-support": ["Communication", "Operations"],
+    "operations": ["Operations", "Productivity/Systems", "Leadership"],
+    "creative": ["Copywriting", "Communication", "Personal Development"],
+    "hr": ["Leadership", "Communication", "Personal Development"],
+    "legal": ["Operations", "Strategy/Innovation"],
+    "it": ["Operations", "Productivity/Systems"],
+    "web-development": ["Operations", "Productivity/Systems"],
+    "app-development": ["Operations", "Productivity/Systems"],
+    "graphics": ["Copywriting", "Communication"],
+    "video": ["Copywriting", "Communication"],
+    "audio": ["Copywriting", "Communication"],
+    "research": ["Strategy/Innovation", "Productivity/Systems"],
+    "communications": ["Communication", "Copywriting"],
+    "ceo": ["Leadership", "Strategy/Innovation", "Mindset"],
+    "com": ["Leadership", "Strategy/Innovation", "Mindset"],
+    "personal-assistant": ["Communication", "Productivity/Systems", "Operations"],
+    "general-task": ["Leadership", "Strategy/Innovation", "Productivity/Systems"],
+    "project-architecture-office": ["Strategy/Innovation", "Leadership", "Operations"],
+}
+
+# Gemini-search script candidate locations (checked in order)
+_GEMINI_SEARCH_CANDIDATES = [
+    Path(__file__).parent / "gemini-search.py",
+    Path("/data/.openclaw/workspace/scripts/gemini-search.py"),
+    Path.home() / ".openclaw" / "workspace" / "scripts" / "gemini-search.py",
+    Path.home() / "Downloads" / "openclaw-master-files" / "23-ai-workforce-blueprint" / "scripts" / "gemini-search.py",
+]
+
+
+def _find_gemini_search() -> "Path | None":
+    """Locate the gemini-search.py script. Returns None if not found."""
+    for c in _GEMINI_SEARCH_CANDIDATES:
+        if c.exists():
+            return c
+    return None
+
+
+def _load_governing_personas(paths: dict, department: str) -> "list | None":
+    """
+    Stage A: load governing-personas.md for the department and return the
+    pre-qualified persona ID list. Returns None when the file is absent
+    (caller falls back to full library).
+    """
+    import re as _re
+    company_root = paths.get("company_root")
+    if not company_root:
+        return None
+    # Try canonical path and legacy alternatives
+    dept_candidates = [
+        company_root / "departments" / department / "governing-personas.md",
+        company_root / department / "governing-personas.md",
+    ]
+    for dept_path in dept_candidates:
+        if dept_path.exists():
+            text = dept_path.read_text(encoding="utf-8", errors="replace")
+            personas: set = set()
+            for m in _re.finditer(r"(?:^|\s)([a-z][a-z0-9]+-[a-z0-9-]+)(?=\s|$|,|\))", text, _re.MULTILINE):
+                personas.add(m.group(1))
+            if personas:
+                return sorted(personas)
+    return None
+
+
+def _dept_keyword_filter(candidates: list, department: str, categories_data: dict) -> list:
+    """
+    Stage B: narrow candidates to those whose domain_tags intersect the
+    department's tags. Falls back to the full input list if nothing matches
+    (never filters to zero).
+    """
+    dept_tags = set(DEPT_DOMAIN_TAGS.get(department, []))
+    if not dept_tags or not categories_data:
+        return candidates
+    personas_data = categories_data.get("personas", {}) or categories_data
+    filtered = []
+    for c in candidates:
+        info = personas_data.get(c, {})
+        ptags = set(info.get("domain_tags", []) or info.get("tags", []))
+        if ptags & dept_tags:
+            filtered.append(c)
+    return filtered if filtered else candidates  # never-to-zero guard
+
+
+def _semantic_candidate_retrieval(task_text: str, top_k: int = 10) -> "list | None":
+    """
+    Stage C: call gemini-search.py for the coaching-personas collection and
+    return a list of persona IDs, or None if the search engine is unavailable.
+    """
+    import subprocess as _subprocess
+    sp = _find_gemini_search()
+    if not sp:
+        return None
+    try:
+        r = _subprocess.run(
+            [sys.executable, str(sp), "--collection", "coaching-personas",
+             "--query", task_text, "--top-k", str(top_k), "--format", "json"],
+            capture_output=True, text=True, timeout=20,
+        )
+        if r.returncode != 0:
+            return None
+        data = json.loads(r.stdout)
+        # Shape: [{"id": "hormozi-100m-offers", "score": 0.83, ...}, ...]
+        return [item.get("id", "") for item in data if item.get("id")]
+    except Exception:
+        return None
+
+
+def build_candidate_pool(task_text: str, department: str, all_personas: list,
+                          paths: dict) -> tuple:
+    """
+    Run the three-stage pre-scoring funnel and return (candidate_list, funnel_dict).
+
+    Stage A: governing-personas.md pool, or all_personas if absent.
+    Stage B: DEPT_DOMAIN_TAGS keyword filter.
+    Stage C: gemini-search semantic retrieval — intersect with Stage B result.
+             If intersection is empty, keep Stage B result (never-to-zero).
+
+    funnel_dict records counts at each stage for output JSON observability.
+    """
+    # Load persona-categories.json for Stage B
+    pc_file = paths.get("persona_categories")
+    categories_data: dict = {}
+    if pc_file and Path(pc_file).exists():
+        try:
+            categories_data = json.loads(Path(pc_file).read_text(encoding="utf-8"))
+        except Exception:
+            categories_data = {}
+
+    # Stage A
+    governing = _load_governing_personas(paths, department)
+    if governing:
+        pool_a = [p for p in governing if p in all_personas]
+        if not pool_a:
+            pool_a = all_personas  # governing list references personas not yet installed
+        pool_note = "governing-personas.md"
+    else:
+        pool_a = list(all_personas)
+        pool_note = "all (no governing-personas.md)"
+
+    # Stage B
+    pool_b = _dept_keyword_filter(pool_a, department, categories_data)
+
+    # Stage C
+    semantic_ids = _semantic_candidate_retrieval(task_text, top_k=10)
+    if semantic_ids:
+        semantic_set = set(semantic_ids)
+        intersection = [p for p in pool_b if p in semantic_set]
+        pool_c = intersection if intersection else pool_b
+        semantic_note = "gemini-search"
+    else:
+        pool_c = pool_b
+        semantic_note = "unavailable (fallback to Stage B)"
+
+    funnel = {
+        "pool": len(pool_a),
+        "pool_source": pool_note,
+        "after_keyword": len(pool_b),
+        "after_semantic": len(pool_c),
+        "semantic_engine": semantic_note,
+    }
+    return pool_c, funnel
 
 
 def read_recent_use_counts(department_id: str, task_category: str,
@@ -846,10 +1027,18 @@ def score_persona(persona_id: str, task_text: str, owner_profile: str,
 
 def select_persona(task: str, department: str, mode: str, weights: dict,
                    paths: dict, db_path: Path, variety: bool = True) -> dict:
-    """Score all available personas and return one.
+    """Run the pre-scoring funnel then score survivors and return one.
 
+    PRE-SCORING FUNNEL (PRD item 1.1 — ported from v1, native in v2):
+      Stage A: governing-personas.md pool (or all personas if absent).
+      Stage B: DEPT_DOMAIN_TAGS keyword filter — narrows to domain-relevant.
+      Stage C: gemini-search semantic retrieval — intersect top-10 hits.
+      Each stage falls back to the previous stage output on empty intersection
+      (never filters to zero). funnel counts appear in output JSON.
+
+    Stage D — 5-layer scoring (existing logic):
     With `variety=True` (default), apply the v10.14.28 anti-repetition logic:
-      1. Compute base 5-layer scores for every persona.
+      1. Compute base 5-layer scores for funnel survivors only.
       2. Read recent-use counts from persona_selection_log scoped to
          (department, task_category) within VARIETY_WINDOW_HOURS.
       3. Multiply each persona's score by variety_penalty_factor(uses).
@@ -860,18 +1049,23 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
     by base score, no penalty, no sampling. Used by `--no-variety` for
     deterministic debugging / regression testing.
     """
-    personas = list_available_personas(paths)
+    all_personas = list_available_personas(paths)
     owner_profile = read_owner_profile(paths)
 
-    if not personas:
+    if not all_personas:
         return {
             "persona_id": None,
             "score": 0.0,
             "warning": "NO_PERSONAS_AVAILABLE",
             "message": "Run Skill 22 on at least one book to activate persona-guided work.",
             "mode": mode,
+            "funnel": {"pool": 0, "after_keyword": 0, "after_semantic": 0},
         }
 
+    # Stages A-C: build candidate pool via funnel
+    personas, funnel = build_candidate_pool(task, department, all_personas, paths)
+
+    # Stage D: 5-layer scoring on funnel survivors only
     scored = [score_persona(p, task, owner_profile, department, weights, paths, db_path) for p in personas]
 
     task_category = infer_task_category(task)
@@ -909,6 +1103,7 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
         "task_category": task_category,
         "weights_used": weights,
         "layers": top["layers"],
+        "funnel": funnel,
         "variety_applied": variety_applied,
         "variety": {
             "enabled": variety_applied,

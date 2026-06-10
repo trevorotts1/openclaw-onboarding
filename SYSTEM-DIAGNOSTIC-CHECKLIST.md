@@ -62,7 +62,7 @@ The automated runner is at **`scripts/qc-system-integrity.sh`**. It executes eve
 │   - 3-check rhythm: 9 AM standup / midday / EOD                       │
 │   - Runtime task→persona flow:                                        │
 │       1. Task lands in dept Telegram topic                            │
-│       2. Director invokes select-persona-for-task.py                  │
+│       2. Director invokes persona-selector-v2.py (canonical selector) │
 │       3. Hybrid search: Gemini semantic + keyword + 5-layer scoring   │
 │       4. Selected persona logged to dept/memory/[date].md             │
 │       5. Sub-agent spawned with "Act As If" prompt                    │
@@ -134,11 +134,11 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 
 | # | Check | How to verify | Pass = |
 |---|---|---|---|
-| 5.1 | select-persona-for-task.py callable | `python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py --help` | Help text returned, exit 0 |
-| 5.2 | Test invocation returns a winner | `--dept marketing --task "Write a launch email" --format id` | Returns a persona-id string, exit 0 |
-| 5.3 | Top-3 candidates have varied semantic scores | Same with `--format json` | Top-3 list, scores not all identical (signal that semantic search is working) |
-| 5.4 | Falls back gracefully if Gemini unavailable | Move gemini-search.py temporarily, re-run | Exits 2 with `"gemini_available": false`, still picks a persona |
-| 5.5 | Selection logged to dept's daily memory | `cat ~/clawd/zero-human-company/*/departments/<dept>/memory/$(date +%Y-%m-%d).md` | Contains `## HH:MM:SS — Persona Selection` entry |
+| 5.1 | persona-selector-v2.py callable (canonical selector) | `python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py --help` | Help text returned, exit 0 |
+| 5.2 | Test invocation returns a winner | `python3 persona-selector-v2.py --department marketing --task "Write a launch email" --format json` | Returns JSON with persona_id string, exit 0 |
+| 5.3 | Output includes funnel counts | Same call, check for "funnel" key in JSON | `"funnel": {"pool": N, "after_keyword": N, "after_semantic": N}` present |
+| 5.4 | Falls back gracefully if Gemini unavailable | Unset GEMINI_API_KEY, re-run | funnel.semantic_engine shows "unavailable (fallback to Stage B)", still picks a persona |
+| 5.5 | select-persona-for-task.py is the shim | `grep -q 'DEPRECATED SHIM' ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py` | Exit 0 — file contains "DEPRECATED SHIM" marker |
 
 ## CHECK 6 — Keyword Search
 
@@ -147,7 +147,7 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 | 6.1 | persona-categories.json has domain + perspective tags | `jq '.personas \| to_entries[] \| select(.value.domain_tags)' persona-categories.json` | Every persona has at least one domain tag |
 | 6.2 | Domain tags match documented 12-tag list | Check tags vs SKILL.md | Marketing, Sales, Leadership, Finance, Operations, Communication, Copywriting, Mindset, Productivity/Systems, Coaching, Strategy/Innovation, Personal Development |
 | 6.3 | Perspective tags match documented 6-tag list | Same | African American experience, Women's challenges, Men's challenges, Family/relationships, Faith/spirituality, Love/romantic relationships |
-| 6.4 | Dept-to-domain mapping present in selector | `grep -A 20 "DEPT_DOMAIN_TAGS" select-persona-for-task.py` | Mapping exists for all 17 default depts |
+| 6.4 | Dept-to-domain mapping present in canonical selector | `grep -A 20 "DEPT_DOMAIN_TAGS" ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py` | Mapping exists for all 19 mandatory depts (DEPT_DOMAIN_TAGS in persona-selector-v2.py) |
 | 6.5 | keyword_filter() narrows candidates correctly | Add a non-matching candidate, run selector | Candidate filtered out before scoring |
 
 ## CHECK 7 — Task Assignments (Kanban / Command Center)

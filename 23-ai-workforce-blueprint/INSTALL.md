@@ -465,22 +465,23 @@ Create folder: ~/.openclaw/workspace/departments/[dept-name]/
 Add this section to the BOTTOM of each department's AGENTS.md:
 
 ```markdown
-## 🔴🔴🔴 Persona Operating Protocol (Dynamic Selection Engine — v9.6.2)
+## 🔴🔴🔴 Persona Operating Protocol (Dynamic Selection Engine — v11.4.0)
 At the start of EVERY task, run dynamic persona selection. Do NOT skip. Do NOT default.
 
-### Step 1: Run the Unified Selector (does Steps 1 + 2 in one call)
+### Step 1: Run the Canonical Selector
 
 ```bash
-python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py \
-    --dept [your-dept] \
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py \
+    --department [your-dept] \
     --task "<concise task description here>" \
     --format json
 ```
 
-This script does THREE things internally:
-1. **Semantic search** via `gemini-search.py` (Gemini Embeddings 2 against the coaching-personas collection)
-2. **Keyword filter** by your dept's domain tags from `persona-categories.json`
-3. **5-Layer alignment scoring** per `persona-matching-protocol.md`:
+This script runs a FOUR-STAGE FUNNEL internally:
+1. **Stage A — Pool**: load governing-personas.md for the dept (pre-qualified list). Falls back to ALL personas if absent.
+2. **Stage B — Keyword filter**: narrow by dept domain tags from `DEPT_DOMAIN_TAGS` (built into the script). Never filters to zero.
+3. **Stage C — Semantic search**: call `gemini-search.py` (Gemini Embeddings 2) for top-10 matches, intersect with Stage B result. Falls back to Stage B on unavailability.
+4. **Stage D — 5-Layer alignment scoring** per `persona-matching-protocol.md` on funnel survivors only:
    | Layer | Weight | Source |
    |-------|--------|--------|
    | 1. Company Mission | 25% | SOUL.md, company-config.json |

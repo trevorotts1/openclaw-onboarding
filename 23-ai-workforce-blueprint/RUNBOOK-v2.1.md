@@ -135,21 +135,21 @@ except Exception as _e:
 
 If you skip this edit: just run `post-build-role-workspaces.py` after every `build-workforce.py` run. Same result.
 
-### B. `select-persona-for-task.py` — point it at v2
+### B. `persona-selector-v2.py` — the canonical selector (v11.4.0+)
 
-The simplest path: don't modify it. Update the dashboard's `selectPersonaForTask()` server function in `src/lib/persona-selector.ts` to call `persona-selector-v2.py` instead. Change the `scriptPath` line from:
+`persona-selector-v2.py` is THE canonical selector. `select-persona-for-task.py`
+is now a deprecated shim that delegates to v2. No change needed in
+`src/lib/persona-selector.ts` — it already calls v2.
+
+If you have any custom scripts, update them:
 
 ```typescript
+// Correct (v11.4.0+):
+scriptPath = path.join(openclaw_root, "skills", "23-ai-workforce-blueprint", "scripts", "persona-selector-v2.py");
+
+// Deprecated (still works via shim but logs a warning to stderr):
 scriptPath = path.join(openclaw_root, "skills", "23-ai-workforce-blueprint", "scripts", "select-persona-for-task.py");
 ```
-
-to:
-
-```typescript
-scriptPath = path.join(openclaw_root, "skills", "23-ai-workforce-blueprint", "scripts", "persona-selector-v2.py");
-```
-
-Old script stays in place for backward compatibility.
 
 ### C. `install.sh` — ensure `shared-utils/` gets copied
 
