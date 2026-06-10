@@ -1,3 +1,5 @@
+## [v11.14.0]  -  2026-06-10  -  feat(wave5-preflight): fail-closed B.1+B.2 safety gate blocks Wave-5 CC deploy
+
 ## [v11.13.0]  -  2026-06-10  -  fix(AF4): retirement-clock trigger — fleet-refresh.sh tracks per-box loaded state and auto-opens retirement issue when all boxes loaded=YES
 
 **AF4 — Legacy retirement clock: deterministic trigger, not vibes**
