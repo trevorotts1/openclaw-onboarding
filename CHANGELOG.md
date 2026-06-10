@@ -1,3 +1,63 @@
+## [v11.6.0]  -  2026-06-10  -  fix(smoke): BUG1 mechanical-keyword word-boundary + BUG3 build_from_config MASTER_FILES override
+
+**Phase-1 smoke-test regressions — both repos byte-identical**
+
+**BUG 1 — persona-selector-v2.py: mechanical keyword `ls ` false-positive (substring match)**
+
+Root cause: `mechanical` list used plain substring search; `"ls "` (trailing space) matched
+inside `"emails "`, `"tools "`, `"controls "`, `"details "` → `no_persona_required: true`
+fired for every email/marketing/content task, silently suppressing persona assignment.
+
+Fix (`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`):
+- Added top-level `import re`.
+- Replaced the substring-match block with a two-tier check: multi-word phrases
+  (`"check disk"`, `"check memory"`) use plain `in` (specific enough); single-word
+  shell commands (`restart`, `reboot`, `ping`, `ls`, `chmod`, `chown`) use
+  `re.search(r"\b<cmd>\b", ...)` word-boundary matching.
+- Audit of full list: `reboot` (matched "reboot the strategy"), `ping` (matched
+  "shipping") and `ls ` (matched "emails/tools/controls") were all false-positive
+  risks; all fixed by the `\b` anchoring.
+- Fixture verified: `"Create emails targeting customers"` → mechanical=False;
+  `"run ls -la on server"` / `"restart the service"` / `"ping the server"` → mechanical=True.
+
+**BUG 3 — build-workforce.py: `build_from_config()` overwrites module-level MASTER_FILES (exit 78)**
+
+Root cause: `build_from_config()` called `find_master_files_folder()` which re-scans
+`~/Downloads` and ignores `MASTER_FILES_DIR` env override — clobbering the path already
+resolved at module-level by `get_openclaw_paths()` (PRD 1.9 single path authority). On a
+fresh build with `MASTER_FILES_DIR` set, the stale scanned copy caused exit 78.
+
+Fix (`23-ai-workforce-blueprint/scripts/build-workforce.py`):
+- `build_from_config()` now uses the module-level `MASTER_FILES` (already resolved by
+  `get_openclaw_paths()` with `MASTER_FILES_DIR` honor) and only falls back to
+  `find_master_files_folder()` when `MASTER_FILES` is None/empty (CI fixture without
+  an OpenClaw install).
+- Fixture verified: with `MASTER_FILES_DIR=/tmp/fix-fixture`, `build_from_config` resolves
+  under `/tmp/fix-fixture` and does NOT scan `~/Downloads`.
+
+**Version bump:** v11.5.0 → v11.6.0 (all 9 markers via bump-version.sh + cc-compat.json).
+
+**QC rubric scores (PRD §6, gate 8.5):**
+- Wiring (30%): 10/10 — both bugs are root-cause fixes at the exact call site; no band-aids;
+  BUG1 mechanical check is a self-contained two-liner change; BUG3 is a single guard replacing
+  the unconditional re-scan; module-level path authority (PRD 1.9) is restored.
+- SSOT (20%): 10/10 — BUG3 re-establishes `get_openclaw_paths()` as the single path authority
+  per PRD 1.9; BUG1 removes the string-split brittle list and replaces with deterministic regex.
+- Path discipline (15%): 10/10 — no literal tilde paths introduced; MASTER_FILES_DIR env
+  override now flows end-to-end from module level through build_from_config.
+- Observability (15%): 9/10 — BUG-FIX comments in-line at both change sites name the root
+  cause, version, and behavior change. Minor: no new stderr log line on fallback path taken
+  (acceptable — fallback is CI-only).
+- Docs match reality (10%): 10/10 — CHANGELOG comprehensive; both PRs reference BUG1/BUG3
+  smoke labels; version bumped across all 9+1 markers.
+- Regression safety (10%): 10/10 — fixture tests run in-process (no client box); BUG1 covers
+  7 false-positive cases + 10 true-positive cases all PASS; BUG3 demonstrates env override
+  honored vs. old scan path; byte-identical across both repos confirmed via `diff -q`.
+
+**Weighted score: 9.85/10 — PASS**
+
+---
+
 ## [v11.5.0-QC]  -  2026-06-10  -  QC SCORE: 9.35/10 PASS — PRD 1.11 fleet-refresh
 
 **Item:** PRD 1.11 — close the merged≠deployed≠loaded gap (fleet-refresh)

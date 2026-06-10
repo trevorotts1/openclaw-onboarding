@@ -777,8 +777,14 @@ def build_from_config(config):
     """
     global MASTER_FILES, COMPANY_DISCOVERY_DIR
 
-    # Detect environment
-    MASTER_FILES = find_master_files_folder()
+    # BUG-FIX v11.6.0 (PRD 1.9): use the module-level MASTER_FILES already resolved
+    # by get_openclaw_paths() (which honours MASTER_FILES_DIR env override) instead
+    # of re-scanning ~/Downloads via find_master_files_folder(), which ignores the
+    # env override and caused exit 78 on fresh builds when the scanned copy is stale.
+    # Only fall back to find_master_files_folder() when the module-level resolver
+    # returned nothing (e.g. CI fixture without an OpenClaw install).
+    if not MASTER_FILES:
+        MASTER_FILES = find_master_files_folder()
     COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
 
     company_name = config["company_name"]

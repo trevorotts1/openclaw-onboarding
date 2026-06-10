@@ -52,6 +52,7 @@ import argparse
 import json
 import os
 import random
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -1324,8 +1325,17 @@ def main():
     task_category = infer_task_category(args.task)
 
     # Mechanical task check
-    mechanical = ["restart", "reboot", "ping", "check disk", "check memory", "ls ", "chmod", "chown"]
-    if any(m in args.task.lower() for m in mechanical):
+    # BUG-FIX v11.6.0: use word-boundary regex for single-word shell commands so
+    # substring matches like "emails" (contains "ls "), "shipping" (contains "ping"),
+    # and "controls/tools" (contain "ls ") do NOT false-trigger no_persona_required.
+    # Multi-word phrases ("check disk", "check memory") are specific enough for plain
+    # substring match.  Single-word commands use \b anchors.
+    _t = args.task.lower()
+    _mechanical_hit = any(m in _t for m in ("check disk", "check memory")) or any(
+        re.search(r"\b" + re.escape(m) + r"\b", _t)
+        for m in ("restart", "reboot", "ping", "ls", "chmod", "chown")
+    )
+    if _mechanical_hit:
         out = {
             "persona_id": None,
             "no_persona_required": True,
