@@ -208,7 +208,12 @@ python3 ~/Downloads/openclaw-master-files/23-ai-workforce-blueprint/scripts/buil
 
 ### Post-Categorization: Automatic persona-categories.json Update
 
-After the persona blueprint is written and its domain/perspective tags are determined during synthesis, automatically append the new persona entry to `persona-categories.json` (located in the Skill 22 folder):
+After the persona blueprint is written and its domain/perspective tags are determined during synthesis, automatically append the new persona entry to `persona-categories.json`.
+
+**Canonical location (PRD 2.7):** `<workspace>/data/coaching-personas/persona-categories.json`
+(VPS: `/data/.openclaw/workspace/data/coaching-personas/persona-categories.json`;
+Mac: `~/.openclaw/workspace/data/coaching-personas/persona-categories.json`).
+The `22-book-to-persona-coaching-leadership-system/persona-categories.json` in the skill folder is the **shipped seed only** — it is copied to the canonical location on first run and is READ-ONLY thereafter. All writes go to the canonical path via `get_openclaw_paths()["persona_categories"]`.
 
 ```python
 # After Phase 3 synthesis produces the blueprint and its tags:
@@ -231,7 +236,7 @@ After the persona blueprint is written and its domain/perspective tags are deter
 **Validation:**
 - The new entry must use only tags from the existing `domainTags` and `perspectiveTags` arrays, or add new tags to those arrays if the persona introduces genuinely new categories.
 - The JSON must remain valid after insertion.
-- Run `python3 -c "import json; json.load(open('persona-categories.json'))"` to verify.
+- Run `python3 -c "import sys; sys.path.insert(0,'shared-utils'); from detect_platform import get_openclaw_paths; p=get_openclaw_paths()['persona_categories']; import json; json.load(open(p)); print('OK:', p)"` to verify.
 
 **This step runs BEFORE the re-index step above, so that persona-categories.json is up to date when the indexer runs.**
 

@@ -63,8 +63,9 @@ warn_only "OpenRouter key present (Phase 1/2/3 fallback)" "[ -n \"$OPENROUTER_AP
 
 echo ""
 echo "--- Pipeline outputs (warn if not yet produced) ---"
-warn_only "coaching-personas folder exists"             "[ -d \"$WORKSPACE/coaching-personas\" ] || find $HOME/Downloads ~/Downloads -maxdepth 4 -name 'coaching-personas' 2>/dev/null | head -1 | grep -q ."
-warn_only "persona-categories.json present"             "find $HOME/Downloads ~/Downloads \"$WORKSPACE\" -maxdepth 5 -name 'persona-categories.json' 2>/dev/null | head -1 | grep -q ."
+# PRD 2.7: canonical path = workspace/data/coaching-personas/; skill-folder is seed only.
+warn_only "coaching-personas folder exists (canonical)"  "[ -d \"$WORKSPACE/data/coaching-personas\" ]"
+warn_only "persona-categories.json present (canonical)"  "[ -f \"$WORKSPACE/data/coaching-personas/persona-categories.json\" ] || [ -f \"$SKILLS_DIR_DEFAULT/22-book-to-persona-coaching-leadership-system/persona-categories.json\" ]"
 warn_only "PERSONA-ROUTER.md present"                   "find $HOME/Downloads ~/Downloads \"$WORKSPACE\" -maxdepth 5 -name 'PERSONA-ROUTER.md' 2>/dev/null | head -1 | grep -q ."
 
 echo ""

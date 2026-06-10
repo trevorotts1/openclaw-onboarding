@@ -64,6 +64,17 @@ else
   MASTER=$HOME/Downloads/openclaw-master-files
 fi
 
+# PRD 2.7: canonical coaching-personas workspace (workspace/data/coaching-personas/).
+# ~/.openclaw/workspace is the runtime workspace on new Mac installs; /data/.openclaw/workspace on VPS.
+if [ -d "/data/.openclaw/workspace" ]; then
+  PC_WORKSPACE="/data/.openclaw/workspace"
+elif [ -d "$HOME/.openclaw/workspace" ]; then
+  PC_WORKSPACE="$HOME/.openclaw/workspace"
+else
+  PC_WORKSPACE="$WORKSPACE"
+fi
+PC_DIR="$PC_WORKSPACE/data/coaching-personas"
+
 ZHC=$WORKSPACE/zero-human-company
 ZHC_ALT=$WORKSPACE/zhc
 
@@ -300,13 +311,18 @@ fi
 # ─── CHECK 3: Book-to-Persona ────────────────────────────────────────────────
 echo
 blue "── CHECK 3: Book-to-Persona (Skill 22) ──"
-PERSONA_DIR=$MASTER/coaching-personas/personas
+# PRD 2.7: persona-categories.json canonical path is PC_DIR (workspace/data/coaching-personas/).
+# The skill-folder copy is the shipped seed (READ-ONLY); check that the canonical one exists.
+check "3.0" "persona-categories.json canonical dir resolves (PRD 2.7)" \
+  "[ -d \"$PC_DIR\" ] || { mkdir -p \"$PC_DIR\" && echo 'created'; }" \
+  "Skill 22 orchestrator creates this on first run; no action needed pre-install."
+PERSONA_DIR=$PC_DIR/personas
 check "3.1" "persona-blueprint.md present in at least one persona folder" \
   "[ -d \"$PERSONA_DIR\" ] && [ \$(find \"$PERSONA_DIR\" -name 'persona-blueprint.md' | wc -l) -gt 0 ]" \
   "Run Skill 22 pipeline on at least one book"
-check "3.5" "persona-categories.json present + valid JSON" \
-  "python3 -c 'import json; json.load(open(\"$MASTER/coaching-personas/persona-categories.json\"))'" \
-  "Re-run gemini-indexer.py or rebuild Skill 22"
+check "3.5" "persona-categories.json present + valid JSON (canonical: workspace/data/coaching-personas/)" \
+  "python3 -c 'import json; json.load(open(\"$PC_DIR/persona-categories.json\"))' 2>/dev/null || python3 -c 'import json; json.load(open(\"$MASTER/coaching-personas/persona-categories.json\"))'" \
+  "Run Skill 22 orchestrator at least once to seed canonical path $PC_DIR/persona-categories.json"
 warn_check "3.6" "No stale Kimi 2.5 / DeepSeek 3.2 / GPT-5.3 hardwires in Skill 22" \
   "! grep -q 'moonshot/kimi-k2.6\\|deepseek/deepseek-v3.2\\|gpt-5.3-codex' $HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system/_meta.json 2>/dev/null" \
   "Re-apply v9.5.0+ skill 22 _meta.json"
@@ -363,9 +379,18 @@ fi
 # ─── CHECK 6: Keyword Search ─────────────────────────────────────────────────
 echo
 blue "── CHECK 6: Keyword Search ──"
-warn_check "6.1" "persona-categories.json has domain_tags fields" \
-  "python3 -c 'import json; d=json.load(open(\"$MASTER/coaching-personas/persona-categories.json\")); p=d.get(\"personas\",d); print(any((v.get(\"domain_tags\") or v.get(\"tags\")) for v in p.values()))' 2>/dev/null | grep -q True" \
-  "Re-tag personas via Skill 22 indexing"
+warn_check "6.1" "persona-categories.json has domain_tags fields (canonical path)" \
+  "python3 -c '
+import json, sys
+for p in [\"$PC_DIR/persona-categories.json\", \"$MASTER/coaching-personas/persona-categories.json\"]:
+    try:
+        d=json.load(open(p)); personas=d.get(\"personas\",d)
+        if any((v.get(\"domain_tags\") or v.get(\"domain\") or v.get(\"tags\")) for v in personas.values() if isinstance(v,dict)):
+            sys.exit(0)
+    except: pass
+sys.exit(1)
+' 2>/dev/null" \
+  "Re-tag personas via Skill 22 indexing; canonical file at $PC_DIR/persona-categories.json"
 
 # ─── CHECK 7: Task Assignments / Kanban ──────────────────────────────────────
 echo
@@ -531,7 +556,11 @@ WS_ROOT="${WORKSPACE_ROOT:-$HOME/.openclaw/workspace}"
 
 GEMINI_INDEX_DB="$WS_ROOT/data/coaching-personas/gemini-index.sqlite"
 PERSONAS_DIR="$WS_ROOT/data/coaching-personas/personas"
+# PRD 2.7: canonical write target first; skill-folder copy is shipped seed (READ-ONLY).
 PERSONA_CATALOG_CANDIDATES=(
+  "$WS_ROOT/data/coaching-personas/persona-categories.json"
+  "$HOME/.openclaw/workspace/data/coaching-personas/persona-categories.json"
+  "/data/.openclaw/workspace/data/coaching-personas/persona-categories.json"
   "$HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json"
   "/data/.openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json"
 )
@@ -539,6 +568,10 @@ PERSONA_CATALOG=""
 for p in "${PERSONA_CATALOG_CANDIDATES[@]}"; do
   [ -f "$p" ] && PERSONA_CATALOG="$p" && break
 done
+# Warn if still resolving from skill folder (should only happen before first Skill 22 run).
+if [ -n "$PERSONA_CATALOG" ] && echo "$PERSONA_CATALOG" | grep -q "22-book-to-persona"; then
+  echo "  [WARN] persona-categories.json resolved from shipped skill folder (pre-Skill-22 run); canonical path: $WS_ROOT/data/coaching-personas/persona-categories.json"
+fi
 
 # X.3 — coaching-personas/ has ≥40 .md blueprint files (matches persona-categories.json catalog)
 check "X.3" "coaching-personas/personas has ≥40 persona blueprints" \

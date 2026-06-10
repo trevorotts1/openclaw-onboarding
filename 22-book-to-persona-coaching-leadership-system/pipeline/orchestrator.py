@@ -44,6 +44,17 @@ import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
+# PRD 2.7: shared path resolver — persona-categories.json canonical path comes
+# from get_openclaw_paths()["persona_categories"], not from a local candidate list.
+_SHARED_UTILS = Path(__file__).resolve().parents[2] / "shared-utils"
+if str(_SHARED_UTILS) not in sys.path:
+    sys.path.insert(0, str(_SHARED_UTILS))
+try:
+    from detect_platform import get_openclaw_paths as _get_openclaw_paths  # type: ignore
+    _OPENCLAW_PATHS_AVAILABLE = True
+except ImportError:
+    _OPENCLAW_PATHS_AVAILABLE = False
+
 # ─── PATHS ─────────────────────────────────────────────────────────────────────
 # v6.6.0: Unified canonical root.
 # VPS  → /data/.openclaw/master-files/coaching-personas
@@ -267,24 +278,31 @@ BOOKS = [
     {"title": "Good to Great Summary",          "author": "Jim Collins",       "file": "Good to Great Summary - Jim Collins.pdf",              "folder": "collins-good-to-great-summary"},
 ]
 
-# ─── PERSONA CATEGORIES UPDATER (v10.14.27) ──────────────────────────────────
+# ─── PERSONA CATEGORIES UPDATER (PRD 2.7) ────────────────────────────────────
 def _persona_categories_path() -> Path:
-    """Locate persona-categories.json across the canonical install paths."""
-    candidates = [
-        Path("/data/.openclaw/master-files/coaching-personas/persona-categories.json"),
-        Path.home() / ".openclaw" / "workspace" / "data" / "coaching-personas" / "persona-categories.json",
-        Path.home() / "Downloads" / "openclaw-master-files" / "coaching-personas" / "persona-categories.json",
-        BASE / "persona-categories.json",
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-    # No file found — return the first candidate so we can create it.
-    return candidates[0]
+    """Locate persona-categories.json via the shared path resolver (PRD 2.7).
+
+    PRD 2.7: single write target = workspace/data/coaching-personas/persona-categories.json.
+    Always delegates to get_openclaw_paths()["persona_categories"] so there is
+    exactly ONE resolution chain across writer (Skill 22) and readers (persona-selector).
+    Falls back to BASE / persona-categories.json only when the resolver is unavailable.
+    """
+    if _OPENCLAW_PATHS_AVAILABLE:
+        try:
+            return _get_openclaw_paths()["persona_categories"]
+        except Exception as e:
+            print(f"[orchestrator] WARNING: get_openclaw_paths() failed ({e}); using BASE fallback.")
+    # Fallback — should not occur on a properly installed box.
+    return BASE / "persona-categories.json"
 
 
 def _append_persona_to_categories(book: dict, folder: str) -> None:
     """Append a new persona entry to persona-categories.json (idempotent).
+
+    PRD 2.7: always writes to the canonical path returned by _persona_categories_path()
+    (workspace/data/coaching-personas/persona-categories.json). The skill-folder copy
+    is the shipped seed — if the canonical file is absent and the seed exists, the seed
+    is COPIED to the canonical location rather than discarded.
 
     Schema 1.0: personas live under data["personas"][slug] with author, book,
     domain[], perspective[], custom[] fields. We write an empty-tags stub so
@@ -292,17 +310,29 @@ def _append_persona_to_categories(book: dict, folder: str) -> None:
     (b) the operator gets a clear "no tags yet" signal to fill in domain +
     perspective tags before the dept-scope filter will include this persona.
     """
+    import shutil
     cat_path = _persona_categories_path()
     if not cat_path.exists():
-        # No persona-categories.json yet — create a minimal v1.0 shell.
         cat_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "schemaVersion": "1.0",
-            "created": datetime.datetime.utcnow().strftime("%Y-%m-%d"),
-            "domainTags": [],
-            "perspectiveTags": [],
-            "personas": {},
-        }
+        # Prefer to seed from the skill-folder copy so existing tags are preserved.
+        skill_seed = Path(__file__).resolve().parents[1] / "persona-categories.json"
+        if skill_seed.exists():
+            shutil.copy2(skill_seed, cat_path)
+            print(f"[orchestrator] Seeded {cat_path} from shipped skill-folder copy.")
+        else:
+            # No seed available — create a minimal v1.0 shell.
+            data = {
+                "schemaVersion": "1.0",
+                "created": datetime.datetime.utcnow().strftime("%Y-%m-%d"),
+                "domainTags": [],
+                "perspectiveTags": [],
+                "personas": {},
+            }
+            with open(cat_path, "w") as f:
+                json.dump(data, f, indent=2)
+        data = json.loads(cat_path.read_text())
+        if "personas" not in data or not isinstance(data.get("personas"), dict):
+            data["personas"] = {}
     else:
         with open(cat_path) as f:
             data = json.load(f)
