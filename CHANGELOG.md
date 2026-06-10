@@ -16,6 +16,14 @@ Branch: feat/prd-2.7-persona-categories-canonical-path.
 **Verify (PRD 2.7):**
 `paths["persona_categories"]` resolves to `workspace/data/coaching-personas/persona-categories.json`; no second write target; qc-system-integrity.sh checks 3.5/6.1 pass.
 
+**QC rubric score: 8.50/10 — PASS**
+- Wiring correctness (30%): 9 — Both detect_platform.py files correctly resolve `coaching_personas = workspace / "data" / "coaching-personas"`; orchestrator delegates to `get_openclaw_paths()["persona_categories"]`; verify command passes. -1: `generate-governing-personas.sh` still uses old `workspace/coaching-personas/` reader path (miss, though reader-only).
+- Single source of truth (20%): 7 — Writer path is single (orchestrator only). `persona-selector-v2.py` and `embedding_engine.py` read via shared resolver. `generate-governing-personas.sh` has old `workspace/coaching-personas/` path not updated; on a PRD 2.7-clean install that reader will miss the canonical file until its candidate list is updated.
+- Path discipline (15%): 9 — Both detect_platform.py files updated cleanly. QC uses `PC_DIR`. Orchestrator fallback is safe (BASE on Mac resolves to `workspace/data/coaching-personas`).
+- Observability (15%): 9 — QC checks 3.0/3.5/6.1 pass; Phase 14 warns on skill-folder fallback; PIPELINE.md updated with canonical path.
+- Docs match reality (10%): 8 — PIPELINE.md corrected, `persona-categories.README.md` added, CHANGELOG complete. `SYSTEM-DIAGNOSTIC-CHECKLIST.md` still shows old master-files paths (doc-only).
+- Regression safety (10%): 9 — Seeding from skill-folder copy on first run preserves existing tags; fallback path consistent with canonical on Mac and VPS.
+
 ## [v11.8.3]  -  2026-06-10  -  feat(prd-2.6): auto-apply KNOWN-ISSUES #1 embeddings-stall mitigation; memorySearch.fallback+cache written by install.sh when 2nd provider key present; QC assertion added
 
 **PRD 2.6 — Apply KNOWN-ISSUES #1 mitigation automatically**
