@@ -13,7 +13,7 @@ Branch: feat/prd-2.11-dept-trio.
 - Devil's Advocate: auto-created in every department. NEVER surfaced to the client on the board, in communications, or in any deliverable.
 - Version bump: v11.8.7 → v11.8.8 (all 9 markers + cc-compat.json).
 
-**QC score: pending**
+**QC score: 8.75/10 — PASS** (Wiring 9/10, SSOT 8/10, Path 10/10, Observability 9/10, Docs 7/10, Regression 9/10; weighted 30/20/15/15/10/10)
 
 **Verify (PRD 2.11 onboarding side, fixture — no client box):**
 - `bash 23-ai-workforce-blueprint/scripts/test-trio-gate.sh` exits 0: PASS (9/9 assertions)
