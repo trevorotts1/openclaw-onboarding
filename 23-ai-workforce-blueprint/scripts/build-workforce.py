@@ -1554,6 +1554,44 @@ def _ensure_company_discovery_dir():
 # WORKSPACE CREATION
 # ============================================================
 
+def _resolve_main_agent_workspace():
+    """
+    Resolve the path that the main (CEO/orchestrator) agent actually reads
+    bootstrap files from. Priority:
+      1. agents.list[id=main].workspace in openclaw.json (per-agent override)
+      2. agents.defaults.workspace in openclaw.json
+      3. ~/.openclaw/workspace (canonical OpenClaw default)
+
+    This is the INJECTED path — the gateway loads SOUL.md from here.
+    It is NOT the same as DEPARTMENTS_DIR/ceo (that is the dept-ceo sub-agent
+    workspace, which the build was already writing to, causing the bug).
+    """
+    import json as _json
+    workspace = None
+    if os.path.isfile(OPENCLAW_CONFIG):
+        try:
+            with open(OPENCLAW_CONFIG, 'r') as _f:
+                _cfg = _json.load(_f)
+            # Step 1: per-agent override on "main"
+            for _ag in _cfg.get("agents", {}).get("list", []) or []:
+                if isinstance(_ag, dict) and _ag.get("id") == "main":
+                    _ws = _ag.get("workspace")
+                    if _ws:
+                        workspace = os.path.expanduser(_ws)
+                        break
+            # Step 2: agents.defaults.workspace
+            if not workspace:
+                _dw = _cfg.get("agents", {}).get("defaults", {}).get("workspace")
+                if _dw:
+                    workspace = os.path.expanduser(_dw)
+        except Exception:
+            pass
+    # Step 3: canonical default
+    if not workspace:
+        workspace = os.path.join(HOME, ".openclaw", "workspace")
+    return workspace
+
+
 def create_department_workspace(dept_id, dept_info, interview_answers):
     """
     Create a full department workspace with all core files.
@@ -1705,6 +1743,63 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         heartbeat_content = generate_heartbeat_md(dept_id, dept_info, interview_answers)
         with open(heartbeat_path, 'w') as f:
             f.write(heartbeat_content)
+
+    # G5-FIX (v11.3.2): Inject PRIME DIRECTIVE into the MAIN AGENT's workspace
+    # SOUL.md — the file the gateway actually injects into the model context.
+    #
+    # The previous code only wrote the directive to DEPARTMENTS_DIR/ceo/SOUL.md
+    # (the dept-ceo sub-agent workspace). The MAIN orchestrator agent reads its
+    # bootstrap files from agents.list[main].workspace (or agents.defaults.workspace
+    # or ~/.openclaw/workspace) — a DIFFERENT path. Proven on Sheila's box: hand-
+    # writing to workspace/SOUL.md stopped the CEO from self-executing; a build
+    # re-run reverted it because the build never touched that file.
+    #
+    # This block ALSO scrubs the "personal assistant / handle it yourself" intro
+    # from workspace/SOUL.md before prepending the directive, so there are no
+    # contradictory instructions. Idempotent: CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER
+    # guards against duplicate injection on re-runs.
+    if is_ceo_dept:
+        import re as _re2
+        main_ws = _resolve_main_agent_workspace()
+        os.makedirs(main_ws, exist_ok=True)
+        ws_soul_path = os.path.join(main_ws, "SOUL.md")
+        # Read existing content (or start empty)
+        if os.path.isfile(ws_soul_path):
+            with open(ws_soul_path, 'r') as _f:
+                ws_existing = _f.read()
+        else:
+            ws_existing = ""
+        # Only inject if V2 marker not already present
+        if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in ws_existing:
+            # Upgrade V1 → V2 if only V1 is present
+            if CEO_ORCHESTRATOR_V1_MARKER in ws_existing:
+                ws_existing = _re2.sub(
+                    r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
+                    ws_existing, count=1, flags=_re2.DOTALL)
+            # Scrub the "personal assistant / handle it yourself" template intro.
+            # The SOUL.md installed by install.sh starts with this marker line —
+            # it instructs the agent to "just help" and "have opinions" which
+            # contradicts the route-not-execute PRIME DIRECTIVE.  Strip from the
+            # beginning of the file up to and including the first --- separator.
+            # (Idempotent — if no such intro is found, the sub is a no-op.)
+            ws_existing = _re2.sub(
+                r'^# SOUL\.md.*?^---\s*\n',
+                '',
+                ws_existing,
+                count=1,
+                flags=_re2.DOTALL | _re2.MULTILINE,
+            )
+            with open(ws_soul_path, 'w') as _f:
+                _f.write(CEO_ORCHESTRATOR_RULE + ws_existing.lstrip())
+            print(
+                f"[G5-FIX] PRIME DIRECTIVE written to main-agent workspace: {ws_soul_path}",
+                file=sys.stderr
+            )
+        else:
+            print(
+                f"[G5-FIX] PRIME DIRECTIVE already present in {ws_soul_path} — skipping (idempotent)",
+                file=sys.stderr
+            )
 
     return dept_dir
 

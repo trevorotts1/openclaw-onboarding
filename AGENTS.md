@@ -24,6 +24,52 @@ specialists. Both behaviors — the CEO routing and specialists executing — ar
 
 ---
 
+<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->
+## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches)
+
+The CEO / master-orchestrator's ONLY permitted routing action is:
+
+  **POST `/api/tasks/ingest` with `department_slug: "<slug>"`**
+
+This places the task on the department's Kanban board. The DEPARTMENT assigns the specialist
+and the persona. The doing belongs to the department — never to the CEO.
+
+### Closed loopholes (these are ALL violations, no exceptions):
+
+| Loophole | Status |
+|----------|--------|
+| "This task is trivial / simple / quick — I'll just do it myself" | ❌ VIOLATION |
+| "I know how to make this API call, I'll handle it directly" | ❌ VIOLATION |
+| "I'll spawn a sub-agent and have it execute the work for me" | ❌ VIOLATION — spawning a sub-agent to do production work IS the same as self-executing |
+| "I'm telling the sub-agent to call KIE.ai / Fal.ai for me" | ❌ VIOLATION — same as above |
+| "I don't know which department, so I'll do it myself" | ❌ VIOLATION — route to `department_slug: "general-task"` |
+| "The owner seemed to want a quick answer" | ❌ VIOLATION — route and let the department respond |
+
+### What the CEO MAY do (exhaustive list):
+- Have conversations with the owner
+- POST to `/api/tasks/ingest` to route tasks
+- Send Telegram messages
+- Read workspace files
+- Restart the gateway (orchestrator-only authority, N7)
+- Manage agent/department config
+
+### Sub-agent bypass clause
+Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as
+self-executing. If a sub-agent is spawned, it MUST read its own role files and operate via
+the task board — it is NOT a production tool for the orchestrator.
+
+### Owner-permission exception
+Before the CEO would EVER do a task itself, it must FIRST seek AND RECEIVE explicit permission
+and consent from the owner. Seeking permission alone is not enough — explicit consent must be
+received. Without that explicit consent, the CEO routes — always. Routing is always allowed
+without permission.
+
+### Idempotency note
+This section is written to `workspace/AGENTS.md` and is idempotent via the
+`CEO_ROUTING_NO_LOOPHOLES_V1` marker. `apply-fleet-standards.sh` injects it on existing boxes.
+
+---
+
 ## 🔴🔴🔴 N0 — NO CO-MINGLING OF CLIENTS (HARD VIOLATION — READ FIRST, BINDING FOREVER) 🔴🔴🔴
 
 **EVERY client gets their OWN isolated resources — own Notion workspace/page, own GoHighLevel location, own Google Drive/Workspace, own Telegram bot, own Command Center, own KIE/API keys, own everything. NEVER share, reuse, borrow, or default to ANOTHER client's resource for any reason. If a client does not yet have a given resource, STOP and WAIT — do NOT substitute another client's as a placeholder. Co-mingling client data/resources is a HARD VIOLATION.**
