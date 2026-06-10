@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 
 graphify-out/
+# graphify (knowledge-graph map) — generated output, never committed
 
 # PRD 1.8: finished migration artifact — deleted from repo, excluded from future tracking
 projects/gemini-migration/

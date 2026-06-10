@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # ============================================================
-#  OpenClaw Onboarding — Shared Library Functions (v1.0.0)
+#  OpenClaw Onboarding — Shared Library Functions (v1.0.1)
 #
 #  Sourced by install.sh, update-skills.sh, check-updates.sh, and
 #  any skill that needs platform detection or master-files lookup.
 #
 #  All functions here are platform-aware (Mac vs VPS) and use
 #  CANONICAL paths and CANONICAL env-var names.
+#
+#  PRD 2.1 unified — this file is the single shared copy for
+#  both mac and vps platforms. Platform overlays live in
+#  platform/mac/ and platform/vps/.
 # ============================================================
 
 # ----------------------------------------------------------
@@ -26,7 +30,7 @@ resolve_platform_paths() {
     export OPENCLAW_HOME="/data"
     export SECRETS_ENV="/data/.openclaw/secrets/.env"
     export CONFIG_JSON="/data/.openclaw/openclaw.json"
-    export WORKSPACE="/data/clawd"
+    export WORKSPACE="/data/.openclaw/workspace"
     export CANONICAL_MASTER="/data/Downloads/openclaw-master-files"
     export SKILLS_DIR_DEFAULT="/data/.openclaw/skills"
     export BACKUP_DIR_DEFAULT="$HOME/openclaw-backups"
@@ -35,7 +39,8 @@ resolve_platform_paths() {
     export OPENCLAW_HOME="$HOME"
     export SECRETS_ENV="$HOME/.openclaw/secrets/.env"
     export CONFIG_JSON="$HOME/.openclaw/openclaw.json"
-    export WORKSPACE="$HOME/clawd"
+    export WORKSPACE="$HOME/.openclaw/workspace"
+    export WORKSPACE_LEGACY="$HOME/clawd"  # dead legacy path — read-only migration only
     export CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
     export SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"
     export BACKUP_DIR_DEFAULT="$HOME/Downloads/openclaw-backups"
@@ -65,7 +70,7 @@ find_master_files() {
     "/data"
     "$HOME"
     "$HOME/clawd"
-    "/data/clawd"
+    "/data/.openclaw/workspace"
     "/opt"
     "/srv"
   )

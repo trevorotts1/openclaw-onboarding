@@ -1,4 +1,5 @@
-# OpenClaw Onboarding — Mac mini
+# OpenClaw Onboarding — Unified (Mac + VPS)
+<!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
 > **Version:** see `/version` - this repo at v11.8.0.
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
@@ -11,11 +12,13 @@
 >
 > **After every release:** `git tag vX.Y.Z && git push --tags && gh release create vX.Y.Z --notes-from-tag` so the GitHub Releases page mirrors the CHANGELOG.
 
-**A complete onboarding package for setting up a fully operational OpenClaw agent on macOS.**
+**A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
 **Current Version: v11.8.0** — See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 
-This repo is **Mac-only**. The Hostinger Docker VPS installer lives at https://github.com/trevorotts1/openclaw-onboarding-vps.
+This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
+
+> Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
 This repo contains **43 numbered skill folders (01 through 43)** — 40 active plus 3 archived (13, 33, 34) — plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
@@ -27,18 +30,24 @@ This repo contains **43 numbered skill folders (01 through 43)** — 40 active p
 
 ## Quick Install (Recommended)
 
-Run this one command on the target machine:
-
+**Mac mini (macOS):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 ```
 
+**Hostinger Docker VPS** (run on VPS host SSH session or directly inside container):
+```bash
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+```
+The installer auto-detects the platform. If running on the Hostinger Docker host (not inside the container), it re-executes inside the container automatically. See `platform/vps/INSTALL-GOTCHAS.md` for edge cases.
+
 What it does:
 1. Downloads the latest onboarding package
-2. Copies skills into `~/.openclaw/skills/`
-3. Installs Gemini Engine early (required by skill 22 and skill 23)
-4. Asks for missing API keys with a skip option (does not block optional skills)
-5. Prints the next step
+2. Detects platform (Mac or VPS) and sources the appropriate bootstrap
+3. Copies skills into the canonical skills directory (`~/.openclaw/skills/` Mac / `/data/.openclaw/skills/` VPS)
+4. Installs Gemini Engine early (required by skill 22 and skill 23)
+5. Asks for missing API keys with a skip option (does not block optional skills)
+6. Prints the next step
 
 ---
 

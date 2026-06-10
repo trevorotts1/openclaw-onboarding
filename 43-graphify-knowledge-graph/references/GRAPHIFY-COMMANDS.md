@@ -1,76 +1,44 @@
-# Graphify — Command Reference
+# Skill 43 — graphify CLI surface (verified)
 
-> Verified against https://github.com/safishamsi/graphify. Use these exact commands; do not invent flags.
+The exact graphify commands this skill relies on, verified against `graphify --help`
+on the installed CLI. Load this when you need the precise flag/subcommand.
 
-## Install
+## Install / register / wire
 
-```bash
-uv tool install "graphifyy[all]"      # PyPI package is "graphifyy" (double-y); CLI is "graphify". [all] = all extractors.
-# Fallbacks:
-pipx install "graphifyy[all]"
-pip3 install --user "graphifyy[all]"
-```
+| Command | What it does |
+|---|---|
+| `uv tool install "graphifyy[all]"` | Install graphify (full extras). Preferred. |
+| `pip3 install --user "graphifyy[all]" --break-system-packages` | VPS-container fallback (apt is a brew shim — not used). |
+| `graphify install --platform claw` | Copy the skill into OpenClaw's platform config dir (registers the skill). `claw` is a supported platform. |
+| `graphify claw install` | Write a `## graphify` section into the workspace AGENTS.md (OpenClaw native wiring — makes `/graphify` always-on). |
+| `graphify claw uninstall` | Remove the `## graphify` section from AGENTS.md. |
 
-## Register the OpenClaw skill
+## Free auto-rebuild hook (no LLM)
 
-```bash
-graphify install --platform claw      # registers the /graphify skill for OpenClaw (the "claw" platform)
-graphify install                      # (Claude Code variant — not used on client boxes)
-```
+| Command | What it does |
+|---|---|
+| `graphify hook install` | Install post-commit + post-checkout git hooks. FREE AST rebuild on every commit. |
+| `graphify hook status` | Check whether the hooks are installed. |
+| `graphify hook uninstall` | Remove the git hooks. |
 
-## Map / extract a folder (build the graph)
+## Build / map (semantic pass — client's OWN model)
 
-```bash
-/graphify .                           # in the agent: map the current directory (semantic pass)
-graphify extract ./folder             # headless CLI extraction (no IDE)
-```
+| Command | What it does |
+|---|---|
+| `graphify . --backend ollama --model deepseek-v4-pro:cloud` | Full build/map of the current dir using the CLIENT'S OWN Ollama model. `--backend` accepts `gemini\|kimi\|claude\|openai\|deepseek\|ollama`; `--model` overrides the backend default. NEVER use an operator key here. |
+| `graphify update .` | FREE structural (AST) re-extract of changed code — no LLM, no tokens. |
+| `graphify cluster-only .` | Re-run clustering on an existing graph.json. |
 
-The output `graphify-out/` contains:
-- `graph.html`  — clickable visual map
-- `GRAPH_REPORT.md` — god-nodes, surprising connections, suggested questions
-- `graph.json`  — queryable graph
+## Query (read the graph — cheap, deterministic)
 
-## Query the graph
+| Command | What it does |
+|---|---|
+| `graphify query "<question>"` | BFS traversal — broad context. Add `--dfs` to trace a path, `--budget N` to cap output. |
+| `graphify path "A" "B"` | Shortest path between two nodes. |
+| `graphify explain "X"` | Plain-language explanation of a node + neighbors. |
 
-```bash
-/graphify query "what connects auth to the database?"   # semantic search
-/graphify path "UserService" "DatabasePool"             # shortest path between two nodes
-/graphify explain "RateLimiter"                          # explain a node + its connections
-```
+## Outputs (in `graphify-out/`)
 
-## Free auto-rebuild hook (AST only — no model, no cost)
-
-```bash
-graphify hook install                 # post-commit + post-checkout hooks; re-runs the AST structure pass on every commit
-```
-
-The hook does the deterministic, local, FREE AST pass only. It does NOT run the semantic pass.
-
-## Local Ollama backend (client's own model — free + private)
-
-```bash
-OLLAMA_BASE_URL=http://localhost:11434 \
-OLLAMA_MODEL=deepseek-v4-pro:cloud \
-graphify extract . --backend ollama
-
-# Override the KV-cache context window if needed:
-GRAPHIFY_OLLAMA_NUM_CTX=8192 graphify extract . --backend ollama
-```
-
-- `OLLAMA_BASE_URL` default: `http://localhost:11434`
-- `OLLAMA_MODEL`    : auto-detect if unset; we set the client's configured model explicitly.
-- **NEVER** set ANTHROPIC/OPENAI/etc. keys for a client's graph build — client's own model only.
-
-## MCP server (optional — expose the graph as tools)
-
-```bash
-python -m graphify.serve graphify-out/graph.json
-# tools exposed: query_graph, get_node, get_neighbors, shortest_path
-```
-
-## The two tiers (design summary)
-
-| Pass | Engine | Trigger | Cost |
-|---|---|---|---|
-| AST structure | tree-sitter (local, deterministic) | every git commit (hook) | FREE |
-| Semantic | the client's model (Ollama) | owner-triggered (`/graphify .`) | client's model time |
+- `graph.html` — interactive visual graph
+- `graph.json` — GraphRAG-ready data (what `query`/`path`/`explain` read)
+- `GRAPH_REPORT.md` — communities, god nodes, honest audit trail (EXTRACTED / INFERRED / AMBIGUOUS)

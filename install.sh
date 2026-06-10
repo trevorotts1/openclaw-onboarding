@@ -1,39 +1,97 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
 # ============================================================
-#  OpenClaw Onboarding Installer v10.13.0 — Mac mini
+#  OpenClaw Onboarding Installer — Unified (Mac + VPS)
+#  PRD 2.1 — unified repo (trevorotts1/openclaw-onboarding)
+#  Branch: prd-2.1-unified-repo
+#
 #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 #
-#  This installer is for Mac mini / macOS deployments of OpenClaw.
-#  It is NOT cross-platform. The Hostinger Docker VPS installer lives at:
-#    https://github.com/trevorotts1/openclaw-onboarding-vps
+#  Supports both platforms:
+#    Mac mini / macOS   — ~/.openclaw/ config root, ~/Downloads/ for backups
+#    Hostinger Docker VPS — /data/.openclaw/ config root (auto-detected)
 #
-#  Canonical Mac paths (per OpenClaw 2026.5.x docs at docs.openclaw.ai):
-#    ~/.openclaw/                       — config root
-#    ~/.openclaw/openclaw.json          — main config
-#    ~/.openclaw/credentials/           — channel allowlists + pairing
-#    ~/.openclaw/agents/<id>/agent/auth-profiles.json  — per-agent creds
-#    ~/.openclaw/secrets/.env           — operator secrets (canonical)
-#    ~/.openclaw/workspace/             — workspace (canonical OpenClaw default; v10.13.9+)
-#    ~/clawd/                           — DEAD legacy path. Older clients may have leftover
-#                                        contents but NEVER write here. See v10.13.9 changelog.
-#    ~/Downloads/openclaw-master-files/ — onboarding master files
-#    ~/Downloads/openclaw-backups/      — config backups
+#  Platform detection: OPENCLAW_PLATFORM env var (mac|vps) overrides auto-detect.
+#  Auto-detect: presence of /data/.openclaw → vps, otherwise → mac.
 #
-#  Credential discovery: ~/.openclaw/secrets/.env (canonical) +
-#    ~/.openclaw/openclaw.json env.vars block + models.providers.*.apiKey +
-#    container env vars + auth-profiles.json. Bulletproof multi-source.
+#  Platform-specific bootstrap lives in platform/mac/bootstrap.sh and
+#  platform/vps/bootstrap.sh. These set OC_CONFIG, OC_JSON, and all
+#  canonical path variables, then run platform pre-flight checks.
+#
+#  Canonical paths per platform:
+#    Mac:  ~/.openclaw/  |  ~/Downloads/openclaw-master-files/  |  ~/Downloads/openclaw-backups/
+#    VPS:  /data/.openclaw/  |  /data/.openclaw/master-files/  |  /data/.openclaw/backups/
+#
+#  NOTE: set -euo pipefail is NOT set before the platform bootstrap block
+#  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
 ONBOARDING_VERSION="v11.8.0"
 
 # ----------------------------------------------------------
+# Platform detection + bootstrap (MUST run before set -euo pipefail)
+# ----------------------------------------------------------
+# Determine platform: env override takes priority, then auto-detect.
+_DETECT_PLATFORM="${OPENCLAW_PLATFORM:-}"
+if [ -z "$_DETECT_PLATFORM" ]; then
+    if [ -d "/data/.openclaw" ]; then
+        _DETECT_PLATFORM="vps"
+    else
+        _DETECT_PLATFORM="mac"
+    fi
+fi
+export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
+
+# Source platform bootstrap (sets OC_CONFIG, OC_JSON, OC_PLATFORM, etc.
+# and runs platform-specific pre-flight).
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+_PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
+if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
+    # shellcheck source=/dev/null
+    source "$_PLATFORM_BOOTSTRAP"
+else
+    # Fallback when running via curl (no local repo clone yet).
+    # Inline the minimal path setup required before the clone happens.
+    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
+        OC_PLATFORM="vps"
+        OC_CONFIG="/data/.openclaw"
+        OC_JSON="/data/.openclaw/openclaw.json"
+        OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
+        OC_WORKSPACE_DEFAULT="/data/.openclaw/workspace"
+        OC_CREDENTIALS="/data/.openclaw/credentials"
+        OC_AGENTS="/data/.openclaw/agents"
+        OC_SKILLS_DIR="/data/.openclaw/skills"
+        OC_LOGS="/data/.openclaw/logs"
+        OC_BACKUPS="/data/.openclaw/backups"
+        OC_INSTALL_LOG_DIR="/data/.openclaw/logs/install"
+        OC_AUTH_PROFILES="/data/.openclaw/agents/main/agent/auth-profiles.json"
+        OC_DOWNLOADS="/data/Downloads"
+    else
+        OC_PLATFORM="mac"
+        OC_CONFIG="$HOME/.openclaw"
+        OC_JSON="$HOME/.openclaw/openclaw.json"
+        OC_CREDENTIALS="$HOME/.openclaw/credentials"
+        OC_AGENTS="$HOME/.openclaw/agents"
+        OC_SKILLS_DIR="$HOME/.openclaw/skills"
+        OC_LOGS="$HOME/.openclaw/logs"
+        OC_AUTH_PROFILES="$HOME/.openclaw/agents/main/agent/auth-profiles.json"
+        OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+        OC_DOWNLOADS="$HOME/Downloads"
+        OC_BACKUPS="$HOME/Downloads/openclaw-backups"
+        OC_INSTALL_LOG_DIR="$HOME/Downloads/openclaw-backups/install-logs"
+        OC_LEGACY_CLAWD="$HOME/clawd"
+        OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"
+        mkdir -p "$OC_BACKUPS" "$OC_INSTALL_LOG_DIR"
+        LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
+        exec 1> >(tee -a "$LOG_FILE") 2>&1
+    fi
+fi
+
+set -euo pipefail
+
+# ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
 # Provides detect_platform(), find_master_files(), and other helpers
 # used by update-skills.sh / check-updates.sh / skills' QC scripts.
-# Falls back to inlined definitions below if the file isn't present
-# yet (e.g. first-time install before the repo has been cloned).
 # ----------------------------------------------------------
 _lib_shared_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-shared.sh"
 if [ -f "$_lib_shared_self" ]; then
@@ -43,36 +101,26 @@ if [ -f "$_lib_shared_self" ]; then
 fi
 
 # ----------------------------------------------------------
-# Mac canonical paths (hardcoded — no platform detect)
+# Onboarding state-machine (v10.16.48 — FIX 1 ONBOARDING HONESTY).
+# Canonical file: lib-onboarding-state.sh (sourced by both platforms).
 # ----------------------------------------------------------
-OC_CONFIG="$HOME/.openclaw"
-OC_JSON="$HOME/.openclaw/openclaw.json"
-OC_CREDENTIALS="$HOME/.openclaw/credentials"
-OC_AGENTS="$HOME/.openclaw/agents"
-OC_SKILLS_DIR="$HOME/.openclaw/skills"
-OC_LOGS="$HOME/.openclaw/logs"
-OC_AUTH_PROFILES="$HOME/.openclaw/agents/main/agent/auth-profiles.json"
-OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-OC_DOWNLOADS="$HOME/Downloads"
-OC_BACKUPS="$HOME/Downloads/openclaw-backups"
-OC_INSTALL_LOG_DIR="$HOME/Downloads/openclaw-backups/install-logs"
-OC_LEGACY_CLAWD="$HOME/clawd"        # most existing clients use this as workspace
-OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"  # OpenClaw docs default for new installs
-
-# Hard fail early if running on Hostinger Docker VPS — that's the wrong installer
-if [ -d "/data/.openclaw" ] && [ ! -d "$HOME/.openclaw" ]; then
-    echo "ERROR: This is the Mac mini installer; /data/.openclaw exists which means you're on a VPS." >&2
-    echo "Use the VPS installer: https://github.com/trevorotts1/openclaw-onboarding-vps" >&2
-    exit 1
+_lib_onboarding_state_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-onboarding-state.sh"
+if [ -f "$_lib_onboarding_state_self" ]; then
+  # shellcheck source=/dev/null
+  source "$_lib_onboarding_state_self"
+  export OPENCLAW_LIB_ONBOARDING_STATE_SOURCED=1
 fi
+# No-op fallbacks so the rest of install.sh never aborts if the lib is missing.
+command -v oc_state_seed          >/dev/null 2>&1 || oc_state_seed()          { :; }
+command -v oc_onboarding_complete >/dev/null 2>&1 || oc_onboarding_complete() { return 1; }
+command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { OC_VERIFIED=0; OC_TOTAL=0; OC_FAILED_LIST=""; OC_PENDING_LIST=""; OC_INTERVIEW_LIST=""; }
 
-mkdir -p "$OC_BACKUPS" "$OC_INSTALL_LOG_DIR"
-
-# Durable log location (v10.0.2): /tmp is wiped on reboot. Persist install
-# logs alongside backups so they survive a restart and can be referenced when
-# reporting issues.
-LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
-exec 1> >(tee -a "$LOG_FILE") 2>&1
+# ----------------------------------------------------------
+# Path variables are already set by the platform bootstrap block above.
+# Re-export derived vars for backward compat with existing skill scripts
+# that reference OC_WORKSPACE (used before OC_WORKSPACE_DEFAULT existed).
+# ----------------------------------------------------------
+OC_WORKSPACE="${OC_WORKSPACE_DEFAULT}"
 
 # ----------------------------------------------------------
 # Bash 3.2 Compatible UI Helpers
@@ -3234,18 +3282,25 @@ new = re.sub(r'\n{3,}', '\n\n', pattern.sub("", text))
 open(p, "w", encoding="utf-8").write(new)
 PYEOF
 
-# FIX 1 (v10.15.48): seed the per-skill onboarding STATE FILE
+# FIX 1 (PRD 2.1 / v10.16.48): seed the per-skill onboarding STATE FILE
 # (.onboarding-state.json) with every non-archived skill at "pending". The agent
 # (and the onboarding-resume cron) drive each skill to qc-passed; "done" is the
 # verification gate, never this prose. Idempotent — re-seeding preserves status.
-if [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
+# Canonical lib: lib-onboarding-state.sh (sourced at top of install.sh).
+# scripts/onboarding-state.sh is a compat shim that sources the canonical.
+if command -v oc_state_seed >/dev/null 2>&1; then
+    SKILLS_DIR="$SKILLS_DIR" oc_state_seed "$ONBOARDING_VERSION" "$SKILLS_DIR" \
+        && success "Onboarding state seeded → (every skill pending; gate drives to qc-passed)" \
+        || warn "oc_state_seed reported an issue (install continues)"
+elif [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
+    # Fallback for older bundles without lib-onboarding-state.sh at root.
     # shellcheck disable=SC1091
     SKILLS_DIR="$SKILLS_DIR" source "$ONBOARDING_DIR/scripts/onboarding-state.sh"
     obs_seed_state "$ONBOARDING_VERSION" "$SKILLS_DIR" \
-        && success "Onboarding state seeded → $OBS_STATE_FILE (every skill pending; gate drives to qc-passed)" \
+        && success "Onboarding state seeded (compat shim) → $OBS_STATE_FILE" \
         || warn "onboarding-state seed reported an issue (install continues)"
 else
-    warn "onboarding-state.sh not found in $ONBOARDING_DIR/scripts — honesty state machine not seeded (older bundle?)"
+    warn "lib-onboarding-state.sh not found — honesty state machine not seeded (older bundle?)"
 fi
 
 # v10.5.4 Tier-3 fallback: also write the payload to a standalone file so the
@@ -3548,7 +3603,7 @@ For each skill's CORE_UPDATES.md:
 **STEP 8: VERIFICATION GATE — THE ONLY DEFINITION OF "DONE"**
 This onboarding is NOT complete until the GATE passes. Files on disk = DOWNLOADED, never "installed". Source the gate and evaluate state:
 - State file: \`~/.openclaw/workspace/.onboarding-state.json\` (per-skill: pending → downloaded → wired → qc-passed | qc-failed)
-- Gate library: \`~/.openclaw/scripts/onboarding-state.sh\` (also at \`~/.openclaw/onboarding/scripts/onboarding-state.sh\`)
+- Gate library: \`lib-onboarding-state.sh\` (repo root, canonical) or compat shim at \`scripts/onboarding-state.sh\`
 - Run: source the library, then \`obs_gate_summary\`. A skill counts INSTALLED only when (a) \`openclaw skills info <name>\` shows it, (b) its CORE_UPDATES sentinel is present (if it ships CORE_UPDATES.md), and (c) its \`qc-*.sh\` exits 0 (if it ships one).
 - **NEVER tell the owner "installed / done / onboarded" for any skill that is not \`qc-passed\`** (or a legitimate INTERVIEW_PENDING park — re-ping the owner on backoff; that is NOT terminal "done").
 - Onboarding is "complete" ONLY when every non-archived skill is \`qc-passed\` (or explicitly INTERVIEW_PENDING) AND closeout (Skill 37) has fired where applicable.

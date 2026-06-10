@@ -1,10 +1,38 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# ============================================================
+#  OpenClaw Skills Updater — Unified (Mac + VPS)
+#  PRD 2.1 — unified repo (trevorotts1/openclaw-onboarding)
+#
+#  Platform auto-detected via OPENCLAW_PLATFORM env var or presence of /data/.openclaw.
+#  VPS: sources platform/vps/bootstrap.sh for container re-exec + path setup.
+#  Mac: sources platform/mac/bootstrap.sh for Homebrew prereqs + path setup.
+# ============================================================
 
-# ============================================================
-#  OpenClaw Skills Updater — Mac Version
-#  Updates skills from GitHub to ~/Downloads/openclaw-master-files/
-# ============================================================
+# Platform detection + bootstrap (MUST run before set -euo pipefail — VPS container
+# re-exec uses conditional commands that may fail intentionally).
+_DETECT_PLATFORM="${OPENCLAW_PLATFORM:-}"
+if [ -z "$_DETECT_PLATFORM" ]; then
+    [ -d "/data/.openclaw" ] && _DETECT_PLATFORM="vps" || _DETECT_PLATFORM="mac"
+fi
+export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
+
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+_PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
+if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
+    # shellcheck source=/dev/null
+    source "$_PLATFORM_BOOTSTRAP"
+else
+    # Inline minimal fallback when running via curl (no local clone yet).
+    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
+        OC_PLATFORM="vps"; OC_CONFIG="/data/.openclaw"; OC_JSON="/data/.openclaw/openclaw.json"
+        OC_SKILLS_DIR="/data/.openclaw/skills"; OC_WORKSPACE_DEFAULT="/data/.openclaw/workspace"
+    else
+        OC_PLATFORM="mac"; OC_CONFIG="$HOME/.openclaw"; OC_JSON="$HOME/.openclaw/openclaw.json"
+        OC_SKILLS_DIR="$HOME/.openclaw/skills"; OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"
+    fi
+fi
+
+set -euo pipefail
 
 ONBOARDING_VERSION="v11.8.0"
 
