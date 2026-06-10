@@ -46,6 +46,94 @@ def _info(msg: str) -> None: print(f"{CYAN}[fleet-refresh] {msg}{NC}", file=sys.
 def _ok(msg: str) -> None:   print(f"{GREEN}[fleet-refresh] {msg}{NC}", file=sys.stderr)
 
 
+# ── Wave 5 deploy preflight (FAIL-CLOSED — NO BYPASS) ────────────────────────
+
+_WAVE5_CC_REPO = "trevorotts1/blackceo-command-center"
+_WAVE5_REQUIRED_FILES = [
+    "scripts/cc-health-check.sh",   # B.1
+    "scripts/atomic-deploy.sh",     # B.2
+]
+
+def wave5_deploy_preflight() -> None:
+    """
+    Fail-closed preflight that MUST pass before ANY Wave-5 Command Center
+    deploy proceeds.
+
+    Checks that BOTH of the following files exist on origin/main of
+    trevorotts1/blackceo-command-center:
+
+        scripts/cc-health-check.sh   (B.1 — must be merged to main)
+        scripts/atomic-deploy.sh     (B.2 — must be merged to main)
+
+    Uses the GitHub Contents API (unauthenticated or via GITHUB_TOKEN) to
+    check each file authoritatively against the main branch HEAD.
+    A 200 response means the file is present; 404 means absent.
+
+    If EITHER file is missing this function prints a FATAL message and
+    exits non-zero immediately.  There is NO env-var, NO flag, and NO code
+    path that bypasses this check.  It runs unconditionally.
+    """
+    import urllib.request
+    import urllib.error
+
+    _info("Wave-5 deploy preflight: checking B.1 + B.2 on origin/main of blackceo-command-center ...")
+
+    missing: list[str] = []
+
+    for path in _WAVE5_REQUIRED_FILES:
+        url = (
+            f"https://api.github.com/repos/{_WAVE5_CC_REPO}/contents/{path}"
+            f"?ref=main"
+        )
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+
+        # Honour GITHUB_TOKEN if present (avoids rate-limit on CI)
+        token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                if resp.status == 200:
+                    _ok(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} PRESENT on main: {path}")
+                else:
+                    # Unexpected non-200/non-404 — treat as missing (fail-closed)
+                    missing.append(path)
+                    _err(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} UNEXPECTED status {resp.status} for: {path} — treating as MISSING")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                missing.append(path)
+                _err(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} MISSING on main (404): {path}")
+            else:
+                # Non-404 HTTP error — fail-closed
+                missing.append(path)
+                _err(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} HTTP error {e.code} for: {path} — treating as MISSING (fail-closed)")
+        except Exception as exc:
+            # Network error, timeout, etc. — fail-closed
+            missing.append(path)
+            _err(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} check failed ({exc.__class__.__name__}: {exc}) — treating as MISSING (fail-closed)")
+
+    if missing:
+        _err("")
+        _err("╔══════════════════════════════════════════════════════════════════╗")
+        _err("║  FATAL: Wave-5 deploy BLOCKED — B.1+B.2 preflight FAILED        ║")
+        _err("╠══════════════════════════════════════════════════════════════════╣")
+        for m in missing:
+            label = "B.1" if m == _WAVE5_REQUIRED_FILES[0] else "B.2"
+            _err(f"║  MISSING from trevorotts1/blackceo-command-center @ main:         ║")
+            _err(f"║    [{label}] {m:<54}║")
+        _err("╠══════════════════════════════════════════════════════════════════╣")
+        _err("║  Wave 5 is BLOCKED until BOTH files are merged to main:          ║")
+        _err("║    B.1  scripts/cc-health-check.sh  (PR #78 — not yet merged)    ║")
+        _err("║    B.2  scripts/atomic-deploy.sh    (does not exist yet)         ║")
+        _err("║                                                                  ║")
+        _err("║  Merge B.1 + B.2 to main in blackceo-command-center, then retry.║")
+        _err("╚══════════════════════════════════════════════════════════════════╝")
+        sys.exit(1)
+
+    _ok("Wave-5 deploy preflight PASSED — B.1 + B.2 both present on origin/main.")
+
+
 # ── Box result schema ─────────────────────────────────────────────────────────
 
 class BoxResult:
@@ -625,6 +713,10 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
 
 def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = False) -> None:
     """Step 4: npm ci (or npm install) + npm run build."""
+    # WAVE-5 SAFETY GATE — runs unconditionally (before dry_run skip).
+    # Blocks Command Center deploy until B.1+B.2 are merged to origin/main.
+    wave5_deploy_preflight()
+
     if dry_run:
         res.step_skip("build-cc")
         return
@@ -722,6 +814,10 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
 
 def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
     """Step 5: pm2 restart command-center (or pm2 start if not running)."""
+    # WAVE-5 SAFETY GATE — runs unconditionally (before dry_run skip).
+    # Blocks Command Center restart until B.1+B.2 are merged to origin/main.
+    wave5_deploy_preflight()
+
     if dry_run:
         res.step_skip("restart-cc")
         return

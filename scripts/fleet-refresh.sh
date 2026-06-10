@@ -106,6 +106,72 @@ if [ ! -f "$REPO_ROOT/cc-compat.json" ]; then
   exit 1
 fi
 
+# ── Wave-5 deploy preflight (FAIL-CLOSED — NO BYPASS) ────────────────────────
+# Runs unconditionally BEFORE any box work (including dry-run).
+# Blocks the entire fan-out until B.1 + B.2 are merged to origin/main of
+# trevorotts1/blackceo-command-center.
+# There is NO flag and NO env-var that bypasses this check.
+wave5_deploy_preflight() {
+  local repo="trevorotts1/blackceo-command-center"
+  local b1="scripts/cc-health-check.sh"
+  local b2="scripts/atomic-deploy.sh"
+  local missing=()
+
+  echo "[fleet-refresh] Wave-5 preflight: checking B.1 + B.2 on origin/main of ${repo} ..."
+
+  for path in "$b1" "$b2"; do
+    local label
+    [ "$path" = "$b1" ] && label="B.1" || label="B.2"
+    local api_url="https://api.github.com/repos/${repo}/contents/${path}?ref=main"
+
+    local http_code
+    local curl_opts=(-s -o /dev/null -w "%{http_code}" --max-time 20)
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      curl_opts+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+    fi
+    curl_opts+=(-H "Accept: application/vnd.github+json" "$api_url")
+
+    if command -v curl >/dev/null 2>&1; then
+      http_code=$(curl "${curl_opts[@]}" 2>/dev/null || echo "000")
+    else
+      http_code="000"
+    fi
+
+    if [ "$http_code" = "200" ]; then
+      echo "[fleet-refresh]   ${label} PRESENT on main: ${path}"
+    else
+      missing+=("${label}:${path}:${http_code}")
+      echo "[fleet-refresh]   ${label} MISSING on main (HTTP ${http_code}): ${path}" >&2
+    fi
+  done
+
+  if [ ${#missing[@]} -gt 0 ]; then
+    echo "" >&2
+    echo "[fleet-refresh] ╔══════════════════════════════════════════════════════════════════╗" >&2
+    echo "[fleet-refresh] ║  FATAL: Wave-5 deploy BLOCKED — B.1+B.2 preflight FAILED        ║" >&2
+    echo "[fleet-refresh] ╠══════════════════════════════════════════════════════════════════╣" >&2
+    for entry in "${missing[@]}"; do
+      local lbl="${entry%%:*}"
+      local rest="${entry#*:}"
+      local fp="${rest%%:*}"
+      echo "[fleet-refresh] ║  MISSING from ${repo} @ main:              ║" >&2
+      echo "[fleet-refresh] ║    [${lbl}] ${fp}" >&2
+    done
+    echo "[fleet-refresh] ╠══════════════════════════════════════════════════════════════════╣" >&2
+    echo "[fleet-refresh] ║  Wave 5 is BLOCKED until BOTH files are merged to main:          ║" >&2
+    echo "[fleet-refresh] ║    B.1  scripts/cc-health-check.sh  (PR #78 — not yet merged)    ║" >&2
+    echo "[fleet-refresh] ║    B.2  scripts/atomic-deploy.sh    (does not exist yet)         ║" >&2
+    echo "[fleet-refresh] ║                                                                  ║" >&2
+    echo "[fleet-refresh] ║  Merge B.1 + B.2 to main in blackceo-command-center, then retry.║" >&2
+    echo "[fleet-refresh] ╚══════════════════════════════════════════════════════════════════╝" >&2
+    exit 1
+  fi
+
+  echo "[fleet-refresh] Wave-5 preflight PASSED — B.1 + B.2 both present on origin/main."
+}
+
+wave5_deploy_preflight
+
 # ── Mode banner ───────────────────────────────────────────────────────────────
 if [ $APPLY -eq 1 ]; then
   echo "[fleet-refresh] MODE: APPLY (--apply passed)"
