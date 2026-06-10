@@ -341,15 +341,17 @@ if [ -n "$GEMINI_INDEXER" ]; then
 fi
 
 # ─── CHECK 5: Semantic Search (runtime persona selector) ─────────────────────
+# NOTE: select-persona-for-task.py is now a deprecated shim.
+#       The canonical selector is persona-selector-v2.py (PRD item 1.1).
 echo
 blue "── CHECK 5: Semantic Search ──"
-SELECTOR=$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py
-check "5.1" "select-persona-for-task.py present + executable" \
+SELECTOR=$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py
+check "5.1" "persona-selector-v2.py present + executable" \
   "[ -x \"$SELECTOR\" ]" \
   "Re-run update-skills.sh --only 23"
 if [ -x "$SELECTOR" ] && [ -n "$COMPANY_DIR" ]; then
-  warn_check "5.2" "Test selector invocation returns a persona id" \
-    "python3 \"$SELECTOR\" --dept marketing --task 'Write a launch email' --format id 2>/dev/null | grep -q ." \
+  warn_check "5.2" "Test selector invocation exits 0 and emits funnel counts" \
+    "python3 \"$SELECTOR\" --department marketing --task 'Write a launch email' --format json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if \"funnel\" in d else 1)'" \
     "Check governing-personas.md in marketing dept; ensure persona-categories.json valid"
 fi
 
@@ -359,6 +361,9 @@ blue "── CHECK 6: Keyword Search ──"
 warn_check "6.1" "persona-categories.json has domain_tags fields" \
   "python3 -c 'import json; d=json.load(open(\"$MASTER/coaching-personas/persona-categories.json\")); p=d.get(\"personas\",d); print(any((v.get(\"domain_tags\") or v.get(\"tags\")) for v in p.values()))' 2>/dev/null | grep -q True" \
   "Re-tag personas via Skill 22 indexing"
+warn_check "6.4" "DEPT_DOMAIN_TAGS present in persona-selector-v2.py" \
+  "grep -q 'DEPT_DOMAIN_TAGS' \"$SELECTOR\"" \
+  "Re-run update-skills.sh --only 23 to restore persona-selector-v2.py"
 
 # ─── CHECK 7: Task Assignments / Kanban ──────────────────────────────────────
 echo

@@ -1,16 +1,19 @@
 #!/bin/bash
-# test-persona-selector.sh — v9.6.5
+# test-persona-selector.sh — v11.3.2
 #
-# Live quality test for select-persona-for-task.py.
+# Live quality test for persona-selector-v2.py (the canonical selector).
+# Note: select-persona-for-task.py is now a deprecated shim; v2 is tested directly.
 #
 # Fires 10 canned tasks across 5 departments and verifies:
-#   1. Each call returns a persona id (non-empty)
+#   1. Each call returns a persona id (non-empty) or NO_PERSONAS_AVAILABLE
 #   2. Persona diversity: NOT the same persona for every task
 #      (catches stale-cache or single-persona-always bugs)
 #   3. 5-layer breakdowns vary across tasks
 #      (catches "selector always returns 0.7 for everything")
 #   4. Marketing-tagged tasks return Marketing-tagged personas
 #      (catches keyword filter not running)
+#   5. Output JSON contains "funnel" object with pool/semantic/keyword/scored counts
+#      (catches item 1.1 / 1.2 regression)
 #
 # This is a SMOKE TEST for quality, not a deep test. Pass = the selector
 # is functioning. Quality of selection still requires human review of the
@@ -22,7 +25,7 @@
 #   bash test-persona-selector.sh --verbose   # prints full JSON per call
 #
 # EXIT CODES:
-#   0 = all 4 assertions pass
+#   0 = all assertions pass
 #   1 = selector script missing
 #   2 = no governing-personas found (Skill 23 hasn't run)
 #   3 = one or more assertions failed
@@ -44,9 +47,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# ─── CANONICAL MAC PATH ──────────────────────────────────────────────────────
-SELECTOR="$HOME/Downloads/openclaw-master-files/23-ai-workforce-blueprint/scripts/select-persona-for-task.py"
-[ ! -f "$SELECTOR" ] && SELECTOR="$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py"
+# ─── CANONICAL SELECTOR PATH (v2 is the canonical selector; PRD item 1.1) ────
+SELECTOR="$HOME/Downloads/openclaw-master-files/23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
+[ ! -f "$SELECTOR" ] && SELECTOR="$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
+# VPS layout
+[ ! -f "$SELECTOR" ] && SELECTOR="/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
 
 red()    { printf "\033[31m%s\033[0m\n" "$1"; }
 green()  { printf "\033[32m%s\033[0m\n" "$1"; }
@@ -55,13 +60,14 @@ blue()   { printf "\033[34m%s\033[0m\n" "$1"; }
 
 # ─── PRE-FLIGHT ──────────────────────────────────────────────────────────────
 if [ ! -x "$SELECTOR" ]; then
-  red "ERROR: select-persona-for-task.py not found or not executable: $SELECTOR"
+  red "ERROR: persona-selector-v2.py not found or not executable: $SELECTOR"
   red "Run update-skills.sh --only 23 to install."
   exit 1
 fi
 
 blue "═══════════════════════════════════════════════════"
-blue "  Persona Selector Quality Test — v9.6.5"
+blue "  Persona Selector Quality Test — v11.3.2"
+blue "  (canonical: persona-selector-v2.py)"
 blue "═══════════════════════════════════════════════════"
 echo "Selector: $SELECTOR"
 echo "Company:  ${COMPANY_SLUG:-<auto-detect>}"
@@ -97,10 +103,11 @@ for entry in "${TASKS[@]}"; do
 
   echo -n "  Task: [$dept] $task ... "
 
-  output=$(python3 "$SELECTOR" $SLUG_ARG --dept "$dept" --task "$task" --format json 2>/dev/null)
+  # v2 uses --department (not --dept); SLUG_ARG not forwarded (v2 resolves paths internally)
+  output=$(python3 "$SELECTOR" --department "$dept" --task "$task" --format json 2>/dev/null)
   rc=$?
 
-  if [ -z "$output" ] || [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+  if [ -z "$output" ] || [ "$rc" -ne 0 ]; then
     red "FAIL (rc=$rc)"
     results+=("FAIL|$dept|$task|no output")
     continue
@@ -108,8 +115,9 @@ for entry in "${TASKS[@]}"; do
 
   persona=$(echo "$output" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('persona_id','') or 'NONE')" 2>/dev/null)
   score=$(echo "$output" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('score',0))" 2>/dev/null)
-  semantic=$(echo "$output" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('breakdown',{}).get('semantic_score',0))" 2>/dev/null)
-  mode=$(echo "$output" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('mode',''))" 2>/dev/null)
+  semantic=$(echo "$output" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('funnel',{}).get('semantic_available','n/a'))" 2>/dev/null)
+  mode=$(echo "$output" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('interaction_mode',''))" 2>/dev/null)
+  has_funnel=$(echo "$output" | python3 -c "import sys,json; r=json.load(sys.stdin); print('YES' if 'funnel' in r else 'NO')" 2>/dev/null)
 
   if [ -z "$persona" ] || [ "$persona" = "NONE" ]; then
     red "FAIL (no persona returned)"
@@ -117,7 +125,7 @@ for entry in "${TASKS[@]}"; do
     continue
   fi
 
-  green "$persona (score=$score, semantic=$semantic)"
+  green "$persona (score=$score, semantic_available=$semantic, funnel=$has_funnel)"
   results+=("PASS|$dept|$task|$persona|$score|$semantic")
   personas_seen+=("$persona")
   breakdowns_seen+=("$score|$semantic")
@@ -179,15 +187,35 @@ else
   A4=SKIP
 fi
 
+# A5: output JSON contains funnel object (PRD item 1.1 / 1.2 regression guard)
+funnel_missing=0
+for r in "${results[@]}"; do
+  if echo "$r" | grep -q "^PASS"; then
+    dept_r=$(echo "$r" | cut -d'|' -f2)
+    task_r=$(echo "$r" | cut -d'|' -f3)
+    out=$(python3 "$SELECTOR" --department "$dept_r" --task "$task_r" --format json 2>/dev/null)
+    has_f=$(echo "$out" | python3 -c "import sys,json; r=json.load(sys.stdin); sys.exit(0 if 'funnel' in r else 1)" 2>/dev/null; echo $?)
+    [ "$has_f" != "0" ] && funnel_missing=$((funnel_missing+1))
+  fi
+done
+if [ "$funnel_missing" -eq 0 ]; then
+  green "  ✓ A5  All responses contain funnel object (pool/semantic/keyword/scored)"
+  A5=PASS
+else
+  red "  ✗ A5  $funnel_missing responses missing funnel object — PRD item 1.1 regression"
+  A5=FAIL
+fi
+
 echo
 blue "═══ Summary ═══"
 echo "  A1 Returns persona:      $A1"
 echo "  A2 Persona diversity:    $A2"
 echo "  A3 Breakdown variance:   $A3"
 echo "  A4 Keyword filter (mkt): $A4"
+echo "  A5 Funnel counts in JSON:$A5"
 echo
 
-if [ "$A1" = "PASS" ] && [ "$A2" != "FAIL" ]; then
+if [ "$A1" = "PASS" ] && [ "$A2" != "FAIL" ] && [ "${A5:-PASS}" != "FAIL" ]; then
   green "OVERALL: SELECTOR FUNCTIONAL ✓"
   echo "Quality of selection still requires human review of top-3 candidates per task."
   exit 0

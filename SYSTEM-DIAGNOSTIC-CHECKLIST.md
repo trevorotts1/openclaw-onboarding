@@ -62,8 +62,8 @@ The automated runner is at **`scripts/qc-system-integrity.sh`**. It executes eve
 │   - 3-check rhythm: 9 AM standup / midday / EOD                       │
 │   - Runtime task→persona flow:                                        │
 │       1. Task lands in dept Telegram topic                            │
-│       2. Director invokes select-persona-for-task.py                  │
-│       3. Hybrid search: Gemini semantic + keyword + 5-layer scoring   │
+│       2. Director invokes persona-selector-v2.py                      │
+│       3. 4-stage funnel: pool → Gemini semantic → keyword → 5-layer   │
 │       4. Selected persona logged to dept/memory/[date].md             │
 │       5. Sub-agent spawned with "Act As If" prompt                    │
 │       6. Sub-agent executes following the DMAIC SOP                   │
@@ -132,13 +132,17 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 
 ## CHECK 5 — Semantic Search
 
+> **Note (PRD item 1.1, v11.3.2+):** `select-persona-for-task.py` is now a
+> deprecated shim.  The canonical selector is `persona-selector-v2.py`.
+> All checks in this section now verify v2 directly.
+
 | # | Check | How to verify | Pass = |
 |---|---|---|---|
-| 5.1 | select-persona-for-task.py callable | `python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py --help` | Help text returned, exit 0 |
-| 5.2 | Test invocation returns a winner | `--dept marketing --task "Write a launch email" --format id` | Returns a persona-id string, exit 0 |
-| 5.3 | Top-3 candidates have varied semantic scores | Same with `--format json` | Top-3 list, scores not all identical (signal that semantic search is working) |
-| 5.4 | Falls back gracefully if Gemini unavailable | Move gemini-search.py temporarily, re-run | Exits 2 with `"gemini_available": false`, still picks a persona |
-| 5.5 | Selection logged to dept's daily memory | `cat ~/clawd/zero-human-company/*/departments/<dept>/memory/$(date +%Y-%m-%d).md` | Contains `## HH:MM:SS — Persona Selection` entry |
+| 5.1 | persona-selector-v2.py callable | `python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py --help` | Help text returned, exit 0 |
+| 5.2 | Test invocation exits 0 and returns funnel counts | `python3 .../persona-selector-v2.py --department marketing --task "Write a launch email" --format json` | Exit 0; output JSON contains `"funnel"` with `pool`, `semantic`, `keyword`, `scored` keys |
+| 5.3 | Semantic stage available when Gemini index exists | Same invocation with Gemini index present | `funnel.semantic_available: true` in output |
+| 5.4 | Falls back gracefully if Gemini unavailable | Remove/rename gemini-search.py temporarily, re-run | Exit 0; `funnel.semantic_available: false`; a persona (or NO_PERSONAS_AVAILABLE warning) still returned |
+| 5.5 | Deprecated shim delegates to v2 | `python3 .../select-persona-for-task.py --dept marketing --task "Write a launch email" 2>&1 \| grep DEPRECATED` | Deprecation warning printed to stderr; v2 result on stdout |
 
 ## CHECK 6 — Keyword Search
 
@@ -147,8 +151,8 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 | 6.1 | persona-categories.json has domain + perspective tags | `jq '.personas \| to_entries[] \| select(.value.domain_tags)' persona-categories.json` | Every persona has at least one domain tag |
 | 6.2 | Domain tags match documented 12-tag list | Check tags vs SKILL.md | Marketing, Sales, Leadership, Finance, Operations, Communication, Copywriting, Mindset, Productivity/Systems, Coaching, Strategy/Innovation, Personal Development |
 | 6.3 | Perspective tags match documented 6-tag list | Same | African American experience, Women's challenges, Men's challenges, Family/relationships, Faith/spirituality, Love/romantic relationships |
-| 6.4 | Dept-to-domain mapping present in selector | `grep -A 20 "DEPT_DOMAIN_TAGS" select-persona-for-task.py` | Mapping exists for all 17 default depts |
-| 6.5 | keyword_filter() narrows candidates correctly | Add a non-matching candidate, run selector | Candidate filtered out before scoring |
+| 6.4 | DEPT_DOMAIN_TAGS present in canonical selector | `grep -A 20 "DEPT_DOMAIN_TAGS" persona-selector-v2.py` | Mapping exists for all default depts (now in v2 per PRD item 1.1) |
+| 6.5 | keyword_filter_candidates() narrows candidates correctly | Add a non-matching candidate, run selector | Candidate filtered out before scoring |
 
 ## CHECK 7 — Task Assignments (Kanban / Command Center)
 

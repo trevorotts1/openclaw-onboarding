@@ -465,22 +465,26 @@ Create folder: ~/.openclaw/workspace/departments/[dept-name]/
 Add this section to the BOTTOM of each department's AGENTS.md:
 
 ```markdown
-## 🔴🔴🔴 Persona Operating Protocol (Dynamic Selection Engine — v9.6.2)
+## 🔴🔴🔴 Persona Operating Protocol (Dynamic Selection Engine — v11.3.2+)
 At the start of EVERY task, run dynamic persona selection. Do NOT skip. Do NOT default.
 
-### Step 1: Run the Unified Selector (does Steps 1 + 2 in one call)
+### Step 1: Run the Canonical Selector
+
+> **Important:** `select-persona-for-task.py` is now a deprecated shim.
+> Use `persona-selector-v2.py` directly.
 
 ```bash
-python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py \
-    --dept [your-dept] \
+python3 ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py \
+    --department [your-dept] \
     --task "<concise task description here>" \
     --format json
 ```
 
-This script does THREE things internally:
-1. **Semantic search** via `gemini-search.py` (Gemini Embeddings 2 against the coaching-personas collection)
-2. **Keyword filter** by your dept's domain tags from `persona-categories.json`
-3. **5-Layer alignment scoring** per `persona-matching-protocol.md`:
+This script runs a **4-stage funnel** internally:
+1. **Pool** — all available personas from `persona-categories.json`
+2. **Semantic retrieval** via `gemini-search.py` (Gemini Embeddings against the coaching-personas collection)
+3. **Keyword filter** by dept domain tags from `DEPT_DOMAIN_TAGS` in the script
+4. **5-Layer alignment scoring** per `persona-matching-protocol.md`:
    | Layer | Weight | Source |
    |-------|--------|--------|
    | 1. Company Mission | 25% | SOUL.md, company-config.json |
@@ -494,17 +498,16 @@ This script does THREE things internally:
 {
   "persona_id": "hormozi-100m-offers",
   "score": 0.86,
-  "mode": "hybrid (semantic + keyword + 5-layer)",
-  "gemini_available": true,
-  "top_3": [{...}, {...}, {...}],
-  "breakdown": {"mission": 0.85, "values": 0.80, "company_kpis": 0.75, "dept_kpis": 0.90, "task_fit": 0.95, "semantic_score": 0.82}
+  "interaction_mode": "leadership",
+  "funnel": {"pool": 42, "semantic": 10, "keyword": 6, "scored": 6, "semantic_available": true},
+  "breakdown": {"top_3": [{...}, {...}, {...}]},
+  "layers": {"mission": 0.85, "owner_values": 0.80, "company_kpis": 0.75, "dept_kpis": 0.90, "task_fit": 0.95}
 }
 ```
 
 **Exit codes:**
-- `0` = selection successful, persona_id printed
-- `2` = Gemini Engine unavailable; selector still returned a persona via keyword + 5-layer only (logged but acceptable as fallback)
-- `1` = no candidates found at all (dept's governing-personas.md missing or persona library empty)
+- `0` = selection successful (even when no personas are available — check for `warning: "NO_PERSONAS_AVAILABLE"` in output)
+- `1` = argument error or v2 script not found
 
 **Logging:** The selector AUTO-LOGS the selection to `~/clawd/zero-human-company/[slug]/departments/[your-dept]/memory/[YYYY-MM-DD].md`. Do NOT log again manually.
 
