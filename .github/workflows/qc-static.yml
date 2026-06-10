@@ -1301,10 +1301,10 @@ jobs:
           done
           # run-closeout.sh must reference resume cron and the n8n step
           for pattern in \
-            "closeoutResumeUuid\|closeout.resume.cron\|resume-closeout-cron" \
-            "wire-n8n-closeout\|STEP_N8N_STATUS\|n8nWired" \
-            "closeoutDeliverables.telegramSequenceSent\|telegramSequenceSent" \
-            "qc-assert-org-chart-connector-tree\|ORG_CHART_QC_SCRIPT"; do
+            "closeoutResumeUuid|closeout.resume.cron|resume-closeout-cron" \
+            "wire-n8n-closeout|STEP_N8N_STATUS|n8nWired" \
+            "closeoutDeliverables.telegramSequenceSent|telegramSequenceSent" \
+            "qc-assert-org-chart-connector-tree|ORG_CHART_QC_SCRIPT"; do
             if grep -qE "$pattern" 37-zhc-closeout/scripts/run-closeout.sh; then
               echo "  ✓ run-closeout.sh contains: $pattern"
             else
