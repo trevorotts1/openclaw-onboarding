@@ -25,6 +25,7 @@ import sqlite3, json, os, sys, re
 from pathlib import Path
 
 # PRD 1.3: import the single shared DB resolver.
+# PRD 1.5: import the canonical dept slug normaliser.
 _SHARED_UTILS = Path(__file__).resolve().parent.parent.parent / "shared-utils"
 sys.path.insert(0, str(_SHARED_UTILS))
 try:
@@ -32,6 +33,26 @@ try:
     _HAS_SHARED_RESOLVER = True
 except ImportError:
     _HAS_SHARED_RESOLVER = False
+
+try:
+    from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
+    _HAS_CANONICAL_SLUG = True
+except ImportError:
+    _HAS_CANONICAL_SLUG = False
+    # Inline fallback so the script still works without the shared-utils import
+    # (e.g. very early bootstrap before shared-utils is installed on the box).
+    import re as _re
+    def _canonical_dept_slug(raw: str) -> str:  # type: ignore
+        if not raw or not isinstance(raw, str):
+            return ""
+        s = raw.strip().lower()
+        if s.startswith("dept-"):
+            s = s[5:]
+        if s.endswith("-dept"):
+            s = s[:-5]
+        s = s.replace(" ", "-").replace("_", "-")
+        s = _re.sub(r"-{2,}", "-", s)
+        return s.strip("-")
 
 
 def find_db():
@@ -182,12 +203,12 @@ def scan_skill23_workspaces():
         parent_folder_name = ws_dir.parent.name if ws_dir.name == "command-center" else ws_dir.name
         for folder in sorted(ws_dir.iterdir()):
             if folder.is_dir() and not folder.name.startswith('.'):
-                raw_name = folder.name.lower().replace(' ', '-')
-                # Strip "-dept" suffix or "dept-" prefix (legacy Skill 23 folder naming)
-                # RC-3: canonical bare slugs never have a dept- prefix; these guards
-                # handle any old folder that still uses the legacy compound form.
-                dept_id = re.sub(r'-dept$', '', raw_name)
-                dept_id = re.sub(r'^dept-', '', dept_id)
+                # PRD 1.5: use the shared canonical_dept_slug normaliser so the folder-
+                # scanning path and the departments.json path produce identical ids.
+                # Handles "dept-" prefix, "-dept" suffix, spaces, underscores, mixed case.
+                dept_id = _canonical_dept_slug(folder.name)
+                if not dept_id:
+                    continue
                 dept_name = dept_id.replace('-', ' ').replace('_', ' ').title()
                 # Try to read name from SOUL.md if it exists
                 soul = folder / "SOUL.md"
@@ -381,9 +402,13 @@ def seed(db_path, departments, company_info):
     print(f"  Departments to seed: {len(departments)} (this is what the client chose in the interview)")
 
     for dept in departments:
-        # departments.json from Skill 23 has IDs like "dept-marketing"; strip that for DB
+        # PRD 1.5: normalise the id through canonical_dept_slug so we get the bare
+        # slug in ALL cases: "dept-marketing" -> "marketing", "Marketing" -> "marketing",
+        # "marketing-dept" -> "marketing".  Replaces the old raw_id[5:] hack which only
+        # handled the leading "dept-" case and would silently pass through mixed-case,
+        # underscore, or trailing-"-dept" forms unchanged.
         raw_id = dept.get('id', '')
-        dept_id = raw_id[5:] if raw_id.startswith("dept-") else raw_id
+        dept_id = _canonical_dept_slug(raw_id)
         if not dept_id:
             continue
         if dept_id in existing:

@@ -63,6 +63,25 @@ try:
 except ImportError:
     _HAS_SHARED_RESOLVER = False
 
+try:
+    from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
+    _HAS_CANONICAL_SLUG = True
+except ImportError:
+    _HAS_CANONICAL_SLUG = False
+    # Inline fallback so the script still works without the shared-utils import.
+    import re as _re_slug
+    def _canonical_dept_slug(raw: str) -> str:  # type: ignore
+        if not raw or not isinstance(raw, str):
+            return ""
+        s = raw.strip().lower()
+        if s.startswith("dept-"):
+            s = s[5:]
+        if s.endswith("-dept"):
+            s = s[:-5]
+        s = s.replace(" ", "-").replace("_", "-")
+        s = _re_slug.sub(r"-{2,}", "-", s)
+        return s.strip("-")
+
 
 MD_COLUMNS = {
     "identity_md": "IDENTITY.md",
@@ -230,18 +249,28 @@ def main() -> int:
             rows_skipped_no_match += 1
             continue
 
-        # Try several key strategies to find the existing row.
+        # PRD 1.5: Try several key strategies to find the existing row.
+        # canonical_slug normalisation ensures we match rows written by seed-workspaces.py
+        # even when the on-disk folder name has a "dept-" prefix or mixed case.
         slug = agent_key.replace("/", "-")
         bare = agent_key.split("/")[-1]
+        canonical = _canonical_dept_slug(slug)
+        canonical_bare = _canonical_dept_slug(bare)
+        # Build ordered unique key list; canonical forms first (PRD 1.5 contract).
+        seen_keys: set[str] = set()
+        ordered_keys: list[str] = []
+        for k in (canonical, canonical_bare, agent_key, slug, bare):
+            if k and k not in seen_keys:
+                ordered_keys.append(k)
+                seen_keys.add(k)
         cur = None
-        for key in (agent_key, slug, bare):
+        rowid = None
+        for key in ordered_keys:
             cur = conn.execute(f"SELECT rowid FROM {table} WHERE {id_col} = ?", (key,))
             row = cur.fetchone()
             if row:
                 rowid = row[0]
                 break
-        else:
-            rowid = None
 
         if rowid is None:
             rows_skipped_no_match += 1

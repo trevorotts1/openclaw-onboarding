@@ -62,6 +62,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
 from detect_platform import get_openclaw_paths  # type: ignore
 from resolve_db import find_dashboard_db, is_db_found  # type: ignore  # PRD 1.3: single shared resolver
 from adaptive_weights import get_weights_for_task, DEFAULT_WEIGHTS  # type: ignore
+from canonical_slug import canonical_dept_slug  # type: ignore  # PRD 1.5: dept identity contract
 
 try:
     from infer_task_category import infer_task_category  # type: ignore
@@ -1267,6 +1268,17 @@ def main():
     parser.add_argument("--task-output-file", help="(record-completion) path to task output file")
     parser.add_argument("--task-output", help="(record-completion) inline task output")
     args = parser.parse_args()
+
+    # PRD 1.5: normalise --department to the canonical slug form immediately after
+    # parsing, before ANY DB write, stickiness key, or dir lookup.  This ensures
+    # department_id in every DB row is the bare slug (e.g. "marketing", not
+    # "dept-marketing" or "Marketing") regardless of what the caller passed.
+    if args.department:
+        _raw_dept = args.department
+        args.department = canonical_dept_slug(_raw_dept)
+        if not args.department:
+            print(json.dumps({"error": f"Invalid --department value {_raw_dept!r}: normalises to empty string"}))
+            return 1
 
     paths = get_openclaw_paths()
     db_path = find_dashboard_db()
