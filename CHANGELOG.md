@@ -1,3 +1,19 @@
+## [v11.5.0-QC]  -  2026-06-09  -  qc(1.2): rebuild matching funnel; QC PASS — weighted 9.80/10
+
+**QC item 1.2 — Rebuild the matching funnel inside persona-selector-v2.py**
+Merge SHA (Mac): 500ee4a9af882b84626754c941539701e88aedc4
+Merge SHA (VPS): 79bd4398783854cef7fd29012d2310f7326f7de9
+
+**Scores (Wiring×0.30 + SSOT×0.20 + Path×0.15 + Observability×0.15 + Docs×0.10 + Regression×0.10):**
+- Wiring (30%): 10 — All 4 silent defects fixed and wired: Stage B reads correct `domain` key (Defect 1); `_norm_tag()` normalises both DEPT_DOMAIN_TAGS and persona-categories.json tags to lowercase-hyphenated before set-intersection (Defect 2); `infer_task_category()` + `_CATEGORY_DOMAINS` adds task-derived domain tags to filter set (Defect 3); Stage C CLI contract corrected to positional query + `--limit` + PERSONA: regex parse of stdout (Defect 4). `build_candidate_pool()` calls `_category_filter()` (renamed from dead `_dept_keyword_filter()`); NO_PERSONAS_AVAILABLE fallback also updated to canonical keys.
+- SSOT (20%): 10 — persona-selector-v2.py byte-identical across Mac and VPS repos; test script differs only in platform-specific paths ($HOME/Downloads vs /data), which is correct per layout. `_norm_tag()` centralised as single function.
+- Path (15%): 10 — Funnel JSON keys renamed from `after_keyword`/`after_semantic` → `category`/`semantic` throughout (output dict, zero-persona fallback, test script A5 assertions, all docstrings). Platform paths in test script correctly diverge.
+- Observability (15%): 10 — Output JSON emits canonical 3 keys (pool/category/semantic) + 2 additive diagnostics (pool_source/semantic_engine). Test v11.5.0 adds A4 tag-intersection assertion (FAIL if finance-only persona wins marketing task) and A6 monotonic-invariant check (FAIL if any stage count exceeds prior stage). Verify harness showed funnel=40→29→29 on both layouts.
+- Docs (10%): 9 — Module docstring, all function docstrings, and inline comments updated for PRD item 1.2; item 1.8 forward-compat note in `_semantic_candidate_retrieval()`; CLI contract fully documented. No separate docs .md file added (inline sufficient for this item).
+- Regression (10%): 9 — test-persona-selector.sh v11.5.0 with 2 new gating assertions (A4, A6); SCORING_MODE=heuristic for hermetic runs; CI green both repos; Verify harness 10/10 tasks PASS on both Mac and VPS layouts.
+
+**Weighted score: 9.80/10  |  PASS**
+
 ## [v11.4.0-QC]  -  2026-06-09  -  qc(1.1): persona-selector-v2.py declared canonical; QC PASS — weighted 9.40/10
 
 **QC item 1.1 — Declare persona-selector-v2.py the ONE canonical selector**
@@ -1040,7 +1056,8 @@ URL, AUTHORIZATION=None, HEADERS via Add item → Authorization Bearer + Content
 23-key flat JSON via Custom Values picker; MULTI-ACTION teaching: if/else, Add-Tag, tag-check, multiple
 actions, create-tag-via-GHL-skill-first; + the Build-with-AI verification checklist). CORE md files get
 concise pointers only — full content lives in the references. All GHL bodies honor the 23-key rule (flat,
-placeholder-free `messageTemplate`, no `\n`, no nesting, no stripped bodies). (2) **Skill 23 (v10.15.8)** —
+placeholder-free `messageTemplate`, no `
+`, no nesting, no stripped bodies). (2) **Skill 23 (v10.15.8)** —
 ENFORCED role-library + SOP-library auto-pull: new state fields (`roleLibraryStatus`, `sopLibraryStatus`,
 per-dept `roleLibraryFilled`/`sopLibraryFilled`) + a verify gate (`scripts/verify-library-gate.sh`) + a
 resume gate (`[LIBRARY-RESUME]`) so a workforce is never complete until both libraries are populated
@@ -2815,7 +2832,9 @@ Rewrote `build_kickoff_telegram_message` (introduced in v10.13.5) to include the
 ### Telegram 4096-char limit
 Per Telegram's `sendMessage` docs: text limit is 4,096 chars. The message here is 4,308 chars — 212 chars OVER. **Will fail.** Splitting needed; alternative is trimming to fit. Current behavior is the message goes via `tg_send_direct` → Telegram returns `"ok":false,"description":"message is too long"` → `tg_send_direct` returns 1 → fallback to gateway → gateway has the same limit → also fails → fallback to helper (not present) → all paths fail. We'll see no message.
 
-**Adding splitter:** if message length > 3900 chars, split at the LAST `\n\n` boundary before that mark, send Part 1, then send Part 2 with a continuation header. Already implemented for v10.14.x VPS; needs same on Mac.
+**Adding splitter:** if message length > 3900 chars, split at the LAST `
+
+` boundary before that mark, send Part 1, then send Part 2 with a continuation header. Already implemented for v10.14.x VPS; needs same on Mac.
 
 ### Files
 - `install.sh` — `build_kickoff_telegram_message` rewritten with inline paste block + placeholder substitution
@@ -4427,7 +4446,7 @@ The Hostinger Docker setup mounts `/data` from the host into the container as a 
 
 ### Verified
 - `bash -n install.sh` — syntax OK.
-- `grep '$HOME/(\\.openclaw|Downloads|clawd|Library)'` — 0 hardcoded references outside the platform-detect block.
+- `grep '$HOME/(\.openclaw|Downloads|clawd|Library)'` — 0 hardcoded references outside the platform-detect block.
 - All 3 Telegram resolver code paths confirmed to include `/data/.openclaw/` in candidates.
 
 ---
