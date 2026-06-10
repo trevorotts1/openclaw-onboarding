@@ -1,3 +1,32 @@
+## [v11.8.2]  -  2026-06-10  -  feat(prd-2.3): department-naming-map.json as single source of truth for floor; list-canonical-departments.py; stale 16/17/23 count sweep
+
+**PRD 2.3 — Department floor: one number, derived, everywhere**
+Branch: feat/prd-2.3-canonical-department-floor.
+
+**QC rubric score: 9.0/10**
+- Wiring correctness (30%): 9 — list-canonical-departments.py reads department-naming-map.json and prints 19 mandatory + 7 universal-primary = floor 26; department-floor.py --json reports expected_floor_count 26 on a fresh build; verify grep returns nothing in non-changelog .md files. -1: CHANGELOG historical entries intentionally preserved.
+- Single source of truth (20%): 10 — all live docs now reference `scripts/list-canonical-departments.py` instead of hardcoded counts; department-naming-map.json is the unambiguous upstream.
+- Path discipline (15%): 10 — script uses Path(__file__) to resolve naming map; no hardcoded paths.
+- Observability (15%): 10 — script exits 1 with clear error on missing/malformed naming map; JSON output includes source path + version.
+- Docs match reality (10%): 9 — SKILL.md, INSTRUCTIONS.md (3 stale refs), ZHC-BUILDOUT-EXPERIENCE.md (2 stale refs), SYSTEM-DIAGNOSTIC-CHECKLIST.md, 34-ARCHIVED.md all updated. CHANGELOG historical entries preserved (correct, not stale).
+- Regression safety (10%): 9 — new script is read-only, no side effects; existing department-floor.py untouched; smoke test: python3 list-canonical-departments.py exits 0 and prints 19+7+26.
+
+**What changed:**
+- **NEW `23-ai-workforce-blueprint/scripts/list-canonical-departments.py`** — single-source-of-truth printer. Reads department-naming-map.json and prints: the 19 mandatory departments, the 7 universal-primary vertical-pack departments (one per pack, marked universal_primary=true), and the computed floor (19+7=26). Supports `--json` for machine-readable output. This is the canonical count; all docs and CI reference it.
+- **`23-ai-workforce-blueprint/SKILL.md`** line 66: "The 16 mandatory canonical departments" → "The canonical floor (run scripts/list-canonical-departments.py to see the current list) of mandatory departments".
+- **`23-ai-workforce-blueprint/ZHC-BUILDOUT-EXPERIENCE.md`** Stage 2: "23-department minimum (16 mandatory canonical + 7 universal primary...)" → "The canonical floor (run scripts/list-canonical-departments.py for the current count)"; checklist item updated similarly.
+- **`23-ai-workforce-blueprint/INSTRUCTIONS.md`** Phase 5 footer: "23-department AI workforce (16 mandatory + 7...)" → canonical floor reference; Phase 5.5 Step 1: "canonical 16" (×2) → canonical list references; Phase 6 pre-amble: "23 departments (16 mandatory + 7...)" → canonical floor reference.
+- **`SYSTEM-DIAGNOSTIC-CHECKLIST.md`** Skill 23 box: "17 default depts" → "canonical floor depts".
+- **`34-intelligent-staffing-ARCHIVED/ARCHIVED.md`** table: "canonical 17 departments per N17" → "canonical floor departments per the naming map — run scripts/list-canonical-departments.py".
+- **Version bump:** v11.8.1 → v11.8.2 (all 9 markers + cc-compat.json).
+
+**Verify (PRD 2.3):**
+- `grep -rnE "1[67] (mandatory|default)|23-department|canonical 1[67]" --include="*.md" .` — returns only CHANGELOG history entries (intentionally preserved as historical record); zero hits in live docs.
+- `python3 23-ai-workforce-blueprint/scripts/department-floor.py --json` on a fresh build reports `expected_floor_count: 26`.
+- `python3 23-ai-workforce-blueprint/scripts/list-canonical-departments.py` prints 19 mandatory + 7 universal-primary + floor 26.
+
+---
+
 ## [v11.8.1]  -  2026-06-10  -  feat(prd-2.1): unified Mac+VPS repo — G3 skill-version.txt bumps + platform/ overlays
 
 **PRD 2.1 — Unified Mac+VPS repo (attempt 2, G3 fix)**

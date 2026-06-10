@@ -21,7 +21,7 @@ All three Skill 34 capabilities now live inside **Skill 23**, not as a separate 
 | `specialist_type` classification (permanent vs on-call) | `23-ai-workforce-blueprint/scripts/build-workforce.py::determine_specialists()` — runs inline during the workforce build, not as a separate skill |
 | 5-layer persona alignment (mission, owner_values, company_kpis, dept_kpis, task_fit) | `23-ai-workforce-blueprint/scripts/persona-selector-v2.py` — the canonical persona engine; resolves at dispatch time, not at install time |
 | Package tier (light / standard / heavy) | `23-ai-workforce-blueprint/scripts/build-workforce.py::DEFAULT_MODEL_ASSIGNMENTS` — model class per department type, replaces the package tier concept |
-| Per-role specialist templates (specialist-templates/ folder in this archive) | Templates are now generated dynamically by `build-workforce.py` from `RECOMMENDED_DEPARTMENTS` (canonical 17 departments per N17) — no static template files |
+| Per-role specialist templates (specialist-templates/ folder in this archive) | Templates are now generated dynamically by `build-workforce.py` from `RECOMMENDED_DEPARTMENTS` (canonical floor departments per the naming map — run `scripts/list-canonical-departments.py`) — no static template files |
 
 ## Why merge, not standalone
 

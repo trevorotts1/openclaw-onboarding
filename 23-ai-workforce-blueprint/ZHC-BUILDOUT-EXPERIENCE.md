@@ -40,12 +40,13 @@ activities / KPIs / tools / challenges for each department the client confirms.
 `build-workforce.py` stands up the company tree against a HARD floor — never a
 reduced workforce.
 
-- **23-department minimum** (16 mandatory canonical + 7 universal primary vertical-pack
-  departments, one per pack — fires for EVERY client regardless of industry),
+- **The canonical floor** (run `scripts/list-canonical-departments.py` for the current count)
+  of mandatory departments PLUS the 7 universal-primary vertical-pack departments
+  (one per pack — fires for EVERY client regardless of industry),
   MINUS only departments the client explicitly declined. Industry keyword matching
-  adds additional vertical extras on top of the 23 floor but never reduces it.
+  adds additional vertical extras on top of the floor but never reduces it.
   The floor is enforced on DISK by `department-floor.py` (build-state JSON is
-  never trusted as proof). A 3-dept, 6-dept, or 16-dept ship is a bug, not a
+  never trusted as proof). A 3-dept, 6-dept, or reduced-dept ship is a bug, not a
   "lean build." See `department-naming-map.json` vertical_packs for the 7 packs
   and their universal_primary departments.
 - **Directors are real agents.** Each department gets a first-class OpenClaw agent
@@ -140,7 +141,7 @@ Follow top to bottom; QC your build against the same list.
 - [ ] Captured per-department activities / KPIs / tools / challenges
 
 **Stage 2 — Build**
-- [ ] 23 departments minimum present on DISK (16 mandatory + 7 universal-primary vertical-pack depts) — run `department-floor.py --json` to verify
+- [ ] The canonical floor of departments present on DISK (run `scripts/list-canonical-departments.py` for the exact list; run `department-floor.py --json` to verify the live client install meets it)
 - [ ] Industry keyword matching added any extras on top of the 23 (check `verticalPacks.addedDepartments` in build-state)
 - [ ] No department declined except where the client explicitly declined it
 - [ ] Each department has a real director agent in `openclaw.json` agents.list[]

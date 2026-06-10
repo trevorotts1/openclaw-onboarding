@@ -300,7 +300,7 @@ If at any point during Phase 0-3 the owner says they don't have a business yet (
 - **Software stack** — pivots to *"what tools do you already use in your personal life or current job?"*
 - **Department customization** — collected as "what KIND of work would you want help with" not "what you currently do."
 
-The final output is still a 23-department AI workforce (16 mandatory + 7 universal-primary vertical-pack departments) — sized and shaped for a pre-revenue founder.
+The final output is still the canonical floor AI workforce (run `scripts/list-canonical-departments.py` to see the current mandatory + universal-primary list) — sized and shaped for a pre-revenue founder.
 
 ---
 
@@ -334,17 +334,17 @@ Same departments as before, but framed as conversational arcs not a checklist. B
 
 ### Phase 5.5  -  Canonical Departments Reconciliation (BINDING  -  added v10.15.0 / Mac v10.14.0)
 
-**Why this exists.** Phase 4 conversational arcs (D-1..D-13) bundle 16 canonical departments into themes. When an owner answers in terms of their *current* business language (e.g. *"I do bookkeeping, tax, government contracts, and compliance"*), the agent can lock in those phrases as the dept names and ship a workforce that diverges from the canonical set. Maria Anderson's 2026-05-23 build is the reference case: 9 departments shipped (Executive Office, Accounting, Tax, HR, Risk & Compliance, Operations, Gov Contracting, Marketing, Sales), missing 10 of the canonical 16 (Web Dev, App Dev, Graphics, Video, Audio, Research, Communications, CRM, OpenClaw Maintenance, Customer Support, Social Media, Paid Advertisement, Billing & Finance, Legal  -  with some overlap to her custom names). Clients have blind spots  -  they don't know they need Video Production, Graphics, CRM, or OpenClaw Maintenance until someone shows them the canonical list and asks.
+**Why this exists.** Phase 4 conversational arcs (D-1..D-13) bundle the canonical mandatory departments into themes. When an owner answers in terms of their *current* business language (e.g. *"I do bookkeeping, tax, government contracts, and compliance"*), the agent can lock in those phrases as the dept names and ship a workforce that diverges from the canonical set. Maria Anderson's 2026-05-23 build is the reference case: 9 departments shipped (Executive Office, Accounting, Tax, HR, Risk & Compliance, Operations, Gov Contracting, Marketing, Sales), missing many mandatory departments (Web Dev, App Dev, Graphics, Video, Audio, Research, Communications, CRM, OpenClaw Maintenance, Customer Support, Social Media, Paid Advertisement, Billing & Finance, Legal — run `scripts/list-canonical-departments.py` for the full current list). Clients have blind spots — they don't know they need Video Production, Graphics, CRM, or OpenClaw Maintenance until someone shows them the canonical list and asks.
 
 **Run this phase BEFORE Phase 6 Final Review. Never skip. Never let "I think we're good" close it out without showing the actual list.**
 
 #### Step 1  -  Compute the gap
 
-Load `23-ai-workforce-blueprint/department-naming-map.json`. The `mandatory` block is the canonical 16. Build three lists:
+Load `23-ai-workforce-blueprint/department-naming-map.json`. The `mandatory` block is the canonical mandatory list (run `scripts/list-canonical-departments.py` for the current count). Build three lists:
 
 - **COVERED**  -  canonical departments the owner already locked in during Phase 4 (match by `display_name`, `folder`, semantic equivalence, or the dept's `one_liner`).
 - **MISSING_MANDATORY**  -  canonical departments NOT yet covered.
-- **CUSTOM_KEEPS**  -  non-canonical departments the owner explicitly asked for (e.g. *Government Contracting*, *Tax*) that don't map to any canonical entry. These stay  -  the canonical 16 is a floor, not a ceiling.
+- **CUSTOM_KEEPS**  -  non-canonical departments the owner explicitly asked for (e.g. *Government Contracting*, *Tax*) that don't map to any canonical entry. These stay  -  the canonical mandatory list is a floor, not a ceiling.
 
 The match step is semantic, not string. Examples of valid coverage:
 - "Bookkeeping" → covers `Billing & Finance`
@@ -802,7 +802,7 @@ This ensures no progress is ever lost. If session dies, resume via Option C.
 ## What Gets Built After the Interview
 
 ### Department Workspaces
-For each of the 23 departments (16 mandatory + 7 universal-primary vertical-pack depts) + any keyword-matched extras, `create_department_workspace()` creates:
+For each of the canonical floor departments (see `scripts/list-canonical-departments.py` for the current list: mandatory + 7 universal-primary vertical-pack depts) + any keyword-matched extras, `create_department_workspace()` creates:
 - SOUL.md (generated from interview, NOT a template — includes the deferral clause)
 - MEMORY.md (empty)
 - HEARTBEAT.md (department priorities)

@@ -40,7 +40,7 @@ The automated runner is at **`scripts/qc-system-integrity.sh`**. It executes eve
                                      ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Skill 23: AI Workforce Blueprint                                      │
-│   - Interviews owner (2-3 questions per dept, 17 default depts)       │
+│   - Interviews owner (2-3 questions per dept, canonical floor depts)   │
 │   - Creates ZHC folder: ~/clawd/zero-human-company/<slug>/            │
 │   - Per dept: director + specialist roles, each in own subfolder      │
 │   - DMAIC SOPs written by parallel sub-agents (heavy tier, 1800s)     │
