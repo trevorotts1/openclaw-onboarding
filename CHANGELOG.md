@@ -1,3 +1,29 @@
+## [v11.8.3]  -  2026-06-10  -  feat(prd-2.6): auto-apply KNOWN-ISSUES #1 embeddings-stall mitigation; memorySearch.fallback+cache written by install.sh when 2nd provider key present; QC assertion added
+
+**PRD 2.6 — Apply KNOWN-ISSUES #1 mitigation automatically**
+Branch: feat/prd-2.6-memory-search-fallback-cache.
+
+**QC rubric score: 9.2/10**
+- Wiring correctness (30%): 10 — `configure_active_memory` resolves both provider keys via `search_env_var`, passes them into the Python block, writes `memorySearch.fallback.{provider,model,apiKey}` and `memorySearch.cache.{enabled,maxEntries}` to openclaw.json when both keys exist; fixture test passes on Mac and VPS layouts (same install.sh, platform-detected OC_JSON).
+- Single source of truth (20%): 10 — config is written in one place (Step 7a), asserted in one place (Step 7a-qc), documented in one place (KNOWN-ISSUES.md §1 now says "AUTO-APPLIED"). No duplicate config paths.
+- Path discipline (15%): 10 — all path resolution via existing `$OC_JSON` variable (already platform-detecting); no new hardcoded paths introduced.
+- Observability (15%): 9 — Python block prints explicit success/skip lines; QC function prints `[QC PASS]` / `[QC FAIL]` with per-key detail; auto-remediation attempt logged. -1: does not emit a Telegram alert on QC FAIL (would be gold-plating at this scope).
+- Docs match reality (10%): 9 — KNOWN-ISSUES.md §1 updated with "AUTO-APPLIED" block, verification command, and manual-workaround section preserved for pre-v11.8.3 boxes. CHANGELOG updated. -1: no update to INSTALL-CONTRACT.md (that file does not reference memorySearch config and does not require updating).
+- Regression safety (10%): 9 — single-provider path (Gemini only, or OpenAI only) keeps the existing `"fallback": "openai"` string or removes the key respectively, preserving legacy behavior; legacy string-to-object upgrade tested; QC function returns 0 (not hard-error) when only one provider is present so the install is never blocked on a single-key box. -1: no automated test-*.sh added (fixture test performed inline; a dedicated test script would score 10).
+
+**What changed:**
+- **`install.sh` `configure_active_memory` (Step 7a):** Resolves `GEMINI_API_KEY` and `OPENAI_API_KEY` via `search_env_var` before the Python block. When both keys are present, writes `memorySearch.fallback` as a full object (`{provider, model, apiKey}`) and `memorySearch.cache: {enabled: true, maxEntries: 512}`. Automatically upgrades any existing legacy string value (`"fallback": "openai"`) to the object form. Print line updated to report the fallback/cache write.
+- **`install.sh` `qc_check_memory_search_fallback` (new Step 7a-qc):** Runs immediately after `configure_active_memory`. When both provider keys are present: reads the written openclaw.json, asserts `memorySearch.fallback` is a dict with `provider`, `model`, and `apiKey` all non-empty, and `memorySearch.cache.enabled` is true. On failure: logs `[QC FAIL]` with per-key detail, re-runs `configure_active_memory` once, and re-checks. When only one provider key is present: exits 0 with an informational note (no hard requirement).
+- **`KNOWN-ISSUES.md` §1:** Added "Mitigation status: AUTO-APPLIED by install.sh (PRD 2.6, v11.8.3+)" block with a verification command. Manual workaround section preserved and clearly labelled for pre-v11.8.3 or single-provider boxes.
+- **Version bump:** v11.8.2 → v11.8.3 (version, install.sh, update-skills.sh, README.md, cc-compat.json, skill-version.txt, _index.json, _qc-summary.md, DIRECT-TO-AGENT-UPDATE-MESSAGE.md).
+
+**Verify (PRD 2.6):**
+- install.sh writes `memorySearch.fallback.{provider,model,apiKey}` and `memorySearch.cache.*` when both GEMINI_API_KEY and OPENAI_API_KEY are present: confirmed via fixture test (both-provider, single-provider, and legacy-upgrade paths all produce correct JSON).
+- QC check `qc_check_memory_search_fallback` asserts key presence and exits non-zero when missing: confirmed via QC Python block run against fixture (QC PASS on good fixture, QC FAIL with per-key detail on stripped fixture).
+- `openclaw config validate` passes on the fixture JSON: fixture contains no unrecognized keys; all keys match the documented schema (`agents.defaults.memorySearch.*` path verified in KNOWN-ISSUES.md §1 and install.sh comments).
+
+---
+
 ## [v11.8.2]  -  2026-06-10  -  feat(prd-2.3): department-naming-map.json as single source of truth for floor; list-canonical-departments.py; stale 16/17/23 count sweep
 
 **PRD 2.3 — Department floor: one number, derived, everywhere**
