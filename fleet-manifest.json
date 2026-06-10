@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "boxes": {},
+  "retirement_triggered": false,
+  "retirement_issue_number": null,
+  "retirement_triggered_ts": null,
+  "_notes": "Managed by shared-utils/fleet_manifest.py — do not edit manually. Updated by fleet-refresh.sh --apply / --verify-only after each run. When all boxes show loaded=true, the AF4 retirement trigger fires automatically (opens GitHub issue + writes legacy-retirement-triggered sentinel). See docs/LEGACY-RETIREMENT.md for the full trigger spec."
+}

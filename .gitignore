@@ -13,3 +13,8 @@ projects/gemini-migration/
 tmp/
 .openclaw/
 *.TRUNCATED-BACKUP
+
+# AF4: legacy-retirement-triggered is a runtime sentinel written by fleet_manifest.py
+# when the retirement trigger fires. The sentinel is ephemeral (proof of trigger fire).
+# fleet-manifest.json (the persistent per-box loaded-state tracker) IS committed.
+legacy-retirement-triggered

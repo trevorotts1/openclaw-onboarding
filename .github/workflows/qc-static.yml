@@ -1128,6 +1128,58 @@ jobs:
 
           echo "✓ PRD 1.11 fleet-refresh artefacts pass all checks"
 
+      # AF4: fleet_manifest.py retirement-trigger — artefact presence + simulate-all-loaded
+      # dry-run fixture.  Verifies the deterministic retirement clock without any client box
+      # or GitHub API call.  Three checks:
+      #   1. shared-utils/fleet_manifest.py syntax OK
+      #   2. fleet-manifest.json exists (skeleton committed to repo)
+      #   3. --simulate-all-loaded --dry-run fires the trigger + writes sentinel
+      - name: "AF4: legacy-retirement trigger artefacts + dry-run fixture"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Check 1: syntax
+          python3 -c "import ast; ast.parse(open('shared-utils/fleet_manifest.py').read())" \
+            || { echo "✗ fleet_manifest.py syntax error"; exit 1; }
+          echo "✓ fleet_manifest.py syntax OK"
+
+          # Check 2: fleet-manifest.json skeleton present
+          [ -f "fleet-manifest.json" ] \
+            || { echo "✗ fleet-manifest.json missing from repo root"; exit 1; }
+          python3 -c "import json; d=json.load(open('fleet-manifest.json')); assert 'boxes' in d" \
+            || { echo "✗ fleet-manifest.json invalid JSON or missing 'boxes' key"; exit 1; }
+          echo "✓ fleet-manifest.json present and valid"
+
+          # Check 3: simulate-all-loaded fires trigger (dry-run, no gh call)
+          TMPDIR_AF4="$(mktemp -d)"
+          export FLEET_MANIFEST_DRY_RUN=1
+          SIM_OUT=$(python3 shared-utils/fleet_manifest.py \
+            --repo-root "$TMPDIR_AF4" \
+            --simulate-all-loaded \
+            --boxes "box-a,box-b,box-c" \
+            --dry-run 2>/dev/null)
+          SIM_RC=$?
+          [ "$SIM_RC" -eq 0 ] \
+            || { echo "✗ simulate-all-loaded exited $SIM_RC (expected 0)"; exit 1; }
+          FIRED=$(echo "$SIM_OUT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('trigger_fired',False))")
+          [ "$FIRED" = "True" ] \
+            || { echo "✗ simulate-all-loaded did not report trigger_fired=True (got: $FIRED)"; exit 1; }
+          [ -f "$TMPDIR_AF4/legacy-retirement-triggered" ] \
+            || { echo "✗ sentinel file not written by simulate-all-loaded"; exit 1; }
+          SENTINEL_OK=$(python3 -c "
+import json
+p = open('$TMPDIR_AF4/legacy-retirement-triggered').read()
+d = json.loads(p)
+assert d['total'] == 3, f'expected 3 total boxes, got {d[\"total\"]}'
+assert d['dry_run'] is True, 'dry_run should be True'
+print('ok')
+")
+          [ "$SENTINEL_OK" = "ok" ] \
+            || { echo "✗ sentinel JSON payload malformed"; exit 1; }
+          rm -rf "$TMPDIR_AF4"
+          echo "✓ AF4 simulate-all-loaded fires trigger (trigger_fired=True), sentinel written + valid"
+          echo "✓ AF4 retirement-trigger artefacts + dry-run fixture all pass"
+
       # PRD 1.11: Injected-core-files CI guard.
       # FAIL the build if any script writes a CEO/agent core file by a
       # hardcoded agents/<id>/ path instead of resolving through

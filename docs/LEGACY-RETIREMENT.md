@@ -75,7 +75,51 @@ in the platform paths map):
 4. Remove the file entries from the tables above.
 5. The CI guard will then enforce "zero local candidate loops" with an empty allowlist.
 
-**Trigger:** Once `get_openclaw_paths()["company_root"]` is verified to return a
-non-empty value on every managed Mac and VPS in the fleet (check via
-`openclaw config get env.vars.ZHC_COMPANY_ROOT` or equivalent), the retirement can
-proceed.
+**Trigger (AF4 — automated, deterministic):** The retirement trigger is now
+machine-enforced. `fleet-refresh.sh` (via `shared-utils/fleet_manifest.py`) tracks
+per-box `loaded=YES` state in `fleet-manifest.json` at the repo root. When the LAST
+box reports `loaded=YES`, the trigger fires automatically:
+
+1. A sentinel file `legacy-retirement-triggered` is written to the repo root.
+2. A GitHub issue titled **"Retire legacy shim + clawd fallbacks (AF4 retirement trigger)"**
+   is opened (or updated if it already exists) in `trevorotts1/openclaw-onboarding`
+   via `gh issue create`.
+3. `fleet-manifest.json` is updated with `retirement_triggered: true` and the
+   issue number — making subsequent runs idempotent (they report
+   "already triggered" and do nothing).
+
+The trigger is **NOT vibes** — it fires exactly once when all fleet boxes cross the
+`loaded=YES` threshold, with a verifiable audit trail in `fleet-manifest.json`,
+the sentinel file, and the GitHub issue.
+
+**Fleet manifest schema** (`fleet-manifest.json`):
+```json
+{
+  "schema_version": 1,
+  "boxes": {
+    "<box-name>": {
+      "loaded": true,
+      "loaded_confidence": "authoritative | proxy | unknown",
+      "last_updated_ts": 1234567890,
+      "onboarding_version": "v11.13.0",
+      "cc_version": "4.14.0"
+    }
+  },
+  "retirement_triggered": false,
+  "retirement_issue_number": null,
+  "retirement_triggered_ts": null
+}
+```
+
+**Dry-run fixture test:** `bash scripts/test-fleet-refresh.sh` includes Test 13
+(five sub-tests) that prove the trigger fires on a simulated all-loaded state and
+is inert for a partial fleet. The CLI entry point also supports:
+
+```bash
+# Simulate all-loaded and show trigger output (no gh call):
+python3 shared-utils/fleet_manifest.py \
+  --repo-root . \
+  --simulate-all-loaded \
+  --boxes "box-a,box-b,box-c" \
+  --dry-run
+```

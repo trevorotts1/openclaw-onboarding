@@ -669,6 +669,220 @@ else
   fail "QC-PROTOCOL.md should reference the 3-layer wiring requirement"
 fi
 
+# ── Test 13: AF4 — fleet_manifest.py retirement trigger ──────────────────────
+section "Test 13: AF4 — fleet_manifest.py retirement trigger (deterministic)"
+
+python3 -c "import ast; ast.parse(open('$SHARED_UTILS/fleet_manifest.py').read())" \
+  && pass "fleet_manifest.py syntax OK" || { fail "fleet_manifest.py syntax error"; }
+
+FX13="$(mktemp -d)"
+trap 'rm -rf "$FX13"' EXIT
+
+# Sub-test 13a: partial fleet (only 1 of 2 boxes loaded) → trigger does NOT fire
+python3 - <<PYEOF13a
+import sys, json, time
+from pathlib import Path
+sys.path.insert(0, "$SHARED_UTILS")
+from fleet_manifest import (
+    update_manifest_for_box, check_retirement_trigger,
+    load_manifest, SENTINEL_FILENAME, MANIFEST_FILENAME
+)
+
+repo_root = Path("$FX13") / "13a"
+repo_root.mkdir(parents=True, exist_ok=True)
+
+# Box A: loaded=YES
+update_manifest_for_box(repo_root, "box-a", {
+    "loaded": {"present": True,  "loaded_confidence": "authoritative"},
+    "onboarding_version": "v11.13.0",
+    "cc_version": "4.14.0",
+})
+
+# Box B: loaded=NO
+update_manifest_for_box(repo_root, "box-b", {
+    "loaded": {"present": False, "loaded_confidence": "proxy"},
+    "onboarding_version": "v11.13.0",
+    "cc_version": "4.14.0",
+})
+
+# Check trigger — must NOT fire (partial fleet)
+status = check_retirement_trigger(repo_root, dry_run=True)
+assert not status["trigger_fired"],     f"Trigger should not fire for partial fleet; got {status}"
+assert not status["already_triggered"], f"Already triggered should be False; got {status}"
+assert not status["all_loaded"],        f"all_loaded should be False; got {status}"
+assert status["total_boxes"] == 2,      f"Expected 2 boxes; got {status}"
+assert status["not_loaded_boxes"] == ["box-b"], f"not_loaded_boxes wrong; got {status}"
+
+# Sentinel should NOT exist
+assert not (repo_root / SENTINEL_FILENAME).exists(), "Sentinel should not be written for partial fleet"
+
+print("  [PASS] 13a: partial fleet (1/2 loaded) — trigger did NOT fire, sentinel absent")
+PYEOF13a
+[ $? -eq 0 ] && pass "AF4 13a: partial fleet does not fire trigger" || fail "AF4 13a: partial fleet incorrectly fired trigger"
+
+# Sub-test 13b: all-loaded fleet → trigger FIRES (dry-run; no gh call)
+python3 - <<PYEOF13b
+import sys, json
+from pathlib import Path
+sys.path.insert(0, "$SHARED_UTILS")
+from fleet_manifest import (
+    update_manifest_for_box, check_retirement_trigger,
+    load_manifest, SENTINEL_FILENAME, MANIFEST_FILENAME
+)
+
+repo_root = Path("$FX13") / "13b"
+repo_root.mkdir(parents=True, exist_ok=True)
+
+boxes = ["box-a", "box-b", "box-c"]
+for box in boxes:
+    update_manifest_for_box(repo_root, box, {
+        "loaded": {"present": True, "loaded_confidence": "authoritative"},
+        "onboarding_version": "v11.13.0",
+        "cc_version": "4.14.0",
+    })
+
+# Fire the trigger (dry_run=True → no gh call, sentinel still written)
+status = check_retirement_trigger(repo_root, dry_run=True)
+assert status["trigger_fired"],     f"Trigger should fire when all boxes loaded=YES; got {status}"
+assert status["all_loaded"],        f"all_loaded should be True; got {status}"
+assert status["total_boxes"] == 3,  f"Expected 3 boxes; got {status}"
+assert len(status["not_loaded_boxes"]) == 0, f"not_loaded_boxes should be empty; got {status}"
+assert status["dry_run"],           f"dry_run should be True; got {status}"
+
+# Sentinel MUST exist
+sentinel = repo_root / SENTINEL_FILENAME
+assert sentinel.exists(), f"Sentinel file must be written when trigger fires; path={sentinel}"
+
+# Sentinel is valid JSON
+payload = json.loads(sentinel.read_text())
+assert payload["triggered_ts"] > 0
+assert set(payload["boxes"]) == set(boxes)
+assert payload["total"] == 3
+assert payload["dry_run"] is True
+
+# Manifest must be updated
+manifest = load_manifest(repo_root)
+assert manifest["retirement_triggered"] is True, "manifest.retirement_triggered must be True"
+assert manifest["retirement_triggered_ts"] > 0
+
+print("  [PASS] 13b: all-loaded fleet (3/3) — trigger FIRED, sentinel written + valid, manifest updated")
+PYEOF13b
+[ $? -eq 0 ] && pass "AF4 13b: all-loaded fleet fires trigger + writes sentinel" || fail "AF4 13b: all-loaded fleet trigger failed"
+
+# Sub-test 13c: trigger is IDEMPOTENT — firing again does nothing
+python3 - <<PYEOF13c
+import sys, json
+from pathlib import Path
+sys.path.insert(0, "$SHARED_UTILS")
+from fleet_manifest import check_retirement_trigger, load_manifest, SENTINEL_FILENAME
+
+repo_root = Path("$FX13") / "13b"   # reuse already-triggered manifest from 13b
+
+# Re-run should report already_triggered, NOT fire again
+status = check_retirement_trigger(repo_root, dry_run=True)
+assert not status["trigger_fired"],    f"Re-run should not re-fire; got {status}"
+assert status["already_triggered"],    f"already_triggered should be True; got {status}"
+
+print("  [PASS] 13c: trigger is idempotent — second call reports already_triggered, does not fire")
+PYEOF13c
+[ $? -eq 0 ] && pass "AF4 13c: trigger idempotent on second call" || fail "AF4 13c: trigger idempotency failed"
+
+# Sub-test 13d: CLI --simulate-all-loaded fires trigger deterministically
+FX13D="$(mktemp -d)"
+export FLEET_MANIFEST_DRY_RUN=1   # ensure no gh call even if gh is on PATH
+SIM_OUT=$(python3 "$SHARED_UTILS/fleet_manifest.py" \
+  --repo-root "$FX13D" \
+  --simulate-all-loaded \
+  --boxes "alpha,beta,gamma" \
+  --dry-run \
+  2>/dev/null)
+SIM_RC=$?
+SIM_FIRED=$(echo "$SIM_OUT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('trigger_fired',False))" 2>/dev/null)
+SIM_TOTAL=$(echo "$SIM_OUT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('total_boxes',0))" 2>/dev/null)
+
+[ "$SIM_RC" -eq 0 ] \
+  && pass "AF4 13d: --simulate-all-loaded exits 0" \
+  || fail "AF4 13d: --simulate-all-loaded exited non-zero ($SIM_RC)"
+
+[ "$SIM_FIRED" = "True" ] \
+  && pass "AF4 13d: --simulate-all-loaded reported trigger_fired=True" \
+  || fail "AF4 13d: --simulate-all-loaded should report trigger_fired=True (got: $SIM_FIRED)"
+
+[ "$SIM_TOTAL" = "3" ] \
+  && pass "AF4 13d: --simulate-all-loaded tracked all 3 boxes" \
+  || fail "AF4 13d: expected 3 total_boxes, got: $SIM_TOTAL"
+
+[ -f "$FX13D/legacy-retirement-triggered" ] \
+  && pass "AF4 13d: sentinel file written by --simulate-all-loaded" \
+  || fail "AF4 13d: sentinel file missing after --simulate-all-loaded"
+
+unset FLEET_MANIFEST_DRY_RUN
+rm -rf "$FX13D"
+
+# Sub-test 13e: fleet-refresh.sh integration — the AF4 trigger-check section is present in
+# fleet-refresh.sh output (static grep) AND the fleet-manifest.py update-box API works end-to-end
+# with a box result that matches what fleet_refresh_runner.py emits.
+
+# 13e-i: fleet-refresh.sh contains the AF4 trigger-check section
+grep -q "AF4\|Legacy Retirement Trigger check\|retirement_trigger" "$REPO_ROOT/scripts/fleet-refresh.sh" \
+  && pass "AF4 13e-i: fleet-refresh.sh contains the AF4 trigger check section" \
+  || fail "AF4 13e-i: fleet-refresh.sh missing AF4 trigger check section"
+
+# 13e-ii: update-box followed by check-trigger writes fleet-manifest.json and
+# correctly reports partial vs all-loaded state
+FX13E="$(mktemp -d)"
+python3 - <<PYEOF13e
+import sys, json
+from pathlib import Path
+sys.path.insert(0, "$SHARED_UTILS")
+from fleet_manifest import update_manifest_for_box, check_retirement_trigger, MANIFEST_FILENAME
+
+repo_root = Path("$FX13E")
+
+# Simulate a fleet_refresh_runner.py box result payload (matches BoxResult.to_dict())
+box_result_loaded = {
+    "box": "test-box",
+    "platform": "mac",
+    "dry_run": False,
+    "merged_sha": None,
+    "deployed": {"ok": True},
+    "loaded": {"present": True, "loaded_confidence": "authoritative", "method": "sessions.systemPromptReport", "marker": "CEO_ORCHESTRATOR_RULE_V2", "ceo_session_key": "agent:main:telegram:direct:8959124298"},
+    "board": {"cc_healthy": True},
+    "steps": {"detect": "ok", "verify": "ok"},
+    "result": "ok",
+    "errors": [],
+    "onboarding_version": "v11.13.0",
+    "cc_version": "4.14.0",
+}
+
+update_manifest_for_box(repo_root, "test-box", box_result_loaded)
+assert (repo_root / MANIFEST_FILENAME).exists(), "fleet-manifest.json must be written by update_manifest_for_box"
+
+manifest_data = json.loads((repo_root / MANIFEST_FILENAME).read_text())
+assert manifest_data["boxes"]["test-box"]["loaded"] is True, "box loaded should be True"
+assert manifest_data["boxes"]["test-box"]["loaded_confidence"] == "authoritative"
+
+# Add a second NOT-loaded box
+update_manifest_for_box(repo_root, "not-loaded-box", {
+    "loaded": {"present": False, "loaded_confidence": "proxy"},
+    "onboarding_version": "v11.13.0",
+    "cc_version": "4.14.0",
+})
+status = check_retirement_trigger(repo_root, dry_run=True)
+assert not status["trigger_fired"], "partial fleet must not fire trigger"
+assert status["total_boxes"] == 2
+assert status["not_loaded_boxes"] == ["not-loaded-box"]
+
+print("  [PASS] 13e-ii: update_manifest_for_box writes fleet-manifest.json + partial-fleet check correct")
+PYEOF13e
+[ $? -eq 0 ] && pass "AF4 13e-ii: update-box API writes manifest + partial-fleet check correct" \
+              || fail "AF4 13e-ii: update-box API or partial-fleet check failed"
+
+rm -rf "$FX13E"
+rm -f "$REPO_ROOT/fleet-manifest.json" "$REPO_ROOT/legacy-retirement-triggered"
+
+rm -rf "$FX13"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "════════════════════════════════════════════════════"

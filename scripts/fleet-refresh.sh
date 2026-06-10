@@ -363,6 +363,21 @@ arr = json.load(sys.stdin)
 arr.append($box_result)
 print(json.dumps(arr))
 " 2>/dev/null || echo "$ALL_RESULTS")
+
+  # ── AF4: update fleet manifest with per-box loaded state ──────────────────
+  # This is the "loaded=YES" tracker that drives the legacy-retirement trigger.
+  # Only update for apply/verify runs (not dry-run) because dry-run does not
+  # mutate client boxes and the loaded state may be stale.
+  if [ $APPLY -eq 1 ] || [ $VERIFY_ONLY -eq 1 ]; then
+    python3 "$SHARED_UTILS/fleet_manifest.py" \
+      --repo-root "$REPO_ROOT" \
+      --update-box "$box" \
+      --box-result "$box_result" \
+      --dry-run \
+      2>/dev/null || true
+    # Note: --dry-run here means "skip the gh issue call for per-box updates"
+    # The retirement trigger check (with real gh) runs once at the end.
+  fi
 done
 
 echo "[fleet-refresh] ═══════════════════════════════════════════"
@@ -375,6 +390,49 @@ arr = json.load(sys.stdin)
 print(json.dumps(arr, indent=2))
 " > "$SUMMARY_FILE" 2>/dev/null || true
 echo "[fleet-refresh] Fleet summary written to: $SUMMARY_FILE"
+
+# ── AF4: check retirement trigger once all boxes are collected ────────────────
+# After every apply/verify run, check if ALL known boxes in fleet-manifest.json
+# now have loaded=YES.  If so, fire the deterministic retirement trigger:
+# write the legacy-retirement-triggered sentinel + open/update the GitHub issue.
+# This is a LOUD observable event — logged to stderr and to the sentinel file.
+#
+# The trigger is idempotent: subsequent runs do nothing if already triggered.
+# dry-run mode: sentinel is written but `gh issue create` is skipped.
+if [ $APPLY -eq 1 ] || [ $VERIFY_ONLY -eq 1 ]; then
+  echo ""
+  echo "[fleet-refresh] ── AF4 Legacy Retirement Trigger check ──────────────"
+  FLEET_MANIFEST_DRY_RUN=$([ $APPLY -eq 1 ] && echo "0" || echo "1")
+  export FLEET_MANIFEST_DRY_RUN
+  TRIGGER_STATUS=$(python3 "$SHARED_UTILS/fleet_manifest.py" \
+    --repo-root "$REPO_ROOT" \
+    --check-trigger \
+    2>/dev/null || echo '{"trigger_fired":false,"error":"fleet_manifest.py failed"}')
+  TRIGGER_FIRED=$(echo "$TRIGGER_STATUS" | python3 -c \
+    "import json,sys; d=json.load(sys.stdin); print(d.get('trigger_fired',False))" 2>/dev/null || echo "False")
+  ALREADY=$(echo "$TRIGGER_STATUS" | python3 -c \
+    "import json,sys; d=json.load(sys.stdin); print(d.get('already_triggered',False))" 2>/dev/null || echo "False")
+  NOT_LOADED=$(echo "$TRIGGER_STATUS" | python3 -c \
+    "import json,sys; d=json.load(sys.stdin); nl=d.get('not_loaded_boxes',[]); print(', '.join(nl) if nl else '(none)')" 2>/dev/null || echo "?")
+  TOTAL=$(echo "$TRIGGER_STATUS" | python3 -c \
+    "import json,sys; d=json.load(sys.stdin); print(d.get('total_boxes',0))" 2>/dev/null || echo "0")
+  LOADED_N=$(echo "$TRIGGER_STATUS" | python3 -c \
+    "import json,sys; d=json.load(sys.stdin); print(len(d.get('loaded_boxes',[])))" 2>/dev/null || echo "0")
+
+  if [ "$TRIGGER_FIRED" = "True" ]; then
+    echo "[fleet-refresh] ✓ RETIREMENT TRIGGER FIRED — all $TOTAL boxes loaded=YES"
+    echo "[fleet-refresh]   Sentinel written: $REPO_ROOT/legacy-retirement-triggered"
+    ISSUE_NUM=$(echo "$TRIGGER_STATUS" | python3 -c \
+      "import json,sys; d=json.load(sys.stdin); n=d.get('issue_number'); print(f'#{n}' if n else '(dry-run or gh unavailable)')" 2>/dev/null || echo "")
+    echo "[fleet-refresh]   GitHub issue: $ISSUE_NUM"
+    echo "[fleet-refresh]   Action: retire legacy shim + clawd fallbacks (see docs/LEGACY-RETIREMENT.md)"
+  elif [ "$ALREADY" = "True" ]; then
+    echo "[fleet-refresh]   Retirement trigger already fired previously — no action needed"
+  else
+    echo "[fleet-refresh]   Retirement trigger: $LOADED_N/$TOTAL boxes loaded=YES (waiting: $NOT_LOADED)"
+  fi
+  echo "[fleet-refresh] ─────────────────────────────────────────────────────"
+fi
 
 if [ $ANY_FAILED -eq 1 ]; then
   echo "[fleet-refresh] RESULT: PARTIAL/FAILED — check errors above"
