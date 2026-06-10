@@ -31,6 +31,8 @@ Required read order:
 5. INSTALL.md - setup, workspace creation, and config management
 6. CORE_UPDATES.md - what to add to your workspace files
 
+**Branding questions — single source of truth:** `interview/branding-questions.json` defines the structured branding question set (ids, prompts, storage targets, drill requirements). The Command Center vendors a copy of this file. INSTRUCTIONS.md Phase 3 themes reference the question ids. Do NOT hardcode branding question prompts anywhere outside that file.
+
 Do NOT run the scaffold script or create any folders before completing all 6 reads.
 Do NOT claim the skill is installed until CORE_UPDATES.md has been applied.
 

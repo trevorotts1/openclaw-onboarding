@@ -1,0 +1,124 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+  "section": "branding",
+  "version": "1.0.0",
+  "description": "Single source of truth for the branding portion of the Skill-23 AI Workforce interview. The Command Center vendors a copy of this file and runs a sync test that fails when the two diverge. Edit HERE first; the CC copy updates via the sync test / vendoring workflow.",
+  "storeTarget": {
+    "primaryColor": "clients.brand_color",
+    "logoUrl": "clients.logo_url",
+    "brandVoice": "company.brand_voice",
+    "brandEvokes": "company.brand_evokes",
+    "customerFeeling": "company.customer_feeling",
+    "brandDescriptors": "company.brand_descriptors",
+    "idealCustomer": "company.ideal_customer",
+    "uniqueDifferentiator": "company.unique_differentiator"
+  },
+  "questions": [
+    {
+      "id": "brand_primary_color",
+      "section": "branding",
+      "phase": "phase3",
+      "prompt": "What is your primary brand color?",
+      "help": "If you know the exact hex code (like #1E3A8A) enter it. If not, just type the color name — for example \"navy\", \"forest green\", or \"coral\" — and we'll convert it to the right hex automatically.",
+      "kind": "color",
+      "storeOn": "client.brand_color",
+      "required": false,
+      "resolverHint": "Call resolveBrandColor() in src/lib/branding.ts when the value is not a valid hex string."
+    },
+    {
+      "id": "brand_logo",
+      "section": "branding",
+      "phase": "phase3",
+      "prompt": "Do you have a logo? Paste a public link to it (or upload one).",
+      "help": "We'll use your logo across the Command Center in place of the default, and upload it to your GoHighLevel media library so it's available for your funnels and emails too.",
+      "kind": "url",
+      "storeOn": "client.logo_url",
+      "required": false
+    },
+    {
+      "id": "brand_evokes",
+      "section": "branding",
+      "phase": "phase3",
+      "prompt": "What feeling do you want your brand to evoke?",
+      "help": "Think about the emotional impression you want people to carry with them after any interaction with your brand — not a product feature, but a feeling.",
+      "kind": "text",
+      "storeOn": "company.brand_evokes",
+      "required": true,
+      "interviewGuidance": "Drill until specific. 'Professional' is NOT an answer. Push for an emotion or visceral reaction — confident, rebellious, warm, aspirational."
+    },
+    {
+      "id": "customer_feeling",
+      "section": "branding",
+      "phase": "phase3",
+      "prompt": "What feeling do you want your customers to leave with after working with you?",
+      "help": "Not what they gained functionally — what they FEEL. Empowered? Relieved? Seen? Ready?",
+      "kind": "text",
+      "storeOn": "company.customer_feeling",
+      "required": true,
+      "interviewGuidance": "Drill the feeling separately from any service description. 'Happy' is not specific enough."
+    },
+    {
+      "id": "brand_descriptors",
+      "section": "branding",
+      "phase": "phase3",
+      "prompt": "What words would your best customer use to describe you?",
+      "help": "Imagine your favorite client is telling a friend about you at dinner. What exact words do they use? Aim for 3–5 words or short phrases.",
+      "kind": "text",
+      "storeOn": "company.brand_descriptors",
+      "required": true,
+      "interviewGuidance": "These are the voice/brand-tone inputs that shape every agent's communication style. Pull real testimonial language when available."
+    },
+    {
+      "id": "brand_voice",
+      "section": "branding",
+      "phase": "phase3",
+      "prompt": "How would you describe your brand voice?",
+      "help": "Is it formal or casual? Inspirational or tactical? Bold or warm? Pick 2–3 adjectives that feel true, then give an example of a sentence that sounds like YOU.",
+      "kind": "text",
+      "storeOn": "company.brand_voice",
+      "required": false,
+      "interviewGuidance": "Pre-fill from Phase 0 website/LinkedIn research if confidence is high; frame as confirmation. Used to initialize SOUL.md brand-voice section."
+    },
+    {
+      "id": "ideal_customer",
+      "section": "branding",
+      "phase": "phase3",
+      "prompt": "Who is your ideal customer — and why do they come to YOU specifically?",
+      "help": "Not a general category. Be specific: who they are, what they want, and what makes them choose you over anyone else who does what you do.",
+      "kind": "text",
+      "storeOn": "company.ideal_customer",
+      "required": true,
+      "interviewGuidance": "Drill until specific. 'Small business owners' = score 2/10 (re-drill). 'Black women entrepreneurs in childcare, over 45, already making $250K/year' = score 9/10 (move on). Drill twice before accepting."
+    },
+    {
+      "id": "unique_differentiator",
+      "section": "branding",
+      "phase": "phase3",
+      "prompt": "Why do people come to YOU versus anyone else who does what you do?",
+      "help": "What is the real reason — not the marketing version. The thing you'd tell a friend, not a prospect.",
+      "kind": "text",
+      "storeOn": "company.unique_differentiator",
+      "required": true,
+      "interviewGuidance": "If they give a marketing answer, drill: 'That's what you tell prospects. What do you actually believe makes the difference?' Get the authentic version."
+    }
+  ],
+  "drillDepthRequirements": {
+    "brand_evokes": 2,
+    "customer_feeling": 2,
+    "brand_descriptors": 1,
+    "brand_voice": 0,
+    "ideal_customer": 3,
+    "unique_differentiator": 2
+  },
+  "postSectionActions": [
+    "Write resolved brand_primary_color hex to clients.brand_color via the Command Center API.",
+    "Write brand_voice to SOUL.md § Brand Voice block.",
+    "Write brand_descriptors + brand_evokes to USER.md § Brand Identity section.",
+    "Update .workforce-build-state.json: set interviewProgress.brandingSectionComplete = true."
+  ],
+  "syncTest": {
+    "description": "The Command Center vendors a copy at src/lib/interview-questions.branding-questions.json. The CI sync test (scripts/sync-branding-questions-test.ts in the CC repo) imports this canonical file and the vendored copy and fails if they diverge on any question id, prompt, storeOn, or kind field.",
+    "canonicalFile": "23-ai-workforce-blueprint/interview/branding-questions.json",
+    "ccVendoredPath": "src/lib/interview-questions.branding-questions.json"
+  }
+}

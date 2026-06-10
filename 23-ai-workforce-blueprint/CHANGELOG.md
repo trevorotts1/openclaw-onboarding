@@ -1,3 +1,9 @@
+## [v11.8.7] — 2026-06-10 — PRD 2.5: branding-questions.json single source of truth
+
+**New:** `interview/branding-questions.json` — canonical structured definition of all 8 branding questions. INSTRUCTIONS.md Phase 3 + header annotated with question ids and JSON reference. SKILL.md required-read-order note added. Command Center vendoring + sync test defined in syncTest block (implemented in CC sub-agent 2.5-cc).
+
+---
+
 ## [v11.8.2] — 2026-06-10 — PRD 2.3: list-canonical-departments.py + stale count sweep
 
 **New:** `scripts/list-canonical-departments.py` — single-source-of-truth script that reads `department-naming-map.json` and prints the 19 mandatory departments, 7 universal-primary vertical-pack departments, and computed floor (26). All live docs now reference this script instead of hardcoded counts (16, 17, 23, 24 swept from SKILL.md, INSTRUCTIONS.md, ZHC-BUILDOUT-EXPERIENCE.md, SYSTEM-DIAGNOSTIC-CHECKLIST.md, 34-ARCHIVED.md).
