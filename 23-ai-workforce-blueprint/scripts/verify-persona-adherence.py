@@ -34,6 +34,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
 
+from resolve_db import find_dashboard_db  # type: ignore  # PRD 1.3: single shared resolver
+
 try:
     from llm_score import _build_prompt, _attempt_ollama_cloud, _attempt_openrouter  # type: ignore
     from llm_score import summarize_persona_blueprint, _cache_path  # type: ignore
@@ -74,19 +76,8 @@ Return ONLY a JSON object — no markdown, no preamble:
 """
 
 
-def find_dashboard_db() -> Path:
-    """Locate mission-control.db across platforms."""
-    if "DASHBOARD_DB_PATH" in os.environ:
-        return Path(os.environ["DASHBOARD_DB_PATH"])
-    for c in [
-        Path("/data/mission-control/mission-control.db"),
-        Path.home() / "projects" / "mission-control" / "mission-control.db",
-        Path.home() / "blackceo-command-center" / "mission-control.db",
-    ]:
-        if c.exists():
-            return c
-    return Path("")
-
+# find_dashboard_db() is imported from shared-utils/resolve_db.py (PRD 1.3).
+# The local copy was removed to eliminate divergent candidate lists.
 
 def ensure_verification_column(db_path: Path):
     """Add verification_json column to persona_assignment if missing. Idempotent."""

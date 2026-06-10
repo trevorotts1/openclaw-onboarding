@@ -60,6 +60,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared-utils"))
 
 from detect_platform import get_openclaw_paths  # type: ignore
+from resolve_db import find_dashboard_db, is_db_found  # type: ignore  # PRD 1.3: single shared resolver
 from adaptive_weights import get_weights_for_task, DEFAULT_WEIGHTS  # type: ignore
 
 try:
@@ -121,21 +122,8 @@ def detect_interaction_mode(task_description: str) -> str:
 
 
 # -------- Dashboard DB lookups (stickiness + weight overrides) --------
-def find_dashboard_db() -> Path:
-    """Locate mission-control.db across platforms."""
-    candidates = []
-    if "DASHBOARD_DB_PATH" in os.environ:
-        candidates.append(Path(os.environ["DASHBOARD_DB_PATH"]))
-    candidates.extend([
-        Path("/data/mission-control/mission-control.db"),
-        Path.home() / "projects" / "mission-control" / "mission-control.db",
-        Path.home() / "blackceo-command-center" / "mission-control.db",
-    ])
-    for c in candidates:
-        if c.exists():
-            return c
-    return Path("")
-
+# find_dashboard_db() is imported from shared-utils/resolve_db.py (PRD 1.3).
+# The local copy was removed to eliminate divergent candidate lists.
 
 def check_sticky_assignment(department_id: str, task_category: str, db_path: Path):
     """Returns sticky assignment dict or None."""
@@ -1282,6 +1270,9 @@ def main():
 
     paths = get_openclaw_paths()
     db_path = find_dashboard_db()
+    # PRD 1.3: expose resolved DB path in every JSON response so a missing DB
+    # is visible on every selection, never a silent no-op.
+    db_field = str(db_path) if is_db_found(db_path) else "none"
 
     # ─── record-completion mode (P0-2 wiring) ────────────────────────────
     if args.mode == "record-completion":
@@ -1328,6 +1319,7 @@ def main():
             "no_persona_required": True,
             "message": "Operational/mechanical task — no persona required.",
             "task_category": task_category,
+            "db": db_field,  # PRD 1.3: visible on every response
         }
         print(json.dumps(out, indent=2) if args.format == "json" else out["message"])
         return 0
@@ -1346,6 +1338,7 @@ def main():
             "interaction_mode": sticky["persona_mode"] or mode,
             "task_category": task_category,
             "breakdown": {"stickiness": True},
+            "db": db_field,  # PRD 1.3: visible on every response
         }
         record_selection(out, args.task, args.department, db_path)
         print(json.dumps(out, indent=2) if args.format == "json" else f"STICKY: {out['persona_name']} ({out['score']:.2f})")
@@ -1375,6 +1368,9 @@ def main():
         }
     else:
         out = select_persona(args.task, args.department, mode, weights, paths, db_path, variety=variety_enabled)
+
+    # PRD 1.3: inject db path so every selection response shows whether the DB was found.
+    out["db"] = db_field
 
     record_selection(out, args.task, args.department, db_path)
     print(json.dumps(out, indent=2) if args.format == "json" else f"{out.get('persona_name','(none)')} ({out.get('score',0):.2f})")

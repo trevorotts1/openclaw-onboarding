@@ -13,6 +13,7 @@ Returns a dict with all standard paths. Raises SystemExit with a clear error
 if no platform can be detected.
 """
 
+import os
 from pathlib import Path
 
 
@@ -29,7 +30,8 @@ def get_openclaw_paths() -> dict:
         root, platform, workspace, skills, secrets, master_files,
         company_root, coaching_personas, gemini_index, persona_categories,
         departments_json, company_config, org_chart, user_md, soul_md,
-        memory_md, agents_md, tools_md, heartbeat_md
+        memory_md, agents_md, tools_md, heartbeat_md,
+        dashboard_db  (PRD 1.3: Path to mission-control.db, or Path("") if absent)
     """
     vps_root = Path("/data/.openclaw")
     mac_new = Path.home() / ".openclaw"
@@ -72,6 +74,11 @@ def get_openclaw_paths() -> dict:
     company_dir = resolve_active_company_dir(company_root)
     persona_categories = resolve_persona_categories(workspace, root, coaching_personas)
 
+    # PRD 1.3: resolve dashboard DB through the single shared resolver.
+    from resolve_db import find_dashboard_db, is_db_found  # local import avoids circular-import risk
+    _raw_db = find_dashboard_db()
+    dashboard_db = _raw_db if is_db_found(_raw_db) else None
+
     return {
         "root": root,
         "platform": platform,
@@ -93,6 +100,8 @@ def get_openclaw_paths() -> dict:
         "agents_md": workspace / "AGENTS.md",
         "tools_md": workspace / "TOOLS.md",
         "heartbeat_md": workspace / "HEARTBEAT.md",
+        # PRD 1.3: dashboard_db is None when not installed, Path object when found.
+        "dashboard_db": dashboard_db,
     }
 
 
