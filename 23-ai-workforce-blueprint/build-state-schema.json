@@ -238,11 +238,66 @@
       "enum": [
         "pending",
         "generating",
+        "partial",
         "sent",
         "done",
-        "failed"
+        "failed",
+        "blocked-floor-incomplete",
+        "blocked-libraries-incomplete"
       ],
-      "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending → generating → sent → done. failed = retries exhausted; resume cron will retry. Added in v10.14.17. NOTE (v10.15.8): the master orchestrator MUST NOT write buildCompletedAt or set closeoutStatus=pending until roleLibraryStatus == done AND sopLibraryStatus == done. The library gate runs BEFORE the closeout gate."
+      "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending → generating → sent → done. failed = retries exhausted; resume cron will retry. partial = soft-only failures (video/notion); blocked-* = build prerequisites not met. Added in v10.14.17. NOTE (v10.15.8): the master orchestrator MUST NOT write buildCompletedAt or set closeoutStatus=pending until roleLibraryStatus == done AND sopLibraryStatus == done. The library gate runs BEFORE the closeout gate. PRD-2.8: seven per-deliverable fields in closeoutDeliverables track individual leg completion; closeoutStatus is the aggregate."
+    },
+    "closeoutDeliverables": {
+      "type": "object",
+      "description": "PRD-2.8: per-deliverable boolean/status fields for the 7 closeout legs. Each field is 'done' when that leg has been delivered and verified, 'waived' when the operator explicitly skips it, or 'failed' when exhausted. The resume cron fires until all are done|waived. This is the per-leg detail; closeoutStatus is the aggregate. Added v11.10.0.",
+      "properties": {
+        "notionTreeUrl": {
+          "type": ["string", "null"],
+          "description": "Notion 9-section page tree root URL once delivered (matches .notionRootPageUrl when set)"
+        },
+        "infographic1Url": {
+          "type": ["string", "null"],
+          "description": "Workforce-structure org chart URL (HTML/Playwright render). Set once the artifact passes the 8.5 gate and has been delivered."
+        },
+        "infographic2Url": {
+          "type": ["string", "null"],
+          "description": "How-Work-Flows diagram URL (KIE.AI / Nano Banana 2). Set once artifact passes 8.5 gate and delivered."
+        },
+        "celebrationVideoUrl": {
+          "type": ["string", "null"],
+          "description": "Celebration video URL (local path delivered via Telegram inline, or durable GHL URL). Set after byte-upload confirmed."
+        },
+        "telegramSequenceSent": {
+          "type": "boolean",
+          "description": "True once all 6 paced Telegram messages have been delivered AND confirmed against the gateway sent-registry (verify-telegram-delivery.sh passes). This is the final leg the owner sees."
+        },
+        "ccUrlDelivered": {
+          "type": "boolean",
+          "description": "True once the Command Center URL (commandCenterUrl) has been built and posted to the owner in Message 6 of the Telegram sequence."
+        },
+        "n8nWired": {
+          "type": ["boolean", "string"],
+          "description": "True or 'skipped' once the n8n wire-up step completes (POST to client n8n webhook with company slug, agent name, and CC URL). 'skipped' when N8N_WEBHOOK_URL is absent and ZHC_SKIP_N8N=1."
+        }
+      },
+      "additionalProperties": false
+    },
+    "closeoutBlockReason": {
+      "type": ["string", "null"],
+      "description": "Set when closeoutStatus is blocked-floor-incomplete or blocked-libraries-incomplete. Human-readable reason string."
+    },
+    "closeoutPartialReason": {
+      "type": ["string", "null"],
+      "description": "Set when closeoutStatus is partial (phantom-closeout guard). Human-readable reason string."
+    },
+    "closeoutResumeRegisteredAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "PRD-2.8: ISO timestamp when the dedicated closeout-resume cron was last registered via `openclaw cron add`. Written by install-closeout-resume-cron.sh and by run-closeout.sh on first start. Used to detect whether the dedicated cron is alive."
+    },
+    "closeoutResumeUuid": {
+      "type": ["string", "null"],
+      "description": "PRD-2.8: OpenClaw cron UUID for the dedicated closeout-resume cron (resume-closeout-cron.sh). Written at registration. Used for self-removal when closeout reaches done|partial."
     },
     "closeoutStartedAt": {
       "type": [
@@ -266,6 +321,11 @@
         "null"
       ],
       "description": "Captures the specific step that exhausted retries (e.g. 'command-center: 3 attempts exhausted', 'infographic-1: ...', 'notion: ...')"
+    },
+    "closeoutPartialArtifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Set when closeoutStatus=partial. Names the soft-failed legs (e.g. ['celebration-video', 'notion']). Hard-failed legs are in closeoutFailureReason."
     },
     "commandCenterStatus": {
       "type": "string",
