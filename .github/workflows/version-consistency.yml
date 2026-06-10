@@ -146,3 +146,22 @@ jobs:
           fi
 
           echo "All 9 version markers agree at $V_ROOT"
+
+          # ── PRD 1.11: cc-compat.json integrity check ─────────────────────────
+          # cc-compat.json.onboardingVersion must equal /version.
+          # pinnedTag (when set) must be a valid vX.Y.Z and >= minVersion.
+          if [ -f cc-compat.json ]; then
+            python3 shared-utils/cc_compat.py --self-test cc-compat.json \
+              || { echo "✗ cc-compat.json schema/constraint check failed"; exit 1; }
+            REPO_VER=$(head -1 version | tr -d '[:space:]')
+            CC_VER=$(python3 -c "import json; print(json.load(open('cc-compat.json'))['onboardingVersion'])")
+            if [ "$CC_VER" != "$REPO_VER" ]; then
+              echo "VERSION DRIFT: cc-compat.json onboardingVersion ($CC_VER) != /version ($REPO_VER)"
+              echo "Fix: update cc-compat.json onboardingVersion when bumping the repo version."
+              exit 1
+            fi
+            echo "✓ cc-compat.json version integrity check passed (onboardingVersion=$CC_VER)"
+          else
+            echo "✗ cc-compat.json missing (required for PRD 1.11 fleet-refresh)"
+            exit 1
+          fi

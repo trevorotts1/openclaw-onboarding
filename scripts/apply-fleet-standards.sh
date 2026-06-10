@@ -170,10 +170,32 @@ echo "[apply-fleet-standards] config standards applied"
 # agent — CEO and specialists alike — sees the role mandate on first read.
 # Idempotent: guarded by <!-- ROLE_DISCIPLINE_V1 --> marker.
 #
-# Workspace resolution mirrors section 5 below.
+# PRD 1.11: Workspace resolution delegates to resolve_injected_core_files()
+# (shared-utils/) when available — that is the SINGLE canonical implementation.
+# The inline 3-step fallback is kept for early-boot/install-time compatibility.
+
+_resolve_workspace_via_shared_helper() {
+  # Try the shared Python helper first (PRD 1.11 single-source-of-truth).
+  local SCRIPT_DIR
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local SHARED_UTILS="$SCRIPT_DIR/../shared-utils"
+  local HELPER="$SHARED_UTILS/resolve_injected_core_files.py"
+  if [ -f "$HELPER" ]; then
+    OC_JSON="${OC_CONFIG:-}" python3 -c "
+import sys, os
+sys.path.insert(0, '$SHARED_UTILS')
+from resolve_injected_core_files import resolve_injected_core_files
+r = resolve_injected_core_files('main')
+print(r['workspace'])
+" 2>/dev/null && return 0
+  fi
+  return 1
+}
 
 WORKSPACE_DIR=""
-if [ -f "$OC_CONFIG" ]; then
+WORKSPACE_DIR=$(_resolve_workspace_via_shared_helper 2>/dev/null) || WORKSPACE_DIR=""
+
+if [ -z "$WORKSPACE_DIR" ] && [ -f "$OC_CONFIG" ]; then
   WORKSPACE_DIR=$(OC_JSON="$OC_CONFIG" python3 -c "
 import json, os
 try:
@@ -336,16 +358,23 @@ fi
 # This ensures existing clients who received the v1 block get the updated
 # Rule 0 (ECHO-BACK GATE) on the next apply-fleet-standards run.
 #
-# Workspace resolution mirrors install.sh Step 10 exactly:
+# PRD 1.11: Workspace resolution delegates to resolve_injected_core_files()
+# (shared-utils/) — single source of truth for the gateway-injected paths.
+# The inline 3-step fallback is kept for early-boot/install-time compatibility.
+# The shared helper already defined _resolve_workspace_via_shared_helper above.
+#
+# Priority (mirrors install.sh Step 10 exactly):
 #   1. agents.list[main].workspace (per-agent override — wins if set)
 #   2. agents.defaults.workspace via `openclaw config get`
 #   3. $OC_ROOT/workspace (canonical OpenClaw default — Mac or VPS)
 # Clawd is dead; ~/clawd is never a fallback.
 
 WORKSPACE_DIR=""
+WORKSPACE_DIR=$(_resolve_workspace_via_shared_helper 2>/dev/null) || WORKSPACE_DIR=""
 
-# Step 1: per-agent workspace override on the "main" agent
-WORKSPACE_DIR=$(OC_JSON="$OC_CONFIG" python3 -c "
+if [ -z "$WORKSPACE_DIR" ]; then
+  # Inline fallback (step 1)
+  WORKSPACE_DIR=$(OC_JSON="$OC_CONFIG" python3 -c "
 import json, os
 try:
     cfg = json.load(open(os.environ['OC_JSON']))
@@ -357,9 +386,9 @@ try:
 except Exception:
     pass
 " 2>/dev/null) || WORKSPACE_DIR=""
+fi
 
-# Step 2: agents.defaults.workspace via CLI (non-zero exit on unset key must not
-# abort under set -e — wrap with || WORKSPACE_DIR="")
+# Fallback step 2: agents.defaults.workspace via CLI
 if [ -z "$WORKSPACE_DIR" ] && command -v openclaw >/dev/null 2>&1; then
   WORKSPACE_DIR=$(openclaw config get agents.defaults.workspace 2>/dev/null \
     | head -1 | python3 -c "
@@ -372,8 +401,7 @@ except Exception:
 " 2>/dev/null) || WORKSPACE_DIR=""
 fi
 
-# Step 3: canonical default for this layout ($OC_ROOT is /data/.openclaw on VPS
-# or $HOME/.openclaw on Mac — both detected at the top of this script).
+# Fallback step 3: canonical default
 WORKSPACE_DIR="${WORKSPACE_DIR:-$OC_ROOT/workspace}"
 if [ ! -d "$WORKSPACE_DIR" ]; then
   WORKSPACE_DIR="$OC_ROOT/workspace"

@@ -1029,3 +1029,169 @@ jobs:
           print('✓ embedding_engine.py contains provider/model/dim, keyword fallback, and cross-provider guard')
           "
           echo "✓ PRD 1.8 embedding engine checks complete"
+
+      # PRD 1.11: fleet-refresh artefacts present and parseable; cc-compat.json
+      # validity; injected-core-files guard; version-consistency extension.
+      - name: PRD 1.11 fleet-refresh artefacts present and parseable
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 1. Required artefacts must exist
+          for f in \
+            scripts/fleet-refresh.sh \
+            scripts/test-fleet-refresh.sh \
+            shared-utils/fleet_refresh_runner.py \
+            shared-utils/cc_compat.py \
+            shared-utils/resolve_injected_core_files.py \
+            cc-compat.json; do
+            [ -f "$f" ] || { echo "✗ PRD 1.11 artefact missing: $f"; exit 1; }
+          done
+          echo "✓ All PRD 1.11 artefacts present"
+
+          # 2. Python files parse without error
+          for f in \
+            shared-utils/fleet_refresh_runner.py \
+            shared-utils/cc_compat.py \
+            shared-utils/resolve_injected_core_files.py; do
+            python3 -c "import ast; ast.parse(open('$f').read())" \
+              || { echo "✗ $f has syntax errors"; exit 1; }
+          done
+          echo "✓ PRD 1.11 Python files syntax OK"
+
+          # 3. Bash scripts syntax check
+          bash -n scripts/fleet-refresh.sh \
+            || { echo "✗ fleet-refresh.sh has bash syntax errors"; exit 1; }
+          bash -n scripts/test-fleet-refresh.sh \
+            || { echo "✗ test-fleet-refresh.sh has bash syntax errors"; exit 1; }
+          echo "✓ PRD 1.11 bash scripts syntax OK"
+
+          # 4. cc-compat.json is valid JSON, satisfies schema, and onboardingVersion == /version
+          python3 shared-utils/cc_compat.py --self-test cc-compat.json \
+            || { echo "✗ cc-compat.json validation failed"; exit 1; }
+          REPO_VER=$(head -1 version | tr -d '[:space:]')
+          CC_VER=$(python3 -c "import json; print(json.load(open('cc-compat.json'))['onboardingVersion'])")
+          if [ "$CC_VER" != "$REPO_VER" ]; then
+            echo "✗ cc-compat.json onboardingVersion ($CC_VER) != /version ($REPO_VER)"
+            echo "Fix: update cc-compat.json onboardingVersion when bumping the repo version."
+            exit 1
+          fi
+          echo "✓ cc-compat.json schema valid; onboardingVersion=$CC_VER matches /version"
+
+          echo "✓ PRD 1.11 fleet-refresh artefacts pass all checks"
+
+      # PRD 1.11: Injected-core-files CI guard.
+      # FAIL the build if any script writes a CEO/agent core file by a
+      # hardcoded agents/<id>/ path instead of resolving through
+      # resolve_injected_core_files().
+      - name: PRD 1.11 injected-core-files CI guard (no direct agents/id/CORE.md writes)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Scan Python and shell scripts for direct agents/<id>/CORE.md paths.
+          # Allow-list: sessions/ reads, auth-profiles, test/fixture paths, archive.
+          # Note: patterns stored in variables to avoid bash misreading bare ( in run: block.
+          SEARCH_PAT='agents/(main|[a-z-]+)/(SOUL|IDENTITY|MEMORY|AGENTS|TOOLS|USER|HEARTBEAT)\.md'
+          ALLOW_PAT='(archive/|/sessions/|auth-profiles|\.telegram-sent|test-|fixtures/|\.bak|for cand in|if \[ -f)'
+          VIOLATIONS=$(git grep -nE "$SEARCH_PAT" -- '*.py' '*.sh' \
+            | grep -vE "$ALLOW_PAT" \
+            || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "PRD 1.11 violation - direct agents/<id>/CORE.md write detected:"
+            echo "$VIOLATIONS" | sed 's/^/    /'
+            echo ""
+            echo "Fix: use resolve_injected_core_files() from shared-utils/ to get"
+            echo "the gateway-injected paths. Writing directly to agents/<id>/SOUL.md"
+            echo "was the v11.3.2 Layer-3 bug (wrong file, never in context)."
+            exit 1
+          fi
+          echo "PRD 1.11 injected-core-files guard: no direct agents/<id>/CORE.md writes"
+
+      # PRD 1.11: resolve_injected_core_files.py self-test (fixture)
+      - name: PRD 1.11 resolve_injected_core_files self-test
+        shell: python {0}
+        run: |
+          import sys, os, json, tempfile
+          from pathlib import Path
+          sys.path.insert(0, 'shared-utils')
+          from resolve_injected_core_files import resolve_injected_core_files
+
+          with tempfile.TemporaryDirectory() as td:
+              td = Path(td)
+              root = td / ".openclaw"
+              root.mkdir()
+              (root / "workspace").mkdir()
+
+              # Step-3 default
+              os.environ["FLEET_REFRESH_ROOT"] = str(td)
+              os.environ.pop("OC_JSON", None)
+              r = resolve_injected_core_files("main")
+              assert r["resolved_from"] == "default", f"expected default, got {r['resolved_from']}"
+
+              # Step-2 override
+              ws2 = td / "custom-ws"
+              ws2.mkdir()
+              cfg = td / "openclaw.json"
+              cfg.write_text(json.dumps({"agents": {"defaults": {"workspace": str(ws2)}, "list": []}}))
+              os.environ["OC_JSON"] = str(cfg)
+              r2 = resolve_injected_core_files("main")
+              assert r2["workspace"].resolve() == ws2.resolve()
+              assert r2["resolved_from"] == "agents.defaults.workspace"
+
+              # Step-1 per-agent wins
+              ws1 = td / "per-agent-ws"
+              ws1.mkdir()
+              cfg.write_text(json.dumps({"agents": {
+                  "defaults": {"workspace": str(ws2)},
+                  "list": [{"id": "main", "workspace": str(ws1)}]
+              }}))
+              r3 = resolve_injected_core_files("main")
+              assert r3["workspace"].resolve() == ws1.resolve()
+              assert r3["resolved_from"] == "agents.list[main].workspace"
+
+              # soul_md must NOT be agents/main/SOUL.md
+              agents_path = str(root / "agents" / "main" / "SOUL.md")
+              assert str(r3["soul_md"]) != agents_path, "Layer-3 bug: soul_md is agents/main/SOUL.md"
+
+              os.environ.pop("OC_JSON", None)
+              os.environ.pop("FLEET_REFRESH_ROOT", None)
+
+          print("✓ resolve_injected_core_files: 3-step priority + Layer-3 guard all pass")
+
+      # PRD 1.11: cc_compat.py self-test
+      - name: PRD 1.11 cc_compat.py self-test
+        shell: python {0}
+        run: |
+          import sys, json, tempfile
+          from pathlib import Path
+          sys.path.insert(0, 'shared-utils')
+          from cc_compat import load_cc_compat, resolve_cc_tag, assert_min_version
+
+          with tempfile.TemporaryDirectory() as td:
+              td = Path(td)
+              (td / "cc-compat.json").write_text(json.dumps({
+                  "schemaVersion": 1,
+                  "onboardingVersion": "v11.5.0",
+                  "commandCenter": {
+                      "minVersion": "v4.12.0",
+                      "maxVersion": None,
+                      "repo": "trevorotts1/blackceo-command-center",
+                      "pinnedTag": "v4.14.0"
+                  },
+                  "notes": ""
+              }))
+              compat = load_cc_compat(td)
+              tag = resolve_cc_tag(compat)
+              assert tag == "v4.14.0", f"pinnedTag expected v4.14.0, got {tag}"
+
+              tag2 = resolve_cc_tag(compat, available_tags=["v4.10.0", "v4.15.0"])
+              # pinnedTag set, so ignore available_tags
+              assert tag2 == "v4.14.0"
+
+              try:
+                  assert_min_version("v4.10.0", compat)
+                  raise AssertionError("Should have raised for v4.10.0 < v4.12.0")
+              except ValueError:
+                  pass  # expected
+
+          print("✓ cc_compat.py self-test passed")
