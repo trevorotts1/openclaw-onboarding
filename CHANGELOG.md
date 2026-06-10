@@ -1,3 +1,32 @@
+## [v11.9.0]  -  2026-06-10  -  feat(prd-2.12-onb): SOP boundary gate — canonical depts always copy, never author
+
+**PRD 2.12 (onboarding side, boundary gate) — Canonical departments always copy from the 233-template library; only genuinely-custom departments are eligible for SOP authoring**
+Branch: feat/prd-2.12-sop-boundary-gate.
+
+**What changed:**
+- **`sop_boundary_gate.py`** (new): canonical library registry + boundary gate module. `CANONICAL_LIBRARY_DEPT_IDS` is computed at import time from the `templates/role-library/` directory tree (no hard-coded list — auto-updates as the library grows). Exposes `is_canonical_dept()`, `refuse_if_canonical()` (raises `CanonicalDeptAuthError`), `classify_manifest_depts()`, and `assert_no_canonical_in_authoring_path()`. Includes CLI: `--list-canonical`, `--check-dept`, `--check-manifest`.
+- **`sop-boundary-gate.py`** (new shim): entry-point for shell-script CLI invocations; re-exports all symbols from `sop_boundary_gate.py` so both `import sop_boundary_gate` and `python3 sop-boundary-gate.py --check-manifest ...` work.
+- **`build-workforce.py`** (`write_sop_research_manifest()`): imports boundary gate; hard-refuses to add any canonical dept to the SOP research manifest (LOUD stderr log + skip). Writes `boundary_gate` field (canonical_refused / custom_queued / gate_available) to manifest JSON. Emits per-dept `[SOP-BOUNDARY-GATE] REFUSE` line when canonical dept would have entered authoring path.
+- **`populate-sops-from-manifest.py`** v9.7.0: imports boundary gate; runs `assert_no_canonical_in_authoring_path()` before any model resolution; filters canonical depts from the processing list with per-dept REFUSE logs; per-loop belt-and-suspenders guard on each individual dept. If all remaining depts are canonical, exits 0 (all work done by copy path). New exit code: 7 = boundary gate fail (passed through from the gate assertion).
+- **`verify-library-gate.sh`** v10.17.0: adds `BOUNDARY GATE` section; locates `sop-research-manifest.json` and runs `sop-boundary-gate.py --check-manifest` against it; writes `sopAuthoringBoundaryStatus` to build-state; exits `rc=7` on boundary violation (takes priority over all other failure codes). Exit code 7 is documented in the header comment block.
+- **`test-sop-boundary-gate.sh`** (new): 15-assertion fixture test suite — runs offline, no client box required. Tests: module import, canonical/custom classification, alias resolution (billing-finance→billing, legal→legal-compliance, dept-prefix, -dept suffix, customer-service), manifest violation detection, custom manifest pass, mixed manifest, edge cases (empty/missing manifest), CLI exit codes 0 and 7, role-library directory-tree sourcing, and token-economics assertion (zero LLM calls for canonical-only manifest).
+- **Token economics rationale** (in code comments): canonical depts have pre-written templates in the role-library precisely to avoid burning LLM tokens on standard work. The boundary gate makes this invariant machine-enforced, not just documented.
+
+**QC score: 9.40/10 PASS** (independent scorer 2026-06-10) — Wiring 10/10 (triple-layered: build-workforce manifest-write + populate-sops manifest+per-loop + verify-library-gate independent check), SSOT 10/10 (canonical list auto-computed from role-library dir tree at import; test 9a asserts parity), Path 9/10 (gate fires before model resolution; verify-library-gate exits 7 with highest priority; minor: populate-sops filters rather than hard-exits on boundary violation), Observability 9/10 (per-dept REFUSE logs + summary line + sopAuthoringBoundaryStatus in build-state JSON), Docs 9/10 (comprehensive CHANGELOG + PR description + thorough docstrings; minor: README NOTE still shows v11.8.8 feature text), Regression 8/10 (15-assertion fixture covering all new paths; no explicit regression coverage of pre-existing populate-sops / build-workforce behavior).
+
+**Verify (PRD 2.12 boundary gate, fixture — no client box):**
+- `bash 23-ai-workforce-blueprint/scripts/test-sop-boundary-gate.sh` exits 0: PASS (15/15 assertions)
+- `python3 sop-boundary-gate.py --check-dept marketing` prints `CANONICAL (copy from library)`: PASS
+- `python3 sop-boundary-gate.py --check-dept hat-creation-department` prints `CUSTOM (authoring eligible)`: PASS
+- Canonical manifest → `--check-manifest` exits 7 (boundary violation): PASS
+- Custom manifest → `--check-manifest` exits 0 (PASS): PASS
+- `verify-library-gate.sh` header lists rc=7 for BOUNDARY GATE FAIL: PASS
+- `populate-sops-from-manifest.py` has REFUSE guard before model resolution: PASS
+- `build-workforce.py` write_sop_research_manifest() has canonical REFUSE + boundary_gate JSON field: PASS
+- Version: v11.8.8 → v11.9.0 (all 9 markers via bump-version.sh)
+
+---
+
 ## [v11.8.8]  -  2026-06-10  -  feat(prd-2.11-onb): department trio — QC + research + devil's-advocate per dept
 
 **PRD 2.11 (onboarding side) — Department trio: QC + research + DA present in EVERY department**

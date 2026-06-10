@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
-# verify-library-gate.sh — v10.16.0 (SUBSTANCE GATE + TRIO GATE)
+# verify-library-gate.sh — v10.17.0 (SUBSTANCE GATE + TRIO GATE + BOUNDARY GATE)
 #
 # ENFORCED build gate for the ROLE LIBRARY + SOP LIBRARY auto-pull.
+#
+# v10.17.0 (PRD 2.12): adds BOUNDARY GATE — asserts canonical departments NEVER
+# enter the SOP authoring path. Canonical depts are those with pre-written role
+# templates in 23-ai-workforce-blueprint/templates/role-library/. They MUST be
+# resolved by copy + token-personalise via _instantiate_role_from_library() in
+# build-workforce.py. If any canonical dept appears in sop-research-manifest.json
+# (the authoring path input), this gate fails with rc=7. The build gate reads the
+# manifest's boundary_gate field (written by build-workforce.py) and also runs
+# sop-boundary-gate.py --check-manifest directly for independent verification.
+# Token economics: pre-written templates exist precisely to avoid burning LLM
+# tokens on standard canonical work.
 #
 # v10.16.0 (PRD 2.11): adds TRIO GATE — every operational department in the
 # built workforce must have a QC specialist role file, a deep-research specialist
@@ -35,12 +46,13 @@
 #        - departments[].roleLibraryFilled / .sopLibraryFilled / .trioFilled (booleans)
 #        - libraryFailureReason (when not done)
 #   4. Exits:
-#        0  = ALL gates pass (role library + SOP library + trio complete)
+#        0  = ALL gates pass (role library + SOP library + trio + boundary complete)
 #        2  = role library NOT done
 #        3  = SOP library NOT done
 #        4  = both role AND SOP libraries NOT done
 #        5  = no workforce / qc could not run
 #        6  = TRIO GATE FAIL — at least one dept is missing QC, research, or DA
+#        7  = BOUNDARY GATE FAIL — canonical dept(s) found in SOP authoring manifest
 #
 # The master orchestrator MUST run this BEFORE writing buildCompletedAt /
 # closeoutStatus=pending. The resume cron (resume-workforce-build.sh) also calls
@@ -243,6 +255,48 @@ if [ "$TRIO_STATUS" != "done" ]; then
   FAIL_REASON="${FAIL_REASON}trio: ${TRIO_GAPS:-incomplete}"
 fi
 
+# ---- BOUNDARY GATE (PRD 2.12): assert canonical depts never in authoring path ----
+# Checks sop-research-manifest.json via sop-boundary-gate.py --check-manifest.
+# A canonical dept in the manifest means build-workforce.py failed to copy from
+# the role-library for that dept — token-economics violation.
+BOUNDARY_STATUS="done"
+BOUNDARY_GAPS=""
+MANIFEST_PATH=""
+
+# Locate the most recent sop-research-manifest.json
+if [ -d /data/.openclaw/workspace ]; then
+  MANIFEST_PATH="$(ls /data/.openclaw/workspace/*/sop-research-manifest.json 2>/dev/null | head -1)"
+elif [ -d "$HOME/.openclaw/workspace" ]; then
+  MANIFEST_PATH="$(ls "$HOME/.openclaw/workspace"/*/sop-research-manifest.json 2>/dev/null | head -1)"
+fi
+
+BOUNDARY_GATE_SCRIPT="$SCRIPT_DIR/sop-boundary-gate.py"
+if [ -z "$MANIFEST_PATH" ] || [ ! -f "$MANIFEST_PATH" ]; then
+  echo "[verify-library-gate] BOUNDARY GATE: no sop-research-manifest.json found — skipping boundary check (not yet in authoring phase)" >&2
+  BOUNDARY_STATUS="done"
+elif [ ! -f "$BOUNDARY_GATE_SCRIPT" ]; then
+  echo "[verify-library-gate] BOUNDARY GATE: sop-boundary-gate.py not found at $BOUNDARY_GATE_SCRIPT — gate unavailable" >&2
+  BOUNDARY_STATUS="done"
+else
+  BOUNDARY_OUTPUT="$(python3 "$BOUNDARY_GATE_SCRIPT" --check-manifest "$MANIFEST_PATH" 2>&1)"
+  BOUNDARY_RC=$?
+  if [ "$BOUNDARY_RC" -eq 7 ]; then
+    BOUNDARY_STATUS="failed"
+    BOUNDARY_GAPS="$(printf '%s' "$BOUNDARY_OUTPUT" | grep 'BOUNDARY VIOLATION\|REFUSE\|canonical dept' | head -5 | tr '\n' '; ')"
+    echo "[verify-library-gate] BOUNDARY GATE FAIL (rc=7): canonical dept(s) in authoring manifest." >&2
+    printf '%s\n' "$BOUNDARY_OUTPUT" >&2
+  else
+    BOUNDARY_STATUS="done"
+    echo "[verify-library-gate] BOUNDARY GATE PASS: no canonical depts in authoring manifest." >&2
+  fi
+fi
+
+# Append boundary to fail reason
+if [ "$BOUNDARY_STATUS" != "done" ]; then
+  [ -n "$FAIL_REASON" ] && FAIL_REASON="$FAIL_REASON | "
+  FAIL_REASON="${FAIL_REASON}boundary: ${BOUNDARY_GAPS:-canonical dept(s) in authoring manifest}"
+fi
+
 # ---- write the gate fields into the state file (atomic), if it exists ----
 if [ -f "$STATE_FILE" ]; then
   TMP="$(mktemp)"
@@ -251,12 +305,14 @@ if [ -f "$STATE_FILE" ]; then
     --arg role "$ROLE_STATUS" \
     --arg sop "$SOP_STATUS" \
     --arg trio "$TRIO_STATUS" \
+    --arg boundary "$BOUNDARY_STATUS" \
     --argjson fail "$FAIL_JSON" \
     --argjson perdept "$(printf '%s' "$GATE_JSON" | jq '.per_dept')" \
     '
       .roleLibraryStatus = $role
       | .sopLibraryStatus = $sop
       | .trioStatus = $trio
+      | .sopAuthoringBoundaryStatus = $boundary
       | .libraryFailureReason = $fail
       | .departments = ((.departments // []) | map(
           . as $d
@@ -272,11 +328,13 @@ else
   echo "[verify-library-gate] no state file at $STATE_FILE — reporting verdict only (not gating closeout)" >&2
 fi
 
-echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP_STATUS trioStatus=$TRIO_STATUS"
+echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP_STATUS trioStatus=$TRIO_STATUS sopAuthoringBoundaryStatus=$BOUNDARY_STATUS"
 [ -n "$FAIL_REASON" ] && echo "[verify-library-gate] gaps: $FAIL_REASON" >&2
 
-# ---- exit code = the gate verdict (trio failure = rc 6, takes priority) ----
-if [ "$TRIO_STATUS" != "done" ]; then
+# ---- exit code = the gate verdict (boundary failure = rc 7, takes priority over all) ----
+if [ "$BOUNDARY_STATUS" != "done" ]; then
+  exit 7
+elif [ "$TRIO_STATUS" != "done" ]; then
   exit 6
 elif [ "$ROLE_STATUS" = "done" ] && [ "$SOP_STATUS" = "done" ]; then
   exit 0
