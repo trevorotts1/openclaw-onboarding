@@ -1361,3 +1361,104 @@ jobs:
           done
           [ $fail -eq 0 ] && echo "✓ All PRD-2.8 Skill 37 script presence + wiring checks pass"
           exit $fail
+
+      # ------------------------------------------------------------------
+      # PRD-2.13: Watchdog Onboarding Loop checks
+      # ------------------------------------------------------------------
+
+      - name: "PRD-2.13: watchdog loop scripts present and executable"
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          for f in \
+            scripts/watchdog-onboarding-loop.sh \
+            scripts/loop-registry.sh \
+            scripts/test-watchdog-loop.sh; do
+            if [ -f "$f" ]; then
+              echo "  ✓ $f exists"
+            else
+              echo "  ✗ $f MISSING"; fail=1
+            fi
+          done
+          # lib-onboarding-state.sh must contain PRD 2.13 wave-goal functions
+          for fn in "oc_wave_state_init" "oc_wave_goal_check" "oc_overall_goal_check" \
+                    "oc_next_incomplete_wave" "oc_wave_fail_strikes" "oc_wave_skills_status"; do
+            if grep -q "$fn" lib-onboarding-state.sh; then
+              echo "  ✓ lib-onboarding-state.sh defines $fn"
+            else
+              echo "  ✗ lib-onboarding-state.sh MISSING $fn"; fail=1
+            fi
+          done
+          # loop-registry.sh must define all registry functions
+          for fn in "lr_register" "lr_kill" "lr_assert_empty" "lr_list" "lr_get_uuid"; do
+            if grep -q "$fn" scripts/loop-registry.sh; then
+              echo "  ✓ loop-registry.sh defines $fn"
+            else
+              echo "  ✗ loop-registry.sh MISSING $fn"; fail=1
+            fi
+          done
+          # watchdog must include cheap-check-first, 3-strike, self-kill, loop-registry
+          for pattern in \
+            "oc_overall_goal_check" \
+            "oc_wave_goal_check" \
+            "MAX_STRIKES" \
+            "self_remove_cron" \
+            "lr_register\|LOOP_REG_LIB" \
+            "oc_next_incomplete_wave"; do
+            if grep -qE "$pattern" scripts/watchdog-onboarding-loop.sh; then
+              echo "  ✓ watchdog contains: $pattern"
+            else
+              echo "  ✗ watchdog MISSING: $pattern"; fail=1
+            fi
+          done
+          # cheap check must appear BEFORE openclaw message send
+          CHEAP_LINE=$(grep -n "oc_overall_goal_check\|CHEAP-CHECK" scripts/watchdog-onboarding-loop.sh | head -1 | cut -d: -f1)
+          SEND_LINE=$(grep -n "openclaw message send" scripts/watchdog-onboarding-loop.sh | head -1 | cut -d: -f1)
+          if [ -n "$CHEAP_LINE" ] && [ -n "$SEND_LINE" ] && [ "$CHEAP_LINE" -lt "$SEND_LINE" ]; then
+            echo "  ✓ cheap state-check (line $CHEAP_LINE) before openclaw send (line $SEND_LINE)"
+          else
+            echo "  ✗ cheap check must precede openclaw message send (cheap=$CHEAP_LINE send=$SEND_LINE)"; fail=1
+          fi
+          [ $fail -eq 0 ] && echo "✓ All PRD-2.13 watchdog loop script presence + wiring checks pass"
+          exit $fail
+
+      - name: "PRD-2.13: watchdog loop fixture tests"
+        shell: bash
+        run: |
+          set -uo pipefail
+          chmod +x scripts/watchdog-onboarding-loop.sh scripts/loop-registry.sh scripts/test-watchdog-loop.sh
+          bash scripts/test-watchdog-loop.sh
+          echo "✓ PRD-2.13 watchdog loop fixture tests all pass"
+
+      - name: "PRD-2.13: lib-onboarding-state.sh wave-goal functions parse without error"
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Verify the bash library syntax is valid (bash -n) and python3
+          # inline blocks in the new wave-goal functions parse correctly.
+          bash -n lib-onboarding-state.sh
+          echo "✓ lib-onboarding-state.sh bash syntax OK"
+          bash -n scripts/loop-registry.sh
+          echo "✓ loop-registry.sh bash syntax OK"
+          bash -n scripts/watchdog-onboarding-loop.sh
+          echo "✓ watchdog-onboarding-loop.sh bash syntax OK"
+          # Verify waveGoals schema constants are present
+          python3 - <<'PYEOF'
+import subprocess, sys, os
+lib = open("lib-onboarding-state.sh").read()
+required = [
+    "OC_WAVE1_SKILLS", "OC_WAVE2_SKILLS", "OC_WAVE3_SKILLS",
+    "OC_WAVE4_SKILLS", "OC_WAVE5_SKILLS",
+    "waveGoals", "failStrikes", "lastCheckedAt", "passedAt",
+    "allWavesVerified", "interviewComplete", "workforceBuilt", "closeoutDelivered",
+]
+fail = 0
+for tok in required:
+    if tok not in lib:
+        print(f"  ✗ lib-onboarding-state.sh missing token: {tok}")
+        fail = 1
+    else:
+        print(f"  ✓ lib-onboarding-state.sh contains: {tok}")
+sys.exit(fail)
+PYEOF

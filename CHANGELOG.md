@@ -1,3 +1,29 @@
+## [v11.12.0]  -  2026-06-10  -  feat(prd-2.13): loop-engineer install — per-wave goals, watchdog cron, 3-strike escalation, loop registry, self-kill on overall goal pass
+
+**PRD 2.13 — Loop-engineer the install so it keeps itself going with no stalls between waves**
+Branch: feat/prd-2.13-watchdog-loop.
+
+**What changed:**
+- **`lib-onboarding-state.sh`**: added PRD 2.13 per-wave goal state block (6 new functions): `oc_wave_state_init` (seeds waveGoals JSON for waves 1-5 + overall); `oc_wave_goal_check <N>` (cheap, near-zero-token check — folder present + qc-passed/interview-pending + core sentinel + qcExit 0; increments failStrikes on miss); `oc_overall_goal_check` (reads .onboarding-state.json + .workforce-build-state.json; verifies all 5 waves + interviewComplete + buildCompletedAt + closeoutStatus=done); `oc_next_incomplete_wave` (returns first non-passed wave number); `oc_wave_fail_strikes <N>` (prints consecutive fail count for a wave); `oc_wave_skills_status <N>` (compact skill:status pairs). Wave skill assignments (1=Foundation/2, 2=Integrations/11, 3=Content+SVC/15, 4=Infrastructure/2, 5=User-interact/4) mirror the 5-wave install plan in install.sh.
+- **`scripts/loop-registry.sh`** (new): Loop Registry lib. Every autonomous loop MUST register here. Functions: `lr_register`, `lr_kill`, `lr_list`, `lr_assert_empty` (exits 1 if any loop still "running" — called by closeout QC), `lr_get_uuid`. Registry file: `$OC_WORKSPACE/.loop-registry.json`. Pure bash + python3, idempotent.
+- **`scripts/watchdog-onboarding-loop.sh`** (new): PRD 2.13 watchdog cron. Registered by install.sh at Step 13.4 (*/10 min). LOOP DOCTRINE: (1) cheap state-file check first (oc_overall_goal_check) before any agent call; (2) only prompts agent when a wave goal is incomplete, with EXACT per-wave prompt (never vague "continue onboarding"); (3) 3-strike escalation per wave — after 3 consecutive check failures on same wave, halts loop + alerts operator; (4) self-kills (openclaw cron rm + lr_kill) when overall goal verified. Registers itself in loop registry. Resolves owner chat (preferred) or operator chat for dispatch.
+- **`scripts/test-watchdog-loop.sh`** (new): 18-assertion fixture test suite — runs offline, no client box. T1-T8: wave state seeding, goal-check pass/fail, strike counting, overall goal pass/fail. T9: KILL CONDITION — simulates mid-wave kill, verifies watchdog detects incomplete wave and builds EXACT wave prompt with call-order tracking (overall_goal_check → find_wave → skills_status → prompt). T10: cheap-check-first verified by line-number comparison in watchdog script. T11-T12: loop registry lr_register/lr_kill/lr_assert_empty. T13: wave 5 interview-pending counts as pass. T14: wave skills status output. T15: CI references PRD-2.13 checks. All 18 pass.
+- **`37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh`**: added T10 (PRD-2.13 closeout asserts loop registry empty): T10a — lr_assert_empty exits 0 when all loops killed (done state); T10b — exits 1 when loop still running (ghost-loop detection). Now 14 assertions total.
+- **`install.sh`**: Step 13.4 — `install_watchdog_loop_cron()` registers the watchdog cron (*/10 min, cheap-check-first doctrine); extracts UUID from `openclaw cron create` output and writes to loop registry; warn-only fallback if cron creation fails (never hard-fails the install).
+- **`.github/workflows/qc-static.yml`**: 3 new PRD-2.13 CI check steps: (a) script presence + wiring (6 functions in lib-onboarding-state.sh, 5 functions in loop-registry.sh, 6 patterns in watchdog, cheap-check-before-send line-number assertion); (b) `bash scripts/test-watchdog-loop.sh` fixture (18 assertions); (c) bash syntax check + token presence check for waveGoals schema constants.
+- **`37-zhc-closeout/skill-version.txt`**: 1.2.0 → 1.2.1 (T10 added).
+- Version: v11.11.0 → v11.12.0 (all 9 markers via bump-version.sh).
+
+**Verify (PRD 2.13 watchdog loop, fixture — no client box):**
+- `bash scripts/test-watchdog-loop.sh` exits 0 (18/18 assertions T1-T15): PASS
+- `bash 37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh` exits 0 (14/14 assertions including T10a/T10b): PASS
+- `bash -n lib-onboarding-state.sh && bash -n scripts/loop-registry.sh && bash -n scripts/watchdog-onboarding-loop.sh` all exit 0: PASS
+- `oc_overall_goal_check` line precedes `openclaw message send` in watchdog (cheap-check-first): PASS
+- Loop registry lr_assert_empty exits 1 when loop running, 0 when killed: PASS
+- 3-strike threshold: failStrikes >= 3 after 3 consecutive wave goal failures: PASS
+
+## [v11.11.0]  -  2026-06-10  -  feat(prd-2.15): Interview experience — persona block, industry-pack assertion, QC gate, nudges verified
+
 ## [v11.10.0]  -  2026-06-10  -  feat(prd-2.8): ZHC closeout gated pipeline — 7 deliverable legs, pre-flight Telegram, connector-tree assertion, n8n, resume cron, fleet sweep
 
 **PRD 2.8 — Skill 37 ZHC Closeout: GATED pipeline so partial/absent closeouts are impossible going forward, fleet sweep for re-delivery of missing legs**

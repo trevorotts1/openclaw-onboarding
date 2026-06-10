@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.11.0"
+ONBOARDING_VERSION="v11.12.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4449,6 +4449,97 @@ install_onboarding_resume_cron() {
 }
 
 install_onboarding_resume_cron
+
+# ----------------------------------------------------------
+# Step 13.4: Install watchdog-onboarding-loop cron (PRD-2.13, every 10 min)
+# ----------------------------------------------------------
+# Why: the existing resume cron (Step 13) fires every 15 min and dispatches
+# a broad "resume onboarding" message. PRD 2.13 adds a separate watchdog that
+# (a) runs a cheap state-file goal check FIRST (near-zero tokens), (b) only
+# prompts the agent when a specific wave is incomplete, (c) uses the EXACT
+# per-wave prompt (never a vague "continue"), (d) stops the loop on 3-strike
+# escalation, and (e) self-kills when the overall goal verifies. The watchdog
+# is registered in the loop registry for closeout QC assertion.
+step "Step 13.4: Installing watchdog-onboarding-loop cron (PRD-2.13, 10-min cheap check)"
+
+install_watchdog_loop_cron() {
+    if ! command -v openclaw >/dev/null 2>&1; then
+        warn "openclaw CLI not on PATH — skipping watchdog-onboarding-loop cron. Re-run update-skills.sh later."
+        return 0
+    fi
+    if openclaw cron list 2>/dev/null | grep -qi "watchdog-onboarding-loop"; then
+        success "watchdog-onboarding-loop cron already installed"
+        return 0
+    fi
+
+    local WATCHDOG_SCRIPT="$ONBOARDING_DIR/scripts/watchdog-onboarding-loop.sh"
+    if [ ! -f "$WATCHDOG_SCRIPT" ]; then
+        warn "watchdog-onboarding-loop.sh not found at $WATCHDOG_SCRIPT — watchdog cron skipped"
+        return 0
+    fi
+    chmod +x "$WATCHDOG_SCRIPT" 2>/dev/null || true
+    chmod +x "$ONBOARDING_DIR/scripts/loop-registry.sh" 2>/dev/null || true
+
+    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
+        resolve_telegram_target_universal
+    fi
+    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
+    if [ -z "$TG_TARGET" ]; then
+        warn "Telegram target not resolved — skipping watchdog-onboarding-loop cron."
+        return 0
+    fi
+
+    local WATCHDOG_PROMPT="[ONBOARDING-WATCHDOG] Run the onboarding watchdog: bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh || bash /data/.openclaw/scripts/watchdog-onboarding-loop.sh 2>/dev/null || true. This is a cheap state-file check — it self-removes when the overall goal is verified."
+
+    local CHANNEL_ACCOUNT="$TELEGRAM_ACCOUNT_CACHED"
+    local OUT="" RC=0
+    local BASE=(
+        --name "watchdog-onboarding-loop"
+        --cron "*/10 * * * *"
+        --tz "America/New_York"
+        --channel telegram
+        --to "$TG_TARGET"
+    )
+    [ -n "$CHANNEL_ACCOUNT" ] && BASE+=(--account "$CHANNEL_ACCOUNT")
+    OUT=$(openclaw cron create "${BASE[@]}" --message "$WATCHDOG_PROMPT" 2>&1) || RC=$?
+    echo "$OUT" >> "$LOG_FILE"
+    if [ "$RC" -eq 0 ]; then
+        local CRON_UUID
+        CRON_UUID=$(printf '%s' "$OUT" | grep -oE '[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F]{12}' | head -1 || true)
+        if [ -n "$CRON_UUID" ] && [ -f "$ONBOARDING_DIR/scripts/loop-registry.sh" ]; then
+            # shellcheck disable=SC1090
+            LOOP_REGISTRY_FILE="${OC_CONFIG}/workspace/.loop-registry.json" \
+            source "$ONBOARDING_DIR/scripts/loop-registry.sh" 2>/dev/null || true
+            LOOP_REGISTRY_FILE="${OC_CONFIG}/workspace/.loop-registry.json" \
+            lr_register "watchdog-onboarding-loop" "$CRON_UUID" "openclaw cron rm $CRON_UUID" 2>/dev/null || true
+        fi
+        success "watchdog-onboarding-loop cron installed (PRD-2.13, */10) — cheap check first, 3-strike escalation, self-kills on overall goal pass"
+        return 0
+    fi
+
+    local BASE_NO_ACCT=(
+        --name "watchdog-onboarding-loop"
+        --cron "*/10 * * * *"
+        --tz "America/New_York"
+        --channel telegram
+        --to "$TG_TARGET"
+    )
+    OUT=$(openclaw cron create "${BASE_NO_ACCT[@]}" --message "$WATCHDOG_PROMPT" 2>&1) || RC=$?
+    echo "$OUT" >> "$LOG_FILE"
+    if [ "$RC" -eq 0 ]; then
+        success "watchdog-onboarding-loop cron installed (no-account fallback)"
+        return 0
+    fi
+
+    warn "watchdog-onboarding-loop cron creation failed. Manual install:"
+    warn "  openclaw cron create --name watchdog-onboarding-loop \\"
+    warn "    --cron '*/10 * * * *' --tz America/New_York \\"
+    warn "    --channel telegram --to '$TG_TARGET' \\"
+    warn "    --message '[ONBOARDING-WATCHDOG] bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh'"
+    return 0
+}
+
+install_watchdog_loop_cron
 
 # ----------------------------------------------------------
 # Step 13.5: Install interview-nudge cron (PRD-2.15, every 6h)

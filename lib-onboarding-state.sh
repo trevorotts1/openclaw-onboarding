@@ -330,3 +330,293 @@ oc_onboarding_complete() {
   [ -z "$OC_FAILED_LIST" ] && [ -z "$OC_PENDING_LIST" ] && return 0
   return 1
 }
+
+# ============================================================
+# PRD 2.13 — PER-WAVE GOAL STATE + CHEAP MACHINE-CHECKABLE GOALS
+# ============================================================
+# Wave goals are stored as a "waveGoals" object in the onboarding state file:
+#   {
+#     "waveGoals": {
+#       "wave1": { "status": "pending|in-progress|passed|failed",
+#                  "skills": ["01-teach-yourself-protocol","02-back-yourself-up-protocol"],
+#                  "failStrikes": 0, "lastCheckedAt": "...", "passedAt": "..." },
+#       "wave2": { ... },
+#       "wave3": { ... },
+#       "wave4": { ... },
+#       "wave5": { ... },
+#       "overall": { "status": "pending|passed",
+#                    "interviewComplete": false,
+#                    "workforceBuilt": false,
+#                    "closeoutDelivered": false,
+#                    "allWavesVerified": false }
+#     }
+#   }
+#
+# WAVE SKILL ASSIGNMENTS (mirrors the 5-wave install plan in install.sh):
+#   Wave 1 (FOUNDATION):    01, 02
+#   Wave 2 (INTEGRATIONS):  03,04,05,06,07,08,09,10,11,12,14
+#   Wave 3 (CONTENT/SVC):   15,16,17,18,19,20,21,24,25,26,27,28,29,30,43
+#   Wave 4 (INFRASTRUCTURE):31,36
+#   Wave 5 (USER-INTERACT): 22,23,32,35
+#
+# PER-WAVE GOAL DEFINITION (all must hold for wave to pass):
+#   (a) All skills in the wave have status=qc-passed (or interview-pending for Wave 5)
+#   (b) Each skill's folder is present on disk in $OC_SKILLS_DIR
+#   (c) Each skill with CORE_UPDATES.md has its sentinel present
+#   (d) Each skill's qc-*.sh (if present) has recorded qcExit=0
+#
+# OVERALL GOAL (all must hold):
+#   (i)   all 5 waves passed
+#   (ii)  interviewComplete = true in workforce-build-state.json
+#   (iii) workforce built (department-floor.py would exit 0 — checked by proxy:
+#         buildCompletedAt is set in workforce-build-state.json)
+#   (iv)  closeout delivered (closeoutStatus=done in workforce-build-state.json)
+# ============================================================
+
+# Canonical wave skill lists (match 5-wave install plan in install.sh).
+OC_WAVE1_SKILLS="01-teach-yourself-protocol 02-back-yourself-up-protocol"
+OC_WAVE2_SKILLS="03-agent-browser 04-superpowers 05-ghl-setup 06-ghl-install-pages 07-kie-setup 08-vercel-setup 09-context7 10-github-setup 11-superdesign 12-openrouter-setup 14-google-workspace-integration"
+OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improving-agent 18-proactive-agent 19-humanizer 20-youtube-watcher 21-tavily-search 24-storyboard-writer 25-video-creator 26-caption-creator 27-video-editor 28-cinematic-forge 29-ghl-convert-and-flow 30-fish-audio-api-reference 43-graphify-knowledge-graph"
+OC_WAVE4_SKILLS="31-upgraded-memory-system 36-ghl-mcp-setup"
+OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner"
+
+# ------------------------------------------------------------
+# oc_wave_state_init
+#   Seed the waveGoals block in the state file if not present.
+#   Idempotent — only seeds; never clobbers existing wave status.
+# ------------------------------------------------------------
+oc_wave_state_init() {
+  [ -f "$ONBOARDING_STATE_FILE" ] || oc_state_seed "${OC_SKILLS_DIR:-$OC_CONFIG/skills}"
+  W1="$OC_WAVE1_SKILLS" W2="$OC_WAVE2_SKILLS" W3="$OC_WAVE3_SKILLS" \
+  W4="$OC_WAVE4_SKILLS" W5="$OC_WAVE5_SKILLS" \
+  STATE_FILE="$ONBOARDING_STATE_FILE" NOW="$(oc_state_now)" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+sf = os.environ["STATE_FILE"]
+now = os.environ["NOW"]
+try:    state = json.load(open(sf))
+except Exception: state = {}
+wg = state.setdefault("waveGoals", {})
+
+for num, key in enumerate(["wave1","wave2","wave3","wave4","wave5"], 1):
+    env_key = f"W{num}"
+    skills = os.environ.get(env_key, "").split()
+    if key not in wg:
+        wg[key] = {
+            "status": "pending",
+            "skills": skills,
+            "failStrikes": 0,
+            "lastCheckedAt": None,
+            "passedAt": None,
+        }
+    else:
+        # Refresh skill list (never downgrade status)
+        wg[key]["skills"] = skills
+        wg[key].setdefault("failStrikes", 0)
+
+if "overall" not in wg:
+    wg["overall"] = {
+        "status": "pending",
+        "allWavesVerified": False,
+        "interviewComplete": False,
+        "workforceBuilt": False,
+        "closeoutDelivered": False,
+    }
+
+json.dump(state, open(sf, "w"), indent=2)
+PYEOF
+}
+
+# ------------------------------------------------------------
+# oc_wave_goal_check <wave_num>   (1-5)
+#   CHEAP MACHINE-CHECKABLE per-wave goal check.
+#   Reads .onboarding-state.json — near-zero tokens, no network.
+#   Returns 0 = wave goal PASSED, 1 = incomplete.
+#   Increments failStrikes on fail; records lastCheckedAt each call.
+#   Does NOT call the agent or openclaw CLI.
+# ------------------------------------------------------------
+oc_wave_goal_check() {
+  local wave_num="$1"
+  local wave_key="wave${wave_num}"
+  [ -f "$ONBOARDING_STATE_FILE" ] || return 1
+
+  WAVE_KEY="$wave_key" STATE_FILE="$ONBOARDING_STATE_FILE" \
+  OC_SKILLS_DIR="${OC_SKILLS_DIR:-$OC_CONFIG/skills}" NOW="$(oc_state_now)" \
+  python3 - <<'PYEOF' 2>/dev/null
+import json, os, sys
+sf   = os.environ["STATE_FILE"]
+wkey = os.environ["WAVE_KEY"]
+sdir = os.environ["OC_SKILLS_DIR"]
+now  = os.environ["NOW"]
+
+try:    state = json.load(open(sf))
+except Exception: sys.exit(1)
+
+wg = state.get("waveGoals", {})
+wave = wg.get(wkey)
+if not wave:
+    sys.exit(1)
+
+skills = wave.get("skills", [])
+sk_state = state.get("skills", {})
+
+# Goal check: all wave skills must be qc-passed (or interview-pending for wave5)
+wave5 = (wkey == "wave5")
+failed = []
+for skill in skills:
+    st = sk_state.get(skill, {}).get("status", "pending")
+    if wave5 and st == "interview-pending":
+        continue
+    if st != "qc-passed":
+        failed.append(f"{skill}:{st}")
+
+# (b) folder present on disk
+missing_folders = []
+for skill in skills:
+    p = os.path.join(sdir, skill)
+    if not os.path.isdir(p):
+        missing_folders.append(skill)
+
+# (c) CORE_UPDATES sentinel
+missing_sentinels = []
+for skill in skills:
+    if sk_state.get(skill, {}).get("hasCoreUpdates") and \
+       not sk_state.get(skill, {}).get("coreUpdatesSentinelPresent"):
+        missing_sentinels.append(skill)
+
+# (d) qcExit == 0 (only for skills that have a qc script)
+bad_qc = []
+for skill in skills:
+    e = sk_state.get(skill, {})
+    qc_exit = e.get("qcExit")
+    if qc_exit is not None and qc_exit != 0 and qc_exit != "null":
+        bad_qc.append(f"{skill}:qcExit={qc_exit}")
+
+now_val = now
+if failed or missing_folders or missing_sentinels or bad_qc:
+    wave["failStrikes"] = wave.get("failStrikes", 0) + 1
+    wave["lastCheckedAt"] = now_val
+    json.dump(state, open(sf, "w"), indent=2)
+    sys.exit(1)
+
+# All pass — mark wave passed
+wave["status"] = "passed"
+wave["passedAt"] = now_val
+wave["lastCheckedAt"] = now_val
+wave["failStrikes"] = 0  # reset on pass
+json.dump(state, open(sf, "w"), indent=2)
+sys.exit(0)
+PYEOF
+}
+
+# ------------------------------------------------------------
+# oc_overall_goal_check
+#   CHEAP overall goal check (reads two state files, no network):
+#   (i) all 5 waves passed in waveGoals, (ii) interviewComplete in
+#   workforce-build-state.json, (iii) buildCompletedAt set (workforce built),
+#   (iv) closeoutStatus=done.
+#   Returns 0 = all goals met, 1 = incomplete.
+# ------------------------------------------------------------
+oc_overall_goal_check() {
+  [ -f "$ONBOARDING_STATE_FILE" ] || return 1
+  local wf_state="${OC_WORKSPACE_DEFAULT:-$OC_CONFIG/workspace}/.workforce-build-state.json"
+
+  STATE_FILE="$ONBOARDING_STATE_FILE" WF_STATE="$wf_state" \
+  NOW="$(oc_state_now)" python3 - <<'PYEOF' 2>/dev/null
+import json, os, sys
+sf  = os.environ["STATE_FILE"]
+wfs = os.environ["WF_STATE"]
+now = os.environ["NOW"]
+
+try:    state = json.load(open(sf))
+except Exception: sys.exit(1)
+
+wg = state.get("waveGoals", {})
+ov = wg.setdefault("overall", {"status":"pending","allWavesVerified":False,
+                                "interviewComplete":False,"workforceBuilt":False,
+                                "closeoutDelivered":False})
+
+# (i) all 5 waves passed
+all_waves = all(
+    wg.get(f"wave{n}", {}).get("status") == "passed"
+    for n in range(1, 6)
+)
+ov["allWavesVerified"] = all_waves
+
+# Read workforce build state (may not exist if workforce hasn't started)
+wf = {}
+if os.path.isfile(wfs):
+    try: wf = json.load(open(wfs))
+    except Exception: pass
+
+# (ii) interview complete
+ov["interviewComplete"] = bool(wf.get("interviewComplete"))
+# (iii) workforce built (proxy: buildCompletedAt is set)
+ov["workforceBuilt"] = bool(wf.get("buildCompletedAt"))
+# (iv) closeout delivered
+ov["closeoutDelivered"] = (wf.get("closeoutStatus") == "done")
+
+passed = all_waves and ov["interviewComplete"] and ov["workforceBuilt"] and ov["closeoutDelivered"]
+if passed:
+    ov["status"] = "passed"
+else:
+    ov.setdefault("status", "pending")
+
+json.dump(state, open(sf, "w"), indent=2)
+sys.exit(0 if passed else 1)
+PYEOF
+}
+
+# ------------------------------------------------------------
+# oc_next_incomplete_wave
+#   Print the wave number (1-5) of the FIRST wave that is not passed,
+#   or empty string if all waves passed.
+# ------------------------------------------------------------
+oc_next_incomplete_wave() {
+  [ -f "$ONBOARDING_STATE_FILE" ] || { echo "1"; return 0; }
+  STATE_FILE="$ONBOARDING_STATE_FILE" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:    state = json.load(open(os.environ["STATE_FILE"]))
+except Exception: print("1"); raise SystemExit
+wg = state.get("waveGoals", {})
+for n in range(1, 6):
+    k = f"wave{n}"
+    if wg.get(k, {}).get("status") != "passed":
+        print(n); raise SystemExit
+print("")  # all passed
+PYEOF
+}
+
+# ------------------------------------------------------------
+# oc_wave_fail_strikes <wave_num>
+#   Print the failStrikes count for the wave (0 if unknown).
+# ------------------------------------------------------------
+oc_wave_fail_strikes() {
+  local wave_num="$1"
+  [ -f "$ONBOARDING_STATE_FILE" ] || { echo "0"; return 0; }
+  WAVE_KEY="wave${wave_num}" STATE_FILE="$ONBOARDING_STATE_FILE" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:    state = json.load(open(os.environ["STATE_FILE"]))
+except Exception: print("0"); raise SystemExit
+print(state.get("waveGoals",{}).get(os.environ["WAVE_KEY"],{}).get("failStrikes",0))
+PYEOF
+}
+
+# ------------------------------------------------------------
+# oc_wave_skills_status <wave_num>
+#   Print a compact summary of skill statuses for the given wave.
+#   E.g.: "01-teach-yourself-protocol:qc-passed 02-back-yourself-up-protocol:pending"
+# ------------------------------------------------------------
+oc_wave_skills_status() {
+  local wave_num="$1"
+  [ -f "$ONBOARDING_STATE_FILE" ] || return 0
+  WAVE_KEY="wave${wave_num}" STATE_FILE="$ONBOARDING_STATE_FILE" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:    state = json.load(open(os.environ["STATE_FILE"]))
+except Exception: raise SystemExit
+wg = state.get("waveGoals", {})
+skills = wg.get(os.environ["WAVE_KEY"], {}).get("skills", [])
+sk = state.get("skills", {})
+parts = [f"{s}:{sk.get(s,{}).get('status','pending')}" for s in skills]
+print(" ".join(parts))
+PYEOF
+}
