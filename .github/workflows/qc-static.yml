@@ -1090,21 +1090,22 @@ jobs:
           set -uo pipefail
           # Scan Python and shell scripts for direct agents/<id>/CORE.md paths.
           # Allow-list: sessions/ reads, auth-profiles, test/fixture paths, archive.
-          VIOLATIONS=\$(git grep -nE \
-            'agents/(main|[a-z-]+)/(SOUL|IDENTITY|MEMORY|AGENTS|TOOLS|USER|HEARTBEAT)\.md' \
-            -- '*.py' '*.sh' \
-            | grep -vE '(archive/|/sessions/|auth-profiles|\.telegram-sent|test-|fixtures/|\.bak)' \
+          # Note: patterns stored in variables to avoid bash misreading bare ( in run: block.
+          SEARCH_PAT='agents/(main|[a-z-]+)/(SOUL|IDENTITY|MEMORY|AGENTS|TOOLS|USER|HEARTBEAT)\.md'
+          ALLOW_PAT='(archive/|/sessions/|auth-profiles|\.telegram-sent|test-|fixtures/|\.bak)'
+          VIOLATIONS=$(git grep -nE "$SEARCH_PAT" -- '*.py' '*.sh' \
+            | grep -vE "$ALLOW_PAT" \
             || true)
-          if [ -n "\$VIOLATIONS" ]; then
-            echo "✗ PRD 1.11 violation — direct agents/<id>/CORE.md write detected:"
-            echo "\$VIOLATIONS" | sed 's/^/    /'
+          if [ -n "$VIOLATIONS" ]; then
+            echo "PRD 1.11 violation - direct agents/<id>/CORE.md write detected:"
+            echo "$VIOLATIONS" | sed 's/^/    /'
             echo ""
             echo "Fix: use resolve_injected_core_files() from shared-utils/ to get"
             echo "the gateway-injected paths. Writing directly to agents/<id>/SOUL.md"
             echo "was the v11.3.2 Layer-3 bug (wrong file, never in context)."
             exit 1
           fi
-          echo "✓ PRD 1.11 injected-core-files guard: no direct agents/<id>/CORE.md writes"
+          echo "PRD 1.11 injected-core-files guard: no direct agents/<id>/CORE.md writes"
 
       # PRD 1.11: resolve_injected_core_files.py self-test (fixture)
       - name: PRD 1.11 resolve_injected_core_files self-test
