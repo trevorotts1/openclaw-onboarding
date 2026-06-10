@@ -29,11 +29,15 @@ import re
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 
-# Priority order for env file locations
+# Priority order for env file locations.
+# These strings are always resolved through _expand_path() -> os.path.expanduser()
+# before any filesystem call, so the tilde is always expanded at use.
+# Do not construct Path("~/...") directly — that does not expand tilde in pathlib.
+# (PRD item 1.7)
 ENV_FILE_PATHS = [
-    "~/.openclaw/.env",
-    "~/clawd/secrets/.env",
-    "~/.clawdbot/.env",
+    os.path.expanduser("~/.openclaw/.env"),
+    os.path.expanduser("~/clawd/secrets/.env"),
+    os.path.expanduser("~/.clawdbot/.env"),
 ]
 
 # Common API key name patterns for fuzzy matching
@@ -313,8 +317,8 @@ def get_key_source(key_name: str) -> Optional[str]:
         key_name: The exact name of the environment variable
     
     Returns:
-        String indicating the source: "environment", "~/.openclaw/.env",
-        "~/clawd/secrets/.env", "~/.clawdbot/.env", or None if not found
+        String indicating the source: "environment", the expanded path of
+        ~/.openclaw/.env, ~/clawd/secrets/.env, ~/.clawdbot/.env, or None if not found
     
     Example:
         >>> get_key_source("OPENAI_API_KEY")

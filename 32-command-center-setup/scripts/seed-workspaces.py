@@ -37,12 +37,16 @@ def find_db():
     return None
 
 def _zhc_root_candidates():
-    """All possible Zero Human Company root locations, in priority order."""
+    """All possible Zero Human Company root locations, in priority order.
+
+    NOTE: Path("~/...") does NOT expand the tilde — use Path.home() or
+    Path(os.path.expanduser("~/...")) instead. (PRD item 1.7)
+    """
     return [
         Path.home() / "clawd" / "zero-human-company",   # v9.6.0+ canonical
         Path.home() / "clawd" / "zhc",                   # short-alias
-        Path("~/clawd/zero-human-company"),          # VPS canonical
-        Path("~/clawd/zhc"),                          # VPS short-alias
+        Path(os.path.expanduser("~/clawd/zero-human-company")),  # expanduser guards tilde
+        Path(os.path.expanduser("~/clawd/zhc")),                  # expanduser guards tilde
     ]
 
 
@@ -95,7 +99,7 @@ def find_departments_config():
     # 3+4+5. Legacy paths
     candidates.extend([
         Path.home() / "Downloads/openclaw-master-files/company-discovery/departments.json",
-        Path("~/Downloads/openclaw-master-files/company-discovery/departments.json"),
+        Path(os.path.expanduser("~/Downloads/openclaw-master-files/company-discovery/departments.json")),
         Path.home() / "clawd/departments/departments.json",
         Path.home() / "projects/command-center/config/departments.json",
         Path.home() / "projects/mission-control/config/departments.json",
@@ -128,7 +132,7 @@ def scan_skill23_workspaces():
     # Legacy paths
     workspace_dirs.extend([
         Path.home() / "clawd/departments",
-        Path("~/clawd/departments"),
+        Path(os.path.expanduser("~/clawd/departments")),
         Path.home() / ".openclaw/workspaces/command-center",
         Path.home() / "Downloads/openclaw-master-files/my AI company departments",
     ])
@@ -248,7 +252,7 @@ def find_company_info(parent_folder_name=None):
         answer_files.append(root / slug / "workforce-interview-answers.md")
     answer_files.extend([
         Path.home() / "Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md",
-        Path("~/Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md"),
+        Path(os.path.expanduser("~/Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md")),
         Path.home() / ".openclaw/workspace/company-discovery/workforce-interview-answers.md",
     ])
 

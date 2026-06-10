@@ -50,13 +50,13 @@ HOME = Path.home()
 ZHC_ROOTS = [
     HOME / "clawd" / "zero-human-company",
     HOME / "clawd" / "zhc",
-    Path("~/clawd/zero-human-company"),
-    Path("~/clawd/zhc"),
+    Path(os.path.expanduser("~/clawd/zero-human-company")),  # PRD item 1.7: expanduser
+    Path(os.path.expanduser("~/clawd/zhc")),                  # PRD item 1.7: expanduser
 ]
 
 SELECTOR_CANDIDATES = [
     HOME / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py",
-    Path("~/Downloads/openclaw-master-files/shared-utils/select_model.py"),
+    Path(os.path.expanduser("~/Downloads/openclaw-master-files/shared-utils/select_model.py")),  # PRD item 1.7
 ]
 
 
