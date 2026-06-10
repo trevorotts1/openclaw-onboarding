@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# verify-library-gate.sh — v10.15.18 (SUBSTANCE GATE)
+# verify-library-gate.sh — v10.16.0 (SUBSTANCE GATE + TRIO GATE)
 #
 # ENFORCED build gate for the ROLE LIBRARY + SOP LIBRARY auto-pull.
+#
+# v10.16.0 (PRD 2.11): adds TRIO GATE — every operational department in the
+# built workforce must have a QC specialist role file, a deep-research specialist
+# role file, and a devil's-advocate role file present in its role-library folder.
+# The devil's-advocate is auto-created and NEVER surfaced to the client. A build
+# that lacks any of the three roles for any department fails this gate with rc=6.
 #
 # v10.15.18: the SOP verdict now uses a SUBSTANCE floor (>=7KB + all DMAIC
 # headers + no placeholder, every role >= 4 substantive SOPs) and the ROLE
@@ -19,17 +25,22 @@
 #   1. Runs qc-completeness.sh (read-only) to measure, per dept:
 #        - library_pct        (how-to.md filled from role-library marker)
 #        - sop_stubs_remaining + avg_sop_per_role (SOP files authored)
-#   2. Writes the gate fields into .workforce-build-state.json (atomic):
+#   2. Asserts the TRIO (PRD 2.11): for every operational dept, the role-library
+#      source directory must contain a qc-specialist, deep-research-specialist,
+#      and devils-advocate file. Emits trioStatus: done | failed.
+#   3. Writes the gate fields into .workforce-build-state.json (atomic):
 #        - roleLibraryStatus  : pending | pulling | done | failed
 #        - sopLibraryStatus   : pending | authoring | done | failed
-#        - departments[].roleLibraryFilled / .sopLibraryFilled (booleans)
+#        - trioStatus         : done | failed  (NEW — PRD 2.11)
+#        - departments[].roleLibraryFilled / .sopLibraryFilled / .trioFilled (booleans)
 #        - libraryFailureReason (when not done)
-#   3. Exits:
-#        0  = BOTH libraries done (gate PASSES — build may proceed to closeout)
+#   4. Exits:
+#        0  = ALL gates pass (role library + SOP library + trio complete)
 #        2  = role library NOT done
 #        3  = SOP library NOT done
-#        4  = both NOT done
+#        4  = both role AND SOP libraries NOT done
 #        5  = no workforce / qc could not run
+#        6  = TRIO GATE FAIL — at least one dept is missing QC, research, or DA
 #
 # The master orchestrator MUST run this BEFORE writing buildCompletedAt /
 # closeoutStatus=pending. The resume cron (resume-workforce-build.sh) also calls
@@ -154,6 +165,84 @@ if [ "$SOP_STATUS" != "done" ]; then
   FAIL_REASON="${FAIL_REASON}sop: ${SOP_GAPS:-incomplete}"
 fi
 
+# ---- TRIO GATE (PRD 2.11): assert QC + research + DA files per dept --------
+# Checks the role-library SOURCE tree (where build-workforce.py copies files
+# from) NOT the built workforce. This ensures the library itself is complete
+# before any build is considered done. Every operational department in the
+# library must have all three files; meta-dirs and master-orchestrator are
+# excluded because they are not operational workflow departments.
+LIBRARY_DIR="$SKILL_DIR/templates/role-library"
+TRIO_JSON="$(python3 - "$LIBRARY_DIR" <<'PYEOF'
+import json, os, sys
+from pathlib import Path
+
+library_dir = Path(sys.argv[1])
+# Directories that are not operational workflow departments
+SKIP = {"_stage1_drafts", "master-orchestrator"}
+
+dept_results = {}
+trio_gaps = []
+trio_done = True
+
+for dept_path in sorted(library_dir.iterdir()):
+    if not dept_path.is_dir():
+        continue
+    dept = dept_path.name
+    if dept.startswith("_") or dept in SKIP:
+        continue
+    files = [f.name.lower() for f in dept_path.iterdir() if f.suffix == ".md"]
+    has_qc = any("qc" in f for f in files)
+    has_research = any("deep-research" in f for f in files)
+    has_da = any("devil" in f for f in files)
+    trio_filled = has_qc and has_research and has_da
+    dept_results[dept] = {
+        "trioFilled": trio_filled,
+        "hasQC": has_qc,
+        "hasResearch": has_research,
+        "hasDA": has_da,
+    }
+    if not trio_filled:
+        trio_done = False
+        missing = []
+        if not has_qc: missing.append("qc-specialist")
+        if not has_research: missing.append("deep-research-specialist")
+        if not has_da: missing.append("devils-advocate")
+        trio_gaps.append(f"{dept} missing: {', '.join(missing)}")
+
+print(json.dumps({
+    "trio_done": trio_done,
+    "trio_gaps": trio_gaps,
+    "per_dept": dept_results,
+}))
+PYEOF
+)"
+
+TRIO_DONE="$(printf '%s' "$TRIO_JSON" | jq -r '.trio_done')"
+TRIO_GAPS="$(printf '%s' "$TRIO_JSON" | jq -r '.trio_gaps | join("; ")')"
+TRIO_STATUS="failed"; [ "$TRIO_DONE" = "true" ] && TRIO_STATUS="done"
+
+# Merge trio per-dept results into the gate per-dept map
+MERGED_GATE_JSON="$(python3 - "$GATE_JSON" "$TRIO_JSON" <<'PYEOF'
+import json, sys
+gate = json.loads(sys.argv[1])
+trio = json.loads(sys.argv[2])
+trio_per = trio.get("per_dept", {})
+gate_per = gate.get("per_dept", {})
+for dept, td in trio_per.items():
+    gate_per.setdefault(dept, {})
+    gate_per[dept]["trioFilled"] = td.get("trioFilled", False)
+gate["per_dept"] = gate_per
+print(json.dumps(gate))
+PYEOF
+)"
+GATE_JSON="$MERGED_GATE_JSON"
+
+# Append trio to fail reason
+if [ "$TRIO_STATUS" != "done" ]; then
+  [ -n "$FAIL_REASON" ] && FAIL_REASON="$FAIL_REASON | "
+  FAIL_REASON="${FAIL_REASON}trio: ${TRIO_GAPS:-incomplete}"
+fi
+
 # ---- write the gate fields into the state file (atomic), if it exists ----
 if [ -f "$STATE_FILE" ]; then
   TMP="$(mktemp)"
@@ -161,11 +250,13 @@ if [ -f "$STATE_FILE" ]; then
   jq \
     --arg role "$ROLE_STATUS" \
     --arg sop "$SOP_STATUS" \
+    --arg trio "$TRIO_STATUS" \
     --argjson fail "$FAIL_JSON" \
     --argjson perdept "$(printf '%s' "$GATE_JSON" | jq '.per_dept')" \
     '
       .roleLibraryStatus = $role
       | .sopLibraryStatus = $sop
+      | .trioStatus = $trio
       | .libraryFailureReason = $fail
       | .departments = ((.departments // []) | map(
           . as $d
@@ -173,6 +264,7 @@ if [ -f "$STATE_FILE" ]; then
           | $d
           + (if ($pd | has("roleLibraryFilled")) then {roleLibraryFilled: $pd.roleLibraryFilled} else {} end)
           + (if ($pd | has("sopLibraryFilled")) then {sopLibraryFilled: $pd.sopLibraryFilled} else {} end)
+          + (if ($pd | has("trioFilled")) then {trioFilled: $pd.trioFilled} else {} end)
         ))
     ' "$STATE_FILE" > "$TMP" 2>/dev/null && mv "$TMP" "$STATE_FILE" \
       || { rm -f "$TMP"; echo "[verify-library-gate] WARN: could not update $STATE_FILE" >&2; }
@@ -180,11 +272,13 @@ else
   echo "[verify-library-gate] no state file at $STATE_FILE — reporting verdict only (not gating closeout)" >&2
 fi
 
-echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP_STATUS"
+echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP_STATUS trioStatus=$TRIO_STATUS"
 [ -n "$FAIL_REASON" ] && echo "[verify-library-gate] gaps: $FAIL_REASON" >&2
 
-# ---- exit code = the gate verdict ----
-if [ "$ROLE_STATUS" = "done" ] && [ "$SOP_STATUS" = "done" ]; then
+# ---- exit code = the gate verdict (trio failure = rc 6, takes priority) ----
+if [ "$TRIO_STATUS" != "done" ]; then
+  exit 6
+elif [ "$ROLE_STATUS" = "done" ] && [ "$SOP_STATUS" = "done" ]; then
   exit 0
 elif [ "$ROLE_STATUS" != "done" ] && [ "$SOP_STATUS" != "done" ]; then
   exit 4

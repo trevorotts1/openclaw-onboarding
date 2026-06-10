@@ -1,10 +1,10 @@
 {
   "generated_at": "2026-06-09T21:20:09.959606+00:00",
-  "version": "11.8.7",
+  "version": "11.8.8",
   "total_roles": 244,
   "departments": {
     "app-development": {
-      "count": 14,
+      "count": 15,
       "roles": [
         "android-specialist",
         "api-backend-specialist",
@@ -13,6 +13,7 @@
         "cloud-infrastructure-specialist",
         "deep-research-specialist-app-development",
         "desktop-app-specialist",
+        "devils-advocate-\u2014-app-development",
         "head-of-app-development",
         "ios-specialist",
         "pwa-progressive-web-app-specialist",
@@ -23,13 +24,14 @@
       ]
     },
     "audio": {
-      "count": 15,
+      "count": 16,
       "roles": [
         "ai-voice-specialist-11-labs-play.ht",
         "audio-mastering-specialist",
         "audiobook-production-specialist",
         "crm-specialist-audio-version",
         "deep-research-specialist-audio",
+        "devils-advocate-\u2014-audio",
         "head-of-audio-production",
         "music-and-audio-producer",
         "podcast-editor",
@@ -43,7 +45,7 @@
       ]
     },
     "billing": {
-      "count": 13,
+      "count": 14,
       "roles": [
         "bookkeeping-specialist",
         "cash-flow-forecasting-specialist",
@@ -51,6 +53,7 @@
         "collections-specialist",
         "crm-specialist-billing-version",
         "deep-research-specialist---billing",
+        "devils-advocate-\u2014-billing",
         "financial-reporting-specialist",
         "fpanda--forecasting-analyst",
         "invoicing-and-ar-specialist",
@@ -61,12 +64,13 @@
       ]
     },
     "communications": {
-      "count": 13,
+      "count": 14,
       "roles": [
         "brand-messaging-specialist",
         "chief-communications-officer",
         "crisis-communications-specialist",
         "deep-research-specialist-communications",
+        "devils-advocate-\u2014-communications",
         "internal-communications-manager",
         "investor--stakeholder-comms-specialist",
         "media-pitching-specialist",
@@ -79,11 +83,12 @@
       ]
     },
     "crm": {
-      "count": 10,
+      "count": 11,
       "roles": [
         "automation-workflow-specialist",
         "crm-platform-administrator",
         "deep-research-role-\u2014-crm",
+        "devils-advocate-\u2014-crm",
         "director-of-crm",
         "email-deliverability-optimization-specialist",
         "pipeline-stage-specialist",
@@ -94,11 +99,12 @@
       ]
     },
     "customer-support": {
-      "count": 14,
+      "count": 15,
       "roles": [
         "account-health-monitor-proactive",
         "churn-prevention-specialist",
         "deep-research-specialist-\u2014-customer-support",
+        "devils-advocate-\u2014-customer-support",
         "head-of-customer-success",
         "knowledge-base-specialist",
         "live-chat-specialist",
@@ -113,7 +119,7 @@
       ]
     },
     "graphics": {
-      "count": 15,
+      "count": 16,
       "roles": [
         "ad-creative-specialist",
         "ai-image-generator-specialist",
@@ -122,6 +128,7 @@
         "chief-design-officer",
         "course-slide-designer",
         "deep-research-specialist-\u2014-graphics",
+        "devils-advocate-\u2014-graphics",
         "email-designer",
         "infographic-specialist",
         "presentation-designer-slides-decks",
@@ -133,7 +140,7 @@
       ]
     },
     "legal-compliance": {
-      "count": 15,
+      "count": 16,
       "roles": [
         "affiliate-agreement-specialist",
         "chief-legal-officer",
@@ -141,6 +148,7 @@
         "contract-drafter-client-agreements",
         "customer-agreement-specialist",
         "deep-research-specialist---legal",
+        "devils-advocate-\u2014-legal-compliance",
         "dispute-resolution-specialist",
         "employment-contract-specialist",
         "industry-specific-regulatory-specialist",
@@ -153,7 +161,7 @@
       ]
     },
     "marketing": {
-      "count": 15,
+      "count": 16,
       "roles": [
         "affiliate--referral-specialist",
         "brand-positioning-specialist",
@@ -162,6 +170,7 @@
         "content-strategist",
         "customer-journey-architect",
         "deep-research-specialist-\u2014-marketing",
+        "devils-advocate-\u2014-marketing",
         "email-campaign-strategist",
         "funnel-strategist",
         "influencer-marketing-specialist",
@@ -180,10 +189,11 @@
       ]
     },
     "openclaw-maintenance": {
-      "count": 13,
+      "count": 14,
       "roles": [
         "backup-and-recovery-specialist",
         "deep-research-role-\u2014-openclaw-maintenance",
+        "devils-advocate-\u2014-openclaw-maintenance",
         "director-of-openclaw-maintenance",
         "disaster-recovery-specialist",
         "integration--mcp-specialist",
@@ -198,7 +208,7 @@
       ]
     },
     "paid-advertisement": {
-      "count": 21,
+      "count": 22,
       "roles": [
         "audience-research-specialist",
         "bing--microsoft-ads-specialist",
@@ -206,6 +216,7 @@
         "creative-testing--a-b-specialist",
         "cross-platform-attribution-specialist",
         "deep-research-role-\u2014-paid-advertisement",
+        "devils-advocate-\u2014-paid-advertisement",
         "director-of-paid-advertisement",
         "facebook-ads-specialist",
         "google-ads-specialist",
@@ -224,12 +235,14 @@
       ]
     },
     "research": {
-      "count": 10,
+      "count": 12,
       "roles": [
         "chief-research-officer",
         "competitive-intelligence-specialist",
         "customer-research-specialist",
         "data-analysis-specialist",
+        "deep-research-specialist-research",
+        "devils-advocate-\u2014-research",
         "industry-analysis-specialist-mckinsey-style",
         "market-trends-specialist",
         "persona-research-specialist",
@@ -239,7 +252,7 @@
       ]
     },
     "sales": {
-      "count": 14,
+      "count": 15,
       "roles": [
         "account-executive-full-cycle",
         "account-manager-post-sale",
@@ -248,6 +261,7 @@
         "closer",
         "crm-specialist-sales-version",
         "deep-research-specialist-\\342\\200\\224-sales",
+        "devils-advocate-\u2014-sales",
         "discovery-call-specialist",
         "follow-up-sequence-specialist",
         "proposal-and-quote-specialist",
@@ -258,11 +272,12 @@
       ]
     },
     "social-media": {
-      "count": 17,
+      "count": 18,
       "roles": [
         "bluesky-specialist",
         "community-manager",
         "deep-research-role-\u2014-social-media",
+        "devils-advocate-\u2014-social-media",
         "director-of-social-media",
         "discord-community-specialist",
         "facebook-specialist",
@@ -280,7 +295,7 @@
       ]
     },
     "video": {
-      "count": 17,
+      "count": 18,
       "roles": [
         "ai-video-generator-specialist",
         "animation-specialist-2d-3d-whiteboard",
@@ -288,6 +303,7 @@
         "color-grading-specialist",
         "crm-specialist-video-version",
         "deep-research-specialist-video",
+        "devils-advocate-\u2014-video",
         "head-of-video-production",
         "live-streaming-specialist",
         "long-form-video-specialist-youtube-courses-sales-videos",
@@ -302,10 +318,11 @@
       ]
     },
     "web-development": {
-      "count": 15,
+      "count": 16,
       "roles": [
         "conversion-rate-optimization-cro-specialist",
         "deep-research-specialist-web-development",
+        "devils-advocate-\u2014-web-development",
         "frontend--javascript--react-specialist",
         "funnel-builder-specialist",
         "head-of-web-development",
@@ -322,23 +339,27 @@
       ]
     },
     "general-task": {
-      "count": 5,
+      "count": 7,
       "roles": [
-        "head-of-general-task",
+        "deep-research-specialist-general-task",
+        "devils-advocate-\u2014-general-task",
         "generalist-operator",
-        "triage-classifier",
+        "head-of-general-task",
         "qc-specialist-general-task",
-        "sop-writer"
+        "sop-writer",
+        "triage-classifier"
       ]
     },
     "project-architecture-office": {
-      "count": 6,
+      "count": 8,
       "roles": [
         "chief-project-architect",
-        "research-agent",
-        "code-monitor",
         "code-editor",
+        "code-monitor",
+        "deep-research-specialist-project-architecture-office",
+        "devils-advocate-\u2014-project-architecture-office",
         "qc-agent",
+        "research-agent",
         "sop-writer"
       ]
     }

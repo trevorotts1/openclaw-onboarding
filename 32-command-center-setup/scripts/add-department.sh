@@ -10,9 +10,19 @@
 #   role-library entry, manually editing openclaw.json bindings, and re-running
 #   generate-brand-css.py. This script does the full chain in one shot.
 #
+# PRD 2.11 (dept trio): every department — including custom departments added
+# by this script — must have a QC Specialist, a Deep Research Specialist, and
+# a Devil's Advocate agent row. The Devil's Advocate is AUTO-CREATED and is
+# NEVER surfaced to the client (not shown on the board, not mentioned in any
+# communication or deliverable). These three rows are created alongside the
+# department head on every fresh add-department.sh invocation.
+#
 # What it does (every step is idempotent — safe to re-run with the same args):
 #   1. INSERT a row into the workspaces table (id = slug)
 #   2. INSERT a department-head row into the agents table (status='standby')
+#   2b. INSERT a QC Specialist agent row (is_master=0, status='standby')
+#   2c. INSERT a Deep Research Specialist agent row (is_master=0, status='standby')
+#   2d. INSERT a Devil's Advocate agent row — AUTO-CREATED, NEVER shown to client
 #   3. INSERT a starter "Welcome to <Dept>" task into the tasks table
 #      (status='backlog', assigned/created_by = the head agent's id)
 #   4. Append the new dept slug to 23-ai-workforce-blueprint/templates/role-
@@ -263,6 +273,68 @@ def main():
         db.execute(sql, [qc_data[c] for c in insert_cols])
         print(f"  + agent (QC)     {qc_agent_id}  ({qc_name})")
 
+        # ─── 2c. (PRD 2.11) INSERT Deep Research Specialist agent ────────────
+        # Every department gets a research specialist so the Devil's Advocate and
+        # other specialists have a dedicated research resource. Auto-created.
+        research_agent_id = secrets.token_hex(8)
+        research_name = f"Deep Research Specialist — {NAME}"
+        research_data = {
+            "id": research_agent_id,
+            "workspace_id": ws_id,
+            "name": research_name,
+            "role": "Deep Research Specialist",
+            "role_type": "Deep Research Specialist",
+            "persona": f"deep-research-specialist-{SLUG}",
+            "description": (
+                f"Deep research intelligence engine for the {NAME} department. "
+                f"Provides Tier-1-cited research (McKinsey, HBR, IBISWorld, Statista) "
+                f"for all {NAME.lower()} decisions."
+            ),
+            "specialist_type": "permanent",
+            "status": "standby",
+            "avatar_emoji": "🔬",
+            "is_master": 0,
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+        insert_cols = [c for c in research_data if c in ag_cols]
+        sql = f"INSERT INTO agents ({','.join(insert_cols)}) VALUES ({','.join('?'*len(insert_cols))})"
+        db.execute(sql, [research_data[c] for c in insert_cols])
+        print(f"  + agent (Research) {research_agent_id}  ({research_name})")
+
+        # ─── 2d. (PRD 2.11) INSERT Devil's Advocate agent ────────────────────
+        # AUTO-CREATED. NEVER surfaced to the client — not shown on the board,
+        # not mentioned in any client-facing communication or deliverable.
+        # Surfaces blind spots in high-stakes {dept} work before it ships.
+        # Triggers on: critical tasks, strategic decisions, consecutive approvals,
+        # and KPI swings > 20%. Runs silently in the background.
+        da_agent_id = secrets.token_hex(8)
+        da_name = f"Devil's Advocate — {NAME}"
+        da_data = {
+            "id": da_agent_id,
+            "workspace_id": ws_id,
+            "name": da_name,
+            "role": "Devil's Advocate",
+            "role_type": "devils-advocate",
+            "persona": f"devils-advocate-{SLUG}",
+            "description": (
+                f"Internal challenge mechanism for the {NAME} department. "
+                f"Auto-created. NEVER surfaced to the client. Surfaces blind "
+                f"spots in high-stakes decisions before they cause real-world damage."
+            ),
+            "specialist_type": "permanent",
+            "status": "standby",
+            # Hidden from client-facing views: avatar_emoji omitted intentionally
+            # so the board filter (emoji != null) can suppress it if desired.
+            "is_master": 0,
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+        insert_cols = [c for c in da_data if c in ag_cols]
+        sql = f"INSERT INTO agents ({','.join(insert_cols)}) VALUES ({','.join('?'*len(insert_cols))})"
+        db.execute(sql, [da_data[c] for c in insert_cols])
+        print(f"  + agent (DA)     {da_agent_id}  ({da_name}) [INTERNAL — never shown to client]")
+
         # ─── 3. INSERT starter task ──────────────────────────────────────────
         task_id = secrets.token_hex(8)
         tk_data = {
@@ -321,6 +393,8 @@ def main():
         "workspace_id": ws_id,
         "head_agent_id": head_agent_id,
         "qc_agent_id": qc_agent_id,
+        "research_agent_id": research_agent_id,
+        "da_agent_id": da_agent_id,
         "starter_task_id": task_id,
         "status": "created",
     })
