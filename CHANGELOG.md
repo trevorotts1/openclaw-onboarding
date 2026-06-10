@@ -1,3 +1,28 @@
+## [v11.8.8]  -  2026-06-10  -  feat(prd-2.11-onb): department trio — QC + research + devil's-advocate per dept
+
+**PRD 2.11 (onboarding side) — Department trio: QC + research + DA present in EVERY department**
+Branch: feat/prd-2.11-dept-trio.
+
+**What changed:**
+- **21 new role files** in `23-ai-workforce-blueprint/templates/role-library/`: `devils-advocate-—-{dept}.md` for all 18 operational departments; `deep-research-specialist-{dept}.md` for `general-task`, `project-architecture-office`, and `research` (which were missing it).
+- **`_index.json`**: registered trio slugs (qc-specialist, deep-research-specialist, devils-advocate) for every operational department.
+- **`verify-library-gate.sh` v10.16.0**: added TRIO GATE. Checks role-library source tree for QC + deep-research + devil's-advocate file per operational dept; writes `trioStatus` and per-dept `trioFilled` to build-state; exits `rc=6` on trio failure.
+- **`add-department.sh`**: added steps 2c (Deep Research Specialist) and 2d (Devil's Advocate) — both agent rows are INSERT'd on every custom-department add. DA has explicit client-suppression comment. Summary JSON updated to include `research_agent_id` and `da_agent_id`.
+- **`test-trio-gate.sh`**: 9-assertion fixture test (no client box required). Covers disk check, _index.json registration, DA suppression note, add-department.sh wiring, gate assertions, and negative (missing DA fails) fixture.
+- **`scripts/generate-trio-roles.py`**: bootstrap utility used to generate the missing files; kept for future use when new departments are added.
+- Devil's Advocate: auto-created in every department. NEVER surfaced to the client on the board, in communications, or in any deliverable.
+- Version bump: v11.8.7 → v11.8.8 (all 9 markers + cc-compat.json).
+
+**QC score: pending**
+
+**Verify (PRD 2.11 onboarding side, fixture — no client box):**
+- `bash 23-ai-workforce-blueprint/scripts/test-trio-gate.sh` exits 0: PASS (9/9 assertions)
+- Gate exits 6 when any dept missing DA (inline fixture): PASS
+- `_index.json` trio registered for all 18 operational depts: PASS
+- All DA files contain `OPERATOR NOTE` suppression marker: PASS
+
+---
+
 ## [v11.8.7]  -  2026-06-10  -  feat(prd-2.5-onb): branding-questions.json — single source of truth for Skill 23 branding portion
 
 **PRD 2.5 (onboarding side) — Interview content: one source of truth**
