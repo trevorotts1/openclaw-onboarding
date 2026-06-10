@@ -1,3 +1,20 @@
+## [v11.7.0-QC]  -  2026-06-09  -  fix(1.3): ONE shared find_dashboard_db() — resolve_db.py; QC PASS — weighted 9.57/10
+
+**QC item 1.3 — Single shared find_dashboard_db() resolver in shared-utils/resolve_db.py**
+Merge SHA (Mac): 6b9bc5a50b0fa4966473835036d63fcd5cd6841f
+Merge SHA (VPS): b24fd8b092d7bffdb2dd116aff3f342489cc4251
+
+Scores per dimension (weights: Wiring 30, SSOT 20, Path 15, Observability 15, Docs 10, Regression 10):
+- Wiring (30): 10/10 — Every consumer script (persona-selector-v2, verify-persona-adherence, sync-md-content-to-db x2, seed-workspaces, generate-brand-css, seed-dashboard-content) delegates to shared resolver; local copies fully deleted or wrapped.
+- SSOT (20): 10/10 — Single canonical resolve_db.py in shared-utils with 8-candidate ordered list; detect_platform.get_openclaw_paths() also wired in; no duplicate definitions survive.
+- Path (15): 9/10 — Both Mac (~/projects/command-center/) and VPS (/data/projects/command-center/) canonical paths present; env-var override first; legacy paths retained for old installs; minor: is_db_found sentinel doc mentions Path("") vs "." edge case but is correctly implemented.
+- Observability (15): 9/10 — db field injected into ALL selector JSON response branches (mechanical, sticky, normal); "none" string when absent; is_db_found() prevents silent Path("").exists()==True false positive on macOS.
+- Docs (10): 9/10 — resolve_db.py has full module docstring, per-candidate inline comments, usage example, __main__ self-test; test-resolve-db.sh provides executable verification; detect_platform docstring updated.
+- Regression (10): 9/10 — test-resolve-db.sh: 5 checks verified on both repo clones including absent-DB sentinel, env-var priority, Mac/VPS fixtures; Haiku verify confirmed both layouts pass; CI green on both repos.
+
+Weighted score: 9.57/10 (Wiring gating satisfied, both layout paths verified, parity clean across Mac + VPS repos)
+
+
 ## [v11.6.0-QC]  -  2026-06-09  -  qc(1.7): remove literal ~/... tilde paths in Python; QC PASS — weighted 9.67/10
 
 **QC item 1.7 — Remove every literal `~/...` string passed bare to os.path.isdir/Path/variable in Python**
