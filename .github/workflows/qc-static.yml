@@ -1166,16 +1166,12 @@ jobs:
             || { echo "✗ simulate-all-loaded did not report trigger_fired=True (got: $FIRED)"; exit 1; }
           [ -f "$TMPDIR_AF4/legacy-retirement-triggered" ] \
             || { echo "✗ sentinel file not written by simulate-all-loaded"; exit 1; }
-          SENTINEL_OK=$(python3 -c "
-import json
-p = open('$TMPDIR_AF4/legacy-retirement-triggered').read()
-d = json.loads(p)
-assert d['total'] == 3, f'expected 3 total boxes, got {d[\"total\"]}'
-assert d['dry_run'] is True, 'dry_run should be True'
-print('ok')
-")
-          [ "$SENTINEL_OK" = "ok" ] \
-            || { echo "✗ sentinel JSON payload malformed"; exit 1; }
+          SENTINEL_TOTAL=$(python3 -c "import json; d=json.load(open('$TMPDIR_AF4/legacy-retirement-triggered')); print(d['total'])")
+          [ "$SENTINEL_TOTAL" = "3" ] \
+            || { echo "✗ sentinel total should be 3, got: $SENTINEL_TOTAL"; exit 1; }
+          SENTINEL_DRYRUN=$(python3 -c "import json; d=json.load(open('$TMPDIR_AF4/legacy-retirement-triggered')); print(d['dry_run'])")
+          [ "$SENTINEL_DRYRUN" = "True" ] \
+            || { echo "✗ sentinel dry_run should be True, got: $SENTINEL_DRYRUN"; exit 1; }
           rm -rf "$TMPDIR_AF4"
           echo "✓ AF4 simulate-all-loaded fires trigger (trigger_fired=True), sentinel written + valid"
           echo "✓ AF4 retirement-trigger artefacts + dry-run fixture all pass"
