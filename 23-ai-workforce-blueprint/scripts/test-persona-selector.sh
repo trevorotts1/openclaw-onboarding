@@ -68,7 +68,10 @@ if [ ! -x "$SELECTOR" ]; then
 fi
 
 # Locate persona-categories.json for A4 tag-intersection assertion
-PERSONA_CAT_FILE="$HOME/Downloads/openclaw-master-files/22-book-to-persona-coaching-leadership-system/persona-categories.json"
+# PRD 2.7: canonical = workspace/data/coaching-personas/persona-categories.json.
+# Skill-folder copy is shipped seed (READ-ONLY); only used as final fallback here.
+PERSONA_CAT_FILE="$HOME/.openclaw/workspace/data/coaching-personas/persona-categories.json"
+[ ! -f "$PERSONA_CAT_FILE" ] && PERSONA_CAT_FILE="/data/.openclaw/workspace/data/coaching-personas/persona-categories.json"
 [ ! -f "$PERSONA_CAT_FILE" ] && PERSONA_CAT_FILE="$HOME/.openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json"
 [ ! -f "$PERSONA_CAT_FILE" ] && PERSONA_CAT_FILE=""  # A4 tag check skipped if file missing
 

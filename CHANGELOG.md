@@ -1,3 +1,21 @@
+## [v11.8.4]  -  2026-06-10  -  feat(prd-2.7): persona-categories.json single canonical write target; orchestrator delegates to get_openclaw_paths(); coaching_personas fixed to workspace/data/coaching-personas/; QC+docs updated
+
+**PRD 2.7 — persona-categories.json: one write path, one read path**
+Branch: feat/prd-2.7-persona-categories-canonical-path.
+
+**What changed:**
+- `shared-utils/detect_platform.py`: `coaching_personas` → `workspace/data/coaching-personas/` (was `workspace/coaching-personas/`); `resolve_persona_categories` doc + order updated.
+- `23-ai-workforce-blueprint/lib/detect_platform.py`: same `coaching_personas` fix.
+- `22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py`: `_persona_categories_path()` now delegates to `get_openclaw_paths()["persona_categories"]`; `_append_persona_to_categories()` seeds from skill-folder copy on first run.
+- `scripts/qc-system-integrity.sh`: `PC_DIR` variable; checks 3.0/3.5/6.1 canonical-first; Phase 14 catalog candidates canonical-first + skill-folder warning.
+- `PIPELINE.md`: corrected "in the Skill 22 folder" to canonical runtime path + seed/write distinction.
+- `qc-book-to-persona-coaching-leadership-system.sh` + `test-persona-selector.sh`: canonical path first.
+- `persona-categories.README.md`: new — documents skill-folder file as READ-ONLY seed.
+- Version bump: v11.8.3 → v11.8.4.
+
+**Verify (PRD 2.7):**
+`paths["persona_categories"]` resolves to `workspace/data/coaching-personas/persona-categories.json`; no second write target; qc-system-integrity.sh checks 3.5/6.1 pass.
+
 ## [v11.8.3]  -  2026-06-10  -  feat(prd-2.6): auto-apply KNOWN-ISSUES #1 embeddings-stall mitigation; memorySearch.fallback+cache written by install.sh when 2nd provider key present; QC assertion added
 
 **PRD 2.6 — Apply KNOWN-ISSUES #1 mitigation automatically**

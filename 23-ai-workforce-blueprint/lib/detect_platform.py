@@ -66,7 +66,8 @@ def get_openclaw_paths() -> dict:
         print("Run the OpenClaw installer before executing this script.")
         raise SystemExit(1)
 
-    coaching_personas = workspace / "coaching-personas"
+    # PRD 2.7: canonical coaching-personas dir is workspace/data/coaching-personas/
+    coaching_personas = workspace / "data" / "coaching-personas"
     gemini_index = workspace / "data" / "gemini-index.sqlite"
 
     company_dir = resolve_active_company_dir(company_root)
@@ -98,18 +99,18 @@ def get_openclaw_paths() -> dict:
 
 def resolve_persona_categories(workspace: Path, root: Path, coaching_personas: Path) -> Path:
     """
-    Resolve persona-categories.json. v10.8.0 P0-5 fix: previously the path
-    pointed only at workspace/coaching-personas/persona-categories.json,
-    which doesn't exist on a fresh install. The file ships in Skill 22's
-    folder (22-book-to-persona-coaching-leadership-system/persona-categories.json)
-    and is COPIED to the coaching-personas workspace folder when Skill 22 runs.
+    Resolve persona-categories.json.
+
+    PRD 2.7: single canonical write target = workspace/data/coaching-personas/persona-categories.json.
+    The skill-folder copy is the SHIPPED seed (READ-ONLY); it is copied into the canonical
+    dir on first Skill 22 run and never written back to.
 
     Resolution order (first existing path wins):
       1. $PERSONA_CATEGORIES_PATH env var (operator override)
-      2. workspace/coaching-personas/persona-categories.json (runtime/post-install canonical)
-      3. root/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json (shipped)
+      2. workspace/data/coaching-personas/persona-categories.json  ← CANONICAL (PRD 2.7)
+      3. root/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json (shipped seed)
       4. workspace/22-book-to-persona-coaching-leadership-system/persona-categories.json (legacy)
-      5. coaching-personas (the original location — returned as a "next-best" stub even if missing)
+      5. candidates[0] — canonical-but-missing stub so callers can warn with the exact expected path
     """
     import os
     if os.environ.get("PERSONA_CATEGORIES_PATH"):

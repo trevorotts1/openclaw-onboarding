@@ -93,7 +93,9 @@ def get_openclaw_paths() -> dict:
     company_root = master_files / "zero-human-company"
 
     # --- derived paths ---
-    coaching_personas = workspace / "coaching-personas"
+    # PRD 2.7: canonical coaching-personas dir is workspace/data/coaching-personas/
+    # (next to the gemini index; aligns with orchestrator + embedding_engine paths).
+    coaching_personas = workspace / "data" / "coaching-personas"
     gemini_index = workspace / "data" / "gemini-index.sqlite"
 
     # build_state: the workforce build-state JSON (written by build-workforce.py)
@@ -168,10 +170,15 @@ def resolve_persona_categories(workspace: Path, root: Path, coaching_personas: P
     """
     Resolve persona-categories.json.
 
+    PRD 2.7: single canonical write target = workspace/data/coaching-personas/persona-categories.json.
+    The skill-folder copy (22-book-to-persona-coaching-leadership-system/persona-categories.json)
+    is the SHIPPED seed only — copied into the canonical dir on first Skill 22 run and never
+    written back. Readers that previously pointed at the skill folder are migrated here.
+
     Resolution order (first existing path wins):
       1. $PERSONA_CATEGORIES_PATH env var (operator override)
-      2. workspace/coaching-personas/persona-categories.json (runtime/post-install canonical)
-      3. root/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json (shipped)
+      2. workspace/data/coaching-personas/persona-categories.json  ← CANONICAL (PRD 2.7)
+      3. root/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json (shipped seed, READ-ONLY)
       4. workspace/22-book-to-persona-coaching-leadership-system/persona-categories.json (legacy)
       5. candidates[0] — returned as the "canonical-but-missing" stub so callers can
          warn with the exact expected path.
