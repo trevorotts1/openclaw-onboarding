@@ -1462,3 +1462,211 @@ jobs:
               else:
                   print(f"  ✓ lib-onboarding-state.sh contains: {tok}")
           sys.exit(fail)
+
+      # AF3: local-candidate-loop guard
+      # Catch any Python file that adds a rogue local ~/clawd candidate loop
+      # (roots.extend / inline list item of the form HOME/"clawd"... or
+      # expanduser("~/clawd/...") with a trailing comma) outside the explicitly
+      # tracked retirement allowlist in docs/LEGACY-RETIREMENT.md.
+      # Covers 32-command-center-setup AND the wider repo.
+      #
+      # Pattern matched: a list-item expression (trailing comma) containing:
+      #   HOME / "clawd" / ...        or
+      #   Path.home() / "clawd" / ... or
+      #   Path(os.path.expanduser("~/clawd/..."))  or
+      #   os.path.expanduser("~/clawd/...")
+      #
+      # Single-path assignments (no trailing comma) are NOT matched — they are
+      # legitimate single-path lookups, not candidate loops.
+      #
+      # Retirement allowlist (KNOWN legacy loops tracked in docs/LEGACY-RETIREMENT.md):
+      #   32-command-center-setup/scripts/generate-kpi-rollup.py   [AF3(a) primary]
+      #   32-command-center-setup/scripts/generate-brand-css.py    [AF3(a) primary]
+      #   32-command-center-setup/scripts/seed-workspaces.py
+      #   32-command-center-setup/scripts/seed-dashboard-content.py
+      #   23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py
+      #   23-ai-workforce-blueprint/scripts/sync-md-content-to-db.py
+      #   23-ai-workforce-blueprint/scripts/backfill-build-state.py
+      #   23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py
+      #   23-ai-workforce-blueprint/scripts/persona-selector-v2.py
+      #   22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
+      #   shared-utils/key_resolver.py
+      #   shared-utils/api_key_utils.py
+      #   shared-utils/llm_score.py
+      #
+      # A planted new candidate-loop outside this allowlist FAILS the build.
+      - name: "AF3: local-candidate-loop guard (32-command-center-setup + repo-wide)"
+        shell: python {0}
+        run: |
+          import re, sys
+          from pathlib import Path
+
+          # Allowlisted files — KNOWN legacy loops tracked in docs/LEGACY-RETIREMENT.md.
+          # These are the ONLY files permitted to contain local ~/clawd candidate loops.
+          # Any Python file NOT here that adds a ~/clawd list-item candidate loop fails CI.
+          ALLOWLIST = {
+              # 32-command-center-setup (primary AF3 scope)
+              "32-command-center-setup/scripts/generate-kpi-rollup.py",
+              "32-command-center-setup/scripts/generate-brand-css.py",
+              "32-command-center-setup/scripts/seed-workspaces.py",
+              "32-command-center-setup/scripts/seed-dashboard-content.py",
+              # 23-ai-workforce-blueprint
+              "23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py",
+              "23-ai-workforce-blueprint/scripts/sync-md-content-to-db.py",
+              "23-ai-workforce-blueprint/scripts/backfill-build-state.py",
+              "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
+              "23-ai-workforce-blueprint/scripts/persona-selector-v2.py",
+              # 22-book-to-persona
+              "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
+              # shared-utils
+              "shared-utils/key_resolver.py",
+              "shared-utils/api_key_utils.py",
+              "shared-utils/llm_score.py",
+          }
+
+          # Pattern: a list-item line (trailing comma) containing a local ~/clawd path.
+          # Matches:  HOME / "clawd" / ...,
+          #           Path.home() / "clawd" / ...,
+          #           Path(os.path.expanduser("~/clawd/...")),
+          #           os.path.expanduser("~/clawd/..."),
+          # Does NOT match single-path assignments (no trailing comma).
+          CANDIDATE_LOOP_PAT = re.compile(
+              r'^\s*(?:HOME|Path\.home\(\))\s*/\s*["\']clawd["\'].*,\s*(?:#.*)?$'
+              r'|^\s*Path\.home\(\)\s*/\s*["\']clawd[^"\']*["\'].*,\s*(?:#.*)?$'
+              r'|^\s*Path\(os\.path\.expanduser\(["\']~/clawd/.*\)\)\s*,\s*(?:#.*)?$'
+              r'|^\s*os\.path\.expanduser\(["\']~/clawd/.*\)\s*,\s*(?:#.*)?$'
+          )
+
+          # Verify the retirement doc exists and mentions every allowlisted file.
+          retirement_doc = Path("docs/LEGACY-RETIREMENT.md")
+          if not retirement_doc.exists():
+              print("✗ docs/LEGACY-RETIREMENT.md missing — required by AF3 guard")
+              sys.exit(1)
+          retirement_text = retirement_doc.read_text()
+          doc_fail = 0
+          for af in sorted(ALLOWLIST):
+              basename = Path(af).name
+              if basename not in retirement_text:
+                  print(f"  ✗ docs/LEGACY-RETIREMENT.md does not mention {basename}")
+                  doc_fail = 1
+          if doc_fail:
+              print("Fix: add the missing filenames to docs/LEGACY-RETIREMENT.md")
+              sys.exit(1)
+          print(f"✓ docs/LEGACY-RETIREMENT.md present and references all {len(ALLOWLIST)} allowlisted files")
+
+          violations = []
+          for py_file in sorted(Path(".").rglob("*.py")):
+              rel = str(py_file).lstrip("./")
+              # Skip git internals, archives, and explicitly allowlisted files
+              if any(part in rel for part in (".git/", "archive/", "migrate")):
+                  continue
+              if rel in ALLOWLIST:
+                  continue
+              # detect_platform.py IS the canonical resolver — always skip
+              if py_file.name == "detect_platform.py":
+                  continue
+              src = py_file.read_text(errors="replace")
+              for lineno, line in enumerate(src.splitlines(), 1):
+                  # Skip comment-only lines
+                  if line.lstrip().startswith("#"):
+                      continue
+                  if CANDIDATE_LOOP_PAT.search(line):
+                      violations.append((rel, lineno, line.rstrip()))
+
+          if violations:
+              print("✗ AF3 violation — rogue ~/clawd candidate-loop item found in Python file(s) NOT on the retirement allowlist:")
+              for rel, lineno, line in violations:
+                  print(f"    {rel}:{lineno}: {line}")
+              print()
+              print("Fix: add the file to docs/LEGACY-RETIREMENT.md (if it is a known legacy loop")
+              print("pending cleanup) OR remove the local path list and use get_openclaw_paths()")
+              print("from shared-utils/detect_platform.py instead.")
+              sys.exit(1)
+
+          print(f"✓ AF3 guard: no rogue ~/clawd candidate-loop items outside the {len(ALLOWLIST)}-file retirement allowlist")
+
+      # AF3: local-candidate-loop guard — negative fixture test.
+      # Proves the guard above ACTUALLY FAILS when a new file in 32-command-center-setup
+      # (or elsewhere) plants a local ~/clawd candidate-loop that is NOT on the allowlist.
+      # A guard that never bites is useless.
+      - name: "AF3: local-candidate-loop guard — negative fixture test (planted loop must fail)"
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          # Plant a temporary Python file in 32-command-center-setup/scripts/ with a
+          # rogue ~/clawd candidate loop. The filename does NOT appear on the allowlist.
+          PLANTED="32-command-center-setup/scripts/_af3_fixture_rogue_loop.py"
+          cat > "$PLANTED" <<'PYEOF'
+          #!/usr/bin/env python3
+          # AF3 CI fixture — planted by the negative self-test; NOT on the allowlist
+          import os
+          from pathlib import Path
+          HOME = Path.home()
+          def _find_thing():
+              roots = []
+              roots.extend([
+                  HOME / "clawd" / "zero-human-company",
+                  Path(os.path.expanduser("~/clawd/zhc")),
+              ])
+              return roots
+          PYEOF
+
+          # Run the same guard logic; it MUST exit non-zero on the planted file.
+          rc=0
+          python3 - <<'GUARD_PY' || rc=$?
+          import re, sys
+          from pathlib import Path
+
+          ALLOWLIST = {
+              "32-command-center-setup/scripts/generate-kpi-rollup.py",
+              "32-command-center-setup/scripts/generate-brand-css.py",
+              "32-command-center-setup/scripts/seed-workspaces.py",
+              "32-command-center-setup/scripts/seed-dashboard-content.py",
+              "23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py",
+              "23-ai-workforce-blueprint/scripts/sync-md-content-to-db.py",
+              "23-ai-workforce-blueprint/scripts/backfill-build-state.py",
+              "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
+              "23-ai-workforce-blueprint/scripts/persona-selector-v2.py",
+              "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
+              "shared-utils/key_resolver.py",
+              "shared-utils/api_key_utils.py",
+              "shared-utils/llm_score.py",
+          }
+
+          CANDIDATE_LOOP_PAT = re.compile(
+              r'^\s*(?:HOME|Path\.home\(\))\s*/\s*["\']clawd["\'].*,\s*(?:#.*)?$'
+              r'|^\s*Path\.home\(\)\s*/\s*["\']clawd[^"\']*["\'].*,\s*(?:#.*)?$'
+              r'|^\s*Path\(os\.path\.expanduser\(["\']~/clawd/.*\)\)\s*,\s*(?:#.*)?$'
+              r'|^\s*os\.path\.expanduser\(["\']~/clawd/.*\)\s*,\s*(?:#.*)?$'
+          )
+
+          violations = []
+          for py_file in sorted(Path(".").rglob("*.py")):
+              rel = str(py_file).lstrip("./")
+              if any(part in rel for part in (".git/", "archive/", "migrate")):
+                  continue
+              if rel in ALLOWLIST:
+                  continue
+              if py_file.name == "detect_platform.py":
+                  continue
+              src = py_file.read_text(errors="replace")
+              for lineno, line in enumerate(src.splitlines(), 1):
+                  if line.lstrip().startswith("#"):
+                      continue
+                  if CANDIDATE_LOOP_PAT.search(line):
+                      violations.append((rel, lineno, line.rstrip()))
+          if violations:
+              sys.exit(1)
+          sys.exit(0)
+          GUARD_PY
+
+          # Always clean up the planted file (even if something else fails).
+          rm -f "$PLANTED"
+
+          # Guard MUST have returned non-zero — a 0 exit means the guard is broken.
+          if [ "$rc" -eq 0 ]; then
+            echo "✗ AF3 negative fixture FAILED: guard returned 0 (PASS) on a planted rogue loop — guard is not enforcing"
+            exit 1
+          fi
+          echo "✓ AF3 negative fixture: guard correctly failed (exit $rc) on a planted rogue ~/clawd candidate-loop in 32-command-center-setup"
