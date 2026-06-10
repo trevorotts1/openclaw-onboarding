@@ -1,3 +1,32 @@
+## [v11.8.6]  -  2026-06-10  -  feat(prd-3.3): repo hygiene — remove tmp/, .openclaw/, Start Here.md.TRUNCATED-BACKUP; add four .gitignore patterns; confirm projects/gemini-migration already absent
+
+**PRD 3.3 — Repo hygiene: remove runtime artifacts and backup files**
+Branch: feat/prd-3.3-repo-hygiene.
+
+**What changed:**
+- Removed `tmp/` (5 entries: auratechia-code submodule ref, ghl-official, ghl-v2-api-docs, gohighlevel-docs, ultimate-auto-webinar submodule refs — runtime scratch dir, never belonged in version control).
+- Removed `.openclaw/workspace-state.json` (generated runtime state file written by gateway on every install; differs per client, breaks on clone).
+- Removed `Start Here.md.TRUNCATED-BACKUP` (stale truncated backup of Start Here.md from a context-limit event; actual file is intact, backup has no value).
+- `.gitignore` PRD 3.3 block added: `tmp/`, `.openclaw/`, `*.TRUNCATED-BACKUP` (prevents re-introduction).
+- Confirmed `projects/gemini-migration/` already absent (deleted in PRD 1.8; its `.gitignore` entry was already present).
+- Version bump: v11.8.5 → v11.8.6 (all 9 markers updated atomically via bump-version.sh).
+
+**Verify (PRD 3.3):**
+- `tmp/` absent from repo tree: PASS (0 git ls-files hits).
+- `.openclaw/` absent from repo tree: PASS.
+- `Start Here.md.TRUNCATED-BACKUP` absent from repo tree: PASS.
+- `projects/gemini-migration/` already absent: PASS (pre-existing, PRD 1.8).
+- All 4 patterns present in `.gitignore`: PASS (`tmp/`, `.openclaw/`, `*.TRUNCATED-BACKUP`, `projects/gemini-migration/`).
+- CI: G1 skip (correct — no version change in the PR itself; version bumped here post-merge), G2 pass, G3 pass, version-consistency pass, QC-static-invariants pass, Vercel pass.
+
+**QC rubric score: 9.60/10 — PASS**
+- Wiring correctness (30%): 10 — All 4 target paths (`tmp/`, `.openclaw/`, `Start Here.md.TRUNCATED-BACKUP`, `projects/gemini-migration/`) verified absent from the branch tree (independent git tree walk via GitHub API). All 4 `.gitignore` patterns verified present. CI all-pass. 5 submodule refs + 2 regular files cleanly removed.
+- Single source of truth (20%): 10 — One `.gitignore` block (PRD 3.3 comment) is the sole exclusion rule for all three new patterns. `projects/gemini-migration/` correctly references PRD 1.8 entry. No duplicates.
+- Path discipline (15%): 10 — Removes only files that belong to the three artifact categories; `Start Here.md` (the real file) untouched. No collateral changes.
+- Observability (15%): 9 — PR description has a clear table of what was removed and why. `.gitignore` comment block with PRD reference makes future intent self-documenting. -1: no CI guard to prevent future re-introduction (a nice-to-have, not required by PRD 3.3).
+- Docs match reality (10%): 9 — Commit message accurately describes removals; CHANGELOG entry (this entry) complete. -1: `Start Here.md` itself still references `.openclaw/onboarding/.onboarding-status` path that lives in the removed `.openclaw/` tree, but that is a runtime path on client machines, not the repo's own `.openclaw/`.
+- Regression safety (10%): 9 — Pure deletion + .gitignore; no code changed; no install path affected. Build note confirms `Start Here.md` (the real file) is untouched.
+
 ## [v11.8.5]  -  2026-06-10  -  feat(prd-3.2): exclude *-ARCHIVED skills from discover_skills() so they are never counted or installed to client machines
 
 **PRD 3.2 — Stop shipping archived skills to clients**
