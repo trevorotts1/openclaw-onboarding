@@ -1,3 +1,9 @@
+## [v11.8.2] — 2026-06-10 — PRD 2.3: list-canonical-departments.py + stale count sweep
+
+**New:** `scripts/list-canonical-departments.py` — single-source-of-truth script that reads `department-naming-map.json` and prints the 19 mandatory departments, 7 universal-primary vertical-pack departments, and computed floor (26). All live docs now reference this script instead of hardcoded counts (16, 17, 23, 24 swept from SKILL.md, INSTRUCTIONS.md, ZHC-BUILDOUT-EXPERIENCE.md, SYSTEM-DIAGNOSTIC-CHECKLIST.md, 34-ARCHIVED.md).
+
+---
+
 ## [v11.1.0] — 2026-06-09 — General Task + PAO departments, auto-wire detection, Ollama HARD RULE, model-object enforcement
 
 ### Overview
