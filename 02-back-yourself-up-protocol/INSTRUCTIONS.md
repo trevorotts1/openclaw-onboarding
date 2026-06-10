@@ -38,9 +38,15 @@ edit the config until I can create a valid backup." Fix the backup problem first
 | Main config | ~/.openclaw/openclaw.json |
 | Workspace .md files | AGENTS.md, TOOLS.md, MEMORY.md, IDENTITY.md, USER.md, SOUL.md, HEARTBEAT.md |
 | Memory logs | memory/*.md |
-| Secrets | ~/clawd/secrets/.env (if exists) |
+| Secrets | ~/.openclaw/secrets/.env (if exists) |
 | Installed skills | ~/.openclaw/skills/ |
 | Cron jobs | openclaw cron list (export) |
+| **Zero Human Company tree** | **~/Downloads/openclaw-master-files/zero-human-company/** (Mac) or **/data/openclaw-master-files/zero-human-company/** (VPS) — this is the entire AI workforce; ALL subdirectories must be included |
+
+**PRD 1.9 (v11.4.0): the zero-human-company tree MUST be in every full backup.**
+The QC script will FAIL if this table row is removed or if the directory is not
+present in the backup. This tree is the client's business — it cannot be
+reconstructed without the interview answers and all generated content.
 
 ### Process
 1. Create timestamped folder:

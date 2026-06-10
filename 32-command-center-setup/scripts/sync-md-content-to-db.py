@@ -120,20 +120,25 @@ def find_db(explicit: str | None = None) -> Path | None:
 
 
 def resolve_company_root() -> Path | None:
-    paths = get_openclaw_paths() or {}
-    cand = paths.get("active_zhc_company") or paths.get("zhc_company_root")
-    if cand:
-        return Path(cand)
-    workspace = paths.get("workspace_root") or paths.get("clawd_root") or os.path.expanduser("~/clawd")
-    zhc = Path(workspace) / "zero-human-company"
-    if zhc.is_dir():
-        candidates = sorted(
-            (d for d in zhc.iterdir() if d.is_dir() and not d.name.startswith(("_", "."))),
-            key=lambda d: d.stat().st_mtime,
-            reverse=True,
-        )
-        if candidates:
-            return candidates[0]
+    """PRD 1.9: use company_dir from get_openclaw_paths() — the canonical root."""
+    try:
+        paths = get_openclaw_paths() or {}
+    except Exception:
+        paths = {}
+    # company_dir is the per-slug subdirectory under master_files/zero-human-company/
+    if paths.get("company_dir"):
+        return Path(paths["company_dir"])
+    # Fall back to scanning company_root (the parent dir)
+    if paths.get("company_root"):
+        zhc = Path(paths["company_root"])
+        if zhc.is_dir():
+            candidates = sorted(
+                (d for d in zhc.iterdir() if d.is_dir() and not d.name.startswith(("_", "."))),
+                key=lambda d: d.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                return candidates[0]
     return None
 
 

@@ -41,13 +41,19 @@ except ImportError:
     OPENAI_AVAILABLE = False
     openai_pkg = None
 
-# Workspace Root Configuration (Mac default → VPS fallback). Legacy ~/clawd
-# was removed in v10.13.0.
-WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
-if not os.path.isdir(WORKSPACE_ROOT):
-    VPS_WORKSPACE = "/data/.openclaw/workspace"
-    if os.path.isdir(VPS_WORKSPACE):
-        WORKSPACE_ROOT = VPS_WORKSPACE
+# PRD 1.9: resolve paths via the single shared authority (detect_platform).
+_SHARED_UTILS = os.path.join(os.path.dirname(__file__), "..", "..", "..", "shared-utils")
+sys.path.insert(0, os.path.realpath(_SHARED_UTILS))
+try:
+    from detect_platform import get_openclaw_paths as _get_paths
+    _paths = _get_paths()
+    WORKSPACE_ROOT = str(_paths["workspace"])
+except (Exception, SystemExit):
+    WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
+    if not os.path.isdir(WORKSPACE_ROOT):
+        VPS_WORKSPACE = "/data/.openclaw/workspace"
+        if os.path.isdir(VPS_WORKSPACE):
+            WORKSPACE_ROOT = VPS_WORKSPACE
 
 DB_PATH = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/gemini-index.sqlite")
 GEMINI_MODEL = "gemini-embedding-2-preview"

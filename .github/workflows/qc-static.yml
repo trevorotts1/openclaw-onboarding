@@ -880,3 +880,39 @@ jobs:
             exit 1
           fi
           echo "✓ All 162 Skill 42 SOPs follow PA-NN-NN-slug.md"
+
+      # PRD 1.9: Path-authority guard — no Python script may define a top-level
+      # WORKSPACE_ROOT =, ZHC_ROOTS =, or MASTER_FILES = constant outside of a
+      # try/except block or function.  All path resolution goes through
+      # get_openclaw_paths() in shared-utils/detect_platform.py.
+      # Shell scripts are excluded (they legitimately use WORKSPACE_ROOT for
+      # OpenClaw workspace, not the company root).
+      # Exclusions: migrate/archive scripts, detect_platform.py itself, the
+      # HEARTBEAT/check scripts that ARE the canonical resolver, and fallback
+      # lines inside except/else blocks.
+      - name: PRD 1.9 path-authority guard (no rogue top-level WORKSPACE_ROOT / ZHC_ROOTS / MASTER_FILES in Python)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Only scan Python files (shell WORKSPACE_ROOT is the OpenClaw workspace, not a company root).
+          # Pattern: top-level bare assignment (zero indent, not inside try/except/def/class).
+          # We look for lines starting with the constant name (no leading whitespace).
+          ROGUE=$(grep -rn \
+            --include="*.py" \
+            -E '^(WORKSPACE_ROOT|ZHC_ROOTS|MASTER_FILES)\s*=' \
+            . \
+            | grep -v '\.git/' \
+            | grep -v 'archive/' \
+            | grep -v 'migrate' \
+            | grep -v 'shared-utils/detect_platform.py' \
+            | grep -v 'scripts/check-company-root' \
+            || true)
+          if [ -n "$ROGUE" ]; then
+            echo "✗ PRD 1.9 violation — Python script(s) define a top-level path root constant:"
+            echo "$ROGUE" | sed 's/^/    /'
+            echo ""
+            echo "Fix: remove the constant and call get_openclaw_paths() from shared-utils/detect_platform.py."
+            echo "Fallback assignments inside try/except blocks are OK (indented — won't match this guard)."
+            exit 1
+          fi
+          echo "✓ PRD 1.9 path-authority guard: no rogue top-level WORKSPACE_ROOT / ZHC_ROOTS / MASTER_FILES in Python"

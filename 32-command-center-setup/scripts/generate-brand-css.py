@@ -41,6 +41,12 @@ try:
 except ImportError:
     _HAS_SHARED_RESOLVER = False
 
+try:
+    from detect_platform import get_openclaw_paths as _get_paths  # type: ignore
+    _PATHS = _get_paths()
+except Exception:
+    _PATHS = {}
+
 
 def find_db():
     """
@@ -64,13 +70,18 @@ def find_db():
 
 
 def find_zhc_company_config(slug=None):
-    """Find company-config.json — most recent if slug is None."""
-    roots = [
+    """Find company-config.json — most recent if slug is None.
+    PRD 1.9: canonical root first, legacy roots for backward compat.
+    """
+    roots = []
+    if _PATHS.get("company_root"):
+        roots.append(Path(_PATHS["company_root"]))
+    roots.extend([
         HOME / "clawd" / "zero-human-company",
         HOME / "clawd" / "zhc",
-        Path(os.path.expanduser("~/clawd/zero-human-company")),  # PRD item 1.7: expanduser
-        Path(os.path.expanduser("~/clawd/zhc")),                  # PRD item 1.7: expanduser
-    ]
+        Path(os.path.expanduser("~/clawd/zero-human-company")),
+        Path(os.path.expanduser("~/clawd/zhc")),
+    ])
     candidates = []
     for root in roots:
         if not root.is_dir():
