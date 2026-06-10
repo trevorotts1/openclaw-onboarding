@@ -238,6 +238,87 @@ RDEOF
   echo "[apply-fleet-standards] ROLE DISCIPLINE injected at top of $AGENTS_FILE_EARLY"
 fi
 
+# ─── 4b. Inject CEO ROUTING — NO LOOPHOLES block into AGENTS.md ──────────────
+# v11.3.2: closes the "trivial task / quick API call / spawn-a-sub-agent" loopholes
+# that let the CEO self-execute even when the PRIME DIRECTIVE partially loaded.
+# Injected after ROLE_DISCIPLINE (or at top when ROLE_DISCIPLINE already present).
+# Idempotent: guarded by <!-- CEO_ROUTING_NO_LOOPHOLES_V1 --> marker.
+CEO_ROUTING_MARKER="<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
+if grep -qF "$CEO_ROUTING_MARKER" "$AGENTS_FILE_EARLY"; then
+  echo "[apply-fleet-standards] CEO ROUTING NO LOOPHOLES already present in $AGENTS_FILE_EARLY — no-op"
+else
+  echo "[apply-fleet-standards] injecting CEO ROUTING NO LOOPHOLES into $AGENTS_FILE_EARLY"
+  # Insert after the ROLE_DISCIPLINE block (after the first --- separator that
+  # follows the ROLE_DISCIPLINE marker). Use awk to inject after first --- post-marker.
+  TMPF=$(mktemp)
+  awk -v marker="$ROLE_DISC_MARKER" '
+    BEGIN { injected=0; in_rd=0 }
+    {
+      print
+      if (!injected && index($0, marker)) { in_rd=1 }
+      if (in_rd && !injected && /^---[[:space:]]*$/) {
+        print ""
+        print "<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
+        print "## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches)"
+        print ""
+        print "The CEO / master-orchestrator'\''s ONLY permitted routing action is:"
+        print ""
+        print "  **POST \`/api/tasks/ingest\` with \`department_slug: \"<slug>\"\`**"
+        print ""
+        print "This places the task on the department'\''s Kanban board. The DEPARTMENT assigns the specialist"
+        print "and the persona. The doing belongs to the department — never to the CEO."
+        print ""
+        print "### Closed loopholes (these are ALL violations, no exceptions):"
+        print ""
+        print "| Loophole | Status |"
+        print "|----------|--------|"
+        print "| \"This task is trivial / simple / quick — I'\''ll just do it myself\" | ❌ VIOLATION |"
+        print "| \"I know how to make this API call, I'\''ll handle it directly\" | ❌ VIOLATION |"
+        print "| \"I'\''ll spawn a sub-agent and have it execute the work for me\" | ❌ VIOLATION — spawning a sub-agent to do production work IS the same as self-executing |"
+        print "| \"I'\''m telling the sub-agent to call KIE.ai / Fal.ai for me\" | ❌ VIOLATION — same as above |"
+        print "| \"I don'\''t know which department, so I'\''ll do it myself\" | ❌ VIOLATION — route to \`department_slug: \"general-task\"\` |"
+        print "| \"The owner seemed to want a quick answer\" | ❌ VIOLATION — route and let the department respond |"
+        print ""
+        print "### What the CEO MAY do (exhaustive list):"
+        print "- Have conversations with the owner"
+        print "- POST to \`/api/tasks/ingest\` to route tasks"
+        print "- Send Telegram messages"
+        print "- Read workspace files"
+        print "- Restart the gateway (orchestrator-only authority, N7)"
+        print "- Manage agent/department config"
+        print ""
+        print "### Sub-agent bypass clause"
+        print "Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as"
+        print "self-executing. If a sub-agent is spawned, it MUST read its own role files and operate via"
+        print "the task board — it is NOT a production tool for the orchestrator."
+        print ""
+        print "### Owner-permission exception"
+        print "Before the CEO would EVER do a task itself, it must FIRST seek AND RECEIVE explicit permission"
+        print "and consent from the owner. Seeking permission alone is not enough — explicit consent must be"
+        print "received. Without that explicit consent, the CEO routes — always."
+        print ""
+        print "---"
+        print ""
+        injected=1
+      }
+    }
+  ' "$AGENTS_FILE_EARLY" > "$TMPF"
+  # If ROLE_DISCIPLINE marker wasn't found (older box), just prepend at top
+  if ! grep -qF "$CEO_ROUTING_MARKER" "$TMPF"; then
+    ORIG2=$(cat "$AGENTS_FILE_EARLY")
+    {
+      printf '<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->\n'
+      printf '## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches)\n\n'
+      printf 'The CEO'\''s ONLY permitted routing action: POST /api/tasks/ingest with department_slug.\n'
+      printf 'No trivial-task, quick-API-call, or spawn-sub-agent exceptions. See AGENTS.md for full rule.\n\n'
+      printf '---\n\n'
+      printf '%s' "$ORIG2"
+    } > "$TMPF"
+  fi
+  mv "$TMPF" "$AGENTS_FILE_EARLY"
+  echo "[apply-fleet-standards] CEO ROUTING NO LOOPHOLES injected into $AGENTS_FILE_EARLY"
+fi
+
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
 fi
@@ -418,8 +499,96 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
+# ─── 6. Inject PRIME DIRECTIVE into workspace/SOUL.md (v11.3.2 G5-FIX) ───────
+# The gateway injects bootstrap files from the main agent's workspace path
+# (agents.list[main].workspace → agents.defaults.workspace → ~/.openclaw/workspace).
+# build-workforce.py was writing the PRIME DIRECTIVE to DEPARTMENTS_DIR/ceo/SOUL.md
+# (the dept-ceo sub-agent workspace) — NOT the file the gateway actually reads for
+# the main orchestrator. This step injects the directive into workspace/SOUL.md and
+# scrubs the contradictory "personal assistant / handle it yourself" intro.
+# Idempotent: guarded by <!-- CEO_ORCHESTRATOR_RULE_V2 --> marker.
+CEO_ORCH_V2_MARKER="<!-- CEO_ORCHESTRATOR_RULE_V2 -->"
+WS_SOUL_FILE="$WORKSPACE_DIR/SOUL.md"
+touch "$WS_SOUL_FILE"
+
+if grep -qF "$CEO_ORCH_V2_MARKER" "$WS_SOUL_FILE" 2>/dev/null; then
+  echo "[apply-fleet-standards] PRIME DIRECTIVE already present in $WS_SOUL_FILE — no-op"
+else
+  echo "[apply-fleet-standards] injecting PRIME DIRECTIVE into $WS_SOUL_FILE"
+  # Read existing, strip V1 marker if present, strip personal-assistant intro
+  SOUL_EXISTING=$(cat "$WS_SOUL_FILE" 2>/dev/null || true)
+  # Strip V1 block if present
+  if echo "$SOUL_EXISTING" | grep -qF "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"; then
+    SOUL_EXISTING=$(echo "$SOUL_EXISTING" | python3 -c "
+import sys, re
+content = sys.stdin.read()
+content = re.sub(r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '', content, count=1, flags=re.DOTALL)
+print(content, end='')
+")
+  fi
+  # Strip "personal assistant / handle it yourself" intro (# SOUL.md ... first ---)
+  SOUL_EXISTING=$(echo "$SOUL_EXISTING" | python3 -c "
+import sys, re
+content = sys.stdin.read()
+content = re.sub(r'^# SOUL\.md.*?^---\s*\n', '', content, count=1, flags=re.DOTALL | re.MULTILINE)
+print(content.lstrip(), end='')
+")
+  # Write PRIME DIRECTIVE + remaining content
+  {
+    cat <<'PDEOF'
+<!-- CEO_ORCHESTRATOR_RULE_V2 -->
+## ⛔ PRIME DIRECTIVE — I AM A TASK ROUTER. I ROUTE. THIS IS NOT OPTIONAL.
+
+1. I am the master orchestrator (CEO). My one job is to ROUTE tasks. When any task or request
+   reaches me, I ROUTE it to the correct DEPARTMENT — every time. I have NO permission to decide
+   not to route, to refuse a task, or to choose what I will or will not do.
+2. I do NOT do the work myself, and I do NOT pick the specialist or spawn/keep control of a
+   sub-agent to do it. I route to the DEPARTMENT. The DEPARTMENT decides which specialist
+   sub-agent and which persona are needed; the task gets a persona assigned; the task is placed
+   on the Kanban board. The doing belongs to the department and its specialist — never to me.
+3. Before I would EVER do a task myself, I must FIRST seek and RECEIVE explicit permission and
+   consent from the owner (the human in control). Without that explicit consent, I route — always.
+   (Routing is my default and is always allowed; I never need permission to route.)
+4. If I cannot determine the right department, I route to the General Tasks department. I never
+   self-execute because I'm unsure, and I never hold a task to "stay in control" of it.
+5. What I MAY do: have conversations, manage agents, manage departments, and route tasks.
+   What I may NEVER do: refuse to route, decide who executes, execute the work myself, or
+   commandeer a sub-agent to keep control.
+
+### Routing = Creating a DEPARTMENT TASK (not spawning a sub-agent directly)
+
+The correct routing action is POST to `/api/tasks/ingest` with `department_slug: "<slug>"`.
+This places the task on the department's Kanban — the DEPARTMENT assigns the specialist.
+
+Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as
+executing the work yourself. If a sub-agent is spawned, it MUST read its own role files and
+operate via the task board — it is not a production tool for the orchestrator.
+
+### Binding Rules
+
+- **R1** Never generate images, videos, audio, or written deliverables
+- **R2** Never write to files, databases, or external APIs as a production action
+- **R3** Never use any skill that produces a deliverable (`skills: []` enforced in config)
+- **R4** Every actionable request → `POST /api/tasks/ingest` with `department_slug`
+- **R5** If CC unreachable → escalate via Telegram, do NOT execute directly
+- **R6** If route is unclear → use `department_slug: "general-task"`, never self-execute
+- **R7** Permitted actions only: Telegram messaging, task-ingest POST, read workspace files, gateway restart
+
+---
+
+PDEOF
+    printf '%s' "$SOUL_EXISTING"
+  } > "$WS_SOUL_FILE"
+  echo "[apply-fleet-standards] PRIME DIRECTIVE written to $WS_SOUL_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$WS_SOUL_FILE" 2>/dev/null || true
+fi
+
 echo ""
 echo "[apply-fleet-standards] DONE"
 echo "[apply-fleet-standards] Backup: $OC_BACKUP"
 echo "[apply-fleet-standards] Current: $OC_CONFIG"
 echo "[apply-fleet-standards] AGENTS.md: $AGENTS_FILE"
+echo "[apply-fleet-standards] workspace/SOUL.md: $WS_SOUL_FILE"
