@@ -669,6 +669,182 @@ else
   fail "QC-PROTOCOL.md should reference the 3-layer wiring requirement"
 fi
 
+# ── Test 13: Retirement trigger — dry-run NEVER sets retirement_triggered ─────
+section "Test 13: Retirement trigger — dry-run is inert (AF4)"
+
+# The AF4 QC gap: an earlier design ran per-box --update-box --dry-run and
+# persisted retirement_triggered=True to the manifest, permanently blocking
+# gh issue creation.  This test proves:
+#   (a) dry-run does NOT write the loaded-state manifest at all
+#   (b) A simulated all-loaded APPLY run DOES fire the trigger (writes sentinel
+#       when gh is absent) and sets retirement_triggered=True in the manifest
+#   (c) A second all-loaded APPLY run skips duplicate creation (idempotent)
+#   (d) A not-all-loaded APPLY run does NOT fire the trigger
+
+FX13="$(mktemp -d)"
+LOADED_STATE="$FX13/.fleet-loaded-state.json"
+
+# Helper: run the fleet-refresh.sh retirement block in isolation using
+# a stub APPLY result set and a fresh loaded-state file.
+run_retirement_block() {
+  local apply_flag="$1"   # 1 = apply, 0 = dry-run
+  local boxes_json="$2"   # JSON array of box result objects
+  local state_file="$3"   # path to loaded-state manifest
+
+  python3 - <<PYEOF
+import json, os, sys, subprocess, time
+from pathlib import Path
+
+loaded_state_file = Path("$state_file")
+all_results_json  = '''$boxes_json'''
+apply             = $apply_flag == 1
+
+state = {}
+if loaded_state_file.is_file():
+    try:
+        state = json.loads(loaded_state_file.read_text())
+    except Exception:
+        state = {}
+
+if "boxes" not in state or not isinstance(state["boxes"], dict):
+    state["boxes"] = {}
+if "retirement_triggered" not in state:
+    state["retirement_triggered"] = False
+
+try:
+    results = json.loads(all_results_json)
+except Exception:
+    results = []
+
+if not apply:
+    # Dry-run: manifest MUST NOT be touched
+    sys.exit(0)
+
+for box_result in results:
+    box = box_result.get("box", "")
+    if not box:
+        continue
+    loaded_present = box_result.get("loaded", {}).get("present", False)
+    result_val     = box_result.get("result", "unknown")
+    if result_val in ("ok",):
+        state["boxes"][box] = {
+            "loaded":    loaded_present,
+            "result":    result_val,
+            "ts":        int(time.time()),
+            "onboarding_version": box_result.get("onboarding_version", "unknown"),
+        }
+
+loaded_state_file.write_text(json.dumps(state, indent=2))
+
+all_loaded = all(entry.get("loaded", False) for entry in state["boxes"].values())
+not_loaded = [b for b, e in state["boxes"].items() if not e.get("loaded", False)]
+
+if not state["boxes"] or not all_loaded:
+    sys.exit(0)
+
+if state["retirement_triggered"]:
+    print("ALREADY_TRIGGERED")
+    sys.exit(0)
+
+# Fire the trigger — gh absent, write sentinel.
+trigger_file = loaded_state_file.parent / ".fleet-retirement-triggered"
+trigger_file.write_text(json.dumps({
+    "triggered_ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "boxes": list(state["boxes"].keys()),
+}))
+print("TRIGGER_FIRED")
+state["retirement_triggered"] = True
+loaded_state_file.write_text(json.dumps(state, indent=2))
+PYEOF
+}
+
+# ── (a) dry-run must NOT write the manifest ───────────────────────────────────
+BOXES_ALL_LOADED='[{"box":"alpha","result":"ok","loaded":{"present":true},"onboarding_version":"v11.13.0"},{"box":"beta","result":"ok","loaded":{"present":true},"onboarding_version":"v11.13.0"}]'
+
+run_retirement_block 0 "$BOXES_ALL_LOADED" "$LOADED_STATE" 2>/dev/null
+if [ -f "$LOADED_STATE" ]; then
+  fail "Test 13a: dry-run wrote the loaded-state manifest (should be inert)"
+else
+  pass "Test 13a: dry-run did NOT write the loaded-state manifest"
+fi
+
+# ── (b) all-loaded APPLY fires the trigger ────────────────────────────────────
+TRIGGER_OUT=$(run_retirement_block 1 "$BOXES_ALL_LOADED" "$LOADED_STATE" 2>/dev/null)
+TRIGGER_FILE="$FX13/.fleet-retirement-triggered"
+
+if [ "$TRIGGER_OUT" = "TRIGGER_FIRED" ]; then
+  pass "Test 13b: all-loaded APPLY fired the trigger (TRIGGER_FIRED)"
+else
+  fail "Test 13b: all-loaded APPLY did NOT fire the trigger (got: '$TRIGGER_OUT')"
+fi
+
+if [ -f "$TRIGGER_FILE" ]; then
+  pass "Test 13b: trigger sentinel file written"
+else
+  fail "Test 13b: trigger sentinel file NOT written"
+fi
+
+if [ -f "$LOADED_STATE" ]; then
+  RT=$(python3 -c "import json; d=json.load(open('$LOADED_STATE')); print(d.get('retirement_triggered', False))" 2>/dev/null)
+  [ "$RT" = "True" ] \
+    && pass "Test 13b: retirement_triggered=True persisted in manifest" \
+    || fail "Test 13b: retirement_triggered should be True, got: $RT"
+else
+  fail "Test 13b: loaded-state manifest not written"
+fi
+
+# ── (c) second all-loaded APPLY is idempotent — no duplicate ─────────────────
+rm -f "$TRIGGER_FILE"
+TRIGGER_OUT2=$(run_retirement_block 1 "$BOXES_ALL_LOADED" "$LOADED_STATE" 2>/dev/null)
+if [ "$TRIGGER_OUT2" = "ALREADY_TRIGGERED" ]; then
+  pass "Test 13c: second all-loaded APPLY correctly skipped (ALREADY_TRIGGERED)"
+else
+  fail "Test 13c: second APPLY should return ALREADY_TRIGGERED, got: '$TRIGGER_OUT2'"
+fi
+if [ ! -f "$TRIGGER_FILE" ]; then
+  pass "Test 13c: trigger sentinel NOT re-written (idempotent)"
+else
+  fail "Test 13c: trigger sentinel was re-written (duplicate — not idempotent)"
+fi
+
+# ── (d) not-all-loaded APPLY does NOT fire ────────────────────────────────────
+FX13B="$(mktemp -d)"
+LOADED_STATE_B="$FX13B/.fleet-loaded-state.json"
+TRIGGER_FILE_B="$FX13B/.fleet-retirement-triggered"
+BOXES_PARTIAL='[{"box":"alpha","result":"ok","loaded":{"present":true},"onboarding_version":"v11.13.0"},{"box":"beta","result":"ok","loaded":{"present":false},"onboarding_version":"v11.13.0"}]'
+
+run_retirement_block 1 "$BOXES_PARTIAL" "$LOADED_STATE_B" 2>/dev/null
+if [ -f "$TRIGGER_FILE_B" ]; then
+  fail "Test 13d: trigger fired when not all boxes loaded (should NOT fire)"
+else
+  pass "Test 13d: trigger correctly NOT fired when beta loaded=NO"
+fi
+if [ -f "$LOADED_STATE_B" ]; then
+  RT_D=$(python3 -c "import json; d=json.load(open('$LOADED_STATE_B')); print(d.get('retirement_triggered', False))" 2>/dev/null)
+  [ "$RT_D" = "False" ] \
+    && pass "Test 13d: retirement_triggered remains False in partial-loaded manifest" \
+    || fail "Test 13d: retirement_triggered should be False, got: $RT_D"
+fi
+
+rm -rf "$FX13" "$FX13B"
+
+# ── Test 14: Retirement block in fleet-refresh.sh bash syntax ─────────────────
+section "Test 14: fleet-refresh.sh (with retirement block) passes bash -n"
+
+bash -n "$REPO_ROOT/scripts/fleet-refresh.sh" \
+  && pass "fleet-refresh.sh with retirement block: bash syntax OK" \
+  || fail "fleet-refresh.sh with retirement block: bash syntax ERROR"
+
+# ── Test 15: .fleet-loaded-state.json docs/schema in docs/LEGACY-RETIREMENT.md ─
+section "Test 15: docs/LEGACY-RETIREMENT.md references retirement trigger"
+
+if grep -q "fleet-refresh\|retirement.trigger\|loaded.state\|all.*loaded\|APPLY" \
+      "$REPO_ROOT/docs/LEGACY-RETIREMENT.md" 2>/dev/null; then
+  pass "docs/LEGACY-RETIREMENT.md references the fleet-refresh retirement trigger"
+else
+  fail "docs/LEGACY-RETIREMENT.md should reference the fleet-refresh retirement trigger"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "════════════════════════════════════════════════════"

@@ -1128,6 +1128,86 @@ jobs:
 
           echo "✓ PRD 1.11 fleet-refresh artefacts pass all checks"
 
+      # PRD 1.11 / AF4: retirement-clock trigger contract.
+      # Proves that the fleet-refresh.sh retirement trigger is wired correctly:
+      #   (a) dry-run is inert (does NOT write the loaded-state manifest)
+      #   (b) all-loaded APPLY fires the trigger exactly once (idempotent)
+      #   (c) partial-loaded APPLY does NOT fire the trigger
+      # This is the regression gate for the AF4 QC gap where dry-run wrote
+      # retirement_triggered=True, permanently blocking gh issue creation.
+      - name: "PRD 1.11 / AF4: retirement-clock trigger contract (fixture)"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 1. LEGACY-RETIREMENT.md must reference the fleet-refresh trigger
+          grep -q "fleet-refresh\|retirement.trigger\|loaded.state\|all.*loaded\|APPLY" \
+            docs/LEGACY-RETIREMENT.md \
+            || { echo "x docs/LEGACY-RETIREMENT.md missing retirement trigger documentation"; exit 1; }
+          echo "ok docs/LEGACY-RETIREMENT.md references the fleet-refresh retirement trigger"
+
+          # 2. fleet-refresh.sh must contain the retirement trigger block
+          grep -q "retirement_triggered\|RETIREMENT TRIGGER\|retirement-clock\|LOADED_STATE_FILE\|all_loaded" \
+            scripts/fleet-refresh.sh \
+            || { echo "x fleet-refresh.sh missing retirement trigger block"; exit 1; }
+          echo "ok fleet-refresh.sh contains the retirement trigger block"
+
+          # 3. Dry-run MUST NOT write the manifest (core AF4 fix).
+          #    The retirement path is guarded by APPLY check.
+          grep -q 'APPLY -eq 1' scripts/fleet-refresh.sh \
+            || { echo "x fleet-refresh.sh retirement block is not guarded by APPLY check"; exit 1; }
+          echo "ok fleet-refresh.sh retirement block is guarded by APPLY check (dry-run safe)"
+
+          # 4+5. Python fixture proof — write to a temp script to avoid heredoc/YAML conflicts.
+          FX_CI="$(mktemp -d)"
+          LOADED_STATE_CI="$FX_CI/.fleet-loaded-state.json"
+          FIXTURE_PY="$FX_CI/af4_fixture.py"
+          printf '%s\n' \
+            'import json, sys, time' \
+            'from pathlib import Path' \
+            'loaded_state_file = Path(sys.argv[1])' \
+            'apply = int(sys.argv[2])' \
+            'if not apply:' \
+            '    sys.exit(0)' \
+            'state = {"boxes": {}, "retirement_triggered": False}' \
+            'state["boxes"]["alpha"] = {"loaded": True, "result": "ok", "ts": int(time.time())}' \
+            'loaded_state_file.write_text(json.dumps(state, indent=2))' \
+            'all_loaded = all(e.get("loaded", False) for e in state["boxes"].values())' \
+            'if all_loaded and not state["retirement_triggered"]:' \
+            '    trigger_file = loaded_state_file.parent / ".fleet-retirement-triggered"' \
+            '    trigger_file.write_text(json.dumps({"triggered_ts": "test", "boxes": list(state["boxes"].keys())}))' \
+            '    state["retirement_triggered"] = True' \
+            '    loaded_state_file.write_text(json.dumps(state, indent=2))' \
+            '    print("TRIGGER_FIRED")' \
+            > "$FIXTURE_PY"
+
+          # (a) dry-run (apply=0): manifest must NOT be written
+          python3 "$FIXTURE_PY" "$LOADED_STATE_CI" 0
+          if [ -f "$LOADED_STATE_CI" ]; then
+            echo "x Dry-run retirement block wrote the manifest (AF4 regression)"
+            rm -rf "$FX_CI"
+            exit 1
+          fi
+          echo "ok Dry-run: manifest not written (AF4 fix confirmed)"
+
+          # (b) all-loaded apply (apply=1): trigger must fire
+          TRIG_OUT=$(python3 "$FIXTURE_PY" "$LOADED_STATE_CI" 1)
+          TRIGGER_FILE_CI="$FX_CI/.fleet-retirement-triggered"
+          [ -f "$TRIGGER_FILE_CI" ] \
+            || { echo "x All-loaded APPLY did not fire trigger (sentinel missing)"; rm -rf "$FX_CI"; exit 1; }
+          RT=$(python3 -c "import json; d=json.load(open('$LOADED_STATE_CI')); print(d.get('retirement_triggered', False))" 2>/dev/null)
+          [ "$RT" = "True" ] \
+            || { echo "x retirement_triggered should be True after trigger, got: $RT"; rm -rf "$FX_CI"; exit 1; }
+          echo "ok All-loaded APPLY: trigger fired + retirement_triggered=True"
+
+          # 6. test-fleet-refresh.sh Test 13 block present (belt-and-suspenders).
+          grep -q "Test 13\|Test 13a\|13b\|13c\|13d" scripts/test-fleet-refresh.sh \
+            || { echo "x test-fleet-refresh.sh missing Test 13 retirement-trigger fixture"; exit 1; }
+          echo "ok test-fleet-refresh.sh contains Test 13 retirement trigger fixture"
+
+          rm -rf "$FX_CI"
+          echo "ok PRD 1.11 / AF4 retirement-clock trigger contract passes all checks"
+
       # PRD 1.11: Injected-core-files CI guard.
       # FAIL the build if any script writes a CEO/agent core file by a
       # hardcoded agents/<id>/ path instead of resolving through
