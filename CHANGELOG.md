@@ -13,13 +13,13 @@ Branch: feat/prd-3.2-exclude-archived-from-discover-skills.
 - The 3 `*-ARCHIVED` folders are present in the repo.
 - The install loop skips them via the existing `*ARCHIVED*` case guard (double-layer protection).
 
-**QC rubric score: 9.17/10 — PASS**
-- Wiring correctness (30%): 10 — `discover_skills()` now returns 40 on the real repo (verified: old returned 43, delta = exactly the 3 archived dirs). The install loop's existing `case *ARCHIVED*` guard is a second independent layer. Count and install behavior now agree.
+**QC rubric score: 9.20/10 — PASS** (independent QC scorer; verified locally: numbered=40 skill_md=40 on real clone)
+- Wiring correctness (30%): 10 — `discover_skills()` returns 40 (verified live: raw 43, delta = exactly 3 archived dirs). Install loop's `case *ARCHIVED* continue` at line 2474 is a second independent layer. Count and install behavior agree.
 - Single source of truth (20%): 9 — Both counting paths (`numbered_count` and `skill_md_count`) inside the single `discover_skills()` function exclude ARCHIVED. No duplicate implementations.
 - Path discipline (15%): 9 — No new paths introduced; function stays within the same resolver pattern as before.
-- Observability (15%): 9 — The existing `note "Skipped (archived): $SKILL_NAME"` in the install loop remains; `discover_skills()` now agrees with what is actually installed so any mismatch is surfaced.
-- Docs match reality (10%): 8 — PRD comment added inside the function; CHANGELOG updated. The agent-facing prose at line 640 ("40 active + 3 archived") accurately describes the repo structure and is intentionally left as-is.
-- Regression safety (10%): 9 — No existing behavior changed for active skills; ARCHIVED dirs untouched in repo; `grep -v` approach is POSIX-portable.
+- Observability (15%): 9 — The existing `note "Skipped (archived): $SKILL_NAME"` in the install loop remains; `discover_skills()` now agrees with what is actually installed.
+- Docs match reality (10%): 8 — PRD comment added inside the function; CHANGELOG updated. README "40 active + 3 archived" is accurate and intentionally unchanged.
+- Regression safety (10%): 9 — Active skills unaffected; ARCHIVED dirs untouched in repo; `grep -v` is POSIX-portable.
 
 ## [v11.8.4]  -  2026-06-10  -  feat(prd-2.7): persona-categories.json single canonical write target; orchestrator delegates to get_openclaw_paths(); coaching_personas fixed to workspace/data/coaching-personas/; QC+docs updated
 
