@@ -1,27 +1,34 @@
 #!/usr/bin/env python3
 """
-PRD 1.8 — Single embedding engine for the coaching-personas index.
+PRD 1.8 + onb-gemini — Single embedding engine for the coaching-personas index.
 
 This module is the ONE implementation of the indexer and search logic.
 All other copies (scripts/, skill 22, skill 23) are 3-line wrappers that
 import from here. projects/gemini-migration/ was a finished migration artifact
 and has been deleted.
 
-Key invariants enforced here (PRD 1.8):
-  - GEMINI_MODEL is the single pinned constant. A model change here
-    auto-triggers --rebuild (old DB rows carry a different model name and
-    the indexer refuses to serve mixed-model results).
+Key invariants enforced here (PRD 1.8 + onb-gemini GA migration):
+  - GEMINI_MODEL is the single pinned constant (now: "gemini-embedding-2", GA).
+    A model change here auto-triggers --rebuild (old DB rows carry a different
+    model name and the indexer refuses to serve mixed-model results).
+  - STALE_GEMINI_MODELS lists all retired/preview slugs. Any DB whose stored
+    model is in this set is STALE: the indexer refuses to extend it (requires
+    --rebuild) and the search path falls back to keyword mode with a loud
+    "stale preview model detected" warning. This is the model-drift detection
+    path that fires at the Wave-5 deploy when client boxes hold -preview vectors.
+  - output_dimensionality=3072 is set EXPLICITLY on every Gemini embed call
+    so the dimension contract is enforced at the API level (not inferred).
   - The embeddings table has provider TEXT, model TEXT, dim INTEGER columns.
     The migration path adds them if absent and backfills from vector blob length
     (1536=openai, 3072=gemini, anything else flagged for re-index).
   - At QUERY TIME: the search function reads the index provider and uses THE
     SAME provider for the query embedding. If the matching key is unavailable,
     search falls back to KEYWORD mode with a loud WARNING — it NEVER computes
-    cross-provider cosine similarity.
+    cross-model cosine similarity (cross-provider OR cross-GA/preview).
 
 Usage:
     from embedding_engine import (
-        GEMINI_MODEL, OPENAI_EMBED_MODEL,
+        GEMINI_MODEL, STALE_GEMINI_MODELS, OPENAI_EMBED_MODEL,
         get_embedder, get_embedding, init_db, chunk_text,
         keyword_fallback_search, search, cmd_index, cmd_status,
         get_db_index_provider,
@@ -64,18 +71,38 @@ except ImportError:
     openai_pkg = None
 
 # ---------------------------------------------------------------------------
-# PRD 1.8: SINGLE pinned model constants.
+# PRD 1.8 + onb-gemini: SINGLE pinned model constants.
 # Changing GEMINI_MODEL here will cause cmd_index() to detect a model mismatch
 # against the DB and require --rebuild.
+#
+# GA migration (onb-gemini): "gemini-embedding-2-preview" → "gemini-embedding-2"
+#   The preview slug is retired. Vectors produced by -preview and -2 are
+#   INCOMPATIBLE even at the same dimensionality — they are different models.
+#   Mixing them produces garbage cosine scores. STALE_GEMINI_MODELS captures
+#   all known preview/retired slugs so the drift-detection path can identify
+#   stale DBs at runtime and refuse to serve them without --rebuild.
 # ---------------------------------------------------------------------------
-GEMINI_MODEL = "gemini-embedding-2-preview"
+GEMINI_MODEL = "gemini-embedding-2"           # GA model — pinned here
+GEMINI_OUTPUT_DIM = 3072                      # explicit dimensionality contract
 OPENAI_EMBED_MODEL = "text-embedding-3-small"  # 1536-dim
+
+# All retired / preview Gemini embedding slugs whose vectors are INCOMPATIBLE
+# with GEMINI_MODEL. Any DB row carrying one of these model names is stale and
+# must be re-embedded before it can be queried or extended.
+STALE_GEMINI_MODELS = frozenset({
+    "gemini-embedding-2-preview",
+    "gemini-embedding-exp-03-07",   # earlier experimental slug (safety net)
+})
 
 # Expected dimensions for known models (used for backfill migration)
 _DIM_BY_MODEL = {
-    GEMINI_MODEL: 3072,
+    GEMINI_MODEL: GEMINI_OUTPUT_DIM,
     OPENAI_EMBED_MODEL: 1536,
 }
+# Backfill heuristic: when a pre-1.8 DB has no provider/model metadata, infer
+# from vector blob length. 3072-dim blobs may be -preview OR GA; both are
+# tagged with GEMINI_MODEL here and will be detected as stale when -preview
+# rows surface, triggering the re-embed path via STALE_GEMINI_MODELS.
 _DIM_TO_PROVIDER = {
     1536: ("openai", OPENAI_EMBED_MODEL),
     3072: ("gemini", GEMINI_MODEL),
@@ -257,7 +284,8 @@ def get_embedding(embedder, text, retries=5):
                     model=model_id,
                     contents=text,
                     config=_genai_types.EmbedContentConfig(
-                        task_type="RETRIEVAL_DOCUMENT"),
+                        task_type="RETRIEVAL_DOCUMENT",
+                        output_dimensionality=GEMINI_OUTPUT_DIM),
                 )
                 return np.array(response.embeddings[0].values, dtype=np.float32)
             elif provider == "openai":
@@ -306,7 +334,8 @@ def embed_query(embedder, query):
                     model=model_id,
                     contents=query,
                     config=_genai_types.EmbedContentConfig(
-                        task_type="RETRIEVAL_QUERY"),
+                        task_type="RETRIEVAL_QUERY",
+                        output_dimensionality=GEMINI_OUTPUT_DIM),
                 )
                 return np.array(response.embeddings[0].values, dtype=np.float32)
             elif provider == "openai":
@@ -330,12 +359,14 @@ def init_db(db_path: str = None) -> sqlite3.Connection:
     """
     Open (or create) the embeddings SQLite DB.
 
-    PRD 1.8: ensures provider TEXT, model TEXT, dim INTEGER columns exist.
-    If the DB was created before this migration, adds the columns and
+    PRD 1.8 + onb-gemini: ensures provider TEXT, model TEXT, dim INTEGER columns
+    exist. If the DB was created before this migration, adds the columns and
     backfills them from vector blob length:
-        1536 bytes / 4 bytes per float32 = 384 dims  -> impossible
-        1536 * 4 = 6144 bytes -> openai text-embedding-3-small
-        3072 * 4 = 12288 bytes -> gemini-embedding-2-preview
+        1536 * 4 = 6144 bytes  -> openai / text-embedding-3-small / 1536
+        3072 * 4 = 12288 bytes -> gemini / gemini-embedding-2 / 3072
+                                  (note: -preview blobs are the same size;
+                                   they will be detected as stale via
+                                   STALE_GEMINI_MODELS at search/index time)
         anything else -> flagged with provider='unknown', model='unknown'
     """
     if db_path is None:
@@ -383,8 +414,11 @@ def _backfill_provider_columns(conn: sqlite3.Connection):
     """
     Backfill provider/model/dim for rows that pre-date the PRD 1.8 migration.
     Resolution:
-        blob length == 1536*4 (6144) -> openai / text-embedding-3-small / 1536
-        blob length == 3072*4 (12288) -> gemini / gemini-embedding-2-preview / 3072
+        blob length == 1536*4 (6144)  -> openai / text-embedding-3-small / 1536
+        blob length == 3072*4 (12288) -> gemini / gemini-embedding-2 / 3072
+                                         (GA model name; stale -preview rows
+                                          carry the same blob size and will be
+                                          upgraded during the Wave-5 --rebuild)
         other -> unknown / unknown / 0 (flagged for re-index)
     """
     cursor = conn.cursor()
@@ -611,13 +645,30 @@ def search(query: str, limit: int = 3, db_path: str = None) -> int:
 
     index_provider, index_model = index_info
 
-    # Step 2: check if index model differs from current constant (model drift)
-    if index_provider == "gemini" and index_model != GEMINI_MODEL:
+    # Step 2: check if index model is stale (retired preview slug) or differs
+    # from the current GEMINI_MODEL constant (any model drift).
+    # STALE_GEMINI_MODELS is the authoritative list of incompatible old slugs.
+    # Cross-model cosine is NEVER computed — keyword fallback instead.
+    if index_provider == "gemini" and (
+            index_model in STALE_GEMINI_MODELS or index_model != GEMINI_MODEL):
+        if index_model in STALE_GEMINI_MODELS:
+            stale_reason = (
+                f"STALE PREVIEW MODEL DETECTED — Index was built with "
+                f"model={index_model!r} which is a retired/preview slug. "
+                f"Vectors from {index_model!r} are INCOMPATIBLE with the current "
+                f"GA model {GEMINI_MODEL!r} even at the same dimensionality. "
+                f"Run `gemini-indexer --rebuild` to re-embed with {GEMINI_MODEL!r}. "
+                f"Falling back to KEYWORD search until re-embed completes."
+            )
+        else:
+            stale_reason = (
+                f"Index was built with model={index_model!r} "
+                f"but GEMINI_MODEL constant is now {GEMINI_MODEL!r}. "
+                f"Run `gemini-indexer --rebuild` to re-index with the current model. "
+                f"Falling back to KEYWORD search."
+            )
         print(
-            f"WARNING [embedding-engine]: Index was built with model={index_model!r} "
-            f"but GEMINI_MODEL constant is now {GEMINI_MODEL!r}. "
-            f"Run `gemini-indexer --rebuild` to re-index with the current model. "
-            f"Falling back to KEYWORD search.",
+            f"WARNING [embedding-engine]: {stale_reason}",
             file=sys.stderr,
         )
         return keyword_fallback_search(query, limit, db_path)
@@ -740,11 +791,19 @@ def cmd_status(db_path: str = None) -> int:
             print(f"Index provider:  {iprov}")
             print(f"Index model:     {imodel}")
             if iprov == "gemini" and imodel != GEMINI_MODEL:
-                print(
-                    f"WARNING: Index model {imodel!r} != current constant "
-                    f"{GEMINI_MODEL!r}. Run --rebuild.",
-                    file=sys.stderr,
-                )
+                if imodel in STALE_GEMINI_MODELS:
+                    print(
+                        f"WARNING: STALE PREVIEW MODEL — Index model {imodel!r} is "
+                        f"a retired/preview slug; vectors are INCOMPATIBLE with current "
+                        f"GA model {GEMINI_MODEL!r}. Run --rebuild to re-embed.",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f"WARNING: Index model {imodel!r} != current constant "
+                        f"{GEMINI_MODEL!r}. Run --rebuild.",
+                        file=sys.stderr,
+                    )
         else:
             print("Index provider:  (unknown — run --rebuild to set)")
     if not os.path.exists(PERSONAS_DIR):
@@ -788,17 +847,30 @@ def cmd_index(rebuild: bool = False, db_path: str = None,
               file=sys.stderr)
         return 1
 
-    # Check for model drift before doing any work
+    # Check for model drift before doing any work.
+    # Stale preview models (STALE_GEMINI_MODELS) get a specific "stale" message;
+    # any other Gemini mismatch gets the generic drift message. Both block the
+    # incremental indexer and require --rebuild to protect vector integrity.
     index_info = get_db_index_provider(db_path)
     if index_info is not None and not rebuild:
-        _, existing_model = index_info
-        if existing_model != GEMINI_MODEL and index_info[0] == "gemini":
-            print(
-                f"ERROR [embedding-engine]: GEMINI_MODEL constant is now "
-                f"{GEMINI_MODEL!r} but the index was built with {existing_model!r}. "
-                f"Run with --rebuild to re-index with the current model.",
-                file=sys.stderr,
-            )
+        existing_provider, existing_model = index_info
+        if existing_provider == "gemini" and existing_model != GEMINI_MODEL:
+            if existing_model in STALE_GEMINI_MODELS:
+                print(
+                    f"ERROR [embedding-engine]: STALE PREVIEW MODEL — Index contains "
+                    f"vectors from retired/preview model {existing_model!r}. "
+                    f"These vectors are INCOMPATIBLE with the current GA model "
+                    f"{GEMINI_MODEL!r}. Run with --rebuild to re-embed all documents "
+                    f"with {GEMINI_MODEL!r}. (Wave-5 per-box re-embed will do this.)",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"ERROR [embedding-engine]: GEMINI_MODEL constant is now "
+                    f"{GEMINI_MODEL!r} but the index was built with {existing_model!r}. "
+                    f"Run with --rebuild to re-index with the current model.",
+                    file=sys.stderr,
+                )
             return 1
 
     embedder = get_embedder()
