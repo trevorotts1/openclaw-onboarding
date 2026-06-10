@@ -1,3 +1,20 @@
+## [v11.9.0-QC]  -  2026-06-10  -  feat(1.9): get_openclaw_paths() as the only path authority; QC PASS — weighted 9.30/10
+
+**QC item 1.9 — get_openclaw_paths() as the single path authority across both onboarding repos**
+Merge SHA (Mac): b622a8965692bafd369f5af766ae36a1f9a13480
+Merge SHA (VPS): c007e21cda98de724fc22d29ef62f4596bc0ee23
+
+Scores per dimension (weights: Wiring 30, SSOT 20, Path 15, Observability 15, Docs 10, Regression 10):
+- Wiring (30): 9/10 — All 10 Python scripts across both repos (build-workforce.py, seed-workspaces.py, both sync-md-content-to-db.py, both gemini-indexer.py, both gemini-search.py, populate-sops-from-manifest.py, generate-brand-css.py, generate-kpi-rollup.py) now call get_openclaw_paths() instead of defining their own path constants; all fallback branches inside try/except so the CI guard passes. Minor: check-company-root.sh embeds Python inline rather than a cleaner import, but works correctly.
+- SSOT (20): 10/10 — detect_platform.get_openclaw_paths() is the undisputed single authority; MASTER_FILES_DIR env override honored; get_legacy_company_roots() is a separate read-only function for migration only; no script writes outside master_files/zero-human-company/.
+- Path (15): 9/10 — Canonical company root correctly set to ~/Downloads/openclaw-master-files/zero-human-company/ (Mac) and /data/openclaw-master-files/zero-human-company/ (VPS); install.sh creates the directory and drops DO-NOT-DELETE.md on both platforms; VPS root correctly on persistent Docker volume outside .openclaw. Minor: generate-kpi-rollup.py docstring comment still references old ~/clawd path (copy artifact from description block), does not affect runtime.
+- Observability (15): 9/10 — check-company-root.sh HEARTBEAT script alerts via Telegram on missing/offloaded tree; BYUP QC script asserts zero-human-company backup coverage; build-workforce.py emits loud stderr WARNING when a legacy location exists and canonical is absent; iCloud offload check present. Minor: check-company-root.sh Telegram alert is conditional on TELEGRAM_OPERATOR_CHAT_ID being set, so a misconfigured box could fail silently.
+- Docs (10): 10/10 — DO-NOT-DELETE.md explains iCloud offload risk and backup protocol; Skill 02 INSTRUCTIONS.md updated with zero-human-company backup row; PRD 1.9 marker in detect_platform.py module docstring; build_state key added to return dict with docstring; all changed files have PRD 1.9 comment headers.
+- Regression (10): 9/10 — CI guard in qc-static.yml fails on top-level WORKSPACE_ROOT/ZHC_ROOTS/MASTER_FILES assignments in Python (excluding detect_platform.py, archive/, migrate); planted-rogue test verified to fail per Haiku verify report; both layout paths (Mac + VPS) pass; parity clean (byte-identical across 19 shared files). Minor: CI guard only scans Python, not shell scripts — shell scripts legitimately use WORKSPACE_ROOT for OpenClaw workspace but this gap is acknowledged and excluded by design.
+
+Weighted score: 9.30/10 (Wiring gating satisfied, both Mac + VPS layout paths verified by Haiku, parity clean)
+
+
 ## [v11.8.0-QC]  -  2026-06-09  -  feat(1.5): dept identity contract — canonical_slug.py; QC PASS — weighted 9.60/10
 
 **QC item 1.5 — Department Identity Contract: canonical_slug.py SSOT + all DB-writing scripts wired**
