@@ -6518,3 +6518,19 @@ All notable changes to the OpenClaw Onboarding package are documented here.
 ## v6.5.14 - 2026-04-01
 - Set tools.exec security=full and ask=off in openclaw.json during install
 - Write exec-approvals.json with askFallback=full — eliminates approval wall for autonomous agent operation
+
+## v11.4.0 — PRD 1.8: Shared Embedding Engine — 2026-06-10
+
+### QC Score: 96.5/100 — PASS
+
+**Item:** PRD 1.8 — shared-utils/embedding_engine.py: single embedding engine, provider/model/dim columns, cross-provider guard
+
+**Merge commit:** a81f1c3912af41dc9eae7a08d6fe754c6f59bff5
+
+**Per-dimension scores:**
+- Wiring (30/30): Single 430-line canonical implementation in shared-utils/embedding_engine.py; all 6 wrappers reduced to 3-line shims importing from it; projects/gemini-migration/ deleted; GEMINI_MODEL defined exactly once; CI enforces wrapper line-count, import guard, and singleton; 5 fixture tests pass on Mac layout.
+- SSOT (20/20): provider/model/dim columns written on every INSERT; init_db() migrates pre-1.8 tables and backfills from blob length; get_db_index_provider() reads canonical (provider, model) back; MAC and VPS byte-identical.
+- Path (13.5/15): detect_platform integration present via wrapper sys.path.insert; Mac (~/.openclaw) and VPS (/data/.openclaw) paths verified via fixture tests; embedding_engine.py itself relies on wrappers for path resolution rather than natively handling both layouts.
+- Observability (15/15): Loud WARNING [embedding-engine] on cross-provider fallback, model-drift detection with explicit stderr messages, --status reports provider/model, [embedding-engine] INFO on backfill, quota/timeout retry logging, keyword-fallback mode labeled in output.
+- Docs (8/10): CI step comments explain PRD 1.8 invariants; .gitignore entry with explanatory comment; all functions have docstrings with PRD 1.8 contracts; wrappers have one-line PRD 1.8 marker; no separate docs file.
+- Regression (10/10): CI enforces wrapper line count <=6, import from embedding_engine, GEMINI_MODEL singleton, schema columns present, keyword_fallback_search / get_db_index_provider / provider_hint all present; both layouts pass 5 fixture tests.
