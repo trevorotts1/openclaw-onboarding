@@ -1148,11 +1148,10 @@ def build_from_config(config):
 # ============================================================
 
 HOME = os.path.expanduser("~")
-# VPS install detection: prefer ~/clawd if it exists, else $HOME/clawd
-if os.path.isdir("~/clawd"):
-    WORKSPACE_ROOT = "~/clawd"
-else:
-    WORKSPACE_ROOT = os.path.join(HOME, "clawd")
+# Use Path.home() so tilde is always expanded — literal "~/..." strings are
+# NEVER expanded by os.path.isdir or pathlib.Path without expanduser/Path.home.
+# (PRD item 1.7: remove every literal "~/..." path in Python.)
+WORKSPACE_ROOT = str(Path.home() / "clawd")
 
 # Zero Human Company folder structure (v9.6.0+)
 # Top-level: ~/clawd/zero-human-company/
@@ -1169,9 +1168,7 @@ LEGACY_DEPARTMENTS_DIR = os.path.join(WORKSPACE_ROOT, "departments")  # pre-v9.6
 
 SUBAGENTS_DIR = os.path.join(WORKSPACE_ROOT, "subagents", "templates")
 MASTER_FILES = None  # Detected at runtime
-OPENCLAW_CONFIG = os.path.join(HOME, ".openclaw", "openclaw.json")
-if os.path.isdir("~/.openclaw"):
-    OPENCLAW_CONFIG = "~/.openclaw/openclaw.json"
+OPENCLAW_CONFIG = str(Path.home() / ".openclaw" / "openclaw.json")
 BACKUP_DIR = os.path.join(HOME, "Downloads", "openclaw-backups")
 COMPANY_DISCOVERY_DIR = None  # Set after master files detected; per-company file is now in COMPANY_DIR
 
@@ -3821,7 +3818,7 @@ def _resolve_director_model(dept_id):
     import subprocess
     selector_candidates = [
         os.path.join(HOME, "Downloads", "openclaw-master-files", "shared-utils", "select_model.py"),
-        "~/Downloads/openclaw-master-files/shared-utils/select_model.py",
+        str(Path.home() / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py"),
     ]
     for sel in selector_candidates:
         if os.path.isfile(sel):
