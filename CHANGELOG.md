@@ -9,12 +9,12 @@ Branch: feat/prd-2.5-branding-questions-json.
 - `23-ai-workforce-blueprint/SKILL.md` — added branding-questions single-source-of-truth note in the Required Read Order block.
 - Version bump: v11.8.6 → v11.8.7 (all 9 markers updated atomically via bump-version.sh).
 
-**QC score: 9.10/10 — PASS**
+**QC score: 9.10/10 — PASS** (independent scorer confirmed 2026-06-10)
 - Wiring correctness (30%): 9/10 — JSON exists, valid, 8 questions covering all Phase 3 brand themes + the two CC-structured fields. INSTRUCTIONS references it at both top-of-file and Phase 3. SKILL.md references it in required read order. CC vendoring + sync test scoped to 2.5-cc sub-agent (not this PR — by design). Deducted 1 for CC sync test not in this PR (correct per PRD split).
 - Single source of truth (20%): 10/10 — interview/branding-questions.json is the only place these question definitions exist in the onboarding repo. No duplicate definitions introduced. CC vendored copy + drift test specified in syncTest block.
 - Path discipline (15%): 10/10 — no hardcoded paths, no literal tildes, file lives under skill folder canonical location.
 - Observability (15%): 9/10 — syncTest.description block documents the failure contract. drillDepthRequirements explicitly expresses drill expectations. postSectionActions documents downstream writes.
-- Docs match reality (10%): 9/10 — INSTRUCTIONS.md and SKILL.md both updated in same commit. Deducted 1 point because SKILL.md version header still says v10.4.0 (that's a separate stale frontmatter item, not introduced here).
+- Docs match reality (10%): 9/10 — INSTRUCTIONS.md and SKILL.md both updated in same commit. SKILL.md version frontmatter says v10.4.0 — pre-existing stale item, not introduced here (-1).
 - Regression safety (10%): 10/10 — no existing functionality removed, only additive; existing Phase 3 text preserved and annotated.
 
 **Verify (PRD 2.5 onboarding side):**
