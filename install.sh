@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.8.2"
+ONBOARDING_VERSION="v11.8.3"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2760,7 +2760,7 @@ note "Step 7: Sub-agent + bootstrap config already applied in Step 0 — skippin
 # ----------------------------------------------------------
 configure_active_memory() {
     step "Step 7a: Configuring Active Memory (Layer 8)"
-    
+
     local OPENCLAW_JSON="$OC_JSON"
 
     if [ ! -f "$OPENCLAW_JSON" ]; then
@@ -2770,10 +2770,25 @@ configure_active_memory() {
 
     backup_config_file "$OPENCLAW_JSON"
 
-    OPENCLAW_JSON="$OPENCLAW_JSON" python3 << 'PYEOF'
+    # PRD 2.6: detect a second embeddings provider key so we can write the
+    # KNOWN-ISSUES #1 mitigation (memorySearch.fallback.* + memorySearch.cache.*)
+    # automatically.  Primary provider is Gemini; if OpenAI is also present it
+    # becomes the fallback provider (lowest latency on rate-limit trip).  If
+    # only OpenAI is present we promote it to primary with no fallback object.
+    local _GEMINI_KEY _OPENAI_KEY
+    _GEMINI_KEY=$(search_env_var "GEMINI_API_KEY" 2>/dev/null || true)
+    _OPENAI_KEY=$(search_env_var "OPENAI_API_KEY" 2>/dev/null || true)
+
+    OPENCLAW_JSON="$OPENCLAW_JSON" \
+    OC_GEMINI_KEY="$_GEMINI_KEY" \
+    OC_OPENAI_KEY="$_OPENAI_KEY" \
+    python3 << 'PYEOF'
 import json, os, sys
 
-path = os.environ['OPENCLAW_JSON']
+path        = os.environ['OPENCLAW_JSON']
+gemini_key  = os.environ.get('OC_GEMINI_KEY', '').strip()
+openai_key  = os.environ.get('OC_OPENAI_KEY', '').strip()
+
 try:
     with open(path) as f:
         config = json.load(f)
@@ -2814,12 +2829,58 @@ try:
     ms['enabled']  = True
     # Sources: "memory" reads MEMORY.md + memory/ files; "qmd" reads cross-agent transcripts
     ms.setdefault('sources', ["memory"])
-    # Provider: prefer "gemini" if available, fall back to "openai"
-    ms.setdefault('provider', "gemini")
-    ms.setdefault('fallback', "openai")
-    # v10.13.12: Pin the embedding model. gemini-embedding-001 is the
-    # fleet-confirmed standard (verified on Maria, Evelyn, Angela, Corey).
-    ms.setdefault('model', "gemini-embedding-001")
+
+    # Determine primary vs fallback provider from discovered keys.
+    # Gemini takes primary when present (fleet-confirmed fastest embedding).
+    if gemini_key:
+        ms.setdefault('provider', "gemini")
+        # v10.13.12: Pin the embedding model. gemini-embedding-001 is the
+        # fleet-confirmed standard (verified on Maria, Evelyn, Angela, Corey).
+        ms.setdefault('model', "gemini-embedding-001")
+    elif openai_key:
+        ms.setdefault('provider', "openai")
+        ms.setdefault('model', "text-embedding-3-small")
+
+    # ── PRD 2.6 / KNOWN-ISSUES #1: embeddings-stall mitigation ─────────────
+    # When the primary provider rate-limits, the memory-search step blocks the
+    # entire agent loop (no timeout, infinite retry spin).  Mitigation: write
+    # a structured fallback object + cache settings so the runtime trips over
+    # to the fallback provider instead of stalling.  This is applied
+    # automatically whenever a SECOND provider key is present.
+    #
+    # Documented config knobs (KNOWN-ISSUES.md §1, fleet-confirmed):
+    #   memorySearch.fallback.provider   — second provider name
+    #   memorySearch.fallback.model      — embedding model for that provider
+    #   memorySearch.fallback.apiKey     — resolved key (written so gateway
+    #                                      picks it up without a separate env
+    #                                      lookup; still present in env too)
+    #   memorySearch.cache.enabled       — short-circuit repeat queries
+    #   memorySearch.cache.maxEntries    — keep last N embeddings in RAM
+    # ────────────────────────────────────────────────────────────────────────
+    has_second_provider = (gemini_key and openai_key)
+    if has_second_provider:
+        # Gemini is primary; OpenAI is the fast, low-latency fallback.
+        fb = ms.setdefault('fallback', {})
+        if isinstance(fb, str):
+            # Upgrade legacy string value ("openai") to a full object.
+            fb = {}
+            ms['fallback'] = fb
+        fb.setdefault('provider', 'openai')
+        fb.setdefault('model',    'text-embedding-3-small')
+        fb.setdefault('apiKey',   openai_key)
+
+        cache = ms.setdefault('cache', {})
+        cache['enabled']       = True
+        cache.setdefault('maxEntries', 512)
+
+        print("  ✓ memorySearch.fallback.{provider,model,apiKey} written (KNOWN-ISSUES #1 mitigation)")
+        print("  ✓ memorySearch.cache.{enabled,maxEntries} written")
+    elif not gemini_key and openai_key:
+        # Only OpenAI — no fallback object needed; ensure legacy string absent.
+        ms.pop('fallback', None)
+    else:
+        # Only Gemini or no key yet — legacy string fallback kept for compat.
+        ms.setdefault('fallback', "openai")
 
     # v10.x.6 recovery knob: hard agent-turn timeout in SECONDS.
     # Schema-confirmed (agents.defaults.timeoutSeconds, positive int, dist 2026.5.20).
@@ -2838,7 +2899,7 @@ try:
     print("  ✓ Active Memory configured (Layer 8) — canonical schema")
     print("  ✓ plugins.entries.memory-core.enabled = true")
     print("  ✓ plugins.entries.memory-wiki.enabled = true")
-    print("  ✓ agents.defaults.memorySearch.{enabled, sources, provider, fallback} set")
+    print("  ✓ agents.defaults.memorySearch.{enabled, sources, provider, model} set")
     print("  ✓ plugins.slots.memory = memory-core")
 except Exception as e:
     print(f"  ✗ Could not configure Active Memory: {e}", file=sys.stderr)
@@ -2846,6 +2907,102 @@ PYEOF
 }
 
 configure_active_memory
+
+# ----------------------------------------------------------
+# Step 7a-qc: QC — assert memorySearch fallback + cache keys (PRD 2.6)
+# ----------------------------------------------------------
+# KNOWN-ISSUES #1 mitigation check: when both Gemini and OpenAI keys exist
+# the full fallback object and cache settings MUST be present in openclaw.json.
+# If they are missing, the agent loop can stall under embeddings rate-limits.
+qc_check_memory_search_fallback() {
+    step "QC: memorySearch fallback + cache presence check (PRD 2.6)"
+
+    local OPENCLAW_JSON="$OC_JSON"
+    if [ ! -f "$OPENCLAW_JSON" ]; then
+        warn "  openclaw.json not found — skipping memorySearch QC check"
+        return
+    fi
+
+    local _G _O
+    _G=$(search_env_var "GEMINI_API_KEY" 2>/dev/null || true)
+    _O=$(search_env_var "OPENAI_API_KEY" 2>/dev/null || true)
+
+    if [ -z "$_G" ] || [ -z "$_O" ]; then
+        note "  memorySearch fallback QC: only one provider key present — fallback object not required"
+        return 0
+    fi
+
+    # Both keys exist — assert the full fallback object and cache settings.
+    OPENCLAW_JSON="$OPENCLAW_JSON" python3 << 'QC_PYEOF'
+import json, os, sys
+
+path = os.environ['OPENCLAW_JSON']
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+except Exception as e:
+    print(f"  [QC FAIL] Cannot read openclaw.json: {e}", file=sys.stderr)
+    sys.exit(1)
+
+ms = (cfg
+      .get('agents', {})
+      .get('defaults', {})
+      .get('memorySearch', {}))
+
+failures = []
+
+# 1. fallback must be an object (not the legacy string)
+fb = ms.get('fallback')
+if not isinstance(fb, dict):
+    failures.append("memorySearch.fallback is absent or not an object (got: {!r})".format(fb))
+else:
+    for key in ('provider', 'model', 'apiKey'):
+        if not fb.get(key):
+            failures.append(f"memorySearch.fallback.{key} is missing or empty")
+
+# 2. cache block must exist with enabled=true
+cache = ms.get('cache')
+if not isinstance(cache, dict):
+    failures.append("memorySearch.cache is absent or not an object")
+elif not cache.get('enabled'):
+    failures.append("memorySearch.cache.enabled is not true")
+
+if failures:
+    print("  [QC FAIL] memorySearch fallback/cache keys incomplete:", file=sys.stderr)
+    for f in failures:
+        print(f"    ✗ {f}", file=sys.stderr)
+    sys.exit(1)
+
+print("  ✓ memorySearch.fallback.{provider,model,apiKey} — present")
+print("  ✓ memorySearch.cache.{enabled} — present")
+print("  [QC PASS] KNOWN-ISSUES #1 mitigation verified in openclaw.json")
+QC_PYEOF
+
+    local qc_exit=$?
+    if [ $qc_exit -ne 0 ]; then
+        error "memorySearch fallback/cache QC FAILED — re-running configure_active_memory"
+        # Auto-remediate: re-run the config step once and check again.
+        configure_active_memory
+        OPENCLAW_JSON="$OPENCLAW_JSON" python3 << 'QC_RETRY_PYEOF'
+import json, os, sys
+path = os.environ['OPENCLAW_JSON']
+with open(path) as f:
+    cfg = json.load(f)
+ms = cfg.get('agents', {}).get('defaults', {}).get('memorySearch', {})
+fb = ms.get('fallback')
+cache = ms.get('cache')
+ok = (isinstance(fb, dict) and
+      fb.get('provider') and fb.get('model') and fb.get('apiKey') and
+      isinstance(cache, dict) and cache.get('enabled'))
+if not ok:
+    print("  [QC FAIL] Still missing after remediation — manual review required", file=sys.stderr)
+    sys.exit(1)
+print("  [QC PASS] memorySearch fallback/cache confirmed after remediation")
+QC_RETRY_PYEOF
+    fi
+}
+
+qc_check_memory_search_fallback
 
 # ----------------------------------------------------------
 # Step 7b: Enable Dreaming (memory consolidation)

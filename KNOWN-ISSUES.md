@@ -19,7 +19,31 @@ timeout and sits in a retry spin while the embeddings provider rate-limits.
 ahead of the model call with no cap on retry/backoff. A throttled provider
 therefore stalls the whole turn rather than degrading gracefully.
 
-**Workaround (config knobs confirmed present in the running dist):**
+**Mitigation status: AUTO-APPLIED by install.sh (PRD 2.6, v11.8.3+)**
+
+`install.sh` Step 7a (`configure_active_memory`) now automatically writes
+the full fallback object and cache settings into `openclaw.json` whenever
+BOTH a Gemini key AND an OpenAI key are present at install time. A QC check
+(`qc_check_memory_search_fallback`) immediately asserts the keys are present
+and auto-remediates if not.
+
+You should NOT need to apply this workaround manually on boxes installed
+with v11.8.3 or later. To verify a box is protected:
+
+```bash
+python3 -c "
+import json
+cfg = json.load(open('~/.openclaw/openclaw.json'.replace('~', __import__('os').path.expanduser('~'))))
+ms = cfg.get('agents',{}).get('defaults',{}).get('memorySearch',{})
+fb = ms.get('fallback')
+print('OK' if isinstance(fb, dict) and fb.get('provider') and ms.get('cache') else 'MISSING')
+"
+```
+
+**Manual workaround (boxes installed before v11.8.3 or single-provider
+installs that later gained a second key):**
+
+Config knobs confirmed present in the running dist:
 
 - `memorySearch.fallback.provider`
 - `memorySearch.fallback.model`
