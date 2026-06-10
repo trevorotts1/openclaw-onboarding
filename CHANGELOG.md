@@ -1,3 +1,33 @@
+## [v11.10.0]  -  2026-06-10  -  feat(prd-2.8): ZHC closeout gated pipeline — 7 deliverable legs, pre-flight Telegram, connector-tree assertion, n8n, resume cron, fleet sweep
+
+**PRD 2.8 — Skill 37 ZHC Closeout: GATED pipeline so partial/absent closeouts are impossible going forward, fleet sweep for re-delivery of missing legs**
+Branch: feat/prd-2.8-closeout-gated-pipeline. Merged PR #146.
+
+**What changed:**
+- **`37-zhc-closeout/scripts/run-closeout.sh`**: pre-flight validates Telegram gateway health + KIE_API_KEY + NOTION_API_TOKEN before ANY generation; writes 7 `closeoutDeliverables` fields atomically as each step completes; registers dedicated closeout-resume cron (loop-registry UUID in state); invokes connector-tree assertion after Step 2; soft-fail n8n step (Step 6.5); extended `closeoutStatus` enum (partial, blocked-floor-incomplete, blocked-libraries-incomplete).
+- **`37-zhc-closeout/scripts/fleet-sweep-closeouts.sh`** (new): sweeps fleet, classifies boxes (complete/incomplete/ghost-complete/build-not-complete), re-runs `run-closeout.sh` on incomplete boxes in `--apply` mode; dry-run default, --local mode for single box.
+- **`37-zhc-closeout/scripts/qc-assert-org-chart-connector-tree.sh`** (new): programmatic assertion of SVG/CSS connector lines + 3 hierarchy levels; rejects card-grid anti-pattern by code, not just rubric; writes `qcOrgChartConnectorTree` to state.
+- **`37-zhc-closeout/scripts/resume-closeout-cron.sh`** (new): dedicated 15-min closeout-resume cron, separate from Skill 23 workforce-build-resume; zero-token leg check; self-removes when all 7 legs done|waived or 48-run cap exhausted; operator Telegram escalation every 3rd consecutive stall.
+- **`37-zhc-closeout/scripts/wire-n8n-closeout.sh`** (new): POSTs `zhc_closeout_complete` webhook after Telegram delivery; 3-retry exponential backoff; soft-fail + graceful skip when N8N_WEBHOOK_URL absent.
+- **`37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh`** (new): 12-assertion fixture test (T1-T9, no client box); all pass in CI.
+- **`23-ai-workforce-blueprint/build-state-schema.json`**: `closeoutDeliverables` object (7 fields, `additionalProperties: false`), `closeoutResumeUuid`, `closeoutResumeRegisteredAt`, `closeoutBlockReason`, `closeoutPartialReason`, `closeoutPartialArtifacts`, `qcOrgChartConnectorTree`; extended `closeoutStatus` enum.
+- **`37-zhc-closeout/INSTRUCTIONS.md`**: pre-flight section updated, 7-leg table, state machine diagram, fleet sweep section, loop registry section, Step 6.5 n8n doc.
+- **`37-zhc-closeout/skill-version.txt`**: 1.1.5 → 1.2.0.
+- **`.github/workflows/qc-static.yml`**: 4 new PRD-2.8 CI check steps (fixture test, org-chart assertion, schema guard, script presence + wiring).
+- Version: v11.9.0 → v11.10.0 (all 9 markers via bump-version.sh).
+
+**QC score: 9.0/10 PASS** (independent scorer 2026-06-10) — Wiring 9/10 (all 7 closeoutDeliverables fields written in run-closeout.sh at each step; cron loop-registry; wire-n8n 3-retry backoff; Telegram pre-flight gate; connector-tree invoked in pipeline), SSOT 9/10 (build-state-schema.json is the single source of truth; additionalProperties:false; all scripts write through state_set/state_get wrappers), Path 9/10 (happy + blocked-floor + blocked-libraries + partial + failed; Telegram pre-flight; n8n soft-fail; cron escalation + max-run cap), Observability 9/10 (per-leg state writes; qcOrgChartConnectorTree JSON in state; fleet sweep box classification; no fake/seeded data), Docs 9/10 (INSTRUCTIONS.md + CHANGELOG.md fully updated with state machine, 7-leg table, fleet sweep, loop registry, Step 6.5), Regression 9/10 (12 fixture assertions in CI; 4 new qc-static.yml steps; schema regression guard). Weighted: Wiring 27 + SSOT 18 + Path 13.5 + Observability 13.5 + Docs 9 + Regression 9 = 90/100.
+
+**Verify (PRD 2.8 closeout gated pipeline, fixture — no client box):**
+- `bash 37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh` exits 0: PASS (12/12 assertions T1-T9)
+- `gh pr checks 146` all green (G2, G3, QC static invariants, version-consistency): PASS
+- `qc-assert-org-chart-connector-tree.sh` — connector-tree HTML passes, card-grid HTML fails rc=1: PASS
+- `fleet-sweep-closeouts.sh --local` exits 2 for incomplete fixture: PASS
+- All 7 `closeoutDeliverables` fields in `build-state-schema.json` under `closeoutDeliverables.properties`: PASS
+- merge SHA: 7e051162f82f1eace999574c256c00c7a21272da
+
+---
+
 ## [v11.9.0]  -  2026-06-10  -  feat(prd-2.12-onb): SOP boundary gate — canonical depts always copy, never author
 
 **PRD 2.12 (onboarding side, boundary gate) — Canonical departments always copy from the 233-template library; only genuinely-custom departments are eligible for SOP authoring**

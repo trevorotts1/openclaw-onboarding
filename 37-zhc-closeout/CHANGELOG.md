@@ -45,6 +45,8 @@ Pre-flight section updated with Telegram gateway check. State machine section up
 
 - skill-version.txt: 1.1.5 → 1.2.0
 
+**QC score: 9.0/10 PASS** (independent scorer 2026-06-10) — Wiring 9/10, SSOT 9/10, Path 9/10, Observability 9/10, Docs 9/10, Regression 9/10. Weighted: 90/100. Merge SHA: 7e051162f82f1eace999574c256c00c7a21272da.
+
 ## [1.1.5] - 2026-06-01 - Beautiful, LINKED closeout: every artifact resolves to a REAL openable URL in Telegram (WS-9 closeout UX) (shipped with onboarding v10.15.20)
 
 The closeout messaging was messy and unlinked — images/video were sent inline but the durable "where do I find this later" link was either missing or a login-gated GHL app deep-link ("we saved it in this folder"). This release makes the celebration message BEAUTIFUL + LINKED: every artifact (celebration video, both infographics, Notion, Command Center, GHL media) resolves to a REAL openable URL posted IN the message. The anti-faking messageId-confirmation gate (1.1.4) is fully preserved.
