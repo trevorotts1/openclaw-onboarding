@@ -37,7 +37,7 @@ try:
     from detect_platform import get_openclaw_paths as _get_paths
     _paths = _get_paths()
     WORKSPACE_ROOT = str(_paths["workspace"])
-except Exception:
+except (Exception, SystemExit):
     WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
     if not os.path.isdir(WORKSPACE_ROOT):
         VPS_WORKSPACE = "/data/.openclaw/workspace"

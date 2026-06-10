@@ -1186,12 +1186,14 @@ try:
     MASTER_FILES = str(_PATHS_BW["master_files"])
     # Canonical ZHC root (PRD 1.9): master_files/zero-human-company/
     ZHC_ROOT = str(_PATHS_BW["company_root"])
-except Exception as _bw_err:
-    # Graceful fallback — should not occur on a properly installed box.
+except (Exception, SystemExit) as _bw_err:
+    # Graceful fallback — includes CI environments without an OpenClaw install.
+    # detect_platform raises SystemExit(1) when no platform is detected; catch it
+    # so module-level import in CI test fixtures does not crash.
     import warnings as _bw_warnings
     _bw_warnings.warn(
-        f"[build-workforce PRD-1.9] detect_platform import failed ({_bw_err}); "
-        "falling back to legacy ~/clawd root. Run the OpenClaw installer.",
+        f"[build-workforce PRD-1.9] detect_platform could not resolve paths ({type(_bw_err).__name__}: {_bw_err}); "
+        "falling back to legacy ~/clawd root. Run the OpenClaw installer on a real box.",
         stacklevel=1,
     )
     WORKSPACE_ROOT = str(Path.home() / "clawd")
