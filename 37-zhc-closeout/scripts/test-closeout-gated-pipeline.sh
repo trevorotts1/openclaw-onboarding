@@ -358,6 +358,65 @@ else
 
   [[ "$t9_ok" -eq 1 ]] && pass "T9: CI workflow references all PRD-2.8 QC checks" \
     || fail "T9: CI workflow missing some PRD-2.8 QC check references"
+
+  # PRD-2.13: CI must also reference watchdog-onboarding-loop checks
+  if grep -qE 'PRD.2.13|watchdog.onboarding.loop|test-watchdog-loop' "$qc_workflow"; then
+    info "CI references PRD-2.13 watchdog-onboarding-loop checks"
+  else
+    info "WARN: CI does not reference PRD-2.13 watchdog-onboarding-loop checks"
+    # Non-fatal for T9 (separate PRD), but noted
+  fi
+fi
+
+# ============================================================
+# T10: Closeout asserts loop registry is empty (PRD-2.13)
+# ============================================================
+# When closeout delivers, the onboarding watchdog loop must be GONE.
+# lr_assert_empty on a fully-killed registry must exit 0;
+# on a "running" registry it must exit 1.
+printf '\n--- T10: closeout asserts loop registry empty (PRD-2.13) ---\n'
+
+LOOP_REG_LIB_PATH=""
+for _cand in \
+  "${SCRIPT_DIR}/../../scripts/loop-registry.sh" \
+  "${SCRIPT_DIR}/../../../scripts/loop-registry.sh" \
+  "${REPO_ROOT}/scripts/loop-registry.sh"; do
+  [[ -n "$_cand" && -f "$_cand" ]] && LOOP_REG_LIB_PATH="$_cand" && break
+done
+
+if [[ -z "$LOOP_REG_LIB_PATH" ]]; then
+  fail "T10: loop-registry.sh not found — cannot assert empty registry"
+else
+  # Setup a temp fixture registry
+  _t10_dir=$(mktemp -d 2>/dev/null || mktemp -d -t t10)
+  _t10_reg="$_t10_dir/.loop-registry.json"
+  # shellcheck disable=SC1090
+  export LOOP_REGISTRY_FILE="$_t10_reg"
+  source "$LOOP_REG_LIB_PATH" 2>/dev/null || true
+
+  # Scenario A: all loops killed → lr_assert_empty exits 0
+  lr_register "watchdog-onboarding-loop" "test-uuid" "openclaw cron rm test-uuid" 2>/dev/null
+  lr_kill "watchdog-onboarding-loop" 2>/dev/null
+  _t10a_rc=0
+  lr_assert_empty 2>/dev/null && _t10a_rc=0 || _t10a_rc=$?
+  if [[ "$_t10a_rc" -eq 0 ]]; then
+    pass "T10a: lr_assert_empty exits 0 when all loops are killed (closeout-done state)"
+  else
+    fail "T10a: lr_assert_empty should exit 0 when all loops killed (rc=$_t10a_rc)"
+  fi
+
+  # Scenario B: loop still running → lr_assert_empty exits 1
+  rm -f "$_t10_reg"
+  lr_register "watchdog-onboarding-loop" "uuid-running" "openclaw cron rm uuid-running" 2>/dev/null
+  _t10b_rc=0
+  lr_assert_empty 2>/dev/null && _t10b_rc=0 || _t10b_rc=$?
+  if [[ "$_t10b_rc" -ne 0 ]]; then
+    pass "T10b: lr_assert_empty exits 1 when loop is still running (ghost-loop detection)"
+  else
+    fail "T10b: lr_assert_empty should exit 1 when loop still running (rc=$_t10b_rc)"
+  fi
+
+  rm -rf "$_t10_dir"
 fi
 
 # ============================================================
