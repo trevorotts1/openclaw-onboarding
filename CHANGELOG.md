@@ -1,3 +1,19 @@
+## [v11.5.0-QC]  -  2026-06-10  -  QC SCORE: 9.35/10 PASS — PRD 1.11 fleet-refresh
+
+**Item:** PRD 1.11 — close the merged≠deployed≠loaded gap (fleet-refresh)
+
+**Merge commits:** openclaw-onboarding c178c294 | openclaw-onboarding-vps 247e24ae
+
+**Per-dimension scores:**
+- Wiring (30%): 9/10 — 8-step ordered flow present; sessions.reset fires after both deploys; loaded-marker verifier in code (systemPromptReport primary + proxy fallback); sessions.reset guard has explicit safety assertion; cc-compat.json wires fleet-refresh and skill-32 to single version contract. Minor: skill-32 installer code-path is Wave 2.1 pre-existing, not code-traced in this PR.
+- SSOT (20%): 10/10 — resolve_injected_core_files.py is the single Python authority; build-workforce.py and apply-fleet-standards.sh are shims/delegates; cc_compat.py is the single resolver for both readers; no duplicate implementations.
+- Path (15%): 10/10 — all path resolution through detect_platform (runner) and resolve_injected_core_files (core files); FLEET_REFRESH_ROOT for fixture tests; no literal tilde paths; no per-script candidate lists.
+- Observability (15%): 9/10 — per-box JSON has merged_sha/deployed.*_ok/loaded.present/loaded_confidence/loaded.method/steps with ok/skip/failed; fleet summary file written; exit 2 on any partial/failed. Minor: detached npm build needs follow-up --verify-only pass.
+- Docs (10%): 9/10 — QC-PROTOCOL.md Part 2b adds 3-layer requirement with 10/8/5/3/0 scoring scale; CHANGELOG comprehensive; cc-compat.json notes field complete. Minor: SYSTEM-DIAGNOSTIC-CHECKLIST.md not updated in this PR.
+- Regression (10%): 9/10 — 12-test fixture harness (Mac+VPS, dry-run inertness, marker truth table, 3-step resolver, cc_compat, CI guard planted-violation bite, bash wrapper, idle-reset, QC-PROTOCOL 3-layer check); existing CI steps unmodified. Minor: live end-to-end deferred to Wave 5 smoke test.
+
+**Weighted score: 9.35/10 — PASS**
+
 ## [v11.5.0]  -  2026-06-10  -  feat(1.11): fleet-refresh.sh — close the "merged ≠ deployed ≠ loaded" gap
 
 **PRD item 1.11 — Close the "merged ≠ deployed ≠ loaded" gap (fleet-refresh)**
