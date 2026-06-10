@@ -197,7 +197,7 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 | X.2 | Bootstrap limits canonical | `jq '.agents.defaults.bootstrapMaxChars, .agents.defaults.bootstrapTotalMaxChars' ~/.openclaw/openclaw.json` returns `200000`, `400000` |
 | X.3 | Sub-agent timeouts ≥ 1800s for heavy | Search all skill scripts for `aiohttp.ClientTimeout\|timeout=` — heavy-reasoning paths show 1800+ |
 | X.4 | All skills point to v9.6.2 docs/templates | `grep -rn "v9.5\|v9.4\|v9.3" /tmp/openclaw-onboarding/install.sh /tmp/openclaw-onboarding/update-skills.sh` returns only historical CHANGELOG entries |
-| X.5 | Both Mac + VPS repos at same commit | `cd Mac; git log -1 --oneline` AND `cd VPS; git log -1 --oneline` show same version label |
+| X.5 | Unified repo version consistent | `cat ~/.openclaw/skills/.onboarding-version` (Mac) or `cat /data/.openclaw/skills/.onboarding-version` (VPS) matches latest tag in trevorotts1/openclaw-onboarding |
 | X.6 | Memory.md links to all 5 build artifacts | `grep -c "pre-interview-research\|workforce-interview-answers\|interview-handoff\|ORG-CHART\|departments.json\|sop-research-manifest" ~/clawd/MEMORY.md` ≥ 5 |
 | X.7 | GHL daily quota not exhausted (won't block install if so) | `bash ~/clawd/scripts/qc-ghl-mcp-setup.sh \| grep "X-RateLimit-Daily-Remaining"` returns > 1000 |
 

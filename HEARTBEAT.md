@@ -9,7 +9,7 @@
    a. Read the notification at `/tmp/oc-update-notification.md`
    b. Clone the latest repo to `/tmp/`:
       - Mac: `git clone https://github.com/trevorotts1/openclaw-onboarding.git /tmp/oc-review`
-      - VPS: `git clone https://github.com/trevorotts1/openclaw-onboarding-vps.git /tmp/oc-review`
+      - VPS: `git clone https://github.com/trevorotts1/openclaw-onboarding.git /tmp/oc-review`
    c. Read `/tmp/oc-review/CHANGELOG.md` — find your installed version at `~/.openclaw/skills/.onboarding-version`
    d. Read every changelog entry between your version and the latest
    e. Make a plain-English summary of what changed

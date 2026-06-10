@@ -6,7 +6,7 @@ RULE 1 — Detect platform first:
 RULE 2 — Run the check-updates scripts. These are READ-ONLY and never install anything. They emit JSON.
   (a) Onboarding repo (the platform-matching one):
         Mac: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/check-updates.sh | bash
-        VPS: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/check-updates.sh | bash
+        VPS: curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/check-updates.sh | bash
   (b) BlackCEO Command Center:
         curl -fsSL https://raw.githubusercontent.com/trevorotts1/blackceo-command-center/main/check-updates.sh | bash
 

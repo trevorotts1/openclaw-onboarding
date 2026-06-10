@@ -15,7 +15,7 @@ Every install kickoff in this document, regardless of which of the 8 blocks belo
 This is **not "any one of three"** — all three attempts MUST happen on every install kickoff (and every Sunday-update detection, see `cron-prompt.txt` RULE 5.5 + `check-updates.sh`). Best-effort delivery with reason logging when a path fails, but the **attempt** is unconditional. This is the N22 binding.
 
 The same triple-fire pattern applies to:
-- Install kickoff: `install.sh::fire_install_kickoff_triplet()` (both Mac + VPS repos)
+- Install kickoff: `install.sh::fire_install_kickoff_triplet()` (unified repo, both Mac + VPS platforms)
 - Update detection: `check-updates.sh` appends to AGENTS.md when `has_repo_update=true` or `has_skill_updates=true`
 - Force-update: `force-update.sh` (manual command at repo root) fires all three on demand
 
@@ -300,7 +300,7 @@ You'll know you're connected when the prompt changes to show the VPS hostname.
 ### Step 2 — Paste the VPS install command and press Return
 
 ```
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 ```
 
 ### What you'll see while it runs
@@ -360,9 +360,9 @@ Open Telegram. Find your conversation with your **VPS** OpenClaw bot.
 I need you to run the OpenClaw onboarding fresh install on this VPS and follow these rules exactly. This is a long instruction set — read it all before you start.
 
 RULE 1 — Run this command on the VPS using your shell-exec capability. Run it exactly as written, no edits:
-  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 
-RULE 2 — Do not modify the command. Do not change the URL (note the URL ends in -vps/main/install.sh — this is the VPS variant, not the Mac one). Do not add flags.
+RULE 2 — Do not modify the command. Do not change the URL (the unified repo auto-detects Mac vs VPS via the presence of /data/.openclaw). Do not add flags.
 
 RULE 3 — VPS file paths are different from Mac. Skills land at /data/.openclaw/skills/ not ~/.openclaw/skills/. Secrets at /data/.openclaw/secrets/.env not ~/.openclaw/secrets/.env. Workspace at /data/clawd not ~/clawd. The install script knows this — do not override paths.
 
@@ -589,7 +589,7 @@ ssh root@YOUR.VPS.IP.ADDRESS
 ### Step 2 — Paste the VPS update command
 
 ```
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/update-skills.sh | bash
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
 ```
 
 ### What you'll see
@@ -638,9 +638,9 @@ Find your **VPS** OpenClaw bot conversation.
 I need you to run the OpenClaw skills updater on this VPS and follow these rules exactly. Read all rules before starting.
 
 RULE 1 — Run this command on the VPS using your shell-exec capability. Run it exactly as written, no edits:
-  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/update-skills.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
 
-RULE 2 — Do not modify the command. The URL ends in -vps/main/update-skills.sh — confirm you're using the VPS variant, not the Mac variant.
+RULE 2 — Do not modify the command. The unified repo auto-detects Mac vs VPS — no separate VPS URL needed.
 
 RULE 3 — VPS paths are different from Mac. Skills at /data/.openclaw/skills/. Secrets at /data/.openclaw/secrets/.env. Workspace at /data/clawd. The update script knows this — do not override paths.
 

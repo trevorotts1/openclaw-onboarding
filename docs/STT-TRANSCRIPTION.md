@@ -1,6 +1,6 @@
 # Speech-to-Text (Audio Transcription) — Tiered, Mac-Local
 
-> This repo is the **Mac (Apple Silicon)** onboarding package. Audio transcription is configured to run **locally** by default, with a cloud fallback. The VPS repo (`openclaw-onboarding-vps`) is intentionally different — see the bottom of this note.
+> This repo is the **unified** onboarding package for Mac (Apple Silicon) and VPS. Audio transcription on Mac is configured to run **locally** by default, with a cloud fallback. The VPS platform overlay (`platform/vps/`) uses a different config — see the bottom of this note.
 
 ---
 
@@ -87,6 +87,6 @@ python3 -c "import json,os; a=json.load(open(os.path.expanduser('~/.openclaw/ope
 ## Mac vs VPS (do not co-mingle the configs)
 
 - **Mac (this repo):** LOCAL faster-whisper `medium` primary + OpenAI cloud fallback. Apple Silicon makes the local model fast and free, and keeps audio private on-box.
-- **VPS (`openclaw-onboarding-vps`):** cloud transcription only (Groq) — **no local model**. VPS containers do not have a Neural Engine and we do not want to bloat the image with a local Whisper model. Do **not** copy this Mac local-model block into the VPS repo.
+- **VPS (platform/vps/ in this repo):** cloud transcription only (Groq) — **no local model**. VPS containers do not have a Neural Engine and we do not want to bloat the image with a local Whisper model. Do **not** copy this Mac local-model block into VPS config.
 
 The two platforms have intentionally different transcription tiers, exactly as their LLM and version sequences are kept independent.

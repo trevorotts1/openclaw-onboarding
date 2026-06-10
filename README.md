@@ -149,7 +149,7 @@ This repo is the **Mac (Apple Silicon)** installer, so audio transcription runs 
 2. Writes a deterministic wrapper at `~/.openclaw/bin/oc-faster-whisper` (forces model `medium`, prints plain text to stdout).
 3. Bakes `tools.media.audio` into `~/.openclaw/openclaw.json` with the local CLI as the **first** model entry (primary) and OpenAI cloud as the **last** entry (fallback).
 
-See **[docs/STT-TRANSCRIPTION.md](docs/STT-TRANSCRIPTION.md)** for the full note (config shape, how to change the model, and how this differs from the VPS repo, which uses cloud Groq — no local model).
+See **[docs/STT-TRANSCRIPTION.md](docs/STT-TRANSCRIPTION.md)** for the full note (config shape, how to change the model, and how this differs from the VPS platform overlay, which uses cloud Groq — no local model).
 
 ---
 

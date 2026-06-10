@@ -9,7 +9,7 @@
 > **Mac vs VPS divergences are flagged inline.** The biggest two:
 > 1. `cloudflared` runs via **launchd** (`sudo cloudflared service install`) — needs **interactive sudo**.
 > 2. There is **NO Hostinger wrapper**, so the `HOOKS_TOKEN` in `~/.openclaw/openclaw.json` is **stable** —
->    no `OPENCLAW_HOOKS_TOKEN` env trick needed (the VPS repo needs it; the Mac repo does not).
+>    no `OPENCLAW_HOOKS_TOKEN` env trick needed (VPS platform needs it; Mac platform does not).
 
 ---
 

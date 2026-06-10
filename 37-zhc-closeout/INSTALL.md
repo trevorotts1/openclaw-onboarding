@@ -26,7 +26,7 @@ No new cron job is created here. Skill 37 piggy-backs on the existing `workforce
 If a box was installed pre-v10.14.17 and needs Skill 37 added without a full re-install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/update-skills.sh | bash
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
 ```
 
 `update-skills.sh` pulls the latest skills bundle and refreshes `$SKILLS_DIR`. The next cron fire of `workforce-build-resume` (within 15 min) will pick up Skill 37's new closeout dirty-state detection automatically.
@@ -81,4 +81,4 @@ The workforce-build-resume cron will no-op gracefully if the skill files are mis
 
 ## Known Issues
 
-None at first ship of v1.0.0. File any issues at https://github.com/trevorotts1/openclaw-onboarding-vps/issues.
+None at first ship of v1.0.0. File any issues at https://github.com/trevorotts1/openclaw-onboarding/issues.

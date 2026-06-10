@@ -116,7 +116,7 @@ Every Sunday at 2 AM, the client's machine runs `scripts/update-skills.sh`. It:
 5. **Write for a 60+ audience.** Numbered steps, plain English, patient tone.
 6. **Verify Python syntax** if you modify any .py file: `python3 -c "import ast; ast.parse(open('file.py').read())"`
 7. **Verify JSON syntax** if you modify openclaw.json: `python3 -c "import json; json.load(open('file.json'))"`
-8. **Update BOTH repos** (openclaw-onboarding and openclaw-onboarding-vps) unless the change is platform-specific.
+8. **Use the unified repo** (openclaw-onboarding) for all changes — platform-specific files live in platform/mac/ and platform/vps/ overlays within this single repo.
 9. **Master agent CAN trigger `openclaw gateway restart` autonomously when a config edit requires it.** Sub-agents CANNOT — they must return "restart needed" and let the master orchestrator decide. (Rule updated 2026-05-23 — was previously "never restart", lifted after restart safety improvements.)
 10. **Commit messages must be descriptive.** Not "update files" but "Add Skill 31 (Upgraded Memory System), fix Skill 23 options skip"
 
@@ -144,11 +144,12 @@ Every Sunday at 2 AM, the client's machine runs `scripts/update-skills.sh`. It:
 
 ---
 
-## Two Repos, Same Content (Mostly)
+## Unified Repo — One Codebase, Two Platforms
 
-| Repo | Platform | Differences |
-|------|----------|-------------|
-| trevorotts1/openclaw-onboarding | Mac Mini | Paths use ~/Downloads/..., ~/clawd/ |
-| trevorotts1/openclaw-onboarding-vps | VPS/Docker | Paths use /data/..., may have Docker-specific steps |
+| Directory | Platform | Notes |
+|-----------|----------|-------|
+| trevorotts1/openclaw-onboarding (root) | Mac + VPS | Unified install.sh + update-skills.sh auto-detect platform |
+| platform/mac/ | Mac Mini | Mac-specific docs and overrides (paths use ~/...) |
+| platform/vps/ | VPS/Docker | VPS-specific docs and overrides (paths use /data/...) |
 
-Both repos must stay in sync. When you push to one, push to the other.
+The openclaw-onboarding-vps repo is archived. All work goes here.

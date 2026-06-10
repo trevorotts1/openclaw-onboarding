@@ -274,11 +274,11 @@ Idempotent — re-running is safe; if only one CLI exists, no action.
 ```bash
 # From the host, naming the container:
 ssh root@<vps>
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/scripts/fix-dual-cli.sh -o /tmp/fix-dual-cli.sh
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/fix-dual-cli.sh -o /tmp/fix-dual-cli.sh
 bash /tmp/fix-dual-cli.sh <openclaw-container-name>
 
 # Or all-in-one:
-ssh root@<vps> "bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/scripts/fix-dual-cli.sh) <openclaw-container-name>"
+ssh root@<vps> "bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/fix-dual-cli.sh) <openclaw-container-name>"
 ```
 
 After cleanup, the bot's `openclaw cron create` and `openclaw message send` calls succeed — no `/restart` needed if the gateway has been hot-reloading. If the bot is still acting confused, send `/restart` once and it'll come back clean.
@@ -318,7 +318,7 @@ Error: apt is not available. Please use brew instead.
 
 1. Capture the exact error output
 2. Note which Hostinger image version (`docker inspect <container> --format '{{.Config.Image}}'`)
-3. File at https://github.com/trevorotts1/openclaw-onboarding-vps/issues with label `hostinger-edge-case`
+3. File at https://github.com/trevorotts1/openclaw-onboarding/issues with label `hostinger-edge-case`
 4. Add an entry to this file in the same commit as the install.sh fix
 
 **Last updated:** v10.14.3 (2026-05-21). Captured during the live install on client Evelyn Bethune (VPS 1651955) which surfaced 8 of the 10 gotchas above in a single ~25-minute session.

@@ -23,7 +23,7 @@
 #   ./scripts/fix-dual-cli.sh openclaw-c54p-openclaw-1
 #
 # Or directly via docker exec from the host:
-#   docker exec -u root <container> sh -c "$(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/scripts/fix-dual-cli.sh)"
+#   docker exec -u root <container> sh -c "$(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/fix-dual-cli.sh)"
 
 set -uo pipefail
 

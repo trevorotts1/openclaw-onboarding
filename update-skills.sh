@@ -1334,7 +1334,7 @@ except: pass
       if [ -n "$TG_TARGET" ]; then
         PROMPT_TMP="/tmp/openclaw-cron-prompt-$$.txt"
         REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
-        [ -d "/data/.openclaw" ] && REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main"
+        # Unified repo: same URL for both Mac and VPS platforms
         if curl -fsSL --max-time 15 "${REPO_URL}/cron-prompt.txt" -o "$PROMPT_TMP" 2>/dev/null && [ -s "$PROMPT_TMP" ]; then
           PROMPT_CONTENT=$(cat "$PROMPT_TMP")
           if openclaw cron create \

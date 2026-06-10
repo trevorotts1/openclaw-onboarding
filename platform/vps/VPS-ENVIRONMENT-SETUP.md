@@ -100,7 +100,7 @@ Set these in the hPanel Environment section BEFORE running install.
 ```
 docker ps
 docker exec -it [container-name] bash
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 ```
 
 ---

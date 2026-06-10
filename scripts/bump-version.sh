@@ -39,7 +39,7 @@
 #   ./scripts/bump-version.sh v10.6.2 --tag --push   # also push the tag
 #   ./scripts/bump-version.sh --check          # exit 1 if drift; print state
 #
-# Works identically on Mac and VPS repos (paths are the same).
+# Works for both Mac and VPS platforms in the unified repo (paths are the same).
 set -euo pipefail
 
 # ─── Locate the repo root ────────────────────────────────────────────────────
