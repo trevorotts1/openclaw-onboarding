@@ -32,7 +32,7 @@ except ImportError:
 
 # Workspace Root Configuration (Mac default → VPS fallback). Legacy ~/clawd
 # was removed in v10.12.0 per memory: "OpenClaw is the system."
-WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
+WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", str(Path.home() / ".openclaw/workspace"))
 if not os.path.isdir(WORKSPACE_ROOT):
     VPS_WORKSPACE = "/data/.openclaw/workspace"
     if os.path.isdir(VPS_WORKSPACE):
@@ -41,7 +41,7 @@ if not os.path.isdir(WORKSPACE_ROOT):
 DB_PATH = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/gemini-index.sqlite")
 PERSONAS_DIR = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/personas")
 if not os.path.exists(PERSONAS_DIR):
-    PERSONAS_DIR = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/personas")
+    PERSONAS_DIR = str(Path.home() / "Downloads/openclaw-master-files/coaching-personas/personas")
 
 GEMINI_MODEL = "gemini-embedding-2-preview"
 OPENAI_EMBED_MODEL = "text-embedding-3-small"  # cheaper than -large; 1536-dim
@@ -62,7 +62,7 @@ def _read_secret(name: str) -> str:
         return v
     # openclaw.json env block fallback (Mac + VPS)
     import json
-    for ocj in (os.path.expanduser("~/.openclaw/openclaw.json"),
+    for ocj in (str(Path.home() / ".openclaw/openclaw.json"),
                 "/data/.openclaw/openclaw.json"):
         if os.path.exists(ocj):
             try:

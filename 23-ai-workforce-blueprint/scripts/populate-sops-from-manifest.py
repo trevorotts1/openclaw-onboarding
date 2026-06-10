@@ -47,16 +47,17 @@ from pathlib import Path
 # ─── PATHS ────────────────────────────────────────────────────────────────────
 
 HOME = Path.home()
+# NOTE: pathlib does NOT auto-expand tilde paths — use Path.home() / "..." instead.
 ZHC_ROOTS = [
     HOME / "clawd" / "zero-human-company",
     HOME / "clawd" / "zhc",
-    Path("~/clawd/zero-human-company"),
-    Path("~/clawd/zhc"),
+    Path.home() / "clawd/zero-human-company",
+    Path.home() / "clawd/zhc",
 ]
 
 SELECTOR_CANDIDATES = [
     HOME / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py",
-    Path("~/Downloads/openclaw-master-files/shared-utils/select_model.py"),
+    Path.home() / "Downloads/openclaw-master-files/shared-utils/select_model.py",
 ]
 
 

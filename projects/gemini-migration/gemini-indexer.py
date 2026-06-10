@@ -11,17 +11,17 @@ except ImportError:
     print("Run: pip3 install google-genai numpy --break-system-packages")
     sys.exit(1)
 
-DB_PATH = os.path.expanduser("~/clawd/data/coaching-personas/gemini-index.sqlite")
-PERSONAS_DIR = os.path.expanduser("~/clawd/data/coaching-personas/personas")
+DB_PATH = str(Path.home() / "clawd/data/coaching-personas/gemini-index.sqlite")
+PERSONAS_DIR = str(Path.home() / "clawd/data/coaching-personas/personas")
 if not os.path.exists(PERSONAS_DIR):
-    PERSONAS_DIR = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/personas")
+    PERSONAS_DIR = str(Path.home() / "Downloads/openclaw-master-files/coaching-personas/personas")
 
 GEMINI_MODEL = "gemini-embedding-2-preview"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
 
 def get_client():
-    env_path = os.path.expanduser("~/clawd/secrets/.env")
+    env_path = str(Path.home() / "clawd/secrets/.env")
     api_key = None
     if os.path.exists(env_path):
         with open(env_path, "r") as f:

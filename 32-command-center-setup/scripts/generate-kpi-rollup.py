@@ -67,11 +67,12 @@ HOME = Path.home()
 
 
 def find_zhc_company_dir(slug=None):
+    # NOTE: pathlib does NOT auto-expand tilde paths — use Path.home() / "..." instead.
     roots = [
         HOME / "clawd" / "zero-human-company",
         HOME / "clawd" / "zhc",
-        Path("~/clawd/zero-human-company"),
-        Path("~/clawd/zhc"),
+        Path.home() / "clawd/zero-human-company",
+        Path.home() / "clawd/zhc",
     ]
     candidates = []
     for root in roots:

@@ -1149,8 +1149,9 @@ def build_from_config(config):
 
 HOME = os.path.expanduser("~")
 # VPS install detection: prefer ~/clawd if it exists, else $HOME/clawd
-if os.path.isdir("~/clawd"):
-    WORKSPACE_ROOT = "~/clawd"
+# NOTE: pathlib/os.path do NOT auto-expand tilde paths; use Path.home() instead.
+if os.path.isdir(str(Path.home() / "clawd")):
+    WORKSPACE_ROOT = str(Path.home() / "clawd")
 else:
     WORKSPACE_ROOT = os.path.join(HOME, "clawd")
 
@@ -1170,8 +1171,8 @@ LEGACY_DEPARTMENTS_DIR = os.path.join(WORKSPACE_ROOT, "departments")  # pre-v9.6
 SUBAGENTS_DIR = os.path.join(WORKSPACE_ROOT, "subagents", "templates")
 MASTER_FILES = None  # Detected at runtime
 OPENCLAW_CONFIG = os.path.join(HOME, ".openclaw", "openclaw.json")
-if os.path.isdir("~/.openclaw"):
-    OPENCLAW_CONFIG = "~/.openclaw/openclaw.json"
+if os.path.isdir(str(Path.home() / ".openclaw")):
+    OPENCLAW_CONFIG = str(Path.home() / ".openclaw/openclaw.json")
 BACKUP_DIR = os.path.join(HOME, "Downloads", "openclaw-backups")
 COMPANY_DISCOVERY_DIR = None  # Set after master files detected; per-company file is now in COMPANY_DIR
 
@@ -1269,9 +1270,9 @@ def _verify_departments_against_dashboard_config() -> None:
     """Best-effort N17 drift check. Logs a warning if the keys diverge; never raises."""
     import json as _json
     candidate_paths = [
-        os.path.expanduser("~/.openclaw/dashboard/config/departments.json"),
+        str(Path.home() / ".openclaw/dashboard/config/departments.json"),
         "/data/.openclaw/dashboard/config/departments.json",
-        os.path.expanduser("~/Documents/blackceo-command-center/config/departments.json"),
+        str(Path.home() / "Documents/blackceo-command-center/config/departments.json"),
     ]
     for p in candidate_paths:
         if not os.path.exists(p):
@@ -1356,7 +1357,7 @@ def research_unknown_answer(question: str, context: str = "", purpose_tier: str 
     if not api_key:
         # Try reading from secrets/.env via the existing convention
         for env_path in (
-            _os.path.expanduser("~/.openclaw/secrets/.env"),
+            _str(Path.home() / ".openclaw/secrets/.env"),
             "/data/.openclaw/secrets/.env",
         ):
             if _os.path.exists(env_path):
@@ -3821,7 +3822,7 @@ def _resolve_director_model(dept_id):
     import subprocess
     selector_candidates = [
         os.path.join(HOME, "Downloads", "openclaw-master-files", "shared-utils", "select_model.py"),
-        "~/Downloads/openclaw-master-files/shared-utils/select_model.py",
+        str(Path.home() / "Downloads/openclaw-master-files/shared-utils/select_model.py"),
     ]
     for sel in selector_candidates:
         if os.path.isfile(sel):

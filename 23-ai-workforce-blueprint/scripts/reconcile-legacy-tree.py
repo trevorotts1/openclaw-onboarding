@@ -77,7 +77,7 @@ def resolve_target_root(args) -> Path | None:
     if cand:
         return Path(cand) / "departments"
     # Fallback: most recent company under ZHC root
-    workspace = paths.get("workspace_root") or paths.get("clawd_root") or os.path.expanduser("~/clawd")
+    workspace = paths.get("workspace_root") or paths.get("clawd_root") or str(Path.home() / "clawd")
     zhc = Path(workspace) / "zero-human-company"
     if zhc.is_dir():
         candidates = sorted(

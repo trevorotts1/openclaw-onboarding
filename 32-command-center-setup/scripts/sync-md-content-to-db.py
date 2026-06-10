@@ -86,7 +86,7 @@ def resolve_company_root() -> Path | None:
     cand = paths.get("active_zhc_company") or paths.get("zhc_company_root")
     if cand:
         return Path(cand)
-    workspace = paths.get("workspace_root") or paths.get("clawd_root") or os.path.expanduser("~/clawd")
+    workspace = paths.get("workspace_root") or paths.get("clawd_root") or str(Path.home() / "clawd")
     zhc = Path(workspace) / "zero-human-company"
     if zhc.is_dir():
         candidates = sorted(

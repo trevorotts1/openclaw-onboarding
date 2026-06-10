@@ -265,7 +265,7 @@ def resolve_departments_dir():
     except Exception:
         pass
     if not zhc_root:
-        ws = Path(workspace) if workspace else Path(os.path.expanduser("~/clawd"))
+        ws = Path(workspace) if workspace else Path.home() / "clawd"
         # Prefer a directly-present departments/ dir under the workspace root.
         # This avoids descending into a single dept folder (e.g. personal-assistant)
         # and mistaking it for the company root -> false floor fail.

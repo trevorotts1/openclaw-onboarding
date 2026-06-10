@@ -215,7 +215,7 @@ def _is_forbidden(model_id: str) -> bool:
 def _load_openclaw_config(path: Optional[str] = None) -> dict:
     candidates = [
         path,
-        os.path.expanduser("~/.openclaw/openclaw.json"),
+        str(Path.home() / ".openclaw/openclaw.json"),
         "/data/.openclaw/openclaw.json",
     ]
     for p in candidates:

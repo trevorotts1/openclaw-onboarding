@@ -43,7 +43,7 @@ except ImportError:
 
 # Workspace Root Configuration (Mac default → VPS fallback). Legacy ~/clawd
 # was removed in v10.13.0.
-WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
+WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", str(Path.home() / ".openclaw/workspace"))
 if not os.path.isdir(WORKSPACE_ROOT):
     VPS_WORKSPACE = "/data/.openclaw/workspace"
     if os.path.isdir(VPS_WORKSPACE):
@@ -67,7 +67,7 @@ def _read_secret(name: str) -> str:
     v = os.environ.get(name)
     if v:
         return v
-    for ocj in (os.path.expanduser("~/.openclaw/openclaw.json"),
+    for ocj in (str(Path.home() / ".openclaw/openclaw.json"),
                 "/data/.openclaw/openclaw.json"):
         if os.path.exists(ocj):
             try:

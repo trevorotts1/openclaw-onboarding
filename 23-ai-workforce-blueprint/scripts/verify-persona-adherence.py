@@ -187,7 +187,7 @@ def _manual_call(prompt: str) -> dict:
         v = os.environ.get(k)
         if v:
             return v
-        for p in [os.path.expanduser("~/.openclaw/openclaw.json"),
+        for p in [str(Path.home() / ".openclaw/openclaw.json"),
                   "/data/.openclaw/openclaw.json"]:
             if os.path.exists(p):
                 try:

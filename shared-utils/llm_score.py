@@ -54,7 +54,7 @@ NEUTRAL_FALLBACK_SCORE = 0.6
 def _openclaw_env() -> dict:
     """Read .env-style values from ~/.openclaw/openclaw.json into a dict."""
     paths = [
-        os.path.expanduser("~/.openclaw/openclaw.json"),
+        str(Path.home() / ".openclaw/openclaw.json"),
         "/data/.openclaw/openclaw.json",
     ]
     for p in paths:
