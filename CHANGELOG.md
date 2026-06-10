@@ -22,6 +22,9 @@ Branch: feat/prd-2.13-watchdog-loop.
 - Loop registry lr_assert_empty exits 1 when loop running, 0 when killed: PASS
 - 3-strike threshold: failStrikes >= 3 after 3 consecutive wave goal failures: PASS
 
+**QC Score: 9.1/10 — PASS** (Wiring 9/10, SSOT 8/10, Path 10/10, Observability 9/10, Docs 10/10, Regression 9/10)
+Merged: 6c5b4fcd80bbbdd1596cec0fe34d842edbf18c7b — Tag: v11.12.0
+
 ## [v11.11.0]  -  2026-06-10  -  feat(prd-2.15): Interview experience — persona block, industry-pack assertion, QC gate, nudges verified
 
 ## [v11.10.0]  -  2026-06-10  -  feat(prd-2.8): ZHC closeout gated pipeline — 7 deliverable legs, pre-flight Telegram, connector-tree assertion, n8n, resume cron, fleet sweep
