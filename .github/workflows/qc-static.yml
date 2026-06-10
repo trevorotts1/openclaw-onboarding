@@ -819,6 +819,54 @@ jobs:
           # stubs / {{token}} leaks / <7KB / missing-Section-9 garbage.
           bash 23-ai-workforce-blueprint/scripts/test-sop-substance-models.sh
 
+      - name: Skill 23 PRD-2.15 interview experience (T1-T12 fixture tests)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # PRD-2.15 interview experience gate — 12 fixture tests, no network, no client box:
+          #   T1-T7: qc-interview-completion.py (question count, jargon, fields, nudge wiring)
+          #   T8-T10: interview-nudge-cron.sh (gateway shim, idle check, complete-silenced)
+          #   T11: no direct api.telegram.org path in any nudge file
+          #   T12: single-source-of-truth invariants (forbidden-jargon.json, schema, contract fence)
+          bash 23-ai-workforce-blueprint/scripts/test-interview-experience.sh
+          echo "✓ PRD-2.15 interview experience T1-T12 all pass"
+
+      - name: Skill 23 PRD-2.15 static greps (schema + INSTRUCTIONS + build-workforce)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce the single-source-of-truth discipline:
+          #   1. build-state-schema.json has industryPack + interviewQc top-level properties
+          #   2. INSTRUCTIONS.md has the INTERVIEWER-BEHAVIORAL-CONTRACT fence
+          #   3. build-workforce.py references industryPack (not the old jargon list)
+          #   4. forbidden-jargon.json exists and is valid JSON
+          #   5. interview-nudge-cron.sh exists and is executable
+          #   6. no api.telegram.org in nudge files (binding gateway rule)
+          python3 -c "
+          import json, sys
+          s = json.load(open('23-ai-workforce-blueprint/build-state-schema.json'))
+          props = s.get('properties', {})
+          assert 'industryPack' in props, 'build-state-schema.json missing industryPack'
+          assert 'interviewQc' in props, 'build-state-schema.json missing interviewQc'
+          jargon = json.load(open('23-ai-workforce-blueprint/interview/forbidden-jargon.json'))
+          assert len(jargon.get('terms', [])) >= 7, 'forbidden-jargon.json has fewer than 7 terms'
+          print('✓ Schema has industryPack + interviewQc; forbidden-jargon.json has 7+ terms')
+          "
+          grep -q 'INTERVIEWER-BEHAVIORAL-CONTRACT' \
+            23-ai-workforce-blueprint/INSTRUCTIONS.md \
+            || { echo '✗ INSTRUCTIONS.md missing INTERVIEWER-BEHAVIORAL-CONTRACT fence'; exit 1; }
+          grep -q 'industryPack' \
+            23-ai-workforce-blueprint/scripts/build-workforce.py \
+            || { echo '✗ build-workforce.py does not reference industryPack'; exit 1; }
+          if grep -q 'api\.telegram\.org' \
+            shared-utils/nudge-incomplete-interviews.py \
+            23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh 2>/dev/null; then
+            echo '✗ Direct api.telegram.org call found in nudge files (binding gateway rule violation)'; exit 1
+          fi
+          [ -x 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh ] \
+            || { echo '✗ interview-nudge-cron.sh not executable'; exit 1; }
+          echo '✓ All PRD-2.15 static grep invariants pass'
+
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash
         run: |

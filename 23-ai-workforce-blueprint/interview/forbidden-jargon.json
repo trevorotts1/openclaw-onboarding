@@ -1,0 +1,65 @@
+{
+  "$schema": "https://openclaw.ai/schemas/interview/forbidden-jargon/v1",
+  "version": "1.0.0",
+  "description": "Single machine-readable source of truth for the Skill-23 forbidden client-facing jargon list. INSTRUCTIONS.md and build-workforce.py are POINTERS to this file — do NOT define a second copy of this list anywhere else. The QC gate (scripts/qc-interview-completion.py) loads this file at runtime and scans AI-authored transcript text for any term listed here. PRD-2.15.",
+  "canonicalFile": "23-ai-workforce-blueprint/interview/forbidden-jargon.json",
+  "terms": [
+    {
+      "term": "SOP",
+      "variants": ["SOPs", "sop", "sops"],
+      "approvedReplacement": "step-by-step instructions",
+      "rationale": "Lean Six Sigma internal terminology that sounds bureaucratic to owners"
+    },
+    {
+      "term": "handoff",
+      "variants": ["hand-off", "handoffs", "hand-offs"],
+      "approvedReplacement": "what departments share",
+      "rationale": "Process-engineering jargon that does not resonate with business owners"
+    },
+    {
+      "term": "tech stack",
+      "variants": ["tech-stack", "techstack"],
+      "approvedReplacement": "tools you use",
+      "rationale": "Developer jargon that alienates non-technical owners"
+    },
+    {
+      "term": "permanent agent",
+      "variants": ["permanent-agent"],
+      "approvedReplacement": "team member",
+      "rationale": "OpenClaw implementation detail — owners think in terms of people, not agents"
+    },
+    {
+      "term": "sub-agent",
+      "variants": ["subagent", "sub agent"],
+      "approvedReplacement": "specialist",
+      "rationale": "Implementation detail that reveals system internals to the client"
+    },
+    {
+      "term": "agent",
+      "variants": [],
+      "approvedReplacement": "team member, specialist, or director",
+      "rationale": "The word 'agent' in the context of AI automation is confusing or off-putting to non-technical owners; use role-based language instead",
+      "clientAnswerExempt": true,
+      "clientAnswerNote": "A client may say 'real estate agent' or 'I have a great agent' in their answer — this is the client's own language and does NOT fail the gate. Only scan AI-authored question/prose text."
+    },
+    {
+      "term": "Lean Six Sigma",
+      "variants": ["lean six sigma", "lean-six-sigma"],
+      "approvedReplacement": "(internal use only — never surface to clients)",
+      "rationale": "Methodology name that sounds impersonal and corporate"
+    },
+    {
+      "term": "DMAIC",
+      "variants": ["dmaic"],
+      "approvedReplacement": "(internal use only — never surface to clients)",
+      "rationale": "Lean Six Sigma phase acronym that has no meaning to business owners"
+    }
+  ],
+  "notes": [
+    "The system uses Lean Six Sigma methodology INTERNALLY (standard work templates, quality gates, value-stream handoffs, continuous improvement) — but the owner never hears those words.",
+    "This file is the ONLY canonical source for this list. INSTRUCTIONS.md and build-workforce.py contain pointers to this file, not a second copy.",
+    "Scanner must use word-boundary matching (\\b) and case-insensitive comparison.",
+    "Multi-word terms (e.g. 'tech stack', 'sub-agent') must match as complete phrases.",
+    "See clientAnswerExempt field on individual terms — some terms are only forbidden in AI-authored text, not in quoted client answers."
+  ]
+}
