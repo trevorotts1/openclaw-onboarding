@@ -1,3 +1,20 @@
+## [v11.8.0-QC]  -  2026-06-09  -  feat(1.5): dept identity contract — canonical_slug.py; QC PASS — weighted 9.60/10
+
+**QC item 1.5 — Department Identity Contract: canonical_slug.py SSOT + all DB-writing scripts wired**
+Merge SHA (Mac): 5d88580a880357d3d6cd13eeaa27211317b8b7c6
+Merge SHA (VPS): e784c65b2201d1b309e0b0c6f1b7884a3619c08a
+
+Scores per dimension (weights: Wiring 30, SSOT 20, Path 15, Observability 15, Docs 10, Regression 10):
+- Wiring (30): 10/10 — All 4 DB-writing scripts (persona-selector-v2.py, seed-workspaces.py, sync-md-content-to-db.py, build-workforce.py) wired to canonical_dept_slug(); all 3 banned patterns (raw_id[5:], .removeprefix("dept-"), re.sub ^dept-) removed from active code; inline fallbacks prevent silent no-ops if shared-utils import fails.
+- SSOT (20): 10/10 — shared-utils/canonical_slug.py is the single Python authority; 14-case self-test; is_canonical_dept_slug() guard; explicitly mirrors TS canonicalDeptSlug(); inline fallbacks are identical copies labeled as such.
+- Path (15): 10/10 — Normalisation applied at the earliest possible point in every script: immediately after parse_args() in persona-selector-v2.py, at DB insert loop in seed-workspaces.py, at key-lookup in sync-md-content-to-db.py, at generate_departments_json() output in build-workforce.py.
+- Observability (15): 8/10 — persona-selector-v2.py emits JSON error when dept normalises to empty string; build-workforce.py uses "or dept_id" fallback to avoid data loss; CI grep guard in TERMINOLOGY.md catches regressions; no per-normalisation debug logging.
+- Docs (10): 10/10 — TERMINOLOGY.md gets full Department Identity Contract section: definition, enforcing-scripts table, failure modes prevented, CI grep guard, schema note on departments.json id vs slug fields.
+- Regression (10): 9/10 — 14 self-test cases in canonical_slug.py __main__ including edge cases (empty, whitespace-only, dept-, -dept); 14/14 PASS verified on both Mac + VPS layouts by Haiku verify; CI green on both repos.
+
+Weighted score: 9.60/10 (Wiring gating satisfied, both layout paths verified, parity clean across Mac + VPS repos)
+
+
 ## [v11.7.0-QC]  -  2026-06-09  -  fix(1.3): ONE shared find_dashboard_db() — resolve_db.py; QC PASS — weighted 9.57/10
 
 **QC item 1.3 — Single shared find_dashboard_db() resolver in shared-utils/resolve_db.py**
