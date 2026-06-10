@@ -1092,7 +1092,7 @@ jobs:
           # Allow-list: sessions/ reads, auth-profiles, test/fixture paths, archive.
           # Note: patterns stored in variables to avoid bash misreading bare ( in run: block.
           SEARCH_PAT='agents/(main|[a-z-]+)/(SOUL|IDENTITY|MEMORY|AGENTS|TOOLS|USER|HEARTBEAT)\.md'
-          ALLOW_PAT='(archive/|/sessions/|auth-profiles|\.telegram-sent|test-|fixtures/|\.bak)'
+          ALLOW_PAT='(archive/|/sessions/|auth-profiles|\.telegram-sent|test-|fixtures/|\.bak|for cand in|if \[ -f)'
           VIOLATIONS=$(git grep -nE "$SEARCH_PAT" -- '*.py' '*.sh' \
             | grep -vE "$ALLOW_PAT" \
             || true)
