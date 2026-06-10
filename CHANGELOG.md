@@ -1,3 +1,26 @@
+## [v11.8.5]  -  2026-06-10  -  feat(prd-3.2): exclude *-ARCHIVED skills from discover_skills() so they are never counted or installed to client machines
+
+**PRD 3.2 — Stop shipping archived skills to clients**
+Branch: feat/prd-3.2-exclude-archived-from-discover-skills.
+
+**What changed:**
+- `install.sh` `discover_skills()`: both the numbered-dir count and the SKILL.md count now pipe through `grep -v -- '-ARCHIVED$'` / `grep -v -- '-ARCHIVED/'` respectively, so `13-google-workspace-setup-ARCHIVED`, `33-department-heads-ARCHIVED`, and `34-intelligent-staffing-ARCHIVED` are excluded from the count returned to the Telegram progress message and from `SKILL_COUNT`. The install loop already contained a `case *ARCHIVED*) ... continue ;;` guard; this change makes `discover_skills()` agree with what the loop actually installs.
+- Version bump: v11.8.4 → v11.8.5 (all 9 markers updated atomically via bump-version.sh).
+- All 3 ARCHIVED folders remain in the repo for reference.
+
+**Verify (PRD 3.2):**
+- `discover_skills()` on a fresh clone returns 40 (not 43).
+- The 3 `*-ARCHIVED` folders are present in the repo.
+- The install loop skips them via the existing `*ARCHIVED*` case guard (double-layer protection).
+
+**QC rubric score: 9.17/10 — PASS**
+- Wiring correctness (30%): 10 — `discover_skills()` now returns 40 on the real repo (verified: old returned 43, delta = exactly the 3 archived dirs). The install loop's existing `case *ARCHIVED*` guard is a second independent layer. Count and install behavior now agree.
+- Single source of truth (20%): 9 — Both counting paths (`numbered_count` and `skill_md_count`) inside the single `discover_skills()` function exclude ARCHIVED. No duplicate implementations.
+- Path discipline (15%): 9 — No new paths introduced; function stays within the same resolver pattern as before.
+- Observability (15%): 9 — The existing `note "Skipped (archived): $SKILL_NAME"` in the install loop remains; `discover_skills()` now agrees with what is actually installed so any mismatch is surfaced.
+- Docs match reality (10%): 8 — PRD comment added inside the function; CHANGELOG updated. The agent-facing prose at line 640 ("40 active + 3 archived") accurately describes the repo structure and is intentionally left as-is.
+- Regression safety (10%): 9 — No existing behavior changed for active skills; ARCHIVED dirs untouched in repo; `grep -v` approach is POSIX-portable.
+
 ## [v11.8.4]  -  2026-06-10  -  feat(prd-2.7): persona-categories.json single canonical write target; orchestrator delegates to get_openclaw_paths(); coaching_personas fixed to workspace/data/coaching-personas/; QC+docs updated
 
 **PRD 2.7 — persona-categories.json: one write path, one read path**

@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.8.4"
+ONBOARDING_VERSION="v11.8.5"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1698,12 +1698,18 @@ discover_skills_dir() {
 }
 
 discover_skills() {
+    # PRD 3.2: *-ARCHIVED skill folders are excluded from both counts so they
+    # are never reflected in Telegram progress messages and do not inflate the
+    # SKILL_COUNT that drives the install loop.  The install loop itself also
+    # guards with a case-match on *ARCHIVED*, so both layers agree.
     local base_dir="${1:-$OC_CONFIG/onboarding}"
     local numbered_count
-    numbered_count=$(find "$base_dir" -maxdepth 1 -type d -name "[0-9][0-9]-*" 2>/dev/null | wc -l | tr -d ' ')
+    numbered_count=$(find "$base_dir" -maxdepth 1 -type d -name "[0-9][0-9]-*" 2>/dev/null \
+        | grep -v -- '-ARCHIVED$' | wc -l | tr -d ' ')
     local skill_md_count
-    skill_md_count=$(find "$base_dir" -maxdepth 2 -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
-    
+    skill_md_count=$(find "$base_dir" -maxdepth 2 -name "SKILL.md" 2>/dev/null \
+        | grep -v -- '-ARCHIVED/' | wc -l | tr -d ' ')
+
     local max_count=$numbered_count
     if [ "$skill_md_count" -gt "$max_count" ] 2>/dev/null; then
         max_count=$skill_md_count
