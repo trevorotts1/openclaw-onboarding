@@ -4,6 +4,8 @@
 **Target interview length:** ~30 questions, ~35 minutes
 **Persona governance:** Persona overrides identity files. CEO has special clause (mission/owner override persona on conflict).
 
+> **Branding questions — single source of truth:** The structured branding question set (ids, prompts, storage targets) lives in `23-ai-workforce-blueprint/interview/branding-questions.json`. The Command Center vendors a copy of that file. Do NOT define or edit branding questions in two places — edit the JSON file only. The Phase 3 themes below map directly to the question ids in that file.
+
 ---
 
 ## Philosophy
@@ -192,12 +194,15 @@ After Phase 1: Run `extract-behavioral-patterns.py` and write `## Behavioral Ide
 
 ### Phase 3 — Brand, Customers, Fears, Frustrations, Weaknesses, Failures (THEMES)
 
-**Brand themes:**
-- **Who do they serve and WHY** — Drill until specific. "Small business owners" is NOT specific.
-- **Why do those people come to YOU** vs. anyone else who does what you do?
-- **What feeling do you want your customers to leave with?**
-- **What feeling do you want your brand to evoke?**
-- **What words would your best customer use to describe you?**
+> **Structured branding questions** (ids, prompts, `storeOn` targets, drill-depth requirements) are defined in [`interview/branding-questions.json`](interview/branding-questions.json). That file is the single source of truth; the Command Center vendors a copy. The themes below describe HOW to ask — the structured fields describe WHAT to capture and WHERE to store it.
+
+**Brand themes** *(→ question ids: `ideal_customer`, `unique_differentiator`, `customer_feeling`, `brand_evokes`, `brand_descriptors`, `brand_voice`, `brand_primary_color`, `brand_logo`)*:
+- **Who do they serve and WHY** — Drill until specific. "Small business owners" is NOT specific. (`ideal_customer`)
+- **Why do those people come to YOU** vs. anyone else who does what you do? (`unique_differentiator`)
+- **What feeling do you want your customers to leave with?** (`customer_feeling`)
+- **What feeling do you want your brand to evoke?** (`brand_evokes`)
+- **What words would your best customer use to describe you?** (`brand_descriptors`)
+- **Brand voice + visual identity** — brand color (`brand_primary_color`) + logo (`brand_logo`) collected here or at Phase 0 asset drop, whichever comes first.
 
 **Vulnerability themes (these REQUIRE drill-down; treat with the most care):**
 - **Biggest fear about scaling this business** — Drill past the obvious.
