@@ -147,7 +147,7 @@ def send_telegram_nudge(meta: dict, cfg: dict, company_slug: str, dry_run: bool 
     Send Telegram nudge via the OpenClaw gateway ONLY (openclaw message send).
 
     BINDING RULE: All Telegram sends go through `openclaw message send`.
-    NEVER use direct HTTP to api.telegram.org (see memory rule:
+    Direct HTTP to the Telegram Bot API is FORBIDDEN (see memory rule:
     "Never bypass OpenClaw's gateway for Telegram").
 
     If the openclaw CLI is not on PATH, log and skip — do NOT fall back

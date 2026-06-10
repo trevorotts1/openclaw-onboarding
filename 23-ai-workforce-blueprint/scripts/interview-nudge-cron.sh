@@ -17,7 +17,7 @@
 #
 # GATEWAY RULE (BINDING — no exceptions):
 #   All Telegram sends go through `openclaw message send`. NEVER use direct
-#   HTTP to api.telegram.org. If the openclaw CLI is absent → log and skip
+#   direct Telegram Bot API calls. If the openclaw CLI is absent → log and skip
 #   (do NOT fall back to direct HTTP).
 #
 # IDEMPOTENCY:
