@@ -1,5 +1,50 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.2.0] - 2026-06-10 - PRD-2.8: GATED pipeline — 7 per-leg deliverables, pre-flight Telegram check, org-chart connector-tree assertion, n8n wiring, dedicated resume cron, fleet sweep (shipped with onboarding v11.10.0)
+
+Addresses PRD section 2.8: "treat the closeout as a gated pipeline like the role/SOP library." Every leg is now explicit and observable; the resume cron fires until all 7 are done or waived; pre-flight fails LOUD before any generation starts.
+
+### A. 7 per-deliverable `closeoutDeliverables` fields (the core PRD-2.8 requirement)
+
+`closeoutDeliverables` object added to `build-state-schema.json` with 7 explicit fields: `notionTreeUrl`, `infographic1Url`, `infographic2Url`, `celebrationVideoUrl`, `telegramSequenceSent` (boolean), `ccUrlDelivered` (boolean), `n8nWired` (boolean or `"skipped"`). `run-closeout.sh` writes each field as the corresponding step completes. The dedicated resume cron reads these fields (not `closeoutStatus` alone) to determine whether work remains.
+
+### B. Pre-flight validates Telegram gateway health (fail LOUD at start)
+
+`run-closeout.sh` now calls `openclaw gateway status` before any KIE.AI/Notion call fires. If the gateway is not healthy/running/ok, the closeout fails immediately with `closeoutFailureReason: "preflight: Telegram gateway not reachable"` and the resume cron retries. Previously: env vars were checked but gateway health was not; infographic generation could succeed while the Telegram step was dead. Set `ZHC_SKIP_TG_PREFLIGHT=1` to bypass in unit tests.
+
+### C. Org-chart connector-tree assertion — `qc-assert-org-chart-connector-tree.sh`
+
+NEW script performs a PROGRAMMATIC check that the rendered Infographic #1 HTML has connector lines (SVG `<line>`/`<path>` with `.connector` class, or CSS `::before`/`::after` border connectors) and 3+ hierarchy levels (owner, ceo, dept). On failure: clears the gate score, triggers a regeneration cycle, and HOLDS the artifact if the assertion still fails. Writes `qcOrgChartConnectorTree` to state. The card-grid anti-pattern (cluster-card with no connectors) is now rejected by code, not just by rubric.
+
+### D. n8n wire-up step — `wire-n8n-closeout.sh` (Step 6.5)
+
+NEW script POSTs a `zhc_closeout_complete` webhook payload to `N8N_WEBHOOK_URL` after Telegram delivery. Payload: company slug, agent name, CC URL, artifact URLs, owner chat ID. 3 retries with backoff. Non-blocking: failure is a soft fail (same as video/notion). Skips gracefully when `N8N_WEBHOOK_URL` unset (writes `n8nStatus="skipped"`, `closeoutDeliverables.n8nWired="skipped"`). Explicit skip via `ZHC_SKIP_N8N=1`.
+
+### E. Dedicated closeout resume cron — `resume-closeout-cron.sh` (loop registry)
+
+NEW dedicated cron registered at the `pending → generating` transition (separate from the Skill 23 `workforce-build-resume` cron). Fires every 15 min. Kill conditions: (1) all 7 `closeoutDeliverables` legs done|waived; (2) `closeoutStatus = done|sent`; (3) max runs (48 = 12h) exhausted (escalates + self-removes). Loop-registry entry: UUID stored in `.closeoutResumeUuid`. Self-removes from state AND from `openclaw cron` on kill. Operator Telegram alert every 3rd consecutive resume attempt without progress.
+
+### F. Fleet sweep — `fleet-sweep-closeouts.sh` (PRD-2.8 fleet delivery verification)
+
+NEW script sweeps all boxes in the fleet manifest (`~/.openclaw/fleet/boxes.json` or `--boxes-file`). Checks each box's 7 `closeoutDeliverables` legs via SSH. Classifies each box: `complete` / `incomplete` / `ghost-complete` (closeoutStatus=done but deliverable fields missing) / `build-not-complete`. In `--apply` mode: invokes `run-closeout.sh` on each incomplete box. JSON report (`--report-json`). Telegram operator summary on apply. Exits 2 when any incomplete (CI-visible). Local mode (`--local`) works without SSH for single-box checks.
+
+### G. `closeoutStatus` enum extended + schema updates
+
+`closeoutStatus` now includes `partial` (soft-only failures) and `blocked-floor-incomplete` / `blocked-libraries-incomplete`. Schema adds: `closeoutDeliverables` (7 fields, `additionalProperties: false`), `closeoutResumeUuid`, `closeoutResumeRegisteredAt`, `closeoutBlockReason`, `closeoutPartialReason`, `closeoutPartialArtifacts`, `qcOrgChartConnectorTree`.
+
+### H. CI (qc-static.yml) — 4 new PRD-2.8 check steps
+
+1. `Skill 37 PRD-2.8: closeout gated pipeline fixture test` — runs `test-closeout-gated-pipeline.sh` (T1–T9)
+2. `Skill 37 PRD-2.8: org-chart connector-tree QC assertion static check` — directly exercises the script with pass/fail fixtures
+3. `Skill 37 PRD-2.8: schema has all 7 closeoutDeliverables fields` — schema regression guard
+4. `Skill 37 PRD-2.8: fleet-sweep + resume-cron scripts present and executable` — script presence + run-closeout.sh wiring assertions
+
+### I. INSTRUCTIONS.md + QUALITY-GATE.md updated
+
+Pre-flight section updated with Telegram gateway check. State machine section updated with new states and 7-leg table. New sections: "7 per-deliverable leg fields", "Dedicated Closeout Resume Cron (Loop Registry)", "Step 6.5 n8n Wire-up", "Fleet Sweep". Step count updated from 6 to 7.
+
+- skill-version.txt: 1.1.5 → 1.2.0
+
 ## [1.1.5] - 2026-06-01 - Beautiful, LINKED closeout: every artifact resolves to a REAL openable URL in Telegram (WS-9 closeout UX) (shipped with onboarding v10.15.20)
 
 The closeout messaging was messy and unlinked — images/video were sent inline but the durable "where do I find this later" link was either missing or a login-gated GHL app deep-link ("we saved it in this folder"). This release makes the celebration message BEAUTIFUL + LINKED: every artifact (celebration video, both infographics, Notion, Command Center, GHL media) resolves to a REAL openable URL posted IN the message. The anti-faking messageId-confirmation gate (1.1.4) is fully preserved.

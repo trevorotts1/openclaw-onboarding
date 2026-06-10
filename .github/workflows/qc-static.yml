@@ -1195,3 +1195,121 @@ jobs:
                   pass  # expected
 
           print("✓ cc_compat.py self-test passed")
+
+      # ------------------------------------------------------------------
+      # PRD-2.8: Skill 37 Closeout Gated Pipeline checks
+      # ------------------------------------------------------------------
+
+      - name: "Skill 37 PRD-2.8: closeout gated pipeline fixture test"
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Runs test-closeout-gated-pipeline.sh against fixture data:
+          #   T1: all 7 closeoutDeliverables fields in complete fixture state
+          #   T2: pre-flight fails LOUD on missing NOTION_API_TOKEN
+          #   T3: pre-flight fails LOUD on missing KIE_API_KEY
+          #   T4: pre-flight Telegram gateway check present
+          #   T5: org-chart QC assertion PASSES for connector-tree, FAILS for card-grid
+          #   T6: dedicated resume cron script exists and run-closeout.sh references it
+          #   T7: fleet-sweep script exists and identifies incomplete closeout fixture
+          #   T8: schema has all 7 PRD-2.8 deliverable fields
+          #   T9: this CI workflow references the new PRD-2.8 QC checks
+          chmod +x 37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh
+          chmod +x 37-zhc-closeout/scripts/qc-assert-org-chart-connector-tree.sh || true
+          chmod +x 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh || true
+          chmod +x 37-zhc-closeout/scripts/resume-closeout-cron.sh || true
+          bash 37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh
+          echo "✓ Skill 37 PRD-2.8 closeout gated pipeline fixture tests passed"
+
+      - name: "Skill 37 PRD-2.8: org-chart connector-tree QC assertion static check"
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Assert the qc-assert-org-chart-connector-tree.sh script exists and is
+          # self-consistent (passes a valid connector-tree HTML fixture, fails a
+          # card-grid fixture). This is the static CI equivalent of T5 in the
+          # fixture test above — belt and suspenders so the assertion script
+          # itself can never silently regress.
+          qc_script="37-zhc-closeout/scripts/qc-assert-org-chart-connector-tree.sh"
+          [ -f "$qc_script" ] || { echo "✗ $qc_script NOT FOUND"; exit 1; }
+          chmod +x "$qc_script"
+
+          # Connector-tree HTML (must pass)
+          tmp_ok=$(mktemp --suffix=.html 2>/dev/null || mktemp /tmp/qctest_XXXXX.html)
+          cat > "$tmp_ok" <<'HTMLEOF'
+          <!DOCTYPE html><html><body>
+          <div class="owner">Owner</div>
+          <svg><line class="connector" x1="10" y1="10" x2="10" y2="50"/></svg>
+          <div class="ceo" data-level="ceo">CEO</div>
+          <div class="dept" data-level="dept">Marketing</div>
+          </body></html>
+          HTMLEOF
+          rc_ok=0
+          ZHC_STATE_FILE="" ZHC_LOG_FILE="" bash "$qc_script" --html-path "$tmp_ok" || rc_ok=$?
+          rm -f "$tmp_ok"
+          [ "$rc_ok" -ne 1 ] || { echo "✗ connector-tree HTML incorrectly FAILED QC (rc=$rc_ok)"; exit 1; }
+
+          # Card-grid HTML (must fail)
+          tmp_fail=$(mktemp --suffix=.html 2>/dev/null || mktemp /tmp/qctest_XXXXX.html)
+          cat > "$tmp_fail" <<'HTMLEOF'
+          <!DOCTYPE html><html><body>
+          <div class="cluster-card">Marketing</div>
+          <div class="cluster-card">Sales</div>
+          </body></html>
+          HTMLEOF
+          rc_fail=0
+          ZHC_STATE_FILE="" ZHC_LOG_FILE="" bash "$qc_script" --html-path "$tmp_fail" || rc_fail=$?
+          rm -f "$tmp_fail"
+          [ "$rc_fail" -eq 1 ] || { echo "✗ card-grid HTML incorrectly PASSED QC (rc=$rc_fail)"; exit 1; }
+
+          echo "✓ Skill 37 org-chart connector-tree QC assertion: connector-tree passes, card-grid fails"
+
+      - name: "Skill 37 PRD-2.8: schema has all 7 closeoutDeliverables fields"
+        shell: bash
+        run: |
+          set -uo pipefail
+          schema="23-ai-workforce-blueprint/build-state-schema.json"
+          [ -f "$schema" ] || { echo "✗ build-state-schema.json not found"; exit 1; }
+          fail=0
+          for field in notionTreeUrl infographic1Url infographic2Url celebrationVideoUrl \
+                       telegramSequenceSent ccUrlDelivered n8nWired; do
+            if python3 -c "import json; s=json.load(open('$schema')); assert '$field' in s['properties']['closeoutDeliverables']['properties']" 2>&1; then
+              echo "  ✓ closeoutDeliverables.$field present in schema"
+            else
+              echo "  ✗ closeoutDeliverables.$field MISSING from schema"; fail=1
+            fi
+          done
+          [ $fail -eq 0 ] && echo "✓ All 7 PRD-2.8 closeoutDeliverables fields present in build-state-schema.json"
+          exit $fail
+
+      - name: "Skill 37 PRD-2.8: fleet-sweep + resume-cron scripts present and executable"
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          for f in \
+            37-zhc-closeout/scripts/fleet-sweep-closeouts.sh \
+            37-zhc-closeout/scripts/resume-closeout-cron.sh \
+            37-zhc-closeout/scripts/wire-n8n-closeout.sh \
+            37-zhc-closeout/scripts/qc-assert-org-chart-connector-tree.sh \
+            37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh; do
+            if [ -f "$f" ]; then
+              echo "  ✓ $f exists"
+            else
+              echo "  ✗ $f MISSING"; fail=1
+            fi
+          done
+          # run-closeout.sh must reference resume cron and the n8n step
+          for pattern in \
+            "closeoutResumeUuid\|closeout.resume.cron\|resume-closeout-cron" \
+            "wire-n8n-closeout\|STEP_N8N_STATUS\|n8nWired" \
+            "closeoutDeliverables.telegramSequenceSent\|telegramSequenceSent" \
+            "qc-assert-org-chart-connector-tree\|ORG_CHART_QC_SCRIPT"; do
+            if grep -qE "$pattern" 37-zhc-closeout/scripts/run-closeout.sh; then
+              echo "  ✓ run-closeout.sh contains: $pattern"
+            else
+              echo "  ✗ run-closeout.sh MISSING: $pattern"; fail=1
+            fi
+          done
+          [ $fail -eq 0 ] && echo "✓ All PRD-2.8 Skill 37 script presence + wiring checks pass"
+          exit $fail

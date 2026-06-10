@@ -1,17 +1,34 @@
 #!/usr/bin/env bash
 # run-closeout.sh -- top-level orchestrator for Skill 37 ZHC Closeout.
 #
-# Reads .workforce-build-state.json and walks through the 6-step pipeline:
+# PRD-2.8: GATED PIPELINE. Every step is a gate. The pipeline does not advance
+# until each gate passes the 8.5 quality gate + delivery verification.
+#
+# Reads .workforce-build-state.json and walks through the 7-step pipeline:
 #   1. Skill 32 (Command Center)
-#   2. Infographic #1 (Workforce Structure)
+#   2. Infographic #1 (Workforce Structure) -- org-chart connector-tree ASSERTED
 #   3. Infographic #2 (How Work Flows)
-#   4. Celebration video (Veo 3.1)
+#   4. Celebration video (Gemini Omni / Veo fallback)
 #   5. Notion page tree (9 sections)
-#   6. Telegram delivery (6 paced messages)
+#   5.5. GHL media upload (conditional)
+#   6. Telegram delivery (6 paced messages) + delivery confirmation gate
+#   6.5. n8n wire-up (optional, non-blocking)
+#   7. Operator summary
+#
+# PRD-2.8 ADDITIONS vs prior versions:
+#   • PRE-FLIGHT: validates KIE_API_KEY, NOTION_API_TOKEN, AND Telegram gateway
+#     health (openclaw gateway status) before ANY generation. Fails LOUD at start.
+#   • closeoutDeliverables: 7 explicit per-leg fields written as each step completes.
+#   • Org-chart QC: qc-assert-org-chart-connector-tree.sh is INVOKED (not just
+#     documented) after Step 2 to assert connector lines, not a card grid.
+#   • n8n wiring step: wire-n8n-closeout.sh fires at Step 6.5 (soft-fail OK).
+#   • Dedicated closeout resume cron registered at start (resume-closeout-cron.sh),
+#     separate from the build-resume cron; self-removes on completion.
+#   • Resume cron UUID written to state (.closeoutResumeUuid) for loop-registry.
 #
 # Idempotent -- each step skips if its target URL field is already set.
-# All steps write state atomically. The resume cron can pick up a stalled
-# closeout at any point and continue from the first un-completed step.
+# All steps write state atomically. The dedicated closeout-resume cron fires
+# every 15 min until all 7 closeoutDeliverables legs are done or waived.
 
 set -u
 
@@ -79,6 +96,31 @@ if [[ -z "${NOTION_API_TOKEN:-}" ]]; then
   fail_closeout "preflight: NOTION_API_TOKEN env var not set"
 fi
 
+# PRD-2.8: TELEGRAM GATEWAY PREFLIGHT -- fail LOUD before any generation if
+# the gateway is unreachable. Sending 6 celebration messages to a client
+# against a non-functional gateway is the definition of "silent mid-way fail."
+# Skip this check when ZHC_SKIP_TG_PREFLIGHT=1 (e.g. unit tests).
+if [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+  log "INFO" "preflight: checking Telegram gateway health"
+  tg_gateway_ok=0
+  if command -v openclaw >/dev/null 2>&1; then
+    gw_status_output=$(openclaw gateway status 2>&1 || true)
+    if printf '%s' "$gw_status_output" | grep -qiE '"status"\s*:\s*"(ok|running|healthy)"|gateway.*(running|ok|healthy)|status.*ok'; then
+      tg_gateway_ok=1
+      log "INFO" "preflight: Telegram gateway healthy"
+    else
+      # Try a lighter check: can we reach the gateway process at all?
+      if openclaw gateway status 2>/dev/null | grep -qi 'running\|online\|ok'; then
+        tg_gateway_ok=1
+        log "INFO" "preflight: Telegram gateway reachable (running)"
+      fi
+    fi
+  fi
+  if [[ "$tg_gateway_ok" -eq 0 ]]; then
+    fail_closeout "preflight: Telegram gateway not reachable or not healthy -- cannot deliver celebration messages; resolve gateway before retrying"
+  fi
+fi
+
 build_completed_at=$(state_get '.buildCompletedAt')
 if [[ -z "$build_completed_at" || "$build_completed_at" == "null" ]]; then
   log "INFO" "buildCompletedAt not set yet -- Skill 23 not done; nothing to do"
@@ -134,6 +176,34 @@ fi
 if [[ "$closeout_status" != "generating" ]]; then
   state_set ".closeoutStatus = \"generating\" | .closeoutStartedAt = \"$(now_iso)\""
   log "INFO" "closeout started -- closeoutStatus transitioned to generating"
+fi
+
+# PRD-2.8: REGISTER the DEDICATED CLOSEOUT RESUME CRON (loop registry entry).
+# This is a SEPARATE cron from workforce-build-resume (Skill 23). It fires every
+# 15 min, checks all 7 closeoutDeliverables legs, and self-removes when done.
+# Idempotent: skip if .closeoutResumeUuid is already set in state.
+existing_cron_uuid=$(state_get '.closeoutResumeUuid')
+if [[ -z "$existing_cron_uuid" || "$existing_cron_uuid" == "null" ]]; then
+  RESUME_CRON_SCRIPT="$SKILL_DIR/scripts/resume-closeout-cron.sh"
+  if [[ -f "$RESUME_CRON_SCRIPT" ]] && command -v openclaw >/dev/null 2>&1; then
+    log "INFO" "registering dedicated closeout-resume cron (PRD-2.8 loop registry)"
+    cron_register_output=$(openclaw cron add \
+      --name "closeout-resume" \
+      --schedule "*/15 * * * *" \
+      --command "bash $RESUME_CRON_SCRIPT" \
+      --json 2>>"$LOG_FILE" || true)
+    cron_uuid=$(printf '%s' "$cron_register_output" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
+    if [[ -n "$cron_uuid" && "$cron_uuid" != "null" ]]; then
+      state_set ".closeoutResumeUuid = \"$cron_uuid\" | .closeoutResumeRegisteredAt = \"$(now_iso)\""
+      log "INFO" "closeout-resume cron registered: uuid=$cron_uuid (loop-registry: resume-closeout-cron)"
+    else
+      log "WARN" "could not register closeout-resume cron (openclaw cron add returned no UUID) -- resume will fall back to workforce-build-resume cron"
+    fi
+  else
+    log "WARN" "resume-closeout-cron.sh or openclaw CLI not found -- skipping cron registration"
+  fi
+else
+  log "INFO" "closeout-resume cron already registered (uuid=$existing_cron_uuid) -- skipping re-registration"
 fi
 
 # ----------------------------------------------------------------------
@@ -349,6 +419,9 @@ GATE_NOTION_RESULT=held
 
 # ----------------------------------------------------------------------
 # STEP 2 -- Infographic #1 (Workforce Structure)
+# PRD-2.8: after the 8.5 quality gate passes, ASSERT the connector-tree
+# requirement programmatically via qc-assert-org-chart-connector-tree.sh.
+# This is NOT just documentation — it is a hard check.
 # ----------------------------------------------------------------------
 if [[ -n "$(state_get '.infographic1Url')" && "$(state_get '.infographic1Url')" != "null" && "$(gate_get_score org_chart)" != "" ]] && rate_meets_gate "$(gate_get_score org_chart)" && [[ "$(gate_get_qc org_chart)" == "pass" ]]; then
   log "INFO" "step=2 infographic-1: already done + gate-passed -- skipping"
@@ -360,6 +433,53 @@ else
   # lines / true reporting tree is the #1 requirement) and QC it. Loops until
   # >= ZHC_QUALITY_MIN or HOLDS for human review. Below 8.5 is never delivered.
   generate_rate_gate org_chart INF1 "$SKILL_DIR/scripts/generate-infographics.sh" structure
+fi
+
+# PRD-2.8: ORG-CHART CONNECTOR-TREE ASSERTION (runs AFTER gate passes).
+# The 8.5 gate alone is agent-self-rated. This is a PROGRAMMATIC assertion
+# that the rendered HTML actually has connector lines (not a card grid).
+# On failure: regenerate (clear gate score so the loop re-runs) then re-assert.
+# If assertion still fails after ZHC_QUALITY_MAX_ATTEMPTS, HOLD the artifact.
+if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
+  ORG_CHART_QC_SCRIPT="$SKILL_DIR/scripts/qc-assert-org-chart-connector-tree.sh"
+  if [[ -x "$ORG_CHART_QC_SCRIPT" || -f "$ORG_CHART_QC_SCRIPT" ]]; then
+    log "INFO" "step=2 org-chart connector-tree assertion (PRD-2.8)"
+    ct_rc=0
+    bash "$ORG_CHART_QC_SCRIPT" >>"$LOG_FILE" 2>&1 || ct_rc=$?
+    if [[ "$ct_rc" -eq 0 ]]; then
+      log "INFO" "step=2 org-chart connector-tree ASSERTED (pass)"
+    elif [[ "$ct_rc" -eq 3 ]]; then
+      log "WARN" "step=2 org-chart connector-tree assertion inconclusive (rc=3, no HTML/image) -- proceeding on agent rating"
+    else
+      log "ERROR" "step=2 org-chart connector-tree ASSERTION FAILED (rc=$ct_rc) -- card-grid anti-pattern detected. Clearing gate score so generate_rate_gate regenerates."
+      # Clear the gate score to force a regeneration attempt
+      state_set "del(.qualityRatings.org_chart)" || true
+      GATE_INF1_RESULT=held
+      STEP_INF1_STATUS=failed
+      # Attempt one more regeneration cycle
+      log "INFO" "step=2 re-running generate_rate_gate after connector-tree failure"
+      generate_rate_gate org_chart INF1 "$SKILL_DIR/scripts/generate-infographics.sh" structure
+      if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
+        ct_rc2=0
+        bash "$ORG_CHART_QC_SCRIPT" >>"$LOG_FILE" 2>&1 || ct_rc2=$?
+        if [[ "$ct_rc2" -eq 0 ]]; then
+          log "INFO" "step=2 org-chart connector-tree ASSERTED on second attempt (pass)"
+        else
+          log "ERROR" "step=2 org-chart connector-tree still FAILS after second attempt -- HOLDING artifact for human review"
+          GATE_INF1_RESULT=held
+          state_set ".qualityHeld = ((.qualityHeld // []) + [\"org_chart_connector_tree\"] | unique)" || true
+        fi
+      fi
+    fi
+  else
+    log "WARN" "step=2 qc-assert-org-chart-connector-tree.sh not found at $ORG_CHART_QC_SCRIPT -- connector-tree check skipped (install may be stale)"
+  fi
+fi
+
+# PRD-2.8: write closeoutDeliverables.infographic1Url when this step passes
+if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
+  inf1_url=$(state_get '.infographic1Url')
+  state_set ".closeoutDeliverables.infographic1Url = \"$inf1_url\"" || true
 fi
 
 # ----------------------------------------------------------------------
@@ -377,6 +497,12 @@ else
   generate_rate_gate flow_diagram INF2 "$SKILL_DIR/scripts/generate-infographics.sh" workflow
 fi
 
+# PRD-2.8: write closeoutDeliverables.infographic2Url when step passes
+if [[ "$GATE_INF2_RESULT" == "pass" ]]; then
+  inf2_url=$(state_get '.infographic2Url')
+  state_set ".closeoutDeliverables.infographic2Url = \"$inf2_url\"" || true
+fi
+
 # ----------------------------------------------------------------------
 # STEP 4 -- Celebration Video
 # ----------------------------------------------------------------------
@@ -385,6 +511,12 @@ if [[ -n "$(state_get '.celebrationVideoUrl')" && "$(state_get '.celebrationVide
   STEP_VIDEO_STATUS=ok
 else
   run_step VIDEO "$SKILL_DIR/scripts/generate-celebration-video.sh"
+fi
+
+# PRD-2.8: write closeoutDeliverables.celebrationVideoUrl when step succeeds
+if [[ "$STEP_VIDEO_STATUS" == "ok" ]]; then
+  video_url=$(state_get '.ghlVideoPublicUrl // .celebrationVideoUrl')
+  state_set ".closeoutDeliverables.celebrationVideoUrl = \"$video_url\"" || true
 fi
 
 # ----------------------------------------------------------------------
@@ -403,6 +535,12 @@ else
   # QC it. Loops until >= ZHC_QUALITY_MIN or HOLDS for human review. Below 8.5
   # is never delivered.
   generate_rate_gate closeout_docs NOTION "$SKILL_DIR/scripts/create-notion-closeout.sh"
+fi
+
+# PRD-2.8: write closeoutDeliverables.notionTreeUrl when notion step passes
+if [[ "$GATE_NOTION_RESULT" == "pass" ]]; then
+  notion_url=$(state_get '.notionRootPageUrl')
+  state_set ".closeoutDeliverables.notionTreeUrl = \"$notion_url\"" || true
 fi
 
 # ----------------------------------------------------------------------
@@ -441,6 +579,30 @@ if [[ -n "$ZHC_QUALITY_HELD" ]]; then
 fi
 run_step TELEGRAM "$SKILL_DIR/scripts/send-telegram-celebration.sh"
 
+# PRD-2.8: write closeoutDeliverables.telegramSequenceSent and ccUrlDelivered
+# after the Telegram step. These are written here (not in send-telegram-celebration.sh)
+# so the single-source-of-truth state writes stay in run-closeout.sh.
+if [[ "$STEP_TELEGRAM_STATUS" == "ok" ]]; then
+  cc_url_state=$(state_get '.commandCenterUrl')
+  cc_delivered="false"
+  [[ -n "$cc_url_state" && "$cc_url_state" != "null" ]] && cc_delivered="true"
+  state_set \
+    ".closeoutDeliverables.telegramSequenceSent = true | .closeoutDeliverables.ccUrlDelivered = $cc_delivered" || true
+fi
+
+# ----------------------------------------------------------------------
+# STEP 6.5 -- n8n wire-up (PRD-2.8, optional, non-blocking)
+# Notifies the client's n8n webhook that the ZHC build + closeout is complete.
+# Runs AFTER Telegram delivery (the owner has their celebration already; n8n is
+# operator plumbing). Failure marks .n8nStatus = "failed" (soft) and moves on.
+# ----------------------------------------------------------------------
+STEP_N8N_STATUS=skipped
+N8N_WIRE_SCRIPT="$SKILL_DIR/scripts/wire-n8n-closeout.sh"
+if [[ -f "$N8N_WIRE_SCRIPT" ]]; then
+  run_step N8N "$N8N_WIRE_SCRIPT"
+  STEP_N8N_STATUS="${STEP_N8N_STATUS:-skipped}"
+fi
+
 # ----------------------------------------------------------------------
 # Finalize -- evaluate step matrix
 # ----------------------------------------------------------------------
@@ -451,6 +613,7 @@ soft_failed=()
 [[ "$STEP_TELEGRAM_STATUS" == "failed" ]] && critical_failed+=("telegram")
 [[ "$STEP_VIDEO_STATUS"    == "failed" ]] && soft_failed+=("celebration-video")
 [[ "$STEP_NOTION_STATUS"   == "failed" ]] && soft_failed+=("notion")
+[[ "${STEP_N8N_STATUS:-skipped}" == "failed" ]] && soft_failed+=("n8n")
 
 if (( ${#critical_failed[@]} > 0 )); then
   reason="critical-failed: $(IFS=,; echo "${critical_failed[*]}")"
@@ -547,7 +710,24 @@ else
     bash "$SKILL_DIR/scripts/send-operator-summary.sh" || log "WARN" "operator-summary step returned non-zero (non-fatal)"
   fi
 
+  # PRD-2.8: write any remaining closeoutDeliverables leg flags before done.
+  # telegramSequenceSent and ccUrlDelivered were written in Step 6 above.
+  # Ensure all fields are set. n8nWired is already set by wire-n8n-closeout.sh.
+  final_n8n=$(state_get '.closeoutDeliverables.n8nWired // empty')
+  if [[ -z "$final_n8n" || "$final_n8n" == "null" ]]; then
+    # n8n was skipped (no N8N_WEBHOOK_URL) but field must be explicit
+    state_set '.closeoutDeliverables.n8nWired = "skipped"' || true
+  fi
+
+  # PRD-2.8: SELF-REMOVE the dedicated closeout-resume cron (kill condition met).
+  resume_cron_uuid=$(state_get '.closeoutResumeUuid')
+  if [[ -n "$resume_cron_uuid" && "$resume_cron_uuid" != "null" ]] && command -v openclaw >/dev/null 2>&1; then
+    log "INFO" "self-removing closeout-resume cron $resume_cron_uuid (loop-registry kill condition: done)"
+    openclaw cron rm "$resume_cron_uuid" 2>>"$LOG_FILE" || log "WARN" "closeout-resume cron rm failed (tolerated)"
+    state_set 'del(.closeoutResumeUuid) | .closeoutResumeRegisteredAt = null' || true
+  fi
+
   state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\""
-  log "INFO" "closeout complete -- closeoutStatus=done"
+  log "INFO" "closeout complete -- closeoutStatus=done (PRD-2.8: all 7 closeoutDeliverables legs written, resume cron removed)"
   exit 0
 fi

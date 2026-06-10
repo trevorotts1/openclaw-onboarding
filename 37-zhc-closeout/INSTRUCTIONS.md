@@ -1,5 +1,7 @@
 # Skill 37 — Runtime Instructions
 
+PRD-2.8: GATED PIPELINE. Seven explicit per-deliverable legs. Pre-flight validates KEYS AND TELEGRAM before generation starts. Org-chart connector-tree is ASSERTED programmatically (not just documented). Dedicated closeout-resume cron (loop registry). Fleet sweep for re-delivery.
+
 This is the execution guide. Use it when `.workforce-build-state.json` shows the closeout is due (or in flight). Follow the steps EXACTLY in order. The state file is the contract — never skip a state write.
 
 ---
@@ -12,20 +14,23 @@ Before any artifact reaches the client (Telegram, media library, GHL, Drive), th
 
 ---
 
-## 0. Pre-flight Checks
+## 0. Pre-flight Checks (PRD-2.8: FAIL LOUD at start, not silently mid-way)
+
+`run-closeout.sh` validates ALL of the following BEFORE any KIE.AI/Notion/Telegram call fires. A missing key discovered after infographic generation would waste credits and leave the client with a broken experience. The pre-flight is the mandatory gate.
 
 Before starting Step 1, verify ALL of the following:
 
 1. `.workforce-build-state.json` exists and has:
    - `buildCompletedAt != null` — Skill 23 is actually done.
    - `closeoutStatus` is `pending` or `generating` (NOT `done` and NOT `sent`).
-2. `KIE_API_KEY` env var is set.
-3. `NOTION_API_TOKEN` env var is set.
-4. `openclaw message send` works (gateway healthy).
+2. `KIE_API_KEY` env var is set — **LOUD FAIL** if empty.
+3. `NOTION_API_TOKEN` env var is set — **LOUD FAIL** if empty.
+4. **Telegram gateway health** (`openclaw gateway status` returns healthy/running/ok) — **LOUD FAIL** if gateway unreachable. Sending 6 celebration messages to a non-functional gateway is the exact silent mid-way failure mode this gate prevents. Set `ZHC_SKIP_TG_PREFLIGHT=1` only in unit tests.
 5. `jq` is on PATH.
-6. The 6 scripts in `scripts/` exist and are executable.
+6. `curl` and `openclaw` CLI are on PATH.
+7. The scripts in `scripts/` exist and are executable.
 
-If ANY check fails, write `closeoutStatus: "failed"` + `closeoutFailureReason: "preflight: <which check>"` to the state file and STOP. The resume cron will try again on its next fire (every 15 min). If preflight has been failing for 3 consecutive resume invocations, escalate to the operator's Telegram chat (`env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759`). Resolve via:
+If ANY check fails, write `closeoutStatus: "failed"` + `closeoutFailureReason: "preflight: <which check>"` to the state file and STOP. The dedicated closeout-resume cron will retry on its next fire (every 15 min). If preflight has been failing for 3 consecutive resume invocations, escalate to the operator's Telegram chat (`env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759`). Resolve via:
 ```bash
 source "$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo $HOME/.openclaw; fi)/skills/shared-utils/operator-chat-id.sh"
 openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" --message "..."
@@ -40,24 +45,56 @@ closeoutStatus values (state-file enum):
 
   pending     ← Skill 23 master orchestrator sets this when buildCompletedAt is written
    ↓
-  generating  ← Skill 37 sets this BEFORE Step 1
+  generating  ← Skill 37 sets this BEFORE Step 1; ALSO registers the dedicated
+                closeout-resume cron (resume-closeout-cron.sh, every 15 min, loop registry)
    ↓
   sent        ← Skill 37 sets this after Step 6's last Telegram message is delivered
    ↓
-  done        ← Skill 37 sets this after final state-file write + log line
-                (done is the terminal happy-path state)
+  done        ← Skill 37 sets this after ALL 7 closeoutDeliverables legs confirmed +
+                resume cron self-removed (loop-registry kill condition)
 
-  failed      ← Set on any step that has exhausted retries
-                Sub-field closeoutFailureReason captures WHY
-                The resume cron will retry from generating on its next fire
+  partial     ← Soft-only failures (video/notion/n8n). Telegram delivered.
+                closeoutPartialArtifacts lists what failed. Resume cron retries.
+
+  failed      ← Hard failures (infographic-1/2, Telegram) or telegram-unconfirmed.
+                closeoutFailureReason captures the specific step.
+                The dedicated closeout-resume cron retries every 15 min.
+
+  blocked-floor-incomplete    ← verify-zhc-standard rc=3 (dept floor not met on disk)
+  blocked-libraries-incomplete ← verify-zhc-standard rc=4/5 (role/SOP library not done)
 ```
 
 `closeoutStartedAt` is set on first transition `pending → generating`.
 `closeoutCompletedAt` is set on transition `sent → done`.
 
+### PRD-2.8: 7 per-deliverable leg fields (`.closeoutDeliverables`)
+
+Each field is written as the corresponding step completes. The dedicated resume cron fires until all 7 are non-null and non-false. This makes the pipeline observable and resumable at leg granularity.
+
+| Field | Written when | Type |
+|-------|-------------|------|
+| `notionTreeUrl` | Notion step passes 8.5 gate | string URL |
+| `infographic1Url` | Org chart passes 8.5 gate + connector-tree assertion | string URL |
+| `infographic2Url` | Flow diagram passes 8.5 gate | string URL |
+| `celebrationVideoUrl` | Video generated + byte-downloaded | string URL |
+| `telegramSequenceSent` | All 6 Telegram messages delivered + confirmed | boolean |
+| `ccUrlDelivered` | CC URL present and included in Message 6 | boolean |
+| `n8nWired` | n8n webhook POST confirmed, or `"skipped"` if N8N_WEBHOOK_URL absent | bool/string |
+
+### PRD-2.8: Dedicated Closeout Resume Cron (Loop Registry)
+
+`resume-closeout-cron.sh` is registered via `openclaw cron add` at the `generating` transition (separate from the Skill 23 `workforce-build-resume` cron):
+
+- **Trigger:** every 15 minutes
+- **Goal check:** reads `.closeoutDeliverables` — cheap, zero tokens
+- **Decision:** if any of the 7 legs is incomplete, dispatches `[CLOSEOUT-RESUME]` self-ping
+- **Kill condition:** self-removes when all 7 legs are done|waived OR max runs (48 = 12h) exceeded
+- **Loop registry entry:** `.closeoutResumeUuid` in state (used for self-removal)
+- **Escalation:** operator Telegram alert every 3rd consecutive resume attempt
+
 ---
 
-## 2. The 6-Step Pipeline
+## 2. The 7-Step Pipeline
 
 All steps run via `scripts/run-closeout.sh` as the top-level orchestrator. You CAN invoke individual scripts manually for debugging, but normal flow goes through `run-closeout.sh`.
 
@@ -232,6 +269,17 @@ This is the only step that the OWNER sees. **All prior steps were silent.** Goal
 - **Output:** each upload returns `{"fileId","url":"https://storage.googleapis.com/msgsndr/..."}`. That `url` is a PUBLIC, openable GCS link. The script writes `ghlVideoPublicUrl`, `ghlInfographic1PublicUrl`, `ghlInfographic2PublicUrl`, `ghlMediaUrls[]`, `ghlMediaFileIds[]`, and the in-app `ghlMediaLibraryUrl` to state.
 - **Skips gracefully** — writing a `ghlMediaUploaded` reason (`skipped-no-ghl` / `skipped-no-pit` / `skipped-pit-verify-failed` / `skipped-no-files`) — when GHL or a working PIT is absent. Never blocks closeout.
 
+### Step 6.5 — n8n Wire-up (PRD-2.8, optional, non-blocking)
+
+**Goal:** Notify the client's n8n instance (webhook) that the ZHC build + closeout is complete.
+
+Runs AFTER Telegram delivery (the owner already has their celebration). The payload carries: company slug, agent name, CC URL, infographic/video URLs, Notion URL, and owner Telegram chat ID. Fires `scripts/wire-n8n-closeout.sh`.
+
+- **Skip conditions:** `N8N_WEBHOOK_URL` env var not set → graceful skip (writes `n8nStatus="skipped"`). `ZHC_SKIP_N8N=1` → explicit skip. `n8nStatus` already `"wired"` → idempotent skip.
+- **Retry:** 3 attempts with exponential backoff. On failure: `n8nStatus="failed"` (soft — closeout continues).
+- **State write:** `closeoutDeliverables.n8nWired = true|"skipped"` written by the script.
+- **Non-blocking:** n8n failure is a soft failure (same as video/notion). The closeout does NOT block on n8n.
+
 ### Step 7 (success path only) -- Operator summary
 
 After every artifact cleared the 8.5 gate, was delivered, the phantom-closeout guard passed, AND the Telegram delivery was confirmed against the sent-registry, `run-closeout.sh` runs one final step BEFORE writing `closeoutStatus: "done"`:
@@ -250,7 +298,7 @@ Skill 37 adds these top-level fields to `.workforce-build-state.json`:
 
 ```json
 {
-  "closeoutStatus": "pending|generating|sent|done|failed",
+  "closeoutStatus": "pending|generating|partial|sent|done|failed",
   "closeoutStartedAt": "2026-05-23T20:30:00Z",
   "closeoutCompletedAt": "2026-05-23T20:45:00Z",
   "closeoutFailureReason": "command-center: <last error>",
@@ -269,6 +317,29 @@ Skill 37 adds these top-level fields to `.workforce-build-state.json`:
   "celebrationVideoModel": "gemini-omni-video",
   "notionRootPageUrl": "https://www.notion.so/...",
 
+  "closeoutDeliverables": {
+    "notionTreeUrl": "https://www.notion.so/...",
+    "infographic1Url": "file:///data/.openclaw/workspace/.zhc-inf1-output.png",
+    "infographic2Url": "https://tempfile.kie.ai/...",
+    "celebrationVideoUrl": "https://tempfile.kie.ai/...",
+    "telegramSequenceSent": true,
+    "ccUrlDelivered": true,
+    "n8nWired": "skipped"
+  },
+
+  "closeoutResumeUuid": "abc123-...",
+  "closeoutResumeRegisteredAt": "2026-05-23T20:30:00Z",
+
+  "qcOrgChartConnectorTree": {
+    "verdict": "pass",
+    "note": "connector-tree confirmed via HTML analysis",
+    "verifiedAt": "2026-05-23T20:32:00Z",
+    "rc": 0,
+    "connectorFound": 1,
+    "cardGridDetected": 0,
+    "hierarchyLevels": 3
+  },
+
   "messagesDelivered": [
     { "n": 1, "messageId": "51678", "chatId": "5252140759", "ts": "2026-05-23T20:44:00Z" },
     { "n": 6, "messageId": "51690", "chatId": "5252140759", "ts": "2026-05-23T20:44:40Z" }
@@ -284,6 +355,8 @@ Skill 37 adds these top-level fields to `.workforce-build-state.json`:
 ```
 
 > v10.15.19/v10.16.18: `messagesDelivered` is an ARRAY OF OBJECTS (was bare integers). Each object carries the REAL gateway `messageId` so the closeout can be cross-checked against the sent-registry before claiming `done`. `verify-zhc-standard.sh` still reads `.messagesDelivered | length`, which holds for the object array.
+>
+> v11.10.0 (PRD-2.8): `closeoutDeliverables` carries the 7 explicit per-leg delivery fields. `closeoutResumeUuid` is the loop-registry entry for the dedicated closeout-resume cron. `qcOrgChartConnectorTree` is the programmatic connector-tree assertion result.
 
 See `23-ai-workforce-blueprint/build-state-schema.json` for the JSON-schema source of truth.
 
@@ -350,7 +423,37 @@ If `closeoutStatus == "failed"` AND the resume cron has retried 3+ times without
 
 ---
 
-## 8. Logging
+## 8. Fleet Sweep (PRD-2.8)
+
+`scripts/fleet-sweep-closeouts.sh` sweeps every box in the fleet and verifies the 7 `closeoutDeliverables` legs are all complete. Mirrors the `fleet-refresh.sh` architecture.
+
+```bash
+# Dry-run (default — safe, read-only report):
+bash 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh --boxes-file ~/.openclaw/fleet/boxes.json
+
+# Apply: re-run run-closeout.sh on every box with an incomplete closeout:
+bash 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh --boxes-file ~/.openclaw/fleet/boxes.json --apply
+
+# Check this box only:
+bash 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh --local
+
+# JSON report:
+bash 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh --boxes-file ... --report-json /tmp/closeout-sweep.json
+```
+
+**Outcome classification per box:**
+- `complete` — all 7 legs done|waived
+- `incomplete` — one or more legs missing (--apply re-runs `run-closeout.sh`)
+- `ghost-complete` — `closeoutStatus=done` but deliverable fields are missing (PRD-2.8 exposes these)
+- `build-not-complete` — `buildCompletedAt` not set yet; skipped
+
+In `--apply` mode, a Telegram summary is sent to the operator after the sweep completes.
+
+**Exit codes:** `0` = all complete; `1` = fatal; `2` = at least one incomplete (CI-visible nonzero)
+
+---
+
+## 9. Logging
 
 Append-only log at `$OC_ROOT/workspace/.zhc-closeout.log` with line format:
 
