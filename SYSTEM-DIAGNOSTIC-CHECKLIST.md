@@ -63,7 +63,7 @@ The automated runner is at **`scripts/qc-system-integrity.sh`**. It executes eve
 │   - Runtime task→persona flow:                                        │
 │       1. Task lands in dept Telegram topic                            │
 │       2. Director invokes persona-selector-v2.py (canonical selector) │
-│       3. Hybrid search: Gemini semantic + keyword + 5-layer scoring   │
+│       3. 4-stage funnel: pool→keyword→semantic→5-layer scoring        │
 │       4. Selected persona logged to dept/memory/[date].md             │
 │       5. Sub-agent spawned with "Act As If" prompt                    │
 │       6. Sub-agent executes following the DMAIC SOP                   │
