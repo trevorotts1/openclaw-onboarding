@@ -1404,7 +1404,7 @@ jobs:
             "oc_wave_goal_check" \
             "MAX_STRIKES" \
             "self_remove_cron" \
-            "lr_register\|LOOP_REG_LIB" \
+            "lr_register|LOOP_REG_LIB" \
             "oc_next_incomplete_wave"; do
             if grep -qE "$pattern" scripts/watchdog-onboarding-loop.sh; then
               echo "  ✓ watchdog contains: $pattern"
