@@ -17,8 +17,8 @@
 # honestly-reported skip when GHL creds are absent). Exit non-zero NEVER — this
 # is wiring, callers gate on the printed STATUS line + their own verification.
 #
-# Mac (launchd) is the canonical path for this repo. VPS uses the systemd path
-# in INSTALL.md §5.6 (the VPS repo ships its own autostart variant).
+# Mac (launchd) is the canonical path for Mac. VPS uses the systemd path
+# in INSTALL.md §5.6 (see platform/vps/ overlay in this unified repo).
 
 set -u
 

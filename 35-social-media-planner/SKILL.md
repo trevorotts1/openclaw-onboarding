@@ -2,9 +2,9 @@
 # CANONICAL OpenClaw skill name — this is the field OpenClaw uses to register
 # the skill, derive its slash command, and key its allowlist (docs.openclaw.ai
 # /tools/skills: "The skill's name, slash command, and allowlist key all come
-# from the `name` frontmatter field"). It MUST stay identical across the Mac
-# (openclaw-onboarding) and VPS (openclaw-onboarding-vps) repos. Canonical name
-# reconciled to `social-media-planner` on BOTH repos (v10.15.48). Do NOT rename.
+# from the `name` frontmatter field"). It MUST stay identical across Mac and VPS
+# platforms in the unified repo (trevorotts1/openclaw-onboarding, platform/mac +
+# platform/vps overlays). Canonical name: `social-media-planner`. Do NOT rename.
 name: social-media-planner
 description: Multi-agent content publishing engine that researches, creates, produces, schedules, and publishes content across 8 platforms (WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook) — handles text, images, videos, podcasts, and HTML email newsletters using a 15+6 agent model.
 # `pipeline_id` is the internal identifier for the content publishing pipeline

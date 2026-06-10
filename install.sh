@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.12.0"
+ONBOARDING_VERSION="v11.12.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3182,9 +3182,9 @@ fi
 #   • OpenAI cloud (gpt-4o-mini-transcribe) is the FINAL fallback so transcription
 #     never hard-fails if the local model is missing or errors.
 #
-# The VPS installer (openclaw-onboarding-vps) does NOT bake a local model — it
-# uses the cloud (Groq) config only. Keep these platform-correct: do not copy
-# this local-model block into the VPS repo.
+# The VPS platform overlay (platform/vps/ in this unified repo) does NOT bake
+# a local model — it uses the cloud (Groq) config only. Keep these
+# platform-correct: do not copy this local-model block into VPS config.
 #
 # OpenClaw schema (docs.openclaw.ai/gateway/config-tools, verified):
 #   tools.media.audio = { enabled, maxBytes, models:[ ...entries ] }

@@ -186,7 +186,7 @@ This is the programmatic enforcement of R3 and R6 above. The SOP is the doctrine
 
 The graphics department head role is: **Chief Design Officer**
 
-This is the role #0 entry in `suggested-roles/graphics-suggested-roles.md` in both the Mac (`openclaw-onboarding`) and VPS (`openclaw-onboarding-vps`) repos. Neither "Imani" nor "Amani" exist in the role library. When routing graphics tasks, use `department_slug: "graphics"` — the Command Center resolves the department head by workspace slug, not by persona name.
+This is the role #0 entry in `suggested-roles/graphics-suggested-roles.md` in the unified repo (`openclaw-onboarding`, covering both Mac and VPS platforms). Neither "Imani" nor "Amani" exist in the role library. When routing graphics tasks, use `department_slug: "graphics"` — the Command Center resolves the department head by workspace slug, not by persona name.
 
 ---
 

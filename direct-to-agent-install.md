@@ -64,9 +64,8 @@ At workspace root, create or update:
 - `SOUL.md` (company mission/beliefs)
 
 ### 5. Download skill files from GitHub
-Fetch the latest skill bundle from the platform-appropriate repo:
-- Mac: `https://github.com/trevorotts1/openclaw-onboarding`
-- VPS: `https://github.com/trevorotts1/openclaw-onboarding-vps`
+Fetch the latest skill bundle from the unified repo (auto-detects Mac vs VPS):
+- Mac + VPS: `https://github.com/trevorotts1/openclaw-onboarding`
 
 Place every skill folder under `<skills-dir>/`. Place root files (`Start Here.md`, `INSTALL-CONTRACT.md`, `AGENTS.md`, `cron-prompt.txt`, `check-updates.sh`, `force-update.sh`, etc.) at `<config-root>/`. Place `shared-utils/` under `<skills-dir>/shared-utils/`.
 
@@ -180,4 +179,4 @@ Reply to the user with:
 
 **This document is the canonical direct-to-agent install spec.** Any agent receiving these instructions should follow them exactly. The instructions are versioned with the repo — re-fetch from GitHub `main` for the latest.
 
-Versioned by: openclaw-onboarding (Mac) and openclaw-onboarding-vps (VPS).
+Versioned by: openclaw-onboarding (unified Mac + VPS repo).

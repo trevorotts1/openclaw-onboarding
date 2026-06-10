@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v11.12.0"
+ONBOARDING_VERSION="v11.12.1"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -311,7 +311,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v11.12.0 — safe_json_edit
+# v11.12.1 — safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1334,7 +1334,7 @@ except: pass
       if [ -n "$TG_TARGET" ]; then
         PROMPT_TMP="/tmp/openclaw-cron-prompt-$$.txt"
         REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
-        [ -d "/data/.openclaw" ] && REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding-vps/main"
+        # Unified repo: same URL for both Mac and VPS platforms
         if curl -fsSL --max-time 15 "${REPO_URL}/cron-prompt.txt" -o "$PROMPT_TMP" 2>/dev/null && [ -s "$PROMPT_TMP" ]; then
           PROMPT_CONTENT=$(cat "$PROMPT_TMP")
           if openclaw cron create \

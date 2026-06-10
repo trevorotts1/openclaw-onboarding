@@ -510,9 +510,10 @@ Expected: 200. If not 200 after 30 seconds, check that PM2 shows the cloudflare-
 
 The VPS install adds a `command:` override to `/docker/<project>/docker-compose.yml` that backgrounds a 45-second delayed `pm2 resurrect` call so the Mission Control dashboard + cloudflared connector survive `docker compose restart`. On Mac, pm2 is managed by launchd via `pm2 startup` and persists across reboots without any docker-compose hook, so the equivalent `scripts/install-pm2-restart-hook.sh` is a no-op on this repo.
 
-If you operate a Hostinger Docker VPS, use the VPS repo's variant of this script and follow the VPS INSTALL.md Phase 6c:
+If you operate a Hostinger Docker VPS, use the platform/vps variant of this script and follow the VPS INSTALL.md Phase 6c:
 
-- VPS repo: https://github.com/trevorotts1/openclaw-onboarding-vps
+- Unified repo (Mac + VPS): https://github.com/trevorotts1/openclaw-onboarding
+- VPS-specific docs: platform/vps/ in the same repo
 
 ## Phase 6c: SOP V2 Library Ingestion (Agent Does This Automatically — v10.13.29+)
 

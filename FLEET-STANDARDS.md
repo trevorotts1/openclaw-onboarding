@@ -75,7 +75,7 @@ present in `AGENTS.md`).
 ## Integration
 
 - **Mac onboarding** (`openclaw-onboarding`): invoked from `install.sh` after core config is in place
-- **VPS onboarding** (`openclaw-onboarding-vps`): invoked from the main setup flow
+- **VPS onboarding** (`openclaw-onboarding`, platform/vps/ overlay): invoked from the main setup flow
 - **Updates**: both repos wire the script into their documented update paths so every `npm install -g openclaw@<ver>` run triggers standards reapplication
 
 ---

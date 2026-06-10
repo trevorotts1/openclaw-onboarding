@@ -16,7 +16,7 @@ SCRIPT_VERSION="1.0.0"
 # ----------------------------------------------------------
 if [ -d "/data/.openclaw" ]; then
   PLATFORM="vps"
-  REPO_NAME="openclaw-onboarding-vps"
+  REPO_NAME="openclaw-onboarding"
   SKILLS_DIR="/data/.openclaw/skills"
   MASTER_DIR="/data/Downloads/openclaw-master-files"
   WORKSPACE="/data/clawd"
