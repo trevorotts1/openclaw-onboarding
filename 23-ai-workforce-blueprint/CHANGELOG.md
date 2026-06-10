@@ -1,4 +1,4 @@
-## [v11.11.0] — 2026-06-10 — PRD 2.15: Interview experience — persona block, industry-pack assertion, completion QC gate, nudges verified
+## [v11.11.0] — 2026-06-10 — PRD 2.15: Interview experience — persona block, industry-pack assertion, completion QC gate, nudges verified — QC score 9.1/10 (PASS)
 
 ### Overview
 
