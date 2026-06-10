@@ -1172,26 +1172,39 @@ def build_from_config(config):
 # ============================================================
 
 HOME = os.path.expanduser("~")
-# Use Path.home() so tilde is always expanded — literal "~/..." strings are
-# NEVER expanded by os.path.isdir or pathlib.Path without expanduser/Path.home.
-# (PRD item 1.7: remove every literal "~/..." path in Python.)
-WORKSPACE_ROOT = str(Path.home() / "clawd")
 
-# Zero Human Company folder structure (v9.6.0+)
-# Top-level: ~/clawd/zero-human-company/
-# Per-company: ~/clawd/zero-human-company/<company-slug>/
-# Departments live inside the per-company folder.
-ZHC_ROOT = os.path.join(WORKSPACE_ROOT, "zero-human-company")
+# PRD 1.9: resolve ALL paths through get_openclaw_paths() — the single path
+# authority. This script NEVER writes outside master_files/zero-human-company/.
+# Legacy ~/clawd roots may be READ for backward compat via get_legacy_company_roots()
+# but nothing new is written there.
+_SHARED_UTILS_BW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared-utils")
+sys.path.insert(0, os.path.realpath(_SHARED_UTILS_BW))
+try:
+    from detect_platform import get_openclaw_paths as _get_openclaw_paths_bw
+    _PATHS_BW = _get_openclaw_paths_bw()
+    WORKSPACE_ROOT = str(_PATHS_BW["workspace"])
+    MASTER_FILES = str(_PATHS_BW["master_files"])
+    # Canonical ZHC root (PRD 1.9): master_files/zero-human-company/
+    ZHC_ROOT = str(_PATHS_BW["company_root"])
+except Exception as _bw_err:
+    # Graceful fallback — should not occur on a properly installed box.
+    import warnings as _bw_warnings
+    _bw_warnings.warn(
+        f"[build-workforce PRD-1.9] detect_platform import failed ({_bw_err}); "
+        "falling back to legacy ~/clawd root. Run the OpenClaw installer.",
+        stacklevel=1,
+    )
+    WORKSPACE_ROOT = str(Path.home() / "clawd")
+    ZHC_ROOT = os.path.join(WORKSPACE_ROOT, "zero-human-company")
+    MASTER_FILES = str(Path.home() / "Downloads" / "openclaw-master-files")
 
 # DEPARTMENTS_DIR is resolved per-company at runtime once the company slug is known.
-# Falls back to the pre-v9.6.0 path for legacy installs (auto-detected).
 DEPARTMENTS_DIR = None       # Resolved by resolve_company_paths() below
-COMPANY_DIR = None           # ~/clawd/zero-human-company/<slug>/
+COMPANY_DIR = None           # <ZHC_ROOT>/<slug>/
 COMPANY_SLUG = None
-LEGACY_DEPARTMENTS_DIR = os.path.join(WORKSPACE_ROOT, "departments")  # pre-v9.6.0 location
+LEGACY_DEPARTMENTS_DIR = os.path.join(WORKSPACE_ROOT, "departments")  # pre-v9.6.0 location (READ-ONLY)
 
 SUBAGENTS_DIR = os.path.join(WORKSPACE_ROOT, "subagents", "templates")
-MASTER_FILES = None  # Detected at runtime
 OPENCLAW_CONFIG = str(Path.home() / ".openclaw" / "openclaw.json")
 BACKUP_DIR = os.path.join(HOME, "Downloads", "openclaw-backups")
 COMPANY_DISCOVERY_DIR = None  # Set after master files detected; per-company file is now in COMPANY_DIR
@@ -1211,33 +1224,44 @@ def resolve_company_paths(company_name: str):
     Set the global COMPANY_DIR / DEPARTMENTS_DIR / COMPANY_SLUG paths based on
     the client's company name. Creates the folders if missing.
 
-    Discovery order at runtime (an agent looking for the workforce later):
-      1. ~/clawd/zero-human-company/<slug>/         ← v9.6.0+ canonical
-      2. ~/clawd/zhc/<slug>/                        ← short alias (legacy from very early v9.6 testing)
-      3. ~/clawd/departments/                        ← pre-v9.6.0 (still readable for legacy installs)
+    PRD 1.9: new companies are ALWAYS written to the canonical root:
+        Mac:  ~/Downloads/openclaw-master-files/zero-human-company/<slug>/
+        VPS:  /data/openclaw-master-files/zero-human-company/<slug>/
+    Override with MASTER_FILES_DIR env var.
+
+    Legacy roots (~/clawd/...) are READ-ONLY for backward compat.
+    Run scripts/migrate-zhc-to-master-files.sh to migrate existing companies.
     """
     global COMPANY_SLUG, COMPANY_DIR, DEPARTMENTS_DIR
     COMPANY_SLUG = slugify_company_name(company_name)
 
-    # Canonical path
+    # PRD 1.9: always write to canonical root (ZHC_ROOT is now master_files/zero-human-company/)
     canonical = os.path.join(ZHC_ROOT, COMPANY_SLUG)
-    # Short-alias path (for installs that already have it)
-    short_alias = os.path.join(WORKSPACE_ROOT, "zhc", COMPANY_SLUG)
 
-    if os.path.isdir(short_alias) and not os.path.isdir(canonical):
-        # Existing short-alias install — keep using it, don't fork
-        COMPANY_DIR = short_alias
-    else:
-        COMPANY_DIR = canonical
+    # If the company already exists in a legacy location and NOT yet in canonical,
+    # emit a loud warning so the operator runs the migration. Never silently write
+    # new content to the old location.
+    legacy_short = os.path.join(WORKSPACE_ROOT, "zhc", COMPANY_SLUG)
+    legacy_clawd = os.path.join(str(Path.home() / "clawd" / "zero-human-company"), COMPANY_SLUG)
+    for _legacy in (legacy_short, legacy_clawd):
+        if os.path.isdir(_legacy) and not os.path.isdir(canonical):
+            print(
+                f"[ZHC WARNING] Company '{COMPANY_SLUG}' found at legacy path: {_legacy}\n"
+                f"[ZHC WARNING] New writes will go to canonical path: {canonical}\n"
+                f"[ZHC WARNING] Run scripts/migrate-zhc-to-master-files.sh to move the existing company.",
+                file=sys.stderr,
+            )
+            break
 
+    COMPANY_DIR = canonical
     os.makedirs(COMPANY_DIR, exist_ok=True)
     DEPARTMENTS_DIR = os.path.join(COMPANY_DIR, "departments")
     os.makedirs(DEPARTMENTS_DIR, exist_ok=True)
 
     # If pre-v9.6.0 legacy departments folder exists with content, log a migration note
     if os.path.isdir(LEGACY_DEPARTMENTS_DIR) and os.listdir(LEGACY_DEPARTMENTS_DIR):
-        print(f"[ZHC] Legacy ~/clawd/departments/ detected. Reading from it for backward compat.\n"
-              f"[ZHC] New writes go to: {DEPARTMENTS_DIR}", file=sys.stderr)
+        print(f"[ZHC] Legacy ~/clawd/departments/ detected (READ-ONLY for backward compat).\n"
+              f"[ZHC] New writes go to canonical path: {DEPARTMENTS_DIR}", file=sys.stderr)
 
     return COMPANY_DIR, DEPARTMENTS_DIR
 

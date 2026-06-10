@@ -58,12 +58,26 @@ def find_db() -> str | None:
 
 def find_company_dir() -> Path | None:
     target_slug = os.environ.get("COMPANY_SLUG", "").strip()
-    roots = [
+    # PRD 1.9: canonical root first, legacy roots for backward compat (READ-ONLY).
+    _canonical = None
+    try:
+        _su = str(Path(__file__).resolve().parent.parent.parent / "shared-utils")
+        if _su not in sys.path:
+            sys.path.insert(0, _su)
+        from detect_platform import get_openclaw_paths as _gop
+        _canonical = _gop()["company_root"]
+    except Exception:
+        pass
+
+    roots = []
+    if _canonical is not None:
+        roots.append(_canonical)
+    roots.extend([
         Path.home() / "clawd" / "zero-human-company",
         Path("/data/clawd/zero-human-company"),
         Path.home() / "clawd" / "zhc",
         Path("/data/clawd/zhc"),
-    ]
+    ])
     best: tuple[float, Path] | None = None
     for root in roots:
         if not root.is_dir():

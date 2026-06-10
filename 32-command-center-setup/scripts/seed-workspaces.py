@@ -80,15 +80,31 @@ def find_db():
 def _zhc_root_candidates():
     """All possible Zero Human Company root locations, in priority order.
 
+    PRD 1.9: the canonical root (master_files/zero-human-company) comes FIRST.
+    Legacy roots follow for backward-compat reading of existing companies.
+    Nothing WRITES to legacy roots — that is enforced in build-workforce.py.
+
     NOTE: Path("~/...") does NOT expand the tilde — use Path.home() or
     Path(os.path.expanduser("~/...")) instead. (PRD item 1.7)
     """
-    return [
-        Path.home() / "clawd" / "zero-human-company",   # v9.6.0+ canonical
-        Path.home() / "clawd" / "zhc",                   # short-alias
-        Path(os.path.expanduser("~/clawd/zero-human-company")),  # expanduser guards tilde
-        Path(os.path.expanduser("~/clawd/zhc")),                  # expanduser guards tilde
-    ]
+    # Try to get the canonical root from the shared path resolver first.
+    try:
+        from detect_platform import get_openclaw_paths as _gop
+        _p = _gop()
+        canonical = _p["company_root"]  # master_files/zero-human-company
+    except Exception:
+        canonical = None
+
+    roots = []
+    if canonical is not None:
+        roots.append(canonical)
+    roots.extend([
+        Path.home() / "clawd" / "zero-human-company",   # v9.6.0+ legacy
+        Path.home() / "clawd" / "zhc",                   # short-alias legacy
+        Path(os.path.expanduser("~/clawd/zero-human-company")),
+        Path(os.path.expanduser("~/clawd/zhc")),
+    ])
+    return roots
 
 
 def _scan_zhc_for_company_slugs():

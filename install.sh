@@ -3042,6 +3042,13 @@ mkdir -p "$OC_BACKUPS"
 mkdir -p "$OC_DOWNLOADS/openclaw-master-files"
 mkdir -p "$OC_DOWNLOADS/openclaw-master-files/coaching-personas/personas"
 mkdir -p "$OC_DOWNLOADS/openclaw-master-files/project-prds"
+# PRD 1.9: create the canonical zero-human-company root and drop the DO-NOT-DELETE marker.
+mkdir -p "$OC_DOWNLOADS/openclaw-master-files/zero-human-company"
+_DNDM="$OC_DOWNLOADS/openclaw-master-files/DO-NOT-DELETE.md"
+if [ ! -f "$_DNDM" ] && [ -f "$SKILLS_DIR/shared-utils/DO-NOT-DELETE.md" ]; then
+  cp "$SKILLS_DIR/shared-utils/DO-NOT-DELETE.md" "$_DNDM"
+fi
+unset _DNDM
 
 success "Backup folders created at $OC_BACKUPS, master files at $OC_DOWNLOADS/openclaw-master-files"
 send_telegram_progress "✓ Security + backups configured. Almost done — finalizing your agent's playbook now…"

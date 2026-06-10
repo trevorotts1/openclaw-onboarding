@@ -30,18 +30,27 @@ except ImportError:
     OPENAI_AVAILABLE = False
     openai_pkg = None
 
-# Workspace Root Configuration (Mac default → VPS fallback). Legacy ~/clawd
-# was removed in v10.12.0 per memory: "OpenClaw is the system."
-WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
-if not os.path.isdir(WORKSPACE_ROOT):
-    VPS_WORKSPACE = "/data/.openclaw/workspace"
-    if os.path.isdir(VPS_WORKSPACE):
-        WORKSPACE_ROOT = VPS_WORKSPACE
+# PRD 1.9: resolve paths via the single shared authority (detect_platform).
+_SHARED_UTILS = os.path.join(os.path.dirname(__file__), "..", "..", "..", "shared-utils")
+sys.path.insert(0, os.path.realpath(_SHARED_UTILS))
+try:
+    from detect_platform import get_openclaw_paths as _get_paths
+    _paths = _get_paths()
+    WORKSPACE_ROOT = str(_paths["workspace"])
+except Exception:
+    WORKSPACE_ROOT = os.environ.get("WORKSPACE_ROOT", os.path.expanduser("~/.openclaw/workspace"))
+    if not os.path.isdir(WORKSPACE_ROOT):
+        VPS_WORKSPACE = "/data/.openclaw/workspace"
+        if os.path.isdir(VPS_WORKSPACE):
+            WORKSPACE_ROOT = VPS_WORKSPACE
 
 DB_PATH = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/gemini-index.sqlite")
 PERSONAS_DIR = os.path.join(WORKSPACE_ROOT, "data/coaching-personas/personas")
 if not os.path.exists(PERSONAS_DIR):
-    PERSONAS_DIR = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/personas")
+    try:
+        PERSONAS_DIR = os.path.join(str(_paths["master_files"]), "coaching-personas", "personas")
+    except NameError:
+        PERSONAS_DIR = os.path.expanduser("~/Downloads/openclaw-master-files/coaching-personas/personas")
 
 GEMINI_MODEL = "gemini-embedding-2-preview"
 OPENAI_EMBED_MODEL = "text-embedding-3-small"  # cheaper than -large; 1536-dim
