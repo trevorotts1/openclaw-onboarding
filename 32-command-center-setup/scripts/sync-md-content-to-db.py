@@ -35,24 +35,33 @@ import sqlite3
 import sys
 from pathlib import Path
 
-# Vendored detect_platform (v10.15.4) for resolving active workforce.
+# PRD 1.3: resolve the shared-utils path and import the single canonical DB resolver.
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 SKILL23 = SKILL_DIR.parent / "23-ai-workforce-blueprint"
-for cand in (
-    SKILL23 / "lib",
-    SKILL_DIR.parent.parent / "shared-utils",
+SHARED_UTILS_CANDIDATES = [
+    SKILL_DIR.parent.parent / "shared-utils",   # repo-checkout path
     SKILL_DIR / "shared-utils",
+    SKILL23 / "lib",
+    Path.home() / ".openclaw" / "skills" / "shared-utils",
     Path.home() / ".openclaw" / "skills" / "23-ai-workforce-blueprint" / "lib",
+    Path("/data/.openclaw/skills/shared-utils"),
     Path("/data/.openclaw/skills/23-ai-workforce-blueprint/lib"),
-):
-    sys.path.insert(0, str(cand))
+]
+for _cand in SHARED_UTILS_CANDIDATES:
+    sys.path.insert(0, str(_cand))
 
 try:
     from detect_platform import get_openclaw_paths
 except ImportError:
     def get_openclaw_paths():  # type: ignore
         return {}
+
+try:
+    from resolve_db import find_dashboard_db as _shared_find_dashboard_db  # type: ignore
+    _HAS_SHARED_RESOLVER = True
+except ImportError:
+    _HAS_SHARED_RESOLVER = False
 
 
 MD_COLUMNS = {
@@ -65,12 +74,22 @@ MD_COLUMNS = {
 
 
 def find_db(explicit: str | None = None) -> Path | None:
+    """
+    PRD 1.3: delegate to the shared resolver when available; fall back to local
+    candidate list only if resolve_db.py cannot be imported (e.g. very early
+    bootstrap before shared-utils is on the installed box).
+    """
     if explicit:
         p = Path(explicit)
         return p if p.is_file() else None
+    if _HAS_SHARED_RESOLVER:
+        p = _shared_find_dashboard_db()
+        return p if p.exists() else None
+    # Fallback for bootstrap installs where shared-utils is not yet present.
     candidates = [
         Path.home() / "projects" / "command-center" / "mission-control.db",
         Path.home() / "projects" / "mission-control" / "mission-control.db",
+        Path("/data/projects/command-center/mission-control.db"),
         Path("/opt/mission-control/mission-control.db"),
         Path("/app/mission-control.db"),
         Path.home() / ".openclaw" / "command-center" / "mission-control.db",

@@ -32,11 +32,29 @@ from pathlib import Path
 
 HOME = Path.home()
 
+# PRD 1.3: import the single shared DB resolver.
+_SHARED_UTILS = Path(__file__).resolve().parent.parent.parent / "shared-utils"
+sys.path.insert(0, str(_SHARED_UTILS))
+try:
+    from resolve_db import find_dashboard_db as _shared_find_dashboard_db  # type: ignore
+    _HAS_SHARED_RESOLVER = True
+except ImportError:
+    _HAS_SHARED_RESOLVER = False
+
 
 def find_db():
+    """
+    PRD 1.3: delegate to the shared resolver when available so every script
+    uses the same ordered candidate list.
+    """
+    if _HAS_SHARED_RESOLVER:
+        p = _shared_find_dashboard_db()
+        return p if p.exists() else None
+    # Fallback for bootstrap installs.
     for c in [
         HOME / "projects/command-center/mission-control.db",
         HOME / "projects/mission-control/mission-control.db",
+        Path("/data/projects/command-center/mission-control.db"),
         Path("/opt/mission-control/mission-control.db"),
         Path("/app/mission-control.db"),
     ]:

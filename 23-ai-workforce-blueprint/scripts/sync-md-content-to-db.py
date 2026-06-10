@@ -42,23 +42,18 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# PRD 1.3: use the single shared DB resolver (shared-utils/resolve_db.py).
+# The local find_db() was removed to eliminate divergent candidate lists.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared-utils"))
+from resolve_db import find_dashboard_db  # type: ignore
 
-# ─── Path discovery (mirrors seed-workspaces.py) ─────────────────────────────
+
+# ─── Path discovery ───────────────────────────────────────────────────────────
 
 def find_db() -> str | None:
-    candidates = [
-        Path.home() / "projects/command-center/mission-control.db",
-        Path.home() / "projects/mission-control/mission-control.db",
-        Path("/opt/mission-control/mission-control.db"),
-        Path("/app/mission-control.db"),
-        Path("/data/projects/command-center/mission-control.db"),
-    ]
-    if os.environ.get("DASHBOARD_DB_PATH"):
-        candidates.insert(0, Path(os.environ["DASHBOARD_DB_PATH"]))
-    for p in candidates:
-        if p.exists():
-            return str(p)
-    return None
+    """Thin wrapper around the shared resolver for backward-compat call sites."""
+    p = find_dashboard_db()
+    return str(p) if p.exists() else None
 
 
 def find_company_dir() -> Path | None:

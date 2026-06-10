@@ -24,10 +24,30 @@ Run this after the Command Center is installed and the DB is created.
 import sqlite3, json, os, sys, re
 from pathlib import Path
 
+# PRD 1.3: import the single shared DB resolver.
+_SHARED_UTILS = Path(__file__).resolve().parent.parent.parent / "shared-utils"
+sys.path.insert(0, str(_SHARED_UTILS))
+try:
+    from resolve_db import find_dashboard_db as _shared_find_dashboard_db  # type: ignore
+    _HAS_SHARED_RESOLVER = True
+except ImportError:
+    _HAS_SHARED_RESOLVER = False
+
+
 def find_db():
+    """
+    PRD 1.3: delegate to the shared resolver when available so every script
+    uses the same ordered candidate list, including the VPS canonical path
+    /data/projects/command-center/ that was missing from this script.
+    """
+    if _HAS_SHARED_RESOLVER:
+        p = _shared_find_dashboard_db()
+        return str(p) if p.exists() else None
+    # Fallback for bootstrap installs.
     candidates = [
         Path.home() / "projects/command-center/mission-control.db",
         Path.home() / "projects/mission-control/mission-control.db",
+        Path("/data/projects/command-center/mission-control.db"),
         Path("/opt/mission-control/mission-control.db"),
         Path("/app/mission-control.db"),
     ]
