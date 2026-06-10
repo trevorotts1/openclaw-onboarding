@@ -302,6 +302,48 @@ Format:
   Loops needed to reach pass: N
   Items fixed during QC: <list>
 
+## PART 2b — WIRING CORRECTNESS: 3-LAYER REQUIREMENT (PRD 1.11)
+
+### Rule 9b: "Wiring correctness" requires all THREE layers verified
+
+The QC rubric dimension "Wiring correctness" (weight 30%) is scored 10/10
+ONLY when all three of the following layers are confirmed, not just one:
+
+**Layer 1 — MERGED (GitHub ground truth)**
+  The fix or feature exists on the `main` branch of the onboarding repo.
+  Evidence: the SHA on `main` in GitHub, not a local clone.
+  A local commit that hasn't been pushed and merged = NOT merged.
+
+**Layer 2 — DEPLOYED (version on the client box)**
+  The merged version has been pulled and is present on the client box.
+  Evidence: `.onboarding-version` on the box matches the expected tag,
+  AND the Command Center version satisfies `cc-compat.json` `minVersion`.
+  A fix that was pushed to GitHub but never pulled to the box = NOT deployed.
+
+**Layer 3 — LOADED (marker present in the INJECTED system prompt)**
+  The deployed files have been read by the OpenClaw gateway and injected
+  into the active session's system prompt.
+  Evidence: the gateway's `sessions.systemPromptReport` call returns a
+  prompt body that contains the `CEO_ORCHESTRATOR_RULE_V2` marker.
+  A file that is on disk but in a resumed session with `systemSent=true` =
+  NOT loaded (the gateway caches the old prompt until the session resets).
+
+  Fallback (proxy confidence, weaker): `workspace/SOUL.md` contains the
+  marker AND the session's `lastSystemPromptTs` post-dates the last
+  `sessions.reset` call. This proves Layer 3 by disk+session state rather
+  than live prompt inspection; labeled `loaded_confidence: "proxy"` in
+  the fleet-refresh output.
+
+**Scoring for "Wiring correctness" in the PRD 1.11 rubric:**
+  10 = All 3 layers verified with authoritative evidence (SHA + version + live prompt)
+   8 = Layer 1 + Layer 2 confirmed; Layer 3 proxy-only (marker on disk, session rebuilt)
+   5 = Layer 1 + Layer 2 only (not known if session loaded the new content)
+   3 = Layer 1 only (merged but undeployed)
+   0 = Layer 1 not confirmed (assumed but not checked)
+
+**Tool:** `scripts/fleet-refresh.sh --verify-only` generates the per-box
+evidence for all three layers without making any changes.
+
 ## PART 3 — CLOUDFLARE API KEY CHECK AT INSTALL
 
 ### Rule 10: Cloudflare API key is verified before install proceeds

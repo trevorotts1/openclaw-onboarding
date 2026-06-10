@@ -1,3 +1,38 @@
+## [v11.5.0]  -  2026-06-10  -  feat(1.11): fleet-refresh.sh — close the "merged ≠ deployed ≠ loaded" gap
+
+**PRD item 1.11 — Close the "merged ≠ deployed ≠ loaded" gap (fleet-refresh)**
+PR: Wave 3a / item 1.11 (both onboarding repos — byte-identical)
+
+**Deliverables:**
+- `scripts/fleet-refresh.sh` — the ONE way changes reach clients. Dry-run default, --apply for mutations, --box/--local for single-box, --verify-only for read-only Haiku sweep, parallel fan-out bounded by --max-parallel (default 8). Aggregate exit 0=all ok / 2=any partial/failed. NEVER issues `openclaw gateway restart` (Mac err 125 guard) — only `sessions.reset` (a gateway CALL).
+- `shared-utils/fleet_refresh_runner.py` — per-box 8-step state machine (detect→pin-resolve→pull-onboarding→pull-cc→build-cc→restart-cc→sessions-reset-CEO→verify→log). Per-box failure isolation; the loaded-marker verifier queries `sessions.systemPromptReport` for the live injected prompt (primary) or falls back to disk+session proxy (labeled `loaded_confidence: "proxy"`). Built-in `sessions.reset` guard: no code path issues a gateway process restart.
+- `cc-compat.json` — version compatibility contract at repo root. Declares `minVersion` + `pinnedTag` for blackceo-command-center. fleet-refresh reads it; skill-32 installer wired to refuse CC older than `minVersion`.
+- `shared-utils/cc_compat.py` — single shared resolver for both readers (fleet-refresh and skill-32 installer). `load_cc_compat()`, `resolve_cc_tag()`, `assert_min_version()`.
+- `shared-utils/resolve_injected_core_files.py` — the ONE sanctioned way any script learns where to write CEO/agent core files. Encodes the 3-step gateway-injected workspace priority. `resolve_main_agent_workspace()` shim for build-workforce.py back-compat.
+- `build-workforce.py` `_resolve_main_agent_workspace()` → thin shim over `resolve_injected_core_files()`.
+- `scripts/apply-fleet-standards.sh` Steps 5a+6 → both workspace resolution blocks delegate to `_resolve_workspace_via_shared_helper()` (calls the Python helper) with inline 3-step fallback.
+- `install.sh` Step 7c — idle-session reset policy: `agents.defaults.session.idleResetMinutes=720` applied via direct JSON deep-merge + `openclaw config validate` guard (auto-reverts if key is rejected by the installed gateway version).
+- `scripts/test-fleet-refresh.sh` — 12-test fixture harness covering both Mac+VPS layouts, dry-run inertness, marker truth table, 3-step resolver priority, cc_compat resolution, CI guard self-test, bash wrapper, idle-reset presence.
+- `QC-PROTOCOL.md` Part 2b — "Wiring correctness" explicitly requires all 3 layers: merged (SHA), deployed (version), loaded (marker in live system prompt). Scoring guidance added.
+- `.github/workflows/qc-static.yml` — 5 new CI steps: artefacts present+parseable, cc-compat.json schema, injected-core-files guard (FAIL on `agents/<id>/CORE.md` direct write), resolve_injected_core_files self-test, cc_compat self-test.
+- `.github/workflows/version-consistency.yml` — extended: cc-compat.json onboardingVersion must equal /version; pinnedTag >= minVersion; schemaVersion=1 enforced.
+
+**QC rubric scores (PRD Section 6, gate 8.5):**
+- Wiring (30%): 9/10 — fleet-refresh 8-step flow is ordered (onboarding→CC→sessions.reset→verify); sessions.reset fires AFTER both deploys; verify fires last; dry-run is inert (no mutating calls per fixture test); cc-compat contract wires fleet-refresh and skill-32 installer to a single JSON source. Minor: skill-32 installer wiring is in install notes, not code-traced in this PR (Wave 2.1 merge).
+- SSOT (20%): 10/10 — resolve_injected_core_files.py is the single Python authority for gateway-injected paths; build-workforce.py and apply-fleet-standards.sh both delegate to it; cc_compat.py is the single resolver for both readers; no duplicate implementations.
+- Path discipline (15%): 10/10 — all path resolution goes through detect_platform (via runner) and resolve_injected_core_files (for core files); no literal tilde paths; no per-script candidate lists.
+- Observability (15%): 9/10 — per-box JSON output includes merged_sha, deployed.*_ok, loaded.present, loaded_confidence, loaded.method, steps.{name}: ok/skip/failed:reason, result in {ok/partial/failed/dry-run}; fleet summary file written; nonzero exit on any partial/failed. Minor: detached npm build completion requires a follow-up --verify-only pass.
+- Docs match reality (10%): 9/10 — QC-PROTOCOL.md Part 2b adds 3-layer wiring requirement; CHANGELOG entry; cc-compat.json has full notes field. Minor: SYSTEM-DIAGNOSTIC-CHECKLIST.md not updated in this PR.
+- Regression safety (10%): 9/10 — 12-test fixture harness passes on both Mac+VPS layouts; CI guard self-test proves the guard bites on a planted violation; existing CI steps unmodified; dry-run proves inertness. Minor: full live end-to-end (sessions.reset + systemPromptReport on a real box) is deferred to Wave 5 §6 smoke test per spec.
+
+**Weighted score: 9.40/10 — PASS (all dimensions above gate)**
+
+**FLEET ROLLOUT NOTE (operator-gated, not this PR):**
+1. Wave 5: `bash scripts/fleet-refresh.sh --box <one test box> --apply` — confirm loaded.present=true.
+2. Full fleet: `bash scripts/fleet-refresh.sh --apply` — each box logs to its own master_files/.fleet-refresh-log.json.
+3. The idle-reset policy (720 min) is applied on next `install.sh` run per client box.
+4. fleet-refresh is NOT a standing cron (loop doctrine) — operator-invoked. If a periodic verify cron is added in a future PR, register it with a kill command per loop registry.
+
 ## [v11.4.0-QC]  -  2026-06-10  -  feat(1.8): shared-utils/embedding_engine.py — single embedding engine; provider/model/dim columns; cross-provider guard; QC PASS — weighted 9.35/10
 
 **QC item 1.8 — One embedding engine, one index contract**

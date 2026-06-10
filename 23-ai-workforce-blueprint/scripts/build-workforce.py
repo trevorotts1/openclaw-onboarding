@@ -1605,36 +1605,46 @@ def _ensure_company_discovery_dir():
 def _resolve_main_agent_workspace():
     """
     Resolve the path that the main (CEO/orchestrator) agent actually reads
-    bootstrap files from. Priority:
-      1. agents.list[id=main].workspace in openclaw.json (per-agent override)
-      2. agents.defaults.workspace in openclaw.json
-      3. ~/.openclaw/workspace (canonical OpenClaw default)
+    bootstrap files from.
 
-    This is the INJECTED path — the gateway loads SOUL.md from here.
-    It is NOT the same as DEPARTMENTS_DIR/ceo (that is the dept-ceo sub-agent
-    workspace, which the build was already writing to, causing the bug).
+    PRD 1.11: This is now a thin shim over resolve_injected_core_files() in
+    shared-utils/.  The shared helper is the single canonical implementation.
+    Kept here by name for backward-compat — callers need not change.
+
+    Returns:
+        str path to the injected workspace directory.
     """
+    try:
+        import sys as _sys
+        _su = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           '..', '..', '..', 'shared-utils')
+        _su = os.path.normpath(_su)
+        if _su not in _sys.path:
+            _sys.path.insert(0, _su)
+        from resolve_injected_core_files import resolve_main_agent_workspace as _rmaw  # type: ignore
+        return str(_rmaw())
+    except Exception:
+        pass
+
+    # Fallback: inline 3-step resolver (bash install early-boot mirror)
     import json as _json
     workspace = None
     if os.path.isfile(OPENCLAW_CONFIG):
         try:
             with open(OPENCLAW_CONFIG, 'r') as _f:
                 _cfg = _json.load(_f)
-            # Step 1: per-agent override on "main"
             for _ag in _cfg.get("agents", {}).get("list", []) or []:
                 if isinstance(_ag, dict) and _ag.get("id") == "main":
                     _ws = _ag.get("workspace")
                     if _ws:
                         workspace = os.path.expanduser(_ws)
                         break
-            # Step 2: agents.defaults.workspace
             if not workspace:
                 _dw = _cfg.get("agents", {}).get("defaults", {}).get("workspace")
                 if _dw:
                     workspace = os.path.expanduser(_dw)
         except Exception:
             pass
-    # Step 3: canonical default
     if not workspace:
         workspace = os.path.join(HOME, ".openclaw", "workspace")
     return workspace

@@ -26,7 +26,7 @@ set -euo pipefail
 #    container env vars + auth-profiles.json. Bulletproof multi-source.
 # ============================================================
 
-ONBOARDING_VERSION="v11.4.0"
+ONBOARDING_VERSION="v11.5.0"
 
 # ----------------------------------------------------------
 # Shared library — source if available (best-effort, never required).
@@ -2836,6 +2836,80 @@ PYEOF_INNER
 }
 
 configure_dreaming
+
+# ----------------------------------------------------------
+# Step 7c: Idle-Session Reset Policy (PRD 1.11 — Layer-2 prevention)
+# ----------------------------------------------------------
+# PRD 1.11: A long-lived session that resumes after a skill/SOUL.md update
+# will still read the OLD system prompt (Layer-2 failure: deployed != loaded).
+# An idle-reset policy ensures the session is automatically rebuilt from disk
+# after N hours of idle, so any fix deployed to disk is guaranteed to reach
+# the model context within the next half-day at most.
+#
+# IMPORTANT — schema confirmation note:
+# The key agents.defaults.session.idleResetMinutes is written using the
+# direct JSON deep-merge pattern (NOT `openclaw config set`) per the
+# memory-activation rule — nested `agents.defaults.*` keys fail with
+# "Invalid input" via openclaw config set on 2026.5.20+.
+# The key name and unit were checked against CHANGELOG v11.3.2 and
+# the existing agents.defaults.timeoutSeconds pattern (same schema level).
+# If this key is invalid for the installed gateway version, `openclaw config validate`
+# will catch it below and the section will be logged as a warning, not a fatal.
+#
+# Default: 720 minutes (12 hours). Long enough to survive a conversation pause
+# or overnight idle; short enough that a deployed fix reaches context by morning.
+# Operator override: set IDLE_RESET_MINUTES env var before running install.sh.
+
+configure_idle_session_reset() {
+    step "Step 7c: Configuring idle-session reset policy (PRD 1.11)"
+    local OPENCLAW_JSON="$OC_JSON"
+    if [ ! -f "$OPENCLAW_JSON" ]; then
+        warn "openclaw.json not found - skipping idle-session reset config"
+        return
+    fi
+    backup_config_file "$OPENCLAW_JSON"
+    local IDLE_MINUTES="${IDLE_RESET_MINUTES:-720}"
+    OPENCLAW_JSON="$OPENCLAW_JSON" IDLE_MINUTES="$IDLE_MINUTES" python3 << 'PYEOF_IDLE'
+import json, os, sys
+path = os.environ['OPENCLAW_JSON']
+idle_minutes = int(os.environ.get('IDLE_MINUTES', '720'))
+try:
+    with open(path, 'r') as f:
+        config = json.load(f)
+
+    agents = config.setdefault('agents', {})
+    defaults = agents.setdefault('defaults', {})
+    session = defaults.setdefault('session', {})
+
+    # Only set if not already configured (idempotent)
+    if session.get('idleResetMinutes') != idle_minutes:
+        session['idleResetMinutes'] = idle_minutes
+        with open(path, 'w') as f:
+            json.dump(config, f, indent=2)
+        print(f"  ✓ agents.defaults.session.idleResetMinutes = {idle_minutes} (12-hour idle rebuild)")
+    else:
+        print(f"  ✓ agents.defaults.session.idleResetMinutes already {idle_minutes} — no-op")
+except Exception as e:
+    print(f"  ✗ Could not configure idle-session reset: {e}", file=sys.stderr)
+PYEOF_IDLE
+
+    # QC assertion: verify the key landed and config validates
+    if command -v openclaw >/dev/null 2>&1; then
+        if openclaw config validate 2>/dev/null; then
+            echo "  ✓ openclaw config validate passed after idle-session reset config"
+        else
+            warn "  openclaw config validate FAILED after idle-session reset config"
+            warn "  agents.defaults.session.idleResetMinutes may not be supported on this version"
+            warn "  Reverting to pre-config backup..."
+            if [ -f "${OPENCLAW_JSON}.bak" ]; then
+                cp "${OPENCLAW_JSON}.bak" "$OPENCLAW_JSON"
+                warn "  Reverted. Idle-session reset not applied; apply manually if needed."
+            fi
+        fi
+    fi
+}
+
+configure_idle_session_reset
 
 # ----------------------------------------------------------
 # Step 8: Exec Security Configuration
