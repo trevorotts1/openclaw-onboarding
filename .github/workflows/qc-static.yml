@@ -1431,34 +1431,34 @@ jobs:
           bash scripts/test-watchdog-loop.sh
           echo "✓ PRD-2.13 watchdog loop fixture tests all pass"
 
-      - name: "PRD-2.13: lib-onboarding-state.sh wave-goal functions parse without error"
+      - name: "PRD-2.13: lib-onboarding-state.sh bash syntax (watchdog + loop-registry)"
         shell: bash
         run: |
           set -uo pipefail
-          # Verify the bash library syntax is valid (bash -n) and python3
-          # inline blocks in the new wave-goal functions parse correctly.
+          # Verify the bash library syntax is valid (bash -n)
           bash -n lib-onboarding-state.sh
           echo "✓ lib-onboarding-state.sh bash syntax OK"
           bash -n scripts/loop-registry.sh
           echo "✓ loop-registry.sh bash syntax OK"
           bash -n scripts/watchdog-onboarding-loop.sh
           echo "✓ watchdog-onboarding-loop.sh bash syntax OK"
-          # Verify waveGoals schema constants are present
-          python3 - <<'PYEOF'
-import subprocess, sys, os
-lib = open("lib-onboarding-state.sh").read()
-required = [
-    "OC_WAVE1_SKILLS", "OC_WAVE2_SKILLS", "OC_WAVE3_SKILLS",
-    "OC_WAVE4_SKILLS", "OC_WAVE5_SKILLS",
-    "waveGoals", "failStrikes", "lastCheckedAt", "passedAt",
-    "allWavesVerified", "interviewComplete", "workforceBuilt", "closeoutDelivered",
-]
-fail = 0
-for tok in required:
-    if tok not in lib:
-        print(f"  ✗ lib-onboarding-state.sh missing token: {tok}")
-        fail = 1
-    else:
-        print(f"  ✓ lib-onboarding-state.sh contains: {tok}")
-sys.exit(fail)
-PYEOF
+
+      - name: "PRD-2.13: lib-onboarding-state.sh wave-goal schema tokens present"
+        shell: python {0}
+        run: |
+          import sys
+          lib = open("lib-onboarding-state.sh").read()
+          required = [
+              "OC_WAVE1_SKILLS", "OC_WAVE2_SKILLS", "OC_WAVE3_SKILLS",
+              "OC_WAVE4_SKILLS", "OC_WAVE5_SKILLS",
+              "waveGoals", "failStrikes", "lastCheckedAt", "passedAt",
+              "allWavesVerified", "interviewComplete", "workforceBuilt", "closeoutDelivered",
+          ]
+          fail = 0
+          for tok in required:
+              if tok not in lib:
+                  print(f"  ✗ lib-onboarding-state.sh missing token: {tok}")
+                  fail = 1
+              else:
+                  print(f"  ✓ lib-onboarding-state.sh contains: {tok}")
+          sys.exit(fail)

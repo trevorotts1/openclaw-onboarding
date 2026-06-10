@@ -308,7 +308,7 @@ fi
 SKILLS_STATUS="$(oc_wave_skills_status "$NEXT_WAVE" 2>/dev/null || echo "")"
 RESUME_MSG="$(build_wave_prompt "$NEXT_WAVE" "$SKILLS_STATUS")"
 
-log "Dispatching wave-$NEXT_WAVE resume prompt to $TARGET (chat $OWNER_CHAT)"
+log "Dispatching wave-$NEXT_WAVE resume prompt to $_owner_chat"
 
 if command -v openclaw >/dev/null 2>&1; then
   if openclaw message send --channel telegram -t "$_owner_chat" \
