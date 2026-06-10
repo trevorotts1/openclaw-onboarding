@@ -343,14 +343,21 @@ fi
 # ─── CHECK 5: Semantic Search (runtime persona selector) ─────────────────────
 echo
 blue "── CHECK 5: Semantic Search ──"
-SELECTOR=$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py
-check "5.1" "select-persona-for-task.py present + executable" \
+SELECTOR=$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/persona-selector-v2.py
+check "5.1" "persona-selector-v2.py present + executable (canonical selector)" \
   "[ -x \"$SELECTOR\" ]" \
   "Re-run update-skills.sh --only 23"
 if [ -x "$SELECTOR" ] && [ -n "$COMPANY_DIR" ]; then
   warn_check "5.2" "Test selector invocation returns a persona id" \
-    "python3 \"$SELECTOR\" --dept marketing --task 'Write a launch email' --format id 2>/dev/null | grep -q ." \
+    "python3 \"$SELECTOR\" --department marketing --task 'Write a launch email' --format json 2>/dev/null | python3 -c 'import sys,json; r=json.load(sys.stdin); sys.exit(0 if r.get(\"persona_id\") else 1)'" \
     "Check governing-personas.md in marketing dept; ensure persona-categories.json valid"
+fi
+# Legacy shim check: select-persona-for-task.py must redirect to v2, not stand alone
+LEGACY_SELECTOR=$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/select-persona-for-task.py
+if [ -f "$LEGACY_SELECTOR" ]; then
+  check "5.1a" "select-persona-for-task.py is a shim (not the original v1)" \
+    "grep -q 'DEPRECATED SHIM' \"$LEGACY_SELECTOR\" || grep -q 'persona-selector-v2' \"$LEGACY_SELECTOR\"" \
+    "select-persona-for-task.py should delegate to persona-selector-v2.py; see archive/README.md"
 fi
 
 # ─── CHECK 6: Keyword Search ─────────────────────────────────────────────────
