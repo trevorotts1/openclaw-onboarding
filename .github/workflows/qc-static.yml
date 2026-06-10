@@ -950,3 +950,82 @@ jobs:
           echo "✓ migrate-zhc-to-master-files.sh --help OK"
 
           echo "✓ PRD 1.10 migration artefacts present and parseable"
+
+      # PRD 1.8: One embedding engine — shared-utils/embedding_engine.py is the
+      # single implementation. Wrappers in scripts/, skill 22, and skill 23 must be
+      # 3-line shims that import it. projects/gemini-migration/ must not exist.
+      # No per-wrapper logic may survive (each wrapper must be <= 4 lines).
+      - name: PRD 1.8 embedding engine — single implementation + no gemini-migration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 1. shared-utils/embedding_engine.py must exist and parse
+          [ -f shared-utils/embedding_engine.py ] \
+            || { echo "✗ shared-utils/embedding_engine.py missing"; exit 1; }
+          python3 -c "import ast; ast.parse(open('shared-utils/embedding_engine.py').read())" \
+            || { echo "✗ embedding_engine.py has syntax errors"; exit 1; }
+          echo "✓ embedding_engine.py present and parses"
+
+          # 2. GEMINI_MODEL must be defined exactly once (in embedding_engine.py only)
+          MODEL_DEFS=$(grep -rn \
+            --include="*.py" \
+            -E '^GEMINI_MODEL\s*=' \
+            . \
+            | grep -v '\.git/' \
+            | grep -v 'shared-utils/embedding_engine.py' \
+            || true)
+          if [ -n "$MODEL_DEFS" ]; then
+            echo "✗ PRD 1.8 violation — GEMINI_MODEL defined outside embedding_engine.py:"
+            echo "$MODEL_DEFS" | sed 's/^/    /'
+            exit 1
+          fi
+          echo "✓ GEMINI_MODEL defined in exactly one place (embedding_engine.py)"
+
+          # 3. Wrappers must be short (PRD 1.8: 3-line wrappers)
+          #    Accept <= 6 lines to allow shebang + blank line + comment + import + call
+          for f in \
+            scripts/gemini-indexer.py \
+            scripts/gemini-search.py \
+            "22-book-to-persona-coaching-leadership-system/pipeline/gemini-indexer.py" \
+            "22-book-to-persona-coaching-leadership-system/pipeline/gemini-search.py" \
+            "23-ai-workforce-blueprint/scripts/gemini-indexer.py" \
+            "23-ai-workforce-blueprint/scripts/gemini-search.py"; do
+            [ -f "$f" ] || { echo "✗ wrapper missing: $f"; exit 1; }
+            lines=$(wc -l < "$f")
+            if [ "$lines" -gt 6 ]; then
+              echo "✗ wrapper too long ($lines lines, expected <=6): $f"
+              exit 1
+            fi
+            # Must import from embedding_engine
+            grep -q "embedding_engine" "$f" \
+              || { echo "✗ wrapper does not import embedding_engine: $f"; exit 1; }
+          done
+          echo "✓ All 6 gemini wrappers are short and import embedding_engine"
+
+          # 4. projects/gemini-migration/ must NOT exist
+          if [ -d "projects/gemini-migration" ]; then
+            echo "✗ projects/gemini-migration/ still present — PRD 1.8 requires deleting this finished migration artifact"
+            exit 1
+          fi
+          echo "✓ projects/gemini-migration/ absent (deleted per PRD 1.8)"
+
+          # 5. embedding_engine.py must define provider/model/dim columns (schema check)
+          python3 -c "
+          import ast, sys
+          src = open('shared-utils/embedding_engine.py').read()
+          if 'provider' not in src or 'model' not in src or 'dim' not in src:
+              print('✗ embedding_engine.py missing provider/model/dim references')
+              sys.exit(1)
+          if 'keyword_fallback_search' not in src:
+              print('✗ embedding_engine.py missing keyword_fallback_search')
+              sys.exit(1)
+          if 'get_db_index_provider' not in src:
+              print('✗ embedding_engine.py missing get_db_index_provider')
+              sys.exit(1)
+          if 'provider_hint' not in src:
+              print('✗ embedding_engine.py missing provider_hint guard (cross-provider protection)')
+              sys.exit(1)
+          print('✓ embedding_engine.py contains provider/model/dim, keyword fallback, and cross-provider guard')
+          "
+          echo "✓ PRD 1.8 embedding engine checks complete"
