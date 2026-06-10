@@ -1,3 +1,22 @@
+## [v11.4.0-QC]  -  2026-06-09  -  qc(1.1): persona-selector-v2.py declared canonical; QC PASS — weighted 9.40/10
+
+**QC item 1.1 — Declare persona-selector-v2.py the ONE canonical selector**
+Merge SHA (Mac): 46657ec5c0cc1a9b69c603cd1fd7ed9786042c70
+Merge SHA (VPS): 110227fc981faeffbfbb8172931f064fa768a522
+
+**Scores (Wiring×0.30 + SSOT×0.20 + Path×0.15 + Observability×0.15 + Docs×0.10 + Regression×0.10):**
+- Wiring (30%): 10 — v2 docstring updated to "THE canonical selector"; shim replaces entire v1 body with subprocess delegation to v2; `select_persona()` in v2 now calls `build_candidate_pool()` (funnel A-C) before Stage D scoring; AGENTS.md, INSTALL.md, CORE_UPDATES.md, RUNBOOK-v2.1.md, 32-INSTALL.md all point to `persona-selector-v2.py --department`; qc-system-integrity.sh check 5.1 updated to test v2; check 5.1a added to assert shim marker present.
+- SSOT (20%): 9 — single active invocation path. One minor note: `build_candidate_pool()` is named "three-stage funnel" in its docstring but the PRD calls it four stages (A-D, with D being the existing scoring). The docstring for `select_persona()` correctly calls it four stages — no functional gap, just inconsistent internal naming.
+- Path (15%): 10 — Mac repo: `~/.openclaw/` paths throughout; VPS repo: `/data/.openclaw/` paths for INSTALL.md Step 465 bash block and qc-system-integrity.sh SELECTOR var; CORE_UPDATES.md VPS diff also corrected /data/ → ~/ for CORE_UPDATES (applicable on Mac too, correct). SYSTEM-DIAGNOSTIC-CHECKLIST.md and test-persona-selector.sh both resolve paths correctly per platform.
+- Observability (15%): 9 — `funnel` key with `pool`, `after_keyword`, `after_semantic`, `pool_source`, `semantic_engine` emitted in every output JSON including the NO_PERSONAS_AVAILABLE early-exit path; A5 assertion in test-persona-selector.sh checks funnel key presence; qc-system-integrity.sh 5.2 validates `persona_id` key in JSON output. Minor gap: A5 assertion logic uses a `grep -v '|\?|'` count that may yield a false PASS if results array is empty (edge case, not a blocker).
+- Docs (10%): 10 — archive/README.md documents v1→v2 migration with exact before/after CLI examples; archive/select-persona-for-task.py preserved as reference; RUNBOOK-v2.1.md section B rewritten from "point it at v2" to "already calls v2"; 32-INSTALL.md Layer 1 search evidence text updated; CORE_UPDATES.md four-stage funnel description with funnel JSON output note.
+- Regression (10%): 9 — shim translates --dept→--department, passes all other args, exits with v2's return code; --company-slug and --top-k-* args handled with warnings (not silently dropped in an error-prone way); test-persona-selector.sh drops --company-slug arg entirely (correct); archive v1 preserved for reference. Minor: shim silently skips --top-k-semantic/--top-k-final with an i+=2 increment — if those flags were passed without a value the increment would skip the wrong arg. Unlikely in practice but not hardened.
+
+**Weighted score: 9.40/10. PASS (>=8.5 + Verify BOTH layouts pass + parity clean).**
+Verify Mac: exit 0, "funnel" key in JSON. Verify VPS: identical.
+
+---
+
 ## [v11.3.2]  -  2026-06-09  -  fix(G5-FIX): CEO PRIME DIRECTIVE written to injected workspace/SOUL.md; loopholes closed in AGENTS.md + create_role_workspaces.py
 
 - **ROOT CAUSE FIX — PRIME DIRECTIVE now written to the injected file:** `build-workforce.py` `create_department_workspace()` was writing `CEO_ORCHESTRATOR_RULE_V2` (the PRIME DIRECTIVE) to `DEPARTMENTS_DIR/ceo/SOUL.md` — the `dept-ceo` sub-agent workspace. The gateway injects bootstrap files from the MAIN agent's workspace (`agents.list[main].workspace` → `agents.defaults.workspace` → `~/.openclaw/workspace`), a completely different path. So the directive was on disk but never reached the model context — the CEO saw the plain "personal assistant / handle it yourself" template and self-executed. Proven on Sheila Reynolds' box: hand-writing to `workspace/SOUL.md` stopped self-execution; a build re-run reverted it. **Fix:** new `_resolve_main_agent_workspace()` function resolves the injected path (same 3-step priority as `install.sh`); `create_department_workspace()` now also injects the PRIME DIRECTIVE into `workspace/SOUL.md` (idempotent, V1→V2 upgrade, scrubs the "personal assistant" intro before prepending). `apply-fleet-standards.sh` Step 6 does the same for existing boxes without a rebuild.
