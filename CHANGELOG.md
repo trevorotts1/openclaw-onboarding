@@ -21,6 +21,11 @@ Branch: fix/af4-retirement-clock-trigger.
 - Test 13d: partial-loaded APPLY does NOT fire trigger — PASS
 - CI AF4 step: structural invariants pass (APPLY guard, LEGACY-RETIREMENT.md ref, test-fleet-refresh.sh Test 13) — PASS
 
+**QC Score: 9.0/10 — PASS** (independent QC 2026-06-10)
+Wiring 9/10 (APPLY guard correctly placed; dry-run path never reaches retirement block; fixture proves all 4 cases; CI re-implements contract in parallel Python — not end-to-end black-box against fleet-refresh.sh itself, minor) | Root cause 9/10 (AF4 defect precisely identified; fix is minimal and correct; documentation accurately describes defect path) | Tests 9/10 (4 fixture cases + idempotency + partial-load guard + bash syntax + docs ref; 37/37 PASS; Test 13c deletes sentinel before second run which could mask sentinel re-write rather than manifest-flag path, minor) | Idempotency 9/10 (retirement_triggered=True flag prevents duplicate; comment-vs-create distinction; sentinel fallback; closed-issue edge case unguarded but acceptable) | Docs 9/10 (LEGACY-RETIREMENT.md trigger section complete with dry-run safety, idempotency, fixture refs; CHANGELOG thorough) | Version/CHANGELOG 9/10 (all 9 markers at v11.13.0; CI version-consistency PASS; cc-compat.json pre-existing v11.12.1 gap on main resolved by this PR)
+
+Merged: 0b8a9afe1be280f02c087189a6260c93c40389cb — Tag: v11.13.0
+
 ## [v11.12.2]  -  2026-06-10  -  fix(AF3): legacy-retirement list + widened CI guard for local ~/clawd candidate loops
 
 **AF3 — Retirement tracking and CI enforcement for local ~/clawd path-candidate loops in 32-command-center-setup and repo-wide**
