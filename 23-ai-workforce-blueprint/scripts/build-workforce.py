@@ -37,8 +37,12 @@ IMPORTANT:
 - Research best practices uses openrouter/perplexity/sonar-pro-search
 
 FORBIDDEN CLIENT-FACING LANGUAGE:
-- Never say: SOPs, handoffs, tech stack, permanent agent, sub-agent, agent
-- Instead say: step-by-step instructions, what departments share, tools you use, team member, specialist, director
+See the canonical machine-readable list: interview/forbidden-jargon.json
+That file is the single source of truth. Do NOT define a second list here.
+Quick reference (human-readable): Never say: SOPs, handoffs, tech stack,
+permanent agent, sub-agent, agent, Lean Six Sigma, DMAIC.
+Instead say: step-by-step instructions, what departments share, tools you
+use, team member, specialist, director.
 """
 
 import os
@@ -97,6 +101,17 @@ except Exception as _e:  # pragma: no cover - defensive
     _LIBRARY_FILL_AVAILABLE = False
     print(f"[ROLE-LIBRARY WARNING] create_role_workspaces import failed "
           f"({_e}); falling back to stub+LLM SOP path", file=sys.stderr)
+
+# PRD-2.15: helper to resolve the build state file path (no tildes; mirrors detect_platform.py).
+def _resolve_build_state_path():
+    """Return Path to .workforce-build-state.json or None if workspace not found."""
+    vps = Path("/data/.openclaw/workspace")
+    if vps.is_dir():
+        return vps / ".workforce-build-state.json"
+    mac = Path(os.environ.get("HOME", "")).expanduser() / ".openclaw" / "workspace"
+    if mac.is_dir():
+        return mac / ".workforce-build-state.json"
+    return None
 
 # WS-2: build-wide tally of how roles were staffed, for the visible ratio log.
 _LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0}
@@ -190,6 +205,43 @@ def load_non_interactive_config(config_file):
     if missing:
         print(f"[NON-INTERACTIVE ERROR] Missing required config keys: {', '.join(missing)}", file=sys.stderr)
         sys.exit(1)
+
+    # PRD-2.15: assert industryPack.slug is present in build state before building.
+    # This enforces that the interview ran with industry customization — an interview
+    # with no recorded pack is not industry-custom and must not proceed blindly.
+    # Edge case: slug="unknown" is allowed with a loud warning (unclassifiable business
+    # should not be un-buildable). Absent slug entirely = hard fail.
+    _state_path = _resolve_build_state_path()
+    if _state_path is not None and _state_path.exists():
+        try:
+            _state = json.loads(_state_path.read_text(encoding="utf-8"))
+            _pack = _state.get("industryPack") or {}
+            _slug = _pack.get("slug")
+            if not _slug:
+                print(
+                    "[NON-INTERACTIVE ERROR] PRD-2.15: industryPack not recorded in build state.\n"
+                    "  Run: 23-ai-workforce-blueprint/scripts/record-industry-pack.sh --blob-file <research-blob>\n"
+                    "  Or confirm the vertical in Phase 5 before building.\n"
+                    "  State file: " + str(_state_path),
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            elif _slug == "unknown":
+                print(
+                    "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' — no industry vertical "
+                    "was detected or confirmed. Building will proceed but industry customization may be generic. "
+                    "Phase 5 confirmation was expected to set the slug.",
+                    file=sys.stderr,
+                )
+        except Exception as _e:
+            print(f"[NON-INTERACTIVE WARNING] PRD-2.15: could not read build state for industryPack check: {_e}", file=sys.stderr)
+            # Non-fatal: the build state may not exist in legacy flows; don't block on read errors.
+    else:
+        print(
+            "[NON-INTERACTIVE WARNING] PRD-2.15: build state not found; cannot assert industryPack.slug. "
+            "Proceeding without industry-pack verification.",
+            file=sys.stderr,
+        )
 
     return config
 

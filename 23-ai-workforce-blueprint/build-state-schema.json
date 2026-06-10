@@ -488,6 +488,34 @@
         }
       }
     },
+    "industryPack": {
+      "type": "object",
+      "description": "PRD-2.15: provenance of the industry vertical pack the interview ran. Written by 23-ai-workforce-blueprint/scripts/record-industry-pack.sh (which calls shared-utils/industry-detector.py). build-workforce.py REQUIRES industryPack.slug before it will build — an interview with no recorded pack is not industry-custom and must not proceed. If slug='unknown', build-workforce.py warns loudly but does not hard-block (an unclassifiable business is still buildable). Added v11.11.0.",
+      "properties": {
+        "slug":           { "type": "string", "description": "e.g. real-estate, personal-pro-dev, service-industry, unknown" },
+        "confidence":     { "type": "number", "description": "0-1 from industry-detector.py" },
+        "source":         { "type": "string", "enum": ["auto-detected","owner-confirmed","owner-corrected"], "description": "auto-detected when confidence>=0.7 and owner did not change it; owner-confirmed/corrected when the C-4 / Phase 5 confirmation ran" },
+        "matchedSignals": { "type": "array", "items": { "type": "string" } },
+        "detectedAt":     { "type": ["string","null"], "format": "date-time" }
+      },
+      "required": ["slug","source"],
+      "additionalProperties": true
+    },
+    "interviewQc": {
+      "type": "object",
+      "description": "PRD-2.15: result of 23-ai-workforce-blueprint/scripts/qc-interview-completion.py. closeoutStatus MUST NOT advance past 'pending' until interviewQc.status=='pass'. Folds the interview experience into the 2.8 closeout gate so 'interview felt great AND artifacts landed' is one verified state. Set to {status:'pending'} by update-interview-state.sh --complete. Added v11.11.0. Cross-skill seam: run-closeout.sh (Skill 37) should gate on interviewQc.status != 'pass' before proceeding — wiring that one-line gate is the follow-up for whoever next touches Skill 37.",
+      "properties": {
+        "status":        { "type": "string", "enum": ["pending","pass","needs-review","fail"] },
+        "questionCount": { "type": "integer" },
+        "jargonHits":    { "type": "array", "items": { "type": "object", "properties": { "term":{"type":"string"}, "line":{"type":"integer"} }, "additionalProperties": false } },
+        "missingFields": { "type": "array", "items": { "type": "string" } },
+        "nudgesWired":   { "type": "boolean" },
+        "ranAt":         { "type": ["string","null"], "format": "date-time" },
+        "rubricVerdict": { "type": ["string","null"], "description": "human-readable summary line" }
+      },
+      "required": ["status"],
+      "additionalProperties": false
+    },
     "interviewProgress": {
       "type": "object",
       "description": "Per-question state updated by update-interview-state.sh. Source of truth for the resume cron and dashboard interview-progress UI. Added in v10.15.1 (VPS) / v10.14.1 (Mac).",

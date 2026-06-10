@@ -1,3 +1,33 @@
+## [v11.11.0] — 2026-06-10 — PRD 2.15: Interview experience — persona block, industry-pack assertion, completion QC gate, nudges verified
+
+### Overview
+
+Four converging deliverables — all wire-it-up + gate-it, not greenfield:
+
+1. **Interviewer behavioral contract (persona block)** — Wrapped the existing "Oprah / Couric Standard" doctrine (INSTRUCTIONS.md lines 103–151) in `<!-- INTERVIEWER-BEHAVIORAL-CONTRACT v1 (PRD-2.15) -->` … `<!-- /INTERVIEWER-BEHAVIORAL-CONTRACT -->` sentinels. Added explicit six-behavior checklist (ONE question, leads with knowledge, suggests answers, earlier answers, celebrates milestones, NEVER uses forbidden term) so the QC gate can grep each. Added "Jennifer Hudson" to the world-class interviewer trio.
+
+2. **Industry-pack assertion (industryPack provenance)** — New `record-industry-pack.sh` wrapper calls `shared-utils/industry-detector.py` and writes `industryPack` provenance object (slug, confidence, source, matchedSignals, detectedAt) into build state atomically. `build-workforce.py` now requires `industryPack.slug` in state before building; absent = hard fail with remediation message; slug="unknown" = loud warning (not a hard block — unclassifiable business is still buildable). `update-interview-state.sh` accepts `--industry-pack <blob>` passthrough.
+
+3. **Interview QC gate** — New `scripts/qc-interview-completion.py`. Four checks: (a) question count 25–35; (b) zero forbidden-jargon hits in AI-authored transcript text (loads from `interview/forbidden-jargon.json` — single canonical source); (c) every branding `required:true` field + structural fields present (branding fields derived at runtime from `branding-questions.json`, not hardcoded); (d) nudge cadence statically verified wired. Exit 0/2/3 contract mirrors `qc-completeness.sh`. Added Phase 6.5 subsection to INSTRUCTIONS.md invoking the gate. `update-interview-state.sh --complete` now sets `interviewQc.status="pending"`.
+
+4. **Nudges live, gateway-routed, state-driven** — New `interview-nudge-cron.sh` (cheap-check-first, lockfile, kill-condition, mirrors `resume-closeout-cron.sh`). Registered every 6h in `install.sh` (Step 13.5). `nudge-incomplete-interviews.py` converted from direct `api.telegram.org` urllib path to `openclaw message send` (binding memory rule). Worker now reads `interviewProgress.lastQuestionAt` and `interviewComplete` from `.workforce-build-state.json` as PRIMARY; falls back to `interview-handoff.md` frontmatter only if state is absent. Idempotency: nudge keys recorded in state (canonical) and handoff (legacy compat).
+
+### New files
+- `interview/forbidden-jargon.json` — single machine-readable source of truth for 7 forbidden terms + approved replacements. INSTRUCTIONS.md and build-workforce.py are pointers.
+- `scripts/qc-interview-completion.py` — completion QC gate (exit 0/2/3).
+- `scripts/record-industry-pack.sh` — industryPack provenance recorder.
+- `scripts/interview-nudge-cron.sh` — state-driven gateway-routed nudge cron.
+- `scripts/test-interview-experience.sh` — 12 offline fixture tests (T1–T12).
+
+### Schema additions (build-state-schema.json)
+- `industryPack` object: slug, confidence, source (enum), matchedSignals, detectedAt.
+- `interviewQc` object: status (enum), questionCount, jargonHits, missingFields, nudgesWired, ranAt, rubricVerdict.
+
+### Cross-skill seam (Skill 37 follow-up)
+`run-closeout.sh` (Skill 37) should gate on `interviewQc.status != "pass"` before advancing past `pending`. The state field and gate that populate it are in this PR; the one-line Skill 37 wiring is flagged as the next Skill 37 touch.
+
+---
+
 ## [v11.8.7] — 2026-06-10 — PRD 2.5: branding-questions.json single source of truth
 
 **New:** `interview/branding-questions.json` — canonical structured definition of all 8 branding questions. INSTRUCTIONS.md Phase 3 + header annotated with question ids and JSON reference. SKILL.md required-read-order note added. Command Center vendoring + sync test defined in syncTest block (implemented in CC sub-agent 2.5-cc).

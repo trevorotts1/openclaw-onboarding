@@ -28,6 +28,7 @@ QNUM=""
 ASKED_BY=""
 PHASES_COMPLETE=""
 COMPLETE=false
+INDUSTRY_PACK_BLOB=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --phase) PHASE="$2"; shift 2 ;;
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
     --asked-by) ASKED_BY="$2"; shift 2 ;;
     --phases-complete) PHASES_COMPLETE="$2"; shift 2 ;;
     --complete) COMPLETE=true; shift ;;
+    --industry-pack) INDUSTRY_PACK_BLOB="$2"; shift 2 ;;  # PRD-2.15: passthrough to record-industry-pack.sh
     *) echo "unknown flag: $1" >&2; exit 1 ;;
   esac
 done
@@ -68,10 +70,29 @@ JQ_ARGS+=(--arg now "$NOW")
 JQ_FILTER+=' | .interviewProgress.lastQuestionAt = $now'
 
 if [ "$COMPLETE" = true ]; then
+  # PRD-2.15: when marking complete, also set interviewQc.status="pending" so the
+  # closeout SM and crons see a QC gate is owed. The QC gate (qc-interview-completion.py)
+  # transitions this to "pass" / "needs-review" / "fail" when it runs.
   JQ_FILTER+=' | .interviewComplete = true | .interviewCompletedAt = $now'
+  JQ_FILTER+=' | if .interviewQc == null then .interviewQc = {"status":"pending"} else .interviewQc.status = "pending" end'
 fi
 
 jq "${JQ_ARGS[@]}" "$JQ_FILTER" "$STATE" > "$TMP"
 mv -f "$TMP" "$STATE"
 
 echo "updated $STATE: phase=$PHASE qnum=$QNUM asked_by=$ASKED_BY complete=$COMPLETE"
+
+# PRD-2.15: if --industry-pack blob file was passed AND industryPack not yet set, run recorder.
+if [ -n "$INDUSTRY_PACK_BLOB" ] && [ -f "$INDUSTRY_PACK_BLOB" ]; then
+  RECORDER_PATH="$(dirname "$0")/record-industry-pack.sh"
+  if [ -f "$RECORDER_PATH" ]; then
+    existing_slug=$(jq -r '.industryPack.slug // empty' "$STATE" 2>/dev/null || true)
+    if [ -z "$existing_slug" ]; then
+      bash "$RECORDER_PATH" --blob-file "$INDUSTRY_PACK_BLOB" --state "$STATE" \
+        && echo "record-industry-pack ran from update-interview-state.sh" \
+        || echo "WARN: record-industry-pack.sh failed (non-fatal)" >&2
+    else
+      echo "industryPack.slug already set ($existing_slug) — skipping record-industry-pack"
+    fi
+  fi
+fi

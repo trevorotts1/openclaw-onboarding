@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.10.0"
+ONBOARDING_VERSION="v11.11.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4449,6 +4449,74 @@ install_onboarding_resume_cron() {
 }
 
 install_onboarding_resume_cron
+
+# ----------------------------------------------------------
+# Step 13.5: Install interview-nudge cron (PRD-2.15, every 6h)
+# ----------------------------------------------------------
+# Why: incomplete interviews go stale when owners stop responding. This cron
+# fires every 6h, reads .workforce-build-state.json (primary) / interview-handoff.md
+# (fallback), and sends a gateway-routed nudge at 24h/72h/168h idle thresholds.
+# The cron is a cheap trigger — it calls nudge-incomplete-interviews.py (worker)
+# which handles the send, idempotency, and state recording.
+# All sends go through `openclaw message send` — NEVER direct to api.telegram.org.
+step "Step 13.5: Installing interview-nudge cron (6-hour idle check, PRD-2.15)"
+
+install_interview_nudge_cron() {
+    if ! command -v openclaw >/dev/null 2>&1; then
+        warn "openclaw CLI not on PATH — skipping interview-nudge cron. Re-run update-skills.sh later."
+        return 0
+    fi
+    if openclaw cron list 2>/dev/null | grep -qi "interview-nudge"; then
+        success "interview-nudge cron already installed"
+        return 0
+    fi
+
+    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
+        resolve_telegram_target_universal
+    fi
+    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
+    if [ -z "$TG_TARGET" ]; then
+        warn "Telegram chat ID not found — cannot install interview-nudge cron."
+        return 0
+    fi
+
+    # Resolve skill dir (same pattern as other cron installs)
+    local _NUDGE_SCRIPT=""
+    for _candidate in \
+        "${HOME}/.openclaw/skills/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh" \
+        "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh" \
+        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh"; do
+        if [ -f "$_candidate" ]; then
+            _NUDGE_SCRIPT="$_candidate"
+            break
+        fi
+    done
+
+    if [ -z "$_NUDGE_SCRIPT" ]; then
+        warn "interview-nudge-cron.sh not found — cron NOT installed."
+        return 0
+    fi
+
+    local RC=0
+    local OUT
+    OUT=$(openclaw cron create \
+        --name "interview-nudge" \
+        --cron "0 */6 * * *" \
+        --tz "America/New_York" \
+        --channel telegram \
+        --to "$TG_TARGET" \
+        --message "[INTERVIEW-NUDGE] Check for idle interviews and send 24h/72h/168h nudges if needed. Run: bash $_NUDGE_SCRIPT" \
+        2>&1) || RC=$?
+    if [ "$RC" -eq 0 ]; then
+        success "interview-nudge cron installed (every 6h)"
+    else
+        warn "interview-nudge cron creation failed (non-fatal)."
+        warn "  Manual: openclaw cron create --name interview-nudge --cron '0 */6 * * *' --channel telegram --to '$TG_TARGET' --message '[INTERVIEW-NUDGE] bash $_NUDGE_SCRIPT'"
+    fi
+    return 0
+}
+
+install_interview_nudge_cron
 
 # ----------------------------------------------------------
 # Step 14: Install Skill 37 (ZHC Closeout) (v10.13.16)

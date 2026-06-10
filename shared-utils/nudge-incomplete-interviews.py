@@ -144,9 +144,22 @@ def record_nudge_sent(handoff_path: Path, nudge_key: str):
 
 def send_telegram_nudge(meta: dict, cfg: dict, company_slug: str, dry_run: bool = False):
     """
-    Send Telegram nudge using TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID env vars.
-    Falls back to printing if not configured or if --dry-run.
+    Send Telegram nudge via the OpenClaw gateway ONLY (openclaw message send).
+
+    BINDING RULE: All Telegram sends go through `openclaw message send`.
+    Direct HTTP to the Telegram Bot API is FORBIDDEN (see memory rule:
+    "Never bypass OpenClaw's gateway for Telegram").
+
+    If the openclaw CLI is not on PATH, log and skip — do NOT fall back
+    to direct HTTP.
+
+    Target resolution priority:
+      1. meta["owner_chat"] — from .workforce-build-state.json ownerChat
+      2. meta["chat_id"]    — legacy handoff frontmatter
+      3. TELEGRAM_CHAT_ID env var — last resort
     """
+    import subprocess as _sp  # local to keep module-level imports clean
+
     link = f"https://t.me/your-openclaw-bot?start=resume_{company_slug}"
     # If a deployed dashboard URL is configured, use that
     dashboard_url = os.environ.get("OPENCLAW_DASHBOARD_URL")
@@ -164,29 +177,129 @@ def send_telegram_nudge(meta: dict, cfg: dict, company_slug: str, dry_run: bool 
         print(f"  [DRY-RUN] Would send Telegram nudge ({cfg['key']}): {message}")
         return True
 
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not bot_token or not chat_id:
-        print(f"  [SKIP] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set. Would have sent: {message}")
+    # Resolve target chat ID (state-driven primary)
+    chat_id = (
+        str(meta.get("owner_chat") or "")
+        or str(meta.get("chat_id") or "")
+        or os.environ.get("TELEGRAM_CHAT_ID", "")
+    )
+
+    if not chat_id:
+        print(
+            f"  [SKIP] No chat_id available for Telegram nudge ({cfg['key']}). "
+            "Set ownerChat in build state or TELEGRAM_CHAT_ID env var."
+        )
         return False
 
-    import urllib.request
-    import urllib.parse
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": message}).encode("utf-8")
-    try:
-        with urllib.request.urlopen(url, data=data, timeout=10) as resp:
-            resp.read()
-        print(f"  Sent Telegram nudge ({cfg['key']}) to chat_id={chat_id}")
-        return True
-    except Exception as e:
-        print(f"  Telegram send failed ({cfg['key']}): {e}")
+    # Gateway send via openclaw CLI only
+    import shutil as _shutil
+    if not _shutil.which("openclaw"):
+        print(
+            f"  [SKIP] openclaw CLI not found on PATH — cannot send nudge ({cfg['key']}) "
+            "via gateway. No direct-HTTP fallback (binding rule)."
+        )
         return False
+
+    try:
+        result = _sp.run(
+            ["openclaw", "message", "send", "--channel", "telegram",
+             "--target", chat_id, "--message", message],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            print(f"  Sent Telegram nudge ({cfg['key']}) to chat_id={chat_id} via openclaw gateway")
+            return True
+        else:
+            print(f"  openclaw message send failed ({cfg['key']}): rc={result.returncode} {result.stderr[:200]}")
+            return False
+    except Exception as e:
+        print(f"  openclaw message send error ({cfg['key']}): {e}")
+        return False
+
+
+def read_build_state(state_path: Path) -> dict:
+    """
+    Read .workforce-build-state.json. Returns {} if not found or invalid.
+    PRD-2.15: build state is the PRIMARY source of interview progress data.
+    """
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def merge_meta_from_state(meta: dict, state: dict) -> dict:
+    """
+    Merge build-state fields into meta dict, preferring state values as primary.
+    Falls back to handoff frontmatter values when state fields are absent.
+    PRD-2.15: state is primary; handoff is fallback only.
+    """
+    merged = dict(meta)
+
+    # interviewComplete from state takes priority
+    if state.get("interviewComplete") is not None:
+        merged["complete"] = bool(state["interviewComplete"])
+
+    # lastQuestionAt from state interviewProgress
+    progress = state.get("interviewProgress") or {}
+    if progress.get("lastQuestionAt"):
+        try:
+            ts = progress["lastQuestionAt"].rstrip("Z")
+            merged["last_activity"] = datetime.fromisoformat(ts)
+        except Exception:
+            pass
+
+    # ownerName, ownerChat from state
+    if state.get("ownerName"):
+        merged["owner_name"] = state["ownerName"]
+    if state.get("ownerChat"):
+        merged["owner_chat"] = state["ownerChat"]
+
+    # lastQuestionNumber → last_question fallback
+    if progress.get("lastQuestionNumber") and not merged.get("last_question"):
+        merged["last_question"] = f"Question #{progress['lastQuestionNumber']}"
+
+    # nudges_sent from state (canonical) or handoff (legacy)
+    if "nudges_sent" in state:
+        merged["nudges_sent"] = state.get("nudges_sent", [])
+
+    # progress_percent estimate from question count
+    if not merged.get("progress_percent") and progress.get("lastQuestionNumber"):
+        q = progress["lastQuestionNumber"]
+        merged["progress_percent"] = min(100, int((q / 30) * 100))
+
+    return merged
+
+
+def record_nudge_sent_state(state_path: Path, nudge_key: str) -> None:
+    """
+    Record a sent nudge in the build state file (canonical dedup store).
+    Also records in the handoff file if it exists (legacy compat).
+    """
+    if not state_path.exists():
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+
+    sent = list(state.get("nudges_sent") or [])
+    if nudge_key not in sent:
+        sent.append(nudge_key)
+        state["nudges_sent"] = sent
+        tmp = Path(str(state_path) + f".tmp.{os.getpid()}")
+        try:
+            tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            tmp.replace(state_path)
+        except Exception:
+            tmp.unlink(missing_ok=True)
 
 
 def scan_and_nudge(dry_run: bool = False) -> dict:
     paths = get_openclaw_paths()
     zhc_root = paths["company_root"]
+    # PRD-2.15: also check the canonical workspace build state path
+    workspace = paths.get("workspace") or paths.get("root", Path("/tmp")) / "workspace"
     counts = {"checked": 0, "nudged": 0, "skipped_complete": 0, "skipped_recent": 0}
 
     if not zhc_root.exists():
@@ -197,13 +310,26 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
     for company in zhc_root.iterdir():
         if not company.is_dir():
             continue
-        handoff = company / "interview-handoff.md"
-        if not handoff.exists():
-            continue
-        counts["checked"] += 1
-        meta = parse_handoff(handoff)
 
-        if meta["complete"]:
+        # PRD-2.15: PRIMARY source is .workforce-build-state.json
+        state_path = workspace / ".workforce-build-state.json"
+        state = read_build_state(state_path) if state_path.exists() else {}
+
+        # FALLBACK: handoff frontmatter (only if state is absent)
+        handoff = company / "interview-handoff.md"
+        meta: dict = {}
+        if handoff.exists():
+            meta = parse_handoff(handoff)
+        elif not state:
+            continue  # neither source exists
+
+        counts["checked"] += 1
+
+        # Merge: state is primary, handoff is fallback
+        if state:
+            meta = merge_meta_from_state(meta, state)
+
+        if meta.get("complete"):
             counts["skipped_complete"] += 1
             continue
         if not meta.get("last_activity"):
@@ -219,7 +345,10 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
                 print(f"  Company {company.name}: idle {hours_idle:.1f}h, sending {cfg['key']}")
                 ok = send_telegram_nudge(meta, cfg, company.name, dry_run=dry_run)
                 if ok and not dry_run:
-                    record_nudge_sent(handoff, cfg["key"])
+                    # Record in state (primary) and handoff (legacy compat)
+                    record_nudge_sent_state(state_path, cfg["key"])
+                    if handoff.exists():
+                        record_nudge_sent(handoff, cfg["key"])
                 counts["nudged"] += 1
                 break  # one nudge per scan per company
         else:
