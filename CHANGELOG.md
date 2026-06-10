@@ -1,3 +1,27 @@
+## [v11.12.2]  -  2026-06-10  -  fix(AF3): legacy-retirement list + widened CI guard for local ~/clawd candidate loops
+
+**AF3 — Retirement tracking and CI enforcement for local ~/clawd path-candidate loops in 32-command-center-setup and repo-wide**
+Branch: af3-legacy-retirement-ci-guard. Merged PR #150.
+
+**What changed (2 files, +289 lines):**
+- **`docs/LEGACY-RETIREMENT.md`** (new): tracks all 13 Python scripts that contain local `~/clawd` path-candidate loops alongside `get_openclaw_paths()`. Two primary AF3 targets called out explicitly: `generate-kpi-rollup.py` (`find_zhc_company_dir` lines 83-88) and `generate-brand-css.py` (`find_zhc_company_config` lines 79-84). Includes retirement plan tied to fleet migration completion.
+- **`.github/workflows/qc-static.yml`**: two new CI steps:
+  1. `AF3: local-candidate-loop guard` — scans all `.py` files for trailing-comma list-item lines with `HOME / "clawd" / ...`, `Path.home() / "clawd" / ...`, or `expanduser("~/clawd/...")`. Allowlists 13 known legacy files from `docs/LEGACY-RETIREMENT.md`. Also asserts the retirement doc exists and references every allowlisted filename.
+  2. `AF3: local-candidate-loop guard — negative fixture test` — plants `_af3_fixture_rogue_loop.py` in `32-command-center-setup/scripts/` (not on allowlist), runs the guard inline, asserts exit non-zero, then removes the file. Proves the guard bites on real violations.
+
+**Verify:**
+- CI `qc-static` green: guard passes on clean repo — `✓ docs/LEGACY-RETIREMENT.md present and references all 13 allowlisted files` + `✓ AF3 guard: no rogue ~/clawd candidate-loop items outside the 13-file retirement allowlist`: PASS
+- CI negative fixture: `✓ AF3 negative fixture: guard correctly failed (exit 1) on a planted rogue ~/clawd candidate-loop in 32-command-center-setup`: PASS
+- `docs/LEGACY-RETIREMENT.md` present, references `generate-kpi-rollup.py` (lines 83-88) and `generate-brand-css.py` (lines 79-84) with loop locations marked TRACKED: PASS
+- Line numbers verified independently against actual source: `generate-kpi-rollup.py` `roots.extend([` at line 83, closes at 88 — CONFIRMED; `generate-brand-css.py` `roots.extend([` at line 79, closes at 84 — CONFIRMED
+- Guard regex tested locally: correctly catches all 4 pattern variants (HOME/Path.home()/Path(expanduser)/os.expanduser) with trailing comma; correctly excludes dict values, bare assignments, and slashless-style paths
+- All CI checks green: G2 PASS, G3 PASS, QC static PASS, version-consistency PASS; G1 skipped (correct — no tag on PR branch)
+
+**QC Score: 9.1/10 — PASS** (independent QC 2026-06-10)
+Wiring 9/10 (guard covers all 4 candidate-loop patterns; negative fixture confirms enforcement; allowlist exactly matches retirement doc; retirement doc asserted by guard itself; minor: no pattern for slashless `HOME/"clawd/foo"` style — present in generate-brand-css.py line 173 but correctly within allowlist) | SSOT 9/10 (LEGACY-RETIREMENT.md is the single allowlist source; guard reads it at runtime; both guard + fixture inline the same allowlist — acceptable duplication given CI inline code requirement; retirement plan is actionable and condition-gated) | Path 9/10 (covers 32-command-center-setup primary scope + repo-wide; negative fixture specifically targets the primary directory; archive/migrate exclusions correct) | Observability 9/10 (negative fixture proves guard bites, not just passes; guard prints each allowlisted file reference result; fix-hint message on violation is clear) | Docs 9/10 (LEGACY-RETIREMENT.md has exact loop locations, line numbers correct, retirement plan complete; PR description matches implementation; CHANGELOG entry comprehensive) | Regression 9/10 (CI all green; existing PRD 1.9 guard unaffected; guard does not accidentally catch legitimate non-list-item clawd refs; local run confirmed)
+
+Merged: eed4f1fb47ed133b3d3932eb7dbeb62e21f4eca1 — Tag: v11.12.2
+
 ## [v11.12.1]  -  2026-06-10  -  fix(AF1): sweep stale openclaw-onboarding-vps pointers from client-facing install/deploy/onboarding paths
 
 **AF1 — Remove all stale openclaw-onboarding-vps references from every client-facing install, deploy, and onboarding path**
