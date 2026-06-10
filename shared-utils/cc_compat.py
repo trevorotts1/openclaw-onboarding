@@ -217,25 +217,68 @@ def assert_min_version(deployed_version: str, compat: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# CLI self-test
+# CLI self-test / validation
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Quick self-test / load-check
-    try:
-        compat = load_cc_compat()
-        print(f"cc-compat.json loaded OK:")
-        print(f"  onboardingVersion : {compat['onboardingVersion']}")
-        print(f"  minVersion        : {compat['commandCenter']['minVersion']}")
-        print(f"  pinnedTag         : {compat['commandCenter'].get('pinnedTag')}")
-        print(f"  maxVersion        : {compat['commandCenter'].get('maxVersion')}")
-        # Smoke-test resolve_cc_tag with a fake available_tags list
-        if compat["commandCenter"].get("pinnedTag"):
-            tag = resolve_cc_tag(compat)
-        else:
-            tag = resolve_cc_tag(compat, available_tags=["v4.12.0", "v4.14.0", "v4.15.0"])
-        print(f"  resolved cc_tag   : {tag}")
-        print("cc_compat.py self-test PASSED")
-    except Exception as e:
-        print(f"FAIL: {e}", file=sys.stderr)
-        sys.exit(1)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="cc_compat.py self-test / schema validator")
+    parser.add_argument(
+        "--self-test",
+        metavar="PATH",
+        nargs="?",
+        const="cc-compat.json",
+        help="Validate a cc-compat.json file (default: cc-compat.json in repo root)",
+    )
+    args = parser.parse_args()
+
+    if args.self_test:
+        # Schema-validation mode: used by CI (qc-static.yml)
+        try:
+            compat = load_cc_compat(Path(args.self_test).parent)
+            cc = compat["commandCenter"]
+            # Basic structure checks
+            assert compat.get("schemaVersion") == 1, "schemaVersion must be 1"
+            assert re.match(r'^v\d+\.\d+\.\d+', compat.get("onboardingVersion", "")), \
+                "onboardingVersion must be vX.Y.Z"
+            assert re.match(r'^v\d+\.\d+\.\d+', cc.get("minVersion", "")), \
+                "minVersion must be vX.Y.Z"
+            pinned = cc.get("pinnedTag")
+            if pinned:
+                assert re.match(r'^v\d+\.\d+\.\d+', str(pinned)), \
+                    f"pinnedTag must be vX.Y.Z or null, got {pinned!r}"
+                assert _version_gte(pinned, cc["minVersion"]), \
+                    f"pinnedTag ({pinned}) < minVersion ({cc['minVersion']})"
+            # Resolve tag smoke-test
+            if pinned:
+                tag = resolve_cc_tag(compat)
+            else:
+                tag = resolve_cc_tag(compat, available_tags=["v4.12.0", "v4.14.0", "v4.15.0"])
+            print(f"cc-compat.json schema valid:")
+            print(f"  onboardingVersion : {compat['onboardingVersion']}")
+            print(f"  minVersion        : {cc['minVersion']}")
+            print(f"  pinnedTag         : {pinned}")
+            print(f"  resolved cc_tag   : {tag}")
+        except Exception as e:
+            print(f"FAIL: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Quick self-test / load-check (no args)
+        try:
+            compat = load_cc_compat()
+            print(f"cc-compat.json loaded OK:")
+            print(f"  onboardingVersion : {compat['onboardingVersion']}")
+            print(f"  minVersion        : {compat['commandCenter']['minVersion']}")
+            print(f"  pinnedTag         : {compat['commandCenter'].get('pinnedTag')}")
+            print(f"  maxVersion        : {compat['commandCenter'].get('maxVersion')}")
+            # Smoke-test resolve_cc_tag with a fake available_tags list
+            if compat["commandCenter"].get("pinnedTag"):
+                tag = resolve_cc_tag(compat)
+            else:
+                tag = resolve_cc_tag(compat, available_tags=["v4.12.0", "v4.14.0", "v4.15.0"])
+            print(f"  resolved cc_tag   : {tag}")
+            print("cc_compat.py self-test PASSED")
+        except Exception as e:
+            print(f"FAIL: {e}", file=sys.stderr)
+            sys.exit(1)

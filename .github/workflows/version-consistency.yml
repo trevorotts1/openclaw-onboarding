@@ -151,47 +151,16 @@ jobs:
           # cc-compat.json.onboardingVersion must equal /version.
           # pinnedTag (when set) must be a valid vX.Y.Z and >= minVersion.
           if [ -f cc-compat.json ]; then
-            python3 - <<CCPY
-import json, re, sys
-d = json.load(open('cc-compat.json'))
-root_ver = open('version').read().strip()
-
-# Check onboardingVersion matches /version
-ov = d.get('onboardingVersion', '')
-if ov != root_ver:
-    print(f'VERSION DRIFT: cc-compat.json onboardingVersion={ov!r} != /version={root_ver!r}')
-    print('Fix: update cc-compat.json onboardingVersion when bumping the repo version.')
-    sys.exit(1)
-
-# Check schemaVersion is 1
-if d.get('schemaVersion') != 1:
-    print(f'cc-compat.json schemaVersion must be 1, got {d.get(\"schemaVersion\")!r}')
-    sys.exit(1)
-
-# Check minVersion format
-cc = d.get('commandCenter', {})
-mv = cc.get('minVersion', '')
-if not re.match(r'^v\d+\.\d+\.\d+', mv):
-    print(f'cc-compat.json commandCenter.minVersion must be vX.Y.Z, got {mv!r}')
-    sys.exit(1)
-
-# Check pinnedTag >= minVersion when set
-def sv(v):
-    m = re.match(r'^v?(\d+)\.(\d+)\.(\d+)', v)
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-
-pinned = cc.get('pinnedTag')
-if pinned:
-    if not re.match(r'^v\d+\.\d+\.\d+', str(pinned)):
-        print(f'cc-compat.json pinnedTag must be vX.Y.Z or null, got {pinned!r}')
-        sys.exit(1)
-    if sv(pinned) < sv(mv):
-        print(f'cc-compat.json pinnedTag ({pinned}) < minVersion ({mv}) — invalid')
-        sys.exit(1)
-
-print(f'cc-compat.json OK: onboardingVersion={ov}, minVersion={mv}, pinnedTag={pinned}')
-CCPY
-            echo "✓ cc-compat.json version integrity check passed"
+            python3 shared-utils/cc_compat.py --self-test cc-compat.json \
+              || { echo "✗ cc-compat.json schema/constraint check failed"; exit 1; }
+            REPO_VER=$(head -1 version | tr -d '[:space:]')
+            CC_VER=$(python3 -c "import json; print(json.load(open('cc-compat.json'))['onboardingVersion'])")
+            if [ "$CC_VER" != "$REPO_VER" ]; then
+              echo "VERSION DRIFT: cc-compat.json onboardingVersion ($CC_VER) != /version ($REPO_VER)"
+              echo "Fix: update cc-compat.json onboardingVersion when bumping the repo version."
+              exit 1
+            fi
+            echo "✓ cc-compat.json version integrity check passed (onboardingVersion=$CC_VER)"
           else
             echo "✗ cc-compat.json missing (required for PRD 1.11 fleet-refresh)"
             exit 1
