@@ -1,3 +1,16 @@
+## [v11.10.0-QC]  -  2026-06-10  -  feat(1.10): migrate-zhc-to-master-files.sh; QC PASS — weighted 9.25/10
+
+**QC item 1.10 — migrate-zhc-to-master-files.sh: discover + classify + move legacy ZHC companies to canonical root**
+Merge SHA (Mac): 18ae46f98d2fa81cdec088ccf11f551d7990f825
+
+Scores per dimension (weights: Wiring 30, SSOT 20, Path 15, Observability 15, Docs 10, Regression 10):
+- Wiring (30): 9/10 — runner calls get_legacy_company_roots() from detect_platform for discovery; rewire() re-runs seed-workspaces.py + sync-md-content-to-db.py + checks Gemini index post-move; force-update.sh auto-runs dry-run on every update and Telegrams manifest summary; all downstream consumers rewired correctly.
+- SSOT (20): 9/10 — all path resolution delegates through detect_platform.get_openclaw_paths() + get_legacy_company_roots(); no hardcoded root paths in runner; _TEST_LEGACY_ROOTS env escape is test-only and clearly documented; runner imports SSOT directly rather than reimplementing discovery.
+- Path (15): 10/10 — dry-run is default; --apply required explicitly; no deletes; .conflicts/<slug>-<source>-<ts> for conflict copies; symlinks left at old location for one release; .migration-log.json idempotent append; exit codes 0/1/2; all 4 classification types (noop/move/move_with_conflicts/conflict_only) correctly handled; 25/25 test pass.
+- Observability (15): 9/10 — check X.7 in qc-system-integrity.sh warns on un-migrated legacy roots; force-update.sh prints dry-run manifest on every update; Telegram conflict alert via openclaw message send; migration log JSON queryable with python3; fallback warning in resolver when legacy root is used.
+- Docs (10): 9/10 — script header documents all guarantees, exit codes, usage, fleet rollout note; inline comments thorough; runner has full module/function docstrings; test harness documents all 6 test groups with purpose.
+- Regression (10): 10/10 — 25-test harness covering Mac layout (T1-T2), VPS layout (T3), idempotency (T4), post-migration resolution (T5), legacy-fallback detection (T6); CI step validates artefacts present + syntax + --help; qc-static.yml PRD 1.9 guard still passes; all 4 shared files byte-identical across both repos.
+
 ## [v11.9.0-QC]  -  2026-06-10  -  feat(1.9): get_openclaw_paths() as the only path authority; QC PASS — weighted 9.30/10
 
 **QC item 1.9 — get_openclaw_paths() as the single path authority across both onboarding repos**
