@@ -61,21 +61,54 @@ block alongside it. These are the direct retirement targets.
 
 ---
 
+## Retirement trigger (automated — deterministic, not vibes)
+
+The retirement trigger is built into `scripts/fleet-refresh.sh`. It fires
+**automatically** when:
+
+1. `fleet-refresh.sh --apply` completes a run against the full fleet.
+2. Every box in the loaded-state manifest (`.fleet-loaded-state.json` in the
+   repo root) reports `loaded=YES` (i.e. CEO_ORCHESTRATOR_RULE_V2 is present
+   in the live injected system prompt).
+3. `retirement_triggered` is not already `True` in the manifest.
+
+When all three conditions hold, fleet-refresh.sh opens (or updates) a
+`retirement-tracker` GitHub issue titled
+_"Retire legacy shim + clawd fallbacks (auto-triggered: all boxes loaded)"_
+on `trevorotts1/openclaw-onboarding` via `gh issue create`. If `gh` is not
+on PATH the trigger writes a `.fleet-retirement-triggered` sentinel file so
+the event is not lost.
+
+**DRY-RUN SAFETY:** `--dry-run` (the default) and `--verify-only` are
+**100% inert** for the retirement path. The manifest is never written and
+`retirement_triggered` is never set during a dry-run. This avoids the AF4
+QC defect where a per-box `--dry-run` persisted `retirement_triggered=True`
+and permanently blocked issue creation.
+
+**Idempotency:** once `retirement_triggered=True` is set in
+`.fleet-loaded-state.json`, subsequent `--apply` runs update (comment on)
+the existing issue rather than creating duplicates.
+
+**Fixture/dry-run verification:** `scripts/test-fleet-refresh.sh` Tests
+13a-13d prove the trigger contract without touching any real box or network:
+- 13a: dry-run does NOT write the manifest
+- 13b: all-loaded APPLY fires the trigger and sets `retirement_triggered=True`
+- 13c: second all-loaded APPLY is idempotent (no duplicate)
+- 13d: partial-loaded APPLY does NOT fire the trigger
+
 ## Retirement plan
 
-After fleet migration to the canonical `get_openclaw_paths()` resolver is confirmed
-complete (all managed clients on OpenClaw >= the version that ships `company_root`
-in the platform paths map):
+After the trigger fires and the retirement-tracker issue is open:
 
 1. Remove the `roots.extend([HOME / "clawd" / ..., ...])` block from each tracked
    file in 32-command-center-setup. Replace with a simple `Path(_PATHS["company_root"])`
    lookup (raise `RuntimeError` if missing rather than silently scanning local paths).
 2. Remove the equivalent blocks from the Skill 23 and Skill 22 files listed above.
 3. Consolidate `shared-utils/key_resolver.py` secrets path into `api_key_utils.py`.
-4. Remove the file entries from the tables above.
-5. The CI guard will then enforce "zero local candidate loops" with an empty allowlist.
+4. Remove the DEPRECATED SHIM marker from
+   `23-ai-workforce-blueprint/scripts/select-persona-for-task.py`.
+5. Remove the file entries from the tables above.
+6. The CI guard will then enforce "zero local candidate loops" with an empty allowlist.
 
-**Trigger:** Once `get_openclaw_paths()["company_root"]` is verified to return a
-non-empty value on every managed Mac and VPS in the fleet (check via
-`openclaw config get env.vars.ZHC_COMPANY_ROOT` or equivalent), the retirement can
-proceed.
+**Trigger:** `fleet-refresh.sh --apply` fires automatically when the last box
+reports `loaded=YES` (see "Retirement trigger" section above).

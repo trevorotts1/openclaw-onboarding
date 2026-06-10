@@ -376,6 +376,215 @@ print(json.dumps(arr, indent=2))
 " > "$SUMMARY_FILE" 2>/dev/null || true
 echo "[fleet-refresh] Fleet summary written to: $SUMMARY_FILE"
 
+# ── Retirement trigger check (APPLY mode only — never dry-run) ────────────────
+# Persists per-box loaded=YES state to the fleet loaded-state manifest.
+# When every box in the manifest reports loaded=YES, opens/updates the
+# "retire legacy shim + clawd fallbacks" GitHub issue exactly once.
+#
+# DRY-RUN SAFETY: the retirement_triggered flag is NEVER set during dry-run.
+# This was the root cause of the AF4 QC gap: an earlier design persisted
+# retirement_triggered=True during --dry-run --update-box, which permanently
+# blocked gh issue creation. The correct intent (documented in the original
+# code comment: "retirement trigger check with real gh runs once at the end")
+# requires that dry-run is fully inert for this path.
+LOADED_STATE_FILE="$REPO_ROOT/.fleet-loaded-state.json"
+RETIREMENT_ISSUE_TITLE="Retire legacy shim + clawd fallbacks (auto-triggered: all boxes loaded)"
+RETIREMENT_ISSUE_LABEL="retirement-tracker"
+
+# Only run the retirement-trigger machinery in APPLY mode.
+# Dry-run and verify-only are 100% inert for this path.
+if [ $APPLY -eq 1 ]; then
+  python3 - <<PYEOF
+import json, os, sys, subprocess, time
+from pathlib import Path
+
+loaded_state_file = Path("$LOADED_STATE_FILE")
+all_results_json  = """$ALL_RESULTS"""
+apply             = True
+dry_run           = False
+
+# Load the current per-box loaded-state manifest (create if absent).
+state = {}
+if loaded_state_file.is_file():
+    try:
+        state = json.loads(loaded_state_file.read_text())
+    except Exception:
+        state = {}
+
+# Validate the state schema:
+#   state["boxes"]              = { box_name: { "loaded": bool, "ts": int, ... } }
+#   state["retirement_triggered"] = bool  (set to True once; never unset)
+if "boxes" not in state or not isinstance(state["boxes"], dict):
+    state["boxes"] = {}
+if "retirement_triggered" not in state:
+    state["retirement_triggered"] = False
+
+# Parse this run's results and update per-box loaded state.
+try:
+    results = json.loads(all_results_json)
+except Exception:
+    results = []
+
+for box_result in results:
+    box  = box_result.get("box", "")
+    if not box:
+        continue
+    loaded_present = box_result.get("loaded", {}).get("present", False)
+    result_val     = box_result.get("result", "unknown")
+    # Only count a box as loaded if the run actually applied (result=ok).
+    # A dry-run result is never propagated here (APPLY=1 guard above),
+    # but be explicit: dry-run result strings MUST NOT advance the state.
+    if result_val in ("ok",):
+        state["boxes"][box] = {
+            "loaded":    loaded_present,
+            "result":    result_val,
+            "ts":        int(time.time()),
+            "onboarding_version": box_result.get("onboarding_version", "unknown"),
+        }
+
+# Persist updated state to the manifest (APPLY only — dry-run never reaches here).
+try:
+    loaded_state_file.write_text(json.dumps(state, indent=2))
+    print(f"[fleet-refresh] Retirement manifest updated: {loaded_state_file}")
+except Exception as e:
+    print(f"[fleet-refresh] WARNING: could not write loaded-state manifest: {e}", file=sys.stderr)
+
+# Check whether ALL tracked boxes are now loaded=YES.
+if not state["boxes"]:
+    print("[fleet-refresh] Retirement check: no boxes in manifest yet — skipping")
+    sys.exit(0)
+
+all_loaded = all(entry.get("loaded", False) for entry in state["boxes"].values())
+not_loaded = [b for b, e in state["boxes"].items() if not e.get("loaded", False)]
+
+print(f"[fleet-refresh] Retirement check: {len(state['boxes'])} boxes tracked; "
+      f"not-loaded={not_loaded if not_loaded else '(none)'}")
+
+if not all_loaded:
+    print(f"[fleet-refresh] Retirement trigger NOT fired: {len(not_loaded)} box(es) not loaded yet.")
+    sys.exit(0)
+
+if state["retirement_triggered"]:
+    print("[fleet-refresh] Retirement trigger: all boxes loaded=YES — issue already opened; skipping duplicate create.")
+    sys.exit(0)
+
+# ALL boxes loaded=YES and retirement not yet triggered — fire the trigger.
+print("[fleet-refresh] RETIREMENT TRIGGER: all boxes loaded=YES — opening/updating retirement tracker issue.")
+
+issue_title  = "$RETIREMENT_ISSUE_TITLE"
+issue_label  = "$RETIREMENT_ISSUE_LABEL"
+box_list     = "\n".join(f"- {b}" for b in sorted(state["boxes"].keys()))
+triggered_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+issue_body = f"""## Automated Retirement Trigger
+
+The fleet-refresh.sh retirement-clock fired because **every tracked box
+reports \`loaded=YES\`** (CEO_ORCHESTRATOR_RULE_V2 is in the live system
+prompt). The deprecation shim and legacy-root fallbacks documented in
+\`docs/LEGACY-RETIREMENT.md\` are now safe to remove.
+
+**Triggered:** {triggered_ts}
+
+**All-loaded boxes ({len(state['boxes'])}):**
+{box_list}
+
+## Retirement tasks
+
+Follow the plan in \`docs/LEGACY-RETIREMENT.md\`:
+
+1. Remove the \`roots.extend([HOME / "clawd" / ..., ...])\` blocks from:
+   - \`32-command-center-setup/scripts/generate-kpi-rollup.py\`
+   - \`32-command-center-setup/scripts/generate-brand-css.py\`
+   - \`32-command-center-setup/scripts/seed-workspaces.py\`
+   - \`32-command-center-setup/scripts/seed-dashboard-content.py\`
+2. Remove equivalent blocks from Skill 23 and Skill 22 files (see \`LEGACY-RETIREMENT.md\`).
+3. Consolidate \`shared-utils/key_resolver.py\` secrets path into \`api_key_utils.py\`.
+4. Remove the DEPRECATED SHIM marker from \`23-ai-workforce-blueprint/scripts/select-persona-for-task.py\`.
+5. Clear \`docs/LEGACY-RETIREMENT.md\` tracked-files tables (empty = zero local loops allowed).
+6. The CI guard (\`AF3: local-candidate-loop guard\`) will then enforce zero local loops.
+
+_Auto-opened by fleet-refresh.sh v11.13.0 retirement-clock._
+"""
+
+# Attempt to create/update the GitHub issue via `gh`.
+gh_bin = subprocess.run(["which", "gh"], capture_output=True, text=True).stdout.strip()
+if not gh_bin:
+    print("[fleet-refresh] WARNING: gh not on PATH — writing trigger sentinel file instead.")
+    trigger_file = Path("$REPO_ROOT") / ".fleet-retirement-triggered"
+    trigger_file.write_text(json.dumps({
+        "triggered_ts": triggered_ts,
+        "boxes": list(state["boxes"].keys()),
+        "reason": "gh not on PATH",
+    }, indent=2))
+    print(f"[fleet-refresh] Retirement trigger sentinel written: {trigger_file}")
+else:
+    # Check for an existing open retirement-tracker issue first.
+    existing = subprocess.run(
+        ["gh", "issue", "list",
+         "--repo", "trevorotts1/openclaw-onboarding",
+         "--label", issue_label,
+         "--state", "open",
+         "--json", "number,title",
+         "--limit", "5"],
+        capture_output=True, text=True, timeout=30,
+    )
+    existing_number = None
+    if existing.returncode == 0:
+        try:
+            existing_issues = json.loads(existing.stdout)
+            for iss in existing_issues:
+                if "retire" in iss.get("title", "").lower() or "retirement" in iss.get("title", "").lower():
+                    existing_number = iss["number"]
+                    break
+        except Exception:
+            pass
+
+    if existing_number:
+        # Update (comment on) the existing issue.
+        result = subprocess.run(
+            ["gh", "issue", "comment", str(existing_number),
+             "--repo", "trevorotts1/openclaw-onboarding",
+             "--body", f"**Retirement clock re-confirmed {triggered_ts}:** all {len(state['boxes'])} boxes still loaded=YES.\\n\\n{box_list}"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            print(f"[fleet-refresh] Updated existing retirement issue #{existing_number}")
+        else:
+            print(f"[fleet-refresh] WARNING: gh issue comment failed: {result.stderr[:200]}", file=sys.stderr)
+    else:
+        # Create a new issue.
+        result = subprocess.run(
+            ["gh", "issue", "create",
+             "--repo", "trevorotts1/openclaw-onboarding",
+             "--title", issue_title,
+             "--label", issue_label,
+             "--body", issue_body],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            issue_url = result.stdout.strip()
+            print(f"[fleet-refresh] Retirement issue created: {issue_url}")
+        else:
+            print(f"[fleet-refresh] WARNING: gh issue create failed: {result.stderr[:200]}", file=sys.stderr)
+            # Fall back to sentinel file so the trigger isn't lost.
+            trigger_file = Path("$REPO_ROOT") / ".fleet-retirement-triggered"
+            trigger_file.write_text(json.dumps({
+                "triggered_ts": triggered_ts,
+                "boxes": list(state["boxes"].keys()),
+                "gh_error": result.stderr[:200],
+            }, indent=2))
+            print(f"[fleet-refresh] Retirement trigger sentinel written: {trigger_file}")
+
+# Mark retirement_triggered=True in the manifest so we never duplicate.
+state["retirement_triggered"] = True
+try:
+    loaded_state_file.write_text(json.dumps(state, indent=2))
+except Exception as e:
+    print(f"[fleet-refresh] WARNING: could not persist retirement_triggered flag: {e}", file=sys.stderr)
+
+PYEOF
+fi
+
 if [ $ANY_FAILED -eq 1 ]; then
   echo "[fleet-refresh] RESULT: PARTIAL/FAILED — check errors above"
   exit 2

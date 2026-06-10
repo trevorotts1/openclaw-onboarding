@@ -1,3 +1,26 @@
+## [v11.13.0]  -  2026-06-10  -  fix(AF4): retirement-clock trigger — fleet-refresh.sh tracks per-box loaded state and auto-opens retirement issue when all boxes loaded=YES
+
+**AF4 — Legacy retirement clock: deterministic trigger, not vibes**
+Branch: fix/af4-retirement-clock-trigger.
+
+**Root cause fixed (AF4 QC gap):** The prior design ran per-box `--update-box --dry-run` and persisted `retirement_triggered=True` to the manifest before the end-of-run `--check-trigger` ran. This permanently blocked `gh issue create` because the trigger saw `retirement_triggered=True` on every subsequent real run. The code comment at line 381 documented the correct intent ("retirement trigger check with real gh runs once at the end") but the implementation contradicted it. Fix: the entire retirement-trigger path is now guarded by `if [ $APPLY -eq 1 ]` — dry-run and verify-only are 100% inert.
+
+**What changed (4 files):**
+- **`scripts/fleet-refresh.sh`**: Added retirement-trigger block at the end of the `--apply` run. Reads/writes `.fleet-loaded-state.json` (per-box `loaded` + `retirement_triggered` manifest). When all tracked boxes report `loaded=YES` and `retirement_triggered=False`, calls `gh issue create` (or updates an existing open issue) with a structured retirement task list citing `docs/LEGACY-RETIREMENT.md`. Falls back to a `.fleet-retirement-triggered` sentinel file when `gh` is absent (CI, fresh boxes). Guarded strictly by `APPLY -eq 1` — dry-run never touches the manifest.
+- **`scripts/test-fleet-refresh.sh`**: Tests 13-15 added. Test 13 is a 4-case fixture proof (13a: dry-run inert; 13b: all-loaded APPLY fires trigger + sets `retirement_triggered=True`; 13c: second run is idempotent; 13d: partial-loaded APPLY does NOT fire). Test 14: bash syntax gate on the updated fleet-refresh.sh. Test 15: `docs/LEGACY-RETIREMENT.md` references the trigger.
+- **`docs/LEGACY-RETIREMENT.md`**: Added "Retirement trigger (automated)" section documenting the deterministic trigger mechanism, dry-run safety, idempotency contract, and fixture verification references.
+- **`.github/workflows/qc-static.yml`**: New CI step `PRD 1.11 / AF4: retirement-clock trigger contract (fixture)` — 6 checks: (1) LEGACY-RETIREMENT.md references trigger; (2) fleet-refresh.sh contains trigger block; (3) APPLY guard present; (4-5) Python fixture proof — dry-run inert, all-loaded APPLY fires; (6) test-fleet-refresh.sh contains Test 13.
+
+**Verify:**
+- `bash scripts/test-fleet-refresh.sh` — 37/37 PASS (all existing Tests 1-12 + new 13-15)
+- `bash -n scripts/fleet-refresh.sh` — syntax OK
+- `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/qc-static.yml'))"` — YAML valid
+- Test 13a: dry-run does NOT write `.fleet-loaded-state.json` — PASS
+- Test 13b: all-loaded APPLY writes manifest + sentinel + sets `retirement_triggered=True` — PASS
+- Test 13c: second all-loaded APPLY returns ALREADY_TRIGGERED (no duplicate) — PASS
+- Test 13d: partial-loaded APPLY does NOT fire trigger — PASS
+- CI AF4 step: structural invariants pass (APPLY guard, LEGACY-RETIREMENT.md ref, test-fleet-refresh.sh Test 13) — PASS
+
 ## [v11.12.2]  -  2026-06-10  -  fix(AF3): legacy-retirement list + widened CI guard for local ~/clawd candidate loops
 
 **AF3 — Retirement tracking and CI enforcement for local ~/clawd path-candidate loops in 32-command-center-setup and repo-wide**
