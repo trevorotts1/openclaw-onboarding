@@ -568,6 +568,31 @@ check "X.6" "gemini-search.py returns ≥1 persona for a known leadership query 
   "[ -f \"$GEMINI_INDEX_DB\" ] && python3 \"$WS_ROOT/scripts/gemini-search.py\" 'leadership coaching' --limit 1 2>/dev/null | grep -qE 'PERSONA:|SCORE:|KEYWORD-HITS:'" \
   "If empty: re-index. If hard-error: check google-genai or openai package install."
 
+# ─── CHECK X.7: PRD 1.10 migration status ────────────────────────────────────
+# Check whether any legacy company locations exist that have NOT been migrated.
+# This is a warning (not a failure) — the system still works while legacy roots exist,
+# but the operator should run the migration to silence future fallback warnings.
+CANONICAL_ROOT="$MASTER/zero-human-company"
+MIGRATION_LOG="$CANONICAL_ROOT/.migration-log.json"
+LEGACY_WITH_COMPANIES=0
+for LDIR in "$HOME/clawd/zero-human-company" "$HOME/clawd/zhc" \
+            "/data/.openclaw/workspace/zero-human-company" "/data/clawd/zero-human-company" \
+            "$HOME/.openclaw/workspace/zero-human-company"; do
+  if [ -d "$LDIR" ] && [ "$(find "$LDIR" -maxdepth 1 -mindepth 1 -type d ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')" -gt 0 ]; then
+    LEGACY_WITH_COMPANIES=$((LEGACY_WITH_COMPANIES+1))
+  fi
+done
+if [ "$LEGACY_WITH_COMPANIES" -eq 0 ]; then
+  green "  ✓ X.7  No legacy ZHC company roots with un-migrated companies"; PASS=$((PASS+1))
+elif [ -f "$MIGRATION_LOG" ]; then
+  MIGRATED_COUNT=$(python3 -c "import json; d=json.load(open('$MIGRATION_LOG')); print(len([e for e in d.get('migrations',[]) if e.get('type')=='primary']))" 2>/dev/null || echo "0")
+  WARNINGS+=("X.7|Legacy ZHC roots still contain ${LEGACY_WITH_COMPANIES} folder(s); ${MIGRATED_COUNT} already migrated|Run: bash ~/.openclaw/skills/scripts/migrate-zhc-to-master-files.sh --apply")
+  WARN=$((WARN+1))
+else
+  WARNINGS+=("X.7|${LEGACY_WITH_COMPANIES} legacy ZHC root(s) with companies found — run migration|bash ~/.openclaw/skills/scripts/migrate-zhc-to-master-files.sh --dry-run  (then --apply)")
+  WARN=$((WARN+1))
+fi
+
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
 echo
 blue "═══════════════════════════════════════════════════"
