@@ -105,6 +105,19 @@ _LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0}
 # inside how-to.md — no LLM regeneration needed).
 _LIBRARY_INSTANTIATED_ROLE_DIRS = set()
 
+# PRD 2.12: boundary gate — canonical-library dept registry.
+# Import sop-boundary-gate.py from the same scripts/ directory.
+try:
+    from sop_boundary_gate import (  # type: ignore
+        is_canonical_dept as _bw_is_canonical_dept,
+        CANONICAL_LIBRARY_DEPT_IDS as _BW_CANONICAL_DEPT_IDS,
+    )
+    _BW_BOUNDARY_GATE_AVAILABLE = True
+except ImportError:
+    _BW_BOUNDARY_GATE_AVAILABLE = False
+    def _bw_is_canonical_dept(dept_id): return False  # type: ignore  # noqa: E302
+    _BW_CANONICAL_DEPT_IDS = frozenset()  # type: ignore
+
 
 # ============================================================
 # ARGUMENT PARSING
@@ -2855,11 +2868,37 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
 
     manifest_path = os.path.join(COMPANY_DIR, SOP_RESEARCH_MANIFEST_NAME)
     entries = []
+    # PRD 2.12: boundary gate tracking — record per-dept canonical status so
+    # populate-sops-from-manifest.py and verify-library-gate.sh can assert the
+    # invariant without re-computing canonicity independently.
+    boundary_canonical = []   # dept_ids that are canonical (should NOT be here)
+    boundary_custom = []      # dept_ids that are genuinely custom (authoring OK)
 
     for dept_id, dept_info in departments.items():
         dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
         if not os.path.isdir(dept_dir):
             continue
+
+        # PRD 2.12 — BOUNDARY GATE pre-check: if a canonical dept ends up in
+        # this manifest it means _instantiate_role_from_library() failed for
+        # all its roles (library lookup miss or _LIBRARY_FILL_AVAILABLE=False).
+        # Log LOUDLY and SKIP — the authoring path must never run for canonical
+        # depts. Token economics: pre-written templates exist precisely for this.
+        if _BW_BOUNDARY_GATE_AVAILABLE and _bw_is_canonical_dept(dept_id):
+            boundary_canonical.append(dept_id)
+            print(
+                f"[SOP-BOUNDARY-GATE] REFUSE manifest entry for canonical dept '{dept_id}'. "
+                f"All roles in this dept should have been instantiated from the role-library "
+                f"(via _instantiate_role_from_library) before reaching this point. "
+                f"Check that _LIBRARY_FILL_AVAILABLE=True and the library lookup succeeded. "
+                f"Skipping this dept — it will NOT be authored by LLM sub-agents.",
+                file=sys.stderr,
+            )
+            continue
+
+        # Track custom depts (genuinely eligible for authoring)
+        if _BW_BOUNDARY_GATE_AVAILABLE:
+            boundary_custom.append(dept_id)
 
         # Collect every SOP stub that needs population
         sop_files = []
@@ -2899,6 +2938,22 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
         }
         entries.append(entry)
 
+    # PRD 2.12 BUILD GATE summary line — loud observability for the operator.
+    if _BW_BOUNDARY_GATE_AVAILABLE:
+        if boundary_canonical:
+            print(
+                f"[SOP-BOUNDARY-GATE] BUILD GATE WARNING: {len(boundary_canonical)} canonical dept(s) "
+                f"were REFUSED from the authoring manifest: {boundary_canonical}. "
+                f"These depts' SOPs must come from the role-library copy path. "
+                f"Verify _LIBRARY_FILL_AVAILABLE=True and re-run build if their role files are empty.",
+                file=sys.stderr,
+            )
+        print(
+            f"[SOP-BOUNDARY-GATE] Manifest boundary gate: "
+            f"canonical_refused={len(boundary_canonical)} custom_queued={len(boundary_custom)}",
+            file=sys.stderr,
+        )
+
     manifest = {
         "version": "1.0",
         "company": company_name,
@@ -2908,12 +2963,19 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
         "max_parallel_sub_agents": 10,
         "departments": entries,
         "sub_agent_instructions": LEAN_SIX_SIGMA_SOP_PROMPT,
+        # PRD 2.12: boundary gate field — consumed by populate-sops-from-manifest.py
+        # and verify-library-gate.sh to assert no canonical dept entered authoring.
+        "boundary_gate": {
+            "canonical_refused": boundary_canonical,
+            "custom_queued": boundary_custom,
+            "gate_available": _BW_BOUNDARY_GATE_AVAILABLE,
+        },
     }
 
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
-    print(f"[SOP-MANIFEST] Wrote {manifest_path} with {len(entries)} departments queued for parallel SOP writing", file=sys.stderr)
+    print(f"[SOP-MANIFEST] Wrote {manifest_path} with {len(entries)} custom dept(s) queued for authoring", file=sys.stderr)
     return manifest_path
 
 

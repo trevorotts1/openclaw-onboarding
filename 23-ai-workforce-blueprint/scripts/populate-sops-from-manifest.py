@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-populate-sops-from-manifest.py — v9.6.2
+populate-sops-from-manifest.py — v9.7.0 (PRD 2.12 boundary gate)
 
 Reads sop-research-manifest.json (written by build-workforce.py) and spawns
 parallel sub-agents to populate the SOP stubs with real DMAIC content.
@@ -21,8 +21,19 @@ place, replacing the `[Step 1 - to be personalized]` placeholders with real
 DMAIC-structured content derived from Perplexity research + the dept's
 interview answers + the role's assigned persona.
 
+PRD 2.12 — BOUNDARY GATE (token-economics protection):
+  Before processing any department the script checks sop-boundary-gate.py to
+  determine whether the dept is canonical (has a pre-written role-library
+  template).  If it is canonical this script REFUSES to author SOPs for it —
+  it logs a loud [SOP-BOUNDARY-GATE] REFUSE line and skips that dept.
+  Canonical depts must be resolved via _instantiate_role_from_library() in
+  build-workforce.py (copy + token-personalise), NEVER via LLM authoring.
+  If the entire manifest consists of canonical depts (no custom depts remain),
+  the script exits 0 — all work was already done by the copy path.
+
 EXIT CODES:
-  0 = all SOPs populated, all sub-agents reported success
+  0 = all SOPs populated (openclaw sub-agents success), OR manifest contained
+      only canonical depts that were already handled by the copy path
   1 = manifest missing or malformed
   2 = one or more sub-agents failed (manifest unchanged, can re-run)
   3 = no models available (selector returned Tier 5 owner-input-required)
@@ -31,6 +42,9 @@ EXIT CODES:
       terminal-state lie that let the library gate pass with empty SOPs. The
       caller MUST keep sopLibraryStatus=authoring and let the resume cron
       re-fire until the substance gate (verify-library-gate.sh) actually passes.
+  7 = BOUNDARY GATE FAIL: manifest contains canonical dept(s) that were not
+      handled by the library copy path. build-workforce.py must be re-run to
+      instantiate those depts from the role-library before authoring.
 """
 
 import argparse
@@ -42,6 +56,30 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+# ─── PRD 2.12: canonical boundary gate ───────────────────────────────────────
+# Import sop-boundary-gate from the scripts/ directory (same folder as this file).
+_BG_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BG_DIR not in sys.path:
+    sys.path.insert(0, _BG_DIR)
+try:
+    from sop_boundary_gate import (  # type: ignore
+        is_canonical_dept as _is_canonical_dept,
+        assert_no_canonical_in_authoring_path as _assert_no_canonical,
+        CANONICAL_LIBRARY_DEPT_IDS as _CANONICAL_DEPT_IDS,
+    )
+    _BOUNDARY_GATE_AVAILABLE = True
+except ImportError as _bg_err:
+    _BOUNDARY_GATE_AVAILABLE = False
+    print(
+        f"[SOP-BOUNDARY-GATE] WARNING: could not import sop-boundary-gate ({_bg_err}). "
+        f"Boundary gate is DISABLED — canonical depts may enter the authoring path. "
+        f"This is a token-economics risk. Ensure sop-boundary-gate.py is present in {_BG_DIR}.",
+        file=sys.stderr,
+    )
+    def _is_canonical_dept(dept_id): return False  # type: ignore  # noqa: E302
+    def _assert_no_canonical(manifest_path): return 0  # type: ignore  # noqa: E302
+    _CANONICAL_DEPT_IDS = frozenset()  # type: ignore
 
 
 # ─── PATHS (PRD 1.9: canonical root from get_openclaw_paths()) ────────────────
@@ -268,7 +306,53 @@ def main():
     max_parallel = args.max_parallel or manifest.get("max_parallel_sub_agents", 10)
     company_name = manifest.get("company", "the company")
 
-    # 2. Resolve model once (all depts use heavy tier)
+    # 2. PRD 2.12 — BOUNDARY GATE: assert no canonical dept in authoring manifest.
+    # This is a hard check BEFORE any model resolution or sub-agent spawn.
+    # canonical depts MUST be handled by the copy path in build-workforce.py;
+    # if they appear here something went wrong upstream (library lookup failed
+    # or was skipped).  We filter them OUT and log loudly — never author them.
+    if _BOUNDARY_GATE_AVAILABLE:
+        boundary_rc = _assert_no_canonical(manifest_path)
+        if boundary_rc == 7:
+            # Violation found — filter canonical depts from the processing list
+            # and continue only with custom depts.  If no custom depts remain,
+            # that is actually a PASS (all work was done by the copy path).
+            canonical_filtered = [e for e in depts if _is_canonical_dept(e.get("dept_id", ""))]
+            custom_depts = [e for e in depts if not _is_canonical_dept(e.get("dept_id", ""))]
+            print(
+                f"[SOP-BOUNDARY-GATE] FILTERED {len(canonical_filtered)} canonical dept(s) "
+                f"from authoring manifest. These must be re-run through build-workforce.py "
+                f"(library copy path) to get their SOPs — authoring is REFUSED:",
+                file=sys.stderr,
+            )
+            for e in canonical_filtered:
+                print(f"  REFUSE: {e.get('dept_id')} ({len(e.get('sop_files', []))} SOP stubs queued — skipped)", file=sys.stderr)
+            depts = custom_depts
+            if not depts:
+                print(
+                    f"[POPULATE-SOPS] Manifest contained only canonical depts (all handled by "
+                    f"the role-library copy path). Nothing to author. Exiting 0.",
+                    file=sys.stderr,
+                )
+                return 0
+            print(
+                f"[POPULATE-SOPS] Continuing with {len(depts)} custom dept(s) eligible for authoring.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[SOP-BOUNDARY-GATE] Boundary check PASS — {len(depts)} dept(s) in manifest "
+                f"are custom (no canonical depts found; library copy path handled canonical work).",
+                file=sys.stderr,
+            )
+    else:
+        print(
+            f"[SOP-BOUNDARY-GATE] Boundary gate DISABLED — proceeding without canonical check "
+            f"(token-economics risk; install sop-boundary-gate.py to enable).",
+            file=sys.stderr,
+        )
+
+    # 3. Resolve model once (all depts use heavy tier)
     model_id = resolve_model("workforce-sop-writer", "heavy")
     if model_id is None:
         print("[POPULATE-SOPS] Selector returned Tier 5 (owner-input-required). "
@@ -281,7 +365,7 @@ def main():
     print(f"[POPULATE-SOPS] Spawn mode: {'openclaw subagents' if use_openclaw else 'inline queue files'}",
           file=sys.stderr)
 
-    # 3. Spawn (batched up to max_parallel at a time)
+    # 4. Spawn (batched up to max_parallel at a time)
     failures = []
     processes_inflight = []
 
@@ -301,6 +385,20 @@ def main():
         processes_inflight = still
 
     for entry in depts:
+        dept_id = entry.get("dept_id", "")
+
+        # PRD 2.12 per-dept REFUSE: belt-and-suspenders check inside the loop.
+        # Even if the manifest-level check above passed, guard each individual
+        # dept in case the depts list was modified externally.
+        if _BOUNDARY_GATE_AVAILABLE and _is_canonical_dept(dept_id):
+            print(
+                f"[SOP-BOUNDARY-GATE] REFUSE authoring for canonical dept '{dept_id}' "
+                f"(per-loop guard). SOPs must be copied from the role-library, not authored. "
+                f"Skipping.",
+                file=sys.stderr,
+            )
+            continue
+
         # Throttle
         while len(processes_inflight) >= max_parallel:
             reap()
@@ -311,16 +409,16 @@ def main():
         prompt = build_subagent_prompt(entry, instructions, model_id)
 
         if args.dry_run:
-            print(f"[POPULATE-SOPS] DRY RUN — dept {entry['dept_id']} would get {len(entry['sop_files'])} SOPs populated")
+            print(f"[POPULATE-SOPS] DRY RUN — dept {dept_id} would get {len(entry['sop_files'])} SOPs populated")
             continue
 
         if use_openclaw:
             try:
                 p = spawn_via_openclaw(entry, prompt, model_id, args.timeout)
-                processes_inflight.append((p, entry["dept_id"]))
+                processes_inflight.append((p, dept_id))
             except Exception as e:
-                print(f"[POPULATE-SOPS] Spawn error for {entry['dept_id']}: {e}", file=sys.stderr)
-                failures.append((entry["dept_id"], -1, str(e)))
+                print(f"[POPULATE-SOPS] Spawn error for {dept_id}: {e}", file=sys.stderr)
+                failures.append((dept_id, -1, str(e)))
         else:
             spawn_inline(entry, prompt, model_id, args.timeout, dry_run=args.dry_run)
 
