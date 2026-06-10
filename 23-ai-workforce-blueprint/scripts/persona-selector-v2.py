@@ -26,14 +26,18 @@ Features:
    picking #1. This stops the "Godin every time" failure mode Trevor flagged
    on 2026-05-24. Quality is preserved (top-1 still wins when it dominates
    by ≥1.5x). Disable with `--no-variety` for deterministic debugging.
-8. PRE-SCORING FUNNEL (PRD item 1.1 ports from v1):
+8. PRE-SCORING FUNNEL (PRD item 1.2 — rebuilt funnel; item 1.1 was the port):
    Stage A — governing-personas.md pool (dept pre-qualified list, or all personas).
-   Stage B — DEPT_DOMAIN_TAGS keyword filter (narrows to domain-relevant candidates).
+   Stage B — category-tag filter: persona-categories.json `domain` key (correct key,
+             Defect 1 fix) + infer_task_category derived tags (Defect 3) + _norm_tag
+             normalisation so DEPT_DOMAIN_TAGS and persona domains both use lowercase-
+             hyphenated form before comparison (Defect 2). Never filters to zero.
    Stage C — gemini-search semantic candidate retrieval (top-10, intersected with B).
+             CLI contract fixed to match gemini-search.py: positional query + --limit,
+             stdout text parsed for PERSONA: lines (Defect 4). Never filters to zero.
    Stage D — existing 5-layer scoring on survivors only.
-   Output JSON includes "funnel": {"pool": N, "after_keyword": N, "after_semantic": N}
-   so the dashboard and QC can see the funnel working. Never filters to zero: each
-   stage falls back to the previous stage's output if it would eliminate everything.
+   Output JSON includes "funnel": {"pool": N, "category": N, "semantic": N} (canonical
+   PRD 1.2 keys) so the dashboard and QC can see the funnel working.
 
 Output: JSON with persona_id, persona_name, score, interaction_mode, breakdown,
 and (if hybrid) secondary_persona_*.
@@ -234,36 +238,84 @@ VARIETY_DOMINANCE_RATIO = 1.5  # top-1 must be ≥1.5x top-3 to skip sampling
 VARIETY_SAMPLE_TOP_N = 3       # weighted-sample pool size when sampling
 VARIETY_SAMPLE_SEED_ENV = "PERSONA_VARIETY_SEED"  # set for deterministic tests
 
-# ─── PRE-SCORING FUNNEL (PRD item 1.1 — ported from v1) ──────────────────────
-# Stage A: governing-personas.md → candidate pool
-# Stage B: DEPT_DOMAIN_TAGS keyword filter
+# ─── PRE-SCORING FUNNEL (PRD item 1.2 — rebuilt funnel) ─────────────────────
+# Stage A: governing-personas.md → candidate pool (or all personas fallback)
+# Stage B: category-tag filter using persona-categories.json `domain` key +
+#          infer-task-category.py derived tags (PRD 1.2 Defects 1-3 fixed)
 # Stage C: gemini-search semantic candidate retrieval (top-10 intersected)
+#          called via CLI contract that matches gemini-search.py as it exists:
+#          positional `query` + `--limit` flag, stdout text parsed for PERSONA:
 # Stage D: existing 5-layer scoring on survivors
-# Never filters to zero: fall back to previous stage if intersection is empty.
+# Never filters to zero: each stage falls back to prior stage's output.
+# Output JSON: "funnel": {"pool": N, "category": N, "semantic": N}
+# plus additive diagnostics: pool_source, semantic_engine.
 
+# Department → domain tags. Values use the SAME canonical form as
+# persona-categories.json `domain` values: lowercase, hyphenated.
+# Both sides are routed through _norm_tag() before comparison (Defect 2 guard).
 DEPT_DOMAIN_TAGS = {
-    "marketing": ["Marketing", "Copywriting", "Communication"],
-    "sales": ["Sales", "Communication", "Strategy/Innovation"],
-    "billing": ["Finance", "Operations"],
-    "customer-support": ["Communication", "Operations"],
-    "operations": ["Operations", "Productivity/Systems", "Leadership"],
-    "creative": ["Copywriting", "Communication", "Personal Development"],
-    "hr": ["Leadership", "Communication", "Personal Development"],
-    "legal": ["Operations", "Strategy/Innovation"],
-    "it": ["Operations", "Productivity/Systems"],
-    "web-development": ["Operations", "Productivity/Systems"],
-    "app-development": ["Operations", "Productivity/Systems"],
-    "graphics": ["Copywriting", "Communication"],
-    "video": ["Copywriting", "Communication"],
-    "audio": ["Copywriting", "Communication"],
-    "research": ["Strategy/Innovation", "Productivity/Systems"],
-    "communications": ["Communication", "Copywriting"],
-    "ceo": ["Leadership", "Strategy/Innovation", "Mindset"],
-    "com": ["Leadership", "Strategy/Innovation", "Mindset"],
-    "personal-assistant": ["Communication", "Productivity/Systems", "Operations"],
-    "general-task": ["Leadership", "Strategy/Innovation", "Productivity/Systems"],
-    "project-architecture-office": ["Strategy/Innovation", "Leadership", "Operations"],
+    "marketing": ["marketing", "copywriting", "communication", "sales", "strategy-innovation"],
+    "sales": ["sales", "communication", "strategy-innovation", "marketing"],
+    "billing": ["finance", "operations"],
+    "customer-support": ["communication", "operations", "coaching"],
+    "operations": ["operations", "productivity-systems", "leadership", "strategy-innovation"],
+    "creative": ["copywriting", "communication", "personal-development", "marketing"],
+    "hr": ["leadership", "communication", "personal-development", "coaching"],
+    "legal": ["operations", "strategy-innovation", "leadership"],
+    "it": ["operations", "productivity-systems"],
+    "web-development": ["operations", "productivity-systems"],
+    "app-development": ["operations", "productivity-systems"],
+    "graphics": ["copywriting", "communication", "marketing"],
+    "video": ["copywriting", "communication", "marketing"],
+    "audio": ["copywriting", "communication", "marketing"],
+    "research": ["strategy-innovation", "productivity-systems", "operations"],
+    "communications": ["communication", "copywriting", "marketing"],
+    "ceo": ["leadership", "strategy-innovation", "mindset", "operations"],
+    "com": ["leadership", "strategy-innovation", "mindset"],
+    "personal-assistant": ["communication", "productivity-systems", "operations"],
+    "general-task": ["leadership", "strategy-innovation", "productivity-systems"],
+    "project-architecture-office": ["strategy-innovation", "leadership", "operations"],
 }
+
+# Maps infer-task-category.py category slugs → set of persona domain tags.
+# Only maps to domains that ACTUALLY EXIST in persona-categories.json:
+#   coaching, communication, copywriting, finance, leadership, marketing,
+#   mindset, operations, personal-development, productivity-systems,
+#   sales, strategy-innovation
+# "general" intentionally maps to empty set — contributes nothing so Stage B
+# keys solely off department tags (the stub infer_task_category path is safe).
+_CATEGORY_DOMAINS: dict = {
+    "email-outreach":   {"marketing", "copywriting", "communication"},
+    "social-post":      {"marketing", "copywriting", "communication"},
+    "content-write":    {"copywriting", "communication"},
+    "video-script":     {"copywriting", "marketing", "communication"},
+    "research":         {"strategy-innovation", "productivity-systems"},
+    "strategy":         {"strategy-innovation", "leadership", "operations"},
+    "design":           {"copywriting", "strategy-innovation"},  # no "design" domain exists
+    "ops":              {"operations", "productivity-systems"},
+    "finance":          {"finance", "operations"},
+    "legal":            {"leadership", "strategy-innovation"},
+    "hr":               {"leadership", "communication", "personal-development"},
+    "customer-service": {"communication", "coaching"},
+    "coaching-prompt":  {"coaching", "mindset", "personal-development"},
+    "review-feedback":  {"communication", "coaching"},
+    "general":          set(),  # empty: contributes nothing; dept tags carry Stage B alone
+}
+
+
+def _norm_tag(s: str) -> str:
+    """Normalize a domain tag to lowercase-hyphenated form.
+
+    Fixes Defect 2: DEPT_DOMAIN_TAGS had Title-Case/slash form (e.g.
+    "Strategy/Innovation", "Productivity/Systems") while persona-categories.json
+    stores "strategy-innovation", "productivity-systems".  Routing BOTH sides
+    through this function ensures set-intersection works.  Centralised here so
+    a future vocabulary change only requires editing one place.
+    """
+    import re as _re
+    s = s.lower()
+    s = _re.sub(r"[/ _]+", "-", s)
+    return s.strip("-")
 
 # Gemini-search script candidate locations (checked in order)
 _GEMINI_SEARCH_CANDIDATES = [
@@ -286,7 +338,15 @@ def _load_governing_personas(paths: dict, department: str) -> "list | None":
     """
     Stage A: load governing-personas.md for the department and return the
     pre-qualified persona ID list. Returns None when the file is absent
-    (caller falls back to full library).
+    (caller falls back to full library — never-to-zero).
+
+    Parser notes:
+    - create_role_workspaces.py writes backtick-wrapped IDs in a markdown table
+      (e.g. `bly-copywriters-handbook`) — caught by the ID regex below.
+    - generate-governing-personas.sh writes author NAMES, not IDs, in the
+      "## Available Persona Pool" section; these do NOT match the ID regex, so
+      the shell-generated stub legitimately yields None → "all personas" fallback.
+      Do NOT expand the regex to match author names — that would produce garbage.
     """
     import re as _re
     company_root = paths.get("company_root")
@@ -308,45 +368,105 @@ def _load_governing_personas(paths: dict, department: str) -> "list | None":
     return None
 
 
-def _dept_keyword_filter(candidates: list, department: str, categories_data: dict) -> list:
+def _category_filter(candidates: list, department: str, task_text: str,
+                     categories_data: dict) -> list:
     """
-    Stage B: narrow candidates to those whose domain_tags intersect the
-    department's tags. Falls back to the full input list if nothing matches
-    (never filters to zero).
+    Stage B (PRD item 1.2): narrow candidates to those whose domain tags
+    intersect the combined department + task-derived domain tag set.
+
+    Fixes three defects from the prior _dept_keyword_filter() implementation:
+      Defect 1 — reads correct key: `domain` (not `domain_tags`/`tags`)
+      Defect 2 — normalises both sides via _norm_tag() before intersection
+                 (DEPT_DOMAIN_TAGS had Title-Case/slash; personas have lowercase-hyphen)
+      Defect 3 — adds task-derived domains from infer_task_category() to the
+                 filter set so a finance task in a marketing dept still surfaces
+                 finance-aligned personas
+
+    Never-to-zero: returns `candidates` unchanged when:
+      - categories_data is empty (fresh install, Skill 22 hasn't run)
+      - filter_tags is empty (no dept entry + general task category)
+      - intersection is empty (no persona matches the combined tags)
     """
-    dept_tags = set(DEPT_DOMAIN_TAGS.get(department, []))
-    if not dept_tags or not categories_data:
-        return candidates
+    if not categories_data:
+        return candidates  # never-to-zero: Skill 22 not yet run
+
+    # Build normalised department tag set
+    raw_dept_tags = DEPT_DOMAIN_TAGS.get(department, [])
+    dept_tags = {_norm_tag(t) for t in raw_dept_tags}
+
+    # Add task-category-derived domain tags (Defect 3)
+    task_cat = infer_task_category(task_text)  # "general" when stub active
+    task_tags = _CATEGORY_DOMAINS.get(task_cat, set())
+    filter_tags = dept_tags | task_tags
+
+    if not filter_tags:
+        return candidates  # never-to-zero: no tags to filter by
+
     personas_data = categories_data.get("personas", {}) or categories_data
     filtered = []
     for c in candidates:
         info = personas_data.get(c, {})
-        ptags = set(info.get("domain_tags", []) or info.get("tags", []))
-        if ptags & dept_tags:
+        # Primary key: `domain` (Defect 1 fix). Fallback keys kept so a future
+        # schema change producing domain_tags/tags still works; primary wins.
+        # IMPORTANT: do NOT change persona-categories.json to add domain_tags —
+        # fixing Defect 1 is selector-side only (see PRD 1.2 risk note §7.9).
+        raw_ptags = (info.get("domain") or info.get("domain_tags") or info.get("tags") or [])
+        ptags = {_norm_tag(t) for t in raw_ptags}
+        if ptags & filter_tags:
             filtered.append(c)
     return filtered if filtered else candidates  # never-to-zero guard
 
 
 def _semantic_candidate_retrieval(task_text: str, top_k: int = 10) -> "list | None":
     """
-    Stage C: call gemini-search.py for the coaching-personas collection and
-    return a list of persona IDs, or None if the search engine is unavailable.
+    Stage C: call gemini-search.py and return an ordered list of persona IDs,
+    or None if the search engine is unavailable/errors.
+
+    CLI contract matched to gemini-search.py as it exists (PRD item 1.2 Defect 4
+    fix).  The prior call used --collection/--query/--top-k/--format=json which
+    do NOT exist in gemini-search.py argparse → returncode != 0 → Stage C was
+    always dark.
+
+    Correct contract:
+      argv: [python3, gemini-search.py, "--", task_text, "--limit", N]
+      stdout: human text; both semantic and keyword-fallback paths print
+              "PERSONA: <id>" on each result line — one regex catches both:
+                [N] SCORE: 0.83 | PERSONA: hormozi-100m-offers
+                [N] KEYWORD-HITS: 4 | PERSONA: bly-copywriters-handbook
+      The "--" before task_text guards against task descriptions that begin
+      with "-" being parsed by argparse as flags.
+
+    NOTE: item 1.8 will replace this subprocess call with the shared
+    embedding_engine.semantic_persona_ids() programmatic API.  Keep ALL
+    the call contract isolated inside this one function body so that swap
+    only touches here.
+
+    ID-convention note: the index stores persona FOLDER names as IDs (e.g.
+    "hormozi-100m-offers").  These are the same IDs used as keys in
+    persona-categories.json, so Stage C's intersection with pool_b self-heals
+    naming mismatches via never-to-zero (empty intersection → keep pool_b).
     """
+    import re as _re
     import subprocess as _subprocess
     sp = _find_gemini_search()
     if not sp:
         return None
     try:
         r = _subprocess.run(
-            [sys.executable, str(sp), "--collection", "coaching-personas",
-             "--query", task_text, "--top-k", str(top_k), "--format", "json"],
+            [sys.executable, str(sp), "--", task_text, "--limit", str(top_k)],
             capture_output=True, text=True, timeout=20,
         )
         if r.returncode != 0:
             return None
-        data = json.loads(r.stdout)
-        # Shape: [{"id": "hormozi-100m-offers", "score": 0.83, ...}, ...]
-        return [item.get("id", "") for item in data if item.get("id")]
+        # Parse "PERSONA: <id>" from both embedding and keyword-fallback output.
+        ids: list = []
+        seen: set = set()
+        for m in _re.finditer(r"PERSONA:\s*(\S+)", r.stdout):
+            pid = m.group(1).strip()
+            if pid and pid not in seen:
+                seen.add(pid)
+                ids.append(pid)
+        return ids if ids else None
     except Exception:
         return None
 
@@ -356,12 +476,24 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
     """
     Run the three-stage pre-scoring funnel and return (candidate_list, funnel_dict).
 
+    Safety invariant: each stage count is >= 1 whenever all_personas is non-empty,
+    and counts are monotonically non-increasing (pool >= category >= semantic)
+    because every stage is a filter-or-fallback, never a strict reduction.
+    The no-personas case is handled upstream at select_persona() line ~1055.
+
     Stage A: governing-personas.md pool, or all_personas if absent.
-    Stage B: DEPT_DOMAIN_TAGS keyword filter.
+    Stage B: category-tag filter (persona-categories.json `domain` key +
+             infer_task_category derived tags). Never-to-zero.
     Stage C: gemini-search semantic retrieval — intersect with Stage B result.
              If intersection is empty, keep Stage B result (never-to-zero).
 
-    funnel_dict records counts at each stage for output JSON observability.
+    funnel_dict canonical keys (PRD 1.2 contract):
+      pool     — Stage A count  (governing pool or full library)
+      category — Stage B count  (after category-tag filter)
+      semantic — Stage C count  (after semantic intersection)
+    Plus additive diagnostics (dashboard use, not canonical):
+      pool_source    — "governing-personas.md" | "all (no governing-personas.md)"
+      semantic_engine — "gemini-search" | "unavailable (fallback to Stage B)"
     """
     # Load persona-categories.json for Stage B
     pc_file = paths.get("persona_categories")
@@ -372,7 +504,7 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
         except Exception:
             categories_data = {}
 
-    # Stage A
+    # Stage A — governing pool or full library (never-to-zero)
     governing = _load_governing_personas(paths, department)
     if governing:
         pool_a = [p for p in governing if p in all_personas]
@@ -381,27 +513,28 @@ def build_candidate_pool(task_text: str, department: str, all_personas: list,
         pool_note = "governing-personas.md"
     else:
         pool_a = list(all_personas)
-        pool_note = "all (no governing-personas.md)"
+        pool_note = "all (no governing-personas.md)"  # PRD literal — dashboard greps for this
 
-    # Stage B
-    pool_b = _dept_keyword_filter(pool_a, department, categories_data)
+    # Stage B — category-tag filter (Defects 1-3 fixed; task_text feeds infer_task_category)
+    pool_b = _category_filter(pool_a, department, task_text, categories_data)
 
-    # Stage C
+    # Stage C — semantic retrieval (Defect 4 fixed: correct CLI contract)
     semantic_ids = _semantic_candidate_retrieval(task_text, top_k=10)
     if semantic_ids:
         semantic_set = set(semantic_ids)
         intersection = [p for p in pool_b if p in semantic_set]
-        pool_c = intersection if intersection else pool_b
+        pool_c = intersection if intersection else pool_b  # never-to-zero
         semantic_note = "gemini-search"
     else:
         pool_c = pool_b
         semantic_note = "unavailable (fallback to Stage B)"
 
+    # Emit canonical 3 keys (PRD 1.2 §3 output contract) + 2 additive diagnostics
     funnel = {
         "pool": len(pool_a),
+        "category": len(pool_b),
+        "semantic": len(pool_c),
         "pool_source": pool_note,
-        "after_keyword": len(pool_b),
-        "after_semantic": len(pool_c),
         "semantic_engine": semantic_note,
     }
     return pool_c, funnel
@@ -1059,7 +1192,7 @@ def select_persona(task: str, department: str, mode: str, weights: dict,
             "warning": "NO_PERSONAS_AVAILABLE",
             "message": "Run Skill 22 on at least one book to activate persona-guided work.",
             "mode": mode,
-            "funnel": {"pool": 0, "after_keyword": 0, "after_semantic": 0},
+            "funnel": {"pool": 0, "category": 0, "semantic": 0},
         }
 
     # Stages A-C: build candidate pool via funnel
