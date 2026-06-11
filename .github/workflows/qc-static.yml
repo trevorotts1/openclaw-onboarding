@@ -1569,6 +1569,7 @@ jobs:
       #   23-ai-workforce-blueprint/scripts/backfill-build-state.py
       #   23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py
       #   23-ai-workforce-blueprint/scripts/persona-selector-v2.py
+      #   23-ai-workforce-blueprint/scripts/_qc_company_info.py   [v11.18.4 bash-3.2 extraction]
       #   22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py
       #   shared-utils/key_resolver.py
       #   shared-utils/api_key_utils.py
@@ -1596,6 +1597,11 @@ jobs:
               "23-ai-workforce-blueprint/scripts/backfill-build-state.py",
               "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
               "23-ai-workforce-blueprint/scripts/persona-selector-v2.py",
+              # v11.18.4: byte-equivalent ~/clawd fallback loop extracted out of
+              # qc-completeness.sh's inline resolver heredoc (bash-3.2 fix). Same
+              # legacy loop as the rest of this list — calls get_openclaw_paths()
+              # first, the ~/clawd scan is only a non-standard-layout fallback.
+              "23-ai-workforce-blueprint/scripts/_qc_company_info.py",
               # 22-book-to-persona
               "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
               # shared-utils
@@ -1708,6 +1714,7 @@ jobs:
               "23-ai-workforce-blueprint/scripts/backfill-build-state.py",
               "23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py",
               "23-ai-workforce-blueprint/scripts/persona-selector-v2.py",
+              "23-ai-workforce-blueprint/scripts/_qc_company_info.py",
               "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
               "shared-utils/key_resolver.py",
               "shared-utils/api_key_utils.py",

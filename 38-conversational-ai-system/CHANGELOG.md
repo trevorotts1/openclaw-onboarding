@@ -1,3 +1,22 @@
+## [1.7.1] - 2026-06-11 — wire.sh stock-bash-3.2 compatibility (externalize python-in-$() heredocs)
+
+### Fixed
+- **`wire.sh` could not PARSE on stock macOS `/bin/bash` 3.2.57.** The M3 Rules-15/16
+  migration runner embedded two `python3 - "$X" <<PYEOF ... PYEOF` heredocs INSIDE `$()`
+  command substitutions. bash 3.2 mis-counts the double-quotes inside a heredoc nested in
+  a `$()` and aborts the WHOLE script with `unexpected EOF while looking for matching "`
+  at PARSE time — so on every client Mac WITHOUT Homebrew bash, `update-skills.sh`'s
+  auto-invocation of `wire.sh` (it runs `$SKILL_DIR/wire.sh` first on each update) silently
+  failed and the live MEMORY.md/AGENTS.md Rules 15/16 rewrite never applied. Same root-cause
+  class as the qc-completeness.sh v11.18.4 fix.
+
+### Changed
+- Externalized the two heredoc bodies to sibling files `_wire_rules_15_16.py` (MEMORY.md
+  Rules 15/16 rewrite) and `_wire_agents_ghl_note.py` (AGENTS.md GHL build-path note),
+  invoked as `python3 "$SCRIPT_DIR/<file>" "$TARGET_MD"`. Logic byte-equivalent. `wire.sh`
+  now resolves `SCRIPT_DIR` and is `bash -n` clean on both bash 3.2.57 and bash 5.x.
+  Verified live: full M3 run + idempotent re-skip on stock `/bin/bash` 3.2 with fixtures.
+
 ## [1.7.0] - 2026-06-11 — CAF-first workflow build (Option 1 primary); Build-with-AI demoted to fallback; human=final verifier; +GHL_AI_LAYERS.md
 
 ### Why

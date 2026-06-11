@@ -8,6 +8,15 @@
 #   - The success marker is written LAST and ONLY after verified replacements.
 set -euo pipefail
 
+# STOCK-BASH-3.2 COMPATIBILITY: the two MEMORY.md / AGENTS.md rewrite snippets
+# (formerly inline `python3 - "$X" <<PYEOF ... PYEOF` heredocs inside $()) are
+# shipped as the sibling _wire_rules_15_16.py / _wire_agents_ghl_note.py. Stock
+# macOS /bin/bash 3.2.57 mis-parses a heredoc nested in a $() — it counts the
+# double-quotes inside the Python and aborts the whole script with `unexpected
+# EOF while looking for matching "` at PARSE time, so wire.sh failed to run on
+# every no-Homebrew client Mac. Resolve the script's own dir to find the siblings.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
 SKILL_VERSION="1.6.0"
 WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
 ISO=$(date -u +%Y%m%dT%H%M%SZ)
@@ -40,58 +49,7 @@ restore_and_fail() {
 # ── Rewrite Rules 15/16 in MEMORY.md ─────────────────────────────────────────
 MEMORY_M3_OK=0
 if [ -f "$MEMORY_MD" ] && grep -q 'skill-38 builder-design-rules' "$MEMORY_MD" 2>/dev/null; then
-  PYOUT=$(python3 - "$MEMORY_MD" <<'PYEOF'
-import sys, pathlib, re
-
-path = pathlib.Path(sys.argv[1])
-text = path.read_text(encoding='utf-8')
-
-# Rule 15: match on "15." + any header text ending the line, then the rule body
-# which may be indented with any amount of whitespace (not just 4 spaces).
-# Also matches the forbidding phrase to catch variant indent styles.
-r15_old = re.compile(
-    r'15\. (?:Terminology Rule|Build-Routing Rule)[^\n]*\n'
-    r'(?:[ \t]+[^\n]*\n)*',
-    re.MULTILINE
-)
-r15_new = (
-    '15. Build-Routing Rule — when the operator says "build me a workflow / playbook /\n'
-    '    funnel," route by node type. A workflow WITH a conversational node -> skill 44\n'
-    '    builds the structure and AUTO-INVOKES skill 38 for the brain in the SAME run\n'
-    '    (THE TRINITY: GHL automation + communications playbook + workflow-AI prompt\n'
-    '    ship together or it is NOT registered). A PURELY MECHANICAL workflow (no\n'
-    '    conversational node) builds standalone via skill 41\'s structure + 12-point\n'
-    '    checklist. (Supersedes the legacy "always Step 9.20" routing.)\n'
-)
-text, n15 = re.subn(r15_old, r15_new, text, count=1)
-
-# Rule 16: match on "16." + any header text ending the line, then body lines
-r16_old = re.compile(
-    r'16\. (?:No-GHL-API Rule|Convert-and-Flow Build-Path Rule)[^\n]*\n'
-    r'(?:[ \t]+[^\n]*\n)*',
-    re.MULTILINE
-)
-r16_new = (
-    '16. Convert-and-Flow Build-Path Rule — GHL Automations have no PUBLIC API or MCP.\n'
-    '    The Build with AI button is the public path. Skill 44 provides an internal-API\n'
-    '    build path when the client\'s Firebase token is present; when absent, Build with\n'
-    '    AI remains the only path. (Never claim a PUBLIC GHL Automations API exists.)\n'
-)
-text, n16 = re.subn(r16_old, r16_new, text, count=1)
-
-# Also wipe any surviving old wording lines (belt + suspenders, within the
-# builder-design-rules block only — avoid touching CHANGELOG).
-old_wording_re = re.compile(
-    r'^([ \t]*)(?:NO API and NO MCP|NEVER write or claim code that ["“]calls the GHL Automations API["”])[^\n]*\n',
-    re.MULTILINE
-)
-text, n_old = re.subn(old_wording_re, '', text)
-
-path.write_text(text, encoding='utf-8')
-# Print machine-readable counts for the shell to parse
-print(f"n15={n15} n16={n16} n_old_wiped={n_old}")
-PYEOF
-  )
+  PYOUT=$(python3 "$SCRIPT_DIR/_wire_rules_15_16.py" "$MEMORY_MD")
   echo "MEMORY.md python output: $PYOUT"
   N15=$(echo "$PYOUT" | python3 -c "import sys,re; m=re.search(r'n15=(\d+)',sys.stdin.read()); print(m.group(1) if m else '0')")
   N16=$(echo "$PYOUT" | python3 -c "import sys,re; m=re.search(r'n16=(\d+)',sys.stdin.read()); print(m.group(1) if m else '0')")
@@ -110,32 +68,7 @@ fi
 # ── Rewrite GHL note in AGENTS.md ────────────────────────────────────────────
 AGENTS_M3_OK=0
 if [ -f "$AGENTS_MD" ] && grep -q 'STEP_1_85_WORKFLOW_BUILDER_TRIGGERS' "$AGENTS_MD" 2>/dev/null; then
-  PYOUT_A=$(python3 - "$AGENTS_MD" <<'PYEOF'
-import sys, pathlib, re
-
-path = pathlib.Path(sys.argv[1])
-text = path.read_text(encoding='utf-8')
-
-# Match the old GHL note (any variant) including multi-line quoted paste instruction
-old_note = re.compile(
-    r'GHL (?:note|build-path note): [^\n]*\n'
-    r'(?:[ \t]*"?[^\n]*\n)*?'          # quoted body lines
-    r'(?:[ \t]*[^\n]*paste[^\n]*\n)*',  # paste-instruction lines
-    re.MULTILINE
-)
-new_note = (
-    'GHL build-path note: GHL Automations have no PUBLIC API or MCP. The Build with AI\n'
-    'button is the public path. Skill 44 (convert-and-flow-operator) provides an\n'
-    'internal-API build path when the client\'s Firebase token is present; when absent,\n'
-    'Build with AI remains the only path (the agent generates the prompt, the operator\n'
-    'clicks + pastes; the prompt nails the SHAPE, the operator pastes tokens after —\n'
-    'always ship the verification checklist).\n'
-)
-text, n = re.subn(old_note, new_note, text, count=1)
-path.write_text(text, encoding='utf-8')
-print(f"n={n}")
-PYEOF
-  )
+  PYOUT_A=$(python3 "$SCRIPT_DIR/_wire_agents_ghl_note.py" "$AGENTS_MD")
   echo "AGENTS.md python output: $PYOUT_A"
   N_A=$(echo "$PYOUT_A" | python3 -c "import sys,re; m=re.search(r'n=(\d+)',sys.stdin.read()); print(m.group(1) if m else '0')")
   if [ "$N_A" -gt 0 ]; then
