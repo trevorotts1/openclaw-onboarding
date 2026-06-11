@@ -1,3 +1,26 @@
+## [v11.16.0]  -  2026-06-11  -  feat(B.6): embedding-health check — all 3 indexes, 3 legs, Ollama-Cloud hard rule, N32, Sunday cron + Wave-5 wiring
+
+### Changes
+- `shared-utils/embedding_health.py` NEW — canonical B.6 per-box embedding health check.
+  Covers all 3 indexes × 3 legs: (a) provider capable + key + smoke embed,
+  (b) stamped provider/model/dim matches config (FLAG RE-INDEX on mismatch),
+  (c) generative provider never assumed to embed.
+  Ollama Cloud hard rule: NEVER embedding-capable.
+  Also verifies memorySearch fallback (PRD 2.6).
+  Standalone: `python3 shared-utils/embedding_health.py --json`
+- `shared-utils/fleet_refresh_runner.py` — adds `step_embedding_health()` (Step 8, always
+  runs read-only in every mode: apply, dry-run, verify-only).
+- `scripts/fleet-refresh.sh` — fleet summary line now shows `embed=PASS/FAIL/WARN` per box.
+- `AGENTS.md` — N32 added to canonical index (table row + full detailed section):
+  "A model-provider change is NOT complete until embedding-health passes on the box."
+
+### Verify scenarios
+- Ollama-Cloud-only box: embedding-health fails all 3 indexes at leg-a with the hard-rule message.
+- Adding GOOGLE_API_KEY to an Ollama-Cloud box: persona_gemini leg-a passes (Google smoke OK).
+- Stamped-Gemini index queried under OpenAI-only config: leg-b flags RE-INDEX, not pass.
+- PRD 2.6 fallback absent: warning surfaced in result.warnings.
+- Fleet summary: embed column present on every box line.
+
 ## [v11.15.0]  -  2026-06-11  -  Wave-5 CC rewire: atomic-deploy.sh, duck-CI gate B.3, exit-3 UNKNOWN contract, false-green fix
 
 ## [v11.14.0]  -  2026-06-10  -  feat(wave5-preflight): fail-closed B.1+B.2 safety gate blocks Wave-5 CC deploy

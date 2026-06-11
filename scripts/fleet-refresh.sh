@@ -418,6 +418,17 @@ for box in "${FINAL_BOXES[@]}"; do
   loaded=$(echo "$box_result" | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('loaded',{}); print('YES' if l.get('present') else 'NO')")
   confidence=$(echo "$box_result" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('loaded',{}).get('loaded_confidence','?'))")
   errors=$(echo "$box_result" | python3 -c "import json,sys; d=json.load(sys.stdin); errs=d.get('errors',[]); print('; '.join(errs[:2]) if errs else '')")
+  # B.6: embedding-health outcome (extracted from steps dict)
+  emb_health=$(echo "$box_result" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+v=d.get('steps',{}).get('embedding-health','not-run')
+if v=='pass': print('PASS')
+elif v is None or v=='not-run': print('NOT-RUN')
+elif str(v).startswith('warn:'): print('WARN')
+elif str(v).startswith('failed:'): print('FAIL')
+else: print(str(v)[:16])
+" 2>/dev/null || echo "?")
 
   case "$result_val" in
     ok)      icon="✓" ;;
@@ -443,7 +454,7 @@ print('yes' if any('[exit-3]' in str(v) for v in steps.values()) else 'no')
     *)       icon="✗"; ANY_FAILED=1; ALL_OK=0 ;;
   esac
 
-  echo "[fleet-refresh]   $icon  $box  [result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)]"
+  echo "[fleet-refresh]   $icon  $box  [result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health]"
   [ -n "$errors" ] && echo "[fleet-refresh]        ERRORS: $errors"
 
   # Accumulate into fleet summary JSON
