@@ -1,5 +1,28 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.10] - 2026-06-11 — docs: world-first "just by talking" hype in owner-facing copy
+
+Docs-only release. No engine, wrapper, or CLI behaviour changed (CLI stays `2.1.1`). Per the
+repo G3 guard (any change inside a skill folder requires a `skill-version.txt` bump), the
+skill version moves `1.0.9` -> `1.0.10` to carry the copy update with the skill payload.
+
+### Changed
+- **`references/fleet-announcement-template.md`** — MESSAGE 1 of the canonical 3-message
+  template: same structure (🎉 congrats → what it unlocks → one final 5-min token setup →
+  next two messages → reach Trevor), but the "what it unlocks" middle now leads with the
+  fact the owner builds workflows **just by talking** to [AGENT_NAME] (plain chat message →
+  draft to review; no clicking, no tech setup, no tutorials) and states plainly that this is
+  the **only system in the world** that can do this right now, installed on the owner's own
+  setup. Placeholders `[OWNER_NAME]` / `[AGENT_NAME]` unchanged.
+- **`references/owner-token-grabber-guide.md`** — the "What this unlocks for you" intro now
+  weaves in the same two beats (build automations **just by talking** + **only system in the
+  world** that does this right now). The 8 setup steps and the FOR THE AGENT wiring section
+  are untouched.
+
+### Not changed
+- Engine (`2.1.1`), wrapper, CLI surface, write-safety posture, the token-setup steps, and
+  all tests are untouched. This release ships owner-facing copy only.
+
 ## [1.0.9] - 2026-06-11 — docs: standardized fleet announcement template + send runbook
 
 Docs-only release. No engine or wrapper behaviour changed; the CLI version stays `2.1.1`.
