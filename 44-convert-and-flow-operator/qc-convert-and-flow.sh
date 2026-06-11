@@ -116,8 +116,14 @@ assert "INSTALL.md documents write-safety default (GOHIGHLEVEL_DRAFT_ONLY)" \
   "grep -q 'GOHIGHLEVEL_DRAFT_ONLY' \"$SKILL44_DIR/INSTALL.md\""
 assert "engine caf wrapper auto-seeds CAF_ALLOWED_LOCATION_IDS from GOHIGHLEVEL_LOCATION_ID" \
   "grep -q 'CAF_ALLOWED_LOCATION_IDS.*GHL_LOCATION_ID\|GHL_LOCATION_ID.*CAF_ALLOWED_LOCATION_IDS\|_caf_allowed_raw' \"$SKILL44_DIR/tools/engine/caf\""
-assert "INSTALL.md Action 3 wrapper auto-seeds GHL_ALLOWED_LOCATION_IDS from GHL_LOCATION_ID" \
-  "grep -q '_caf_allowed_raw' \"$SKILL44_DIR/INSTALL.md\""
+# NOTE (v1.0.9): the single-source refactor (1.0.6 / PR #167) removed the inline
+# wrapper heredoc from INSTALL.md, so `_caf_allowed_raw` no longer lives in the doc
+# — it lives in the committed `tools/engine/caf` wrapper (asserted on line above).
+# This assertion now verifies INSTALL.md DOCUMENTS the whitelist auto-seed behavior
+# (the "Write-location whitelist auto-seed" note) rather than greppng for a token
+# the refactor intentionally deleted.
+assert "INSTALL.md documents the CAF_ALLOWED_LOCATION_IDS whitelist auto-seed behavior" \
+  "grep -q 'CAF_ALLOWED_LOCATION_IDS' \"$SKILL44_DIR/INSTALL.md\" && grep -qi 'auto-seed\|seeds the whitelist' \"$SKILL44_DIR/INSTALL.md\""
 assert "INSTALL.md wires GOHIGHLEVEL_ALLOWED_LOCATION_IDS at install (Action 5)" \
   "grep -q 'GOHIGHLEVEL_ALLOWED_LOCATION_IDS' \"$SKILL44_DIR/INSTALL.md\""
 assert "convertandflow + ghl wrappers also auto-seed CAF_ALLOWED_LOCATION_IDS" \
@@ -160,6 +166,37 @@ assert "INSTALL.md contains CORE_UPDATES auto-apply action (Action 7)" \
   "grep -q 'skill:44-convert-and-flow-operator:core-update-applied' \"$SKILL44_DIR/INSTALL.md\""
 assert "INSTALL.md Action 3 uses cp (single-source wrapper, no inline heredoc)" \
   "grep -q 'cp.*tools/engine/caf.*CAF_DIR\|cp.*engine.*caf' \"$SKILL44_DIR/INSTALL.md\""
+# v1.0.9 — GHL env-wiring + fail-loud live verify (Evelyn VPS bug reproduction)
+assert "wire-ghl-env.sh present (single-source GHL env wiring)" \
+  "[ -f \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" ]"
+assert "verify-ghl-live.sh present (fail-loud post-install verify gate)" \
+  "[ -f \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\" ]"
+assert "wire-ghl-env.sh has JSON deep-merge fallback (config-set-rejects-nested-key path)" \
+  "grep -q 'JSON deep-merge fallback' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
+assert "wire-ghl-env.sh wires all 5 canonical GHL vars" \
+  "for v in GOHIGHLEVEL_API_KEY GOHIGHLEVEL_LOCATION_ID GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN GOHIGHLEVEL_ALLOWED_LOCATION_IDS GOHIGHLEVEL_DRAFT_ONLY; do grep -q \"wire_var \$v\" \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" || exit 1; done"
+assert "wire-ghl-env.sh replaces empty docker env_file placeholders in place (VPS)" \
+  "grep -q 'removing empty placeholder' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" && grep -q 'replacing existing' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
+assert "wire-ghl-env.sh does NOT restart the gateway on Mac (rescue-Mac rule)" \
+  "grep -qi 'NOT restarting the gateway' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
+assert "verify-ghl-live.sh runs a real read (workflows + contacts PIT-only fallback)" \
+  "grep -q 'workflows list' \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\" && grep -q 'contacts list' \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\""
+assert "verify-ghl-live.sh is fail-loud (exit 1) + has missing-prereqs (exit 2) path" \
+  "grep -q 'exit 1' \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\" && grep -q 'exit 2' \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\""
+assert "verify-ghl-live.sh does NOT hand-source secrets/.env (inherited env only)" \
+  "! grep -qE '^[[:space:]]*source .*secrets/\\.env' \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\""
+assert "INSTALL.md Action 5 calls wire-ghl-env.sh (single-source env wiring)" \
+  "grep -q 'wire-ghl-env.sh' \"$SKILL44_DIR/INSTALL.md\""
+assert "INSTALL.md Action 6b runs the fail-loud verify gate (verify-ghl-live.sh)" \
+  "grep -q 'verify-ghl-live.sh' \"$SKILL44_DIR/INSTALL.md\""
+assert "INSTALL.md handles installed-with-missing-prereqs (no fabricated success)" \
+  "grep -qi 'installed-with-missing-prereqs' \"$SKILL44_DIR/INSTALL.md\""
+
+# v1.0.9 — live-box: prove the wired env is actually inherited + caf reaches GHL.
+live_assert "GOHIGHLEVEL_LOCATION_ID present in openclaw.json env.vars (gateway-inherited)" \
+  "openclaw config get env.vars.GOHIGHLEVEL_LOCATION_ID >/dev/null 2>&1"
+live_assert "verify-ghl-live.sh exits 0 (caf reaches GHL) or 2 (missing-prereqs) — never 1" \
+  "bash \"$CAF_DIR/engine/verify-ghl-live.sh\" >/dev/null 2>&1; rc=\$?; [ \"\$rc\" -eq 0 ] || [ \"\$rc\" -eq 2 ]"
 
 # ── Section A: Installation (live-box only) ───────────────────────────────────
 echo ""

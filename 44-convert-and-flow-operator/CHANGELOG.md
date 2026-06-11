@@ -1,5 +1,70 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.11] - 2026-06-11 — fix: wire GHL creds into gateway-inherited env + fail-loud live verify (Evelyn VPS reproduction)
+
+### Fixed (install env-wiring gap — root cause of caf dying on a "successful" install)
+- **Creds landed only where the gateway process never reads them.** The installer
+  left `GOHIGHLEVEL_*` in `~/.openclaw/secrets/.env` — a file the OpenClaw
+  gateway/agent **process never loads.** When the agent invoked `caf`, the
+  gateway's process env had no `GOHIGHLEVEL_LOCATION_ID`, so the engine died at
+  `Error: GHL_LOCATION_ID environment variable is not set.` while the install had
+  already reported success. **Reproduced live on Evelyn's VPS, 2026-06-11.**
+- **Empty docker `env_file` placeholders masked everything (VPS).** The Hostinger
+  compose `env_file` (`/docker/<project>/.env`) carried empty placeholder lines
+  (`GOHIGHLEVEL_API_KEY=` with no value, no FIREBASE line). docker-compose injects
+  an empty `env_file` value as an **empty string** into the container process env,
+  and an empty string still wins against the secrets file for any consumer that
+  reads `os.environ` — so it masked the real value even after it was added
+  elsewhere. Empty placeholders are now **replaced in place**, never appended-after.
+
+### Added (`tools/engine/wire-ghl-env.sh` — single-source env wiring)
+- Wires all **5** canonical vars (`GOHIGHLEVEL_API_KEY`, `GOHIGHLEVEL_LOCATION_ID`,
+  `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`, `GOHIGHLEVEL_ALLOWED_LOCATION_IDS`,
+  `GOHIGHLEVEL_DRAFT_ONLY`) into `openclaw.json` `env.vars` — the block the gateway
+  inherits at process start. Tries `openclaw config set` first; **falls back to a
+  direct JSON deep-merge** into `openclaw.json` when `config set` rejects the
+  nested key (the supported pattern on OpenClaw 2026.5.20+, same as
+  `31-upgraded-memory-system/scripts/activate-memory-stack.sh`).
+- **VPS:** ALSO populates the host `/docker/<project>/.env`, REPLACING empty
+  `GOHIGHLEVEL_*=` placeholder lines in place (with a logged note on why empty
+  placeholders mask). Auto-finds the OpenClaw project under `/docker`; skipped
+  cleanly when `/docker` is not visible (inside the container).
+- **Mac:** wires `env.vars` but does NOT restart the gateway (rescue-Mac rule);
+  documents that a `launchctl kickstart` may be needed for full inheritance.
+- Exit 2 (required var absent everywhere) lets the caller mark the skill
+  installed-with-missing-prereqs and list exactly which vars — never a fabricated
+  success.
+
+### Added (`tools/engine/verify-ghl-live.sh` — fail-loud post-install verify gate)
+- Runs a **real read** against GHL using **ONLY the inherited process env** (no
+  manual secrets sourcing — reproduces exactly what the gateway/agent process
+  sees): `caf workflows list`, falling back to `caf contacts list --limit 1`
+  (PIT-only, since workflow reads can legitimately fail without the Firebase
+  token). **FAILS LOUDLY (exit 1)** if creds are present but caf can't reach GHL
+  (the Evelyn failure mode). Exit 2 = installed-with-missing-prereqs (lists the
+  vars). Exit 0 = live-verified. The install path NEVER reports skill-44 success
+  on exit 1.
+
+### Wired into both install paths
+- **`INSTALL.md` Action 5** rewritten to call `wire-ghl-env.sh` (single source, no
+  inline `config set` drift); **new Action 6b** runs the fail-loud verify gate;
+  Action 2 chmods the two new scripts; "Done When" updated.
+- **Root `install.sh` Step 14e** (`install_skill_44_convert_and_flow_operator_env`)
+  runs both scripts as part of the orchestrated install, with the same
+  fail-loud / missing-prereqs semantics.
+
+### Added (CI + QC)
+- `.github/workflows/skill44-install-path.yml` — new job `install-path-env-wiring`
+  asserting both scripts exist, the deep-merge fallback + docker placeholder-replace
+  logic is present, INSTALL.md Action 5 calls `wire-ghl-env.sh`, and Action 6b runs
+  `verify-ghl-live.sh`.
+- `qc-convert-and-flow.sh` — Section S assertions for the two scripts, the
+  env-wiring call, and the verify gate.
+
+### Scope note
+- Installer / env-wiring only. Engine builder code is untouched (a separate branch
+  `caf-engine-folder-hardening` owns engine fixes).
+
 ## [1.0.10] - 2026-06-11 — docs: world-first "just by talking" hype in owner-facing copy
 
 Docs-only release. No engine, wrapper, or CLI behaviour changed (CLI stays `2.1.1`). Per the

@@ -31,8 +31,9 @@ mkdir -p "$CAF_DIR"
 python3 -m venv "$CAF_DIR/.venv"
 source "$CAF_DIR/.venv/bin/activate"
 
-# Copy engine from master files
+# Copy engine from master files (includes wire-ghl-env.sh + verify-ghl-live.sh)
 cp -r "$MASTER_FILES_DIR/44-convert-and-flow-operator/tools/engine/." "$CAF_DIR/engine/"
+chmod +x "$CAF_DIR/engine/wire-ghl-env.sh" "$CAF_DIR/engine/verify-ghl-live.sh" 2>/dev/null || true
 cd "$CAF_DIR/engine"
 pip install -e . --quiet
 deactivate
@@ -77,32 +78,74 @@ openclaw config set env.vars.PATH "$CAF_DIR:\${PATH}"
 openclaw config set env.vars.PATH "$CAF_DIR:/usr/local/bin:/usr/bin:/bin"
 ```
 
-## Action 5: Set credentials
+## Action 5: Wire credentials into the gateway-inherited env (single source)
 
-Source from the canonical secrets file:
+> **WHY A SCRIPT, NOT INLINE `openclaw config set` (Evelyn VPS bug, 2026-06-11):**
+> The previous install left the `GOHIGHLEVEL_*` creds **only** in
+> `~/.openclaw/secrets/.env` — a file the OpenClaw gateway/agent **process never
+> loads.** When the agent invoked `caf`, the gateway's process env had no
+> `GOHIGHLEVEL_LOCATION_ID`, so the engine died at
+> `Error: GHL_LOCATION_ID environment variable is not set.` while the install had
+> already reported success. On the Hostinger VPS it was worse: the docker-compose
+> `env_file` (`/docker/<project>/.env`) carried **empty placeholder lines**
+> (`GOHIGHLEVEL_API_KEY=` with no value, no FIREBASE line). docker injects an empty
+> `env_file` value as an **empty string** into the container process env, and an
+> empty string still wins against the secrets file for any consumer that reads
+> `os.environ` — so it **masked** the real value everywhere.
+>
+> The committed script `tools/engine/wire-ghl-env.sh` is the **single source** for
+> all of this so the logic can never drift from an inline heredoc (the same drift
+> class as the `gohighlevel.main` bug). It:
+> 1. Wires all **5** canonical vars into `openclaw.json` `env.vars` (the block the
+>    gateway inherits at process start). It tries `openclaw config set` first and
+>    **falls back to a direct JSON deep-merge** into `openclaw.json` when
+>    `config set` rejects the nested key — the supported pattern on OpenClaw
+>    2026.5.20+ (same approach as `31-upgraded-memory-system/scripts/activate-memory-stack.sh`).
+> 2. **VPS only:** ALSO populates the host `/docker/<project>/.env`, **replacing
+>    any empty `GOHIGHLEVEL_*=` placeholder line in place** (an empty placeholder
+>    overrides the real value with an empty string). Reached only when `/docker`
+>    is visible (i.e. run on the host, not inside the container).
+> 3. **Mac only:** wires `env.vars` but does **NOT** restart the gateway
+>    (rescue-Mac rule); it prints that a `launchctl kickstart` may be needed for
+>    the running gateway to inherit the new `env.vars`.
+
+The 5 canonical vars (engine wrapper maps `GOHIGHLEVEL_*` → `GHL_*`):
+`GOHIGHLEVEL_API_KEY` (PIT, required), `GOHIGHLEVEL_LOCATION_ID` (required),
+`GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (optional — workflow writes only),
+`GOHIGHLEVEL_ALLOWED_LOCATION_IDS` (write-location whitelist — defaults to the
+client's own location), `GOHIGHLEVEL_DRAFT_ONLY` (write-safety default — `true`).
+
 ```bash
-source ~/.openclaw/secrets/.env
+# Single-source wiring. Reads values from the process env OR ~/.openclaw/secrets/.env.
+bash "$CAF_DIR/engine/wire-ghl-env.sh"
+WIRE_RC=$?
 
-# Verify required vars are set
-[ -n "$GOHIGHLEVEL_API_KEY" ]    || { echo "ERROR: GOHIGHLEVEL_API_KEY not set"; exit 1; }
-[ -n "$GOHIGHLEVEL_LOCATION_ID" ] || { echo "ERROR: GOHIGHLEVEL_LOCATION_ID not set"; exit 1; }
+if [ "$WIRE_RC" -eq 2 ]; then
+  # Required creds (API key / location id) are genuinely absent everywhere.
+  # This is NOT a hard failure and NOT a silent success: the CLI is installed but
+  # cannot reach GHL yet. Mark it installed-with-missing-prereqs and tell the
+  # operator EXACTLY which vars to add to ~/.openclaw/secrets/.env, then re-run.
+  echo "[skill44] INSTALLED-WITH-MISSING-PREREQS: add GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID"
+  echo "[skill44] to ~/.openclaw/secrets/.env, then re-run: bash \"$CAF_DIR/engine/wire-ghl-env.sh\""
+elif [ "$WIRE_RC" -ne 0 ]; then
+  echo "ERROR: wire-ghl-env.sh failed (rc=$WIRE_RC)"; exit 1
+fi
 ```
 
-Wire into openclaw config (gateway reads from env.vars at runtime):
-```bash
-openclaw config set env.vars.GOHIGHLEVEL_API_KEY              "$GOHIGHLEVEL_API_KEY"
-openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID          "$GOHIGHLEVEL_LOCATION_ID"
-openclaw config set env.vars.GOHIGHLEVEL_DRAFT_ONLY           "true"
-# Seed the location whitelist with the client's own location so writes are allowed from day one.
-# Add more comma-separated IDs here later if you manage multiple sub-accounts.
-openclaw config set env.vars.GOHIGHLEVEL_ALLOWED_LOCATION_IDS "$GOHIGHLEVEL_LOCATION_ID"
-```
+> **VPS host context:** if you run the installer on the Hostinger **host** (so
+> `/docker` is visible), the script auto-finds and updates the OpenClaw project's
+> `/docker/<project>/.env`. Then apply with a **force-recreate** so the container
+> re-reads `env_file` (a plain `docker restart` does NOT re-read it):
+> ```bash
+> docker compose -f /docker/<project>/docker-compose.yml up -d --force-recreate
+> ```
+> If the installer is running **inside** the container (where `/docker` is not
+> visible), the `env.vars` wiring above is the gateway-inherited path; populate
+> the host `env_file` from the host separately if needed.
 
-Firebase token (workflow writes — OPTIONAL at install time):
-```bash
-# If the client has already captured their Firebase token:
-openclaw config set env.vars.GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "$GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN"
-```
+Firebase token (workflow writes — OPTIONAL at install time): the script wires it
+automatically when present in the env / secrets file; absence is a no-op, never a
+failure. If the client captures it later, just re-run `wire-ghl-env.sh`.
 
 ---
 
@@ -175,6 +218,48 @@ caf doctor
 
 Expected output: all checks green. If the Firebase token is absent, `caf doctor` should report
 WARN (not FAIL) — the skill works for standard ops without it.
+
+---
+
+## Action 6b: FAIL-LOUD live verify gate (MANDATORY — never report success on a dead caf)
+
+> **WHY (Evelyn VPS bug, 2026-06-11):** the install reported success while `caf`
+> could not reach GHL at all (creds only in `secrets/.env`, masked by empty docker
+> `env_file` placeholders). A "skill installed" flag is **not** proof the tool
+> works. This gate runs a **real read** against GHL using **only the inherited
+> process env** (it deliberately does NOT source any secrets file — it reproduces
+> exactly what the gateway/agent process sees) and **FAILS LOUDLY** if it errors.
+> Never mark skill 44 success when `caf` can't reach GHL.
+
+```bash
+bash "$CAF_DIR/engine/verify-ghl-live.sh"
+VERIFY_RC=$?
+
+case "$VERIFY_RC" in
+  0)
+    echo "[skill44] LIVE-VERIFIED: caf reached GHL with a real read. Skill 44 is live."
+    ;;
+  2)
+    # Required creds genuinely absent. Installed-with-missing-prereqs — the gate
+    # already printed exactly which vars. NOT a success, NOT a hard crash.
+    echo "[skill44] INSTALLED-WITH-MISSING-PREREQS (see verify output for the exact vars)."
+    echo "[skill44] Add them to ~/.openclaw/secrets/.env, re-run wire-ghl-env.sh, then re-run this gate."
+    ;;
+  *)
+    # rc=1: creds present but the live read FAILED. This FAILS the install step.
+    echo "ERROR: skill 44 live verify FAILED — caf could not reach GHL despite creds being present."
+    echo "       Do NOT report skill 44 as successfully installed. See the verify output above."
+    exit 1
+    ;;
+esac
+```
+
+> **What the gate runs:** `caf workflows list` (the workflow-read path), falling
+> back to `caf contacts list --limit 1` (PIT-only) if the workflow read fails —
+> because workflow reads can legitimately fail without the Firebase token, while a
+> PIT-only contacts read still proves core reachability. Exit 0 = live; exit 2 =
+> installed-with-missing-prereqs (lists the vars); exit 1 = present-but-unreachable
+> (fails the install).
 
 ---
 
@@ -326,6 +411,9 @@ approved and published.
 
 ## Done When
 
+- [ ] `wire-ghl-env.sh` wired all present GHL vars into `openclaw.json` `env.vars` (Action 5)
+- [ ] VPS: `/docker/<project>/.env` has NO empty `GOHIGHLEVEL_*=` placeholder lines (replaced in place)
+- [ ] `verify-ghl-live.sh` exits 0 (live) — or exit 2 (installed-with-missing-prereqs, vars listed); NEVER reported success on exit 1 (Action 6b)
 - [ ] `caf doctor` exits green (or WARN for missing Firebase token — not FAIL)
 - [ ] `caf contacts list --limit 3` returns real contacts
 - [ ] `caf workflows list` returns the workflow list

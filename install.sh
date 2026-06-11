@@ -4861,6 +4861,72 @@ install_skill_40_zhc_public_records_scraper() {
 install_skill_40_zhc_public_records_scraper
 
 # ----------------------------------------------------------
+# Step 14e: Wire Skill 44 (Convert and Flow Operator) GHL env + fail-loud verify
+# ----------------------------------------------------------
+# Why: skill 44 ships the `caf` GHL operator CLI. The agent invokes it from the
+# gateway PROCESS, which inherits env from openclaw.json `env.vars` (and, on a
+# Hostinger VPS, from the docker-compose `env_file` /docker/<project>/.env) — NOT
+# from ~/.openclaw/secrets/.env, which the gateway never loads. Evelyn's VPS
+# (2026-06-11) proved the gap: creds lived only in secrets/.env and the docker
+# env_file had empty `GOHIGHLEVEL_*=` placeholder lines (docker injects those as
+# EMPTY STRINGS, masking everything), so caf died at
+# "Error: GHL_LOCATION_ID environment variable is not set." while the install had
+# already reported success. This step wires all 5 GHL vars into the
+# gateway-inherited env via the skill's single-source wire-ghl-env.sh, then runs a
+# fail-loud live verify (verify-ghl-live.sh) so we NEVER report skill-44 success
+# when caf can't reach GHL. Genuinely-absent creds → installed-with-missing-prereqs
+# (which vars are listed), never a fabricated success. Idempotent.
+step "Step 14e: Wiring Skill 44 (Convert and Flow Operator) GHL creds into gateway-inherited env + fail-loud live verify"
+
+install_skill_44_convert_and_flow_operator_env() {
+    local SKILL_DEST="$SKILLS_DIR/44-convert-and-flow-operator"
+    local WIRE="$SKILL_DEST/tools/engine/wire-ghl-env.sh"
+    local VERIFY="$SKILL_DEST/tools/engine/verify-ghl-live.sh"
+
+    if [ ! -f "$WIRE" ]; then
+        warn "Skill 44 wire-ghl-env.sh not found at $WIRE — skipping env-wiring (older onboarding bundle?)"
+        return 0
+    fi
+    chmod +x "$WIRE" "$VERIFY" 2>/dev/null || true
+
+    # Mac rescue rule: the wire script NEVER restarts the gateway; it documents
+    # that a launchctl kickstart may be needed for full inheritance. VPS: it
+    # updates openclaw.json env.vars (gateway-inherited) and, if /docker is
+    # reachable from this context, the host env_file (replacing empty placeholders).
+    note "Wiring GHL env (env.vars deep-merge + VPS docker env_file placeholder replace)…"
+    set +e
+    OC_JSON="$OC_JSON" OC_SECRETS_ENV="$OC_SECRETS_ENV" bash "$WIRE"
+    local WIRE_RC=$?
+    set -e
+    if [ "$WIRE_RC" -eq 2 ]; then
+        warn "Skill 44 INSTALLED-WITH-MISSING-PREREQS — required GHL creds (GOHIGHLEVEL_API_KEY / GOHIGHLEVEL_LOCATION_ID) absent on this box. Add them to $OC_SECRETS_ENV and re-run $WIRE. CLI is installed; it cannot reach GHL until then."
+        add_to_list "installed" "44-convert-and-flow-operator (missing-prereqs: GHL creds)"
+        return 0
+    elif [ "$WIRE_RC" -ne 0 ]; then
+        warn "Skill 44 wire-ghl-env.sh returned rc=$WIRE_RC — env wiring may be incomplete; see output above."
+    else
+        success "Skill 44 GHL env wired into gateway-inherited config."
+    fi
+
+    # Fail-loud live verify: a real read using ONLY inherited process env.
+    if [ -f "$VERIFY" ]; then
+        note "Running fail-loud live verify (verify-ghl-live.sh)…"
+        set +e
+        OC_SECRETS_ENV="$OC_SECRETS_ENV" bash "$VERIFY"
+        local VERIFY_RC=$?
+        set -e
+        case "$VERIFY_RC" in
+            0) success "Skill 44 LIVE-VERIFIED: caf reached GHL with a real read." ;;
+            2) warn "Skill 44 installed-with-missing-prereqs (verify could not run a live read — creds absent). NOT a success; NOT a hard failure." ;;
+            *) warn "Skill 44 LIVE VERIFY FAILED (rc=$VERIFY_RC): caf could NOT reach GHL despite creds present (Evelyn failure mode — env not inherited / empty docker placeholder / auth). Skill 44 is NOT live-verified. See output above; re-run $WIRE then force-recreate (VPS) or restart the gateway (Mac)." ;;
+        esac
+    fi
+    return 0
+}
+
+install_skill_44_convert_and_flow_operator_env
+
+# ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)
 # ----------------------------------------------------------
 # Why: pre-v10.13.18 Skill 23 marked depts "done" purely on file presence,
