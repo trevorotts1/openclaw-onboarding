@@ -139,6 +139,15 @@ These are identical to the `convert-and-flow-token-grabber.zip` the operator shi
 The same four files also exist inside `tools/engine/chrome-extension/` (that copy is
 for the engine's own reference); `tools/chrome-extension/` is the client-facing copy.
 
+### Owner-facing setup guide
+
+For walking an OWNER through grabbing the token (warm, plain-English, 8 steps + the
+public download link), send or read from `references/owner-token-grabber-guide.md`.
+That doc is what a client agent uses to get a non-technical owner from zero to a working
+Firebase token; it also carries a clearly-separated **FOR THE AGENT** section on wiring
+the pasted token into the gateway-inherited env and building the first DRAFT-only,
+`ZHC-` prefixed test workflow.
+
 ---
 
 ## Files in this folder
@@ -155,3 +164,4 @@ for the engine's own reference); `tools/chrome-extension/` is the client-facing 
 10. platform/vps/ — VPS-specific paths
 11. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
 12. tools/chrome-extension/ — Token Grabber Chrome extension (client-facing; load unpacked)
+13. references/owner-token-grabber-guide.md — owner-facing Token Grabber walkthrough (8 steps + download link) + agent wiring notes
