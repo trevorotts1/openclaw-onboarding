@@ -116,10 +116,35 @@ Step 2 pattern) and surfaces missing items before touching the workflow builder.
 
 ---
 
+## Chrome Extension: Token Grabber (load unpacked)
+
+The skill ships the Token Grabber Chrome extension at `tools/chrome-extension/`.
+
+**This extension is NOT on the Chrome Web Store.** Clients load it via Chrome's
+"load unpacked" developer method (see INSTALL.md Action 5b for the full steps).
+
+**What it does:** reads `stsTokenManager.refreshToken` from the page's
+`firebaseLocalStorageDb` IndexedDB on `convertandflow.com`, `gohighlevel.com`, or
+`leadconnectorhq.com`, and copies it to clipboard. Makes **zero network calls**.
+
+**Token env var:** `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`
+
+The files in `tools/chrome-extension/`:
+- `manifest.json` — MV3 manifest (permissions: activeTab, scripting, clipboardWrite)
+- `popup.html` — extension popup UI
+- `popup.js` — IndexedDB reader
+- `icon48.png` — extension icon
+
+These are identical to the `convert-and-flow-token-grabber.zip` the operator ships.
+The same four files also exist inside `tools/engine/chrome-extension/` (that copy is
+for the engine's own reference); `tools/chrome-extension/` is the client-facing copy.
+
+---
+
 ## Files in this folder
 
 1. SKILL.md (this)
-2. INSTALL.md — setup + `caf doctor`
+2. INSTALL.md — setup + `caf doctor` + Chrome extension load-unpacked steps (Action 5b)
 3. INSTRUCTIONS.md — runtime usage, TRINITY routing, rollback recipe
 4. CORE_UPDATES.md — text to merge into core files
 5. QC.md — checklist (authoritative: `qc-convert-and-flow.sh`)
@@ -129,3 +154,4 @@ Step 2 pattern) and surfaces missing items before touching the workflow builder.
 9. platform/mac/ — Mac-specific paths + auto-re-grab recipe
 10. platform/vps/ — VPS-specific paths
 11. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
+12. tools/chrome-extension/ — Token Grabber Chrome extension (client-facing; load unpacked)

@@ -112,6 +112,69 @@ Firebase token (workflow writes — OPTIONAL at install time):
 openclaw config set env.vars.GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "$GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN"
 ```
 
+---
+
+## Action 5b: Load the Token Grabber Chrome Extension (first time)
+
+> **What this does:** The Token Grabber is a small Chrome extension that reads your
+> Firebase refresh token from the logged-in GHL / Convert and Flow page and copies it
+> to your clipboard. It makes **zero network calls** — it only reads from your own
+> browser's storage.
+
+### Get the extension folder
+
+The extension folder is already included in this skill at:
+```
+44-convert-and-flow-operator/tools/chrome-extension/
+```
+It contains four files: `manifest.json`, `popup.html`, `popup.js`, `icon48.png`.
+
+> **Do NOT upload this to the Chrome Web Store.** We are using the "load unpacked"
+> method — the extension lives as a folder on your computer, not in the Chrome store.
+
+### Install steps (one time)
+
+1. Open Chrome and go to: **chrome://extensions**
+2. Flip the **Developer mode** toggle in the top-right corner to **ON**.
+3. Click the **"Load unpacked"** button that appears.
+4. Navigate to the `tools/chrome-extension/` folder inside this skill and click **Select**.
+5. The "Convert and Flow Token Grabber" extension will appear in your list. Done.
+
+### Grab your token
+
+1. Open any logged-in page on:
+   - `https://app.convertandflow.com`
+   - `https://app.gohighlevel.com`
+   - `https://app.leadconnectorhq.com`
+2. Click the extension icon in your Chrome toolbar.
+3. Click **"Grab Refresh Token"**.
+4. Click **"Copy to Clipboard"** — the token is now on your clipboard.
+
+### Store the token
+
+Paste the value into your secrets file:
+```
+GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<paste token here>
+```
+
+Then wire it into OpenClaw:
+```bash
+openclaw config set env.vars.GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "$GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN"
+```
+
+### After editing extension files
+
+Because the extension is "unpacked" (not from the Chrome store), it does **not**
+auto-update. If you ever edit the extension files, go back to **chrome://extensions**
+and click the **↻ (refresh)** icon on the extension card to reload it.
+
+> **Note on extension IDs:** Chrome assigns a unique extension ID when you load unpacked.
+> Each computer gets its own ID — that is normal and expected. (The operator's installed
+> copy has ID `mghmjilakepcjpjinhcgnnghenlfigid` as a reference example only; your ID
+> will be different and does not affect how the extension works.)
+
+---
+
 ## Action 6: Run `caf doctor`
 
 ```bash
