@@ -1,5 +1,35 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.8] - 2026-06-11 — docs: owner-facing Token Grabber setup guide + agent wiring notes
+
+Docs-only release. No engine or wrapper behaviour changed; the CLI version stays `2.1.1`.
+Per the repo G3 guard (any change inside a skill folder requires a `skill-version.txt`
+bump), the skill version moves `1.0.7` -> `1.0.8` to carry the new doc with the skill payload.
+
+### Added
+- **`references/owner-token-grabber-guide.md`** — a NEW owner-facing explainer a client
+  agent can send or walk a non-technical business owner through. Plain-English description
+  of what Skill 44 unlocks (the agent builds Convert & Flow / GHL automation workflows as
+  DRAFTS the owner reviews: appointment follow-ups, lead nurture, tag-and-text), the
+  prominent public download link for the Convert & Flow Token Grabber Chrome extension, and
+  the polished 8-step one-time setup (download/unpack → `chrome://extensions` → Developer
+  mode → Load unpacked → pin the 🧩 → log out/in → grab + copy → paste to agent).
+- A clearly-separated **FOR THE AGENT** section inside the same doc: wire the pasted token
+  as `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` into the gateway-inherited env (`openclaw config
+  set env.vars.*`; on Hostinger VPS also replace the empty `/docker/<project>/.env`
+  placeholder + `--force-recreate`), verify with a real `caf` read on the inherited env,
+  then build the test workflow DRAFT-only with a `ZHC-` prefixed name, retrying once on a
+  transient "token refresh failed" before reporting any problem.
+
+### Changed
+- `SKILL.md` — the "Chrome Extension: Token Grabber" section now points to the new
+  owner-facing guide, and the "Files in this folder" list includes
+  `references/owner-token-grabber-guide.md` (item 13).
+
+### Not changed
+- Engine (`2.1.1`), wrapper, CLI surface, write-safety posture, and all 119 tests are
+  untouched. This release ships documentation only.
+
 ## [1.0.7] - 2026-06-11 — fix: ZHC- folder standing approval + top-level `folder` plan-key hardening (both reproduced live on a client box)
 
 Two surgical engine fixes, both confirmed live on a managed client box (Evelyn, VPS)
