@@ -245,6 +245,7 @@ show_step "Applying updates..."
 PROTECTED="AGENTS.md MEMORY.md SOUL.md USER.md IDENTITY.md HEARTBEAT.md TOOLS.md"
 idx=0
 APPLIED_COUNT=0
+HAS_WIRE_MIGRATIONS=0
 
 for SNAME in "${SKILL_NAMES[@]}"; do
   ACTION="${SKILL_ACTIONS[$idx]}"
@@ -257,6 +258,12 @@ for SNAME in "${SKILL_NAMES[@]}"; do
   LOCAL_PATH="$SKILLS_DIR/$SNAME"
   [ -d "$STAGED_PATH" ] || { idx=$((idx + 1)); continue; }
   mkdir -p "$LOCAL_PATH"
+
+  # ── A.2: detect wire migration skills (35, 36, 38, 44) ───────────────────
+  SKILL_NUM="${SNAME%%-*}"
+  if echo "$SKILL_NUM" | grep -qE '^(35|36|38|44)$' || [ -f "$STAGED_PATH/wire.sh" ]; then
+    HAS_WIRE_MIGRATIONS=1
+  fi
 
   for ITEM in "$STAGED_PATH"/*; do
     FNAME=$(basename "$ITEM")
@@ -565,6 +572,29 @@ Remove this UPDATE PENDING section from AGENTS.md when complete.
 
 ---
 FLAGEOF
+  fi
+fi
+
+# ── A.2 Session Load Gate (edit→reset→loaded-check ordering) ──────────────────
+# Called only when wire.sh migration skills (36, 38, 35, 44) were applied.
+# This ensures: skill files copied + AGENTS.md updated (edit) → sessions.reset
+# (reset) → loaded-check. update-skills.sh logs the result but does NOT exit
+# on gate failure — the gate itself has already alerted the operator.
+if [ "${HAS_WIRE_MIGRATIONS:-0}" = "1" ]; then
+  A2_GATE="$(dirname "$0")/a2-session-load-gate.sh"
+  if [ -x "$A2_GATE" ]; then
+    echo "[$(log_ts)] A.2: Running session load gate (wire migrations were applied)" >> "$LOG_FILE"
+    echo "  ℹ A.2: Verifying session load gate..." >&3
+    if bash "$A2_GATE" --box "$(hostname)" >> "$LOG_FILE" 2>&1; then
+      echo "[$(log_ts)] A.2: Session load gate returned loaded=YES — session confirmed loaded." >> "$LOG_FILE"
+      echo "  ✓ A.2: Session load gate — loaded=YES" >&3
+    else
+      echo "[$(log_ts)] A.2: Session load gate returned loaded=NO — operator has been alerted. Continuing." >> "$LOG_FILE"
+      echo "  ⚠ A.2: Session load gate — loaded=NO (operator alerted)" >&3
+    fi
+  else
+    echo "[$(log_ts)] WARNING: A.2 gate script not found at $A2_GATE — skipping" >> "$LOG_FILE"
+    echo "  ⚠ A.2: gate script not found at $A2_GATE — skipping" >&3
   fi
 fi
 
