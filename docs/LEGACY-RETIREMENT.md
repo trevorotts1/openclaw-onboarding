@@ -44,6 +44,7 @@ block alongside it. These are the direct retirement targets.
 | `23-ai-workforce-blueprint/scripts/backfill-build-state.py`        | inline list with `Path.home() / "clawd" / ...` items | TRACKED — remove after fleet migration |
 | `23-ai-workforce-blueprint/scripts/reconcile-legacy-tree.py`       | single-item list `[Path.home() / "clawd" / "departments", ...]` | TRACKED — remove after fleet migration |
 | `23-ai-workforce-blueprint/scripts/persona-selector-v2.py`         | single-path list `[Path.home() / "clawd" / "skills" / ..., ...]` | TRACKED — remove after fleet migration |
+| `23-ai-workforce-blueprint/scripts/_qc_company_info.py`            | candidate + parent list with `Path.home() / "clawd" / "zero-human-company"` items (v11.18.4: byte-equivalent extraction out of `qc-completeness.sh`'s inline resolver heredoc for stock-bash-3.2 compatibility — calls `get_openclaw_paths()` first; the `~/clawd` scan is a non-standard-layout fallback) | TRACKED — remove after fleet migration |
 
 ### Skill 22 (book-to-persona)
 
