@@ -17,6 +17,10 @@ ADDITIVE CHANGES (no happy-path behavior change):
   identical interactive UX.
 - 429 recognition: returned as AdapterResult(ok=False, http_code=429) with
   X-RateLimit-Daily-Reset header passthrough (caller surfaces, never retries).
+- get_token() retries the Firebase securetoken EXCHANGE exactly once on a
+  transient None result (exchange-failed) before raising TOKEN_REFRESH_FAILED.
+  This is disjoint from the request()-level 401/403 retry: this covers the
+  one-time refresh failure observed live, NOT an HTTP auth rejection.
 """
 from __future__ import annotations
 
@@ -110,11 +114,23 @@ class InternalTransport:
         refresh_token = _resolve_refresh_token()
         if refresh_token:
             token = self._refresh_firebase(refresh_token)
+            if not token:
+                # RETRY-ONCE on a transient Firebase token-refresh failure.
+                # The securetoken exchange occasionally returns None as a
+                # ONE-TIME transient (observed live) and succeeds on the very
+                # next call.  Retry the exchange EXACTLY ONCE before surfacing
+                # TOKEN_REFRESH_FAILED so we don't nudge the owner to re-grab a
+                # token that is actually still valid.  This is one retry — not a
+                # loop — and it ONLY covers the None (exchange-failed) case; a
+                # successful exchange is never re-attempted, and downstream HTTP
+                # errors (400/429/etc.) never reach this path.
+                token = self._refresh_firebase(refresh_token)
             if token:
                 self._token = token
                 self._token_time = time.time()
                 return token
-            # Refresh token present but exchange failed
+            # Refresh token present but exchange failed TWICE (transient retry
+            # exhausted) — now surface the persistent error / nudge a re-grab.
             raise AdapterError(
                 "TOKEN_REFRESH_FAILED",
                 "Firebase refresh token is set but token refresh failed. "

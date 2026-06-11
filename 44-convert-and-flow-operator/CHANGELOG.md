@@ -1,5 +1,34 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.4] - 2026-06-11 — fix: retry-once on the transient Firebase token-refresh error for workflow writes
+
+### Fixed (engine `internal/transport.py`)
+- **Transient Firebase token-refresh failure now auto-retries ONCE before
+  surfacing.** The securetoken refresh exchange can return `None` as a ONE-TIME
+  transient (observed live on a managed box) and succeed on the very next call;
+  the old code raised `TOKEN_REFRESH_FAILED` on the first `None`, falsely nudging
+  the owner to re-grab a token that was still valid. `InternalTransport.get_token()`
+  now retries the exchange **exactly once** on a `None` result, and only raises
+  `TOKEN_REFRESH_FAILED` if the second attempt also fails. This is one retry, not
+  a loop, and is disjoint from the existing request()-level 401/403 retry.
+
+### Preserved (NOT weakened)
+- The PR #163 build-path **fail-loud** behaviour is untouched: a downstream HTTP
+  error dict (e.g. the 400 `corrupted order` save rejection) is returned UNCHANGED
+  by `transport.request()` and never triggers a token-refresh exchange. Only a
+  `None` from the securetoken exchange (transient) is retried; only a `None` from
+  `_do_request` (401/403 auth signal) drives the separate one-shot `force_refresh`.
+
+### Added
+- `tools/engine/tests/test_token_retry.py` (`TestTokenRefreshRetryOnce`):
+  - transient failure -> ONE retry -> success (exactly 2 exchange attempts);
+  - persistent failure -> `TOKEN_REFRESH_FAILED` surfaced after one retry (exactly
+    2 attempts — proves no loop);
+  - happy path -> single attempt (never retried);
+  - HTTP `_error` dict (400 corrupted-order) -> surfaced unchanged, no refresh
+    triggered (guards the PR #163 fail-loud).
+  The two retry tests FAIL on pre-1.0.4 transport and PASS after the fix.
+
 ## [1.0.3] - 2026-06-11 — fix: `workflows build` now ADDS action ordering and FAILS LOUD on rejected save; opportunities list snake_case params; payments list alias
 
 ### Fixed (CRITICAL — engine `workflow_builder.py`)
