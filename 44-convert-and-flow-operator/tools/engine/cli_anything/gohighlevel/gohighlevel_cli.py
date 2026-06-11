@@ -47,6 +47,29 @@ def _loc(ctx: click.Context) -> str:
     return ctx.obj.get("location_id") or api._get_location_id()
 
 
+def _emit_build_result(ctx: click.Context, builder, stats) -> None:
+    """Print a build result and FAIL LOUD when the build recorded errors.
+
+    A rejected step-save (e.g. GHL 400 'corrupted order') lands in
+    stats['errors'].  Previously the CLI printed the summary and exited 0
+    even when nothing saved — a silent false success.  Now any non-empty
+    errors list prints to stderr and exits non-zero so the failure can never
+    be mistaken for Steps:0/Errors:0/exit-0.
+    """
+    errors = stats.get("errors") or []
+    if ctx.obj["json"]:
+        click.echo(json.dumps(stats, indent=2, default=str), err=bool(errors))
+    else:
+        summary = builder.format_summary()
+        click.echo(summary, err=bool(errors))
+    if errors:
+        click.echo(
+            f"BUILD FAILED: {len(errors)} error(s) during workflow build.",
+            err=True,
+        )
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Main CLI Group
 # ---------------------------------------------------------------------------
@@ -59,7 +82,7 @@ def _loc(ctx: click.Context) -> str:
     "--dry-run", is_flag=True, default=False,
     help="Print every write's method+URL+payload and exit — no data is sent to GHL.",
 )
-@click.version_option("2.0.0", prog_name="cli-anything-gohighlevel")
+@click.version_option("2.1.0", prog_name="cli-anything-gohighlevel")
 @click.pass_context
 def cli(ctx, use_json, location_id, experimental, dry_run):
     """GoHighLevel CLI — manage contacts, workflows, calendars, and more."""
@@ -99,7 +122,7 @@ def repl(ctx):
             "workflows": "List and manage workflows",
             "conversations": "Manage conversations and messages",
             "emails": "Email campaigns (list, get, send)",
-            "payments": "Transactions, invoices, orders",
+            "payments": "Transactions, invoices, orders (list = transactions)",
             "forms": "Forms and submissions",
             "social": "Social media posts and analytics",
             "locations": "Location/sub-account management",
@@ -320,9 +343,13 @@ def opportunities(ctx):
 def opportunities_list(ctx, pipeline_id, limit, status):
     """List opportunities."""
     try:
-        params = {"locationId": _loc(ctx), "limit": limit}
+        # GET /opportunities/search is the one search endpoint that expects
+        # snake_case query params (location_id/pipeline_id).  Sending camelCase
+        # locationId leaves the required location_id unset -> 422.  The
+        # create/update BODIES still use camelCase and are untouched.
+        params = {"location_id": _loc(ctx), "limit": limit}
         if pipeline_id:
-            params["pipelineId"] = pipeline_id
+            params["pipeline_id"] = pipeline_id
         if status:
             params["status"] = status
         data = api.get("/opportunities/search", params=params)
@@ -624,10 +651,7 @@ def workflows_create(ctx, name, folder, json_file):
         builder = CampaignBuilder(client)
         stats = builder.build(campaign, folder or name)
 
-        if ctx.obj["json"]:
-            click.echo(json.dumps(stats, indent=2, default=str))
-        else:
-            click.echo(builder.format_summary())
+        _emit_build_result(ctx, builder, stats)
     except Exception as e:
         _handle_error(e)
 
@@ -753,10 +777,7 @@ def workflows_create_n8n(ctx, name, webhook_url, tag, folder):
         builder = CampaignBuilder(client)
         stats = builder.build(campaign, folder or f"n8n-{name}")
 
-        if ctx.obj["json"]:
-            click.echo(json.dumps(stats, indent=2, default=str))
-        else:
-            click.echo(builder.format_summary())
+        _emit_build_result(ctx, builder, stats)
     except Exception as e:
         _handle_error(e)
 
@@ -870,10 +891,7 @@ def workflows_build(ctx, plan_file, folder):
         with WriteLock(location_id):
             builder = CampaignBuilder(client)
             stats = builder.build(campaign, folder_name)
-        if ctx.obj["json"]:
-            click.echo(json.dumps(stats, indent=2, default=str))
-        else:
-            click.echo(builder.format_summary())
+        _emit_build_result(ctx, builder, stats)
     except Exception as e:
         _handle_error(e)
 
@@ -1240,8 +1258,24 @@ def emails_list_campaigns(ctx, status):
 @cli.group()
 @click.pass_context
 def payments(ctx):
-    """Payments, invoices, transactions, and orders."""
+    """Payments, invoices, transactions, and orders.
+
+    `payments list` is an alias for `payments transactions` so the uniform
+    `<group> list` pattern works across every resource group.
+    """
     pass
+
+
+@payments.command("list")
+@click.option("--limit", default=20)
+@click.option("--offset", default=0)
+@click.option("--contact-id", default=None)
+@click.pass_context
+def payments_list(ctx, limit, offset, contact_id):
+    """Alias for `payments transactions` (the canonical <group> list verb)."""
+    ctx.invoke(
+        payments_transactions, limit=limit, offset=offset, contact_id=contact_id
+    )
 
 
 @payments.command("transactions")

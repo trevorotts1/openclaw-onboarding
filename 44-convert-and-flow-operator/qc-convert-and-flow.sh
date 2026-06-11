@@ -120,6 +120,20 @@ assert "INSTALL.md Action 3 wrapper auto-seeds GHL_ALLOWED_LOCATION_IDS from GHL
   "grep -q '_caf_allowed_raw' \"$SKILL44_DIR/INSTALL.md\""
 assert "INSTALL.md wires GOHIGHLEVEL_ALLOWED_LOCATION_IDS at install (Action 5)" \
   "grep -q 'GOHIGHLEVEL_ALLOWED_LOCATION_IDS' \"$SKILL44_DIR/INSTALL.md\""
+assert "convertandflow + ghl wrappers also auto-seed CAF_ALLOWED_LOCATION_IDS" \
+  "grep -q '_caf_allowed_raw' \"$SKILL44_DIR/tools/engine/convertandflow\" && grep -q '_caf_allowed_raw' \"$SKILL44_DIR/tools/engine/ghl\""
+assert "workflow build path applies action ordering via link_steps (Bug 1a)" \
+  "grep -q 'templates = link_steps' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py\""
+assert "workflow build fails loud on rejected save (step_err captured, Bug 1b)" \
+  "grep -q 'step_err' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py\""
+assert "CLI exits non-zero on build errors (stats['errors'] + sys.exit)" \
+  "grep -q \"stats.get(.errors.)\" \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\" && grep -q '_emit_build_result' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "opportunities list uses snake_case search params (Bug 3)" \
+  "grep -q 'location_id.*_loc(ctx)' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "payments list alias present (Bug 4)" \
+  "grep -q 'payments.command(\"list\")' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "regression test for fail-loud + ordering present" \
+  "grep -q 'TestBuildFailsLoudAndEmitsOrdering' \"$SKILL44_DIR/tools/engine/tests/test_e2e_unit11.py\""
 assert "CORE_UPDATES.md sentinel present" \
   "grep -q 'skill:44-convert-and-flow-operator:core-update-applied' \"$SKILL44_DIR/CORE_UPDATES.md\""
 assert "CHANGELOG.md exists" \

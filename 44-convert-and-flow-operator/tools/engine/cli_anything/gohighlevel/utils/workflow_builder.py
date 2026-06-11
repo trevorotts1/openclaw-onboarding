@@ -243,6 +243,15 @@ class CampaignBuilder:
             """Full pipeline: create → tag → trigger → save steps → sync."""
             wf_name = wf_def["name"]
 
+            # Apply action ORDERING up front so the very first save PUT carries
+            # order/next/parentKey on every step.  Without this the build path
+            # PUT raw plan templates with no execution chain and GHL rejects the
+            # save with a 400 'corrupted order' (Bug 1a).  link_steps is the
+            # canonical linker already used by the legacy create-step path; we
+            # run it inside the builder so all installed boxes get the fix
+            # without re-authoring plan JSON.
+            templates = link_steps(wf_def.get("templates", []))
+
             # Step 1: Create workflow
             result = self.client.request(
                 "POST", f"/workflow/{self.loc}",
@@ -250,7 +259,7 @@ class CampaignBuilder:
                 workflow_name=wf_name,
             )
             if not result or not result.get("id"):
-                return key, None, False, False
+                return key, None, False, False, None
 
             wf_id = result["id"]
 
@@ -296,7 +305,7 @@ class CampaignBuilder:
                     trigger_data = {**trigger_body, "id": trigger_id}
 
                     # Link trigger to first step
-                    first_step_id = wf_def["templates"][0]["id"] if wf_def.get("templates") else None
+                    first_step_id = templates[0]["id"] if templates else None
                     if first_step_id:
                         self.client.request(
                             "PUT", f"/workflow/{self.loc}/trigger/{trigger_id}",
@@ -305,17 +314,32 @@ class CampaignBuilder:
                             workflow_name=wf_name,
                         )
 
-            # Step 3: Save steps via PUT
+            # Step 3: Save steps via PUT (linked templates carry order/next/parentKey)
             put_body = {
                 "name": wf_name,
                 "version": 1,
-                "workflowData": {"templates": wf_def["templates"]},
+                "workflowData": {"templates": templates},
             }
             put_result = self.client.request(
                 "PUT", f"/workflow/{self.loc}/{wf_id}", put_body,
                 workflow_name=wf_name,
             )
             steps_ok = bool(put_result and not put_result.get("_error"))
+
+            # Bug 1b — FAIL LOUD on a non-2xx save.  The transport returns
+            # {"_error": True, "http_code": <code>, ...} on a rejected PUT; the
+            # old code silently treated that as steps_ok=False and reported
+            # Steps:0/Errors:0/exit-0.  Capture a real error string so the
+            # caller can surface it and exit non-zero.
+            step_err = None
+            if not steps_ok:
+                pr = put_result or {}
+                http_code = pr.get("http_code") or pr.get("code")
+                step_err = (
+                    f"{wf_name}: step-save PUT failed "
+                    f"(HTTP {http_code if http_code is not None else 'unknown'}): "
+                    f"{pr.get('message', 'no response')}"
+                )
 
             # Step 4: Sync triggers + canvas meta
             if steps_ok:
@@ -335,7 +359,7 @@ class CampaignBuilder:
                         trigger_list = [trigger_data]
 
                     steps_with_meta = []
-                    for idx, step in enumerate(wf_def["templates"]):
+                    for idx, step in enumerate(templates):
                         s = {**step}
                         s["advanceCanvasMeta"] = {"position": {"x": 400 + idx * 300, "y": 0}}
                         s.setdefault("cat", "")
@@ -362,7 +386,7 @@ class CampaignBuilder:
                         workflow_name=wf_name,
                     )
 
-            return key, wf_id, steps_ok, trigger_ok
+            return key, wf_id, steps_ok, trigger_ok, step_err
 
         # Run all workflows in parallel
         with ThreadPoolExecutor(max_workers=10) as pool:
@@ -372,7 +396,12 @@ class CampaignBuilder:
             ]
 
             for future in as_completed(futures):
-                key, wf_id, steps_ok, trigger_ok = future.result()
+                key, wf_id, steps_ok, trigger_ok, step_err = future.result()
+                # Surface a rejected step-save regardless of whether the shell
+                # workflow was created — an empty workflow shell with a failed
+                # save is a FAILURE, not a silent success (Bug 1b).
+                if step_err:
+                    self.stats["errors"].append(step_err)
                 if wf_id:
                     wf_ids[key] = wf_id
                     self.stats["workflows_created"] += 1

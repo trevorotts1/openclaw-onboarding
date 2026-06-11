@@ -34,7 +34,16 @@ export GHL_LOCATION_ID="${CAF_LOCATION_ID:-${GOHIGHLEVEL_LOCATION_ID:-${GHL_LOCA
 export GHL_FIREBASE_REFRESH_TOKEN="${CAF_FIREBASE_REFRESH_TOKEN:-${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-${GHL_FIREBASE_REFRESH_TOKEN:-}}}"
 
 # --- Safety config (passed through env for the safety wrapper layer) ---
-export CAF_ALLOWED_LOCATION_IDS="${GOHIGHLEVEL_ALLOWED_LOCATION_IDS:-${CAF_ALLOWED_LOCATION_IDS:-}}"
+# CAF_ALLOWED_LOCATION_IDS: default to the client's own GOHIGHLEVEL_LOCATION_ID when
+# neither GOHIGHLEVEL_ALLOWED_LOCATION_IDS nor CAF_ALLOWED_LOCATION_IDS is set.
+# Blank defaults = all writes blocked, which is the wrong fail-mode for a single-location install.
+_caf_allowed_raw="${GOHIGHLEVEL_ALLOWED_LOCATION_IDS:-${CAF_ALLOWED_LOCATION_IDS:-}}"
+if [ -z "$_caf_allowed_raw" ] && [ -n "$GHL_LOCATION_ID" ]; then
+    _caf_allowed_raw="$GHL_LOCATION_ID"
+    echo "[ghl] Allowed write locations set to ${_caf_allowed_raw}; add more in CAF_ALLOWED_LOCATION_IDS" >&2
+fi
+export CAF_ALLOWED_LOCATION_IDS="$_caf_allowed_raw"
+unset _caf_allowed_raw
 export CAF_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
 export CAF_DRY_RUN="${GOHIGHLEVEL_DRY_RUN:-${CAF_DRY_RUN:-}}"
 

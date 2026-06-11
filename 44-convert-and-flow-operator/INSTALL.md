@@ -62,9 +62,12 @@ if [ -z "$_caf_allowed_raw" ] && [ -n "$GHL_LOCATION_ID" ]; then
     _caf_allowed_raw="$GHL_LOCATION_ID"
     echo "[caf] Allowed write locations set to ${_caf_allowed_raw}; add more in CAF_ALLOWED_LOCATION_IDS" >&2
 fi
-export GHL_ALLOWED_LOCATION_IDS="$_caf_allowed_raw"
+# safety_gate.py reads CAF_ALLOWED_LOCATION_IDS / CAF_DRAFT_ONLY / CAF_DRY_RUN —
+# export those exact names (the GHL_-prefixed names are ignored by the gate).
+export CAF_ALLOWED_LOCATION_IDS="$_caf_allowed_raw"
 unset _caf_allowed_raw
-export GHL_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
+export CAF_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
+export CAF_DRY_RUN="${GOHIGHLEVEL_DRY_RUN:-${CAF_DRY_RUN:-}}"
 
 # Snapshot dir for workflow rollbacks
 export GHL_SNAPSHOT_DIR="${HOME}/.openclaw/tools/convert-and-flow-cli/data/snapshots"
