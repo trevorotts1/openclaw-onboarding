@@ -115,13 +115,16 @@ jobs:
             grep -A5 'Action 3' "$INSTALL" || true
             exit 1
           fi
-          # Assert the stale heredoc form is gone (exec line with .main inside a heredoc)
-          if grep -q 'gohighlevel\.main' "$INSTALL"; then
-            echo "FAIL: stale gohighlevel.main still present in INSTALL.md"
-            grep 'gohighlevel\.main' "$INSTALL" || true
+          # Assert the stale heredoc exec form is gone.
+          # Pattern is intentionally narrow: only matches the Python -m invocation form
+          # (e.g. `-m cli_anything.gohighlevel.main`) so prose references like
+          # "the gohighlevel.main bug" in CHANGELOG/comments don't false-positive.
+          if grep -qE '\-m cli_anything\.gohighlevel\.main' "$INSTALL"; then
+            echo "FAIL: stale '-m cli_anything.gohighlevel.main' exec form still present in INSTALL.md"
+            grep -E '\-m cli_anything\.gohighlevel\.main' "$INSTALL" || true
             exit 1
           fi
-          echo "PASS: no stale .main entrypoint in INSTALL.md"
+          echo "PASS: no stale -m cli_anything.gohighlevel.main exec form in INSTALL.md"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # CHECK 2: CORE_UPDATES auto-apply — guards against agents not knowing skill 44
