@@ -1,3 +1,10 @@
+## [v11.18.0]  -  2026-06-11  -  PRD Addendum A.2: session load gate (edit->reset->loaded-check ordering)
+
+### Changes
+- `scripts/a2-session-load-gate.sh` NEW — PRD Addendum A.2 session load gate. Issues `openclaw gateway call sessions.reset` (NEVER gateway restart), verifies edit->reset ordering via AGENTS.md mtime + `<!-- convertandflow-migration:` marker, retries once on failure, alerts operator via `openclaw message send` on persistent loaded=NO. Lockfile-idempotent. Mac + VPS platform-aware paths.
+- `tests/fixture-a2-session-load-gate.sh` NEW — 2-case fixture: Case 1 (loaded=YES: marker present, mtime before reset epoch); Case 2 (loaded=NO: marker absent -> retry -> alert -> exit 1, 2 reset calls confirmed).
+- `scripts/update-skills.sh` — wires A.2 gate: (a) HAS_WIRE_MIGRATIONS flag set when skills 35/36/38/44 or any wire.sh skill is applied; (b) A.2 gate called after UPDATE PENDING flag write, before completion output; gate failure is non-fatal (operator already alerted).
+
 ## [v11.17.1]  -  2026-06-11  -  skill-44 Chrome extension load-unpacked (no Chrome Web Store)
 
 ## [v11.17.1]  -  2026-06-11  -  fix(36): SOUL.md tier-protocol removal regex now matches header suffix variants (D-1)
@@ -548,10 +555,10 @@ Fix (`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`):
 - Replaced the substring-match block with a two-tier check: multi-word phrases
   (`"check disk"`, `"check memory"`) use plain `in` (specific enough); single-word
   shell commands (`restart`, `reboot`, `ping`, `ls`, `chmod`, `chown`) use
-  `re.search(r"\b<cmd>\b", ...)` word-boundary matching.
+  `re.search(r"<cmd>", ...)` word-boundary matching.
 - Audit of full list: `reboot` (matched "reboot the strategy"), `ping` (matched
   "shipping") and `ls ` (matched "emails/tools/controls") were all false-positive
-  risks; all fixed by the `\b` anchoring.
+  risks; all fixed by the `` anchoring.
 - Fixture verified: `"Create emails targeting customers"` → mechanical=False;
   `"run ls -la on server"` / `"restart the service"` / `"ping the server"` → mechanical=True.
 
