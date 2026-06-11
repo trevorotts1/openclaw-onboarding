@@ -17,8 +17,10 @@ Exit codes:
     0  success / dry-run completed
     1  fatal (platform detection failure, missing required args)
     2  partial (at least one step failed but run continued)
+    3  retry-then-mark-UNKNOWN (transient error; caller retries; on repeated
+       failure marks box UNKNOWN — NEVER destructive)
 
-PRD 1.11 — v11.5.0
+PRD 1.11 — v11.14.0
 """
 
 from __future__ import annotations
@@ -49,9 +51,11 @@ def _ok(msg: str) -> None:   print(f"{GREEN}[fleet-refresh] {msg}{NC}", file=sys
 # ── Wave 5 deploy preflight (FAIL-CLOSED — NO BYPASS) ────────────────────────
 
 _WAVE5_CC_REPO = "trevorotts1/blackceo-command-center"
+# Each entry: (label, path)
 _WAVE5_REQUIRED_FILES = [
-    "scripts/cc-health-check.sh",   # B.1
-    "scripts/atomic-deploy.sh",     # B.2
+    ("B.1", "scripts/cc-health-check.sh"),
+    ("B.2", "scripts/atomic-deploy.sh"),
+    ("B.3", "tests/e2e/duck-test"),
 ]
 
 def wave5_deploy_preflight() -> None:
@@ -59,28 +63,31 @@ def wave5_deploy_preflight() -> None:
     Fail-closed preflight that MUST pass before ANY Wave-5 Command Center
     deploy proceeds.
 
-    Checks that BOTH of the following files exist on origin/main of
+    Checks that ALL THREE of the following paths exist on origin/main of
     trevorotts1/blackceo-command-center:
 
         scripts/cc-health-check.sh   (B.1 — must be merged to main)
         scripts/atomic-deploy.sh     (B.2 — must be merged to main)
+        tests/e2e/duck-test          (B.3 — duck CI test, required for mock-mode
+                                      post-deploy green gate)
 
     Uses the GitHub Contents API (unauthenticated or via GITHUB_TOKEN) to
-    check each file authoritatively against the main branch HEAD.
-    A 200 response means the file is present; 404 means absent.
+    check each path authoritatively against the main branch HEAD.
+    A 200 response means the path is present; 404 means absent.
 
-    If EITHER file is missing this function prints a FATAL message and
+    If ANY path is missing this function prints a FATAL message and
     exits non-zero immediately.  There is NO env-var, NO flag, and NO code
-    path that bypasses this check.  It runs unconditionally.
+    path that bypasses this check.  It runs unconditionally and is
+    PRESERVED UNWEAKENED at the top of both step_build_cc and step_restart_cc.
     """
     import urllib.request
     import urllib.error
 
-    _info("Wave-5 deploy preflight: checking B.1 + B.2 on origin/main of blackceo-command-center ...")
+    _info("Wave-5 deploy preflight: checking B.1 + B.2 + B.3 on origin/main of blackceo-command-center ...")
 
-    missing: list[str] = []
+    missing: list[tuple[str, str]] = []
 
-    for path in _WAVE5_REQUIRED_FILES:
+    for label, path in _WAVE5_REQUIRED_FILES:
         url = (
             f"https://api.github.com/repos/{_WAVE5_CC_REPO}/contents/{path}"
             f"?ref=main"
@@ -95,43 +102,44 @@ def wave5_deploy_preflight() -> None:
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 if resp.status == 200:
-                    _ok(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} PRESENT on main: {path}")
+                    _ok(f"  {label} PRESENT on main: {path}")
                 else:
                     # Unexpected non-200/non-404 — treat as missing (fail-closed)
-                    missing.append(path)
-                    _err(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} UNEXPECTED status {resp.status} for: {path} — treating as MISSING")
+                    missing.append((label, path))
+                    _err(f"  {label} UNEXPECTED status {resp.status} for: {path} — treating as MISSING")
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                missing.append(path)
-                _err(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} MISSING on main (404): {path}")
+                missing.append((label, path))
+                _err(f"  {label} MISSING on main (404): {path}")
             else:
                 # Non-404 HTTP error — fail-closed
-                missing.append(path)
-                _err(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} HTTP error {e.code} for: {path} — treating as MISSING (fail-closed)")
+                missing.append((label, path))
+                _err(f"  {label} HTTP error {e.code} for: {path} — treating as MISSING (fail-closed)")
         except Exception as exc:
             # Network error, timeout, etc. — fail-closed
-            missing.append(path)
-            _err(f"  B.{_WAVE5_REQUIRED_FILES.index(path) + 1} check failed ({exc.__class__.__name__}: {exc}) — treating as MISSING (fail-closed)")
+            missing.append((label, path))
+            _err(f"  {label} check failed ({exc.__class__.__name__}: {exc}) — treating as MISSING (fail-closed)")
 
     if missing:
         _err("")
         _err("╔══════════════════════════════════════════════════════════════════╗")
-        _err("║  FATAL: Wave-5 deploy BLOCKED — B.1+B.2 preflight FAILED        ║")
+        _err("║  FATAL: Wave-5 deploy BLOCKED — B.1+B.2+B.3 preflight FAILED    ║")
         _err("╠══════════════════════════════════════════════════════════════════╣")
-        for m in missing:
-            label = "B.1" if m == _WAVE5_REQUIRED_FILES[0] else "B.2"
+        for lbl, m in missing:
             _err(f"║  MISSING from trevorotts1/blackceo-command-center @ main:         ║")
-            _err(f"║    [{label}] {m:<54}║")
+            _err(f"║    [{lbl}] {m:<54}║")
         _err("╠══════════════════════════════════════════════════════════════════╣")
-        _err("║  Wave 5 is BLOCKED until BOTH files are merged to main:          ║")
-        _err("║    B.1  scripts/cc-health-check.sh  (PR #78 — not yet merged)    ║")
-        _err("║    B.2  scripts/atomic-deploy.sh    (does not exist yet)         ║")
+        _err("║  Wave 5 is BLOCKED until ALL three paths are merged to main:     ║")
+        _err("║    B.1  scripts/cc-health-check.sh                               ║")
+        _err("║    B.2  scripts/atomic-deploy.sh                                 ║")
+        _err("║    B.3  tests/e2e/duck-test                                      ║")
         _err("║                                                                  ║")
-        _err("║  Merge B.1 + B.2 to main in blackceo-command-center, then retry.║")
+        _err("║  Merge B.1 + B.2 + B.3 to main in blackceo-command-center,      ║")
+        _err("║  then retry.                                                     ║")
         _err("╚══════════════════════════════════════════════════════════════════╝")
         sys.exit(1)
 
-    _ok("Wave-5 deploy preflight PASSED — B.1 + B.2 both present on origin/main.")
+    _ok("Wave-5 deploy preflight PASSED — B.1 + B.2 + B.3 all present on origin/main.")
 
 
 # ── Box result schema ─────────────────────────────────────────────────────────
@@ -711,10 +719,56 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
         res.step_fail("pull-cc", str(e))
 
 
+def _run_duck_ci_test(cc_dir: Path, box: str) -> tuple[bool, str]:
+    """
+    Run the duck CI test (tests/e2e/duck-test) in mock mode from the deployed
+    CC checkout.  Returns (passed: bool, detail: str).
+
+    The duck test is invoked as:
+        bash <cc_dir>/tests/e2e/duck-test --mock
+
+    Exit 0 = green.  Any non-zero exit = red (blocks deploy).
+    stdout+stderr are captured and the first 200 chars returned as detail.
+    """
+    duck_test = cc_dir / "tests" / "e2e" / "duck-test"
+    if not duck_test.is_file():
+        return False, f"duck-test not found at {duck_test} (B.3 preflight should have caught this)"
+
+    try:
+        result = subprocess.run(
+            ["bash", str(duck_test), "--mock"],
+            cwd=str(cc_dir),
+            capture_output=True, text=True, timeout=120,
+        )
+        detail = (result.stdout + result.stderr).strip()[:200]
+        if result.returncode == 0:
+            return True, detail or "duck-test passed"
+        else:
+            return False, f"duck-test exited {result.returncode}: {detail}"
+    except subprocess.TimeoutExpired:
+        return False, "duck-test timed out after 120s"
+    except Exception as exc:
+        return False, f"duck-test failed to launch: {exc}"
+
+
 def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = False) -> None:
-    """Step 4: npm ci (or npm install) + npm run build."""
+    """
+    Step 4: invoke scripts/atomic-deploy.sh from the deployed CC checkout.
+
+    atomic-deploy.sh owns the full build+serve sequence (npm ci / npm install,
+    npm run build, pm2 restart).  This step calls it synchronously and checks
+    its exit code.  After atomic-deploy.sh reports success the duck CI test
+    (tests/e2e/duck-test --mock) is run as a post-deploy green requirement;
+    failure of the duck test fails this step.
+
+    REMOVED: the detached Popen / npm-run-build-into-live-.next path is gone.
+    That code path is not reachable.  atomic-deploy.sh is the ONLY deploy
+    mechanism from this function.
+
+    WAVE-5 SAFETY GATE is PRESERVED UNWEAKENED at the top of this function.
+    """
     # WAVE-5 SAFETY GATE — runs unconditionally (before dry_run skip).
-    # Blocks Command Center deploy until B.1+B.2 are merged to origin/main.
+    # Blocks Command Center deploy until B.1+B.2+B.3 are merged to origin/main.
     wave5_deploy_preflight()
 
     if dry_run:
@@ -728,150 +782,140 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
 
     cc_dir = Path(cc_dir)
 
-    # Try npm ci first, fall back to npm install
-    npm_cmd = None
-    lock_file = cc_dir / "package-lock.json"
-
-    if lock_file.is_file():
-        # Try npm ci
-        try:
-            result = subprocess.run(
-                ["npm", "ci"],
-                cwd=str(cc_dir), capture_output=True, text=True, timeout=300
-            )
-            if result.returncode == 0:
-                npm_cmd = "ci"
-            else:
-                _warn("npm ci failed (lockfile mismatch?), falling back to npm install")
-        except Exception:
-            pass
-
-    if npm_cmd is None:
-        # Fall back to npm install
-        try:
-            result = subprocess.run(
-                ["npm", "install"],
-                cwd=str(cc_dir), capture_output=True, text=True, timeout=300
-            )
-            if result.returncode != 0:
-                res.step_fail("build-cc", f"npm install failed (exit {result.returncode}): {result.stderr[:200]}")
-                return
-            npm_cmd = "install"
-        except subprocess.TimeoutExpired:
-            res.step_fail("build-cc", "npm install timed out")
-            return
-        except Exception as e:
-            res.step_fail("build-cc", str(e))
-            return
-
-    # npm run build
-    # Write a build-start marker so the verifier can detect incomplete builds
-    build_marker = cc_dir / ".fleet-refresh-build-running"
-    build_complete = cc_dir / ".fleet-refresh-build-complete"
-    build_failed = cc_dir / ".fleet-refresh-build-failed"
-
-    for f in [build_marker, build_complete, build_failed]:
-        if f.exists():
-            f.unlink()
-
-    build_marker.write_text(str(time.time()))
-
-    if local:
-        # Synchronous build in local/fixture mode
-        try:
-            build_result = subprocess.run(
-                ["npm", "run", "build"],
-                cwd=str(cc_dir), capture_output=True, text=True, timeout=300
-            )
-            build_marker.unlink(missing_ok=True)
-            if build_result.returncode != 0:
-                build_failed.write_text(str(build_result.returncode))
-                res.step_fail("build-cc", f"npm run build failed (exit {build_result.returncode}): {build_result.stderr[:200]}")
-                return
-            build_complete.write_text(str(time.time()))
-            res.steps["build-cc-npm-cmd"] = npm_cmd
-            res.step_ok("build-cc")
-        except subprocess.TimeoutExpired:
-            build_marker.unlink(missing_ok=True)
-            build_failed.write_text("timeout")
-            res.step_fail("build-cc", "npm run build timed out")
-    else:
-        # Detached build: start async, record job marker, verify separately
-        # (avoids babysitting the npm build over SSH which burns tokens)
-        script = (
-            f"cd {cc_dir} && "
-            f"npm run build > /tmp/fleet-refresh-build-{res.box}.log 2>&1 "
-            f"&& touch {build_complete} "
-            f"|| echo $? > {build_failed}; "
-            f"rm -f {build_marker}"
+    # Resolve atomic-deploy.sh from the deployed CC checkout (CC main).
+    atomic_deploy = cc_dir / "scripts" / "atomic-deploy.sh"
+    if not atomic_deploy.is_file():
+        res.step_fail(
+            "build-cc",
+            f"atomic-deploy.sh not found at {atomic_deploy}. "
+            f"B.2 preflight should have blocked this deploy — check wave5_deploy_preflight().",
         )
-        subprocess.Popen(["bash", "-c", script], close_fds=True)
-        res.steps["build-cc-detached"] = True
-        res.steps["build-cc-npm-cmd"] = npm_cmd
-        res.steps["build-cc"] = "launched-detached"
-        _info(f"  npm build launched detached; completion marker: {build_complete}")
+        return
+
+    # Invoke atomic-deploy.sh synchronously.
+    # Exit contract honoured:
+    #   0  → success
+    #   1  → fail this box (step_fail)
+    #   3  → transient; caller should retry then mark UNKNOWN (never destructive)
+    try:
+        deploy_result = subprocess.run(
+            ["bash", str(atomic_deploy)],
+            cwd=str(cc_dir),
+            capture_output=True, text=True, timeout=600,
+        )
+        deploy_detail = (deploy_result.stdout + deploy_result.stderr).strip()[:300]
+
+        if deploy_result.returncode == 1:
+            res.step_fail("build-cc", f"atomic-deploy.sh exited 1 (deploy failed): {deploy_detail}")
+            return
+
+        if deploy_result.returncode == 3:
+            # Transient error: surface via step_fail with a marker the caller
+            # can detect; never destructive.  Exit code 3 propagates to the
+            # box result so fleet-refresh.sh can retry then mark UNKNOWN.
+            res.step_fail("build-cc", f"[exit-3] atomic-deploy.sh transient error: {deploy_detail}")
+            return
+
+        if deploy_result.returncode != 0:
+            res.step_fail("build-cc", f"atomic-deploy.sh exited {deploy_result.returncode}: {deploy_detail}")
+            return
+
+    except subprocess.TimeoutExpired:
+        res.step_fail("build-cc", "atomic-deploy.sh timed out after 600s")
+        return
+    except Exception as exc:
+        res.step_fail("build-cc", f"atomic-deploy.sh failed to launch: {exc}")
+        return
+
+    # Post-deploy green requirement: duck CI test in mock mode.
+    duck_passed, duck_detail = _run_duck_ci_test(cc_dir, res.box)
+    res.steps["build-cc-duck-test"] = "pass" if duck_passed else f"fail: {duck_detail}"
+    if not duck_passed:
+        res.step_fail("build-cc", f"duck CI test (post-deploy) FAILED: {duck_detail}")
+        return
+
+    _ok(f"  duck CI test passed: {duck_detail}")
+    res.step_ok("build-cc")
 
 
 def step_restart_cc(paths: dict, res: BoxResult, dry_run: bool) -> None:
-    """Step 5: pm2 restart command-center (or pm2 start if not running)."""
+    """
+    Step 5: ensure the Command Center is running after the build step.
+
+    Delegates to scripts/atomic-deploy.sh from the deployed CC checkout.
+    atomic-deploy.sh is idempotent: if the CC is already running from the
+    build step it confirms the process is healthy; if it is not running it
+    starts it.
+
+    Exit contract (honoured identically to step_build_cc):
+        0  → success (CC is up and healthy)
+        1  → fail this box
+        3  → transient; caller retries then marks UNKNOWN — never destructive
+
+    REMOVED: raw pm2 restart / pm2 start calls that bypassed atomic-deploy.sh.
+    REMOVED: build-running / build-failed marker checks (detached build is gone).
+
+    Safety guard: NEVER issue `openclaw gateway restart` — this step only
+    touches the Command Center process via atomic-deploy.sh, not the OpenClaw
+    gateway process (Mac err 125 guard).
+
+    WAVE-5 SAFETY GATE is PRESERVED UNWEAKENED at the top of this function.
+    """
     # WAVE-5 SAFETY GATE — runs unconditionally (before dry_run skip).
-    # Blocks Command Center restart until B.1+B.2 are merged to origin/main.
+    # Blocks Command Center restart until B.1+B.2+B.3 are merged to origin/main.
     wave5_deploy_preflight()
 
     if dry_run:
         res.step_skip("restart-cc")
         return
 
-    # Safety guard: NEVER issue openclaw gateway restart (Mac err 125)
-    # This step only touches pm2 (Command Center), not the OpenClaw gateway process.
-
     cc_dir = paths.get("cc_dir")
+    if not cc_dir or not Path(cc_dir).is_dir():
+        res.step_fail("restart-cc", f"CC dir not found: {cc_dir}")
+        return
 
-    try:
-        # Check if build completed (if detached)
-        if cc_dir:
-            build_failed = Path(cc_dir) / ".fleet-refresh-build-failed"
-            build_running = Path(cc_dir) / ".fleet-refresh-build-running"
-            if build_running.exists():
-                res.step_fail("restart-cc", "npm build is still running; cannot restart CC with incomplete build")
-                return
-            if build_failed.exists():
-                fail_code = build_failed.read_text().strip()
-                res.step_fail("restart-cc", f"npm build failed (exit {fail_code}); not restarting CC")
-                return
+    cc_dir = Path(cc_dir)
 
-        # Try pm2 restart
-        result = subprocess.run(
-            ["pm2", "restart", "command-center"],
-            capture_output=True, text=True, timeout=30
+    # Resolve atomic-deploy.sh from the deployed CC checkout (CC main).
+    atomic_deploy = cc_dir / "scripts" / "atomic-deploy.sh"
+    if not atomic_deploy.is_file():
+        res.step_fail(
+            "restart-cc",
+            f"atomic-deploy.sh not found at {atomic_deploy}. "
+            f"B.2 preflight should have blocked this deploy — check wave5_deploy_preflight().",
         )
-        if result.returncode == 0:
-            res.step_ok("restart-cc")
+        return
+
+    # Invoke atomic-deploy.sh synchronously.
+    try:
+        restart_result = subprocess.run(
+            ["bash", str(atomic_deploy)],
+            cwd=str(cc_dir),
+            capture_output=True, text=True, timeout=600,
+        )
+        restart_detail = (restart_result.stdout + restart_result.stderr).strip()[:300]
+
+        if restart_result.returncode == 1:
+            res.step_fail("restart-cc", f"atomic-deploy.sh exited 1 (restart failed): {restart_detail}")
             return
 
-        # pm2 restart failed; try pm2 start from CC dir
-        if cc_dir and Path(cc_dir).is_dir():
-            eco = Path(cc_dir) / "ecosystem.config.cjs"
-            if eco.is_file():
-                start_result = subprocess.run(
-                    ["pm2", "start", str(eco)],
-                    capture_output=True, text=True, timeout=30
-                )
-                if start_result.returncode == 0:
-                    res.step_ok("restart-cc")
-                    return
-                res.step_fail("restart-cc",
-                    f"pm2 start failed (exit {start_result.returncode}): {start_result.stderr[:200]}")
-            else:
-                res.step_fail("restart-cc", f"pm2 restart failed and no ecosystem.config.cjs at {cc_dir}")
-        else:
-            res.step_fail("restart-cc", f"pm2 restart failed (exit {result.returncode}): {result.stderr[:200]}")
+        if restart_result.returncode == 3:
+            # Transient error: never destructive.  Surface for retry logic.
+            res.step_fail("restart-cc", f"[exit-3] atomic-deploy.sh transient error: {restart_detail}")
+            return
+
+        if restart_result.returncode != 0:
+            res.step_fail("restart-cc", f"atomic-deploy.sh exited {restart_result.returncode}: {restart_detail}")
+            return
+
     except subprocess.TimeoutExpired:
-        res.step_fail("restart-cc", "pm2 timed out")
-    except FileNotFoundError:
-        res.step_fail("restart-cc", "pm2 not found on PATH")
-    except Exception as e:
-        res.step_fail("restart-cc", str(e))
+        res.step_fail("restart-cc", "atomic-deploy.sh timed out after 600s")
+        return
+    except Exception as exc:
+        res.step_fail("restart-cc", f"atomic-deploy.sh failed to launch: {exc}")
+        return
+
+    res.step_ok("restart-cc")
 
 
 def step_sessions_reset_ceo(
@@ -1135,9 +1179,21 @@ def main() -> None:
     print(json.dumps(result.to_dict(), default=str))
 
     # Exit code
+    # 0  success / dry-run
+    # 1  fatal (platform detection failure, missing required args)
+    # 2  partial (at least one step failed but run continued)
+    # 3  transient error (step emitted [exit-3] marker) — caller retries,
+    #    then marks box UNKNOWN on repeated failure; NEVER destructive
     if result.result in ("ok", "dry-run"):
         sys.exit(0)
     elif result.result == "partial":
+        # Check if any step failed with the [exit-3] transient marker.
+        transient = any(
+            "[exit-3]" in str(v)
+            for v in result.steps.values()
+        )
+        if transient:
+            sys.exit(3)
         sys.exit(2)
     else:
         sys.exit(2)
