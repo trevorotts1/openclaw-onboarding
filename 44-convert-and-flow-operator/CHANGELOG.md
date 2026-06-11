@@ -1,5 +1,58 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.3] - 2026-06-11 — fix: `workflows build` now ADDS action ordering and FAILS LOUD on rejected save; opportunities list snake_case params; payments list alias
+
+### Fixed (CRITICAL — engine `workflow_builder.py`)
+- **Bug 1a — `workflows build` omitted action ORDERING on the save PUT** (GHL rejected with
+  400 `corrupted order`). `CampaignBuilder._create_workflow` now runs `link_steps()` on the
+  plan templates ONCE up front and uses that linked copy (carrying `order`/`next`/`parentKey`)
+  for the Step-2 first-step link, the Step-3 step-save PUT body, AND the Step-4 sync PUT.
+  Previously `link_steps` was defined but never called on the build path, so the very first
+  save PUT had zero execution chain and GHL rejected it.
+- **Bug 1b — `workflows build` SWALLOWED a non-2xx save and printed `Steps: 0, Errors: 0`
+  (false success, exit 0).** A rejected step-save PUT (transport returns
+  `{"_error": True, "http_code": 400, ...}`) is now captured as a real error string
+  (including HTTP code + message), returned from `_create_workflow`, and appended to
+  `stats['errors']` UNCONDITIONALLY (not gated on the workflow-shell id). The CLI
+  (`workflows build` / `workflows create` / `workflows create-n8n`) now prints the error
+  summary to stderr and exits non-zero whenever `stats['errors']` is non-empty.
+
+### Fixed (engine CLI `gohighlevel_cli.py`)
+- **Bug 3 — `opportunities list` 422 from camelCase params.** `GET /opportunities/search`
+  now sends snake_case `location_id`/`pipeline_id` (the one search endpoint that diverges
+  from the camelCase convention). The create/update BODIES (camelCase) are unchanged.
+- **Bug 4 — `payments` had no `list` verb.** Added a thin `payments list` alias that
+  forwards to `payments transactions`, so the uniform `<group> list` pattern works.
+  Explicit `transactions`/`orders`/`invoices` verbs are unchanged.
+
+### Changed
+- Engine CLI version bumped `2.0.0` -> `2.1.0` (behavior change: build applies ordering and
+  fails loud on a rejected save).
+
+### Added
+- Regression tests `TestBuildFailsLoudAndEmitsOrdering` in
+  `tools/engine/tests/test_e2e_unit11.py`:
+  - TEST A asserts a rejected step-save exits non-zero with the 400/`corrupted order`
+    cause surfaced (guards the exact pre-fix Steps:0/Errors:0/exit-0 false-success shape).
+  - TEST B asserts the FIRST (step-save) PUT body carries `order` `[0,1,2]` plus
+    `next`/`parentKey` links — proving `link_steps` ran BEFORE the save PUT.
+  Both tests FAIL on pre-fix main and PASS after the fix.
+- `qc-convert-and-flow.sh` static asserts for the build-path `link_steps`, CLI fail-loud,
+  snake_case opportunities params, payments list alias, the regression test, and the
+  `convertandflow`/`ghl` wrapper auto-seed parity.
+
+### Hardening (consistency, not a blocker)
+- `tools/engine/convertandflow` and `tools/engine/ghl` wrappers now apply the same
+  `CAF_ALLOWED_LOCATION_IDS` auto-seed-from-`GHL_LOCATION_ID` logic that `caf` got in 1.0.2,
+  so a blank whitelist never silently blocks all writes on any of the three runtime wrappers.
+- `INSTALL.md` Action 3 installed wrapper now exports `CAF_ALLOWED_LOCATION_IDS` /
+  `CAF_DRAFT_ONLY` / `CAF_DRY_RUN` (the exact names `safety_gate.py` reads) instead of the
+  `GHL_`-prefixed names the gate ignores — matching the shipped engine wrappers.
+
+### Not changed (safety gate preserved exactly)
+- Fail-closed location whitelist, approval gate, and dry-run refusals (all `sys.exit(1)` on
+  `SafetyRefused`). Draft-only default. `STRIP_KEYS`. Transport 401 retry-once / 429 no-retry.
+
 ## [1.0.2] - 2026-06-11 — fix: CAF_ALLOWED_LOCATION_IDS auto-seeds from GOHIGHLEVEL_LOCATION_ID at install
 
 ### Fixed

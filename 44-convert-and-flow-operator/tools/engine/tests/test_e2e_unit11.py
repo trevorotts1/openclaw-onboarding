@@ -1347,6 +1347,283 @@ class TestCriterion21Serialization(unittest.TestCase):
         )
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# REGRESSION: workflows build FAILS LOUD on a rejected save + EMITS ordering
+# (Bug 1a: missing action ordering -> GHL 400 'corrupted order';
+#  Bug 1b: silent false-success Steps:0/Errors:0/exit-0)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _make_failing_save_adapter(
+    location_id: str = SANDBOX_LOCATION_ID,
+    request_log: list | None = None,
+    put_bodies: list | None = None,
+):
+    """Mock client whose FIRST PUT (the step-save) returns a 400 error dict.
+
+    Mirrors transport.py _do_request: a rejected PUT returns
+    {"_error": True, "http_code": 400, "code": 400, "message": ...}.
+    POSTs (folder/workflow/tag/trigger) and GETs succeed; only the step-save
+    PUT fails — exactly the live failure mode the build path swallowed.
+    """
+    from cli_anything.gohighlevel.internal.adapter_types import AdapterResult
+
+    wf = dict(FIXTURE_WORKFLOW)
+    client = MagicMock()
+    client.location_id = location_id
+    client._adapter = None  # force CampaignBuilder onto the legacy .request() path
+
+    state = {"stepsave_count": 0}
+
+    def mock_request(method, path, body=None, workflow_name="", _apply_step_backoff=False):
+        if request_log is not None:
+            request_log.append({"method": method, "path": path, "body": body})
+        if method == "GET":
+            return dict(wf)
+        if method == "PUT":
+            if put_bodies is not None:
+                put_bodies.append(body)
+            p = str(path)
+            # The step-save PUT targets /workflow/<loc>/<wf_id> (NOT /trigger/...)
+            # and carries a workflowData payload. Reject THAT the way GHL
+            # rejects an unordered workflowData payload; trigger-link PUTs pass.
+            is_step_save = ("/trigger/" not in p) and bool(
+                (body or {}).get("workflowData")
+            )
+            if is_step_save:
+                state["stepsave_count"] += 1
+                if state["stepsave_count"] == 1:
+                    return {
+                        "_error": True,
+                        "http_code": 400,
+                        "code": 400,
+                        "message": "corrupted order: action chain is not linked",
+                    }
+            return {"id": wf["id"], "name": wf["name"], "status": "draft"}
+        if method == "POST":
+            if "tags/create" in str(path):
+                return {"id": "TAG001"}
+            if "/trigger" in str(path):
+                return {"id": "TRG001"}
+            return {"id": "FOLDER001", "name": "caf-build"}
+        return {"id": wf["id"]}
+
+    client.request.side_effect = mock_request
+    client.get_workflow.side_effect = lambda wid: AdapterResult(ok=True, data=dict(wf))
+    return client
+
+
+class TestBuildFailsLoudAndEmitsOrdering(unittest.TestCase):
+    """Regression for the two CRITICAL workflows-build bugs.
+
+    Both tests must FAIL on pre-fix main and PASS after the fix:
+      TEST A — a rejected step-save PUT must yield Errors>=1 and exit code 1,
+               never Steps:0/Errors:0/exit-0.
+      TEST B — the FIRST (step-save) PUT body must carry action ordering
+               (order/next/parentKey), proving link_steps ran BEFORE the save
+               PUT — not only in the gated sync PUT.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["CAF_DATA_DIR"] = self.tmp
+        os.environ["CAF_ALLOWED_LOCATION_IDS"] = SANDBOX_LOCATION_ID
+        os.environ["CAF_APPROVAL_TOKEN"] = "regression-test-token"
+        os.environ["GHL_FIREBASE_REFRESH_TOKEN"] = "sandbox-refresh-token"
+        os.environ["CAF_STEP_BACKOFF_MS"] = "0"
+        os.environ["CAF_INTERNAL_STEP_BACKOFF_MS"] = "0"
+        os.environ.pop("CAF_DRY_RUN", None)
+
+    def tearDown(self):
+        for k in (
+            "CAF_DATA_DIR", "CAF_ALLOWED_LOCATION_IDS", "CAF_APPROVAL_TOKEN",
+            "GHL_FIREBASE_REFRESH_TOKEN", "CAF_STEP_BACKOFF_MS",
+            "CAF_INTERNAL_STEP_BACKOFF_MS", "CAF_DRY_RUN",
+        ):
+            os.environ.pop(k, None)
+
+    def test_build_fails_loud_on_rejected_save(self):
+        """TEST A: a 400 step-save must exit non-zero with the error surfaced."""
+        from click.testing import CliRunner
+        from cli_anything.gohighlevel.gohighlevel_cli import cli
+
+        plan_file = Path(self.tmp) / "plan.json"
+        plan_file.write_text(json.dumps(FIXTURE_PLAN), encoding="utf-8")
+
+        request_log = []
+        mock_client = _make_failing_save_adapter(
+            location_id=SANDBOX_LOCATION_ID,
+            request_log=request_log,
+        )
+
+        with patch(
+            "cli_anything.gohighlevel.gohighlevel_cli._get_internal_client",
+            return_value=mock_client,
+        ):
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                "--experimental", "--json",
+                "--location-id", SANDBOX_LOCATION_ID,
+                "workflows", "build",
+                "--from-plan", str(plan_file),
+                "--folder", "t",
+            ])
+
+        # Confirm the mock was actually exercised (not a no-op).
+        self.assertGreater(
+            len(request_log), 0,
+            "Build issued no API calls — mock not reached.",
+        )
+
+        # 1) A rejected save MUST exit non-zero (pre-fix this was 0).
+        self.assertNotEqual(
+            result.exit_code, 0,
+            f"Rejected step-save must NOT exit 0. Got exit 0.\n"
+            f"output:\n{result.output}",
+        )
+
+        # 2) The build result must record the error (non-empty, mentions 400 /
+        #    corrupted order). On error we emit the stats JSON object to stderr,
+        #    so scan both captured streams.
+        def _safe_stream(name):
+            try:
+                return getattr(result, name) or ""
+            except Exception:
+                return ""
+        combined = _safe_stream("stdout") + "\n" + _safe_stream("stderr")
+        errors = None
+        # Try to parse the largest JSON object substring in the output.
+        start = combined.find("{")
+        end = combined.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                data = json.loads(combined[start:end + 1])
+                if isinstance(data, dict) and "errors" in data:
+                    errors = data["errors"]
+            except Exception:
+                data = {}
+        else:
+            data = {}
+
+        self.assertIsNotNone(
+            errors,
+            f"Build JSON with an 'errors' field was not emitted.\n{combined}",
+        )
+        self.assertTrue(
+            len(errors) >= 1,
+            f"errors must be non-empty on a rejected save. Got: {errors!r}",
+        )
+        joined = " ".join(str(e) for e in errors)
+        self.assertTrue(
+            ("400" in joined) or ("corrupted order" in joined),
+            f"Error text must surface the HTTP 400 / 'corrupted order' cause. "
+            f"Got: {errors!r}",
+        )
+
+        # 3) Guard against the EXACT pre-fix false-success shape: a created
+        #    workflow shell with zero steps saved and an empty errors list.
+        false_success = (
+            data.get("workflows_created", 0) >= 1
+            and data.get("steps_saved", 0) == 0
+            and not data.get("errors")
+        )
+        self.assertFalse(
+            false_success,
+            "Pre-fix false-success detected: workflow shell created, "
+            "steps_saved==0, errors==[]. A rejected save must report an error.",
+        )
+
+    def test_build_emits_action_ordering_in_first_put(self):
+        """TEST B: the first (step-save) PUT body must carry ordering links."""
+        from click.testing import CliRunner
+        from cli_anything.gohighlevel.gohighlevel_cli import cli
+
+        # 3-step plan with NO order/next/parentKey on the raw templates —
+        # link_steps must add them before the save PUT.
+        plan = {
+            "ordered_check": {
+                "name": "ZHC-Ordering-Check",
+                "templates": [
+                    {"id": "a1", "type": "email", "name": "Email: One",
+                     "attributes": {"subject": "1", "body": "<p>1</p>",
+                                    "html": "<p>1</p>", "fromName": "",
+                                    "attachments": []}},
+                    {"id": "a2", "type": "wait", "name": "Wait 1 Day",
+                     "attributes": {"type": "time",
+                                    "startAfter": {"type": "days", "value": 1}}},
+                    {"id": "a3", "type": "add_contact_tag", "name": "Tag: done",
+                     "attributes": {"tags": ["done"]}},
+                ],
+            }
+        }
+        plan_file = Path(self.tmp) / "ordered_plan.json"
+        plan_file.write_text(json.dumps(plan), encoding="utf-8")
+
+        put_bodies = []
+        mock_client = _make_sandbox_adapter(
+            location_id=SANDBOX_LOCATION_ID,
+            put_bodies=put_bodies,
+        )
+
+        with patch(
+            "cli_anything.gohighlevel.gohighlevel_cli._get_internal_client",
+            return_value=mock_client,
+        ):
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                "--experimental", "--json",
+                "--location-id", SANDBOX_LOCATION_ID,
+                "workflows", "build",
+                "--from-plan", str(plan_file),
+                "--folder", "t",
+            ])
+
+        self.assertEqual(
+            result.exit_code, 0,
+            f"Happy-path build must exit 0.\n{result.output}",
+        )
+        self.assertGreater(len(put_bodies), 0, "No PUT body captured.")
+
+        # The FIRST PUT is the step-save (Step 3). Its templates must be ordered.
+        first_templates = (
+            (put_bodies[0] or {}).get("workflowData", {}).get("templates", [])
+        )
+        self.assertEqual(
+            len(first_templates), 3,
+            f"First PUT must carry all 3 steps. Got: {first_templates!r}",
+        )
+
+        # order keys present and sequential [0,1,2].
+        orders = [s.get("order") for s in first_templates]
+        self.assertEqual(
+            orders, [0, 1, 2],
+            f"First PUT step 'order' must be [0,1,2] (link_steps ran before the "
+            f"save PUT). Got: {orders!r}",
+        )
+
+        # Linking: step0.next == step1.id; parentKey chain back-links.
+        self.assertEqual(
+            first_templates[0].get("next"), first_templates[1]["id"],
+            "step[0].next must point at step[1].id",
+        )
+        self.assertEqual(
+            first_templates[1].get("next"), first_templates[2]["id"],
+            "step[1].next must point at step[2].id",
+        )
+        self.assertIsNone(
+            first_templates[0].get("parentKey"),
+            "first step parentKey must be None",
+        )
+        self.assertEqual(
+            first_templates[1].get("parentKey"), first_templates[0]["id"],
+            "step[1].parentKey must point back at step[0].id",
+        )
+        self.assertEqual(
+            first_templates[2].get("parentKey"), first_templates[1]["id"],
+            "step[2].parentKey must point back at step[1].id",
+        )
+
+
 # ── Standalone runner ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1356,6 +1633,7 @@ if __name__ == "__main__":
         TestCriterion19E2EMergeGate,
         TestCriterion20Rollback,
         TestCriterion21Serialization,
+        TestBuildFailsLoudAndEmitsOrdering,
     ]:
         suite.addTests(loader.loadTestsFromTestCase(cls))
 

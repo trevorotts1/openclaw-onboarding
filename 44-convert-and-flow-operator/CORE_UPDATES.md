@@ -56,7 +56,7 @@ Health: caf doctor
 | calendars | caf calendars list/appointments |
 | conversations | caf conversations list/get/send |
 | documents | caf documents list/get/send |
-| payments | caf payments invoices list/create/send; transactions list |
+| payments | caf payments list (= transactions); invoices/orders/transactions; create-invoice |
 | forms | caf forms list/submissions |
 | social | caf social accounts/post/schedule |
 | locations | caf locations get/customfields/customvalues |
