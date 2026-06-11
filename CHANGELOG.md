@@ -1,3 +1,5 @@
+## [v11.17.1]  -  2026-06-11  -  skill-44 Chrome extension load-unpacked (no Chrome Web Store)
+
 ## [v11.17.1]  -  2026-06-11  -  fix(36): SOUL.md tier-protocol removal regex now matches header suffix variants (D-1)
 
 ### Changes
