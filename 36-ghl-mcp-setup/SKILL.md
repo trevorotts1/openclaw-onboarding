@@ -117,6 +117,7 @@ After setup, run these three smoke tests in order:
 - **Skill 05 (`05-ghl-setup`):** Handles the foundational credential discovery. This skill (36) builds on top of it by adding the MCP layer. If a client only has 05 installed, this skill 36 elevates them to MCP-first.
 - **Skill 29 (`29-ghl-convert-and-flow`):** Provides the Tier 3 reference files. When MCPs lack a tool, this skill's instructions fall through to skill 29's `references/[module].md` lookups.
 - **Skill 35 (`35-social-media-planner`):** Runs a SELF-CONTAINED 15+6 subagent publishing pipeline that posts to GHL Blog + Social Planner and uploads media via the DIRECT LeadConnector API (POST /medias/upload-file). That internal pipeline is EXEMPT from tier routing — do not redirect it through an MCP. Only AD-HOC interactive requests (a person asking the agent in chat to post something or look something up) follow the tier chain.
+- **`38-conversational-ai-system/references/GHL_AI_LAYERS.md`:** The authoritative 3-layer GHL AI architecture reference. **MCP tools (Tiers 1-2 above) cover contacts/conversations/calendar/tags reads and writes. They do NOT build GHL workflows.** Workflow builds use Skill 44's internal Build API (Tier 0, Firebase token required) or the Build-with-AI manual paste (fallback). These are orthogonal surfaces — MCP and Build API are not interchangeable. See GHL_AI_LAYERS.md for the full Layer 0 / Layer 1 / Layer 2 decision table.
 
 ## Important Rules
 

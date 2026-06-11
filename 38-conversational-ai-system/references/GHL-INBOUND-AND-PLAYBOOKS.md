@@ -228,9 +228,24 @@ Tunnel Values record (Section 5). It is Rule 7 of the playbook's Rules of Engage
 
 ---
 
-## 4. Build-with-AI prompt TEMPLATE (the operator pastes this into GHL)
+## 4. Build-with-AI prompt TEMPLATE (Option 2 — fallback when Skill 44 token absent)
 
-**GHL / Convert and Flow has no PUBLIC API or MCP for building automations.** The Build with AI button is the public path (Automations → **Build with AI** → paste a prompt → Publish). Skill 44 (convert-and-flow-operator) provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path. The agent's job is to generate a precise, copy-paste-ready prompt (or invoke skill 44's build path) with every value substituted.
+> **3-layer architecture reference:** `references/GHL_AI_LAYERS.md` is the canonical doc for
+> Layer 0 (compile-time Build-with-AI / CAF direct-build), Layer 1 (runtime Workflow AI step
+> prompt), and Layer 2 (OpenClaw playbook). Read it before any workflow build.
+>
+> **Routing decision:**
+> - **Option 1 (PRIMARY):** when the client has Skill 44 (convert-and-flow-operator) AND a healthy
+>   `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`, use `caf workflows build` — the internal-API path.
+>   Engine v2.1.0+ (`link_steps()` pre-save fix + rejected-save non-zero exit) makes this reliable.
+>   The 12-point verification checklist (Section 5) is MANDATORY even on a successful direct build.
+> - **Option 2 (FALLBACK — this section):** when the Firebase token is absent or expired, generate
+>   the prompt below and have the operator paste it into Automations → Build with AI → Publish.
+>
+> **The human is always the final verifier.** The in-builder "Test" button sends empty merge fields
+> and passes even when the live payload is broken — always perform a real inbound test.
+
+**GHL / Convert and Flow has no PUBLIC API or MCP for building automations.** The Build with AI button is the public path (Automations → **Build with AI** → paste a prompt → Publish). This is Option 2 — the fallback path used when the Firebase token for Skill 44 is absent or expired. When the token IS present, invoke Skill 44's direct-build path (Option 1) instead of the manual paste. The agent's job is to generate a precise, copy-paste-ready prompt (or invoke Skill 44's build path) with every value substituted.
 
 > Placeholders: `{{PUBLIC_HOSTNAME}}`, `{{HOOK_PATH}}`, `{{HOOKS_TOKEN}}`, `{{CHANNEL}}`.
 > `{{CHANNEL}}` must be one of the VALID send types in Section 7 (`SMS`, `Email`, `FB`, `IG`,
