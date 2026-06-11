@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 # qc-completeness.sh - v10.15.44 (Mac) / v10.16.43 (VPS)
+# v11.18.4 STOCK-BASH-3.2 COMPATIBILITY: the embedded `python3 - <<PYEOF` snippets
+# that lived inside $() command substitutions are externalized to sibling files
+# (_qc_company_info.py, _qc_get.py, _qc_owner_chat.py, _qc_summary.py). Stock
+# macOS /bin/bash 3.2.57 mis-parses a heredoc nested in a $() — it counts the
+# double-quotes inside the Python and aborts the entire script with `unexpected
+# EOF while looking for matching "` at PARSE time. The main analyzer heredoc
+# (`python3 - <<'PYEOF'` at column 0, NOT inside a $()) is unaffected and stays
+# inline. Logic is byte-equivalent across the port.
 #
 # First-class "are you done?" check for the active workforce. Runs after every
 # build / install / update. Reports PASS / PARTIAL / FAIL per dept and emits a
@@ -65,111 +73,20 @@ log "============================================"
 # Fix: use paths["company_dir"] first, follow symlinks when testing existence, and
 # scan all candidate paths the working pipeline knows about.
 export SCRIPT_DIR
-COMPANY_INFO="$(python3 - <<'PYEOF' 2>>"$LOG_FILE"
-import json, os, sys
-from pathlib import Path
+# v11.18.4 STOCK-BASH-3.2 COMPATIBILITY: the resolver Python (formerly an inline
+# `python3 - <<'PYEOF' ... PYEOF` heredoc inside this $()) is now shipped as the
+# sibling _qc_company_info.py. Stock macOS /bin/bash 3.2.57 mis-parses a heredoc
+# nested in a $() command substitution — it counts the double-quotes inside the
+# Python and aborts the WHOLE script with `unexpected EOF while looking for
+# matching "` at PARSE time, so every no-Homebrew client Mac had a dead QC gate.
+# Externalizing the snippet keeps the logic byte-equivalent and makes the script
+# `bash -n` clean on bash 3.2. _qc_company_info.py reads SCRIPT_DIR /
+# OPENCLAW_COMPANY_SLUG from the env (exported above) and prints the info JSON.
+COMPANY_INFO="$(python3 "$SCRIPT_DIR/_qc_company_info.py" 2>>"$LOG_FILE")"
 
-script_dir = Path(os.environ.get("SCRIPT_DIR", ".")).resolve()
-skill_dir = script_dir.parent.resolve()
-# Mirror the sys.path setup from post-build-role-workspaces.py
-for p in (skill_dir / "lib",
-          skill_dir.parent.parent / "shared-utils",
-          skill_dir / "shared-utils",
-          script_dir):
-    sys.path.insert(0, str(p))
-
-try:
-    from detect_platform import get_openclaw_paths
-except ImportError as e:
-    print(json.dumps({"error": f"detect_platform import failed: {e}"}))
-    sys.exit(0)
-
-try:
-    paths = get_openclaw_paths()
-except Exception as e:
-    print(json.dumps({"error": f"detect_platform: {e}"}))
-    sys.exit(0)
-
-# "company_dir" is the resolved active company slug dir (same key post-build uses).
-# "company_root" is the parent zero-human-company/ dir.
-# Previous code looked for non-existent keys "active_zhc_company"/"zhc_company_root".
-zhc_root = None
-
-# Priority 1: detect_platform's already-resolved active company dir
-company_dir = paths.get("company_dir")
-if company_dir and Path(company_dir).resolve().is_dir():
-    zhc_root = str(Path(company_dir).resolve())
-
-# Priority 2: scan well-known candidate paths (follow symlinks)
-if not zhc_root:
-    slug = os.environ.get("OPENCLAW_COMPANY_SLUG", "")
-    candidates = []
-    if slug:
-        candidates += [
-            Path("/data/.openclaw/workspace/zero-human-company") / slug,
-            Path.home() / ".openclaw" / "workspace" / "zero-human-company" / slug,
-            Path("/data/clawd/zero-human-company") / slug,
-            Path.home() / "clawd" / "zero-human-company" / slug,
-        ]
-    # Also scan parent dirs and pick the most-recently-modified child
-    parent_candidates = [
-        paths.get("company_root"),
-        Path("/data/.openclaw/workspace/zero-human-company"),
-        Path("/data/.openclaw/workspace/departments"),
-        Path("/data/clawd/zero-human-company"),
-        Path.home() / ".openclaw" / "workspace" / "zero-human-company",
-        Path.home() / "clawd" / "zero-human-company",
-    ]
-    for cand in candidates:
-        if cand and Path(cand).resolve().is_dir():
-            zhc_root = str(Path(cand).resolve())
-            break
-    if not zhc_root:
-        for parent in parent_candidates:
-            if not parent:
-                continue
-            p = Path(parent).resolve()
-            # If the candidate IS the departments dir directly (non-standard layout)
-            if p.is_dir() and (p / "departments").resolve().is_dir():
-                zhc_root = str(p)
-                break
-            # Scan for per-company subdirs
-            if p.is_dir():
-                subdirs = sorted(
-                    (d for d in p.iterdir() if d.is_dir() and not d.name.startswith(("_", "."))),
-                    key=lambda d: d.stat().st_mtime, reverse=True
-                )
-                if subdirs:
-                    zhc_root = str(subdirs[0].resolve())
-                    break
-
-# Resolve departments dir — follow symlinks
-departments_dir = None
-departments_json = None
-if zhc_root:
-    # Standard layout: <company_root>/departments/
-    dept_candidate = Path(zhc_root) / "departments"
-    if dept_candidate.resolve().is_dir():
-        departments_dir = str(dept_candidate.resolve())
-        departments_json = str(Path(zhc_root) / "departments.json")
-    else:
-        # Non-standard: zhc_root itself may be the departments dir
-        if Path(zhc_root).resolve().is_dir():
-            # Check if it contains role-like subdirs directly
-            departments_dir = str(Path(zhc_root).resolve())
-            departments_json = str(Path(zhc_root).parent / "departments.json")
-
-print(json.dumps({
-    "company_root": zhc_root,
-    "departments_dir": departments_dir,
-    "departments_json": departments_json,
-}))
-PYEOF
-)"
-
-COMPANY_ROOT="$(printf '%s' "$COMPANY_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('company_root') or '')" 2>>"$LOG_FILE")"
-DEPARTMENTS_DIR="$(printf '%s' "$COMPANY_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('departments_dir') or '')" 2>>"$LOG_FILE")"
-DEPARTMENTS_JSON="$(printf '%s' "$COMPANY_INFO" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('departments_json') or '')" 2>>"$LOG_FILE")"
+COMPANY_ROOT="$(printf '%s' "$COMPANY_INFO" | python3 "$SCRIPT_DIR/_qc_get.py" company_root 2>>"$LOG_FILE")"
+DEPARTMENTS_DIR="$(printf '%s' "$COMPANY_INFO" | python3 "$SCRIPT_DIR/_qc_get.py" departments_dir 2>>"$LOG_FILE")"
+DEPARTMENTS_JSON="$(printf '%s' "$COMPANY_INFO" | python3 "$SCRIPT_DIR/_qc_get.py" departments_json 2>>"$LOG_FILE")"
 
 log "company_root=${COMPANY_ROOT:-<not-found>}"
 log "departments_dir=${DEPARTMENTS_DIR:-<not-found>}"
@@ -587,35 +504,15 @@ if [ "$QUIET" = "0" ] && [ "$STATUS" != "PASS" ] && [ "$STATUS" != "NO_WORKFORCE
   # Resolve owner chat id from openclaw.json
   OCJSON="$HOME/.openclaw/openclaw.json"
   [ -f "/data/.openclaw/openclaw.json" ] && OCJSON="/data/.openclaw/openclaw.json"
-  OWNER_CHAT="$(python3 - <<PYEOF 2>>"$LOG_FILE"
-import json
-try:
-    cfg = json.load(open("$OCJSON"))
-    allow = cfg.get("channels", {}).get("telegram", {}).get("allowFrom", []) \
-        or cfg.get("channels", {}).get("telegram", {}).get("ownerAllowFrom", [])
-    if allow:
-        print(allow[0])
-except Exception:
-    pass
-PYEOF
-)"
+  # v11.18.4 STOCK-BASH-3.2 COMPATIBILITY: externalized from an inline
+  # python-in-$() heredoc (parse hazard on bash 3.2). The openclaw.json path is
+  # now passed as argv[1]. Logic byte-equivalent.
+  OWNER_CHAT="$(python3 "$SCRIPT_DIR/_qc_owner_chat.py" "$OCJSON" 2>>"$LOG_FILE")"
   if [ -n "$OC_BIN" ] && [ -n "$OWNER_CHAT" ]; then
-    SUMMARY="$(python3 - <<PYEOF 2>>"$LOG_FILE"
-import json
-d = json.load(open("$JSON_FILE"))
-lines = [f"OpenClaw QC: {d['status']} on workforce {d.get('company_root','')}"]
-lines.append(f"depts: PASS={d['depts_passing']} PARTIAL={d['depts_partial']} FAIL={d['depts_failing']}")
-gaps = [dd for dd in d.get("departments", []) if dd["status"] != "PASS"]
-for dd in gaps[:8]:
-    lines.append(f"- {dd['dept_id']}: {dd['role_folders']}/{dd['expected_roles']} roles, "
-                 f"lib%={dd['library_pct']}, id%={dd['identity_pct']}, status={dd['status']}")
-if d.get("legacy_tree_present"):
-    lines.append("legacy tree present: " + ", ".join(d["legacy_tree_present"]))
-lines.append("Full report: $JSON_FILE")
-lines.append("Fix: run migrate-existing-workforce.sh (R2) once available.")
-print("\n".join(lines))
-PYEOF
-)"
+    # v11.18.4 STOCK-BASH-3.2 COMPATIBILITY: externalized from an inline
+    # python-in-$() heredoc (parse hazard on bash 3.2). The QC JSON report path
+    # is now passed as argv[1]. Logic byte-equivalent.
+    SUMMARY="$(python3 "$SCRIPT_DIR/_qc_summary.py" "$JSON_FILE" 2>>"$LOG_FILE")"
     "$OC_BIN" message send --channel telegram -t "$OWNER_CHAT" -m "$SUMMARY" >>"$LOG_FILE" 2>&1 \
       && log "Telegram alert sent to ${OWNER_CHAT}" \
       || log "Telegram send FAILED (see log)"

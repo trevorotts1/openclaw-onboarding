@@ -1,3 +1,39 @@
+## [v11.18.4]  -  2026-06-11  -  qc-completeness: stock bash 3.2 compatibility (externalize python snippets) + fleet Mac parse sweep
+
+### Changes
+- `23-ai-workforce-blueprint/scripts/qc-completeness.sh` — **stock macOS bash 3.2.57 could
+  not PARSE the script.** bash 3.2 mis-counts the double-quotes inside a heredoc nested in a
+  `$()` command substitution and aborts the WHOLE script with `unexpected EOF while looking
+  for matching "` at PARSE time — so every client Mac WITHOUT Homebrew bash had a DEAD QC gate
+  (the "are you done?" authority the build / verify-library-gate / never-stop cron all delegate
+  to). Reproduced live on Maria Anderson's Mac mini (`/bin/bash -n qc-completeness.sh` → EOF
+  error, exit 2; earlier misleading exit codes were pipeline tails, not the script). Fix ported
+  from the on-box Maria repair: the three embedded `python3 - <<PYEOF` snippets that lived inside
+  `$()` are externalized to sibling files **`_qc_company_info.py`** (the detect_platform company
+  resolver), **`_qc_get.py`** (the JSON getter, replaces three inline `python3 -c`),
+  **`_qc_owner_chat.py`** (Telegram owner-chat resolver), **`_qc_summary.py`** (per-dept gap
+  summary). Logic is byte-equivalent. The MAIN analyzer heredoc (`python3 - <<'PYEOF'` at column
+  0, NOT inside a `$()`) is unaffected and stays inline, so `test-sop-substance-models.sh`'s
+  function extraction still works. `/bin/bash -n` is now clean on bash 3.2.57 AND bash 5.x;
+  end-to-end run verified on stock `/bin/bash` 3.2 (resolver + getters execute → NO_WORKFORCE_FOUND
+  path reached, which is impossible if the script parse-aborts). The whole skill dir is `cp -r`'d
+  by `update-skills.sh`, so the sibling `.py` files ship automatically — no installer change.
+- `38-conversational-ai-system/wire.sh` (skill-38 → v1.7.1) — **same root-cause class found in
+  the fleet Mac parse sweep.** This M3 migration runner (auto-invoked by `update-skills.sh` first
+  on each update) embedded two `python3 - "$X" <<PYEOF ... PYEOF` heredocs inside `$()` → identical
+  bash-3.2 parse abort → the live MEMORY.md/AGENTS.md Rules 15/16 rewrite silently never applied on
+  no-Homebrew Macs. Externalized to `_wire_rules_15_16.py` + `_wire_agents_ghl_note.py`; `bash -n`
+  clean on 3.2; full M3 run + idempotent re-skip verified live on stock `/bin/bash` 3.2.
+- **Fleet Mac parse sweep:** ran `/bin/bash -n` (stock 3.2.57) over ALL 292 `.sh` files the repo
+  ships. Before: 2 parse failures (`qc-completeness.sh`, `wire.sh`). After: 0. `BASH_SOURCE[0]`
+  under `set -u` was assessed — bare `${BASH_SOURCE[0]}` does NOT error on bash 3.2 when a script
+  is executed by path or sourced from a file (only the `bash -c` empty-array edge case errors,
+  which none of these scripts hit), so per "fix only where it changes behavior" the 133 bare uses
+  were NOT mass-rewritten; the one edited (`wire.sh`) was guarded with `${BASH_SOURCE[0]:-$0}`.
+- **FIELD IMPACT:** every Mac client without Homebrew bash carries the broken copies in the field.
+  The next `update-skills.sh` (or fleet refresh) re-syncs both fixed scripts + their sibling `.py`
+  files automatically.
+
 ## [v11.18.3]  -  2026-06-11  -  fix(wave5-tooling): B.3 duck-test.ts path probe + a2 reset reason + embedding gateway-env
 
 ### Changes
