@@ -162,9 +162,42 @@ def _resolve_memory_search_fallback(openclaw_json: dict) -> Optional[str]:
         return None
 
 
-def _get_api_key(env_key: str) -> Optional[str]:
-    """Resolve an API key from the environment. Returns None if absent or empty."""
+def _openclaw_env_vars(openclaw_json: Optional[dict]) -> dict:
+    """
+    Return the box's OWN openclaw.json env.vars map (env.vars).
+
+    Bug-fix (v11.18.1): on gateway boxes the embedding key is wired into
+    openclaw.json `env.vars` (and may not be exported into this Python process's
+    OS env). NO CO-MINGLING: this reads env.vars ONLY from the openclaw_json
+    already parsed for THIS box — it never borrows another box's key or hits
+    another gateway.
+    """
+    if not isinstance(openclaw_json, dict):
+        return {}
+    env = openclaw_json.get("env", {})
+    if not isinstance(env, dict):
+        return {}
+    vars_ = env.get("vars", {})
+    return vars_ if isinstance(vars_, dict) else {}
+
+
+def _get_api_key(env_key: str, openclaw_json: Optional[dict] = None) -> Optional[str]:
+    """Resolve an API key, OS env first then the box's own openclaw.json env.vars.
+
+    Bug-fix (v11.18.1): the old implementation read ONLY os.environ, which
+    false-FAILed leg-a on gateway boxes whose embedding key lives in
+    openclaw.json env.vars rather than the Python process env. We now check
+    os.environ first, then fall back to openclaw_json["env"]["vars"][env_key].
+    A key is declared missing only when absent from BOTH sources.
+
+    NO CO-MINGLING: env_vars come exclusively from the box's own openclaw_json.
+    """
     val = os.environ.get(env_key, "").strip()
+    if val:
+        return val
+    env_vars = _openclaw_env_vars(openclaw_json)
+    raw = env_vars.get(env_key, "")
+    val = str(raw).strip() if raw is not None else ""
     return val if val else None
 
 
@@ -274,19 +307,19 @@ def _attempt_smoke_embed(provider: str, openclaw_json: dict) -> tuple[bool, str]
         return False, "Ollama Cloud CANNOT embed — hard rule B.6 (no exceptions)"
 
     if p in ("google", "gemini"):
-        key = _get_api_key("GOOGLE_API_KEY") or _get_api_key("GEMINI_API_KEY")
+        key = _get_api_key("GOOGLE_API_KEY", openclaw_json) or _get_api_key("GEMINI_API_KEY", openclaw_json)
         if not key:
             return False, "GOOGLE_API_KEY / GEMINI_API_KEY not set"
         return _smoke_embed_google(key)
 
     if p == "openai":
-        key = _get_api_key("OPENAI_API_KEY")
+        key = _get_api_key("OPENAI_API_KEY", openclaw_json)
         if not key:
             return False, "OPENAI_API_KEY not set"
         return _smoke_embed_openai(key)
 
     if p == "openrouter":
-        key = _get_api_key("OPENROUTER_API_KEY")
+        key = _get_api_key("OPENROUTER_API_KEY", openclaw_json)
         if not key:
             return False, "OPENROUTER_API_KEY not set"
         return _smoke_embed_openrouter(key)
@@ -394,13 +427,24 @@ def _read_gemini_index_stamp(openclaw_root: Path) -> Optional[dict]:
     return None
 
 
-def _read_cc_sop_stamp(cc_dir: Path, db_path_override: Optional[str] = None) -> Optional[dict]:
+def _read_cc_sop_stamp(
+    cc_dir: Path,
+    db_path_override: Optional[str] = None,
+    openclaw_json: Optional[dict] = None,
+) -> Optional[dict]:
     """
     Read the embedding stamp from the Command Center SOP database (mission-control.db).
     Returns {provider, model, dim} or None.
+
+    Bug-fix (v11.18.1): DATABASE_PATH may be wired into the box's own
+    openclaw.json env.vars rather than this process's OS env, so we consult
+    env.vars as a fallback (OS env still wins). NO CO-MINGLING: env.vars are
+    read only from the openclaw_json already passed in for THIS box.
     """
     candidates: list[Path] = []
     env_db = os.environ.get("DATABASE_PATH", "").strip()
+    if not env_db:
+        env_db = str(_openclaw_env_vars(openclaw_json).get("DATABASE_PATH", "") or "").strip()
     if env_db:
         candidates.insert(0, Path(env_db))
     if db_path_override:
@@ -594,7 +638,7 @@ def check_persona_gemini_index(
     res = _make_index_result(f"persona_gemini ({GEMINI_EMBED_MODEL} @{GEMINI_EMBED_DIMS})")
     LBL = "Index 2 (persona_gemini)"
 
-    google_key = _get_api_key("GOOGLE_API_KEY") or _get_api_key("GEMINI_API_KEY")
+    google_key = _get_api_key("GOOGLE_API_KEY", openclaw_json) or _get_api_key("GEMINI_API_KEY", openclaw_json)
 
     # ── Leg (a) ────────────────────────────────────────────────────────────────
     if not google_key:
@@ -707,9 +751,9 @@ def check_cc_sop_index(
     res = _make_index_result("cc_sop (mission-control.db)")
     LBL = "Index 3 (cc_sop)"
 
-    google_key    = _get_api_key("GOOGLE_API_KEY") or _get_api_key("GEMINI_API_KEY")
-    openai_key    = _get_api_key("OPENAI_API_KEY")
-    openrouter_key = _get_api_key("OPENROUTER_API_KEY")
+    google_key    = _get_api_key("GOOGLE_API_KEY", openclaw_json) or _get_api_key("GEMINI_API_KEY", openclaw_json)
+    openai_key    = _get_api_key("OPENAI_API_KEY", openclaw_json)
+    openrouter_key = _get_api_key("OPENROUTER_API_KEY", openclaw_json)
 
     capable_provider: Optional[str] = None
     if google_key:
@@ -741,7 +785,7 @@ def check_cc_sop_index(
             _err(msg)
 
     # ── Leg (b) ────────────────────────────────────────────────────────────────
-    stamp = _read_cc_sop_stamp(cc_dir)
+    stamp = _read_cc_sop_stamp(cc_dir, openclaw_json=openclaw_json)
     if stamp is None:
         res["leg_b_stamp_match"] = None
         res["leg_b_detail"] = "no CC SOP stamp on disk (DB not found or index not yet built)"

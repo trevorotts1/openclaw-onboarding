@@ -118,7 +118,7 @@ wave5_deploy_preflight() {
   local repo="trevorotts1/blackceo-command-center"
   local b1="scripts/cc-health-check.sh"
   local b2="scripts/atomic-deploy.sh"
-  local b3="tests/e2e/duck-test"
+  local b3="tests/e2e/duck-test.ts"
   local missing=()
 
   echo "[fleet-refresh] Wave-5 preflight: checking B.1 + B.2 + B.3 on origin/main of ${repo} ..."
@@ -165,7 +165,7 @@ wave5_deploy_preflight() {
     echo "[fleet-refresh] ║  Wave 5 is BLOCKED until ALL three paths are merged to main:     ║" >&2
     echo "[fleet-refresh] ║    B.1  scripts/cc-health-check.sh                               ║" >&2
     echo "[fleet-refresh] ║    B.2  scripts/atomic-deploy.sh                                 ║" >&2
-    echo "[fleet-refresh] ║    B.3  tests/e2e/duck-test                                      ║" >&2
+    echo "[fleet-refresh] ║    B.3  tests/e2e/duck-test.ts                                   ║" >&2
     echo "[fleet-refresh] ║                                                                  ║" >&2
     echo "[fleet-refresh] ║  Merge B.1 + B.2 + B.3 to main in blackceo-command-center,      ║" >&2
     echo "[fleet-refresh] ║  then retry.                                                     ║" >&2

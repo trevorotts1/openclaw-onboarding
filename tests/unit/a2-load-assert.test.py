@@ -251,6 +251,64 @@ class TestConfidenceMatrix(unittest.TestCase):
         self.assertFalse(_ts_strictly_after("1000001", None))
         self.assertTrue(_ts_strictly_after("2026-06-11T12:00:01Z", "2026-06-11T12:00:00Z"))
 
+    def test_do_reset_drops_invalid_reason_enum(self):
+        """Bug #2 (v11.18.1): sessions.reset params must NOT contain a `reason`
+        key — the public schema allows only optional new|reset, and the old
+        `reason:"a2-load-assert"` failed TypeBox validation."""
+        captured = {"params": None}
+
+        def _stub(cmd, **kwargs):
+            args = list(cmd)
+            joined = " ".join(args)
+            if "sessions.reset" in joined:
+                # --params is the token right after the flag
+                idx = args.index("--params")
+                captured["params"] = json.loads(args[idx + 1])
+                return StubResult(stdout='{"ok":true}')
+            return StubResult(stdout="", returncode=0)
+
+        asserter = A2LoadAssert(
+            box="unit-test",
+            session_key="agent:main:telegram:direct:12345",
+        )
+        with patch("subprocess.run", side_effect=_stub), \
+             patch("shutil.which", return_value="/usr/bin/openclaw"):
+            ok = asserter._do_reset()
+        self.assertTrue(ok)
+        self.assertIsNotNone(captured["params"])
+        self.assertIn("key", captured["params"])
+        self.assertNotIn("reason", captured["params"],
+                         "sessions.reset must not send an invalid `reason` enum value")
+
+    def test_do_reset_succeeds_on_exit1_with_ok_true(self):
+        """Bug #3 (v11.18.1): a plugin-warning exit 1 with ok:true must be a
+        SUCCESS (parse stdout before trusting the exit code)."""
+        def _stub(cmd, **kwargs):
+            return StubResult(stdout='{"ok":true}', stderr="plugin codex blocked", returncode=1)
+        asserter = A2LoadAssert(box="x", session_key="agent:main:telegram:direct:1")
+        with patch("subprocess.run", side_effect=_stub), \
+             patch("shutil.which", return_value="/usr/bin/openclaw"):
+            self.assertTrue(asserter._do_reset())
+
+    def test_do_reset_fails_on_ok_false(self):
+        """Regression guard: a genuine ok:false RPC error must still FAIL
+        (A.2 must not become a tautology)."""
+        def _stub(cmd, **kwargs):
+            return StubResult(stdout='{"ok":false,"error":"boom"}', returncode=0)
+        asserter = A2LoadAssert(box="x", session_key="agent:main:telegram:direct:1")
+        with patch("subprocess.run", side_effect=_stub), \
+             patch("shutil.which", return_value="/usr/bin/openclaw"):
+            self.assertFalse(asserter._do_reset())
+
+    def test_do_reset_fails_on_exit1_no_envelope(self):
+        """Regression guard: exit 1 with no parseable ok envelope must FAIL."""
+        def _stub(cmd, **kwargs):
+            return StubResult(stdout="", stderr="connection refused", returncode=1)
+        asserter = A2LoadAssert(box="x", session_key="agent:main:telegram:direct:1")
+        with patch("subprocess.run", side_effect=_stub), \
+             patch("shutil.which", return_value="/usr/bin/openclaw"):
+            self.assertFalse(asserter._do_reset())
+
     def test_no_ceo_chat_id_is_medium(self):
         """MEDIUM when ceo_chat_id is absent (probe has no target)."""
         with tempfile.TemporaryDirectory() as td:
