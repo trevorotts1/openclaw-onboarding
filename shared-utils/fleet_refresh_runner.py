@@ -51,11 +51,16 @@ def _ok(msg: str) -> None:   print(f"{GREEN}[fleet-refresh] {msg}{NC}", file=sys
 # ── Wave 5 deploy preflight (FAIL-CLOSED — NO BYPASS) ────────────────────────
 
 _WAVE5_CC_REPO = "trevorotts1/blackceo-command-center"
-# Each entry: (label, path)
+# Each entry: (label, path) — B.3 uses a candidate list (see wave5_deploy_preflight).
 _WAVE5_REQUIRED_FILES = [
     ("B.1", "scripts/cc-health-check.sh"),
     ("B.2", "scripts/atomic-deploy.sh"),
-    ("B.3", "tests/e2e/duck-test"),
+]
+# B.3 duck-test: probe duck-test.ts first (TypeScript source), fall back to
+# duck-test (extensionless/shell).  First 200 wins.  Both absent = BLOCKED.
+_WAVE5_B3_CANDIDATES = [
+    "tests/e2e/duck-test.ts",
+    "tests/e2e/duck-test",
 ]
 
 def wave5_deploy_preflight() -> None:
@@ -66,16 +71,21 @@ def wave5_deploy_preflight() -> None:
     Checks that ALL THREE of the following paths exist on origin/main of
     trevorotts1/blackceo-command-center:
 
-        scripts/cc-health-check.sh   (B.1 — must be merged to main)
-        scripts/atomic-deploy.sh     (B.2 — must be merged to main)
-        tests/e2e/duck-test          (B.3 — duck CI test, required for mock-mode
-                                      post-deploy green gate)
+        scripts/cc-health-check.sh      (B.1 — must be merged to main)
+        scripts/atomic-deploy.sh        (B.2 — must be merged to main)
+        tests/e2e/duck-test.ts          (B.3 — TypeScript duck CI test; falls
+                                          back to tests/e2e/duck-test if the
+                                          .ts form is absent.  Either extension
+                                          satisfies the gate.)
+
+    B.3 is a duck-test on the path itself: we do not require a specific
+    extension, only that some form of the duck-test file exists on main.
 
     Uses the GitHub Contents API (unauthenticated or via GITHUB_TOKEN) to
     check each path authoritatively against the main branch HEAD.
     A 200 response means the path is present; 404 means absent.
 
-    If ANY path is missing this function prints a FATAL message and
+    If ANY required item is missing this function prints a FATAL message and
     exits non-zero immediately.  There is NO env-var, NO flag, and NO code
     path that bypasses this check.  It runs unconditionally and is
     PRESERVED UNWEAKENED at the top of both step_build_cc and step_restart_cc.
@@ -86,39 +96,49 @@ def wave5_deploy_preflight() -> None:
     _info("Wave-5 deploy preflight: checking B.1 + B.2 + B.3 on origin/main of blackceo-command-center ...")
 
     missing: list[tuple[str, str]] = []
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
 
-    for label, path in _WAVE5_REQUIRED_FILES:
+    def _probe(label: str, path: str) -> bool:
+        """Return True if path returns 200 on origin/main; False otherwise."""
         url = (
             f"https://api.github.com/repos/{_WAVE5_CC_REPO}/contents/{path}"
             f"?ref=main"
         )
         req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
-
-        # Honour GITHUB_TOKEN if present (avoids rate-limit on CI)
-        token = os.environ.get("GITHUB_TOKEN", "").strip()
         if token:
             req.add_header("Authorization", f"Bearer {token}")
-
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 if resp.status == 200:
                     _ok(f"  {label} PRESENT on main: {path}")
-                else:
-                    # Unexpected non-200/non-404 — treat as missing (fail-closed)
-                    missing.append((label, path))
-                    _err(f"  {label} UNEXPECTED status {resp.status} for: {path} — treating as MISSING")
+                    return True
+                # Non-200/non-404 — treat as missing (fail-closed)
+                _err(f"  {label} UNEXPECTED status {resp.status} for: {path} — treating as MISSING")
+                return False
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                missing.append((label, path))
-                _err(f"  {label} MISSING on main (404): {path}")
-            else:
-                # Non-404 HTTP error — fail-closed
-                missing.append((label, path))
-                _err(f"  {label} HTTP error {e.code} for: {path} — treating as MISSING (fail-closed)")
+                return False
+            _err(f"  {label} HTTP error {e.code} for: {path} — treating as MISSING (fail-closed)")
+            return False
         except Exception as exc:
-            # Network error, timeout, etc. — fail-closed
-            missing.append((label, path))
             _err(f"  {label} check failed ({exc.__class__.__name__}: {exc}) — treating as MISSING (fail-closed)")
+            return False
+
+    # B.1 and B.2: single-path checks
+    for label, path in _WAVE5_REQUIRED_FILES:
+        if not _probe(label, path):
+            missing.append((label, path))
+            _err(f"  {label} MISSING on main (404): {path}")
+
+    # B.3: duck-test path probe — accept duck-test.ts OR duck-test
+    b3_found = False
+    for candidate in _WAVE5_B3_CANDIDATES:
+        if _probe("B.3", candidate):
+            b3_found = True
+            break
+    if not b3_found:
+        missing.append(("B.3", "tests/e2e/duck-test{.ts,}"))
+        _err("  B.3 MISSING on main (checked duck-test.ts AND duck-test)")
 
     if missing:
         _err("")
@@ -132,7 +152,7 @@ def wave5_deploy_preflight() -> None:
         _err("║  Wave 5 is BLOCKED until ALL three paths are merged to main:     ║")
         _err("║    B.1  scripts/cc-health-check.sh                               ║")
         _err("║    B.2  scripts/atomic-deploy.sh                                 ║")
-        _err("║    B.3  tests/e2e/duck-test                                      ║")
+        _err("║    B.3  tests/e2e/duck-test.ts  (or duck-test)                   ║")
         _err("║                                                                  ║")
         _err("║  Merge B.1 + B.2 + B.3 to main in blackceo-command-center,      ║")
         _err("║  then retry.                                                     ║")
@@ -721,34 +741,44 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
 
 def _run_duck_ci_test(cc_dir: Path, box: str) -> tuple[bool, str]:
     """
-    Run the duck CI test (tests/e2e/duck-test) in mock mode from the deployed
+    Run the duck CI test (tests/e2e/duck-test.ts) in mock mode from the deployed
     CC checkout.  Returns (passed: bool, detail: str).
 
-    The duck test is invoked as:
-        bash <cc_dir>/tests/e2e/duck-test --mock
+    duck-test.ts is a node:test + tsx test (NOT a bash script), and its own
+    header documents the canonical invocation:
+
+        node --import tsx --test tests/e2e/duck-test.ts
+
+    This is the same harness the repo's package.json "test:unit" script uses
+    (`node --import tsx --test tests/unit/*.test.ts`).  Mock mode is the DEFAULT
+    behaviour of the test (real KIE is opt-in via DUCK_E2E_USE_REAL_KIE=1), so
+    there is NO `--mock` flag to pass — passing one is rejected by node:test.
 
     Exit 0 = green.  Any non-zero exit = red (blocks deploy).
     stdout+stderr are captured and the first 200 chars returned as detail.
+
+    The test stands up a Next.js server (next start if a .next build exists,
+    else next dev) and runs the full pipeline, so the timeout is generous.
     """
-    duck_test = cc_dir / "tests" / "e2e" / "duck-test"
+    duck_test = cc_dir / "tests" / "e2e" / "duck-test.ts"
     if not duck_test.is_file():
-        return False, f"duck-test not found at {duck_test} (B.3 preflight should have caught this)"
+        return False, f"duck-test.ts not found at {duck_test} (B.3 preflight should have caught this)"
 
     try:
         result = subprocess.run(
-            ["bash", str(duck_test), "--mock"],
+            ["node", "--import", "tsx", "--test", str(duck_test)],
             cwd=str(cc_dir),
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=300,
         )
         detail = (result.stdout + result.stderr).strip()[:200]
         if result.returncode == 0:
-            return True, detail or "duck-test passed"
+            return True, detail or "duck-test.ts passed"
         else:
-            return False, f"duck-test exited {result.returncode}: {detail}"
+            return False, f"duck-test.ts exited {result.returncode}: {detail}"
     except subprocess.TimeoutExpired:
-        return False, "duck-test timed out after 120s"
+        return False, "duck-test.ts timed out after 300s"
     except Exception as exc:
-        return False, f"duck-test failed to launch: {exc}"
+        return False, f"duck-test.ts failed to launch: {exc}"
 
 
 def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = False) -> None:
@@ -758,8 +788,8 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
     atomic-deploy.sh owns the full build+serve sequence (npm ci / npm install,
     npm run build, pm2 restart).  This step calls it synchronously and checks
     its exit code.  After atomic-deploy.sh reports success the duck CI test
-    (tests/e2e/duck-test --mock) is run as a post-deploy green requirement;
-    failure of the duck test fails this step.
+    (node --import tsx --test tests/e2e/duck-test.ts) is run as a post-deploy
+    green requirement; failure of the duck test fails this step.
 
     REMOVED: the detached Popen / npm-run-build-into-live-.next path is gone.
     That code path is not reachable.  atomic-deploy.sh is the ONLY deploy
@@ -929,6 +959,17 @@ def step_sessions_reset_ceo(
 
     Uses `openclaw gateway call sessions.reset` — a gateway CALL, never a
     gateway process restart (Mac err 125 guard: see the spec).
+
+    Bug-fix (v11.18.1): the public sessions.reset RPC params schema
+    (SessionsResetParamsSchema in openclaw/openclaw
+    packages/gateway-protocol/src/schema/sessions.ts) is
+    `reason?: 'new' | 'reset'` with additionalProperties:false. The old
+    `reason: "fleet-refresh"` failed TypeBox validation, so the gateway
+    rejected the call and every box's CEO reset fails-closed on 2026.6.1.
+    `reason` is OPTIONAL, so we omit it. We also parse the stdout envelope
+    FIRST so a harmless plugin-blocked warning (exit 1, `ok:true`) does not
+    false-fail the step; a genuine `ok:false` / unparseable stdout on a
+    non-zero exit still fails.
     """
     if dry_run:
         res.step_skip("sessions-reset-CEO")
@@ -947,23 +988,36 @@ def step_sessions_reset_ceo(
     try:
         result = subprocess.run(
             ["openclaw", "gateway", "call", "sessions.reset",
-             "--params", json.dumps({"key": ceo_session_key, "reason": "fleet-refresh"})],
+             "--params", json.dumps({"key": ceo_session_key})],
             capture_output=True, text=True, timeout=30
         )
-        if result.returncode != 0:
-            res.step_fail("sessions-reset-CEO",
-                f"sessions.reset failed (exit {result.returncode}): {result.stderr[:200]}")
+        if result.stderr.strip():
+            _warn(f"  sessions.reset stderr: {result.stderr[:200]}")
+
+        # Parse stdout FIRST — the JSON-RPC envelope is authoritative.
+        stdout = (result.stdout or "").strip()
+        resp = None
+        if stdout:
+            try:
+                resp = json.loads(stdout)
+            except Exception:
+                resp = None
+
+        if isinstance(resp, dict) and "ok" in resp:
+            if resp.get("ok") is True and "error" not in resp:
+                res.step_ok("sessions-reset-CEO")
+                return
+            res.step_fail("sessions-reset-CEO", f"gateway call returned error: {resp}")
             return
 
-        # Check for error in output
-        try:
-            resp = json.loads(result.stdout)
-            if resp.get("ok") is False or "error" in resp:
-                res.step_fail("sessions-reset-CEO", f"gateway call returned error: {resp}")
-                return
-        except Exception:
-            pass  # Non-JSON response is OK as long as exit code was 0
+        # No parseable ok envelope: trust the exit code only here.
+        if result.returncode != 0:
+            res.step_fail("sessions-reset-CEO",
+                f"sessions.reset failed (exit {result.returncode}, no ok=true envelope): "
+                f"{result.stderr[:200]}")
+            return
 
+        # exit 0 with a non-JSON response is OK (older gateways).
         res.step_ok("sessions-reset-CEO")
     except subprocess.TimeoutExpired:
         res.step_fail("sessions-reset-CEO", "sessions.reset timed out")

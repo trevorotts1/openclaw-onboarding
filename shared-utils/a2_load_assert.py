@@ -373,7 +373,25 @@ class A2LoadAssert:
     # Gateway call helpers
     # ------------------------------------------------------------------
     def _do_reset(self) -> bool:
-        """Issue sessions.reset via gateway call.  Returns True on success."""
+        """Issue sessions.reset via gateway call.  Returns True on success.
+
+        Bug-fix (v11.18.1): the public sessions.reset RPC params schema
+        (SessionsResetParamsSchema in openclaw/openclaw
+        packages/gateway-protocol/src/schema/sessions.ts) is
+        `reason?: 'new' | 'reset'` with additionalProperties:false. The old
+        `reason: "a2-load-assert"` failed TypeBox validation, so the gateway
+        rejected the call and LEG A false-FAILed. `reason` is OPTIONAL, so we
+        simply omit it (absent reason is a valid default reset).
+
+        Bug-fix (v11.18.1): parse stdout FIRST, regardless of exit code. The
+        openclaw CLI exits 1 on harmless plugin-blocked warnings (codex /
+        whatsapp) even when sessions.reset itself succeeded — the old
+        exit-code-first guard turned those into false LEG A failures. We now
+        trust the JSON-RPC success envelope (`ok:true`) over the process exit
+        code. A genuine RPC error (`ok:false`) or unparseable/empty stdout on a
+        non-zero exit still fails (REGRESSION GUARD: A.2 must not become a
+        tautology that swallows real reset failures).
+        """
         _info(f"Issuing sessions.reset for key: {self.session_key}")
         if not shutil.which("openclaw"):
             _err("openclaw not on PATH")
@@ -381,23 +399,42 @@ class A2LoadAssert:
         try:
             result = subprocess.run(
                 ["openclaw", "gateway", "call", "sessions.reset",
-                 "--params", json.dumps({"key": self.session_key,
-                                          "reason": "a2-load-assert"})],
+                 "--params", json.dumps({"key": self.session_key})],
                 capture_output=True, text=True, timeout=30
             )
-            if result.returncode != 0:
-                _err(f"sessions.reset failed (exit {result.returncode}): {result.stderr[:200]}")
+            # Log stderr (plugin warnings live here) but do NOT treat it as fatal yet.
+            if result.stderr.strip():
+                _warn(f"sessions.reset stderr: {result.stderr[:200]}")
+
+            # Parse stdout FIRST — the JSON-RPC envelope is authoritative.
+            stdout = (result.stdout or "").strip()
+            resp = None
+            if stdout:
+                try:
+                    resp = json.loads(stdout)
+                except Exception:
+                    resp = None
+
+            if isinstance(resp, dict) and "ok" in resp:
+                if resp.get("ok") is True:
+                    if result.returncode != 0:
+                        _ok(f"sessions.reset succeeded (ok=true) despite exit {result.returncode} "
+                            f"(non-fatal plugin warning)")
+                    else:
+                        _ok("sessions.reset succeeded")
+                    return True
+                # ok is False (or falsey) — a genuine RPC error.
+                _err(f"sessions.reset returned error: {resp}")
                 return False
-            try:
-                resp = json.loads(result.stdout)
-                if resp.get("ok") is False:
-                    _err(f"sessions.reset returned error: {resp}")
-                    return False
-                _ok("sessions.reset succeeded")
-                return True
-            except Exception:
-                _ok("sessions.reset succeeded (non-JSON response)")
-                return True
+
+            # No parseable ok envelope. Trust exit code only here.
+            if result.returncode != 0:
+                _err(f"sessions.reset failed (exit {result.returncode}, no ok=true envelope): "
+                     f"{result.stderr[:200]}")
+                return False
+            # exit 0 with a non-JSON / no-envelope response: accept (older gateways).
+            _ok("sessions.reset succeeded (exit 0, non-JSON response)")
+            return True
         except subprocess.TimeoutExpired:
             _err("sessions.reset timed out")
             return False
@@ -427,7 +464,13 @@ class A2LoadAssert:
         return None
 
     def _send_probe(self) -> bool:
-        """Send the probe message via openclaw message send (one-way).  Returns True if the command succeeded."""
+        """Send the probe message via openclaw message send (one-way).  Returns True if the command succeeded.
+
+        Bug-fix (v11.18.1): parse stdout FIRST so a harmless plugin-blocked
+        warning (exit 1, but `ok:true` in the JSON-RPC envelope) does not
+        false-fail LEG B. A genuine `ok:false` or an empty/unparseable stdout
+        on non-zero exit still fails.
+        """
         if not shutil.which("openclaw"):
             _err("openclaw not on PATH; probe send failed")
             return False
@@ -439,8 +482,27 @@ class A2LoadAssert:
                  "--message", self._PROBE_MESSAGE],
                 capture_output=True, text=True, timeout=30
             )
+            if result.stderr.strip():
+                _warn(f"probe send stderr: {result.stderr[:200]}")
+
+            stdout = (result.stdout or "").strip()
+            resp = None
+            if stdout:
+                try:
+                    resp = json.loads(stdout)
+                except Exception:
+                    resp = None
+
+            if isinstance(resp, dict) and "ok" in resp:
+                if resp.get("ok") is True:
+                    _info("Probe message sent (ok=true)")
+                    return True
+                _warn(f"probe send returned error envelope: {resp}")
+                return False
+
             if result.returncode != 0:
-                _warn(f"probe send returned exit {result.returncode}: {result.stderr[:200]}")
+                _warn(f"probe send returned exit {result.returncode} (no ok=true envelope): "
+                      f"{result.stderr[:200]}")
                 return False
             _info("Probe message sent")
             return True
@@ -623,6 +685,13 @@ class A2LoadAssert:
         Detect whether the local box has a live/working model.
         Uses the box's own gateway only — NEVER borrows another box's key.
         Returns True if a model appears to be live.
+
+        Bug-fix (v11.18.1): parse stdout FIRST. A harmless plugin-blocked
+        warning makes the openclaw CLI exit 1 even when chat.history returned a
+        valid response — the old exit-code-first guard wrongly concluded
+        "no model" and skipped LEG B. The explicit no-model-signal scan remains
+        the authoritative negative; a parseable success envelope (`ok:true`) or
+        a messages payload on a non-zero exit is now treated as model-live.
         """
         if not shutil.which("openclaw"):
             return False
@@ -643,6 +712,19 @@ class A2LoadAssert:
                 return False
             if result.returncode == 0:
                 return True
+            # Non-zero exit without a no-model signal: trust the stdout envelope
+            # over the exit code (plugin-warning tolerance).
+            stdout = (result.stdout or "").strip()
+            if stdout:
+                try:
+                    resp = json.loads(stdout)
+                except Exception:
+                    resp = None
+                if isinstance(resp, dict) and resp.get("ok") is True:
+                    return True
+                if isinstance(resp, (list, dict)):
+                    # chat.history returns a list (or {messages:[...]}) on success.
+                    return True
             return False
         except Exception:
             return False

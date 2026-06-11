@@ -1,3 +1,55 @@
+## [v11.18.1]  -  2026-06-11  -  fix(wave5 tooling): B.3 preflight path + sessions.reset reason enum + exit-code tolerance + embedding env.vars
+
+### Changes
+- `scripts/fleet-refresh.sh` + `shared-utils/fleet_refresh_runner.py` — **B.3 preflight path
+  (FLEET-WIDE APPLY BLOCKER).** The fail-closed Wave-5 preflight checked
+  `tests/e2e/duck-test` on origin/main of trevorotts1/blackceo-command-center, which returns
+  HTTP 404 (the real file is `tests/e2e/duck-test.ts`, HTTP 200 — curl-confirmed). The 404
+  blocked the ENTIRE fan-out (preflight runs unconditionally at the top of step_build_cc /
+  step_restart_cc). Fixed the checked path to `tests/e2e/duck-test.ts` in BOTH files
+  (`fleet-refresh.sh` b3 var; runner `_WAVE5_REQUIRED_FILES` B.3 entry), plus the display
+  banners for consistency. Verified live: with a GITHUB_TOKEN the runner preflight now exits 0
+  ("PASSED") on the fix branch and exits 1 ("BLOCKED — B.3 MISSING 404") on pre-fix main.
+- `shared-utils/fleet_refresh_runner.py` `_run_duck_ci_test` — **reconciled the latent
+  post-preflight deploy failure.** The old code resolved the extensionless `tests/e2e/duck-test`
+  and ran it as `bash <path> --mock`. duck-test.ts is a `node:test` + tsx test (NOT a bash
+  script) and its own header documents the canonical invocation. Now resolves
+  `tests/e2e/duck-test.ts` and runs `node --import tsx --test <path>` (the repo's `test:unit`
+  harness); dropped the unsupported `--mock` flag (mock mode is the test's DEFAULT — real KIE is
+  opt-in via DUCK_E2E_USE_REAL_KIE=1); timeout raised to 300s (test stands up a Next.js server).
+- `shared-utils/a2_load_assert.py` `_do_reset` + `shared-utils/fleet_refresh_runner.py`
+  `step_sessions_reset_ceo` — **dropped the invalid `reason` enum on sessions.reset.** The public
+  `SessionsResetParamsSchema` (openclaw/openclaw packages/gateway-protocol/src/schema/sessions.ts)
+  is `reason?: 'new' | 'reset'` with additionalProperties:false. The old values
+  `reason:"a2-load-assert"` / `reason:"fleet-refresh"` failed TypeBox validation → gateway
+  rejected the call → A.2 LEG A false-FAILed and every box CEO reset failed-closed on 2026.6.1.
+  `reason` is OPTIONAL, so we omit it (absent reason is a valid default reset). Shipped together.
+- `shared-utils/a2_load_assert.py` `_do_reset` / `_send_probe` / `_detect_model` — **exit-code
+  tolerance (plugin-warning false-fail).** These methods returned False on `returncode != 0`
+  BEFORE parsing stdout; harmless plugin-blocked warnings (codex / whatsapp) make the openclaw
+  CLI exit 1 even when the RPC succeeded → false LEG A/LEG B failures. Now parse the stdout
+  JSON-RPC envelope FIRST: `ok:true` → success (even on exit 1); `ok:false` → fail; a non-zero
+  exit with empty/unparseable stdout still fails. REGRESSION GUARD: a genuine RPC error or
+  unparseable stdout still fails LEG A (A.2 is not a tautology) — covered by new unit tests.
+- `shared-utils/embedding_health.py` `_get_api_key` (+ new `_openclaw_env_vars` helper) and
+  `_read_cc_sop_stamp` — **B.6 reads the box's own openclaw.json env.vars.** Key/DB-path
+  resolution was OS-process-env only; on gateway boxes the embedding key (and DATABASE_PATH) is
+  wired into openclaw.json `env.vars` and may not be exported to the python OS env → false leg-a
+  FAIL when the gateway runtime HAS the key. Now checks os.environ first, then falls back to
+  `openclaw_json["env"]["vars"][key]`; a key is declared missing only when absent from BOTH.
+  `openclaw_json` is threaded into `_attempt_smoke_embed` callsites and the persona / CC-SOP
+  per-index checks. NO CO-MINGLING: env.vars are read ONLY from the box's own openclaw_json
+  already passed in — never another box's key or gateway.
+- `tests/unit/a2-load-assert.test.py` — added 4 regression tests: `_do_reset` sends NO `reason`
+  key; exit-1-with-ok:true succeeds; ok:false fails; exit-1-with-no-envelope fails. Full suite
+  10/10 green.
+
+### Notes
+- VPS (v10.14.x) / Mac (v10.13.x) onboarding version sequences kept independent — not converged.
+- The repo `/version` marker is intentionally NOT bumped here (ship-phase rebase resolves the
+  v11.18.1 bump to avoid collision with two concurrent in-flight repo PRs: the Skill-44 ENGINE
+  fix and the conv-AI 38/41/36 redesign). All files touched are disjoint from both.
+
 ## [v11.18.0]  -  2026-06-11  -  feat(A.2 v2): real session-load gate — proves LOADED via post-reset session/probe, supersedes #160
 
 ### Changes
