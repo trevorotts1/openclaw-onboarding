@@ -74,7 +74,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]" 2>/dev/null || pip install -e . || pip install click requests pytest
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
 
       - name: "AC 19 — Router picks Tier 0 for nurture intent"
         run: |
@@ -172,7 +173,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]" 2>/dev/null || pip install -e . || pip install click requests pytest
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
 
       - name: "AC 20 — Pre-write snapshot captured before update PUT"
         run: |
@@ -251,7 +253,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]" 2>/dev/null || pip install -e . || pip install click requests pytest
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
 
       - name: "AC 21 — WriteLock serializes two concurrent builds (same location)"
         run: |
@@ -343,7 +346,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]" 2>/dev/null || pip install -e . || pip install click requests pytest
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
 
       - name: Run full test suite (safety gate + adapter probe + unit 2 + unit 11)
         run: |
