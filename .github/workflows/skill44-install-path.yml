@@ -173,7 +173,110 @@ jobs:
           fi
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # STATUS CHECK — both jobs must be green.
+  # CHECK 3: GHL env-wiring + fail-loud live verify (the Evelyn VPS bug class).
+  # Creds must be wired into the gateway-inherited env (openclaw.json env.vars +,
+  # on VPS, the docker env_file with empty placeholders REPLACED), and a fail-loud
+  # live verify gate must run a real read so install never reports success on a
+  # dead caf. These checks are pure static + bash -n + functional exit-code tests.
+  # ─────────────────────────────────────────────────────────────────────────────
+  install-path-env-wiring:
+    name: "Install-path: GHL env wired into gateway-inherited env + fail-loud verify"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "Both env scripts exist and are syntactically valid"
+        run: |
+          WIRE="44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh"
+          VERIFY="44-convert-and-flow-operator/tools/engine/verify-ghl-live.sh"
+          for f in "$WIRE" "$VERIFY"; do
+            [ -f "$f" ] || { echo "FAIL: missing $f"; exit 1; }
+            bash -n "$f" || { echo "FAIL: $f has a syntax error"; exit 1; }
+            echo "PASS: $f present + valid"
+          done
+
+      - name: "wire-ghl-env.sh: deep-merge fallback + all 5 vars + docker placeholder-replace"
+        run: |
+          WIRE="44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh"
+          # JSON deep-merge fallback (config-set-rejects-nested-key path on 2026.5.20+)
+          grep -q 'JSON deep-merge fallback' "$WIRE" || { echo "FAIL: no JSON deep-merge fallback"; exit 1; }
+          grep -q "setdefault('env'" "$WIRE" || { echo "FAIL: deep-merge does not target env.vars"; exit 1; }
+          # All 5 canonical vars wired
+          for v in GOHIGHLEVEL_API_KEY GOHIGHLEVEL_LOCATION_ID GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN GOHIGHLEVEL_ALLOWED_LOCATION_IDS GOHIGHLEVEL_DRAFT_ONLY; do
+            grep -q "wire_var $v" "$WIRE" || { echo "FAIL: $v not wired"; exit 1; }
+          done
+          # VPS docker env_file placeholder REPLACE-in-place (not append-after)
+          grep -q 'removing empty placeholder' "$WIRE" || { echo "FAIL: no empty-placeholder removal"; exit 1; }
+          grep -q 'replacing existing' "$WIRE" || { echo "FAIL: no in-place replace"; exit 1; }
+          grep -q 'force-recreate' "$WIRE" || { echo "FAIL: no force-recreate guidance"; exit 1; }
+          # Mac rescue rule: no gateway restart
+          grep -qi 'NOT restarting the gateway' "$WIRE" || { echo "FAIL: missing rescue-Mac no-restart note"; exit 1; }
+          echo "PASS: wire-ghl-env.sh has deep-merge fallback, all 5 vars, placeholder-replace, force-recreate + rescue-Mac notes"
+
+      - name: "verify-ghl-live.sh: real read, inherited env only, fail-loud, missing-prereqs"
+        run: |
+          VERIFY="44-convert-and-flow-operator/tools/engine/verify-ghl-live.sh"
+          grep -q 'workflows list' "$VERIFY" || { echo "FAIL: does not run a workflows read"; exit 1; }
+          grep -q 'contacts list' "$VERIFY" || { echo "FAIL: no PIT-only fallback read"; exit 1; }
+          grep -q 'exit 1' "$VERIFY" || { echo "FAIL: no fail-loud exit"; exit 1; }
+          grep -q 'exit 2' "$VERIFY" || { echo "FAIL: no missing-prereqs exit-2 path"; exit 1; }
+          # Must NOT hand-source a secrets file before invoking caf (would feed env
+          # the gateway would not have — defeats the purpose of the gate).
+          if grep -qE '^\s*source .*secrets/\.env' "$VERIFY"; then
+            echo "FAIL: verify gate sources secrets/.env (must use inherited env only)"; exit 1
+          fi
+          echo "PASS: verify gate runs a real read on inherited env, fails loud, has exit-2 missing-prereqs path"
+
+      - name: "Functional: wire-ghl-env.sh exit-2 when required creds absent"
+        run: |
+          WIRE="44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh"
+          SB="$(mktemp -d)"; mkdir -p "$SB/.openclaw/secrets"
+          printf '{"version":1}\n' > "$SB/.openclaw/openclaw.json"
+          printf 'ANTHROPIC_API_KEY=sk-ant-x\n' > "$SB/.openclaw/secrets/.env"
+          set +e
+          OC_JSON="$SB/.openclaw/openclaw.json" OC_SECRETS_ENV="$SB/.openclaw/secrets/.env" SKILL44_NO_DOCKER_ENV=1 bash "$WIRE" >/dev/null 2>&1
+          rc=$?
+          set -e
+          [ "$rc" -eq 2 ] || { echo "FAIL: expected exit 2 (missing prereqs), got $rc"; exit 1; }
+          echo "PASS: exit 2 on absent required creds"
+
+      - name: "Functional: wire-ghl-env.sh deep-merges all 5 vars + replaces docker placeholders"
+        run: |
+          WIRE="44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh"
+          SB="$(mktemp -d)"; mkdir -p "$SB/.openclaw/secrets" "$SB/docker/oc"
+          printf '{"version":1,"agents":{"defaults":{}}}\n' > "$SB/.openclaw/openclaw.json"
+          printf 'GOHIGHLEVEL_API_KEY=pit-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nGOHIGHLEVEL_LOCATION_ID=Loc12345678901234567890\n' > "$SB/.openclaw/secrets/.env"
+          printf 'OPENCLAW_OWNER_NAME=Test\nGOHIGHLEVEL_API_KEY=\nGOHIGHLEVEL_LOCATION_ID=\n' > "$SB/docker/oc/.env"
+          # openclaw is not installed in CI → forces the JSON deep-merge fallback.
+          OC_JSON="$SB/.openclaw/openclaw.json" OC_SECRETS_ENV="$SB/.openclaw/secrets/.env" DOCKER_ENV_FILE="$SB/docker/oc/.env" bash "$WIRE"
+          # Assert all present vars landed in env.vars (python -c avoids YAML heredoc indent traps).
+          OCJ="$SB/.openclaw/openclaw.json" python3 -c 'import json,os; v=json.load(open(os.environ["OCJ"]))["env"]["vars"]; [__import__("sys").exit("missing env.vars."+k) for k in ("GOHIGHLEVEL_API_KEY","GOHIGHLEVEL_LOCATION_ID","GOHIGHLEVEL_ALLOWED_LOCATION_IDS","GOHIGHLEVEL_DRAFT_ONLY") if not v.get(k)]; assert v["GOHIGHLEVEL_DRAFT_ONLY"]=="true"; assert v["GOHIGHLEVEL_ALLOWED_LOCATION_IDS"]==v["GOHIGHLEVEL_LOCATION_ID"]; print("PASS: openclaw.json env.vars has all present vars via deep-merge")'
+          # docker .env: no empty placeholder remains; real values present.
+          if grep -qE '^GOHIGHLEVEL_API_KEY=$' "$SB/docker/oc/.env"; then echo "FAIL: empty placeholder survived"; exit 1; fi
+          grep -qE '^GOHIGHLEVEL_API_KEY=pit-' "$SB/docker/oc/.env" || { echo "FAIL: real API key not in docker .env"; exit 1; }
+          grep -qE '^GOHIGHLEVEL_LOCATION_ID=Loc' "$SB/docker/oc/.env" || { echo "FAIL: real location id not in docker .env"; exit 1; }
+          echo "PASS: docker env_file placeholders replaced in place with real values"
+
+      - name: "INSTALL.md Action 5 calls wire-ghl-env.sh; Action 6b runs verify-ghl-live.sh"
+        run: |
+          INSTALL="44-convert-and-flow-operator/INSTALL.md"
+          grep -q 'wire-ghl-env.sh' "$INSTALL" || { echo "FAIL: INSTALL.md does not call wire-ghl-env.sh"; exit 1; }
+          grep -q 'verify-ghl-live.sh' "$INSTALL" || { echo "FAIL: INSTALL.md does not run verify-ghl-live.sh (Action 6b)"; exit 1; }
+          grep -qi 'installed-with-missing-prereqs' "$INSTALL" || { echo "FAIL: INSTALL.md missing the missing-prereqs handling"; exit 1; }
+          echo "PASS: INSTALL.md wires env (Action 5) + runs fail-loud verify (Action 6b)"
+
+      - name: "Root install.sh: Step 14e wires env + runs verify"
+        run: |
+          ROOT="install.sh"
+          grep -q 'install_skill_44_convert_and_flow_operator_env' "$ROOT" || { echo "FAIL: install.sh has no Step 14e env-wiring function"; exit 1; }
+          grep -q 'wire-ghl-env.sh' "$ROOT" || { echo "FAIL: install.sh does not invoke wire-ghl-env.sh"; exit 1; }
+          grep -q 'verify-ghl-live.sh' "$ROOT" || { echo "FAIL: install.sh does not invoke verify-ghl-live.sh"; exit 1; }
+          echo "PASS: install.sh Step 14e wires env + runs fail-loud verify"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STATUS CHECK — all jobs must be green.
   # ─────────────────────────────────────────────────────────────────────────────
   install-path-gate-passed:
     name: "skill-44 install-path gate PASSED"
@@ -181,6 +284,7 @@ jobs:
     needs:
       - install-path-wrapper-exec
       - install-path-core-updates-action
+      - install-path-env-wiring
     if: always()
     steps:
       - name: Check all install-path jobs passed
@@ -191,6 +295,10 @@ jobs:
           fi
           if [[ "${{ needs.install-path-core-updates-action.result }}" != "success" ]]; then
             echo "FAIL: install-path-core-updates-action did not pass"
+            exit 1
+          fi
+          if [[ "${{ needs.install-path-env-wiring.result }}" != "success" ]]; then
+            echo "FAIL: install-path-env-wiring did not pass"
             exit 1
           fi
           echo "All skill-44 install-path integrity checks GREEN."
