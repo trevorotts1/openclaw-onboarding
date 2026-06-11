@@ -54,7 +54,16 @@ ENGINE="$(dirname "$0")/engine"
 export GHL_API_KEY="${GOHIGHLEVEL_API_KEY:-${CAF_API_KEY:-}}"
 export GHL_LOCATION_ID="${GOHIGHLEVEL_LOCATION_ID:-${CAF_LOCATION_ID:-}}"
 export GHL_FIREBASE_REFRESH_TOKEN="${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-${CAF_FIREBASE_REFRESH_TOKEN:-}}"
-export GHL_ALLOWED_LOCATION_IDS="${GOHIGHLEVEL_ALLOWED_LOCATION_IDS:-${CAF_ALLOWED_LOCATION_IDS:-}}"
+
+# CAF_ALLOWED_LOCATION_IDS: default to the client's own GHL_LOCATION_ID so a blank
+# whitelist never silently blocks all writes on a single-location install.
+_caf_allowed_raw="${GOHIGHLEVEL_ALLOWED_LOCATION_IDS:-${CAF_ALLOWED_LOCATION_IDS:-}}"
+if [ -z "$_caf_allowed_raw" ] && [ -n "$GHL_LOCATION_ID" ]; then
+    _caf_allowed_raw="$GHL_LOCATION_ID"
+    echo "[caf] Allowed write locations set to ${_caf_allowed_raw}; add more in CAF_ALLOWED_LOCATION_IDS" >&2
+fi
+export GHL_ALLOWED_LOCATION_IDS="$_caf_allowed_raw"
+unset _caf_allowed_raw
 export GHL_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
 
 # Snapshot dir for workflow rollbacks
@@ -101,9 +110,12 @@ source ~/.openclaw/secrets/.env
 
 Wire into openclaw config (gateway reads from env.vars at runtime):
 ```bash
-openclaw config set env.vars.GOHIGHLEVEL_API_KEY     "$GOHIGHLEVEL_API_KEY"
-openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID "$GOHIGHLEVEL_LOCATION_ID"
-openclaw config set env.vars.GOHIGHLEVEL_DRAFT_ONLY  "true"
+openclaw config set env.vars.GOHIGHLEVEL_API_KEY              "$GOHIGHLEVEL_API_KEY"
+openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID          "$GOHIGHLEVEL_LOCATION_ID"
+openclaw config set env.vars.GOHIGHLEVEL_DRAFT_ONLY           "true"
+# Seed the location whitelist with the client's own location so writes are allowed from day one.
+# Add more comma-separated IDs here later if you manage multiple sub-accounts.
+openclaw config set env.vars.GOHIGHLEVEL_ALLOWED_LOCATION_IDS "$GOHIGHLEVEL_LOCATION_ID"
 ```
 
 Firebase token (workflow writes — OPTIONAL at install time):
@@ -205,6 +217,39 @@ WARN (not FAIL) — the skill works for standard ops without it.
 > **VPS installs:** there is no Chrome in the container, so the agent cannot auto-re-grab.
 > On a VPS, the agent will notify you via Telegram: "I need you to grab the Convert and Flow
 > token to build workflows directly" — you copy it from your browser and paste it in.
+
+---
+
+---
+
+## Note: Write-location whitelist auto-seed (CAF_ALLOWED_LOCATION_IDS)
+
+The wrapper reads `CAF_ALLOWED_LOCATION_IDS` (or its canonical alias
+`GOHIGHLEVEL_ALLOWED_LOCATION_IDS`) as the list of location IDs that are
+allowed to receive write operations (create/update/delete contacts, build
+workflows, etc.). If **both** variables are empty the engine rejects every
+write — which silently blocks all CRM operations on a fresh single-location install.
+
+**What the wrapper now does automatically:** when neither variable is set, the
+wrapper seeds the whitelist with the client's own `GOHIGHLEVEL_LOCATION_ID` and
+logs a visible line to stderr:
+
+```
+[caf] Allowed write locations set to <id>; add more in CAF_ALLOWED_LOCATION_IDS
+```
+
+This means a standard single-location install works without any extra
+configuration. If you manage multiple sub-accounts under one agent, add them
+as a comma-separated list:
+
+```bash
+openclaw config set env.vars.GOHIGHLEVEL_ALLOWED_LOCATION_IDS \
+  "$GOHIGHLEVEL_LOCATION_ID,<second-location-id>"
+```
+
+The draft-only and approval-gate safeties remain unchanged — the whitelist
+controls WHICH locations can be written; the other guards control HOW writes are
+approved and published.
 
 ---
 

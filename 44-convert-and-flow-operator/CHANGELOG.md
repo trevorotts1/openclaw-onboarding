@@ -1,5 +1,28 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.2] - 2026-06-11 — fix: CAF_ALLOWED_LOCATION_IDS auto-seeds from GOHIGHLEVEL_LOCATION_ID at install
+
+### Fixed
+- `tools/engine/caf` (engine wrapper): `CAF_ALLOWED_LOCATION_IDS` no longer defaults to
+  blank, which silently blocked every write on a fresh single-location install. When neither
+  `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` nor `CAF_ALLOWED_LOCATION_IDS` is set, the wrapper now
+  seeds the whitelist from `GHL_LOCATION_ID` (i.e. the client's own location) and emits:
+  `[caf] Allowed write locations set to <id>; add more in CAF_ALLOWED_LOCATION_IDS`
+- `INSTALL.md` Action 3 (installed wrapper written to disk): same auto-seed logic applied
+  so the problem cannot re-emerge after a fresh install.
+- `INSTALL.md` Action 5 (credential wiring step): now explicitly wires
+  `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` via `openclaw config set` to `$GOHIGHLEVEL_LOCATION_ID`
+  as the initial value, matching the auto-seed logic.
+
+### Added
+- `INSTALL.md` "Note: Write-location whitelist auto-seed" section explaining the behaviour,
+  the log line, and how to add additional sub-account IDs for multi-location setups.
+
+### Not changed
+- Draft-only default (`GOHIGHLEVEL_DRAFT_ONLY=true`) untouched.
+- Approval gate untouched.
+- Engine internals untouched.
+
 ## [1.0.1] - 2026-06-11 — Chrome extension: switch to load-unpacked (no Chrome Web Store)
 
 ### Changed

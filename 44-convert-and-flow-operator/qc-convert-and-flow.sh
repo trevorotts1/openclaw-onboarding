@@ -114,6 +114,12 @@ assert "INSTALL.md documents 'ghl' command" \
   "grep -q '\bghl\b' \"$SKILL44_DIR/INSTALL.md\""
 assert "INSTALL.md documents write-safety default (GOHIGHLEVEL_DRAFT_ONLY)" \
   "grep -q 'GOHIGHLEVEL_DRAFT_ONLY' \"$SKILL44_DIR/INSTALL.md\""
+assert "engine caf wrapper auto-seeds CAF_ALLOWED_LOCATION_IDS from GOHIGHLEVEL_LOCATION_ID" \
+  "grep -q 'CAF_ALLOWED_LOCATION_IDS.*GHL_LOCATION_ID\|GHL_LOCATION_ID.*CAF_ALLOWED_LOCATION_IDS\|_caf_allowed_raw' \"$SKILL44_DIR/tools/engine/caf\""
+assert "INSTALL.md Action 3 wrapper auto-seeds GHL_ALLOWED_LOCATION_IDS from GHL_LOCATION_ID" \
+  "grep -q '_caf_allowed_raw' \"$SKILL44_DIR/INSTALL.md\""
+assert "INSTALL.md wires GOHIGHLEVEL_ALLOWED_LOCATION_IDS at install (Action 5)" \
+  "grep -q 'GOHIGHLEVEL_ALLOWED_LOCATION_IDS' \"$SKILL44_DIR/INSTALL.md\""
 assert "CORE_UPDATES.md sentinel present" \
   "grep -q 'skill:44-convert-and-flow-operator:core-update-applied' \"$SKILL44_DIR/CORE_UPDATES.md\""
 assert "CHANGELOG.md exists" \
@@ -174,6 +180,8 @@ live_assert "snapshot dir exists" \
   "[ -d \"$CAF_DIR/data/snapshots\" ] || mkdir -p \"$CAF_DIR/data/snapshots\""
 live_assert "wrapper sets GOHIGHLEVEL_DRAFT_ONLY" \
   "grep -q 'GOHIGHLEVEL_DRAFT_ONLY' \"$CAF_DIR/caf\""
+live_assert "installed wrapper auto-seeds CAF_ALLOWED_LOCATION_IDS (blank whitelist fix)" \
+  "grep -q '_caf_allowed_raw' \"$CAF_DIR/caf\""
 
 # ── Section E: TRINITY and self-test (live-box only) ─────────────────────────
 echo ""
