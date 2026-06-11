@@ -12,7 +12,7 @@ MEM_MD="$WS/MEMORY.md"
 [ -f "$MEM_MD" ] || { echo "[skill 38] $MEM_MD not found — skipping"; exit 0; }
 
 MARKER_BEGIN="<!-- BEGIN skill-38 memory-rules v5.14 -->"
-BUILDER_MARKER="<!-- BEGIN skill-38 builder-design-rules v1.4.1 -->"
+BUILDER_MARKER="<!-- BEGIN skill-38 builder-design-rules v1.5.0 -->"
 R3A_MARKER="<!-- BEGIN skill-38 round3-queueA-rules v1.5.0 -->"
 
 if grep -qF "$MARKER_BEGIN" "$MEM_MD" && grep -qF "$BUILDER_MARKER" "$MEM_MD" && grep -qF "$R3A_MARKER" "$MEM_MD"; then
@@ -52,26 +52,28 @@ cat >> "$MEM_MD" <<'BLOCK'
 BLOCK
 fi
 
-# Block 2 — Conversation Playbook Builder design rules (v1.4.1 enhancement)
+# Block 2 — Conversation Playbook Builder design rules (v1.5.0 enhancement)
 if ! grep -qF "$BUILDER_MARKER" "$MEM_MD"; then
 cat >> "$MEM_MD" <<'BLOCK'
 
-<!-- BEGIN skill-38 builder-design-rules v1.4.1 -->
-## Skill 38 — Conversation Playbook Builder: design rules (v1.4.1)
+<!-- BEGIN skill-38 builder-design-rules v1.5.0 -->
+## Skill 38 — Conversation Playbook Builder: design rules (v1.5.0)
 
 These rules make the recurring "build me a conversation playbook" flow bulletproof.
 The system's USP is COMMUNICATION-DRIVEN funnels / automations — built by talking and
 brainstorming, NOT click-and-drag (this is what beats CloseBot).
 
-15. Terminology Rule — "workflow" / "automation" / "Workflow AI" all mean a
-    **GHL Automations-section workflow** unless the operator says otherwise. When the
-    operator says "build me a workflow / playbook / funnel," it is a Conversation
-    Playbook Builder request (Step 9.20).
-16. No-GHL-API Rule — GHL / Convert and Flow Automations have **NO API and NO MCP**.
-    The ONLY way to build one is the **"Build with AI" button** (top-right of the
-    Automations section): the agent generates the prompt, the operator clicks the button
-    and pastes it. (Future: Playwright / browser-control auto-paste; today it is manual.)
-    NEVER write or claim code that "calls the GHL Automations API" — it does not exist.
+15. Build-Routing Rule — when the operator says "build me a workflow / playbook /
+    funnel," route by node type. A workflow WITH a conversational node -> skill 44
+    builds the structure and AUTO-INVOKES skill 38 for the brain in the SAME run
+    (THE TRINITY: GHL automation + communications playbook + workflow-AI prompt
+    ship together or it is NOT registered). A PURELY MECHANICAL workflow (no
+    conversational node) builds standalone via skill 41's structure + 12-point
+    checklist. (Supersedes the legacy "always Step 9.20" routing.)
+16. Convert-and-Flow Build-Path Rule — GHL Automations have no PUBLIC API or MCP.
+    The Build with AI button is the public path. Skill 44 provides an internal-API
+    build path when the client's Firebase token is present; when absent, Build with
+    AI remains the only path. (Never claim a PUBLIC GHL Automations API exists.)
 17. 3-PART Build Rule — every conversation-playbook build produces all THREE parts:
     Part 1 = Workflow AI instruction set (Build-with-AI prompt + manual-build fallback +
     verification checklist); Part 2 = the conversation playbook itself (Layer 2 markdown,
@@ -91,7 +93,7 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
     **~/clawd/secrets/.env** AND/OR **~/.openclaw/.env** — check BOTH before ever claiming
     a key is missing. (VPS keeps env in /docker/<project>/.env; Mac does not.)
 
-<!-- END skill-38 builder-design-rules v1.4.1 -->
+<!-- END skill-38 builder-design-rules v1.5.0 -->
 BLOCK
 fi
 

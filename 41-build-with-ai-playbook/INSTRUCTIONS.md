@@ -4,7 +4,7 @@ This is the operator-facing runtime guide. It assumes the install scripts (00--0
 
 ## The non-fabrication floor (read first)
 
-**NEVER fabricate GHL capabilities.** This is the #1 rule of this skill, enforced by scripts/qc-prompt-completeness.sh. When a trigger or action is not available in the operator's plan tier, a lookup returns nothing, or a value is uncertain:
+**NEVER fabricate GHL capabilities.** This is the #1 rule of this skill, enforced by scripts/qc-prompt-completeness.sh. This rule extends to skill 44 (failed probe / unknown endpoint -> say so and degrade, never claim an unverified build). When a trigger or action is not available in the operator's plan tier, a lookup returns nothing, or a value is uncertain:
 
 - Report the honest gap: "That trigger is not available on your current plan tier. I can suggest an alternative, or you can upgrade."
 - Offer the operator the manual path: the GHL help docs, the API reference, or a manual build in the workflow builder.
@@ -29,6 +29,12 @@ When the operator asks to build a workflow, do NOT dump 50 questions. USE what y
 
 Before generating the Build With AI prompt, audit what tags, custom fields, and custom values the workflow will reference. The Workflow AI Builder inserts placeholder syntax but does NOT create these objects.
 
+> This dependency-first contract (tags, custom fields, custom values created
+> BEFORE the workflow references them) is a HARD INPUT CONTRACT on skill 44: skill
+> 44 will REFUSE to build a workflow whose dependencies do not yet exist. GET-back
+> verification (Step 3) and the ZHC-/ZHC_ standing-approval rule bind skill 44's
+> writes identically.
+
 **Dependency types to check:**
 - **Tags** referenced in: Contact Tag trigger, Add/Remove Contact Tag actions, If/Else conditions
 - **Custom fields** referenced in: Update Contact Field action, If/Else conditions, trigger filters
@@ -37,7 +43,7 @@ Before generating the Build With AI prompt, audit what tags, custom fields, and 
 **For each dependency:**
 1. Check if it already exists (GET /locations/{locationId}/tags, /customFields, /customValues)
 2. If missing, add it to the CREATE-FIRST list
-3. The operator must approve creation (standing approval for ZHC- / ZHC_ prefixed objects)
+3. The operator must approve creation (standing approval for ZHC- / ZHC_ prefixed objects). This ZHC- standing approval extends to skill 44 writes identically.
 
 **ZHC prefix rules:**
 - Agent-created tags: ZHC- prefix (e.g., ZHC-new-lead, ZHC-welcome-sent)
@@ -76,7 +82,7 @@ Content-Type: application/json
 {"name": "office_phone", "value": "+1 555 123 4567"}
 ```
 
-**Verification:** GET the object back immediately after creation. If the GET fails, retry once, then surface to the operator.
+**Verification:** GET the object back immediately after creation. If the GET fails, retry once, then surface to the operator. This GET-back retry-once pattern extends to skill 44 (failed probe / unknown endpoint -> say so and degrade, never claim an unverified build).
 
 **Logging:** emit a dependency_created event to build-with-ai-events.jsonl for each object created.
 
@@ -106,6 +112,12 @@ Every prompt MUST follow the 8-section template at templates/build-with-ai-promp
 
 ### Step 5: Operator pastes into GHL Workflow AI Builder
 
+> **Skill 44 era:** when the client has the convert-and-flow-operator (skill 44)
+> installed AND a healthy Firebase token, skill 44 builds the workflow directly
+> from this skill's STRUCTURE — the manual paste below is the FALLBACK for the
+> no-token path (or when the operator prefers to paste). The dependency-first
+> contract (Step 2/3) and the 12-point verification (Step 6) bind BOTH paths.
+
 Direct the operator to:
 1. Navigate to Automations > Workflows in GHL / Convert and Flow
 2. Click "Build using AI" (top-right of workflow list)
@@ -118,6 +130,10 @@ Direct the operator to:
 9. Toggle to Published and Save
 
 ### Step 6: Post-build verification (12-point checklist)
+
+> Skill 44 runs this exact 12-point checklist as its structural post-build check
+> after an internal-API build, the same way the manual path runs it after a paste
+> build. The checklist is path-agnostic.
 
 Run protocols/verification-checklist.md after every build:
 

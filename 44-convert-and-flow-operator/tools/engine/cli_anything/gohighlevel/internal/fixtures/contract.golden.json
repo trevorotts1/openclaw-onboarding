@@ -1,0 +1,42 @@
+{
+  "capture_date": "2026-06-11T00:00:00Z",
+  "_synthetic": true,
+  "_synthetic_note": "SYNTHETIC -- recapture from real account at first onboarding. This fixture was built at skill-44 build time from verified source-code shapes (STRIP_KEYS frozenset, VERIFIED_ACTIONS set, workflow GET/PUT payload structure). It has NOT been validated against a live GHL backend. Run the capture procedure in fixtures/README.md with a real canonical account credential before first production deploy.",
+  "_capture_note": "Captured at skill-44 build time from verified VERIFIED_ACTIONS set. Re-capture from canonical GHL account before first production deploy using the procedure in fixtures/README.md.",
+  "account_id_redacted": "REDACTED",
+  "_note": "This file is captured from ONE real account at build time. Do not edit manually. See fixtures/README.md for the capture procedure.",
+  "workflow_get_shape": {
+    "top_level_keys": [
+      "_id", "companyAge", "companyId", "createdAt", "creationSource",
+      "deleted", "id", "isTriggerBucketMigrated", "locationId", "meta",
+      "name", "originType", "permissionMeta", "status", "updatedAt",
+      "version", "workflowData"
+    ],
+    "has_version": true,
+    "has_workflowData_templates": true
+  },
+  "strip_keys_present_in_get": [
+    "_id", "__v", "companyAge", "companyId", "createdAt", "creationSource",
+    "deleted", "id", "isTriggerBucketMigrated", "locationId", "originType",
+    "permissionMeta", "updatedAt"
+  ],
+  "verified_actions_snapshot": [
+    "add_contact_tag", "add_notes", "add_to_workflow",
+    "array_functions", "assign_user", "call", "chatgpt", "conversation_ai",
+    "create_opportunity", "create_update_contact", "custom_code",
+    "custom_webhook", "datetime_formatter", "dnd_contact", "drip",
+    "edit_conversation", "email", "facebook_conversion_api",
+    "fb_interactive_messenger", "find_contact", "find_opportunity",
+    "gmb", "google_sheets", "goto", "if_else", "ig_interactive_messenger",
+    "instagram-dm", "internal_notification", "ivr_connect_call",
+    "ivr_gather", "math_operation", "membership_grant_offer",
+    "membership_revoke_offer", "messenger", "number_formatter",
+    "remove_assigned_user", "remove_contact_tag", "remove_from_all_workflows",
+    "remove_from_workflow", "remove_opportunity", "respond_on_comment",
+    "review_request", "sms", "slack_message", "stripe_one_time_charge",
+    "task-notification", "text_formatter", "transition",
+    "update_appointment_status", "update_contact_field",
+    "update_custom_value", "voicemail", "wait", "webhook",
+    "workflow_goal", "workflow_split"
+  ]
+}

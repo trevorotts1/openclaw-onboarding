@@ -135,7 +135,7 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 
 | Tool | Purpose | Credentials |
 |------|---------|-------------|
-| GoHighLevel Social Planner API | Post scheduling, commenting, media attachment across all 6 platforms | GHL_PRIVATE_TOKEN + GHL_LOCATION_ID |
+| GoHighLevel Social Planner API | Post scheduling, commenting, media attachment across all 6 platforms | GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID |
 | kie.ai API | Image generation (Nano Banana 2) at 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Video generation (Veo 3.1 Lite) | KIE_API_KEY |
 | Fish Audio S2 API | Podcast TTS with inline [emotion] tags (depends on Skill 30) | FISH_AUDIO_API_KEY + FISH_AUDIO_VOICE_ID |
 | Google Sheets API | Content logging across 19 worksheets with inline image previews | **Sheet created automatically via n8n webhook** - no client credentials needed |

@@ -1,0 +1,408 @@
+# ci/skill44-e2e.yml
+#
+# Skill 44 — End-to-End CI (Merge Gate + Rollback + Serialization)
+# Acceptance Criteria 19, 20, 21 per PRD-ADDENDUM-C Section 9.
+#
+# HARD MERGE REQUIREMENT (Section 12):
+#   No skill-44 PR merges unless every job in this workflow is green.
+#   A unit can score 8.5+ on the QC rubric and still be blocked if CI is red.
+#
+# This file is intended for the staged onboarding PR into openclaw-onboarding.
+# It lives at engine/ci/skill44-e2e.yml in the engine workspace and should be
+# copied to .github/workflows/skill44-e2e.yml when the onboarding PR is opened.
+#
+# Jobs:
+#   unit11-e2e-merge-gate   — AC 19: Telegram intent → Tier 0 → CLI build →
+#                              TRINITY+23-key gate stubs → DRAFT, no live CRM.
+#   unit11-rollback         — AC 20: Pre-write snapshot captured; restore
+#                              reverses the mutation.
+#   unit11-serialization    — AC 21: WriteLock serializes concurrent builds;
+#                              step backoff fires between sequential write steps.
+#   regression-guard        — Existing test suites must stay green after e2e runs.
+#
+# All jobs: internal API fully mocked, NO live CRM writes ever.
+
+name: skill-44 e2e (unit 11 — AC 19/20/21)
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "skill-44/**"
+    paths:
+      - "44-convert-and-flow-operator/tools/engine/**"
+      - ".github/workflows/skill44-e2e.yml"
+  push:
+    branches:
+      - "skill-44/**"
+  workflow_dispatch:
+
+# No live CRM credentials are needed or present.
+# All env vars below are sandbox/fixture values — not real secrets.
+env:
+  CAF_ALLOWED_LOCATION_IDS: "SANDBOX_LOC_001"
+  CAF_APPROVAL_TOKEN: "ci-sandbox-approval-token"
+  GHL_FIREBASE_REFRESH_TOKEN: "ci-sandbox-refresh-token"
+  CAF_DRAFT_ONLY: "true"
+  CAF_STEP_BACKOFF_MS: "0"
+  CAF_INTERNAL_STEP_BACKOFF_MS: "0"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 1: AC 19 — MERGE GATE
+  # Telegram-style intent → router picks Tier 0 → CLI build --from-plan →
+  # TRINITY stub → 23-key stub → DRAFT workflow, NOT published.
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit11-e2e-merge-gate:
+    name: "AC 19 — E2E Merge Gate (intent → Tier 0 → build → gates → DRAFT)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
+
+      - name: "AC 19 — Router picks Tier 0 for nurture intent"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_router_picks_tier0_for_nurture_intent" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-router"
+
+      - name: "AC 19 — Router correctly assigns Tier 1 for blogs (not CLI-covered)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_router_picks_tier1_for_blog_intent" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-router-blog"
+
+      - name: "AC 19 — CLI build --from-plan exits 0 (SANDBOX fixture, API mocked)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_cli_build_from_plan_exits_zero or test_cli_build_result_is_json" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-cli-build"
+
+      - name: "AC 19 — Build NEVER auto-publishes (all PUT bodies are DRAFT)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_cli_build_never_auto_publishes or test_cli_build_mock_returns_draft_status" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-draft-check"
+
+      - name: "AC 19 — TRINITY gate stub passes ZHC-prefixed workflow"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "trinity_gate" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-trinity"
+
+      - name: "AC 19 — 23-key gate stub passes fixture workflow structure"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "23key_gate" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-23key"
+
+      - name: "AC 19 — FULL E2E PIPELINE (authoritative merge gate assertion)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_full_e2e_pipeline" \
+            --tb=long \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-full"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 2: AC 20 — ROLLBACK
+  # Pre-write snapshot is captured automatically before every mutation.
+  # caf workflows restore replays the snapshot via PUT; restored body
+  # matches the pre-mutation snapshot (server-managed keys stripped).
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit11-rollback:
+    name: "AC 20 — Rollback (pre-write snapshot + restore)"
+    runs-on: ubuntu-latest
+    needs: unit11-e2e-merge-gate
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
+
+      - name: "AC 20 — Pre-write snapshot captured before update PUT"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_pre_write_snapshot_captured_before_update_put" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-snap"
+
+      - name: "AC 20 — Restore reverses mutation via PUT (body matches snapshot)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_restore_reverses_update" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-restore"
+
+      - name: "AC 20 — snapshot_manager.capture() auto-called (not manual)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_rollback_snapshot_automatically_captured" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-auto"
+
+      - name: "AC 20 — Snapshot precedes mutation in full update cycle"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_snapshot_precedes_mutation_in_full_update_cycle" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-precedes"
+
+      - name: "AC 20 — Full rollback suite"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "TestCriterion20Rollback" \
+            --tb=long \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-full"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 3: AC 21 — SERIALIZATION
+  # Two concurrent builds for the same location do not run internal writes
+  # in parallel (WriteLock serializes); step backoff fires between sequential
+  # write steps (not only on 429); the Sunday auto-update design uses the same
+  # lock so it cannot run builds in parallel on a box.
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit11-serialization:
+    name: "AC 21 — Serialization (WriteLock + step backoff)"
+    runs-on: ubuntu-latest
+    needs: unit11-e2e-merge-gate
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
+
+      - name: "AC 21 — WriteLock serializes two concurrent builds (same location)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_write_lock_serializes_two_concurrent_builds" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-lock"
+
+      - name: "AC 21 — Independent locations run concurrently (no deadlock)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_independent_locations_run_concurrently" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-independent"
+
+      - name: "AC 21 — Step backoff fires between sequential write steps (not only 429)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_step_backoff_fires_between_sequential_write_steps" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-backoff"
+          CAF_INTERNAL_STEP_BACKOFF_MS: "60"
+
+      - name: "AC 21 — No backoff on first write (step_index=0)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_no_step_backoff_on_first_write" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-first-write"
+          CAF_INTERNAL_STEP_BACKOFF_MS: "200"
+
+      - name: "AC 21 — Full concurrent build cycle (WriteLock enforced)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_concurrent_builds_same_location_serialized_full_cycle" \
+            --tb=long \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-concurrent"
+
+      - name: "AC 21 — Full serialization suite"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "TestCriterion21Serialization" \
+            --tb=long \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-full"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 4: REGRESSION GUARD
+  # All pre-existing engine tests must remain green after the e2e suite runs.
+  # A failing regression here means the e2e changes broke something upstream.
+  # ─────────────────────────────────────────────────────────────────────────────
+  regression-guard:
+    name: "Regression guard (existing engine tests must stay green)"
+    runs-on: ubuntu-latest
+    needs:
+      - unit11-e2e-merge-gate
+      - unit11-rollback
+      - unit11-serialization
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip install pytest
+
+      - name: Run full test suite (safety gate + adapter probe + unit 2 + unit 11)
+        run: |
+          python3 -m pytest tests/ \
+            -v \
+            --tb=short \
+            -p no:warnings \
+            --junit-xml=test-results.xml
+        env:
+          CAF_DATA_DIR: "/tmp/ci-regression"
+          CAF_ALLOWED_LOCATION_IDS: "SANDBOX_LOC_001"
+          CAF_APPROVAL_TOKEN: "ci-sandbox-approval-token"
+          GHL_FIREBASE_REFRESH_TOKEN: "ci-sandbox-refresh-token"
+          CAF_DRAFT_ONLY: "true"
+          CAF_STEP_BACKOFF_MS: "0"
+          CAF_INTERNAL_STEP_BACKOFF_MS: "0"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: skill44-e2e-test-results
+          path: 44-convert-and-flow-operator/tools/engine/test-results.xml
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STATUS CHECK — all jobs above must be green to allow a PR merge.
+  # Add this job's name to the branch protection required status checks list.
+  # ─────────────────────────────────────────────────────────────────────────────
+  e2e-gate-passed:
+    name: "skill-44 e2e gate PASSED"
+    runs-on: ubuntu-latest
+    needs:
+      - unit11-e2e-merge-gate
+      - unit11-rollback
+      - unit11-serialization
+      - regression-guard
+    if: always()
+    steps:
+      - name: Check all required jobs passed
+        run: |
+          if [[ "${{ needs.unit11-e2e-merge-gate.result }}" != "success" ]]; then
+            echo "FAIL: unit11-e2e-merge-gate did not pass (AC 19)"
+            exit 1
+          fi
+          if [[ "${{ needs.unit11-rollback.result }}" != "success" ]]; then
+            echo "FAIL: unit11-rollback did not pass (AC 20)"
+            exit 1
+          fi
+          if [[ "${{ needs.unit11-serialization.result }}" != "success" ]]; then
+            echo "FAIL: unit11-serialization did not pass (AC 21)"
+            exit 1
+          fi
+          if [[ "${{ needs.regression-guard.result }}" != "success" ]]; then
+            echo "FAIL: regression-guard did not pass"
+            exit 1
+          fi
+          echo "All skill-44 e2e gates GREEN. PR may merge."

@@ -347,14 +347,20 @@ brainstorm flow (Section I of the protocol):
   bootstrap pointer (AGENTS.md/TOOLS.md/MEMORY.md as appropriate), create a
   NEW Notion doc in the CLIENT's own workspace, and register it.
 
-GHL note: Automations have NO API/MCP — the only build path is the
-"Build with AI" button (top-right of Automations); the agent generates the
-prompt, the operator clicks + pastes. The prompt nails the SHAPE; the
-operator pastes tokens after — always ship the verification checklist.
+GHL build-path note: GHL Automations have no PUBLIC API or MCP. The Build with AI
+button is the public path. Skill 44 (convert-and-flow-operator) provides an
+internal-API build path when the client's Firebase token is present; when absent,
+Build with AI remains the only path (the agent generates the prompt, the operator
+clicks + pastes; the prompt nails the SHAPE, the operator pastes tokens after —
+always ship the verification checklist).
 
 THE TRINITY: a GHL workflow/automation, a communications playbook, and a
 workflow-AI prompt travel together — building one implies the other two.
 See protocols/conversation-workflows-protocol.md (Section "THE TRINITY").
+
+ROUTING: a workflow WITH a conversational node -> skill 44 builds + auto-invokes
+skill 38 for the brain (all three TRINITY legs or not registered); a purely
+mechanical workflow builds standalone via skill 41.
 
 Standards (full content in reference docs — do NOT inline here):
 - Communications playbook format + must-appear checklist + storage + the

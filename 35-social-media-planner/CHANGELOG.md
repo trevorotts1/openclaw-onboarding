@@ -1,5 +1,14 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.7.0 - 2026-06-10 — Appendix A: credential path + name cleanup (no behavior change)
+
+### What changed
+- INSTRUCTIONS.md: two table rows changed `~/.openclaw/credentials/.env` -> `~/.openclaw/secrets/.env`; `GHL_LOCATION_ID` -> `GOHIGHLEVEL_LOCATION_ID` in the path column. (`credentials/.env` goes to true zero in active instruction text.)
+- SKILL.md: three occurrences of `[from secrets/.env: GHL_LOCATION_ID]` -> `[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]`.
+- CORE_UPDATES.md: one credential row changed `GHL_PRIVATE_TOKEN + GHL_LOCATION_ID` -> `GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID`.
+- `GHL_PRIVATE_TOKEN` and `GHL_LOCATION_ID` REMAIN in INSTALL.md/QC.md/qc-*.sh as DELIBERATE deprecated-name guardrails ("do not use these names") — those guardrails are intentionally protective and are NOT changed.
+- wire.sh added: M4 migration checks for stray `GHL_PRIVATE_TOKEN=` and `GHL_LOCATION_ID=` entries in the box's secrets file and mirrors values to the canonical names (copy-not-delete, no value logged, chmod 600 preserved).
+
 ## v2.6.0 - June 9, 2026
 
 ### Fix — Wire row-logging to new social-planner-row-append webhook (fleet-wide planner bug fix)

@@ -1,3 +1,16 @@
+## [1.6.0] - 2026-06-10 — Skill 44 era: nine-file sweep + Rules 15/16 rewrite + TRINITY/self-test wiring + alias-aware credentials
+
+### Why
+Skill 44 (convert-and-flow-operator) ships an internal-API workflow-build path. Without this rewrite, every onboarded agent carries a standing NEVER rule (Rule 16) that forbids skill 44's core capability. This is the critical blocker fix.
+
+### Changes
+- **Nine-file sweep:** all occurrences of the old "NO API and NO MCP / NEVER write or claim" wording replaced with the canonical sentence: "GHL Automations have no PUBLIC API or MCP. The Build with AI button is the public path. Skill 44 provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path." Files touched: scripts/06-append-memory-rules.sh, scripts/05-update-agents-md.sh, CORE_UPDATES.md, INSTRUCTIONS.md, protocols/conversation-workflows-protocol.md, references/workflow-ai-instructions-standard.md, references/GHL-INBOUND-AND-PLAYBOOKS.md, references/v6.0-source-playbook.md, this CHANGELOG. Historical CHANGELOG entries (pre-v1.6.0) intentionally quote old wording — they are immutable records.
+- **Rules 15/16 rewrite:** Rule 15 = Build-Routing Rule (node-type-based routing, TRINITY gate, supersedes "always Step 9.20"). Rule 16 = Convert-and-Flow Build-Path Rule (public path + skill 44 internal path). Marker version bumped v1.4.1 -> v1.5.0 in scripts/06-append-memory-rules.sh so live boxes re-apply via M3 migration.
+- **TRINITY wiring:** skill 44 QC calls qc-trinity-registry.sh as a hard gate for conversational builds.
+- **Self-test credential alias add (Part 0 finding #7):** 24-self-test-hook.sh readiness check now alias-aware (`GHL_PRIVATE_INTEGRATION_TOKEN|GOHIGHLEVEL_API_KEY` and `GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID`). Behavior-preserving; matches skill 37's existing pattern. Needed so criterion 3 (44-built workflow passes the self-test) passes on a canonical-named box.
+- **Conditional manual-paste branch:** skill 38's client-doc generator gains a conditional — if box has skill 44 + healthy Firebase token, doc says direct build; else existing manual paste instructions verbatim (no manual content deleted).
+- **wire.sh added:** M3 migration (marker-bounded in-place Rules 15/16 rewrite on live MEMORY.md + AGENTS.md blocks).
+
 ## [1.5.12] - 2026-05-30 - Round-2 backlog F18: Webhook Chaining (downstream triggers — the AI as the front door of an automated workflow, OFF by default)
 
 ### Why

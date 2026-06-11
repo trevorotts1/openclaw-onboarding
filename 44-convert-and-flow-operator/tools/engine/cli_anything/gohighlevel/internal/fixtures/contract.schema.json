@@ -1,0 +1,26 @@
+{
+  "_doc": "Minimal shape assertions the ContractProbe enforces on READ-ONLY GETs. Update this when GHL changes the internal API shape and the golden fixture is re-captured.",
+  "_synthetic_check": "warn_if_synthetic",
+  "_synthetic_check_note": "If contract.golden.json._synthetic is true the probe emits a SYNTHETIC_FIXTURE warning in the probe result reason alongside ok=true. This means the fixture was built from source-code shapes and has not been validated against a live GHL backend. Recapture before first production use.",
+
+  "probe_fixture": {
+    "workflow_id": "",
+    "_note": "Set to a real workflow ID in the canonical account for doctor/Sunday probe. Empty = skip live GET assertions (CI uses mock transport instead)."
+  },
+
+  "workflow_get_shape": {
+    "required_keys": ["name", "version", "workflowData", "status"],
+    "requires_version": true,
+    "requires_workflow_data_templates": true
+  },
+
+  "strip_keys_assertions": {
+    "must_be_present_for_strip": [
+      "createdAt", "updatedAt", "locationId"
+    ],
+    "_note": "These STRIP_KEYS must be present on a live GET response. If any are missing, GHL changed its response shape — contract drift."
+  },
+
+  "check_verified_actions": true,
+  "_verified_actions_note": "Probe checks that every action in the golden snapshot is still in VERIFIED_ACTIONS. A missing action means GHL retired it."
+}

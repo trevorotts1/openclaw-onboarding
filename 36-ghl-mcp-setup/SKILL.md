@@ -1,21 +1,22 @@
 ---
 name: ghl-mcp-setup
-description: Install and configure the 5-tier GoHighLevel access chain — Official MCP (36 tools), Community MCP (586 tools), direct REST API, Playwright browser, and Codex Computer Use — so the agent always picks the cheapest path first and falls back gracefully. Registers ghl-mcp under nested mcp.servers via the openclaw mcp set CLI.
+description: Install and configure the 6-tier GoHighLevel access chain — Tier 0 Convert and Flow CLI (skill 44), Official MCP (36 tools), Community MCP (588 tools, on-demand curl), direct REST API, agent-browser/Playwright, and Codex Computer Use — so the agent always picks the cheapest path first and falls back gracefully. Registers ghl-mcp under nested mcp.servers via the openclaw mcp set CLI.
 ---
 
 # GHL MCP Setup — Multi-Tier Access for GoHighLevel
 
 ## What This Is
 
-This skill teaches your AI agent how to connect to GoHighLevel (also called "Convert and Flow") through a **5-tier access chain** that always picks the cheapest, fastest path first and falls back gracefully when needed.
+This skill teaches your AI agent how to connect to GoHighLevel (also called "Convert and Flow") through a **6-tier access chain** that always picks the cheapest, fastest path first and falls back gracefully when needed.
 
 The chain:
 
-1. **Tier 1 — Official GHL MCP** (36 tools, hosted by GHL, free, no install) — for contacts, calendars, conversations, opportunities, social media, blogs, emails, locations, read-only payments
-2. **Tier 2 — Community GHL MCP** (586 tools, runs locally) — for products, invoices, billing, subscriptions, estimates, store, coupons, Voice AI, Phone System, Agent Studio
-3. **Tier 3 — Direct REST API** with Private Integration Token (uses skill 29's reference files) — for anything neither MCP covers
-4. **Tier 4 — Playwright browser** at app.gohighlevel.com / white-label URL — for UI-only flows
-5. **Tier 5 — Codex Computer Use** (`codex/gpt-5.5`) — visual automation as last resort
+0. **Tier 0 — Convert and Flow CLI** (`caf`/`convertandflow`/`ghl`, skill 44) — for everything the CLI covers: contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, workflows (PIT for standard ops; Firebase token for workflow writes)
+1. **Tier 1 — Official GHL MCP** (36 tools, hosted by GHL, free, no install) — for blogs and CLI gaps
+2. **Tier 2 — Community GHL MCP** (588 tools, on-demand via curl — NOT registered in mcp.servers) — for products, invoices, billing, subscriptions, estimates, store, coupons, Voice AI, Phone System, Agent Studio
+3. **Tier 3 — Direct REST API** with Private Integration Token (uses skill 29's reference files) — for anything no MCP covers; media uploads (POST /medias/upload-file)
+4. **Tier 4 — Browser: agent-browser (Vercel) FIRST, Playwright fallback** (skill 03) — for UI-only flows; workflow-write backstop when no Firebase token
+5. **Tier 5 — Codex Computer Use** (`codex/gpt-5.5`) — visual automation, approval-gated, last resort
 
 ## Why This Skill Exists
 
@@ -115,7 +116,7 @@ After setup, run these three smoke tests in order:
 
 - **Skill 05 (`05-ghl-setup`):** Handles the foundational credential discovery. This skill (36) builds on top of it by adding the MCP layer. If a client only has 05 installed, this skill 36 elevates them to MCP-first.
 - **Skill 29 (`29-ghl-convert-and-flow`):** Provides the Tier 3 reference files. When MCPs lack a tool, this skill's instructions fall through to skill 29's `references/[module].md` lookups.
-- **Skill 35 (`35-social-media-planner`):** Posts to GHL Blog + Social Planner + Media Library. As of skill 36 v1.0.0, those operations should route through MCP Tier 1 first (`blogs_create-blog-post`, `social-media-posting_create-post`) and only fall through to raw API if MCPs don't cover the call.
+- **Skill 35 (`35-social-media-planner`):** Runs a SELF-CONTAINED 15+6 subagent publishing pipeline that posts to GHL Blog + Social Planner and uploads media via the DIRECT LeadConnector API (POST /medias/upload-file). That internal pipeline is EXEMPT from tier routing — do not redirect it through an MCP. Only AD-HOC interactive requests (a person asking the agent in chat to post something or look something up) follow the tier chain.
 
 ## Important Rules
 

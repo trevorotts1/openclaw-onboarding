@@ -37,8 +37,8 @@ The skill resolves variables at runtime from these sources. Confirm each is pres
 |---------------|--------|
 | Brand voice, tone, mission | `~/.openclaw/SOUL.md`, `IDENTITY.md` |
 | Owner profile, audience | `~/.openclaw/USER.md` |
-| API keys (GHL, WordPress, Medium, etc.) | `~/.openclaw/credentials/.env` |
-| Platform URLs, location IDs | `~/.openclaw/credentials/.env` (e.g., `GHL_LOCATION_ID`) |
+| API keys (GHL, WordPress, Medium, etc.) | `~/.openclaw/secrets/.env` |
+| Platform URLs, location IDs | `~/.openclaw/secrets/.env` (e.g., `GOHIGHLEVEL_LOCATION_ID`) |
 | Image model preference | `~/.openclaw/config/image-model.json` |
 | Video specs (resolution, bitrate) | `~/.openclaw/config/video-specs.json` |
 | Posting cadence, time-of-day | `~/.openclaw/config/social-cadence.json` |

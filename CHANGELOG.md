@@ -1,3 +1,14 @@
+## [v11.17.0]  -  2026-06-11  -  skill-44: Convert and Flow Operator + GHL routing overhaul (skills 44/36/38/41/29/35)
+
+### Changes
+- `44-convert-and-flow-operator/` NEW (v1.0.0) — Convert and Flow CLI operator (caf/convertandflow/ghl); 6-tier GHL router; Phase 1-3 full command surface including get/export/update/build/patch-email/patch-trigger/restore; internal-API adapter module with contract fixtures; snapshot rollback before every write; WriteLock serialization + step backoff; Firebase token grab + Mac auto-re-grab recipe; TRINITY enforcement; 23-key body contract; qc-convert-and-flow.sh; wire.sh migrations M1-M4.
+- `36-ghl-mcp-setup/` (v1.0.0 -> v1.1.0) — 6-tier table with skill numbers; Tier 0 first; Tier 2 on-demand curl; SOUL.md -> NO UPDATE NEEDED; Tier Escalation Protocol -> AGENTS.md block; stale skill-35 MCP claim removed; QC linter Sections H+E; agent-browser Tier 4 alignment.
+- `38-conversational-ai-system/` (1.5.14 -> 1.6.0) — Nine-file sweep: Rules 15/16 rewrite (no-API claim retired, Tier 0 / Build-with-AI fallback language); TRINITY enforcement in qc-trinity-registry.sh; self-test alias-aware (GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID); conditional manual-paste branch for no-token path.
+- `41-build-with-ai-playbook/` (1.3.0 -> 1.4.0) — Paste-step is fallback not default; dependency-first hard input contract on skill 44; 12-point checklist path-agnostic.
+- `29-ghl-convert-and-flow/` (v6.5.6 -> v6.6.0) — Header gains Tier 0 sentence; references/medias.md carved (POST /medias/upload-file, both CDN forms, parentId, retry); modules.md indexes medias.md.
+- `35-social-media-planner/` (v2.6.2 -> v2.7.0) — Appendix A six-line credential cleanup: credentials/.env -> secrets/.env; GHL_LOCATION_ID -> GOHIGHLEVEL_LOCATION_ID; GHL_PRIVATE_TOKEN -> GOHIGHLEVEL_API_KEY in CORE_UPDATES.
+- `.github/workflows/skill44-e2e.yml` — Full AC 19/20/21 e2e harness (unit11-e2e-merge-gate, unit11-rollback, unit11-serialization, regression-guard); hard merge gate.
+
 ## [v11.16.0]  -  2026-06-11  -  feat(B.6): embedding-health check — all 3 indexes, 3 legs, Ollama-Cloud hard rule, N32, Sunday cron + Wave-5 wiring
 
 ### Changes

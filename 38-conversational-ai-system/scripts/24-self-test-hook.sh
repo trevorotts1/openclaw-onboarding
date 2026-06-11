@@ -156,10 +156,10 @@ fi
 
 # GHL creds in secrets/.env
 if [ -n "$SECRETS_ENV" ]; then
-  grep -q 'GHL_PRIVATE_INTEGRATION_TOKEN' "$SECRETS_ENV" && ok "GHL_PRIVATE_INTEGRATION_TOKEN present in $SECRETS_ENV" \
-    || { bad "GHL_PRIVATE_INTEGRATION_TOKEN missing from secrets/.env"; fix "add GHL_PRIVATE_INTEGRATION_TOKEN to $SECRETS_ENV (the GHL skill reads secrets/.env), then restart"; }
-  grep -q 'GHL_LOCATION_ID' "$SECRETS_ENV" && ok "GHL_LOCATION_ID (location set) present in $SECRETS_ENV" \
-    || { bad "GHL_LOCATION_ID missing from secrets/.env"; fix "add GHL_LOCATION_ID=<location_id> to $SECRETS_ENV — it is the GHL API credential the agent sends with"; }
+  grep -qE 'GHL_PRIVATE_INTEGRATION_TOKEN|GOHIGHLEVEL_API_KEY' "$SECRETS_ENV" && ok "GHL PIT present in $SECRETS_ENV (GHL_PRIVATE_INTEGRATION_TOKEN or GOHIGHLEVEL_API_KEY)" \
+    || { bad "GHL PIT missing from secrets/.env (need GHL_PRIVATE_INTEGRATION_TOKEN or GOHIGHLEVEL_API_KEY)"; fix "add GOHIGHLEVEL_API_KEY (or GHL_PRIVATE_INTEGRATION_TOKEN) to $SECRETS_ENV, then restart"; }
+  grep -qE 'GHL_LOCATION_ID|GOHIGHLEVEL_LOCATION_ID' "$SECRETS_ENV" && ok "GHL location ID present in $SECRETS_ENV (GHL_LOCATION_ID or GOHIGHLEVEL_LOCATION_ID)" \
+    || { bad "GHL location ID missing from secrets/.env (need GHL_LOCATION_ID or GOHIGHLEVEL_LOCATION_ID)"; fix "add GOHIGHLEVEL_LOCATION_ID=<location_id> to $SECRETS_ENV, then restart"; }
 else
   bad "secrets/.env not found"; fix "place GHL creds in secrets/.env (container /data/.openclaw/secrets/.env on VPS, ~/.openclaw/secrets/.env on Mac)"
 fi
@@ -226,7 +226,7 @@ trap 'rm -f "$BODY_FILE" 2>/dev/null || true' EXIT
   printf '"phone":"%s",'           "$TEST_PHONE"
   printf '"subject":"self-test",'
   printf '"message_body":"This is an automated backend self-test inbound. Please acknowledge.",'
-  printf '"location_id":"%s",'     "${GHL_LOCATION_ID:-selftest-location}"
+  printf '"location_id":"%s",'     "${GHL_LOCATION_ID:-${GOHIGHLEVEL_LOCATION_ID:-selftest-location}}"
   printf '"location_name":"Self-Test Location"'
   printf '}'
 } > "$BODY_FILE"
@@ -300,7 +300,7 @@ if [ "${CREATE_TEMP_CONTACT:-0}" = "1" ] && [ -n "$SECRETS_ENV" ]; then
   sect "(c-real) Real GHL send via a TEMPORARY test contact (create -> send -> delete)"
   # shellcheck disable=SC1090
   set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a
-  PIT="${GHL_PRIVATE_INTEGRATION_TOKEN:-}"; LOC="${GHL_LOCATION_ID:-}"
+  PIT="${GHL_PRIVATE_INTEGRATION_TOKEN:-${GOHIGHLEVEL_API_KEY:-}}"; LOC="${GHL_LOCATION_ID:-${GOHIGHLEVEL_LOCATION_ID:-}}"
   if [ -n "$PIT" ] && [ -n "$LOC" ]; then
     CREATE="$(curl -s --max-time 30 -X POST "https://services.leadconnectorhq.com/contacts/" \
       -H "Authorization: Bearer $PIT" -H "Version: 2021-07-28" -H "Content-Type: application/json" \

@@ -230,9 +230,7 @@ Tunnel Values record (Section 5). It is Rule 7 of the playbook's Rules of Engage
 
 ## 4. Build-with-AI prompt TEMPLATE (the operator pastes this into GHL)
 
-**GHL / Convert and Flow has NO API and NO MCP for building automations.** The only way to build one
-programmatically-ish is the **"Build with AI"** feature: Automations → **Build with AI** → paste a prompt
-→ Publish. The agent's job is to generate a precise, copy-paste-ready prompt with every value substituted.
+**GHL / Convert and Flow has no PUBLIC API or MCP for building automations.** The Build with AI button is the public path (Automations → **Build with AI** → paste a prompt → Publish). Skill 44 (convert-and-flow-operator) provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path. The agent's job is to generate a precise, copy-paste-ready prompt (or invoke skill 44's build path) with every value substituted.
 
 > Placeholders: `{{PUBLIC_HOSTNAME}}`, `{{HOOK_PATH}}`, `{{HOOKS_TOKEN}}`, `{{CHANNEL}}`.
 > `{{CHANNEL}}` must be one of the VALID send types in Section 7 (`SMS`, `Email`, `FB`, `IG`,

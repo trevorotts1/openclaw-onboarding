@@ -23,7 +23,7 @@ The Content Publishing Engine orchestrates multi-agent workflows to research, cr
 
 ## Key Principles
 - **15+6 Agent Model**: 15 primary agents for core execution + 6 QC (Quality Control) agents for validation.
-- **Variable-based Configuration**: All platform credentials, URLs, and settings pulled from `[from identity.md: brand name]`, `[from secrets/.env: GHL_LOCATION_ID]`, etc. NO hardcoded values.
+- **Variable-based Configuration**: All platform credentials, URLs, and settings pulled from `[from identity.md: brand name]`, `[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]`, etc. NO hardcoded values.
 - **Phase-based Execution**: Research → Create → Produce → Schedule → Publish.
 - **8-Platform Publishing**: Seamless cross-posting with platform-specific formatting.
 - **Video Pipeline**: FFmpeg-based crossfades, stitching, and optimization (e.g., `[from config: video specs]`).
@@ -85,7 +85,7 @@ QC: Grammar, Fact-Check, Visual.
    | Medium | `[from secrets/.env: MEDIUM_TOKEN]` |
    | Substack | `[from secrets/.env: SUBSTACK_API]` |
    | LinkedIn | `[from secrets/.env: LINKEDIN_TOKEN]` |
-   | GHL Blog | `https://services.leadconnectorhq.com/blogs?locationId=[from secrets/.env: GHL_LOCATION_ID]` |
+   | GHL Blog | `https://services.leadconnectorhq.com/blogs?locationId=[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]` |
    | YouTube | `[from secrets/.env: YOUTUBE_KEY]` |
    | X/Twitter | `[from secrets/.env: TWITTER_TOKEN]` |
    | Facebook | `[from secrets/.env: FACEBOOK_TOKEN]` |
@@ -119,7 +119,7 @@ sessions_spawn task="Run Content Publishing Engine on [topic]" runtime="subagent
 
 Fallback if Ollama Cloud Minimax isn't available: `model="openrouter/xiaomi/mimo-v2-pro"`. Never hardcode the OpenRouter option as the primary.
 
-The subagent will read `identity.md`, pull credentials from `[from secrets/.env: GHL_LOCATION_ID]`, run the 15+6 agent pipeline (Research → Create → Produce → Schedule → Publish), upload finished media to the client's GHL Media Library, and return public CDN links — it does NOT require any external CLI tools.
+The subagent will read `identity.md`, pull credentials from `[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]`, run the 15+6 agent pipeline (Research → Create → Produce → Schedule → Publish), upload finished media to the client's GHL Media Library, and return public CDN links — it does NOT require any external CLI tools.
 
 ## Config Fields
 

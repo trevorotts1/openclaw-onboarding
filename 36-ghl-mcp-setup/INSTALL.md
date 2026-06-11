@@ -126,9 +126,9 @@ When finished, give the user a clear summary:
 > **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
 
 
-This guide enables AI agent autonomous setup of the 5-tier GHL access chain.
+This guide enables AI agent autonomous setup of the 6-tier GHL access chain.
 After completing these steps, the agent will route GHL requests through:
-Official MCP → Community MCP → REST API → Playwright → Codex Computer Use.
+Convert and Flow CLI (Tier 0, skill 44) → Official MCP → Community MCP (on-demand) → REST API → agent-browser/Playwright → Codex Computer Use.
 
 ## Important Things to Know Before You Start
 
@@ -440,11 +440,27 @@ EOF
 fi
 ```
 
-#### 5.7 Register with OpenClaw
+#### 5.7 Tier 2 = ON-DEMAND via curl (NO native registration)
+
+As of skill 36 v1.1.0 the community MCP is NOT registered under
+`mcp.servers` — its 588 tool schemas would ride in every session's context
+whether or not GHL is touched (measurement recorded in CHANGELOG). The local
+service still runs (launchd/systemd from 5.5/5.6, unchanged); only the
+registration mode changes. The agent invokes Tier 2 tools on demand:
 
 ```bash
-openclaw mcp set ghl-community-mcp "{\"url\":\"http://localhost:${GHL_MCP_PORT}/mcp\",\"transport\":\"streamable-http\",\"connectionTimeoutMs\":30000}"
+# Discover the tool surface live (no standing context cost):
+curl -sS "$GHL_COMMUNITY_MCP_URL/tools" | python3 -m json.tool
+
+# Invoke a tool via JSON-RPC over HTTP:
+curl -sS -X POST "$GHL_COMMUNITY_MCP_URL/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"ghl_list_products","arguments":{"limit":3}}'
 ```
+
+If a prior install registered `ghl-community-mcp`, remove it:
+`openclaw mcp remove ghl-community-mcp` (the migration in the wire.sh does this on
+live boxes).
 
 ### Action 6: Tier 2 Smoke Test
 
@@ -513,10 +529,10 @@ If the response uses Tier 3 or has no disclosure header, the agent isn't loading
 ## Done When
 
 - [ ] Tier 1 (`ghl-mcp`) registered, `/tools` returns 36
-- [ ] Tier 2 (`ghl-community-mcp`) registered, `/health` returns 588 tools
+- [ ] Tier 2 service running + `/tools` curl returns 588; NOT registered in mcp.servers
 - [ ] `GHL_COMMUNITY_MCP_URL` env var set
 - [ ] launchd plist (Mac) or systemd unit (VPS) running
-- [ ] SOUL.md / AGENTS.md / TOOLS.md / MEMORY.md updated per CORE_UPDATES.md
+- [ ] AGENTS.md / TOOLS.md / MEMORY.md updated per CORE_UPDATES.md (SOUL.md unchanged)
 - [ ] Full reference copied to `$MASTER_FILES_DIR/36-ghl-mcp-setup/`
 - [ ] `qc-ghl-mcp-setup.sh` exits 0
 - [ ] User verification prompt returns correct disclosure header
