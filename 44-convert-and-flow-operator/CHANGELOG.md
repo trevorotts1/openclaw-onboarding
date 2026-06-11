@@ -1,5 +1,63 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.7] - 2026-06-11 — fix: ZHC- folder standing approval + top-level `folder` plan-key hardening (both reproduced live on a client box)
+
+Two surgical engine fixes, both confirmed live on a managed client box (Evelyn, VPS)
+by an Opus diagnostic 2026-06-11. These are NEW bugs — disjoint from the 1.0.3
+400 `corrupted order` fix (already shipped).
+
+### Fixed (CRITICAL — engine `workflow_builder.py`)
+- **Bug 2a — folder-creation POST bypassed ZHC- standing approval.**
+  `CampaignBuilder._build_locked` created the campaign folder with
+  `self.client.request("POST", f"/workflow/{loc}", {"name": folder_name, ...})`
+  WITHOUT passing `workflow_name`. The safety gate (`safety_gate._is_approved`)
+  only inspects `workflow_name` for the ZHC-/ZHC_ standing-approval prefix, so it
+  saw an empty string and **demanded `CAF_APPROVAL_TOKEN` even when the FOLDER
+  name was ZHC-prefixed** — the build refused at the folder step despite a
+  ZHC- folder name that should be standing-approved exactly like a ZHC- workflow
+  name. Fix: pass `workflow_name=folder_name` on the folder POST. Non-ZHC folder
+  names still require a token (gate behaviour unchanged).
+
+### Fixed (CRITICAL — engine CLI `gohighlevel_cli.py` `workflows build`)
+- **Bug 2b — a top-level `"folder": "<name>"` plan key crashed the builder with
+  `TypeError: string indices must be integers`.** The `workflows build` handler
+  read `campaign.get("folder")` for the folder name but passed the WHOLE plan
+  dict (including the bare-string `folder` value) into `CampaignBuilder.build()`,
+  which iterates every value as a workflow dict (`wf_def["name"]`) — indexing a
+  string with `"name"` raised the TypeError. Fix: `pop` `folder` out of the plan
+  dict before iterating; use the popped value as the folder name when `--folder`
+  was not supplied; `--folder` wins when both are present. After the pop, every
+  remaining entry must be a workflow object — the handler now **fails loud** with
+  a clear message listing the offending non-dict entries (and exits non-zero)
+  instead of surfacing a raw TypeError.
+
+### Changed
+- Engine CLI version bumped `2.1.0` -> `2.1.1` (behaviour: folder POST carries
+  the folder name for ZHC- standing approval; build pops/validates the `folder`
+  plan key).
+
+### Added
+- Regression tests `TestZHCFolderStandingApprovalAndFolderKeyPlan` in
+  `tools/engine/tests/test_e2e_unit11.py`:
+  - **TEST A** — a ZHC- folder name + ZHC- workflow name, NO `CAF_APPROVAL_TOKEN`:
+    build exits 0 and the folder-creation POST carries `workflow_name=<ZHC folder>`
+    (FAILS on pre-fix main, where the missing name triggers a SAFETY GATE refusal /
+    non-zero exit).
+  - **TEST B** — a plan with a top-level `"folder": "<name>"` string key builds
+    successfully (no TypeError), the folder key is consumed as the folder name,
+    and is NOT iterated as a workflow.
+  - **TEST C** — `--folder` wins over the plan `folder` key when both are present.
+  - **TEST D** — a non-dict, non-`folder` top-level entry fails loud (non-zero
+    exit, clear message) rather than raising a raw TypeError.
+- `TestZHCFolderApprovalGate` in `tools/engine/tests/test_safety_gate.py`:
+  unit-level proof that `check_write` with `workflow_name="ZHC-Folder"` and NO
+  token passes (the gate-side contract Bug 2a relies on).
+
+### Not changed (safety gate preserved exactly)
+- Fail-closed location whitelist, the approval gate semantics for non-ZHC names,
+  dry-run refusals, draft-only default, the 1.0.3 build fail-loud / `link_steps`
+  ordering, and the 1.0.4 token retry-once are all untouched.
+
 ## [1.0.6] - 2026-06-11 — fix: install auto-applies CORE_UPDATES + de-dup wrapper (single source) + CI install-path test
 
 ### Fixed (install integrity — root cause of boxes not knowing skill 44 is installed)

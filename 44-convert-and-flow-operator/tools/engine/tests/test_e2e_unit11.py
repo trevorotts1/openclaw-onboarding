@@ -1624,6 +1624,236 @@ class TestBuildFailsLoudAndEmitsOrdering(unittest.TestCase):
         )
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# REGRESSION: ZHC- folder standing approval (Bug 2a) + top-level `folder` plan-key
+# hardening (Bug 2b) — both reproduced live on a client box 2026-06-11.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _make_gated_adapter(
+    location_id: str = SANDBOX_LOCATION_ID,
+    request_log: list | None = None,
+):
+    """Mock client whose .request() runs the REAL safety gate before returning.
+
+    This is the only way to reproduce Bug 2a end-to-end: the live failure was
+    a SAFETY GATE refusal on the folder-creation POST (empty workflow_name made
+    the ZHC- standing-approval check fail).  A fully-mocked client that skips
+    check_write would PASS even on pre-fix code and prove nothing.  Here the
+    mock mirrors InternalGHLClient.request: call check_write(...) with the SAME
+    workflow_name the builder forwards, then return the canned mock response.
+    A SafetyRefused becomes SystemExit(1) exactly as the real client does.
+
+    request_log captures method/path/body AND workflow_name so the test can
+    assert the folder POST carried the ZHC- folder name.
+    """
+    from cli_anything.gohighlevel.internal.adapter_types import AdapterResult
+    from cli_anything.gohighlevel.utils.safety_gate import check_write, SafetyRefused
+
+    wf = dict(FIXTURE_WORKFLOW)
+    client = MagicMock()
+    client.location_id = location_id
+    client._adapter = None  # force CampaignBuilder onto the legacy .request() path
+
+    def mock_request(method, path, body=None, workflow_name="", _apply_step_backoff=False):
+        url = f"https://backend.leadconnectorhq.com{path}"
+        try:
+            check_write(method, url, body, location_id=location_id,
+                        workflow_name=workflow_name)
+        except SafetyRefused as exc:
+            # Mirror InternalGHLClient.request: a refused write exits non-zero.
+            print(f"SAFETY GATE: {exc}", file=sys.stderr)
+            sys.exit(1)
+        if request_log is not None:
+            request_log.append({
+                "method": method, "path": path, "body": body,
+                "workflow_name": workflow_name,
+            })
+        if method == "GET":
+            return dict(wf)
+        if method == "PUT":
+            return {"id": wf["id"], "name": wf["name"], "status": "draft"}
+        if method == "POST":
+            if "tags/create" in str(path):
+                return {"id": "TAG001"}
+            if "/trigger" in str(path):
+                return {"id": "TRG001"}
+            return {"id": "FOLDER001", "name": "caf-build"}
+        return {"id": wf["id"]}
+
+    client.request.side_effect = mock_request
+    client.get_workflow.side_effect = lambda wid: AdapterResult(ok=True, data=dict(wf))
+    return client
+
+
+class TestZHCFolderStandingApprovalAndFolderKeyPlan(unittest.TestCase):
+    """Regression for Bug 2a (ZHC- folder approval) and Bug 2b (folder plan key).
+
+    All tests must FAIL on pre-fix main and PASS after the fix:
+      TEST A — ZHC- folder name builds with NO CAF_APPROVAL_TOKEN; the folder POST
+               carries workflow_name=<ZHC folder> (pre-fix: SAFETY GATE refusal,
+               non-zero exit).
+      TEST B — a top-level "folder": "<name>" plan key builds (no TypeError) and is
+               consumed as the folder name, not iterated as a workflow.
+      TEST C — --folder wins over the plan folder key when both are present.
+      TEST D — a non-dict, non-folder top-level entry fails loud (non-zero exit,
+               clear message), not a raw TypeError.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["CAF_DATA_DIR"] = self.tmp
+        os.environ["CAF_ALLOWED_LOCATION_IDS"] = SANDBOX_LOCATION_ID
+        # NO CAF_APPROVAL_TOKEN — standing approval must come from the ZHC- prefix.
+        os.environ.pop("CAF_APPROVAL_TOKEN", None)
+        os.environ["GHL_FIREBASE_REFRESH_TOKEN"] = "sandbox-refresh-token"
+        os.environ["CAF_STEP_BACKOFF_MS"] = "0"
+        os.environ["CAF_INTERNAL_STEP_BACKOFF_MS"] = "0"
+        os.environ.pop("CAF_DRY_RUN", None)
+
+    def tearDown(self):
+        for k in (
+            "CAF_DATA_DIR", "CAF_ALLOWED_LOCATION_IDS", "CAF_APPROVAL_TOKEN",
+            "GHL_FIREBASE_REFRESH_TOKEN", "CAF_STEP_BACKOFF_MS",
+            "CAF_INTERNAL_STEP_BACKOFF_MS", "CAF_DRY_RUN",
+        ):
+            os.environ.pop(k, None)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _run_build(self, plan, extra_args, request_log=None):
+        from click.testing import CliRunner
+        from cli_anything.gohighlevel.gohighlevel_cli import cli
+
+        plan_file = Path(self.tmp) / "plan.json"
+        plan_file.write_text(json.dumps(plan), encoding="utf-8")
+        mock_client = _make_gated_adapter(
+            location_id=SANDBOX_LOCATION_ID, request_log=request_log,
+        )
+        with patch(
+            "cli_anything.gohighlevel.gohighlevel_cli._get_internal_client",
+            return_value=mock_client,
+        ):
+            runner = CliRunner()
+            return runner.invoke(cli, [
+                "--experimental", "--json",
+                "--location-id", SANDBOX_LOCATION_ID,
+                "workflows", "build",
+                "--from-plan", str(plan_file),
+                *extra_args,
+            ])
+
+    def test_a_zhc_folder_name_passes_standing_approval(self):
+        """TEST A: ZHC- folder name builds with no token; folder POST carries it."""
+        request_log = []
+        result = self._run_build(
+            FIXTURE_PLAN, ["--folder", "ZHC-Evelyn-Onboarding"],
+            request_log=request_log,
+        )
+        self.assertEqual(
+            result.exit_code, 0,
+            f"[Bug2a] ZHC- folder build must exit 0 WITHOUT a token (standing "
+            f"approval). Got exit {result.exit_code}.\nOutput:\n{result.output}",
+        )
+        # The folder-creation POST (directory type) must carry the ZHC folder name.
+        folder_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("type") == "directory"
+        ]
+        self.assertGreater(
+            len(folder_posts), 0,
+            "[Bug2a] No folder-creation POST observed — build did not reach it.",
+        )
+        self.assertEqual(
+            folder_posts[0]["workflow_name"], "ZHC-Evelyn-Onboarding",
+            "[Bug2a] folder POST must forward folder_name as workflow_name so the "
+            "ZHC- standing-approval check sees the ZHC- prefix.",
+        )
+
+    def test_b_top_level_folder_key_does_not_crash(self):
+        """TEST B: a 'folder' string key is consumed, not iterated as a workflow."""
+        plan = dict(FIXTURE_PLAN)
+        plan["folder"] = "ZHC-Plan-Folder"  # the exact shape that crashed
+        request_log = []
+        # No --folder: the plan folder key must be used as the folder name.
+        result = self._run_build(plan, [], request_log=request_log)
+        self.assertEqual(
+            result.exit_code, 0,
+            f"[Bug2b] A top-level 'folder' plan key must NOT crash the builder "
+            f"(was: TypeError: string indices must be integers). "
+            f"Exit {result.exit_code}.\nOutput:\n{result.output}",
+        )
+        self.assertNotIn(
+            "string indices", result.output,
+            "[Bug2b] The string-indices TypeError must not surface.",
+        )
+        # The folder key must have been consumed as the folder name.
+        folder_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("type") == "directory"
+        ]
+        self.assertGreater(len(folder_posts), 0, "[Bug2b] folder POST not observed")
+        self.assertEqual(
+            folder_posts[0]["body"]["name"], "ZHC-Plan-Folder",
+            "[Bug2b] plan 'folder' key must be used as the folder name.",
+        )
+        # And it must NOT have been built as a workflow (no workflow POST named so).
+        wf_creates = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("name") == "ZHC-Plan-Folder"
+            and r["body"].get("type") != "directory"
+        ]
+        self.assertEqual(
+            wf_creates, [],
+            "[Bug2b] the 'folder' value must not be created as a workflow.",
+        )
+
+    def test_c_explicit_folder_flag_wins_over_plan_key(self):
+        """TEST C: --folder overrides the plan 'folder' key when both are given."""
+        plan = dict(FIXTURE_PLAN)
+        plan["folder"] = "ZHC-Plan-Folder"
+        request_log = []
+        result = self._run_build(
+            plan, ["--folder", "ZHC-Flag-Folder"], request_log=request_log,
+        )
+        self.assertEqual(result.exit_code, 0, f"Build must exit 0.\n{result.output}")
+        folder_posts = [
+            r for r in request_log
+            if r["method"] == "POST"
+            and isinstance(r.get("body"), dict)
+            and r["body"].get("type") == "directory"
+        ]
+        self.assertGreater(len(folder_posts), 0, "[Bug2b] folder POST not observed")
+        self.assertEqual(
+            folder_posts[0]["body"]["name"], "ZHC-Flag-Folder",
+            "[Bug2b] --folder must win over the plan 'folder' key.",
+        )
+
+    def test_d_non_dict_entry_fails_loud(self):
+        """TEST D: a non-dict, non-folder top-level entry exits non-zero, clearly."""
+        plan = dict(FIXTURE_PLAN)
+        plan["stray_string"] = "ZHC-not-a-workflow"  # non-dict, not 'folder'
+        result = self._run_build(plan, ["--folder", "ZHC-Build"])
+        self.assertNotEqual(
+            result.exit_code, 0,
+            f"[Bug2b] A non-dict plan entry must FAIL LOUD (non-zero), not silently "
+            f"crash with a TypeError. Exit {result.exit_code}.\n{result.output}",
+        )
+        self.assertNotIn(
+            "string indices", result.output,
+            "[Bug2b] Must fail with a clear message, not a raw TypeError.",
+        )
+        self.assertIn(
+            "stray_string", result.output,
+            "[Bug2b] The error must name the offending entry.",
+        )
+
+
 # ── Standalone runner ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1634,6 +1864,7 @@ if __name__ == "__main__":
         TestCriterion20Rollback,
         TestCriterion21Serialization,
         TestBuildFailsLoudAndEmitsOrdering,
+        TestZHCFolderStandingApprovalAndFolderKeyPlan,
     ]:
         suite.addTests(loader.loadTestsFromTestCase(cls))
 
