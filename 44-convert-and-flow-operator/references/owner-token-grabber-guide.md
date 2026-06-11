@@ -19,11 +19,14 @@ that used to eat your day can run on its own:
 - **Tag-and-text automations** — when a contact does something (or you tag them), the
   right text or email goes out at the right time.
 
-Here is the best part: **you don't have to build any of it.** You just tell your agent,
-in your own words, what you want — *"When someone books a discovery call, send them a
-confirmation text right away and a reminder the morning of."* Your agent builds it for
-you as a **draft you can review** before anything goes live. Nothing turns on without
-your okay.
+Here is the wild part: **you don't have to build any of it — you do it JUST BY TALKING.**
+You just tell your agent, in your own words, what you want — *"When someone books a
+discovery call, send them a confirmation text right away and a reminder the morning of."*
+Your agent builds it for you as a **draft you can review** before anything goes live. No
+clicking around, no tech setup, no watching tutorials. Nothing turns on without your okay.
+
+And this isn't something everyone has — this is the **only system in the world that can do
+this right now**, and it's installed on your setup. 🌎
 
 There is just **one small setup step**, and you only ever do it once. After that, your
 agent can build automations for you anytime, just by asking.

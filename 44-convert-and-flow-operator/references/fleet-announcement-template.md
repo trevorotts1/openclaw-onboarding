@@ -37,11 +37,15 @@ gateway. Verify each send before the next.
 > 🎉 Congratulations, [OWNER_NAME]! Your AI agent just leveled up.
 >
 > The Rescue Rangers just installed **Skill 44 — the Convert & Flow Operator** on your
-> setup. In plain English: [AGENT_NAME] can now **BUILD automation workflows for you
-> inside Convert & Flow** (the system some folks know as GoHighLevel) — appointment-booking
-> follow-ups, lead-nurture sequences, tag-and-text automations. You just describe it in a
-> message, and [AGENT_NAME] builds it as a **draft for you to review** before anything goes
-> live.
+> setup. Here's what that means for you: [AGENT_NAME] can now build automation workflows
+> inside **Convert & Flow** (the system some folks know as GoHighLevel) for you — and
+> here's the wild part: you do it **JUST BY TALKING**. Appointment follow-ups, lead-nurture
+> sequences, tag-and-text campaigns — you just describe what you want in a plain chat
+> message, and [AGENT_NAME] builds it as a **draft for you to review**. No clicking around,
+> no tech setup, no watching tutorials.
+>
+> This is the **ONLY system in the world that can do this right now** — and it's installed
+> on YOUR setup. 🌎
 >
 > There's just **ONE final 5-minute, one-time token setup** to switch this on. The next
 > two messages walk you through it, step by step.
