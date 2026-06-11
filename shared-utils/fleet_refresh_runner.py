@@ -773,6 +773,7 @@ def step_build_cc(paths: dict, res: BoxResult, dry_run: bool, local: bool = Fals
 
     if dry_run:
         res.step_skip("build-cc")
+        res.step_skip("build-cc-duck-test")
         return
 
     cc_dir = paths.get("cc_dir")

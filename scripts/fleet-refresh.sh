@@ -41,15 +41,18 @@
 #   • NEVER issues `openclaw gateway restart` (Mac err 125 → box DOWN).
 #     Only `sessions.reset` is issued (a gateway CALL, not a process restart).
 #   • Per-box failure is isolated: one box failing never aborts others.
-#   • Aggregate exit: 0=all ok; 2=any partial/failed (CI-visible nonzero).
+#   • Aggregate exit: 0=all ok; 2=any partial/failed; 3=any unknown (CI-visible nonzero).
+#   • CC deploy goes through scripts/atomic-deploy.sh ONLY (B.2).
+#     No raw npm build or direct pm2 restart paths exist.
 #   • Not a standing loop (loop doctrine): operator-invoked, not a cron.
 #
 # EXIT CODES:
 #   0  all boxes ok (or dry-run completed)
 #   1  fatal (e.g., cannot find runner, bad flags)
 #   2  at least one box partial or failed
+#   3  at least one box UNKNOWN (atomic-deploy exit 3 — CC state indeterminate)
 #
-# PRD 1.11 — v11.5.0 (WAVE 3)
+# PRD 1.11 — v11.14.0 (WAVE 5)
 # =============================================================================
 set -euo pipefail
 
@@ -388,6 +391,7 @@ echo "[fleet-refresh] ═══════════════════�
 ALL_RESULTS="[]"
 ALL_OK=1
 ANY_FAILED=0
+ANY_UNKNOWN=0
 
 for box in "${FINAL_BOXES[@]}"; do
   result_file="$TMPDIR_RESULTS/${box}.json"
@@ -429,13 +433,13 @@ steps=d.get('steps',{})
 print('yes' if any('[exit-3]' in str(v) for v in steps.values()) else 'no')
 " 2>/dev/null || echo "no")
       if [ "$has_exit3" = "yes" ]; then
-        icon="?"
+        icon="?"; ANY_UNKNOWN=1
         echo "[fleet-refresh]   ? $box — TRANSIENT (exit-3): retry then mark UNKNOWN if repeated"
       else
-        icon="△"
+        icon="△"; ANY_FAILED=1
       fi
-      ANY_FAILED=1
       ;;
+    unknown) icon="?"; ANY_UNKNOWN=1 ;;
     *)       icon="✗"; ANY_FAILED=1; ALL_OK=0 ;;
   esac
 
@@ -674,6 +678,11 @@ fi
 if [ $ANY_FAILED -eq 1 ]; then
   echo "[fleet-refresh] RESULT: PARTIAL/FAILED — check errors above"
   exit 2
+elif [ $ANY_UNKNOWN -eq 1 ]; then
+  echo "[fleet-refresh] RESULT: UNKNOWN — at least one box returned exit 3 (CC state indeterminate)"
+  echo "[fleet-refresh]   atomic-deploy.sh exit 3 means the health-check was inconclusive after all retries."
+  echo "[fleet-refresh]   No rollback was performed on those boxes. Operator must investigate."
+  exit 3
 else
   echo "[fleet-refresh] RESULT: OK — all boxes refreshed"
   exit 0
