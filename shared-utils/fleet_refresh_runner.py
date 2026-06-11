@@ -20,7 +20,7 @@ Exit codes:
     3  retry-then-mark-UNKNOWN (transient error; caller retries; on repeated
        failure marks box UNKNOWN — NEVER destructive)
 
-PRD 1.11 — v11.14.0
+PRD 1.11 — v11.15.0 (B.6 embedding-health wired in v11.16.0)
 """
 
 from __future__ import annotations
@@ -973,9 +973,90 @@ def step_sessions_reset_ceo(
         res.step_fail("sessions-reset-CEO", str(e))
 
 
+def step_embedding_health(
+    paths: dict,
+    shared_utils: Path,
+    res: BoxResult,
+) -> dict:
+    """
+    Step 8 (B.6): Run the per-box embedding-health check across all three indexes.
+
+    Covers:
+      Index 1 — OpenClaw memory search (agents.defaults.memorySearch + sqlite stamp)
+      Index 2 — Persona gemini-index  (gemini-embedding-2 @3072)
+      Index 3 — CC SOP embeddings     (mission-control.db)
+
+    For each index three legs are checked:
+      (a) Embedding-capable provider configured + key present + cheap smoke embed.
+          Ollama Cloud is NEVER embedding-capable — hard rule with no exceptions.
+      (b) Stamped provider/model/dim matches current config; mismatch = FLAG RE-INDEX.
+      (c) Generative provider is NOT assumed to serve embeddings.
+
+    Also verifies memorySearch fallback config (PRD 2.6).
+
+    This step is READ-ONLY (no mutations).  It runs in EVERY mode:
+      - Wave-5 apply pass (per-box in fleet_refresh_runner.py)
+      - Sunday cron --verify-only pass (fleet-refresh.sh)
+      - Standalone:  python3 shared-utils/embedding_health.py [--json]
+
+    Returns the embedding-health result dict.  Always records the result in
+    res.steps["embedding-health"] so the fleet summary reflects the outcome.
+
+    N32 rule: a model-provider change is NOT complete until this step passes.
+    """
+    sys.path.insert(0, str(shared_utils))
+    try:
+        from embedding_health import run_embedding_health, load_openclaw_json  # type: ignore
+    except ImportError as exc:
+        msg = f"embedding_health.py not found in shared-utils: {exc}"
+        res.step_fail("embedding-health", msg)
+        return {"overall": "fail", "errors": [msg]}
+
+    openclaw_root = paths.get("root", Path("/nonexistent"))
+    cc_dir        = paths.get("cc_dir")
+
+    # Load openclaw.json
+    openclaw_json: dict = {}
+    try:
+        openclaw_json = load_openclaw_json(openclaw_root)
+    except Exception as e:
+        _warn(f"embedding-health: could not load openclaw.json: {e}")
+
+    try:
+        emb_result = run_embedding_health(
+            openclaw_root=Path(openclaw_root),
+            openclaw_json=openclaw_json,
+            cc_dir=Path(cc_dir) if cc_dir else None,
+        )
+    except Exception as exc:
+        msg = f"embedding_health.run_embedding_health raised: {exc}"
+        res.step_fail("embedding-health", msg)
+        return {"overall": "fail", "errors": [msg]}
+
+    overall = emb_result.get("overall", "fail")
+
+    if overall == "pass":
+        res.steps["embedding-health"] = "pass"
+        _ok(f"  embedding-health: PASS (all 3 indexes, 3 legs each)")
+    elif overall == "warn":
+        res.steps["embedding-health"] = f"warn:{'; '.join(emb_result.get('warnings', []))[:120]}"
+        _warn(f"  embedding-health: WARN — {len(emb_result.get('warnings', []))} warning(s)")
+    else:
+        errs = emb_result.get("errors", [])
+        summary = "; ".join(errs[:2])
+        res.steps["embedding-health"] = f"failed:{summary[:200]}"
+        for e in errs:
+            res.errors.append(f"embedding-health: {e}")
+        _err(f"  embedding-health: FAIL — {len(errs)} error(s)")
+        for e in errs:
+            _err(f"    {e}")
+
+    return emb_result
+
+
 def step_log(paths: dict, res: BoxResult, dry_run: bool,
              pinned_onboarding_tag: str, cc_tag: str) -> None:
-    """Step 8: append result to .fleet-refresh-log.json."""
+    """Step 9: append result to .fleet-refresh-log.json."""
     if dry_run:
         res.step_skip("log", "dry-run")
         return
@@ -1118,12 +1199,19 @@ def run_box(
     except Exception as e:
         res.step_fail("verify", str(e))
 
-    # Step 8: log (skipped in verify-only as it's read-only mode)
+    # Step 8 (B.6): embedding-health — always runs (read-only; Wave-5 pass + Sunday cron)
+    # N32: a model-provider change is NOT complete until this passes on the box.
+    try:
+        step_embedding_health(paths, shared_utils, res)
+    except Exception as e:
+        res.step_fail("embedding-health", str(e))
+
+    # Step 9: log (skipped in verify-only as it's read-only mode)
     if not verify_only:
         try:
             step_log(paths, res, dry_run, pinned_onboarding_tag, cc_tag)
         except Exception as e:
-            res.step_fail("log", str(e))
+            res.step_fail("log", str(e))  # noqa: PERF203
 
     # Determine final result
     has_failures = any("failed" in str(v) for v in res.steps.values())

@@ -187,6 +187,7 @@ This is the single canonical index of the N1–N27 non-negotiables. Every other 
 | N29 | **Shared core files (Zero-Human-Workforce file model).** On every box, ALL of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via **symlink** (not duplicated). Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files. The symlink target is ALWAYS the LOCAL box's own canonical (the default agent workspace resolved from THIS box's `openclaw.json`) — NEVER a hardcoded or cross-box/cross-account path (co-mingling guard, N0). Nested workflow agents (`*/workflows/*/agents/*`) are EXEMPT. Real files are backed up (`*.bak-unify-<ts>`, never deleted) + unique content preserved additively into the agent's own `IDENTITY.md` before linking. Idempotent. | This file (Shared Core Files section) + [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md) | `link_shared_core_files()` in `install.sh` (Step 10a) + `update-skills.sh`; QC check 9.9 in `scripts/qc-system-integrity.sh` |
 | N30 | **Ollama Cloud HARD RULE: `OLLAMA_BASE_URL` MUST be `https://ollama.com` for `:cloud` models. NEVER `http://127.0.0.1` or `http://localhost:11434`.** `:cloud`-tagged models (e.g. `deepseek-v4-pro:cloud`, `kimi-k2.6:cloud`) are routed through the Ollama Cloud API, NOT a local daemon. Setting `OLLAMA_BASE_URL` to a loopback address → immediate ECONNREFUSED on every client box (no local Ollama daemon runs there). Any script, config, or install step that writes or defaults `OLLAMA_BASE_URL` to `127.0.0.1` or `localhost` for a cloud model is a HARD VIOLATION. Local Ollama probes (health-checks, model-list queries against a local daemon) are exempt — they must NEVER be confused with the model-routing URL used for actual inference. | This file (N30 section) | `build-workforce.py` provider setup; `install.sh` model config step; `scripts/qc-system-integrity.sh` Ollama-URL check |
 | N31 | **Agent model field MUST be an object `{primary, fallbacks:[...]}`, NEVER a bare string.** Writing `"model": "ollama/deepseek-v4-pro:cloud"` in `agents.list[]` bypasses all fallback chains — if Ollama Cloud is over-capacity the agent dies silently. Every agent entry written by `build-workforce.py` or any install script MUST use the canonical object form: `{"primary": "ollama/deepseek-v4-pro:cloud", "fallbacks": ["openrouter/deepseek/deepseek-v4-pro", ...]}`. Bare strings are only permissible in temporary draft states during development; NEVER in production `openclaw.json`. | This file (N31 section) + `build-workforce.py add_agent_to_config()` | `scripts/qc-system-integrity.sh` model-object check |
+| N32 | **A model-provider change is NOT complete until `embedding-health` passes on the box.** Switching the generative provider (or any API key rotation) can silently orphan all three embedding consumers: OpenClaw memory search, persona gemini-index, and CC SOP embeddings. The `embedding-health` check (PRD Addendum B.6) MUST pass — all three indexes, three legs each (provider capable + key live + smoke embed + stamp matches config) — before any provider-change task is marked done. Ollama Cloud is NEVER embedding-capable (hard rule). Run: `python3 shared-utils/embedding_health.py --json` on the box after any provider/key change. | This file (N32 section) + `shared-utils/embedding_health.py` | `step_embedding_health()` in `fleet_refresh_runner.py`; Sunday cron `--verify-only` pass in `scripts/fleet-refresh.sh` |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
 
@@ -317,6 +318,52 @@ Enforced by `scripts/qc-system-integrity.sh` Ollama-URL check. Added v11.1.0.
 - Any PR that writes bare-string model fields to `openclaw.json` is blocked
 
 Added v11.1.0.
+
+---
+
+## 🔴 N32 — Model-Provider Change NOT Complete Until `embedding-health` Passes
+
+**A model-provider change is NOT complete until `python3 shared-utils/embedding_health.py --json` passes on the box.**
+
+Switching the generative provider (or rotating any API key) can silently orphan ALL THREE embedding consumers simultaneously — no error is raised at the generative layer. This is the exact failure mode that hit Barret after the Ollama Cloud push (memory search broke silently).
+
+### The three embedding consumers (all must pass)
+
+| Index | Consumer | Provider requirement | Stamp location |
+|-------|----------|----------------------|----------------|
+| 1 | OpenClaw memory search | `agents.defaults.memorySearch.provider` (NOT Ollama Cloud) | `~/.openclaw/memory/*.sqlite` meta table |
+| 2 | Persona gemini-index | Google only — `gemini-embedding-2` @3072 | `~/.openclaw/gemini-index/meta.json` |
+| 3 | CC SOP embeddings | Google or OpenAI or OpenRouter | `mission-control.db` embedding_meta table |
+
+### Three legs per index (all must pass)
+
+| Leg | What is checked | Fail condition |
+|-----|-----------------|----------------|
+| (a) | Provider is embedding-capable + key present + one cheap smoke embed | Provider is Ollama Cloud; key missing; API call fails |
+| (b) | Index's stamped provider/model/dim matches currently configured provider | Mismatch → `FLAG RE-INDEX` (not a pass) |
+| (c) | Configured generative provider is NOT assumed to serve embeddings | Ollama Cloud configured as generative AND index stamped with Ollama |
+
+### Hard rules
+
+- **Ollama Cloud CANNOT embed — no exceptions.** Any index stamped with Ollama Cloud is broken. Any `memorySearch.provider` pointing at Ollama Cloud is broken. No workarounds.
+- **Generative provider != embedding provider.** These are always separate API paths. Never assume the model you're chatting with can also embed.
+- **Stamp mismatch = RE-INDEX required.** The existing vectors are stale. They will return wrong results silently. Do not pass the box as healthy until the index is rebuilt.
+- **PRD 2.6: `memorySearch.fallback` must be set.** `agents.defaults.memorySearch.fallback` must be a non-empty string (e.g. `"openai"` or `"google"`).
+
+### When to run
+
+- **After any provider or API key change** — run before closing the task.
+- **Wave-5 fleet pass** — runs automatically per box via `step_embedding_health()` in `fleet_refresh_runner.py`.
+- **Sunday cron `--verify-only`** — runs automatically via `scripts/fleet-refresh.sh`.
+- **Standalone diagnostic:** `python3 shared-utils/embedding_health.py --json`
+
+### Enforcement
+
+- `step_embedding_health()` in `shared-utils/fleet_refresh_runner.py` — wired as Step 8 (always runs, read-only)
+- `scripts/fleet-refresh.sh` fleet summary — `embed=PASS/FAIL/WARN` field printed per box
+- `shared-utils/embedding_health.py` — the canonical check; exit 0 = pass, exit 1 = fail
+
+Added v11.16.0.
 
 ---
 
