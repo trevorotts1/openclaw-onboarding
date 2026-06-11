@@ -227,9 +227,19 @@ class CampaignBuilder:
                 )
                 self.stats["end_time"] = time.time()
                 return self.stats
+            # Bug 2a — the folder-creation POST omitted workflow_name, so the
+            # safety gate saw an empty name and the ZHC- standing-approval check
+            # (safety_gate._is_approved) always failed for it: a ZHC- *folder*
+            # name was forced to demand CAF_APPROVAL_TOKEN even though a ZHC-
+            # *workflow* name in the very same build was standing-approved.
+            # Pass folder_name as the gate's workflow_name so ZHC- folder names
+            # carry standing approval exactly like ZHC- workflow names.  The
+            # gate's behaviour is unchanged for non-ZHC names (still requires a
+            # token).
             folder = self.client.request(
                 "POST", f"/workflow/{self.loc}",
                 {"name": folder_name, "type": "directory"},
+                workflow_name=folder_name,
             )
             folder_id = folder.get("id") if folder else None
             if not folder_id:

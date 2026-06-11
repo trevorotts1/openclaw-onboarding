@@ -134,6 +134,14 @@ assert "payments list alias present (Bug 4)" \
   "grep -q 'payments.command(\"list\")' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
 assert "regression test for fail-loud + ordering present" \
   "grep -q 'TestBuildFailsLoudAndEmitsOrdering' \"$SKILL44_DIR/tools/engine/tests/test_e2e_unit11.py\""
+assert "folder-creation POST forwards folder_name to the gate (Bug 2a)" \
+  "grep -q 'workflow_name=folder_name' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py\""
+assert "workflows build pops the top-level 'folder' plan key (Bug 2b)" \
+  "grep -q 'campaign.pop(.folder.' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "workflows build fails loud on non-workflow plan entries (Bug 2b)" \
+  "grep -q 'non-workflow entries' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "regression test for ZHC- folder approval + folder-key plan hardening present" \
+  "grep -q 'TestZHCFolderStandingApprovalAndFolderKeyPlan' \"$SKILL44_DIR/tools/engine/tests/test_e2e_unit11.py\""
 assert "CORE_UPDATES.md sentinel present" \
   "grep -q 'skill:44-convert-and-flow-operator:core-update-applied' \"$SKILL44_DIR/CORE_UPDATES.md\""
 assert "CHANGELOG.md exists" \

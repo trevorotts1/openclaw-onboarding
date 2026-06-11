@@ -82,7 +82,7 @@ def _emit_build_result(ctx: click.Context, builder, stats) -> None:
     "--dry-run", is_flag=True, default=False,
     help="Print every write's method+URL+payload and exit — no data is sent to GHL.",
 )
-@click.version_option("2.1.0", prog_name="cli-anything-gohighlevel")
+@click.version_option("2.1.1", prog_name="cli-anything-gohighlevel")
 @click.pass_context
 def cli(ctx, use_json, location_id, experimental, dry_run):
     """GoHighLevel CLI — manage contacts, workflows, calendars, and more."""
@@ -887,7 +887,38 @@ def workflows_build(ctx, plan_file, folder):
             campaign = json.load(f)
         client = _get_internal_client(ctx)
         location_id = _loc(ctx)
-        folder_name = folder or campaign.get("folder", "caf-build")
+
+        # Bug 2b — a top-level "folder": "<name>" key in the plan is a folder
+        # NAME, not a workflow definition.  CampaignBuilder.build() iterates the
+        # dict treating every value as a workflow dict (wf_def["name"]); the
+        # bare string folder value crashed the build with
+        # `TypeError: string indices must be integers`.  POP the folder key out
+        # of the plan before iterating: use it as the folder name when --folder
+        # was not given; --folder wins when both are present.  After the pop,
+        # every remaining entry MUST be a workflow dict — fail loud with a clear
+        # message on any non-dict entry instead of a raw TypeError downstream.
+        plan_folder = campaign.pop("folder", None)
+        if folder:
+            folder_name = folder
+        elif isinstance(plan_folder, str) and plan_folder.strip():
+            folder_name = plan_folder
+        else:
+            folder_name = "caf-build"
+
+        bad = [
+            f"{k!r} ({type(v).__name__})"
+            for k, v in campaign.items()
+            if not isinstance(v, dict)
+        ]
+        if bad:
+            click.echo(
+                "Error: plan contains non-workflow entries — every top-level "
+                "key (other than 'folder') must map to a workflow object.\n"
+                f"Offending entries: {', '.join(bad)}",
+                err=True,
+            )
+            sys.exit(1)
+
         with WriteLock(location_id):
             builder = CampaignBuilder(client)
             stats = builder.build(campaign, folder_name)

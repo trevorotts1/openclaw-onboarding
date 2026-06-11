@@ -255,6 +255,51 @@ class TestZHCStandingApproval(unittest.TestCase):
             )
 
 
+class TestZHCFolderApprovalGate(unittest.TestCase):
+    """Bug 2a gate-side contract: a ZHC- *folder* name passed as workflow_name
+    must receive standing approval with NO token — exactly like a ZHC- workflow
+    name.  This is the gate behaviour CampaignBuilder relies on once the folder
+    POST forwards folder_name as workflow_name.
+    """
+
+    def setUp(self):
+        os.environ.pop("CAF_DRY_RUN", None)
+        os.environ["CAF_ALLOWED_LOCATION_IDS"] = "ZHC_LOC"
+        os.environ.pop("CAF_APPROVAL_TOKEN", None)
+        self.sg = _fresh_safety_gate()
+        socket.socket.connect = _guarded_connect
+
+    def tearDown(self):
+        os.environ.pop("CAF_DRY_RUN", None)
+        os.environ.pop("CAF_ALLOWED_LOCATION_IDS", None)
+        os.environ.pop("CAF_APPROVAL_TOKEN", None)
+        socket.socket.connect = _original_connect
+
+    def test_zhc_folder_name_passes_without_token(self):
+        """A ZHC- folder name (as workflow_name) is standing-approved, no token."""
+        try:
+            self.sg.check_write(
+                method="POST",
+                url="https://backend.leadconnectorhq.com/workflow/ZHC_LOC",
+                payload={"name": "ZHC-Onboarding-Folder", "type": "directory"},
+                location_id="ZHC_LOC",
+                workflow_name="ZHC-Onboarding-Folder",
+            )
+        except self.sg.SafetyRefused:
+            self.fail("ZHC- folder name must receive standing approval without a token")
+
+    def test_non_zhc_folder_name_refused_without_token(self):
+        """A non-ZHC folder name still requires a token (gate unchanged)."""
+        with self.assertRaises(self.sg.SafetyRefused):
+            self.sg.check_write(
+                method="POST",
+                url="https://backend.leadconnectorhq.com/workflow/ZHC_LOC",
+                payload={"name": "random-folder", "type": "directory"},
+                location_id="ZHC_LOC",
+                workflow_name="random-folder",
+            )
+
+
 class TestDraftOnlyFlag(unittest.TestCase):
     """draft_only_active_flag() must respect CAF_DRAFT_ONLY at call time."""
 
@@ -291,6 +336,7 @@ if __name__ == "__main__":
         TestWhitelistFailClosed,
         TestWhitelistEnforced,
         TestZHCStandingApproval,
+        TestZHCFolderApprovalGate,
         TestDraftOnlyFlag,
     ]:
         suite.addTests(loader.loadTestsFromTestCase(cls))
