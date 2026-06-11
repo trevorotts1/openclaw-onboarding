@@ -1,5 +1,43 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.9] - 2026-06-11 — docs: standardized fleet announcement template + send runbook
+
+Docs-only release. No engine or wrapper behaviour changed; the CLI version stays `2.1.1`.
+Per the repo G3 guard (any change inside a skill folder requires a `skill-version.txt`
+bump), the skill version moves `1.0.8` -> `1.0.9` to carry the new doc with the skill payload.
+
+### Added
+- **`references/fleet-announcement-template.md`** — the ONE canonical owner-facing Skill 44
+  announcement, sent fleet-wide once a box has been given Skill 44. Two parts:
+  - **The canonical 3-message template** (placeholders `[OWNER_NAME]` / `[AGENT_NAME]`,
+    verbatim from what was sent to Cassandra and Aurelia): Message 1 = 🎉 congratulations +
+    plain-English "what it unlocks" (the agent BUILDS Convert & Flow automation workflows as
+    drafts to review — appointment follow-ups, lead-nurture, tag-and-text) + the "one final
+    5-minute one-time token setup" framing + the "reach out to Trevor" offer; Message 2 =
+    🔑 FINAL SETUP Part 1 of 2 (token explainer + Chrome Token Grabber, steps 1️⃣–5️⃣: download
+    from the public Drive link, unzip, `chrome://extensions`, Developer mode ON, Load unpacked,
+    pin the 🧩); Message 3 = 🔑 FINAL SETUP Part 2 of 2 (steps 6️⃣–8️⃣: log out/in, grab + copy,
+    paste the canonical "Here is the Convert and Flow GHL Firebase token: …" message, then
+    "Use Skill 44 and create me a test workflow").
+  - **The operator-facing fleet-send runbook**: the GATE (only announce when the box's ledger
+    shows skill44 remediation complete — caf engine ≥ 2.1.1 with a live `caf` read, or
+    explicitly token-pending where the announcement IS the token ask; never announce a
+    capability that is not live on the box), SEND MECHANICS (always the client's OWN OpenClaw
+    gateway via `openclaw message send --channel telegram` — never the direct Telegram API;
+    one client at a time; substitute the roster names; verify exit code + message id before
+    the next; 3 messages in order), RECEIPTS (per-client JSON line appended to the operator
+    ledger), and the already-announced list (cassandra msg ids 12524-12526 / aurelia, both
+    2026-06-11) to prevent duplicate sends.
+
+### Changed
+- `SKILL.md` — the Token Grabber section now points to the new fleet-announcement template
+  (a "Fleet announcement" subsection beside the owner-facing setup guide), and the "Files in
+  this folder" list includes `references/fleet-announcement-template.md` (item 14).
+
+### Not changed
+- Engine (`2.1.1`), wrapper, CLI surface, write-safety posture, and all 119 tests are
+  untouched. This release ships documentation only.
+
 ## [1.0.8] - 2026-06-11 — docs: owner-facing Token Grabber setup guide + agent wiring notes
 
 Docs-only release. No engine or wrapper behaviour changed; the CLI version stays `2.1.1`.

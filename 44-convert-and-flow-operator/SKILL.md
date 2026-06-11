@@ -148,6 +148,18 @@ Firebase token; it also carries a clearly-separated **FOR THE AGENT** section on
 the pasted token into the gateway-inherited env and building the first DRAFT-only,
 `ZHC-` prefixed test workflow.
 
+### Fleet announcement (standardized owner message + send runbook)
+
+Once a box has been **given Skill 44**, the owner gets the standardized announcement in
+`references/fleet-announcement-template.md` — the canonical **3-message** template
+(placeholders `[OWNER_NAME]` / `[AGENT_NAME]`: congratulations + what it unlocks, then the
+🔑 FINAL SETUP Part 1 of 2 and Part 2 of 2 walkthrough that reuses the Token Grabber steps
+above). The same file carries the **operator-facing fleet-send runbook**: the GATE (only
+announce when the box's ledger shows skill44 remediation complete — engine ≥ 2.1.1 with a
+live `caf` read, or explicitly token-pending), SEND MECHANICS (always the client's own
+gateway via `openclaw message send`, one client at a time, verify each send), and per-client
+RECEIPTS to the operator ledger. Do NOT paste the runbook section to an owner.
+
 ---
 
 ## Files in this folder
@@ -165,3 +177,4 @@ the pasted token into the gateway-inherited env and building the first DRAFT-onl
 11. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
 12. tools/chrome-extension/ — Token Grabber Chrome extension (client-facing; load unpacked)
 13. references/owner-token-grabber-guide.md — owner-facing Token Grabber walkthrough (8 steps + download link) + agent wiring notes
+14. references/fleet-announcement-template.md — standardized owner announcement (canonical 3-message template, `[OWNER_NAME]`/`[AGENT_NAME]`) + operator fleet-send runbook (gate, send mechanics, receipts)
