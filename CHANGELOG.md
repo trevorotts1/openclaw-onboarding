@@ -1,3 +1,8 @@
+## [v11.17.1]  -  2026-06-11  -  fix(36): SOUL.md tier-protocol removal regex now matches header suffix variants (D-1)
+
+### Changes
+- `36-ghl-mcp-setup/` (v1.1.0 -> v1.1.1) — fix(36): SOUL.md tier-protocol removal regex now matches header suffix variants (D-1)
+
 ## [v11.17.0]  -  2026-06-11  -  skill-44: Convert and Flow Operator + GHL routing overhaul (skills 44/36/38/41/29/35)
 
 ### Changes

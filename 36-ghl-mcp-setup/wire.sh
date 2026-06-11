@@ -32,7 +32,7 @@ import sys, re, pathlib
 path = pathlib.Path(sys.argv[1])
 text = path.read_text(encoding='utf-8')
 # Remove the block from the header line through the trailing "Full reference:" line
-pattern = r'## 🔴 GHL Tier Escalation Protocol\n.*?Full reference:.*?\n'
+pattern = r'## 🔴 GHL Tier Escalation Protocol[^\n]*\n.*?Full reference:.*?\n'
 new_text = re.sub(pattern, '', text, flags=re.DOTALL)
 path.write_text(new_text, encoding='utf-8')
 PYEOF
