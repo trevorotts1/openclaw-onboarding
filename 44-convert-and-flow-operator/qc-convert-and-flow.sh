@@ -148,6 +148,10 @@ assert "nextcloud NOT present in vendored engine" \
   "! [ -d \"$SKILL44_DIR/tools/engine/cli_anything/nextcloud\" ]"
 assert "blotato NOT present in vendored engine" \
   "! [ -d \"$SKILL44_DIR/tools/engine/cli_anything/blotato\" ]"
+assert "INSTALL.md contains CORE_UPDATES auto-apply action (Action 7)" \
+  "grep -q 'skill:44-convert-and-flow-operator:core-update-applied' \"$SKILL44_DIR/INSTALL.md\""
+assert "INSTALL.md Action 3 uses cp (single-source wrapper, no inline heredoc)" \
+  "grep -q 'cp.*tools/engine/caf.*CAF_DIR\|cp.*engine.*caf' \"$SKILL44_DIR/INSTALL.md\""
 
 # ── Section A: Installation (live-box only) ───────────────────────────────────
 echo ""

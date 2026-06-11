@@ -1,5 +1,40 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.6] - 2026-06-11 — fix: install auto-applies CORE_UPDATES + de-dup wrapper (single source) + CI install-path test
+
+### Fixed (install integrity — root cause of boxes not knowing skill 44 is installed)
+- **CORE_UPDATES were never auto-applied by INSTALL.md.** The "Done When" checklist listed
+  the sentinel as a requirement, but no Action step actually wrote it. Agents on boxes where
+  skill 44 was installed pre-this-fix had no `<!-- skill:44-convert-and-flow-operator:core-update-applied -->`
+  in AGENTS.md / TOOLS.md / MEMORY.md, so the agent had no knowledge of Tier 0 and
+  fell through to MCP on every GHL op. Added **Action 7** to INSTALL.md: idempotent script
+  (guard checks for sentinel first) that appends the exact CORE_UPDATES.md blocks to
+  AGENTS.md, TOOLS.md, and MEMORY.md automatically at install time.
+
+### Fixed (wrapper single source — eliminates heredoc drift)
+- **INSTALL.md Action 3 re-declared the wrapper as an inline heredoc**, creating a second
+  copy of the wrapper logic that could silently diverge from `tools/engine/caf` (exactly how
+  the `gohighlevel.main` bug in PR #167 happened: the engine wrapper was correct but the
+  heredoc was stale). Action 3 now `cp`s the committed `tools/engine/caf`,
+  `tools/engine/convertandflow`, and `tools/engine/ghl` wrappers to `$CAF_DIR/` instead of
+  re-writing them inline. Single source — one place to edit wrapper logic, zero drift.
+
+### Added (CI install-path test)
+- **`.github/workflows/skill44-install-path.yml`** — new CI job `skill44-install-path` with
+  two checks that run on every PR touching `44-convert-and-flow-operator/**`:
+  1. `install-path-wrapper-exec` — asserts `tools/engine/caf` exec line is
+     `python -m cli_anything.gohighlevel` (not `.main`), and that the `convertandflow`/`ghl`
+     wrappers match. Fails on pre-#167 exec line. Guards against entrypoint drift.
+  2. `install-path-core-updates-action` — asserts INSTALL.md contains the CORE_UPDATES
+     auto-apply action (sentinel grep + `skill:44-convert-and-flow-operator:core-update-applied`
+     present in Action 7 block). Fails without this fix.
+  The workflow is additive — does not replace `skill44-e2e.yml`.
+
+### QC (qc-convert-and-flow.sh)
+- Two new static assertions in Section S:
+  - `INSTALL.md contains CORE_UPDATES auto-apply action (Action 7)`
+  - `INSTALL.md Action 3 uses cp (single-source wrapper, no inline heredoc)`
+
 ## [1.0.5] - 2026-06-11 — fix: INSTALL.md Action-3 heredoc used stale `cli_anything.gohighlevel.main` entrypoint (no `main.py` in engine 2.1.0)
 
 ### Fixed (install path)
