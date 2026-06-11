@@ -1,3 +1,16 @@
+## [v11.18.3]  -  2026-06-11  -  fix(wave5-tooling): B.3 duck-test.ts path probe + a2 reset reason + embedding gateway-env
+
+### Changes
+- `scripts/fleet-refresh.sh` — B.3 preflight: dual-candidate probe (`duck-test.ts` then
+  `duck-test` fallback) so the file-presence check works on both TypeScript and compiled
+  projects.
+- `shared-utils/a2_load_assert.py` — sessions.reset reason field now accepts underscores
+  (matches OpenClaw v11+ schema); exit-code tolerance widened.
+- `shared-utils/embedding_health.py` — `_get_api_key()` checks three sources in priority
+  order: `os.environ`, `openclaw.json` `env.vars`, Mac gateway env file. Fixes API-key
+  discovery on Mac boxes where the key is not in the container env.
+- Squash-merge of `fix/wave5-tooling-b3-a2-embedding` via PR #166.
+
 ## [v11.18.1]  -  2026-06-11  -  fix(wave5 tooling): B.3 preflight path + sessions.reset reason enum + exit-code tolerance + embedding env.vars
 
 ### Changes

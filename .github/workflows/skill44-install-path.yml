@@ -1,0 +1,196 @@
+# ci/skill44-install-path.yml
+#
+# Skill 44 — Install-path integrity CI
+#
+# Guards two classes of install-path bugs that have hit production:
+#
+#   1. Wrapper exec-line drift (the gohighlevel.main bug from PR #167):
+#      The committed engine wrappers (caf / convertandflow / ghl) must all use
+#      `python -m cli_anything.gohighlevel` — never `cli_anything.gohighlevel.main`
+#      or any other suffix. This check fails if the exec line is wrong.
+#
+#   2. CORE_UPDATES never auto-applied (the root cause of boxes not knowing skill 44
+#      is installed): INSTALL.md must contain the Action 7 CORE_UPDATES auto-apply
+#      block including the sentinel string. This check fails without the Action 7 fix.
+#
+# Both checks are pure static — no Python, no venv, no secrets.
+
+name: skill-44 install-path integrity
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "fix/skill44**"
+      - "skill-44/**"
+    paths:
+      - "44-convert-and-flow-operator/**"
+      - ".github/workflows/skill44-install-path.yml"
+  push:
+    branches:
+      - "fix/skill44**"
+      - "skill-44/**"
+  workflow_dispatch:
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # CHECK 1: Wrapper exec-line — guards against entrypoint drift (PR #167 class)
+  # All three committed wrappers must exec `python -m cli_anything.gohighlevel`
+  # (no `.main` suffix).
+  # ─────────────────────────────────────────────────────────────────────────────
+  install-path-wrapper-exec:
+    name: "Install-path: wrapper exec line is cli_anything.gohighlevel (no .main)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "caf wrapper: exec line correct (no .main suffix)"
+        run: |
+          WRAPPER="44-convert-and-flow-operator/tools/engine/caf"
+          echo "--- Checking $WRAPPER ---"
+          cat "$WRAPPER"
+          echo ""
+          # Must contain the correct entrypoint
+          if grep -q 'cli_anything\.gohighlevel "$@"' "$WRAPPER"; then
+            echo "PASS: exec line uses cli_anything.gohighlevel"
+          else
+            echo "FAIL: exec line missing or wrong in $WRAPPER"
+            grep 'cli_anything' "$WRAPPER" || true
+            exit 1
+          fi
+          # Must NOT contain the stale .main suffix
+          if grep -q 'cli_anything\.gohighlevel\.main' "$WRAPPER"; then
+            echo "FAIL: stale .main suffix found in $WRAPPER (pre-#167 entrypoint)"
+            exit 1
+          fi
+          echo "PASS: .main suffix absent"
+
+      - name: "convertandflow wrapper: exec line correct (no .main suffix)"
+        run: |
+          WRAPPER="44-convert-and-flow-operator/tools/engine/convertandflow"
+          echo "--- Checking $WRAPPER ---"
+          if grep -q 'cli_anything\.gohighlevel "$@"' "$WRAPPER"; then
+            echo "PASS: exec line uses cli_anything.gohighlevel"
+          else
+            echo "FAIL: exec line missing or wrong in $WRAPPER"
+            grep 'cli_anything' "$WRAPPER" || true
+            exit 1
+          fi
+          if grep -q 'cli_anything\.gohighlevel\.main' "$WRAPPER"; then
+            echo "FAIL: stale .main suffix found in $WRAPPER"
+            exit 1
+          fi
+          echo "PASS: .main suffix absent"
+
+      - name: "ghl wrapper: exec line correct (no .main suffix)"
+        run: |
+          WRAPPER="44-convert-and-flow-operator/tools/engine/ghl"
+          echo "--- Checking $WRAPPER ---"
+          if grep -q 'cli_anything\.gohighlevel "$@"' "$WRAPPER"; then
+            echo "PASS: exec line uses cli_anything.gohighlevel"
+          else
+            echo "FAIL: exec line missing or wrong in $WRAPPER"
+            grep 'cli_anything' "$WRAPPER" || true
+            exit 1
+          fi
+          if grep -q 'cli_anything\.gohighlevel\.main' "$WRAPPER"; then
+            echo "FAIL: stale .main suffix found in $WRAPPER"
+            exit 1
+          fi
+          echo "PASS: .main suffix absent"
+
+      - name: "INSTALL.md Action 3: uses cp (single-source wrapper — no inline heredoc)"
+        run: |
+          INSTALL="44-convert-and-flow-operator/INSTALL.md"
+          echo "--- Checking Action 3 in $INSTALL ---"
+          # The single-source fix replaces the heredoc with a cp of the committed wrapper.
+          # Assert the cp form is present.
+          if grep -q 'cp.*tools/engine/caf\|cp.*engine.*caf' "$INSTALL"; then
+            echo "PASS: Action 3 uses cp (single-source)"
+          else
+            echo "FAIL: Action 3 does not use cp — may still have inline heredoc"
+            grep -A5 'Action 3' "$INSTALL" || true
+            exit 1
+          fi
+          # Assert the stale heredoc exec form is gone.
+          # Pattern is intentionally narrow: only matches the Python -m invocation form
+          # (e.g. `-m cli_anything.gohighlevel.main`) so prose references like
+          # "the gohighlevel.main bug" in CHANGELOG/comments don't false-positive.
+          if grep -qE '\-m cli_anything\.gohighlevel\.main' "$INSTALL"; then
+            echo "FAIL: stale '-m cli_anything.gohighlevel.main' exec form still present in INSTALL.md"
+            grep -E '\-m cli_anything\.gohighlevel\.main' "$INSTALL" || true
+            exit 1
+          fi
+          echo "PASS: no stale -m cli_anything.gohighlevel.main exec form in INSTALL.md"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # CHECK 2: CORE_UPDATES auto-apply — guards against agents not knowing skill 44
+  # is installed (the root cause this PR fixes).
+  # ─────────────────────────────────────────────────────────────────────────────
+  install-path-core-updates-action:
+    name: "Install-path: INSTALL.md contains CORE_UPDATES auto-apply (Action 7)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "INSTALL.md: sentinel string present in Action 7 block"
+        run: |
+          INSTALL="44-convert-and-flow-operator/INSTALL.md"
+          SENTINEL="skill:44-convert-and-flow-operator:core-update-applied"
+          echo "--- Checking CORE_UPDATES auto-apply in $INSTALL ---"
+          if grep -qF "$SENTINEL" "$INSTALL"; then
+            echo "PASS: sentinel $SENTINEL found in INSTALL.md"
+          else
+            echo "FAIL: sentinel not found — INSTALL.md is missing the CORE_UPDATES auto-apply (Action 7)"
+            echo "Hint: agents on boxes installed without Action 7 will not know Skill 44 exists."
+            exit 1
+          fi
+
+      - name: "INSTALL.md: CORE_UPDATES block writes to AGENTS.md"
+        run: |
+          INSTALL="44-convert-and-flow-operator/INSTALL.md"
+          if grep -q 'AGENTS.md' "$INSTALL" && grep -q 'TOOLS.md' "$INSTALL" && grep -q 'MEMORY.md' "$INSTALL"; then
+            echo "PASS: INSTALL.md references AGENTS.md, TOOLS.md, MEMORY.md in CORE_UPDATES block"
+          else
+            echo "FAIL: INSTALL.md missing CORE_UPDATES target file references"
+            exit 1
+          fi
+
+      - name: "CORE_UPDATES.md: sentinel matches INSTALL.md sentinel"
+        run: |
+          CORE_UPDATES="44-convert-and-flow-operator/CORE_UPDATES.md"
+          SENTINEL="skill:44-convert-and-flow-operator:core-update-applied"
+          if grep -qF "$SENTINEL" "$CORE_UPDATES"; then
+            echo "PASS: CORE_UPDATES.md sentinel matches"
+          else
+            echo "FAIL: CORE_UPDATES.md sentinel mismatch — install and CORE_UPDATES.md are out of sync"
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STATUS CHECK — both jobs must be green.
+  # ─────────────────────────────────────────────────────────────────────────────
+  install-path-gate-passed:
+    name: "skill-44 install-path gate PASSED"
+    runs-on: ubuntu-latest
+    needs:
+      - install-path-wrapper-exec
+      - install-path-core-updates-action
+    if: always()
+    steps:
+      - name: Check all install-path jobs passed
+        run: |
+          if [[ "${{ needs.install-path-wrapper-exec.result }}" != "success" ]]; then
+            echo "FAIL: install-path-wrapper-exec did not pass"
+            exit 1
+          fi
+          if [[ "${{ needs.install-path-core-updates-action.result }}" != "success" ]]; then
+            echo "FAIL: install-path-core-updates-action did not pass"
+            exit 1
+          fi
+          echo "All skill-44 install-path integrity checks GREEN."

@@ -38,49 +38,26 @@ pip install -e . --quiet
 deactivate
 ```
 
-## Action 3: Write the wrapper (maps canonical env -> engine env at runtime)
+## Action 3: Install the wrapper (single source — copies committed engine wrapper)
+
+> **Why copy instead of heredoc?** The committed wrapper at
+> `tools/engine/caf` is the single source of truth. Copying it to the install
+> directory means there is exactly one place to edit the wrapper logic; the
+> INSTALL.md heredoc approach created a second copy that could silently diverge
+> (as happened with the `gohighlevel.main` entrypoint bug fixed in PR #167).
 
 ```bash
-cat > "$CAF_DIR/caf" <<'WRAPPER'
-#!/usr/bin/env bash
-# Convert and Flow CLI wrapper — maps canonical GOHIGHLEVEL_* env to engine env
-# Also accepts CAF_* aliases for backwards compatibility.
-set -euo pipefail
-
-VENV="$(dirname "$0")/.venv"
-ENGINE="$(dirname "$0")/engine"
-
-# Canonical -> engine mapping (engine uses GHL_API_KEY internally)
-export GHL_API_KEY="${GOHIGHLEVEL_API_KEY:-${CAF_API_KEY:-}}"
-export GHL_LOCATION_ID="${GOHIGHLEVEL_LOCATION_ID:-${CAF_LOCATION_ID:-}}"
-export GHL_FIREBASE_REFRESH_TOKEN="${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-${CAF_FIREBASE_REFRESH_TOKEN:-}}"
-
-# CAF_ALLOWED_LOCATION_IDS: default to the client's own GHL_LOCATION_ID so a blank
-# whitelist never silently blocks all writes on a single-location install.
-_caf_allowed_raw="${GOHIGHLEVEL_ALLOWED_LOCATION_IDS:-${CAF_ALLOWED_LOCATION_IDS:-}}"
-if [ -z "$_caf_allowed_raw" ] && [ -n "$GHL_LOCATION_ID" ]; then
-    _caf_allowed_raw="$GHL_LOCATION_ID"
-    echo "[caf] Allowed write locations set to ${_caf_allowed_raw}; add more in CAF_ALLOWED_LOCATION_IDS" >&2
-fi
-# safety_gate.py reads CAF_ALLOWED_LOCATION_IDS / CAF_DRAFT_ONLY / CAF_DRY_RUN —
-# export those exact names (the GHL_-prefixed names are ignored by the gate).
-export CAF_ALLOWED_LOCATION_IDS="$_caf_allowed_raw"
-unset _caf_allowed_raw
-export CAF_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
-export CAF_DRY_RUN="${GOHIGHLEVEL_DRY_RUN:-${CAF_DRY_RUN:-}}"
-
-# Snapshot dir for workflow rollbacks
-export GHL_SNAPSHOT_DIR="${HOME}/.openclaw/tools/convert-and-flow-cli/data/snapshots"
-mkdir -p "$GHL_SNAPSHOT_DIR"
-
-exec "$VENV/bin/python" -m cli_anything.gohighlevel "$@"
-WRAPPER
-chmod +x "$CAF_DIR/caf"
-
-# Create aliases
-ln -sf "$CAF_DIR/caf" "$CAF_DIR/convertandflow"
-ln -sf "$CAF_DIR/caf" "$CAF_DIR/ghl"
+# Copy the committed wrapper + aliases from the engine directory
+cp "$MASTER_FILES_DIR/44-convert-and-flow-operator/tools/engine/caf"          "$CAF_DIR/caf"
+cp "$MASTER_FILES_DIR/44-convert-and-flow-operator/tools/engine/convertandflow" "$CAF_DIR/convertandflow"
+cp "$MASTER_FILES_DIR/44-convert-and-flow-operator/tools/engine/ghl"           "$CAF_DIR/ghl"
+chmod +x "$CAF_DIR/caf" "$CAF_DIR/convertandflow" "$CAF_DIR/ghl"
 ```
+
+> **What the wrapper does:** maps canonical `GOHIGHLEVEL_*` env vars to the engine's
+> internal `GHL_*` names, auto-seeds `CAF_ALLOWED_LOCATION_IDS` from
+> `GOHIGHLEVEL_LOCATION_ID` on a blank whitelist, enforces `CAF_DRAFT_ONLY=true` by
+> default, and invokes the engine via `python -m cli_anything.gohighlevel`.
 
 ## Action 4: Add wrapper dir to PATH (persistent)
 
@@ -201,6 +178,97 @@ WARN (not FAIL) — the skill works for standard ops without it.
 
 ---
 
+## Action 7: Apply CORE_UPDATES to agent core files (auto)
+
+> **This step is mandatory.** Until the sentinel is present in AGENTS.md / TOOLS.md /
+> MEMORY.md the agent does NOT know Skill 44 is installed and will not use Tier 0.
+
+```bash
+WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
+SENTINEL="<!-- skill:44-convert-and-flow-operator:core-update-applied -->"
+CORE_UPDATES="$MASTER_FILES_DIR/44-convert-and-flow-operator/CORE_UPDATES.md"
+
+# Guard: skip if already applied
+if grep -qF "$SENTINEL" "$WORKSPACE/AGENTS.md" 2>/dev/null; then
+  echo "[skill44] CORE_UPDATES already applied — skipping."
+else
+  echo "[skill44] Applying CORE_UPDATES to AGENTS.md / TOOLS.md / MEMORY.md ..."
+
+  # --- AGENTS.md ---
+  cat >> "$WORKSPACE/AGENTS.md" <<'AGENTS_BLOCK'
+
+## Convert and Flow Operator — Tier 0 (skill 44)
+
+Skill 44 is the FIRST STOP in the 6-tier GHL access chain. Try it before any MCP.
+
+### When to use Tier 0
+
+- Any GHL operation the CLI covers (contacts, opportunities, calendars, conversations,
+  documents, payments, forms, social, locations, workflow reads): use `caf <command>`.
+- Workflow BUILD or EDIT: check Firebase token first (see token-aware routing in skill 36
+  AGENTS.md). Present + healthy = Tier 0 builds directly. Absent = Tier 4 backstop.
+- Media upload: SKIP Tier 0. Always Tier 3 (POST /medias/upload-file).
+- Rate limit (429): STOP. Never fall through. Surface reset time in plain English.
+
+### Per-operation routing
+
+See the full 6-tier table in skill 36's AGENTS.md block. Skill 44 owns Tier 0;
+skill 36 owns the routing law for all 6 tiers.
+
+### Disclosure format
+
+[GHL tier used: 0 — convertandflow <command>]
+<!-- skill:44-convert-and-flow-operator:core-update-applied -->
+AGENTS_BLOCK
+
+  # --- TOOLS.md ---
+  cat >> "$WORKSPACE/TOOLS.md" <<'TOOLS_BLOCK'
+
+## Convert and Flow CLI — Tier 0 GHL operator (skill 44)
+
+Commands: caf / convertandflow / ghl
+
+Installed at: ~/.openclaw/tools/convert-and-flow-cli/caf (Mac) or /data/.openclaw/tools/convert-and-flow-cli/caf (VPS)
+Health: caf doctor
+
+| Domain | Commands |
+|---|---|
+| contacts | caf contacts list/get/create/update/tag/untag |
+| opportunities | caf opportunities list/get/update |
+| calendars | caf calendars list/appointments |
+| conversations | caf conversations list/get/send |
+| documents | caf documents list/get/send |
+| payments | caf payments list (= transactions); invoices/orders/transactions; create-invoice |
+| forms | caf forms list/submissions |
+| social | caf social accounts/post/schedule |
+| locations | caf locations get/customfields/customvalues |
+| workflows (read) | caf workflows list/get/export |
+| workflows (write) | caf workflows build/patch-email/patch-trigger/restore [Firebase token required] |
+
+Credentials: GOHIGHLEVEL_API_KEY (PIT), GOHIGHLEVEL_LOCATION_ID, GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (workflow writes only).
+<!-- skill:44-convert-and-flow-operator:core-update-applied -->
+TOOLS_BLOCK
+
+  # --- MEMORY.md ---
+  INSTALL_DATE="$(date +%Y-%m-%d)"
+  cat >> "$WORKSPACE/MEMORY.md" <<MEMORY_BLOCK
+
+## Convert and Flow Operator — Installed ${INSTALL_DATE}
+
+Skill 44 (Tier 0) installed. CLI at ~/.openclaw/tools/convert-and-flow-cli/.
+Credentials: GOHIGHLEVEL_API_KEY (PIT), GOHIGHLEVEL_LOCATION_ID.
+Firebase token for workflow writes: GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (optional at install).
+Write safety: GOHIGHLEVEL_DRAFT_ONLY=true, location whitelist, approval gate.
+Health: caf doctor
+<!-- skill:44-convert-and-flow-operator:core-update-applied -->
+MEMORY_BLOCK
+
+  echo "[skill44] CORE_UPDATES applied."
+fi
+```
+
+---
+
 ## Client-Facing Disclosure: Firebase Token Auto-Re-Grab (Mac installs only)
 
 > **PLAIN LANGUAGE (binding transparency requirement — PRD Section 3.2):**
@@ -263,4 +331,4 @@ approved and published.
 - [ ] `caf workflows list` returns the workflow list
 - [ ] `caf` resolves on PATH inside openclaw gateway
 - [ ] `qc-convert-and-flow.sh` exits 0
-- [ ] CORE_UPDATES.md sentinel written to AGENTS.md / TOOLS.md / MEMORY.md
+- [ ] CORE_UPDATES sentinel present in AGENTS.md (auto-applied by Action 7)
