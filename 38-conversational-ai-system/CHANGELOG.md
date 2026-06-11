@@ -1,3 +1,33 @@
+## [1.7.0] - 2026-06-11 — CAF-first workflow build (Option 1 primary); Build-with-AI demoted to fallback; human=final verifier; +GHL_AI_LAYERS.md
+
+### Why
+Skill 44 v2.1.0 (engine CLI 2.1.0, merged `beb43e35`) resolved both critical build bugs —
+`link_steps()` pre-save fix eliminating GHL 400 corrupted-order errors, and rejected-save
+non-zero exit eliminating the silent Steps:0/Errors:0/exit-0 false-pass. With these fixes
+verified in main, the CAF direct-build path is now the reliable Option 1 primary. The
+Build-with-AI manual paste is demoted to Option 2 fallback (Firebase token absent/expired).
+The 3-layer architecture (Layer 0 compile-time, Layer 1 runtime Workflow AI step, Layer 2
+OpenClaw playbook) was undocumented; operators confused the three surfaces repeatedly. The
+human-is-final-verifier rule was implicit; it is now explicit in every build-path touchpoint.
+
+### Added
+- `references/GHL_AI_LAYERS.md` (NEW) — the authoritative 3-layer GHL AI architecture
+  reference. Layer 0 = compile-time Build-with-AI / CAF direct-build. Layer 1 = runtime
+  GHL Workflow AI step prompt (inside a Conversation AI node). Layer 2 = OpenClaw
+  Master-Files playbook (`conversation-workflows/<id>.md`). Explains CAF-first (Option 1)
+  vs Build-with-AI (Option 2) routing, the CAF engine v2.1.0 fixes, the human-is-final-
+  verifier rule, and a quick decision table. Cross-referenced by skills 36, 38, 41, 44.
+
+### Changed
+- `INSTRUCTIONS.md` — "Read first" block: added item 6 pointing to `GHL_AI_LAYERS.md`.
+  Step 9.20 GHL build-path note rewritten: **CAF-first (Option 1 PRIMARY)** when Firebase
+  token present; **Build-with-AI (Option 2 FALLBACK)** when absent. References Skill 44
+  engine v2.1.0 fixes (engine fix SHA `beb43e35`). Adds explicit "human is always the
+  final verifier" statement with the in-builder Test-button caveat.
+- `references/GHL-INBOUND-AND-PLAYBOOKS.md` — Section 4 header renamed to clarify it is
+  the Option 2 fallback template. Pre-amble updated with a routing callout box: Option 1
+  (CAF direct, PRIMARY) vs Option 2 (this section, fallback). Cross-links `GHL_AI_LAYERS.md`.
+
 ## [1.6.0] - 2026-06-10 — Skill 44 era: nine-file sweep + Rules 15/16 rewrite + TRINITY/self-test wiring + alias-aware credentials
 
 ### Why

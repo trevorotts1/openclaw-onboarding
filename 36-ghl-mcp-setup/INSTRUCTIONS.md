@@ -176,6 +176,10 @@ If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLi
 - ❌ Jumping to Tier 4 (browser) for a workflow-write when the Firebase token is
   present and healthy. Tier 4 is the backstop ONLY when the token is genuinely
   unavailable.
+- ❌ Using MCP tools (Tiers 1-2) to BUILD a GHL workflow. MCP covers contacts /
+  conversations / calendar / tags reads and writes. Workflow creation and editing use
+  Skill 44's internal Build API (Tier 0) or the Build-with-AI manual paste (fallback).
+  These are orthogonal surfaces — see `38-conversational-ai-system/references/GHL_AI_LAYERS.md`.
 
 ## Common Cross-Tier Workflows
 

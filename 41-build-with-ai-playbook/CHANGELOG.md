@@ -1,3 +1,20 @@
+## [1.5.0] - 2026-06-11 — CAF-first (Option 1 primary), GHL_AI_LAYERS cross-reference, human=final-verifier explicit
+
+### Why
+Skill 44 engine v2.1.0 (`beb43e35`) is verified in main. CAF direct-build is now the
+reliable Option 1 primary path. Step 5 previously described Option 1 and Option 2 but
+blurred the routing decision. The human-is-final-verifier rule and the in-builder
+Test-button caveat were absent.
+
+### Changes
+- INSTRUCTIONS.md Step 5 rewritten as "Option 1 (CAF direct — PRIMARY) / Option 2
+  (manual paste — FALLBACK)" with explicit decision criteria (Firebase token present/absent).
+  CAF engine v2.1.0 fixes called out (`link_steps()` pre-save + non-zero exit on reject).
+  Human-is-final-verifier and Test-button-sends-empty-fields caveat added.
+- Cross-reference block added to Step 5 pointing to
+  `38-conversational-ai-system/references/GHL_AI_LAYERS.md` as the authoritative 3-layer
+  architecture doc (Layer 0 / Layer 1 / Layer 2).
+
 ## [1.4.0] - 2026-06-10 — Skill 44 era: paste-step becomes fallback, dependency-first hard contract, 12-point checklist path-agnostic
 
 ### Why

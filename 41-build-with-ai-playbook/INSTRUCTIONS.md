@@ -110,24 +110,37 @@ Every prompt MUST follow the 8-section template at templates/build-with-ai-promp
 - Number every action step
 - Label If/Else branches clearly: "YES branch:" and "NO branch:"
 
-### Step 5: Operator pastes into GHL Workflow AI Builder
+### Step 5: Build the workflow — Option 1 (CAF direct) or Option 2 (manual paste)
 
-> **Skill 44 era:** when the client has the convert-and-flow-operator (skill 44)
-> installed AND a healthy Firebase token, skill 44 builds the workflow directly
-> from this skill's STRUCTURE — the manual paste below is the FALLBACK for the
-> no-token path (or when the operator prefers to paste). The dependency-first
-> contract (Step 2/3) and the 12-point verification (Step 6) bind BOTH paths.
+> **3-layer architecture reference:** `38-conversational-ai-system/references/GHL_AI_LAYERS.md`
+> is the canonical doc for the Layer 0 compile-time build-path decision (CAF vs Build-with-AI),
+> Layer 1 (Workflow AI step prompt), and Layer 2 (OpenClaw playbook). Cross-read it before any
+> workflow build.
 
-Direct the operator to:
-1. Navigate to Automations > Workflows in GHL / Convert and Flow
-2. Click "Build using AI" (top-right of workflow list)
-3. Paste the generated prompt into the AI prompt box
-4. Click "Build Workflow"
-5. Wait for AI generation (under 30 seconds average)
-6. Review the generated workflow visually
-7. Make any manual adjustments (the AI may need clarification on complex logic)
-8. Run the 12-point verification checklist
-9. Toggle to Published and Save
+**Option 1 — CAF direct (PRIMARY):** when the client has Skill 44 (convert-and-flow-operator)
+installed AND a healthy `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`:
+
+1. Skill 44 receives this skill's 8-section structure (Steps 2-4 output).
+2. `caf workflows build` sends it to the GHL internal Build API directly.
+   - Engine v2.1.0+ (`link_steps()` runs BEFORE save — no corrupted step order; rejected save
+     exits non-zero — no silent Steps:0/Errors:0/exit-0 false-pass).
+3. Proceed directly to Step 6 (12-point verification) — **do not skip even on a successful build**.
+
+**Option 2 — Manual paste (FALLBACK):** when the Firebase token is absent or expired:
+
+1. Navigate to Automations > Workflows in GHL / Convert and Flow.
+2. Click "Build using AI" (top-right of workflow list).
+3. Paste the generated prompt (from Step 4) into the AI prompt box.
+4. Click "Build Workflow".
+5. Wait for AI generation (under 30 seconds average).
+6. Review the generated workflow visually.
+7. Make any manual adjustments (the AI may need clarification on complex logic).
+8. Run the 12-point verification checklist (Step 6).
+9. Toggle to Published and Save.
+
+> The dependency-first contract (Steps 2-3) and the 12-point verification (Step 6) bind BOTH paths.
+> **The human is always the final verifier** on both paths — the in-builder "Test" button sends
+> empty merge fields and passes even when the live payload is broken.
 
 ### Step 6: Post-build verification (12-point checklist)
 

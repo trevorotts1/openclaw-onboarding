@@ -4,6 +4,28 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.0] - 2026-06-11 — GHL_AI_LAYERS cross-reference added; MCP scope clarified vs Build API
+
+### Why
+The 6-tier chain (Skill 36) installs GHL MCP access. Multiple operators conflated the
+MCP tier (read/write contacts, conversations, calendar via public API) with Skill 44's
+internal Build API (workflow create/edit). GHL_AI_LAYERS.md now documents the full
+picture; Skill 36 cross-references it so operators reading the tier chain know MCP and
+the Build API are orthogonal surfaces.
+
+### Changes
+- Cross-reference to `38-conversational-ai-system/references/GHL_AI_LAYERS.md` added to
+  SKILL.md and INSTRUCTIONS.md with a one-line clarification: "MCP tools (Tiers 1-2)
+  cover contacts/conversations/calendar/tags reads and writes. They do NOT build GHL
+  workflows. Workflow builds use Skill 44's internal Build API (Tier 0) or the
+  Build-with-AI manual paste. These are orthogonal surfaces. See GHL_AI_LAYERS.md."
+- skill-version.txt bumped to v1.2.0.
+
+## [v1.1.1] - 2026-06-11 — SOUL.md tier-protocol removal regex fix (D-1)
+
+### Changes
+- wire.sh SOUL.md tier-protocol removal regex now matches header suffix variants (D-1).
+
 ## [v1.1.0] - 2026-06-10
 
 ### Skill 44 era — 6-tier overhaul (edits a-m)
