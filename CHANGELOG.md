@@ -1,3 +1,54 @@
+## [v11.18.0]  -  2026-06-11  -  feat(A.2 v2): real session-load gate — proves LOADED via post-reset session/probe, supersedes #160
+
+### Changes
+- `shared-utils/a2_load_assert.py` NEW — PRD Addendum A.2 v2 load-assertion state machine.
+  TWO-LEG DESIGN (replaces broken grep-on-disk + mtime tautology from #160):
+  LEG A (deterministic): snapshot sessions.json sessionId/sessionStartedAt BEFORE reset; issue
+  `openclaw gateway call sessions.reset`; confirm sessionId CHANGED or sessionStartedAt
+  strictly advanced after reset.  Proves genuine re-initialization; no live model needed.
+  LEG B (GOLD canary echo): write a unique plain-alphanumeric canary token into SOUL.md
+  (via resolve_injected_core_files); issue second sessions.reset; send probe via
+  `openclaw message send`; bounded poll of `chat.history` + transcript jsonl fallback
+  for a new assistant message echoing the canary.  Canary echoed = new core-file content
+  is provably in the live rebuilt context.
+  loaded_confidence: HIGH (both legs pass) | MEDIUM (LEG A pass, LEG B inconclusive/non-model
+  reason) | UNKNOWN (no live model — skips LEG B honestly, no false alert) | LOW (LEG A
+  failed — operator alert fires).  Mirrors fleet_refresh_runner.py BoxResult.loaded vocab.
+  Canary cleanup: idempotent trap-driven strip + final sessions.reset.
+  NO CO-MINGLING: never borrows another box's API key or gateway endpoint.
+- `scripts/a2-session-load-gate.sh` REWRITE — thin bash wrapper around a2_load_assert.py.
+  Removed: check_marker() grep-on-disk, check_ordering() mtime tautology, fixed sleep 15.
+  Added: delegates to a2_load_assert.py; parses loaded_confidence from JSON; operator alert
+  fires ONLY on LOW (LEG A failed), NOT on UNKNOWN or MEDIUM.
+  KEPT from #160: sessions.reset via gateway call (NEVER gateway restart), operator alert
+  via `openclaw message send` (NEVER direct telegram curl), lockfile idempotency.
+- `tests/fixture-a2-session-load-gate.sh` REWRITE — state-aware stub with 4 cases:
+  Case 1 HIGH (new sessionId + canary echoed → exit 0, no alert, canary stripped),
+  Case 2 LOW (same sessionId after reset → exit 1 + operator alert),
+  Case 3 UNKNOWN (no-model stub → exit 0, no alert, no key borrow),
+  Case 4 MEDIUM (chat.history returns unknown-method → exit 0, no false alert).
+  The gate does NOT block on a fixed sleep — bounded poll with A2_PROBE_TIMEOUT=10.
+  Asserts a LIVE-LOAD signal (stub mints new sessionId + enqueues canary echo), not a
+  backdated disk file.
+- `tests/unit/a2-load-assert.test.py` NEW — unit tests for a2_load_assert.py confidence
+  matrix with stubbed subprocess.run: test_high_both_legs_pass, test_low_leg_a_fails,
+  test_unknown_no_model, test_medium_leg_b_unavailable, test_ts_strictly_after,
+  test_no_ceo_chat_id_is_medium.
+- `scripts/update-skills.sh` — skill-44 trigger fix: removed 44 from the HAS_WIRE_MIGRATIONS
+  numeric allowlist (skill 44 ships NO wire.sh and writes NO convertandflow-migration marker;
+  a 44-only run was false-alerting the operator with loaded=LOW). New A.2 v2 gate invocation
+  block added after UPDATE PENDING flag write; outputs loaded_confidence in
+  {HIGH/MEDIUM/UNKNOWN/LOW}.  The -f wire.sh check remains as the general trigger for any
+  current/future wire skill.
+- `version`, `install.sh`, `README.md` (x2), `23-ai-workforce-blueprint/skill-version.txt`,
+  `role-library/_index.json`, `role-library/_qc-summary.md`, `update-skills.sh`
+  (ONBOARDING_VERSION + header), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` — bumped to v11.18.0
+  via `./scripts/bump-version.sh v11.18.0` (all 9 markers agree).
+- `cc-compat.json` — onboardingVersion hand-synced to v11.18.0 (10th marker not covered by
+  bump-version.sh; CI enforces equality with /version).
+- CHANGELOG v11.18.0 description updated from mtime/marker ordering to live-load (LEG A
+  sessionId re-init + LEG B canary echo) design.
+
 ## [v11.17.2]  -  2026-06-11  -  fix(skill-44): CAF_ALLOWED_LOCATION_IDS auto-seeds from GOHIGHLEVEL_LOCATION_ID — blank whitelist fix
 
 ## [v11.17.1]  -  2026-06-11  -  skill-44 Chrome extension load-unpacked (no Chrome Web Store)
