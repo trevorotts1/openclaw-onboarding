@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from cli_anything.gohighlevel.utils.ghl_internal_client import InternalGHLClient
 from cli_anything.gohighlevel.utils.safety_gate import draft_only_active_flag
+from cli_anything.gohighlevel.utils.write_lock import WriteLock
 
 # ── Verified Action Types (56 confirmed via save API 2026-03-22) ──────────
 
@@ -195,7 +196,22 @@ class CampaignBuilder:
 
         Pass `folder_id` to drop the campaign into an existing folder; pass
         `folder_name` to create a new folder. Exactly one is required.
+
+        Serialization: the entire build is wrapped in a WriteLock for the
+        location so that concurrent builds to the same location are
+        serialized — second build waits for the first to complete before
+        starting any internal-API writes (AC 21).
         """
+        with WriteLock(self.loc):
+            return self._build_locked(campaign, folder_name=folder_name, folder_id=folder_id)
+
+    def _build_locked(
+        self,
+        campaign: dict,
+        folder_name: Optional[str] = None,
+        folder_id: Optional[str] = None,
+    ) -> dict:
+        """Internal build implementation (called under WriteLock)."""
         self.stats["start_time"] = time.time()
 
         # Pre-flight validation

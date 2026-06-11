@@ -761,6 +761,243 @@ def workflows_create_n8n(ctx, name, webhook_url, tag, folder):
         _handle_error(e)
 
 
+# ---------------------------------------------------------------------------
+# PHASE 3: Surgical workflow commands (PRD Section 0 / AC Criteria 1, 19-21)
+# ---------------------------------------------------------------------------
+
+@workflows.command("get")
+@click.option("--workflow-id", required=True, help="Workflow ID to fetch")
+@click.pass_context
+def workflows_get(ctx, workflow_id):
+    """Get a workflow by ID (internal API, read-only).
+
+    Returns the full workflow JSON.
+    """
+    try:
+        client = _get_internal_client(ctx)
+        result = client.get_workflow(workflow_id)
+        if not result.ok:
+            click.echo(f"Error: {result.error}", err=True)
+            sys.exit(1)
+        _output(ctx, result.data, f"Workflow {workflow_id}")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("export")
+@click.option("--workflow-id", required=True, help="Workflow ID to export")
+@click.option("--out", "out_file", required=True, type=click.Path(), help="Output JSON file path")
+@click.pass_context
+def workflows_export(ctx, workflow_id, out_file):
+    """Export a workflow to a JSON file (internal API, read-only)."""
+    try:
+        client = _get_internal_client(ctx)
+        result = client.get_workflow(workflow_id)
+        if not result.ok:
+            click.echo(f"Error: {result.error}", err=True)
+            sys.exit(1)
+        with open(out_file, "w") as f:
+            json.dump(result.data, f, indent=2)
+        if ctx.obj["json"]:
+            click.echo(json.dumps({"exported": out_file, "workflow_id": workflow_id}))
+        else:
+            click.echo(f"Exported workflow {workflow_id} to {out_file}")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("update")
+@click.option("--workflow-id", required=True, help="Workflow ID to update")
+@click.option("--from-json", "json_file", required=True, type=click.Path(exists=True),
+              help="JSON file with updated workflow body")
+@click.pass_context
+def workflows_update(ctx, workflow_id, json_file):
+    """Update a workflow from a JSON file (internal API, write-gated).
+
+    Requires --experimental. A pre-write snapshot is captured automatically
+    before the PUT — use 'workflows restore' to revert.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.snapshot_manager import capture, restore as sm_restore
+        from cli_anything.gohighlevel.utils.write_lock import WriteLock
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        # 1. Pre-write snapshot (AC 20 — HARD RULE)
+        snap_path = capture(client, workflow_id)
+        if snap_path is None:
+            click.echo(f"Error: Failed to capture pre-write snapshot for {workflow_id} — aborting.", err=True)
+            sys.exit(1)
+        if ctx.obj["json"]:
+            pass
+        else:
+            click.echo(f"[snapshot] {snap_path}")
+        # 2. Load new body
+        with open(json_file) as f:
+            body = json.load(f)
+        # 3. Serialized write (AC 21)
+        with WriteLock(location_id):
+            result = client.put_workflow(workflow_id, body)
+        if not result.ok:
+            click.echo(f"Error: {result.error}", err=True)
+            sys.exit(1)
+        _output(ctx, result.data or {"ok": True, "workflow_id": workflow_id}, "Workflow Updated")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("build")
+@click.option("--from-plan", "plan_file", required=True, type=click.Path(exists=True),
+              help="JSON plan file describing the workflow(s) to build")
+@click.option("--folder", default=None, help="Folder name override (defaults to plan folder key or 'caf-build')")
+@click.pass_context
+def workflows_build(ctx, plan_file, folder):
+    """Build a workflow from a plan JSON file (internal API, write-gated).
+
+    Requires --experimental. Supports conversational and mechanical workflows.
+    A TRINITY check is enforced for conversational plans (plans with a
+    'conversational' flag or 'playbook' key).
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+        from cli_anything.gohighlevel.utils.write_lock import WriteLock
+        with open(plan_file) as f:
+            campaign = json.load(f)
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        folder_name = folder or campaign.get("folder", "caf-build")
+        with WriteLock(location_id):
+            builder = CampaignBuilder(client)
+            stats = builder.build(campaign, folder_name)
+        if ctx.obj["json"]:
+            click.echo(json.dumps(stats, indent=2, default=str))
+        else:
+            click.echo(builder.format_summary())
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("patch-email")
+@click.option("--workflow-id", required=True, help="Workflow ID")
+@click.option("--step-id", required=True, help="Step/action ID within the workflow")
+@click.option("--subject", default=None, help="New email subject")
+@click.option("--body-file", "body_file", default=None, type=click.Path(exists=True),
+              help="HTML file with new email body")
+@click.pass_context
+def workflows_patch_email(ctx, workflow_id, step_id, subject, body_file):
+    """Patch a single email step in a workflow (internal API, write-gated).
+
+    Requires --experimental. A pre-write snapshot is captured automatically.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.snapshot_manager import capture
+        from cli_anything.gohighlevel.utils.write_lock import WriteLock
+        from cli_anything.gohighlevel.internal.contract import strip_for_put
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        # 1. Get current workflow
+        get_result = client.get_workflow(workflow_id)
+        if not get_result.ok:
+            click.echo(f"Error fetching workflow: {get_result.error}", err=True)
+            sys.exit(1)
+        # 2. Pre-write snapshot (AC 20)
+        snap_path = capture(client, workflow_id)
+        if not ctx.obj["json"]:
+            click.echo(f"[snapshot] {snap_path}")
+        # 3. Patch the step
+        wf_body = get_result.data
+        templates = wf_body.get("workflowData", {}).get("templates", [])
+        patched = False
+        for tmpl in templates:
+            if tmpl.get("id") == step_id or tmpl.get("name") == step_id:
+                attrs = tmpl.setdefault("attributes", {})
+                if subject is not None:
+                    attrs["subject"] = subject
+                if body_file:
+                    with open(body_file) as bf:
+                        attrs["body"] = bf.read()
+                        attrs["html"] = attrs["body"]
+                patched = True
+                break
+        if not patched:
+            click.echo(f"Error: step '{step_id}' not found in workflow {workflow_id}", err=True)
+            sys.exit(1)
+        # 4. Serialized PUT (AC 21)
+        with WriteLock(location_id):
+            put_result = client.put_workflow(workflow_id, strip_for_put(wf_body))
+        if not put_result.ok:
+            click.echo(f"Error: {put_result.error}", err=True)
+            sys.exit(1)
+        _output(ctx, {"ok": True, "workflow_id": workflow_id, "step_id": step_id}, "Email Step Patched")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("patch-trigger")
+@click.option("--workflow-id", required=True, help="Workflow ID")
+@click.option("--trigger-json", "trigger_file", required=True, type=click.Path(exists=True),
+              help="JSON file with new trigger definition")
+@click.pass_context
+def workflows_patch_trigger(ctx, workflow_id, trigger_file):
+    """Replace the trigger on a workflow (internal API, write-gated).
+
+    Requires --experimental. A pre-write snapshot is captured automatically.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.snapshot_manager import capture
+        from cli_anything.gohighlevel.utils.write_lock import WriteLock
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        # 1. Pre-write snapshot (AC 20 — HARD RULE; also gets current state)
+        snap_path = capture(client, workflow_id)
+        if snap_path is None:
+            click.echo(f"Error: Failed to capture pre-write snapshot for {workflow_id} — aborting.", err=True)
+            sys.exit(1)
+        if not ctx.obj["json"]:
+            click.echo(f"[snapshot] {snap_path}")
+        # 2. Load new trigger
+        with open(trigger_file) as f:
+            new_trigger = json.load(f)
+        # 3. Build updated workflow body with newTriggers key
+        import json as _json
+        wf_body = _json.loads(snap_path.read_text(encoding="utf-8"))
+        wf_body["newTriggers"] = [new_trigger]
+        # 4. Serialized PUT (AC 21)
+        with WriteLock(location_id):
+            put_result = client.put_workflow(workflow_id, wf_body)
+        if not put_result.ok:
+            click.echo(f"Error: {put_result.error}", err=True)
+            sys.exit(1)
+        _output(ctx, {"ok": True, "workflow_id": workflow_id}, "Trigger Patched")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("restore")
+@click.option("--workflow-id", required=True, help="Workflow ID to restore")
+@click.option("--snapshot", "snapshot_file", required=True, type=click.Path(exists=True),
+              help="Snapshot JSON file to restore from")
+@click.pass_context
+def workflows_restore(ctx, workflow_id, snapshot_file):
+    """Restore a workflow to a captured pre-write snapshot.
+
+    Requires --experimental. Replays the snapshot via PUT — the workflow
+    is returned to its state at snapshot capture time.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.snapshot_manager import restore as sm_restore
+        client = _get_internal_client(ctx)
+        sm_restore(client, workflow_id, snapshot_file)
+        _output(ctx, {"ok": True, "workflow_id": workflow_id, "restored_from": snapshot_file},
+                "Workflow Restored")
+    except Exception as e:
+        _handle_error(e)
+
+
 # ===========================================================================
 # DOCUMENTS / CONTRACTS
 # ===========================================================================

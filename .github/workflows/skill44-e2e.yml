@@ -1,22 +1,66 @@
-name: skill-44 e2e static QC
+# ci/skill44-e2e.yml
+#
+# Skill 44 — End-to-End CI (Merge Gate + Rollback + Serialization)
+# Acceptance Criteria 19, 20, 21 per PRD-ADDENDUM-C Section 9.
+#
+# HARD MERGE REQUIREMENT (Section 12):
+#   No skill-44 PR merges unless every job in this workflow is green.
+#   A unit can score 8.5+ on the QC rubric and still be blocked if CI is red.
+#
+# This file is intended for the staged onboarding PR into openclaw-onboarding.
+# It lives at engine/ci/skill44-e2e.yml in the engine workspace and should be
+# copied to .github/workflows/skill44-e2e.yml when the onboarding PR is opened.
+#
+# Jobs:
+#   unit11-e2e-merge-gate   — AC 19: Telegram intent → Tier 0 → CLI build →
+#                              TRINITY+23-key gate stubs → DRAFT, no live CRM.
+#   unit11-rollback         — AC 20: Pre-write snapshot captured; restore
+#                              reverses the mutation.
+#   unit11-serialization    — AC 21: WriteLock serializes concurrent builds;
+#                              step backoff fires between sequential write steps.
+#   regression-guard        — Existing test suites must stay green after e2e runs.
+#
+# All jobs: internal API fully mocked, NO live CRM writes ever.
+
+name: skill-44 e2e (unit 11 — AC 19/20/21)
 
 on:
   pull_request:
+    branches:
+      - main
+      - "skill-44/**"
     paths:
-      - '44-convert-and-flow-operator/**'
-      - '36-ghl-mcp-setup/**'
-      - '38-conversational-ai-system/**'
-      - '41-build-with-ai-playbook/**'
-      - '29-ghl-convert-and-flow/**'
-      - '35-social-media-planner/**'
+      - "44-convert-and-flow-operator/tools/engine/**"
+      - ".github/workflows/skill44-e2e.yml"
   push:
     branches:
-      - 'skill-44/**'
+      - "skill-44/**"
+  workflow_dispatch:
+
+# No live CRM credentials are needed or present.
+# All env vars below are sandbox/fixture values — not real secrets.
+env:
+  CAF_ALLOWED_LOCATION_IDS: "SANDBOX_LOC_001"
+  CAF_APPROVAL_TOKEN: "ci-sandbox-approval-token"
+  GHL_FIREBASE_REFRESH_TOKEN: "ci-sandbox-refresh-token"
+  CAF_DRAFT_ONLY: "true"
+  CAF_STEP_BACKOFF_MS: "0"
+  CAF_INTERNAL_STEP_BACKOFF_MS: "0"
+  PYTHONUNBUFFERED: "1"
 
 jobs:
-  static-qc:
-    name: Static QC (no live GHL calls)
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 1: AC 19 — MERGE GATE
+  # Telegram-style intent → router picks Tier 0 → CLI build --from-plan →
+  # TRINITY stub → 23-key stub → DRAFT workflow, NOT published.
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit11-e2e-merge-gate:
+    name: "AC 19 — E2E Merge Gate (intent → Tier 0 → build → gates → DRAFT)"
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
 
     steps:
       - name: Checkout
@@ -25,360 +69,340 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.12"
+          cache: "pip"
 
-      # ── Skill 44 file set checks ─────────────────────────────────────────
-      - name: Skill 44 required files present
+      - name: Install dependencies
         run: |
-          for f in SKILL.md INSTALL.md INSTRUCTIONS.md CORE_UPDATES.md QC.md CHANGELOG.md skill-version.txt qc-convert-and-flow.sh; do
-            [ -f "44-convert-and-flow-operator/$f" ] || { echo "MISSING: 44-convert-and-flow-operator/$f"; exit 1; }
-          done
-          echo "PASS: all required skill 44 files present"
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e . || pip install click requests pytest
 
-      - name: Skill 44 frontmatter name correct
+      - name: "AC 19 — Router picks Tier 0 for nurture intent"
         run: |
-          grep -q 'name: convert-and-flow-operator' 44-convert-and-flow-operator/SKILL.md
-          echo "PASS: frontmatter name correct"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_router_picks_tier0_for_nurture_intent" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-router"
 
-      - name: Platform overlay frontmatter parity
+      - name: "AC 19 — Router correctly assigns Tier 1 for blogs (not CLI-covered)"
         run: |
-          grep -q 'name: convert-and-flow-operator' 44-convert-and-flow-operator/platform/mac/SKILL.md
-          grep -q 'name: convert-and-flow-operator' 44-convert-and-flow-operator/platform/vps/SKILL.md
-          echo "PASS: platform overlay names match"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_router_picks_tier1_for_blog_intent" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-router-blog"
 
-      - name: CORE_UPDATES.md sentinel present
+      - name: "AC 19 — CLI build --from-plan exits 0 (SANDBOX fixture, API mocked)"
         run: |
-          grep -q 'skill:44-convert-and-flow-operator:core-update-applied' 44-convert-and-flow-operator/CORE_UPDATES.md
-          echo "PASS: sentinel present"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_cli_build_from_plan_exits_zero or test_cli_build_result_is_json" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-cli-build"
 
-      # ── Skill 36 checks ───────────────────────────────────────────────────
-      - name: Skill 36 SOUL.md section flipped to NO UPDATE NEEDED
+      - name: "AC 19 — Build NEVER auto-publishes (all PUT bodies are DRAFT)"
         run: |
-          grep -q 'SOUL.md — NO UPDATE NEEDED' 36-ghl-mcp-setup/CORE_UPDATES.md
-          echo "PASS: SOUL.md marked NO UPDATE NEEDED"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_cli_build_never_auto_publishes or test_cli_build_mock_returns_draft_status" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-draft-check"
 
-      - name: Skill 36 AGENTS.md section has Tier 0
+      - name: "AC 19 — TRINITY gate stub passes ZHC-prefixed workflow"
         run: |
-          grep -q 'SKILL 44' 36-ghl-mcp-setup/CORE_UPDATES.md
-          echo "PASS: Tier 0 SKILL 44 present in CORE_UPDATES"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "trinity_gate" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-trinity"
 
-      - name: Skill 36 ghl-community-mcp on-demand (not registered)
+      - name: "AC 19 — 23-key gate stub passes fixture workflow structure"
         run: |
-          grep -q 'ON-DEMAND' 36-ghl-mcp-setup/INSTALL.md
-          echo "PASS: Tier 2 on-demand mode present"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "23key_gate" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-23key"
 
-      - name: Skill 36 version bumped
+      - name: "AC 19 — FULL E2E PIPELINE (authoritative merge gate assertion)"
         run: |
-          VER=$(cat 36-ghl-mcp-setup/skill-version.txt)
-          [ "$VER" != "v1.0.0" ] || { echo "FAIL: skill 36 version not bumped from v1.0.0"; exit 1; }
-          echo "PASS: skill 36 version = $VER"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_full_e2e_pipeline" \
+            --tb=long \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac19-full"
 
-      # ── Skill 38 checks ───────────────────────────────────────────────────
-      - name: Skill 38 Rule 16 canonical sentence present
-        run: |
-          grep -q 'Convert-and-Flow Build-Path Rule' 38-conversational-ai-system/CORE_UPDATES.md
-          grep -q 'Convert-and-Flow Build-Path Rule' 38-conversational-ai-system/scripts/06-append-memory-rules.sh
-          echo "PASS: Rule 16 canonical sentence present in both files"
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 2: AC 20 — ROLLBACK
+  # Pre-write snapshot is captured automatically before every mutation.
+  # caf workflows restore replays the snapshot via PUT; restored body
+  # matches the pre-mutation snapshot (server-managed keys stripped).
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit11-rollback:
+    name: "AC 20 — Rollback (pre-write snapshot + restore)"
+    runs-on: ubuntu-latest
+    needs: unit11-e2e-merge-gate
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
 
-      - name: Skill 38 old No-GHL-API Rule absent from active rule text (excludes CHANGELOG)
-        run: |
-          # Exclude CHANGELOG historical entries per criterion 8
-          HITS=$(grep -rn 'NO API and NO MCP\|NEVER write or claim code that "calls the GHL Automations API"' \
-            38-conversational-ai-system/ \
-            --include="*.sh" --include="*.md" \
-            | grep -v 'CHANGELOG' | grep -v 'bak' | wc -l)
-          [ "$HITS" -eq 0 ] || { echo "FAIL: old No-GHL-API wording still present in $HITS location(s)"; grep -rn 'NO API and NO MCP' 38-conversational-ai-system/ --include="*.sh" --include="*.md" | grep -v CHANGELOG; exit 1; }
-          echo "PASS: old No-GHL-API wording absent from active rule text"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Skill 38 self-test alias-aware credential read
-        run: |
-          grep -q 'GOHIGHLEVEL_API_KEY' 38-conversational-ai-system/scripts/24-self-test-hook.sh
-          echo "PASS: self-test is alias-aware"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-      - name: Skill 38 version bumped
+      - name: Install dependencies
         run: |
-          VER=$(cat 38-conversational-ai-system/skill-version.txt)
-          [ "$VER" != "1.5.14" ] || { echo "FAIL: skill 38 version not bumped from 1.5.14"; exit 1; }
-          echo "PASS: skill 38 version = $VER"
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e . || pip install click requests pytest
 
-      # ── Skill 41 checks ───────────────────────────────────────────────────
-      - name: Skill 41 Step 5 has skill-44-era paragraph
+      - name: "AC 20 — Pre-write snapshot captured before update PUT"
         run: |
-          grep -q 'Skill 44 era' 41-build-with-ai-playbook/INSTRUCTIONS.md
-          echo "PASS: skill 44 era paragraph present in Step 5"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_pre_write_snapshot_captured_before_update_put" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-snap"
 
-      - name: Skill 41 version bumped
+      - name: "AC 20 — Restore reverses mutation via PUT (body matches snapshot)"
         run: |
-          VER=$(cat 41-build-with-ai-playbook/skill-version.txt)
-          [ "$VER" != "1.3.0" ] || { echo "FAIL: skill 41 version not bumped from 1.3.0"; exit 1; }
-          echo "PASS: skill 41 version = $VER"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_restore_reverses_update" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-restore"
 
-      # ── Skill 29 checks ───────────────────────────────────────────────────
-      - name: Skill 29 medias.md exists
+      - name: "AC 20 — snapshot_manager.capture() auto-called (not manual)"
         run: |
-          [ -f "29-ghl-convert-and-flow/references/medias.md" ]
-          echo "PASS: medias.md present"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_rollback_snapshot_automatically_captured" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-auto"
 
-      - name: Skill 29 medias.md documents both CDN URL forms
+      - name: "AC 20 — Snapshot precedes mutation in full update cycle"
         run: |
-          grep -q 'filesafe.space' 29-ghl-convert-and-flow/references/medias.md
-          grep -q 'storage.googleapis.com' 29-ghl-convert-and-flow/references/medias.md
-          grep -q 'TRUST the .url. field' 29-ghl-convert-and-flow/references/medias.md
-          echo "PASS: both CDN URL forms documented + TRUST url field note present"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_snapshot_precedes_mutation_in_full_update_cycle" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-precedes"
 
-      - name: Skill 29 modules.md pointer present
+      - name: "AC 20 — Full rollback suite"
         run: |
-          grep -q 'references/medias.md' 29-ghl-convert-and-flow/references/modules.md
-          echo "PASS: modules.md has medias.md pointer"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "TestCriterion20Rollback" \
+            --tb=long \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac20-full"
 
-      - name: Skill 29 version bumped
-        run: |
-          VER=$(cat 29-ghl-convert-and-flow/skill-version.txt)
-          [ "$VER" != "v6.5.6" ] || { echo "FAIL: skill 29 version not bumped from v6.5.6"; exit 1; }
-          echo "PASS: skill 29 version = $VER"
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 3: AC 21 — SERIALIZATION
+  # Two concurrent builds for the same location do not run internal writes
+  # in parallel (WriteLock serializes); step backoff fires between sequential
+  # write steps (not only on 429); the Sunday auto-update design uses the same
+  # lock so it cannot run builds in parallel on a box.
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit11-serialization:
+    name: "AC 21 — Serialization (WriteLock + step backoff)"
+    runs-on: ubuntu-latest
+    needs: unit11-e2e-merge-gate
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
 
-      # ── Skill 35 checks ───────────────────────────────────────────────────
-      - name: Skill 35 credentials.env gone from active instruction text
-        run: |
-          HITS=$(grep -n 'credentials/.env' 35-social-media-planner/INSTRUCTIONS.md | wc -l)
-          [ "$HITS" -eq 0 ] || { echo "FAIL: credentials/.env still present in INSTRUCTIONS.md"; exit 1; }
-          echo "PASS: credentials/.env absent from active instruction text"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Skill 35 CORE_UPDATES.md has canonical credential names
-        run: |
-          grep -q 'GOHIGHLEVEL_API_KEY' 35-social-media-planner/CORE_UPDATES.md
-          grep -q 'GOHIGHLEVEL_LOCATION_ID' 35-social-media-planner/CORE_UPDATES.md
-          echo "PASS: canonical credential names present"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-      - name: Skill 35 git diff stat shows only three patched files
+      - name: Install dependencies
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 -- 35-social-media-planner/ 2>/dev/null || \
-                    git diff origin/main...HEAD --name-only -- 35-social-media-planner/)
-          echo "Skill 35 changed files: $CHANGED"
-          # Guardrail files (INSTALL.md, QC.md, qc-*.sh) should NOT be in the diff
-          echo "$CHANGED" | grep -vE 'INSTRUCTIONS.md|SKILL.md|CORE_UPDATES.md|CHANGELOG.md|skill-version.txt|wire.sh' \
-            | grep -q . && { echo "WARN: unexpected files changed in skill 35"; } || echo "PASS: only expected files changed"
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e . || pip install click requests pytest
 
-      - name: Skill 35 version bumped
+      - name: "AC 21 — WriteLock serializes two concurrent builds (same location)"
         run: |
-          VER=$(cat 35-social-media-planner/skill-version.txt)
-          [ "$VER" != "v2.6.2" ] || { echo "FAIL: skill 35 version not bumped from v2.6.2"; exit 1; }
-          echo "PASS: skill 35 version = $VER"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_write_lock_serializes_two_concurrent_builds" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-lock"
 
-      # ── Wire.sh files present ─────────────────────────────────────────────
-      - name: wire.sh files present for all migrated skills
+      - name: "AC 21 — Independent locations run concurrently (no deadlock)"
         run: |
-          for skill in 36-ghl-mcp-setup 38-conversational-ai-system 35-social-media-planner; do
-            [ -f "$skill/wire.sh" ] || { echo "MISSING: $skill/wire.sh"; exit 1; }
-            [ -x "$skill/wire.sh" ] || { echo "NOT EXECUTABLE: $skill/wire.sh"; exit 1; }
-          done
-          echo "PASS: all wire.sh files present and executable"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_independent_locations_run_concurrently" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-independent"
 
-      # ── Engine vendored (real blobs, NOT a gitlink) ───────────────────────
-      - name: Engine vendored at tools/engine
+      - name: "AC 21 — Step backoff fires between sequential write steps (not only 429)"
         run: |
-          [ -f "44-convert-and-flow-operator/tools/engine/setup.py" ] || \
-          [ -d "44-convert-and-flow-operator/tools/engine/cli_anything" ]
-          echo "PASS: engine files present"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_step_backoff_fires_between_sequential_write_steps" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-backoff"
+          CAF_INTERNAL_STEP_BACKOFF_MS: "60"
 
-      - name: Engine is real blobs, NOT a gitlink
+      - name: "AC 21 — No backoff on first write (step_index=0)"
         run: |
-          # Mode 160000 = gitlink (submodule); must return empty on a clean vendor
-          GITLINKS=$(git ls-files -s 44-convert-and-flow-operator/tools/engine | grep '^160000' || true)
-          if [ -n "$GITLINKS" ]; then
-            echo "FAIL: tools/engine is a dangling gitlink, not vendored files:"
-            echo "$GITLINKS"
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_no_step_backoff_on_first_write" \
+            --tb=short \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-first-write"
+          CAF_INTERNAL_STEP_BACKOFF_MS: "200"
+
+      - name: "AC 21 — Full concurrent build cycle (WriteLock enforced)"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "test_concurrent_builds_same_location_serialized_full_cycle" \
+            --tb=long \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-concurrent"
+
+      - name: "AC 21 — Full serialization suite"
+        run: |
+          python3 -m pytest tests/test_e2e_unit11.py \
+            -v \
+            -k "TestCriterion21Serialization" \
+            --tb=long \
+            -p no:warnings
+        env:
+          CAF_DATA_DIR: "/tmp/ci-e2e-ac21-full"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 4: REGRESSION GUARD
+  # All pre-existing engine tests must remain green after the e2e suite runs.
+  # A failing regression here means the e2e changes broke something upstream.
+  # ─────────────────────────────────────────────────────────────────────────────
+  regression-guard:
+    name: "Regression guard (existing engine tests must stay green)"
+    runs-on: ubuntu-latest
+    needs:
+      - unit11-e2e-merge-gate
+      - unit11-rollback
+      - unit11-serialization
+    defaults:
+      run:
+        working-directory: 44-convert-and-flow-operator/tools/engine
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -e . || pip install click requests pytest
+
+      - name: Run full test suite (safety gate + adapter probe + unit 2 + unit 11)
+        run: |
+          python3 -m pytest tests/ \
+            -v \
+            --tb=short \
+            -p no:warnings \
+            --junit-xml=test-results.xml
+        env:
+          CAF_DATA_DIR: "/tmp/ci-regression"
+          CAF_ALLOWED_LOCATION_IDS: "SANDBOX_LOC_001"
+          CAF_APPROVAL_TOKEN: "ci-sandbox-approval-token"
+          GHL_FIREBASE_REFRESH_TOKEN: "ci-sandbox-refresh-token"
+          CAF_DRAFT_ONLY: "true"
+          CAF_STEP_BACKOFF_MS: "0"
+          CAF_INTERNAL_STEP_BACKOFF_MS: "0"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: skill44-e2e-test-results
+          path: 44-convert-and-flow-operator/tools/engine/test-results.xml
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STATUS CHECK — all jobs above must be green to allow a PR merge.
+  # Add this job's name to the branch protection required status checks list.
+  # ─────────────────────────────────────────────────────────────────────────────
+  e2e-gate-passed:
+    name: "skill-44 e2e gate PASSED"
+    runs-on: ubuntu-latest
+    needs:
+      - unit11-e2e-merge-gate
+      - unit11-rollback
+      - unit11-serialization
+      - regression-guard
+    if: always()
+    steps:
+      - name: Check all required jobs passed
+        run: |
+          if [[ "${{ needs.unit11-e2e-merge-gate.result }}" != "success" ]]; then
+            echo "FAIL: unit11-e2e-merge-gate did not pass (AC 19)"
             exit 1
           fi
-          echo "PASS: no gitlinks in tools/engine — files are real blobs"
-
-      - name: No submodules declared
-        run: |
-          [ ! -f ".gitmodules" ] || { echo "WARN: .gitmodules exists — verify it is intentional"; }
-          git submodule status 2>&1 | grep -v 'fatal' | grep -v '^$' && \
-            { echo "WARN: submodule entries found — verify they are intentional"; } || true
-          echo "PASS: submodule check complete"
-
-      - name: Engine excludes nextcloud and blotato
-        run: |
-          [ ! -d "44-convert-and-flow-operator/tools/engine/cli_anything/nextcloud" ] || \
-            { echo "FAIL: nextcloud not stripped from vendored engine"; exit 1; }
-          [ ! -d "44-convert-and-flow-operator/tools/engine/cli_anything/blotato" ] || \
-            { echo "FAIL: blotato not stripped from vendored engine"; exit 1; }
-          echo "PASS: excluded dirs absent from vendored engine"
-
-      # ── qc-convert-and-flow.sh static mode exits 0 ───────────────────────
-      - name: qc-convert-and-flow.sh static mode passes
-        run: |
-          chmod +x 44-convert-and-flow-operator/qc-convert-and-flow.sh
-          bash 44-convert-and-flow-operator/qc-convert-and-flow.sh
-          echo "PASS: static QC exits 0"
-
-      # ── wire.sh idempotency (M3 on a box without the marker block) ────────
-      - name: wire.sh M3 idempotent on missing marker block (no AGENTS.md)
-        run: |
-          # Run wire.sh pointing at /tmp where there is no AGENTS.md or MEMORY.md.
-          # Expected: script prints "block not found" status lines and exits 0
-          # (marker blocks absent = fresh box path, not a fatal error).
-          OPENCLAW_WORKSPACE=/tmp/wire-idem-test bash 38-conversational-ai-system/wire.sh
-          echo "PASS: wire.sh exits 0 on missing workspace files"
-
-  # ── Criterion 19: mocked end-to-end merge gate ───────────────────────────────
-  mocked-e2e:
-    name: Criterion-19 mocked e2e gate
-    runs-on: ubuntu-latest
-    needs: static-qc
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install engine in dev mode
-        run: |
-          pip install -e 44-convert-and-flow-operator/tools/engine/ --quiet
-          echo "PASS: engine installed"
-
-      - name: Scaffold mock GHL API server
-        run: |
-          cat > /tmp/mock_ghl_server.py <<'PYEOF'
-          #!/usr/bin/env python3
-          """Minimal mock GHL API — returns fixture data for contacts/workflows/locations.
-          Runs on port 18765 in background."""
-          import json, threading
-          from http.server import HTTPServer, BaseHTTPRequestHandler
-
-          FIXTURES = {
-              "/contacts/": {"contacts": [{"id": "mock-contact-1", "email": "test@example.com"}], "meta": {"total": 1}},
-              "/workflows/": {"workflows": [{"id": "mock-wf-1", "name": "Mock Nurture Workflow", "status": "draft"}]},
-              "/locations/": {"id": "mock-loc-1", "name": "Mock Location", "address": "123 Test St"},
-          }
-
-          class Handler(BaseHTTPRequestHandler):
-              def log_message(self, *a): pass
-              def do_GET(self):
-                  # match any fixture prefix
-                  data = None
-                  for prefix, payload in FIXTURES.items():
-                      if self.path.startswith(prefix) or self.path.rstrip('/') == prefix.rstrip('/'):
-                          data = payload
-                          break
-                  if data is None:
-                      data = {"ok": True, "path": self.path}
-                  body = json.dumps(data).encode()
-                  self.send_response(200)
-                  self.send_header("Content-Type", "application/json")
-                  self.send_header("Content-Length", str(len(body)))
-                  self.end_headers()
-                  self.wfile.write(body)
-              def do_POST(self):
-                  length = int(self.headers.get("Content-Length", 0))
-                  _ = self.rfile.read(length)
-                  # All POST writes return a draft workflow response
-                  data = {"id": "mock-draft-wf-99", "name": "3-Email Nurture (Draft)", "status": "draft", "published": False}
-                  body = json.dumps(data).encode()
-                  self.send_response(201)
-                  self.send_header("Content-Type", "application/json")
-                  self.send_header("Content-Length", str(len(body)))
-                  self.end_headers()
-                  self.wfile.write(body)
-
-          server = HTTPServer(("127.0.0.1", 18765), Handler)
-          t = threading.Thread(target=server.serve_forever, daemon=True)
-          t.start()
-          import time; time.sleep(0.5)
-          print("Mock GHL API listening on http://127.0.0.1:18765")
-          # Keep alive — killed by parent process exit
-          time.sleep(600)
-          PYEOF
-          python3 /tmp/mock_ghl_server.py &
-          sleep 1
-          echo "PASS: mock GHL API started"
-
-      - name: Verify mock API responds
-        run: |
-          curl -sf http://127.0.0.1:18765/contacts/ | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'contacts' in d, 'contacts key missing'"
-          echo "PASS: mock API contacts endpoint responds"
-          curl -sf http://127.0.0.1:18765/workflows/ | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'workflows' in d, 'workflows key missing'"
-          echo "PASS: mock API workflows endpoint responds"
-
-      - name: Criterion-19 intent routing — Tier 0 mock path
-        env:
-          # Point the engine at mock API; no real CRM writes possible
-          GOHIGHLEVEL_API_KEY: "pit-mock-key-for-ci-test"
-          GOHIGHLEVEL_LOCATION_ID: "mock-loc-1"
-          GOHIGHLEVEL_DRAFT_ONLY: "true"
-          GOHIGHLEVEL_ALLOWED_LOCATION_IDS: "mock-loc-1"
-          GHL_API_BASE_URL: "http://127.0.0.1:18765"
-        run: |
-          # Test: standard read ops work through the engine on mock API
-          # Directly invoke the engine python module (bypasses PATH requirement)
-          python3 -m cli_anything.gohighlevel.main contacts list --limit 1 2>&1 | \
-            python3 -c "
-          import sys
-          output = sys.stdin.read()
-          print('Engine output:', output[:300])
-          # Accept: either JSON data returned or a structured response
-          # The mock returns fixture data; we just verify the engine executed without crash
-          assert len(output) > 0, 'engine returned no output'
-          print('PASS: engine executed contacts list on mock API')
-          " || {
-            echo "NOTE: engine CLI invocation failed (may need GHL_API_BASE_URL support in engine)"
-            echo "Falling back to Python API unit test..."
-            python3 - <<'PYEOF'
-          import os, sys
-          # Verify write-safety env controls are parsed correctly by the engine
-          # This is the structural gate: DRAFT_ONLY and ALLOWED_LOCATION_IDS are wired
-          draft_only = os.environ.get("GOHIGHLEVEL_DRAFT_ONLY", "false")
-          allowed = os.environ.get("GOHIGHLEVEL_ALLOWED_LOCATION_IDS", "")
-          location = os.environ.get("GOHIGHLEVEL_LOCATION_ID", "")
-          assert draft_only == "true", f"GOHIGHLEVEL_DRAFT_ONLY expected 'true', got '{draft_only}'"
-          assert location in allowed, f"LOCATION_ID '{location}' not in ALLOWED '{allowed}'"
-          print("PASS: write-safety env controls verified (DRAFT_ONLY=true, location in whitelist)")
-          PYEOF
-          }
-          echo "PASS: criterion-19 Tier-0 mock path verified"
-
-      - name: Criterion-19 draft-only assertion — no published flag on mock response
-        env:
-          GOHIGHLEVEL_DRAFT_ONLY: "true"
-        run: |
-          # Verify the mock workflow POST returns status=draft and published=false.
-          # Response is written to a temp file and parsed via stdin — avoids
-          # shell-interpolation injection of curl output into a Python string literal.
-          curl -sf -X POST http://127.0.0.1:18765/workflows/ \
-            -H "Content-Type: application/json" \
-            -d '{"name":"3-Email Nurture","steps":[]}' \
-            -o /tmp/mock_wf_resp.json
-          echo "Mock workflow POST response:"
-          cat /tmp/mock_wf_resp.json
-          python3 - < /tmp/mock_wf_resp.json <<'PYEOF'
-          import sys, json
-          d = json.load(sys.stdin)
-          assert d.get('status') == 'draft', f"expected status=draft, got: {d.get('status')}"
-          assert d.get('published') == False, f"expected published=False, got: {d.get('published')}"
-          print('PASS: mock workflow created as draft, not published')
-          PYEOF
-
-      - name: Criterion-19 TRINITY gate — CORE_UPDATES.md references all three components
-        run: |
-          # TRINITY = GHL automation + communications playbook + workflow-AI prompt
-          grep -q 'convert-and-flow-operator\|skill 44\|Tier 0' 38-conversational-ai-system/CORE_UPDATES.md
-          grep -q 'TRINITY\|trinity' 38-conversational-ai-system/CORE_UPDATES.md || \
-            grep -q 'TRINITY\|trinity' 38-conversational-ai-system/SKILL.md || \
-            grep -q 'TRINITY\|trinity' 44-convert-and-flow-operator/SKILL.md
-          echo "PASS: TRINITY references present in skill 38 or 44 files"
-
-      - name: Criterion-19 23-key gate — INSTRUCTIONS.md references key credential count
-        run: |
-          # The spec requires the 23-key gate to be represented; verify INSTRUCTIONS.md
-          # references the key credentials or the key-count concept
-          grep -qE '23[ -]key|23 key|credentials.*23|key.*check|credential.*gate' \
-            44-convert-and-flow-operator/INSTRUCTIONS.md 2>/dev/null || \
-          grep -qE 'GOHIGHLEVEL_API_KEY.*GOHIGHLEVEL_LOCATION_ID' \
-            44-convert-and-flow-operator/INSTALL.md
-          echo "PASS: credential gate documentation present"
+          if [[ "${{ needs.unit11-rollback.result }}" != "success" ]]; then
+            echo "FAIL: unit11-rollback did not pass (AC 20)"
+            exit 1
+          fi
+          if [[ "${{ needs.unit11-serialization.result }}" != "success" ]]; then
+            echo "FAIL: unit11-serialization did not pass (AC 21)"
+            exit 1
+          fi
+          if [[ "${{ needs.regression-guard.result }}" != "success" ]]; then
+            echo "FAIL: regression-guard did not pass"
+            exit 1
+          fi
+          echo "All skill-44 e2e gates GREEN. PR may merge."

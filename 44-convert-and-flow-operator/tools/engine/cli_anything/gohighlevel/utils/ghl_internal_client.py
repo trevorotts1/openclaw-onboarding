@@ -17,8 +17,12 @@ import urllib.request
 from typing import Any, Optional
 
 from cli_anything.gohighlevel.utils.safety_gate import check_write, SafetyRefused
+from cli_anything.gohighlevel.internal.adapter import InternalAdapter
+from cli_anything.gohighlevel.internal.adapter_types import AdapterResult, AdapterError
+from cli_anything.gohighlevel.internal.transport import InternalTransport
+from cli_anything.gohighlevel.internal.endpoints import BASE_URL as _BASE_URL
 
-BASE_URL = "https://backend.leadconnectorhq.com"
+BASE_URL = _BASE_URL
 FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
 CTX = ssl.create_default_context()
 
@@ -119,10 +123,17 @@ class InternalGHLClient:
         self.token_mgr = token_mgr
         self.location_id = location_id
         self._call_count = 0
+        # The InternalAdapter is the single isolation point for all internal API
+        # calls.  It composes transport + endpoints + contract + guards + degrade.
+        # The shim's request() method delegates to it for write calls; legacy
+        # direct urllib calls are preserved for backward compat.
+        self._adapter = InternalAdapter(location_id=location_id, transport=InternalTransport())
 
     @property
     def call_count(self) -> int:
-        return self._call_count
+        # Include adapter transport call count for unified tracking
+        adapter_count = getattr(self._adapter.transport, "call_count", 0) if hasattr(self, "_adapter") else 0
+        return self._call_count + adapter_count
 
     def request(
         self,
@@ -131,10 +142,12 @@ class InternalGHLClient:
         body: dict[str, Any] | None = None,
         workflow_name: str = "",
     ) -> Optional[dict]:
-        """Make an API request with auto-retry on 401.
+        """Make an API request.
 
-        All write methods (POST/PUT/DELETE/PATCH) are checked by the safety
-        gate before any network call is made.
+        Delegates to InternalAdapter.transport so that tests can mock
+        transport.request without touching the legacy urllib path.
+        All write methods are checked by the safety gate before any
+        network call is made.
         """
         url = f"{BASE_URL}{path}"
         try:
@@ -143,14 +156,13 @@ class InternalGHLClient:
             print(f"SAFETY GATE: {exc}", file=sys.stderr)
             sys.exit(1)
 
-        token = self.token_mgr.get_token()
-        result = self._do_request(method, path, body, token)
-
-        # Retry on auth failure
-        if result is None:
-            token = self.token_mgr.force_refresh()
-            result = self._do_request(method, path, body, token)
-
+        # Delegate to the adapter's transport (mockable; auto-refresh on 401)
+        try:
+            result = self._adapter.transport.request(method, path, body)
+        except AdapterError as exc:
+            # AdapterError (e.g. NO_TOKEN) — surface as SystemExit for CLI compat
+            print(f"Error: {exc.message}", file=sys.stderr)
+            sys.exit(1)
         return result
 
     def _do_request(
@@ -180,6 +192,22 @@ class InternalGHLClient:
             return {"_error": True, "code": e.code, "message": error_body[:200]}
         except Exception as ex:
             return {"_error": True, "message": str(ex)}
+
+    def get_workflow(self, wf_id: str) -> "AdapterResult":
+        """Get a workflow by ID via the InternalAdapter (read-only).
+
+        Returns AdapterResult. Supports .get(key) for backward compat with
+        callers that treat the result as a dict (delegates to result.data).
+        """
+        return self._adapter.get_workflow(wf_id)
+
+    def put_workflow(self, wf_id: str, body: dict) -> "AdapterResult":
+        """PUT a workflow body via the InternalAdapter (write-gated)."""
+        return self._adapter.put_workflow(wf_id, body)
+
+    def put_trigger(self, tr_id: str, body: dict) -> "AdapterResult":
+        """PUT a trigger body via the InternalAdapter (write-gated)."""
+        return self._adapter.put_trigger(tr_id, body)
 
     def create_location_tag(self, tag: str, workflow_name: str = "") -> bool:
         """Create a tag at location level (required before using in triggers)."""
