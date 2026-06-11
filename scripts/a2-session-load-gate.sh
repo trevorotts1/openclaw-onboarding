@@ -33,6 +33,7 @@ done
 # ── Platform detection & paths ────────────────────────────────────────────────
 if [[ -n "$WORKSPACE_OVERRIDE" ]]; then
   WORKSPACE="$WORKSPACE_OVERRIDE"
+  LOG_DIR="${WORKSPACE}/../skills"
 elif [[ -d "/data/.openclaw/workspace" ]]; then
   WORKSPACE="/data/.openclaw/workspace"
   SESSIONS_JSON="/data/.openclaw/agents/main/sessions/sessions.json"
@@ -51,9 +52,11 @@ LOG_FILE="$LOG_DIR/.a2-load-gate.log"
 AGENTS_MD="$WORKSPACE/AGENTS.md"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
+# log writes to stderr + log file so callers using $() subshells don't capture log lines.
 log() {
   local msg="[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [a2-session-load-gate] [$BOX] $*"
-  echo "$msg" | tee -a "$LOG_FILE"
+  echo "$msg" >&2
+  echo "$msg" >> "$LOG_FILE"
 }
 
 # ── Lockfile (idempotent, matches update-skills.sh pattern) ──────────────────
@@ -125,6 +128,8 @@ check_ordering() {
 }
 
 # ── Issue sessions.reset ──────────────────────────────────────────────────────
+# NOTE: do_reset echoes only the epoch integer to stdout; all other output goes
+# to stderr via log(). This keeps $() captures clean.
 do_reset() {
   local attempt="$1"
   log "Issuing sessions.reset (attempt $attempt) for key: $SESSION_KEY"
@@ -132,13 +137,12 @@ do_reset() {
   reset_epoch=$(date +%s)
 
   if openclaw gateway call sessions.reset \
-    --params "{\"key\":\"${SESSION_KEY}\",\"reason\":\"a2-session-load-gate\"}" ; then
+    --params "{\"key\":\"${SESSION_KEY}\",\"reason\":\"a2-session-load-gate\"}" >/dev/null 2>&1; then
     log "sessions.reset succeeded (epoch $reset_epoch)"
     echo "$reset_epoch"
     return 0
   else
     log "ERROR: sessions.reset command failed (attempt $attempt)"
-    echo ""
     return 1
   fi
 }
