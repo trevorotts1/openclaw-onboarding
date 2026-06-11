@@ -1,5 +1,24 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.5] - 2026-06-11 — fix: INSTALL.md Action-3 heredoc used stale `cli_anything.gohighlevel.main` entrypoint (no `main.py` in engine 2.1.0)
+
+### Fixed (install path)
+- **INSTALL.md Action-3 heredoc** exec line corrected from
+  `exec "$VENV/bin/python" -m cli_anything.gohighlevel.main "$@"` to
+  `exec "$VENV/bin/python" -m cli_anything.gohighlevel "$@"`.
+  Engine 2.1.0 (shipped in PR #163) removed `main.py` — the package entry point
+  is now `__main__.py` which routes to `gohighlevel_cli:main`. The stale
+  `.main` suffix caused `ModuleNotFoundError` on every `caf` invocation on any
+  box installed with the 2.1.0 engine via INSTALL.md. The three committed wrapper
+  scripts (tools/engine/caf, convertandflow, ghl) were already correct and are
+  unchanged.
+
+### Root cause
+  Engine CLI was bumped 2.0.0 → 2.1.0 in PR #163; `main.py` was removed but the
+  INSTALL.md heredoc was not updated to match. Boxes receiving the 2.1.0 engine
+  via the heredoc install path broke silently; boxes that copied the committed
+  wrapper scripts (e.g. hand-patched) were unaffected.
+
 ## [1.0.4] - 2026-06-11 — fix: retry-once on the transient Firebase token-refresh error for workflow writes
 
 ### Fixed (engine `internal/transport.py`)
