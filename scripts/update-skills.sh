@@ -1,5 +1,5 @@
 #!/bin/bash
-# BlackCEO System - Safe Update Script v8.8.1
+# BlackCEO System - Safe Update Script v11.18.0
 # Surgical Update System - Download, compare, backup, apply, notify
 #
 # Improvements over previous version:
@@ -245,6 +245,7 @@ show_step "Applying updates..."
 PROTECTED="AGENTS.md MEMORY.md SOUL.md USER.md IDENTITY.md HEARTBEAT.md TOOLS.md"
 idx=0
 APPLIED_COUNT=0
+HAS_WIRE_MIGRATIONS=0
 
 for SNAME in "${SKILL_NAMES[@]}"; do
   ACTION="${SKILL_ACTIONS[$idx]}"
@@ -257,6 +258,15 @@ for SNAME in "${SKILL_NAMES[@]}"; do
   LOCAL_PATH="$SKILLS_DIR/$SNAME"
   [ -d "$STAGED_PATH" ] || { idx=$((idx + 1)); continue; }
   mkdir -p "$LOCAL_PATH"
+
+  # ── A.2 v2: detect wire migration skills ────────────────────────────────
+  # Trigger: skill has a wire.sh (general) OR is one of the known wire skills
+  # (35/36/38).  Skill 44 is NOT included: it ships NO wire.sh and writes NO
+  # convertandflow-migration marker, so a 44-only run must NOT fire the gate.
+  SKILL_NUM="${SNAME%%-*}"
+  if echo "$SKILL_NUM" | grep -qE '^(35|36|38)$' || [ -f "$STAGED_PATH/wire.sh" ]; then
+    HAS_WIRE_MIGRATIONS=1
+  fi
 
   for ITEM in "$STAGED_PATH"/*; do
     FNAME=$(basename "$ITEM")
@@ -568,6 +578,33 @@ FLAGEOF
   fi
 fi
 
+# ── A.2 v2 Session Load Gate ──────────────────────────────────────────────────
+# Called only when a skill with a wire.sh migration (35, 36, 38, or any future
+# wire skill) was applied.  Skill 44 is NOT in this set — it ships no wire.sh.
+# The gate asserts the running agent's post-reset context actually contains the
+# new core-file content via: LEG A (new sessionId) + LEG B (canary echo).
+# update-skills.sh does NOT exit on gate failure — the gate itself alerts the
+# operator.  UNKNOWN (no live model) is not an alert condition.
+if [ "${HAS_WIRE_MIGRATIONS:-0}" = "1" ]; then
+  A2_GATE="$(dirname "$0")/scripts/a2-session-load-gate.sh"
+  [ -x "$A2_GATE" ] || A2_GATE="$(dirname "$0")/a2-session-load-gate.sh"
+  if [ -x "$A2_GATE" ]; then
+    echo "[$(log_ts)] A.2 v2: Running session load gate (wire migrations were applied)" >> "$LOG_FILE"
+    echo "  ℹ A.2: Verifying session load gate (live canary probe)..." >&3
+    A2_OUT=$(bash "$A2_GATE" --box "$(hostname)" 2>&1 || true)
+    echo "$A2_OUT" >> "$LOG_FILE"
+    A2_CONFIDENCE=$(echo "$A2_OUT" | grep 'loaded_confidence=' | tail -1 | cut -d= -f2 || echo "UNKNOWN")
+    case "$A2_CONFIDENCE" in
+      HIGH)    echo "  ✓ A.2: loaded_confidence=HIGH — session confirmed loaded (canary echoed)" >&3 ;;
+      MEDIUM)  echo "  ℹ A.2: loaded_confidence=MEDIUM — LEG A passed; LEG B inconclusive (not a full green-light)" >&3 ;;
+      UNKNOWN) echo "  ℹ A.2: loaded_confidence=UNKNOWN — no live model; deterministic re-init only" >&3 ;;
+      LOW|*)   echo "  ⚠ A.2: loaded_confidence=LOW — session did not re-initialize (operator alerted)" >&3 ;;
+    esac
+  else
+    echo "[$(log_ts)] A.2 v2: gate script not found, skipping" >> "$LOG_FILE"
+  fi
+fi
+
 # ── Completion ──
 exec 1>&3 2>&4
 echo ""
@@ -592,3 +629,4 @@ echo "" >&3
 
 echo "[$(log_ts)] Updated $LOCAL_VER -> $REMOTE_VER | New:$NEW_COUNT | Updated:$UPDATE_COUNT | State:$INTERVIEW_STATE" >> "$LOG_FILE"
 rm -rf "$STAGE_DIR" "$STAGE_ZIP"
+
