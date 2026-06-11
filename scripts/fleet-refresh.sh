@@ -40,16 +40,21 @@
 #   • --dry-run is the default.  --apply must be passed explicitly.
 #   • NEVER issues `openclaw gateway restart` (Mac err 125 → box DOWN).
 #     Only `sessions.reset` is issued (a gateway CALL, not a process restart).
+#   • CC deploy goes through scripts/atomic-deploy.sh ONLY (B.2).
+#     No raw npm build or direct pm2 restart paths exist.
+#   • Post-deploy duck CI test (tests/e2e/duck-test.ts, mock mode) is a
+#     required green gate after every CC deploy.
 #   • Per-box failure is isolated: one box failing never aborts others.
-#   • Aggregate exit: 0=all ok; 2=any partial/failed (CI-visible nonzero).
+#   • Aggregate exit: 0=all ok; 2=any partial/failed; 3=any unknown (CI-visible nonzero).
 #   • Not a standing loop (loop doctrine): operator-invoked, not a cron.
 #
 # EXIT CODES:
 #   0  all boxes ok (or dry-run completed)
 #   1  fatal (e.g., cannot find runner, bad flags)
 #   2  at least one box partial or failed
+#   3  at least one box UNKNOWN (atomic-deploy exit 3 — CC state indeterminate)
 #
-# PRD 1.11 — v11.5.0 (WAVE 3)
+# PRD 1.11 — v11.14.0 (WAVE 5)
 # =============================================================================
 set -euo pipefail
 
@@ -108,20 +113,21 @@ fi
 
 # ── Wave-5 deploy preflight (FAIL-CLOSED — NO BYPASS) ────────────────────────
 # Runs unconditionally BEFORE any box work (including dry-run).
-# Blocks the entire fan-out until B.1 + B.2 are merged to origin/main of
+# Blocks the entire fan-out until B.1 + B.2 + B.3 are merged to origin/main of
 # trevorotts1/blackceo-command-center.
 # There is NO flag and NO env-var that bypasses this check.
 wave5_deploy_preflight() {
   local repo="trevorotts1/blackceo-command-center"
   local b1="scripts/cc-health-check.sh"
   local b2="scripts/atomic-deploy.sh"
+  local b3="tests/e2e/duck-test.ts"
   local missing=()
 
-  echo "[fleet-refresh] Wave-5 preflight: checking B.1 + B.2 on origin/main of ${repo} ..."
+  echo "[fleet-refresh] Wave-5 preflight: checking B.1+B.2+B.3 on origin/main of ${repo} ..."
 
-  for path in "$b1" "$b2"; do
-    local label
-    [ "$path" = "$b1" ] && label="B.1" || label="B.2"
+  for entry in "B.1:${b1}" "B.2:${b2}" "B.3:${b3}"; do
+    local label="${entry%%:*}"
+    local path="${entry#*:}"
     local api_url="https://api.github.com/repos/${repo}/contents/${path}?ref=main"
 
     local http_code
@@ -148,7 +154,7 @@ wave5_deploy_preflight() {
   if [ ${#missing[@]} -gt 0 ]; then
     echo "" >&2
     echo "[fleet-refresh] ╔══════════════════════════════════════════════════════════════════╗" >&2
-    echo "[fleet-refresh] ║  FATAL: Wave-5 deploy BLOCKED — B.1+B.2 preflight FAILED        ║" >&2
+    echo "[fleet-refresh] ║  FATAL: Wave-5 deploy BLOCKED — B.1+B.2+B.3 preflight FAILED    ║" >&2
     echo "[fleet-refresh] ╠══════════════════════════════════════════════════════════════════╣" >&2
     for entry in "${missing[@]}"; do
       local lbl="${entry%%:*}"
@@ -158,16 +164,18 @@ wave5_deploy_preflight() {
       echo "[fleet-refresh] ║    [${lbl}] ${fp}" >&2
     done
     echo "[fleet-refresh] ╠══════════════════════════════════════════════════════════════════╣" >&2
-    echo "[fleet-refresh] ║  Wave 5 is BLOCKED until BOTH files are merged to main:          ║" >&2
-    echo "[fleet-refresh] ║    B.1  scripts/cc-health-check.sh  (PR #78 — not yet merged)    ║" >&2
-    echo "[fleet-refresh] ║    B.2  scripts/atomic-deploy.sh    (does not exist yet)         ║" >&2
+    echo "[fleet-refresh] ║  Wave 5 is BLOCKED until ALL files are merged to main:           ║" >&2
+    echo "[fleet-refresh] ║    B.1  scripts/cc-health-check.sh                               ║" >&2
+    echo "[fleet-refresh] ║    B.2  scripts/atomic-deploy.sh                                 ║" >&2
+    echo "[fleet-refresh] ║    B.3  tests/e2e/duck-test.ts                                   ║" >&2
     echo "[fleet-refresh] ║                                                                  ║" >&2
-    echo "[fleet-refresh] ║  Merge B.1 + B.2 to main in blackceo-command-center, then retry.║" >&2
+    echo "[fleet-refresh] ║  Merge B.1+B.2+B.3 to main in blackceo-command-center, then     ║" >&2
+    echo "[fleet-refresh] ║  retry.                                                          ║" >&2
     echo "[fleet-refresh] ╚══════════════════════════════════════════════════════════════════╝" >&2
     exit 1
   fi
 
-  echo "[fleet-refresh] Wave-5 preflight PASSED — B.1 + B.2 both present on origin/main."
+  echo "[fleet-refresh] Wave-5 preflight PASSED — B.1 + B.2 + B.3 all present on origin/main."
 }
 
 wave5_deploy_preflight
@@ -385,6 +393,7 @@ echo "[fleet-refresh] ═══════════════════�
 ALL_RESULTS="[]"
 ALL_OK=1
 ANY_FAILED=0
+ANY_UNKNOWN=0
 
 for box in "${FINAL_BOXES[@]}"; do
   result_file="$TMPDIR_RESULTS/${box}.json"
@@ -416,6 +425,7 @@ for box in "${FINAL_BOXES[@]}"; do
     ok)      icon="✓" ;;
     dry-run) icon="○" ;;
     partial) icon="△"; ANY_FAILED=1 ;;
+    unknown) icon="?"; ANY_UNKNOWN=1 ;;
     *)       icon="✗"; ANY_FAILED=1; ALL_OK=0 ;;
   esac
 
@@ -654,6 +664,11 @@ fi
 if [ $ANY_FAILED -eq 1 ]; then
   echo "[fleet-refresh] RESULT: PARTIAL/FAILED — check errors above"
   exit 2
+elif [ $ANY_UNKNOWN -eq 1 ]; then
+  echo "[fleet-refresh] RESULT: UNKNOWN — at least one box returned exit 3 (CC state indeterminate)"
+  echo "[fleet-refresh]   atomic-deploy.sh exit 3 means the health-check was inconclusive after all retries."
+  echo "[fleet-refresh]   No rollback was performed on those boxes. Operator must investigate."
+  exit 3
 else
   echo "[fleet-refresh] RESULT: OK — all boxes refreshed"
   exit 0
