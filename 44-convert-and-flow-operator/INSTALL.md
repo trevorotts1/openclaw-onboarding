@@ -73,7 +73,7 @@ export CAF_DRY_RUN="${GOHIGHLEVEL_DRY_RUN:-${CAF_DRY_RUN:-}}"
 export GHL_SNAPSHOT_DIR="${HOME}/.openclaw/tools/convert-and-flow-cli/data/snapshots"
 mkdir -p "$GHL_SNAPSHOT_DIR"
 
-exec "$VENV/bin/python" -m cli_anything.gohighlevel.main "$@"
+exec "$VENV/bin/python" -m cli_anything.gohighlevel "$@"
 WRAPPER
 chmod +x "$CAF_DIR/caf"
 
