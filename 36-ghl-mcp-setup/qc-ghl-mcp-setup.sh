@@ -147,7 +147,8 @@ assert "Tier 1 tools/list returns 36 tools" "[ \"$T1_TOOLS\" = '36' ]"
 
 echo ""
 echo "── Section D: Tier 2 (Community MCP) ──"
-assert "ghl-community-mcp registered" "command -v openclaw && openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'"
+assert "ghl-community-mcp NOT registered in mcp.servers (Tier 2 is on-demand curl)" "! (command -v openclaw && openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp')"
+assert "Tier 2 /tools curl returns the tool surface on-demand" "curl -sS -m 8 \"$URL/tools\" 2>/dev/null | grep -qE 'ghl_list_products|\"tools\"'"
 URL=$(command -v openclaw && openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
 if [ "${OPENCLAW_PLATFORM:-}" = "mac" ]; then
   assert "launchd service is running" "launchctl print gui/$(id -u)/com.clawd.ghl-mcp 2>/dev/null | grep -q 'state = running'"
@@ -163,7 +164,8 @@ assert "Tier 2 ghl_list_products returns real data" "echo \"$T2_CALL\" | grep -q
 
 echo ""
 echo "── Section E: Core .md files wired ──"
-assert "SOUL.md has Tier Escalation Protocol" "[ -f \"$WORKSPACE/SOUL.md\" ] && grep -q 'Tier Escalation Protocol' \"$WORKSPACE/SOUL.md\""
+assert "AGENTS.md has Tier Escalation Protocol (relocated from SOUL.md)" "[ -f \"$WORKSPACE/AGENTS.md\" ] && grep -q 'Tier Escalation Protocol' \"$WORKSPACE/AGENTS.md\""
+assert "SOUL.md does NOT carry the legacy skill-36 Tier Escalation Protocol" "[ ! -f \"$WORKSPACE/SOUL.md\" ] || ! grep -q '🔴 GHL Tier Escalation Protocol' \"$WORKSPACE/SOUL.md\""
 assert "AGENTS.md has canonical state block"  "[ -f \"$WORKSPACE/AGENTS.md\" ] && grep -qE 'CANONICAL|Canonical' \"$WORKSPACE/AGENTS.md\""
 assert "AGENTS.md references GHL_COMMUNITY_MCP_URL" "grep -q 'GHL_COMMUNITY_MCP_URL' \"$WORKSPACE/AGENTS.md\" 2>/dev/null"
 assert "TOOLS.md has GHL MCP tool reference" "[ -f \"$WORKSPACE/TOOLS.md\" ] && grep -qE 'ghl-community-mcp|ghl_list_products' \"$WORKSPACE/TOOLS.md\""
@@ -172,6 +174,19 @@ assert "MEMORY.md has GHL MCP install record" "[ -f \"$WORKSPACE/MEMORY.md\" ] &
 echo ""
 echo "── Section F: Doc archived to master files ──"
 assert "ghl-mcp-setup-full.md copied to master files folder" "find \"$MASTER_FILES_DIR\" -maxdepth 3 -name 'ghl-mcp-setup-full.md' 2>/dev/null | grep -q ."
+
+echo ""
+echo "── Section H: Tier 0 (Convert and Flow CLI, skill 44) ──"
+SKILL44_PRESENT="[ -d \"$(dirname "$MASTER_FILES_DIR")/44-convert-and-flow-operator\" ] || [ -d \"$HOME/.openclaw/tools/convert-and-flow-cli\" ]"
+if eval "$SKILL44_PRESENT" 2>/dev/null; then
+  assert "caf wrapper resolves on PATH"                       "command -v caf >/dev/null 2>&1 || command -v convertandflow >/dev/null 2>&1"
+  assert "caf doctor exits green"                             "caf doctor >/dev/null 2>&1"
+else
+  warn_only "caf wrapper resolves on PATH (skill 44 not yet installed)"   "command -v caf >/dev/null 2>&1 || command -v convertandflow >/dev/null 2>&1"
+  warn_only "caf doctor exits green (skill 44 not yet installed)"         "caf doctor >/dev/null 2>&1"
+fi
+assert "AGENTS.md tier table shows Tier 0 = SKILL 44"        "grep -qE '\\| 0 \\|.*SKILL 44' \"$WORKSPACE/AGENTS.md\""
+assert "AGENTS.md disclosure recognizes Tier 0 format"       "grep -q 'GHL tier used: 0' \"$WORKSPACE/AGENTS.md\""
 
 echo ""
 echo "── Section G: Security ──"

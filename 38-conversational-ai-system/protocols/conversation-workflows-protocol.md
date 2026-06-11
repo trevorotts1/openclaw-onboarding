@@ -25,7 +25,7 @@ it before building anything; the rest of this protocol uses these terms precisel
 | **Channel communication playbook** | The baseline tone/voice/signature for ONE channel (SMS, email, FB, IG, WhatsApp, Live Chat, etc.). Applies to EVERY reply on that channel. | `<MASTER_FILES_DIR>/` channel playbooks (scaffolded by `scripts/12-scaffold-channel-playbooks.sh`); pointer in AGENTS.md Step 4. | The AI (read at reply time) | channel |
 | **Communications playbook** (a.k.a. Layer 2 conversation-workflow playbook) | A SCENARIO-specific behavior override (pricing inquiry, booking, refund, FAQ…). Phases + edge cases + on-success/escalation. Overrides the channel playbook's body when its trigger fires, but still honors the channel's tone. | `<MASTER_FILES_DIR>/conversation-workflows/<slug>.md`, registered in `registry.md`. Standard: `references/communications-playbook-standard.md`. | The AI (read at reply time when the scenario fires) | scenario (many per client) |
 | **Workflow-AI prompt** (a.k.a. Build-with-AI prompt) | A natural-language INSTRUCTION SET the OPERATOR pastes into GHL to build the routing. It is text the human copies; it is NOT what the AI runs. | `<MASTER_FILES_DIR>/conversation-workflows/<slug>--build-with-ai-prompt.md`. Standard: `references/workflow-ai-instructions-standard.md`. | The HUMAN operator (paste-once) | scenario needing new GHL routing |
-| **GHL automation / workflow** | The actual built thing inside GHL (Convert and Flow) Automations — trigger + filters + Custom Webhook — that DELIVERS the inbound conversation to OpenClaw. Built by pasting the workflow-AI prompt into **Automations → "Build with AI"** (no API, no MCP). | Inside the client's GHL account (Automations area). Mirrored for reference in `<slug>--ghl-side.md`. | The GHL platform (runs server-side) | scenario / channel route |
+| **GHL automation / workflow** | The actual built thing inside GHL (Convert and Flow) Automations — trigger + filters + Custom Webhook — that DELIVERS the inbound conversation to OpenClaw. Built by skill 44's internal-API path when the Firebase token is present, else by pasting the workflow-AI prompt into **Automations → "Build with AI"** (no PUBLIC API/MCP). | Inside the client's GHL account (Automations area). Mirrored for reference in `<slug>--ghl-side.md`. | The GHL platform (runs server-side) | scenario / channel route |
 
 **The relationship in one line:** the operator pastes the **workflow-AI (Build-with-AI) prompt** to
 build the **GHL automation**, which routes inbound messages to OpenClaw, where the AI runs the
@@ -283,11 +283,7 @@ The agent saves the tag list (names + IDs) to the workflow's `--ghl-side.md` fil
 
 #### D.2 — Generate the Build-with-AI prompt (Part 1a)
 
-> **CRITICAL — no API, no MCP.** GHL / Convert and Flow Automations have **NO API and NO MCP** for
-> building automations. The ONLY path is the **"Build with AI" button** (top-right of the Automations
-> section): the operator clicks it, then pastes the prompt the agent generates here. (Future: Playwright /
-> browser-control auto-paste; right now it is a manual paste.) Do NOT write code that "calls the GHL
-> Automations API" — it does not exist. See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
+> **CRITICAL — no PUBLIC API/MCP; skill 44 internal path or Build with AI.** GHL Automations have no PUBLIC API or MCP. The Build with AI button is the public path. Skill 44 provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path (the operator clicks it, then pastes the prompt the agent generates here). Do NOT claim a PUBLIC GHL Automations API exists. See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
 
 The agent writes a precise prompt the operator pastes into the GHL **Build with AI** button. The prompt's
 PRIMARY JOB is to get the **SHAPE** right — trigger, if/else branches, filters, tags, and the Custom
@@ -375,8 +371,8 @@ The agent then tells the operator:
 >
 > 1. Open your Convert and Flow account
 > 2. Click **Automations** on the left menu
-> 3. Click the **Build with AI** button (top-right of Automations) — this
->    is the ONLY way to build a GHL automation; there is no API for it
+> 3. Click the **Build with AI** button — the public path; or let skill 44 build
+>    via its internal-API path when the Firebase token is present
 > 4. Paste the prompt I saved at:
 >    `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--workflow-ai-prompt.md`
 > 5. Let Build with AI build the structure

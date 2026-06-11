@@ -17,6 +17,8 @@ Every reply that surfaces GHL / GoHighLevel / Convert and Flow / LeadConnector d
 ```
 
 Examples:
+- `[GHL tier used: 0 — convertandflow contacts list]`
+- `[GHL tier used: 0 (workflow write, Firebase token healthy) — convertandflow workflows build]`
 - `[GHL tier used: 1 — locations_get-location]`
 - `[GHL tier used: 2 — ghl_list_products]`
 - `[GHL tier used: 2 (Tier 1 lacked tool: products) — ghl_list_products]`
@@ -85,9 +87,16 @@ curl -sS -X GET "https://services.leadconnectorhq.com/<endpoint>?locationId=$GOH
 
 Some modules use `Version: 2021-04-15`. Always check the reference file for the correct version header.
 
-### Tier 4 — Playwright browser
+### Tier 4 — Browser (agent-browser FIRST, Playwright fallback) — skill 03
 
-Use when the operation can only be done in the UI (no API endpoint exists). Login at the client's white-label URL or `https://app.gohighlevel.com`. Use `launchPersistentContext`, never `launch()`.
+Use when the operation can only be done in the UI (no API endpoint exists) OR as
+the no-token workflow-write backstop. Prefer skill 03's agent-browser with
+ref-based accessibility snapshots (text) over screenshots; fall back to Playwright
+`launchPersistentContext` only if agent-browser is unavailable. On Mac installs a
+dead-Firebase-token event triggers the auto-re-grab recipe (Section 3B): read
+`stsTokenManager.refreshToken` from the client's LOCAL logged-in browser profile
+and refresh the secrets file. Write discipline parity: draft-only, location
+whitelist, and the approval gate bind Tier 4 writes exactly as they bind Tier 0.
 
 ### Tier 5 — Codex Computer Use
 
@@ -163,6 +172,10 @@ If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLi
 - ❌ "Tier 2 crashed earlier in this session → skip it." → Wrong. Restart and retry.
 - ❌ "Tier 3 is faster / cleaner / I prefer raw API." → Personal preference is not a routing override.
 - ❌ Skipping the disclosure header on a GHL response. → Required on every GHL-data response.
+- ❌ "CLI covers it but I'll use an MCP." Wrong. Tier 0 first for every covered op.
+- ❌ Jumping to Tier 4 (browser) for a workflow-write when the Firebase token is
+  present and healthy. Tier 4 is the backstop ONLY when the token is genuinely
+  unavailable.
 
 ## Common Cross-Tier Workflows
 
@@ -201,7 +214,7 @@ Tier 2: list_transactions filtered by contactId → payment history
 
 Disclosure: `[GHL tier used: 1+2 — contacts_search-contacts; list_transactions]`
 
-### Social media post via MCP (Tier 1, replaces skill 35's raw API call)
+### Social media post — AD-HOC interactive request only (Tier 1)
 
 ```
 Tier 1: social-media-posting_create-post
@@ -209,7 +222,9 @@ Tier 1: social-media-posting_create-post
 Body includes content, media URLs, platform targets, schedule
 ```
 
-This replaces the raw `POST /social-media-posting/oauth/.../accounts` call that skill 35 used pre-v36.
+This Tier-1 path is for an AD-HOC, in-chat request ("post this to my socials").
+Skill 35's scheduled 15+6 publishing pipeline is SEPARATE and self-contained — it
+posts via its own verified direct-API path and is NOT routed through this MCP.
 
 ## Health Check Cheatsheet
 

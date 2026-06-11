@@ -1,0 +1,182 @@
+name: skill-44 e2e static QC
+
+on:
+  pull_request:
+    paths:
+      - '44-convert-and-flow-operator/**'
+      - '36-ghl-mcp-setup/**'
+      - '38-conversational-ai-system/**'
+      - '41-build-with-ai-playbook/**'
+      - '29-ghl-convert-and-flow/**'
+      - '35-social-media-planner/**'
+  push:
+    branches:
+      - 'skill-44/**'
+
+jobs:
+  static-qc:
+    name: Static QC (no live GHL calls)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ── Skill 44 file set checks ─────────────────────────────────────────
+      - name: Skill 44 required files present
+        run: |
+          for f in SKILL.md INSTALL.md INSTRUCTIONS.md CORE_UPDATES.md QC.md CHANGELOG.md skill-version.txt qc-convert-and-flow.sh; do
+            [ -f "44-convert-and-flow-operator/$f" ] || { echo "MISSING: 44-convert-and-flow-operator/$f"; exit 1; }
+          done
+          echo "PASS: all required skill 44 files present"
+
+      - name: Skill 44 frontmatter name correct
+        run: |
+          grep -q 'name: convert-and-flow-operator' 44-convert-and-flow-operator/SKILL.md
+          echo "PASS: frontmatter name correct"
+
+      - name: Platform overlay frontmatter parity
+        run: |
+          grep -q 'name: convert-and-flow-operator' 44-convert-and-flow-operator/platform/mac/SKILL.md
+          grep -q 'name: convert-and-flow-operator' 44-convert-and-flow-operator/platform/vps/SKILL.md
+          echo "PASS: platform overlay names match"
+
+      - name: CORE_UPDATES.md sentinel present
+        run: |
+          grep -q 'skill:44-convert-and-flow-operator:core-update-applied' 44-convert-and-flow-operator/CORE_UPDATES.md
+          echo "PASS: sentinel present"
+
+      # ── Skill 36 checks ───────────────────────────────────────────────────
+      - name: Skill 36 SOUL.md section flipped to NO UPDATE NEEDED
+        run: |
+          grep -q 'SOUL.md — NO UPDATE NEEDED' 36-ghl-mcp-setup/CORE_UPDATES.md
+          echo "PASS: SOUL.md marked NO UPDATE NEEDED"
+
+      - name: Skill 36 AGENTS.md section has Tier 0
+        run: |
+          grep -q 'SKILL 44' 36-ghl-mcp-setup/CORE_UPDATES.md
+          echo "PASS: Tier 0 SKILL 44 present in CORE_UPDATES"
+
+      - name: Skill 36 ghl-community-mcp on-demand (not registered)
+        run: |
+          grep -q 'ON-DEMAND' 36-ghl-mcp-setup/INSTALL.md
+          echo "PASS: Tier 2 on-demand mode present"
+
+      - name: Skill 36 version bumped
+        run: |
+          VER=$(cat 36-ghl-mcp-setup/skill-version.txt)
+          [ "$VER" != "v1.0.0" ] || { echo "FAIL: skill 36 version not bumped from v1.0.0"; exit 1; }
+          echo "PASS: skill 36 version = $VER"
+
+      # ── Skill 38 checks ───────────────────────────────────────────────────
+      - name: Skill 38 Rule 16 canonical sentence present
+        run: |
+          grep -q 'Convert-and-Flow Build-Path Rule' 38-conversational-ai-system/CORE_UPDATES.md
+          grep -q 'Convert-and-Flow Build-Path Rule' 38-conversational-ai-system/scripts/06-append-memory-rules.sh
+          echo "PASS: Rule 16 canonical sentence present in both files"
+
+      - name: Skill 38 old No-GHL-API Rule absent from active rule text (excludes CHANGELOG)
+        run: |
+          # Exclude CHANGELOG historical entries per criterion 8
+          HITS=$(grep -rn 'NO API and NO MCP\|NEVER write or claim code that "calls the GHL Automations API"' \
+            38-conversational-ai-system/ \
+            --include="*.sh" --include="*.md" \
+            | grep -v 'CHANGELOG' | grep -v 'bak' | wc -l)
+          [ "$HITS" -eq 0 ] || { echo "FAIL: old No-GHL-API wording still present in $HITS location(s)"; grep -rn 'NO API and NO MCP' 38-conversational-ai-system/ --include="*.sh" --include="*.md" | grep -v CHANGELOG; exit 1; }
+          echo "PASS: old No-GHL-API wording absent from active rule text"
+
+      - name: Skill 38 self-test alias-aware credential read
+        run: |
+          grep -q 'GOHIGHLEVEL_API_KEY' 38-conversational-ai-system/scripts/24-self-test-hook.sh
+          echo "PASS: self-test is alias-aware"
+
+      - name: Skill 38 version bumped
+        run: |
+          VER=$(cat 38-conversational-ai-system/skill-version.txt)
+          [ "$VER" != "1.5.14" ] || { echo "FAIL: skill 38 version not bumped from 1.5.14"; exit 1; }
+          echo "PASS: skill 38 version = $VER"
+
+      # ── Skill 41 checks ───────────────────────────────────────────────────
+      - name: Skill 41 Step 5 has skill-44-era paragraph
+        run: |
+          grep -q 'Skill 44 era' 41-build-with-ai-playbook/INSTRUCTIONS.md
+          echo "PASS: skill 44 era paragraph present in Step 5"
+
+      - name: Skill 41 version bumped
+        run: |
+          VER=$(cat 41-build-with-ai-playbook/skill-version.txt)
+          [ "$VER" != "1.3.0" ] || { echo "FAIL: skill 41 version not bumped from 1.3.0"; exit 1; }
+          echo "PASS: skill 41 version = $VER"
+
+      # ── Skill 29 checks ───────────────────────────────────────────────────
+      - name: Skill 29 medias.md exists
+        run: |
+          [ -f "29-ghl-convert-and-flow/references/medias.md" ]
+          echo "PASS: medias.md present"
+
+      - name: Skill 29 medias.md documents both CDN URL forms
+        run: |
+          grep -q 'filesafe.space' 29-ghl-convert-and-flow/references/medias.md
+          grep -q 'storage.googleapis.com' 29-ghl-convert-and-flow/references/medias.md
+          grep -q 'TRUST the .url. field' 29-ghl-convert-and-flow/references/medias.md
+          echo "PASS: both CDN URL forms documented + TRUST url field note present"
+
+      - name: Skill 29 modules.md pointer present
+        run: |
+          grep -q 'references/medias.md' 29-ghl-convert-and-flow/references/modules.md
+          echo "PASS: modules.md has medias.md pointer"
+
+      - name: Skill 29 version bumped
+        run: |
+          VER=$(cat 29-ghl-convert-and-flow/skill-version.txt)
+          [ "$VER" != "v6.5.6" ] || { echo "FAIL: skill 29 version not bumped from v6.5.6"; exit 1; }
+          echo "PASS: skill 29 version = $VER"
+
+      # ── Skill 35 checks ───────────────────────────────────────────────────
+      - name: Skill 35 credentials.env gone from active instruction text
+        run: |
+          HITS=$(grep -n 'credentials/.env' 35-social-media-planner/INSTRUCTIONS.md | wc -l)
+          [ "$HITS" -eq 0 ] || { echo "FAIL: credentials/.env still present in INSTRUCTIONS.md"; exit 1; }
+          echo "PASS: credentials/.env absent from active instruction text"
+
+      - name: Skill 35 CORE_UPDATES.md has canonical credential names
+        run: |
+          grep -q 'GOHIGHLEVEL_API_KEY' 35-social-media-planner/CORE_UPDATES.md
+          grep -q 'GOHIGHLEVEL_LOCATION_ID' 35-social-media-planner/CORE_UPDATES.md
+          echo "PASS: canonical credential names present"
+
+      - name: Skill 35 git diff stat shows only three patched files
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 -- 35-social-media-planner/ 2>/dev/null || \
+                    git diff origin/main...HEAD --name-only -- 35-social-media-planner/)
+          echo "Skill 35 changed files: $CHANGED"
+          # Guardrail files (INSTALL.md, QC.md, qc-*.sh) should NOT be in the diff
+          echo "$CHANGED" | grep -vE 'INSTRUCTIONS.md|SKILL.md|CORE_UPDATES.md|CHANGELOG.md|skill-version.txt|wire.sh' \
+            | grep -q . && { echo "WARN: unexpected files changed in skill 35"; } || echo "PASS: only expected files changed"
+
+      - name: Skill 35 version bumped
+        run: |
+          VER=$(cat 35-social-media-planner/skill-version.txt)
+          [ "$VER" != "v2.6.2" ] || { echo "FAIL: skill 35 version not bumped from v2.6.2"; exit 1; }
+          echo "PASS: skill 35 version = $VER"
+
+      # ── Wire.sh files present ─────────────────────────────────────────────
+      - name: wire.sh files present for all migrated skills
+        run: |
+          for skill in 36-ghl-mcp-setup 38-conversational-ai-system 35-social-media-planner; do
+            [ -f "$skill/wire.sh" ] || { echo "MISSING: $skill/wire.sh"; exit 1; }
+            [ -x "$skill/wire.sh" ] || { echo "NOT EXECUTABLE: $skill/wire.sh"; exit 1; }
+          done
+          echo "PASS: all wire.sh files present and executable"
+
+      # ── Engine vendored ───────────────────────────────────────────────────
+      - name: Engine vendored at tools/engine
+        run: |
+          [ -f "44-convert-and-flow-operator/tools/engine/setup.py" ] || \
+          [ -d "44-convert-and-flow-operator/tools/engine/cli_anything" ]
+          echo "PASS: engine vendored"

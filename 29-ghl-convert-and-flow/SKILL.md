@@ -1,6 +1,6 @@
 ---
 name: ghl-convert-and-flow
-description: Domain-specific reference files for the GoHighLevel (Convert and Flow) API v2 — Tier 3 direct REST API access covering contacts, conversations, pipelines, calendars, payments, and more. Use after trying Tier 1 (official MCP) and Tier 2 (community MCP) per skill 36's 5-tier escalation rules.
+description: Domain-specific reference files for the GoHighLevel (Convert and Flow) API v2 — Tier 3 direct REST API access covering contacts, conversations, pipelines, calendars, payments, and more. Use after Tier 0 (Convert and Flow CLI, skill 44) and the Tier 1/2 MCPs per skill 36's 6-tier escalation rules.
 ---
 
 # GHL API Skill - GoHighLevel / Convert and Flow API v2
@@ -9,7 +9,7 @@ description: Domain-specific reference files for the GoHighLevel (Convert and Fl
 > NEVER paste the master reference into context or core files.
 > ALWAYS read the appropriate `references/*.md` file at query time.
 
-> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct REST API. The agent must try **Tier 1 (Official MCP, `ghl-mcp`, 36 tools)** first, then **Tier 2 (Community MCP, `ghl-community-mcp`, 588 tools)** before falling here. Use this skill's `references/[module].md` files only when neither MCP covers the call. See skill 36 (`36-ghl-mcp-setup`) for the MCP layer and the full 5-tier escalation rules.
+> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct REST API. The agent must try **Tier 0 (Convert and Flow CLI, skill 44)** FIRST for every operation the CLI covers, then **Tier 1 (Official MCP, `ghl-mcp`, 36 tools)** for blogs/CLI gaps, then **Tier 2 (Community MCP, `ghl-community-mcp`, 588 tools, on-demand via curl)** before falling here. Use this skill's `references/[module].md` files only when no higher tier covers the call (and for media uploads — see `references/medias.md`). See skill 36 (`36-ghl-mcp-setup`) for the full 6-tier escalation rules.
 
 ---
 

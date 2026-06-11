@@ -186,6 +186,8 @@ Marketplace app management.
 ### medias (7 endpoints)
 Media library management. Upload and retrieve media files.
 
+**Key endpoint:** `POST /medias/upload-file` (multipart). **Deep reference:** `references/medias.md` (carved from the proven skill 28/35/37 implementations — endpoint, multipart fields, `parentId` folder caveat, CDN URL formats, retry pattern). This is the Tier-3 media path the router uses; the CLI has NO media commands so media NEVER routes to Tier 0.
+
 **Scopes:** `medias.readonly`, `medias.write`
 
 ---

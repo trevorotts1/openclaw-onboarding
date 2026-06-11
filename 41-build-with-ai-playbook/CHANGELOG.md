@@ -1,3 +1,14 @@
+## [1.4.0] - 2026-06-10 — Skill 44 era: paste-step becomes fallback, dependency-first hard contract, 12-point checklist path-agnostic
+
+### Why
+Skill 44 ships an internal-API build path. Without these edits, skill 41's INSTRUCTIONS.md implied the paste step was always required and did not communicate the dependency-first contract to skill 44.
+
+### Changes
+- INSTRUCTIONS.md Step 5 gains a skill-44-era lead paragraph: when skill 44 is installed AND Firebase token is healthy, skill 44 builds directly; manual paste is the FALLBACK.
+- INSTRUCTIONS.md Step 2 dependency-first contract documented as a HARD INPUT CONTRACT on skill 44: skill 44 will REFUSE to build if dependencies do not exist; GET-back verification + ZHC- standing approval bind skill 44's writes identically.
+- INSTRUCTIONS.md Step 6 12-point checklist annotated as path-agnostic: skill 44 runs the same checklist after an internal-API build.
+- Non-fabrication floor + GET-back + ZHC standing approval each gain a one-line cross-reference noting the rule extends to skill 44.
+
 ## [1.3.0] - 2026-06-03 - Executor stack + live L1-L5 browser-execution harness + version-marker reconciliation
 
 ### Added

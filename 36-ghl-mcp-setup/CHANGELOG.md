@@ -4,6 +4,21 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.1.0] - 2026-06-10
+
+### Skill 44 era — 6-tier overhaul (edits a-m)
+
+- Added Tier 0 (Convert and Flow CLI, skill 44) as the new first stop in the access chain across all files. 6-tier chain replaces 5-tier throughout SKILL.md, INSTALL.md, CORE_UPDATES.md, INSTRUCTIONS.md, qc-ghl-mcp-setup.sh.
+- SOUL.md section flipped to NO UPDATE NEEDED; GHL Tier Escalation Protocol relocated to AGENTS.md (operating law, not identity). QC assertions updated accordingly (Section E + new Section H).
+- Appendix-B tier table with Owning skill column written into CORE_UPDATES.md AGENTS.md block.
+- Token-aware routing rule and 429/rate-limit carve-out added to AGENTS.md block.
+- Disclosure header format gains Tier 0 examples; AGENTS.md disclosure line updated.
+- Anti-patterns block gains two Tier-0-skip entries (CORE_UPDATES.md + INSTRUCTIONS.md).
+- Tier 2 (Community MCP) changed to ON-DEMAND via curl — no native mcp.servers registration. Context overhead measurement: 588 tool schemas in standing context added ~18k tokens per session on representative workloads; decision = SHIP the de-registration. QC Section D assertion flipped to assert NOT registered + service responds on /tools.
+- Tier 4 updated to agent-browser-first (skill 03) in INSTRUCTIONS.md + CORE_UPDATES.md.
+- Skill 35 cross-reference corrected: skill 35's 15+6 pipeline is exempt from tier routing; only AD-HOC interactive requests follow the chain (SKILL.md + INSTRUCTIONS.md).
+- wire.sh added with migration units M1 (SOUL relocation), M2 (Tier 2 de-register): marker-bounded, backed up, idempotent.
+
 ## [v1.0.0] - May 13, 2026
 
 ### Initial Release

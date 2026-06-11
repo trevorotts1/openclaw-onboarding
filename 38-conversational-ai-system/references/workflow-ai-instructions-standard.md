@@ -6,8 +6,7 @@
 
 # Workflow-AI Instructions Standard (Skill 38)
 
-A **workflow-AI prompt** is the instruction set the agent generates and the operator pastes into
-GHL / Convert and Flow's **"Build with AI" button** to construct a NEW automation/workflow. This file
+A **workflow-AI prompt** is the instruction set the agent generates — either used by skill 44's internal-API path (when the Firebase token is present) or pasted by the operator into GHL / Convert and Flow's **"Build with AI" button** — to construct a NEW automation/workflow. GHL Automations have no PUBLIC API or MCP. The Build with AI button is the public path. Skill 44 provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path. This file
 is the single standard for what every workflow-AI instruction set must contain, WHERE it goes, the
 exact field-by-field steps for the Custom Webhook action (which Build-with-AI repeatedly fails to
 populate), and how to teach MULTI-ACTION workflows.
@@ -65,9 +64,7 @@ creating a NEW automation/workflow:
 4. Let Build with AI construct the structure.
 5. Run the **Build-with-AI Verification Checklist** (Section 4) before publishing.
 
-> CRITICAL — no API, no MCP. GHL Automations have NO API and NO MCP for building automations. The ONLY
-> path is the Build-with-AI button (manual paste). Do NOT write code that "calls the GHL Automations
-> API" — it does not exist. See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
+> CRITICAL — no PUBLIC API/MCP. GHL Automations have no PUBLIC API or MCP. The Build with AI button is the public path. Skill 44 provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path. See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
 
 ## 2. MUST-APPEAR checklist — every workflow-AI instruction set
 
