@@ -181,16 +181,73 @@ def _openclaw_env_vars(openclaw_json: Optional[dict]) -> dict:
     return vars_ if isinstance(vars_, dict) else {}
 
 
+def _load_gateway_env_file() -> dict:
+    """
+    Load the Mac OpenClaw launchd gateway env snapshot file.
+
+    On Mac clients the gateway is managed by launchd and its env vars are
+    loaded from a static snapshot file that is NOT inherited by subprocess
+    environments (per the openclaw-mac-gateway-env-and-slack memory pattern):
+
+        ~/.openclaw/service-env/ai.openclaw.gateway.env
+
+    Returns an empty dict if the file is absent or unparseable.
+    This is checked as a third source in _get_api_key (after os.environ and
+    openclaw_json["env"]["vars"]) so Mac clients find their embedding keys
+    without any co-mingling.
+    """
+    candidates = [
+        Path.home() / ".openclaw" / "service-env" / "ai.openclaw.gateway.env",
+        Path("/data/.openclaw/service-env/ai.openclaw.gateway.env"),
+    ]
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        result: dict = {}
+        try:
+            for line in candidate.read_text(errors="replace").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:]
+                if "=" in line:
+                    k, _, v = line.partition("=")
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k:
+                        result[k] = v
+        except Exception:
+            continue
+        return result
+    return {}
+
+
+# Module-level lazy cache for gateway env file (loaded once per process)
+_GATEWAY_ENV_CACHE: Optional[dict] = None
+
+
+def _get_gateway_env_file() -> dict:
+    """Return cached gateway env file contents (loaded once per process)."""
+    global _GATEWAY_ENV_CACHE
+    if _GATEWAY_ENV_CACHE is None:
+        _GATEWAY_ENV_CACHE = _load_gateway_env_file()
+    return _GATEWAY_ENV_CACHE
+
+
 def _get_api_key(env_key: str, openclaw_json: Optional[dict] = None) -> Optional[str]:
-    """Resolve an API key, OS env first then the box's own openclaw.json env.vars.
+    """Resolve an API key from multiple sources.  Returns None if absent/empty.
 
-    Bug-fix (v11.18.1): the old implementation read ONLY os.environ, which
-    false-FAILed leg-a on gateway boxes whose embedding key lives in
-    openclaw.json env.vars rather than the Python process env. We now check
-    os.environ first, then fall back to openclaw_json["env"]["vars"][env_key].
-    A key is declared missing only when absent from BOTH sources.
+    Search order (first non-empty value wins):
+      1. os.environ — VPS Docker / CI / shell-injected envs.
+      2. openclaw_json["env"]["vars"] — keys wired via `openclaw config set env.vars.X`
+         (present in the parsed openclaw.json; not always in OS env on gateway boxes).
+      3. Mac gateway env file (~/.openclaw/service-env/ai.openclaw.gateway.env) —
+         the launchd static snapshot; never inherited by subprocess envs on Mac
+         (per openclaw-mac-gateway-env-and-slack pattern).
 
-    NO CO-MINGLING: env_vars come exclusively from the box's own openclaw_json.
+    NO CO-MINGLING: sources 2 and 3 are box-local only; they are never read
+    from another box's files.
     """
     val = os.environ.get(env_key, "").strip()
     if val:
@@ -198,6 +255,11 @@ def _get_api_key(env_key: str, openclaw_json: Optional[dict] = None) -> Optional
     env_vars = _openclaw_env_vars(openclaw_json)
     raw = env_vars.get(env_key, "")
     val = str(raw).strip() if raw is not None else ""
+    if val:
+        return val
+    # Mac launchd gateway env file (third source)
+    gw_env = _get_gateway_env_file()
+    val = gw_env.get(env_key, "").strip()
     return val if val else None
 
 

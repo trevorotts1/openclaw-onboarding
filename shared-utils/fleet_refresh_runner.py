@@ -51,11 +51,16 @@ def _ok(msg: str) -> None:   print(f"{GREEN}[fleet-refresh] {msg}{NC}", file=sys
 # ── Wave 5 deploy preflight (FAIL-CLOSED — NO BYPASS) ────────────────────────
 
 _WAVE5_CC_REPO = "trevorotts1/blackceo-command-center"
-# Each entry: (label, path)
+# Each entry: (label, path) — B.3 uses a candidate list (see wave5_deploy_preflight).
 _WAVE5_REQUIRED_FILES = [
     ("B.1", "scripts/cc-health-check.sh"),
     ("B.2", "scripts/atomic-deploy.sh"),
-    ("B.3", "tests/e2e/duck-test.ts"),
+]
+# B.3 duck-test: probe duck-test.ts first (TypeScript source), fall back to
+# duck-test (extensionless/shell).  First 200 wins.  Both absent = BLOCKED.
+_WAVE5_B3_CANDIDATES = [
+    "tests/e2e/duck-test.ts",
+    "tests/e2e/duck-test",
 ]
 
 def wave5_deploy_preflight() -> None:
@@ -66,16 +71,21 @@ def wave5_deploy_preflight() -> None:
     Checks that ALL THREE of the following paths exist on origin/main of
     trevorotts1/blackceo-command-center:
 
-        scripts/cc-health-check.sh   (B.1 — must be merged to main)
-        scripts/atomic-deploy.sh     (B.2 — must be merged to main)
-        tests/e2e/duck-test.ts       (B.3 — duck CI test, required for mock-mode
-                                      post-deploy green gate)
+        scripts/cc-health-check.sh      (B.1 — must be merged to main)
+        scripts/atomic-deploy.sh        (B.2 — must be merged to main)
+        tests/e2e/duck-test.ts          (B.3 — TypeScript duck CI test; falls
+                                          back to tests/e2e/duck-test if the
+                                          .ts form is absent.  Either extension
+                                          satisfies the gate.)
+
+    B.3 is a duck-test on the path itself: we do not require a specific
+    extension, only that some form of the duck-test file exists on main.
 
     Uses the GitHub Contents API (unauthenticated or via GITHUB_TOKEN) to
     check each path authoritatively against the main branch HEAD.
     A 200 response means the path is present; 404 means absent.
 
-    If ANY path is missing this function prints a FATAL message and
+    If ANY required item is missing this function prints a FATAL message and
     exits non-zero immediately.  There is NO env-var, NO flag, and NO code
     path that bypasses this check.  It runs unconditionally and is
     PRESERVED UNWEAKENED at the top of both step_build_cc and step_restart_cc.
@@ -86,39 +96,49 @@ def wave5_deploy_preflight() -> None:
     _info("Wave-5 deploy preflight: checking B.1 + B.2 + B.3 on origin/main of blackceo-command-center ...")
 
     missing: list[tuple[str, str]] = []
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
 
-    for label, path in _WAVE5_REQUIRED_FILES:
+    def _probe(label: str, path: str) -> bool:
+        """Return True if path returns 200 on origin/main; False otherwise."""
         url = (
             f"https://api.github.com/repos/{_WAVE5_CC_REPO}/contents/{path}"
             f"?ref=main"
         )
         req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
-
-        # Honour GITHUB_TOKEN if present (avoids rate-limit on CI)
-        token = os.environ.get("GITHUB_TOKEN", "").strip()
         if token:
             req.add_header("Authorization", f"Bearer {token}")
-
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 if resp.status == 200:
                     _ok(f"  {label} PRESENT on main: {path}")
-                else:
-                    # Unexpected non-200/non-404 — treat as missing (fail-closed)
-                    missing.append((label, path))
-                    _err(f"  {label} UNEXPECTED status {resp.status} for: {path} — treating as MISSING")
+                    return True
+                # Non-200/non-404 — treat as missing (fail-closed)
+                _err(f"  {label} UNEXPECTED status {resp.status} for: {path} — treating as MISSING")
+                return False
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                missing.append((label, path))
-                _err(f"  {label} MISSING on main (404): {path}")
-            else:
-                # Non-404 HTTP error — fail-closed
-                missing.append((label, path))
-                _err(f"  {label} HTTP error {e.code} for: {path} — treating as MISSING (fail-closed)")
+                return False
+            _err(f"  {label} HTTP error {e.code} for: {path} — treating as MISSING (fail-closed)")
+            return False
         except Exception as exc:
-            # Network error, timeout, etc. — fail-closed
-            missing.append((label, path))
             _err(f"  {label} check failed ({exc.__class__.__name__}: {exc}) — treating as MISSING (fail-closed)")
+            return False
+
+    # B.1 and B.2: single-path checks
+    for label, path in _WAVE5_REQUIRED_FILES:
+        if not _probe(label, path):
+            missing.append((label, path))
+            _err(f"  {label} MISSING on main (404): {path}")
+
+    # B.3: duck-test path probe — accept duck-test.ts OR duck-test
+    b3_found = False
+    for candidate in _WAVE5_B3_CANDIDATES:
+        if _probe("B.3", candidate):
+            b3_found = True
+            break
+    if not b3_found:
+        missing.append(("B.3", "tests/e2e/duck-test{.ts,}"))
+        _err("  B.3 MISSING on main (checked duck-test.ts AND duck-test)")
 
     if missing:
         _err("")
@@ -132,7 +152,7 @@ def wave5_deploy_preflight() -> None:
         _err("║  Wave 5 is BLOCKED until ALL three paths are merged to main:     ║")
         _err("║    B.1  scripts/cc-health-check.sh                               ║")
         _err("║    B.2  scripts/atomic-deploy.sh                                 ║")
-        _err("║    B.3  tests/e2e/duck-test.ts                                   ║")
+        _err("║    B.3  tests/e2e/duck-test.ts  (or duck-test)                   ║")
         _err("║                                                                  ║")
         _err("║  Merge B.1 + B.2 + B.3 to main in blackceo-command-center,      ║")
         _err("║  then retry.                                                     ║")

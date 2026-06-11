@@ -118,12 +118,15 @@ wave5_deploy_preflight() {
   local repo="trevorotts1/blackceo-command-center"
   local b1="scripts/cc-health-check.sh"
   local b2="scripts/atomic-deploy.sh"
-  local b3="tests/e2e/duck-test.ts"
+  # B.3 duck-test: probe duck-test.ts first (TypeScript source), fall back to
+  # duck-test (extensionless/shell).  First 200 wins; both absent = BLOCKED.
+  local b3_candidates=("tests/e2e/duck-test.ts" "tests/e2e/duck-test")
   local missing=()
 
   echo "[fleet-refresh] Wave-5 preflight: checking B.1 + B.2 + B.3 on origin/main of ${repo} ..."
 
-  for entry in "B.1:${b1}" "B.2:${b2}" "B.3:${b3}"; do
+  # ── B.1 and B.2: single-path checks ─────────────────────────────────────────
+  for entry in "B.1:${b1}" "B.2:${b2}"; do
     local label="${entry%%:*}"
     local path="${entry#*:}"
     local api_url="https://api.github.com/repos/${repo}/contents/${path}?ref=main"
@@ -149,6 +152,36 @@ wave5_deploy_preflight() {
     fi
   done
 
+  # ── B.3: duck-test path duck-test (duck-test.ts OR duck-test) ───────────────
+  # Probes duck-test.ts first; if absent tries extensionless duck-test.
+  # Either 200 satisfies the gate.  This makes the preflight resilient to CC
+  # repos that ship either the TypeScript source or a compiled/extensionless copy.
+  local b3_found=0
+  for b3_candidate in "${b3_candidates[@]}"; do
+    local b3_url="https://api.github.com/repos/${repo}/contents/${b3_candidate}?ref=main"
+    local b3_curl_opts=(-s -o /dev/null -w "%{http_code}" --max-time 20)
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      b3_curl_opts+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+    fi
+    b3_curl_opts+=(-H "Accept: application/vnd.github+json" "$b3_url")
+
+    local b3_http="000"
+    if command -v curl >/dev/null 2>&1; then
+      b3_http=$(curl "${b3_curl_opts[@]}" 2>/dev/null || echo "000")
+    fi
+
+    if [ "$b3_http" = "200" ]; then
+      b3_found=1
+      echo "[fleet-refresh]   B.3 PRESENT on main: ${b3_candidate}"
+      break
+    fi
+  done
+
+  if [ $b3_found -eq 0 ]; then
+    missing+=("B.3:tests/e2e/duck-test{.ts,}:404")
+    echo "[fleet-refresh]   B.3 MISSING on main (checked duck-test.ts AND duck-test)" >&2
+  fi
+
   if [ ${#missing[@]} -gt 0 ]; then
     echo "" >&2
     echo "[fleet-refresh] ╔══════════════════════════════════════════════════════════════════╗" >&2
@@ -165,7 +198,7 @@ wave5_deploy_preflight() {
     echo "[fleet-refresh] ║  Wave 5 is BLOCKED until ALL three paths are merged to main:     ║" >&2
     echo "[fleet-refresh] ║    B.1  scripts/cc-health-check.sh                               ║" >&2
     echo "[fleet-refresh] ║    B.2  scripts/atomic-deploy.sh                                 ║" >&2
-    echo "[fleet-refresh] ║    B.3  tests/e2e/duck-test.ts                                   ║" >&2
+    echo "[fleet-refresh] ║    B.3  tests/e2e/duck-test.ts  (or duck-test)                   ║" >&2
     echo "[fleet-refresh] ║                                                                  ║" >&2
     echo "[fleet-refresh] ║  Merge B.1 + B.2 + B.3 to main in blackceo-command-center,      ║" >&2
     echo "[fleet-refresh] ║  then retry.                                                     ║" >&2
