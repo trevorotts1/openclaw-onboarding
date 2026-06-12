@@ -206,6 +206,7 @@ Check USER.md, MEMORY.md, AGENTS.md, TOOLS.md, and workforce-interview-answers.m
 - After every question, tell the client: "If you are not sure, just say 'I don't know' and I will research the best answer for you."
 - Dynamic count: 3-7 per department based on complexity and what is already known
 - Progress indicators at milestones
+- For every department, ask the one Healer-dependency question so the embedded Healer knows what to watch: "Are there any unusual outside tools, APIs, or services this department depends on that I should keep an eye on for breakages or version changes?" (example answer: "We rely on a niche scheduling API and a custom Zapier webhook.") This seeds the department Healer's model and external-dependency census.
 
 ### "I Don't Know" Research Protocol
 

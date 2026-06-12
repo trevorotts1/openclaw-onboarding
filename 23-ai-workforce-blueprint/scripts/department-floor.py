@@ -66,12 +66,14 @@ NAMING_MAP = SKILL_DIR / "department-naming-map.json"
 # Hardcoded mandatory fallback — IDENTICAL to build-workforce.load_canonical_floor()
 # so the floor is still enforced on a broken install that lost the naming map.
 # v11.1.0: added general-task + project-architecture-office, floor 24→26.
+# Bugs + Healer (self-repair immune system) added as mandatory, floor 26→28.
 HARDCODED_MANDATORY = [
     "marketing", "sales", "billing-finance", "customer-support",
     "web-development", "app-development", "graphics", "video", "audio",
     "research", "communications", "crm", "openclaw-maintenance", "legal",
     "social-media", "paid-advertisement", "personal-assistant",
     "general-task", "project-architecture-office",
+    "bugs", "healer",
 ]
 
 # Known legacy aliases + variant slugs a canonical dept can appear under on disk.

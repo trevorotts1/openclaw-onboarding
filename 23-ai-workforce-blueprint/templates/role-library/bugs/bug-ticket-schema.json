@@ -1,0 +1,116 @@
+{
+  "_schema_version": "1.0",
+  "_description": "The universal Bug Ticket intake schema. Every department and the command center itself uses this schema when filing a bug to the ZHC Bugs Department. A department that hits a bug files this ticket FIRST, then continues stabilizing per its own SOPs. Filing is mandatory: an unfiled bug is a future repeat.",
+  "_usage": "Submit a JSON object matching this schema to the Bug Intake Clerk. All fields marked required must be present and non-null. Optional fields default to null.",
+  "bug_id": {
+    "_type": "string",
+    "_format": "BUG-YYYYMMDD-NNN",
+    "_assigned_by": "Bug Intake Clerk on receipt",
+    "_required": false,
+    "_note": "Leave null when submitting; the Intake Clerk assigns this."
+  },
+  "reported_at": {
+    "_type": "string",
+    "_format": "ISO 8601 timestamp",
+    "_assigned_by": "Bug Intake Clerk on receipt",
+    "_required": false,
+    "_note": "Leave null when submitting; the Intake Clerk stamps this."
+  },
+  "reporter": {
+    "_required": true,
+    "department": {
+      "_type": "string",
+      "_required": true,
+      "_example": "presentations"
+    },
+    "specialist": {
+      "_type": "string",
+      "_required": true,
+      "_example": "slide-submitter"
+    },
+    "run_id": {
+      "_type": "string",
+      "_required": true,
+      "_example": "run-2026-0612-03"
+    }
+  },
+  "symptom": {
+    "_type": "string",
+    "_required": true,
+    "_description": "Verbatim error text or a precise, specific description of the failure. Vague descriptions like 'it broke' are not valid. The Intake Clerk will return malformed tickets for correction."
+  },
+  "evidence_paths": {
+    "_type": "array of strings",
+    "_required": false,
+    "_description": "Paths to checkpoints, logs, QC reports, screenshots, or any other evidence files that document the failure.",
+    "_example": ["working/checkpoints/phase4_checkpoint.json", "working/qc/image_qc_report.json"]
+  },
+  "severity_guess": {
+    "_type": "string",
+    "_required": true,
+    "_allowed_values": [
+      "P0 run-dead",
+      "P1 degraded",
+      "P2 cosmetic or latent",
+      "P3 improvement"
+    ],
+    "_description": "The reporter's best estimate of severity. The Triage Analyst will confirm or override this. P0 = live run halted or credits burning; P1 = running but producing incorrect output; P2 = edge case or formatting issue, no immediate client impact; P3 = proactive improvement suggestion."
+  },
+  "suspected_layer": {
+    "_type": "string",
+    "_required": true,
+    "_allowed_values": [
+      "code",
+      "sop",
+      "core-file",
+      "settings-json",
+      "model",
+      "external-api",
+      "environment",
+      "gap",
+      "unknown"
+    ],
+    "_description": "The reporter's best guess at which layer contains the defect. code = a script or binary; sop = an instruction in a role SOP; core-file = AGENTS.md, TOOLS.md, MEMORY.md, or bootstrap files; settings-json = openclaw.json or other configuration; model = AI model behavior; external-api = a third-party API contract changed or failed; environment = keys, disk, RAM, network; gap = no SOP covers this situation; unknown = genuinely unclear."
+  },
+  "client_slug": {
+    "_type": "string",
+    "_required": true,
+    "_description": "The slug identifying the client whose box or workflow was affected.",
+    "_example": "lyric"
+  },
+  "status": {
+    "_type": "string",
+    "_default": "REPORTED",
+    "_allowed_values": [
+      "REPORTED",
+      "TRIAGED",
+      "HEALING",
+      "VERIFYING",
+      "HEALED",
+      "REGRESSION WATCH",
+      "CLOSED",
+      "DUPLICATE",
+      "RETURNED_FOR_CORRECTION"
+    ],
+    "_managed_by": "Bugs Department",
+    "_note": "Set to REPORTED by the Intake Clerk. All subsequent transitions are owned by the Bugs Department and Healer per SOP B-9.3."
+  },
+  "dedup_of": {
+    "_type": "string or null",
+    "_default": null,
+    "_description": "If this ticket is a duplicate of a prior ticket, the Triage Analyst sets this to the original bug_id.",
+    "_managed_by": "Triage and Dedup Analyst"
+  },
+  "assigned_healer": {
+    "_type": "string or null",
+    "_default": null,
+    "_description": "The slug of the Healer role assigned to this ticket by the Triage Analyst.",
+    "_managed_by": "Triage and Dedup Analyst"
+  },
+  "kanban_card_id": {
+    "_type": "string or null",
+    "_default": null,
+    "_description": "The id of the Kanban card opened for this ticket.",
+    "_managed_by": "Bug Intake Clerk"
+  }
+}

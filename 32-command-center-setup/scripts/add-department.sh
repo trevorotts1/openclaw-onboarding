@@ -258,7 +258,14 @@ def main():
             "workspace_id": ws_id,
             "name": qc_name,
             "role": f"QC Specialist",
-            "role_type": "QC Specialist",
+            # role_type is the CANONICAL lowercase token, NOT the human label.
+            # The CC QC scorer resolves the per-dept QC gate via
+            # agents.role_type = 'qc' (qc-scorer.ts; column added by migration 060).
+            # A human label here ("QC Specialist") silently fails that lookup and
+            # the dept degrades to heuristic QC. Canonical tokens match the role
+            # library set: specialist, leadership, qc, deep-research, on-call,
+            # orchestrator, healer.
+            "role_type": "qc",
             "persona": f"qc-specialist-{SLUG}",
             "description": f"Quality control gate for the {NAME} department. Reviews all deliverables before sign-off.",
             "specialist_type": "permanent",
@@ -283,7 +290,9 @@ def main():
             "workspace_id": ws_id,
             "name": research_name,
             "role": "Deep Research Specialist",
-            "role_type": "Deep Research Specialist",
+            # Canonical lowercase token (see QC note above): the role library uses
+            # 'deep-research', not the human label "Deep Research Specialist".
+            "role_type": "deep-research",
             "persona": f"deep-research-specialist-{SLUG}",
             "description": (
                 f"Deep research intelligence engine for the {NAME} department. "

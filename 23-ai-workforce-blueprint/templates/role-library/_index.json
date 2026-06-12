@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-12T00:47:16Z",
   "version": "11.23.0",
-  "total_roles": 277,
+  "total_roles": 281,
   "departments": {
     "app-development": {
       "count": 15,
@@ -378,6 +378,20 @@
         "capacity-reliability-engineer",
         "deep-research-specialist-presentations",
         "devils-advocate-presentations"
+      ]
+    },
+    "bugs": {
+      "count": 3,
+      "roles": [
+        "bug-intake-clerk",
+        "bug-librarian",
+        "triage-dedup-analyst"
+      ]
+    },
+    "healer": {
+      "count": 1,
+      "roles": [
+        "chief-healer"
       ]
     }
   },
@@ -2941,7 +2955,57 @@
       "sop_count": 1,
       "sop_min": 1,
       "path": "templates/role-library/presentations/devils-advocate-presentations.md"
+    },
+    {
+      "slug": "bug-intake-clerk",
+      "dept": "bugs",
+      "title": "Bug Intake Clerk (Registrar)",
+      "role_type": "specialist",
+      "word_count": 1953,
+      "sop_count": 1,
+      "sop_min": 5,
+      "path": "templates/role-library/bugs/bug-intake-clerk.md"
+    },
+    {
+      "slug": "triage-dedup-analyst",
+      "dept": "bugs",
+      "title": "Triage and Dedup Analyst",
+      "role_type": "specialist",
+      "word_count": 2161,
+      "sop_count": 1,
+      "sop_min": 5,
+      "path": "templates/role-library/bugs/triage-dedup-analyst.md"
+    },
+    {
+      "slug": "bug-librarian",
+      "dept": "bugs",
+      "title": "Bug Librarian (Pattern Keeper)",
+      "role_type": "specialist",
+      "word_count": 2676,
+      "sop_count": 2,
+      "sop_min": 5,
+      "path": "templates/role-library/bugs/bug-librarian.md"
+    },
+    {
+      "slug": "chief-healer",
+      "dept": "healer",
+      "title": "Chief Healer",
+      "role_type": "healer",
+      "word_count": 4854,
+      "sop_count": 12,
+      "sop_min": 5,
+      "path": "templates/role-library/healer/chief-healer.md"
+    },
+    {
+      "slug": "dept-healer-template",
+      "dept": "healer",
+      "title": "The Healer (department template)",
+      "role_type": "healer",
+      "word_count": 4517,
+      "sop_count": 12,
+      "sop_min": 5,
+      "path": "templates/role-library/healer/dept-healer-template.md"
     }
   ],
-  "total_departments": 20
+  "total_departments": 22
 }

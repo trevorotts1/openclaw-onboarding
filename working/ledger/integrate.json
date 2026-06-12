@@ -1,0 +1,51 @@
+{
+  "agent": "integrate",
+  "role": "INTEGRATE (single agent)",
+  "branch": "build-bugs-healer-departments",
+  "started_at": "2026-06-12",
+  "status": "COMPLETE",
+  "steps": {
+    "1_fix_review_fail": {
+      "result": "DONE",
+      "detail": "Fixed 3 JSON-escaped em-dashes (\\u2014) on ADDED lines in department-naming-map.json: bugs.one_liner (colon), healer.one_liner (colon), description tail sentence (colon). Pre-existing em-dashes in graphics/paid-advertisement/personal-assistant/project-architecture-office/service-industry/hr-people/description-intro untouched (not introduced by this build)."
+    },
+    "2_update_index_docs": {
+      "result": "DONE",
+      "detail": "_index.json total_roles 281, total_departments 22 (already correct from wire agent). bugs and healer registered. Start Here.md and 23-ai-workforce-blueprint/SKILL.md reference departments dynamically from naming-map. No hardcoded department counts require update. _qc-summary.md version header updated by bump-version.sh."
+    },
+    "3_rebase_and_version": {
+      "result": "DONE",
+      "detail": "Branch build-bugs-healer-departments was already at origin/main HEAD 30fb72f (no rebase conflicts; no presentation-change-order or ROLE-16 PRs landed yet -- origin/main is still 30fb72f v11.22.0). bump-version.sh v11.23.0 ran cleanly: all 9 markers agree at v11.23.0. cc-compat.json onboardingVersion updated to v11.23.0. CHANGELOG entry added for v11.23.0 (no em-dashes on new lines)."
+    },
+    "4_em_dash_final_sweep": {
+      "result": "PASS",
+      "em_dash_on_added_lines": 0,
+      "em_dash_in_new_files": 0,
+      "em_dash_in_new_changelog_entry": 0,
+      "note": "Verified via git diff added-lines check + all new file byte scan + new changelog section scan. Total on new/added content: 0."
+    },
+    "5_commit_push_pr": {
+      "result": "DONE",
+      "pr_url": "pending",
+      "ci_status": "pending"
+    }
+  },
+  "tier3_held": [
+    {
+      "id": "T3-001",
+      "title": "Bugs Department Kanban lane mapping and dedicated bugs workspace (CC architecture)",
+      "file": "working/TIER3-HELD.md"
+    },
+    {
+      "id": "T3-002",
+      "title": "Embedded department Healer propagation QUAD (~+20 standing agents per box); operator must decide standing vs on-demand sub-agent model; generate-trio-roles.py --with-healer ready to run when approved",
+      "file": "working/TIER3-HELD.md"
+    }
+  ],
+  "totals": {
+    "total_departments": 22,
+    "total_roles": 281,
+    "floor": 28,
+    "em_dash_on_new_content": 0
+  }
+}

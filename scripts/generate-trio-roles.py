@@ -811,6 +811,47 @@ scoring.
 """
 
 
+# Canonical PART 5 department-Healer template (the QUAD's 4th role). Lives in the
+# role library; we read it and fill {{DEPARTMENT_NAME}} per department so every
+# dept's embedded Healer is byte-identical to the canonical template (the
+# never-twice immune system). See THE_HEALER_AND_BUGS_DEPARTMENT.md PART 5 and
+# SYSTEM-INTEGRATION-STRATEGY.md C3 ("extend the trio to a QUAD").
+HEALER_TEMPLATE = ROLE_LIB / "healer" / "dept-healer-template.md"
+
+
+def make_healer_content(dept: str, dept_name: str, director_title: str) -> str:
+    """Instantiate the PART 5 department-Healer template for one department.
+
+    Reads the canonical template verbatim and fills only the {{DEPARTMENT_NAME}}
+    token. role_type stays 'healer' (NEVER 'qc'; the QC scorer must never be able
+    to select a Healer as the QC gate; checks-and-balances per N5 + Fable C1).
+    Other {{TOKENS}} (persona, date, industry, company) are filled later by the
+    WS-2 instantiation path, exactly like every other library role.
+    """
+    if not HEALER_TEMPLATE.is_file():
+        raise FileNotFoundError(
+            f"department-Healer template missing: {HEALER_TEMPLATE} "
+            "(cannot generate the QUAD's 4th role)"
+        )
+    tmpl = HEALER_TEMPLATE.read_text()
+    return tmpl.replace("{{DEPARTMENT_NAME}}", dept_name)
+
+
+def healer_role_slug(dept: str) -> str:
+    return f"healer-{dept}"
+
+
+def healer_filename(dept: str) -> str:
+    return f"healer-{dept}.md"
+
+
+def needs_healer_file(dept_dir: Path) -> bool:
+    for f in dept_dir.iterdir():
+        if f.name.lower().startswith("healer-") or "the-healer" in f.name.lower():
+            return False
+    return True
+
+
 def needs_da_file(dept_dir: Path) -> bool:
     for f in dept_dir.iterdir():
         if "devil" in f.name.lower():
@@ -833,8 +874,19 @@ def needs_qc_file(dept_dir: Path) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate missing trio role files")
+    parser = argparse.ArgumentParser(description="Generate missing trio (or quad) role files")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done, no writes")
+    parser.add_argument(
+        "--with-healer",
+        action="store_true",
+        help=(
+            "QUAD mode: also instantiate the PART 5 department Healer in every "
+            "department (role_type healer). OFF by default: embedding one Healer "
+            "per department is ~+20 standing agents per box and is an OPERATOR-GATED "
+            "scale decision (SYSTEM-INTEGRATION-STRATEGY.md C3). Do not enable "
+            "fleet-wide without operator GO."
+        ),
+    )
     args = parser.parse_args()
 
     idx = json.loads(INDEX_PATH.read_text())
@@ -928,6 +980,30 @@ def main():
             created.append(f"{dept}/QC")
         else:
             skipped.append(f"{dept}/QC (already exists)")
+
+        # --- Department Healer (the QUAD's 4th role; OPERATOR-GATED) ----------
+        # Only runs under --with-healer. Embedding a Healer in every department
+        # is a ~+20-agents-per-box scale decision (Fable C3); default trio runs
+        # NEVER touch it. role_type is 'healer', NEVER 'qc'.
+        if args.with_healer:
+            if needs_healer_file(dept_dir):
+                fname = healer_filename(dept)
+                fpath = dept_dir / fname
+                content = make_healer_content(dept, dept_name, director_title)
+                if args.dry_run:
+                    print(f"  [DRY-RUN] would create: {fpath.relative_to(REPO_ROOT)}")
+                else:
+                    fpath.write_text(content)
+                    print(f"  + created: {fpath.relative_to(REPO_ROOT)}")
+                slug = healer_role_slug(dept)
+                dept_idx = depts_in_idx.setdefault(dept, {"count": 0, "roles": []})
+                if slug not in dept_idx["roles"]:
+                    dept_idx["roles"].append(slug)
+                    dept_idx["roles"].sort()
+                    dept_idx["count"] = len(dept_idx["roles"])
+                created.append(f"{dept}/Healer")
+            else:
+                skipped.append(f"{dept}/Healer (already exists)")
 
     # Write updated index
     idx["departments"] = depts_in_idx

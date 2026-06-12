@@ -1,0 +1,63 @@
+{
+  "agent": "bugs",
+  "branch": "build-bugs-healer-departments",
+  "started_at": "2026-06-12",
+  "status": "COMPLETE",
+  "em_dash_scan": "CLEAN",
+  "verbatim_transplant": "CONFIRMED",
+  "files_created": [
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/bugs/bug-intake-clerk.md",
+      "role_type": "specialist",
+      "sections": 19,
+      "em_dash_scan": "CLEAN",
+      "note": "PART 2.3 role 1; contains SOP B-9.1 verbatim with full expanded steps"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/bugs/triage-dedup-analyst.md",
+      "role_type": "specialist",
+      "sections": 19,
+      "em_dash_scan": "CLEAN",
+      "note": "PART 2.3 role 2; contains SOP B-9.2 verbatim with full expanded steps"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/bugs/bug-librarian.md",
+      "role_type": "specialist",
+      "sections": 19,
+      "em_dash_scan": "CLEAN",
+      "note": "PART 2.3 role 3; contains SOP B-9.3 and B-9.5 verbatim with full expanded steps"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/bugs/bug-ticket-schema.json",
+      "note": "PART 2.2 universal intake schema; all 12 fields from the authority doc present verbatim; referenced by all 3 specialist role files"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/bugs/bugs-department-sops.md",
+      "sops": ["B-9.1", "B-9.2", "B-9.3", "B-9.4", "B-9.5"],
+      "em_dash_scan": "CLEAN",
+      "note": "PART 2.4 SOPs B-9.1 through B-9.5 transplanted verbatim; serves as SOP library reference index for the dept; B-9.4 (Healer Handoff) is library-ref only as it spans multiple roles"
+    },
+    {
+      "path": "working/TIER3-HELD.md",
+      "note": "Proposal T3-001: Kanban lane mapping for Bugs Dept; held for operator GO per TIER 3 authority rules"
+    }
+  ],
+  "tier3_held": [
+    {
+      "id": "T3-001",
+      "title": "Bugs Department Kanban Lane Mapping",
+      "file": "working/TIER3-HELD.md",
+      "reason": "Adding new Kanban lanes or a dedicated bugs workspace is command-center architecture -- TIER 3 per PART 4 and SYSTEM-INTEGRATION-STRATEGY.md C1"
+    }
+  ],
+  "schema_field_verification": {
+    "all_12_fields_present": true,
+    "fields": ["bug_id", "reported_at", "reporter", "symptom", "evidence_paths", "severity_guess", "suspected_layer", "client_slug", "status", "dedup_of", "assigned_healer", "kanban_card_id"]
+  },
+  "role_type_verification": {
+    "bug-intake-clerk": "specialist",
+    "triage-dedup-analyst": "specialist",
+    "bug-librarian": "specialist",
+    "none_are_qc": true
+  }
+}
