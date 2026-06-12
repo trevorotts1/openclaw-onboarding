@@ -352,7 +352,9 @@ this department — invoke it or fill this manually.)
 
 HEARTBEAT_CONTENT="# HEARTBEAT.md — ${AGENT_NAME}
 
-Cadence: every 30 minutes (default).
+Cadence: DISABLED by default for department sub-agents (v11.25.0).
+Only the main agent runs a heartbeat (6h, via agents.defaults.heartbeat.agentsOnly=[main]).
+Enable a custom cadence for this department ONLY if the operator explicitly opts in.
 Owner: ${AGENT_SLUG}
 Dept: ${DEPARTMENT}
 
@@ -365,7 +367,9 @@ Dept: ${DEPARTMENT}
 
 ## Scheduled tasks
 
-(Empty — populated by the dept's daily/weekly cadence in SOUL.md / how-to.md.)
+(Empty -- populated by the dept's daily/weekly cadence in SOUL.md / how-to.md.
+Heartbeat-driven tasks should go here only if the operator has opted this agent
+into a non-default heartbeat cadence in openclaw.json agents.list[slug].heartbeat.)
 "
 
 # ─── Write per-agent files ──────────────────────────────────────────────────

@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.24.0"
+ONBOARDING_VERSION="v11.25.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3011,15 +3011,16 @@ QC_RETRY_PYEOF
 qc_check_memory_search_fallback
 
 # ----------------------------------------------------------
-# Step 7b: Enable Dreaming (memory consolidation)
+# Step 7b: Dreaming (memory consolidation) -- DEFAULT OFF (v11.25.0)
 # ----------------------------------------------------------
-# v10.13.12: Per docs.openclaw.ai/concepts/dreaming, dreaming is opt-in and
-# OFF by default. Every client we onboard wants the nightly memory
-# consolidation sweep, so we flip it on here. Cadence stays at the doc
-# default (0 3 * * * — 3am client local time). Verified enabled on the
-# existing fleet (Maria, Evelyn, Angela, Corey).
+# v11.25.0: dreaming is now left OFF by default on new installs.
+# Rationale: dreaming fires a nightly memory-consolidation session that
+# launches a sub-agent and burns tokens. On boxes with many agents this
+# compounds the [heartbeat poll] loop problem. Operator must explicitly
+# opt in via: plugins.entries.memory-core.config.dreaming.enabled = true
+# Existing fleet is unaffected (dreaming stays enabled where already on).
 configure_dreaming() {
-    step "Step 7b: Enabling Dreaming (memory consolidation)"
+    step "Step 7b: Dreaming config (leaving OFF by default -- operator opt-in required)"
     local OPENCLAW_JSON="$OC_JSON"
     if [ ! -f "$OPENCLAW_JSON" ]; then
         warn "openclaw.json not found - skipping dreaming config"
@@ -3035,14 +3036,14 @@ try:
     mc = cfg.setdefault('plugins', {}).setdefault('entries', {}).setdefault('memory-core', {})
     mc_cfg = mc.setdefault('config', {})
     dreaming = mc_cfg.setdefault('dreaming', {})
-    # EXPLICIT assignment (not setdefault) — we force this ON for done-for-you clients
-    dreaming['enabled'] = True
+    # v11.25.0: leave dreaming OFF on new installs (operator opt-in only)
+    dreaming.setdefault('enabled', False)
     with open(path, 'w') as f:
         json.dump(cfg, f, indent=2)
-    print("  \u2713 plugins.entries.memory-core.config.dreaming.enabled = true")
-    print("  \u2713 Default cadence: 0 3 * * * (3am client local time)")
+    print("  \u2713 plugins.entries.memory-core.config.dreaming.enabled = false (default; operator may enable)")
+    print("  \u2713 To enable: set plugins.entries.memory-core.config.dreaming.enabled = true in openclaw.json")
 except Exception as e:
-    print(f"  \u2717 Could not enable dreaming: {e}", file=sys.stderr)
+    print(f"  \u2717 Could not write dreaming config: {e}", file=sys.stderr)
 PYEOF_INNER
 }
 
@@ -5628,20 +5629,25 @@ else
 fi
 echo ""
 
-# Fix D (furnace-fix): Programmatic heartbeat reset to 1h after install completes.
+# Fix D (furnace-fix v2): Sane heartbeat defaults after install completes.
+# v11.25.0: raised from 1h to 6h, main-only scope, fresh-context, capped tokens.
 # The agent is instructed (Start Here.md) to set heartbeat to 5m during onboarding
 # and reset it after all 40 skills are done. But if onboarding stalls waiting for
-# the owner interview, the agent may never reset it — leaving the box burning 12
-# model calls/hour indefinitely from heartbeat alone.
-# We reset it here at the end of install.sh so even a stalled box gets a sane
-# heartbeat. The agent's own reset (Start Here.md Step 3) remains as the belt; this
-# is the suspenders. Uses fresh-context heartbeat (not full-history replay).
-note "Resetting heartbeat to 1h (install complete — prevents 5m heartbeat burn if agent stalls)..."
+# the owner interview, the agent may never reset it, leaving the box burning
+# model calls indefinitely from heartbeat alone.
+# We apply sane defaults here at the end of install.sh so even a stalled box gets
+# a safe baseline. The agent's own reset (Start Here.md Step 3) remains the belt;
+# this is the suspenders. Uses fresh-context heartbeat (not target:last history replay).
+note "Setting sane heartbeat defaults (6h interval, main-only, fresh-context, capped tokens)..."
 if command -v openclaw >/dev/null 2>&1; then
-    if openclaw config set agents.defaults.heartbeat.every 1h 2>>"$LOG_FILE"; then
-        success "Heartbeat reset to 1h (was or will be 5m during onboarding — now safe)"
+    _hb_ok=1
+    openclaw config set agents.defaults.heartbeat.every 6h 2>>"$LOG_FILE" || _hb_ok=0
+    openclaw config set agents.defaults.heartbeat.agentsOnly '["main"]' 2>>"$LOG_FILE" || true
+    openclaw config set agents.defaults.heartbeat.maxTokens 2000 2>>"$LOG_FILE" || true
+    if [ "$_hb_ok" = "1" ]; then
+        success "Heartbeat set to 6h main-only fresh-context (prevents [heartbeat poll] loop on new installs)"
     else
-        warn "Could not auto-reset heartbeat via openclaw config set. Manual fix: openclaw config set agents.defaults.heartbeat.every 1h"
+        warn "Could not set heartbeat.every via openclaw config set. Manual fix: openclaw config set agents.defaults.heartbeat.every 6h"
     fi
 fi
 
