@@ -1,3 +1,14 @@
+## [v11.22.0]  -  2026-06-12  -  feat: onboarding nudge lifecycle — escalate→dormant→re-arm + hard credit-failure backoff (furnace-proof)
+
+### Changes
+
+**Nudge lifecycle (furnace-proof).** Onboarding nudges now follow a proper state machine: escalate→dormant→re-arm. Credit failures (402/429) enter dormant and notify the operator ONCE — no retry storm. Owner re-engagement auto-re-arms via a touch-file hook.
+
+- **`resume-onboarding.sh`**: nudge schedule (15m/2h/24h/24h→dormant), cheap file-read gate pre-interview, `nudge_record_sent`/`nudge_schedule_due`/`nudge_handle_credit_failure` helpers, re-arm touch-file detection. Credit 402/429 → dormant + one operator notify, no retry storm.
+- **`watchdog-onboarding-loop.sh`**: Rule 0 FURNACE-GATE dormant check (obeys nudge-lifecycle DORMANT before any model call), credit 402/429 → dormant + one operator notify via `nudge_credit_fail_dormant`.
+- **`install.sh`**: seed `$WS/.onboarding-nudge-state` on fresh install (idempotent), Step 13.6 re-arm hook (`onboarding-rearm-hook.sh` written to `OC_CONFIG/scripts/`, registered in `hooks.onMessage` — touch `.onboarding-nudge-rearm` on any owner message while dormant; `resume-onboarding.sh` cheap-detects it next cron fire and resets lifecycle).
+- **Version**: v11.21.1 → v11.22.0 (all 9 markers + cc-compat.json). All existing tests pass (18/18).
+
 ## [v11.21.1]  -  2026-06-12  -  fix: update-skills.sh always writes .onboarding-version (obs_seed_state non-fatal, trustworthy stamp)
 
 ### Changes

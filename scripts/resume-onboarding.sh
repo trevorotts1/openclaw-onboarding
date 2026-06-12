@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# resume-onboarding.sh — v10.15.49  (FIX 2: FURNACE GATE — interview + backoff)
+# resume-onboarding.sh — v10.16.0  (NUDGE LIFECYCLE: escalate→dormant→re-arm + credit-backoff)
 #
 # Autonomous resume layer for SKILL ONBOARDING (the install/wire/QC pipeline),
 # modeled on resume-workforce-build.sh. Reads
@@ -21,6 +21,32 @@
 #
 # Idempotent. Safe every */15. 10-min lockfile. Escalates to Rescue Rangers +
 # operator once at the run cap, then slow-retries (2h backoff) — never stops.
+#
+# ── NUDGE LIFECYCLE (built on top of PR #181 gates) ──────────────────────────
+# State file: $WS/.onboarding-nudge-state  (plain key=value, no model read)
+#   nudge_attempts=N          — number of model nudges fired so far
+#   last_nudge_ts=EPOCH       — Unix timestamp of last nudge sent
+#   dormant=true|false        — if true: no autonomous nudge; wait for re-arm
+#   credit_fail_ts=EPOCH      — set on 402/429; enters dormant until re-arm
+#   credit_notified=true      — credit-failure notification already sent once
+#
+# SCHEDULE (owner-idle before interview completes):
+#   Attempt 1  — after  15 min idle  (900s)
+#   Attempt 2  — after   2 h idle    (7200s from attempt 1)
+#   Attempt 3  — after ~24 h idle    (86400s from attempt 2)
+#   Attempt 4  — after ~24 h idle    (86400s from attempt 3)
+#   → DORMANT  — zero autonomous model calls until owner re-engages
+#
+# RE-ARM: $WS/.onboarding-nudge-rearm touch file. Created by the incoming-
+# message hook (see install.sh). When present, dormant=false, attempts reset.
+#
+# CREDIT BACKOFF: if openclaw message send exits non-zero AND the output
+# contains "402" or "429" (or env ONBOARDING_LAST_SEND_RC is set to those),
+# set dormant=true + credit_fail_ts + notify operator ONCE. No retry storm.
+#
+# CHEAP-CHECK RULE: every cron fire reads the nudge state file (no model call).
+# A model call happens ONLY when nudge_schedule_due() returns 0.
+# Most cron fires exit at the cheap check.
 
 set -u
 
@@ -56,7 +82,103 @@ RUN_COUNT_FILE="$WS/.onboarding-resume-runs.count"
 SHARED_DISPATCH_LOCK="$WS/.onboarding-dispatch.lock"   # shared with watchdog
 MAX_RUNS_BEFORE_ESCALATE=24   # 6h at */30 (widened cron) — then escalate + slow-retry
 
+# ── nudge lifecycle state file (plain key=value, NO model read) ──────────────
+NUDGE_STATE_FILE="$WS/.onboarding-nudge-state"
+NUDGE_REARM_FILE="$WS/.onboarding-nudge-rearm"
+# Nudge schedule: minimum seconds since last nudge before the NEXT attempt fires.
+# Attempt 1: 15 min from cold start; 2: 2h; 3: 24h; 4: 24h → DORMANT.
+NUDGE_SCHEDULE=(900 7200 86400 86400)   # indexed 0..3; attempt N uses index N-1
+MAX_NUDGE_ATTEMPTS=4
+
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"; }
+
+# ── nudge state helpers (pure file I/O — zero model calls) ───────────────────
+nudge_get() {
+  # nudge_get KEY → prints value or "" if unset/file missing
+  local key="$1" val=""
+  [[ -f "$NUDGE_STATE_FILE" ]] && val="$(grep "^${key}=" "$NUDGE_STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2-)" || true
+  printf '%s' "$val"
+}
+nudge_set() {
+  # nudge_set KEY VALUE — update or append key=value in the state file
+  local key="$1" value="$2"
+  mkdir -p "$WS" 2>/dev/null || true
+  if [[ -f "$NUDGE_STATE_FILE" ]] && grep -q "^${key}=" "$NUDGE_STATE_FILE" 2>/dev/null; then
+    # Update in-place (portable sed — works on both GNU and BSD/Mac)
+    local tmp
+    tmp="$(mktemp)"
+    sed "s|^${key}=.*|${key}=${value}|" "$NUDGE_STATE_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$NUDGE_STATE_FILE" || rm -f "$tmp"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$NUDGE_STATE_FILE" 2>/dev/null || true
+  fi
+}
+nudge_enter_dormant() {
+  local reason="$1"
+  nudge_set dormant true
+  log "NUDGE-LIFECYCLE: entering DORMANT (${reason}). No autonomous model calls until owner re-engages."
+}
+nudge_rearm() {
+  # Called when owner engagement is detected (touch file present).
+  nudge_set dormant false
+  nudge_set nudge_attempts 0
+  nudge_set last_nudge_ts 0
+  nudge_set credit_fail_ts 0
+  nudge_set credit_notified false
+  rm -f "$NUDGE_REARM_FILE" 2>/dev/null || true
+  log "NUDGE-LIFECYCLE: re-armed — attempts reset, dormant cleared."
+}
+nudge_schedule_due() {
+  # Returns 0 (due) or 1 (not yet due / dormant / beyond max).
+  # PURE file read — zero model calls.
+  local dormant attempts last_ts now gap required_gap attempt_idx
+  dormant="$(nudge_get dormant)"
+  [[ "$dormant" == "true" ]] && return 1
+
+  attempts="$(nudge_get nudge_attempts)"; attempts="${attempts:-0}"
+  (( attempts >= MAX_NUDGE_ATTEMPTS )) && {
+    nudge_enter_dormant "max-attempts-reached (${attempts}/${MAX_NUDGE_ATTEMPTS})"
+    return 1
+  }
+
+  last_ts="$(nudge_get last_nudge_ts)"; last_ts="${last_ts:-0}"
+  now="$(date +%s)"
+  gap=$(( now - last_ts ))
+
+  attempt_idx="$attempts"   # attempts=0 → index 0 (first nudge)
+  (( attempt_idx >= ${#NUDGE_SCHEDULE[@]} )) && attempt_idx=$(( ${#NUDGE_SCHEDULE[@]} - 1 ))
+  required_gap="${NUDGE_SCHEDULE[$attempt_idx]}"
+
+  if (( gap >= required_gap )); then
+    return 0  # nudge is due
+  else
+    log "NUDGE-LIFECYCLE: not due yet (attempt ${attempts}, gap ${gap}s < required ${required_gap}s)"
+    return 1
+  fi
+}
+nudge_record_sent() {
+  local now; now="$(date +%s)"
+  local attempts; attempts="$(nudge_get nudge_attempts)"; attempts="${attempts:-0}"
+  nudge_set nudge_attempts $(( attempts + 1 ))
+  nudge_set last_nudge_ts "$now"
+  log "NUDGE-LIFECYCLE: nudge attempt $(( attempts + 1 )) recorded at ${now}"
+}
+nudge_handle_credit_failure() {
+  # Call when model send fails with 402/429.
+  local now; now="$(date +%s)"
+  local already_notified; already_notified="$(nudge_get credit_notified)"
+  nudge_set credit_fail_ts "$now"
+  nudge_enter_dormant "credit-failure-402/429"
+  if [[ "$already_notified" != "true" ]]; then
+    nudge_set credit_notified true
+    local op; op="$(resolve_operator_chat_id)"
+    if [[ -n "$op" ]] && command -v openclaw >/dev/null 2>&1; then
+      openclaw message send --channel telegram -t "$op" \
+        -m "⚠️ [ONBOARDING] $(hostname): model call returned 402/429 (payment/quota). Entering DORMANT — will NOT retry autonomously. Onboarding resumes when the owner sends any message. Check billing/quota." \
+        2>>"$LOG_FILE" || true
+      log "NUDGE-LIFECYCLE: credit-failure operator notification sent to $op"
+    fi
+  fi
+}
 
 # ── operator chat resolver (Remote Rescue) — operator account, NOT client ────
 resolve_operator_chat_id() {
@@ -107,6 +229,35 @@ fi
 if ! command -v openclaw >/dev/null 2>&1; then
   log "openclaw CLI not on PATH — cannot dispatch resume; exiting"
   exit 0
+fi
+
+# ── NUDGE LIFECYCLE: re-arm check (CHEAP — pure file read, NO model call) ────
+# If the re-arm touch file exists, the owner sent a message since we went
+# dormant. Reset the attempt counter and wake up the lifecycle.
+if [[ -f "$NUDGE_REARM_FILE" ]]; then
+  log "NUDGE-LIFECYCLE: re-arm file detected — resetting lifecycle and clearing dormant."
+  nudge_rearm
+fi
+
+# ── NUDGE LIFECYCLE: dormant/schedule gate (CHEAP — no model call) ───────────
+# After the re-arm check above, determine whether a nudge is due this cycle.
+# If not due, exit immediately — the cron fire costs nothing.
+# NOTE: this gate is ONLY applied pre-interview (while owner-idle nudges are
+# the purpose of this cron). Post-interview the resume work runs normally; the
+# nudge lifecycle does not gate post-interview resume dispatches.
+_wf_state_pre="$WS/.workforce-build-state.json"
+_interview_complete_pre="false"
+[[ -f "$_wf_state_pre" ]] && _interview_complete_pre="$(jq -r '.interviewComplete // false' "$_wf_state_pre" 2>/dev/null || echo false)"
+
+if [[ "$_interview_complete_pre" != "true" ]]; then
+  # Pre-interview: apply nudge lifecycle schedule gate.
+  if ! nudge_schedule_due; then
+    # Not due yet or DORMANT — cheap exit, zero model calls.
+    _d="$(nudge_get dormant)"; _a="$(nudge_get nudge_attempts)"
+    log "NUDGE-LIFECYCLE: pre-interview gate — dormant=${_d:-false}, attempts=${_a:-0}. No model call this cycle."
+    exit 0
+  fi
+  log "NUDGE-LIFECYCLE: pre-interview nudge DUE (attempt $(( $(nudge_get nudge_attempts) + 1 ))/${MAX_NUDGE_ATTEMPTS})"
 fi
 
 # ── heal config before any gateway interaction ──────────────────────────────
@@ -303,11 +454,33 @@ fi
 # ── dispatch the resume self-ping (internal — drives activation + gate) ──────
 msg="[ONBOARDING-RESUME] The skill onboarding is NOT verified-complete. These skills are not yet qc-passed: ${WORK_LIST:-none}. ${PARK_LIST:+(parked awaiting owner input: ${PARK_LIST}.) }DO THIS: (1) source the gate library ~/.openclaw/scripts/onboarding-state.sh; (2) for EACH not-passed skill folder under ~/.openclaw/skills/: read SKILL.md+INSTALL.md+CORE_UPDATES.md, EXECUTE INSTALL.md activation (read ≠ execute), merge CORE_UPDATES surgically, then run obs_verify_skill <folder> and loop activate→verify until it returns qc-passed; (3) a skill that genuinely needs owner input may be parked via obs_set_status <folder> interview-pending (then ask the owner) — that is the ONLY non-passed terminal state; (4) when obs_gate_summary returns success, remove the UPDATE PENDING flag from AGENTS.md and tell the owner the HONEST count. Do NOT report installed/done/onboarded for any skill that is not qc-passed. This resume is internal — keep owner messages to plain-English progress only. Run #$_run_count."
 
-if openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" >>"$LOG_FILE" 2>&1; then
+_SEND_OUT="$(mktemp)"
+_SEND_RC=0
+openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" >"$_SEND_OUT" 2>&1 || _SEND_RC=$?
+
+if [[ "$_SEND_RC" -eq 0 ]]; then
   log "dispatched ONBOARDING-RESUME self-ping to $TARGET_CHAT (work: ${WORK_LIST:-none}; park: ${PARK_LIST:-none})"
-  # Stamp the shared dispatch lock so watchdog backs off in the same window.
+  # Stamp shared dispatch lock so watchdog backs off in the same window.
   touch "$SHARED_DISPATCH_LOCK" 2>/dev/null || true
+  # Record the nudge in the lifecycle state (pre-interview only — post-interview
+  # resume dispatches are normal work, not owner-nudges, and should not count).
+  if [[ "$_interview_complete_pre" != "true" ]]; then
+    nudge_record_sent
+    _attempts_now="$(nudge_get nudge_attempts)"
+    if (( _attempts_now >= MAX_NUDGE_ATTEMPTS )); then
+      nudge_enter_dormant "max-attempts-${_attempts_now}-reached — box going quiet until owner re-engages"
+    fi
+  fi
 else
-  log "FAILED to dispatch resume self-ping to $TARGET_CHAT (see log)"
+  _SEND_CONTENT="$(cat "$_SEND_OUT" 2>/dev/null || true)"
+  log "FAILED to dispatch resume self-ping to $TARGET_CHAT (rc=${_SEND_RC}): ${_SEND_CONTENT}"
+  # Credit-failure backoff: 402 (payment required) or 429 (rate/quota limit).
+  # Enter DORMANT immediately and notify operator ONCE. No retry storm.
+  if [[ "$_SEND_CONTENT" == *"402"* || "$_SEND_CONTENT" == *"429"* || \
+        "${ONBOARDING_LAST_SEND_RC:-}" == "402" || "${ONBOARDING_LAST_SEND_RC:-}" == "429" ]]; then
+    nudge_handle_credit_failure
+    log "NUDGE-LIFECYCLE: credit-failure detected — dormant entered; no further autonomous retries."
+  fi
 fi
+rm -f "$_SEND_OUT" 2>/dev/null || true
 exit 0
