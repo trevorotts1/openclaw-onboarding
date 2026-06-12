@@ -476,6 +476,8 @@ When all 40 active skills are installed (or attempted), the agent MUST:
 ```
 3. Restart the gateway yourself (master agent): `openclaw gateway restart`. Then tell the user: "Onboarding complete. I have reset the heartbeat back to hourly checks and restarted the gateway to apply the change."
 
+> **NOTE (furnace-fix):** install.sh now also resets the heartbeat to `1h` at the end of installation as a safety net. If the agent sets the heartbeat to `5m` and onboarding stalls waiting for the owner interview, the install.sh reset ensures the box does not continue burning model calls every 5 minutes indefinitely. The agent's own reset above remains — this is belt-and-suspenders. The onboarding-resume and watchdog-onboarding-loop crons also have pre-interview backoff gates so they do not hammer the model while waiting for the owner to engage.
+
 ### How This Works
 
 OpenClaw sends a heartbeat message to the agent every 5 minutes. The agent reads HEARTBEAT.md and sees the onboarding watchdog task. If it was idle or stalled, it immediately checks the status file and resumes installation. This is external enforcement. The agent cannot "forget" to keep going because OpenClaw keeps poking it.

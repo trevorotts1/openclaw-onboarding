@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 # scripts/watchdog-onboarding-loop.sh — PRD 2.13 Watchdog Loop
+# v2 (furnace-fix): interview gate + wave-backoff + shared dispatch lock
 # ============================================================
 # PURPOSE:
 #   Loop-engineers the install so it keeps itself going with no stalls
@@ -75,6 +76,7 @@ STATE_FILE="${ONBOARDING_STATE_FILE:-$WS/.onboarding-state.json}"
 LOCK_FILE="$WS/.watchdog-onboarding-loop.lock"
 LOG_FILE="$WS/.watchdog-onboarding-loop.log"
 LOOP_REGISTRY_FILE="$WS/.loop-registry.json"
+SHARED_DISPATCH_LOCK="$WS/.onboarding-dispatch.lock"   # shared with resume-onboarding.sh
 LOOP_NAME="watchdog-onboarding-loop"
 MAX_STRIKES=3   # 3 consecutive check failures on the same wave → escalate + halt
 
@@ -269,6 +271,49 @@ if [[ "$WAVE_GOAL_PASSED" -eq 1 ]]; then
   [[ -z "$NEXT_WAVE" ]] && NEXT_WAVE="overall"
 fi
 
+# ── FURNACE GATE: interview check + wave backoff + shared dispatch lock ───────
+# Pre-interview boxes must NOT hammer the model on every watchdog fire.
+# Rules:
+#   1. "overall" wave with interview NOT complete → defer to interview-nudge cron.
+#   2. Waves 1–3: apply a 30-min backoff so model calls fire at most every 30 min
+#      (not every 10/20 min), since wave 1-3 are skill-installs and don't need
+#      constant prodding.
+#   3. Shared dispatch lock: if resume-onboarding.sh fired a call <8 min ago, skip.
+
+_wf_state="$WS/.workforce-build-state.json"
+_interview_complete="false"
+[[ -f "$_wf_state" ]] && _interview_complete="$(jq -r '.interviewComplete // false' "$_wf_state" 2>/dev/null || echo false)"
+
+# Rule 1: overall goal not met + interview not complete → interview-nudge owns this.
+if [[ "$NEXT_WAVE" == "overall" ]] && [[ "$_interview_complete" != "true" ]]; then
+  log "FURNACE-GATE: NEXT_WAVE=overall but interview not complete. interview-nudge cron owns the nudge interval. Watchdog exiting — no model call."
+  exit 0
+fi
+
+# Rule 2: early-wave backoff — waves 1-3 get a 30-min minimum between dispatches.
+_WATCHDOG_DISPATCH_TS="$WS/.watchdog-last-dispatch.ts"
+_now_ts=$(date +%s)
+if [[ "$NEXT_WAVE" =~ ^[123]$ ]]; then
+  _last_dispatch=0
+  [[ -f "$_WATCHDOG_DISPATCH_TS" ]] && _last_dispatch="$(cat "$_WATCHDOG_DISPATCH_TS" 2>/dev/null | tr -dc '0-9' || echo 0)"
+  _gap=$(( _now_ts - _last_dispatch ))
+  if (( _gap < 1800 )); then
+    log "FURNACE-GATE: Wave ${NEXT_WAVE} (early-wave), last dispatch ${_gap}s ago (<1800/30min) — backoff; no model call."
+    exit 0
+  fi
+  log "FURNACE-GATE: Wave ${NEXT_WAVE}, last dispatch ${_gap}s ago (>=1800) — allowing dispatch."
+fi
+
+# Rule 3: shared dispatch lock — if resume-onboarding.sh fired in last 8 min, skip.
+if [[ -f "$SHARED_DISPATCH_LOCK" ]]; then
+  _sdl_mtime=$(stat -c %Y "$SHARED_DISPATCH_LOCK" 2>/dev/null || stat -f %m "$SHARED_DISPATCH_LOCK" 2>/dev/null || echo 0)
+  _sdl_age=$(( _now_ts - _sdl_mtime ))
+  if (( _sdl_age < 480 )); then
+    log "SHARED-DISPATCH-LOCK: resume-onboarding.sh dispatched ${_sdl_age}s ago (<480) — skipping watchdog fire to avoid double model call."
+    exit 0
+  fi
+fi
+
 # ── build the EXACT resume prompt for the next incomplete wave ────────────────
 build_wave_prompt() {
   local wave="$1"
@@ -314,6 +359,10 @@ if command -v openclaw >/dev/null 2>&1; then
   if openclaw message send --channel telegram -t "$_owner_chat" \
     -m "$RESUME_MSG" >>"$LOG_FILE" 2>&1; then
     log "dispatched wave-$NEXT_WAVE resume prompt (strikes=$STRIKES)"
+    # Stamp shared dispatch lock (dedup with resume-onboarding.sh)
+    touch "$SHARED_DISPATCH_LOCK" 2>/dev/null || true
+    # Stamp per-wave dispatch timestamp (early-wave 30-min backoff)
+    echo "$_now_ts" > "$_WATCHDOG_DISPATCH_TS" 2>/dev/null || true
     # Send Telegram progress ping to operator (separate from agent message)
     _op_chat="$(resolve_operator_chat_id)"
     if [[ "$_op_chat" != "$_owner_chat" ]] && [[ -n "$_op_chat" ]]; then

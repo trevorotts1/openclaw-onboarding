@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# resume-onboarding.sh — v10.15.48  (FIX 1: INSTALL RESUME)
+# resume-onboarding.sh — v10.15.49  (FIX 2: FURNACE GATE — interview + backoff)
 #
 # Autonomous resume layer for SKILL ONBOARDING (the install/wire/QC pipeline),
 # modeled on resume-workforce-build.sh. Reads
@@ -53,7 +53,8 @@ STATE_FILE="$WS/.onboarding-state.json"
 LOCK_FILE="$WS/.onboarding-resume.lock"
 LOG_FILE="$WS/.onboarding-resume.log"
 RUN_COUNT_FILE="$WS/.onboarding-resume-runs.count"
-MAX_RUNS_BEFORE_ESCALATE=24   # 6h at */15 — then escalate + slow-retry (never stop)
+SHARED_DISPATCH_LOCK="$WS/.onboarding-dispatch.lock"   # shared with watchdog
+MAX_RUNS_BEFORE_ESCALATE=24   # 6h at */30 (widened cron) — then escalate + slow-retry
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"; }
 
@@ -110,6 +111,58 @@ fi
 
 # ── heal config before any gateway interaction ──────────────────────────────
 openclaw doctor --fix >/dev/null 2>&1 || true
+
+# ── FURNACE GATE: check interview state before any model call ────────────────
+# If the interview hasn't started yet (Skill 23 is still pending/not reached),
+# this cron should NOT hammer the model every 30 min. The watchdog-onboarding-loop
+# handles early-wave skill installation. We only need to fire if:
+#   (a) interview is complete (post-interview: legitimate resume work), OR
+#   (b) Skill 23 is interview-pending or qc-passed (interview in progress or done)
+# For anything earlier than that, apply a hard backoff: only fire once per 2 hours.
+_wf_state="$WS/.workforce-build-state.json"
+_interview_complete="false"
+[[ -f "$_wf_state" ]] && _interview_complete="$(jq -r '.interviewComplete // false' "$_wf_state" 2>/dev/null || echo false)"
+
+_skill23_status="pending"
+if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+  _skill23_status="$(jq -r '.skills."23-ai-workforce-blueprint".status // "pending"' "$STATE_FILE" 2>/dev/null || echo pending)"
+fi
+
+if [[ "$_interview_complete" != "true" ]]; then
+  # Interview not complete. Only proceed if Skill 23 is in-progress/parked.
+  if [[ "$_skill23_status" != "interview-pending" && "$_skill23_status" != "qc-passed" ]]; then
+    # Skill 23 not yet reached — early-wave install still in progress.
+    # Apply a 2-hour backoff: only fire a model call if last fire was > 7200s ago.
+    _BACKOFF_TS_FILE="$WS/.onboarding-resume-backoff.ts"
+    _now_ts=$(date +%s)
+    _last_fire=0
+    [[ -f "$_BACKOFF_TS_FILE" ]] && _last_fire="$(cat "$_BACKOFF_TS_FILE" 2>/dev/null | tr -dc '0-9' || echo 0)"
+    _gap=$(( _now_ts - _last_fire ))
+    if (( _gap < 7200 )); then
+      log "FURNACE-GATE: Skill 23 not yet reached (status=${_skill23_status}), interview not started, last fire ${_gap}s ago (<7200). Backoff — no model call this cycle."
+      exit 0
+    fi
+    log "FURNACE-GATE: Skill 23 not yet reached but ${_gap}s since last fire (>=7200) — allowing one nudge fire."
+    echo "$_now_ts" > "$_BACKOFF_TS_FILE" 2>/dev/null || true
+  else
+    log "FURNACE-GATE: Skill 23 status=${_skill23_status}, interview pending/in-progress — proceeding normally."
+  fi
+else
+  log "FURNACE-GATE: interview complete — proceeding normally."
+fi
+
+# ── SHARED DISPATCH LOCK: dedup with watchdog-onboarding-loop ────────────────
+# If the watchdog dispatched a model call within the last 8 min, skip this fire.
+# Both crons check this file so they never double-fire in the same window.
+_now_ts=$(date +%s)
+if [[ -f "$SHARED_DISPATCH_LOCK" ]]; then
+  _sdl_mtime=$(stat -c %Y "$SHARED_DISPATCH_LOCK" 2>/dev/null || stat -f %m "$SHARED_DISPATCH_LOCK" 2>/dev/null || echo 0)
+  _sdl_age=$(( _now_ts - _sdl_mtime ))
+  if (( _sdl_age < 480 )); then
+    log "SHARED-DISPATCH-LOCK: another dispatch fired ${_sdl_age}s ago (<480) — skipping this fire to avoid double model call."
+    exit 0
+  fi
+fi
 
 # ── BELT: only a REAL gate-pass is terminal ──────────────────────────────────
 # Run the verification gate. If it passes, onboarding is genuinely complete →
@@ -252,6 +305,8 @@ msg="[ONBOARDING-RESUME] The skill onboarding is NOT verified-complete. These sk
 
 if openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" >>"$LOG_FILE" 2>&1; then
   log "dispatched ONBOARDING-RESUME self-ping to $TARGET_CHAT (work: ${WORK_LIST:-none}; park: ${PARK_LIST:-none})"
+  # Stamp the shared dispatch lock so watchdog backs off in the same window.
+  touch "$SHARED_DISPATCH_LOCK" 2>/dev/null || true
 else
   log "FAILED to dispatch resume self-ping to $TARGET_CHAT (see log)"
 fi
