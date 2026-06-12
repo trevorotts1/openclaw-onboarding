@@ -1,3 +1,17 @@
+## [v11.21.1]  -  2026-06-12  -  fix: update-skills.sh always writes .onboarding-version (obs_seed_state non-fatal, trustworthy stamp)
+
+### Changes
+
+**Stamp-reliability fix.** `update-skills.sh` now guarantees `.onboarding-version` reflects reality after every successful skill sync, even when optional shim functions are absent or fail.
+
+- **Root cause**: `obs_seed_state` and `obs_verify_skill`/`obs_gate_summary` are pre-PRD-2.1 names no longer exported by `lib-onboarding-state.sh` (which now uses `oc_state_seed`, `oc_gate_skill`, `oc_state_summary`). On boxes where only the new API is available, calling the old name under `set -euo pipefail` could abort the script before the stamp write.
+- **Fix 1**: `obs_seed_state` call replaced with a guarded dispatch: tries `oc_state_seed` first (canonical), falls back to `obs_seed_state` (legacy), falls back to a no-op warning. `source` is now guarded with `|| true`. All branches non-fatal.
+- **Fix 2**: Verification gate (`obs_verify_skill`/`obs_gate_summary`) replaced with a guarded dispatch that tries `oc_gate_skill`/`oc_state_summary` first (canonical PRD 2.1 API), then `obs_verify_skill`/`obs_gate_summary` (legacy), then skips gracefully. All calls non-fatal.
+- **Fix 3**: State transitions (`obs_set_status`) now try `oc_state_set` first, fall back to `obs_set_status`, both guarded with `|| true`.
+- **Fix 4**: `EXIT` trap added in `main()` after `SKILLS_DIR` is set. Sets `_OC_SKILLS_SYNCED=1` after the copy loop and `_OC_STAMP_WRITTEN=1` after the explicit stamp write. If the script exits for any reason after sync but before stamp, the trap writes the correct stamp unconditionally.
+- **Fix 5**: Explicit stamp write line now logs `updated to <version>` for visibility.
+- **Version**: v11.21.0 → v11.21.1 (all 9 markers + cc-compat.json). Skill sync behavior unchanged.
+
 ## [v11.20.0]  -  2026-06-12  -  feat(self-service): add+wire onboarding scripts + derived org chart/Notion + converge step + guardrails
 
 ### Changes
