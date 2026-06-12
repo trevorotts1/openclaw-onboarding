@@ -39,8 +39,72 @@ Check:
 Fix:
 - Reinstall as a persistent system service (Step 2 of the v5.14 playbook). On Mac use
   `sudo cloudflared service install <TOKEN>`; on Linux use the apt-package post-install
-  systemd unit. Skill 38's `04-register-crons.sh` does NOT manage cloudflared — that
+  systemd unit. Skill 38's `04-register-crons.sh` does NOT manage cloudflared -- that
   lives in Phase 1 of the playbook itself.
+
+### Wi-Fi QUIC idle-timeout drop (CF error 1033 / 530, repeated every few minutes)
+
+**Symptom:** Tunnel drops repeatedly on Wi-Fi (every 4-10 min), connector log shows:
+
+```
+failed to accept QUIC stream: timeout: no recent network activity
+```
+
+All 4 edge connections drop simultaneously for ~6s. CF returns error 1033 or 530 during
+the gap. On wired Ethernet the issue is much rarer (longer NAT idle timers).
+
+**Root cause:** cloudflared defaults to `--protocol quic` (UDP/7844). Consumer routers
+expire idle UDP NAT mappings in minutes. When the mapping expires the QUIC connection
+collapses before cloudflared can detect and re-establish it.
+
+**Confirmed:** 287 drops in 22h on Christy's Mac (Wi-Fi, no protocol override).
+
+**Fix (4 layers, defense in depth):**
+
+Layer A (root fix): force TCP transport -- eliminates the UDP NAT expiry entirely.
+
+```bash
+# Adds --protocol http2 to the root LaunchDaemon, sets KeepAlive=true,
+# disables AC sleep. Run once per box (idempotent, safe to re-run).
+sudo bash platform/mac/tunnel-hardening/harden-mac-tunnel.sh
+```
+
+Layer C (no-sudo safety net): 20s edge ping to keep NAT mapping warm.
+
+```bash
+bash platform/mac/tunnel-hardening/install-keepalive-agent.sh
+```
+
+Layer D-nosudo (watchdog): fires every 5 minutes, logs ESCALATE if connector is down.
+
+```bash
+bash platform/mac/tunnel-hardening/install-watchdog-agent.sh
+```
+
+Layer D-sudo (AC no-sleep): bundled into `harden-mac-tunnel.sh` -- sets `pmset -c sleep 0`.
+
+**Verify** (after applying):
+
+```bash
+# Protocol is http2
+/usr/libexec/PlistBuddy -c "Print :ProgramArguments" \
+  /Library/LaunchDaemons/com.cloudflare.cloudflared.plist | grep http2
+
+# Keepalive agent is ticking
+tail -5 /tmp/clawd-tunnel-keepalive.log
+# Expected: [<ts>] edge-ping ok
+
+# No recent QUIC drops (log should be quiet after harden)
+grep 'no recent network activity' \
+  /Library/Logs/com.cloudflare.cloudflared.err.log | tail -3
+```
+
+**Note:** This fix is Mac/Wi-Fi specific. Linux VPS connectors run in datacenters and
+are not behind consumer NAT -- do NOT apply `--protocol http2` to VPS connectors
+without validating the datacenter NAT behavior.
+
+See `platform/mac/tunnel-hardening/README.md` for the full 4-layer spec and
+existing-fleet remediation plan.
 
 ## Layer 3 — OpenClaw gateway
 

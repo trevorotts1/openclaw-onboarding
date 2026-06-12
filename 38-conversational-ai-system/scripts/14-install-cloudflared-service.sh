@@ -55,6 +55,47 @@ case "$OS" in
       sudo cloudflared service install "$CLOUDFLARE_TUNNEL_TOKEN" >/dev/null
       echo "cloudflared launchd service installed" >&2
     fi
+
+    # ---- Mac-tunnel hardening (Layers A + B + D) ----------------------------
+    # Force --protocol http2 (TCP; eliminates UDP NAT idle-timeout drops on Wi-Fi),
+    # set KeepAlive=true unconditionally, and disable AC sleep.
+    # NOTE: Linux/systemd connectors run in datacenters and are NOT behind consumer
+    # NAT -- the QUIC idle-timeout bug is Mac/Wi-Fi specific; leave Linux untouched.
+    HARDEN_SCRIPT="$(cd "$(dirname "$0")/../.." && pwd)/platform/mac/tunnel-hardening/harden-mac-tunnel.sh"
+    if [[ -f "$HARDEN_SCRIPT" ]]; then
+      echo "Running Mac-tunnel hardening (http2 + KeepAlive + pmset)..." >&2
+      bash "$HARDEN_SCRIPT" >&2 || {
+        echo "WARN: Mac-tunnel hardening returned non-zero; check output above." >&2
+        echo "      The connector is still running but may not be fully hardened." >&2
+        echo "      Re-run manually: sudo bash $HARDEN_SCRIPT" >&2
+      }
+    else
+      echo "WARN: harden-mac-tunnel.sh not found at $HARDEN_SCRIPT" >&2
+      echo "      Skipping Mac-tunnel hardening -- tunnel will run with QUIC defaults." >&2
+      echo "      Run manually: sudo bash platform/mac/tunnel-hardening/harden-mac-tunnel.sh" >&2
+    fi
+
+    # ---- User-level keepalive + watchdog agents (Layers C + D-nosudo) -------
+    # These require no sudo and can run as the current login user.
+    # KEEPALIVE_SCRIPT is invoked as the current user (not root).
+    KEEPALIVE_SCRIPT="$(cd "$(dirname "$0")/../.." && pwd)/platform/mac/tunnel-hardening/install-keepalive-agent.sh"
+    WATCHDOG_SCRIPT="$(cd "$(dirname "$0")/../.." && pwd)/platform/mac/tunnel-hardening/install-watchdog-agent.sh"
+    # If running as root (typical in provisioning), use sudo -u to drop to the login user.
+    LOGIN_USER="${SUDO_USER:-$(logname 2>/dev/null || id -un)}"
+    for AGENT_SCRIPT in "$KEEPALIVE_SCRIPT" "$WATCHDOG_SCRIPT"; do
+      if [[ -f "$AGENT_SCRIPT" ]]; then
+        echo "Installing user tunnel agent: $(basename $AGENT_SCRIPT)" >&2
+        if [[ $EUID -eq 0 ]] && [[ -n "$LOGIN_USER" ]] && [[ "$LOGIN_USER" != "root" ]]; then
+          sudo -u "$LOGIN_USER" bash "$AGENT_SCRIPT" >&2 || \
+            echo "WARN: $(basename $AGENT_SCRIPT) returned non-zero -- check output." >&2
+        else
+          bash "$AGENT_SCRIPT" >&2 || \
+            echo "WARN: $(basename $AGENT_SCRIPT) returned non-zero -- check output." >&2
+        fi
+      else
+        echo "WARN: $(basename $AGENT_SCRIPT) not found -- skipping user agent install." >&2
+      fi
+    done
     ;;
   Linux)
     if systemctl list-unit-files 2>/dev/null | grep -q '^cloudflared.service'; then

@@ -101,3 +101,102 @@ openclaw message send --session-key agent:main:operator --no-deliver --message "
 **Rule:** owner-facing onboarding/closeout messages use the **default** account
 (unchanged). Operator maintenance, Rescue-Rangers escalations, and resume-cron
 self-pings use the **operator** account / session key. Never the reverse.
+
+---
+
+## Mac-tunnel Keepalive Hardening -- Existing-Fleet Remediation Playbook
+
+**Background:** Every Wi-Fi Mac-tunnel client is exposed to repeated CF-1033 tunnel drops
+caused by QUIC (UDP) NAT idle-timeout. The full diagnosis and 4-layer fix spec are in
+`platform/mac/tunnel-hardening/README.md`. This section is the operator-facing
+remediation runbook for the existing fleet.
+
+Ledger: `~/clawd/fleet-heartbeat/mac-tunnel-keepalive-ledger.tsv`
+Format: `client\ttimestamp\tkeepalive_pid\twatchdog_pid\tresult`
+
+### Wave A -- no-sudo push (immediate; no client involvement)
+
+For each Mac-tunnel client, SSH over the CF tunnel and run both user-space agents:
+
+```bash
+# SSH wrapper (non-login shell needs the full cloudflared path)
+# ProxyCommand: /opt/homebrew/bin/cloudflared access ssh --hostname <tunnel-hostname>
+# Remote commands via: ssh -o ProxyCommand=... <user>@<hostname> "zsh -lc '...'"
+
+# Run on the client box as the login user:
+bash ~/path/to/platform/mac/tunnel-hardening/install-keepalive-agent.sh
+bash ~/path/to/platform/mac/tunnel-hardening/install-watchdog-agent.sh
+```
+
+The keepalive installer detects and replaces any existing `com.zhc.tunnel-keepalive`
+(Christy's legacy label) -- no double-run.
+
+Per-box verify after install:
+
+```bash
+launchctl print gui/$(id -u)/com.clawd.tunnel-keepalive | grep 'pid ='
+# Must show a non-zero PID
+
+tail -5 /tmp/clawd-tunnel-keepalive.log
+# Expected after ~20s: [<ts>] edge-ping ok
+
+launchctl print gui/$(id -u)/com.clawd.tunnel-watchdog | grep 'state ='
+# Expected: state = running
+```
+
+Append to ledger when each box is done (append-only; skip already-done entries):
+
+```bash
+echo -e "<client>\t$(date -u +%FT%TZ)\t<keepalive_pid>\t<watchdog_pid>\tok" \
+  >> ~/clawd/fleet-heartbeat/mac-tunnel-keepalive-ledger.tsv
+```
+
+Fan out in parallel (SSH/kickoff only; fire detached, do NOT babysit). Use Haiku for
+the SSH/kickoff/poll; reserve Sonnet for real build work.
+
+### Wave B -- one-time sudo harden per box (Layers A+B+D)
+
+Stage `harden-mac-tunnel.sh` on each box, then instruct the client to run it once:
+
+```bash
+# Stage (operator over SSH)
+scp platform/mac/tunnel-hardening/harden-mac-tunnel.sh \
+  <client>:~/Downloads/harden-mac-tunnel.sh
+
+# Instruction to the client (they enter their own password)
+sudo bash ~/Downloads/harden-mac-tunnel.sh
+```
+
+After the client confirms, verify remotely (no sudo needed):
+
+```bash
+# Protocol is http2 in the LaunchDaemon
+/usr/libexec/PlistBuddy -c "Print :ProgramArguments" \
+  /Library/LaunchDaemons/com.cloudflare.cloudflared.plist | grep http2
+
+# No recent QUIC drops in the connector log
+grep 'no recent network activity' \
+  /Library/Logs/com.cloudflare.cloudflared.err.log | tail -3
+# Expected: empty or timestamps older than 30 min
+```
+
+Update the ledger with the sudo-harden timestamp when confirmed.
+
+### Wave C -- close the loop
+
+When a box has BOTH the http2 daemon (Wave B) AND the keepalive agent (Wave A), it is
+fully hardened. The watchdog stays as the permanent safety net. Watch the watchdog log
+for any ESCALATE lines that indicate the root connector went down:
+
+```bash
+grep ESCALATE /tmp/clawd-tunnel-watchdog.log
+# If present: operator must run harden-mac-tunnel.sh on that box
+```
+
+### Fleet client priority (Wi-Fi clients first)
+
+Check each client's network type before Wave A to prioritize effort:
+- Wi-Fi clients: HIGH priority -- exposed to QUIC idle drops
+- Wired Ethernet clients: lower urgency (drops rare but hardening is still recommended)
+
+All Mac-tunnel clients get Wave A (keepalive + watchdog) regardless of network type.

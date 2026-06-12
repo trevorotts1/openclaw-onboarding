@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- com.clawd.tunnel-keepalive.plist.template
+     Layer C -- user-level keepalive LaunchAgent (no sudo).
+     install-keepalive-agent.sh uses sed to expand placeholders.
+     Placeholders:
+       __LABEL__        -> com.clawd.tunnel-keepalive
+       __SCRIPT_PATH__  -> /Users/<user>/.cloudflared/nat-keepalive.sh
+       __LOG_PATH__     -> /tmp/clawd-tunnel-keepalive.log
+       __HOST__         -> region1.v2.argotunnel.com (CF edge)
+       __PORT__         -> 7844
+  -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__SCRIPT_PATH__</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__LOG_PATH__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_PATH__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>KEEPALIVE_HOST</key>
+    <string>__HOST__</string>
+    <key>KEEPALIVE_PORT</key>
+    <string>__PORT__</string>
+  </dict>
+</dict>
+</plist>

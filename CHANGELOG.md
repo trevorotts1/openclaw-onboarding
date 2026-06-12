@@ -1,3 +1,55 @@
+## [v11.23.0]  -  2026-06-12  -  feat: Mac-tunnel keepalive hardening (http2 protocol + KeepAlive LaunchDaemon + 20s edge-keepalive)
+
+### Changes
+
+**Mac-tunnel QUIC idle-timeout fix (fleet-wide class issue).** Every Wi-Fi Mac-tunnel client was
+exposed to repeated CF-1033/530 drops caused by cloudflared defaulting to QUIC (UDP). Consumer
+routers age out idle UDP NAT mappings in minutes, collapsing all 4 edge connections simultaneously.
+Confirmed on Christy's Mac: 287 drops in 22h. This ships 4 defense-in-depth layers.
+
+**Layer A (root fix):** `harden-mac-tunnel.sh` injects `--protocol http2` into
+`/Library/LaunchDaemons/com.cloudflare.cloudflared.plist` via PlistBuddy. Forces TCP transport;
+UDP NAT expiry no longer applies. Idempotent, safe to re-run.
+
+**Layer B:** Same script sets `KeepAlive=true` (unconditional -- replaces `{SuccessfulExit: false}`)
++ `RunAtLoad=true`. Fixes the latent respawn bug where a clean exit-zero was never restarted.
+
+**Layer C (no-sudo safety net):** `install-keepalive-agent.sh` installs `com.clawd.tunnel-keepalive`
+user LaunchAgent -- infinite loop, TCP connect to `region1.v2.argotunnel.com:7844` every 20s.
+Keeps the NAT mapping warm even while still on QUIC. Remote-pushable to existing fleet with no
+password. Detects and replaces legacy `com.zhc.tunnel-keepalive` (Christy) automatically.
+
+**Layer D-nosudo:** `install-watchdog-agent.sh` installs `com.clawd.tunnel-watchdog` user LaunchAgent
+(StartInterval=300). Checks cloudflared process, optional public-URL probe. On down: tries user-scope
+kickstart; for root daemon, logs `ESCALATE` to `/tmp/clawd-tunnel-watchdog.log` for operator pickup.
+
+**Layer D-sudo:** `harden-mac-tunnel.sh` also runs `pmset -c sleep 0 disablesleep 1` (AC only -- never
+touches battery). Box stays up on mains power.
+
+**New installs:** `14-install-cloudflared-service.sh` now calls `harden-mac-tunnel.sh` (as root)
+and then `install-keepalive-agent.sh` + `install-watchdog-agent.sh` (as login user) immediately
+after the Darwin `service install`, before the Restart Survival Test. Every new connector is
+hardened at provision time.
+
+**Existing fleet remediation split:**
+- Bucket 2 (no sudo, push today): keepalive + watchdog agents via SSH -- `install-keepalive-agent.sh`
+  + `install-watchdog-agent.sh`.
+- Bucket 3 (one-time sudo per box): `sudo bash harden-mac-tunnel.sh` -- fully hardens the root daemon.
+
+- **`platform/mac/tunnel-hardening/`** (NEW directory): `harden-mac-tunnel.sh`,
+  `install-keepalive-agent.sh`, `install-watchdog-agent.sh`,
+  `com.clawd.tunnel-keepalive.plist.template`, `com.clawd.tunnel-watchdog.plist.template`, `README.md`.
+- **`38-conversational-ai-system/scripts/14-install-cloudflared-service.sh`**: bakes all 4 layers
+  into new Mac connector installs.
+- **`mac-mini-onboarding/connect-openclaw-to-cloudflare-tunnel.md`**: new Step 7b with run commands
+  + verify block.
+- **`38-conversational-ai-system/references/cloudflare-tunnel-troubleshooting.md`**: Layer 2 section
+  now documents the QUIC idle-timeout diagnosis + all 4 fix layers.
+- **`KNOWN-ISSUES.md`**: new entry 4 (Mac-tunnel Wi-Fi drops).
+- **`docs/OPERATOR-MAINTENANCE.md`**: existing-fleet remediation playbook (Wave A no-sudo push +
+  Wave B sudo harden + Wave C close-the-loop + ledger format).
+- **Version**: v11.22.0 -> v11.23.0 (all markers + cc-compat.json).
+
 ## [v11.22.0]  -  2026-06-12  -  feat: onboarding nudge lifecycle — escalate→dormant→re-arm + hard credit-failure backoff (furnace-proof)
 
 ### Changes
