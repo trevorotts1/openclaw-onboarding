@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.20.0"
+ONBOARDING_VERSION="v11.21.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4376,7 +4376,7 @@ install_workforce_resume_cron
 # the agent to activate + verify. It NEVER stops on a self-declared "done" —
 # only on a real gate-pass (handled by the shell guard scripts/resume-onboarding.sh).
 # Modeled on install_workforce_resume_cron; reuses max-runs + Rescue Rangers.
-step "Step 13b: Installing onboarding-resume cron (every 15 min until the verification gate passes)"
+step "Step 13b: Installing onboarding-resume cron (every 30 min — interview gate + backoff in script)"
 
 install_onboarding_resume_cron() {
     if ! command -v openclaw >/dev/null 2>&1; then
@@ -4413,7 +4413,7 @@ install_onboarding_resume_cron() {
     local OUT="" RC=0
     local BASE=(
         --name "onboarding-resume"
-        --cron "*/15 * * * *"
+        --cron "*/30 * * * *"
         --tz "America/New_York"
         --channel telegram
         --to "$TG_TARGET"
@@ -4422,13 +4422,13 @@ install_onboarding_resume_cron() {
     OUT=$(openclaw cron create "${BASE[@]}" --message "$PROMPT_CONTENT" 2>&1) || RC=$?
     echo "$OUT" >> "$LOG_FILE"
     if [ "$RC" -eq 0 ]; then
-        success "onboarding-resume cron installed — every 15 min until the verification gate passes (never stops on self-declared 'done')"
+        success "onboarding-resume cron installed — every 30 min (interview gate + 2h backoff pre-interview in script)"
         return 0
     fi
 
     local BASE_NO_ACCT=(
         --name "onboarding-resume"
-        --cron "*/15 * * * *"
+        --cron "*/30 * * * *"
         --tz "America/New_York"
         --channel telegram
         --to "$TG_TARGET"
@@ -4442,7 +4442,7 @@ install_onboarding_resume_cron() {
 
     warn "onboarding-resume cron creation failed. Manual install:"
     warn "  openclaw cron create --name onboarding-resume \\"
-    warn "    --cron '*/15 * * * *' --tz America/New_York \\"
+    warn "    --cron '*/30 * * * *' --tz America/New_York \\"
     warn "    --channel telegram --to '$TG_TARGET' \\"
     warn "    --message \"\$(cat $RESUME_PROMPT_FILE)\""
     return 0
@@ -4495,7 +4495,7 @@ install_watchdog_loop_cron() {
     local OUT="" RC=0
     local BASE=(
         --name "watchdog-onboarding-loop"
-        --cron "*/10 * * * *"
+        --cron "*/20 * * * *"
         --tz "America/New_York"
         --channel telegram
         --to "$TG_TARGET"
@@ -4513,13 +4513,13 @@ install_watchdog_loop_cron() {
             LOOP_REGISTRY_FILE="${OC_CONFIG}/workspace/.loop-registry.json" \
             lr_register "watchdog-onboarding-loop" "$CRON_UUID" "openclaw cron rm $CRON_UUID" 2>/dev/null || true
         fi
-        success "watchdog-onboarding-loop cron installed (PRD-2.13, */10) — cheap check first, 3-strike escalation, self-kills on overall goal pass"
+        success "watchdog-onboarding-loop cron installed (PRD-2.13, */20) — interview gate + wave-backoff + shared dispatch lock; self-kills on overall goal pass"
         return 0
     fi
 
     local BASE_NO_ACCT=(
         --name "watchdog-onboarding-loop"
-        --cron "*/10 * * * *"
+        --cron "*/20 * * * *"
         --tz "America/New_York"
         --channel telegram
         --to "$TG_TARGET"
@@ -4533,7 +4533,7 @@ install_watchdog_loop_cron() {
 
     warn "watchdog-onboarding-loop cron creation failed. Manual install:"
     warn "  openclaw cron create --name watchdog-onboarding-loop \\"
-    warn "    --cron '*/10 * * * *' --tz America/New_York \\"
+    warn "    --cron '*/20 * * * *' --tz America/New_York \\"
     warn "    --channel telegram --to '$TG_TARGET' \\"
     warn "    --message '[ONBOARDING-WATCHDOG] bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh'"
     return 0
@@ -5506,5 +5506,22 @@ else
     warn "configure-operator-telegram.sh not found at $ONBOARDING_DIR/scripts/configure-operator-telegram.sh"
 fi
 echo ""
+
+# Fix D (furnace-fix): Programmatic heartbeat reset to 1h after install completes.
+# The agent is instructed (Start Here.md) to set heartbeat to 5m during onboarding
+# and reset it after all 40 skills are done. But if onboarding stalls waiting for
+# the owner interview, the agent may never reset it — leaving the box burning 12
+# model calls/hour indefinitely from heartbeat alone.
+# We reset it here at the end of install.sh so even a stalled box gets a sane
+# heartbeat. The agent's own reset (Start Here.md Step 3) remains as the belt; this
+# is the suspenders. Uses fresh-context heartbeat (not full-history replay).
+note "Resetting heartbeat to 1h (install complete — prevents 5m heartbeat burn if agent stalls)..."
+if command -v openclaw >/dev/null 2>&1; then
+    if openclaw config set agents.defaults.heartbeat.every 1h 2>>"$LOG_FILE"; then
+        success "Heartbeat reset to 1h (was or will be 5m during onboarding — now safe)"
+    else
+        warn "Could not auto-reset heartbeat via openclaw config set. Manual fix: openclaw config set agents.defaults.heartbeat.every 1h"
+    fi
+fi
 
 fire_install_kickoff_triplet

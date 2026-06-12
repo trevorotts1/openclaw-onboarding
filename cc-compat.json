@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "onboardingVersion": "v11.20.0",
+  "onboardingVersion": "v11.21.0",
   "commandCenter": {
     "minVersion": "v4.39.0",
     "maxVersion": null,
     "repo": "trevorotts1/blackceo-command-center",
     "pinnedTag": "v4.39.0"
   },
-  "notes": "Version compatibility contract between openclaw-onboarding and blackceo-command-center. fleet-refresh.sh reads pinnedTag (or resolves latest >= minVersion when pinnedTag is null) and checks out that tag. The skill-32 installer refuses to clone a CC older than minVersion. CI fails if onboardingVersion != /version or if pinnedTag < minVersion. v11.19.0 adds self-service add+wire (roles/SOPs/personas + converge); requires CC v4.39.0 for /api/system/converge endpoint. If CC is older, converge falls back to on-box seed-workspaces.py + ingest-sop-library.sh (graceful degradation, §1.6 step 5)."
+  "notes": "Version compatibility contract between openclaw-onboarding and blackceo-command-center. fleet-refresh.sh reads pinnedTag (or resolves latest >= minVersion when pinnedTag is null) and checks out that tag. The skill-32 installer refuses to clone a CC older than minVersion. CI fails if onboardingVersion != /version or if pinnedTag < minVersion. v11.19.0 adds self-service add+wire (roles/SOPs/personas + converge); requires CC v4.39.0 for /api/system/converge endpoint. If CC is older, converge falls back to on-box seed-workspaces.py + ingest-sop-library.sh (graceful degradation, \u00a71.6 step 5)."
 }
