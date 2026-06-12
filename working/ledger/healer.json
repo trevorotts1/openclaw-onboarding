@@ -1,0 +1,71 @@
+{
+  "agent": "healer",
+  "branch": "build-bugs-healer-departments",
+  "started_at": "2026-06-12",
+  "status": "COMPLETE",
+  "em_dash_scan": "CLEAN",
+  "verbatim_transplant": "CONFIRMED",
+  "files_created": [
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/healer/chief-healer.md",
+      "role_type": "healer",
+      "sections": 19,
+      "em_dash_scan": "CLEAN",
+      "note": "PART 3.3 Chief Healer mandate; full 19-section role file; includes verbatim SOPs 9.1-9.12 with Fable adjustments; tier table in Section 1; role_type=healer never qc"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/healer/dept-healer-template.md",
+      "role_type": "healer",
+      "sections": 19,
+      "em_dash_scan": "CLEAN",
+      "note": "PART 5 department-Healer template; instantiable via {{DEPARTMENT_NAME}} token; verbatim SOPs 9.1-9.12 embedded; Bug-Ticket filing stub in SOP 9.1 (PART 2.2 schema verbatim + TODO flag pointing at ZHC Bugs Dept); tier table in Section 1; role_type=healer"
+    }
+  ],
+  "sop_verification": {
+    "sops_present": ["9.1", "9.2", "9.3", "9.4", "9.5", "9.6", "9.7", "9.8", "9.9", "9.10", "9.11", "9.12"],
+    "verbatim_from_part6": true,
+    "fable_adjustment_9_4_step8": {
+      "applied": true,
+      "description": "Step 8 UPSTREAM PROPAGATION added: Tier 2 local patches are provisional; must be flagged upstream in the healing report or re-materialization erases them"
+    },
+    "fable_adjustment_9_12": {
+      "applied": true,
+      "description": "SOP 9.12 grounded to real pipeline: sync-extensions.sh --converge + embedding_health.py --json verify; NOT a new pipeline"
+    },
+    "fable_adjustment_9_9_shared_core": {
+      "applied": true,
+      "description": "Note added for shared-core boxes (N29): AGENTS/TOOLS/USER are ONE symlinked canonical file per box; context-budget check applies box-wide"
+    },
+    "fable_adjustment_9_10_validation_hooks": {
+      "applied": true,
+      "description": "Named openclaw config validate and N31 object-not-string model rule as documented validation hooks"
+    },
+    "fable_adjustment_9_11_teachers_location": {
+      "applied": true,
+      "description": "Teachers location named explicitly: Skill 01 Teach Yourself Protocol at ~/Downloads/openclaw-master-files/<sub>/"
+    }
+  },
+  "tier_table_verification": {
+    "present_in_chief_healer_section_1": true,
+    "present_in_dept_template_section_1": true,
+    "tiers": ["TIER 1: FIX FORWARD", "TIER 2: PATCH AND NOTIFY", "TIER 3: PROPOSE AND HOLD"],
+    "verbatim_from_part4": true
+  },
+  "role_type_verification": {
+    "chief-healer": "healer",
+    "dept-healer-template": "healer",
+    "none_are_qc": true,
+    "reason": "QC scorer queries agents.role_type = 'qc'; Healer must NEVER be qc or QC scorer could select Healer as QC gate -- checks-and-balances violation per SYSTEM-INTEGRATION-STRATEGY.md C1"
+  },
+  "bug_ticket_stub_verification": {
+    "present_in_dept_template_sop_9_1": true,
+    "schema_verbatim_from_part2_2": true,
+    "fields": ["bug_id", "reported_at", "reporter", "symptom", "evidence_paths", "severity_guess", "suspected_layer", "client_slug", "status", "dedup_of", "assigned_healer", "kanban_card_id"],
+    "todo_flag": "TODO -- ZHC BUGS DEPARTMENT: when the Bugs Department ships, these tickets route to its Intake Clerk via the documented channel; until then they remain local and every healing report lists open tickets"
+  },
+  "propagation_not_done": {
+    "note": "Per task scope: did NOT instantiate dept-healer-template for all 26 departments (the +20-agents-per-box propagation is a separate operator-gated toggle per SYSTEM-INTEGRATION-STRATEGY.md C3). Template ships ready to stamp per department.",
+    "decision_for_operator": "Chief Healer dispatches per-department healing sub-agents on demand (sub-specialist model) vs 20 standing agents -- per SYSTEM-INTEGRATION-STRATEGY.md C3 leaner alternative note"
+  },
+  "tier3_proposals": []
+}

@@ -502,6 +502,8 @@ Once a rescue agent helps you, you MUST cooperate with the resolution protocol s
 - **If still broken after the rescue agent replies:** POST ONE focused follow-up to the same `$RESCUE_RANGERS_WEBHOOK_URL` (what's still failing + the exact new error), then wait. Do not spam.
 - **Hard cap: 25 exchanges per client per day** — the backstop for conversations that never resolve / loop. Resolve early; don't run to the cap.
 
+**File every bug (mandatory).** When any department hits a defect, FIRST write a Bug Ticket (schema in `templates/role-library/bugs/bug-ticket-schema.json`) to `working/healer/bug_tickets/BUG-YYYYMMDD-NNN.json`, then keep stabilizing. An unfiled bug is a future repeat. The Bugs + Healer departments route and heal it; the same bug never happens twice.
+
 ---
 
 ## Agent Operating Rules

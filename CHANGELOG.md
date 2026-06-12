@@ -52,7 +52,21 @@ hardened at provision time.
 - **Fix (post-merge)**: version-marker reconciliation (3 stale at 11.22.0: `23-blueprint/skill-version.txt`, `_index.json`, `_qc-summary.md` heading); `cloudflare-tunnel-troubleshooting.md` personal-data scrub; skill-38/skill-version.txt bump to 1.7.3. G3 + QC static now green.
 
 ## [v11.22.0]  -  2026-06-12  -  feat: onboarding nudge lifecycle — escalate→dormant→re-arm + hard credit-failure backoff (furnace-proof)
+## [v11.24.0]  -  2026-06-12  -  feat: Add ZHC Bugs Department + Healer Department (standalone), dept-Healer template, SOP suites; Tier-3 CC items held
 
+### Changes
+
+**ZHC Bugs Department (3 specialist roles + 5 SOPs).** The company's front desk and medical records for every defect. Bug Intake Clerk (Registrar), Triage and Dedup Analyst, and Bug Librarian ship as full 19-section role files with verbatim B-SOPs 9.1-9.5. Universal Bug Ticket schema (12 fields) in bug-ticket-schema.json. Registered in _index.json; bugs-suggested-roles.md wires materialization; bugs + healer added to department-naming-map.json mandatory set (floor 26 to 28, version 2.5.0); department-floor.py hardcoded fallback updated to 21 mandatory.
+
+**ZHC Healer Department (Chief Healer + dept-Healer template + SOP suite 9.1-9.12).** The company doctors. Chief Healer role file ships as a full 19-section file with all 12 SOPs embedded verbatim from PART 6 (The Healer and Bugs Department authority doc) plus Fable reconciliation adjustments: SOP 9.4 Step 8 UPSTREAM PROPAGATION (local patches are provisional; permanent fix flows through operator PR pipeline), SOP 9.12 grounded to sync-extensions.sh + embedding_health.py (not a new pipeline), SOP 9.9 shared-core note, SOP 9.10 openclaw config validate hook, SOP 9.11 teachers location named. dept-healer-template.md instantiable with {{DEPARTMENT_NAME}} token per department. healer-suggested-roles.md wires materialization. role_type canonicalized to healer (never qc, per Fable C1 checks-and-balances guarantee).
+
+**Fable gap-fixes and wiring.** scripts/generate-trio-roles.py gains QUAD mode (--with-healer flag, DEFAULT OFF, operator-gated); 32-command-center-setup/scripts/add-department.sh role_type canonicalized (QC Specialist to qc, Deep Research Specialist to deep-research) so CC QC scorer resolves future depts correctly; 23-ai-workforce-blueprint/SKILL.md gains Healer-dependency interview question; AGENTS.md gains one lean bug-filing pointer line.
+
+**Tier-3 HELD items (not implemented, held for operator GO).** T3-001: Bugs Dept Kanban lane mapping and dedicated bugs workspace (CC architecture). T3-002: Embedded dept-Healer propagation QUAD to all existing depts, ~+20 standing agents per box (operator decision required on standing vs on-demand sub-agent model; generate-trio-roles.py --with-healer is ready to run when approved).
+
+- **Version**: v11.23.0 to v11.24.0 (all 9 markers + cc-compat.json). New total_departments 22, total_roles 281.
+
+## [v11.22.0]  -  2026-06-12  -  feat: onboarding nudge lifecycle -- escalate-dormant-re-arm + hard credit-failure backoff (furnace-proof)
 ### Changes
 
 **Nudge lifecycle (furnace-proof).** Onboarding nudges now follow a proper state machine: escalate→dormant→re-arm. Credit failures (402/429) enter dormant and notify the operator ONCE — no retry storm. Owner re-engagement auto-re-arms via a touch-file hook.

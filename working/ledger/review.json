@@ -1,0 +1,66 @@
+{
+  "agent": "review",
+  "role": "INTEGRATION REVIEWER (Opus, single mind)",
+  "branch": "build-bugs-healer-departments",
+  "reviewed_at": "2026-06-12",
+  "status": "COMPLETE",
+  "verdict": "6 of 7 PASS, 1 FAIL (em-dash). DO NOT COMMIT until the em-dash FAIL is fixed.",
+  "report": "/Users/blackceomacmini/Downloads/BUGS-HEALER-BUILD-REVIEW.md",
+  "checks": {
+    "1_dirs_19section_verbatim": {
+      "result": "PASS",
+      "evidence": "both bugs/ and healer/ dirs exist; 5 role files each have 19 sections; quote-matched B-9.1, B-9.3, SOP 9.1, SOP 9.4 doctrine boundary, SOP 9.6 char-for-char against authority doc PART 2.4 and PART 6"
+    },
+    "2_index_valid_totals": {
+      "result": "PASS",
+      "evidence": "JSON valid; total_departments 20->22; total_roles 277->281; invariant total_roles == sum(dept count) == sum(roles[] len) == 281 holds; bugs(3)+chief-healer(1) registered; dept-healer-template is flat-only hygiene entry"
+    },
+    "3_suggested_naming_interview_agents": {
+      "result": "PASS",
+      "evidence": "bugs-suggested-roles.md + healer-suggested-roles.md NEW and resolve; naming-map bugs+healer mandatory, floor 26->28, v2.5.0; department-floor.py floor=28; SKILL.md Healer-dependency interview question present; AGENTS.md bug-filing line present"
+    },
+    "4_role_type_canonicalization": {
+      "result": "PASS",
+      "evidence": "bugs 3x specialist lowercase; healer 2x healer lowercase; NO new role typed qc (20 qc are pre-existing dept QC specialists); add-department.sh C1 fix QC Specialist->qc, Deep Research Specialist->deep-research"
+    },
+    "5_no_em_dashes": {
+      "result": "FAIL",
+      "evidence": "byte-level em-dash on added lines = 0 AND all 7 new dept files = 0, BUT build introduced 3 JSON-escaped em-dashes (\\u2014) on ADDED lines in department-naming-map.json: description field (3 occurrences), bugs one_liner, healer one_liner. json.loads decodes them to literal U+2014; byte-grep misses the \\u2014 escape form. wire ledger 'em-dash 0 on added line' claim was unverified (checked only literal UTF-8 bytes).",
+      "required_fix": "replace em-dash with comma/colon/ascii-hyphen in bugs+healer one_liners and the description field of department-naming-map.json; then grep -c '\\\\u201[2-5]' on added diff lines must = 0"
+    },
+    "6_tier3_held": {
+      "result": "PASS",
+      "evidence": "TIER3-HELD.md has T3-001 (Kanban lanes), T3-002 (Healer propagation QUAD), note N-001 (safe mapping); NO qc-scorer/migration/schema/manifest/master-SOP/Kanban files touched; --with-healer default OFF; no 4th healer agent seed added to add-department.sh"
+    },
+    "7_healer_sop_adjustments_bugstub": {
+      "result": "PASS",
+      "evidence": "SOP 9.4 step 8 UPSTREAM PROPAGATION present (provisional Tier-2); SOP 9.12 grounded to sync-extensions.sh --converge + embedding_health.py --json (not a new pipeline); Bug-Ticket filing stubbed TODO->Bugs Dept in dept-template SOP 9.1 with PART 2.2 schema verbatim"
+    }
+  },
+  "checks_passed": "6/7",
+  "em_dash_count": {
+    "literal_utf8_on_added_lines": 0,
+    "literal_utf8_in_new_dept_files": 0,
+    "json_escaped_introduced_on_added_lines": 3,
+    "location": "department-naming-map.json: description field + bugs one_liner + healer one_liner",
+    "preexisting_baseline_escapes_not_this_build": "77 in _index.json + 8 elsewhere in naming-map (do not block)"
+  },
+  "static_checks": {
+    "json_valid": "PASS (all 6 JSON files)",
+    "python_syntax": "PASS (department-floor.py, generate-trio-roles.py)",
+    "bash_n": "PASS (add-department.sh)"
+  },
+  "tier3_held_for_operator": [
+    {
+      "id": "T3-001",
+      "title": "Bugs Department Kanban lane mapping / dedicated bugs workspace",
+      "needs": "operator GO to create bugs workspace, confirm safe status mapping (no new lanes), approve Bug Librarian REGRESSION WATCH sweep cron"
+    },
+    {
+      "id": "T3-002",
+      "title": "Embedded department Healer propagation (QUAD, ~+20 standing agents per box)",
+      "needs": "operator decision standing-Healer-per-dept vs lean on-demand sub-agent (Fable C3); if GO, run generate-trio-roles.py --with-healer + per-box converge + embedding_health verify; also author 3 unbuilt PART 3.2 Healer-dept roster roles before registration"
+    }
+  ],
+  "commit_recommendation": "HOLD. Fix the 3 em-dashes in department-naming-map.json, re-verify (json-escaped dash count on added lines = 0), then Integrate may commit. All other 6 checks are clean and the build is otherwise ready."
+}

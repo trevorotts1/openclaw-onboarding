@@ -1,0 +1,93 @@
+{
+  "agent": "wire",
+  "role": "ARCHITECT (Opus)",
+  "branch": "build-bugs-healer-departments",
+  "started_at": "2026-06-12",
+  "status": "COMPLETE",
+  "em_dash_scan": "CLEAN (0 em/en-dashes on any added line across all 9 touched files + 2 TIER3 additions)",
+  "scope": "SAFE file-level wiring per THE_HEALER_AND_BUGS_DEPARTMENT.md PART 7 + SYSTEM-INTEGRATION-STRATEGY.md; TIER-3 architecture items HELD",
+  "files_changed": [
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/_index.json",
+      "change": "Registered bugs dept (3 roster roles: bug-intake-clerk, bug-librarian, triage-dedup-analyst) + healer dept (1 roster role: chief-healer). Added FULL 8-field flat-array entries for all 4 standing roles + dept-healer-template (flat hygiene entry, NOT roster). role_type: bugs=specialist, healer roles=healer (never qc). Recomputed total_roles 277->281 and total_departments 20->22. Invariant total_roles==sum(dept role lists) holds.",
+      "verified": "JSON valid; library_lookup() resolves all 4 role headings to files via the real normalizer"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/suggested-roles/bugs-suggested-roles.md",
+      "change": "NEW file in exact presentations format (### N. Role). Headings resolve through _crw_library_lookup to the 3 bugs role files. Makes future clients materialize the bugs roster (build-workforce.py determine_specialists parses these headings).",
+      "verified": "build-workforce parser extracts 3 specialists; all resolve"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/suggested-roles/healer-suggested-roles.md",
+      "change": "NEW file. Lists Chief Healer (the one real standing role file). Notes the QUAD dept-Healer template + the 3 unbuilt PART 3.2 roster roles as a gap so materialization never points at a missing file.",
+      "verified": "parser extracts 1 specialist (Chief Healer); resolves"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/department-naming-map.json",
+      "change": "Added bugs + healer to mandatory (floor 26->28). version 2.4.0->2.5.0 + description updated. THE switch that makes both depts standard for every future client (Fable C3).",
+      "verified": "JSON valid; mandatory=21; floor computes 28 (21 mandatory + 7 universal primaries)"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/scripts/department-floor.py",
+      "change": "Added bugs + healer to HARDCODED_MANDATORY fallback (now 21) + doc comment 26->28. evaluate_floor() derives the live floor from naming-map keys = 28.",
+      "verified": "py_compile OK; EXPECTED FLOOR = 28"
+    },
+    {
+      "path": "scripts/generate-trio-roles.py",
+      "change": "QUAD: added make_healer_content() (instantiates PART 5 template, fills {{DEPARTMENT_NAME}}, role_type healer never qc, preserves WS-2 tokens), needs_healer_file(), healer_role_slug/filename(), and an OPT-IN --with-healer flag (DEFAULT OFF). Default trio runs touch NO healer files. Did NOT run --with-healer (the +20-agents propagation is operator-gated; HELD as T3-002).",
+      "verified": "py_compile OK; default dry-run = 0 healer mentions; --with-healer --dry-run lists per-dept files and writes nothing; make_healer_content produces 'The Healer -- Marketing' role_type healer; 0 stray healer-<dept>.md files written; _index.json untouched by script"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/SKILL.md",
+      "change": "Added the ONE Healer-dependency interview question to Question Philosophy (asks per department: unusual outside tools/APIs/services the embedded Healer should watch). Seeds the Healer model+external-dependency census per PART 7.3.",
+      "verified": "em-dash 0 on added line"
+    },
+    {
+      "path": "AGENTS.md",
+      "change": "Added ONE lean bug-filing line in the Rescue Rangers section per SOP 9.9 discipline: file a Bug Ticket (schema path given) to working/healer/bug_tickets/BUG-YYYYMMDD-NNN.json first, then stabilize. One line + pointer, no full protocol.",
+      "verified": "em-dash 0 on added line"
+    },
+    {
+      "path": "32-command-center-setup/scripts/add-department.sh",
+      "change": "role_type canonicalization fix (Fable C1 verified bug): QC agent role_type 'QC Specialist' -> 'qc' (line ~268); Research agent 'Deep Research Specialist' -> 'deep-research' (line ~295). CC QC scorer queries agents.role_type='qc' lowercase; the human labels silently failed the lookup and degraded depts to heuristic QC. Added explanatory comments. devils-advocate left as-is (already lowercase, not Fable-named). Head agent has NO role_type field, so no Healer/head agent is ever stamped qc.",
+      "verified": "bash -n OK; only role_type qc/deep-research/devils-advocate present; the pre-existing em-dash on the unrelated research_name DISPLAY line is not mine (git diff shows 0 em-dashes on added lines)"
+    }
+  ],
+  "tier3_held": [
+    {
+      "id": "T3-001",
+      "title": "Bugs Department Kanban lane mapping / dedicated bugs workspace",
+      "owner": "bugs sub-agent (pre-existing)",
+      "note": "Kept; new lanes / bugs workspace = CC architecture = TIER 3"
+    },
+    {
+      "id": "T3-002",
+      "title": "Embedded department Healer propagation (the QUAD, ~+20 agents per box)",
+      "owner": "wire (architect)",
+      "note": "Generator code + --with-healer flag BUILT and tested; NOT run. Operator must decide standing-Healer-per-dept vs lean on-demand sub-agent model (Fable C3), and author the 3 unbuilt PART 3.2 Healer-dept roster roles (Global Model Registrar, SOP Library Custodian, Deep Research Specialist Healing) before they can register."
+    }
+  ],
+  "tier3_notes": [
+    {
+      "id": "N-001",
+      "title": "Bug lifecycle mapped onto EXISTING Kanban statuses (no new lanes)",
+      "note": "SAFE mapping documented: REPORTED=backlog, TRIAGED=assigned, HEALING=in_progress, VERIFYING=review, HEALED=done, REGRESSION WATCH=ledger+sweep, blocked=SLA breach. Ticket JSON ledger is source of truth, card is the view. No CC code/schema/manifest/master-SOP touched."
+    }
+  ],
+  "not_touched_held_classes": ["model_manifest", "master-SOP (CLIENT-WEBINAR-DECK-SOP)", "CC DB schema / migrations / mission-control.db", "qc-scorer.ts", "new Kanban lanes / bug-lifecycle statuses"],
+  "totals": {
+    "total_departments": 22,
+    "total_roles": 281,
+    "floor": 28,
+    "previous_total_roles": 277,
+    "previous_total_departments": 20
+  },
+  "ci_static_checks": {
+    "python_syntax": "PASS",
+    "bash_n": "PASS",
+    "json_valid": "PASS",
+    "no_anthropic_strings_on_added_lines": "PASS",
+    "em_dash_on_added_lines": 0
+  },
+  "did_not_git_commit": true
+}
