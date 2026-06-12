@@ -265,4 +265,31 @@ then open `persona-categories.json` and fill in the tags for the new persona.
 
 ---
 
+---
+
+## Self-Service: Add a Book Persona After Build (§1.5)
+
+**After a persona is created, you MUST verify domain/perspective tags are non-empty, then run converge to push it into dept routing + the CC dashboard.**
+
+### Add a Book/Video Persona
+
+When the owner says "add a book persona named after `<Author>`" or "add `<Title>` as a coaching persona":
+
+```bash
+# 1. Add the persona from source (book PDF, video, etc.)
+bash add-persona-from-source.sh --source <path-or-url> \
+  [--title "<Book Title>"] [--author "<Author Name>"]
+
+# 2. REQUIRED: Verify domain and perspective tags are non-empty
+#    Open persona-categories.json and fill in the tags for the new persona.
+#    Until these are filled, the persona is NOT routable (visible in CC with
+#    needs_tags=true flag; excluded from dept candidate pools).
+
+# 3. Run converge (MANDATORY closing step — never skip)
+bash 32-command-center-setup/scripts/sync-extensions.sh --converge
+```
+
+**Tag requirement (§1.7):** domain[] and perspective[] must both be non-empty before the persona appears as routable in the CC dashboard. Converge writes untagged personas to `extension-sync/needs-tags.json` and surfaces them in the Telegram summary. After hand-tagging, re-run converge to clear the flag.
+
 <!-- BREADCRUMB: memory-surgery/skill-22-mac | 2026-04-12 | v6.5.7 | Added wiki note, memory system verified -->
+<!-- SKILL.md updated: Added Self-Service Add-and-Wire persona section (§1.5) -->

@@ -88,19 +88,47 @@ fi
 echo "[governing-personas] Using departments dir: $DEPARTMENTS_DIR"
 
 # Locate persona-categories.json
+# §1.7: Use the shared canonical resolver to reconcile path drift between
+# orchestrator.py (workspace/data/coaching-personas/) and this script.
 if [[ -z "${PERSONA_CATEGORIES:-}" ]]; then
-  for cand in \
-      "$HOME_DIR/.openclaw/workspace/coaching-personas/persona-categories.json" \
-      "/data/.openclaw/workspace/coaching-personas/persona-categories.json" \
-      "$HOME_DIR/clawd/coaching-personas/persona-categories.json" \
-      "$HOME_DIR/Downloads/openclaw-master-files/coaching-personas/persona-categories.json" \
-      "$HOME_DIR/.openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json"
-  do
+  # Try the shared resolver first (preferred — single resolution chain)
+  RESOLVER_CANDIDATES=(
+    "/data/.openclaw/skills/shared-utils/resolve_persona_categories_path.py"
+    "$HOME_DIR/.openclaw/skills/shared-utils/resolve_persona_categories_path.py"
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/resolve_persona_categories_path.py"
+  )
+  RESOLVER_PY=""
+  for cand in "${RESOLVER_CANDIDATES[@]}"; do
     if [[ -f "$cand" ]]; then
-      PERSONA_CATEGORIES="$cand"
+      RESOLVER_PY="$cand"
       break
     fi
   done
+
+  if [[ -n "$RESOLVER_PY" ]]; then
+    PERSONA_CATEGORIES="$(python3 "$RESOLVER_PY" 2>/dev/null)" || PERSONA_CATEGORIES=""
+    [[ -n "$PERSONA_CATEGORIES" ]] && [[ -f "$PERSONA_CATEGORIES" ]] && \
+      echo "[governing-personas] persona-categories resolved via shared resolver: $PERSONA_CATEGORIES"
+  fi
+
+  # Fallback: legacy search order (kept for boxes where shared-utils not yet installed)
+  if [[ -z "${PERSONA_CATEGORIES:-}" || ! -f "${PERSONA_CATEGORIES:-}" ]]; then
+    for cand in \
+        "$HOME_DIR/.openclaw/workspace/data/coaching-personas/persona-categories.json" \
+        "/data/.openclaw/workspace/data/coaching-personas/persona-categories.json" \
+        "$HOME_DIR/.openclaw/workspace/coaching-personas/persona-categories.json" \
+        "/data/.openclaw/workspace/coaching-personas/persona-categories.json" \
+        "$HOME_DIR/clawd/coaching-personas/persona-categories.json" \
+        "$HOME_DIR/Downloads/openclaw-master-files/coaching-personas/persona-categories.json" \
+        "$HOME_DIR/.openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json"
+    do
+      if [[ -f "$cand" ]]; then
+        PERSONA_CATEGORIES="$cand"
+        echo "[governing-personas] persona-categories (fallback search): $PERSONA_CATEGORIES"
+        break
+      fi
+    done
+  fi
 fi
 
 # Locate coaching-personas/personas dir

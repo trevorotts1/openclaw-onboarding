@@ -86,38 +86,21 @@ ls -la $OC_ROOT/workspace/agents/main/departments/*/governing-personas.md | head
 ### Steps
 
 1. Verify pre-conditions above.
-2. Check if the slug exists in the role library:
+2. Run `add-department.sh` — this is the CANONICAL path for all new department adds:
    ```bash
-   python3 -c "import json; idx=json.load(open('$(find $OC_ROOT -name _index.json -path "*/role-library/*" 2>/dev/null | head -1)')); print(list(idx['departments'].keys()))"
-   ```
-3. If the slug is in the index (detected by Sunday cron), run:
-   ```bash
-   bash 32-command-center-setup/scripts/sync-extensions.sh --dept <slug> --verbose
-   ```
-   This runs all steps: routing registration + workspace materialization + **CC workspaces row + QC specialist** (G2/G3 fix).
-
-4. If adding a brand-new dept not yet in the index, use the manual path:
-   ```bash
-   bash 32-command-center-setup/scripts/add-department.sh \
+   bash $OC_ROOT/skills/32-command-center-setup/scripts/add-department.sh \
      --slug <slug> \
      --name "<Display Name>" \
      --icon "🔧" \
      --head-name "<Name> Lead"
    ```
-   This creates: CC workspaces row + head agent + QC specialist + routing registration + role-library entry + persona-stale marker.
+   This creates: CC workspaces row + head agent + QC/Research/DA trio + routing registration + role-library entry + persona-stale marker.
 
-5. Mark the persona index stale so it rebuilds on next use:
+3. Run converge — **MANDATORY closing step, never skip**:
    ```bash
-   touch $OC_ROOT/skills/23-ai-workforce-blueprint/.persona-index-stale
+   bash $OC_ROOT/skills/32-command-center-setup/scripts/sync-extensions.sh --converge
    ```
-6. Regenerate `governing-personas.md` for the new dept:
-   ```bash
-   bash $OC_ROOT/skills/23-ai-workforce-blueprint/scripts/generate-governing-personas.sh
-   ```
-7. Restart gateway (orchestrator only — N7):
-   ```bash
-   openclaw gateway restart
-   ```
+   Converge: validates `_index.json` invariants → refreshes build-state → regenerates ORG-CHART.md → re-syncs CC dashboard. FAIL LOUD if CC sync fails.
 
 ### Verification Gate (REQUIRED — checks the CC, not just openclaw.json)
 
@@ -171,15 +154,25 @@ openclaw message send --channel telegram --body "Test task for <slug> dept"
 1. Verify pre-conditions above.
 2. Run `add-role.sh`:
    ```bash
-   bash 23-ai-workforce-blueprint/scripts/add-role.sh \
+   bash $OC_ROOT/skills/23-ai-workforce-blueprint/scripts/add-role.sh \
      --dept <dept-slug> \
-     --role "<Role Name>" \
-     --type "specialist"
+     --role "<Role Name>"
    ```
-   This creates: role workspace + agent row + persona governance file + `.persona-index-stale` marker.
-3. Regenerate `governing-personas.md`:
+   This creates: role workspace + agent row + persona governance file + `.persona-index-stale` marker + `_index.json` upsert.
+
+3. **REQUIRED: Fill how-to.md from the role-library template.** Remove the `[PENDING — FILL FROM LIBRARY]` marker.
+   The role is BLOCKED from live status until this is done. QC gate will catch it.
    ```bash
-   bash $OC_ROOT/skills/23-ai-workforce-blueprint/scripts/generate-governing-personas.sh
+   # Template location
+   ls $OC_ROOT/skills/23-ai-workforce-blueprint/templates/role-library/<dept-slug>/<role-slug>/how-to.md
+   # Copy and edit it
+   cp [...] $OC_ROOT/workspace/agents/main/departments/<dept-slug>/roles/<role-slug>/how-to.md
+   # Then edit to remove [PENDING] and fill in actual SOPs
+   ```
+
+4. Run converge — **MANDATORY closing step, never skip**:
+   ```bash
+   bash $OC_ROOT/skills/32-command-center-setup/scripts/sync-extensions.sh --converge
    ```
 
 ### Verification Gate
@@ -204,23 +197,46 @@ sqlite3 <db-path> "SELECT id,name,role FROM agents WHERE workspace_id='<dept-slu
 ### Steps
 
 1. Identify the owning department and role (or company-wide universal SOP).
-2. Author the SOP file in the correct location:
-   - Dept-level: `$OC_ROOT/workspace/agents/main/departments/<dept-slug>/SOP/<slug>.md`
-   - Universal: `universal-sops/<slug>.md`
-3. Register it in `SOP/00-INDEX.md` for the owning dept.
-4. If company-wide, update `universal-sops/00-ROUTING.md` to reference it.
-5. Run `ingest-sop-library.py` to update the CC SOP sync:
+2. Author the SOP markdown file (you write it FIRST, then call `add-sop.sh`).
+   Must have: title, context, and at least 3 numbered steps.
    ```bash
-   python3 32-command-center-setup/scripts/ingest-sop-library.py
+   cat > /tmp/new-sop.md << 'EOF'
+   # <SOP Title>
+
+   ## Purpose
+   <one-line purpose>
+
+   ## Steps
+   1. <Step 1>
+   2. <Step 2>
+   3. <Step 3>
+   EOF
    ```
+
+3. Register the SOP with `add-sop.sh` (validates substance, places file, regenerates `00-INDEX.md`):
+   ```bash
+   bash $OC_ROOT/skills/32-command-center-setup/scripts/add-sop.sh \
+     --dept <dept-slug> \
+     [--role <role-slug>] \
+     --title "<SOP Title>" \
+     --file /tmp/new-sop.md \
+     [--keywords "kw1,kw2"]
+   ```
+
+4. Run converge — **MANDATORY closing step, never skip**:
+   ```bash
+   bash $OC_ROOT/skills/32-command-center-setup/scripts/sync-extensions.sh --converge
+   ```
+   Converge ingests the SOP into the CC dashboard via `POST /api/sops/import-role-library`.
 
 ### Verification Gate
 
 ```bash
-# SOP file exists at path
-cat $OC_ROOT/workspace/agents/main/departments/<dept-slug>/SOP/00-INDEX.md | grep <slug>
+# SOP file placed and 00-INDEX.md regenerated
+cat $OC_ROOT/workspace/agents/main/departments/<dept-slug>/SOP/00-INDEX.md | grep <sop-slug>
 
-# ingest-sop-library completed without error
+# Converge completed without error (check add-ledger)
+tail -1 $OC_ROOT/extension-sync/add-ledger.jsonl | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d.get('status'))"
 ```
 
 ---

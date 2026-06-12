@@ -1,3 +1,19 @@
+## [v11.19.0]  -  2026-06-11  -  feat(self-service): add+wire onboarding scripts + derived org chart/Notion + converge step + guardrails
+
+### Changes
+
+**Self-service add-and-wire (Executor A — onboarding repo half).** Four add types (dept/role/SOP/persona) now flow through authoritative sources + a single idempotent converge step. `_index.json` stays correct, ORG-CHART.md stays derived, CC dashboard stays synced.
+
+- **§1.1b** `add-department.sh`: `upsert_role_library()` now recomputes `total_roles`+`total_departments`. Atomic write via tmp+os.replace.
+- **§1.1** `add-role.sh`: `upsert_role_into_index()` added. FAIL LOUD if dept not in index. Ledger append with `pending_how_to:true`.
+- **§1.2** New `32-command-center-setup/scripts/add-sop.sh` + `23-ai-workforce-blueprint/scripts/regenerate-sop-index.py`. Substance gate (empty/short/no-structure → FAIL LOUD). Deterministic `00-INDEX.md` rebuild.
+- **§1.3** New `refresh-build-state-from-index.py`. `build-workforce.py --regenerate-org-chart-only` flag. `create-notion-closeout.sh --refresh-workforce-only` mode.
+- **§1.6** `detect-extensions.py` extended (NEW-ROLE, NEW-SOP, NEW-PERSONA, UNTAGGED). `sync-extensions.sh --converge` full sweep: invariant check → build-state refresh → ORG-CHART → infographic/Notion → CC HTTP converge → needs-tags.json → extended last-sync → Telegram summary → add-ledger.
+- **§1.7** New `shared-utils/resolve_persona_categories_path.py` (path drift reconciliation). `generate-governing-personas.sh` + `orchestrator.py` both use the shared resolver. Phase 6b structured `[PERSONA-REFRESH]` lines + ledger append.
+- **§1.5** All four skill SKILL.md files updated with agent-runnable add commands + mandatory converge step. `universal-sops/adding-capability-after-build.md` Events 2/3/4 rewritten.
+- **§4.1** New test scripts: `test-add-role-index.sh`, `test-add-sop.sh`, `test-converge.sh` (all pass).
+- **Version:** v11.18.5 → v11.19.0 (all 9 markers). `cc-compat.json`: minVersion/pinnedTag → v4.39.0.
+
 ## [v11.19.0] — 2026-06-11
 
 ### Added
@@ -11,6 +27,7 @@
 
 ### Changed
 - version: v11.18.4 -> v11.19.0
+
 ## [v11.18.5]  -  2026-06-11  -  GHL skills: route workflow-creation through Skill 44 (de-hoop) + integration review
 
 ### Changes

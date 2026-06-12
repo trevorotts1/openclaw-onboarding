@@ -153,6 +153,16 @@ def parse_args():
         default='workforce-config.json',
         help='JSON config file for non-interactive mode (default: workforce-config.json)'
     )
+    parser.add_argument(
+        '--regenerate-org-chart-only',
+        action='store_true',
+        help=(
+            'Re-render ORG-CHART.md from current build-state WITHOUT a full rebuild. '
+            'Used by converge (sync-extensions.sh --converge) after add-*.sh runs '
+            'to keep GET /api/org-chart current. Reads .workforce-build-state.json '
+            'and writes <COMPANY_DIR>/ORG-CHART.md then exits 0.'
+        )
+    )
     return parser.parse_args()
 
 
@@ -4201,9 +4211,74 @@ def main():
     #   - save_openclaw_config() with validation after edits
 
 
+def regenerate_org_chart_only():
+    """§1.3: Re-render ORG-CHART.md from current .workforce-build-state.json.
+    Called by converge (sync-extensions.sh --converge) after any add-*.sh run.
+    Reads build-state, extracts dept/role data, regenerates ORG-CHART.md.
+    Exits 0 on success, 1 on error."""
+    import json as _json
+    import os as _os
+    from pathlib import Path as _Path
+
+    state_path = _build_state_path()
+    if not _os.path.isfile(state_path):
+        print(f"[--regenerate-org-chart-only] FATAL: build-state not found at {state_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        state = _json.load(open(state_path))
+    except (_json.JSONDecodeError, OSError) as e:
+        print(f"[--regenerate-org-chart-only] FATAL: cannot read {state_path}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Build simple dept/specialist maps from build-state
+    depts_raw = state.get("departments", {})
+    if isinstance(depts_raw, list):
+        depts_list = depts_raw
+    else:
+        depts_list = [
+            {"slug": k, "name": v.get("name") or " ".join(w.capitalize() for w in k.split("-")),
+             "emoji": v.get("emoji", ""), "rolesPlanned": v.get("rolesPlanned", 0)}
+            for k, v in depts_raw.items()
+        ]
+
+    selected_departments = {
+        d.get("slug", str(i)): {
+            "name": d.get("name", d.get("slug", "")),
+            "emoji": d.get("emoji", ""),
+            "head": d.get("head", f"{d.get('name', d.get('slug', ''))} Lead"),
+        }
+        for i, d in enumerate(depts_list)
+    }
+    specialists_by_dept = {slug: [] for slug in selected_departments}
+
+    org_chart = generate_org_chart(selected_departments, specialists_by_dept)
+
+    # Determine COMPANY_DIR: same logic as build-workforce.py main path
+    company_dir = state.get("companyDir") or COMPANY_DIR or WORKSPACE_ROOT
+    if not company_dir or not _os.path.isdir(company_dir):
+        # Fallback to workspace root
+        ws_cands = ["/data/.openclaw/workspace", _os.path.join(HOME, ".openclaw", "workspace")]
+        company_dir = next((c for c in ws_cands if _os.path.isdir(c)), WORKSPACE_ROOT)
+
+    org_chart_path = _os.path.join(company_dir, "ORG-CHART.md")
+    try:
+        with open(org_chart_path, "w") as f:
+            f.write(org_chart)
+        print(f"[--regenerate-org-chart-only] ORG-CHART.md written to {org_chart_path}", file=sys.stderr)
+    except OSError as e:
+        print(f"[--regenerate-org-chart-only] FATAL: cannot write {org_chart_path}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"org_chart_path={org_chart_path}")
+    sys.exit(0)
+
+
 if __name__ == "__main__":
     args = parse_args()
-    if args.non_interactive:
+    if getattr(args, 'regenerate_org_chart_only', False):
+        regenerate_org_chart_only()
+    elif args.non_interactive:
         config = load_non_interactive_config(args.config_file)
         build_from_config(config)
     else:

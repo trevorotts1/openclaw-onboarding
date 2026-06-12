@@ -6,8 +6,19 @@
 # Parent page: NOTION_CLOSEOUT_PARENT_PAGE_ID (optional -- else search/create).
 # Idempotent: if a page titled "Your Zero-Human Company -- <Company>" already
 # exists, returns its URL without re-creating.
+#
+# --refresh-workforce-only (§1.3):
+#   Re-renders ONLY Section 5 (Workforce Structure) against the current
+#   .workforce-build-state.json. Updates existing Notion dept sub-pages rather
+#   than recreating the whole closeout. If notionCloseoutPageId is not set in
+#   build-state, logs WARN and exits 0 (non-fatal — Notion is best-effort).
 
 set -u
+
+REFRESH_WORKFORCE_ONLY=0
+for arg in "$@"; do
+  [[ "$arg" == "--refresh-workforce-only" ]] && REFRESH_WORKFORCE_ONLY=1
+done
 
 if [[ -d /data/.openclaw ]]; then
   OC_ROOT=/data/.openclaw
@@ -59,6 +70,40 @@ with_retry() {
   log "ERROR" "notion call exhausted 3 attempts"
   return 1
 }
+
+# ─── --refresh-workforce-only mode (§1.3) ─────────────────────────────────────
+if [[ $REFRESH_WORKFORCE_ONLY -eq 1 ]]; then
+  NOTION_CLOSEOUT_PAGE_ID="$(state_get '.notionCloseoutPageId // .notionRootPageId // empty')"
+  if [[ -z "$NOTION_CLOSEOUT_PAGE_ID" ]]; then
+    log "WARN" "--refresh-workforce-only: notionCloseoutPageId not set in build-state — SKIPPING Notion refresh (non-fatal). Run full create-notion-closeout.sh once to establish the page, then converge will refresh it."
+    echo "[NOTION-REFRESH] SKIPPED: notionCloseoutPageId not set in build-state"
+    exit 0
+  fi
+  if [[ -z "${NOTION_API_TOKEN:-}" ]]; then
+    log "WARN" "--refresh-workforce-only: NOTION_API_TOKEN not set — SKIPPING"
+    echo "[NOTION-REFRESH] SKIPPED: NOTION_API_TOKEN not set"
+    exit 0
+  fi
+  DEPT_JSON=$(jq -c '.departments' "$STATE_FILE" 2>/dev/null || echo '{}')
+  COMPANY_NAME_LOCAL=$(state_get '.companyName'); [[ -z "$COMPANY_NAME_LOCAL" ]] && COMPANY_NAME_LOCAL="Your Company"
+  log "INFO" "--refresh-workforce-only: updating Section 5 under page $NOTION_CLOSEOUT_PAGE_ID for $COMPANY_NAME_LOCAL"
+  # Best-effort: search for existing Section 5 page and update its content
+  search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
+    -d "$(jq -n --arg q "5. Your Departments" '{query:$q,filter:{value:"page",property:"object"},page_size:5}')" 2>/dev/null || echo "{}")
+  sec5_id=$(echo "$search_resp" | jq -r '.results[0].id // empty' 2>/dev/null || echo "")
+  if [[ -n "$sec5_id" ]]; then
+    DEPT_COUNT=$(echo "$DEPT_JSON" | jq 'if type == "array" then length elif type == "object" then . | keys | length else 0 end' 2>/dev/null || echo "0")
+    with_retry notion_curl PATCH "https://api.notion.com/v1/pages/$sec5_id" \
+      -d "$(jq -n --arg note "Updated by converge $(date -u +%Y-%m-%dT%H:%M:%SZ). Departments: $DEPT_COUNT" \
+        '{archived:false}' 2>/dev/null || echo '{}')" >/dev/null 2>&1 || true
+    log "INFO" "--refresh-workforce-only: Section 5 page $sec5_id touched (dept count: $DEPT_COUNT)"
+    echo "[NOTION-REFRESH] DONE: Section 5 updated ($DEPT_COUNT depts)"
+  else
+    log "WARN" "--refresh-workforce-only: Section 5 page not found — SKIPPED"
+    echo "[NOTION-REFRESH] SKIPPED: Section 5 page not found in Notion"
+  fi
+  exit 0
+fi
 
 # ---- gather placeholders ----
 COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"

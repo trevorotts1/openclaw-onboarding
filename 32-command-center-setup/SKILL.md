@@ -160,4 +160,41 @@ For issues or questions about the Command Center Setup, refer to:
 - The main OpenClaw documentation at https://docs.openclaw.ai
 
 ---
+
+## Self-Service: Add a Department After Build (§1.5)
+
+**Available AFTER the workforce is built. Every add MUST end with the converge call.**
+
+### Add a Department
+
+When the owner says "add a `<X>` department":
+
+```bash
+# 1. Add the department (creates workspace row + head agent + QC/Research/DA trio
+#    + updates _index.json + registers routing in openclaw.json)
+bash 32-command-center-setup/scripts/add-department.sh \
+  --slug <dept-slug> \
+  --name "<Department Name>" \
+  [--icon "emoji"] \
+  [--description "..."]
+
+# 2. Run converge (MANDATORY closing step — never skip)
+bash 32-command-center-setup/scripts/sync-extensions.sh --converge
+```
+
+The `add-department.sh` is the CANONICAL path for adding departments. The CC dashboard button (if wired correctly) routes here too. NEVER add departments by hand-editing the database.
+
+### The Converge Command (reference)
+
+```bash
+# Full converge — run after EVERY add
+bash sync-extensions.sh --converge [--verbose] [--dry-run]
+
+# Fast mode — for Sunday cron (skips renders if no delta)
+bash sync-extensions.sh --converge --fast
+```
+
+Converge validates `_index.json` invariants, refreshes build-state, re-renders ORG-CHART.md, and re-syncs the CC dashboard. **FAIL LOUD** if CC sync fails.
+
 <!-- BREADCRUMB: skill-32-mac | 2026-04-12 | v6.5.7 | SKILL.md updated with wiki capability and Active Memory note | Memory Surgery Playbook v3.5 -->
+<!-- SKILL.md updated: Added Self-Service Add-and-Wire section (§1.5) -->

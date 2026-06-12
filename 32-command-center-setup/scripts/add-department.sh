@@ -444,12 +444,20 @@ def upsert_role_library(slug, name):
         deps[slug] = {"count": 1, "roles": [head_slug]}
         print(f"  + role-library   added dept '{slug}' with [{head_slug}]")
 
+    # Recompute totals so _index.json stays internally consistent (§1.1b fix)
+    idx["total_roles"] = sum(len(d.get("roles", [])) for d in deps.values())
+    idx["total_departments"] = len(deps)
+
     # Refresh generated-at timestamp
     idx["generated_at"] = NOW
     try:
-        with open(target, "w") as f:
+        import tempfile
+        idx_dir = target.parent
+        fd, tmp_path = tempfile.mkstemp(prefix=".idx.", suffix=".json.tmp", dir=str(idx_dir))
+        with os.fdopen(fd, "w") as f:
             json.dump(idx, f, indent=2)
             f.write("\n")
+        os.replace(tmp_path, str(target))
         return True
     except OSError as e:
         print(f"  [role-library] WARN failed to write {target}: {e}", file=sys.stderr)
