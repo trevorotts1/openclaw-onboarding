@@ -1,12 +1,12 @@
 # Suggested Roles -- presentations-dept
-**Version:** 1.3 | 2026-06-12
-**Status:** v12 Deck Discovery Strategist addition (17 roles; ROLE-17 front-door discovery now live)
+**Version:** 1.4 | 2026-06-12
+**Status:** v12.1.0 Brainstorming Buddy (renamed from Deck Discovery Strategist, generalized template); 17 roles
 
 ## Department Purpose
 End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery).
 
-## v12.0.0 Role Roster (17 roles)
-- Deck Discovery Strategist (ROLE-17, NEW -- v12)
+## v12.1.0 Role Roster (17 roles)
+- Brainstorming Buddy (ROLE-17, renamed from Deck Discovery Strategist in v12.1.0)
 - Director (ROLE-01)
 - Brand Steward (ROLE-02)
 - Capacity and Reliability Engineer (ROLE-03, NEW -- v11.19.0)
@@ -26,13 +26,13 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ---
 
-## New Roles Added in v12.0.0
+## New / Updated Roles in v12.1.0
 
-### 17. Deck Discovery Strategist (NEW -- v12)
-**Slug:** deck-discovery-strategist
-**What it does:** The department front door. When the owner says "how do I get started / make a deck?", this role brainstorms with them BEFORE the build: offers a SIMPLE interview (<=7 questions) or an EXTENSIVE interview (10 to 20 questions, back-and-forth), confirms what it learned with the owner (read-back + explicit sign-off), writes the binding working/copy/deck_brief.json, and kicks off the build by handing the locked brief to the Director. Replaces the Director's old discovery interview; the Director now ingests and validates the brief instead of re-interviewing.
-**Core SOPs:** 9.0 Open + Depth Choice | 9.1 Simple Interview (<=7 Qs) | 9.2 Extensive Interview (10-20 Qs) | 9.3 Confirm-and-Lock | 9.4 Kickoff/Handoff
-**Role type:** leadership
+### 17. Brainstorming Buddy (renamed from Deck Discovery Strategist in v12.1.0)
+**Slug:** brainstorming-buddy-presentations
+**What it does:** The department Step -1 (runs BEFORE the Director). When the owner says "how do I get started / make a presentation?", this role brainstorms with them BEFORE the build: asks 1-2 opening framing questions, offers a SIMPLE interview (7 questions or fewer) or an EXTENSIVE interview (10 to 20 questions, back-and-forth), confirms what it learned with the owner (read-back + explicit sign-off), writes the binding brief.json at working/brainstorm/presentations/<slug>/brief.json, and kicks off the build by handing the locked brief to the Director of Presentations. The Director's SOP 9.1 ingests and validates the brief and never re-interviews the owner. Generalized from the v12 Deck Discovery Strategist; now one instance of N (one per target department).
+**Core SOPs:** 9.1 Simple Interview (7 Qs or fewer) | 9.2 Extensive Interview (10-20 Qs) | 9.3 Confirm-and-Lock | 9.4 Kickoff/Handoff
+**Role type:** specialist
 
 ---
 
@@ -144,7 +144,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ## Department Coordination Notes
 
-- **Discovery Comes First:** ROLE-17 Deck Discovery Strategist runs before the Director. It produces the owner-signed deck_brief.json; the Director's SOP 9.1 ingests and validates it and never re-interviews the owner.
+- **Step -1 Comes First:** ROLE-17 Brainstorming Buddy runs before the Director (Step -1). It produces the owner-signed brief.json; the Director's SOP 9.1 ingests and validates it and never re-interviews the owner.
 - **Media Library Comes First:** The Media Librarian / GHL Updater runs Step 0 (folder creation) before ANY other phase begins.
 - **Capacity Before Dispatch:** The Capacity & Reliability Engineer runs Step 0.5 and produces capacity_plan.json before the Director dispatches Phase 1 agents.
 - **Copy Before Prompts Before Generation:** The Slide Copywriter finishes slides_copy.md (Phase 1) before the Slide Image Creator writes a single prompt (Phase 2) before the Slide Submitter submits to Kie.ai (Phase 4). The pipeline is sequential at the phase level.

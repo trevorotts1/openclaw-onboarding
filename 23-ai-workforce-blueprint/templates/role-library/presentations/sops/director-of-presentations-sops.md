@@ -12,15 +12,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Brief Ingest and Validation
 
-**When to run:** As soon as the Deck Discovery Strategist (ROLE-17) hands off working/copy/deck_brief.json with brief_locked: true.
+**When to run:** As soon as the Brainstorming Buddy (ROLE-17) hands off working/copy/deck_brief.json with brief_locked: true.
 
 **Inputs:**
 - working/copy/deck_brief.json (locked, owner-signed, delivered by ROLE-17)
 
 **Steps:**
 1. Read working/copy/deck_brief.json in full.
-2. Verify: brief_locked = true AND owner_confirmed = true are both present. If either is false or missing, hand the brief BACK to the Deck Discovery Strategist with the exact gap; the Director does NOT re-interview the owner.
-3. Verify every mandatory variable is present (see deck_brief.json mandatory checklist: interview_depth, GOAL, CTA_ACTION, AUDIENCE, TRANSFORMATION_PROMISE, TARGET_FEELING, TONE, OFFER_NAME, PRICE_MODE, FINAL_PRICE, DURATION_MIN, REPRESENTATION_MIX, plus PRICE_ANCHOR when PRICE_MODE = drop). If any mandatory variable is missing, hand the brief BACK to the Deck Discovery Strategist with the exact missing field list. The Director does NOT fill discovery gaps itself.
+2. Verify: brief_locked = true AND owner_confirmed = true are both present. If either is false or missing, hand the brief BACK to the Brainstorming Buddy with the exact gap; the Director does NOT re-interview the owner.
+3. Verify every mandatory variable is present (see deck_brief.json mandatory checklist: interview_depth, GOAL, CTA_ACTION, AUDIENCE, TRANSFORMATION_PROMISE, TARGET_FEELING, TONE, OFFER_NAME, PRICE_MODE, FINAL_PRICE, DURATION_MIN, REPRESENTATION_MIX, plus PRICE_ANCHOR when PRICE_MODE = drop). If any mandatory variable is missing, hand the brief BACK to the Brainstorming Buddy with the exact missing field list. The Director does NOT fill discovery gaps itself.
 4. Copy all brief variables into working/copy/intake.json for backward compatibility with downstream specialists. The brief is authoritative; intake.json is the generated mirror.
 5. Proceed to SOP 9.2 (Echo Protocol and Mission PRD Gate).
 
@@ -29,7 +29,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Hand to:** SOP 9.2 (Echo Protocol and Mission PRD Gate)
 
-**Failure mode:** If the Deck Discovery Strategist does not acknowledge the returned brief within 1 hour, escalate to the Master Orchestrator. The Director never re-interviews the owner under any circumstance; gap-filling is the Deck Discovery Strategist's job.
+**Failure mode:** If the Brainstorming Buddy does not acknowledge the returned brief within 1 hour, escalate to the Master Orchestrator. The Director never re-interviews the owner under any circumstance; gap-filling is the Brainstorming Buddy's job.
 
 ---
 

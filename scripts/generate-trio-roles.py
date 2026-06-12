@@ -35,6 +35,13 @@ INDEX_PATH = ROLE_LIB / "_index.json"
 SKIP_DEPTS = {"_stage1_drafts", "master-orchestrator"}
 
 # Dept-specific display names and director titles
+BUDDY_DEPTS = {  # depts that get a Brainstorming Buddy (Tier 1 for v12.1.0)
+    "presentations", "video", "graphics", "marketing",
+    "web-development", "app-development",
+}
+BB_TEMPLATE = ROLE_LIB / "_brainstorming-buddy-template.md"
+BB_BANKS = ROLE_LIB / "_brainstorming-buddy-question-banks.json"
+
 DEPT_META = {
     "app-development":          ("App Development",        "Head of App Development"),
     "audio":                    ("Audio Production",        "Head of Audio Production"),
@@ -54,6 +61,14 @@ DEPT_META = {
     "social-media":             ("Social Media",            "Head of Social Media"),
     "video":                    ("Video",                   "Head of Video Production"),
     "web-development":          ("Web Development",         "Head of Web Development"),
+    # presentations is a vertical-pack dept not in the main iteration list but IS
+    # in BUDDY_DEPTS; the Buddy loop handles it explicitly via BUDDY_EXTRA_DEPTS.
+}
+
+# Depts in BUDDY_DEPTS that are NOT in DEPT_META (e.g. vertical-pack departments)
+# -- iterated by the Buddy block ONLY (they already have a dir and a director file).
+BUDDY_EXTRA_DEPTS = {
+    "presentations": ("Presentations", "Director of Presentations"),
 }
 
 
@@ -864,6 +879,48 @@ def needs_healer_file(dept_dir: Path) -> bool:
     return True
 
 
+def bb_role_slug(dept: str) -> str:
+    return f"brainstorming-buddy-{dept}"
+
+
+def bb_filename(dept: str) -> str:
+    return f"brainstorming-buddy-{dept}.md"
+
+
+def needs_bb_file(dept_dir: Path) -> bool:
+    for f in dept_dir.iterdir():
+        if "brainstorming-buddy" in f.name.lower():
+            return False
+    return True
+
+
+def make_bb_content(dept: str, dept_name: str, director_title: str) -> str:
+    """Instantiate the canonical Brainstorming Buddy template for one department.
+
+    Reads the template and fills DEPARTMENT_NAME, DIRECTOR_TITLE, DEPT_DELIVERABLE,
+    DEPT_BUILD_SPECIALISTS, DEPT_SLUG, and DEPT_QUESTION_BANK from the banks file.
+    Other {{TOKENS}} (persona/date/industry/company) are filled later by the
+    WS-2 instantiation path, like every other role.
+    """
+    if not BB_TEMPLATE.is_file():
+        raise FileNotFoundError(
+            f"Brainstorming Buddy template missing: {BB_TEMPLATE}"
+        )
+    if not BB_BANKS.is_file():
+        raise FileNotFoundError(
+            f"Brainstorming Buddy question banks missing: {BB_BANKS}"
+        )
+    tmpl = BB_TEMPLATE.read_text()
+    banks = json.loads(BB_BANKS.read_text())[dept]
+    return (tmpl
+            .replace("{{DEPARTMENT_NAME}}", dept_name)
+            .replace("{{DIRECTOR_TITLE}}", director_title)
+            .replace("{{DEPT_DELIVERABLE}}", banks["dept_deliverable"])
+            .replace("{{DEPT_SLUG}}", banks["dept_slug"])
+            .replace("{{DEPT_QUESTION_BANK}}", banks["rendered_question_bank"])
+            .replace("{{DEPT_BUILD_SPECIALISTS}}", banks["build_specialists_str"]))
+
+
 def needs_da_file(dept_dir: Path) -> bool:
     for f in dept_dir.iterdir():
         if "devil" in f.name.lower():
@@ -998,6 +1055,34 @@ def main():
         else:
             skipped.append(f"{dept}/QC (already exists)")
 
+        # --- Brainstorming Buddy (5th role; gated to BUDDY_DEPTS) ---------------
+        if dept in BUDDY_DEPTS:
+            if needs_bb_file(dept_dir):
+                fname = bb_filename(dept)
+                fpath = dept_dir / fname
+                content = make_bb_content(dept, dept_name, director_title)
+                if args.dry_run:
+                    print(f"  [DRY-RUN] would create: {fpath.relative_to(REPO_ROOT)}")
+                else:
+                    fpath.write_text(content)
+                    print(f"  + created: {fpath.relative_to(REPO_ROOT)}")
+                slug = bb_role_slug(dept)
+                dept_idx = depts_in_idx.setdefault(dept, {"count": 0, "roles": []})
+                if slug not in dept_idx["roles"]:
+                    dept_idx["roles"].append(slug)
+                    dept_idx["roles"].sort()
+                    dept_idx["count"] = len(dept_idx["roles"])
+                created.append(f"{dept}/Buddy")
+            else:
+                # Ensure slug is registered even if file already exists
+                slug = bb_role_slug(dept)
+                dept_idx = depts_in_idx.setdefault(dept, {"count": 0, "roles": []})
+                if slug not in dept_idx["roles"]:
+                    dept_idx["roles"].append(slug)
+                    dept_idx["roles"].sort()
+                    dept_idx["count"] = len(dept_idx["roles"])
+                skipped.append(f"{dept}/Buddy (already exists)")
+
         # --- Department Healer (the QUAD's 4th role; ON by default) -----------
         # ON by default since v11.28.0 (T3-002 operator GO 2026-06-12).
         # Heartbeats are main-only (install.sh agentsOnly=["main"]) and dept
@@ -1023,6 +1108,40 @@ def main():
                 created.append(f"{dept}/Healer")
             else:
                 skipped.append(f"{dept}/Healer (already exists)")
+
+    # --- Brainstorming Buddy for BUDDY_EXTRA_DEPTS (e.g. presentations) --------
+    # These depts are in BUDDY_DEPTS but NOT in DEPT_META (vertical-pack depts).
+    # They already have a role-library directory and a director file; we only
+    # need the Buddy role materialized and the index entry registered.
+    for dept, (dept_name, director_title) in BUDDY_EXTRA_DEPTS.items():
+        dept_dir = ROLE_LIB / dept
+        if not dept_dir.is_dir():
+            errors.append(f"BUDDY_EXTRA SKIP (no dir): {dept}")
+            continue
+        if needs_bb_file(dept_dir):
+            fname = bb_filename(dept)
+            fpath = dept_dir / fname
+            content = make_bb_content(dept, dept_name, director_title)
+            if args.dry_run:
+                print(f"  [DRY-RUN] would create: {fpath.relative_to(REPO_ROOT)}")
+            else:
+                fpath.write_text(content)
+                print(f"  + created: {fpath.relative_to(REPO_ROOT)}")
+            slug = bb_role_slug(dept)
+            dept_idx = depts_in_idx.setdefault(dept, {"count": 0, "roles": []})
+            if slug not in dept_idx["roles"]:
+                dept_idx["roles"].append(slug)
+                dept_idx["roles"].sort()
+                dept_idx["count"] = len(dept_idx["roles"])
+            created.append(f"{dept}/Buddy (extra)")
+        else:
+            slug = bb_role_slug(dept)
+            dept_idx = depts_in_idx.setdefault(dept, {"count": 0, "roles": []})
+            if slug not in dept_idx["roles"]:
+                dept_idx["roles"].append(slug)
+                dept_idx["roles"].sort()
+                dept_idx["count"] = len(dept_idx["roles"])
+            skipped.append(f"{dept}/Buddy (extra, already exists)")
 
     # Write updated index
     idx["departments"] = depts_in_idx

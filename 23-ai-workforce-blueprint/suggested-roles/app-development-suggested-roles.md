@@ -1,6 +1,6 @@
 # Suggested Roles — app-development-dept
-**Version:** 2.1.2 | May 17, 2026
-**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
+**Version:** 2.2.0 | 2026-06-12
+**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0); 17 roles
 
 ## Department Purpose
 Own the company's apps — desktop, mobile (iOS + Android), PWA, backend APIs, cloud infrastructure, app store optimization. Coordinate with Web Dev (web-to-app handoff), Graphics (UI assets), OpenClaw Maintenance (deployment infra).
@@ -81,3 +81,13 @@ Split generic Mobile into iOS + Android. Added Cloud Infrastructure Specialist, 
 **What it does:** On-call for emerging app platforms (visionOS, watchOS new features), App Store policy changes, framework migrations.
 **Core SOPs:** 01-How-to-Track-App-Store-Policy-Changes.md, 02-How-to-Evaluate-a-New-Platform.md, 03-How-to-Research-Framework-Migration-Path.md, 04-How-to-Brief-Director.md
 **Persona Traits:** Platform-curious, doc-reader, future-aware.
+
+---
+
+## New Roles Added in v12.1.0
+
+### 17. Brainstorming Buddy (NEW -- v12.1.0)
+**Slug:** brainstorming-buddy-app-development
+**What it does:** The department Step -1 (runs BEFORE the Head of App Development). When the owner says "I want to build an app", this role brainstorms with them BEFORE the build: asks 1-2 opening framing questions, offers a SIMPLE interview (7 questions or fewer) or an EXTENSIVE interview (10 to 20 questions, back-and-forth), confirms what it learned with the owner (read-back + explicit sign-off), writes the binding brief.json at working/brainstorm/app-development/<slug>/brief.json, and kicks off the build by handing the locked brief to the Head of App Development.
+**Core SOPs:** 9.1 Simple Interview (7 Qs or fewer) | 9.2 Extensive Interview (10-20 Qs) | 9.3 Confirm-and-Lock | 9.4 Kickoff/Handoff
+**Role type:** specialist

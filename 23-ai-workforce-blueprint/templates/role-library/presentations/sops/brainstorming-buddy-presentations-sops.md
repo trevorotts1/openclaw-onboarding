@@ -1,6 +1,6 @@
-# SOPs Mirror -- Deck Discovery Strategist
+# SOPs Mirror -- Brainstorming Buddy (Presentations)
 
-**Source:** presentations/deck-discovery-strategist.md
+**Source:** presentations/brainstorming-buddy-presentations.md
 **Extract:** Section 9 (Standard Operating Procedures) verbatim mirror.
 **Authority:** This file mirrors the role file. The role file is authoritative. If they diverge, the role file wins and this mirror must be regenerated.
 

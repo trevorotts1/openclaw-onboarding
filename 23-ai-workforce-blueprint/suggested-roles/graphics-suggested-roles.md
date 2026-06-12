@@ -1,6 +1,6 @@
 # Suggested Roles — graphics-dept
-**Version:** 2.1.2 | May 17, 2026
-**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
+**Version:** 2.2.0 | 2026-06-12
+**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0); 18 roles
 
 ## Department Purpose
 All static visual content for the company — brand identity, social graphics, slides, ads, book covers, infographics, email design. Coordinate with Marketing (briefs), Web Dev (assets), Video (thumbnails), Audio (podcast covers), Paid Ads (ad creative), Social Media (post graphics).
@@ -86,3 +86,13 @@ Added Book Cover Designer, Course Slide Designer, Infographic Specialist, Email 
 **What it does:** Trend research, emerging design tools evaluation, design system best practice. Tier-1: Smashing Magazine, Brand New, design industry reports.
 **Core SOPs:** 01-How-to-Track-Design-Trends.md, 02-How-to-Evaluate-New-Design-Tools.md, 03-How-to-Research-Industry-Visual-Conventions.md, 04-How-to-Brief-Director.md
 **Persona Traits:** Trend-aware, tool-curious, source-rigorous.
+
+---
+
+## New Roles Added in v12.1.0
+
+### 18. Brainstorming Buddy (NEW -- v12.1.0)
+**Slug:** brainstorming-buddy-graphics
+**What it does:** The department Step -1 (runs BEFORE the Chief Design Officer). When the owner says "I need a graphic", this role brainstorms with them BEFORE the build: asks 1-2 opening framing questions, offers a SIMPLE interview (7 questions or fewer) or an EXTENSIVE interview (10 to 20 questions, back-and-forth), confirms what it learned with the owner (read-back + explicit sign-off), writes the binding brief.json at working/brainstorm/graphics/<slug>/brief.json, and kicks off the build by handing the locked brief to the Chief Design Officer.
+**Core SOPs:** 9.1 Simple Interview (7 Qs or fewer) | 9.2 Extensive Interview (10-20 Qs) | 9.3 Confirm-and-Lock | 9.4 Kickoff/Handoff
+**Role type:** specialist
