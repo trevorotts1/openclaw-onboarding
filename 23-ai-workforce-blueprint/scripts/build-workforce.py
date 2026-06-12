@@ -257,13 +257,13 @@ def load_non_interactive_config(config_file):
 
 
 # ============================================================
-# CANONICAL DEPARTMENT FLOOR (N23 standard: 16 mandatory + 7 universal-primary-vertical)
+# CANONICAL DEPARTMENT FLOOR (N28 standard: 21 mandatory + 7 universal-primary-vertical)
 # ============================================================
-# Every Zero Human Company is built with the 16 mandatory canonical departments
+# Every Zero Human Company is built with the 21 mandatory canonical departments
 # PLUS the 7 universal primary vertical-pack departments (one primary per pack,
-# always added regardless of industry) = 23 departments minimum. The canonical
+# always added regardless of industry) = 28 departments minimum. The canonical
 # floor is further expanded by keyword-matched industry extras (flavor/additive,
-# never reducing). Explicit client declines are the ONLY way to go below 23.
+# never reducing). Explicit client declines are the ONLY way to go below 28.
 # Canonical IDs live in department-naming-map.json (the source of truth). Legacy
 # RECOMMENDED_DEPARTMENTS keys differ from canonical IDs (e.g. "billing" vs
 # "billing-finance"); CANONICAL_ID_ALIASES maps canonical -> legacy so we
@@ -348,10 +348,14 @@ def load_canonical_floor():
         print(f"[CANONICAL] Could not read {map_path}: {e}. Using hardcoded floor.", file=sys.stderr)
 
     canonical_ids = list(mandatory.keys()) or [
+        # 21-dept hardcoded fallback — mirrors HARDCODED_MANDATORY in department-floor.py.
+        # Update both in lockstep whenever the naming-map mandatory section changes.
         "marketing", "sales", "billing-finance", "customer-support",
         "web-development", "app-development", "graphics", "video", "audio",
         "research", "communications", "crm", "openclaw-maintenance", "legal",
-        "social-media", "paid-advertisement",
+        "social-media", "paid-advertisement", "personal-assistant",
+        "general-task", "project-architecture-office",
+        "bugs", "healer",
     ]
 
     floor = {}
@@ -376,7 +380,7 @@ def _canonical_decline_set(build_state):
     Return the set of canonical IDs the client EXPLICITLY declined.
 
     EXPLICIT-DECLINE MODEL (v10.15.26 / v10.16.25): the ONLY sanctioned way for a
-    workforce to land below the 16 mandatory floor is a RECORDED explicit decline.
+    workforce to land below the 21 mandatory floor is a RECORDED explicit decline.
     Two equivalent recordings are honored (and kept in sync with the on-disk
     enforcer department-floor.py.declined_set()):
       1. build_state["canonicalReconciliation"]["decisions"][cid] == "no"
@@ -705,24 +709,24 @@ def _write_industry_org_design_manifest(matched_packs, added_departments, core_a
 
 def apply_vertical_packs(selected_departments, core_answers):
     """
-    WS-4 (23-DEPT STANDARD): auto-add vertical-pack departments to the workforce.
+    WS-4 (28-DEPT STANDARD): auto-add vertical-pack departments to the workforce.
 
-    Standard set (the 16 canonical floor) is already applied by
+    Standard set (the 21 canonical floor) is already applied by
     reconcile_canonical_floor(). This sibling step adds the 7 universal primary
     vertical departments (one per pack) PLUS keyword-matched extras:
 
-      PHASE 1 — UNIVERSAL PRIMARIES (23-dept floor, fires for ALL clients):
+      PHASE 1 — UNIVERSAL PRIMARIES (28-dept floor, fires for ALL clients):
         Every vertical pack exposes exactly one universal_primary department
         (marked universal_primary=true in department-naming-map.json; defaults to
         the first dept in the pack if the flag is absent). These 7 departments are
-        added to EVERY client regardless of industry — giving 16+7=23 as the
+        added to EVERY client regardless of industry — giving 21+7=28 as the
         minimum floor. Industry matching does NOT gate these.
 
-      PHASE 2 — KEYWORD-MATCHED EXTRAS (flavor on top of the 23 floor):
+      PHASE 2 — KEYWORD-MATCHED EXTRAS (flavor on top of the 28 floor):
         Detect which packs match the client's industry/business context via
         auto_add_keywords. For each matching pack, add remaining (non-universal-
         primary) departments to selected_departments. These extras are ADDITIVE
-        and do NOT reduce the floor — they push the final count to 23+.
+        and do NOT reduce the floor — they push the final count to 28+.
 
       DE-DUP: all adds are de-duped against (a) the canonical floor under any
         canonical id/alias/variant, (b) a prior universal-primary already added,
@@ -807,13 +811,13 @@ def apply_vertical_packs(selected_departments, core_answers):
             universal_count += 1
 
     print(f"[VERTICAL] Universal primaries added: {universal_count} of {len(vertical_packs)} packs "
-          f"(23-dept floor: 16 mandatory + {universal_count} universal)", file=sys.stderr)
+          f"(28-dept floor: 21 mandatory + {universal_count} universal)", file=sys.stderr)
 
-    # PHASE 2 — keyword-matched extras (flavor on top of the 23 floor).
+    # PHASE 2 — keyword-matched extras (flavor on top of the 28 floor).
     matched_packs = _detect_vertical_packs(core_answers, vertical_packs)
     if not matched_packs:
         print("[VERTICAL] No vertical pack matched the client's industry signal — "
-              "no extras beyond the 23-dept floor.", file=sys.stderr)
+              "no extras beyond the 28-dept floor.", file=sys.stderr)
     else:
         for pack_id, _hits in matched_packs:
             pack = vertical_packs.get(pack_id, {})
