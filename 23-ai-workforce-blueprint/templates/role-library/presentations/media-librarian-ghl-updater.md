@@ -51,12 +51,22 @@ This role is dispatched FIRST, before the discovery interview. The local and GHL
 3. Write media_library.json to record all paths.
 4. Notify the Director that Step 0 is complete.
 
+### Phase A Task (During Discovery)
+
+1. Run SOP 9.5 (Client Asset Acquisition): collect logo file, upload to GHL/Drive, verify the public URL, record LOGO_URL (and FOUNDER_PORTRAIT_URL if A5 slides are planned) in media_library.json before Phase 2 ends.
+2. Track PROOF_ASSETS collected during discovery. Run the [PROOF PENDING] resolution loop with the client before Phase 1A closes.
+
 ### Phase 5 to 6 Handoff Task (After Image QC Passes)
 
 1. Monitor the working/qc/image_qc_report.json file. As images pass (score >= 8.5), intake them per SOP 9.2.
 2. Upload passed images to GHL per SOP 9.3.
 3. After all images pass: run the delivery verification per SOP 9.4.
 4. Notify the Director and the PPTX Assembly Specialist that the media library is complete and verified.
+
+### Post-Phase 6 QC Task (After Final Deck QC Passes)
+
+1. Run SOP 9.6 (Final Deck Delivery): deliver the PPTX to all required destinations, verify each destination, send the delivery notification via openclaw message send.
+2. Mark delivery_complete = true in media_library.json only after all destinations are verified.
 
 ---
 
@@ -87,6 +97,11 @@ Review the local workdir structure. Are all completed run directories properly a
 | Delivery verification passing rate | 100% (only verified deliveries are marked complete) |
 | Local / GHL naming convention compliance | 100% |
 | media_library.json written before any Phase proceeds | 100% |
+| LOGO_URL verified and recorded before Phase 2 ends | 100% |
+| FOUNDER_PORTRAIT_URL verified when A5 slides present | 100% |
+| [PROOF PENDING] items resolved before Phase 1A closes | 100% |
+| Final PPTX delivery verified at every destination before done message | 100% |
+| Delivery notification sent via openclaw message send (never raw API) | 100% |
 
 ---
 
@@ -250,6 +265,103 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
+### SOP 9.5 -- Client Asset Acquisition
+
+**When to run:** During Phase A (discovery), before Phase 2 ends. LOGO_URL (and FOUNDER_PORTRAIT_URL when A5 slides exist) must be recorded in media_library.json before Phase 2 is complete. The [PROOF PENDING] resolution loop with the client must be completed before Phase 1A.
+
+**Inputs:**
+- intake.json (LOGO_ON_SLIDES, LOGO_FILE, LOGO_URL, A5 slide presence flag)
+- Client's GHL media library credentials
+- Client's Google Drive credentials (if applicable)
+- PROOF_ASSETS list from discovery
+
+**Steps:**
+
+**Logo acquisition:**
+1. Check intake.json for LOGO_URL. If a stable public https URL is already present and the file downloads successfully (HTTP 200, non-empty), record it directly -- no upload needed.
+2. If the client provided only a local file (LOGO_FILE set, LOGO_URL missing or not stable):
+   a. Upload the file to the client's GHL media library (use the same GHL credentials as SOP 9.3). Record the returned media URL.
+   b. If the client uses Drive, also upload to the client's Drive folder and record the direct-download link.
+   c. Prefer the GHL URL. Fall back to Drive direct-download link if GHL is unavailable.
+3. Verify: attempt an HTTP GET on the final URL. It must return 200 with a non-empty body. A URL that returns 403 or 404 cannot be used as a Kie.ai reference image.
+4. Record LOGO_URL in media_library.json: `"logo_url": "<verified public https URL>"`.
+
+**Founder portrait acquisition (A5 slides only):**
+1. If slides_copy.md (or the draft slide plan) contains any A5 archetype slides: collect the founder portrait image from the client.
+2. Upload to GHL media library (and Drive if applicable) using the same upload process as above.
+3. Verify the URL returns HTTP 200 with a non-empty body.
+4. Record FOUNDER_PORTRAIT_URL in media_library.json: `"founder_portrait_url": "<verified public https URL>"`.
+
+**[PROOF PENDING] resolution loop:**
+1. During Phase A, collect all PROOF_ASSETS items: testimonials, revenue screenshots, press logos, before/after numbers.
+2. For any proof item that the client has not yet supplied: mark it `[PROOF PENDING]` in intake.json and in the corresponding slide entry in slides_copy.md.
+3. Before Phase 1A (owner approval gate): present the full list of [PROOF PENDING] items to the client and collect each one or confirm it will be replaced with a restructured slide (per the master SOP asset collection rule -- no fabricated proof, ever).
+4. After the client responds: update intake.json and slides_copy.md. Replace [PROOF PENDING] with the actual asset reference, or mark [CLIENT TO SUPPLY] and restructure the slide to remove the fabricated element.
+5. Run this loop until no [PROOF PENDING] entries remain before Phase 1A closes.
+
+**Outputs:**
+- media_library.json updated with `logo_url` (and `founder_portrait_url` if applicable)
+- intake.json updated with resolved PROOF_ASSETS
+- slides_copy.md updated with all proof references resolved or marked [CLIENT TO SUPPLY]
+
+**Hand to:** Slide Image Creator / Prompt Writer (who reads LOGO_URL and FOUNDER_PORTRAIT_URL from media_library.json for image-to-image submissions); Director (confirmation that assets are ready before Phase 2)
+
+**Failure mode:** If the client cannot supply a logo or founder portrait and the intake calls for one: escalate to the Director immediately. Do not proceed to Phase 2 with a missing reference URL. If the client confirms LOGO_ON_SLIDES = false, update intake.json and remove all logo references; text-to-image mode applies.
+
+---
+
+### SOP 9.6 -- Final Deck Delivery
+
+**When to run:** After final Phase 6 QC passes (working/qc/final_deck_qc.md score >= 8.5).
+
+Note: if a ROLE-13 Delivery Concierge role is added to this department in a future revision, this SOP migrates there and this role hands off to ROLE-13 after QC passes. Until that role exists, this role owns delivery.
+
+**Inputs:**
+- output/[DECK_SLUG].pptx (the QC-passed assembled deck)
+- working/qc/final_deck_qc.md (final QC score, must be >= 8.5)
+- intake.json (client box type: Mac vs. other)
+- media_library.json (GHL folder name and ghl_folder_id)
+- GHL credentials from client's env stores
+
+**Steps:**
+
+1. Confirm the final QC score is >= 8.5. Do not deliver a deck that has not passed final QC.
+
+2. Determine delivery path:
+   a. **Mac client (Mac mini or MacBook):** copy the PPTX to the client's ~/Downloads/ folder.
+      - Command: `cp output/[DECK_SLUG].pptx ~/Downloads/[DECK_SLUG]_final.pptx`
+      - Verify: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` must show the file with a non-zero size.
+      - Record the exact path.
+   b. **Non-Mac or environment unclear:** do NOT assume a delivery location. Ask the client explicitly: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Then deliver to their stated destination. Record the destination.
+
+3. Upload the final PPTX to the client's GHL media library:
+   - Upload to the same GHL folder used for the slide images (ghl_folder_id from media_library.json).
+   - Remote name: `[Deck Title] FINAL v<N>.pptx`.
+   - Record the returned GHL media_id and URL in media_library.json: `"pptx_ghl_media_id": "...", "pptx_ghl_url": "..."`.
+
+4. Verify every destination before reporting done:
+   - Mac download: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` (non-empty file must exist).
+   - GHL: call the GHL API to confirm the PPTX file exists in the folder by its media_id. A self-report without an API confirmation is not ground truth.
+   - Additional destinations (Drive, email, etc.): confirm via the relevant API or service before reporting.
+
+5. Send a delivery notification via `openclaw message send` (never raw Telegram API):
+   - Include every verified destination path or URL.
+   - Include the final QC score.
+   - Example message: "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) ~/Downloads/[DECK_SLUG]_final.pptx on your Mac, (2) GHL media library folder '[FOLDER_NAME]' as '[REMOTE_NAME]'. Both locations confirmed."
+
+6. Update media_library.json: add `"delivery_complete": true, "delivery_verified_at": "ISO timestamp", "delivery_destinations": [{"type": "...", "path_or_url": "...", "verified": true}]`.
+
+**Outputs:**
+- PPTX at every confirmed delivery destination
+- media_library.json updated with delivery_complete and all destination records
+- Delivery notification sent via openclaw message send
+
+**Hand to:** Director of Presentations (run complete); client (via the delivery notification)
+
+**Failure mode:** If any delivery destination fails verification: do not mark delivery_complete = true. Notify the Director: "Delivery incomplete: [destination] could not be verified. [Specific error]. Local PPTX is at output/[DECK_SLUG].pptx. Awaiting resolution." Never send a "done" message when a destination is unverified.
+
+---
+
 ## 10. Quality Gates
 
 ### Gate 1 -- Step 0 Must Complete Before Any Run Phase
@@ -271,10 +383,13 @@ local_count == ghl_count == slide_count_final before delivery_verified is set to
 ### You receive work from:
 - Director of Presentations -- dispatch at Step 0 (start of run) and again after Phase 5 begins
 - QC Specialist -- Presentations -- passed images in working/renders/ + image_qc_report.json signals
+- Client (via discovery channel) -- logo file, founder portrait, and PROOF_ASSETS during Phase A
 
 ### You hand work off to:
-- PPTX Assembly Specialist -- media-library/ folder path + media_library.json (confirms all images present)
-- Director -- delivery_verified status
+- Slide Image Creator / Prompt Writer -- LOGO_URL and FOUNDER_PORTRAIT_URL from media_library.json (before Phase 2)
+- PPTX Assembly Specialist -- media-library/ folder path + media_library.json (confirms all images present, delivery_verified: true)
+- Director -- delivery_verified status and delivery_complete status after final deck delivery
+- Client -- delivery notification with all verified destination paths and final QC score (via openclaw message send)
 
 ---
 
@@ -318,6 +433,12 @@ media_library.json: delivery_verified = true, local_count = 75, ghl_count = 75, 
 - Uploading to the wrong GHL location (operator's media library instead of client's).
 - Moving (not copying) images from renders/ to media-library/ -- QC may need the original renders for re-review.
 - Skipping Step 0 because "the directory probably exists from a previous run" -- never assume, always verify.
+- Supplying a LOGO_URL that returns 403 or 404 -- Kie.ai i2i requires a publicly reachable https URL; an inaccessible URL silently produces a slide without the logo.
+- Proceeding to Phase 2 with LOGO_URL = null when LOGO_ON_SLIDES = true -- the prompt writer has no reference URL to embed.
+- Leaving [PROOF PENDING] items unresolved at Phase 1A -- the owner approval gate must close with every asset resolved or marked [CLIENT TO SUPPLY].
+- Sending the final delivery notification before verifying every destination -- a "done" message with unverified artifacts is a lie.
+- Delivering the PPTX to a hardcoded path on a non-Mac client without asking -- always ask where the client wants it if the box type is not Mac.
+- Calling openclaw message send with a Drive or GHL URL that has not been confirmed reachable -- verify each URL before including it in the notification.
 
 ---
 

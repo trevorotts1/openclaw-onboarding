@@ -89,8 +89,11 @@ Re-calibrate the fleet sizing table (see SOP 9.1) against actual run performance
 | capacity_plan.json delivered before Phase 1 begins | 100% |
 | Budget overruns caught before starting Phase 4 | 100% |
 | Silent run deaths (no watchdog alert) | 0 |
-| Watchdog self-heals that restored a stalled run | Track and report |
-| Flask sizing accuracy (recommended vs. actual agents used) | Within 20% |
+| Watchdog detects stalls within 10-minute polling window | 100% |
+| First-stall self-heals that restore progress | Track success rate |
+| Director receives first-stall alert for action | 100% |
+| Operator paged only on second stall or failed self-heal | 100% |
+| Fleet sizing accuracy (recommended vs. actual agents used) | Within 20% |
 
 ---
 
@@ -186,7 +189,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.2 -- Resilience Watchdog Cron and Checkpoint Recovery
 
-**When to run:** Phase 7 -- after the Slide Submitter begins Phase 4 (image generation). The watchdog runs for the duration of Phase 4 and Phase 5, then is removed after Phase 6 completes.
+**When to run:** Phase 7 -- after the Slide Submitter begins Phase 4 (image generation). The watchdog runs every 10 minutes for up to 90 minutes or until the run reaches DONE status, whichever comes first.
 
 **Inputs:**
 - working/checkpoints/ (directory of all checkpoint JSON files)
@@ -199,7 +202,25 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    # Resilience watchdog for [DECK_SLUG] -- Phase 7 SOP 9.2
    CHECKPOINT_DIR="[WORKDIR]/working/checkpoints"
    LAST_PROGRESS_FILE="$CHECKPOINT_DIR/.last_progress"
-   STALL_THRESHOLD_MINUTES=30
+   CONSECUTIVE_STALLS_FILE="$CHECKPOINT_DIR/.consecutive_stalls"
+   STALL_THRESHOLD_MINUTES=10
+   START_TIME_FILE="$CHECKPOINT_DIR/.watchdog_start_time"
+   MAX_RUNTIME_MINUTES=90
+
+   # Initialize start time on first run
+   if [ ! -f "$START_TIME_FILE" ]; then
+       date +%s > "$START_TIME_FILE"
+   fi
+
+   # Check if we have exceeded 90 minutes
+   START_TIME=$(cat "$START_TIME_FILE")
+   CURRENT_TIME=$(date +%s)
+   ELAPSED_MINUTES=$(( (CURRENT_TIME - START_TIME) / 60 ))
+   if [ $ELAPSED_MINUTES -gt $MAX_RUNTIME_MINUTES ]; then
+       openclaw message send --channel telegram --to [DIRECTOR_CHAT_ID] --message "[DECK_SLUG] watchdog: max runtime (90 min) exceeded. Removing watchdog and escalating to operator."
+       openclaw message send --channel telegram --to [OPERATOR_CHAT_ID] --message "[DECK_SLUG] watchdog: run exceeded 90-minute watchdog window. Manual intervention required."
+       exit 0
+   fi
 
    # Check phase4_checkpoint.json for progress
    if [ -f "$CHECKPOINT_DIR/phase4_checkpoint.json" ]; then
@@ -207,34 +228,47 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
        PREV_COMPLETE=$(cat "$LAST_PROGRESS_FILE" 2>/dev/null || echo "0")
        echo "$SLIDES_COMPLETE" > "$LAST_PROGRESS_FILE"
        if [ "$SLIDES_COMPLETE" = "$PREV_COMPLETE" ] && [ "$SLIDES_COMPLETE" != "0" ]; then
-           # No progress since last check -- potential stall
-           openclaw message send --channel telegram --to [OPERATOR_CHAT_ID] --message "[DECK_SLUG] watchdog: no new images completed in 15 min (current: $SLIDES_COMPLETE). Checking Kie.ai status..."
+           # No progress since last check -- increment consecutive stalls
+           STALL_COUNT=$(cat "$CONSECUTIVE_STALLS_FILE" 2>/dev/null || echo "0")
+           STALL_COUNT=$((STALL_COUNT + 1))
+           echo "$STALL_COUNT" > "$CONSECUTIVE_STALLS_FILE"
+           
+           if [ $STALL_COUNT -eq 1 ]; then
+               # First stall: alert Director and attempt self-heal
+               openclaw message send --channel telegram --to [DIRECTOR_CHAT_ID] --message "[DECK_SLUG] watchdog: no progress in 10 minutes (current: $SLIDES_COMPLETE). Attempting self-heal..."
+           elif [ $STALL_COUNT -ge 2 ]; then
+               # Second consecutive stall or beyond: page operator
+               openclaw message send --channel telegram --to [OPERATOR_CHAT_ID] --message "[DECK_SLUG] watchdog: second consecutive stall detected ($STALL_COUNT total). Manual intervention required."
+           fi
+       else
+           # Progress detected: reset stall counter
+           echo "0" > "$CONSECUTIVE_STALLS_FILE"
        fi
    fi
    ```
-2. Install the cron via crontab:
+2. Install the cron via crontab to run every 10 minutes:
    ```bash
-   (crontab -l 2>/dev/null; echo "*/15 * * * * bash [WORKDIR]/working/scripts/watchdog.sh >> [WORKDIR]/working/checkpoints/watchdog.log 2>&1") | crontab -
+   (crontab -l 2>/dev/null; echo "*/10 * * * * bash [WORKDIR]/working/scripts/watchdog.sh >> [WORKDIR]/working/checkpoints/watchdog.log 2>&1") | crontab -
    ```
 3. Verify the cron is installed: `crontab -l | grep watchdog`.
-4. Record the cron installation in capacity_plan.json: `watchdog_installed: true, watchdog_cron: "*/15 * * * *"`.
-5. When a stall is detected: attempt self-heal.
-   - Phase 4 stall: check phase4_checkpoint.json for tasks with status "submitted" and submitted_at > 30 minutes ago. If found, attempt to re-poll those task IDs. If still stuck after 3 poll attempts, escalate to Director.
-   - Phase 5 stall: check image_qc_report.json for images not yet scored > 30 minutes after download. Re-dispatch QC on those images.
+4. Record the cron installation in capacity_plan.json: `watchdog_installed: true, watchdog_cron: "*/10 * * * *", watchdog_max_runtime_minutes: 90, stall_threshold_minutes: 10`.
+5. When a stall is detected: attempt self-heal on first stall only.
+   - Phase 4 first stall: check phase4_checkpoint.json for tasks with status "submitted" and submitted_at > 10 minutes ago. If found, attempt to re-poll those task IDs. If self-heal succeeds, reset stall counter. If self-heal fails or second stall occurs, escalate to operator.
+   - Phase 5 first stall: check image_qc_report.json for images not yet scored > 10 minutes after download. Re-dispatch QC on those images. If succeeds, reset counter.
 6. After Phase 6 completes (delivery_verified = true in media_library.json): remove the cron:
    ```bash
    crontab -l | grep -v watchdog | crontab -
    ```
-7. Write `watchdog_removed: true, removed_at: ISO timestamp` to capacity_plan.json.
+7. Write `watchdog_removed: true, removed_at: ISO timestamp` to capacity_plan.json. Clean up watchdog tracking files: `rm $CHECKPOINT_DIR/.last_progress $CHECKPOINT_DIR/.consecutive_stalls $CHECKPOINT_DIR/.watchdog_start_time`.
 
 **Outputs:**
-- working/scripts/watchdog.sh (installed and running)
-- working/checkpoints/watchdog.log (updated every 15 minutes)
-- capacity_plan.json (watchdog_installed, watchdog_removed)
+- working/scripts/watchdog.sh (installed and running every 10 minutes)
+- working/checkpoints/watchdog.log (updated every 10 minutes)
+- capacity_plan.json (watchdog_installed, watchdog_removed, stall_threshold_minutes, watchdog_max_runtime_minutes)
 
-**Hand to:** Director (watchdog alerts are Telegram messages; Director handles escalations)
+**Hand to:** Director (receives first-stall alert for self-heal attempts); Operator (receives second-stall alert or failed self-heal notification)
 
-**Failure mode:** If crontab is not available on the client's box (some minimal Docker containers): install the watchdog as a background shell process instead: `nohup bash working/scripts/watchdog_loop.sh &`. Write the PID to capacity_plan.json: `watchdog_pid: N`. Kill the PID explicitly after Phase 6.
+**Failure mode:** If crontab is not available on the client's box (some minimal Docker containers): install the watchdog as a background shell process instead: `nohup bash working/scripts/watchdog_loop.sh &`. Write the PID to capacity_plan.json: `watchdog_pid: N`. Kill the PID explicitly after Phase 6 or after 90 minutes, whichever comes first.
 
 ---
 
@@ -307,7 +341,8 @@ watchdog_removed = true in capacity_plan.json after delivery_verified = true.
 - Director of Presentations -- dispatch signal at Step 0.5 and after Phase 4 begins
 
 ### You hand work off to:
-- Director of Presentations -- capacity_plan.json (fleet sizing recommendations, go/no-go)
+- Director of Presentations -- capacity_plan.json (fleet sizing recommendations, go/no-go); first-stall alerts from watchdog for action/self-heal attempt
+- Operator -- second-stall alerts or failed self-heal notifications; escalations when watchdog exceeds 90-minute window
 - All specialists -- capacity_plan.json is the shared reference for model routing and agent counts
 - Slide Submitter -- capacity_plan.json budget_ceiling is the 2x stop threshold
 
@@ -360,8 +395,11 @@ Telegram message from watchdog: "[enrollment-on-autopilot] watchdog: no new imag
 - Declaring a key missing after checking only one of the four env stores.
 - Issuing a GO decision without running a live test turn to verify Ollama Cloud connectivity.
 - Setting max_concurrent_agents to 10 on a box with 3GB free RAM (will crash the box mid-run).
-- Forgetting to remove the watchdog cron after Phase 6 (the cron runs forever, consuming resources).
+- Forgetting to remove the watchdog cron after Phase 6 or after 90 minutes (the cron runs forever, consuming resources).
 - Skipping the budget pre-flight because "the client said they have enough credits."
+- Paging the operator on first stall detection (Director gets first alert; only escalate to operator on second consecutive stall or failed self-heal).
+- Running watchdog indefinitely instead of capping at 90 minutes (wastes resources on dead runs).
+- Using 30-minute stall threshold instead of 10 minutes (misses rapidly-stalling generations).
 
 ---
 
@@ -371,9 +409,12 @@ Telegram message from watchdog: "[enrollment-on-autopilot] watchdog: no new imag
 |---|---------|------------|
 | 1 | Checking total RAM instead of free RAM | Use the "free" column from `free -h`, not the "total" column. |
 | 2 | Not testing model reachability (assuming it works) | SOP 9.3 requires a live test turn, not an assumption. |
-| 3 | Installing the watchdog cron but never removing it | Gate 5 is explicit: watchdog_removed = true must be written after Phase 6. |
+| 3 | Installing the watchdog cron but never removing it | Gate 5 is explicit: watchdog_removed = true must be written after Phase 6 or after 90 minutes. |
 | 4 | Writing capacity_plan.json without the env_store_locations section | This section is mandatory -- it is the proof that all 4 stores were checked. |
 | 5 | Recommending the maximum agent count without checking cpu_load_15min | Load check is mandatory -- a hot box should not get the maximum fleet. |
+| 6 | Paging operator immediately on first stall | First stall triggers Director alert and self-heal attempt only. Operator is paged on second consecutive stall or if self-heal fails. |
+| 7 | Using 30-minute threshold instead of 10 minutes | Stall threshold is now 10 minutes per SOP 9.2 revision. |
+| 8 | Letting watchdog run beyond 90 minutes | Watchdog must terminate after 90 minutes or when run reaches DONE status, whichever comes first. |
 
 ---
 

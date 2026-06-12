@@ -102,6 +102,10 @@ This file is your fallback identity. It governs only when no persona is assigned
 | Owner approval gate turnaround | < 4 hours after owner receives copy |
 | Total loop count per deck | <= 3 loops per phase |
 | Run completion without silent failure | 100% -- every failure is escalated loudly |
+| Intake completeness | All mandatory Q-bank variables (TONE, PRICE_MODE, VIP_TIER, REPRESENTATION_MIX with percentages, VISUAL_MIX, DARK_OK, HOOK SEED, PROOF_ASSETS) captured and confirmed before PRD is written |
+| Model manifest declared at echo | 100% of runs have model_manifest.json written and operator-confirmed before Phase 1 |
+| Mode B word-preservation rate | 100% -- zero unrequested rewrites of client copy; every proposed change listed and owner-approved per substitution |
+| Slide math accuracy | SLIDE_COUNT within the hard-max ceiling for the stated duration on 100% of runs |
 
 ---
 
@@ -137,17 +141,39 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 6. Before closing the interview, read back a one-paragraph summary of what you heard. Ask: "Is this accurate? Did I miss anything?" Record the owner's confirmation in intake.json as `interview_confirmed: true` with the timestamp.
 7. Write the full intake.json to working/copy/intake.json.
 
-**Adaptive Q Bank (use as needed, not all):**
-- "What is the name of the offer you are presenting, and what does it cost?"
-- "Who is the ideal person in the audience -- what are they struggling with right now?"
-- "What do you want them to FEEL by the end of slide 1?"
-- "What is the single biggest objection your audience will have before they buy?"
-- "How long is your presentation? Or how many slides are you targeting?"
-- "Do you have brand colors and a logo? If yes, please share or describe them."
-- "Are there existing decks or styles you love? Share examples if possible."
-- "What proof (testimonials, results, case studies) can we include?"
-- "Is there a price drop or payment plan structure we need to choreograph?"
-- "Who else will see or use this deck besides you?"
+**Adaptive Q Bank (mandatory items -- pull from this list, in priority order, skip only what is already known):**
+
+**Q1. THE GOAL (always ask).** "What is the goal of this presentation? What do you want people to DO at the end?" (Buy the offer, book a call, join the challenge, donate, enroll.) Variable: `GOAL`, `CTA_ACTION`.
+
+**Q2. THE FEELING (always ask).** "When someone walks away from this webinar, how do you want them to FEEL?" (Capable and fired up, safe and understood, urgently behind, hopeful, seen for the first time.) Variable: `TARGET_FEELING`.
+
+**Q3. THE TONE (ask unless tone is already on file).** Offer these seven named styles and let them pick one or blend two:
+1. **Inspirational** (rise-up energy, possibility language, big vision)
+2. **Tough Love** (direct, calls out excuses, "nobody is coming to save you")
+3. **Challenger** (provokes, flips beliefs, "everything you were taught is wrong")
+4. **Teacher / Authority** (calm expertise, frameworks, receipts)
+5. **Storyteller** (narrative-first, emotional arc, testimony-driven)
+6. **High-Energy Hype** (fast, loud, celebration energy, big numbers)
+7. **Calm Premium** (understated, luxury, scarcity through quietness)
+Variable: `TONE`.
+
+**Q4. PRICE STRUCTURE (always ask).** "Do you want a gradual price drop (we walk the price down from a big anchor, the proven Lyric method) or a straight price (one price, stated once)?" If gradual: collect the full offer stack, each component's standalone value, the anchor, the final price, payment plan. If straight: collect the price and the value stack that justifies it. Variables: `PRICE_MODE` (`drop` | `straight`), `OFFER_STACK`, `PRICE_ANCHOR`, `FINAL_PRICE`, `PAYMENT_PLAN`.
+
+**Q5. VIP LEVEL (always ask).** "Do you want a VIP or premium tier in this pitch?" If yes: what it includes, its price, and how many spots (real scarcity only -- no fabricated limits). Variables: `VIP_TIER`, `VIP_PRICE`, `VIP_SPOTS`.
+
+**Q6. DURATION (always ask).** "How many minutes is the presentation? (10, 15, 30, 45, 60, 90...)" Variable: `DURATION_MIN`. This drives the slide cap in Phase B.
+
+**Q7. BRAND COLORS (skip if already on file).** Exact hex codes for primary, secondary, accent. Ask for the brand guide if one exists. Variables: `BRAND_PRIMARY`, `BRAND_SECONDARY`, `BRAND_ACCENT`.
+
+**Q7a. THE HOOK SEED (ask whenever the client has language they already use).** "Is there one line you already say all the time, the thing you want them humming when they leave?" If they have one, it seeds `HOOK`; if not, Phase 1 derives it from the promise and the owner confirms it at the approval gate.
+
+**Q8. LOGO (skip if already on file).** "Do you want your logo to appear on the slides?" If yes: highest-res transparent PNG plus a stable public URL (Kie image-to-image needs a URL; if only a file arrives, upload it to the client's GHL media library or Drive and record the URL). Variables: `LOGO_ON_SLIDES`, `LOGO_FILE`, `LOGO_URL`.
+
+**Q9. AUDIENCE REPRESENTATION (always ask unless on file).** "Who is your audience, and how should people in the images break down?" Collect demographics WITH PERCENTAGES, for example: "70% African American women, 20% African American men, 10% mixed" or "100% women, diverse" or "no people at all." The percentage breakdown is enforced across the deck in Phase 2. Variables: `AUDIENCE`, `REPRESENTATION_MIX` (list of {group, percent}).
+
+**Q10. VISUAL MIX (always ask unless on file).** "Should your slides primarily feature people, some people, be typography-led, or a mix of both?" Options: `people-heavy` (people on ~60%+ of slides), `some-people` (~30%), `typography-led` (people only where proof demands it), `mix` (~45%). Variable: `VISUAL_MIX`.
+
+**Supplementary (only if room remains under the 10-question cap and the answer is unknown):** `DARK_OK` (dark styling explicitly wanted? default false); `PROOF_ASSETS` (testimonials, screenshots, press logos, before/after numbers -- collect NOW so placeholders are rare); style references or decks they admire (`STYLE_PREFS`); anything else important to them, captured verbatim (`CLIENT_NOTES`).
 
 **Outputs:**
 - working/copy/intake.json (complete, interview_confirmed: true)
@@ -168,11 +194,24 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Write the ECHO: a 3-5 sentence paragraph in plain language that restates the deck's mission. Format: "This deck is for [AUDIENCE]. It presents [OFFER] at [FINAL_PRICE]. It will [TRANSFORMATION_PROMISE]. The owner's primary goal is [GOAL]. The audience's biggest objection is [OBJECTION]."
-2. Write the PRD (1 page max). Required fields: deck_slug, client_slug, target_audience, offer_name, final_price, anchor_price (must be >= 3x final_price), transformation_promise, primary_objection, hook (one sentence -- sung >=7x), slide_count_target, style_references, qc_threshold (always 8.5), model_manifest (image model = gpt-image-2-image-to-image default), and assumptions_list (any items flagged assumed: true from intake).
-3. Run the Improvement Pass: read the PRD back against intake.json. Identify any gap. Fix it. Repeat once.
-4. Write both the ECHO and the PRD to working/copy/mission_prd.json.
-5. Send the ECHO + PRD to the operator as a Telegram message via openclaw message send. Ask: "Does this match your vision? Reply YES to proceed, or tell me what to change."
-6. WAIT for explicit written confirmation. Do not proceed to Phase 1 until received. Record the confirmation as `prd_approved_by`, `prd_approved_at`, and `prd_approval_message` in mission_prd.json.
+2. **Declare the MODEL MANIFEST** in the echo (per master SOP Section 9.0). Include it as a named block in the echo message and in the PRD:
+   ```json
+   {
+     "image_platform": "kie.ai",
+     "image_model_t2i": "gpt-image-2-text-to-image",
+     "image_model_i2i": "gpt-image-2-image-to-image",
+     "resolution": "2K",
+     "aspect_ratio": "16:9",
+     "authorized_by": "<operator>",
+     "date": "<run date>"
+   }
+   ```
+   Save this to `working/checkpoints/model_manifest.json`. The operator's confirmation of the echo IS their authorization of this manifest. Any model change the operator wants must be declared here at echo time; agents never improvise a model change mid-run.
+3. Write the PRD (1 page max). Required fields: deck_slug, client_slug, target_audience, offer_name, final_price, anchor_price (must be >= 3x final_price), transformation_promise, primary_objection, hook (one sentence -- sung >= 7x), slide_count_target, style_references, qc_threshold (always 8.5), model_manifest (reference to the confirmed manifest file), and assumptions_list (any items flagged assumed: true from intake).
+4. Run the Improvement Pass: read the PRD back against intake.json. Identify any gap. Fix it. Repeat once.
+5. Write both the ECHO and the PRD to working/copy/mission_prd.json.
+6. Send the ECHO + PRD (including the manifest block) to the operator as a Telegram message via openclaw message send. Ask: "Does this match your vision? Reply YES to proceed, or tell me what to change."
+7. WAIT for explicit written confirmation. Do not proceed to Phase 1 until received. Record the confirmation as `prd_approved_by`, `prd_approved_at`, and `prd_approval_message` in mission_prd.json.
 
 **Outputs:**
 - working/copy/mission_prd.json (echo + PRD + confirmation record)
@@ -196,10 +235,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 2. For Mode A: record `mode: "A"` in mission_prd.json. Proceed to SOP 9.4.
 3. For Mode B:
    a. Inventory the existing content: how many slides exist? What copy is present? What images (if any)?
-   b. Build the Enhancement Gap: a table with one row per existing slide. Columns: slide_number, existing_headline, existing_body, enhancement_needed (copy / image / both / none), notes.
+   b. Build the Enhancement Gap: a table with one row per existing slide. Columns: slide_number, existing_headline, existing_body, enhancement_needed (ADD / PROPOSE / image-only / none), notes.
+      - **ADD**: new slides to insert (hook slides, pain slides, proof/white-paper slides, ladder slides, roadmap slides, quote slides, cost-vs-value slides). The client's original content slides are NOT in this category.
+      - **PROPOSE**: a suggested change to an existing slide's copy or structure. These are proposals only -- they are reported to the owner in the gap analysis report and may NOT be applied without explicit per-substitution owner approval. The client's words are never rewritten without that approval on a per-slide, per-change basis.
+      - **image-only**: the client's copy stays verbatim (typo fixes only, flagged); only the visual treatment is redesigned to the premium standard.
+      - **none**: slide is already compliant; no change.
    c. Record the gap table in working/copy/enhancement_gap.json.
-   d. Identify slides that must be REWRITTEN vs. AUGMENTED (per master SOP Section on Mode B word-preserving augmentation).
-   e. Record `mode: "B"` and `enhancement_gap_file: "working/copy/enhancement_gap.json"` in mission_prd.json.
+   d. The Mode B gap analysis report (sent before any change is made) must list: (i) every ADD slide and its purpose, (ii) every PROPOSE change and the exact wording being proposed vs. the client's original, and (iii) every image-only redesign. The owner approves the full list before any work begins.
+   e. After owner approval, ADD new slides and execute approved PROPOSE substitutions. Never change a word on any existing slide beyond approved substitutions and flagged typo corrections.
+   f. Record `mode: "B"` and `enhancement_gap_file: "working/copy/enhancement_gap.json"` in mission_prd.json.
 4. For both modes: confirm the STYLE BLOCK source. If the Brand Steward has already produced a STYLE BLOCK for this client, load it. If not, dispatch the Brand Steward now (do not proceed past this step without a STYLE BLOCK).
 
 **Outputs:**
@@ -221,29 +265,72 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - master SOP slide-math table (see below)
 
 **Steps:**
-1. If the client provided a duration in minutes (not a slide count), convert using this table:
-   | Duration | Slide Count Cap |
-   |----------|-----------------|
-   | 30 min   | 35-40 slides    |
-   | 45 min   | 50-55 slides    |
-   | 60 min   | 65-75 slides    |
-   | 90 min   | 90-100 slides   |
-   Use the lower end for dense content, upper end for image-heavy decks.
+1. If the client provided a duration in minutes (not a slide count), convert using the master SOP table (Section 4). This table governs and cannot be overridden by agent judgment:
+
+   | Duration | Target slide count | HARD MAX |
+   |----------|--------------------|----------|
+   | 10 min | 12 to 15 | 15 |
+   | 15 min | 18 to 22 | 25 |
+   | 30 min | 35 to 42 | 45 |
+   | 45 min | 50 to 58 | 60 |
+   | 60 min | 60 to 70 | 75 |
+   | 90 min | 70 to 85 | 90 |
+   | 120+ min | 80 to 90 | **90 absolute ceiling** |
+
+   Rules from the master SOP:
+   - The rate is roughly 1.3 to 1.5 slides per minute, tapering as duration grows. A three-hour presentation does NOT mean 300 slides. 90 is the absolute ceiling for any deck.
+   - Below 30 minutes, the Hormozi arc compresses: merge the origin story into 2 slides, run ONE secret instead of three, and keep the offer section proportionally intact (the pitch never gets cut).
+   - Propose the slide count from this table; the client confirms it during the intake echo. Record `SLIDE_COUNT`.
+
 2. Record `slide_count_final` in mission_prd.json.
-3. Allocate the arc. Required arc structure (per master SOP Section 4):
-   | Section | Slide Range | Purpose |
-   |---------|-------------|---------|
-   | Hook | Slides 1-3 | First hook delivery, big promise |
-   | Story / Problem | 4-10 | Problem agitation, relatable pain |
-   | Solution Intro | 11-15 | The offer revealed |
-   | Proof | 16-25 | Testimonials, case studies, results |
-   | Mechanism | 26-35 | How it works, what they get |
-   | Offer Stack | 36-45 | Value anchoring, bonuses |
-   | Price Ladder | 46-65 | Drop choreography (per SOP 9.5 of offer-price-strategist) |
-   | Urgency / Close | 66-end | Final hook, CTA |
-   Adjust slide ranges proportionally for decks shorter or longer than 75 slides.
-4. Write the arc_allocation.json to working/copy/arc_allocation.json.
-5. Verify: does the arc include at least 7 hook appearances? (Hook can appear as a refrain in any section.) If not, add hook-refrain slots to the Offer Stack and Urgency sections.
+
+3. Allocate the arc using the master SOP Section 4.1 worked allocation table. Percentages from the arc produce fractions; use this pre-reconciled allocation for the common counts. For other counts, allocate proportionally, round, then add or remove slides from the Secrets sections (NEVER from the offer section) until the total matches `SLIDE_COUNT`:
+
+   | Arc section | 45 slides | 60 slides | 75 slides |
+   |---|---|---|---|
+   | 1. Big Bold Promise | 1 | 1 | 2 |
+   | 2. Painful Math | 2 | 2 | 3 |
+   | 3. Real Problem reframe | 2 | 3 | 3 |
+   | 4. Commitment slide | 1 | 1 | 1 |
+   | 5. Origin story + authority | 3 | 5 | 6 |
+   | 6. Social proof | 2 | 2 | 3 |
+   | 7. For / NOT for | 2 | 2 | 3 |
+   | 8. Secret #1 (teach, proof, action) | 5 | 7 | 9 |
+   | 9. Secret #2 (teach, proof, action) | 5 | 7 | 9 |
+   | 10. Secret #3 (teach, proof, action) | 5 | 7 | 9 |
+   | 11. The Window / urgency logic | 1 | 2 | 2 |
+   | 12. Recap | 1 | 2 | 2 |
+   | 13. Transition to offer | 1 | 1 | 2 |
+   | 14. Offer + price sequence | 9 | 12 | 15 |
+   | 15. Guarantee + risk reversal | 1 | 2 | 2 |
+   | 16. Bonuses | 2 | 2 | 2 |
+   | 17. Final CTA + Q&A close | 2 | 2 | 2 |
+   | **Total** | **45** | **60** | **75** |
+
+   The offer section (rows 14 to 17) is never compressed below 10 slides on a 45+ slide deck. If `VIP_TIER` exists, it takes 1 to 2 slides inside row 14 (presented AFTER the core final price).
+
+4. Apply the master SOP Section 4.2 proven flow. The proven deck runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). This is the narrative the allocation table serves:
+
+   | Section | Slides (of 75) | What it does | Signature moves |
+   |---|---|---|---|
+   | 1. THE HOOK | 1 to 7 | Promise, future-pace, painful math, reframe, commitment | "30 Seats. 30 Days." promise with objection-killer sub; "This is what FULL looks like" future-pace; "$48,000 a year. Gone." empty-chairs math; "It's not your heart. It's your system." reframe; "Stay. I dare you." commitment dare |
+   | 2. AUTHORITY & STORY | 8 to 15 | Origin, receipts, peer proof, identity | "I didn't wake up like this"; "I'm not a coach who read about it. I built it. I run it. I'm you."; then/now split; receipts row (press, revenue, centers); "Women who look like us" representation wall; "If they did it, so can you" closer |
+   | 3. SECRET #1 | 16 to 24 | Belief shift on the MESSAGE | Section banner; "They're not ignoring you. Your message is wrong."; old-way/new-way split; the 4 Questions framework; verified result ("47 inquiries, one post, 7 days"); client win; 3-step action plan; vision slide; **slide 24: ANCHOR plant ("worth $5,000+. Remember this number. Keep watching.")** |
+   | 4. SECRET #2 | 25 to 35 | Belief shift on SPEED/system | "Fill seats in 7 days. Not 7 months."; silent-leak stat (95%); 72-Hour Rule; 5-step automated journey diagram; live-demo dashboard; sprint proof; doubter testimonial; 7-day roadmap; old/new contrast; **BUILDUP ("Imagine this running tonight") then slide 35: DROP 1 to $2,500 ("because you showed up live; this price does NOT leave this room")** |
+   | 5. SECRET #3 | 36 to 43 | Belief shift on ECONOMICS/LTV | "One campaign. $3K to $10K a month."; lifetime-value math ($200/wk x 52 x 3 yrs = $31,200 from ONE family); One Message/One Funnel/One Follow-up; live funnel proof; real revenue testimonial; the Window (12 to 18 months urgency logic); identity slide ("The CEO you're about to become"); recap ("You now know more than 95% of owners") |
+   | 6. THE OFFER | 44 to 59 | Choice frame, offer, stack, ladder | "Two Choices" frame; "Go build it" takeaway close; "Stop building. Start owning."; offer reveal with MAGIC name ("30 Kids In 30 Days Challenge"); one-promise slide; stack components one per slide, each named with a benefit and valued ($997, $1,497, $997...); VIP bonuses ($497, $997); full stack recap with checkmarks; **callback slide ("I told you to remember that number. Here it is: $5,282")**; LTV justification ("1 family = $9,600/yr; pays for itself"); **BUILDUP ("This is the part that changes everything") then slide 51: DROP 2 to $1,000 ("because you believed")** |
+   | 7. THE CLOSE + FINAL PUSH | 60 to 75 | Objections, drops, guarantee, proof, urgency, welcome | Objection kills ("I'm too busy" = you don't have the system; "Will it scale?"); Day 1 onboarding picture; student proof with compliance line; future-pace Day 31; **BUILDUP ("You didn't leave. That tells me everything.") then slide 65: DROP 3 to $500 on the price-tag motif**; conditional guarantee ("Fill 3 seats. Or I pay. AND I'll personally work with you until you do."); "1,000 times" receipts; Wall of Wins (6 named results); keep-guessing/build-the-system choice; final push ("This isn't just a webinar. This is your moment."); last call with door-closing urgency and join URL; fast-action bonuses that expire; **slide 73: FINAL, the full strikethrough tag ($5,000 / $2,500 / $1,000 / $500 all struck) revealing GA $47 | VIP $97, 15-minute window**; full recap table with both prices; "You made it. Welcome to the family." celebration |
+
+   Flow rules enforced in Phase 1:
+   1. Every section opens with a banner/progress slide and closes with an emotional punctuation slide.
+   2. Each Secret follows: claim -> problem/stat -> framework -> proof -> action plan -> vision.
+   3. Proof appears within 2 slides of every claim. Named, located testimonials ("Janelle, Atlanta GA") with compliance disclaimers.
+   4. The ladder spreads across sections (rungs near the 32/47/68/87/97% marks), every drop earns its reason, every drop follows a BUILDUP.
+   5. Open loops plant early and close on screen with explicit callbacks.
+   6. The deck talks TO one person in the client's voice, in second person, with the client's edge. TONE from intake governs every line.
+
+5. Write the arc_allocation.json to working/copy/arc_allocation.json.
+6. Verify: does the arc include at least 7 hook appearances? (Hook can appear as a refrain in any section.) If not, add hook-refrain slots to the Secrets and Urgency sections.
 
 **Outputs:**
 - mission_prd.json updated with slide_count_final
@@ -251,7 +338,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Hand to:** Slide Copywriter (Phase 1 copy write) and Offer Price Strategist (price ladder choreography, concurrent)
 
-**Failure mode:** If the client's stated slide count is impossible for the duration (e.g., 200 slides for a 30-minute presentation), push back with the math table and recommend an achievable count. Record the negotiated count in mission_prd.json with a note.
+**Failure mode:** If the client's stated slide count is impossible for the duration (e.g., 200 slides for a 30-minute presentation), push back with the master SOP math table above and recommend an achievable count. Record the negotiated count in mission_prd.json with a note. If the stated count exceeds 90 for any duration, reject it: 90 is the absolute ceiling.
 
 ---
 
@@ -335,15 +422,15 @@ final_deck_qc_report.json: all 11 image criteria and 14 copy criteria satisfied 
 
 ### You receive work from:
 - Master Orchestrator -- initiates a new deck run with a request
-- Operator (human) -- provides answers during discovery and approval gates
+- Operator (human) -- provides answers during discovery and approval gates, confirms MODEL MANIFEST at echo, and provides per-substitution approvals in Mode B
 
 ### You hand work off to:
-- Slide Copywriter (Phase 1 copy)
+- Slide Copywriter (Phase 1 copy) -- receives a complete intake.json with all mandatory variables: TONE (one of seven named styles), PRICE_MODE, VIP_TIER (with contents/price/real spot count), REPRESENTATION_MIX (with percentages), VISUAL_MIX, DARK_OK, HOOK (seeded from client or to be derived), and PROOF_ASSETS. Incomplete intake is NOT forwarded; the Director resolves gaps first.
 - Offer Price Strategist (price ladder, concurrent with Phase 1)
 - Brand Steward (STYLE BLOCK, early in run)
-- Slide Image Creator (Phase 2 prompts)
+- Slide Image Creator (Phase 2 prompts) -- never receives a prompt brief until approval_record.json exists (Phase 1A gate confirmed)
 - QC Specialist (Phases 1Q, 3, 5)
-- Slide Submitter (Phase 4 image generation)
+- Slide Submitter (Phase 4 image generation) -- receives model_manifest.json (operator-confirmed at echo) before any generation job; the manifest is the authorization token for all Kie.ai calls
 - Media Librarian / GHL Updater (after Phase 5)
 - PPTX Assembly Specialist (Phase 6)
 - Capacity & Reliability Engineer (Step 0.5, and ongoing watchdog)
@@ -379,6 +466,14 @@ A healthy run_ledger.json shows: `status: "delivered"`, slide_count = 75, phase_
 - Substituting an unauthorized image model when Kie.ai is down, without operator approval.
 - Skipping the capacity probe and dispatching 10 agents on a 4GB RAM box.
 - Asking the operator to choose the mode (A vs B) when the answer is obvious from the incoming assets.
+- Running discovery without collecting TONE from the seven named styles -- tone governs every line of copy; a missing tone produces a copy QC cascade.
+- Collecting REPRESENTATION_MIX without percentages -- a vague "diverse audience" is not enforceable in Phase 2 and produces mismatched slides.
+- Stating VIP_TIER exists without capturing the real spot count -- fabricated scarcity is a copy QC auto-fail.
+- Skipping the HOOK SEED question when the client has signature language -- the hook should be theirs whenever possible; agents derive it only when the client has none.
+- Failing to collect PROOF_ASSETS upfront -- late-arriving assets mean [CLIENT TO SUPPLY] placeholders that restructure slide builds mid-run and delay delivery.
+- Writing the PRD without declaring the MODEL MANIFEST -- the manifest is the operator's authorization; writing prompts without it means generation may happen on an unauthorized model.
+- In Mode B: rewriting a client's slide copy without per-substitution owner approval -- the rule is ADD and PROPOSE, not rewrite. Any unrequested change to client words is a violation regardless of quality.
+- Using the old (wrong) slide-math table -- the master SOP Section 4 table governs; the 90-slide absolute ceiling applies to ALL durations over 90 minutes.
 
 ---
 
