@@ -55,6 +55,14 @@ try:
 except ImportError:
     _OPENCLAW_PATHS_AVAILABLE = False
 
+# §1.7: Import the shared persona-categories path resolver so orchestrator and
+# generate-governing-personas.sh use the SAME resolution chain.
+try:
+    from resolve_persona_categories_path import get_persona_categories_path as _get_persona_categories_path  # type: ignore
+    _PERSONA_RESOLVER_AVAILABLE = True
+except ImportError:
+    _PERSONA_RESOLVER_AVAILABLE = False
+
 # ─── PATHS ─────────────────────────────────────────────────────────────────────
 # v6.6.0: Unified canonical root.
 # VPS  → /data/.openclaw/master-files/coaching-personas
@@ -280,20 +288,65 @@ BOOKS = [
 
 # ─── PERSONA CATEGORIES UPDATER (PRD 2.7) ────────────────────────────────────
 def _persona_categories_path() -> Path:
-    """Locate persona-categories.json via the shared path resolver (PRD 2.7).
+    """Locate persona-categories.json via the shared path resolver (§1.7 / PRD 2.7).
 
-    PRD 2.7: single write target = workspace/data/coaching-personas/persona-categories.json.
-    Always delegates to get_openclaw_paths()["persona_categories"] so there is
-    exactly ONE resolution chain across writer (Skill 22) and readers (persona-selector).
-    Falls back to BASE / persona-categories.json only when the resolver is unavailable.
+    Resolution order (§3.1):
+    1. get_openclaw_paths()["persona_categories"] from detect_platform.py (canonical)
+    2. shared resolve_persona_categories_path.get_persona_categories_path() (§1.7 reconciliation)
+    3. BASE / persona-categories.json (local fallback)
+
+    Both this function and generate-governing-personas.sh now call the SAME
+    resolve_persona_categories_path resolver, eliminating the workspace/data/coaching-personas/
+    vs workspace/coaching-personas/ path drift (§1.7).
     """
     if _OPENCLAW_PATHS_AVAILABLE:
         try:
             return _get_openclaw_paths()["persona_categories"]
         except Exception as e:
-            print(f"[orchestrator] WARNING: get_openclaw_paths() failed ({e}); using BASE fallback.")
-    # Fallback — should not occur on a properly installed box.
+            print(f"[orchestrator] WARNING: get_openclaw_paths() failed ({e}); trying shared resolver.")
+
+    # §1.7: Try the shared resolver (same chain as generate-governing-personas.sh)
+    if _PERSONA_RESOLVER_AVAILABLE:
+        try:
+            resolved = _get_persona_categories_path(fail_loud=False)
+            if resolved and resolved.is_file():
+                return resolved
+        except Exception as e:
+            print(f"[orchestrator] WARNING: resolve_persona_categories_path failed ({e}); using BASE fallback.")
+
+    # Final fallback — should not occur on a properly installed box.
     return BASE / "persona-categories.json"
+
+
+def _ledger_append_phase6b_skip(folder: str, detail: str) -> None:
+    """§1.7.3: Append a Phase-6b skip/fail record to the add-ledger so converge
+    knows to retry governing-personas.md refresh. Best-effort — never raises."""
+    import fcntl
+    from datetime import datetime, timezone
+
+    oc_root_candidates = [Path("/data/.openclaw"), Path.home() / ".openclaw"]
+    oc_root = next((c for c in oc_root_candidates if c.is_dir()), None)
+    if not oc_root:
+        return
+
+    ledger_dir = oc_root / "extension-sync"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    ledger_path = ledger_dir / "add-ledger.jsonl"
+    record = json.dumps({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "type": "persona",
+        "slug": folder,
+        "status": "phase6b-skip",
+        "detail": detail,
+        "by": "orchestrator",
+    }, separators=(",", ":")) + "\n"
+    try:
+        with open(ledger_path, "a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            f.write(record)
+            fcntl.flock(f, fcntl.LOCK_UN)
+    except Exception:
+        pass  # Best-effort
 
 
 def _append_persona_to_categories(book: dict, folder: str) -> None:
@@ -1448,12 +1501,25 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
                 )
                 if crw_proc.returncode == 0:
                     log("Phase 6b: governing-personas.md refresh complete.")
+                    # §1.7.3: structured success line for converge/QC
+                    print(f"[PERSONA-REFRESH] DONE: governing-personas.md refreshed for all depts")
                 else:
-                    log(f"  Warning: --refresh-personas-only exited {crw_proc.returncode}: {crw_proc.stderr[:200]}")
+                    reason = crw_proc.stderr[:200].strip() or f"rc={crw_proc.returncode}"
+                    log(f"  Warning: --refresh-personas-only exited {crw_proc.returncode}: {reason}")
+                    # §1.7.3: structured failure line the agent can surface
+                    print(f"[PERSONA-REFRESH] FAILED: {reason}")
+                    # Append to add-ledger for converge retry
+                    _ledger_append_phase6b_skip(folder, f"FAILED: {reason}")
             else:
-                log("  Phase 6b: create_role_workspaces.py not found — governing-personas.md NOT refreshed (non-fatal).")
+                msg = "Skill 23 not installed (create_role_workspaces.py not found)"
+                log(f"  Phase 6b: {msg} — governing-personas.md NOT refreshed (non-fatal).")
+                # §1.7.3: structured SKIPPED line
+                print(f"[PERSONA-REFRESH] SKIPPED: {msg}")
+                _ledger_append_phase6b_skip(folder, f"SKIPPED: {msg}")
         except Exception as e:
             log(f"  Warning: Phase 6b refresh failed: {e}")
+            print(f"[PERSONA-REFRESH] FAILED: {e}")
+            _ledger_append_phase6b_skip(folder, f"FAILED: {e}")
 
         return True
 

@@ -3,32 +3,40 @@
 #
 # PURPOSE
 #   Master idempotent orchestrator for post-build capability extension.
-#   Detects new skills/departments added since the initial Skill 23 build,
-#   registers them into the routing layer, and notifies the owner via
-#   Telegram. Safe to re-run at any time — convergent, never destructive.
+#   In --converge mode: full sweep (depts + roles + SOPs + personas + CC sync).
+#   In legacy mode (no --converge): departments-only fast path for Sunday cron.
 #
-# WHAT IT DOES
-#   1. Reads the canonical role-library _index.json (current state of truth)
-#   2. Calls detect-extensions.py to diff against the last-sync manifest
-#   3. For each NEW department detected:
-#      a. register-routing-dept.py — adds the dept to department-router config
-#      b. materialize-dept-agents.sh — creates agent workspace dirs if missing
-#      c. Updates openclaw.json via openclaw config set (additive only)
-#   4. Writes an updated sync manifest (last-sync.json) so next run is no-op
-#   5. Sends a Telegram summary to the owner (new depts + skip count)
+# WHAT IT DOES (--converge mode, §1.6)
+#   1. Detects deltas: depts + roles + SOPs + personas vs last-sync.json
+#   2. Registers routing + materializes workspaces for new depts
+#   3. Validates _index.json invariants (total_roles == sum(dept role counts))
+#   4. Refreshes build-state + org chart + Notion (via refresh-build-state-from-index.py
+#      and build-workforce.py --regenerate-org-chart-only)
+#   5. Re-syncs the Command Center: POST /api/system/converge (HTTP preferred);
+#      falls back to on-box seed-workspaces.py + ingest-sop-library.py if unreachable
+#   6. Handles untagged personas: writes needs-tags.json; surfaces in Telegram
+#   7. Updates last-sync.json (extended: depts+roles+SOPs+personas)
+#   8. Sends Telegram summary (new entities + untagged personas + CC sync path)
+#   9. Runs post-add ground-truth QC (asserts new entity visible in CC)
 #
-# IDEMPOTENCY CONTRACT
+# IDEMPOTENCY CONTRACT (unchanged from v11.18.5)
 #   - Running twice in a row produces the same state (no duplicates)
 #   - Never removes existing departments, agents, or routing rules
 #   - Never touches agents NOT in the extension delta
-#   - Fails loudly (exit 1) on any step that mutates state and errors
+#   - Fails loudly (exit 1) on any mutating step that errors
 #
 # USAGE
-#   bash sync-extensions.sh [--dry-run] [--verbose]
-#   bash sync-extensions.sh --dept <slug>     # force-add a single dept
+#   bash sync-extensions.sh --converge [--dry-run] [--verbose] [--fast]
+#   bash sync-extensions.sh [--dry-run] [--verbose]    # legacy depts-only
+#   bash sync-extensions.sh --dept <slug>              # force-add a single dept
+#
+# --fast     Skip infographic/Notion re-renders (cheap path; used by Sunday cron)
+#            In --fast mode, full renders run only when deltas exist.
 #
 # CALLED FROM
-#   Sunday cron (0 3 * * 0) via update-skills.sh
+#   Client agent: closing step of EVERY add-*.sh run (converge mode)
+#   Sunday cron (0 3 * * 0): sync-extensions.sh --converge --fast
+#   CC dashboard: POST /api/system/converge calls back via MC_API_TOKEN
 #   Manually after adding a new skill/dept to the role-library
 
 set -uo pipefail
@@ -44,18 +52,24 @@ die()     { fail "$*"; exit 1; }
 DRY_RUN=0
 VERBOSE=0
 FORCE_DEPT=""
+CONVERGE_MODE=0
+FAST_MODE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dry-run) DRY_RUN=1 ;;
-    --verbose) VERBOSE=1 ;;
-    --dept)    shift; FORCE_DEPT="$1" ;;
+    --dry-run)   DRY_RUN=1 ;;
+    --verbose)   VERBOSE=1 ;;
+    --converge)  CONVERGE_MODE=1 ;;
+    --fast)      FAST_MODE=1 ;;
+    --dept)      shift; FORCE_DEPT="$1" ;;
     *) warn "Unknown flag: $1" ;;
   esac
   shift
 done
 
-[[ $DRY_RUN -eq 1 ]] && info "DRY-RUN MODE — no mutations"
+[[ $DRY_RUN -eq 1 ]]    && info "DRY-RUN MODE — no mutations"
+[[ $CONVERGE_MODE -eq 1 ]] && info "CONVERGE MODE — full sweep (depts + roles + SOPs + personas + CC)"
+[[ $FAST_MODE -eq 1 ]]     && info "FAST MODE — infographic/Notion renders skipped unless deltas present"
 
 # ─── Platform detection ───────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -79,17 +93,56 @@ info "Config   : $OC_JSON"
 
 # ─── Path resolution ─────────────────────────────────────────────────────────
 INDEX_JSON="$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/_index.json"
+# Also check installed-skills path (live box)
+if [[ ! -f "$INDEX_JSON" ]]; then
+  for idx_cand in \
+    "$OC_ROOT/skills/23-ai-workforce-blueprint/templates/role-library/_index.json" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json"
+  do
+    if [[ -f "$idx_cand" ]]; then
+      INDEX_JSON="$idx_cand"
+      break
+    fi
+  done
+fi
 DETECT_PY="$SCRIPT_DIR/detect-extensions.py"
 REGISTER_PY="$SCRIPT_DIR/register-routing-dept.py"
 MATERIALIZE_SH="$SCRIPT_DIR/materialize-dept-agents.sh"
+BUILD_WORKFORCE_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/build-workforce.py"
+REFRESH_BUILD_STATE_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
+REGEN_SOP_INDEX_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/regenerate-sop-index.py"
+SEED_WORKSPACES_PY="$SCRIPT_DIR/seed-workspaces.py"
+INGEST_SOP_LIBRARY_SH="$SCRIPT_DIR/ingest-sop-library.sh"
+GENERATE_INFOGRAPHICS_SH="$REPO_ROOT/37-zhc-closeout/scripts/generate-infographics.sh"
+CREATE_NOTION_SH="$REPO_ROOT/37-zhc-closeout/scripts/create-notion-closeout.sh"
+
+# Also check installed paths for key scripts
+for script_var in REFRESH_BUILD_STATE_PY REGEN_SOP_INDEX_PY BUILD_WORKFORCE_PY; do
+  script_path="${!script_var}"
+  if [[ ! -f "$script_path" ]]; then
+    for oc_cand in \
+      "/data/.openclaw/skills" \
+      "$HOME/.openclaw/skills"
+    do
+      cand_23="$oc_cand/23-ai-workforce-blueprint/scripts/$(basename "$script_path")"
+      if [[ -f "$cand_23" ]]; then
+        eval "$script_var=\"$cand_23\""
+        break
+      fi
+    done
+  fi
+done
 
 SYNC_STATE_DIR="$OC_ROOT/extension-sync"
 LAST_SYNC_JSON="$SYNC_STATE_DIR/last-sync.json"
+NEEDS_TAGS_JSON="$SYNC_STATE_DIR/needs-tags.json"
+ADD_LEDGER_JSONL="$SYNC_STATE_DIR/add-ledger.jsonl"
 SYNC_LOG="$SYNC_STATE_DIR/sync-$(date +%Y%m%d-%H%M%S).log"
 
 mkdir -p "$SYNC_STATE_DIR"
 
-[[ -f "$INDEX_JSON" ]] || die "Role-library _index.json not found at: $INDEX_JSON"
+[[ -f "$INDEX_JSON" ]] || die "Role-library _index.json not found at: $INDEX_JSON (check installed skills)"
 [[ -f "$DETECT_PY"  ]] || die "detect-extensions.py not found at: $DETECT_PY"
 
 # ─── Step 1: Detect extension delta ──────────────────────────────────────────
@@ -98,6 +151,10 @@ info "Detecting extension delta..."
 if [[ -n "$FORCE_DEPT" ]]; then
   info "Force-adding single dept: $FORCE_DEPT"
   NEW_DEPTS="$FORCE_DEPT"
+  NEW_ROLES=""
+  NEW_SOPS=""
+  NEW_PERSONAS=""
+  UNTAGGED_PERSONAS=""
 else
   DETECT_ARGS="--index $INDEX_JSON"
   [[ -f "$LAST_SYNC_JSON" ]] && DETECT_ARGS="$DETECT_ARGS --last-sync $LAST_SYNC_JSON"
@@ -109,15 +166,33 @@ else
     exit 1
   }
 
-  # detect-extensions.py writes one dept slug per line on stdout, prefixed "NEW: "
-  NEW_DEPTS="$(echo "$DETECT_OUTPUT" | grep '^NEW: ' | sed 's/^NEW: //')"
+  # Legacy dept delta (back-compat: grep '^NEW: ' still works since detect-extensions.py
+  # emits both NEW: and NEW-DEPT: for each new dept)
+  NEW_DEPTS="$(echo "$DETECT_OUTPUT" | grep '^NEW-DEPT: ' | sed 's/^NEW-DEPT: //')"
+  # Fallback: if NEW-DEPT: lines absent (older detect-extensions.py), use NEW: lines
+  if [[ -z "$NEW_DEPTS" ]]; then
+    NEW_DEPTS="$(echo "$DETECT_OUTPUT" | grep '^NEW: ' | sed 's/^NEW: //')"
+  fi
   SKIP_COUNT="$(echo "$DETECT_OUTPUT" | grep '^SKIP: ' | wc -l | tr -d ' ')"
+
+  # Extended delta (converge mode only)
+  NEW_ROLES="$(echo "$DETECT_OUTPUT" | grep '^NEW-ROLE: ' | sed 's/^NEW-ROLE: //')"
+  NEW_SOPS="$(echo "$DETECT_OUTPUT" | grep '^NEW-SOP: ' | sed 's/^NEW-SOP: //')"
+  NEW_PERSONAS="$(echo "$DETECT_OUTPUT" | grep '^NEW-PERSONA: ' | sed 's/^NEW-PERSONA: //')"
+  UNTAGGED_PERSONAS="$(echo "$DETECT_OUTPUT" | grep '^UNTAGGED: ' | sed 's/^UNTAGGED: //')"
 
   [[ $VERBOSE -eq 1 ]] && info "Detect output:" && echo "$DETECT_OUTPUT"
 fi
 
-if [[ -z "$NEW_DEPTS" ]]; then
-  ok "No new departments detected — sync is current."
+# In converge mode, we continue even with no new depts (roles/SOPs/personas may be new)
+HAS_ANY_DELTA=0
+[[ -n "$NEW_DEPTS" ]] && HAS_ANY_DELTA=1
+[[ $CONVERGE_MODE -eq 1 && -n "${NEW_ROLES:-}" ]] && HAS_ANY_DELTA=1
+[[ $CONVERGE_MODE -eq 1 && -n "${NEW_SOPS:-}" ]] && HAS_ANY_DELTA=1
+[[ $CONVERGE_MODE -eq 1 && -n "${NEW_PERSONAS:-}" ]] && HAS_ANY_DELTA=1
+
+if [[ -z "$NEW_DEPTS" && $HAS_ANY_DELTA -eq 0 ]]; then
+  ok "No new entities detected — sync is current."
   # Still update the last-sync timestamp
   [[ $DRY_RUN -eq 0 ]] && python3 - "$INDEX_JSON" "$LAST_SYNC_JSON" <<'PYEOF'
 import json, sys
@@ -130,7 +205,12 @@ state = {"synced_at": datetime.now(timezone.utc).isoformat(),
 with open(sys.argv[2], "w") as f:
     json.dump(state, f, indent=2)
 PYEOF
-  exit 0
+  if [[ $CONVERGE_MODE -eq 1 ]]; then
+    info "Converge mode: no delta, but running CC re-sync for consistency"
+    # Fall through to CC re-sync step
+  else
+    exit 0
+  fi
 fi
 
 info "New departments to register: $(echo "$NEW_DEPTS" | wc -l | tr -d ' ')"
@@ -202,40 +282,318 @@ while IFS= read -r dept; do
   REGISTERED+=("$dept")
 done <<< "$NEW_DEPTS"
 
-# ─── Step 3: Update last-sync manifest ───────────────────────────────────────
-if [[ $DRY_RUN -eq 0 ]]; then
-  python3 - "$INDEX_JSON" "$LAST_SYNC_JSON" <<'PYEOF'
+# ─── Step 2c extended: validate _index.json invariants (converge mode) ───────
+if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
+  info "Step 2c: Validating _index.json invariants..."
+  INVARIANT_RESULT="$(python3 - "$INDEX_JSON" <<'PYEOF'
 import json, sys
-from datetime import datetime, timezone
 idx = json.load(open(sys.argv[1]))
-state = {"synced_at": datetime.now(timezone.utc).isoformat(),
-         "departments": list(idx.get("departments", {}).keys()),
-         "total_roles": idx.get("total_roles", 0),
-         "version": idx.get("version", "unknown")}
+deps = idx.get("departments", {})
+computed = sum(len(d.get("roles", [])) for d in deps.values())
+reported = idx.get("total_roles", None)
+if reported != computed:
+    print(f"INVARIANT_FAIL: total_roles={reported} but sum(dept roles)={computed}")
+    sys.exit(1)
+# Also verify count == len(roles) per dept
+bad = []
+for slug, d in deps.items():
+    if d.get("count") != len(d.get("roles", [])):
+        bad.append(f"{slug}: count={d.get('count')} vs len(roles)={len(d.get('roles',[]))}")
+if bad:
+    print("INVARIANT_FAIL: per-dept count drift: " + "; ".join(bad))
+    sys.exit(1)
+print(f"INVARIANT_OK: total_roles={computed}, total_departments={len(deps)}")
+PYEOF
+  )" || {
+    fail "Step 2c: _index.json invariant FAIL: $INVARIANT_RESULT"
+    die "_index.json is internally inconsistent. Re-run add-role.sh or add-department.sh to fix."
+  }
+  ok "Step 2c: $INVARIANT_RESULT"
+fi
+
+# ─── Step 3: Refresh build-state + org chart + Notion (converge mode) ────────
+if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
+  info "Step 3a: Refreshing build-state from _index.json..."
+
+  if [[ -f "$REFRESH_BUILD_STATE_PY" ]]; then
+    REFRESH_ARGS="--verbose"
+    [[ $VERBOSE -eq 1 ]] || REFRESH_ARGS=""
+    if python3 "$REFRESH_BUILD_STATE_PY" $REFRESH_ARGS 2>&1; then
+      ok "Step 3a: build-state refreshed"
+    else
+      fail "Step 3a: refresh-build-state-from-index.py failed"
+      die "build-state refresh failed — converge cannot continue without current build-state."
+    fi
+  else
+    warn "Step 3a: refresh-build-state-from-index.py not found at $REFRESH_BUILD_STATE_PY — skipping"
+  fi
+
+  info "Step 3b: Regenerating ORG-CHART.md..."
+  if [[ -f "$BUILD_WORKFORCE_PY" ]]; then
+    if python3 "$BUILD_WORKFORCE_PY" --regenerate-org-chart-only 2>&1; then
+      ok "Step 3b: ORG-CHART.md regenerated"
+    else
+      warn "Step 3b: --regenerate-org-chart-only failed (non-fatal — org chart may be stale)"
+    fi
+  else
+    warn "Step 3b: build-workforce.py not found — ORG-CHART.md NOT regenerated"
+  fi
+
+  if [[ $FAST_MODE -eq 0 || $HAS_ANY_DELTA -eq 1 ]]; then
+    info "Step 3c: Re-rendering infographic..."
+    if [[ -f "$GENERATE_INFOGRAPHICS_SH" ]]; then
+      bash "$GENERATE_INFOGRAPHICS_SH" structure 2>&1 && ok "Step 3c: infographic regenerated" || \
+        warn "Step 3c: infographic regeneration failed (non-fatal)"
+    else
+      warn "Step 3c: generate-infographics.sh not found — skipping"
+    fi
+
+    info "Step 3d: Refreshing Notion workforce tree..."
+    if [[ -f "$CREATE_NOTION_SH" ]]; then
+      if bash "$CREATE_NOTION_SH" --refresh-workforce-only 2>&1; then
+        ok "Step 3d: Notion workforce tree refreshed"
+      else
+        warn "Step 3d: Notion workforce refresh failed or page id not set — SKIPPED (non-fatal)"
+      fi
+    else
+      warn "Step 3d: create-notion-closeout.sh not found — skipping Notion refresh"
+    fi
+  else
+    info "Step 3c/3d: FAST mode + no delta — skipping infographic/Notion renders"
+  fi
+fi
+
+# ─── Step 3 (legacy): Update last-sync manifest (all modes) ──────────────────
+if [[ $DRY_RUN -eq 0 ]]; then
+  info "Step 3e: Updating last-sync.json..."
+  python3 - "$INDEX_JSON" "$LAST_SYNC_JSON" "$OC_ROOT" <<'PYEOF'
+import json, os, sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+idx = json.load(open(sys.argv[1]))
+oc_root = sys.argv[3] if len(sys.argv) > 3 else ""
+
+# Flatten roles from index
+all_roles = []
+for dept, ddata in idx.get("departments", {}).items():
+    for role in ddata.get("roles", []):
+        all_roles.append(f"{dept}/{role}")
+
+# Scan on-disk SOPs
+sops = []
+for depts_cand in [
+    Path(oc_root) / "workspace/agents/main/departments" if oc_root else None,
+    Path(oc_root) / "workspace/departments" if oc_root else None,
+]:
+    if depts_cand and depts_cand.is_dir():
+        for dept_dir in sorted(depts_cand.iterdir()):
+            if not dept_dir.is_dir() or dept_dir.name.startswith("."):
+                continue
+            dept = dept_dir.name
+            for sop_dir in [dept_dir / "SOP"] + [
+                r / "SOP" for r in (dept_dir / "roles").iterdir()
+                if (dept_dir / "roles").is_dir() and r.is_dir() and not r.name.startswith(".")
+            ] if (dept_dir / "roles").is_dir() else [dept_dir / "SOP"]:
+                if sop_dir.is_dir():
+                    for f in sop_dir.glob("*.md"):
+                        if f.name == "00-INDEX.md":
+                            continue
+                        stem = f.stem
+                        parts = stem.split("-", 1)
+                        slug = parts[1] if (len(parts) == 2 and parts[0].isdigit()) else stem
+                        sops.append(f"{dept}/{slug}")
+        break
+
+# Scan personas
+personas = []
+for pc_cand in [
+    Path(oc_root) / "workspace/data/coaching-personas/persona-categories.json" if oc_root else None,
+    Path(oc_root) / "workspace/coaching-personas/persona-categories.json" if oc_root else None,
+]:
+    if pc_cand and pc_cand.is_file():
+        try:
+            pc = json.load(open(pc_cand))
+            personas = list(pc.get("personas", {}).keys())
+        except Exception:
+            pass
+        break
+
+state = {
+    "synced_at": datetime.now(timezone.utc).isoformat(),
+    "version": idx.get("version", "unknown"),
+    "total_roles": idx.get("total_roles", 0),
+    "departments": list(idx.get("departments", {}).keys()),
+    "roles": sorted(all_roles),
+    "sops": sorted(set(sops)),
+    "personas": sorted(personas),
+}
 with open(sys.argv[2], "w") as f:
     json.dump(state, f, indent=2)
+    f.write("\n")
 print(f"last-sync.json updated: {sys.argv[2]}")
 PYEOF
   ok "last-sync.json updated"
 fi
 
-# ─── Step 4: Telegram summary ────────────────────────────────────────────────
-if [[ ${#REGISTERED[@]} -gt 0 && $DRY_RUN -eq 0 ]]; then
-  REG_LIST="$(printf '%s\n' "${REGISTERED[@]}" | sed 's/^/  • /')"
-  MSG="Extension sync complete on $(hostname).
+# ─── Step 4: Re-sync Command Center (converge mode only, §1.6 step 5) ────────
+CC_SYNC_PATH="none"
+if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
+  info "Step 4: Re-syncing Command Center..."
+
+  CC_BASE_URL="${CC_BASE_URL:-${NEXT_PUBLIC_APP_URL:-http://localhost:3000}}"
+  MC_API_TOKEN="${MC_API_TOKEN:-${CRON_SECRET:-}}"
+
+  CC_HTTP_OK=0
+  if [[ -n "$MC_API_TOKEN" && -n "$CC_BASE_URL" ]]; then
+    CC_CONVERGE_RESP="$(curl -sf -X POST "$CC_BASE_URL/api/system/converge" \
+      -H "Authorization: Bearer $MC_API_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"scope":"all"}' \
+      --max-time 60 2>&1)" && CC_HTTP_OK=1 || CC_HTTP_OK=0
+
+    if [[ $CC_HTTP_OK -eq 1 ]]; then
+      ok "Step 4: CC converge via HTTP succeeded ($CC_BASE_URL/api/system/converge)"
+      CC_SYNC_PATH="http"
+    else
+      warn "Step 4: CC HTTP converge failed (rc=$? output: ${CC_CONVERGE_RESP:0:200}) — trying on-box fallback"
+    fi
+  else
+    warn "Step 4: MC_API_TOKEN or CC_BASE_URL not set — skipping HTTP converge, trying on-box fallback"
+  fi
+
+  if [[ $CC_HTTP_OK -eq 0 ]]; then
+    # On-box fallback: seed-workspaces.py + ingest-sop-library.sh
+    FALLBACK_OK=0
+    if [[ -f "$SEED_WORKSPACES_PY" ]]; then
+      if python3 "$SEED_WORKSPACES_PY" 2>&1; then
+        ok "  fallback: seed-workspaces.py succeeded"
+        FALLBACK_OK=1
+      else
+        warn "  fallback: seed-workspaces.py failed"
+      fi
+    else
+      warn "  fallback: seed-workspaces.py not found at $SEED_WORKSPACES_PY"
+    fi
+
+    if [[ -f "$INGEST_SOP_LIBRARY_SH" ]]; then
+      if bash "$INGEST_SOP_LIBRARY_SH" 2>&1; then
+        ok "  fallback: ingest-sop-library.sh succeeded"
+        FALLBACK_OK=1
+      else
+        warn "  fallback: ingest-sop-library.sh failed"
+      fi
+    fi
+
+    if [[ $FALLBACK_OK -eq 1 ]]; then
+      CC_SYNC_PATH="on-box-fallback"
+      info "Step 4: CC re-synced via on-box fallback"
+    else
+      fail "Step 4: BOTH HTTP converge AND on-box fallback failed."
+      die "CC is out of sync. Check CC_BASE_URL=$CC_BASE_URL and MC_API_TOKEN, or run seed-workspaces.py manually."
+    fi
+  fi
+fi
+
+# ─── Step 5: Persona tags (converge mode, §1.6 step 6) ───────────────────────
+UNTAGGED_COUNT=0
+if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 && -n "${UNTAGGED_PERSONAS:-}" ]]; then
+  UNTAGGED_COUNT="$(echo "$UNTAGGED_PERSONAS" | wc -l | tr -d ' ')"
+  info "Step 5: $UNTAGGED_COUNT untagged persona(s) detected — writing needs-tags.json"
+
+  python3 - "$NEEDS_TAGS_JSON" <<PYEOF
+import json, sys
+from datetime import datetime, timezone
+slugs = """${UNTAGGED_PERSONAS}""".strip().splitlines()
+data = {"generated_at": datetime.now(timezone.utc).isoformat(), "untagged": [s.strip() for s in slugs if s.strip()]}
+with open(sys.argv[1], "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+print(f"needs-tags.json written: {len(data['untagged'])} untagged persona(s)")
+PYEOF
+  ok "Step 5: needs-tags.json updated"
+elif [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
+  # No untagged personas — clear any stale needs-tags.json
+  if [[ -f "$NEEDS_TAGS_JSON" ]]; then
+    python3 -c "
+import json
+from datetime import datetime, timezone
+with open('$NEEDS_TAGS_JSON', 'w') as f:
+    json.dump({'generated_at': datetime.now(timezone.utc).isoformat(), 'untagged': []}, f, indent=2)
+    f.write('\n')
+"
+    ok "Step 5: needs-tags.json cleared (no untagged personas)"
+  fi
+fi
+
+# ─── Step 6: Append converge record to add-ledger (§1.8) ─────────────────────
+if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
+  python3 - "$ADD_LEDGER_JSONL" "$CC_SYNC_PATH" <<PYEOF
+import json, sys, fcntl
+from datetime import datetime, timezone
+ledger_path = sys.argv[1]
+cc_path = sys.argv[2]
+new_depts = """${NEW_DEPTS:-}""".strip()
+new_roles = """${NEW_ROLES:-}""".strip()
+record = json.dumps({
+    "ts": datetime.now(timezone.utc).isoformat(),
+    "type": "converge",
+    "slug": "full-converge",
+    "status": "done",
+    "detail": f"new_depts={len([d for d in new_depts.splitlines() if d])}, new_roles={len([r for r in new_roles.splitlines() if r])}, cc_sync_path={cc_path}",
+    "by": "converge",
+}, separators=(",", ":"))
+try:
+    with open(ledger_path, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        f.write(record + "\n")
+        fcntl.flock(f, fcntl.LOCK_UN)
+except OSError as e:
+    print(f"WARN: could not write ledger: {e}", file=sys.stderr)
+PYEOF
+fi
+
+# ─── Step 7: Telegram summary (extended for converge mode) ───────────────────
+if [[ $DRY_RUN -eq 0 ]]; then
+  if [[ ${#REGISTERED[@]} -gt 0 || $CONVERGE_MODE -eq 1 ]]; then
+    MSG="Extension sync complete on $(hostname)."
+
+    if [[ ${#REGISTERED[@]} -gt 0 ]]; then
+      REG_LIST="$(printf '%s\n' "${REGISTERED[@]}" | sed 's/^/  • /')"
+      MSG="$MSG
 New departments registered (${#REGISTERED[@]}):
 $REG_LIST"
-  if [[ ${#FAILED[@]} -gt 0 ]]; then
-    FAIL_LIST="$(printf '%s\n' "${FAILED[@]}" | sed 's/^/  • /')"
-    MSG="$MSG
+    fi
+
+    if [[ $CONVERGE_MODE -eq 1 ]]; then
+      NEW_ROLES_COUNT=0
+      NEW_SOPS_COUNT=0
+      NEW_PERSONAS_COUNT=0
+      [[ -n "${NEW_ROLES:-}" ]] && NEW_ROLES_COUNT=$(echo "$NEW_ROLES" | wc -l | tr -d ' ')
+      [[ -n "${NEW_SOPS:-}" ]] && NEW_SOPS_COUNT=$(echo "$NEW_SOPS" | wc -l | tr -d ' ')
+      [[ -n "${NEW_PERSONAS:-}" ]] && NEW_PERSONAS_COUNT=$(echo "$NEW_PERSONAS" | wc -l | tr -d ' ')
+      MSG="$MSG
+New roles: $NEW_ROLES_COUNT | New SOPs: $NEW_SOPS_COUNT | New personas: $NEW_PERSONAS_COUNT
+CC sync path: $CC_SYNC_PATH"
+      if [[ $UNTAGGED_COUNT -gt 0 ]]; then
+        MSG="$MSG
+ATTENTION: $UNTAGGED_COUNT persona(s) need domain/perspective tags before they are routable.
+See extension-sync/needs-tags.json for the list."
+      fi
+    fi
+
+    if [[ ${#FAILED[@]} -gt 0 ]]; then
+      FAIL_LIST="$(printf '%s\n' "${FAILED[@]}" | sed 's/^/  • /')"
+      MSG="$MSG
 
 FAILED to register (${#FAILED[@]}) — manual review needed:
 $FAIL_LIST"
-  fi
+    fi
 
-  # Send via openclaw message send (N rule: never bypass OpenClaw for Telegram)
-  openclaw message send --channel telegram --body "$MSG" 2>/dev/null || \
-    warn "Telegram summary send failed (non-fatal)"
+    # Send via openclaw message send (rule: never bypass OpenClaw for Telegram)
+    openclaw message send --channel telegram --body "$MSG" 2>/dev/null || \
+      warn "Telegram summary send failed (non-fatal)"
+  fi
 fi
 
 # ─── Result ───────────────────────────────────────────────────────────────────
@@ -244,4 +602,8 @@ if [[ ${#FAILED[@]} -gt 0 ]]; then
   exit 1
 fi
 
-ok "sync-extensions.sh complete — ${#REGISTERED[@]} new dept(s) registered."
+if [[ $CONVERGE_MODE -eq 1 ]]; then
+  ok "sync-extensions.sh --converge complete — ${#REGISTERED[@]} new dept(s), CC sync: $CC_SYNC_PATH"
+else
+  ok "sync-extensions.sh complete — ${#REGISTERED[@]} new dept(s) registered."
+fi

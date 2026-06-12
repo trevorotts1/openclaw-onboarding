@@ -432,5 +432,78 @@ The workforce structure auto-updates the wiki:
 For full wiki capabilities, see Skill 31 (Upgraded Memory System).
 
 ---
+---
+
+## Self-Service: Add a Role / Add an SOP After Build (§1.5)
+
+**These operations are available AFTER the workforce is built. Every add MUST end with the converge call.**
+
+### Add a Role to an Existing Department
+
+When the owner says "add a `<X>` specialist to `<dept>`":
+
+```bash
+# 1. Add the role (creates files + inserts agent row + updates _index.json)
+bash add-role.sh --dept <slug> --role "<X Specialist>"
+
+# 2. REQUIRED: Fill how-to.md from the role-library template (REMOVE the [PENDING] marker)
+#    Template: 23-ai-workforce-blueprint/templates/role-library/<dept>/<role>/how-to.md
+#    The role is BLOCKED from live status until this is filled.
+
+# 3. Run converge (MANDATORY closing step — never skip)
+bash 32-command-center-setup/scripts/sync-extensions.sh --converge
+```
+
+**Hard rule:** The role stays blocked (status=pending, not routable) until how-to.md no longer contains `[PENDING — FILL FROM LIBRARY]`. Do not skip step 2.
+
+### Add an SOP
+
+When the owner says "add this SOP / write a procedure for `<task>`":
+
+```bash
+# 1. Author the SOP markdown (you write it FIRST, then call add-sop.sh)
+#    Must have: section headers (##) or numbered steps (1.) and at least 5 lines.
+cat > /tmp/sop-draft.md << 'EOF'
+# <SOP Title>
+
+## Purpose
+<one-line purpose>
+
+## Steps
+1. <Step 1>
+2. <Step 2>
+3. <Step 3>
+EOF
+
+# 2. Add the SOP (validates substance, places file, regenerates 00-INDEX.md)
+bash 32-command-center-setup/scripts/add-sop.sh \
+  --dept <dept-slug> \
+  [--role <role-slug>] \
+  --title "<SOP Title>" \
+  --file /tmp/sop-draft.md \
+  [--keywords "kw1,kw2"]
+
+# 3. Run converge (MANDATORY closing step — never skip)
+bash 32-command-center-setup/scripts/sync-extensions.sh --converge
+```
+
+### The Converge Command
+
+The converge step is REQUIRED after EVERY add. It:
+- Validates _index.json invariants
+- Refreshes build-state + ORG-CHART.md
+- Re-renders the org chart infographic
+- Re-syncs the Command Center dashboard
+- Updates last-sync.json
+
+```bash
+# Standard converge (full renders)
+bash 32-command-center-setup/scripts/sync-extensions.sh --converge
+
+# Fast mode (for Sunday cron — skips infographic/Notion if no delta)
+bash 32-command-center-setup/scripts/sync-extensions.sh --converge --fast
+```
+
 <!-- BREADCRUMB: skill-23-mac | 2026-04-12 | Memory Surgery Phase 2 Wave A -->
 <!-- SKILL.md updated: Added Memory Wiki Integration section, updated Interview Persistence Protocol with layer references -->
+<!-- SKILL.md updated: Added Self-Service Add-and-Wire section (§1.5) -->

@@ -142,6 +142,92 @@ def emit_summary(payload):
     print(json.dumps(payload, separators=(",", ":")))
 
 
+def upsert_role_into_index(dept_slug, role_slug, oc_root, script_dir, now):
+    """Add role_slug to _index.json under departments[dept_slug].roles[].
+    FAIL LOUD if dept not found in index (adding a role to a non-existent dept
+    is a wiring error). Returns True if file changed, False if no-op."""
+    import tempfile
+    candidates = [
+        Path("/data/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json"),
+        Path.home() / ".openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json",
+        Path(script_dir).resolve().parent / "templates/role-library/_index.json",
+        Path(script_dir).resolve().parent.parent / "23-ai-workforce-blueprint/templates/role-library/_index.json",
+    ]
+    target = None
+    for p in candidates:
+        if p.is_file():
+            target = p
+            break
+    if not target:
+        print(f"  [role-index] _index.json not found — skipping (run on box with installed skills)", file=sys.stderr)
+        return False
+
+    try:
+        idx = json.load(open(target))
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"  [role-index] FATAL: failed to read {target}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    deps = idx.setdefault("departments", {})
+    if dept_slug not in deps:
+        print(f"  [role-index] FATAL: dept '{dept_slug}' not found in _index.json — "
+              f"add the department first with add-department.sh before adding roles.", file=sys.stderr)
+        sys.exit(1)
+
+    dept_entry = deps[dept_slug]
+    roles = dept_entry.get("roles", [])
+    if role_slug in roles:
+        print(f"  [role-index] role '{role_slug}' already in _index.json for dept '{dept_slug}' — no-op")
+        return False
+
+    roles.append(role_slug)
+    roles.sort()
+    dept_entry["roles"] = roles
+    dept_entry["count"] = len(roles)
+
+    # Recompute global totals
+    idx["total_roles"] = sum(len(d.get("roles", [])) for d in deps.values())
+    idx["total_departments"] = len(deps)
+    idx["generated_at"] = now
+
+    # Atomic write (tmp + os.replace)
+    idx_dir = target.parent
+    fd, tmp_path = tempfile.mkstemp(prefix=".idx.", suffix=".json.tmp", dir=str(idx_dir))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(idx, f, indent=2)
+            f.write("\n")
+        os.replace(tmp_path, str(target))
+    except OSError as e:
+        if Path(tmp_path).exists():
+            Path(tmp_path).unlink(missing_ok=True)
+        print(f"  [role-index] FATAL: write failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"  + role-index     added '{role_slug}' to dept '{dept_slug}' in _index.json "
+          f"(total_roles={idx['total_roles']})")
+    return True
+
+
+def _append_add_ledger(oc_root, record):
+    """Append one JSON line to the append-only add-ledger.jsonl (§1.8).
+    Never raises — failure is WARN only (ledger is best-effort)."""
+    import fcntl
+    ledger_dir = Path(oc_root) / "extension-sync"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    ledger_path = ledger_dir / "add-ledger.jsonl"
+    line = json.dumps(record, separators=(",", ":")) + "\n"
+    try:
+        with open(ledger_path, "a") as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                f.write(line)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+    except OSError as e:
+        print(f"  [ledger] WARN: could not append to {ledger_path}: {e}", file=sys.stderr)
+
+
 # ─── Locate the department workspace dir ─────────────────────────────────────
 # Convention: departments live in $OC_ROOT/workspace/agents/main/departments/<slug>/
 # Mirrors the path written by build-workforce.py DEPARTMENTS_DIR.
@@ -362,7 +448,21 @@ if DB_PATH and Path(DB_PATH).is_file():
     finally:
         db.close()
 
-# ─── 8. Touch .persona-index-stale ───────────────────────────────────────────
+# ─── 8. Upsert role into _index.json (§1.1 — NEW) ───────────────────────────
+index_changed = upsert_role_into_index(DEPT_SLUG, ROLE_SLUG, OC_ROOT, SCRIPT_DIR, NOW)
+
+# ─── 9. Append to add-ledger (§1.8) ──────────────────────────────────────────
+_append_add_ledger(OC_ROOT, {
+    "ts": NOW,
+    "type": "role",
+    "slug": ROLE_SLUG,
+    "dept": DEPT_SLUG,
+    "status": "already_exists" if agent_status == "already_exists" else "created",
+    "detail": f"role_name={ROLE_NAME}, index_changed={index_changed}, pending_how_to=true",
+    "by": "agent",
+})
+
+# ─── 10. Touch .persona-index-stale ──────────────────────────────────────────
 skill23_dir = Path(OC_ROOT) / "skills" / "23-ai-workforce-blueprint"
 if skill23_dir.is_dir():
     marker = skill23_dir / ".persona-index-stale"
@@ -375,6 +475,7 @@ else:
     print(f"  [persona-stale] skill 23 dir not found at {skill23_dir}; no-op")
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
+final_status = "already_exists" if agent_status == "already_exists" else ("created" if identity_path.exists() else "error")
 emit_summary({
     "dept": DEPT_SLUG,
     "role": ROLE_NAME,
@@ -382,7 +483,8 @@ emit_summary({
     "role_dir": str(role_dir),
     "agent_id": agent_id or "none",
     "agent_status": agent_status,
-    "status": "created" if identity_path.exists() else "error",
+    "status": final_status,
+    "pending_how_to": True,
 })
 PYEOF
 
@@ -394,6 +496,10 @@ fi
 
 echo ""
 echo "[add-role] Done. Role '$ROLE_NAME' added under dept '$DEPT_SLUG'."
-echo "  Next: run generate-governing-personas.sh to update persona pools."
-echo "  Then: fill the how-to.md stub with the role's SOPs."
+echo "  Next steps (ALL REQUIRED):"
+echo "    1. Fill how-to.md from the role-library template (remove the [PENDING — FILL FROM LIBRARY] marker)."
+echo "       Template: 23-ai-workforce-blueprint/templates/role-library/<dept>/<role>/how-to.md"
+echo "    2. Run generate-governing-personas.sh to update persona pools."
+echo "    3. Run converge: bash 32-command-center-setup/scripts/sync-extensions.sh --converge"
+echo "       This updates build-state, ORG-CHART.md, infographic, Notion, and the CC dashboard."
 exit 0
