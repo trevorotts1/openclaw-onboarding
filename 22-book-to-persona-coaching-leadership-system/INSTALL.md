@@ -391,18 +391,129 @@ If Codex OAuth is not found or expired: reconnect via OpenClaw settings using yo
 
 ---
 
-## Step 5 - Set Up Gemini Engine Collection (coaching-personas) - DOCUMENTATION ONLY
+## Step 5 - Install Gemini Vector Index (coaching-personas) — DOWNLOAD PREBUILT (DEFAULT)
 
-Pre-built personas are already included in this skill folder. They will be added to Gemini Engine during Skill 23 (AI Workforce Blueprint) installation.
+> **DEFAULT PATH: download the prebuilt index.** This avoids re-embedding 6260 chunks and saves your Gemini API credits.
+> Only fall back to local embedding (Step 5-FALLBACK) if the download fails or you are adding new books that are not in the prebuilt set.
 
-**Run the indexer AFTER Skill 22 completes, before Skill 23.** Skill 23 needs the personas indexed before it can find them.
+### Step 5-A: Detect install path (Mac vs VPS)
 
-**What happens next:**
-- Run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` to index all personas now
-- Skill 23 will run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py` to index all personas + workforce files together
-- This ensures Skill 23 can find persona files via the index before assigning them to departments
+```bash
+if [ -d "/data/.openclaw" ]; then
+  COACHING_DB_DIR="/data/.openclaw/workspace/data/coaching-personas"
+else
+  COACHING_DB_DIR="$HOME/.openclaw/workspace/data/coaching-personas"
+fi
+echo "Index install path: $COACHING_DB_DIR"
+mkdir -p "$COACHING_DB_DIR"
+```
 
-**Note:** If you need to verify personas are searchable after Skill 23 completes, run:
+### Step 5-B: Download prebuilt index from GitHub Release
+
+```bash
+ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v1.0.0/gemini-index.sqlite.gz"
+EXPECTED_SHA256="65864eb6b53a54818017b44b17c4c0647a543086aa833573b1f56cdf816ed0ad"
+GZ_PATH="/tmp/gemini-index.sqlite.gz"
+
+echo "Downloading prebuilt persona index (~71 MB)..."
+curl -L --retry 3 --retry-delay 5 --fail \
+  -H "Accept: application/octet-stream" \
+  "$ASSET_URL" -o "$GZ_PATH"
+
+if [ $? -ne 0 ]; then
+  echo "DOWNLOAD FAILED — fall back to Step 5-FALLBACK (local embedding)"
+  exit 1
+fi
+echo "Download complete."
+```
+
+### Step 5-C: Verify SHA256 (HARD FAIL if mismatch — do NOT install a corrupt index)
+
+```bash
+ACTUAL_SHA256="$(shasum -a 256 "$GZ_PATH" | awk '{print $1}')"
+if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+  echo "SHA256 MISMATCH — ABORTING"
+  echo "  Expected: $EXPECTED_SHA256"
+  echo "  Got:      $ACTUAL_SHA256"
+  echo "The downloaded file is corrupt. Delete /tmp/gemini-index.sqlite.gz and retry."
+  exit 1
+fi
+echo "SHA256 verified: OK"
+```
+
+### Step 5-D: Decompress and install
+
+```bash
+echo "Decompressing..."
+gunzip -c "$GZ_PATH" > "$COACHING_DB_DIR/gemini-index.sqlite"
+
+if [ $? -ne 0 ]; then
+  echo "GUNZIP FAILED — file may be corrupt. Retry download."
+  exit 1
+fi
+
+DB_SIZE=$(du -sh "$COACHING_DB_DIR/gemini-index.sqlite" | awk '{print $1}')
+echo "Index installed at: $COACHING_DB_DIR/gemini-index.sqlite ($DB_SIZE)"
+rm -f "$GZ_PATH"
+```
+
+### Step 5-E: Verify the installed index is usable
+
+```bash
+python3 - <<'EOF'
+import sqlite3, os, sys
+
+coaching_db_dir = os.environ.get("COACHING_DB_DIR") or \
+    ("/data/.openclaw/workspace/data/coaching-personas" if os.path.isdir("/data/.openclaw")
+     else os.path.expanduser("~/.openclaw/workspace/data/coaching-personas"))
+db_path = os.path.join(coaching_db_dir, "gemini-index.sqlite")
+
+if not os.path.exists(db_path):
+    print(f"FAIL: {db_path} not found")
+    sys.exit(1)
+
+conn = sqlite3.connect(db_path)
+try:
+    row = conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()
+    chunk_count = row[0]
+    print(f"Index verified: {chunk_count} chunks in embeddings table")
+    if chunk_count < 6000:
+        print(f"WARNING: expected ~6260 chunks, got {chunk_count}. Re-run download.")
+    else:
+        print("PASS: prebuilt index ready for use")
+except Exception as e:
+    print(f"FAIL: could not query embeddings table: {e}")
+    sys.exit(1)
+finally:
+    conn.close()
+EOF
+```
+
+**Expected output:** `PASS: prebuilt index ready for use` with ~6260 chunks.
+
+---
+
+## Step 5-FALLBACK — Local Embedding (Only if Download Fails or Adding New Books)
+
+Use this path ONLY when:
+- The GitHub Release download above failed and cannot be retried
+- You are adding client-specific books not in the prebuilt set (incremental indexing)
+
+**Note:** This consumes Gemini API credits (one embedding call per chunk). With 6260 chunks the full rebuild costs ~$0.50–$1.00 at GA pricing.
+
+**Run the indexer after Step 5b-Deploy is complete:**
+```bash
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --collection coaching-personas
+```
+
+Skill 23 will also call this indexer again to add workforce files on top of the personas. That incremental run is cheap (only new chunks are embedded).
+
+**To add a new book to an existing prebuilt index (incremental — does NOT re-embed existing chunks):**
+```bash
+python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --collection coaching-personas --incremental
+```
+
+**Verify persona search works:**
 ```bash
 python3 ~/.openclaw/workspace/scripts/gemini-search.py "negotiation"
 ```
@@ -490,6 +601,8 @@ fi
 crontab -l | grep update-skills
 ```
 Should show: `0 2 * * 0 $HOME/.openclaw/skills/scripts/update-skills.sh`
+
+**Prebuilt index and fleet-refresh:** When a new prebuilt index release is published, the shared manifest at `shared-utils/prebuilt-index/INDEX-MANIFEST.json` in this repo will be updated with a new `asset_url` and `sha256`. After `update-skills.sh` runs and pulls a new version of this skill, re-run Steps 5-A through 5-E to refresh the local index. You do NOT need to re-embed — just download the new `.gz` from the updated `asset_url` in the manifest. The manifest's `release_tag` field always points to the canonical latest prebuilt release.
 
 ---
 
@@ -688,7 +801,7 @@ Run through this checklist:
 - [ ] Ollama Cloud key confirmed (`OLLAMA_API_KEY` or `models.providers.ollama.apiKey` in openclaw.json) — PRIMARY for Phase 1 + 2
 - [ ] OpenRouter API key confirmed — fallback only, used when Ollama Cloud is unavailable
 - [ ] Codex OAuth token confirmed and not expired (Phase 3 primary)
-- [ ] Gemini Vector Database coaching-personas added and embedded (Step 5)
+- [ ] Gemini Vector Database coaching-personas installed — prebuilt asset downloaded + SHA256 verified (Step 5), OR local embedding fallback completed
 - [ ] Gemini Engine test query returns results
 - [ ] Core files updated per CORE_UPDATES.md (Step 7)
 - [ ] Pipeline execution test passed (Step 8)
@@ -732,16 +845,46 @@ chmod +x ~/.openclaw/workspace/scripts/gemini-*.py
 pip3 install google-genai numpy pdfplumber pypdf ebooklib aiohttp beautifulsoup4 mobi lxml --break-system-packages
 ```
 
-#### Step 3: INDEX pre-built personas
+#### Step 3: INSTALL prebuilt index (download — no Gemini credits consumed)
+
+This is the DEFAULT path. Run Steps 5-A through 5-E from the Step 5 section above.
+One-liner for copy-paste (Mac):
 ```bash
-python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --collection coaching-personas
+COACHING_DB_DIR="$HOME/.openclaw/workspace/data/coaching-personas"
+mkdir -p "$COACHING_DB_DIR"
+ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v1.0.0/gemini-index.sqlite.gz"
+EXPECTED_SHA="65864eb6b53a54818017b44b17c4c0647a543086aa833573b1f56cdf816ed0ad"
+GZ=/tmp/gemini-index.sqlite.gz
+curl -L --retry 3 --fail "$ASSET_URL" -o "$GZ" && \
+ACTUAL=$(shasum -a 256 "$GZ" | awk '{print $1}') && \
+[ "$ACTUAL" = "$EXPECTED_SHA" ] && echo "SHA256 OK" || { echo "SHA256 MISMATCH — aborting"; exit 1; } && \
+gunzip -c "$GZ" > "$COACHING_DB_DIR/gemini-index.sqlite" && \
+rm -f "$GZ" && \
+echo "Index installed at $COACHING_DB_DIR/gemini-index.sqlite"
 ```
+
+VPS path — replace `$HOME/.openclaw` with `/data/.openclaw`:
+```bash
+COACHING_DB_DIR="/data/.openclaw/workspace/data/coaching-personas"
+mkdir -p "$COACHING_DB_DIR"
+ASSET_URL="https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v1.0.0/gemini-index.sqlite.gz"
+EXPECTED_SHA="65864eb6b53a54818017b44b17c4c0647a543086aa833573b1f56cdf816ed0ad"
+GZ=/tmp/gemini-index.sqlite.gz
+curl -L --retry 3 --fail "$ASSET_URL" -o "$GZ" && \
+ACTUAL=$(sha256sum "$GZ" | awk '{print $1}') && \
+[ "$ACTUAL" = "$EXPECTED_SHA" ] && echo "SHA256 OK" || { echo "SHA256 MISMATCH — aborting"; exit 1; } && \
+gunzip -c "$GZ" > "$COACHING_DB_DIR/gemini-index.sqlite" && \
+rm -f "$GZ" && \
+echo "Index installed at $COACHING_DB_DIR/gemini-index.sqlite"
+```
+
+> **Fallback only:** If the download fails, run `python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --collection coaching-personas` to build locally (consumes Gemini API credits).
 
 #### Step 4: VERIFY index status
 ```bash
 python3 ~/.openclaw/workspace/scripts/gemini-indexer.py --status
 ```
-Expected: Shows "coaching-personas" collection with 40+ documents.
+Expected: Shows "coaching-personas" collection with 40+ documents (6260 chunks).
 
 #### Step 5: APPLY CORE_UPDATES.md
 Add entries from CORE_UPDATES.md to:

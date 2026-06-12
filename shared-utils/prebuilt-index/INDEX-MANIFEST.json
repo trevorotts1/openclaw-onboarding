@@ -1,0 +1,17 @@
+{
+  "model": "gemini-embedding-2",
+  "dims": 3072,
+  "provider": "gemini",
+  "persona_count": 40,
+  "chunk_count": 6260,
+  "file_count": 120,
+  "sha256": "65864eb6b53a54818017b44b17c4c0647a543086aa833573b1f56cdf816ed0ad",
+  "build_date": "2026-06-12",
+  "release_tag": "prebuilt-index-v1.0.0",
+  "asset_url": "https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v1.0.0/gemini-index.sqlite.gz",
+  "gz_size_bytes": 75131079,
+  "gz_size_mb": 71.65,
+  "source_db_bytes": 85245952,
+  "hormozi_leads_rows": 99,
+  "notes": "Full rebuild with GA gemini-embedding-2 @3072. Includes Hormozi $100M Leads (99 chunks) + $100M Offers. 40 personas / 6260 chunks. Clients download this asset instead of re-embedding (saves Gemini API credits). SHA256 verified at build time and must be verified before install."
+}
