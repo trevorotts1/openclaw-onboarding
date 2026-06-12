@@ -1,3 +1,21 @@
+## [v11.28.0]  -  2026-06-12  -  feat(T3-002): Healer embedded in every department (on-demand, heartbeat OFF)
+
+### Changes
+
+**T3-002 operator GO 2026-06-12.** The QUAD model is now the default: every operational department gets an embedded Healer (the 4th role alongside Devil's Advocate, Deep Research Specialist, QC Specialist). The Healer is on-demand only -- no heartbeat, no standing burn.
+
+**Safety proof (why this is zero-burn):**
+1. `install.sh` sets `agents.defaults.heartbeat.agentsOnly=["main"]` -- only the main agent runs a heartbeat tick. No dept sub-agent (Healer included) ever fires on a timer.
+2. `scaffold-agent-files.sh` scaffolds dept agents with `Cadence: DISABLED by default`. A materialized Healer is dormant until dispatched.
+3. The dept-healer-template.md "When to run" block lists only event triggers: watchdog 2nd-consecutive-stall, QC loop-4 escalation, Phase-4 failCode event, operator bug report. No scheduled mode exists.
+
+**What shipped:**
+- `scripts/generate-trio-roles.py`: default flipped to QUAD (`--with-healer` ON by default); added `--no-healer` opt-out for trio-only mode; backward-compat `--with-healer` alias kept; docstring updated; in-loop comment updated; `total_roles` recompute added so _index.json never drifts.
+- 18 `healer-<dept>.md` files materialized into every DEPT_META department (app-development, audio, billing, communications, crm, customer-support, general-task, graphics, legal-compliance, marketing, openclaw-maintenance, paid-advertisement, project-architecture-office, research, sales, social-media, video, web-development). Each is byte-identical to `dept-healer-template.md` with `{{DEPARTMENT_NAME}}` filled; `Role type: healer` (never qc).
+- `_index.json`: 18 `healer-<dept>` slugs registered; `total_roles` bumped 285 -> 303.
+- `working/TIER3-HELD.md`: T3-001 and T3-002 marked BUILT.
+- **Version**: v11.27.0 -> v11.28.0 (all 9 markers + cc-compat.json).
+
 ## [v11.27.0]  -  2026-06-12  -  fix: rollout blockers -- register-routing-dept path/schema + drop invalid wiki on dept agents (config-validate clean)
 
 ### Changes

@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
 """
-generate-trio-roles.py — PRD 2.11 bootstrap script.
+generate-trio-roles.py - PRD 2.11 / T3-002 QUAD bootstrap script.
 
-Generates missing Devil's Advocate, Deep Research Specialist, and QC Specialist
-role files for every operational department in the role library, then updates
-_index.json so the trio is registered.
+Default (QUAD) mode: generates the Devil's Advocate, Deep Research Specialist,
+QC Specialist, AND Healer (4th role) for every operational department listed in
+DEPT_META, then updates _index.json so all four are registered.
+
+The Healer is ON by default as of v11.28.0 (T3-002 operator GO 2026-06-12).
+It is safe to embed because:
+  1. Heartbeats are main-only on every box (install.sh agents.defaults.heartbeat.
+     agentsOnly=["main"]) -- no dept sub-agent (Healer included) is ever on the
+     tick.
+  2. Dept sub-agents ship heartbeat DISABLED by default (scaffold-agent-files.sh
+     Cadence: DISABLED). A materialized Healer is dormant until dispatched.
+  3. Trigger-only dispatch: watchdog 2nd-consecutive-stall, QC loop-4 escalation,
+     Phase-4 failCode event, operator bug report. No scheduled run mode exists.
+
+Use --no-healer for trio-only mode (skips the per-department Healer).
 
 Run from the repo root:
-    python3 scripts/generate-trio-roles.py [--dry-run]
+    python3 scripts/generate-trio-roles.py [--dry-run] [--no-healer]
 """
 import argparse
 import json
@@ -877,16 +889,21 @@ def main():
     parser = argparse.ArgumentParser(description="Generate missing trio (or quad) role files")
     parser.add_argument("--dry-run", action="store_true", help="Print what would be done, no writes")
     parser.add_argument(
-        "--with-healer",
-        action="store_true",
+        "--no-healer", dest="with_healer", action="store_false",
         help=(
-            "QUAD mode: also instantiate the PART 5 department Healer in every "
-            "department (role_type healer). OFF by default: embedding one Healer "
-            "per department is ~+20 standing agents per box and is an OPERATOR-GATED "
-            "scale decision (SYSTEM-INTEGRATION-STRATEGY.md C3). Do not enable "
-            "fleet-wide without operator GO."
+            "Trio-only mode: skip the per-department Healer (QUAD's 4th role). "
+            "Default is QUAD (Healer embedded per dept, heartbeat OFF, on-demand "
+            "triggered). T3-002 operator GO 2026-06-12: dept heartbeats are OFF "
+            "(install.sh agentsOnly=[main]) so an embedded Healer is dormant until "
+            "a watchdog/QC-loop-4/failCode trigger fires -- zero standing burn."
         ),
     )
+    # --with-healer is kept as a harmless no-op alias for backward compat
+    parser.add_argument(
+        "--with-healer", dest="with_healer", action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.set_defaults(with_healer=True)
     args = parser.parse_args()
 
     idx = json.loads(INDEX_PATH.read_text())
@@ -981,10 +998,12 @@ def main():
         else:
             skipped.append(f"{dept}/QC (already exists)")
 
-        # --- Department Healer (the QUAD's 4th role; OPERATOR-GATED) ----------
-        # Only runs under --with-healer. Embedding a Healer in every department
-        # is a ~+20-agents-per-box scale decision (Fable C3); default trio runs
-        # NEVER touch it. role_type is 'healer', NEVER 'qc'.
+        # --- Department Healer (the QUAD's 4th role; ON by default) -----------
+        # ON by default since v11.28.0 (T3-002 operator GO 2026-06-12).
+        # Heartbeats are main-only (install.sh agentsOnly=["main"]) and dept
+        # sub-agents ship with Cadence: DISABLED -- so a materialized Healer
+        # costs zero tokens until a watchdog/QC-loop-4/failCode trigger fires.
+        # role_type is 'healer', NEVER 'qc'. Use --no-healer for trio-only.
         if args.with_healer:
             if needs_healer_file(dept_dir):
                 fname = healer_filename(dept)
@@ -1007,9 +1026,14 @@ def main():
 
     # Write updated index
     idx["departments"] = depts_in_idx
+    # Recompute total_roles from the sum of per-dept counts so it never drifts
+    idx["total_roles"] = sum(
+        info.get("count", len(info.get("roles", [])))
+        for info in depts_in_idx.values()
+    )
     if not args.dry_run:
         INDEX_PATH.write_text(json.dumps(idx, indent=2) + "\n")
-        print(f"\n[OK] Updated {INDEX_PATH.relative_to(REPO_ROOT)}")
+        print(f"\n[OK] Updated {INDEX_PATH.relative_to(REPO_ROOT)} (total_roles={idx['total_roles']})")
     else:
         print(f"\n[DRY-RUN] Would update {INDEX_PATH.relative_to(REPO_ROOT)}")
 
