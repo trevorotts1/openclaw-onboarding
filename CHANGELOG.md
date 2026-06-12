@@ -1,3 +1,13 @@
+## [v12.1.1]  -  2026-06-12  -  fix: seed-workspaces.py CC workspace seeding is now idempotent (INSERT OR IGNORE + in-loop existing-set update)
+
+### Changes
+
+**Fix: seed-workspaces.py idempotency.** `INSERT INTO workspaces` changed to `INSERT OR IGNORE INTO workspaces` so the seed never crashes on a UNIQUE(slug) constraint violation. Added `existing.add(dept_id)` inside the loop so duplicate canonical slugs within the same dept list are counted as skipped (not double-inserted). Added `cur.rowcount` check so the INSERTED/SKIPPED print and counter remain accurate. Root cause: `existing` was computed once before the dept loop — if two dept entries canonicalized to the same slug the second was absent from `existing`, the plain INSERT hit the UNIQUE(slug) constraint, and the crash left all later departments without workspace rows.
+
+**Version:** v12.1.0 -> v12.1.1. All 9 markers + cc-compat.json updated.
+
+---
+
 ## [v12.1.0]  -  2026-06-12  -  feat: Brainstorming Buddy generalized cross-department role (6 instances) + rename deck-discovery-strategist
 
 ### Changes
