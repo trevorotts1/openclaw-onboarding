@@ -1,17 +1,50 @@
 # Suggested Roles -- presentations-dept
-**Version:** 1.0 | 2026-06-11
-**Status:** Wave v11.19.0 -- Presentations Department v2 baseline
+**Version:** 1.2 | 2026-06-12
+**Status:** Wave v11.23.0 + Healer addition -- Presentations Department change order v1 (16 roles; ROLE-16 Healer now live)
 
 ## Department Purpose
-End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, and adversarial review. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery).
+End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery).
 
-## v11.19.0 Role Roster
-- Director (role #0)
-- QC Specialist -- Presentations
-- Deep Research Specialist -- Presentations
-- Devil's Advocate -- Presentations
-- Offer and Price Strategist (NEW -- v11.19.0)
-- Capacity and Reliability Engineer (NEW -- v11.19.0)
+## v11.23.0 Role Roster (16 roles)
+- Director (ROLE-01)
+- Brand Steward (ROLE-02)
+- Capacity and Reliability Engineer (ROLE-03, NEW -- v11.19.0)
+- Deep Research Specialist -- Presentations (ROLE-04)
+- Devil's Advocate -- Presentations (ROLE-05)
+- Media Librarian and GHL Updater (ROLE-06)
+- Offer and Price Strategist (ROLE-07, NEW -- v11.19.0)
+- PPTX Assembly Specialist (ROLE-08)
+- QC Specialist -- Presentations (ROLE-09)
+- Slide Copywriter (ROLE-10)
+- Slide Image Creator (ROLE-11)
+- Slide Submitter (ROLE-12)
+- Delivery Concierge (ROLE-13, NEW -- v11.23.0)
+- Presenter Coach (ROLE-14, NEW -- v11.23.0)
+- Hook Strategist (ROLE-15, NEW -- v11.23.0)
+- Healer -- Presentations (ROLE-16, NEW -- v11.23.0+healer)
+
+---
+
+## New Roles Added in v11.23.0
+
+### 12. Delivery Concierge (NEW -- v11.23.0)
+**Slug:** delivery-concierge
+**What it does:** Owns Phase 6+ multi-destination deck delivery. Resolves all delivery destinations from the Director's intake, uploads to each (GHL, Google Drive, local Mac Downloads), sends verified delivery notifications via openclaw message send, runs ground-truth verification (file hash + size), and writes a delivery_complete ledger entry.
+**Core SOPs:** 9.1 Destination Resolution | 9.2 Multi-Destination Upload | 9.3 Notification | 9.4 Ground-Truth Verification
+**Role type:** specialist
+**Absorbed:** ROLE-06 SOP 9.6 (Final Deck Delivery)
+
+### 13. Presenter Coach (NEW -- v11.23.0)
+**Slug:** presenter-coach
+**What it does:** Owns the live-presentation preparation layer. Writes a timed talk track (slide-by-slide narration against DURATION_MIN), preps Q and A objection answers for the 10 hardest questions, builds a one-page rehearsal run sheet, and runs a mandatory rehearsal gate (deck is not webinar-ready until owner completes at least one aloud run). Hands off to ROLE-13 Delivery Concierge.
+**Core SOPs:** 9.1 Talk Track | 9.2 Q and A Objection Prep | 9.3 Rehearsal Pack | 9.4 Rehearsal Gate
+**Role type:** specialist
+
+### 14. Hook Strategist (NEW -- v11.23.0)
+**Slug:** hook-strategist
+**What it does:** Owns the Hook Lab end-to-end. Generates 10 hook candidates (>=1 per formula across 7 formulas: F1 Purple Rain / F2 Contrarian / F3 Specificity Bomb / F4 Identity Claim / F5 Before-After / F6 Two-Truths / F7 Direct Prediction), scores each on 5 dimensions (Memorable/Provocative/Punchy/Specific/Singable), field-tests top 3 (say-it-aloud / 3-second recall / T-shirt / cookout tests), presents to owner for selection. Builds variant ladder (7-10 variants), placement map, and runs post-deck hook audit. Outputs hook_package.json consumed by Copywriter.
+**Core SOPs:** 9.1 Hook Generation and Scoring | 9.2 Variant Ladder, Placement Map, Post-Deck Hook Audit
+**Role type:** specialist
 
 ---
 
@@ -89,6 +122,13 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 **Core SOPs:** 9.1 Adversarial Doctrine Review and Kill-List
 **Role type:** on-call
 
+### 15. Healer -- Presentations (NEW -- v11.23.0+healer)
+**Slug:** healer-presentations
+**What it does:** Department immune system. Receives second-consecutive-stall handoffs from ROLE-03 Capacity and Reliability Engineer, loop-4 escalations from ROLE-09 QC Specialist, and Phase-4 API failCode events from ROLE-12 Slide Submitter. Diagnoses root cause using five-whys on evidence (dispatches ROLE-04 Deep Research Specialist for provider docs). Fixes the run (Tier 1: mechanical hot-patch, resume from last good checkpoint). Patches the SOP that allowed the failure so it never recurs (Tier 2: SOP surgery, mirror regeneration, regression entry). Proposes model manifest changes and new specialists to the operator and holds until approved (Tier 3). Reports every heal to the Director, CEO orchestrator, and operator before closing the incident. Runs monthly model currency census on GPT Image 2 / Minimax m3 / DeepSeek models in this department.
+**Core SOPs:** 9.1 Intake+Triage | 9.2 Root-Cause Diagnosis | 9.3 Fix Forward | 9.4 SOP Surgery | 9.5 Gap Detection | 9.6 Model Census | 9.7 Healing Report | 9.8 Regression Watch | 9.9 Core-File Surgery | 9.10 Settings Repair | 9.11 Teacher-Self | 9.12 Embedding Refresh
+**Role type:** healer
+**Receives from:** ROLE-03 (second consecutive stall or failed self-heal), ROLE-09 (loop-4 escalation), ROLE-12 (Phase-4 failCode events), Director (gap flags), Chief Healer (global patch directives)
+
 ---
 
 ## Department Coordination Notes
@@ -99,3 +139,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - **Price Ladder Concurrent with Copy:** The Offer Price Strategist runs concurrently with the Slide Copywriter during Phase 1. The Copywriter waits for price_ladder.json before writing price-bearing slides.
 - **Brand Steward Before Phase 2:** The STYLE BLOCK must exist before the Slide Image Creator writes any prompt.
 - **Owner Approval Gate is Hard:** No prompts are written until the owner says YES to the slide copy. This gate cannot be waived without explicit operator authorization on record.
+- **Hook Lab Before Copy:** The Hook Strategist (ROLE-15) runs during Phase B+ (after slide math, before Phase 1 copy). The Copywriter waits for hook_package.json before writing any slides.
+- **Presenter Coach After Copy, Before Delivery:** ROLE-14 runs after Phase 1A owner approval and before the deck ships. The rehearsal gate must be cleared before ROLE-13 delivers.
+- **Delivery Concierge Replaces Direct Delivery:** ROLE-06 Media Librarian hands off to ROLE-13 Delivery Concierge after PPTX assembly (Phase 6). ROLE-13 owns all destinations, verification, and notification.
+- **ROLE-16 Healer is Live:** healer-presentations.md authored and merged (change order v1 + healer addition). The Healer receives: second consecutive stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, Phase-4 API failCode events from ROLE-12. File a Bug Ticket to the Bugs Department before handing off to the Healer (Bugs Department pending commission).

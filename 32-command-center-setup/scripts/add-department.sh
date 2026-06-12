@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# add-department.sh — add a NEW department to an existing client's Command Center.
+# add-department.sh -- add a NEW department to an existing client's Command Center.
 #
 # Background:
 #   v10.14.26 ships seed-workspaces.py + seed-dashboard-content.py + materialize-
@@ -10,19 +10,19 @@
 #   role-library entry, manually editing openclaw.json bindings, and re-running
 #   generate-brand-css.py. This script does the full chain in one shot.
 #
-# PRD 2.11 (dept trio): every department — including custom departments added
-# by this script — must have a QC Specialist, a Deep Research Specialist, and
+# PRD 2.11 (dept trio): every department -- including custom departments added
+# by this script -- must have a QC Specialist, a Deep Research Specialist, and
 # a Devil's Advocate agent row. The Devil's Advocate is AUTO-CREATED and is
 # NEVER surfaced to the client (not shown on the board, not mentioned in any
 # communication or deliverable). These three rows are created alongside the
 # department head on every fresh add-department.sh invocation.
 #
-# What it does (every step is idempotent — safe to re-run with the same args):
+# What it does (every step is idempotent -- safe to re-run with the same args):
 #   1. INSERT a row into the workspaces table (id = slug)
 #   2. INSERT a department-head row into the agents table (status='standby')
 #   2b. INSERT a QC Specialist agent row (is_master=0, status='standby')
 #   2c. INSERT a Deep Research Specialist agent row (is_master=0, status='standby')
-#   2d. INSERT a Devil's Advocate agent row — AUTO-CREATED, NEVER shown to client
+#   2d. INSERT a Devil's Advocate agent row -- AUTO-CREATED, NEVER shown to client
 #   3. INSERT a starter "Welcome to <Dept>" task into the tasks table
 #      (status='backlog', assigned/created_by = the head agent's id)
 #   4. Append the new dept slug to 23-ai-workforce-blueprint/templates/role-
@@ -46,8 +46,8 @@
 #   {"slug":"podcast","status":"already_exists"}
 #
 # Exit codes:
-#   0 — success (created OR already_exists)
-#   1 — fatal (missing args, missing DB, malformed config, etc.)
+#   0 -- success (created OR already_exists)
+#   1 -- fatal (missing args, missing DB, malformed config, etc.)
 
 set -euo pipefail
 
@@ -82,10 +82,10 @@ if [[ -z "$SLUG" || -z "$NAME" ]]; then
   exit 1
 fi
 
-# Normalize slug — lowercase, hyphens only
+# Normalize slug -- lowercase, hyphens only
 SLUG_NORM=$(echo "$SLUG" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g')
 if [[ -z "$SLUG_NORM" ]]; then
-  echo "[add-department] FATAL: slug normalized to empty — provide a valid slug" >&2
+  echo "[add-department] FATAL: slug normalized to empty -- provide a valid slug" >&2
   exit 1
 fi
 SLUG="$SLUG_NORM"
@@ -106,7 +106,7 @@ else
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "[add-department] FATAL: python3 not on PATH — required" >&2
+  echo "[add-department] FATAL: python3 not on PATH -- required" >&2
   exit 1
 fi
 
@@ -182,10 +182,10 @@ def main():
         ag_cols = [r[1] for r in db.execute("PRAGMA table_info(agents)")]
         tk_cols = [r[1] for r in db.execute("PRAGMA table_info(tasks)")]
         if not ws_cols:
-            print("[add-department] FATAL: workspaces table missing — run seed-workspaces.py first", file=sys.stderr)
+            print("[add-department] FATAL: workspaces table missing -- run seed-workspaces.py first", file=sys.stderr)
             sys.exit(1)
         if not ag_cols or not tk_cols:
-            print("[add-department] FATAL: agents/tasks table missing — dashboard schema mismatch", file=sys.stderr)
+            print("[add-department] FATAL: agents/tasks table missing -- dashboard schema mismatch", file=sys.stderr)
             sys.exit(1)
 
         # ─── Idempotency: if slug already a workspace, short-circuit ────────
@@ -252,7 +252,7 @@ def main():
         # unverifiable. Idempotent: the workspaces idempotency guard above means
         # we only reach here on a fresh INSERT, so this is always safe.
         qc_agent_id = secrets.token_hex(8)
-        qc_name = f"QC Specialist — {NAME}"
+        qc_name = f"QC Specialist -- {NAME}"
         qc_data = {
             "id": qc_agent_id,
             "workspace_id": ws_id,
@@ -284,7 +284,7 @@ def main():
         # Every department gets a research specialist so the Devil's Advocate and
         # other specialists have a dedicated research resource. Auto-created.
         research_agent_id = secrets.token_hex(8)
-        research_name = f"Deep Research Specialist — {NAME}"
+        research_name = f"Deep Research Specialist -- {NAME}"
         research_data = {
             "id": research_agent_id,
             "workspace_id": ws_id,
@@ -312,13 +312,13 @@ def main():
         print(f"  + agent (Research) {research_agent_id}  ({research_name})")
 
         # ─── 2d. (PRD 2.11) INSERT Devil's Advocate agent ────────────────────
-        # AUTO-CREATED. NEVER surfaced to the client — not shown on the board,
+        # AUTO-CREATED. NEVER surfaced to the client -- not shown on the board,
         # not mentioned in any client-facing communication or deliverable.
         # Surfaces blind spots in high-stakes {dept} work before it ships.
         # Triggers on: critical tasks, strategic decisions, consecutive approvals,
         # and KPI swings > 20%. Runs silently in the background.
         da_agent_id = secrets.token_hex(8)
-        da_name = f"Devil's Advocate — {NAME}"
+        da_name = f"Devil's Advocate -- {NAME}"
         da_data = {
             "id": da_agent_id,
             "workspace_id": ws_id,
@@ -342,9 +342,41 @@ def main():
         insert_cols = [c for c in da_data if c in ag_cols]
         sql = f"INSERT INTO agents ({','.join(insert_cols)}) VALUES ({','.join('?'*len(insert_cols))})"
         db.execute(sql, [da_data[c] for c in insert_cols])
-        print(f"  + agent (DA)     {da_agent_id}  ({da_name}) [INTERNAL — never shown to client]")
+        print(f"  + agent (DA)     {da_agent_id}  ({da_name}) [INTERNAL -- never shown to client]")
 
-        # ─── 3. INSERT starter task ──────────────────────────────────────────
+        # --- 2e. (PRD 2.11+healer) INSERT Healer agent -----------------------
+        # Every department gets a Healer (department immune system).
+        # Receives: second consecutive stall handoffs from the watchdog,
+        # QC loop-4 escalations, API failCode events, and operator bug reports.
+        # role_type: healer (canonical lowercase value).
+        healer_agent_id = secrets.token_hex(8)
+        healer_name = f"Healer -- {NAME}"
+        healer_data = {
+            "id": healer_agent_id,
+            "workspace_id": ws_id,
+            "name": healer_name,
+            "role": "Healer",
+            "role_type": "healer",
+            "persona": f"healer-{SLUG}",
+            "description": (
+                f"Department immune system for the {NAME} department. "
+                f"Receives watchdog stall handoffs, QC loop-4 escalations, "
+                f"and API failCode events. Diagnoses root cause, fixes the run, "
+                f"and patches the SOP so the same failure never recurs."
+            ),
+            "specialist_type": "permanent",
+            "status": "standby",
+            "avatar_emoji": "🩹",
+            "is_master": 0,
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+        insert_cols = [c for c in healer_data if c in ag_cols]
+        sql = f"INSERT INTO agents ({','.join(insert_cols)}) VALUES ({','.join('?'*len(insert_cols))})"
+        db.execute(sql, [healer_data[c] for c in insert_cols])
+        print(f"  + agent (Healer) {healer_agent_id}  ({healer_name})")
+
+        # --- 3. INSERT starter task ──────────────────────────────────────────
         task_id = secrets.token_hex(8)
         tk_data = {
             "id": task_id,
@@ -387,7 +419,7 @@ def main():
     # ─── 8. Per-agent file scaffold (Trevor's agent-file architecture v10.14.29) ─
     # SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (workspace root)
     # PER-AGENT: IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT.md (dept folder)
-    # Subagents excluded — Skill 23 handles those.
+    # Subagents excluded -- Skill 23 handles those.
     scaffold_agent_files(SLUG, HEAD_NAME)
 
     # ─── 9. (G3 fix) Register routing entry in openclaw.json ─────────────────
@@ -426,7 +458,7 @@ def upsert_role_library(slug, name):
             target = p
             break
     if not target:
-        print(f"  [role-library] _index.json not found in any expected location — skipping")
+        print(f"  [role-library] _index.json not found in any expected location -- skipping")
         return False
 
     try:
@@ -439,7 +471,7 @@ def upsert_role_library(slug, name):
     head_slug = f"head-of-{slug}"
 
     if slug in deps:
-        # Already present — make sure the head role is in the list
+        # Already present -- make sure the head role is in the list
         roles = deps[slug].get("roles", [])
         if head_slug not in roles:
             roles.append(head_slug)
@@ -511,7 +543,7 @@ def append_telegram_binding(slug, name):
     bindings = found_bindings_owner["telegram"]["bindings"]
     agent_id = f"dept-{slug}"
 
-    # Idempotent — don't double-add
+    # Idempotent -- don't double-add
     for b in bindings:
         if isinstance(b, dict) and b.get("agent_id") == agent_id:
             print(f"  [openclaw.json] telegram binding for {agent_id} already present, no change")
@@ -521,7 +553,7 @@ def append_telegram_binding(slug, name):
         "topic_id": None,  # operator fills in
         "agent_id": agent_id,
         "label": name,
-        "_note": "Added by add-department.sh — operator must set topic_id",
+        "_note": "Added by add-department.sh -- operator must set topic_id",
     })
 
     # Atomic write
@@ -542,7 +574,7 @@ def append_telegram_binding(slug, name):
 
 def regen_brand_css():
     """Re-run generate-brand-css.py so any dept-specific styling lands.
-    Best-effort — never fails the parent."""
+    Best-effort -- never fails the parent."""
     script = Path(SCRIPT_DIR) / "generate-brand-css.py"
     if not script.is_file():
         print(f"  [brand-css] {script} not found, skipping")
@@ -564,9 +596,9 @@ def regen_brand_css():
 def scaffold_agent_files(slug, head_name):
     """Invoke scaffold-agent-files.sh to write per-agent IDENTITY/SOUL/MEMORY/
     HEARTBEAT and (re)create USER/AGENTS/TOOLS symlinks for the new dept-head
-    agent. Best-effort — never fails the parent.
+    agent. Best-effort -- never fails the parent.
 
-    Sub-agents (role folders inside this dept) are NOT scaffolded here — they
+    Sub-agents (role folders inside this dept) are NOT scaffolded here -- they
     are excluded from Trevor's agent-file architecture spec (they inherit from
     the dept head)."""
     scaffolder = Path(SCRIPT_DIR) / "scaffold-agent-files.sh"
@@ -616,15 +648,15 @@ def register_routing_dept(slug):
     NOT the workspaces table).
 
     Idempotent: register-routing-dept.py itself is idempotent (it checks before
-    inserting). Best-effort — never fails the parent."""
+    inserting). Best-effort -- never fails the parent."""
     oc_json = Path(OC_ROOT) / "openclaw.json"
     register_py = Path(SCRIPT_DIR) / "register-routing-dept.py"
     if not register_py.is_file():
-        print(f"  [routing] register-routing-dept.py not found at {register_py} — skipping",
+        print(f"  [routing] register-routing-dept.py not found at {register_py} -- skipping",
               file=sys.stderr)
         return
     if not oc_json.is_file():
-        print(f"  [routing] openclaw.json not found at {oc_json} — skipping",
+        print(f"  [routing] openclaw.json not found at {oc_json} -- skipping",
               file=sys.stderr)
         return
     try:

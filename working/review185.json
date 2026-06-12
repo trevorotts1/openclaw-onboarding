@@ -1,0 +1,78 @@
+{
+  "reviewer": "Opus (REVIEWER role, mechanical verification, no delegation)",
+  "branch": "presentation-dept-changeorder-v1",
+  "head_commit": "88be0f7",
+  "base_main": "30fb72f",
+  "reviewed_at": "2026-06-12T12:57:30Z",
+  "verdict": "PASS",
+  "tests_passed": "14/14",
+  "tests": {
+    "T1_em_dash_zero": "PASS",
+    "T2_slide_submitter_api_contract": "PASS",
+    "T3_qc_autofail_battery": "PASS",
+    "T4_director_slidemath_arc_flow": "PASS (arc table 20/20 rows verbatim vs master 4.1; 90 absolute ceiling present)",
+    "T5_offer_price_ladder": "PASS",
+    "T6_devils_advocate_doctrine": "PASS (18/18 master 4.3 points + 7/7 hook sub-bullets verbatim; 24 total points; BLOCKING rule present)",
+    "T7_brand_steward": "PASS (60/30/10 deleted, no-people default, 9% chip)",
+    "T8_slide_image_creator": "PASS (A1-A5 + 3 engines)",
+    "T9_slide_copywriter": "PASS (template fields, Mode B verbatim)",
+    "T10_hook_strategist": "PASS (F1-F7, 10 candidates, scoring)",
+    "T11_delivery_ownership": "PASS",
+    "T12_new_files_sops_starthere": "PASS (3 new files 19-sec; sops/ mirror 16 files; 00-START-HERE present) -- WAS PARTIAL FAIL, NOW FIXED by build commit 88be0f7",
+    "T13_role16_healer": "PASS (was DEFERRED in acceptance report; now AUTHORED + live: 19 sections, role_type=healer, presentations count=16, total_roles=281)",
+    "T14_operator_checklist": "PASS (delivered in verdict return)"
+  },
+  "previously_failing_now_pass": ["T1_em_dash_zero", "T12_new_files_sops_starthere"],
+  "em_dash": {
+    "added_by_change_order_across_all_touched_files": 0,
+    "role_files_plus_sops_mirror_plus_00starthere_literal_glyphs": 0,
+    "index_json_literal_glyphs": 0,
+    "note": "CHANGELOG.md (1459) and install.sh (364) carry pre-existing release-history/installer prose em-dashes identical to main; the change order added ZERO and net-REDUCED repo-wide em-dash (68863 main -> 68710 head). _index.json em-dashes are stored as ASCII \\u2014 escapes (ensure_ascii=True), zero literal glyph bytes."
+  },
+  "role16_healer": {
+    "file": "23-ai-workforce-blueprint/templates/role-library/presentations/healer-presentations.md",
+    "sections": 19,
+    "role_type": "healer (NOT qc) -- confirmed",
+    "sops_present": "9.1 through 9.12 (all 12)",
+    "three_authority_tiers": "PRESENT (TIER 1 FIX FORWARD / TIER 2 PATCH AND NOTIFY / TIER 3 PROPOSE AND HOLD), matches reference PART 4",
+    "bug_ticket_stub": "PRESENT as TODO in SOP 9.11 -- references Bugs Department PART 2.2; defers wiring until Bugs Dept commissioned",
+    "spot_match_vs_reference_PART6": "FAITHFUL -- all 12 SOPs match PART 6 content, contextualized to Presentations (ROLE-04 Deep Research, GPT Image 2 / Minimax m3 / DeepSeek inventory, sops/ mirror + 00-START-HERE)",
+    "index_registration": "presentations count=16, roles_len=16, global roles array has dept=presentations entry with role_type=healer, sop_count=12, total_roles=281",
+    "sops_mirror": "healer-presentations-sops.md present; Section 9 byte-identical to role file"
+  },
+  "three_triggers": {
+    "ROLE-03_capacity-reliability-engineer.md": "PRESENT -- hands to ROLE-16 Healer on second consecutive stall or failed self-heal (SOP 9.2 Hand-to line + Section 11 handoffs)",
+    "ROLE-09_qc-specialist-presentations.md": "PRESENT -- hands to ROLE-16 Healer on loop-4 escalation (handoffs + escalation table)",
+    "ROLE-12_slide-submitter.md": "PRESENT -- hands to ROLE-16 Healer on Phase-4 failCode events (handoffs + escalation table)",
+    "reciprocity": "all 3 match the Healer file 'You receive work from' section exactly"
+  },
+  "suggested_roles": "UPDATED -- presentations-suggested-roles.md roster=16 roles, ROLE-16 Healer marked NOW LIVE (no longer deferred), full description + role_type=healer + triggers; new clients onboard all 16 roles",
+  "index_json": "VALID JSON; presentations count=16; total_roles=281 (main 277 +4: delivery-concierge, presenter-coach, hook-strategist, healer-presentations); arithmetic internally consistent",
+  "sops_mirror": "REGENERATED -- 16 mirror files (1:1 with 16 role files); ALL 16 mirrors byte-identical to their role file Section 9 (mechanically verified)",
+  "verbatim_vs_master_sop": {
+    "director_arc_table_4.1": "20/20 rows identical",
+    "devils_advocate_doctrine_4.3": "18/18 points + 7/7 hook sub-bullets identical"
+  },
+  "json_validity": {
+    "_index.json": "VALID",
+    "cc-compat.json": "VALID (onboardingVersion v11.23.0)",
+    "working/build.json": "VALID; ledger claims accurate, no overclaim"
+  },
+  "version_bump": "consistent: version=v11.23.0, skill-version.txt=11.23.0, cc-compat.onboardingVersion=v11.23.0",
+  "fix_applied_by_reviewer": {
+    "file": "CHANGELOG.md",
+    "issue": "v11.23.0 entry was STALE -- still said 'ROLE-16 Healer deferred', 'count 12->15', 'total_roles 277->280' (written by first commit before Healer was added). Contradicted ground-truth _index.json (count=16, total=281) and suggested-roles (ROLE-16 live).",
+    "fix": "Updated CHANGELOG header + Index line to count 12->16, total 277->281, ROLE-16 authored/live; added P6 Healer bullet (19 sec, SOPs 9.1-9.12, 3 tiers, 3 triggers, Bug-Ticket TODO, sops/ mirror). Em-dash-free (-- and ->). Re-verified: 0 em-dashes added; 14/14 still PASS.",
+    "remaining_gap_after_fix": "NONE"
+  },
+  "tier3_held_for_operator_DO_NOT_IMPLEMENT": [
+    "Bug-Ticket schema + filing: depends on the future ZHC Bugs Department (reference PART 2.2). Healer SOP 9.11 stubs it as TODO. Correctly NOT implemented.",
+    "ZHC Bugs Department (new department #1): 3 roles (Bug Intake Clerk/Registrar, Triage and Dedup Analyst, Bug Librarian), Bug Ticket schema, SOPs B-9.1..B-9.5, Kanban lifecycle B-9.3. NOT in scope of this branch.",
+    "Healer Department org-level roles: Chief Healer, Global Model Registrar, SOP Library Custodian (reference PART 3). The Healer file forward-references the Chief Healer as a collaborator; the role itself is not authored here. Held.",
+    "Command-center architecture wiring (reference PART 7): register both new departments in the command center, the Kanban/Bugs board, CEO-orchestrator routing, SLA timers, board-vs-ledger reconciliation. CC-architecture = Tier 3, operator-owned. NOT implemented.",
+    "Blueprint enforcement (reference PART 7.3): make the AI-workforce interview auto-birth a department Healer + bug-ticket wiring for EVERY new department. Fleet-wide structural change. Held.",
+    "Fleet rollout of the Healer to OTHER departments (reference PART 8): this branch ships ONLY the Presentations Healer. Other departments' Healers are future work."
+  ],
+  "remaining_gap": "NONE. All 14 acceptance tests pass; the one stale CHANGELOG inconsistency found during review was fixed directly and re-verified.",
+  "git_tree": "clean before reviewer edit; reviewer's CHANGELOG fix is uncommitted in working tree (task did not request commit/push)"
+}

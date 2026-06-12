@@ -81,6 +81,9 @@ Review the Phase 6 QC reports from the past quarter. Identify recurring assembly
 | Slide count in PPTX matches slide_count_final | 100% |
 | Image stretching or alignment defects | 0 |
 | PPTX file delivered within 1 hour of QC pass | 100% |
+| Strike overlays rendered correctly (sngStrike applied where strike: true) | 100% |
+| Text overlays applied for all pptx_text_overlays.json entries | 100% |
+| Assembly halted and escalated when overlay entry is missing for a failed text slide | 100% |
 
 ---
 
@@ -107,16 +110,46 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - working/media-library/slide-NN.png (all slides, zero-padded, in order)
 - working/copy/presenter_notes.json
-- working/copy/pptx_text_overlays.json (optional)
+- working/copy/pptx_text_overlays.json (optional -- but required when any slide's text render failed twice during Phase 5; see strike support below)
 - working/copy/mission_prd.json (slide_count_final, deck_slug)
+
+**Strike-capable overlay support:**
+
+pptx_text_overlays.json entries may contain a `strike: true` property on any run. This is the documented fallback for struck-through prices that failed two render attempts in Phase 4/5 (per master SOP Section 7.4). The assembly script must handle the `strike` property on every run-level entry and apply the correct OOXML attribute to the text run.
+
+Each entry in pptx_text_overlays.json follows this schema:
+```json
+{
+  "slide_number": 51,
+  "text": "$2,500",
+  "left": 2.1,
+  "top": 1.8,
+  "width": 3.0,
+  "height": 0.8,
+  "font_name": "Montserrat Black",
+  "font_size_pt": 48,
+  "font_color_hex": "888888",
+  "bold": true,
+  "strike": true
+}
+```
+When `strike: true`: the run's OOXML `<a:rPr>` must include `strike="sngStrike"`. This is set via `run.font._rPr.set("strike", "sngStrike")` in python-pptx (direct XML manipulation, since python-pptx has no high-level strike API as of v1.x).
+
+When `strike: false` or the property is absent: do not set the strike attribute.
+
+When to write a new pptx_text_overlays.json entry:
+- During Phase 5 QC: if a text element (especially a struck-through old price) fails to render correctly on two consecutive generation attempts, the QC Specialist or Slide Image Creator writes an entry to pptx_text_overlays.json with the text, position, font spec, and `strike: true` (for struck prices). This role reads those entries at assembly time.
+- The Slide Image Creator regenerates the slide WITHOUT the failing text element; this role applies it natively during assembly.
 
 **Steps:**
 1. Verify slide count: `ls working/media-library/*.png | wc -l` must equal slide_count_final from mission_prd.json. If it does not, halt and notify the Director.
 2. Verify presenter_notes.json has exactly slide_count_final entries. If fewer entries than slides: flag missing notes to the Director. Do not assemble with missing notes.
-3. Write the assembly script at working/scripts/assemble_pptx.py:
+3. Check for pptx_text_overlays.json. If it exists, read it and log how many entries contain `strike: true`. These are struck-price overlays and require special handling.
+4. Write the assembly script at working/scripts/assemble_pptx.py:
    ```python
    from pptx import Presentation
    from pptx.util import Inches, Pt
+   from pptx.dml.color import RGBColor
    import json, os, glob, re
 
    # Configuration
@@ -137,7 +170,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    overlays = {}
    if os.path.exists(OVERLAYS_FILE):
        with open(OVERLAYS_FILE) as f:
-           overlays = {item["slide_number"]: item for item in json.load(f)}
+           for item in json.load(f):
+               sn = item["slide_number"]
+               if sn not in overlays:
+                   overlays[sn] = []
+               overlays[sn].append(item)
 
    blank_layout = prs.slide_layouts[6]  # blank layout
 
@@ -152,15 +189,32 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
        pic = slide.shapes.add_picture(img_path, Inches(0), Inches(0),
                                       Inches(SLIDE_WIDTH_INCHES), Inches(SLIDE_HEIGHT_INCHES))
 
-       # Native text overlays (if any)
+       # Native text overlays (if any) -- supports multiple overlays per slide + strike property
        if slide_number in overlays:
-           overlay = overlays[slide_number]
-           txBox = slide.shapes.add_textbox(
-               Inches(overlay["left"]), Inches(overlay["top"]),
-               Inches(overlay["width"]), Inches(overlay["height"])
-           )
-           tf = txBox.text_frame
-           tf.text = overlay["text"]
+           for overlay in overlays[slide_number]:
+               txBox = slide.shapes.add_textbox(
+                   Inches(overlay["left"]), Inches(overlay["top"]),
+                   Inches(overlay["width"]), Inches(overlay["height"])
+               )
+               tf = txBox.text_frame
+               para = tf.paragraphs[0]
+               run = para.add_run()
+               run.text = overlay["text"]
+               run.font.size = Pt(overlay.get("font_size_pt", 36))
+               run.font.bold = overlay.get("bold", True)
+               if overlay.get("font_name"):
+                   run.font.name = overlay["font_name"]
+               if overlay.get("font_color_hex"):
+                   hex_color = overlay["font_color_hex"].lstrip("#")
+                   run.font.color.rgb = RGBColor(
+                       int(hex_color[0:2], 16),
+                       int(hex_color[2:4], 16),
+                       int(hex_color[4:6], 16)
+                   )
+               # Strike support: apply sngStrike via direct OOXML manipulation
+               if overlay.get("strike"):
+                   rPr = run.font._rPr
+                   rPr.set("strike", "sngStrike")
 
        # Speaker notes
        if slide_number in notes:
@@ -171,16 +225,20 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    prs.save(OUTPUT_FILE)
    print(f"Saved: {OUTPUT_FILE}")
    ```
-4. Run the assembly script: `python3 working/scripts/assemble_pptx.py`.
-5. Verify the output file exists at output/[DECK_SLUG].pptx and is non-empty.
-6. Open the PPTX with python-pptx and verify: slide count == slide_count_final, first and last slide images are correct, first slide has a non-empty notes field.
+5. Run the assembly script: `python3 working/scripts/assemble_pptx.py`.
+6. Verify the output file exists at output/[DECK_SLUG].pptx and is non-empty.
+7. Open the PPTX with python-pptx and verify: slide count == slide_count_final, first and last slide images are correct, first slide has a non-empty notes field.
+8. For any slide with a `strike: true` overlay entry: open the corresponding slide in the rendered PDF (SOP 9.2) and visually confirm the struck text appears with the strikethrough line.
 
 **Outputs:**
-- output/[DECK_SLUG].pptx (the assembled deck)
+- output/[DECK_SLUG].pptx (the assembled deck, with all native overlays and struck-price overlays applied)
+- pptx_text_overlays.json (written by QC Specialist / Slide Image Creator during Phase 5; read here; this role does not write it, it reads it)
 
-**Hand to:** SOP 9.2 (render to PDF for QC)
+**Hand to:** SOP 9.2 (render to PDF for QC), then after Phase 6 QC passes -- hand to Media Librarian / GHL Updater SOP 9.6 (Final Deck Delivery) or ROLE-13 Delivery Concierge if that role exists.
 
 **Failure mode:** If any slide image file is missing or corrupt: halt. Do not assemble with a gap. Notify the Director: "Assembly blocked: slide-NN.png is missing or corrupt. Media Librarian must re-verify."
+
+Native text overlay fallback trigger: if two render attempts on any text element both fail Phase 5 image QC (text garbled, struck price not rendered cleanly), the QC Specialist or Slide Image Creator must write the failed element to pptx_text_overlays.json with the correct `strike` flag BEFORE assembly begins. If this role reaches assembly and discovers that a slide's image has a missing text element that is not covered by an overlay entry, halt and notify the Director: the fallback entry was not written.
 
 ---
 
@@ -262,13 +320,13 @@ No image is smaller than 13.333 x 7.5 inches in the PPTX. python-pptx layout che
 ## 11. Handoffs (Value Stream Map)
 
 ### You receive work from:
-- Media Librarian / GHL Updater -- delivery_verified = true, media-library/ folder ready
+- Media Librarian / GHL Updater -- delivery_verified = true, media-library/ folder ready, media_library.json complete
 - Slide Copywriter (indirectly) -- presenter_notes.json
-- QC Specialist -- Presentations (indirectly) -- pptx_text_overlays.json (if native overlays needed)
+- QC Specialist / Slide Image Creator -- Presentations (indirectly) -- pptx_text_overlays.json (if native overlays needed, including strike: true entries for failed struck-price renders)
 
 ### You hand work off to:
 - QC Specialist -- Presentations -- assembled PPTX + PDF pages (Phase 6 QC)
-- Director of Presentations -- final PPTX after QC passes (for delivery to client)
+- Media Librarian / GHL Updater SOP 9.6 (or ROLE-13 Delivery Concierge if that role exists) -- final QC-passed PPTX for delivery; this role does NOT deliver directly to the client
 
 ---
 
@@ -300,6 +358,10 @@ python-pptx loop over all 75 slides: every slide.notes_slide.notes_text_frame.te
 - Using a non-blank slide layout (adds default placeholder shapes behind the image).
 - Not verifying speaker notes after assembly (invisible error until presenter opens the file).
 - Delivering the PPTX file without running the PDF render (the QC gate requires PDF pages).
+- Setting `tf.text = overlay["text"]` directly instead of using a run -- this path does not support per-run font properties (strike, color, bold) and will silently drop them.
+- Forgetting to apply `run.font._rPr.set("strike", "sngStrike")` on strike: true entries -- the struck price will appear un-struck in the client's file and the price drop sequence breaks.
+- Using a single overlays dict keyed by slide_number pointing to one item instead of a list -- multiple overlays on the same slide (e.g., old struck price + new price) will silently overwrite each other.
+- Handing the PPTX directly to the client without passing through the Media Librarian SOP 9.6 delivery step -- destinations are unverified, the notification is skipped, and delivery_complete is never written.
 
 ---
 

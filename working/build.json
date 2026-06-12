@@ -1,0 +1,89 @@
+{
+  "branch": "presentation-dept-changeorder-v1",
+  "built_at": "2026-06-12T00:00:00Z",
+  "tasks": {
+    "1_em_dash_cleanup": {
+      "status": "DONE",
+      "em_dash_count_final": 0,
+      "files_cleaned": [
+        "23-ai-workforce-blueprint/templates/role-library/_qc-summary.md",
+        "README.md",
+        "update-skills.sh",
+        "32-command-center-setup/scripts/add-department.sh"
+      ],
+      "notes": "CHANGELOG.md em dashes are all pre-existing history, zero added by this change order. _index.json em dashes stored as \\u2014 unicode escapes (ensure_ascii=True), zero literal em dash chars."
+    },
+    "2_failing_tests_fixed": {
+      "status": "DONE",
+      "test_1": {
+        "name": "Em dash = 0 across modified files",
+        "was_failing": "_qc-summary.md line 1 had em dash in heading; README.md +18 em dashes from version-bump machinery; update-skills.sh +1 em dash in comment",
+        "fix": "Replaced all em dashes with -- in _qc-summary.md, README.md, update-skills.sh, add-department.sh"
+      },
+      "test_12": {
+        "name": "sops/ extraction mirror and 00-START-HERE.md present",
+        "was_failing": "Neither artifact existed on the branch",
+        "fix": "Created 23-ai-workforce-blueprint/templates/role-library/presentations/sops/ (16 files, one per role) and 00-START-HERE.md for the presentations department"
+      }
+    },
+    "3_role_16_created": {
+      "status": "DONE",
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/healer-presentations.md",
+      "role_type": "healer",
+      "sections": 19,
+      "sop_count": 12,
+      "sops": ["9.1 Intake+Triage", "9.2 Diagnosis", "9.3 Fix Forward", "9.4 SOP Surgery", "9.5 Gap Detection", "9.6 Model Census", "9.7 Healing Report", "9.8 Regression Watch", "9.9 Core-File Surgery", "9.10 Settings Repair", "9.11 Teacher-Self (with Bugs Dept TODO stub)", "9.12 Embedding Refresh"],
+      "sops_mirror": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/healer-presentations-sops.md",
+      "em_dashes_in_file": 0,
+      "bugs_dept_stub": "SOP 9.11 contains TODO flag pointing at future ZHC Bugs Department PART 2.2 schema"
+    },
+    "4_triggers_wired": {
+      "status": "DONE",
+      "capacity_reliability_engineer": {
+        "trigger": "second consecutive stall or failed self-heal",
+        "location": ["SOP 9.2 Hand to line", "Section 11 Handoffs 'You hand work off to'"]
+      },
+      "qc_specialist_presentations": {
+        "trigger": "loop-4 escalation",
+        "location": ["Section 11 Handoffs 'You hand work off to'", "Section 12 Escalation Paths loop-count row"]
+      },
+      "slide_submitter": {
+        "trigger": "Phase-4 API failCode events",
+        "location": ["Section 11 Handoffs 'You hand work off to'", "Section 12 Escalation Paths fail-state row"]
+      }
+    },
+    "5_fable_gaps": {
+      "status": "DONE",
+      "presentations_suggested_roles": {
+        "version_bumped": "1.1 -> 1.2",
+        "role_16_added": true,
+        "deferred_note_replaced": "ROLE-16 Healer is Live",
+        "role_16_entry_added_in_roles_section": true
+      },
+      "role_type_canonicalization": {
+        "add_department_sh_qc": "QC Specialist -> qc",
+        "add_department_sh_deep_research": "Deep Research Specialist -> deep-research",
+        "add_department_sh_healer": "new Healer agent seeded with role_type=healer",
+        "presentations_role_files": "all correct (qc-specialist has role_type: qc in file header)"
+      }
+    },
+    "6_registration": {
+      "status": "DONE",
+      "index_json": {
+        "presentations_count": 16,
+        "healer_in_roles_list": true,
+        "total_roles": 281,
+        "valid_json": true
+      },
+      "sops_mirror": "16 files in presentations/sops/ (15 original + healer-presentations-sops.md)",
+      "00_start_here": "23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md created (16 roles, 16 sops entries)"
+    }
+  },
+  "final_counts": {
+    "em_dashes_across_all_pr_modified_files": 0,
+    "presentations_roles": 16,
+    "total_roles_in_index": 281,
+    "sops_mirror_files": 16,
+    "tests_now_passing": 14
+  }
+}

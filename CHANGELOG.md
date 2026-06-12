@@ -1,4 +1,22 @@
+## [v11.26.0]  -  2026-06-12  -  feat: Presentation Department change order v2 + ROLE-16 Healer-Presentations
+
+### Changes
+
+**Presentation Department change order v2.** Comprehensive fixes and new capabilities across the now-16-role presentation pipeline, plus ROLE-16 Healer-Presentations.
+
+- **P0 -- API contract fixes**: ROLE-12 (Slide Submitter) corrected state strings (complete->success, in_progress->waiting, failed->fail), resultJson parsing (JSON string->object), i2i model logic (LOGO_ON_SLIDES default i2i, input_urls array), smoke test SOP 9.5. ROLE-09 (QC Specialist) added 20 auto-fail rules (AF-C1-C5 copy, AF-P1-P8 prompt, AF-I1-I7 image).
+- **P1 -- Doctrine restorations**: ROLE-01 Director Q-bank (Q1-Q10 + model manifest), slide math table + 17-row arc from master Section 4. ROLE-02 Brand Steward representation fix (no invented racial percentages, no-people default + operator flag). ROLE-05 Devil's Advocate master Section 4.3 verbatim transplant (points 1-18) + 6 dept extensions (total 24); BLOCKING-flag authority added. ROLE-07 Offer Price Strategist price ladder rebuilt to master model (ANCHOR->DROP1->DROP2->DROP3->FINAL, SOP 9.4 straight mode, VIP side-by-side, priceless pitch). ROLE-10 Slide Copywriter per-slide template restored to master Section 5.2, Mode B client-word preservation, SOP 9.7 doctrine application checklist.
+- **P2 -- Strengthening packs**: ROLE-11 Slide Image Creator 5 archetypes (A1-A5) from master 7.2, three engines from master 7.3 (Facial/Audience/World), density calibration, Appendix A gold-standard exemplar. ROLE-10 voice doctrine (numbers vs adjectives, banned generic words, read-aloud gate).
+- **P3 -- Hook Lab**: ROLE-15 Hook Strategist created (new). Owns Hook Lab end-to-end: SOP 9.1 generation + scoring (3 qualities, 7 formulas, field-test protocol), SOP 9.2 variant ladder + placement map + post-deck audit. Outputs hook_package.json consumed by Copywriter.
+- **P4 -- New roles**: ROLE-13 Delivery Concierge created (new). Absorbs SOP 9.6 final deck delivery from Media Librarian; owns multi-destination upload, verification, openclaw notification. ROLE-14 Presenter Coach created (new). Owns talk track (SOP 9.1), Q and A objection prep (SOP 9.2), rehearsal pack (SOP 9.3), rehearsal gate (SOP 9.4).
+- **P5 -- Watchdog fix**: ROLE-03 Capacity and Reliability Engineer watchdog cadence tightened (10 min / 90 min max, two-tier director+operator alerting).
+- **P6 -- Healer**: ROLE-16 Healer -- Presentations created (new, role_type=healer). 19 sections, SOPs 9.1-9.12 (intake/triage, five-whys diagnosis, fix-forward, SOP surgery, gap detection, model census, healing report, regression watch, core-file surgery, settings repair, teacher-self, embedding refresh). Three authority tiers (FIX FORWARD / PATCH AND NOTIFY / PROPOSE AND HOLD). Receives second-consecutive-stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, Phase-4 failCode events from ROLE-12 (all three triggers wired). sops/ mirror regenerated (16 files).
+- **Index**: presentations dept count 12->16, total_roles 281->285. ROLE-16 Healer authored and live.
+- **Version**: v11.25.0 -> v11.26.0 (all 9 markers + cc-compat.json).
+
 ## [v11.25.0]  -  2026-06-12  -  fix: sane heartbeat defaults (main-only 6h fresh-context + Skill-18 cadence + dreaming off) -- prevents [heartbeat poll] loop on new installs
+
+## [v11.22.0]  -  2026-06-12  -  feat: onboarding nudge lifecycle -- escalate->dormant->re-arm + hard credit-failure backoff (furnace-proof)
 
 ### Changes
 
