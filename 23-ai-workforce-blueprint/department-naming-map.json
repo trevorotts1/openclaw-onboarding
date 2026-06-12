@@ -190,9 +190,9 @@
         {
           "id": "presentations",
           "name": "Presentations",
-          "emoji": "\ud83c\udfa4",
-          "one_liner": "Slides, decks, keynote prep, talking points",
-          "base_suggested_roles": "graphics-suggested-roles.md",
+          "emoji": "\ud83d\uddbc\ufe0f",
+          "one_liner": "End-to-end branded webinar/slide decks: copy, price ladder, images, QC, delivery",
+          "base_suggested_roles": "presentations-suggested-roles.md",
           "universal_primary": true
         },
         {

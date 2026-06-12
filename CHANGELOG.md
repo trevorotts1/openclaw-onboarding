@@ -1,3 +1,17 @@
+## [v11.19.0] — 2026-06-11
+
+### Added
+- Presentations Department v2: 12 specialist roles with decomposed webinar-deck SOPs (director-of-presentations, slide-copywriter, offer-price-strategist [NEW], slide-image-creator, brand-steward, qc-specialist-presentations, slide-submitter, media-librarian-ghl-updater, pptx-assembly-specialist, capacity-reliability-engineer [NEW], deep-research-specialist-presentations, devils-advocate-presentations)
+- Master SOP: universal-sops/CLIENT-WEBINAR-DECK-SOP.md (CLIENT WEBINAR DECK SOP v2.3, 39 mistakes, Phase 7 resilience cron, 18-point Pitch Doctrine)
+- New role: Offer and Price Strategist -- owns the spread-ladder choreography and cross-slide numeric consistency blocking gate
+- New role: Capacity and Reliability Engineer -- owns Step 0.5 budget pre-flight, fleet sizing, and Phase 7 resilience watchdog cron
+- presentations-suggested-roles.md: 12-role roster repointed from graphics fallback
+- department-naming-map.json: presentations dept updated (base_suggested_roles, one_liner, emoji)
+- _index.json: 244 -> 256 total roles, presentations dept added (12 roles)
+
+### Changed
+- version: v11.18.4 -> v11.19.0
+
 ## [v11.18.4]  -  2026-06-11  -  qc-completeness: stock bash 3.2 compatibility (externalize python snippets) + fleet Mac parse sweep
 
 ### Changes
