@@ -49,6 +49,7 @@ hardened at provision time.
 - **`docs/OPERATOR-MAINTENANCE.md`**: existing-fleet remediation playbook (Wave A no-sudo push +
   Wave B sudo harden + Wave C close-the-loop + ledger format).
 - **Version**: v11.22.0 -> v11.23.0 (all markers + cc-compat.json).
+- **Fix (post-merge)**: version-marker reconciliation (3 stale at 11.22.0: `23-blueprint/skill-version.txt`, `_index.json`, `_qc-summary.md` heading); `cloudflare-tunnel-troubleshooting.md` personal-data scrub; skill-38/skill-version.txt bump to 1.7.3. G3 + QC static now green.
 
 ## [v11.22.0]  -  2026-06-12  -  feat: onboarding nudge lifecycle — escalate→dormant→re-arm + hard credit-failure backoff (furnace-proof)
 
