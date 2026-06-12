@@ -57,7 +57,7 @@ the gap. On wired Ethernet the issue is much rarer (longer NAT idle timers).
 expire idle UDP NAT mappings in minutes. When the mapping expires the QUIC connection
 collapses before cloudflared can detect and re-establish it.
 
-**Confirmed:** 287 drops in 22h on Christy's Mac (Wi-Fi, no protocol override).
+**Confirmed:** 287 drops in 22h on a live client Mac (Wi-Fi, no protocol override).
 
 **Fix (4 layers, defense in depth):**
 
