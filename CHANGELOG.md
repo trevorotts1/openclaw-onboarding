@@ -52,7 +52,7 @@ hardened at provision time.
 - **Fix (post-merge)**: version-marker reconciliation (3 stale at 11.22.0: `23-blueprint/skill-version.txt`, `_index.json`, `_qc-summary.md` heading); `cloudflare-tunnel-troubleshooting.md` personal-data scrub; skill-38/skill-version.txt bump to 1.7.3. G3 + QC static now green.
 
 ## [v11.22.0]  -  2026-06-12  -  feat: onboarding nudge lifecycle — escalate→dormant→re-arm + hard credit-failure backoff (furnace-proof)
-## [v11.23.0]  -  2026-06-12  -  feat: Add ZHC Bugs Department + Healer Department (standalone), dept-Healer template, SOP suites; Tier-3 CC items held
+## [v11.24.0]  -  2026-06-12  -  feat: Add ZHC Bugs Department + Healer Department (standalone), dept-Healer template, SOP suites; Tier-3 CC items held
 
 ### Changes
 
@@ -64,7 +64,7 @@ hardened at provision time.
 
 **Tier-3 HELD items (not implemented, held for operator GO).** T3-001: Bugs Dept Kanban lane mapping and dedicated bugs workspace (CC architecture). T3-002: Embedded dept-Healer propagation QUAD to all existing depts, ~+20 standing agents per box (operator decision required on standing vs on-demand sub-agent model; generate-trio-roles.py --with-healer is ready to run when approved).
 
-- **Version**: v11.22.0 to v11.23.0 (all 9 markers + cc-compat.json). New total_departments 22, total_roles 281.
+- **Version**: v11.23.0 to v11.24.0 (all 9 markers + cc-compat.json). New total_departments 22, total_roles 281.
 
 ## [v11.22.0]  -  2026-06-12  -  feat: onboarding nudge lifecycle -- escalate-dormant-re-arm + hard credit-failure backoff (furnace-proof)
 ### Changes
