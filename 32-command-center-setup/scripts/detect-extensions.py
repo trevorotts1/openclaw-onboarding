@@ -36,6 +36,16 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Shared canonical resolver for persona-categories.json (§1.7 AF3-compliant)
+_SHARED_UTILS = Path(__file__).resolve().parents[3] / "shared-utils"
+if str(_SHARED_UTILS) not in sys.path:
+    sys.path.insert(0, str(_SHARED_UTILS))
+try:
+    from resolve_persona_categories_path import get_persona_categories_path as _resolve_persona_path
+    _HAS_SHARED_RESOLVER = True
+except ImportError:
+    _HAS_SHARED_RESOLVER = False
+
 
 def load_json(path: str, label: str, required: bool = True) -> dict:
     try:
@@ -66,19 +76,29 @@ def find_workspace_depts_dir() -> Path | None:
 
 
 def find_persona_categories_path() -> Path | None:
-    """Locate persona-categories.json via canonical resolver order (§1.7)."""
-    candidates = [
-        Path("/data/.openclaw/workspace/data/coaching-personas/persona-categories.json"),
-        Path.home() / ".openclaw/workspace/data/coaching-personas/persona-categories.json",
-        Path("/data/.openclaw/workspace/coaching-personas/persona-categories.json"),
-        Path.home() / ".openclaw/workspace/coaching-personas/persona-categories.json",
-        Path.home() / "clawd/coaching-personas/persona-categories.json",
-        Path("/data/.openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json"),
-        Path.home() / ".openclaw/skills/22-book-to-persona-coaching-leadership-system/persona-categories.json",
-    ]
-    for c in candidates:
-        if c.is_file():
-            return c
+    """Locate persona-categories.json via canonical resolver order (§1.7 AF3-compliant).
+
+    Delegates to shared-utils/resolve_persona_categories_path.py (the single source of
+    truth for this path). Direct candidate lists are prohibited by the AF3 guard to
+    avoid ~/clawd hardcoding across the codebase.
+    """
+    if _HAS_SHARED_RESOLVER:
+        return _resolve_persona_path(fail_loud=False)
+    # Fallback: shared resolver not importable (should not happen in production)
+    oc_root = None
+    if Path("/data/.openclaw").is_dir():
+        oc_root = Path("/data/.openclaw")
+    elif (Path.home() / ".openclaw").is_dir():
+        oc_root = Path.home() / ".openclaw"
+    if oc_root:
+        for relpath in [
+            "workspace/data/coaching-personas/persona-categories.json",
+            "workspace/coaching-personas/persona-categories.json",
+            "skills/22-book-to-persona-coaching-leadership-system/persona-categories.json",
+        ]:
+            p = oc_root / relpath
+            if p.is_file():
+                return p
     return None
 
 
