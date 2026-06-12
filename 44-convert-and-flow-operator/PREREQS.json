@@ -1,0 +1,45 @@
+{
+  "skill": "44-convert-and-flow-operator",
+  "prerequisites": [
+    {
+      "id": "ghl-pit",
+      "type": "credential",
+      "label": "GoHighLevel Private Integration Token (PIT)",
+      "check": { "envVar": "GOHIGHLEVEL_API_KEY" },
+      "severity": "required",
+      "satisfy": "Add GOHIGHLEVEL_API_KEY=<your PIT> to ~/.openclaw/secrets/.env (chmod 600), then run: openclaw config set env.vars.GOHIGHLEVEL_API_KEY \"$GOHIGHLEVEL_API_KEY\". Get the PIT from GHL Settings > Integrations > Private Integrations. GHL has no API keys; this is a PIT."
+    },
+    {
+      "id": "ghl-location",
+      "type": "credential",
+      "label": "GoHighLevel Location ID",
+      "check": { "envVar": "GOHIGHLEVEL_LOCATION_ID" },
+      "severity": "required",
+      "satisfy": "Add GOHIGHLEVEL_LOCATION_ID=<your location id> to ~/.openclaw/secrets/.env, then: openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID \"$GOHIGHLEVEL_LOCATION_ID\"."
+    },
+    {
+      "id": "ghl-firebase",
+      "type": "credential",
+      "label": "Convert and Flow Firebase refresh token (workflow writes only)",
+      "check": { "envVar": "GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN" },
+      "severity": "optional",
+      "satisfy": "Optional. Needed only for workflow build/edit. Grab it with the Token Grabber Chrome extension (Skill 44 INSTALL.md Action 5b), paste into ~/.openclaw/secrets/.env as GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN, then re-run wire-ghl-env.sh."
+    },
+    {
+      "id": "skill-36",
+      "type": "skill",
+      "label": "Skill 36 - GHL MCP Setup",
+      "check": { "skill": "36-ghl-mcp-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 36 first (it is the 6-tier GHL access chain; Skill 44 is Tier 0 inside it). It is in the same onboarding package; re-run the installer or install Skill 36 on its own."
+    },
+    {
+      "id": "python39",
+      "type": "binary",
+      "label": "Python 3.9+",
+      "check": { "binary": "python3", "minVersion": "3.9" },
+      "severity": "required",
+      "satisfy": "Install Python 3.9 or newer. Mac: brew install python@3.12. VPS: ships in the container image."
+    }
+  ]
+}

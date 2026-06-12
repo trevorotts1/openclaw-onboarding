@@ -1,0 +1,13 @@
+{
+  "skill": "08-vercel-setup",
+  "prerequisites": [
+    {
+      "id": "vercel-token",
+      "type": "credential",
+      "label": "Vercel API Token",
+      "check": { "envVar": "VERCEL_TOKEN" },
+      "severity": "required",
+      "satisfy": "Add VERCEL_TOKEN=<your token> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.VERCEL_TOKEN \"$VERCEL_TOKEN\". Get your token from vercel.com > Account Settings > Tokens."
+    }
+  ]
+}

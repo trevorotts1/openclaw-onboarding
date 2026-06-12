@@ -1,0 +1,21 @@
+{
+  "skill": "27-video-editor",
+  "prerequisites": [
+    {
+      "id": "python39",
+      "type": "binary",
+      "label": "Python 3.9+",
+      "check": { "binary": "python3", "minVersion": "3.9" },
+      "severity": "required",
+      "satisfy": "Install Python 3.9 or newer. Mac: brew install python@3.12. VPS: ships in the container image."
+    },
+    {
+      "id": "openrouter-api-key",
+      "type": "credential",
+      "label": "OpenRouter API Key (for AI-assisted editing)",
+      "check": { "envVar": "OPENROUTER_API_KEY" },
+      "severity": "optional",
+      "satisfy": "Optional. Add OPENROUTER_API_KEY=<your key> to ~/.openclaw/secrets/.env for AI-assisted editing features. Get your key from openrouter.ai > Keys."
+    }
+  ]
+}

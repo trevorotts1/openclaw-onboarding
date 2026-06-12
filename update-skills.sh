@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v11.29.0"
+ONBOARDING_VERSION="v12.0.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -311,7 +311,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v11.28.0 - safe_json_edit
+# v12.0.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1163,6 +1163,21 @@ except:
 
     # Step 4: Wire GHL MCP (skill 36 only)
     wire_ghl_mcp "$SKILL_NAME"
+
+    # Step 5 (v12.0.0): Per-skill prerequisite check -- NOT sentinel-gated.
+    # Runs on every wiring pass so a prereq satisfied between runs clears on
+    # the next update. Exit 2 = installed-with-missing-prereqs (note + continue).
+    # Exit 3 = malformed PREREQS.json (warn + continue). Read-only; self-records.
+    PREREQ_CHECKER_UPDATE="$SKILLS_DIR/shared-utils/check-skill-prereqs.sh"
+    if [[ -x "$PREREQ_CHECKER_UPDATE" && -f "$SKILL_DIR/PREREQS.json" ]]; then
+      PREREQ_RC_UPDATE=0
+      bash "$PREREQ_CHECKER_UPDATE" "$SKILL_DIR" || PREREQ_RC_UPDATE=$?
+      if [[ $PREREQ_RC_UPDATE -eq 2 ]]; then
+        echo "    [prereq] $SKILL_NAME: installed with missing prerequisites"
+      elif [[ $PREREQ_RC_UPDATE -eq 3 ]]; then
+        echo "    [prereq] $SKILL_NAME: WARN malformed PREREQS.json (skipped)"
+      fi
+    fi
 
     # Mark skill as wired for this version
     touch "$WIRED_SENTINEL" 2>/dev/null || true

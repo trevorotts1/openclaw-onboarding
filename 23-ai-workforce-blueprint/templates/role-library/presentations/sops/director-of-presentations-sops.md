@@ -10,64 +10,26 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
-### SOP 9.1 -- Adaptive Discovery Interview
+### SOP 9.1 -- Brief Ingest and Validation
 
-**When to run:** At the very start of every new deck run, after media library folders are confirmed to exist (per master SOP Section 2). Never skip or shorten this phase.
+**When to run:** As soon as the Deck Discovery Strategist (ROLE-17) hands off working/copy/deck_brief.json with brief_locked: true.
 
 **Inputs:**
-- Incoming deck request (may be minimal: just "I want a webinar deck")
-- Client's stated niche, audience, and offer (may be blank -- that is what this interview fills)
-- Any prior deck assets, outlines, or style references the client provides
+- working/copy/deck_brief.json (locked, owner-signed, delivered by ROLE-17)
 
 **Steps:**
-1. Open the Adaptive Q Bank (see below). Select 3 to 10 questions based on what is already known vs. unknown. Never ask a question whose answer is already in the intake or the client's SOUL.md / USER.md.
-2. Ask the first question. Wait for the answer before asking the next.
-3. Record each answer in working/copy/intake.json under the corresponding field key.
-4. After each answer, evaluate: does this answer fully close the discovery gap, or does it raise a follow-up? If a follow-up is needed, ask it before moving to the next planned question.
-5. Continue until all critical unknowns are resolved. Critical unknowns: offer name, offer price (FINAL_PRICE), transformation promise, target audience descriptor, primary objection, desired slide count or presentation duration, and style references (colors, fonts, mood).
-6. Before closing the interview, read back a one-paragraph summary of what you heard. Ask: "Is this accurate? Did I miss anything?" Record the owner's confirmation in intake.json as `interview_confirmed: true` with the timestamp.
-7. Write the full intake.json to working/copy/intake.json.
-
-**Adaptive Q Bank (mandatory items -- pull from this list, in priority order, skip only what is already known):**
-
-**Q1. THE GOAL (always ask).** "What is the goal of this presentation? What do you want people to DO at the end?" (Buy the offer, book a call, join the challenge, donate, enroll.) Variable: `GOAL`, `CTA_ACTION`.
-
-**Q2. THE FEELING (always ask).** "When someone walks away from this webinar, how do you want them to FEEL?" (Capable and fired up, safe and understood, urgently behind, hopeful, seen for the first time.) Variable: `TARGET_FEELING`.
-
-**Q3. THE TONE (ask unless tone is already on file).** Offer these seven named styles and let them pick one or blend two:
-1. **Inspirational** (rise-up energy, possibility language, big vision)
-2. **Tough Love** (direct, calls out excuses, "nobody is coming to save you")
-3. **Challenger** (provokes, flips beliefs, "everything you were taught is wrong")
-4. **Teacher / Authority** (calm expertise, frameworks, receipts)
-5. **Storyteller** (narrative-first, emotional arc, testimony-driven)
-6. **High-Energy Hype** (fast, loud, celebration energy, big numbers)
-7. **Calm Premium** (understated, luxury, scarcity through quietness)
-Variable: `TONE`.
-
-**Q4. PRICE STRUCTURE (always ask).** "Do you want a gradual price drop (we walk the price down from a big anchor, the proven Lyric method) or a straight price (one price, stated once)?" If gradual: collect the full offer stack, each component's standalone value, the anchor, the final price, payment plan. If straight: collect the price and the value stack that justifies it. Variables: `PRICE_MODE` (`drop` | `straight`), `OFFER_STACK`, `PRICE_ANCHOR`, `FINAL_PRICE`, `PAYMENT_PLAN`.
-
-**Q5. VIP LEVEL (always ask).** "Do you want a VIP or premium tier in this pitch?" If yes: what it includes, its price, and how many spots (real scarcity only -- no fabricated limits). Variables: `VIP_TIER`, `VIP_PRICE`, `VIP_SPOTS`.
-
-**Q6. DURATION (always ask).** "How many minutes is the presentation? (10, 15, 30, 45, 60, 90...)" Variable: `DURATION_MIN`. This drives the slide cap in Phase B.
-
-**Q7. BRAND COLORS (skip if already on file).** Exact hex codes for primary, secondary, accent. Ask for the brand guide if one exists. Variables: `BRAND_PRIMARY`, `BRAND_SECONDARY`, `BRAND_ACCENT`.
-
-**Q7a. THE HOOK SEED (ask whenever the client has language they already use).** "Is there one line you already say all the time, the thing you want them humming when they leave?" If they have one, it seeds `HOOK`; if not, Phase 1 derives it from the promise and the owner confirms it at the approval gate.
-
-**Q8. LOGO (skip if already on file).** "Do you want your logo to appear on the slides?" If yes: highest-res transparent PNG plus a stable public URL (Kie image-to-image needs a URL; if only a file arrives, upload it to the client's GHL media library or Drive and record the URL). Variables: `LOGO_ON_SLIDES`, `LOGO_FILE`, `LOGO_URL`.
-
-**Q9. AUDIENCE REPRESENTATION (always ask unless on file).** "Who is your audience, and how should people in the images break down?" Collect demographics WITH PERCENTAGES, for example: "70% African American women, 20% African American men, 10% mixed" or "100% women, diverse" or "no people at all." The percentage breakdown is enforced across the deck in Phase 2. Variables: `AUDIENCE`, `REPRESENTATION_MIX` (list of {group, percent}).
-
-**Q10. VISUAL MIX (always ask unless on file).** "Should your slides primarily feature people, some people, be typography-led, or a mix of both?" Options: `people-heavy` (people on ~60%+ of slides), `some-people` (~30%), `typography-led` (people only where proof demands it), `mix` (~45%). Variable: `VISUAL_MIX`.
-
-**Supplementary (only if room remains under the 10-question cap and the answer is unknown):** `DARK_OK` (dark styling explicitly wanted? default false); `PROOF_ASSETS` (testimonials, screenshots, press logos, before/after numbers -- collect NOW so placeholders are rare); style references or decks they admire (`STYLE_PREFS`); anything else important to them, captured verbatim (`CLIENT_NOTES`).
+1. Read working/copy/deck_brief.json in full.
+2. Verify: brief_locked = true AND owner_confirmed = true are both present. If either is false or missing, hand the brief BACK to the Deck Discovery Strategist with the exact gap; the Director does NOT re-interview the owner.
+3. Verify every mandatory variable is present (see deck_brief.json mandatory checklist: interview_depth, GOAL, CTA_ACTION, AUDIENCE, TRANSFORMATION_PROMISE, TARGET_FEELING, TONE, OFFER_NAME, PRICE_MODE, FINAL_PRICE, DURATION_MIN, REPRESENTATION_MIX, plus PRICE_ANCHOR when PRICE_MODE = drop). If any mandatory variable is missing, hand the brief BACK to the Deck Discovery Strategist with the exact missing field list. The Director does NOT fill discovery gaps itself.
+4. Copy all brief variables into working/copy/intake.json for backward compatibility with downstream specialists. The brief is authoritative; intake.json is the generated mirror.
+5. Proceed to SOP 9.2 (Echo Protocol and Mission PRD Gate).
 
 **Outputs:**
-- working/copy/intake.json (complete, interview_confirmed: true)
+- working/copy/intake.json (populated from deck_brief.json, interview_confirmed: true)
 
 **Hand to:** SOP 9.2 (Echo Protocol and Mission PRD Gate)
 
-**Failure mode:** If the client is unresponsive or provides answers too vague to proceed (e.g., "you decide"), ask one clarifying follow-up, then use the best-available defaults and flag every assumption in intake.json as `assumed: true`. Escalate to the operator: "I have made N assumptions in intake.json -- please confirm or correct before I proceed to the PRD."
+**Failure mode:** If the Deck Discovery Strategist does not acknowledge the returned brief within 1 hour, escalate to the Master Orchestrator. The Director never re-interviews the owner under any circumstance; gap-filling is the Deck Discovery Strategist's job.
 
 ---
 
