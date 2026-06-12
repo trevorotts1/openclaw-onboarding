@@ -45,7 +45,7 @@ A dedicated bugs workspace (separate from department workspaces) provides visual
 
 The Bugs Department operates fully on its ticket ledger (working/bugs/intake_ledger.json and working/bugs/triage_ledger.json) without any command center integration. All SOPs function correctly using the ledger as the source of truth. The Kanban integration is a visibility enhancement, not a functional prerequisite.
 
-**Status: HELD -- awaiting operator GO**
+**Status: BUILT -- operator GO 2026-06-12. See PR t3-healer-every-department (T3-002) and blackceo-command-center PR (T3-001).**
 
 ---
 
@@ -75,7 +75,7 @@ I implemented the generator change (the trio becomes a QUAD) in scripts/generate
 
 Bugs + Healer ship as registered departments (bugs: 3 specialists; healer: Chief Healer) and every future client materializes them. Per-department embedded Healers simply do not exist until the operator decides the scale model. No functional break; the immune system runs at the Chief Healer / Bugs Department level until per-dept Healers are turned on.
 
-**Status: HELD -- awaiting operator GO**
+**Status: BUILT -- operator GO 2026-06-12. generate-trio-roles.py default flipped to QUAD (--no-healer opt-out); 18 healer-<dept>.md files materialized; _index.json updated (total_roles 285 -> 303); heartbeat OFF (agentsOnly=[main]); role_type healer, never qc.**
 
 ---
 
