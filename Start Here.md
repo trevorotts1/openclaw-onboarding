@@ -468,15 +468,17 @@ DO NOT REMOVE this block until all 41 active skills are installed or attempted.
 
 When all 41 active skills are installed (or attempted), the agent MUST:
 1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
-2. Reset the heartbeat interval back to the default:
+2. Reset the heartbeat interval back to the sane default (6h, main-only):
 ```json
 "heartbeat": {
-  "every": "1h"
+  "every": "6h",
+  "agentsOnly": ["main"],
+  "maxTokens": 2000
 }
 ```
-3. Restart the gateway yourself (master agent): `openclaw gateway restart`. Then tell the user: "Onboarding complete. I have reset the heartbeat back to hourly checks and restarted the gateway to apply the change."
+3. Restart the gateway yourself (master agent): `openclaw gateway restart`. Then tell the user: "Onboarding complete. I have reset the heartbeat to a 6h main-only cadence and restarted the gateway to apply the change."
 
-> **NOTE (furnace-fix):** install.sh now also resets the heartbeat to `1h` at the end of installation as a safety net. If the agent sets the heartbeat to `5m` and onboarding stalls waiting for the owner interview, the install.sh reset ensures the box does not continue burning model calls every 5 minutes indefinitely. The agent's own reset above remains — this is belt-and-suspenders. The onboarding-resume and watchdog-onboarding-loop crons also have pre-interview backoff gates so they do not hammer the model while waiting for the owner to engage.
+> **NOTE (furnace-fix v2):** install.sh now applies sane defaults (6h main-only fresh-context, capped maxTokens) at the end of installation. If the agent sets the heartbeat to `5m` and onboarding stalls waiting for the owner interview, the install.sh reset ensures the box does not continue burning model calls every 5 minutes indefinitely. The 6h default (raised from 1h in v11.25.0) prevents the per-agent [heartbeat poll] pile-up observed on 9 of 23 fleet boxes. The agent's own reset above remains belt-and-suspenders. The onboarding-resume and watchdog-onboarding-loop crons also have pre-interview backoff gates.
 
 ### How This Works
 

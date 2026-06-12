@@ -1,3 +1,34 @@
+## [v11.25.0]  -  2026-06-12  -  fix: sane heartbeat defaults (main-only 6h fresh-context + Skill-18 cadence + dreaming off) -- prevents [heartbeat poll] loop on new installs
+
+### Changes
+
+**Root-cause fix for [heartbeat poll] pile-up found on 9/23 fleet boxes.** Three drivers patched.
+
+**Driver 1 -- agents.defaults.heartbeat (install.sh Fix D).** Default changed from `every: 1h`
+to `every: 6h` with `agentsOnly: ["main"]` and `maxTokens: 2000`. Previously every agent on the
+box (main + all ZHC department sub-agents) received a heartbeat at the same interval, each firing
+a [heartbeat poll] session that accumulated tokens. New installs now target only the main agent
+at a 6h cadence with a 2000-token cap, fresh-context only (not target:last history replay).
+Start Here.md Step 3 reset instruction updated to match (was `every: 1h`, now `every: 6h`
+with agentsOnly + maxTokens).
+
+**Driver 2 -- Skill 18 / scaffold-agent-files.sh HEARTBEAT.md template.** Sub-agent HEARTBEAT.md
+template cadence changed from `Cadence: every 30 minutes (default)` to disabled-by-default with
+an explicit opt-in note. This prevents Skill 32 department scaffolding from inadvertently creating
+per-agent heartbeat configs that fan out model calls across every department agent.
+
+**Driver 3 -- memory-core dreaming default.** Changed from enabled=True (forced on) to
+`setdefault('enabled', False)` (off on new installs, operator opt-in required). Dreaming fires a
+nightly sub-agent memory-consolidation sweep; leaving it on by default on boxes with many agents
+compounds the token burn. Existing fleet is unaffected (dreaming stays on where already set).
+
+- **`install.sh`**: Fix D heartbeat defaults (6h/main-only/maxTokens=2000); Step 7b dreaming
+  forced-on changed to setdefault(False).
+- **`Start Here.md`**: Step 3 post-onboarding heartbeat reset updated (1h to 6h + agentsOnly + maxTokens).
+- **`32-command-center-setup/scripts/scaffold-agent-files.sh`**: HEARTBEAT.md template cadence
+  changed from 30-minute default to disabled-by-default with opt-in note.
+- **Version**: v11.24.0 to v11.25.0 (all 9 markers + cc-compat.json).
+
 ## [v11.23.0]  -  2026-06-12  -  feat: Mac-tunnel keepalive hardening (http2 protocol + KeepAlive LaunchDaemon + 20s edge-keepalive)
 
 ### Changes
