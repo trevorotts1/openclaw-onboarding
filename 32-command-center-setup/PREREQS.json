@@ -1,0 +1,21 @@
+{
+  "skill": "32-command-center-setup",
+  "prerequisites": [
+    {
+      "id": "python39",
+      "type": "binary",
+      "label": "Python 3.9+",
+      "check": { "binary": "python3", "minVersion": "3.9" },
+      "severity": "required",
+      "satisfy": "Install Python 3.9 or newer. Mac: brew install python@3.12. VPS: ships in the container image."
+    },
+    {
+      "id": "sqlite3",
+      "type": "binary",
+      "label": "sqlite3 CLI",
+      "check": { "binary": "sqlite3" },
+      "severity": "optional",
+      "satisfy": "Optional. Install sqlite3 for manual DB inspection. Mac: brew install sqlite. VPS: apt-get install sqlite3."
+    }
+  ]
+}

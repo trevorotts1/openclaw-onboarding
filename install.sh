@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.29.0"
+ONBOARDING_VERSION="v12.0.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2497,6 +2497,28 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
 done
 
 success "$SKILL_COUNT skills installed"
+
+# Step 5b (v12.0.0): Per-skill prerequisite check -- non-blocking.
+# For each installed skill that has a PREREQS.json, check prerequisites.
+# Exit 2 = installed-with-missing-prereqs (informational, never a failure).
+# Exit 3 = malformed PREREQS.json (warn and continue).
+# Self-records into .onboarding-state.json missingPrereqs/prereqCheckedAt.
+PREREQ_CHECKER="$SKILLS_DIR/shared-utils/check-skill-prereqs.sh"
+if [[ -x "$PREREQ_CHECKER" ]]; then
+  note "Running prerequisite checks for installed skills (non-blocking)..."
+  for SKILL_DIR_CHECK in "$SKILLS_DIR"/[0-9]*/; do
+    [[ -d "$SKILL_DIR_CHECK" ]] || continue
+    SKILL_NAME_CHECK="$(basename "$SKILL_DIR_CHECK")"
+    [[ -f "$SKILL_DIR_CHECK/PREREQS.json" ]] || continue
+    PREREQ_RC=0
+    bash "$PREREQ_CHECKER" "$SKILL_DIR_CHECK" || PREREQ_RC=$?
+    if [[ $PREREQ_RC -eq 2 ]]; then
+      note "Skill $SKILL_NAME_CHECK: installed with missing prerequisites (see MISSING-PREREQUISITES.md)"
+    elif [[ $PREREQ_RC -eq 3 ]]; then
+      warn "Skill $SKILL_NAME_CHECK: malformed PREREQS.json (skipped)"
+    fi
+  done
+fi
 
 # v10.13.9: STOP creating ~/clawd. Clawd is dead — OpenClaw replaced it.
 # Previous behavior (mkdir -p ~/clawd) was actively spreading the legacy

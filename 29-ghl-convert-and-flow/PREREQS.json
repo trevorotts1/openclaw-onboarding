@@ -1,0 +1,29 @@
+{
+  "skill": "29-ghl-convert-and-flow",
+  "prerequisites": [
+    {
+      "id": "skill-05",
+      "type": "skill",
+      "label": "Skill 05 - GHL Setup",
+      "check": { "skill": "05-ghl-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 05 (GHL Setup) first. It is in the same onboarding package; re-run the installer or install Skill 05 on its own."
+    },
+    {
+      "id": "ghl-pit",
+      "type": "credential",
+      "label": "GoHighLevel Private Integration Token (PIT)",
+      "check": { "envVar": "GOHIGHLEVEL_API_KEY" },
+      "severity": "required",
+      "satisfy": "Add GOHIGHLEVEL_API_KEY=<your PIT> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.GOHIGHLEVEL_API_KEY \"$GOHIGHLEVEL_API_KEY\". Get the PIT from GHL Settings > Integrations > Private Integrations."
+    },
+    {
+      "id": "ghl-location",
+      "type": "credential",
+      "label": "GoHighLevel Location ID",
+      "check": { "envVar": "GOHIGHLEVEL_LOCATION_ID" },
+      "severity": "required",
+      "satisfy": "Add GOHIGHLEVEL_LOCATION_ID=<your location id> to ~/.openclaw/secrets/.env, then: openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID \"$GOHIGHLEVEL_LOCATION_ID\"."
+    }
+  ]
+}

@@ -1,3 +1,19 @@
+## [v12.0.0]  -  2026-06-12  -  feat(MAJOR): Presentation Brainstormer + per-dept Healer materialization + missing-prereq notice
+
+### Changes
+
+**BUILD A -- Deck Discovery Strategist (ROLE-17, Presentations front door).**
+New leadership role that is the owner's first contact with the Presentations department. Offers SIMPLE (<=7 question) or EXTENSIVE (10-20 question, back-and-forth) interview paths, confirms everything with the owner (Confirm-and-Lock: read-back + explicit YES), writes the binding `working/copy/deck_brief.json`, and hands it to the Director. The Director's SOP 9.1 is retitled from "Adaptive Discovery Interview" to "Brief Ingest and Validation" -- it validates the locked brief and never re-interviews the owner. Presentations department grows from 16 to 17 roles. All 19 sections authored verbatim per spec. Both question banks (SOP 9.1 simple, SOP 9.2 extensive) present. SOP mirror `sops/deck-discovery-strategist-sops.md` created. `_index.json` total_roles 303 -> 304. `presentations-suggested-roles.md` and `00-START-HERE.md` updated. Director role file and SOP mirror regenerated.
+
+**BUILD B -- Per-dept Healer materialization + rollout gating.**
+New `32-command-center-setup/scripts/lib-trio-quad-rows.py`: reusable idempotent inserter for all four trio/quad sub-agent DB rows (qc, deep-research, devils-advocate, healer) -- single source of truth extracted from `add-department.sh`. New `32-command-center-setup/scripts/backfill-per-dept-healer.sh`: one-shot idempotent backfill for already-built boxes; interview-complete gated (interviewComplete != true -> SKIP + exit 0); backs up openclaw.json + mission-control.db before writes; writes per-box receipts to `/tmp/v12-healer-backfill/<box>.json`; runs config validate and hard-fails + restores backup if validate fails; heartbeat agentsOnly list never touched. `materialize-dept-agents.sh` extended with Phase 3 (trio/quad DB-row pass via lib) and Phase 4 (healer role-file write-if-missing), both idempotent, both skip on dry-run. Rollout gating rule documented: skills go to all boxes; departments only when interviewComplete=true in `.workforce-build-state.json`.
+
+**BUILD C -- Missing-prerequisite notice.**
+New `shared-utils/check-skill-prereqs.sh`: per-skill read-only prereq checker; exit 0/2/3; self-records into `.onboarding-state.json` `missingPrereqs`/`prereqCheckedAt`; never blocks install (exit 2 = informational). New `PREREQS.json` for initial set of 14 skills (05, 06, 07, 08, 09, 10, 12, 21, 27, 29, 32, 36, 38, 44) -- machine-readable prerequisite declarations with `satisfy` strings giving exact env-var names and steps. New `scripts/qc-prereqs-json.sh` CI lint: validates all PREREQS.json; fails build if a `required` entry has no satisfy string. Framework wired to install.sh and update-skills.sh comment markers; report format documented per C.4.
+
+**Version**: v11.28.0 -> v12.0.0 (all 9 markers + cc-compat.json). MAJOR release.
+
+
 ## [v11.29.0]  -  2026-06-12  -  fix: add personal-assistant role-library dir (28-floor satisfiable) + confirm master-orchestrator excluded from floor
 
 ### Changes

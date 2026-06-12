@@ -1,5 +1,5 @@
 # 00 -- START HERE -- Presentations Department
-**Version:** 1.1 | 2026-06-12
+**Version:** 1.2 | 2026-06-12
 **Role library path:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **SOP mirror path:** 23-ai-workforce-blueprint/templates/role-library/presentations/sops/
 
@@ -11,10 +11,11 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ---
 
-## Role Roster (16 roles)
+## Role Roster (17 roles)
 
 | ROLE | Slug | Role type | File |
 |------|------|-----------|------|
+| ROLE-17 | deck-discovery-strategist | leadership | deck-discovery-strategist.md |
 | ROLE-01 | director-of-presentations | leadership | director-of-presentations.md |
 | ROLE-02 | brand-steward | specialist | brand-steward.md |
 | ROLE-03 | capacity-reliability-engineer | specialist | capacity-reliability-engineer.md |
@@ -36,6 +37,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ## Pipeline Sequence (phase order)
 
+0. **Discovery** -- ROLE-17 Deck Discovery Strategist brainstorms with the owner (SIMPLE or EXTENSIVE), confirms, and locks working/copy/deck_brief.json; then triggers the Director.
 1. **Step 0** -- ROLE-06 Media Librarian creates the landing zone and acquires client assets (LOGO_URL, FOUNDER_PORTRAIT_URL).
 2. **Step 0.5** -- ROLE-03 Capacity and Reliability Engineer probes the box and writes capacity_plan.json.
 3. **Phase B+** -- ROLE-15 Hook Strategist runs the Hook Lab; outputs hook_package.json.
@@ -65,6 +67,7 @@ Each role's Section 9 (Standard Operating Procedures) is mirrored verbatim in so
 
 | SOP Mirror File | Source Role | SOPs Covered |
 |----------------|-------------|--------------|
+| sops/deck-discovery-strategist-sops.md | deck-discovery-strategist.md | 9.0 Open+Depth, 9.1 Simple, 9.2 Extensive, 9.3 Confirm-Lock, 9.4 Kickoff |
 | sops/brand-steward-sops.md | brand-steward.md | 9.1 Style Block, 9.2 Consistency Audit, 9.3 Exemplar Handoff |
 | sops/capacity-reliability-engineer-sops.md | capacity-reliability-engineer.md | 9.1 Capacity Probe, 9.2 Watchdog Cron, 9.3 Model Routing |
 | sops/deep-research-specialist-presentations-sops.md | deep-research-specialist-presentations.md | 9.1 Benchmark Research |

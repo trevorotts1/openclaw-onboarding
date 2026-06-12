@@ -1,0 +1,45 @@
+{
+  "skill": "38-conversational-ai-system",
+  "prerequisites": [
+    {
+      "id": "skill-05",
+      "type": "skill",
+      "label": "Skill 05 - GHL Setup",
+      "check": { "skill": "05-ghl-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 05 (GHL Setup) first. It is in the same onboarding package; re-run the installer or install Skill 05 on its own."
+    },
+    {
+      "id": "skill-10",
+      "type": "skill",
+      "label": "Skill 10 - GitHub Setup",
+      "check": { "skill": "10-github-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 10 (GitHub Setup) first. It is in the same onboarding package; re-run the installer or install Skill 10 on its own."
+    },
+    {
+      "id": "skill-19",
+      "type": "skill",
+      "label": "Skill 19 - Cloudflare Setup",
+      "check": { "skill": "19-cloudflare-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 19 (Cloudflare Setup) first. It is in the same onboarding package; re-run the installer or install Skill 19 on its own."
+    },
+    {
+      "id": "skill-29",
+      "type": "skill",
+      "label": "Skill 29 - GHL Convert and Flow",
+      "check": { "skill": "29-ghl-convert-and-flow" },
+      "severity": "required",
+      "satisfy": "Install Skill 29 (GHL Convert and Flow) first; it is in the same onboarding package. Re-run the installer or install Skill 29 on its own, then re-check prerequisites."
+    },
+    {
+      "id": "cf-token",
+      "type": "credential",
+      "label": "Cloudflare API Token",
+      "check": { "envVar": "CLOUDFLARE_API_TOKEN" },
+      "severity": "required",
+      "satisfy": "Add CLOUDFLARE_API_TOKEN=<your token> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.CLOUDFLARE_API_TOKEN \"$CLOUDFLARE_API_TOKEN\". Create the token at dash.cloudflare.com > My Profile > API Tokens."
+    }
+  ]
+}

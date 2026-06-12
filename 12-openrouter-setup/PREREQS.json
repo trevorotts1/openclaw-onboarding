@@ -1,0 +1,13 @@
+{
+  "skill": "12-openrouter-setup",
+  "prerequisites": [
+    {
+      "id": "openrouter-api-key",
+      "type": "credential",
+      "label": "OpenRouter API Key",
+      "check": { "envVar": "OPENROUTER_API_KEY" },
+      "severity": "required",
+      "satisfy": "Add OPENROUTER_API_KEY=<your key> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.OPENROUTER_API_KEY \"$OPENROUTER_API_KEY\". Get your key from openrouter.ai > Keys."
+    }
+  ]
+}

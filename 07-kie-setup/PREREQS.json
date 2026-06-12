@@ -1,0 +1,13 @@
+{
+  "skill": "07-kie-setup",
+  "prerequisites": [
+    {
+      "id": "kie-api-key",
+      "type": "credential",
+      "label": "Kie.ai API Key",
+      "check": { "envVar": "KIE_API_KEY" },
+      "severity": "required",
+      "satisfy": "Add KIE_API_KEY=<your key> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.KIE_API_KEY \"$KIE_API_KEY\". Get your API key from app.kie.ai > Settings > API Keys."
+    }
+  ]
+}

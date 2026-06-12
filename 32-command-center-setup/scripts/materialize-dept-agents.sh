@@ -333,7 +333,205 @@ if [[ $DRY_RUN -eq 0 && -f "$MANIFEST" && -x "$SCAFFOLDER" ]]; then
   echo "[materialize-dept-agents] scaffolded $scaffold_ok agents ($scaffold_fail failures)"
   rm -f "$MANIFEST"
 elif [[ ! -x "$SCAFFOLDER" ]]; then
-  echo "[materialize-dept-agents] WARN: scaffold-agent-files.sh not executable at $SCAFFOLDER — skipping per-agent file scaffolding" >&2
+  echo "[materialize-dept-agents] WARN: scaffold-agent-files.sh not executable at $SCAFFOLDER -- skipping per-agent file scaffolding" >&2
+fi
+
+# ---- Phase 3: trio/quad DB-row pass (idempotent, skip on dry-run) -----------
+# Inserts QC / Deep-Research / Devil's Advocate / Healer rows for each dept
+# that is missing them. Delegates to lib-trio-quad-rows.py for the same logic
+# that add-department.sh uses (single source of truth).
+# Safe to re-run: every insert is WHERE NOT EXISTS for that workspace+role_type.
+# If no mission-control.db is found, logs a WARN and continues (some boxes
+# legitimately have no CC DB yet during the initial install pass).
+if [[ $DRY_RUN -eq 0 ]]; then
+  SCRIPTS_DIR_PHASE3="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  export OC_SCRIPTS_DIR="$SCRIPTS_DIR_PHASE3"
+  python3 <<'PHASE3EOF'
+import os, sys, sqlite3, json
+from pathlib import Path
+
+OC_ROOT = os.environ.get("OC_ROOT_PATH", "")
+SCRIPTS_DIR = os.environ.get("OC_SCRIPTS_DIR", "")
+DRY_RUN = os.environ.get("OC_DRY_RUN", "0") == "1"
+
+# Import lib-trio-quad-rows
+try:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "lib_trio_quad_rows",
+        os.path.join(SCRIPTS_DIR, "lib-trio-quad-rows.py")
+    )
+    lib = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lib)
+    ensure_trio_quad_rows = lib.ensure_trio_quad_rows
+except Exception as e:
+    print(f"[materialize] WARN: could not load lib-trio-quad-rows.py: {e}", file=sys.stderr)
+    sys.exit(0)
+
+# Resolve mission-control.db (mirror add-department.sh candidate list)
+db_candidates = [
+    os.path.join(OC_ROOT, "workspaces", "command-center", "mission-control.db"),
+    os.path.join(OC_ROOT, "workspace", "mission-control.db"),
+    os.path.join(OC_ROOT, "data", "mission-control.db"),
+]
+db_path = None
+for c in db_candidates:
+    if os.path.isfile(c):
+        db_path = c
+        break
+
+if not db_path:
+    print("[materialize] WARN: mission-control.db not found - skipping trio/quad row pass")
+    sys.exit(0)
+
+# Read manifest written by Phase 1
+manifest_path = os.path.join(OC_ROOT, ".materialize-dept-agents.manifest")
+if not os.path.isfile(manifest_path):
+    # Manifest was already consumed by Phase 2 scaffolder -- try workspaces table
+    try:
+        db = sqlite3.connect(db_path)
+        cur = db.execute(
+            "SELECT id, name, slug FROM workspaces WHERE type != 'main' AND type != 'system'"
+        )
+        rows = cur.fetchall()
+        db.close()
+        entries = [(ws_id, name, slug or name.lower().replace(" ", "-")) for ws_id, name, slug in rows]
+    except Exception as e:
+        print(f"[materialize] WARN: could not read workspaces table: {e}", file=sys.stderr)
+        sys.exit(0)
+else:
+    entries = []
+    with open(manifest_path) as f:
+        for line in f:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 4:
+                # agent_id, name, workspace_path, dept_slug
+                entries.append((None, parts[1], parts[3]))
+
+db = sqlite3.connect(db_path)
+total_healer = 0
+total_qc = 0
+total_research = 0
+total_da = 0
+
+for ws_id_or_none, dept_name, dept_slug in entries:
+    if not dept_name:
+        continue
+    # Resolve ws_id if not directly available
+    if not ws_id_or_none:
+        cur = db.execute(
+            "SELECT id FROM workspaces WHERE slug=? LIMIT 1", (dept_slug,)
+        )
+        row = cur.fetchone()
+        if not row:
+            print(f"  [materialize] SKIP {dept_slug}: no workspace row found")
+            continue
+        ws_id = row[0]
+    else:
+        ws_id = ws_id_or_none
+
+    try:
+        counts = ensure_trio_quad_rows(db, ws_id, dept_name, dept_slug, "")
+        total_healer += counts.get("healer", 0)
+        total_qc += counts.get("qc", 0)
+        total_research += counts.get("deep-research", 0)
+        total_da += counts.get("devils-advocate", 0)
+    except Exception as e:
+        print(f"  [materialize] WARN: trio/quad insert failed for {dept_slug}: {e}", file=sys.stderr)
+
+db.commit()
+db.close()
+
+print(
+    f"[materialize] trio/quad rows:"
+    f" +{total_healer} healer,"
+    f" +{total_qc} qc,"
+    f" +{total_research} research,"
+    f" +{total_da} da"
+    f" (idempotent)"
+)
+PHASE3EOF
+fi
+
+# ---- Phase 4: role-file materialization (write healer-<dept>.md if missing) -
+# Ensures the per-dept Healer role FILE exists in the box's installed role library.
+# Source: <skills>/23-ai-workforce-blueprint/templates/role-library/healer/dept-healer-template.md
+# Target: <role-library>/<dept>/healer-<dept>.md
+# Write only if missing; fills {{DEPARTMENT_NAME}} with the pretty dept name.
+# Other {{TOKENS}} are filled by the WS-2 instantiation path.
+if [[ $DRY_RUN -eq 0 ]]; then
+  python3 <<'PHASE4EOF'
+import os, sys
+
+OC_ROOT = os.environ.get("OC_ROOT_PATH", "")
+SCRIPTS_DIR = os.environ.get("OC_SCRIPTS_DIR", "")
+
+# Find skills dir
+SKILLS_CANDIDATES = [
+    os.path.join(OC_ROOT, "workspace", ".openclaw-skills"),
+    os.path.join(OC_ROOT, ".openclaw-skills"),
+    os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".openclaw-skills"),
+    "/data/skills",
+    os.path.join(os.path.expanduser("~"), "skills"),
+]
+skills_dir = ""
+for c in SKILLS_CANDIDATES:
+    if os.path.isdir(c):
+        skills_dir = c
+        break
+
+if not skills_dir:
+    print("[materialize] Phase 4: skills dir not found -- skipping role-file materialization")
+    sys.exit(0)
+
+healer_template = os.path.join(
+    skills_dir,
+    "23-ai-workforce-blueprint",
+    "templates",
+    "role-library",
+    "healer",
+    "dept-healer-template.md",
+)
+if not os.path.isfile(healer_template):
+    print(f"[materialize] Phase 4: healer template not found at {healer_template} -- skipping")
+    sys.exit(0)
+
+role_lib = os.path.join(
+    skills_dir,
+    "23-ai-workforce-blueprint",
+    "templates",
+    "role-library",
+)
+
+written = 0
+skipped = 0
+
+if not os.path.isdir(role_lib):
+    print(f"[materialize] Phase 4: role-library not found at {role_lib} -- skipping")
+    sys.exit(0)
+
+with open(healer_template) as f:
+    template_content = f.read()
+
+for dept_slug in sorted(os.listdir(role_lib)):
+    dept_dir = os.path.join(role_lib, dept_slug)
+    if not os.path.isdir(dept_dir) or dept_slug.startswith("_") or dept_slug == "healer":
+        continue
+    target = os.path.join(dept_dir, f"healer-{dept_slug}.md")
+    if os.path.isfile(target):
+        skipped += 1
+        continue
+    dept_name = dept_slug.replace("-", " ").title()
+    content = template_content.replace("{{DEPARTMENT_NAME}}", dept_name)
+    try:
+        with open(target, "w") as f:
+            f.write(content)
+        written += 1
+    except Exception as e:
+        print(f"  [materialize] WARN: could not write {target}: {e}", file=sys.stderr)
+
+print(f"[materialize] Phase 4: role files written={written} already_present={skipped}")
+PHASE4EOF
 fi
 
 exit 0

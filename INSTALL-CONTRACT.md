@@ -372,6 +372,20 @@ A skill is "done" (and the agent is allowed to declare it done) only when ALL of
 
 If any of these is missing, the skill is NOT done. Do not say "done" or "complete" or "✅" until all 8 are true.
 
+Item 3 is machine-checked: `check-skill-prereqs.sh` reads `PREREQS.json` and surfaces any unmet prereq in `MISSING-PREREQUISITES.md`. See Rule 16.
+
+---
+
+## Rule 16 -- Prerequisite declaration (v12.0.0)
+
+If a skill has any prerequisite, it MUST ship a `PREREQS.json` at the skill folder root declaring it.
+
+Every `required` entry's `satisfy` string MUST name the exact env-var and the canonical secrets path (`~/.openclaw/secrets/.env` Mac, `/data/.openclaw/secrets/.env` VPS) and/or the config command to fix it. A `required` prereq with no actionable `satisfy` string is a contract violation (caught by `scripts/qc-prereqs-json.sh` in CI).
+
+The prose `## Prerequisites` sections in `SKILL.md` and `INSTALL.md` stay as the human narrative; `PREREQS.json` is their executable mirror. Skills without prerequisites ship no `PREREQS.json` (backward compatible; the checker exits 0 silently).
+
+Neither `required` nor `optional` prereqs ever block INSTALL. Exit code 2 from `check-skill-prereqs.sh` is informational and is treated as "note + continue" by both `install.sh` and `update-skills.sh`.
+
 ---
 
 ## Self-audit (recite before declaring any skill done)

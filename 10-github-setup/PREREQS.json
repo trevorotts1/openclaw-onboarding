@@ -1,0 +1,13 @@
+{
+  "skill": "10-github-setup",
+  "prerequisites": [
+    {
+      "id": "github-token",
+      "type": "credential",
+      "label": "GitHub Personal Access Token",
+      "check": { "envVar": "GITHUB_TOKEN" },
+      "severity": "required",
+      "satisfy": "Add GITHUB_TOKEN=<your PAT> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.GITHUB_TOKEN \"$GITHUB_TOKEN\". Create a PAT at github.com > Settings > Developer settings > Personal access tokens."
+    }
+  ]
+}

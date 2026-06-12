@@ -1,0 +1,13 @@
+{
+  "skill": "06-ghl-install-pages",
+  "prerequisites": [
+    {
+      "id": "skill-05",
+      "type": "skill",
+      "label": "Skill 05 - GHL Setup",
+      "check": { "skill": "05-ghl-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 05 (GHL Setup) first. It is in the same onboarding package; re-run the installer or install Skill 05 on its own."
+    }
+  ]
+}

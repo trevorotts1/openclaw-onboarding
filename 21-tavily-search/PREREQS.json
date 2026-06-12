@@ -1,0 +1,13 @@
+{
+  "skill": "21-tavily-search",
+  "prerequisites": [
+    {
+      "id": "tavily-api-key",
+      "type": "credential",
+      "label": "Tavily Search API Key",
+      "check": { "envVar": "TAVILY_API_KEY" },
+      "severity": "required",
+      "satisfy": "Add TAVILY_API_KEY=<your key> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.TAVILY_API_KEY \"$TAVILY_API_KEY\". Get your key from tavily.com > Dashboard > API Keys."
+    }
+  ]
+}
