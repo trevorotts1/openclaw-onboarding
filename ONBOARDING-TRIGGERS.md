@@ -54,7 +54,7 @@ Pick the one block below that matches your exact situation. Each block is self-c
 
 ## What actually gets installed
 
-A fresh install lays down **43 numbered skill folders** (40 active, 3 archived) plus the agent runtime, memory architecture, and persona system. The headline pieces:
+A fresh install lays down **44 numbered skill folders** (41 active, 3 archived) plus the agent runtime, memory architecture, and persona system. The headline pieces:
 
 - **Skill 01 — Teach Yourself Protocol** — governs how the agent stores new knowledge
 - **Skill 02 — Back Yourself Up Protocol** — config + secret backups before any change
