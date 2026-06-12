@@ -1,3 +1,31 @@
+## [v12.1.0]  -  2026-06-12  -  feat: Brainstorming Buddy generalized cross-department role (6 instances) + rename deck-discovery-strategist
+
+### Changes
+
+**Brainstorming Buddy generalized cross-department role; 6 instances.** New reusable `_brainstorming-buddy-template.md` (19-section, with DEPARTMENT_NAME/DIRECTOR_TITLE/DEPT_DELIVERABLE/DEPT_QUESTION_BANK tokens) lives alongside `_section-19-template.md` in the role-library template directory. New `_brainstorming-buddy-question-banks.json` holds OPENING/SIMPLE/EXTENSIVE question banks for all 6 Tier-1 departments (presentations, video, graphics, marketing, web-development, app-development). Per-dept question banks map onto each Director's existing intake schema so the Director never re-asks what the Buddy already captured.
+
+**presentations:** v12 Deck Discovery Strategist file renamed (git mv) to `brainstorming-buddy-presentations.md`; content replaced with the generalized 19-section template instantiated for presentations (byte-structurally identical to the other 5 instances; question bank is the same presentations-specific bank). Old slug `deck-discovery-strategist` removed from `_index.json`; new slug `brainstorming-buddy-presentations` registered. SOP mirror renamed to `brainstorming-buddy-presentations-sops.md`. Director SOP 9.1 "Brief Ingest and Validation" change from v12 preserved. `presentations/00-START-HERE.md` ROLE-17 updated to new slug/filename; Step -1 pipeline label updated. `presentations-suggested-roles.md` updated.
+
+**video:** `brainstorming-buddy-video.md` created; hands off to Head of Video Production + 10 build specialists.
+
+**graphics:** `brainstorming-buddy-graphics.md` created; hands off to Chief Design Officer + 11 build specialists.
+
+**marketing:** `brainstorming-buddy-marketing.md` created; hands off to Chief Marketing Officer + 10 build specialists.
+
+**web-development:** `brainstorming-buddy-web-development.md` created; hands off to Head of Web Development + 11 build specialists.
+
+**app-development:** `brainstorming-buddy-app-development.md` created; hands off to Head of App Development + 10 build specialists. Shares the web/app question bank with web-development per spec.
+
+**generate-trio-roles.py extended:** BUDDY_DEPTS set + BUDDY_EXTRA_DEPTS (presentations) + BB_TEMPLATE/BB_BANKS path constants + `bb_role_slug`/`bb_filename`/`needs_bb_file`/`make_bb_content` helpers + 5th-role Buddy gate in the per-dept loop (guarded by `if dept in BUDDY_DEPTS`) + separate BUDDY_EXTRA_DEPTS loop for vertical-pack depts. Idempotent: skips if file already exists, ensures slug registered in index.
+
+**_index.json:** `deck-discovery-strategist` slug removed from presentations; `brainstorming-buddy-presentations` + 5 other buddy slugs added; per-dept counts updated; `total_roles` recomputed (313 -> 318).
+
+**suggested-roles:** All 6 target dept suggested-roles files bumped + Brainstorming Buddy entry appended.
+
+**Version:** v12.0.0 -> v12.1.0. All 9 markers + cc-compat.json updated.
+
+---
+
 ## [v12.0.0]  -  2026-06-12  -  feat(MAJOR): Presentation Brainstormer + per-dept Healer materialization + missing-prereq notice
 
 ### Changes

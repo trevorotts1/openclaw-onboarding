@@ -1,15 +1,16 @@
 {
   "generated_at": "2026-06-12T00:00:00Z",
-  "version": "12.0.0",
-  "total_roles": 313,
+  "version": "12.1.0",
+  "total_roles": 318,
   "departments": {
     "app-development": {
-      "count": 16,
+      "count": 17,
       "roles": [
         "android-specialist",
         "api-backend-specialist",
         "app-analytics-specialist",
         "app-store-optimization-aso-specialist",
+        "brainstorming-buddy-app-development",
         "cloud-infrastructure-specialist",
         "deep-research-specialist-app-development",
         "desktop-app-specialist",
@@ -125,11 +126,12 @@
       ]
     },
     "graphics": {
-      "count": 17,
+      "count": 18,
       "roles": [
         "ad-creative-specialist",
         "ai-image-generator-specialist",
         "book-cover-designer",
+        "brainstorming-buddy-graphics",
         "brand-identity-specialist-logo-color-type",
         "chief-design-officer",
         "course-slide-designer",
@@ -169,9 +171,10 @@
       ]
     },
     "marketing": {
-      "count": 17,
+      "count": 18,
       "roles": [
         "affiliate--referral-specialist",
+        "brainstorming-buddy-marketing",
         "brand-positioning-specialist",
         "chief-marketing-officer",
         "content-marketing-strategist",
@@ -309,10 +312,11 @@
       ]
     },
     "video": {
-      "count": 19,
+      "count": 20,
       "roles": [
         "ai-video-generator-specialist",
         "animation-specialist-2d-3d-whiteboard",
+        "brainstorming-buddy-video",
         "captioning--subtitling-specialist",
         "color-grading-specialist",
         "crm-specialist-video-version",
@@ -333,8 +337,9 @@
       ]
     },
     "web-development": {
-      "count": 17,
+      "count": 18,
       "roles": [
+        "brainstorming-buddy-web-development",
         "conversion-rate-optimization-cro-specialist",
         "deep-research-specialist-web-development",
         "devils-advocate-\u2014-web-development",
@@ -384,23 +389,23 @@
     "presentations": {
       "count": 17,
       "roles": [
-        "deck-discovery-strategist",
-        "director-of-presentations",
-        "slide-copywriter",
-        "offer-price-strategist",
-        "slide-image-creator",
+        "brainstorming-buddy-presentations",
         "brand-steward",
-        "qc-specialist-presentations",
-        "slide-submitter",
-        "media-librarian-ghl-updater",
-        "pptx-assembly-specialist",
         "capacity-reliability-engineer",
         "deep-research-specialist-presentations",
-        "devils-advocate-presentations",
         "delivery-concierge",
-        "presenter-coach",
+        "devils-advocate-presentations",
+        "director-of-presentations",
+        "healer-presentations",
         "hook-strategist",
-        "healer-presentations"
+        "media-librarian-ghl-updater",
+        "offer-price-strategist",
+        "pptx-assembly-specialist",
+        "presenter-coach",
+        "qc-specialist-presentations",
+        "slide-copywriter",
+        "slide-image-creator",
+        "slide-submitter"
       ]
     },
     "bugs": {
@@ -3084,14 +3089,14 @@
       "path": "templates/role-library/presentations/healer-presentations.md"
     },
     {
-      "slug": "deck-discovery-strategist",
+      "slug": "brainstorming-buddy-presentations",
       "dept": "presentations",
-      "title": "Deck Discovery Strategist",
+      "title": "Brainstorming Buddy -- Presentations",
       "role_type": "leadership",
       "word_count": 2900,
       "sop_count": 5,
       "sop_min": 4,
-      "path": "templates/role-library/presentations/deck-discovery-strategist.md"
+      "path": "templates/role-library/presentations/brainstorming-buddy-presentations.md"
     },
     {
       "slug": "director-of-personal-assistant",

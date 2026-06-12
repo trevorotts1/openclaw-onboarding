@@ -1,6 +1,6 @@
 # Suggested Roles — marketing-dept
-**Version:** 2.1.2 | May 17, 2026
-**Status:** Wave 4.5 — v2.1 baseline + specialist expansion
+**Version:** 2.2.0 | 2026-06-12
+**Status:** v12.1.0 + Brainstorming Buddy (Step -1, new in v12.1.0); 18 roles
 
 ## Department Purpose
 Generate awareness, attract leads, develop the company's unique selling and value propositions, manage brand positioning, and nurture prospects into sales-ready opportunities. Coordinates with Communications (PR), Social Media (organic), Paid Advertisement (paid), CRM (email/SMS execution), Graphics, Video, and Audio.
@@ -170,3 +170,13 @@ Added in v10.5.2 to bring Marketing to Fortune-500 operational depth: Influencer
 - 03-How-to-Identify-Emerging-Trends.md
 - 04-How-to-Summarize-Research-Into-Director-Briefs.md
 **Persona Trait Suggestions:** Voracious reader, synthesis-skilled, source-cite-rigorous.
+
+---
+
+## New Roles Added in v12.1.0
+
+### 18. Brainstorming Buddy (NEW -- v12.1.0)
+**Slug:** brainstorming-buddy-marketing
+**What it does:** The department Step -1 (runs BEFORE the Chief Marketing Officer). When the owner says "I want to run a campaign", this role brainstorms with them BEFORE the build: asks 1-2 opening framing questions, offers a SIMPLE interview (7 questions or fewer) or an EXTENSIVE interview (10 to 20 questions, back-and-forth), confirms what it learned with the owner (read-back + explicit sign-off), writes the binding brief.json at working/brainstorm/marketing/<slug>/brief.json, and kicks off the build by handing the locked brief to the Chief Marketing Officer.
+**Core SOPs:** 9.1 Simple Interview (7 Qs or fewer) | 9.2 Extensive Interview (10-20 Qs) | 9.3 Confirm-and-Lock | 9.4 Kickoff/Handoff
+**Role type:** specialist

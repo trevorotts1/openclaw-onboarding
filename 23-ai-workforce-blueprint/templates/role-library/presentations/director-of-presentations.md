@@ -48,7 +48,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 2. Confirm all env stores are populated: KIE_API_KEY, OLLAMA_API_KEY, OPENROUTER_API_KEY, GHL credentials. Check all four locations (workspace/.env, ~/clawd/secrets/.env, openclaw.json env.vars, running gateway process env) before declaring any key missing.
 3. Create the working directory tree per master SOP Section 2 BEFORE any other action.
 4. Run Step 0.5 capacity probe. Record the results in capacity_plan.json. If budget will be exceeded, escalate to the operator before proceeding.
-5. Receive the locked working/copy/deck_brief.json from the Deck Discovery Strategist (ROLE-17) and run SOP 9.1 Brief Ingest and Validation.
+5. Receive the locked working/copy/deck_brief.json from the Brainstorming Buddy (ROLE-17) and run SOP 9.1 Brief Ingest and Validation.
 
 ### Mid-Run
 
@@ -125,15 +125,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Brief Ingest and Validation
 
-**When to run:** As soon as the Deck Discovery Strategist (ROLE-17) hands off working/copy/deck_brief.json with brief_locked: true.
+**When to run:** As soon as the Brainstorming Buddy (ROLE-17) hands off working/copy/deck_brief.json with brief_locked: true.
 
 **Inputs:**
 - working/copy/deck_brief.json (locked, owner-signed, delivered by ROLE-17)
 
 **Steps:**
 1. Read working/copy/deck_brief.json in full.
-2. Verify: brief_locked = true AND owner_confirmed = true are both present. If either is false or missing, hand the brief BACK to the Deck Discovery Strategist with the exact gap; the Director does NOT re-interview the owner.
-3. Verify every mandatory variable is present (see deck_brief.json mandatory checklist: interview_depth, GOAL, CTA_ACTION, AUDIENCE, TRANSFORMATION_PROMISE, TARGET_FEELING, TONE, OFFER_NAME, PRICE_MODE, FINAL_PRICE, DURATION_MIN, REPRESENTATION_MIX, plus PRICE_ANCHOR when PRICE_MODE = drop). If any mandatory variable is missing, hand the brief BACK to the Deck Discovery Strategist with the exact missing field list. The Director does NOT fill discovery gaps itself.
+2. Verify: brief_locked = true AND owner_confirmed = true are both present. If either is false or missing, hand the brief BACK to the Brainstorming Buddy with the exact gap; the Director does NOT re-interview the owner.
+3. Verify every mandatory variable is present (see deck_brief.json mandatory checklist: interview_depth, GOAL, CTA_ACTION, AUDIENCE, TRANSFORMATION_PROMISE, TARGET_FEELING, TONE, OFFER_NAME, PRICE_MODE, FINAL_PRICE, DURATION_MIN, REPRESENTATION_MIX, plus PRICE_ANCHOR when PRICE_MODE = drop). If any mandatory variable is missing, hand the brief BACK to the Brainstorming Buddy with the exact missing field list. The Director does NOT fill discovery gaps itself.
 4. Copy all brief variables into working/copy/intake.json for backward compatibility with downstream specialists. The brief is authoritative; intake.json is the generated mirror.
 5. Proceed to SOP 9.2 (Echo Protocol and Mission PRD Gate).
 
@@ -142,7 +142,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Hand to:** SOP 9.2 (Echo Protocol and Mission PRD Gate)
 
-**Failure mode:** If the Deck Discovery Strategist does not acknowledge the returned brief within 1 hour, escalate to the Master Orchestrator. The Director never re-interviews the owner under any circumstance; gap-filling is the Deck Discovery Strategist's job.
+**Failure mode:** If the Brainstorming Buddy does not acknowledge the returned brief within 1 hour, escalate to the Master Orchestrator. The Director never re-interviews the owner under any circumstance; gap-filling is the Brainstorming Buddy's job.
 
 ---
 
@@ -383,7 +383,7 @@ final_deck_qc_report.json: all 11 image criteria and 14 copy criteria satisfied 
 ## 11. Handoffs (Value Stream Map)
 
 ### You receive work from:
-- Deck Discovery Strategist (ROLE-17) -- delivers a locked, owner-signed deck_brief.json; the Director validates it, never re-interviews.
+- Brainstorming Buddy (ROLE-17) -- delivers a locked, owner-signed deck_brief.json; the Director validates it, never re-interviews.
 - Master Orchestrator -- initiates a new deck run with a request
 - Operator (human) -- provides answers during approval gates, confirms MODEL MANIFEST at echo, and provides per-substitution approvals in Mode B
 
