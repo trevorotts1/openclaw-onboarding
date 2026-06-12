@@ -128,9 +128,63 @@ The fallback chain is the durable fix.
 
 ---
 
+## 4. Mac-tunnel goes offline every few minutes (CF error 1033 / 530) on Wi-Fi
+
+**Symptom:** Client Mac reports the OpenClaw dashboard/tunnel is unreachable. Connector
+log (`/Library/Logs/com.cloudflare.cloudflared.err.log`) shows repeated:
+
+```
+failed to accept QUIC stream: timeout: no recent network activity
+```
+
+All 4 edge connections drop simultaneously; CF returns error 1033 or 530 for ~6s
+before reconnect. On wired Ethernet the problem is rare or absent.
+
+**Root cause (confirmed: Christy Mac, 287 drops in 22h):**
+cloudflared defaults to `--protocol quic` (UDP/7844). Consumer Wi-Fi routers age out
+idle UDP NAT mappings in minutes. When the mapping expires, QUIC collapses before
+cloudflared can recover it. The root LaunchDaemon also had `KeepAlive = {SuccessfulExit: false}`
+meaning a clean exit zero would never auto-restart -- a latent respawn bug.
+
+**This is a fleet-wide class issue for every Wi-Fi Mac-tunnel client.** Wired-Ethernet
+boxes are mostly unaffected (longer NAT idle timers), but all Wi-Fi Mac boxes are exposed.
+
+**Fix: 4-layer defense in depth (see `platform/mac/tunnel-hardening/`):**
+
+| Layer | Effect | Privilege |
+|---|---|---|
+| A | `--protocol http2` in root daemon (TCP -- no UDP NAT expiry) | sudo |
+| B | `KeepAlive=true` unconditional + `RunAtLoad=true` | sudo |
+| C | 20s edge ping (keeps QUIC NAT warm; safety net) | no sudo |
+| D | AC no-sleep (`pmset`) + */5 watchdog | sudo + no sudo |
+
+Quick remediation for an existing box (Layer C alone stops most drops with no password):
+
+```bash
+# No sudo -- push now
+bash platform/mac/tunnel-hardening/install-keepalive-agent.sh
+bash platform/mac/tunnel-hardening/install-watchdog-agent.sh
+
+# Sudo -- run once per box for full hardening
+sudo bash platform/mac/tunnel-hardening/harden-mac-tunnel.sh
+```
+
+New installs: `14-install-cloudflared-service.sh` now applies all four layers
+automatically at provision time.
+
+**Upstream ask:** cloudflared should default to `--protocol http2` or `auto` on macOS
+rather than QUIC-first, given how common consumer Wi-Fi NAT aging is.
+
+See:
+- `platform/mac/tunnel-hardening/README.md` -- full spec + verify block
+- `38-conversational-ai-system/references/cloudflare-tunnel-troubleshooting.md` -- Layer 2 section
+- `docs/OPERATOR-MAINTENANCE.md` -- existing-fleet remediation playbook
+
+---
+
 ## Filing upstream
 
-Both issues are core-runtime, not onboarding. File against the openclaw
+Issues 1-3 are core-runtime, not onboarding. File against the openclaw
 project with the symptom log lines above. Until fixed, the workarounds here
 keep the fleet responsive. The recommended fallback-embeddings and
 agent-timeout values should be carried in the default onboarding config so

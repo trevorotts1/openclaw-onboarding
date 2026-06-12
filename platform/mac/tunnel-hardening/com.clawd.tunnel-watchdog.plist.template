@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- com.clawd.tunnel-watchdog.plist.template
+     Layer D-nosudo -- user-level tunnel watchdog LaunchAgent (no sudo).
+     install-watchdog-agent.sh uses sed to expand placeholders.
+     Placeholders:
+       __LABEL__        -> com.clawd.tunnel-watchdog
+       __SCRIPT_PATH__  -> /Users/<user>/.cloudflared/tunnel-watchdog.sh
+       __LOG_PATH__     -> /tmp/clawd-tunnel-watchdog.log
+       __INTERVAL__     -> 300  (seconds, = every 5 minutes)
+  -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__SCRIPT_PATH__</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>__INTERVAL__</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__LOG_PATH__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_PATH__</string>
+</dict>
+</plist>

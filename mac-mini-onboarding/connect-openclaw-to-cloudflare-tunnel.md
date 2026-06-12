@@ -89,6 +89,33 @@ STEP 7 — Confirm cloudflared is running and connected
   #   sudo cloudflared service install <TUNNEL_TOKEN>
   #   sudo launchctl start com.cloudflare.cloudflared
 
+STEP 7b — Harden the connector (Wi-Fi QUIC idle-timeout fix)
+cloudflared defaults to QUIC (UDP). Consumer Wi-Fi routers age out idle UDP NAT
+mappings in minutes, causing repeated 6s drops (CF error 1033). Fix: switch the
+connector to http2 (TCP) and install a 20s keepalive agent.
+
+  # Layer A+B+D: force TCP, unconditional KeepAlive, AC no-sleep (requires sudo, once).
+  sudo bash platform/mac/tunnel-hardening/harden-mac-tunnel.sh
+
+  # Layer C: 20s edge ping -- keeps NAT mapping warm (no sudo).
+  bash platform/mac/tunnel-hardening/install-keepalive-agent.sh
+
+  # Layer D-nosudo: */5 connector watchdog (no sudo).
+  bash platform/mac/tunnel-hardening/install-watchdog-agent.sh
+
+After running, confirm:
+  /usr/libexec/PlistBuddy -c "Print :ProgramArguments" \
+    /Library/LaunchDaemons/com.cloudflare.cloudflared.plist | grep http2
+  # Expected: http2 is present
+
+  launchctl print gui/$(id -u)/com.clawd.tunnel-keepalive | grep 'pid ='
+  # Expected: a non-zero PID
+
+  tail -5 /tmp/clawd-tunnel-keepalive.log
+  # Expected (after ~20s): [<ts>] edge-ping ok
+
+See platform/mac/tunnel-hardening/README.md for full details and the verify block.
+
 STEP 8 — Report back to Trevor with these exact fields:
   - openclaw gateway status output (verbatim)
   - openclaw config get gateway.controlUi.allowedOrigins (verbatim, post-merge)
