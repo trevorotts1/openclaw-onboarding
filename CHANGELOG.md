@@ -1,4 +1,4 @@
-## [v11.19.0]  -  2026-06-11  -  feat(self-service): add+wire onboarding scripts + derived org chart/Notion + converge step + guardrails
+## [v11.20.0]  -  2026-06-12  -  feat(self-service): add+wire onboarding scripts + derived org chart/Notion + converge step + guardrails
 
 ### Changes
 
@@ -12,7 +12,7 @@
 - **§1.7** New `shared-utils/resolve_persona_categories_path.py` (path drift reconciliation). `generate-governing-personas.sh` + `orchestrator.py` both use the shared resolver. Phase 6b structured `[PERSONA-REFRESH]` lines + ledger append.
 - **§1.5** All four skill SKILL.md files updated with agent-runnable add commands + mandatory converge step. `universal-sops/adding-capability-after-build.md` Events 2/3/4 rewritten.
 - **§4.1** New test scripts: `test-add-role-index.sh`, `test-add-sop.sh`, `test-converge.sh` (all pass).
-- **Version:** v11.18.5 → v11.19.0 (all 9 markers). `cc-compat.json`: minVersion/pinnedTag → v4.39.0.
+- **Version:** v11.19.0 → v11.20.0 (all 9 markers). `cc-compat.json`: onboardingVersion → v11.20.0. Note: v11.19.0 was taken by Presentations Department (PR #176); rebased and re-versioned to v11.20.0.
 
 ## [v11.19.0] — 2026-06-11
 
