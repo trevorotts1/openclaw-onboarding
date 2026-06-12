@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 #  Skill 36 — GHL MCP Setup — Install QC Script (v1.0.0)
-#  Standalone bespoke validator for the 5-tier GHL access chain.
+#  Standalone bespoke validator for the 6-tier GHL access chain (Tier 0 = Convert and Flow CLI, skill 44).
 #  Exits 0 if all assertions pass. Non-zero = blocker.
 #
 #  Tests:
