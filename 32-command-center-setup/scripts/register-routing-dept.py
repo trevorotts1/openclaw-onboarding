@@ -53,10 +53,13 @@ def main() -> None:
     else:
         # Try to auto-resolve from known relative paths
         script_dir = Path(__file__).parent
+        home = Path(os.environ.get("HOME", "/tmp"))
         candidates = [
-            script_dir / "../../../23-ai-workforce-blueprint/department-naming-map.json",
-            Path(os.environ.get("HOME", "/tmp")) / "Downloads/openclaw-onboarding/23-ai-workforce-blueprint/department-naming-map.json",
-            Path(os.environ.get("HOME", "/tmp")) / "Downloads/openclaw-master-files/23-ai-workforce-blueprint/department-naming-map.json",
+            script_dir / "../../23-ai-workforce-blueprint/department-naming-map.json",
+            home / ".openclaw/skills/23-ai-workforce-blueprint/department-naming-map.json",
+            Path("/data/.openclaw/skills/23-ai-workforce-blueprint/department-naming-map.json"),
+            home / "Downloads/openclaw-onboarding/23-ai-workforce-blueprint/department-naming-map.json",
+            home / "Downloads/openclaw-master-files/23-ai-workforce-blueprint/department-naming-map.json",
         ]
         naming_map_path = None
         for c in candidates:
@@ -73,13 +76,32 @@ def main() -> None:
     except Exception as e:
         die(f"Cannot load naming map from {naming_map_path}: {e}")
 
-    # Build slug → metadata index from both mandatory and vertical_packs
-    dept_meta = {}
-    for section in ("mandatory", "vertical_packs", "universal_primary", "vertical_secondary"):
-        for entry in naming_map.get(section, []):
-            slug = entry.get("slug") or entry.get("id")
-            if slug:
+    # Build slug -> metadata index.  The naming map stores depts as DICTS keyed
+    # by slug (not arrays), and vertical_packs nests depts inside each pack's
+    # auto_add_departments list.  Handle both forms so mandatory (dict-keyed)
+    # and vertical-pack entries (list with "id") are found without crashing.
+    dept_meta: dict = {}
+
+    # mandatory: dict keyed by slug (entry carries no slug/id field)
+    mandatory = naming_map.get("mandatory", {})
+    if isinstance(mandatory, dict):
+        for slug, entry in mandatory.items():
+            if isinstance(entry, dict):
                 dept_meta[slug] = entry
+    elif isinstance(mandatory, list):          # tolerate legacy array form
+        for entry in mandatory:
+            s = entry.get("slug") or entry.get("id")
+            if s:
+                dept_meta[s] = entry
+
+    # vertical_packs: dict of packs, each with auto_add_departments[] carrying "id"
+    packs = naming_map.get("vertical_packs", {})
+    pack_iter = packs.values() if isinstance(packs, dict) else packs
+    for pack in pack_iter:
+        for entry in (pack.get("auto_add_departments", []) if isinstance(pack, dict) else []):
+            s = entry.get("id") or entry.get("slug")
+            if s:
+                dept_meta[s] = entry
 
     if args.dept not in dept_meta:
         die(f"Department '{args.dept}' not found in naming map at {naming_map_path}")
@@ -87,7 +109,10 @@ def main() -> None:
     meta = dept_meta[args.dept]
     director_title = meta.get("director_title") or meta.get("head", "Director")
     emoji = meta.get("emoji", "")
-    description = meta.get("description", f"{args.dept} department")
+    # human name lives in display_name (mandatory) or name (vertical-pack entries)
+    description = (meta.get("description") or meta.get("one_liner")
+                   or meta.get("display_name") or meta.get("name")
+                   or f"{args.dept} department")
 
     info(f"Dept: {args.dept} | Director: {director_title} | Emoji: {emoji}")
 
