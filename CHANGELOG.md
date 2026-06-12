@@ -1,3 +1,26 @@
+## [v11.29.0]  -  2026-06-12  -  fix: add personal-assistant role-library dir (28-floor satisfiable) + confirm master-orchestrator excluded from floor
+
+### Changes
+
+**28-floor now fully satisfiable fleet-wide.** `personal-assistant` is a mandatory floor department since v10.15.42 (naming-map + HARDCODED_MANDATORY in department-floor.py), but `templates/role-library/personal-assistant/` did not exist -- so every box would fail the floor gate on personal-assistant and materialization had nothing to instantiate.
+
+**What shipped:**
+- `templates/role-library/personal-assistant/` directory created with 9 role files sourced from the AUTHENTIC Skill-42 content (`42-personal-assistant-library/`):
+  - `director-of-personal-assistant.md` (leadership -- department head, 5 SOPs)
+  - `inbox-manager.md` (specialist -- sourced from PA-01-01 through PA-01-08)
+  - `calendar-scheduling-manager.md` (specialist -- sourced from PA-02-01 through PA-02-07)
+  - `task-priority-manager.md` (specialist -- sourced from PA-04-01 through PA-04-06)
+  - `travel-logistics-specialist.md` (specialist -- sourced from PA-10-01 through PA-10-05)
+  - `daily-briefing-specialist.md` (specialist -- sourced from PA-03-01 through PA-03-04)
+  - `personal-coach.md` (specialist -- sourced from PA-08-01 through PA-08-08)
+  - `sop-writer.md` (on-call -- standard cross-dept SOP-authoring role)
+  - `healer-personal-assistant.md` (healer -- standard cross-dept healer, QUAD model compliant)
+- `_index.json`: personal-assistant department registered (9 roles); `total_roles` 303 -> 312; `total_departments` 22 -> 23; version bumped to v11.29.0.
+- **master-orchestrator CONFIRMED EXCLUDED from floor:** master-orchestrator is NOT in naming-map mandatory, NOT in HARDCODED_MANDATORY in department-floor.py. It is the CEO agent scaffold (2 roles only) and is not a client department. The floor remains exactly 28 (21 mandatory + 7 universal-primary). No changes were needed -- this PR documents the confirmation.
+- **No fabricated content.** All role SOPs sourced exclusively from `42-personal-assistant-library/` specialist folders. Role files reference their Skill-42 source explicitly in the Cross-References section.
+- **Zero em dashes** in all created files (verified).
+- **Version**: v11.28.0 -> v11.29.0 (version file, cc-compat.json, install.sh, update-skills.sh, README.md, CHANGELOG.md, _index.json).
+
 ## [v11.28.0]  -  2026-06-12  -  feat(T3-002): Healer embedded in every department (on-demand, heartbeat OFF)
 
 ### Changes
