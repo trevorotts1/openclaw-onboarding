@@ -221,7 +221,7 @@ your YES before the team starts building."
 2. The Director ingests brief.json as the seed for its OWN intake SOP (it confirms and
    extends, never re-asks what the brief already answers).
 3. The Director then dispatches this department's BUILD SPECIALISTS in pipeline order:
-   AI Image Generator Specialist, Ad Creative Specialist, Brand Identity Specialist, Social Media Graphics Specialist, Infographic Specialist, Thumbnail/Cover Designer, Presentation Designer, Email Designer, Print/Asset Design Specialist, Book Cover Designer, Course Slide Designer.
+   AI Image Generator Specialist, Ad Creative Specialist, Brand Identity Specialist, Social Media Graphics Specialist, Infographic Specialist, Thumbnail/Cover Designer, Presentation Designer, Email Designer, Print/Asset Design Specialist, Book Cover Designer, Course Slide Designer, Style Analyst, Deck Systems Specialist, Generation Operator, Photo Shoot Director, Fidelity Tester.
 4. Notify the owner that the build has started and tell them the next gate they will see
    (usually the Director's owner-approval gate).
 5. Record `handoff_at`, `handoff_to`, `dispatch_id` in brief.json.
@@ -252,7 +252,15 @@ the Master Orchestrator with the locked brief attached. Never silently drop a lo
 
 ### You hand work off to:
 - Chief Design Officer -- receives the locked, signed-off brief.json and runs the build.
-  The Director then dispatches this department's build specialists: AI Image Generator Specialist, Ad Creative Specialist, Brand Identity Specialist, Social Media Graphics Specialist, Infographic Specialist, Thumbnail/Cover Designer, Presentation Designer, Email Designer, Print/Asset Design Specialist, Book Cover Designer, Course Slide Designer.
+  The Director then dispatches this department's build specialists: AI Image Generator Specialist, Ad Creative Specialist, Brand Identity Specialist, Social Media Graphics Specialist, Infographic Specialist, Thumbnail/Cover Designer, Presentation Designer, Email Designer, Print/Asset Design Specialist, Book Cover Designer, Course Slide Designer, Style Analyst, Deck Systems Specialist, Generation Operator, Photo Shoot Director, Fidelity Tester.
+
+  **DIU routing note:** When `brief.json` contains `diu_route: true`, the Chief Design Officer reads `diu_intake_path` and routes directly:
+  - `analyze` → Style Analyst (new style card from reference images or deck)
+  - `generate` → Generation Operator (existing style ID from the design library)
+  - `photo_shoot` → Photo Shoot Director (likeness present; consent gate fires first)
+  - `deck` → Deck Systems Specialist (slide count + resolution captured in brief)
+  - `diagnose` → Fidelity Tester (off-style result; Diagnosis Mode §5)
+  The Fidelity Tester receives every new style card automatically after Style Analyst creates it.
 
 ---
 
@@ -385,5 +393,19 @@ to the Chief Design Officer for promotion to a standing role.
 18. DELIVERY DESTINATIONS. `DELIVERY_DESTINATIONS`
 19. DEADLINE. `DEADLINE`
 20. ANYTHING ELSE verbatim. `NOTES`
+
+### DIU-SPECIFIC (extensive set, items 21-27 -- ask when applicable)
+
+21. STYLE REFERENCES -- "Do you have reference images, an existing deck, or past designs whose LOOK you want reused or analyzed?" -> `STYLE_REFERENCES`, `ANALYZE_REQUEST`
+22. STYLE LIBRARY ID -- "Should this reuse a saved style from your style library (give me the ID if you know it), or is this a brand-new look?" -> `STYLE_ID`, `NEW_STYLE`
+23. PEOPLE / LIKENESS -- "Will a real person appear in the image (you, your team, a client)? If yes, whose likeness, and do we have their reference photos on file?" -> `PEOPLE_LIKENESS`, `IDENTITY_REFS`
+24. DECK SPECS -- "For decks: how many slides, and what resolution does the final need (screen-share default, or print/projection quality)?" -> `SLIDE_COUNT`, `RESOLUTION_CHOICE`
+25. FIDELITY PRIORITY -- "How important is exact style match? Is this a critical brand deliverable (we need a tight fidelity score) or an exploratory first pass (directionally right is enough)?" -> `FIDELITY_PRIORITY` (values: critical / standard / exploratory)
+26. STYLE AVOID -- "Are there any looks, colors, or visual elements you want to absolutely avoid in this image -- things that are off-brand or have tested badly before?" -> `STYLE_AVOID`, `NEGATIVE_NOTES`
+27. SHOOT MODE -- "If this is a personal photo shoot or branded lifestyle image: what is the scene context -- location, wardrobe, action, editorial portrait, or a retouching pass on an existing photo?" -> `SHOOT_MODE` (values: location / wardrobe / action / editorial / retouch)
+
+**Triage note (O2 capture):** If the owner's answer to O2 (Placement) or any subsequent answer references a reference image, existing deck, likeness, or style ID, capture `diu_route: true` in brief.json. This flag signals the Chief Design Officer to route the brief through the Design Intelligence Unit intake table (see `graphics/00-START-HERE.md`).
+
+**DIU routing hint:** When `diu_route: true`, capture `diu_intake_path` in brief.json using the value that best fits: `analyze` (new style from references), `generate` (existing style ID), `photo_shoot` (likeness present), `deck` (slide count set), or `diagnose` (off-style result). The Chief Design Officer reads this field to route directly to the correct DIU specialist without re-interviewing.
 
 *End of role file. All 19 sections present and filled.*
