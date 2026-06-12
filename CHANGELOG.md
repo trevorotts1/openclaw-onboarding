@@ -1,3 +1,13 @@
+## [v12.2.0]  -  2026-06-12  -  feat: DIU full role set — 8 remaining graphics specialists registered + ROLE-- files shipped
+
+### Changes
+
+**DIU full role set.** Eight remaining Design Intelligence Unit specialist roles registered in `_index.json` and ROLE-- files shipped to `templates/role-library/graphics/`: design-producer, style-librarian, likeness-rights-officer, render-dispatcher, asset-provenance-librarian, style-steward, brand-systems-specialist, motion-systems-specialist. All 13 DIU roles are now fully registered. Graphics dept count 23 → 31, total_roles 323 → 331. All 26 SOP-DIU files (SOP-DIU-101 through SOP-DIU-615) present and SOP-DIU ids verified unique. `ROLE--brand-systems-specialist.md` created (was the only ROLE-- file missing from the 13-role set). `_index.json` invariant passes: count == len(roles) and total_roles == sum(dept counts). README skill-45 row added; skill folder count 44 → 45.
+
+**Version:** v12.1.1 → v12.2.0. All 9 markers agree at v12.2.0 (pre-existing from prior bump). cc-compat.json onboardingVersion = v12.2.0.
+
+---
+
 ## [v12.1.1]  -  2026-06-12  -  fix: seed-workspaces.py CC workspace seeding is now idempotent (INSERT OR IGNORE + in-loop existing-set update)
 
 ### Changes

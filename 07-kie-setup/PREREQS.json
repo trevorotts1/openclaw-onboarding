@@ -2,12 +2,44 @@
   "skill": "07-kie-setup",
   "prerequisites": [
     {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 — Teach Yourself Protocol",
+      "check": { "skillId": 1 },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (teach-yourself-protocol) before installing Skill 07."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 — Back Yourself Up Protocol",
+      "check": { "skillId": 2 },
+      "severity": "required",
+      "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 07."
+    },
+    {
+      "id": "kie-account",
+      "type": "service-account",
+      "label": "Kie.ai Account (app.kie.ai)",
+      "check": { "url": "https://app.kie.ai" },
+      "severity": "required",
+      "satisfy": "Create a free account at https://app.kie.ai. Load credits (pay-as-you-go) before running any generation tasks. Minimum $5 credit recommended for initial testing."
+    },
+    {
       "id": "kie-api-key",
       "type": "credential",
       "label": "Kie.ai API Key",
       "check": { "envVar": "KIE_API_KEY" },
       "severity": "required",
       "satisfy": "Add KIE_API_KEY=<your key> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.KIE_API_KEY \"$KIE_API_KEY\". Get your API key from app.kie.ai > Settings > API Keys."
+    },
+    {
+      "id": "kie-credits",
+      "type": "service-balance",
+      "label": "Kie.ai Credits (non-zero balance)",
+      "check": { "note": "Verify via GET https://api.kie.ai/api/v1/account/balance with Authorization: Bearer $KIE_API_KEY" },
+      "severity": "warning",
+      "satisfy": "Top up credits at https://app.kie.ai/billing. A zero-credit account returns HTTP 402 on all generation tasks. Minimum recommended: $5 for initial setup verification (one smoke-test image ~$0.04–$0.10)."
     }
   ]
 }
