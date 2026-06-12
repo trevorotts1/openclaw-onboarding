@@ -129,6 +129,13 @@
       "perspective": ["african-american-experience", "mens-challenges"],
       "custom": ["elite-performance"]
     },
+    "hormozi-100m-leads": {
+      "author": "Alex Hormozi",
+      "book": "$100M Leads",
+      "domain": ["marketing", "sales", "strategy-innovation"],
+      "perspective": [],
+      "custom": ["lead-generation", "advertising", "core-four"]
+    },
     "hormozi-100m-offers": {
       "author": "Alex Hormozi",
       "book": "$100M Offers",

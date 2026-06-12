@@ -4,6 +4,30 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.7.2] - 2026-06-11
+
+### Added (book-persona library)
+- **New persona: `hormozi-100m-leads` — Alex Hormozi, $100M Leads** (Acquisition.com
+  Volume II). Built from the full book text via the standard 3-phase pipeline and
+  matched 1:1 to the `hormozi-100m-offers` persona format:
+  - `personas/hormozi-100m-leads/extraction-notes.md` (12 structured extraction items)
+  - `personas/hormozi-100m-leads/analysis-notes.md` (8-dimension analysis)
+  - `personas/hormozi-100m-leads/persona-blueprint.md` (all 14 sections + self-rating;
+    "Engaged Lead Machine Architect" — Core Four, Rule of 100, Lead Getters, CAC/LTGP).
+- **`persona-categories.json`**: registered `hormozi-100m-leads`
+  (`domain: marketing/sales/strategy-innovation`; `custom: lead-generation, advertising,
+  core-four`). Explicitly positioned as the companion volume to `hormozi-100m-offers`
+  (offers = "what do I sell?", leads = "who do I sell it to?").
+
+### Embedding wiring (operator index)
+- New persona staged in the operator coaching-personas index source dir; embeds
+  incrementally via `shared-utils/embedding_engine.py`
+  (`gemini-embedding-2-preview` @ 3072 dims). Indexing is content-hash incremental —
+  the new persona embeds on the next indexer run (~99 chunks).
+  NOTE: at ship time the operator Google API key was returning 429 RESOURCE_EXHAUSTED
+  on base model `gemini-embedding-2` (account quota cap), so the live re-index is
+  deferred until quota clears / a quota increase is granted — no code change required.
+
 ## [v6.6.1] - 2026-06-09
 
 ### Fixed (critical — EPUB/MOBI/AZW3 ebook extraction)
