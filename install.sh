@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v11.21.1"
+ONBOARDING_VERSION="v11.22.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3466,6 +3466,22 @@ else
     warn "lib-onboarding-state.sh not found — honesty state machine not seeded (older bundle?)"
 fi
 
+# ── Seed nudge lifecycle state file (idempotent; reset on fresh install) ─────
+# The nudge state file lives at $WS/.onboarding-nudge-state (plain key=value).
+# Seeded fresh here so a clean install starts from attempt 0, not dormant.
+# Re-running install (update/resume) does NOT reset it — if we're mid-lifecycle
+# we want to preserve the current attempt count and dormant flag.
+_NUDGE_STATE_FILE="$OC_CONFIG/workspace/.onboarding-nudge-state"
+if [ ! -f "$_NUDGE_STATE_FILE" ]; then
+    mkdir -p "$OC_CONFIG/workspace" 2>/dev/null || true
+    printf 'nudge_attempts=0\nlast_nudge_ts=0\ndormant=false\ncredit_fail_ts=0\ncredit_notified=false\n' \
+        > "$_NUDGE_STATE_FILE" 2>/dev/null \
+        && success "Nudge lifecycle state initialized → $_NUDGE_STATE_FILE" \
+        || warn "Could not write nudge state file (non-fatal)"
+else
+    success "Nudge lifecycle state already exists → $_NUDGE_STATE_FILE (preserved)"
+fi
+
 # v10.5.4 Tier-3 fallback: also write the payload to a standalone file so the
 # operator can recover with `cat`+paste even if both Telegram fails AND the
 # AGENTS.md append fails. Single source of truth via tee — same bytes go to
@@ -4608,6 +4624,111 @@ install_interview_nudge_cron() {
 }
 
 install_interview_nudge_cron
+
+# ----------------------------------------------------------
+# Step 13.6: Install onboarding re-arm hook (nudge lifecycle)
+# ----------------------------------------------------------
+# WHY: when the owner sends ANY message after the nudge lifecycle has gone
+# DORMANT, onboarding must automatically wake up (re-arm) without requiring
+# a manual operator action. The hook is a lightweight OpenClaw incoming-
+# message hook that touches $WS/.onboarding-nudge-rearm whenever a message
+# arrives from the owner chat. resume-onboarding.sh detects the touch file
+# on its next (cheap) cron fire and resets the attempt counter.
+#
+# IMPLEMENTATION:
+#   OpenClaw hooks are registered in openclaw.json under
+#   hooks.onMessage[].command. The hook script is written to
+#   $OC_CONFIG/scripts/onboarding-rearm-hook.sh and registered idempotently.
+#   The hook itself is pure shell (touch + log) — zero model calls.
+# ----------------------------------------------------------
+step "Step 13.6: Installing onboarding re-arm hook (nudge lifecycle wakeup on owner message)"
+
+install_rearm_hook() {
+    if ! command -v openclaw >/dev/null 2>&1; then
+        warn "openclaw CLI not on PATH — skipping re-arm hook install."
+        return 0
+    fi
+
+    local HOOK_DIR="$OC_CONFIG/scripts"
+    local HOOK_SCRIPT="$HOOK_DIR/onboarding-rearm-hook.sh"
+    local NUDGE_STATE="$OC_CONFIG/workspace/.onboarding-nudge-state"
+    local REARM_FILE="$OC_CONFIG/workspace/.onboarding-nudge-rearm"
+    local REARM_LOG="$OC_CONFIG/workspace/.onboarding-rearm-hook.log"
+    mkdir -p "$HOOK_DIR" 2>/dev/null || true
+
+    # Write the hook script (idempotent — overwrite to pick up any updates)
+    cat > "$HOOK_SCRIPT" <<'HOOK_EOF'
+#!/usr/bin/env bash
+# onboarding-rearm-hook.sh — nudge lifecycle re-arm on owner message
+# Called by OpenClaw's onMessage hook. Pure file I/O — zero model calls.
+# Arguments: $1=channel, $2=chatId, $3=messageText (optional, may be absent)
+set -u
+if [[ -d /data/.openclaw ]]; then OC_ROOT=/data/.openclaw
+elif [[ -d "${HOME}/.openclaw" ]]; then OC_ROOT="${HOME}/.openclaw"
+else exit 0; fi
+
+WS="$OC_ROOT/workspace"
+NUDGE_STATE="$WS/.onboarding-nudge-state"
+REARM_FILE="$WS/.onboarding-nudge-rearm"
+LOG="$WS/.onboarding-rearm-hook.log"
+
+# Only act if the nudge state file exists (onboarding is active on this box).
+[ -f "$NUDGE_STATE" ] || exit 0
+
+# Only re-arm if currently dormant (avoid resetting mid-lifecycle unnecessarily).
+_dormant="$(grep '^dormant=' "$NUDGE_STATE" 2>/dev/null | head -1 | cut -d= -f2-)"
+if [ "$_dormant" = "true" ]; then
+    touch "$REARM_FILE" 2>/dev/null || true
+    printf '%s onboarding-rearm-hook: owner message detected — re-arm file created\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$LOG" 2>/dev/null || true
+fi
+exit 0
+HOOK_EOF
+    chmod +x "$HOOK_SCRIPT" 2>/dev/null || true
+    success "Re-arm hook script written → $HOOK_SCRIPT"
+
+    # Register the hook in openclaw.json via openclaw config set (idempotent).
+    # The hook fires on every inbound message; the script self-gates on dormant.
+    # Use openclaw config to check if already registered before adding.
+    local _existing_hooks
+    _existing_hooks="$(openclaw config get hooks.onMessage 2>/dev/null | tr -d '[:space:]' || echo "")"
+    if echo "$_existing_hooks" | grep -qF "onboarding-rearm-hook"; then
+        success "Re-arm hook already registered in openclaw.json — skipping"
+        return 0
+    fi
+
+    # Append the hook using safe_json_edit (defined earlier in install.sh)
+    # to avoid clobbering existing hooks.
+    local _oc_json="$OC_CONFIG/openclaw.json"
+    if [ -f "$_oc_json" ] && command -v python3 >/dev/null 2>&1; then
+        local _tmp; _tmp="$(mktemp)"
+        python3 - "$_oc_json" "$HOOK_SCRIPT" <<'PYEOF' > "$_tmp" 2>/dev/null && mv "$_tmp" "$_oc_json" || rm -f "$_tmp"
+import json, sys
+path, hook_script = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    cfg = json.load(f)
+hooks = cfg.setdefault("hooks", {})
+on_msg = hooks.setdefault("onMessage", [])
+# Idempotent: only add if not already present
+if not any(isinstance(h, dict) and "onboarding-rearm-hook" in h.get("command","") for h in on_msg):
+    on_msg.append({"command": hook_script, "async": True})
+cfg["hooks"]["onMessage"] = on_msg
+print(json.dumps(cfg, indent=2))
+PYEOF
+        # Validate the JSON we just wrote
+        if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$_oc_json" 2>/dev/null; then
+            success "Re-arm hook registered in openclaw.json (hooks.onMessage)"
+        else
+            warn "openclaw.json validation failed after hook registration — rolled back"
+            git checkout "$_oc_json" 2>/dev/null || true
+        fi
+    else
+        warn "Could not register re-arm hook in openclaw.json (no python3 or config not found). Manual: add '$HOOK_SCRIPT' to hooks.onMessage in $OC_CONFIG/openclaw.json"
+    fi
+    return 0
+}
+
+install_rearm_hook
 
 # ----------------------------------------------------------
 # Step 14: Install Skill 37 (ZHC Closeout) (v10.13.16)

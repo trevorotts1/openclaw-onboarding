@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v11.21.1"
+ONBOARDING_VERSION="v11.22.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -311,7 +311,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v11.21.1 — safe_json_edit
+# v11.22.0 — safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -668,33 +668,6 @@ main() {
   echo "  📂 Skills directory: $SKILLS_DIR"
 
   # ----------------------------------------------------------
-  # STAMP-RELIABILITY: unconditional EXIT trap.
-  # _OC_SKILLS_SYNCED is set to 1 after the skill copy loop completes.
-  # _OC_STAMP_WRITTEN is set to 1 after the explicit stamp write succeeds.
-  # If the script exits (any cause) after sync but before stamp, this trap
-  # writes the stamp so .onboarding-version ALWAYS reflects reality.
-  # The trap fires on EXIT — including set -e aborts from optional steps
-  # (obs_seed_state, obs_verify_skill, link_shared_core_files, etc.).
-  # ----------------------------------------------------------
-  _OC_SKILLS_SYNCED=0
-  _OC_STAMP_WRITTEN=0
-  _oc_stamp_on_exit() {
-    if [ "${_OC_SKILLS_SYNCED:-0}" -eq 1 ] && [ "${_OC_STAMP_WRITTEN:-0}" -eq 0 ]; then
-      echo "" >&2
-      echo "  [stamp-trap] Writing .onboarding-version (trap: stamp not yet written before exit)..." >&2
-      echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version" 2>/dev/null || true
-      # Sync to legacy locations as well
-      for _TL in \
-          "$HOME/Downloads/openclaw-master-files/.onboarding-version" \
-          "$HOME/.openclaw/onboarding/.onboarding-version"; do
-        [ -f "$_TL" ] && echo "$ONBOARDING_VERSION" > "$_TL" 2>/dev/null || true
-      done
-      echo "  [stamp-trap] .onboarding-version = $ONBOARDING_VERSION (written via trap)" >&2
-    fi
-  }
-  trap '_oc_stamp_on_exit' EXIT
-
-  # ----------------------------------------------------------
   # Catchup check: if last weekly cron check is older than 7 days,
   # surface a note so the user knows the Sunday cron may have missed.
   # ----------------------------------------------------------
@@ -806,25 +779,10 @@ main() {
   # Seed the state file with every non-archived skill at "pending" from the
   # freshly-pulled source. Statuses then advance downloaded -> wired -> qc-passed
   # as the run progresses; the "complete" report is GATED on these (below).
-  #
-  # STAMP-RELIABILITY FIX: obs_seed_state is a stale name from the pre-PRD-2.1
-  # onboarding-state.sh. The current lib-onboarding-state.sh exports oc_state_seed
-  # instead. We call whichever is present and guard BOTH so a missing/failing shim
-  # cannot abort the script under set -euo pipefail before the stamp write.
   if [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
     # shellcheck disable=SC1091
-    source "$ONBOARDING_DIR/scripts/onboarding-state.sh" || true
-    # Call the canonical function (lib-onboarding-state.sh >= PRD 2.1).
-    # Fall back to the legacy obs_seed_state name if the new one is absent.
-    # Both calls are non-fatal: a missing or failing shim must NEVER abort the
-    # script before the version stamp is written (stamp-reliability fix).
-    if command -v oc_state_seed >/dev/null 2>&1; then
-      oc_state_seed "$EXTRACTED_DIR" "$ONBOARDING_VERSION" || echo "  ⚠ oc_state_seed reported an issue (continuing)"
-    elif command -v obs_seed_state >/dev/null 2>&1; then
-      obs_seed_state "$ONBOARDING_VERSION" "$EXTRACTED_DIR" || echo "  ⚠ obs_seed_state reported an issue (continuing)"
-    else
-      echo "  ⚠ onboarding-state seed function not available in this bundle — state file not seeded (non-fatal)"
-    fi
+    source "$ONBOARDING_DIR/scripts/onboarding-state.sh"
+    obs_seed_state "$ONBOARDING_VERSION" "$EXTRACTED_DIR" || echo "  ⚠ onboarding-state seed reported an issue (continuing)"
     # Make the gate library + helper scripts available to the running agent at
     # the canonical ~/.openclaw/scripts/ (where install.sh also lands them).
     _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
@@ -935,14 +893,8 @@ main() {
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition — files are on disk = DOWNLOADED (NOT installed).
-    # Prefer canonical oc_state_set (lib-onboarding-state.sh >= PRD 2.1); fall back to
-    # legacy obs_set_status. Both guarded non-fatal (stamp-reliability fix).
-    { command -v oc_state_set >/dev/null 2>&1 && oc_state_set "$SKILL_NAME" "downloaded"; } || \
-      { command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"; } || true
+    command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
   done
-  # STAMP-RELIABILITY: skills copy loop complete — activate the exit trap so any
-  # subsequent failure still results in a correct .onboarding-version stamp.
-  _OC_SKILLS_SYNCED=1
 
   # ----------------------------------------------------------
   # v10.15.47: WIRING PHASE — per-skill executed steps (not prose).
@@ -1216,8 +1168,7 @@ except:
     touch "$WIRED_SENTINEL" 2>/dev/null || true
     # FIX 1: state transition — installer + CORE_UPDATES merge ran = WIRED
     # (still NOT "installed" until the verification gate passes below).
-    { command -v oc_state_set >/dev/null 2>&1 && oc_state_set "$SKILL_NAME" "wired"; } || \
-      { command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "wired"; } || true
+    command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "wired"
     WIRED_COUNT=$((WIRED_COUNT + 1))
   done
 
@@ -1254,12 +1205,8 @@ except:
   echo "  Unifying shared core files (AGENTS/TOOLS/USER symlinked to this box's canonical)..."
   link_shared_core_files || echo "  ⚠ link_shared_core_files reported warnings (update continues)"
 
-  # Write version file to active dir (the canonical location).
-  # STAMP-RELIABILITY: this is the primary stamp write. After it succeeds we
-  # set _OC_STAMP_WRITTEN=1 so the EXIT trap knows it does not need to re-write.
+  # Write version file to active dir (the canonical location)
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
-  _OC_STAMP_WRITTEN=1
-  echo "  ✓ updated to $ONBOARDING_VERSION (.onboarding-version written)"
 
   # Sync version marker to legacy locations if they exist, so get_current_version
   # always reads the same value regardless of which path it finds first.
@@ -1316,71 +1263,24 @@ except:
   # ----------------------------------------------------------
   ONBOARDING_GATE_OK="unknown"
   ONBOARDING_GATE_SUMMARY=""
-  # STAMP-RELIABILITY FIX: prefer the canonical oc_gate_skill / oc_state_summary
-  # API (lib-onboarding-state.sh >= PRD 2.1). Fall back to legacy obs_verify_skill /
-  # obs_gate_summary if only those are present. All calls are non-fatal — a missing
-  # or failing gate shim must NEVER abort the script before the stamp is written.
-  _gate_fn=""
-  _summary_fn=""
-  if command -v oc_gate_skill >/dev/null 2>&1; then
-    _gate_fn="oc_gate_skill"
-  elif command -v obs_verify_skill >/dev/null 2>&1; then
-    _gate_fn="obs_verify_skill"
-  fi
-  if command -v oc_state_summary >/dev/null 2>&1; then
-    _summary_fn="oc_state_summary"
-  elif command -v obs_gate_summary >/dev/null 2>&1; then
-    _summary_fn="obs_gate_summary"
-  fi
-
-  if [ -n "$_gate_fn" ]; then
+  if command -v obs_verify_skill >/dev/null 2>&1; then
     echo ""
     echo "  Running the per-skill VERIFICATION GATE (skills info + CORE_UPDATES sentinel + qc-*.sh)..."
     for _gskill in "$SKILLS_DIR"/[0-9]*/; do
       [ -d "$_gskill" ] || continue
       _gname="$(basename "$_gskill")"
       case "$_gname" in *ARCHIVED*) continue ;; esac
-      if [ "$_gate_fn" = "oc_gate_skill" ]; then
-        # oc_gate_skill uses OC_SKILLS_DIR global; set it to the installed dir
-        _greason=""
-        if OC_SKILLS_DIR="$SKILLS_DIR" oc_gate_skill "$_gname" 2>/dev/null; then
-          echo "    ✓ verified-installed: $_gname"
-        else
-          _greason="gate reported failure"
-          echo "    ✗ NOT verified: $_gname — ${_greason}"
-        fi
+      if _greason="$(obs_verify_skill "$_gname" "$SKILLS_DIR")"; then
+        echo "    ✓ verified-installed: $_gname"
       else
-        # Legacy obs_verify_skill signature: obs_verify_skill <name> <skills_dir>
-        _greason=""
-        if _greason="$(obs_verify_skill "$_gname" "$SKILLS_DIR" 2>/dev/null)"; then
-          echo "    ✓ verified-installed: $_gname"
-        else
-          echo "    ✗ NOT verified: $_gname — ${_greason}"
-        fi
+        echo "    ✗ NOT verified: $_gname — ${_greason}"
       fi
     done
-    if [ -n "$_summary_fn" ]; then
-      if [ "$_summary_fn" = "oc_state_summary" ]; then
-        # oc_state_summary sets OC_VERIFIED / OC_TOTAL / OC_FAILED_LIST globals
-        oc_state_summary 2>/dev/null || true
-        : "${OC_VERIFIED:=0}" "${OC_TOTAL:=0}" "${OC_FAILED_LIST:=}"
-        ONBOARDING_GATE_SUMMARY="${OC_VERIFIED}/${OC_TOTAL} skills verified-installed${OC_FAILED_LIST:+; failed: $OC_FAILED_LIST}"
-        if oc_onboarding_complete 2>/dev/null; then
-          ONBOARDING_GATE_OK="yes"
-        else
-          ONBOARDING_GATE_OK="no"
-        fi
-      else
-        # Legacy obs_gate_summary: outputs GATE-HUMAN: lines, returns 0 on complete
-        ONBOARDING_GATE_SUMMARY="$(obs_gate_summary "$SKILLS_DIR" 2>/dev/null | grep '^GATE-HUMAN:' | sed 's/^GATE-HUMAN: //' || true)"
-        if obs_gate_summary "$SKILLS_DIR" >/dev/null 2>&1; then
-          ONBOARDING_GATE_OK="yes"
-        else
-          ONBOARDING_GATE_OK="no"
-        fi
-      fi
+    ONBOARDING_GATE_SUMMARY="$(obs_gate_summary "$SKILLS_DIR" 2>/dev/null | grep '^GATE-HUMAN:' | sed 's/^GATE-HUMAN: //')"
+    if obs_gate_summary "$SKILLS_DIR" >/dev/null 2>&1; then
+      ONBOARDING_GATE_OK="yes"
     else
-      ONBOARDING_GATE_OK="unknown"
+      ONBOARDING_GATE_OK="no"
     fi
   else
     echo "  ⚠ verification gate unavailable (onboarding-state.sh not sourced) — cannot honestly verify; will report file-sync only."

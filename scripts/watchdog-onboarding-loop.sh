@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================
 # scripts/watchdog-onboarding-loop.sh — PRD 2.13 Watchdog Loop
-# v2 (furnace-fix): interview gate + wave-backoff + shared dispatch lock
+# v3 (nudge-lifecycle): dormant/credit-backoff awareness added on top of
+#     v2 (furnace-fix): interview gate + wave-backoff + shared dispatch lock
 # ============================================================
 # PURPOSE:
 #   Loop-engineers the install so it keeps itself going with no stalls
@@ -80,7 +81,45 @@ SHARED_DISPATCH_LOCK="$WS/.onboarding-dispatch.lock"   # shared with resume-onbo
 LOOP_NAME="watchdog-onboarding-loop"
 MAX_STRIKES=3   # 3 consecutive check failures on the same wave → escalate + halt
 
+# Nudge lifecycle state file (shared with resume-onboarding.sh — pure file I/O)
+NUDGE_STATE_FILE="$WS/.onboarding-nudge-state"
+NUDGE_REARM_FILE="$WS/.onboarding-nudge-rearm"
+
 log() { printf '%s [watchdog] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG_FILE"; }
+
+# ── nudge state read helper (cheap, no model call) ───────────────────────────
+nudge_get() {
+  local key="$1" val=""
+  [[ -f "$NUDGE_STATE_FILE" ]] && val="$(grep "^${key}=" "$NUDGE_STATE_FILE" 2>/dev/null | head -1 | cut -d= -f2-)" || true
+  printf '%s' "$val"
+}
+nudge_set() {
+  local key="$1" value="$2"
+  mkdir -p "$WS" 2>/dev/null || true
+  if [[ -f "$NUDGE_STATE_FILE" ]] && grep -q "^${key}=" "$NUDGE_STATE_FILE" 2>/dev/null; then
+    local tmp; tmp="$(mktemp)"
+    sed "s|^${key}=.*|${key}=${value}|" "$NUDGE_STATE_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$NUDGE_STATE_FILE" || rm -f "$tmp"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$NUDGE_STATE_FILE" 2>/dev/null || true
+  fi
+}
+nudge_credit_fail_dormant() {
+  # Enter dormant on credit failure + notify operator ONCE.
+  local now; now="$(date +%s)"
+  local already; already="$(nudge_get credit_notified)"
+  nudge_set dormant true
+  nudge_set credit_fail_ts "$now"
+  log "NUDGE-LIFECYCLE[watchdog]: credit-failure — entering DORMANT"
+  if [[ "$already" != "true" ]]; then
+    nudge_set credit_notified true
+    local op; op="$(resolve_operator_chat_id)"
+    if [[ -n "$op" ]] && command -v openclaw >/dev/null 2>&1; then
+      openclaw message send --channel telegram -t "$op" \
+        -m "⚠️ [ONBOARDING-WATCHDOG] $(hostname): model call returned 402/429 (payment/quota). Entering DORMANT — will NOT retry autonomously. Onboarding resumes when the owner sends any message. Check billing/quota." \
+        2>>"$LOG_FILE" || true
+    fi
+  fi
+}
 
 # ── operator chat resolver ────────────────────────────────────────────────────
 resolve_operator_chat_id() {
@@ -284,6 +323,16 @@ _wf_state="$WS/.workforce-build-state.json"
 _interview_complete="false"
 [[ -f "$_wf_state" ]] && _interview_complete="$(jq -r '.interviewComplete // false' "$_wf_state" 2>/dev/null || echo false)"
 
+# Rule 0 (NEW — nudge lifecycle): if nudge state is DORMANT, the box is quiet.
+# The watchdog obeys dormant too — no model call while dormant, even for waves.
+# Re-arm (owner engagement) is detected by resume-onboarding.sh's cheap check;
+# once re-armed the dormant flag is cleared and the watchdog resumes normally.
+_nudge_dormant="$(nudge_get dormant)"
+if [[ "$_nudge_dormant" == "true" ]]; then
+  log "FURNACE-GATE: nudge-lifecycle DORMANT — no autonomous model call this cycle. Waiting for owner re-engagement (touch $NUDGE_REARM_FILE to re-arm)."
+  exit 0
+fi
+
 # Rule 1: overall goal not met + interview not complete → interview-nudge owns this.
 if [[ "$NEXT_WAVE" == "overall" ]] && [[ "$_interview_complete" != "true" ]]; then
   log "FURNACE-GATE: NEXT_WAVE=overall but interview not complete. interview-nudge cron owns the nudge interval. Watchdog exiting — no model call."
@@ -356,8 +405,12 @@ RESUME_MSG="$(build_wave_prompt "$NEXT_WAVE" "$SKILLS_STATUS")"
 log "Dispatching wave-$NEXT_WAVE resume prompt to $_owner_chat"
 
 if command -v openclaw >/dev/null 2>&1; then
-  if openclaw message send --channel telegram -t "$_owner_chat" \
-    -m "$RESUME_MSG" >>"$LOG_FILE" 2>&1; then
+  _WD_SEND_OUT="$(mktemp)"
+  _WD_SEND_RC=0
+  openclaw message send --channel telegram -t "$_owner_chat" \
+    -m "$RESUME_MSG" >"$_WD_SEND_OUT" 2>&1 || _WD_SEND_RC=$?
+
+  if [[ "$_WD_SEND_RC" -eq 0 ]]; then
     log "dispatched wave-$NEXT_WAVE resume prompt (strikes=$STRIKES)"
     # Stamp shared dispatch lock (dedup with resume-onboarding.sh)
     touch "$SHARED_DISPATCH_LOCK" 2>/dev/null || true
@@ -371,8 +424,17 @@ if command -v openclaw >/dev/null 2>&1; then
         2>>"$LOG_FILE" || true
     fi
   else
-    log "FAILED to dispatch wave-$NEXT_WAVE resume prompt to $_owner_chat"
+    _WD_SEND_CONTENT="$(cat "$_WD_SEND_OUT" 2>/dev/null || true)"
+    log "FAILED to dispatch wave-$NEXT_WAVE resume prompt to $_owner_chat (rc=${_WD_SEND_RC}): ${_WD_SEND_CONTENT}"
+    # Credit-failure backoff: 402 (payment required) or 429 (rate/quota).
+    # Enter DORMANT immediately — do NOT retry-storm. Notify operator ONCE.
+    if [[ "$_WD_SEND_CONTENT" == *"402"* || "$_WD_SEND_CONTENT" == *"429"* || \
+          "${ONBOARDING_LAST_SEND_RC:-}" == "402" || "${ONBOARDING_LAST_SEND_RC:-}" == "429" ]]; then
+      nudge_credit_fail_dormant
+      log "NUDGE-LIFECYCLE[watchdog]: credit-failure — DORMANT entered; no further autonomous retries."
+    fi
   fi
+  rm -f "$_WD_SEND_OUT" 2>/dev/null || true
 else
   log "openclaw CLI not found — cannot dispatch; will retry next fire"
 fi
