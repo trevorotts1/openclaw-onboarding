@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-10T10:02:47.589739+00:00",
-  "version": "11.18.5",
-  "total_roles": 244,
+  "generated_at": "2026-06-12T00:47:16Z",
+  "version": "11.19.0",
+  "total_roles": 277,
   "departments": {
     "app-development": {
       "count": 15,
@@ -361,6 +361,23 @@
         "qc-agent",
         "research-agent",
         "sop-writer"
+      ]
+    },
+    "presentations": {
+      "count": 12,
+      "roles": [
+        "director-of-presentations",
+        "slide-copywriter",
+        "offer-price-strategist",
+        "slide-image-creator",
+        "brand-steward",
+        "qc-specialist-presentations",
+        "slide-submitter",
+        "media-librarian-ghl-updater",
+        "pptx-assembly-specialist",
+        "capacity-reliability-engineer",
+        "deep-research-specialist-presentations",
+        "devils-advocate-presentations"
       ]
     }
   },
@@ -2804,7 +2821,127 @@
       "sop_count": 2,
       "sop_min": 2,
       "path": "templates/role-library/project-architecture-office/sop-writer.md"
+    },
+    {
+      "slug": "director-of-presentations",
+      "dept": "presentations",
+      "title": "Director of Presentations",
+      "role_type": "leadership",
+      "word_count": 2800,
+      "sop_count": 6,
+      "sop_min": 6,
+      "path": "templates/role-library/presentations/director-of-presentations.md"
+    },
+    {
+      "slug": "slide-copywriter",
+      "dept": "presentations",
+      "title": "Slide Copywriter",
+      "role_type": "specialist",
+      "word_count": 2200,
+      "sop_count": 4,
+      "sop_min": 4,
+      "path": "templates/role-library/presentations/slide-copywriter.md"
+    },
+    {
+      "slug": "offer-price-strategist",
+      "dept": "presentations",
+      "title": "Offer and Price Strategist",
+      "role_type": "specialist",
+      "word_count": 2000,
+      "sop_count": 3,
+      "sop_min": 3,
+      "path": "templates/role-library/presentations/offer-price-strategist.md"
+    },
+    {
+      "slug": "slide-image-creator",
+      "dept": "presentations",
+      "title": "Slide Image Creator",
+      "role_type": "specialist",
+      "word_count": 2500,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/presentations/slide-image-creator.md"
+    },
+    {
+      "slug": "brand-steward",
+      "dept": "presentations",
+      "title": "Brand Steward",
+      "role_type": "specialist",
+      "word_count": 1800,
+      "sop_count": 2,
+      "sop_min": 2,
+      "path": "templates/role-library/presentations/brand-steward.md"
+    },
+    {
+      "slug": "qc-specialist-presentations",
+      "dept": "presentations",
+      "title": "QC Specialist -- Presentations",
+      "role_type": "qc",
+      "word_count": 2400,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/presentations/qc-specialist-presentations.md"
+    },
+    {
+      "slug": "slide-submitter",
+      "dept": "presentations",
+      "title": "Slide Submitter",
+      "role_type": "specialist",
+      "word_count": 1900,
+      "sop_count": 4,
+      "sop_min": 4,
+      "path": "templates/role-library/presentations/slide-submitter.md"
+    },
+    {
+      "slug": "media-librarian-ghl-updater",
+      "dept": "presentations",
+      "title": "Media Librarian and GHL Updater",
+      "role_type": "specialist",
+      "word_count": 1900,
+      "sop_count": 4,
+      "sop_min": 4,
+      "path": "templates/role-library/presentations/media-librarian-ghl-updater.md"
+    },
+    {
+      "slug": "pptx-assembly-specialist",
+      "dept": "presentations",
+      "title": "PPTX Assembly Specialist",
+      "role_type": "specialist",
+      "word_count": 1800,
+      "sop_count": 3,
+      "sop_min": 3,
+      "path": "templates/role-library/presentations/pptx-assembly-specialist.md"
+    },
+    {
+      "slug": "capacity-reliability-engineer",
+      "dept": "presentations",
+      "title": "Capacity and Reliability Engineer",
+      "role_type": "specialist",
+      "word_count": 2000,
+      "sop_count": 3,
+      "sop_min": 3,
+      "path": "templates/role-library/presentations/capacity-reliability-engineer.md"
+    },
+    {
+      "slug": "deep-research-specialist-presentations",
+      "dept": "presentations",
+      "title": "Deep Research Specialist -- Presentations",
+      "role_type": "deep-research",
+      "word_count": 1600,
+      "sop_count": 1,
+      "sop_min": 1,
+      "path": "templates/role-library/presentations/deep-research-specialist-presentations.md"
+    },
+    {
+      "slug": "devils-advocate-presentations",
+      "dept": "presentations",
+      "title": "Devil's Advocate -- Presentations",
+      "role_type": "on-call",
+      "word_count": 1700,
+      "sop_count": 1,
+      "sop_min": 1,
+      "path": "templates/role-library/presentations/devils-advocate-presentations.md"
     }
   ],
-  "total_departments": 19
+  "total_departments": 20
 }
