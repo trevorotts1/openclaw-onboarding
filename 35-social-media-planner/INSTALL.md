@@ -216,23 +216,29 @@ openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID "YYYYYYYYYYYYYYYYYYYYYY"
 
 Never echo the PIT into chat logs.
 
-### Step 4: Detect Skill 36 (GHL MCPs) and configure routing
+### Step 4: Detect Skill 44 (Tier 0 CLI) + Skill 36 (GHL MCPs) and configure routing
 
 ```bash
+if [ -d "$HOME/.openclaw/skills/44-convert-and-flow-operator" ] || [ -d "~/.openclaw/skills/44-convert-and-flow-operator" ]; then
+  CAF_AVAILABLE="yes"
+  echo "  ✓ Skill 44 (Tier 0 caf) detected — social posting/scheduling routes through caf FIRST"
+else
+  CAF_AVAILABLE="no"
+fi
 if [ -d "$HOME/.openclaw/skills/36-ghl-mcp-setup" ] || [ -d "~/.openclaw/skills/36-ghl-mcp-setup" ]; then
   ROUTING_MODE="mcp-first"
-  echo "  ✓ Skill 36 detected — Skill 35 will route GHL operations through MCPs first"
+  echo "  ✓ Skill 36 detected — Skill 35 will route GHL operations through MCPs (after Tier 0 caf)"
 else
   ROUTING_MODE="direct-api"
-  echo "  ⚠ Skill 36 NOT installed — Skill 35 will use direct GHL Social Planner API"
-  echo "    STRONGLY RECOMMENDED: install Skill 36 first for better reliability"
+  echo "  ⚠ Skill 36 NOT installed — Skill 35 falls to direct GHL Social Planner API after Tier 0"
+  echo "    STRONGLY RECOMMENDED: install Skill 44 (Tier 0) and Skill 36 first for better reliability"
 fi
 ```
 
-If `ROUTING_MODE=mcp-first`, the production playbook uses MCP tools by default:
-- **Social posting:** Tier 1 `social-media-posting_create-post` → Tier 2 `create_social_post` → direct API as last resort
+The production playbook follows the 6-tier chain (skill 36), highest applicable tier first:
+- **Social posting:** Tier 0 `caf social schedule` (if Skill 44 installed) → Tier 1 `social-media-posting_create-post` → Tier 2 `create_social_post` → direct API as last resort
 - **Blog publish:** Tier 1 `blogs_create-blog-post` → Tier 2 `create_blog_post` → direct API
-- **Media upload:** Tier 1 not available → Tier 2 `upload_media_file` → direct API
+- **Media upload:** Tier 0/Tier 1 not available (no caf/official-MCP media command) → Tier 2 `upload_media_file` → direct API (`POST /medias/upload-file` — documented Tier 3 exception)
 - **Email templates:** Tier 1 `emails_create-template` → Tier 2 `create_email_template` → direct API
 
 Every GHL-data response from this skill MUST include the `[GHL tier used: N — tool_name]` disclosure header (Skill 36 protocol).

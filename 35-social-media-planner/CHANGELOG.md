@@ -1,5 +1,14 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.7.1 - 2026-06-11 — route social posting through Skill 44 (Tier 0) first
+
+### Changed (GHL skills integration review — Tier 0 routing gap)
+- The social-posting routing chain previously named Tier 1 (Official MCP) → Tier 2 (Community MCP) → Tier 3 (raw API) but **omitted Tier 0 (Skill 44 / `caf`) entirely**, even though `caf` ships a `social` command group (`list-accounts`, `schedule`, `status`). Inserted Tier 0 as the first stop, matching skill 36's 6-tier chain, so a social post `caf` can schedule directly no longer routes the owner/agent to the MCP or raw API:
+  - `CORE_UPDATES.md` — the routing header is now "6-tier GHL routing (Tier 0 = Skill 44, primary)"; the AGENTS.md posting-path bullets gained a "(if skill 44 installed — PRIMARY)" branch via `caf social schedule`.
+  - `INSTALL.md` Step 4 — detects Skill 44 (Tier 0) ahead of Skill 36; routing list leads with `caf social schedule`.
+  - `INSTRUCTIONS.md` `check-social-connections` — added a Tier 0 `caf social list-accounts` branch ahead of the MCP branch.
+- Media upload kept as the documented Tier 3 exception (`POST /medias/upload-file` — `caf` has no media commands). n8n/Google-Sheets/Podbean planning steps are outside GHL and unchanged.
+
 ## v2.7.0 - 2026-06-10 — Appendix A: credential path + name cleanup (no behavior change)
 
 ### What changed

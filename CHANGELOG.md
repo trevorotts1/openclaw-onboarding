@@ -1,3 +1,17 @@
+## [v11.18.5]  -  2026-06-11  -  GHL skills: route workflow-creation through Skill 44 (de-hoop) + integration review
+
+### Changes
+
+**GHL skills integration review (Skill 44 ↔ 29/35/36/38/41) + CAF-first de-hoop.** Thorough end-to-end review of how Skill 44 (Convert & Flow Operator, Tier 0) integrates with the other GHL skills, plus cleanup so clients never jump through hoops to create a workflow — they just ask their Skill-44 agent. Findings: 29 + 41 already clean (CAF-first / tier-correct); 38 + 35 + 36 had residual hoops / a routing gap / a stale label — all fixed.
+
+- **Skill 38 (1.7.1 → 1.7.2) — de-hooped agent-facing build-path instructions.** The decision docs were already CAF-first, but the operator-handoff scripts + templates the agent reads aloud still led with "click Build with AI" and one template falsely called it "the only programmatic path." Reordered to CAF-first across `protocols/conversation-workflows-protocol.md`, `templates/sms-workflow-ai-prompt-template.md`, `templates/workflow-verification-checklist-template.md`, `references/workflow-ai-instructions-standard.md`, and `CORE_UPDATES.md` Rule 16: when the Firebase token is connected, Skill 44 builds the workflow directly (Option 1, PRIMARY — owner does nothing); Build with AI is the explicit no-token fallback (Option 2). 3-layer separation (Layer 0/1/2) preserved; TRINITY + qc-trinity-registry hard gate untouched. SKILL.md `references/` self-count reconciled 19 → 22 to match disk.
+- **Skill 35 (v2.7.0 → v2.7.1) — inserted Tier 0 into the social-posting routing chain.** The chain named Tier 1/2/3 but omitted Tier 0 (Skill 44 `caf social`), so a post `caf` could schedule directly routed to the MCP/raw API instead. Added the Tier 0 first-stop branch in `CORE_UPDATES.md`, `INSTALL.md` Step 4, and `INSTRUCTIONS.md`. Media upload kept as the documented Tier 3 exception.
+- **Skill 36 (v1.2.0 → v1.2.1) — QC.md label fix.** `QC.md` §1 still said "5-tier"; corrected to the 6-tier chain with Tier 0 (Skill 44) named. No behavior change.
+- **Skills 29 + 41 — no change.** Skill 29 correctly positions itself as Tier 3 (and GHL's public REST API has no workflow-build endpoints); Skill 41 is explicitly CAF-first with Build-with-AI as the documented Layer-0 fallback. Verified clean.
+
+- **Version bump:** v11.18.4 → v11.18.5 (all 9 markers via `bump-version.sh` + `cc-compat.json` onboardingVersion).
+- **QC/CI:** `qc-convert-and-flow.sh` PASS (45/0); `qc-trinity-registry.sh` parses + runs against a fixture dir; version-consistency (9 markers + cc-compat) + G3 (35/36/38 skill-version.txt bumped) + qc-static green.
+
 ## [v11.18.4]  -  2026-06-11  -  qc-completeness: stock bash 3.2 compatibility (externalize python snippets) + fleet Mac parse sweep
 
 ### Changes

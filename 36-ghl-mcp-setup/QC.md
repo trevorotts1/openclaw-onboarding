@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Verifies that the 5-tier GHL access chain is fully installed and routing correctly: Official MCP (Tier 1), Community MCP (Tier 2), REST API fallback (Tier 3), Playwright (Tier 4), Codex Computer Use (Tier 5). Confirms the canonical-state block, env vars, disclosure protocol, and platform-aware lifecycle (launchd / systemd) are all in place.
+Verifies that the 6-tier GHL access chain is fully installed and routing correctly: Convert and Flow CLI (Tier 0, skill 44 — PRIMARY), Official MCP (Tier 1), Community MCP (Tier 2), REST API fallback (Tier 3), agent-browser/Playwright (Tier 4), Codex Computer Use (Tier 5). Confirms the canonical-state block, env vars, disclosure protocol, and platform-aware lifecycle (launchd / systemd) are all in place.
 
 ## 2. Installation Checks
 

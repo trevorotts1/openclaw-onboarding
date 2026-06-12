@@ -4,6 +4,15 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.2.1] - 2026-06-11 — 5-tier → 6-tier label sweep (Tier 0 = Skill 44) across QC/INSTRUCTIONS/full doc
+
+### Fixed
+- Four stale "5-tier" labels survived from before Tier 0 (Convert and Flow CLI, skill 44) became the PRIMARY first stop; SKILL.md/INSTALL.md/CORE_UPDATES.md already said 6-tier, but these lagged. Corrected — no behavior change, the routing logic was already 6-tier:
+  - `QC.md` §1 Purpose — "5-tier" → "6-tier" with Tier 0 named.
+  - `INSTRUCTIONS.md` intro — "5-tier" → "6-tier"; the preference-order sentence now leads with Tier 0 (Convert and Flow CLI, skill 44).
+  - `ghl-mcp-setup-full.md` §"access chain you are setting up" — added the missing **Tier 0 row** to the chain table (it only listed Tiers 1-5); header + "try in numerical order" rule updated to start at Tier 0; Tier 4 corrected to agent-browser-first per the canonical SKILL.md.
+  - `ghl-mcp-setup-full.md` §8 Phase 7 heading — "5-TIER CHAIN" → "6-TIER CHAIN".
+
 ## [v1.2.0] - 2026-06-11 — GHL_AI_LAYERS cross-reference added; MCP scope clarified vs Build API
 
 ### Why

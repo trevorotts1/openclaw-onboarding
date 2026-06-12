@@ -8,9 +8,13 @@
 
 This is the first conversation workflow we're wiring up for **<CLIENT_BUSINESS_NAME>**. When a contact texts you, this workflow fires, sends the message to your conversational AI, and lets the AI respond on your behalf — including, when the conversation is ready, helping the contact <DESIRED_OUTCOME>.
 
-You don't have to build this workflow by hand. In Convert and Flow's **Automations** area, the **"Build with AI"** button (top-right of a new automation) constructs the entire workflow from a prompt. The prompt is below. Copy it once, paste it once, done.
+You don't have to build this workflow by hand — and in most cases you don't have to do anything at all.
 
-## How to use this
+**Primary path (Tier 0 — Skill 44 / `caf`):** if your Convert and Flow (Firebase) token is connected, your agent builds this workflow for you directly via the internal API (`caf workflows build`). You do nothing; the agent tells you when it's built, then hands you the verification checklist. The prompt below is the exact spec the agent uses.
+
+**Fallback path (no token):** only if the Firebase token isn't connected, you build it yourself with GHL's **"Build with AI"** button, which constructs the entire workflow from the prompt below. Copy it once, paste it once, done.
+
+## How to use this (fallback — only when the Firebase token is NOT connected)
 
 1. Open your Convert and Flow account.
 2. Click **Automations** on the left menu.

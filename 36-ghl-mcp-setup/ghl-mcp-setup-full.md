@@ -16,17 +16,18 @@ You are an AI agent. You have been asked to set up GoHighLevel (GHL) integration
 - LeadConnector (`leadconnectorhq.com` is GHL's API host)
 - The client's white-label name (e.g. "Convert and Flow", "Your Brand CRM"). Ask the client what they call it.
 
-### The 5-tier access chain you are setting up
+### The 6-tier access chain you are setting up
 
 | Tier | What | When |
 |------|------|------|
-| 1 | Official GHL MCP (hosted by GHL, 36 tools) | Contacts, calendars, conversations, opportunities, social media, blogs, emails, locations, read-only payments |
+| 0 | Convert and Flow CLI (`caf`/`convertandflow`/`ghl`, skill 44) — PRIMARY | Contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, workflow READS (PIT); workflow BUILD/EDIT (Firebase token). The cheapest, fastest path — no MCP overhead, no manual UI. |
+| 1 | Official GHL MCP (hosted by GHL, 36 tools) | Blogs + anything the CLI doesn't cover among contacts, calendars, conversations, opportunities, social media, emails, locations, read-only payments |
 | 2 | Community GHL MCP (local, 588 tools) | Products, invoices, billing, subscriptions, estimates, store, coupons, Voice AI, Phone System, Agent Studio, full payments |
-| 3 | Direct REST API (GHL skill in `openclaw-master-files/29-ghl-convert-and-flow/`) | Anything neither MCP covers |
-| 4 | Playwright browser at `app.gohighlevel.com` (or client's white-label URL) | UI-only flows the API doesn't expose |
+| 3 | Direct REST API (GHL skill in `openclaw-master-files/29-ghl-convert-and-flow/`) | Anything neither the CLI nor either MCP covers; media uploads (`POST /medias/upload-file`) |
+| 4 | agent-browser (Vercel) FIRST, Playwright fallback at `app.gohighlevel.com` (skill 03) | UI-only flows the API doesn't expose; workflow-write backstop when no Firebase token |
 | 5 | Codex Computer Use (`codex/gpt-5.5`) | Last-resort visual automation |
 
-**Rule:** Try each tier in numerical order. Do NOT skip tiers. If Tier N fails fresh on this request, recover it before falling through.
+**Rule:** Try each tier in numerical order, **starting at Tier 0**. Do NOT skip tiers. If Tier N fails fresh on this request, recover it before falling through.
 
 ---
 
@@ -650,7 +651,7 @@ Use `launchPersistentContext` (NEVER `launch()`) so login state persists.
 
 ---
 
-## 8. PHASE 7 — WIRE THE 5-TIER CHAIN INTO THE CLIENT'S CORE `.md` FILES
+## 8. PHASE 7 — WIRE THE 6-TIER CHAIN INTO THE CLIENT'S CORE `.md` FILES
 
 The client's agent has bootstrap files at the workspace root (e.g. `~/clawd/`). Names vary; common conventions:
 - `SOUL.md` — voice/stance, cardinal behavioral rules

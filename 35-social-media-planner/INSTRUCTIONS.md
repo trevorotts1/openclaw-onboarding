@@ -182,9 +182,16 @@ Before you tell the owner which platforms are or are not connected, you MUST run
 
 ### check-social-connections — the live GHL query to run
 
-When reporting connection status, run this live query and use ONLY its output:
+When reporting connection status, run this live query and use ONLY its output. Try the highest tier available — **Tier 0 (Skill 44 `caf`) first**, then MCP, then direct API:
 
-**If Skill 36 (GHL MCP) is installed (`ROUTING_MODE=mcp-first`):**
+**If Skill 44 (Tier 0 CLI) is installed (PRIMARY):**
+```bash
+# List connected Social Planner accounts via the Convert and Flow CLI (Tier 0)
+caf social list-accounts --json
+# Schedule a post directly: caf social schedule --platform <p> --content "..." --at <iso8601>
+```
+
+**If Skill 44 is absent but Skill 36 (GHL MCP) is installed (`ROUTING_MODE=mcp-first`):**
 ```bash
 # Query all connected Social Planner accounts via MCP
 MCP_URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')

@@ -4,18 +4,24 @@
 <!-- Substitution placeholders: <PUBLIC_HOSTNAME>, <ROUTE_ID>, <CHANNEL>, <HOOKS_TOKEN>. -->
 <!-- Rendered per-workflow by scripts/21-generate-client-reference-sheet.sh. -->
 
-> "✓ Build-with-AI prompt ready. Two things to do:
+> "✓ Workflow ready to build.
 >
+> **If your Convert and Flow (Firebase) token is connected — you do nothing.**
+> Skill 44 (Tier 0) builds it for you directly via the internal API. GHL
+> Automations have no PUBLIC API and no MCP, but Skill 44's internal-API path
+> IS a programmatic build path — it's the primary one when the token is present.
+>
+> **Only if the token is NOT connected**, build it yourself via the no-token
+> fallback:
 > 1. Open your Convert and Flow account
-> 2. Click **Automations** on the left menu (GHL Automations have no API
->    and no MCP — the **Build with AI** button is the only programmatic path)
+> 2. Click **Automations** on the left menu
 > 3. Create a **new** automation/workflow → click **Build with AI** (top-right)
 > 4. Paste the prompt I saved at:
 >    `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--build-with-ai-prompt.md`
 > 5. Let Build with AI build it
 >
-> Once it's built, come back and tell me. I'll give you a verification
-> checklist — sometimes Build with AI gets the scaffolding right but
+> Once it's built (either path), come back and tell me. I'll give you a
+> verification checklist — sometimes the build gets the scaffolding right but
 > misses critical pieces."
 
 > **MANDATORY — manually fill the Custom Webhook AFTER Build with AI runs.** Build-with-AI only builds the
