@@ -430,8 +430,13 @@ def seed(db_path, departments, company_info):
         if dept_id in existing:
             skipped += 1
             continue
+        # Idempotency: INSERT OR IGNORE prevents a UNIQUE(slug) crash when the
+        # dept list contains duplicate canonical slugs, or when workspaces were
+        # partially seeded in a prior run. The pre-loop `existing` set handles
+        # the already-in-db case; OR IGNORE is the last-resort safety net for
+        # rows inserted earlier in this same loop iteration.
         cur.execute("""
-            INSERT INTO workspaces (id, name, slug, description, icon, company_id)
+            INSERT OR IGNORE INTO workspaces (id, name, slug, description, icon, company_id)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             dept_id,
@@ -441,8 +446,15 @@ def seed(db_path, departments, company_info):
             dept.get('emoji', '📁'),
             company_slug
         ))
-        print(f"  INSERTED: {dept_id} ({dept['name']}) {dept.get('emoji', '📁')}")
-        inserted += 1
+        if cur.rowcount:
+            print(f"  INSERTED: {dept_id} ({dept['name']}) {dept.get('emoji', '📁')}")
+            inserted += 1
+            # Update in-loop guard so duplicate canonical slugs in the same
+            # dept list are counted as skipped rather than double-inserted.
+            existing.add(dept_id)
+        else:
+            print(f"  SKIPPED (conflict): {dept_id} ({dept['name']})")
+            skipped += 1
 
     conn.commit()
     conn.close()
