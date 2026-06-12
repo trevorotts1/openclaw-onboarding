@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================
-#  OpenClaw Skills Updater — Unified (Mac + VPS)
-#  PRD 2.1 — unified repo (trevorotts1/openclaw-onboarding)
+#  OpenClaw Skills Updater -- Unified (Mac + VPS)
+#  PRD 2.1 -- unified repo (trevorotts1/openclaw-onboarding)
 #
 #  Platform auto-detected via OPENCLAW_PLATFORM env var or presence of /data/.openclaw.
 #  VPS: sources platform/vps/bootstrap.sh for container re-exec + path setup.
 #  Mac: sources platform/mac/bootstrap.sh for Homebrew prereqs + path setup.
 # ============================================================
 
-# Platform detection + bootstrap (MUST run before set -euo pipefail — VPS container
+# Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
 _DETECT_PLATFORM="${OPENCLAW_PLATFORM:-}"
 if [ -z "$_DETECT_PLATFORM" ]; then
@@ -85,7 +85,7 @@ write_update_pending_flag() {
 
   # v10.15.48: resolve the canonical workspace the agent ACTUALLY reads from.
   # Prefer the OBS-resolved workspace (per-agent override -> defaults ->
-  # canonical default). NEVER prefer the dead ~/clawd — writing the flag there
+  # canonical default). NEVER prefer the dead ~/clawd -- writing the flag there
   # while the agent reads ~/.openclaw/workspace is the classic "agent never sees
   # the flag" bug. Falls back to the canonical default only.
   local WORKSPACE_DIR=""
@@ -100,7 +100,7 @@ write_update_pending_flag() {
   # FIX 1: FULLY strip ALL prior UPDATE PENDING / ONBOARDING PENDING SECTIONS
   # (header → next "## " heading or EOF). The old `grep -v "UPDATE PENDING"`
   # only removed the single header LINE, leaving the multi-line body behind and
-  # STACKING a fresh full flag on every run — duplicates accreted forever.
+  # STACKING a fresh full flag on every run -- duplicates accreted forever.
   AGENTS_FILE="$AGENTS_FILE" python3 - <<'PYEOF' 2>/dev/null || true
 import os, re
 p = os.environ["AGENTS_FILE"]
@@ -126,13 +126,13 @@ PYEOF
 
   cat >> "$AGENTS_FILE" <<FLAGCONTENT
 
-## 🔴🔴🔴 UPDATE PENDING — SKILL UPDATE TO ${version}
+## 🔴🔴🔴 UPDATE PENDING -- SKILL UPDATE TO ${version}
 
 **EXECUTION MODE: DO NOT ASK PERMISSION. EXECUTE IMMEDIATELY.**
 
 A skill update was applied via update-skills.sh on ${DATE_STAMP}. Process the activation steps now.
 
-### 🔴 THE GATE IS THE TRUTH — NOT THIS PROSE, NOT YOUR OWN "done"
+### 🔴 THE GATE IS THE TRUTH -- NOT THIS PROSE, NOT YOUR OWN "done"
 This update is **NOT complete** until the VERIFICATION GATE passes. Files on disk = DOWNLOADED, not installed. Source the gate and check state:
 - State file: \`~/.openclaw/workspace/.onboarding-state.json\` (per-skill: pending → downloaded → wired → qc-passed | qc-failed)
 - Gate library: \`~/.openclaw/scripts/onboarding-state.sh\` (or the onboarding repo's \`scripts/\`)
@@ -141,21 +141,21 @@ This update is **NOT complete** until the VERIFICATION GATE passes. Files on dis
 
 ### What changed in this update
 - Onboarding version: ${version}
-- New skills installed (require ACTIVATION + GATE): ${new_skills:-none — updates only}
+- New skills installed (require ACTIVATION + GATE): ${new_skills:-none -- updates only}
 
 ### How to process each skill that is NOT yet qc-passed
 For each such skill folder under \`~/.openclaw/skills/\`:
 1. READ all files (Teach Yourself Protocol): SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md, plus any \`references/*.md\` files
 2. CHECK prerequisites and search ALL standard credential locations (canonical: \`~/.openclaw/secrets/.env\` on Mac, \`/data/.openclaw/secrets/.env\` on VPS, plus \`openclaw.json\` env.vars). Skip asking the owner if values already exist.
 3. EXECUTE the activation steps in INSTALL.md (read ≠ execute)
-4. APPLY CORE_UPDATES.md surgically — add to AGENTS.md / TOOLS.md / MEMORY.md / SOUL.md only the sections explicitly labeled in that file
+4. APPLY CORE_UPDATES.md surgically -- add to AGENTS.md / TOOLS.md / MEMORY.md / SOUL.md only the sections explicitly labeled in that file
 5. RUN the gate (\`obs_verify_skill <folder>\`); loop activate→verify until it returns \`qc-passed\`. Skills that legitimately await owner input may be parked \`interview-pending\` (re-ping the owner; do NOT treat as terminal "done").
 6. REPORT to owner ONLY what is verified-installed, plus what remains gated.
 
 ### Discipline (binding)
 - Skills 22-23: MAIN ORCHESTRATOR ONLY, never delegate
 - Tier order in any tiered skill (e.g. skill 36 GHL MCP): try Tier N before Tier N+1, no skipping
-- Disclosure headers (e.g. \`[GHL tier used: N — tool_name]\`) required per any skill's SOUL-level rules
+- Disclosure headers (e.g. \`[GHL tier used: N -- tool_name]\`) required per any skill's SOUL-level rules
 - No destructive shortcuts: no \`--force\`, no \`--no-verify\`, no \`--break-system-packages\` unless explicitly instructed
 
 ### When the GATE passes (and ONLY then)
@@ -169,19 +169,19 @@ FLAGCONTENT
   # Seed Core.md terminology into MEMORY.md (idempotent)
   local MEMORY_FILE="$WORKSPACE_DIR/MEMORY.md"
   touch "$MEMORY_FILE"
-  if ! grep -q "## Terminology — Core.md Files" "$MEMORY_FILE" 2>/dev/null; then
+  if ! grep -q "## Terminology -- Core.md Files" "$MEMORY_FILE" 2>/dev/null; then
     cat >> "$MEMORY_FILE" << 'COREMDEOF'
 
-## Terminology — Core.md Files
+## Terminology -- Core.md Files
 
-When the owner says **"Core.md files"** they mean the OpenClaw bootstrap files loaded every session — not a literal file called `core.md`. The Core.md files are:
+When the owner says **"Core.md files"** they mean the OpenClaw bootstrap files loaded every session -- not a literal file called `core.md`. The Core.md files are:
 
-- **IDENTITY.md** — the role the agent is playing. It contains the **experiences and the skills they need to embody** that role. Not just surface metadata (name / vibe / emoji) — the lived background and capability set of the character being played.
-- **SOUL.md** — the **personality** of the agent, its **true mission**, its **beliefs**, its **rules**, its **goals**, its **belief systems**, its **principles**. Who the agent IS, not who they are playing. First file injected each session.
-- **AGENTS.md** — operating procedures, protocols, workflows, memory rules. *What the agent does and how*
-- **USER.md** — the human being helped (name, timezone, preferences, communication style)
-- **TOOLS.md** — local tool notes and conventions (camera names, SSH aliases, environment-specific specifics) — NOT a permissions registry
-- **MEMORY.md** — curated long-term durable facts, decisions, preferences. Loaded in main private sessions; paired with daily logs at `memory/YYYY-MM-DD.md`
+- **IDENTITY.md** -- the role the agent is playing. It contains the **experiences and the skills they need to embody** that role. Not just surface metadata (name / vibe / emoji) -- the lived background and capability set of the character being played.
+- **SOUL.md** -- the **personality** of the agent, its **true mission**, its **beliefs**, its **rules**, its **goals**, its **belief systems**, its **principles**. Who the agent IS, not who they are playing. First file injected each session.
+- **AGENTS.md** -- operating procedures, protocols, workflows, memory rules. *What the agent does and how*
+- **USER.md** -- the human being helped (name, timezone, preferences, communication style)
+- **TOOLS.md** -- local tool notes and conventions (camera names, SSH aliases, environment-specific specifics) -- NOT a permissions registry
+- **MEMORY.md** -- curated long-term durable facts, decisions, preferences. Loaded in main private sessions; paired with daily logs at `memory/YYYY-MM-DD.md`
 
 When the owner says "update the Core.md files" or "this needs to live in the Core.md files," choose the right one of these six based on its purpose:
 - Personality / principle → SOUL.md
@@ -199,7 +199,7 @@ COREMDEOF
 }
 
 # ----------------------------------------------------------
-# SKILLS DIRECTORY SECTION — Active-dir-first detection
+# SKILLS DIRECTORY SECTION -- Active-dir-first detection
 # ----------------------------------------------------------
 # Platform detection:
 #   VPS  (Hostinger Docker) → active dir is /data/.openclaw/skills
@@ -211,15 +211,15 @@ COREMDEOF
 # ----------------------------------------------------------
 
 # ----------------------------------------------------------
-# Discover skills directory — active dir first
+# Discover skills directory -- active dir first
 # ----------------------------------------------------------
 discover_skills_dir() {
   # Detect platform: VPS has /data, Mac does not
   if [ -d /data ]; then
-    # VPS (Hostinger Docker) — active path is /data/.openclaw/skills
+    # VPS (Hostinger Docker) -- active path is /data/.openclaw/skills
     local ACTIVE_DIR="/data/.openclaw/skills"
   else
-    # Mac — active path is ~/.openclaw/skills
+    # Mac -- active path is ~/.openclaw/skills
     local ACTIVE_DIR="$HOME/.openclaw/skills"
   fi
 
@@ -232,7 +232,7 @@ discover_skills_dir() {
     fi
   fi
 
-  # Active dir exists but is empty (first-install into it) — still prefer it
+  # Active dir exists but is empty (first-install into it) -- still prefer it
   if [ -d "$ACTIVE_DIR" ]; then
     echo "$ACTIVE_DIR"
     return
@@ -263,7 +263,7 @@ discover_skills_dir() {
 }
 
 # ----------------------------------------------------------
-# UPDATE PENDING flag handling — search correct locations
+# UPDATE PENDING flag handling -- search correct locations
 # ----------------------------------------------------------
 check_update_pending() {
   # Search Mac primary location first, then secondary
@@ -285,7 +285,7 @@ check_update_pending() {
 }
 
 # ----------------------------------------------------------
-# Check .onboarding-version — search multiple paths
+# Check .onboarding-version -- search multiple paths
 # Priority MUST match discover_skills_dir() (active dir first, legacy second)
 # so the version we READ is the same location we WRITE to. If the legacy
 # Downloads path is checked first the script sees the old stale marker even
@@ -330,7 +330,7 @@ get_current_version() {
 #   - edits the file in-place
 #   - exits 0 on success, non-zero on failure
 #
-# Note: the Mac updater has NO direct json.dump writes today —
+# Note: the Mac updater has NO direct json.dump writes today --
 # GHL MCP wiring uses `openclaw mcp set` which validates its own
 # input. This helper is provided here as a forward-defense guard
 # so future changes are forced to go through validation + rollback.
@@ -341,19 +341,19 @@ safe_json_edit() {
   local EDIT_FUNC="$3"
 
   if [ ! -f "$OCJSON" ]; then
-    echo "  [safe_json_edit] $OCJSON not found — skipping $DESCRIPTION"
+    echo "  [safe_json_edit] $OCJSON not found -- skipping $DESCRIPTION"
     return 0
   fi
 
   local BACKUP="${OCJSON}.bak-$(date +%Y%m%d-%H%M%S)"
   cp -f "$OCJSON" "$BACKUP" 2>/dev/null || {
-    echo "  [safe_json_edit] WARN: could not create backup — skipping $DESCRIPTION"
+    echo "  [safe_json_edit] WARN: could not create backup -- skipping $DESCRIPTION"
     return 0
   }
 
   # Run the edit function
   if ! "$EDIT_FUNC" "$OCJSON"; then
-    echo "  [safe_json_edit] WARN: edit function failed — rolling back $DESCRIPTION"
+    echo "  [safe_json_edit] WARN: edit function failed -- rolling back $DESCRIPTION"
     cp -f "$BACKUP" "$OCJSON" 2>/dev/null || true
     rm -f "$BACKUP" 2>/dev/null || true
     return 0
@@ -362,7 +362,7 @@ safe_json_edit() {
   # Validate with the CLI if available
   if command -v openclaw >/dev/null 2>&1; then
     if ! openclaw config validate >> "$LOG_FILE" 2>&1; then
-      echo "  [safe_json_edit] WARN: openclaw config validate FAILED after $DESCRIPTION — rolling back"
+      echo "  [safe_json_edit] WARN: openclaw config validate FAILED after $DESCRIPTION -- rolling back"
       cp -f "$BACKUP" "$OCJSON" 2>/dev/null || true
       rm -f "$BACKUP" 2>/dev/null || true
       return 0
@@ -374,26 +374,26 @@ safe_json_edit() {
 }
 
 # ----------------------------------------------------------
-# v10.15.51 — link_shared_core_files
+# v10.15.51 -- link_shared_core_files
 # ----------------------------------------------------------
 # Zero-Human-Workforce file model: on EVERY box, ALL of that account's agents
 # + sub-agents SHARE the box's ONE canonical AGENTS.md / TOOLS.md / USER.md
 # (symlinked, NOT duplicated). Per-agent files (IDENTITY.md, SOUL.md, MEMORY.md,
-# HEARTBEAT.md) stay each agent's OWN real files — never touched here (except
+# HEARTBEAT.md) stay each agent's OWN real files -- never touched here (except
 # additive content preservation into IDENTITY.md, see below).
 #
 # CANON_DIR = the box's DEFAULT AGENT WORKSPACE (agents.defaults.workspace, with
 # the same resolver as obs_resolve_workspace / install.sh Step 10). The canonical
 # AGENTS.md/TOOLS.md/USER.md live there. The symlink target is ALWAYS this LOCAL
-# box's own canonical — NEVER a hardcoded path and NEVER a cross-box/cross-account
+# box's own canonical -- NEVER a hardcoded path and NEVER a cross-box/cross-account
 # path. The client is the USER; a client box links to the CLIENT's own files only.
 # This is the co-mingling guard (N0): we read THIS box's openclaw.json and resolve
-# THIS box's workspace — we never write a foreign path into a client's symlink.
+# THIS box's workspace -- we never write a foreign path into a client's symlink.
 #
 # NESTED WORKFLOW AGENT EXEMPTION: any workspace path matching */workflows/*/agents/*
 # is an internal workflow micro-agent and is NEVER touched.
 #
-# Idempotent: a second run produces no new backups and no churn — a symlink that
+# Idempotent: a second run produces no new backups and no churn -- a symlink that
 # already points at CANON_DIR/<f> is a no-op; an absent file is left absent.
 # Every action is logged with the [link-shared] prefix.
 # ----------------------------------------------------------
@@ -403,7 +403,7 @@ link_shared_core_files() {
   # --- Resolve CANON_DIR (box's own default agent workspace) ---------------
   # Precedence mirrors obs_resolve_workspace / install.sh Step 10:
   #   per-agent main override -> agents.defaults.workspace -> ~/.openclaw/workspace.
-  # We ALWAYS read THIS box's openclaw.json — never a foreign/hardcoded path.
+  # We ALWAYS read THIS box's openclaw.json -- never a foreign/hardcoded path.
   local OCJSON="$HOME/.openclaw/openclaw.json"
   [ -f "/data/.openclaw/openclaw.json" ] && OCJSON="/data/.openclaw/openclaw.json"
   if [ -z "$CANON_DIR" ]; then
@@ -513,7 +513,7 @@ PYEOF
     local W_REAL
     W_REAL="$(cd "$W" 2>/dev/null && pwd -P || echo "$W")"
 
-    # Skip the canonical workspace itself — it OWNS the real files.
+    # Skip the canonical workspace itself -- it OWNS the real files.
     if [ "$W_REAL" = "$CANON_REAL" ]; then
       continue
     fi
@@ -532,7 +532,7 @@ PYEOF
       local LINKPATH="$W_REAL/$f"
 
       if [ -L "$LINKPATH" ]; then
-        # Already a symlink — repoint ONLY if it points somewhere wrong.
+        # Already a symlink -- repoint ONLY if it points somewhere wrong.
         local CUR
         CUR="$(readlink "$LINKPATH" 2>/dev/null || echo '')"
         # Resolve current target to a real path for comparison.
@@ -552,7 +552,7 @@ PYEOF
         local BAK="$LINKPATH.bak-unify-$TS"
         cp -p "$LINKPATH" "$BAK" 2>/dev/null \
           && { echo "  [link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
-          || { echo "  [link-shared] WARN: backup failed for $LINKPATH — leaving file untouched"; continue; }
+          || { echo "  [link-shared] WARN: backup failed for $LINKPATH -- leaving file untouched"; continue; }
 
         # Best-effort PRESERVE: append any content NOT already in CANON/<f> to
         # this agent's OWN IDENTITY.md under a guarded marker (only ADD; create
@@ -657,7 +657,7 @@ main() {
   echo "   OpenClaw Skills Updater (Mac)"
   echo "   Version: ${ONBOARDING_VERSION}"
   if [ -n "$ONLY_SKILLS" ]; then
-    echo "   Mode: SELECTIVE — only [$ONLY_SKILLS]"
+    echo "   Mode: SELECTIVE -- only [$ONLY_SKILLS]"
   fi
   echo "============================================"
   echo ""
@@ -678,7 +678,7 @@ main() {
     if [ "$LAST_CHECK_TS" -gt 0 ]; then
       DAYS_SINCE=$(( (NOW_TS - LAST_CHECK_TS) / 86400 ))
       if [ "$DAYS_SINCE" -gt 7 ]; then
-        echo "  ℹ️  Weekly Sunday check last ran ${DAYS_SINCE} days ago — your machine may have been asleep."
+        echo "  ℹ️  Weekly Sunday check last ran ${DAYS_SINCE} days ago -- your machine may have been asleep."
         echo "      This manual run will catch up."
       fi
     fi
@@ -713,7 +713,7 @@ main() {
       fi
     fi
   else
-    echo "  No previous version found — fresh install"
+    echo "  No previous version found -- fresh install"
   fi
 
   echo ""
@@ -721,7 +721,7 @@ main() {
 
   # v10.15.18: clone instead of curl|unzip. Info-ZIP's `unzip` MANGLES UTF-8
   # filenames (the role-library has em-dash filenames like
-  # `qc-specialist-—-sales.md` and `deep-research-role-—-openclaw-maintenance.md`)
+  # `qc-specialist----sales.md` and `deep-research-role----openclaw-maintenance.md`)
   # and silently partial-writes them, so a zip-based update would drop or
   # corrupt those role docs. `git clone` preserves every filename byte-for-byte.
   TEMP_ZIP="/tmp/openclaw-onboarding-update.zip"
@@ -737,7 +737,7 @@ main() {
         https://github.com/trevorotts1/openclaw-onboarding.git|https://github.com/trevorotts1/openclaw-onboarding)
           EXTRACTED_DIR="$TEMP_EXTRACT" ;;
         *)
-          echo "ERROR: cloned remote ($_origin) is NOT trevorotts1/openclaw-onboarding — refusing to use it."
+          echo "ERROR: cloned remote ($_origin) is NOT trevorotts1/openclaw-onboarding -- refusing to use it."
           rm -rf "$TEMP_EXTRACT"; EXTRACTED_DIR="" ;;
       esac
     fi
@@ -746,7 +746,7 @@ main() {
   # Fallback ONLY if git is unavailable or the clone failed: zip + Mac-native
   # `ditto` (NOT Info-ZIP unzip) which handles UTF-8 filenames correctly.
   if [ -z "$EXTRACTED_DIR" ]; then
-    echo "  (git clone unavailable/failed — falling back to zip + ditto)"
+    echo "  (git clone unavailable/failed -- falling back to zip + ditto)"
     curl -fSL --progress-bar "https://github.com/trevorotts1/openclaw-onboarding/archive/refs/heads/main.zip" -o "$TEMP_ZIP"
     rm -rf "$TEMP_EXTRACT"; mkdir -p "$TEMP_EXTRACT"
     if command -v ditto >/dev/null 2>&1; then
@@ -770,7 +770,7 @@ main() {
   # v10.15.48: canonical onboarding dir for the freshly-pulled repo. Root-level
   # scripts/ (apply-fleet-standards.sh, ghl-mcp-autostart.sh, the new
   # resume-onboarding wiring) live here. Previously $ONBOARDING_DIR was
-  # referenced (fleet-standards call) but never set under `set -u` — a latent
+  # referenced (fleet-standards call) but never set under `set -u` -- a latent
   # bug. Define it once here so every downstream script reference resolves.
   ONBOARDING_DIR="$EXTRACTED_DIR"
   export ONBOARDING_DIR
@@ -793,7 +793,7 @@ main() {
       [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
     done
   else
-    echo "  ⚠ onboarding-state.sh not found in pulled repo — honesty gate disabled for this run (older bundle?)"
+    echo "  ⚠ onboarding-state.sh not found in pulled repo -- honesty gate disabled for this run (older bundle?)"
   fi
 
   # Backup existing skills
@@ -886,18 +886,18 @@ main() {
     # IMPORTANT: strip the trailing slash from SKILL_DIR before passing to cp.
     # The glob pattern [0-9]*/ always appends a trailing slash.
     # `cp -r "path/01-skill/" dest/` copies the CONTENTS of 01-skill/ flat
-    # into dest/ (the dir itself is not created) — this is the root cause of
+    # into dest/ (the dir itself is not created) -- this is the root cause of
     # the "132 loose files dumped into ~/.openclaw/skills/" flatten bug.
     # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
     # named subdirectory, producing dest/01-skill/ as intended.
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
     echo "    Updated: $SKILL_NAME"
-    # FIX 1: state transition — files are on disk = DOWNLOADED (NOT installed).
+    # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
   done
 
   # ----------------------------------------------------------
-  # v10.15.47: WIRING PHASE — per-skill executed steps (not prose).
+  # v10.15.47: WIRING PHASE -- per-skill executed steps (not prose).
   # For every installed skill folder, this phase:
   #   1. Runs the skill's own installer (wire.sh > install.sh > setup-*.sh) if present, idempotent.
   #   2. Idempotently merges CORE_UPDATES.md into workspace AGENTS/TOOLS/MEMORY/SOUL files.
@@ -905,10 +905,10 @@ main() {
   #   4. Wires skill 36's GHL MCP under nested mcp.servers via `openclaw mcp set`.
   #
   # State guard: each skill writes a sentinel file $SKILLS_DIR/<skill>/.wired-<version>
-  # so the loop is safe to re-run — it skips already-wired skills.
+  # so the loop is safe to re-run -- it skips already-wired skills.
   #
   # Scope: additive only. Never edits IDENTITY.md, never rebuilds workforce,
-  # never clobbers existing AGENTS.md sections — only appends new ones.
+  # never clobbers existing AGENTS.md sections -- only appends new ones.
   # ----------------------------------------------------------
 
   # Resolve workspace directory (mirrors write_update_pending_flag)
@@ -941,8 +941,8 @@ main() {
     fi
 
     # Parse CORE_UPDATES.md: extract each labeled section and append to the right file.
-    # Sections are delimited by lines matching: ## <TARGET>.md — UPDATE REQUIRED
-    # or: ## <TARGET>.md — NO UPDATE NEEDED  (skip those).
+    # Sections are delimited by lines matching: ## <TARGET>.md -- UPDATE REQUIRED
+    # or: ## <TARGET>.md -- NO UPDATE NEEDED  (skip those).
     # We use python3 (always present on Mac) for safe multi-line extraction.
     python3 - "$CU_FILE" "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" "$SENTINEL" <<'PYEOF'
 import sys, re
@@ -961,10 +961,10 @@ try:
 except Exception:
     sys.exit(0)
 
-# Split on section headers like: ## AGENTS.md — UPDATE REQUIRED
-# or ## AGENTS.md — NO UPDATE NEEDED
+# Split on section headers like: ## AGENTS.md -- UPDATE REQUIRED
+# or ## AGENTS.md -- NO UPDATE NEEDED
 header_re = re.compile(
-    r'^##\s+(AGENTS|TOOLS|MEMORY|SOUL)\.md\s*[—–-]+\s*(.*?)$',
+    r'^##\s+(AGENTS|TOOLS|MEMORY|SOUL)\.md\s*[--–-]+\s*(.*?)$',
     re.IGNORECASE | re.MULTILINE
 )
 
@@ -1028,7 +1028,7 @@ PYEOF
     esac
 
     [ "$NEED_FFMPEG" -eq 0 ] && [ "$NEED_IMAGEMAGICK" -eq 0 ] && return 0
-    [ -z "$BREW_CMD" ] && { echo "    (brew not found — skipping prereqs for $SKILL_FOLDER)"; return 0; }
+    [ -z "$BREW_CMD" ] && { echo "    (brew not found -- skipping prereqs for $SKILL_FOLDER)"; return 0; }
 
     if [ "$NEED_FFMPEG" -eq 1 ]; then
       if command -v ffmpeg >/dev/null 2>&1; then
@@ -1055,7 +1055,7 @@ PYEOF
     [ "$SKILL_FOLDER" = "36-ghl-mcp-setup" ] || return 0
 
     if ! command -v openclaw >/dev/null 2>&1; then
-      echo "    (openclaw CLI not found — skipping GHL MCP registration)"
+      echo "    (openclaw CLI not found -- skipping GHL MCP registration)"
       return 0
     fi
 
@@ -1095,17 +1095,17 @@ except:
 
     # FIX 3 (v10.15.48): registration alone NEVER starts the local server, so
     # the GHL tools don't resolve. Run the EXECUTED autostart (launchd KeepAlive
-    # on :8765 + healthcheck + auto-restart). Idempotent — no-op if already
+    # on :8765 + healthcheck + auto-restart). Idempotent -- no-op if already
     # healthy + registered; honest SKIP line if GHL creds are absent.
     # BUG FIX (v10.15.49): run NON-BLOCKING so the wiring loop + .onboarding-version
     # stamp always complete. macOS has no `timeout`, so backgrounding is the safe
     # cross-platform fix. The MCP still starts; the updater no longer waits on it.
     local AUTOSTART="$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"
     if [ -x "$AUTOSTART" ]; then
-      echo "    Starting GHL MCP server in background (launchd :${GHL_MCP_PORT}) — log: /tmp/ghl-mcp-autostart.log"
+      echo "    Starting GHL MCP server in background (launchd :${GHL_MCP_PORT}) -- log: /tmp/ghl-mcp-autostart.log"
       ( GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" >/tmp/ghl-mcp-autostart.log 2>&1 & )
     else
-      echo "    (ghl-mcp-autostart.sh not found at $AUTOSTART — server NOT started; GHL tools will not resolve until it is run)"
+      echo "    (ghl-mcp-autostart.sh not found at $AUTOSTART -- server NOT started; GHL tools will not resolve until it is run)"
     fi
   }
 
@@ -1151,7 +1151,7 @@ except:
       if bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1; then
         echo "    Installer OK: $SKILL_NAME"
       else
-        echo "    Installer reported warnings for $SKILL_NAME (see $LOG_FILE) — continuing"
+        echo "    Installer reported warnings for $SKILL_NAME (see $LOG_FILE) -- continuing"
       fi
     fi
 
@@ -1166,7 +1166,7 @@ except:
 
     # Mark skill as wired for this version
     touch "$WIRED_SENTINEL" 2>/dev/null || true
-    # FIX 1: state transition — installer + CORE_UPDATES merge ran = WIRED
+    # FIX 1: state transition -- installer + CORE_UPDATES merge ran = WIRED
     # (still NOT "installed" until the verification gate passes below).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "wired"
     WIRED_COUNT=$((WIRED_COUNT + 1))
@@ -1177,7 +1177,7 @@ except:
   # ----------------------------------------------------------
   # v10.15.42: Run migrate-existing-workforce.sh so copied skills
   # actually install into the client's live department tree.
-  # This script is idempotent and additive — it never deletes or
+  # This script is idempotent and additive -- it never deletes or
   # overwrites existing departments, only fills gaps.
   # ----------------------------------------------------------
   MIGRATE_SCRIPT="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
@@ -1190,7 +1190,7 @@ except:
       echo "  migrate-existing-workforce.sh: completed with warnings (see $LOG_FILE)"
     fi
   else
-    echo "  (migrate-existing-workforce.sh not found or not executable — skipping)"
+    echo "  (migrate-existing-workforce.sh not found or not executable -- skipping)"
   fi
 
   # ----------------------------------------------------------
@@ -1199,7 +1199,7 @@ except:
   # agent/sub-agent on THIS box shares the box's ONE canonical AGENTS.md /
   # TOOLS.md / USER.md via symlink. Per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT stay
   # each agent's own. Nested workflow agents exempt. Idempotent. Reads THIS box's
-  # openclaw.json only (co-mingling guard) — never a foreign/hardcoded target.
+  # openclaw.json only (co-mingling guard) -- never a foreign/hardcoded target.
   # ----------------------------------------------------------
   echo ""
   echo "  Unifying shared core files (AGENTS/TOOLS/USER symlinked to this box's canonical)..."
@@ -1223,7 +1223,7 @@ except:
   # VERIFICATION: confirm the active dir was actually updated.
   # If SKILLS_DIR's .onboarding-version does not match what we
   # just wrote, something redirected writes away from the active
-  # dir — fail loudly instead of reporting false success.
+  # dir -- fail loudly instead of reporting false success.
   # ----------------------------------------------------------
   VERIFY_VER=$(cat "$SKILLS_DIR/.onboarding-version" 2>/dev/null | tr -d '[:space:]')
   if [ "$VERIFY_VER" != "$ONBOARDING_VERSION" ]; then
@@ -1254,7 +1254,7 @@ except:
   rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 
   # ----------------------------------------------------------
-  # FIX 1: VERIFICATION GATE — run the gate on EVERY non-archived skill.
+  # FIX 1: VERIFICATION GATE -- run the gate on EVERY non-archived skill.
   # A skill counts INSTALLED only if (a) openclaw skills info shows it,
   # (b) its CORE_UPDATES sentinel is present (if it ships one), and (c) its
   # qc-*.sh exits 0 (if it ships one). We DO NOT claim "installed/onboarded"
@@ -1273,7 +1273,7 @@ except:
       if _greason="$(obs_verify_skill "$_gname" "$SKILLS_DIR")"; then
         echo "    ✓ verified-installed: $_gname"
       else
-        echo "    ✗ NOT verified: $_gname — ${_greason}"
+        echo "    ✗ NOT verified: $_gname -- ${_greason}"
       fi
     done
     ONBOARDING_GATE_SUMMARY="$(obs_gate_summary "$SKILLS_DIR" 2>/dev/null | grep '^GATE-HUMAN:' | sed 's/^GATE-HUMAN: //')"
@@ -1283,7 +1283,7 @@ except:
       ONBOARDING_GATE_OK="no"
     fi
   else
-    echo "  ⚠ verification gate unavailable (onboarding-state.sh not sourced) — cannot honestly verify; will report file-sync only."
+    echo "  ⚠ verification gate unavailable (onboarding-state.sh not sourced) -- cannot honestly verify; will report file-sync only."
   fi
 
   echo ""
@@ -1291,7 +1291,7 @@ except:
   if [ "$ONBOARDING_GATE_OK" = "yes" ]; then
     echo "   Skills updated AND verified-installed."
   elif [ "$ONBOARDING_GATE_OK" = "no" ]; then
-    echo "   Skills FILE-SYNCED to disk — NOT all verified-installed yet."
+    echo "   Skills FILE-SYNCED to disk -- NOT all verified-installed yet."
     echo "   ${ONBOARDING_GATE_SUMMARY:-(gate summary unavailable)}"
     echo "   (The onboarding-resume cron will re-fire wiring + QC until all pass.)"
   else
@@ -1301,7 +1301,7 @@ except:
   echo "   Location: $SKILLS_DIR"
   echo "   Files on disk: $VERIFY_SKILL_COUNT skill folders confirmed in active dir"
   if [ -n "$ONLY_SKILLS" ]; then
-    echo "   Mode: SELECTIVE — only [$ONLY_SKILLS]"
+    echo "   Mode: SELECTIVE -- only [$ONLY_SKILLS]"
     echo "   Skipped: $SKIPPED_COUNT other skills (not in --only list)"
   fi
   echo "============================================"
@@ -1339,7 +1339,7 @@ except: pass
           PROMPT_CONTENT=$(cat "$PROMPT_TMP")
           if openclaw cron create \
               --name "weekly-onboarding-update" \
-              --description "Sunday 2am ET — check for OpenClaw onboarding + command-center updates and ask client permission before applying anything." \
+              --description "Sunday 2am ET -- check for OpenClaw onboarding + command-center updates and ask client permission before applying anything." \
               --cron "0 3 * * 0" \
               --tz "America/New_York" \
               --exact \
@@ -1352,21 +1352,21 @@ except: pass
               --message "$PROMPT_CONTENT" >/dev/null 2>&1; then
             echo "  ✓ Sunday weekly update-check cron installed (Sundays 2am ET → telegram $TG_TARGET)"
           else
-            echo "  ⚠ Cron install failed — agent can retry manually"
+            echo "  ⚠ Cron install failed -- agent can retry manually"
           fi
           rm -f "$PROMPT_TMP"
         else
-          echo "  ⚠ Could not fetch cron-prompt.txt — agent can install cron manually later"
+          echo "  ⚠ Could not fetch cron-prompt.txt -- agent can install cron manually later"
         fi
       else
-        echo "  ⚠ No telegram target configured — skipping cron install. Configure Telegram first then re-run."
+        echo "  ⚠ No telegram target configured -- skipping cron install. Configure Telegram first then re-run."
       fi
     fi
   fi
 
   # ----------------------------------------------------------
   # Fleet standards: ensure sub-agents fully permitted + Telegram media 50MB
-  # (idempotent — applied on every update, no-op if already canonical)
+  # (idempotent -- applied on every update, no-op if already canonical)
   # ----------------------------------------------------------
   echo ""
   echo "  Applying fleet standards (sub-agents fully permitted, Telegram media 50MB)..."
@@ -1425,7 +1425,7 @@ The onboarding-resume cron will keep re-firing wiring + QC until every skill pas
 
   send_telegram_progress "${_TG_HEADLINE}
 
-New skills (need activation): ${NEW_SKILLS_CSV:-none — updates only}.
+New skills (need activation): ${NEW_SKILLS_CSV:-none -- updates only}.
 
 Workforce QC: ${QC_STATUS_LINE:-not run} (exit ${QC_COMPLETENESS_RC:-?})
 
@@ -1437,20 +1437,20 @@ Paste this to your agent:
 
   case "$TELEGRAM_LAST_RESULT" in
     sent:*)              echo "  ✓ Telegram sent to ${TELEGRAM_LAST_RESULT#sent:}" ;;
-    no-openclaw-cli)     echo "  ⚠ Telegram skipped — openclaw CLI not on PATH" ;;
-    no-telegram-target)  echo "  ⚠ Telegram skipped — no telegram.allowFrom configured in openclaw.json" ;;
-    failed:*)            echo "  ⚠ Telegram FAILED — see $LOG_FILE (using backup block below)" ;;
+    no-openclaw-cli)     echo "  ⚠ Telegram skipped -- openclaw CLI not on PATH" ;;
+    no-telegram-target)  echo "  ⚠ Telegram skipped -- no telegram.allowFrom configured in openclaw.json" ;;
+    failed:*)            echo "  ⚠ Telegram FAILED -- see $LOG_FILE (using backup block below)" ;;
   esac
 
   # Always print the backup block so client is never stranded
   cat <<'BACKUP_BLOCK'
 
 ╔════════════════════════════════════════════════════════════════════╗
-║   BACKUP — IF YOU DID NOT GET A TELEGRAM NOTE                      ║
+║   BACKUP -- IF YOU DID NOT GET A TELEGRAM NOTE                      ║
 ╠════════════════════════════════════════════════════════════════════╣
 ║                                                                    ║
 ║   Open whatever you use to talk to your OpenClaw agent (Telegram,  ║
-║   web UI, terminal chat — whatever you have set up).               ║
+║   web UI, terminal chat -- whatever you have set up).               ║
 ║                                                                    ║
 ║   Paste this EXACT message to your agent (copy between the         ║
 ║   >>> and <<< markers):                                            ║

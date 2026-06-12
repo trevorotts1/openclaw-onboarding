@@ -1,0 +1,254 @@
+# SOPs Mirror -- Media Librarian and GHL Updater
+
+**Source:** presentations/media-librarian-ghl-updater.md
+**Extract:** Section 9 (Standard Operating Procedures) verbatim mirror.
+**Authority:** This file mirrors the role file. The role file is authoritative. If they diverge, the role file wins and this mirror must be regenerated.
+
+---
+
+## 9. Standard Operating Procedures (Numbered)
+
+Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
+
+### SOP 9.1 -- Step-0 Landing Zone Creation
+
+**When to run:** At the very start of every new deck run -- before discovery interview, before any other action.
+
+**Inputs:**
+- intake.json (may be partially complete at this point -- only client_slug and deck_slug are needed)
+- Current date (ISO format, YYYY-MM-DD)
+
+**Steps:**
+1. Determine the local workdir path:
+   - Mac clients: `~/webinar-decks/<client-slug>/<deck-slug>/<YYYY-MM-DD>/`
+   - VPS clients: `/data/.openclaw/workspace/webinar-decks/<client-slug>/<deck-slug>/<YYYY-MM-DD>/`
+   Use today's date for YYYY-MM-DD.
+2. Create the directory tree with all required subdirectories:
+   ```
+   <workdir>/
+     media-library/           (passed images -- the deliverable folder)
+     working/
+       prompts/               (per-slide prompt files from Phase 2)
+       renders/               (raw downloads from Phase 4 -- pre-QC)
+       checkpoints/           (all checkpoint JSON files)
+       qc/                    (QC reports from all phases)
+       copy/                  (slide copy, intake, PRD, approval records)
+       brand/                 (STYLE BLOCK, brand registry, representation audit)
+   ```
+3. Verify: `ls -la <workdir>` confirms all subdirectories exist. If any creation failed, halt and notify the Director.
+4. Determine version number N for this run. Check the GHL media library for existing folders with the naming pattern `<Client> <Deck> v<N>`. If none exist, N=1. If v1 exists, N=2. Etc.
+5. Record all paths in working/checkpoints/media_library.json:
+   ```json
+   {
+     "client_slug": "...",
+     "deck_slug": "...",
+     "run_date": "YYYY-MM-DD",
+     "version_number": N,
+     "local_workdir": "<full path>",
+     "local_media_library": "<full path>/media-library/",
+     "ghl_folder_name": "<Client> <Deck> v<N>",
+     "ghl_folder_id": null,
+     "drive_folder_id": null,
+     "created_at": "ISO timestamp"
+   }
+   ```
+   (ghl_folder_id is null until GHL folder is created in SOP 9.3)
+6. Notify the Director: "Step 0 complete. Local workdir: [path]. GHL folder will be created next."
+
+**Outputs:**
+- Local directory tree (verified to exist)
+- working/checkpoints/media_library.json (with null ghl_folder_id pending GHL creation)
+
+**Hand to:** Director (who can now begin the discovery interview and all other run phases)
+
+**Failure mode:** If directory creation fails (permission error, disk full), halt immediately. Notify the Director: "Step 0 blocked: [specific error]. Cannot proceed." Never start a run without the local directory tree.
+
+---
+
+### SOP 9.2 -- Passed-Image Intake
+
+**When to run:** During Phase 5 -- as each image passes the QC gate (score >= 8.5). Run continuously as QC reports come in; do not wait for all images.
+
+**Inputs:**
+- working/qc/image_qc_report.json (watch for new passes)
+- working/renders/slide-NN.png (source of passed images)
+
+**Steps:**
+1. Watch image_qc_report.json for entries with `pass: true` and `local_path` set.
+2. For each newly passed image:
+   a. Verify the file exists at the path in local_path and is a valid non-empty PNG.
+   b. Copy (do not move) the image from working/renders/slide-NN.png to working/media-library/slide-NN.png.
+   c. Naming convention MUST be: `slide-NN.png` (zero-padded slide number, kebab-case). This naming is mandatory for python-pptx assembly order.
+3. Update media_library.json: add an entry for this image: `{ "slide_number": N, "local_media_library_path": "...", "ghl_upload_status": "pending" }`.
+4. After copying: trigger SOP 9.3 (GHL upload) for this image immediately. Do not batch -- upload as images pass.
+
+**Outputs:**
+- working/media-library/slide-NN.png (copied from renders)
+- media_library.json (updated with intake entries)
+
+**Hand to:** SOP 9.3 (GHL upload, triggered per image)
+
+**Failure mode:** If the source file does not exist at working/renders/slide-NN.png (despite image_qc_report.json showing a pass): flag to the QC Specialist. Do not fabricate a file path. Record the anomaly in media_library.json.
+
+---
+
+### SOP 9.3 -- GHL-Drive Upload
+
+**When to run:** Immediately after each image is intaked (SOP 9.2), and after SOP 9.1 creates the GHL folder.
+
+**Inputs:**
+- media_library.json (ghl_folder_id -- if still null, create the folder first)
+- working/media-library/slide-NN.png (the image to upload)
+- GHL credentials from client's env stores
+
+**Steps (Create GHL Folder -- run once per deck run):**
+1. If media_library.json has `ghl_folder_id: null`: create the GHL media library folder.
+   a. Folder name: `<Client> <Deck> v<N>` (use the values from media_library.json).
+   b. Call the GHL media library API: POST to create folder. Record the returned folder_id.
+   c. Known issue (per master SOP): GHL folder creation via API has been broken before. If the API call fails: log the failure, upload to Media Library root, and note in media_library.json: `ghl_folder_creation_failed: true, fallback: "media_library_root"`.
+   d. Update media_library.json: `ghl_folder_id: "[returned_id or 'root_fallback']"`.
+
+**Steps (Upload Each Image):**
+1. For the image at working/media-library/slide-NN.png:
+   a. GHL remote name MUST be: `Slide NN v<version_number>` (zero-padded, human-readable). Example: `Slide 01 v1`, `Slide 23 v2`.
+   b. Call the GHL upload API with the file content, the GHL folder ID (or root if fallback), and the remote name.
+   c. Record the GHL media_id returned by the API.
+2. Update media_library.json for this image: `{ "ghl_upload_status": "complete", "ghl_media_id": "...", "ghl_remote_name": "Slide NN v<N>", "uploaded_at": "ISO timestamp" }`.
+3. If the client uses Google Drive (has `use_drive: true` in intake.json): also upload to the Drive folder at the path recorded in media_library.json. Record Drive file_id.
+4. If the GHL upload fails: retry once after 30 seconds. If second attempt fails: mark `ghl_upload_status: "failed"` and flag to the Director. Do not skip the delivery verification until the failure is resolved.
+
+**Outputs:**
+- media_library.json (updated with ghl_upload_status and ghl_media_id for each image)
+- Images in GHL media library (or root fallback)
+
+**Hand to:** SOP 9.4 (delivery verification, run after all images are uploaded)
+
+**Failure mode:** If GHL API is completely unavailable (authentication failure, service outage): log all failed uploads in media_library.json. Notify the Director: "[N] images could not be uploaded to GHL. Local copies are in [path]. GHL upload is pending resolution." The PPTX Assembly Specialist can still work from the local media-library/ folder; GHL upload can be retried separately.
+
+---
+
+### SOP 9.4 -- Delivery and Ground-Truth Verification
+
+**When to run:** After all images have been uploaded (all entries in media_library.json show `ghl_upload_status: "complete"` or `"failed"`).
+
+**Inputs:**
+- media_library.json (complete with all entries)
+- GHL media library (live API check)
+
+**Steps:**
+1. Count local images in working/media-library/: `ls working/media-library/*.png | wc -l`. Record as `local_count`.
+2. Call the GHL API to list files in the deck's GHL folder. Count files with names matching `Slide NN v<N>` pattern. Record as `ghl_count`.
+3. Compare local_count to slide_count_final from mission_prd.json.
+4. Compare ghl_count to slide_count_final.
+5. Compare local_count to ghl_count.
+6. All three counts must match. Any mismatch = delivery verification FAILED.
+7. For any GHL file that is missing (present locally but not in GHL): attempt a one-time re-upload.
+8. If all counts match after any necessary re-uploads: write `delivery_verified: true, verified_at: "ISO timestamp", local_count: N, ghl_count: N` to media_library.json.
+9. Notify the Director and the PPTX Assembly Specialist: "Delivery verification PASSED. [N] images confirmed in local media-library/ and GHL. PPTX assembly can begin."
+
+**Outputs:**
+- media_library.json (delivery_verified: true)
+- Notification to Director and PPTX Assembly Specialist
+
+**Hand to:** PPTX Assembly Specialist (who reads local media-library/ for assembly)
+
+**Failure mode:** If after one re-upload attempt the GHL count still does not match: notify the Director with the specific gap: "[N] images are missing from GHL. See media_library.json for the list. PPTX assembly can proceed from local copies; GHL delivery is incomplete and requires manual resolution." Mark `delivery_verified: "partial"` in media_library.json.
+
+---
+
+### SOP 9.5 -- Client Asset Acquisition
+
+**When to run:** During Phase A (discovery), before Phase 2 ends. LOGO_URL (and FOUNDER_PORTRAIT_URL when A5 slides exist) must be recorded in media_library.json before Phase 2 is complete. The [PROOF PENDING] resolution loop with the client must be completed before Phase 1A.
+
+**Inputs:**
+- intake.json (LOGO_ON_SLIDES, LOGO_FILE, LOGO_URL, A5 slide presence flag)
+- Client's GHL media library credentials
+- Client's Google Drive credentials (if applicable)
+- PROOF_ASSETS list from discovery
+
+**Steps:**
+
+**Logo acquisition:**
+1. Check intake.json for LOGO_URL. If a stable public https URL is already present and the file downloads successfully (HTTP 200, non-empty), record it directly -- no upload needed.
+2. If the client provided only a local file (LOGO_FILE set, LOGO_URL missing or not stable):
+   a. Upload the file to the client's GHL media library (use the same GHL credentials as SOP 9.3). Record the returned media URL.
+   b. If the client uses Drive, also upload to the client's Drive folder and record the direct-download link.
+   c. Prefer the GHL URL. Fall back to Drive direct-download link if GHL is unavailable.
+3. Verify: attempt an HTTP GET on the final URL. It must return 200 with a non-empty body. A URL that returns 403 or 404 cannot be used as a Kie.ai reference image.
+4. Record LOGO_URL in media_library.json: `"logo_url": "<verified public https URL>"`.
+
+**Founder portrait acquisition (A5 slides only):**
+1. If slides_copy.md (or the draft slide plan) contains any A5 archetype slides: collect the founder portrait image from the client.
+2. Upload to GHL media library (and Drive if applicable) using the same upload process as above.
+3. Verify the URL returns HTTP 200 with a non-empty body.
+4. Record FOUNDER_PORTRAIT_URL in media_library.json: `"founder_portrait_url": "<verified public https URL>"`.
+
+**[PROOF PENDING] resolution loop:**
+1. During Phase A, collect all PROOF_ASSETS items: testimonials, revenue screenshots, press logos, before/after numbers.
+2. For any proof item that the client has not yet supplied: mark it `[PROOF PENDING]` in intake.json and in the corresponding slide entry in slides_copy.md.
+3. Before Phase 1A (owner approval gate): present the full list of [PROOF PENDING] items to the client and collect each one or confirm it will be replaced with a restructured slide (per the master SOP asset collection rule -- no fabricated proof, ever).
+4. After the client responds: update intake.json and slides_copy.md. Replace [PROOF PENDING] with the actual asset reference, or mark [CLIENT TO SUPPLY] and restructure the slide to remove the fabricated element.
+5. Run this loop until no [PROOF PENDING] entries remain before Phase 1A closes.
+
+**Outputs:**
+- media_library.json updated with `logo_url` (and `founder_portrait_url` if applicable)
+- intake.json updated with resolved PROOF_ASSETS
+- slides_copy.md updated with all proof references resolved or marked [CLIENT TO SUPPLY]
+
+**Hand to:** Slide Image Creator / Prompt Writer (who reads LOGO_URL and FOUNDER_PORTRAIT_URL from media_library.json for image-to-image submissions); Director (confirmation that assets are ready before Phase 2)
+
+**Failure mode:** If the client cannot supply a logo or founder portrait and the intake calls for one: escalate to the Director immediately. Do not proceed to Phase 2 with a missing reference URL. If the client confirms LOGO_ON_SLIDES = false, update intake.json and remove all logo references; text-to-image mode applies.
+
+---
+
+### SOP 9.6 -- Final Deck Delivery
+
+**When to run:** After final Phase 6 QC passes (working/qc/final_deck_qc.md score >= 8.5).
+
+Note: if a ROLE-13 Delivery Concierge role is added to this department in a future revision, this SOP migrates there and this role hands off to ROLE-13 after QC passes. Until that role exists, this role owns delivery.
+
+**Inputs:**
+- output/[DECK_SLUG].pptx (the QC-passed assembled deck)
+- working/qc/final_deck_qc.md (final QC score, must be >= 8.5)
+- intake.json (client box type: Mac vs. other)
+- media_library.json (GHL folder name and ghl_folder_id)
+- GHL credentials from client's env stores
+
+**Steps:**
+
+1. Confirm the final QC score is >= 8.5. Do not deliver a deck that has not passed final QC.
+
+2. Determine delivery path:
+   a. **Mac client (Mac mini or MacBook):** copy the PPTX to the client's ~/Downloads/ folder.
+      - Command: `cp output/[DECK_SLUG].pptx ~/Downloads/[DECK_SLUG]_final.pptx`
+      - Verify: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` must show the file with a non-zero size.
+      - Record the exact path.
+   b. **Non-Mac or environment unclear:** do NOT assume a delivery location. Ask the client explicitly: "Where would you like the PowerPoint delivered: email, Google Drive, GHL, or somewhere else?" Then deliver to their stated destination. Record the destination.
+
+3. Upload the final PPTX to the client's GHL media library:
+   - Upload to the same GHL folder used for the slide images (ghl_folder_id from media_library.json).
+   - Remote name: `[Deck Title] FINAL v<N>.pptx`.
+   - Record the returned GHL media_id and URL in media_library.json: `"pptx_ghl_media_id": "...", "pptx_ghl_url": "..."`.
+
+4. Verify every destination before reporting done:
+   - Mac download: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` (non-empty file must exist).
+   - GHL: call the GHL API to confirm the PPTX file exists in the folder by its media_id. A self-report without an API confirmation is not ground truth.
+   - Additional destinations (Drive, email, etc.): confirm via the relevant API or service before reporting.
+
+5. Send a delivery notification via `openclaw message send` (never raw Telegram API):
+   - Include every verified destination path or URL.
+   - Include the final QC score.
+   - Example message: "Your webinar deck is ready. Final QC score: [SCORE]/10. File locations: (1) ~/Downloads/[DECK_SLUG]_final.pptx on your Mac, (2) GHL media library folder '[FOLDER_NAME]' as '[REMOTE_NAME]'. Both locations confirmed."
+
+6. Update media_library.json: add `"delivery_complete": true, "delivery_verified_at": "ISO timestamp", "delivery_destinations": [{"type": "...", "path_or_url": "...", "verified": true}]`.
+
+**Outputs:**
+- PPTX at every confirmed delivery destination
+- media_library.json updated with delivery_complete and all destination records
+- Delivery notification sent via openclaw message send
+
+**Hand to:** Director of Presentations (run complete); client (via the delivery notification)
+
+**Failure mode:** If any delivery destination fails verification: do not mark delivery_complete = true. Notify the Director: "Delivery incomplete: [destination] could not be verified. [Specific error]. Local PPTX is at output/[DECK_SLUG].pptx. Awaiting resolution." Never send a "done" message when a destination is unverified.
+
+---

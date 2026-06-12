@@ -367,6 +367,7 @@ Only the correct API state strings are used: `waiting` (in progress), `success` 
 ### You hand work off to:
 - QC Specialist -- Presentations -- rendered images in working/renders/ (triggers Phase 5)
 - Director -- completion notification and phase4_checkpoint.json (includes smoke test outcome, logo submission status, any failCode/failMsg entries)
+- ROLE-16 Healer -- Presentations -- Phase-4 API failCode events: when any slide task returns a terminal fail state (failCode + failMsg logged), hand off to the Healer with the full failCode, failMsg, the checkpoint entry, and the request body used; the Healer root-causes and patches the submitter SOP if the failure reveals a protocol gap
 
 ### Checkpoint fields the Director expects at handoff:
 - `model_variant`: which model was used
@@ -390,7 +391,7 @@ Only the correct API state strings are used: `waiting` (in progress), `success` 
 | Poll cap reached (100 iterations) | Director | Kie.ai status check + potential re-submission | Human owner |
 | Budget exceeds 2x ceiling | Director immediately | Operator authorization required to continue | Human owner |
 | KIE account credits exhausted | Director immediately | Do NOT switch to another image platform | Human owner |
-| state `fail` on a slide task (failCode + failMsg logged) | Director after 3 resubmit attempts fail | Full failCode/failMsg report to Director | Human owner |
+| state `fail` on a slide task (failCode + failMsg logged) | Director after 3 resubmit attempts fail; ROLE-16 Healer receives failCode + failMsg package for root-cause analysis | Full failCode/failMsg report to Director | Human owner |
 | LOGO_URL is not publicly reachable over https | Director before wave 1 | Upload logo to GHL/Drive to obtain a public URL, then retry | Human owner |
 
 ---

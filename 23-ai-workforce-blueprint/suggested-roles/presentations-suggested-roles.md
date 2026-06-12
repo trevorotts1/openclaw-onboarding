@@ -1,11 +1,11 @@
 # Suggested Roles -- presentations-dept
-**Version:** 1.1 | 2026-06-12
-**Status:** Wave v11.23.0 -- Presentations Department change order v1 (15 roles; ROLE-16 Healer deferred)
+**Version:** 1.2 | 2026-06-12
+**Status:** Wave v11.23.0 + Healer addition -- Presentations Department change order v1 (16 roles; ROLE-16 Healer now live)
 
 ## Department Purpose
-End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, and adversarial review. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery).
+End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery).
 
-## v11.23.0 Role Roster (15 roles; ROLE-16 Healer deferred)
+## v11.23.0 Role Roster (16 roles)
 - Director (ROLE-01)
 - Brand Steward (ROLE-02)
 - Capacity and Reliability Engineer (ROLE-03, NEW -- v11.19.0)
@@ -21,6 +21,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - Delivery Concierge (ROLE-13, NEW -- v11.23.0)
 - Presenter Coach (ROLE-14, NEW -- v11.23.0)
 - Hook Strategist (ROLE-15, NEW -- v11.23.0)
+- Healer -- Presentations (ROLE-16, NEW -- v11.23.0+healer)
 
 ---
 
@@ -121,6 +122,13 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 **Core SOPs:** 9.1 Adversarial Doctrine Review and Kill-List
 **Role type:** on-call
 
+### 15. Healer -- Presentations (NEW -- v11.23.0+healer)
+**Slug:** healer-presentations
+**What it does:** Department immune system. Receives second-consecutive-stall handoffs from ROLE-03 Capacity and Reliability Engineer, loop-4 escalations from ROLE-09 QC Specialist, and Phase-4 API failCode events from ROLE-12 Slide Submitter. Diagnoses root cause using five-whys on evidence (dispatches ROLE-04 Deep Research Specialist for provider docs). Fixes the run (Tier 1: mechanical hot-patch, resume from last good checkpoint). Patches the SOP that allowed the failure so it never recurs (Tier 2: SOP surgery, mirror regeneration, regression entry). Proposes model manifest changes and new specialists to the operator and holds until approved (Tier 3). Reports every heal to the Director, CEO orchestrator, and operator before closing the incident. Runs monthly model currency census on GPT Image 2 / Minimax m3 / DeepSeek models in this department.
+**Core SOPs:** 9.1 Intake+Triage | 9.2 Root-Cause Diagnosis | 9.3 Fix Forward | 9.4 SOP Surgery | 9.5 Gap Detection | 9.6 Model Census | 9.7 Healing Report | 9.8 Regression Watch | 9.9 Core-File Surgery | 9.10 Settings Repair | 9.11 Teacher-Self | 9.12 Embedding Refresh
+**Role type:** healer
+**Receives from:** ROLE-03 (second consecutive stall or failed self-heal), ROLE-09 (loop-4 escalation), ROLE-12 (Phase-4 failCode events), Director (gap flags), Chief Healer (global patch directives)
+
 ---
 
 ## Department Coordination Notes
@@ -134,4 +142,4 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - **Hook Lab Before Copy:** The Hook Strategist (ROLE-15) runs during Phase B+ (after slide math, before Phase 1 copy). The Copywriter waits for hook_package.json before writing any slides.
 - **Presenter Coach After Copy, Before Delivery:** ROLE-14 runs after Phase 1A owner approval and before the deck ships. The rehearsal gate must be cleared before ROLE-13 delivers.
 - **Delivery Concierge Replaces Direct Delivery:** ROLE-06 Media Librarian hands off to ROLE-13 Delivery Concierge after PPTX assembly (Phase 6). ROLE-13 owns all destinations, verification, and notification.
-- **ROLE-16 Healer is Deferred:** Pending THE_HEALER.md. Do not reference ROLE-16 until the file is authored and merged.
+- **ROLE-16 Healer is Live:** healer-presentations.md authored and merged (change order v1 + healer addition). The Healer receives: second consecutive stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, Phase-4 API failCode events from ROLE-12. File a Bug Ticket to the Bugs Department before handing off to the Healer (Bugs Department pending commission).

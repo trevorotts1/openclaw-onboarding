@@ -266,7 +266,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/checkpoints/watchdog.log (updated every 10 minutes)
 - capacity_plan.json (watchdog_installed, watchdog_removed, stall_threshold_minutes, watchdog_max_runtime_minutes)
 
-**Hand to:** Director (receives first-stall alert for self-heal attempts); Operator (receives second-stall alert or failed self-heal notification)
+**Hand to:** Director (receives first-stall alert for self-heal attempts); Operator (receives second-stall alert or failed self-heal notification); ROLE-16 Healer -- Presentations (on second consecutive stall or failed self-heal: hand off with the full incident package -- stall count, checkpoint state, self-heal attempt log -- so the Healer can root-cause and permanently patch the SOP that allowed the stall)
 
 **Failure mode:** If crontab is not available on the client's box (some minimal Docker containers): install the watchdog as a background shell process instead: `nohup bash working/scripts/watchdog_loop.sh &`. Write the PID to capacity_plan.json: `watchdog_pid: N`. Kill the PID explicitly after Phase 6 or after 90 minutes, whichever comes first.
 
@@ -343,6 +343,7 @@ watchdog_removed = true in capacity_plan.json after delivery_verified = true.
 ### You hand work off to:
 - Director of Presentations -- capacity_plan.json (fleet sizing recommendations, go/no-go); first-stall alerts from watchdog for action/self-heal attempt
 - Operator -- second-stall alerts or failed self-heal notifications; escalations when watchdog exceeds 90-minute window
+- ROLE-16 Healer -- Presentations -- second consecutive stall or failed self-heal: hand off the full incident package (stall count, checkpoint state, self-heal attempt log) for root-cause diagnosis and permanent SOP repair
 - All specialists -- capacity_plan.json is the shared reference for model routing and agent counts
 - Slide Submitter -- capacity_plan.json budget_ceiling is the 2x stop threshold
 
