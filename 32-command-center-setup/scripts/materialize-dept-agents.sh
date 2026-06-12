@@ -199,15 +199,11 @@ for slug, workspace_path in discovered.items():
             "multimodal": {"enabled": True, "modalities": ["all"]},
             "fallback": "none",
         },
-        "wiki": {
-            "enabled": True,
-            "autoSearch": True,
-            "contextInjection": {
-                "onStartup": True,
-                "onTaskSwitch": True,
-                "maxResults": 5,
-            },
-        },
+        # NOTE: "wiki" is NOT a valid agents.list[] key in the strict OpenClaw
+        # config schema (agents.list entries are z.core.$strict).  It was here
+        # previously and caused "Unrecognized key: wiki" on every dept agent,
+        # breaking openclaw gateway status / openclaw agents list.  Removed.
+        # Per-agent doc/wiki-search capability is expressed via memorySearch.
     }
 
     existing = by_id.get(agent_id)
@@ -227,7 +223,12 @@ for slug, workspace_path in discovered.items():
         if existing.get("workspace") != workspace_path:
             existing["workspace"] = workspace_path
             changed = True
-        # Ensure memorySearch + wiki blocks exist (don't overwrite curated extras)
+        # Ensure memorySearch block exists (don't overwrite curated extras).
+        # NOTE: "wiki" backfill deliberately removed -- "wiki" is not a valid
+        # agents.list[] key in the strict OpenClaw schema and causes
+        # "Unrecognized key: wiki" / Invalid input on every dept agent.
+        # Also strip any stale "wiki" key left by earlier runs so existing
+        # boxes become schema-valid after the next materialize run.
         existing.setdefault("memorySearch", desired_entry["memorySearch"])
         if "multimodal" not in existing.get("memorySearch", {}):
             existing["memorySearch"]["multimodal"] = desired_entry["memorySearch"]["multimodal"]
@@ -238,12 +239,8 @@ for slug, workspace_path in discovered.items():
         if "extraPaths" not in existing.get("memorySearch", {}):
             existing["memorySearch"]["extraPaths"] = []
             changed = True
-        existing.setdefault("wiki", desired_entry["wiki"])
-        if "autoSearch" not in existing.get("wiki", {}):
-            existing["wiki"]["autoSearch"] = True
-            changed = True
-        if "contextInjection" not in existing.get("wiki", {}):
-            existing["wiki"]["contextInjection"] = desired_entry["wiki"]["contextInjection"]
+        if "wiki" in existing:
+            del existing["wiki"]
             changed = True
         if changed:
             updated += 1

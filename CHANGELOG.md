@@ -1,3 +1,13 @@
+## [v11.27.0]  -  2026-06-12  -  fix: rollout blockers -- register-routing-dept path/schema + drop invalid wiki on dept agents (config-validate clean)
+
+### Changes
+
+**Bug 1 -- register-routing-dept.py:** Fixed one-too-many-dot-dot path overshoot (line 57: `../../` not `../../../`) that caused the naming-map lookup to escape above repo root on all standard install paths. Fixed naming-map schema mismatch (lines 76-90): the real map stores mandatory as a dict keyed by slug (not an array), and vertical_packs as a nested dict; the old code iterated dict keys as strings, crashed with AttributeError, and found zero slugs -- breaking routing registration for bugs/healer/presentations and every vertical-pack dept on every box. New index-builder handles both dict-keyed (mandatory) and list-with-id (vertical_packs.auto_add_departments) section types, with legacy array fallback. Added installed-skill candidate paths ($HOME/.openclaw/skills/ + /data/.openclaw/skills/) so VPS/Docker boxes resolve without --naming-map.
+
+**Bug 2 -- materialize-dept-agents.sh:** Removed invalid `wiki` top-level key from the desired_entry written into every dept agent (lines 202-210) and from the backfill onto pre-existing entries (lines 241-246). The agents.list[] schema is strict (z.core.$strict); `wiki` is not among its allowed keys. The invalid key caused `openclaw config validate` / `openclaw gateway status` / `openclaw agents list` to fail on every box built with this script (24 Aurelia agents confirmed). Any future fleet box running Skill-32 materialization would have gotten the same invalid config. The backfill block now actively strips any stale `wiki` key left by earlier runs, making the next materialize run a remediation pass for pre-existing bad entries. Per-agent doc-search is expressed via the existing memorySearch block.
+
+- **Version**: v11.26.0 -> v11.27.0 (all version markers + cc-compat.json).
+
 ## [v11.26.0]  -  2026-06-12  -  feat: Presentation Department change order v2 + ROLE-16 Healer-Presentations
 
 ### Changes
