@@ -283,7 +283,7 @@ The agent saves the tag list (names + IDs) to the workflow's `--ghl-side.md` fil
 
 #### D.2 — Generate the Build-with-AI prompt (Part 1a)
 
-> **CRITICAL — no PUBLIC API/MCP; skill 44 internal path or Build with AI.** GHL Automations have no PUBLIC API or MCP. The Build with AI button is the public path. Skill 44 provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path (the operator clicks it, then pastes the prompt the agent generates here). Do NOT claim a PUBLIC GHL Automations API exists. See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
+> **CRITICAL — CAF-first; no PUBLIC API/MCP.** GHL Automations have no PUBLIC API or MCP, but Skill 44's internal-API path (Tier 0) IS a programmatic build path. When the client's Firebase token is present, Skill 44 builds the workflow directly (Option 1, PRIMARY — the owner does nothing). When the token is absent, fall back to GHL's "Build with AI" button (Option 2, the no-token fallback — the operator clicks it, then pastes the prompt the agent generates here). Do NOT claim a PUBLIC GHL Automations API exists. See `references/GHL_AI_LAYERS.md` (canonical) and `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
 
 The agent writes a precise prompt the operator pastes into the GHL **Build with AI** button. The prompt's
 PRIMARY JOB is to get the **SHAPE** right — trigger, if/else branches, filters, tags, and the Custom
@@ -367,20 +367,25 @@ Each field is filled in with the EXACT values from the operator's setup (`PUBLIC
 
 The agent then tells the operator:
 
-> "✓ Build-with-AI prompt ready. Here's how to use it:
+> "✓ Workflow ready to build.
 >
+> **If your Convert and Flow (Firebase) token is connected — you do nothing.**
+> Skill 44 (Tier 0) builds the workflow structure for you directly via the
+> internal API (`caf workflows build`). I'll tell you when it's built.
+>
+> **Only if the token is NOT connected** (you'll know — I'll ask you to grab
+> it), here's the manual fallback:
 > 1. Open your Convert and Flow account
 > 2. Click **Automations** on the left menu
-> 3. Click the **Build with AI** button — the public path; or let skill 44 build
->    via its internal-API path when the Firebase token is present
+> 3. Click the **Build with AI** button (the no-token fallback path)
 > 4. Paste the prompt I saved at:
 >    `<MASTER_FILES_DIR>/conversation-workflows/<workflow-id>--workflow-ai-prompt.md`
 > 5. Let Build with AI build the structure
 >
-> Once it's built, come back and tell me. I'll give you a verification
-> checklist — Build with AI gets the SHAPE (trigger, branches, tags,
-> webhook step) right, but it often fumbles the token and the exact
-> webhook URL, so you'll paste those values in yourself."
+> Either way, once it's built I'll give you a verification checklist — whichever
+> path built it gets the SHAPE (trigger, branches, tags, webhook step) right,
+> but the token and the exact webhook URL still get confirmed against the
+> checklist before you publish."
 
 #### D.2b — Manual-build fallback (Part 1b)
 

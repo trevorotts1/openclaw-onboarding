@@ -1,3 +1,17 @@
+## [1.7.2] - 2026-06-11 — de-hoop: route workflow-creation through Skill 44 (Tier 0) first
+
+### Changed (GHL skills integration review — CAF-first de-hoop)
+- **Operator-facing handoff + templates now lead with Skill 44 (Tier 0), not the manual Build-with-AI hoop.** Per the fleet directive ("clients never jump through hoops to create a workflow — they just ask their Skill-44 agent"), the build-path instructions the agent reads to the owner are reordered to CAF-first:
+  - `protocols/conversation-workflows-protocol.md` — operator handoff (~L370) now says: if the Firebase token is connected, **Skill 44 builds the workflow directly — the owner does nothing**; Build with AI is the explicit no-token fallback. The §D.2 CRITICAL note (~L286) reworded to the same Option-1 (CAF, PRIMARY) / Option-2 (Build-with-AI, no-token fallback) framing.
+  - `templates/sms-workflow-ai-prompt-template.md` — added the CAF-first lead; the manual Build-with-AI steps are now labeled "fallback — only when the Firebase token is NOT connected."
+  - `templates/workflow-verification-checklist-template.md` — corrected the factual error that Build-with-AI is "the only programmatic path"; Skill 44's internal-API path IS programmatic and is primary when the token is present.
+  - `references/workflow-ai-instructions-standard.md` — "WHERE it goes" §1 reordered to Option 1 (Skill 44 / Tier 0, PRIMARY) then Option 2 (Build with AI, no-token fallback); intro paragraph aligned.
+  - `CORE_UPDATES.md` Rule 16 (Convert-and-Flow Build-Path Rule) reworded to CAF-first.
+- **3-layer separation preserved** (Layer 0 Build-with-AI prompt / Layer 1 Workflow-AI step prompt / Layer 2 OpenClaw playbook never conflated). The TRINITY rule + `scripts/qc-trinity-registry.sh` hard gate are untouched. Prompt-generation (§D.2) and the path-agnostic verification checklist remain documented manual artifacts (legitimate exceptions — caf consumes a prompt but does not author it).
+
+### Fixed
+- SKILL.md SELF-COUNTS: `references/` count reconciled 19 → 22 to match disk (the Addendum-C `GHL_AI_LAYERS.md` merge plus `GHL-INBOUND-AND-PLAYBOOKS.md` and `VPS-VS-MAC-INSTALL.md` were on disk but uncounted). Per the bump-version.sh Skill-38 self-count re-verification rule.
+
 ## [1.7.1] - 2026-06-11 — wire.sh stock-bash-3.2 compatibility (externalize python-in-$() heredocs)
 
 ### Fixed

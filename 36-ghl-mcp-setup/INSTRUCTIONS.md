@@ -1,8 +1,8 @@
 # GHL MCP — How to Use It Day to Day
 
-This document explains how to USE the 5-tier GHL access chain after setup is complete. If setup is not done yet, read INSTALL.md first.
+This document explains how to USE the 6-tier GHL access chain after setup is complete. If setup is not done yet, read INSTALL.md first.
 
-After setup, your agent can route GHL requests through Official MCP, Community MCP, raw API, browser, and Codex Computer Use — in that order of preference.
+After setup, your agent can route GHL requests through Tier 0 Convert and Flow CLI (skill 44 — PRIMARY), then Official MCP, Community MCP, raw API, agent-browser/Playwright, and Codex Computer Use — in that order of preference.
 
 ## The Cardinal Rule
 

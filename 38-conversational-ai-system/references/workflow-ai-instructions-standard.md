@@ -6,7 +6,7 @@
 
 # Workflow-AI Instructions Standard (Skill 38)
 
-A **workflow-AI prompt** is the instruction set the agent generates — either used by skill 44's internal-API path (when the Firebase token is present) or pasted by the operator into GHL / Convert and Flow's **"Build with AI" button** — to construct a NEW automation/workflow. GHL Automations have no PUBLIC API or MCP. The Build with AI button is the public path. Skill 44 provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path. This file
+A **workflow-AI prompt** is the instruction set the agent generates — used by skill 44's internal-API path (Option 1, PRIMARY, when the Firebase token is present) or, as the no-token fallback, pasted by the operator into GHL / Convert and Flow's **"Build with AI" button** (Option 2) — to construct a NEW automation/workflow. GHL Automations have no PUBLIC API or MCP, but Skill 44's internal-API path (Tier 0) IS a programmatic build path and is the primary one when the token is present; Build with AI is the no-token fallback. This file
 is the single standard for what every workflow-AI instruction set must contain, WHERE it goes, the
 exact field-by-field steps for the Custom Webhook action (which Build-with-AI repeatedly fails to
 populate), and how to teach MULTI-ACTION workflows.
@@ -53,9 +53,17 @@ populate), and how to teach MULTI-ACTION workflows.
 
 ---
 
-## 1. WHERE it goes (do not guess)
+## 1. WHERE it goes (do not guess) — CAF-first (Tier 0 PRIMARY)
 
-The workflow-AI prompt is pasted into GHL's **"Build with AI"** button in the **Automations area** when
+The build path is decided by the canonical 3-layer doc `references/GHL_AI_LAYERS.md`. Two paths, in order:
+
+**Option 1 — PRIMARY (Skill 44 / Tier 0, internal API).** When the client has Skill 44 installed AND a
+healthy `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`, skill 44 builds the workflow structure directly via the
+internal API (`caf workflows build`) from this same spec — the owner does nothing. This is the reliable
+path and the default. Skill 44 then runs the same post-build verification checklist (Section 4).
+
+**Option 2 — FALLBACK (no token, GHL "Build with AI" button).** Only when the Firebase token is absent or
+expired, the prompt is pasted into GHL's **"Build with AI"** button in the **Automations area** when
 creating a NEW automation/workflow:
 
 1. Open Convert and Flow → **Automations** (left menu).
@@ -64,7 +72,10 @@ creating a NEW automation/workflow:
 4. Let Build with AI construct the structure.
 5. Run the **Build-with-AI Verification Checklist** (Section 4) before publishing.
 
-> CRITICAL — no PUBLIC API/MCP. GHL Automations have no PUBLIC API or MCP. The Build with AI button is the public path. Skill 44 provides an internal-API build path when the client's Firebase token is present; when absent, Build with AI remains the only path. See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
+> CRITICAL — no PUBLIC API/MCP. GHL Automations have no PUBLIC API or MCP. Skill 44's internal-API path
+> (Tier 0) IS a programmatic build path and is the PRIMARY one when the Firebase token is present. The
+> Build with AI button is the no-token FALLBACK. See `references/GHL_AI_LAYERS.md` (canonical) and
+> `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4.
 
 ## 2. MUST-APPEAR checklist — every workflow-AI instruction set
 
