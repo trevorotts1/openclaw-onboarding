@@ -673,11 +673,37 @@ After each department is created, ask: "What does success look like for this dep
 - If the client hesitates or says "I don't know", offer: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
 - If yes, research industry best practices and present 3 KPI options as choices, not mandates
 
+#### Context Ingestion (Before Any Question)
+
+*Added v12.3.4. This step runs before any interview question is asked.*
+
+Before the AI asks you a single question, it reads everything it already knows about you and your business. This is called the **Context Ingestion Pre-Pass** (Phase 0.5). Here is what it reads:
+
+1. Your core profile files — IDENTITY, MEMORY, AGENTS, TOOLS, USER, and SOUL — the six foundation files that contain who you are, what you value, how you work, and what tools you use.
+2. Pre-interview research from your website, LinkedIn, and any links you dropped in Phase 0.
+3. Any answers from a previous interview session (if you are resuming).
+4. A list of documents and links you provided (provided-context-manifest.md).
+
+The AI sorts everything it finds into three buckets for each interview topic:
+
+- **KNOWN** — it already has a clear answer from your existing files. Instead of asking from scratch, it confirms with you: *"Based on your profile, you serve real estate coaches. Still true, or did anything change?"*
+- **PARTIAL** — it has a hint but needs more detail. It skips the basic question and goes straight to the deeper one: *"I see you work with coaches — which type, and why do they choose you over anyone else?"*
+- **UNKNOWN** — no information found. It asks the full question fresh, just like a standard interview.
+
+**What this means for you:** The interview gets shorter and smarter. You only answer things the AI genuinely does not know. You never get asked something it already has on file.
+
+**Two important rules the AI follows:**
+
+- **KNOWN-CONTEXT is never secretly recorded.** When the AI says "I see you serve real estate coaches — still true?", it does NOT silently write that as your answer. It only writes what YOU say out loud in the live session. If you confirm it, it logs your confirmation. If you correct it, it logs your correction. If you skip it, nothing gets written.
+- **RECORDED-ANSWER = what YOU said.** The only things that go into your company blueprint are words that came out of your mouth (or keyboard) in this session. Pre-existing files inform the questions; they never replace your voice.
+
+This is the NO-FABRICATION rule in plain English: *"I only write down what YOU tell me. What I already know, I just confirm with you."*
+
 #### Context-Aware Question Flow
 
 The AI should ask questions in this priority order. After each question, add: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-1. **Check context files first** - If USER.md says the business uses GoHighLevel, don't ask "What tools do you use?" - you already know.
+1. **Run Context Ingestion first** (Phase 0.5) — load `interview-context-map.json` before asking anything. If USER.md says the business uses GoHighLevel, don't ask "What tools do you use?" — you already know.
 
 2. **Ask high-level questions first:**
    - "What is your business name?" (Example: BlackCEO, Acme Coaching)

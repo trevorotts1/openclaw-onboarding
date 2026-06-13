@@ -64,7 +64,7 @@ This skill serves new entrepreneurs and business owners who have never successfu
 
 This is the SINGLE skill that builds a client's entire AI company. It replaces what used to be three separate skills (Skills 23, 33, and 34) with one unified flow:
 
-1. **Interviews the client** about their business using dynamic, plain-English questions (3-7 per department based on complexity and what the AI already knows)
+1. **Ingests existing client context first** (Phase 0.5: `scripts/context-ingest.py` reads all 6 core workspace files + prior answers + Phase 0 research → `interview-context-map.json`), then **interviews the client** with dynamic, plain-English questions (3-7 per department, skipping known facts, deepening partial ones, asking fresh only for unknowns)
 2. **Creates departments** based on interview answers, on top of a CANONICAL FLOOR. The canonical floor (run `scripts/list-canonical-departments.py` to see the current list) of mandatory departments (from department-naming-map.json) is built for every company unless the client explicitly declined one in build-state (canonicalReconciliation.decisions), UNION any client custom departments. reconcile_canonical_floor() in build-workforce.py enforces this in code (standard-unless-declined) and writes an auditable canonicalReconciliation record. Client-named canonical depts keep their real description; the rest inherit the naming-map one-liner with the client's industry context.
 3. **Hires department heads** as permanent agents with full workspaces and core files
 4. **Determines specialists** - the AI silently decides which roles are full-time team members (permanent agents) vs on-call specialists (spawned when needed). The client never hears these technical terms.
@@ -197,14 +197,34 @@ Each department head gets an agents.list entry:
 
 ## Interview Design
 
-### Before Asking Any Question
-Check USER.md, MEMORY.md, AGENTS.md, TOOLS.md, and workforce-interview-answers.md for information already known. Confirm instead of re-asking.
+### Before Asking Any Question — Context Ingestion (v12.3.4)
+
+Run `scripts/context-ingest.py` (Phase 0.5 in INSTRUCTIONS.md) BEFORE asking any question.
+It reads all **6 core workspace files** (IDENTITY.md, MEMORY.md, AGENTS.md, TOOLS.md,
+USER.md, SOUL.md) plus pre-interview-research.md, software-stack-capabilities.md,
+prior workforce-interview-answers.md, and provided-context-manifest.md, then produces
+`interview-context-map.json` classifying each interview theme:
+
+- **KNOWN** → confirm with client: *"Based on [source], [X]. Still right, or did anything change?"*
+  Log only after client confirms. Tag answer: `confirmed-from-context: <source>`.
+- **PARTIAL** → deepen: skip the surface question, lead in with what you know, drill deeper.
+- **UNKNOWN** → ask fresh (standard interview flow).
+
+**Two non-negotiable definitions:**
+- **KNOWN-CONTEXT** = a fact found in an ingested source. May inform questions only; NEVER
+  silently recorded as a client answer.
+- **RECORDED-ANSWER** = a value written to `workforce-interview-answers.md` by `log_answer()`.
+  May ONLY originate from a client utterance in the live session.
+
+If context-ingest.py cannot run or produces no map, treat all themes as UNKNOWN and run the
+full interview as normal — purely additive.
 
 ### Question Philosophy
 - Plain English only. No jargon.
 - Every question includes an example answer
 - After every question, tell the client: "If you are not sure, just say 'I don't know' and I will research the best answer for you."
 - Dynamic count: 3-7 per department based on complexity and what is already known
+  (the `interview-context-map.json` from Phase 0.5 is the source of "what is already known")
 - Progress indicators at milestones
 - For every department, ask the one Healer-dependency question so the embedded Healer knows what to watch: "Are there any unusual outside tools, APIs, or services this department depends on that I should keep an eye on for breakages or version changes?" (example answer: "We rely on a niche scheduling API and a custom Zapier webhook.") This seeds the department Healer's model and external-dependency census.
 

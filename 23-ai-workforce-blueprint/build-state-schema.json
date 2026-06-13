@@ -518,7 +518,7 @@
     },
     "interviewProgress": {
       "type": "object",
-      "description": "Per-question state updated by update-interview-state.sh. Source of truth for the resume cron and dashboard interview-progress UI. Added in v10.15.1 (VPS) / v10.14.1 (Mac).",
+      "description": "Per-question state updated by update-interview-state.sh. Source of truth for the resume cron and dashboard interview-progress UI. Added in v10.15.1 (VPS) / v10.14.1 (Mac). v12.3.4: added contextIngest sub-object.",
       "properties": {
         "lastQuestionNumber": {
           "type": "integer"
@@ -538,6 +538,39 @@
           "items": {
             "type": "string"
           }
+        },
+        "contextIngest": {
+          "type": "object",
+          "description": "v12.3.4: written by context-ingest.py (Phase 0.5). Records that the context pre-pass ran and how many themes it classified. Non-blocking: absent = pre-pass not yet run. Used by QC and dashboard to show context-ingestion status.",
+          "properties": {
+            "ranAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "ISO-8601 timestamp when context-ingest.py completed."
+            },
+            "sources": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "List of source file labels that were present during ingestion."
+            },
+            "themesKnown": {
+              "type": "integer",
+              "description": "Number of interview themes classified as KNOWN (confirmed, not re-asked cold)."
+            },
+            "themesPartial": {
+              "type": "integer",
+              "description": "Number of interview themes classified as PARTIAL (deepened)."
+            },
+            "themesUnknown": {
+              "type": "integer",
+              "description": "Number of interview themes classified as UNKNOWN (asked fresh)."
+            },
+            "mapPath": {
+              "type": "string",
+              "description": "Absolute path to the interview-context-map.json written by context-ingest.py."
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
