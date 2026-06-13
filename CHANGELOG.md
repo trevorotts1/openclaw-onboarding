@@ -1,3 +1,15 @@
+## [v12.3.3]  -  2026-06-13  -  fix: credential-check helper + N33 agent protocol — never falsely report a key missing
+
+### Changes
+
+**A — `shared-utils/check-credential.sh` (new reusable helper).** Canonical four-layer credential existence checker that agents and tooling MUST use instead of ad-hoc greps. Checks in the correct order: (a) live process env (`docker exec <container> printenv` on VPS, `ps eww <gateway-pid>` on Mac — the definitive source), (b) `/docker/<project>/.env` (Docker Compose env file), (c) `openclaw.json mcp.servers.<svc>.headers` + `.env` (MCP-wired keys like Notion and GHL live here, not as bare env vars), (d) all `.env` stores (`secrets/.env`, `workspace/.env`, `clawd/secrets/.env`, `clawd/.env`, `service-env/ai.openclaw.gateway.env`, `openclaw.json env.vars`, `auth-profiles.json`). Output: `FOUND-in-<LOCATION>: KEY=******` (always masked) or `GENUINELY-ABSENT` with the full checked list. Exit 0 = found. Exit 1 = genuinely absent. Never reports absent without having run the live-process-env check. Supports `--json` and `--quiet` modes. Installed to `~/.openclaw/skills/shared-utils/` on every box via the existing `shared-utils` copy step.
+
+**B — AGENTS.md `N33 — Credential Check Protocol` (new section, marker `CREDENTIAL_CHECK_V1`).** Teaches every agent the evidence triad required before "missing" can be claimed: (1) live process env checked, (2) MCP server headers checked, (3) all .env stores checked. DO/DON'T table of common false-negative traps: Docker container env vs host filesystem miss; grep only secrets/.env + openclaw.json; "plugin enabled but key=null" = key IS in MCP headers; trusting a file-grep miss without the live-process-env check. Idempotency marker prevents double-injection by `apply-fleet-standards.sh`.
+
+**Root cause this fixes:** agents falsely reported 3 keys "missing" by checking only `secrets/.env` + `openclaw.json`, skipping the live container process env and MCP server headers where keys actually lived (`~/.openclaw/workspace/.env`, `~/clawd/secrets/.env` confirmed for Jocelyn KIE / Sonatta PIT / Jill GHL).
+
+---
+
 ## [v12.3.2]  -  2026-06-13  -  chore: remove _stage1_drafts leftover + keep both distinct openclaw-maintenance roles
 
 ### Changes

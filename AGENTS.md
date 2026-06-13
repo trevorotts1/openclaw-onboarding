@@ -628,6 +628,70 @@ Don't wait for permission to improve. If you learned something, write it down no
 
 ---
 
+<!-- CREDENTIAL_CHECK_V1 -->
+## 🔴 N33 — Credential Check Protocol (never falsely report a key missing)
+
+> Idempotency marker: `CREDENTIAL_CHECK_V1`. `apply-fleet-standards.sh` injects this on
+> existing boxes. Do NOT add it again if the marker is already present.
+
+A credential that exists in the live process env but is absent from a flat file is **PRESENT**.
+An agent that reports "missing" without the evidence triad below has made a false claim.
+
+### The Evidence Triad (required before "missing")
+
+Before reporting any key as absent, you MUST have completed all three steps:
+
+1. **Live process env** — checked via `docker exec <container> printenv` (VPS) or `ps eww <gw-pid>` (Mac).
+2. **MCP server headers** — checked `openclaw.json mcp.servers.<svc>.headers` + `.env` (Notion, GHL, and other MCP-wired keys live here, not as bare env vars).
+3. **All .env stores** — checked every store listed in the "checked" output of `check-credential.sh`.
+
+Only after all three return empty may you say a key is **GENUINELY-ABSENT**.
+
+### DO — correct procedure
+
+```
+# Use the canonical helper every time:
+~/.openclaw/skills/shared-utils/check-credential.sh <KEY_NAME>
+
+# On VPS (Docker): check live process env first
+docker exec <container> printenv | grep -i <KEY_NAME>
+
+# On Mac/host: check gateway process env first
+ps eww <gateway-pid> | tr ' ' '\n' | grep -i <KEY_NAME>
+
+# Always check MCP headers for Notion / GHL keys
+python3 -c "
+import json
+cfg=json.load(open('~/.openclaw/openclaw.json'.replace('~', __import__('os').path.expanduser('~'))))
+mcp=cfg.get('mcp',{}).get('servers',{})
+[print(k,v) for svc in mcp.values() for k,v in svc.get('headers',{}).items()]
+"
+```
+
+### DON'T — common false-negative traps
+
+| Trap | Why it's wrong |
+|------|----------------|
+| `grep -r KEY ~/.openclaw/secrets/.env` only, then report missing | Docker trap: key is in the container process env, not the host file |
+| Check host filesystem on a VPS and conclude "key absent" | Host file miss ≠ container process env miss |
+| Grep `secrets/.env` + `openclaw.json` only | Skips `workspace/.env`, `clawd/secrets/.env`, `service-env/`, auth-profiles |
+| See "plugin enabled but key=null" and report key missing | That means the key IS in MCP headers — it's not surfaced as a bare env var |
+| Trust a `file-grep` miss without the live-process-env check | The process env is the authoritative source; file greps are secondary |
+| Report NONE/missing without citing which stores were checked | Incomplete evidence = unverifiable claim |
+
+### check-credential.sh — canonical helper location
+
+```
+~/.openclaw/skills/shared-utils/check-credential.sh <KEY_NAME>
+```
+
+Output: `FOUND-in-<LOCATION>: KEY=******` (masked) or `GENUINELY-ABSENT` with full checked list.
+The script NEVER prints cleartext values. Exit 0 = found. Exit 1 = genuinely absent.
+
+Check order: (a) live process env → (b) /docker/<project>/.env → (c) MCP server headers/env → (d) all .env stores + openclaw.json env.vars + auth-profiles.json.
+
+---
+
 ## Learned Lessons
 
 > Add lessons here as you learn them
