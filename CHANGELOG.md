@@ -1,3 +1,18 @@
+## [v12.3.2]  -  2026-06-13  -  chore: remove _stage1_drafts leftover + keep both distinct openclaw-maintenance roles
+
+### Changes
+
+**A — Removed `_stage1_drafts/openclaw-maintenance/system-health--uptime-specialist.md`.** This was a leftover scratch copy of the real role (same file exists in the live `openclaw-maintenance/` dir). Confirmed `_stage1_drafts` is explicitly SKIPped by both gate scripts (`verify-library-gate.sh` and `test-trio-gate.sh` include `SKIP = {"_stage1_drafts", "master-orchestrator"}`), so the dir is never loaded by any operational logic. The draft was the only non-QC leftover; all other `_stage1_drafts/openclaw-maintenance/` files are legitimate original draft copies. No operational impact.
+
+**B — `system-health--uptime-specialist` KEPT (not a duplicate).** Investigation confirmed these two roles are DISTINCT:
+- `system-health--uptime-specialist`: Broad platform health monitoring — agent heartbeat sweeps, service liveness probes, alert triage, health baselines, KPIs, weekly health reports. Tools: `openclaw health`, `openclaw resources`, alert manager, uptime calculator.
+- `uptime-connectivity-watchdog-specialist` (added v12.3.0): Narrowly scoped — keeps the OpenClaw gateway (port 18789) and Cloudflare tunnel online. Owns F4/F5/F7 loop classes (kill-spawn loops, PM2 second-gateway, GHL-MCP announce spam). Includes the Mac hard rule (never `openclaw gateway restart` over SSH).
+Both remain registered in `_index.json`. openclaw-maintenance count stays at 19; `total_roles` stays at 335.
+
+**C — No `_index.json` changes.** Invariants confirmed: `count == len(roles)` for all depts; `total_roles (335) == sum(dept counts)`.
+
+---
+
 ## [v12.3.1]  -  2026-06-13  -  fix: floor reporting never stale + interview never falsely flagged incomplete
 
 ### Changes
