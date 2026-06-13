@@ -4,10 +4,10 @@ department-floor.py — the ONE source of truth for the HARD department floor.
 
 WHY THIS EXISTS (the bug it kills):
 Clients kept landing with HEAVILY-REDUCED workforces (Cassandra 3 depts, others
-3-per-dept / 6-dept / legacy) DESPITE the repo carrying 216 role templates, 16
-mandatory canonical departments, and 7 industry vertical packs. Diagnosis found
-THREE places that trusted the build-state JSON as proof of completion instead of
-counting REAL departments on disk:
+3-per-dept / 6-dept / legacy) DESPITE the repo carrying 216 role templates,
+the mandatory canonical departments, and 7 industry vertical packs. Diagnosis
+found THREE places that trusted the build-state JSON as proof of completion
+instead of counting REAL departments on disk:
   1. verify-zhc-standard.sh step-2 read `.departments[]` from the build-state
      JSON, so a hand-seeded 3-dept JSON (Cassandra's seeded fiction) reported
      "all canonical present" and passed the floor.
@@ -17,19 +17,25 @@ counting REAL departments on disk:
      status=done / closeoutStatus=done with zero disk verification.
 
 THE FIX (this module): compute the EXPECTED floor =
-    21 mandatory canonical departments
-    + the 7 universal-primary vertical-pack departments (one per pack,
-      marked universal_primary=true in department-naming-map.json — these
-      fire for EVERY client regardless of industry, giving the 7-universal-primary floor)
+    len(HARDCODED_MANDATORY) mandatory canonical departments
+    + len(universal_primary_vertical_departments(...)) universal-primary
+      vertical-pack departments (one per pack, marked universal_primary=true in
+      department-naming-map.json — these fire for EVERY client regardless of
+      industry, giving the universal-primary floor)
     − any department the client EXPLICITLY declined (recorded as an explicit
       decline in build-state canonicalReconciliation.decisions == "no")
 
     Industry keyword matching STILL adds additional pack departments on top of
-    the 28 floor, but those extras are not gating — the gate only checks for
-    the 7 universal primaries (plus the 21 mandatory). The minimum floor is
-    28 departments. exit 3 fires when disk is below 28 or a specific
-    mandatory/universal-primary dept is missing. Exit 3 never fires for missing
-    EXTRA (keyword-matched) pack depts — those are flavor, not floor.
+    the computed floor, but those extras are not gating — the gate only checks
+    for the universal primaries (plus the mandatory set). exit 3 fires when disk
+    is below the computed floor or a specific mandatory/universal-primary dept is
+    missing. Exit 3 never fires for missing EXTRA (keyword-matched) pack depts —
+    those are flavor, not floor.
+
+    NOTE: the computed floor count is ALWAYS derived at runtime from the live
+    data (len(HARDCODED_MANDATORY) + count of universal-primary pack depts) so
+    the reported number can NEVER drift from what evaluate_floor() enforces.
+    No integer floor counts are hardcoded in any human-readable string.
 
 …and then count the REAL department directories ON DISK and FAIL hard when disk
 is below the floor or a mandatory/universal-primary dept is missing from disk.
@@ -43,9 +49,13 @@ USAGE
   python3 department-floor.py --json            # machine-readable verdict to stdout
   python3 department-floor.py                   # human summary to stderr
 EXIT CODES
-  0  floor met (on disk >= 28: all mandatory(−declines) + all 7 universal primaries(−declines))
-  3  floor NOT met (below 28 or a specific mandatory/universal-primary dept missing)
+  0  floor met (all mandatory(−declines) + all universal primaries(−declines) on disk)
+  3  floor NOT met (below computed floor or a mandatory/universal-primary dept missing)
   7  no workforce / cannot resolve company on disk
+
+The exact floor count is computed dynamically from HARDCODED_MANDATORY +
+universal_primary_vertical_departments(); print it with --json or the default
+human summary to see the live count.
 
 This module is import-safe: `from department_floor import evaluate_floor`
 (after adding the scripts dir to sys.path) returns the verdict dict directly.
@@ -117,7 +127,8 @@ def universal_primary_vertical_departments(nm):
     Return the list of universal primary vertical-pack department ids — one per
     pack, the department marked universal_primary=true (always the first dept in
     auto_add_departments). These are added to EVERY client regardless of industry,
-    giving the 21+7=28 mandatory floor.
+    giving the len(HARDCODED_MANDATORY) + len(result) mandatory floor (computed at
+    runtime — no integer is hardcoded here).
 
     If a pack has no dept marked universal_primary=true, the first dept in
     auto_add_departments is treated as the universal primary (backward-compatible
@@ -151,10 +162,11 @@ def universal_primary_vertical_departments(nm):
 def matched_vertical_pack_departments(nm, core_answers):
     """
     Return the list of vertical-pack department ids for the client — includes:
-      1. ALL 7 universal primary departments (one per pack, always present for
-         every client — these are the 7 universal primaries (21+7=28 total mandatory floor)).
+      1. All universal primary departments (one per pack, always present for every
+         client — these are the universal primaries that form the top layer of the
+         computed mandatory floor alongside HARDCODED_MANDATORY).
       2. Additional pack departments that match the client's industry keywords
-         (flavor/extras on top of the 23 floor, not gating).
+         (flavor/extras on top of the computed floor, not gating).
 
     De-duped. Deterministic. Uses the SAME keyword-match logic as
     build-workforce._detect_vertical_packs().
@@ -370,23 +382,23 @@ def load_build_state():
 
 def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
     """
-    Compute the HARD department floor (28-department standard) and compare it to
-    REAL on-disk departments.
+    Compute the HARD department floor and compare it to REAL on-disk departments.
 
-    The floor is 21 mandatory + 7 universal-primary vertical-pack departments = 28.
-    Additional keyword-matched pack departments are tracked but do NOT gate the
-    floor — they are flavor/extras on top of the 28.
+    The floor = len(HARDCODED_MANDATORY) mandatory + len(universal_primary_vertical_departments())
+    universal-primary vertical-pack departments. Both counts are derived at runtime
+    from the live data so the reported floor ALWAYS equals what this function enforces.
+    Additional keyword-matched pack departments are tracked but do NOT gate the floor.
 
     Returns a verdict dict:
       {
         "rc": 0|3|7,
         "departments_dir": str|None,
-        "mandatory": [...],              # 21 canonical mandatory dept ids
+        "mandatory": [...],              # canonical mandatory dept ids
         "declined": [...],
-        "universal_primary_vertical": [...],  # 7 universal pack primaries (always required)
+        "universal_primary_vertical": [...],  # universal pack primaries (always required)
         "matched_vertical_departments": [...],  # universal primaries + keyword extras
         "expected_floor": [...],         # mandatory(−declined) + universal primaries(−declined)
-        "expected_floor_count": int,     # should be 28 minus any explicit declines
+        "expected_floor_count": int,     # computed floor minus any explicit declines
         "on_disk_count": int,
         "missing_mandatory": [...],      # mandatory not found on disk (not declined)
         "missing_universal_primary": [...],  # universal-primary depts missing from disk
@@ -419,7 +431,7 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
     present = departments_on_disk(departments_dir)
 
     expected_mand = [c for c in mand if _norm(c) not in declined]
-    # Floor gate: only the 7 universal primaries (not all matched extras).
+    # Floor gate: only the universal primaries (one per pack, not all keyword-matched extras).
     expected_universal_primary = [v for v in universal_primaries if _norm(v) not in declined]
     expected_floor = expected_mand + expected_universal_primary
 
@@ -429,7 +441,13 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
     floor_met = (not missing_mandatory) and (not missing_universal_primary)
     rc = 0 if floor_met else 3
 
-    reason = "floor met (28-department standard)"
+    # Reason string uses the live computed floor count — never a hardcoded integer.
+    _expected_floor_count = len(expected_mand) + len(expected_universal_primary)
+    reason = (
+        f"floor met ({_expected_floor_count}-department standard: "
+        f"{len(mand)} mandatory + {len(universal_primaries)} universal-primary-vertical"
+        f" − {len(declined)} declined)"
+    )
     if not floor_met:
         bits = []
         if missing_mandatory:
@@ -466,8 +484,14 @@ def main(argv):
     if as_json:
         print(json.dumps(verdict, indent=2))
     else:
+        _floor_label = (
+            f"{verdict['expected_floor_count']}-department standard"
+            f" ({len(verdict['mandatory'])} mandatory"
+            f" + {len(verdict['universal_primary_vertical'])} universal-primary-vertical"
+            f" − {len(verdict['declined'])} declined)"
+        )
         print("============================================", file=sys.stderr)
-        print("department-floor.py — HARD floor verdict (28-department standard)", file=sys.stderr)
+        print(f"department-floor.py — HARD floor verdict ({_floor_label})", file=sys.stderr)
         print(f"departments_dir = {verdict['departments_dir']}", file=sys.stderr)
         print(f"expected floor  = {verdict['expected_floor_count']} "
               f"({len(verdict['mandatory'])} mandatory "
