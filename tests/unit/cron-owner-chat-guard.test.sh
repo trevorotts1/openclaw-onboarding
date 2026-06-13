@@ -369,6 +369,85 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# (5) COMMAND-MODE INVARIANT (v12.3.10)
+# The interview-nudge cron MUST be registered in silent command mode.
+# Assert: install.sh's interview-nudge registration uses `openclaw cron add`
+# with `--command` and contains NO `--channel telegram` / `--to` / `--message`
+# on the interview-nudge create path. Also assert no operator id appears as a
+# cron --to target in interview-nudge-cron.sh itself.
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "--- (5) COMMAND-MODE: interview-nudge cron registered in silent command mode ---"
+
+# 5a: install.sh interview-nudge section uses `openclaw cron add ... --command`
+nudge_section=$(awk '/install_interview_nudge_cron\(\)/,/^install_interview_nudge_cron$/' \
+    "$REPO_ROOT/install.sh" 2>/dev/null || true)
+
+if [ -z "$nudge_section" ]; then
+    fail "5a: could not extract install_interview_nudge_cron() function body from install.sh"
+else
+    if echo "$nudge_section" | grep -q 'openclaw cron add'; then
+        pass "5a: install.sh interview-nudge uses 'openclaw cron add' (command mode)"
+    else
+        fail "5a: install.sh interview-nudge does NOT use 'openclaw cron add'"
+    fi
+
+    if echo "$nudge_section" | grep -q -- '--command'; then
+        pass "5b: install.sh interview-nudge uses --command flag (silent command mode)"
+    else
+        fail "5b: install.sh interview-nudge does NOT use --command flag"
+    fi
+
+    # Must NOT contain --channel telegram or --to or --message on the nudge cron add line
+    if echo "$nudge_section" | grep 'openclaw cron add\|openclaw cron create' | grep -q -- '--channel telegram'; then
+        fail "5c: install.sh interview-nudge cron registration contains --channel telegram (announce mode leak)"
+    else
+        pass "5c: install.sh interview-nudge cron registration has NO --channel telegram"
+    fi
+
+    if echo "$nudge_section" | grep 'openclaw cron add\|openclaw cron create' | grep -qE '\-\-to [0-9]|\-\-to "\$'; then
+        fail "5d: install.sh interview-nudge cron registration contains --to <id> (announce mode leak)"
+    else
+        pass "5d: install.sh interview-nudge cron registration has NO --to"
+    fi
+
+    if echo "$nudge_section" | grep 'openclaw cron add\|openclaw cron create' | grep -q -- '--message'; then
+        fail "5e: install.sh interview-nudge cron registration contains --message (announce mode leak)"
+    else
+        pass "5e: install.sh interview-nudge cron registration has NO --message"
+    fi
+fi
+
+# 5f: interview-nudge-cron.sh itself never contains operator ids as --to targets
+nudge_shim="$REPO_ROOT/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh"
+if [ -f "$nudge_shim" ]; then
+    for op_id in "5252140759" "6663821679" "6771245262"; do
+        # Only flag if the operator id appears on a non-comment line as --to value
+        if grep -v "^[[:space:]]*#" "$nudge_shim" | grep -qE "\-\-to ['\"]?${op_id}['\"]?|\-\-target ['\"]?${op_id}['\"]?"; then
+            fail "5f-${op_id}: interview-nudge-cron.sh contains operator id ${op_id} as a --to/--target (operator announce leak)"
+        else
+            pass "5f-${op_id}: interview-nudge-cron.sh does not route to operator id ${op_id}"
+        fi
+    done
+else
+    fail "5f: interview-nudge-cron.sh not found at $nudge_shim"
+fi
+
+# 5g: the shim header documents COMMAND MODE and NO-OPERATOR-ANNOUNCE rules
+if [ -f "$nudge_shim" ]; then
+    if grep -q 'COMMAND mode\|COMMAND MODE\|command mode' "$nudge_shim" 2>/dev/null; then
+        pass "5g: interview-nudge-cron.sh documents COMMAND MODE rule"
+    else
+        fail "5g: interview-nudge-cron.sh missing COMMAND MODE documentation"
+    fi
+    if grep -q 'OPERATOR-ANNOUNCE\|operator-announce\|no.*operator.*announce\|operator.*chat.*log' "$nudge_shim" 2>/dev/null; then
+        pass "5h: interview-nudge-cron.sh documents operator-announce prohibition"
+    else
+        fail "5h: interview-nudge-cron.sh missing operator-announce prohibition documentation"
+    fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""

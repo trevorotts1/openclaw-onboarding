@@ -1,3 +1,11 @@
+## [v12.3.10] — 2026-06-13 — fix: interview-nudge cron self-removes at closeout + on next fire; converted to silent command mode (no operator-announce)
+
+- `scripts/interview-nudge-cron.sh`: added `self_remove_cron()` / `find_nudge_cron_uuid()` (UUID-from-state primary, name-scan fallback). `interviewComplete=true` branch now calls `self_remove_cron("interviewComplete")` before `exit 0` — guarantees removal on the next 6h fire even for clients completed before this release. Added OPERATOR-ANNOUNCE RULE and SELF-REMOVAL docs to header.
+- `build-state-schema.json`: added `interviewNudgeUuid` + `interviewNudgeRegisteredAt` (additive, non-required, mirrors `closeoutResumeUuid`/`closeoutResumeRegisteredAt`).
+- `scripts/test-interview-experience.sh`: added T13 — `interviewComplete=true` + recorded UUID → shim receives `cron rm <uuid>` (self-remove behavioral test).
+
+---
+
 ## [v12.3.4] — 2026-06-13 — feat: Skill 23 interview ingests existing client context to ask sharper, non-redundant questions (no-fabrication guardrail)
 
 ### Overview

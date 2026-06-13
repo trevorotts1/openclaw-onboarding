@@ -299,6 +299,15 @@
       "type": ["string", "null"],
       "description": "PRD-2.8: OpenClaw cron UUID for the dedicated closeout-resume cron (resume-closeout-cron.sh). Written at registration. Used for self-removal when closeout reaches done|partial."
     },
+    "interviewNudgeRegisteredAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "v12.3.10: ISO timestamp when the interview-nudge cron was last registered via `openclaw cron add`. Written by install.sh install_interview_nudge_cron(). Used to detect whether the nudge cron is alive."
+    },
+    "interviewNudgeUuid": {
+      "type": ["string", "null"],
+      "description": "v12.3.10: OpenClaw cron UUID for the interview-nudge cron (interview-nudge-cron.sh). Written at registration. Used for self-removal when interviewComplete=true reaches closeoutStatus=done (run-closeout.sh) and on the next cron fire (interview-nudge-cron.sh self_remove_cron)."
+    },
     "closeoutStartedAt": {
       "type": [
         "string",

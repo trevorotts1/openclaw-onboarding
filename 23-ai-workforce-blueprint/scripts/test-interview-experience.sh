@@ -14,6 +14,7 @@
 #   T10: Nudge silenced when interview is complete
 #   T11: No direct api.telegram.org path in nudge files
 #   T12: Single-source-of-truth invariants (schema, jargon list, contract fence)
+#   T13: interviewComplete=true + recorded UUID → shim receives 'cron rm' (self-remove on next fire)
 #
 # EXIT CODES:
 #   0  all tests PASS
@@ -438,6 +439,72 @@ SHIM
     fail "T11: functional urllib+api.telegram.org call found in nudge files (binding rule violation)"
   else
     fail "T11: no functional urllib pattern (good) but openclaw gateway send NOT found in nudge files"
+  fi
+)
+
+# ── T13: Self-remove on next fire (interviewComplete=true + recorded UUID) ────
+# Acceptance test B: pre-existing boxes like Talaya have interviewComplete=true
+# and a recorded .interviewNudgeUuid. On the next 6h fire, the shim must call
+# `openclaw cron rm <uuid>`, NOT just exit 0 silently.
+(
+  STATE="$TMPDIR_TEST/t13-state.json"
+  SHIM_LOG="$TMPDIR_TEST/t13-shim.log"
+  SHIM_DIR="$TMPDIR_TEST/t13-shim-bin"
+  mkdir -p "$SHIM_DIR"
+
+  # Write a shim that records ALL invocations (cron list for UUID scan, cron rm)
+  cat > "$SHIM_DIR/openclaw" << 'SHIM'
+#!/usr/bin/env bash
+echo "$@" >> "${SHIM_LOG}"
+if [[ "$1" == "cron" && "$2" == "list" ]]; then
+  # Return a fake cron list entry with the test UUID so the name-scan fallback works
+  echo "interview-nudge  0 */6 * * *  deadbeef-0000-0000-0000-000000000001"
+fi
+exit 0
+SHIM
+  chmod +x "$SHIM_DIR/openclaw"
+
+  FAKE_UUID="deadbeef-0000-0000-0000-000000000001"
+
+  # State: interviewComplete=true, 100h idle, with a recorded UUID
+  jq -n \
+    --arg uuid "$FAKE_UUID" \
+    '{
+      "version": 1,
+      "interviewComplete": true,
+      "ownerChat": 9999999999,
+      "ownerName": "Test Owner",
+      "companyName": "TestCo LLC",
+      "industry": "personal-pro-dev",
+      "agentName": "TestCEO",
+      "interviewNudgeUuid": $uuid,
+      "interviewNudgeRegisteredAt": "2026-06-01T00:00:00Z",
+      "interviewProgress": {
+        "lastQuestionNumber": 30,
+        "lastQuestionPhase": "phase5",
+        "lastQuestionAt": "2026-06-01T00:00:00Z"
+      }
+    }' > "$STATE"
+
+  # Run the nudge cron pointing OC_ROOT at a tmp dir with our state file
+  T13_OC_ROOT="$TMPDIR_TEST/t13-oc"
+  mkdir -p "$T13_OC_ROOT/workspace"
+  cp "$STATE" "$T13_OC_ROOT/workspace/.workforce-build-state.json"
+
+  SHIM_LOG="$SHIM_LOG" PATH="$SHIM_DIR:$PATH" \
+    OC_ROOT="$T13_OC_ROOT" \
+    bash "$NUDGE_CRON" 2>/dev/null || true
+
+  # The shim should have been called with `cron rm <uuid>`
+  if [ -f "$SHIM_LOG" ] && grep -q "cron rm" "$SHIM_LOG" 2>/dev/null; then
+    if grep -q "$FAKE_UUID" "$SHIM_LOG" 2>/dev/null; then
+      pass "T13: interviewComplete=true + recorded UUID → shim received 'cron rm $FAKE_UUID' (self-remove on next fire)"
+    else
+      # Name-scan fallback may have used a different UUID from `cron list` output
+      pass "T13: interviewComplete=true + recorded UUID → shim received 'cron rm' (self-remove on next fire)"
+    fi
+  else
+    fail "T13: interviewComplete=true + recorded UUID → expected 'cron rm' in shim log, got: $(cat "$SHIM_LOG" 2>/dev/null || echo '(empty)')"
   fi
 )
 

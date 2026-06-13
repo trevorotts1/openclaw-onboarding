@@ -819,17 +819,18 @@ jobs:
           # stubs / {{token}} leaks / <7KB / missing-Section-9 garbage.
           bash 23-ai-workforce-blueprint/scripts/test-sop-substance-models.sh
 
-      - name: Skill 23 PRD-2.15 interview experience (T1-T12 fixture tests)
+      - name: Skill 23 PRD-2.15 interview experience (T1-T13 fixture tests)
         shell: bash
         run: |
           set -uo pipefail
-          # PRD-2.15 interview experience gate — 12 fixture tests, no network, no client box:
+          # PRD-2.15 interview experience gate — 13 fixture tests, no network, no client box:
           #   T1-T7: qc-interview-completion.py (question count, jargon, fields, nudge wiring)
           #   T8-T10: interview-nudge-cron.sh (gateway shim, idle check, complete-silenced)
           #   T11: no direct api.telegram.org path in any nudge file
           #   T12: single-source-of-truth invariants (forbidden-jargon.json, schema, contract fence)
+          #   T13: interviewComplete=true + recorded UUID → shim receives 'cron rm' (self-remove on next fire)
           bash 23-ai-workforce-blueprint/scripts/test-interview-experience.sh
-          echo "✓ PRD-2.15 interview experience T1-T12 all pass"
+          echo "✓ PRD-2.15 interview experience T1-T13 all pass"
 
       - name: Skill 23 PRD-2.15 static greps (schema + INSTRUCTIONS + build-workforce)
         shell: bash
@@ -842,15 +843,18 @@ jobs:
           #   4. forbidden-jargon.json exists and is valid JSON
           #   5. interview-nudge-cron.sh exists and is executable
           #   6. no api.telegram.org in nudge files (binding gateway rule)
+          #   7. build-state-schema.json has interviewNudgeUuid + interviewNudgeRegisteredAt (v12.3.10)
           python3 -c "
           import json, sys
           s = json.load(open('23-ai-workforce-blueprint/build-state-schema.json'))
           props = s.get('properties', {})
           assert 'industryPack' in props, 'build-state-schema.json missing industryPack'
           assert 'interviewQc' in props, 'build-state-schema.json missing interviewQc'
+          assert 'interviewNudgeUuid' in props, 'build-state-schema.json missing interviewNudgeUuid (v12.3.10)'
+          assert 'interviewNudgeRegisteredAt' in props, 'build-state-schema.json missing interviewNudgeRegisteredAt (v12.3.10)'
           jargon = json.load(open('23-ai-workforce-blueprint/interview/forbidden-jargon.json'))
           assert len(jargon.get('terms', [])) >= 7, 'forbidden-jargon.json has fewer than 7 terms'
-          print('✓ Schema has industryPack + interviewQc; forbidden-jargon.json has 7+ terms')
+          print('✓ Schema has industryPack + interviewQc + interviewNudgeUuid + interviewNudgeRegisteredAt; forbidden-jargon.json has 7+ terms')
           "
           grep -q 'INTERVIEWER-BEHAVIORAL-CONTRACT' \
             23-ai-workforce-blueprint/INSTRUCTIONS.md \
@@ -866,6 +870,42 @@ jobs:
           [ -x 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh ] \
             || { echo '✗ interview-nudge-cron.sh not executable'; exit 1; }
           echo '✓ All PRD-2.15 static grep invariants pass'
+
+      - name: v12.3.10 interview-nudge cron command-mode + no-operator-announce guard
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce TEST C (v12.3.10): interview-nudge cron is registered in
+          # silent command mode — NEVER announce/agentTurn mode. The cron MUST:
+          #   1. use `openclaw cron add ... --command` in install.sh (not cron create with --channel/--to/--message)
+          #   2. contain NO operator id (5252140759|6663821679|6771245262) as a --to/--target value
+          #      in interview-nudge-cron.sh itself
+          # Also runs the full cron-owner-chat-guard.test.sh (includes section 5 command-mode checks).
+          nudge_section=$(awk '/install_interview_nudge_cron\(\)/,/^install_interview_nudge_cron$/' install.sh 2>/dev/null || true)
+          if [ -z "$nudge_section" ]; then
+            echo "✗ Could not extract install_interview_nudge_cron() from install.sh"; exit 1
+          fi
+          if ! echo "$nudge_section" | grep -q 'openclaw cron add'; then
+            echo "✗ install.sh interview-nudge uses 'cron create' (announce mode) instead of 'cron add' (command mode)"; exit 1
+          fi
+          if ! echo "$nudge_section" | grep -q -- '--command'; then
+            echo "✗ install.sh interview-nudge missing --command flag (silent command mode required)"; exit 1
+          fi
+          if echo "$nudge_section" | grep 'openclaw cron' | grep -q -- '--channel telegram'; then
+            echo "✗ install.sh interview-nudge cron contains --channel telegram (announce mode leak)"; exit 1
+          fi
+          if echo "$nudge_section" | grep 'openclaw cron' | grep -qE '\-\-to [0-9]|\-\-to "\$'; then
+            echo "✗ install.sh interview-nudge cron contains --to <id> (announce mode leak)"; exit 1
+          fi
+          for op_id in 5252140759 6663821679 6771245262; do
+            if grep -v "^[[:space:]]*#" 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh \
+                | grep -qE "\-\-to ['\"]?${op_id}['\"]?|\-\-target ['\"]?${op_id}['\"]?"; then
+              echo "✗ interview-nudge-cron.sh routes to operator id ${op_id} (operator announce leak)"; exit 1
+            fi
+          done
+          echo "✓ interview-nudge cron is registered in silent command mode; no operator-announce path"
+          bash tests/unit/cron-owner-chat-guard.test.sh
+          echo "✓ cron-owner-chat-guard.test.sh (incl. section 5 command-mode) all pass"
 
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash
@@ -1328,7 +1368,7 @@ jobs:
       # PRD-2.8: Skill 37 Closeout Gated Pipeline checks
       # ------------------------------------------------------------------
 
-      - name: "Skill 37 PRD-2.8: closeout gated pipeline fixture test"
+      - name: "Skill 37 PRD-2.8/v12.3.10: closeout gated pipeline fixture test"
         shell: bash
         run: |
           set -uo pipefail
@@ -1342,12 +1382,15 @@ jobs:
           #   T7: fleet-sweep script exists and identifies incomplete closeout fixture
           #   T8: schema has all 7 PRD-2.8 deliverable fields
           #   T9: this CI workflow references the new PRD-2.8 QC checks
+          #   T10: loop registry empty assertion (PRD-2.13)
+          #   T11: v12.3.10 run-closeout.sh self-removes interview-nudge cron at done-transition
+          #   T12: v12.3.10 build-state-schema.json has interviewNudgeUuid + interviewNudgeRegisteredAt
           chmod +x 37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh
           chmod +x 37-zhc-closeout/scripts/qc-assert-org-chart-connector-tree.sh || true
           chmod +x 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh || true
           chmod +x 37-zhc-closeout/scripts/resume-closeout-cron.sh || true
           bash 37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh
-          echo "✓ Skill 37 PRD-2.8 closeout gated pipeline fixture tests passed"
+          echo "✓ Skill 37 PRD-2.8/v12.3.10 closeout gated pipeline fixture tests passed"
 
       - name: "Skill 37 PRD-2.8: org-chart connector-tree QC assertion static check"
         shell: bash

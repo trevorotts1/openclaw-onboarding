@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.3.9"
+ONBOARDING_VERSION="v12.3.10"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4649,6 +4649,15 @@ install_watchdog_loop_cron
 # The cron is a cheap trigger — it calls nudge-incomplete-interviews.py (worker)
 # which handles the send, idempotency, and state recording.
 # All sends go through `openclaw message send` — NEVER direct to api.telegram.org.
+#
+# v12.3.10 CHANGES (fix/v12.3.10-nudge-cron-selfremove-no-operator-announce):
+#   COMMAND MODE (no --channel/--to/--message): converted from announce/agentTurn
+#   mode to silent command mode (mirrors closeout-resume pattern). The cron now
+#   just runs interview-nudge-cron.sh; all status goes to the script log, NOT to
+#   any Telegram chat. No operator-chat status announce.
+#   UUID CAPTURE: the cron UUID is captured from `openclaw cron add --json` output
+#   and persisted to build-state as .interviewNudgeUuid so run-closeout.sh can
+#   self-remove it when interviewComplete=true reaches closeoutStatus=done.
 step "Step 13.5: Installing interview-nudge cron (6-hour idle check, PRD-2.15)"
 
 install_interview_nudge_cron() {
@@ -4660,24 +4669,6 @@ install_interview_nudge_cron() {
         success "interview-nudge cron already installed"
         return 0
     fi
-
-    if [ "$TELEGRAM_RESOLVED" != "true" ]; then
-        resolve_telegram_target_universal
-    fi
-    local TG_TARGET="$TELEGRAM_TARGET_CACHED"
-    if [ -z "$TG_TARGET" ]; then
-        warn "Telegram chat ID not found — cannot install interview-nudge cron."
-        return 0
-    fi
-    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as cron target.
-    case "$TG_TARGET" in
-        5252140759|6663821679|6771245262)
-            warn "ERROR: interview-nudge cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
-            warn "This would route cron deliveries to the operator, not the client owner. Aborting cron install."
-            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
-            return 1
-            ;;
-    esac
 
     # Resolve skill dir (same pattern as other cron installs)
     local _NUDGE_SCRIPT=""
@@ -4696,21 +4687,52 @@ install_interview_nudge_cron() {
         return 0
     fi
 
+    # COMMAND MODE (v12.3.10): silent command cron — no --channel/--to/--message.
+    # The shim runs interview-nudge-cron.sh; status is log-only, never a Telegram
+    # announce. The operator-rejection guard is inside the shim itself (via the
+    # v12.3.8 resolve-owner-chat.sh / nudge-incomplete-interviews.py).
     local RC=0
     local OUT
-    OUT=$(openclaw cron create \
+    OUT=$(openclaw cron add \
         --name "interview-nudge" \
-        --cron "0 */6 * * *" \
-        --tz "America/New_York" \
-        --channel telegram \
-        --to "$TG_TARGET" \
-        --message "[INTERVIEW-NUDGE] Check for idle interviews and send 24h/72h/168h nudges if needed. Run: bash $_NUDGE_SCRIPT" \
+        --schedule "0 */6 * * *" \
+        --command "bash $_NUDGE_SCRIPT" \
+        --json \
         2>&1) || RC=$?
     if [ "$RC" -eq 0 ]; then
-        success "interview-nudge cron installed (every 6h)"
+        # Capture UUID and persist to build-state for self-removal at closeout
+        local CRON_UUID
+        CRON_UUID=$(printf '%s' "$OUT" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
+        if [ -n "$CRON_UUID" ] && [ "$CRON_UUID" != "null" ]; then
+            local _STATE_FILE="${OC_ROOT:-${HOME}/.openclaw}/workspace/.workforce-build-state.json"
+            if [ -f "$_STATE_FILE" ] && command -v jq >/dev/null 2>&1; then
+                local _NOW
+                _NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+                local _TMP
+                _TMP=$(mktemp)
+                if jq \
+                    --arg uuid "$CRON_UUID" \
+                    --arg ts "$_NOW" \
+                    '.interviewNudgeUuid = $uuid | .interviewNudgeRegisteredAt = $ts' \
+                    "$_STATE_FILE" > "$_TMP" 2>/dev/null; then
+                    mv "$_TMP" "$_STATE_FILE"
+                else
+                    rm -f "$_TMP"
+                fi
+            fi
+            # Register with loop-registry for hygiene
+            if [ -f "$ONBOARDING_DIR/scripts/loop-registry.sh" ]; then
+                # shellcheck disable=SC1090
+                LOOP_REGISTRY_FILE="${OC_ROOT:-${HOME}/.openclaw}/workspace/.loop-registry.json" \
+                source "$ONBOARDING_DIR/scripts/loop-registry.sh" 2>/dev/null || true
+                LOOP_REGISTRY_FILE="${OC_ROOT:-${HOME}/.openclaw}/workspace/.loop-registry.json" \
+                lr_register "interview-nudge" "$CRON_UUID" "openclaw cron rm $CRON_UUID" 2>/dev/null || true
+            fi
+        fi
+        success "interview-nudge cron installed (every 6h, silent command mode — no operator announce)"
     else
         warn "interview-nudge cron creation failed (non-fatal)."
-        warn "  Manual: openclaw cron create --name interview-nudge --cron '0 */6 * * *' --channel telegram --to '$TG_TARGET' --message '[INTERVIEW-NUDGE] bash $_NUDGE_SCRIPT'"
+        warn "  Manual: openclaw cron add --name interview-nudge --schedule '0 */6 * * *' --command 'bash $_NUDGE_SCRIPT' --json"
     fi
     return 0
 }

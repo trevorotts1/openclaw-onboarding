@@ -727,6 +727,34 @@ else
     state_set 'del(.closeoutResumeUuid) | .closeoutResumeRegisteredAt = null' || true
   fi
 
+  # v12.3.10: SELF-REMOVE the interview-nudge cron (interviewComplete=true kill condition).
+  # Primary: keyed on .interviewNudgeUuid recorded at install time.
+  # Fallback: name-scan for boxes installed before UUID recording (e.g. Talaya).
+  nudge_cron_uuid=$(state_get '.interviewNudgeUuid')
+  if [[ -n "$nudge_cron_uuid" && "$nudge_cron_uuid" != "null" ]] && command -v openclaw >/dev/null 2>&1; then
+    log "INFO" "self-removing interview-nudge cron $nudge_cron_uuid (interviewComplete=true, closeout done)"
+    openclaw cron rm "$nudge_cron_uuid" 2>>"$LOG_FILE" || log "WARN" "interview-nudge cron rm failed (tolerated)"
+    state_set 'del(.interviewNudgeUuid) | .interviewNudgeRegisteredAt = null' || true
+  fi
+  # Fallback scan: remove any interview-nudge cron registered without a recorded UUID
+  if command -v openclaw >/dev/null 2>&1; then
+    scan_uuid=$(openclaw cron list 2>/dev/null \
+      | awk '/interview-nudge/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9a-fA-F-]{8,}$/) { print $i; exit } }' \
+      | head -1 || true)
+    if [[ -n "$scan_uuid" ]]; then
+      log "INFO" "fallback-scan removing interview-nudge cron $scan_uuid (no recorded UUID)"
+      openclaw cron rm "$scan_uuid" 2>>"$LOG_FILE" || log "WARN" "fallback interview-nudge cron rm failed (tolerated)"
+    fi
+  fi
+  # Loop-registry hygiene
+  if [[ -f "$SKILL_DIR/../scripts/loop-registry.sh" ]]; then
+    LOOP_REGISTRY_FILE="$(dirname "$LOG_FILE")/.loop-registry.json" \
+    # shellcheck disable=SC1090
+    source "$SKILL_DIR/../scripts/loop-registry.sh" 2>/dev/null || true
+    LOOP_REGISTRY_FILE="$(dirname "$LOG_FILE")/.loop-registry.json" \
+    lr_kill "interview-nudge" 2>/dev/null || true
+  fi
+
   state_set ".closeoutStatus = \"done\" | .closeoutCompletedAt = \"$(now_iso)\""
   log "INFO" "closeout complete -- closeoutStatus=done (PRD-2.8: all 7 closeoutDeliverables legs written, resume cron removed)"
   exit 0
