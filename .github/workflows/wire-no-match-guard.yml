@@ -1,0 +1,32 @@
+name: wire-no-match-guard
+
+# Fails the build if the grep no-match-abort traps fixed in v12.3.9 regress.
+# Triggered whenever the guarded files change.
+# v12.3.9 / fix/v12.3.9-update-skills-grep-abort
+
+on:
+  push:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - tests/unit/wire-no-match-completes.test.sh
+      - .github/workflows/wire-no-match-guard.yml
+  pull_request:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - tests/unit/wire-no-match-completes.test.sh
+      - .github/workflows/wire-no-match-guard.yml
+
+jobs:
+  wire-no-match-guard:
+    name: Grep no-match-abort regression guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run wire-no-match-completes tests
+        run: |
+          chmod +x tests/unit/wire-no-match-completes.test.sh
+          bash tests/unit/wire-no-match-completes.test.sh
