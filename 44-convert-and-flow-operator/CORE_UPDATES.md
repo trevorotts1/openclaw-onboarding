@@ -20,6 +20,40 @@ patch-trigger / restore / Tier 4 agent-browser build): check the active session 
 If it is a lighter/non-high-reasoning model or thinking is not HIGH, surface the
 recommendation to the owner first (see INSTRUCTIONS.md Step 0). Then proceed — this
 is a recommendation, not a block. Read-only ops skip this check entirely.
+NOTE: if Step 9 QC catches a HALLUCINATION-class fail, this recommendation upgrades to
+a HARD REQUIREMENT — the redo MUST use a high-reasoning model with thinking=HIGH.
+
+### PLAN MODE — required before any new workflow CREATE/BUILD
+Before touching caf workflows build (or the Tier 4 backstop, or skill 38 structure
+generation) for a NEW workflow: run PLAN MODE (INSTRUCTIONS.md Step 0.5).
+STEPS: THINK (restate client's desired result + expectations + best approach) →
+DEPENDENCY PRE-CHECK (GET-verify all tags/fields/values exist in GHL first) →
+OUTLINE (ordered trigger→nodes→exit blueprint) →
+CHECKLIST (instantiate references/workflow-build-checklist-template.md with all 21 items) →
+IMPROVEMENTS (surface optional upgrades, labeled as suggestions) →
+PRESENT TO CLIENT + ASK THE TWO GATING QUESTIONS:
+  Q1: "Draft or live?" (default = DRAFT matching CAF_DRAFT_ONLY=true)
+  Q2: "Re-entry once or allow-multiple?" (default = ONCE / re-entry OFF)
+Only after BOTH gating questions are answered may the agent proceed to building.
+RUSHING TO A DEFAULT BUILD WITHOUT PLAN MODE IS A VIOLATION.
+
+### QC GATE — required before declaring any workflow done
+After building a workflow, do NOT say "done." STEPS:
+  1. Send the verbatim client announce: "I've built the workflow. Before I call it done,
+     I'm running an independent QC agent to verify it against the checklist item-by-item.
+     One moment." (via openclaw message send --channel telegram)
+  2. Spawn an independent MiniMax QC sub-agent (via sessions_send, verify model available
+     first — prefer minimax/minimax-2.7 via OpenRouter or minimax-m3:cloud; fall back to
+     next independent high-reasoning model and record which was used).
+  3. QC sub-agent runs caf workflows export <id> + qc-built-workflow.sh <id> item-by-item
+     (WF-1..WF-21). Returns explicit PASS/FAIL + observed vs expected value per item.
+  4. All-PASS → proceed to step 5. Any FAIL → fix + re-run QC.
+     HALLUCINATION FAIL (agent claimed X but QC-observed NOT-X) → HARD STOP →
+     mandatory redo on high-reasoning model thinking=HIGH → full re-QC → disclose to client →
+     log to build-events ledger.
+  5. ONLY AFTER ALL-PASS: tell client "QC passed" and hand the FILLED CHECKLIST (every WF
+     item with its PASS + observed value) to the client for independent verification.
+NEVER declare a workflow done before independent MiniMax QC passes + filled checklist handed over.
 
 Skill 44 is the FIRST STOP in the 6-tier GHL access chain. Try it before any MCP.
 

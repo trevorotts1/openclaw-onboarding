@@ -1,5 +1,94 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.15] - 2026-06-13 — feat: PLAN→BUILD→QC protocol (plan mode + WF-21 checklist + independent MiniMax QC gate + hallucination escalation)
+
+### Added (PLAN MODE — INSTRUCTIONS.md Step 0.5)
+- **Step 0.5 — PLAN MODE** binding gate inserted between Step 0 (model check) and the
+  Natural-language intents table in INSTRUCTIONS.md. Fires on any new workflow CREATE/BUILD;
+  not triggered by reads, REVIEW/export, or single-step patch-email/patch-trigger on an
+  existing workflow.
+- Six mandatory steps before any `caf workflows build` call:
+  - **Step A — THINK:** reason through A1 (desired result in client's own framing), A2
+    (client expectations, honored verbatim when hyper-specific), A3 (best trigger/node/action
+    approach for THIS client's goal).
+  - **Step B — DEPENDENCY PRE-CHECK:** GET-verify every tag/custom-field/custom-value before
+    the build; missing items listed as "must create first"; ZHC-/ZHC_ standing approval noted.
+  - **Step C — OUTLINE:** ordered trigger→nodes→exit blueprint with config for each step.
+  - **Step D — CHECKLIST:** instantiate references/workflow-build-checklist-template.md for
+    this build with all 21 WF items filled.
+  - **Step E — IMPROVEMENTS:** optional labeled suggestions alongside (never instead of) the
+    client's exact spec.
+  - **Step F — PRESENT + GATING QUESTIONS:** present plan to client and ask two mandatory
+    gating questions: Q1 publish/draft, Q2 re-entry once/allow-multiple.
+- Binding rule: "Rushing to a default build is NOT the best outcome and is a violation."
+- `"Build a follow-up workflow"` intent row re-pointed to "PLAN MODE (Step 0.5) first, then
+  TRINITY."
+- Per-operation decision rule: new sub-rule 2.0 "New workflow build → run PLAN MODE (Step 0.5)
+  and get gating answers BEFORE choosing the token/tier path."
+
+### Added (WF-1..WF-21 Checklist Template)
+- **references/workflow-build-checklist-template.md** — new canonical 21-item reusable
+  checklist serving BOTH the agent self-check (PLAN MODE Step D) AND the client hand-over
+  (after QC passes). Covers: name, tags, trigger type+filters, trigger active flag (WF-4
+  Sheila gate), publish state, re-entry/allow-multiple, action sequence, If/Else conditions,
+  wait durations, custom fields, custom values, SMS From-number (WF-12 Sheila trap), email
+  sender, webhooks, delivery chain linkage, advanced settings, edge cases, dependencies,
+  TRINITY completeness, hallucination detection (WF-20), and snapshot verification (WF-21).
+  Cross-referenced as superset of skill 41's 12-point checklist.
+
+### Added (Step 9 — QC GATE, INSTRUCTIONS.md)
+- **Step 9 — QC GATE** binding gate: after build completion, before declaring done.
+  Sequence:
+  1. Verbatim client announce via `openclaw message send --channel telegram` (mandatory).
+  2. Spawn independent MiniMax QC sub-agent via `sessions_send` in a fresh session; prefer
+     `minimax/minimax-2.7` via OpenRouter or `minimax-m3:cloud`; verify model configured +
+     reachable before spawn; fall back to next independent high-reasoning model and log.
+  3. QC sub-agent inspects via `caf workflows export <id>` + `qc-built-workflow.sh <id>`;
+     returns explicit PASS/FAIL + observed vs expected for each WF-1..WF-21 item.
+  4. All-PASS → Step 6. Any FAIL → fix + re-run QC.
+  5. ONLY after all-PASS: declare done + hand client the filled checklist.
+  6. Log QC run to build-events ledger (model used, per-item verdicts, pass/fail, escalation).
+- **Hallucination escalation sub-section:** when QC class=HALLUCINATION (build-agent-claimed
+  TRUE, QC-observed FALSE): hard stop; v12.3.5 Step 0 recommendation FLIPPED TO REQUIREMENT
+  (redo must use high-reasoning model + thinking=HIGH); full re-QC from scratch; honest client
+  disclosure; ledger log.
+
+### Added (qc-built-workflow.sh — per-build QC script)
+- **qc-built-workflow.sh** — new per-build QC script (DISTINCT from install-level
+  qc-convert-and-flow.sh). Takes `<workflow-id> [--publish-intent DRAFT|LIVE]
+  [--re-entry ONCE|ALLOW-MULTIPLE] [--json]`. Machine-asserts WF-3 (trigger present),
+  WF-4 (trigger active vs publish-intent — Sheila gate), WF-5 (publish status), WF-6
+  (re-entry setting), WF-7 (action nodes present), WF-12 (SMS From-number non-empty),
+  WF-15 (delivery chain linkage), WF-18+WF-21 (snapshot exists). Emits per-item PASS/FAIL
+  JSON. Appends to build-events ledger. Exit 0=all-pass, 1=fail, 2=prereq-error.
+
+### Added (qc-convert-and-flow.sh Section S static assertions)
+- 35 new static assertions in Section S covering: Step 0.5 PLAN MODE present + all binding
+  rules, Step 9 QC GATE + announce template + MiniMax dispatch + checklist handover, checklist
+  template exists with all 21 WF items + Sheila/SMS gates + hallucination detector + skill 41
+  cross-ref, qc-built-workflow.sh present + executable + per-item assertions, CORE_UPDATES
+  AGENTS.md block has all 3 new rules (plan-mode, QC-gate, hallucination→reasoning-HIGH).
+
+### Changed (SKILL.md)
+- READ-BEFORE-ACT block extended with Step 0.5 PLAN MODE + Step 9 QC GATE summaries.
+- Teach Yourself read-order updated (references/workflow-build-checklist-template.md item 4,
+  qc-built-workflow.sh item 5; existing items renumbered).
+- Files in this folder list updated (items 9, 16 added).
+
+### Changed (CORE_UPDATES.md AGENTS.md block)
+- Three new binding rules prepended to the Convert and Flow Operator AGENTS.md section so
+  every client agent inherits them on session start:
+  1. PLAN MODE before build (think→outline→checklist→recommendations→gating questions).
+  2. Independent MiniMax QC + checklist hand-over before declaring done.
+  3. Hallucination → reasoning-model-thinking-HIGH (hard requirement, not recommendation).
+
+### Scope
+- Engine builder code under tools/engine/ is UNTOUCHED (docs/protocol + QC-script release).
+- Engine CLI version unchanged (2.1.1).
+- total_roles UNCHANGED (335).
+
+---
+
 ## [1.0.13] - 2026-06-13 — docs: model-recommendation pre-flight warning for workflow builds
 
 ### Added (Step 0 model check — recommendation gate, not a hard block)

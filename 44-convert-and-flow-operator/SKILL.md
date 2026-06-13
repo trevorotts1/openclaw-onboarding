@@ -5,13 +5,26 @@ description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflo
 
 # Skill 44 — Convert and Flow Operator (Tier 0)
 
-## READ-BEFORE-ACT — Model Check (workflow builds and modifications)
+## READ-BEFORE-ACT — Model Check + PLAN MODE + QC GATE (workflow builds)
 
-Before executing any workflow BUILD or MODIFY action (caf workflows build, patch-email,
-patch-trigger, restore, or Tier 4 agent-browser build), run the **Step 0 model check**
-in INSTRUCTIONS.md. If the active session model is a lighter/non-high-reasoning model or
-thinking is not HIGH, surface the recommendation to the owner first, then proceed.
-This is a recommendation gate, not a hard block. Read-only ops skip this check.
+**Step 0 — Model Check (before any BUILD or MODIFY):** If the active session model is a
+lighter/non-high-reasoning model or thinking is not HIGH, surface the recommendation to the
+owner first, then proceed. Recommendation gate, not a hard block. Read-only ops skip this.
+NOTE: If Step 9 QC catches a HALLUCINATION, this recommendation FLIPS TO A HARD REQUIREMENT.
+
+**Step 0.5 — PLAN MODE (before any new workflow CREATE/BUILD):** BINDING GATE — do NOT
+touch `caf workflows build` or the Tier 4 backstop until the plan is presented and the two
+gating questions are answered. Steps: THINK (result + expectations + best approach) →
+DEPENDENCY PRE-CHECK → OUTLINE → CHECKLIST (instantiate references/workflow-build-checklist-template.md) →
+IMPROVEMENTS → PRESENT + GATING QUESTIONS (publish: DRAFT vs LIVE? / re-entry: once vs
+allow-multiple?). Rushing to a default build is NOT the best outcome and is a VIOLATION.
+
+**Step 9 — QC GATE (before declaring done):** BINDING GATE — the build agent MUST NOT say
+"done" until an independent MiniMax QC sub-agent passes all checklist items and the filled
+checklist is handed to the client. Sequence: announce to client → spawn MiniMax sub-agent
+(via sessions_send, verify model available first) → QC runs `caf workflows export` +
+`qc-built-workflow.sh <wf-id>` item-by-item → all-PASS → hand client the filled checklist.
+Any FAIL: fix + re-run QC. HALLUCINATION FAIL: hard stop + redo on reasoning-model thinking=HIGH.
 
 ---
 
@@ -19,10 +32,15 @@ This is a recommendation gate, not a hard block. Read-only ops skip this check.
 
 1. **SKILL.md** (this file) — overview, CLI surface, credential model, write-safety posture
 2. **INSTALL.md** — autonomous setup, venv, wrapper, `caf doctor`
-3. **INSTRUCTIONS.md** — day-to-day usage, natural language intents, TRINITY routing, rollback
-4. **CORE_UPDATES.md** — exact text to merge into AGENTS.md / TOOLS.md / MEMORY.md
-5. **QC.md** — human-readable checklist (authoritative script is `qc-convert-and-flow.sh`)
-6. **CHANGELOG.md** — skill version history
+3. **INSTRUCTIONS.md** — day-to-day usage, Step 0.5 PLAN MODE, natural language intents,
+   TRINITY routing, Step 9 QC GATE (including hallucination escalation), rollback
+4. **references/workflow-build-checklist-template.md** — canonical WF-1..WF-21 checklist
+   (instantiate at PLAN MODE Step D; hand to client after QC passes)
+5. **qc-built-workflow.sh** — per-build QC script (mechanically asserts WF-3,4,5,6,7,12,15,18,21);
+   invoked by the MiniMax QC sub-agent at Step 9
+6. **CORE_UPDATES.md** — exact text to merge into AGENTS.md / TOOLS.md / MEMORY.md
+7. **QC.md** — human-readable checklist (authoritative install-QC script is `qc-convert-and-flow.sh`)
+8. **CHANGELOG.md** — skill version history
 
 Store only lean references in core files; full runtime docs live in this folder + master-files.
 
@@ -176,15 +194,20 @@ RECEIPTS to the operator ledger. Do NOT paste the runbook section to an owner.
 
 1. SKILL.md (this)
 2. INSTALL.md — setup + `caf doctor` + Chrome extension load-unpacked steps (Action 5b)
-3. INSTRUCTIONS.md — runtime usage, TRINITY routing, rollback recipe
+3. INSTRUCTIONS.md — runtime usage, Step 0.5 PLAN MODE, TRINITY routing, Step 9 QC GATE,
+   hallucination escalation, rollback recipe
 4. CORE_UPDATES.md — text to merge into core files
-5. QC.md — checklist (authoritative: `qc-convert-and-flow.sh`)
+5. QC.md — checklist (authoritative install-QC: `qc-convert-and-flow.sh`)
 6. CHANGELOG.md
 7. skill-version.txt
-8. qc-convert-and-flow.sh — automated QC validator
-9. platform/mac/ — Mac-specific paths + auto-re-grab recipe
-10. platform/vps/ — VPS-specific paths
-11. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
-12. tools/chrome-extension/ — Token Grabber Chrome extension (client-facing; load unpacked)
-13. references/owner-token-grabber-guide.md — owner-facing Token Grabber walkthrough (8 steps + download link) + agent wiring notes
-14. references/fleet-announcement-template.md — standardized owner announcement (canonical 3-message template, `[OWNER_NAME]`/`[AGENT_NAME]`) + operator fleet-send runbook (gate, send mechanics, receipts)
+8. qc-convert-and-flow.sh — automated install-level QC validator (static + live modes)
+9. qc-built-workflow.sh — per-build QC script (takes workflow-id, asserts WF-3/4/5/6/7/12/15/18/21,
+   emits per-item PASS/FAIL JSON; invoked by MiniMax QC sub-agent at Step 9)
+10. platform/mac/ — Mac-specific paths + auto-re-grab recipe
+11. platform/vps/ — VPS-specific paths
+12. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
+13. tools/chrome-extension/ — Token Grabber Chrome extension (client-facing; load unpacked)
+14. references/owner-token-grabber-guide.md — owner-facing Token Grabber walkthrough (8 steps + download link) + agent wiring notes
+15. references/fleet-announcement-template.md — standardized owner announcement (canonical 3-message template, `[OWNER_NAME]`/`[AGENT_NAME]`) + operator fleet-send runbook (gate, send mechanics, receipts)
+16. references/workflow-build-checklist-template.md — canonical WF-1..WF-21 reusable checklist
+    (agent self-check at PLAN MODE Step D + client hand-over after QC passes)

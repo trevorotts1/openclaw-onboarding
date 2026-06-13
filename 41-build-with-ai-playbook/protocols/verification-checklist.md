@@ -79,3 +79,25 @@ The 12-point post-build verification checklist. Run this after every workflow bu
 Record the verification score in build-with-ai-events.jsonl:
 - build_completed event: verification_score field
 - verification_failed event: failed_items array + fix_suggested string
+
+---
+
+## Cross-reference: Skill 44 WF-1..WF-21 Checklist (caf-built workflows)
+
+For workflows built via Skill 44's Convert and Flow CLI (`caf workflows build`), use the
+**Skill 44 WF-1..WF-21 checklist** at
+`44-convert-and-flow-operator/references/workflow-build-checklist-template.md` instead.
+
+That checklist is a SUPERSET of this 12-point checklist, extended with Skill 44-specific
+gates that are not applicable to Build-with-AI (browser/manual) builds:
+- **WF-4** — trigger active flag vs publish-intent (the "Sheila trap": CAF_DRAFT_ONLY=true
+  ships triggers inactive by default; a workflow built as LIVE needs active:true or it
+  silently never fires).
+- **WF-12** — SMS From-number non-empty on every SMS node (no-From-number = silent send failure).
+- **WF-15** — delivery chain linkage (targetActionId/parentKey wired by link_steps).
+- **WF-20** — no hallucinated artifacts (build agent claims independently verified via export).
+- **WF-21** — pre-build snapshot exists for rollback.
+- Gating questions recorded on the checklist (publish decision, re-entry decision).
+
+This Skill 41 checklist applies to **Build-with-AI (manual browser)** builds only.
+For caf-built workflows, the Skill 44 WF-1..WF-21 checklist is authoritative.
