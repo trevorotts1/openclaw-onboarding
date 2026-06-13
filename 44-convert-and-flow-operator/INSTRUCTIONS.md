@@ -41,6 +41,7 @@ Operators never memorize CLI syntax. Say what you want in Telegram; the agent ro
 | "List my active invoices" | `caf payments invoices list --status active` |
 | "Schedule this social post for tomorrow at 9am" | `caf social post schedule --time "tomorrow 9am" --content "..."` |
 | "What workflows do I have?" | `caf workflows list` |
+| "Review/audit this workflow" / "check this workflow" / "inspect this workflow" | `caf workflows export <id>` (Tier 0 first), then escalate per skill 36 for what export cannot show (e.g. trigger-bucket state) |
 
 ---
 
@@ -69,6 +70,10 @@ For a purely mechanical workflow (no conversational node): skill 41 builds stand
 2. Is this a workflow BUILD? → Check Firebase token:
    a. Present + healthy → caf workflows build
    b. Absent / expired → Tier 4 backstop (agent-browser) + owner nudge
+2.5 Is this a workflow REVIEW / inspect / audit / "check this workflow"?
+   → Tier 0 FIRST: caf workflows export <id>
+   → Escalate per skill 36 ONLY for pieces export cannot show (e.g. trigger-bucket state).
+   → NEVER open-ended-pick the 834-tool Community MCP for a workflow review.
 3. Is this any other op in the CLI surface? → caf <command>
 4. CLI returns 404 / unknown command? → Fall to Tier 1/2/3 per skill 36
 5. Rate limit (429)? → STOP. Surface reset time. NEVER fall through tiers.

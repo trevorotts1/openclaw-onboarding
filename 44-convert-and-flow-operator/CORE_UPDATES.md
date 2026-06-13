@@ -29,8 +29,13 @@ Skill 44 is the FIRST STOP in the 6-tier GHL access chain. Try it before any MCP
   documents, payments, forms, social, locations, workflow reads): use `caf <command>`.
 - Workflow BUILD or EDIT: check Firebase token first (see token-aware routing in skill 36
   AGENTS.md). Present + healthy = Tier 0 builds directly. Absent = Tier 4 backstop.
+- Workflow REVIEW / inspect / audit / "check this workflow": Tier 0 FIRST — `caf workflows export <id>`. Escalate to Tier 1/2/3 ONLY for what export cannot show (e.g. trigger-bucket state). NEVER open-ended-pick the Community MCP for a workflow review.
 - Media upload: SKIP Tier 0. Always Tier 3 (POST /medias/upload-file).
 - Rate limit (429): STOP. Never fall through. Surface reset time in plain English.
+
+### Anti-patterns (mirrored from skill 36)
+
+- ❌ "They said review the workflow → I will use the 834-tool MCP." Wrong. Review = Tier 0 `caf workflows export` first; escalate only for what export cannot show (e.g. trigger-bucket state). Never open-ended-pick the Community MCP for a workflow review.
 
 ### Per-operation routing
 
@@ -67,7 +72,7 @@ Health: caf doctor
 | forms | caf forms list/submissions |
 | social | caf social accounts/post/schedule |
 | locations | caf locations get/customfields/customvalues |
-| workflows (read) | caf workflows list/get/export |
+| workflows (read/review) | caf workflows list/get/export — Tier 0 (caf) owns workflow build/edit/review; MCP workflow tools are escalation-only (note: `review` and `triggers` engine subcommands are MVP-deferred; use `export` as the Tier-0 read for review until shipped) |
 | workflows (write) | caf workflows build/patch-email/patch-trigger/restore [Firebase token required] |
 
 Credentials: GOHIGHLEVEL_API_KEY (PIT), GOHIGHLEVEL_LOCATION_ID, GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (workflow writes only).

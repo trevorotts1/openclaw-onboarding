@@ -345,6 +345,90 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
 fi
 
+# ─── 4c. Inject CREDENTIAL_CHECK_V2 (N33 + N34) into AGENTS.md ──────────────
+# Idempotent: guarded by <!-- CREDENTIAL_CHECK_V2 --> marker.
+# Upgrade path: if a box carries V1, strip it and inject V2 in its place.
+# This is idempotent: re-running on a V2 box is a no-op.
+CRED_CHECK_V2_MARKER="<!-- CREDENTIAL_CHECK_V2 -->"
+CRED_CHECK_V1_MARKER="<!-- CREDENTIAL_CHECK_V1 -->"
+
+if grep -qF "$CRED_CHECK_V2_MARKER" "$AGENTS_FILE_EARLY"; then
+  echo "[apply-fleet-standards] CREDENTIAL_CHECK_V2 already present in $AGENTS_FILE_EARLY — no-op"
+else
+  echo "[apply-fleet-standards] injecting CREDENTIAL_CHECK_V2 (N33+N34) into $AGENTS_FILE_EARLY"
+  # Remove any V1 block if present (strip from V1 marker to the next top-level ---\n heading)
+  TMPF2="$(mktemp)"
+  python3 - "$AGENTS_FILE_EARLY" <<'CCPYEOF'
+import sys, re
+
+path = sys.argv[1]
+content = open(path).read()
+
+# Strip V1 block if present: from <!-- CREDENTIAL_CHECK_V1 --> to next top-level ---
+v1_pattern = re.compile(
+    r'<!-- CREDENTIAL_CHECK_V1 -->.*?(?=\n---\n(?:\n|##|\Z))',
+    re.DOTALL
+)
+content = v1_pattern.sub('', content)
+
+open(path, 'w').write(content)
+CCPYEOF
+  # Append V2 block at end (before any trailing learned-lessons section if present)
+  cat >> "$AGENTS_FILE_EARLY" <<'CCEOF'
+
+<!-- CREDENTIAL_CHECK_V2 -->
+## 🔴 N33 — Credential Check Protocol (never falsely report a key missing)
+
+> Idempotency marker: `CREDENTIAL_CHECK_V2`. `apply-fleet-standards.sh` injects this on
+> existing boxes. Do NOT add it again if the marker is already present.
+> Boxes carrying `CREDENTIAL_CHECK_V1` are automatically upgraded to V2 on next run.
+
+A credential that exists in the live process env but is absent from a flat file is **PRESENT**.
+An agent that reports "missing" without the evidence triad below has made a false claim.
+
+### The Evidence Triad (required before "missing")
+
+Before reporting any key as absent, you MUST have completed all three steps:
+
+1. **Live process env** — checked via `docker exec <container> printenv` (VPS) or `ps eww <gw-pid>` (Mac).
+2. **MCP server headers** — checked `openclaw.json mcp.servers.<svc>.headers` + `.env`.
+3. **All .env stores** — checked every store listed in the "checked" output of `check-credential.sh`.
+
+Only after all three return empty may you say a key is **GENUINELY-ABSENT**.
+
+Use the canonical helper:
+```
+~/.openclaw/skills/shared-utils/check-credential.sh <KEY_NAME>
+~/.openclaw/skills/shared-utils/check-credential.sh --provider <PROVIDER_NAME> --json
+```
+
+<!-- N34 -->
+## 🔴 N34 — Provider Detection Protocol (a missing config block is NEVER proof a provider is absent)
+
+"Does box X have provider Y" = **can the gateway resolve Y's API key at runtime** — NOT "is there a `models.providers.<Y>` block."
+
+Run `check-credential.sh --provider <Y>` (live process env FIRST). Three verdicts:
+
+| Verdict | Exit | Action |
+|---|---|---|
+| `PRESENT_WITH_BLOCK` | 0 | Key live + block references it — update block |
+| `NEEDS_BLOCK` | 3 | Key live, no block — HAS the provider, CREATE the block |
+| `GENUINELY-ABSENT` | 1 | Only after live-env tier + all stores empty — then skip |
+
+**Hard violations:** emitting absent/no-provider from a config-block check alone; writing `had_X: false` for a check that never ran (use `NOT_ASSESSED`). Sonnet only — never Haiku for credential checks.
+
+Block-name matching is on the **referenced apiKey**, not the block name (`openrouter-grok` with `apiKey: $OPENROUTER_API_KEY` IS the openrouter provider).
+
+Root cause: 2026-06-13 Kimi-2.7 sweep falsely reported 5/5 boxes as no-OpenRouter from a `models.providers`-only check while `OPENROUTER_API_KEY` was live in the container env.
+
+CCEOF
+  echo "[apply-fleet-standards] CREDENTIAL_CHECK_V2 injected into $AGENTS_FILE_EARLY"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
+fi
+
 # ─── 5. Append BIG PROJECT MODE standard to the agent's active AGENTS.md ──────
 # Universal operating standard (see BIG-PROJECT-MODE.md at repo root). This is
 # appended to the SAME active-workspace AGENTS.md that install.sh / update-skills
