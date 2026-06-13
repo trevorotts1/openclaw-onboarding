@@ -1,3 +1,48 @@
+## [v12.3.7]  -  2026-06-13  -  feat: Skill 44 PLAN→BUILD→QC protocol (plan mode + WF-21 checklist + independent MiniMax QC gate + hallucination escalation) [skill 44 v1.0.15]
+
+### Changes
+
+**Skill 44 — PLAN MODE (Step 0.5) + QC GATE (Step 9) + WF-1..WF-21 Checklist + per-build qc-built-workflow.sh**
+
+Added a binding PLAN→BUILD→QC protocol to Skill 44 (Convert and Flow Operator) that closes
+three gaps: (1) no planning step before builds, (2) trigger-inactive silent failure (the Sheila
+trap), and (3) build agent self-reports accepted as truth without independent verification.
+
+- **Step 0.5 PLAN MODE** — BINDING gate before any `caf workflows build` or Tier 4 build:
+  THINK (desired result + client expectations + best approach) → DEPENDENCY PRE-CHECK →
+  OUTLINE → CHECKLIST (instantiate WF-1..WF-21 template) → IMPROVEMENTS → PRESENT + GATING
+  QUESTIONS (publish DRAFT/LIVE; re-entry ONCE/ALLOW-MULTIPLE). Rushing without planning is a
+  violation. Per-operation rule 2.0 and intents table both re-route new builds through PLAN MODE.
+
+- **references/workflow-build-checklist-template.md** — new canonical 21-item checklist
+  serving agent self-check (PLAN MODE Step D) AND client hand-over (after QC passes). Includes
+  WF-4 trigger-active Sheila gate, WF-12 SMS From-number gate, WF-20 hallucination detector,
+  WF-21 snapshot gate. Cross-referenced as superset of skill 41's 12-point checklist.
+
+- **Step 9 QC GATE** — BINDING gate before declaring done: announce to client → spawn
+  independent MiniMax sub-agent (via sessions_send, verify model available; prefer
+  minimax/minimax-2.7 via OpenRouter or minimax-m3:cloud) → QC runs `caf workflows export` +
+  `qc-built-workflow.sh` item-by-item → all-PASS → hand client filled checklist. HALLUCINATION
+  class (agent claimed X, QC observed NOT-X) = hard stop + redo on reasoning-model thinking=HIGH
+  (Step 0 recommendation flipped to hard requirement) + full re-QC + honest client disclosure.
+
+- **qc-built-workflow.sh** — new per-build QC script (distinct from install-level
+  qc-convert-and-flow.sh). Takes workflow-id, --publish-intent (DRAFT/LIVE), --re-entry
+  (ONCE/ALLOW-MULTIPLE), --json. Machine-asserts WF-3/4/5/6/7/12/15/18/21. Emits per-item
+  PASS/FAIL JSON. Appends to build-events ledger.
+
+- **CORE_UPDATES.md AGENTS.md block** — three new binding rules (PLAN MODE before build;
+  independent MiniMax QC + checklist hand-over before done; hallucination → reasoning-HIGH)
+  so every client agent inherits them on session start.
+
+- **qc-convert-and-flow.sh Section S** — 35 new static assertions proving all of the above
+  present and correct; existing v12.3.5/v12.3.6 assertions unchanged.
+
+- **Engine code untouched.** Docs/protocol + QC-script release only. total_roles: 335 (unchanged).
+- Skill 44 version: 1.0.14 → 1.0.15.
+
+---
+
 ## [v12.3.6]  -  2026-06-13  -  fix: anti-lying provider-detection (N34 + check-credential.sh --provider) + GHL REVIEW Tier-0-first routing
 
 ### Changes

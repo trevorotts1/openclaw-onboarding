@@ -198,6 +198,76 @@ live_assert "GOHIGHLEVEL_LOCATION_ID present in openclaw.json env.vars (gateway-
 live_assert "verify-ghl-live.sh exits 0 (caf reaches GHL) or 2 (missing-prereqs) — never 1" \
   "bash \"$CAF_DIR/engine/verify-ghl-live.sh\" >/dev/null 2>&1; rc=\$?; [ \"\$rc\" -eq 0 ] || [ \"\$rc\" -eq 2 ]"
 
+# v1.0.15 — PLAN MODE + QC GATE + checklist template + per-build QC script + hallucination escalation
+assert "INSTRUCTIONS.md contains 'Step 0.5 — PLAN MODE' section" \
+  "grep -q 'Step 0.5.*PLAN MODE' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md PLAN MODE has THINK step (A1/A2/A3)" \
+  "grep -q 'DESIRED RESULT\|A1\.' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -q 'CLIENT EXPECTATIONS\|A2\.' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -q 'BEST APPROACH\|A3\.' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md PLAN MODE has gating question 1 (publish decision)" \
+  "grep -qi 'draft.*live\|publish.*draft\|GATING QUESTION 1\|build.*draft.*review' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md PLAN MODE has gating question 2 (re-entry decision)" \
+  "grep -qi 're-entry\|allow.*multiple\|GATING QUESTION 2\|come through.*more than once' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md PLAN MODE 'rushing is a violation' binding rule present" \
+  "grep -qi 'rushing.*violation\|violation.*rushing' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md intents table re-points 'Build a follow-up workflow' to PLAN MODE" \
+  "grep -q 'PLAN MODE.*Step 0.5.*then TRINITY\|PLAN MODE.*first.*then TRINITY' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md Per-operation rule 2.0 (new build → PLAN MODE first) present" \
+  "grep -q '2\.0.*PLAN MODE\|PLAN MODE.*before.*2a\|get.*gating.*answers.*BEFORE' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md contains 'Step 9 — QC GATE' section" \
+  "grep -q 'Step 9.*QC GATE\|QC GATE.*before declaring done' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md QC GATE contains verbatim client announce template" \
+  "grep -q \"I've built the workflow\" \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -q 'independent QC agent' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -q 'checklist item-by-item' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md QC GATE documents MiniMax sub-agent dispatch (sessions_send)" \
+  "grep -qi 'sessions_send\|MiniMax\|minimax' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md QC GATE requires caf workflows export + qc-built-workflow.sh" \
+  "grep -q 'qc-built-workflow.sh' \"$SKILL44_DIR/INSTRUCTIONS.md\" && grep -q 'caf workflows export' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md QC GATE 'done only after all-PASS + checklist handed over' rule present" \
+  "grep -qi 'done.*QC pass\|all-PASS.*checklist\|checklist.*hand.over\|filled checklist' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md hallucination escalation section present" \
+  "grep -qi 'HALLUCINATION\|hallucination' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md hallucination escalation requires reasoning-model thinking=HIGH (REQUIREMENT not recommendation)" \
+  "grep -qi 'REQUIREMENT.*thinking.*HIGH\|thinking.*HIGH.*REQUIRED\|flipped.*RECOMMENDATION.*REQUIREMENT\|reasoning.*model.*thinking.*HIGH' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md hallucination requires client disclosure" \
+  "grep -qi 'DISCLOSE.*client\|QC caught.*reported.*wasn.t.*true\|honest disclosure' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "INSTRUCTIONS.md bidirectional link Step 0 <-> Step 9 present" \
+  "grep -qi 'BIDIRECTIONAL\|Step 0.*recommendation.*flipped\|flipped.*Step 0' \"$SKILL44_DIR/INSTRUCTIONS.md\""
+assert "references/workflow-build-checklist-template.md exists" \
+  "[ -f \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" ]"
+assert "checklist template contains WF-1 through WF-21 (21 items)" \
+  "for i in \$(seq 1 21); do grep -q \"WF-\$i\" \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" || exit 1; done"
+assert "checklist template WF-4 trigger-active Sheila gate present" \
+  "grep -qi 'WF-4\|SHEILA BUG GATE\|trigger.*active.*publish\|active.*flag' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
+assert "checklist template WF-12 SMS From-number gate present" \
+  "grep -qi 'WF-12\|SMS.*From.*number\|From-number\|from_number' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
+assert "checklist template WF-20 hallucinated artifacts detector present" \
+  "grep -qi 'WF-20\|hallucinated\|HALLUCINATION' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
+assert "checklist template skill 41 cross-reference (superset) present" \
+  "grep -qi 'Skill 41\|skill41\|superset\|12-point' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
+assert "qc-built-workflow.sh present" \
+  "[ -f \"$SKILL44_DIR/qc-built-workflow.sh\" ]"
+assert "qc-built-workflow.sh is executable" \
+  "[ -x \"$SKILL44_DIR/qc-built-workflow.sh\" ]"
+assert "qc-built-workflow.sh takes workflow-id argument and asserts trigger present (WF-3)" \
+  "grep -q 'WF-3\|trigger.*present\|TRIGGER PRESENT' \"$SKILL44_DIR/qc-built-workflow.sh\""
+assert "qc-built-workflow.sh asserts trigger active vs publish-intent (WF-4 Sheila gate)" \
+  "grep -q 'WF-4\|SHEILA\|trigger.*active\|PUBLISH_INTENT\|publish_intent' \"$SKILL44_DIR/qc-built-workflow.sh\""
+assert "qc-built-workflow.sh asserts SMS From-number non-empty (WF-12)" \
+  "grep -q 'WF-12\|fromNumber\|From-number\|SMS.*from' \"$SKILL44_DIR/qc-built-workflow.sh\""
+assert "qc-built-workflow.sh asserts delivery chain linkage (WF-15)" \
+  "grep -q 'WF-15\|targetActionId\|delivery.*chain\|linkage' \"$SKILL44_DIR/qc-built-workflow.sh\""
+assert "qc-built-workflow.sh asserts snapshot existence (WF-21)" \
+  "grep -q 'WF-21\|snapshot.*exists\|SNAPSHOT' \"$SKILL44_DIR/qc-built-workflow.sh\""
+assert "qc-built-workflow.sh emits per-item PASS/FAIL JSON (--json flag)" \
+  "grep -q '\-\-json\|JSON_MODE\|json.*mode' \"$SKILL44_DIR/qc-built-workflow.sh\""
+assert "qc-built-workflow.sh appends to build-events ledger" \
+  "grep -q 'build-events.jsonl\|BUILD_EVENTS_LEDGER' \"$SKILL44_DIR/qc-built-workflow.sh\""
+assert "CORE_UPDATES.md AGENTS.md block has PLAN-MODE-before-build rule" \
+  "grep -qi 'PLAN MODE\|PLAN_MODE\|plan.*mode.*before.*build\|rushing.*violation' \"$SKILL44_DIR/CORE_UPDATES.md\""
+assert "CORE_UPDATES.md AGENTS.md block has QC-GATE rule (independent MiniMax + checklist handover)" \
+  "grep -qi 'QC GATE\|independent.*MiniMax\|MiniMax.*QC\|checklist.*handover\|checklist.*handed' \"$SKILL44_DIR/CORE_UPDATES.md\""
+assert "CORE_UPDATES.md AGENTS.md block has hallucination→reasoning-HIGH requirement" \
+  "grep -qi 'HALLUCINATION\|hallucination' \"$SKILL44_DIR/CORE_UPDATES.md\" && grep -qi 'thinking.*HIGH\|HIGH.*thinking\|reasoning.*model' \"$SKILL44_DIR/CORE_UPDATES.md\""
+
 # ── Section A: Installation (live-box only) ───────────────────────────────────
 echo ""
 echo "── Section A: Installation (live-box) ──"
