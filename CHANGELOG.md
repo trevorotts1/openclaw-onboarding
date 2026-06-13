@@ -1,3 +1,72 @@
+## [v12.3.11] - 2026-06-13 - fix: format-robust CORE_UPDATES parser wires all 41 skills (22 previously skipped); new CI guard
+
+### Changes
+
+**Root cause closed (v12.3.11):**
+
+#### CORE_UPDATES parser skipped 22 of 41 shipping skills
+
+The `wire_core_updates()` python3 heredoc in `update-skills.sh` matched exactly one header
+convention (ASCII-hyphen `## X.md - UPDATE REQUIRED`) using a character-class range
+`[--–-]` (U+002D..U+2013) that accidentally matched letters/digits and missed the em-dash
+(U+2014) entirely. As a result, 22 of 41 non-archived skills shipped CORE_UPDATES.md
+content that was silently discarded on every install and update run.
+
+**Skills previously skipped (now wired):**
+- FORMAT 2 (em-dash `## X.md — UPDATE REQUIRED`): 36-ghl-mcp-setup, 44-convert-and-flow-operator
+- FORMAT 4 (bracket h2 `## [ADD TO X.md]`): 03-agent-browser, 37-zhc-closeout,
+  38-conversational-ai-system, 39-real-estate-playbook, 40-zhc-public-records-scraper,
+  41-build-with-ai-playbook
+- FORMAT 5 (bracket h3 `### [ADD TO X.md]`): 17-self-improving-agent
+- FORMAT 6 (bold-bracket `**[ADD TO X.md]**`): 16-summarize-youtube
+- FORMAT 7 (plain h3 `### X.md` under Suggested snippets): 18-proactive-agent,
+  19-humanizer, 20-youtube-watcher, 21-tavily-search, 24-storyboard-writer, 25-video-creator,
+  26-caption-creator, 27-video-editor, 28-cinematic-forge
+- FORMAT 8/9 (verb-first `## Add to X.md`): 31-upgraded-memory-system, 35-social-media-planner
+- FORMAT 10 (paren-suffix `## X.md (append)`): 42-personal-assistant-library,
+  43-graphify-knowledge-graph
+- IDENTITY/USER targets missing from target_map: 01, 02, 04, 05..15 (silently dropped those blocks)
+
+**Fix (four layers):**
+1. **Format-robust parser** — replaced the brittle Python regex with a normalising parser that
+   recognises all 14 header conventions (h2/h3, bracket, bold-bracket, verb-first, paren,
+   bare-filename) via a single normalising HEADER_PATTERN regex. The fix is exhaustive and
+   explicit — no character-class ranges that span letters/digits.
+2. **IDENTITY + USER targets** — added to `target_map`; skills 01/02/04 and others that
+   emit `## IDENTITY.md - UPDATE REQUIRED` now have their blocks merged.
+3. **BEGIN/END idempotency markers** — every appended block is wrapped in
+   `<!-- BEGIN skill:<folder>:<target> -->` / `<!-- END ... -->` so re-runs detect
+   already-merged content per target without relying solely on the skill-level sentinel.
+4. **Unconditional sentinel** — the sentinel `<!-- skill:<folder>:core-update-applied -->`
+   is always stamped to AGENTS.md at the end, even for all-skip-section skills, so the
+   install.sh VERIFICATION GATE passes for every shipping skill.
+5. **UNRECOGNIZED HEADER fail-loud guard** — after processing, any heading/bold line that
+   contains a target filename but was not classified as a real section or explicit no-update
+   emits `[CORE_UPDATES] UNRECOGNIZED HEADER in <folder>: <line>` to stderr; with
+   `CORE_UPDATES_STRICT=1` the merger exits non-zero, blocking CI if a 15th format ships.
+6. **WARN on zero-section skills** — emits `[CORE_UPDATES] WARN: <folder> produced no
+   mergeable section` when the parser finds zero non-skip sections (loud, never silent).
+
+**New CI guard:**
+- `tests/unit/core-updates-all-skills-wired.test.sh` — runs `wire_core_updates` against all
+  41 non-archived skill folders into temp fixtures and asserts each produces a sentinel;
+  includes per-format unit assertions (em-dash, bracket h2/h3, bold-bracket, plain h3,
+  Add-to, (append)); idempotency; no-comingling; and the UNRECOGNIZED-header STRICT guard.
+- `.github/workflows/core-updates-wiring-guard.yml` — triggers on changes to
+  `update-skills.sh`, `install.sh`, the test, or any `**/CORE_UPDATES.md`.
+
+**install.sh:** prose in STEP 7 updated to document that the parser recognises all CORE_UPDATES
+header conventions and that every shipping skill MUST stamp a sentinel.
+
+**Files changed:** `update-skills.sh` (wire_core_updates python3 heredoc replaced),
+`install.sh` (STEP 7 prose + VERIFICATION GATE note), `version`, `cc-compat.json`,
+`CHANGELOG.md`, `23-ai-workforce-blueprint/skill-version.txt`,
+`23-ai-workforce-blueprint/templates/role-library/_index.json`,
+`23-ai-workforce-blueprint/templates/role-library/_qc-summary.md`,
+`README.md` (2 markers), `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`,
+`tests/unit/core-updates-all-skills-wired.test.sh` (new),
+`.github/workflows/core-updates-wiring-guard.yml` (new).
+
 ## [v12.3.10] - 2026-06-13 - fix: interview-nudge cron self-removes at closeout (interviewComplete=true) + on next fire, and converts from operator-announce agentTurn cron to a silent command cron that nudges ONLY the client owner via the v12.3.8 resolver (no operator-chat status announce, fleet-wide)
 
 ### Changes

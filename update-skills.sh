@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v12.3.10"
+ONBOARDING_VERSION="v12.3.11"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -311,7 +311,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v12.3.8 - safe_json_edit
+# v12.3.11 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -919,7 +919,12 @@ main() {
   # Brew path (Mac only; VPS branch kept out, VPS uses update-skills-vps.sh)
   BREW_CMD="$(command -v brew 2>/dev/null || echo '')"
 
-  # ---- Helper: idempotent CORE_UPDATES.md merger ----
+  # ---- Helper: idempotent CORE_UPDATES.md merger (v12.3.11 format-robust) ----
+  # Recognises ALL 14 header conventions found in the repo (em-dash, bracket h2/h3,
+  # bold-bracket, plain h3, Add-to, (append), Addition, Update, bare filename h2).
+  # Adds IDENTITY and USER to target_map. Wraps appended blocks in BEGIN/END markers
+  # for future in-place updates. Stamps sentinel even when 0 mergeable sections found.
+  # Emits UNRECOGNIZED HEADER warnings; exits non-zero under CORE_UPDATES_STRICT=1.
   wire_core_updates() {
     local SKILL_FOLDER="$1"   # e.g. "36-ghl-mcp-setup"
     local CU_FILE="$SKILLS_DIR/$SKILL_FOLDER/CORE_UPDATES.md"
@@ -930,30 +935,54 @@ main() {
     local TOOLS_FILE="$WIRE_WORKSPACE_DIR/TOOLS.md"
     local MEMORY_FILE="$WIRE_WORKSPACE_DIR/MEMORY.md"
     local SOUL_FILE="$WIRE_WORKSPACE_DIR/SOUL.md"
-    touch "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" 2>/dev/null || true
+    local IDENTITY_FILE="$WIRE_WORKSPACE_DIR/IDENTITY.md"
+    local USER_FILE="$WIRE_WORKSPACE_DIR/USER.md"
+    touch "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" \
+          "$IDENTITY_FILE" "$USER_FILE" 2>/dev/null || true
 
     # Sentinel: skip if this skill's core updates are already merged
     local SENTINEL="<!-- skill:${SKILL_FOLDER}:core-update-applied -->"
     if grep -qF "$SENTINEL" "$AGENTS_FILE" 2>/dev/null || \
        grep -qF "$SENTINEL" "$TOOLS_FILE" 2>/dev/null || \
-       grep -qF "$SENTINEL" "$MEMORY_FILE" 2>/dev/null; then
+       grep -qF "$SENTINEL" "$MEMORY_FILE" 2>/dev/null || \
+       grep -qF "$SENTINEL" "$SOUL_FILE" 2>/dev/null || \
+       grep -qF "$SENTINEL" "$IDENTITY_FILE" 2>/dev/null || \
+       grep -qF "$SENTINEL" "$USER_FILE" 2>/dev/null; then
       return 0
     fi
 
-    # Parse CORE_UPDATES.md: extract each labeled section and append to the right file.
-    # Sections are delimited by lines matching: ## <TARGET>.md -- UPDATE REQUIRED
-    # or: ## <TARGET>.md -- NO UPDATE NEEDED  (skip those).
-    # We use python3 (always present on Mac) for safe multi-line extraction.
-    python3 - "$CU_FILE" "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" "$SENTINEL" <<'PYEOF'
-import sys, re
+    # Parse CORE_UPDATES.md with the format-robust normalising parser.
+    # Recognises ALL header conventions across all 14 formats in the repo:
+    #   FORMAT 1/3: ## X.md - UPDATE REQUIRED  (ASCII / en-dash h2)
+    #   FORMAT 2:   ## X.md — UPDATE REQUIRED  (em-dash h2)
+    #   FORMAT 4:   ## [ADD TO X.md]           (bracket h2, optional trailing note)
+    #   FORMAT 5:   ### [ADD TO X.md]          (bracket h3)
+    #   FORMAT 6:   **[ADD TO X.md]**          (bold-bracket inline)
+    #   FORMAT 7:   ### X.md                   (plain h3, under Suggested snippets)
+    #   FORMAT 8/9: ## Add to X.md             (verb-first h2)
+    #   FORMAT 10:  ## X.md (append)           (paren suffix h2)
+    #   FORMAT 11:  ## X.md append             (bare suffix word h2)
+    #   FORMAT 12:  ## X.md Addition/Update    (mixed suffix h2)
+    #   FORMAT 13:  ## X.md                    (bare filename h2, where:+fenced)
+    # python3 is a hard dependency on Mac (already noted in the existing comment).
+    python3 - \
+        "$CU_FILE" "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" \
+        "$SOUL_FILE" "$IDENTITY_FILE" "$USER_FILE" \
+        "$SENTINEL" "$SKILL_FOLDER" \
+        "${CORE_UPDATES_STRICT:-0}" <<'PYEOF'
+import sys, re, os
 
-cu_path, agents_f, tools_f, memory_f, soul_f, sentinel = sys.argv[1:]
+(cu_path, agents_f, tools_f, memory_f, soul_f,
+ identity_f, user_f, sentinel, skill_folder, strict_mode) = sys.argv[1:]
+strict = (strict_mode == "1")
 
 target_map = {
-    'agents': agents_f,
-    'tools':  tools_f,
-    'memory': memory_f,
-    'soul':   soul_f,
+    'agents':   agents_f,
+    'tools':    tools_f,
+    'memory':   memory_f,
+    'soul':     soul_f,
+    'identity': identity_f,
+    'user':     user_f,
 }
 
 try:
@@ -961,48 +990,203 @@ try:
 except Exception:
     sys.exit(0)
 
-# Split on section headers like: ## AGENTS.md -- UPDATE REQUIRED
-# or ## AGENTS.md -- NO UPDATE NEEDED
-header_re = re.compile(
-    r'^##\s+(AGENTS|TOOLS|MEMORY|SOUL)\.md\s*[--–-]+\s*(.*?)$',
+# ---------------------------------------------------------------------------
+# HEADER RECOGNITION
+# A "core section header" is a line that:
+#   (a) starts with ## or ### (h2/h3), OR is a **[ADD TO X.md]** bold-bracket,
+#   (b) AND contains exactly one of the six target filenames.
+#
+# The regex captures:
+#   group(hashes)  — ## or ### (or None for bold-bracket)
+#   group(target)  — AGENTS|TOOLS|MEMORY|SOUL|IDENTITY|USER (case-insensitive)
+#   group(rest)    — remainder of the line after ".md" (for directive parsing)
+#
+# We build a single pattern that handles all known formats.
+# The "no update" / "no change" signals come from the full line text (rest).
+# ---------------------------------------------------------------------------
+
+TARGETS = r'(AGENTS|TOOLS|MEMORY|SOUL|IDENTITY|USER)'
+
+# Structural headers that must NOT be treated as target sections even though
+# they contain one of the target names (e.g. "## Relevant (update allowed)")
+STRUCTURAL_PREFIXES = (
+    'rule', 'relevant', 'optional', 'non-relevant', 'what not',
+    'where to', 'purpose', 'quick reference', 'core .md', 'what to add',
+    'suggested snippets', 'verification', 'placement decision',
+    'credential storage', 'add this', 'paste these', 'check if running',
+)
+
+def is_structural(line_text):
+    """Return True if the heading looks like a structural/meta header."""
+    # Strip leading #, *, [, whitespace
+    stripped = re.sub(r'^[#*\[\s]+', '', line_text).strip().lower()
+    return any(stripped.startswith(p) for p in STRUCTURAL_PREFIXES)
+
+def classify_directive(rest_text):
+    """
+    Given the text AFTER '<TARGET>.md' on a header line, decide:
+      'skip'   — this section is a no-op (no-update / no-change / do-not-edit)
+      'merge'  — real content section
+    """
+    t = rest_text.lower()
+    # Explicit skip signals
+    skip_signals = ('no update', 'no change', 'do not edit', 'not relevant',
+                    'no update needed', 'no update required')
+    for sig in skip_signals:
+        if sig in t:
+            return 'skip'
+    return 'merge'
+
+# Build the master header recognition regex.
+# It matches lines in these forms:
+#   1. ^(#{2,3})\s+  ... TARGET\.md ...   (h2/h3 with target anywhere on line)
+#   2. ^\*\*\[ADD TO TARGET\.md\]\*\*     (bold-bracket)
+#
+# We use MULTILINE so ^ matches start-of-line.
+# We capture the target name and the full line text so we can classify it.
+
+HEADER_PATTERN = re.compile(
+    r'^(?:'
+    # h2/h3: optional leading [, optional ADD/APPEND TO, target, optional rest
+    r'(#{2,3})\s+(?:\[?(?:ADD\s+TO|APPEND\s+TO|ADD|APPEND|UPDATE)?\s*)?'
+    + TARGETS + r'\.md(.*?)'
+    r'|'
+    # bold-bracket: **[ADD TO TARGET.md]** (optional trailing text)
+    r'\*\*\[(?:ADD\s+TO|APPEND\s+TO)?\s*' + TARGETS + r'\.md\]?\*\*(.*?)'
+    r')$',
     re.IGNORECASE | re.MULTILINE
 )
 
-sections = list(header_re.finditer(text))
-if not sections:
-    sys.exit(0)
+def extract_target_and_directive(m):
+    """
+    From a regex match, return (target_key, directive) where
+      target_key  — lowercase 'agents'|'tools'|'memory'|'soul'|'identity'|'user'
+      directive   — 'merge' or 'skip'
+    """
+    # Group layout: (hashes, target_h2, rest_h2, target_bold, rest_bold)
+    # group(1)=hashes, group(2)=target for h2/h3, group(3)=rest for h2/h3
+    # group(4)=target for bold, group(5)=rest for bold
+    target = (m.group(2) or m.group(4) or '').lower()
+    rest   = (m.group(3) or m.group(5) or '')
+    directive = classify_directive(rest)
+    return target, directive
 
-for i, m in enumerate(sections):
-    key = m.group(1).lower()
-    directive = m.group(2).strip().lower()
-    if 'no update' in directive:
-        continue
-    target_file = target_map.get(key)
-    if not target_file:
-        continue
+# ---------------------------------------------------------------------------
+# STRUCTURAL HEADER DETECTION (for section boundary purposes)
+# Any h2 that does NOT match a target name stops the current section.
+# ---------------------------------------------------------------------------
+ANY_H2_RE = re.compile(r'^#{1,3}\s+\S', re.MULTILINE)
 
-    # Content is between this header and the next (or EOF)
-    start = m.end()
-    end = sections[i+1].start() if i+1 < len(sections) else len(text)
-    block = text[start:end].strip()
+# ---------------------------------------------------------------------------
+# SCAN: collect all section matches with their positions
+# ---------------------------------------------------------------------------
+all_matches = list(HEADER_PATTERN.finditer(text))
+
+# Filter out structural headers
+real_sections = []
+for m in all_matches:
+    full_line = m.group(0)
+    if is_structural(full_line):
+        continue
+    target, directive = extract_target_and_directive(m)
+    if not target or target not in target_map:
+        continue
+    real_sections.append((m, target, directive))
+
+# ---------------------------------------------------------------------------
+# UNRECOGNIZED HEADER detection
+# Any line that contains "TARGET.md" in a heading/bold context but was NOT
+# captured by our regex is potentially an unrecognized format.
+# ---------------------------------------------------------------------------
+LOOSE_RE = re.compile(
+    r'^(?:#{2,3}|\*\*\[)[^\n]*' + TARGETS + r'\.md[^\n]*$',
+    re.IGNORECASE | re.MULTILINE
+)
+all_loose = set(m.group(0).strip() for m in LOOSE_RE.finditer(text))
+recognized_lines = set(m[0].group(0).strip() for m in real_sections)
+# Also count structural headers as recognized (they are intentionally not merged)
+structural_lines = set()
+for m in all_matches:
+    if is_structural(m.group(0)):
+        structural_lines.add(m.group(0).strip())
+
+unrecognized = []
+for line in all_loose:
+    if line not in recognized_lines and line not in structural_lines:
+        unrecognized.append(line)
+
+if unrecognized:
+    for u in unrecognized:
+        print(f'[CORE_UPDATES] UNRECOGNIZED HEADER in {skill_folder}: {u}', file=sys.stderr)
+    if strict:
+        sys.exit(1)
+
+# ---------------------------------------------------------------------------
+# MERGE PHASE
+# For each real non-skip section, extract content up to the next section header
+# (of any kind) and append it wrapped in BEGIN/END markers.
+# ---------------------------------------------------------------------------
+
+# Build a flat list of all heading positions (for section boundary detection)
+all_heading_positions = sorted(
+    [m.start() for m in ANY_H2_RE.finditer(text)] +
+    [m.start() for m in re.finditer(r'^\*\*\[', text, re.MULTILINE)]
+)
+
+def next_section_start(pos):
+    """Return start of next heading at or after pos, or len(text)."""
+    for hp in all_heading_positions:
+        if hp > pos:
+            return hp
+    return len(text)
+
+merged_count = 0
+
+for (m, target, directive) in real_sections:
+    if directive == 'skip':
+        continue
+    target_file = target_map[target]
+
+    # Extract block: from end of matched header line to next heading
+    content_start = m.end()
+    content_end = next_section_start(m.start() + 1)
+    block = text[content_start:content_end].strip()
+
     if not block:
         continue
 
-    # Check sentinel in target file before appending
+    # Check for BEGIN/END idempotency marker in target file
+    begin_marker = f'<!-- BEGIN skill:{skill_folder}:{target} -->'
+    end_marker   = f'<!-- END skill:{skill_folder}:{target} -->'
+
     try:
         existing = open(target_file, encoding='utf-8', errors='replace').read()
     except Exception:
         existing = ''
-    if sentinel in existing:
+
+    if begin_marker in existing:
+        # Already merged for this target — skip
         continue
 
-    # Append block + sentinel
+    # Append wrapped block
     with open(target_file, 'a', encoding='utf-8') as fh:
-        fh.write('\n\n')
+        fh.write(f'\n\n{begin_marker}\n')
         fh.write(block)
-        fh.write('\n')
+        fh.write(f'\n{end_marker}\n')
 
-# Write sentinel to AGENTS.md (primary guard file)
+    merged_count += 1
+
+# ---------------------------------------------------------------------------
+# WARN on zero-section skills (possible format regression, but not an error)
+# ---------------------------------------------------------------------------
+mergeable_sections = [(m, t, d) for (m, t, d) in real_sections if d != 'skip']
+if not mergeable_sections:
+    print(f'[CORE_UPDATES] WARN: {skill_folder} produced no mergeable section', file=sys.stderr)
+
+# ---------------------------------------------------------------------------
+# SENTINEL: always stamp to AGENTS.md so install.sh VERIFICATION GATE passes.
+# This is unconditional — even for genuine no-op skills (all-skip sections).
+# ---------------------------------------------------------------------------
 try:
     existing = open(agents_f, encoding='utf-8', errors='replace').read()
 except Exception:

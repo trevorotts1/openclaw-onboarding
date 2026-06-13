@@ -1,0 +1,43 @@
+name: core-updates-wiring-guard
+
+# Fails the build if the format-robust CORE_UPDATES merger introduced in v12.3.11
+# regresses or a new skill ships a header format the parser does not recognise.
+#
+# Triggers on any change to the merger source, install.sh documentation, the test,
+# or any skill's CORE_UPDATES.md file.
+#
+# v12.3.11 / fix/v12.3.11-core-updates-parser
+
+on:
+  push:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - tests/unit/core-updates-all-skills-wired.test.sh
+      - .github/workflows/core-updates-wiring-guard.yml
+      - "**/CORE_UPDATES.md"
+  pull_request:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - tests/unit/core-updates-all-skills-wired.test.sh
+      - .github/workflows/core-updates-wiring-guard.yml
+      - "**/CORE_UPDATES.md"
+
+jobs:
+  core-updates-wiring-guard:
+    name: CORE_UPDATES format-robust merger guard (v12.3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run core-updates-all-skills-wired tests
+        run: |
+          chmod +x tests/unit/core-updates-all-skills-wired.test.sh
+          bash tests/unit/core-updates-all-skills-wired.test.sh
