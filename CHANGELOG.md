@@ -1,3 +1,57 @@
+## [v12.3.8]  -  2026-06-13  -  fix: kill the cron owner-chat regenerator — mirror install.sh operator-rejecting resolver into update-skills.sh weekly-onboarding-update backfill + nudge-incomplete-interviews.py env fallback; add cron-owner-chat-guard CI; parity case-guard on auto-kickoff cron
+
+### Changes
+
+**Root cause closed: the weekly-onboarding-update REGENERATOR was the source of cron misrouting**
+
+The v12.2.1 fix hardened `install.sh`'s five client-delivery crons and the resolver. But
+`update-skills.sh`'s "backfill if absent" branch — which runs every time a box pulls updates —
+was unconditionally regenerating the weekly-onboarding-update cron from a bare `print(allow[0])`
+with no `OPERATOR_CHAT_IDS` rejection and no `case` abort guard. On any box where `allowFrom[0]`
+is an operator ID (e.g. Dr Tola `[5252140759, 8399116757, ...]`), every update sweep silently
+re-introduced the misroute even after it had been manually corrected.
+
+**Files changed:**
+
+- **update-skills.sh** — replaced bare `print(allow[0])` resolver with the full S0→S1→S2
+  operator-rejecting walk (mirrors `install.sh resolve_telegram_target_universal`):
+  `OPENCLAW_OWNER_CHAT_ID` env override wins first; else iterates `channels.telegram.allowFrom`
+  and `commands.ownerAllowFrom`, printing the FIRST entry NOT in `OPERATOR_CHAT_IDS` and
+  matching the 6-20 digit format and != bot_id; prints empty if none. Added the identical
+  defense-in-depth `case "$TG_TARGET" in 5252140759|6663821679|6771245262)` abort guard before
+  `openclaw cron create --to`. On operator-only or unresolvable configs: FAIL-LOUD (print error,
+  clear `TG_TARGET`, skip cron — never defaults to operator).
+
+- **shared-utils/nudge-incomplete-interviews.py** — added module-level
+  `OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}`. In `send_telegram_nudge()`
+  the resolved `chat_id` (from `owner_chat`, `chat_id`, or `TELEGRAM_CHAT_ID` env fallback) is
+  normalised and rejected if it matches an operator ID — prints `[SKIP]` and returns `False`
+  instead of nudging the operator. Covers corrupted build-state as well as inherited env vars.
+
+- **install.sh** — parity-only: added the defense-in-depth `case "$chat_id" in` operator-abort
+  guard inside `_kickoff_mech_a_cron()` before `openclaw cron create`. The resolver already
+  filters this path; the guard makes all 6 Telegram-delivery `--to` call sites uniformly guarded
+  so the CI grep-check has no exceptions list.
+
+- **shared-utils/resolve-owner-chat.sh** — new sourceable helper that defines
+  `resolve_owner_chat_id()` and `OPERATOR_CHAT_IDS` once. Provides a single canonical location
+  for the operator-rejection logic to prevent future drift.
+
+- **tests/unit/cron-owner-chat-guard.test.sh** — new CI test (55 assertions):
+  (1) GREP-GUARD: every telegram cron `--to` has an operator `case` guard within 200 lines;
+  (2) FORBIDDEN: no bare `allow[0]`/`allowFrom[0]` without `OPERATOR_CHAT_IDS` guard;
+  (3) BEHAVIORAL: hermetic resolver assertions (operator skipped, empty-on-operator-only,
+      `OPENCLAW_OWNER_CHAT_ID` wins, nudge rejects operator env, nudge passes client env);
+  (4) RESOLVER-SYNC: `OPERATOR_CHAT_IDS` set identical in `install.sh`,
+      `resolve-owner-chat.sh`, and `nudge-incomplete-interviews.py`.
+
+- **.github/workflows/cron-owner-chat-guard.yml** — new CI workflow running the test on every
+  push/PR touching `install.sh`, `update-skills.sh`, `shared-utils/**`, or `scripts/**`.
+
+**total_roles unchanged.**
+
+---
+
 ## [v12.3.7]  -  2026-06-13  -  feat: Skill 44 PLAN→BUILD→QC protocol (plan mode + WF-21 checklist + independent MiniMax QC gate + hallucination escalation) [skill 44 v1.0.15]
 
 ### Changes

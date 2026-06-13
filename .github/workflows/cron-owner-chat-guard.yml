@@ -1,0 +1,41 @@
+name: cron-owner-chat-guard
+
+# Fails the build if any Telegram-delivery cron --to path bypasses the
+# operator-rejecting resolver.  Triggered whenever the guarded files change.
+# v12.3.8 / fix/v12.3.8-cron-resolver-parity
+
+on:
+  push:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - shared-utils/**
+      - scripts/**
+      - tests/unit/cron-owner-chat-guard.test.sh
+      - .github/workflows/cron-owner-chat-guard.yml
+  pull_request:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - shared-utils/**
+      - scripts/**
+      - tests/unit/cron-owner-chat-guard.test.sh
+      - .github/workflows/cron-owner-chat-guard.yml
+
+jobs:
+  cron-owner-chat-guard:
+    name: Cron owner-chat operator-rejection guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run cron-owner-chat-guard tests
+        run: |
+          chmod +x tests/unit/cron-owner-chat-guard.test.sh
+          bash tests/unit/cron-owner-chat-guard.test.sh

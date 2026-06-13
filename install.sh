@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.3.7"
+ONBOARDING_VERSION="v12.3.8"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5254,6 +5254,16 @@ IMPORTANT — Cron self-cleanup (do this BEFORE Wave 1): install.sh scheduled th
 
 Then proceed with Wave 1."
 
+    # DEFENSE-IN-DEPTH GUARD (v12.3.8 parity): the resolver already filters
+    # operator IDs, but add the same second-layer case guard that all other
+    # delivery --to call sites carry, so every cron --to is uniformly guarded.
+    case "$chat_id" in
+        5252140759|6663821679|6771245262)
+            warn "Auto-kickoff cron target resolved to an OPERATOR chat ID ($chat_id) — skipping kickoff cron."
+            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
+            return 0
+            ;;
+    esac
     if openclaw cron create \
          --name "$cron_name" \
          --cron "$cron_expr" \
