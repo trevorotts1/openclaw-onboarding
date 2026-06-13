@@ -52,8 +52,13 @@ for cand in "${OPENCLAW_BIN:-}" "$(command -v openclaw 2>/dev/null)" \
   if [ -n "${cand:-}" ] && [ -x "$cand" ]; then OC_BIN="$cand"; break; fi
 done
 
-# ----- Trevor's chat ID (per memory fleet-chat-id-discovery) -----
-TREVOR_CHAT="5252140759"
+# ----- Operator chat ID for migration status reports -----
+# INTENTIONAL: this script is an OPERATOR-INITIATED fleet-migration tool.
+# All Telegram sends here go to Trevor (the operator) to report migration
+# progress, NOT to the client owner.  This is correct and intentional —
+# do NOT replace this with a client-owner resolver.
+# Overridable via OPERATOR_TELEGRAM_CHAT_ID env var for future operator changes.
+TREVOR_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
 
 log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" | tee -a "$LOG"; }
 tg() {

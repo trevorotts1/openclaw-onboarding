@@ -1,3 +1,27 @@
+## [v12.2.1]  -  2026-06-13  -  fix: cron delivery misrouted to operator chat instead of client owner chat
+
+### Changes
+
+**Root cause (confirmed on drtola / talaya / jocelyn):** When `install.sh` is run from the operator's Mac (via SSH tunnel), the SSH session inherits the operator's shell env vars, including `TELEGRAM_CHAT_ID=5252140759` (Trevor's operator chat). The `resolve_telegram_target_universal` Python resolver's S20 source (shell env) picked up this value and cached it as `TELEGRAM_TARGET_CACHED`. All 5 cron-creation functions (`install_weekly_cron`, `install_workforce_resume_cron`, `install_onboarding_resume_cron`, `install_watchdog_loop_cron`, `install_interview_nudge_cron`) then registered crons with `--to 5252140759` — routing every onboarding-nudge, watchdog, and weekly-update delivery to the operator instead of the client owner.
+
+**Fix — three layers:**
+
+1. `install.sh` `resolve_telegram_target_universal` (`is_chat_id`): added `OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}` to the validator. The resolver now hard-rejects all three operator IDs at every S1–S23 source, so they can never be returned as a client owner target regardless of what env vars or config files are present.
+
+2. `install.sh` — added a priority S0 source that checks `OPENCLAW_OWNER_CHAT_ID` env var before all config walks. Operators can export this before running install on a client box to pin the correct owner chat when auto-detection is ambiguous.
+
+3. `install.sh` — all 5 cron-creation functions now include a `case "$TG_TARGET"` regression guard immediately after the resolver call. If an operator ID somehow reaches this point (future regression), the cron install aborts with a loud error rather than silently wiring the wrong target.
+
+4. `23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh` — `TREVOR_CHAT` is intentionally the operator ID (this script is an operator-initiated fleet-migration tool, not a client-facing cron). Added a comment clarifying this is correct + intentional, and made the value overridable via `OPERATOR_TELEGRAM_CHAT_ID` env var for future operator changes.
+
+**Rescue crons (Rescue Rangers escalation, 3-strike operator alerts, credit-failure dormant notices) are NOT affected.** Those always resolve via `resolve_operator_chat_id()` which correctly targets the operator. This fix only touches the CLIENT-DELIVERY path (the `--to` flag on the 5 `openclaw cron create` calls).
+
+**To repoint existing misrouted crons on a live box:** `openclaw cron list` to find the UUID, `openclaw cron rm <UUID>`, then re-run the relevant cron install step from `install.sh` (or the full install with `--resume`). Alternatively run `bash ~/.openclaw/skills/scripts/install.sh --crons-only` if that flag is available; otherwise full reinstall is idempotent.
+
+**Version:** v12.2.0 → v12.2.1. Markers updated: `version`, `install.sh`, `update-skills.sh`, `cc-compat.json`, `README.md`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`.
+
+---
+
 ## [v12.2.0]  -  2026-06-12  -  feat: DIU full role set — 8 remaining graphics specialists registered + ROLE-- files shipped
 
 ### Changes
