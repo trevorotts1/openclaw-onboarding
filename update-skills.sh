@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v12.3.7"
+ONBOARDING_VERSION="v12.3.8"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -311,7 +311,7 @@ get_current_version() {
 }
 
 # ----------------------------------------------------------
-# v12.3.7 - safe_json_edit
+# v12.3.8 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1336,16 +1336,92 @@ except:
       OCJSON="$HOME/.openclaw/openclaw.json"
       [ -d "/data/.openclaw" ] && OCJSON="/data/.openclaw/openclaw.json"
       TG_TARGET=""
-      if [ -f "$OCJSON" ]; then
-        TG_TARGET=$(python3 -c "
-import json
+      # OPERATOR-REJECTING RESOLVER (mirrors install.sh resolve_telegram_target_universal).
+      # BUG-FIX (v12.3.8/fix/v12.3.8-cron-resolver-parity): the prior inline
+      # `print(allow[0])` took allowFrom[0] BLINDLY — on boxes where the operator
+      # ID is first in allowFrom (e.g. Dr Tola [5252140759, 8399116757,...]) this
+      # regenerated the weekly-onboarding-update cron pointing to the OPERATOR
+      # instead of the client owner. The resolver below mirrors the three-layer
+      # guard from install.sh: S0 OPENCLAW_OWNER_CHAT_ID env override → first
+      # non-operator entry in allowFrom/ownerAllowFrom → fail-loud if empty.
+      TG_TARGET=$(python3 - <<'PYEOF' 2>/dev/null
+import json, os
+
+# OPERATOR chat IDs — MUST match install.sh OPERATOR_CHAT_IDS exactly.
+# These must NEVER be returned as a client owner-chat target.
+OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
+
+def is_valid_owner_chat(v, bot_id=""):
+    """Return the chat ID string if valid and non-operator, else empty string."""
+    if not isinstance(v, (str, int)):
+        return ""
+    s = str(v).strip().replace("telegram:", "").replace("tg:", "")
+    if not s:
+        return ""
+    digits = s.lstrip("-")
+    if not (digits.isdigit() and 6 <= len(digits) <= 20):
+        return ""
+    if bot_id and s == bot_id:
+        return ""
+    if s in OPERATOR_CHAT_IDS:
+        return ""
+    return s
+
+# Determine config path (Mac or VPS)
+home = os.path.expanduser("~")
+oc_json = os.path.join(home, ".openclaw", "openclaw.json")
+if os.path.isdir("/data/.openclaw"):
+    oc_json = "/data/.openclaw/openclaw.json"
+
+cfg = {}
 try:
-    cfg=json.load(open('$OCJSON'))
-    allow=cfg.get('channels',{}).get('telegram',{}).get('allowFrom',[])
-    if allow: print(allow[0])
-except: pass
-" 2>/dev/null)
-      fi
+    cfg = json.load(open(oc_json))
+except Exception:
+    pass
+
+# Extract bot_id to exclude it
+bot_id = ""
+bt = cfg.get("channels", {}).get("telegram", {}).get("botToken", "") or ""
+if ":" in bt:
+    bot_id = bt.split(":")[0]
+
+# S0: OPENCLAW_OWNER_CHAT_ID env var — explicit operator override (wins first)
+s0 = os.environ.get("OPENCLAW_OWNER_CHAT_ID", "").strip()
+if s0:
+    cid = is_valid_owner_chat(s0, bot_id)
+    if cid:
+        print(cid)
+        raise SystemExit(0)
+
+# S1: channels.telegram.allowFrom — first non-operator entry
+for v in cfg.get("channels", {}).get("telegram", {}).get("allowFrom", []):
+    cid = is_valid_owner_chat(v, bot_id)
+    if cid:
+        print(cid)
+        raise SystemExit(0)
+
+# S2: commands.ownerAllowFrom — first non-operator entry
+for v in cfg.get("commands", {}).get("ownerAllowFrom", []):
+    cid = is_valid_owner_chat(v, bot_id)
+    if cid:
+        print(cid)
+        raise SystemExit(0)
+
+# No valid non-operator owner chat found — print empty (caller will fail-loud)
+print("")
+PYEOF
+)
+      # DEFENSE-IN-DEPTH GUARD: even if the resolver somehow returns an operator
+      # ID (future regression), abort before wiring the cron. Mirrors the identical
+      # case guard in install.sh install_weekly_onboarding_update_cron().
+      case "$TG_TARGET" in
+          5252140759|6663821679|6771245262)
+              echo "  ERROR: weekly-onboarding-update cron target resolved to an OPERATOR chat ID ($TG_TARGET) — refusing to install cron."
+              echo "  This would route every weekly update to the operator, not the client owner. Aborting cron install."
+              echo "  Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running update-skills.sh, or reorder allowFrom so the client owner appears before any operator ID."
+              TG_TARGET=""
+              ;;
+      esac
       if [ -n "$TG_TARGET" ]; then
         PROMPT_TMP="/tmp/openclaw-cron-prompt-$$.txt"
         REPO_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main"
@@ -1374,7 +1450,8 @@ except: pass
           echo "  ⚠ Could not fetch cron-prompt.txt -- agent can install cron manually later"
         fi
       else
-        echo "  ⚠ No telegram target configured -- skipping cron install. Configure Telegram first then re-run."
+        echo "  ⚠ No telegram target configured (or all resolved to operator IDs) -- skipping cron install."
+        echo "  ⚠ Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> or configure Telegram with a non-operator allowFrom entry, then re-run."
       fi
     fi
   fi

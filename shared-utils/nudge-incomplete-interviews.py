@@ -34,6 +34,16 @@ sys.path.insert(0, str(Path(__file__).parent))
 from detect_platform import get_openclaw_paths
 
 
+# OPERATOR chat IDs — MUST match install.sh OPERATOR_CHAT_IDS exactly.
+# (v12.3.8/fix/v12.3.8-cron-resolver-parity)
+# These IDs must NEVER receive a client-owner nudge. The env fallback
+# TELEGRAM_CHAT_ID can carry an operator ID (e.g. when the SSH session that
+# runs the nudge cron inherits TELEGRAM_CHAT_ID=5252140759 from the operator's
+# shell). A corrupted build-state can also carry an operator ID in owner_chat.
+# Any such value is rejected below — skip-and-warn instead of nudging operator.
+OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
+
+
 NUDGE_CONFIG = [
     {
         "key": "nudge_24h",
@@ -177,12 +187,26 @@ def send_telegram_nudge(meta: dict, cfg: dict, company_slug: str, dry_run: bool 
         print(f"  [DRY-RUN] Would send Telegram nudge ({cfg['key']}): {message}")
         return True
 
-    # Resolve target chat ID (state-driven primary)
-    chat_id = (
+    # Resolve target chat ID (state-driven primary).
+    # OPERATOR-REJECTION GUARD (v12.3.8/fix/v12.3.8-cron-resolver-parity):
+    # reject any value that matches a known operator chat ID regardless of
+    # which source it came from (owner_chat, chat_id, or TELEGRAM_CHAT_ID env).
+    # A corrupted build-state or an inherited operator env var must never cause
+    # nudges to land in the operator's chat instead of the client owner's.
+    _raw_chat_id = (
         str(meta.get("owner_chat") or "")
         or str(meta.get("chat_id") or "")
         or os.environ.get("TELEGRAM_CHAT_ID", "")
     )
+    _normalized = _raw_chat_id.strip().replace("telegram:", "").replace("tg:", "")
+    if _normalized in OPERATOR_CHAT_IDS:
+        print(
+            f"  [SKIP] Resolved chat_id ({_raw_chat_id}) is an OPERATOR id — "
+            f"refusing to send nudge ({cfg['key']}) to operator instead of client owner. "
+            "Set ownerChat in build state or OPENCLAW_OWNER_CHAT_ID env var."
+        )
+        return False
+    chat_id = _raw_chat_id
 
     if not chat_id:
         print(
