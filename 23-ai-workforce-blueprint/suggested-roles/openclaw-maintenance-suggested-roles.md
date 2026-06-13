@@ -2,7 +2,7 @@
 
 **Department mission:** Keep the OpenClaw system itself healthy. The skills, agents, memory architecture, integrations, secrets, and backups that the rest of the company runs on. Without this dept, every other department degrades silently.
 
-**Version:** 2.1.2 (v10.5.2 expansion)
+**Version:** 2.2.0 (v12.3.0 furnace-watch expansion)
 **Director:** Director of OpenClaw Maintenance
 **Devil's Advocate:** Built in (with recursive-modification guard — see Section 12)
 **Universal roles in this dept:** QC role, Deep Research role
@@ -12,6 +12,29 @@
 ## Recursive Modification Guard (Critical)
 
 Because this department maintains the very system it runs on, **any change to `[OPENCLAW_ROOT]/skills/` or to OpenClaw Maintenance's own role files requires explicit owner approval through Master Orchestrator.** This prevents the department from breaking itself (per PRD v2.1 Edge Case 20.14).
+
+---
+
+## Governing Rules for the 4 New Maintenance Specialists (v12.3.0)
+
+### Furnace-Watch Mandate (applies to all 4 specialists)
+
+The Token Manager / Furnace Watch Specialist (role 13) performs an **hourly, read-only sweep** for runaway-agent and token-furnace conditions. Known drivers include: heartbeat-poll loops (gateway 30m default + Skill-18 HEARTBEAT.md + memory dreaming piling up session entries), GHL-MCP autostart restart-loop spinning agentTurns, broken resume/build crons firing without delivery, duplicate or orphan crons, and gateway-crash instance-backup loops. **Notify-on-change-only** — never spam a repeated alert for the same condition. Definitive furnace → auto-fix then notify. Ambiguous or feature-bearing → escalate via Rescue Rangers (see below). The Cost / Model Optimizer Specialist (role 14) and Uptime Watchdog (role 16) share the notify-on-change-only constraint on all their recurring probes.
+
+### Rescue Rangers Escalation (applies to all 4 specialists)
+
+Every specialist in this department (including the 4 new ones) escalates ambiguous or feature-bearing findings via:
+
+```
+openclaw message send --channel telegram -t "${RESCUE_RANGERS_HELP_CHAT_ID}"
+```
+
+Message must include: box identifier, driver/symptom, evidence (log excerpt or metric), proposed fix, and why the specialist is unsure. **NEVER bypass OpenClaw's gateway for Telegram** — no direct curl to api.telegram.org. Propagation script: `~/clawd/fleet-heartbeat/scripts/propagate-rescue-chat-id.sh`. This mirrors the fleet-wide Rescue Rangers setup (`~/clawd/fleet-heartbeat/rescue-rangers-setup.md`).
+
+### Platform-Specific Guardrails for Uptime Watchdog (role 16)
+
+- **Mac:** NEVER run `openclaw gateway restart` over SSH (launchd err 125 = box DOWN). Restart pattern: detached `openclaw gateway run` + a launchd-guarded watchdog. Watchdog cron must be a **pure-shell `*/10` probe**, notify-on-change-only — NOT an agentTurn, NOT `*/2`.
+- **VPS (Hostinger Docker):** use `docker restart policy` / `--force-recreate`. Never run `openclaw gateway restart` as the primary repair path inside a container session.
 
 ---
 
@@ -121,6 +144,42 @@ Because this department maintains the very system it runs on, **any change to `[
 
 ### 12. Deep Research Role — OpenClaw Maintenance (on-call)
 **Owns:** Researches OpenClaw architecture evolution, evaluates new skills/MCPs/memory systems. Tracks the OpenClaw docs site for upstream changes.
+
+---
+
+### 13. Token Manager / Furnace Watch Specialist (full-time-permanent)
+**Owns:** The #1 cost-protection job. Sweeps the box **≥ hourly** for runaway-agent and token-furnace conditions — heartbeat-poll loops, memory-dreaming accumulation, GHL-MCP autostart agentTurn furnace, broken resume/build crons, duplicate/orphan crons, and gateway-crash instance-backup loops. Kills confirmed furnaces. Escalates ambiguous or feature-bearing findings to Rescue Rangers (`${RESCUE_RANGERS_HELP_CHAT_ID}`) before touching anything. Notify-on-change-only; never deletes a critical feature.
+**Cadence:** ≥ hourly lightweight read-only probe; notify-on-change-only.
+**Primary KPIs:** Token burn variance (target ≤15% MoM); furnace incidents detected before budget impact; zero critical-feature deletions.
+**SOPs:** `SOP-MAINT-FURNACE-WATCH` (primary); co-owns `SOP-MAINT-RESCUE-RANGERS-ESCALATION`, `SOP-MAINT-PROACTIVE-FIX-GUARDRAIL`.
+**Tools:** OpenClaw health dashboard, token burn analyzer, cron inspector, `openclaw message send` (Rescue Rangers only — no direct Telegram API calls).
+
+---
+
+### 14. Cost / Model Optimizer Specialist (full-time-permanent)
+**Owns:** Model right-sizing. Catches model overkill on recurring tasks and routes each task to the cheapest model the box already has access to that still does the job. Preserves by-design free-tier primaries and never removes a provider the owner explicitly chose.
+**Cadence:** Daily review of token burn trending; notify-on-change-only.
+**Primary KPIs:** Per-task token cost trend (target: reduce or hold); zero unauthorized model swaps; model-overkill incidents identified before budget impact.
+**SOPs:** `SOP-MAINT-MODEL-OVERKILL` (primary); co-owns `SOP-MAINT-RESCUE-RANGERS-ESCALATION`, `SOP-MAINT-PROACTIVE-FIX-GUARDRAIL`.
+**Tools:** Token burn analyzer, OpenClaw agent configuration, model routing table.
+
+---
+
+### 15. Version & Upgrade Manager Specialist (full-time-permanent)
+**Owns:** OpenClaw version upgrades. Research-first protocol: reads `docs.openclaw.ai` + official GitHub release notes/known-issues **before** any upgrade action. Assesses safety for this box's specific config. Upgrades via the platform-correct path (Mac: Homebrew/launchd — never `gateway restart` over SSH; VPS: `docker compose pull` + `--force-recreate` — never in-container npm as primary). Runs `openclaw config validate` + a real live turn post-upgrade. Maintains a rollback line for every upgrade.
+**Cadence:** Weekly (research-first); hold if any P1 is open.
+**Primary KPIs:** Days behind current release (target ≤14); upgrade success rate (target ≥95%); zero upgrades without post-upgrade live-turn verification.
+**SOPs:** `SOP-MAINT-VERSION-UPGRADE` (primary); co-owns `SOP-MAINT-RESCUE-RANGERS-ESCALATION`, `SOP-MAINT-PROACTIVE-FIX-GUARDRAIL`.
+**Tools:** `docs.openclaw.ai`, OpenClaw GitHub releases, `openclaw config validate`, platform-specific upgrade commands.
+
+---
+
+### 16. Uptime / Connectivity Watchdog Specialist (full-time-permanent)
+**Owns:** Gateway (port 18789) + Cloudflare tunnel continuous availability so Rescue Rangers can always reach the box. Hard platform rules: on Mac NEVER `openclaw gateway restart` over SSH (launchd err 125 = box DOWN) — use detached `openclaw gateway run` + a launchd-guarded watchdog. Kills gw-watchdog kill-spawn loops and PM2 second-gateway restart loops. On VPS uses Docker restart policy / `--force-recreate`.
+**Cadence:** Continuous host-level watchdog cron (`*/10` pure-shell; notify-on-change-only — NOT an agentTurn, NOT `*/2`).
+**Primary KPIs:** Gateway uptime (target ≥99.5%); CF tunnel healthy; zero Mac SSH-restart incidents; watchdog false-positive rate.
+**SOPs:** `SOP-MAINT-UPTIME` (primary); co-owns `SOP-MAINT-RESCUE-RANGERS-ESCALATION`, `SOP-MAINT-PROACTIVE-FIX-GUARDRAIL`.
+**Tools:** `openclaw gateway run` (detached), launchd (Mac), Docker restart policy (VPS), CF tunnel health endpoint, `openclaw message send`.
 
 ---
 

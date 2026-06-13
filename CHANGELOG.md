@@ -1,3 +1,19 @@
+## [v12.3.0]  -  2026-06-13  -  feat: maintenance expansion — 4 furnace specialist roles + 6 SOPs + floor reporting corrected to 28-department standard
+
+### Changes
+
+**Maintenance dept expansion (Option A — additive, no new dept).** Four specialist role files added to the existing mandatory `openclaw-maintenance` department: `token-manager-furnace-watch-specialist` (R1, owns furnace/heartbeat/GHL-MCP/runaway drivers F1/F2/F3/F6/F10/F11/F13), `cost-model-optimizer-specialist` (R2, owns model-overkill drivers F9/F8-cost), `version-and-upgrade-manager-specialist` (R3, research-first weekly upgrade cycle), `uptime-connectivity-watchdog-specialist` (R4, continuous gateway+CF tunnel watchdog, Mac-no-SSH-restart rule). All 4 follow the canonical 19-section format. Dept count 15 → 19, `total_roles` 331 → 335. `_index.json` invariant passes: `count == len(roles)` and `total_roles == sum(dept counts)`.
+
+**SOP library (new dir).** Created `openclaw-maintenance/sops/` (mirrors `graphics/sops/` + `presentations/sops/` convention). Six SOP files shipped: `sop-furnace-watch-hourly.md` (SOP-MAINT-FURNACE-WATCH), `sop-model-overkill-daily.md` (SOP-MAINT-MODEL-OVERKILL), `sop-version-upgrade-weekly.md` (SOP-MAINT-VERSION-UPGRADE), `sop-uptime-connectivity-continuous.md` (SOP-MAINT-UPTIME), `sop-rescue-rangers-escalation.md` (SOP-MAINT-RESCUE-RANGERS-ESCALATION, cross-cutting), `sop-proactive-fix-guardrail.md` (SOP-MAINT-PROACTIVE-FIX-GUARDRAIL, cross-cutting). All 6 SOP IDs verified unique across repo.
+
+**Floor reporting corrected.** `scripts/department-floor.py` string/comment sync: stale "16 mandatory + 7 universal = 23" and "26-department standard" replaced with truthful "21 mandatory + 7 universal-primary = 28" and "28-department standard" throughout (module docstring, exit-code docs, inline comments, `evaluate_floor()` docstring, `reason` default string, `main()` banner). Zero change to `HARDCODED_MANDATORY` (already correct 21), zero change to `department-naming-map.json` `.mandatory` (already 21), zero change to computed floor gate logic or exit codes. `expected_floor_count` was already 28; the fix makes the REPORT match the gate.
+
+**Auto-provisioned; no new workspace.** Roles register under the existing `openclaw-maintenance` workspace via `seed-workspaces.py` + `materialize-dept-agents.sh` (idempotent). No new CC API surface; `pinnedTag v4.39.0` / `minVersion v4.39.0` unchanged.
+
+**Excludes Jill-style opt-outs.** No client-business-specific dept promoted to mandatory. No force-add to any opted-out box.
+
+---
+
 ## [v12.2.1]  -  2026-06-13  -  fix: cron delivery misrouted to operator chat instead of client owner chat
 
 ### Changes

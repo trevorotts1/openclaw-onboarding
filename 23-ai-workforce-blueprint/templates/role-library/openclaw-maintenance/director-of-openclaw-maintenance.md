@@ -446,6 +446,10 @@ For changes that affect the CEO's stated priorities or involve budget >{{MONTHLY
 
 | Downstream Role | What You Hand | Format | Frequency |
 |---|---|---|---|
+| **Token Manager / Furnace Watch Specialist** | Token-burn anomaly flags (>30% deviation), suspected runaway-loop or heartbeat-furnace conditions, GHL-MCP autostart or broken-cron findings requiring triage | Incident ticket with evidence (agent name, burn rate, log excerpt) | On-demand (hourly sweep findings) |
+| **Cost / Model Optimizer Specialist** | Model-overkill findings from burn-analyzer review, recurring high-cost task patterns identified during token audit | Optimization request with cost delta and baseline | Daily (from burn review) |
+| **Version & Upgrade Manager Specialist** | Upgrade readiness signals (regression-test clean, no open P1), upgrade hold orders (open P1 in flight), post-upgrade validation requirements | Upgrade authorization or hold notice | Weekly |
+| **Uptime / Connectivity Watchdog Specialist** | Gateway restart authorizations (Mac: detached-run only, never SSH restart), CF tunnel configuration changes, watchdog threshold updates | Directive with exact command (Mac/VPS path explicit) | On-demand |
 | **Monitoring/Observability Specialist** | New monitoring rules, updated alert thresholds, investigation assignments, post-incident monitoring adjustments | Task assignment with specific observability requirements | Daily |
 | **Director of Engineering** | Platform bugs requiring code fixes, feature requests for improved reliability, infrastructure scaling needs | Bug report or feature request with reproduction steps and impact assessment | Weekly |
 | **CEO/Master Orchestrator** | Monthly health report, quarterly reliability review, budget-impacting change proposals, SEV1 incident notifications | Structured report or urgent communication | Monthly (health), on-demand (SEV1) |
