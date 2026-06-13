@@ -1,3 +1,35 @@
+## [v12.3.10] - 2026-06-13 - fix: interview-nudge cron self-removes at closeout (interviewComplete=true) + on next fire, and converts from operator-announce agentTurn cron to a silent command cron that nudges ONLY the client owner via the v12.3.8 resolver (no operator-chat status announce, fleet-wide)
+
+### Changes
+
+**Two root causes closed (v12.3.10):**
+
+#### 1. Nudge cron stays registered forever on completed clients
+
+The `interview-nudge` cron had a kill-CONDITION (exits 0 when `interviewComplete=true`) but no kill-ACTION. The shim checked the condition and exited early, but never called `openclaw cron rm` on itself. No other code removed it either: `run-closeout.sh` self-removed only the `closeout-resume` cron. On every completed client the nudge cron remained in `openclaw cron list` and fired every 6h indefinitely.
+
+**Fix (three layers):**
+- `install.sh install_interview_nudge_cron()`: captures UUID from `openclaw cron add --json` output and persists it to build-state as `.interviewNudgeUuid` + `.interviewNudgeRegisteredAt`.
+- `run-closeout.sh` done-transition: self-removes the nudge cron by UUID (primary) + name-scan fallback for boxes installed before UUID recording (Talaya fleet rescue). Also kills the loop-registry entry.
+- `interview-nudge-cron.sh` shim: `interviewComplete=true` branch now calls `self_remove_cron("interviewComplete")` before `exit 0`. Guarantees removal even on clients completed before this release, on the next 6h fire.
+- `build-state-schema.json`: adds `interviewNudgeUuid` + `interviewNudgeRegisteredAt` (additive, non-required).
+
+#### 2. Nudge cron announces status to the operator chat
+
+The cron was registered in ANNOUNCE/agentTurn mode (`--channel telegram --to <id> --message <prompt>`). OpenClaw ran the `--message` as an agent turn and delivered its output to the `--to` chat — so cheap status lines ("interviewComplete=true - no nudge needed; exit") were spoken into the operator's Telegram chat on every 6h fire. Same v12.3.8 root cause: when install runs over an SSH tunnel, the resolver inherits `TELEGRAM_CHAT_ID=5252140759` and the cron target becomes the operator.
+
+**Fix:** converted from ANNOUNCE mode to silent COMMAND mode (mirrors the closeout-resume pattern):
+- `install.sh`: replaced `openclaw cron create --channel telegram --to ... --message ...` with `openclaw cron add --schedule ... --command "bash $_NUDGE_SCRIPT" --json`.
+- No `--channel`/`--to`/`--message` on the interview-nudge registration. Status is log-only (`$OC_ROOT/workspace/.interview-nudge.log`), never Telegram.
+- The ONLY Telegram traffic is a real client-facing nudge, routed to the CLIENT owner via `nudge-incomplete-interviews.py` which enforces `OPERATOR_CHAT_IDS` rejection (v12.3.8 guard, unchanged).
+- `interview-nudge-cron.sh`: added OPERATOR-ANNOUNCE RULE docs; the shim never calls `openclaw message send` to an operator id and is never wired with `--to` operator id.
+
+**Files changed:** `install.sh` (version bump + command-mode cron), `23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh` (self_remove_cron + COMMAND MODE docs), `37-zhc-closeout/scripts/run-closeout.sh` (nudge cron rm at done-transition + fallback scan), `23-ai-workforce-blueprint/build-state-schema.json` (interviewNudgeUuid + interviewNudgeRegisteredAt), `VERSION`.
+
+**Tests added:** T13 in `test-interview-experience.sh` (self-remove on next fire); T11/T12 in `test-closeout-gated-pipeline.sh` (closeout removes nudge cron); section (5) in `cron-owner-chat-guard.test.sh` (command-mode static checks); new CI step in `qc-static.yml`.
+
+---
+
 ## [v12.3.9]  -  2026-06-13  -  fix: guard wire_ghl_mcp grep + all sibling no-match-abort traps in update-skills.sh + install.sh so a legitimate no-match never aborts wiring/stamp; keep real errors loud
 
 ### Changes

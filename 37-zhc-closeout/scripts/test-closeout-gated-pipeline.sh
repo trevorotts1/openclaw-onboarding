@@ -420,6 +420,79 @@ else
 fi
 
 # ============================================================
+# T11: v12.3.10 — run-closeout.sh self-removes interview-nudge cron at done-transition
+# ============================================================
+# Acceptance test A: when interviewComplete=true reaches closeoutStatus=done,
+# run-closeout.sh must call `openclaw cron rm <interviewNudgeUuid>` alongside
+# the existing closeout-resume cron rm. Verified by static grep (the test
+# for the dynamic path is in test-interview-experience.sh T13).
+printf '\n--- T11: v12.3.10 interview-nudge cron self-remove at done-transition ---\n'
+
+if [[ ! -f "$run_script" ]]; then
+  fail "T11: run-closeout.sh not found at $run_script"
+else
+  # 11a: run-closeout.sh references interviewNudgeUuid (the UUID key)
+  if grep -q 'interviewNudgeUuid' "$run_script"; then
+    pass "T11a: run-closeout.sh references interviewNudgeUuid (nudge cron self-remove wired)"
+  else
+    fail "T11a: run-closeout.sh does NOT reference interviewNudgeUuid — nudge cron self-remove missing"
+  fi
+
+  # 11b: run-closeout.sh issues `openclaw cron rm` for the nudge cron
+  # Check that there is a cron rm call near the interviewNudgeUuid reference
+  nudge_rm_context=$(grep -A5 'interviewNudgeUuid' "$run_script" | grep 'cron rm' || true)
+  if [[ -n "$nudge_rm_context" ]]; then
+    pass "T11b: run-closeout.sh calls 'cron rm' after resolving interviewNudgeUuid"
+  else
+    # Also accept the pattern where rm is called with the variable directly
+    nudge_rm_context2=$(grep 'nudge_cron_uuid\|nudge.*cron.*rm\|cron rm.*nudge' "$run_script" || true)
+    if [[ -n "$nudge_rm_context2" ]]; then
+      pass "T11b: run-closeout.sh has nudge cron rm call (variable form)"
+    else
+      fail "T11b: run-closeout.sh does not call 'cron rm' for the interview-nudge cron"
+    fi
+  fi
+
+  # 11c: the nudge-cron rm block is at the done-transition (alongside closeout-resume rm)
+  # Check that both closeoutResumeUuid and interviewNudgeUuid appear in the same done-transition block
+  done_block=$(awk '/PRD-2.8: SELF-REMOVE/,/closeoutStatus.*=.*done/' "$run_script" 2>/dev/null || true)
+  if echo "$done_block" | grep -q 'interviewNudgeUuid'; then
+    pass "T11c: interview-nudge cron rm is in the done-transition block alongside closeout-resume rm"
+  else
+    fail "T11c: interview-nudge cron rm is NOT in the done-transition block — may not fire at closeout"
+  fi
+
+  # 11d: a fallback name-scan is present for pre-UUID boxes (Talaya fleet rescue)
+  if grep -q 'interview-nudge' "$run_script" && grep -q 'scan_uuid\|grep.*interview-nudge\|awk.*interview-nudge' "$run_script"; then
+    pass "T11d: run-closeout.sh has a fallback name-scan for boxes without a recorded interviewNudgeUuid"
+  else
+    fail "T11d: run-closeout.sh missing fallback name-scan for pre-UUID boxes (Talaya)"
+  fi
+fi
+
+# ============================================================
+# T12: v12.3.10 — build-state-schema.json has interviewNudgeUuid + interviewNudgeRegisteredAt
+# ============================================================
+printf '\n--- T12 (schema): build-state-schema.json has v12.3.10 nudge UUID fields ---\n'
+schema_file_t12="$REPO_ROOT/23-ai-workforce-blueprint/build-state-schema.json"
+if [[ ! -f "$schema_file_t12" ]]; then
+  fail "T12(schema): build-state-schema.json not found"
+else
+  t12s_ok=1
+  for field in interviewNudgeUuid interviewNudgeRegisteredAt; do
+    if jq -e ".properties.${field}" "$schema_file_t12" >/dev/null 2>&1; then
+      info "schema has $field"
+    else
+      info "MISSING from schema: $field"
+      t12s_ok=0
+    fi
+  done
+  [[ "$t12s_ok" -eq 1 ]] \
+    && pass "T12(schema): interviewNudgeUuid + interviewNudgeRegisteredAt present in build-state-schema.json" \
+    || fail "T12(schema): one or more v12.3.10 nudge UUID fields missing from build-state-schema.json"
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 printf '\n============================================================\n'

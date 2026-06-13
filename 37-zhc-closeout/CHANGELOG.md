@@ -1,5 +1,17 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## [1.3.0] - 2026-06-13 - v12.3.10: interview-nudge cron self-removed at done-transition (interviewComplete=true)
+
+- `scripts/run-closeout.sh`: at the done-transition (alongside the existing closeout-resume cron self-remove), added a block that:
+  1. Reads `.interviewNudgeUuid` from build-state (written by install.sh at install time).
+  2. Calls `openclaw cron rm <uuid>` to remove the interview-nudge cron — tolerated non-fatal on failure.
+  3. Clears `.interviewNudgeUuid` / nulls `.interviewNudgeRegisteredAt` from build-state.
+  4. Fallback name-scan: scans `openclaw cron list` for any cron named `interview-nudge` and removes it — covers boxes installed before UUID recording was added (Talaya fleet rescue).
+  5. Calls `lr_kill "interview-nudge"` via loop-registry.sh for registry hygiene.
+- `scripts/test-closeout-gated-pipeline.sh`: added T11 (static grep asserts nudge cron rm wired at done-transition + fallback scan present) and T12 (schema has interviewNudgeUuid + interviewNudgeRegisteredAt).
+
+---
+
 ## [1.2.0] - 2026-06-10 - PRD-2.8: GATED pipeline — 7 per-leg deliverables, pre-flight Telegram check, org-chart connector-tree assertion, n8n wiring, dedicated resume cron, fleet sweep (shipped with onboarding v11.10.0)
 
 Addresses PRD section 2.8: "treat the closeout as a gated pipeline like the role/SOP library." Every leg is now explicit and observable; the resume cron fires until all 7 are done or waived; pre-flight fails LOUD before any generation starts.
