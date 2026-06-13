@@ -14,6 +14,13 @@ Add this section:
 ```
 ## Convert and Flow Operator — Tier 0 (skill 44)
 
+### Pre-flight: model check before any workflow build or modify
+Before executing a workflow BUILD or MODIFY (caf workflows build / patch-email /
+patch-trigger / restore / Tier 4 agent-browser build): check the active session model.
+If it is a lighter/non-high-reasoning model or thinking is not HIGH, surface the
+recommendation to the owner first (see INSTRUCTIONS.md Step 0). Then proceed — this
+is a recommendation, not a block. Read-only ops skip this check entirely.
+
 Skill 44 is the FIRST STOP in the 6-tier GHL access chain. Try it before any MCP.
 
 ### When to use Tier 0

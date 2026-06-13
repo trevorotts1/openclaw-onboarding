@@ -1,5 +1,32 @@
 # Skill 44 — Convert and Flow Operator: Runtime Instructions
 
+## Step 0 — Model Check Pre-flight (READ BEFORE ANY BUILD OR MODIFY ACTION)
+
+**Trigger:** any time you are about to BUILD or MODIFY a GHL workflow (caf workflows build,
+patch-email, patch-trigger, restore, or Tier 4 agent-browser build).
+
+**Check:** look at your current session's active model name and thinking level.
+
+**If the active model is a lighter/faster model** (e.g. deepseek-flash, haiku, mini, flash,
+or any model NOT identified as a high-reasoning model) **OR thinking is not set to HIGH**:
+
+Surface this recommendation to the owner BEFORE proceeding:
+
+> ⚠️ **GHL workflow builds are complex and error-prone on lighter models.**
+> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. deepseek-v4-pro,
+> or an Opus-tier model) with thinking set to HIGH before proceeding — for the best
+> possible output and to avoid hard-to-catch hallucinations in workflow logic.
+> *(A lighter model previously turned a 2-minute fix into a 12-hour loop by
+> hallucinating a failure cause, a fake link, and a wrong number.)*
+> Say "proceed anyway" to continue on the current model, or switch first and re-run.
+
+**Then proceed** once surfaced — this is a recommendation, not a hard block. Do NOT
+repeat the warning on the same build session after the owner has acknowledged it.
+
+Read-only ops (caf contacts list, caf workflows list, etc.) do NOT trigger this check.
+
+---
+
 ## Natural-language intents -> CLI commands
 
 Operators never memorize CLI syntax. Say what you want in Telegram; the agent routes to the right command.

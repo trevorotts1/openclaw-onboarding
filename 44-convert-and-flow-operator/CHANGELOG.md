@@ -1,5 +1,27 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.0.12] - 2026-06-13 — docs: model-recommendation pre-flight warning for workflow builds
+
+### Added (Step 0 model check — recommendation gate, not a hard block)
+- **INSTRUCTIONS.md Step 0** — new "Model Check Pre-flight" section at the top of
+  INSTRUCTIONS.md, triggered before any workflow BUILD or MODIFY action. Checks the
+  active session model/thinking level; if lighter/non-high-reasoning or thinking not HIGH,
+  surfaces a clear recommendation to the owner before proceeding. Proceeds on owner
+  acknowledgement ("proceed anyway") — never blocks. Read-only ops exempt.
+- **SKILL.md READ-BEFORE-ACT block** — a short "READ-BEFORE-ACT" callout added above
+  the Teach Yourself Protocol, pointing to INSTRUCTIONS.md Step 0 for the model check.
+- **CORE_UPDATES.md AGENTS.md block** — a concise pre-flight note prepended to the
+  Convert and Flow Operator AGENTS.md section so every client agent sees the check rule
+  every session.
+
+### Motivation
+A lighter model previously hallucinated a workflow's failure cause, a fake link, and a
+wrong number — turning a 2-minute fix into a 12-hour debugging loop. This warning
+surfaces the risk before the build starts and routes the operator to a better model when
+needed, without blocking work when the owner chooses to proceed.
+
+---
+
 ## [1.0.11] - 2026-06-11 — fix: wire GHL creds into gateway-inherited env + fail-loud live verify (Evelyn VPS reproduction)
 
 ### Fixed (install env-wiring gap — root cause of caf dying on a "successful" install)
