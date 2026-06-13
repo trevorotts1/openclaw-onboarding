@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v12.3.8"
+ONBOARDING_VERSION="v12.3.9"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -249,7 +249,7 @@ discover_skills_dir() {
   fi
 
   # Fuzzy search for folders with "openclaw" and "master" in name (case-insensitive)
-  local FUZZY_DIR=$(find "$HOME" -maxdepth 2 -type d -iname "*openclaw*" 2>/dev/null | grep -i "master" | head -1)
+  local FUZZY_DIR=$(find "$HOME" -maxdepth 2 -type d -iname "*openclaw*" 2>/dev/null | grep -i "master" | head -1 || true)
   if [ -n "$FUZZY_DIR" ] && [ -d "$FUZZY_DIR" ]; then
     local SKILL_COUNT=$(ls -d "$FUZZY_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
     if [ "$SKILL_COUNT" -gt "0" ]; then
@@ -1082,7 +1082,7 @@ except:
     local GHL_MCP_INSTALL_MD="$SKILLS_DIR/36-ghl-mcp-setup/INSTALL.md"
     if [ -f "$GHL_MCP_INSTALL_MD" ]; then
       local DETECTED_PORT
-      DETECTED_PORT=$(grep -oE 'localhost:[0-9]+' "$GHL_MCP_INSTALL_MD" 2>/dev/null | head -1 | cut -d: -f2)
+      DETECTED_PORT=$(grep -oE 'localhost:[0-9]+' "$GHL_MCP_INSTALL_MD" 2>/dev/null | head -1 | cut -d: -f2 || true)
       [ -n "$DETECTED_PORT" ] && GHL_MCP_PORT="$DETECTED_PORT"
     fi
 
@@ -1291,7 +1291,7 @@ except:
         echo "    ✗ NOT verified: $_gname -- ${_greason}"
       fi
     done
-    ONBOARDING_GATE_SUMMARY="$(obs_gate_summary "$SKILLS_DIR" 2>/dev/null | grep '^GATE-HUMAN:' | sed 's/^GATE-HUMAN: //')"
+    ONBOARDING_GATE_SUMMARY="$(obs_gate_summary "$SKILLS_DIR" 2>/dev/null | grep '^GATE-HUMAN:' | sed 's/^GATE-HUMAN: //' || true)"
     if obs_gate_summary "$SKILLS_DIR" >/dev/null 2>&1; then
       ONBOARDING_GATE_OK="yes"
     else
@@ -1481,7 +1481,7 @@ PYEOF
     echo ""
     echo "  Running qc-completeness.sh against live workforce..."
     QC_OUTPUT="$(bash "$QC_COMPLETENESS_SCRIPT" 2>&1)" || QC_COMPLETENESS_RC=$?
-    QC_STATUS_LINE="$(printf '%s\n' "$QC_OUTPUT" | grep -E '^STATUS:' | tail -1)"
+    QC_STATUS_LINE="$(printf '%s\n' "$QC_OUTPUT" | grep -E '^STATUS:' | tail -1 || true)"
     echo "  ${QC_STATUS_LINE:-qc-completeness ran (no STATUS line captured)} (exit $QC_COMPLETENESS_RC)"
   fi
 

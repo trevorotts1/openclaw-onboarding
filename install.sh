@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.3.8"
+ONBOARDING_VERSION="v12.3.9"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1726,10 +1726,10 @@ discover_skills() {
     local base_dir="${1:-$OC_CONFIG/onboarding}"
     local numbered_count
     numbered_count=$(find "$base_dir" -maxdepth 1 -type d -name "[0-9][0-9]-*" 2>/dev/null \
-        | grep -v -- '-ARCHIVED$' | wc -l | tr -d ' ')
+        | grep -v -- '-ARCHIVED$' | wc -l | tr -d ' ' || true)
     local skill_md_count
     skill_md_count=$(find "$base_dir" -maxdepth 2 -name "SKILL.md" 2>/dev/null \
-        | grep -v -- '-ARCHIVED/' | wc -l | tr -d ' ')
+        | grep -v -- '-ARCHIVED/' | wc -l | tr -d ' ' || true)
 
     local max_count=$numbered_count
     if [ "$skill_md_count" -gt "$max_count" ] 2>/dev/null; then
@@ -2089,7 +2089,7 @@ except Exception: pass
 }
 
 get_gateway_capability() {
-    openclaw gateway status --verbose 2>/dev/null | grep -E "^Capability:" | awk '{print $2}' | head -1
+    openclaw gateway status --verbose 2>/dev/null | grep -E "^Capability:" | awk '{print $2}' | head -1 || true
 }
 
 # auto_repair_cli_scopes — detect read-only state, try CLI repair with master
@@ -4907,7 +4907,7 @@ start_ghl_mcp_autostart() {
     OUT="$(bash "$AUTOSTART" 2>&1)" || RC=$?
     printf '%s\n' "$OUT" >> "$LOG_FILE"
     local STATUS_LINE
-    STATUS_LINE="$(printf '%s\n' "$OUT" | grep -E '^STATUS:' | tail -1)"
+    STATUS_LINE="$(printf '%s\n' "$OUT" | grep -E '^STATUS:' | tail -1 || true)"
     case "$STATUS_LINE" in
         *HEALTHY_ALREADY*|*"=HEALTHY"*) success "GHL MCP server running + registered (${STATUS_LINE:-healthy})" ;;
         *SKIPPED_NO_CREDS*)             note "GHL MCP server not started — GHL token absent (honest gap). ${STATUS_LINE}" ;;
@@ -5437,8 +5437,8 @@ print_install_summary() {
     local warn_pat='^  ⚠️'
 
     local err_count warn_count
-    err_count=$(grep -cE "$err_pat" "$LOG_FILE" 2>/dev/null | head -1)
-    warn_count=$(grep -cE "$warn_pat" "$LOG_FILE" 2>/dev/null | head -1)
+    err_count=$(grep -cE "$err_pat" "$LOG_FILE" 2>/dev/null | head -1 || true)
+    warn_count=$(grep -cE "$warn_pat" "$LOG_FILE" 2>/dev/null | head -1 || true)
     err_count=${err_count:-0}
     warn_count=${warn_count:-0}
 
@@ -5457,7 +5457,7 @@ print_install_summary() {
     echo "     ${err_count} error(s), ${warn_count} warning(s) detected during install."
     echo ""
     echo "  ─── First 10 issues (most recent first) ──────────────────────────────"
-    grep -nE "$err_pat|$warn_pat" "$LOG_FILE" 2>/dev/null | tail -10 | sed 's/^/     /'
+    grep -nE "$err_pat|$warn_pat" "$LOG_FILE" 2>/dev/null | tail -10 | sed 's/^/     /' || true
     echo ""
     echo "  ─── Full log (durable, survives reboot) ──────────────────────────────"
     echo "     $LOG_FILE"
@@ -5718,7 +5718,7 @@ note "Configuring operator Telegram channel separation (operator account + bindi
 if [ -f "$ONBOARDING_DIR/scripts/configure-operator-telegram.sh" ]; then
     _OPTG_OUT="$(bash "$ONBOARDING_DIR/scripts/configure-operator-telegram.sh" 2>&1)" || true
     printf '%s\n' "$_OPTG_OUT" >> "$LOG_FILE"
-    _OPTG_STATUS="$(printf '%s\n' "$_OPTG_OUT" | grep -E '^STATUS:' | tail -1)"
+    _OPTG_STATUS="$(printf '%s\n' "$_OPTG_OUT" | grep -E '^STATUS:' | tail -1 || true)"
     case "$_OPTG_STATUS" in
         *=CONFIGURED*)                       success "Operator Telegram separation live (${_OPTG_STATUS})" ;;
         *STRUCTURE_ONLY_NEEDS_TOKEN*)        warn "Operator Telegram STRUCTURE written but needs a BotFather operator bot token. ${_OPTG_STATUS} — set OPERATOR_TELEGRAM_BOT_TOKEN in ~/.openclaw/secrets/.env and re-run scripts/configure-operator-telegram.sh." ;;

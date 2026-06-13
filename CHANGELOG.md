@@ -1,3 +1,37 @@
+## [v12.3.9]  -  2026-06-13  -  fix: guard wire_ghl_mcp grep + all sibling no-match-abort traps in update-skills.sh + install.sh so a legitimate no-match never aborts wiring/stamp; keep real errors loud
+
+### Changes
+
+**Root cause closed: `grep` returning exit 1 on no-match under `set -euo pipefail` aborted skill wiring and the version stamp**
+
+The `wire_ghl_mcp` function in `update-skills.sh` used `grep -oE 'localhost:[0-9]+'` against
+`36-ghl-mcp-setup/INSTALL.md` — which contains only `http://localhost:${GHL_MCP_PORT}` (a literal
+shell variable, no digits). `grep` exits 1 on no-match; under `set -euo pipefail` the pipeline
+exit propagates through the command-substitution assignment and the script aborts. The wiring loop
+(skills 37–45) and the `.onboarding-version` stamp were never reached.
+
+**Traps fixed (12 total):**
+
+- `update-skills.sh` L252 — `FUZZY_DIR=$(find ... | grep -i "master" | head -1)` — no openclaw-master dir → abort
+- `update-skills.sh` L1085 — `DETECTED_PORT=$(grep -oE 'localhost:[0-9]+' ... | head -1 | cut ...)` — PRIMARY BUG: no digit port in INSTALL.md → abort
+- `update-skills.sh` L1294 — `ONBOARDING_GATE_SUMMARY=$(... | grep '^GATE-HUMAN:' | sed ...)` — no GATE-HUMAN line → abort
+- `update-skills.sh` L1484 — `QC_STATUS_LINE=$(printf ... | grep -E '^STATUS:' | tail -1)` — no STATUS line → abort
+- `install.sh` L1729 — `numbered_count=$(find ... | grep -v -- '-ARCHIVED$' | wc -l | ...)` — zero dirs → abort
+- `install.sh` L1732 — `skill_md_count=$(find ... | grep -v -- '-ARCHIVED/' | wc -l | ...)` — zero SKILL.md files → abort
+- `install.sh` L2092 — `get_gateway_capability()` pipeline — no Capability line (gateway not running yet) → function exits 1 → assignment aborts
+- `install.sh` L4910 — `STATUS_LINE=$(printf ... | grep -E '^STATUS:' | tail -1)` — no STATUS line → abort
+- `install.sh` L5440 — `err_count=$(grep -cE ... | head -1)` — grep -c exits 1 on zero-match (clean install) → abort on happy path
+- `install.sh` L5441 — `warn_count=$(grep -cE ... | head -1)` — twin zero-match trap → abort on happy path
+- `install.sh` L5460 — standalone `grep -nE ... | tail -10 | sed ...` — no matching lines → abort
+- `install.sh` L5721 — `_OPTG_STATUS=$(printf ... | grep -E '^STATUS:' | tail -1)` — no STATUS line → abort
+
+**Fix applied:** appended `|| true` to the whole pipeline on each fragile assignment/statement.
+`set -euo pipefail` is NOT relaxed globally. Empty/zero result + downstream `${:-}` / `-eq 0` guards
+keep all real error surfaces intact. `stderr` preserved (pre-existing `2>/dev/null` redirects
+are unchanged).
+
+---
+
 ## [v12.3.8]  -  2026-06-13  -  fix: kill the cron owner-chat regenerator — mirror install.sh operator-rejecting resolver into update-skills.sh weekly-onboarding-update backfill + nudge-incomplete-interviews.py env fallback; add cron-owner-chat-guard CI; parity case-guard on auto-kickoff cron
 
 ### Changes
