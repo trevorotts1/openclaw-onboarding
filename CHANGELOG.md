@@ -1,3 +1,35 @@
+## [v12.3.5]  -  2026-06-13  -  docs: Skill 44 model-recommendation pre-flight warning for GHL workflow builds
+
+### Changes
+
+**A — `44-convert-and-flow-operator/INSTRUCTIONS.md` Step 0 (new pre-flight section).** Added
+"Step 0 — Model Check Pre-flight" at the top of INSTRUCTIONS.md, triggered before any workflow
+BUILD or MODIFY action. Checks active session model/thinking level; surfaces a clear, concise
+recommendation to switch to a high-reasoning model (deepseek-v4-pro / Opus-tier) with thinking
+HIGH if the current model is lighter. Proceeds on owner acknowledgement — recommendation gate,
+not a hard block. Read-only ops (contacts list, workflows list, etc.) are exempt.
+
+**B — `44-convert-and-flow-operator/SKILL.md` READ-BEFORE-ACT block.** Added a short
+READ-BEFORE-ACT callout above the Teach Yourself Protocol read-order, pointing agents to
+INSTRUCTIONS.md Step 0 before executing any workflow build or modify action.
+
+**C — `44-convert-and-flow-operator/CORE_UPDATES.md` AGENTS.md block.** Prepended a concise
+pre-flight note to the Convert and Flow Operator AGENTS.md section so every client agent sees
+the model-check rule on every session startup.
+
+**Motivation:** A lighter model hallucinated a workflow failure cause, a fake diagnostic link,
+and a wrong number — turning a 2-minute fix into a 12-hour loop. This warning surfaces the risk
+before a build starts and routes the operator to a better model when needed, without blocking
+work when the owner chooses to proceed anyway.
+
+total_roles: 335 (unchanged — docs/rule change, no new roles)
+
+---
+
+## [v12.3.4]  -  2026-06-13  -  feat: Skill 23 context-aware interview — ingest existing client context, skip-known / deepen / no-fabrication
+
+---
+
 ## [v12.3.3]  -  2026-06-13  -  fix: credential-check helper + N33 agent protocol — never falsely report a key missing
 
 ### Changes

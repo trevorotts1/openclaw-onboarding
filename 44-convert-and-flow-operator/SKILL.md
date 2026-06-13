@@ -5,6 +5,16 @@ description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflo
 
 # Skill 44 — Convert and Flow Operator (Tier 0)
 
+## READ-BEFORE-ACT — Model Check (workflow builds and modifications)
+
+Before executing any workflow BUILD or MODIFY action (caf workflows build, patch-email,
+patch-trigger, restore, or Tier 4 agent-browser build), run the **Step 0 model check**
+in INSTRUCTIONS.md. If the active session model is a lighter/non-high-reasoning model or
+thinking is not HIGH, surface the recommendation to the owner first, then proceed.
+This is a recommendation gate, not a hard block. Read-only ops skip this check.
+
+---
+
 ## Teach Yourself Protocol read-order
 
 1. **SKILL.md** (this file) — overview, CLI surface, credential model, write-safety posture
