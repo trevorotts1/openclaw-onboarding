@@ -1,3 +1,85 @@
+## [v12.3.6]  -  2026-06-13  -  fix: anti-lying provider-detection (N34 + check-credential.sh --provider) + GHL REVIEW Tier-0-first routing
+
+### Changes
+
+**Fix A — Provider Detection Protocol (anti-lying credential check, N33/N34 + check-credential.sh v12.3.6)**
+
+Root cause: the 2026-06-13 Kimi-2.7 fleet sweep falsely reported 5/5 boxes as "no OpenRouter"
+from a `models.providers`-only block check, while `OPENROUTER_API_KEY` was live in the container
+env / service-env / a differently-named block the entire time.
+
+**A1 — `shared-utils/check-credential.sh` (v12.3.3 -> v12.3.6): provider-detection mode + no-block-not-absent guard.**
+New invocation: `check-credential.sh --provider <NAME> [--json|--smoke]`. Maps provider names to
+their canonical API key(s) via a built-in PROVIDER_KEY_MAP (openrouter, ollama-cloud, notion, ghl,
+openai, google, anthropic, groq, etc.; unknown provider falls back to treating the arg as a literal
+key). Runs the same 4-layer credential check (live process env first: VPS `docker exec printenv`,
+Mac `ps eww`; then /docker/.env; then MCP headers; then all .env stores + openclaw.json env.vars
++ auth-profiles). ADDITIONALLY parses `openclaw.json models.providers[*]` matching on the
+REFERENCED `apiKey` (not the block name — `openrouter-grok` with `apiKey: $OPENROUTER_API_KEY`
+counts as the openrouter provider). Emits a THREE-state verdict: `PRESENT_WITH_BLOCK` (exit 0),
+`NEEDS_BLOCK` (exit 3 — key present, no block; HAS the provider, just add the block), or
+`GENUINELY-ABSENT` (exit 1 — only after live env + all stores empty). JSON output carries
+`where_found[]` (non-empty on any non-absent verdict) and `live_env_checked: true`.
+THE NO-BLOCK-NOT-ABSENT GUARD: structurally cannot emit GENUINELY-ABSENT from a missing block
+alone — absent path is reached only after the 4-layer key search returns empty.
+New `--self-test` flag asserts the guard in CI (T1: key-in-store-no-block -> NEEDS_BLOCK exit-3;
+T2: block named differently referencing the key -> PRESENT_WITH_BLOCK; T3: no-key-anywhere ->
+GENUINELY-ABSENT with live_env_checked=true). Legacy `check-credential.sh <KEY>` mode unchanged.
+
+**A2 — `AGENTS.md`: N33 row (previously missing from index table) + N34 row + N34 section body.**
+N-rule index table now includes both N33 and N34 rows (N33 was body-only with no table row; fixed).
+N34 binding rule: running `check-credential.sh --provider <Y>` for provider detection; three verdicts
+only; hard violations for emitting absent from a config-block check alone, and for writing a provider
+verdict (e.g. `had_openrouter:false`) for a check that never ran (use `NOT_ASSESSED`); Sonnet only
+(never Haiku) for credential/provider checks. CREDENTIAL_CHECK marker bumped V1 -> V2 (both AGENTS.md
+and apply-fleet-standards.sh) so existing boxes get the N34 upgrade on next `apply-fleet-standards.sh` run.
+
+**A3 — `scripts/apply-fleet-standards.sh`: CREDENTIAL_CHECK_V2 injection (N33+N34).**
+Injects the N33+N34 block into client-box AGENTS.md (idempotent, V2 marker). Strips V1 if present
+(upgrade path). V1 boxes get upgraded on next run; V2 boxes are no-ops.
+
+**A4 — `36-ghl-mcp-setup/CORE_UPDATES.md` + `44-convert-and-flow-operator/CORE_UPDATES.md`: provider-detection is a fleet-sweep concern.**
+Both skill CORE_UPDATES note that the binding helper is taught in AGENTS.md N33/N34 and reaches every sweep agent via the V2 injection.
+
+**Fix B — GHL REVIEW Tier-0-first routing (docs-only MVP; engine `triggers`/`review` read deferred)**
+
+Root cause: a "review this workflow" intent routed to the 834-tool Community MCP as a free-pick
+because the routing law only named BUILD/MODIFY as Tier-0-first ops; REVIEW was an unnamed gap.
+
+**B1 — `36-ghl-mcp-setup/CORE_UPDATES.md` AGENTS.md block, rule 1 + Tier-0 table + anti-patterns.**
+Rule 1 now enumerates "BUILD, MODIFY, and REVIEW/inspect/audit — ALWAYS start at Tier 0 (caf)."
+A REVIEW begins with `caf workflows export` (read); escalate to Tier 1/2/3 ONLY for pieces export
+cannot return (trigger-bucket state, products/store/Voice-AI objects). Tier-0 table "Use for" cell
+now reads "…workflows (list/get/export/REVIEW/inspect/audit)." New anti-pattern:
+"❌ 'review the workflow → use the 834-tool MCP.' Wrong. Review = Tier 0 caf export first."
+TOOLS.md workflow rows carry inline guardrail: "Tier 0 (caf) owns workflow build/edit/review —
+MCP workflow tools are escalation-only."
+
+**B2 — `44-convert-and-flow-operator/INSTRUCTIONS.md` decision rule + Natural-language intents table.**
+New branch 2.5 inserted BEFORE the catch-all: "Is this a workflow REVIEW/inspect/audit? → Tier 0
+`caf workflows export <id>` FIRST." New intents row: '"Review/audit this workflow" → caf workflows
+export <id> (Tier 0 first)'. The `review` and `triggers` engine subcommands are MVP-deferred (the
+engine has list/get/export/build/patch-email/patch-trigger/restore but no review/triggers subcommand).
+
+**B3 — `44-convert-and-flow-operator/CORE_UPDATES.md` "When to use Tier 0" list + anti-pattern.**
+"Workflow review/inspect/audit" added next to workflow reads. Anti-pattern mirrored from skill 36.
+TOOLS.md read row notes: "review and triggers engine subcommands are MVP-deferred; use export as
+the Tier-0 read for review until shipped." No doc advertises a command the engine lacks.
+
+**B4 — Deferred follow-up (recorded for next release):** add `caf workflows triggers <id>` /
+extend export to merge the trigger bucket so a Tier-0 review returns the whole picture (the Sheila
+circular-debug bug: `export` reads only workflowData.templates, cannot show the trigger bucket).
+Until shipped, the docs now make escalation explicit and bounded rather than an open-ended MCP
+free-pick — the routing hole is closed even pre-engine.
+
+**Skill version bumps (CI gate G3):**
+- `36-ghl-mcp-setup/skill-version.txt`: v1.2.2 -> v1.2.3
+- `44-convert-and-flow-operator/skill-version.txt`: 1.0.13 -> 1.0.14
+
+total_roles: 335 (unchanged — rule/routing/helper change, no new roles)
+
+---
+
 ## [v12.3.5]  -  2026-06-13  -  docs: Skill 44 model-recommendation pre-flight warning for GHL workflow builds
 
 ### Changes

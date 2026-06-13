@@ -59,7 +59,7 @@ Add this section. Adapt aliases to client white-label brand:
 
 When asked to do anything involving GHL / GoHighLevel / Convert and Flow / LeadConnector / [client white-label name]:
 
-1. **Tier order is binding. Do not skip tiers.** Try Tier 0 (Convert and Flow CLI, skill 44) FIRST for every operation the CLI covers. Fall to Tier 1 (official MCP `ghl-mcp`) for blogs and CLI gaps. Fall to Tier 2 (community MCP `ghl-community-mcp`, on-demand via curl) for products/subscriptions/estimates/store/coupons/Voice AI/Phone System/Agent Studio. Fall to Tier 3 (API + skill 29) only if neither MCP covers it. Fall to Tier 4 (agent-browser, skill 03) or Tier 5 (Codex Computer Use) only as the UI-only / no-token backstop.
+1. **Tier order is binding. Do not skip tiers.** Workflow operations — **BUILD, MODIFY, and REVIEW/inspect/audit** — ALWAYS start at Tier 0 (caf). A REVIEW begins with `caf workflows export` (read); escalate to Tier 1/2/3 ONLY for the specific pieces export cannot return (trigger-bucket state, products/store/Voice-AI objects). Never open-ended-pick the Community MCP for a workflow review. For all other ops: Try Tier 0 FIRST for every operation the CLI covers. Fall to Tier 1 (official MCP `ghl-mcp`) for blogs and CLI gaps. Fall to Tier 2 (community MCP `ghl-community-mcp`, on-demand via curl) for products/subscriptions/estimates/store/coupons/Voice AI/Phone System/Agent Studio. Fall to Tier 3 (API + skill 29) only if neither MCP covers it. Fall to Tier 4 (agent-browser, skill 03) or Tier 5 (Codex Computer Use) only as the UI-only / no-token backstop.
 
 2. **Always use `$GHL_COMMUNITY_MCP_URL`** in shell commands for Tier 2. Never type a literal port number. Hardcoded ports from session memory have caused documented failures.
 
@@ -92,7 +92,7 @@ Full reference: [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/ghl-mcp-setup-full.md
 
 | Tier | Path | Owning skill | Use for | Credential |
 |---|---|---|---|---|
-| 0 | Convert and Flow CLI (caf / convertandflow / ghl) | SKILL 44 | Everything the CLI covers: contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, workflows | PIT (standard ops); Firebase token (workflow writes) |
+| 0 | Convert and Flow CLI (caf / convertandflow / ghl) | SKILL 44 | Everything the CLI covers: contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, workflows (list/get/export/REVIEW/inspect/audit). Tier 0 (caf) owns workflow build/edit/review — MCP workflow tools are escalation-only. | PIT (standard ops); Firebase token (workflow writes) |
 | 1 | Official GHL MCP (ghl-mcp) | registered by SKILL 36 | Blogs; fallback for CLI gaps | PIT |
 | 2 | Community GHL MCP, ON-DEMAND via curl | installed by SKILL 36 | Products, subscriptions, estimates, store, coupons, Voice AI, Phone System, Agent Studio | PIT |
 | 3 | Direct REST API | SKILL 29 | Anything no MCP covers; media uploads (POST /medias/upload-file) | PIT |
@@ -110,6 +110,7 @@ Rules: Tier 0 first for covered ops. Media never routes to Tier 0. On 429: stop 
 - ❌ Jumping to Tier 4 (browser) for a workflow-write when the Firebase token is
   present and healthy. Tier 4 is the backstop ONLY when the token is genuinely
   unavailable.
+- ❌ "They said review the workflow → I will use the 834-tool MCP." Wrong. Review = Tier 0 `caf workflows export` first; escalate only for what export cannot show (e.g. trigger-bucket state). Never open-ended-pick the Community MCP for a workflow review.
 
 ### Mandatory disclosure format
 
@@ -148,6 +149,7 @@ Common tool name lookup:
 | Social Media | 1 | `social-media-posting_create-post`, `social-media-posting_get-account` |
 | Voice AI / Phone | 2 | `create_voice_ai_agent`, `ghl_buy_phone_number`, `ghl_list_phone_numbers` |
 | Agent Studio | 2 | `ghl_create_agent`, `ghl_deploy_agent`, `ghl_list_agents` |
+| Workflows (read: list/get/export) | **Tier 0 (caf) first** | `caf workflows list/get/export` — **Tier 0 (caf) owns workflow build/edit/review; these MCP workflow tools are escalation-only** (use only for what `caf workflows export` cannot show, e.g. trigger-bucket state) |
 
 For anything not above: `curl $GHL_COMMUNITY_MCP_URL/tools | python3 -m json.tool` for live discovery.
 

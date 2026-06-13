@@ -188,6 +188,8 @@ This is the single canonical index of the N1–N27 non-negotiables. Every other 
 | N30 | **Ollama Cloud HARD RULE: `OLLAMA_BASE_URL` MUST be `https://ollama.com` for `:cloud` models. NEVER `http://127.0.0.1` or `http://localhost:11434`.** `:cloud`-tagged models (e.g. `deepseek-v4-pro:cloud`, `kimi-k2.6:cloud`) are routed through the Ollama Cloud API, NOT a local daemon. Setting `OLLAMA_BASE_URL` to a loopback address → immediate ECONNREFUSED on every client box (no local Ollama daemon runs there). Any script, config, or install step that writes or defaults `OLLAMA_BASE_URL` to `127.0.0.1` or `localhost` for a cloud model is a HARD VIOLATION. Local Ollama probes (health-checks, model-list queries against a local daemon) are exempt — they must NEVER be confused with the model-routing URL used for actual inference. | This file (N30 section) | `build-workforce.py` provider setup; `install.sh` model config step; `scripts/qc-system-integrity.sh` Ollama-URL check |
 | N31 | **Agent model field MUST be an object `{primary, fallbacks:[...]}`, NEVER a bare string.** Writing `"model": "ollama/deepseek-v4-pro:cloud"` in `agents.list[]` bypasses all fallback chains — if Ollama Cloud is over-capacity the agent dies silently. Every agent entry written by `build-workforce.py` or any install script MUST use the canonical object form: `{"primary": "ollama/deepseek-v4-pro:cloud", "fallbacks": ["openrouter/deepseek/deepseek-v4-pro", ...]}`. Bare strings are only permissible in temporary draft states during development; NEVER in production `openclaw.json`. | This file (N31 section) + `build-workforce.py add_agent_to_config()` | `scripts/qc-system-integrity.sh` model-object check |
 | N32 | **A model-provider change is NOT complete until `embedding-health` passes on the box.** Switching the generative provider (or any API key rotation) can silently orphan all three embedding consumers: OpenClaw memory search, persona gemini-index, and CC SOP embeddings. The `embedding-health` check (PRD Addendum B.6) MUST pass — all three indexes, three legs each (provider capable + key live + smoke embed + stamp matches config) — before any provider-change task is marked done. Ollama Cloud is NEVER embedding-capable (hard rule). Run: `python3 shared-utils/embedding_health.py --json` on the box after any provider/key change. | This file (N32 section) + `shared-utils/embedding_health.py` | `step_embedding_health()` in `fleet_refresh_runner.py`; Sunday cron `--verify-only` pass in `scripts/fleet-refresh.sh` |
+| N33 | **Credential Check Protocol — never falsely report a key missing.** Use `~/.openclaw/skills/shared-utils/check-credential.sh <KEY>` every time. Evidence triad required before "absent": (1) live process env checked (`docker exec printenv` / `ps eww`), (2) MCP server headers checked, (3) all .env stores checked. Only after all three return empty may a key be called GENUINELY-ABSENT. | This file (N33 section) + `shared-utils/check-credential.sh` | `<!-- CREDENTIAL_CHECK_V2 -->` marker (injected by `apply-fleet-standards.sh`) |
+| N34 | **Provider Detection Protocol — a missing config block is NEVER proof a provider is absent.** "Does box X have provider Y" = "can the gateway resolve Y's API key at runtime" — NOT "is there a models.providers.Y block." Run `check-credential.sh --provider <Y>` (3-state verdict). Missing/empty models.providers block alone NEVER produces absent — only downgrades PRESENT_WITH_BLOCK to NEEDS_BLOCK. GENUINELY-ABSENT only after live-env tier + all stores came up empty. Use SONNET (never Haiku) for credential/provider checks. Write NOT_ASSESSED (never false) for any check that did not run. | This file (N34 section) + `shared-utils/check-credential.sh --provider` mode | `check-credential.sh --self-test` in CI (qc-static.yml); fleet sweeps branch off 3-state verdict |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
 
@@ -628,11 +630,12 @@ Don't wait for permission to improve. If you learned something, write it down no
 
 ---
 
-<!-- CREDENTIAL_CHECK_V1 -->
+<!-- CREDENTIAL_CHECK_V2 -->
 ## 🔴 N33 — Credential Check Protocol (never falsely report a key missing)
 
-> Idempotency marker: `CREDENTIAL_CHECK_V1`. `apply-fleet-standards.sh` injects this on
+> Idempotency marker: `CREDENTIAL_CHECK_V2`. `apply-fleet-standards.sh` injects this on
 > existing boxes. Do NOT add it again if the marker is already present.
+> Boxes carrying `CREDENTIAL_CHECK_V1` will be upgraded to V2 on next `apply-fleet-standards.sh` run.
 
 A credential that exists in the live process env but is absent from a flat file is **PRESENT**.
 An agent that reports "missing" without the evidence triad below has made a false claim.
@@ -682,13 +685,96 @@ mcp=cfg.get('mcp',{}).get('servers',{})
 ### check-credential.sh — canonical helper location
 
 ```
+# Key-mode (unchanged):
 ~/.openclaw/skills/shared-utils/check-credential.sh <KEY_NAME>
+
+# Provider-mode (new in v12.3.6 — for fleet sweeps that touch models.providers):
+~/.openclaw/skills/shared-utils/check-credential.sh --provider <PROVIDER_NAME>
+~/.openclaw/skills/shared-utils/check-credential.sh --provider openrouter --json
+
+# Self-test (CI / manual verification of the no-block-not-absent guard):
+~/.openclaw/skills/shared-utils/check-credential.sh --self-test
 ```
 
-Output: `FOUND-in-<LOCATION>: KEY=******` (masked) or `GENUINELY-ABSENT` with full checked list.
-The script NEVER prints cleartext values. Exit 0 = found. Exit 1 = genuinely absent.
+Key-mode output: `FOUND-in-<LOCATION>: KEY=******` (masked) or `GENUINELY-ABSENT` with full checked list.
+Provider-mode output: three-state verdict — `PRESENT_WITH_BLOCK` (exit 0), `NEEDS_BLOCK` (exit 3), `GENUINELY-ABSENT` (exit 1).
+The script NEVER prints cleartext values.
 
 Check order: (a) live process env → (b) /docker/<project>/.env → (c) MCP server headers/env → (d) all .env stores + openclaw.json env.vars + auth-profiles.json.
+
+---
+
+<!-- N34 -->
+## 🔴 N34 — Provider Detection Protocol (a missing config block is NEVER proof a provider is absent)
+
+> Idempotency marker: included in `CREDENTIAL_CHECK_V2`. This section is injected alongside N33.
+
+**Root cause this fixes:** the 2026-06-13 Kimi-2.7 fleet sweep falsely reported 5/5 boxes as
+"no OpenRouter" from a `models.providers`-only block check, while `OPENROUTER_API_KEY` was live
+in the container env / service-env / a differently-named block the entire time.
+
+### The Core Rule
+
+"Does box X have provider Y" means **"can the gateway resolve provider Y's API key at runtime"**
+— NOT "is there a `models.providers.<Y>` block."
+
+A **missing** or **empty** `models.providers` block is **NEVER** evidence of absence. It can only
+downgrade `PRESENT_WITH_BLOCK` to `NEEDS_BLOCK` — never to `GENUINELY-ABSENT`.
+
+### Correct Procedure — Three-State Provider Check
+
+```bash
+# Always use the helper:
+~/.openclaw/skills/shared-utils/check-credential.sh --provider openrouter --json
+
+# Block-name matching is on the REFERENCED apiKey, NOT the block name.
+# A block named "openrouter-grok" with apiKey=$OPENROUTER_API_KEY
+# counts as the "openrouter" provider.
+```
+
+**Three verdicts only:**
+
+| Verdict | Exit | Meaning | Required action |
+|---|---|---|---|
+| `PRESENT_WITH_BLOCK` | 0 | Key live + block references it | Update existing block |
+| `NEEDS_BLOCK` | 3 | Key live, no block yet — HAS the provider | CREATE the block: `{"api":"openai-completions","baseUrl":"https://openrouter.ai/api/v1","apiKey":"$OPENROUTER_API_KEY"}` and wire the model |
+| `GENUINELY-ABSENT` | 1 | Key not found in live env AND all stores | Only then skip |
+
+### Structural Guard (cannot be bypassed)
+
+`GENUINELY-ABSENT` is only emitted when **all** of these are true:
+- `live_env_checked: true` (the live-process-env tier ran)
+- `where_found: []` (empty across ALL tiers — live env, compose .env, MCP headers, all stores)
+
+A missing `models.providers` block **structurally cannot** contribute to a `GENUINELY-ABSENT`
+verdict — the absent path is reached only after the 4-layer key search, never from the block scan.
+
+### DON'T — provider-check anti-patterns
+
+| Trap | Why it's wrong |
+|------|----------------|
+| Check `models.providers` and see no block → report "no openrouter" | **Hard violation.** Block absence ≠ key absence. Run `--provider` mode. |
+| Write `had_openrouter: false` for a check that never ran | **Hard violation.** Use `NOT_ASSESSED` for any check that did not execute. |
+| Use Haiku for credential/provider checks | Haiku fabricates "process env: NOTFOUND". Sonnet only. |
+| Grep `secrets/.env` + `openclaw.json` without the live-process-env check | The live env is authoritative; file-grep misses are NOT definitive. |
+| Report absent without `live_env_checked: true` and `where_found: []` in evidence | Incomplete evidence = unverifiable and false claim. |
+
+### Fleet Sweep Contract
+
+Every fleet sweep that edits `models.providers` MUST:
+
+1. Call `check-credential.sh --provider <name> --json` for each provider on each box.
+2. Branch off the THREE-state verdict:
+   - `PRESENT_WITH_BLOCK` → update existing block
+   - `NEEDS_BLOCK` → CREATE the block + wire the model (NEVER skip — this is the exact fix that resolved evelyn/sonatta/beverly/kofi)
+   - `GENUINELY-ABSENT` (with `live_env_checked:true` + `where_found:[]`) → only then skip
+3. NEVER emit a provider verdict (e.g. `had_openrouter:false`) for a check that did not run — use `NOT_ASSESSED`.
+4. Every `PRESENT`/`NEEDS_BLOCK` finding requires a non-empty `where_found[]`; every `ABSENT` requires `live_env_checked:true`.
+5. Use **Sonnet** (never Haiku) for credential/provider checks.
+
+### CI Gate
+
+`check-credential.sh --self-test` runs in `qc-static.yml` and asserts the `NEEDS_BLOCK` guard cannot regress.
 
 ---
 
