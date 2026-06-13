@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.2.0"
+ONBOARDING_VERSION="v12.2.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -238,6 +238,16 @@ OC_JSON = os.path.join(OC_CONFIG, "openclaw.json")
 OC_CREDS = os.path.join(OC_CONFIG, "credentials")
 OC_LOGS = os.path.join(OC_CONFIG, "logs")
 
+# BUG-FIX (fix/cron-owner-chat-routing): these are OPERATOR chat IDs (Trevor /
+# E.R. Spaulding / LeAnne Dolce).  They must NEVER be returned as a client
+# owner-chat target — doing so routes every cron delivery to the operator
+# instead of the client.  Confirmed live misrouting on drtola / talaya /
+# jocelyn (all 3 crons wired to 5252140759).
+# The operator's Mac env may export TELEGRAM_CHAT_ID=5252140759 (or equivalent)
+# and the SSH session that runs install.sh inherits it, causing S20 to resolve
+# the operator ID instead of the client owner ID.
+OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
+
 def is_chat_id(v, bot_id=""):
     if not isinstance(v, (str, int)): return False
     s = str(v).strip().replace("telegram:", "").replace("tg:", "")
@@ -245,6 +255,8 @@ def is_chat_id(v, bot_id=""):
     digits = s.lstrip("-")
     if not (digits.isdigit() and 6 <= len(digits) <= 20): return False
     if bot_id and s == bot_id: return False
+    # NEVER return a known operator chat ID as the client owner target.
+    if s in OPERATOR_CHAT_IDS: return False
     return s
 
 def cli_get(path):
@@ -290,6 +302,15 @@ def try_list(values, src, account_hint=""):
         cid = is_chat_id(v, bot_id)
         if cid:
             try_value(cid, src, account_hint); return
+
+# ─── S0: OPENCLAW_OWNER_CHAT_ID env var — explicit operator override ───
+# The operator may set this before running install to pin the correct owner
+# chat ID for boxes where auto-detection is ambiguous.  Checked FIRST so it
+# wins before any config-file walk.  Operator IDs are still rejected by
+# is_chat_id() — this slot is for the CLIENT owner only.
+_s0 = os.environ.get("OPENCLAW_OWNER_CHAT_ID", "").strip()
+if _s0:
+    try_value(_s0, "S0:env.OPENCLAW_OWNER_CHAT_ID")
 
 # ─── S1: channels.telegram.allowFrom (Mac primary) ───
 raw = cli_get("channels.telegram.allowFrom")
@@ -4140,6 +4161,18 @@ install_weekly_cron() {
         warn "  curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/diagnose-telegram-config.sh | bash"
         return 0
     fi
+    # REGRESSION GUARD (fix/cron-owner-chat-routing): operator IDs must NEVER
+    # be wired as a cron delivery target — crons must reach the CLIENT OWNER.
+    # is_chat_id() now rejects them inside the Python resolver; this second
+    # check catches any future path that bypasses the resolver.
+    case "$TG_TARGET" in
+        5252140759|6663821679|6771245262)
+            warn "ERROR: weekly-onboarding-update cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
+            warn "This would route every weekly update to the operator, not the client owner. Aborting cron install."
+            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
+            return 1
+            ;;
+    esac
     note "Telegram cron target resolved: $TG_TARGET (source: $TELEGRAM_SOURCE_CACHED)"
 
     # Pull cron prompt from the just-installed repo files
@@ -4358,6 +4391,15 @@ install_workforce_resume_cron() {
         warn "Telegram target not resolved — skipping workforce-resume cron."
         return 0
     fi
+    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as cron target.
+    case "$TG_TARGET" in
+        5252140759|6663821679|6771245262)
+            warn "ERROR: workforce-build-resume cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
+            warn "This would route cron deliveries to the operator, not the client owner. Aborting cron install."
+            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
+            return 1
+            ;;
+    esac
 
     local PROMPT_CONTENT
     PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
@@ -4444,6 +4486,15 @@ install_onboarding_resume_cron() {
         warn "Telegram target not resolved — skipping onboarding-resume cron."
         return 0
     fi
+    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as cron target.
+    case "$TG_TARGET" in
+        5252140759|6663821679|6771245262)
+            warn "ERROR: onboarding-resume cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
+            warn "This would route cron deliveries to the operator, not the client owner. Aborting cron install."
+            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
+            return 1
+            ;;
+    esac
 
     local PROMPT_CONTENT
     PROMPT_CONTENT=$(cat "$RESUME_PROMPT_FILE")
@@ -4527,6 +4578,15 @@ install_watchdog_loop_cron() {
         warn "Telegram target not resolved — skipping watchdog-onboarding-loop cron."
         return 0
     fi
+    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as cron target.
+    case "$TG_TARGET" in
+        5252140759|6663821679|6771245262)
+            warn "ERROR: watchdog-onboarding-loop cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
+            warn "This would route cron deliveries to the operator, not the client owner. Aborting cron install."
+            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
+            return 1
+            ;;
+    esac
 
     local WATCHDOG_PROMPT="[ONBOARDING-WATCHDOG] Run the onboarding watchdog: bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh || bash /data/.openclaw/scripts/watchdog-onboarding-loop.sh 2>/dev/null || true. This is a cheap state-file check — it self-removes when the overall goal is verified."
 
@@ -4609,6 +4669,15 @@ install_interview_nudge_cron() {
         warn "Telegram chat ID not found — cannot install interview-nudge cron."
         return 0
     fi
+    # REGRESSION GUARD (fix/cron-owner-chat-routing): never wire an operator ID as cron target.
+    case "$TG_TARGET" in
+        5252140759|6663821679|6771245262)
+            warn "ERROR: interview-nudge cron target resolved to an OPERATOR chat ID ($TG_TARGET)."
+            warn "This would route cron deliveries to the operator, not the client owner. Aborting cron install."
+            warn "Set OPENCLAW_OWNER_CHAT_ID=<client-owner-chat-id> before running install.sh to force the correct target."
+            return 1
+            ;;
+    esac
 
     # Resolve skill dir (same pattern as other cron installs)
     local _NUDGE_SCRIPT=""
