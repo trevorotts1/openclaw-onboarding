@@ -455,6 +455,164 @@ def _write_canonical_reconciliation(record):
         print(f"[CANONICAL WARNING] Could not write reconciliation to {path}: {e}", file=sys.stderr)
 
 
+# ── v12.3.1: Interview state persistence helpers ──────────────────────────────
+
+def _write_interview_complete_to_state(answers_path=None):
+    """
+    Write interviewComplete=true + interviewCompletedAt + interviewProgress.lastQuestionAt
+    into .workforce-build-state.json.
+
+    Called by build_from_config() after the answers file is successfully written
+    so that EVERY check that reads build-state (verify-zhc-standard.sh,
+    interview-nudge-cron.sh, resume-workforce-build.sh) sees the correct flag.
+    Idempotent: if interviewComplete is already true, it only refreshes the path.
+
+    Also records the absolute path of the answers file in
+    interviewProgress.answersFilePath so verify_interview_complete() and any
+    future audit script can find the populated file directly without guessing.
+    """
+    path = _build_state_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        now = datetime.now().isoformat()
+        state["interviewComplete"] = True
+        state["interviewCompletedAt"] = state.get("interviewCompletedAt") or now
+        progress = state.get("interviewProgress") or {}
+        if not isinstance(progress, dict):
+            progress = {}
+        progress.setdefault("lastQuestionAt", now)
+        progress["interviewComplete"] = True
+        if answers_path:
+            progress["answersFilePath"] = str(answers_path)
+        state["interviewProgress"] = progress
+        # Set interviewQc status to "pending" if not already evaluated
+        if not isinstance(state.get("interviewQc"), dict):
+            state["interviewQc"] = {"status": "pending"}
+        elif state["interviewQc"].get("status") not in ("pass", "needs-review"):
+            state["interviewQc"]["status"] = "pending"
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+        print(f"[INTERVIEW] Wrote interviewComplete=true to {path}", file=sys.stderr)
+        if answers_path:
+            print(f"[INTERVIEW] answers file path recorded: {answers_path}", file=sys.stderr)
+    except OSError as e:
+        print(f"[INTERVIEW WARNING] Could not write interviewComplete to {path}: {e}", file=sys.stderr)
+
+
+def verify_interview_complete(answers_path=None):
+    """
+    v12.3.1: Determine interview completeness from the PRESENCE OF REAL ANSWERS
+    in the populated file — not just a flag in build-state.
+
+    The blank template (workforce-interview-answers.md shipped with the skill)
+    contains only a header and placeholder HTML comment — no **Q:**/**A:** pairs.
+    A real interview produces at least 3 **Q:**/**A:** pairs (company name,
+    industry, and at least one department question).
+
+    Checks (in order):
+      1. build-state interviewComplete == true  (fast path — set by this module)
+      2. answers file at answers_path (or auto-discovered) has >= 3 **Q:** blocks
+         and file size > 512 bytes.
+      3. A skill23-*-workforce-proposal.md file >= 4000 bytes exists (legacy path).
+
+    Returns a dict:
+      {
+        "complete": bool,
+        "method": str,         # "flag" | "answers_file" | "proposal_doc" | "none"
+        "answers_path": str|None,
+        "question_count": int,
+        "file_size": int,
+        "flag_set": bool,
+      }
+    """
+    result = {
+        "complete": False,
+        "method": "none",
+        "answers_path": None,
+        "question_count": 0,
+        "file_size": 0,
+        "flag_set": False,
+    }
+
+    # Check 1: build-state flag
+    state = _load_build_state()
+    flag = bool(state.get("interviewComplete"))
+    result["flag_set"] = flag
+    if flag:
+        result["complete"] = True
+        result["method"] = "flag"
+        # Also try to confirm the answers file exists with real content
+        # (don't just trust the flag — provide the file evidence too).
+
+    # Check 2: answers file with real content
+    # Candidate paths: caller-supplied > build-state recorded path > standard discovery dirs
+    candidates = []
+    if answers_path:
+        candidates.append(str(answers_path))
+    recorded = (state.get("interviewProgress") or {}).get("answersFilePath")
+    if recorded:
+        candidates.append(str(recorded))
+    # Standard discovery directory candidates (mirrors _ensure_company_discovery_dir)
+    home = os.path.expanduser("~")
+    for base in (
+        "/data/.openclaw/workspace",
+        os.path.join(home, ".openclaw", "workspace"),
+    ):
+        candidates.append(os.path.join(base, "company-discovery", "workforce-interview-answers.md"))
+
+    for cand in candidates:
+        if not os.path.isfile(cand):
+            continue
+        try:
+            size = os.path.getsize(cand)
+            text = open(cand, errors="ignore").read()
+        except OSError:
+            continue
+        # Count real Q-blocks (the template has zero; real answers have ≥ 1 per question)
+        q_count = len([ln for ln in text.splitlines() if ln.strip().startswith("**Q:**")])
+        if q_count >= 3 and size > 512:
+            result["complete"] = True
+            result["method"] = "answers_file"
+            result["answers_path"] = cand
+            result["question_count"] = q_count
+            result["file_size"] = size
+            return result
+        elif q_count > 0:
+            # Partial — file has SOME answers but fewer than the minimum.
+            result["answers_path"] = cand
+            result["question_count"] = q_count
+            result["file_size"] = size
+            # Don't override flag-based completion if the flag is already set.
+            if not flag:
+                result["complete"] = False
+                result["method"] = "partial_answers"
+            return result
+
+    # Check 3: legacy proposal doc (≥ 4000 bytes)
+    for pattern_base in (
+        os.path.join(home, "clawd", "zero-human-company"),
+        "/data/.openclaw/workspace",
+        os.path.join(home, ".openclaw", "workspace"),
+    ):
+        import glob
+        for doc in glob.glob(os.path.join(pattern_base, "**", "skill23-*-workforce-proposal.md"), recursive=True):
+            try:
+                if os.path.getsize(doc) >= 4000:
+                    if not result["complete"]:
+                        result["complete"] = True
+                        result["method"] = "proposal_doc"
+                        result["answers_path"] = doc
+                    return result
+            except OSError:
+                continue
+
+    if flag and result["method"] == "flag":
+        return result  # Flag set, no file evidence found but trust the flag.
+
+    return result
+
+
 def reconcile_canonical_floor(selected_departments, core_answers, departments_config):
     """
     Enforce the canonical floor on the client's selected departments.
@@ -903,6 +1061,12 @@ def build_from_config(config):
                 f.write(f"**Q:** What tools do you use?\n**A:** {tools}\n\n---\n\n")
             if biggest_challenge:
                 f.write(f"**Q:** What is your biggest challenge?\n**A:** {biggest_challenge}\n\n---\n\n")
+
+        # v12.3.1: Mark the interview as complete in build-state RIGHT AFTER writing
+        # the answers file — so every downstream check (verify-zhc-standard.sh,
+        # interview-nudge-cron.sh, resume-workforce-build.sh) sees interviewComplete=true
+        # and finds the populated answers file, never the blank template.
+        _write_interview_complete_to_state(answers_path=answers_path)
 
     # Process departments
     departments_config = config.get("departments", {})

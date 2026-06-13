@@ -1,3 +1,28 @@
+## [v12.3.1]  -  2026-06-13  -  fix: floor reporting never stale + interview never falsely flagged incomplete
+
+### Changes
+
+**FIX 1 — FLOOR REPORTING NEVER STALE AGAIN (`department-floor.py`).**
+Root cause: every human-readable string in `department-floor.py` that cited a floor count (the `reason=` return value, the `main()` banner print, docstrings referencing "28-department standard", "21 mandatory", "7 universal") was a static string literal. When the mandatory list changed the strings went stale while the gate still enforced the live count — the reported number diverged from what `evaluate_floor()` actually enforced.
+
+Fix: every hardcoded floor-count integer in human-readable output is replaced by runtime-derived f-strings:
+- `reason` string now uses `f"floor met ({_expected_floor_count}-department standard: {len(mand)} mandatory + {len(universal_primaries)} universal-primary-vertical − {len(declined)} declined)"`.
+- `main()` banner print now uses a `_floor_label` variable built from `verdict['expected_floor_count']`, `len(verdict['mandatory'])`, `len(verdict['universal_primary_vertical'])`, and `len(verdict['declined'])`.
+- All docstring/comment references to static counts replaced with `len(HARDCODED_MANDATORY)` + `len(universal_primary_vertical_departments(...))` language.
+
+CI guard added: `scripts/check-floor-count-drift.py` — fails if any string literal in `department-floor.py` contains `NN-department` where NN disagrees with the computed floor, and asserts the live `evaluate_floor()` reason embeds the actual count. Wired into `.github/workflows/qc-static.yml`.
+
+**FIX 2 — INTERVIEW NEVER FALSELY FLAGGED INCOMPLETE AGAIN (`build-workforce.py` + `verify-zhc-standard.sh`).**
+Root cause: `build_from_config()` wrote the owner's real interview answers into `workforce-interview-answers.md` but never set `interviewComplete=true` in `.workforce-build-state.json`. Every downstream check (nudge cron, `verify-zhc-standard.sh`, `resume-workforce-build.sh`) reads that flag and falsely reported "interview not started/incomplete" — this mislabeled Teresa/Talaya/Karen/Sheila/Sonatta all session.
+
+Fix: two new helpers in `build-workforce.py`:
+- `_write_interview_complete_to_state(answers_path)` — writes `interviewComplete=true`, `interviewCompletedAt`, `interviewProgress.lastQuestionAt`, and `interviewProgress.answersFilePath` (the absolute path of the populated file) into build-state immediately after the answers file is written. Called from `build_from_config()` at the point answers are flushed.
+- `verify_interview_complete(answers_path)` — determines completion from ground truth: (1) build-state flag, (2) answers file has ≥3 `**Q:**` blocks + >512 bytes (blank template has zero), (3) legacy proposal doc fallback. Returns a verdict dict — future audits read this, not the blank template.
+
+`verify-zhc-standard.sh` check 1 updated: now checks (a) `interviewComplete` flag, then (b) `workforce-interview-answers.md` for real Q&A content (the `interviewProgress.answersFilePath` path or standard discovery dirs), then (c) legacy proposal doc. Reports the exact evidence found.
+
+---
+
 ## [v12.3.0]  -  2026-06-13  -  feat: maintenance expansion — 4 furnace specialist roles + 6 SOPs + floor reporting corrected to 28-department standard
 
 ### Changes

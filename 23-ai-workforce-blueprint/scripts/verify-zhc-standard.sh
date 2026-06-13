@@ -78,25 +78,56 @@ if [ ! -f "$STATE_FILE" ]; then
 fi
 
 # ---- 1. INTERVIEW COMPLETE ----------------------------------------------
+# v12.3.1: check is now multi-layer — reads from ground truth sources in order:
+#   a) build-state interviewComplete == true  (set by build-workforce.py v12.3.1+)
+#   b) workforce-interview-answers.md has REAL Q&A content (≥3 **Q:** blocks + >512 bytes)
+#      This catches older builds where the flag was never set but answers were logged.
+#   c) a skill23-*-workforce-proposal.md >= 4000 bytes exists (legacy fallback)
+# The blank template (workforce-interview-answers.md shipped by the skill) has
+# zero **Q:** lines — it is not counted as complete.
 INTERVIEW_OK="$(jq -r '.interviewComplete // false' "$STATE_FILE" 2>/dev/null)"
-if [ "$INTERVIEW_OK" != "true" ]; then
-  # Soft fallback: a populated proposal/answers doc on disk counts as complete
-  # even on older builds that never set the flag.
-  ANS_OK=0
-  for cand in \
-    "$HOME/clawd/zero-human-company"/*/skill23-*-workforce-proposal.md \
-    "/data/.openclaw/workspace"/skill23-*-workforce-proposal.md \
-    "$HOME/.openclaw/workspace"/skill23-*-workforce-proposal.md ; do
-    [ -f "$cand" ] && [ "$(wc -c < "$cand" 2>/dev/null || echo 0)" -ge 4000 ] && ANS_OK=1 && break
-  done
-  if [ "$ANS_OK" -eq 1 ]; then
-    echo "[1/5] interview: flag unset but a substantive proposal doc exists — treating as COMPLETE"
-  else
-    note_gap 2 "interviewComplete != true and no substantive proposal doc found"
-    echo "[1/5] interview: INCOMPLETE"
-  fi
+if [ "$INTERVIEW_OK" = "true" ]; then
+  echo "[1/5] interview: COMPLETE (interviewComplete=true in build-state)"
 else
-  echo "[1/5] interview: COMPLETE (interviewComplete=true)"
+  ANS_OK=0
+
+  # Check (b): answers file with real Q&A content — check the recorded path first,
+  # then standard discovery directories.
+  RECORDED_ANS="$(jq -r '.interviewProgress.answersFilePath // empty' "$STATE_FILE" 2>/dev/null || true)"
+  ANSWERS_CANDIDATES=""
+  [ -n "$RECORDED_ANS" ] && ANSWERS_CANDIDATES="$RECORDED_ANS"
+  ANSWERS_CANDIDATES="$ANSWERS_CANDIDATES
+$HOME/.openclaw/workspace/company-discovery/workforce-interview-answers.md
+/data/.openclaw/workspace/company-discovery/workforce-interview-answers.md
+$HOME/Downloads/openclaw-master-files/company-discovery/workforce-interview-answers.md"
+
+  while IFS= read -r cand; do
+    [ -z "$cand" ] && continue
+    [ -f "$cand" ] || continue
+    sz=$(wc -c < "$cand" 2>/dev/null || echo 0)
+    q_count=$(grep -c '^\*\*Q:\*\*' "$cand" 2>/dev/null || echo 0)
+    if [ "$q_count" -ge 3 ] && [ "$sz" -gt 512 ]; then
+      ANS_OK=1
+      echo "[1/5] interview: flag unset but workforce-interview-answers.md has real answers ($q_count Q-blocks, ${sz}B) — treating as COMPLETE"
+      break
+    fi
+  done <<< "$ANSWERS_CANDIDATES"
+
+  # Check (c): legacy proposal doc fallback
+  if [ "$ANS_OK" -eq 0 ]; then
+    for cand in \
+      "$HOME/clawd/zero-human-company"/*/skill23-*-workforce-proposal.md \
+      "/data/.openclaw/workspace"/skill23-*-workforce-proposal.md \
+      "$HOME/.openclaw/workspace"/skill23-*-workforce-proposal.md ; do
+      [ -f "$cand" ] && [ "$(wc -c < "$cand" 2>/dev/null || echo 0)" -ge 4000 ] && ANS_OK=1 && break
+    done
+    [ "$ANS_OK" -eq 1 ] && echo "[1/5] interview: flag unset but a substantive proposal doc exists — treating as COMPLETE"
+  fi
+
+  if [ "$ANS_OK" -eq 0 ]; then
+    note_gap 2 "interviewComplete != true, no real answers in workforce-interview-answers.md, and no substantive proposal doc found"
+    echo "[1/5] interview: INCOMPLETE (no real Q&A evidence found)"
+  fi
 fi
 
 # ---- 2. HARD DEPARTMENT FLOOR (DISK, not build-state JSON) --------------

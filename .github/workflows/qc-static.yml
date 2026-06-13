@@ -1757,3 +1757,20 @@ jobs:
             exit 1
           fi
           echo "✓ AF3 negative fixture: guard correctly failed (exit $rc) on a planted rogue ~/clawd candidate-loop in 32-command-center-setup"
+
+      - name: department-floor.py floor count drift guard (v12.3.1)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # CI guard: department-floor.py must derive ALL floor counts from runtime
+          # data (len(HARDCODED_MANDATORY) + len(universal_primary_vertical_departments())).
+          # Hardcoded integer floor counts in reason= strings or banners went stale
+          # when the mandatory list changed (v12.3.0 raised floor to 28; strings still
+          # said 26). v12.3.1 fixes this and this guard prevents regression.
+          # The guard: imports department_floor via importlib (filename has a hyphen),
+          # builds a synthetic departments_dir, calls evaluate_floor(), and asserts
+          # that (a) floor_met=True, (b) the reason string contains the live
+          # expected_floor_count (not a stale integer larger than the computed value),
+          # and (c) no string literal in the source contains "NN-department" where NN
+          # disagrees with the computed floor.
+          python3 scripts/check-floor-count-drift.py
