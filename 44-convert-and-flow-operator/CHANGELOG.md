@@ -1,6 +1,6 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
-## [1.0.12] - 2026-06-13 — docs: model-recommendation pre-flight warning for workflow builds
+## [1.0.13] - 2026-06-13 — docs: model-recommendation pre-flight warning for workflow builds
 
 ### Added (Step 0 model check — recommendation gate, not a hard block)
 - **INSTRUCTIONS.md Step 0** — new "Model Check Pre-flight" section at the top of
