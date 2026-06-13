@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.3.10"
+ONBOARDING_VERSION="v12.3.11"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3823,13 +3823,26 @@ For each skill's CORE_UPDATES.md:
 - Do NOT touch personal content
 - Use skill headers: "### [Skill Name] (Skill [Number])"
 
-**STEP 8: VERIFICATION GATE — THE ONLY DEFINITION OF "DONE"**
-This onboarding is NOT complete until the GATE passes. Files on disk = DOWNLOADED, never "installed". Source the gate and evaluate state:
+The \`wire_core_updates()\` function in \`update-skills.sh\` (v12.3.11+) runs a format-robust
+parser that recognises ALL header conventions present in the repo — including em-dash
+(## X.md — UPDATE REQUIRED), bracket h2/h3 (## [ADD TO X.md] / ### [ADD TO X.md]),
+bold-bracket (**[ADD TO X.md]**), plain h3 under "Suggested snippets" (### X.md),
+verb-first (## Add to X.md), paren-suffix (## X.md (append)), mixed-suffix
+(## X.md Addition / ## X.md Update), and bare-filename h2 (## X.md). It targets all six
+core files: AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, IDENTITY.md, USER.md. Every appended
+block is wrapped in <!-- BEGIN skill:<folder>:<target> --> / <!-- END ... --> markers for
+idempotent re-runs. Every shipping skill MUST stamp the sentinel
+\`<!-- skill:<folder>:core-update-applied -->\` in AGENTS.md (the VERIFICATION GATE checks
+for its presence). The parser stamps the sentinel unconditionally — even for all-skip-section
+skills — so the gate always passes when the merger ran.
+
+**STEP 8: VERIFICATION GATE — THE ONLY DEFINITION OF “DONE”**
+This onboarding is NOT complete until the GATE passes. Files on disk = DOWNLOADED, never “installed”. Source the gate and evaluate state:
 - State file: \`~/.openclaw/workspace/.onboarding-state.json\` (per-skill: pending → downloaded → wired → qc-passed | qc-failed)
 - Gate library: \`lib-onboarding-state.sh\` (repo root, canonical) or compat shim at \`scripts/onboarding-state.sh\`
 - Run: source the library, then \`obs_gate_summary\`. A skill counts INSTALLED only when (a) \`openclaw skills info <name>\` shows it, (b) its CORE_UPDATES sentinel is present (if it ships CORE_UPDATES.md), and (c) its \`qc-*.sh\` exits 0 (if it ships one).
-- **NEVER tell the owner "installed / done / onboarded" for any skill that is not \`qc-passed\`** (or a legitimate INTERVIEW_PENDING park — re-ping the owner on backoff; that is NOT terminal "done").
-- Onboarding is "complete" ONLY when every non-archived skill is \`qc-passed\` (or explicitly INTERVIEW_PENDING) AND closeout (Skill 37) has fired where applicable.
+- **NEVER tell the owner “installed / done / onboarded” for any skill that is not \`qc-passed\`** (or a legitimate INTERVIEW_PENDING park — re-ping the owner on backoff; that is NOT terminal “done”).
+- Onboarding is “complete” ONLY when every non-archived skill is \`qc-passed\` (or explicitly INTERVIEW_PENDING) AND closeout (Skill 37) has fired where applicable.
 
 **STEP 8b: REPORT TO OWNER (HONESTLY)**
 - If the gate PASSES: "All skills verified-installed ([X]/[Y]). Memory layers verified. Interview state: [A/B/C]."
