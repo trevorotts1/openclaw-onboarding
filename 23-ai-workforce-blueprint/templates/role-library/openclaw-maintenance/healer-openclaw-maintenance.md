@@ -270,7 +270,7 @@ The SOP suite is the heart of this role. All 12 SOPs are reproduced verbatim bel
 
 ## 11. Handoffs (Value Stream Map)
 
-**Receives from:** the watchdog (second consecutive stall or failed self-heal), QC Specialist (loop-4 escalations), any specialist (error flags, failCodes), the Director (suspected gaps), the Chief Healer (global patch directives), the Bugs Department (routed ticket with evidence package).
+**Receives from:** the watchdog (second consecutive stall or failed self-heal), QC Specialist (loop-4 escalations), any specialist (error flags, failCodes), the Director (suspected gaps), the Chief Healer (global patch directives), the Bugs Department (routed ticket with evidence package); and from the four new maintenance specialists: **Token Manager / Furnace Watch Specialist** (runaway-loop / heartbeat-furnace incidents that require SOP surgery after auto-fix), **Cost / Model Optimizer Specialist** (model-overkill patterns that reveal a gap in the optimization SOP), **Version & Upgrade Manager Specialist** (upgrade failures or post-upgrade regressions requiring root-cause heal), **Uptime / Connectivity Watchdog Specialist** (gateway crash or tunnel-down incidents where the watchdog's auto-recovery failed and a systemic SOP fix is needed).
 
 **Hands to:** the affected specialist (fixed run, resumed), the Director + operator (healing reports, Tier 3 proposals), the Chief Healer (ledger sync, cross-department patterns), the Deep Research Specialist (research dispatches), the Bugs Department Bug Librarian (closed incident data, teaching cross-links).
 
