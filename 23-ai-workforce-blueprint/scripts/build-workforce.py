@@ -1515,8 +1515,9 @@ def resolve_company_paths(company_name: str):
 # Files inherited from main CEO workspace
 INHERITED_FILES = ["TOOLS.md", "AGENTS.md", "USER.md"]
 
-# Files to check for existing context before asking questions
-CONTEXT_FILES = ["USER.md", "MEMORY.md", "AGENTS.md", "TOOLS.md"]
+# Files to check for existing context before asking questions.
+# v12.3.4: expanded to all 6 core workspace .md files (added IDENTITY.md + SOUL.md).
+CONTEXT_FILES = ["USER.md", "MEMORY.md", "AGENTS.md", "TOOLS.md", "IDENTITY.md", "SOUL.md"]
 
 # Canonical 17 departments — N17 binding. This list MUST match the dashboard's
 # `config/departments.json` exactly. v10.13.0 sync: removed Operations / Creative
@@ -4309,13 +4310,23 @@ def main():
     INTERVIEW RULES:
     - Dynamic questions (3-7 per department)
     - Plain English only, no jargon
-    - Check existing files before asking
+    - Check existing files before asking (v12.3.4: all 6 core files via context-ingest.py)
     - Confirm known info: "We already know X. Still correct?"
     - Offer research: "Not sure? I can research best practices for your industry."
     - Flush after every answered question
     - Update handoff file after every answer
     - Progress indicators at milestones
     - Use Perplexity sonar-pro-search for best practices research
+
+    CONTEXT INGESTION (v12.3.4):
+    Step 2.5 runs scripts/context-ingest.py BEFORE Phase 1 to assemble a
+    KNOWN-CONTEXT map from all 6 core workspace files (USER, MEMORY, AGENTS,
+    TOOLS, IDENTITY, SOUL), pre-interview-research.md, software-stack-capabilities.md,
+    prior workforce-interview-answers.md, and provided-context-manifest.md.
+    The map classifies each interview theme: known/partial/unknown → confirm/deepen/ask-fresh.
+    KNOWN-CONTEXT is shown to the client and confirmed; it is NEVER silently recorded
+    as a client answer. Only log_answer() after a live client confirmation turn may write
+    to workforce-interview-answers.md (NO-FABRICATION invariant).
     """
     global MASTER_FILES, COMPANY_DISCOVERY_DIR
 
@@ -4325,10 +4336,25 @@ def main():
     print(f"[PERSISTENCE] Master files folder: {MASTER_FILES}", file=sys.stderr)
     print(f"[PERSISTENCE] Interview answers will be saved to: {COMPANY_DISCOVERY_DIR}/", file=sys.stderr)
 
-    # Step 2: Read existing context
+    # Step 2: Read existing context (now spans all 6 core .md files: USER, MEMORY,
+    # AGENTS, TOOLS, IDENTITY, SOUL — see CONTEXT_FILES constant, expanded v12.3.4)
     existing_context = read_existing_context()
     previous_answers = read_previous_answers()
     handoff = read_handoff()
+
+    # Step 2.5: Context Ingestion Pre-Pass (v12.3.4)
+    # Run context-ingest.py to produce [slug]/interview-context-map.json and a
+    # human digest. Load the map before Phase 1 and use it to:
+    #   - KNOWN → confirm with client, never auto-record
+    #   - PARTIAL → deepen (sharper follow-up using context as lead-in)
+    #   - UNKNOWN → ask fresh
+    # If the map is absent (new box, empty workspace), every theme is unknown and
+    # the interview runs exactly as it does today — purely additive.
+    # The AI agent should invoke: python3 scripts/context-ingest.py [--json] [--human]
+    # and load the resulting interview-context-map.json into its working context.
+    # See INSTRUCTIONS.md "Phase 0.5 — Context Ingestion" + "Context Ingestion +
+    # Pull-Forward Rule (Binding)" for the full routing and KNOWN-CONTEXT vs
+    # RECORDED-ANSWER definitions.
 
     # Step 3: Check for Skill 22 (Book-to-Persona)
     persona_categories = load_persona_categories()
@@ -4363,7 +4389,8 @@ def main():
     # The AI agent handles the response conversationally from here.
     # The functions above provide the building blocks.
     # The AI uses:
-    #   - log_answer() after every question
+    #   - context-ingest.py (NEW v12.3.4) at Step 2.5 to classify themes known/partial/unknown
+    #   - log_answer() after every question — THE ONLY writer to workforce-interview-answers.md
     #   - create_handoff() after every answer
     #   - create_department_workspace() for each department
     #   - determine_specialists() for specialist decisions

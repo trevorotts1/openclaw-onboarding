@@ -101,6 +101,24 @@ If detection confidence < 0.7, ask the C-4 confirmation question in Phase 3.
 
 ---
 
+### Phase 0.5 — Context Ingestion (0 questions, ~1 min)
+
+**Run immediately after Phase 0 Asset Drop, before asking ANY interview question.**
+
+Invoke `scripts/context-ingest.py` (with `--human` for the digest or `--json` for machine
+output) to produce `[ZHC]/[slug]/interview-context-map.json`. Load the map into working
+context. It classifies every interview theme as:
+
+- **KNOWN** — strong evidence in existing sources. Use the `confirm` routing below.
+- **PARTIAL** — thin or indirect evidence. Use the `deepen` routing below.
+- **UNKNOWN** — no evidence found. Ask fresh (standard interview flow).
+
+If context-ingest.py cannot run or the map is absent, treat ALL themes as UNKNOWN and
+conduct the full interview as today — Phase 0.5 is purely additive; a missing map never
+blocks the interview.
+
+---
+
 <!-- INTERVIEWER-BEHAVIORAL-CONTRACT v1 (PRD-2.15) -->
 <!-- This fence makes the persona block machine-verifiable by qc-interview-completion.py. -->
 <!-- The QC gate asserts this fence is present and contains all six required behavior -->
@@ -826,16 +844,75 @@ After the owner completes the interview (all phases done, `--complete` flag set)
 
 ---
 
-## Pull-Forward Rule (Binding)
+## Context Ingestion + Pull-Forward Rule (Binding)
 
-Before asking ANY question, check (in this order):
-1. `[ZHC]/[slug]/pre-interview-research.md` — Phase 0 findings
+**v12.3.4 — upgrade of the prior Pull-Forward Rule. Covers ALL sources; enforced via
+Phase 0.5 (context-ingest.py), interview-context-map.json state field, and QC check #5.**
+
+### Two essential definitions
+
+**KNOWN-CONTEXT** — a fact found in an ingested source (any of the files listed below).
+A KNOWN-CONTEXT item may be SHOWN to the client and used to phrase a sharper confirmation
+question. It MUST NOT be silently recorded as a client answer. It becomes a RECORDED-ANSWER
+only after the client confirms it live.
+
+**RECORDED-ANSWER** — a value written to `workforce-interview-answers.md` via `log_answer()`.
+May ONLY originate from a client utterance in the live session. If the client confirms a
+KNOWN-CONTEXT item, log it with provenance note `confirmed-from-context: <source>`. If the
+client does NOT confirm, the item stays KNOWN-CONTEXT; do not record it — mark pending.
+
+### All ingestion sources (check in this order)
+
+1. `[OPENCLAW_ROOT]/workspace/IDENTITY.md` — client's foundational identity file
 2. `[OPENCLAW_ROOT]/workspace/MEMORY.md` — facts already saved
-3. `[OPENCLAW_ROOT]/workspace/USER.md` — owner preferences + behavioral profile
-4. `[OPENCLAW_ROOT]/workspace/AGENTS.md` — tools/behavior already configured
+3. `[OPENCLAW_ROOT]/workspace/AGENTS.md` — agents/behavior configured
+4. `[OPENCLAW_ROOT]/workspace/TOOLS.md` — tools wired
+5. `[OPENCLAW_ROOT]/workspace/USER.md` — owner preferences + behavioral profile
+6. `[OPENCLAW_ROOT]/workspace/SOUL.md` — mission/values/purpose
+7. `[ZHC]/[slug]/pre-interview-research.md` — Phase 0 asset-drop findings
+8. `[ZHC]/[slug]/software-stack-capabilities.md` — Phase 3.5 software map
+9. `[MASTER_FILES]/company-discovery/workforce-interview-answers.md` — prior run answers
+10. `[ZHC]/[slug]/provided-context-manifest.md` — raw links from Phase 0 asset drop
 
-If the answer exists in any of those files, **DO NOT re-ask**. Frame as confirmation:
-> "Based on what I already know, your marketing focuses on social media and email. Still right, or did anything change?"
+Use `scripts/context-ingest.py` (Phase 0.5) to do this systematically. The script emits
+`interview-context-map.json` and a human digest. Reading the digest at interview start gives
+you the full picture in under 30 seconds.
+
+### Three-way routing (per interview-context-map.json status)
+
+**KNOWN → confirm, never auto-record:**
+> "Based on your [IDENTITY/SOUL/prior answers], [specific thing]. Still right, or did anything change?"
+
+Do NOT re-ask cold. If the client confirms → log with `confirmed-from-context: <source>`. If
+the client says something different → log their NEW statement (context was stale; that's fine).
+If the client says nothing or skips → do NOT record; mark pending.
+
+**PARTIAL → deepen (skip the surface question; lead in with context):**
+Use what you know as the opening frame, then ask the sharper drill-down. Example: context
+says "serves coaches" → DO NOT ask "Who do you serve?" Instead: "I can see you work with
+coaches. Which KIND of coaches, and why do THEY pick you over anyone else?" This is the
+Drill-Down Detection Protocol applied to partial context.
+
+**UNKNOWN → ask fresh:** Standard interview flow. No pre-fill, no frame.
+
+### De-duplication rule
+
+If context already ties two themes together (e.g. MEMORY.md answers both "biggest fear" and
+"bottleneck" with a single statement), confirm them together in one turn rather than asking
+twice.
+
+### Enforcement
+
+This rule is enforced at three levels:
+1. **Structural** — `context-ingest.py` writes only to `interview-context-map.json`; it
+   is hard-coded to never open `workforce-interview-answers.md` for writing.
+2. **State** — `interviewProgress.contextIngest` in `.workforce-build-state.json` records
+   that the pre-pass ran + how many themes are known/partial/unknown.
+3. **QC** — `qc-interview-completion.py` check #5 (`unconfirmed-context-as-answer`) exits 3
+   (HARD FAIL) if a context snippet appears in answers without a `confirmed-from-context:` note.
+
+Connects to: "Leads with knowledge" behavior #1 (L118 Oprah/Couric Standard) and the
+Drill-Down Detection Protocol.
 
 ---
 

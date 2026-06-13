@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 """
-qc-interview-completion.py — PRD-2.15: Interview Completion QC Gate.
+qc-interview-completion.py — PRD-2.15 + PRD-2.16: Interview Completion QC Gate.
 
 Checks that a completed interview transcript meets quality standards before
-the build pipeline is allowed to proceed. Four checks:
+the build pipeline is allowed to proceed. Five checks:
 
   1. Question count: 25-35 answered questions in the transcript.
   2. Zero forbidden-jargon hits in AI-authored text (loads from forbidden-jargon.json).
   3. Every mandatory data field populated (branding required:true + structural fields).
   4. Nudge cadence wired: interview-nudge-cron.sh exists + install.sh registers it.
+  5. NO-FABRICATION (v12.3.4): if interview-context-map.json exists, every answer whose
+     text is a verbatim copy of a context snippet WITHOUT a 'confirmed-from-context:'
+     provenance note is flagged as HARD FAIL (exit 3, reason 'unconfirmed-context-as-answer').
+     Answers that DO carry the provenance note PASS check #5.
 
 EXIT CODES (mirror qc-completeness.sh):
-  0 — PASS (all four checks pass)
+  0 — PASS (all five checks pass)
   1 — Error (bad input, unreadable state, missing required file)
   2 — SOFT FAIL / needs human review (borderline count: 24 or 36)
-  3 — HARD FAIL (jargon hit, missing mandatory field, count way off, nudges not wired)
+  3 — HARD FAIL (jargon hit, missing mandatory field, count way off, nudges not wired,
+                 or unconfirmed-context-as-answer)
 
 TRANSCRIPT FORMAT ASSUMPTIONS:
   The transcript (workforce-interview-answers.md) is written per SKILL.md protocol
@@ -31,7 +36,7 @@ TRANSCRIPT FORMAT ASSUMPTIONS:
 
 NO-FABRICATION: this script reads and reports; it never writes answers.
 
-PRD-2.15 / v11.11.0
+PRD-2.15 + PRD-2.16 / v12.3.4
 """
 
 import argparse
@@ -333,6 +338,94 @@ def check_nudges_wired(repo_root: Path) -> dict:
     }
 
 
+# ── Check 5: No-fabrication (v12.3.4) ────────────────────────────────────────
+
+def check_no_fabrication(transcript: str, context_map_path: Path | None) -> dict:
+    """
+    Check #5 (v12.3.4): NO-FABRICATION guardrail.
+
+    If interview-context-map.json exists and a known/partial context snippet appears
+    verbatim in workforce-interview-answers.md WITHOUT a 'confirmed-from-context:'
+    provenance note in the same answer block, that is an UNCONFIRMED-CONTEXT-AS-ANSWER
+    violation → HARD FAIL (exit 3).
+
+    An answer block that DOES contain 'confirmed-from-context: <source>' PASSES — the
+    client confirmed it live and the agent tagged it correctly.
+
+    If context-map is absent → check skips (returns pass). This is intentional:
+    on a fresh install or when context-ingest was not run, there is nothing to verify.
+
+    Reads only. Never writes.
+    """
+    if context_map_path is None or not context_map_path.exists():
+        return {"violations": [], "skipped": True,
+                "note": "interview-context-map.json not found; check #5 skipped (not a failure)."}
+
+    try:
+        context_map = json.loads(context_map_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"violations": [], "skipped": True,
+                "note": f"Could not read context map ({exc}); check #5 skipped."}
+
+    themes = context_map.get("themes", [])
+    violations = []
+
+    # Build a list of (theme_id, snippet) pairs where status is known or partial
+    # and the snippet is long enough to be meaningful (avoid 1-word false positives)
+    context_snippets = []
+    for t in themes:
+        if t.get("status") in ("known", "partial") and t.get("snippet"):
+            snippet = t["snippet"].strip()
+            if len(snippet) >= 30:  # Only check snippets >= 30 chars (avoid tiny matches)
+                context_snippets.append({
+                    "theme_id": t["theme_id"],
+                    "source": t.get("source", "unknown"),
+                    "snippet": snippet,
+                })
+
+    if not context_snippets:
+        return {"violations": [], "skipped": False,
+                "note": "No substantial known-context snippets to verify."}
+
+    # Parse answer blocks from transcript: each block is between --- separators
+    # or a Q-block start. We look for blocks that contain a verbatim snippet
+    # but lack 'confirmed-from-context:'.
+    # Split by answer block boundaries (--- or **Q** lines)
+    answer_blocks = re.split(
+        r"(?:^---+\s*$)|(?=^\*\*Q[\*\s])",
+        transcript,
+        flags=re.MULTILINE,
+    )
+
+    for cs in context_snippets:
+        snippet_lower = cs["snippet"].lower()
+        # Find blocks that contain this snippet verbatim (case-insensitive)
+        for block in answer_blocks:
+            block_lower = block.lower()
+            if snippet_lower in block_lower:
+                # Check for provenance note in the same block
+                if "confirmed-from-context:" not in block.lower():
+                    # This is a violation: verbatim context copied without confirmation tag
+                    preview = cs["snippet"][:100].replace("\n", " ")
+                    violations.append({
+                        "theme_id": cs["theme_id"],
+                        "source": cs["source"],
+                        "snippet_preview": preview,
+                        "reason": (
+                            f"Context snippet from '{cs['source']}' appears verbatim in "
+                            f"answer block without 'confirmed-from-context:' provenance note. "
+                            f"This answer must be confirmed live by the client before logging."
+                        ),
+                    })
+                    break  # One violation per theme is enough
+
+    return {
+        "violations": violations,
+        "skipped": False,
+        "note": f"Checked {len(context_snippets)} context snippets against {len(answer_blocks)} answer blocks.",
+    }
+
+
 # ── Verdict assembly ──────────────────────────────────────────────────────────
 
 def build_verdict(
@@ -340,10 +433,12 @@ def build_verdict(
     jargon_hits: list,
     field_result: dict,
     nudge_result: dict,
+    fabrication_result: dict | None = None,
 ) -> tuple:
     """
     Returns (verdict_str, exit_code, details_dict).
     PASS=0, SOFT FAIL=2, HARD FAIL=3.
+    Checks: 1=count, 2=jargon, 3=fields, 4=nudges, 5=no-fabrication (v12.3.4).
     """
     hard_failures = []
     soft_failures = []
@@ -383,6 +478,22 @@ def build_verdict(
             "Nudge cadence not fully wired: " + "; ".join(nudge_result["issues"])
         )
 
+    # Check #5: No-fabrication (v12.3.4)
+    fabrication_violations = []
+    if fabrication_result and not fabrication_result.get("skipped"):
+        fabrication_violations = fabrication_result.get("violations", [])
+        if fabrication_violations:
+            hard_failures.append(
+                f"[unconfirmed-context-as-answer] {len(fabrication_violations)} answer(s) "
+                f"contain verbatim context snippets without a 'confirmed-from-context:' "
+                f"provenance note. These answers must originate from a live client turn. "
+                f"Themes affected: {', '.join(v['theme_id'] for v in fabrication_violations)}"
+            )
+        if fabrication_result.get("note"):
+            warnings.append(f"[check-5] {fabrication_result['note']}")
+    elif fabrication_result and fabrication_result.get("skipped"):
+        warnings.append(f"[check-5 skipped] {fabrication_result.get('note','context map absent')}")
+
     # Determine verdict
     if hard_failures:
         verdict = "FAIL"
@@ -403,6 +514,7 @@ def build_verdict(
         "checkedFields": field_result.get("checked", []),
         "nudgesWired": nudge_result["wired"],
         "nudgeIssues": nudge_result.get("issues", []),
+        "fabricationViolations": fabrication_violations,
         "hardFailures": hard_failures,
         "softFailures": soft_failures,
         "warnings": warnings,
@@ -461,8 +573,11 @@ def write_state_qc(state_path: Path, details: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="PRD-2.15 interview completion QC gate. Checks question count, "
-                    "jargon, mandatory fields, and nudge wiring."
+        description=(
+            "PRD-2.15 + PRD-2.16 interview completion QC gate. "
+            "Checks question count, jargon, mandatory fields, nudge wiring, "
+            "and no-fabrication (check #5, v12.3.4)."
+        )
     )
     parser.add_argument(
         "--transcript",
@@ -499,6 +614,20 @@ def main():
         action="store_true",
         help="Write the interviewQc verdict back into the state file (atomic).",
     )
+    parser.add_argument(
+        "--context-map",
+        help=(
+            "Path to interview-context-map.json (check #5 no-fabrication). "
+            "Defaults to [ZHC]/[slug]/interview-context-map.json auto-detected from state. "
+            "Pass --no-context-map to skip check #5 explicitly."
+        ),
+        default=None,
+    )
+    parser.add_argument(
+        "--no-context-map",
+        action="store_true",
+        help="Skip check #5 (no-fabrication) even if a context map is present.",
+    )
     args = parser.parse_args()
 
     # Resolve paths
@@ -531,14 +660,43 @@ def main():
     jargon_data = load_json(jargon_path, "forbidden-jargon.json")
     jargon_terms = jargon_data.get("terms", [])
 
+    # Resolve context map path for check #5
+    context_map_path = None
+    if not args.no_context_map:
+        if args.context_map:
+            context_map_path = Path(args.context_map)
+        else:
+            # Auto-detect: try to locate [ZHC]/[slug]/interview-context-map.json
+            # by reading companySlug from state
+            try:
+                company_slug = state.get("companySlug") or state.get("companyName")
+                if company_slug:
+                    import re as _re
+                    slug = _re.sub(r"[^a-z0-9]+", "-", company_slug.lower()).strip("-")
+                    # Try canonical ZHC roots
+                    for zhc_base in [
+                        Path("/data/openclaw-master-files/zero-human-company"),
+                        Path(os.environ.get("HOME", "~")).expanduser()
+                        / "Downloads" / "openclaw-master-files" / "zero-human-company",
+                    ]:
+                        candidate = zhc_base / slug / "interview-context-map.json"
+                        if candidate.exists():
+                            context_map_path = candidate
+                            break
+            except Exception:
+                pass
+
     # Run checks
     count_result = count_questions(transcript, state)
     jargon_hits = scan_jargon(transcript, jargon_terms)
     field_result = check_mandatory_fields(state, branding_path)
     nudge_result = check_nudges_wired(repo_root)
+    fabrication_result = check_no_fabrication(transcript, context_map_path)
 
     # Assemble verdict
-    verdict, exit_code, details = build_verdict(count_result, jargon_hits, field_result, nudge_result)
+    verdict, exit_code, details = build_verdict(
+        count_result, jargon_hits, field_result, nudge_result, fabrication_result
+    )
 
     # Output
     if args.format == "json":
@@ -546,12 +704,14 @@ def main():
     else:
         # Human-readable
         status_icon = {"PASS": "[PASS]", "NEEDS-REVIEW": "[NEEDS-REVIEW]", "FAIL": "[FAIL]"}.get(verdict, "[FAIL]")
-        print(f"\n{status_icon} Interview QC Gate — PRD-2.15")
+        print(f"\n{status_icon} Interview QC Gate — PRD-2.15 + PRD-2.16 (v12.3.4)")
         print(f"  Question count : {details['questionCount']}"
               + (f" (state: {details['questionCountStateValue']})" if details['questionCountStateValue'] else ""))
         print(f"  Jargon hits    : {len(details['jargonHits'])}")
         print(f"  Missing fields : {len(details['missingFields'])}")
         print(f"  Nudges wired   : {'yes' if details['nudgesWired'] else 'NO'}")
+        fab_violations = details.get("fabricationViolations", [])
+        print(f"  No-fabrication : {'PASS' if not fab_violations else f'FAIL ({len(fab_violations)} violation(s))'}")
 
         if details["warnings"]:
             print("\n  WARNINGS:")
@@ -577,6 +737,13 @@ def main():
             print("\n  NUDGE ISSUES:")
             for iss in details["nudgeIssues"]:
                 print(f"    - {iss}")
+
+        if fab_violations:
+            print("\n  NO-FABRICATION VIOLATIONS (unconfirmed-context-as-answer):")
+            for v in fab_violations:
+                print(f"    theme={v['theme_id']} source={v['source']}")
+                print(f"    snippet: {v['snippet_preview'][:80]}")
+                print(f"    fix: add 'confirmed-from-context: {v['source']}' to this answer block")
 
         print(f"\n  Ran at: {details['ranAt']}")
         print(f"  Summary: {details['rubricVerdict']}")

@@ -1,3 +1,31 @@
+## [v12.3.4] — 2026-06-13 — feat: Skill 23 interview ingests existing client context to ask sharper, non-redundant questions (no-fabrication guardrail)
+
+### Overview
+
+Logic/interview-flow release. No roles added or removed (total_roles stays 335). Implements a structured context-ingestion pre-pass that reads all 6 core workspace files + prior answers + Phase 0 research BEFORE asking any question, classifies each interview theme as KNOWN/PARTIAL/UNKNOWN, and routes accordingly — skipping redundant cold questions, deepening partial ones, and asking fresh only for unknowns. Ships the KNOWN-CONTEXT vs RECORDED-ANSWER distinction with a real enforcement layer (not just prose).
+
+### Changes
+
+A. **NEW: `scripts/context-ingest.py`** — Skill 23 context ingestion helper (mirrors qc-interview-completion.py conventions: `_resolve_openclaw_root`, argparse, `--json`/`--human`). Reads 10 sources (6 core workspace .md files + pre-interview-research.md + software-stack-capabilities.md + prior workforce-interview-answers.md + provided-context-manifest.md). For each of 33 interview themes (Phase 1-6 + branding question ids) emits `{theme_id, phase, label, status, source, snippet, confidence, suggested_action}`. Writes `[slug]/interview-context-map.json` atomically; hard-coded to NEVER open `workforce-interview-answers.md` for writing. On a box with no context files, all themes are UNKNOWN and the interview runs exactly as today (pure superset).
+
+B. **`build-workforce.py`**: CONTEXT_FILES expanded from 4 files `[USER, MEMORY, AGENTS, TOOLS]` to 6 files `[USER, MEMORY, AGENTS, TOOLS, IDENTITY, SOUL]`. `read_existing_context()` (L1795) picks up IDENTITY + SOUL with no other change. `main()` docstring Step 2 note updated; new Step 2.5 'Context Ingestion Pre-Pass' instructs the agent to invoke `context-ingest.py`, load the resulting map, and apply KNOWN/PARTIAL/UNKNOWN routing before Phase 1. Building-block comment updated to list context-ingest.py first.
+
+C. **`INSTRUCTIONS.md`**: Added Phase 0.5 'Context Ingestion (0 questions)' immediately after Phase 0. Replaced 'Pull-Forward Rule (Binding)' with 'Context Ingestion + Pull-Forward Rule (Binding)' — enumerates all 10 ingestion sources (6 core files + 4 context files), defines KNOWN-CONTEXT and RECORDED-ANSWER, specifies three-way routing (confirm/deepen/ask-fresh), de-duplication rule, and three enforcement levels (structural file separation + state field + QC check #5). INTERVIEWER-BEHAVIORAL-CONTRACT fence and all 6 required keywords remain intact.
+
+D. **`SKILL.md`**: Replaced one-liner 'Before Asking Any Question' with full context-ingestion section (6-file list + KNOWN/PARTIAL/UNKNOWN routing + two-label definitions). Updated 'What This Skill Does' bullet #1 to make context-ingestion a first-class step. Updated question-count note to reference interview-context-map.json as the source of 'what is already known'.
+
+E. **`scripts/qc-interview-completion.py`**: Added check #5 (`check_no_fabrication()`). If `interview-context-map.json` exists, any answer containing a verbatim context snippet >= 30 chars WITHOUT a `confirmed-from-context:` provenance note → HARD FAIL exit 3 'unconfirmed-context-as-answer'. Answers WITH the provenance note pass. Map absent → check skips (not a failure). Added `--context-map` and `--no-context-map` CLI flags. Updated docstring from 4 checks to 5. PRD version bumped to PRD-2.15 + PRD-2.16.
+
+F. **`build-state-schema.json`**: Added `interviewProgress.contextIngest` object (ranAt, sources[], themesKnown, themesPartial, themesUnknown, mapPath). Schema remains draft-07 valid; all existing fields untouched.
+
+G. **`ai-workforce-blueprint-full.md`**: New subsection 'Context Ingestion (Before Any Question)' in the Context-Aware Question Flow section. Plain-English explanation of the KNOWN/PARTIAL/UNKNOWN routing, the confirm-not-fabricate pattern, and the NO-FABRICATION rule. Updated context flow step 1 to reference Phase 0.5.
+
+### Version
+
+Version: v12.3.3 → v12.3.4. Markers updated: version, install.sh, update-skills.sh, skill-version.txt, _index.json, _qc-summary.md, README.md (x2), DIRECT-TO-AGENT-UPDATE-MESSAGE.md. total_roles unchanged at 335.
+
+---
+
 ## [v11.11.0] — 2026-06-10 — PRD 2.15: Interview experience — persona block, industry-pack assertion, completion QC gate, nudges verified — QC score 9.1/10 (PASS)
 
 ### Overview
