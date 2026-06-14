@@ -1,0 +1,42 @@
+{
+  "cluster": "ROLE-04",
+  "agent": "deep-research-specialist-presentations (ROLE-04)",
+  "priority": "P6",
+  "wave": "Wave 2",
+  "disposition": "UPDATE",
+  "completed_at": "2026-06-13",
+  "checkpoints": [
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/deep-research-specialist-presentations.md",
+      "action": "UPDATE",
+      "version_from": "1.0",
+      "version_to": "2.0",
+      "changes": [
+        "Section 1 Who You Are: expanded from 3 research categories to 4 (added: external corroboration as ONE GP-8 requirement; grounded image context for IMAGE prompts)",
+        "Section 1 What This Role Is NOT: added fabrication prohibition for corroboration + zero-proof reporting obligation",
+        "Section 3 Daily Operations: added PROOF_ASSETS + GROUNDED_CONTENT to intake read; SOP 9.2 dispatch; GP-8 ALERT step 6",
+        "Section 7 KPIs: added two new rows (Category D coverage; SOP 9.2 delivery)",
+        "Section 8 Tools: added working/research/grounded-content-[DECK_SLUG].json",
+        "Section 9 SOP 9.1: renamed to include External Corroboration; added Category D (D1 case studies / D2 research studies / D3 wall-of-wins as ONE GP-8 function); added gp8_alert to archive.json schema; added Category E to brief template; external_proof_count gate; GP-8 ALERT notification protocol",
+        "Section 9 SOP 9.2 (NEW): Grounded Image Context Extract -- extracts 5 slot-typed concrete scene descriptions (pain/method/transformation/proof/offer) from client GROUNDED_CONTENT and routes grounded-content-[DECK_SLUG].json to Slide Image Creator as the grounded_content variable",
+        "Section 10 Quality Gates: added Gate 4 GP-8 Corroboration Gate; added Gate 5 Grounded Image Context Delivered",
+        "Section 11 Handoffs: added Slide Image Creator (Category E) and QC Specialist (GP-8 ALERT flag) as new downstream consumers",
+        "Section 14 Anti-Patterns: added 4 new anti-patterns (missing Category D flag; D-as-separate-extras; missing Category E; fabricated grounded anchors)",
+        "Section 15 Common Mistakes: added 3 new rows (6: Category E optional trap; 7: silent GP-8 ALERT omission; 8: generic image anchors)",
+        "Section 18 Update Triggers: added 2 new triggers (generic imagery shipped; zero-proof deck fails QC after brief)",
+        "Section 19 Sub-Specialists: added Slide Image Creator and QC Specialist as named collaborators"
+      ],
+      "em_dash_count": 0,
+      "all_19_sections_present": true
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/deep-research-specialist-presentations-sops.md",
+      "action": "REGENERATED (verbatim mirror of Section 9)",
+      "mirror_verified": true,
+      "em_dash_count": 0
+    }
+  ],
+  "diu_twin": "n/a (ROLE-04 is a Presentations department role; no ROLE-- or SOP-- DIU twin exists)",
+  "blockers": [],
+  "governing_traces": ["P6", "GP-8", "GP-16", "GP-21", "F3"]
+}

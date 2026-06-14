@@ -238,3 +238,4 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
 **Failure mode:** A smoke test that cannot complete (network error, auth error, timeout) always halts the run. There is no bypass. The ~3 cent cost is mandatory insurance against burning 75 slides on a broken key or a degraded platform.
 
 ---
+

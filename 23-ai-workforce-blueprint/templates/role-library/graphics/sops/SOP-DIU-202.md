@@ -45,11 +45,13 @@ Before assembling any manifest, apply the routing decision table in `powerpoint-
 
 ### Step 3 — Set the text strategy
 
-Choose strategy (a) or (b) per `powerpoint-designs/_RULES.md` and record it in the manifest header:
-- **(a)** AI renders text in-image — use exact-text quoting; suited for presentation-final decks.
-- **(b)** Background/imagery only, text overlay added in PowerPoint later — **preferred default** for editable client decks; prompts must include explicit clear-zone language.
+**ROUTING INTERLOCK - AUDIENCE/WEBINAR DECKS:** An audience deck, webinar deck, funnel deck, or any deck matching a CLIENT-WEBINAR-DECK-SOP archetype CANNOT proceed on this DIU pipeline. Route immediately to the Presentations department via CDO. This is not a judgment call - it is a hard stop. A deck assembled on this pipeline with strategy (b) backgrounds when it should run the Presentations text-in-image pipeline is an architecture violation and will AUTO-FAIL final QC.
 
-Do not leave the strategy field blank. If the brief does not specify it, default to (b) and document the default.
+Choose strategy (a) or (b) per `powerpoint-designs/_RULES.md` and record it in the manifest header:
+- **(a)** AI renders text in-image — use exact-text quoting; required for audience/webinar decks (routing interlock above applies - those decks must not reach this step on the DIU pipeline at all).
+- **(b)** Background/imagery only, text overlay added in PowerPoint later — valid ONLY for non-audience, non-webinar DIU-routed decks (brand/strategy/campaign/portfolio decks with a style ID); prompts must include explicit clear-zone language.
+
+Do not leave the strategy field blank. For audience/webinar decks: halt immediately per the routing interlock above. For confirmed DIU-routed non-audience decks: record the strategy and document the basis for the routing decision.
 
 ### Step 4 — Assemble the Slide Manifest
 

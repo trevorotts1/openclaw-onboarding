@@ -23,7 +23,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 1. Inputs intake: read intake.json (BIG_PROMISE, TRANSFORMATION, audience language, HOOK SEED), the offer stack, and the primary objection.
 
-2. Mine the client's OWN language first. The strongest hooks reuse the words the client already says. Pull from the HOOK SEED, the intake, and verbatim client notes before inventing anything new.
+2. Mine the client's OWN language first. The HOOK is derived from the strongest promise in the offer -- the most concrete, most credible outcome the client can deliver. Pull from BIG_PROMISE, HOOK SEED, and verbatim client notes before inventing anything new. A hook not rooted in the strongest promise is a tagline, not a hook.
 
 3. Generate exactly 10 candidates, with at least 1 from each of the 7 formulas. THE THREE required qualities (a hook must score on all three):
    - **MEMORABLE:** number symmetry ("30 Kids. 30 Days."), triple alliteration ("Confident. Consistent. Clear."), contrast pairs, rhythm of 2 to 8 words with hard stops.
@@ -51,7 +51,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 7. Hand to the Copywriter variant system (this is SOP 9.2): 7 to 10 variants, placement map, first occurrence inside the first 10 to 15%, dedicated A4 hook slide, refrains after proof slides, reprise as the FINAL substantive slide.
 
-8. Post-deck Hook Audit (this is SOP 9.2): count occurrences mechanically, verify distribution (no section without a refrain candidate, never more than 2 consecutive ladder/close slides without the hook nearby), verify the closing slide carries it.
+8. Post-deck Hook Audit (this is SOP 9.2): count occurrences mechanically, verify distribution (no section without a refrain candidate, never more than 2 consecutive ladder/close slides without the hook nearby), verify the closing slide carries it, verify total is approaching the ~10x target (7 is the floor; push toward 10 with placement additions if under 9).
 
 **Outputs:**
 - working/copy/hook_package.json (the candidates block, the scores block, and the owner selection block)
@@ -82,7 +82,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 4. Write the variants and the placement map into hook_package.json. The Copywriter reads this and places the variants; you own the map, the Copywriter owns the surrounding slide copy.
 
-5. Post-deck Hook Audit (run on the completed slides_copy.md): count occurrences MECHANICALLY (do not estimate; count). Verify the total is >= 7.
+5. Post-deck Hook Audit (run on the completed slides_copy.md): count occurrences MECHANICALLY (do not estimate; count). Verify the total is >= 7 (minimum floor). Target is ~10x. If count is 7 or 8, identify which sections have no refrain and add standalone refrain slides at those section boundaries before closing the audit as complete.
 
 6. Verify distribution mechanically: no section is missing a refrain candidate; there are never more than 2 consecutive ladder or close slides without the hook nearby; the first occurrence is inside the first 10 to 15%; a dedicated A4 hook slide exists.
 

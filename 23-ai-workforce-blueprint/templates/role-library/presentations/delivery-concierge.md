@@ -3,8 +3,9 @@
 **Department:** {{DEPARTMENT_NAME}}
 **Reports to:** Director of Presentations
 **Role type:** specialist
+**Role number:** ROLE-13
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.0
+**Version:** 1.1
 **Last updated:** {{ISO_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -44,11 +45,15 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 3. Daily Operations
 
+### DELIVERY INTERLOCK (mandatory hard stop)
+
+Delivery CANNOT start without `working/qc/final_deck_qc.json` present on disk. If this file does not exist, halt immediately. Do not touch any delivery destination. Notify the Director: "Delivery blocked: working/qc/final_deck_qc.json is absent. QC Specialist must emit this file before delivery can proceed." This is not a soft guideline -- it is a hard interlock. A done message without a verified QC artifact is a lie.
+
 ### On Receiving a QC-Passed Deck
 
 You are dispatched by the Director of Presentations or the QC Specialist after final Phase 6 QC passes (score >= 8.5).
 
-1. Confirm the final QC score is >= 8.5 in working/qc/final_deck_qc.md. If the score is below 8.5, refuse delivery. Return the deck to the QC Specialist.
+1. Confirm `working/qc/final_deck_qc.json` exists on disk. If absent: halt -- see the DELIVERY INTERLOCK above. Read the file: confirm the `qc_score` field is >= 8.5. If the score is below 8.5, refuse delivery. Return the deck to the QC Specialist.
 2. Run SOP 9.1 (Destination Resolution) to determine where the deck must be delivered.
 3. Run SOP 9.2 (Multi-Destination Upload) to deliver the PPTX to every required destination.
 4. Run SOP 9.3 (Notification) to send the delivery notification via `openclaw message send`.
@@ -99,7 +104,7 @@ Review the delivery_destinations records across all completed runs. Are all deli
 - Google Drive API (if applicable -- `use_drive: true` in intake.json)
 - `openclaw message send` (notification -- NEVER raw Telegram API)
 - working/checkpoints/media_library.json (read and write)
-- working/qc/final_deck_qc.md (read -- QC gate confirmation)
+- working/qc/final_deck_qc.json (read -- QC gate confirmation)
 - intake.json (read -- client box type, use_drive flag)
 - output/[DECK_SLUG].pptx (the QC-passed assembled deck to deliver)
 
@@ -116,7 +121,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - intake.json (client box type: `box_type: "mac"` or other; `use_drive: true/false`)
 - working/checkpoints/media_library.json (ghl_folder_id, ghl_folder_name, version_number)
-- working/qc/final_deck_qc.md (final QC score -- must confirm >= 8.5 before proceeding)
+- working/qc/final_deck_qc.json (final QC score -- must confirm >= 8.5 before proceeding)
 
 **Steps:**
 1. Read intake.json. Check the `box_type` field.
@@ -143,7 +148,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "created_at": "ISO timestamp"
    }
    ```
-5. Confirm the final QC score from working/qc/final_deck_qc.md. If score < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
+5. Confirm the final QC score from working/qc/final_deck_qc.json. If score < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
 
 **Outputs:**
 - working/checkpoints/delivery_plan.json (all destinations listed with pending status)
@@ -208,7 +213,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Inputs:**
 - working/checkpoints/delivery_plan.json (all destinations with verified status)
-- working/qc/final_deck_qc.md (final QC score)
+- working/qc/final_deck_qc.json (final QC score)
 - working/checkpoints/media_library.json (ghl_folder_name for human-readable reference)
 
 **Steps:**
@@ -291,7 +296,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 ## 10. Quality Gates
 
 ### Gate 1 -- QC Score Gate (Mandatory Pre-Delivery Check)
-Final Phase 6 QC score in working/qc/final_deck_qc.md must be >= 8.5. No delivery begins below this threshold. A score below 8.5 means the deck goes back to the QC Specialist, not to the client.
+Final Phase 6 QC score in working/qc/final_deck_qc.json must be >= 8.5. No delivery begins below this threshold. A score below 8.5 means the deck goes back to the QC Specialist, not to the client.
 
 ### Gate 2 -- Destination Resolution Before Upload
 delivery_plan.json must exist with all destinations recorded before any file is copied or uploaded. Never skip the resolution step and go directly to upload.
@@ -309,7 +314,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 ### You receive work from:
 - **ROLE-08 PPTX Assembly Specialist** -- the QC-passed output/[DECK_SLUG].pptx; triggered after Phase 6 QC passes (score >= 8.5); the Assembly Specialist hands the PPTX and the QC result to the Director, who dispatches this role
 - **ROLE-06 Media Librarian and GHL Updater** -- media_library.json (ghl_folder_id, ghl_folder_name, version_number, drive_folder_id); SOP 9.6 from ROLE-06 is now absorbed into this role; ROLE-06 no longer owns delivery
-- **QC Specialist -- Presentations** -- final Phase 6 QC score via working/qc/final_deck_qc.md
+- **QC Specialist -- Presentations** -- final Phase 6 QC score via working/qc/final_deck_qc.json
 - **Director of Presentations** -- dispatch signal after Phase 6 QC passes
 
 ### You hand work off to:
@@ -388,7 +393,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 | 1 | Calling a delivery "done" when the GHL upload succeeded but verification was skipped | Gate 3: verification is mandatory before notification. API confirmation, not upload-step self-report. |
 | 2 | Using the operator's GHL API token instead of the client's | GHL credentials come from the CLIENT's env stores. Check before the first call. |
 | 3 | Sending the delivery message via a raw Telegram curl call | Gate 4: openclaw message send is the only allowed channel. No exceptions. |
-| 4 | Delivering a deck before Phase 6 QC score is confirmed | Gate 1: read final_deck_qc.md and confirm >= 8.5 as the literal first action. |
+| 4 | Delivering a deck before Phase 6 QC score is confirmed | Gate 1: read final_deck_qc.json and confirm >= 8.5 as the literal first action. |
 | 5 | Assuming a non-Mac client wants Mac Downloads delivery | SOP 9.1 step 3: if box_type is not mac, ASK. Never assume. |
 | 6 | Not writing delivery_plan.json before starting uploads | SOP 9.1 always runs first. delivery_plan.json is required input for SOP 9.2. |
 | 7 | Conflating ROLE-06 image delivery verification with PPTX delivery | ROLE-06 verifies slide image delivery. This role verifies PPTX delivery. They are separate steps. |

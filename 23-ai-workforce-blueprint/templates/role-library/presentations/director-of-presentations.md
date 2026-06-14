@@ -370,7 +370,7 @@ copy_qc_report.json average >= 8.5. If not, loop back to Slide Copywriter.
 approval_record.json has copy_approved_by and copy_approved_at. No Phase 2 without this.
 
 ### Gate 5 -- Prompt QC (Phase 3)
-prompt_qc_report.json average >= 8.5 per prompt. If not, loop back to Slide Image Creator.
+prompt_qc_report.json average >= 8.5 per prompt. If not, loop back to Slide Image Creator. **No Phase 4 (image generation) may begin until prompt_qc_report.json exists on disk with a passing status. This is a hard interlock: the Slide Submitter is not dispatched, and no createTask call is made, until this file exists and every prompt shows a passing score. A missing or failing prompt_qc_report.json is not a soft warning; it is a generation stop.**
 
 ### Gate 6 -- Image QC (Phase 5)
 image_qc_report.json: each image >= 8.5 or re-generated (max 3 attempts, then escalate).
@@ -469,13 +469,13 @@ A healthy run_ledger.json shows: `status: "delivered"`, slide_count = 75, phase_
 ## 17. Edge Cases for This Role
 
 ### Edge Case 17.1 -- Client Wants to Skip Owner Approval Gate
-If the operator says "just proceed, I trust you," the Director documents this in approval_record.json as `approval_type: "implicit"` with the operator's exact message as `copy_approval_message`. This satisfies the audit trail but does NOT waive the gate -- the Director still logs a complete approval record.
+If the operator says "just proceed, I trust you" or any equivalent, the Director does NOT log this as implicit approval and does NOT proceed. Implicit approval is not a valid approval type. The Director responds with the exact message the operator sent, quoted verbatim, and asks for explicit re-confirmation: "I have your message: '[VERBATIM OPERATOR MESSAGE]'. To proceed to Phase 2, I need your explicit YES. Please reply YES to confirm you approve the slide copy as written." Phase 2 does not begin until the operator sends that explicit confirmation. The approval_record.json requires: `copy_approved_by`, `copy_approved_at`, and `copy_approval_message` (the operator's explicit YES, not a delegated trust statement). A run that begins Phase 2 without an explicit approval record is a protocol violation regardless of operator intent.
 
 ### Edge Case 17.2 -- Mid-Run Model Outage
 If Kie.ai goes down mid-generation (e.g., after slide 40 of 75): pause the run. Write a checkpoint in working/checkpoints/generation_pause.json listing completed slides and pending slides. Escalate to the operator immediately. Do NOT substitute another image model without written operator authorization.
 
 ### Edge Case 17.3 -- Slide Count Requested Is Impossibly Low
-If a client requests a 10-slide webinar deck for a 90-minute presentation, push back with the math table. Recommend 90-100 slides. Record the recommendation and the client's final decision in mission_prd.json.
+If a client requests a 10-slide webinar deck for a 90-minute presentation, push back with the math table. Recommend 90 slides (the absolute ceiling for any duration). Record the recommendation and the client's final decision in mission_prd.json. 90 is the hard maximum for all durations, including 90 minutes and beyond; no client request or operator instruction overrides the ceiling.
 
 ---
 

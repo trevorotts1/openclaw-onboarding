@@ -1,0 +1,90 @@
+{
+  "cluster": "ROLE-02",
+  "role": "brand-steward",
+  "completed_at": "2026-06-13",
+  "agent": "sonnet-subagent",
+  "disposition": "REWRITE (P1/P4)",
+  "files_edited": [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/brand-steward.md"
+  ],
+  "mirror_regenerated": true,
+  "mirror_file": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/brand-steward-sops.md",
+  "twin_synced": "n/a (presentations roles have no ROLE--/SOP-- DIU twin)",
+  "version_bumped": "1.1 -> 1.2",
+  "checkpoints": [
+    {
+      "file": "brand-steward.md",
+      "check": "60/30/10 racial default DELETED",
+      "status": "PASS",
+      "evidence": "The 60/30/10 default appears ONLY in section 14 Anti-Patterns as an example of what NOT to do. No positive rule invents a racial default. Applied in prior change order commit 3172a8e."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "NO PEOPLE + operator flag when REPRESENTATION_MIX unanswered",
+      "status": "PASS",
+      "evidence": "SOP 9.1 step 5 explicitly: DO NOT invent a racial default; set representation to NO PEOPLE; immediately notify operator. Style block template line: [If unanswered: 'NO PEOPLE -- operator flag issued, awaiting confirmation']."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "Brand grammar added (kicker + gold rule; 3px full-width accent divider; PRIMARY/SECONDARY/ACCENT on white base; DRAWN strikethrough; section progress banners; compliance disclaimer)",
+      "status": "PASS",
+      "evidence": "SOP 9.1 step 6 STYLE BLOCK template contains the full BRAND GRAMMAR block. Example A also shows the full grammar in a concrete client example."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "Logo chip ~9% slide width with 1px border (4% rule replaced)",
+      "status": "PASS",
+      "evidence": "SOP 9.1 step 4: 'Logo on a white chip at approximately 9% of slide width with a subtle 1px brand-accent border'. 4% is cited as a mistake in section 15 row 8, not as a rule."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "tertiary almost always white rule REMOVED",
+      "status": "PASS",
+      "evidence": "No positive 'tertiary almost always white' rule exists in the file. SOP 9.1 step 2 explicitly says: Do NOT label any client hex as 'tertiary almost always white.' The three client hex slots are PRIMARY/SECONDARY/ACCENT only."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "SOP 9.3 Archetype Palette (A1-A5) present",
+      "status": "PASS",
+      "evidence": "SOP 9.3 'Archetype Palette and Exemplar Handoff' present with full When/Inputs/Steps/Outputs/Hand-to/Failure-mode structure. Steps include: verbatim A1-A5 table from master SOP Section 7.2, full Section 7.5 exemplar as required pre-reading."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "All 19 sections present",
+      "status": "PASS",
+      "evidence": "Sections 1-19 all present including Role Identity, Persona Governance, Daily/Weekly/Monthly/Quarterly Operations, KPIs, Tools, SOPs, Quality Gates, Handoffs, Escalation Paths, Good/Bad Examples, Common Mistakes, Research Sources, Edge Cases, Update Triggers, Sub-Specialists."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "KPI table updated to match added SOP 9.3",
+      "status": "PASS",
+      "evidence": "Section 7 KPIs table includes: 'Section 7.5 exemplar prompt delivered to Slide Image Creator before Phase 2 begins | 100%' and 'STYLE BLOCK includes all proven brand grammar devices | 100%' and 'Operator flagged within 1 hour when intake has no representation answer | 100%'."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "Anti-Patterns updated",
+      "status": "PASS",
+      "evidence": "Section 14 includes: inventing racial default, missing brand grammar section, delivering STYLE BLOCK without archetype_palette_handoff.md, labeling Primary/Secondary roles incorrectly."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "Handoffs updated to match SOP 9.3",
+      "status": "PASS",
+      "evidence": "Section 11 handoff to Slide Image Creator now includes 'archetype_palette_handoff.md (required pre-reading including Section 7.5 exemplar, delivered via SOP 9.3)'. Director handoff includes 'SOP 9.3 delivery confirmation'."
+    },
+    {
+      "file": "brand-steward.md",
+      "check": "Zero em dashes",
+      "status": "PASS",
+      "evidence": "Python grep confirmed 0 U+2014 em dash characters in file."
+    },
+    {
+      "file": "sops/brand-steward-sops.md",
+      "check": "Mirror is verbatim match of section 9 in role file",
+      "status": "PASS",
+      "evidence": "Python string comparison confirmed: ROLE section 9 length 11116 bytes == MIRROR section 9 length 11116 bytes. MATCH."
+    }
+  ],
+  "blockers": [],
+  "notes": "All ROLE-02 P1/P4 changes were applied in the prior change order commit 3172a8e (branch presentation-dept-surgery). This surgery pass verified all items are complete, bumped version 1.1->1.2, and confirmed the sops mirror is byte-identical. The DIU twin is n/a (presentations roles have no ROLE--/SOP-- twin in the repository)."
+}

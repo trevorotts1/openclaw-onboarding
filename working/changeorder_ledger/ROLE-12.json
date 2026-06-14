@@ -1,0 +1,92 @@
+{
+  "cluster": "ROLE-12",
+  "agent": "sonnet",
+  "timestamp": "2026-06-13",
+  "wave": "WAVE-1 P0-A",
+  "status": "VERIFIED_COMPLETE",
+  "files_edited": [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/sops/slide-submitter-sops.md"
+  ],
+  "files_verified_already_correct": [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/slide-submitter.md"
+  ],
+  "checkpoints": [
+    {
+      "file": "slide-submitter.md",
+      "check": "API states: waiting/success/fail",
+      "result": "PASS - correct states used throughout; old states (complete/in_progress) appear only in Anti-Patterns as examples of what NOT to do"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "SOP 9.3 step 2b: data.resultJson parsed as JSON string -> resultUrls[0]",
+      "result": "PASS - line 207 in SOP 9.3 step 2b"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "SOP 9.3 step 2c: log data.failCode + data.failMsg on failure",
+      "result": "PASS - line 208 in SOP 9.3 step 2c"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "SOP 9.3a API CONTRACT verbatim from master Appendix A",
+      "result": "PASS - table is byte-identical to master SOP Appendix A table"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "LOGO mechanism: gpt-image-2-image-to-image DEFAULT when LOGO_ON_SLIDES=true",
+      "result": "PASS - SOP 9.1 documents the model selection logic"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "Every call passes input_urls beginning with LOGO_URL; A5 appends FOUNDER_PORTRAIT_URL; max 16 public https",
+      "result": "PASS - SOP 9.1 steps 1 and 3; request body template in SOP 9.2"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "Request-body JSON template verbatim (both i2i and t2i)",
+      "result": "PASS - SOP 9.2 step 3b contains both JSON templates"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "Prompt-must-state-references rule",
+      "result": "PASS - SOP 9.2 contains the Prompt-must-state-references rule paragraph"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "SOP 9.5 API Smoke Test (one cheap 1K test before 75 slides burn; failed smoke halts Phase 4)",
+      "result": "PASS - SOP 9.5 fully documented; smoke test = mandatory gate, no bypass"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "5-min wait / 60-sec interval / 100-poll cap / PNG validation / 2x budget stop",
+      "result": "PASS - all five preserved in SOP 9.3 (5-min wait, 60-sec sleep, 100-cap) and SOP 9.4 (2x stop) and SOP 9.3 (PNG magic bytes)"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "Em dash count = 0",
+      "result": "PASS - zero em dash (U+2014) characters found"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "All 19 sections present",
+      "result": "PASS - sections 1 through 19 all present"
+    },
+    {
+      "file": "slide-submitter.md",
+      "check": "DIU ROLE--/SOP-- twin",
+      "result": "N/A - no ROLE--/SOP-- byte-identical DIU twin exists for this Presentations role"
+    },
+    {
+      "file": "sops/slide-submitter-sops.md",
+      "check": "Mirror is verbatim match of Section 9 from role file",
+      "result": "PASS after fix - added trailing newline to make byte-identical"
+    }
+  ],
+  "changes_applied": [
+    "sops/slide-submitter-sops.md: added missing trailing newline to achieve byte-identical match with Section 9 of role file"
+  ],
+  "items_already_correct_no_edit_needed": [
+    "slide-submitter.md: all P0-A items were already implemented in the role file (API states, resultJson, failCode/failMsg, SOP 9.3a, logo mechanism, request body templates, prompt-must-state-references, SOP 9.5 smoke test, 5-min wait, 60-sec interval, 100-poll cap, PNG validation, 2x budget stop)"
+  ],
+  "blockers": []
+}

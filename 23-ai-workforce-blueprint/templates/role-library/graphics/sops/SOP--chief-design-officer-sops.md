@@ -97,4 +97,38 @@
 
 ---
 
-*DIU SOPs owned: [SOP-DIU-612], [SOP-DIU-613], [SOP-DIU-614]. These are addendum SOPs (9.8, 9.9, 9.10) appended to the CDO's existing 9.1-9.7 base SOPs. Total CDO sop_count: 10.*
+---
+
+### SOP 9.11 -- DIU Webinar-vs-DIU Routing Arbiter (Coded Decision Gate)
+
+**ZHC SOP.** Routing arbiter for ambiguous webinar/audience deck vs. DIU pipeline decisions.
+**Library-version pin:** CLIENT-WEBINAR-DECK-SOP v2.3, SOP-DIU-611 v1.1, powerpoint-designs/_RULES.md v1.0 (§-refs verified 2026-06-13).
+**When to run:** Any time a deck brief is ambiguous between the DIU pipeline and the Presentations pipeline.
+**Frequency:** On-demand; every ambiguous deck escalation must route through this SOP before any generation begins.
+**Inputs:** Deck brief from the Deck Systems Specialist (or escalation notice), the brief's stated purpose/audience/context.
+
+**ROUTING ARBITER DECISION TABLE:**
+
+| Condition in the brief | Routing verdict |
+|---|---|
+| Brief names "webinar," "funnel," "virtual event," or "audience presentation" | Presentations dept - CLIENT-WEBINAR-DECK-SOP |
+| Brief shows a REPRESENTATION_MIX or specific audience composition | Presentations dept |
+| Brief specifies one of the five CLIENT-WEBINAR-DECK-SOP archetypes | Presentations dept |
+| Brief is a brand/strategy/campaign deck with a specific DIU style card ID in INDEX.md | DIU pipeline |
+| Brief is for internal use only, no live audience delivery | DIU pipeline |
+| Brief does not fit any row above | Escalate to Director of Presentations; halt all generation |
+
+**Steps:**
+1. Apply the decision table. Document the matching row and deliver the routing decision in writing.
+2. For Presentations-routed decks: forward the brief to the Director of Presentations.
+3. For DIU-routed decks: confirm to Deck Systems Specialist and authorize manifest assembly; record verdict + date.
+4. For escalations: forward full brief + decision-table analysis to Director of Presentations; no generation until written verdict received.
+5. If DIU routing is disputed after generation begins: halt immediately. CDO is final arbiter.
+
+**Outputs:** Routing verdict with documented decision-table row; Director of Presentations' written arbiter decision on record (for escalations).
+**Hand to:** Deck Systems Specialist (DIU route) or Director of Presentations (Presentations route).
+**Failure mode:** If deck incorrectly routed to DIU and generation has begun, halt immediately. Log root cause and implement corrective measure.
+
+---
+
+*DIU SOPs owned: [SOP-DIU-612], [SOP-DIU-613], [SOP-DIU-614], [routing-arbiter-9.11]. These are addendum SOPs (9.8, 9.9, 9.10, 9.11) appended to the CDO's existing 9.1-9.7 base SOPs. Total CDO sop_count: 11.*

@@ -256,3 +256,48 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Failure mode:** If a deck reaches the offer section without answering BOTH cost-of-inaction and value-of-action, flag it as a doctrine gap. If a non-monetary outcome has a fabricated dollar value attached, that is a fabrication violation -- strip the fake number, run the priceless pitch instead, and notify the Director.
 
 ---
+
+### SOP 9.7 -- SP-EXPERT: Expertise Over Charisma and the Ascension Ladder
+
+**When to run:** Concurrently with SOP 9.1 or 9.4, during the offer-design phase, before price_ladder.json is finalized.
+
+**Governing principle (SP-EXPERT):** The offer is won by demonstrated capability, not by charm or enthusiasm. People buy expertise. The entry product (a low-price offer, a free resource, a challenge, a mini-course, or any first transaction) is the buy-in signal: the first rung of the ASCENSION LADDER, the moment the audience self-identifies as a buyer and signals readiness for deeper engagement. The pitch works because the presenter proved they know what they are doing -- through a framework, a result, a specific mechanism, a case study -- before any price was named.
+
+**Inputs:**
+- intake.json (ENTRY_PRODUCT if present; OFFER_STACK; FINAL_PRICE; any stated back-end or VIP offer)
+- price_ladder.json (draft)
+- working/copy/arc_allocation.json (where proof and teaching slides fall relative to the offer)
+
+**Steps:**
+1. Review the arc_allocation.json to confirm that at least one of the following appears BEFORE the ANCHOR slide (before the 32% mark): a framework or mechanism slide, a case study or result slide, a white-paper reference, or a "how this works" teaching moment. If none exist before the anchor, flag to the Director: the audience has not yet seen proof of expertise. The ANCHOR must land AFTER the audience has reason to believe the number is credible.
+2. Identify the ENTRY_PRODUCT in intake.json. This may be: a free lead magnet, a low-price challenge, a mini-course, a strategy session, or a trial tier. If none exists and the offer is a single core-product sale, note that there is no entry product; skip steps 3 and 4 and proceed to step 5.
+3. If an ENTRY_PRODUCT exists: encode it as ASCENSION_RUNG_1 in price_ladder.json. Record:
+   - `entry_product_name`: the name of the entry product
+   - `entry_product_price`: its price (may be 0 for a free offer)
+   - `entry_product_role`: "buy-in signal -- first rung of the ascension ladder"
+   - `ascension_path`: a brief description of the journey from entry product to core offer to VIP (e.g., "Challenge -> Enrollment System -> VIP Coaching Pod")
+   The Slide Copywriter will use this to frame the entry product in copy as the doorway, not the destination.
+4. Verify the ascension logic is consistent with the value ladder. The entry product price must be below FINAL_PRICE. If VIP_TIER exists, the ascension path is: ENTRY_PRODUCT (if any) -> GA (FINAL_PRICE) -> VIP. Record this in price_ladder.json as `ascension_ladder_verified: true`.
+5. Review the offer section slides in arc_allocation.json. Confirm that the proof of expertise (case studies, results, mechanism slides) is woven into the teach sections BEFORE the offer reveals, not dumped into the offer section alone. If all proof is back-loaded to the offer section, flag it to the Director: "Proof arrives after the audience needs to believe. Recommend redistributing at least one proof beat to the teach sections." (This flag is advisory to the Copywriter and Director; it does not block the ladder build.)
+6. Write a one-line SP-EXPERT assertion to price_ladder.json:
+   ```json
+   "sp_expert": {
+     "expertise_before_price": true,
+     "entry_product_name": "...",
+     "entry_product_price": 0,
+     "entry_product_role": "buy-in signal -- first rung of the ascension ladder",
+     "ascension_path": "...",
+     "ascension_ladder_verified": true
+   }
+   ```
+   If no entry product exists, set `entry_product_name: null` and `ascension_ladder_verified: false` with a note: "No entry product in intake. Single-offer close."
+7. Pass the `sp_expert` block to the Director with the rest of price_ladder.json. The QC Specialist will check that proof appears before the offer section (copy QC criterion: light pitch woven, appetizer not dinner).
+
+**Outputs:**
+- working/copy/price_ladder.json (with the `sp_expert` block appended)
+
+**Hand to:** Director (who routes to the Slide Copywriter alongside price_ladder.json)
+
+**Failure mode:** If the arc has zero proof or teaching content before the offer section -- i.e., the deck goes straight from intro to pitch with no expertise demonstrated -- that is a doctrine violation (GP-12, the pitch is where decks die). Flag it to the Director as a HIGH-severity gap before the Copywriter begins. Do not invent proof; instruct the Director to obtain it from the client via PROOF_ASSETS in intake.json.
+
+---

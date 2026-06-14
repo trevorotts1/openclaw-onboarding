@@ -1,6 +1,8 @@
 # TEST PROTOCOL — Style Fidelity Verification & Card Patching
-**Version:** 1.0 | **Last Updated:** 2026-06-12
+**Version:** 1.1 | **Last Updated:** 2026-06-13
 **Audience:** AI agents. No style card reaches `production` status without passing this protocol. Untested cards generate untested results.
+
+> **SCOPE BANNER - READ BEFORE USE:** Style-card fidelity ONLY - NOT the QC for a webinar deck. This protocol grades the RAW PNG for 12-dimension style transfer. It does not assess assembled slides, collision/contrast/legibility on composed PPTX files, representation tally against a client audience, or image-grounding against a client's methodology. Webinar-deck QC is the Presentations department qc-specialist final-deck QC (CLIENT-WEBINAR-DECK-SOP SOP 9.5). Do NOT cite a passing TEST-PROTOCOL score as the deliverable gate for a webinar deck - those are different gates for different artifacts.
 
 ---
 

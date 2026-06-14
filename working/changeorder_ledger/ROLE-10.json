@@ -1,0 +1,31 @@
+{
+  "cluster": "ROLE-10 Slide Copywriter (Presentations)",
+  "wave": "Wave 3 (Opus strengthening pack)",
+  "spec_refs": ["PRD 3.A ROLE-10", "TODO Wave3 ROLE-10", "CHECKLIST F item 1", "change order 8"],
+  "timestamp_utc": "2026-06-13",
+  "files_edited": [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/slide-copywriter.md",
+    "23-ai-workforce-blueprint/templates/role-library/presentations/sops/slide-copywriter-sops.md"
+  ],
+  "mirror_regenerated": "sops/slide-copywriter-sops.md regenerated; Section 9 body diff vs role file = IDENTICAL (verbatim)",
+  "twin_synced": "n/a (no ROLE--/SOP-- twin exists for slide-copywriter; twins exist only on the DIU graphics side)",
+  "changes": {
+    "per_slide_template_fields_restored": "PRESENT - PURPOSE/ARCHETYPE/LADDER/TEXT_ANCHOR/HOOK_REFRAIN/PEOPLE all in SOP 9.1 template; KPI line + anti-patterns list them all mandatory",
+    "body_limit_tightened_to_master": "PRESENT - SOP 9.1 step 3: max 3 text blocks per slide; sub-copy 18 words maximum, one line (master 5.1)",
+    "sop_9_7_doctrine_application": "PRESENT and EXTENDED - existing steps 1-10 retained; ADDED steps 11-16 to complete the mandated GP-3/4/6/9/10/11 + SP-OLDNEW/SP-PSD/SP-CARE/SP-TEACH coverage (promise-not-product GP-3 master rule 2; emotion+logic GP-4 master rule 5; every-drop-adds-value GP-6 master rule 3; SP-OLDNEW bridge; SP-PSD Point-Story-Demo; SP-CARE care-first open + SP-TEACH teach-themselves). Grounded verbatim in master 4.3 + ingest 06; no fabrication of the never-fabricate placeholders (washing-machine/Coke/Michael-J/localized-commodities untouched). Outputs self-check note updated; 7 matching anti-patterns added to Section 14",
+    "voice_rules_in_identity": "PRESENT - Section 1 How You Write: Numbers beat adjectives; Periods are percussion; banned-generic-words list; second person present tense; read-aloud gate",
+    "mode_b_non_preserving_rewrite_removed": "PRESENT - SOP 9.4: 'There is NO non-preserving rewrite path in Mode B'; improvements are proposals not edits; client words ship verbatim (GP-20)"
+  },
+  "integrity": {
+    "all_19_sections_present": true,
+    "sop_structure_when_inputs_steps_outputs_handto_failuremode": "intact (additions live inside Steps + Outputs of SOP 9.7)",
+    "kpi_table_updated_to_match": true,
+    "anti_patterns_updated_to_match": true,
+    "em_dash_count_role": 0,
+    "em_dash_count_mirror": 0,
+    "any_unicode_dash_variant_count": 0
+  },
+  "all_changes_applied": true,
+  "blockers": [],
+  "git": "no git commands run (per standing rules)"
+}

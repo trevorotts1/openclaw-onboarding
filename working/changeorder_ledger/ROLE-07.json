@@ -1,0 +1,55 @@
+{
+  "cluster": "ROLE-07",
+  "role": "Offer and Price Strategist",
+  "agent": "sonnet-subagent",
+  "timestamp": "2026-06-13",
+  "disposition": "REWRITE",
+  "priority": "P1",
+  "traces": ["GP-6", "GP-7", "GP-9", "06 SP-EXPERT", "Lyric §6", "change order §4.5", "TODO P1 ROLE-07"],
+  "checkpoints": [
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/offer-price-strategist.md",
+      "status": "COMPLETE",
+      "changes": [
+        "Added SP-EXPERT principle (expertise over charisma; entry-product = buy-in signal; ascension ladder) to Role Identity (Section 1) -- paragraph after 'blocking gate for numeric consistency'",
+        "Added SOP 9.7 -- SP-EXPERT: Expertise Over Charisma and the Ascension Ladder (full When/Inputs/Steps/Outputs/Hand-to/Failure-mode structure)",
+        "Added two SP-EXPERT KPI rows to Section 7 KPI table",
+        "Added Gate 9 (SP-EXPERT Ascension Logic) to Section 10 Quality Gates",
+        "Updated Section 3 Daily Operations to include SOP 9.7 call for every deck",
+        "Updated Section 8 Tools to include SP-EXPERT principle source reference",
+        "Updated Section 11 Handoffs to include sp_expert block in price_ladder.json output",
+        "Added four SP-EXPERT anti-patterns to Section 14",
+        "Added two SP-EXPERT rows to Section 15 Common Mistakes table",
+        "Added two SP-EXPERT update triggers to Section 18",
+        "Verified: all 19 sections present",
+        "Verified: zero em dashes",
+        "Verified: existing SOPs 9.1-9.6 unchanged (spread ladder, ANCHOR ~32%, DROP1/2/3, FINAL ~97%, BUILDUP, CALLBACK, cost-vs-value, VIP two-option close, straight mode all intact)"
+      ]
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/offer-price-strategist-sops.md",
+      "status": "COMPLETE",
+      "changes": [
+        "Added SOP 9.7 verbatim mirror (character-for-character match with role file Section 9 SOP 9.7)",
+        "Verified: SOPs 9.1-9.7 now present in mirror",
+        "Verified: zero em dashes",
+        "Verified: diff SOP 9.7 between role file and mirror = 0 (identical)"
+      ]
+    }
+  ],
+  "diu_twin": "n/a -- offer-price-strategist is a Presentations role with no ROLE-- or SOP-- DIU twin",
+  "pre_existing_content_kept": [
+    "Spread ladder ANCHOR ~32% (VALUE plant, NOT a drop, 'Remember this number...')",
+    "DROP1 ~47% / DROP2 ~68% / DROP3 ~87% / FINAL ~97% (+/-2)",
+    "BUILDUP (A1 archetype) before every DROP",
+    "CALLBACK in offer section",
+    "FINAL real price BELOW the value ladder",
+    "Every drop ADDS value (no stripping)",
+    "anchor >= 3x final (Gate 2)",
+    "Strictly decreasing value ladder (Gate 3)",
+    "SOP 9.4 PRICE_MODE straight (one-reveal sequence)",
+    "SOP 9.5 VIP two-option close with real spot counts",
+    "SOP 9.6 Priceless Pitch / Cost-vs-Value"
+  ],
+  "blockers": []
+}

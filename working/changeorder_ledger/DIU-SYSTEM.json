@@ -1,0 +1,138 @@
+{
+  "cluster": "DIU-SYSTEM",
+  "agent": "subagent-DIU-SYSTEM",
+  "branch": "presentation-dept-surgery",
+  "completed_at": "2026-06-13",
+  "em_dash_violations_found": 2,
+  "em_dash_violations_fixed": 2,
+  "all_changes_applied": true,
+  "files": [
+    {
+      "file": "45-design-intelligence-library/library/powerpoint-designs/_RULES.md",
+      "change": "Removed (b)-preferred default for webinar/audience decks; added ARCHITECTURE LAW FOR WEBINAR/AUDIENCE DECKS block: text-in-image is THE rule; strategy-(b) is a per-element fallback only; AUTO-FAIL if deck assembled primarily from bare backgrounds + overlay text boxes.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "45-design-intelligence-library/library/_system/MASTER-SOP.md",
+      "change": "Added REPRESENTATION_MIX OVERRIDE paragraph after hard-rule at line ~262: per-client representation_mix governs and OVERRIDES universal skin-tone default; em-dash violation found in initial edit, fixed (replaced with semicolon).",
+      "status": "DONE",
+      "em_dash_check": "CLEAN (initial violation fixed)"
+    },
+    {
+      "file": "45-design-intelligence-library/library/_system/TEST-PROTOCOL.md",
+      "change": "Added SCOPE BANNER block after header; version bumped to 1.1 (2026-06-13): style-card fidelity ONLY - NOT the QC for a webinar deck; webinar-deck QC is Presentations qc-specialist final-deck QC.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-202.md",
+      "change": "Killed (b)-default for audience decks in Step 3; added ROUTING INTERLOCK hard stop (audience/webinar decks CANNOT proceed on DIU pipeline); hardened boundary into coded routing interlock.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-501.md",
+      "change": "Added SCOPE BANNER block before Role Mission: style-card fidelity ONLY; NOT the QC for a webinar deck; a passing SOP-DIU-501 verdict is NOT a delivery gate for a webinar deck.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-611.md",
+      "change": "Rewrote Section D Hard Rules: added D.1 ROUTING INTERLOCK (coded hard stop - audience/webinar decks CANNOT proceed on DIU strategy-(b) pipeline) and D.2 ARCHITECTURE LOCK (text-in-image is THE rule for webinar/audience decks); em-dash violation in D.1 found and fixed (replaced with hyphen).",
+      "status": "DONE",
+      "em_dash_check": "CLEAN (initial violation fixed)"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/deck-systems-specialist.md",
+      "change": "SOP 9.5 step 2: replaced old (b)-default with routing interlock decision table; step 3: replaced generic hard rules with ROUTING INTERLOCK coded hard stop for audience/webinar decks.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--deck-systems-specialist.md",
+      "change": "Byte-identical twin sync of deck-systems-specialist.md SOP 9.5 steps 2 and 3.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/deck-systems-specialist-sops.md",
+      "change": "Sops mirror sync: same SOP 9.5 changes (routing interlock awareness + ROUTING INTERLOCK coded hard stop).",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP--deck-systems-specialist-sops.md",
+      "change": "SOP-- twin sync of deck-systems-specialist-sops.md.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/fidelity-tester.md",
+      "change": "Added BIDIRECTIONAL SKIN RULE block after step 4 of SOP 9.1: fails in BOTH directions (lightening AND mono-casting against multicultural audiences); added Per-client REPRESENTATION_MIX counterweight.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--fidelity-tester.md",
+      "change": "Byte-identical twin sync of fidelity-tester.md BIDIRECTIONAL SKIN RULE addition.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/fidelity-tester-sops.md",
+      "change": "Sops mirror sync: same BIDIRECTIONAL SKIN RULE (condensed).",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP--fidelity-tester-sops.md",
+      "change": "SOP-- twin sync of fidelity-tester-sops.md.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/style-analyst.md",
+      "change": "Added REPRESENTATION-MIX SCHEMA FIELD block after step 4 of SOP 9.1: when REPRESENTATION_MIX exists in intake, record it in card Model Notes; flag UNCAPTURED if missing for audience/webinar context.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--style-analyst.md",
+      "change": "Byte-identical twin sync of style-analyst.md REPRESENTATION-MIX SCHEMA FIELD addition.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/style-analyst-sops.md",
+      "change": "Sops mirror sync: same REPRESENTATION-MIX SCHEMA FIELD (condensed).",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP--style-analyst-sops.md",
+      "change": "SOP-- twin sync of style-analyst-sops.md.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/chief-design-officer.md",
+      "change": "Added SOP 9.8 DIU Webinar-vs-DIU Routing Arbiter (Coded Decision Gate) with decision table and 5-step procedure; CDO becomes the coded routing arbiter for ambiguous webinar-vs-DIU decks.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/chief-design-officer-sops.md",
+      "change": "Added SOP 9.11 DIU Webinar-vs-DIU Routing Arbiter to addendum (pre-existing DIU SOPs were 9.8-9.10; new arbiter added as 9.11 to avoid conflict).",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP--chief-design-officer-sops.md",
+      "change": "SOP-- twin sync: same SOP 9.11 addition.",
+      "status": "DONE",
+      "em_dash_check": "CLEAN"
+    }
+  ],
+  "notes": "ROLE--chief-design-officer.md twin was not found in the repo (no ROLE-- prefix file exists for CDO); the standard CDO twin sync was applied to the sops/ mirror pair only. All 21 file edits complete, 0 em dash violations in final state."
+}

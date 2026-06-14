@@ -1,0 +1,35 @@
+{
+  "cluster": "ROLE-05",
+  "role": "Devil's Advocate -- Presentations",
+  "timestamp": "2026-06-13",
+  "files_edited": [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/devils-advocate-presentations.md",
+    "23-ai-workforce-blueprint/templates/role-library/presentations/sops/devils-advocate-presentations-sops.md"
+  ],
+  "changes_applied": [
+    "VERIFIED: all 18 master SOP Section 4.3 points present verbatim (char-for-char match confirmed against master SOP)",
+    "VERIFIED: points 19-24 department extensions present (the file's good inventions kept)",
+    "VERIFIED: severity system + Kill List format present and sound",
+    "VERIFIED: DA timing = after Phase 1Q, before Phase 1A (already correct)",
+    "VERIFIED: HIGH flag on fabricated proof or fake scarcity BLOCKS the run (already correct)",
+    "ADDED: SP-EXPERT lens check (expertise over charisma) as explicit Supplemental Lens Check with test",
+    "ADDED: SP-LING lens check (linguistic leverage -- order matters) as explicit Supplemental Lens Check with test",
+    "ADDED: GP-4 lens check (emotion buys; logic justifies -- deck-wide test) as explicit Supplemental Lens Check",
+    "ADDED: GP-10 lens check (appetizer not dinner -- teaching completeness) as explicit Supplemental Lens Check",
+    "ADDED: step 2e in SOP 9.1 for applying supplemental lens checks alongside doctrine points",
+    "ADDED: Supplemental Lens Checks section to Kill List template in step 3",
+    "UPDATED: Summary line in Kill List template to include supplemental lens count",
+    "UPDATED: KPI table -- added metric for 4 supplemental lens checks at 100% per review",
+    "UPDATED: Gate 1 in Quality Gates to require 24 doctrine points + 4 supplemental lens checks",
+    "UPDATED: Section 14 Anti-Patterns to include omitting supplemental lens checks",
+    "UPDATED: Section 15 Common Mistakes table -- added mistake #7 (skipping lens checks)",
+    "UPDATED: Section 11 Handoffs -- Kill List description now notes lens checks required",
+    "REGENERATED: sops/devils-advocate-presentations-sops.md as verbatim mirror of Section 9"
+  ],
+  "em_dash_count": 0,
+  "all_19_sections_present": true,
+  "sop_structure_preserved": true,
+  "mirror_regenerated": true,
+  "twin_synced": "n/a (no ROLE-- DIU twin for presentations devil's advocate)",
+  "blockers": []
+}

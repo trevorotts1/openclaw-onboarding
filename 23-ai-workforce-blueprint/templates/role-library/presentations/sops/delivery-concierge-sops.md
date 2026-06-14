@@ -17,7 +17,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - intake.json (client box type: `box_type: "mac"` or other; `use_drive: true/false`)
 - working/checkpoints/media_library.json (ghl_folder_id, ghl_folder_name, version_number)
-- working/qc/final_deck_qc.md (final QC score -- must confirm >= 8.5 before proceeding)
+- working/qc/final_deck_qc.json (final QC score -- must confirm >= 8.5 before proceeding)
 
 **Steps:**
 1. Read intake.json. Check the `box_type` field.
@@ -44,7 +44,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "created_at": "ISO timestamp"
    }
    ```
-5. Confirm the final QC score from working/qc/final_deck_qc.md. If score < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
+5. Confirm the final QC score from working/qc/final_deck_qc.json. If score < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
 
 **Outputs:**
 - working/checkpoints/delivery_plan.json (all destinations listed with pending status)
@@ -109,7 +109,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Inputs:**
 - working/checkpoints/delivery_plan.json (all destinations with verified status)
-- working/qc/final_deck_qc.md (final QC score)
+- working/qc/final_deck_qc.json (final QC score)
 - working/checkpoints/media_library.json (ghl_folder_name for human-readable reference)
 
 **Steps:**

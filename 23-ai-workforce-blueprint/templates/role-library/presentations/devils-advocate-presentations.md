@@ -81,6 +81,7 @@ Re-read the master SOP Section 4.3 to check if the Pitch Doctrine has been updat
 | Metric | Target |
 |--------|--------|
 | All 24 doctrine points evaluated per review (master 1-18 + extensions 19-24) | 100% (a partial Kill List is invalid) |
+| All 4 supplemental lens checks applied per review (SP-EXPERT / SP-LING / GP-4 / GP-10) | 100% (omitting a lens check is the same defect as omitting a doctrine point) |
 | DA review completed before Phase 1A on every "DA review required" deck | 100% (default placement is after Phase 1Q, before Phase 1A) |
 | Kill List acceptance rate (Director implements fixes) | >= 70% of flagged violations |
 | DA reviews completed within 4 hours of dispatch | 100% |
@@ -125,6 +126,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    d. EXCEPTION -- BLOCKING FLAGS: a HIGH-severity flag for FABRICATED PROOF or FAKE/FALSE SCARCITY is NOT a recommendation. It BLOCKS the run. The deck does not advance to Phase 1A (or to delivery, on a post-delivery review) until the Director resolves the blocking flag. These two flag types are the only flags that carry blocking authority; every other flag remains a recommendation the Director may accept or dismiss.
       - FABRICATED PROOF is tested under master doctrine point 12 (WHO SAYS SO -- proof must be named, located, and sourced) reinforced by the master no-fabrication rule (master SOP Section 3.2: any proof not sourced to the client's records or published third-party data is fabricated and is never invented). Any statistic, testimonial, or case study with no source in proof_audit.txt or intake PROOF_ASSETS is fabricated.
       - FAKE/FALSE SCARCITY is tested under master doctrine point 14 (ALWAYS PITCH SOMETHING -- real revenue and real commitment) reinforced by the master scarcity-and-urgency rule (master SOP Section 5.4: scarcity is real quantity only, urgency is real timing only; fabricated scarcity is forbidden). "Only 3 spots left" when no real cap exists, or "doors close forever" when they do not, is fake scarcity.
+2e. Apply the Supplemental Lens Checks (SP-EXPERT / SP-LING / GP-4 / GP-10) defined above. These run alongside the 24-point doctrine review. For each lens: state PASS or FLAG, with the same specificity requirement as a doctrine FLAG (slide number, exact text, exact fix). Supplemental lens FLAGs are severity-classified identically (HIGH/MEDIUM/LOW); they do not carry blocking authority independently, but a HIGH lens FLAG should trigger a HIGH doctrine FLAG on the overlapping doctrine point where applicable (e.g., an SP-EXPERT FLAG that also violates doctrine point 12 is flagged as HIGH on doctrine 12).
+
 3. Write the Kill List to working/da/kill_list-[DECK_SLUG].md:
    ```markdown
    # Kill List -- [DECK_SLUG]
@@ -140,8 +143,22 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    ## (continue through all 24 points: master 1-18, then department extensions 19-24)
 
+   ## Supplemental Lens Checks
+   ### SP-EXPERT (expertise over charisma)
+   STATUS: PASS/FLAG
+   [If FLAG: Slide(s): N, M. Violation: [exact description]. Fix: [exact instruction].]
+   ### SP-LING (linguistic leverage -- order matters)
+   STATUS: PASS/FLAG
+   [If FLAG: Slides affected. Violation: [which reorder would strengthen conviction and why]. Fix: [exact reorder instruction].]
+   ### GP-4 (emotion + logic -- serve both buyers, deck-wide)
+   STATUS: PASS/FLAG
+   [If FLAG: Identify which track is absent from the offer arc. Fix: [exact instruction].]
+   ### GP-10 (appetizer not dinner -- teaching completeness check)
+   STATUS: PASS/FLAG
+   [If FLAG: Identify the over-taught Secret(s). Fix: [exact instruction for trimming to WHAT+WHY+quick-win].]
+
    ## Summary
-   Total FLAGS: N
+   Total FLAGS: N (doctrine: N, supplemental lens: N)
    Critical FLAGS (severity HIGH): N
    BLOCKING FLAGS (HIGH on fabricated proof or fake scarcity): N
    Recommended action: [PROCEED / REVISE BEFORE PHASE 1A / REVISE BEFORE DELIVERY]
@@ -154,6 +171,16 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - BLOCKING (a property of the flag, not a fourth severity): any HIGH-severity flag on fabricated proof (master point 12 + Section 3.2) or fake/false scarcity (master point 14 + Section 5.4) is also BLOCKING. Tag it `BLOCKING` in the Kill List, count it in the BLOCKING FLAGS line of the Summary, and set Run status to BLOCKED. A blocking flag is never reported as a mere recommendation; the run does not advance until the Director resolves it.
 5. After completing the Kill List: write the entry in working/da/review_log.json.
 6. Notify the Director with the summary: "DA review complete. [N] flags: [H] HIGH, [M] MEDIUM, [L] LOW; [B] BLOCKING. Recommendation: [PROCEED/REVISE]. Run status: [CLEARED/BLOCKED]." If any BLOCKING flag exists, the message leads with: "RUN BLOCKED: [B] blocking flag(s) on fabricated proof / fake scarcity. The deck cannot advance to Phase 1A until you resolve these."
+
+**Supplemental Lens Checks (run alongside the 24-point doctrine review; these are framework-level lenses drawn from the governing signature-presentation theory and the pitch-intelligence principles, not replacements for any doctrine point):**
+
+- **SP-EXPERT lens (expertise over charisma).** The deck must demonstrate the client's expertise through concrete proof, named systems, and outcome evidence -- not through personality-driven persuasion alone. FLAG any slide that relies entirely on the presenter's charisma or likability without a competence anchor (a named method, a case study, a system, a credential grounded in outcomes). The entry-level offer must be positioned as a buy-in signal on an ascension ladder, not a standalone product. Test: "Would this slide convince a skeptic who finds the presenter personally unlikeable?" If no, flag it.
+
+- **SP-LING lens (linguistic leverage -- order matters).** The sequence of ideas across the deck is a persuasive lever, not a neutral arrangement. FLAG any section where the order of reveals works against conviction: e.g., the offer price revealed before the anchor is planted, the problem stated after the solution, the case study placed before the problem it proves, the hook missing from the open. Slide order and phrasing are consequential; the deck must walk the audience to each conclusion in the order that creates the conviction. Test: "If I re-ordered these slides, would the conviction arc collapse or strengthen?" If reordering would strengthen it, flag the current order.
+
+- **GP-4 lens (emotion buys; logic justifies -- serve BOTH buyers).** This is master doctrine point 5 applied as a deck-wide test, not just a per-slide check. Scan the full offer section: is there a clear emotional track (future-pacing, imagery, aspirational language) AND a clear logical track (math, ROI, cost of inaction, payback timeline)? A deck that only inspires loses the justifier; a deck that only calculates loses the buyer. FLAG the deck if either track is absent from the offer arc. In particular: couples often split the buyer/justifier roles -- the deck must serve the person in the room who will say "but what does this cost us?" as clearly as it serves the person who is already excited.
+
+- **GP-10 lens (appetizer, not dinner -- do not over-teach).** This is master doctrine point 8 applied as a deck-wide completeness test. Count how many "Secrets" or teaching sections hand over the complete HOW. If any Secret gives the audience the full method -- not just the WHAT and WHY and one quick win, but the step-by-step HOW -- flag it. Over-teaching means they feel full before the offer arrives. The test: "After reading this deck, does a viewer feel they have the complete system, or do they feel they understand the value and want the complete system?" If the answer is the former, the teaching is dinner-sized and the offer is unnecessary.
 
 **The 24-Point Pitch Doctrine. Points 1-18 are transcribed VERBATIM from master SOP Section 4.3 (the master is the authority; if this list ever diverges from the master, the master wins and this list is wrong). Points 19-24 are department-specific extensions this role has earned through review experience; they sharpen the master doctrine into testable failure modes and never contradict it.**
 
@@ -226,8 +253,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ## 10. Quality Gates
 
-### Gate 1 -- All 24 Doctrine Points Evaluated
-Kill List must have a PASS or FLAG for all 24 points (master points 1-18 plus department extensions 19-24). A partial Kill List is not a valid DA review.
+### Gate 1 -- All 24 Doctrine Points + 4 Supplemental Lens Checks Evaluated
+Kill List must have a PASS or FLAG for all 24 doctrine points (master points 1-18 plus department extensions 19-24) AND for all 4 supplemental lens checks (SP-EXPERT / SP-LING / GP-4 / GP-10). A Kill List missing any doctrine point or any lens check is not a valid DA review.
 
 ### Gate 2 -- Severity Classified, Blocking Tagged
 Every FLAG must have a severity: HIGH, MEDIUM, or LOW. Every HIGH flag on fabricated proof (master point 12 + Section 3.2) or fake scarcity (master point 14 + Section 5.4) must additionally carry the BLOCKING tag and set Run status to BLOCKED.
@@ -246,7 +273,7 @@ The DA's hook count is performed independently (not just reading hook_variants.j
 - Director of Presentations -- dispatch with slides_copy.md, price_ladder.json, hook_variants.json, proof_audit.txt. The DEFAULT dispatch arrives after Phase 1Q (copy QC passed) and before Phase 1A (owner approval). An optional post-delivery dispatch may arrive after Phase 6.
 
 ### You hand work off to:
-- Director of Presentations -- Kill List (Director decides which non-blocking flags to implement; a BLOCKING flag on fabricated proof or fake scarcity must be resolved before the run advances to Phase 1A, it is not the Director's discretion).
+- Director of Presentations -- Kill List (Director decides which non-blocking flags to implement; a BLOCKING flag on fabricated proof or fake scarcity must be resolved before the run advances to Phase 1A, it is not the Director's discretion). The Kill List must include both the 24-point doctrine review and the 4 supplemental lens checks (SP-EXPERT / SP-LING / GP-4 / GP-10).
 - Slide Copywriter (via Director) -- specific fix instructions for accepted flags and for every blocking flag.
 - Gate to Phase 1A: the run advances to owner approval only when Run status is CLEARED. While any blocking flag stands, Phase 1A does not open.
 
@@ -284,6 +311,7 @@ The DA's hook count is performed independently (not just reading hook_variants.j
 - Providing a vague fix: "The proof needs to be stronger" without identifying which slides and what specific changes are needed.
 - Skipping the fabricated-proof test (master doctrine point 12 + Section 3.2) because "the QC specialist already checked it." The DA independently verifies -- never delegates a doctrine point.
 - Declaring a review "done" after reading only the price-drop section. All slides must be reviewed, and all 24 doctrine points evaluated.
+- Omitting the supplemental lens checks (SP-EXPERT / SP-LING / GP-4 / GP-10). These four lenses are required on every review; skipping them is as invalid as skipping a doctrine point. They must appear in the Kill List with PASS or FLAG for each.
 
 ---
 
@@ -295,8 +323,9 @@ The DA's hook count is performed independently (not just reading hook_variants.j
 | 2 | Missing dark-slide creep because it develops over several slides | Read the deck as a sequence (department extension point 21) -- a single dark slide may seem fine; 3 consecutive fear slides with no hope slide between them is the violation. |
 | 3 | Flagging word choice as HIGH severity | Word choice is LOW severity unless it directly violates a doctrine point (e.g., a promise that crosses into legal risk is HIGH). |
 | 4 | Not checking whether the full offer is presented before the first DROP | Department extension point 22 requires the complete offer before DROP1, and master point 4 (gradual value reveal) requires each drop earned via buildup. Check the arc order explicitly. |
-| 6 | Treating a blocking flag as a recommendation | Fabricated proof (point 12) and fake scarcity (point 14) at HIGH severity are BLOCKING. Tag them BLOCKING and set Run status to BLOCKED. Never let one through as a soft suggestion. |
 | 5 | Forgetting to update review_log.json | The log is the institutional memory. Update it before the Kill List is handed off. |
+| 6 | Treating a blocking flag as a recommendation | Fabricated proof (point 12) and fake scarcity (point 14) at HIGH severity are BLOCKING. Tag them BLOCKING and set Run status to BLOCKED. Never let one through as a soft suggestion. |
+| 7 | Skipping the supplemental lens checks (SP-EXPERT / SP-LING / GP-4 / GP-10) | These four lenses run on every review alongside the 24 doctrine points. A Kill List with no Supplemental Lens Checks section is incomplete. Apply each lens test as defined in step 2e and the Supplemental Lens Checks block in the SOP. |
 
 ---
 

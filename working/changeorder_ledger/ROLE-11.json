@@ -1,0 +1,62 @@
+{
+  "cluster": "ROLE-11 Slide Image Creator (slide-image-creator)",
+  "agent": "opus",
+  "branch": "presentation-dept-surgery",
+  "timestamp": "2026-06-13",
+  "files_edited": [
+    "/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/tmp.RIA82TU7t3/openclaw-onboarding/23-ai-workforce-blueprint/templates/role-library/presentations/slide-image-creator.md",
+    "/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/tmp.RIA82TU7t3/openclaw-onboarding/23-ai-workforce-blueprint/templates/role-library/presentations/sops/slide-image-creator-sops.md"
+  ],
+  "changes_applied": [
+    {
+      "id": "P4-racial-default-delete",
+      "desc": "DELETED the SOP 9.4 60/30/10 racial-default failure mode (was line 393); transplanted the brand-steward NO-PEOPLE + operator-flag rule verbatim (DO NOT invent a racial default; set NO PEOPLE; representation_source default_no_people; operator flag; do not write any people-inclusive prompt until answered). 60/30/10 now survives only as a prohibition in the anti-patterns (section 14).",
+      "status": "done",
+      "trace": "P4; F2; change order 4.6; PRD 3.A ROLE-11 #1, 4.5; CHECKLIST D ROLE-11 + H#8"
+    },
+    {
+      "id": "A1-A5-archetypes",
+      "desc": "FIVE PROVEN ARCHETYPES A1-A5 present as the primary table (SOP 9.2), generic five demoted to a FALLBACK slide-type table, every prompt declares its archetype on line 1 (SOP 9.1 step 1).",
+      "status": "already-present-verified",
+      "trace": "PRD 3.A ROLE-11 #2"
+    },
+    {
+      "id": "three-engines",
+      "desc": "THREE ENGINES FACIAL-EXPRESSION / AUDIENCE / WORLD present in element 11; old Single-Subject/Group/Presenter taxonomy demoted to a SHOT layer beneath the engines, not the primary engines.",
+      "status": "already-present-verified",
+      "trace": "PRD 3.A ROLE-11 #3; GP-13"
+    },
+    {
+      "id": "exemplar-preread",
+      "desc": "SOP 9.1 step 0 = read master SOP 7.5 exemplar in FULL first (and the Appendix A A2 exemplar) before writing any prompt.",
+      "status": "already-present-verified",
+      "trace": "PRD 3.A ROLE-11 #4; GP-21"
+    },
+    {
+      "id": "drawn-strike-pptx-fallback",
+      "desc": "Strikethrough = a clean single DRAWN line in brand accent on the price-tag motif (SOP 9.5), replacing hand-drawn red diagonal (now only a prohibition); after 2 failed renders the native PPTX text-overlay fallback fires (pptx_text_overlays.json, strike:true).",
+      "status": "already-present-verified",
+      "trace": "PRD 3.A ROLE-11 #5; master 7.4/10.1"
+    },
+    {
+      "id": "P6-grounded-content",
+      "desc": "ADDED the grounded-content variable to the brief (P6): new GROUNDED_CONTENT input in SOP 9.1; grounding wired into the WORLD ENGINE (element 11) and SOP 9.4 People step 1; grounding self-check added to SOP 9.1 step 7e; KPI row + anti-pattern + Deep-Research handoff added. Ungrounded generic imagery declared an auto-fail at the image-grounding gate.",
+      "status": "done",
+      "trace": "P6; PRD 4.6, section 5; TODO P1 ROLE-11 'carry the grounded-content variable in the brief'; CHECKLIST E grounding"
+    },
+    {
+      "id": "wave3-opus-pack",
+      "desc": "Per-archetype 10-line mini-templates (A1-A5), Expression Vocabulary Table, Lighting + World Library, density calibration (target 5000-7500, under 3500 self-check), and the SECOND gold-standard exemplar for an A2 people slide (Appendix A) all present.",
+      "status": "already-present-verified",
+      "trace": "PRD 3.A ROLE-11 #6 (Opus pack); TODO Wave3 image pack; CHECKLIST F ROLE-11"
+    }
+  ],
+  "mirror_regenerated": true,
+  "mirror_path": "sops/slide-image-creator-sops.md",
+  "mirror_verbatim_match": true,
+  "twin_synced": "n/a - no ROLE--/SOP-- byte-identical DIU twin exists for slide-image-creator (Presentations role)",
+  "em_dash_count": 0,
+  "sections_present": 19,
+  "all_changes_applied": true,
+  "blockers": []
+}
