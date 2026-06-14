@@ -1,3 +1,16 @@
+## [v12.4.3] - 2026-06-14 - docs: Custom Role + SOP Authoring and Core-Merge Standard (Skill 23)
+
+### Changes
+
+Adds the missing repeatable STANDARD for how Skill 23 authors custom roles/SOPs that the 233-template core library does not cover, and how custom content MERGES into an overlapping core department instead of duplicating it. Standard document plus light pointers only; no build-workforce.py logic rewrite.
+
+- NEW: `23-ai-workforce-blueprint/CUSTOM-AUTHORING-AND-MERGE-STANDARD.md`. Defines six things: (1) TRIGGER (custom authoring fires only for a need not covered by the 233-template core/floor; canonical/floor stays COPY + token-personalize, never LLM-authored, per `sop_boundary_gate.py`); (2) DETERMINE (per-dept interview capture of customRoles[]/customSops[] recorded in build-state `customAuthoring{}`); (3) CUSTOM ROLE AUTHORING (19-section role file, owner+mission+dept-purpose grounding, naming-by-purpose, 11-dimension rubric QC gate); (4) CUSTOM SOP AUTHORING (six-field When/Inputs/Steps/Outputs/Hand-to/Failure-mode skeleton, owner-procedure grounding, atomicity QC gate); (5) CORE-MERGE (semantic-overlap decision then layer custom roles/SOPs INTO the one core dept, build-state `coreMerges[]`); (6) CLOSEOUT GATE (blocks closeout until every captured custom item is authored to standard and every overlap is merged not duplicated).
+- `23-ai-workforce-blueprint/INSTRUCTIONS.md`: added Phase 5.5 Step 6 light pointer to the new standard.
+- `23-ai-workforce-blueprint/SKILL.md`: added a light pointer in the Self-Service (1.5) section.
+- Version markers bumped 12.4.2 -> 12.4.3 across all 9 locations.
+
+---
+
 ## [v12.4.2] - 2026-06-14 - feat: ZHC interview redesign + reconciliation engine + auto-closeout (Skills 23 + 37)
 
 ### Changes
