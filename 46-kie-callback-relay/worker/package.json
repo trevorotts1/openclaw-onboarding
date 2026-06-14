@@ -1,0 +1,14 @@
+{
+  "name": "kie-callback-relay",
+  "version": "1.0.0",
+  "description": "Centralized Cloudflare Worker -- receives Kie.ai callbacks, verifies HMAC, writes to KV for box polling",
+  "private": true,
+  "scripts": {
+    "dev":    "wrangler dev",
+    "deploy": "wrangler deploy",
+    "secret": "wrangler secret put KIE_WEBHOOK_HMAC_KEY --name kie-callback-relay"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

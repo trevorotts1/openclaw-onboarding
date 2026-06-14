@@ -1,3 +1,34 @@
+## [v12.8.1] - 2026-06-14 - fix(security): Skill 46 callback-relay hardening (IDOR + secret-in-URL)
+
+### Changes
+
+- fix(security/A): submitId is now 128-bit cryptographically random hex (crypto.randomBytes(16)) in kie-slide-submitter.js. Was predictable deckId_slideId, enabling IDOR against KV. Human-readable deckId/slideId are stored as a separate `label` field in the local registry. Crash-resume rebuilt: on restart, registry is scanned by label rather than reconstructing the filename.
+- fix(security/B): Worker GET /kv-read now requires Authorization: Bearer <KVREAD_TOKEN> in every request. Unauthenticated reads return 401. The bearer token is a Worker secret (never in any .md). The box-kv-poller sends the token on every poll. Misconfigured token fails closed (500 if not set on the Worker).
+- fix(security/C): perTaskSecret is never stored in KV and never returned in any response body. The callBackUrl now carries h=HMAC-SHA256(perTaskSecret, KIE_CALLBACK_HMAC_KEY); the Worker stores this HMAC in KV. On /kv-read the box sends the raw perTaskSecret as &p=<preimage>; the Worker recomputes HMAC(preimage) in constant time and compares against the stored HMAC. Returns 403 on mismatch. The plaintext secret stays entirely on the box.
+- fix(security/D): callBackUrl no longer carries the raw perTaskSecret in the s= param. s= is now HMAC-SHA256(clientSlug + ":" + submitId, KIE_CALLBACK_HMAC_KEY). The Worker recomputes and verifies in constant time on every POST /cb. Nothing secret traverses Kie or appears in logs.
+- Kie HMAC verification (POST /cb), 300-second replay window, and idempotency are unchanged.
+- New Worker secret required: KIE_CALLBACK_HMAC_KEY (set via wrangler secret put).
+- New Worker secret required: KVREAD_TOKEN (set via wrangler secret put).
+- Worker version bumped 1.0.0 -> 1.1.0.
+- No client names in any changed file.
+
+---
+
+## [v12.8.0] - 2026-06-14 - feat: Kie callback Worker (centralized, operator CF) + submitter webhook-primary/poll-fallback
+
+### Changes
+
+- New Skill 46 (46-kie-callback-relay): centralized Cloudflare Worker at kie-callback.zerohumanworkforce.com receives all Kie.ai image-generation callbacks for the fleet, verifies Kie HMAC-SHA256 signature once centrally, enforces a 300-second replay window (operator policy; Kie does not define one), and stores verified results in Worker KV (transport B2 from DESIGN.md).
+- Worker code: worker/src/index.js (Cloudflare Workers ES module, no npm runtime deps). Routes: POST /cb (callback receiver), GET /kv-read (box polling endpoint), GET /healthz (deploy verification). wrangler.toml wired to account 13f808b72eb78027a8046357c6cf1afa, zone zerohumanworkforce.com (zone ID confirmed via CF API 2026-06-14).
+- Box-side KV poller (box-kv-poller.js): polls Worker GET /kv-read every 2 seconds (does not consume Kie's 10-req/s query budget), validates perTaskSecret against local task registry, allowlists result URLs to Kie CDN hosts before download, writes idempotent done-marker (.kie/done/<taskId>.json), falls back to Kie recordInfo poll with backoff up to 10-minute ceiling.
+- Slide submitter (kie-slide-submitter.js): webhook-primary, poll-fallback, crash-safe. Submits full deck batch first (respecting 20-per-10-seconds creation rate; source: https://docs.kie.ai/ verified 2026-06-14), then waits for all results in parallel. Callbacks enabled above 5-slide threshold; smaller decks use efficient batch polling (Candidate C). On restart: skips slides with done-markers, re-enters wait queue for slides with taskId but no marker, re-submits slides that crashed before Kie returned a taskId.
+- Skill 07 (07-kie-setup/SKILL.md) updated: corrected rate limit citation (20 requests per 10 seconds; source: docs.kie.ai verified 2026-06-14), added Skill 46 companion section and callBackUrl format reference, added Flux URL 10-minute expiry note. skill-version.txt bumped v6.5.8 -> v6.6.0.
+- DEPLOY.md: step-by-step deploy guide (KV namespace create, wrangler secret put, wrangler deploy, smoke test, secret rotation procedure).
+- SUBMITTER-SOP.md: operator SOP for the webhook-primary slide submit loop.
+- Zero client names in any new or modified repo file (verified by diff review).
+- All 9 version markers bumped to v12.8.0.
+
+---
 ## [v12.7.3] - 2026-06-14 - fix: correct invented Kie.ai rate cap + add unverified-hard-number QC guard (AF-SRC)
 
 ### Changes
