@@ -4,14 +4,14 @@
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.2 the proven flow, Section 5.5 the price sequence)
 **Owning role at write time:** Offer Price Strategist (the re-pitch choreography), Slide Copywriter (the recap copy)
 **Enforced at the gate by:** QC Specialist - Presentations (copy QC criterion c23 re-pitch presence gate, c24 close-density gate)
-**Gold-standard numbers:** Lyric 75-slide deck (lyric-principles.md Section 5): re-pitch s74 "Here's Everything You're Getting" ("TOTAL VALUE $5,276+" vs "$47 / $97", "This is not a deal. This is a decision."), send-off s75.
+**Gold-standard numbers:** the gold-standard 75-slide reference deck (the gold-standard principles reference, Section 5): re-pitch s74 "Here's Everything You're Getting" ("TOTAL VALUE $5,276+" vs "$47 / $97", "This is not a deal. This is a decision."), send-off s75.
 **Status:** Standalone pitch-craft SOP. This document states the re-pitch doctrine as a single checkable pass/fail procedure. It points at the already-live enforcement (Offer Price Strategist SOP 9.9 Re-Pitch Choreography and QC copy criteria c23/c24, FIX-7 / FIX-8) and adds no contradictory code.
 
 ---
 
 ## 1. PURPOSE
 
-After the final price is revealed, the deck does NOT just close. The Corey deck revealed the price and ended on a moment slide and a thank-you, leaving the offer un-recapped. Lyric's gold standard recaps the entire offer after the final price: the full stack re-listed, the total value versus the price restated, the promises restated, the guarantee restated, the urgency reset, then a warm send-off. The re-pitch is the genuinely-missing structural beat the Corey forensic named. This SOP makes a 4-to-7-slide re-pitch block mandatory after the final price and before the close.
+After the final price is revealed, the deck does NOT just close. The forensic reference deck revealed the price and ended on a moment slide and a thank-you, leaving the offer un-recapped. The gold-standard reference deck recaps the entire offer after the final price: the full stack re-listed, the total value versus the price restated, the promises restated, the guarantee restated, the urgency reset, then a warm send-off. The re-pitch is the genuinely-missing structural beat the forensic named. This SOP makes a 4-to-7-slide re-pitch block mandatory after the final price and before the close.
 
 ---
 
@@ -53,13 +53,13 @@ A deck missing the re-pitch fails c23 at Phase 1Q (absent = fail) and the deck-l
 
 ---
 
-## 4. PASS vs FAIL EXAMPLES (drawn from the actual Corey and Lyric decks)
+## 4. PASS vs FAIL EXAMPLES (drawn from the forensic reference deck and the gold-standard reference deck)
 
-**FAIL (the real Corey deck):** the final price was revealed and the deck went straight to a moment slide and a thank-you, with no recap of the stack, no restated value gap, no restated promises, no objection kills, no reset urgency. Fails c23 (re-pitch absent).
+**FAIL (the forensic reference deck):** the final price was revealed and the deck went straight to a moment slide and a thank-you, with no recap of the stack, no restated value gap, no restated promises, no objection kills, no reset urgency. Fails c23 (re-pitch absent).
 
-**PASS (Lyric model):** after the final $47/$97 reveal at s73, s74 "Here's Everything You're Getting" re-lists the entire 8-item stack as a grid, each with its value, "TOTAL VALUE $5,276+" versus "$47 / $97", capped with "This is not a deal. This is a decision."; the urgency is reset inside the final beat ("next 15 minutes"; "this price does not exist after this webinar"); s75 is the warm send-off. Passes c23 and c24.
+**PASS (the gold-standard reference deck):** after the final $47/$97 reveal at s73, s74 "Here's Everything You're Getting" re-lists the entire 8-item stack as a grid, each with its value, "TOTAL VALUE $5,276+" versus "$47 / $97", capped with "This is not a deal. This is a decision."; the urgency is reset inside the final beat ("next 15 minutes"; "this price does not exist after this webinar"); s75 is the warm send-off. Passes c23 and c24.
 
-**PASS (Corey re-sequenced):** after Corey's final entry price, a 4-to-5-slide re-pitch recaps his components (from his interview), restates the value gap (priceless frame), restates his promises (clarity over control, identity development, ownership), restates the guarantee, answers the top objections, resets the 15-minute window, then a warm send-off. Nothing new is introduced in the recap; everything restates the earlier stack.
+**PASS (the example brand re-sequenced):** after the client's final entry price, a 4-to-5-slide re-pitch recaps the client's components (from the client interview), restates the value gap (priceless frame), restates the client's promises (from the client interview), restates the guarantee, answers the top objections, resets the 15-minute window, then a warm send-off. Nothing new is introduced in the recap; everything restates the earlier stack.
 
 ---
 

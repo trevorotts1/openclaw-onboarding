@@ -1,7 +1,7 @@
 # MASTER QC AUTO-FAIL RULESET (SLIDE-CRAFT)
 
 **Cluster:** Slide-Craft Rules (the single most important deliverable)
-**Purpose:** the precise, machine-checkable list the integrator wires into qc-specialist-presentations.md so a deck CANNOT pass if it repeats the Corey failures.
+**Purpose:** the precise, machine-checkable list the integrator wires into qc-specialist-presentations.md so a deck CANNOT pass if it repeats the forensic failures.
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **How to use:** every rule below is an AUTO-FAIL. Auto-fails are checked FIRST, before any 1-to-10 scoring, exactly like the existing AF-C / AF-P / AF-I tables in the QC role. A triggered auto-fail forces FAIL on the affected slide (or the whole DECK where marked) regardless of any average. The QC report records the triggered code, the slide, and the failure message verbatim.
 **Status:** Reference ruleset, RECONCILED with the live gate. This document is the authored slide-craft auto-fail doctrine; the named codes below (AF-HOOK, AF-AUD, AF-OBI, AF-DEN, AF-PLACEHOLDER) are the doctrine's own taxonomy. In the live qc-specialist-presentations.md these protections are ALREADY WIRED under the repo's existing code namespace (the FIX-1 through FIX-8 overhaul). Use the reconciliation map below to find each rule's live equivalent. Do NOT re-add a parallel AF-HOOK/AF-AUD/AF-OBI/AF-DEN namespace to the QC role; that work is done.
@@ -23,7 +23,7 @@ The protections this ruleset specifies are already enforced in qc-specialist-pre
 
 The ONE genuinely net-new auto-fail this overhaul adds to the QC role is the blanket bracket-token-on-render ban (AF-F10), because the live AF-F9 caught a bracket only as a copy-vs-pixel diff, not as an unconditional ban that blocks FINAL on any `[...]` token. Everything else in this ruleset is already live; this document is the reference doctrine behind it.
 
-Note on the spacing floor: this ruleset's AF-DEN-1 proposes an absolute "8-slide minimum gap"; the LIVE AF-C7 enforces "no 2 drops within 2 slides" plus the Offer Price Strategist percentage placement (~47/68/87% depth). The 8-slide figure is the Lyric gold-standard DOCTRINAL TARGET (gaps 11/16/14/8); the 2-slide minimum is the hard auto-fail floor. See SOP-PITCH-01 Section 2 rule 2 for the reconciliation. Do not introduce a contradictory hard 8-slide auto-fail without the Director adjusting AF-C7.
+Note on the spacing floor: this ruleset's AF-DEN-1 proposes an absolute "8-slide minimum gap"; the LIVE AF-C7 enforces "no 2 drops within 2 slides" plus the Offer Price Strategist percentage placement (~47/68/87% depth). The 8-slide figure is the gold-standard DOCTRINAL TARGET (gaps 11/16/14/8); the 2-slide minimum is the hard auto-fail floor. See SOP-PITCH-01 Section 2 rule 2 for the reconciliation. Do not introduce a contradictory hard 8-slide auto-fail without the Director adjusting AF-C7.
 
 ---
 
@@ -99,7 +99,7 @@ These five are the spine. A deck that trips any of them is NOT final, full stop.
 
 ## 2. DENSITY / PACING AUTO-FAILS (deck-level veto; from SOP-SLIDE-04)
 
-These are deck-level and are evaluated against arc_allocation.json and slide order. They are auto-fails, not scored, because a crammed offer was the root of the Corey 2/10 pitch.
+These are deck-level and are evaluated against arc_allocation.json and slide order. They are auto-fails, not scored, because a crammed offer was the root of the forensic-deck 2/10 pitch.
 
 - **AF-DEN-1:** any two adjacent price beats < 8 slides apart. `AF-DEN-1: {beatA}@{X} and {beatB}@{Y} are {gap} slides apart (min 8).`
 - **AF-DEN-2:** anchor outside 25-45% depth. `AF-DEN-2: anchor at {pct}% (target ~one-third).`

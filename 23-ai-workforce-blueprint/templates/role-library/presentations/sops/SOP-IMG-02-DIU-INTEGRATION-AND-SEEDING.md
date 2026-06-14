@@ -13,7 +13,7 @@
 The design-library investigation (design-library-findings.md) found skill 45 - the **Design Intelligence Library / Design Intelligence Unit (DIU)** - is REAL, COMPLETE, and EXECUTABLE, but is **unused**: the library `INDEX.md` is an empty seed (`*(empty - awaiting first analysis)*`) on every box. The PPTX style analysis works deterministically (rasterize -> cluster into 3-8 named families -> Deck Style System file with a Shared Foundation block + per-family SHORT/MEDIUM/LONG prompt templates), and the named-style recall (SOP-DIU-607) is fully specified. The capability exists; nobody has run it.
 
 This SOP does NOT re-author the analysis engine. It does three things:
-1. Defines the **seeding step** that fills the empty library by running a reference deck (Lyric's v2 gold standard, and any client reference deck) through the analyzer. (Closes GAP a.)
+1. Defines the **seeding step** that fills the empty library by running a reference deck (the gold-standard v2 reference deck, and any client reference deck) through the analyzer. (Closes GAP a.)
 2. Defines the **auto-handoff contract** between Presentations and the DIU so the style flows without manual CDO archaeology. (Closes GAP d.)
 3. Explains, enforceably, **how the Presentations dept consumes** a style family: PPTX style analysis -> 3-8 named style families -> per-family scaffolding prompts -> Slide Image Creator.
 
@@ -68,18 +68,18 @@ This is the auto-handoff: a single conditioned trigger + one request artifact + 
 
 The library must not be empty when the trigger fires. Two seeding paths:
 
-### 4.1 Bootstrap seed - run Lyric's v2 gold standard through the analyzer (one-time, fleet baseline)
+### 4.1 Bootstrap seed - run the gold-standard v2 reference deck through the analyzer (one-time, fleet baseline)
 
 Run ONCE per box during onboarding so every client starts with at least one production-status reference style.
 
-**Source (the verified gold standard, NOT the abstract PNG deck):** `/Users/blackceomacmini/Downloads/Lyric_Webinar_Slide_Prompts_v2.txt` - the 75-slide prompt set. (The 29-slide PNG deck in `lyric-hawkins-deck/` is a text-free abstract tech deck and is NOT the gold standard - do not seed from it.)
+**Source (the verified gold standard, NOT the abstract PNG deck):** the gold-standard reference prompt set (the 75-slide prompt set). (A 29-slide abstract PNG deck is a text-free abstract tech deck and is NOT the gold standard - do not seed from it.)
 
 **Steps (PPT-ANALYSIS-SOP §2, applied; the Deck Systems Specialist runs this):**
-1. Rasterize the source to slide images. If a rendered `.pptx`/PDF of the Lyric deck exists, use `libreoffice --headless --convert-to pdf` then `pdftoppm -png -r 100`. If only the prompt set exists (no rendered deck), the analyzer reads the prompt set's per-slide ONE-BIG-IDEA + archetype + layout descriptions as the evidence (the v2 file IS a structured per-slide spec).
+1. Rasterize the source to slide images. If a rendered `.pptx`/PDF of the gold-standard deck exists, use `libreoffice --headless --convert-to pdf` then `pdftoppm -png -r 100`. If only the prompt set exists (no rendered deck), the analyzer reads the prompt set's per-slide ONE-BIG-IDEA + archetype + layout descriptions as the evidence (the v2 file IS a structured per-slide spec).
 2. Batch-survey in groups of ~10; tag each slide: layout archetype, dominant colors, text density, imagery type.
-3. Cluster into 3-8 NAMED families (Lyric's deck maps cleanly to the documented 5-archetype system: A=Full-bleed photo+headline, B=Photo one side/text opposite, C=Photo-top/data-bottom, D=Type-dominant punch, E=Portrait/selfie). Record which slide numbers belong to each family.
+3. Cluster into 3-8 NAMED families (the gold-standard deck maps cleanly to the documented 5-archetype system: A=Full-bleed photo+headline, B=Photo one side/text opposite, C=Photo-top/data-bottom, D=Type-dominant punch, E=Portrait/selfie). Record which slide numbers belong to each family.
 4. Extract the Shared Foundation: Montserrat weight ladder; brand hexes (off-white #FBF7F4, raspberry #C8104E, gold #C9A24B, charcoal #231F20); the gold-gradient/glow/strikethrough price system; logo bottom-right ~9% via I2I; the AVOID list (no black backgrounds).
-5. Write the Deck Style System file `PPT-001_lyric-gold-standard.md` with the Foundation Prompt Block (800-1,200 chars) + one family card per family (SHORT/MEDIUM/LONG templates).
+5. Write the Deck Style System file `PPT-001_gold-standard.md` with the Foundation Prompt Block (800-1,200 chars) + one family card per family (SHORT/MEDIUM/LONG templates).
 6. **Register in INDEX.md:** one PPT row + one row per family (PPT-001-A ... PPT-001-E), `Status: production`, version v1.0. The INDEX must no longer read `*(empty)*` for PowerPoint designs.
 7. Test per TEST-PROTOCOL: generate one test slide per family with new content; score family fidelity AND cross-family cohesion.
 
@@ -100,7 +100,7 @@ When a client supplies a reference deck (concern: "analyze a PowerPoint, detect 
 | 3 | **Single intake point.** The style request went to the CDO via SOP-DIU-612, not to the Generation Operator or Slide Image Creator directly. | CDO intake | A direct DIU call bypassing the CDO |
 | 4 | **Family count is named + evidenced.** The analysis output names 3-8 families and lists member slide numbers per family. | 3-8 named families with slide map | A vague style estimate, >8 families (over-split), or 0 families |
 | 5 | **Webinar deck stayed in the Presentations pipeline.** The deck was NOT routed into the DIU Rotation Engine, and generation used the GPT-Image-2-only manifest. | Presentations pipeline + GPT-Image-2 | Webinar deck routed through the Rotation Engine or a non-manifest model |
-| 6 | **Bootstrap seed present (per box).** After onboarding, INDEX.md contains the `PPT-001_lyric-gold-standard` production rows. | Seed registered | No seed; library still empty after onboarding |
+| 6 | **Bootstrap seed present (per box).** After onboarding, INDEX.md contains the `PPT-001_gold-standard` production rows. | Seed registered | No seed; library still empty after onboarding |
 | 7 | **No-reference path is clean.** If intake declares NO style reference, no crossing fired and the STYLE BLOCK was built from intake brand fields + the SOP-IMG-03 creative-develop path. | No spurious crossing | A crossing fired with no style reference (wasted DIU spend) |
 
 ---
@@ -109,7 +109,7 @@ When a client supplies a reference deck (concern: "analyze a PowerPoint, detect 
 
 | Condition | First action | If unresolved |
 |---|---|---|
-| Trigger fired but INDEX.md empty (check 1) | CDO schedules a New-Client Calibration Run (SOP-DIU-613) to analyze the client's reference deck, OR seeds from the Lyric bootstrap (§4.1) if the client has no reference. Do NOT proceed to prompts with an invented style on a style-match deck. | Director of Presentations + CDO |
+| Trigger fired but INDEX.md empty (check 1) | CDO schedules a New-Client Calibration Run (SOP-DIU-613) to analyze the client's reference deck, OR seeds from the gold-standard bootstrap (§4.1) if the client has no reference. Do NOT proceed to prompts with an invented style on a style-match deck. | Director of Presentations + CDO |
 | Client supplied a reference deck the analyzer calls "inconsistent junk / no coherent system" | Per PPT-ANALYSIS-SOP §5: analyze only the strongest 10-15 slides and build the system from those; tell the operator. | CDO |
 | `style_request.json` missing required Workflow-B variables | CDO returns it to the Brand Steward with an itemized list (SOP-DIU-612 §A). Brand Steward fills, never guesses. | Director |
 | Slide Image Creator overrode the contracted foundation (check 2) | QC fails the prompt; re-author with the Foundation Prompt Block. | Director; CDO if disputed |

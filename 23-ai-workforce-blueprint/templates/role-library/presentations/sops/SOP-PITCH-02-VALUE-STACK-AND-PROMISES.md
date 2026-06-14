@@ -4,32 +4,32 @@
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4.2 the proven flow, Section 4.4 named required components, Section 5.5 the price sequence)
 **Owning role at write time:** Offer Price Strategist (the itemized stack, the tally, the promise inventory), Slide Copywriter (the slide copy)
 **Enforced at the gate by:** QC Specialist - Presentations (copy QC criteria c18-c22 named-component presence gates; the Offer Price Strategist gates)
-**Gold-standard numbers:** Lyric 75-slide deck (lyric-principles.md Section 3): Day 1 $997 / Day 2 $1,497 / Day 3 $997 / VIP $497 / Action-Taker $297 / Strategy Session $997; stack slide s57 "$5,282", tally slide s58 "Over $5,000".
+**Gold-standard numbers:** the gold-standard 75-slide reference deck (the gold-standard principles reference, Section 3): Day 1 $997 / Day 2 $1,497 / Day 3 $997 / VIP $497 / Action-Taker $297 / Strategy Session $997; stack slide s57 "$5,282", tally slide s58 "Over $5,000".
 **Status:** Standalone pitch-craft SOP. This document states the value-stack and promises doctrine as a single checkable pass/fail procedure. It points at the already-live enforcement (Offer Price Strategist SOP 9.2 Offer Stack and Value-Anchor Construction, with FIX-5 / FIX-5a / FIX-5b; and the QC named-component gates) and adds no contradictory code.
 
 ---
 
 ## 1. PURPOSE
 
-People buy promises, not products. "People don't really buy products, they really buy promises; if the promise is strong enough, the product will sell itself" (transcript-spec.md Section 4). The Corey deck had no itemized value stack and stated no promises before the price: the offer was a bare number with nothing summed behind it. Lyric's gold standard plants the promises early, stacks every deliverable with a real-world dollar value, sums the stack to a total that exceeds the anchor BEFORE the cheapest price appears, and proves the anchor was not hype. This SOP makes the value stack and the promises a required, ordered, checkable beat set.
+People buy promises, not products. "People don't really buy products, they really buy promises; if the promise is strong enough, the product will sell itself" (the transcript reference, Section 4). The forensic reference deck had no itemized value stack and stated no promises before the price: the offer was a bare number with nothing summed behind it. The gold-standard reference deck plants the promises early, stacks every deliverable with a real-world dollar value, sums the stack to a total that exceeds the anchor BEFORE the cheapest price appears, and proves the anchor was not hype. This SOP makes the value stack and the promises a required, ordered, checkable beat set.
 
-A drop without added value is wrong (transcript-spec.md Section 5: "every time we do a price drop, you still gotta add more value", said twice). So value and promises are not a single late slide; they are planted before the first number and re-stacked at every drop.
+A drop without added value is wrong (the transcript reference, Section 5: "every time we do a price drop, you still gotta add more value", said twice). So value and promises are not a single late slide; they are planted before the first number and re-stacked at every drop.
 
 ---
 
 ## 2. THE HARD RULE (the value-stack and promises procedure)
 
-1. **Promises are planted BEFORE the first number (before the anchor).** A dedicated promises beat exists before the anchor slide: the things the program will DO for the buyer, stated as outcomes, not features. (Corey's promise set, transcript-grounded: move parents from controlling to clarity-driven guiding; develop the child's identity, not behavior management; build ownership that carries into adulthood; make parents confident, consistent, and clear.) The promise inventory is recorded so it can be restated at each drop and in the re-pitch.
+1. **Promises are planted BEFORE the first number (before the anchor).** A dedicated promises beat exists before the anchor slide: the things the program will DO for the buyer, stated as outcomes, not features. (The example brand's promises planted before the anchor, transcript-grounded: the example brand sells a non-monetary outcome; the promise inventory is drawn from the client interview.) The promise inventory is recorded so it can be restated at each drop and in the re-pitch.
 
-2. **Every deliverable is itemized with a real-world value.** Each offer component is named and carries a concrete dollar value (or, for a non-monetary offer, a priceless frame, see rule 6). (Lyric: Day 1 Parent Magnet System $997, Day 2 7-Figure CEO Blueprint $1,497, Day 3 Enrollment Automation $997, VIP Live Q&A $497, Action-Taker Stack $297, Strategy Session $997.)
+2. **Every deliverable is itemized with a real-world value.** Each offer component is named and carries a concrete dollar value (or, for a non-monetary offer, a priceless frame, see rule 6). (Gold-standard: Day 1 component $997, Day 2 component $1,497, Day 3 component $997, VIP component $497, Action-Taker component $297, Strategy Session $997.)
 
-3. **An itemized value-stack slide sums to a TOTAL.** A dedicated stack slide lists every component with its value in one clean view and sums them to an explicit total. (Lyric s57 "Everything You Get" sums to "$5,282", capped with "And I still haven't told you what you actually pay.")
+3. **An itemized value-stack slide sums to a TOTAL.** A dedicated stack slide lists every component with its value in one clean view and sums them to an explicit total. (Gold-standard s57 "Everything You Get" sums to "$5,282", capped with "And I still haven't told you what you actually pay.")
 
-4. **The stack total is proven to EXCEED the anchor BEFORE the cheapest prices appear.** A tally slide states the total and ties it back to the anchor the audience was told to remember ("I told you to remember that number. Here it is."), proving the anchor was not hype. (Lyric s58 "Add It All Up, Over $5,000"; the tally equals the anchor per FIX-5a.) This lands before Drop 1, so the value is undeniable when the price collapses.
+4. **The stack total is proven to EXCEED the anchor BEFORE the cheapest prices appear.** A tally slide states the total and ties it back to the anchor the audience was told to remember ("I told you to remember that number. Here it is."), proving the anchor was not hype. (Gold-standard s58 "Add It All Up, Over $5,000"; the tally equals the anchor per FIX-5a.) This lands before Drop 1, so the value is undeniable when the price collapses.
 
 5. **Value is re-stacked at every drop.** Each drop names additional value added at that beat (a new deliverable, a bonus, a guarantee); a promise is restated between drops (FIX-5b PROMISE SLIDE BETWEEN DROPS). The perceived value-to-price gap widens at every rung.
 
-6. **A non-monetary offer uses the PRICELESS frame, never a fabricated dollar ROI.** If the offer does not produce money (Corey sells a parenting outcome), the value frame is priceless (the American Express "seeing your kid smile, priceless" device), not an invented "$96,000 of value." Dollar values are never fabricated for non-monetary outcomes; the itemized stack still lists the components, and the value gap is framed as priceless rather than as a fake dollar total.
+6. **A non-monetary offer uses the PRICELESS frame, never a fabricated dollar ROI.** If the offer does not produce money (the example brand sells a non-monetary outcome), the value frame is priceless (the American Express "seeing your kid smile, priceless" device), not an invented "$96,000 of value." Dollar values are never fabricated for non-monetary outcomes; the itemized stack still lists the components, and the value gap is framed as priceless rather than as a fake dollar total.
 
 7. **A VALUE-GAP slide precedes the FINAL price.** Before the final reveal, a slide states the total value versus what the buyer actually pays (the gap), so the final price lands as an obvious bargain (FIX-5 VALUE-GAP slide before FINAL).
 
@@ -55,13 +55,13 @@ A deck missing a required named component (stack, tally, promises, value-gap) fa
 
 ---
 
-## 4. PASS vs FAIL EXAMPLES (drawn from the actual Corey and Lyric decks)
+## 4. PASS vs FAIL EXAMPLES (drawn from the forensic reference deck and the gold-standard reference deck)
 
-**FAIL (the real Corey deck):** no itemized value stack (one slide only re-asserts the anchor number without summing components), no promises stated before the anchor, no value-gap slide before the final price. Fails the stack, promises, and value-gap presence gates.
+**FAIL (the forensic reference deck):** no itemized value stack (one slide only re-asserts the anchor number without summing components), no promises stated before the anchor, no value-gap slide before the final price. Fails the stack, promises, and value-gap presence gates.
 
-**PASS (Lyric model):** promises planted early (the 30-seats/30-days promise repeated); each Day delivered with a dollar value; s57 "Everything You Get" sums to "$5,282" with "And I still haven't told you what you actually pay."; s58 "Add It All Up, Over $5,000" ties the tally to the anchor before the cheapest drops; the re-pitch (s74) restates the total value "$5,276+" versus "$47 / $97." Passes every gate.
+**PASS (the gold-standard reference deck):** promises planted early (the example signature promise repeated); each Day delivered with a dollar value; s57 "Everything You Get" sums to "$5,282" with "And I still haven't told you what you actually pay."; s58 "Add It All Up, Over $5,000" ties the tally to the anchor before the cheapest drops; the re-pitch (s74) restates the total value "$5,276+" versus "$47 / $97." Passes every gate.
 
-**PASS (Corey re-sequenced, priceless frame):** Corey's promises planted before the anchor (clarity over control, identity development, ownership that carries into adulthood); the components itemized (the framework, the strategy session, the program curriculum, the challenge, ongoing sessions) from his interview; because the outcome is non-monetary, the value frame is priceless (the American Express device), not a fabricated dollar total; a value-gap beat precedes the final entry price. Corey's actual components and any prices come from his interview, never fabricated.
+**PASS (the example brand re-sequenced, priceless frame):** the client's promises planted before the anchor (from the client interview); the components itemized (the framework, the strategy session, the program curriculum, the challenge, ongoing sessions) from the client interview; because the outcome is non-monetary, the value frame is priceless (the American Express device), not a fabricated dollar total; a value-gap beat precedes the final entry price. The client's actual components and any prices come from the client interview, never fabricated.
 
 ---
 

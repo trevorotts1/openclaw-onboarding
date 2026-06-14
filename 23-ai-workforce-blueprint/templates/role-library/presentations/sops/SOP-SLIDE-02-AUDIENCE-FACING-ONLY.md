@@ -12,7 +12,7 @@
 
 ## 1. PURPOSE
 
-The face of a slide is for the AUDIENCE. Nothing else is allowed on it. The Corey deck committed every audience-facing violation Trevor named: it printed the speaker's spoken lines, the AI's own internal pitch doctrine, narration of the photo, meta-telegraphing of the format (including the literal word "webinar"), credential justification dumps, and raw "[owner to confirm]" build tokens, all on the live face. The reason it shipped is that the only check in the system verified the inverse (that the presenter note did not duplicate the slide), which says nothing about whether forbidden categories are ON the slide. This SOP names the forbidden categories explicitly and makes each one a hard auto-fail. The slide is not the script. The slide is not the build log. The slide is not the AI's reasoning.
+The face of a slide is for the AUDIENCE. Nothing else is allowed on it. The forensic reference deck committed every audience-facing violation the reviewer named: it printed the speaker's spoken lines, the AI's own internal pitch doctrine, narration of the photo, meta-telegraphing of the format (including the literal word "webinar"), credential justification dumps, and raw "[owner to confirm]" build tokens, all on the live face. The reason it shipped is that the only check in the system verified the inverse (that the presenter note did not duplicate the slide), which says nothing about whether forbidden categories are ON the slide. This SOP names the forbidden categories explicitly and makes each one a hard auto-fail. The slide is not the script. The slide is not the build log. The slide is not the AI's reasoning.
 
 ---
 
@@ -22,12 +22,12 @@ Only AUDIENCE COPY may appear on the rendered face of a slide. Audience copy is:
 
 The following SIX categories are BANNED from the slide face. Each is routed elsewhere, never deleted-into-the-void unless it is build noise:
 
-1. **Speaker SAY lines.** The words the presenter speaks. These go to the **Presenter's Speech** (word for word) and the **Presenter's Guide** (the beat). They never appear on the slide. Examples from Corey: "When you come into our program, this is where we start." / "Remember this number. We come back to it." / "Stay right here. Something is about to change." / "Hold on. The value is still climbing." / "This is the door. Are you walking through it?"
-2. **The AI's own internal pitch doctrine, as a caption.** The build-logic the system reasons with (Section 4.3 of the master SOP) is INTERNAL. It is never slide copy. Examples from Corey: "The lower the price, the greater the value." / "Still climbing in value as the price falls." / "Now let us talk about what you actually pay." / "In the next breath, the real number." These are the sales mechanics, printed where the room can read the trick.
-3. **Image narration.** Captions that describe what the photo already shows. The audience can see the picture; narrating it is a tell. Examples from Corey: "Same parent, same child. Two completely different rooms to grow up in." (the photo already shows that) / "Step 1 . Step 2 . Step 3" labeling three notebooks already in frame.
-4. **Meta-telegraphing.** Any line that announces the structure, the technique, or the format. Includes the literal word **"webinar"** and any technique self-label. Examples from Corey: "This Is Not Just A Webinar." / "ONE LAST PROOF BEFORE YOU DECIDE." / "Hold onto this line. We will keep coming back to it." / "An intrigue gap, on purpose."
-5. **Justification / credential dumps.** Paragraphs that argue why-you-should-believe-us with resumes and clinical credentials. These go to the Presenter's Speech. Examples from Corey: the Andrea-licensed-counselor and Corey-years-in-executive-recruitment credential paragraphs; "Andrea's clinical observation, as a licensed counselor." (Per master rule 1, the T.D. Jakes rule, quote slides carry the NAME ONLY, not the resume.)
-6. **Build tokens / placeholders rendered into the image.** Any bracket build token baked onto a rendered slide. Examples from Corey: "[INSERT REAL RESULT - owner to confirm]", "[ENDORSEMENT - owner to confirm]", "[CLIENT WIN - owner to confirm]". A placeholder is a copy-stage device; it must be RESOLVED (filled with the client's real interview-sourced content) or the slide is PULLED before render. A placeholder must never reach a rendered image.
+1. **Speaker SAY lines.** The words the presenter speaks. These go to the **Presenter's Speech** (word for word) and the **Presenter's Guide** (the beat). They never appear on the slide. Examples from the forensic reference deck: "When you come into our program, this is where we start." / "Remember this number. We come back to it." / "Stay right here. Something is about to change." / "Hold on. The value is still climbing." / "This is the door. Are you walking through it?"
+2. **The AI's own internal pitch doctrine, as a caption.** The build-logic the system reasons with (Section 4.3 of the master SOP) is INTERNAL. It is never slide copy. Examples from the forensic reference deck: "The lower the price, the greater the value." / "Still climbing in value as the price falls." / "Now let us talk about what you actually pay." / "In the next breath, the real number." These are the sales mechanics, printed where the room can read the trick.
+3. **Image narration.** Captions that describe what the photo already shows. The audience can see the picture; narrating it is a tell. Examples from the forensic reference deck: "Same parent, same child. Two completely different rooms to grow up in." (the photo already shows that) / "Step 1 . Step 2 . Step 3" labeling three notebooks already in frame.
+4. **Meta-telegraphing.** Any line that announces the structure, the technique, or the format. Includes the literal word **"webinar"** and any technique self-label. Examples from the forensic reference deck: "This Is Not Just A Webinar." / "ONE LAST PROOF BEFORE YOU DECIDE." / "Hold onto this line. We will keep coming back to it." / "An intrigue gap, on purpose."
+5. **Justification / credential dumps.** Paragraphs that argue why-you-should-believe-us with resumes and clinical credentials. These go to the Presenter's Speech. Examples from the forensic reference deck: the licensed-counselor and years-in-executive-recruitment credential paragraphs; a presenter's clinical observation, as a licensed counselor. (Per master rule 1, the T.D. Jakes rule, quote slides carry the NAME ONLY, not the resume.)
+6. **Build tokens / placeholders rendered into the image.** Any bracket build token baked onto a rendered slide. Examples from the forensic reference deck: "[INSERT REAL RESULT - owner to confirm]", "[ENDORSEMENT - owner to confirm]", "[CLIENT WIN - owner to confirm]". A placeholder is a copy-stage device; it must be RESOLVED (filled with the client's real interview-sourced content) or the slide is PULLED before render. A placeholder must never reach a rendered image.
 
 ---
 
@@ -50,21 +50,21 @@ AF-AUD-6 (the rendered placeholder) is the single most embarrassing tell and is 
 
 ---
 
-## 4. PASS vs FAIL EXAMPLES (drawn from the actual Corey defects)
+## 4. PASS vs FAIL EXAMPLES (drawn from the actual forensic reference deck defects)
 
-**FAIL (Corey slide 44):** headline "This Is Not Just A Webinar." -> AF-AUD-4 (the word "webinar" plus a meta announcement).
+**FAIL (forensic-deck slide 44):** headline "This Is Not Just A Webinar." -> AF-AUD-4 (the word "webinar" plus a meta announcement).
 **PASS:** delete the meta framing entirely; if the slide needs a close label, use a neutral non-telegraphing line that states the one idea, not the format.
 
-**FAIL (Corey slide 10):** caption "Same parent, same child. Two completely different rooms to grow up in." over a photo of one parent and child in two rooms -> AF-AUD-3 (narrates the image).
+**FAIL (forensic-deck slide 10):** caption "Same parent, same child. Two completely different rooms to grow up in." over a photo of one parent and child in two rooms -> AF-AUD-3 (narrates the image).
 **PASS:** let the image carry it; the slide keeps only the one-idea headline, no caption.
 
-**FAIL (Corey slide 34):** caption "The lower the price, the greater the value." -> AF-AUD-2 (internal doctrine printed as copy).
+**FAIL (forensic-deck slide 34):** caption "The lower the price, the greater the value." -> AF-AUD-2 (internal doctrine printed as copy).
 **PASS:** the doctrine drives how the price slide is BUILT (the drop adds value); it is never written on the slide. Delete.
 
-**FAIL (Corey slides 28/30/35/38/40/42):** rendered images containing "[CLIENT WIN - owner to confirm]" and "[INSERT REAL RESULT - owner to confirm]" -> AF-AUD-6 on every one.
-**PASS:** fill each tile with Corey's real interview-sourced win (name + result), or, if the interview has not yet supplied it, the slide stays at the copy stage with a `[CLIENT TO SUPPLY]` placeholder and is NOT rendered until resolved.
+**FAIL (forensic-deck slides 28/30/35/38/40/42):** rendered images containing "[CLIENT WIN - owner to confirm]" and "[INSERT REAL RESULT - owner to confirm]" -> AF-AUD-6 on every one.
+**PASS:** fill each tile with the client's real interview-sourced win (name + result), or, if the interview has not yet supplied it, the slide stays at the copy stage with a `[CLIENT TO SUPPLY]` placeholder and is NOT rendered until resolved.
 
-**FAIL (Corey slide 9):** "When you come into our program, this is where we start." on the face -> AF-AUD-1 (speaker SAY line).
+**FAIL (forensic-deck slide 9):** "When you come into our program, this is where we start." on the face -> AF-AUD-1 (speaker SAY line).
 **PASS:** that sentence is exactly what the presenter SAYS; route it to the Presenter's Speech. The slide shows the one idea (where the program starts) with a handful of words.
 
 ---

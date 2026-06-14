@@ -1,6 +1,6 @@
 # Design-System Cluster: Integration Map
 
-**Cluster:** Design System (Corey overhaul).
+**Cluster:** Design System.
 **Presentations dept:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **Master SOP:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
@@ -31,7 +31,7 @@ Do NOT re-add an AF-I8..I12 or AF-D1..D3 namespace to the QC role; those protect
 | 02-SOP-creative-typography-guide.md | Type-research guide: weight ladder, expressive display, hierarchy, per-word emphasis | New universal sub-SOP under the master SOP design section; referenced by the Typography Architect (SOP 9.1) and the QC gate |
 | 03-SOP-pure-typography-hook-slides.md | Dedicated hook slide design: hook large over low-opacity image, no competing imagery, no footer band | New universal sub-SOP; enforced by Slide Image Creator + QC |
 | 04-SOP-variable-layout-anti-template.md | Rotate image position + word placement; auto-fail a deck whose layout never varies | New universal sub-SOP; enforced by Typography Architect self-audit + QC final deck gate |
-| 05-SOP-logo-consistency.md | ONE locked logo mark, image-to-image at fixed size/position; auto-fail drift/misspelled render. Also encodes the full Lyric design proof | New universal sub-SOP; enforced by Brand Steward + Slide Image Creator + QC |
+| 05-SOP-logo-consistency.md | ONE locked logo mark, image-to-image at fixed size/position; auto-fail drift/misspelled render. Also encodes the full gold-standard design proof | New universal sub-SOP; enforced by Brand Steward + Slide Image Creator + QC |
 
 ---
 
@@ -87,11 +87,11 @@ This is the load-bearing sequencing change: typography and layout are DECIDED be
 
 ## 5. Why each rule is enforceable (not soft guidance)
 
-Trevor's overriding requirement: description alone already failed (PR #212 added 77 auto-fails and the FINAL deck still shipped the footer hook on 40 slides, the word "webinar", and raw placeholders). So every rule in this cluster is phrased as a concrete trigger with a mechanical check:
+The principal reviewer's overriding requirement: description alone already failed (PR #212 added 77 auto-fails and the FINAL deck still shipped the footer hook on 40 slides, the word "webinar", and raw placeholders). So every rule in this cluster is phrased as a concrete trigger with a mechanical check:
 - Footer hook -> AF-I8 (any hook in a footer band = auto-fail), not "avoid footers."
 - Layout never varies -> AF-D1 (mechanical archetype-count + max-share + word-block-stack count), not "vary the layout."
 - Single-device typography -> AF-D3 (over 70% single device = auto-fail), not "be creative."
 - Logo drift -> AF-I11 (cross-slide mark comparison to the locked asset = auto-fail), not "keep the logo consistent."
 - The image-to-image path is forced at prompt time (LOGO_URL in input_urls) so the mutation cannot happen, AND caught at render time if it does.
 
-Each SOP carries: purpose, the hard rule, the enforcement check (the exact auto-fail trigger), PASS vs FAIL examples drawn from the actual Corey defects, and the escalation/repair path.
+Each SOP carries: purpose, the hard rule, the enforcement check (the exact auto-fail trigger), PASS vs FAIL examples drawn from the forensic defects, and the escalation/repair path.

@@ -11,7 +11,7 @@
 
 ## 1. PURPOSE
 
-The hook is a song's chorus, not its wallpaper. It is sung at a few natural beats so the audience leaves humming it. The Corey deck did the exact opposite: the signature line "There is a difference between parenting through control and parenting through clarity" was stamped as a footer on roughly 40 of 45 slides, printed twice on at least eight, extended/mutated on one ("...and the results are significantly different."), and misspelled on another ("parenting through hclarity"). There was no clean dedicated hook slide at all.
+The hook is a song's chorus, not its wallpaper. It is sung at a few natural beats so the audience leaves humming it. The forensic reference deck did the exact opposite: the example signature hook was stamped as a footer on roughly 40 of 45 slides, printed twice on at least eight, extended/mutated on one ("...and the results are significantly different."), and rendered a misspelled hook ("hclarity") on slide 23. There was no clean dedicated hook slide at all.
 
 The root cause is in the system's own rules: the master SOP mandates the hook "AT LEAST 7 TIMES... roughly one per 8 to 10 slides", the copy criterion 11 auto-fails when the count is BELOW 7, and the image creator's render spec prescribed a bottom-band footer as the hook rendering. The system did exactly what it was told: it floored the count and stamped footers. This SOP inverts the rule: the hook lives on a small, fixed CEILING of dedicated slides, footer-stamping is banned, and the refrain is sacred and exact.
 
@@ -23,7 +23,7 @@ The root cause is in the system's own rules: the master SOP mandates the hook "A
 2. **The hook is NEVER a footer.** No footer band, no bottom-strip overlay, no recurring stamp at the base of content slides. The hook does not appear as body copy on a teaching slide, a proof slide, an offer slide, or any non-dedicated slide.
 3. **The natural beats** (the 3 to 4 anchors, from the transcript): (a) when the hook is born, right after the core contrast that produces it; (b) after the story that proves it; (c) at the result/payoff beat; (d) late, as the through-line into the close. The Hook Strategist names these anchors and produces an explicit HOOK-ABSENT list (every other slide).
 4. **The hook is a sacred, exact refrain.** It is rendered VERBATIM every time. It is never reworded, never extended, never abbreviated mid-deck, never duplicated on the same slide, never misspelled. One canonical string, locked at copy stage, rendered identically on each dedicated slide.
-5. **The signature quote is a SEPARATE beat.** The client's second quotable line (Corey: "Instead of solving problems, we walk them through how to think about it...", attributed to the client's name only) lives on its OWN dedicated quote slide. The control-vs-clarity hook is NOT stamped on top of the signature-quote slide; conflating the two hooks is a defect (Corey slide 18 did this).
+5. **The signature quote is a SEPARATE beat.** The client's second quotable line (the example signature quote, attributed to the client's name only) lives on its OWN dedicated quote slide. The example signature hook is NOT stamped on top of the signature-quote slide; conflating the two hooks is a defect (forensic-deck slide 18 did this).
 6. **Print once per slide.** On a dedicated hook slide the line appears exactly once. Not as a bold copy plus a ghosted italic repeat. Not as headline plus body plus footer. Once.
 
 ---
@@ -46,21 +46,21 @@ The root cause is in the system's own rules: the master SOP mandates the hook "A
 
 ---
 
-## 4. PASS vs FAIL EXAMPLES (drawn from the actual Corey defects)
+## 4. PASS vs FAIL EXAMPLES (drawn from the actual forensic reference deck defects)
 
-**FAIL (Corey, deck-wide):** the hook footer-stamped on slides 1, 2, 4, 5, 6, 8, 10, 12, 13, 14, 15, 18, 20, 22, 23, 25, 26, 28, 29, 32, 34, 37, 38, 40, 42, 44, 45 (40 of 45) -> AF-HOOK-1 (count 40 > 4) and AF-HOOK-2 (footer on every one).
+**FAIL (the forensic reference deck, deck-wide):** the hook footer-stamped on slides 1, 2, 4, 5, 6, 8, 10, 12, 13, 14, 15, 18, 20, 22, 23, 25, 26, 28, 29, 32, 34, 37, 38, 40, 42, 44, 45 (40 of 45) -> AF-HOOK-1 (count 40 > 4) and AF-HOOK-2 (footer on every one).
 **PASS:** delete the footer from all 40 slides; build 4 dedicated pure-typography hook slides at the named anchors; the hook appears on exactly those 4 and nowhere else.
 
-**FAIL (Corey slides 10, 12, 14, 22, 28, 44):** hook printed twice (bold copy plus ghosted italic repeat) -> AF-HOOK-4. Slide 4 printed it three times -> AF-HOOK-4.
+**FAIL (forensic-deck slides 10, 12, 14, 22, 28, 44):** hook printed twice (bold copy plus ghosted italic repeat) -> AF-HOOK-4. Slide 4 printed it three times -> AF-HOOK-4.
 **PASS:** the hook appears once on each dedicated slide; these content slides carry no hook at all.
 
-**FAIL (Corey slide 28):** "...and the results are significantly different." appended to the hook -> AF-HOOK-5 (extended/mutated).
+**FAIL (forensic-deck slide 28):** "...and the results are significantly different." appended to the hook -> AF-HOOK-5 (extended/mutated).
 **PASS:** the canonical line is rendered verbatim, with nothing added.
 
-**FAIL (Corey slide 23):** footer rendered "parenting through hclarity" -> AF-HOOK-6 (misspelled) and AF-HOOK-2 (footer).
+**FAIL (forensic-deck slide 23):** footer rendered a misspelled hook ("hclarity") -> AF-HOOK-6 (misspelled) and AF-HOOK-2 (footer).
 **PASS:** the hook is on a dedicated slide, composited as native text, spelled exactly.
 
-**FAIL (Corey slide 18):** the signature quote ("We Walk Them Through How To Think About It") on its own slide BUT with the control-vs-clarity hook footer stamped on top -> AF-HOOK-7 and AF-HOOK-2.
+**FAIL (forensic-deck slide 18):** the example signature quote ("We Walk Them Through How To Think About It") on its own slide BUT with the example signature hook footer stamped on top -> AF-HOOK-7 and AF-HOOK-2.
 **PASS:** the signature quote stands alone on its own beat (name-only attribution); the main hook is on its separate dedicated slides.
 
 ---
@@ -78,7 +78,7 @@ The root cause is in the system's own rules: the master SOP mandates the hook "A
 
 ## 6. RECONCILIATION WITH THE EXISTING (FLOOR-BASED) RULE -- REQUIRED INTEGRATION EDITS
 
-This SOP contradicts, on purpose, the current floor-based hook rule that PRODUCED the Corey failure. The integrator MUST make these exact changes so the system stops flooring-and-stamping:
+This SOP contradicts, on purpose, the current floor-based hook rule that PRODUCED the forensic reference deck failure. The integrator MUST make these exact changes so the system stops flooring-and-stamping:
 
 - **Master SOP Section 4.3 rule 1:** replace "The hook appears AT LEAST 7 TIMES across the deck (scale up on longer decks: roughly one occurrence per 8 to 10 slides, never fewer than 7)" with "The hook appears on EXACTLY 3 to 4 DEDICATED pure-typography slides at named beats and NOWHERE ELSE. Footer-stamping is banned. The hook is a verbatim, sacred refrain." Keep "Sing it early", "Refrain after proof" only as a NOTE that the refrain after proof is one of the 3 to 4 dedicated beats, not a new footer.
 - **Master SOP Section 5.1, THE HOOK bullet:** replace "Sing it at least 7 times" with "Place it on 3 to 4 dedicated slides only." Delete "refrains at the bottom of proof slides" (that line authorized the footer) and "light occurrences through every section."

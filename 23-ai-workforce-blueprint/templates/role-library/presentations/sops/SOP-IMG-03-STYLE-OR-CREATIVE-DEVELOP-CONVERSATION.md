@@ -41,7 +41,7 @@ The three answers map to three intake values:
 | **(2) Use a saved style** | `STYLE_SOURCE = saved_style`, `STYLE_ID = <name or ID>` | Signature-style recall (SOP-IMG-04): resolve the alias in NAMED-STYLES.md -> card ID@version -> STYLE BLOCK. |
 | **(3) Creatively develop one** | `STYLE_SOURCE = creative_develop` | The creative-develop flow (§3 below). |
 
-**Hard rule:** the branch is asked on EVERY new deck. The agent does not assume. A deck that proceeds to Phase 2 with `STYLE_SOURCE` unset = a defect (the agent skipped the question and is about to invent a look with no client direction - the exact ad-hoc path that produced Corey's cookie-cutter single-device typography).
+**Hard rule:** the branch is asked on EVERY new deck. The agent does not assume. A deck that proceeds to Phase 2 with `STYLE_SOURCE` unset = a defect (the agent skipped the question and is about to invent a look with no client direction - the exact ad-hoc path that produced the forensic reference deck's cookie-cutter single-device typography).
 
 This branch supersedes the bare reference question. It is asked once, early, before the STYLE BLOCK is built.
 
@@ -59,7 +59,7 @@ When `STYLE_SOURCE = creative_develop` (the client has no reference and no saved
    - "Show me one deck, ad, or brand whose LOOK you admire (even if it's not yours)?" -> `STYLE_ADMIRED` (optional aspiration anchor; this is admiration, not a deck to match exactly)
    - "Any look you want to avoid - anything that's tested badly or feels off-brand?" -> `STYLE_AVOID`
    These reuse the BB question stems already in the files (mood/imagery/avoid) - do not re-invent the question bank; this branch just sequences them into a style-development mini-flow.
-2. **Brand Steward drafts a candidate style** from the answers + the client's brand fields (logo, any brand colors). It reaches for the closest seeded reference family (e.g. the Lyric bootstrap PPT-001 family that matches `STYLE_MOOD`) as a STARTING scaffold, then adapts the palette/type to the client. This is "creatively develop," anchored on a proven family rather than from a blank page.
+2. **Brand Steward drafts a candidate style** from the answers + the client's brand fields (logo, any brand colors). It reaches for the closest seeded reference family (e.g. the gold-standard bootstrap PPT-001 family that matches `STYLE_MOOD`) as a STARTING scaffold, then adapts the palette/type to the client. This is "creatively develop," anchored on a proven family rather than from a blank page.
 3. **Render a style probe (small, before the full deck):** generate 2-3 sample slides (a hook-type slide, a content slide, a price slide) at the candidate style. This is a probe, not the deck.
 4. **Client sign-off:** show the probe. "Here's the signature style I developed for you - love it, tweak it, or try a different direction?" Iterate the probe (not the deck) until the client approves.
 5. **On approval:** the approved style becomes the deck's STYLE BLOCK foundation. Offer to SAVE it as a named signature style (SOP-IMG-04 / SOP-DIU-607): "Want me to save this as your Signature Style 1 so you can just say 'use Style 1' next time?" If yes -> the Style Analyst captures the alias and (if the probe slides warrant) the Deck Systems Specialist registers a production PPT card.
@@ -127,9 +127,9 @@ This seed is empty-but-valid: a fresh client box has a NAMED-STYLES.md with zero
 
 ## 7. PASS vs FAIL EXAMPLES
 
-**FAIL (the current gap):** Corey had no reference deck and no saved style. The system never asked the branch; it just built slides with one black-headline-plus-teal-accent-word device on ~40 of 45 slides (the Corey cookie-cutter typography defect). No probe, no client style sign-off. Fails checks 1 and 2.
+**FAIL (the current gap):** The example brand client had no reference deck and no saved style. The system never asked the branch; it just built slides with one black-headline-plus-teal-accent-word device on ~40 of 45 slides (the forensic reference deck cookie-cutter typography defect). No probe, no client style sign-off. Fails checks 1 and 2.
 
-**PASS:** Corey answers "creatively develop one." Buddy asks 4 short questions (mood = premium/warm; colors = his brand teal; imagery = real families; avoid = anything cheesy/clip-arty). Brand Steward scaffolds on the Lyric premium-warm family, adapts the palette, renders a 3-slide probe. Corey approves slide 2's treatment, asks for bolder headlines; probe iterated and approved. Offered "save as Signature Style 1?" - yes. Style Analyst writes the alias into NAMED-STYLES.md. Passes checks 1-6.
+**PASS:** The example brand client answers "creatively develop one." The Brainstorming Buddy asks 4 short questions (mood = premium/warm; colors = brand teal; imagery = real families; avoid = anything cheesy/clip-arty). Brand Steward scaffolds on the gold-standard premium-warm family, adapts the palette, renders a 3-slide probe. The client approves slide 2's treatment, asks for bolder headlines; probe iterated and approved. Offered "save as Signature Style 1?" - yes. Style Analyst writes the alias into NAMED-STYLES.md. Passes checks 1-6.
 
 **PASS (saved style):** A returning client says "use Style 1." `STYLE_SOURCE = saved_style`, `STYLE_ID = Style 1`. Goes to SOP-IMG-04 recall. (No probe needed - the style is already approved.)
 

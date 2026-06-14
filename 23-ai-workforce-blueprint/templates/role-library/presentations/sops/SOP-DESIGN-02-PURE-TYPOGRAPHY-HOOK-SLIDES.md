@@ -1,11 +1,11 @@
 # SOP: Pure-Typography Hook Slides
 
-**Cluster:** Design System (Corey overhaul)
+**Cluster:** Design System
 **Owner roles:** Typography Architect (assigns PURE_TYPE_HOOK in the treatment table, SOP 9.3) + Slide Image Creator (renders it). Enforced by: QC Specialist (Phase 3 prompt QC, Phase 5 image QC).
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 7.2 A4, 7.5 exemplar)
 **Version:** 1.0
 
-> The hook is a refrain sung at 3 to 4 natural anchors, each on its OWN dedicated pure-typography slide. Corey's deck did the opposite: the hook was footer-wallpaper on about 40 of 45 slides, printed twice on several, mutated on one, misspelled on another, with no clean dedicated hook slide at all. This SOP defines what a dedicated hook slide looks like so the hook lives on type, not on a footer.
+> The hook is a refrain sung at 3 to 4 natural anchors, each on its OWN dedicated pure-typography slide. The forensic reference deck did the opposite: the hook was footer-wallpaper on about 40 of 45 slides, printed twice on several, mutated on one, misspelled on another, with no clean dedicated hook slide at all. This SOP defines what a dedicated hook slide looks like so the hook lives on type, not on a footer.
 
 ---
 
@@ -30,15 +30,15 @@ A dedicated hook slide is PURE TYPOGRAPHY. The hook line is the entire slide. It
 ### 2.2 What is BANNED on a dedicated hook slide
 
 - A competing photographic subject (a person, a scene, a product) at normal opacity. The image must be low-opacity background only.
-- A footer band carrying the hook (the Corey failure). The hook is the hero of the slide, never a bottom strip.
-- The hook line printed twice (a bold copy plus a ghosted italic repeat is the Corey slide-10/12/14 failure).
-- A reworded or extended hook (the Corey slide-28 "...and the results are significantly different" failure). The refrain is fixed and verbatim.
+- A footer band carrying the hook (the forensic failure). The hook is the hero of the slide, never a bottom strip.
+- The hook line printed twice (a bold copy plus a ghosted italic repeat is the forensic-deck slide-10/12/14 failure).
+- A reworded or extended hook (the forensic-deck slide-28 "...and the results are significantly different" failure). The refrain is fixed and verbatim.
 - A second idea, a body paragraph, a kicker stack, a chart, or a sub-head that introduces a new concept.
 - The signature quote stacked on top of the control-vs-clarity hook (these are two distinct beats and must be two distinct slides).
 
 ### 2.3 The signature quote slide is its own beat
 
-The signature quote (e.g. "Instead of solving problems, we walk them through how to think about it...") is a SEPARATE dedicated beat, on its own slide, attributed at the bottom, with NO control-vs-clarity hook stamped on it. It follows the same pure-type-over-low-opacity-image treatment, but it is not counted as one of the control-vs-clarity hook anchors and the two never share a slide.
+The signature quote (e.g. "Instead of solving problems, we walk them through how to think about it...") is a SEPARATE dedicated beat, on its own slide, attributed at the bottom, with NO primary hook stamped on it. It follows the same pure-type-over-low-opacity-image treatment, but it is not counted as one of the primary hook anchors and the two never share a slide.
 
 ---
 
@@ -52,7 +52,7 @@ The signature quote (e.g. "Instead of solving problems, we walk them through how
 | The hook line appears twice on the same slide | AUTO-FAIL that slide |
 | The hook line is reworded or extended from the canonical refrain | AUTO-FAIL that slide (verbatim refrain only) |
 | A second idea, body paragraph, or chart appears on a PURE_TYPE_HOOK slide | FAIL that slide (one big idea) |
-| The signature quote shares a slide with the control-vs-clarity hook | AUTO-FAIL both (two beats conflated) |
+| The signature quote shares a slide with the primary hook | AUTO-FAIL both (two beats conflated) |
 | The deck has zero dedicated pure-typography hook slides | AUTO-FAIL (deck-level): the hook has no home |
 | The hook line is misspelled in the rendered image (e.g. "hclarity") | AUTO-FAIL (also caught by the text-render auto-fail) |
 
@@ -60,15 +60,15 @@ The Slide Image Creator marks each PURE_TYPE_HOOK prompt with the treatment tag 
 
 ---
 
-## 4. PASS vs FAIL Examples (from the actual Corey defects)
+## 4. PASS vs FAIL Examples (from the forensic defects)
 
-**FAIL (Corey):** the hook "There is a difference between parenting through control and parenting through clarity" was footer-stamped on about 40 of 45 slides, printed twice on slides 10/12/14/22/28/44, printed three times on slide 4 (headline, body, footer), extended on slide 28, and misspelled "parenting through hclarity" on slide 23. There was no clean dedicated hook slide. Verdict: deck-level AUTO-FAIL plus per-slide AUTO-FAILs.
+**FAIL (the forensic reference deck):** the example signature hook was footer-stamped on about 40 of 45 slides, printed twice on slides 10/12/14/22/28/44, printed three times on slide 4 (headline, body, footer), extended on slide 28, and misspelled on slide 23. There was no clean dedicated hook slide. Verdict: deck-level AUTO-FAIL plus per-slide AUTO-FAILs.
 
-**FAIL (Corey slide 18):** the signature quote "We Walk Them Through How To Think About It" was correctly isolated, but the control-vs-clarity hook footer was stamped on top of it, conflating two distinct hooks. Verdict: AUTO-FAIL (two beats conflated).
+**FAIL (forensic-deck slide 18):** the signature quote was correctly isolated, but the primary hook footer was stamped on top of it, conflating two distinct hooks. Verdict: AUTO-FAIL (two beats conflated).
 
-**PASS (the fix):** about four dedicated hook slides, each the hook line set large over a low-opacity parent-and-child image, "control" and "clarity" in the accent, the logo bottom-right, nothing else. The signature quote is its own separate slide with the attribution at the bottom and no control-vs-clarity hook on it. The hook appears nowhere else on the deck. Verdict: PASS.
+**PASS (the fix):** about four dedicated hook slides, each the hook line set large over a low-opacity thematic image, with one or two emphasis words in the accent, the logo bottom-right, nothing else. The signature quote is its own separate slide with the attribution at the bottom and no primary hook on it. The hook appears nowhere else on the deck. Verdict: PASS.
 
-**PASS (Lyric proof):** the hook ("30 seats, 30 days, zero ad spend") recurs as its own beat across the deck, never as a footer stamped on every slide; pivotal hook slides are pure typography with the image at low opacity and the text doing the heavy lifting. Verdict: PASS.
+**PASS (the gold-standard reference deck):** the example signature hook recurs as its own beat across the deck, never as a footer stamped on every slide; pivotal hook slides are pure typography with the image at low opacity and the text doing the heavy lifting. Verdict: PASS.
 
 ---
 
@@ -85,5 +85,5 @@ The Slide Image Creator marks each PURE_TYPE_HOOK prompt with the treatment tag 
 ## 6. Research Base
 
 - The transcript "song" doctrine: the hook is sung at natural anchors, on its own slide, never stamped on every slide.
-- The Lyric proof: pivotal/hook slides are pure typography with a low-opacity image; the text does the heavy lifting; the hook recurs as its own beat.
+- The gold-standard proof: pivotal/hook slides are pure typography with a low-opacity image; the text does the heavy lifting; the hook recurs as its own beat.
 - Master SOP Section 7.2 A4 (type-dominant punch: type IS the slide) and 7.5 (the exemplar's per-line type discipline).

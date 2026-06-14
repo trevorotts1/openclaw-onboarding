@@ -12,7 +12,7 @@
 
 Concern 20 (verbatim): "Kie.ai text-to-image vs image-to-image vs image-to-text/JSON use DIFFERENT curl / JSON / HTTP-POST structures. Logo-on-every-slide = image-to-image. The SOP must teach the correct call per mode."
 
-The Corey forensic (Dimension F) proved the consequence of guessing the mode: the logomark mutated into at least four different marks across the deck (ringed leaf, bare leaf, EG monogram, mountain peak) because the slides were generated text-to-image per slide instead of composited image-to-image with one locked logo asset passed as a reference. An agent that does not know the exact call structure for each mode WILL default to text-to-image and WILL reinvent the logo.
+The forensic reference deck (Dimension F) proved the consequence of guessing the mode: the logomark mutated into at least four different marks across the deck (ringed leaf, bare leaf, a generic monogram, mountain peak) because the slides were generated text-to-image per slide instead of composited image-to-image with one locked logo asset passed as a reference. An agent that does not know the exact call structure for each mode WILL default to text-to-image and WILL reinvent the logo.
 
 This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) still pins `gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`. This SOP makes the choice between them, and the body for each, mechanical.
 
@@ -92,7 +92,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 
 **Rules for Mode A:**
 - There is NO `input_urls` field. Adding one to a T2I body is malformed - the reference would be ignored, and the agent would falsely believe the logo was composited. If `input_urls` is needed, the call is Mode B, not Mode A.
-- Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the Corey logo-mutation defect). That is exactly why a deck with a logo never uses Mode A.
+- Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the logo-mutation defect). That is exactly why a deck with a logo never uses Mode A.
 
 ---
 
@@ -179,9 +179,9 @@ The Slide Submitter (at submit time) and the QC Specialist (at image QC) enforce
 | 6 | **Reachable refs.** Every `input_urls` entry is a public https URL that returns 200 and <=30 MB. | All reachable | Any 404 / auth-required / >30 MB / non-https / local-path ref |
 | 7 | **No analysis-as-Kie-call.** No `createTask` body whose intent is "read/extract/analyze." | Analysis done by agent read | An "image-to-text"/"extract JSON" job POSTed to Kie |
 | 8 | **resultUrls parse.** Download reads `JSON.parse(data.resultJson).resultUrls[0]`, not `data.url`. | Correct field | Reads `.url` (the old-runbook bug) |
-| 9 | **Logo identity (image QC).** The rendered logo on the slide is the SAME mark as the locked `LOGO_URL` asset (shape, color, lockup), on every slide. | Identical mark | A different mark than the locked asset on any slide (the Corey logo-mutation defect) - see SOP-IMG-04 lock |
+| 9 | **Logo identity (image QC).** The rendered logo on the slide is the SAME mark as the locked `LOGO_URL` asset (shape, color, lockup), on every slide. | Identical mark | A different mark than the locked asset on any slide (the logo-mutation defect) - see SOP-IMG-04 lock |
 
-Check 9 is the closing of the Corey logo-mutation loop: passing the logo via I2I (checks 1-3) is the WRITE-time guard; the rendered-logo-matches-locked-asset comparison is the READ-time guard. Both are required. A deck that passes checks 1-8 but renders a mutated logo still fails check 9.
+Check 9 is the closing of the logo-mutation loop: passing the logo via I2I (checks 1-3) is the WRITE-time guard; the rendered-logo-matches-locked-asset comparison is the READ-time guard. Both are required. A deck that passes checks 1-8 but renders a mutated logo still fails check 9.
 
 ---
 
@@ -197,15 +197,15 @@ Check 9 is the closing of the Corey logo-mutation loop: passing the logo via I2I
 
 ---
 
-## 9. PASS vs FAIL EXAMPLES (drawn from the actual Corey defects)
+## 9. PASS vs FAIL EXAMPLES (drawn from the actual forensic reference deck defects)
 
-**FAIL (the real Corey defect):** A content slide with a logo on file was submitted with body `{"model":"gpt-image-2-text-to-image","input":{"prompt":"...with the Explore Growth ringed-leaf logo in the lower right..."}}`. No `input_urls`. Result: the model invented a logo, and across the deck it drew a ringed leaf on one slide, a bare leaf on another, an "EG" monogram on a third, a mountain peak on a fourth. Fails check 1 (T2I on a logo slide) and check 9 (logo not identical to a locked asset).
+**FAIL (the forensic reference deck defect):** A content slide with a logo on file was submitted with body `{"model":"gpt-image-2-text-to-image","input":{"prompt":"...with a brand ringed-leaf logo described in words in the lower right..."}}`. No `input_urls`. Result: the model invented a logo, and across the deck it drew a ringed leaf on one slide, a bare leaf on another, a generic monogram on a third, a mountain peak on a fourth. Fails check 1 (T2I on a logo slide) and check 9 (logo not identical to a locked asset).
 
-**PASS:** The same slide submitted as `{"model":"gpt-image-2-image-to-image","input":{"prompt":"... The first reference image is the company logo: place it on a white chip in the lower-right corner at ~9% slide width, do not redraw, recolor, or restyle it. ...","input_urls":["https://media.../explore-growth-logo.png"],"aspect_ratio":"16:9","resolution":"2K"}}`. One locked logo asset, named as the first reference, with the "do not redraw" instruction. Passes checks 1-3; the rendered logo is the same mark on every slide (check 9).
+**PASS:** The same slide submitted as `{"model":"gpt-image-2-image-to-image","input":{"prompt":"... The first reference image is the company logo: place it on a white chip in the lower-right corner at ~9% slide width, do not redraw, recolor, or restyle it. ...","input_urls":["https://media.../brand-logo.png"],"aspect_ratio":"16:9","resolution":"2K"}}`. One locked logo asset, named as the first reference, with the "do not redraw" instruction. Passes checks 1-3; the rendered logo is the same mark on every slide (check 9).
 
 **FAIL:** An A5 founder slide submitted I2I with `input_urls:["<LOGO_URL>","<FOUNDER_URL>"]` but the prompt never said which reference was which. The model painted the logo's colors onto the founder's blazer. Fails check 2 (references not named in order).
 
-**FAIL:** A slide passed a frame from Lyric's analyzed reference deck as a style anchor but omitted the style-reference-only directive; the render copied a person from Lyric's slide verbatim. Fails check 4.
+**FAIL:** A slide passed a frame from the gold-standard analyzed reference deck as a style anchor but omitted the style-reference-only directive; the render copied a person from the reference slide verbatim. Fails check 4.
 
 **FAIL:** An agent reported "I ran the reference deck through Kie image-to-text to get the style families." There is no such endpoint; the analysis was never actually performed. Fails check 7.
 

@@ -11,7 +11,7 @@
 
 ## 1. PURPOSE
 
-A webinar slide carries ONE idea. The audience cannot read a slide and listen to the presenter at the same time; if the slide holds two ideas, they read instead of listen, and the presenter becomes furniture. This SOP exists because the Corey final deck shipped slides with three to five separate ideas stacked on one face (the footer hook silently added a second idea to roughly thirty of them), and the existing one-big-idea rule was a SCORED criterion that a two-idea slide could average its way past. Description failed. This SOP makes one-big-idea a hard, machine-checkable gate that a deck cannot pass.
+A webinar slide carries ONE idea. The audience cannot read a slide and listen to the presenter at the same time; if the slide holds two ideas, they read instead of listen, and the presenter becomes furniture. This SOP exists because the forensic reference deck shipped slides with three to five separate ideas stacked on one face (the footer hook silently added a second idea to roughly thirty of them), and the existing one-big-idea rule was a SCORED criterion that a two-idea slide could average its way past. Description failed. This SOP makes one-big-idea a hard, machine-checkable gate that a deck cannot pass.
 
 This is the rule above all other slide-craft rules. When any other rule conflicts with it, this rule wins and the content is split across more slides.
 
@@ -45,34 +45,34 @@ The QC Specialist runs these mechanical checks on slides_copy.md (Phase 1Q) and 
 | OBI-3: Two or more core ideas in one entry | The QC agent identifies the count of distinct claims/contrasts/concepts. A diagnosis-and-method, a gap-and-reframe, a value-trio-on-one-slide, or two unrelated assertions = fail. | "AF-OBI (OBI-3): slide N contains [N] core ideas: [idea A]; [idea B]. Per SOP-SLIDE-01 this is [N] separate slides. Split as: [proposed split]." |
 | OBI-4: A value trio on a single slide | Detect three parallel named values (alliterated trio) co-present in HEADLINE/SUB-COPY/SUPPORTING. | "AF-OBI (OBI-4): slide N lists a full value trio ([the three values]) on one slide. Per SOP-SLIDE-01 each value is its own slide plus a formula slide. Build 4 slides." |
 | OBI-5: A bulleted list of pains | Detect 2 or more distinct pain statements as list items on one slide. | "AF-OBI (OBI-5): slide N lists [N] pains as bullets. Per master rule 9 each pain is its own slide with its own emotional image. Build [N] slides." |
-| OBI-6: A comparison table with more than 2 rows of contrast | Count contrast rows rendered on the slide (the Corey deck shipped an 8-row control-vs-clarity table). More than 2 rows = the slide is teaching a whole framework, not one contrast. | "AF-OBI (OBI-6): slide N renders a [N]-row comparison table. Reduce to the single sharpest contrast (one row, two sides) or move the full table to the Presenter's Guide." |
+| OBI-6: A comparison table with more than 2 rows of contrast | Count contrast rows rendered on the slide (the forensic reference deck shipped an 8-row control-vs-clarity table). More than 2 rows = the slide is teaching a whole framework, not one contrast. | "AF-OBI (OBI-6): slide N renders a [N]-row comparison table. Reduce to the single sharpest contrast (one row, two sides) or move the full table to the Presenter's Guide." |
 
-**Render-time addition (Phase 5/6):** the rendered image is inspected for any text block beyond the three approved copy blocks. A step list, a credential paragraph, a "Step 1 / Step 2 / Step 3" cue, or any body text not present in slides_copy.md that appears on the rendered face fails AF-OBI at the image gate (this is where the Corey slide-5 stacked image cards leaked in: the copy was clean-ish but the image creator invented extra text blocks). Cross-reference: SOP-SLIDE-02 OBI overlaps with the audience-facing ban on invented captions.
+**Render-time addition (Phase 5/6):** the rendered image is inspected for any text block beyond the three approved copy blocks. A step list, a credential paragraph, a "Step 1 / Step 2 / Step 3" cue, or any body text not present in slides_copy.md that appears on the rendered face fails AF-OBI at the image gate (this is where the forensic-deck slide 5 stacked image cards leaked in: the copy was clean-ish but the image creator invented extra text blocks). Cross-reference: SOP-SLIDE-02 OBI overlaps with the audience-facing ban on invented captions.
 
 ---
 
-## 4. PASS vs FAIL EXAMPLES (drawn from the actual Corey defects)
+## 4. PASS vs FAIL EXAMPLES (drawn from the forensic reference deck defects)
 
-**FAIL (Corey slide 8, the canonical two-idea slide Trevor named by name):**
+**FAIL (forensic-deck slide 8, the canonical two-idea slide the reviewer named by name):**
 > "Doing The Right Things, The Wrong Way" (the gap) AND "What if the problem is not effort, but approach?" (the reframe), on one slide, plus a hook footer, plus an "An intrigue gap, on purpose" meta line.
 Why it fails: OBI-3 (two core ideas: a gap and its reframe), OBI-1 (four-plus text blocks). This is two slides.
 
 **PASS (the split):**
 > Slide A, HEADLINE: "Doing the right things. The wrong way." (the gap, 6 words). Slide B, HEADLINE: "What if it is not effort, but approach?" (the reframe, 8 words). Each is one idea, one text block, under 9 words, no footer.
 
-**FAIL (Corey slide 5):**
+**FAIL (forensic-deck slide 5):**
 > Three headline ideas stacked ("Why It Happens. The Framework. Confident Guide."), three full step descriptions baked into image cards, a hook footer, and a redundant "Step 1 / Step 2 / Step 3" cue. At least five text blocks, three big ideas.
 Why it fails: OBI-3 (three core ideas), OBI-1 (five-plus text blocks).
 
 **PASS (the split):** a why-it-happens slide, a framework slide, and an outcome beat; the step descriptions move to the Presenter's Guide; no footer.
 
-**FAIL (Corey slide 26):**
+**FAIL (forensic-deck slide 26):**
 > All three Cs (Confident, Consistent, Clear) on one slide PLUS a separate CLARIFY/COMMUNICATE/COACH card grid PLUS a hook footer.
 Why it fails: OBI-4 (full value trio on one slide), OBI-1, OBI-3.
 
 **PASS (the split):** a Confident slide, a Consistent slide, a Clear slide, then a formula slide ("Confident + Consistent + Clear = an Effective Guide"). Four slides.
 
-**FAIL (Corey slide 28):**
+**FAIL (forensic-deck slide 28):**
 > An 8-row comparison table (4 CONTROL traits vs 4 CLARITY traits) plus a headline plus a body paragraph plus the hook footer printed twice.
 Why it fails: OBI-6 (8-row table), OBI-1.
 

@@ -83,9 +83,9 @@ The DIU's style cards carry an optional `{LOGO_NOTE}` text variable (MASTER-SOP 
 
 ---
 
-## 6. PASS vs FAIL EXAMPLES (drawn from the Corey defects + the recall vision)
+## 6. PASS vs FAIL EXAMPLES (drawn from the forensic reference deck defects + the recall vision)
 
-**FAIL (logo mutation, DIU side):** A client's saved "Bold Executive" style includes their logo, described only in `{LOGO_NOTE}` text. Each DIU-generated brand image redrew the logo differently - the same class of defect as Corey's deck-wide logo mutation, now on brand imagery. Fails check 5.
+**FAIL (logo mutation, DIU side):** A client's saved "Bold Executive" style includes their logo, described only in `{LOGO_NOTE}` text. Each DIU-generated brand image redrew the logo differently - the same class of defect as the forensic reference deck's deck-wide logo mutation, now on brand imagery. Fails check 5.
 
 **PASS (recall + composited logo):** Client says "make my new pitch deck, use Style 1." `STYLE_SOURCE = saved_style`, `STYLE_ID = Style 1`. Style Analyst matches the `Style 1` alias in NAMED-STYLES.md -> `PPT-002-C@v1.0`, production. Brand Steward folds the Foundation Prompt Block into the STYLE BLOCK, pins the version. Generation passes the client's locked `LOGO_URL` as the first reference with "place, do not redraw" - the same logo mark renders on every slide. Passes checks 1-7.
 

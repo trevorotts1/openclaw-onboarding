@@ -4,26 +4,26 @@
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4 Slide Math, Section 4.2 the proven flow, Section 5.5 the price sequence)
 **Owning role at write time:** Director of Presentations (arc_allocation.json minimum-count enforcement)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-DENSITY, below)
-**Gold-standard numbers:** Lyric 75-slide deck (lyric-principles.md): ladder at s24/35/51/65/73, gaps 11/16/14/8, Wall of Wins 5 slides before offer, re-pitch s74-75.
-**Status:** Reference SOP, RECONCILED with the live gate. The density/pacing protection is ALREADY WIRED in qc-specialist-presentations.md as auto-fail AF-C7 (the gradual-drop choreography, four sub-conditions: SPREAD / EARNED+BUILT-UP / ADDS-value / FINAL-below-ladder) plus copy QC criteria c17 (ladder integrity), c19 (Wall-of-Wins framing), c23 (re-pitch presence), and c24 (close density and Wall spacing), backed by the Offer Price Strategist SOP 9.1/9.2/9.9 gates. The draft codes AF-DEN-1..8 map onto AF-C7 + c17 + c19 + c23 + c24. IMPORTANT reconciliation: this SOP proposes an absolute "8-slide minimum gap"; the LIVE AF-C7 enforces "no 2 drops within 2 slides" plus the percentage placement (~47/68/87%). The 8-slide figure is the Lyric DOCTRINAL TARGET (gaps 11/16/14/8); the 2-slide minimum is the hard auto-fail floor. See sops/SOP-PITCH-01-SLOW-DROP-PROCESS.md Section 2 rule 2 for the authoritative reconciliation. Do NOT add a contradictory hard 8-slide auto-fail without the Director adjusting AF-C7. Do NOT add a parallel AF-DEN namespace.
+**Gold-standard numbers:** the gold-standard reference deck (the gold-standard principles reference): ladder at s24/35/51/65/73, gaps 11/16/14/8, Wall of Wins 5 slides before offer, re-pitch s74-75.
+**Status:** Reference SOP, RECONCILED with the live gate. The density/pacing protection is ALREADY WIRED in qc-specialist-presentations.md as auto-fail AF-C7 (the gradual-drop choreography, four sub-conditions: SPREAD / EARNED+BUILT-UP / ADDS-value / FINAL-below-ladder) plus copy QC criteria c17 (ladder integrity), c19 (Wall-of-Wins framing), c23 (re-pitch presence), and c24 (close density and Wall spacing), backed by the Offer Price Strategist SOP 9.1/9.2/9.9 gates. The draft codes AF-DEN-1..8 map onto AF-C7 + c17 + c19 + c23 + c24. IMPORTANT reconciliation: this SOP proposes an absolute "8-slide minimum gap"; the LIVE AF-C7 enforces "no 2 drops within 2 slides" plus the percentage placement (~47/68/87%). The 8-slide figure is the gold-standard DOCTRINAL TARGET (gaps 11/16/14/8); the 2-slide minimum is the hard auto-fail floor. See sops/SOP-PITCH-01-SLOW-DROP-PROCESS.md Section 2 rule 2 for the authoritative reconciliation. Do NOT add a contradictory hard 8-slide auto-fail without the Director adjusting AF-C7. Do NOT add a parallel AF-DEN namespace.
 
 ---
 
 ## 1. PURPOSE
 
-A slow drop is a reward for staying, earned across minutes of narrative. The Corey deck crammed the entire offer into the back third: the price beats landed 2 and 3 slides apart ($5,000 to $2,500 to $1,200 with no value stack, no promises, no re-pitch), and the Wall of Wins sat 3 slides before the offer. Lyric's gold standard spreads the ladder across the back two-thirds with gaps of 11, 16, 14, and 8 slides, a build-up before every drop, and the Wall of Wins exactly 5 slides before the offer. The reason Corey's compressed: the offer-price-strategist built the ladder by PERCENTAGE of slide count with no absolute minimum-gap floor, so when the arc allocated the offer to a narrow window, the percentages produced a cliff. This SOP adds hard minimum counts and a hard minimum-gap floor, computed against the FULL deck, so density and pacing are checkable, not vibes.
+A slow drop is a reward for staying, earned across minutes of narrative. The forensic reference deck crammed the entire offer into the back third: the price beats landed 2 and 3 slides apart ($5,000 to $2,500 to $1,200 with no value stack, no promises, no re-pitch), and the Wall of Wins sat 3 slides before the offer. The gold-standard reference deck spreads the ladder across the back two-thirds with gaps of 11, 16, 14, and 8 slides, a build-up before every drop, and the Wall of Wins exactly 5 slides before the offer. The reason the forensic deck's compressed: the offer-price-strategist built the ladder by PERCENTAGE of slide count with no absolute minimum-gap floor, so when the arc allocated the offer to a narrow window, the percentages produced a cliff. This SOP adds hard minimum counts and a hard minimum-gap floor, computed against the FULL deck, so density and pacing are checkable, not vibes.
 
 ---
 
 ## 2. THE HARD RULE
 
-1. **Minimum gap between any two price beats: 8 slides.** Anchor to Drop 1, Drop 1 to Drop 2, Drop 2 to Drop 3, Drop 3 to Final, every adjacent pair, at least 8 slides apart. Computed against the FULL deck slide count, never against the offer window only. (Lyric: 11/16/14/8.)
-2. **The value anchor lands near the one-third mark**, not the back third. Target 30 to 40% depth. (Lyric: s24 = 32%.) The anchor is a value-plant ("remember this number"), not a drop.
-3. **A dedicated BUILDUP slide immediately precedes every DROP.** No price ever drops cold. (Lyric: s34, s50, s64, s72.)
-4. **A mandatory itemized value-stack slide precedes Drop 1**, and the stack total is proven to exceed the anchor before the cheapest prices appear. (Lyric: s57 stack, s58 "add it all up".)
+1. **Minimum gap between any two price beats: 8 slides.** Anchor to Drop 1, Drop 1 to Drop 2, Drop 2 to Drop 3, Drop 3 to Final, every adjacent pair, at least 8 slides apart. Computed against the FULL deck slide count, never against the offer window only. (gold-standard: 11/16/14/8.)
+2. **The value anchor lands near the one-third mark**, not the back third. Target 30 to 40% depth. (gold-standard: s24 = 32%.) The anchor is a value-plant ("remember this number"), not a drop.
+3. **A dedicated BUILDUP slide immediately precedes every DROP.** No price ever drops cold. (gold-standard: s34, s50, s64, s72.)
+4. **A mandatory itemized value-stack slide precedes Drop 1**, and the stack total is proven to exceed the anchor before the cheapest prices appear. (gold-standard: s57 stack, s58 "add it all up".)
 5. **A promises beat precedes the anchor.** Promises are planted before the first number (people buy promises, not products).
-6. **The Wall of Wins sits about 5 slides before the final offer** (4 to 6 acceptable), with a build-up run between, never jammed 2 slides against it. (Lyric: s68 -> s73.) See the Wall of Wins SOP in the offer cluster for its content rules; this SOP enforces only its SPACING.
-7. **A 4-to-7-slide re-pitch block follows the FINAL price** (recap the stack, restate the promises, reset the urgency), before the send-off. (Lyric: s74-75.) A deck that closes on a plain thank-you with no re-pitch fails.
+6. **The Wall of Wins sits about 5 slides before the final offer** (4 to 6 acceptable), with a build-up run between, never jammed 2 slides against it. (gold-standard: s68 -> s73.) See the Wall of Wins SOP in the offer cluster for its content rules; this SOP enforces only its SPACING.
+7. **A 4-to-7-slide re-pitch block follows the FINAL price** (recap the stack, restate the promises, reset the urgency), before the send-off. (gold-standard: s74-75.) A deck that closes on a plain thank-you with no re-pitch fails.
 8. **Minimum slide counts per section** (scaled to deck length; these are floors for a ~25-to-30-minute deck, roughly 60 to 80 slides):
    - Hook + open: >= 5
    - Authority / who-listens: >= 4
@@ -53,18 +53,18 @@ A slow drop is a reward for staying, earned across minutes of narrative. The Cor
 
 ---
 
-## 4. PASS vs FAIL EXAMPLES (drawn from the actual Corey defects)
+## 4. PASS vs FAIL EXAMPLES (drawn from the actual forensic reference deck defects)
 
-**FAIL (Corey ladder):** anchor s32, Drop 1 s34 (gap 2), Drop 2 s37 (gap 3), final s43 (gap 6) -> DEN-1 fails all three gaps; DEN-2 fails (anchor at 71% depth).
-**PASS (Lyric model):** anchor at ~one-third, then gaps of 11, 16, 14, 8 across the back two-thirds.
+**FAIL (the forensic-deck ladder):** anchor s32, Drop 1 s34 (gap 2), Drop 2 s37 (gap 3), final s43 (gap 6) -> DEN-1 fails all three gaps; DEN-2 fails (anchor at 71% depth).
+**PASS (the gold-standard reference deck):** anchor at ~one-third, then gaps of 11, 16, 14, 8 across the back two-thirds.
 
-**FAIL (Corey):** no itemized value stack (slide 39 only re-asserts $5,000 without summing components) -> DEN-4. No promises slide before the anchor -> DEN-5. No re-pitch after the final price (closes on a moment slide + thank-you) -> DEN-7.
+**FAIL (the forensic reference deck):** no itemized value stack (slide 39 only re-asserts $5,000 without summing components) -> DEN-4. No promises slide before the anchor -> DEN-5. No re-pitch after the final price (closes on a moment slide + thank-you) -> DEN-7.
 **PASS:** a promises slide before the anchor; an itemized stack summed past the anchor before Drop 1; a 4-to-7-slide re-pitch after the final price.
 
-**FAIL (Corey):** Wall of Wins (s40) 3 slides before the offer (s43) -> DEN-6.
+**FAIL (the forensic reference deck):** Wall of Wins (s40) 3 slides before the offer (s43) -> DEN-6.
 **PASS:** Wall of Wins ~5 slides before the offer with a build-up run between.
 
-**FAIL (Corey overall):** deck too thin to space the beats (Trevor: "needs roughly 8-10 MORE slides") -> DEN-8 across teaching and offer sections.
+**FAIL (the forensic reference deck, overall):** deck too thin to space the beats (the reviewer: "needs roughly 8-10 MORE slides") -> DEN-8 across teaching and offer sections.
 **PASS:** sections meet their floors; the ladder gaps are satisfiable because the deck is long enough.
 
 ---

@@ -1,17 +1,17 @@
 # SOP: Logo Consistency (One Locked Mark, Image-to-Image)
 
-**Cluster:** Design System (Corey overhaul)
+**Cluster:** Design System
 **Owner roles:** Brand Steward (locks the single logo asset, pins it in the STYLE BLOCK) + Slide Image Creator (composites it image-to-image on every slide). Enforced by: QC Specialist (Phase 5 image QC, Phase 6 final deck QC).
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 7.2 logo chip device, 7.3 element 10, Appendix A Kie.ai image-to-image)
 **Version:** 1.0
 
-> ONE locked logo mark, used identically on every slide it appears on. Corey's logomark MUTATED across the deck into at least four-plus different marks (ringed leaf, bare leaf, EG serif monogram, mountain peak, founders-tagline lockup; in V8 a roundel, a sprout, a tall tree, a mountain mark, an EG monogram) because it was generated text-to-image per slide. This SOP forces the image-to-image path with one canonical asset at a fixed size and position, and auto-fails any drift or misspelled render.
+> ONE locked logo mark, used identically on every slide it appears on. The forensic reference deck's logomark MUTATED across the deck into at least four-plus different marks (ringed leaf, bare leaf, a serif monogram, mountain peak, founders-tagline lockup; in V8 a roundel, a sprout, a tall tree, a mountain mark, a generic monogram) because it was generated text-to-image per slide. This SOP forces the image-to-image path with one canonical asset at a fixed size and position, and auto-fails any drift or misspelled render.
 
 ---
 
 ## 1. Purpose
 
-Guarantee that when a logo asset exists, the SAME mark appears at the SAME size in the SAME position on every slide. The root cause of Corey's mutation was that the mark was re-drawn (text-to-image) on each slide, so the model reinvented it, and the existing logo auto-fail only checked for absent or distorted, not "a different mark than the locked asset." This SOP closes both gaps: it mandates the image-to-image composite path and it makes logo DRIFT an auto-fail.
+Guarantee that when a logo asset exists, the SAME mark appears at the SAME size in the SAME position on every slide. The root cause of the forensic reference deck's mutation was that the mark was re-drawn (text-to-image) on each slide, so the model reinvented it, and the existing logo auto-fail only checked for absent or distorted, not "a different mark than the locked asset." This SOP closes both gaps: it mandates the image-to-image composite path and it makes logo DRIFT an auto-fail.
 
 ---
 
@@ -39,13 +39,13 @@ Guarantee that when a logo asset exists, the SAME mark appears at the SAME size 
 
 ---
 
-## 4. PASS vs FAIL Examples (from the actual Corey defects)
+## 4. PASS vs FAIL Examples (from the actual forensic reference deck defects)
 
-**FAIL (Corey, original deck):** the logomark mutated across the deck into at least four marks (ringed leaf, bare leaf, EG serif monogram, mountain peak, founders-tagline lockup, seen across slides 9, 10, 19, 21, 28, 36 and others), proving it was generated text-to-image per slide. Verdict: deck-level AUTO-FAIL (logo not locked, drifting).
+**FAIL (the forensic reference deck, original deck):** the logomark mutated across the deck into at least four marks (ringed leaf, bare leaf, a serif monogram, mountain peak, founders-tagline lockup, seen across slides 9, 10, 19, 21, 28, 36 and others), proving it was generated text-to-image per slide. Verdict: deck-level AUTO-FAIL (logo not locked, drifting).
 
-**FAIL (Corey V8 regression):** the logo still mutated into a roundel, a sprout, a tall tree, a mountain mark, an EG monogram, and varying lockups across s02, s07, s22, s24, s28, s32, s40, s58. Also a logo-text render bug: "IDEHNOTTY DEVELOPMENT" on s16 (garbled brand name). Verdict: deck-level AUTO-FAIL plus per-slide AUTO-FAIL on s16 (logo text garbled).
+**FAIL (the forensic-deck V8 regression):** the logo still mutated into a roundel, a sprout, a tall tree, a mountain mark, a generic monogram, and varying lockups across s02, s07, s22, s24, s28, s32, s40, s58. Also a logo-text render bug: "IDEHNOTTY DEVELOPMENT" on s16 (garbled brand name). Verdict: deck-level AUTO-FAIL plus per-slide AUTO-FAIL on s16 (logo text garbled).
 
-**PASS (Lyric proof):** ONE logo ("7 Figure Childcare CEO"), bottom-right, ~9% width, on a white chip with a 1px gold border, "never recolored, never distorted, never clipped," identical on every slide via the image-to-image composite path, with hero placement (bottom-center ~10 to 11%) reserved only for the pivotal moments (s50, s64) and the close. Verdict: PASS.
+**PASS (the gold-standard reference deck):** ONE logo ("7 Figure Childcare CEO"), bottom-right, ~9% width, on a white chip with a 1px gold border, "never recolored, never distorted, never clipped," identical on every slide via the image-to-image composite path, with hero placement (bottom-center ~10 to 11%) reserved only for the pivotal moments (s50, s64) and the close. Verdict: PASS.
 
 **PASS (single slide):** the prompt declares "the first reference image is the logo; composite it bottom-right at 9% width on a white chip with a 1px gold border, do not redraw it," `LOGO_URL` is in `input.input_urls`, and the rendered slide shows the exact locked mark. Verdict: PASS.
 
@@ -61,7 +61,7 @@ Guarantee that when a logo asset exists, the SAME mark appears at the SAME size 
 
 ---
 
-## 6. The Lyric Design Proof (the full design system this cluster encodes)
+## 6. The Gold-Standard Design Proof (the full design system this cluster encodes)
 
 This is the gold-standard design system the whole design-system cluster ports to every client. It is recorded here as the single reference so the Typography Architect, Brand Steward, and Slide Image Creator share one source.
 
@@ -76,6 +76,6 @@ This is the gold-standard design system the whole design-system cluster ports to
 
 ## 7. Research Base
 
-- The Lyric gold-standard design proof (the locked logo spec, the image-to-image composite path, the bottom-right ~9% placement).
+- The gold-standard design proof (the locked logo spec, the image-to-image composite path, the bottom-right ~9% placement).
 - Master SOP Section 7.2 (logo chip device), 7.3 element 10 (logo placement + contrast plate), Appendix A (the Kie.ai gpt-image-2-image-to-image path and `input.input_urls` reference-image mechanics).
-- The Corey forensic Dimension F (logo mutation root-caused to text-to-image-per-slide generation; this SOP forces image-to-image and adds the drift auto-fail).
+- The forensic Dimension F (logo mutation root-caused to text-to-image-per-slide generation; this SOP forces image-to-image and adds the drift auto-fail).
