@@ -69,6 +69,20 @@ OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the 
 AGENT_NAME=$(state_get '.agentName'); [[ -z "$AGENT_NAME" ]] && AGENT_NAME="the CEO Agent"
 INDUSTRY=$(state_get '.industry'); [[ -z "$INDUSTRY" ]] && INDUSTRY="modern business"
 INFOGRAPHIC1_URL=$(state_get '.infographic1Url')
+# Read client logo URL from branding-questions.json capture (PRD step 4 -- logo fix)
+LOGO_URL=$(state_get '.logoUrl // .logo_url')
+[[ "$LOGO_URL" == "null" ]] && LOGO_URL=""
+if [[ -z "$LOGO_URL" ]]; then
+  # Fallback: search branding-questions.json in the workspace
+  _branding_file=""
+  for _bf in "$OC_ROOT/workspace/branding-questions.json" "$OC_ROOT/workspace/.branding-questions.json"; do
+    [[ -f "$_bf" ]] && _branding_file="$_bf" && break
+  done
+  if [[ -n "$_branding_file" ]]; then
+    LOGO_URL=$(jq -r '.logo_url // .logoUrl // .logo // empty' "$_branding_file" 2>/dev/null || true)
+    [[ "$LOGO_URL" == "null" ]] && LOGO_URL=""
+  fi
+fi
 
 if [[ ! -f "$TEMPLATE" ]]; then
   log "ERROR" "video prompt template missing: $TEMPLATE"
@@ -88,12 +102,13 @@ DURATION_INPUT="${ZHC_VIDEO_DURATION:-}"
 case "$MODEL" in
   gemini-omni-video)
     # Gemini Omni Video accepts 4-8 (passed as a string per docs).
+    # PRD step 4: default changed from 4 to 8 to meet the 8s floor requirement.
     case "$DURATION_INPUT" in
       4|5|6|7|8) DURATION="$DURATION_INPUT" ;;
-      "")        DURATION="4" ;;
+      "")        DURATION="8" ;;
       *)
-        log "WARN" "ZHC_VIDEO_DURATION='$DURATION_INPUT' is out of Gemini Omni range (4-8); falling back to 4"
-        DURATION="4"
+        log "WARN" "ZHC_VIDEO_DURATION='$DURATION_INPUT' is out of Gemini Omni range (4-8); falling back to 8"
+        DURATION="8"
         ;;
     esac
     ;;
@@ -132,20 +147,30 @@ submit_gemini_omni() {
   # KIE gemini-omni-video requires duration as a STRING ("8"), not an integer - returns error otherwise (Teresa launch 2026-05-27).
   # We use jq --arg (NOT --argjson) for duration so it is always emitted as a
   # quoted JSON string. aspect_ratio stays "16:9" (validated above).
+  # PRD step 4: audio flag added to primary Gemini Omni body (was absent before,
+  # only the Veo fallback had generate_audio). Logo URL composited when available.
   local input_obj
+  # Build image_urls array: infographic first, then logo if available
+  local img_urls_arr="[]"
   if [[ -n "$INFOGRAPHIC1_URL" && "$INFOGRAPHIC1_URL" != "null" && "$INFOGRAPHIC1_URL" != file://* ]]; then
+    img_urls_arr=$(jq -n --arg img "$INFOGRAPHIC1_URL" '[$img]')
+  fi
+  if [[ -n "$LOGO_URL" && "$LOGO_URL" != "null" && "$LOGO_URL" != file://* ]]; then
+    img_urls_arr=$(echo "$img_urls_arr" | jq --arg logo "$LOGO_URL" '. + [$logo]')
+  fi
+  if [[ $(echo "$img_urls_arr" | jq 'length') -gt 0 ]]; then
     input_obj=$(jq -n \
       --arg prompt "$PROMPT" \
-      --arg img "$INFOGRAPHIC1_URL" \
+      --argjson imgs "$img_urls_arr" \
       --arg dur "$DURATION" \
       --arg aspect "$aspect" \
-      '{prompt: $prompt, image_urls: [$img], duration: $dur, aspect_ratio: $aspect}')
+      '{prompt: $prompt, image_urls: $imgs, duration: $dur, aspect_ratio: $aspect, generate_audio: true}')
   else
     input_obj=$(jq -n \
       --arg prompt "$PROMPT" \
       --arg dur "$DURATION" \
       --arg aspect "$aspect" \
-      '{prompt: $prompt, duration: $dur, aspect_ratio: $aspect}')
+      '{prompt: $prompt, duration: $dur, aspect_ratio: $aspect, generate_audio: true}')
   fi
   local body
   body=$(jq -n \
