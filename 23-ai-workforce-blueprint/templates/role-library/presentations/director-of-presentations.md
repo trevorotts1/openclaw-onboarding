@@ -272,7 +272,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    The offer section (rows 14 to 17) is never compressed below 10 slides on a 45+ slide deck. If `VIP_TIER` exists, it takes 1 to 2 slides inside row 14 (presented AFTER the core final price).
 
-4. Apply the master SOP Section 4.2 proven flow. The proven deck runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). This is the narrative the allocation table serves:
+3a. **Walk the canonical arc (master SOP Section 4.2A, THE BLACKCEO SIGNATURE WEBINAR ARC).** The allocation table sizes the deck; the canonical arc is the named slide-by-slide JOURNEY you allocate INTO. It runs ten named sections in the operator's revealed order: A. Hook Open -> B. Care / See-Yourself -> C. The Promise -> D. Story -> E. Teaching (one big idea per slide, each carrying the hook and a light pitch) -> F. Proof: Who Says So + Wall of Wins -> G. The Offer (gradual spread ladder, value added at every drop) -> H. Guarantee -> I. Scarcity / Close -> J. Hook Callback. Each arc section maps to its components (the doctrine 4.3 plus the ten required components 4.4), the typography-and-standalone-art standard, and a QC gate (the full mapping is the Section 4.2A table). The ten named sections collapse onto the seven proven sections below; record the arc-section label on each slot in arc_allocation.json so the Copywriter and QC can trace every slide to its beat. Carry forward the connective-tissue rules (hook cadence ~10x from the first verse and woven the whole way through; proof woven between the drops; value ADDED at every drop; the light pitch distributed not back-loaded; a slide earns the next slide; section banner-in / emotional-punctuation-out; text-anchor variation; the slide is not the script; the designed emotional sequence that creates a Significant Emotional Experience; no em dashes; echo-then-build; enhance-don't-replace).
+
+4. Apply the master SOP Section 4.2 proven flow. The proven deck runs SEVEN sections with on-screen progress labels ("SECTION 3 OF 7"). This is the narrative the allocation table serves, and it is how the ten canonical arc sections (step 3a) collapse onto the slide-count math:
 
    | Section | Slides (of 75) | What it does | Signature moves |
    |---|---|---|---|
@@ -292,8 +294,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    5. Open loops plant early and close on screen with explicit callbacks.
    6. The deck talks TO one person in the client's voice, in second person, with the client's edge. TONE from intake governs every line.
 
-5. Write the arc_allocation.json to working/copy/arc_allocation.json.
-6. Verify: does the arc include at least 7 hook appearances? (Hook can appear as a refrain in any section.) If not, add hook-refrain slots to the Secrets and Urgency sections.
+5. Write the arc_allocation.json to working/copy/arc_allocation.json. Every slot carries its canonical arc-section label (A through J per Section 4.2A) alongside its proven-section label, so each slide is traceable to its beat for the Copywriter and QC.
+6. Verify against the canonical arc (Section 4.2A): the deck includes a Hook Open (A) inside the first 10 to 15%, a Care / See-Yourself beat (B) before any credentials, a dedicated A4 hook slide, hook refrains woven through every section toward the ~10x cadence (floor 7; the hook can refrain in any section, after proof, never more than 2 consecutive ladder/close slides without it), and a Hook Callback (J) reprise on the final substantive slide. If any is missing, add the slot before handing off (hook-refrain slots go at the section boundaries that lack one).
 
 **Outputs:**
 - mission_prd.json updated with slide_count_final

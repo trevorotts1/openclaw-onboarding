@@ -76,7 +76,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 1. Hand the owner-selected hook to the Copywriter variant system: build 7 to 10 variants of the hook. Each variant says the same thing reframed for the section it appears in. Variants may be shorter, punchier, or reframed, but each must still pass the three qualities and avoid every anti-pattern.
 
-2. Draw the placement map. First occurrence lands inside the first 10 to 15% of the deck (sing it early; nobody waits to the end of the song to sing Purple Rain). Include: a dedicated A4 hook slide (type-dominant); refrains placed AFTER proof slides (the proof just earned the hook); a reprise as the FINAL substantive slide of the deck.
+2. Draw the placement map. The refrain is sung approximately 10x, WOVEN slide to slide through every section, sung the WHOLE WAY THROUGH (not only at the start and the close). First occurrence lands inside the first 10 to 15% of the deck (sing it early; nobody waits to the end of the song to sing Purple Rain). Include: a dedicated A4 hook slide (type-dominant); refrains placed AFTER proof slides (the proof just earned the hook); a reprise as the FINAL substantive slide of the deck. No section without a refrain candidate.
 
 3. Distribution rule: no section without a refrain candidate, and never more than 2 consecutive ladder or close slides without the hook nearby. Record each placement as `{ "slide": N, "section": "...", "variant_used": "...", "after_proof": true|false }`.
 
