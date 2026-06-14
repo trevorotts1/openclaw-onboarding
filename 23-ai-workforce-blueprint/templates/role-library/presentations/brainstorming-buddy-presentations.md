@@ -36,7 +36,7 @@ are not optional questions and they are never assumed:
 - GROUNDED-CONTENT (the client's specific book / message / offer / methodology the
   imagery must depict -- never a generic substitute)
 - VISUAL_MIX (people-heavy / some-people / typography-led / mix)
-- DARK_OK (default: false; Lyric standard killed black backgrounds)
+- DARK_OK (default: false; the proven standard eliminated black backgrounds)
 - HOOK SEED (the strongest-promise line the client already says)
 
 **NO-PEOPLE RULE:** If REPRESENTATION_MIX is not captured and cannot be confirmed at
@@ -213,7 +213,7 @@ DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or
    Ask: "Default is a clean white base -- the standard that makes premium decks pop. Do
    you specifically want any dark-styled slides?"
    Capture as: `DARK_OK` (true / false). Default if owner does not answer: `false`.
-   Note: the Lyric gold standard eliminated all black backgrounds -- recommend false.
+   Note: the proven gold standard eliminated all black backgrounds -- recommend false.
 
    **Field 6 -- HOOK SEED (the strongest-promise line)**
    Ask: "Is there one line you already say all the time -- the phrase you want them

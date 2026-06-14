@@ -413,7 +413,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
    c. No slides are missing (total count matches slide_count_final in mission_prd.json).
    d. No images are stretched, cropped, or misaligned in the PPTX layout.
    e. Font embedding: if PPTX-native text is used, fonts are embedded (verify by opening in a clean environment without the brand fonts installed -- text should still display correctly).
-   f. Logo present on every slide (Lyric standard) when LOGO_ON_SLIDES = true.
+   f. Logo present on every slide when LOGO_ON_SLIDES = true.
 
 6. **Emit the delivery pass-artifact.** Write `working/qc/final_deck_qc.json` (this exact filename is the delivery interlock token; see SOP 9.6). Structure:
    ```json

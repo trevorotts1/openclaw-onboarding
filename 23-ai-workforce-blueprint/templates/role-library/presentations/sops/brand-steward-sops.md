@@ -185,7 +185,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.4 -- The TYPOGRAPHY LAW (font system + size scale + hierarchy + palette + zero-black-bg)
 
-**When to run:** Within SOP 9.1, as the typography portion of the STYLE BLOCK. The TYPOGRAPHY LAW is non-negotiable and travels into every prompt the Slide Image Creator writes. This codifies the gold-standard system extracted from the proven Lyric Hawkins "Enrollment On Autopilot" deck (75 slides, QC 9.42), where the entire type system is drawn INTO the image as designed typography (the deck shipped as full-bleed rendered PNGs with zero native PowerPoint text runs; the type lives in the prompt spec, not in a slide theme).
+**When to run:** Within SOP 9.1, as the typography portion of the STYLE BLOCK. The TYPOGRAPHY LAW is non-negotiable and travels into every prompt the Slide Image Creator writes. This codifies the gold-standard system where the entire type system is drawn INTO the image as designed typography (the deck ships as full-bleed rendered PNGs with zero native PowerPoint text runs; the type lives in the prompt spec, not in a slide theme).
 
 **Inputs:**
 - intake.json (brand_fonts, brand_colors, style_references)
@@ -206,20 +206,20 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - GIANT NUMBER: 110-150pt (Black) -- dollar figures, hero stats, the price-drop current price. Giant numbers run 1.5x to 3x the size of surrounding text and are the hero of the data zone.
    - Hero headline: 62-86pt (Black) -- the dominating 2-line headline, the first thing the eye reads.
    - Secondary headline: 42-62pt (Black / ExtraBold) -- data-zone headlines, sub-punch lines.
-   - Sub-headline: 24-32pt (ExtraBold) -- the raspberry/Secondary accent line under the headline.
+   - Sub-headline: 24-32pt (ExtraBold) -- the BRAND_SECONDARY accent line under the headline.
    - Body beat: 17-22pt (ExtraBold / Medium).
    - Tertiary / italic breathing line: 16-19pt (Medium italic).
    - Kicker label: ~13pt (Bold), gold all-caps, letter-spaced +0.12 to +0.15em.
    - Footnote: 11-13pt (Regular italic).
 
-3. **HIERARCHY STACK -- the canonical vertical rhythm.** Every text-bearing slide reads top to bottom in the same disciplined stack: gold caps kicker label -> thin gold breathing rule -> massive charcoal Black 2-line headline (dominates the zone, first thing the eye reads) -> raspberry/Secondary ExtraBold sub-headline -> a second thin gold rule (premium paired-rule framing around the core message) -> charcoal body beat -> italic tertiary breathing line -> logo chip bottom-right.
+3. **HIERARCHY STACK -- the canonical vertical rhythm.** Every text-bearing slide reads top to bottom in the same disciplined stack: accent caps kicker label -> thin accent breathing rule -> massive charcoal Black 2-line headline (dominates the zone, first thing the eye reads) -> BRAND_SECONDARY ExtraBold sub-headline -> a second thin accent rule (premium paired-rule framing around the core message) -> charcoal body beat -> italic tertiary breathing line -> logo chip bottom-right.
 
-4. **PALETTE -- five core colors plus a giant-number gold gradient.** Default gold-standard hexes (substitute the client's intake hexes onto the same roles):
+4. **PALETTE -- five core colors plus a giant-number gradient.** Derive from the client's intake hexes onto these roles (when intake supplies no brand colors, flag and use sensible defaults):
    - Charcoal #231F20 -- ALL headlines and body. NEVER pure black (#000000); the warm charcoal is softer and more premium.
-   - Raspberry-pink #C8104E -- sub-headlines, urgency, the "winner" price, punchlines, single-word emphasis.
-   - Metallic gold #C9A24B -- kicker labels, rules, dividers, logo-chip border, badges, column dividers, arrows. Gold is STRUCTURAL, not decorative.
+   - [BRAND_SECONDARY] -- sub-headlines, urgency, the "winner" price, punchlines, single-word emphasis. Assign the client's high-contrast action color.
+   - [BRAND_PRIMARY] -- kicker labels, rules, dividers, logo-chip border, badges, column dividers, arrows. This is STRUCTURAL, not decorative. Gold tones work well in this role.
    - White #FFFFFF and warm off-white #FBF7F4 -- the base layer (80%+ of the visual area).
-   - Giant-number "liquid gold" gradient: dark stop #B8860B (left) -> light stop #E6C66E (right); OR raspberry #C8104E with a subtle pink glow for the "winner" price.
+   - Giant-number gradient: derive from BRAND_PRIMARY; a two-stop gradient (dark left -> light right) OR BRAND_SECONDARY with a subtle glow for the "winner" price.
 
 5. **ZERO BLACK BACKGROUNDS -- the load-bearing hard rule.** No black backgrounds anywhere in any frame: not in corners, not behind text, not as a vignette. White or warm off-white base on every slide (unless DARK_OK=true). This is the single most repeated constraint in the proven spec and the defining break from the failure-mode decks. Headlines are charcoal #231F20, never #000000.
 

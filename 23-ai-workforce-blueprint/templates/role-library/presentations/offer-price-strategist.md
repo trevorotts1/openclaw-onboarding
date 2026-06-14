@@ -134,7 +134,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. Read FINAL_PRICE from intake.json. If no FINAL_PRICE is present, stop immediately and notify the Director. Do NOT invent a price.
 2. Set the ANCHOR. The ANCHOR is a VALUE anchor, not a price, and it is NOT a drop. It is a value plant placed mid-teach inside Secret #1 or #2 (around the 32% mark of the deck), establishing what a system like this is WORTH, and it carries the explicit memory hook in copy and presenter note: "Remember this number. Hold onto it. Keep watching." Rule: ANCHOR_VALUE must be >= 3x the FINAL real buy price and must sit above the highest value-ladder rung. If the client has stated an anchor in intake.json, use it IF it satisfies this rule. If the stated anchor is < 3x FINAL_PRICE, flag the discrepancy to the Director and propose a compliant anchor. Record the source: `anchor_source: "client_stated"` or `anchor_source: "strategist_proposed"`.
-3. Build the SPREAD VALUE LADDER. The proven structure (Lyric 75-slide deck) walks a VALUE ladder down -- $5,000 -> $2,500 -> $1,000 -> $500 -- spread across the deck, then SHATTERS it with the real price reveal. The rungs sit at approximately these percentages of the total deck slide count:
+3. Build the SPREAD VALUE LADDER. The proven structure walks a VALUE ladder down -- from ANCHOR_VALUE through DROP1/DROP2/DROP3 rungs -- spread across the deck, then SHATTERS it with the real price reveal. The rungs sit at approximately these percentages of the total deck slide count:
    - ANCHOR: ~32% mark (value plant with memory hook, mid-teach, NOT a drop)
    - DROP1: ~47% mark ("because you showed up live")
    - DROP2: ~68% mark ("because you believed")
@@ -205,8 +205,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    c. Runs a running total: "So far that's $X in value..."
    d. Builds to the TOTAL STACK VALUE.
    e. Frames: "You could pay [TOTAL_STACK_VALUE] for this... but today it's not [TOTAL_STACK_VALUE]."
-4a. COMPONENT-CARD + $-CHIP MODEL (FIX-5a). Every offer component gets its OWN slide built as a COMPONENT CARD: the component name as the headline, a one-line benefit, and its OWN $ VALUE CHIP. The $ chip is a consistent reusable template (same shape, same corner, same gold treatment, same placement on every component card) so the cards read as one family across the offer arc. Component cards are SPREAD across the offer section (not crammed into one stack slide), each carrying its named $ value (the Lyric model: $997 + $1,497 + $997 + $497 + $297 + $997 = $5,282 across slides 49-58, each on its own card, then callback-proved). Record each component card with `{ "component": "...", "value": 0, "chip": "$X", "own_slide": true }`. (The Slide Copywriter writes the card copy and the Slide Image Creator renders the chip per a consistent template; you specify the value, the chip text, and that each component owns a slide.)
-4b. TALLY slide (FIX-5a). After the component cards, one TALLY slide ("Here's Everything You're Getting") sums every component + its $ chip in one grid; the SUM must equal the ANCHOR value (proving the anchor plant, e.g. the six cards totalling $5,282 land on the ~$5,000 anchor). Assert: TALLY total == sum of component chips == anchor_value (within the stated rounding). Record `tally_slide: N` and `tally_total: 0` in offer_stack.json.
+4a. COMPONENT-CARD + $-CHIP MODEL (FIX-5a). Every offer component gets its OWN slide built as a COMPONENT CARD: the component name as the headline, a one-line benefit, and its OWN $ VALUE CHIP. The $ chip is a consistent reusable template (same shape, same corner, same gold treatment, same placement on every component card) so the cards read as one family across the offer arc. Component cards are SPREAD across the offer section (not crammed into one stack slide), each carrying its named $ value (each on its own card, spread across the offer arc, then callback-proved). Record each component card with `{ "component": "...", "value": 0, "chip": "$X", "own_slide": true }`. (The Slide Copywriter writes the card copy and the Slide Image Creator renders the chip per a consistent template; you specify the value, the chip text, and that each component owns a slide.)
+4b. TALLY slide (FIX-5a). After the component cards, one TALLY slide ("Here's Everything You're Getting") sums every component + its $ chip in one grid; the SUM must equal the ANCHOR value (proving the anchor plant). Assert: TALLY total == sum of component chips == anchor_value (within the stated rounding). Record `tally_slide: N` and `tally_total: 0` in offer_stack.json.
 5. THE LOWER THE PRICE, THE GREATER THE VALUE (master doctrine, rule 3). Every DROP slide -- or the slide immediately after it -- stacks NEW named value onto the table. The ladder descends in price while the table GROWS in value. Map which named component(s) get added at or right after each DROP:
    - At/after DROP1: name a new value item added to the table.
    - At/after DROP2: name another new value item added.
@@ -585,33 +585,33 @@ A 4 to 7 slide RE-PITCH movement (recap table + value gap + promises + guarantee
 
 ## 13. Good Output Examples
 
-### Example A -- price_ladder.json (drop mode), proven $5,000 value ladder shattered by a $47 reveal
+### Example A -- price_ladder.json (drop mode), illustrative value ladder shattered by a low final reveal
 ```json
 {
-  "deck_slug": "enrollment-on-autopilot",
+  "deck_slug": "[CLIENT_SLUG]",
   "price_mode": "drop",
-  "final_price": 47,
-  "anchor_value": 5000,
+  "final_price": "[FINAL_PRICE]",
+  "anchor_value": "[ANCHOR_VALUE]",
   "anchor_source": "strategist_proposed",
   "anchor_min_ratio_satisfied": true,
   "anchor_memory_hook": "Remember this number. Hold onto it. Keep watching.",
-  "callback_slide": 48,
+  "callback_slide": "[CALLBACK_SLIDE]",
   "callback_line": "I told you to remember that number. Here it is.",
   "payment_plan": null,
   "rungs": [
-    {"rung": "ANCHOR", "target_slide": 24, "value": 5000, "is_drop": false, "buildup_slide": null, "memory_hook": true, "label": "What a system like this is worth"},
-    {"rung": "DROP1", "target_slide": 35, "value": 2500, "is_drop": true, "buildup_slide": 34, "reason": "because you showed up live"},
-    {"rung": "DROP2", "target_slide": 51, "value": 1000, "is_drop": true, "buildup_slide": 50, "reason": "because you believed"},
-    {"rung": "DROP3", "target_slide": 65, "value": 500, "is_drop": true, "buildup_slide": 64, "reason": "because you stayed"},
-    {"rung": "FINAL", "target_slide": 73, "price": 47, "is_drop": false, "below_ladder": true, "window_minutes": 15, "label": "Your investment today"}
+    {"rung": "ANCHOR", "target_slide": "[ANCHOR_SLIDE]", "value": "[ANCHOR_VALUE]", "is_drop": false, "buildup_slide": null, "memory_hook": true, "label": "What a system like this is worth"},
+    {"rung": "DROP1", "target_slide": "[DROP1_SLIDE]", "value": "[DROP1_VALUE]", "is_drop": true, "buildup_slide": "[DROP1_SLIDE - 1]", "reason": "because you showed up live"},
+    {"rung": "DROP2", "target_slide": "[DROP2_SLIDE]", "value": "[DROP2_VALUE]", "is_drop": true, "buildup_slide": "[DROP2_SLIDE - 1]", "reason": "because you believed"},
+    {"rung": "DROP3", "target_slide": "[DROP3_SLIDE]", "value": "[DROP3_VALUE]", "is_drop": true, "buildup_slide": "[DROP3_SLIDE - 1]", "reason": "because you stayed"},
+    {"rung": "FINAL", "target_slide": "[FINAL_SLIDE]", "price": "[FINAL_PRICE]", "is_drop": false, "below_ladder": true, "window_minutes": 15, "label": "Your investment today"}
   ],
-  "vip": {"present": true, "vip_price": 97, "vip_spots": 20, "vip_spots_source": "client_stated", "side_by_side_with_final": true, "added_components": [{"name": "VIP Coaching Pod", "value": 997}]}
+  "vip": {"present": true, "vip_price": "[VIP_PRICE]", "vip_spots": "[VIP_SPOTS]", "vip_spots_source": "client_stated", "side_by_side_with_final": true, "added_components": [{"name": "[VIP BONUS NAME]", "value": "[VIP_BONUS_VALUE]"}]}
 }
 ```
-The $5,000 / $2,500 / $1,000 / $500 ladder walks VALUE down; the real price ($47, with $97 VIP side-by-side) sits far below the lowest rung. Each drop has a buildup the slide before it and an earned reason; the anchor at slide 24 carries the memory hook; slide 48 calls it back.
+The value ladder walks VALUE down rung by rung; the real price (FINAL_PRICE, with VIP_PRICE side-by-side) sits far below the lowest rung. Each drop has a buildup the slide before it and an earned reason; the anchor carries the memory hook; the callback slide calls it back at the offer open.
 
 ### Example B -- Numeric Audit Pass
-numeric_audit.txt shows: 12 prices/values found across 8 slides. All 12 verified against price_ladder.json and offer_stack.json. Anchor not treated as a drop; DROP3 ($500) > FINAL ($47); every drop has a buildup and a reason; callback present at slide 48. No discrepancies. NUMERIC CONSISTENCY GATE: PASSED.
+numeric_audit.txt shows: [N] prices/values found across [N] slides. All verified against price_ladder.json and offer_stack.json. Anchor not treated as a drop; DROP3 ([DROP3_VALUE]) > FINAL ([FINAL_PRICE]); every drop has a buildup and a reason; callback present at [CALLBACK_SLIDE]. No discrepancies. NUMERIC CONSISTENCY GATE: PASSED.
 
 ---
 
