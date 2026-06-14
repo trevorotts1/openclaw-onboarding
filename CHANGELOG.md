@@ -1,3 +1,66 @@
+## [v12.7.2] - 2026-06-14 - feat: Presentations SOP overhaul + image-prompt hardening + ROLE-23 first-time-onboarding (union of all 4 PRs)
+
+### Changes
+
+- Union merge of PRs 230 + 228 + 229 + 227: client-name genericization, Quality Control dept (floor 28->29), ROLE-22 Content-to-Presentation Architect, ROLE-23 First-Time-User Onboarding, 19-document SOP library (slide-craft, pitch-craft, design-system, image-design), AF-F10 placeholder gate, image-prompt hardening (AF-P13 through AF-P16, GPT-Image 2 full budget).
+- Presentations dept 21 -> 23 roles (ROLE-22 content-to-presentation + ROLE-23 first-time-onboarding-presentations). QC dept added (3 roles). total_roles 355 -> 360.
+- All 9 version markers bumped to v12.7.2.
+
+## [v12.7.1] - 2026-06-14 - feat: image-prompt control hardening -- full GPT-Image 2 budget, mandatory paired negative block, spelling-lock, locked-logo image-to-image, four pre-generation QC gates (FIX-13)
+
+### Changes
+
+**Presentations department: strengthen the image-prompt writer and the prompt QC so the forensic design-craft defects (Dimension F) cannot ship.** The forensic defects targeted: garbled / misspelled rendered text ("hclarity", "IDEHNOTTY DEVELOPMENT"); the logo mutating into four-plus marks per slide (proof of text-to-image regeneration instead of one locked image-to-image asset); bracket / "owner to confirm" placeholders baked into rendered images; image narration and speaker / meta text rendered on the slide face. Root cause per the forensic: a rule not auto-failed at the gate does not exist, and the prompt was STARVED of specificity by a character cap far below the model ceiling.
+
+**Prompt writer (`slide-image-creator.md` + its SOP mirror).**
+- **Character budget raised to use the full GPT-Image 2 LONG-tier budget.** Target band 9,000-14,000 (was 5,000-7,500); soft minimum 5,000; hard maximum 18,000 (was 15,000). GPT-Image 2 accepts up to 20,000 on both endpoints (45-design-intelligence-library/library/_system/MODEL-SPECS.md, the authoritative source); 18,000 keeps a 2,000-char safety margin. The old short cap used only a quarter to a third of the budget and starved the prompt of per-line garble-proofing and the full negative block. Role identity, SOP 9.1 step 3, SOP 9.4-strengthening, Gate 3, and the KPI table all updated. The budget is spent on defect-preventing specificity only, never boilerplate (the density-calibration rule still governs).
+- **New SOP 9.8 -- the mandatory paired NEGATIVE-PROMPT BLOCK.** Replaces the old thin one-line AVOID block. Wires the design-library negative-prompt system into the prompt-writer. Because GPT-Image 2 has no negative-prompt field (inline only), the block is inline imperative "Do not ..." sentences placed as the final paragraph, each critical negative paired with a positive twin, audited for no contradiction. It covers all eight forensic defect classes: garbled text, logo mutation, placeholder / bracket tokens, image narration / presenter / meta / "webinar", anatomical artifacts, background competing with text, demographic / skin-tone fidelity, and the carried-forward universal baseline. The design-library "10 strongest only" cap is explicitly LIFTED for this long-budget path.
+- **New SOP 9.9 -- the concrete full-prompt template** (positive block + image-to-image logo directive + the eight-class negative block) as the structural reference.
+- **Spelling-lock on every verbatim string (element 3).** Every headline / sub / supporting line / kicker / price / struck price carries a letter-for-letter spelling-lock instruction. Kills the garbled-text defect at the prompt stage.
+- **One locked logo via image-to-image only (element 10).** On every LOGO_ON_SLIDES = true slide the prompt declares Mode B (`gpt-image-2-image-to-image`) with the single locked LOGO_URL as the first reference and the verbatim "place, do not redraw" sentence plus the "do not invent any mark" negative twin (SOP-IMG-01 + SOP-DESIGN-04). A logo-in-words-only or text-to-image logo prompt is forbidden.
+- **No bracket / placeholder token as rendered copy (element 3).** The writer halts and flags rather than baking any "[...]" / "owner to confirm" / build-note token.
+- **Native-text fallback generalized from PRICE text to ALL critical text (SOP 9.5 step 7).** Any verbatim string that garbles twice at image QC is removed from the render and recorded in `pptx_text_overlays.json` for native compositing (the forensic Dimension-F fix; previously price-only).
+- **New Gate 11** (defect-control gate) and four new anti-pattern rows.
+
+**Prompt and image QC (`qc-specialist-presentations.md` + its SOP mirror).**
+- **Four net-new PRE-generation prompt auto-fails (FIX-13)** so a defect-prone prompt never reaches Kie.ai: `AF-P13` (the eight-class paired negative block present, complete, paired, no-contradiction-audited; supersedes the bare AVOID check), `AF-P14` (every verbatim string carries its spelling-lock), `AF-P15` (every logo slide declares the image-to-image LOGO_URL-first directive with "place, do not redraw"; SOP-IMG-01 check 1/3 enforced at prompt time), `AF-P16` (no bracket / placeholder token as rendered copy; pre-empts the render-side AF-F10).
+- **`AF-P2` ceiling raised to 18,000** (was 15,000); `AF-P1` floor reframed to the 5,000 soft minimum. New scored criterion 3 rewards genuine budget use at or above 9,000 chars; four new scored criteria (19 double-weight negative-block defect mapping, 20 spelling-lock coverage, 21 logo image-to-image directive, 22 no placeholder). Criteria count 18 -> 22; auto-fail count 12 -> 16.
+- **Render-side checks tightened.** `AF-I1` (garble) and `AF-F9` (OCR readback) now explicitly run on EVERY text element, not just headlines, and name their pairing with the prompt-side spelling-lock. `AF-I2` named to negative-block class 5. `AF-I4` and `AF-F7` now name SOP-IMG-01 and SOP-DESIGN-04 as the authorities, with the write-time (AF-P15) and read-time (AF-F7) logo guards stated as both-required. KPI scoreboard adds five prompt-gate rows.
+
+**Design library (`45-design-intelligence-library`, versioned independently to v1.2.1).** `NEGATIVE-PROMPTING-SOP.md` (v1.0 -> v1.1): documented the long-budget exception lifting the "10 strongest" inline-negative cap for the up-to-18,000-char GPT-Image 2 path, with the positive-twin and no-contradiction rules still in force.
+
+**Reconciliation, not duplication.** This builds on the v12.7.0 reconciliation: the render-side defenses (AF-I1 garble, AF-F9 OCR readback, AF-F7 logo-identity drift, AF-F10 placeholder ban, AF-I2 anatomy, AF-F2 contrast, AF-DC1 text-over-face, AF-R1 representation) already existed; v12.7.1 adds the PRE-generation prompt-side gates that pair with them and raises the starved character budget. No parallel auto-fail namespace was added.
+
+**Doctrine compliance.** No em dashes, en dashes, or Unicode arrows in any new or modified repo file; "image-to-image" / "text-to-image" written out per existing file convention. Both SOP mirrors regenerated from the authoritative role files. All 9 version markers + cc-compat.json onboardingVersion updated to v12.7.1.
+
+---
+
+## [v12.7.0] - 2026-06-14 - feat: Presentations SOP overhaul -- ROLE-22 onboarding + standalone slide-craft/pitch-craft/design-system/image-design SOP library + AF-F10 placeholder-on-render gate
+
+### Changes
+
+**Presentations department: SOP overhaul + first-run onboarding role (ROLE-22).** Integrates the presentation-overhaul SOP library into the Presentations role library and adds the one genuinely-missing role, reconciled against the live v12.6.1 enforcement (the FIX-1 through FIX-8 overhaul) so nothing already-shipped is clobbered or duplicated.
+
+**New role ROLE-22 First-Time-User Onboarding (`first-time-onboarding-presentations`).** The owner's first-run welcome and the department front door (Step -2, before the Brainstorming Buddy). Detects first-time use, orients the owner in under 3 minutes (what the department does, the roles, the Brainstorming Buddy, how to start, the AUDIENCE-versus-SPEAKER surface distinction), then hands to the Brainstorming Buddy (ROLE-17) and sets the first-time flag so it never repeats. 19-section role file + SOP mirror (sops/first-time-onboarding-presentations-sops.md), persona Nadia Wells. Presentations department grows 21 -> 22 roles.
+
+**Standalone cluster SOP library added under `presentations/sops/` (19 documents).** Cross-role doctrine, each with purpose, the hard rule, the enforcement check, pass/fail examples drawn from the forensic reference deck and the gold-standard reference deck, and an escalation path:
+- Slide-Craft (5): SOP-SLIDE-00 master auto-fail ruleset (+ reconciliation map), SOP-SLIDE-01 one-big-idea, SOP-SLIDE-02 audience-facing-only, SOP-SLIDE-03 hook doctrine, SOP-SLIDE-04 deck density and pacing.
+- Pitch-Craft (4, authored net-new from the gold-standard principles reference + the transcript reference): SOP-PITCH-01 slow-drop process (anchor early, spread beats, earned reason + added value per drop, late final), SOP-PITCH-02 value-stack and promises (itemized stack summed past the anchor before the cheapest price; promises before the first number), SOP-PITCH-03 re-pitch (mandatory 4-to-7 slide post-price recap), SOP-PITCH-04 Wall of Wins (real-client homage about 5 slides before the offer, never a child future-pace).
+- Design-System (5): SOP-DESIGN-00 integration map (+ reconciliation), SOP-DESIGN-01 creative typography guide, SOP-DESIGN-02 pure-typography hook slides, SOP-DESIGN-03 variable layout / anti-template, SOP-DESIGN-04 logo consistency.
+- Image-Design (5): SOP-IMG-00 cluster index, SOP-IMG-01 Kie.ai call mechanics (T2I / I2I / analysis), SOP-IMG-02 design-intelligence-library integration + seeding, SOP-IMG-03 style-source conversation branch + creative-develop flow + NAMED-STYLES seed, SOP-IMG-04 signature-style recall + DIU logo image-to-image.
+
+**Reconciliation, not duplication.** The live qc-specialist-presentations.md already enforces the hook ceiling (AF-C2 + AF-P12), the audience-facing-forbidden-content battery including the word "webinar" (AF-C9 + AF-F9), one-big-idea (AF-C6 + AF-C8), gradual-drop choreography (AF-C7), the re-pitch and Wall-of-Wins gates (copy c19/c23/c24), logo-identity drift (AF-F7 with the mandated image-to-image LOGO_URL path), and hook mutation/misspelling on render (AF-P3 + AF-I1 + AF-F9). Each cluster SOP that names a draft auto-fail code (AF-HOOK / AF-AUD / AF-OBI / AF-DEN / AF-I8..I12 / AF-D1..D3) now carries a reconciliation note mapping it to the live code, and SOP-SLIDE-00 and SOP-DESIGN-00 carry full reconciliation maps. No parallel auto-fail namespace was added to the QC role.
+
+**Enforcement gate: one net-new auto-fail, AF-F10 (FIX-12).** The blanket build-token/placeholder-on-render ban. On the OCR text of each composed slide, any bracketed token `[...]` or a substring match on "owner to confirm" / "insert" / "tbd" / "placeholder" / "client win" / "endorsement" / "real result" / "to supply" / "pending" rendered on the slide face = auto-fail and BLOCKS FINAL STATUS. This closes the gap where the live AF-F9 caught a leaked bracket only as a copy-vs-pixel diff, not as an unconditional ban (the forensic reference deck shipped raw "[CLIENT WIN - owner to confirm]" on rendered slides). Wired into the QC Image/Final auto-fail table, the SOP 9.5 assert sequence (step i), the final_deck_qc.json pass interlock, and the QC KPI scoreboard.
+
+**Index + roster registration.** `_index.json`: presentations dept count 21 -> 22 with `first-time-onboarding-presentations` registered in the dept roster and the flat `roles[]` array; the four prior overhaul roles (typography-architect, presenters-guide-specialist, presenters-speech-writer, audio-demonstration-specialist) that were in the dept roster but missing from the flat array are now added with full 8-field entries; `total_roles` recomputed as the sum of department counts (340). `00-START-HERE.md` roster 21 -> 22, ROLE-22 row, Step -2 pipeline entry, SOP mirror index row, and a new Cluster SOP Library index registering all 19 standalone SOP documents. `presentations-suggested-roles.md` bumped with the ROLE-22 entry.
+
+**Doctrine compliance.** No em dashes, en dashes, or Unicode arrows in any new or modified repo file; acronyms expanded in prose on first use (Design Intelligence Unit, image-to-image).
+
+**Version:** v12.6.1 -> v12.7.0. All 9 version markers + cc-compat.json onboardingVersion updated.
+
+---
+
 ## [v12.7.1] - 2026-06-14 - feat: Content-to-Presentation Architect (ROLE-22) -- turn any source into a presentation brief (Presentations dept)
 
 ### Changes

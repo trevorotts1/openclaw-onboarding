@@ -1,11 +1,11 @@
 # Suggested Roles -- presentations-dept
 **Version:** 1.5 | 2026-06-14
-**Status:** v12.1.0 Brainstorming Buddy (renamed from Deck Discovery Strategist, generalized template); presentation-overhaul v1.7 adds ROLE-18 through ROLE-21 (Typography Architect, Presenters Guide Specialist, Presenters Speech Writer, Audio Demonstration + Fish Audio Expression Specialist); 21 roles
+**Status:** v12.1.0 Brainstorming Buddy (renamed from Deck Discovery Strategist, generalized template); presentation-overhaul v1.7 adds ROLE-18 through ROLE-21 (Typography Architect, Presenters Guide Specialist, Presenters Speech Writer, Audio Demonstration + Fish Audio Expression Specialist); v12.7.0 adds ROLE-22 First-Time-User Onboarding plus the standalone slide-craft / pitch-craft / design-system / image-design cluster SOPs; 22 roles
 
 ## Department Purpose
 End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery).
 
-## v1.7 Role Roster (21 roles)
+## v1.7 Role Roster (22 roles)
 - Brainstorming Buddy (ROLE-17, renamed from Deck Discovery Strategist in v12.1.0)
 - Director (ROLE-01)
 - Brand Steward (ROLE-02)
@@ -27,6 +27,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - Presenters Guide Specialist (ROLE-19, NEW -- v1.7 presentation overhaul)
 - Presenters Speech Writer (ROLE-20, NEW -- v1.7 presentation overhaul)
 - Audio Demonstration + Fish Audio Expression Specialist (ROLE-21, NEW -- v1.7 presentation overhaul)
+- First-Time-User Onboarding -- Presentations (ROLE-22, NEW -- v12.7.0)
 
 ---
 
@@ -58,6 +59,13 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 **Persona:** Vivienne Locke, Voice Director
 **What it does:** Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO. Owns the expression engine (Fish Audio expression tags / emphasis / pauses / energy mapped to hook, jaw-drops, drops) and authoritatively documents the ElevenLabs v2-vs-v3 difference for correct fallback mode-switching. Runs the TTS FALLBACK CHAIN: PRIMARY Fish Audio S2-Pro (POST https://api.fish.audio/v1/tts, Bearer, model s2-pro, mp3 192kbps; S2 [bracket] free-form tags / S1 (parenthesis) fixed-set tags) -> FALLBACK ElevenLabs v3 (eleven_v3 inline tags) / v2 (eleven_multilingual_v2 sliders) -> FINAL leg local Whisper/STT (faster-whisper) as the round-trip word-match VERIFICATION leg (Whisper is STT, never a synthesizer). Chunks long talks, synthesizes per chunk, ffmpeg-concats + loudness-normalizes, STT-verifies >=95% word-match. Runs only when WANT_AUDIO_DEMO=true. Delivers via the Delivery Concierge.
 **Core SOPs:** 9.1 Expression Tagging | 9.2 Chunk + Synthesize (fallback chain) | 9.3 ffmpeg Stitch + Loudness Normalize | 9.4 STT Verify (Whisper word-match) | 9.5 Deliver Demo
+**Role type:** specialist
+
+### 22. First-Time-User Onboarding -- Presentations (NEW -- v12.7.0)
+**Slug:** first-time-onboarding-presentations
+**Persona:** Nadia Wells, Onboarding Host
+**What it does:** The owner's first-run welcome and the department's front door. On a first-time Presentations request it detects first-time use (working/presentations/onboarding_state.json), orients the owner in under 3 minutes (what the department does, the roles available, the Brainstorming Buddy, how to get started, and the AUDIENCE-versus-SPEAKER surface distinction), then hands straight to the Brainstorming Buddy (ROLE-17) and sets first_time_complete so it never repeats. Re-runnable on request ("remind me how this works") without resetting the flag. Builds nothing; it orients and triggers. Runs as Step -2, before the Brainstorming Buddy.
+**Core SOPs:** 9.1 First-Time Orientation | 9.2 Roles Tour and Surface Explainer | 9.3 Hand to the Brainstorming Buddy and Set the Flag | 9.4 On-Demand Refresher
 **Role type:** specialist
 
 ---
