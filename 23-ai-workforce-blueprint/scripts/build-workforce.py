@@ -2631,7 +2631,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
     # The previous code only wrote the directive to DEPARTMENTS_DIR/ceo/SOUL.md
     # (the dept-ceo sub-agent workspace). The MAIN orchestrator agent reads its
     # bootstrap files from agents.list[main].workspace (or agents.defaults.workspace
-    # or ~/.openclaw/workspace) - a DIFFERENT path. Proven on Sheila's box: hand-
+    # or ~/.openclaw/workspace) - a DIFFERENT path. Proven on a client box: hand-
     # writing to workspace/SOUL.md stopped the CEO from self-executing; a build
     # re-run reverted it because the build never touched that file.
     #
@@ -3321,7 +3321,7 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
     (genuinely missing role → caller keeps the legacy stub+LLM path).
 
     Deterministic: same template + same interview context → byte-identical
-    output across clients (this is what makes Kofi == Lyric == everyone).
+    output across clients (this is what makes every client identical).
     """
     if not _LIBRARY_FILL_AVAILABLE:
         return None
@@ -4704,7 +4704,7 @@ def add_agent_to_config(config, dept_id, dept_info):
     #
     # v11.3.1: Generation departments (graphics, video, audio) get an explicit
     # tools.allow so generation tools survive any parent-deny inheritance.
-    # Verified tool names from live Sheila Reynolds box (2026.6.1):
+    # Verified tool names from a live client box (2026.6.1):
     #   image_generate, video_generate, music_generate (confirmed in tools.deny
     #   on main agent). tts, exec, read, write, edit, web_fetch, web_search
     #   confirmed in docs.openclaw.ai/gateway/security.

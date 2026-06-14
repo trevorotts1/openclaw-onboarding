@@ -402,7 +402,7 @@ best-practice - hard-failing only helps operators catch gaps earlier.
 ## [v10.15.32] - 2026-06-02 - 23-department standard (N23): universal vertical-pack primaries
 
 ### Why
-Clients were shipping with 17 departments (Sheila: 16 mandatory + CEO counted as custom = 17) instead
+Clients were shipping with 17 departments (one client: 16 mandatory + CEO counted as custom = 17) instead
 of the intended 23-25. Root cause: `apply_vertical_packs()` only fired for clients whose industry
 keywords matched a pack - a client with no matching keyword got 0 vertical departments added,
 landing at 16. Trevor's stated standard is 23-25 = 16 mandatory + 7 vertical packs. The fix makes
@@ -463,7 +463,7 @@ Part of repo `v10.15.9` (the 8 rated improvements, port of VPS #47). Two improve
 ## [v10.15.8] - 2026-05-29 - ENFORCED Role Library + SOP Library auto-pull gate
 
 ### Why
-Last night several clients (Kofi / Teresa / Evelyn / Maria / Lyric) had workforces *scaffolded* -
+Last night several clients had workforces *scaffolded* -
 department + role folders existed, depts even flipped to `status: "done"` - but the **role library was
 never pulled into the `how-to.md` files** AND the **SOP placeholders were never authored**. Nothing GATED
 on those two libraries being populated, so the build "looked done." Prose like "AUTOMATIC NEXT STEP: also

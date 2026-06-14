@@ -11,6 +11,15 @@
 
 See `23-ai-workforce-blueprint/CHANGELOG.md` for the full per-file detail.
 
+## [v12.6.2] - 2026-06-14 - fix: genericize fleet template -- strip all leaked client names from role library and repo infrastructure
+
+### Changes
+
+- Genericized all client names (Corey, Lyric, Karen Vaughn, Jocelyn, Cassandra, Kofi, etc.) across role files, scripts, CHANGELOG, INSTRUCTIONS, build-state-schema, and SOP examples.
+- Only names/brands changed; every rule, threshold, auto-fail, model id, token count, config value, and SOP step preserved verbatim.
+- Two documented false-positives left intact: "song lyrics" (copyright rule) and "Sheila Heen" (published book attribution).
+- All 9 version markers bumped from v12.6.1 to v12.6.2.
+
 ## [v12.6.1] - 2026-06-14 - fix: bound onboarding-resume cron -- hard cap + self-delete, no perpetual token furnace
 
 ### Changes

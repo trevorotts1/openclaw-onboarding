@@ -395,11 +395,11 @@ A client submits three reference images: a luxury watchmaker's magazine ad, a hi
 
 ### Example B — Alias Creation: "Style 1" for a Client
 
-The CDO relays: "Karen approved the gold executive card from last week. She wants to call it 'Style 1.' Here's the winning test image path."
+The CDO relays: "the client approved the gold executive card from last week. She wants to call it 'Style 1.' Here's the winning test image path."
 
 **Good output:**
 - NAMED-STYLES.md entry written: `"Style 1" → GEN-027@v1.0, frozen-reference: path/to/winning-test.png, brand-overrides: {BRAND_COLOR_1: "#B8962E", BRAND_COLOR_2: "#1A2B4A"}, created: 2026-06-12, approved-by: CDO`
-- Card GEN-027 Changelog updated: "Named alias 'Style 1' created for Karen at v1.0, 2026-06-12"
+- Card GEN-027 Changelog updated: "Named alias 'Style 1' created for the client at v1.0, 2026-06-12"
 - Receipt file updated with alias backlink
 - CDO notified: "Alias 'Style 1' → GEN-027@v1.0 registered. Frozen reference image recorded. Version-advance rule: v1.x prompt patches will auto-advance; v2.0 re-analysis requires CDO confirmation + regression render."
 

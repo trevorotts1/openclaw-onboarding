@@ -441,7 +441,7 @@ def main():
     if not use_openclaw:
         # v10.15.18: inline mode only WROTE work files — it did NOT author any
         # SOPs. Returning 0 here used to mark the SOP library "done" and let the
-        # gate pass on empty files (the Sheila/Evelyn-stub failure). We now
+        # gate pass on empty files (the empty-file/stub failure). We now
         # return 4 = "queued, NOT authored" so the caller keeps the status at
         # authoring and the resume cron re-fires until verify-library-gate.sh
         # confirms real, substantive SOPs on disk.
