@@ -8,7 +8,17 @@
 
 **Resolving "use style {ID}":** find the row → open the file at File Path → follow MASTER-SOP.md Workflow B.
 
+**Resolving a friendly name ("use signature style 1" / "use signature 2"):** operators do not have to memorize ID codes. Every registered card also carries a **Sig #**, a per-category friendly alias (signature 1, 2, 3, and so on) assigned in registration order within that category. To resolve a friendly name:
+1. Determine the category from context (e.g. a PowerPoint request → PPT table; "ad" → FB or AD table; if ambiguous, ask which category).
+2. In that category's table, find the row whose **Sig #** equals the spoken number ("signature style 1" → Sig # = 1).
+3. Use that row's **ID** as the canonical reference and continue with Workflow B exactly as for "use style {ID}".
+- "Signature style N" is ALWAYS category-scoped: PPT signature 1 and FB signature 1 are different cards. If the operator gives no category, resolve to the category their request implies; if still ambiguous, ask. Never guess across categories.
+- The friendly alias is a convenience layer only. The **ID** remains the single source of truth used in file paths, generation logs, and handoffs.
+
+**Assigning a Sig #:** when you register a new card, set its **Sig #** to the next unused integer in that category (1 for the first card in the category, 2 for the second, …). Never reuse a Sig # within a category even after a card is retired (retired rows keep their Sig # so spoken references stay stable). Sig # is independent of the numeric part of the ID (IDs can skip; Sig # counts registration order).
+
 **Registering a new style:** append a row to the correct category table. Required fields, no exceptions:
+- **Sig #**: friendly alias = next unused integer in this category (1, 2, 3, in registration order; see "Assigning a Sig #" below). Lets an operator say "use signature style N".
 - **ID** — next available number for that prefix (scan the table; never reuse a retired ID)
 - **Style Name** — matches the card header
 - **One-Line Summary** — copied exactly from the card's one-line style summary
@@ -24,49 +34,49 @@
 ---
 
 ## SINGLE IMAGE DESIGNS (SI-)
-| ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first analysis)* | | | | | |
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first analysis)* | | | | | |
 
 ## FACEBOOK AD DESIGNS (FB-)
-| ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first analysis)* | | | | | |
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first analysis)* | | | | | |
 
 ## BOOK COVER DESIGNS (BC-)
-| ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first analysis)* | | | | | |
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first analysis)* | | | | | |
 
 ## MAGAZINE COVER DESIGNS (MAG-)
-| ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first analysis)* | | | | | |
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first analysis)* | | | | | |
 
 ## SOCIAL MEDIA DESIGNS (SM-)
-| ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first analysis)* | | | | | |
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first analysis)* | | | | | |
 
 ## BANNER DESIGNS (BN-)
-| ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first analysis)* | | | | | |
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first analysis)* | | | | | |
 
 ## ADVERTISEMENT DESIGNS (AD-)
-| ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first analysis)* | | | | | |
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first analysis)* | | | | | |
 
 ## POWERPOINT DESIGNS (PPT-)
-| ID | Style Name | Families | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first analysis)* | | | | | | |
+| Sig # | ID | Style Name | Families | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first analysis)* | | | | | | |
 
 ## PERSONAL PHOTO SHOOT — SHOOT CARDS (PS-)
-| ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
-|---|---|---|---|---|---|---|
-| — | *(empty — awaiting first shoot card)* | | | | | |
+| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |
+|---|---|---|---|---|---|---|---|
+| - | - | *(empty - awaiting first shoot card)* | | | | | |
 
 ## CLIENT IDENTITY PROFILES (reference list, not style cards)
 | Client | Slug | Consent date | Folder |

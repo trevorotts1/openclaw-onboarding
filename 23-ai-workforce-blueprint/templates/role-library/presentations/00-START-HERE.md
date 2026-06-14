@@ -1,5 +1,5 @@
 # 00 -- START HERE -- Presentations Department
-**Version:** 1.6 | 2026-06-14
+**Version:** 1.7 | 2026-06-14
 **Role library path:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **SOP mirror path:** 23-ai-workforce-blueprint/templates/role-library/presentations/sops/
 
@@ -15,9 +15,9 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 ---
 
-## Role Roster (17 roles; all live)
+## Role Roster (21 roles; all live)
 
-**Doctrine count:** all 17 roles are live to spec (ROLE-01 through ROLE-17). ROLE-16 The Healer is **COMPLETE** and built to full spec: the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (plus the T3-BUGBOARD-HEALER-SPEC.md build contract) has been supplied, and the ZHC Bugs Department it files into is commissioned and present in this repo at role-library/bugs/ (Bug Intake Clerk, Triage and Dedup Analyst, Bug Librarian, the universal bug-ticket-schema.json, and the B-9.1 to B-9.5 SOPs), with the Healer Department at role-library/healer/ (Chief Healer + the per-department Healer template). ROLE-16 carries the three authority tiers, all 12 Healer SOPs (9.1 to 9.12), and its triggers are wired to a live Bugs Department.
+**Doctrine count:** all 21 roles are live to spec (ROLE-01 through ROLE-21). ROLE-18 through ROLE-21 are the presentation-overhaul roles added v1.7: the Typography Architect (per-slide type-layout system, runs BEFORE the Slide Image Creator), the Presenters Guide Specialist (branded speaker outline PDF + Notion), the Presenters Speech Writer (word-for-word script paced to TARGET_WPM=140, PDF + Notion), and the Audio Demonstration + Fish Audio Expression Specialist (expression-tagged TTS demo with the Fish S2-Pro -> ElevenLabs -> Whisper-STT-verify fallback chain). All four route deliverables through the Delivery Concierge for verified last-mile. ROLE-16 The Healer is **COMPLETE** and built to full spec: the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (plus the T3-BUGBOARD-HEALER-SPEC.md build contract) has been supplied, and the ZHC Bugs Department it files into is commissioned and present in this repo at role-library/bugs/ (Bug Intake Clerk, Triage and Dedup Analyst, Bug Librarian, the universal bug-ticket-schema.json, and the B-9.1 to B-9.5 SOPs), with the Healer Department at role-library/healer/ (Chief Healer + the per-department Healer template). ROLE-16 carries the three authority tiers, all 12 Healer SOPs (9.1 to 9.12), and its triggers are wired to a live Bugs Department.
 
 
 | ROLE | Slug | Role type | File |
@@ -39,6 +39,10 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 | ROLE-14 | presenter-coach | specialist | presenter-coach.md |
 | ROLE-15 | hook-strategist | specialist | hook-strategist.md |
 | ROLE-16 | healer-presentations | healer | healer-presentations.md |
+| ROLE-18 | typography-architect | specialist | typography-architect.md |
+| ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md |
+| ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md |
+| ROLE-21 | audio-demonstration-specialist | specialist | audio-demonstration-specialist.md |
 
 ---
 
@@ -51,16 +55,18 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 4. **Phase 1** -- ROLE-10 Slide Copywriter (concurrent: ROLE-07 Offer and Price Strategist). Output: slides_copy.md + price_ladder.json.
 5. **Phase 1Q** -- ROLE-09 QC Specialist runs copy QC gate (score >= 8.5).
 6. **Phase 1A** -- Owner approval gate (Director-managed). No prompts until YES.
-7. **Phase 2** -- ROLE-11 Slide Image Creator writes prompts (requires STYLE BLOCK from ROLE-02).
-8. **Phase 3** -- ROLE-09 QC Specialist runs prompt QC gate (dual-scored).
-9. **Phase 4** -- ROLE-12 Slide Submitter submits to Kie.ai (2 RPS cap, smoke test first).
-10. **Phase 4 concurrent** -- ROLE-03 watchdog cron runs.
-11. **Phase 5** -- ROLE-09 QC Specialist runs image QC gate.
-12. **Phase 5 passed** -- ROLE-06 Media Librarian intakes passed images to GHL.
-13. **Phase 6** -- ROLE-08 PPTX Assembly Specialist assembles the deck.
-14. **Phase 6 QC** -- ROLE-09 QC Specialist runs final deck QC (score >= 8.5).
-15. **Post-Phase 6** -- ROLE-14 Presenter Coach writes talk track and runs rehearsal gate.
-16. **Delivery** -- ROLE-13 Delivery Concierge delivers to all destinations and verifies.
+7. **Phase 1.5 (type-layout gate)** -- ROLE-18 Typography Architect authors working/typography/type_layout_system.md (one distinct layout template per archetype) AFTER the STYLE BLOCK and arc_allocation.json exist and BEFORE the Slide Image Creator writes any prompt. This is a hard gate: it replaces the single hard-coded canonical hierarchy stack in slide-image-creator.md element 5, so the deck rotates layouts instead of stamping one frame. Hook slides are type-driven (no image OR <=15% opacity bg).
+8. **Phase 2** -- ROLE-11 Slide Image Creator writes prompts (requires STYLE BLOCK from ROLE-02 AND type_layout_system.md from ROLE-18; element 5 of every prompt is sourced from the matching archetype layout template).
+9. **Phase 3** -- ROLE-09 QC Specialist runs prompt QC gate (dual-scored).
+10. **Phase 4** -- ROLE-12 Slide Submitter submits to Kie.ai (2 RPS cap, smoke test first).
+11. **Phase 4 concurrent** -- ROLE-03 watchdog cron runs.
+12. **Phase 5** -- ROLE-09 QC Specialist runs image QC gate (including the ROLE-18 layout-variety / image-position asserts).
+13. **Phase 5 passed** -- ROLE-06 Media Librarian intakes passed images to GHL.
+14. **Phase 6** -- ROLE-08 PPTX Assembly Specialist assembles the deck.
+15. **Phase 6 QC** -- ROLE-09 QC Specialist runs final deck QC (score >= 8.5).
+16. **Post-Phase 6** -- ROLE-14 Presenter Coach writes talk track and runs rehearsal gate.
+17. **Post-Coach deliverables (per DELIVERABLE_SET, AFTER ROLE-14, BEFORE ROLE-13):** ROLE-19 Presenters Guide Specialist (if "+guide") writes the branded speaker-outline PDF + Notion page; ROLE-20 Presenters Speech Writer (if "+guide+speech") writes the word-for-word script paced to TARGET_WPM=140 as a PDF + Notion page; ROLE-21 Audio Demonstration + Fish Audio Expression Specialist (if WANT_AUDIO_DEMO=true / DELIVERABLE_SET "+audio") turns the QC-passed Speech into an expression-tagged TTS demo mp3. Each routes its deliverable through ROLE-13 for verified last-mile (no self-report).
+18. **Delivery** -- ROLE-13 Delivery Concierge delivers the deck and every post-coach deliverable to all destinations and verifies (ground-truth: file hash + size).
 
 On-call throughout: ROLE-05 Devil's Advocate (high-stakes reviews), ROLE-04 Deep Research Specialist.
 
@@ -93,6 +99,10 @@ Each role's Section 9 (Standard Operating Procedures) is mirrored verbatim in so
 | sops/slide-image-creator-sops.md | slide-image-creator.md | 9.1 15-Element Prompt, 9.2 Archetypes+Composition, 9.3 White-Base+Palette, 9.4 Engines+Overlays, 9.5 Strikethrough |
 | sops/slide-submitter-sops.md | slide-submitter.md | 9.1 Model Manifest, 9.2 KIE Submit, 9.3 Poll+Download, 9.3a API Contract, 9.4 Budget Discipline, 9.5 Smoke Test |
 | sops/healer-presentations-sops.md | healer-presentations.md | 9.1 Intake+Triage, 9.2 Diagnosis, 9.3 Fix Forward, 9.4 SOP Surgery, 9.5 Gap Detection, 9.6 Model Census, 9.7 Healing Report, 9.8 Regression Watch, 9.9 Core-File Surgery, 9.10 Settings Repair, 9.11 Teacher-Self, 9.12 Embedding Refresh |
+| sops/typography-architect-sops.md | typography-architect.md | 9.1 Type-Layout System Authoring, 9.2 Hook-Slide Typography Spec, 9.3 Layout-Variety Audit |
+| sops/presenters-guide-specialist-sops.md | presenters-guide-specialist.md | 9.1 Guide Assembly, 9.2 PDF Render (fonts >=12), 9.3 Notion Publish, 9.4 Verified Delivery |
+| sops/presenters-speech-writer-sops.md | presenters-speech-writer.md | 9.1 Word-for-Word Draft, 9.2 WPM Pacing Pass (TARGET_WPM=140), 9.3 Designed PDF Render (fonts >=12), 9.4 Notion Publish + Verified Delivery |
+| sops/audio-demonstration-specialist-sops.md | audio-demonstration-specialist.md | 9.1 Expression Tagging, 9.2 Chunk + Synthesize (Fish S2 -> ElevenLabs -> fallthrough), 9.3 ffmpeg Stitch + Normalize, 9.4 STT Verify (Whisper), 9.5 Deliver Demo |
 
 **Mirror rule:** role file is authoritative. If a sops/ file diverges from the role file's Section 9, the role file wins and the mirror must be regenerated immediately. Never edit the sops/ file directly.
 
@@ -103,6 +113,43 @@ Each role's Section 9 (Standard Operating Procedures) is mirrored verbatim in so
 The Graphics department's Design Intelligence Unit (DIU) -- Style Analyst, Deck Systems Specialist, Generation Operator, Photo Shoot Director, Fidelity Tester -- operates entirely within the Graphics department and does NOT touch the presentations pipeline. This department's webinar and deck production workflow (ROLE-01 through ROLE-17, the full phase sequence above, and the Kie.ai submission path via ROLE-12 Slide Submitter) is the authoritative source for webinar deck delivery. The DIU's Deck Systems Specialist analyzes and generates deck IMAGERY STYLE SYSTEMS only; deck narrative writing, price ladder choreography, PPTX assembly, and final submission to Kie.ai for webinar decks remain exclusively with this department. Any cross-department request that would route deck narrative or assembly work to the Graphics DIU is a misroute -- return it here.
 
 **Permitted cross-department request (presentations → Graphics DIU):** This department MAY request a style card analysis from the Graphics DIU when a client wants a NEW webinar deck built to match an existing deck's visual aesthetic. In that case, ROLE-02 Brand Steward submits the reference deck to the Graphics DIU Style Analyst (via Chief Design Officer) for a PPT-tier style card; the resulting style ID is then passed back to ROLE-11 Slide Image Creator as the style reference for Phase 2 prompt authoring. The narrative, copy, and assembly pipeline remain entirely with this department; only the imagery style analysis crosses the boundary. This is the ONLY permitted cross-department call; all other DIU capabilities (photo shoot, generation operator, fidelity testing) are out of scope for this department.
+
+---
+
+## First-Time Onboarding (the owner's first-run experience)
+
+When an owner first says something conversational like "I need a deck," "make me a webinar,"
+or "I want a pitch," this is the front door to the whole department. The experience is:
+
+1. **Conversational trigger, friendly answer.** The owner does not fill a form. The
+   Brainstorming Buddy (ROLE-17) answers "Let's brainstorm it together first." It is FRIENDLY
+   proactive Q&A: roughly 3 to 10 adaptive questions, NOT a 50-question dump.
+2. **Use what we already know.** The Buddy reads workspace SOUL.md / USER.md / any prior brief
+   and NEVER re-asks what the agent already knows (governing rule from the master SOP
+   "never re-ask what the agent already knows"). It only asks the unknowns.
+3. **Capture the scope + style up front (SOP 9.0).** Before the mode offer, the Buddy runs the
+   pre-presentation capture: the six hard-required audience/content/hook fields PLUS the three
+   scope fields and the style branch:
+   - **DELIVERABLE_SET** (deck only / +guide / +guide+speech / +audio) -- offered as an explicit
+     add-on menu so the owner knows the Guide, Speech, and Audio demo exist.
+   - **WANT_AUDIO_DEMO** (+ voice/persona) -- only when "+audio" is chosen; the voice is never
+     defaulted silently.
+   - **TARGET_WPM** (default 140; 130 teach-heavy / 150-160 high-energy) -- only when a speech is
+     in scope.
+   - **STYLE BRANCH** -- "do you have a style to match, a reference deck to analyze, or should we
+     CREATE a signature style?" On match/analyze, the Brand Steward submits the reference to the
+     Graphics DIU Style Analyst for a PPT-tier style card (the only permitted DIU crossing);
+     on create, the Brand Steward builds the STYLE BLOCK fresh.
+4. **ECHO -> PRD -> checklist gate.** The Buddy reads the brief back for explicit sign-off
+   (the ECHO protocol), then hands the locked brief to the Director, who runs the Echo / Mission
+   PRD gate and the checklist before any build begins.
+5. **Then the build.** The Director dispatches the pipeline (Phase -1 -> Step 0 -> ... -> Phase 1.5
+   Typography Architect -> Phase 2 ... -> Presenter Coach -> Guide/Speech/Audio per DELIVERABLE_SET
+   -> Delivery Concierge), surfacing the owner-approval gate (Phase 1A) before any prompts.
+
+A first-time owner who says "I need a webinar" is therefore met with a brainstorm, asked only
+the unknowns (3 to 10 questions, known context not re-asked), offered the guide/speech/audio
+add-ons and the style branch, and shown an ECHO + PRD + checklist before a single slide is built.
 
 ---
 

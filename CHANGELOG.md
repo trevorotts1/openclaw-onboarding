@@ -1,3 +1,46 @@
+## [v12.5.0] - 2026-06-14 - feat: Presentation SOP overhaul -- 4 new specialist roles, banded hook cadence, re-pitch choreography, QC expansion, and Skill 45 DIU scope boundary (Skills 23 + 45)
+
+### Changes
+
+Comprehensive overhaul of the Presentations department standard and Skill 45 Design Intelligence Library. The change spans 14 role/SOP files, the master CLIENT-WEBINAR-DECK-SOP.md, and the Skill 45 DIU library, coordinated across 6 parallel author agents.
+
+**New Roles (ROLE-18 through ROLE-21):**
+- `typography-architect.md` (ROLE-18, Marcus Vane): per-slide type-layout SYSTEM CARD authored before any image prompt; layout variety (no >2 consecutive same image position, no >3 consecutive same type family); type-driven hook slides (no image or <=15% opacity bg). Hard gate: Phase 1.5 between STYLE BLOCK and Slide Image Creator.
+- `presenters-guide-specialist.md` (ROLE-19, Delia Crewe): branded speaker outline PDF (font-floor >=12pt) + Notion delivery via Delivery Concierge.
+- `presenters-speech-writer.md` (ROLE-20, Roland Pace): word-for-word script paced to TARGET_WPM=140 (repo constant; avatar_video.py:206 default 150 cited); +/-10% DURATION_MIN assert; PDF + Notion; Delivery Concierge for last-mile.
+- `audio-demonstration-specialist.md` (ROLE-21, Vivienne Locke): expression-tagged TTS demo; Fish S2-Pro -> ElevenLabs v3/v2 -> local Whisper STT-VERIFY fallback chain; Whisper is STT-only (>=95% word-match); chunk + ffmpeg concat + loudnorm; Delivery Concierge.
+- All 4 ships with full sops/ mirrors. `00-START-HERE.md` (v1.6->v1.7) updated: roster 17->21, SOP Mirror Index, Pipeline Sequence (Typography as Phase-1.5 gate; Guide/Speech/Audio as Phase-17 before Delivery Concierge). `suggested-roles/presentations-suggested-roles.md` (v1.4->v1.5) updated.
+
+**FIX-1/FIX-4 -- Hook cadence overhaul (hook-strategist.md, CLIENT-WEBINAR-DECK-SOP.md, qc-specialist-presentations.md):** Recut from floor-only "sung on every slide" to a SCHEDULED-CADENCE model. 3-4 dedicated A4 hook slides on a ~30-min deck (open + close always two); ceiling ~1 per 6 slides; never 2 consecutive. AF-C2 recut to a BANDED check: auto-fail in BOTH directions (under the floor AND over the ceiling). Over-stamping auto-fail: hook on >5 slides, 2+ consecutive, or footer on every slide = FAIL. Hook_variants.json is the schedule source of truth; hook=true only on scheduled beats.
+
+**FIX-2 -- Mechanical word ceiling (qc-specialist-presentations.md, CLIENT-WEBINAR-DECK-SOP.md):** AF-C8 added: >30 words summed across all on-slide fields = auto-fail (even when each field is individually within limits). Canonical hierarchy stack clarified: hook refrain and italic tertiary are NOT default stack elements.
+
+**FIX-3 -- Audience-facing FORBIDDEN list (slide-image-creator.md, slide-copywriter.md, CLIENT-WEBINAR-DECK-SOP.md, qc-specialist-presentations.md):** AF-C9 bans as on-slide copy: (1) presenter narration, (2) AI meta-commentary, (3) image/scene descriptions, (4) telegraphing/stage-direction kickers, (5) the literal word "webinar". Copywriter SOP 9.3 step 4a mirrors the scan. The canonical "This isn't just a webinar. This is your moment." close copy replaced with the non-webinar line "This is your moment. The door is open."
+
+**FIX-5 -- Value-stack/promise/slow-drop (offer-price-strategist.md, CLIENT-WEBINAR-DECK-SOP.md):** COMPONENT-CARD slides with $ chips spread across the offer section; TALLY slide summing to anchor; PROMISE slides between DROP1/DROP2 and DROP2/FINAL; VALUE-GAP slide before FINAL. offer_stack.json structure updated.
+
+**FIX-6 -- Wall of Wins framing (qc-specialist-presentations.md):** criterion c19 anti-pattern added: future-paced "Watch What Changes" wall about the buyer's own outcome FAILS; passing wall requires >=4 real named clients with city + result number + aggregate band + "these are your peers."
+
+**FIX-7 -- RE-PITCH choreography (offer-price-strategist.md, CLIENT-WEBINAR-DECK-SOP.md, qc-specialist-presentations.md):** New arc row I.5 in the Signature Webinar Arc. Full 4-7 slide RE-PITCH movement after FINAL price: recap table, value gap, promise inventory, guarantee, objection kills, reset urgency, final CTA. New SOP 9.9 in offer-price-strategist. QC criterion c23: price-then-end deck FAILS.
+
+**FIX-8 -- Minimum close density (qc-specialist-presentations.md, CLIENT-WEBINAR-DECK-SOP.md):** criterion c24: post-Wall close >= ~8 slides on a 45+ deck; auto-flag Wall of Wins within 2 slides of final CTA.
+
+**FIX-9 -- Layout variety (typography-architect.md, slide-image-creator.md, qc-specialist-presentations.md):** i-DC4 REWARDS LAYOUT VARIETY and FAILS single-canonical-stack sameness. AF-F6: >2 consecutive slides with same image zone = fail; hook slides must be type-driven. brand-steward.md: canonical hierarchy stack is now the FALLBACK ordering only; per-slide TYPE layout ceded to Typography Architect.
+
+**FIX-10 -- Logo identity + offer price (qc-specialist-presentations.md, CLIENT-WEBINAR-DECK-SOP.md):** AF-F7: logo visually identical across slides (no EG-monogram drift); logo slides use image-to-image with LOGO_URL. AF-F8: offer/CTA slide price must equal FINAL_PRICE from price_ladder.json/intake.json.
+
+**FIX-11 -- OCR readback (qc-specialist-presentations.md):** AF-F9: OCR each composed-slide PNG and diff vs intended copy; baked typo/garble/missing-connector/leaked-scene-string = fail + re-render.
+
+**FIX-12 -- First-time onboarding/brainstorm (brainstorming-buddy-presentations.md, 00-START-HERE.md):** FIRST-TIME ONBOARDING block added: conversational trigger -> friendly brainstorm -> add-ons -> style branch -> ECHO gate. New fields DELIVERABLE_SET, WANT_AUDIO_DEMO, TARGET_WPM. STYLE BRANCH: match-existing / analyze-reference / create-new. _brainstorming-buddy-question-banks.json: new PRE-PRESENTATION SCOPE + STYLE block.
+
+**Skill 45 DIU (INSTRUCTIONS.md, INDEX.md, MODEL-SPECS.md, SKILL.md, qc-design-intelligence-library.sh):** Signature-style friendly alias (Sig #) column added to all 9 style-card tables. Style-branch Step 0 added to Workflow B. Kie.ai image-to-JSON / vision mode documented (MODEL-SPECS v1.3, endpoint verified against live docs). SCOPE boundary: webinar/funnel/sales/audience decks are Presentations dept only; DIU serves brand/strategy/campaign/pitch/internal decks. QC script fixed: DEPARTMENT-BUILD-BRIEF.md counted as repo-owned (not client data); exit 0 clean.
+
+**_index.json:** presentations dept count 17 -> 21 (added audio-demonstration-specialist, presenters-guide-specialist, presenters-speech-writer, typography-architect). total_roles updated to 355 (ground-truth: file count verified by verify-role-library.sh).
+
+**Version markers bumped v12.4.8 -> v12.5.0:** version, cc-compat.json, install.sh, update-skills.sh, README.md, DIRECT-TO-AGENT-UPDATE-MESSAGE.md, skill-version.txt, _index.json, _qc-summary.md (all 9 markers agree).
+
+---
+
 ## [v12.4.8] - 2026-06-14 - feat: professional design-craft, color-theory, and QC standard for Presentations (Skill 23)
 
 ### Changes

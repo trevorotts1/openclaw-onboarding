@@ -39,6 +39,14 @@ This folder holds:
 **Trigger:** "Generate an ad using style FB-003, subject: [new subject], headline: [text]"
 
 **Steps:**
+
+0. **STYLE BRANCH (do this FIRST, before anything else): "do you have a style, or should I create one?"** Every generation needs a registered style card. Before resolving anything, establish which style to use:
+   - **(a) Operator named an ID** ("use style FB-003") → resolve it in `INDEX.md` and continue at step 1.
+   - **(b) Operator named a friendly alias** ("use signature style 1" / "use signature 2") → resolve it via INDEX.md "Resolving a friendly name" (Sig # column, category-scoped), get the ID, continue at step 1.
+   - **(c) Operator has a reference image/deck to match** ("make it look like this") → this is an ANALYSIS job first. Route to the Style Analyst (job 1 / MASTER-SOP Workflow A; a deck or 4+ images → Deck Systems Specialist / PPT-ANALYSIS-SOP) to produce and register a style card, THEN return here and continue at step 1 with the new ID.
+   - **(d) Operator has NO style and wants you to create one** ("I don't have a style, make me one" / "create a signature style") → route to the Style Analyst to DESIGN a new style card (analyze any refs if provided, else design fresh from brand defaults per MASTER-SOP §9), register it in INDEX.md with a Sig #, THEN continue at step 1.
+   - If it is unclear which of (a) to (d) applies, ASK the operator: "Do you have a style ID to reuse, a reference to match, or should I create a signature style for you?" Never guess a style or improvise one inline; an unregistered, untested style is not a valid input to generation.
+
 1. Resolve the style ID in `INDEX.md` — find the row, get the file path.
 2. Open the style card file → extract the prompt templates (SHORT / MEDIUM / LONG tiers).
 3. Consult the card's category `_RULES.md` for hard rules and model routing.

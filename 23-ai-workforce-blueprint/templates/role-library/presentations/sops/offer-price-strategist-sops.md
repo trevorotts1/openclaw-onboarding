@@ -92,21 +92,34 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    c. Runs a running total: "So far that's $X in value..."
    d. Builds to the TOTAL STACK VALUE.
    e. Frames: "You could pay [TOTAL_STACK_VALUE] for this... but today it's not [TOTAL_STACK_VALUE]."
+4a. COMPONENT-CARD + $-CHIP MODEL (FIX-5a). Every offer component gets its OWN slide built as a COMPONENT CARD: the component name as the headline, a one-line benefit, and its OWN $ VALUE CHIP. The $ chip is a consistent reusable template (same shape, same corner, same gold treatment, same placement on every component card) so the cards read as one family across the offer arc. Component cards are SPREAD across the offer section (not crammed into one stack slide), each carrying its named $ value (the Lyric model: $997 + $1,497 + $997 + $497 + $297 + $997 = $5,282 across slides 49-58, each on its own card, then callback-proved). Record each component card with `{ "component": "...", "value": 0, "chip": "$X", "own_slide": true }`. (The Slide Copywriter writes the card copy and the Slide Image Creator renders the chip per a consistent template; you specify the value, the chip text, and that each component owns a slide.)
+4b. TALLY slide (FIX-5a). After the component cards, one TALLY slide ("Here's Everything You're Getting") sums every component + its $ chip in one grid; the SUM must equal the ANCHOR value (proving the anchor plant, e.g. the six cards totalling $5,282 land on the ~$5,000 anchor). Assert: TALLY total == sum of component chips == anchor_value (within the stated rounding). Record `tally_slide: N` and `tally_total: 0` in offer_stack.json.
 5. THE LOWER THE PRICE, THE GREATER THE VALUE (master doctrine, rule 3). Every DROP slide -- or the slide immediately after it -- stacks NEW named value onto the table. The ladder descends in price while the table GROWS in value. Map which named component(s) get added at or right after each DROP:
    - At/after DROP1: name a new value item added to the table.
    - At/after DROP2: name another new value item added.
    - At/after DROP3: name another new value item added.
    Record this in offer_stack.json under `value_additions_by_drop`.
 6. Stripping value to justify a discount is a VIOLATION. A DROP slide must never REMOVE a component to "explain" the lower price. If the run ever shows a component disappearing from the table as the price falls, flag it to the Director as a doctrine violation and refuse to ship the ladder until it is corrected.
+6a. PROMISE SLIDE BETWEEN DROPS (FIX-5b; running promise inventory, master doctrine rule 2). Between each pair of drops, place a PROMISE slide that restates the promise just earned, so each drop is paid for by a promise just made (the concern this kills is "promises missing" between drops). Maintain a running PROMISE INVENTORY: each promise made in the teach/offer arc is logged, and at least one promise slide sits between DROP1 and DROP2 and another between DROP2 and FINAL, restating the next promise the audience is buying. Record `promise_slides: [N, ...]` and the `promise_inventory` list in offer_stack.json. (The Copywriter writes the promise copy from the inventory; you mark where the doctrine requires a promise beat.)
+6b. VALUE-GAP slide before FINAL (FIX-5). Right before the FINAL price reveal, quantify the value gap on the slide: "Total value [TALLY total] vs your price today." The gap (total stack value minus FINAL price) must be stated on screen before the FINAL number lands. Record `value_gap_slide: N` and `value_gap: 0` (tally_total minus final_price) in offer_stack.json.
 7. Verify: a BUILDUP slide must always precede every DROP slide (per SOP 9.1 step 5). If a DROP slide exists without a preceding BUILDUP, flag it so the Copywriter inserts one before it.
 8. Write the offer_stack.json to working/copy/offer_stack.json. Structure:
    ```json
    {
      "components": [
-       {"name": "...", "value": 0, "value_source": "client_stated|market_estimate|pending"}
+       {"name": "...", "value": 0, "chip": "$X", "own_slide": true, "value_source": "client_stated|market_estimate|pending"}
      ],
      "total_stack_value": 0,
      "buildup_slide_range": [start_slide, end_slide],
+     "component_cards": [
+       {"component": "...", "value": 0, "chip": "$X", "slide": N}
+     ],
+     "tally_slide": null,
+     "tally_total": 0,
+     "value_gap_slide": null,
+     "value_gap": 0,
+     "promise_inventory": ["..."],
+     "promise_slides": [],
      "value_additions_by_drop": [
        {"drop": "DROP1", "added_component": "...", "added_value": 0},
        {"drop": "DROP2", "added_component": "...", "added_value": 0},
@@ -340,6 +353,47 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Hand to:** Director (routes to Slide Copywriter and QC Specialist)
 
 **Failure mode:** If the client provides neither a guarantee nor a willingness to use the service-guarantee frame, flag to the Director and halt the offer finalization until resolved (the deck cannot ship without a guarantee). If no real scarcity constraint exists, the close ships without scarcity ONLY on explicit owner sign-off; never substitute a fabricated cap or countdown.
+
+---
+
+### SOP 9.9 -- Re-Pitch Choreography (4 to 7 slides AFTER the FINAL price)
+
+**When to run:** Concurrently with SOP 9.1 or 9.4, after the FINAL price reveal is placed. This is the genuinely MISSING structural beat (FIX-7): a deck that reveals the FINAL price and then simply ends is incomplete. The re-pitch sits AFTER the FINAL price and BEFORE the hook-reprise close (master arc: after section I scarcity, before section J hook callback).
+
+**Inputs:**
+- price_ladder.json (FINAL price, anchor value, callback, drops with earned reasons)
+- offer_stack.json (component cards + $ chips, tally total, value gap, promise inventory)
+- price_ladder.json guarantee + scarcity blocks (SOP 9.8)
+- arc_allocation.json (the post-FINAL slide range)
+
+**Steps:**
+1. Author a named RE-PITCH MOVEMENT of 4 to 7 slides that fires AFTER the FINAL price and BEFORE the hook reprise. The movement re-sells the whole offer one more time at the moment of decision; it does not introduce new value, it RECAPS and RESETS what was already earned. The seven beats (use 4 to 7; a ~30-min deck uses all seven):
+   1. FULL RECAP TABLE -- "Here's Everything You Get": every component card + its $ value + checkmarks in one grid (reuse the component-card $ chips from offer_stack.json).
+   2. VALUE GAP RESTATED -- the total stack value (tally_total) vs the FINAL price, restated as the gap (reuse value_gap from offer_stack.json).
+   3. PROMISES RE-LISTED -- the promise inventory (offer_stack.json promise_inventory) re-listed, so the audience sees every promise they are buying.
+   4. GUARANTEE RESTATED -- the guarantee from SOP 9.8 restated (the service-guarantee frame, e.g. "your next 30 days is on us").
+   5. OBJECTION KILLS -- the top 2 to 3 objections answered (from intake objections; never fabricated).
+   6. RESET URGENCY / SCARCITY -- the real scarcity from SOP 9.8 re-armed (the real 15-minute window, the real spot cap, the real cohort date); REAL constraints only, never fabricated.
+   7. FINAL CTA + join URL -- the call to action with the real join URL, then the deck hands to the hook-reprise close (section J).
+2. Record the re-pitch block in price_ladder.json:
+   ```json
+   "re_pitch": {
+     "present": true,
+     "slide_range": [start_slide, end_slide],
+     "slide_count": 0,
+     "beats": ["recap_table", "value_gap", "promises", "guarantee", "objection_kills", "reset_scarcity", "final_cta"],
+     "after_final_price": true,
+     "before_hook_reprise": true
+   }
+   ```
+3. Verify: the re-pitch sits AFTER the FINAL price slide and BEFORE the hook-reprise close; slide_count is 4 to 7; the recap table reuses the component cards and $ chips (no new value invented); the value gap and promises trace to offer_stack.json; the guarantee and scarcity trace to SOP 9.8; objection kills trace to intake (zero fabrication). A deck whose FINAL price is revealed and then goes straight to the close FAILS this SOP.
+
+**Outputs:**
+- working/copy/price_ladder.json (with the `re_pitch` block)
+
+**Hand to:** Director (who routes to the Slide Copywriter to write the re-pitch copy and to the QC Specialist, who checks re-pitch presence as copy QC criterion 23)
+
+**Failure mode:** If there is no room in arc_allocation.json for a 4 to 7 slide re-pitch after the FINAL price, flag to the Director that the arc is too thin for the post-price re-pitch (FIX-8 close-density) and request the slides. Never skip the re-pitch to save slides; a price reveal with no re-pitch is an incomplete close. Never invent new value, new promises, or fabricated scarcity inside the re-pitch; it recaps what was already earned.
 
 ---
 

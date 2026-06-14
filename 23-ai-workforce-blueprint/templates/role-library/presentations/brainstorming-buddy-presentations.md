@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
-**Version:** 2.0
+**Version:** 2.1
 **Last updated:** {{GENERATION_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -163,16 +163,21 @@ it governs only when no persona is assigned. In all cases honor the company miss
 
 **When to run:** The instant a new deck request arrives, before the mode offer and before
 any other question is asked. This SOP is MANDATORY and NON-SKIPPABLE. It cannot be
-deferred to the main interview. No brief may be locked without all six fields resolved.
+deferred to the main interview. No brief may be locked without the six hard-required fields
+resolved (REPRESENTATION_MIX, AUDIENCE-COMPOSITION NOTE, GROUNDED-CONTENT, VISUAL_MIX,
+DARK_OK, HOOK SEED) plus the three scope fields and the style branch captured or defaulted
+(DELIVERABLE_SET, WANT_AUDIO_DEMO, TARGET_WPM, STYLE_SOURCE).
 
 **Inputs:** the incoming request (however thin); workspace SOUL.md / USER.md pre-read.
 
 **Steps:**
-1. Check SOUL.md / USER.md / any prior brief for the six required fields. Credit any
+1. Check SOUL.md / USER.md / any prior brief for the required fields. Credit any
    already on file and confirm them rather than re-asking.
-2. For each of the six fields NOT already on file, ask the question below (one at a time,
-   in the order listed). Each is MANDATORY -- there is no skip and no assumed default
-   except where explicitly stated:
+2. For each field NOT already on file, ask the question below (one at a time,
+   in the order listed). The six audience/content/hook fields are MANDATORY -- there is no
+   skip and no assumed default except where explicitly stated; the scope fields
+   (DELIVERABLE_SET, WANT_AUDIO_DEMO, TARGET_WPM) and the STYLE BRANCH have sensible defaults
+   (deck-only / false / 140 / create-new) and never block the gate:
 
    **Field 1 -- REPRESENTATION_MIX (with percentages; the audience-composition core)**
    Ask: "Who will be in the seats watching this -- and how should the people in the images
@@ -217,7 +222,46 @@ deferred to the main interview. No brief may be locked without all six fields re
    If none: mark `hook_seed_missing: true`. The Hook Strategist will derive one from the
    offer; note this in brief.json so the Director knows to trigger the Hook Lab.
 
-3. After all six fields are resolved (captured OR flagged), write the pre-presentation
+   **Field 7 -- DELIVERABLE_SET (what ships beyond the deck)**
+   Ask: "Beyond the slide deck itself, what else do you want? I can also produce a
+   presenter's GUIDE (a beautiful branded at-a-glance run-of-show), a full word-for-word
+   SPEECH script, and even an AUDIO demo of the talk in a chosen voice. Pick one:
+   deck only / +guide / +guide+speech / +audio."
+   Capture as: `DELIVERABLE_SET` (one of: deck-only / +guide / +guide+speech / +audio).
+   Default if owner says "just the deck" or "no preference": `deck-only`. The Director uses
+   this to decide whether to dispatch the Presenters Guide Specialist (ROLE-19), the
+   Presenters Speech Writer (ROLE-20), and the Audio Demonstration Specialist (ROLE-21)
+   after the Presenter Coach.
+
+   **Field 8 -- WANT_AUDIO_DEMO (audio demo + voice/persona)**
+   Ask only if DELIVERABLE_SET is "+audio" (otherwise default false): "For the audio demo,
+   what voice or persona should it use -- your own cloned voice, a warm female narrator, a
+   high-energy male host, or something else?"
+   Capture as: `WANT_AUDIO_DEMO` (true / false) and `AUDIO_VOICE_PERSONA` (free text).
+   If "+audio" with no voice named: set `WANT_AUDIO_DEMO: true`, `audio_voice_unset: true`
+   (the Audio Demonstration Specialist asks the owner via the Director before synthesizing;
+   a voice is never defaulted silently). Default when not "+audio": `WANT_AUDIO_DEMO: false`.
+
+   **Field 9 -- TARGET_WPM (speech pace; default 140)**
+   Ask only if DELIVERABLE_SET includes a speech ("+guide+speech" or "+audio"): "How fast
+   should the spoken pace feel -- standard (about 140 words a minute, the most credible
+   pace), a slower teach pace (about 130), or a high-energy pace (about 150 to 160)?"
+   Capture as: `TARGET_WPM` (integer). Default if owner says "you decide" or not asked:
+   `140` (the presentation-speech constant; never silently 150). Mark `target_wpm_defaulted:
+   true` when defaulted.
+
+   **STYLE BRANCH -- "do you have a style or want me to create one?"**
+   Ask: "Do you have an existing deck or visual style you want matched, a reference deck I
+   should analyze, or should we CREATE a fresh signature style for you?"
+   Capture as: `STYLE_SOURCE` (one of: match-existing / analyze-reference / create-new) plus
+   `STYLE_REFERENCE` (a deck/file/URL when match-existing or analyze-reference).
+   - On match-existing or analyze-reference: note that the Brand Steward (the only permitted
+     crossing) submits the reference to the Graphics DIU Style Analyst for a PPT-tier style
+     card whose ID flows to the Slide Image Creator.
+   - On create-new (or no preference): note that the Brand Steward builds the STYLE BLOCK
+     fresh. Default when unanswered: `create-new` with `style_source_defaulted: true`.
+
+3. After the fields are resolved (captured OR flagged), write the pre-presentation
    block to brief.json:
    ```json
    {
@@ -231,18 +275,26 @@ deferred to the main interview. No brief may be locked without all six fields re
        "DARK_OK": false,
        "HOOK_SEED": "...",
        "hook_seed_missing": false,
+       "DELIVERABLE_SET": "deck-only",
+       "WANT_AUDIO_DEMO": false,
+       "AUDIO_VOICE_PERSONA": null,
+       "TARGET_WPM": 140,
+       "STYLE_SOURCE": "create-new",
+       "STYLE_REFERENCE": null,
        "pre_presentation_gate_passed": true
      }
    }
    ```
    Set `pre_presentation_gate_passed: true` only if REPRESENTATION_MIX and
    GROUNDED_CONTENT are captured (or their respective flags are set). VISUAL_MIX,
-   DARK_OK, and HOOK_SEED may use defaults/flags without blocking the gate.
-4. Confirm the six fields back to the owner in a single brief summary before proceeding:
+   DARK_OK, HOOK_SEED, DELIVERABLE_SET, WANT_AUDIO_DEMO, TARGET_WPM, and STYLE_SOURCE may
+   use defaults/flags without blocking the gate.
+4. Confirm the fields back to the owner in a single brief summary before proceeding:
    "Quick check before we dive in -- I have your audience as [AUDIENCE_COMPOSITION_NOTE],
    the content grounded in [GROUNDED_CONTENT], visual style [VISUAL_MIX], dark backgrounds
-   [DARK_OK], and the hook seed [HOOK_SEED or 'to be derived by our Hook Strategist'].
-   Does that look right?"
+   [DARK_OK], the hook seed [HOOK_SEED or 'to be derived by our Hook Strategist'], you want
+   [DELIVERABLE_SET][, audio in a [AUDIO_VOICE_PERSONA] voice at [TARGET_WPM] WPM], and the
+   style is [STYLE_SOURCE]. Does that look right?"
 5. On confirmation, proceed to SOP 9.1 (mode offer).
 
 **Outputs:** `brief.json` with `pre_presentation_capture` block and `pre_presentation_gate_passed: true`.
@@ -587,6 +639,34 @@ Skip only if the answer is already confirmed on file.
   they leave?"
   -> `HOOK_SEED` (free text)
   If none: `hook_seed_missing: true` (Hook Strategist derives it during the build).
+
+### PRE-PRESENTATION SCOPE + STYLE (SOP 9.0, after P1-P6; sensible defaults, never block the gate)
+
+- **D1. DELIVERABLE_SET (default: deck-only)**
+  "Beyond the slide deck, do you want a presenter's GUIDE, a full word-for-word SPEECH script,
+  or an AUDIO demo of the talk? Pick: deck only / +guide / +guide+speech / +audio."
+  -> `DELIVERABLE_SET`. The Director dispatches ROLE-19 (guide), ROLE-20 (speech), ROLE-21
+  (audio) after the Presenter Coach per this value.
+
+- **D2. WANT_AUDIO_DEMO + voice (ask only if "+audio"; default false)**
+  "What voice or persona should the audio demo use -- your cloned voice, a warm female
+  narrator, a high-energy host, or other?"
+  -> `WANT_AUDIO_DEMO` (true/false), `AUDIO_VOICE_PERSONA` (never defaulted silently;
+  set `audio_voice_unset: true` if "+audio" but no voice named).
+
+- **D3. TARGET_WPM (ask only if a speech is in scope; default 140)**
+  "How fast should the spoken pace feel -- standard (~140 WPM, the most credible pace),
+  teach pace (~130), or high-energy (~150-160)?"
+  -> `TARGET_WPM` (integer; default 140, never silently 150; mark `target_wpm_defaulted: true`
+  when defaulted).
+
+- **D4. STYLE BRANCH (default: create-new)**
+  "Do you have an existing deck/visual style to match, a reference deck to analyze, or should
+  we CREATE a fresh signature style for you?"
+  -> `STYLE_SOURCE` (match-existing / analyze-reference / create-new), `STYLE_REFERENCE`
+  (deck/file/URL when matching or analyzing). On match/analyze the Brand Steward submits the
+  reference to the Graphics DIU Style Analyst for a PPT-tier style card (the only permitted DIU
+  crossing); on create the Brand Steward builds the STYLE BLOCK fresh.
 
 ### OPENING (after SOP 9.0 pre-presentation capture; before mode offer)
 

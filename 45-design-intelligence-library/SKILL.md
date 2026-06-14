@@ -36,6 +36,14 @@ End state: a human says *"Use style FB-003 to advertise [product] with [headline
 
 ---
 
+## SCOPE: what Skill 45 decks ARE and are NOT (boundary contract)
+
+**Webinar, funnel, sales, and audience presentation decks are NOT owned by Skill 45.** They are owned by the **Presentations department** and governed by `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` plus the presentations role library. The DIU **Style Rotation Engine** (`PPT-ANALYSIS-SOP.md` §3B) serves **brand / strategy / campaign / pitch / internal decks only**: visual-style-driven multi-slide systems, not communication-driven webinar funnels.
+
+This boundary is enforced, not advisory: the Deck Systems Specialist's SOP 9.5 [SOP-DIU-611] explicitly FORBIDS webinar/funnel/audience decks from routing through the DIU Rotation Engine (`presentations/00-START-HERE.md`). Skill 45 and the Presentations dept are **two separate systems joined by one explicit crossing**: the Presentations Brand Steward MAY submit a reference deck to the DIU Style Analyst for a PPT-tier style card, whose ID is then handed to the Presentations Slide Image Creator. That is the ONLY legal handoff. A webinar/audience deck never runs end-to-end through Skill 45.
+
+---
+
 ## The five specialist roles (live in role-library/graphics after converge)
 
 | Role | Slug | Owns |

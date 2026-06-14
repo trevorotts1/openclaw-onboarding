@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-12T00:00:00Z",
-  "version": "12.4.8",
-  "total_roles": 335,
+  "version": "12.5.0",
+  "total_roles": 355,
   "departments": {
     "app-development": {
       "count": 17,
@@ -404,8 +404,9 @@
       ]
     },
     "presentations": {
-      "count": 17,
+      "count": 21,
       "roles": [
+        "audio-demonstration-specialist",
         "brainstorming-buddy-presentations",
         "brand-steward",
         "capacity-reliability-engineer",
@@ -419,10 +420,13 @@
         "offer-price-strategist",
         "pptx-assembly-specialist",
         "presenter-coach",
+        "presenters-guide-specialist",
+        "presenters-speech-writer",
         "qc-specialist-presentations",
         "slide-copywriter",
         "slide-image-creator",
-        "slide-submitter"
+        "slide-submitter",
+        "typography-architect"
       ]
     },
     "bugs": {
