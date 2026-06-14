@@ -1,3 +1,19 @@
+## [v12.8.0] - 2026-06-14 - feat: Kie callback Worker (centralized, operator CF) + submitter webhook-primary/poll-fallback
+
+### Changes
+
+- New Skill 46 (46-kie-callback-relay): centralized Cloudflare Worker at kie-callback.zerohumanworkforce.com receives all Kie.ai image-generation callbacks for the fleet, verifies Kie HMAC-SHA256 signature once centrally, enforces a 300-second replay window (operator policy; Kie does not define one), and stores verified results in Worker KV (transport B2 from DESIGN.md).
+- Worker code: worker/src/index.js (Cloudflare Workers ES module, no npm runtime deps). Routes: POST /cb (callback receiver), GET /kv-read (box polling endpoint), GET /healthz (deploy verification). wrangler.toml wired to account 13f808b72eb78027a8046357c6cf1afa, zone zerohumanworkforce.com (zone ID confirmed via CF API 2026-06-14).
+- Box-side KV poller (box-kv-poller.js): polls Worker GET /kv-read every 2 seconds (does not consume Kie's 10-req/s query budget), validates perTaskSecret against local task registry, allowlists result URLs to Kie CDN hosts before download, writes idempotent done-marker (.kie/done/<taskId>.json), falls back to Kie recordInfo poll with backoff up to 10-minute ceiling.
+- Slide submitter (kie-slide-submitter.js): webhook-primary, poll-fallback, crash-safe. Submits full deck batch first (respecting 20-per-10-seconds creation rate; source: https://docs.kie.ai/ verified 2026-06-14), then waits for all results in parallel. Callbacks enabled above 5-slide threshold; smaller decks use efficient batch polling (Candidate C). On restart: skips slides with done-markers, re-enters wait queue for slides with taskId but no marker, re-submits slides that crashed before Kie returned a taskId.
+- Skill 07 (07-kie-setup/SKILL.md) updated: corrected rate limit citation (20 requests per 10 seconds; source: docs.kie.ai verified 2026-06-14), added Skill 46 companion section and callBackUrl format reference, added Flux URL 10-minute expiry note. skill-version.txt bumped v6.5.8 -> v6.6.0.
+- DEPLOY.md: step-by-step deploy guide (KV namespace create, wrangler secret put, wrangler deploy, smoke test, secret rotation procedure).
+- SUBMITTER-SOP.md: operator SOP for the webhook-primary slide submit loop.
+- Zero client names in any new or modified repo file (verified by diff review).
+- All 9 version markers bumped to v12.8.0.
+
+---
+
 ## [v12.7.2] - 2026-06-14 - feat: Presentations SOP overhaul + image-prompt hardening + ROLE-23 first-time-onboarding (union of all 4 PRs)
 
 ### Changes
