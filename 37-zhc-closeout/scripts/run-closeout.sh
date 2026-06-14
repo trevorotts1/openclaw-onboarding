@@ -90,7 +90,7 @@ for cmd in jq curl openclaw; do
   fi
 done
 # ---- PRD-2.15 (v12.3.12): EARLY interviewQc check (before API-key preflight) ----
-# If the interview QC hasn't passed, refuse immediately — no point checking API keys
+# If the interview QC hasn't passed, refuse immediately - no point checking API keys
 # for a closeout we're about to refuse. This is a cheap token-free read.
 _early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
 _early_build_done=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE" 2>/dev/null || true)
@@ -105,11 +105,13 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
     [[ -f "$_cand" ]] && _EARLY_QC_SCRIPT="$_cand" && break
   done
   if [[ -n "$_EARLY_QC_SCRIPT" ]]; then
-    python3 "$_EARLY_QC_SCRIPT" --write-state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    # --write-state is a flag; the state path goes via --state (the old positional
+    # form was rejected by argparse and silently no-op'd this QC re-check).
+    python3 "$_EARLY_QC_SCRIPT" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
     _early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
   fi
   if [[ "$_early_qc" != "pass" ]]; then
-    _early_block_reason="interviewQc.status=${_early_qc} (not pass) — refusing to close out an unverified interview."
+    _early_block_reason="interviewQc.status=${_early_qc} (not pass) - refusing to close out an unverified interview."
     log "ERROR" "BLOCKED (interviewQc gate): $_early_block_reason"
     _tmp_s=$(mktemp)
     jq ".closeoutStatus = \"blocked-interview-incomplete\" | .closeoutBlockReason = \"$_early_block_reason\"" \
@@ -126,7 +128,7 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
     _OP_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
     if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
       openclaw message send --channel telegram -t "$_OP_CHAT" \
-        -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_early_qc} — closeout refused for $(jq -r '.companyName // empty' "$STATE_FILE" 2>/dev/null). State: $STATE_FILE" \
+        -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_early_qc} - closeout refused for $(jq -r '.companyName // empty' "$STATE_FILE" 2>/dev/null). State: $STATE_FILE" \
         >>"$LOG_FILE" 2>&1 || true
     fi
     exit 0  # never fail-hard; watchdog + resume cron drive it
@@ -190,14 +192,16 @@ if [[ "$_qc_status" != "pass" ]]; then
     [[ -f "$_cand" ]] && _QC_SCRIPT="$_cand" && break
   done
   if [[ -n "$_QC_SCRIPT" ]]; then
-    log "INFO" "interviewQc.status=${_qc_status} — running qc-interview-completion.py --write-state (best-effort)"
-    python3 "$_QC_SCRIPT" --write-state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    log "INFO" "interviewQc.status=${_qc_status} - running qc-interview-completion.py --write-state --state (best-effort)"
+    # --write-state is a flag; the state path goes via --state (the old positional
+    # form was rejected by argparse and silently no-op'd this QC re-check).
+    python3 "$_QC_SCRIPT" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
     _qc_status=$(state_get '.interviewQc.status')
     log "INFO" "interviewQc.status after inline QC run: ${_qc_status}"
   fi
 fi
 if [[ "$_qc_status" != "pass" ]]; then
-  _block_reason="interviewQc.status=${_qc_status} (not pass) — refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass."
+  _block_reason="interviewQc.status=${_qc_status} (not pass) - refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass."
   log "ERROR" "BLOCKED: $_block_reason"
   state_set ".closeoutStatus = \"blocked-interview-incomplete\" | .closeoutBlockReason = \"$_block_reason\""
   # Write closeoutBlockers entry so the operator surface (fleet-stuck-clients.sh) shows it
@@ -213,19 +217,19 @@ if [[ "$_qc_status" != "pass" ]]; then
   _OPERATOR_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
   if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     openclaw message send --channel telegram -t "$_OPERATOR_CHAT" \
-      -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_qc_status} — closeout refused for $(state_get '.companyName'). Verify interview + run QC. State: $STATE_FILE" \
+      -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_qc_status} - closeout refused for $(state_get '.companyName'). Verify interview + run QC. State: $STATE_FILE" \
       >>"$LOG_FILE" 2>&1 || true
   fi
   exit 0  # never fail-hard; watchdog + resume cron drive it
 fi
-log "INFO" "interviewQc.status=pass — gate cleared"
+log "INFO" "interviewQc.status=pass - gate cleared"
 
 # ---- v10.x: ZHC-STANDARD PREFLIGHT (libraries must be REAL on disk) -------
 # buildCompletedAt alone is not proof: an agent could have written it while the
 # role/SOP libraries are empty/thin. Re-verify the disk substance via Skill 23's
 # verify-zhc-standard.sh (the single source of truth) BEFORE generating ANY
 # closeout artifact. If the role/SOP library is not substantive, REFUSE to
-# close out and let the resume cron re-fire the library build — never deliver a
+# close out and let the resume cron re-fire the library build - never deliver a
 # celebration for an empty workforce.
 ZHC_STD_SCRIPT=""
 for cand in \
@@ -238,7 +242,7 @@ if [[ -n "$ZHC_STD_SCRIPT" ]]; then
   bash "$ZHC_STD_SCRIPT" >> "$LOG_FILE" 2>&1
   ZHC_STD_RC=$?
   # v10.x HARD FLOOR: rc 3 = department floor not met ON DISK (fewer than the 16
-  # mandatory + industry vertical-pack departments, minus explicit declines —
+  # mandatory + industry vertical-pack departments, minus explicit declines -
   # measured against real folders, NOT the build-state JSON). rc 4 = role library
   # not done, rc 5 = SOP library not done. ALL THREE block closeout so a
   # HEAVILY-REDUCED workforce (Cassandra 3-dept / Kofi-style 6-dept / a seeded
@@ -514,7 +518,7 @@ GATE_NOTION_RESULT=held
 # STEP 2 -- Infographic #1 (Workforce Structure)
 # PRD-2.8: after the 8.5 quality gate passes, ASSERT the connector-tree
 # requirement programmatically via qc-assert-org-chart-connector-tree.sh.
-# This is NOT just documentation — it is a hard check.
+# This is NOT just documentation - it is a hard check.
 # ----------------------------------------------------------------------
 if [[ -n "$(state_get '.infographic1Url')" && "$(state_get '.infographic1Url')" != "null" && "$(gate_get_score org_chart)" != "" ]] && rate_meets_gate "$(gate_get_score org_chart)" && [[ "$(gate_get_qc org_chart)" == "pass" ]]; then
   log "INFO" "step=2 infographic-1: already done + gate-passed -- skipping"
@@ -543,12 +547,12 @@ if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
     if [[ "$ct_rc" -eq 0 ]]; then
       log "INFO" "step=2 org-chart connector-tree ASSERTED (pass)"
     elif [[ "$ct_rc" -eq 3 ]]; then
-      # PRD-2.15 (v12.3.12): rc=3 means NO artifact (no HTML/PNG rendered — Playwright crash,
-      # missing Chromium, or fresh-VPS). This is NOT inconclusive — it is a HARD operator-visible
+      # PRD-2.15 (v12.3.12): rc=3 means NO artifact (no HTML/PNG rendered - Playwright crash,
+      # missing Chromium, or fresh-VPS). This is NOT inconclusive - it is a HARD operator-visible
       # HOLD. The prior "proceed on agent rating" was the exact silent failure mode that let Beverly
       # get a green while Playwright had never run. Changed from WARN+proceed to ERROR+escalate.
       _inf1_fail_reason="playwright-rc3: org-chart renderer returned no HTML/PNG artifact (Playwright crash or Chromium missing on this host)"
-      log "ERROR" "step=2 org-chart rc=3 — NO artifact rendered. Classifying as HARD HOLD (not inconclusive). Reason: $_inf1_fail_reason"
+      log "ERROR" "step=2 org-chart rc=3 - NO artifact rendered. Classifying as HARD HOLD (not inconclusive). Reason: $_inf1_fail_reason"
       GATE_INF1_RESULT=held
       STEP_INF1_STATUS=failed
       state_set ".infographic1FailureReason = \"$_inf1_fail_reason\"" || true

@@ -67,7 +67,16 @@
         "string",
         "null"
       ],
-      "format": "date-time"
+      "format": "date-time",
+      "description": "PRD-3.3 R3.3 (v12.4.x auto-closeout): the build-completion timestamp. Written AUTOMATICALLY BY A SCRIPT (resume-workforce-build.sh) the moment every department is done + roleLibraryStatus==done + sopLibraryStatus==done + commsAutomationStatus terminal, so the closeout fires without an agent hand-write. The agent's inline write is a redundant faster path (idempotent: the cron only writes when this is empty). Previously this was an agent-only hand-write with no script writer (the missing HOP-4, diag/03)."
+    },
+    "buildKickRequestedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "PRD-3.3 R3.1 (v12.4.x auto-closeout): ISO timestamp written by update-interview-state.sh --complete when it seeds the build/closeout gate fields and fires the internal [WORKFORCE-RESUME] build-kick self-ping. Makes 'interview finished' a state-driven trigger that starts the build immediately instead of waiting on a second agent hand-write. Auditable + idempotent (re-running --complete refreshes it; the build-kick is skipped when departments are already underway)."
     },
     "departments": {
       "type": "array",
@@ -866,6 +875,63 @@
         "null"
       ],
       "description": "PRD-2.15 (v12.3.12): Notion page ID of the root closeout page, set by create-notion-closeout.sh on first successful run (alongside notionRootPageUrl). The --refresh-workforce-only path reads this to avoid its 'skip forever' failure mode."
+    },
+    "canonicalReconciliation": {
+      "type": "object",
+      "description": "PRD R2.x (v12.5.x reconciliation engine): the auditable record of how the owner's department set was reconciled with the canonical floor (21 mandatory + 7 universal-primary = 28, computed live). Written by build-workforce.py reconcile_canonical_floor / apply_semantic_merges / materialize_custom_roles / capture_custom_sops and read by department-floor.py.",
+      "properties": {
+        "decisions": {
+          "type": "object",
+          "description": "Per-dept opt-in/opt-out: id -> 'yes'|'no'|'later'. Covers mandatory canonical depts AND the 7 universal-primary vertical depts AND custom depts (R2.6 symmetric opt-out). A 'no' is the ONLY sanctioned way below the floor; honored by both build-workforce.py and department-floor.py.",
+          "additionalProperties": true
+        },
+        "mergeDecisions": {
+          "type": "object",
+          "description": "R2.3 Capability 2 semantic merge: custom_id -> 'merge'|'keep'. 'merge' folds the custom dept INTO the overlapping canonical dept (one department, no duplicate); 'keep' ships both standalone. An un-decided overlap stays standalone and is recorded under semanticMerges.pending.",
+          "additionalProperties": true
+        },
+        "customKeeps": {
+          "type": "array",
+          "description": "R2.2 Capability 1: non-canonical departments the owner explicitly asked for that have no floor equivalent (preserved as standalone).",
+          "items": { "type": "string" }
+        },
+        "customRoles": {
+          "type": "object",
+          "description": "R2.4 Capability 3 INPUT: dept_id -> list of extra roles the owner asked for (string title or {title, summary, permanent}). Materialized at build by materialize_custom_roles().",
+          "additionalProperties": true
+        },
+        "customRolesBuilt": {
+          "type": "array",
+          "description": "R2.4 Capability 3 AUDIT: the custom roles actually materialized at build ({dept, title, slug, permanent}).",
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "customSops": {
+          "type": "object",
+          "description": "R2.5 Capability 4 INPUT: dept_id -> list of owner-specific procedures (string or {title, procedure}). Captured at build by capture_custom_sops() respecting sop_boundary_gate.py.",
+          "additionalProperties": true
+        },
+        "customSopsCaptured": {
+          "type": "array",
+          "description": "R2.5 Capability 4 AUDIT: procedures captured ({dept, title, isCanonical, file}). isCanonical=true => supplemental overlay over copied library SOPs (LLM authoring refused); false => LLM-authoring ground truth for a custom dept.",
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "semanticMerges": {
+          "type": "object",
+          "description": "R2.3 AUDIT: {proposals, merged, kept, pending, evaluatedAt, source} from apply_semantic_merges().",
+          "additionalProperties": true
+        },
+        "mergedInto": {
+          "type": "object",
+          "description": "R2.3 build-time layering carrier: survivor canonical dept id -> list of absorbed custom dept records ({id, name, description, base_suggested_roles}) so the survivor materializes the absorbed function as a role inside itself.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "verticalPacks": {
+      "type": "object",
+      "description": "Auditable vertical-pack application record written by build-workforce.py apply_vertical_packs(): {detectedPacks, addedDepartments, skippedDuplicates, declinedVerticals, researchManifest, appliedAt, source}. declinedVerticals (R2.6) lists universal-primary verticals the owner opted out of, skipped at build.",
+      "additionalProperties": true
     }
   }
 }

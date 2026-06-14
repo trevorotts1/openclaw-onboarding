@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# resume-workforce-build.sh — autonomous resume layer for Skill 23 builds
+# resume-workforce-build.sh - autonomous resume layer for Skill 23 builds
 #
 # Reads /data/.openclaw/workspace/.workforce-build-state.json. If the state
 # shows pending or stale-building departments, sends a self-message via
@@ -43,7 +43,7 @@ LOG_FILE="$OC_ROOT/workspace/.workforce-build-state.log"
 RUN_COUNT_FILE="$OC_ROOT/workspace/.workforce-build-resume-runs.count"
 MAX_ATTEMPTS_DEFAULT=12
 STALE_BUILDING_MINUTES=15
-# v10.14.36 — defense-in-depth max-runs cap.
+# v10.14.36 - defense-in-depth max-runs cap.
 # After 24 fires (6h at 15-min intervals) the cron auto-removes itself
 # regardless of state. A workforce build that hasn't completed in 6 hours
 # is stuck; the cron is no longer useful, kill it.
@@ -53,7 +53,7 @@ log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"
 }
 
-# Remote Rescue v1 — resolve the operator's Telegram chat ID for escalations.
+# Remote Rescue v1 - resolve the operator's Telegram chat ID for escalations.
 # Lookup order: env.vars.OPERATOR_TELEGRAM_CHAT_ID -> $OPERATOR_TELEGRAM_CHAT_ID
 # -> $OPENCLAW_TREVOR_CHAT (legacy) -> hardcoded 5252140759 (Trevor default).
 resolve_operator_chat_id() {
@@ -76,7 +76,7 @@ resolve_operator_chat_id() {
   printf '%s' "$v"
 }
 
-# v10.14.36 — locate this cron's UUID by name so we can self-remove.
+# v10.14.36 - locate this cron's UUID by name so we can self-remove.
 # OpenClaw doesn't pass a CRON_UUID env var, so we resolve by --name.
 # Returns empty string if openclaw CLI is unavailable or the cron isn't listed.
 find_self_cron_uuid() {
@@ -86,14 +86,14 @@ find_self_cron_uuid() {
     | head -1
 }
 
-# v10.14.36 — self-remove the workforce-build-resume cron. Tolerates missing
+# v10.14.36 - self-remove the workforce-build-resume cron. Tolerates missing
 # UUID/CLI; logs whatever it can. Never errors out the script.
 self_remove_cron() {
   local reason="$1"
   local uuid
   uuid=$(find_self_cron_uuid)
   if [[ -z "$uuid" ]]; then
-    log "self_remove_cron($reason): could not resolve workforce-build-resume UUID — leaving cron in place"
+    log "self_remove_cron($reason): could not resolve workforce-build-resume UUID - leaving cron in place"
     return 0
   fi
   log "self_remove_cron($reason): removing cron $uuid"
@@ -101,11 +101,11 @@ self_remove_cron() {
     log "self_remove_cron($reason): removed $uuid"
     rm -f "$RUN_COUNT_FILE" 2>/dev/null || true
   else
-    log "self_remove_cron($reason): openclaw cron rm $uuid FAILED — see errors above"
+    log "self_remove_cron($reason): openclaw cron rm $uuid FAILED - see errors above"
   fi
 }
 
-# ---- v10.14.36: BELT — explicit self-stop on terminal state ----
+# ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
 # (status=done / closeoutStatus=done|sent) is NO LONGER trusted as proof on its
 # own. A hand-seeded build-state (Cassandra's 3-dept fiction) used to flip the
@@ -144,11 +144,11 @@ if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
       _floor_rc=$?
       if [[ "$_floor_rc" == "3" ]]; then
         _allow_remove=0
-        log "BELT: terminal JSON state (build_status=$_build_status, closeout=$_closeout_status) but DEPARTMENT FLOOR NOT MET on disk (department-floor.py rc=3). REFUSING to self-remove — a seeded/reduced build-state will not end the build. Driving the floor instead."
+        log "BELT: terminal JSON state (build_status=$_build_status, closeout=$_closeout_status) but DEPARTMENT FLOOR NOT MET on disk (department-floor.py rc=3). REFUSING to self-remove - a seeded/reduced build-state will not end the build. Driving the floor instead."
       fi
     fi
     if (( _allow_remove == 1 )); then
-      log "BELT: terminal state detected + floor satisfied (build_status=$_build_status, closeout=$_closeout_status, completed=$_build_completed_at) — removing self-cron and exiting"
+      log "BELT: terminal state detected + floor satisfied (build_status=$_build_status, closeout=$_closeout_status, completed=$_build_completed_at) - removing self-cron and exiting"
       self_remove_cron "terminal-state"
       exit 0
     fi
@@ -157,12 +157,12 @@ fi
 
 # ---- v10.15.18: NEVER-STOP run accounting (Rule 8) ----
 # PRIOR BEHAVIOR (v10.14.36): after MAX_RUNS_BEFORE_SELF_REMOVE the cron
-# auto-REMOVED itself — a stall trap that let a half-built workforce sit forever
+# auto-REMOVED itself - a stall trap that let a half-built workforce sit forever
 # while the client never found out. Rule 8 forbids stopping: the only legitimate
 # terminal state is a REAL completion (build done + closeout confirmed), which is
 # handled by the BELT terminal-state check above (self_remove_cron). When we
 # instead just hit the run cap WITHOUT completing, we ESCALATE to Rescue Rangers
-# (once) and KEEP RETRYING in a slow-backoff posture — we never self-remove on a
+# (once) and KEEP RETRYING in a slow-backoff posture - we never self-remove on a
 # run count.
 mkdir -p "$(dirname "$RUN_COUNT_FILE")" 2>/dev/null || true
 _run_count=0
@@ -178,18 +178,18 @@ if (( _run_count > MAX_RUNS_BEFORE_SELF_REMOVE )); then
   # 8th fire ≈ once every 2 hours (the spec's 2h-backoff-retry).
   _over=$(( _run_count - MAX_RUNS_BEFORE_SELF_REMOVE ))
   if (( _over % 8 != 1 )); then
-    log "NEVER-STOP: run #$_run_count past cap ($MAX_RUNS_BEFORE_SELF_REMOVE) — in 2h-backoff slow mode, skipping this fire (will act on the next 2h boundary). NOT self-removing."
+    log "NEVER-STOP: run #$_run_count past cap ($MAX_RUNS_BEFORE_SELF_REMOVE) - in 2h-backoff slow mode, skipping this fire (will act on the next 2h boundary). NOT self-removing."
     exit 0
   fi
-  log "NEVER-STOP: run #$_run_count past cap — slow-retry fire. Escalating to Rescue Rangers (once) and continuing; will NOT self-remove on run count."
+  log "NEVER-STOP: run #$_run_count past cap - slow-retry fire. Escalating to Rescue Rangers (once) and continuing; will NOT self-remove on run count."
   if command -v openclaw >/dev/null 2>&1; then
     _already_escalated=$(jq -r '.rescueRangersEscalated // false' "$STATE_FILE" 2>/dev/null)
     if [[ "$_already_escalated" != "true" ]]; then
-      # Escalate via the n8n Rescue Rangers webhook (NOT bot-to-bot Telegram —
+      # Escalate via the n8n Rescue Rangers webhook (NOT bot-to-bot Telegram -
       # bots can't read other bots, so the old group post never reached the rescue agent).
       _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
       if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
-        _rr_msg="workforce-build-resume on $(hostname) has run $_run_count times without reaching a real completion. roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}. Now in 2h-backoff slow-retry (NOT stopped — Rule 8). Run scripts/verify-zhc-standard.sh + verify-library-gate.sh on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
+        _rr_msg="workforce-build-resume on $(hostname) has run $_run_count times without reaching a real completion. roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}. Now in 2h-backoff slow-retry (NOT stopped - Rule 8). Run scripts/verify-zhc-standard.sh + verify-library-gate.sh on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
         _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
           '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
         curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
@@ -197,13 +197,13 @@ if (( _run_count > MAX_RUNS_BEFORE_SELF_REMOVE )); then
       _operator_chat="$(resolve_operator_chat_id)"
       if [[ -n "$_operator_chat" ]]; then
         openclaw message send --channel telegram -t "$_operator_chat" \
-          -m "⚠️ workforce-build-resume on $(hostname) hit $_run_count runs without completing — escalated to Rescue Rangers and switched to 2h-backoff slow-retry. It will KEEP retrying until libraries + closeout are real (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
+          -m "⚠️ workforce-build-resume on $(hostname) hit $_run_count runs without completing - escalated to Rescue Rangers and switched to 2h-backoff slow-retry. It will KEEP retrying until libraries + closeout are real (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
       fi
       _tmp_esc=$(mktemp)
       jq '.rescueRangersEscalated = true' "$STATE_FILE" > "$_tmp_esc" 2>/dev/null && mv "$_tmp_esc" "$STATE_FILE" || rm -f "$_tmp_esc"
     fi
   fi
-  # fall through and keep working — do NOT self_remove_cron on a run count
+  # fall through and keep working - do NOT self_remove_cron on a run count
 fi
 
 # ---- v10.14.20: heal config before any gateway interaction ----
@@ -213,17 +213,17 @@ fi
 
 # ---- preconditions ----
 if [[ ! -f "$STATE_FILE" ]]; then
-  log "no state file at $STATE_FILE — nothing to resume; exiting clean"
+  log "no state file at $STATE_FILE - nothing to resume; exiting clean"
   exit 0
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
-  log "jq not installed — cannot parse state; exiting"
+  log "jq not installed - cannot parse state; exiting"
   exit 0
 fi
 
 if ! command -v openclaw >/dev/null 2>&1; then
-  log "openclaw CLI not on PATH — cannot dispatch resume; exiting"
+  log "openclaw CLI not on PATH - cannot dispatch resume; exiting"
   exit 0
 fi
 
@@ -233,10 +233,10 @@ if [[ -f "$LOCK_FILE" ]]; then
   now=$(date +%s)
   lock_age=$(( now - lock_mtime ))
   if (( lock_age < 600 )); then
-    log "lock held for ${lock_age}s (< 600s) — another resume in flight; exiting"
+    log "lock held for ${lock_age}s (< 600s) - another resume in flight; exiting"
     exit 0
   fi
-  log "stale lock (age ${lock_age}s) — clearing"
+  log "stale lock (age ${lock_age}s) - clearing"
 fi
 echo $$ > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"' EXIT
@@ -244,8 +244,63 @@ trap 'rm -f "$LOCK_FILE"' EXIT
 # ---- read state ----
 interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE")
 if [[ "$interview_complete" != "true" ]]; then
-  log "interview not yet complete — nothing to resume"
-  exit 0
+  # PRD-3.3 R3.2 (auto-closeout): RECOVER a finished-but-unflagged interview.
+  # Prior behavior: this hard-exited the moment interviewComplete != true, which
+  # made the ONLY recovery cron blind to an interview the owner genuinely finished
+  # but whose interviewComplete flag the agent never wrote (HOP-1 miss, diag/03).
+  # From that point the build never started and the owner got silence + a wrong
+  # "finish your interview" nudge. Now: if the interview CONTENT looks complete
+  # (a real lastQuestionAt exists, i.e. the interview was conducted) but the flag
+  # is missing, run the QC gate against the transcript. The QC gate - not this
+  # cron, and not the agent's memory - is the authority on "is the interview
+  # actually complete." If QC returns pass, the content IS complete: set the flag
+  # via the canonical writer (update-interview-state.sh --complete, which is
+  # idempotent and also seeds the build + kicks it) and fall through to drive the
+  # build. If QC is fail/needs-review/pending-after-run, do NOT force the flag -
+  # leave it for the QC-resume / watchdog lanes (a half-interview must not be
+  # promoted to a build). This NEVER fabricates answers; it only flips a flag the
+  # owner's completed content already earned.
+  last_q_at_unflagged=$(jq -r '.interviewProgress.lastQuestionAt // empty' "$STATE_FILE" 2>/dev/null || true)
+  if [[ -z "$last_q_at_unflagged" || "$last_q_at_unflagged" == "null" ]]; then
+    log "interview not yet complete and no lastQuestionAt - interview not started; nothing to recover"
+    exit 0
+  fi
+  log "RECOVERY: interviewComplete!=true but interview content exists (lastQuestionAt=$last_q_at_unflagged) - running QC to decide if the owner actually finished (HOP-1 recovery)."
+  _recover_qc_status="pending"
+  QC_SCRIPT_RECOVER="${SCRIPT_DIR}/qc-interview-completion.py"
+  if [[ -f "$QC_SCRIPT_RECOVER" ]] && command -v python3 >/dev/null 2>&1; then
+    # --write-state is a flag; the state path goes via --state (the old
+    # positional form was rejected by argparse and silently no-op'd QC).
+    python3 "$QC_SCRIPT_RECOVER" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    _recover_qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
+    log "RECOVERY: QC verdict on unflagged interview = $_recover_qc_status"
+  else
+    log "RECOVERY: qc-interview-completion.py not found at $QC_SCRIPT_RECOVER - cannot verify completeness; leaving unflagged for the watchdog."
+  fi
+  if [[ "$_recover_qc_status" == "pass" ]]; then
+    # Content verified complete. Promote via the canonical idempotent writer so the
+    # same flag + gate-seeding + build-kick path runs as a normal --complete.
+    COMPLETE_WRITER="${SCRIPT_DIR}/update-interview-state.sh"
+    if [[ -f "$COMPLETE_WRITER" ]]; then
+      log "RECOVERY: QC=pass - promoting interview to complete via update-interview-state.sh --complete (idempotent; seeds build + kicks it)."
+      bash "$COMPLETE_WRITER" --complete >>"$LOG_FILE" 2>&1 || log "RECOVERY: update-interview-state.sh --complete returned non-zero (non-fatal; setting flag inline as fallback)."
+    fi
+    interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE")
+    if [[ "$interview_complete" != "true" ]]; then
+      # Fallback: writer missing or failed - set the flag inline so we proceed.
+      _now_rec=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      _tmp_rec=$(mktemp)
+      jq --arg now "$_now_rec" '.interviewComplete = true | .interviewCompletedAt = (.interviewCompletedAt // $now) | (if .departments == null then .departments = [] else . end) | (if .roleLibraryStatus == null then .roleLibraryStatus = "pending" else . end) | (if .sopLibraryStatus == null then .sopLibraryStatus = "pending" else . end)' "$STATE_FILE" > "$_tmp_rec" 2>/dev/null \
+        && mv "$_tmp_rec" "$STATE_FILE" || rm -f "$_tmp_rec"
+      interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE")
+      log "RECOVERY: set interviewComplete=true inline (fallback)."
+    fi
+    log "RECOVERY: interview promoted to complete - continuing into the normal resume/build path."
+    # fall through - do NOT exit; the rest of this script now drives the build.
+  else
+    log "RECOVERY: QC=$_recover_qc_status (not pass) - NOT promoting. The owner-facing nudge / QC-resume / watchdog lanes own an unfinished or unverifiable interview. Exiting (nothing to resume yet)."
+    exit 0
+  fi
 fi
 
 # ---- PRD-2.15 (v12.3.12): QC-aware resume gate ----
@@ -257,20 +312,22 @@ qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null |
 if [[ "$qc_status" != "pass" ]]; then
   QC_SCRIPT="${SCRIPT_DIR}/qc-interview-completion.py"
   if [[ "$qc_status" == "pending" ]] && [[ -f "$QC_SCRIPT" ]]; then
-    log "[QC-RESUME] interviewQc.status=pending — running qc-interview-completion.py --write-state (best-effort)"
-    python3 "$QC_SCRIPT" --write-state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    log "[QC-RESUME] interviewQc.status=pending - running qc-interview-completion.py --write-state --state (best-effort)"
+    # --write-state is a flag; the state path goes via --state (the old positional
+    # form was rejected by argparse and silently no-op'd QC, stranding the gate).
+    python3 "$QC_SCRIPT" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
     qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
     log "[QC-RESUME] interviewQc.status after QC run: $qc_status"
   fi
   if [[ "$qc_status" != "pass" ]]; then
-    log "[QC-RESUME] interviewQc.status=$qc_status — cannot resume build until QC passes. Firing self-ping for agent to review QC."
+    log "[QC-RESUME] interviewQc.status=$qc_status - cannot resume build until QC passes. Firing self-ping for agent to review QC."
     if command -v openclaw >/dev/null 2>&1; then
       _owner_chat=$(jq -r '.ownerChat // empty' "$STATE_FILE" 2>/dev/null || true)
       # Self-ping is INTERNAL (to agent, not owner). Use operator escalation path if available.
       _operator_chat=$(resolve_operator_chat_id 2>/dev/null || echo "5252140759")
       if [[ -n "$_operator_chat" ]]; then
         openclaw message send --channel telegram -t "$_operator_chat" \
-          -m "⚠️ [QC-RESUME] interviewQc.status=${qc_status} on $(hostname) — build resume blocked until QC gate passes. State: $STATE_FILE" \
+          -m "⚠️ [QC-RESUME] interviewQc.status=${qc_status} on $(hostname) - build resume blocked until QC gate passes. State: $STATE_FILE" \
           >>"$LOG_FILE" 2>&1 || true
       fi
     fi
@@ -302,7 +359,7 @@ fi
 # how-to.md (roleLibraryStatus != done) OR the SOP library NOT authored
 # (sopLibraryStatus != done) is INCOMPLETE. Fire a [LIBRARY-RESUME] self-ping so
 # the agent runs verify-library-gate.sh + re-pulls. Only relevant once all depts
-# are done (no pending/stale) and BEFORE closeout owns the rest — the gate runs
+# are done (no pending/stale) and BEFORE closeout owns the rest - the gate runs
 # before the closeout gate. Last-night incident (Kofi/Teresa/Evelyn/Maria/Lyric).
 role_library_status=$(jq -r '.roleLibraryStatus // empty' "$STATE_FILE")
 sop_library_status=$(jq -r '.sopLibraryStatus // empty' "$STATE_FILE")
@@ -333,21 +390,70 @@ if (( pending_count == 0 )) && (( stale_building_count == 0 )) && (( library_dir
   esac
 fi
 
+# ---- PRD-3.3 R3.3 (auto-closeout): SCRIPT writes buildCompletedAt + closeoutStatus=pending ----
+# This was HOP-4, the missing link (diag/03): NO script wrote buildCompletedAt -
+# it was an agent hand-write, so if the agent's session ended after the last
+# department finished, the build sat "done on disk" but never crossed into the
+# closeout, and the owner got nothing. Now the cron itself writes it the moment
+# the FULL completion contract is satisfied on the state:
+#   - every department done (pending_count==0, stale_building_count==0, all done)
+#   - roleLibraryStatus==done AND sopLibraryStatus==done (library_dirty==0)
+#   - commsAutomationStatus terminal (done|not-applicable, comms_automation_dirty==0)
+# Only then do we stamp buildCompletedAt + set closeoutStatus=pending (if not
+# already terminal). This is the deterministic HOP-4 the chain was missing; it
+# fires BEFORE the closeout_dirty recompute below so the SAME cron fire dispatches
+# the [CLOSEOUT-RESUME] self-ping. The agent inline-write path still works and is
+# idempotent (we only write when buildCompletedAt is empty), so this never
+# double-writes or races an agent that got there first.
+if (( pending_count == 0 )) && (( stale_building_count == 0 )) \
+   && (( library_dirty == 0 )) && (( comms_automation_dirty == 0 )) \
+   && (( total_count_now > 0 )) && (( done_count_now == total_count_now )) \
+   && [[ -z "$build_completed_at" ]]; then
+  log "AUTO-COMPLETE (HOP-4): all ${total_count_now} departments done + libraries done (role=$role_library_status sop=$sop_library_status) + comms-automations terminal ($comms_automation_status) but buildCompletedAt was unset - writing buildCompletedAt + closeoutStatus=pending so the closeout fires automatically (no agent hand-write required)."
+  _now_bc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  _tmp_bc=$(mktemp)
+  # Set buildCompletedAt; only set closeoutStatus=pending if it is not already a
+  # later/terminal state (do not clobber generating/sent/done/partial/blocked-*).
+  if jq --arg now "$_now_bc" '
+        .buildCompletedAt = $now
+        | (if ((.closeoutStatus // "") | IN("generating","partial","sent","done","failed","blocked-floor-incomplete","blocked-libraries-incomplete","blocked-interview-incomplete")) then . else .closeoutStatus = "pending" end)
+      ' "$STATE_FILE" > "$_tmp_bc" 2>/dev/null; then
+    mv "$_tmp_bc" "$STATE_FILE"
+    # Refresh local copies so the dirty recompute below sees the new values.
+    build_completed_at=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE")
+    closeout_status=$(jq -r '.closeoutStatus // empty' "$STATE_FILE")
+    log "AUTO-COMPLETE (HOP-4): wrote buildCompletedAt=$build_completed_at, closeoutStatus=$closeout_status."
+  else
+    rm -f "$_tmp_bc"
+    log "AUTO-COMPLETE (HOP-4): WARN - failed to write buildCompletedAt (non-fatal; will retry next fire)."
+  fi
+fi
+
+# Recompute closeout_dirty now that HOP-4 may have just set buildCompletedAt, so
+# this same fire can dispatch the [CLOSEOUT-RESUME] self-ping below.
+closeout_dirty=0
+if [[ -n "$build_completed_at" ]]; then
+  case "$closeout_status" in
+    done|sent) closeout_dirty=0 ;;
+    *) closeout_dirty=1 ;;
+  esac
+fi
+
 total_attention=$(( pending_count + stale_building_count + library_dirty + comms_automation_dirty + closeout_dirty ))
 if (( total_attention == 0 )); then
   done_count=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
   total_count=$(jq -r '.departments | length' "$STATE_FILE")
   if (( done_count == total_count )) && (( total_count > 0 )); then
-    log "ALL ${total_count} departments done + libraries done (role=$role_library_status sop=$sop_library_status) + comms-automations terminal (status=$comms_automation_status) + closeout terminal (status=$closeout_status) — nothing to do"
+    log "ALL ${total_count} departments done + libraries done (role=$role_library_status sop=$sop_library_status) + comms-automations terminal (status=$comms_automation_status) + closeout terminal (status=$closeout_status) - nothing to do"
   else
-    log "no pending/stale departments, comms-automations clean (status=$comms_automation_status), closeout clean (pending=$pending_count, stale=$stale_building_count, closeout=$closeout_status) — nothing to do"
+    log "no pending/stale departments, comms-automations clean (status=$comms_automation_status), closeout clean (pending=$pending_count, stale=$stale_building_count, closeout=$closeout_status) - nothing to do"
   fi
   exit 0
 fi
 
 # ---- attempt cap (v10.15.18: escalate-and-CONTINUE, never hard-stop) ----
 # PRIOR BEHAVIOR: at maxResumeAttempts the cron bailed and stopped self-pinging
-# (exit 0, never to retry) — a half-built workforce then sat forever and the
+# (exit 0, never to retry) - a half-built workforce then sat forever and the
 # client never found out. Rule 8: NEVER STOP. We now escalate to the operator +
 # Rescue Rangers ONCE at the cap, then KEEP RETRYING in slow-backoff. The cron
 # only stops on a REAL terminal state (handled by the BELT check above).
@@ -356,11 +462,11 @@ max_attempts=$(jq -r ".maxResumeAttempts // $MAX_ATTEMPTS_DEFAULT" "$STATE_FILE"
 if (( attempts >= max_attempts )); then
   _cap_already=$(jq -r '.resumeCapEscalated // false' "$STATE_FILE")
   if [[ "$_cap_already" != "true" ]]; then
-    log "resumeAttempts ($attempts) >= maxResumeAttempts ($max_attempts) — escalating (operator + Rescue Rangers) and switching to slow-retry. NOT stopping (Rule 8)."
+    log "resumeAttempts ($attempts) >= maxResumeAttempts ($max_attempts) - escalating (operator + Rescue Rangers) and switching to slow-retry. NOT stopping (Rule 8)."
     _operator_chat="$(resolve_operator_chat_id)"
     _lib_note=""
     if (( library_dirty == 1 )); then
-      _lib_note=" LIBRARIES NOT done (roleLibraryStatus=${role_library_status}, sopLibraryStatus=${sop_library_status}) — the role-library pull / SOP authoring keeps failing; run scripts/verify-library-gate.sh on $(hostname)."
+      _lib_note=" LIBRARIES NOT done (roleLibraryStatus=${role_library_status}, sopLibraryStatus=${sop_library_status}) - the role-library pull / SOP authoring keeps failing; run scripts/verify-library-gate.sh on $(hostname)."
     fi
     if [[ -n "$_operator_chat" ]]; then
       openclaw message send --channel telegram -t "$_operator_chat" \
@@ -382,12 +488,12 @@ if (( attempts >= max_attempts )); then
   # here we just avoid spamming a self-ping every 15 min once we're past the cap.
   _attempts_over=$(( attempts - max_attempts ))
   if (( _attempts_over % 8 != 0 )); then
-    log "slow-retry: attempt $attempts past cap — backoff skip this fire (will dispatch on the next ~2h boundary)."
+    log "slow-retry: attempt $attempts past cap - backoff skip this fire (will dispatch on the next ~2h boundary)."
     # still bump the counter so backoff advances
     _tmp_a=$(mktemp); jq ".resumeAttempts = $((attempts + 1))" "$STATE_FILE" > "$_tmp_a" && mv "$_tmp_a" "$STATE_FILE"
     exit 0
   fi
-  log "slow-retry: attempt $attempts past cap — dispatching a resume self-ping (2h boundary)."
+  log "slow-retry: attempt $attempts past cap - dispatching a resume self-ping (2h boundary)."
 fi
 
 # ---- v10.15.9: OPERATOR-FACING library-gate status surfacing (near-cap) ----
@@ -404,7 +510,7 @@ if (( library_dirty == 1 )) && (( attempts >= near_cap_threshold )); then
     _operator_chat="$(resolve_operator_chat_id)"
     _agent_name=$(jq -r '.agentName // "the workforce build"' "$STATE_FILE")
     _company=$(jq -r '.companyName // ""' "$STATE_FILE")
-    STATUS_LINE="⚠️ Library gate not closing: ${_company:+$_company — }${_agent_name} has all departments done but roleLibraryStatus=${role_library_status} / sopLibraryStatus=${sop_library_status} after ${attempts}/${max_attempts} resume attempts. The role-library pull or SOP authoring keeps failing — it will hit the cap soon and stop retrying. Check scripts/verify-library-gate.sh on $(hostname). State: $STATE_FILE"
+    STATUS_LINE="⚠️ Library gate not closing: ${_company:+$_company - }${_agent_name} has all departments done but roleLibraryStatus=${role_library_status} / sopLibraryStatus=${sop_library_status} after ${attempts}/${max_attempts} resume attempts. The role-library pull or SOP authoring keeps failing - it will hit the cap soon and stop retrying. Check scripts/verify-library-gate.sh on $(hostname). State: $STATE_FILE"
     log "OPERATOR-STATUS (near-cap, libraries dirty): $STATUS_LINE"
     if [[ -n "$_operator_chat" ]]; then
       openclaw message send --channel telegram -t "$_operator_chat" -m "$STATUS_LINE" 2>>"$LOG_FILE" || true
@@ -440,30 +546,30 @@ else
 fi
 
 if [[ -z "$TARGET_CHAT" ]]; then
-  log "no usable target chat (ownerChat or operator) — cannot dispatch resume"
+  log "no usable target chat (ownerChat or operator) - cannot dispatch resume"
   exit 0
 fi
 
 if (( library_dirty == 1 )) && (( closeout_dirty == 0 )); then
-  msg="[LIBRARY-RESUME] ${agent_name}: every department is built but the ROLE LIBRARY and/or SOP LIBRARY are NOT populated (roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}). The workforce is NOT complete until BOTH are done. Run scripts/verify-library-gate.sh to measure; if role library < 100% re-run scripts/post-build-role-workspaces.py (pulls how-to.md from templates/role-library/); if SOPs have stubs re-run scripts/populate-sops-from-manifest.py. Re-run verify-library-gate.sh until it exits 0 (roleLibraryStatus=done AND sopLibraryStatus=done) — ONLY THEN write buildCompletedAt + closeoutStatus=pending. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the resume is internal."
+  msg="[LIBRARY-RESUME] ${agent_name}: every department is built but the ROLE LIBRARY and/or SOP LIBRARY are NOT populated (roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}). The workforce is NOT complete until BOTH are done. Run scripts/verify-library-gate.sh to measure; if role library < 100% re-run scripts/post-build-role-workspaces.py (pulls how-to.md from templates/role-library/); if SOPs have stubs re-run scripts/populate-sops-from-manifest.py. Re-run verify-library-gate.sh until it exits 0 (roleLibraryStatus=done AND sopLibraryStatus=done) - ONLY THEN write buildCompletedAt + closeoutStatus=pending. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the resume is internal."
 elif (( comms_automation_dirty == 1 )); then
-  # v10.15.9: cross-skill chain to Skill 38 — fires AFTER libraries are clean.
+  # v10.15.9: cross-skill chain to Skill 38 - fires AFTER libraries are clean.
   # A workforce that built a Communications / Sales / Customer-Support department
   # is NOT fully delivered until Skill 38 has scaffolded the matching comms
   # automations (THE TRINITY: playbook + Build-with-AI prompt + registry row).
   comms_depts=$(jq -r '(.commsAutomationDepartments // []) | join(", ")' "$STATE_FILE")
-  msg="[COMMS-AUTOMATION-RESUME] ${agent_name}: all departments + libraries are done, but the comms-automation handoff to Skill 38 is incomplete (commsAutomationStatus=${comms_automation_status}). This workforce built a comms/sales/support department (${comms_depts:-communications/sales/customer-support}) — per the Skill 23 -> Skill 38 cross-skill chain, you MUST scaffold the matching conversational automations. DO THIS: (1) read ~/.openclaw/skills/38-conversational-ai-system/SKILL.md + protocols/conversation-workflows-protocol.md; (2) set commsAutomationStatus=scaffolding; (3) build at MINIMUM the appointment-booking starter via THE TRINITY — communications playbook + its Build-with-AI prompt + a registry row in the client's conversation-workflows/ (plus a pricing/FAQ or lead-followup playbook matching the department that triggered this); (4) run ~/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh — it must PASS (every registered workflow has its playbook + prompt); (5) ONLY THEN set commsAutomationStatus=done + commsAutomationVerifiedAt in .workforce-build-state.json. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — this is internal; the owner hears from you via Skill 37 Step 6 only."
+  msg="[COMMS-AUTOMATION-RESUME] ${agent_name}: all departments + libraries are done, but the comms-automation handoff to Skill 38 is incomplete (commsAutomationStatus=${comms_automation_status}). This workforce built a comms/sales/support department (${comms_depts:-communications/sales/customer-support}) - per the Skill 23 -> Skill 38 cross-skill chain, you MUST scaffold the matching conversational automations. DO THIS: (1) read ~/.openclaw/skills/38-conversational-ai-system/SKILL.md + protocols/conversation-workflows-protocol.md; (2) set commsAutomationStatus=scaffolding; (3) build at MINIMUM the appointment-booking starter via THE TRINITY - communications playbook + its Build-with-AI prompt + a registry row in the client's conversation-workflows/ (plus a pricing/FAQ or lead-followup playbook matching the department that triggered this); (4) run ~/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh - it must PASS (every registered workflow has its playbook + prompt); (5) ONLY THEN set commsAutomationStatus=done + commsAutomationVerifiedAt in .workforce-build-state.json. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - this is internal; the owner hears from you via Skill 37 Step 6 only."
 elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_count == 0 )); then
-  msg="[CLOSEOUT-RESUME] ${agent_name}: workforce build is done (buildCompletedAt set) but closeout is incomplete (closeoutStatus=${closeout_status:-unset}). Read /data/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md and invoke scripts/run-closeout.sh. The script is idempotent — it picks up from the first un-completed step. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the owner only hears from you when Skill 37 Step 6 fires."
+  msg="[CLOSEOUT-RESUME] ${agent_name}: workforce build is done (buildCompletedAt set) but closeout is incomplete (closeoutStatus=${closeout_status:-unset}). Read /data/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md and invoke scripts/run-closeout.sh. The script is idempotent - it picks up from the first un-completed step. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the owner only hears from you when Skill 37 Step 6 fires."
 else
-  msg="[WORKFORCE-RESUME] ${agent_name}: continue the workforce build per the Post-Interview Handoff Protocol in Skill 23. Read .workforce-build-state.json. Pending: ${pending_list:-none}. Stale: ${stale_list:-none}. Closeout status: ${closeout_status:-unset}. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this — the resume is internal. When all departments are done, set closeoutStatus=pending and either invoke ~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh inline OR exit and let the next cron fire pick up the closeout."
+  msg="[WORKFORCE-RESUME] ${agent_name}: continue the workforce build per the Post-Interview Handoff Protocol in Skill 23. Read .workforce-build-state.json. Pending: ${pending_list:-none}. Stale: ${stale_list:-none}. Closeout status: ${closeout_status:-unset}. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the resume is internal. When all departments are done, set closeoutStatus=pending and either invoke ~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh inline OR exit and let the next cron fire pick up the closeout."
 fi
 
 log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_attempts; pending='$pending_list'; stale='$stale_list'; library_dirty=$library_dirty roleLib='$role_library_status' sopLib='$sop_library_status'; comms_automation_dirty=$comms_automation_dirty comms_automation_status='$comms_automation_status'; closeout_dirty=$closeout_dirty closeout_status='$closeout_status')"
 if openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" 2>>"$LOG_FILE"; then
   log "resume dispatch ok"
 else
-  log "resume dispatch FAILED — see errors above"
+  log "resume dispatch FAILED - see errors above"
 fi
 
 exit 0

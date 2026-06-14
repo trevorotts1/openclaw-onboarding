@@ -75,6 +75,21 @@ if [ "$COMPLETE" = true ]; then
   # transitions this to "pass" / "needs-review" / "fail" when it runs.
   JQ_FILTER+=' | .interviewComplete = true | .interviewCompletedAt = $now'
   JQ_FILTER+=' | if .interviewQc == null then .interviewQc = {"status":"pending"} else .interviewQc.status = "pending" end'
+  # PRD-3.3 R3.1 (auto-closeout): finishing the interview must DETERMINISTICALLY
+  # advance the chain instead of waiting on a separate agent hand-write of the
+  # build-state. Seed the library + closeout gate fields to "pending" the moment
+  # --complete is written so the resume cron's library/closeout gates are armed
+  # from the outset (a missing/non-"done" value is already treated as not-done).
+  # We do NOT fabricate the departments[] array here - the canonical floor +
+  # custom reconciliation is the agent's build step (build-workforce.py); seeding
+  # a fake department list would be a lie. We DO ensure departments[] exists as an
+  # array sentinel so the resume cron and watchdog parse it cleanly, and we record
+  # buildKickRequestedAt so the kick below is idempotent and auditable.
+  JQ_FILTER+=' | if .departments == null then .departments = [] else . end'
+  JQ_FILTER+=' | if (.roleLibraryStatus == null) then .roleLibraryStatus = "pending" else . end'
+  JQ_FILTER+=' | if (.sopLibraryStatus == null) then .sopLibraryStatus = "pending" else . end'
+  JQ_FILTER+=' | if (.closeoutStatus == null) then .closeoutStatus = "pending" else . end'
+  JQ_FILTER+=' | .buildKickRequestedAt = $now'
 fi
 
 jq "${JQ_ARGS[@]}" "$JQ_FILTER" "$STATE" > "$TMP"
@@ -85,20 +100,71 @@ echo "updated $STATE: phase=$PHASE qnum=$QNUM asked_by=$ASKED_BY complete=$COMPL
 # PRD-2.15 (v12.3.12): auto-run QC gate immediately on --complete so
 # interviewQc.status transitions from "pending" to pass|needs-review|fail
 # the moment the interview is marked done. This removes the "agent forgot to run
-# QC" failure mode. Best-effort (non-fatal — the watchdog + resume cron will
+# QC" failure mode. Best-effort (non-fatal - the watchdog + resume cron will
 # re-drive if QC is pending).
 if [ "$COMPLETE" = true ]; then
   QC_SCRIPT="$(dirname "$0")/qc-interview-completion.py"
   if [ -f "$QC_SCRIPT" ]; then
-    echo "auto-running QC gate (qc-interview-completion.py --write-state) post-complete..."
-    if python3 "$QC_SCRIPT" --write-state "$STATE" 2>&1; then
+    echo "auto-running QC gate (qc-interview-completion.py --write-state --state) post-complete..."
+    # FIX (v12.4.x): --write-state is a flag; the state path MUST be passed via
+    # --state. The prior form `--write-state "$STATE"` passed the path as a
+    # positional, which argparse REJECTS ("unrecognized arguments") - so QC never
+    # ran, interviewQc.status stayed "pending", and the whole auto-closeout chain
+    # stalled silently. Verified against the script's argparse definition.
+    if python3 "$QC_SCRIPT" --write-state --state "$STATE" 2>&1; then
       qc_result=$(jq -r '.interviewQc.status // "pending"' "$STATE" 2>/dev/null || echo "pending")
       echo "interviewQc.status after auto-QC: $qc_result"
     else
-      echo "WARN: qc-interview-completion.py returned non-zero (non-fatal — interviewQc.status stays pending for watchdog/resume to retry)" >&2
+      echo "WARN: qc-interview-completion.py returned non-zero (non-fatal - interviewQc.status stays pending for watchdog/resume to retry)" >&2
     fi
   else
-    echo "WARN: qc-interview-completion.py not found at $QC_SCRIPT — interviewQc.status remains pending" >&2
+    echo "WARN: qc-interview-completion.py not found at $QC_SCRIPT - interviewQc.status remains pending" >&2
+  fi
+fi
+
+# PRD-3.3 R3.1 (auto-closeout): KICK THE BUILD deterministically.
+# Historically (diag/03 HOP 2) the build only started when the agent REMEMBERED
+# to hand-write a build-state and self-dispatch. If the session ended after the
+# owner's last answer (token limit / tool error / "felt done"), the whole build
+# and closeout silently stranded. Now that --complete has marked interviewComplete
+# and seeded the gate fields above, fire ONE internal [WORKFORCE-RESUME] self-ping
+# so the agent starts the canonical floor + custom reconciliation build IMMEDIATELY
+# instead of waiting up to 15 minutes for the resume cron. This is the state-driven
+# trigger that closes the HOP-1 -> HOP-2 gap.
+#
+# Guards:
+#  - Only when QC PASSED (qc_result=="pass"). A non-pass interview must NOT kick a
+#    build; the QC-resume / watchdog lanes own that case. This mirrors run-closeout.sh's
+#    hard gate so we never start a build on an unverified interview.
+#  - Idempotent: skip if departments already have non-pending entries (build already
+#    underway) so re-running --complete never double-dispatches into an active build.
+#  - Best-effort, never fatal: if openclaw CLI is absent, the resume cron (every 15m)
+#    is the recovery net and will dispatch the same self-ping on its next fire.
+if [ "$COMPLETE" = true ]; then
+  qc_for_kick=$(jq -r '.interviewQc.status // "pending"' "$STATE" 2>/dev/null || echo "pending")
+  active_depts=$(jq -r '[.departments[]? | select(.status != "pending")] | length' "$STATE" 2>/dev/null || echo 0)
+  if [ "$qc_for_kick" = "pass" ] && [ "${active_depts:-0}" = "0" ]; then
+    if command -v openclaw >/dev/null 2>&1; then
+      # Resolve a chat the bot can reply to: owner first, else operator default.
+      KICK_CHAT=$(jq -r '.ownerChat // empty' "$STATE" 2>/dev/null || true)
+      if [ -z "$KICK_CHAT" ] || [ "$KICK_CHAT" = "null" ]; then
+        KICK_CHAT="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+        case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-${OPENCLAW_TREVOR_CHAT:-5252140759}}" ;; esac
+      fi
+      KICK_AGENT=$(jq -r '.agentName // "the master orchestrator"' "$STATE" 2>/dev/null || echo "the master orchestrator")
+      KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate passed. Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
+      if openclaw message send --channel telegram -t "$KICK_CHAT" -m "$KICK_MSG" 2>&1; then
+        echo "auto-closeout: dispatched [WORKFORCE-RESUME] build-kick to chat $KICK_CHAT"
+      else
+        echo "WARN: build-kick dispatch failed (non-fatal - resume cron will re-dispatch within 15m)" >&2
+      fi
+    else
+      echo "INFO: openclaw CLI not on PATH - build-kick deferred to resume cron (interviewComplete + gate fields are seeded; cron will dispatch)" >&2
+    fi
+  elif [ "$qc_for_kick" != "pass" ]; then
+    echo "INFO: build NOT kicked - interviewQc.status=$qc_for_kick (not pass). QC-resume/watchdog lanes own this; build kicks only on a passing interview." >&2
+  else
+    echo "INFO: build already underway (active departments present) - skipping build-kick to avoid double-dispatch" >&2
   fi
 fi
 
@@ -112,7 +178,7 @@ if [ -n "$INDUSTRY_PACK_BLOB" ] && [ -f "$INDUSTRY_PACK_BLOB" ]; then
         && echo "record-industry-pack ran from update-interview-state.sh" \
         || echo "WARN: record-industry-pack.sh failed (non-fatal)" >&2
     else
-      echo "industryPack.slug already set ($existing_slug) — skipping record-industry-pack"
+      echo "industryPack.slug already set ($existing_slug) - skipping record-industry-pack"
     fi
   fi
 fi
