@@ -108,7 +108,7 @@ self_remove_cron() {
 # ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
 # (status=done / closeoutStatus=done|sent) is NO LONGER trusted as proof on its
-# own. A hand-seeded build-state (Cassandra's 3-dept fiction) used to flip the
+# own. A hand-seeded build-state (a 3-dept seeded fiction) used to flip the
 # JSON to done and the cron would self-remove, leaving a HEAVILY-REDUCED
 # workforce as the final result with the never-stop machinery quit. We now run
 # department-floor.py against the REAL folders on disk: if the floor is NOT met
@@ -360,7 +360,7 @@ fi
 # (sopLibraryStatus != done) is INCOMPLETE. Fire a [LIBRARY-RESUME] self-ping so
 # the agent runs verify-library-gate.sh + re-pulls. Only relevant once all depts
 # are done (no pending/stale) and BEFORE closeout owns the rest - the gate runs
-# before the closeout gate. Last-night incident (Kofi/Teresa/Evelyn/Maria/Lyric).
+# before the closeout gate. Last-night incident (multiple clients).
 role_library_status=$(jq -r '.roleLibraryStatus // empty' "$STATE_FILE")
 sop_library_status=$(jq -r '.sopLibraryStatus // empty' "$STATE_FILE")
 done_count_now=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")

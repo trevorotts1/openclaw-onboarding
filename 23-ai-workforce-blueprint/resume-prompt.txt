@@ -18,7 +18,7 @@ BEFORE doing anything else, invoke the shell-level resume guard. It has
 defense-in-depth checks (belt: terminal-state self-stop; suspenders:
 max-runs counter) that auto-remove this cron when it's no longer useful.
 Running it costs <1 second and prevents the v10.14.16–v10.14.35 bug where
-this cron kept firing every 15 min on done builds (Lyric/Evelyn incident,
+this cron kept firing every 15 min on done builds (multi-client incident,
 2026-05-24).
 
 ```bash
@@ -107,7 +107,7 @@ If you encounter ANY error you cannot recover from after 3 retries, mark that de
 LIBRARY FLOW (Skill 23 - ROLE LIBRARY + SOP LIBRARY gate, added v10.15.8)
 ═══════════════════════════════════════════════════════════════════
 
-Every department is built, but the role library and/or the SOP library were not fully populated. This is the last-night incident class (Kofi/Teresa/Evelyn/Maria/Lyric): workforces scaffolded, but `how-to.md` files never filled from the role library and SOP placeholders never authored. A workforce is NOT complete until BOTH are done. Do NOT write `buildCompletedAt` and do NOT start closeout while this gate is dirty.
+Every department is built, but the role library and/or the SOP library were not fully populated. This is the last-night incident class (multiple clients): workforces scaffolded, but `how-to.md` files never filled from the role library and SOP placeholders never authored. A workforce is NOT complete until BOTH are done. Do NOT write `buildCompletedAt` and do NOT start closeout while this gate is dirty.
 
 1. Measure the gap:
    ```bash

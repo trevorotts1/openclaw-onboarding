@@ -337,30 +337,30 @@ Assets involving sensitive modes (Mode F stylized creative, regulated vertical c
 ## 13. Good Output Examples
 
 ### Example A — Self-Likeness Fast Path: Mode A Headshot
-The Chief Design Officer routes a headshot brief: "Client Karen needs 4 professional headshot variations, Mode A, for her LinkedIn and website. The 'Karen' identity profile is current. Standing self-likeness release is active."
+The Chief Design Officer routes a headshot brief: "Client (the client) needs 4 professional headshot variations, Mode A, for her LinkedIn and website. The 'the client' identity profile is current. Standing self-likeness release is active."
 
 **Good output process:**
-1. Gate 1 check: open `personal-photo-shoot/karen-vaughn/CONSENT.md` → status: active, Mode A covered, commercial use covered, channels (LinkedIn, website) within scope. Who-appears inventory: all reference images contain Karen only. Gate clears in under 2 minutes (file-read fast path).
+1. Gate 1 check: open `personal-photo-shoot/sample-client/CONSENT.md` → status: active, Mode A covered, commercial use covered, channels (LinkedIn, website) within scope. Who-appears inventory: all reference images contain the client only. Gate clears in under 2 minutes (file-read fast path).
 2. Identity Lock Block assembled from `IDENTITY.md`: exact physical descriptors, "do not render any other recognizable real person in the scene" clause appended.
 3. Mode A workflow: NB2 endpoint per MODEL-SPECS routing table, contact-sheet tier (n=4), studio lighting context, professional headshot framing. All variables filled; zero unfilled tokens.
 4. Reference images verified (GHL media, URL-liveness confirmed); size within NB2 30MB limit.
 5. Shoot brief handed to Generation Operator. Operator returns 4 outputs with receipt.
-6. Gate 2 fidelity check: Karen identifiable in all 4; no other persons; no hard-rule violations. 3 of 4 pass; 1 has minor expression artifact (not a fidelity failure — routes to CDO for quality preference selection, not to Fidelity Tester).
+6. Gate 2 fidelity check: the client identifiable in all 4; no other persons; no hard-rule violations. 3 of 4 pass; 1 has minor expression artifact (not a fidelity failure — routes to CDO for quality preference selection, not to Fidelity Tester).
 7. Rights Manifest entry written for each of the 4 outputs (4 per-item files). LinkedIn/website distribution: disclosure check — Meta (LinkedIn) synthetic-media policy consulted; AI-content label applied.
 8. CDO receives 3 clean outputs + 1 flagged with a note; manifest complete; shoot closed.
 
 **Why this is good:** Consent gate runs first and resolves in seconds (file read, no human loop). Identity Lock Block is verbatim from the identity profile. The output never leaves this role without a manifest entry and disclosure determination.
 
 ### Example B — Mode E Client-in-Slide Composite with Cross-Department Coordination
-Ad Creative Specialist requests (via CDO SOP-DIU-612): "For Karen's campaign deck, need her placed in a boardroom scene for the hero slide — confident pose, brand gold palette, mode E, composite."
+Ad Creative Specialist requests (via CDO SOP-DIU-612): "For the client's campaign deck, need her placed in a boardroom scene for the hero slide — confident pose, brand gold palette, mode E, composite."
 
 **Good output process:**
 1. SOP-DIU-612 gate triggers: `likeness_present: true` — brief routes to the Photo Shoot Director FIRST.
-2. Gate 1: consent record active, Mode E covered, commercial use covered. Who-appears inventory: reference set is Karen only. Gate passes.
+2. Gate 1: consent record active, Mode E covered, commercial use covered. Who-appears inventory: reference set is the client only. Gate passes.
 3. Coordinate with Deck Systems Specialist: receive slide composition spec — 16:9, text-clear zones on the left 40%, background extends to full bleed.
 4. Identity Lock Block assembled; Mode E context prompt includes text-clear zone directive and boardroom-setting descriptors with brand gold.
 5. Reference images hosted (GHL), verified, handed to Operator.
-6. Generation Operator returns composite; Gate 2 check passes (Karen identifiable, no other persons, brand gold present, text-clear zones respected).
+6. Generation Operator returns composite; Gate 2 check passes (the client identifiable, no other persons, brand gold present, text-clear zones respected).
 7. Rights Manifest entry written. Internal draft status — Mode E composite for design review is exempt from external synthetic-media disclosure. Manifest notes the internal-use scope.
 8. CDO receives verified composite with manifest entry. Deck Systems Specialist proceeds with slide assembly using this verified output.
 
@@ -371,7 +371,7 @@ Ad Creative Specialist requests (via CDO SOP-DIU-612): "For Karen's campaign dec
 ## 14. Bad Output Examples (Anti-Patterns)
 
 ### Anti-Pattern A — Skipping the Consent Gate for "Obviously OK" Requests
-A brief arrives from the CDO: "Quick Mode A headshot for Maria, we've done this before, just go ahead." The Director routes straight to Identity Lock Block assembly without reading the consent record, reasoning that it "must be active since we ran a shoot last month."
+A brief arrives from the CDO: "Quick Mode A headshot for the client, we've done this before, just go ahead." The Director routes straight to Identity Lock Block assembly without reading the consent record, reasoning that it "must be active since we ran a shoot last month."
 
 **Why this fails:**
 - Last month's shoot provides no information about the current consent record status — records expire, scope gets updated, revocations can occur between sessions.
@@ -382,11 +382,11 @@ A brief arrives from the CDO: "Quick Mode A headshot for Maria, we've done this 
 **How to fix:** Gate 1 runs on every request, always. The self-likeness fast path exists precisely because it is fast (file read, not a human loop). There is no legitimate time-saving argument for skipping it.
 
 ### Anti-Pattern B — Hosting Identity References on Public Permanent URLs
-The Director needs to get Karen's reference headshot to Kie.ai. The quickest path seems to be uploading it to ImgBB (the standard non-person reference hosting path) since the URL generates immediately.
+The Director needs to get the client's reference headshot to Kie.ai. The quickest path seems to be uploading it to ImgBB (the standard non-person reference hosting path) since the URL generates immediately.
 
 **Why this fails:**
 - SOP-DIU-609 prohibits public-permanent hosting of identity reference images. ImgBB creates permanent public URLs with no expiry and no deletion guarantee.
-- Karen's face is now on a permanent, publicly accessible URL tied to a third-party service — a direct breach of the hosting protocol for biometric-adjacent personal data.
+- the client's face is now on a permanent, publicly accessible URL tied to a third-party service — a direct breach of the hosting protocol for biometric-adjacent personal data.
 - The Rights Manifest entry requires a deletion confirmation after the job completes; ImgBB does not provide verifiable deletion.
 - In the event of a consent revocation, the reference image on that URL cannot be reliably purged.
 

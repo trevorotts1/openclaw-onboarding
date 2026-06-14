@@ -323,7 +323,7 @@ QC Specialist — Audio reviews: accuracy (random spot-check), formatting compli
 ### Example B — Customer Call Summary
 
 > **CALL SUMMARY — CS-2026-05-19-142**
-> **Date:** May 19, 2026 | **Duration:** 8:23 | **Agent:** Maria G. | **Customer:** James T. (Acct #4421)
+> **Date:** May 19, 2026 | **Duration:** 8:23 | **Agent:** Renata G. | **Customer:** James T. (Acct #4421)
 > **Type:** Support — Billing Question
 > **Sentiment:** Neutral → Satisfied
 >
@@ -331,7 +331,7 @@ QC Specialist — Audio reviews: accuracy (random spot-check), formatting compli
 >
 > **Outcome:** Resolved. Agent identified the duplicate as a system error, issued a refund for the duplicate charge, and confirmed the subscription billing is corrected going forward.
 >
-> **Action Items:** (1) Engineering to investigate billing system duplicate-charge bug — Maria flagged ticket #ENG-2281. (2) Customer Success to follow up with James in 7 days to confirm next invoice is correct.
+> **Action Items:** (1) Engineering to investigate billing system duplicate-charge bug — Renata flagged ticket #ENG-2281. (2) Customer Success to follow up with James in 7 days to confirm next invoice is correct.
 >
 > **Notable Quote:** "Honestly the product is great, this is my first billing issue in 18 months. Appreciate how fast you fixed it."
 

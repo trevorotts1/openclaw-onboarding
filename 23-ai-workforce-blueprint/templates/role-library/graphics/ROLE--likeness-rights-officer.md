@@ -421,14 +421,14 @@ The Fidelity Tester's 12-dimension scoring pass includes a compliance hard-rule 
 
 ### Example A — Clean Self-Likeness Fast Path
 
-**Request:** CDO routes a work order: "Client Karen V — Mode A (editorial), office setting, reference images in GHL media library folder `/karen/identity/`, using style card SI-029."
+**Request:** CDO routes a work order: "Client (the client) — Mode A (editorial), office setting, reference images in GHL media library folder `/sample-client/identity/`, using style card SI-029."
 
 **Good output from this role:**
 
 Gate L1 run in under 5 minutes:
-- CONSENT.md located at `personal-photo-shoot/karen-vaughn/CONSENT.md`, status = `active`, expiry 2026-12-01 (>180 days out).
+- CONSENT.md located at `personal-photo-shoot/sample-client/CONSENT.md`, status = `active`, expiry 2026-12-01 (>180 days out).
 - Modes in scope: A, B, C, D — Mode A confirmed in scope.
-- Who-appears inventory: 4 images reviewed, all show Karen only, no other identifiable faces.
+- Who-appears inventory: 4 images reviewed, all show the client only, no other identifiable faces.
 - MINORS CHECK: No minor present.
 - Restricted-Content Matrix: Content type = editorial portrait, channel = client-internal. Verdict: CLEARED.
 - Identity Lock Block assembled from IDENTITY.md using verbatim PHOTO-SHOOT-SOP §4 template. Compliance clause appended: "Do not render any other recognizable real person in the scene. Do not incorporate real third-party brand logos, trademarks, or mastheads not supplied by the client."
