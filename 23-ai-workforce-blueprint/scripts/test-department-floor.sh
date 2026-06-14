@@ -8,7 +8,7 @@
 #       (no industry signal) PASSES (rc=0).
 #   T2. SEEDED 3-DEPT STATE FAILS: a 3-dept-on-disk workspace — even with a
 #       hand-seeded build-state claiming closeoutStatus=done/buildCompletedAt —
-#       FAILS the floor (rc=3). This is the Cassandra-seeded-fiction bypass.
+#       FAILS the floor (rc=3). This is the seeded-fiction bypass.
 #   T3. EXPLICIT DECLINE HONORED: a 15-dept workspace where the 16th mandatory is
 #       recorded as an explicit decline PASSES (rc=0).
 #   T4. VERTICAL PACKS ADD INDUSTRY DEPTS: with a real-estate industry signal, the
@@ -74,7 +74,7 @@ echo "=== T1: 16-dept floor enforced (all mandatory present, no industry) ==="
 DD=$(mk_workspace t1 $MANDATORY)
 if eval_floor "$DD" "" '{"industry":"general business"}'; then ok "16 mandatory on disk -> rc=0 (floor met)"; else bad "16 mandatory should PASS but rc!=0"; fi
 
-echo "=== T2: seeded 3-dept state FAILS (Cassandra bypass) ==="
+echo "=== T2: seeded 3-dept state FAILS (seeded-fiction bypass) ==="
 DD=$(mk_workspace t2 marketing sales research)
 SEED='{"status":"done","buildCompletedAt":"2026-01-01T00:00:00Z","closeoutStatus":"done","departments":[{"slug":"marketing"},{"slug":"sales"},{"slug":"research"},{"slug":"crm"},{"slug":"legal"},{"slug":"video"},{"slug":"audio"},{"slug":"graphics"},{"slug":"communications"},{"slug":"customer-support"},{"slug":"billing-finance"},{"slug":"web-development"},{"slug":"app-development"},{"slug":"openclaw-maintenance"},{"slug":"social-media"},{"slug":"paid-advertisement"}]}'
 if eval_floor "$DD" "$SEED" '{"industry":"coaching"}'; then bad "3-dept disk + seeded done-state should FAIL but rc=0 (BYPASS NOT CLOSED)"; else ok "3 depts on disk -> rc=3 even with seeded done-state + 16 fake dept entries in JSON"; fi

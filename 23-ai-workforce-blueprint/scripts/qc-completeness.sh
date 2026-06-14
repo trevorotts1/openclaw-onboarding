@@ -128,8 +128,8 @@ STUB_PATTERN = re.compile(r"to be personalized based on research", re.IGNORECASE
 #      IMPROVE / CONTROL — the exact headers the SOP-population manifest mandates)
 #   3. no remaining "[Step N - to be personalized ...]" placeholder
 # This is what stops a 1 KB hollow SOP (or a stub with the placeholder string
-# deleted) from being counted as "done" — the documented Maria-thin / Evelyn-stub
-# / Sheila-empty failure.
+# deleted) from being counted as "done" — the documented thin-file / stub-file
+# / empty-file failure.
 SUBSTANTIVE_MIN_BYTES = 7168  # 7 KB
 DMAIC_HEADERS = ("define", "measure", "analyze", "improve", "control")
 PLACEHOLDER_STEP = re.compile(r"\[\s*step\s+\d+\s*[-–—]\s*to be personalized", re.IGNORECASE)
@@ -140,7 +140,7 @@ DMAIC_HEADER_RE = re.compile(r"^#{1,4}\s*(define|measure|analyze|improve|control
 # SOPs inside how-to.md as a "## 9. ..." section containing "### SOP 9.x" blocks,
 # each carrying the When-to-run / Frequency / Inputs / Steps / Outputs / Hand-to /
 # Failure-mode structure. The old gate only counted standalone 0[1-9]-*.md files, so
-# fully-instantiated substantive workforces (Teresa/Corey/Maria/Kofi) were marked
+# fully-instantiated substantive workforces (multiple clients) were marked
 # INCOMPLETE -> the never-stop crons looped forever or fell back to regenerate.
 # We now accept EITHER model as substantive, WITHOUT weakening the gate against real
 # garbage: still FAIL on [Step N...] stubs, {{token}} leaks, <7KB, or a missing
@@ -383,7 +383,7 @@ for dept_dir in on_disk_depts:
         "status": dept_status,
     })
 
-# Legacy tree detection (Angeleen pattern)
+# Legacy tree detection (legacy-tree pattern)
 legacy_detected = []
 for candidate in [
     Path("/data/clawd/departments"),
@@ -400,7 +400,7 @@ for candidate in [
 # ---- v10.15.26 / v10.16.25: HARD DEPARTMENT FLOOR (counts REAL depts on disk)
 # Before this, qc-completeness measured per-dept STAFFING of whatever was on
 # disk but had NO floor concept: a 3-dept workforce where those 3 were fully
-# staffed returned PASS (the Cassandra-3-dept / Kofi-6-dept bug). Now we compute
+# staffed returned PASS (the 3-dept / 6-dept reduced-workforce bug). Now we compute
 # the expected floor = 16 mandatory + the industry vertical-pack departments
 # matched to the client, MINUS any explicitly declined dept, and FAIL the whole
 # QC if disk is below that floor. department-floor.py is the single source of
@@ -467,7 +467,7 @@ for d in dept_reports:
          f"{d.get('min_sop_per_role', 0):>6} {d.get('roles_below_min_sops', 0):>5} {d['status']:>8}")
 if legacy_detected:
     emit("")
-    emit(f"LEGACY TREE PRESENT (Angeleen pattern):")
+    emit(f"LEGACY TREE PRESENT (legacy-tree pattern):")
     for p in legacy_detected:
         emit(f"  - {p}  (run reconcile-legacy-tree.py from Release 2 to merge)")
 emit("")
