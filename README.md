@@ -1,7 +1,9 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v12.4.7.
+> **Version:** see `/version` - this repo at v12.4.8.
+>
+> **NOTE (v12.4.8) -- feat: professional design-craft, color-theory, and QC standard for Presentations (Skill 23).** Encodes the PROFESSIONAL DESIGN-CRAFT + COLOR-THEORY standard across four presentation role files and their SOP mirrors. All 8 design-craft dimensions verified MISSING (grep=0) before this change. Art-Director Persona; THE THIRDS SYSTEM; IMAGE LAYERING AND DEPTH; OBJECTS / CARDS / PANELS / INSETS; SOP 9.7 Color Theory and Color Grading; Design-Craft Auto-Fail Battery (AF-DC1 through AF-DC7); Design-Craft Scoring Dimensions (p-DC1/i-DC1 through p-DC7/i-DC7 with double-weight for color-harmony and color-grading); design_craft block in final_deck_qc.json; expanded media-library folder structure with naming conventions. Brand Steward adds step 5a, COLOR THEORY + COLOR GRADING sections to STYLE BLOCK, Gate 7, and 3 new common mistakes. See [CHANGELOG.md](CHANGELOG.md).
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
 >
 > **NOTE (v12.4.7) — feat: DIU full role set — 13 graphics specialists registered.** Eight remaining Design Intelligence Unit specialist roles (design-producer, style-librarian, likeness-rights-officer, render-dispatcher, asset-provenance-librarian, style-steward, brand-systems-specialist, motion-systems-specialist) added to `_index.json` + ROLE-- files shipped. Graphics dept count 23 → 31, total_roles 323 → 331. All 26 SOP-DIU files present; SOP-DIU id uniqueness verified. See [CHANGELOG.md](CHANGELOG.md).
@@ -18,7 +20,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v12.4.7** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v12.4.8** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 

@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.3
+**Version:** 1.4
 **Last updated:** 2026-06-14
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -124,6 +124,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 5. Extract representation preferences from intake.json field `REPRESENTATION_MIX`. This field is collected WITH PERCENTAGES during discovery (e.g., "70% African American women, 20% African American men, 10% mixed" or "100% women, diverse" or "no people at all"). The percentage breakdown drives the deck-level ratio in SOP 9.2.
    - If `REPRESENTATION_MIX` is present and answered: use the client's stated breakdown verbatim. Record as `representation_source: "client_intake"`.
    - If `REPRESENTATION_MIX` is unanswered or blank: DO NOT invent a racial default. Set representation to NO PEOPLE (people element omitted from all slides) and flag: `representation_source: "default_no_people -- intake unanswered"`. Immediately notify the operator with a flag: "REPRESENTATION UNANSWERED: intake.json has no REPRESENTATION_MIX value. Deck will default to no people in images. Please confirm or supply the intended breakdown before Phase 2." Do not proceed to people-inclusive prompts until the operator or client has answered.
+
+5a. DERIVE THE COLOR RELATIONSHIPS AND GRADING PROFILE (required -- must complete before step 6):
+   a. Identify the COLOR RELATIONSHIP from the brand palette: map the three client hex codes to the color wheel. Determine whether the relationship is COMPLEMENTARY (primaries on opposite sides of the wheel -- maximum contrast and pop), ANALOGOUS (adjacent hues -- warm harmony and cohesion), or TRIADIC (three equidistant hues -- vibrant balance).
+   b. Identify the COMPLEMENTARY ACCENT: which color creates the strongest contrast pop against the others? This is the accent reserved for CTAs, price reveals, and the single most important number per slide. Do not spread it indiscriminately.
+   c. Run the CONTRAST CHECK on the headline color against the white base: the charcoal headline (#231F20 default) on the white base (#FBF7F4 default) must pass WCAG AA (minimum 4.5:1 for normal text, 3:1 for large text at 18pt+ regular or 14pt+ bold). Record the ratio. If the client brand requires a lighter headline on white that fails WCAG AA, flag to the Director and suggest a darker shade.
+   d. Derive the COLOR GRADING PROFILE: look at the warmth of the brand palette overall. A gold-primary, charcoal-secondary, off-white-base palette is WARM. A navy-primary, silver-secondary, cool-white-base palette is COOL. A balanced multi-hue palette with no dominant temperature lean is NEUTRAL. Record WARM, COOL, or NEUTRAL.
+   e. Record these findings as the COLOR THEORY section and COLOR GRADING PROFILE in the STYLE BLOCK (step 6 template below).
+
 6. Build the STYLE BLOCK text. Format (800-1,500 characters):
    ```
    STYLE BLOCK -- [client_slug] -- [deck_slug]
@@ -170,12 +178,25 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    [If unanswered: "NO PEOPLE -- operator flag issued, awaiting confirmation"]
    Age range: [range from intake or NONE if no people default]
 
+   COLOR THEORY (derived from brand palette in step 5a -- governs how colors relate, not which colors are used):
+   color_relationship: [COMPLEMENTARY / ANALOGOUS / TRIADIC]
+   complementary_accent: [HEX and role -- the accent reserved for maximum-contrast moments: CTAs, price reveals, the single most important number per slide]
+   contrast_check: [e.g., "Charcoal #231F20 on white #FBF7F4: ratio 16.5:1, WCAG AA PASS" OR "flag: ratio X:1, below 4.5:1 threshold for normal text"]
+   contrast_rule: complementary accent is used ONCE per slide maximum for maximum-impact moments; spreading it across the deck dilutes its power.
+
+   COLOR GRADING PROFILE (consistency across the deck -- every image must feel shot in the same light):
+   color_grade_profile: [WARM / COOL / NEUTRAL]
+   temperature: [description, e.g., "warm golden-hour light temperature, slightly lifted shadows, warm midtones"]
+   saturation: [description, e.g., "slightly elevated saturation on primary subjects, desaturated backgrounds for separation"]
+   tonal_contrast: [HIGH / LOW -- high = strong shadow/highlight separation; low = softer, more even tonal range]
+   lock: "Every prompt in this deck states TEMPERATURE=[value], SATURATION=[value], TONAL CONTRAST=[value] in a COLOR GRADING comment block. A deck where some images are warm-toned and others are cool-toned is an AUTO-FAIL at QC."
+
    ARCHETYPES: A1-A5 per master SOP Section 7.2 (delivered separately via SOP 9.3)
 
    16:9 ALWAYS. 2K resolution (2560x1440). Never 4:3 or square.
    ```
 7. Write the completed STYLE BLOCK to working/brand/style_block.md.
-8. Register the STYLE BLOCK in working/brand/brand_registry.json: `{ "client_slug": "...", "deck_slug": "...", "style_block_path": "working/brand/style_block.md", "generated_at": "...", "color_source": "...", "font_source": "...", "representation_source": "..." }`.
+8. Register the STYLE BLOCK in working/brand/brand_registry.json: `{ "client_slug": "...", "deck_slug": "...", "style_block_path": "working/brand/style_block.md", "generated_at": "...", "color_source": "...", "font_source": "...", "representation_source": "...", "color_relationship": "COMPLEMENTARY/ANALOGOUS/TRIADIC", "color_grade_profile": "WARM/COOL/NEUTRAL" }`.
 9. Notify the Director and the Slide Image Creator that the STYLE BLOCK is ready.
 
 **Outputs:**
@@ -331,6 +352,9 @@ working/brand/archetype_palette_handoff.md exists and the Slide Image Creator ha
 ### Gate 6 -- TYPOGRAPHY LAW Complete (SOP 9.4)
 The STYLE BLOCK carries the full TYPOGRAPHY LAW: the one-typeface weight map (Black for headlines and giant numbers, ExtraBold for subs and body beats, Bold for gold caps labels, SemiBold for section labels, Medium italic for tertiary, Regular for footnotes), the slide-height-relative size scale (giant numbers 110-150pt, hero headline 62-86pt, sub 24-32pt, kicker ~13pt), the canonical hierarchy stack (gold caps label -> gold rule -> charcoal Black 2-line headline -> Secondary ExtraBold sub -> gold rule -> body beat -> italic tertiary -> logo chip), the five-color palette (charcoal #231F20 never pure black, raspberry #C8104E, gold #C9A24B, white #FFFFFF and warm off-white #FBF7F4, plus the giant-number gold gradient), and the ZERO black backgrounds rule. Basic or default fonts are explicitly forbidden. Any part missing = the STYLE BLOCK is incomplete and must not be delivered.
 
+### Gate 7 -- COLOR THEORY and COLOR GRADING PROFILE Present (SOP 9.1 step 5a)
+The STYLE BLOCK must include both the COLOR THEORY section (color_relationship, complementary_accent, contrast_check, contrast_rule) and the COLOR GRADING PROFILE section (color_grade_profile, temperature, saturation, tonal_contrast, lock) before it is delivered to the Slide Image Creator. A STYLE BLOCK delivered without these sections cannot guarantee color harmony or grade consistency across the deck and is incomplete. Phase 2 cannot begin on a STYLE BLOCK missing Gate 7.
+
 ---
 
 ## 11. Handoffs (Value Stream Map)
@@ -444,6 +468,9 @@ representation_audit.json shows: people_slides = 42 out of 60 total, Black_Brown
 | 10 | Labeling a client hex as "tertiary almost always white" | White is the base layer, listed separately. The three client hexes are PRIMARY/SECONDARY/ACCENT. If a client brand truly uses white as an accent, document it explicitly with a note. |
 | 11 | Defaulting the type to a basic font ("Montserrat Bold" with no size, or Calibri/Arial/Times) | Encode the full TYPOGRAPHY LAW (SOP 9.4): one family, the weight map, the slide-height-relative size scale, the hierarchy stack, and the palette. Basic or default fonts are an AUTO-FAIL at QC. |
 | 12 | Shipping a STYLE BLOCK without the size scale or hierarchy stack | The TYPOGRAPHY LAW carries the per-role pt sizes and the canonical stack so every prompt names an exact weight and a large pt size per line. A LAW missing any part is an incomplete STYLE BLOCK (Gate 6). |
+| 13 | Skipping step 5a (color relationships and grading profile) and shipping a STYLE BLOCK without COLOR THEORY or COLOR GRADING sections | Run step 5a before step 6 on every run. A STYLE BLOCK without the color-theory sections is incomplete (Gate 7) and will produce an ungraded inconsistent deck. |
+| 14 | Spreading the complementary accent across every slide instead of reserving it for maximum-impact moments | The complementary accent derives its power from scarcity. Document in the STYLE BLOCK: "reserved for CTAs, price reveals, and the single most important number per slide." |
+| 15 | Failing to run the WCAG contrast check on the headline color vs. the white base | Run the contrast check in step 5a for every new client palette. Charcoal #231F20 on white #FBF7F4 passes at 16.5:1. Flag any ratio below 4.5:1 immediately. |
 
 ---
 

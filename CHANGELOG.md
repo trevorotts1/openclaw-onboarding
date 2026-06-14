@@ -1,3 +1,23 @@
+## [v12.4.8] - 2026-06-14 - feat: professional design-craft, color-theory, and QC standard for Presentations (Skill 23)
+
+### Changes
+
+Encodes the PROFESSIONAL DESIGN-CRAFT + COLOR-THEORY standard into the Presentations department SOPs across four role files and their SOP mirrors. All 8 design-craft dimensions were verified MISSING (grep=0) before this change. The art-director persona, composition grid, layering/depth, objects/cards/panels, font placement, color theory, media-library folder structure, and expanded QC matrix are now load-bearing SOP requirements with auto-fails and scored dimensions.
+
+**slide-image-creator.md (v1.1 -> v1.2):** Art-Director Persona (PROFESSIONALLY TRAINED ADOBE GRAPHIC ARTIST AND ART DIRECTOR WITH 30 YEARS OF EXPERIENCE, 5-bullet operating baseline); THE THIRDS SYSTEM (3x3 grid, nine intersection zones, focal point placement -- required in every prompt); IMAGE LAYERING AND DEPTH (foreground/midground/background, depth of field, subject separation methods, typography as the front layer); OBJECTS / CARDS / PANELS / INSETS vocabulary (gold-rule divider, callout chip, vignette/scrim gradient, hang-tag/price-tag motif, inset/callout panel -- each with placement rules); new SOP 9.7 Color Theory and Color Grading (Part A: complementary/contrasting/analogous color relationships + WCAG contrast declaration; Part B: WARM/COOL/NEUTRAL grade profile, temperature lock, saturation consistency, COLOR GRADING block in every prompt); Gate 10 (color theory); Common Mistakes 8-9; Update Triggers 9-10.
+
+**brand-steward.md (v1.3 -> v1.4):** SOP 9.1 step 5a (derive color relationships and grading profile before building STYLE BLOCK text -- required on every run); COLOR THEORY section in STYLE BLOCK template (color_relationship, complementary_accent, contrast_check, contrast_rule); COLOR GRADING PROFILE section in STYLE BLOCK template (color_grade_profile, temperature, saturation, tonal_contrast, lock); brand_registry.json color fields (color_relationship, color_grade_profile); Gate 7 (STYLE BLOCK must have both COLOR THEORY and COLOR GRADING sections before Phase 2); Common Mistakes 13-15.
+
+**media-librarian-ghl-updater.md (v1.0 -> v1.1):** Full SOP 9.1 directory tree with every subdirectory (assets/logo/, assets/founder-portrait/, assets/proof-assets/, output/, qc/finalrender/, and all checkpoint JSON files) documented with naming conventions and file-purpose comments; GHL folder structure and naming conventions; local and GHL naming standards.
+
+**qc-specialist-presentations.md (v1.2 -> v1.3):** Design-Craft Auto-Fail Battery AF-DC1 through AF-DC7 (text over face, flat single layer, ignored thirds, clashing/uncontrasted colors -- WCAG AA fail, ungraded inconsistent deck, font in unsafe zone, prompt missing all three design-craft element groups); Design-Craft Scoring Dimensions p-DC1 through p-DC7 at Phase 3 Prompt QC + i-DC1 through i-DC7 at Phase 5 Image QC (composition/thirds, layering/depth, card/object use, font-placement/alignment, color-harmony double-weight, color-grading double-weight, art-direction-quality) with 8.5 threshold, 7.0 floor, forced loop at <= 3; design_craft block added to final_deck_qc.json schema; pass condition updated: zero AF-DC1 through AF-DC7 required, ten named presentation components retained both-sides-forward.
+
+**sops/ mirrors regenerated:** slide-image-creator-sops.md, brand-steward-sops.md, qc-specialist-presentations-sops.md, media-librarian-ghl-updater-sops.md.
+
+**Version markers bumped v12.4.7 -> v12.4.8:** version, cc-compat.json, install.sh, update-skills.sh, README.md, DIRECT-TO-AGENT-UPDATE-MESSAGE.md, _qc-summary.md (G3 skill-content gate satisfied).
+
+---
+
 ## [v12.4.7] - 2026-06-14 - feat: presentation typography/art/hook/gradual-drop standard + the canonical BlackCEO Signature Webinar Arc, encoded into the master SOP and the Design Intelligence Unit presentation SOPs (Skill 23)
 
 ### Changes

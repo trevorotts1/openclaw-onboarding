@@ -88,6 +88,29 @@ The proven QC-9.42 deck was built on exactly FIVE layout archetypes, rotated acr
 
 **Composition language inside each archetype:** zones are described in PERCENTAGES of the frame ("top 58% photo band," "bottom 42% type zone") PLUS thirds language for element placement within zones. Both are required on every prompt.
 
+**THE THIRDS SYSTEM (required design rule and required prompt element):** Every prompt must declare which third of the frame holds each key element. The frame is divided into a 3x3 grid: upper / middle / lower third vertically, and left / center / right third horizontally. This creates nine intersection zones, and the most powerful focal points sit at the four intersections of the inner lines (upper-left, upper-right, lower-left, lower-right). Rules:
+- Every prompt states which third holds the HEADLINE (e.g., "headline anchored to the lower-left third").
+- Every prompt states which third holds the PRIMARY SUBJECT or visual element (e.g., "subject positioned at the upper-right third intersection").
+- Every prompt states which zone holds SUPPORTING ELEMENTS (e.g., "logo chip at lower-right; supporting copy in the center-left zone").
+- "Centered" alone is not thirds language and is an auto-fail at Prompt QC (AF-P6). Centering as an intentional design choice must be described as "centered on the vertical axis in the middle third, with deliberate symmetry as the composition anchor."
+- On every people-slide, the person's EYE LINE or face falls at or near a thirds-grid intersection. Declaring this in the prompt is mandatory.
+
+**IMAGE LAYERING AND DEPTH (required on every prompt):** Every slide prompt must specify all three depth layers explicitly. The image model cannot infer depth -- you must direct it. The three layers:
+- FOREGROUND: what is closest to the viewer? (A blurred edge element, a prop, negative space, a design device -- or stated as "no foreground element, the subject IS the near plane.")
+- MIDGROUND: the primary subject. Separated from the background by depth of field (soft background blur) OR by a lighting story (rim light, scrim, or exposure falloff behind the subject). Separation is required -- a subject that merges with the background is a composition defect.
+- BACKGROUND: the environmental context (the real-world setting per the World Engine). Typically softer focus, lower contrast, or lighter exposure than the midground subject.
+- Typography and design devices (gold rules, kicker labels, overlays) are the FRONT LAYER -- they sit above the photo layers in z-order and are rendered as designed elements, not embedded in the scene.
+- Subject separation method (required statement in the prompt): "Subject is separated from the background by [rim light and soft background blur / a natural exposure falloff / a shallow depth of field producing a bokeh background / the scrim gradient masking the background transition]. The background reads as environmental context, not a seamless studio backdrop."
+- Missing any layer from the prompt is a prompt-defect that routes back from QC.
+
+**OBJECTS, CARDS, PANELS, INSETS, AND CALLOUT DEVICES (vocabulary and usage rules):** Premium deck slides use intentional design objects to create structure, frame information, and add visual interest beyond a photo with text. These are not decorations -- each device has a purpose and placement rule:
+- **Gold-rule divider**: a 2-3px horizontal gold line that separates the kicker label from the headline, or the headline from the sub-headline. Always horizontal. Placed between rung changes in the hierarchy stack. Required in the canonical stack (see element 5).
+- **Callout chip / kicker label**: a gold all-caps letter-spaced 13pt label that sits above the headline and identifies the slide's category or moment ("THE PROMISE", "YOUR TRANSFORMATION", "THE PROOF"). Carries the gold rule beneath it.
+- **Vignette / scrim gradient**: a soft white-to-transparent or dark-to-transparent gradient that separates the typography zone from the photo zone (A1 archetype). Required whenever text sits over a photo band. State the direction and coverage percentage in the prompt.
+- **Hang-tag / price-tag motif**: the visual device for price-drop slides -- a stylized price tag shape with the ANCHOR price in a large weight, used to set the value reference before the drops. Required on the ANCHOR slide. Specify the shape, color (white on brand color background, or brand-color stroke on white), and the text it carries.
+- **Inset / callout panel**: a floating card or semi-transparent panel that holds a supporting proof point, stat, or testimonial fragment while the main image runs behind it. Used when a second information element must appear without a full split-layout. Specify exact position (e.g., "lower-left inset, 28% width, semi-transparent white, 2px gold border, anchored to the lower-left third intersection").
+- **Placement rule**: all objects must be placed in named thirds zones. "Bottom-right corner" is insufficient; "logo chip at the lower-right third intersection" is correct.
+
 **Per-archetype mini-templates (the 10-line skeleton each prompt fills in; signature moves are mandatory):**
 
 **A1 mini-template (FULL-BLEED PHOTO + HEADLINE OVERLAY):**
@@ -396,3 +419,54 @@ Rules:
 **Failure mode:** If a prompt cannot be made to carry designed typography (e.g., the STYLE BLOCK shipped without the TYPOGRAPHY LAW), halt and flag the Brand Steward and Director: "Phase 2 blocked -- STYLE BLOCK is missing the TYPOGRAPHY LAW; prompts will default to basic fonts and auto-fail." Never default to a basic font to keep moving.
 
 ---
+
+### SOP 9.7 -- Color Theory, Color Relationships, and Color Grading (every prompt)
+
+**When to run:** Within SOP 9.1, during elements 2, 9, and 15 (BACKGROUND, BRAND PALETTE, and AVOID BLOCK). Must complete before handoff to Phase 3 QC.
+
+**Inputs:**
+- The STYLE BLOCK from the Brand Steward (COLOR THEORY section and COLOR GRADING PROFILE -- generated by Brand Steward SOP 9.1 step 5a and SOP 9.2)
+- The client brand hex codes and their roles
+
+**Part A -- COLOR RELATIONSHIPS (complementary, contrasting, analogous):**
+1. Read the COLOR THEORY section of the STYLE BLOCK: what is the primary-secondary relationship? (complementary = opposite on the wheel for maximum pop; analogous = adjacent hues for warmth and harmony; triadic = three equidistant hues for vibrant balance)
+2. The BRAND PALETTE is the governing constraint -- brand hex codes do not change. Color theory governs HOW the colors RELATE and appear together, not which colors are used.
+3. Complementary accent use: when the STYLE BLOCK names a complementary accent (e.g., raspberry-pink as the pop accent against a gold primary), that accent color is reserved for MAXIMUM CONTRAST moments -- CTAs, price reveals, the single most important number on a slide. Using it everywhere kills its power.
+4. Contrast declaration (required in every prompt's BRAND PALETTE element): state the contrast relationship between the headline color and the background it sits on. The minimum threshold is WCAG AA: 4.5:1 for normal text, 3:1 for large text (large = 18pt+ regular or 14pt+ bold). "Charcoal (#231F20) on white (#FBF7F4): contrast ratio 16.5:1, PASS" is the correct form. A prompt that places light text on a light background without a contrast declaration is a defect.
+5. Include a COLOR GRADING block at the end of every prompt per Part B.
+
+**Part B -- COLOR GRADING (consistent warm/cool tone, saturation, and temperature across the deck):**
+1. Read the COLOR GRADING PROFILE from the STYLE BLOCK: WARM, COOL, or NEUTRAL grade.
+   - WARM grade: golden-hour light temperature, slightly lifted shadows, warm midtones, saturated sunset-direction tones. Charcoal and raspberry-pink on an off-white base reads as WARM.
+   - COOL grade: silver-blue light temperature, neutral-to-cool midtones, clean shadows. A navy-primary palette typically grades COOL.
+   - NEUTRAL grade: balanced daylight, no dominant temperature lean.
+2. Every prompt must state the TEMPERATURE LOCK: "Image color temperature: WARM / COOL / NEUTRAL -- lock to [description] to match the deck's grade profile."
+3. Saturation consistency: state the saturation level in the prompt (e.g., "slightly elevated saturation on the primary subject, desaturated background for separation -- consistent with the deck's warm-grade palette").
+4. Tonal contrast: state whether the overall key is HIGH (strong shadow/highlight separation) or LOW (softer, more even tonal range). Keep this consistent across the deck.
+5. Include the following COLOR GRADING block verbatim in every prompt (adapt values to client profile):
+   ```
+   // COLOR GRADING: TEMPERATURE=[WARM/COOL/NEUTRAL], SATURATION=[description],
+   // TONAL CONTRAST=[HIGH/LOW], GRADE=[match deck profile from STYLE BLOCK].
+   // Every image in this deck must feel like it was shot in the same light.
+   ```
+6. A deck where some images are warm-toned and others are cool-toned = an UNGRADED INCONSISTENT DECK, which is an AUTO-FAIL at QC (AF-DC5 in the Design-Craft battery).
+
+**Steps:**
+1. Read the COLOR THEORY and COLOR GRADING sections of the STYLE BLOCK before writing element 9 (BRAND PALETTE).
+2. Write the contrast declaration into element 9 (headline color vs. background, WCAG ratio, PASS/FAIL).
+3. Note the complementary accent and restrict its usage to maximum-impact moments only.
+4. Write the TEMPERATURE LOCK into element 13 (MOOD) or element 14 (PROFESSIONALISM).
+5. Append the COLOR GRADING block comment before the AVOID block.
+6. Record in the prompt self-check (SOP 9.1 step 7 item h): "COLOR GRADING verified: TEMPERATURE=[value], GRADE=[value]."
+
+**Outputs:**
+- Contrast declaration in element 9
+- TEMPERATURE LOCK in element 13 or 14
+- COLOR GRADING block appended before the AVOID block
+
+**Hand to:** QC Specialist -- Presentations (color-harmony and color-grading dimensions are scored at Phase 3 prompt QC and Phase 5 image QC)
+
+**Failure mode:** If the STYLE BLOCK is missing the COLOR THEORY or COLOR GRADING sections, halt and notify the Brand Steward: "Phase 2 blocked -- STYLE BLOCK is missing color-theory sections. Cannot guarantee color harmony or grade consistency across the deck." Never write color elements without the STYLE BLOCK's grade profile.
+
+---
+
