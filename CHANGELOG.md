@@ -1,3 +1,9 @@
+## [v12.5.1] - 2026-06-14 - fix: genericize all client-specific content in presentation SOPs (PR #224)
+
+Audit of all 24 presentation SOP and role files merged in v12.5.0 (PR #223). Removed every client-specific token baked into rules, examples, gates, and QC criteria (client names, brand colors, offer names, specific prices, niche imagery) so the SOPs serve the whole clientele. All doctrine, QC gates, and rules preserved intact. 17 files changed. See PR #224 for full contamination hit list.
+
+---
+
 ## [v12.5.0] - 2026-06-14 - feat: Presentation SOP overhaul -- 4 new specialist roles, banded hook cadence, re-pitch choreography, QC expansion, and Skill 45 DIU scope boundary (Skills 23 + 45)
 
 ### Changes
