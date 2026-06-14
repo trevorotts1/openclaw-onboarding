@@ -45,7 +45,7 @@ Guarantee that when a logo asset exists, the SAME mark appears at the SAME size 
 
 **FAIL (the forensic-deck V8 regression):** the logo still mutated into a roundel, a sprout, a tall tree, a mountain mark, a generic monogram, and varying lockups across s02, s07, s22, s24, s28, s32, s40, s58. Also a logo-text render bug: "IDEHNOTTY DEVELOPMENT" on s16 (garbled brand name). Verdict: deck-level AUTO-FAIL plus per-slide AUTO-FAIL on s16 (logo text garbled).
 
-**PASS (the gold-standard reference deck):** ONE logo ("7 Figure Childcare CEO"), bottom-right, ~9% width, on a white chip with a 1px gold border, "never recolored, never distorted, never clipped," identical on every slide via the image-to-image composite path, with hero placement (bottom-center ~10 to 11%) reserved only for the pivotal moments (s50, s64) and the close. Verdict: PASS.
+**PASS (the gold-standard reference deck):** ONE logo (the brand wordmark), bottom-right, ~9% width, on a white chip with a 1px gold border, "never recolored, never distorted, never clipped," identical on every slide via the image-to-image composite path, with hero placement (bottom-center ~10 to 11%) reserved only for the pivotal moments (s50, s64) and the close. Verdict: PASS.
 
 **PASS (single slide):** the prompt declares "the first reference image is the logo; composite it bottom-right at 9% width on a white chip with a 1px gold border, do not redraw it," `LOGO_URL` is in `input.input_urls`, and the rendered slide shows the exact locked mark. Verdict: PASS.
 
