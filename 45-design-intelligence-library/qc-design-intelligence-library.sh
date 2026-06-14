@@ -1,7 +1,10 @@
 #!/bin/bash
 
 # QC Script for Skill 45 — Design Intelligence Library
-# Verifies: 16 library files present, INDEX.md parses, no client data committed to repo
+# Verifies: 19 library files present (7 _system + 9 _RULES + 3 top-level), INDEX.md parses, no client data committed to repo
+# Top-level repo-owned library files: README.md, INDEX.md (empty seed), DEPARTMENT-BUILD-BRIEF.md (org-builder brief).
+# Client data = {ID}_{name}.md style cards and personal-photo-shoot/{client}/ identity folders ONLY.
+# Category _RULES.md are repo-owned system files and are NEVER client data.
 
 set -e
 
@@ -57,10 +60,10 @@ for cat in "${categories[@]}"; do
   fi
 done
 
-# 3. Verify README.md and INDEX.md exist (2 files)
+# 3. Verify top-level repo-owned library files exist (3 files)
 echo ""
 echo "[QC] Checking top-level library files..."
-for file in "README.md" "INDEX.md"; do
+for file in "README.md" "INDEX.md" "DEPARTMENT-BUILD-BRIEF.md"; do
   if [[ -f "$LIBRARY_DIR/$file" ]]; then
     echo "  ✓ $file"
   else
@@ -89,19 +92,33 @@ fi
 # 5. Check for client data accidentally committed
 echo ""
 echo "[QC] Checking for committed client data (should be empty)..."
-# Count non-empty style-card files (files matching {ID}_{name}.md, excluding empty seed lines)
+# Client data is box-owned, never in the repo. It is ONLY:
+#   (a) style-card files named {ID}_{name}.md inside a category folder, and
+#   (b) per-client identity folders under personal-photo-shoot/{client}/.
+# Repo-owned _RULES.md files are SYSTEM files and must NEVER be counted as client data.
 client_data_count=0
-for cat_dir in "$LIBRARY_DIR"/*designs "$LIBRARY_DIR/personal-photo-shoot"; do
-  if [[ -d "$cat_dir" ]]; then
-    # Count .md files that aren't _RULES.md or empty
-    find "$cat_dir" -maxdepth 1 -name "*.md" ! -name "_RULES.md" -type f -size +1000c 2>/dev/null && ((client_data_count++)) || true
-  fi
-done
+client_data_files=()
+
+# (a) Style cards: any .md in a category folder that is NOT _RULES.md.
+while IFS= read -r f; do
+  client_data_files+=("$f")
+  ((client_data_count++)) || true
+done < <(find "$LIBRARY_DIR"/*designs "$LIBRARY_DIR/personal-photo-shoot" \
+            -maxdepth 1 -type f -name "*.md" ! -name "_RULES.md" 2>/dev/null)
+
+# (b) Per-client identity folders under personal-photo-shoot/ (any subdirectory).
+while IFS= read -r d; do
+  client_data_files+=("$d/")
+  ((client_data_count++)) || true
+done < <(find "$LIBRARY_DIR/personal-photo-shoot" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 
 if [[ $client_data_count -eq 0 ]]; then
   echo "  ✓ No committed client data (style cards, identity profiles) — good"
 else
-  echo "  ⚠ Warning: $client_data_count potential client-data files found (may be expected if skill already installed on box)"
+  echo "  ⚠ Warning: $client_data_count potential client-data file(s)/folder(s) found (expected only if the skill is already installed on a box):"
+  for item in "${client_data_files[@]}"; do
+    echo "      - ${item#$LIBRARY_DIR/}"
+  done
 fi
 
 # 6. File count summary
@@ -112,12 +129,12 @@ rules_count=$(find "$LIBRARY_DIR" -path "*/_RULES.md" | wc -l)
 toplevel_count=$(find "$LIBRARY_DIR" -maxdepth 1 -name "*.md" | wc -l)
 echo "  System files (_system/*.md): $system_count (expected: 7)"
 echo "  Category _RULES.md: $rules_count (expected: 9)"
-echo "  Top-level files (README, INDEX): $toplevel_count (expected: 2)"
+echo "  Top-level files (README, INDEX, DEPARTMENT-BUILD-BRIEF): $toplevel_count (expected: 3)"
 
 expected_total=$((system_count + rules_count + toplevel_count))
-echo "  Total library files: $expected_total (expected: 18)"
+echo "  Total library files: $expected_total (expected: 19)"
 
-if [[ $system_count -ne 7 ]] || [[ $rules_count -ne 9 ]] || [[ $toplevel_count -ne 2 ]]; then
+if [[ $system_count -ne 7 ]] || [[ $rules_count -ne 9 ]] || [[ $toplevel_count -ne 3 ]]; then
   echo "  ✗ File count mismatch"
   exit 1
 fi
@@ -145,7 +162,7 @@ fi
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
 echo "[QC] ✓ All checks passed. Design Intelligence Library (v1.0.0)"
-echo "[QC] 16 library files present + valid structure"
+echo "[QC] 19 library files present + valid structure (7 _system + 9 _RULES + 3 top-level)"
 echo "[QC] Ready for installation on boxes"
 echo "═══════════════════════════════════════════════════════════════"
 

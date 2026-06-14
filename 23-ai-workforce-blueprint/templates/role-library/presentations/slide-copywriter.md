@@ -218,6 +218,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 2. For each item in proof_audit.txt, verify: does this item appear verbatim (or as a direct paraphrase) in intake.json? If yes: mark VERIFIED. If no: mark UNVERIFIED.
 3. For every UNVERIFIED item: replace the proof content on that slide with `[PROOF PENDING -- client must supply]` and add a comment in proof_audit.txt.
 4. Scan every slide's HEADLINE, SUBHEAD, and BODY for fabricated statistics. A fabricated statistic is any number, percentage, or named study that does not appear in intake.json. Replace any found with `[STAT PENDING]`.
+4a. THE FORBIDDEN-ON-SLIDE SCAN (FIX-3; mirrors the QC audience-facing AUTO-FAIL battery). Scan every slide's HEADLINE, SUBHEAD, SUPPORTING, and any BODY field for the following, none of which may ever appear as ON-SLIDE (audience-facing) text. Each is an AUTO-FAIL at the same severity as the em-dash ban:
+   - (1) PRESENTER NARRATION / what-to-say lines. The spoken words live in the PRESENTER NOTE, never on the slide (rule 15, the slide is never the script). If a slide field reads like something the speaker says aloud, move it to the PRESENTER NOTE.
+   - (2) THE AI'S OWN META-COMMENTARY or reasoning (any "here I will...", "this slide should...", model-voice text). Strip it; it is never copy.
+   - (3) IMAGE / SCENE DESCRIPTIONS as visible copy. A scene description (for example "Same parent, same child, two completely different rooms to grow up in", or "The senior engineer who hit every goal and still feels lost") is photo-brief direction for the Slide Image Creator's World/Expression engines, NOT a headline or sub. Move it to the PRESENTER NOTE or a separate image-brief note; never bake it as slide copy.
+   - (4) TELEGRAPHING / STAGE-DIRECTION kickers and lines ("one last proof before you decide", "before you decide", "this is not just a webinar", "today I'm gonna show you why"). The mechanic stays off the slide.
+   - (5) The literal word "webinar" on ANY audience-facing slide (HEADLINE / SUBHEAD / SUPPORTING). Replace with a non-"webinar" line (for the close, "This is your moment. The door is open."). The word "webinar" may appear only in the PRESENTER NOTE or internal fields, never as baked copy.
+   For each hit, remove it from the audience-facing field, relocate the content to the PRESENTER NOTE (or flag it for the Slide Image Creator's photo brief when it is a scene description), and record the relocation in proof_audit.txt as `FORBIDDEN-ON-SLIDE: slide N, type [1-5], relocated`. A slide whose baked copy still contains any of the five fails the gate and is not handed off.
 5. Scan every slide for em dashes. Replace every em dash with a comma or parenthesis.
 6. Count total PROOF PENDING and STAT PENDING placeholders. If count > 5, flag to the Director: "High placeholder count ([N]) -- recommend resolving with the client before Phase 1Q."
 7. Write proof_audit.txt to working/copy/proof_audit.txt.
@@ -323,6 +330,9 @@ proof_audit.txt shows zero UNVERIFIED items with real data (only PENDING placeho
 ### Gate 5 -- No Fabrication
 No statistics or quotes in slides_copy.md that do not trace back to intake.json.
 
+### Gate 6 -- Forbidden-On-Slide Scan Clean (FIX-3)
+proof_audit.txt shows the forbidden-on-slide scan (SOP 9.3 step 4a) ran and no audience-facing field (HEADLINE / SUBHEAD / SUPPORTING / BODY) carries: presenter narration, the AI's own meta-commentary, an image/scene description as copy, a telegraphing / stage-direction kicker, or the literal word "webinar". Any hit must have been relocated (to the PRESENTER NOTE or the image brief) before handoff. Same severity tier as the em-dash ban.
+
 ---
 
 ## 11. Handoffs (Value Stream Map)
@@ -406,6 +416,10 @@ A 75-slide deck with hook "Enroll clients without chasing them" distributed as: 
 - A deck with no guarantee beat, or no scarcity / last-calls beat in the close. Both are required components (master rule 21). Write the guarantee after the final price; write only TRUE scarcity (fake scarcity is a blocking flag).
 - A deck whose every proof point is the client's own assertion with zero third-party corroboration. "Who says so other than you" is a required component (master rule 12); weave at least one case study, study, or white paper between the drops. A zero-proof deck fails, it is not waved through.
 - Putting more than one big idea on a slide. One big idea per slide; a multi-idea slide is a QC auto-fail (AF-C6). Split it.
+- **Baking a SCENE / IMAGE DESCRIPTION as a headline or sub (FIX-3).** "Same parent, same child, two completely different rooms to grow up in" or "The senior engineer who hit every goal and still feels lost" are photo-brief direction for the Slide Image Creator, never audience-facing copy. Move them to the PRESENTER NOTE or the image brief; the image SHOWS the scene, the slide never narrates it. AUTO-FAIL on the slide.
+- **Baking presenter narration or the AI's own meta-commentary as slide copy (FIX-3).** The spoken words live in the PRESENTER NOTE; the model's reasoning never appears at all. A slide field that reads like what the speaker says aloud fails.
+- **A telegraphing / stage-direction kicker on the slide (FIX-3):** "one last proof before you decide", "before you decide", "this is not just a webinar", "today I'm gonna show you why". The mechanic stays off the slide; it telegraphs the move and kills it.
+- **The literal word "webinar" on any audience-facing slide (FIX-3).** Replace with a non-"webinar" line (the close becomes "This is your moment. The door is open."). "Webinar" may live only in the PRESENTER NOTE, never as baked copy.
 
 ---
 

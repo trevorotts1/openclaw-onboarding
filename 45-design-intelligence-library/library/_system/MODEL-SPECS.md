@@ -1,5 +1,5 @@
 # MODEL SPECS — API Limits, Routing & Request Templates
-**Version:** 1.2 | **Last Updated:** 2026-06-12 | **Source:** Verified Kie.ai API documentation (not blog estimates)
+**Version:** 1.3 | **Last Updated:** 2026-06-14 | **Source:** Verified Kie.ai API documentation (not blog estimates)
 **Audience:** AI agents. This is the ONLY file that changes when models update. Style cards never reference model versions directly — they reference tiers and capabilities defined here.
 
 ---
@@ -16,6 +16,8 @@
 | 4 | **Ideogram V3** | `ideogram/v3-text-to-image` | **5,000 chars** | **YES — `negative_prompt`, 5,000 chars** | None | image_size presets | Typography engine |
 | 5 | **Wan 2.7** | `wan/2-7-image` | **5,000 chars** | No (inline only) | `input_urls`, optional, 10MB each | 1K / 2K | n=1–4 batch, seed |
 
+> **Note:** the 7 endpoints above are all GENERATION endpoints (they output images) and share the `jobs/createTask` lifecycle in Section 5. There is a separate, non-generation **image-to-JSON / vision-analysis** capability documented in Section 1B + Section 5.8 below: it INGESTS an image and returns structured text/JSON, used by Workflow A (analyze an image to a style card).
+
 ### Aspect ratio support (critical for routing)
 
 | Endpoint | Supported ratios |
@@ -25,6 +27,34 @@
 | Seedream 4.5 (both T2I and Edit) | 1:1, 4:3, 3:4, 16:9, 9:16, 2:3, 3:2, 21:9 — **required parameter, no auto** |
 | Ideogram V3 | Presets only: square, square_hd, portrait_4_3, portrait_16_9, landscape_4_3, landscape_16_9 |
 | Wan 2.7 | 1:1, 3:4, 4:3, 1:8, 8:1, 9:16, 16:9, 21:9 |
+
+---
+
+## 1B. IMAGE-TO-JSON (VISION ANALYSIS) MODE: image in, structured style JSON out
+
+This is the THIRD Kie.ai mode, alongside text-to-image (T2I) and image-to-image (I2I). It does NOT generate an image; it **reads** an input image with a multimodal model and returns a structured description. It is the machine path for **Workflow A** (analyze an image to a style card): instead of (or alongside) the agent eyeballing the image, you can POST the image to Kie.ai's multimodal chat endpoint and ask for the 12 style dimensions back as JSON, then map that JSON into `STYLE-CARD-TEMPLATE.md`.
+
+**Verified against live Kie.ai docs (`docs.kie.ai/market/chat/gpt-5-2`, fetched 2026-06-14), NOT guessed:**
+
+| Property | Value |
+|---|---|
+| Mode | Vision / image-understanding (multimodal chat completion): image IN, text/JSON OUT |
+| Endpoint | `POST https://api.kie.ai/gpt-5-2/v1/chat/completions` |
+| Lifecycle | **Synchronous chat-completions** (request → response in one call). This is NOT the `jobs/createTask` + `recordInfo` polling lifecycle the generation endpoints use. |
+| Model ID | `gpt-5-2` (multimodal: accepts text + image input; backup options: other `gpt-5-*` chat models in the `docs.kie.ai/market/chat/` family; confirm the exact slug in live docs before substituting) |
+| Auth | `Authorization: Bearer {API_KEY}` (same KIE_API_KEY as the generation endpoints) |
+| Image input | inside `messages[].content[]` as an item `{"type": "image_url", "image_url": {"url": "{IMAGE_URL}"}}`. Multiple images = multiple `image_url` items in the same `content` array. |
+| Text instruction | a sibling content item `{"type": "text", "text": "{ANALYSIS_INSTRUCTION}"}` in the same array. |
+| Structured output | The Kie.ai chat docs do **NOT** document an OpenAI-style `response_format` / `json_schema` parameter. Get JSON by INSTRUCTING the model in the text item ("Return ONLY valid JSON matching this schema: ..."), then parse `choices[0].message.content`. Do not pass `response_format` unless live docs add it; passing an undocumented field can be rejected. |
+| Where the answer lives | `choices[0].message.content` (a string; parse it as JSON when you asked for JSON). |
+| Usage accounting | `usage.prompt_tokens` / `completion_tokens` / `total_tokens` in the response. |
+
+**When to use it:** an operator hands you a reference image/deck and there is no registered style for it (INSTRUCTIONS.md job 2, branch c/d). Route to the Style Analyst, who may use this mode to bootstrap the 12-dimension read, then still applies MASTER-SOP judgment and writes/tests the card. The agent's own multimodal vision remains a valid alternative; this mode is the API-driven option for batch or headless analysis.
+
+**Hard rules:**
+- This mode produces a STYLE CARD DRAFT, never a final card. The Style Analyst still fills `STYLE-CARD-TEMPLATE.md` and runs `TEST-PROTOCOL.md`.
+- It NEVER edits an existing card (Workflow B / model-update rules unchanged).
+- Verify the model slug and request shape against live `docs.kie.ai` before each library version bump; chat model ids rev faster than the image endpoints.
 
 ---
 
@@ -100,11 +130,13 @@ Choose by task. Category `_RULES.md` files may override.
 
 ## 5. READY-TO-SEND JSON TEMPLATES (Kie.ai)
 
-All endpoints share the same task lifecycle:
+All GENERATION endpoints (5.1–5.7) share the same task lifecycle:
 1. `POST https://api.kie.ai/api/v1/jobs/createTask` with `Authorization: Bearer {API_KEY}`
 2. Extract `data.taskId`
 3. Poll `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId={taskId}` (or use `callBackUrl`)
 4. When `state` = `success`, image URL(s) are in `resultJson.resultUrls`
+
+> **Exception:** the image-to-JSON / vision-analysis template (5.8) does NOT use this lifecycle. It is a synchronous chat-completions call to a different endpoint; see Section 1B.
 
 ### 5.1 GPT-Image 2 — Text-to-Image
 ```json
@@ -214,6 +246,45 @@ All endpoints share the same task lifecycle:
 }
 ```
 
+### 5.8 Image-to-JSON / vision analysis (image in → structured style JSON out)
+
+**Different endpoint, different lifecycle** (synchronous chat-completions, no `createTask`/`recordInfo` polling). See Section 1B. Verified against `docs.kie.ai/market/chat/gpt-5-2`.
+
+`POST https://api.kie.ai/gpt-5-2/v1/chat/completions` with header `Authorization: Bearer {API_KEY}`:
+
+```json
+{
+  "model": "gpt-5-2",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a design style analyst. Extract the transferable STYLE of the attached image across the 12 dimensions. Return ONLY valid JSON, no prose."
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Analyze this image and return JSON with keys: render, composition, subject_treatment, color_palette, color_grading, lighting, typography, layering, subject_background, negative_space, workflow_notes, unifying_dna. Each value is a concise style description. Describe STYLE only, never the specific content/subject."
+        },
+        {
+          "type": "image_url",
+          "image_url": { "url": "{IMAGE_URL}" }
+        }
+      ]
+    }
+  ],
+  "reasoning_effort": "high"
+}
+```
+
+**Reading the result:** the JSON string is in `choices[0].message.content`. Parse it, then map each key into `STYLE-CARD-TEMPLATE.md`. This is a DRAFT input to Workflow A; the Style Analyst still completes and tests the card.
+
+**Notes:**
+- `reasoning_effort` accepts `"high"` for thorough analysis; lower it for speed. `tools` (e.g. `web_search`) is optional and not needed for pure image analysis.
+- Pass additional `image_url` items in the same `content` array to analyze a small batch in one call (e.g. a 3-slide sample of a deck); for full decks use Deck Systems Specialist + PPT-ANALYSIS-SOP.
+- Do NOT add `response_format`/`json_schema`; not documented for this Kie.ai endpoint as of 2026-06-14. Enforce JSON by instruction + parse-and-retry, not by an undocumented parameter.
+
 ---
 
 ## 6. ADDING A NEW MODEL (future-proofing protocol)
@@ -233,3 +304,4 @@ When a new model or endpoint becomes available (e.g., GPT-Image 3, Nano Banana 3
 | 2026-06-12 | v1.0 | Initial: 5 endpoints (GPT-Image 2 T2I, Nano Banana 2, Seedream 4.5 Edit, Ideogram V3, Wan 2.7) |
 | 2026-06-12 | v1.1 | Added GPT-Image 2 Image-to-Image (20K + refs 30MB) and Seedream 4.5 Text-to-Image (3K, ratio required). Updated routing: GPT I2I now first choice for text-heavy style-reference work; Seedream T2I added as fast-draft option. Style-reference-only directive extended to GPT I2I. |
 | 2026-06-12 | v1.2 | Added Editing Hierarchy (Seedream 4.5 Edit = only true surgical editor) and Personal Photo Shoot routing rows. |
+| 2026-06-14 | v1.3 | Documented the THIRD mode: image-to-JSON / vision analysis (Section 1B + template 5.8). Synchronous chat-completions endpoint `POST https://api.kie.ai/gpt-5-2/v1/chat/completions`, model `gpt-5-2`, image via `messages[].content[].image_url`, answer at `choices[0].message.content`. Verified against live `docs.kie.ai/market/chat/gpt-5-2`; no `response_format`/`json_schema` documented (JSON by instruction). Powers Workflow A image-to-style-card. No style cards touched. |

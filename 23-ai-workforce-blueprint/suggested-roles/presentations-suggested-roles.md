@@ -1,11 +1,11 @@
 # Suggested Roles -- presentations-dept
-**Version:** 1.4 | 2026-06-12
-**Status:** v12.1.0 Brainstorming Buddy (renamed from Deck Discovery Strategist, generalized template); 17 roles
+**Version:** 1.5 | 2026-06-14
+**Status:** v12.1.0 Brainstorming Buddy (renamed from Deck Discovery Strategist, generalized template); presentation-overhaul v1.7 adds ROLE-18 through ROLE-21 (Typography Architect, Presenters Guide Specialist, Presenters Speech Writer, Audio Demonstration + Fish Audio Expression Specialist); 21 roles
 
 ## Department Purpose
 End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery).
 
-## v12.1.0 Role Roster (17 roles)
+## v1.7 Role Roster (21 roles)
 - Brainstorming Buddy (ROLE-17, renamed from Deck Discovery Strategist in v12.1.0)
 - Director (ROLE-01)
 - Brand Steward (ROLE-02)
@@ -23,6 +23,42 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - Presenter Coach (ROLE-14, NEW -- v11.23.0)
 - Hook Strategist (ROLE-15, NEW -- v11.23.0)
 - Healer -- Presentations (ROLE-16, NEW -- v11.23.0+healer)
+- Typography Architect (ROLE-18, NEW -- v1.7 presentation overhaul)
+- Presenters Guide Specialist (ROLE-19, NEW -- v1.7 presentation overhaul)
+- Presenters Speech Writer (ROLE-20, NEW -- v1.7 presentation overhaul)
+- Audio Demonstration + Fish Audio Expression Specialist (ROLE-21, NEW -- v1.7 presentation overhaul)
+
+---
+
+## New Roles Added in v1.7 (Presentation Overhaul)
+
+### 18. Typography Architect (NEW -- v1.7)
+**Slug:** typography-architect
+**Persona:** Marcus Vane, Type Director
+**What it does:** Runs as a Phase-0.7/1.5 gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json, and BEFORE the Slide Image Creator writes any prompt. Designs one distinct TYPE-LAYOUT SYSTEM CARD per slide archetype (hook / divider / teach-one-big-idea / jaw-drop standalone / data / wall-of-wins / offer-component-card / CTA): image position, word-placement zone, type treatment, and a do/never list. Replaces the single hard-coded canonical hierarchy stack in slide-image-creator.md element 5, so the deck rotates layouts instead of stamping one frame. Hook slides are type-driven (no image OR <=15% opacity bg). Enforces image-position rotation (no >2 consecutive slides same position) and type-family rotation (no >3 consecutive, borrowed from Skill 45 PPT-ANALYSIS). Outputs working/typography/type_layout_system.md, the required input to the Slide Image Creator.
+**Core SOPs:** 9.1 Type-Layout System Authoring | 9.2 Hook-Slide Typography Spec | 9.3 Layout-Variety Audit
+**Role type:** specialist
+
+### 19. Presenters Guide Specialist (NEW -- v1.7)
+**Slug:** presenters-guide-specialist
+**Persona:** Delia Crewe, Stage Producer
+**What it does:** Converts the QC-passed deck + the Presenter Coach talk track into a BEAUTIFUL speaker-facing OUTLINE (one block per section and per slide: slide thumbnail ref, the one point to drive home, the beat/transition, the time budget, ladder/hook cues). Speaker-facing run-of-show, NOT the word-for-word script. Renders a designed, branded PDF (no font below 12pt) AND a Notion page (Notion -> Google Docs -> text fallback chain). Delivers via the Delivery Concierge (verified last-mile, never self-report). Runs only if DELIVERABLE_SET includes the guide.
+**Core SOPs:** 9.1 Guide Assembly | 9.2 PDF Render (fonts >=12) | 9.3 Notion Publish (fallback chain) | 9.4 Verified Delivery via Delivery Concierge
+**Role type:** specialist
+
+### 20. Presenters Speech Writer (NEW -- v1.7)
+**Slug:** presenters-speech-writer
+**Persona:** Roland Pace, Speechwright
+**What it does:** Writes the FULL word-for-word "here is what you say" script keyed to each slide, paced to TARGET_WPM (default 140; 130 teach-heavy, 150-160 high-energy), hook sung on its scheduled beats, drops with earned reasons + timed pauses, no em dashes. Asserts total_words / TARGET_WPM lands within +/-10% of DURATION_MIN, and records TARGET_WPM=140 as the SOP constant so it is never silently 150. Renders a designed PDF (no font below 12pt) + a Notion page, per-slide pace markers. Sibling to the Guide (Guide = at-a-glance outline, Speech = full read). Delivers via the Delivery Concierge. Runs only if DELIVERABLE_SET includes the speech.
+**Core SOPs:** 9.1 Word-for-Word Draft | 9.2 WPM Pacing Pass (TARGET_WPM=140) | 9.3 Designed PDF Render (fonts >=12) | 9.4 Notion Publish + Verified Delivery
+**Role type:** specialist
+
+### 21. Audio Demonstration + Fish Audio Expression Specialist (NEW -- v1.7)
+**Slug:** audio-demonstration-specialist
+**Persona:** Vivienne Locke, Voice Director
+**What it does:** Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO. Owns the expression engine (Fish Audio expression tags / emphasis / pauses / energy mapped to hook, jaw-drops, drops) and authoritatively documents the ElevenLabs v2-vs-v3 difference for correct fallback mode-switching. Runs the TTS FALLBACK CHAIN: PRIMARY Fish Audio S2-Pro (POST https://api.fish.audio/v1/tts, Bearer, model s2-pro, mp3 192kbps; S2 [bracket] free-form tags / S1 (parenthesis) fixed-set tags) -> FALLBACK ElevenLabs v3 (eleven_v3 inline tags) / v2 (eleven_multilingual_v2 sliders) -> FINAL leg local Whisper/STT (faster-whisper) as the round-trip word-match VERIFICATION leg (Whisper is STT, never a synthesizer). Chunks long talks, synthesizes per chunk, ffmpeg-concats + loudness-normalizes, STT-verifies >=95% word-match. Runs only when WANT_AUDIO_DEMO=true. Delivers via the Delivery Concierge.
+**Core SOPs:** 9.1 Expression Tagging | 9.2 Chunk + Synthesize (fallback chain) | 9.3 ffmpeg Stitch + Loudness Normalize | 9.4 STT Verify (Whisper word-match) | 9.5 Deliver Demo
+**Role type:** specialist
 
 ---
 
@@ -155,3 +191,5 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - **Presenter Coach After Copy, Before Delivery:** ROLE-14 runs after Phase 1A owner approval and before the deck ships. The rehearsal gate must be cleared before ROLE-13 delivers.
 - **Delivery Concierge Replaces Direct Delivery:** ROLE-06 Media Librarian hands off to ROLE-13 Delivery Concierge after PPTX assembly (Phase 6). ROLE-13 owns all destinations, verification, and notification.
 - **ROLE-16 Healer is Live:** healer-presentations.md authored and merged (change order v1 + healer addition). The Healer receives: second consecutive stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, Phase-4 API failCode events from ROLE-12. File a Bug Ticket to the Bugs Department before handing off to the Healer (Bugs Department pending commission).
+- **Typography Architect Before the Slide Image Creator:** ROLE-18 runs as a Phase-0.7/1.5 gate after the STYLE BLOCK (ROLE-02) and arc_allocation.json (ROLE-01) exist and BEFORE ROLE-11 writes any prompt. type_layout_system.md is a hard input to ROLE-11 element 5; without it the deck reverts to one stamped frame.
+- **Guide / Speech / Audio After the Presenter Coach, Before Delivery:** ROLE-19 (guide), ROLE-20 (speech), and ROLE-21 (audio) run AFTER ROLE-14 Presenter Coach and BEFORE ROLE-13 Delivery Concierge, gated on DELIVERABLE_SET (deck only / +guide / +guide+speech / +audio) and WANT_AUDIO_DEMO. ROLE-20 consumes ROLE-14's talk track; ROLE-21 consumes ROLE-20's QC-passed speech. All three route every deliverable through ROLE-13 for verified last-mile (never self-report). TARGET_WPM=140 is the recorded speech constant.
