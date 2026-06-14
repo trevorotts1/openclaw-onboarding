@@ -1,3 +1,11 @@
+## [v12.7.2] - 2026-06-14 - feat: Presentations SOP overhaul + image-prompt hardening + ROLE-23 first-time-onboarding (union of all 4 PRs)
+
+### Changes
+
+- Union merge of PRs 230 + 228 + 229 + 227: client-name genericization, Quality Control dept (floor 28->29), ROLE-22 Content-to-Presentation Architect, ROLE-23 First-Time-User Onboarding, 19-document SOP library (slide-craft, pitch-craft, design-system, image-design), AF-F10 placeholder gate, image-prompt hardening (AF-P13 through AF-P16, GPT-Image 2 full budget).
+- Presentations dept 21 -> 23 roles (ROLE-22 content-to-presentation + ROLE-23 first-time-onboarding-presentations). QC dept added (3 roles). total_roles 355 -> 360.
+- All 9 version markers bumped to v12.7.2.
+
 ## [v12.7.1] - 2026-06-14 - feat: image-prompt control hardening -- full GPT-Image 2 budget, mandatory paired negative block, spelling-lock, locked-logo image-to-image, four pre-generation QC gates (FIX-13)
 
 ### Changes
