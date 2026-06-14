@@ -1,0 +1,36 @@
+name: bounded-resume-cron-guard
+
+# Fails the build if the onboarding-resume cron is an unbounded token furnace.
+# Triggered whenever the guarded files change.
+# v12.6.1 / fix/bound-onboarding-resume-furnace
+
+on:
+  push:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - scripts/resume-onboarding.sh
+      - scripts/resume-onboarding-prompt.txt
+      - tests/unit/bounded-resume-cron.test.sh
+      - .github/workflows/bounded-resume-cron-guard.yml
+  pull_request:
+    paths:
+      - install.sh
+      - update-skills.sh
+      - scripts/resume-onboarding.sh
+      - scripts/resume-onboarding-prompt.txt
+      - tests/unit/bounded-resume-cron.test.sh
+      - .github/workflows/bounded-resume-cron-guard.yml
+
+jobs:
+  bounded-resume-cron-guard:
+    name: Bounded onboarding-resume cron guard (v12.6.1)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run bounded-resume-cron tests
+        run: |
+          chmod +x tests/unit/bounded-resume-cron.test.sh
+          bash tests/unit/bounded-resume-cron.test.sh

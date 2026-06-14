@@ -47,7 +47,7 @@ If you are reading this file, the user has triggered onboarding by saying someth
 
 **0.1: Confirm AGENTS.md has the install kickoff flag (UPDATE PENDING or ONBOARDING PENDING)**
 
-> ⚠️ FLAG NAME: `install.sh` writes a `## 🔴🔴🔴 UPDATE PENDING - EXECUTE IMMEDIATELY` section to the top of AGENTS.md. Older docs/installs used `ONBOARDING PENDING`. BOTH are valid kickoff flags — match EITHER. (Grepping for only `ONBOARDING PENDING` used to make a fresh install stall here because install.sh writes `UPDATE PENDING`.)
+> ⚠️ FLAG NAME: `install.sh` writes a `## UPDATE PENDING - Skills Activation Required` section to the top of AGENTS.md. Older docs/installs used `ONBOARDING PENDING` or `UPDATE PENDING - EXECUTE IMMEDIATELY`. ALL are valid kickoff flags -- match `UPDATE PENDING` OR `ONBOARDING PENDING`. (Grepping for only `ONBOARDING PENDING` used to make a fresh install stall here because install.sh writes `UPDATE PENDING`.)
 
 Search ALL possible AGENTS.md locations. The path differs between Mac and VPS:
 ```bash
@@ -488,9 +488,9 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 
 ---
 
-## 🔴 ONBOARDING CONTINUITY - NEVER STOP UNTIL ALL 32 SKILLS ARE INSTALLED
+## ONBOARDING CONTINUITY - Work Through All Skills (Bounded)
 
-**The onboarding process must run continuously until all 41 active skills are installed.** Some models will stall, pause, or silently stop mid-installation. This protocol prevents that.
+**The onboarding process should work through all active skills. Some models may stall or pause mid-installation. This protocol keeps progress moving.** The resume cron provides up to 5 retry fires if interrupted; after that, the operator is notified to re-trigger.
 
 ### Self-Check Rules
 

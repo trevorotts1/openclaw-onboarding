@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.6.0"
+ONBOARDING_VERSION="v12.6.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3534,11 +3534,10 @@ UPDATE_PENDING_FILE="$ONBOARDING_DIR/UPDATE-PENDING.md"
 
 cat << 'FLAGCONTENT' | tee "$UPDATE_PENDING_FILE" >> "$AGENTS_FILE"
 
-## 🔴🔴🔴 UPDATE PENDING - EXECUTE IMMEDIATELY
+## UPDATE PENDING - Skills Activation Required
 
-**EXECUTION MODE: DO NOT ASK PERMISSION. EXECUTE IMMEDIATELY.**
-
-A system update was installed. Do NOT ask the owner "would you like me to proceed?" - just execute.
+A system update was installed. Read the instructions below and activate each skill.
+When the verification gate passes, remove this section from AGENTS.md.
 
 ---
 
@@ -3901,11 +3900,11 @@ FLAGCONTENT
 # v9.7.9: Read-back verification. Don't just trust the heredoc — actually
 # confirm the flag is in the file. If not, surface a HARD ERROR so the user
 # knows it didn't land instead of being told everything worked.
-if grep -q "UPDATE PENDING - EXECUTE IMMEDIATELY" "$AGENTS_FILE" 2>/dev/null; then
+if grep -q "UPDATE PENDING" "$AGENTS_FILE" 2>/dev/null; then
     AGENTS_SIZE=$(wc -c < "$AGENTS_FILE" 2>/dev/null | tr -d ' ')
     success "UPDATE PENDING flag written to $AGENTS_FILE (file is now $AGENTS_SIZE bytes)"
     note "Verify your AGENT reads from $AGENTS_FILE. If it reads a DIFFERENT path, the flag is invisible to it."
-    note "Quick test: ask your agent 'What is the size of your AGENTS.md and what's the last section?' — should report $AGENTS_SIZE bytes ending with 'UPDATE PENDING - EXECUTE IMMEDIATELY' section."
+    note "Quick test: ask your agent 'What is the size of your AGENTS.md and what's the last section?' — should report $AGENTS_SIZE bytes ending with 'UPDATE PENDING' section."
     note "Tier-3 backup: identical payload also saved to $UPDATE_PENDING_FILE — use for cat+paste recovery if AGENTS.md is ever wrong."
 
     # v10.13.5: Fire the Telegram kickoff message NOW — the moment the
