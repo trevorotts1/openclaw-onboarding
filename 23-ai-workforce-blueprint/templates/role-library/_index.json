@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-12T00:00:00Z",
-  "version": "12.6.1",
-  "total_roles": 355,
+  "version": "12.7.0",
+  "total_roles": 358,
   "departments": {
     "app-development": {
       "count": 17,
@@ -455,6 +455,14 @@
         "sop-writer",
         "task-priority-manager",
         "travel-logistics-specialist"
+      ]
+    },
+    "quality-control": {
+      "count": 3,
+      "roles": [
+        "director-of-quality-control",
+        "role-auditor",
+        "procedure-auditor"
       ]
     }
   },
@@ -3378,7 +3386,37 @@
       "sop_count": 6,
       "sop_min": 5,
       "path": "templates/role-library/openclaw-maintenance/uptime-connectivity-watchdog-specialist.md"
+    },
+    {
+      "slug": "director-of-quality-control",
+      "dept": "quality-control",
+      "title": "Director of Quality Control",
+      "role_type": "leadership",
+      "word_count": 2409,
+      "sop_count": 4,
+      "sop_min": 4,
+      "path": "templates/role-library/quality-control/director-of-quality-control.md"
+    },
+    {
+      "slug": "role-auditor",
+      "dept": "quality-control",
+      "title": "Role Auditor",
+      "role_type": "specialist",
+      "word_count": 974,
+      "sop_count": 1,
+      "sop_min": 1,
+      "path": "templates/role-library/quality-control/role-auditor.md"
+    },
+    {
+      "slug": "procedure-auditor",
+      "dept": "quality-control",
+      "title": "Procedure Auditor",
+      "role_type": "specialist",
+      "word_count": 1134,
+      "sop_count": 1,
+      "sop_min": 1,
+      "path": "templates/role-library/quality-control/procedure-auditor.md"
     }
   ],
-  "total_departments": 23
+  "total_departments": 24
 }

@@ -428,14 +428,14 @@ When in doubt: keep the canonical dept on the MISSING list. Better to over-ask t
 
 Send ONE message to the owner that does FOUR things in this order:
 
-1. Names the canonical recommendation: *"Before we close out departments, I want to walk you through our canonical recommendation list  -  the departments every zero-human company gets by default, no matter the industry."* (Use the live count from `scripts/list-canonical-departments.py`, currently 28: 21 mandatory + 7 universal-primary vertical. Never hardcode a stale number.)
+1. Names the canonical recommendation: *"Before we close out departments, I want to walk you through our canonical recommendation list  -  the departments every zero-human company gets by default, no matter the industry."* (Use the live count from `scripts/list-canonical-departments.py`, currently 29: 22 mandatory + 7 universal-primary vertical. Never hardcode a stale number.)
 2. Lists every canonical dept (`display_name` + `emoji` + `one_liner`), marking each as ALREADY-COVERED or NOT-YET-COVERED based on Step 1.
 3. Names the CUSTOM_KEEPS explicitly so the owner knows the agent isn't trying to delete them: *"You also asked for [Custom1], [Custom2]  -  those stay no matter what."*
 4. Closes with: *"Here are the [N] you do NOT have yet that I want you to consider. For each, I'll give you the one-sentence pitch. Ready to walk through them and decide what to add?"*
 
 The exact format (use real values, never the bracket placeholders):
 
-> *"Before we close out departments, here's our canonical recommendation list of the departments most zero-human companies need (run `scripts/list-canonical-departments.py` for the live list - 21 mandatory + 7 universal-primary). Some are already covered by what you told me. Others may be blind spots  -  things you didn't realize you'd want until I name them.*
+> *"Before we close out departments, here's our canonical recommendation list of the departments most zero-human companies need (run `scripts/list-canonical-departments.py` for the live list - 22 mandatory + 7 universal-primary). Some are already covered by what you told me. Others may be blind spots  -  things you didn't realize you'd want until I name them.*
 >
 > *ALREADY COVERED by what you told me:*
 > *[for each COVERED: emoji DisplayName  -  one_liner]*
@@ -514,7 +514,7 @@ For each department, ask whether the owner has a SPECIFIC procedure they run tha
 
 #### Step 4  -  Hard rules
 
-1. **NEVER skip Step 2.** Even if the owner already named every department by hand, show the full canonical list (run `scripts/list-canonical-departments.py` for the current count - 21 mandatory + 7 universal-primary = 28) and confirm coverage one by one. The point is to surface blind spots  -  you cannot surface a blind spot the owner doesn't know exists.
+1. **NEVER skip Step 2.** Even if the owner already named every department by hand, show the full canonical list (run `scripts/list-canonical-departments.py` for the current count - 22 mandatory + 7 universal-primary = 29) and confirm coverage one by one. The point is to surface blind spots  -  you cannot surface a blind spot the owner doesn't know exists.
 2. **NEVER auto-decide for the owner.** If they say *"whatever you think is best"*, respond: *"I'll bias toward YES on the whole canonical list  -  but I need you to say it. Want me to add all the missing ones, or do you want to skip something?"*
 3. **NEVER advance to Phase 6 with `MISSING_MANDATORY` items still in `pending` state, or with a flagged semantic overlap (Step 3.5) still un-decided.** Every canonical dept must have a recorded `yes` / `no` / `later` decision and every overlap a `merge` / `keep` decision before final review.
 4. **The canonical departments (minus NOs) + the owner's CUSTOM_KEEPS (minus merged/declined) + their YES decisions + any custom roles/SOPs they asked for** are the final department set passed to the post-interview build. NOs and merged customs are excluded. LATERs are written to `90-day-reassessment.md` for a follow-up nudge.
@@ -538,9 +538,9 @@ Show a plain-English synthesis of EVERYTHING captured (not raw answers - your sy
 
 ---
 
-## The 16 Mandatory Departments
+## The 22 Mandatory Departments
 
-Auto-built for EVERY zero-human company, no exceptions:
+Auto-built for EVERY zero-human company, no exceptions. The live, authoritative list and count come from `scripts/list-canonical-departments.py`; the list below is descriptive of that live data, never a hardcoded gate:
 
 1. **Marketing** - brand, awareness, demand generation
 2. **Sales** - outreach, conversion, deals
@@ -558,6 +558,12 @@ Auto-built for EVERY zero-human company, no exceptions:
 14. **Legal** - contracts, compliance, terms, privacy, IP
 15. **Social Media (organic only)** - Facebook, Instagram, TikTok, LinkedIn, Twitter/X, Pinterest, YouTube channel, Threads, Bluesky, Community Manager
 16. **Paid Advertisement** - Google Ads, Bing, Meta Ads, TikTok, LinkedIn, Twitter, Pinterest, YouTube Ads, Spotify, Snapchat, Native (Taboola/Outbrain)
+17. **Personal Assistant** - inbox, scheduling, travel, personal life (the owner's right hand)
+18. **General Task** - catch-all routing fallback so no task is ever dropped
+19. **Project Architecture Office** - governs every project from trigger to verifiable completion
+20. **Bugs** - the front desk and medical records for every defect: logs, triages, dedupes, tracks every bug to verified closure
+21. **Healer** - the company doctors: root-cause diagnosis, fix-forward, SOP surgery, so the same bug never happens twice
+22. **Quality Control** - owns and operates the system analyzer: holds every other department's roles and procedures to the standard on two axes (is it real, is it specific enough to follow) and routes the failures it finds to the Healer
 
 **Plus: Master Orchestrator (CEO Agent)** - sits above all departments at `[ZHC]/[slug]/master-orchestrator/`. Special CEO persona deferral clause (mission/owner override persona on conflict).
 

@@ -1,3 +1,16 @@
+## [v12.7.0] - 2026-06-14 - feat: Quality Control department (fleet-wide quality function that owns and runs the system analyzer); mandatory floor raised 28 to 29
+
+### Changes
+
+**New canonical, fleet-wide MANDATORY department: Quality Control.** Shipped to every Zero Human Company. It owns and operates the ZHC System Analyzer: it reads every OTHER department's roles and standard operating procedures and holds them to the standard on two independent axes, reported side by side. Axis 1 (Reality): is each mechanism actually executed at runtime, with file-and-line proof, never from prose. Axis 2 (Specificity / right-sizing): can an autonomous worker who has never seen the business run each procedure end to end without guessing, with the hard allowance that a procedure may run up to roughly 7,500 words when it earns it (brevity is never a merit; artificially thin procedures are flagged). The department diagnoses and never repairs in place; every failure it finds is filed to the Bugs Department and routed to the Healer.
+
+- **3 roles** under `23-ai-workforce-blueprint/templates/role-library/quality-control/`: Director of Quality Control (head; Trevor may rename), Role Auditor, Procedure Auditor, plus `00-START-HERE.md`.
+- **4 executable SOPs** under `quality-control/sops/`: Q-9.1 Audit a Department's Procedures, Q-9.2 Audit a Department's Roles, Q-9.3 System-Wide Quality Rollup, Q-9.4 Maintain the Standard. Each carries purpose, the hard rule, the enforcement check, generic pass-versus-fail examples (no client names), and escalation to the Healer.
+- **Mandatory canonical floor raised 28 to 29** (22 mandatory + 7 universal-primary), computed live: `department-naming-map.json` (v2.5.0 to v2.6.0), `scripts/department-floor.py` `HARDCODED_MANDATORY`, `scripts/build-workforce.py` `load_canonical_floor()` fallback, `scripts/list-canonical-departments.py`, `suggested-roles/quality-control-suggested-roles.md`, `templates/role-library/_index.json` (dept entry + 3 roles + totals), `build-state-schema.json`, `INSTRUCTIONS.md`, `scripts/test-reconciliation-engine.sh`. No integer floor gate is hardcoded; the count-drift guard computes 29 and passes.
+- All 9 version markers bumped to v12.7.0 (`scripts/bump-version.sh`); `cc-compat.json` onboardingVersion bumped to v12.7.0.
+
+See `23-ai-workforce-blueprint/CHANGELOG.md` for the full per-file detail.
+
 ## [v12.6.1] - 2026-06-14 - fix: bound onboarding-resume cron -- hard cap + self-delete, no perpetual token furnace
 
 ### Changes
