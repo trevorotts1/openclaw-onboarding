@@ -1,3 +1,15 @@
+## [v12.7.1] - 2026-06-14 - feat: Content-to-Presentation Architect (ROLE-22) -- turn any source into a presentation brief (Presentations dept)
+
+### Changes
+
+**New fleet-wide Presentations role: Content-to-Presentation Architect (ROLE-22).** Source-ingest specialist that turns any owner-supplied source into a build-ready presentation brief for the existing deck pipeline. Zero slides built here -- single deliverable is the source-derived brief the Director of Presentations dispatches into the standard build.
+
+- `presentations/content-to-presentation-architect.md` (new): 19-section role, 6 SOPs covering source ingestion per modality, analysis and hook main-theme, teaching devices, micro-vs-full decision, handoff, and trigger standard. Hard non-skippable privacy rule for Zoom and Google Meet recordings (and any recording of identifiable people).
+- `presentations/sops/content-to-presentation-architect-sops.md` (new): Section 9 SOP mirror.
+- `presentations/00-START-HERE.md` (v1.7 -> v1.8): roster 22 roles, ROLE-22 row added, Step -2 source-ingest front door.
+- `_index.json`: presentations count 21 -> 22, ROLE-22 in roles[], total_roles 358 -> 359. Version 12.7.0 -> 12.7.1.
+- All 9 version markers bumped to v12.7.1.
+
 ## [v12.7.0] - 2026-06-14 - feat: Quality Control department + Content-to-Presentation Architect (ROLE-22) + presentations SOP overhaul
 
 ### Changes
