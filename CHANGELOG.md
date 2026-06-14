@@ -1,3 +1,42 @@
+## [v12.3.12] - 2026-06-13 - fix: closeout-readiness-watchdog + interviewQc gate + Playwright hard hold + Notion notionCloseoutPageId (PRD-2.15)
+
+### Changes
+
+**Root cause closed (v12.3.12):**
+
+Four gaps in the ZHC closeout chain verified from code per WATCHDOG-SPEC-v12.3.12.md:
+
+**Gap A — No operator escalation for stalled interviews:**
+The nudge cron exhausted at 168h and went permanently silent. Zero operator escalation for
+stalled interviews, failed QC, wedged builds, or blocked closeouts. Beverly sat 9 days silent.
+
+Fix: New `closeout-readiness-watchdog.sh` (every 6h). Detects STUCK_MID_INTERVIEW,
+STUCK_INTERVIEW_NEVER_STARTED, STUCK_QC_FAILED, STUCK_PRE_CLOSEOUT, STUCK_CLOSEOUT_BLOCKED.
+Writes `closeoutBlockers[]`, Telegrams operator, POSTs Rescue Rangers. Idempotent throttle.
+`interview-nudge-cron.sh` invokes watchdog after final pass. `nudge-incomplete-interviews.py`
+marks `interviewStalled=true` at 168h dead-end.
+
+**Gap B — No interviewQc gate in run-closeout.sh:**
+`grep interviewQc run-closeout.sh` = 0 hits. Seeded `buildCompletedAt` could trigger celebration
+for 21/30 interview with no QC run. Fix: gates on `interviewQc.status != pass` before
+KIE/Notion preflight. Sets `closeoutStatus=blocked-interview-incomplete`. `update-interview-state.sh
+--complete` auto-runs QC. `resume-workforce-build.sh` QC-aware with [QC-RESUME] path.
+
+**Gap C — Playwright rc=3 was silent "proceed on agent rating":**
+rc=3 = no PNG/HTML (Playwright crash, fresh VPS). Was WARN + proceed. Fix: now HARD HOLD.
+Writes `infographic1FailureReason`, `closeoutLegStatus.org_chart=failed:playwright-missing`,
+`closeoutBlockers[]`, operator escalation.
+
+**Gap D — notionCloseoutPageId never set, --refresh-workforce-only SKIPs forever:**
+Fix: `create-notion-closeout.sh` writes both `notionRootPageUrl` AND `notionCloseoutPageId`.
+Root-page failure is fail-loud with structured state + operator alert. Refresh skip surfaces as blocker.
+
+New: `closeout-readiness-watchdog.sh`, `fleet-stuck-clients.sh`, `test-closeout-watchdog.sh` (15 assertions),
+`closeout-watchdog-guard.yml` CI. Schema: 8 new fields + `blocked-interview-incomplete` enum value.
+install.sh: Step 13.5b registers watchdog cron (every 6h).
+
+---
+
 ## [v12.3.11] - 2026-06-13 - fix: format-robust CORE_UPDATES parser wires all 41 skills (22 previously skipped); new CI guard
 
 ### Changes

@@ -82,6 +82,26 @@ mv -f "$TMP" "$STATE"
 
 echo "updated $STATE: phase=$PHASE qnum=$QNUM asked_by=$ASKED_BY complete=$COMPLETE"
 
+# PRD-2.15 (v12.3.12): auto-run QC gate immediately on --complete so
+# interviewQc.status transitions from "pending" to pass|needs-review|fail
+# the moment the interview is marked done. This removes the "agent forgot to run
+# QC" failure mode. Best-effort (non-fatal — the watchdog + resume cron will
+# re-drive if QC is pending).
+if [ "$COMPLETE" = true ]; then
+  QC_SCRIPT="$(dirname "$0")/qc-interview-completion.py"
+  if [ -f "$QC_SCRIPT" ]; then
+    echo "auto-running QC gate (qc-interview-completion.py --write-state) post-complete..."
+    if python3 "$QC_SCRIPT" --write-state "$STATE" 2>&1; then
+      qc_result=$(jq -r '.interviewQc.status // "pending"' "$STATE" 2>/dev/null || echo "pending")
+      echo "interviewQc.status after auto-QC: $qc_result"
+    else
+      echo "WARN: qc-interview-completion.py returned non-zero (non-fatal — interviewQc.status stays pending for watchdog/resume to retry)" >&2
+    fi
+  else
+    echo "WARN: qc-interview-completion.py not found at $QC_SCRIPT — interviewQc.status remains pending" >&2
+  fi
+fi
+
 # PRD-2.15: if --industry-pack blob file was passed AND industryPack not yet set, run recorder.
 if [ -n "$INDUSTRY_PACK_BLOB" ] && [ -f "$INDUSTRY_PACK_BLOB" ]; then
   RECORDER_PATH="$(dirname "$0")/record-industry-pack.sh"

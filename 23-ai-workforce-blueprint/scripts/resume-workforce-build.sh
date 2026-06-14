@@ -248,6 +248,36 @@ if [[ "$interview_complete" != "true" ]]; then
   exit 0
 fi
 
+# ---- PRD-2.15 (v12.3.12): QC-aware resume gate ----
+# interviewComplete=true is necessary but not sufficient. The interviewQc gate
+# must also be pass before build/closeout can proceed. If QC is pending (not yet
+# run), try to run it inline. If it is fail|needs-review, fire a [QC-RESUME]
+# self-ping and let the watchdog raise STUCK_QC_FAILED if it persists.
+qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
+if [[ "$qc_status" != "pass" ]]; then
+  QC_SCRIPT="${SCRIPT_DIR}/qc-interview-completion.py"
+  if [[ "$qc_status" == "pending" ]] && [[ -f "$QC_SCRIPT" ]]; then
+    log "[QC-RESUME] interviewQc.status=pending — running qc-interview-completion.py --write-state (best-effort)"
+    python3 "$QC_SCRIPT" --write-state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
+    log "[QC-RESUME] interviewQc.status after QC run: $qc_status"
+  fi
+  if [[ "$qc_status" != "pass" ]]; then
+    log "[QC-RESUME] interviewQc.status=$qc_status — cannot resume build until QC passes. Firing self-ping for agent to review QC."
+    if command -v openclaw >/dev/null 2>&1; then
+      _owner_chat=$(jq -r '.ownerChat // empty' "$STATE_FILE" 2>/dev/null || true)
+      # Self-ping is INTERNAL (to agent, not owner). Use operator escalation path if available.
+      _operator_chat=$(resolve_operator_chat_id 2>/dev/null || echo "5252140759")
+      if [[ -n "$_operator_chat" ]]; then
+        openclaw message send --channel telegram -t "$_operator_chat" \
+          -m "⚠️ [QC-RESUME] interviewQc.status=${qc_status} on $(hostname) — build resume blocked until QC gate passes. State: $STATE_FILE" \
+          >>"$LOG_FILE" 2>&1 || true
+      fi
+    fi
+    exit 0
+  fi
+fi
+
 pending_count=$(jq -r '[.departments[] | select(.status == "pending" or .status == "failed")] | length' "$STATE_FILE")
 stale_building_count=$(jq --arg min "$STALE_BUILDING_MINUTES" -r '
   [.departments[]

@@ -34,11 +34,11 @@
     },
     "companyName": {
       "type": "string",
-      "description": "Client's company name — used by Skill 37 in prompts + Notion page titles"
+      "description": "Client's company name \u2014 used by Skill 37 in prompts + Notion page titles"
     },
     "industry": {
       "type": "string",
-      "description": "Client's industry — used by Skill 37 to pick example tasks"
+      "description": "Client's industry \u2014 used by Skill 37 to pick example tasks"
     },
     "brandColor": {
       "type": "string",
@@ -139,24 +139,24 @@
           "agentRegistered": {
             "type": "boolean",
             "default": false,
-            "description": "True only when a corresponding entry exists in openclaw.json agents.list[] with id == 'dept-<slug>'. Materialized by Skill 32's materialize-dept-agents.sh. A dept with status=done but agentRegistered=false is a LIE — the role-definition.md files exist but the OpenClaw runtime sees no such agent. Added v10.14.19."
+            "description": "True only when a corresponding entry exists in openclaw.json agents.list[] with id == 'dept-<slug>'. Materialized by Skill 32's materialize-dept-agents.sh. A dept with status=done but agentRegistered=false is a LIE \u2014 the role-definition.md files exist but the OpenClaw runtime sees no such agent. Added v10.14.19."
           },
           "roleLibraryFilled": {
             "type": "boolean",
             "default": false,
-            "description": "True only when EVERY role folder in this dept has its how-to.md filled from the role library (carries the '<!-- Filled from role-library v' marker), as verified by qc-completeness.sh (library_pct == 100). A dept with status=done but roleLibraryFilled=false is INCOMPLETE — the role scaffolds exist but the role library was never pulled in. Added v10.15.8. ENFORCED: see roleLibraryStatus + the verify/resume gate."
+            "description": "True only when EVERY role folder in this dept has its how-to.md filled from the role library (carries the '<!-- Filled from role-library v' marker), as verified by qc-completeness.sh (library_pct == 100). A dept with status=done but roleLibraryFilled=false is INCOMPLETE \u2014 the role scaffolds exist but the role library was never pulled in. Added v10.15.8. ENFORCED: see roleLibraryStatus + the verify/resume gate."
           },
           "sopLibraryFilled": {
             "type": "boolean",
             "default": false,
-            "description": "True only when EVERY role folder in this dept has its SOP files authored/pulled (no remaining 'to be personalized' stubs), as verified by qc-completeness.sh (sop_stubs_remaining == 0 and avg_sop_per_role > 0). A dept with status=done but sopLibraryFilled=false is INCOMPLETE — the SOP placeholders were never authored. Added v10.15.8. ENFORCED: see sopLibraryStatus + the verify/resume gate."
+            "description": "True only when EVERY role folder in this dept has its SOP files authored/pulled (no remaining 'to be personalized' stubs), as verified by qc-completeness.sh (sop_stubs_remaining == 0 and avg_sop_per_role > 0). A dept with status=done but sopLibraryFilled=false is INCOMPLETE \u2014 the SOP placeholders were never authored. Added v10.15.8. ENFORCED: see sopLibraryStatus + the verify/resume gate."
           }
         }
       }
     },
     "agentsMaterializedCount": {
       "type": "integer",
-      "description": "Count of dept entries actually present in openclaw.json agents.list[] (excludes the default 'main'). Written by Skill 37 Step 1 after running materialize-dept-agents.sh. Cross-check against the number of departments where status==done — a mismatch means the closeout MUST fail rather than send a celebration the runtime can't back up. Added v10.14.19."
+      "description": "Count of dept entries actually present in openclaw.json agents.list[] (excludes the default 'main'). Written by Skill 37 Step 1 after running materialize-dept-agents.sh. Cross-check against the number of departments where status==done \u2014 a mismatch means the closeout MUST fail rather than send a celebration the runtime can't back up. Added v10.14.19."
     },
     "openItems": {
       "type": "array",
@@ -182,7 +182,7 @@
         "done",
         "failed"
       ],
-      "description": "ENFORCED build gate (added v10.15.8). Tracks whether the ROLE LIBRARY has been pulled into every role folder (how-to.md filled from templates/role-library/ via post-build-role-workspaces.py). Set to 'pending' the moment the build starts; 'pulling' while post-build augmentation runs; 'done' only when qc-completeness.sh reports library_pct == 100 across ALL on-disk depts (every per-dept roleLibraryFilled == true); 'failed' if the pull errored or coverage < 100. A workforce is NOT complete (buildCompletedAt MUST NOT be set, closeout MUST NOT fire) until roleLibraryStatus == done. The resume cron fires a [LIBRARY-RESUME] self-ping while this is pending/pulling/failed. Last-night incident (Kofi/Teresa/Evelyn/Maria/Lyric): workforces were scaffolded but the role library was never connected — this field + gate prevent that."
+      "description": "ENFORCED build gate (added v10.15.8). Tracks whether the ROLE LIBRARY has been pulled into every role folder (how-to.md filled from templates/role-library/ via post-build-role-workspaces.py). Set to 'pending' the moment the build starts; 'pulling' while post-build augmentation runs; 'done' only when qc-completeness.sh reports library_pct == 100 across ALL on-disk depts (every per-dept roleLibraryFilled == true); 'failed' if the pull errored or coverage < 100. A workforce is NOT complete (buildCompletedAt MUST NOT be set, closeout MUST NOT fire) until roleLibraryStatus == done. The resume cron fires a [LIBRARY-RESUME] self-ping while this is pending/pulling/failed. Last-night incident (Kofi/Teresa/Evelyn/Maria/Lyric): workforces were scaffolded but the role library was never connected \u2014 this field + gate prevent that."
     },
     "sopLibraryStatus": {
       "type": "string",
@@ -204,7 +204,7 @@
     "librariesNearCapNotified": {
       "type": "boolean",
       "default": false,
-      "description": "Throttle flag (added v10.15.9). Set true the FIRST time resume-workforce-build.sh emits an OPERATOR-FACING 'library gate not closing' status line — i.e. when the libraries are still dirty AND resumeAttempts has reached within 2 of maxResumeAttempts. Surfacing this near-cap (instead of only at the hard cap) makes a persistently-failing role-library/SOP pull visible before the cron stops retrying. Once true, the status is not re-emitted on every remaining cycle."
+      "description": "Throttle flag (added v10.15.9). Set true the FIRST time resume-workforce-build.sh emits an OPERATOR-FACING 'library gate not closing' status line \u2014 i.e. when the libraries are still dirty AND resumeAttempts has reached within 2 of maxResumeAttempts. Surfacing this near-cap (instead of only at the hard cap) makes a persistently-failing role-library/SOP pull visible before the cron stops retrying. Once true, the status is not re-emitted on every remaining cycle."
     },
     "commsAutomationStatus": {
       "type": "string",
@@ -216,7 +216,7 @@
         "failed"
       ],
       "default": "pending",
-      "description": "ENFORCED cross-skill chain to Skill 38 (added v10.15.9). When the built workforce includes a Communications, Sales, or Customer-Support department, the closeout MUST hand off to Skill 38 (conversational AI system) to scaffold the matching comms automations — the same enforcement shape as the role/SOP library gate (state field + verify/resume self-ping), NOT prose. Set by the Skill 23 master orchestrator at Moment 3.8 once all departments are done: 'not-applicable' if NONE of Communications/Sales/Customer-Support was built (no comms department => no handoff needed); otherwise 'pending'. Skill 38 transitions pending → scaffolding → done. 'done' ONLY when the client's conversation-workflows/ has at least the appointment-booking starter playbook + its Build-with-AI prompt registered (THE TRINITY) — verifiable via Skill 38 scripts/qc-trinity-registry.sh. A workforce with a comms/sales/support department but commsAutomationStatus NOT IN {done, not-applicable} is NOT fully delivered — resume-workforce-build.sh treats it as dirty and dispatches a [COMMS-AUTOMATION-RESUME] self-ping. Last-night incident class (siblings with zero cross-references): a Sales/Support workforce shipped with no conversational automations wired."
+      "description": "ENFORCED cross-skill chain to Skill 38 (added v10.15.9). When the built workforce includes a Communications, Sales, or Customer-Support department, the closeout MUST hand off to Skill 38 (conversational AI system) to scaffold the matching comms automations \u2014 the same enforcement shape as the role/SOP library gate (state field + verify/resume self-ping), NOT prose. Set by the Skill 23 master orchestrator at Moment 3.8 once all departments are done: 'not-applicable' if NONE of Communications/Sales/Customer-Support was built (no comms department => no handoff needed); otherwise 'pending'. Skill 38 transitions pending \u2192 scaffolding \u2192 done. 'done' ONLY when the client's conversation-workflows/ has at least the appointment-booking starter playbook + its Build-with-AI prompt registered (THE TRINITY) \u2014 verifiable via Skill 38 scripts/qc-trinity-registry.sh. A workforce with a comms/sales/support department but commsAutomationStatus NOT IN {done, not-applicable} is NOT fully delivered \u2014 resume-workforce-build.sh treats it as dirty and dispatches a [COMMS-AUTOMATION-RESUME] self-ping. Last-night incident class (siblings with zero cross-references): a Sales/Support workforce shipped with no conversational automations wired."
     },
     "commsAutomationDepartments": {
       "type": "array",
@@ -243,28 +243,41 @@
         "done",
         "failed",
         "blocked-floor-incomplete",
-        "blocked-libraries-incomplete"
+        "blocked-libraries-incomplete",
+        "blocked-interview-incomplete"
       ],
-      "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending → generating → sent → done. failed = retries exhausted; resume cron will retry. partial = soft-only failures (video/notion); blocked-* = build prerequisites not met. Added in v10.14.17. NOTE (v10.15.8): the master orchestrator MUST NOT write buildCompletedAt or set closeoutStatus=pending until roleLibraryStatus == done AND sopLibraryStatus == done. The library gate runs BEFORE the closeout gate. PRD-2.8: seven per-deliverable fields in closeoutDeliverables track individual leg completion; closeoutStatus is the aggregate."
+      "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending \u2192 generating \u2192 sent \u2192 done. failed = retries exhausted; resume cron will retry. partial = soft-only failures (video/notion); blocked-* = build prerequisites not met. Added in v10.14.17. NOTE (v10.15.8): the master orchestrator MUST NOT write buildCompletedAt or set closeoutStatus=pending until roleLibraryStatus == done AND sopLibraryStatus == done. The library gate runs BEFORE the closeout gate. PRD-2.8: seven per-deliverable fields in closeoutDeliverables track individual leg completion; closeoutStatus is the aggregate. blocked-interview-incomplete = interviewQc.status != pass (v12.3.12 watchdog gate)."
     },
     "closeoutDeliverables": {
       "type": "object",
       "description": "PRD-2.8: per-deliverable boolean/status fields for the 7 closeout legs. Each field is 'done' when that leg has been delivered and verified, 'waived' when the operator explicitly skips it, or 'failed' when exhausted. The resume cron fires until all are done|waived. This is the per-leg detail; closeoutStatus is the aggregate. Added v11.10.0.",
       "properties": {
         "notionTreeUrl": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Notion 9-section page tree root URL once delivered (matches .notionRootPageUrl when set)"
         },
         "infographic1Url": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Workforce-structure org chart URL (HTML/Playwright render). Set once the artifact passes the 8.5 gate and has been delivered."
         },
         "infographic2Url": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "How-Work-Flows diagram URL (KIE.AI / Nano Banana 2). Set once artifact passes 8.5 gate and delivered."
         },
         "celebrationVideoUrl": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Celebration video URL (local path delivered via Telegram inline, or durable GHL URL). Set after byte-upload confirmed."
         },
         "telegramSequenceSent": {
@@ -276,36 +289,57 @@
           "description": "True once the Command Center URL (commandCenterUrl) has been built and posted to the owner in Message 6 of the Telegram sequence."
         },
         "n8nWired": {
-          "type": ["boolean", "string"],
+          "type": [
+            "boolean",
+            "string"
+          ],
           "description": "True or 'skipped' once the n8n wire-up step completes (POST to client n8n webhook with company slug, agent name, and CC URL). 'skipped' when N8N_WEBHOOK_URL is absent and ZHC_SKIP_N8N=1."
         }
       },
       "additionalProperties": false
     },
     "closeoutBlockReason": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Set when closeoutStatus is blocked-floor-incomplete or blocked-libraries-incomplete. Human-readable reason string."
     },
     "closeoutPartialReason": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Set when closeoutStatus is partial (phantom-closeout guard). Human-readable reason string."
     },
     "closeoutResumeRegisteredAt": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time",
       "description": "PRD-2.8: ISO timestamp when the dedicated closeout-resume cron was last registered via `openclaw cron add`. Written by install-closeout-resume-cron.sh and by run-closeout.sh on first start. Used to detect whether the dedicated cron is alive."
     },
     "closeoutResumeUuid": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "PRD-2.8: OpenClaw cron UUID for the dedicated closeout-resume cron (resume-closeout-cron.sh). Written at registration. Used for self-removal when closeout reaches done|partial."
     },
     "interviewNudgeRegisteredAt": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time",
       "description": "v12.3.10: ISO timestamp when the interview-nudge cron was last registered via `openclaw cron add`. Written by install.sh install_interview_nudge_cron(). Used to detect whether the nudge cron is alive."
     },
     "interviewNudgeUuid": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "v12.3.10: OpenClaw cron UUID for the interview-nudge cron (interview-nudge-cron.sh). Written at registration. Used for self-removal when interviewComplete=true reaches closeoutStatus=done (run-closeout.sh) and on the next cron fire (interview-nudge-cron.sh self_remove_cron)."
     },
     "closeoutStartedAt": {
@@ -314,7 +348,7 @@
         "null"
       ],
       "format": "date-time",
-      "description": "When Skill 37 first transitioned pending → generating"
+      "description": "When Skill 37 first transitioned pending \u2192 generating"
     },
     "closeoutCompletedAt": {
       "type": [
@@ -322,7 +356,7 @@
         "null"
       ],
       "format": "date-time",
-      "description": "When Skill 37 transitioned sent → done"
+      "description": "When Skill 37 transitioned sent \u2192 done"
     },
     "closeoutFailureReason": {
       "type": [
@@ -333,7 +367,9 @@
     },
     "closeoutPartialArtifacts": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Set when closeoutStatus=partial. Names the soft-failed legs (e.g. ['celebration-video', 'notion']). Hard-failed legs are in closeoutFailureReason."
     },
     "commandCenterStatus": {
@@ -361,7 +397,7 @@
         "skipped",
         "failed"
       ],
-      "description": "n8n integration wire-up status (optional — may be 'skipped' for clients without n8n)"
+      "description": "n8n integration wire-up status (optional \u2014 may be 'skipped' for clients without n8n)"
     },
     "n8nUrl": {
       "type": [
@@ -392,57 +428,94 @@
       "description": "KIE.AI-returned URL for the celebration video (Gemini Omni Video, model id gemini-omni-video; Veo 3.1 fallback). This is the EPHEMERAL vendor CDN URL (aiquickdraw) -- not durable. The bytes are downloaded to celebrationVideoLocalPath and, where GHL is present, re-hosted to a durable public URL in ghlVideoPublicUrl."
     },
     "celebrationVideoLocalPath": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Local on-disk path to the downloaded celebration MP4 (workspace/.zhc-celebration-video.mp4). Sent inline to Telegram via multipart and uploaded to the GHL media library."
     },
     "celebrationVideoModel": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "The KIE model that actually produced the celebration video (gemini-omni-video | veo3 | veo3_fast)."
     },
     "infographic1LocalPath": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Local on-disk path to the rendered Workforce Structure org-chart PNG (workspace/.zhc-inf1-output.png). Sent inline to Telegram and uploaded to GHL."
     },
     "infographic2LocalPath": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Local on-disk path to the How-Work-Flows infographic PNG, when downloaded for GHL re-hosting."
     },
     "ghlLocationId": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Convert and Flow / GHL LOCATION (sub-account) id for this client, if provisioned. Closeout media uploads target this location. Empty when the client has no GHL location (do NOT fabricate)."
     },
     "ghlMediaUploaded": {
-      "type": ["boolean", "string"],
+      "type": [
+        "boolean",
+        "string"
+      ],
       "description": "true when closeout media was uploaded to the client's GHL media library; otherwise a skip/failure reason string (skipped-no-ghl | skipped-no-pit | skipped-pit-verify-failed | skipped-no-files | failed-no-files-accepted)."
     },
     "ghlMediaFileIds": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "GHL fileIds of every closeout media file accepted by /medias/upload-file."
     },
     "ghlMediaUrls": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "PUBLIC (storage.googleapis.com/msgsndr/...) URLs of every uploaded closeout media file -- openable without a GHL login."
     },
     "ghlMediaLibraryUrl": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "In-app Convert and Flow media-storage link (behind GHL login) where the closeout media lives. Convenience 'browse them all' link -- NOT the openable artifact link."
     },
     "ghlVideoPublicUrl": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Durable, openable PUBLIC URL of the celebration video re-hosted in the GHL media library. Posted to Telegram as the video's 'open it directly' link."
     },
     "ghlInfographic1PublicUrl": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Durable, openable PUBLIC URL of the Workforce Structure infographic re-hosted in the GHL media library."
     },
     "ghlInfographic2PublicUrl": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Durable, openable PUBLIC URL of the How-Work-Flows infographic re-hosted in the GHL media library."
     },
     "ghlMediaUploadedAt": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time",
       "description": "Timestamp the GHL media upload completed."
     },
@@ -459,17 +532,37 @@
         "oneOf": [
           {
             "type": "object",
-            "required": ["n"],
+            "required": [
+              "n"
+            ],
             "properties": {
-              "n": { "type": "integer", "description": "Message slot 1-7." },
-              "messageId": { "type": "string", "description": "Real gateway Telegram messageId returned by `openclaw message send --json`. Non-empty == confirmed-accepted by the gateway. A slot is only counted delivered when this is present and non-empty." },
-              "chatId": { "type": "string" },
-              "ts": { "type": "string" },
-              "status": { "type": "string", "description": "Set to 'send-failed' when the gateway returned no messageId; such a slot is NOT counted delivered and is retried." },
-              "reason": { "type": "string" }
+              "n": {
+                "type": "integer",
+                "description": "Message slot 1-7."
+              },
+              "messageId": {
+                "type": "string",
+                "description": "Real gateway Telegram messageId returned by `openclaw message send --json`. Non-empty == confirmed-accepted by the gateway. A slot is only counted delivered when this is present and non-empty."
+              },
+              "chatId": {
+                "type": "string"
+              },
+              "ts": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "description": "Set to 'send-failed' when the gateway returned no messageId; such a slot is NOT counted delivered and is retried."
+              },
+              "reason": {
+                "type": "string"
+              }
             }
           },
-          { "type": "integer", "description": "Legacy (pre-v10.15.19/v10.16.18) bare-integer form. Still accepted for backward compatibility." }
+          {
+            "type": "integer",
+            "description": "Legacy (pre-v10.15.19/v10.16.18) bare-integer form. Still accepted for backward compatibility."
+          }
         ]
       },
       "description": "Per-message Telegram delivery tracker for Step 6 of Skill 37. As of v10.15.19/v10.16.18 each entry is an OBJECT { n, messageId, chatId, ts } carrying the REAL gateway messageId so the closeout can cross-check delivery against the sent-registry (verify-telegram-delivery.sh) before claiming done. A slot with no messageId is recorded { n, status:'send-failed' } and is not counted delivered. Bare integers from older runs are still accepted."
@@ -478,20 +571,42 @@
       "type": "object",
       "description": "Result of verify-telegram-delivery.sh cross-checking captured messageIds against the gateway sent-registry. closeoutStatus=done is gated on status=='pass'.",
       "properties": {
-        "status": { "type": "string", "enum": ["pass", "fail"] },
-        "rc": { "type": "integer" },
-        "verifiedAt": { "type": "string" },
-        "requiredSlots": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "rc": {
+          "type": "integer"
+        },
+        "verifiedAt": {
+          "type": "string"
+        },
+        "requiredSlots": {
+          "type": "string"
+        },
         "results": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "n": { "type": "integer" },
-              "messageId": { "type": "string" },
-              "required": { "type": "boolean" },
-              "verdict": { "type": "string" },
-              "note": { "type": "string" }
+              "n": {
+                "type": "integer"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "verdict": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
             }
           }
         }
@@ -499,30 +614,103 @@
     },
     "industryPack": {
       "type": "object",
-      "description": "PRD-2.15: provenance of the industry vertical pack the interview ran. Written by 23-ai-workforce-blueprint/scripts/record-industry-pack.sh (which calls shared-utils/industry-detector.py). build-workforce.py REQUIRES industryPack.slug before it will build — an interview with no recorded pack is not industry-custom and must not proceed. If slug='unknown', build-workforce.py warns loudly but does not hard-block (an unclassifiable business is still buildable). Added v11.11.0.",
+      "description": "PRD-2.15: provenance of the industry vertical pack the interview ran. Written by 23-ai-workforce-blueprint/scripts/record-industry-pack.sh (which calls shared-utils/industry-detector.py). build-workforce.py REQUIRES industryPack.slug before it will build \u2014 an interview with no recorded pack is not industry-custom and must not proceed. If slug='unknown', build-workforce.py warns loudly but does not hard-block (an unclassifiable business is still buildable). Added v11.11.0.",
       "properties": {
-        "slug":           { "type": "string", "description": "e.g. real-estate, personal-pro-dev, service-industry, unknown" },
-        "confidence":     { "type": "number", "description": "0-1 from industry-detector.py" },
-        "source":         { "type": "string", "enum": ["auto-detected","owner-confirmed","owner-corrected"], "description": "auto-detected when confidence>=0.7 and owner did not change it; owner-confirmed/corrected when the C-4 / Phase 5 confirmation ran" },
-        "matchedSignals": { "type": "array", "items": { "type": "string" } },
-        "detectedAt":     { "type": ["string","null"], "format": "date-time" }
+        "slug": {
+          "type": "string",
+          "description": "e.g. real-estate, personal-pro-dev, service-industry, unknown"
+        },
+        "confidence": {
+          "type": "number",
+          "description": "0-1 from industry-detector.py"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "auto-detected",
+            "owner-confirmed",
+            "owner-corrected"
+          ],
+          "description": "auto-detected when confidence>=0.7 and owner did not change it; owner-confirmed/corrected when the C-4 / Phase 5 confirmation ran"
+        },
+        "matchedSignals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "detectedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
       },
-      "required": ["slug","source"],
+      "required": [
+        "slug",
+        "source"
+      ],
       "additionalProperties": true
     },
     "interviewQc": {
       "type": "object",
-      "description": "PRD-2.15: result of 23-ai-workforce-blueprint/scripts/qc-interview-completion.py. closeoutStatus MUST NOT advance past 'pending' until interviewQc.status=='pass'. Folds the interview experience into the 2.8 closeout gate so 'interview felt great AND artifacts landed' is one verified state. Set to {status:'pending'} by update-interview-state.sh --complete. Added v11.11.0. Cross-skill seam: run-closeout.sh (Skill 37) should gate on interviewQc.status != 'pass' before proceeding — wiring that one-line gate is the follow-up for whoever next touches Skill 37.",
+      "description": "PRD-2.15: result of 23-ai-workforce-blueprint/scripts/qc-interview-completion.py. closeoutStatus MUST NOT advance past 'pending' until interviewQc.status=='pass'. Folds the interview experience into the 2.8 closeout gate so 'interview felt great AND artifacts landed' is one verified state. Set to {status:'pending'} by update-interview-state.sh --complete. Added v11.11.0. Cross-skill seam: run-closeout.sh (Skill 37) should gate on interviewQc.status != 'pass' before proceeding \u2014 wiring that one-line gate is the follow-up for whoever next touches Skill 37.",
       "properties": {
-        "status":        { "type": "string", "enum": ["pending","pass","needs-review","fail"] },
-        "questionCount": { "type": "integer" },
-        "jargonHits":    { "type": "array", "items": { "type": "object", "properties": { "term":{"type":"string"}, "line":{"type":"integer"} }, "additionalProperties": false } },
-        "missingFields": { "type": "array", "items": { "type": "string" } },
-        "nudgesWired":   { "type": "boolean" },
-        "ranAt":         { "type": ["string","null"], "format": "date-time" },
-        "rubricVerdict": { "type": ["string","null"], "description": "human-readable summary line" }
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "pass",
+            "needs-review",
+            "fail"
+          ]
+        },
+        "questionCount": {
+          "type": "integer"
+        },
+        "jargonHits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "term": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "missingFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "nudgesWired": {
+          "type": "boolean"
+        },
+        "ranAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rubricVerdict": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "human-readable summary line"
+        }
       },
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "additionalProperties": false
     },
     "interviewProgress": {
@@ -559,7 +747,9 @@
             },
             "sources": {
               "type": "array",
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "description": "List of source file labels that were present during ingestion."
             },
             "themesKnown": {
@@ -600,6 +790,82 @@
       "type": "string",
       "format": "date-time",
       "description": "DEPRECATED v10.15.1 / v10.14.1. Use interviewProgress.lastQuestionAt."
+    },
+    "interviewStalled": {
+      "type": "boolean",
+      "default": false,
+      "description": "PRD-2.15 (v12.3.12): set by nudge-incomplete-interviews.py after 168h nudge dead-end. Consumed by closeout-readiness-watchdog as a strong STUCK_MID_INTERVIEW signal."
+    },
+    "interviewStalledAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "ISO timestamp when interviewStalled was first set."
+    },
+    "closeoutBlockers": {
+      "type": "array",
+      "description": "PRD-2.15 (v12.3.12): durable operator surface. Each entry records a stuck condition that was escalated. Appended by closeout-readiness-watchdog.sh and run-closeout.sh on hard holds. Cleared when the condition resolves.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "class": {
+            "type": "string",
+            "description": "STUCK_MID_INTERVIEW | STUCK_QC_FAILED | org-chart-not-rendered | ..."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Human-readable explanation"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "escalatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cleared": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "stuckEscalations": {
+      "type": "object",
+      "description": "PRD-2.15 (v12.3.12): per-class throttle ledger written by closeout-readiness-watchdog. Prevents duplicate escalations. Keys are STUCK_CLASS names; values have notifiedAt (ISO) + class.",
+      "additionalProperties": true
+    },
+    "closeoutLegStatus": {
+      "type": "object",
+      "description": "PRD-2.15 (v12.3.12): per-leg human-readable status map (e.g. {org_chart:'failed:playwright-missing', notion:'skipped:no-page-id'}). Gives operator a single field to read why each closeout leg is red.",
+      "additionalProperties": true
+    },
+    "infographic1FailureReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "PRD-2.15 (v12.3.12): structured failure reason for the org-chart infographic leg. Written by generate-infographics.sh on Playwright-missing or render failure. Example: 'playwright-missing: chromium not installed on this host'."
+    },
+    "notionFailureReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "PRD-2.15 (v12.3.12): structured failure reason for the Notion closeout leg. Written by create-notion-closeout.sh on root-page 401/scope failure."
+    },
+    "notionCloseoutPageId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "PRD-2.15 (v12.3.12): Notion page ID of the root closeout page, set by create-notion-closeout.sh on first successful run (alongside notionRootPageUrl). The --refresh-workforce-only path reads this to avoid its 'skip forever' failure mode."
     }
   }
 }
