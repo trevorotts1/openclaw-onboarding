@@ -50,7 +50,7 @@ Every generation call, regardless of mode, follows this lifecycle. This is verba
    - Headers: `Authorization: Bearer $KIE_API_KEY` (the CLIENT's own key - never a shared key), `Content-Type: application/json`
    - Body: see §4 (Mode A) or §5 (Mode B).
 2. **Capture the task id:** on `{ "code": 200, "data": { "taskId": "..." } }`, append `{ "slide_NN": "<taskId>" }` to `working/checkpoints/kie_task_ids.json` immediately, before submitting the next slide.
-3. **Rate cap:** never more than 20 requests / 10 seconds (2 RPS). Submit in waves of 20, then sleep 15s. Retries count against the cap.
+3. **Rate cap:** never more than 20 new generation requests / 10 seconds, per account (source: https://docs.kie.ai/ Section 8 "Rate Limits & Concurrency", verified 2026-06-14). Submit in waves of 20, then sleep 10s (the documented window). Retries count against the cap.
 4. **Poll:** after the LAST submit, wait 5 minutes, then `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` (same Bearer) every 60s. Parse `data.state`  in  {`waiting`,`success`,`fail`}. Treat `fail`/`failed`/`error`/`cancelled` as terminal failure; log `data.failCode` + `data.failMsg`.
 5. **Download:** on `success`, `data.resultJson` is a JSON STRING; parse it -> `resultUrls` (an ARRAY) -> download `resultUrls[0]` to `working/renders/slide-NN.png`. It is `resultUrls`, NOT `.url` - the old runbook had this wrong.
 6. **Poll cap:** 100 poll passes max. At 100 with tasks still `waiting`, STOP, checkpoint, escalate the stuck task ids. Never loop forever.
