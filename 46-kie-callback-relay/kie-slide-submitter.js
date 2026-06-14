@@ -2,7 +2,7 @@
  * Kie Slide Submitter -- webhook-primary, poll-fallback, crash-safe
  *
  * Implements the DESIGN.md section 7 + 8 submit-and-wait loop:
- *   1. For each slide: generate perTaskSecret, write registry row (status: submitted)
+ *   1. For each slide: generate perTaskSecret + random submitId, write registry row
  *   2. POST createTask with callBackUrl pointing at the central Worker
  *   3. Record returned taskId into registry; write taskId->submitId index
  *   4. Submit ALL slides first (respecting 20-per-10-seconds rate limit), THEN wait
@@ -16,10 +16,21 @@
  *   Status query: 10 requests per second per API key (in-repo kie-setup-full.md)
  *
  * Usage:
- *   const submitter = new KieSlideSubmitter({ clientSlug, kieApiKey, kvWorkerUrl, workspaceDir });
+ *   const submitter = new KieSlideSubmitter({
+ *     clientSlug, kieApiKey, kvWorkerUrl, workspaceDir,
+ *     callbackHmacKey,  -- shared with Worker (KIE_CALLBACK_HMAC_KEY)
+ *     kvReadToken       -- shared with Worker (KVREAD_TOKEN)
+ *   });
  *   const results = await submitter.submitDeck(slides, { model, callbackThreshold });
  *
- * The callBackUrl format: https://kie-callback.zerohumanworkforce.com/cb?c=<client>&j=<submitId>&s=<secret>
+ * callBackUrl format (security-hardened, 2026-06-14):
+ *   /cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>
+ *
+ *   submitId          -- 128-bit random hex (fix A); never deckId_slideId
+ *   callbackValidator -- HMAC-SHA256(clientSlug + ":" + submitId, callbackHmacKey) (fix D)
+ *   perTaskSecretHmac -- HMAC-SHA256(perTaskSecret, callbackHmacKey) (fix C)
+ *
+ * Neither the raw perTaskSecret nor any other secret appears in the URL (fixes C + D).
  */
 
 const fs     = require('fs');
@@ -47,16 +58,29 @@ const MODEL_TIMEOUTS = {
 class KieSlideSubmitter {
   /**
    * @param {object} opts
-   * @param {string} opts.clientSlug    -- client identifier (no spaces/special chars)
-   * @param {string} opts.kieApiKey     -- Kie API key (Bearer token)
-   * @param {string} opts.kvWorkerUrl   -- Worker base URL
-   * @param {string} opts.workspaceDir  -- path to workspace directory
+   * @param {string} opts.clientSlug       -- client identifier (no spaces/special chars)
+   * @param {string} opts.kieApiKey        -- Kie API key (Bearer token)
+   * @param {string} opts.kvWorkerUrl      -- Worker base URL
+   * @param {string} opts.workspaceDir     -- path to workspace directory
+   * @param {string} opts.callbackHmacKey  -- shared HMAC key for callback validator + secret HMAC
+   *                                          (must match Worker KIE_CALLBACK_HMAC_KEY secret)
+   * @param {string} opts.kvReadToken      -- bearer token for /kv-read authentication
+   *                                          (must match Worker KVREAD_TOKEN secret)
    */
   constructor(opts) {
-    this.clientSlug   = opts.clientSlug;
-    this.kieApiKey    = opts.kieApiKey;
-    this.kvWorkerUrl  = opts.kvWorkerUrl || CALLBACK_WORKER_URL;
-    this.workspaceDir = opts.workspaceDir;
+    this.clientSlug      = opts.clientSlug;
+    this.kieApiKey       = opts.kieApiKey;
+    this.kvWorkerUrl     = opts.kvWorkerUrl || CALLBACK_WORKER_URL;
+    this.workspaceDir    = opts.workspaceDir;
+    this.callbackHmacKey = opts.callbackHmacKey;
+    this.kvReadToken     = opts.kvReadToken;
+
+    if (!this.callbackHmacKey) {
+      throw new Error('[kie-submit] opts.callbackHmacKey is required (KIE_CALLBACK_HMAC_KEY)');
+    }
+    if (!this.kvReadToken) {
+      throw new Error('[kie-submit] opts.kvReadToken is required (KVREAD_TOKEN)');
+    }
 
     this.registryDir  = path.join(this.workspaceDir, '.kie', 'registry');
     this.indexDir     = path.join(this.workspaceDir, '.kie', 'index');
@@ -68,7 +92,8 @@ class KieSlideSubmitter {
     this.poller = new KieKvPoller({
       clientSlug:   this.clientSlug,
       kvWorkerUrl:  this.kvWorkerUrl,
-      workspaceDir: this.workspaceDir
+      workspaceDir: this.workspaceDir,
+      kvReadToken:  this.kvReadToken     // Fix B: pass bearer token to poller
     });
 
     // Token bucket for rate limiting (20 per 10s)
@@ -92,14 +117,19 @@ class KieSlideSubmitter {
     console.log(`[kie-submit] deck of ${slides.length} slides; callbacks=${useCallbacks} (threshold=${threshold})`);
 
     // --- Phase 1: Resume-safe registry load; skip already-submitted slides ---
+    // Fix A: submitId is now a 128-bit random hex. Registry files are keyed by that random ID.
+    // To resume, scan the registry directory for a file whose deckId+slideId label matches.
+    const registryByLabel = this._loadRegistryByLabel();
+
     const pending   = [];
     const submitted = []; // slides with existing taskId (crash-resume)
 
     for (const slide of slides) {
-      const submitId = this._makeSubmitId(slide.deckId, slide.slideId);
-      const existing = this._readRegistry(submitId);
+      const label    = `${slide.deckId}_${slide.slideId}`; // human-readable label, NOT the KV key
+      const existing = registryByLabel[label] || null;
 
       if (existing?.taskId) {
+        const submitId = existing.submitId;
         // Already submitted; check if done
         const done = this._readDoneMarker(existing.taskId);
         if (done) {
@@ -110,6 +140,8 @@ class KieSlideSubmitter {
                          perTaskSecret: existing.perTaskSecret, existing: true });
         }
       } else {
+        // New slide: generate a 128-bit random submitId (fix A)
+        const submitId = crypto.randomBytes(16).toString('hex');
         pending.push({ ...slide, submitId, taskId: null, existing: false });
       }
     }
@@ -124,19 +156,35 @@ class KieSlideSubmitter {
 
       const model         = slide.model || opts.model || 'nano-banana-pro';
       const perTaskSecret = crypto.randomBytes(32).toString('hex');
-      const submitId      = slide.submitId;
+      const submitId      = slide.submitId; // already a 128-bit random hex (fix A)
 
-      // Write registry BEFORE submitting (crash-safe: write first, then submit)
+      // Fix D: callback validator = HMAC-SHA256(clientSlug + ":" + submitId, callbackHmacKey)
+      //   Nothing secret in the URL; the Worker recomputes and verifies.
+      // Fix C: perTaskSecretHmac = HMAC-SHA256(perTaskSecret, callbackHmacKey)
+      //   A hash of the secret, safe to pass through Kie logs. Stored in KV by Worker.
+      const callbackValidator = crypto
+        .createHmac('sha256', this.callbackHmacKey)
+        .update(`${this.clientSlug}:${submitId}`)
+        .digest('hex');
+      const perTaskSecretHmac = crypto
+        .createHmac('sha256', this.callbackHmacKey)
+        .update(perTaskSecret)
+        .digest('hex');
+
+      // Write registry BEFORE submitting (crash-safe: write first, then submit).
+      // Store deckId + slideId as human-readable label fields alongside the random submitId.
       const regRow = {
-        submitId,
+        submitId,                              // Fix A: 128-bit random hex, not deckId_slideId
+        label:        `${slide.deckId}_${slide.slideId}`, // human-readable label for resume scan
         clientSlug:   this.clientSlug,
         deckId:       slide.deckId,
         slideId:      slide.slideId,
         model,
         targetPath:   slide.targetPath,
-        perTaskSecret,
+        perTaskSecret,                         // stays on box in local registry only
         callBackUrl:  useCallbacks
-          ? `${this.kvWorkerUrl}/cb?c=${encodeURIComponent(this.clientSlug)}&j=${encodeURIComponent(submitId)}&s=${perTaskSecret}`
+          // Fix C + D: no raw secret in URL; s= is the callback validator, h= is the secret HMAC
+          ? `${this.kvWorkerUrl}/cb?c=${encodeURIComponent(this.clientSlug)}&j=${encodeURIComponent(submitId)}&s=${callbackValidator}&h=${perTaskSecretHmac}`
           : null,
         submittedAt:  new Date().toISOString(),
         status:       'submitting',
@@ -288,8 +336,32 @@ class KieSlideSubmitter {
   }
 
   // --- Registry helpers ---
-  _makeSubmitId(deckId, slideId) {
-    return `${deckId}_${slideId}`;
+
+  /**
+   * Scan the registry directory and build an index keyed by human-readable label
+   * (deckId_slideId). Used for crash-safe resume now that submitId is random (fix A).
+   * Returns: { [label]: registryRow, ... }
+   */
+  _loadRegistryByLabel() {
+    const result = {};
+    let files;
+    try {
+      files = fs.readdirSync(this.registryDir);
+    } catch (_) {
+      return result;
+    }
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        const row = JSON.parse(fs.readFileSync(path.join(this.registryDir, f), 'utf8'));
+        // Support both new-style (row.label) and legacy (deckId_slideId filename-based) rows
+        const label = row.label || (row.deckId && row.slideId ? `${row.deckId}_${row.slideId}` : null);
+        if (label) result[label] = row;
+      } catch (_) {
+        // Corrupt or partial file; skip
+      }
+    }
+    return result;
   }
 
   _readRegistry(submitId) {

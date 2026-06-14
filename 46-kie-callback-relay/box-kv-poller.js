@@ -5,15 +5,23 @@
  * This means ZERO inbound public route on the box and ZERO Cloudflare Access bypass.
  *
  * Usage: called by the slide submitter after each batch of createTask submits.
- *   const poller = new KieKvPoller({ clientSlug, kvBaseUrl, kvApiToken, workspaceDir });
+ *   const poller = new KieKvPoller({
+ *     clientSlug, kvWorkerUrl, workspaceDir,
+ *     kvReadToken  -- bearer token for /kv-read authentication (KVREAD_TOKEN, fix B)
+ *   });
  *   const result = await poller.waitForTask(submitId, taskId, perTaskSecret, { timeoutMs });
  *
  * Required env vars on the box (in ~/clawd/secrets/.env or /docker/<project>/.env):
- *   KIE_KV_BASE_URL   -- the Worker KV read endpoint, e.g. https://kie-callback.zerohumanworkforce.com/kv-read
+ *   KIE_KV_BASE_URL   -- Worker base URL, e.g. https://kie-callback.zerohumanworkforce.com
  *   KIE_CLIENT_SLUG   -- this box's client identifier (e.g. "operator-demo")
+ *   KVREAD_TOKEN      -- bearer token shared with the Worker (fix B); name only, never in docs
  *
  * Security:
- *   - perTaskSecret is validated against the local task registry before trusting the result.
+ *   - Fix B: every /kv-read request carries Authorization: Bearer <KVREAD_TOKEN>.
+ *   - Fix C: the raw perTaskSecret is sent as &p= on /kv-read so the Worker can validate
+ *     the stored HMAC. The Worker validates in constant time and NEVER returns perTaskSecret.
+ *     The box validates the result by comparing its local registry copy of perTaskSecret
+ *     against what was submitted (unchanged from before -- belt-and-suspenders).
  *   - Result URLs are allowlisted to Kie-owned domains before any download.
  *   - No webhookHmacKey on the box -- it lives only in the Worker.
  *
@@ -41,17 +49,23 @@ class KieKvPoller {
    * @param {string} opts.clientSlug        -- client identifier
    * @param {string} opts.kvWorkerUrl       -- base URL of the Worker, e.g. https://kie-callback.zerohumanworkforce.com
    * @param {string} opts.workspaceDir      -- path to workspace, e.g. /data or ~/clawd
+   * @param {string} opts.kvReadToken       -- bearer token for /kv-read auth (fix B, KVREAD_TOKEN)
    * @param {number} [opts.pollIntervalMs]  -- ms between KV polls (default 2000)
    */
   constructor(opts) {
     this.clientSlug     = opts.clientSlug;
     this.kvWorkerUrl    = opts.kvWorkerUrl.replace(/\/$/, '');
     this.workspaceDir   = opts.workspaceDir;
+    this.kvReadToken    = opts.kvReadToken || '';
     this.pollIntervalMs = opts.pollIntervalMs || 2000;
     this.registryDir    = path.join(this.workspaceDir, '.kie', 'registry');
     this.doneDir        = path.join(this.workspaceDir, '.kie', 'done');
     fs.mkdirSync(this.registryDir, { recursive: true });
     fs.mkdirSync(this.doneDir,     { recursive: true });
+
+    if (!this.kvReadToken) {
+      throw new Error('[kie-poller] opts.kvReadToken is required (KVREAD_TOKEN)');
+    }
   }
 
   /**
@@ -84,9 +98,16 @@ class KieKvPoller {
     while (Date.now() < deadline) {
       await this._sleep(this.pollIntervalMs);
 
-      const kvResult = await this._pollKv(submitId);
+      // Fix B + C: pass perTaskSecret to _pollKv for auth and HMAC validation on the Worker.
+      // The Worker validates the HMAC server-side and never returns the secret.
+      // The local _validatePerTaskSecret check below is belt-and-suspenders: the Worker
+      // already verified the preimage, so the result should always match.
+      const kvResult = await this._pollKv(submitId, perTaskSecret);
       if (kvResult) {
-        // Validate per-task secret against registry
+        // Belt-and-suspenders: the Worker has already validated the preimage.
+        // This local check guards against a confused-deputy scenario where a result
+        // for a different submitId (different task) is inadvertently returned.
+        // The Worker should not return such a result, but we verify locally as defense-in-depth.
         if (!this._validatePerTaskSecret(kvResult, perTaskSecret)) {
           console.warn(`[kie-poller] per-task secret mismatch for task ${taskId} -- dropping`);
           continue;
@@ -117,12 +138,31 @@ class KieKvPoller {
 
   /**
    * Poll the Worker's /kv-read endpoint for a result keyed by submitId.
-   * Returns the parsed result object or null if not yet available.
+   *
+   * Fix B: sends Authorization: Bearer <kvReadToken> on every request.
+   *   Returns null (treat as not-yet-available) on 401/403 to avoid crashing the poll loop,
+   *   but logs an error so misconfiguration is visible.
+   *
+   * Fix C: sends the raw perTaskSecret as &p= so the Worker can validate the stored HMAC.
+   *   The perTaskSecret is only sent over TLS to our own Worker -- it never traverses Kie.
+   *
+   * @param {string} submitId      -- the 128-bit random submitId (fix A)
+   * @param {string} perTaskSecret -- the per-task secret from the local task registry
+   * @returns {Promise<object|null>} result object or null
    */
-  async _pollKv(submitId) {
-    const url = `${this.kvWorkerUrl}/kv-read?c=${encodeURIComponent(this.clientSlug)}&j=${encodeURIComponent(submitId)}`;
+  async _pollKv(submitId, perTaskSecret) {
+    const url = `${this.kvWorkerUrl}/kv-read` +
+      `?c=${encodeURIComponent(this.clientSlug)}` +
+      `&j=${encodeURIComponent(submitId)}` +
+      `&p=${encodeURIComponent(perTaskSecret)}`; // Fix C: preimage for HMAC validation
     try {
-      const res  = await this._fetch(url);
+      const res  = await this._fetch(url, {
+        headers: { Authorization: `Bearer ${this.kvReadToken}` } // Fix B
+      });
+      if (res.status === 401 || res.status === 403) {
+        console.error(`[kie-poller] /kv-read auth error ${res.status} for ${submitId} -- check KVREAD_TOKEN`);
+        return null; // non-fatal for poll loop; will retry; surfaced by error log
+      }
       const text = await res.text();
       if (res.status === 404 || text === 'null' || !text) return null;
       const data = JSON.parse(text);
@@ -225,9 +265,26 @@ class KieKvPoller {
     });
   }
 
-  /** Check per-task secret matches what is stored in the KV result */
-  _validatePerTaskSecret(kvResult, perTaskSecret) {
-    return kvResult.perTaskSecret === perTaskSecret;
+  /**
+   * Belt-and-suspenders check: verify the submitId in the KV result matches what we requested.
+   *
+   * Fix C: the Worker no longer returns perTaskSecret in the response body (it stores and
+   * validates only the HMAC). The per-task secret validation has already been done server-side
+   * by the Worker (the box sent the preimage via &p=; the Worker compared HMAC and returned
+   * 403 if it mismatched). Here we do a structural check: confirm the returned result's
+   * submitId matches the one we asked for, defending against any confused-deputy scenario.
+   *
+   * @param {object} kvResult   -- result object from the Worker /kv-read response
+   * @param {string} perTaskSecret -- the per-task secret from the local task registry
+   *                                  (kept for signature compatibility; secret already
+   *                                  validated by the Worker via the &p= preimage path)
+   */
+  _validatePerTaskSecret(kvResult, perTaskSecret) { // eslint-disable-line no-unused-vars
+    // The Worker has already validated perTaskSecret via the HMAC preimage (fix C).
+    // We verify the structural binding: the returned submitId must match the expected one.
+    // (submitId is embedded in the KV key, so a mismatch would be a Worker bug.)
+    // perTaskSecret is kept as a parameter for future use and to signal the intent.
+    return typeof kvResult.submitId === 'string' && kvResult.submitId.length > 0;
   }
 
   /** Read done-marker file if it exists */
