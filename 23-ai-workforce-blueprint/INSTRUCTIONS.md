@@ -523,6 +523,10 @@ For each department, ask whether the owner has a SPECIFIC procedure they run tha
 
 The canonical list message in Step 2 will be long. Send it as ONE message anyway (do not split). It is the most important orienting message in the entire interview  -  splitting it kills the comparison effect. If the owner's chat client truncates, the canonical map file is on disk and the agent can re-send any section on request.
 
+#### Step 6  -  Custom role/SOP capture + core-merge (pointer)
+
+Canonical and floor departments resolve their roles/SOPs by COPY + token-personalize from the 233-template library (never LLM-authored). For anything the library does NOT cover  -  a custom department, or a custom role/SOP the owner needs inside ANY department (including a core one)  -  capture it per department, author it to standard, and LAYER any semantically overlapping custom content INTO the one core department instead of shipping a duplicate. See `23-ai-workforce-blueprint/CUSTOM-AUTHORING-AND-MERGE-STANDARD.md` for the binding trigger / capture / authoring / core-merge / closeout-gate rules.
+
 ---
 
 ### Phase 6 - Final Review (~2-3 min)
