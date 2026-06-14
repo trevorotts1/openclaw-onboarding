@@ -1,3 +1,28 @@
+## [v12.4.0] - 2026-06-13 - feat: Presentation Department surgery (P0 run-breakers + P1-P7 fidelity/machinery + new roles 13/14/15)
+
+### Changes
+
+Complete surgery on the Presentation Department to take its output from 7.4/10 to the proven Lyric standard (final QC 9.42) by converting Trevor's governing intelligence from prose into enforced machinery.
+
+**P0 run-breakers:**
+- ROLE-12 Slide Submitter rewritten to the real Kie.ai API: states waiting/success/fail (old complete/in_progress/failed removed from logic), data.resultJson parsed to resultUrls[0], failCode/failMsg logged, master Appendix A pasted verbatim as SOP 9.3a, the input_urls/LOGO_URL image-to-image logo mechanism restored, and the API smoke test added.
+- ROLE-09 QC Specialist given an AUTO-FAIL battery checked FIRST before scoring (spelling, garbled text, deformities, em-dash), plus c15 doctrine battery, c16 TEXT_ANCHOR variation, c17 ladder integrity; averaging + the 7.0 floor kept as the soft layer underneath.
+
+**P1-P7 fidelity + machinery:**
+- ROLE-01 Director: master slide-math char-for-char, 90 absolute ceiling, 17-row arc allocation, Section 4.2 seven-section flow, full intake fields, model manifest.
+- ROLE-02 Brand Steward: the 60/30/10 racial default deleted to NO-PEOPLE-plus-operator-flag, proven brand grammar, 9% logo chip with 1px border, tertiary-white removed, SOP 9.3 archetype palette.
+- ROLE-05 Devil's Advocate: 18 master doctrine points verbatim + 6 department extensions (19-24), review timing after Phase 1Q and before Phase 1A, HIGH-flag blocking on fabricated proof / fake scarcity.
+- ROLE-07 Offer Price Strategist: spread ladder (ANCHOR 32% value-plant not-a-drop, DROP 47/68/87%, FINAL 97% below the value ladder), BUILDUP before every DROP, callback, SOP 9.4/9.5/9.6.
+- ROLE-11 Slide Image Creator: A1-A5 archetypes, Facial/Audience/World engines, master exemplar pre-read, both gold-standard exemplars, drawn-line strike (replacing the red diagonal), PPTX fallback after 2 failed renders, the line-393 racial default deleted.
+- ROLE-10 Slide Copywriter: per-slide template fields, tightened body limit, SOP 9.7 Doctrine Application, voice rules + banned words, Mode B non-preserving rewrite path removed.
+- Gate interlocks (generation needs approval_record + passed prompt_qc; delivery needs final_deck_qc.json; routing forces audience/webinar decks off the DIU strategy-(b) pipeline), architecture lock (text-in-image is THE rule for webinar decks; overlay is a per-element fallback), assembled-slide QC (PPTX to PDF to PNG with coded collision/contrast/legibility asserts), REPRESENTATION_MIX deck-wide +/-10% cast tally auto-fail, and the image-grounding gate.
+
+**New roles (Wave 4):** ROLE-13 Delivery Concierge, ROLE-14 Presenter Coach, ROLE-15 Hook Strategist (the Hook Lab) built to the full 19-section template; all touched sops/ mirrors regenerated to verbatim; all graphics ROLE--/SOP-- twins synced byte-identical; 00-START-HERE updated last.
+
+**DEFERRED (blocked):** ROLE-16 The Healer is MANDATORY per the change order but DEFERRED because the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md was not supplied. The role exists as a v1.0 scaffold; the deferral is noted in 00-START-HERE.md. Operator acknowledgement required to close.
+
+Skill markers: 23-ai-workforce-blueprint and root onboarding to v12.4.0; 45-design-intelligence-library skill-version to 1.1.1 (DIU routing/representation machinery edits). No em dashes anywhere in the touched department.
+
 ## [v12.3.12] - 2026-06-13 - fix: closeout-readiness-watchdog + interviewQc gate + Playwright hard hold + Notion notionCloseoutPageId (PRD-2.15)
 
 ### Changes
