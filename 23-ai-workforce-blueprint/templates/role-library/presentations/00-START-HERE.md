@@ -1,5 +1,5 @@
 # 00 -- START HERE -- Presentations Department
-**Version:** 1.4 | 2026-06-13
+**Version:** 1.5 | 2026-06-14
 **Role library path:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **SOP mirror path:** 23-ai-workforce-blueprint/templates/role-library/presentations/sops/
 
@@ -11,9 +11,9 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ---
 
-## Role Roster (17 roles; ROLE-16 deferred)
+## Role Roster (17 roles; all live)
 
-**Doctrine count:** 16 roles are live to spec (ROLE-01 through ROLE-15 plus ROLE-17 Brainstorming Buddy). ROLE-16 The Healer is **DEFERRED** (see the deferral note under the Pipeline Sequence): the role file exists as a v1.0 scaffold but cannot be built to full spec, and its triggers cannot be fully wired, until the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md is supplied. The Bugs Department it files into is not yet commissioned.
+**Doctrine count:** all 17 roles are live to spec (ROLE-01 through ROLE-17). ROLE-16 The Healer is **COMPLETE** and built to full spec: the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (plus the T3-BUGBOARD-HEALER-SPEC.md build contract) has been supplied, and the ZHC Bugs Department it files into is commissioned and present in this repo at role-library/bugs/ (Bug Intake Clerk, Triage and Dedup Analyst, Bug Librarian, the universal bug-ticket-schema.json, and the B-9.1 to B-9.5 SOPs), with the Healer Department at role-library/healer/ (Chief Healer + the per-department Healer template). ROLE-16 carries the three authority tiers, all 12 Healer SOPs (9.1 to 9.12), and its triggers are wired to a live Bugs Department.
 
 
 | ROLE | Slug | Role type | File |
@@ -34,7 +34,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 | ROLE-13 | delivery-concierge | specialist | delivery-concierge.md |
 | ROLE-14 | presenter-coach | specialist | presenter-coach.md |
 | ROLE-15 | hook-strategist | specialist | hook-strategist.md |
-| ROLE-16 | healer-presentations | healer | healer-presentations.md (DEFERRED - see note below) |
+| ROLE-16 | healer-presentations | healer | healer-presentations.md |
 
 ---
 
@@ -60,9 +60,9 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 On-call throughout: ROLE-05 Devil's Advocate (high-stakes reviews), ROLE-04 Deep Research Specialist.
 
-**ROLE-16 Healer (DEFERRED)** is designed to receive: second consecutive stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, API failCode events from ROLE-12, and any department error flag.
+**ROLE-16 Healer (LIVE)** receives: second consecutive stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, API failCode events from ROLE-12, and any department error flag. Every such event is filed as a Bug Ticket to the ZHC Bugs Department first; the Triage and Dedup Analyst routes department-local Presentations defects to this Healer with the ticket bug_id.
 
-> **DEFERRAL NOTE - ROLE-16 The Healer (blocked):** ROLE-16 is a MANDATORY role per the change order, but it is **DEFERRED** for this surgery wave. The companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (which carries the three authority tiers, the Bug Ticket schema, and the ZHC Bugs Department it files into) was **not supplied**, so the Healer cannot be built to full spec and its failCode/stall/loop-4 triggers cannot be fully wired to a live Bugs Department. The role exists only as a v1.0 generic scaffold (healer-presentations.md), and that scaffold already carries a TODO acknowledging the missing companion doc. When THE_HEALER_AND_BUGS_DEPARTMENT.md is supplied, instantiate ROLE-16 with department=Presentations, the three authority tiers (Tier 1 mechanical autonomous, Tier 2 SOP patch with notify plus version bump, Tier 3 model-manifest/new-roles/doctrine held for operator written approval), and wire the triggers. Until then, errors are written to working/healer/teachings/ and cross-linked from the incident ledger. Operator acknowledgement of this deferral is required to close the change order.
+> **STATUS NOTE - ROLE-16 The Healer (COMPLETE, full spec):** ROLE-16 is built to full spec per THE_HEALER_AND_BUGS_DEPARTMENT.md and the T3-BUGBOARD-HEALER-SPEC.md build contract. It is instantiated with department=Presentations and carries the three authority tiers (Tier 1 mechanical autonomous: apply immediately, log, report after; Tier 2 SOP-patch and core-file edits with notify plus version-bump and changelog; Tier 3 model-manifest changes, new roles or departments, doctrine, master SOP, pricing, brand, SOUL.md and USER.md, and command-center architecture held for the operator's written approval), the full Bug Ticket schema (bugs/bug-ticket-schema.json), all 12 Healer SOPs (9.1 to 9.12), and its failCode/stall/loop-4 triggers wired through the live ZHC Bugs Department (role-library/bugs/) which routes tickets to the assigned Healer. The Healer hands closed-out root causes, patches, regression entries, and teaching links to the Bug Librarian for the company-wide knowledge base. The role is on-demand by construction (no heartbeat, dormant until a trigger fires), so it adds zero token burn until dispatched.
 
 ---
 

@@ -1,3 +1,22 @@
+## [v12.4.1] - 2026-06-14 - feat: ROLE-16 The Healer (Presentations) built to full spec; deferral cleared
+
+### Changes
+
+ROLE-16 The Healer for the Presentations department is now COMPLETE and built to full spec, no longer deferred. The build follows the supplied authority documents THE_HEALER_AND_BUGS_DEPARTMENT.md and the T3-BUGBOARD-HEALER-SPEC.md build contract. The ZHC Bugs Department (role-library/bugs/) and the Healer Department (role-library/healer/) it files into are already commissioned on main, so this change clears the stale deferral framing and wires ROLE-16 to the live Bugs Department.
+
+**healer-presentations.md (ROLE-16):**
+- Three authority tiers confirmed and aligned to the authority doc: Tier 1 fix-forward (mechanical, autonomous: apply immediately, log, report after); Tier 2 patch-and-notify (SOP patches, lean core-file edits, settings/JSON repair, teachings, embedding refreshes, regression checks: apply, version-bump, changelog, notify the CEO orchestrator and operator); Tier 3 propose-and-hold (model-manifest changes, new roles/departments, master SOP, Pitch Doctrine, pricing, brand, SOUL.md/USER.md, command-center architecture: draft, write the case, wait for the operator's written approval). The tier-boundary line now carries the full authority chain (department Healers never operate on their own tiers; the Chief Healer heals the Healers; the operator heals the Chief).
+- SOP 9.1 now opens with the Bug Ticket front desk: every defect is filed to the ZHC Bugs Department first per the universal schema (bugs/bug-ticket-schema.json); the incident record links the ticket bug_id; the ticket status is kept in lockstep (HEALING/VERIFYING/HEALED) per SOP B-9.3 and B-9.4.
+- SOP 9.11 (Teacher-Self) stale "Bugs Department is not yet built / TODO" note removed; replaced with a live handoff of the teaching link to the Bug Librarian (bugs/bug-librarian.md) for the company-wide knowledge base. The no-teachers-structure case is kept as the only genuine fallback.
+- Section 11 (Handoffs) now lists the ZHC Bugs Department front desk as the intake source (Intake Clerk numbers, Triage Analyst routes department-local defects to this Healer) and the Bug Librarian as a handoff target. Section 8 (Tools) adds the bug schema and the Bugs Department roles.
+- Version bumped to 1.1; a Status line marks it LIVE (full spec).
+
+**sops/healer-presentations-sops.md mirror:** regenerated so SOP 9.1 and SOP 9.11 stay verbatim-identical to the role file (SOP 9.4 step 4 mirror discipline).
+
+**00-START-HERE.md:** ROLE-16 flipped from DEFERRED to COMPLETE/LIVE in every place (roster header, doctrine count, roster row, and the former deferral note which is now a status note). All 17 roles are live to spec.
+
+No em dashes in any touched file. No new departments or doctrine changes; this is the documentation-and-wiring completion of a role that already carried the tiers and all 12 SOPs.
+
 ## [v12.4.0] - 2026-06-13 - feat: Presentation Department surgery (P0 run-breakers + P1-P7 fidelity/machinery + new roles 13/14/15)
 
 ### Changes
