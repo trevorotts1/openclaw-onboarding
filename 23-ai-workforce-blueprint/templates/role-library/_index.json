@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-12T00:00:00Z",
-  "version": "12.6.1",
-  "total_roles": 355,
+  "generated_at": "2026-06-14T00:00:00Z",
+  "version": "12.7.0",
+  "total_roles": 356,
   "departments": {
     "app-development": {
       "count": 17,
@@ -404,12 +404,13 @@
       ]
     },
     "presentations": {
-      "count": 21,
+      "count": 22,
       "roles": [
         "audio-demonstration-specialist",
         "brainstorming-buddy-presentations",
         "brand-steward",
         "capacity-reliability-engineer",
+        "content-to-presentation-architect",
         "deep-research-specialist-presentations",
         "delivery-concierge",
         "devils-advocate-presentations",
@@ -2908,6 +2909,16 @@
       "sop_count": 6,
       "sop_min": 6,
       "path": "templates/role-library/presentations/director-of-presentations.md"
+    },
+    {
+      "slug": "content-to-presentation-architect",
+      "dept": "presentations",
+      "title": "Content-to-Presentation Architect",
+      "role_type": "specialist",
+      "word_count": 5770,
+      "sop_count": 6,
+      "sop_min": 6,
+      "path": "templates/role-library/presentations/content-to-presentation-architect.md"
     },
     {
       "slug": "slide-copywriter",

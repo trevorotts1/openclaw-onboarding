@@ -1,5 +1,5 @@
 # 00 -- START HERE -- Presentations Department
-**Version:** 1.7 | 2026-06-14
+**Version:** 1.8 | 2026-06-14
 **Role library path:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **SOP mirror path:** 23-ai-workforce-blueprint/templates/role-library/presentations/sops/
 
@@ -15,9 +15,9 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 ---
 
-## Role Roster (21 roles; all live)
+## Role Roster (22 roles; all live)
 
-**Doctrine count:** all 21 roles are live to spec (ROLE-01 through ROLE-21). ROLE-18 through ROLE-21 are the presentation-overhaul roles added v1.7: the Typography Architect (per-slide type-layout system, runs BEFORE the Slide Image Creator), the Presenters Guide Specialist (branded speaker outline PDF + Notion), the Presenters Speech Writer (word-for-word script paced to TARGET_WPM=140, PDF + Notion), and the Audio Demonstration + Fish Audio Expression Specialist (expression-tagged TTS demo with the Fish S2-Pro -> ElevenLabs -> Whisper-STT-verify fallback chain). All four route deliverables through the Delivery Concierge for verified last-mile. ROLE-16 The Healer is **COMPLETE** and built to full spec: the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (plus the T3-BUGBOARD-HEALER-SPEC.md build contract) has been supplied, and the ZHC Bugs Department it files into is commissioned and present in this repo at role-library/bugs/ (Bug Intake Clerk, Triage and Dedup Analyst, Bug Librarian, the universal bug-ticket-schema.json, and the B-9.1 to B-9.5 SOPs), with the Healer Department at role-library/healer/ (Chief Healer + the per-department Healer template). ROLE-16 carries the three authority tiers, all 12 Healer SOPs (9.1 to 9.12), and its triggers are wired to a live Bugs Department.
+**Doctrine count:** all 22 roles are live to spec (ROLE-01 through ROLE-22). ROLE-22 is the Content-to-Presentation Architect added v1.8: the source-ingest front door that turns any owner-supplied source (YouTube, Vimeo, any video file, audio training, website, blog post, PDF, report, white paper, Zoom recording, Google Meet recording) into a build-ready presentation BRIEF for the deck pipeline. It transcribes or extracts the source, finds the main theme by hook analysis, builds a step-by-step teaching arc, attaches teaching devices (analogy / metaphor / mnemonic) with a simplify-when trigger, decides micro-vs-full, and hands a source brief to the Director. It enforces a hard privacy rule on recordings of identifiable people (extract the lessons, never the identity) and does NOT duplicate the Deep Research Specialist (no open-web search) or the Brainstorming Buddy (source present, not idea only). ROLE-18 through ROLE-21 are the presentation-overhaul roles added v1.7: the Typography Architect (per-slide type-layout system, runs BEFORE the Slide Image Creator), the Presenters Guide Specialist (branded speaker outline PDF + Notion), the Presenters Speech Writer (word-for-word script paced to TARGET_WPM=140, PDF + Notion), and the Audio Demonstration + Fish Audio Expression Specialist (expression-tagged TTS demo with the Fish S2-Pro -> ElevenLabs -> Whisper-STT-verify fallback chain). All four route deliverables through the Delivery Concierge for verified last-mile. ROLE-16 The Healer is **COMPLETE** and built to full spec: the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (plus the T3-BUGBOARD-HEALER-SPEC.md build contract) has been supplied, and the ZHC Bugs Department it files into is commissioned and present in this repo at role-library/bugs/ (Bug Intake Clerk, Triage and Dedup Analyst, Bug Librarian, the universal bug-ticket-schema.json, and the B-9.1 to B-9.5 SOPs), with the Healer Department at role-library/healer/ (Chief Healer + the per-department Healer template). ROLE-16 carries the three authority tiers, all 12 Healer SOPs (9.1 to 9.12), and its triggers are wired to a live Bugs Department.
 
 
 | ROLE | Slug | Role type | File |
@@ -43,12 +43,14 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 | ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md |
 | ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md |
 | ROLE-21 | audio-demonstration-specialist | specialist | audio-demonstration-specialist.md |
+| ROLE-22 | content-to-presentation-architect | specialist | content-to-presentation-architect.md |
 
 ---
 
 ## Pipeline Sequence (phase order)
 
--1. **Step -1** -- ROLE-17 Brainstorming Buddy brainstorms with the owner (SIMPLE or EXTENSIVE interview), confirms, and locks working/brainstorm/presentations/<slug>/brief.json; then hands the locked brief to the Director.
+-2. **Step -2 (source-ingest front door; only when a SOURCE is supplied)** -- ROLE-22 Content-to-Presentation Architect runs when the owner says "turn this <video|Vimeo|blog|PDF|report|white paper|audio|Zoom|Google Meet|link> into a presentation." It ingests the source per modality (video/audio = transcribe; web/blog = fetch + extract; PDF/report/white-paper = parse), enforces the hard privacy rule on recordings of identifiable people, finds the main theme by hook analysis, builds the step-by-step teaching arc with teaching devices, decides micro-vs-full, and writes working/content-to-presentation/<source-slug>/source_brief.json. It hands that source brief to the Director and flags that the audience/representation/style fields are NOT captured (route via ROLE-17's SOP 9.0, theme/arc/hook pre-seeded). If the owner has only an IDEA and no source, work starts at Step -1 instead.
+-1. **Step -1** -- ROLE-17 Brainstorming Buddy brainstorms with the owner (SIMPLE or EXTENSIVE interview), confirms, and locks working/brainstorm/presentations/<slug>/brief.json; then hands the locked brief to the Director. When ROLE-22 produced a source brief, the Buddy captures only the audience/representation/style fields (REPRESENTATION_MIX, AUDIENCE_COMPOSITION_NOTE, VISUAL_MIX, DARK_OK, GROUNDED_CONTENT, DELIVERABLE_SET) and never re-asks the theme, arc, or hook the source brief already answers.
 1. **Step 0** -- ROLE-06 Media Librarian creates the landing zone and acquires client assets (LOGO_URL, FOUNDER_PORTRAIT_URL).
 2. **Step 0.5** -- ROLE-03 Capacity and Reliability Engineer probes the box and writes capacity_plan.json.
 3. **Phase B+** -- ROLE-15 Hook Strategist runs the Hook Lab; outputs hook_package.json.
@@ -103,6 +105,7 @@ Each role's Section 9 (Standard Operating Procedures) is mirrored verbatim in so
 | sops/presenters-guide-specialist-sops.md | presenters-guide-specialist.md | 9.1 Guide Assembly, 9.2 PDF Render (fonts >=12), 9.3 Notion Publish, 9.4 Verified Delivery |
 | sops/presenters-speech-writer-sops.md | presenters-speech-writer.md | 9.1 Word-for-Word Draft, 9.2 WPM Pacing Pass (TARGET_WPM=140), 9.3 Designed PDF Render (fonts >=12), 9.4 Notion Publish + Verified Delivery |
 | sops/audio-demonstration-specialist-sops.md | audio-demonstration-specialist.md | 9.1 Expression Tagging, 9.2 Chunk + Synthesize (Fish S2 -> ElevenLabs -> fallthrough), 9.3 ffmpeg Stitch + Normalize, 9.4 STT Verify (Whisper), 9.5 Deliver Demo |
+| sops/content-to-presentation-architect-sops.md | content-to-presentation-architect.md | 9.1 Source Ingestion per Modality (+ Privacy Rule), 9.2 Analysis + Hook Main-Theme + Teaching Arc, 9.3 Teaching Devices + Simplify-When, 9.4 Micro-vs-Full Decision, 9.5 Handoff, 9.6 Trigger Standard |
 
 **Mirror rule:** role file is authoritative. If a sops/ file diverges from the role file's Section 9, the role file wins and the mirror must be regenerated immediately. Never edit the sops/ file directly.
 

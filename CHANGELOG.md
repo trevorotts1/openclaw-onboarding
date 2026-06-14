@@ -1,3 +1,28 @@
+## [v12.7.0] - 2026-06-14 - feat: Content-to-Presentation Architect -- turn any source into a presentation brief (Presentations dept ROLE-22)
+
+### Changes
+
+**New fleet-wide Presentations role: Content-to-Presentation Architect (ROLE-22).** A source-ingest specialist that turns ANY owner-supplied source into a build-ready presentation BRIEF for the existing deck pipeline. It does not build slides, write image prompts, choose typography, or score decks -- its single deliverable is the source-derived brief that the Director of Presentations dispatches into the standard build.
+
+- `23-ai-workforce-blueprint/templates/role-library/presentations/content-to-presentation-architect.md` (new): full 19-section role file. Six SOPs:
+  - SOP 9.1 Source Ingestion per Modality -- realistic ingestion path per source: YouTube / Vimeo / any video file and audio training = transcribe (speech-to-text); website / blog post = fetch + main-content extract; PDF / report / white paper = parse the text layer (optical character recognition only for scans). Includes a HARD, NON-SKIPPABLE PRIVACY RULE for Zoom and Google Meet recordings (and any recording of identifiable people): never carry a person's name, face, voice identity, employer, or any identifying detail into any output; extract the lessons and big points only; sets `privacy_redaction_applied: true`.
+  - SOP 9.2 Analysis + Hook Main-Theme + Teaching Arc -- extract major points, find the single main theme via hook analysis (the line the source repeats / opens and closes on), build a numbered step-by-step teaching arc (one big idea per step, each earning the next), and flag claims needing external proof for ROLE-04 (no open-web search here).
+  - SOP 9.3 Teaching Devices + Simplify-When -- defines ANALOGY (mechanism), METAPHOR (stakes), MNEMONIC (recall) with a choosing rule and a generic worked example of each; defines the simplify-when trigger (jargon / multi-idea sentences / bloated points / dense docs for a non-specialist audience) and preserves the original in `source_excerpt`.
+  - SOP 9.4 Micro-vs-Full Decision -- concrete criteria (distinct major-point count, source length/depth, intended use) with the owner's stated use winning on conflict; borderline defaults to MICRO with a flag.
+  - SOP 9.5 Handoff -- writes `source_brief.json` (theme / hook seeds / teaching arc / micro-vs-full / proof flags / privacy flag), maps it onto the Director's `deck_brief.json`, and explicitly routes the audience/representation/style capture to the Brainstorming Buddy SOP 9.0 (never invents an audience default).
+  - SOP 9.6 Trigger Standard -- the owner trigger phrases ("turn this <video|Vimeo|blog|PDF|report|white paper|audio|Zoom|Google Meet|link> into a presentation") and the flow from trigger to finished deck; disambiguates from the Brainstorming Buddy (source present -> here; idea only -> Buddy).
+  - Nine quality gates, including a hard-zero privacy gate, no-audience-defaults gate, and a no-duplicated-web-research gate (does not overlap the Deep Research Specialist).
+
+- `23-ai-workforce-blueprint/templates/role-library/presentations/sops/content-to-presentation-architect-sops.md` (new): Section 9 mirror with purpose, hard rule, enforcement check, generic pass/fail examples, and escalation per SOP.
+
+- `23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md` (v1.7 -> v1.8): roster now 22 roles; added ROLE-22 to the roster table, a Step -2 source-ingest front door to the pipeline sequence, and the SOP mirror index row.
+
+- `23-ai-workforce-blueprint/templates/role-library/_index.json`: registered the role (departments.presentations.count 21 -> 22, roles[] entry added); version 12.6.1 -> 12.7.0. NOTE: the index `total_roles` / per-department sums / `roles[]` length already do not reconcile across the in-flight presentation branches; this change increments only the net-new role and defers the full reconcile to merge with the sibling presentation branch.
+
+- `version`: v12.6.1 -> v12.7.0.
+
+**Generic, fleet-wide:** zero client names anywhere in the new files. Privacy rule is enforceable (flag + gate), not merely described.
+
 ## [v12.6.1] - 2026-06-14 - fix: bound onboarding-resume cron -- hard cap + self-delete, no perpetual token furnace
 
 ### Changes
