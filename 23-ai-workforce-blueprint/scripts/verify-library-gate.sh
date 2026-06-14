@@ -25,7 +25,7 @@
 # verdict requires every dept to meet its canonical role count — not the old
 # "stubs==0 AND avg>0" rule that accepted empty/thin builds.
 #
-# Why this exists: last night (Kofi/Teresa/Evelyn/Maria/Lyric) several workforces
+# Why this exists: last night several workforces
 # were scaffolded — department folders + role folders existed — but the role
 # library was never pulled into the how-to.md files AND the SOP placeholders were
 # never authored. The build still reported "done" because nothing GATED on those
@@ -112,7 +112,7 @@ fi
 # v10.15.18 SUBSTANCE GATE. The old SOP rule (stubs==0 AND avg_sop_per_role>0)
 # accepted empty/thin builds: a role with ZERO SOPs passed as long as the dept
 # average was >0, and a 1 KB hollow SOP with the placeholder string deleted
-# counted as done. That is the Maria-thin / Evelyn-stub / Sheila-empty bug.
+# counted as done. That is the thin-file / stub-file / empty-file bug.
 #
 # New rule — a dept's SOP library is done ONLY when:
 #   * roles_below_min_sops == 0  (EVERY role has >= its floor of SUBSTANTIVE

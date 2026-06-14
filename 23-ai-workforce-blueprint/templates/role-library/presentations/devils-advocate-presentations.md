@@ -293,7 +293,7 @@ The DA's hook count is performed independently (not just reading hook_variants.j
 ## 13. Good Output Examples
 
 ### Example A -- Doctrine Point 12 (Who Says So / no fabricated proof) BLOCKING FLAG
-"Doctrine Point 12: Who says so other than you -- proof named, located, sourced. STATUS: FLAG (HIGH, BLOCKING). Slide 31 cites 'Maria, Austin, closed $24,000 in 30 days,' but proof_audit.txt has no source for this testimonial and intake PROOF_ASSETS lists no Maria. This is fabricated proof (master point 12 + Section 3.2 no-fabrication rule). Fix: replace with a sourced, named, located testimonial from the client's records, or mark the slide [CLIENT TO SUPPLY] and restructure without the claim. RUN BLOCKED: deck cannot advance to Phase 1A until the Director resolves this."
+"Doctrine Point 12: Who says so other than you -- proof named, located, sourced. STATUS: FLAG (HIGH, BLOCKING). Slide 31 cites 'Renata, Austin, closed $24,000 in 30 days,' but proof_audit.txt has no source for this testimonial and intake PROOF_ASSETS lists no Renata. This is fabricated proof (master point 12 + Section 3.2 no-fabrication rule). Fix: replace with a sourced, named, located testimonial from the client's records, or mark the slide [CLIENT TO SUPPLY] and restructure without the claim. RUN BLOCKED: deck cannot advance to Phase 1A until the Director resolves this."
 
 ### Example B -- Doctrine Point 1 (Hook Doctrine, sings >= 7 times) PASS
 "Doctrine Point 1: The Hook Doctrine -- hook sings >= 7 times. STATUS: PASS. Independent count: 9 hook appearances across slides 1, 8, 18, 27, 39, 47, 56, 67, 74. First occurrence at slide 1 (inside the first 15%). Dedicated A4 hook slide present at slide 18. Distribution is even across all sections, and the close (slide 74) reprises it."

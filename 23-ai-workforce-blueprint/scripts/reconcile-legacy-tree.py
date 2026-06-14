@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """reconcile-legacy-tree.py - v10.15.5 (Mac) / v10.16.5 (VPS)
 
-Closes the Angeleen pattern: a workforce was built (or hand-curated) at a
+Closes the legacy-tree pattern: a workforce was built (or hand-curated) at a
 legacy path like /data/clawd/departments/ or ~/clawd/departments/ but the
 active workspace lives at $OC_ROOT/workspace/departments/ (or the per-company
 ZHC path). Agents read from the active workspace and see stubs or nothing;
