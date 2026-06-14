@@ -1,3 +1,15 @@
+## [v12.4.2] - 2026-06-14 - feat: ZHC interview redesign + reconciliation engine + auto-closeout (Skills 23 + 37)
+
+### Changes
+
+Interview redesign, reconciliation engine, and auto-closeout readiness wiring for the ZHC workflow (Skills 23 and 37). Feature code was already present on the branch (context-ingest.py, qc-interview-completion.py, department-floor.py, reconcile-legacy-tree.py, closeout-readiness-watchdog.sh, run-closeout.sh, etc.); this version bump satisfies the G3 skill-content-change gate.
+
+- Skill 23 (ai-workforce-blueprint): interview redesign + reconciliation engine scripts; skill-version.txt 12.4.1 -> 12.4.2.
+- Skill 37 (zhc-closeout): run-closeout.sh update; skill-version.txt 12.3.12 -> 12.4.2.
+- All 9 version markers and cc-compat.json onboardingVersion bumped 12.4.1 -> 12.4.2.
+
+---
+
 ## [v12.4.1] - 2026-06-14 - feat: ROLE-16 The Healer (Presentations) built to full spec; deferral cleared
 
 ### Changes

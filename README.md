@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v12.4.1.
+> **Version:** see `/version` - this repo at v12.4.2.
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
 >
 > **NOTE (v12.3.12) — feat: DIU full role set — 13 graphics specialists registered.** Eight remaining Design Intelligence Unit specialist roles (design-producer, style-librarian, likeness-rights-officer, render-dispatcher, asset-provenance-librarian, style-steward, brand-systems-specialist, motion-systems-specialist) added to `_index.json` + ROLE-- files shipped. Graphics dept count 23 → 31, total_roles 323 → 331. All 26 SOP-DIU files present; SOP-DIU id uniqueness verified. See [CHANGELOG.md](CHANGELOG.md).
@@ -18,7 +18,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v12.4.1** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v12.4.2** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
