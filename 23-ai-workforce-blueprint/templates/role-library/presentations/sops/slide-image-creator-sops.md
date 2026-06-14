@@ -27,8 +27,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    1. **FORMAT**: "Create a 16:9 presentation slide image at 2K resolution (2560x1440 pixels)."
    2. **BACKGROUND**: "White base background. [Brand accent color] used only as accent elements (no more than 20% of the visual area)."
    3. **HEADLINE VERBATIM**: "The slide headline reads exactly: '[HEADLINE from slides_copy.md]'. This text is the primary typographic element. Place it in [position per thirds grid]."
-   4. **TYPOGRAPHY**: "[Font name from STYLE BLOCK] for headlines. [Font name] for body text. Type is [size guidance based on slide section -- e.g., large 60-80pt for hero slides, 40-50pt for content slides]."
-   5. **FONT PLACEMENT**: "Headline text is anchored [top-left / center / bottom-left per thirds grid]. Body text [if any] is below the headline with [spacing guidance]. No text appears within 5% of any edge."
+   4. **TYPOGRAPHY (carry the full TYPOGRAPHY LAW from the STYLE BLOCK, SOP 9.4 of the Brand Steward; designed type, never basic):** "One typeface family ([family from STYLE BLOCK -- default Montserrat]); hierarchy by WEIGHT, never by mixing typefaces. Headlines and giant numbers in [family] Black; sub-headlines and body beats in [family] ExtraBold; gold all-caps letter-spaced kicker labels in [family] Bold; section labels and subheads in [family] SemiBold; tertiary breathing lines in [family] Medium italic; footnotes in [family] Regular. Every text line in this prompt declares its exact weight AND a large pt size relative to slide height: giant numbers 110-150pt, hero 2-line headline 62-86pt, secondary headline 42-62pt, sub-headline 24-32pt, body beat 17-22pt, tertiary italic 16-19pt, kicker label ~13pt, footnote 11-13pt. The typography is DESIGNED INTO the image as part of the composition (text baked into the pixels as rendered designed type), not a basic font dropped on top. Basic or default fonts (Calibri, Arial, Times, system default) are forbidden." Never write a font name without an accompanying weight and large pt size; "Montserrat Bold" with no size is insufficient.
+   5. **FONT PLACEMENT (the canonical hierarchy stack):** "Text reads top to bottom in the canonical stack: gold all-caps letter-spaced kicker label -> thin gold breathing rule -> massive charcoal Black 2-line headline (dominates the zone, the first thing the eye reads) -> raspberry/Secondary ExtraBold sub-headline -> a second thin gold rule (premium paired-rule framing around the core message) -> charcoal body beat -> italic tertiary breathing line -> logo chip bottom-right. Headline text is anchored [top-left / center / bottom-left per thirds grid]. No text appears within 5% of any edge." Not every slide uses every rung, but the order is fixed; the giant charcoal Black headline always dominates."
    6. **THIRDS GRID**: "Using the rule of thirds: primary visual element in [upper-right / lower-left / center-right] region. Text occupies [upper-left / center-left] region. This creates clear visual tension and hierarchy."
    7. **OBJECT PLACEMENT**: "[Specific objects: product images, icons, diagrams, charts] placed in [specific region]. Objects must not overlap the headline text."
    8. **OVERLAYS**: "[If this slide has a hook text overlay per hook_variants.json]: A translucent [brand color] strip runs [horizontally / diagonally] at the bottom third of the image. White text on the strip reads: '[HOOK VARIANT TEXT]'. [If no overlay]: No text overlays other than the headline."
@@ -40,9 +40,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
       - **WORLD ENGINE (real-world knowledge):** the SETTING matches the industry and the moment. Where would this person actually be: their office, the kitchen table at dinner, the empty classroom at 6am? Every people-slide prompt STATES the real-world setting AND justifies why it fits the slide's one idea. Pull the setting from the Lighting + World Library (SOP 9.3 strengthening pack). A generic studio backdrop where a real-world scene belongs is a defect and an auto-fail. The World Engine is also where GROUNDING lives: the scene, props, and moment must depict a concrete moment from THIS client's method (the GROUNDED_CONTENT variable: their book, message, offer, or methodology), not a generic stand-in. Stock-generic imagery that depicts no concrete moment from the client's actual method is an auto-fail at the image-grounding gate (QC final-deck grounding criterion). Carry GROUNDED_CONTENT into both the photo brief and the object placement so the slide shows the client's real thing, not an interchangeable stock scene.
       - **SHOT layer (taxonomy beneath the engines, not a replacement for them):** under the three engines, also pick the shot framing for the person. Engine A (Single Subject): one person, full-body or three-quarter shot. Engine B (Audience Group): a small group of 2 to 4 people, natural energy, not a posed stock photo. Engine C (Presenter / Speaker): one person presenting or teaching, confident posture, reads as a knowledgeable guide not a salesperson. The shot layer answers "how is the person framed"; the three engines above answer "what does the person feel, who are they, and where are they". Both layers must be present on a people-slide."
    12. **BULLETS** (if slide has bullet points): "Body text bullets are short, no full sentences. Each bullet is max 5 words. Bullets appear as [dot / dash / icon] markers."
-   13. **MOOD**: "[Emotional tone for this slide: e.g., aspirational, urgent, celebratory, authoritative]. The visual energy should feel [descriptor] to [target audience descriptor from intake.json]."
-   14. **PROFESSIONALISM**: "Production quality: magazine-grade photography or polished digital illustration. No amateur stock photo aesthetic. No watermarks. No blur. Sharp focus on the human subject if people are present."
-   15. **CLOSING CONSTRAINTS (AVOID BLOCK)**: "AVOID: dark backgrounds, shadowed images, grainy textures, busy patterns, more than 3 colors, any watermark, any em dash, any text not specified in this prompt, image elements that extend into the border zone."
+   13. **MOOD (one felt beat per slide -- SEE):** "[Emotional tone for this slide: e.g., aspirational, urgent, celebratory, authoritative]. This slide carries its OWN felt emotional moment (a Significant Emotional Experience), readable in 2 seconds without narration. The visual energy should feel [descriptor] to [target audience descriptor from intake.json]."
+   14. **PROFESSIONALISM (the standalone-art gate, SOP 9.6):** "Production quality: this slide must read as a finished, gallery-grade STANDALONE PIECE OF ART, complete on its own with no other slide for context. Intentional art direction (focal hierarchy, negative space, depth of field), premium lifestyle-documentary photography (never stock, clipart, or cartoon), directional warm lighting, a clear hero subject, and the large creative typography composed INTO the image as part of the composition (not pasted on top). Magazine-grade. No amateur stock photo aesthetic. No watermarks. No blur. Sharp focus on the human subject if people are present. This image is one you could frame and hang. A slide that is 'just a background with text' is a defect." A composition that only works as part of the sequence fails the standalone test.
+   15. **CLOSING CONSTRAINTS (AVOID BLOCK)**: "AVOID: dark backgrounds, pure black backgrounds, shadowed images, grainy textures, busy patterns, more than 3 colors, any watermark, any em dash, any text not specified in this prompt, image elements that extend into the border zone, basic or default fonts (Calibri, Arial, Times, system default), any text rendered without a designed weight and large size, a flat type treatment with no hierarchy, and any 'background with text dropped on top' that fails the standalone-art test."
 3. Verify character count of the completed prompt. Target: 5,000-7,500 characters. Minimum: 1,500. Maximum: 15,000. If under 1,500, the prompt is too sparse -- expand the MOOD, PEOPLE, and OBJECT PLACEMENT elements. If over 15,000, trim the AVOID block and MOOD sections.
 4. Verify: is the HEADLINE VERBATIM text exactly as it appears in slides_copy.md? Copy-paste, do not paraphrase.
 5. Verify: no em dashes in the prompt. (The word "em-dash" or "--" in the AVOID block is acceptable as a prohibition, not a usage.)
@@ -53,6 +53,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    c. No em dashes.
    d. No dark backgrounds (unless DARK_OK flag is set).
    e. Grounding: every image depicts a concrete moment from THIS client's method (the GROUNDED_CONTENT variable), not a generic stock scene. A slide whose imagery is interchangeable with any other brand fails the image-grounding gate at QC.
+   f. TYPOGRAPHY LAW (SOP 9.6 / brand-steward SOP 9.4): every text line names its exact weight AND a large pt size; the one-family weight map is honored (Black for headlines and giant numbers, ExtraBold for subs and body beats, Bold for gold caps labels); the prompt states the type is designed INTO the image. No prompt names a basic or default font (Calibri, Arial, Times, system default) and none names a font with no per-line size. Any such prompt is an AUTO-FAIL.
+   g. STANDALONE ART (SOP 9.6): every prompt directs a finished gallery-grade standalone composition (art direction + hero subject + typography composed into the image + its own felt emotional beat). No prompt produces "just a background with text". A slide that would only work as part of the sequence fails the standalone-art gate.
 
 **Outputs:**
 - working/prompts/slide-NN-prompt.txt (one file per slide, zero-padded)
@@ -159,13 +161,19 @@ The proven QC-9.42 deck was built on exactly FIVE layout archetypes, rotated acr
 ```
 
 **Recurring brand devices (the proven deck's visual grammar, specify them explicitly in every prompt):**
-- Kicker label: small all-caps letter-spaced label in gold or pink above the headline, with a short gold rule beneath it.
-- Gold 3px full-width rule as the divider between photo and type zones.
+- Giant numbers as the hero: dollar figures and stats rendered 110-150pt in the heaviest weight (Black), 1.5x to 3x the size of surrounding text, the hero of the data zone; rendered in the "liquid gold" gradient or the accent with a glow.
+- Kicker label: small all-caps letter-spaced label (~13pt, Bold) in gold or pink above the headline, with a short gold rule beneath it.
+- Gold rules framing the message: thin gold rules above and below the core message (premium paired-rule framing); a 3px full-width gold rule as the divider between photo and type zones.
+- Drawn strikes on superseded prices: old prices struck with a single clean DRAWN line in the brand accent (double-thickness, a drawn object, never a font strikethrough or a diagonal scribble), per SOP 9.5; the anchor price is NOT struck.
+- Two-line tight dominating headlines: headlines set as two short, tightly-stacked lines that fill and dominate the zone.
+- Single-word color swaps for emphasis: inside a charcoal headline, one or two words switch to raspberry or gold for emphasis.
 - Color roles: gold = money, value, and dividers; pink/accent = action, emphasis words, and urgency; charcoal = headlines (never pure black backgrounds).
 - Price tag motif: drops are rendered as a large white hang-tag shape with a gold border; old prices struck through with a DRAWN line in the brand accent (SOP 9.5); the new price glowing in accent at the bottom of the tag.
 - Section progress labels on section-opener slides ("SECTION 3 OF 7", "SECRET #1" in a filled accent banner box).
-- Logo on a white chip (~9% of slide width, subtle 1px gold border) in the same corner on every slide.
+- White scrim gradients over full-bleed photos: a soft white-to-transparent gradient (never a black box) so charcoal text reads over the imagery.
+- Logo on a white chip (~9% of slide width, subtle 1px gold border) in the same corner on every slide, never recolored, never distorted, never clipped.
 - Compliance line: any results/income claim slide carries a small italic disclaimer in the lower margin.
+- Text baked INTO the image as designed typography: because the deck ships as rendered images, the typography is generated by the image model from the exact font weight, size, and color spec, then composed over the photography. Every prompt declares the weights and hexes explicitly; a slide theme font does nothing.
 
 **FALLBACK slide-type table (use ONLY when a slide does not map cleanly to one of the five archetypes; pick the nearest archetype after using this to reason about composition):**
 
@@ -350,3 +358,41 @@ Rules:
 
 ---
 
+### SOP 9.6 -- Designed-Typography and Standalone-Art Enforcement (every prompt)
+
+**When to run:** Within SOP 9.1, on every prompt, as a final composition check before handoff to Phase 3 QC. This SOP carries the Brand Steward's TYPOGRAPHY LAW (brand-steward SOP 9.4) and the core design principle that each slide is a standalone piece of art into the prompt.
+
+**Inputs:**
+- The completed prompt for the slide
+- The TYPOGRAPHY LAW from the STYLE BLOCK (the weight map, the size scale, the hierarchy stack, the palette, the zero-black-background rule)
+
+**Part A -- DESIGNED TYPOGRAPHY (never basic, never default):**
+1. Every text line in the prompt names its exact font WEIGHT and a large pt SIZE relative to slide height. "Montserrat Black, approximately 78-86pt" is correct; "Montserrat Bold" with no size is insufficient; "a clean sans-serif" or any unnamed/default font is a defect.
+2. The one-family weight map is honored: headlines and giant numbers in the heaviest weight (Black); sub-headlines, body beats, and before/after stats in ExtraBold; gold all-caps letter-spaced kicker labels in Bold; section labels and subheads in SemiBold; tertiary breathing lines in Medium italic; footnotes in Regular. Hierarchy is created by weight, never by mixing typefaces.
+3. The size scale is applied: giant numbers 110-150pt, hero 2-line headline 62-86pt, secondary headline 42-62pt, sub-headline 24-32pt, body beat 17-22pt, tertiary italic 16-19pt, kicker label ~13pt, footnote 11-13pt.
+4. The canonical hierarchy stack is present in element 5 (gold caps label -> gold rule -> charcoal Black 2-line headline -> Secondary ExtraBold sub -> gold rule -> body beat -> italic tertiary -> logo chip).
+5. The creative devices are specified where they apply: giant numbers as the hero, paired gold rules, drawn strikes on superseded prices, two-line tight dominating headlines, single-word color swaps, white scrim gradients over full-bleed photos.
+6. The prompt states the typography is DESIGNED INTO the image (baked into the pixels as rendered designed type), and explicitly forbids basic or default fonts in the AVOID block.
+7. BASIC OR DEFAULT FONTS = AUTO-FAIL: a prompt that names a basic or platform-default typeface (Calibri, Arial, Times, system default), or that names any font with no per-line weight and large pt size, is an AUTO-FAIL at prompt QC.
+
+**Part B -- EACH SLIDE IS A STANDALONE PIECE OF ART:**
+1. Standalone test: pull THIS slide out of the deck with no other slide for context. The prompt must direct an image that still reads as a deliberate, beautiful, finished piece of visual art on its own. A composition that only works as part of a sequence FAILS.
+2. The prompt directs intentional art direction (focal hierarchy, negative space, depth of field), premium lifestyle-documentary photography (never stock, clipart, or cartoon), directional warm lighting, and a clear hero subject.
+3. The large creative typography is composed INTO the image as part of the composition, not pasted on top.
+4. The slide carries its OWN felt emotional beat (a Significant Emotional Experience), readable in 2 seconds without narration.
+5. The image is gallery-grade: the photo + the large Montserrat-Black typography + the brand palette + the gold rules compose one image you could frame and hang.
+6. "JUST A BACKGROUND WITH TEXT" = AUTO-FAIL. A prompt that produces a generic background with text dropped on it, with no art direction and no standalone composition, is an AUTO-FAIL at prompt and image QC.
+
+**Steps:**
+1. Run Part A on every prompt; fix any line that lacks an exact weight and large pt size before handoff.
+2. Run Part B on every prompt; if the prompt would produce "just a background with text," rebuild the composition (art direction, hero subject, typography composed in, the felt beat) before handoff.
+3. Record in the prompt's self-check (SOP 9.1 step 7 items f and g) that both parts pass.
+
+**Outputs:**
+- Every prompt carrying designed typography (exact weights + large pt sizes + hierarchy + creative devices + text-baked-in) and directing a standalone gallery-grade art piece
+
+**Hand to:** QC Specialist -- Presentations (the typography AUTO-FAIL and the standalone-art AUTO-FAIL are scored at Phase 3 prompt QC and re-verified at Phase 5 image QC)
+
+**Failure mode:** If a prompt cannot be made to carry designed typography (e.g., the STYLE BLOCK shipped without the TYPOGRAPHY LAW), halt and flag the Brand Steward and Director: "Phase 2 blocked -- STYLE BLOCK is missing the TYPOGRAPHY LAW; prompts will default to basic fonts and auto-fail." Never default to a basic font to keep moving.
+
+---

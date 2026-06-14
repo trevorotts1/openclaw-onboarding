@@ -19,11 +19,12 @@ The following conditions each independently force an immediate FAIL verdict on t
 | Code | Auto-Fail Condition |
 |------|---------------------|
 | AF-C1 | Any em dash in any field of any slide. The em dash is the dead giveaway of unedited AI output. |
-| AF-C2 | Hook count below 7 across the deck (mechanical count; count every tagged HOOK_REFRAIN occurrence and the dedicated hook slide). Fewer than 7 = auto-fail. |
+| AF-C2 | Hook (the refrain) count below 7 across the deck (mechanical count; count every tagged HOOK_REFRAIN occurrence and the dedicated hook slide). Fewer than 7 = auto-fail. The DOCTRINE is approximately 10x, sung from the first verse and woven slide to slide (the Purple Rain rule); 7 is the floor, not the target. A hook sung only on slide 1 and the last slide (no weaving through the sections), OR a first occurrence later than the first 15% of the deck (delayed to the middle or the close), is also an AF-C2 auto-fail even if the raw count clears 7. |
 | AF-C3 | Any fabricated proof or statistic not traceable to intake.json or proof_audit.txt. A number not present in the intake or research brief = auto-fail on that slide. |
 | AF-C4 | Any cross-slide numeric mismatch (e.g., stack total stated as $5,282 on one slide and $5,276 on another). Defer the Offer Strategist mechanics to SOP 9.3, but a FAIL there blocks this gate. The QC agent compiles all repeated numbers and diffs them; any mismatch auto-fails all slides carrying the inconsistent value. |
 | AF-C5 | Headline over 9 words (mechanical word count; count is exact). |
 | AF-C6 | Multi-idea slide. The operator's rule is "one big idea per slide; a multi-idea slide FAILS." A slide that makes more than one point is an automatic FAIL, not a deduction. Signal: more than 3 text blocks, or copy that needs a second point to make sense. Split it and re-QC. |
+| AF-C7 | GRADUAL-drop choreography violation (the STACKED FAILURE). The price drops are NOT spread across the deck: the ANCHOR is treated as a drop instead of a value plant, OR the drops are stacked back-to-back in the close (e.g., DROP1, DROP2, and DROP3 all fall after ~80% of the deck) instead of spread at ~47% / ~68% / ~87%, OR any drop strips value to justify the lower price instead of ADDING value (the red rule: the lower the price, the greater the value), OR a drop has no earned reason, OR a drop has no emotional BUILDUP slide immediately before it, OR the FINAL real price does not sit below the entire ladder. Any one of these is a doctrine violation and an auto-fail on the offer/ladder slides. (Cross-checked against price_ladder.json and the Offer and Price Strategist Gate 10.) |
 
 #### Prompt QC Auto-Fails (SOP 9.2)
 
@@ -40,6 +41,8 @@ Check these before scoring. Each independently forces FAIL on the affected promp
 | AF-P7 | People are present in the slide spec but the prompt is missing any of: hair description, clothing description, or facial expression description. All three are required when people appear. |
 | AF-P8 | Missing AVOID block (the closing constraints block listing negatives is mandatory in every prompt). |
 | AF-P9 | Image-grounding failure (P6, BLOCKING): the prompt for a people-slide or scene-slide does NOT depict a concrete moment from THIS client's method, book, message, or offer (the GROUNDED_CONTENT variable carried in the brief). A prompt describing a generic, interchangeable scene that could belong to any business, when the brief named a specific grounded moment, = auto-fail. ("A confident woman at a desk" is generic; "the founder reviewing the {{CLIENT_METHOD}} 5-step intake dashboard at the kitchen table at 6am" is grounded.) |
+| AF-P10 | Basic / default / undesigned TYPOGRAPHY (the TYPOGRAPHY LAW, brand-steward SOP 9.4 + slide-image-creator SOP 9.6 Part A). Any of the following on a prompt is an auto-fail: it names a basic or platform-default typeface (Calibri, Arial, Times, "a clean sans-serif," or any system default); OR it names a font with NO per-line weight and large pt size (e.g. "Montserrat Bold" with no size); OR it does not honor the one-family weight map (headlines and giant numbers in the heaviest weight, e.g. Montserrat Black; subs and body beats in ExtraBold; gold all-caps kicker labels in Bold); OR it lacks the size scale (giant numbers 110-150pt, hero headline 62-86pt, kicker ~13pt); OR it has no designed hierarchy (no dominating charcoal Black 2-line headline, no size contrast). Designed typography is mandatory; basic or default fonts are the documented failure mode. |
+| AF-P11 | Standalone-art failure (the core design principle, slide-image-creator SOP 9.6 Part B). The prompt produces "just a background with text": a generic background image with copy dropped on top, with no intentional art direction, no clear hero subject, no composition, and the typography pasted on rather than composed INTO the image. A prompt whose result would only read as part of a sequence (it does not stand alone as a deliberate, gallery-grade art piece with its own felt emotional beat) = auto-fail. Each slide must be a finished standalone piece of art. |
 
 #### Image QC Auto-Fails (SOP 9.3)
 
@@ -55,6 +58,8 @@ Check these before scoring. Each independently forces FAIL on the affected image
 | AF-I6 | Emoji or clipart glyphs rendered anywhere in the image. Premium decks use photography and typography only. |
 | AF-I7 | An em dash rendered in slide text. |
 | AF-I8 | Image-grounding failure (P6, BLOCKING): a people-slide or scene-slide image that does NOT depict a concrete moment from THIS client's method, book, message, or offer (the GROUNDED_CONTENT variable). A generic stock-style scene that could belong to any business when the brief named a specific grounded moment = auto-fail. Grounding is scored at prompt QC (AF-P9) and re-verified here against the rendered image. |
+| AF-I9 | Basic / default / undesigned TYPOGRAPHY rendered in the image (the TYPOGRAPHY LAW). The rendered text reads as a basic or default font (Calibri/Arial/Times/system-default look) rather than the designed weight-mapped system; OR there is no type hierarchy (no dominating heavy-weight charcoal headline, no giant number at 1.5x-3x surrounding text where the brief calls for one, no gold caps kicker); OR a headline renders in pure black on the base instead of charcoal. The image must show DESIGNED typography composed into the picture. This is the prompt-side AF-P10 re-verified against the rendered image. |
+| AF-I10 | Standalone-art failure rendered in the image (the core design principle). The rendered slide is "just a background with text": a generic background with copy dropped on top, no intentional art direction, no clear hero subject, the typography pasted on rather than composed into the image, and no felt emotional beat. Pull the slide out alone: if it does not read as a deliberate, gallery-grade piece of visual art on its own, it auto-fails. This is the prompt-side AF-P11 re-verified against the rendered image. |
 
 #### Deck-Wide Representation Auto-Fails (SOP 9.3 + SOP 9.5 -- the casting tally, P5)
 
@@ -93,7 +98,7 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 - working/copy/intake.json (for comparison on proof claims and prices)
 
 **Steps:**
-1. For every slide, check ALL six Copy QC Auto-Fails (AF-C1 through AF-C6) BEFORE scoring. Record each triggered auto-fail by code in the report. A slide with any auto-fail is marked FAIL immediately. AF-C6 (multi-idea slide) is mechanical: one big idea per slide; a slide that makes more than one point auto-fails.
+1. For every slide, check ALL seven Copy QC Auto-Fails (AF-C1 through AF-C7) BEFORE scoring. Record each triggered auto-fail by code in the report. A slide with any auto-fail is marked FAIL immediately. AF-C2 (the hook/refrain) is the Purple Rain doctrine check: the refrain is approximately 10x (floor 7), sung from the first verse (inside the first 15%) and woven slide to slide through every section, never only on slide 1 and the close. AF-C6 (multi-idea slide) is mechanical: one big idea per slide; a slide that makes more than one point auto-fails. AF-C7 (gradual-drop choreography) is the spread-not-stacked check against price_ladder.json: anchor is a value plant not a drop, drops spread at ~47/68/87% (not bunched in the close), every drop earned and built up and ADDS value (never strips it), FINAL below the entire ladder.
 2. Dispatch 3-5 QC agents (minimax-m3:cloud) each independently scoring slides_copy.md on all 22 criteria. Each agent returns a score per criterion per slide.
 3. Average the agent scores for each criterion across all slides. Compute the overall average.
 4. Apply double-weight to criteria 1, 2, 7, 11, 12, and 15 (these are the most critical -- see criteria list below).
@@ -118,7 +123,7 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 9. Increment `loop_count` in the report. If loop_count reaches 4 without a pass: escalate to the Director with the specific persistent failures.
 
 **The 22 Copy QC Criteria (c1-c22):** (criteria c18-c22 are the operator's named required presentation components per master SOP Section 4.4; each is a presence gate)
-1. (double-weight) Hook appears >= 7 times across the deck, well-distributed (not clustered).
+1. (double-weight) Hook (the refrain) appears >= 7 times across the deck (the doctrine is approximately 10x), sung from the FIRST verse (first occurrence inside the first 15%) and WOVEN slide to slide through every section, well-distributed (not clustered, not only on slide 1 and the close, never more than 2 consecutive ladder/close slides without the hook nearby), a dedicated A4 hook slide present, and a reprise on the final substantive slide. A count of 7 or 8 with sections lacking a refrain scores below the floor (the Purple Rain rule: sing it the whole way through).
 2. (double-weight) Every headline is 9 words or fewer. Count is exact.
 3. Every subhead is 18 words or fewer.
 4. Body copy is 3 bullets max or 30 words max per slide.
@@ -174,17 +179,17 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 - working/copy/price_ladder.json (for price-drop slide verification)
 
 **Steps:**
-1. For every prompt, check ALL nine Prompt QC Auto-Fails (AF-P1 through AF-P9) BEFORE scoring. Check 0 (character count) is always first: count mechanically and record the exact integer in the report. AF-P9 (image-grounding) is a BLOCKING check: a prompt that does not depict a concrete moment from THIS client's method fails before scoring. A prompt with any auto-fail is marked FAIL immediately; record the code(s).
-2. Dispatch 5-10 QC agents (minimax-m3:cloud) in parallel. Each agent independently scores each prompt on all 16 criteria.
+1. For every prompt, check ALL eleven Prompt QC Auto-Fails (AF-P1 through AF-P11) BEFORE scoring. Check 0 (character count) is always first: count mechanically and record the exact integer in the report. AF-P9 (image-grounding), AF-P10 (designed typography), and AF-P11 (standalone art) are all BLOCKING checks: a prompt that does not depict a concrete moment from THIS client's method, OR uses a basic/default/undesigned font, OR produces "just a background with text," fails before scoring. A prompt with any auto-fail is marked FAIL immediately; record the code(s).
+2. Dispatch 5-10 QC agents (minimax-m3:cloud) in parallel. Each agent independently scores each prompt on all 18 criteria.
 3. For each prompt, calculate the per-agent score, then average across all agents.
-4. Apply double-weight to criteria 2, 3, 4, 13, and 16 (the most commonly failing and highest impact; criterion 16 image-grounding is double-weighted because ungrounded imagery is the F3 defect this gate exists to stop).
+4. Apply double-weight to criteria 2, 3, 4, 13, 16, 17, and 18 (the most commonly failing and highest impact; criterion 16 image-grounding is double-weighted because ungrounded imagery is the F3 defect this gate exists to stop; criterion 17 designed-typography and criterion 18 standalone-art are double-weighted because basic fonts and "background with text" are the documented gold-standard failures these gates exist to stop).
 5. Write prompt_qc_report.json. One entry per prompt (one per slide), including the recorded character count and any auto-fail codes.
 6. For any prompt with an auto-fail or scoring < 8.5: write specific revision_instructions. Instructions must specify the failing auto-fail code or criterion and the exact change required.
 7. Identify fail classification for each failing prompt: render-noise (image quality issues likely in generation), prompt-defect (structural problem with the prompt itself), or text-fail (headline text will not render correctly -- mark as text-fail-x2 if two text elements fail).
 8. Pass: overall weighted average >= 8.5, no individual prompt below 7.0, no auto-fails. Fail: otherwise.
 9. Increment loop_count. At loop_count = 4, escalate.
 
-**The 16 Prompt QC Criteria (p1-p16):**
+**The 18 Prompt QC Criteria (p1-p18):**
 1. All 15 elements present in order (format / background / headline verbatim / typography / font placement / thirds / object placement / overlays / brand palette / logo / people / bullets / mood / professionalism / closing constraints).
 2. (double-weight) Headline text is verbatim match to slides_copy.md HEADLINE field (not paraphrased).
 3. (double-weight) Character count is 1,500-15,000. Target 5,000-7,500.
@@ -201,6 +206,8 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 14. Price-drop slides: struck price and new price match price_ladder.json exactly (verify for any slide in the Price Ladder arc section).
 15. Prompt front-loads critical content: composition, people, and headline appear in the first 500 characters.
 16. (double-weight) Image grounding (P6): the prompt depicts a CONCRETE moment from THIS client's method, book, message, or offer (the GROUNDED_CONTENT variable in the brief), not a generic interchangeable scene. The scored question is "does this image depict a concrete moment from THIS client's method?" Beyond the binary AF-P9 floor, this criterion scores HOW grounded the moment is: a prompt that names the specific method step, the specific setting where that step happens, and the specific outcome it produces scores high; a prompt that gestures at the industry generically scores low. This criterion is also evaluated against the rendered image at final-deck QC (SOP 9.5).
+17. (double-weight) Designed typography (the TYPOGRAPHY LAW): beyond the binary AF-P10 floor, this criterion scores HOW well the prompt carries the designed type system. A prompt that names the exact weight AND a large pt size on EVERY text line, honors the one-family weight map (Black for headlines and giant numbers, ExtraBold for subs and body beats, Bold for gold caps labels, Medium italic for tertiary), applies the full size scale (giant numbers 110-150pt, hero headline 62-86pt, kicker ~13pt), lays out the canonical hierarchy stack, and specifies the creative devices (giant numbers, paired gold rules, drawn strikes, single-word color swaps, text baked into the image) scores high; a prompt that names a font with only a partial size hint or a thin hierarchy scores low; a basic or default font is the AF-P10 floor.
+18. (double-weight) Standalone art (the core design principle): beyond the binary AF-P11 floor, this criterion scores HOW well the prompt directs a finished, gallery-grade standalone composition. A prompt with intentional art direction (focal hierarchy, negative space, depth), a clear hero subject, premium lifestyle-documentary photography, the typography composed INTO the image, and its own felt emotional beat (readable in 2 seconds) scores high; a prompt that gestures at a scene with copy on top scores low; "just a background with text" is the AF-P11 floor. The scored question is "would this single slide, pulled out alone, read as a deliberate piece of visual art?" Re-evaluated against the rendered image at Phase 5 and final-deck QC.
 
 **Outputs:**
 - working/qc/prompt_qc_report.json (with per-prompt character counts, auto-fail codes, scores, fail classifications, revision instructions)
@@ -221,10 +228,10 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 - working/copy/slides_copy.md (for visual text verification and slide MOOD/emotion)
 
 **Steps:**
-1. For every image, check ALL eight Image QC Auto-Fails (AF-I1 through AF-I8) BEFORE scoring. A triggered auto-fail immediately marks the image FAIL; record the code(s) in the report. Auto-fail inspection includes: reading every word of rendered text on the slide for misspellings, duplicated words, and garbled glyphs (not just the headline -- all text elements); inspecting hands, faces, and limbs for deformities; verifying aspect ratio; verifying logo presence and integrity when LOGO_ON_SLIDES = true; checking background darkness; scanning for emoji or clipart glyphs; checking rendered text for em dashes; and verifying the image depicts a concrete moment from THIS client's method (AF-I8 grounding, BLOCKING).
+1. For every image, check ALL ten Image QC Auto-Fails (AF-I1 through AF-I10) BEFORE scoring. A triggered auto-fail immediately marks the image FAIL; record the code(s) in the report. Auto-fail inspection includes: reading every word of rendered text on the slide for misspellings, duplicated words, and garbled glyphs (not just the headline -- all text elements); inspecting hands, faces, and limbs for deformities; verifying aspect ratio; verifying logo presence and integrity when LOGO_ON_SLIDES = true; checking background darkness; scanning for emoji or clipart glyphs; checking rendered text for em dashes; verifying the image depicts a concrete moment from THIS client's method (AF-I8 grounding, BLOCKING); verifying the rendered type is the DESIGNED weight-mapped system with real hierarchy and not a basic/default font (AF-I9, BLOCKING); and verifying the slide reads as a finished standalone piece of art and not "just a background with text" (AF-I10, BLOCKING).
 2. Dispatch up to 5 QC agents (minimax-m3:cloud) per batch of images. Each agent scores a non-overlapping batch (e.g., agent 1 handles slides 1-15, agent 2 handles slides 16-30, etc.).
-3. Each agent scores each image on all 15 criteria.
-4. Apply double-weight to criteria 3, 5, 6, 7, and 15 (most critical for the assembled deck; criterion 15 image-grounding is double-weighted).
+3. Each agent scores each image on all 17 criteria.
+4. Apply double-weight to criteria 3, 5, 6, 7, 15, 16, and 17 (most critical for the assembled deck; criterion 15 image-grounding, criterion 16 designed-typography, and criterion 17 standalone-art are all double-weighted, because ungrounded imagery, basic fonts, and "background with text" are the documented gold-standard failures).
 5. Write image_qc_report.json with per-image auto-fail codes and scores.
 5a. **Deck-wide representation tally (P5, AF-R1/AF-R3) -- run ONCE after the full deck's images have all passed per-slide image QC.** Tally every people-slide by its REPRESENTATION_MIX group; compute each group's share of all people-slides; compare to the captured REPRESENTATION_MIX percentages. If any group is outside +/- 10 percentage points, trigger AF-R1 and re-cast the deficient/over-represented slides (bidirectional: fails both under-representation AND mono-casting). If people appear when REPRESENTATION_MIX was never captured, trigger AF-R3 (invented demographic). Record the tally table and verdict in image_qc_report.json under `representation_tally`. The tally is a DECK property, not a slide property: the deck fails even if every individual image passed its own per-slide QC.
 6. For each failing image (auto-fail or score < 8.5): classify the failure type:
@@ -236,10 +243,10 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 9. Maximum 3 total attempts per image. At attempt 4: escalate to the Director.
 10. Passed images are moved to working/media-library/ immediately (do not wait for full deck pass).
 
-**The 15 Image QC Criteria (i1-i15):**
+**The 17 Image QC Criteria (i1-i17):**
 
-AUTO-FAIL LAYER (checked first; see AF-I1 through AF-I8 above plus the deck-wide AF-R1/AF-R3 tally -- these override scoring):
-- i-AF: Any of AF-I1 through AF-I8 triggers a hard FAIL on the image before the scored layer runs; the deck-wide AF-R1/AF-R3 representation tally (step 5a) hard-FAILS the deck regardless of individual image scores.
+AUTO-FAIL LAYER (checked first; see AF-I1 through AF-I10 above plus the deck-wide AF-R1/AF-R3 tally -- these override scoring):
+- i-AF: Any of AF-I1 through AF-I10 triggers a hard FAIL on the image before the scored layer runs; the deck-wide AF-R1/AF-R3 representation tally (step 5a) hard-FAILS the deck regardless of individual image scores.
 
 SCORED LAYER (1-10, applied only after auto-fail check passes):
 1. 16:9 aspect ratio, 2K resolution confirmed.
@@ -257,6 +264,8 @@ SCORED LAYER (1-10, applied only after auto-fail check passes):
 13. Text edges sharp at 2K (headline and all text elements rendered with crisp, high-resolution edges; soft or anti-aliased text = fail).
 14. Mood and energy of the image match the arc section (aspirational for hero slides, urgent for price drops, etc.).
 15. (double-weight) Image grounding (P6): the rendered image depicts a CONCRETE moment from THIS client's method, book, message, or offer, not a generic interchangeable scene. The scored question is "does this image depict a concrete moment from THIS client's method?" An image that renders the specific method moment named in the GROUNDED_CONTENT brief scores high; an image that resolved to a generic stock-style scene scores low. (The binary floor is AF-I8; this criterion scores the degree of grounding above that floor.)
+16. (double-weight) Designed typography (the TYPOGRAPHY LAW): the rendered type reads as the DESIGNED weight-mapped system, not a basic or default font. The scored question is "is this gallery-grade designed typography composed into the image?" An image with a dominating heavy-weight (Black) charcoal headline, real size hierarchy, giant numbers at 1.5x-3x surrounding text where the brief calls for them, gold all-caps letter-spaced kicker labels, and charcoal headlines (never pure black) scores high; an image whose type looks like a basic or default font, or is flat with no hierarchy, scores low. (The binary floor is AF-I9; this criterion scores the degree of designed typography above that floor.)
+17. (double-weight) Standalone art (the core design principle): the rendered slide reads as a finished, gallery-grade piece of visual art that stands on its own. The scored question is "pulled out alone, would this single slide read as a deliberate piece of art?" An image with intentional art direction, a clear hero subject, premium lifestyle-documentary photography, typography composed into the picture, and its own felt emotional beat scores high; an image that is "just a background with text," or that only makes sense as part of the sequence, scores low. (The binary floor is AF-I10; this criterion scores the degree of standalone art above that floor.)
 
 **Outputs:**
 - working/qc/image_qc_report.json (per-image auto-fail codes, scores, classifications, and the deck-wide `representation_tally` table + verdict)
@@ -324,9 +333,11 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
    Record each slide's assert results (collision / contrast / legibility, pass or the failing element) in the report.
 
 2. **Visual re-verification of the per-slide gates on the composed output.** For each rendered page (slide), verify:
-   a. All 15 image QC criteria (including the AF-I1 through AF-I8 auto-fail layer) are still satisfied in the rendered output. Images from Phase 5 that passed should still pass here; if they do not, it indicates an assembly error.
+   a. All 17 image QC criteria (including the AF-I1 through AF-I10 auto-fail layer) are still satisfied in the rendered output. Images from Phase 5 that passed should still pass here; if they do not, it indicates an assembly error.
    b. All 17 copy QC criteria are satisfied in the text overlays and any PPTX-native text elements.
    c. **Image-grounding re-verification (P6, BLOCKING):** AF-I8 / criterion i15 re-checked on the composed slide -- does each people-slide or scene-slide image still depict a concrete moment from THIS client's method? An ungrounded image that slipped through fails here.
+   d. **Designed-typography re-verification (BLOCKING):** AF-I9 / criterion i16 re-checked on the composed slide -- does the rendered type read as the designed weight-mapped system (dominating heavy-weight charcoal headline, real hierarchy, giant numbers at scale, gold caps kickers) and not a basic or default font? A basic-font or flat-hierarchy slide fails here.
+   e. **Standalone-art re-verification (BLOCKING):** AF-I10 / criterion i17 re-checked on the composed slide -- pulled out alone, does the slide read as a finished, gallery-grade piece of art with its own felt beat, not "just a background with text"? A slide that fails the standalone test fails here.
 
 3. **Deck-wide representation tally re-run (P5, AF-R2).** Re-run the step-5a tally on the FINAL assembled deck, because dropped, substituted, or re-cast slides can shift the distribution since Phase 5. If any captured REPRESENTATION_MIX group is outside +/- 10 percentage points = AF-R2 auto-fail on the deck. If people appear with no captured mix = AF-R3. Bidirectional (fails under-representation AND mono-casting); representation overrides skin-tone-quality.
 
@@ -366,7 +377,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
      "score": 0.0,
      "auto_fails_triggered": [],
      "per_slide_asserts": [
-       {"slide": N, "collision": "pass", "contrast": "pass", "legibility": "pass", "overlay_checked": true, "grounding": "pass"}
+       {"slide": N, "collision": "pass", "contrast": "pass", "legibility": "pass", "overlay_checked": true, "grounding": "pass", "designed_typography": "pass", "standalone_art": "pass"}
      ],
      "representation_tally": {"captured_mix": [], "deck_tally": [], "within_10pct": true, "verdict": "pass"},
      "structural_completeness": {"cost_vs_value": true, "emotion_and_logic": true, "light_pitch_distributed": true, "care_first_open": true, "psd": true, "journey_see": true, "old_to_new": true, "teach_themselves": true, "not_over_taught": true, "promise_leads": true, "hook_sings": true, "who_says_so": true, "wall_of_wins": true, "guarantee": true, "scarcity_factor": true, "story_arc": true, "one_big_idea_per_slide": true, "gradual_price_ladder": true},
@@ -375,7 +386,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
      "revision_instructions": []
    }
    ```
-   `pass` is `true` ONLY when: zero AF-F1 through AF-F4 asserts failed, zero AF-R2/AF-R3, zero AF-I8 grounding failures, every structural-completeness item is true (including all ten of the operator's named required presentation components: promise_leads, hook_sings, who_says_so, wall_of_wins, one_big_idea_per_slide, guarantee, scarcity_factor, story_arc, gradual_price_ladder, and the walked checklist-of-promises this artifact represents), AND the visual score is >= 8.5 with no single item below the 7.0 floor.
+   `pass` is `true` ONLY when: zero AF-F1 through AF-F4 asserts failed, zero AF-R2/AF-R3, zero AF-I8 grounding failures, zero AF-I9 designed-typography failures, zero AF-I10 standalone-art failures, every structural-completeness item is true (including all ten of the operator's named required presentation components: promise_leads, hook_sings, who_says_so, wall_of_wins, one_big_idea_per_slide, guarantee, scarcity_factor, story_arc, gradual_price_ladder, and the walked checklist-of-promises this artifact represents), AND the visual score is >= 8.5 with no single item below the 7.0 floor.
 
 7. If pass: notify the Director that Phase 6 is complete and the deck is ready for delivery. The presence of `final_deck_qc.json` with `pass: true` is what unlocks delivery (SOP 9.6).
 8. If fail: write `pass: false`, route specific revision instructions to the PPTX Assembly Specialist (collision/contrast/legibility/order/overlay), the Slide Image Creator (grounding, representation re-cast), or the Slide Copywriter (structural-completeness gaps), and increment loop_count.

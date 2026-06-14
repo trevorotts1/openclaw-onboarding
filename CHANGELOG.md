@@ -1,3 +1,20 @@
+## [v12.4.7] - 2026-06-14 - feat: presentation typography/art/hook/gradual-drop standard + the canonical BlackCEO Signature Webinar Arc, encoded into the master SOP and the Design Intelligence Unit presentation SOPs (Skill 23)
+
+### Changes
+
+Two complementary bodies of presentation work land together. (A) The LYRIC-TYPOGRAPHY-STANDARD encoding (typography law, standalone-art gate, the Purple Rain hook doctrine, and the gradual spread value ladder), carried forward from the presentation-typography-art-hook-standard branch and reconciled both-sides-forward with the 10-named-components work already on main (v12.4.5). (B) The elevation of the proven flow (Section 4.2), the doctrine (Section 4.3), the 10 named components (Section 4.4), the Signature Presentation Theory (SEE, PSD, care-before-credentials, teach-themselves, expertise-over-charisma), and the typography/art standard into ONE named, canonical slide-by-slide arc, distilled from the live teaching transcript (Trevor Otts, 2026-06-11) read end to end. Nothing in the operator's philosophy is changed: the rule is add-on and improve-upon, never change. No build logic.
+
+- `universal-sops/CLIENT-WEBINAR-DECK-SOP.md`: NEW Section 4.2A "THE BLACKCEO SIGNATURE WEBINAR ARC" (ten named arc sections A-J in the operator's revealed order, each mapped to its components, the typography-and-standalone-art standard, the proven section it collapses onto, and its primary QC gate; plus the 12 connective-tissue rules and the three-layers-per-slide bar). This sits alongside Section 4.4 (the 10 required components) and Section 4.3 (the doctrine), tying them into one journey.
+- `presentations/qc-specialist-presentations.md` (v1.2): merged forward the typography/standalone-art/hook/gradual-drop auto-fail gates (AF-P10/AF-I9 designed typography, AF-P11/AF-I10 standalone art, AF-C2 hook doctrine strengthened) with the 10-named-components criteria (c18-c22) already on main. The gradual-drop choreography gate is now AF-C7 (renamed from the branch's AF-C6 to avoid a code collision with the on-main multi-idea AF-C6); all references reconciled to AF-C7. 22 copy criteria retained.
+- `presentations/brand-steward.md` (v1.3), `slide-image-creator.md` (v1.1), `hook-strategist.md` (v1.2): the typography law, designed-typography + standalone-art prompt gates, and the Purple Rain doctrine, carried forward intact.
+- `presentations/offer-price-strategist.md` (v1.1): BOTH the gradual-drop Gate 10 (typography branch) and SOP 9.8 guarantee + scarcity (10-components work on main) retained.
+- `presentations/director-of-presentations.md` (v1.1): SOP 9.4 walks the canonical arc and records arc-section labels; the checklist-of-promises gate from main retained.
+- `presentations/slide-copywriter.md` (v1.1): SOP 9.1 step 1a writes each slide to its arc-section beat and carries the connective tissue.
+- All affected sops/ mirrors regenerated verbatim (Section 9 byte-identical to each role file). Full 19-section structure intact. Zero em dashes in authored content.
+- Skill 23 content changed (skill-version.txt gate G3 satisfied by version bump). Version markers bumped 12.4.6 -> 12.4.7 across all 9 locations plus cc-compat.json onboardingVersion.
+
+---
+
 ## [v12.4.6] - 2026-06-14 - docs: correct stale "missing capability" framing in Custom Authoring + Merge Standard (Skill 23)
 
 ### Changes
