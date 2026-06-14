@@ -31,11 +31,17 @@ falls OUTSIDE the library:
    shipped as a second, duplicate department.
 
 The grounded diagnosis at
-`Downloads/ZHC-INTERVIEW-CLOSEOUT-FIX/diag/02-departments.md` records both gaps
-(capability 2 partial: detect/de-dup exists, true combine/merge missing;
-capabilities 3 and 4 missing as a build decision). This standard closes them at
-the specification level so the build and the closeout gate have a single rule to
-satisfy.
+`Downloads/ZHC-INTERVIEW-CLOSEOUT-FIX/diag/02-departments.md` originally recorded
+both as gaps (capability 2: detect/de-dup existed but true combine/merge did not;
+capabilities 3 and 4 were not a build decision). Those gaps are now CLOSED in
+code, not just at the specification level: the semantic COMBINE/merge executor is
+`apply_semantic_merges()` (`scripts/build-workforce.py`, called in the main build
+flow), the per-department custom-role build decision is `materialize_custom_roles()`,
+and the per-department custom-SOP build decision is `capture_custom_sops()`. This
+standard is the binding QUALITY CONTRACT those three implementations must satisfy
+(authoring rubric, six-field SOP shape, core-merge rule, and the closeout
+acceptance gate in section 6), giving the build and the closeout gate a single rule
+to verify against.
 
 The mission this serves: BlackCEO builds Zero Human Companies that break the
 owner's addiction to labor as the revenue mechanism. A custom role or SOP only
@@ -332,13 +338,17 @@ A custom SOP does not reach `authored` until:
 
 ## 5. CORE-MERGE - layer custom into one core department, never duplicate
 
-This is the combine path the diagnosis flagged as missing
-(`diag/02-departments.md`, capability 2). Detection and de-dup of variant-slugged
-canonical depts already exists (`_canonical_present()`,
-`CANONICAL_VARIANT_SLUGS`, `apply_vertical_packs` skip-on-overlap). What this
-standard adds is the rule for SEMANTIC overlap that those slug maps do not catch
-(e.g. "Accounting" / "Tax" vs canonical Billing and Finance), and the rule for a
-custom ROLE/SOP whose work belongs inside a core department.
+This is the combine path the diagnosis originally flagged as missing
+(`diag/02-departments.md`, capability 2) and which is now IMPLEMENTED by
+`apply_semantic_merges()` in `scripts/build-workforce.py`. Detection and de-dup of
+variant-slugged canonical depts already existed (`_canonical_present()`,
+`CANONICAL_VARIANT_SLUGS`, `apply_vertical_packs` skip-on-overlap); on top of that,
+`detect_semantic_overlaps()` surfaces SEMANTIC overlaps that those slug maps do not
+catch (e.g. "Accounting" / "Tax" vs canonical Billing and Finance), and
+`apply_semantic_merges()` folds an owner-confirmed `merge` decision INTO the one
+canonical survivor (dropping the duplicate standalone). What this standard adds is
+the authoritative RULE those functions enforce, plus the rule for a custom
+ROLE/SOP whose work belongs inside a core department.
 
 ### The semantic-overlap decision
 

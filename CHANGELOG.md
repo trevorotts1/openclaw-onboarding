@@ -1,4 +1,4 @@
-## [v12.4.6] - 2026-06-14 - feat: presentation typography/art/hook/gradual-drop standard + the canonical BlackCEO Signature Webinar Arc, encoded into the master SOP and the Design Intelligence Unit presentation SOPs (Skill 23)
+## [v12.4.7] - 2026-06-14 - feat: presentation typography/art/hook/gradual-drop standard + the canonical BlackCEO Signature Webinar Arc, encoded into the master SOP and the Design Intelligence Unit presentation SOPs (Skill 23)
 
 ### Changes
 
@@ -11,7 +11,19 @@ Two complementary bodies of presentation work land together. (A) The LYRIC-TYPOG
 - `presentations/director-of-presentations.md` (v1.1): SOP 9.4 walks the canonical arc and records arc-section labels; the checklist-of-promises gate from main retained.
 - `presentations/slide-copywriter.md` (v1.1): SOP 9.1 step 1a writes each slide to its arc-section beat and carries the connective tissue.
 - All affected sops/ mirrors regenerated verbatim (Section 9 byte-identical to each role file). Full 19-section structure intact. Zero em dashes in authored content.
-- Skill 23 content changed (skill-version.txt gate G3 satisfied by version bump). Version markers bumped 12.4.5 -> 12.4.6 across all 9 locations plus cc-compat.json onboardingVersion.
+- Skill 23 content changed (skill-version.txt gate G3 satisfied by version bump). Version markers bumped 12.4.6 -> 12.4.7 across all 9 locations plus cc-compat.json onboardingVersion.
+
+---
+
+## [v12.4.6] - 2026-06-14 - docs: correct stale "missing capability" framing in Custom Authoring + Merge Standard (Skill 23)
+
+### Changes
+
+Forensic audit of Trevor's 12 ZHC interview/closeout concerns against merged main (PRs #211/#214/#215/#216). Verdict: 11 of 12 concerns were already truly fixed and wired in code with file:line proof; only the supporting documentation carried a stale self-contradiction, now corrected.
+
+- CUSTOM-AUTHORING-AND-MERGE-STANDARD.md: the "Why this exists" and section 5 "CORE-MERGE" passages still described the semantic combine/merge path and the per-department custom-role/custom-SOP build decisions as MISSING gaps. That was true when the standard was first drafted (#214) but became false the moment #215 shipped the engine. Corrected both passages to state the gaps are CLOSED in code and name the real implementations: apply_semantic_merges() (the semantic COMBINE/merge executor that folds an owner-confirmed merge into the canonical survivor and drops the duplicate), detect_semantic_overlaps(), materialize_custom_roles() (per-dept custom-role build decision), and capture_custom_sops() (per-dept custom-SOP build decision), all in scripts/build-workforce.py and all called in the main build flow. The standard remains the binding quality contract those functions must satisfy.
+- No logic changes. Skill 23 content changed (skill-version.txt gate G3 satisfied by the version bump). Zero em dashes added.
+- Version markers bumped 12.4.5 -> 12.4.6 across all 9 locations + cc-compat.json onboardingVersion.
 
 ---
 
