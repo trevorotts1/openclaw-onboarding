@@ -1,3 +1,19 @@
+## [v12.4.5] - 2026-06-14 - feat: presentation typography + standalone-art + hook + gradual-drop standard encoded into the Design Intelligence Unit SOPs (Skill 23)
+
+### Changes
+
+Encodes the already-extracted presentation gold standard (the LYRIC-TYPOGRAPHY-STANDARD study: typography anatomy, hook and gradual drop, and each-slide-is-art, ground-truthed from the proven Lyric Hawkins "Enrollment On Autopilot" deck at QC 9.42) into the Design Intelligence Unit role library so every future deck ships designed typography, gallery-grade standalone art, a woven hook, and a gradual spread value ladder, never basic default fonts or a "background with text". Five role files and their five sops/ mirrors changed; no build logic.
+
+- `presentations/brand-steward.md` (v1.2 -> v1.3): new SOP 9.4 TYPOGRAPHY LAW (one-family Montserrat weight map, slide-height-relative size scale, canonical hierarchy stack, five-color palette with charcoal #231F20 never pure black, zero black backgrounds); STYLE BLOCK template carries the full law; new Gate 6; basic/default fonts forbidden.
+- `presentations/slide-image-creator.md` (v1.0 -> v1.1): every prompt now carries exact font weights, large per-line pt sizes, the hierarchy stack, the creative devices (giant numbers, gold rules, drawn strikes, single-word color swaps), and text-baked-in; new SOP 9.6 enforces designed typography (basic/default fonts = AUTO-FAIL) and the standalone-art gate ("just a background with text" = AUTO-FAIL); new Gates 8 and 9.
+- `presentations/hook-strategist.md` (v1.1 -> v1.2): Purple Rain doctrine made explicit (refrain sung ~10x, woven slide to slide, from the first verse, the whole way through, refrain after proof).
+- `presentations/offer-price-strategist.md` (v1.0 -> v1.1): GRADUAL drop doctrine plus new Gate 10 choreography gate (spread not stacked, every drop earned and built up and adds value, case studies between drops, FINAL below the ladder).
+- `presentations/qc-specialist-presentations.md` (v1.1 -> v1.2): typography, standalone-art, hook, and gradual-drop added as scored AUTO-FAIL gates (AF-P10/AF-I9 designed typography, AF-P11/AF-I10 standalone art, AF-C2 hook doctrine strengthened, new AF-C6 gradual-drop; scored criteria p17/p18 and i16/i17 double-weighted; new Gates 10-13; final_deck_qc.json re-verifies typography and standalone art per slide).
+- The five sops/ mirrors regenerated verbatim (Section 9 byte-identical to each role file). Every role file keeps its full 19-section structure. No em dashes.
+- Skill 23 content changed (skill-version.txt gate G3 satisfied by version bump). Version markers bumped 12.4.4 -> 12.4.5 across all 9 locations plus cc-compat.json onboardingVersion.
+
+---
+
 ## [v12.4.4] - 2026-06-14 - fix: canonical department floor reconciliation closure (Skill 23)
 
 ### Changes
