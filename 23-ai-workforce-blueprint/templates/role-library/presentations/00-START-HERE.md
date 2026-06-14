@@ -15,9 +15,9 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 
 ---
 
-## Role Roster (21 roles; all live)
+## Role Roster (22 roles; all live)
 
-**Doctrine count:** all 21 roles are live to spec (ROLE-01 through ROLE-21). ROLE-18 through ROLE-21 are the presentation-overhaul roles added v1.7: the Typography Architect (per-slide type-layout system, runs BEFORE the Slide Image Creator), the Presenters Guide Specialist (branded speaker outline PDF + Notion), the Presenters Speech Writer (word-for-word script paced to TARGET_WPM=140, PDF + Notion), and the Audio Demonstration + Fish Audio Expression Specialist (expression-tagged TTS demo with the Fish S2-Pro -> ElevenLabs -> Whisper-STT-verify fallback chain). All four route deliverables through the Delivery Concierge for verified last-mile. ROLE-16 The Healer is **COMPLETE** and built to full spec: the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (plus the T3-BUGBOARD-HEALER-SPEC.md build contract) has been supplied, and the ZHC Bugs Department it files into is commissioned and present in this repo at role-library/bugs/ (Bug Intake Clerk, Triage and Dedup Analyst, Bug Librarian, the universal bug-ticket-schema.json, and the B-9.1 to B-9.5 SOPs), with the Healer Department at role-library/healer/ (Chief Healer + the per-department Healer template). ROLE-16 carries the three authority tiers, all 12 Healer SOPs (9.1 to 9.12), and its triggers are wired to a live Bugs Department.
+**Doctrine count:** all 22 roles are live to spec (ROLE-01 through ROLE-22). ROLE-18 through ROLE-21 are the presentation-overhaul roles added v1.7: the Typography Architect (per-slide type-layout system, runs BEFORE the Slide Image Creator), the Presenters Guide Specialist (branded speaker outline PDF + Notion), the Presenters Speech Writer (word-for-word script paced to TARGET_WPM=140, PDF + Notion), and the Audio Demonstration + Fish Audio Expression Specialist (expression-tagged TTS demo with the Fish S2-Pro -> ElevenLabs -> Whisper-STT-verify fallback chain). All four route deliverables through the Delivery Concierge for verified last-mile. ROLE-22 First-Time-User Onboarding (added v12.7.0) is the owner's first-run welcome: it detects a first-time Presentations request, orients the owner in under 3 minutes (what the department does, the roles, the Brainstorming Buddy, how to start, the audience-versus-speaker surface distinction), then hands straight to the Brainstorming Buddy and sets the first-time flag so it never repeats. ROLE-16 The Healer is **COMPLETE** and built to full spec: the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (plus the T3-BUGBOARD-HEALER-SPEC.md build contract) has been supplied, and the ZHC Bugs Department it files into is commissioned and present in this repo at role-library/bugs/ (Bug Intake Clerk, Triage and Dedup Analyst, Bug Librarian, the universal bug-ticket-schema.json, and the B-9.1 to B-9.5 SOPs), with the Healer Department at role-library/healer/ (Chief Healer + the per-department Healer template). ROLE-16 carries the three authority tiers, all 12 Healer SOPs (9.1 to 9.12), and its triggers are wired to a live Bugs Department.
 
 
 | ROLE | Slug | Role type | File |
@@ -43,11 +43,13 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 | ROLE-19 | presenters-guide-specialist | specialist | presenters-guide-specialist.md |
 | ROLE-20 | presenters-speech-writer | specialist | presenters-speech-writer.md |
 | ROLE-21 | audio-demonstration-specialist | specialist | audio-demonstration-specialist.md |
+| ROLE-22 | first-time-onboarding-presentations | specialist | first-time-onboarding-presentations.md |
 
 ---
 
 ## Pipeline Sequence (phase order)
 
+-2. **Step -2 (first contact only)** -- ROLE-22 First-Time-User Onboarding detects a first-time Presentations request, orients the owner in under 3 minutes (what the department does, the roles, the Brainstorming Buddy, how to start, the audience-versus-speaker surface distinction), then hands straight to the Brainstorming Buddy and sets the first_time_complete flag so it never repeats. Returning owners skip this step.
 -1. **Step -1** -- ROLE-17 Brainstorming Buddy brainstorms with the owner (SIMPLE or EXTENSIVE interview), confirms, and locks working/brainstorm/presentations/<slug>/brief.json; then hands the locked brief to the Director.
 1. **Step 0** -- ROLE-06 Media Librarian creates the landing zone and acquires client assets (LOGO_URL, FOUNDER_PORTRAIT_URL).
 2. **Step 0.5** -- ROLE-03 Capacity and Reliability Engineer probes the box and writes capacity_plan.json.
@@ -103,8 +105,37 @@ Each role's Section 9 (Standard Operating Procedures) is mirrored verbatim in so
 | sops/presenters-guide-specialist-sops.md | presenters-guide-specialist.md | 9.1 Guide Assembly, 9.2 PDF Render (fonts >=12), 9.3 Notion Publish, 9.4 Verified Delivery |
 | sops/presenters-speech-writer-sops.md | presenters-speech-writer.md | 9.1 Word-for-Word Draft, 9.2 WPM Pacing Pass (TARGET_WPM=140), 9.3 Designed PDF Render (fonts >=12), 9.4 Notion Publish + Verified Delivery |
 | sops/audio-demonstration-specialist-sops.md | audio-demonstration-specialist.md | 9.1 Expression Tagging, 9.2 Chunk + Synthesize (Fish S2 -> ElevenLabs -> fallthrough), 9.3 ffmpeg Stitch + Normalize, 9.4 STT Verify (Whisper), 9.5 Deliver Demo |
+| sops/first-time-onboarding-presentations-sops.md | first-time-onboarding-presentations.md | 9.1 First-Time Orientation, 9.2 Roles Tour and Surface Explainer, 9.3 Hand to the Brainstorming Buddy and Set the Flag, 9.4 On-Demand Refresher |
 
 **Mirror rule:** role file is authoritative. If a sops/ file diverges from the role file's Section 9, the role file wins and the mirror must be regenerated immediately. Never edit the sops/ file directly.
+
+---
+
+## Cluster SOP Library (standalone cross-role doctrine, added v12.7.0)
+
+These standalone SOP documents live in `sops/` alongside the per-role mirrors. They are NOT role mirrors; they are cross-role doctrine the Corey overhaul authored, each carrying purpose, the hard rule, the enforcement check (mapped to the LIVE qc-specialist auto-fail codes), pass/fail examples drawn from the actual Corey and Lyric decks, and an escalation path. Where a cluster SOP names a draft auto-fail code (AF-HOOK, AF-AUD, AF-OBI, AF-DEN, AF-I8..I12, AF-D1..D3), that protection is ALREADY WIRED in qc-specialist-presentations.md under the repo's existing codes (AF-C2 / AF-C6 / AF-C7 / AF-C8 / AF-C9 / AF-P3 / AF-P12 / AF-I1 / AF-F6 / AF-F7 / AF-F9 / AF-F10 / AF-DC1..7 and copy QC c5 / c17 / c19 / c23 / c24); each SOP carries the reconciliation. Do not re-add a parallel auto-fail namespace.
+
+| Cluster | SOP file | Covers | Live enforcement it documents |
+|---------|----------|--------|-------------------------------|
+| Slide-Craft | sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md | The master slide-craft auto-fail doctrine + the reconciliation map to the live codes | AF-C2/C6/C7/C9/P3/P12/I1/F6/F7/F9/F10 |
+| Slide-Craft | sops/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md | One core idea per slide; mandatory splits; text-block + word ceilings | AF-C6 + AF-C8 + copy c5 |
+| Slide-Craft | sops/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md | Six banned audience-facing categories (speaker lines, build doctrine, image narration, telegraphing/"webinar", credentials, build tokens) | AF-C9 + AF-F9 + AF-F10 |
+| Slide-Craft | sops/SOP-SLIDE-03-HOOK-DOCTRINE.md | The sacred refrain: 3-4 dedicated pure-type hook slides, ceiling not floor, no footer | AF-C2 + AF-P12 + AF-P3 + AF-I1 + AF-F9 |
+| Slide-Craft | sops/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md | Beat spacing, build-up before drops, value-stack/promises/re-pitch presence, section floors | AF-C7 + copy c17/c19/c23/c24 |
+| Pitch-Craft | sops/SOP-PITCH-01-SLOW-DROP-PROCESS.md | The slow-drop choreography: anchor early, spread beats, earned reason + added value per drop, late final | AF-C7 + copy c17 |
+| Pitch-Craft | sops/SOP-PITCH-02-VALUE-STACK-AND-PROMISES.md | Itemized stack summed to a total exceeding the anchor; promises before the first number | Offer Price Strategist SOP 9.2 + Section 4.4 component gates |
+| Pitch-Craft | sops/SOP-PITCH-03-RE-PITCH.md | Mandatory 4-7 slide post-price recap before the close | copy c23 + c24 + Offer Price Strategist SOP 9.9 |
+| Pitch-Craft | sops/SOP-PITCH-04-WALL-OF-WINS.md | Real-client homage ~5 slides before the offer; never a child future-pace | copy c19 + c24 |
+| Design-System | sops/SOP-DESIGN-00-INTEGRATION-MAP.md | Where each design rule lands + the reconciliation map to the live codes | AF-C2/P12/P3/I1/F6/F7/F9/F10/DC1..7 |
+| Design-System | sops/SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE.md | Locked weight ladder, expressive display, per-word emphasis | AF-DC1..7 |
+| Design-System | sops/SOP-DESIGN-02-PURE-TYPOGRAPHY-HOOK-SLIDES.md | Hook line large over a low-opacity image, no competing imagery, no footer | AF-F6 + AF-C2 |
+| Design-System | sops/SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE.md | Rotate archetype + word-block position; no single chassis | AF-F6 + AF-DC |
+| Design-System | sops/SOP-DESIGN-04-LOGO-CONSISTENCY.md | One locked mark, image-to-image, drift is a defect (full Lyric design proof) | AF-F7 + AF-I4 |
+| Image-Design | sops/SOP-IMG-00-CLUSTER-INDEX-AND-WIRING.md | The image-gen + design-library cluster index | (reference) |
+| Image-Design | sops/SOP-IMG-01-KIE-CALL-MECHANICS.md | The three Kie.ai modes (T2I / I2I / analysis) made exact; logo = I2I | slide-image-creator I2I path + AF-F7 |
+| Image-Design | sops/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md | Wiring skill 45 into Presentations; seeding the empty library; the auto-handoff trigger | forward work (Brand Steward + DIU) |
+| Image-Design | sops/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md | The three-way style branch + the creative-develop probe flow + the NAMED-STYLES seed | forward work (Brainstorming Buddy + Brand Steward) |
+| Image-Design | sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md | "Use Style 1" recall; the DIU logo-as-image-to-image mechanic | forward work + slide-image-creator I2I path |
 
 ---
 
