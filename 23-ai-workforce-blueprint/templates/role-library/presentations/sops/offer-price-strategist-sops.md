@@ -301,3 +301,44 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Failure mode:** If the arc has zero proof or teaching content before the offer section -- i.e., the deck goes straight from intro to pitch with no expertise demonstrated -- that is a doctrine violation (GP-12, the pitch is where decks die). Flag it to the Director as a HIGH-severity gap before the Copywriter begins. Do not invent proof; instruct the Director to obtain it from the client via PROOF_ASSETS in intake.json.
 
 ---
+
+### SOP 9.8 -- The Guarantee (required component 6) and the Scarcity Factor (required component 7)
+
+**When to run:** Concurrently with SOP 9.1 or 9.4, before price_ladder.json is finalized. Both are required components of every deck (master SOP Section 4.4, rule 21).
+
+**Inputs:**
+- intake.json (any client-stated guarantee, refund policy, results promise; `VIP_SPOTS`, real cohort dates, real enrollment caps, real expiry windows)
+- master SOP Section 5.4 (the four guarantee types) and Section 4.3 rule 21
+
+**Steps:**
+1. **Select the GUARANTEE type with the client (the deck must carry one).** Choose one of the four (master Section 5.4): Unconditional (any-reason refund), Conditional (do-the-work clause, allows a bolder promise), Anti-guarantee (all sales final, framed as exclusivity), or Implied (performance-based). For a service business wary of refunds, the operator-preferred frame is the SERVICE GUARANTEE: "if you do not get the result, your next 30 days is on us" or "five more sessions until your breakthrough." It reverses risk without writing checks. If intake states no guarantee, propose the service-guarantee frame and flag to the Director for the client to confirm; never ship a deck with no guarantee beat.
+2. Record the guarantee in price_ladder.json:
+   ```json
+   "guarantee": {
+     "type": "unconditional|conditional|anti|implied|service",
+     "statement": "one bold sentence the guarantee slide carries",
+     "conditional_logic": "the do-the-work or eligibility clause, or null",
+     "positioned_after_final_price": true,
+     "source": "client_stated|strategist_proposed"
+   }
+   ```
+3. **Define the SCARCITY FACTOR for the close (real only).** Set the real constraint the close will use: a real spot cap (`VIP_SPOTS`), a real cohort start date, or a real expiry window (the proven deck used a true 15-minute action window). Record:
+   ```json
+   "scarcity": {
+     "type": "spot_cap|cohort_date|expiry_window",
+     "real_value": "the true number / date / window",
+     "source": "client_stated|null"
+   }
+   ```
+   If no real constraint exists, do NOT invent one. Set `scarcity.real_value: null`, flag to the Director that the client must supply a real constraint, and warn that fabricated scarcity is a Devil's-Advocate BLOCKING flag. A real scarcity beat is required in the close; a fabricated one is forbidden.
+4. Pass both blocks to the Director with price_ladder.json. The Slide Copywriter writes the guarantee slide (after the final price) and the scarcity beat (in the close) from these blocks; the QC Specialist checks their presence (copy QC criteria 20 and 21).
+
+**Outputs:**
+- working/copy/price_ladder.json (with the `guarantee` and `scarcity` blocks)
+
+**Hand to:** Director (routes to Slide Copywriter and QC Specialist)
+
+**Failure mode:** If the client provides neither a guarantee nor a willingness to use the service-guarantee frame, flag to the Director and halt the offer finalization until resolved (the deck cannot ship without a guarantee). If no real scarcity constraint exists, the close ships without scarcity ONLY on explicit owner sign-off; never substitute a fabricated cap or countdown.
+
+---
+

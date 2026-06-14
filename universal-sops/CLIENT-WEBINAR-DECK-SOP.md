@@ -1,6 +1,6 @@
 # CLIENT WEBINAR DECK SOP
 **Standard Operating Procedure: Branded Webinar / Slide Deck, End-to-End**
-**Version 2.3 (2026-06-11)**
+**Version 2.4 (2026-06-14)**
 **Audience:** any client's OpenClaw agent (lead agent + sub-agents). This document is self-contained. The executing agent needs NOTHING else to take a client from a blank conversation to a finished, QC-passed, branded, pitch-correct PowerPoint.
 **Provenance:** generalized from the proven Lyric Hawkins "Enrollment on Autopilot" run (75 slides, final QC 9.42). Pitch mechanics are drawn from Alex Hormozi's $100M Offers and $100M Leads, the flow, archetypes, ladder choreography, and exemplar prompt are extracted from the actual Lyric run assets (75 prompts, final deck, execution runbook), and the pitch doctrine in Section 4.3 is transcribed from the operator's live teaching sessions. All client-specific values are DISCOVERY VARIABLES. Nothing client-specific is hardcoded.
 
@@ -38,6 +38,7 @@ PHASE 6  PPTX assembly, final deck QC, speaker notes, delivery
 - No em dashes anywhere, in any output, ever. The em dash is a dead giveaway of unedited AI output; QC auto-fails it on sight.
 - **NEVER DIE SILENTLY.** Any hiccup (Kie.ai tokens/credits exhausted, a model unavailable, GHL auth failing, a stalled loop) is escalated to the operator IMMEDIATELY. A run that quietly stops is worse than a run that loudly fails.
 - The deck has a HOOK and it is sung at least 7 times (Section 4.3, rule 1). A deck without a singing hook is not done.
+- **Ten named presentation components are REQUIRED and QC-gated in every deck (Section 4.4): the Promise, the Hook, Case Studies / "who says so other than you", the Wall of Wins, One Big Idea Per Slide, the Guarantee, the Scarcity Factor, the Story Arc (short-term fix vs long-term identity), the Gradual Price Ladder, and the checklist-is-a-list-of-promises discipline. Each is a mandatory element with an explicit QC gate; a deck missing any one of them is not done.** A multi-idea slide auto-fails; a zero-proof deck fails; a missing guarantee, scarcity beat, wall of wins, or story arc fails at copy QC and final-deck QC.
 
 ---
 
@@ -276,7 +277,7 @@ These are the principles the operator teaches live. They are not optional style 
 
 **11. COMPARE AND CONTRAST, CONSTANTLY.** Old way vs new way. Control vs clarity. Keep guessing vs build the system. Two-sided slides that show how each path SHOWS UP in real life are the workhorses of belief shift; use them in every Secret and again in the close.
 
-**12. WHO SAYS SO OTHER THAN YOU.** Case studies are not decoration; they are the answer to "who agrees with you besides you?" Proof within two slides of every claim, plus white-paper or research backing where the niche expects it. Named, located testimonials.
+**12. WHO SAYS SO OTHER THAN YOU (case studies / third-party proof, REQUIRED).** Case studies are not decoration; they are the answer to "who agrees with you besides you?" Third-party proof, studies, and white papers are woven BETWEEN the price drops, not clustered. Proof within two slides of every claim, plus white-paper or research backing where the niche expects it. Named, located testimonials. **A deck with ZERO third-party proof FAILS:** the Deep Research Specialist surfaces the GP-8 zero-proof alert, the Slide Copywriter must place at least one external-corroboration ("who says so") beat woven between the drops, and copy QC scores its presence (a deck where every proof point is the client's own assertion with no case study, study, or white paper is a fail, not a flag).
 
 **13. TRIPLE ALLITERATION.** Lists of three should alliterate when natural ("confident, consistent, and clear"), and the trio can become formulaic: Confidence + Consistency + Clarity = Effective Guide. When a value trio is part of the pitch, each value word can earn its OWN slide, because each one is being sold.
 
@@ -289,6 +290,34 @@ These are the principles the operator teaches live. They are not optional style 
 **17. PREMIUM MEANS PHOTOGRAPHY, NOT EMOJIS.** Icons and emojis cheapen a premium deck. Emotion is carried by photographic imagery and typography, never clipart glyphs.
 
 **18. ROADMAP THE PROGRAM.** When the offer is a challenge or program, lay out the journey on slides: Day 1, Day 2, Day 3; Week 1 through 6; the 90-day plan. Future-pacing the program itself builds excitement and gives the logical justifier their structure.
+
+**19. THE STORY ARC (short-term fix vs long-term identity; self-recognition).** Every deck carries a narrative arc that contrasts the SHORT-TERM FIX the audience is currently chasing against the LONG-TERM IDENTITY transformation the offer actually delivers, and walks them to SELF-RECOGNITION ("that is exactly me"). The fix is the band-aid they keep buying (control, behavior management, the quick patch); the identity is who they become (clarity, ownership, the CEO they are about to be). The arc names the short-term fix, shows why it never holds, then reframes the real outcome as a durable identity change, so the audience recognizes themselves in both the before and the after. At least one explicit short-term-fix-vs-long-term-identity contrast beat is required, and the arc is what makes the audience say "that is me" rather than "that is interesting."
+
+**20. THE WALL OF WINS (wall of results, REQUIRED).** The deck carries a Wall of Wins (also called the wall of results): a dedicated results/testimonial wall element that stacks multiple named, located client wins in one view (the proven deck: six named results). It is distinct from the single proof-within-two-slides testimonials; it is a deliberate concentration of social proof near the close that says "look how many people this already worked for." A deck with no wall of wins is missing a required element. As the client accumulates wins, the wall grows.
+
+**21. THE GUARANTEE (required), THE SCARCITY FACTOR (required), and THE CHECKLIST IS A LIST OF PROMISES.**
+- **THE GUARANTEE:** every deck states an explicit guarantee / promise / risk-reversal (one of the four guarantee types in Section 5.4; the operator-preferred frame for service businesses is the SERVICE GUARANTEE, "if you do not get the result, your next 30 days is on us"). A deck with no guarantee beat is incomplete.
+- **THE SCARCITY FACTOR:** the close carries a real scarcity / last-calls / doors-closing element (real spots or real time only, never fabricated; fake scarcity is a blocking flag). A close with no scarcity beat is incomplete.
+- **THE CHECKLIST IS A LIST OF PROMISES:** "a checklist for an AI is a list of promises." Before any agent says "I'm done," it walks its OWN checklist and verifies every promise was kept. The agent echoes the mission, builds its own checklist of promises (this very SOP's required components among them), and checks it before delivery (Section 3.3). This is the QC philosophy that the other nine components are scored against: each required component is one promise on the checklist, and the checklist is not satisfied until every promise is verified present.
+
+---
+
+## 4.4 THE TEN REQUIRED PRESENTATION COMPONENTS (named, mandatory, each QC-gated)
+
+These are the ten presentation components the operator named as REQUIRED. Each is a mandatory element of every deck and each has an explicit QC gate. This table is the master index; the doctrine above (Section 4.3) defines each one, the role SOPs produce them, and the QC Specialist (Section 6, Section 11.3) gates them.
+
+| # | Component | Where it is produced | QC gate |
+|---|---|---|---|
+| 1 | **THE PROMISE** (pitch the promise, not the product; lead with the core promise) | Copywriter leads every teach/offer slide with the promise (4.3 rule 2); Director records `BIG_PROMISE` in the PRD | Copy QC criterion 12 doctrine battery (promises pitched, not products) |
+| 2 | **THE HOOK** (written like a song, derived from the strongest promise, sung approximately 10x, minimum 7) | Hook Strategist derives + maps it; Copywriter places it; Presenter Coach sings it in the talk track | Copy QC criterion 11 mechanical HOOK COUNT (auto-fail under 7) |
+| 3 | **CASE STUDIES / "WHO SAYS SO OTHER THAN YOU"** (third-party proof, studies, white papers woven between the drops; zero-proof deck FAILS) | Deep Research Specialist feeds external corroboration; Copywriter places it between drops | Copy QC + final-deck structural-completeness (zero external proof = fail, not flag) |
+| 4 | **WALL OF WINS / WALL OF RESULTS** (a concentrated results/testimonial wall element) | Deep Research + client `PROOF_ASSETS` feed it; Copywriter builds the wall slide near the close | Copy QC + final-deck structural-completeness (wall present) |
+| 5 | **ONE BIG IDEA PER SLIDE** (one idea, large; multi-idea slide FAILS) | Copywriter (Section 5.1 limits); slide math (Section 4) | Copy QC AUTO-FAIL on any multi-idea slide |
+| 6 | **THE GUARANTEE** (explicit promise / guarantee / risk-reversal) | Offer Price Strategist sets the guarantee type; Copywriter writes the guarantee slide | Copy QC + final-deck structural-completeness (guarantee present) |
+| 7 | **THE SCARCITY FACTOR** (last-calls / doors-closing in the close; real only) | Offer Price Strategist + Copywriter write the close | Copy QC + final-deck structural-completeness (real scarcity present); fake scarcity = blocking flag |
+| 8 | **THE STORY ARC** (short-term fix vs long-term identity; self-recognition) | Copywriter writes the arc; Director's arc allocation carries the contrast beat | Copy QC + final-deck structural-completeness (short-term-fix vs long-term-identity contrast present) |
+| 9 | **THE GRADUAL PRICE LADDER** (value-plant anchor -> spread earned-reason drops -> ADD VALUE every drop -> final late) | Offer Price Strategist owns the spread ladder; Copywriter writes the rungs | Copy QC ladder integrity (criterion 17) + Offer Price Strategist gates |
+| 10 | **"A CHECKLIST FOR AN AI IS A LIST OF PROMISES"** (the QC / checklist philosophy) | Director echo gate (Section 3.3): the agent builds its own checklist of promises and checks it before "done" | Director echo gate + every QC gate is the enforcement of the checklist |
 
 ---
 
@@ -418,7 +447,7 @@ Every ladder slide carries a LADDER tag in slides_copy.md: `ANCHOR`, `BUILDUP`, 
 **3 to 5 QC agents on Minimax (DeepSeek v4 Flash fallback), in parallel, non-overlapping slide ranges.** Each agent scores each assigned slide 1 to 10 per criterion. **>= 8.5 overall passes. Below 8.5 loops back to the writer automatically. The owner never sees sub-8.5 work.** Up to 3 revision loops, then escalate to the lead agent. Report: `working/qc/copy_qc_report.md`.
 
 **COPY QC GUIDE:**
-1. **One big idea:** the slide makes exactly one point. Two ideas = fail.
+1. **One big idea (AUTO-FAIL on violation):** the slide makes exactly one point. A multi-idea slide is an automatic FAIL, not a deduction; the operator's rule is "one big idea per slide, multi-idea slide FAILS." If a slide carries two ideas, split it and re-QC. (Mechanical signal: more than 3 text blocks, or copy that cannot fit Section 5.1 limits without dropping a point, indicates more than one idea.)
 2. **Limits honored:** headline <= 9 words, sub <= 18, <= 3 text blocks, bullet and stack limits per Section 5.1. Mechanical count, auto-fail if over.
 3. **Template complete:** every field of the Section 5.2 template filled, including PRESENTER NOTE.
 4. **Tone match:** the copy sounds like the chosen `TONE` (and `TARGET_FEELING`). A Tough Love deck with soft hedging language = fail.
@@ -434,8 +463,13 @@ Every ladder slide carries a LADDER tag in slides_copy.md: `ANCHOR`, `BUILDUP`, 
 12. **Doctrine compliance (Section 4.3):** promises pitched not products; every drop adds value (rule 3); both emotion AND logic served in the offer section (rule 5); cost-vs-value explicitly answered, priceless pitch used where outcomes are non-monetary (rule 6); light pitches woven (rule 7); appetizer not dinner (rule 8: a Secret that hands over the complete HOW = fail); at least one intrigue slide per section (rule 10); compare/contrast device present in every Secret (rule 11); a paid pitch exists (rule 14) unless the owner signed off on free-only.
 13. **Slide-vs-script separation:** slide text does not duplicate the presenter note narration (rule 15).
 14. **Text anchor variation:** no more than 2 consecutive slides share the same TEXT_ANCHOR (rule 16).
+15. **Who says so / external proof present (rule 12):** the deck carries at least one third-party proof beat (case study, study, or white paper) woven between the drops. A deck whose every proof point is the client's own assertion with zero external corroboration FAILS this criterion. The Deep Research GP-8 zero-proof alert, if present, forces a fail here until the operator supplies or approves corroboration.
+16. **Wall of Wins present (rule 20):** the deck carries a Wall of Wins / wall of results slide near the close that concentrates multiple named, located client wins in one view. Absent = fail.
+17. **Guarantee present (rule 21):** the deck states an explicit guarantee / risk-reversal beat (one of the four types, Section 5.4). Absent = fail.
+18. **Scarcity Factor present (rule 21):** the close carries a real scarcity / last-calls / doors-closing beat (real spots or real time only). Absent = fail; fabricated scarcity = blocking flag (handled by the Devil's Advocate).
+19. **Story Arc present (rule 19):** the deck carries an explicit short-term-fix-vs-long-term-identity contrast beat that drives the audience to self-recognition. Absent = fail.
 
-Weighting: criteria 1, 2, 7, 11, and 12 count double. Any auto-fail forces FAIL.
+Weighting: criteria 1, 2, 7, 11, 12, and 15 count double. Any auto-fail (including a multi-idea slide under criterion 1) forces FAIL.
 
 ### 6.2 Phase 1A: OWNER APPROVAL GATE (human, mandatory, blocks Phase 2)
 
@@ -870,6 +904,7 @@ PHASE 1 - SLIDE COPY
          ANCHOR memory hook + BUILDUP before every DROP + callbacks written; price_sequence_check.md all boxes ticked
 [ ] 1.5a Flow rules (4.2) honored: section banners, claim->proof within 2 slides, open loops closed, compliance lines on results claims
 [ ] 1.5b Cross-slide numeric consistency verified (every repeated number identical everywhere)
+[ ] 1.5c TEN REQUIRED COMPONENTS present (Section 4.4): the Promise leads; the Hook sung >=7x; at least one "who says so" external-proof beat woven between the drops (zero external proof = fail); a Wall of Wins slide near the close; one big idea per slide (multi-idea = auto-fail); an explicit Guarantee beat; a real Scarcity / last-calls beat in the close; a short-term-fix-vs-long-term-identity Story Arc beat; the spread price ladder; and the agent's own checklist-of-promises walked
 [ ] 1.6  No fabricated proof; placeholders marked [CLIENT TO SUPPLY]
 
 PHASE 1Q - COPY QC (internal, automatic)
