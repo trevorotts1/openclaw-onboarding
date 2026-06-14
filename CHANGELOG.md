@@ -1,3 +1,27 @@
+## [v12.6.1] - 2026-06-14 - fix: bound onboarding-resume cron -- hard cap + self-delete, no perpetual token furnace
+
+### Changes
+
+**Root cause (Erin box incident):** The `onboarding-resume` cron (*/30) had no hard stop. After hitting `MAX_RUNS_BEFORE_ESCALATE` (was 24 = 6h), the script entered a perpetual "slow-retry" loop that never self-deleted. The `resume-onboarding-prompt.txt` injected into the agent contained `RULE 8 -- NEVER STOP`, instructing the agent to continue indefinitely, spawning subagents across all configured models on every fire. The `UPDATE PENDING` block written into the client AGENTS.md by both `install.sh` and `update-skills.sh` contained `EXECUTION MODE: DO NOT ASK PERMISSION. EXECUTE IMMEDIATELY.`, amplifying autonomous runaway behavior.
+
+**Fixes applied:**
+
+- `scripts/resume-onboarding.sh` (v10.16.0 -> v10.16.1): `MAX_RUNS_BEFORE_ESCALATE` lowered from 24 to 5 (2.5h total at */30). The cap branch now calls `self_remove_cron()` + `exit 0` after escalating to operator and Rescue Rangers. The old perpetual slow-retry loop (which never self-removed) is removed entirely.
+
+- `scripts/resume-onboarding-prompt.txt`: Removed `RULE 8 -- NEVER STOP (binding for every resume fire)` and all associated unbounded-loop imperatives. Added explicit BOUNDED EXECUTION block instructing the agent to use its current model only (no fan-out across all configured models, no spawning multiple subagents), and a clear STOP CONDITION.
+
+- `install.sh` UPDATE PENDING template (line 3537): Replaced `## UPDATE PENDING - EXECUTE IMMEDIATELY` header and `EXECUTION MODE: DO NOT ASK PERMISSION. EXECUTE IMMEDIATELY.` body with a calm, bounded heading. Grep verification updated to match the new header.
+
+- `update-skills.sh` UPDATE PENDING template (line 129): Same -- removed `EXECUTE IMMEDIATELY` and `DO NOT ASK PERMISSION` from the injected block.
+
+- `Start Here.md`: Updated flag-name documentation to reference the new header; removed `NEVER STOP UNTIL ALL 32 SKILLS ARE INSTALLED` section heading and replaced with bounded language.
+
+**Guard added:**
+
+- `tests/unit/bounded-resume-cron.test.sh`: 18 assertions covering (1) MAX_RUNS cap <= 10, (2) cap branch calls self_remove_cron + exits 0 rather than slow-retrying, (3) prompt lacks NEVER STOP / DO NOT ASK PERMISSION / EXECUTE IMMEDIATELY, (4) UPDATE PENDING heredocs in install.sh + update-skills.sh lack furnace imperatives, (5) gate-pass path calls self_remove_cron, (6) cron interval >= */15, (7) prompt does not instruct multi-model fan-out.
+
+- `.github/workflows/bounded-resume-cron-guard.yml`: CI workflow wiring the new test to push + PR paths covering all modified files.
+
 ## [v12.6.0] - 2026-06-14 - feat: ZHC Final Package overhaul -- deterministic auto-fire, full booklet, visual-intelligence set, video fixes, real counts (Skill 37)
 
 ### Changes

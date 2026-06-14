@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# resume-onboarding.sh — v10.16.0  (NUDGE LIFECYCLE: escalate→dormant→re-arm + credit-backoff)
+# resume-onboarding.sh — v10.16.1  (BOUNDED: hard-stop at MAX_RUNS_BEFORE_ESCALATE + self-delete)
 #
 # Autonomous resume layer for SKILL ONBOARDING (the install/wire/QC pipeline),
 # modeled on resume-workforce-build.sh. Reads
@@ -10,17 +10,18 @@
 # an interrupted onboarding (or one that an over-eager agent self-declared
 # "done") sits forever with un-registered skills.
 #
-# NEVER-STOP (Rule 8): this cron does NOT exit on a self-declared "done". It
-# exits ONLY when the VERIFICATION GATE passes (every skill qc-passed, or an
-# explicit interview-pending park). It runs the gate itself (sourcing
-# onboarding-state.sh) — it does not trust prose or a hand-flipped flag.
+# BOUNDED (not perpetual): this cron exits cleanly on EITHER:
+#   (a) VERIFICATION GATE passes (every skill qc-passed, or interview-pending park)
+#   (b) MAX_RUNS_BEFORE_ESCALATE fires reached — escalate to operator + self-delete.
+# It does NOT slow-retry indefinitely. After the hard cap the cron removes itself
+# and the operator must investigate and re-run update-skills.sh if needed.
 #
 # INTERVIEW_PENDING is a LEGITIMATE park, not terminal "done": a skill waiting on
 # owner input is re-pinged to the OWNER on backoff (so the owner is reminded),
 # and counts toward gate-success only when explicitly parked.
 #
-# Idempotent. Safe every */15. 10-min lockfile. Escalates to Rescue Rangers +
-# operator once at the run cap, then slow-retries (2h backoff) — never stops.
+# Idempotent. Safe every */30. 10-min lockfile. Escalates to operator + Rescue
+# Rangers at the run cap, then self-deletes (HARD STOP — no perpetual loop).
 #
 # ── NUDGE LIFECYCLE (built on top of PR #181 gates) ──────────────────────────
 # State file: $WS/.onboarding-nudge-state  (plain key=value, no model read)
@@ -80,7 +81,7 @@ LOCK_FILE="$WS/.onboarding-resume.lock"
 LOG_FILE="$WS/.onboarding-resume.log"
 RUN_COUNT_FILE="$WS/.onboarding-resume-runs.count"
 SHARED_DISPATCH_LOCK="$WS/.onboarding-dispatch.lock"   # shared with watchdog
-MAX_RUNS_BEFORE_ESCALATE=24   # 6h at */30 (widened cron) — then escalate + slow-retry
+MAX_RUNS_BEFORE_ESCALATE=5    # 2.5h at */30 — escalate + HARD SELF-DELETE (no perpetual loop)
 
 # ── nudge lifecycle state file (plain key=value, NO model read) ──────────────
 NUDGE_STATE_FILE="$WS/.onboarding-nudge-state"
@@ -361,31 +362,25 @@ _run_count=$((_run_count + 1))
 echo "$_run_count" > "$RUN_COUNT_FILE" 2>/dev/null || true
 
 if (( _run_count > MAX_RUNS_BEFORE_ESCALATE )); then
-  _over=$(( _run_count - MAX_RUNS_BEFORE_ESCALATE ))
-  if (( _over % 8 != 1 )); then
-    log "NEVER-STOP: run #$_run_count past cap — 2h-backoff slow mode, skipping this fire. NOT self-removing."
-    exit 0
+  # Hard cap reached: escalate to operator + Rescue Rangers, then SELF-DELETE.
+  # No perpetual slow-retry. The operator must investigate and re-run update-skills.sh.
+  log "BOUNDED: run #$_run_count exceeds cap ${MAX_RUNS_BEFORE_ESCALATE} — escalating + self-deleting cron."
+  _op="$(resolve_operator_chat_id)"
+  [[ -n "$_op" ]] && openclaw message send --channel telegram -t "$_op" \
+    -m "ONBOARDING-RESUME on $(hostname) reached the ${MAX_RUNS_BEFORE_ESCALATE}-run limit without the verification gate passing (${GATE_HUMAN:-skills still unverified}). The cron is now SELF-DELETING. Investigate with: bash scripts/onboarding-state.sh on the box. Re-run update-skills.sh when ready to retry. State: $STATE_FILE" 2>>"$LOG_FILE" || true
+  # Escalate via Rescue Rangers webhook.
+  _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
+  if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
+    _rr_msg="onboarding-resume on $(hostname) hit hard cap (${_run_count} runs, max ${MAX_RUNS_BEFORE_ESCALATE}). Gate did not pass. Cron self-deleted. Re-run update-skills.sh to restart. State: $STATE_FILE. Version: $(openclaw --version 2>/dev/null | head -1)"
+    _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
+      '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
+    curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
   fi
-  # escalate once
-  _already="$(command -v jq >/dev/null 2>&1 && jq -r '.resumeEscalated // false' "$STATE_FILE" 2>/dev/null || echo false)"
-  if [[ "$_already" != "true" ]]; then
-    _op="$(resolve_operator_chat_id)"
-    [[ -n "$_op" ]] && openclaw message send --channel telegram -t "$_op" \
-      -m "⚠️ onboarding-resume on $(hostname) hit $_run_count runs without the verification gate passing (${GATE_HUMAN:-skills still un-verified}). Now slow-retrying (it does NOT stop). State: $STATE_FILE" 2>>"$LOG_FILE" || true
-    # Escalate via the n8n Rescue Rangers webhook (NOT bot-to-bot Telegram —
-    # bots can't read other bots, so the old group post never reached the rescue agent).
-    _rr_webhook="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
-    if [[ -n "$_rr_webhook" ]] && command -v curl >/dev/null 2>&1; then
-      _rr_msg="onboarding on $(hostname) past $_run_count resume runs without a gate-pass. Run scripts/onboarding-state.sh -> obs_gate_summary on the box. State: $STATE_FILE. OpenClaw version: $(openclaw --version 2>/dev/null | head -1)"
-      _rr_payload=$(jq -nc --arg c "$(hostname)" --arg a "main" --arg m "$_rr_msg" \
-        '{action:"escalate",client:$c,agent:$a,message:$m}' 2>/dev/null)
-      curl -s -X POST "$_rr_webhook" -H "Content-Type: application/json" -d "$_rr_payload" >>"$LOG_FILE" 2>&1 || true
-    fi
-    if command -v jq >/dev/null 2>&1; then
-      _tmp="$(mktemp)"; jq '.resumeEscalated = true' "$STATE_FILE" > "$_tmp" 2>/dev/null && mv "$_tmp" "$STATE_FILE" || rm -f "$_tmp"
-    fi
+  if command -v jq >/dev/null 2>&1; then
+    _tmp="$(mktemp)"; jq '.resumeEscalated = true' "$STATE_FILE" > "$_tmp" 2>/dev/null && mv "$_tmp" "$STATE_FILE" || rm -f "$_tmp"
   fi
-  log "NEVER-STOP: run #$_run_count past cap — slow-retry fire; continuing (NOT self-removing)."
+  self_remove_cron "hard-cap-reached-${_run_count}-runs"
+  exit 0
 fi
 
 # ── lock (no double self-ping) ───────────────────────────────────────────────

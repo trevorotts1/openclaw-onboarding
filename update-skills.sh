@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v12.6.0"
+ONBOARDING_VERSION="v12.6.1"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -126,11 +126,10 @@ PYEOF
 
   cat >> "$AGENTS_FILE" <<FLAGCONTENT
 
-## 🔴🔴🔴 UPDATE PENDING -- SKILL UPDATE TO ${version}
+## UPDATE PENDING -- Skill Update to ${version}
 
-**EXECUTION MODE: DO NOT ASK PERMISSION. EXECUTE IMMEDIATELY.**
-
-A skill update was applied via update-skills.sh on ${DATE_STAMP}. Process the activation steps now.
+A skill update was applied via update-skills.sh on ${DATE_STAMP}. Activate each new skill below,
+run the verification gate, then remove this section from AGENTS.md when the gate passes.
 
 ### 🔴 THE GATE IS THE TRUTH -- NOT THIS PROSE, NOT YOUR OWN "done"
 This update is **NOT complete** until the VERIFICATION GATE passes. Files on disk = DOWNLOADED, not installed. Source the gate and check state:
