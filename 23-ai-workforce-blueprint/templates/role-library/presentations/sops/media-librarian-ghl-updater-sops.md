@@ -26,15 +26,34 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 2. Create the directory tree with all required subdirectories:
    ```
    <workdir>/
-     media-library/           (passed images -- the deliverable folder)
+     media-library/               (passed images -- the deliverable folder; files named slide-NN.png)
+       assets/
+         logo/                    (client logo files: logo-full.png, logo-chip.png)
+         founder-portrait/        (founder / host portrait photos passed in as A5 reference images)
+         proof-assets/            (before/after photos, testimonial screenshots, product images)
      working/
-       prompts/               (per-slide prompt files from Phase 2)
-       renders/               (raw downloads from Phase 4 -- pre-QC)
-       checkpoints/           (all checkpoint JSON files)
-       qc/                    (QC reports from all phases)
-       copy/                  (slide copy, intake, PRD, approval records)
-       brand/                 (STYLE BLOCK, brand registry, representation audit)
+       prompts/                   (per-slide prompt files: slide-NN-prompt.txt)
+       renders/                   (raw downloads from Phase 4 -- pre-QC: slide-NN-raw.png)
+       checkpoints/               (all checkpoint JSON files)
+         media_library.json       (run ledger: paths, GHL folder id, version number)
+         run_ledger.json          (per-phase completion log)
+         pptx_text_overlays.json  (native-text fallback entries from PPTX Assembly Specialist)
+       qc/                        (QC reports from all phases)
+         copy_qc_report.json
+         prompt_qc_report.json
+         image_qc_report.json
+         final_deck_qc.json
+         finalrender/             (QC-passed final render copies, before upload to GHL)
+       copy/                      (slide copy, intake, PRD, approval records)
+       brand/                     (STYLE BLOCK, brand registry, representation audit)
+     output/                      (final assembled deck: <deck-slug>_v<N>.pptx)
    ```
+   **Naming conventions:**
+   - Local slide files: `slide-NN.png` (zero-padded two digits, lowercase, kebab-case)
+   - GHL folder name: `<Client First Name> <Deck Short Name> v<N>` (title-case, per run)
+   - GHL slide title: `Slide NN v<N>` (title-case, space-separated)
+   - Founder portrait: `founder-portrait-[slug].png` (client-supplied, not generated)
+   - Logo: `logo-full.png` (full color) and `logo-chip.png` (small lockup for slide placement)
 3. Verify: `ls -la <workdir>` confirms all subdirectories exist. If any creation failed, halt and notify the Director.
 4. Determine version number N for this run. Check the GHL media library for existing folders with the naming pattern `<Client> <Deck> v<N>`. If none exist, N=1. If v1 exists, N=2. Etc.
 5. Record all paths in working/checkpoints/media_library.json:
@@ -252,3 +271,4 @@ Note: if a ROLE-13 Delivery Concierge role is added to this department in a futu
 **Failure mode:** If any delivery destination fails verification: do not mark delivery_complete = true. Notify the Director: "Delivery incomplete: [destination] could not be verified. [Specific error]. Local PPTX is at output/[DECK_SLUG].pptx. Awaiting resolution." Never send a "done" message when a destination is unverified.
 
 ---
+

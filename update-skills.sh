@@ -34,7 +34,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v12.4.7"
+ONBOARDING_VERSION="v12.4.8"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 

@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** qc
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.2
+**Version:** 1.3
 **Last updated:** 2026-06-14
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -197,6 +197,20 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 | AF-F4 | An overlay element exists on the composed slide but no collision assert was run on it. Every native PPTX overlay element MUST pass an individual collision assert; an un-checked overlay is itself an auto-fail (you cannot pass a slide whose overlay you never collision-checked). |
 | AF-F5 | The delivery pass-artifact `working/qc/final_deck_qc.json` is absent or its `pass` field is not `true` at the moment delivery is attempted. (This is the delivery interlock; see SOP 9.6.) |
 
+#### Design-Craft Auto-Fails (checked at Phase 3 Prompt QC and Phase 5 Image QC)
+
+These conditions each independently force an immediate FAIL verdict on the affected slide. They enforce the PROFESSIONAL DESIGN-CRAFT standard required of a PROFESSIONALLY TRAINED ADOBE GRAPHIC ARTIST AND ART DIRECTOR WITH 30 YEARS OF EXPERIENCE. Check these at Phase 3 (against the prompt) and re-verify at Phase 5 (against the rendered image).
+
+| Code | Auto-Fail Condition |
+|------|---------------------|
+| AF-DC1 | Text over a face: any text element (headline, sub, kicker, body beat, hook overlay) lands directly over a human face in the image. Text over a face is the most common amateur composition error. Every prompt must specify face position in a named thirds zone that does not intersect the text zone. |
+| AF-DC2 | Flat single layer: the image has no foreground / midground / background separation -- a single flat plane with subject and environment merging together. Checked at Phase 5 against the rendered image. Every prompt must specify all three depth layers (IMAGE LAYERING AND DEPTH rule, slide-image-creator SOP 9.2). |
+| AF-DC3 | Ignored thirds: the prompt does not declare which third holds the headline, which holds the primary subject, and which holds supporting elements. "Centered" alone without a thirds declaration is also AF-DC3. Required by the THIRDS SYSTEM rule (slide-image-creator SOP 9.2). |
+| AF-DC4 | Clashing or uncontrasted colors: any headline-on-background combination in the rendered image that fails WCAG AA (below 4.5:1 for normal text, below 3:1 for large text at 18pt+ regular or 14pt+ bold). Also flagged if visually clashing complementary colors are placed adjacent without sufficient separation or hierarchy (e.g., full-saturation raspberry directly adjacent to full-saturation gold with no neutral buffer). |
+| AF-DC5 | Ungraded inconsistent deck: across the deck as a whole, some images are visibly warm-toned and others are visibly cool-toned, with no unified color-grading profile. Each image must feel as if it was shot in the same light. An inconsistently graded deck fails the color-grading dimension regardless of individual slide scores. |
+| AF-DC6 | Font in unsafe zone: text placed within 5% of any slide edge (the bleed/margin zone), or any text element overlapping a human face. Both are composition defects independent of content quality. |
+| AF-DC7 | Prompt missing all three design-craft element groups (Phase 3 only): the prompt omits all of the following groups: (a) a thirds-zone assignment for headline, subject, and supporting elements; (b) depth-layer specification (foreground / midground / background); (c) a COLOR GRADING block comment. A prompt missing all three groups has not been art-directed to the required standard and is a Phase 3 auto-fail. Missing one or two groups triggers a scored deduction (p-DC dimension), not an outright auto-fail, unless the missing group is also covered by a more specific auto-fail above. |
+
 ---
 
 ### SOP 9.1 -- Copy QC Gate (Phase 1Q)
@@ -321,8 +335,27 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 17. (double-weight) Designed typography (the TYPOGRAPHY LAW): beyond the binary AF-P10 floor, this criterion scores HOW well the prompt carries the designed type system. A prompt that names the exact weight AND a large pt size on EVERY text line, honors the one-family weight map (Black for headlines and giant numbers, ExtraBold for subs and body beats, Bold for gold caps labels, Medium italic for tertiary), applies the full size scale (giant numbers 110-150pt, hero headline 62-86pt, kicker ~13pt), lays out the canonical hierarchy stack, and specifies the creative devices (giant numbers, paired gold rules, drawn strikes, single-word color swaps, text baked into the image) scores high; a prompt that names a font with only a partial size hint or a thin hierarchy scores low; a basic or default font is the AF-P10 floor.
 18. (double-weight) Standalone art (the core design principle): beyond the binary AF-P11 floor, this criterion scores HOW well the prompt directs a finished, gallery-grade standalone composition. A prompt with intentional art direction (focal hierarchy, negative space, depth), a clear hero subject, premium lifestyle-documentary photography, the typography composed INTO the image, and its own felt emotional beat (readable in 2 seconds) scores high; a prompt that gestures at a scene with copy on top scores low; "just a background with text" is the AF-P11 floor. The scored question is "would this single slide, pulled out alone, read as a deliberate piece of visual art?" Re-evaluated against the rendered image at Phase 5 and final-deck QC.
 
+**Design-Craft Scoring Dimensions (Phase 3 Prompt QC -- scored p-DC1 through p-DC7; Phase 5 Image QC -- re-scored i-DC1 through i-DC7):**
+
+After the standard 18 criteria, score the following seven Design-Craft dimensions. Each dimension is scored 1-10, same scale as the standard criteria. The Design-Craft average is included in the overall prompt QC score for that slide. A slide that scores <= 3 on ANY SINGLE Design-Craft dimension triggers a forced revision loop regardless of the overall average (the "forced loop" rule -- amateur composition on even one dimension blocks the deck).
+
+| Dim | Code | What is scored | AUTO-FAIL code |
+|-----|------|---------------|----------------|
+| 1 | p-DC1 / i-DC1 | Composition / Thirds: prompt declares thirds-zone for headline, subject, and supporting elements; rendered image honors the declared zones; focal point at or near a thirds-grid intersection | AF-DC3 if missing entirely |
+| 2 | p-DC2 / i-DC2 | Layering / Depth: prompt specifies foreground / midground / background; subject is separated from background by depth of field, rim light, or scrim gradient in the rendered image | AF-DC2 if completely flat |
+| 3 | p-DC3 / i-DC3 | Card / Object Use: when the slide spec calls for a panel, inset, callout chip, vignette, hang-tag, price-tag motif, or gold-rule divider, the prompt specifies the device with correct placement (named thirds zone, not just "corner") | -- |
+| 4 | p-DC4 / i-DC4 | Font Placement / Alignment: headline and copy stack within the named thirds zone; text is within safe margins (no element within 5% of any edge); no text over a human face in the rendered image | AF-DC6 if in unsafe zone; AF-DC1 if over face |
+| 5 | p-DC5 / i-DC5 | Color Harmony (DOUBLE-WEIGHT): prompt declares a contrast ratio for headline-on-background (WCAG AA minimum); complementary accent is reserved for maximum-impact moments; color relationships match the STYLE BLOCK COLOR THEORY section; rendered image passes the contrast check | AF-DC4 if WCAG fails |
+| 6 | p-DC6 / i-DC6 | Color Grading (DOUBLE-WEIGHT): prompt includes the TEMPERATURE LOCK and COLOR GRADING block comment; rendered image matches the deck-level grade profile (WARM / COOL / NEUTRAL); deck-wide grade consistency is checked at SOP 9.5 | AF-DC5 if inconsistent across deck |
+| 7 | p-DC7 / i-DC7 | Art-Direction Quality: overall prompt demonstrates professional art direction -- clear visual idea, intentional composition, gallery-standard ambition; rendered image reads as magazine-grade, not amateur stock-photo aesthetic | AF-DC1 (text over face), AF-DC2 (flat), AF-P11 (standalone) if worst-case |
+
+**Design-Craft pass rules:**
+- 8.5 average threshold and 7.0 per-dimension floor apply to the Design-Craft block exactly as they apply to the standard criteria.
+- Dimensions 5 (color harmony) and 6 (color grading) are DOUBLE-WEIGHT: the score on each of those dimensions counts twice in the Design-Craft average.
+- A score of <= 3 on any single Design-Craft dimension triggers a FORCED REVISION LOOP regardless of the average. "3 or below" = amateur composition that must be rebuilt before the deck advances.
+
 **Outputs:**
-- working/qc/prompt_qc_report.json (with per-prompt character counts, auto-fail codes, scores, fail classifications, revision instructions)
+- working/qc/prompt_qc_report.json (with per-prompt character counts, auto-fail codes, scores including p-DC1 through p-DC7, fail classifications, revision instructions)
 
 **Hand to:** Director (pass = proceed to Phase 4 generation; fail = back to Slide Image Creator)
 
@@ -379,8 +412,22 @@ SCORED LAYER (1-10, applied only after auto-fail check passes):
 16. (double-weight) Designed typography (the TYPOGRAPHY LAW): the rendered type reads as the DESIGNED weight-mapped system, not a basic or default font. The scored question is "is this gallery-grade designed typography composed into the image?" An image with a dominating heavy-weight (Black) charcoal headline, real size hierarchy, giant numbers at 1.5x-3x surrounding text where the brief calls for them, gold all-caps letter-spaced kicker labels, and charcoal headlines (never pure black) scores high; an image whose type looks like a basic or default font, or is flat with no hierarchy, scores low. (The binary floor is AF-I9; this criterion scores the degree of designed typography above that floor.)
 17. (double-weight) Standalone art (the core design principle): the rendered slide reads as a finished, gallery-grade piece of visual art that stands on its own. The scored question is "pulled out alone, would this single slide read as a deliberate piece of art?" An image with intentional art direction, a clear hero subject, premium lifestyle-documentary photography, typography composed into the picture, and its own felt emotional beat scores high; an image that is "just a background with text," or that only makes sense as part of the sequence, scores low. (The binary floor is AF-I10; this criterion scores the degree of standalone art above that floor.)
 
+**Design-Craft Image QC Dimensions (i-DC1 through i-DC7) -- scored after criteria i1-i17:**
+
+Re-score the seven Design-Craft dimensions from Phase 3 Prompt QC against the RENDERED IMAGE. The same 1-10 scale, same 8.5 threshold, same 7.0 floor, same double-weight for color-harmony and color-grading, same forced-loop rule (score <= 3 on any dimension triggers a forced revision loop regardless of average).
+
+| Dim | i-Code | What is scored in the rendered image |
+|-----|--------|--------------------------------------|
+| 1 | i-DC1 | Composition / Thirds: does the rendered image place headline, subject, and supporting elements in the declared thirds zones? Does the focal point land at or near a thirds-grid intersection? |
+| 2 | i-DC2 | Layering / Depth: is there visible foreground / midground / background separation in the image? Is the subject separated from the background by depth of field, rim light, or scrim gradient? |
+| 3 | i-DC3 | Card / Object Use: if the slide called for a design device (panel, inset, callout chip, vignette, hang-tag, price-tag motif, gold-rule divider), is it present, correctly placed, and well-executed? |
+| 4 | i-DC4 | Font Placement / Alignment: is text within safe margins (not within 5% of any edge)? Is the hierarchy stack honored? Is any text landing over a human face? |
+| 5 | i-DC5 (DOUBLE-WEIGHT) | Color Harmony: do the rendered colors honor WCAG AA contrast on all text? Are complementary accents used only for maximum-impact moments? Does the palette feel intentionally composed? |
+| 6 | i-DC6 (DOUBLE-WEIGHT) | Color Grading: does this image match the deck's grade profile (WARM / COOL / NEUTRAL)? Does it feel shot in the same light as the other slides? Is temperature and saturation consistent? |
+| 7 | i-DC7 | Art-Direction Quality: does the rendered slide look magazine-grade, gallery-worthy, art-directed? Or does it look like a generic stock photo with text on top? |
+
 **Outputs:**
-- working/qc/image_qc_report.json (per-image auto-fail codes, scores, classifications, and the deck-wide `representation_tally` table + verdict)
+- working/qc/image_qc_report.json (per-image auto-fail codes, scores including i-DC1 through i-DC7, classifications, and the deck-wide `representation_tally` table + verdict)
 - Passed images moved to working/media-library/ (the deliverable folder)
 
 **Hand to:** Media Librarian / GHL Updater (passes images to GHL) and Director (for Phase 6 kick-off)
@@ -494,11 +541,23 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
      "representation_tally": {"captured_mix": [], "deck_tally": [], "within_10pct": true, "verdict": "pass"},
      "structural_completeness": {"cost_vs_value": true, "emotion_and_logic": true, "light_pitch_distributed": true, "care_first_open": true, "psd": true, "journey_see": true, "old_to_new": true, "teach_themselves": true, "not_over_taught": true, "promise_leads": true, "hook_sings": true, "who_says_so": true, "wall_of_wins": true, "guarantee": true, "scarcity_factor": true, "story_arc": true, "one_big_idea_per_slide": true, "gradual_price_ladder": true},
      "logo_on_every_slide": true,
+     "design_craft": {
+       "auto_fails_triggered": [],
+       "composition_thirds_avg": 0.0,
+       "layering_depth_avg": 0.0,
+       "card_object_use_avg": 0.0,
+       "font_placement_avg": 0.0,
+       "color_harmony_avg": 0.0,
+       "color_grading_avg": 0.0,
+       "art_direction_quality_avg": 0.0,
+       "color_grade_consistency": "pass",
+       "forced_loops_on_dc_dimensions": 0
+     },
      "loop_count": 0,
      "revision_instructions": []
    }
    ```
-   `pass` is `true` ONLY when: zero AF-F1 through AF-F4 asserts failed, zero AF-R2/AF-R3, zero AF-I8 grounding failures, zero AF-I9 designed-typography failures, zero AF-I10 standalone-art failures, every structural-completeness item is true (including all ten of the operator's named required presentation components: promise_leads, hook_sings, who_says_so, wall_of_wins, one_big_idea_per_slide, guarantee, scarcity_factor, story_arc, gradual_price_ladder, and the walked checklist-of-promises this artifact represents), AND the visual score is >= 8.5 with no single item below the 7.0 floor.
+   `pass` is `true` ONLY when: zero AF-F1 through AF-F4 asserts failed, zero AF-R2/AF-R3, zero AF-I8 grounding failures, zero AF-I9 designed-typography failures, zero AF-I10 standalone-art failures, zero AF-DC1 through AF-DC7 design-craft auto-fails, every structural-completeness item is true (including all ten of the operator's named required presentation components: promise_leads, hook_sings, who_says_so, wall_of_wins, one_big_idea_per_slide, guarantee, scarcity_factor, story_arc, gradual_price_ladder, and the walked checklist-of-promises this artifact represents), AND the visual score is >= 8.5 with no single item (including all seven Design-Craft dimensions) below the 7.0 floor, AND no Design-Craft dimension scored <= 3 (which triggers a forced loop regardless of average).
 
 7. If pass: notify the Director that Phase 6 is complete and the deck is ready for delivery. The presence of `final_deck_qc.json` with `pass: true` is what unlocks delivery (SOP 9.6).
 8. If fail: write `pass: false`, route specific revision instructions to the PPTX Assembly Specialist (collision/contrast/legibility/order/overlay), the Slide Image Creator (grounding, representation re-cast), or the Slide Copywriter (structural-completeness gaps), and increment loop_count.
