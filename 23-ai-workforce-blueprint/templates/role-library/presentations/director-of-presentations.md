@@ -421,7 +421,7 @@ final_deck_qc_report.json: all 11 image criteria and 14 copy criteria satisfied 
 A healthy run_ledger.json shows: `status: "delivered"`, slide_count = 75, phase_scores = {copy_qc: 9.1, prompt_qc: 8.9, image_qc: 8.8, final_deck_qc: 9.4}, loop_counts = {phase1q: 1, phase3: 0, phase5: 2}, escalations = [], delivered_at = ISO timestamp.
 
 ### Example B -- PRD Confirmation Message
-"This deck is for female coaches selling a high-ticket group program. It presents 'Enrollment on Autopilot' at $2,997. It will help them enroll 5-10 clients per month without cold outreach. The owner's primary goal is to run this deck live on Zoom. The audience's biggest objection is 'I don't have time for another program.' Does this match your vision? Reply YES to proceed, or tell me what to change."
+"This deck is for female coaches selling a high-ticket group program. It presents 'The Client Enrollment System' at $2,997. It will help them enroll 5-10 clients per month without cold outreach. The owner's primary goal is to run this deck live on Zoom. The audience's biggest objection is 'I don't have time for another program.' Does this match your vision? Reply YES to proceed, or tell me what to change."
 
 ---
 

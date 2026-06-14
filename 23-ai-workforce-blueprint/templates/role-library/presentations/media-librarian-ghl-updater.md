@@ -429,12 +429,12 @@ local_count == ghl_count == slide_count_final before delivery_verified is set to
 ```json
 {
   "client_slug": "coach-janelle",
-  "deck_slug": "enrollment-on-autopilot",
+  "deck_slug": "client-webinar-deck",
   "run_date": "2026-06-11",
   "version_number": 1,
-  "local_workdir": "/Users/janellecarter/webinar-decks/coach-janelle/enrollment-on-autopilot/2026-06-11/",
-  "local_media_library": "/Users/janellecarter/webinar-decks/coach-janelle/enrollment-on-autopilot/2026-06-11/media-library/",
-  "ghl_folder_name": "Coach Janelle Enrollment on Autopilot v1",
+  "local_workdir": "/Users/janellecarter/webinar-decks/coach-janelle/client-webinar-deck/2026-06-11/",
+  "local_media_library": "/Users/janellecarter/webinar-decks/coach-janelle/client-webinar-deck/2026-06-11/media-library/",
+  "ghl_folder_name": "Coach Janelle Client Webinar Deck v1",
   "ghl_folder_id": null,
   "created_at": "2026-06-11T09:00:00Z"
 }

@@ -342,11 +342,11 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 ### Example A -- delivery_plan.json After Destination Resolution (Mac Client)
 ```json
 {
-  "deck_slug": "enrollment-on-autopilot",
+  "deck_slug": "client-webinar-deck",
   "qc_score": 9.42,
   "destinations": [
-    {"type": "mac_downloads", "path": "~/Downloads/enrollment-on-autopilot_final.pptx", "status": "pending"},
-    {"type": "ghl", "ghl_folder_id": "abc123", "remote_name": "Enrollment on Autopilot FINAL v1.pptx", "status": "pending"},
+    {"type": "mac_downloads", "path": "~/Downloads/client-webinar-deck_final.pptx", "status": "pending"},
+    {"type": "ghl", "ghl_folder_id": "abc123", "remote_name": "Client Webinar Deck FINAL v1.pptx", "status": "pending"},
     {"type": "drive", "drive_folder_id": "xyz789", "status": "pending"}
   ],
   "created_at": "2026-06-11T16:00:00Z"
@@ -359,15 +359,15 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
   "delivery_complete": true,
   "delivery_verified_at": "2026-06-11T16:22:00Z",
   "delivery_destinations": [
-    {"type": "mac_downloads", "path": "~/Downloads/enrollment-on-autopilot_final.pptx", "verified": true},
-    {"type": "ghl", "ghl_media_id": "ghl-media-9999", "remote_name": "Enrollment on Autopilot FINAL v1.pptx", "verified": true},
+    {"type": "mac_downloads", "path": "~/Downloads/client-webinar-deck_final.pptx", "verified": true},
+    {"type": "ghl", "ghl_media_id": "ghl-media-9999", "remote_name": "Client Webinar Deck FINAL v1.pptx", "verified": true},
     {"type": "drive", "drive_file_id": "drive-file-4444", "verified": true}
   ]
 }
 ```
 
 ### Example C -- Delivery Notification Text
-"Your webinar deck is ready. Final QC score: 9.42/10. File locations: (1) ~/Downloads/enrollment-on-autopilot_final.pptx on your Mac, (2) GHL media library folder 'Lyric Hawkins Enrollment on Autopilot v1' as 'Enrollment on Autopilot FINAL v1.pptx'. Both locations confirmed."
+"Your webinar deck is ready. Final QC score: 9.42/10. File locations: (1) ~/Downloads/client-webinar-deck_final.pptx on your Mac, (2) GHL media library folder '<Client Business Name> <Deck Title> v1' as 'Client Webinar Deck FINAL v1.pptx'. Both locations confirmed."
 
 ---
 
