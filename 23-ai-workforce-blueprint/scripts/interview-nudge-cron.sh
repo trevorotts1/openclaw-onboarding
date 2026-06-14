@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# interview-nudge-cron.sh — PRD-2.15: State-driven, gateway-routed nudge cron
+# interview-nudge-cron.sh - PRD-2.15: State-driven, gateway-routed nudge cron
 # for incomplete AI Workforce interviews.
 #
 # Registered every 6h by install.sh. Mirrors the cheap-check-first / kill-
@@ -15,12 +15,12 @@
 #   • No companies with a lastQuestionAt set → nothing to do (exit 0)
 #   • Under 24h idle → exit 0 (cheap check)
 #
-# GATEWAY RULE (BINDING — no exceptions):
+# GATEWAY RULE (BINDING - no exceptions):
 #   All Telegram sends go through `openclaw message send`. NEVER use direct
 #   direct Telegram Bot API calls. If the openclaw CLI is absent → log and skip
 #   (do NOT fall back to direct HTTP).
 #
-# OPERATOR-ANNOUNCE RULE (BINDING — v12.3.10):
+# OPERATOR-ANNOUNCE RULE (BINDING - v12.3.10):
 #   This cron is registered in COMMAND mode (no --channel/--to/--message).
 #   Status lines (idle hours, "complete - exit", "no owner chat") are written to
 #   $OC_ROOT/workspace/.interview-nudge.log ONLY. They are NEVER spoken into a
@@ -32,7 +32,7 @@
 #   When interviewComplete=true, the shim removes the interview-nudge cron from
 #   openclaw's registry (keyed on .interviewNudgeUuid, with a name-scan fallback)
 #   and then exits 0. This guarantees no live nudge cron remains for a completed
-#   client — even on boxes installed before run-closeout.sh's primary removal path.
+#   client - even on boxes installed before run-closeout.sh's primary removal path.
 #
 # IDEMPOTENCY:
 #   The Python worker (nudge-incomplete-interviews.py) records sent nudges
@@ -92,7 +92,7 @@ state_set() {
 
 # ── Self-removal (v12.3.10) ───────────────────────────────────────────────────
 # Find the cron UUID from state (preferred) or by name-scan (fallback for
-# boxes installed before UUID recording was added — e.g. Talaya).
+# boxes installed before UUID recording was added - e.g. Talaya).
 find_nudge_cron_uuid() {
   if [[ -f "${STATE_FILE}" ]] && command -v jq >/dev/null 2>&1; then
     local uuid
@@ -114,7 +114,7 @@ self_remove_cron() {
   local uuid
   uuid=$(find_nudge_cron_uuid)
   if [[ -z "$uuid" ]]; then
-    log "self_remove_cron($reason): could not find interview-nudge cron UUID — may already be removed"
+    log "self_remove_cron($reason): could not find interview-nudge cron UUID - may already be removed"
     return 0
   fi
   log "self_remove_cron($reason): removing cron $uuid"
@@ -141,7 +141,7 @@ self_remove_cron() {
 if [[ -f "${LOCK_FILE}" ]]; then
   lock_age=$(( $(date -u +%s) - $(date -u -r "${LOCK_FILE}" +%s 2>/dev/null || date -u +%s) ))
   if (( lock_age < STALE_LOCK_MINUTES * 60 )); then
-    log "lockfile held (${lock_age}s old, limit=${STALE_LOCK_MINUTES}m) — nudge worker may still be running; skip"
+    log "lockfile held (${lock_age}s old, limit=${STALE_LOCK_MINUTES}m) - nudge worker may still be running; skip"
     exit 0
   fi
   log "stale lockfile removed (${lock_age}s old)"
@@ -152,24 +152,53 @@ trap 'rm -f "${LOCK_FILE}"' EXIT
 
 # ── No state file ─────────────────────────────────────────────────────────────
 if [[ ! -f "${STATE_FILE}" ]]; then
-  log "no state file at ${STATE_FILE} — nothing to do"
+  log "no state file at ${STATE_FILE} - nothing to do"
   exit 0
 fi
 
-command -v jq >/dev/null 2>&1 || { log "jq not found — aborting"; exit 1; }
+command -v jq >/dev/null 2>&1 || { log "jq not found - aborting"; exit 1; }
 
 # ── Cheap trigger check (token-free) ─────────────────────────────────────────
 interview_complete=$(state_get '.interviewComplete')
 last_q_at=$(state_get '.interviewProgress.lastQuestionAt')
 
 if [[ "${interview_complete}" == "true" ]]; then
-  log "interviewComplete=true — interview done, no nudge needed; self-removing cron"
+  log "interviewComplete=true - interview done, no nudge needed; self-removing cron"
   self_remove_cron "interviewComplete"
   exit 0
 fi
 
 if [[ -z "${last_q_at}" ]]; then
-  log "interviewProgress.lastQuestionAt not set — interview not started or state missing; exit"
+  log "interviewProgress.lastQuestionAt not set - interview not started or state missing; exit"
+  exit 0
+fi
+
+# ── PRD-3.3 R3.5 (auto-closeout): do NOT nudge an owner who already FINISHED ──
+# The nudge cron used to key "needs nudge" purely off interviewComplete != true.
+# That wrongly nudged an owner who finished the interview but whose interviewComplete
+# flag was never written (the HOP-1 miss, diag/03) - telling them to "finish" the
+# interview they already finished. Gate the OWNER nudge on a real "content
+# incomplete" signal: if the QC gate already returned 'pass' against the transcript,
+# OR every interview phase is marked complete, the CONTENT is done - the owner must
+# NOT be nudged. Instead this is a flag-missing condition the resume cron recovers
+# (R3.2) and the operator watchdog surfaces (R3.4 STUCK_INTERVIEW_FLAG_MISSING).
+# Hand off to the watchdog (operator lane) and exit WITHOUT an owner nudge.
+nudge_qc_status=$(state_get '.interviewQc.status')
+nudge_phases_complete=$(jq -r '(.interviewProgress.phasesComplete // []) | length' "${STATE_FILE}" 2>/dev/null || echo 0)
+_content_complete_no_flag=0
+if [[ "${nudge_qc_status}" == "pass" ]]; then
+  _content_complete_no_flag=1
+elif (( nudge_phases_complete >= 6 )); then
+  _content_complete_no_flag=1
+fi
+if (( _content_complete_no_flag == 1 )); then
+  log "interview CONTENT complete (qc=${nudge_qc_status:-none}, phasesComplete=${nudge_phases_complete}) but interviewComplete flag missing - NOT nudging the owner (they finished). Handing off to operator watchdog for the flag-missing condition."
+  WATCHDOG_FM="${SCRIPT_DIR}/closeout-readiness-watchdog.sh"
+  if [[ -f "$WATCHDOG_FM" ]]; then
+    bash "$WATCHDOG_FM" --from-nudge >>"${LOG_FILE}" 2>&1 || log "WARN: watchdog invocation (flag-missing) returned non-zero (non-fatal)"
+  else
+    log "WARN: closeout-readiness-watchdog.sh not found at $WATCHDOG_FM - flag-missing not surfaced to operator"
+  fi
   exit 0
 fi
 
@@ -196,7 +225,7 @@ HOURS_IDLE=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
 log "interview idle for ${HOURS_IDLE}h (lastQuestionAt=${last_q_at})"
 
 if (( HOURS_IDLE < 24 )); then
-  log "idle < 24h — no nudge yet; exit"
+  log "idle < 24h - no nudge yet; exit"
   exit 0
 fi
 
@@ -206,7 +235,7 @@ fi
 
 # ── Verify gateway CLI is available ──────────────────────────────────────────
 if ! command -v openclaw >/dev/null 2>&1; then
-  log "WARN: openclaw CLI not found — cannot send nudge via gateway; skip (no direct-HTTP fallback)"
+  log "WARN: openclaw CLI not found - cannot send nudge via gateway; skip (no direct-HTTP fallback)"
   exit 0
 fi
 
@@ -239,10 +268,10 @@ ZHC_STUCK_INTERVIEW_DAYS="${ZHC_STUCK_INTERVIEW_DAYS:-5}"
 if [[ "${_interview_still_incomplete}" != "true" ]] && (( HOURS_IDLE >= ZHC_STUCK_INTERVIEW_DAYS * 24 )); then
   WATCHDOG="${SCRIPT_DIR}/closeout-readiness-watchdog.sh"
   if [[ -f "$WATCHDOG" ]]; then
-    log "nudge threshold elapsed and interview still incomplete — invoking closeout-readiness-watchdog (operator lane)"
+    log "nudge threshold elapsed and interview still incomplete - invoking closeout-readiness-watchdog (operator lane)"
     bash "$WATCHDOG" --from-nudge >>"${LOG_FILE}" 2>&1 || log "WARN: watchdog invocation returned non-zero (non-fatal)"
   else
-    log "WARN: closeout-readiness-watchdog.sh not found at $WATCHDOG — skipping operator escalation"
+    log "WARN: closeout-readiness-watchdog.sh not found at $WATCHDOG - skipping operator escalation"
   fi
 fi
 

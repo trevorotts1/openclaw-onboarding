@@ -117,10 +117,10 @@ def _resolve_build_state_path():
 _LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0}
 # Set of role folder names (absolute paths) instantiated from the library, so
 # write_sop_research_manifest() can SKIP them (their SOPs are already authored
-# inside how-to.md — no LLM regeneration needed).
+# inside how-to.md - no LLM regeneration needed).
 _LIBRARY_INSTANTIATED_ROLE_DIRS = set()
 
-# PRD 2.12: boundary gate — canonical-library dept registry.
+# PRD 2.12: boundary gate - canonical-library dept registry.
 # Import sop-boundary-gate.py from the same scripts/ directory.
 try:
     from sop_boundary_gate import (  # type: ignore
@@ -217,7 +217,7 @@ def load_non_interactive_config(config_file):
         sys.exit(1)
 
     # PRD-2.15: assert industryPack.slug is present in build state before building.
-    # This enforces that the interview ran with industry customization — an interview
+    # This enforces that the interview ran with industry customization - an interview
     # with no recorded pack is not industry-custom and must not proceed blindly.
     # Edge case: slug="unknown" is allowed with a loud warning (unclassifiable business
     # should not be un-buildable). Absent slug entirely = hard fail.
@@ -238,7 +238,7 @@ def load_non_interactive_config(config_file):
                 sys.exit(1)
             elif _slug == "unknown":
                 print(
-                    "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' — no industry vertical "
+                    "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' - no industry vertical "
                     "was detected or confirmed. Building will proceed but industry customization may be generic. "
                     "Phase 5 confirmation was expected to set the slug.",
                     file=sys.stderr,
@@ -257,13 +257,18 @@ def load_non_interactive_config(config_file):
 
 
 # ============================================================
-# CANONICAL DEPARTMENT FLOOR (N23 standard: 16 mandatory + 7 universal-primary-vertical)
+# CANONICAL DEPARTMENT FLOOR (standard: 21 mandatory + 7 universal-primary-vertical = 28)
 # ============================================================
-# Every Zero Human Company is built with the 16 mandatory canonical departments
-# PLUS the 7 universal primary vertical-pack departments (one primary per pack,
-# always added regardless of industry) = 23 departments minimum. The canonical
-# floor is further expanded by keyword-matched industry extras (flavor/additive,
-# never reducing). Explicit client declines are the ONLY way to go below 23.
+# Every Zero Human Company is built with the mandatory canonical departments
+# (21 in department-naming-map.json v2.5.0) PLUS the 7 universal primary
+# vertical-pack departments (one primary per pack, always added regardless of
+# industry) = 28 departments minimum. The floor is computed at runtime from the
+# live naming map (len(mandatory) + count of universal-primary pack depts); the
+# numbers in these comments describe the live data and are never a hardcoded
+# gate. The canonical floor is further expanded by keyword-matched industry
+# extras (flavor/additive, never reducing). Explicit client declines (a
+# mandatory dept, a universal-primary vertical, or a custom dept) are the ONLY
+# way to go below the floor.
 # Canonical IDs live in department-naming-map.json (the source of truth). Legacy
 # RECOMMENDED_DEPARTMENTS keys differ from canonical IDs (e.g. "billing" vs
 # "billing-finance"); CANONICAL_ID_ALIASES maps canonical -> legacy so we
@@ -323,9 +328,255 @@ CANONICAL_DIRECT = [
 ]
 
 
+# ============================================================
+# CAPABILITY 2 - SEMANTIC COMBINE / MERGE (PRD R2.3)
+# ============================================================
+# _canonical_present() only catches a custom dept that is the canonical id, its
+# single alias, or a known VARIANT slug. It does NOT catch a custom dept that is
+# the SAME function under a different, non-slug name (e.g. "Accounting" vs
+# billing-finance, "Client Success" vs customer-support, "Brand & Identity
+# Design" vs graphics). Without a merge step those ship as a SECOND department
+# alongside the canonical one - a duplicate. This map + the detect/apply pair
+# below find that semantic overlap and, ON A RECORDED OWNER CONFIRM, fold the
+# custom INTO the canonical dept (custom roles/SOPs layered in, ONE department),
+# never shipping a duplicate.
+#
+# Keyword model (deterministic, no LLM): for each canonical id, a list of
+# whole-word/phrase signals. A custom dept whose normalized name OR description
+# contains a signal for exactly one canonical id is a merge CANDIDATE. The
+# canonical floor dept is always the survivor (the custom function is absorbed
+# into it). This is the SAME outcome the advisory build-with-AI prompt strings
+# asked the LLM to "recommend" - but enforced in code with an executor.
+SEMANTIC_OVERLAP_KEYWORDS = {
+    "billing-finance": [
+        "accounting", "bookkeeping", "bookkeep", "tax", "taxes", "payroll",
+        "invoicing", "accounts payable", "accounts receivable", "ledger",
+    ],
+    "customer-support": [
+        "client success", "customer success", "client care", "client services",
+        "account success", "help desk", "helpdesk", "client experience",
+    ],
+    "graphics": [
+        "brand identity", "brand and identity", "brand design", "identity design",
+        "visual identity", "branding design", "creative design", "logo design",
+    ],
+    "crm": [
+        "marketing and crm", "crm automation", "marketing automation",
+        "convert and flow", "convert & flow", "pipeline automation",
+        "customer relationship management",
+    ],
+    "openclaw-maintenance": [
+        "fleet operations", "fleet ops", "fleet rescue", "rescue operations",
+        "platform maintenance", "infrastructure ops", "infra ops", "devops",
+    ],
+    "project-architecture-office": [
+        "zhc build office", "build office", "workforce build", "delivery office",
+        "program office", "pmo", "project management office",
+    ],
+    "legal": [
+        "compliance", "regulatory", "risk and compliance", "risk & compliance",
+        "contracts and compliance",
+    ],
+    "communications": [
+        "public relations", "pr and comms", "internal comms", "corporate comms",
+    ],
+}
+
+# Universal-primary vertical depts can also absorb a custom function. Keyed the
+# same way; survivor is the canonical vertical id.
+SEMANTIC_OVERLAP_KEYWORDS_VERTICAL = {
+    "presentations": [
+        "speeches", "thought leadership", "thought-leadership", "keynotes",
+        "speaking", "pitch decks", "slide decks", "presentation design",
+    ],
+    "listings": ["mls", "property listings", "listing management"],
+    "podcast": ["podcasting", "show production", "episode production"],
+}
+
+
+def _semantic_overlap_match(custom_id, custom_info, overlap_map):
+    """
+    Return the canonical id a custom dept semantically overlaps, or None.
+
+    Deterministic keyword scan over the custom dept's normalized id + name +
+    description. A custom dept matches a canonical id when it contains at least
+    one of that id's signals. If signals for MORE THAN ONE canonical id match,
+    return None (ambiguous - never auto-propose a merge we cannot defend; leave
+    it as a standalone custom for the owner to place by hand). The match is
+    advisory: it produces a PROPOSAL; only a recorded owner confirm merges it.
+    """
+    info = custom_info or {}
+    haystack = " ".join([
+        str(custom_id or ""),
+        str(info.get("name", "") or ""),
+        str(info.get("description", "") or ""),
+        str(info.get("activities", "") or ""),
+    ]).lower()
+    haystack = re.sub(r"[-_]", " ", haystack)
+    hits = set()
+    for cid, signals in overlap_map.items():
+        for sig in signals:
+            s = sig.lower()
+            if " " in s:
+                if s in haystack:
+                    hits.add(cid)
+                    break
+            elif re.search(r"\b" + re.escape(s) + r"\b", haystack):
+                hits.add(cid)
+                break
+    if len(hits) == 1:
+        return next(iter(hits))
+    return None
+
+
+def detect_semantic_overlaps(selected_departments):
+    """
+    CAPABILITY 2 (detect). Find custom depts that semantically overlap a canonical
+    floor dept (or universal-primary vertical) under a NON-aliased, NON-variant
+    name. Returns a list of proposal dicts:
+        {"custom_id", "custom_name", "target_canonical", "target_kind"}
+    where target_kind is "mandatory" or "vertical".
+
+    A custom dept already recognized by _canonical_present() (id/alias/variant)
+    is NOT a proposal - it is already de-duped by reconcile_canonical_floor().
+    This step ONLY surfaces the semantic (non-slug) overlaps that step misses.
+    """
+    floor_ids = set(load_canonical_floor().keys())
+    proposals = []
+    for did, info in selected_departments.items():
+        # Skip anything that is itself a canonical dept under id/alias/variant.
+        if any(_canonical_present(cid, {did: info}) for cid in floor_ids):
+            continue
+        target = _semantic_overlap_match(did, info, SEMANTIC_OVERLAP_KEYWORDS)
+        kind = "mandatory"
+        if not target:
+            target = _semantic_overlap_match(did, info, SEMANTIC_OVERLAP_KEYWORDS_VERTICAL)
+            kind = "vertical"
+        if target and target != did:
+            proposals.append({
+                "custom_id": did,
+                "custom_name": (info or {}).get("name", did),
+                "target_canonical": target,
+                "target_kind": kind,
+            })
+    return proposals
+
+
+def apply_semantic_merges(selected_departments, core_answers):
+    """
+    CAPABILITY 2 (execute). For each detected semantic overlap, look up the OWNER'S
+    recorded decision in build-state canonicalReconciliation.mergeDecisions and act:
+
+      mergeDecisions[<custom_id>] == "merge"   -> FOLD the custom INTO the canonical
+          dept: append the custom dept's name + description into the canonical
+          dept's mergedFrom record so its roles/SOPs are layered in, then DROP the
+          standalone custom dept (no duplicate ships). The canonical dept survives.
+      mergeDecisions[<custom_id>] == "keep"    -> leave both standalone (owner wants
+          a distinct department). No merge.
+      (absent / any other value)               -> conservative DEFAULT: keep both
+          standalone and record the proposal as PENDING so the interview/Phase 5.5
+          can ask. NEVER auto-merge without a recorded confirm - a silent merge
+          would destroy a department the owner may have wanted.
+
+    Idempotent: a custom already folded (absent from selected_departments) is a
+    no-op. Records an auditable semanticMerges block into build-state.
+
+    Returns the mutated selected_departments dict.
+    """
+    proposals = detect_semantic_overlaps(selected_departments)
+    if not proposals:
+        return selected_departments
+
+    build_state = _load_build_state()
+    recon = build_state.get("canonicalReconciliation", {}) or {}
+    merge_decisions = recon.get("mergeDecisions", {}) or {}
+
+    merged = []
+    kept = []
+    pending = []
+    # Survivor canonical dept -> list of absorbed custom records (for build-time
+    # role/SOP layering). Persisted under canonicalReconciliation.mergedInto.
+    merged_into = {}
+
+    for p in proposals:
+        cid = p["custom_id"]
+        target = p["target_canonical"]
+        decision = str(merge_decisions.get(cid, "")).strip().lower()
+        if decision == "merge":
+            custom_info = selected_departments.get(cid, {}) or {}
+            # The canonical/vertical target must end up present so the fold has a
+            # home. reconcile_canonical_floor() (mandatory) and apply_vertical_packs()
+            # (vertical) add it; record the absorption for build-time layering.
+            merged_into.setdefault(target, []).append({
+                "id": cid,
+                "name": custom_info.get("name", cid),
+                "description": custom_info.get("description", ""),
+                "base_suggested_roles": custom_info.get("base_suggested_roles", ""),
+            })
+            # Annotate the survivor in-place if it is already in the set (mandatory
+            # may not be added until reconcile runs after this; that is fine - the
+            # mergedInto record is the durable carrier the build reads).
+            if target in selected_departments:
+                surv = selected_departments[target]
+                mf = surv.get("mergedFrom", [])
+                if cid not in mf:
+                    mf.append(cid)
+                surv["mergedFrom"] = mf
+            # Drop the standalone custom so NO duplicate department ships.
+            selected_departments.pop(cid, None)
+            merged.append({"custom_id": cid, "target_canonical": target, "target_kind": p["target_kind"]})
+            print(f"[MERGE] Folded custom '{cid}' INTO canonical '{target}' "
+                  f"(owner confirmed). No duplicate department ships.", file=sys.stderr)
+        elif decision == "keep":
+            kept.append({"custom_id": cid, "target_canonical": target})
+            print(f"[MERGE] Owner chose to KEEP '{cid}' standalone alongside "
+                  f"'{target}'. No merge.", file=sys.stderr)
+        else:
+            pending.append(p)
+            print(f"[MERGE] PENDING decision for custom '{cid}' (overlaps "
+                  f"'{target}'). Kept standalone; Phase 5.5 must ask merge/keep.",
+                  file=sys.stderr)
+
+    # Persist an auditable record (idempotent merge into build-state).
+    try:
+        path = _build_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        existing = state.get("canonicalReconciliation", {})
+        if not isinstance(existing, dict):
+            existing = {}
+        existing["semanticMerges"] = {
+            "proposals": proposals,
+            "merged": merged,
+            "kept": kept,
+            "pending": pending,
+            "evaluatedAt": datetime.now().isoformat(),
+            "source": "build-workforce.py apply_semantic_merges",
+        }
+        # mergedInto is the build-time layering carrier: survivor -> absorbed customs.
+        prior_mi = existing.get("mergedInto", {}) or {}
+        for tgt, recs in merged_into.items():
+            prior = prior_mi.get(tgt, [])
+            for r in recs:
+                if not any(x.get("id") == r["id"] for x in prior):
+                    prior.append(r)
+            prior_mi[tgt] = prior
+        existing["mergedInto"] = prior_mi
+        state["canonicalReconciliation"] = existing
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+        print(f"[MERGE] Wrote semanticMerges record ({len(merged)} merged, "
+              f"{len(kept)} kept, {len(pending)} pending) to {path}", file=sys.stderr)
+    except OSError as e:
+        print(f"[MERGE WARNING] Could not write semanticMerges record: {e}", file=sys.stderr)
+
+    return selected_departments
+
+
 def load_canonical_floor():
     """
-    Read the 16 mandatory canonical departments from department-naming-map.json.
+    Read the mandatory canonical departments from department-naming-map.json
+    (21 in v2.5.0; the count is read live from the map, never hardcoded).
 
     Returns an ordered dict mapping canonical-id -> dept-info dict in the
     RECOMMENDED_DEPARTMENTS shape ({name, emoji, head, description}). Each
@@ -347,11 +598,15 @@ def load_canonical_floor():
     except (OSError, json.JSONDecodeError) as e:
         print(f"[CANONICAL] Could not read {map_path}: {e}. Using hardcoded floor.", file=sys.stderr)
 
+    # Fallback MUST stay in lockstep with department-floor.HARDCODED_MANDATORY
+    # (21 ids) so a broken install that lost the naming map still enforces the
+    # full mandatory floor instead of silently under-building at 16.
     canonical_ids = list(mandatory.keys()) or [
         "marketing", "sales", "billing-finance", "customer-support",
         "web-development", "app-development", "graphics", "video", "audio",
         "research", "communications", "crm", "openclaw-maintenance", "legal",
-        "social-media", "paid-advertisement",
+        "social-media", "paid-advertisement", "personal-assistant",
+        "general-task", "project-architecture-office", "bugs", "healer",
     ]
 
     floor = {}
@@ -376,14 +631,15 @@ def _canonical_decline_set(build_state):
     Return the set of canonical IDs the client EXPLICITLY declined.
 
     EXPLICIT-DECLINE MODEL (v10.15.26 / v10.16.25): the ONLY sanctioned way for a
-    workforce to land below the 16 mandatory floor is a RECORDED explicit decline.
+    workforce to land below the mandatory floor (21 in v2.5.0) is a RECORDED
+    explicit decline.
     Two equivalent recordings are honored (and kept in sync with the on-disk
     enforcer department-floor.py.declined_set()):
       1. build_state["canonicalReconciliation"]["decisions"][cid] == "no"
          (the per-dept yes/no map written at interview/reconcile time)
       2. build_state["declinedDepartments"] = [cid, ...]
          (a flat list the interview/config may set directly)
-    Anything else (absent, "yes", null) means the canonical dept STAYS — there is
+    Anything else (absent, "yes", null) means the canonical dept STAYS - there is
     no implicit/silent way to drop a mandatory department.
     """
     declined = set()
@@ -503,15 +759,15 @@ def _write_interview_complete_to_state(answers_path=None):
 def verify_interview_complete(answers_path=None):
     """
     v12.3.1: Determine interview completeness from the PRESENCE OF REAL ANSWERS
-    in the populated file — not just a flag in build-state.
+    in the populated file - not just a flag in build-state.
 
     The blank template (workforce-interview-answers.md shipped with the skill)
-    contains only a header and placeholder HTML comment — no **Q:**/**A:** pairs.
+    contains only a header and placeholder HTML comment - no **Q:**/**A:** pairs.
     A real interview produces at least 3 **Q:**/**A:** pairs (company name,
     industry, and at least one department question).
 
     Checks (in order):
-      1. build-state interviewComplete == true  (fast path — set by this module)
+      1. build-state interviewComplete == true  (fast path - set by this module)
       2. answers file at answers_path (or auto-discovered) has >= 3 **Q:** blocks
          and file size > 512 bytes.
       3. A skill23-*-workforce-proposal.md file >= 4000 bytes exists (legacy path).
@@ -543,7 +799,7 @@ def verify_interview_complete(answers_path=None):
         result["complete"] = True
         result["method"] = "flag"
         # Also try to confirm the answers file exists with real content
-        # (don't just trust the flag — provide the file evidence too).
+        # (don't just trust the flag - provide the file evidence too).
 
     # Check 2: answers file with real content
     # Candidate paths: caller-supplied > build-state recorded path > standard discovery dirs
@@ -579,7 +835,7 @@ def verify_interview_complete(answers_path=None):
             result["file_size"] = size
             return result
         elif q_count > 0:
-            # Partial — file has SOME answers but fewer than the minimum.
+            # Partial - file has SOME answers but fewer than the minimum.
             result["answers_path"] = cand
             result["question_count"] = q_count
             result["file_size"] = size
@@ -618,12 +874,13 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
     Enforce the canonical floor on the client's selected departments.
 
     Logic (standard-unless-declined):
-      final = (16 canonical MINUS explicit "no" in build-state) UNION client customs
+      final = (all canonical MINUS explicit "no" in build-state) UNION client customs
+      (canonical = the 21 mandatory in department-naming-map.json v2.5.0)
 
     - If a canonicalReconciliation.decisions block exists in build-state, honor
       each explicit "no" (drop that canonical dept) and keep everything else.
-    - If NO reconciliation block exists, include all 16 canonical (standard) and
-      write an auditable canonicalReconciliation.autoIncluded record.
+    - If NO reconciliation block exists, include all canonical depts (standard)
+      and write an auditable canonicalReconciliation.autoIncluded record.
     - Client-named canonical depts keep the client's real description (already in
       selected_departments); canonical depts the client did NOT name inherit the
       naming-map one-liner, contextualized with company industry/voice.
@@ -782,6 +1039,7 @@ def _write_vertical_pack_record(record):
             "detectedPacks": record.get("detectedPacks", []),
             "addedDepartments": record.get("addedDepartments", []),
             "skippedDuplicates": record.get("skippedDuplicates", []),
+            "declinedVerticals": record.get("declinedVerticals", []),
             "researchManifest": record.get("researchManifest", ""),
             "appliedAt": datetime.now().isoformat(),
             "source": "build-workforce.py apply_vertical_packs",
@@ -822,8 +1080,8 @@ def _write_industry_org_design_manifest(matched_packs, added_departments, core_a
             "mapping, Mintzberg organizational configurations), and either confirm "
             "the department, recommend an industry-specific specialization of it, "
             "or flag it for removal. Cite every source with a URL + retrieval date. "
-            "Never invent a department that overlaps the canonical 16 or another "
-            "vertical-pack department."
+            "Never invent a department that overlaps a canonical floor department "
+            "or another vertical-pack department."
         ),
         "company": {
             "name": core_answers.get("company_name", ""),
@@ -842,7 +1100,7 @@ def _write_industry_org_design_manifest(matched_packs, added_departments, core_a
                 "validationQuestions": [
                     "Does this department reflect a real value-chain stage / profit pool in the client's industry?",
                     "Should any role inside it be specialized for this industry (name the role + the specialization)?",
-                    "Does it overlap or conflict with any canonical-16 department or another added department? If so, recommend merge/drop.",
+                    "Does it overlap or conflict with any canonical floor department or another added department? If so, recommend merge/drop.",
                 ],
             }
             for d in added_departments
@@ -863,24 +1121,27 @@ def _write_industry_org_design_manifest(matched_packs, added_departments, core_a
 
 def apply_vertical_packs(selected_departments, core_answers):
     """
-    WS-4 (23-DEPT STANDARD): auto-add vertical-pack departments to the workforce.
+    WS-4 (CANONICAL FLOOR STANDARD): auto-add vertical-pack departments.
 
-    Standard set (the 16 canonical floor) is already applied by
-    reconcile_canonical_floor(). This sibling step adds the 7 universal primary
+    Standard set (the mandatory canonical floor, 21 in v2.5.0) is already applied
+    by reconcile_canonical_floor(). This sibling step adds the 7 universal primary
     vertical departments (one per pack) PLUS keyword-matched extras:
 
-      PHASE 1 — UNIVERSAL PRIMARIES (23-dept floor, fires for ALL clients):
+      PHASE 1 - UNIVERSAL PRIMARIES (floor layer, fires for ALL clients):
         Every vertical pack exposes exactly one universal_primary department
         (marked universal_primary=true in department-naming-map.json; defaults to
         the first dept in the pack if the flag is absent). These 7 departments are
-        added to EVERY client regardless of industry — giving 16+7=23 as the
-        minimum floor. Industry matching does NOT gate these.
+        added to EVERY client regardless of industry - giving 21+7=28 as the
+        minimum floor (v2.5.0). Industry matching does NOT gate these. A universal
+        primary the owner explicitly declined in Phase 5.5 (canonicalReconciliation
+        .decisions[id] == "no" or declinedDepartments[]) is SKIPPED here so the
+        opt-out is honored symmetrically with the mandatory floor.
 
-      PHASE 2 — KEYWORD-MATCHED EXTRAS (flavor on top of the 23 floor):
+      PHASE 2 - KEYWORD-MATCHED EXTRAS (flavor on top of the 28 floor):
         Detect which packs match the client's industry/business context via
         auto_add_keywords. For each matching pack, add remaining (non-universal-
         primary) departments to selected_departments. These extras are ADDITIVE
-        and do NOT reduce the floor — they push the final count to 23+.
+        and do NOT reduce the floor - they push the final count to 28+.
 
       DE-DUP: all adds are de-duped against (a) the canonical floor under any
         canonical id/alias/variant, (b) a prior universal-primary already added,
@@ -899,15 +1160,30 @@ def apply_vertical_packs(selected_departments, core_answers):
         return selected_departments
 
     # Build the canonical/alias/variant id set so a vertical dept can never
-    # shadow a canonical-16 department (no overlap with the standard set).
+    # shadow a canonical floor department (no overlap with the standard set).
     floor = load_canonical_floor()
     canonical_block = set(floor.keys())
     canonical_block |= {CANONICAL_ID_ALIASES.get(c, c) for c in floor.keys()}
     for c in floor.keys():
         canonical_block |= set(CANONICAL_VARIANT_SLUGS.get(c, []))
 
+    # R2.6 SYMMETRIC OPT-OUT: a universal-primary vertical the owner explicitly
+    # declined in Phase 5.5 must be skipped here, exactly as a declined mandatory
+    # canonical dept is skipped in reconcile_canonical_floor(). The decline is
+    # recorded the same way (canonicalReconciliation.decisions[id] == "no" OR a
+    # flat declinedDepartments[] entry) and read by the SAME _canonical_decline_set
+    # helper, so the on-disk enforcer (department-floor.declined_set) and this
+    # builder stay in lockstep. _norm-style comparison (hyphen/case-insensitive)
+    # keeps a decline keyed as e.g. "scheduling_dispatch" matching "scheduling-dispatch".
+    _vert_declined_raw = _canonical_decline_set(_load_build_state())
+    _vert_declined = {re.sub(r"[^a-z0-9]", "", str(d).lower()) for d in _vert_declined_raw}
+
+    def _is_vertical_declined(did):
+        return re.sub(r"[^a-z0-9]", "", str(did).lower()) in _vert_declined
+
     added_departments = []
     skipped_duplicates = []
+    declined_verticals = []
     seen_added = set()
 
     def _add_dept(dept, pack_id, label=""):
@@ -917,13 +1193,17 @@ def apply_vertical_packs(selected_departments, core_answers):
         did = dept.get("id")
         if not did:
             return False
+        if _is_vertical_declined(did):
+            declined_verticals.append({"id": did, "reason": "owner declined (Phase 5.5)", "pack": pack_id})
+            print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}'{label} - owner explicitly declined.", file=sys.stderr)
+            return False
         if did in canonical_block:
             skipped_duplicates.append({"id": did, "reason": "overlaps canonical floor", "pack": pack_id})
-            print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}'{label} — overlaps canonical floor.", file=sys.stderr)
+            print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}'{label} - overlaps canonical floor.", file=sys.stderr)
             return False
         if did in selected_departments or did in seen_added:
             skipped_duplicates.append({"id": did, "reason": "already present", "pack": pack_id})
-            print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}'{label} — already present.", file=sys.stderr)
+            print(f"[VERTICAL] Skipping '{did}' from pack '{pack_id}'{label} - already present.", file=sys.stderr)
             return False
         base = dept.get("base_suggested_roles", "")
         info = {
@@ -946,7 +1226,7 @@ def apply_vertical_packs(selected_departments, core_answers):
               file=sys.stderr)
         return True
 
-    # PHASE 1 — universal primaries: one from every pack, always fires.
+    # PHASE 1 - universal primaries: one from every pack, always fires.
     universal_count = 0
     for pack_id, pack in vertical_packs.items():
         if not isinstance(pack, dict):
@@ -965,13 +1245,15 @@ def apply_vertical_packs(selected_departments, core_answers):
             universal_count += 1
 
     print(f"[VERTICAL] Universal primaries added: {universal_count} of {len(vertical_packs)} packs "
-          f"(23-dept floor: 16 mandatory + {universal_count} universal)", file=sys.stderr)
+          f"({len(declined_verticals)} declined by owner); "
+          f"floor = {len(floor)} mandatory + {universal_count} universal-primary "
+          f"= {len(floor) + universal_count}", file=sys.stderr)
 
-    # PHASE 2 — keyword-matched extras (flavor on top of the 23 floor).
+    # PHASE 2 - keyword-matched extras (flavor on top of the floor).
     matched_packs = _detect_vertical_packs(core_answers, vertical_packs)
     if not matched_packs:
-        print("[VERTICAL] No vertical pack matched the client's industry signal — "
-              "no extras beyond the 23-dept floor.", file=sys.stderr)
+        print("[VERTICAL] No vertical pack matched the client's industry signal - "
+              "no extras beyond the canonical floor.", file=sys.stderr)
     else:
         for pack_id, _hits in matched_packs:
             pack = vertical_packs.get(pack_id, {})
@@ -990,6 +1272,7 @@ def apply_vertical_packs(selected_departments, core_answers):
         "detectedPacks": [{"pack": pid, "matchedKeywords": kws} for pid, kws in matched_packs],
         "addedDepartments": added_departments,
         "skippedDuplicates": skipped_duplicates,
+        "declinedVerticals": declined_verticals,
         "researchManifest": manifest_path,
     })
 
@@ -998,6 +1281,274 @@ def apply_vertical_packs(selected_departments, core_answers):
           f"{len(skipped_duplicates)} de-duped.", file=sys.stderr)
     return selected_departments
 
+
+# ============================================================
+# CAPABILITY 3 - PER-DEPT CUSTOM ROLES (PRD R2.4)
+# ============================================================
+
+def _next_role_number(dept_dir):
+    """Return the next free NN- prefix for a new role folder in a dept dir."""
+    nums = []
+    if os.path.isdir(dept_dir):
+        for entry in os.listdir(dept_dir):
+            m = re.match(r"^(\d{2})-", entry)
+            if m and os.path.isdir(os.path.join(dept_dir, entry)):
+                nums.append(int(m.group(1)))
+    return (max(nums) + 1) if nums else 1
+
+
+def materialize_custom_roles(dept_id, dept_info, dept_config, interview_answers):
+    """
+    CAPABILITY 3 (PRD R2.4): materialize the EXTRA roles the owner asked for in
+    THIS department as a build decision - not the post-build add-role.sh path.
+
+    Source of truth (in precedence order):
+      1. dept_config["customRoles"]            - per-dept list from the interview config
+      2. build-state canonicalReconciliation.customRoles[<dept_id>]  - interview capture
+    Each entry is either a string (role title) or a dict:
+        {"title": "...", "summary": "...", "permanent": true|false}
+
+    For each requested role NOT already present in the dept (by slug), create a
+    role folder with a PENDING how-to.md that carries the SAME one-shot
+    library-fill instruction the standard NO_TEMPLATE path uses (so the role is
+    materialized identically - never a silent empty stub). Records the
+    materialized roles into build-state canonicalReconciliation.customRolesBuilt.
+
+    Returns the list of created role folder paths (may be empty). Idempotent: a
+    role whose slug already exists is skipped.
+    """
+    requested = list(dept_config.get("customRoles", []) or [])
+    bs = _load_build_state()
+    recon = bs.get("canonicalReconciliation", {}) or {}
+    if not requested:
+        requested = list((recon.get("customRoles", {}) or {}).get(dept_id, []) or [])
+
+    # CAPABILITY 2 fold-in: if a custom dept was MERGED into THIS canonical dept
+    # (canonicalReconciliation.mergedInto[<dept_id>]), the absorbed function ships
+    # as a role INSIDE this survivor dept - never as a separate department. Add a
+    # representative role for each absorbed custom so its work is materialized here.
+    for absorbed in (recon.get("mergedInto", {}) or {}).get(dept_id, []) or []:
+        a_name = (absorbed.get("name") or absorbed.get("id") or "").strip()
+        if not a_name:
+            continue
+        title = f"{a_name} Specialist"
+        if not any((isinstance(r, dict) and (r.get("title") == title)) or r == title for r in requested):
+            requested.append({
+                "title": title,
+                "summary": (absorbed.get("description")
+                            or f"Owner's '{a_name}' function, folded into {dept_info['name']} (Capability 2 merge)."),
+                "permanent": False,
+            })
+
+    if not requested:
+        return []
+
+    dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
+    if not os.path.isdir(dept_dir):
+        print(f"[CUSTOM-ROLE WARNING] dept dir missing for '{dept_id}', cannot add custom roles.", file=sys.stderr)
+        return []
+
+    company_name = interview_answers.get("company_name", "the company")
+    industry = interview_answers.get("industry", "")
+    existing_slugs = set()
+    for entry in os.listdir(dept_dir):
+        if os.path.isdir(os.path.join(dept_dir, entry)):
+            existing_slugs.add(re.sub(r"^\d{2}-", "", entry))
+
+    created = []
+    built_records = []
+    for item in requested:
+        if isinstance(item, dict):
+            title = (item.get("title") or item.get("name") or "").strip()
+            summary = (item.get("summary") or item.get("description") or "").strip()
+            permanent = bool(item.get("permanent", False))
+        else:
+            title = str(item).strip()
+            summary = ""
+            permanent = False
+        if not title:
+            continue
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+        if slug in existing_slugs:
+            print(f"[CUSTOM-ROLE] '{title}' already present in '{dept_id}', skipping.", file=sys.stderr)
+            continue
+        num = _next_role_number(dept_dir)
+        folder = f"{num:02d}-{slug}"
+        role_dir = os.path.join(dept_dir, folder)
+        os.makedirs(role_dir, exist_ok=True)
+        how_to_path = os.path.join(role_dir, "how-to.md")
+        if not os.path.isfile(how_to_path):
+            with open(how_to_path, "w") as f:
+                f.write(f"""# {title} - how-to.md  [PENDING - OWNER-REQUESTED CUSTOM ROLE - FILL FROM LIBRARY]
+
+**Department:** {dept_info['name']} ({dept_info.get('emoji', '')})
+**Company:** {company_name}
+**Industry:** {industry}
+**Staffing:** {"permanent specialist" if permanent else "on-call specialist"}
+**Owner request:** {summary or "(owner asked for this role during the interview; no extra detail captured)"}
+**Status:** PENDING - owner-requested custom role; fill from the nearest role-library template family.
+
+> ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
+> 1. Look in `23-ai-workforce-blueprint/templates/role-library/{dept_id}/` for the
+>    nearest template family (closest role title). If none, use the closest dept family.
+> 2. Copy that template and TOKEN-FILL: company = `{company_name}`, role = `{title}`,
+>    department = `{dept_info['name']}`, industry = `{industry}`.
+> 3. Keep the template's Section-9 SOP structure intact. If the owner gave a
+>    specific procedure for this role (see the dept's owner-procedures.md), fold it
+>    into the relevant SOP step.
+> 4. Once filled, remove this PENDING header - the role drops off PENDING-SOPS.md.
+
+## What This Role Does
+
+{summary or f"Owner-requested specialist in the {dept_info['name']} department. Materialized as a build decision (Capability 3)."}
+""")
+        existing_slugs.add(slug)
+        created.append(role_dir)
+        built_records.append({"dept": dept_id, "title": title, "slug": slug, "permanent": permanent})
+        print(f"[CUSTOM-ROLE] Materialized owner-requested role '{title}' in '{dept_id}' ({folder}).", file=sys.stderr)
+
+    if built_records:
+        try:
+            path = _build_state_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            state = _load_build_state()
+            existing = state.get("canonicalReconciliation", {})
+            if not isinstance(existing, dict):
+                existing = {}
+            prior = existing.get("customRolesBuilt", [])
+            for r in built_records:
+                if not any(x.get("dept") == r["dept"] and x.get("slug") == r["slug"] for x in prior):
+                    prior.append(r)
+            existing["customRolesBuilt"] = prior
+            state["canonicalReconciliation"] = existing
+            with open(path, "w") as f:
+                json.dump(state, f, indent=2)
+        except OSError as e:
+            print(f"[CUSTOM-ROLE WARNING] Could not record customRolesBuilt: {e}", file=sys.stderr)
+
+    return created
+
+
+# ============================================================
+# CAPABILITY 4 - PER-DEPT CUSTOM SOPs (PRD R2.5)
+# ============================================================
+
+def capture_custom_sops(dept_id, dept_info, dept_config, interview_answers):
+    """
+    CAPABILITY 4 (PRD R2.5): capture the owner-specific procedures for THIS
+    department as a build decision, RESPECTING sop_boundary_gate.py:
+
+      - CANONICAL dept (templates exist in role-library) -> the build COPIES SOPs
+        from the 233-template library (LLM authoring is REFUSED for canonical
+        depts). We therefore do NOT author a new SOP body; instead we write the
+        owner's procedure to `<dept>/owner-procedures.md` as a SUPPLEMENTAL note
+        the role docs reference (a "your procedure for this" overlay), and flag it
+        so the token-personalize / converge step folds it into the copied SOPs.
+      - CUSTOM dept (no library templates) -> the owner's procedure is recorded so
+        populate-sops-from-manifest.py LLM-authors the SOP FROM the owner's
+        procedure, not generic boilerplate.
+
+    Source of truth (precedence): dept_config["customSops"] then build-state
+    canonicalReconciliation.customSops[<dept_id>]. Each entry is a string or a
+    dict {"title": "...", "procedure": "..."}.
+
+    Writes `<dept>/owner-procedures.md` (idempotent) and records
+    canonicalReconciliation.customSopsCaptured. Returns the procedures file path
+    or "" if nothing was captured. NEVER bypasses the canonical boundary gate.
+    """
+    entries = list(dept_config.get("customSops", []) or [])
+    if not entries:
+        bs = _load_build_state()
+        recon = bs.get("canonicalReconciliation", {}) or {}
+        entries = list((recon.get("customSops", {}) or {}).get(dept_id, []) or [])
+    if not entries:
+        return ""
+
+    dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
+    if not os.path.isdir(dept_dir):
+        print(f"[CUSTOM-SOP WARNING] dept dir missing for '{dept_id}', cannot capture SOPs.", file=sys.stderr)
+        return ""
+
+    # Determine canonicity via the SAME boundary gate the populate step honors.
+    is_canonical = False
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from sop_boundary_gate import is_canonical_dept  # type: ignore
+        is_canonical = bool(is_canonical_dept(dept_id))
+    except Exception as e:
+        # Conservative fallback: treat a dept that resolves to a suggested-roles
+        # file as canonical (copy path) so we never accidentally invite LLM
+        # authoring for a library dept.
+        is_canonical = dept_id in DEPT_TO_SUGGESTED_ROLES
+        print(f"[CUSTOM-SOP] boundary-gate import unavailable ({e}); "
+              f"falling back to DEPT_TO_SUGGESTED_ROLES membership for '{dept_id}'.", file=sys.stderr)
+
+    company_name = interview_answers.get("company_name", "the company")
+    mode = ("CANONICAL (copy from library; owner procedure is a supplemental overlay "
+            "folded into copied SOPs - LLM authoring stays REFUSED)"
+            if is_canonical else
+            "CUSTOM (LLM-author the SOP FROM this owner procedure, not boilerplate)")
+
+    lines = [
+        f"# Owner-Specific Procedures - {dept_info['name']} ({dept_info.get('emoji', '')})",
+        "",
+        f"**Company:** {company_name}",
+        f"**Department:** {dept_id}",
+        f"**SOP handling:** {mode}",
+        "",
+        "> These are the OWNER'S specific procedures for this department, captured",
+        "> as a build decision (Capability 4). For a canonical department these are",
+        "> a supplemental overlay the copied library SOPs reference - they do NOT",
+        "> replace the canonical SOP body and do NOT invite LLM re-authoring. For a",
+        "> custom department they are the GROUND TRUTH the authored SOP is built from.",
+        "",
+    ]
+    captured = []
+    for i, item in enumerate(entries, 1):
+        if isinstance(item, dict):
+            title = (item.get("title") or f"Procedure {i}").strip()
+            procedure = (item.get("procedure") or item.get("text") or "").strip()
+        else:
+            title = f"Procedure {i}"
+            procedure = str(item).strip()
+        if not procedure:
+            continue
+        lines.append(f"## {title}")
+        lines.append("")
+        lines.append(procedure)
+        lines.append("")
+        captured.append({"dept": dept_id, "title": title})
+
+    if not captured:
+        return ""
+
+    proc_path = os.path.join(dept_dir, "owner-procedures.md")
+    with open(proc_path, "w") as f:
+        f.write("\n".join(lines))
+    print(f"[CUSTOM-SOP] Captured {len(captured)} owner procedure(s) for '{dept_id}' "
+          f"-> {proc_path} [{'canonical-overlay' if is_canonical else 'custom-authoring-source'}]",
+          file=sys.stderr)
+
+    try:
+        path = _build_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        existing = state.get("canonicalReconciliation", {})
+        if not isinstance(existing, dict):
+            existing = {}
+        prior = existing.get("customSopsCaptured", [])
+        for r in captured:
+            entry = {**r, "isCanonical": is_canonical, "file": proc_path}
+            if not any(x.get("dept") == r["dept"] and x.get("title") == r["title"] for x in prior):
+                prior.append(entry)
+        existing["customSopsCaptured"] = prior
+        state["canonicalReconciliation"] = existing
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+    except OSError as e:
+        print(f"[CUSTOM-SOP WARNING] Could not record customSopsCaptured: {e}", file=sys.stderr)
+
+    return proc_path
 
 
 def build_from_config(config):
@@ -1063,7 +1614,7 @@ def build_from_config(config):
                 f.write(f"**Q:** What is your biggest challenge?\n**A:** {biggest_challenge}\n\n---\n\n")
 
         # v12.3.1: Mark the interview as complete in build-state RIGHT AFTER writing
-        # the answers file — so every downstream check (verify-zhc-standard.sh,
+        # the answers file - so every downstream check (verify-zhc-standard.sh,
         # interview-nudge-cron.sh, resume-workforce-build.sh) sees interviewComplete=true
         # and finds the populated answers file, never the blank template.
         _write_interview_complete_to_state(answers_path=answers_path)
@@ -1086,8 +1637,8 @@ def build_from_config(config):
                 }
 
     # v10.x - Enforce the canonical department floor (standard-unless-declined).
-    # Builds all 16 canonical depts (minus any the client explicitly declined in
-    # build-state) UNION the client's customs, then writes an auditable
+    # Builds all canonical depts (21 in v2.5.0; minus any the client explicitly
+    # declined in build-state) UNION the client's customs, then writes an auditable
     # canonicalReconciliation record. Canonical depts the client named keep their
     # real description; the rest inherit the naming-map one-liner with client
     # industry context. Idempotent.
@@ -1097,18 +1648,29 @@ def build_from_config(config):
 
     # WS-4: research-driven industry add-ons. After the standard floor, detect
     # the client's industry from the naming-map vertical_packs keywords and add
-    # the matching industry departments — de-duped against the canonical 16 and
+    # the matching industry departments - de-duped against the canonical floor and
     # each other (no overlap), each inheriting a real base roles file, and
     # grounded by a McKinsey-style industry-org-design research manifest the
     # Research dept consumes. Runs BEFORE assert_dept_map_resolves so every
     # auto-added dept is proven to resolve to an existing roles file.
     selected_departments = apply_vertical_packs(selected_departments, core_answers)
 
+    # CAPABILITY 2 (PRD R2.3): semantic COMBINE/MERGE. After the floor + verticals
+    # are present (so every survivor dept exists to absorb into), fold any custom
+    # dept that semantically overlaps a canonical floor / universal-primary dept
+    # under a non-slug name (e.g. Accounting->billing-finance, Client Success->
+    # customer-support, Brand & Identity Design->graphics) INTO the canonical dept
+    # - but ONLY when the owner recorded a "merge" decision in
+    # canonicalReconciliation.mergeDecisions. Confirmed merges drop the duplicate
+    # standalone custom; un-decided overlaps stay standalone + are recorded PENDING
+    # for Phase 5.5 to ask. Never a silent merge.
+    selected_departments = apply_semantic_merges(selected_departments, core_answers)
+
     print(f"[NON-INTERACTIVE] Departments: {', '.join(selected_departments.keys())}", file=sys.stderr)
 
     # v10.15.18: HARD-FAIL the build if ANY selected department does not resolve
     # to an existing suggested-roles file. This makes the "zero-role department"
-    # variance bug impossible — no department can silently ship with 0 roles/SOPs.
+    # variance bug impossible - no department can silently ship with 0 roles/SOPs.
     assert_dept_map_resolves(list(selected_departments.keys()))
 
     # Create department workspaces
@@ -1132,6 +1694,20 @@ def build_from_config(config):
         # Create role subfolders, 00-START-HERE.md, governing-personas.md, and SOP stubs
         role_folders = create_role_workspace(dept_id, dept_info, dept_answers)
         print(f"[NON-INTERACTIVE] Created {len(role_folders)} role folders in {dept_id}/", file=sys.stderr)
+
+        # CAPABILITY 3 (PRD R2.4): materialize the EXTRA roles this owner asked for
+        # in THIS department as a build decision (not the post-build add-role.sh
+        # path). Idempotent; skips any role slug already present.
+        custom_role_folders = materialize_custom_roles(dept_id, dept_info, dept_config, dept_answers)
+        if custom_role_folders:
+            role_folders = list(role_folders) + custom_role_folders
+            print(f"[NON-INTERACTIVE] Added {len(custom_role_folders)} owner-requested custom role(s) to {dept_id}/", file=sys.stderr)
+
+        # CAPABILITY 4 (PRD R2.5): capture this owner's department-specific
+        # procedures as a build decision, respecting sop_boundary_gate.py
+        # (canonical = supplemental overlay over copied SOPs; custom = LLM
+        # authoring source). Never invites LLM authoring for a canonical dept.
+        capture_custom_sops(dept_id, dept_info, dept_config, dept_answers)
 
         # Log department answers
         if discovery_dir:
@@ -1181,15 +1757,15 @@ def build_from_config(config):
     write_universal_routing_map(selected_departments)
 
     # Gap-3: collect every NO_TEMPLATE role (PENDING how-to.md) into a single
-    # company-root manifest so the orchestrator knows exactly what to fill — a
+    # company-root manifest so the orchestrator knows exactly what to fill - a
     # missing template is never a silent empty stub.
     write_pending_sops_manifest(selected_departments)
 
     # v9.6.0: write the SOP research manifest so the AI agent can fan out
     # parallel sub-agents (one per department) to write real Lean Six Sigma
-    # SOPs to replace the [Step X — to be personalized] placeholders.
+    # SOPs to replace the [Step X - to be personalized] placeholders.
     # The sub-agents are spawned BY the AI agent reading this manifest,
-    # not by this script directly — keeps spawn under the agent's control
+    # not by this script directly - keeps spawn under the agent's control
     # so it respects the v9.4.0 maxConcurrent / maxSpawnDepth gates and
     # the v9.5.2 timeout floors (1800s per heavy-reasoning sub-agent).
     manifest_path = write_sop_research_manifest(
@@ -1236,7 +1812,7 @@ def build_from_config(config):
                     # stay failed and the resume cron must re-fire until the
                     # substance gate confirms real DMAIC SOPs on disk.
                     print(f"[NON-INTERACTIVE] SOP population ran in INLINE-QUEUE mode (no openclaw "
-                          f"sub-agents available) — work files were written but NO SOPs are authored "
+                          f"sub-agents available) - work files were written but NO SOPs are authored "
                           f"yet. sopLibraryStatus=authoring. The AI agent MUST execute each dept's "
                           f".sop-write-queue/ job, then re-run verify-library-gate.sh until it exits 0. "
                           f"Do NOT write buildCompletedAt while the SOP library is empty.", file=sys.stderr)
@@ -1268,7 +1844,7 @@ def build_from_config(config):
         selected_departments=selected_departments,
     )
 
-    # Generate departments.json — v9.6.1 writes to BOTH the ZHC company folder
+    # Generate departments.json - v9.6.1 writes to BOTH the ZHC company folder
     # (canonical for Skill 32 to read) and the legacy company-discovery folder
     # (kept for backward compatibility during the v9.5 -> v9.6 transition).
     departments_json = generate_departments_json(selected_departments)
@@ -1326,7 +1902,7 @@ def build_from_config(config):
     generate_persona_matrix(selected_departments, persona_categories, company_name)
 
 
-    # v10.5.1: Run v2.1 post-build augmentation — adds IDENTITY.md, SOUL.md,
+    # v10.5.1: Run v2.1 post-build augmentation - adds IDENTITY.md, SOUL.md,
     # MEMORY.md, HEARTBEAT.md, how-to.md (universal 18-section template), and
     # AGENTS/TOOLS/USER symlinks to every role folder created above. Master
     # Orchestrator (CEO) gets the CEO variant of the deferral clause. Idempotent.
@@ -1398,10 +1974,10 @@ def build_from_config(config):
         try:
             _gate_rc = _subprocess.run(["bash", _gate_script], timeout=240).returncode
             if _gate_rc == 0:
-                print("[v10.15.8] LIBRARY GATE PASS — roleLibraryStatus=done AND sopLibraryStatus=done. "
+                print("[v10.15.8] LIBRARY GATE PASS - roleLibraryStatus=done AND sopLibraryStatus=done. "
                       "Workforce may proceed to closeout.", file=sys.stderr)
             else:
-                print(f"[v10.15.8] LIBRARY GATE FAIL (rc={_gate_rc}) — role library and/or SOP library "
+                print(f"[v10.15.8] LIBRARY GATE FAIL (rc={_gate_rc}) - role library and/or SOP library "
                       f"NOT populated. Do NOT write buildCompletedAt / closeoutStatus=pending. Re-run "
                       f"post-build-role-workspaces.py and/or populate-sops-from-manifest.py, then re-run "
                       f"verify-library-gate.sh until it exits 0. The resume cron will fire [LIBRARY-RESUME] "
@@ -1418,7 +1994,7 @@ def build_from_config(config):
 
 HOME = os.path.expanduser("~")
 
-# PRD 1.9: resolve ALL paths through get_openclaw_paths() — the single path
+# PRD 1.9: resolve ALL paths through get_openclaw_paths() - the single path
 # authority. This script NEVER writes outside master_files/zero-human-company/.
 # Legacy ~/clawd roots may be READ for backward compat via get_legacy_company_roots()
 # but nothing new is written there.
@@ -1432,7 +2008,7 @@ try:
     # Canonical ZHC root (PRD 1.9): master_files/zero-human-company/
     ZHC_ROOT = str(_PATHS_BW["company_root"])
 except (Exception, SystemExit) as _bw_err:
-    # Graceful fallback — includes CI environments without an OpenClaw install.
+    # Graceful fallback - includes CI environments without an OpenClaw install.
     # detect_platform raises SystemExit(1) when no platform is detected; catch it
     # so module-level import in CI test fixtures does not crash.
     import warnings as _bw_warnings
@@ -1519,13 +2095,13 @@ INHERITED_FILES = ["TOOLS.md", "AGENTS.md", "USER.md"]
 # v12.3.4: expanded to all 6 core workspace .md files (added IDENTITY.md + SOUL.md).
 CONTEXT_FILES = ["USER.md", "MEMORY.md", "AGENTS.md", "TOOLS.md", "IDENTITY.md", "SOUL.md"]
 
-# Canonical 17 departments — N17 binding. This list MUST match the dashboard's
+# Canonical 17 departments - N17 binding. This list MUST match the dashboard's
 # `config/departments.json` exactly. v10.13.0 sync: removed Operations / Creative
 # / HR / IT (none of these are produced by the AI Workforce Interview anymore;
 # they were pre-v10.7.0 leftovers). Added CRM, OpenClaw Maintenance, Social
 # Media, Paid Advertisement (all 4 explicit interview outputs).
 #
-# Per N17, this dict is a SUGGESTION list during the interview — the client
+# Per N17, this dict is a SUGGESTION list during the interview - the client
 # still chooses which subset they need. But no department OUTSIDE this list
 # may be invented by the script. The interview output IS the source of truth
 # for which subset is enabled in the dashboard.
@@ -1551,11 +2127,11 @@ RECOMMENDED_DEPARTMENTS = {
     "crm": {"name": "CRM", "emoji": "📇", "head": "Director of CRM", "description": "Customer data, lead lifecycle, pipeline hygiene (GHL-focused)"},
     "openclaw": {"name": "OpenClaw Maintenance", "emoji": "🦾", "head": "Head of OpenClaw Maintenance", "description": "Sunday updates, skill bumps, system QC, internal tooling"},
     "legal": {"name": "Legal / Compliance", "emoji": "⚖️", "head": "Chief Legal Officer", "description": "Contracts, regulations, keeping you protected"},
-    "social": {"name": "Social Media", "emoji": "📱", "head": "Director of Social Media", "description": "Organic channels — LinkedIn, X, Instagram, TikTok, YouTube"},
-    "paid-ads": {"name": "Paid Advertisement", "emoji": "🎯", "head": "Director of Paid Advertisement", "description": "Meta / Google / YouTube / TikTok paid acquisition — ROAS, CPA, retargeting"},
+    "social": {"name": "Social Media", "emoji": "📱", "head": "Director of Social Media", "description": "Organic channels - LinkedIn, X, Instagram, TikTok, YouTube"},
+    "paid-ads": {"name": "Paid Advertisement", "emoji": "🎯", "head": "Director of Paid Advertisement", "description": "Meta / Google / YouTube / TikTok paid acquisition - ROAS, CPA, retargeting"},
 }
 
-# N17 runtime guard — if config/departments.json is reachable from the workspace,
+# N17 runtime guard - if config/departments.json is reachable from the workspace,
 # verify our hardcoded list matches it. Drift between this dict and the dashboard
 # config is the exact failure mode the Phase 13 audit catches.
 def _verify_departments_against_dashboard_config() -> None:
@@ -1585,7 +2161,7 @@ def _verify_departments_against_dashboard_config() -> None:
                     print(f"  Missing from script (in dashboard): {sorted(missing_from_script)}", file=sys.stderr)
             return
         except Exception:
-            return  # Best-effort only — never block on a parsing issue
+            return  # Best-effort only - never block on a parsing issue
 
 # Model assignments per department type
 # Creative/content departments use Kimi (fast, good for writing)
@@ -1613,7 +2189,7 @@ DEFAULT_MODEL_ASSIGNMENTS = {
 
 
 # ============================================================
-# RESEARCH FALLBACK (Phase 13 audit — P1)
+# RESEARCH FALLBACK (Phase 13 audit - P1)
 # ============================================================
 # When the interview encounters an unknown answer (industry-specific term,
 # unfamiliar role title, missing dept-KPI baseline), the script can call
@@ -1634,14 +2210,14 @@ def research_unknown_answer(question: str, context: str = "", purpose_tier: str 
         question: the unknown answer the agent needs (e.g. "What's the typical
                   CPA for a Series-A SaaS company in healthtech?").
         context: 1-2 sentence framing the script already has.
-        purpose_tier: "light" | "standard" | "heavy" — controls max_tokens.
+        purpose_tier: "light" | "standard" | "heavy" - controls max_tokens.
 
     Returns:
         The model's response text, or None if research is unavailable.
 
     N1 compliance: Perplexity Sonar is hosted via OpenRouter, NOT Anthropic.
     N15 alignment: this is the runtime counterpart to web-research-preflight.sh
-                   — preflight populates static defaults, this fills gaps.
+                   - preflight populates static defaults, this fills gaps.
     """
     import os as _os
     import json as _json
@@ -1665,8 +2241,8 @@ def research_unknown_answer(question: str, context: str = "", purpose_tier: str 
                 if api_key:
                     break
     if not api_key:
-        # No key — return None so caller falls back to its built-in default.
-        print(f"[research] OPENROUTER_API_KEY absent — skipping web research for: {question[:80]}",
+        # No key - return None so caller falls back to its built-in default.
+        print(f"[research] OPENROUTER_API_KEY absent - skipping web research for: {question[:80]}",
               file=sys.stderr)
         return None
 
@@ -1855,7 +2431,7 @@ def _resolve_main_agent_workspace():
 
     PRD 1.11: This is now a thin shim over resolve_injected_core_files() in
     shared-utils/.  The shared helper is the single canonical implementation.
-    Kept here by name for backward-compat — callers need not change.
+    Kept here by name for backward-compat - callers need not change.
 
     Returns:
         str path to the injected workspace directory.
@@ -1959,12 +2535,12 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         try:
             os.symlink(src, dst)
         except OSError as e:
-            # Fallback to copy only if symlink unsupported (rare — Windows w/o admin)
+            # Fallback to copy only if symlink unsupported (rare - Windows w/o admin)
             print(f"[INHERITED-FILES WARN] symlink failed for {filename}: {e}; falling back to copy",
                   file=sys.stderr)
             shutil.copy2(src, dst)
 
-    # G5: detect CEO dept — canonical orchestrator rule is PREPENDED to its
+    # G5: detect CEO dept - canonical orchestrator rule is PREPENDED to its
     # MEMORY.md / SOUL.md / IDENTITY.md (NOT to AGENTS.md/TOOLS.md which are
     # shared). Idempotent: CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER guards against
     # duplicate injection on re-runs.
@@ -1977,7 +2553,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(soul_path, 'w') as f:
             f.write(soul_content)
     # G5: for CEO, prepend canonical orchestrator rule at the TOP of SOUL.md
-    # (idempotent — skip if V2 marker already present; upgrade V1→V2 if only V1 present)
+    # (idempotent - skip if V2 marker already present; upgrade V1→V2 if only V1 present)
     if is_ceo_dept:
         with open(soul_path, 'r') as f:
             existing = f.read()
@@ -1992,7 +2568,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
             with open(soul_path, 'w') as f:
                 f.write(CEO_ORCHESTRATOR_RULE + existing)
 
-    # v10.13.23 — Create IDENTITY.md for the dept head (Trevor's agent-file
+    # v10.13.23 - Create IDENTITY.md for the dept head (Trevor's agent-file
     # architecture). Per the spec: every top-level agent gets its own
     # IDENTITY/SOUL/MEMORY/HEARTBEAT; the SHARED files (USER/AGENTS/TOOLS)
     # stay symlinked at the workspace root. Sub-agents (role folders inside
@@ -2003,7 +2579,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(identity_path, 'w') as f:
             f.write(identity_content)
     # G5: for CEO, prepend canonical orchestrator rule at the TOP of IDENTITY.md
-    # (idempotent — skip if V2 marker present; upgrade V1→V2 if only V1 present)
+    # (idempotent - skip if V2 marker present; upgrade V1→V2 if only V1 present)
     if is_ceo_dept:
         with open(identity_path, 'r') as f:
             existing = f.read()
@@ -2049,12 +2625,12 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
             f.write(heartbeat_content)
 
     # G5-FIX (v11.3.2): Inject PRIME DIRECTIVE into the MAIN AGENT's workspace
-    # SOUL.md — the file the gateway actually injects into the model context.
+    # SOUL.md - the file the gateway actually injects into the model context.
     #
     # The previous code only wrote the directive to DEPARTMENTS_DIR/ceo/SOUL.md
     # (the dept-ceo sub-agent workspace). The MAIN orchestrator agent reads its
     # bootstrap files from agents.list[main].workspace (or agents.defaults.workspace
-    # or ~/.openclaw/workspace) — a DIFFERENT path. Proven on Sheila's box: hand-
+    # or ~/.openclaw/workspace) - a DIFFERENT path. Proven on Sheila's box: hand-
     # writing to workspace/SOUL.md stopped the CEO from self-executing; a build
     # re-run reverted it because the build never touched that file.
     #
@@ -2081,11 +2657,11 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
                     r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '',
                     ws_existing, count=1, flags=_re2.DOTALL)
             # Scrub the "personal assistant / handle it yourself" template intro.
-            # The SOUL.md installed by install.sh starts with this marker line —
+            # The SOUL.md installed by install.sh starts with this marker line -
             # it instructs the agent to "just help" and "have opinions" which
             # contradicts the route-not-execute PRIME DIRECTIVE.  Strip from the
             # beginning of the file up to and including the first --- separator.
-            # (Idempotent — if no such intro is found, the sub is a no-op.)
+            # (Idempotent - if no such intro is found, the sub is a no-op.)
             ws_existing = _re2.sub(
                 r'^# SOUL\.md.*?^---\s*\n',
                 '',
@@ -2101,7 +2677,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
             )
         else:
             print(
-                f"[G5-FIX] PRIME DIRECTIVE already present in {ws_soul_path} — skipping (idempotent)",
+                f"[G5-FIX] PRIME DIRECTIVE already present in {ws_soul_path} - skipping (idempotent)",
                 file=sys.stderr
             )
 
@@ -2109,7 +2685,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 
 
 # ============================================================
-# CEO / MASTER ORCHESTRATOR CANONICAL RULE (G5 — Trevor's "make it permanent")
+# CEO / MASTER ORCHESTRATOR CANONICAL RULE (G5 - Trevor's "make it permanent")
 # ============================================================
 # This block is PREPENDED to the TOP of the CEO agent's MEMORY.md, SOUL.md,
 # and IDENTITY.md by create_department_workspace() when dept_id is in the CEO
@@ -2122,7 +2698,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 #   4. General Tasks fallback when department is unclear
 #
 # Idempotency: create_department_workspace() checks for the IDEMPOTENCY_MARKER
-# before prepending — re-running the build never duplicates the block.
+# before prepending - re-running the build never duplicates the block.
 
 CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V2 -->"
 # V2 (PR2, 2026-06-09): Replaces V1 CANONICAL ORCHESTRATOR RULE with the PRIME DIRECTIVE
@@ -2137,17 +2713,17 @@ CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V2 -->"
 CEO_ORCHESTRATOR_V1_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"
 
 CEO_ORCHESTRATOR_RULE = f"""{CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER}
-## ⛔ PRIME DIRECTIVE — I AM A TASK ROUTER. I ROUTE. THIS IS NOT OPTIONAL.
+## ⛔ PRIME DIRECTIVE - I AM A TASK ROUTER. I ROUTE. THIS IS NOT OPTIONAL.
 
 1. I am the master orchestrator (CEO). My one job is to ROUTE tasks. When any task or request
-   reaches me, I ROUTE it to the correct DEPARTMENT — every time. I have NO permission to decide
+   reaches me, I ROUTE it to the correct DEPARTMENT - every time. I have NO permission to decide
    not to route, to refuse a task, or to choose what I will or will not do.
 2. I do NOT do the work myself, and I do NOT pick the specialist or spawn/keep control of a
    sub-agent to do it. I route to the DEPARTMENT. The DEPARTMENT decides which specialist
    sub-agent and which persona are needed; the task gets a persona assigned; the task is placed
-   on the Kanban board. The doing belongs to the department and its specialist — never to me.
+   on the Kanban board. The doing belongs to the department and its specialist - never to me.
 3. Before I would EVER do a task myself, I must FIRST seek and RECEIVE explicit permission and
-   consent from the owner (the human in control). Without that explicit consent, I route — always.
+   consent from the owner (the human in control). Without that explicit consent, I route - always.
    (Routing is my default and is always allowed; I never need permission to route.)
 4. If I cannot determine the right department, I route to the General Tasks department. I never
    self-execute because I'm unsure, and I never hold a task to "stay in control" of it.
@@ -2158,11 +2734,11 @@ CEO_ORCHESTRATOR_RULE = f"""{CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER}
 ### Routing = Creating a DEPARTMENT TASK (not spawning a sub-agent directly)
 
 The correct routing action is POST to `/api/tasks/ingest` with `department_slug: "<slug>"`.
-This places the task on the department's Kanban — the DEPARTMENT assigns the specialist.
+This places the task on the department's Kanban - the DEPARTMENT assigns the specialist.
 
 Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as
 executing the work yourself. If a sub-agent is spawned, it MUST read its own role files and
-operate via the task board — it is not a production tool for the orchestrator.
+operate via the task board - it is not a production tool for the orchestrator.
 
 ### Binding Rules
 
@@ -2186,12 +2762,12 @@ operate via the task board — it is not a production tool for the orchestrator.
 # that skipped AGENTS.md had no read-the-SOP directive in its OWN first-read
 # files. DIRECTOR_OPERATING_PROTOCOL below is written verbatim into the
 # director's IDENTITY.md/SOUL.md (generate_identity_md/generate_soul_md), so the
-# protocol is present in the files the agent reads first — not dependent on the
+# protocol is present in the files the agent reads first - not dependent on the
 # shared AGENTS.md being installed. The CEO / Master Orchestrator variant lives
 # in create_role_workspaces.py (CEO_OPERATING_PROTOCOL there is the single source
 # of truth, embedded by stub_identity/stub_soul via post-build-role-workspaces.py).
 
-DIRECTOR_OPERATING_PROTOCOL = """## Operating Protocol — Read the SOP Before You Work (binding)
+DIRECTOR_OPERATING_PROTOCOL = """## Operating Protocol - Read the SOP Before You Work (binding)
 
 Before executing ANY task, follow these steps IN ORDER. Do not skip a step.
 
@@ -2206,7 +2782,7 @@ Before executing ANY task, follow these steps IN ORDER. Do not skip a step.
    duration of the task and executes per the how-to (its Section-9 SOPs / the
    matching `SOP/` file indexed by `SOP/00-INDEX.md`).
 3. **No procedure, no guessing.** If the role folder has no SOP/how-to that
-   covers the task, do NOT let the sub-agent proceed by guessing — fire the
+   covers the task, do NOT let the sub-agent proceed by guessing - fire the
    department SOP-Writer (INSTRUCTIONS.md Moment 3.7) to author the missing SOP
    first, or escalate.
 4. **Review against the how-to before reporting.** When the sub-agent returns,
@@ -2223,7 +2799,7 @@ def generate_identity_md(dept_id, dept_info, interview_answers):
     its own IDENTITY/SOUL/MEMORY/HEARTBEAT. Sub-agents inherit. SHARED files
     (USER/AGENTS/TOOLS) live at the workspace root and are symlinked.
 
-    Kept intentionally lightweight — the agent fills in its persona name and
+    Kept intentionally lightweight - the agent fills in its persona name and
     voice during the first conversation with the owner.
     """
     company_name = interview_answers.get('company_name', 'the company')
@@ -2241,20 +2817,20 @@ def generate_identity_md(dept_id, dept_info, interview_answers):
     production_tools_note = ""
     if is_production_dept:
         production_tools_note = """
-## Production Tools — I Execute These (the CEO does not)
+## Production Tools - I Execute These (the CEO does not)
 
 As a department specialist I am authorized and expected to invoke AI generation tools directly:
 
-- **KIE.ai** (`KIE_API_KEY`) — image generation (Nano Banana, Seedream, Flux), video generation
+- **KIE.ai** (`KIE_API_KEY`) - image generation (Nano Banana, Seedream, Flux), video generation
   (VEO 3.1 Fast, Luma Dream Machine), audio/TTS endpoints. Primary production API.
-- **Fal.ai** (`FAL_API_KEY`) — alternative image/video generation endpoints (Flux Pro, SDXL).
-- **OpenClaw built-in skills** — `image_generate`, `video_generate`, `tts` (when available).
+- **Fal.ai** (`FAL_API_KEY`) - alternative image/video generation endpoints (Flux Pro, SDXL).
+- **OpenClaw built-in skills** - `image_generate`, `video_generate`, `tts` (when available).
 
 The Master Orchestrator NEVER invokes these directly. When a task reaches this department,
 this agent (or the specialist it delegates to) runs the generation and delivers the output.
 """
 
-    return f"""# IDENTITY.md — {head_title}
+    return f"""# IDENTITY.md - {head_title}
 
 **Department:** {dept_name}
 **Company:** {company_name}
@@ -2262,7 +2838,7 @@ this agent (or the specialist it delegates to) runs the generation and delivers 
 
 ## Who I Am
 
-- **Name:** (assign during first conversation — capture the persona/name the owner gives this agent)
+- **Name:** (assign during first conversation - capture the persona/name the owner gives this agent)
 - **Role:** {head_title}
 - **Department:** {dept_name}
 - **Reports to:** Master Orchestrator (CEO Agent)
@@ -2460,7 +3036,7 @@ def generate_devils_advocate_sop_md(dept_id, dept_info, interview_answers):
 # ============================================================
 # v10.15.18 BUG FIX (zero-role-department): the previous hardcoded map keyed
 # on LEGACY ids (support/operations/creative/hr/it) that DO NOT match the
-# canonical 16-dept folder ids (customer-support/crm/graphics/openclaw-
+# canonical floor folder ids (customer-support/crm/graphics/openclaw-
 # maintenance/...), and several of its files (operations-/creative-/hr-people-/
 # it-tech-suggested-roles.md) DO NOT EXIST in the repo. For any dept that
 # resolved through a missing/mismatched entry, role parsing silently warned
@@ -2496,7 +3072,7 @@ def build_dept_to_suggested_roles():
     Build the canonical dept-id -> suggested-roles filename map from
     department-naming-map.json (mandatory + vertical_packs), then layer the
     legacy aliases on top. The naming map is the SINGLE SOURCE OF TRUTH so the
-    map can never drift from the canonical 16-dept floor again.
+    map can never drift from the canonical floor again.
     """
     map_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -2608,7 +3184,7 @@ def assert_dept_map_resolves(dept_ids):
         for u in unresolved:
             print(f"  - {u}", file=sys.stderr)
         raise SystemExit(78)
-    print(f"[DEPT-MAP ASSERT] OK — all {len(resolved)} departments resolve to an existing "
+    print(f"[DEPT-MAP ASSERT] OK - all {len(resolved)} departments resolve to an existing "
           f"suggested-roles file in {roles_dir}", file=sys.stderr)
     return resolved
 
@@ -2738,7 +3314,7 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
     client's interview context ({{COMPANY_NAME}} / {{COMPANY_INDUSTRY}} /
     {{ASSIGNED_PERSONA}} / {{GENERATION_DATE}} and the rest). The returned
     string is the role's full how-to.md INCLUDING its pre-written Section 9
-    SOPs — so no empty `[Step 1 ...]` stubs and no LLM regeneration are needed.
+    SOPs - so no empty `[Step 1 ...]` stubs and no LLM regeneration are needed.
 
     Returns the personalized content string, or None when no template matches
     (genuinely missing role → caller keeps the legacy stub+LLM path).
@@ -2806,7 +3382,7 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
     header = (f"<!-- WS-2: instantiated from role-library "
               f"v{role_entry.get('version', '?') if role_entry else '?'} "
               f"({role_entry.get('slug', '?') if role_entry else '?'}) on "
-              f"{gen_date}. Pre-written Section-9 SOPs included — not "
+              f"{gen_date}. Pre-written Section-9 SOPs included - not "
               f"LLM-regenerated. -->\n")
     return header + out
 
@@ -2880,22 +3456,22 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         else:
             _LIBRARY_FILL_STATS["llm_generated"] += 1
             print(f"[ROLE-LIBRARY] NO TEMPLATE for {folder_name} ({dept_id}) "
-                  f"— writing PENDING how-to.md stub (collected in PENDING-SOPS.md)",
+                  f"- writing PENDING how-to.md stub (collected in PENDING-SOPS.md)",
                   file=sys.stderr)
             # Gap-3: NO_TEMPLATE roles must NOT leave a silent empty stub. Write a
             # how-to.md clearly headed PENDING, carrying the EXACT one-shot
             # instruction to populate it FROM the nearest role-library template
             # family (token-fill, NOT a free-form LLM essay). It is also collected
             # into the company-root PENDING-SOPS.md manifest so the orchestrator
-            # knows what to fill — never silent.
+            # knows what to fill - never silent.
             how_to_path = os.path.join(role_dir, "how-to.md")
             if not os.path.isfile(how_to_path):
-                pending_how_to = f"""# {role['name']} — how-to.md  [PENDING — FILL FROM LIBRARY]
+                pending_how_to = f"""# {role['name']} - how-to.md  [PENDING - FILL FROM LIBRARY]
 
 **Department:** {dept_info['name']} ({dept_info['emoji']})
 **Company:** {company_name}
 **Industry:** {industry}
-**Status:** PENDING — no role-library template matched this role.
+**Status:** PENDING - no role-library template matched this role.
 
 > ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
 > 1. Look in `23-ai-workforce-blueprint/templates/role-library/{dept_id}/` for the
@@ -2914,7 +3490,7 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
 ## SOPs (read-first)
 The numbered `0N-*.md` files in this folder are step-by-step instruction sets.
 Read the matching SOP BEFORE executing a task it covers. No improvising. If no
-SOP covers the task, do not guess — escalate to the {dept_info['head']} so the
+SOP covers the task, do not guess - escalate to the {dept_info['head']} so the
 SOP-Writer can author one (INSTRUCTIONS.md Moment 3.7).
 """
                 with open(how_to_path, 'w') as f:
@@ -2992,7 +3568,7 @@ This file adds role-specific filtering on top of the department pool.
             with open(personas_path, 'w') as f:
                 f.write(personas_content)
 
-        # 3. Create SOP stub files — ONLY for roles with no library template.
+        # 3. Create SOP stub files - ONLY for roles with no library template.
         # WS-2: when the role was instantiated from the library, its full
         # Section-9 SOPs already live inside how-to.md; writing empty
         # `[Step 1 ...]` stubs here would re-introduce the LLM-regeneration bug.
@@ -3071,7 +3647,7 @@ If this task cannot be completed at the specialist level, escalate to the {dept_
 #
 # Spawns 5-10 parallel sub-agents (one per department, capped at maxConcurrent=10
 # per the v9.4.0 sub-agent config). The actual sub-agent spawn is performed by
-# the AI agent running this build, not by this script — this script writes a
+# the AI agent running this build, not by this script - this script writes a
 # manifest the agent reads and executes.
 
 SOP_RESEARCH_MANIFEST_NAME = "sop-research-manifest.json"
@@ -3095,7 +3671,7 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
 
     manifest_path = os.path.join(COMPANY_DIR, SOP_RESEARCH_MANIFEST_NAME)
     entries = []
-    # PRD 2.12: boundary gate tracking — record per-dept canonical status so
+    # PRD 2.12: boundary gate tracking - record per-dept canonical status so
     # populate-sops-from-manifest.py and verify-library-gate.sh can assert the
     # invariant without re-computing canonicity independently.
     boundary_canonical = []   # dept_ids that are canonical (should NOT be here)
@@ -3106,10 +3682,10 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
         if not os.path.isdir(dept_dir):
             continue
 
-        # PRD 2.12 — BOUNDARY GATE pre-check: if a canonical dept ends up in
+        # PRD 2.12 - BOUNDARY GATE pre-check: if a canonical dept ends up in
         # this manifest it means _instantiate_role_from_library() failed for
         # all its roles (library lookup miss or _LIBRARY_FILL_AVAILABLE=False).
-        # Log LOUDLY and SKIP — the authoring path must never run for canonical
+        # Log LOUDLY and SKIP - the authoring path must never run for canonical
         # depts. Token economics: pre-written templates exist precisely for this.
         if _BW_BOUNDARY_GATE_AVAILABLE and _bw_is_canonical_dept(dept_id):
             boundary_canonical.append(dept_id)
@@ -3118,7 +3694,7 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
                 f"All roles in this dept should have been instantiated from the role-library "
                 f"(via _instantiate_role_from_library) before reaching this point. "
                 f"Check that _LIBRARY_FILL_AVAILABLE=True and the library lookup succeeded. "
-                f"Skipping this dept — it will NOT be authored by LLM sub-agents.",
+                f"Skipping this dept - it will NOT be authored by LLM sub-agents.",
                 file=sys.stderr,
             )
             continue
@@ -3133,7 +3709,7 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
             role_dir = os.path.join(dept_dir, entry)
             if not os.path.isdir(role_dir) or entry == "memory" or entry == "devils-advocate":
                 continue
-            # WS-2: skip roles instantiated from the library — their Section-9
+            # WS-2: skip roles instantiated from the library - their Section-9
             # SOPs already live in how-to.md, so they must NOT be queued for
             # LLM regeneration. (They also have no `0N-...md` stub files, but
             # this guard makes the intent explicit and robust to re-runs.)
@@ -3165,7 +3741,7 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
         }
         entries.append(entry)
 
-    # PRD 2.12 BUILD GATE summary line — loud observability for the operator.
+    # PRD 2.12 BUILD GATE summary line - loud observability for the operator.
     if _BW_BOUNDARY_GATE_AVAILABLE:
         if boundary_canonical:
             print(
@@ -3190,7 +3766,7 @@ def write_sop_research_manifest(company_name, industry, departments, interview_a
         "max_parallel_sub_agents": 10,
         "departments": entries,
         "sub_agent_instructions": LEAN_SIX_SIGMA_SOP_PROMPT,
-        # PRD 2.12: boundary gate field — consumed by populate-sops-from-manifest.py
+        # PRD 2.12: boundary gate field - consumed by populate-sops-from-manifest.py
         # and verify-library-gate.sh to assert no canonical dept entered authoring.
         "boundary_gate": {
             "canonical_refused": boundary_canonical,
@@ -3219,7 +3795,7 @@ Use the Lean Six Sigma DMAIC structure for every SOP. Every SOP file must contai
   - What this task is in one sentence
   - Required inputs (data, files, credentials, prior outputs)
   - Required outputs (the artifact this task produces)
-  - Done criteria — MEASURABLE, not vague. e.g. 'Email scheduled, subject line A/B tested, segment confirmed'
+  - Done criteria - MEASURABLE, not vague. e.g. 'Email scheduled, subject line A/B tested, segment confirmed'
 
   ## MEASURE
   - KPIs this task moves. Numbers, not adjectives.
@@ -3230,7 +3806,7 @@ Use the Lean Six Sigma DMAIC structure for every SOP. Every SOP file must contai
   - Root-cause checklist. Five Whys. Not symptom-chasing.
   - Common failure modes specific to this industry: research them via Perplexity.
 
-  ## IMPROVE — Step-by-Step
+  ## IMPROVE - Step-by-Step
   - Numbered concrete steps. Each step references a specific tool from: {DEPT_TOOLS}
   - Each step is something an AI agent can ACTUALLY do (read file X, call API Y, post to channel Z).
   - Embody the role's persona expertise. If the persona is John Maxwell for a leadership role, use Maxwell's principles verbatim where applicable.
@@ -3239,7 +3815,7 @@ Use the Lean Six Sigma DMAIC structure for every SOP. Every SOP file must contai
   - Devil's Advocate checkpoints. What the DA verifies before declaring done.
   - The DA must validate measurable criteria from DEFINE, not subjective taste.
 
-  ## ESCALATION + RESEARCH RULE (binding — paste this section verbatim into every SOP)
+  ## ESCALATION + RESEARCH RULE (binding - paste this section verbatim into every SOP)
   If you hit an edge case not covered above:
     - DO NOT GUESS. Guessing is forbidden for any AI employee.
     - You are either ABSOLUTELY SURE of the next step (proceed) or you are NOT SURE (research).
@@ -3249,12 +3825,12 @@ Use the Lean Six Sigma DMAIC structure for every SOP. Every SOP file must contai
 Hard constraints:
   - NEVER reference Anthropic models. Use the selector chain heavy tier when invoking models.
   - Plain English. No corporate jargon.
-  - Tools referenced must be from {DEPT_TOOLS}. If a useful tool is missing from that list, recommend it under a 'Suggested tool additions' section at the bottom — don't pretend it's available.
+  - Tools referenced must be from {DEPT_TOOLS}. If a useful tool is missing from that list, recommend it under a 'Suggested tool additions' section at the bottom - don't pretend it's available.
   - Cite Perplexity research findings inline when a step is derived from research. e.g. 'Per industry benchmark (Perplexity 2026-05-13): companies in {INDUSTRY} typically...'
 
 For each role folder in this department, you'll find:
-  - 00-START-HERE.md (DO NOT rewrite — already contains role context)
-  - governing-personas.md (DO NOT rewrite — already lists persona traits)
+  - 00-START-HERE.md (DO NOT rewrite - already contains role context)
+  - governing-personas.md (DO NOT rewrite - already lists persona traits)
   - 01-, 02-, 03-, etc. SOP files (THESE are what you populate)
   - tools.md, good-examples.md, bad-examples.md (write these if missing)
 
@@ -3315,7 +3891,7 @@ def determine_specialists(dept_id, dept_info, interview_answers):
                 'type': role_type,
                 # Route specialists through the SAME model selector the department
                 # director uses (resolves to kimi-k2.6+/deepseek), floored at the
-                # fleet-standard default. Never the deprecated moonshot/kimi-k2.5 —
+                # fleet-standard default. Never the deprecated moonshot/kimi-k2.5 -
                 # that hardcode caused fleet-wide "Unknown model" on routed dept-agent
                 # calls (directors were already fixed; specialists were missed).
                 'model': _resolve_director_model(dept_id) or 'ollama/kimi-k2.6:cloud',
@@ -3461,7 +4037,7 @@ def generate_org_chart(departments, specialists_by_dept):
 # universal-sops/00-ROUTING.md were documented (INSTALL.md/ai-workforce-blueprint-
 # full.md) but NEVER generated by the build. A director therefore had no
 # build-emitted, machine-readable list of which specialist owns which kind of
-# work — the director->specialist dispatch lived only in runtime LLM reasoning.
+# work - the director->specialist dispatch lived only in runtime LLM reasoning.
 # These generators emit, at build time:
 #   - <dept>/ROSTER.md            (one row per role folder + a when-to-use line;
 #                                  the director's OPERATING PROTOCOL references it)
@@ -3497,7 +4073,7 @@ def _when_to_use_line(role):
 
 
 def write_department_roster(dept_id, dept_info):
-    """Write <dept>/ROSTER.md — the machine-readable When-to Reference Map the
+    """Write <dept>/ROSTER.md - the machine-readable When-to Reference Map the
     director consults (per its OPERATING PROTOCOL) before dispatching a task.
 
     Lists every specialist role folder in this department with a one-line
@@ -3513,7 +4089,7 @@ def write_department_roster(dept_id, dept_info):
 
     roles = parse_suggested_roles(dept_id)
     lines = [
-        f"# ROSTER — {dept_info['name']} ({dept_info.get('emoji', '')})",
+        f"# ROSTER - {dept_info['name']} ({dept_info.get('emoji', '')})",
         "",
         f"**Department head:** {dept_info.get('head', dept_id)}",
         "**This is the When-to Reference Map for this department.** Before you "
@@ -3521,7 +4097,7 @@ def write_department_roster(dept_id, dept_info):
         "then spawn a sub-agent and have it read that role folder IN ORDER: "
         "`00-START-HERE.md` -> `IDENTITY.md` -> `SOUL.md` -> `how-to.md` -> "
         "`governing-personas.md`, then execute per the how-to. If no row matches, "
-        "escalate to the CEO — do not guess.",
+        "escalate to the CEO - do not guess.",
         "",
         "| Role | Role folder | Type | When to use |",
         "| --- | --- | --- | --- |",
@@ -3534,7 +4110,7 @@ def write_department_roster(dept_id, dept_info):
                 f"| {role['name']} | `{folder}/` | {rtype} | {_when_to_use_line(role)} |"
             )
     else:
-        lines.append("| _(no roles resolved — investigate dept->menu mapping)_ |  |  |  |")
+        lines.append("| _(no roles resolved - investigate dept->menu mapping)_ |  |  |  |")
 
     lines += [
         "",
@@ -3543,7 +4119,7 @@ def write_department_roster(dept_id, dept_info):
         "2. Spawn a sub-agent; instruct it to read that role folder in order and "
         "act AS IF it IS that role.",
         "3. If the role's `how-to.md` / `SOP/` does not cover the task, fire the "
-        "department SOP-Writer (INSTRUCTIONS.md Moment 3.7) before proceeding — "
+        "department SOP-Writer (INSTRUCTIONS.md Moment 3.7) before proceeding - "
         "never guess.",
         "4. Review the sub-agent's output against the same how-to before reporting.",
         "",
@@ -3559,7 +4135,7 @@ def write_department_roster(dept_id, dept_info):
 
 
 def write_universal_routing_map(departments):
-    """Write universal-sops/00-ROUTING.md — the company-wide master routing file
+    """Write universal-sops/00-ROUTING.md - the company-wide master routing file
     that maps a task to its owning department, then points at that department's
     ROSTER.md for role-level selection.
 
@@ -3574,13 +4150,13 @@ def write_universal_routing_map(departments):
     os.makedirs(universal_dir, exist_ok=True)
 
     lines = [
-        "# 00-ROUTING.md — Master Task Routing",
+        "# 00-ROUTING.md - Master Task Routing",
         "",
         "The CEO / Master Orchestrator reads this FIRST for every task: find the "
         "department whose *Handles* matches the task, open that department's "
         "`departments/<dept>/ROSTER.md` to pick the specialist role, then spawn a "
         "sub-agent that reads the role folder in order and executes per its "
-        "`how-to.md`. If no department matches, ask the owner — do not guess.",
+        "`how-to.md`. If no department matches, ask the owner - do not guess.",
         "",
         "| Department | Folder | Director | Handles |",
         "| --- | --- | --- | --- |",
@@ -3604,7 +4180,7 @@ def write_universal_routing_map(departments):
         "`00-START-HERE.md -> IDENTITY.md -> SOUL.md -> how-to.md -> "
         "governing-personas.md`, execute per the how-to, and review the result "
         "against the how-to before reporting. No SOP for the task? Author it first "
-        "(SOP-Writer, INSTRUCTIONS.md Moment 3.7) — never guess.",
+        "(SOP-Writer, INSTRUCTIONS.md Moment 3.7) - never guess.",
         "",
         f"*Generated by build-workforce.py (Skill 23) on "
         f"{datetime.now().strftime('%B %d, %Y at %I:%M %p')}.*",
@@ -3618,12 +4194,12 @@ def write_universal_routing_map(departments):
 
 
 def write_pending_sops_manifest(departments):
-    """Write PENDING-SOPS.md at the company root — the human/orchestrator-readable
+    """Write PENDING-SOPS.md at the company root - the human/orchestrator-readable
     manifest of every role whose how-to.md is a PENDING stub (no library template
     matched), so the orchestrator knows exactly what still needs filling.
 
     Closes the 'silent empty stub' gap: a NO_TEMPLATE role is no longer a quiet
-    placeholder — it is headed PENDING in its own how-to.md AND collected here.
+    placeholder - it is headed PENDING in its own how-to.md AND collected here.
     Scans the on-disk role folders for how-to.md files that carry the PENDING
     marker (written by create_role_workspace / create_role_workspaces.stub_how_to).
     """
@@ -3646,11 +4222,11 @@ def write_pending_sops_manifest(departments):
                     head = open(how_to).read(600)
                 except OSError:
                     continue
-                if "PENDING — FILL FROM LIBRARY" in head or "how-to.md (stub)" in head:
+                if "PENDING - FILL FROM LIBRARY" in head or "how-to.md (stub)" in head:
                     pending.append((dept_id, entry, how_to))
 
     lines = [
-        "# PENDING-SOPS.md — Role how-to.md files awaiting library fill",
+        "# PENDING-SOPS.md - Role how-to.md files awaiting library fill",
         "",
         f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}",
         "",
@@ -3663,7 +4239,7 @@ def write_pending_sops_manifest(departments):
         ]
     else:
         lines += [
-            f"**{len(pending)} role(s) have a PENDING how-to.md** — no role-library "
+            f"**{len(pending)} role(s) have a PENDING how-to.md** - no role-library "
             "template matched, so each carries a PENDING header with a one-shot "
             "fill instruction. Populate each FROM the nearest library template "
             "family (token-fill style, NOT a free-form LLM essay). Do NOT mark the "
@@ -3706,13 +4282,13 @@ def write_company_config_json(company_name, industry, brand_colors=None,
     Layer 3 always fell back to a flat constant.
 
     Args:
-        company_name:     str — company display name.
-        industry:         str — industry vertical (e.g., "personal-development").
-        brand_colors:     dict — optional {primary, accent, text} hex values.
-        full_config:      dict — the non-interactive config (or harvested
+        company_name:     str - company display name.
+        industry:         str - industry vertical (e.g., "personal-development").
+        brand_colors:     dict - optional {primary, accent, text} hex values.
+        full_config:      dict - the non-interactive config (or harvested
                                   interview answers) from which mission, owner
                                   values, and company KPIs are pulled.
-        selected_departments: dict — departments dict (dept_id -> info) used
+        selected_departments: dict - departments dict (dept_id -> info) used
                                   to derive dept_kpis aggregate.
     """
     if not COMPANY_DIR:
@@ -3776,7 +4352,7 @@ def write_company_config_json(company_name, industry, brand_colors=None,
     print(f"[COMPANY-CONFIG] Wrote {path} (schema v2.0)", file=sys.stderr)
     missing = [k for k in ("mission", "owner_values", "company_kpis") if not cfg[k]]
     if missing:
-        print(f"[COMPANY-CONFIG] WARN: empty fields {missing} — persona scoring "
+        print(f"[COMPANY-CONFIG] WARN: empty fields {missing} - persona scoring "
               f"Layers 1-3 will fall back. Re-run interview or pass via config.",
               file=sys.stderr)
     return path
@@ -3792,7 +4368,7 @@ def generate_departments_json(departments):
     WS-4: the FIRST entry is always the CEO department so the Command Center
     renders it at the TOP of the Kanban / department rail. The CEO is the
     Master Orchestrator (the main agent above the worker departments) surfaced
-    as a board column — it does NOT overlap the worker departments (it is not
+    as a board column - it does NOT overlap the worker departments (it is not
     one of the keys in `departments`, which carries only the worker depts).
 
     The CEO entry is emitted with id `dept-ceo` AND slug `ceo` so it matches
@@ -3819,14 +4395,14 @@ def generate_departments_json(departments):
         "isCeo": True,
     })
     for dept_id, dept_info in departments.items():
-        # Guard: never double-emit a CEO/master-orchestrator worker column —
+        # Guard: never double-emit a CEO/master-orchestrator worker column -
         # the CEO is already the prepended top column.
         if dept_id in ("ceo", "master-orchestrator", "dept-ceo"):
             continue
         # RC-3: emit explicit bare canonical slug so CC canonical-map + migration
         # 046 can key on slug without stripping the "dept-" prefix at runtime.
         # dept_id is always a bare canonical slug (marketing, sales, billing-finance,
-        # etc.) — never a dept-X compound.  The "id" field keeps the dept- prefix
+        # etc.) - never a dept-X compound.  The "id" field keeps the dept- prefix
         # for legacy CC compatibility; "slug" is the authoritative bare form.
         # PRD 1.5: run dept_id through canonical_dept_slug so the slug field is
         # always the authoritative bare form (lowercase, hyphenated, no dept- prefix)
@@ -4074,7 +4650,7 @@ def add_agent_to_config(config, dept_id, dept_info):
     # safe default that Anthropic-strips and matches v9.5.x policy.
     #
     # N31 FIX (v11.1.0): model MUST be an object {primary, fallbacks:[...]},
-    # NEVER a bare string. Bare strings bypass all fallback chains — if Ollama
+    # NEVER a bare string. Bare strings bypass all fallback chains - if Ollama
     # Cloud is over-capacity the agent dies silently. See AGENTS.md N31.
     _primary = _resolve_director_model(dept_id) or "ollama/kimi-k2.6:cloud"
     model = {
@@ -4116,7 +4692,7 @@ def add_agent_to_config(config, dept_id, dept_info):
         },
     }
 
-    # CEO / Master Orchestrator agent — pure router, NEVER executes production work.
+    # CEO / Master Orchestrator agent - pure router, NEVER executes production work.
     # Setting skills:[] blocks ALL installed OpenClaw skills for this agent so it
     # cannot invoke image_generate, tts, video_generate, file-write production
     # tools, coding-agent, or any other skill-backed production capability.
@@ -4337,7 +4913,7 @@ def main():
     print(f"[PERSISTENCE] Interview answers will be saved to: {COMPANY_DISCOVERY_DIR}/", file=sys.stderr)
 
     # Step 2: Read existing context (now spans all 6 core .md files: USER, MEMORY,
-    # AGENTS, TOOLS, IDENTITY, SOUL — see CONTEXT_FILES constant, expanded v12.3.4)
+    # AGENTS, TOOLS, IDENTITY, SOUL - see CONTEXT_FILES constant, expanded v12.3.4)
     existing_context = read_existing_context()
     previous_answers = read_previous_answers()
     handoff = read_handoff()
@@ -4349,10 +4925,10 @@ def main():
     #   - PARTIAL → deepen (sharper follow-up using context as lead-in)
     #   - UNKNOWN → ask fresh
     # If the map is absent (new box, empty workspace), every theme is unknown and
-    # the interview runs exactly as it does today — purely additive.
+    # the interview runs exactly as it does today - purely additive.
     # The AI agent should invoke: python3 scripts/context-ingest.py [--json] [--human]
     # and load the resulting interview-context-map.json into its working context.
-    # See INSTRUCTIONS.md "Phase 0.5 — Context Ingestion" + "Context Ingestion +
+    # See INSTRUCTIONS.md "Phase 0.5 - Context Ingestion" + "Context Ingestion +
     # Pull-Forward Rule (Binding)" for the full routing and KNOWN-CONTEXT vs
     # RECORDED-ANSWER definitions.
 
@@ -4390,7 +4966,7 @@ def main():
     # The functions above provide the building blocks.
     # The AI uses:
     #   - context-ingest.py (NEW v12.3.4) at Step 2.5 to classify themes known/partial/unknown
-    #   - log_answer() after every question — THE ONLY writer to workforce-interview-answers.md
+    #   - log_answer() after every question - THE ONLY writer to workforce-interview-answers.md
     #   - create_handoff() after every answer
     #   - create_department_workspace() for each department
     #   - determine_specialists() for specialist decisions

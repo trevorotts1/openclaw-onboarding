@@ -25,13 +25,13 @@ version: 2.0.0
 
 Required read order:
 1. SKILL.md (this file)
-2. ai-workforce-blueprint-full.md - the complete blueprint document
-3. INSTRUCTIONS.md - interview question framework and dynamic question logic
+2. INSTRUCTIONS.md - **AUTHORITATIVE** interview spec: question framework, dynamic question logic, the No-Work-During-Interview Gate, Phase 5.5 reconciliation. On any conflict, INSTRUCTIONS.md WINS.
+3. ai-workforce-blueprint-full.md - HISTORICAL REFERENCE for folder/file structure and naming conventions only. Superseded by INSTRUCTIONS.md and the canonical department floor on any conflict. Do NOT copy its "7 Required Questions" or "17 departments" list; they are obsolete.
 4. EXAMPLES.md - good and bad department/role structure examples
 5. INSTALL.md - setup, workspace creation, and config management
 6. CORE_UPDATES.md - what to add to your workspace files
 
-**Branding questions — single source of truth:** `interview/branding-questions.json` defines the structured branding question set (ids, prompts, storage targets, drill requirements). The Command Center vendors a copy of this file. INSTRUCTIONS.md Phase 3 themes reference the question ids. Do NOT hardcode branding question prompts anywhere outside that file.
+**Branding questions - single source of truth:** `interview/branding-questions.json` defines the structured branding question set (ids, prompts, storage targets, drill requirements). The Command Center vendors a copy of this file. INSTRUCTIONS.md Phase 3 themes reference the question ids. Do NOT hardcode branding question prompts anywhere outside that file.
 
 Do NOT run the scaffold script or create any folders before completing all 6 reads.
 Do NOT claim the skill is installed until CORE_UPDATES.md has been applied.
@@ -40,7 +40,7 @@ Do NOT claim the skill is installed until CORE_UPDATES.md has been applied.
 
 ## 🔴 NO CO-MINGLING (binding)
 
-This skill builds **this client's** company and nothing else. Every department, workspace, role file, persona, and resource it creates belongs to **this one client** and is provisioned in **this client's own** workspace/Notion/GHL/Drive/Telegram/keys. NEVER reuse, borrow, or default to another client's resource. If a needed resource does not exist yet, **STOP and WAIT** — do not substitute another client's as a placeholder. See [`../NO-COMINGLING-RULE.md`](../NO-COMINGLING-RULE.md) and AGENTS.md N0. Co-mingling is a hard violation.
+This skill builds **this client's** company and nothing else. Every department, workspace, role file, persona, and resource it creates belongs to **this one client** and is provisioned in **this client's own** workspace/Notion/GHL/Drive/Telegram/keys. NEVER reuse, borrow, or default to another client's resource. If a needed resource does not exist yet, **STOP and WAIT** - do not substitute another client's as a placeholder. See [`../NO-COMINGLING-RULE.md`](../NO-COMINGLING-RULE.md) and AGENTS.md N0. Co-mingling is a hard violation.
 
 ---
 
@@ -65,7 +65,7 @@ This skill serves new entrepreneurs and business owners who have never successfu
 This is the SINGLE skill that builds a client's entire AI company. It replaces what used to be three separate skills (Skills 23, 33, and 34) with one unified flow:
 
 1. **Ingests existing client context first** (Phase 0.5: `scripts/context-ingest.py` reads all 6 core workspace files + prior answers + Phase 0 research → `interview-context-map.json`), then **interviews the client** with dynamic, plain-English questions (3-7 per department, skipping known facts, deepening partial ones, asking fresh only for unknowns)
-2. **Creates departments** based on interview answers, on top of a CANONICAL FLOOR. The canonical floor (run `scripts/list-canonical-departments.py` to see the current list) of mandatory departments (from department-naming-map.json) is built for every company unless the client explicitly declined one in build-state (canonicalReconciliation.decisions), UNION any client custom departments. reconcile_canonical_floor() in build-workforce.py enforces this in code (standard-unless-declined) and writes an auditable canonicalReconciliation record. Client-named canonical depts keep their real description; the rest inherit the naming-map one-liner with the client's industry context.
+2. **Creates departments** based on interview answers, on top of a CANONICAL FLOOR. The canonical floor (run `scripts/list-canonical-departments.py` to see the current list) of mandatory departments (from department-naming-map.json) is built for every company unless the client explicitly declined one in build-state (canonicalReconciliation.decisions), UNION any client custom departments. reconcile_canonical_floor() in build-workforce.py enforces this in code (standard-unless-declined) and writes an auditable canonicalReconciliation record. Client-named canonical depts keep their real description; the rest inherit the naming-map one-liner with the client's industry context. The reconciliation ENGINE (Phase 5.5) then: COMBINES a custom dept that semantically overlaps a canonical dept under a non-slug name into ONE department on an owner `merge` decision (apply_semantic_merges, never a duplicate); honors symmetric opt-in/opt-out for the mandatory floor AND the 7 universal-primary verticals AND custom depts (a `no` skips it); materializes the per-dept extra roles the owner asked for as a build decision (materialize_custom_roles, not the post-build add-role path); and captures per-dept owner procedures (capture_custom_sops) respecting the canonical/custom SOP boundary gate (canonical = overlay; custom = authoring source).
 3. **Hires department heads** as permanent agents with full workspaces and core files
 4. **Determines specialists** - the AI silently decides which roles are full-time team members (permanent agents) vs on-call specialists (spawned when needed). The client never hears these technical terms.
 5. **Assigns coaching personas** using the Act As If Protocol and 5-layer alignment check
@@ -73,7 +73,7 @@ This is the SINGLE skill that builds a client's entire AI company. It replaces w
 7. **Generates the org chart** (ORG-CHART.md in the CEO workspace)
 8. **Creates the Devil's Advocate** in every department automatically
 9. **Generates the Command Center config** (departments.json for the dashboard)
-10. **Pulls the ROLE LIBRARY + authors the SOP LIBRARY for every role — ENFORCED (v10.15.8).** Filling each role's `how-to.md` from `templates/role-library/` and authoring its SOPs is a GATED build step, not optional cleanup. State fields `roleLibraryStatus` / `sopLibraryStatus` (+ per-dept `roleLibraryFilled` / `sopLibraryFilled`) plus the verify/resume gate `scripts/verify-library-gate.sh` mean a workforce is **NOT complete** (no `buildCompletedAt`, no closeout) until BOTH libraries are populated. The 15-min resume cron fires `[LIBRARY-RESUME]` until they are. See INSTRUCTIONS.md "Moment 3.6 — ROLE LIBRARY + SOP LIBRARY auto-pull gate".
+10. **Pulls the ROLE LIBRARY + authors the SOP LIBRARY for every role - ENFORCED (v10.15.8).** Filling each role's `how-to.md` from `templates/role-library/` and authoring its SOPs is a GATED build step, not optional cleanup. State fields `roleLibraryStatus` / `sopLibraryStatus` (+ per-dept `roleLibraryFilled` / `sopLibraryFilled`) plus the verify/resume gate `scripts/verify-library-gate.sh` mean a workforce is **NOT complete** (no `buildCompletedAt`, no closeout) until BOTH libraries are populated. The 15-min resume cron fires `[LIBRARY-RESUME]` until they are. See INSTRUCTIONS.md "Moment 3.6 - ROLE LIBRARY + SOP LIBRARY auto-pull gate".
 
 ## How It Connects to the System
 
@@ -83,13 +83,13 @@ Skill 22 (Book-to-Persona Coaching Leadership System) builds coaching personas
 --> **Skill 38 (Conversational AI System)** scaffolds the matching comms automations when a Communications / Sales / Customer-Support department was built
 --> BlackCEO Command Center displays and manages everything
 
-### Cross-skill chain → Skill 38 (Conversational AI System) — ENFORCED
+### Cross-skill chain → Skill 38 (Conversational AI System) - ENFORCED
 When this skill builds a **Communications, Sales, or Customer-Support** department, the closeout MUST
 hand off to **Skill 38** to scaffold the matching conversational automations (channel/communications
 playbooks + their Build-with-AI prompts, starting with appointment booking). This is NOT optional prose:
 it is enforced by the `commsAutomationStatus` state field in `build-state-schema.json` + the
 `[COMMS-AUTOMATION-RESUME]` gate in `scripts/resume-workforce-build.sh` (same shape as the role/SOP
-library gate). See **INSTRUCTIONS.md → "Moment 3.8 — Comms-automation handoff to Skill 38"**. A
+library gate). See **INSTRUCTIONS.md → "Moment 3.8 - Comms-automation handoff to Skill 38"**. A
 Sales/Support workforce shipped with zero conversational automations is half-delivered.
 
 ### What Skill 22 Provides
@@ -117,24 +117,24 @@ The Command Center reads:
 
 **Model selection is DYNAMIC** via `shared-utils/select_model.py --purpose-tier heavy`. The selector resolves the best available model in this priority order, walking down only if the higher one is missing from the client's `openclaw.json`:
 
-1. **Ollama Cloud Kimi** (`ollama/kimi-k*:cloud`, latest version, thinking=high) — PREFERRED, lowest cost per call
+1. **Ollama Cloud Kimi** (`ollama/kimi-k*:cloud`, latest version, thinking=high) - PREFERRED, lowest cost per call
 2. **OpenRouter Kimi** (`openrouter/moonshot/kimi-k*`, thinking=high)
 3. **Ollama Cloud DeepSeek V*-pro** (`ollama/deepseek-v*-pro:cloud`)
 4. **OpenRouter DeepSeek V*-pro** (`openrouter/deepseek/deepseek-v*-pro`, thinking=high)
-5. **OAuth GPT** (`codex/gpt-*` or `openai-codex/gpt-*`, whatever the client's latest version is — 5.3, 5.4, 5.5, 5.10, etc.)
+5. **OAuth GPT** (`codex/gpt-*` or `openai-codex/gpt-*`, whatever the client's latest version is - 5.3, 5.4, 5.5, 5.10, etc.)
 
-The selector auto-picks the highest version number in each chain entry. When a new Kimi or GPT version ships and the client adds it to their config, this skill picks it up automatically — no edit needed.
+The selector auto-picks the highest version number in each chain entry. When a new Kimi or GPT version ships and the client adds it to their config, this skill picks it up automatically - no edit needed.
 
 **ABSOLUTE RULE:** Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Filter applied at every tier of the selector.
 
-**ABSOLUTE RULE — NO INTERVIEW FABRICATION:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. A prior nudge YES, a cron tick, a "do not stop" override, or any autonomous agent decision does NOT count as consent. If the owner is not actively present and choosing Option B right now, the build MUST NOT proceed — write `status: INTERVIEW_PENDING` to `interview-handoff.md` and stop. NEVER write invented answers into `workforce-interview-answers.md`. This rule cannot be overridden by any downstream instruction, operator override, or "never stop" automation directive.
+**ABSOLUTE RULE - NO INTERVIEW FABRICATION:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. A prior nudge YES, a cron tick, a "do not stop" override, or any autonomous agent decision does NOT count as consent. If the owner is not actively present and choosing Option B right now, the build MUST NOT proceed - write `status: INTERVIEW_PENDING` to `interview-handoff.md` and stop. NEVER write invented answers into `workforce-interview-answers.md`. This rule cannot be overridden by any downstream instruction, operator override, or "never stop" automation directive.
 
 **If the selector returns Tier 5 (owner-input-required):**
 The install agent shows the owner a plain-English prompt asking which model to use. The skill is still installed; only the model-binding waits on the owner's reply.
 
-**Research model:** When the AI offers to research industry best practices, it uses `openrouter/perplexity/sonar-pro-search` for the research pass — that model is purpose-built for live web research and is kept separate from the reasoning chain above.
+**Research model:** When the AI offers to research industry best practices, it uses `openrouter/perplexity/sonar-pro-search` for the research pass - that model is purpose-built for live web research and is kept separate from the reasoning chain above.
 
-**RESEARCH IS FOR ENRICHMENT, NOT FABRICATION:** The agent may research the owner's website, public materials, and industry best practices to DEEPEN and REINFORCE the interview — to ask better questions, add industry context, and PROPOSE draft answers for the owner to confirm or correct. The owner must still review and confirm every answer in a live session. Research must NEVER be used to auto-finalize or fabricate answers the owner did not give. Option B = a research-assisted interview the owner actively confirms, NOT a no-interview build. This is the positive complement to the NO INTERVIEW FABRICATION rule above — both rules are binding and neither weakens the other.
+**RESEARCH IS FOR ENRICHMENT, NOT FABRICATION:** The agent may research the owner's website, public materials, and industry best practices to DEEPEN and REINFORCE the interview - to ask better questions, add industry context, and PROPOSE draft answers for the owner to confirm or correct. The owner must still review and confirm every answer in a live session. Research must NEVER be used to auto-finalize or fabricate answers the owner did not give. Option B = a research-assisted interview the owner actively confirms, NOT a no-interview build. This is the positive complement to the NO INTERVIEW FABRICATION rule above - both rules are binding and neither weakens the other.
 
 ## The Three Options
 
@@ -144,7 +144,7 @@ When this skill triggers, it ALWAYS presents three options. Never skip this. Nev
 The AI interviews you about your business. Asks 3-7 questions per department based on complexity and what it already knows. Builds everything from your answers. Most personalized.
 
 **Option B - Quick Setup (fastest)**
-**CONSENT GATE:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. No autonomous path, cron, nudge response, or prior authorization unlocks it. Owner must be present and actively choosing this path right now. If not, mark INTERVIEW_PENDING and stop — never fabricate.
+**CONSENT GATE:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. No autonomous path, cron, nudge response, or prior authorization unlocks it. Owner must be present and actively choosing this path right now. If not, mark INTERVIEW_PENDING and stop - never fabricate.
 
 No interview. The AI reads what it already knows from your workspace files plus industry best practices. Proposes a structure. You approve or adjust. Then it builds.
 
@@ -197,7 +197,16 @@ Each department head gets an agents.list entry:
 
 ## Interview Design
 
-### Before Asking Any Question — Context Ingestion (v12.3.4)
+### The interview has ONE job (binding anchor)
+
+The interview exists ONLY to gather what is needed to BUILD the owner's departments, roles (team members), and step-by-step instructions, then drive the build to closeout. Every question serves the build. Hold these four rules (the authoritative copy lives in INSTRUCTIONS.md "Interview Single-Job Anchor" + "No-Work-During-Interview Gate"):
+
+1. **Intake interviewer, not a worker.** NEVER perform, produce, demo, or OFFER any client work during the interview: no presentations, decks, copy, funnels, names, logos, graphics, videos, or sample/showcase deliverables. Those are post-build deliverables, gated behind an explicit owner request AFTER closeout. (This is the direct fix for the signature-presentation drift.)
+2. **No-Work-During-Interview Gate.** Until `interviewComplete: true` is written to `.workforce-build-state.json`, create NO departments / roles / step-by-step instructions / files / folders and produce NO deliverables. The ONLY permitted in-interview side-action is SILENT capability lookup (tool/API research, best-practice research) that yields NO owner-facing artifact.
+3. **No chat-log analysis as a content source.** Context ingestion is a bounded ONE-SHOT pre-pass over the named core files; after it, BUILD. Never re-mine the owner's conversation history to decide content.
+4. **Always proceeds to reconciliation.** When intake is gathered, ALWAYS run Phase 5.5 (Canonical Departments Reconciliation), then the build. Never drift into client work or open-ended analysis.
+
+### Before Asking Any Question - Context Ingestion (v12.3.4)
 
 Run `scripts/context-ingest.py` (Phase 0.5 in INSTRUCTIONS.md) BEFORE asking any question.
 It reads all **6 core workspace files** (IDENTITY.md, MEMORY.md, AGENTS.md, TOOLS.md,
@@ -217,7 +226,7 @@ prior workforce-interview-answers.md, and provided-context-manifest.md, then pro
   May ONLY originate from a client utterance in the live session.
 
 If context-ingest.py cannot run or produces no map, treat all themes as UNKNOWN and run the
-full interview as normal — purely additive.
+full interview as normal - purely additive.
 
 ### Question Philosophy
 - Plain English only. No jargon.
@@ -249,7 +258,7 @@ When the client says "I don't know", "not sure", "skip", "research it", or anyth
 4. **Wait for approval.** The client must say yes, adjust it, or skip. Do NOT auto-accept your own recommendation.
 
 5. **Log the answer.** If they approve:
-   - Write it to workforce-interview-answers.md with a note: "Researched recommendation — approved by client"
+   - Write it to workforce-interview-answers.md with a note: "Researched recommendation - approved by client"
    - Follow the normal flush protocol (handoff update, MEMORY.md, etc.)
    If they skip:
    - Log it as skipped in interview-handoff.md
@@ -262,10 +271,10 @@ When the client says "I don't know", "not sure", "skip", "research it", or anyth
 This interview may take hours, days, weeks, or months. The client may stop and come back at any time. Every answer must survive gateway restarts, session resets, context loss, and even agent replacement. The Memory Wiki system ensures persistence across all layers:
 
 **Active Persistence Files:**
-1. **workforce-interview-answers.md** — the permanent answer record (Layer 1: Filesystem)
-2. **interview-handoff.md** — the progress tracker and resume point (Layer 1: Filesystem)
-3. **MEMORY.md** — the boot-time progress line (Layer 1: Filesystem)
-4. **Memory Wiki** — structured interview pages with provenance (Layer 8: Wiki System)
+1. **workforce-interview-answers.md** - the permanent answer record (Layer 1: Filesystem)
+2. **interview-handoff.md** - the progress tracker and resume point (Layer 1: Filesystem)
+3. **MEMORY.md** - the boot-time progress line (Layer 1: Filesystem)
+4. **Memory Wiki** - structured interview pages with provenance (Layer 8: Wiki System)
 
 **Persistence Guarantees:**
 - Layer 1 (Markdown files): All answers written immediately to disk
@@ -338,7 +347,7 @@ At the START of every session, before doing anything else related to Skill 23:
 
 - **Client says "I don't know" or "skip":** Log it as skipped in `interview-handoff.md`. Move to the next question. Circle back to all skipped questions at the end of the interview. Offer to research the answer for them.
 
-- **Client wants to change a previous answer:** Update the answer in `workforce-interview-answers.md`. Add a note: "Updated on [date] — previous answer was [X]." Do not re-ask every question.
+- **Client wants to change a previous answer:** Update the answer in `workforce-interview-answers.md`. Add a note: "Updated on [date] - previous answer was [X]." Do not re-ask every question.
 
 - **Stale handoff (started months ago):** If `started_date` is more than 90 days old, ask the client: "You started this interview on [date]. Some of your answers may be outdated. Would you like to review your previous answers before continuing, or pick up where you left off?"
 
@@ -471,11 +480,11 @@ bash add-role.sh --dept <slug> --role "<X Specialist>"
 #    Template: 23-ai-workforce-blueprint/templates/role-library/<dept>/<role>/how-to.md
 #    The role is BLOCKED from live status until this is filled.
 
-# 3. Run converge (MANDATORY closing step — never skip)
+# 3. Run converge (MANDATORY closing step - never skip)
 bash 32-command-center-setup/scripts/sync-extensions.sh --converge
 ```
 
-**Hard rule:** The role stays blocked (status=pending, not routable) until how-to.md no longer contains `[PENDING — FILL FROM LIBRARY]`. Do not skip step 2.
+**Hard rule:** The role stays blocked (status=pending, not routable) until how-to.md no longer contains `[PENDING - FILL FROM LIBRARY]`. Do not skip step 2.
 
 ### Add an SOP
 
@@ -504,7 +513,7 @@ bash 32-command-center-setup/scripts/add-sop.sh \
   --file /tmp/sop-draft.md \
   [--keywords "kw1,kw2"]
 
-# 3. Run converge (MANDATORY closing step — never skip)
+# 3. Run converge (MANDATORY closing step - never skip)
 bash 32-command-center-setup/scripts/sync-extensions.sh --converge
 ```
 
@@ -521,7 +530,7 @@ The converge step is REQUIRED after EVERY add. It:
 # Standard converge (full renders)
 bash 32-command-center-setup/scripts/sync-extensions.sh --converge
 
-# Fast mode (for Sunday cron — skips infographic/Notion if no delta)
+# Fast mode (for Sunday cron - skips infographic/Notion if no delta)
 bash 32-command-center-setup/scripts/sync-extensions.sh --converge --fast
 ```
 

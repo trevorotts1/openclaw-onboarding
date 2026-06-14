@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
-department-floor.py — the ONE source of truth for the HARD department floor.
+department-floor.py - the ONE source of truth for the HARD department floor.
+
+FLOOR (computed live from department-naming-map.json v2.5.0): 28 departments =
+21 mandatory canonical + 7 universal-primary vertical-pack (one per pack). The
+count is ALWAYS derived at runtime from len(HARDCODED_MANDATORY) + the count of
+universal-primary pack depts, so no integer is hardcoded as a gate. Below the
+floor is only ever reached by an EXPLICIT recorded decline (a mandatory dept, a
+universal-primary vertical, or a custom dept the owner declined in Phase 5.5).
 
 WHY THIS EXISTS (the bug it kills):
 Clients kept landing with HEAVILY-REDUCED workforces (Cassandra 3 depts, others
@@ -12,7 +19,7 @@ instead of counting REAL departments on disk:
      JSON, so a hand-seeded 3-dept JSON (Cassandra's seeded fiction) reported
      "all canonical present" and passed the floor.
   2. qc-completeness.sh measured per-dept staffing of whatever was ON DISK but
-     had NO floor concept at all — 3 well-staffed depts returned PASS.
+     had NO floor concept at all - 3 well-staffed depts returned PASS.
   3. run-closeout.sh / resume-workforce-build.sh self-completed on JSON
      status=done / closeoutStatus=done with zero disk verification.
 
@@ -20,16 +27,16 @@ THE FIX (this module): compute the EXPECTED floor =
     len(HARDCODED_MANDATORY) mandatory canonical departments
     + len(universal_primary_vertical_departments(...)) universal-primary
       vertical-pack departments (one per pack, marked universal_primary=true in
-      department-naming-map.json — these fire for EVERY client regardless of
+      department-naming-map.json - these fire for EVERY client regardless of
       industry, giving the universal-primary floor)
     − any department the client EXPLICITLY declined (recorded as an explicit
       decline in build-state canonicalReconciliation.decisions == "no")
 
     Industry keyword matching STILL adds additional pack departments on top of
-    the computed floor, but those extras are not gating — the gate only checks
+    the computed floor, but those extras are not gating - the gate only checks
     for the universal primaries (plus the mandatory set). exit 3 fires when disk
     is below the computed floor or a specific mandatory/universal-primary dept is
-    missing. Exit 3 never fires for missing EXTRA (keyword-matched) pack depts —
+    missing. Exit 3 never fires for missing EXTRA (keyword-matched) pack depts -
     those are flavor, not floor.
 
     NOTE: the computed floor count is ALWAYS derived at runtime from the live
@@ -39,7 +46,7 @@ THE FIX (this module): compute the EXPECTED floor =
 
 …and then count the REAL department directories ON DISK and FAIL hard when disk
 is below the floor or a mandatory/universal-primary dept is missing from disk.
-The build-state JSON is NEVER trusted as proof of floor compliance — only disk
+The build-state JSON is NEVER trusted as proof of floor compliance - only disk
 is.
 
 Reads the SAME source of truth as build-workforce.py:
@@ -72,7 +79,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 NAMING_MAP = SKILL_DIR / "department-naming-map.json"
 
-# Hardcoded mandatory fallback — IDENTICAL to build-workforce.load_canonical_floor()
+# Hardcoded mandatory fallback - IDENTICAL to build-workforce.load_canonical_floor()
 # so the floor is still enforced on a broken install that lost the naming map.
 # v11.1.0: added general-task + project-architecture-office, floor 24→26.
 # Bugs + Healer (self-repair immune system) added as mandatory, floor 26→28.
@@ -124,11 +131,11 @@ def mandatory_ids(nm):
 
 def universal_primary_vertical_departments(nm):
     """
-    Return the list of universal primary vertical-pack department ids — one per
+    Return the list of universal primary vertical-pack department ids - one per
     pack, the department marked universal_primary=true (always the first dept in
     auto_add_departments). These are added to EVERY client regardless of industry,
     giving the len(HARDCODED_MANDATORY) + len(result) mandatory floor (computed at
-    runtime — no integer is hardcoded here).
+    runtime - no integer is hardcoded here).
 
     If a pack has no dept marked universal_primary=true, the first dept in
     auto_add_departments is treated as the universal primary (backward-compatible
@@ -161,9 +168,9 @@ def universal_primary_vertical_departments(nm):
 
 def matched_vertical_pack_departments(nm, core_answers):
     """
-    Return the list of vertical-pack department ids for the client — includes:
+    Return the list of vertical-pack department ids for the client - includes:
       1. All universal primary departments (one per pack, always present for every
-         client — these are the universal primaries that form the top layer of the
+         client - these are the universal primaries that form the top layer of the
          computed mandatory floor alongside HARDCODED_MANDATORY).
       2. Additional pack departments that match the client's industry keywords
          (flavor/extras on top of the computed floor, not gating).
@@ -441,7 +448,7 @@ def evaluate_floor(departments_dir=None, build_state=None, core_answers=None):
     floor_met = (not missing_mandatory) and (not missing_universal_primary)
     rc = 0 if floor_met else 3
 
-    # Reason string uses the live computed floor count — never a hardcoded integer.
+    # Reason string uses the live computed floor count - never a hardcoded integer.
     _expected_floor_count = len(expected_mand) + len(expected_universal_primary)
     reason = (
         f"floor met ({_expected_floor_count}-department standard: "
@@ -491,7 +498,7 @@ def main(argv):
             f" − {len(verdict['declined'])} declined)"
         )
         print("============================================", file=sys.stderr)
-        print(f"department-floor.py — HARD floor verdict ({_floor_label})", file=sys.stderr)
+        print(f"department-floor.py - HARD floor verdict ({_floor_label})", file=sys.stderr)
         print(f"departments_dir = {verdict['departments_dir']}", file=sys.stderr)
         print(f"expected floor  = {verdict['expected_floor_count']} "
               f"({len(verdict['mandatory'])} mandatory "

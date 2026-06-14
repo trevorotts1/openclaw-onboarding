@@ -1,7 +1,12 @@
 # The AI Workforce Blueprint
+
+> **PRECEDENCE (binding):** This document is a HISTORICAL REFERENCE for folder/file structure and naming conventions ONLY. On ANY conflict about the interview, the department list, question wording, the build flow, or what the agent is allowed to do during the interview, `INSTRUCTIONS.md` and the canonical department floor (`scripts/list-canonical-departments.py` / `department-naming-map.json`) WIN. Where this document and `INSTRUCTIONS.md` disagree, follow `INSTRUCTIONS.md`. Do NOT copy the question lists or the department list out of this file as if they were current; they are kept only so the structure conventions stay readable.
+
+> **THE INTERVIEW HAS ONE JOB (binding):** Every question in this skill exists ONLY to gather what is needed to BUILD the owner's departments, roles, and step-by-step instructions. The agent is an intake interviewer, not a worker. It NEVER performs or offers client work during the interview (no presentations, no copy, no funnels, no names, no sample deliverables, no chat-log analysis). It NEVER surveys the owner's current daily task list for its own sake. When intake is complete it ALWAYS proceeds to department reconciliation (`INSTRUCTIONS.md` Phase 5.5) and then the build. See `INSTRUCTIONS.md` "Interview Single-Job Anchor" and "No-Work-During-Interview Gate" for the authoritative rules.
+
 > **Version 11 - March 13, 2026** | 3-Option Flow + Interview-Style Questions + Context Awareness + Telegram Formatting
 
-**Version:** V2.1
+**Version:** V2.1 (historical reference; superseded by INSTRUCTIONS.md v10.4.0+ on any conflict)
 **Last updated:** March 13 at 8-15 AM
 
 ## How to Build the Folder System That Powers Your AI Workforce
@@ -85,40 +90,14 @@ When you trigger this skill, you have 3 options. Choose the one that fits your s
 **Best for:** First-time setup, new businesses, reorganizing
 
 **What happens:**
-1. I show you 17 pre-built departments
-2. You choose: Keep all / Keep some / Add custom / Start fresh
-3. I interview you with example-driven questions
-4. I build everything automatically
+1. I gather what I need to build your departments, roles, and step-by-step instructions
+2. I reconcile what you tell me against the canonical department floor (INSTRUCTIONS.md Phase 5.5)
+3. I build everything automatically
 
-**The 17 Recommended Departments:**
+> **DEPARTMENT LIST, DO NOT USE THE STALE LIST BELOW.** The current canonical department floor is computed at runtime by `scripts/list-canonical-departments.py` (defined in `department-naming-map.json`) and is the ONLY authoritative source. The bulleted set that historically lived here (a 17-item draft including `creative-dept`, `hr-people-dept`, `it-tech-dept`, `ceo-dept`, `operations-dept`) is OBSOLETE and it CONTRADICTS the canonical floor. It has been removed so no agent copies it. To present departments to an owner, run the canonical list and follow INSTRUCTIONS.md Phase 5.5 (Canonical Departments Reconciliation). Never read a department set out of this historical document.
 
-• marketing-dept - Ads, social media, email campaigns, lead generation
-• sales-dept - Converting leads to customers
-• billing-dept - Invoicing, payments, financial tracking
-• customer-support-dept - Helping existing clients
-• operations-dept - Day-to-day business running
-• creative-dept - ALL written content (copywriting, speeches, presentations, scripts)
-• graphics-dept - Static images, brand assets, AI image generation (KIE.ai, Nano Banana, OpenAI images)
-• video-dept - AI video generation, editing, captions, storyboarding (KIE.ai video endpoints)
-• audio-dept - Full audio lifecycle: TTS, transcription, music, voice agents, podcasts (KIE.ai audio, Fish Audio, Whisper)
-• hr-people-dept - Team management, hiring
-• legal-compliance-dept - Contracts, regulations
-• it-tech-dept - Software, websites, infrastructure
-• web-development-dept - Websites, funnels, landing pages
-• app-development-dept - Software, mobile apps, APIs
-• research-dept - Market research, competitive analysis, data insights
-• comms-dept - Internal communications, announcements, newsletters
-• ceo-dept - Executive strategy, vision, high-level decisions
-• master-orchestrator-dept - Routes all work (always included)
-
-**Department Flexibility:**
-"Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
-- Default to keeping all 17 if the client has no preference
-
-**Department handoff rules:**
-• Creative writes ALL content — other departments produce it into final assets
-• Graphics handles static images — Video handles moving images — Audio handles sound
-• If it starts as words, it starts in Creative. If it needs to become an image, it goes to Graphics. Video, to Video. Sound, to Audio.
+**How content flows between departments (internal routing note, superseded by the canonical floor):**
+> This historical note referenced an obsolete `creative-dept`. Under the canonical floor there is no `creative-dept`; written content is owned by Communications, with Graphics owning static images, Video owning moving images, and Audio owning sound. Treat the canonical floor (`scripts/list-canonical-departments.py`) and INSTRUCTIONS.md as authoritative for which department owns what. This bullet is internal routing prose, never client-facing question text.
 
 ### Option B - Manual Build 🛠️
 
@@ -612,66 +591,65 @@ This file sits at the top level of each department folder, before any role subfo
 
 > 💡 **Tip**: Keep the Department Overview high level. Do not bury step by step SOPs here. Those live in the role folders.
 
-### Minimum 7 Setup Questions (Required)
+### Department Build-Intake Questions (up to 7 per department)
 
-For each department, the AI must ask at least **7 questions** so it can generate the Department Overview, the role Start Here files, and the knowledge base files correctly.
+> **PRECEDENCE:** The authoritative interview spec is `INSTRUCTIONS.md` (theme-based, Phases 1-6 + Phase 5.5 reconciliation). The questions below are a HISTORICAL plain-list reference, kept only to show the SHAPE of what each department needs. If they conflict with `INSTRUCTIONS.md`, follow `INSTRUCTIONS.md`.
 
-**Interview-Style Question Format:**
-Each question should include an example answer. This helps the user understand what kind of information you're looking for. Questions should be conversational and warm.
+Every question here exists for ONE reason: to gather what is needed to BUILD this department, its team members, and their step-by-step instructions. These are NOT a survey of the owner's current daily tasks, and the agent does NOT perform or offer any client work while asking them. The framing is always "so I can build this for you," never "describe what you currently do."
 
-**Before asking, check existing context:**
-- MEMORY.md for business info
-- USER.md for preferences and tools
-- AGENTS.md for known integrations
-- HEARTBEAT.md for active projects
-- IDENTITY.md for business context
+**Question format:**
+Each question includes an example answer to show what kind of detail builds a strong department. Questions are conversational and warm. No forbidden language (never say "SOPs", "handoffs", "tech stack", "agent"; instead say "step-by-step instructions", "what departments share", "tools you use", "team member / specialist / director"; see `interview/forbidden-jargon.json`).
 
-Skip any question where the answer is already known from these files.
+**Before asking, check existing context (one-shot pre-pass only):**
+- IDENTITY.md, MEMORY.md, AGENTS.md, TOOLS.md, USER.md, SOUL.md (the six core files) plus Phase 0 research.
+- This is a bounded pre-pass via `scripts/context-ingest.py`. Use it to skip questions already answered and to phrase sharper confirmations. After it runs once, BUILD. Do NOT re-read or re-analyze owner conversations as a content source.
 
-#### The 7 Required Questions (With Examples)
+Skip any question whose answer is already confirmed from these files.
+
+#### The Build-Intake Questions (with examples)
 
 After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-**1. What is the purpose of this department?**
-   - Example: "The Sales department converts leads into paying customers through calls, demos, and proposals"
-   - Example: "The Marketing department generates awareness and brings new leads into the business"
+**1. So I can build this department right, what do you want it to be responsible for?**
+   - Example: "I want a Sales department that turns interested people into paying customers."
+   - Example: "I want a Marketing department that gets new people aware of me and brings in leads."
    - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-**2. What roles exist inside this department?**
-   - Example: "Appointment Setter, Closer, Account Manager"
-   - Example: "Content Writer, Social Media Manager, Ads Specialist"
-   - Example: "Just one person - a generalist who does everything"
+**2. Which team members should I build into this department? (I will suggest the standard roles; you add or remove.)**
+   - Example: "An Appointment Setter, a Closer, and an Account Manager."
+   - Example: "A Content Writer, a Social Media Manager, and an Ads Specialist."
+   - Example: "Just one all-rounder for now; you pick the right ones."
    - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-**3. What does each role do day to day?**
-   - Example: "The Appointment Setter makes 50-80 calls per day, books 3-5 appointments"
-   - Example: "The Content Writer writes blog posts, emails, and social media content"
+**3. For each team member I build, what should they own day to day?**
+   - Example: "The Appointment Setter reaches out and books calls; the Closer runs the calls and signs people up."
+   - Example: "The Content Writer produces blog posts, emails, and social posts."
    - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-**4. What does this department receive from other departments and what does it hand off to other departments?**
-   - Example: "Receives qualified leads from Marketing, hands closed deals to Operations"
-   - Example: "Receives content requests from Sales, hands finished content to everyone"
+**4. So the departments work together, what does this department need FROM other departments, and what does it pass ON to them?**
+   - Example: "It needs qualified leads from Marketing, and it passes signed customers on to onboarding."
+   - Example: "It needs content requests from Sales, and it passes finished content back to everyone."
    - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-**5. What is the tech stack for this department (tools and logins used daily)?**
-   - Example: "GoHighLevel for CRM, Slack for communication, Google Calendar for scheduling"
-   - Example: "Canva for design, Buffer for social posting, Google Drive for storage"
+**5. What tools do you use (or want to use) for this part of the business, so I can wire them in?**
+   - Example: "GoHighLevel for my CRM, Google Calendar for scheduling."
+   - Example: "Canva for design, Google Drive for storage."
    - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-**6. What are the KPIs for this department (goals, targets, definition of success)?**
-   - Example: "Sales: 3-5 appointments booked per day, 75% show rate, $50k monthly revenue"
-   - Example: "Marketing: 10,000 impressions per week, 50 new leads per month"
+**6. How will we know this department is winning? (Targets I should build it to hit.)**
+   - Example: "3-5 booked calls a day, a 75% show rate, $50k a month."
+   - Example: "10,000 people reached a week, 50 new leads a month."
    - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-**7. What are the most common tasks this department performs that need SOPs (list the top 10)?**
-   - Example: "1. Booking appointments 2. Handling objections 3. Following up 4. Updating CRM..."
-   - Example: "1. Writing blog posts 2. Scheduling social media 3. Running ad campaigns..."
+**7. What are the main jobs this department does that I should write step-by-step instructions for? (Your top handful.)**
+   - Example: "Booking calls, handling pushback, following up, keeping the CRM current."
+   - Example: "Writing posts, scheduling social, running ad campaigns."
    - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-**KPI Capture per department:**
-After each department is created, ask: "What does success look like for this department? How would you know it is doing a great job?"
-- If the client hesitates or says "I don't know", offer: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
-- If yes, research industry best practices and present 3 KPI options as choices, not mandates
+**Targets per department:**
+While building each department, ask: "What does winning look like here? How would you know this part of your business is doing a great job?"
+- If the owner hesitates or says "I don't know", offer: "That is completely fine. I can research what businesses like yours typically aim for and suggest some options. Want me to do that?"
+- If yes, research industry best practices and present 3 target options as choices, not mandates.
 
 #### Context Ingestion (Before Any Question)
 
@@ -679,22 +657,22 @@ After each department is created, ask: "What does success look like for this dep
 
 Before the AI asks you a single question, it reads everything it already knows about you and your business. This is called the **Context Ingestion Pre-Pass** (Phase 0.5). Here is what it reads:
 
-1. Your core profile files — IDENTITY, MEMORY, AGENTS, TOOLS, USER, and SOUL — the six foundation files that contain who you are, what you value, how you work, and what tools you use.
+1. Your core profile files - IDENTITY, MEMORY, AGENTS, TOOLS, USER, and SOUL - the six foundation files that contain who you are, what you value, how you work, and what tools you use.
 2. Pre-interview research from your website, LinkedIn, and any links you dropped in Phase 0.
 3. Any answers from a previous interview session (if you are resuming).
 4. A list of documents and links you provided (provided-context-manifest.md).
 
 The AI sorts everything it finds into three buckets for each interview topic:
 
-- **KNOWN** — it already has a clear answer from your existing files. Instead of asking from scratch, it confirms with you: *"Based on your profile, you serve real estate coaches. Still true, or did anything change?"*
-- **PARTIAL** — it has a hint but needs more detail. It skips the basic question and goes straight to the deeper one: *"I see you work with coaches — which type, and why do they choose you over anyone else?"*
-- **UNKNOWN** — no information found. It asks the full question fresh, just like a standard interview.
+- **KNOWN** - it already has a clear answer from your existing files. Instead of asking from scratch, it confirms with you: *"Based on your profile, you serve real estate coaches. Still true, or did anything change?"*
+- **PARTIAL** - it has a hint but needs more detail. It skips the basic question and goes straight to the deeper one: *"I see you work with coaches - which type, and why do they choose you over anyone else?"*
+- **UNKNOWN** - no information found. It asks the full question fresh, just like a standard interview.
 
 **What this means for you:** The interview gets shorter and smarter. You only answer things the AI genuinely does not know. You never get asked something it already has on file.
 
 **Two important rules the AI follows:**
 
-- **KNOWN-CONTEXT is never secretly recorded.** When the AI says "I see you serve real estate coaches — still true?", it does NOT silently write that as your answer. It only writes what YOU say out loud in the live session. If you confirm it, it logs your confirmation. If you correct it, it logs your correction. If you skip it, nothing gets written.
+- **KNOWN-CONTEXT is never secretly recorded.** When the AI says "I see you serve real estate coaches - still true?", it does NOT silently write that as your answer. It only writes what YOU say out loud in the live session. If you confirm it, it logs your confirmation. If you correct it, it logs your correction. If you skip it, nothing gets written.
 - **RECORDED-ANSWER = what YOU said.** The only things that go into your company blueprint are words that came out of your mouth (or keyboard) in this session. Pre-existing files inform the questions; they never replace your voice.
 
 This is the NO-FABRICATION rule in plain English: *"I only write down what YOU tell me. What I already know, I just confirm with you."*
@@ -703,7 +681,7 @@ This is the NO-FABRICATION rule in plain English: *"I only write down what YOU t
 
 The AI should ask questions in this priority order. After each question, add: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-1. **Run Context Ingestion first** (Phase 0.5) — load `interview-context-map.json` before asking anything. If USER.md says the business uses GoHighLevel, don't ask "What tools do you use?" — you already know.
+1. **Run Context Ingestion first** (Phase 0.5) - load `interview-context-map.json` before asking anything. If USER.md says the business uses GoHighLevel, don't ask "What tools do you use?" - you already know.
 
 2. **Ask high-level questions first:**
    - "What is your business name?" (Example: BlackCEO, Acme Coaching)
@@ -716,20 +694,19 @@ The AI should ask questions in this priority order. After each question, add: "I
    - "What tools do you currently use to run your business? Examples: Stripe for payments, HubSpot or Convert and Flow for your CRM, Mailchimp for email."
    - Store this answer in the workspace config as `connectedSystems`
 
-5. **Department Flexibility Question:**
-   - "Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
-   - Default to keeping all 17 if the client has no preference
+5. **Department Reconciliation (do NOT improvise a department list here):**
+   - Run `scripts/list-canonical-departments.py` and follow INSTRUCTIONS.md Phase 5.5 to walk the owner through the canonical floor, mark coverage, capture their custom departments, and record a YES / NO / LATER decision for each. The canonical floor is the source of truth; never present a hand-typed count from this historical document.
 
 6. **Progress Indicator:**
    - After completing basic business info: "You are 30% complete."
 
-7. **Ask about existing materials:**
-   - "Do you have existing SOPs, checklists, or training materials?" (Example: Yes in Google Docs / No starting fresh / Some scattered)
+7. **Ask about existing materials I can build from:**
+   - "Do you already have any written step-by-step instructions, checklists, or training notes I can build from?" (Example: Yes in Google Docs / No starting fresh / Some scattered)
 
-8. **Ask about current challenges:**
-   - "What is your biggest challenge right now?" (Example: Following up with leads, creating content, managing invoices)
+8. **Ask what they most want built:**
+   - "Of everything we have talked about, which part of your business do you most want handled for you, so I build that team strongest first?" (Example: following up with leads, creating content, managing invoices)
 
-9. **Then ask the 7 department-specific questions** for each selected department
+9. **Then ask the build-intake questions** for each department in the reconciled set
 
 10. **Progress Indicators during build:**
     - After department creation: "You are 50% complete."
@@ -1223,28 +1200,28 @@ BEFORE YOU CREATE ANYTHING:
    OPTION A - Full Interview Setup (Recommended, most personalized):
    "I will interview you about your business first. I will ask you detailed questions about each department - at least 7 questions per department - so I deeply understand your operations, tools, KPIs, and processes. Then I will build your entire folder structure and write every document with real content based on your specific answers. This takes the longest but produces the best results."
 
-   OPTION B - Quick Setup (AI Mode, fastest):
-   "I will skip the interview and build everything now using what I already know about you from our previous conversations and your existing files (USER.md, MEMORY.md, etc.), combined with the recommended structure from this Blueprint. Every folder and every document will be created with real content - not empty placeholders. You can refine and personalize later."
+   OPTION B - Quick Setup (research-assisted, fastest), requires explicit live owner consent (see INSTRUCTIONS.md Option B consent gate):
+   "I will run a faster, research-assisted intake. I read your six core files once as a one-shot pre-pass, draw on your Phase 0 research and industry best practices, and PROPOSE a structure for you to confirm or correct live. I do NOT mine our chat history for content, and I do NOT auto-finalize anything you did not confirm. Every folder and document gets real content once you approve. You can refine later."
 
    OPTION C - Review and Recommend First (Middle ground):
    "Before I build anything, I will read this entire Blueprint, review everything I already know about your business, and come back to you with my recommendations: which departments I think you need, which roles I think are missing, what I would suggest before we start. You review my recommendations, approve or change them, and then I build."
 
    Wait for my answer before proceeding.
 
-2. Interview me about my business so you understand what departments and roles I need. (Skip this step if Option B was chosen. For Option C, do the review first, then ask if the user wants a full interview or wants to proceed with the recommendations.)
+2. Run the build-intake conversation so you know what departments, team members, and step-by-step instructions to BUILD. (Skip this step if Option B was chosen. For Option C, do the review first, then ask if the owner wants a full intake or wants to proceed with the recommendations.) The agent NEVER performs or offers client work during this conversation, and NEVER mines chat history as a content source.
 
-   After each interview question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+   After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
    First, ask the high level questions:
-   - What does your business do?
+   - What does your business do? (so I can shape the whole company around it)
      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   - What are the main functions or activities in your business? (marketing, sales, billing, customer support, content creation, etc.)
+   - What are the main parts of your business I should build teams for? (getting attention, selling, getting paid, taking care of customers, making content, etc.)
      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   - For each function, what specific tasks get done? (writing ads, setting appointments, sending invoices, etc.)
+   - For each part, what are the main jobs I should write step-by-step instructions for? (writing ads, booking calls, sending invoices, etc.)
      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   - Do you have existing SOPs, scripts, checklists, or training materials we can use?
+   - Do you already have any written step-by-step instructions, scripts, checklists, or training notes I can build from?
      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   - What tools and software does your business use?
+   - What tools and software do you use, so I can wire them into the right team members?
      - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
    **System Discovery Question:**
@@ -1252,34 +1229,32 @@ BEFORE YOU CREATE ANYTHING:
    - Store this answer in the workspace config as `connectedSystems`
    - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-   **Department Flexibility Question:**
-   - "Here are the 17 departments we recommend for a complete AI workforce. You can keep all of them, remove any you do not need right now, or add new ones specific to your business. What would you like to adjust?"
-   - Default to keeping all 17 if the client has no preference
-   - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+   **Department Reconciliation (do NOT improvise a department list):**
+   - Run `scripts/list-canonical-departments.py` and follow INSTRUCTIONS.md Phase 5.5: show the canonical floor, mark what the owner already covered, name their custom departments, and record YES / NO / LATER per department. The canonical floor is authoritative; never present a hand-typed count from this historical document.
 
-   **Progress Indicator:** After completing basic business info, tell the client: "You are 30% complete."
+   **Progress Indicator:** After completing basic business info, tell the owner: "You are 30% complete."
 
-   Then, for EACH department, ask at least 7 questions minimum (required). After each question, add this fallback line: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   1. What is the purpose of this department?
+   Then, for EACH department in the reconciled set, ask up to 7 build-intake questions. After each, add: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
+   1. So I can build it right, what do you want this department responsible for?
       - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   2. What roles exist inside this department?
+   2. Which team members should I build into this department? (I will suggest the standard ones; you add or remove.)
       - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   3. What does each role do day to day?
+   3. For each team member I build, what should they own day to day?
       - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   4. What does this department receive from other departments and what does it hand off to other departments?
+   4. What does this department need FROM other departments, and what does it pass ON to them?
       - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   5. What is the tech stack for this department (tools and logins used daily)?
+   5. What tools do you use (or want to use) here, so I can wire them in?
       - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   6. What are the KPIs for this department (goals, targets, definition of success)?
+   6. How will we know this department is winning? (Targets I should build it to hit.)
       - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
-   7. What are the most common tasks this department performs that need SOPs (list the top 10)?
+   7. What are the main jobs here I should write step-by-step instructions for? (Your top handful.)
       - Fallback: "If you are not sure, just ask me to research best practices for your industry. We will figure it out together."
 
-   **KPI Capture per department:**
-   After each department is created, ask: "What does success look like for this department? How would you know it is doing a great job?"
-   - If the client hesitates or says "I don't know", offer: "That is completely fine. I can research what companies in your industry typically measure and suggest some options. Want me to do that?"
-   - If yes, research industry best practices and present 3 KPI options as choices, not mandates
-   - After KPI capture, show progress: "You are 50% complete."
+   **Targets per department:**
+   While building each department, ask: "What does winning look like here? How would you know this part of your business is doing a great job?"
+   - If the owner hesitates or says "I don't know", offer: "That is completely fine. I can research what businesses like yours typically aim for and suggest some options. Want me to do that?"
+   - If yes, research industry best practices and present 3 target options as choices, not mandates.
+   - After targets are captured, show progress: "You are 50% complete."
 
 3. Think step by step before creating anything. After the interview:
    - Propose the department structure you recommend (with explanations)
@@ -1341,7 +1316,7 @@ BEFORE YOU CREATE ANYTHING:
    Go file by file and write real content. For each file, follow this intelligence hierarchy:
 
    SOURCE 1 (Best): Use what you learned from the interview (Option A answers).
-   SOURCE 2 (Good): Use what you already know about this person from USER.md, MEMORY.md, SOUL.md, and previous conversations.
+   SOURCE 2 (Good): Use what the one-shot context pre-pass surfaced from the six core files (IDENTITY/MEMORY/AGENTS/TOOLS/USER/SOUL) and Phase 0 research. Do NOT re-mine the owner's chat history or "previous conversations" as a content source; context ingestion is a bounded one-shot pre-pass, after which you BUILD.
    SOURCE 3 (Fallback): Use industry best practices for this type of business, this department, and this role. Write what a competent professional in this position would do in a well-run company of this type.
 
    If you have Source 1, use it. If not, use Source 2. If you have neither, use Source 3. You can combine sources - for example, use interview answers for the parts the client explained, and fill in gaps with best practices.
