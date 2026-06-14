@@ -29,6 +29,27 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 5. Extract representation preferences from intake.json field `REPRESENTATION_MIX`. This field is collected WITH PERCENTAGES during discovery (e.g., "70% African American women, 20% African American men, 10% mixed" or "100% women, diverse" or "no people at all"). The percentage breakdown drives the deck-level ratio in SOP 9.2.
    - If `REPRESENTATION_MIX` is present and answered: use the client's stated breakdown verbatim. Record as `representation_source: "client_intake"`.
    - If `REPRESENTATION_MIX` is unanswered or blank: DO NOT invent a racial default. Set representation to NO PEOPLE (people element omitted from all slides) and flag: `representation_source: "default_no_people -- intake unanswered"`. Immediately notify the operator with a flag: "REPRESENTATION UNANSWERED: intake.json has no REPRESENTATION_MIX value. Deck will default to no people in images. Please confirm or supply the intended breakdown before Phase 2." Do not proceed to people-inclusive prompts until the operator or client has answered.
+5a. **DERIVE THE COLOR RELATIONSHIPS AND GRADING PROFILE (required -- must complete before step 6).**
+
+The brand hex codes do not exist in isolation. Before building the STYLE BLOCK text, analyze how PRIMARY and SECONDARY relate on the color wheel and determine the deck's color grading temperature. Both outputs are written into the STYLE BLOCK so the Slide Image Creator can encode them in every prompt.
+
+**Color relationships (using Adobe Color or equivalent):**
+1. Compare PRIMARY and SECONDARY on the color wheel. Identify the dominant relationship:
+   - COMPLEMENTARY: the two hexes sit roughly opposite each other on the wheel (hue difference approximately 150-210 degrees). State: `color_relationship: "complementary"`. Example: gold (#C9A24B, warm yellow-orange, hue ~40 degrees) and raspberry-pink (#C8104E, red-adjacent, hue ~340 degrees) are near-complementary, with the warm side strongly complementary to a teal-blue. Name this: "PRIMARY and SECONDARY are near-complementary (warm analogous family with strong contrast) -- SECONDARY is the action/urgency accent that creates visual pop against the PRIMARY structural gold."
+   - ANALOGOUS: the two hexes sit adjacent on the wheel (hue difference approximately 30-60 degrees). State: `color_relationship: "analogous"`. This creates harmony; pair with a contrasting ACCENT for visual energy.
+   - TRIADIC: the three brand hexes (including ACCENT) are roughly evenly distributed (approximately 120 degrees apart). State: `color_relationship: "triadic"`. This creates maximum variety; each color takes a clearly separated role.
+2. CONTRAST check: compute or estimate the WCAG-AA contrast ratio of PRIMARY against the white base (#FFFFFF or the warm off-white). Log the result in the STYLE BLOCK. If PRIMARY is < 4.5:1 on white, flag: "PRIMARY is low-contrast on white base -- NOT suitable for body text; use only for structural devices (rules, kicker labels at large size, decorative roles). Body and headline text must use the charcoal HEADLINE COLOR." If SECONDARY is < 4.5:1 on white, apply the same rule.
+3. Document the complementary accent: "If the prompt needs a maximum-pop emphasis that goes BEYOND the brand palette, the complementary color to PRIMARY [HEX] is approximately [COMPLEMENTARY_HEX] -- use sparingly (one word, one device) to create controlled visual tension."
+
+**Color grading temperature:**
+1. Determine the COLOR GRADE TEMPERATURE from the brand palette and any style references in intake.json:
+   - WARM grade (default for coaching, lifestyle, personal brand, enrollment decks): off-white base (#FBF7F4 or equivalent), warm-key photography, no cool blue/gray tones, all saturation moderate-warm. Document as `color_grade_profile: "warm"`.
+   - COOL grade (technology, finance, corporate): white or cool-white base, clean studio or overcast photography, silver or blue-toned structural accents, moderate-cool saturation. Document as `color_grade_profile: "cool"`.
+   - NEUTRAL grade: true white base, no temperature bias, editorial-neutral photography. Document as `color_grade_profile: "neutral"`.
+2. If the PRIMARY hex is warm (hue in orange / yellow / red family), default to WARM grade unless style_references say otherwise.
+3. If the PRIMARY hex is cool (hue in blue / teal / purple family), default to COOL grade unless style_references say otherwise.
+4. Write `color_grade_profile` into the STYLE BLOCK and the brand_registry.json entry.
+
 6. Build the STYLE BLOCK text. Format (800-1,500 characters):
    ```
    STYLE BLOCK -- [client_slug] -- [deck_slug]
@@ -62,12 +83,25 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    [If unanswered: "NO PEOPLE -- operator flag issued, awaiting confirmation"]
    Age range: [range from intake or NONE if no people default]
 
+   COLOR THEORY:
+   Color relationship: [complementary / analogous / triadic] -- [one-sentence description of how PRIMARY and SECONDARY relate on the wheel and what visual role that creates]
+   Complementary accent: [HEX of the color that is opposite PRIMARY on the wheel] -- use sparingly for maximum-pop emphasis only
+   Contrast check: PRIMARY [HEX] on white base = approximately [N]:1 contrast ([WCAG pass/fail for body text]); SECONDARY [HEX] on white base = approximately [N]:1 contrast ([WCAG pass/fail])
+   Rule: [which hexes are safe for body text vs structural-devices-only vs accent-use-only]
+
+   COLOR GRADING:
+   color_grade_profile: [warm / cool / neutral]
+   Temperature: [one-sentence description -- e.g., "all photography is warm-key, golden-hour quality; off-white base; no cool blue casts anywhere in the deck"]
+   Saturation: [moderate-warm / rich-warm / moderate-cool / desaturated-neutral]
+   Tonal contrast: [balanced premium / high contrast / soft editorial]
+   Lock: every slide in this deck shares the above temperature, saturation, and tonal contrast. No individual slide may break the grade.
+
    ARCHETYPES: A1-A5 per master SOP Section 7.2 (delivered separately via SOP 9.3)
 
    16:9 ALWAYS. 2K resolution (2560x1440). Never 4:3 or square.
    ```
 7. Write the completed STYLE BLOCK to working/brand/style_block.md.
-8. Register the STYLE BLOCK in working/brand/brand_registry.json: `{ "client_slug": "...", "deck_slug": "...", "style_block_path": "working/brand/style_block.md", "generated_at": "...", "color_source": "...", "font_source": "...", "representation_source": "..." }`.
+8. Register the STYLE BLOCK in working/brand/brand_registry.json: `{ "client_slug": "...", "deck_slug": "...", "style_block_path": "working/brand/style_block.md", "generated_at": "...", "color_source": "...", "font_source": "...", "representation_source": "...", "color_relationship": "...", "color_grade_profile": "..." }`.
 9. Notify the Director and the Slide Image Creator that the STYLE BLOCK is ready.
 
 **Outputs:**
@@ -148,3 +182,4 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Failure mode:** If the Slide Image Creator begins writing prompts before acknowledging receipt of archetype_palette_handoff.md, flag this to the Director immediately. Prompts written without exemplar pre-reading risk density and structure failures at Prompt QC.
 
 ---
+

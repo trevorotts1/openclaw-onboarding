@@ -86,6 +86,21 @@ The proven QC-9.42 deck was built on exactly FIVE layout archetypes, rotated acr
 
 **Composition language inside each archetype:** zones are described in PERCENTAGES of the frame ("top 58% photo band," "bottom 42% type zone") PLUS thirds language for element placement within zones. Both are required on every prompt.
 
+**THE THIRDS SYSTEM (required design rule and required prompt element):** Every prompt must declare which third of the frame holds each key element. The frame is divided into a 3x3 grid: upper / middle / lower third vertically, and left / center / right third horizontally. This creates nine intersection zones, and the most powerful focal points sit at the four intersections of the inner lines (upper-left, upper-right, lower-left, lower-right). Rules:
+- Every prompt states which third holds the HEADLINE (e.g., "headline anchored to the lower-left third").
+- Every prompt states which third holds the PRIMARY SUBJECT or visual element (e.g., "subject positioned at the upper-right third intersection").
+- Every prompt states which zone holds SUPPORTING ELEMENTS (e.g., "logo chip at lower-right; supporting copy in the center-left zone").
+- "Centered" alone is not thirds language and is an auto-fail at Prompt QC (AF-P6). Centering as an intentional design choice must be described as "centered on the vertical axis in the middle third, with deliberate symmetry as the composition anchor."
+- On every people-slide, the person's EYE LINE or face falls at or near a thirds-grid intersection. Declaring this in the prompt is mandatory.
+
+**IMAGE LAYERING AND DEPTH (required on every prompt):** Every slide prompt must specify all three depth layers explicitly. The image model cannot infer depth -- you must direct it. The three layers:
+- FOREGROUND: what is closest to the viewer? (A blurred edge element, a prop, negative space, a design device -- or stated as "no foreground element, the subject IS the near plane.")
+- MIDGROUND: the primary subject. Separated from the background by depth of field (soft background blur) OR by a lighting story (rim light, scrim, or exposure falloff behind the subject). Separation is required -- a subject that merges with the background is a composition defect.
+- BACKGROUND: the environmental context (the real-world setting per the World Engine). Typically softer focus, lower contrast, or lighter exposure than the midground subject.
+- Typography and design devices (gold rules, kicker labels, overlays) are the FRONT LAYER -- they sit above the photo layers in z-order and are rendered as designed elements, not embedded in the scene.
+- Subject separation method (required statement in the prompt): "Subject is separated from the background by [rim light and soft background blur / a natural exposure falloff / a shallow depth of field producing a bokeh background / the scrim gradient masking the background transition]. The background reads as environmental context, not a seamless studio backdrop."
+- Missing any layer from the prompt is a prompt-defect that routes back from QC.
+
 **Per-archetype mini-templates (the 10-line skeleton each prompt fills in; signature moves are mandatory):**
 
 **A1 mini-template (FULL-BLEED PHOTO + HEADLINE OVERLAY):**
@@ -157,6 +172,15 @@ The proven QC-9.42 deck was built on exactly FIVE layout archetypes, rotated acr
 9  Logo chip spec + MOOD + LIGHTING paragraph.
 10 COLOR VERIFICATION block + AVOID block.
 ```
+
+**OBJECTS, CARDS, PANELS, INSETS, AND CALLOUT DEVICES (required prompt discipline):** When the slide calls for a graphic device beyond typography and photography, declare it explicitly. Vague references ("add some design elements") produce amateur output. The proven device vocabulary:
+- CARD / PANEL: a floating rectangular or rounded-corner surface, typically white or the warm off-white base, that lifts content off the photo background. Use when text must sit over a busy photo area. State the panel size ("a white card occupying the left 50% of the slide from 10% top to 90% bottom"), opacity ("fully opaque white, not semi-transparent"), and shadow ("subtle 8px drop shadow at 15% opacity so the card reads as a lifted surface").
+- INSET: a smaller embedded frame, typically in a corner or a defined zone, carrying a secondary element (a statistic, a secondary image crop, a chart). State size ("an inset frame in the lower-right, occupying the bottom 25% x right 30% of the slide"), border ("1px gold rule border matching the PRIMARY hex"), and content ("shows a cropped close-up of the founder's hands on a keyboard").
+- CALLOUT CHIP / BADGE: a pill, tag, or rounded chip shape carrying a micro-label or a single data point. State color fill (brand accent), text spec (Montserrat Bold, ~13pt, all-caps, white), and placement (on the thirds grid).
+- VIGNETTE: a soft darkening or lightening at the frame edges that draws the eye to the center subject. Use only when the slide has a full-bleed photo and the center subject needs contrast separation. State: "a very subtle outer vignette, darkening the corners by approximately 15%, never fully black -- the vignette is atmospheric, not a black frame."
+- HANG-TAG (price tag motif): a large white hang-tag shape with a brand-accent border, carrying the price drop spec. Size, border color, content, and struck-price treatment are all stated explicitly (see SOP 9.5).
+- GOLD-RULE DIVIDER: the 3px full-width horizontal rule in PRIMARY hex between photo zone and type zone. Every A3 archetype uses it; it is also used in A2 as the seam between photo and text panels. State: "a 3px solid full-width horizontal rule in PRIMARY hex [HEX] sits at the [N%] mark, dividing the photo band above from the type zone below."
+- Rule: every device in the prompt must include (a) shape / surface description, (b) exact position on the thirds grid or as a percentage zone, (c) color spec with hex, (d) typography spec if it carries text. Missing any of these makes the device ambiguous to the image model.
 
 **Recurring brand devices (the proven deck's visual grammar, specify them explicitly in every prompt):**
 - Kicker label: small all-caps letter-spaced label in gold or pink above the headline, with a short gold rule beneath it.
@@ -347,6 +371,64 @@ Rules:
 **Hand to:** QC Specialist (for Phase 3 prompt QC, which checks price-drop slides against price_ladder.json); PPTX Assembly Specialist (for any pptx_text_overlays.json fallback entries)
 
 **Failure mode:** If a price-drop slide's copy in slides_copy.md shows a price that does not match price_ladder.json, halt and flag to the Director: "Price discrepancy on slide N -- slides_copy.md shows $X but price_ladder.json shows $Y. Offer Price Strategist must resolve before prompt can be written."
+
+---
+
+### SOP 9.6 -- Color Theory, Color Relationships, and Color Grading
+
+**When to run:** On every prompt -- applied in element 9 (BRAND PALETTE) and in the closing COLOR VERIFICATION block. Color theory is not a Phase 2 "add-on": it is a required discipline baked into every prompt the same way thirds-grid and layering are.
+
+**Inputs:**
+- STYLE BLOCK (3 hex codes with roles + the WHITE BASE)
+- arc_allocation.json (section and slide type -- emotional warmth vs urgency vs authority vs celebration affects grading temperature)
+- The client's COLOR GRADING PROFILE (delivered by the Brand Steward in the STYLE BLOCK as `color_grade_profile`; if absent, derive from the brand palette temperature)
+
+**PART A -- Color Relationships (complementary and contrasting)**
+
+The three brand hex codes from the STYLE BLOCK do not exist in isolation. They must RELATE to each other on the color wheel in ways that create visual energy and legibility. The two primary relationships to declare in every prompt:
+
+1. **COMPLEMENTARY ACCENTS for pop:** complementary colors sit directly opposite each other on the color wheel (e.g., orange and blue, gold and purple, raspberry-pink and teal). When a brand uses gold (#C9A24B -- a warm yellow-orange) as PRIMARY, the complementary accent range sits in blue-violet territory. Using a complementary accent on a single emphasis word or a single device creates maximum pop and visual tension. In the prompt, state: "The emphasis word [WORD] is set in [COMPLEMENTARY ACCENT HEX] to create maximum color pop against the gold rule devices -- complementary tension is intentional." When the STYLE BLOCK already assigns a SECONDARY hex that is complementary to PRIMARY, name that relationship: "SECONDARY [HEX] is the complementary accent to PRIMARY [HEX] -- this relationship creates visual energy and directs the eye to action elements."
+
+2. **SUFFICIENT CONTRAST for legibility:** any text element must have a WCAG-AA contrast ratio of at least 4.5:1 against the pixels directly behind it (3:1 for large text >= 24pt). In the prompt, before specifying text color, state the contrast relationship: "Charcoal #231F20 on the warm off-white #FBF7F4 base produces approximately 17:1 contrast -- high legibility. Gold #C9A24B on the white base produces approximately 2.7:1 -- insufficient for body text; gold is used only for kicker labels at large size and for structural rules, never for body copy." If the STYLE BLOCK's PRIMARY hex is low-contrast on white (e.g., a light pastel), flag it and escalate to the Brand Steward before writing prompts (see Edge Case 17.2).
+
+3. **ANALOGOUS / TRIADIC HARMONY for the deck:** analogous colors sit adjacent on the wheel (e.g., gold, orange, warm red) and create a harmonious, unified feeling -- good for decks with a warm emotional tone. Triadic colors are three evenly spaced points on the wheel -- energetic and varied, used when the deck needs visual contrast across sections. In the STYLE BLOCK notes, identify which relationship the brand palette uses and honor it in every prompt: "The brand palette is analogous-warm (gold and raspberry-pink are adjacent on the warm spectrum with charcoal as the anchor) -- maintain this warmth across all slides; no cool blues or teals introduced."
+
+**PART B -- Color Grading (deck-wide tonal consistency)**
+
+Color grading means the entire deck reads as ONE cohesive body of work -- the same warm/cool temperature, the same saturation level, the same tonal contrast -- across all 75 slides. This is the difference between a professionally produced deck and a deck of mismatched images. Rules:
+
+1. **DETERMINE THE GRADE TEMPERATURE from the STYLE BLOCK `color_grade_profile`:**
+   - WARM grade: off-white base (#FBF7F4 or equivalent), charcoal not pure black, gold tones structurally dominant, photography has a warm golden-hour or soft-morning-light quality. Use for coaching, lifestyle, personal-brand, and enrollment decks. The Lyric gold standard is a WARM grade.
+   - COOL grade: white or cool-white base, silver or blue-toned accents structurally dominant, photography with clean overcast or studio lighting. Use for technology, finance, and corporate decks.
+   - NEUTRAL grade: a true white base, no temperature bias in the palette, lighting is editorial-neutral. Use when the client's brand has no warm/cool bias.
+   - If `color_grade_profile` is absent from the STYLE BLOCK, derive it from the PRIMARY hex temperature: gold / orange / red primary = WARM grade; blue / teal / purple primary = COOL grade; green / gray primary = NEUTRAL grade. Document the derived grade in the prompt's COLOR VERIFICATION block.
+
+2. **DECLARE THE GRADE in every prompt's COLOR VERIFICATION block:**
+   ```
+   // COLOR GRADING: WARM grade. All photography on this slide must carry the same warm temperature as the rest of the deck -- golden-hour quality light, off-white base tones, no cool blue casts. Saturation: moderate-warm (not oversaturated, not desaturated). Tonal contrast: balanced premium (deep charcoal shadows, bright whites, no flat midtone mud).
+   ```
+
+3. **CONSISTENT SATURATION ACROSS THE DECK:** all slides must share the same approximate saturation level. Mixing a highly saturated photo with a desaturated photo in the same deck creates tonal inconsistency. In the prompt, state: "Saturation level: [moderate / rich / desaturated] -- consistent with deck color grade." If the source photography's saturation is unknown (the image model is generating fresh), instruct: "Generate with [moderate/rich/desaturated] saturation to match the deck's consistent color grade."
+
+4. **TEMPERATURE LOCK across all slides:** no slide in a WARM-grade deck introduces cool blue backgrounds, cool-toned lighting, or cool-biased photography, even if the slide content is "neutral." The grade is DECK-WIDE. In the prompt, state: "Temperature lock: WARM. No cool-toned elements, no blue-tinted shadows, no silver accents. All lighting is warm-key, all backgrounds maintain the off-white warm base."
+
+5. **COLOR GRADING and the BRAND PALETTE work together, not against each other:** the brand hex codes (PRIMARY/SECONDARY/ACCENT) always take precedence for specific design elements (gold rules, raspberry-pink accent words, etc.). Color grading governs the photography temperature and the overall tonal feel -- it does not override hex-specified brand elements. Example: in a WARM-grade deck with a raspberry-pink SECONDARY, the photography is warm but the action/urgency words are still exactly #C8104E raspberry-pink; the grade does not wash the pink into orange.
+
+**Steps:**
+1. Read the STYLE BLOCK `color_grade_profile` (or derive it from the PRIMARY hex if absent).
+2. Identify the brand palette COLOR RELATIONSHIPS: are PRIMARY and SECONDARY complementary, analogous, or triadic? Name the relationship explicitly.
+3. In element 9 (BRAND PALETTE) of the prompt, add a COLOR RELATIONSHIPS paragraph AFTER the hex role list: "Color relationship: [PRIMARY HEX] and [SECONDARY HEX] are [complementary / analogous / triadic], creating [visual tension and pop / harmonic warmth / energetic variety]. [SECONDARY HEX] is the complementary accent and is used only on action/emphasis elements to preserve the pop effect -- overuse of complementary colors neutralizes the tension."
+4. In element 9, add a CONTRAST DECLARATION: "Legibility check: [HEADLINE COLOR] on [BACKGROUND COLOR] = [ratio]:1 contrast (WCAG-AA [pass/fail]). [BODY COLOR] on [BACKGROUND COLOR] = [ratio]:1 contrast. All text elements meet or exceed 4.5:1."
+5. In the COLOR VERIFICATION closing block, add the COLOR GRADING line: "// COLOR GRADING: [WARM/COOL/NEUTRAL] grade -- [one-sentence description of what that means for this slide's photography temperature, saturation, and tonal contrast]."
+
+**Outputs:**
+- Element 9 (BRAND PALETTE) includes color-relationship paragraph and contrast declaration
+- COLOR VERIFICATION block includes COLOR GRADING line
+- Every prompt's photography temperature, saturation, and tonal contrast declared and consistent with the deck grade
+
+**Hand to:** SOP 9.1 (these elements are part of the overall prompt)
+
+**Failure mode:** If the STYLE BLOCK has no `color_grade_profile` and the PRIMARY hex has no clear temperature (e.g., a true neutral gray), derive NEUTRAL grade, document the derivation in the COLOR VERIFICATION block, and flag to the Brand Steward: "COLOR GRADE DERIVED as NEUTRAL from PRIMARY hex temperature -- confirm before final generation."
 
 ---
 

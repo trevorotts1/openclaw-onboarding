@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.0
+**Version:** 1.1
 **Last updated:** {{ISO_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -102,6 +102,9 @@ Review the local workdir structure. Are all completed run directories properly a
 | [PROOF PENDING] items resolved before Phase 1A closes | 100% |
 | Final PPTX delivery verified at every destination before done message | 100% |
 | Delivery notification sent via openclaw message send (never raw API) | 100% |
+| Full SOP 9.1 directory tree created at Step 0 (all subdirectories including assets/logo, assets/founder-portrait, assets/proof-assets, output/) | 100% |
+| Local files named slide-NN.png (kebab-case, zero-padded) -- never slide_NN.png or Slide NN.png | 100% |
+| GHL files named "Slide NN v<N>" (title-case, space-separated) | 100% |
 
 ---
 
@@ -132,18 +135,77 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Mac clients: `~/webinar-decks/<client-slug>/<deck-slug>/<YYYY-MM-DD>/`
    - VPS clients: `/data/.openclaw/workspace/webinar-decks/<client-slug>/<deck-slug>/<YYYY-MM-DD>/`
    Use today's date for YYYY-MM-DD.
-2. Create the directory tree with all required subdirectories:
+2. Create the directory tree with all required subdirectories. The FULL folder structure is:
    ```
    <workdir>/
-     media-library/           (passed images -- the deliverable folder)
+     media-library/                  (passed images -- the deliverable folder; python-pptx reads from here)
+       slide-01.png                  (zero-padded kebab-case; naming is mandatory for assembly order)
+       slide-02.png
+       ...
+       slide-NN.png
+       assets/                       (client-supplied assets collected during Phase A)
+         logo/                       (logo file(s) -- original; never modify the original)
+           <client-slug>-logo.png    (logo copy used for GHL upload and prompt reference)
+         founder-portrait/           (founder portrait for A5 slides; original + upload copy)
+           <client-slug>-portrait.jpg
+         proof-assets/               (screenshots, testimonials, press logos, before-after)
+           [PROOF PENDING items listed here until resolved; each named by slide number]
      working/
-       prompts/               (per-slide prompt files from Phase 2)
-       renders/               (raw downloads from Phase 4 -- pre-QC)
-       checkpoints/           (all checkpoint JSON files)
-       qc/                    (QC reports from all phases)
-       copy/                  (slide copy, intake, PRD, approval records)
-       brand/                 (STYLE BLOCK, brand registry, representation audit)
+       prompts/                      (per-slide prompt files from Phase 2, one per slide)
+         slide-01-prompt.txt
+         slide-02-prompt.txt
+         ...
+       renders/                      (raw downloads from Phase 4 -- pre-QC; never modified)
+         slide-01.png
+         slide-02.png
+         ...
+       checkpoints/                  (all checkpoint JSON files)
+         media_library.json          (master media ledger; all paths, IDs, upload statuses)
+         run_ledger.json             (run state, phase completion, escalations)
+         pptx_text_overlays.json     (native PPTX text elements; output from SOP 9.5 fallbacks)
+       qc/                           (QC reports from all phases)
+         copy_qc_report.json
+         prompt_qc_report.json
+         image_qc_report.json
+         final_deck_qc.json          (the delivery pass-artifact; its presence with pass:true unlocks delivery)
+         finalrender/                (PPTX->PDF->PNG pages for assembled-slide asserts)
+           page-001.png
+           page-002.png
+           ...
+       copy/                         (slide copy, intake, PRD, approval records)
+         intake.json
+         slides_copy.md
+         hook_variants.json
+         arc_allocation.json
+         price_ladder.json
+         proof_audit.txt
+         mission_prd.json
+         presenter_notes.json
+       brand/                        (STYLE BLOCK, brand registry, representation audit)
+         style_block.md              (the STYLE BLOCK including COLOR THEORY and COLOR GRADING sections)
+         brand_registry.json
+         archetype_palette_handoff.md
+         representation_audit.json
+         representation_adjustments.txt (if any)
+     output/                         (final assembled PPTX -- deliverable)
+       <deck-slug>_v<N>.pptx
    ```
+
+   **GHL media folder structure (mirrors the local media-library but lives in the client's GHL account):**
+   ```
+   GHL Media Library root/
+     <Client> <Deck> v<N>/           (one folder per deck run, named per SOP 9.3)
+       Slide 01 v<N>.png             (GHL remote name: "Slide NN v<N>", zero-padded)
+       Slide 02 v<N>.png
+       ...
+       Slide NN v<N>.png
+       <Deck Title> FINAL v<N>.pptx  (uploaded at delivery per SOP 9.6)
+   ```
+
+   **Naming conventions (load-bearing -- do not deviate):**
+   - Local file: `slide-NN.png` (zero-padded, hyphen-separated, lowercase). This exact format is required for python-pptx assembly order.
+   - GHL file: `Slide NN v<N>` (human-readable, space-separated, title-case, zero-padded). This format is required for GHL delivery tracking.
+   - Any deviation from either naming convention is a Gate 2 violation and blocks delivery verification.
 3. Verify: `ls -la <workdir>` confirms all subdirectories exist. If any creation failed, halt and notify the Director.
 4. Determine version number N for this run. Check the GHL media library for existing folders with the naming pattern `<Client> <Deck> v<N>`. If none exist, N=1. If v1 exists, N=2. Etc.
 5. Record all paths in working/checkpoints/media_library.json:
@@ -439,6 +501,10 @@ media_library.json: delivery_verified = true, local_count = 75, ghl_count = 75, 
 - Sending the final delivery notification before verifying every destination -- a "done" message with unverified artifacts is a lie.
 - Delivering the PPTX to a hardcoded path on a non-Mac client without asking -- always ask where the client wants it if the box type is not Mac.
 - Calling openclaw message send with a Drive or GHL URL that has not been confirmed reachable -- verify each URL before including it in the notification.
+- Creating the workdir without the assets/ subdirectory tree (logo/, founder-portrait/, proof-assets/) -- these folders must exist at Step 0 so asset acquisition can proceed during Phase A without path errors.
+- Saving the logo or founder portrait DIRECTLY into media-library/ instead of assets/logo/ and assets/founder-portrait/ -- media-library/ is for generated slide PNGs only; client-supplied assets live in assets/.
+- Creating the output/ folder inside working/ instead of at the same level as working/ -- the deliverable PPTX lives at <workdir>/output/, not <workdir>/working/output/.
+- Using underscore naming (slide_23.png) instead of hyphen (slide-23.png) -- python-pptx assembly reads kebab-case only; underscore naming silently breaks assembly order.
 
 ---
 

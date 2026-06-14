@@ -94,6 +94,11 @@ Audit the QC criteria themselves. Are all criteria still relevant? Has the maste
 | Deck-wide representation tally within +/- 10% of captured REPRESENTATION_MIX | 100% of delivered decks (AF-R1/AF-R2) |
 | Ungrounded (generic) images reaching delivery | 0 (AF-P9/AF-I8 grounding gate) |
 | Decks delivered without a PASS final_deck_qc.json on disk | 0 (the SOP 9.6 delivery interlock) |
+| Text-over-face defects reaching delivery | 0 (AF-DC1) |
+| Flat single-layer compositions (no depth) reaching delivery | 0 (AF-DC2) |
+| Temperature-inconsistent slides (wrong color grade) reaching delivery | 0 (AF-DC5) |
+| Design-Craft dimension scores <= 3 on any delivered slide (forced loop) | 0 |
+| Average i-DC7 art-direction-quality score across deck | >= 8.5 |
 
 ---
 
@@ -187,6 +192,40 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 | AF-F3 | Legibility failure: any text element on the composed slide renders below the minimum legible size at presentation distance (computed as a fraction of slide height) or is clipped, truncated, or runs off the slide edge. |
 | AF-F4 | An overlay element exists on the composed slide but no collision assert was run on it. Every native PPTX overlay element MUST pass an individual collision assert; an un-checked overlay is itself an auto-fail (you cannot pass a slide whose overlay you never collision-checked). |
 | AF-F5 | The delivery pass-artifact `working/qc/final_deck_qc.json` is absent or its `pass` field is not `true` at the moment delivery is attempted. (This is the delivery interlock; see SOP 9.6.) |
+
+#### Design-Craft Auto-Fails (PROMPT QC Phase 3 + IMAGE QC Phase 5 + FINAL DECK Phase 6)
+
+The Design-Craft battery enforces the art-director standard (slide-image-creator.md Section 1, Art-Director Persona). It runs at Phase 3 (prompt QC) and Phase 5 (image QC) and Phase 6 (final deck). Each condition independently forces FAIL on the affected prompt or image. Check these after the phase-specific auto-fail battery and before the scored layer.
+
+| Code | Auto-Fail Condition | Phase |
+|------|---------------------|-------|
+| AF-DC1 | **Amateur composition -- text over a face:** any rendered text element (headline, kicker, sub-copy, overlay) overlaps the focal subject's face in the image. Text is a designed layer and must NEVER land on a person's face. | Phase 5, Phase 6 |
+| AF-DC2 | **No focal hierarchy -- flat single layer:** the rendered slide has no discernible foreground / midground / background depth. The subject is not separated from the background (no depth-of-field blur, no rim light, no exposure separation). The composition reads as a flat photo with text on top, not a layered art-direction piece. | Phase 5, Phase 6 |
+| AF-DC3 | **Ignored thirds -- no compositional intent:** the primary subject, headline, and supporting elements all occupy the center of the frame with no thirds-grid reasoning. The composition has no tension, no focal-point placement at a thirds intersection, and no declared compositional intent. "Everything is centered" on a people or environment slide is this auto-fail. | Phase 3 (prompt missing thirds language), Phase 5 (rendered image shows no thirds reasoning) |
+| AF-DC4 | **Clashing or uncontrasted colors -- insufficient legibility:** any text element in the rendered image fails WCAG-AA contrast (below 4.5:1 for normal text, below 3:1 for large text) against the pixel area directly behind it. (Note: this duplicates AF-F2 for the composed slide at Phase 6; at Phase 5 it is checked on the raw render.) | Phase 5, Phase 6 |
+| AF-DC5 | **Ungraded inconsistent deck -- temperature break:** a rendered slide's photography has a measurably different color temperature from the rest of the deck (e.g., a cool-blue photo in a WARM-grade deck, or a desaturated photo in a moderate-warm saturation deck). The deck must read as ONE graded body of work. | Phase 5 (per-slide) and Phase 6 (deck-wide tally) |
+| AF-DC6 | **Font placement violation -- unsafe zone:** headline or body text appears within 5% of any edge (violating the safe-zone margin), or text bleeds into the face/foreground subject area, or the text group is placed entirely within the "busy" region of the photo (no scrim, card, or zone separation). | Phase 3 (prompt missing font-placement element 5), Phase 5 (rendered) |
+| AF-DC7 | **Prompt missing design-craft elements (Phase 3 only):** the prompt does not declare (a) the thirds-grid assignment for the headline and subject, (b) all three depth layers (foreground / midground / background) with the subject separation method, AND (c) the color-relationship and color-grading lines in element 9 and the COLOR VERIFICATION block. Missing all three of these groups in a single prompt is an auto-fail on the prompt. Missing any one is a scored defect (p-DC criterion) but not by itself an auto-fail at Phase 3 -- the auto-fail triggers when all three groups are absent, signaling zero design-craft intent. | Phase 3 |
+
+These auto-fails are HARD vetoes on the same logic as AF-P1 through AF-I8: they fire before scoring and no scored average can overcome them. A rendered slide that is otherwise beautiful but puts text on a face (AF-DC1) fails; a prompt that is otherwise long but has no thirds, no layering, and no color-theory lines (AF-DC7) fails.
+
+#### Design-Craft Scoring Dimensions (Prompt QC Phase 3 + Image QC Phase 5)
+
+**After the auto-fail battery clears**, score each prompt (Phase 3) and each image (Phase 5) on the following seven Design-Craft dimensions. These are scored 1-10 with the same 8.5 threshold and 7.0 per-item floor that govern all other criteria. They are ADDITIONAL to the existing 16 prompt criteria and 15 image criteria -- they do not replace any existing criterion.
+
+Add these to the Phase 3 scoring report as criteria p-DC1 through p-DC7 and to the Phase 5 report as i-DC1 through i-DC7. Apply double-weight to p-DC3 / i-DC3 (color-harmony) and p-DC4 / i-DC4 (color-grading) as these are the most commonly invisible defects and the highest-impact for deck coherence.
+
+| Dimension | Phase 3 prompt criterion | Phase 5 image criterion | Scoring question |
+|-----------|--------------------------|-------------------------|------------------|
+| Composition / thirds | p-DC1 | i-DC1 | Does the prompt / rendered image place the headline, subject, and supporting elements on the thirds grid with stated intentional compositional tension? "Centered" alone scores <= 5. A fully declared thirds grid with focal-point placement at an intersection scores >= 9. |
+| Layering / depth | p-DC2 | i-DC2 | Does the prompt / rendered image show all three depth layers with the subject visibly separated from the background by depth of field, rim light, scrim, or exposure? A flat single-layer composition with no separation scores <= 4. A three-layer composition with explicit separation scores >= 9. |
+| Card / object / panel use | p-DC3 | i-DC3 | When the slide calls for graphic devices (card, inset, callout chip, vignette, hang-tag, gold-rule divider), are they declared / rendered with explicit size, position, color, and typography specs? Missing entirely when the slide needs them scores <= 4. Correctly declared / rendered with full specs scores >= 9. |
+| Font placement / alignment | p-DC4 | i-DC4 | Is typography placed as a designed layer (within safe zones, in the correct third, never over a face, using the label-headline-sub-rule hierarchy stack)? Text within 5% of an edge or over the face scores <= 3 (likely auto-fail). Properly placed hierarchical stack in the correct third scores >= 9. |
+| Color harmony | p-DC5 | i-DC5 (double-weight) | Does the prompt / rendered image apply the brand palette's color RELATIONSHIPS correctly -- complementary tension on emphasis elements, analogous harmony on structural elements, WCAG-AA contrast declared / visible on all text? A palette used as "pick any brand color for any element" with no relationship reasoning scores <= 4. A palette applied with relationship intent (complementary pop, sufficient contrast, analogous harmony) scores >= 9. |
+| Color grading | p-DC6 | i-DC6 (double-weight) | Does the prompt declare / does the rendered image display the correct deck-wide color grade (temperature, saturation, tonal contrast consistent with the STYLE BLOCK `color_grade_profile`)? A cool photo in a warm-grade deck scores <= 3 (likely auto-fail via AF-DC5). A rendered slide matching the deck's grade exactly scores >= 9. |
+| Art-direction quality | p-DC7 | i-DC7 | Overall: does this prompt / rendered image read as the work of a professionally trained art director with 30 years of experience? Would a senior creative director at an Adobe-level agency approve this? Flat, generic, stock-photo-aesthetic, or "just a slide" results score <= 4. Gallery-worthy, standalone-art, emotionally precise, premium lifestyle-documentary results score >= 9. This is the holistic art-direction gate. |
+
+**AUTO-FAIL override inside the scored layer:** even after auto-fails are cleared, a score of <= 3 on any single Design-Craft dimension (p-DC1 through p-DC7 or i-DC1 through i-DC7) triggers a FORCED LOOP regardless of the overall average. A score of <= 3 means the dimension is not merely underdeveloped -- it is absent or inverted. The forced loop routes to the Slide Image Creator with the specific dimension and the required fix. This is the scored-layer safety net beneath the auto-fail battery.
 
 ---
 
@@ -479,11 +518,23 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
      "representation_tally": {"captured_mix": [], "deck_tally": [], "within_10pct": true, "verdict": "pass"},
      "structural_completeness": {"cost_vs_value": true, "emotion_and_logic": true, "light_pitch_distributed": true, "care_first_open": true, "psd": true, "journey_see": true, "old_to_new": true, "teach_themselves": true, "not_over_taught": true, "promise_leads": true, "hook_sings": true, "who_says_so": true, "wall_of_wins": true, "guarantee": true, "scarcity_factor": true, "story_arc": true, "one_big_idea_per_slide": true, "gradual_price_ladder": true},
      "logo_on_every_slide": true,
+     "design_craft": {
+       "auto_fails_triggered": [],
+       "composition_thirds_avg": 0.0,
+       "layering_depth_avg": 0.0,
+       "card_object_use_avg": 0.0,
+       "font_placement_avg": 0.0,
+       "color_harmony_avg": 0.0,
+       "color_grading_avg": 0.0,
+       "art_direction_quality_avg": 0.0,
+       "color_grade_consistency": "pass",
+       "forced_loops_on_dc_dimensions": 0
+     },
      "loop_count": 0,
      "revision_instructions": []
    }
    ```
-   `pass` is `true` ONLY when: zero AF-F1 through AF-F4 asserts failed, zero AF-R2/AF-R3, zero AF-I8 grounding failures, every structural-completeness item is true (including all ten of the operator's named required presentation components: promise_leads, hook_sings, who_says_so, wall_of_wins, one_big_idea_per_slide, guarantee, scarcity_factor, story_arc, gradual_price_ladder, and the walked checklist-of-promises this artifact represents), AND the visual score is >= 8.5 with no single item below the 7.0 floor.
+   `pass` is `true` ONLY when: zero AF-F1 through AF-F4 asserts failed, zero AF-R2/AF-R3, zero AF-I8 grounding failures, zero AF-DC1 through AF-DC7 design-craft auto-fails, every structural-completeness item is true (including all ten of the operator's named required presentation components: promise_leads, hook_sings, who_says_so, wall_of_wins, one_big_idea_per_slide, guarantee, scarcity_factor, story_arc, gradual_price_ladder, and the walked checklist-of-promises this artifact represents), AND the visual score is >= 8.5 with no single item (including all seven Design-Craft dimensions) below the 7.0 floor, AND no Design-Craft dimension scored <= 3 (which triggers a forced loop regardless of average).
 
 7. If pass: notify the Director that Phase 6 is complete and the deck is ready for delivery. The presence of `final_deck_qc.json` with `pass: true` is what unlocks delivery (SOP 9.6).
 8. If fail: write `pass: false`, route specific revision instructions to the PPTX Assembly Specialist (collision/contrast/legibility/order/overlay), the Slide Image Creator (grounding, representation re-cast), or the Slide Copywriter (structural-completeness gaps), and increment loop_count.
@@ -546,6 +597,15 @@ The scored, BLOCKING grounding criterion ("does this image depict a concrete mom
 
 ### Gate 9 -- Delivery Interlock
 Delivery CANNOT begin without `working/qc/final_deck_qc.json` present on disk with `pass: true` (SOP 9.6, AF-F5). The Director / Delivery Concierge consume this gate token; ROLE-09 owns its emission. No artifact, no delivery.
+
+### Gate 10 -- Design-Craft Auto-Fail Battery
+The Design-Craft auto-fail battery (AF-DC1 through AF-DC7) runs at Phase 3, Phase 5, and Phase 6 immediately after the phase-specific auto-fail battery and before any scored layer. A prompt or image that triggers any AF-DC code receives an immediate FAIL and specific revision instructions naming the exact design-craft violation.
+
+### Gate 11 -- Design-Craft Scored Dimensions (8.5 threshold, 7.0 floor, forced loop at <= 3)
+The seven Design-Craft dimensions (composition/thirds, layering/depth, card/object use, font-placement/alignment, color-harmony, color-grading, art-direction-quality) are scored on every prompt (Phase 3) and every rendered image (Phase 5). The 8.5 threshold and 7.0 per-item floor apply. A score of <= 3 on any single dimension forces a loop regardless of the average.
+
+### Gate 12 -- Color-Grading Deck-Wide Tally (Phase 5 and Phase 6)
+After the full deck's images pass per-slide image QC (Phase 5) and after final assembly (Phase 6), run a color-grading consistency check: compare the photography temperature of every people-slide and scene-slide against the STYLE BLOCK `color_grade_profile`. Any slide whose rendered photography temperature is visibly inconsistent with the declared grade (e.g., a cool-blue photo in a WARM-grade deck) triggers AF-DC5 and must be re-generated. This tally is DECK-WIDE (same logic as the representation tally): a deck of individually-passing images can still fail the grading check if one slide breaks the grade.
 
 ---
 
@@ -621,6 +681,10 @@ image_qc_report.json representation_tally: captured_mix = [{group: "African Amer
 - Treating the representation tally as one-directional (only failing skin-lightening). It is bidirectional: mono-casting one group above its captured share fails too, and representation overrides skin-tone-quality when they conflict.
 - Passing a generic stock-style scene because "it looks premium." AF-P9 / AF-I8 grounding is BLOCKING: a beautifully rendered scene that could belong to any business fails if the brief named a concrete moment from THIS client's method.
 - Letting delivery proceed without `final_deck_qc.json` on disk with `pass: true`. AF-F5 / SOP 9.6 is a hard precondition. A done message without verified artifacts is a lie; an un-rendered or un-asserted deck is an unverified deck and must never carry a PASS artifact.
+- Skipping the Design-Craft auto-fail battery (AF-DC1 through AF-DC7) because "the existing auto-fails cover it." The AF-DC battery is an ADDITIONAL layer that covers design-craft-specific defects (text over face, flat composition, temperature break, font in unsafe zone) not covered by the other auto-fail batteries.
+- Giving an image a high art-direction-quality score (i-DC7 >= 8) while it has text landing on the subject's face. AF-DC1 forces FAIL before any scoring -- a pass on i-DC7 is irrelevant when the image also triggers AF-DC1.
+- Running Design-Craft scoring only at Phase 5 (image QC) and skipping Phase 3 (prompt QC). AF-DC7 and criterion p-DC1 through p-DC6 run at Phase 3 on the PROMPT -- catching design-craft defects in the prompt before generation saves a generation attempt.
+- Treating the color-grading consistency check as a per-slide check only. Gate 12 is a DECK-WIDE tally: a single cool-blue photo in a warm-grade deck triggers AF-DC5 and must be re-generated even if the rest of the deck passed.
 
 ---
 
@@ -643,6 +707,9 @@ image_qc_report.json representation_tally: captured_mix = [{group: "African Amer
 | 13 | Inventing a cast because the deck "needs people" | AF-R3: uncaptured REPRESENTATION_MIX = NO PEOPLE. Never infer a demographic. |
 | 14 | Passing a generic image because it is well-rendered | Grounding (AF-P9/AF-I8) is blocking: it must depict a concrete moment from THIS client's method. |
 | 15 | Reporting a deck "done" before final_deck_qc.json exists and is PASS | SOP 9.6 delivery interlock (AF-F5): no PASS artifact, no delivery. Verify the artifact on disk. |
+| 16 | Scoring i-DC7 (art-direction-quality) without checking the other six Design-Craft dimensions first | The full Design-Craft scored layer (p-DC1 through p-DC7 at Phase 3; i-DC1 through i-DC7 at Phase 5) must all be scored. i-DC7 is the holistic gate but it does not substitute for the six specific dimensions -- all seven appear in the QC report. |
+| 17 | Allowing a Design-Craft dimension score of 4.0 to "average out" to a passing overall score | A score of <= 3 on any Design-Craft dimension triggers a forced loop. A score of 4.0-6.9 on any Design-Craft dimension is below the 7.0 per-item floor and fails that item, routing a specific revision instruction to the Slide Image Creator. |
+| 18 | Skipping the color-grading consistency check at Phase 6 because all per-slide images passed at Phase 5 | Gate 12 runs AGAIN on the final assembled deck. Dropped or substituted slides can shift the deck's grading consistency. |
 
 ---
 

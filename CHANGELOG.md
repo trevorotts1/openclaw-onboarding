@@ -1,3 +1,23 @@
+## [v12.4.7] - 2026-06-14 - feat: professional design-craft, color-theory, and QC standard for Presentations (Skill 23)
+
+### Changes
+
+Encodes the PROFESSIONAL DESIGN-CRAFT + COLOR-THEORY standard into the Presentations department SOPs across four role files and their SOP mirrors. All 8 design-craft dimensions were verified MISSING (grep=0) before this change. The art-director persona, composition grid, layering/depth, objects/cards/panels, font placement, color theory, media-library folder structure, and expanded QC matrix are now load-bearing SOP requirements with auto-fails and scored dimensions.
+
+**slide-image-creator.md (v1.0 -> v1.1):** Art-Director Persona (PROFESSIONALLY TRAINED ADOBE GRAPHIC ARTIST AND ART DIRECTOR WITH 30 YEARS OF EXPERIENCE); THE THIRDS SYSTEM rule; IMAGE LAYERING AND DEPTH standard; OBJECTS / CARDS / PANELS / INSETS vocabulary; new SOP 9.6 Color Theory and Color Grading (Part A: complementary / contrasting / analogous relationships + WCAG contrast declaration; Part B: WARM/COOL/NEUTRAL grade profile, temperature lock, saturation consistency, COLOR GRADING block in every prompt); Quality Gates 8-10; Common Mistakes 6-9; Update Triggers 7-8.
+
+**brand-steward.md (v1.2 -> v1.3):** SOP 9.1 step 5a (derive color relationships and grading profile before building STYLE BLOCK text); COLOR THEORY section in STYLE BLOCK template (color_relationship, complementary_accent, contrast_check, contrast_rule); COLOR GRADING section in STYLE BLOCK template (color_grade_profile, temperature, saturation, tonal_contrast, lock); brand_registry.json color fields; Example A extended; KPIs 4 added; Gate 6 added; Common Mistakes 11-13.
+
+**media-librarian-ghl-updater.md (v1.0 -> v1.1):** Full SOP 9.1 directory tree specification with every subdirectory (assets/logo/, assets/founder-portrait/, assets/proof-assets/, output/, qc/finalrender/, brand/) documented with naming conventions, file-purpose comments, and GHL folder structure; KPIs 3 added; Bad Output Examples 6 added.
+
+**qc-specialist-presentations.md (v1.1 -> v1.2):** Design-Craft Auto-Fail Battery AF-DC1 through AF-DC7 (text over face, flat single layer, ignored thirds, clashing/uncontrasted colors, ungraded inconsistent deck, font in unsafe zone, prompt missing all three design-craft element groups); Design-Craft Scoring Dimensions p-DC1 through p-DC7 / i-DC1 through i-DC7 (composition/thirds, layering/depth, card/object use, font-placement/alignment, color-harmony double-weight, color-grading double-weight, art-direction-quality) with 8.5 threshold, 7.0 floor, forced loop at <= 3; final_deck_qc.json design_craft block; pass condition updated to require zero AF-DC auto-fails AND includes the ten named presentation components from v12.4.5; Gates 10-12; KPIs 7 added; Bad Output Examples 5 added; Common Mistakes 16-18.
+
+**sops/ mirrors regenerated:** slide-image-creator-sops.md, brand-steward-sops.md, qc-specialist-presentations-sops.md, media-librarian-ghl-updater-sops.md.
+
+**Version markers bumped v12.4.6 -> v12.4.7:** version, cc-compat.json, install.sh, update-skills.sh, README.md, DIRECT-TO-AGENT-UPDATE-MESSAGE.md, _qc-summary.md.
+
+---
+
 ## [v12.4.6] - 2026-06-14 - docs: correct stale "missing capability" framing in Custom Authoring + Merge Standard (Skill 23)
 
 ### Changes
