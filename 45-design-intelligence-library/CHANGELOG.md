@@ -1,5 +1,10 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## [v1.2.1] - 2026-06-14 - fix: negative-prompting long-budget cap-lift note
+
+### Changed
+- **`library/_system/NEGATIVE-PROMPTING-SOP.md` (v1.0 to v1.1):** documented the long-budget exception to the "10 strongest" inline-negative cap. On a LONG-tier GPT-Image 2 prompt (the up-to-18,000-character budget, for example the Presentations slide-image-creator path, slide-image-creator SOP 9.8), the 10-strongest cap is LIFTED: with that much room the full defect-mapped negative block fits and prompt pollution is not a concern at this length, so every required negative class is stated rather than a top-ten selection. The cap still applies on SHORT and MEDIUM prompts and the small-budget endpoints (Seedream). The positive-twin pairing rule and the no-contradiction audit still apply with full force when the cap is lifted. This is the design-library half of the v12.7.1 image-prompt hardening that wires this negative system into the Presentations prompt-writer.
+
 ## [v1.1.0] - 2026-06-12 - feat: full DIU role set — 8 remaining specialists + ROLE-- files
 
 ### Added
