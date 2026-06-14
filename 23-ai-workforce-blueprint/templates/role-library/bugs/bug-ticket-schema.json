@@ -76,7 +76,7 @@
     "_type": "string",
     "_required": true,
     "_description": "The slug identifying the client whose box or workflow was affected.",
-    "_example": "lyric"
+    "_example": "sample-client"
   },
   "status": {
     "_type": "string",

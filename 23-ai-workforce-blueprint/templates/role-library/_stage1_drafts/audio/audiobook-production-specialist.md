@@ -399,7 +399,7 @@ Chapter 2:
 PICKUP REPORT — "The Glass Citadel" by Elena Marchetti
 Narrator: James Okonkwo
 Date: 2026-05-19
-Proofreader: Maria Santos
+Proofreader: Renata Santos
 
 CATEGORY A — Must Fix (changes meaning or factually wrong):
 | Ch | Timecode | Issue | Original Audio | Correct Text | Retake From |

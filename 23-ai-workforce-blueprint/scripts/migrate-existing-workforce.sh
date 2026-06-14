@@ -12,8 +12,8 @@
 #   bash migrate-existing-workforce.sh <client> [--dry-run|--apply]
 #
 # Example:
-#   bash migrate-existing-workforce.sh kofi --dry-run
-#   bash migrate-existing-workforce.sh kofi --apply
+#   bash migrate-existing-workforce.sh sample-client --dry-run
+#   bash migrate-existing-workforce.sh sample-client --apply
 
 set -uo pipefail
 

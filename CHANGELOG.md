@@ -53,6 +53,46 @@
 
 ---
 
+## [v12.7.1] - 2026-06-14 - feat: Content-to-Presentation Architect (ROLE-22) -- turn any source into a presentation brief (Presentations dept)
+
+### Changes
+
+**New fleet-wide Presentations role: Content-to-Presentation Architect (ROLE-22).** Source-ingest specialist that turns any owner-supplied source into a build-ready presentation brief for the existing deck pipeline. Zero slides built here -- single deliverable is the source-derived brief the Director of Presentations dispatches into the standard build.
+
+- `presentations/content-to-presentation-architect.md` (new): 19-section role, 6 SOPs covering source ingestion per modality, analysis and hook main-theme, teaching devices, micro-vs-full decision, handoff, and trigger standard. Hard non-skippable privacy rule for Zoom and Google Meet recordings (and any recording of identifiable people).
+- `presentations/sops/content-to-presentation-architect-sops.md` (new): Section 9 SOP mirror.
+- `presentations/00-START-HERE.md` (v1.7 -> v1.8): roster 22 roles, ROLE-22 row added, Step -2 source-ingest front door.
+- `_index.json`: presentations count 21 -> 22, ROLE-22 in roles[], total_roles 358 -> 359. Version 12.7.0 -> 12.7.1.
+- All 9 version markers bumped to v12.7.1.
+
+## [v12.7.0] - 2026-06-14 - feat: Quality Control department + Content-to-Presentation Architect (ROLE-22) + presentations SOP overhaul
+
+### Changes
+
+**New canonical, fleet-wide MANDATORY department: Quality Control.** Shipped to every Zero Human Company. It owns and operates the ZHC System Analyzer: it reads every OTHER department's roles and standard operating procedures and holds them to the standard on two independent axes, reported side by side. Axis 1 (Reality): is each mechanism actually executed at runtime, with file-and-line proof, never from prose. Axis 2 (Specificity / right-sizing): can an autonomous worker who has never seen the business run each procedure end to end without guessing, with the hard allowance that a procedure may run up to roughly 7,500 words when it earns it (brevity is never a merit; artificially thin procedures are flagged). The department diagnoses and never repairs in place; every failure it finds is filed to the Bugs Department and routed to the Healer.
+
+- **3 roles** under `23-ai-workforce-blueprint/templates/role-library/quality-control/`: Director of Quality Control (head; Trevor may rename), Role Auditor, Procedure Auditor, plus `00-START-HERE.md`.
+- **4 executable SOPs** under `quality-control/sops/`: Q-9.1 Audit a Department's Procedures, Q-9.2 Audit a Department's Roles, Q-9.3 System-Wide Quality Rollup, Q-9.4 Maintain the Standard. Each carries purpose, the hard rule, the enforcement check, generic pass-versus-fail examples (no client names), and escalation to the Healer.
+- **Mandatory canonical floor raised 28 to 29** (22 mandatory + 7 universal-primary), computed live: `department-naming-map.json` (v2.5.0 to v2.6.0), `scripts/department-floor.py` `HARDCODED_MANDATORY`, `scripts/build-workforce.py` `load_canonical_floor()` fallback, `scripts/list-canonical-departments.py`, `suggested-roles/quality-control-suggested-roles.md`, `templates/role-library/_index.json` (dept entry + 3 roles + totals), `build-state-schema.json`, `INSTRUCTIONS.md`, `scripts/test-reconciliation-engine.sh`. No integer floor gate is hardcoded; the count-drift guard computes 29 and passes.
+
+**New fleet-wide Presentations role: Content-to-Presentation Architect (ROLE-22).** A source-ingest specialist that turns ANY owner-supplied source into a build-ready presentation BRIEF for the existing deck pipeline. It does not build slides, write image prompts, choose typography, or score decks -- its single deliverable is the source-derived brief that the Director of Presentations dispatches into the standard build.
+
+- `23-ai-workforce-blueprint/templates/role-library/presentations/content-to-presentation-architect.md` (new): full 19-section role file with six SOPs covering source ingestion per modality, analysis and hook main-theme, teaching devices, micro-vs-full decision, handoff, and trigger standard. Includes a hard non-skippable privacy rule for Zoom and Google Meet recordings.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/sops/content-to-presentation-architect-sops.md` (new): Section 9 SOP mirror.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/00-START-HERE.md` (v1.7 -> v1.8): roster now 22 roles; ROLE-22 added.
+- All 9 version markers bumped to v12.7.0 (`scripts/bump-version.sh`); `cc-compat.json` onboardingVersion bumped to v12.7.0.
+
+See `23-ai-workforce-blueprint/CHANGELOG.md` for the full per-file detail.
+
+## [v12.6.2] - 2026-06-14 - fix: genericize fleet template -- strip all leaked client names from role library and repo infrastructure
+
+### Changes
+
+- Genericized all client names (Corey, Lyric, Karen Vaughn, Jocelyn, Cassandra, Kofi, etc.) across role files, scripts, CHANGELOG, INSTRUCTIONS, build-state-schema, and SOP examples.
+- Only names/brands changed; every rule, threshold, auto-fail, model id, token count, config value, and SOP step preserved verbatim.
+- Two documented false-positives left intact: "song lyrics" (copyright rule) and "Sheila Heen" (published book attribution).
+- All 9 version markers bumped from v12.6.1 to v12.6.2.
+
 ## [v12.6.1] - 2026-06-14 - fix: bound onboarding-resume cron -- hard cap + self-delete, no perpetual token furnace
 
 ### Changes

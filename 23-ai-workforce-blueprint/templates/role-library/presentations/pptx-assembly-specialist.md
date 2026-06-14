@@ -312,7 +312,7 @@ Native text overlay fallback trigger: if two render attempts on any text element
 
 ### SOP 9.4 -- Typography-Safe Assembler Spec
 
-**When to run:** Apply these rules on EVERY overlay text box added during SOP 9.1 and SOP 9.3. These rules are not optional and are not waivable by any downstream role. They exist because the absence of these rules produced the colliding 5-box text stack on Corey's deck -- the defining P2 defect. Text-in-image is the rule for webinar decks; overlay is a per-element fallback only. When overlay IS used, every rule below applies with no exception.
+**When to run:** Apply these rules on EVERY overlay text box added during SOP 9.1 and SOP 9.3. These rules are not optional and are not waivable by any downstream role. They exist because the absence of these rules produced the colliding 5-box text stack on a forensic reference deck -- the defining P2 defect. Text-in-image is the rule for webinar decks; overlay is a per-element fallback only. When overlay IS used, every rule below applies with no exception.
 
 **Inputs:**
 - working/copy/pptx_text_overlays.json (each entry defines the overlay to apply)
@@ -425,7 +425,7 @@ Call `assert_no_overlay_collisions(overlays[slide_number], slide_number)` for ev
 
 **Rule 6 -- bottom-up gradient scrim (replaces the flat 50% slab):**
 
-When a native text overlay is applied on top of a photographic background image, a readability scrim must be inserted between the background image and the text box. The scrim is a bottom-up gradient: fully transparent at the top, transitioning to a semi-opaque dark fill (rgba 0,0,0,0.65) at the bottom. This matches the Lyric gold-standard visual treatment (controlled typography) and replaces any flat 50%-opacity slab that earlier assembler versions used.
+When a native text overlay is applied on top of a photographic background image, a readability scrim must be inserted between the background image and the text box. The scrim is a bottom-up gradient: fully transparent at the top, transitioning to a semi-opaque dark fill (rgba 0,0,0,0.65) at the bottom. This matches the gold-standard reference deck visual treatment (controlled typography) and replaces any flat 50%-opacity slab that earlier assembler versions used.
 
 To insert a gradient scrim in python-pptx (direct OOXML):
 
@@ -571,7 +571,7 @@ python-pptx loop over all 75 slides: every slide.notes_slide.notes_text_frame.te
 - Handing the PPTX directly to the client without passing through the Media Librarian SOP 9.6 delivery step -- destinations are unverified, the notification is skipped, and delivery_complete is never written.
 - Allowing `spAutoFit` to remain in any overlay text box XML -- this lets PowerPoint expand boxes at presentation time, destroying fixed geometry and causing collisions the assert would have caught.
 - Skipping the collision assert (SOP 9.4 Rule 5) because "the overlays look spaced out" -- visual inspection is not a substitute for the coded assert; near-misses at design time become collisions on different screen resolutions.
-- Using a flat 50%-opacity solid-fill slab as the readability scrim instead of the bottom-up gradient -- the flat slab creates a visible hard edge that reads as a design defect and was the Corey-era treatment the gradient replaces.
+- Using a flat 50%-opacity solid-fill slab as the readability scrim instead of the bottom-up gradient -- the flat slab creates a visible hard edge that reads as a design defect and was the earlier defective treatment the gradient replaces.
 - Setting overlay box height to 0 or omitting it from pptx_text_overlays.json -- Rule 2 requires all dimensions to be explicit; a zero-height box passes the autofit check but fails the text-fits assert and will clip all text.
 - Anchoring text to the top of a price overlay box -- the struck price and new price must be bottom-anchored so they grow upward into reserved space; top-anchoring causes them to push downward into the slide content below.
 

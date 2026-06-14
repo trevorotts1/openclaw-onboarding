@@ -191,7 +191,7 @@
         "done",
         "failed"
       ],
-      "description": "ENFORCED build gate (added v10.15.8). Tracks whether the ROLE LIBRARY has been pulled into every role folder (how-to.md filled from templates/role-library/ via post-build-role-workspaces.py). Set to 'pending' the moment the build starts; 'pulling' while post-build augmentation runs; 'done' only when qc-completeness.sh reports library_pct == 100 across ALL on-disk depts (every per-dept roleLibraryFilled == true); 'failed' if the pull errored or coverage < 100. A workforce is NOT complete (buildCompletedAt MUST NOT be set, closeout MUST NOT fire) until roleLibraryStatus == done. The resume cron fires a [LIBRARY-RESUME] self-ping while this is pending/pulling/failed. Last-night incident (Kofi/Teresa/Evelyn/Maria/Lyric): workforces were scaffolded but the role library was never connected \u2014 this field + gate prevent that."
+      "description": "ENFORCED build gate (added v10.15.8). Tracks whether the ROLE LIBRARY has been pulled into every role folder (how-to.md filled from templates/role-library/ via post-build-role-workspaces.py). Set to 'pending' the moment the build starts; 'pulling' while post-build augmentation runs; 'done' only when qc-completeness.sh reports library_pct == 100 across ALL on-disk depts (every per-dept roleLibraryFilled == true); 'failed' if the pull errored or coverage < 100. A workforce is NOT complete (buildCompletedAt MUST NOT be set, closeout MUST NOT fire) until roleLibraryStatus == done. The resume cron fires a [LIBRARY-RESUME] self-ping while this is pending/pulling/failed. Last-night incident (multiple clients): workforces were scaffolded but the role library was never connected \u2014 this field + gate prevent that."
     },
     "sopLibraryStatus": {
       "type": "string",
@@ -878,7 +878,7 @@
     },
     "canonicalReconciliation": {
       "type": "object",
-      "description": "PRD R2.x (v12.5.x reconciliation engine): the auditable record of how the owner's department set was reconciled with the canonical floor (21 mandatory + 7 universal-primary = 28, computed live). Written by build-workforce.py reconcile_canonical_floor / apply_semantic_merges / materialize_custom_roles / capture_custom_sops and read by department-floor.py.",
+      "description": "PRD R2.x (v12.5.x reconciliation engine): the auditable record of how the owner's department set was reconciled with the canonical floor (22 mandatory + 7 universal-primary = 29, computed live). Written by build-workforce.py reconcile_canonical_floor / apply_semantic_merges / materialize_custom_roles / capture_custom_sops and read by department-floor.py.",
       "properties": {
         "decisions": {
           "type": "object",

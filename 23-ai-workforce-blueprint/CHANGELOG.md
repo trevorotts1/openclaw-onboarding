@@ -1,3 +1,27 @@
+## [v12.7.0] - 2026-06-14 - feat: Quality Control department (the fleet-wide quality function that owns and runs the system analyzer); mandatory floor raised 28 to 29
+
+New canonical, fleet-wide MANDATORY department shipped to every Zero Human Company. Quality Control owns and operates the ZHC System Analyzer: it reads every OTHER department's roles and standard operating procedures and holds them to the standard on two independent axes, reported side by side: Axis 1 Reality (is each mechanism actually executed at runtime, with file-and-line proof, never from prose) and Axis 2 Specificity / right-sizing (can an autonomous worker who has never seen the business run each procedure end to end without guessing, with the hard allowance that a procedure may run up to roughly 7,500 words when it earns it; brevity is never a merit; artificially thin procedures are flagged). The department diagnoses; it never repairs in place. Every failure it finds is filed to the Bugs Department and routed to the Healer.
+
+### Changes
+
+**A. New department `templates/role-library/quality-control/` (3 roles, all live):**
+- `director-of-quality-control.md` (head; Trevor may rename) - owns the standard and operates the analyzer: maintains the two-axis rubric, the four specificity classes, the six mechanical auto-flags, the up-to-7,500-word allowance, and the visual scorecard; runs the per-department audit fan-out; assembles the system-wide rollup; signs every ship-or-hold; routes every failure to the Healer.
+- `role-auditor.md` - audits role documents (reality B-dimensions + the role-document specificity overlay), hunts the summarized-away anti-pattern explicitly.
+- `procedure-auditor.md` - audits standard operating procedures (the six fail-closed auto-flags, the reality checks, the eight specificity dimensions with the three autonomous-execution-floor dimensions weighted double, the earned-length test above 3,000 words).
+- `00-START-HERE.md` - department front door (what it does, the two axes, the role roster, the SOP mirror index, the audit fan-out, the four classes, the six auto-flags).
+- `sops/` - four executable SOPs mirrored from the role files: Q-9.1 Audit a Department's Procedures, Q-9.2 Audit a Department's Roles, Q-9.3 System-Wide Quality Rollup, Q-9.4 Maintain the Standard. Each carries purpose, the hard rule, the enforcement check, generic pass-versus-fail examples (no client names), and escalation to the Healer.
+
+**B. Mandatory canonical floor raised 28 to 29 (22 mandatory + 7 universal-primary), computed live:**
+- `department-naming-map.json` (v2.5.0 to v2.6.0): added `quality-control` to `.mandatory` with `suggested_roles_file: quality-control-suggested-roles.md`; description narrative updated to the 29-department standard.
+- `scripts/department-floor.py`: `HARDCODED_MANDATORY` fallback gains `quality-control` (22 ids), docstring updated.
+- `scripts/build-workforce.py`: `load_canonical_floor()` fallback gains `quality-control` (22 ids), floor comments updated.
+- `scripts/list-canonical-departments.py`: descriptive docstring updated to 22 + 7 = 29.
+- `suggested-roles/quality-control-suggested-roles.md`: new (department purpose + 3-role roster).
+- `templates/role-library/_index.json`: new `quality-control` dept entry (count 3); 3 role entries added to `roles`; `total_departments` 23 to 24; `total_roles` +3.
+- `build-state-schema.json`, `INSTRUCTIONS.md` (mandatory list + 3 count strings), `scripts/test-reconciliation-engine.sh` (floor assertion 28 to 29, mandatory 21 to 22): floor count strings reconciled to 29.
+
+The floor count is computed live everywhere (no integer floor gate is hardcoded). The CI count-drift guard (`scripts/check-floor-count-drift.py`) computes 29 (22 mandatory + 7 universal) and passes; `list-canonical-departments.py` reports floor 29 with `quality-control` in the canonical mandatory set.
+
 ## [v12.5.0] - 2026-06-14 - feat: department-reconciliation engine (PRD R2.x) - semantic combine/merge, per-dept custom roles + SOPs, symmetric opt-out for floor + verticals + customs; stale floor numbers corrected to 21+7=28
 
 Reconciliation-engine release for Skill 23. Builds the six reconciliation capabilities into the engine per ZHC-INTERVIEW-CLOSEOUT-FIX/PRD.md coverage area 2 + diag/02-departments.md. No roles added or removed (canonical floor stays 21 mandatory + 7 universal-primary = 28, computed live from department-naming-map.json v2.5.0). CORRECTION HONORED: no "Ant Farm fold-in" was added as a fleet/repo capability - Ant Farm is Trevor-only, handled on his box separately, and must NEVER appear in the shared client interview/build flow; build-workforce.py contains zero ant-farm references and no antfarm-foldin.py was authored.
@@ -378,7 +402,7 @@ best-practice - hard-failing only helps operators catch gaps earlier.
 ## [v10.15.32] - 2026-06-02 - 23-department standard (N23): universal vertical-pack primaries
 
 ### Why
-Clients were shipping with 17 departments (Sheila: 16 mandatory + CEO counted as custom = 17) instead
+Clients were shipping with 17 departments (one client: 16 mandatory + CEO counted as custom = 17) instead
 of the intended 23-25. Root cause: `apply_vertical_packs()` only fired for clients whose industry
 keywords matched a pack - a client with no matching keyword got 0 vertical departments added,
 landing at 16. Trevor's stated standard is 23-25 = 16 mandatory + 7 vertical packs. The fix makes
@@ -439,7 +463,7 @@ Part of repo `v10.15.9` (the 8 rated improvements, port of VPS #47). Two improve
 ## [v10.15.8] - 2026-05-29 - ENFORCED Role Library + SOP Library auto-pull gate
 
 ### Why
-Last night several clients (Kofi / Teresa / Evelyn / Maria / Lyric) had workforces *scaffolded* -
+Last night several clients had workforces *scaffolded* -
 department + role folders existed, depts even flipped to `status: "done"` - but the **role library was
 never pulled into the `how-to.md` files** AND the **SOP placeholders were never authored**. Nothing GATED
 on those two libraries being populated, so the build "looked done." Prose like "AUTOMATIC NEXT STEP: also

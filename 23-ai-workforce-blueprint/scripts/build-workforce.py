@@ -257,7 +257,7 @@ def load_non_interactive_config(config_file):
 
 
 # ============================================================
-# CANONICAL DEPARTMENT FLOOR (standard: 21 mandatory + 7 universal-primary-vertical = 28)
+# CANONICAL DEPARTMENT FLOOR (standard: 22 mandatory + 7 universal-primary-vertical = 29)
 # ============================================================
 # Every Zero Human Company is built with the mandatory canonical departments
 # (21 in department-naming-map.json v2.5.0) PLUS the 7 universal primary
@@ -576,7 +576,7 @@ def apply_semantic_merges(selected_departments, core_answers):
 def load_canonical_floor():
     """
     Read the mandatory canonical departments from department-naming-map.json
-    (21 in v2.5.0; the count is read live from the map, never hardcoded).
+    (22 in v2.6.0; the count is read live from the map, never hardcoded).
 
     Returns an ordered dict mapping canonical-id -> dept-info dict in the
     RECOMMENDED_DEPARTMENTS shape ({name, emoji, head, description}). Each
@@ -599,7 +599,7 @@ def load_canonical_floor():
         print(f"[CANONICAL] Could not read {map_path}: {e}. Using hardcoded floor.", file=sys.stderr)
 
     # Fallback MUST stay in lockstep with department-floor.HARDCODED_MANDATORY
-    # (21 ids) so a broken install that lost the naming map still enforces the
+    # (22 ids) so a broken install that lost the naming map still enforces the
     # full mandatory floor instead of silently under-building at 16.
     canonical_ids = list(mandatory.keys()) or [
         "marketing", "sales", "billing-finance", "customer-support",
@@ -607,6 +607,7 @@ def load_canonical_floor():
         "research", "communications", "crm", "openclaw-maintenance", "legal",
         "social-media", "paid-advertisement", "personal-assistant",
         "general-task", "project-architecture-office", "bugs", "healer",
+        "quality-control",
     ]
 
     floor = {}
@@ -875,7 +876,7 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
 
     Logic (standard-unless-declined):
       final = (all canonical MINUS explicit "no" in build-state) UNION client customs
-      (canonical = the 21 mandatory in department-naming-map.json v2.5.0)
+      (canonical = the 22 mandatory in department-naming-map.json v2.6.0)
 
     - If a canonicalReconciliation.decisions block exists in build-state, honor
       each explicit "no" (drop that canonical dept) and keep everything else.
@@ -1131,7 +1132,7 @@ def apply_vertical_packs(selected_departments, core_answers):
         Every vertical pack exposes exactly one universal_primary department
         (marked universal_primary=true in department-naming-map.json; defaults to
         the first dept in the pack if the flag is absent). These 7 departments are
-        added to EVERY client regardless of industry - giving 21+7=28 as the
+        added to EVERY client regardless of industry - giving 22+7=29 as the
         minimum floor (v2.5.0). Industry matching does NOT gate these. A universal
         primary the owner explicitly declined in Phase 5.5 (canonicalReconciliation
         .decisions[id] == "no" or declinedDepartments[]) is SKIPPED here so the
@@ -2630,7 +2631,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
     # The previous code only wrote the directive to DEPARTMENTS_DIR/ceo/SOUL.md
     # (the dept-ceo sub-agent workspace). The MAIN orchestrator agent reads its
     # bootstrap files from agents.list[main].workspace (or agents.defaults.workspace
-    # or ~/.openclaw/workspace) - a DIFFERENT path. Proven on Sheila's box: hand-
+    # or ~/.openclaw/workspace) - a DIFFERENT path. Proven on a client box: hand-
     # writing to workspace/SOUL.md stopped the CEO from self-executing; a build
     # re-run reverted it because the build never touched that file.
     #
@@ -3320,7 +3321,7 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
     (genuinely missing role → caller keeps the legacy stub+LLM path).
 
     Deterministic: same template + same interview context → byte-identical
-    output across clients (this is what makes Kofi == Lyric == everyone).
+    output across clients (this is what makes every client identical).
     """
     if not _LIBRARY_FILL_AVAILABLE:
         return None
@@ -4703,7 +4704,7 @@ def add_agent_to_config(config, dept_id, dept_info):
     #
     # v11.3.1: Generation departments (graphics, video, audio) get an explicit
     # tools.allow so generation tools survive any parent-deny inheritance.
-    # Verified tool names from live Sheila Reynolds box (2026.6.1):
+    # Verified tool names from a live client box (2026.6.1):
     #   image_generate, video_generate, music_generate (confirmed in tools.deny
     #   on main agent). tts, exec, read, write, edit, web_fetch, web_search
     #   confirmed in docs.openclaw.ai/gateway/security.

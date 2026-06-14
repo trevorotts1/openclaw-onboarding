@@ -2,21 +2,21 @@
 """
 department-floor.py - the ONE source of truth for the HARD department floor.
 
-FLOOR (computed live from department-naming-map.json v2.5.0): 28 departments =
-21 mandatory canonical + 7 universal-primary vertical-pack (one per pack). The
+FLOOR (computed live from department-naming-map.json v2.6.0): 29 departments =
+22 mandatory canonical + 7 universal-primary vertical-pack (one per pack). The
 count is ALWAYS derived at runtime from len(HARDCODED_MANDATORY) + the count of
 universal-primary pack depts, so no integer is hardcoded as a gate. Below the
 floor is only ever reached by an EXPLICIT recorded decline (a mandatory dept, a
 universal-primary vertical, or a custom dept the owner declined in Phase 5.5).
 
 WHY THIS EXISTS (the bug it kills):
-Clients kept landing with HEAVILY-REDUCED workforces (Cassandra 3 depts, others
+Clients kept landing with HEAVILY-REDUCED workforces (one client 3 depts, others
 3-per-dept / 6-dept / legacy) DESPITE the repo carrying 216 role templates,
 the mandatory canonical departments, and 7 industry vertical packs. Diagnosis
 found THREE places that trusted the build-state JSON as proof of completion
 instead of counting REAL departments on disk:
   1. verify-zhc-standard.sh step-2 read `.departments[]` from the build-state
-     JSON, so a hand-seeded 3-dept JSON (Cassandra's seeded fiction) reported
+     JSON, so a hand-seeded 3-dept JSON (a seeded-fiction build-state) reported
      "all canonical present" and passed the floor.
   2. qc-completeness.sh measured per-dept staffing of whatever was ON DISK but
      had NO floor concept at all - 3 well-staffed depts returned PASS.
@@ -83,13 +83,14 @@ NAMING_MAP = SKILL_DIR / "department-naming-map.json"
 # so the floor is still enforced on a broken install that lost the naming map.
 # v11.1.0: added general-task + project-architecture-office, floor 24→26.
 # Bugs + Healer (self-repair immune system) added as mandatory, floor 26→28.
+# Quality Control (owns and runs the system analyzer) added as mandatory, floor 28→29.
 HARDCODED_MANDATORY = [
     "marketing", "sales", "billing-finance", "customer-support",
     "web-development", "app-development", "graphics", "video", "audio",
     "research", "communications", "crm", "openclaw-maintenance", "legal",
     "social-media", "paid-advertisement", "personal-assistant",
     "general-task", "project-architecture-office",
-    "bugs", "healer",
+    "bugs", "healer", "quality-control",
 ]
 
 # Known legacy aliases + variant slugs a canonical dept can appear under on disk.
