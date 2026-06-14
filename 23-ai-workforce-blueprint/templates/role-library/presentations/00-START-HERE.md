@@ -1,5 +1,5 @@
 # 00 -- START HERE -- Presentations Department
-**Version:** 1.3 | 2026-06-12
+**Version:** 1.4 | 2026-06-13
 **Role library path:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **SOP mirror path:** 23-ai-workforce-blueprint/templates/role-library/presentations/sops/
 
@@ -11,7 +11,10 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ---
 
-## Role Roster (17 roles)
+## Role Roster (17 roles; ROLE-16 deferred)
+
+**Doctrine count:** 16 roles are live to spec (ROLE-01 through ROLE-15 plus ROLE-17 Brainstorming Buddy). ROLE-16 The Healer is **DEFERRED** (see the deferral note under the Pipeline Sequence): the role file exists as a v1.0 scaffold but cannot be built to full spec, and its triggers cannot be fully wired, until the companion document THE_HEALER_AND_BUGS_DEPARTMENT.md is supplied. The Bugs Department it files into is not yet commissioned.
+
 
 | ROLE | Slug | Role type | File |
 |------|------|-----------|------|
@@ -31,7 +34,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 | ROLE-13 | delivery-concierge | specialist | delivery-concierge.md |
 | ROLE-14 | presenter-coach | specialist | presenter-coach.md |
 | ROLE-15 | hook-strategist | specialist | hook-strategist.md |
-| ROLE-16 | healer-presentations | healer | healer-presentations.md |
+| ROLE-16 | healer-presentations | healer | healer-presentations.md (DEFERRED - see note below) |
 
 ---
 
@@ -57,7 +60,9 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 On-call throughout: ROLE-05 Devil's Advocate (high-stakes reviews), ROLE-04 Deep Research Specialist.
 
-**ROLE-16 Healer** receives: second consecutive stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, API failCode events from ROLE-12, and any department error flag.
+**ROLE-16 Healer (DEFERRED)** is designed to receive: second consecutive stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, API failCode events from ROLE-12, and any department error flag.
+
+> **DEFERRAL NOTE - ROLE-16 The Healer (blocked):** ROLE-16 is a MANDATORY role per the change order, but it is **DEFERRED** for this surgery wave. The companion document THE_HEALER_AND_BUGS_DEPARTMENT.md (which carries the three authority tiers, the Bug Ticket schema, and the ZHC Bugs Department it files into) was **not supplied**, so the Healer cannot be built to full spec and its failCode/stall/loop-4 triggers cannot be fully wired to a live Bugs Department. The role exists only as a v1.0 generic scaffold (healer-presentations.md), and that scaffold already carries a TODO acknowledging the missing companion doc. When THE_HEALER_AND_BUGS_DEPARTMENT.md is supplied, instantiate ROLE-16 with department=Presentations, the three authority tiers (Tier 1 mechanical autonomous, Tier 2 SOP patch with notify plus version bump, Tier 3 model-manifest/new-roles/doctrine held for operator written approval), and wire the triggers. Until then, errors are written to working/healer/teachings/ and cross-linked from the incident ledger. Operator acknowledgement of this deferral is required to close the change order.
 
 ---
 

@@ -1,0 +1,86 @@
+{
+  "cluster": "NEW-ROLES",
+  "agent": "sonnet",
+  "owns": ["ROLE-13", "ROLE-14", "ROLE-15"],
+  "timestamp": "2026-06-13T00:00:00Z",
+  "checkpoints": [
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/delivery-concierge.md",
+      "role": "ROLE-13",
+      "disposition": "ADD (already scaffolded; upgraded to spec)",
+      "changes": [
+        "Added Role number: ROLE-13 to header",
+        "Bumped version to 1.1",
+        "Replaced all final_deck_qc.md references with final_deck_qc.json (8 occurrences)",
+        "Added hard DELIVERY INTERLOCK clause in Daily Operations (delivery CANNOT start without working/qc/final_deck_qc.json on disk)",
+        "Gate 1 updated to reference final_deck_qc.json"
+      ],
+      "em_dash_count": 0,
+      "sections_present": 19,
+      "sop_structure_intact": true,
+      "mirror_regenerated": true,
+      "twin_synced": "n/a (no ROLE-- DIU twin for Presentations roles)"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/delivery-concierge-sops.md",
+      "role": "ROLE-13",
+      "disposition": "REGENERATED (verbatim mirror of Section 9)",
+      "changes": [
+        "All final_deck_qc.md references updated to final_deck_qc.json in SOP 9.1, 9.3, and input lists"
+      ],
+      "em_dash_count": 0
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/presenter-coach.md",
+      "role": "ROLE-14",
+      "disposition": "ADD (already scaffolded to spec; no changes required)",
+      "changes": [
+        "No edits required -- role already contains: Role number ROLE-14 in header, Rehearsal Gate (SOP 9.4), talk track (SOP 9.1), Q&A Objection Prep (SOP 9.2), Rehearsal Pack (SOP 9.3), webinar-ready gate requiring aloud run, zero em dashes, all 19 sections present"
+      ],
+      "em_dash_count": 0,
+      "sections_present": 19,
+      "sop_structure_intact": true,
+      "mirror_regenerated": false,
+      "mirror_note": "Presenter-coach-sops.md mirror already verbatim-matches Section 9 (no changes to Section 9 were required); mirror is current"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/hook-strategist.md",
+      "role": "ROLE-15",
+      "disposition": "ADD (already scaffolded; upgraded to spec)",
+      "changes": [
+        "Added Role number: ROLE-15 to header",
+        "Bumped version to 1.1",
+        "Updated identity paragraph: HOOK is derived from the strongest promise; target ~10x from FIRST verse (not just >= 7)",
+        "SOP 9.1 step 2: added explicit 'derived from the strongest promise' doctrine",
+        "SOP 9.1 step 8: added ~10x target with push-to-10 if under 9",
+        "SOP 9.2 step 5: updated audit floor to >= 7 with ~10x target; added refrain-addition logic for counts of 7 or 8",
+        "Gate 5: updated to include ~10x target and first_occurrence_pct <= 15% check",
+        "KPI table: updated hook occurrence row to show target ~10x (minimum 7)"
+      ],
+      "em_dash_count": 0,
+      "sections_present": 19,
+      "sop_structure_intact": true,
+      "mirror_regenerated": true,
+      "twin_synced": "n/a"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/hook-strategist-sops.md",
+      "role": "ROLE-15",
+      "disposition": "REGENERATED (verbatim mirror of Section 9)",
+      "changes": [
+        "SOP 9.1 step 2: derived from strongest promise doctrine added",
+        "SOP 9.1 step 8: ~10x target with push logic added",
+        "SOP 9.2 step 5: floor >= 7, target ~10x, refrain-addition for counts 7 or 8"
+      ],
+      "em_dash_count": 0
+    }
+  ],
+  "deferred": [
+    {
+      "role": "ROLE-16",
+      "reason": "EXPLICITLY BLOCKED: companion doc THE_HEALER_AND_BUGS_DEPARTMENT.md was not supplied. Per PRD Section 8 hard blocker and CHECKLIST.md pre-flight item: ROLE-16 The Healer cannot be built to spec without it. Noted as explicitly deferred in this ledger and in the StructuredOutput return.",
+      "action_required": "Operator must supply THE_HEALER_AND_BUGS_DEPARTMENT.md before ROLE-16 can be built."
+    }
+  ],
+  "00_start_here_note": "00-START-HERE.md already contains all three roles (ROLE-13, ROLE-14, ROLE-15) in the Role Roster table and Pipeline Sequence. No update required. The spec instructs 00-START-HERE.md is updated LAST by the orchestrator after all clusters complete -- not by this cluster agent."
+}

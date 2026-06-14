@@ -302,6 +302,34 @@ This role contributes to the company revenue cascade by: **converting audience a
 **Hand to:** Standard review workflow (SOP 9.2).
 **Failure mode:** If AI output is consistently low-quality or off-brand for a specific use case, designer switches to manual production. Report tool limitation to CDO for quarterly tool audit. Never ship obviously AI-generated work without human refinement.
 
+### SOP 9.8 -- DIU Webinar-vs-DIU Routing Arbiter (Coded Decision Gate)
+
+**When to run:** Any time a deck brief is ambiguous between the DIU pipeline (PPT-ANALYSIS-SOP + Rotation Engine) and the Presentations pipeline (CLIENT-WEBINAR-DECK-SOP). Also run when the Deck Systems Specialist escalates a routing dispute or when the Director of Presentations disputes a DIU routing decision.
+**Frequency:** On-demand; every ambiguous deck escalation must route through this SOP before any generation begins.
+**Inputs:** Deck brief from the Deck Systems Specialist (or escalation notice), the brief's stated purpose/audience/context, the current CLIENT-WEBINAR-DECK-SOP archetype list.
+
+**ROUTING ARBITER DECISION TABLE (apply in order; first matching row is the verdict):**
+
+| Condition in the brief | Routing verdict | Rationale |
+|---|---|---|
+| Brief names "webinar," "funnel," "virtual event," or "audience presentation" in any form | Presentations dept - CLIENT-WEBINAR-DECK-SOP | These are unambiguous audience-deck keywords; text-in-image is THE rule |
+| Brief shows a REPRESENTATION_MIX or specific audience composition | Presentations dept | Audience-composition capture = audience deck; DIU does not govern audience casting |
+| Brief specifies one of the five CLIENT-WEBINAR-DECK-SOP archetypes | Presentations dept | Archetype match is deterministic |
+| Brief is a brand/strategy/campaign deck with a specific DIU style card ID in INDEX.md | DIU pipeline - PPT-ANALYSIS-SOP + Rotation Engine | Named style card = DIU scope |
+| Brief is for internal use only, no live audience delivery | DIU pipeline | No audience = no audience-deck rules apply |
+| Brief does not fit any row above | Escalate to Director of Presentations for arbiter decision; halt all generation | When uncertain, the Presentations-pipeline default protects against the architecture violation; never default to DIU on ambiguous cases |
+
+**Steps:**
+1. Read the brief fully. Apply the decision table above. If the first matching row is unambiguous, the verdict is final. Document the matching row and deliver the routing decision to the Deck Systems Specialist in writing.
+2. For Presentations-routed decks: forward the brief to the Director of Presentations. The Deck Systems Specialist has no further involvement unless a DIU strategy-(b) imagery request is made later via SOP 9.8 (DIU-612 cross-dept template).
+3. For DIU-routed decks: confirm the routing decision to the Deck Systems Specialist and authorize manifest assembly. Record the routing verdict, the matching decision-table row, and the date in the deck's project record.
+4. For escalations where the Director of Presentations is required as final arbiter: forward the full brief and this SOP's decision-table analysis to the Director of Presentations. Do NOT allow any generation to begin until the Director's written verdict is received and logged.
+5. If the Director of Presentations disputes a DIU routing decision AFTER generation has begun: halt generation immediately. The CDO is the final arbiter and overrides all prior routing decisions. Document the dispute, the CDO decision, and any generation spend already committed.
+
+**Outputs:** Routing verdict (Presentations or DIU) with documented decision-table row; for ambiguous decks, Director of Presentations' written arbiter decision on record.
+**Hand to:** Deck Systems Specialist (for DIU-routed decks - manifest assembly may begin); Director of Presentations (for Presentations-routed decks - brief forwarded).
+**Failure mode:** If a deck has been incorrectly routed to the DIU and generation has already begun, halt immediately. The cost of stopping is always less than the cost of delivering a strategy-(b)-assembled deck when text-in-image was required. Log the routing failure, determine root cause (brief incomplete, decision table row ambiguous, Deck Systems Specialist error), and implement a corrective measure before the next deck brief is processed.
+
 ---
 
 ## 10. Quality Gates

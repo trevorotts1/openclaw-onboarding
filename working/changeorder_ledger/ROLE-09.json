@@ -1,0 +1,40 @@
+{
+  "cluster": "ROLE-09 qc-specialist-presentations",
+  "owner_agent": "opus presentation-dept-surgery",
+  "branch": "presentation-dept-surgery",
+  "started": "2026-06-13",
+  "completed": "2026-06-13",
+  "status": "DONE",
+  "target_files": [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/qc-specialist-presentations.md",
+    "23-ai-workforce-blueprint/templates/role-library/presentations/sops/qc-specialist-presentations-sops.md"
+  ],
+  "twin": "n/a (no ROLE--/SOP-- byte-identical DIU twin exists for QC presentations; only DIU roles carry twins per the spec)",
+  "mirror_regenerated": true,
+  "mirror_verbatim_match": "VERIFIED byte-exact via diff: role Section 9 (lines 117-506) == mirror Section 9",
+  "master_sop_source": "universal-sops/CLIENT-WEBINAR-DECK-SOP.md (v2.3, READ-ONLY, not edited)",
+  "em_dash_final": "0 in both files (clean); no en-dash/minus/fig-dash/horiz-bar variants either",
+  "structure": "all 19 sections present; six SOPs 9.1-9.6 each carry When/Inputs/Steps/Outputs/Hand-to/Failure-mode",
+  "checkpoints": [
+    {"file": "qc-specialist-presentations.md", "change": "Section 1: named the two-layer machine - AUTO-FAIL battery HARD layer checked FIRST, averaging+8.5 with 7.0 per-item floor as SOFT layer underneath (P0-B)", "done": true},
+    {"file": "qc-specialist-presentations.md", "change": "Added AF-I8 image-grounding auto-fail (P6) + AF-P9 prompt-grounding auto-fail (P6)", "done": true},
+    {"file": "qc-specialist-presentations.md", "change": "Added Deck-Wide Representation Auto-Fails AF-R1 (generated images) / AF-R2 (final deck) / AF-R3 (uncaptured=NO PEOPLE); bidirectional; representation-overrides-skin-tone-quality counterweight (P5)", "done": true},
+    {"file": "qc-specialist-presentations.md", "change": "Added Final-Deck/Assembled-Slide Auto-Fails AF-F1 collision / AF-F2 WCAG-AA contrast / AF-F3 legibility / AF-F4 per-overlay collision / AF-F5 delivery-interlock (P3)", "done": true},
+    {"file": "qc-specialist-presentations.md", "change": "SOP 9.2 expanded to 16 criteria + AF-P1-P9 step; added p16 double-weighted grounding criterion (P6)", "done": true},
+    {"file": "qc-specialist-presentations.md", "change": "SOP 9.3 expanded to 15 criteria + AF-I1-I8 step + new step 5a deck-wide representation tally; added i15 double-weighted grounding criterion (P5/P6)", "done": true},
+    {"file": "qc-specialist-presentations.md", "change": "SOP 9.5 rewritten: renders PPTX->PDF->PNG (soffice/pdftoppm) and runs coded collision(AF-F1)/per-overlay-collision(AF-F4)/WCAG-AA contrast(AF-F2)/legibility(AF-F3) asserts on the composed slide; grounding re-verify; representation tally re-run (AF-R2); 06-framework structural-completeness checks (cost-vs-value, dual emotion+logic, light-pitch, care-first, PSD, journey/SEE, old-to-new, teach-themselves, not-over-taught); emits working/qc/final_deck_qc.json as the delivery pass-artifact (P3)", "done": true},
+    {"file": "qc-specialist-presentations.md", "change": "Added SOP 9.6 Delivery Interlock: no delivery without final_deck_qc.json present and pass:true (AF-F5)", "done": true},
+    {"file": "qc-specialist-presentations.md", "change": "Updated supporting sections to match added SOPs: Section 7 KPIs (collision/contrast/representation/grounding/delivery metrics), Section 8 Tools (final_deck_qc.json, finalrender, pptx_text_overlays, render toolchain), Section 10 Quality Gates 6-9, Section 11 Handoffs (PPTX assembler + delivery interlock token), Section 13 Examples D/E, Section 14 Anti-Patterns, Section 15 Common Mistakes 11-15, Section 18 Triggers 7-9", "done": true},
+    {"file": "sops/qc-specialist-presentations-sops.md", "change": "Regenerated mirror to byte-verbatim match of role Section 9 (diff-verified)", "done": true}
+  ],
+  "checklist_reconciliation": {
+    "C_auto_fail_first_grep_gt_0": "PASS (auto.?fail occurrences = 77)",
+    "C_image_qc_scored_criteria": "PASS (i11 facial-expression match, i12 World-Engine setting, i13 sharp 2K edges)",
+    "C_c15_c16_c17": "PASS (c15 Doctrine double-weight, c16 TEXT_ANCHOR, c17 Ladder)",
+    "C_7_0_floor_soft_layer": "PASS (named explicitly as the soft layer under the auto-fails)",
+    "E_P3_assembled_slide_qc": "PASS (PPTX->PDF->PNG render + collision/WCAG-AA-contrast/legibility asserts + per-overlay collision + final_deck_qc.json emitted)",
+    "E_P5_representation": "PASS (deck-wide +/-10% tally on generated images AND final deck = AUTO-FAIL; bidirectional rubric; DIU counterweight)",
+    "E_P6_grounding": "PASS (scored BLOCKING grounding at prompt QC AF-P9/p16 + final-deck QC AF-I8/i15)",
+    "E_delivery_interlock": "PASS (SOP 9.6 + AF-F5: no final pass without final_deck_qc.json present and PASS)"
+  }
+}

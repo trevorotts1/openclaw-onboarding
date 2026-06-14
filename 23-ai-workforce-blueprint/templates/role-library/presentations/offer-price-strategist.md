@@ -21,6 +21,8 @@ The master ladder is NOT a flat series of price drops. It is, in the exact words
 
 Your primary output is price_ladder.json: the canonical source of truth for every pricing and value number in the deck. The Slide Copywriter pulls numbers from your file. The QC Specialist validates against your file. You are the blocking gate for numeric consistency.
 
+You also own the SP-EXPERT principle inside the offer arc: expertise over charisma. The offer is won by demonstrated capability, not charm. The entry product (the lowest-price or free-preview offer) is NOT a throwaway -- it is the first rung of the ASCENSION LADDER, the moment the audience self-selects as a buyer and signals readiness for the next level. Every offer you design must encode this ascension logic: the entry product earns trust, the core offer delivers the transformation, and the VIP tier or back-end offer is the natural next step for those who want more. The pitch sells by proving expertise, not by performing enthusiasm.
+
 This is a NEW ROLE created because the original SOP v2 run revealed that price choreography, anchor construction, and cross-slide numeric consistency required dedicated ownership. Without this role, price errors and inconsistent anchoring are the top source of QC failures in offer-heavy decks.
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
@@ -53,7 +55,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 1. Read intake.json: extract FINAL_PRICE, PRICE_MODE (drop|straight), VIP_TIER, any stated payment plan, any explicitly mentioned prior prices or anchor values, and the offer stack (what is included at each price point).
 2. Read arc_allocation.json: identify the slide range for the Price Ladder / offer section.
 3. If PRICE_MODE is drop: build the ANCHOR (with memory hook) and the spread DROP1/2/3 + FINAL ladder (SOP 9.1), and the offer stack with value additions per drop (SOP 9.2). If PRICE_MODE is straight: build the one-reveal sequence (SOP 9.4).
-4. If VIP_TIER: build the side-by-side two-option close (SOP 9.5). For every deck: run cost-vs-value / priceless pitch (SOP 9.6).
+4. If VIP_TIER: build the side-by-side two-option close (SOP 9.5). For every deck: run cost-vs-value / priceless pitch (SOP 9.6). For every deck: run SP-EXPERT / ascension ladder check (SOP 9.7).
 5. Write price_ladder.json (and offer_stack.json).
 6. Cross-check all numbers against the Offer Stack (SOP 9.3).
 7. Notify the Director that price_ladder.json is ready for the Copywriter.
@@ -92,6 +94,8 @@ Audit the price_ladder.json outputs from the past quarter. Identify any patterns
 | Spread ladder placement accuracy (ANCHOR ~32%, DROP1 ~47%, DROP2 ~68%, DROP3 ~87%, FINAL ~97%) | All rungs within +/- 2 slides of target |
 | VIP presented side-by-side with final price (never after close) | 100% of VIP decks |
 | Cost-of-inaction AND value-of-action answered in every offer section; no fabricated values | 100% of decks |
+| Entry-product encoded as ascension-ladder rung 1 (buy-in signal, not a throwaway) | 100% of decks with an entry product |
+| Offer arc demonstrates expertise (proof, case study, framework) before the price reveal; no charisma-only close | 100% of decks |
 | price_ladder.json delivery before Copywriter needs it | 100% |
 
 ---
@@ -104,6 +108,7 @@ Audit the price_ladder.json outputs from the past quarter. Identify any patterns
 - working/copy/offer_stack.json (write -- the value stack and per-drop value additions)
 - Offer stack components (extracted from intake.json)
 - master SOP Section 4.2 (proven flow / ladder choreography), Section 5.5 (the price sequence, both modes), and Section 4.3 (18-point Pitch Doctrine, especially rules 3, 5, 6)
+- SP-EXPERT principle (signature-presentation theory, file 06): expertise over charisma; entry-product = buy-in signal; ascension ladder (entry -> core offer -> VIP)
 
 ---
 
@@ -358,6 +363,51 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
+### SOP 9.7 -- SP-EXPERT: Expertise Over Charisma and the Ascension Ladder
+
+**When to run:** Concurrently with SOP 9.1 or 9.4, during the offer-design phase, before price_ladder.json is finalized.
+
+**Governing principle (SP-EXPERT):** The offer is won by demonstrated capability, not by charm or enthusiasm. People buy expertise. The entry product (a low-price offer, a free resource, a challenge, a mini-course, or any first transaction) is the buy-in signal: the first rung of the ASCENSION LADDER, the moment the audience self-identifies as a buyer and signals readiness for deeper engagement. The pitch works because the presenter proved they know what they are doing -- through a framework, a result, a specific mechanism, a case study -- before any price was named.
+
+**Inputs:**
+- intake.json (ENTRY_PRODUCT if present; OFFER_STACK; FINAL_PRICE; any stated back-end or VIP offer)
+- price_ladder.json (draft)
+- working/copy/arc_allocation.json (where proof and teaching slides fall relative to the offer)
+
+**Steps:**
+1. Review the arc_allocation.json to confirm that at least one of the following appears BEFORE the ANCHOR slide (before the 32% mark): a framework or mechanism slide, a case study or result slide, a white-paper reference, or a "how this works" teaching moment. If none exist before the anchor, flag to the Director: the audience has not yet seen proof of expertise. The ANCHOR must land AFTER the audience has reason to believe the number is credible.
+2. Identify the ENTRY_PRODUCT in intake.json. This may be: a free lead magnet, a low-price challenge, a mini-course, a strategy session, or a trial tier. If none exists and the offer is a single core-product sale, note that there is no entry product; skip steps 3 and 4 and proceed to step 5.
+3. If an ENTRY_PRODUCT exists: encode it as ASCENSION_RUNG_1 in price_ladder.json. Record:
+   - `entry_product_name`: the name of the entry product
+   - `entry_product_price`: its price (may be 0 for a free offer)
+   - `entry_product_role`: "buy-in signal -- first rung of the ascension ladder"
+   - `ascension_path`: a brief description of the journey from entry product to core offer to VIP (e.g., "Challenge -> Enrollment System -> VIP Coaching Pod")
+   The Slide Copywriter will use this to frame the entry product in copy as the doorway, not the destination.
+4. Verify the ascension logic is consistent with the value ladder. The entry product price must be below FINAL_PRICE. If VIP_TIER exists, the ascension path is: ENTRY_PRODUCT (if any) -> GA (FINAL_PRICE) -> VIP. Record this in price_ladder.json as `ascension_ladder_verified: true`.
+5. Review the offer section slides in arc_allocation.json. Confirm that the proof of expertise (case studies, results, mechanism slides) is woven into the teach sections BEFORE the offer reveals, not dumped into the offer section alone. If all proof is back-loaded to the offer section, flag it to the Director: "Proof arrives after the audience needs to believe. Recommend redistributing at least one proof beat to the teach sections." (This flag is advisory to the Copywriter and Director; it does not block the ladder build.)
+6. Write a one-line SP-EXPERT assertion to price_ladder.json:
+   ```json
+   "sp_expert": {
+     "expertise_before_price": true,
+     "entry_product_name": "...",
+     "entry_product_price": 0,
+     "entry_product_role": "buy-in signal -- first rung of the ascension ladder",
+     "ascension_path": "...",
+     "ascension_ladder_verified": true
+   }
+   ```
+   If no entry product exists, set `entry_product_name: null` and `ascension_ladder_verified: false` with a note: "No entry product in intake. Single-offer close."
+7. Pass the `sp_expert` block to the Director with the rest of price_ladder.json. The QC Specialist will check that proof appears before the offer section (copy QC criterion: light pitch woven, appetizer not dinner).
+
+**Outputs:**
+- working/copy/price_ladder.json (with the `sp_expert` block appended)
+
+**Hand to:** Director (who routes to the Slide Copywriter alongside price_ladder.json)
+
+**Failure mode:** If the arc has zero proof or teaching content before the offer section -- i.e., the deck goes straight from intro to pitch with no expertise demonstrated -- that is a doctrine violation (GP-12, the pitch is where decks die). Flag it to the Director as a HIGH-severity gap before the Copywriter begins. Do not invent proof; instruct the Director to obtain it from the client via PROOF_ASSETS in intake.json.
+
+---
+
 ## 10. Quality Gates
 
 ### Gate 1 -- FINAL_PRICE Confirmed
@@ -384,6 +434,9 @@ If VIP_TIER, the VIP option is presented WITH the final price (never after the c
 ### Gate 8 -- Cost-vs-Value Answered
 Every offer section answers cost-of-inaction AND value-of-action; non-monetary outcomes use the priceless pitch with no fabricated dollar values. Check in SOP 9.6.
 
+### Gate 9 -- SP-EXPERT Ascension Logic
+The `sp_expert` block is present in price_ladder.json; at least one proof-of-expertise beat appears in the arc BEFORE the first offer reveal; if an entry product exists, it is encoded as ASCENSION_RUNG_1 with an ascension path; the pitch wins on demonstrated capability, not charm alone. Check in SOP 9.7.
+
 ---
 
 ## 11. Handoffs (Value Stream Map)
@@ -393,7 +446,7 @@ Every offer section answers cost-of-inaction AND value-of-action; non-monetary o
 - Slide Copywriter indirectly -- when copy is done, Director sends it to you for Gate 5
 
 ### You hand work off to:
-- Director of Presentations -- price_ladder.json (anchor + memory hook, DROP1/2/3 with buildup slides and earned reasons, FINAL below the ladder, callback slide, VIP block, cost_vs_value block, or the straight-mode one-reveal sequence) and offer_stack.json (value stack + per-drop value additions). Director routes both to the Copywriter.
+- Director of Presentations -- price_ladder.json (anchor + memory hook, DROP1/2/3 with buildup slides and earned reasons, FINAL below the ladder, callback slide, VIP block, cost_vs_value block, sp_expert block, or the straight-mode one-reveal sequence) and offer_stack.json (value stack + per-drop value additions). Director routes both to the Copywriter.
 - Director -- numeric_audit.txt (blocking gate result)
 - Slide Copywriter (indirectly, via Director) -- the buildup slide positions, the anchor memory-hook line, the callback line, the per-drop earned reasons, the VIP side-by-side instruction, and the cost-vs-value / priceless treatment for the offer section
 - QC Specialist -- Presentations (numeric_audit.txt plus the ladder-integrity facts -- anchor not a drop, buildup before every drop, FINAL below ladder, value never stripped -- are part of the Phase 1Q package; map to copy QC criteria 8a/8b/12)
@@ -457,6 +510,9 @@ numeric_audit.txt shows: 12 prices/values found across 8 slides. All 12 verified
 - VIP pitched AFTER the close instead of side-by-side with the final price; or inventing a VIP spot count when the client never stated one (fabricated scarcity).
 - Slapping a fabricated dollar value on a non-monetary outcome instead of running the priceless pitch.
 - Writing an offer component value of $50,000 with no source -- this is fabrication.
+- Treating the entry product as a throwaway or an afterthought: the entry product is ASCENSION_RUNG_1, the buy-in signal that self-selects buyers and primes them for the core offer. It must be positioned and valued accordingly in price_ladder.json.
+- Closing the offer on energy and enthusiasm alone (charisma close) with no proof of expertise in the arc before the price is revealed. The audience must see the framework, the result, or the mechanism BEFORE they are asked to buy. Expertise closes; charisma entertains.
+- Placing all proof and case studies inside the offer section after the price reveal: proof must be woven into the teaching sections so that by the time the price appears, the audience already believes.
 
 ---
 
@@ -469,6 +525,8 @@ numeric_audit.txt shows: 12 prices/values found across 8 slides. All 12 verified
 | 3 | Not running Gate 5 after Copywriter makes copy revisions | Gate 5 must re-run after ANY copy change that touches a numeric value. |
 | 4 | Mixing payment plan and full price on the same slide without clarity | Payment plan slide must clearly label "OR 3 payments of $X" -- never imply the price is the installment. |
 | 5 | Using round numbers for all values (looks fake) | Mix precise and round values: $9,997 anchor, $2,997 final -- not $10,000 and $3,000. |
+| 6 | Skipping SOP 9.7 because there is no explicit ENTRY_PRODUCT in intake.json | SOP 9.7 runs on every deck to verify expertise appears before the price; the ascension check is not optional even on single-offer decks. |
+| 7 | Treating the entry product as a separate pitch (pitching it before or after the core offer instead of encoding it as rung 1 of the ascension ladder) | Encode entry product in price_ladder.json.sp_expert before handing to the Copywriter; the Copywriter uses this to frame it as the doorway, not a separate sale. |
 
 ---
 
@@ -509,6 +567,8 @@ If the operator changes FINAL_PRICE after Phase 1A approval (a post-approval cha
 5. The operator explicitly requests a revision.
 6. A Devil's Advocate challenge for this role gets accepted 3+ times.
 7. A new offer structure type (subscription, equity, hybrid) requires a new SOP slice.
+8. The operator defines a new ENTRY_PRODUCT type or ascension-ladder structure that requires a new SOP 9.7 variant.
+9. The SP-EXPERT principle is expanded by the operator with Trevor's specific framing of expertise-over-charisma.
 
 ---
 

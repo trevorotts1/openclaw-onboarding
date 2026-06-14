@@ -4,8 +4,8 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.1
-**Last updated:** {{ISO_DATE}}
+**Version:** 1.2
+**Last updated:** 2026-06-13
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
 

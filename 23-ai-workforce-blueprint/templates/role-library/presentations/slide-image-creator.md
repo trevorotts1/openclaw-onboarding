@@ -89,6 +89,8 @@ Review the master SOP for any updates to the 15-element spec or the image model.
 | Em dashes in any prompt | 0 |
 | Prompt character count outside 1,500-15,000 range | 0 |
 | Price-drop prompts using the price-tag motif + drawn-line strike (no "hand-drawn red diagonal") | 100% |
+| People-slide prompts grounded in the client's method (GROUNDED_CONTENT depicted, not a generic stock scene) | 100% |
+| Prompts inventing a racial/gender default when STYLE BLOCK has no ratio (must be NO PEOPLE + operator flag) | 0 |
 
 ---
 
@@ -117,6 +119,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/slides_copy.md (approved copy for every slide)
 - STYLE BLOCK (brand palette, type system, logo rule, representation ratio)
 - working/copy/hook_variants.json
+- the GROUNDED_CONTENT variable from intake.json (the client's book / message / offer / methodology) plus any deep-research grounding routed into the image brief: the concrete moments, settings, and props from THIS client's actual method that the imagery must depict (P6 grounding; the World Engine consumes it). If GROUNDED_CONTENT is blank, flag the operator and do not invent a generic stand-in for the client's method.
 
 **Steps:**
 0. **Read the master SOP Section 7.5 gold-standard exemplar in full before writing your first prompt.** This is the actual prompt that produced the title slide of the QC-9.42 Lyric deck. Study its anatomy: the header block (title, ARCHETYPE / SECTION / LADDER tags, ONE BIG IDEA line), zone percentages, emotionally precise photo direction, exact verbatim copy with per-line font/size/color, the gold rule devices, the logo chip spec, MOOD + LIGHTING, and the closing COLOR VERIFICATION and AVOID blocks. Also read the SECOND exemplar in the appendix of this file (Section 9.5 strengthening, the A2 people-slide exemplar). Your prompts must match their density and structure, adapted to each slide's own archetype and brand variables. Do not write a single prompt before you have read both.
@@ -135,7 +138,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    11. **PEOPLE (driven by the THREE ENGINES, transplanted from master SOP Section 7.3 element 11; all three required on every people-slide, missing any one is an auto-fail):**
       - **FACIAL EXPRESSION ENGINE:** the face must match what the slide is SAYING. Every person spec includes hair (color, style, length), clothing (color, style, formality), and a facial expression described in terms of the emotion the slide communicates (a pain slide gets a worried, overwhelmed face; a vision slide gets the arrived, relieved smile). The expression is stated in explicit emotion terms, never just "smiling." Use the Expression Vocabulary Table (SOP 9.2 strengthening pack) to pick the exact expression for the slide's emotion. Missing hair, clothing, OR the expression = auto-fail.
       - **AUDIENCE ENGINE:** people match the slide's REPRESENTATION_MIX assignment and AUDIENCE from intake (the representation group, age range, gender mix, and the style of dress for the niche). The diversity spec comes from the STYLE BLOCK representation_ratio (e.g., 70% African American women, 20% African American men, 10% mixed) and the deck-wide ratio is honored across slides, not forced onto every single slide.
-      - **WORLD ENGINE (real-world knowledge):** the SETTING matches the industry and the moment. Where would this person actually be: their office, the kitchen table at dinner, the empty classroom at 6am? Every people-slide prompt STATES the real-world setting AND justifies why it fits the slide's one idea. Pull the setting from the Lighting + World Library (SOP 9.3 strengthening pack). A generic studio backdrop where a real-world scene belongs is a defect and an auto-fail.
+      - **WORLD ENGINE (real-world knowledge):** the SETTING matches the industry and the moment. Where would this person actually be: their office, the kitchen table at dinner, the empty classroom at 6am? Every people-slide prompt STATES the real-world setting AND justifies why it fits the slide's one idea. Pull the setting from the Lighting + World Library (SOP 9.3 strengthening pack). A generic studio backdrop where a real-world scene belongs is a defect and an auto-fail. The World Engine is also where GROUNDING lives: the scene, props, and moment must depict a concrete moment from THIS client's method (the GROUNDED_CONTENT variable: their book, message, offer, or methodology), not a generic stand-in. Stock-generic imagery that depicts no concrete moment from the client's actual method is an auto-fail at the image-grounding gate (QC final-deck grounding criterion). Carry GROUNDED_CONTENT into both the photo brief and the object placement so the slide shows the client's real thing, not an interchangeable stock scene.
       - **SHOT layer (taxonomy beneath the engines, not a replacement for them):** under the three engines, also pick the shot framing for the person. Engine A (Single Subject): one person, full-body or three-quarter shot. Engine B (Audience Group): a small group of 2 to 4 people, natural energy, not a posed stock photo. Engine C (Presenter / Speaker): one person presenting or teaching, confident posture, reads as a knowledgeable guide not a salesperson. The shot layer answers "how is the person framed"; the three engines above answer "what does the person feel, who are they, and where are they". Both layers must be present on a people-slide."
    12. **BULLETS** (if slide has bullet points): "Body text bullets are short, no full sentences. Each bullet is max 5 words. Bullets appear as [dot / dash / icon] markers."
    13. **MOOD**: "[Emotional tone for this slide: e.g., aspirational, urgent, celebratory, authoritative]. The visual energy should feel [descriptor] to [target audience descriptor from intake.json]."
@@ -150,6 +153,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    b. Character count in range for every prompt.
    c. No em dashes.
    d. No dark backgrounds (unless DARK_OK flag is set).
+   e. Grounding: every image depicts a concrete moment from THIS client's method (the GROUNDED_CONTENT variable), not a generic stock scene. A slide whose imagery is interchangeable with any other brand fails the image-grounding gate at QC.
 
 **Outputs:**
 - working/prompts/slide-NN-prompt.txt (one file per slide, zero-padded)
@@ -367,7 +371,7 @@ Rules:
 - Slide type and section (from arc_allocation.json)
 
 **Steps (People -- Element 11):**
-1. The three engines are the authority for every people-slide and are written in element 11 per SOP 9.1: the FACIAL EXPRESSION ENGINE (hair + clothing + explicit expression from the Expression Vocabulary Table, SOP 9.2 strengthening), the AUDIENCE ENGINE (representation group, age range, gender mix, niche dress per the STYLE BLOCK ratio), and the WORLD ENGINE (real-world setting + justification from the Lighting + World Library, SOP 9.3 strengthening). All three are mandatory; missing any one is an auto-fail.
+1. The three engines are the authority for every people-slide and are written in element 11 per SOP 9.1: the FACIAL EXPRESSION ENGINE (hair + clothing + explicit expression from the Expression Vocabulary Table, SOP 9.2 strengthening), the AUDIENCE ENGINE (representation group, age range, gender mix, niche dress per the STYLE BLOCK ratio), and the WORLD ENGINE (real-world setting + justification from the Lighting + World Library, SOP 9.3 strengthening, AND the GROUNDED_CONTENT variable so the setting/props depict a concrete moment from THIS client's method, not a generic stand-in). All three are mandatory; missing any one is an auto-fail. Ungrounded generic imagery that shows no concrete moment from the client's method is an auto-fail at the image-grounding gate.
 2. Beneath the three engines, pick the SHOT framing layer for this slide:
    - Shot A (Single Subject): one person, full-body or three-quarter shot.
    - Shot B (Audience Group): a small group of 2 to 4 people representing the STYLE BLOCK ratio, natural energy, not a posed stock photo.
@@ -390,7 +394,7 @@ Rules:
 
 **Hand to:** SOP 9.1
 
-**Failure mode:** If STYLE BLOCK has no representation_ratio, use this default: 60% Black/Brown subjects, 30% other POC, 10% white, gender parity. Document the default in a comment in the prompt: `// REPRESENTATION: using default ratio (no STYLE BLOCK ratio specified)`.
+**Failure mode:** If STYLE BLOCK has no representation_ratio, DO NOT invent a racial default. Inventing a demographic ratio for a client is a brand and trust risk. Set representation to NO PEOPLE (people element omitted from all slides) and flag: `representation_source: "default_no_people -- intake unanswered"`. Immediately notify the operator with a flag: "REPRESENTATION UNANSWERED: STYLE BLOCK has no representation_ratio. Deck will default to no people in images. Please confirm or supply the intended breakdown before Phase 2." Do not write a single people-inclusive prompt until the operator or client has answered. Document the no-people state in a comment in every prompt: `// REPRESENTATION: NO PEOPLE default -- no STYLE BLOCK ratio supplied, operator flag issued`. (This is the verbatim brand-steward rule; never invent percentages the client did not supply.)
 
 ---
 
@@ -475,9 +479,10 @@ Every people-slide prompt carries all three engines (Facial Expression with an e
 ## 11. Handoffs (Value Stream Map)
 
 ### You receive work from:
-- Director of Presentations -- dispatch signal with slides_copy.md (Phase 1 approved), STYLE BLOCK, hook_variants.json
+- Director of Presentations -- dispatch signal with slides_copy.md (Phase 1 approved), STYLE BLOCK, hook_variants.json, and the GROUNDED_CONTENT variable from intake.json
 - Brand Steward -- STYLE BLOCK
 - Offer Price Strategist -- price_ladder.json (for price-drop slide instructions)
+- Deep Research Specialist -- grounding routed into the image brief (concrete moments, settings, and props from THIS client's method) so the World Engine depicts the real method, not a generic stock scene (P6 grounding)
 
 ### You hand work off to:
 - QC Specialist -- Presentations (Phase 3 prompt QC)
@@ -522,6 +527,8 @@ Every people-slide prompt carries all three engines (Facial Expression with an e
 - Describing a price strike as a "hand-drawn red diagonal" or a font strikethrough style. The strike is a single clean DRAWN line in the brand accent through the numerals, on the white hang-tag price-tag motif.
 - Padding a thin prompt with filler or repeated boilerplate to hit the character target. Pad with genuine specificity (scene detail, per-line type, setting justification) or not at all.
 - Writing a prompt before reading BOTH gold-standard exemplars (master 7.5 A4 and Appendix A A2).
+- Inventing a racial or gender default (e.g., "60% Black/Brown, 30% other POC, 10% white") when the STYLE BLOCK has no representation ratio. The correct response is NO PEOPLE plus an operator flag; never invent a demographic ratio the client did not supply.
+- Ungrounded generic imagery that depicts no concrete moment from THIS client's method (the GROUNDED_CONTENT variable). A scene that is interchangeable with any other brand fails the image-grounding gate. The World Engine must depict the client's real thing.
 
 ---
 

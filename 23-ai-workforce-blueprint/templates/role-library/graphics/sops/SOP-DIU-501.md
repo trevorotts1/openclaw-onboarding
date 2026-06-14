@@ -11,6 +11,8 @@
 
 ---
 
+> **SCOPE BANNER - READ BEFORE USE:** Style-card fidelity ONLY - NOT the QC for a webinar deck. This SOP governs image-only style-transfer testing on DIU style cards. It does not cover assembled-slide QC, PPTX collision/contrast/legibility asserts, representation tally against a client audience, or image-grounding against a client's methodology. Webinar-deck QC is the Presentations department qc-specialist final-deck QC (CLIENT-WEBINAR-DECK-SOP SOP 9.5). A passing SOP-DIU-501 verdict is NOT a delivery gate for a webinar deck and must never be cited as one.
+
 ## Role Mission (Fidelity Tester)
 
 Nothing reaches production untested; failures become institutional memory. The Fidelity Tester's job is to score every draft card against the 12-dimension rubric, route PASS verdicts forward, and run an evidence-based patch loop on FAIL verdicts until the card earns its status. The Tester never creates cards, never generates API requests, and never delivers to clients. Every scoring decision is grounded in test images and receipts on disk — never memory, never URLs.

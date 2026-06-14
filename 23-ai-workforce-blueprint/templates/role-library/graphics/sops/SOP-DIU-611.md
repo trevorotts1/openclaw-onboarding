@@ -70,13 +70,13 @@ All routing verdicts, archetype definitions, pipeline scope, and model-manifest 
 
 The following rules have no exception path:
 
-1. **Webinar/funnel decks never enter the Rotation Engine.** A deck matching any CLIENT-WEBINAR-DECK-SOP archetype routes to Presentations regardless of the client's personal brand style or any existing DIU style card. The Rotation Engine is not an upgrade to webinar production — it is a different pipeline for a different output type.
+1. **ROUTING INTERLOCK (coded hard stop):** An audience deck, webinar deck, funnel deck, or virtual event deck CANNOT proceed on the DIU strategy-(b) pipeline. This is not a preference - it is a mechanical gate. Any deck matching a CLIENT-WEBINAR-DECK-SOP archetype routes to Presentations regardless of the client's personal brand style, any existing DIU style card, or CDO convenience. The Deck Systems Specialist must halt the DIU workflow the moment a deck is identified as audience/webinar and route to CDO for forwarding to the Presentations Director. Proceeding past this gate on the wrong pipeline is an architecture violation; the deck would be assembled primarily from bare backgrounds with overlay text boxes, which is an AUTO-FAIL at final QC.
 
-2. **The DIU's seven-endpoint routing table never overrides the CLIENT-WEBINAR-DECK-SOP model manifest.** That SOP's GPT-Image-2-only constraint is a Presentations department contract, not a DIU configuration. The Deck Systems Specialist has no authority over it.
+2. **ARCHITECTURE LOCK:** Text-in-image is THE rule for webinar and audience decks. The DIU strategy-(b) background-only approach is a per-element fallback only for non-audience DIU-routed decks. For audience/webinar decks, the Presentations pipeline's GPT-Image-2 text-in-image approach is the only legal architecture. The DIU's seven-endpoint routing table never overrides the CLIENT-WEBINAR-DECK-SOP model manifest.
 
 3. **Slide Image Creator prompts in the Presentations pipeline may not silently override a contracted PPT-category foundation block.** If Presentations requests imagery using an analyzed client style, the style card governs — Presentations sources the style via SOP-DIU-612, not by writing style directly into Slide Image Creator prompts.
 
-4. **The Slide Manifest has exactly one owner per phase.** Concurrent edits to the manifest by both pipelines are forbidden. Ownership transfers explicitly: Deck Systems Specialist → Generation Operator (during generation); Generation Operator → Deck Systems Specialist (cohesion review); Deck Systems Specialist → Presentations (strategy-(b) text overlay). Any phase-overlap is escalated to CDO immediately.
+4. **The Slide Manifest has exactly one owner per phase.** Concurrent edits to the manifest by both pipelines are forbidden. Ownership transfers explicitly: Deck Systems Specialist to Generation Operator (during generation); Generation Operator to Deck Systems Specialist (cohesion review); Deck Systems Specialist to Presentations (strategy-(b) text overlay). Any phase-overlap is escalated to CDO immediately.
 
 ### E. Routing decision logging
 

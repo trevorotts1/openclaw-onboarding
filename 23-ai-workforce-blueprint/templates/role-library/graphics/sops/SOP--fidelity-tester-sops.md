@@ -22,6 +22,12 @@
 2. Open the card at the submitted version. Confirm status is `draft` (first-run testing) or `tested`/`production` (regression or diagnosis mode).
 3. Score each test image on all 12 dimensions (1-5 per dimension) using the rubric in TEST-PROTOCOL.md §3. Record each dimension score individually before computing the average.
 4. Apply pass criteria: average across all 12 dimensions >= 4.0, AND no single dimension below 3, AND zero hard-rule violations. One hard-rule violation is an automatic fail regardless of all other scores.
+
+   **BIDIRECTIONAL SKIN RULE (P5 counterweight - mandatory):** The skin-tone hard-rule is bidirectional. It fails in BOTH directions:
+   - FAIL (lightening): skin tones rendered lighter, washed-out, or ashy compared to the intended tone - this is the original rule.
+   - FAIL (mono-casting against audience): imagery that casts a mono-demographic group when the client's captured REPRESENTATION_MIX specifies a multicultural or mixed audience.
+
+   **Per-client REPRESENTATION_MIX counterweight:** The REPRESENTATION_MIX from the client's intake record overrides the universal deep-skin quality default when they would otherwise conflict. Score skin-tone quality for whoever IS cast per the client's REPRESENTATION_MIX. Never fail a card for following a client's actual audience composition.
 5. Record the test as a row in the card's Test Log: date, model, tier, test type, test subject description, per-dimension scores, average, pass/fail verdict, notes.
 6. Issue verdict:
    - PASS: Update card status to `tested` (first-run pass) or confirm `production` (regression pass). Update INDEX.md status field to match. Notify Style Analyst and Chief Design Officer.

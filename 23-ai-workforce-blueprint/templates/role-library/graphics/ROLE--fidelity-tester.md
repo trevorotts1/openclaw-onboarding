@@ -184,6 +184,12 @@ This role contributes to the company revenue cascade by: **ensuring that every s
 2. Open the card at the submitted version. Confirm status is `draft` (first-run testing) or `tested`/`production` (regression or diagnosis mode). Note the current Changelog version so any status transitions you record are tagged to the correct version.
 3. Score each test image on all 12 dimensions (1–5 per dimension) using the rubric in TEST-PROTOCOL.md §3. Do not average dimensions in your head -- record each dimension score individually before computing the average.
 4. Apply pass criteria: average across all 12 dimensions ≥ 4.0, AND no single dimension below 3, AND zero hard-rule violations. One hard-rule violation (text on face, lightened skin tone, identity drift, unrequested persons in frame) is an automatic fail regardless of all other scores.
+
+   **BIDIRECTIONAL SKIN RULE (P5 counterweight - mandatory):** The skin-tone hard-rule is bidirectional. It fails in BOTH directions:
+   - FAIL (lightening): skin tones rendered lighter, washed-out, or ashy compared to the intended tone - this is the original rule.
+   - FAIL (mono-casting against audience): imagery that casts a mono-demographic group when the client's captured REPRESENTATION_MIX specifies a multicultural or mixed audience. Example: a card generated for a client whose audience is 60% Black/30% white/10% Hispanic that renders only white subjects is a hard-rule violation in the opposite direction.
+
+   **Per-client REPRESENTATION_MIX counterweight:** The REPRESENTATION_MIX from the client's intake record overrides the universal deep-skin quality default when they would otherwise conflict. If the client's audience is predominantly light-skinned and the card casts predominantly light-skinned subjects, that is correct representation - not a failure of the skin-tone quality rule. Score skin-tone quality (warmth, dimensionality, accuracy) for whoever IS cast per the client's REPRESENTATION_MIX. Never fail a card for following a client's actual audience composition.
 5. Record the test as a row in the card's Test Log: date, model, tier, test type (near/far/text-stress), test subject description, per-dimension scores, average, pass/fail verdict, notes on any borderline dimensions or notable behaviors.
 6. Issue verdict:
    - PASS: Update card status to `tested` (first-run pass) or confirm `production` status (regression pass). Update INDEX.md status field to match. Notify Style Analyst and Chief Design Officer of the promotion.

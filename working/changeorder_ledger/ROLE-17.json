@@ -1,0 +1,32 @@
+{
+  "cluster": "ROLE-17",
+  "role": "Brainstorming Buddy -- Presentations",
+  "disposition": "UPDATE",
+  "wave": "P5 (Wave 2 / Wave 4 intake capture)",
+  "traces": ["05", "GP-13", "P5", "P6", "P7"],
+  "governing_directives": [
+    "PRD section 5 (per-client intake fields table)",
+    "TODO P5 ROLE-17",
+    "CHECKLIST E (REPRESENTATION_MIX hard-required at intake + NO-PEOPLE default)",
+    "ingest/05-trevor-requirement-audience-capture.md",
+    "change order standing rules section 0.5"
+  ],
+  "completed_at": "2026-06-13",
+  "files_edited": [
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/brainstorming-buddy-presentations.md",
+      "action": "UPDATE",
+      "checkpoint": "v2.0 -- Added SOP 9.0 PRE-PRESENTATION HARD-REQUIRED CAPTURE (six mandatory fields: REPRESENTATION_MIX with percentages, AUDIENCE-COMPOSITION NOTE, GROUNDED-CONTENT, VISUAL_MIX, DARK_OK default false, HOOK SEED); NO-PEOPLE + operator-flag rule for uncaptured representation; GROUNDED-CONTENT non-skippable; updated KPIs, Tools, Quality Gates, Handoffs, Anti-Patterns, Common Mistakes, Update Triggers, and Question Bank to enforce hard-required pre-presentation capture. SOP 9.0 runs before mode offer and is MANDATORY. All 19 sections kept. Zero em dashes."
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/brainstorming-buddy-presentations-sops.md",
+      "action": "REGENERATE (verbatim mirror of Section 9)",
+      "checkpoint": "v2.0 -- Mirror regenerated to match updated Section 9 of the role file verbatim. Includes new SOP 9.0, updated SOP 9.1 prerequisite and failure-mode, updated SOP 9.3 mandatory-variable checklist, updated SOP 9.4 prerequisite."
+    }
+  ],
+  "diu_twin": "n/a -- no ROLE-- or SOP-- byte-identical twin exists for brainstorming-buddy-presentations",
+  "em_dash_count": 0,
+  "all_changes_applied": true,
+  "blockers": [],
+  "notes": "All six hard-required pre-presentation fields (REPRESENTATION_MIX with percentages, AUDIENCE-COMPOSITION NOTE, GROUNDED-CONTENT, VISUAL_MIX, DARK_OK, HOOK SEED) are now enforced in SOP 9.0 as a mandatory gate before mode offer. NO-PEOPLE rule implemented: if REPRESENTATION_MIX is not captured, representation_uncaptured: true is set and the operator is flagged -- a racial or gender default is NEVER invented. GROUNDED-CONTENT is the client's specific book/message/offer/methodology; if absent at lock, grounded_content_provisional is set and handoff is blocked until resolved. The role file version bumped to 2.0. All 19 sections present. Zero em dashes confirmed by grep."
+}

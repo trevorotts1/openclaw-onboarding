@@ -1,0 +1,36 @@
+{
+  "cluster": "ROLE-06+08",
+  "agent": "sonnet",
+  "timestamp": "2026-06-13",
+  "checkpoints": [
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/media-librarian-ghl-updater.md",
+      "action": "VERIFIED_NO_EDIT_NEEDED",
+      "note": "SOP 9.5 (Client Asset Acquisition: LOGO_URL + FOUNDER_PORTRAIT_URL hosting + [PROOF PENDING] loop) and SOP 9.6 (Final Deck Delivery: Mac ~/Downloads path + GHL upload + openclaw message send + ground-truth verification) were already present and complete. KPI table, Anti-Patterns, Handoffs, and Daily Operations already reference both SOPs. Section 14 Anti-Patterns contains 'a done message with unverified artifacts is a lie'. No em dashes. All 19 sections intact.",
+      "status": "DONE"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/media-librarian-ghl-updater-sops.md",
+      "action": "VERIFIED_IN_SYNC",
+      "note": "Mirror already contained verbatim Section 9 including SOP 9.5 and SOP 9.6. No regeneration needed - mirror was already in sync with the role file.",
+      "status": "DONE"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/pptx-assembly-specialist.md",
+      "action": "UPDATED",
+      "note": "Added SOP 9.4 Typography-Safe Assembler Spec (6 rules: Rule 1 autofit BANNED/no spAutoFit with enforce_no_autofit() function; Rule 2 fixed-box sizing; Rule 3 rendered-text-height measurement with assert_text_fits() function; Rule 4 bottom-anchoring grow-UP-into-headroom with bottom_anchor_textbox() function; Rule 5 build-time collision assert FAILS LOUD with assert_no_overlay_collisions() function; Rule 6 bottom-up gradient scrim replacing flat 50% slab with add_gradient_scrim() function). Also: added lxml to Section 8 Tools; added 4 KPI rows (spAutoFit=0, collision assert 100%, gradient scrim 100%); updated Gate 5 in Quality Gates; updated Section 11 Handoffs; added 5 Anti-Pattern entries in Section 14; added typography-safe assembler requirement paragraph to SOP 9.1. sngStrike support was pre-existing and kept intact. No em dashes. All 19 sections intact.",
+      "status": "DONE"
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/pptx-assembly-specialist-sops.md",
+      "action": "REGENERATED",
+      "note": "Mirror regenerated to verbatim match Section 9 of the updated role file. SOP 9.1 through SOP 9.4 now present in mirror. Typography-safe assembler requirement paragraph in SOP 9.1 present. No em dashes.",
+      "status": "DONE"
+    }
+  ],
+  "twin_sync": "n/a - ROLE-06 and ROLE-08 are Presentations department roles; the ROLE-- / SOP-- byte-identical DIU twin pattern applies only to graphics department roles. No Presentations role has a twin in the graphics folder.",
+  "em_dash_check": "CLEAN - 0 em dashes in all 4 files (verified with grep)",
+  "section_count_check": "ROLE-06: 19 sections confirmed. ROLE-08: 19 sections confirmed.",
+  "all_changes_applied": true,
+  "blockers": []
+}

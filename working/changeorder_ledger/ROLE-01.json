@@ -1,0 +1,58 @@
+{
+  "cluster": "ROLE-01",
+  "role": "Director of Presentations",
+  "agent": "sonnet-subagent",
+  "timestamp": "2026-06-13",
+  "files_edited": [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/director-of-presentations.md",
+    "23-ai-workforce-blueprint/templates/role-library/presentations/sops/director-of-presentations-sops.md"
+  ],
+  "changes_applied": [
+    {
+      "item": "Slide-math table",
+      "status": "ALREADY_CORRECT",
+      "detail": "Table already matches master SOP verbatim: 10->15, 15->25, 30->45, 45->60, 60->75, 90->90, 120+->90 with 90 absolute ceiling. No change needed."
+    },
+    {
+      "item": "17-row arc allocation table (master section 4.1) + 7-section flow (section 4.2)",
+      "status": "ALREADY_CORRECT",
+      "detail": "SOP 9.4 already contained both the 17-row allocation table and the 7-section proven flow verbatim from the master. No change needed."
+    },
+    {
+      "item": "Intake items: TONE, PRICE_MODE, VIP tier (real spot count), REPRESENTATION_MIX with PERCENTAGES, VISUAL_MIX, DARK_OK (default false), HOOK SEED, PROOF_ASSETS",
+      "status": "ALREADY_CORRECT",
+      "detail": "All eight intake fields already present in SOP 9.1, SOP 9.4, Section 11 Handoffs, KPI table, Anti-Patterns. No change needed."
+    },
+    {
+      "item": "MODEL MANIFEST declaration at echo (master section 9.0)",
+      "status": "ALREADY_CORRECT",
+      "detail": "SOP 9.2 Step 2 already declares the MODEL MANIFEST with the verbatim JSON block from master section 9.0, saves to model_manifest.json, and states operator confirmation = authorization. No change needed."
+    },
+    {
+      "item": "SOP 9.3 Mode B = ADD/PROPOSE only",
+      "status": "ALREADY_CORRECT",
+      "detail": "SOP 9.3 Mode B steps already enforce ADD and PROPOSE only, with explicit per-substitution owner approval required. The client's words are never rewritten without approval. No change needed."
+    },
+    {
+      "item": "Edge 17.1 tighten: no fabricated/implicit approval; verbatim owner message + re-confirmation",
+      "status": "APPLIED",
+      "detail": "Removed 'approval_type: implicit' soft path. Replaced with hard re-confirmation requirement: Director quotes the operator's exact message verbatim and requires explicit YES before Phase 2. Implicit approval is explicitly forbidden."
+    },
+    {
+      "item": "Edge 17.3: fix 90-100 slides -> 90 slides (absolute ceiling)",
+      "status": "APPLIED",
+      "detail": "Changed 'Recommend 90-100 slides' to 'Recommend 90 slides (the absolute ceiling for any duration)'. Added explicit statement that 90 is the hard maximum for all durations."
+    },
+    {
+      "item": "GENERATION gate interlock: Phase 2 cannot start without approval_record.json; Phase 4 not without a passed prompt_qc_report",
+      "status": "APPLIED",
+      "detail": "Phase 2 gate (approval_record.json) was already present. Added explicit hard interlock text to Gate 5 (Prompt QC): 'No Phase 4 (image generation) may begin until prompt_qc_report.json exists on disk with a passing status. This is a hard interlock: the Slide Submitter is not dispatched, and no createTask call is made, until this file exists and every prompt shows a passing score.'"
+    }
+  ],
+  "mirror_regenerated": true,
+  "twin_synced": "n/a - no ROLE-- or SOP-- DIU twin exists for presentations/director-of-presentations",
+  "em_dash_count_role_file": 0,
+  "em_dash_count_mirror_file": 0,
+  "all_changes_applied": true,
+  "blockers": []
+}

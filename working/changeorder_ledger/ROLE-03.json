@@ -1,0 +1,32 @@
+{
+  "cluster": "ROLE-03",
+  "role": "Capacity and Reliability Engineer",
+  "disposition": "UPDATE",
+  "agent": "capacity-reliability-engineer (ROLE-03)",
+  "completed_at": "2026-06-13",
+  "checkpoints": [
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/capacity-reliability-engineer.md",
+      "status": "DONE",
+      "changes": [
+        "Section 1 (Who You Are): updated Phase 7 description from 'every 15 minutes / no progress in 30+ minutes' to 'every 10 minutes for up to 90 minutes / no progress in 10+ minutes'",
+        "Section 3 (Daily Operations Phase 7): updated cron description from 'every 15 minutes for the duration of the run' to 'every 10 minutes for up to 90 minutes (or until DONE status)'",
+        "Section 12 (Escalation Paths): updated table header from 'If unresolved (30 min)' to 'If unresolved (10 min)' to match new stall threshold",
+        "Section 13 (Good Output Examples, Example B): updated watchdog alert message from '15 min' to '10 min'",
+        "Section 18 (Update Triggers): updated trigger description from 'currently 15 minutes' to 'currently 10 minutes, max 90-minute window'",
+        "SOP 9.1 step 11 preflight (soffice/python-pptx/poppler) already present - no change needed",
+        "SOP 9.2 watchdog script already correct (STALL_THRESHOLD_MINUTES=10, MAX_RUNTIME_MINUTES=90, */10 cron) - no change needed",
+        "Em-dash audit: 0 em dashes found - clean",
+        "KPI table already had correct values (10-minute polling window, smart paging) - no change needed"
+      ]
+    },
+    {
+      "file": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/capacity-reliability-engineer-sops.md",
+      "status": "VERIFIED - NO REGENERATION NEEDED",
+      "note": "Mirror covers Section 9 only. Section 9 (SOP 9.2) was already correct (10-min cron, 90-min cap, STALL_THRESHOLD=10). All changes applied in this pass were outside Section 9 (sections 1, 3, 12, 13, 18). Mirror remains a verbatim match of Section 9."
+    }
+  ],
+  "diu_twin": "n/a - ROLE-03 is Presentations-only, no ROLE-- or SOP-- DIU byte-identical twin exists",
+  "all_changes_applied": true,
+  "blockers": []
+}
