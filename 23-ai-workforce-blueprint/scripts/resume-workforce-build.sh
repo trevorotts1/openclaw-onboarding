@@ -560,7 +560,29 @@ elif (( comms_automation_dirty == 1 )); then
   comms_depts=$(jq -r '(.commsAutomationDepartments // []) | join(", ")' "$STATE_FILE")
   msg="[COMMS-AUTOMATION-RESUME] ${agent_name}: all departments + libraries are done, but the comms-automation handoff to Skill 38 is incomplete (commsAutomationStatus=${comms_automation_status}). This workforce built a comms/sales/support department (${comms_depts:-communications/sales/customer-support}) - per the Skill 23 -> Skill 38 cross-skill chain, you MUST scaffold the matching conversational automations. DO THIS: (1) read ~/.openclaw/skills/38-conversational-ai-system/SKILL.md + protocols/conversation-workflows-protocol.md; (2) set commsAutomationStatus=scaffolding; (3) build at MINIMUM the appointment-booking starter via THE TRINITY - communications playbook + its Build-with-AI prompt + a registry row in the client's conversation-workflows/ (plus a pricing/FAQ or lead-followup playbook matching the department that triggered this); (4) run ~/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh - it must PASS (every registered workflow has its playbook + prompt); (5) ONLY THEN set commsAutomationStatus=done + commsAutomationVerifiedAt in .workforce-build-state.json. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - this is internal; the owner hears from you via Skill 37 Step 6 only."
 elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_count == 0 )); then
-  msg="[CLOSEOUT-RESUME] ${agent_name}: workforce build is done (buildCompletedAt set) but closeout is incomplete (closeoutStatus=${closeout_status:-unset}). Read /data/.openclaw/skills/37-zhc-closeout/INSTRUCTIONS.md and invoke scripts/run-closeout.sh. The script is idempotent - it picks up from the first un-completed step. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the owner only hears from you when Skill 37 Step 6 fires."
+  # PRD-FINAL-PACKAGE Step 1 (v12.6.0): DETERMINISTIC in-process exec of run-closeout.sh.
+  # This is the PRIMARY path. The self-ping below is SECONDARY (fallback only).
+  # run-closeout.sh is idempotent -- a double-fire is safe.
+  _CLOSEOUT_SCRIPT=""
+  for _cand in \
+    "$OC_ROOT/skills/37-zhc-closeout/scripts/run-closeout.sh" \
+    "$HOME/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh" \
+    "/data/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh"; do
+    if [[ -f "$_cand" ]]; then
+      _CLOSEOUT_SCRIPT="$_cand"
+      break
+    fi
+  done
+  if [[ -n "$_CLOSEOUT_SCRIPT" ]]; then
+    log "HOP-4 (v12.6.0): in-process exec of run-closeout.sh (PRIMARY -- deterministic, no Telegram required)"
+    # Fire detached so this cron returns immediately; run-closeout.sh runs in background.
+    # nohup ensures it survives if the parent cron shell exits.
+    nohup bash "$_CLOSEOUT_SCRIPT" >> "$LOG_FILE" 2>&1 &
+    log "HOP-4: run-closeout.sh launched (pid=$!); self-ping follows as secondary nudge"
+  else
+    log "HOP-4: run-closeout.sh not found at any expected path -- falling back to self-ping only"
+  fi
+  msg="[CLOSEOUT-RESUME] ${agent_name}: workforce build is done (buildCompletedAt set) but closeout is incomplete (closeoutStatus=${closeout_status:-unset}). run-closeout.sh was launched in-process; this is a secondary nudge. If the closeout does not advance within 15 min, invoke scripts/run-closeout.sh manually. The script is idempotent - it picks up from the first un-completed step. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the owner only hears from you when Skill 37 Step 6 fires."
 else
   msg="[WORKFORCE-RESUME] ${agent_name}: continue the workforce build per the Post-Interview Handoff Protocol in Skill 23. Read .workforce-build-state.json. Pending: ${pending_list:-none}. Stale: ${stale_list:-none}. Closeout status: ${closeout_status:-unset}. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the resume is internal. When all departments are done, set closeoutStatus=pending and either invoke ~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh inline OR exit and let the next cron fire pick up the closeout."
 fi
@@ -569,7 +591,7 @@ log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_att
 if openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$msg" 2>>"$LOG_FILE"; then
   log "resume dispatch ok"
 else
-  log "resume dispatch FAILED - see errors above"
+  log "resume dispatch FAILED (non-fatal: in-process exec already fired above if closeout_dirty)"
 fi
 
 exit 0

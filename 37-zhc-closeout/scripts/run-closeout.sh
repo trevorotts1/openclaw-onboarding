@@ -507,12 +507,48 @@ generate_rate_gate() {
 # Defaults so referencing an unset step does not trip set -u.
 STEP_INF1_STATUS=skipped
 STEP_INF2_STATUS=skipped
+STEP_VISUAL_STATUS=skipped
 STEP_VIDEO_STATUS=skipped
 STEP_NOTION_STATUS=skipped
 STEP_TELEGRAM_STATUS=skipped
 GATE_INF1_RESULT=held
 GATE_INF2_RESULT=held
 GATE_NOTION_RESULT=held
+
+# ----------------------------------------------------------------------
+# STEP 2.0 -- Visual Intelligence Set (PRD step 3, v12.6.0)
+# Generates the full set of 3-30 images using generate-visual-intelligence.sh.
+# Writes .visualIntelligenceUrls (array) + .infographic1Url + .infographic2Url
+# (backward compat). If already populated (>= 3 URLs), skips.
+# This step REPLACES the old separate infographic-1 / infographic-2 steps as
+# the primary generation path. The individual steps 2 and 3 still run as
+# a fallback safety net for the specific QC-gated org-chart assertion.
+# ----------------------------------------------------------------------
+VISUAL_INTEL_SCRIPT="$SKILL_DIR/scripts/generate-visual-intelligence.sh"
+existing_vi_count=$(state_get '.visualIntelligenceUrls | length' 2>/dev/null || echo "0")
+[[ -z "$existing_vi_count" || "$existing_vi_count" == "null" ]] && existing_vi_count=0
+if [[ "$existing_vi_count" -ge 3 ]]; then
+  log "INFO" "step=2.0 visual-intelligence: already has $existing_vi_count images -- skipping"
+  STEP_VISUAL_STATUS=ok
+elif [[ -x "$VISUAL_INTEL_SCRIPT" || -f "$VISUAL_INTEL_SCRIPT" ]]; then
+  log "INFO" "step=2.0 visual-intelligence: generating image set"
+  if bash "$VISUAL_INTEL_SCRIPT" 2>>"$LOG_FILE"; then
+    STEP_VISUAL_STATUS=ok
+    log "INFO" "step=2.0 visual-intelligence: complete"
+  else
+    STEP_VISUAL_STATUS=failed
+    log "WARN" "step=2.0 visual-intelligence: failed (non-critical -- individual infographic steps will run as fallback)"
+  fi
+else
+  log "WARN" "step=2.0 visual-intelligence: generate-visual-intelligence.sh not found -- falling back to individual infographic steps"
+  STEP_VISUAL_STATUS=skipped
+fi
+
+# Write set-level deliverable to state
+if [[ "$STEP_VISUAL_STATUS" == "ok" ]]; then
+  vi_urls=$(state_get '.visualIntelligenceUrls')
+  state_set ".closeoutDeliverables.visualIntelligenceUrls = $vi_urls" 2>/dev/null || true
+fi
 
 # ----------------------------------------------------------------------
 # STEP 2 -- Infographic #1 (Workforce Structure)
@@ -713,6 +749,36 @@ if [[ "$STEP_TELEGRAM_STATUS" == "ok" ]]; then
     ".closeoutDeliverables.telegramSequenceSent = true | .closeoutDeliverables.ccUrlDelivered = $cc_delivered" || true
 fi
 
+# PRD-FINAL-PACKAGE (v12.6.0) STANDING RULE:
+# When a client's Command Center link exists, write that CC link into the
+# client's AGENTS.md + TOOLS.md so every agent knows the CC URL.
+_cc_url_for_write=$(state_get '.commandCenterUrl')
+if [[ -n "$_cc_url_for_write" && "$_cc_url_for_write" != "null" && "$_cc_url_for_write" =~ ^https?:// ]]; then
+  _agent_dir="${OC_ROOT}/agents/main"
+  if [[ -d "$_agent_dir" ]]; then
+    for _core_file in "$_agent_dir/AGENTS.md" "$_agent_dir/TOOLS.md"; do
+      if [[ -f "$_core_file" ]]; then
+        # Only write if CC URL is not already present in the file
+        if ! grep -qF "$_cc_url_for_write" "$_core_file" 2>/dev/null; then
+          _cc_block="
+## Command Center
+URL: $_cc_url_for_write
+This is the client's live Command Center dashboard. Use this URL when the owner asks
+for their dashboard link, when confirming closeout delivery, or when directing them
+to check task status. Written by run-closeout.sh at closeout time.
+"
+          printf '%s\n' "$_cc_block" >> "$_core_file"
+          log "INFO" "wrote commandCenterUrl to $_core_file (standing rule: CC link in AGENTS.md + TOOLS.md)"
+        else
+          log "INFO" "commandCenterUrl already in $_core_file -- skipping write"
+        fi
+      fi
+    done
+  else
+    log "WARN" "agent dir $_agent_dir not found -- cannot write CC URL to AGENTS.md / TOOLS.md"
+  fi
+fi
+
 # ----------------------------------------------------------------------
 # STEP 6.5 -- n8n wire-up (PRD-2.8, optional, non-blocking)
 # Notifies the client's n8n webhook that the ZHC build + closeout is complete.
@@ -737,6 +803,8 @@ soft_failed=()
 [[ "$STEP_VIDEO_STATUS"    == "failed" ]] && soft_failed+=("celebration-video")
 [[ "$STEP_NOTION_STATUS"   == "failed" ]] && soft_failed+=("notion")
 [[ "${STEP_N8N_STATUS:-skipped}" == "failed" ]] && soft_failed+=("n8n")
+# Visual intelligence set failure is soft -- the individual infographics serve as fallback
+[[ "$STEP_VISUAL_STATUS"   == "failed" ]] && soft_failed+=("visual-intelligence-set")
 
 if (( ${#critical_failed[@]} > 0 )); then
   reason="critical-failed: $(IFS=,; echo "${critical_failed[*]}")"

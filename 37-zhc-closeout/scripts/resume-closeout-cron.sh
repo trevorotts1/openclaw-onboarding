@@ -225,7 +225,28 @@ if (( attempts >= 3 )) && [[ $(( attempts % 3 )) -eq 0 ]]; then
   fi
 fi
 
-msg="[CLOSEOUT-RESUME] ${agent_name}: workforce closeout is incomplete after ${run_count} cron fire(s). closeoutStatus=${closeout_status:-unset}. Missing deliverable legs: ${incomplete_legs}. Invoke scripts/run-closeout.sh (idempotent -- picks up from first incomplete leg). Do NOT message the owner — they only hear from you when Step 6 Telegram delivery fires. Resume attempt ${attempts}."
+# PRD-FINAL-PACKAGE Step 1 (v12.6.0): DETERMINISTIC in-process exec of run-closeout.sh.
+# This is the PRIMARY path. The self-ping below is SECONDARY (fallback only).
+# run-closeout.sh is idempotent -- a double-fire is safe.
+_CLOSEOUT_SCRIPT=""
+for _cand in \
+  "$OC_ROOT/skills/37-zhc-closeout/scripts/run-closeout.sh" \
+  "$HOME/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh" \
+  "/data/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh"; do
+  if [[ -f "$_cand" ]]; then
+    _CLOSEOUT_SCRIPT="$_cand"
+    break
+  fi
+done
+if [[ -n "$_CLOSEOUT_SCRIPT" ]]; then
+  log "in-process exec of run-closeout.sh (PRIMARY -- deterministic, no Telegram required)"
+  nohup bash "$_CLOSEOUT_SCRIPT" >> "$LOG_FILE" 2>&1 &
+  log "run-closeout.sh launched (pid=$!); self-ping follows as secondary nudge"
+else
+  log "WARN: run-closeout.sh not found at any expected path -- falling back to self-ping only"
+fi
+
+msg="[CLOSEOUT-RESUME] ${agent_name}: workforce closeout is incomplete after ${run_count} cron fire(s). closeoutStatus=${closeout_status:-unset}. Missing deliverable legs: ${incomplete_legs}. run-closeout.sh was launched in-process as the primary path; this self-ping is a secondary nudge. Invoke scripts/run-closeout.sh manually if the closeout does not advance within 15 min. Do NOT message the owner -- they only hear from you when Step 6 Telegram delivery fires. Resume attempt ${attempts}."
 
 if [[ -z "$owner_chat" || "$owner_chat" == "null" ]]; then
   log "ownerChat not set -- sending resume to operator chat $operator_chat"
@@ -238,9 +259,9 @@ log "[CLOSEOUT-RESUME] run=$run_count attempt=$attempts missing=$incomplete_legs
 
 if command -v openclaw >/dev/null 2>&1; then
   openclaw message send --channel telegram --target "$target_chat" --message "$msg" \
-    >/dev/null 2>&1 || log "WARN: openclaw message send failed (gateway may be restarting)"
+    >/dev/null 2>&1 || log "WARN: openclaw message send failed (gateway may be restarting; in-process exec already fired)"
 else
-  log "WARN: openclaw CLI not found -- cannot dispatch self-ping"
+  log "WARN: openclaw CLI not found -- cannot dispatch self-ping (in-process exec fired above)"
 fi
 
 log "resume cron fire complete (run $run_count/$MAX_RUNS)"

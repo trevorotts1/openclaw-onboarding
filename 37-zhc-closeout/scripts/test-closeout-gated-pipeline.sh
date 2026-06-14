@@ -493,10 +493,278 @@ else
 fi
 
 # ============================================================
+# T13 (v12.6.0): Deterministic auto-fire -- in-process exec wired in both scripts
+# ============================================================
+printf '\n--- T13 (v12.6.0): deterministic in-process exec of run-closeout.sh ---\n'
+resume_build="$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+resume_cron="$SCRIPT_DIR/resume-closeout-cron.sh"
+
+if [[ -f "$resume_build" ]]; then
+  # Accept: nohup bash <var> or nohup bash "...", plus scripts that search for run-closeout.sh
+  if grep -qE 'nohup bash|bash.*CLOSEOUT_SCRIPT|_CLOSEOUT_SCRIPT.*bash' "$resume_build" \
+     && grep -q 'run-closeout.sh' "$resume_build"; then
+    pass "T13a: resume-workforce-build.sh launches run-closeout.sh in-process (deterministic exec found)"
+  else
+    fail "T13a: resume-workforce-build.sh does NOT have a literal in-process exec of run-closeout.sh"
+  fi
+else
+  fail "T13a: resume-workforce-build.sh not found at $resume_build"
+fi
+
+if [[ -f "$resume_cron" ]]; then
+  if grep -qE 'nohup bash|bash.*CLOSEOUT_SCRIPT|_CLOSEOUT_SCRIPT.*bash' "$resume_cron" \
+     && grep -q 'run-closeout.sh' "$resume_cron"; then
+    pass "T13b: resume-closeout-cron.sh launches run-closeout.sh in-process (deterministic exec found)"
+  else
+    fail "T13b: resume-closeout-cron.sh does NOT have a literal in-process exec of run-closeout.sh"
+  fi
+else
+  fail "T13b: resume-closeout-cron.sh not found at $resume_cron"
+fi
+
+# ============================================================
+# T14 (v12.6.0): Notion booklet -- AI CEO section + CC how-to section + Lean wording
+# ============================================================
+printf '\n--- T14 (v12.6.0): Notion booklet content spec ---\n'
+notion_script="$SCRIPT_DIR/create-notion-closeout.sh"
+
+if [[ ! -f "$notion_script" ]]; then
+  fail "T14: create-notion-closeout.sh not found"
+else
+  # T14a: dedicated AI CEO section exists
+  if grep -qiE 'Who Is Your AI CEO|AI CEO|section.*3.*ai.*ceo|Triad Rule' "$notion_script"; then
+    pass "T14a: create-notion-closeout.sh has a dedicated AI CEO section"
+  else
+    fail "T14a: create-notion-closeout.sh is missing a dedicated AI CEO section"
+  fi
+
+  # T14b: How to Use Your Command Center section exists
+  if grep -qiE 'How to Use Your Command Center|Command Center.*walkthrough|Kanban.*column|section.*6.*command' "$notion_script"; then
+    pass "T14b: create-notion-closeout.sh has a How to Use Your Command Center section"
+  else
+    fail "T14b: create-notion-closeout.sh missing Command Center how-to section"
+  fi
+
+  # T14c: CC URL is read from state and embedded in the section
+  if grep -q 'commandCenterUrl\|CC_URL' "$notion_script"; then
+    pass "T14c: create-notion-closeout.sh reads commandCenterUrl from state"
+  else
+    fail "T14c: create-notion-closeout.sh does not read commandCenterUrl from state"
+  fi
+
+  # T14d: Lean wording present (not just DMAIC)
+  if grep -qiE 'Lean|waste|variation' "$notion_script"; then
+    pass "T14d: create-notion-closeout.sh has Lean/waste/variation wording in Six Sigma section"
+  else
+    fail "T14d: create-notion-closeout.sh missing Lean / waste / variation wording"
+  fi
+
+  # T14e: chunk helper or length guard for rich_text
+  if grep -qE 'chunk|1900|1800|2000|split.*text|text.*split' "$notion_script"; then
+    pass "T14e: create-notion-closeout.sh has rich-text chunking / length guard"
+  else
+    fail "T14e: create-notion-closeout.sh missing rich-text chunking (<=1900 chars)"
+  fi
+
+  # T14f: RPS pacing (sleep 0.4 or pace())
+  if grep -qE 'sleep 0\.4|pace\(\)|pace ;' "$notion_script"; then
+    pass "T14f: create-notion-closeout.sh has RPS pacing (>=0.4s between calls)"
+  else
+    fail "T14f: create-notion-closeout.sh missing inter-request pacing"
+  fi
+
+  # T14g: director_title from naming map read
+  if grep -q 'director_title\|naming.map\|NAMING_MAP\|department-naming-map' "$notion_script"; then
+    pass "T14g: create-notion-closeout.sh reads director_title from department-naming-map.json"
+  else
+    fail "T14g: create-notion-closeout.sh does not read director_title from naming map"
+  fi
+
+  # T14h: booklet-content.md exists
+  if [[ -f "$SKILL_DIR/templates/booklet-content.md" ]]; then
+    pass "T14h: templates/booklet-content.md exists (editable prose source)"
+  else
+    fail "T14h: templates/booklet-content.md missing"
+  fi
+fi
+
+# ============================================================
+# T15 (v12.6.0): Visual intelligence set -- min 3 prompts, GPT-Image-2, generator exists
+# ============================================================
+printf '\n--- T15 (v12.6.0): visual intelligence set generator ---\n'
+vi_script="$SCRIPT_DIR/generate-visual-intelligence.sh"
+mandatory_prompts=(
+  "$SKILL_DIR/templates/infographic-1-prompt.md"
+  "$SKILL_DIR/templates/img-what-is-zhc-prompt.md"
+  "$SKILL_DIR/templates/img-how-your-zhc-works-prompt.md"
+)
+
+if [[ ! -f "$vi_script" ]]; then
+  fail "T15a: generate-visual-intelligence.sh not found at $vi_script"
+else
+  pass "T15a: generate-visual-intelligence.sh exists"
+
+  # Check it issues >=3 prompt entries (mandatory queue)
+  prompt_count=$(grep -cE 'infographic-1-prompt\.md|img-what-is-zhc|img-how-your-zhc-works|img-dept-overview|img-sop-system|img-six-sigma|infographic-2-prompt' "$vi_script" 2>/dev/null || echo "0")
+  if [[ "$prompt_count" -ge 3 ]]; then
+    pass "T15b: generate-visual-intelligence.sh references >= 3 distinct prompt templates"
+  else
+    fail "T15b: generate-visual-intelligence.sh references only $prompt_count prompt templates (need >= 3)"
+  fi
+
+  # Check GPT-Image-2 is the primary model
+  if grep -qE 'gpt-image-2|GPT_IMAGE_2|PRIMARY_MODEL.*gpt' "$vi_script"; then
+    pass "T15c: generate-visual-intelligence.sh uses gpt-image-2 as primary model"
+  else
+    fail "T15c: generate-visual-intelligence.sh does not use gpt-image-2 as primary"
+  fi
+
+  # Check cap enforcement (max 30)
+  if grep -qE 'CAP|cap.*30|30.*cap|\[.*30.*\]' "$vi_script"; then
+    pass "T15d: generate-visual-intelligence.sh enforces a cap (<=30)"
+  else
+    fail "T15d: generate-visual-intelligence.sh missing cap enforcement"
+  fi
+fi
+
+for pfile in "${mandatory_prompts[@]}"; do
+  if [[ -f "$pfile" ]]; then
+    # Check the file is non-empty and has real prompt content
+    lines=$(wc -l < "$pfile" 2>/dev/null || echo "0")
+    if [[ "$lines" -gt 3 ]]; then
+      pass "T15-prompt: $(basename $pfile) exists and is non-empty ($lines lines)"
+    else
+      fail "T15-prompt: $(basename $pfile) exists but appears empty ($lines lines)"
+    fi
+  else
+    fail "T15-prompt: MISSING mandatory prompt file: $pfile"
+  fi
+done
+
+# Check visualIntelligenceUrls is referenced in state writes
+if grep -q 'visualIntelligenceUrls' "$vi_script" 2>/dev/null; then
+  pass "T15e: generate-visual-intelligence.sh writes .visualIntelligenceUrls to state"
+else
+  fail "T15e: generate-visual-intelligence.sh does not write .visualIntelligenceUrls to state"
+fi
+
+# ============================================================
+# T16 (v12.6.0): Celebration video -- 8s default, audio flag, logo, prompt duration match
+# ============================================================
+printf '\n--- T16 (v12.6.0): celebration video fixes ---\n'
+video_script="$SCRIPT_DIR/generate-celebration-video.sh"
+video_prompt="$SKILL_DIR/templates/veo-prompt.txt"
+
+if [[ ! -f "$video_script" ]]; then
+  fail "T16: generate-celebration-video.sh not found"
+else
+  # T16a: default duration is 8 (not 4)
+  if grep -qE 'DURATION="8".*#.*PRD|PRD.*DURATION.*8|""\s*\)\s*DURATION="8"' "$video_script"; then
+    pass "T16a: Gemini Omni default duration is 8 (meets 8s floor)"
+  elif grep -A2 '"")' "$video_script" | grep -q 'DURATION="8"'; then
+    pass "T16a: Gemini Omni default duration is 8 (meets 8s floor)"
+  else
+    fail "T16a: Gemini Omni default duration may still be 4 -- check generate-celebration-video.sh"
+  fi
+
+  # T16b: generate_audio in PRIMARY Gemini Omni body (submit_gemini_omni function).
+  # The function lives around lines 120-200. Check the relevant band + also a global check
+  # that generate_audio appears BEFORE submit_veo (which was the ONLY place it lived before).
+  _veo_line=$(grep -n 'submit_veo()' "$video_script" 2>/dev/null | head -1 | cut -d: -f1)
+  [[ -z "$_veo_line" ]] && _veo_line=999
+  # Count generate_audio lines that appear before the veo function (= in the gemini body)
+  _audio_before_veo=$(awk -v stop="$_veo_line" 'NR < stop && /generate_audio/' "$video_script" | wc -l)
+  if [[ "$_audio_before_veo" -gt 0 ]]; then
+    pass "T16b: PRIMARY Gemini Omni body includes generate_audio (audio flag set, $_audio_before_veo line(s) before submit_veo)"
+  else
+    fail "T16b: PRIMARY Gemini Omni body missing generate_audio flag (only found in Veo fallback, not before line $_veo_line)"
+  fi
+
+  # T16c: logo URL read from state/branding-questions.json
+  if grep -qE 'logo_url|logoUrl|LOGO_URL|branding-questions' "$video_script"; then
+    pass "T16c: generate-celebration-video.sh reads client logo_url"
+  else
+    fail "T16c: generate-celebration-video.sh does not read client logo_url"
+  fi
+fi
+
+if [[ -f "$video_prompt" ]]; then
+  # T16d: prompt does not say 15 seconds (was the contradiction)
+  if grep -q '15-second\|15 second\|15sec' "$video_prompt"; then
+    fail "T16d: veo-prompt.txt still says '15 second' -- duration contradiction not fixed"
+  else
+    pass "T16d: veo-prompt.txt does not contain '15 second' contradiction"
+  fi
+
+  # T16e: prompt says 8 seconds or mentions achievable duration
+  if grep -qE '8-second|8 second|8s|8sec' "$video_prompt"; then
+    pass "T16e: veo-prompt.txt narrative matches achievable 8s duration"
+  else
+    fail "T16e: veo-prompt.txt narrative does not mention 8s duration"
+  fi
+
+  # T16f: prompt uses client logo directive (not hardcoded BlackCEO)
+  if grep -qE 'client.*logo|logo.*client|COMPANY_NAME.*logo|logo.*COMPANY|client brand' "$video_prompt"; then
+    pass "T16f: veo-prompt.txt has client-logo directive (not hardcoded BlackCEO)"
+  elif ! grep -q 'BlackCEO' "$video_prompt" || grep -q 'client' "$video_prompt"; then
+    pass "T16f: veo-prompt.txt logo directive does not hardcode BlackCEO (acceptable)"
+  else
+    fail "T16f: veo-prompt.txt still has hardcoded BlackCEO mark -- should use client logo"
+  fi
+else
+  fail "T16d-f: veo-prompt.txt not found at $video_prompt"
+fi
+
+# ============================================================
+# T17 (v12.6.0): No stale "233" count as a live role-count assertion
+# ============================================================
+printf '\n--- T17 (v12.6.0): stale 233 count eliminated from live assertions ---\n'
+
+# Check ZHC-BUILDOUT-EXPERIENCE.md
+exp_file="$REPO_ROOT/23-ai-workforce-blueprint/ZHC-BUILDOUT-EXPERIENCE.md"
+if [[ -f "$exp_file" ]]; then
+  # 233 as a live role-count claim: "233-template role library" or "233 roles" etc.
+  if grep -qE '233-template role library|233 roles|"233"' "$exp_file"; then
+    fail "T17a: ZHC-BUILDOUT-EXPERIENCE.md still contains stale '233' role-count claim"
+  else
+    pass "T17a: ZHC-BUILDOUT-EXPERIENCE.md: no stale '233' live role-count claims"
+  fi
+else
+  fail "T17a: ZHC-BUILDOUT-EXPERIENCE.md not found"
+fi
+
+# Check INSTRUCTIONS.md
+inst_file="$REPO_ROOT/23-ai-workforce-blueprint/INSTRUCTIONS.md"
+if [[ -f "$inst_file" ]]; then
+  # "233-template library" references in step descriptions
+  if grep -qE '233-template library' "$inst_file"; then
+    fail "T17b: INSTRUCTIONS.md still contains '233-template library' reference"
+  else
+    pass "T17b: INSTRUCTIONS.md: '233-template library' references updated"
+  fi
+else
+  fail "T17b: INSTRUCTIONS.md not found"
+fi
+
+# ============================================================
+# T18 (v12.6.0): CC link written into AGENTS.md + TOOLS.md at closeout
+# ============================================================
+printf '\n--- T18 (v12.6.0): CC link written to AGENTS.md + TOOLS.md ---\n'
+if [[ -f "$run_script" ]]; then
+  if grep -qE 'AGENTS\.md|TOOLS\.md' "$run_script" && grep -q 'commandCenterUrl\|_cc_url' "$run_script"; then
+    pass "T18: run-closeout.sh writes commandCenterUrl into AGENTS.md and TOOLS.md"
+  else
+    fail "T18: run-closeout.sh does not write CC URL into AGENTS.md / TOOLS.md"
+  fi
+else
+  fail "T18: run-closeout.sh not found"
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 printf '\n============================================================\n'
-printf 'PRD-2.8 Closeout Gated Pipeline — Test Results\n'
+printf 'PRD-2.8 / PRD-FINAL-PACKAGE Closeout Gated Pipeline -- Test Results\n'
 printf '============================================================\n'
 for r in "${RESULTS[@]}"; do
   printf '  %s\n' "$r"

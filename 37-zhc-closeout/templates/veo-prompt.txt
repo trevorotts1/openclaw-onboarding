@@ -1,28 +1,30 @@
-A short 15-second cinematic celebration clip for a {{INDUSTRY}} business called "{{COMPANY_NAME}}", marking the launch of their zero-human AI workforce.
+An 8-second cinematic celebration clip for a {{INDUSTRY}} business called "{{COMPANY_NAME}}", marking the launch of their zero-human AI workforce.
 
 VISUAL TREATMENT:
 - Premium corporate aesthetic. Think Apple keynote meets Bloomberg ad spot.
-- Smooth, deliberate camera moves — slow pans, subtle dolly-ins, no jump cuts or chaos.
+- Smooth, deliberate camera moves -- slow pans, subtle dolly-ins, no jump cuts or chaos.
 - Light-on-dark color grade: deep blacks, warm gold highlights, no neon.
-- 9:16 vertical aspect ratio (formatted for Telegram delivery).
+- 16:9 horizontal aspect ratio (formatted for web and Telegram preview).
 
-NARRATIVE ARC (15 seconds):
+LOGO TREATMENT:
+- If a client logo is provided in the image references, composite it prominently in the closing frame -- centered and clean on a dark background. Do NOT use a hardcoded "BlackCEO" mark. The logo belongs to the client, {{COMPANY_NAME}}.
+- If no logo is provided, end on the company name "{{COMPANY_NAME}}" in clean premium sans-serif type.
 
-00:00 - 00:03 — Open on a quiet, elegant interior workspace at dawn. Soft golden light through a window. The mood is calm, purposeful, victorious.
+NARRATIVE ARC (8 seconds, tight and impactful):
 
-00:03 - 00:07 — A subtle particle/light-trail animation forms the words "{{COMPANY_NAME}}" in clean, premium sans-serif type. The particles suggest intelligence — neural-network-like nodes briefly visible behind the type, then dissolving.
+00:00 - 00:02 -- Open on a quiet, elegant interior workspace at dawn. Soft golden light through a window. The mood is calm, purposeful, victorious.
 
-00:07 - 00:11 — Cut to abstract visualization of a workforce coming online: glowing departmental nodes lighting up one by one in a soft tree/hierarchy formation. No human figures — just elegant data-art that suggests organized capability.
+00:02 - 00:05 -- Abstract visualization of a workforce coming online: glowing departmental nodes lighting up one by one in a soft tree/hierarchy formation. No human figures -- just elegant data-art that suggests organized capability. Behind it, a subtle neural-network-like particle field dissolves.
 
-00:11 - 00:14 — Type fades in below the visualization: "Your zero-human workforce. Built for {{OWNER_NAME}}."
+00:05 - 00:07 -- Text fades in: "Your zero-human workforce. Built for {{OWNER_NAME}}."
 
-00:14 - 00:15 — Final hold: small "BlackCEO" mark fades in bottom-center, then a gentle fade-out to black.
+00:07 - 00:08 -- Final hold: {{COMPANY_NAME}} logo or name fades in centered on dark background, then a gentle fade-out to black.
 
 AUDIO:
-- Triumphant but restrained orchestral score — think Hans Zimmer in a quiet moment, not the climax.
+- Triumphant but restrained orchestral score -- think Hans Zimmer in a quiet moment, not the climax.
+- One subtle "whoosh" at the 00:02 transition for emphasis.
 - No voiceover.
-- One subtle "whoosh" at the 00:07 transition for emphasis.
 
 AVOID: stock-footage office scenes, cartoonish robots, AI-tropes (binary code rain, robot eyes), generic upbeat music, jump cuts, anything that looks like a cheap web banner.
 
-TARGET: makes {{OWNER_NAME}} feel they just got something premium and serious, not gimmicky.
+TARGET: makes {{OWNER_NAME}} feel they just received something premium and serious, not gimmicky.

@@ -1,3 +1,53 @@
+## [v12.6.0] - 2026-06-14 - feat: ZHC Final Package overhaul -- deterministic auto-fire, full booklet, visual-intelligence set, video fixes, real counts (Skill 37)
+
+### Changes
+
+**PRD-FINAL-PACKAGE.md v12.6.0 -- complete end-to-end overhaul of the ZHC closeout final package delivery.**
+
+**Step 1 -- Deterministic Skill 23 -> Skill 37 handoff:**
+- `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh`: on HOP-4 transition (closeout_dirty, no pending/stale), directly launches `run-closeout.sh` via `nohup bash ... &` as PRIMARY path. Self-ping retained as SECONDARY fallback only.
+- `37-zhc-closeout/scripts/resume-closeout-cron.sh`: same pattern -- every cron fire does in-process exec first, then self-ping. Closeout runs even if the gateway has Telegram-offset corruption.
+
+**Step 2 -- Notion booklet rebuilt to full spec (create-notion-closeout.sh):**
+- New dedicated Section 3: "Who Is Your AI CEO?" -- names the agent, explains the Triad Rule, how to talk to the CEO.
+- New Section 6: "How to Use Your Command Center" -- full walkthrough (Kanban columns, task creation, sidebar, 3-check rhythm, talking to dept heads). Reads `commandCenterUrl` from state and displays it prominently.
+- Section 5 (Departments and Roles) now reads `director_title` + `one_liner` from `department-naming-map.json` (keyed by slug). Each dept sub-page prints: director name + focal point + roles list (with descriptions if in state) + SOP count (with sample list up to 10 if in state).
+- Section 8 (formerly 7) upgraded to "Lean Six Sigma in Your ZHC" -- explicit Lean waste-removal framing (idle time, rework, dropped handoffs) + Six Sigma variation-reduction framing + DMAIC + Friday review.
+- `chunk_paragraphs()` helper: splits any text at <=1900 chars at whitespace boundaries before POST. 429 Retry-After honored.
+- Proactive RPS pacing: `pace()` function calls `sleep 0.4` after every notion page create call.
+- Prose extracted to `templates/booklet-content.md` (editable; not locked in shell heredocs).
+- 10 sections total (was 9).
+
+**Step 3 -- Visual intelligence set generator (generate-visual-intelligence.sh, NEW):**
+- Generates min 3, up to 30 images (default cap 10), each from its own written prompt template.
+- Primary model: `gpt-image-2-text-to-image` (per PRD fork decision). Fallback: `nano-banana-2`.
+- Mandatory 3: org-flowchart + "What Is a ZHC" + "How Your ZHC Works". Additional: dept-overview, sop-system, six-sigma, workflow-infographic.
+- New prompt files: templates/img-what-is-zhc-prompt.md, templates/img-how-your-zhc-works-prompt.md, templates/img-dept-overview-prompt.md, templates/img-sop-system-prompt.md, templates/img-six-sigma-prompt.md.
+- `infographic-1-prompt.md` wired in as the org-flowchart entry (was dead code before).
+- Writes `.visualIntelligenceUrls` (array) + `.infographic1Url` / `.infographic2Url` (backward compat).
+- Wired into `run-closeout.sh` as Step 2.0 (runs before the individual infographic QC steps).
+
+**Step 4 -- Celebration video fixes (generate-celebration-video.sh):**
+- Duration default: changed from "4" to "8" for Gemini Omni primary (8s floor met without env override).
+- Audio: `generate_audio: true` added to PRIMARY Gemini Omni submit body (was absent; only Veo fallback had it).
+- Logo: reads `logo_url`/`logoUrl` from build state + branding-questions.json. Composites client logo (NOT hardcoded BlackCEO mark) into Gemini `image_urls` alongside org chart.
+- Prompt (veo-prompt.txt): narrative rewritten for 8s (was 15s -- unachievable contradiction fixed). Logo directive now references client brand.
+
+**Step 5 -- Kill stale "233" count:**
+- `23-ai-workforce-blueprint/ZHC-BUILDOUT-EXPERIENCE.md:59`: "233-template role library" -> "335-role library (335 roles / 23 departments as of v12.6.0)".
+- `23-ai-workforce-blueprint/INSTRUCTIONS.md:513,528`: both "233-template library" references updated to "335-role library".
+
+**Standing rule -- CC link into AGENTS.md + TOOLS.md:**
+- `run-closeout.sh`: after Telegram delivery, writes the `commandCenterUrl` into `OC_ROOT/agents/main/AGENTS.md` and `TOOLS.md` if not already present. Every agent knows the CC URL from closeout time forward.
+
+**Docs + release:**
+- `37-zhc-closeout/README.md`: new file documenting the full final package (CC link, Notion 10 sections, visual-intelligence set, video specs, auto-fire mechanism, real counts).
+- `37-zhc-closeout/templates/booklet-content.md`: new content source-of-truth file.
+- VERSION: v12.5.1 -> v12.6.0.
+- Acceptance tests T13-T18 added to test-closeout-gated-pipeline.sh; all 46 tests PASS.
+
+---
+
 ## [v12.5.1] - 2026-06-14 - fix: genericize all client-specific content in presentation SOPs (PR #224)
 
 Audit of all 24 presentation SOP and role files merged in v12.5.0 (PR #223). Removed every client-specific token baked into rules, examples, gates, and QC criteria (client names, brand colors, offer names, specific prices, niche imagery) so the SOPs serve the whole clientele. All doctrine, QC gates, and rules preserved intact. 17 files changed. See PR #224 for full contamination hit list.

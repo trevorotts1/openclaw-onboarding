@@ -510,7 +510,7 @@ For each department in the final set, ask whether the owner wants any EXTRA spec
 
 #### Step 3.8  -  Per-dept custom SOPs (Capability 4)
 
-For each department, ask whether the owner has a SPECIFIC procedure they run that the team must follow (e.g. *"our refund flow"*, *"our cohort onboarding"*). Record them under `canonicalReconciliation.customSops[<dept_id>]` as strings or `{ "title", "procedure" }` objects. The build captures them (`capture_custom_sops()`) respecting the SOP boundary gate: a CANONICAL department writes the procedure as a supplemental `owner-procedures.md` overlay the copied 233-template SOPs reference (LLM authoring stays refused); a CUSTOM department uses the procedure as the GROUND TRUTH its LLM-authored SOP is built from. Capture the owner's actual procedure - never generic flavor.
+For each department, ask whether the owner has a SPECIFIC procedure they run that the team must follow (e.g. *"our refund flow"*, *"our cohort onboarding"*). Record them under `canonicalReconciliation.customSops[<dept_id>]` as strings or `{ "title", "procedure" }` objects. The build captures them (`capture_custom_sops()`) respecting the SOP boundary gate: a CANONICAL department writes the procedure as a supplemental `owner-procedures.md` overlay the copied 335-role library SOPs reference (LLM authoring stays refused); a CUSTOM department uses the procedure as the GROUND TRUTH its LLM-authored SOP is built from. Capture the owner's actual procedure - never generic flavor.
 
 #### Step 4  -  Hard rules
 
@@ -525,7 +525,7 @@ The canonical list message in Step 2 will be long. Send it as ONE message anyway
 
 #### Step 6  -  Custom role/SOP capture + core-merge (pointer)
 
-Canonical and floor departments resolve their roles/SOPs by COPY + token-personalize from the 233-template library (never LLM-authored). For anything the library does NOT cover  -  a custom department, or a custom role/SOP the owner needs inside ANY department (including a core one)  -  capture it per department, author it to standard, and LAYER any semantically overlapping custom content INTO the one core department instead of shipping a duplicate. See `23-ai-workforce-blueprint/CUSTOM-AUTHORING-AND-MERGE-STANDARD.md` for the binding trigger / capture / authoring / core-merge / closeout-gate rules.
+Canonical and floor departments resolve their roles/SOPs by COPY + token-personalize from the 335-role library (never LLM-authored; 335 roles / 23 departments as of v12.6.0). For anything the library does NOT cover  -  a custom department, or a custom role/SOP the owner needs inside ANY department (including a core one)  -  capture it per department, author it to standard, and LAYER any semantically overlapping custom content INTO the one core department instead of shipping a duplicate. See `23-ai-workforce-blueprint/CUSTOM-AUTHORING-AND-MERGE-STANDARD.md` for the binding trigger / capture / authoring / core-merge / closeout-gate rules.
 
 ---
 
