@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v12.5.0.
+> **Version:** see `/version` - this repo at v12.6.0.
 >
 > **NOTE (v12.5.0) - feat: Presentation SOP overhaul - 4 new specialist roles, QC expansion, hook cadence, re-pitch choreography, and Design Intelligence Library scope boundary (Skills 23 + 45).** Comprehensive presentation standard upgrade across 14 role/SOP files, the master CLIENT-WEBINAR-DECK-SOP, and Skill 45 DIU. Key changes: ROLE-18 Typography Architect (per-slide type-layout system, hard gate before Slide Image Creator); ROLE-19 Presenters Guide Specialist; ROLE-20 Presenters Speech Writer (TARGET_WPM=140 constant, duration assert); ROLE-21 Audio Demonstration + Fish Audio Expression Specialist (S2-Pro -> ElevenLabs -> Whisper-STT-verify chain). Hook cadence recut from floor-only to a BANDED model (3-4 dedicated A4 hook slides, ceiling ~1 per 6 slides, never 2 consecutive). RE-PITCH block added (4-7 slides after FINAL price). On-slide FORBIDDEN list (narrator copy, AI meta-commentary, scene descriptions, telegraphing kickers, the word "webinar"). New QC criteria c23 (re-pitch required), c24 (close density >= 8 slides on 45+ deck). AF-C7 through AF-C9 and AF-F6 through AF-F9 added. Skill 45 DIU: signature-style friendly aliases (Sig #), style-branch Step 0, image-to-JSON Kie.ai mode documented, SCOPE boundary (webinar decks belong to Presentations dept). _index.json: presentations dept 17 -> 21 roles, total_roles updated to 355. See [CHANGELOG.md](CHANGELOG.md).
 > Every release MUST agree across the version-tracked files; run `./scripts/bump-version.sh vX.Y.Z` to update them atomically. Drift is caught in CI (`.github/workflows/version-consistency.yml`).
@@ -20,7 +20,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v12.5.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v12.6.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
