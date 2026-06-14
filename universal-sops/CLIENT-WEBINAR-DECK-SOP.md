@@ -28,7 +28,7 @@ PHASE 6  PPTX assembly, final deck QC, speaker notes, delivery
 - Media library folders (local + GHL) are created FIRST, before anything else.
 - Words before prompts. Prompts before generation. Prompt QC gates generation. Image QC gates assembly. The OWNER approves the slide copy before a single prompt is written.
 - Image platform and model: **Kie.ai running the GPT Image 2 family only**, pinned in the MODEL MANIFEST (9.0) and declared to the operator at echo time. No other image model in any situation unless the OPERATOR explicitly authorizes it in writing. A model outage means PAUSE and escalate, never substitute.
-- Rate cap: never more than **20 image requests per 10 seconds (2 RPS)**. This is a REQUEST-rate cap, not a token cap.
+- Rate cap: never more than **20 new generation requests per 10 seconds** per account. This is a REQUEST-rate cap, not a token cap. (source: https://docs.kie.ai/ Section 8 "Rate Limits & Concurrency", verified 2026-06-14)
 - One big idea per slide. Slides must be legible from the back of the room.
 - Client brand colors on a **WHITE BASE**. No dark-styled images ever unless the client explicitly asks (`DARK_OK = true`).
 - 16:9 always. 2K quality unless the client indicates otherwise.
@@ -720,9 +720,10 @@ At the ECHO (Section 3.3), the agent declares the model manifest for the run and
 - **Text-to-image (`gpt-image-2-text-to-image`)** only when there are no reference images at all (`LOGO_ON_SLIDES = false` and no portrait), with no `input_urls` field in the body.
 
 ### 9.2 Rate cap
-- **Never more than 20 requests per 10 seconds (2 RPS).** REQUEST rate, not tokens.
-- Proven safe pattern: waves of 20 submissions, then sleep 15 seconds, repeat. Retries count against the cap.
-- Pipelined: submit wave N+1 as soon as the 15-second window clears; do not wait on wave N's render results.
+- **Never more than 20 new generation requests per 10 seconds.** REQUEST rate, not tokens. The cap is per ACCOUNT (it covers every generation endpoint, not just images), allows 100+ concurrent running tasks, and excess returns HTTP 429 (the request is rejected, not queued). (source: https://docs.kie.ai/ Section 8 "Rate Limits & Concurrency", verified 2026-06-14)
+- Proven safe pattern: submit in waves of 20, then sleep 10 seconds (the documented window) before the next wave, repeat. Retries count against the cap, so a wave that issued retries must let the full 10-second window clear before the next wave.
+- Pipelined: submit wave N+1 as soon as the 10-second window clears; do not wait on wave N's render results.
+- Math: a wave of 20 submissions followed by a 10-second window holds the average at or below 20 requests / 10 seconds, exactly the documented cap. If 429s appear, widen the inter-wave sleep (the 9.x failure path moves it to 30s, then 60s).
 
 ### 9.3 Submit (async createTask)
 - `POST https://api.kie.ai/api/v1/jobs/createTask`
@@ -765,7 +766,7 @@ CKPT = pathlib.Path("working/checkpoints")
 def submit_all(prompts: dict, logo_url: str):
     tasks = json.loads((CKPT/"kie_task_ids.json").read_text()) if (CKPT/"kie_task_ids.json").exists() else {}
     pending = [(s, p) for s, p in sorted(prompts.items()) if s not in tasks]
-    for i in range(0, len(pending), 20):              # waves of 20
+    for i in range(0, len(pending), 20):              # waves of 20 (cap: 20 req / 10s, docs.kie.ai Sec 8, verified 2026-06-14)
         for slide, prompt in pending[i:i+20]:
             body = {"model": "gpt-image-2-image-to-image",
                     "input": {"prompt": prompt, "input_urls": [logo_url],
@@ -777,7 +778,7 @@ def submit_all(prompts: dict, logo_url: str):
                     (CKPT/"kie_task_ids.json").write_text(json.dumps(tasks, indent=2))
                     break
                 time.sleep(2)
-        time.sleep(15)                                # rate-cap margin
+        time.sleep(10)                                # rate-cap window: 20 req / 10s (docs.kie.ai Sec 8)
     return tasks
 
 def poll_all(tasks: dict, out_dir="working/renders"):
@@ -1000,7 +1001,7 @@ PHASE 4 - GENERATION
          any version/model change happens ONLY here, in writing)
 [ ] 4.1  Correct variant used per manifest: gpt-image-2-image-to-image with input_urls (logo, + founder
          portrait on A5, max 16 refs) or gpt-image-2-text-to-image when no references. NOTHING else
-[ ] 4.2  Rate cap honored: waves of 20, 15s sleeps, retries counted, single submission agent
+[ ] 4.2  Rate cap honored: waves of 20, 10s sleeps (the 20-req/10s window), retries counted, single submission agent
 [ ] 4.3  Task IDs checkpointed after EACH success; submission pipelined with polling
 [ ] 4.4  Polling: 5-min initial wait, then every 1 minute, HARD CAP 100 polls, then escalate
 [ ] 4.5  resultJson parsed as resultUrls ARRAY; renders downloaded in parallel; fails logged with
@@ -1039,7 +1040,7 @@ PHASE 7 - RESILIENCE
 3. **Generating before prompt QC.** Burned generations on flawed prompts cost real money. The gate is absolute.
 4. **One global style prompt for all slides.** Produces generic mismatched slides. One full prompt per slide; the style block lives inside each.
 5. **Skipping Step 0.** Without the landing zones, passed images scatter and get lost.
-6. **Blowing the rate cap.** Waves of 20, 15-second sleeps, one submission agent. RPS, not TPS.
+6. **Blowing the rate cap.** Waves of 20, 10-second sleeps (the documented 20-req/10s window), one submission agent. Request rate, not token rate.
 7. **Switching image models on error.** Retry or escalate, never substitute. Operator authorization only.
 8. **Skipping the owner approval gate.** Writing prompts against unapproved copy means rewriting prompts when the owner changes a word. Copy is approved FIRST, verbatim into prompts SECOND.
 9. **Paraphrased headlines.** Image models render what you give them. Verbatim or auto-fail.
@@ -1082,6 +1083,8 @@ PHASE 7 - RESILIENCE
 
 ## APPENDIX A: KIE.AI GPT IMAGE 2 API QUICK REFERENCE (authoritative for Phase 4)
 
+> **Source of every hard constant below:** the live Kie.ai documentation at https://docs.kie.ai/ (endpoints + the GPT Image 2 reference) and Section 8 "Rate Limits & Concurrency". Verified 2026-06-14. Each external constant in this appendix (model ids, character ceiling, reference-image count, rate cap, task states) is sourced from those docs, NOT estimated. Re-verify against the live docs on every MODEL MANIFEST version bump and update the verification date.
+
 | Item | Value |
 |---|---|
 | Platform | Kie.ai (the pinned image platform for this SOP) |
@@ -1101,4 +1104,4 @@ PHASE 7 - RESILIENCE
 | Optional | `callBackUrl` webhook on createTask (this SOP polls instead) |
 | Cost benchmark | ~3 cents per image at 2K |
 
-Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Section 9. If this appendix ever conflicts with live Kie.ai documentation, verify against the live docs, update the MODEL MANIFEST and this appendix with operator sign-off, and log the change.
+Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Section 9. Every hard external constant here is sourced from the live docs (https://docs.kie.ai/, verified 2026-06-14, see the source note under the appendix heading). On the NEXT MODEL MANIFEST version bump, re-fetch the live docs, re-confirm each constant, and update the verification date; if a constant has changed, update the MODEL MANIFEST and this appendix with operator sign-off, refresh the citation, and log the change. Do NOT carry a bare "verify later" note on an un-cited number; that pattern is an AF-SRC auto-fail (see the presentations QC specialist and the Quality Control procedure auditor).
