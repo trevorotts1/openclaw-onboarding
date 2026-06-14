@@ -103,31 +103,31 @@
 
 **ZHC SOP.** Routing arbiter for ambiguous webinar/audience deck vs. DIU pipeline decisions.
 **Library-version pin:** CLIENT-WEBINAR-DECK-SOP v2.3, SOP-DIU-611 v1.1, powerpoint-designs/_RULES.md v1.0 (§-refs verified 2026-06-13).
-**When to run:** Any time a deck brief is ambiguous between the DIU pipeline and the Presentations pipeline.
+**When to run:** Any time a deck brief is ambiguous between the DIU pipeline and the Presentations pipeline. Also run when the Deck Systems Specialist escalates a routing dispute or when the Director of Presentations disputes a DIU routing decision.
 **Frequency:** On-demand; every ambiguous deck escalation must route through this SOP before any generation begins.
-**Inputs:** Deck brief from the Deck Systems Specialist (or escalation notice), the brief's stated purpose/audience/context.
+**Inputs:** Deck brief from the Deck Systems Specialist (or escalation notice), the brief's stated purpose/audience/context, the current CLIENT-WEBINAR-DECK-SOP archetype list.
 
-**ROUTING ARBITER DECISION TABLE:**
+**ROUTING ARBITER DECISION TABLE (apply in order; first matching row is the verdict):**
 
-| Condition in the brief | Routing verdict |
-|---|---|
-| Brief names "webinar," "funnel," "virtual event," or "audience presentation" | Presentations dept - CLIENT-WEBINAR-DECK-SOP |
-| Brief shows a REPRESENTATION_MIX or specific audience composition | Presentations dept |
-| Brief specifies one of the five CLIENT-WEBINAR-DECK-SOP archetypes | Presentations dept |
-| Brief is a brand/strategy/campaign deck with a specific DIU style card ID in INDEX.md | DIU pipeline |
-| Brief is for internal use only, no live audience delivery | DIU pipeline |
-| Brief does not fit any row above | Escalate to Director of Presentations; halt all generation |
+| Condition in the brief | Routing verdict | Rationale |
+|---|---|---|
+| Brief names "webinar," "funnel," "virtual event," or "audience presentation" in any form | Presentations dept - CLIENT-WEBINAR-DECK-SOP | Unambiguous audience-deck keywords; text-in-image is THE rule |
+| Brief shows a REPRESENTATION_MIX or specific audience composition | Presentations dept | Audience-composition capture = audience deck |
+| Brief specifies one of the five CLIENT-WEBINAR-DECK-SOP archetypes | Presentations dept | Archetype match is deterministic |
+| Brief is a brand/strategy/campaign deck with a specific DIU style card ID in INDEX.md | DIU pipeline - PPT-ANALYSIS-SOP + Rotation Engine | Named style card = DIU scope |
+| Brief is for internal use only, no live audience delivery | DIU pipeline | No audience = no audience-deck rules apply |
+| Brief does not fit any row above | Escalate to Director of Presentations for arbiter decision; halt all generation | When uncertain, default to Presentations; never default to DIU on ambiguous cases |
 
 **Steps:**
-1. Apply the decision table. Document the matching row and deliver the routing decision in writing.
-2. For Presentations-routed decks: forward the brief to the Director of Presentations.
-3. For DIU-routed decks: confirm to Deck Systems Specialist and authorize manifest assembly; record verdict + date.
-4. For escalations: forward full brief + decision-table analysis to Director of Presentations; no generation until written verdict received.
-5. If DIU routing is disputed after generation begins: halt immediately. CDO is final arbiter.
+1. Read the brief fully. Apply the decision table above. If the first matching row is unambiguous, the verdict is final. Document the matching row and deliver the routing decision to the Deck Systems Specialist in writing.
+2. For Presentations-routed decks: forward the brief to the Director of Presentations. The Deck Systems Specialist has no further involvement unless a DIU strategy-(b) imagery cross-dept request is made later via SOP 9.8 (DIU-612).
+3. For DIU-routed decks: confirm the routing decision to the Deck Systems Specialist and authorize manifest assembly. Record the routing verdict, the matching decision-table row, and the date in the deck's project record.
+4. For escalations where the Director of Presentations is required as final arbiter: forward the full brief and this SOP's decision-table analysis to the Director of Presentations. Do NOT allow any generation to begin until the Director's written verdict is received and logged.
+5. If the Director of Presentations disputes a DIU routing decision AFTER generation has begun: halt generation immediately. The CDO is the final arbiter and overrides all prior routing decisions. Document the dispute, the CDO decision, and any generation spend already committed.
 
-**Outputs:** Routing verdict with documented decision-table row; Director of Presentations' written arbiter decision on record (for escalations).
-**Hand to:** Deck Systems Specialist (DIU route) or Director of Presentations (Presentations route).
-**Failure mode:** If deck incorrectly routed to DIU and generation has begun, halt immediately. Log root cause and implement corrective measure.
+**Outputs:** Routing verdict (Presentations or DIU) with documented decision-table row; for ambiguous decks, Director of Presentations' written arbiter decision on record.
+**Hand to:** Deck Systems Specialist (for DIU-routed decks - manifest assembly may begin); Director of Presentations (for Presentations-routed decks - brief forwarded).
+**Failure mode:** If a deck has been incorrectly routed to the DIU and generation has already begun, halt immediately. Log the routing failure, determine root cause, and implement a corrective measure before the next deck brief is processed.
 
 ---
 

@@ -76,7 +76,7 @@ The following rules have no exception path:
 
 3. **Slide Image Creator prompts in the Presentations pipeline may not silently override a contracted PPT-category foundation block.** If Presentations requests imagery using an analyzed client style, the style card governs — Presentations sources the style via SOP-DIU-612, not by writing style directly into Slide Image Creator prompts.
 
-4. **The Slide Manifest has exactly one owner per phase.** Concurrent edits to the manifest by both pipelines are forbidden. Ownership transfers explicitly: Deck Systems Specialist — Generation Operator (during generation); Generation Operator — Deck Systems Specialist (cohesion review); Deck Systems Specialist — Presentations (strategy-(b) text overlay). Any phase-overlap is escalated to CDO immediately.
+4. **The Slide Manifest has exactly one owner per phase.** Concurrent edits to the manifest by both pipelines are forbidden. Ownership transfers explicitly: Deck Systems Specialist to Generation Operator (during generation); Generation Operator to Deck Systems Specialist (cohesion review); Deck Systems Specialist to Presentations (strategy-(b) text overlay). Any phase-overlap is escalated to CDO immediately.
 
 ### E. Routing decision logging
 

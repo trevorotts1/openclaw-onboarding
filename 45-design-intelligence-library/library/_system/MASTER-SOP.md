@@ -259,7 +259,7 @@ Unless the source image dictates otherwise or the operator overrides, library-wi
 - The box's `company-config.json` brand block (colors, style voice, visual energy)
 - Branding interview answers (visual identity, target perception, market positioning)
 
-**Hard rule (universal, not brand-specific):** deep skin tones rendered rich, warm, and dimensional — this is non-negotiable in every card involving people. This is a RENDER-QUALITY rule for whoever is cast, not a casting rule.
+**Hard rule (universal, not brand-specific):** deep skin tones rendered rich, warm, and dimensional - this is non-negotiable in every card involving people. This is a RENDER-QUALITY rule for whoever is cast, not a casting rule.
 
 **REPRESENTATION_MIX OVERRIDE (mandatory, highest priority):** Per-client representation governs and OVERRIDES the universal skin-tone default when they conflict. If a client's captured REPRESENTATION_MIX specifies a particular audience composition, casting must reflect that composition. The skin-tone quality rule applies to whoever is cast per that mix; it does not impose or override the client's specified audience. Deep-skin quality = how you render the person; REPRESENTATION_MIX = who is cast. Never conflate the two. A card that ignores a client's REPRESENTATION_MIX in favor of the universal skin-tone default fails the representation gate.
 
