@@ -1,3 +1,16 @@
+## [v12.4.5] - 2026-06-14 - feat: encode the 10 named presentation components as required, QC-gated elements (Skill 23)
+
+### Changes
+
+Audited the 10 presentation components the operator named in transcript GMT20260611-180326 against the real presentation role-library SOPs and the master CLIENT-WEBINAR-DECK-SOP, then made every one a REQUIRED element with an explicit QC gate. Already strong and required: the Promise, the Hook, the Gradual Price Ladder. Strengthened or added: case studies / "who says so" (zero-proof deck now FAILS, was a soft GP-8 flag); the Wall of Wins (was flow-narrative only, now a required slide + QC check); one big idea per slide (upgraded to copy-QC auto-fail AF-C6); the Guarantee (now owned by Offer Price Strategist SOP 9.8 + QC-gated); the Scarcity Factor (real-scarcity presence now gated); the Story Arc short-term-fix vs long-term-identity (newly named component); and "a checklist for an AI is a list of promises" (Director SOP 9.2 step 4a writes a checklist_of_promises walked before "done").
+
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (v2.3 -> v2.4): new Section 4.4 ten-required-components index, doctrine rules 19/20/21, rule 12 rewritten to a fail, non-negotiables line, copy QC criteria 15-19, master-checklist item 1.5c.
+- Presentations role library: qc-specialist (1.1 -> 1.2, AF-C6 + 17 -> 22 copy criteria + final-deck structural items), slide-copywriter (1.0 -> 1.1, doctrine steps 17-21), offer-price-strategist (1.0 -> 1.1, new SOP 9.8 guarantee + scarcity), deep-research (2.0 -> 2.1, Category D note), director (1.0 -> 1.1, checklist-of-promises gate), 00-START-HERE (1.5 -> 1.6). All five sops/ mirrors regenerated verbatim-in-sync.
+- Zero em dashes added; 19-section structure intact in all changed role files.
+- Version markers bumped 12.4.4 -> 12.4.5 across all 9 locations (G3 skill-content gate satisfied).
+
+---
+
 ## [v12.4.4] - 2026-06-14 - fix: canonical department floor reconciliation closure (Skill 23)
 
 ### Changes

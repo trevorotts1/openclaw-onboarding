@@ -74,6 +74,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    ### D3 -- Wall-of-Wins
    [Finding]...
    (Include client-supplied PROOF_ASSETS from intake.json here, annotated with confidence level.)
+   (Category D feeds TWO of the operator's required presentation components: D1/D2 feed component 3 "who says so other than you" -- woven between the drops; D3 feeds component 4 the WALL OF WINS slide near the close. Surface enough named, located D3 wins for the Copywriter to build a multi-win wall; if none exist, mark them `[CLIENT TO SUPPLY]` and note it, never fabricate.)
 
    ## Category E: Grounded Image Context (see SOP 9.2 for detail)
    [Output of SOP 9.2 pasted here verbatim]
@@ -142,3 +143,4 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Failure mode:** If GROUNDED_CONTENT is absent from intake.json AND no offer/method description can be derived: set `derived_not_confirmed: true`, write placeholder scene descriptions marked "[PLACEHOLDER -- operator must confirm before prompt authoring]", and alert the Director. Do NOT block the brief -- deliver the placeholders. The Image Creator will treat unconfirmed placeholders as generic until the operator confirms them.
 
 ---
+

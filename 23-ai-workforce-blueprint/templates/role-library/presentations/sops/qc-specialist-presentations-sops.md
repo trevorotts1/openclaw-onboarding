@@ -23,6 +23,7 @@ The following conditions each independently force an immediate FAIL verdict on t
 | AF-C3 | Any fabricated proof or statistic not traceable to intake.json or proof_audit.txt. A number not present in the intake or research brief = auto-fail on that slide. |
 | AF-C4 | Any cross-slide numeric mismatch (e.g., stack total stated as $5,282 on one slide and $5,276 on another). Defer the Offer Strategist mechanics to SOP 9.3, but a FAIL there blocks this gate. The QC agent compiles all repeated numbers and diffs them; any mismatch auto-fails all slides carrying the inconsistent value. |
 | AF-C5 | Headline over 9 words (mechanical word count; count is exact). |
+| AF-C6 | Multi-idea slide. The operator's rule is "one big idea per slide; a multi-idea slide FAILS." A slide that makes more than one point is an automatic FAIL, not a deduction. Signal: more than 3 text blocks, or copy that needs a second point to make sense. Split it and re-QC. |
 
 #### Prompt QC Auto-Fails (SOP 9.2)
 
@@ -92,8 +93,8 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 - working/copy/intake.json (for comparison on proof claims and prices)
 
 **Steps:**
-1. For every slide, check ALL five Copy QC Auto-Fails (AF-C1 through AF-C5) BEFORE scoring. Record each triggered auto-fail by code in the report. A slide with any auto-fail is marked FAIL immediately.
-2. Dispatch 3-5 QC agents (minimax-m3:cloud) each independently scoring slides_copy.md on all 17 criteria. Each agent returns a score per criterion per slide.
+1. For every slide, check ALL six Copy QC Auto-Fails (AF-C1 through AF-C6) BEFORE scoring. Record each triggered auto-fail by code in the report. A slide with any auto-fail is marked FAIL immediately. AF-C6 (multi-idea slide) is mechanical: one big idea per slide; a slide that makes more than one point auto-fails.
+2. Dispatch 3-5 QC agents (minimax-m3:cloud) each independently scoring slides_copy.md on all 22 criteria. Each agent returns a score per criterion per slide.
 3. Average the agent scores for each criterion across all slides. Compute the overall average.
 4. Apply double-weight to criteria 1, 2, 7, 11, 12, and 15 (these are the most critical -- see criteria list below).
 5. Write the copy_qc_report.json. One entry per slide, plus a summary. Structure:
@@ -116,7 +117,7 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
 8. If any slide scores below 7.0 OR overall weighted_average < 8.5 OR any auto-fail triggered: fail. Write `pass: false`. Send revision_instructions to the Slide Copywriter.
 9. Increment `loop_count` in the report. If loop_count reaches 4 without a pass: escalate to the Director with the specific persistent failures.
 
-**The 17 Copy QC Criteria (c1-c17):**
+**The 22 Copy QC Criteria (c1-c22):** (criteria c18-c22 are the operator's named required presentation components per master SOP Section 4.4; each is a presence gate)
 1. (double-weight) Hook appears >= 7 times across the deck, well-distributed (not clustered).
 2. (double-weight) Every headline is 9 words or fewer. Count is exact.
 3. Every subhead is 18 words or fewer.
@@ -147,6 +148,11 @@ These are checked on the COMPOSED slide (the rendered PPTX, not the raw PNG) aft
     - A BUILDUP slide immediately precedes every DROP slide (no DROP without a BUILDUP).
     - At least one callback is present in the offer section explicitly referencing the ANCHOR.
     - FINAL price sits below all ladder rungs (strictly less than DROP3 in drop mode).
+18. (double-weight) Who says so / external proof present (master rule 12, GP-8): the deck carries at least one third-party proof beat (a case study, study, or white paper) woven between the price drops. A deck whose every proof point is the client's own assertion with ZERO external corroboration FAILS. If the Deep Research brief carries `external_proof_count: 0` (the GP-8 alert), this criterion FAILS until the operator supplies or approves substitute corroboration; the QC Specialist surfaces the zero-proof state to the operator before delivery. This is a fail, not a soft flag.
+19. Wall of Wins present (master rule 20): the deck carries a Wall of Wins / wall of results slide near the close that concentrates multiple named, located client wins (or `[CLIENT TO SUPPLY]` placeholders) in one view. A deck with no wall-of-wins element fails. The wall is distinct from the single proof-within-two-slides testimonials; it is a deliberate concentration of social proof.
+20. Guarantee present (master rule 21): the deck states an explicit guarantee / promise / risk-reversal beat (one of the four guarantee types, master Section 5.4; for service businesses the service-guarantee frame "your next 30 days is on us"). Absent = fail.
+21. Scarcity Factor present (master rule 21): the close carries a real scarcity / last-calls / doors-closing beat (real spots or real time only). Absent = fail. Fabricated scarcity is a separate BLOCKING flag owned by the Devil's Advocate; this criterion checks PRESENCE of a real scarcity beat.
+22. Story Arc present (master rule 19): the deck carries an explicit short-term-fix-vs-long-term-identity contrast beat (the band-aid the audience keeps buying vs the durable identity the offer delivers) that drives the audience to self-recognition ("that is me"). Absent = fail.
 
 **Outputs:**
 - working/qc/copy_qc_report.json
@@ -324,7 +330,7 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
 
 3. **Deck-wide representation tally re-run (P5, AF-R2).** Re-run the step-5a tally on the FINAL assembled deck, because dropped, substituted, or re-cast slides can shift the distribution since Phase 5. If any captured REPRESENTATION_MIX group is outside +/- 10 percentage points = AF-R2 auto-fail on the deck. If people appear with no captured mix = AF-R3. Bidirectional (fails under-representation AND mono-casting); representation overrides skin-tone-quality.
 
-4. **Structural-completeness checks (the governing intelligence: master Section 4.3 + the signature-presentation framework).** Verify, deck-wide, that the pitch and journey machinery is present in the assembled deck (each missing item routes a revision instruction to the responsible author):
+4. **Structural-completeness checks (the governing intelligence: master Section 4.3 + Section 4.4 ten required components + the signature-presentation framework).** Verify, deck-wide, that the pitch and journey machinery AND every one of the operator's ten named required presentation components is present in the assembled deck (each missing item routes a revision instruction to the responsible author):
    a. **Cost-versus-value beat present (GP-9):** the deck contains an explicit cost-of-inaction AND value-of-action beat.
    b. **Dual emotion + logic track (GP-4):** for each key offer beat ask "does this beat serve BOTH the emotional buyer and the logical justifier?" An offer section that is all-emotion or all-math fails.
    c. **Light pitch distributed, not back-loaded (GP-11):** the program is named and referenced inside the teaching sections from the first verse, not only in the offer section.
@@ -334,7 +340,14 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
    g. **Old-to-new bridge (SP-OLDNEW):** each new idea is anchored to something the audience already knows.
    h. **Teach-themselves (SP-TEACH):** the deck invites the audience to reach the conclusion themselves ("you already know..."), conversational rather than lecturing.
    i. **Not over-taught (GP-10):** "appetizer, not dinner" -- the teaching proves value and creates desire without handing over the complete HOW (which lives in the offer).
-   (Note: items a, c, e, g, h, i are also enforced upstream at copy QC c15; this is the deck-level confirmation that they survived into the assembled deck. SP-LING / SP-LOCAL and the Michael-J figure are operator-supplied placeholders; they are checked as "placeholder present, not fabricated," never invented.)
+   j. **The Promise leads (master rule 2, component 1):** the deck identifies and leads with the core promise; teach/offer slides pitch the promise, not the product.
+   k. **The Hook sings (master rule 1, component 2):** the hook is present and sung >= 7 times in the assembled deck (re-confirm the copy QC c1 count survived assembly).
+   l. **Who says so / external proof present (master rule 12, component 3):** at least one third-party proof beat (case study / study / white paper) is woven between the drops. ZERO external proof in the assembled deck = fail; surface to the operator.
+   m. **Wall of Wins present (master rule 20, component 4):** a wall-of-wins / wall-of-results slide concentrating multiple named wins exists near the close.
+   n. **The Guarantee present (master rule 21, component 6):** an explicit guarantee / risk-reversal beat exists.
+   o. **The Scarcity Factor present (master rule 21, component 7):** a real scarcity / last-calls / doors-closing beat exists in the close (real only; fake scarcity is a Devil's-Advocate blocking flag).
+   p. **The Story Arc present (master rule 19, component 8):** an explicit short-term-fix-vs-long-term-identity contrast beat driving self-recognition exists.
+   (Note: items a, c, e, g, h, i, j, k, l, m, n, o, p are also enforced upstream at copy QC c15 / c1 / c11 / c18-c22; this is the deck-level confirmation that they survived into the assembled deck. One-big-idea-per-slide is enforced as copy-QC auto-fail AF-C6 upstream and re-confirmed per composed slide here. The gradual price ladder (component 9) is confirmed via the ladder-integrity re-check and the Offer Price Strategist gates. The checklist-is-a-list-of-promises (component 10) is the Director echo gate plus the existence of this PASS artifact, which IS the walked checklist. SP-LING / SP-LOCAL and the Michael-J figure are operator-supplied placeholders; they are checked as "placeholder present, not fabricated," never invented.)
 
 5. **Additional final-deck-specific checks:**
    a. Slide order matches arc_allocation.json exactly.
@@ -356,13 +369,13 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
        {"slide": N, "collision": "pass", "contrast": "pass", "legibility": "pass", "overlay_checked": true, "grounding": "pass"}
      ],
      "representation_tally": {"captured_mix": [], "deck_tally": [], "within_10pct": true, "verdict": "pass"},
-     "structural_completeness": {"cost_vs_value": true, "emotion_and_logic": true, "light_pitch_distributed": true, "care_first_open": true, "psd": true, "journey_see": true, "old_to_new": true, "teach_themselves": true, "not_over_taught": true},
+     "structural_completeness": {"cost_vs_value": true, "emotion_and_logic": true, "light_pitch_distributed": true, "care_first_open": true, "psd": true, "journey_see": true, "old_to_new": true, "teach_themselves": true, "not_over_taught": true, "promise_leads": true, "hook_sings": true, "who_says_so": true, "wall_of_wins": true, "guarantee": true, "scarcity_factor": true, "story_arc": true, "one_big_idea_per_slide": true, "gradual_price_ladder": true},
      "logo_on_every_slide": true,
      "loop_count": 0,
      "revision_instructions": []
    }
    ```
-   `pass` is `true` ONLY when: zero AF-F1 through AF-F4 asserts failed, zero AF-R2/AF-R3, zero AF-I8 grounding failures, every structural-completeness item is true, AND the visual score is >= 8.5 with no single item below the 7.0 floor.
+   `pass` is `true` ONLY when: zero AF-F1 through AF-F4 asserts failed, zero AF-R2/AF-R3, zero AF-I8 grounding failures, every structural-completeness item is true (including all ten of the operator's named required presentation components: promise_leads, hook_sings, who_says_so, wall_of_wins, one_big_idea_per_slide, guarantee, scarcity_factor, story_arc, gradual_price_ladder, and the walked checklist-of-promises this artifact represents), AND the visual score is >= 8.5 with no single item below the 7.0 floor.
 
 7. If pass: notify the Director that Phase 6 is complete and the deck is ready for delivery. The presence of `final_deck_qc.json` with `pass: true` is what unlocks delivery (SOP 9.6).
 8. If fail: write `pass: false`, route specific revision instructions to the PPTX Assembly Specialist (collision/contrast/legibility/order/overlay), the Slide Image Creator (grounding, representation re-cast), or the Slide Copywriter (structural-completeness gaps), and increment loop_count.
@@ -396,3 +409,4 @@ soffice --headless --convert-to pdf <Deck>.pptx && pdftoppm -png -r 100 <Deck>.p
 **Failure mode:** If `final_deck_qc.json` is malformed or unreadable, treat it as absent (HARD-STOP). Never infer PASS from a missing or broken artifact.
 
 ---
+

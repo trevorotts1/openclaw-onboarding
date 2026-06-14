@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** deep-research
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 2.0
+**Version:** 2.1
 **Last updated:** 2026-06-13
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -166,6 +166,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    ### D3 -- Wall-of-Wins
    [Finding]...
    (Include client-supplied PROOF_ASSETS from intake.json here, annotated with confidence level.)
+   (Category D feeds TWO of the operator's required presentation components: D1/D2 feed component 3 "who says so other than you" -- woven between the drops; D3 feeds component 4 the WALL OF WINS slide near the close. Surface enough named, located D3 wins for the Copywriter to build a multi-win wall; if none exist, mark them `[CLIENT TO SUPPLY]` and note it, never fabricate.)
 
    ## Category E: Grounded Image Context (see SOP 9.2 for detail)
    [Output of SOP 9.2 pasted here verbatim]
