@@ -20,7 +20,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v12.4.7** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v12.4.8** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
