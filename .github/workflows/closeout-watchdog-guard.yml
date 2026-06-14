@@ -1,0 +1,144 @@
+name: Closeout watchdog guard
+
+# Fails the build if the v12.3.12 closeout-readiness-watchdog regresses:
+#   - stuck-pre-closeout escalation
+#   - interviewQc hard gate in run-closeout.sh
+#   - Playwright rc=3 hard hold
+#   - Notion notionCloseoutPageId establishment
+#   - fleet-stuck-clients.sh CI visibility
+#
+# v12.3.12 / fix/v12.3.12-closeout-watchdog
+
+on:
+  push:
+    paths:
+      - 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh
+      - 23-ai-workforce-blueprint/scripts/update-interview-state.sh
+      - 23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+      - 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh
+      - 23-ai-workforce-blueprint/build-state-schema.json
+      - 37-zhc-closeout/scripts/run-closeout.sh
+      - 37-zhc-closeout/scripts/generate-infographics.sh
+      - 37-zhc-closeout/scripts/create-notion-closeout.sh
+      - 37-zhc-closeout/scripts/fleet-stuck-clients.sh
+      - 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh
+      - 37-zhc-closeout/scripts/test-closeout-watchdog.sh
+      - shared-utils/nudge-incomplete-interviews.py
+      - install.sh
+      - .github/workflows/closeout-watchdog-guard.yml
+  pull_request:
+    paths:
+      - 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh
+      - 23-ai-workforce-blueprint/scripts/update-interview-state.sh
+      - 23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+      - 23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh
+      - 23-ai-workforce-blueprint/build-state-schema.json
+      - 37-zhc-closeout/scripts/run-closeout.sh
+      - 37-zhc-closeout/scripts/generate-infographics.sh
+      - 37-zhc-closeout/scripts/create-notion-closeout.sh
+      - 37-zhc-closeout/scripts/fleet-stuck-clients.sh
+      - 37-zhc-closeout/scripts/fleet-sweep-closeouts.sh
+      - 37-zhc-closeout/scripts/test-closeout-watchdog.sh
+      - shared-utils/nudge-incomplete-interviews.py
+      - install.sh
+      - .github/workflows/closeout-watchdog-guard.yml
+
+jobs:
+  closeout-watchdog-guard:
+    name: Closeout watchdog + interviewQc gate (v12.3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify watchdog script is executable and has correct shebang
+        run: |
+          set -euo pipefail
+          if [[ ! -f "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh" ]]; then
+            echo "FAIL: closeout-readiness-watchdog.sh missing"
+            exit 1
+          fi
+          head -1 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh | grep -q "bash" || {
+            echo "FAIL: watchdog missing bash shebang"
+            exit 1
+          }
+          echo "OK: watchdog script present and has bash shebang"
+
+      - name: Verify interviewQc gate is wired in run-closeout.sh
+        run: |
+          set -euo pipefail
+          if ! grep -q "interviewQc" 37-zhc-closeout/scripts/run-closeout.sh; then
+            echo "FAIL: interviewQc gate missing from run-closeout.sh"
+            exit 1
+          fi
+          if ! grep -q "blocked-interview-incomplete" 37-zhc-closeout/scripts/run-closeout.sh; then
+            echo "FAIL: blocked-interview-incomplete status missing from run-closeout.sh"
+            exit 1
+          fi
+          echo "OK: interviewQc gate wired in run-closeout.sh"
+
+      - name: Verify rc=3 hard hold wired in run-closeout.sh
+        run: |
+          set -euo pipefail
+          if grep -q "proceeding on agent rating" 37-zhc-closeout/scripts/run-closeout.sh; then
+            echo "FAIL: rc=3 'proceeding on agent rating' still present — must be replaced with hard hold"
+            exit 1
+          fi
+          if ! grep -q "playwright-rc3\|org-chart-not-rendered\|HARD HOLD" 37-zhc-closeout/scripts/run-closeout.sh; then
+            echo "FAIL: rc=3 hard hold not wired in run-closeout.sh"
+            exit 1
+          fi
+          echo "OK: rc=3 is a hard hold (not 'proceed on agent rating')"
+
+      - name: Verify notionCloseoutPageId set in create-notion-closeout.sh
+        run: |
+          set -euo pipefail
+          if ! grep -q "notionCloseoutPageId" 37-zhc-closeout/scripts/create-notion-closeout.sh; then
+            echo "FAIL: notionCloseoutPageId not written in create-notion-closeout.sh"
+            exit 1
+          fi
+          echo "OK: notionCloseoutPageId established in create-notion-closeout.sh"
+
+      - name: Verify fleet-stuck-clients.sh exists
+        run: |
+          set -euo pipefail
+          if [[ ! -f "37-zhc-closeout/scripts/fleet-stuck-clients.sh" ]]; then
+            echo "FAIL: fleet-stuck-clients.sh missing"
+            exit 1
+          fi
+          echo "OK: fleet-stuck-clients.sh present"
+
+      - name: Verify schema has new fields
+        run: |
+          set -euo pipefail
+          python3 - <<'PYEOF'
+          import json, sys
+          with open("23-ai-workforce-blueprint/build-state-schema.json") as f:
+              schema = json.load(f)
+          props = schema.get("properties", {})
+          required_fields = [
+              "interviewStalled", "interviewStalledAt", "closeoutBlockers",
+              "stuckEscalations", "closeoutLegStatus",
+              "infographic1FailureReason", "notionFailureReason", "notionCloseoutPageId"
+          ]
+          missing = [f for f in required_fields if f not in props]
+          if missing:
+              print(f"FAIL: schema missing fields: {missing}")
+              sys.exit(1)
+          cs_enum = props.get("closeoutStatus", {}).get("enum", [])
+          if "blocked-interview-incomplete" not in cs_enum:
+              print("FAIL: closeoutStatus enum missing 'blocked-interview-incomplete'")
+              sys.exit(1)
+          print(f"OK: all 8 new schema fields present, closeoutStatus enum extended")
+          PYEOF
+
+      - name: Run watchdog test harness
+        run: |
+          set -euo pipefail
+          chmod +x 37-zhc-closeout/scripts/test-closeout-watchdog.sh
+          bash 37-zhc-closeout/scripts/test-closeout-watchdog.sh

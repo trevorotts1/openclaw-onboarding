@@ -29,7 +29,7 @@ else
   exit 1
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="$SKILL_DIR/templates/notion-page-tree.json"
@@ -77,6 +77,18 @@ if [[ $REFRESH_WORKFORCE_ONLY -eq 1 ]]; then
   if [[ -z "$NOTION_CLOSEOUT_PAGE_ID" ]]; then
     log "WARN" "--refresh-workforce-only: notionCloseoutPageId not set in build-state — SKIPPING Notion refresh (non-fatal). Run full create-notion-closeout.sh once to establish the page, then converge will refresh it."
     echo "[NOTION-REFRESH] SKIPPED: notionCloseoutPageId not set in build-state"
+    # PRD-2.15 (v12.3.12): this skip must be VISIBLE to the operator surface.
+    # Before this fix, a never-converging refresh left no trace. Write a blocker
+    # entry so fleet-stuck-clients.sh and run-closeout.sh closeoutLegStatus surface it.
+    _SKIP_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")
+    state_set ".closeoutLegStatus.notion = \"skipped:no-page-id\"" || true
+    state_set "
+      .closeoutBlockers = (
+        (.closeoutBlockers // [])
+        | map(select(.class != \"notion-refresh-skipped-no-page-id\"))
+        | . + [{\"class\":\"notion-refresh-skipped-no-page-id\",\"reason\":\"--refresh-workforce-only skipped: notionCloseoutPageId not set (full create-notion-closeout.sh was never completed)\",\"since\":\"$_SKIP_TS\",\"escalatedAt\":null,\"cleared\":false}]
+      )
+    " || true
     exit 0
   fi
   if [[ -z "${NOTION_API_TOKEN:-}" ]]; then
@@ -206,7 +218,27 @@ fi
 root_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/pages" -d "$root_body")
 ROOT_ID=$(echo "$root_resp" | jq -r '.id')
 if [[ -z "$ROOT_ID" || "$ROOT_ID" == "null" ]]; then
-  log "ERROR" "root page creation returned no id; response: $(echo "$root_resp" | head -c 300)"
+  # PRD-2.15 (v12.3.12): fail-loud on root page failure — write structured state
+  # so the operator surface shows why Notion failed (not a bare exit 1 into the log).
+  _notion_err_detail=$(echo "$root_resp" | jq -r '.message // .code // "unknown"' 2>/dev/null || echo "no detail")
+  _notion_fail_reason="root-page-create-failed: Notion API returned no id (status likely 401/403/scope). Detail: $_notion_err_detail"
+  log "ERROR" "$_notion_fail_reason"
+  state_set ".notionFailureReason = \"$_notion_fail_reason\"" || true
+  state_set ".closeoutLegStatus.notion = \"failed:root-page-create\"" || true
+  _TS_N=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  state_set "
+    .closeoutBlockers = (
+      (.closeoutBlockers // [])
+      | map(select(.class != \"notion-root-page-failed\"))
+      | . + [{\"class\":\"notion-root-page-failed\",\"reason\":\"$_notion_fail_reason\",\"since\":\"$_TS_N\",\"escalatedAt\":\"$_TS_N\",\"cleared\":false}]
+    )
+  " || true
+  _OP_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+  if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+    openclaw message send --channel telegram -t "$_OP_CHAT" \
+      -m "🚨 ZHC HOLD [notion-root-page-failed] $(state_get '.companyName'): Notion root page creation failed. $_notion_fail_reason. Check NOTION_API_TOKEN + workspace permissions. State: $STATE_FILE" \
+      >>"$LOG_FILE" 2>&1 || true
+  fi
   exit 1
 fi
 ROOT_URL="https://www.notion.so/${ROOT_ID//-/}"
@@ -360,6 +392,11 @@ sec9_blocks=$(jq -s '.' <(p "Action plan for week 1. Don't try to use everything
 create_child_page "9. Your First 7 Days" "$sec9_blocks" >/dev/null
 
 # ---- finalize ----
-state_set ".notionRootPageUrl = \"$ROOT_URL\""
-log "INFO" "notion page tree complete -- root url=$ROOT_URL"
+# PRD-2.15 (v12.3.12): establish BOTH notionRootPageUrl AND notionCloseoutPageId
+# so the --refresh-workforce-only path can never hit its "skip forever" branch
+# (it SKIPs when notionCloseoutPageId is unset — which was the case before this fix).
+state_set ".notionRootPageUrl = \"$ROOT_URL\" | .notionCloseoutPageId = \"$ROOT_ID\""
+log "INFO" "notion page tree complete -- root url=$ROOT_URL id=$ROOT_ID (notionCloseoutPageId set)"
+log "INFO" "closeoutLegStatus.notion = pass"
+state_set ".closeoutLegStatus.notion = \"pass\"" || true
 exit 0

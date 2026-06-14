@@ -42,7 +42,7 @@ else
   exit 1
 fi
 
-STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -89,6 +89,50 @@ for cmd in jq curl openclaw; do
     exit 1
   fi
 done
+# ---- PRD-2.15 (v12.3.12): EARLY interviewQc check (before API-key preflight) ----
+# If the interview QC hasn't passed, refuse immediately — no point checking API keys
+# for a closeout we're about to refuse. This is a cheap token-free read.
+_early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
+_early_build_done=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE" 2>/dev/null || true)
+if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" != "pass" ]]; then
+  # QC script search (best-effort, non-fatal if absent)
+  _EARLY_QC_SCRIPT=""
+  for _cand in \
+    "${SKILL_DIR%/*}/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "$OC_ROOT/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py"; do
+    [[ -f "$_cand" ]] && _EARLY_QC_SCRIPT="$_cand" && break
+  done
+  if [[ -n "$_EARLY_QC_SCRIPT" ]]; then
+    python3 "$_EARLY_QC_SCRIPT" --write-state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    _early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
+  fi
+  if [[ "$_early_qc" != "pass" ]]; then
+    _early_block_reason="interviewQc.status=${_early_qc} (not pass) — refusing to close out an unverified interview."
+    log "ERROR" "BLOCKED (interviewQc gate): $_early_block_reason"
+    _tmp_s=$(mktemp)
+    jq ".closeoutStatus = \"blocked-interview-incomplete\" | .closeoutBlockReason = \"$_early_block_reason\"" \
+      "$STATE_FILE" > "$_tmp_s" && mv "$_tmp_s" "$STATE_FILE" || rm -f "$_tmp_s"
+    _TS_EARLY=$(now_iso)
+    _tmp_b=$(mktemp)
+    jq "
+      .closeoutBlockers = (
+        (.closeoutBlockers // [])
+        | map(select(.class != \"STUCK_QC_FAILED\"))
+        | . + [{\"class\":\"STUCK_QC_FAILED\",\"reason\":\"$_early_block_reason\",\"since\":\"$_TS_EARLY\",\"escalatedAt\":null,\"cleared\":false}]
+      )
+    " "$STATE_FILE" > "$_tmp_b" && mv "$_tmp_b" "$STATE_FILE" || rm -f "$_tmp_b"
+    _OP_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+    if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+      openclaw message send --channel telegram -t "$_OP_CHAT" \
+        -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_early_qc} — closeout refused for $(jq -r '.companyName // empty' "$STATE_FILE" 2>/dev/null). State: $STATE_FILE" \
+        >>"$LOG_FILE" 2>&1 || true
+    fi
+    exit 0  # never fail-hard; watchdog + resume cron drive it
+  fi
+fi
+
 if [[ -z "${KIE_API_KEY:-}" ]]; then
   fail_closeout "preflight: KIE_API_KEY env var not set"
 fi
@@ -126,6 +170,55 @@ if [[ -z "$build_completed_at" || "$build_completed_at" == "null" ]]; then
   log "INFO" "buildCompletedAt not set yet -- Skill 23 not done; nothing to do"
   exit 0
 fi
+
+# ---- PRD-2.15 (v12.3.12): interviewQc HARD GATE --------------------------------
+# The schema's own TODO (build-state-schema.json:506): run-closeout.sh should
+# gate on interviewQc.status != 'pass' before proceeding. This wires that gate.
+# A premature/seeded buildCompletedAt can no longer slip a half-interview into
+# a celebration (e.g. Beverly at 21/30 with no QC run = REFUSED, not silently ignored).
+# Gate is placed BEFORE the expensive generation preflight (KIE/Notion/TG checks)
+# so a stalled interview is surfaced immediately without requiring API keys.
+_qc_status=$(state_get '.interviewQc.status')
+if [[ "$_qc_status" != "pass" ]]; then
+  # Try to (re)compute it autonomously before deciding
+  _QC_SCRIPT=""
+  for _cand in \
+    "${SKILL_DIR%/*}/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "$OC_ROOT/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py" \
+    "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/qc-interview-completion.py"; do
+    [[ -f "$_cand" ]] && _QC_SCRIPT="$_cand" && break
+  done
+  if [[ -n "$_QC_SCRIPT" ]]; then
+    log "INFO" "interviewQc.status=${_qc_status} — running qc-interview-completion.py --write-state (best-effort)"
+    python3 "$_QC_SCRIPT" --write-state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
+    _qc_status=$(state_get '.interviewQc.status')
+    log "INFO" "interviewQc.status after inline QC run: ${_qc_status}"
+  fi
+fi
+if [[ "$_qc_status" != "pass" ]]; then
+  _block_reason="interviewQc.status=${_qc_status} (not pass) — refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass."
+  log "ERROR" "BLOCKED: $_block_reason"
+  state_set ".closeoutStatus = \"blocked-interview-incomplete\" | .closeoutBlockReason = \"$_block_reason\""
+  # Write closeoutBlockers entry so the operator surface (fleet-stuck-clients.sh) shows it
+  _TS=$(now_iso)
+  state_set "
+    .closeoutBlockers = (
+      (.closeoutBlockers // [])
+      | map(select(.class != \"STUCK_QC_FAILED\"))
+      | . + [{\"class\":\"STUCK_QC_FAILED\",\"reason\":\"$_block_reason\",\"since\":\"$_TS\",\"escalatedAt\":null,\"cleared\":false}]
+    )
+  " || true
+  # Escalate operator via Telegram (non-fatal)
+  _OPERATOR_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+  if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+    openclaw message send --channel telegram -t "$_OPERATOR_CHAT" \
+      -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_qc_status} — closeout refused for $(state_get '.companyName'). Verify interview + run QC. State: $STATE_FILE" \
+      >>"$LOG_FILE" 2>&1 || true
+  fi
+  exit 0  # never fail-hard; watchdog + resume cron drive it
+fi
+log "INFO" "interviewQc.status=pass — gate cleared"
 
 # ---- v10.x: ZHC-STANDARD PREFLIGHT (libraries must be REAL on disk) -------
 # buildCompletedAt alone is not proof: an agent could have written it while the
@@ -441,7 +534,8 @@ fi
 # On failure: regenerate (clear gate score so the loop re-runs) then re-assert.
 # If assertion still fails after ZHC_QUALITY_MAX_ATTEMPTS, HOLD the artifact.
 if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
-  ORG_CHART_QC_SCRIPT="$SKILL_DIR/scripts/qc-assert-org-chart-connector-tree.sh"
+  # ZHC_ORGCHART_QC_SCRIPT env override allows test harnesses to inject a stub.
+  ORG_CHART_QC_SCRIPT="${ZHC_ORGCHART_QC_SCRIPT:-${SKILL_DIR}/scripts/qc-assert-org-chart-connector-tree.sh}"
   if [[ -x "$ORG_CHART_QC_SCRIPT" || -f "$ORG_CHART_QC_SCRIPT" ]]; then
     log "INFO" "step=2 org-chart connector-tree assertion (PRD-2.8)"
     ct_rc=0
@@ -449,7 +543,32 @@ if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
     if [[ "$ct_rc" -eq 0 ]]; then
       log "INFO" "step=2 org-chart connector-tree ASSERTED (pass)"
     elif [[ "$ct_rc" -eq 3 ]]; then
-      log "WARN" "step=2 org-chart connector-tree assertion inconclusive (rc=3, no HTML/image) -- proceeding on agent rating"
+      # PRD-2.15 (v12.3.12): rc=3 means NO artifact (no HTML/PNG rendered — Playwright crash,
+      # missing Chromium, or fresh-VPS). This is NOT inconclusive — it is a HARD operator-visible
+      # HOLD. The prior "proceed on agent rating" was the exact silent failure mode that let Beverly
+      # get a green while Playwright had never run. Changed from WARN+proceed to ERROR+escalate.
+      _inf1_fail_reason="playwright-rc3: org-chart renderer returned no HTML/PNG artifact (Playwright crash or Chromium missing on this host)"
+      log "ERROR" "step=2 org-chart rc=3 — NO artifact rendered. Classifying as HARD HOLD (not inconclusive). Reason: $_inf1_fail_reason"
+      GATE_INF1_RESULT=held
+      STEP_INF1_STATUS=failed
+      state_set ".infographic1FailureReason = \"$_inf1_fail_reason\"" || true
+      state_set ".closeoutLegStatus.org_chart = \"failed:playwright-missing\"" || true
+      # Write closeoutBlockers entry
+      _TS_INF=$(now_iso)
+      state_set "
+        .closeoutBlockers = (
+          (.closeoutBlockers // [])
+          | map(select(.class != \"org-chart-not-rendered\"))
+          | . + [{\"class\":\"org-chart-not-rendered\",\"reason\":\"$_inf1_fail_reason\",\"since\":\"$_TS_INF\",\"escalatedAt\":\"$_TS_INF\",\"cleared\":false}]
+        )
+      " || true
+      # Operator escalation
+      _OP_CHAT="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}"
+      if command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
+        openclaw message send --channel telegram -t "$_OP_CHAT" \
+          -m "🚨 ZHC HOLD [org-chart-not-rendered] $(state_get '.companyName'): org-chart Playwright returned rc=3 (no artifact). Install Chromium or use ZHC_ORGCHART_FALLBACK=1. State: $STATE_FILE" \
+          >>"$LOG_FILE" 2>&1 || true
+      fi
     else
       log "ERROR" "step=2 org-chart connector-tree ASSERTION FAILED (rc=$ct_rc) -- card-grid anti-pattern detected. Clearing gate score so generate_rate_gate regenerates."
       # Clear the gate score to force a regeneration attempt

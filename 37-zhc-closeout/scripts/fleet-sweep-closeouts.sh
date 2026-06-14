@@ -109,7 +109,30 @@ check_state_file() {
   closeout_status=$(jq -r '.closeoutStatus // "not-set"' "$state_file" 2>/dev/null)
 
   if [[ -z "$build_completed" || "$build_completed" == "null" ]]; then
-    jq -n --arg b "$box_name" '{"box": $b, "status": "build-not-complete", "legs": {}}'
+    # PRD-2.15 (v12.3.12): "build not complete" is NOT always benign. If the interview
+    # is stalled or QC has failed, classify it as stuck-pre-closeout so the operator
+    # can act — don't silently skip it as if it just needs more time.
+    _interview_complete=$(jq -r '.interviewComplete // false' "$state_file" 2>/dev/null)
+    _interview_stalled=$(jq -r '.interviewStalled // false' "$state_file" 2>/dev/null)
+    _qc_st=$(jq -r '.interviewQc.status // "pending"' "$state_file" 2>/dev/null)
+    _resume_att=$(jq -r '.resumeAttempts // 0' "$state_file" 2>/dev/null)
+    _max_att=$(jq -r '.maxResumeAttempts // 0' "$state_file" 2>/dev/null)
+    _stuck_reason=""
+    if [[ "$_interview_stalled" == "true" ]]; then
+      _stuck_reason="interview-stalled"
+    elif [[ "$_qc_st" == "fail" || "$_qc_st" == "needs-review" ]]; then
+      _stuck_reason="qc-${_qc_st}"
+    elif [[ "$_interview_complete" != "true" ]]; then
+      _stuck_reason="interview-in-progress"
+    elif [[ "$_max_att" -gt 0 && "$_resume_att" -ge "$_max_att" ]]; then
+      _stuck_reason="resume-cap-hit"
+    fi
+    if [[ -n "$_stuck_reason" && "$_stuck_reason" != "interview-in-progress" ]]; then
+      jq -n --arg b "$box_name" --arg r "$_stuck_reason" \
+        '{"box": $b, "status": "stuck-pre-closeout", "stuckReason": $r, "legs": {}}'
+    else
+      jq -n --arg b "$box_name" '{"box": $b, "status": "build-not-complete", "legs": {}}'
+    fi
     return
   fi
 
@@ -232,6 +255,7 @@ boxes_complete=0
 boxes_incomplete=0
 boxes_no_build=0
 boxes_ghost=0
+boxes_stuck=0
 
 while IFS= read -r box_json; do
   box_name=$(printf '%s' "$box_json" | jq -r '.name // "unknown"')
@@ -319,6 +343,11 @@ while IFS= read -r box_json; do
     build-not-complete)
       log "INFO" "[$box_name] build not complete yet -- skipping closeout check"
       boxes_no_build=$((boxes_no_build + 1)) ;;
+    stuck-pre-closeout)
+      _stuck_r=$(printf '%s' "$result" | jq -r '.stuckReason // "unknown"')
+      log "WARN" "[$box_name] STUCK PRE-CLOSEOUT (reason: $_stuck_r) -- surfacing for operator; run fleet-stuck-clients.sh for details"
+      boxes_stuck=$((boxes_stuck + 1))
+      any_incomplete=1 ;;
     *)
       log "WARN" "[$box_name] unexpected status: $overall"
   esac
@@ -352,7 +381,7 @@ while IFS= read -r box_json; do
 done < <(jq -c '.[]' "$BOXES_FILE")
 
 # ---- summary ----
-log "INFO" "fleet sweep summary: checked=$boxes_checked complete=$boxes_complete incomplete=$boxes_incomplete ghost=$boxes_ghost no-build=$boxes_no_build"
+log "INFO" "fleet sweep summary: checked=$boxes_checked complete=$boxes_complete incomplete=$boxes_incomplete ghost=$boxes_ghost no-build=$boxes_no_build stuck-pre-closeout=$boxes_stuck"
 
 # ---- write JSON report ----
 summary_json=$(jq -n \
@@ -395,6 +424,7 @@ Complete:       $boxes_complete
 Incomplete:     $boxes_incomplete (re-run triggered)
 Ghost complete: $boxes_ghost
 Build pending:  $boxes_no_build
+Stuck pre-close: $boxes_stuck (run fleet-stuck-clients.sh for details)
 run-closeout.sh was invoked on each incomplete box. Cron will pick up any remaining legs within 15 min."
 
   if command -v openclaw >/dev/null 2>&1; then

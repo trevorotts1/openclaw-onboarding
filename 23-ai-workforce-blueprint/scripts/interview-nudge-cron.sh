@@ -225,5 +225,26 @@ else
   log "nudge worker exited with rc=$rc"
 fi
 
+# ── PRD-2.15 (v12.3.12): watchdog hand-off after final nudge pass ─────────────
+# The nudge worker exhausts its owner-ping sequence at 168h, then goes silent.
+# At that point the interview is still stalled but NO operator ever learns.
+# Fix: after every nudge worker pass, if the interview is still incomplete AND
+# idle >= ZHC_STUCK_INTERVIEW_DAYS threshold, invoke the operator escalation
+# watchdog so the very cron that goes silent also wakes the operator lane.
+# This keeps a single escalation source of truth (the watchdog) without the
+# nudge cron doing any operator messaging itself (preserving the NO-FABRICATION
+# / owner-only boundary).
+_interview_still_incomplete=$(state_get '.interviewComplete')
+ZHC_STUCK_INTERVIEW_DAYS="${ZHC_STUCK_INTERVIEW_DAYS:-5}"
+if [[ "${_interview_still_incomplete}" != "true" ]] && (( HOURS_IDLE >= ZHC_STUCK_INTERVIEW_DAYS * 24 )); then
+  WATCHDOG="${SCRIPT_DIR}/closeout-readiness-watchdog.sh"
+  if [[ -f "$WATCHDOG" ]]; then
+    log "nudge threshold elapsed and interview still incomplete — invoking closeout-readiness-watchdog (operator lane)"
+    bash "$WATCHDOG" --from-nudge >>"${LOG_FILE}" 2>&1 || log "WARN: watchdog invocation returned non-zero (non-fatal)"
+  else
+    log "WARN: closeout-readiness-watchdog.sh not found at $WATCHDOG — skipping operator escalation"
+  fi
+fi
+
 log "interview-nudge-cron complete"
 exit 0

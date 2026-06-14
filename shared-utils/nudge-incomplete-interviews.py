@@ -376,6 +376,28 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
                 counts["nudged"] += 1
                 break  # one nudge per scan per company
         else:
+            # PRD-2.15 (v12.3.12): no applicable nudge AND interview is incomplete.
+            # If idle >= 168h, this is the dead-end: all nudges exhausted + owner silent.
+            # Mark the interview as STALLED (first-class state, per INSTRUCTIONS.md:796).
+            # NO new owner message — watchdog reads this flag for STUCK_MID_INTERVIEW.
+            if hours_idle >= 168 and not meta.get("complete"):
+                if state_path.exists() and not dry_run:
+                    try:
+                        import json as _json
+                        _s = _json.loads(state_path.read_text())
+                        if not _s.get("interviewStalled"):
+                            from datetime import timezone as _tz
+                            _s["interviewStalled"] = True
+                            _s["interviewStalledAt"] = datetime.now(_tz.utc).strftime(
+                                "%Y-%m-%dT%H:%M:%SZ"
+                            )
+                            state_path.write_text(_json.dumps(_s, indent=2))
+                            print(
+                                f"  Company {company.name}: nudges exhausted at {hours_idle:.1f}h idle — "
+                                f"marked interviewStalled=true (watchdog will escalate operator)"
+                            )
+                    except Exception as e:
+                        print(f"  WARN: could not write interviewStalled for {company.name}: {e}")
             counts["skipped_recent"] += 1
 
     return counts

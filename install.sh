@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.3.11"
+ONBOARDING_VERSION="v12.3.12"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4751,6 +4751,73 @@ install_interview_nudge_cron() {
 }
 
 install_interview_nudge_cron
+
+# ----------------------------------------------------------
+# Step 13.5b: Install closeout-readiness-watchdog cron (PRD-2.15, v12.3.12)
+# ----------------------------------------------------------
+# WHY: the interview-nudge cron is owner-facing only. The closeout-readiness-
+# watchdog is the OPERATOR-FACING twin: it surfaces stalled interviews, failed
+# QC, wedged builds, and blocked closeouts to the operator + Rescue Rangers so
+# Trevor learns on day 5 instead of "never". Fires every 6h (token-free).
+# Mirrors the interview-nudge install block exactly.
+# ----------------------------------------------------------
+step "Step 13.5b: Installing closeout-readiness-watchdog cron (6-hour operator escalation, PRD-2.15 v12.3.12)"
+
+install_closeout_watchdog_cron() {
+    if ! command -v openclaw >/dev/null 2>&1; then
+        warn "openclaw CLI not on PATH — skipping closeout-readiness-watchdog cron. Re-run update-skills.sh later."
+        return 0
+    fi
+
+    if openclaw cron list 2>/dev/null | grep -qi "closeout-readiness-watchdog"; then
+        success "closeout-readiness-watchdog cron already installed"
+        return 0
+    fi
+
+    _WATCHDOG_SCRIPT=""
+    for _cand in \
+        "${HOME}/.openclaw/skills/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh" \
+        "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh" \
+        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh"; do
+        if [[ -f "$_cand" ]]; then
+            _WATCHDOG_SCRIPT="$_cand"
+            break
+        fi
+    done
+
+    if [[ -z "$_WATCHDOG_SCRIPT" ]]; then
+        warn "closeout-readiness-watchdog.sh not found — cron NOT installed."
+        return 0
+    fi
+
+    # Register as COMMAND mode (no --channel/--to/--message) — status is log-only.
+    # Matches the interview-nudge cron pattern (v12.3.10 OPERATOR-ANNOUNCE RULE).
+    _WATCHDOG_CRON_OUT=$(openclaw cron add \
+        --name "closeout-readiness-watchdog" \
+        --schedule "0 */6 * * *" \
+        --command "bash $_WATCHDOG_SCRIPT" \
+        --json 2>/dev/null || true)
+
+    if [[ -n "$_WATCHDOG_CRON_OUT" ]]; then
+        _WATCHDOG_UUID=$(printf '%s' "$_WATCHDOG_CRON_OUT" | jq -r '.id // .uuid // empty' 2>/dev/null || true)
+        if [[ -n "$_WATCHDOG_UUID" ]]; then
+            # Write UUID to state for later self-removal if needed
+            _WD_STATE_FILE="${OC_CONFIG:-${HOME}/.openclaw}/workspace/.workforce-build-state.json"
+            if [[ -f "$_WD_STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+                _tmp=$(mktemp)
+                jq --arg uuid "$_WATCHDOG_UUID" '.closeoutWatchdogCronUuid = $uuid' \
+                    "$_WD_STATE_FILE" > "$_tmp" && mv "$_tmp" "$_WD_STATE_FILE" || rm -f "$_tmp"
+            fi
+        fi
+        success "closeout-readiness-watchdog cron installed (every 6h, silent command mode — operator escalation via Telegram + Rescue Rangers)"
+    else
+        warn "closeout-readiness-watchdog cron creation failed (non-fatal)."
+        warn "  Manual: openclaw cron add --name closeout-readiness-watchdog --schedule '0 */6 * * *' --command 'bash $_WATCHDOG_SCRIPT' --json"
+    fi
+    return 0
+}
+
+install_closeout_watchdog_cron
 
 # ----------------------------------------------------------
 # Step 13.6: Install onboarding re-arm hook (nudge lifecycle)
