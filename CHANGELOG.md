@@ -1,3 +1,17 @@
+## [v12.4.4] - 2026-06-14 - fix: canonical department floor reconciliation closure (Skill 23)
+
+### Changes
+
+Closes PR #192 (fix/reconcile-canonical-department-floor-28). The canonical floor reconciliation (28 = 21 mandatory + 7 universal-primary-vertical) was originally authored against v11.x. When #215 (zhc-interview-closeout-fix / v12.4.2) rewrote department-floor.py and build-workforce.py, it subsumed every stale-reference correction from #192 and went further (dynamic floor counts via len(HARDCODED_MANDATORY) + len(universal_primary_vertical_departments()), removing all hardcoded integer floor strings, removing em dashes). This PR confirms that subsumed state and closes the branch cleanly.
+
+- department-floor.py: all stale "16 mandatory", "19 mandatory", "26 floor", "23-dept", and hardcoded "28-department standard" strings replaced by dynamic computed values in v12.4.2. Gate logic, HARDCODED_MANDATORY (21 items), and CANONICAL_VARIANT_SLUGS all correct.
+- build-workforce.py: stale "N23 standard / 16 mandatory / 23-dept floor" section headers replaced with accurate dynamic-count language in v12.4.2. load_canonical_floor() fallback list correctly carries all 21 mandatory ids.
+- list-canonical-departments.py: stale "19 mandatory" and "floor = 26" docstring corrected in v12.4.2.
+- No logic changes in this version. Skill 23 content changed (skill-version.txt gate G3 satisfied by version bump).
+- Version markers bumped 12.4.3 -> 12.4.4 across all 9 locations.
+
+---
+
 ## [v12.4.3] - 2026-06-14 - docs: Custom Role + SOP Authoring and Core-Merge Standard (Skill 23)
 
 ### Changes
