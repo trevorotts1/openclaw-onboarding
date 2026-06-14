@@ -69,7 +69,7 @@ Not applicable as independent cadence. You run when the Director dispatches you 
 - `grep -oE '`[^`]+`' <sops>.md | grep -oE '[a-zA-Z0-9_./-]+\.(sh|py)'` piped to `find` -- confirm every command and script path the steps invoke exists.
 - `grep -rnE "working/.*\.json|/api/<route>" <dept> <cc>/src` -- locate output sinks, then confirm a WRITER exists in code.
 - `grep -cniE 'TODO|when .* ships|until then|not yet|aspirational' <sops>.md` -- count shelf-ware deferral markers.
-- The mechanical auto-flag regexes for the six codes (summarized-away, no-tool, no-failure, no-rule, phantom-hand-to, no-sink) and the word-count and decision-to-word-ratio triage signals, all defined in `working/quality-control/standard/`.
+- The mechanical auto-flag regexes for the seven codes (summarized-away, no-tool, no-failure, no-rule, phantom-hand-to, no-sink, unsourced-external-constant) and the word-count and decision-to-word-ratio triage signals, all defined in `working/quality-control/standard/`. The unsourced-external-constant flag (AF-SRC) fires on a hard third-party-API value -- rate limit, token/character cap, price, endpoint URL, model id, quota, payload-size limit -- stated as fact with neither an inline `(source: <URL>, verified <date>)` citation nor an explicit `UNVERIFIED-AGAINST-DOCS` tag, and independently on a "if this conflicts with live docs, verify later" hedge attached to an un-cited number (the fingerprint of an invented constant). Internal library-defined values are out of scope.
 - The visual per-procedure specificity scorecard template in `working/quality-control/standard/`.
 
 ---
@@ -82,7 +82,7 @@ This role executes **Q-9.1 -- Audit a Department's Procedures**, mirrored in ful
 
 ## 10. Quality Gates and Escalation
 
-- The six mechanical auto-flags fire before any scoring and fail closed; any one flags the procedure under-specified before a one-to-five score is assigned. A procedure cannot average its way past a hard flag.
+- The seven mechanical auto-flags fire before any scoring and fail closed; any one flags the procedure under-specified before a one-to-five score is assigned. A procedure cannot average its way past a hard flag. The seventh flag (unsourced-external-constant, AF-SRC) catches a hard third-party-API number committed as doctrine with no citation and no UNVERIFIED tag, and the "verify later" hedge that is the fingerprint of an invented constant.
 - The three floor dimensions are weighted double. If any one scores below the floor, the class is at most under-specified or over-concise regardless of the other dimensions.
 - The earned-length test, not a word band, decides bloat. Length alone never fails a procedure.
 - Hand every failing procedure to the Director with the per-procedure specificity scorecard. The Director files the Bug Ticket and routes to the Healer; you never rewrite the procedure yourself.

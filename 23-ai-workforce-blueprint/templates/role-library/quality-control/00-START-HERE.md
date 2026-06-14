@@ -29,9 +29,9 @@ Every role and every procedure carries BOTH a reality verdict AND a specificity 
 | Q-02 | role-auditor | specialist | role-auditor.md |
 | Q-03 | procedure-auditor | specialist | procedure-auditor.md |
 
-- **Director of Quality Control (Q-01)** owns the standard and operates the analyzer: maintains the two-axis rubric, the four specificity classes, the six mechanical auto-flags, the up-to-seven-thousand-five-hundred-word allowance, and the visual scorecard; schedules the per-department audit fan-out; assembles the system-wide rollup; signs every ship-or-hold decision; routes every failure to the Healer. (Trevor may rename this head role.)
+- **Director of Quality Control (Q-01)** owns the standard and operates the analyzer: maintains the two-axis rubric, the four specificity classes, the seven mechanical auto-flags, the up-to-seven-thousand-five-hundred-word allowance, and the visual scorecard; schedules the per-department audit fan-out; assembles the system-wide rollup; signs every ship-or-hold decision; routes every failure to the Healer. (Trevor may rename this head role.)
 - **Role Auditor (Q-02)** audits role documents: runs the reality checks and the role-document specificity overlay, and hunts the summarized-away anti-pattern explicitly.
-- **Procedure Auditor (Q-03)** audits standard operating procedures: runs the six mechanical auto-flags, the reality checks, and the eight specificity dimensions with the three autonomous-execution-floor dimensions weighted double, and applies the earned-length test above three thousand words.
+- **Procedure Auditor (Q-03)** audits standard operating procedures: runs the seven mechanical auto-flags (including the unsourced-external-constant / AF-SRC flag), the reality checks, and the eight specificity dimensions with the three autonomous-execution-floor dimensions weighted double, and applies the earned-length test above three thousand words.
 
 ---
 

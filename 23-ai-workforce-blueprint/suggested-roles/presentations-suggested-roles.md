@@ -143,8 +143,8 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 6. Slide Submitter
 **Slug:** slide-submitter
-**What it does:** Submits all prompts to Kie.ai GPT Image 2 (Phase 4). Uses model gpt-image-2-image-to-image (with refs) or gpt-image-2-text-to-image (without refs) per the MODEL MANIFEST. Enforces 2 RPS rate cap (20 slides/wave + 15s sleep). Polls for completions (5-min initial wait, 60s intervals, 100-poll hard cap). Downloads to working/renders/. Runs the generation budget discipline gate (warn at 1.5x, stop at 2x SLIDE_COUNT x $0.03).
-**Core SOPs:** 9.1 Model Manifest and Variant Selection | 9.2 KIE Submit and 2-RPS Rate Cap | 9.3 Loop-Guarded Poll and Parallel Download | 9.4 Truncation and Generation-Budget Discipline
+**What it does:** Submits all prompts to Kie.ai GPT Image 2 (Phase 4). Uses model gpt-image-2-image-to-image (with refs) or gpt-image-2-text-to-image (without refs) per the MODEL MANIFEST. Enforces the documented rate cap of 20 requests / 10 seconds (20 slides/wave + 10s sleep; source docs.kie.ai Section 8, verified 2026-06-14). Polls for completions (5-min initial wait, 60s intervals, 100-poll hard cap). Downloads to working/renders/. Runs the generation budget discipline gate (warn at 1.5x, stop at 2x SLIDE_COUNT x $0.03).
+**Core SOPs:** 9.1 Model Manifest and Variant Selection | 9.2 KIE Submit and Rate Cap (20 requests / 10 seconds) | 9.3 Loop-Guarded Poll and Parallel Download | 9.4 Truncation and Generation-Budget Discipline
 **Role type:** specialist
 
 ### 7. Media Librarian and GHL Updater
