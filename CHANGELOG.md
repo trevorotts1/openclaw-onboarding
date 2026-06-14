@@ -1,3 +1,19 @@
+## [v12.8.1] - 2026-06-14 - fix(security): Skill 46 callback-relay hardening (IDOR + secret-in-URL)
+
+### Changes
+
+- fix(security/A): submitId is now 128-bit cryptographically random hex (crypto.randomBytes(16)) in kie-slide-submitter.js. Was predictable deckId_slideId, enabling IDOR against KV. Human-readable deckId/slideId are stored as a separate `label` field in the local registry. Crash-resume rebuilt: on restart, registry is scanned by label rather than reconstructing the filename.
+- fix(security/B): Worker GET /kv-read now requires Authorization: Bearer <KVREAD_TOKEN> in every request. Unauthenticated reads return 401. The bearer token is a Worker secret (never in any .md). The box-kv-poller sends the token on every poll. Misconfigured token fails closed (500 if not set on the Worker).
+- fix(security/C): perTaskSecret is never stored in KV and never returned in any response body. The callBackUrl now carries h=HMAC-SHA256(perTaskSecret, KIE_CALLBACK_HMAC_KEY); the Worker stores this HMAC in KV. On /kv-read the box sends the raw perTaskSecret as &p=<preimage>; the Worker recomputes HMAC(preimage) in constant time and compares against the stored HMAC. Returns 403 on mismatch. The plaintext secret stays entirely on the box.
+- fix(security/D): callBackUrl no longer carries the raw perTaskSecret in the s= param. s= is now HMAC-SHA256(clientSlug + ":" + submitId, KIE_CALLBACK_HMAC_KEY). The Worker recomputes and verifies in constant time on every POST /cb. Nothing secret traverses Kie or appears in logs.
+- Kie HMAC verification (POST /cb), 300-second replay window, and idempotency are unchanged.
+- New Worker secret required: KIE_CALLBACK_HMAC_KEY (set via wrangler secret put).
+- New Worker secret required: KVREAD_TOKEN (set via wrangler secret put).
+- Worker version bumped 1.0.0 -> 1.1.0.
+- No client names in any changed file.
+
+---
+
 ## [v12.8.0] - 2026-06-14 - feat: Kie callback Worker (centralized, operator CF) + submitter webhook-primary/poll-fallback
 
 ### Changes
