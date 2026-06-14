@@ -3,15 +3,15 @@
 list-canonical-departments.py - single-source-of-truth department floor printer.
 
 Reads department-naming-map.json and prints:
-  1. The 21 mandatory departments (every client gets these unless explicitly declined).
+  1. The 22 mandatory departments (every client gets these unless explicitly declined).
   2. The 7 universal-primary vertical-pack departments (one per pack, marked
      universal_primary=true - added for every client regardless of industry).
-  3. The computed floor = mandatory count + universal-primary count = 28.
+  3. The computed floor = mandatory count + universal-primary count = 29.
 
 This script IS the canonical count. The floor is computed at runtime from the
-live naming map (21 + 7 = 28 for naming map v2.5.0); the numbers in this
+live naming map (22 + 7 = 29 for naming map v2.6.0); the numbers in this
 docstring are descriptive of the live data, never a hardcoded gate. All docs
-and CI reference this script instead of hardcoding 16, 17, 19, 23, 24, 26, or
+and CI reference this script instead of hardcoding 16, 17, 19, 23, 24, 26, 28, or
 any other stale number.
 
 USAGE

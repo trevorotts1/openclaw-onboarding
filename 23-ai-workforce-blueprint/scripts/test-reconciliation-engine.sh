@@ -6,7 +6,7 @@
 # These are the engine behaviors built into Skill 23 build-workforce.py +
 # department-floor.py:
 #
-#   R2.1  Floor is 21 mandatory + 7 universal-primary = 28, computed live; no
+#   R2.1  Floor is 22 mandatory + 7 universal-primary = 29, computed live; no
 #         stale 16/19/23/26 strings remain in the three scripts.
 #   R2.2  Capability 1 MERGE custom+floor still works (custom dept preserved).
 #   R2.3  Capability 2 semantic COMBINE/MERGE: a custom dept that semantically
@@ -62,13 +62,13 @@ def _read_state():
     except Exception:
         return {}
 
-print("== R2.1 floor is 28 (21 + 7), computed live; no stale strings ==")
+print("== R2.1 floor is 29 (22 + 7), computed live; no stale strings ==")
 import subprocess
 out = subprocess.run(["python3", os.path.join(SCRIPTS, "list-canonical-departments.py"), "--json"],
                      capture_output=True, text=True)
 d = json.loads(out.stdout)
-check(d["floor"] == 28, f"list-canonical floor == 28 (got {d['floor']})")
-check(d["mandatory_count"] == 21, f"mandatory == 21 (got {d['mandatory_count']})")
+check(d["floor"] == 29, f"list-canonical floor == 29 (got {d['floor']})")
+check(d["mandatory_count"] == 22, f"mandatory == 22 (got {d['mandatory_count']})")
 check(d["universal_primary_count"] == 7, f"universal-primary == 7 (got {d['universal_primary_count']})")
 
 # Stale-number scan across the three reconciliation scripts (defended strings only:

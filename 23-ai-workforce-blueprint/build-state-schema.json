@@ -878,7 +878,7 @@
     },
     "canonicalReconciliation": {
       "type": "object",
-      "description": "PRD R2.x (v12.5.x reconciliation engine): the auditable record of how the owner's department set was reconciled with the canonical floor (21 mandatory + 7 universal-primary = 28, computed live). Written by build-workforce.py reconcile_canonical_floor / apply_semantic_merges / materialize_custom_roles / capture_custom_sops and read by department-floor.py.",
+      "description": "PRD R2.x (v12.5.x reconciliation engine): the auditable record of how the owner's department set was reconciled with the canonical floor (22 mandatory + 7 universal-primary = 29, computed live). Written by build-workforce.py reconcile_canonical_floor / apply_semantic_merges / materialize_custom_roles / capture_custom_sops and read by department-floor.py.",
       "properties": {
         "decisions": {
           "type": "object",
