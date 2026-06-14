@@ -285,7 +285,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 2. **Named methodologies are named SYSTEMS (rule 7).** Every piece of the client's methodology from intake (their identity development structure, their guided development system, their named frameworks) is treated as a named SYSTEM and softly sold every time it appears. A framework mentioned by name is a light sales point.
 3. **One pain per slide with an emotional image note (rule 9).** Each distinct pain point is ONE slide, never a bulleted list of pains. Write a PRESENTER NOTE and a PURPOSE that make the viewer say "that is exactly how I feel," and note the emotion the image must carry.
 4. **At least one intrigue slide per section (rule 10).** Each arc section contains at least one genuine curiosity-gap slide -- a line that makes the audience ask a question ("doing the right things, but in the wrong way?"). Track per-section coverage.
-5. **Compare and contrast in every Secret (rule 11).** Every Secret section carries an old-way vs new-way device (control vs clarity, keep guessing vs build the system). Two-sided belief-shift slides are the workhorses; one lives in each Secret and again in the close.
+5. **Compare and contrast in every Secret (rule 11).** Every Secret section carries an old-way vs new-way device (e.g. struggling alone vs having the system, keep guessing vs build the process -- derived from THIS client's intake). Two-sided belief-shift slides are the workhorses; one lives in each Secret and again in the close.
 6. **Cost vs value, answered before the close (rule 6).** Before the offer lands, the deck has explicitly answered both: the COST of inaction and the VALUE of action. If the offer produces money, the math is on screen. If the outcome is non-monetary, run the PRICELESS PITCH (the American Express frame) and elevate the outcome above money. Never fabricate dollar values for non-monetary outcomes.
 7. **Appetizer depth, not dinner (rule 8).** Each Secret teaches the WHAT, the WHY, and ONE quick win. The complete HOW lives inside the offer. A Secret that hands over the full how-to has no dinner left to sell.
 8. **Triple alliteration on value trios (rule 13).** When a value trio is part of the pitch, alliterate it where natural ("confident, consistent, clear") and consider giving each value word its own slide, because each is being sold.
@@ -366,24 +366,24 @@ proof_audit.txt shows the forbidden-on-slide scan (SOP 9.3 step 4a) ran and no a
 ```
 SLIDE 12
 SECTION: Solution Intro
-PURPOSE: Show that warm clients arrive on their own once the system runs.
+PURPOSE: Show that the result the client promises arrives predictably once the system runs.
 ARCHETYPE: A2
 LADDER: none
-HEADLINE: Your clients come to you. Every week.
-EMPHASIS: "Every week"
-SUBHEAD: No cold outreach. No social media grind.
+HEADLINE: [THE RESULT]. Every [TIMEFRAME].
+EMPHASIS: "Every [TIMEFRAME]"
+SUBHEAD: No [OLD GRIND]. No [OLD STRUGGLE].
 SUPPORTING: NONE
 PROOF USED: none
 PEOPLE: no
 HOOK_REFRAIN: yes; bottom band, refrain after the idea lands
 TEXT_ANCHOR: right block
-PRESENTER NOTE: This is the moment they realize they've been working harder than they need to. Name the old grind, then let the new picture sit. Pause before you turn the slide.
-HOOK VARIANT: "Enrollment on autopilot, your clients, your terms"
+PRESENTER NOTE: This is the moment they realize they have been working harder than they need to. Name the old grind, then let the new picture sit. Pause before you turn the slide.
+HOOK VARIANT: "[HOOK LINE -- the short variant that fits a bottom-band refrain]"
 ```
 Note: numbers and hard stops do the work; no banned generic words; the PRESENTER NOTE adds narration the slide does not show (rule 15); every template field is filled.
 
 ### Example B -- Hook Variant Distribution
-A 75-slide deck with hook "Enroll clients without chasing them" distributed as: Slide 1 (full version), Slide 8 (shortened: "No more chasing"), Slide 22 (proof section: "This is what enrollment without chasing looks like"), Slide 38 (offer stack: "Everything here works because you never chase"), Slide 51 (price drop: "For the price of one client who chased you"), Slide 67 (urgency: "Stop chasing. Start enrolling."), Slide 74 (close: "Enrollment on autopilot -- your clients, your terms").
+A 75-slide deck with hook "[THE HOOK from intake]" distributed as: Slide 1 (full version), Slide 8 (shortened variant), Slide 22 (proof section: "This is what [HOOK NOUN] looks like"), Slide 38 (offer stack: "Everything here works because [HOOK VERB]"), Slide 51 (price drop: "For the price of [ONE BAD ALTERNATIVE]"), Slide 67 (urgency: "[ACTION]. [RESULT]."), Slide 74 (close: "[HOOK LINE -- the signature close form]").
 
 ---
 

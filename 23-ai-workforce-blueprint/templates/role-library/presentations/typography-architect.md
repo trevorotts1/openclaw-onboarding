@@ -296,7 +296,7 @@ A 58-slide deck: image positions walk right, left, full-bleed, none(hook), right
 
 **Tier 2:**
 - Skill 45 references/PPT-ANALYSIS-SOP.md (the layout-rotation discipline: count 3 to 8 distinct slide-style families, never more than 3 consecutive same family)
-- The Lyric gold standard rendered deck (layout variety across 75 slides)
+- The proven gold standard rendered deck (layout variety across 75 slides)
 
 **Tier 3:**
 - Typography systems references (type scale, weight hierarchy, optical sizing) via the Deep Research Specialist -- Presentations

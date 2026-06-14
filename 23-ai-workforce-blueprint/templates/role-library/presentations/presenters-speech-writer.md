@@ -290,11 +290,11 @@ HOOK BEAT: none on this slide.
 
 ### Example B -- A drop block with earned reason and pause
 ```
-Slide 43 [PACE: ~18s @ 140 WPM]
-"Everything you just saw is worth five thousand dollars. [pause]
-But you are not paying five thousand. [pause] You are not paying two thousand five hundred.
-[pause] Today, it is ninety-seven dollars."
-DROP: FINAL ($97); earned reason = the full value stack just tallied; mechanic line "the lower the price the greater the value" stays in this speech, not on the slide.
+Slide [FINAL_SLIDE] [PACE: ~18s @ 140 WPM]
+"Everything you just saw is worth [ANCHOR_VALUE spoken]. [pause]
+But you are not paying [ANCHOR_VALUE]. [pause] You are not paying [DROP1_VALUE].
+[pause] Today, it is [FINAL_PRICE spoken]."
+DROP: FINAL ([FINAL_PRICE]); earned reason = the full value stack just tallied; mechanic line "the lower the price the greater the value" stays in this speech, not on the slide.
 ```
 
 ---

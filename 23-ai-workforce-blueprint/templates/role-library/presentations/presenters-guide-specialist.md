@@ -282,7 +282,7 @@ SECTION: The Offer (8 min)
 ```
 
 ### Example B -- A verified delivery record
-The guide ships as output/corey_deck_presenters_guide.pdf (smallest font 12pt, branded) plus a Notion page URL; the Delivery Concierge returns delivery_complete with file hash + size for the Mac Downloads, GHL, and Drive destinations; only then is the guide marked shipped.
+The guide ships as output/[CLIENT_SLUG]_deck_presenters_guide.pdf (smallest font 12pt, branded) plus a Notion page URL; the Delivery Concierge returns delivery_complete with file hash + size for the Mac Downloads, GHL, and Drive destinations; only then is the guide marked shipped.
 
 ---
 

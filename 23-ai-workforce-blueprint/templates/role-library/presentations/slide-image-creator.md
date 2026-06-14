@@ -141,7 +141,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - the GROUNDED_CONTENT variable from intake.json (the client's book / message / offer / methodology) plus any deep-research grounding routed into the image brief: the concrete moments, settings, and props from THIS client's actual method that the imagery must depict (P6 grounding; the World Engine consumes it). If GROUNDED_CONTENT is blank, flag the operator and do not invent a generic stand-in for the client's method.
 
 **Steps:**
-0. **Read the master SOP Section 7.5 gold-standard exemplar in full before writing your first prompt.** This is the actual prompt that produced the title slide of the QC-9.42 Lyric deck. Study its anatomy: the header block (title, ARCHETYPE / SECTION / LADDER tags, ONE BIG IDEA line), zone percentages, emotionally precise photo direction, exact verbatim copy with per-line font/size/color, the gold rule devices, the logo chip spec, MOOD + LIGHTING, and the closing COLOR VERIFICATION and AVOID blocks. Also read the SECOND exemplar in the appendix of this file (Section 9.5 strengthening, the A2 people-slide exemplar). Your prompts must match their density and structure, adapted to each slide's own archetype and brand variables. Do not write a single prompt before you have read both.
+0. **Read the master SOP Section 7.5 gold-standard exemplar in full before writing your first prompt.** This is the anatomy of the passing title-slide prompt from the proven run. Study its structure: the header block (title, ARCHETYPE / SECTION / LADDER tags, ONE BIG IDEA line), zone percentages, emotionally precise photo direction, exact verbatim copy with per-line font/size/color, the brand rule devices, the logo chip spec, MOOD + LIGHTING, and the closing COLOR VERIFICATION and AVOID blocks. Also read the SECOND exemplar in the appendix of this file (Section 9.5 strengthening, the A2 people-slide exemplar). Your prompts must match their density and structure, adapted to each slide's own archetype and brand variables. Do not write a single prompt before you have read both.
 1. For each slide N, create working/prompts/slide-NN-prompt.txt (zero-padded number, e.g., slide-01-prompt.txt). **Line 1 of every prompt declares its archetype**, in the form `[ARCHETYPE A1] [SECTION: ...] [LADDER: ...]` followed by a ONE BIG IDEA line, exactly as the master 7.5 exemplar does. The archetype is taken from the slide's ARCHETYPE field in slides_copy.md (A1-A5 per SOP 9.2).
 2. Write the 15-element prompt in this exact order. Each element must be present:
    1. **FORMAT**: "Create a 16:9 presentation slide image at 2K resolution (2560x1440 pixels)."
@@ -553,13 +553,13 @@ Rules:
 **Part A -- COLOR RELATIONSHIPS (complementary, contrasting, analogous):**
 1. Read the COLOR THEORY section of the STYLE BLOCK: what is the primary-secondary relationship? (complementary = opposite on the wheel for maximum pop; analogous = adjacent hues for warmth and harmony; triadic = three equidistant hues for vibrant balance)
 2. The BRAND PALETTE is the governing constraint -- brand hex codes do not change. Color theory governs HOW the colors RELATE and appear together, not which colors are used.
-3. Complementary accent use: when the STYLE BLOCK names a complementary accent (e.g., raspberry-pink as the pop accent against a gold primary), that accent color is reserved for MAXIMUM CONTRAST moments -- CTAs, price reveals, the single most important number on a slide. Using it everywhere kills its power.
+3. Complementary accent use: when the STYLE BLOCK names a complementary accent (e.g., the client's action/urgency color as the pop accent against a structural primary), that accent color is reserved for MAXIMUM CONTRAST moments -- CTAs, price reveals, the single most important number on a slide. Using it everywhere kills its power.
 4. Contrast declaration (required in every prompt's BRAND PALETTE element): state the contrast relationship between the headline color and the background it sits on. The minimum threshold is WCAG AA: 4.5:1 for normal text, 3:1 for large text (large = 18pt+ regular or 14pt+ bold). "Charcoal (#231F20) on white (#FBF7F4): contrast ratio 16.5:1, PASS" is the correct form. A prompt that places light text on a light background without a contrast declaration is a defect.
 5. Include a COLOR GRADING block at the end of every prompt per Part B.
 
 **Part B -- COLOR GRADING (consistent warm/cool tone, saturation, and temperature across the deck):**
 1. Read the COLOR GRADING PROFILE from the STYLE BLOCK: WARM, COOL, or NEUTRAL grade.
-   - WARM grade: golden-hour light temperature, slightly lifted shadows, warm midtones, saturated sunset-direction tones. Charcoal and raspberry-pink on an off-white base reads as WARM.
+   - WARM grade: golden-hour light temperature, slightly lifted shadows, warm midtones, saturated sunset-direction tones. Charcoal and a warm action accent on an off-white base reads as WARM.
    - COOL grade: silver-blue light temperature, neutral-to-cool midtones, clean shadows. A navy-primary palette typically grades COOL.
    - NEUTRAL grade: balanced daylight, no dominant temperature lean.
 2. Every prompt must state the TEMPERATURE LOCK: "Image color temperature: WARM / COOL / NEUTRAL -- lock to [description] to match the deck's grade profile."
@@ -654,8 +654,8 @@ Every prompt includes (a) a contrast declaration for headline-on-background at W
 
 ## 13. Good Output Examples
 
-### Example A -- Hook Slide Prompt (abbreviated for illustration)
-"[ARCHETYPE A1] [SECTION: THE HOOK] [LADDER: none] ONE BIG IDEA: she does not have to chase clients anymore. Create a 16:9 presentation slide at 2K resolution. White base background. #C4A44D used only as accent elements, maximum 20% of visual area. The slide headline reads exactly: 'You do not have to chase clients'. Place headline in lower-left third on a soft white-to-transparent gradient scrim covering the bottom 28% of the frame. Bold, 70pt [Brand Font]. PEOPLE via the three engines -- AUDIENCE ENGINE: one Black woman in her 40s, business professional attire per the niche. FACIAL EXPRESSION ENGINE: vision/future-pace expression, relieved, arrived, soft confident smile, shoulders down (not just 'smiling'). WORLD ENGINE: she sits at her own desk in a bright editorial office with the phone face-down beside her, because the one idea is that the chasing is over; a real workspace, not a studio backdrop. Three-quarter shot, person in the right two-thirds. Semi-transparent #C4A44D horizontal band overlaid at bottom 15%: white text reads 'Enrollment on autopilot, your clients, your terms'. Logo lower-right on a white chip with a 1px gold border. AVOID: dark backgrounds, generic studio backdrop, watermarks, em dashes, any text not specified here..."
+### Example A -- Hook Slide Prompt (abbreviated for illustration; substitute client's intake values)
+"[ARCHETYPE A1] [SECTION: THE HOOK] [LADDER: none] ONE BIG IDEA: [the audience's core desire, stated as achieved]. Create a 16:9 presentation slide at 2K resolution. [BASE_COLOR] base background. [BRAND_PRIMARY_HEX] used only as accent elements, maximum 20% of visual area. The slide headline reads exactly: '[HOOK LINE from slides_copy.md]'. Place headline in lower-left third on a soft white-to-transparent gradient scrim covering the bottom 28% of the frame. [WEIGHT], 70pt [BRAND_FONT]. PEOPLE via the three engines -- AUDIENCE ENGINE: [one person matching REPRESENTATION_MIX from STYLE BLOCK, professional attire per the niche]. FACIAL EXPRESSION ENGINE: vision/future-pace expression, relieved, arrived, soft confident smile, shoulders down (not just 'smiling'). WORLD ENGINE: [real-world setting justified by the slide's one idea -- NOT a studio backdrop; the setting SHOWS the promise delivered]. Three-quarter shot, person in the right two-thirds. Semi-transparent [BRAND_PRIMARY_HEX] horizontal band overlaid at bottom 15%: white text reads '[OFFER_NAME tagline from intake]'. Logo lower-right on a white chip with a 1px [BRAND_PRIMARY] border. AVOID: dark backgrounds, generic studio backdrop, watermarks, em dashes, any text not specified here..."
 
 ### Example B -- Price Drop Slide Prompt Fragment
 "[ARCHETYPE A4] ...On a large white hang-tag with a gold #C4A44D border: the old price $9,997 appears in muted charcoal, with a single clean DRAWN straight line in the brand accent #C4A44D through the center of the numerals, the line slightly wider than the text (a drawn object, not a font strikethrough and not a diagonal scribble). Struck price is smaller (40pt). The new price $6,997 glows below and to the right, bold, 60pt, #C4A44D. Payment plan line: 'or 3 payments of $2,499' at 28pt regular weight..."
@@ -765,43 +765,43 @@ This role is a specialist and does not manage sub-specialists directly. Close co
 [ARCHETYPE A2] [SECTION: AUTHORITY & STORY] [LADDER: none]
 ONE BIG IDEA: The founder built and runs the exact thing she teaches; she is one of you, not an outsider.
 PROMPT:
-Archetype A2 - PHOTO ONE SIDE + TEXT OPPOSITE, vertical 45/55 split. 16:9 canvas, 2K resolution. Base: warm off-white #FBF7F4 across the full frame. NO black backgrounds anywhere in the frame.
+Archetype A2 - PHOTO ONE SIDE + TEXT OPPOSITE, vertical 45/55 split. 16:9 canvas, 2K resolution. Base: [BASE_COLOR] across the full frame. NO black backgrounds anywhere in the frame.
 
-LAYOUT: The left 45% of the slide is a full-height photo panel carrying the person. The right 55% is the clean warm off-white #FBF7F4 text zone carrying the full text group. The person is placed on the LEFT because the eye reads the human first, lands on the face and the proof, then travels right into the promise text; the split is a deliberate 45/55, not a centered halve.
+LAYOUT: The left 45% of the slide is a full-height photo panel carrying the person. The right 55% is the clean [BASE_COLOR] text zone carrying the full text group. The person is placed on the LEFT because the eye reads the human first, lands on the face and the proof, then travels right into the promise text; the split is a deliberate 45/55, not a centered halve.
 
 PHOTO PANEL (left 45%, full height):
 PERSON via the three engines.
-AUDIENCE ENGINE: a confident Black woman in her early 40s, the founder figure, matching the audience she serves (a 70% African American women audience). Natural hair in a soft tapered curl, shoulder length. Wardrobe: a tailored raspberry-pink #C8104E blazer over a cream shell, gold stud earrings; professional, aspirational, the niche's "successful owner" dress code, never corporate-stiff.
-FACIAL EXPRESSION ENGINE: AUTHORITY expression - she looks direct to camera, settled, certain, no grin; the calm of someone who has done the thing and has nothing to prove. Shoulders square, chin level, a half-step lean toward the viewer that reads as "I am talking to you." The expression matches what the slide SAYS: she built it and runs it.
-WORLD ENGINE: the real-world setting is her own working facility, not a studio cyclorama. She stands in the doorway of a bright, light-filled center she clearly owns: behind her, softly out of focus, a real operating space with warm wood shelving, a wall of full cubbies, and a glass-paned interior door. The setting is justified because the one idea is "I built it, I run it" - she must be standing INSIDE the thing she built, not against a seamless backdrop. Premium lifestyle-documentary photography, real and warm.
-LIGHTING: bright editorial interior, golden-hour daylight spilling through a tall window on the right edge of the photo panel, wrapping her face in soft warm key light; clean, premium, aspirational. No institutional overhead fluorescents, no moody shadow, no desaturation.
-SHOT: three-quarter shot (Shot A, Single Subject), framed from mid-thigh up, she occupies the inner two-thirds of the photo panel with breathing room above her head.
+AUDIENCE ENGINE: [one person matching REPRESENTATION_MIX from STYLE BLOCK; professional attire per the client's niche -- the "successful owner" dress code; never corporate-stiff]. Wardrobe includes [BRAND_SECONDARY color item] for brand alignment.
+FACIAL EXPRESSION ENGINE: AUTHORITY expression - looks direct to camera, settled, certain, no grin; the calm of someone who has done the thing and has nothing to prove. Shoulders square, chin level, a half-step lean toward the viewer that reads as "I am talking to you." The expression matches what the slide SAYS: she built it and runs it.
+WORLD ENGINE: the real-world setting is the founder's own working space or facility, not a studio cyclorama. She stands inside or adjacent to the real thing she built: [a justified real-world setting pulled from the client's niche and GROUNDED_CONTENT]. The setting is justified because the one idea is "I built it, I run it" -- she must be inside the thing she built, not against a seamless backdrop. Premium lifestyle-documentary photography, real and warm.
+LIGHTING: bright editorial interior, golden-hour daylight, wrapping the face in soft warm key light; clean, premium, aspirational. No institutional overhead fluorescents, no moody shadow, no desaturation.
+SHOT: three-quarter shot (Shot A, Single Subject), framed from mid-thigh up, subject occupies the inner two-thirds of the photo panel with breathing room above the head.
 
-The photo panel meets the text zone along a clean vertical line in metallic gold #C9A24B (3px, full height), functioning as the premium divider between the two zones.
+The photo panel meets the text zone along a clean vertical line in [BRAND_PRIMARY_HEX] (3px, full height), functioning as the premium divider between the two zones.
 
-TEXT ZONE (right 55%, warm off-white #FBF7F4 background):
-Kicker label - top-left of the text zone, upper third, all-caps, letter-spaced, Montserrat SemiBold, approximately 16-18pt, metallic gold #C9A24B: "WHO'S TALKING TO YOU". A short 40px gold #C9A24B rule sits directly beneath the kicker.
+TEXT ZONE (right 55%, [BASE_COLOR] background):
+Kicker label - top-left of the text zone, upper third, all-caps, letter-spaced, [BRAND_FONT] SemiBold, approximately 16-18pt, [BRAND_PRIMARY_HEX]: "WHO'S TALKING TO YOU". A short 40px [BRAND_PRIMARY_HEX] rule sits directly beneath the kicker.
 
-Headline - directly below the kicker, left-aligned, Montserrat Black, very large (approximately 52-60pt relative to slide height), charcoal #231F20, three lines:
+Headline - directly below the kicker, left-aligned, [BRAND_FONT] Black, very large (approximately 52-60pt relative to slide height), charcoal #231F20, three lines:
 Line 1: "I'm Not A Coach"
 Line 2: "Who Read About It."
-Line 3: "I Built It. I Run It." - with the words "Built It" and "Run It" in raspberry-pink #C8104E for emphasis.
+Line 3: "I Built It. I Run It." - with the words "Built It" and "Run It" in [BRAND_SECONDARY_HEX] for emphasis.
 The headline dominates the upper and middle thirds of the text zone and is the second thing the eye reads after the face.
 
-A thin horizontal rule in metallic gold #C9A24B (approximately 45% of the text-zone width, left-aligned) sits between the headline and the sub-copy below - a premium breathing line.
+A thin horizontal rule in [BRAND_PRIMARY_HEX] (approximately 45% of the text-zone width, left-aligned) sits between the headline and the sub-copy below - a premium breathing line.
 
-Sub-copy - lower-middle third of the text zone, left-aligned, Montserrat Medium, approximately 20-22pt, charcoal #231F20, one line:
-"Same chairs to fill. Same payroll on Friday. I'm you."
+Sub-copy - lower-middle third of the text zone, left-aligned, [BRAND_FONT] Medium, approximately 20-22pt, charcoal #231F20, one line:
+"[One-line peer-identity line from the client's niche, e.g. 'Same [challenge]. Same [cost]. I'm you.']"
 
-LOGO: the client logo placed in the bottom-right corner of the text zone, approximately 9% of slide width, on a clean crisp white rectangular chip with a subtle 1px gold #C9A24B border. Logo never recolored, never distorted, never clipped, sitting clear of the sub-copy with at least 5% margin from the slide edge.
+LOGO: the client logo placed in the bottom-right corner of the text zone, approximately 9% of slide width, on a clean crisp white rectangular chip with a subtle 1px [BRAND_PRIMARY_HEX] border. Logo never recolored, never distorted, never clipped, sitting clear of the sub-copy with at least 5% margin from the slide edge.
 
-OBJECT PLACEMENT recap: photo panel left 45% full height; 3px gold vertical divider on the seam; kicker + gold tick in the text-zone upper third; headline across the upper-middle thirds; 45%-width gold breathing rule; sub-copy in the lower-middle third; logo chip bottom-right. Nothing overlaps the founder's face; no text crosses the gold divider into the photo panel.
+OBJECT PLACEMENT recap: photo panel left 45% full height; 3px accent vertical divider on the seam; kicker + accent tick in the text-zone upper third; headline across the upper-middle thirds; 45%-width accent breathing rule; sub-copy in the lower-middle third; logo chip bottom-right. Nothing overlaps the founder's face; no text crosses the accent divider into the photo panel.
 
-MOOD + LIGHTING: grounded, credible, peer-to-peer authority. The image says "she is one of us and she actually did this." Warm, bright, aspirational, premium documentary realism. Not motivational-poster vague, not cold corporate headshot; a real owner in her real space, talking straight to one person.
+MOOD + LIGHTING: grounded, credible, peer-to-peer authority. The image says "she is one of us and she actually did this." Warm, bright, aspirational, premium documentary realism. Not motivational-poster vague, not cold corporate headshot; a real owner in their real space, talking straight to one person.
 
-COLOR VERIFICATION: Warm off-white #FBF7F4 base confirmed across the full frame and the entire text zone. Raspberry-pink #C8104E on the blazer and on the emphasis words "Built It" and "Run It". Metallic gold #C9A24B on the kicker, the kicker tick, the vertical divider, the breathing rule, and the logo chip border. Charcoal #231F20 on the headline body and the sub-copy. Zero black backgrounds anywhere in the frame.
+COLOR VERIFICATION: [BASE_COLOR] base confirmed across the full frame and the entire text zone. [BRAND_SECONDARY_HEX] on the wardrobe accent and on the emphasis words "Built It" and "Run It". [BRAND_PRIMARY_HEX] on the kicker, the kicker tick, the vertical divider, the breathing rule, and the logo chip border. Charcoal #231F20 on the headline body and the sub-copy. Zero black backgrounds anywhere in the frame.
 
-AVOID: Deformed hands or extra fingers. Garbled or misspelled text. Em dashes rendered in any slide text. Clipart, cartoon, or emoji glyphs. Black, navy, or charcoal backgrounds. A generic seamless studio backdrop behind the founder (she must be in her real facility). A salesy or grinning expression where calm authority belongs. Men as the focal figure. Cheesy stock photography. Institutional fluorescent lighting. Dark, moody, or desaturated tones. Any text crossing the gold divider into the photo panel.
+AVOID: Deformed hands or extra fingers. Garbled or misspelled text. Em dashes rendered in any slide text. Clipart, cartoon, or emoji glyphs. Black, navy, or charcoal backgrounds. A generic seamless studio backdrop behind the founder (she must be in her real facility). A salesy or grinning expression where calm authority belongs. Cheesy stock photography. Institutional fluorescent lighting. Dark, moody, or desaturated tones. Any text crossing the accent divider into the photo panel.
 ```
 
 ---

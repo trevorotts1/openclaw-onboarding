@@ -303,7 +303,7 @@ Additional bad outputs:
 
 **Tier 1:**
 - universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 4.3 rule 1 (the Hook Doctrine / Purple Rain rule) and Section 6.1 criterion 11 (mechanical hook count)
-- The proven Lyric run hooks ("30 Kids. 30 Days.", "It's not your heart. It's your system.", "Stay. I dare you.")
+- Proven hook formulas: F1 number symmetry ("30 Kids. 30 Days."), F3 reframe contrast ("It's not your heart. It's your system."), F4 dare ("Stay. I dare you.")
 
 **Tier 2:**
 - Alex Hormozi, $100M Offers and $100M Leads -- promise compression and offer naming (the MAGIC formula feeds hook nouns)
