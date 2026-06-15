@@ -494,6 +494,22 @@ if [[ $RC -ne 0 ]]; then
   exit $RC
 fi
 
+# B6: WIRING GATE — blocking for this dept (not advisory)
+_WIRING_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/verify-wiring.sh"
+if [[ -f "$_WIRING_SCRIPT" ]]; then
+  echo "[add-role] Running wiring gate for dept $DEPT_SLUG..."
+  _WIRING_RC=0
+  bash "$_WIRING_SCRIPT" --dept "$DEPT_SLUG" 2>&1 | tail -30 || _WIRING_RC=$?
+  if [[ "$_WIRING_RC" != "0" ]]; then
+    echo "[add-role] ERROR: verify-wiring.sh failed (rc=$_WIRING_RC) for dept $DEPT_SLUG — dept is NOT wired." >&2
+    echo "[add-role] wiringStatus set to 'failed'. Fix registration/reachability then re-run." >&2
+    exit 1
+  fi
+  echo "[add-role] Wiring gate PASSED for dept $DEPT_SLUG."
+else
+  echo "[add-role] WARN: verify-wiring.sh not found — run it manually after filling how-to.md" >&2
+fi
+
 echo ""
 echo "[add-role] Done. Role '$ROLE_NAME' added under dept '$DEPT_SLUG'."
 echo "  Next steps (ALL REQUIRED):"

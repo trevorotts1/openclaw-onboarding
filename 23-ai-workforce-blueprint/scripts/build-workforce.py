@@ -1881,22 +1881,77 @@ def build_from_config(config):
             # via explicit tools.allow on each generation dept agent (see
             # add_agent_to_config below).
 
+            registration_failures = []
             for dept_id, dept_info in selected_departments.items():
-                add_agent_to_config(config_data, dept_id, dept_info)
-            save_openclaw_config(config_data)
-            print(f"[NON-INTERACTIVE] Config updated with {len(selected_departments)} department agents", file=sys.stderr)
+                try:
+                    result = add_agent_to_config(config_data, dept_id, dept_info)
+                    if result is False:
+                        # False = guard-blocked or not added (not just already-present)
+                        # Check if it was already present (idempotent) vs actually failed
+                        existing_ids = [a.get("id") for a in config_data.get("agents", {}).get("list", [])]
+                        if f"dept-{dept_id}" not in existing_ids:
+                            registration_failures.append(f"{dept_id}:add_returned_false")
+                except Exception as _reg_e:
+                    print(f"[NON-INTERACTIVE ERROR] Registration failed for {dept_id}: {_reg_e}", file=sys.stderr)
+                    registration_failures.append(f"{dept_id}:{_reg_e}")
+            if registration_failures:
+                print(f"[NON-INTERACTIVE ERROR] {len(registration_failures)} dept(s) failed registration: {registration_failures}", file=sys.stderr)
+            else:
+                save_openclaw_config(config_data)
+                print(f"[NON-INTERACTIVE] Config updated with {len(selected_departments)} department agents", file=sys.stderr)
         except Exception as e:
-            print(f"[NON-INTERACTIVE WARNING] Config update failed: {e}", file=sys.stderr)
+            print(f"[NON-INTERACTIVE ERROR] Config update block failed: {e}", file=sys.stderr)
+            registration_failures = getattr(locals(), 'registration_failures', [])
+            registration_failures.append(f"config_block:{e}")
     else:
-        print(f"[NON-INTERACTIVE WARNING] openclaw.json not found at {OPENCLAW_CONFIG} - skipping agent config",
+        print(f"[NON-INTERACTIVE ERROR] openclaw.json not found at {OPENCLAW_CONFIG} — registration FAILED (wiringStatus: blocked-no-config). Build cannot be marked complete without agent config.",
               file=sys.stderr)
+        registration_failures = ["all:openclaw_json_absent"]
+        # Write wiringStatus to build-state
+        try:
+            _state_f = os.path.join(WORKSPACE, ".workforce-build-state.json")
+            if os.path.isfile(_state_f):
+                import tempfile as _tf
+                _s = json.load(open(_state_f))
+                _s["wiringStatus"] = "blocked-no-config"
+                _s["wiringFailureReason"] = f"openclaw.json absent at {OPENCLAW_CONFIG}"
+                _tmp = _tf.mktemp(dir=os.path.dirname(_state_f), prefix=".bws.", suffix=".tmp")
+                json.dump(_s, open(_tmp, "w"), indent=2)
+                os.replace(_tmp, _state_f)
+        except Exception as _ws_e:
+            print(f"[NON-INTERACTIVE WARN] could not write wiringStatus to build-state: {_ws_e}", file=sys.stderr)
 
-    # Save handoff as completed
+    # B2: Gate progress_pct and "Build complete!" on registration success
+    _build_progress = 100
+    _build_complete_msg = "Build complete!"
+    if registration_failures:
+        _build_progress = 90  # cap at 90 when registration failed
+        _build_complete_msg = (
+            f"Build INCOMPLETE — {len(registration_failures)} department agent(s) not registered: "
+            f"{registration_failures}. Roles are on disk but not wired into openclaw.json. "
+            f"Re-run after fixing config."
+        )
+        # Write wiringStatus:failed to build-state
+        try:
+            _state_f = os.path.join(WORKSPACE, ".workforce-build-state.json")
+            if os.path.isfile(_state_f):
+                import tempfile as _tf2
+                _s2 = json.load(open(_state_f))
+                if _s2.get("wiringStatus") not in ("blocked-no-config",):
+                    _s2["wiringStatus"] = "failed"
+                    _s2["wiringFailureReason"] = f"registration_failures={registration_failures}"
+                    _tmp2 = _tf2.mktemp(dir=os.path.dirname(_state_f), prefix=".bws.", suffix=".tmp")
+                    json.dump(_s2, open(_tmp2, "w"), indent=2)
+                    os.replace(_tmp2, _state_f)
+        except Exception:
+            pass
+
+    # Save handoff as completed (B2: progress capped if registration failed)
     create_handoff(
         option=config.get("option", "A"),
         departments_done=list(selected_departments.keys()),
         departments_remaining=[],
-        progress_pct=100
+        progress_pct=_build_progress
     )
 
     # Generate/update persona-matrix.md for workforce visibility
@@ -1943,7 +1998,7 @@ def build_from_config(config):
         file=sys.stderr,
     )
 
-    print(f"\n[NON-INTERACTIVE] Build complete!", file=sys.stderr)
+    print(f"\n[NON-INTERACTIVE] {_build_complete_msg}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Company: {company_name}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Departments: {len(selected_departments)}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Workspace: {DEPARTMENTS_DIR}", file=sys.stderr)

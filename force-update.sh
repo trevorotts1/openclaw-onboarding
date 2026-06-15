@@ -153,8 +153,10 @@ update process:
      - Follow INSTALL.md and CORE_UPDATES.md step-by-step
      - Run qc-*.sh and ensure exit 0
      - Independent QC sub-agent scores against QC.md rubric (gate ≥ 8.5)
-  5. After all skills updated, bump ${SKILLS_DIR}/.onboarding-version
-     to ${LATEST_VERSION}.
+  5. Run: bash ${SKILLS_DIR}/update-skills.sh
+     This applies the merge AND writes the verified stamp + content manifest.
+     Do NOT hand-edit .onboarding-version — the stamp is only valid when
+     written by update-skills.sh after the A3 content gate passes.
   6. Reply with a one-paragraph summary of what changed and any
      skills that failed QC.
 
@@ -211,6 +213,8 @@ cat <<EOF
 {
   "ok": true,
   "action": "trigger-fired",
+  "applied": false,
+  "apply_verified": false,
   "platform": "$PLATFORM",
   "local_version": "$LOCAL_VERSION",
   "latest_version": "$LATEST_VERSION",
@@ -219,7 +223,8 @@ cat <<EOF
     "agents_md_flag": $([ "$FLAG_FIRED" = "true" ] && echo true || echo false),
     "terminal_fallback": true
   },
-  "next_step": "Apply the update by pasting the instruction block above to your agent, OR run the terminal command shown in the printed block."
+  "note": "ok:true means the trigger fired, NOT that the update was applied. Verification happens in update-skills.sh content gate (A3) and check-updates.sh content_verified field (A4).",
+  "next_step": "Apply the update by pasting the instruction block above to your agent, OR run: bash ${SKILLS_DIR}/update-skills.sh"
 }
 EOF
 

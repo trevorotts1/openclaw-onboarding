@@ -146,6 +146,114 @@ if [ -n "$LATEST_VERSION" ] && [ "$LOCAL_VERSION" != "$LATEST_VERSION" ]; then
   HAS_REPO_UPDATE="true"
 fi
 
+# A4: Content-verification — read .onboarding-content-manifest.json and check
+# whether the on-box installed content matches the recorded manifest for the
+# stamped version. If it does not, force has_skill_updates=true even when
+# the version strings match (this is the Lyric symptom: stamp matches, content drifted).
+CONTENT_VERIFIED="false"
+CONTENT_DRIFT_SKILLS_JSON=""
+_MANIFEST_FILE="$SKILLS_DIR/.onboarding-content-manifest.json"
+if [ -f "$_MANIFEST_FILE" ] && command -v python3 >/dev/null 2>&1; then
+  _CONTENT_CHECK=$(python3 - "$_MANIFEST_FILE" "$SKILLS_DIR" <<'PYEOF'
+import json, hashlib, os, sys
+from pathlib import Path
+
+manifest_path = sys.argv[1]
+skills_dir = sys.argv[2]
+
+try:
+    manifest = json.load(open(manifest_path))
+except Exception as e:
+    print(f"manifest_error:{e}")
+    sys.exit(0)
+
+recorded_version = manifest.get("version", "")
+recorded_skills = manifest.get("skills", {})
+
+# Check SHA tool
+import subprocess
+sha_cmd = None
+for cmd in [["shasum", "-a", "256"], ["sha256sum"]]:
+    try:
+        r = subprocess.run(cmd + ["/dev/null"], capture_output=True, timeout=5)
+        if r.returncode == 0:
+            sha_cmd = cmd
+            break
+    except Exception:
+        pass
+
+if sha_cmd is None:
+    print("no_sha_tool")
+    sys.exit(0)
+
+drift = []
+for skill_name, recorded_digest in recorded_skills.items():
+    skill_dir = Path(skills_dir) / skill_name
+    if not skill_dir.is_dir():
+        drift.append(f"{skill_name}:missing")
+        continue
+
+    exclude_names = {".wired-", "skill-version.txt", ".onboarding-version",
+                     ".onboarding-content-manifest.json"}
+    exclude_suffixes = (".bak",)
+
+    file_hash_input = []
+    for fpath in sorted(skill_dir.rglob("*")):
+        if not fpath.is_file():
+            continue
+        # exclude volatile files
+        skip = False
+        for ex in exclude_names:
+            if fpath.name.startswith(ex) or fpath.name == ex:
+                skip = True; break
+        if fpath.suffix in exclude_suffixes:
+            skip = True
+        if ".git" in fpath.parts:
+            skip = True
+        if skip:
+            continue
+
+        rel = str(fpath.relative_to(skill_dir))
+        r = subprocess.run(sha_cmd + [str(fpath)], capture_output=True, text=True, timeout=10)
+        file_digest = r.stdout.split()[0] if r.returncode == 0 else "error"
+        file_hash_input.append(f"{rel}:{file_digest}")
+
+    combined = "\n".join(sorted(file_hash_input)) + "\n"
+    skill_digest = hashlib.sha256(combined.encode()).hexdigest()
+
+    if skill_digest != recorded_digest:
+        drift.append(f"{skill_name}:digest_mismatch")
+
+if drift:
+    print("drift:" + ",".join(drift))
+else:
+    print("ok")
+PYEOF
+  2>/dev/null || echo "check_error")
+
+  if [ "$_CONTENT_CHECK" = "ok" ]; then
+    CONTENT_VERIFIED="true"
+  elif [[ "$_CONTENT_CHECK" == drift:* ]]; then
+    # Content drifted — force has_skill_updates even if version string matches
+    CONTENT_VERIFIED="false"
+    _DRIFT_LIST="${_CONTENT_CHECK#drift:}"
+    # Build JSON array of drifted skills
+    CONTENT_DRIFT_SKILLS_JSON=$(python3 -c "
+import json, sys
+items = sys.argv[1].split(',')
+print(json.dumps(items))
+" "$_DRIFT_LIST" 2>/dev/null || echo '[]')
+    HAS_SKILL_UPDATES="true"
+    HAS_REPO_UPDATE="true"  # treat content drift as needing an update
+  else
+    CONTENT_VERIFIED="false"  # check failed/unavailable — conservative
+  fi
+else
+  # No manifest yet (first install) or python3 unavailable — not an error
+  CONTENT_VERIFIED="false"
+fi
+[ -z "$CONTENT_DRIFT_SKILLS_JSON" ] && CONTENT_DRIFT_SKILLS_JSON="[]"
+
 # Escape changelog excerpt for JSON
 LATEST_ENTRY_JSON=$(printf '%s' "$LATEST_ENTRY" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null)
 [ -z "$LATEST_ENTRY_JSON" ] && LATEST_ENTRY_JSON='""'
@@ -162,7 +270,9 @@ cat <<JSON
   "has_skill_updates": ${HAS_SKILL_UPDATES},
   "risk_hint": "${RISK_HINT}",
   "changelog_excerpt": ${LATEST_ENTRY_JSON},
-  "skill_changes": [${SKILL_CHANGES_JSON}]
+  "skill_changes": [${SKILL_CHANGES_JSON}],
+  "content_verified": ${CONTENT_VERIFIED},
+  "content_drift_skills": ${CONTENT_DRIFT_SKILLS_JSON}
 }
 JSON
 
@@ -180,6 +290,7 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$SKILLS_DIR/.last-update-check" 2>/dev/null || tr
 # Sunday cron Telegram flow) or until next Sunday's check clears it.
 # v10.12.0 P20.1: prior versions only wrote this flag from force-update.sh.
 # ----------------------------------------------------------
+# A4: also fires when content_verified=false (content drifted even with matching stamp)
 if [ "$HAS_REPO_UPDATE" = "true" ] || [ "$HAS_SKILL_UPDATES" = "true" ]; then
   if [ "$PLATFORM" = "vps" ]; then
     AGENTS_MD="/data/.openclaw/AGENTS.md"

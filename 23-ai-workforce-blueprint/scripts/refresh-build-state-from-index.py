@@ -25,6 +25,8 @@ USAGE
     python3 refresh-build-state-from-index.py
     python3 refresh-build-state-from-index.py --dry-run
     python3 refresh-build-state-from-index.py --verbose
+    python3 refresh-build-state-from-index.py --strict   (default: gate status:done on library+wiring)
+    python3 refresh-build-state-from-index.py --counts-only  (update counts only, never flip status)
 
 EXIT CODES
     0 — success
@@ -127,6 +129,10 @@ def main() -> None:
         description="Re-sync .workforce-build-state.json from _index.json + on-disk dirs")
     parser.add_argument("--dry-run", action="store_true", help="No writes, just report")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--strict", action="store_true", default=True,
+                        help="Gate status:done on library+wiring booleans from the build-state (default ON)")
+    parser.add_argument("--counts-only", action="store_true",
+                        help="Update role counts only; never touch status field")
     args = parser.parse_args()
 
     now = datetime.now(timezone.utc).isoformat()
@@ -196,37 +202,71 @@ def main() -> None:
         if slug in existing_depts_dict:
             # Upsert: update role counts and statuses, preserve other fields
             entry = existing_depts_dict[slug]
+            # C1: Read library/wiring booleans from the gates (written by
+            # verify-library-gate.sh / verify-wiring.sh), not the local heuristics.
+            # Fall back to the heuristic only if gate fields are absent.
+            gate_rl_filled = entry.get("roleLibraryFilled")
+            gate_sop_filled = entry.get("sopLibraryFilled")
+            gate_wiring = entry.get("wiringStatus", "")
+            # If gate fields are missing, seed from heuristic (first-run fallback)
+            if gate_rl_filled is None:
+                gate_rl_filled = (rl_status == "done")
+            if gate_sop_filled is None:
+                gate_sop_filled = (sop_status == "done")
+
+            # C2: Gate status:done on all three conditions (library + wiring)
+            if args.counts_only:
+                # --counts-only: never touch status
+                new_status = entry.get("status", "building")
+            elif args.strict:
+                wiring_done = (gate_wiring == "done")
+                dept_done = bool(gate_rl_filled) and bool(gate_sop_filled) and wiring_done
+                new_status = "done" if dept_done else entry.get("status", "building")
+            else:
+                new_status = "done"  # legacy/non-strict: count-based
+
             if (entry.get("rolesPlanned") != roles_count or
                     entry.get("rolesDone") != roles_count or
-                    entry.get("status") != "done"):
+                    entry.get("status") != new_status):
                 entry["rolesPlanned"] = roles_count
                 entry["rolesDone"] = roles_count
-                entry["status"] = "done"
-                entry["roleLibraryFilled"] = (rl_status == "done")
-                entry["sopLibraryFilled"] = (sop_status == "done")
+                entry["status"] = new_status
+                entry["roleLibraryFilled"] = gate_rl_filled
+                entry["sopLibraryFilled"] = gate_sop_filled
                 entry["updatedAt"] = now
                 existing_depts_dict[slug] = entry
                 changed = True
                 if args.verbose:
-                    print(f"  updated dept: {slug} (roles={roles_count})")
+                    print(f"  updated dept: {slug} (roles={roles_count}, status={new_status})")
         else:
             # New dept — add with full shape
+            # C2: New depts start as "building" — gates must pass before done
             name = " ".join(w.capitalize() for w in slug.replace("-", " ").split())
+            _new_rl = (rl_status == "done")
+            _new_sop = (sop_status == "done")
+            if args.counts_only:
+                _new_status = "building"
+            elif args.strict:
+                # New dept: wiring is not yet done (no entry), so status=building
+                _new_status = "building"
+            else:
+                _new_status = "done"
             existing_depts_dict[slug] = {
                 "slug": slug,
                 "name": name,
-                "status": "done",
+                "status": _new_status,
                 "rolesPlanned": roles_count,
                 "rolesDone": roles_count,
-                "roleLibraryFilled": (rl_status == "done"),
-                "sopLibraryFilled": (sop_status == "done"),
+                "roleLibraryFilled": _new_rl,
+                "sopLibraryFilled": _new_sop,
+                "wiringStatus": "pending",
                 "emoji": "",
                 "createdAt": now,
                 "updatedAt": now,
             }
             changed = True
             if args.verbose:
-                print(f"  added dept: {slug} (roles={roles_count})")
+                print(f"  added dept: {slug} (roles={roles_count}, status={_new_status})")
 
     # Recompute totals
     total_roles = sum(len(d.get("roles", [])) for d in index_depts.values())

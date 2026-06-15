@@ -734,7 +734,10 @@ main() {
       _origin="$(git -C "$TEMP_EXTRACT" remote get-url origin 2>/dev/null)"
       case "$_origin" in
         https://github.com/trevorotts1/openclaw-onboarding.git|https://github.com/trevorotts1/openclaw-onboarding)
-          EXTRACTED_DIR="$TEMP_EXTRACT" ;;
+          EXTRACTED_DIR="$TEMP_EXTRACT"
+          # A2: capture source git SHA for content-manifest
+          SRC_GIT_SHA="$(git -C "$TEMP_EXTRACT" rev-parse HEAD 2>/dev/null || echo "")"
+          SRC_FROM_ZIP=0 ;;
         *)
           echo "ERROR: cloned remote ($_origin) is NOT trevorotts1/openclaw-onboarding -- refusing to use it."
           rm -rf "$TEMP_EXTRACT"; EXTRACTED_DIR="" ;;
@@ -758,6 +761,9 @@ main() {
     else
       EXTRACTED_DIR=$(find "$TEMP_EXTRACT" -maxdepth 1 -mindepth 1 -type d | head -1)
     fi
+    # A2: zip fallback — no git SHA available; content-set hash still works
+    SRC_GIT_SHA="zip-fallback-$(date -u +%Y%m%dT%H%M%SZ)"
+    SRC_FROM_ZIP=1
   fi
 
   if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR" ]; then
@@ -773,6 +779,19 @@ main() {
   # bug. Define it once here so every downstream script reference resolves.
   ONBOARDING_DIR="$EXTRACTED_DIR"
   export ONBOARDING_DIR
+
+  # A2: Compute SOURCE manifest from the pulled tree BEFORE the copy loop.
+  # This is what the destination must match after install (A3 gate).
+  _CONTENT_HASH_SCRIPT="$EXTRACTED_DIR/scripts/skill-content-hash.sh"
+  SRC_MANIFEST=""
+  if [ -f "$_CONTENT_HASH_SCRIPT" ]; then
+    SRC_MANIFEST=$(bash "$_CONTENT_HASH_SCRIPT" "$EXTRACTED_DIR" 2>/dev/null || true)
+    printf '%s\n' "$SRC_MANIFEST" > /tmp/openclaw-update-src-manifest.txt
+    echo "  [A2] Source content manifest computed ($(echo "$SRC_MANIFEST" | wc -l | tr -d ' ') lines)"
+  else
+    echo "  [A2] skill-content-hash.sh not found in source — content verification unavailable (non-fatal for this install)"
+    SRC_MANIFEST=""
+  fi
 
   # v10.15.48 (FIX 1): source the onboarding STATE MACHINE + verification GATE.
   # Seed the state file with every non-archived skill at "pending" from the
@@ -1403,12 +1422,107 @@ except:
   echo "  Unifying shared core files (AGENTS/TOOLS/USER symlinked to this box's canonical)..."
   link_shared_core_files || echo "  ⚠ link_shared_core_files reported warnings (update continues)"
 
-  # Write version file to active dir (the canonical location)
+  # ----------------------------------------------------------
+  # A3: CONTENT-GATE — verify installed content matches source
+  # BEFORE writing the version stamp. This replaces the old
+  # tautological verify (script wrote its own constant) with a
+  # real content assertion (destination digest == source digest).
+  # If ANY installed skill's content does not match the source,
+  # the stamp is NEVER written and the script exits 1.
+  # ----------------------------------------------------------
+  _A3_GATE_PASS=1
+  _A3_MISMATCH_SKILLS=""
+  if [ -n "$SRC_MANIFEST" ] && [ -f "$_CONTENT_HASH_SCRIPT" ]; then
+    echo ""
+    echo "  [A3] Running content-gate: verifying destination matches source..."
+    DEST_MANIFEST=$(bash "$_CONTENT_HASH_SCRIPT" "$SKILLS_DIR" 2>/dev/null || true)
+
+    # Compare per-skill digests for skills that were installed this run.
+    # We skip skills that were not in scope (ARCHIVED, or not updated by --only).
+    while IFS='|' read -r skill_name src_digest; do
+      [ -z "$skill_name" ] && continue
+      [[ "$skill_name" == "__TREE_SHA__" ]] && continue
+      case "$skill_name" in *ARCHIVED*) continue ;; esac
+
+      dest_digest=$(echo "$DEST_MANIFEST" | grep "^${skill_name}|" | cut -d'|' -f2 | head -1)
+      if [ -z "$dest_digest" ]; then
+        echo "    [A3] MISMATCH: $skill_name — present in source but NOT in destination" >&2
+        _A3_MISMATCH_SKILLS="${_A3_MISMATCH_SKILLS}  $skill_name: expected=$src_digest found=<missing>\n"
+        _A3_GATE_PASS=0
+      elif [ "$dest_digest" != "$src_digest" ]; then
+        echo "    [A3] MISMATCH: $skill_name — content digest differs" >&2
+        _A3_MISMATCH_SKILLS="${_A3_MISMATCH_SKILLS}  $skill_name: expected=$src_digest found=$dest_digest\n"
+        _A3_GATE_PASS=0
+      else
+        : # echo "    [A3] OK: $skill_name"
+      fi
+    done <<< "$SRC_MANIFEST"
+
+    if [ "$_A3_GATE_PASS" -eq 0 ]; then
+      echo ""
+      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      echo "  A3 CONTENT-GATE FAILED — stamp NOT written."
+      echo "  The following skills have content that does not match source:"
+      printf '%b' "$_A3_MISMATCH_SKILLS"
+      echo ""
+      echo "  The version stamp is NEVER written when content is mismatched."
+      echo "  Re-run update-skills.sh to retry the install from scratch."
+      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+      exit 1
+    fi
+    echo "  [A3] Content-gate PASSED — all installed skills match source."
+  else
+    echo "  [A3] skill-content-hash.sh unavailable — skipping content verification (legacy path)"
+  fi
+
+  # Write version file ONLY after content gate passes (A3)
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 
-  # Sync version marker to legacy locations if they exist, so get_current_version
-  # always reads the same value regardless of which path it finds first.
-  # This prevents the stale-legacy-marker false-positive on re-runs (Bug B).
+  # A3: Write the content manifest companion file alongside the version stamp.
+  # This is the ground-truth record that check-updates.sh (A4) reads for drift detection.
+  if [ -n "$SRC_MANIFEST" ]; then
+    _NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    _MANIFEST_TMP=$(mktemp)
+    # Build the per-skill JSON block
+    _SKILLS_JSON=""
+    while IFS='|' read -r _sn _sd; do
+      [ -z "$_sn" ] && continue
+      [[ "$_sn" == "__TREE_SHA__" ]] && continue
+      case "$_sn" in *ARCHIVED*) continue ;; esac
+      [ -n "$_SKILLS_JSON" ] && _SKILLS_JSON="${_SKILLS_JSON},"
+      _SKILLS_JSON="${_SKILLS_JSON}\"${_sn}\":\"${_sd}\""
+    done <<< "$SRC_MANIFEST"
+    _TREE_SHA=$(echo "$SRC_MANIFEST" | grep "^__TREE_SHA__|" | cut -d'|' -f2 | head -1)
+    python3 -c "
+import json, sys
+data = {
+    'version': '${ONBOARDING_VERSION}',
+    'src_git_sha': '${SRC_GIT_SHA:-unknown}',
+    'src_from_zip': bool(${SRC_FROM_ZIP:-0}),
+    'tree_sha': '${_TREE_SHA:-unknown}',
+    'installed_at': '${_NOW_ISO}',
+    'skills': {${_SKILLS_JSON}}
+}
+with open('${_MANIFEST_TMP}', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" 2>/dev/null && mv "$_MANIFEST_TMP" "$SKILLS_DIR/.onboarding-content-manifest.json" || \
+      echo "  [A3] WARN: could not write content manifest (non-fatal)"
+
+    # Post-write re-assertion: re-read and confirm tree_sha still matches
+    _RECHECK_TREE=$(python3 -c "import json; d=json.load(open('$SKILLS_DIR/.onboarding-content-manifest.json')); print(d.get('tree_sha',''))" 2>/dev/null || echo "")
+    if [ -n "$_RECHECK_TREE" ] && [ "$_RECHECK_TREE" != "$_TREE_SHA" ]; then
+      echo ""
+      echo "  A3 POST-WRITE ASSERTION FAILED: tree_sha in manifest does not match what was just written."
+      echo "  Expected: $_TREE_SHA  Found: $_RECHECK_TREE"
+      echo "  Active dir may have been modified during the write — aborting."
+      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+      exit 1
+    fi
+  fi
+
+  # Sync version marker to legacy locations if they exist
   for _LEGACY_MARKER in \
       "$HOME/Downloads/openclaw-master-files/.onboarding-version" \
       "$HOME/.openclaw/onboarding/.onboarding-version"; do
@@ -1417,12 +1531,7 @@ except:
     fi
   done
 
-  # ----------------------------------------------------------
-  # VERIFICATION: confirm the active dir was actually updated.
-  # If SKILLS_DIR's .onboarding-version does not match what we
-  # just wrote, something redirected writes away from the active
-  # dir -- fail loudly instead of reporting false success.
-  # ----------------------------------------------------------
+  # Secondary check: verify the stamp was physically written (defense-in-depth)
   VERIFY_VER=$(cat "$SKILLS_DIR/.onboarding-version" 2>/dev/null | tr -d '[:space:]')
   if [ "$VERIFY_VER" != "$ONBOARDING_VERSION" ]; then
     echo ""

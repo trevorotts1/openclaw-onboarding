@@ -439,7 +439,9 @@ if [[ -n "$build_completed_at" ]]; then
   esac
 fi
 
-total_attention=$(( pending_count + stale_building_count + library_dirty + comms_automation_dirty + closeout_dirty ))
+# B4: Ensure wiring_dirty is defined (set to 0 if not already computed above)
+wiring_dirty=${wiring_dirty:-0}
+total_attention=$(( pending_count + stale_building_count + library_dirty + wiring_dirty + comms_automation_dirty + closeout_dirty ))
 if (( total_attention == 0 )); then
   done_count=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
   total_count=$(jq -r '.departments | length' "$STATE_FILE")
@@ -552,6 +554,14 @@ fi
 
 if (( library_dirty == 1 )) && (( closeout_dirty == 0 )); then
   msg="[LIBRARY-RESUME] ${agent_name}: every department is built but the ROLE LIBRARY and/or SOP LIBRARY are NOT populated (roleLibraryStatus=${role_library_status:-unset}, sopLibraryStatus=${sop_library_status:-unset}). The workforce is NOT complete until BOTH are done. Run scripts/verify-library-gate.sh to measure; if role library < 100% re-run scripts/post-build-role-workspaces.py (pulls how-to.md from templates/role-library/); if SOPs have stubs re-run scripts/populate-sops-from-manifest.py. Re-run verify-library-gate.sh until it exits 0 (roleLibraryStatus=done AND sopLibraryStatus=done) - ONLY THEN write buildCompletedAt + closeoutStatus=pending. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the resume is internal."
+# B4: [WIRING-RESUME] self-ping when wiring is dirty
+elif (( wiring_dirty > 0 )); then
+  log "[WIRING-RESUME] wiring_dirty=$wiring_dirty — one or more departments have wiringStatus!=done. Running verify-wiring.sh inline..."
+  _wiring_script_b4="$SCRIPT_DIR/verify-wiring.sh"
+  if [[ -f "$_wiring_script_b4" ]]; then
+    bash "$_wiring_script_b4" --all >>"$LOG_FILE" 2>&1 || true
+  fi
+  msg="[WIRING-RESUME] ${agent_name}: wiring_dirty=$wiring_dirty — one or more department agents are not properly wired (registered/reachable/connected). verify-wiring.sh was run inline; check its output in the log. Fix any failed departments and re-run verify-wiring.sh until it exits 0. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner — this is internal."
 elif (( comms_automation_dirty == 1 )); then
   # v10.15.9: cross-skill chain to Skill 38 - fires AFTER libraries are clean.
   # A workforce that built a Communications / Sales / Customer-Support department
