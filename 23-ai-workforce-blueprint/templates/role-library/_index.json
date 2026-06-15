@@ -3611,6 +3611,16 @@
       "sop_count": 5,
       "sop_min": 5,
       "path": "templates/role-library/engineering/qc-specialist/how-to.md"
+    },
+    {
+      "slug": "deep-research-specialist",
+      "dept": "engineering",
+      "title": "Deep Research Specialist -- Engineering",
+      "role_type": "deep-research",
+      "word_count": 9500,
+      "sop_count": 4,
+      "sop_min": 4,
+      "path": "templates/role-library/engineering/deep-research-specialist/how-to.md"
     }
   ],
   "total_departments": 25
