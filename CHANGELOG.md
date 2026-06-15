@@ -95,6 +95,7 @@ Root cause: `register-weekly-cron.sh` existed but had zero callers in any instal
 **Version bumped:** all 9 markers + `cc-compat.json` onboardingVersion v12.14.5 → v12.14.6.
 Zero client names in diff (grep verified).
 
+
 ---
 
 ## [v12.14.5] - 2026-06-15 - docs: rename install flow to fleet onboarding tunnel provisioning; field guide renamed

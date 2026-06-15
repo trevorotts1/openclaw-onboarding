@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# verify-library-gate.sh — v10.18.0 (SUBSTANCE GATE + TRIO GATE + BOUNDARY GATE + PRESENTATIONS WELCOME)
+# verify-library-gate.sh — v10.18.1 (SUBSTANCE GATE + TRIO GATE + BOUNDARY GATE + PRESENTATIONS WELCOME + CONTENT FLOOR)
+#
+# v10.18.1 (BUG 1 FIX): the gate no longer trusts the <!-- Filled from role-library -->
+# marker alone.  qc-completeness.sh now requires BOTH the marker AND file size >= 3072 B
+# before counting a role as library-filled (library_pct).  build-workforce.py and
+# create_role_workspaces.py also refuse to stamp the marker on thin output (< 3072 B),
+# returning None instead so the caller falls back to the PENDING-stub path.
+# This closes the gap where a thin stub carrying the marker passed rfilled=True here
+# while verify-wiring.sh correctly failed the same file.
 #
 # ENFORCED build gate for the ROLE LIBRARY + SOP LIBRARY auto-pull.
 #

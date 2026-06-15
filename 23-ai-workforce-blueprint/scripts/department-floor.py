@@ -266,7 +266,16 @@ def resolve_departments_dir():
     personal-assistant, causing the whole departments/ tree to be walked as if it
     were the company root -> false floor fail).
     """
-    for libp in (SKILL_DIR / "lib", SKILL_DIR.parent / "shared-utils", SKILL_DIR / "shared-utils"):
+    # BUG 2 FIX: sys.path.insert(0, ...) order matters — the LAST insert wins
+    # (each call pushes the previous one down).  The old loop inserted lib FIRST,
+    # so shared-utils ended up at position 0 and its detect_platform (which returns
+    # company_root=~/Downloads/openclaw-master-files/zero-human-company and
+    # company_dir=None on the ~/clawd layout) silently shadowed the lib/ version
+    # (which correctly resolves company_dir for ~/clawd).  Result: false rc=7.
+    # Fix: insert shared-utils first (fallback), then lib/ LAST so lib/ ends at
+    # position 0 — exactly the resolution order that qc-completeness.sh uses via
+    # the same lib/ detect_platform and that returns a working company_dir.
+    for libp in (SKILL_DIR.parent / "shared-utils", SKILL_DIR / "shared-utils", SKILL_DIR / "lib"):
         sys.path.insert(0, str(libp))
     zhc_root = None
     workspace = None
