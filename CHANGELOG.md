@@ -1,3 +1,24 @@
+## [v12.9.9] - 2026-06-15 - fix: gate scripts bash portability -- replace mapfile with while-read so gates run on Mac (zsh-parent, bash 3.2)
+
+### Changes
+
+**Fleet-wide fix: gate scripts no longer fail silently on Mac client boxes.**
+
+`mapfile` (also called `readarray`) is a bash 4+ builtin. Mac ships bash 3.2 as the system shell, and Mac client boxes often invoke scripts from a zsh parent (launchd, OpenClaw's cron runner, etc.). When a zsh process calls `bash script.sh`, bash 3.2 is resolved first if it is the system default — and bash 3.2 does not have `mapfile`. The result was `mapfile: command not found` causing `verify-wiring.sh` to silently produce an empty department list and exit 0 (false pass) or crash before running any checks.
+
+**Modified files:**
+
+- **`23-ai-workforce-blueprint/scripts/verify-wiring.sh`** (v1.0.0 to v1.0.1) -- line 121: replaced `mapfile -t ALL_DEPTS < <(jq ...)` with a portable `while IFS= read -r _dept_line; do ALL_DEPTS+=(...); done < <(jq ...)` loop. Functionally identical; works in bash 3.2+. Added inline comment explaining the portability rationale. Version header updated to v1.0.1 with fix note.
+
+**Not changed (already clean):**
+
+- `verify-library-gate.sh` -- no `mapfile`/`readarray` usage; uses POSIX-compatible constructs throughout. `bash -n` verified clean.
+- `qc-completeness.sh` -- no `mapfile`/`readarray` usage; Python-based analysis avoids the issue entirely. `bash -n` verified clean.
+
+**All callers already correct:** `resume-workforce-build.sh`, `add-role.sh`, `migrate-existing-workforce.sh`, `verify-library-gate.sh` all invoke the gate scripts via `bash "$SCRIPT"` -- not `zsh` or `sh`. No caller changes needed.
+
+**Test result:** `bash -n` parse check passes on all three gate scripts. Smoke test -- invoking `verify-wiring.sh` via `HOME=<tmp> zsh -c 'bash verify-wiring.sh --allow-missing-config'` -- produces no `mapfile: command not found` error and correctly reaches the runtime OpenClaw-root check.
+
 ## [v12.9.8] - 2026-06-14 - feat: Presentations Department live welcome -- auto-sends personalized Telegram message to owner on wiring+library gate pass
 
 ### Changes
