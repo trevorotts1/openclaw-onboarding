@@ -1,3 +1,11 @@
+## [v12.9.2] - 2026-06-14 - fix: close ungated claim-points (A1-A6, B1-B7, C1-C4, X1-X2) + behavioral acceptance tests
+
+### Changes
+
+**Close ungated claim-points across the workforce build pipeline.** Six A-gates, seven B-gates, four C-gates, and two X-gates are now hard-enforced: A1-A6 (department-done truth), B1-B7 (role-library indexing and registration), C1-C4 (wiring verification), and X1-X2 (cross-cutting guards). The `build-workforce.py` and `verify-wiring.sh` scripts enforce each gate with an explicit FAIL-LOUD path. Behavioral acceptance tests (28/28 pass) added in `tests/test-ungated-claim-points.sh`.
+
+---
+
 ## [v12.9.0] - 2026-06-14 - feat: presentation vision-gate overhaul + 16 new AF codes + casting ledger + deliverable bundle + gradient ban + PIL logo composite
 
 ### Changes
