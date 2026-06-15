@@ -100,6 +100,15 @@ if [ "$QC_RC" -eq 4 ]; then
   echo "[verify-library-gate] qc reports NO_WORKFORCE_FOUND — nothing to gate; exiting 5" >&2
   exit 5
 fi
+# v12.9.4: exit code 5 from qc-completeness.sh = GATE_BUG (resolver returned no
+# company dir but a real workforce dir exists on disk).  This is a hard resolver
+# failure — do NOT silently pass or treat as "no workforce".  Exit non-zero so
+# the calling orchestrator sees a gate failure and does not advance closeout.
+if [ "$QC_RC" -eq 5 ]; then
+  echo "[verify-library-gate] qc reports GATE_BUG — company-dir resolver returned no result" \
+       "but a real workforce dir exists. This is a resolver bug. Exiting 8." >&2
+  exit 8
+fi
 
 # newest qc-completeness JSON artifact
 QC_JSON="$(ls -t "$LOG_DIR"/qc-completeness-*.json 2>/dev/null | head -1)"
