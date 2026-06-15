@@ -3531,6 +3531,16 @@
       "path": "templates/role-library/account-management/deep-research-specialist/how-to.md"
     },
     {
+      "slug": "director-of-account-management",
+      "dept": "account-management",
+      "title": "Director of Account Management",
+      "role_type": "leadership",
+      "word_count": 9400,
+      "sop_count": 8,
+      "sop_min": 5,
+      "path": "templates/role-library/account-management/director-of-account-management/how-to.md"
+    },
+    {
       "slug": "qc-specialist",
       "dept": "client-experience-booking",
       "title": "QC Specialist -- Client Experience & Booking",
