@@ -1,10 +1,10 @@
-# Cloudflare & GoDaddy Setup Guide
+# Fleet Onboarding Tunnel Provisioning Field Guide
 
 ## SCHOOL OF AI
 
 Everything you need to do BEFORE your AI agent sets up your OpenClaw tunnel
 
-> **Where this lives:** This guide is shipped INSIDE skill 38 (`references/cloudflare-godaddy-setup-guide.md`). When a client's install hits the missing-Cloudflare-API-token halt in `scripts/00-verify-prerequisites.sh` (Rule 13 of QC-PROTOCOL.md), the agent points the client at THIS document — locally, no external link required. The Google Doc credentials reference remains the canonical source for any updates the operator makes; this in-skill copy is the embedded fallback so the install can walk a client through the entire flow without leaving the skill.
+> **Where this lives:** This guide is shipped INSIDE skill 38 (`references/fleet-onboarding-tunnel-provisioning-field-guide.md`). When a client's install hits the missing-Cloudflare-API-token halt in `scripts/00-verify-prerequisites.sh` (Rule 13 of QC-PROTOCOL.md), the agent points the client at THIS document — locally, no external link required. The Google Doc credentials reference remains the canonical source for any updates the operator makes; this in-skill copy is the embedded fallback so the install can walk a client through the entire flow without leaving the skill.
 
 You'll do four things in this guide:
 
@@ -344,7 +344,7 @@ Helping you put AI to work — one careful step at a time.
 
 ## Operator notes (for the AI agent running skill 38, not the client)
 
-Per the OpenClaw QC-PROTOCOL.md (Part 3 Rule 13), when `scripts/00-verify-prerequisites.sh` cannot find a Cloudflare API token in any of the 10 documented locations, the agent halts and points the client at THIS document. The four parts of this guide map to the install flow:
+Per the OpenClaw QC-PROTOCOL.md (Part 3 Rule 13), when `scripts/00-verify-prerequisites.sh` cannot find a Cloudflare API token in any of the 10 documented locations, the agent halts and points the client at THIS document. The four parts of this guide map to the fleet onboarding tunnel provisioning:
 
 - Parts 1-3 (account + domain + nameservers) prepare Cloudflare to manage the client's domain. Skill 38's Phase 1 (per `references/v6.0-source-playbook.md` Steps 1-2) then creates the Cloudflare Tunnel via API and installs `cloudflared` as a persistent system service. Without the Cloudflare account + active domain, that Phase will fail.
 - Part 4 (API token creation) produces the credential the agent reads from `~/.openclaw/.env` as `CLOUDFLARE_API_TOKEN`. The 9 permission rows map 1-to-1 to what the v5.14 playbook actually calls into:

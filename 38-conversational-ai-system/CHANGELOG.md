@@ -1728,7 +1728,7 @@ than duplicating them. `skill-version.txt` bumped 1.4.4 → 1.4.5.
   `INSTALL.md`, `INSTRUCTIONS.md`, and the reference cross-links in `GHL-INBOUND-AND-PLAYBOOKS.md`,
   `stripe-coupons-api.md`, `stripe-webhooks-reference.md`, `shopify-graphql-reference.md`,
   `sales-frameworks-deep-dive.md`, `ghl-coupons-api.md`, `cloudflare-tunnel-troubleshooting.md`,
-  `cloudflare-godaddy-setup-guide.md`.
+  `fleet-onboarding-tunnel-provisioning-field-guide.md`.
 - Conflict sweep across the Skill 38 folder (nested GHL body, sub-23-key body, `deliver:true`, mapping-level
   `fallbacks`, conflicting "DATA ONLY / no messageTemplate" phrasing): **no contradictions found**. The only
   remaining `deliver:true` / "no stripped bodies" mentions are corrective prose that debunks the old patterns,

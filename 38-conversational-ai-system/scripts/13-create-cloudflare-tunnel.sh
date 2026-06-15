@@ -19,7 +19,7 @@ The operator must paste the token they generated under their own Cloudflare
 dashboard (https://dash.cloudflare.com/profile/api-tokens), per the
 "agent suggests, operator decides" rule.
 
-See references/cloudflare-godaddy-setup-guide.md for the exact scopes the
+See references/fleet-onboarding-tunnel-provisioning-field-guide.md for the exact scopes the
 token needs (Account: Cloudflare Tunnel:Edit, Zone: DNS:Edit on the parent
 zone).
 

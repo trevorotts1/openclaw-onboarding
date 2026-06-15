@@ -121,7 +121,7 @@ I checked these locations and found no Cloudflare API key:
 
 The walk-through content lives in the guide shipped INSIDE this skill:
 
-  references/cloudflare-godaddy-setup-guide.md
+  references/fleet-onboarding-tunnel-provisioning-field-guide.md
 
 (That guide is the verbatim School of AI step-by-step: 4 parts, ~30 minutes,
 walks you through the Cloudflare account, GoDaddy nameservers, and the
@@ -136,7 +136,7 @@ is the canonical source if you prefer to view it in Google Docs.)
 >>>   (a) NOTION DOC — create a NEW Notion doc IN THE CLIENT'S OWN Notion
 >>>       workspace (never another client's, never a shared/operator
 >>>       workspace) containing the full content of
->>>       references/cloudflare-godaddy-setup-guide.md, then send the client
+>>>       references/fleet-onboarding-tunnel-provisioning-field-guide.md, then send the client
 >>>       the link so they can follow it at their own pace; OR
 >>>
 >>>   (b) MANUAL WALKTHROUGH — walk the client through the guide step by step,
