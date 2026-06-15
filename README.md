@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v12.10.0.
+> **Version:** see `/version` - this repo at v12.11.0.
 >
 > **NOTE (v12.9.9) - feat: Content-to-Presentation one-person/general modes + fluff-strip + cover/close + infographic checklist + system-wide deck portable-document export (AF-F11).** The Content-to-Presentation Architect (ROLE-22) now ALWAYS asks, before building, whether a deck is a ONE-PERSON presentation (a personalized deck for a single named recipient) or a GENERAL presentation (designed to be seen by many), and records the answer as the deciding fork for the whole build. Mode-aware privacy reconciles the old blanket hard-zero-names rule: GENERAL strips ALL personal references (full de-identification); ONE-PERSON keeps ONLY the named recipient's identity and strips every other person's personally identifiable information. A signal-vs-fluff extraction step strips chitchat, scheduling talk, and tangents while keeping the main theme, points, decisions, lessons, key concepts, and action items, and captures action items plus key soundbites. One-person decks gain a personalized cover and closing addressed to the recipient. Every content-to-presentation source now names a deliverable bundle (the deck, a Presenter guide in portable-document format, and a one-page infographic checklist of the main points and action items). System-wide (fleet-wide, ALL decks): the PPTX Assembly Specialist now emits a portable-document-format (.pdf) export ALONGSIDE the .pptx via headless LibreOffice (`soffice --headless --convert-to pdf`, with a documented fallback chain), so a recipient without PowerPoint can open the deck; both files are required and verified at the assembly gate (Gate 6) and at the Phase 6 QC gate (new AF-F11). The Director propagates the mode and the bundle into the build. SOPs renumbered/extended cleanly; both SOP mirrors regenerated. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -26,7 +26,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v12.10.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v12.11.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 

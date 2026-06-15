@@ -54,12 +54,13 @@ Delivery CANNOT start without `working/qc/final_deck_qc.json` present on disk. I
 You are dispatched by the Director of Presentations or the QC Specialist after final Phase 6 QC passes (score >= 8.5).
 
 1. Confirm `working/qc/final_deck_qc.json` exists on disk. If absent: halt -- see the DELIVERY INTERLOCK above. Read the file: confirm the `qc_score` field is >= 8.5. If the score is below 8.5, refuse delivery. Return the deck to the QC Specialist.
-2. Run SOP 9.1 (Destination Resolution) to determine where the deck must be delivered.
-3. Run SOP 9.2 (Multi-Destination Upload) to deliver the PPTX to every required destination.
-4. Run SOP 9.3 (Notification) to send the delivery notification via `openclaw message send`.
-5. Run SOP 9.4 (Ground-Truth Verification) to confirm file existence at every destination before reporting done.
-6. Update media_library.json with `delivery_complete: true` only after SOP 9.4 passes.
-7. Notify the Director: "Delivery complete and verified. [Summary of destinations and counts]."
+2. **Run SOP 9.0 (Package Assembly and Hygiene Sweep) FIRST**, before any destination upload. This step creates the clean `delivery/[DECK_SLUG]-FINAL/` directory and runs AF-DH1. Hard-stop on any hygiene failure.
+3. Run SOP 9.1 (Destination Resolution) to determine where the deck must be delivered.
+4. Run SOP 9.2 (Multi-Destination Upload) to deliver FROM the clean `delivery/[DECK_SLUG]-FINAL/` directory to every required destination. Never copy from `working/` or the build root directly.
+5. Run SOP 9.3 (Notification) to send the delivery notification via `openclaw message send`.
+6. Run SOP 9.4 (Ground-Truth Verification) to confirm file existence at every destination before reporting done.
+7. Update media_library.json with `delivery_complete: true` only after SOP 9.4 passes.
+8. Notify the Director: "Delivery complete and verified. [Summary of destinations and counts]."
 
 ---
 

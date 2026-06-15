@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.1
+**Version:** 1.2
 **Last updated:** {{ISO_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -61,6 +61,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 5. Run SOP 9.2 (Source Ingestion per Modality) to acquire the source text. The MODE-AWARE PRIVACY rule in SOP 9.2 is mandatory and non-skippable for any recording of identifiable people and is read against the `presentation_mode` set in SOP 9.1.
 6. Run SOP 9.3 (Signal-vs-Fluff Extraction) to strip conversational filler, chitchat, scheduling talk, tangents, and off-topic banter while keeping the main theme, the main points, the decisions, the lessons, the key concepts, and the action items.
 7. Run SOP 9.4 (Analysis, Hook, and Teaching Arc) to extract major points, find the main theme by hook analysis, and build the step-by-step teaching arc.
+7b. Run SOP 9.4B (Source Persuasion-Intelligence Extraction) to extract from the source itself the persuasion fields the regular build brief carries -- the transformation promise, the primary objection, the call to action, the target feeling, the detected tone, the narrative arc type, a synthesized hook candidate, an offer-intelligence sub-block when the source contains an offer, and the source's own proof assets. This step runs AFTER SOP 9.4 and BEFORE SOP 9.5. It writes the `persuasion_intelligence` block into `source_brief.json` so the shared downstream roles (Hook Strategist, Slide Copywriter, Offer Price Strategist) receive parity-grade material regardless of whether the build originated from the Brainstorming Buddy or from this role.
 8. Run SOP 9.5 (Teaching Devices and Simplify-When) to attach analogies, metaphors, and mnemonics, elaborate the points, and simplify dense passages where the trigger fires.
 9. Run SOP 9.6 (Micro-vs-Full Decision) to set the output scale.
 10. Run SOP 9.7 (Deliverable Bundle Definition) to capture the action items and key soundbites and name the required bundle (deck + Presenter guide in portable-document format + one-page infographic checklist), plus the personalized cover and closing slides when the mode is ONE-PERSON.
@@ -224,9 +225,56 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Outputs:** the `analysis` block of `source_brief.json` (major_point_count, main_theme, hook_seeds, teaching_arc with elaboration, proof_flags).
 
-**Hand to:** SOP 9.5 (Teaching Devices).
+**Hand to:** SOP 9.4B (Source Persuasion-Intelligence Extraction).
 
 **Failure mode:** If the source has no discernible through-line (it is a grab-bag with no main idea): report this to the Director and propose the strongest candidate theme, marked `theme_provisional: true`. Do not force a theme the source does not support.
+
+---
+
+### SOP 9.4B -- Source Persuasion-Intelligence Extraction
+
+**When to run:** Immediately after SOP 9.4, before SOP 9.5. Runs on the de-fluffed `signal_text` that SOP 9.3 produced, AFTER the teaching arc exists. Does NOT run new web searches -- extraction is FROM the source only. ROLE-04 owns all open-web research.
+
+**Why this SOP exists:** The regular build brief captures persuasion intelligence through the Brainstorming Buddy's interview (GOAL, CTA, TRANSFORMATION_PROMISE, TARGET_FEELING, TONE, OFFER_NAME, etc.). A converter source already encodes equivalent intelligence inside the recording or document itself -- the promise the speaker makes, the objection they kill, the call to action at the end, the emotional arc they engineer. Without extracting this intelligence explicitly, those fields arrive at the Hook Strategist, Slide Copywriter, and Offer Price Strategist empty, and the deck comes out as a teaching dump rather than a persuasive presentation even at full prompt length. SOP 9.4B closes that gap by extracting the source-answerable persuasion fields and writing them into `source_brief.json` as a `persuasion_intelligence` block so the shared downstream roles receive parity-grade material.
+
+**Boundary (HARD -- do not cross it):** This SOP extracts ONLY what the source actually contains. It does NOT fill REPRESENTATION_MIX, AUDIENCE_COMPOSITION_NOTE, VISUAL_MIX, DARK_OK, GROUNDED_CONTENT, or DELIVERABLE_SET -- those are genuine audience and branding decisions the source cannot answer and they remain routed to the Brainstorming Buddy's SOP 9.0. Fields the source does not contain are listed in `fields_absent_in_source`, never guessed.
+
+**Privacy interaction:** SOP 9.4B runs AFTER the SOP 9.2 mode-aware privacy redaction. In GENERAL mode, extracted `proof_assets` and `offer_intelligence` carry zero third-party identities. In ONE-PERSON mode only `recipient_name` may appear. Re-state `privacy_mode` on the `persuasion_intelligence` block so the downstream QC gate can check it.
+
+**No-own-image-path invariant:** This SOP produces a `persuasion_intelligence` block for the brief only. It does NOT produce, select, or influence image prompts, model choices, or renderer settings. The Content-to-Presentation pipeline NEVER owns a renderer, model choice, text-baking path, prompt-writer, or QC log. All image work routes through the shared Slide Image Creator and canonical `render_deck.py`. A converter-specific image path is a hard doctrine violation. The image gates (AF-RENDERER, AF-MODEL-SOVEREIGNTY, AF-BAKED, AF-PROMPT-FLOOR, AF-NO-VISION-QC) apply to converter runs through the shared pipeline exactly as they apply to regular builds.
+
+**Inputs:**
+- de-fluffed `signal_text` from SOP 9.3
+- the `analysis` block (main_theme, hook_seeds, teaching_arc) from SOP 9.4
+- `presentation_mode` and `privacy_mode` from SOP 9.1/9.2
+
+**Steps:**
+1. **Transformation promise.** Scan the source for the explicit one-sentence promise of what the audience will be, do, or have as a result. Look for "so that you can..." patterns, stated outcomes in the opening 10-15% of the source, and explicit "by the end of this you will..." framing. If found, record as `transformation_promise`. If absent, record as absent.
+2. **Primary objection.** Identify the single belief or objection the source most directly addresses. Look for "you might think... but actually...", "most people believe... the truth is...", and "the reason you have not done X is..." reframe patterns. Record as `primary_objection` if present.
+3. **Goal and call to action.** Identify what the source invites the audience to DO at the end -- a purchase, a booking, an application, a download. Extract verbatim when a call to action phrase exists. Record as `goal` and `cta_action`. If no explicit call to action is present, record as absent.
+4. **Target feeling.** Infer the emotional end-state the source is engineered to produce. Map the emotional arc already in the signal text: does the source move an audience from frustration to empowerment, from confusion to clarity, from fear to confidence, from stagnation to momentum? Record the inferred arc as `target_feeling`. This is the role's own inference from the source arc -- not a fabrication. Mark `target_feeling_inferred: true` so the Director and Brainstorming Buddy know it was not stated verbatim.
+5. **Tone detected.** Map the source's own register to one of seven named tone styles: Inspirational (aspirational energy, possibility-framing), Tough Love (direct challenge, high accountability), Challenger (disrupts conventional wisdom), Teacher (methodical, step-by-step clarity), Storyteller (narrative-led, case-study-centered), High-Energy Hype (urgency and excitement), Calm Premium (quiet authority, elegant restraint). Record as `tone_detected`. This is not locked -- the owner overrides it at the Brainstorming Buddy's SOP 9.0 -- but it lets the Buddy CONFIRM rather than re-ask.
+6. **Narrative arc type.** Classify the overall structure of the source into one of: Hormozi-arc presentation (problem-agitate-solve with price revelation), straight teaching (linear concept sequence), case study (story-led result narrative), how-to (step-by-step procedural), or conceptual argument (thesis-evidence-conclusion). Record as `narrative_arc_type`.
+7. **Hook candidate.** Compress the central promise or transformation the source makes into ONE singable, repeatable line -- distinct from the verbatim `hook_seeds` SOP 9.4 already captures. This is a synthesis, not a lift. Apply the same Purple-Rain rule as the Hook Strategist: if you cannot sing it, it is not done. Record as `hook_candidate`. The Hook Strategist refines this; they do not re-discover it.
+8. **Offer intelligence (sub-block -- only when the source contains an offer).** If the source contains an explicit offer with pricing, guarantee, or scarcity, extract the following verbatim from the source and do NOT fold these fields into the teaching arc and do NOT drop them as "off-topic":
+   - `offer_name`: the name of the offer as stated.
+   - `offer_stack`: an array of the named components or bonuses in the offer.
+   - `price_mode`: drop / range / stated / not-present.
+   - `price_anchor`: the high reference price the source states before the reveal, if any.
+   - `final_price`: the stated final or actual price.
+   - `payment_plan`: the stated payment option, if any.
+   - `guarantee`: the stated guarantee or refund policy, verbatim.
+   - `scarcity_beats`: an array of the stated scarcity or urgency signals (for example: "only 12 seats," "doors close Friday," "price goes up at midnight").
+   - `vip_tier`: the stated high-ticket or elevated-access tier, if any.
+   If the source contains no offer or no pricing, set `offer_intelligence: null`.
+9. **Proof assets (only what is IN the source).** Extract the source's OWN proof -- testimonials, stated results, revenue figures, case study outcomes, award references -- that appear in the signal text. These are assets the deck can USE, distinct from the `proof_flags` array (which flags claims that need EXTERNAL corroboration via ROLE-04). Record as `proof_assets` (array of objects with `claim`, `source_context`, and `confidence: high|medium`). In GENERAL mode, strip all identifying information per the mode-aware privacy rule before recording. In ONE-PERSON mode, only the named recipient's identifying information may survive.
+10. **Assemble the `persuasion_intelligence` block** into `source_brief.json` alongside (not replacing) the existing `analysis` block. Mark `persuasion_intelligence_complete: true` and list every field the source did not contain in `fields_absent_in_source` (never leave a field simply missing -- absence is always explicit).
+
+**Outputs:** the `persuasion_intelligence` block in `source_brief.json` (see schema in SOP 9.8).
+
+**Hand to:** SOP 9.5 (Teaching Devices).
+
+**Failure mode:** If the source is a tight written report or a non-persuasive technical document with no transformation promise, no call to action, no offer, and no emotional arc: record `persuasion_intelligence_complete: true` with ALL fields listed in `fields_absent_in_source` and a note: "Source is informational/technical -- no persuasion structure found; Brainstorming Buddy must supply all persuasion fields." Never fabricate a promise or objection the source does not make.
 
 ---
 
@@ -369,12 +417,44 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "personalized_closing": false,
      "tone_personalization_notes": "<one-person mode only, grounded in the source>",
      "audience_appropriateness_checked": true,
+     "persuasion_intelligence": {
+       "persuasion_intelligence_complete": true,
+       "privacy_mode": "one-person|general|null",
+       "transformation_promise": "<one sentence stating what the audience will be, do, or have -- or null>",
+       "primary_objection": "<the single belief or objection the source most directly addresses -- or null>",
+       "goal": "<what the source ultimately aims to accomplish for the audience -- or null>",
+       "cta_action": "<the explicit call to action phrase extracted verbatim -- or null>",
+       "target_feeling": "<the emotional end-state the source engineers>",
+       "target_feeling_inferred": true,
+       "tone_detected": "Inspirational|Tough Love|Challenger|Teacher|Storyteller|High-Energy Hype|Calm Premium",
+       "narrative_arc_type": "Hormozi-arc|straight-teaching|case-study|how-to|conceptual-argument",
+       "hook_candidate": "<the central promise compressed into one singable line>",
+       "offer_intelligence": {
+         "offer_name": "<stated offer name>",
+         "offer_stack": ["<component or bonus>"],
+         "price_mode": "drop|range|stated|not-present",
+         "price_anchor": "<high reference price stated before reveal>",
+         "final_price": "<stated final price>",
+         "payment_plan": "<stated payment option>",
+         "guarantee": "<stated guarantee verbatim>",
+         "scarcity_beats": ["<stated scarcity or urgency signal>"],
+         "vip_tier": "<stated high-ticket tier or null>"
+       },
+       "proof_assets": [
+         {
+           "claim": "<result, testimonial, or outcome stated in the source>",
+           "source_context": "<where in the source this appears>",
+           "confidence": "high|medium"
+         }
+       ],
+       "fields_absent_in_source": ["<field name for each persuasion field the source did not contain>"]
+     },
      "handoff_to": "director-of-presentations",
      "handoff_at": "<iso>"
    }
    ```
-2. Map the source brief onto the Director's `deck_brief.json` intake. The source brief PROVIDES: the `presentation_mode` (one-person / general, which drives privacy, personalization, and tone), the main theme (a derived HOOK SEED), the teaching arc (the one-big-idea-per-slide outline with elaboration), the micro-vs-full call (which sizes the deck), the deliverable bundle (deck + Presenter guide + infographic checklist) and `checklist_items`, the personalized cover and closing requirements (one-person mode), and the proof flags (which the Director routes to ROLE-04). The source brief does NOT capture the audience-and-representation fields (REPRESENTATION_MIX, AUDIENCE_COMPOSITION_NOTE, VISUAL_MIX, DARK_OK, GROUNDED_CONTENT, DELIVERABLE_SET) -- those belong to the Brainstorming Buddy's SOP 9.0 capture and are NEVER guessed here. Note: the `presentation_mode` is distinct from the Director's Mode A / Mode B (build-from-scratch vs augment-existing); the two are independent axes.
-3. Route the handoff: hand `source_brief.json` to the Director of Presentations. Because the audience-and-representation fields are not yet captured, the Director either (a) routes the owner through the Brainstorming Buddy's SOP 9.0 pre-presentation capture to collect those fields with the source brief pre-seeding the theme/arc/hook/mode so the Buddy does NOT re-ask them, or (b) if those fields are already on file from a prior brief, validates and proceeds. You state this routing need explicitly in the handoff so no audience default is ever invented downstream. The `presentation_mode` and the bundle requirements travel with the brief so the Director propagates them to the build.
+2. Map the source brief onto the Director's `deck_brief.json` intake. The source brief PROVIDES: the `presentation_mode` (one-person / general, which drives privacy, personalization, and tone), the main theme (a derived HOOK SEED), the teaching arc (the one-big-idea-per-slide outline with elaboration), the micro-vs-full call (which sizes the deck), the deliverable bundle (deck + Presenter guide + infographic checklist) and `checklist_items`, the personalized cover and closing requirements (one-person mode), and the proof flags (which the Director routes to ROLE-04). The source brief also PROVIDES the `persuasion_intelligence` block (SOP 9.4B): `transformation_promise`, `primary_objection`, `goal`, `cta_action`, `target_feeling`, `tone_detected`, `narrative_arc_type`, `hook_candidate`, `offer_intelligence` (when the source contains an offer), and `proof_assets` (the source's own proof). The Director maps these fields onto the mandatory-variable checklist in Director SOP 9.1 step 3 BEFORE routing any missing fields to the Brainstorming Buddy -- so the Buddy is asked ONLY for genuinely source-absent fields and the always-Buddy audience and representation fields. The source brief does NOT capture the audience-and-representation fields (REPRESENTATION_MIX, AUDIENCE_COMPOSITION_NOTE, VISUAL_MIX, DARK_OK, GROUNDED_CONTENT, DELIVERABLE_SET) -- those belong to the Brainstorming Buddy's SOP 9.0 capture and are NEVER guessed here. Note: the `presentation_mode` is distinct from the Director's Mode A / Mode B (build-from-scratch vs augment-existing); the two are independent axes.
+3. Route the handoff: hand `source_brief.json` to the Director of Presentations. Because the audience-and-representation fields are not yet captured, the Director either (a) routes the owner through the Brainstorming Buddy's SOP 9.0 pre-presentation capture to collect those fields with the source brief pre-seeding the theme/arc/hook/mode/persuasion-intelligence so the Buddy does NOT re-ask fields the source already answered, or (b) if those fields are already on file from a prior brief, validates and proceeds. You state this routing need explicitly in the handoff so no audience default is ever invented downstream. The `presentation_mode` and the bundle requirements travel with the brief so the Director propagates them to the build. **ROLE-04 Research Dispatch (MANDATORY):** The Director MUST dispatch ROLE-04 as Phase -0.5 for ALL content-to-presentation builds, regardless of `proof_flags`. The `proof_flags` array is copy-level ingest only -- it identifies which claims need proof, but it does NOT determine whether research runs. ROLE-04's full six-category mandate (A through F) runs unconditionally on every build. The `source_brief.json` pre-seeds ROLE-04's intake (the `main_theme`, `teaching_arc`, the `persuasion_intelligence` block including `offer_intelligence` and `proof_assets`, and any `GROUNDED_CONTENT` notes travel in the brief so ROLE-04 can tailor Categories B, D, and E to the source's actual content -- see SOP 9.4B step 9 for the feed). The Director blocks Phase B+ until the Research Brief is complete and `research_complete: true`.
 4. Notify the owner via openclaw message send (never direct API): "I have turned your [modality] into a presentation brief -- main theme captured, [N] teaching steps mapped, built as a [one-person/general] [micro/full] presentation. You will receive the deck, a presenter guide, and a one-page checklist of the key points. The Presentations team will confirm your audience and style, then build it. I will let you know at the first approval gate."
 5. Record the handoff in the archive.
 
@@ -396,8 +476,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Flow from trigger to finished deck:**
 1. Owner says a trigger phrase with a source -> Master Orchestrator / Director routes to this role.
-2. This role: SOP 9.1 audience-mode decision (one-person / general, asked FIRST) -> SOP 9.2 ingest (mode-aware privacy rule on recordings) -> SOP 9.3 signal-vs-fluff extraction -> SOP 9.4 analysis + theme + arc -> SOP 9.5 teaching devices + simplify -> SOP 9.6 micro-vs-full -> SOP 9.7 deliverable bundle (deck + Presenter guide + infographic checklist; cover/closing in one-person mode) -> SOP 9.8 hand `source_brief.json` to the Director.
-3. Director: validates the source brief, propagates the `presentation_mode` and the deliverable bundle, collects audience/representation/style via the Brainstorming Buddy's SOP 9.0 if not on file (theme/arc/hook/mode pre-seeded so they are not re-asked), dispatches ROLE-04 only if proof flags want external corroboration.
+2. This role: SOP 9.1 audience-mode decision (one-person / general, asked FIRST) -> SOP 9.2 ingest (mode-aware privacy rule on recordings) -> SOP 9.3 signal-vs-fluff extraction -> SOP 9.4 analysis + theme + arc -> SOP 9.4B source persuasion-intelligence extraction -> SOP 9.5 teaching devices + simplify -> SOP 9.6 micro-vs-full -> SOP 9.7 deliverable bundle (deck + Presenter guide + infographic checklist; cover/closing in one-person mode) -> SOP 9.8 hand `source_brief.json` to the Director.
+3. Director: validates the source brief, propagates `presentation_mode`, deliverable bundle, AND the `persuasion_intelligence` block (including `offer_intelligence` and `proof_assets`) into `intake.json`; satisfies mandatory-variable check from `persuasion_intelligence` FIRST before routing any gap to the Brainstorming Buddy; collects audience/representation/style and genuinely source-absent persuasion fields via the Brainstorming Buddy's SOP 9.0 (theme/arc/hook/mode/persuasion-intelligence pre-seeded so they are not re-asked); dispatches ROLE-04 unconditionally as mandatory Phase -0.5.
 4. Deck pipeline builds: Hook Strategist -> Slide Copywriter (+ Offer Price Strategist) -> Brand Steward -> Typography Architect -> Slide Image Creator -> QC gates -> Slide Submitter -> Media Librarian -> PPTX Assembly (emits the deck plus its portable-document export) -> final QC -> Presenters Guide Specialist (the guide) -> Presenter Coach -> Delivery Concierge delivers the finished bundle.
 
 **Outputs:** none (this SOP is the routing contract this role conforms to).
@@ -451,6 +531,18 @@ The source brief does NOT fill REPRESENTATION_MIX, AUDIENCE_COMPOSITION_NOTE, VI
 
 ### Gate 14 -- No Duplicated Web Research
 Source claims needing external proof are flagged in `proof_flags` for ROLE-04, not searched and asserted here. Zero open-web fact searches by this role. (SOP 9.4 / SOP 9.8)
+
+### Gate 15 -- Persuasion-Intelligence Block Present and Complete
+`persuasion_intelligence_complete: true` is set on `source_brief.json`. Every field the source did not contain is listed in `fields_absent_in_source` -- fields are never simply omitted. `privacy_mode` on the block matches `presentation_mode`. (SOP 9.4B)
+
+### Gate 16 -- Offer Intelligence Captured When Source Contains an Offer
+When the source contains an offer with pricing, guarantee, or scarcity: `offer_intelligence` is populated with the offer's stated components, prices, guarantee, and scarcity beats extracted verbatim. Offer beats are NOT folded into the teaching arc and NOT dropped as off-topic. When the source contains no offer, `offer_intelligence: null`. (SOP 9.4B)
+
+### Gate 17 -- Proof Assets Correctly Separated from Proof Flags
+`proof_assets` records the source's OWN proof (testimonials, stated results, case study outcomes in the signal text). `proof_flags` records claims that need EXTERNAL corroboration from ROLE-04. The two arrays are distinct and not interchanged. (SOP 9.4B)
+
+### Gate 18 -- No Converter-Owned Image Path
+This role produces no image prompts, makes no model choices, and defines no rendering path. The `persuasion_intelligence` block feeds downstream roles through the Director; it does not route any image work through a converter-specific path. All image work routes through the shared Slide Image Creator and canonical `render_deck.py`. (SOP 9.4B invariant / AF-CONVERTER-PARITY)
 
 ---
 

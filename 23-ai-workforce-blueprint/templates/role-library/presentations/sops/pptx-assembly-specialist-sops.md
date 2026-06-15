@@ -56,6 +56,7 @@ Every overlay text box added in this SOP must comply with all six rules of SOP 9
 1. Verify slide count: `ls working/media-library/*.png | wc -l` must equal slide_count_final from mission_prd.json. If it does not, halt and notify the Director.
 2. Verify presenter_notes.json has exactly slide_count_final entries. If fewer entries than slides: flag missing notes to the Director. Do not assemble with missing notes.
 3. Check for pptx_text_overlays.json. If it exists, read it and log how many entries contain `strike: true`. These are struck-price overlays and require special handling.
+3a. **Workspace discipline (AF-DH1 prevention):** Confirm the assembly script path is `working/scripts/assemble_pptx.py`. All intermediate files (prompts, renders, QC logs, manifests, scripts) MUST remain under `working/`. Output PPTX goes to `output/[DECK_SLUG].pptx` and PDF to `output/[DECK_SLUG].pdf`. The assembly script must NEVER hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- that path is owned exclusively by Delivery Concierge SOP 9.0. Verify now; refuse to proceed if any of these conditions are violated.
 4. Write the assembly script at working/scripts/assemble_pptx.py:
    ```python
    from pptx import Presentation
@@ -140,12 +141,14 @@ Every overlay text box added in this SOP must comply with all six rules of SOP 9
 6. Verify the output file exists at output/[DECK_SLUG].pptx and is non-empty.
 7. Open the PPTX with python-pptx and verify: slide count == slide_count_final, first and last slide images are correct, first slide has a non-empty notes field.
 8. For any slide with a `strike: true` overlay entry: open the corresponding slide in the rendered PDF (SOP 9.2) and visually confirm the struck text appears with the strikethrough line.
+9. Notify the Director that `output/` files are ready (PPTX + PDF). Do NOT copy any file to ~/Downloads or to `delivery/`; Delivery Concierge SOP 9.0 owns final packaging. Touching the delivery directory from this role is an AF-DH1 trigger.
 
 **Outputs:**
 - output/[DECK_SLUG].pptx (the assembled deck, with all native overlays and struck-price overlays applied)
+- output/[DECK_SLUG].pdf (the portable-document export, produced in SOP 9.2)
 - pptx_text_overlays.json (written by QC Specialist / Slide Image Creator during Phase 5; read here; this role does not write it, it reads it)
 
-**Hand to:** SOP 9.2 (render to PDF for QC), then after Phase 6 QC passes -- hand to Media Librarian / GHL Updater SOP 9.6 (Final Deck Delivery) or ROLE-13 Delivery Concierge if that role exists.
+**Hand to:** SOP 9.2 (render to PDF for QC), then after Phase 6 QC passes -- hand to Delivery Concierge (ROLE-13) who runs SOP 9.0 to package the clean client bundle. Do NOT copy output files to Downloads directly.
 
 **Failure mode:** If any slide image file is missing or corrupt: halt. Do not assemble with a gap. Notify the Director: "Assembly blocked: slide-NN.png is missing or corrupt. Media Librarian must re-verify."
 

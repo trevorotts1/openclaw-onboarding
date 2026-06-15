@@ -18,14 +18,22 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - working/style/style_block.md (palette, font family, weight map, logo placement rule)
 - working/copy/arc_allocation.json (the slide-type manifest)
+- working/research/design-brief-[DECK_SLUG].md (Category F Design Style Brief from ROLE-04 Phase -0.5 -- REQUIRED; if missing, block and notify the Director)
 
 **Steps:**
 
-1. Inherit the type scale and weight map from the STYLE BLOCK. Do NOT invent a font family. Carry the weight ladder verbatim (for example: hero headlines in Family Black, sub-headlines in ExtraBold, kicker labels in Bold, section labels in SemiBold, tertiary lines in Medium italic, footnotes in Regular) and the pt-size ranges relative to slide height.
+0. **Load the Design Style Brief (Category F).** Read `working/research/design-brief-[DECK_SLUG].md` before doing anything else. Note which default font families the brief identifies to avoid (these inform step 1's "do NOT invent a font" rule), which layouts are overused in the niche (inform the do/never lists in step 3), and which compositional approaches are underused (inform focal-point and whitespace choices). The brief is research-not-instruction; you retain full creative authority.
+
+1. Inherit the type scale and weight map from the STYLE BLOCK. Do NOT invent a font family. Do NOT use any platform-default family identified in the Design Style Brief's F2 section (AF-F13 enforces this at Phase 6). Carry the weight ladder verbatim (for example: hero headlines in Family Black, sub-headlines in ExtraBold, kicker labels in Bold, section labels in SemiBold, tertiary lines in Medium italic, footnotes in Regular) and the pt-size ranges relative to slide height. **Record the following as machine-readable tokens at the top of type_layout_system.md:**
+   - `font_family_display: [brand display family]`
+   - `font_family_body: [brand body family]`
+   - `type_scale_steps: [N]` (must be exactly 4 or 5; AF-F13 enforces this)
+   - `min_body_pt: 18` (absolute minimum -- AF-F12 enforces this; no body run in the deck may render below this)
+   These tokens are machine-read by the QC Specialist at Phase 6 to assert AF-F12 and AF-F13.
 
 2. Enumerate the archetypes present in arc_allocation.json. The standing archetype set is: hook, divider, teach-one-big-idea, jaw-drop standalone, data, wall-of-wins, offer-component-card, CTA. Add any archetype the manifest names that is not in this set.
 
-3. For EACH archetype, author one distinct LAYOUT TEMPLATE specifying:
+3. For EACH archetype, author one distinct LAYOUT TEMPLATE specifying (consult the F4 layout-overuse findings from the Design Style Brief to ensure each template avoids overused patterns):
    - **IMAGE POSITION:** one of left / right / top / bottom / full-bleed / none / low-opacity-bg. No two adjacent archetypes default to the same position.
    - **WORD-PLACEMENT ZONE:** which thirds-grid region the text occupies (upper-left / center / bottom-left, etc.), distinct per archetype so the eye is led differently slide to slide.
    - **TYPE TREATMENT:** which rungs of the weight ladder this archetype uses, in what order, at what pt sizes. NOT every rung on every slide; the canonical stack is per-archetype, not universal.
@@ -35,7 +43,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 5. Explicitly mark which archetypes are type-driven (hook, jaw-drop standalone, divider) versus image-led (teach-one-big-idea, wall-of-wins, offer-component-card). The hook archetype routes to SOP 9.2 for its full spec.
 
-6. Write working/typography/type_layout_system.md. Structure: one section per archetype, each with IMAGE POSITION, WORD-PLACEMENT ZONE, TYPE TREATMENT (weights + pt sizes), and the DO/NEVER list. Open the file with the inherited type scale and weight map so it is self-contained for the Slide Image Creator.
+6. Write working/typography/type_layout_system.md. Structure: (a) the four machine-readable token lines at the top (font_family_display, font_family_body, type_scale_steps, min_body_pt); then (b) one section per archetype, each with IMAGE POSITION, WORD-PLACEMENT ZONE, TYPE TREATMENT (weights + pt sizes), and the DO/NEVER list. Open the file with the inherited type scale and weight map so it is self-contained for the Slide Image Creator. **Section-divider archetypes must each declare a distinct focal point and whitespace strategy -- no two divider templates may be structurally identical (AF-F14 enforces this at Phase 6).**
 
 **Outputs:**
 - working/typography/type_layout_system.md (one LAYOUT TEMPLATE per archetype)
