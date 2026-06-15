@@ -149,7 +149,7 @@ fi
 # A4: Content-verification — read .onboarding-content-manifest.json and check
 # whether the on-box installed content matches the recorded manifest for the
 # stamped version. If it does not, force has_skill_updates=true even when
-# the version strings match (this is the Lyric symptom: stamp matches, content drifted).
+# the version strings match (the half-applied-box symptom: stamp matches, content drifted).
 CONTENT_VERIFIED="false"
 CONTENT_DRIFT_SKILLS_JSON=""
 _MANIFEST_FILE="$SKILLS_DIR/.onboarding-content-manifest.json"

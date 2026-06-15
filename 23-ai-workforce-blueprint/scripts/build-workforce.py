@@ -1901,15 +1901,21 @@ def build_from_config(config):
                 print(f"[NON-INTERACTIVE] Config updated with {len(selected_departments)} department agents", file=sys.stderr)
         except Exception as e:
             print(f"[NON-INTERACTIVE ERROR] Config update block failed: {e}", file=sys.stderr)
-            registration_failures = getattr(locals(), 'registration_failures', [])
-            registration_failures.append(f"config_block:{e}")
+            # registration_failures is defined at the top of the try block, so it
+            # is always in scope here; append to it directly (do NOT re-init or the
+            # failures recorded in the loop above would be discarded).
+            try:
+                registration_failures.append(f"config_block:{e}")
+            except NameError:
+                registration_failures = [f"config_block:{e}"]
     else:
         print(f"[NON-INTERACTIVE ERROR] openclaw.json not found at {OPENCLAW_CONFIG} — registration FAILED (wiringStatus: blocked-no-config). Build cannot be marked complete without agent config.",
               file=sys.stderr)
         registration_failures = ["all:openclaw_json_absent"]
-        # Write wiringStatus to build-state
+        # Write wiringStatus to build-state (use the canonical path resolver,
+        # NOT a bare WORKSPACE global which does not exist in this module).
         try:
-            _state_f = os.path.join(WORKSPACE, ".workforce-build-state.json")
+            _state_f = _build_state_path()
             if os.path.isfile(_state_f):
                 import tempfile as _tf
                 _s = json.load(open(_state_f))
@@ -1931,9 +1937,9 @@ def build_from_config(config):
             f"{registration_failures}. Roles are on disk but not wired into openclaw.json. "
             f"Re-run after fixing config."
         )
-        # Write wiringStatus:failed to build-state
+        # Write wiringStatus:failed to build-state (canonical path resolver)
         try:
-            _state_f = os.path.join(WORKSPACE, ".workforce-build-state.json")
+            _state_f = _build_state_path()
             if os.path.isfile(_state_f):
                 import tempfile as _tf2
                 _s2 = json.load(open(_state_f))
@@ -1943,8 +1949,8 @@ def build_from_config(config):
                     _tmp2 = _tf2.mktemp(dir=os.path.dirname(_state_f), prefix=".bws.", suffix=".tmp")
                     json.dump(_s2, open(_tmp2, "w"), indent=2)
                     os.replace(_tmp2, _state_f)
-        except Exception:
-            pass
+        except Exception as _ws_e2:
+            print(f"[NON-INTERACTIVE WARN] could not write wiringStatus:failed to build-state: {_ws_e2}", file=sys.stderr)
 
     # Save handoff as completed (B2: progress capped if registration failed)
     create_handoff(
