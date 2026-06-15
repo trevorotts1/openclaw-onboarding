@@ -1,3 +1,42 @@
+## [v12.9.0] - 2026-06-14 - feat: presentation vision-gate overhaul + 16 new AF codes + casting ledger + deliverable bundle + gradient ban + PIL logo composite
+
+### Changes
+
+**Gate overhaul: the presentation QC gate is now a VISION gate.** The "assembly-only (no generation)" run path is eliminated. Phase 5 and Phase 6 open every rendered PNG, run OCR, run the vision-model, and log the result per slide. A text-only PASS is itself AF-GATE-0 and fails the deck.
+
+**16 new auto-fail codes (all in BOTH a producing SOP AND the gate):**
+- `AF-GATE-0` -- meta auto-fail: images not opened and logged means no PASS (qc-specialist-presentations-sops.md + qc-specialist-presentations.md)
+- `AF-LOGO` -- PIL logo composite on every slide (mandatory post-Kie step, not a fallback); SSIM >= 0.97 on chip against LOGO_URL; any wordmark garble, invented mark, or absent composite = fail (SOP-IMG-05-PIL-LOGO-COMPOSITE.md)
+- `AF-CAST` -- deck-wide casting tally against the captured audience_composition; all-one-race when intake says multicultural = immediate fail; inverted default = fail (SOP-CAST-01-AUDIENCE-COMPOSITION-AND-CASTING-LEDGER.md)
+- `AF-FACE-MOOD` -- dour or flat expression on a positive beat (slide-image-creator-sops.md SOP 9.10 Part E)
+- `AF-GRAD` -- gradient fill, radial glow, or bloom on any type region (SOP-IMG-05 gradient ban; slide-image-creator-sops.md SOP 9.10 Part A)
+- `AF-TYPE` -- hero type below pt-size floor, not dominating its zone, generic or default font, no weight hierarchy (slide-image-creator-sops.md SOP 9.6)
+- `AF-TELEGRAPH` -- first-person presenter voice, ledger language, telegraph eyebrows, or "who agrees" on the slide face; verbatim match to the brief is NOT a defense (AF-P3 demoted from sufficient-PASS)
+- `AF-PRICE-FACE` -- per-item dollar values or unauthorized prices on the offer face (slide-image-creator-sops.md SOP 9.10 Part F)
+- `AF-VALIDATOR` -- validator slide carries zero external refs or only self-referential framing (SOP 9.10 Part G)
+- `AF-WALL` -- empty tile, placeholder, or future-pace framing on the Wall of Wins
+- `AF-OPACITY` -- pure flat-color slide where the SOP requires an atmospheric background layer (SOP 9.10 Part B)
+- `AF-CALLOUT` -- missing, small, or garbled price callout on the offer slide
+- `AF-REPITCH` -- missing or incomplete re-pitch block (must have both emotion and logic beats)
+- `AF-MODEL` -- detectable image-model or color-grade break mid-deck (SOP 9.10 Part C)
+- `AF-SAME` -- 2+ consecutive slides sharing the same archetype + image zone; variety floor violation (SOP 9.10 Part D)
+- `AF-DELIVER` -- deliverable bundle incomplete: missing presenter guide PDF, script PDF, or audio file (SOP-PITCH-05-DELIVERABLE-BUNDLE.md)
+
+**New SOPs (3 new files):**
+- `SOP-IMG-05-PIL-LOGO-COMPOSITE.md`: PIL logo composite as a mandatory first-pass post-processing step on every slide (not a fallback); gradient ban with the producing-side prohibition and the gate-side AF-GRAD enforcement
+- `SOP-CAST-01-AUDIENCE-COMPOSITION-AND-CASTING-LEDGER.md`: non-defaultable `audience_composition` intake field (build HALTS if absent); Casting Ledger replacing per-slide demographic locks; representation propagation from intake to every people-prompt; AF-CAST + AF-FACE-MOOD enforcement
+- `SOP-PITCH-05-DELIVERABLE-BUNDLE.md`: three-artifact closeout bundle (presenter guide PDF + word-for-word script PDF + audio via Fish Audio S2 with expression tags + ffmpeg stitch); AF-DELIVER closeout hard gate
+
+**Producing rules added to slide-image-creator-sops.md (SOP 9.10):** gradient ban (Part A), opacity backgrounds on flat slides (Part B), image-model consistency (Part C), layout variety and no-consecutive-archetype rule (Part D), casting ledger propagation with no per-slide demographic locks (Part E), promises-not-prices (Part F), external validators only (Part G). Negative block template updated to include the gradient ban as class 8 addendum.
+
+**Role files updated:** qc-specialist-presentations.md (v1.4 -> v1.5, vision-gate section added); slide-image-creator.md (v1.2 -> v1.3, anti-pattern rows 14-18 added).
+
+**AF-P3 demotion:** verbatim match to the brief is necessary but NOT sufficient as a PASS condition. A brief-matching string that also triggers AF-TELEGRAPH or AF-PRICE-FACE still auto-fails.
+
+**Doctrine compliance:** no em dashes, no client names, no invented external-service constants, all AF codes extend (never duplicate) the existing AF-C/AF-F/AF-SRC namespace. Both SOP mirrors kept in parity with their authoritative role files. All 9 version markers bumped to v12.9.0.
+
+---
+
 ## [v12.8.3] - 2026-06-14 - feat: content-to-presentation one-person/general modes + fluff-strip + cover/close + infographic checklist + system-wide deck PDF (AF-F11)
 
 ### Changes

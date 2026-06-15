@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** qc
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.4
+**Version:** 1.5
 **Last updated:** 2026-06-14
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -236,6 +236,34 @@ These conditions each independently force an immediate FAIL verdict on the affec
 | AF-DC5 | Ungraded inconsistent deck: across the deck as a whole, some images are visibly warm-toned and others are visibly cool-toned, with no unified color-grading profile. Each image must feel as if it was shot in the same light. An inconsistently graded deck fails the color-grading dimension regardless of individual slide scores. |
 | AF-DC6 | Font in unsafe zone: text placed within 5% of any slide edge (the bleed/margin zone), or any text element overlapping a human face. Both are composition defects independent of content quality. |
 | AF-DC7 | Prompt missing all three design-craft element groups (Phase 3 only): the prompt omits all of the following groups: (a) a thirds-zone assignment for headline, subject, and supporting elements; (b) depth-layer specification (foreground / midground / background); (c) a COLOR GRADING block comment. A prompt missing all three groups has not been art-directed to the required standard and is a Phase 3 auto-fail. Missing one or two groups triggers a scored deduction (p-DC dimension), not an outright auto-fail, unless the missing group is also covered by a more specific auto-fail above. |
+
+#### Vision-Gate and Pixel-Level Enforcement Auto-Fails (SOP 9.7 -- the v12.9.0 gate overhaul)
+
+These auto-fails implement the gate-overhaul doctrine: every rule lands in BOTH a producing SOP AND a hard auto-fail. The codes below are the hard auto-fail half of each rule. They extend (never duplicate) the existing AF-C, AF-P, AF-I, AF-F, AF-R, and AF-DC namespaces. Run ALL of these checks before the scored layer. Full definitions are in the SOP mirror (sops/qc-specialist-presentations-sops.md, Vision-Gate and Pixel-Level Enforcement Auto-Fails section). This section summarizes each code and its cross-reference.
+
+**AF-GATE-0** (meta auto-fail): the gate input is the rendered PNG set, not the brief or assembly script. QC-FINAL.md must record per slide: the PNG path opened, the OCR text, and the vision-model verdict. No image opened = no PASS. A text-only PASS is itself AF-GATE-0.
+
+| Code | Catches | Producing SOP |
+|------|---------|---------------|
+| AF-LOGO | Logo identity drift or mutation (any wordmark garble, invented mark, SSIM < 0.97 on chip, absent logo, PIL composite not logged) | SOP-IMG-05-PIL-LOGO-COMPOSITE.md |
+| AF-CAST | Deck-wide casting violation (distribution outside +/- 10 pct, all-one-race, inverted default, people without captured audience_composition) | SOP-CAST-01-AUDIENCE-COMPOSITION-AND-CASTING-LEDGER.md |
+| AF-FACE-MOOD | Dour or flat expression on a positive-beat slide | SOP-CAST-01; slide-image-creator-sops.md SOP 9.10 Part E |
+| AF-GRAD | Gradient fill, radial glow, or bloom on any type region | SOP-IMG-05-PIL-LOGO-COMPOSITE.md (gradient ban); slide-image-creator-sops.md SOP 9.10 Part A |
+| AF-TYPE | Hero type below pt-size floor, type not dominating its zone, generic or default font, no weight hierarchy | slide-image-creator-sops.md SOP 9.6 Part A |
+| AF-TELEGRAPH | First-person presenter voice, ledger language, telegraph eyebrows, or "who agrees" framing on the slide face (verbatim match to brief is NOT a defense) | SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md; slide-image-creator-sops.md SOP 9.10 Part F note |
+| AF-PRICE-FACE | Unauthorized per-item dollar values or multiple prices on the offer face | slide-image-creator-sops.md SOP 9.10 Part F |
+| AF-VALIDATOR | Validator slide carries zero external refs or only self-referential framing | slide-image-creator-sops.md SOP 9.10 Part G |
+| AF-WALL | Empty tile, placeholder, or future-pace framing on the Wall of Wins | SOP-PITCH-04-WALL-OF-WINS.md |
+| AF-OPACITY | Pure flat-color slide where the SOP requires an atmospheric background layer | slide-image-creator-sops.md SOP 9.10 Part B |
+| AF-CALLOUT | Missing, small, or garbled price callout on the offer / CTA slide | slide-image-creator-sops.md SOP 9.10 Part F |
+| AF-REPITCH | Missing or incomplete re-pitch block (must carry both emotion AND logic beats) | SOP-PITCH-03-RE-PITCH.md |
+| AF-MODEL | Detectable image-model or color-grade break mid-deck | slide-image-creator-sops.md SOP 9.10 Part C |
+| AF-SAME | 2+ consecutive slides sharing the same archetype AND image zone; deck variety below the floor | slide-image-creator-sops.md SOP 9.10 Part D |
+| AF-DELIVER | Deliverable bundle incomplete at closeout (missing guide PDF, script PDF, or audio file) | SOP-PITCH-05-DELIVERABLE-BUNDLE.md |
+
+**AF-P3 demotion:** verbatim match to the brief is necessary but NOT sufficient as a PASS condition. A brief-matching string that triggers AF-TELEGRAPH, AF-PRICE-FACE, or any other AF code still auto-fails.
+
+**Tooling:** all vision-gate tools (OCR, SSIM comparator, face-classifier, gradient/glow detector, pt-size estimator, archetype hasher, disk checker) are fail-closed: a tool that is unavailable or errors is treated as a FAIL, never a silent PASS.
 
 #### SOP-Doctrine Auto-Fails (checked when auditing or revising THIS SOP and any SOP it depends on)
 
