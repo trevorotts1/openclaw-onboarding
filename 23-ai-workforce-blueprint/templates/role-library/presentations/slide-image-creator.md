@@ -4,7 +4,7 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.2
+**Version:** 1.3
 **Last updated:** 2026-06-14
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -843,6 +843,11 @@ The four write-time controls that pre-empt the forensic defects. Every prompt mu
 | 11 | Logo mutating into a different mark across slides | Composite ONE locked logo image-to-image (Mode B, LOGO_URL first reference, "place, do not redraw"); add negative-block class 2; never text-to-image the mark (SOP-IMG-01 / SOP-DESIGN-04). |
 | 12 | A bracket / "owner to confirm" placeholder reaching the render | Scan the prompt for bracket tokens / build notes before handoff (AF-P16); resolve with real interview content or pull the slide; add negative-block class 3 (pre-empts AF-F10). |
 | 13 | Missing or unpaired negative block; under-budget starved prompt | Author the full eight-class SOP 9.8 block as the final paragraph, each negative paired with a positive twin; spend the 9,000-14,000 budget on defect-preventing specificity, not padding (Gate 11). |
+| 14 | Gradient or glow on type regions (AF-GRAD) | STRIP all "liquid-gold gradient", "metallic warm gold", "radial glow" language from type elements. Use flat solid brand-color only. Add gradient ban to the DO-NOT block (SOP 9.10 Part A). |
+| 15 | All-one-race deck when intake says multicultural (AF-CAST) | Confirm audience_composition is captured; build the Casting Ledger; write each people-prompt's Audience Engine from the ledger. Delete per-slide demographic locks (SOP 9.10 Part E, SOP-CAST-01). |
+| 16 | Missing atmospheric background on flat slides (AF-OPACITY) | Add a faded photographic background at approximately 10-15% opacity on pure-type slides. State it explicitly in the prompt (SOP 9.10 Part B). |
+| 17 | Consecutive identical archetypes (AF-SAME) | Verify variety constraints before writing prompts: no two consecutive slides with the same archetype AND image zone; at least 3 distinct archetypes per 10-slide window (SOP 9.10 Part D). |
+| 18 | Per-item dollar values on offer-component slides (AF-PRICE-FACE) | Rewrite component copy as promises / outcomes. Only the single final price callout is authorized on the offer face (SOP 9.10 Part F). |
 
 ---
 
