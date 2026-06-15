@@ -212,6 +212,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - At/after DROP2: name another new value item added.
    - At/after DROP3: name another new value item added.
    Record this in offer_stack.json under `value_additions_by_drop`.
+5a. THE ESCALATION RULE -- BIGGER AND BETTER AT EVERY DROP (master doctrine, the red rule made operational). Naming SOME new value at each drop is the floor; this step raises it. The value added at each successive drop must ESCALATE: each rung's addition is a bigger and better promise, bonus, or guarantee than the rung before it, never a token or restated add. Operationally, every entry in `value_additions_by_drop` must satisfy all three:
+   - It is a SUBSTANTIVE named deliverable, bonus, or guarantee (a real component the audience can point to), not a vague "and more" or a restatement of value already on the table.
+   - It is DISTINCT from every value already added at a prior rung (no re-adding the same component, no re-wording a prior add).
+   - It carries a non-trivial `added_value`, so the RUNNING VALUE TOTAL strictly INCREASES at this rung by a non-trivial amount over the prior rung. A drop whose addition is trivial, restated, or merely cosmetic FAILS the escalation rule even though it technically "added" something. (For a non-monetary offer the added_value is a priceless-frame weight per SOP 9.6, not a fabricated dollar figure; the escalation is then judged on the substance and distinctness of the named bonus, never an invented number, per the AF-SRC discipline that bars un-cited external constants. The running total here is an internal pitch figure built from the client-stated stack, not an external-service value.)
+5b. THE RUNNING VALUE TOTAL (the on-screen rising line that mirrors the falling price). Maintain a cumulative `running_value_total` that begins at the TALLY total (the proven stack value at the anchor) and INCREASES at every drop by that drop's `added_value`. This climbing total is what the audience watches rise while the price falls; it is the inverse line of the price ladder. Record the running total at each rung in `value_additions_by_drop` as `running_value_total`, and assert it is strictly increasing (TALLY total < total after DROP1 < total after DROP2 < total after DROP3). Every running total is internally consistent with offer_stack.json (it equals the prior total plus that rung's added_value, to the dollar) so the cross-slide number-reconciliation gate (AF-C4) finds no mismatch. The design-system price-typography SOP renders this climbing total beside the struck price so the widening gap is SEEN, not just implied; you supply the numbers, the renderer draws the two opposing lines. The VALUE-GAP slide before FINAL (step 6b) uses the FINAL running total, which is the largest of all.
 6. Stripping value to justify a discount is a VIOLATION. A DROP slide must never REMOVE a component to "explain" the lower price. If the run ever shows a component disappearing from the table as the price falls, flag it to the Director as a doctrine violation and refuse to ship the ladder until it is corrected.
 6a. PROMISE SLIDE BETWEEN DROPS (FIX-5b; running promise inventory, master doctrine rule 2). Between each pair of drops, place a PROMISE slide that restates the promise just earned, so each drop is paid for by a promise just made (the concern this kills is "promises missing" between drops). Maintain a running PROMISE INVENTORY: each promise made in the teach/offer arc is logged, and at least one promise slide sits between DROP1 and DROP2 and another between DROP2 and FINAL, restating the next promise the audience is buying. Record `promise_slides: [N, ...]` and the `promise_inventory` list in offer_stack.json. (The Copywriter writes the promise copy from the inventory; you mark where the doctrine requires a promise beat.)
 6b. VALUE-GAP slide before FINAL (FIX-5). Right before the FINAL price reveal, quantify the value gap on the slide: "Total value [TALLY total] vs your price today." The gap (total stack value minus FINAL price) must be stated on screen before the FINAL number lands. Record `value_gap_slide: N` and `value_gap: 0` (tally_total minus final_price) in offer_stack.json.
@@ -234,12 +239,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "promise_inventory": ["..."],
      "promise_slides": [],
      "value_additions_by_drop": [
-       {"drop": "DROP1", "added_component": "...", "added_value": 0},
-       {"drop": "DROP2", "added_component": "...", "added_value": 0},
-       {"drop": "DROP3", "added_component": "...", "added_value": 0}
+       {"drop": "DROP1", "added_component": "...", "added_value": 0, "running_value_total": 0},
+       {"drop": "DROP2", "added_component": "...", "added_value": 0, "running_value_total": 0},
+       {"drop": "DROP3", "added_component": "...", "added_value": 0, "running_value_total": 0}
      ]
    }
    ```
+   The `running_value_total` at each rung equals the prior rung's running total plus that rung's `added_value`; the first rung's prior total is `tally_total`. Each must strictly exceed the one before it (the escalation rule, step 5a), and each must reconcile to the dollar with `tally_total` and the per-drop `added_value` figures so AF-C4 finds no cross-slide mismatch.
 
 **Outputs:**
 - working/copy/offer_stack.json
@@ -527,8 +533,16 @@ Every DROP slide has an emotional A1 BUILDUP slide immediately before it, each d
 ### Gate 5 -- Cross-Slide Numeric Consistency
 numeric_audit.txt shows PASSED before Phase 1Q runs.
 
-### Gate 6 -- Value Added, Never Stripped
-Each drop ADDS new named value to the table (the lower the price, the greater the value). Zero value-stripping violations. Check in SOP 9.2 steps 5-6.
+### Gate 6 -- Value Added, Never Stripped, and ESCALATING (the rising-value curve)
+Each drop ADDS new named value to the table (the lower the price, the greater the value). Zero value-stripping violations. Check in SOP 9.2 steps 5-6. Two further sub-conditions, BOTH blocking, sit on top of the never-stripped floor:
+- **ESCALATION (SOP 9.2 step 5a).** The value added at each drop must be BIGGER and BETTER than the prior rung, not a token add. Each `value_additions_by_drop` entry must name a SUBSTANTIVE distinct deliverable, bonus, or guarantee (never a vague "and more" or a restatement of value already on the table), and the `running_value_total` must strictly increase at every rung by a non-trivial amount. A drop whose addition is trivial, restated, or cosmetic FAILS this gate even though it technically added something. For a non-monetary offer, escalation is judged on the substance and distinctness of the named bonus under the priceless frame (SOP 9.6), never a fabricated dollar figure (the running total is an internal pitch figure, not an external-service constant; the AF-SRC discipline still bars un-cited external numbers).
+- **THE RISING-VALUE CURVE (SOP 9.2 step 5b).** The cumulative `running_value_total` is recorded at every rung, begins at `tally_total`, and climbs as the price falls, so the audience watches the value line rise while the price line drops. Assert it is strictly increasing (tally_total < DROP1 total < DROP2 total < DROP3 total) and that each total reconciles to the dollar with the stack (AF-C4 clean). The design-system price-typography SOP renders this climbing total against the struck price on the drop slide (or its immediate successor) so the widening gap is SEEN; the Strategist supplies the numbers.
+
+This is the engine that makes the audience RAVENOUS: a falling price and a visibly rising value, moving in opposite directions on screen and escalating at every rung, so by the final price the perceived value-to-price gap is overwhelming.
+
+**PASS:** anchor stack proven at $5,282 (tally); DROP1 adds the full example-program blueprint ($1,200 value), running total $6,482; DROP2 adds the done-with-you automation build ($1,800 value), running total $8,282; DROP3 adds a results guarantee ($2,000 value), running total $10,282. Each add is a distinct substantive deliverable, each bigger than the last, the running total climbs $5,282 to $6,482 to $8,282 to $10,282 while the price falls, and the climbing total is rendered against the struck price at each drop. Escalation and the rising curve both pass.
+
+**FAIL:** DROP1 adds a "bonus checklist" ($50), DROP2 "adds" the same checklist re-worded as a "quick-start guide" ($0 net), DROP3 adds "and a few more surprises" with no named deliverable and no value. The running total barely moves and one rung restates a prior add. Fails ESCALATION (trivial/restated/unnamed adds, running total not strictly increasing by a non-trivial amount) even though "something" was named at each drop.
 
 ### Gate 7 -- VIP Side-by-Side
 If VIP_TIER, the VIP option is presented WITH the final price (never after the close), with real client-stated spot counts only. Check in SOP 9.5.
@@ -545,7 +559,7 @@ The ladder is GRADUAL and SPREAD across the WHOLE deck, never stacked back-to-ba
 - The drops are spread at ~47% / ~68% / ~87% with the FINAL at ~97%; each rung is within +/- 2 slides of its target. The drops are NOT bunched in the last stretch of the deck. (A run where DROP1, DROP2, and DROP3 all fall after ~80% of the deck is the STACKED FAILURE and fails this gate.)
 - Each drop carries an EARNED REASON (because you showed up live / believed / stayed); a drop with no reason is a discount, not a reward.
 - A BUILDUP slide (A1, emotional) immediately precedes EVERY drop.
-- EVERY drop ADDS new named value (the red rule: the lower the price, the greater the value); zero value-stripping. (This is the same doctrine as Gate 6, asserted here as part of the choreography.)
+- EVERY drop ADDS new named value (the red rule: the lower the price, the greater the value); zero value-stripping; and the add ESCALATES (bigger and better than the prior rung) so the `running_value_total` strictly climbs as the price falls (the rising-value curve). (This is the same doctrine as Gate 6, asserted here as part of the choreography.)
 - Case studies sit between the drops ("who says so other than you").
 - The FINAL real price sits far below the entire ladder, with a real time window.
 This gate enforces that the audience rides the ladder down for the ENTIRE webinar (the "keep them hanging" mechanic), not a value reveal plus a stack of drops crammed into the close.

@@ -23,7 +23,7 @@ Every deck obeys ONE locked weight ladder with at least FOUR distinct weights an
 
 | Weight | Role | Typical size (relative to 1440px slide height) |
 |--------|------|-------------------------------------------------|
-| BLACK | Hero headlines, hero numbers, the live price numeral | 60 to 86pt |
+| BLACK | Hero headlines, hero numbers, the live price numeral, the climbing running value total | 60 to 86pt |
 | ExtraBold | Sub-heads, the second line of a two-line headline, the struck price | 26 to 34pt |
 | Bold | Kicker labels, section banners, tag-price labels, bullet labels | 16 to 22pt |
 | Medium / SemiBold + Italic | Body lines, tertiary lines, captions, the compliance disclaimer | 17 to 24pt |
@@ -45,6 +45,15 @@ Each headline names AT MOST one or two emphasis words. Emphasis is rendered in t
 
 Every slide has exactly one clear reading order: the eye lands on the hero element first (the BLACK line or the photo subject), then the sub-head, then the body, then the kicker/label, then the logo. The Typography Architect states this order implicitly through the weight ladder; the prompt writer renders it. Two elements competing for "first" on the same slide is a hierarchy failure.
 
+### 2.5 The price ladder AND the rising-value curve (the inverse, drawn)
+
+On every DROP slide (or its immediate successor) the price-typography system renders TWO opposing movements so the audience SEES them, never just reads them in copy:
+
+- The PRICE FALLING: the cumulative struck ladder. Every prior (dead) price is double-struck in the gold treatment and the new (live) price glows in the live-price accent; the audience watches the ladder die rung by rung.
+- The VALUE RISING: the cumulative RUNNING VALUE TOTAL, climbing. The Offer Price Strategist supplies a `running_value_total` at each rung (offer_stack.json `value_additions_by_drop`, SOP 9.2 step 5b) that begins at the proven tally and strictly increases at every drop. The renderer draws this climbing total as a hero number (BLACK weight, gold gradient, the same money treatment) and shows it INCREASING from the prior rung's total to this rung's.
+
+The two are visually PAIRED on the same slide so the widening gap is seen: the falling struck price and the rising value total set against each other (side by side, stacked as a two-line ledger, or as an up-arrow value beside the struck price), so the audience literally watches the price line move down while the value line moves up. Rendering only the struck price, with no climbing value total beside it, leaves the inverse implied rather than seen and fails this rule. The numbers are the Strategist's (consistent with offer_stack.json, AF-C4 clean); the renderer draws the two lines and the gap. The rendered VALUE numbers are pitch-stack figures, NOT a presenter-narration line: the telegraphing phrases ("the lower the price, the greater the value", "the value is still climbing") remain banned as on-slide copy (AF-C9). What is rendered is the climbing TOTAL itself, shown rising, not a sentence describing it.
+
 ---
 
 ## 3. The Enforcement Check (what auto-fails the slide/deck)
@@ -58,10 +67,11 @@ These gates are checked by QC. Each is a concrete PASS/FAIL.
 | The same single-device look (black headline + one accent word) is used on more than 70% of slides | AUTO-FAIL (deck-level): the forensic cookie-cutter pattern |
 | An A4 type-punch or A3 data slide does NOT set its hero element in BLACK weight at hero scale | FAIL that prompt |
 | A money/price number is rendered in flat color when the locked price-type system specifies the gold gradient | FAIL that prompt/image |
+| A DROP slide (or its successor) renders the struck/falling price but NOT the climbing running value total beside it (the rising-value curve of SOP 2.5 is absent, so the inverse is implied not seen) | FAIL that prompt/image |
 | Two elements on one slide compete as the visual "first" (no single reading order) | FAIL that prompt |
 | Emphasis word(s) absent on a headline that names a contrast or a money word | FAIL that prompt |
 
-QC checks the prompt at Phase 3 against the Typography Architect treatment table (the prompt must name the assigned weight roles and emphasis word) and checks the rendered image at Phase 5 (the hero element is visibly the heaviest; the emphasis word is visibly accented; the price uses the gradient).
+QC checks the prompt at Phase 3 against the Typography Architect treatment table (the prompt must name the assigned weight roles and emphasis word) and checks the rendered image at Phase 5 (the hero element is visibly the heaviest; the emphasis word is visibly accented; the price uses the gradient). On DROP slides, QC additionally confirms the rising-value curve of SOP 2.5: the cumulative running value total is rendered, climbing, against the struck/falling price so the widening gap is visible (a struck price with no climbing value total beside it fails); this is the rendering half of the choreography the QC Specialist enforces under AF-C7 sub-condition (c).
 
 ---
 
