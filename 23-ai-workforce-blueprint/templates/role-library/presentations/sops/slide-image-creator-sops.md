@@ -19,6 +19,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - STYLE BLOCK (brand palette, type system, logo rule, representation ratio)
 - working/copy/hook_variants.json
 - the GROUNDED_CONTENT variable from intake.json (the client's book / message / offer / methodology) plus any deep-research grounding routed into the image brief: the concrete moments, settings, and props from THIS client's actual method that the imagery must depict (P6 grounding; the World Engine consumes it). If GROUNDED_CONTENT is blank, flag the operator and do not invent a generic stand-in for the client's method.
+- working/research/grounded-content-[DECK_SLUG].json (Category E from ROLE-04 Phase -0.5 -- REQUIRED; load before writing any prompt)
+- working/research/design-brief-[DECK_SLUG].md (Category F from ROLE-04 Phase -0.5 -- REQUIRED; informs composition and grading direction)
+
+**Real-image-present requirement (AF-I11):** Every non-pure-typography slide must specify a real generated raster (Kie / GPT-Image-2) at >=1920px on the long edge, full-bleed or designed-zone, sourced from the Category E grounded anchor. Decorative icon-font glyphs, single-color clip-art PNGs <=256px, and emoji-as-iconography are FORBIDDEN as slide content art. Concept slides (process, architecture, comparison) must specify a generated diagram-as-image, never text in boxes.
 
 **Steps:**
 0. **Read the master SOP Section 7.5 gold-standard exemplar in full before writing your first prompt.** This is the anatomy of the passing title-slide prompt from the proven run. Study its structure: the header block (title, ARCHETYPE / SECTION / LADDER tags, ONE BIG IDEA line), zone percentages, emotionally precise photo direction, exact verbatim copy with per-line font/size/color, the brand rule devices, the logo chip spec, MOOD + LIGHTING, and the closing COLOR VERIFICATION and AVOID blocks. Also read the SECOND exemplar in the appendix of this file (Section 9.5 strengthening, the A2 people-slide exemplar). Your prompts must match their density and structure, adapted to each slide's own archetype and brand variables. Do not write a single prompt before you have read both.

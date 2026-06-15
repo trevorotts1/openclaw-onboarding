@@ -12,19 +12,19 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Niche Deck, Offer Benchmark, and External Corroboration Research
 
-**When to run:** On-demand, when dispatched by the Director. Common dispatch triggers: (a) proof_audit.txt has >= 3 PROOF PENDING items, (b) the Offer Price Strategist cannot find a market-rate anchor for an offer component, (c) the Director wants competitor deck structure benchmarks before writing the arc, (d) intake.json PROOF_ASSETS field is empty or contains fewer than 2 sourced items.
+**When to run:** MANDATORY on every deck run as Phase -0.5, regardless of proof-asset availability, deck mode (personal or general), pipeline entry point (Brainstorming Buddy or Content-to-Presentation Architect), or deck size. Micro decks may produce a condensed brief with fewer queries, but the brief MUST exist and carry `research_complete: true` with all required category sections present. There are no opt-out triggers and no conditional skip paths; dispatching ROLE-04 as Phase -0.5 is a requirement of the Director SOP 9.x Step 5a. The prior "on-demand" dispatch triggers (a)-(d) are now sub-cases of the mandatory run, not its primary trigger.
 
 **Inputs:**
-- working/copy/intake.json (for research context; read PROOF_ASSETS and GROUNDED_CONTENT fields)
+- working/copy/intake.json (for research context; read PROOF_ASSETS, GROUNDED_CONTENT, and -- when present -- the `persuasion_intelligence` block propagated from a converter `source_brief.json` by the Director SOP 9.1 step 4a: `persuasion_intelligence.offer_intelligence`, `persuasion_intelligence.proof_assets`, `persuasion_intelligence.narrative_arc_type`, `persuasion_intelligence.transformation_promise`)
 - working/copy/proof_audit.txt (for specific proof gaps, if applicable)
 - Director's research brief request (specific research questions)
 
 **Steps:**
-1. Build the research plan. List 5-15 search queries. Each query must target one of four research categories:
+1. Build the research plan. List 5-15 search queries. Each query must target one of four research categories. **When the run originated from the Content-to-Presentation Architect (ROLE-22) and `persuasion_intelligence` is present in intake.json:** seed the category queries from the source's own intelligence -- Category B queries use `offer_intelligence.price_anchor` and `offer_intelligence.price_mode` as starting-point benchmarks rather than generic market-range queries; Category D queries use `proof_assets` entries as corroboration targets ("who else says this same thing about [claim]?") and `primary_objection` to identify relevant third-party rebuttals; Category E scene descriptions use `narrative_arc_type` and `transformation_promise` to anchor grounded imagery to concrete moments in THIS source's method rather than generic industry stock scenes.
    - Category A (Niche Deck Structures): "best webinar deck structure for [COMPANY_INDUSTRY] coaches", "[INDUSTRY] online course enrollment presentation format", "high-converting webinar slides [TARGET_AUDIENCE]".
-   - Category B (Price Anchors): "[INDUSTRY] group program price range", "[OFFER_NAME] competitor pricing [YEAR]", "high-ticket coaching offer price anchor [TARGET_AUDIENCE]".
+   - Category B (Price Anchors): "[INDUSTRY] group program price range", "[OFFER_NAME] competitor pricing [YEAR]", "high-ticket coaching offer price anchor [TARGET_AUDIENCE]". When `offer_intelligence.price_anchor` is present, add a targeted query anchored to that stated figure.
    - Category C (Proof Statistics): "[COMPANY_INDUSTRY] ROI statistics [YEAR]", "[TARGET_AUDIENCE] transformation results study", "[problem statement] prevalence data".
-   - Category D (External Corroboration): This category serves the single GP-8 function "who says so other than you?" and covers all three sub-types together as ONE requirement:
+   - Category D (External Corroboration): This category serves the single GP-8 function "who says so other than you?" and covers all three sub-types together as ONE requirement. When `proof_assets` from the source's own `persuasion_intelligence` block are present, treat each as a corroboration target: find third-party sources that confirm or validate each claim the source makes.
      - Sub-type D1 (Case studies): Published or verifiable client transformation stories in the same niche; "[INDUSTRY] client case study [TRANSFORMATION_CLAIM]".
      - Sub-type D2 (White-paper and research studies): Peer-reviewed or institutional research validating the client's method or the problem it solves; "[method/approach] research study [YEAR]", "[problem statement] evidence-based intervention".
      - Sub-type D3 (Wall-of-wins): Documented testimonials, results screenshots, cohort outcome data, or award/recognition items the client has on record; combine with client-supplied PROOF_ASSETS from intake.json.
@@ -44,6 +44,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    # Research Brief -- [DECK_SLUG]
    Research Date: [YYYY-MM-DD]
    Researcher: Deep Research Specialist -- Presentations
+   research_complete: true
    external_proof_count: [N]
    GP-8 ALERT: [YES if external_proof_count = 0, else NO]
 
@@ -78,6 +79,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    ## Category E: Grounded Image Context (see SOP 9.2 for detail)
    [Output of SOP 9.2 pasted here verbatim]
+
+   ## Category F: Design Styles and Typography Research (see SOP 9.3 for detail)
+   [Output of SOP 9.3 pasted here verbatim; also written separately to working/research/design-brief-[DECK_SLUG].md]
 
    ## Summary: Top 5 Most Usable Findings
    [Numbered list of the 5 findings with highest confidence and relevance; at least 1 must be from Category D if any exist]
@@ -141,6 +145,37 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Hand to:** Director (routes grounded-content JSON to Slide Image Creator; Slide Image Creator loads it as the `grounded_content` variable in every prompt brief)
 
 **Failure mode:** If GROUNDED_CONTENT is absent from intake.json AND no offer/method description can be derived: set `derived_not_confirmed: true`, write placeholder scene descriptions marked "[PLACEHOLDER -- operator must confirm before prompt authoring]", and alert the Director. Do NOT block the brief -- deliver the placeholders. The Image Creator will treat unconfirmed placeholders as generic until the operator confirms them.
+
+---
+
+### SOP 9.3 -- Design Style and Typography Research (Category F)
+
+**When to run:** On every research brief run, alongside SOP 9.1. Mandatory except when `STYLE_BRANCH = "match existing"` or `"analyze reference"` (delegated to the Graphics Differentiated Imaging Unit per 00-START-HERE), in which case a delegation note replaces the F1-F4 findings.
+
+**Inputs:**
+- working/copy/intake.json (read COMPANY_INDUSTRY, OFFER_NAME, TARGET_AUDIENCE, STYLE_REFERENCES)
+- Director's research brief request (deck_slug, any declared STYLE BRANCH)
+
+**STYLE BRANCH handling:**
+- `STYLE_BRANCH: "match existing"` or `"analyze reference"` -> set `design_research_mode: delegated_to_DIU`, record delegation note only, skip F1-F4.
+- `STYLE_BRANCH: "create new"` or absent -> run F1-F4 fully.
+
+**Steps:**
+1. Build Category F research queries: F1 (competitor/aspirational deck visual styles), F2 (typography in the niche -- defaults to avoid, alternatives to use), F3 (color/grading trends), F4 (layout/composition archetypes -- overused vs underused).
+2. Execute queries. For each result: record finding + source URL + publication date + at least one observed published example + confidence (HIGH/MEDIUM/LOW) + `feeds:` note ("Typography Architect" and/or "Slide Image Creator").
+3. Write Design Style Brief to `working/research/design-brief-[DECK_SLUG].md` with sections F1-F4 plus a 3-5 bullet summary.
+4. Paste the full Design Style Brief into the main Research Brief under "Category F."
+5. Notify the Director: "Category F Design Style Brief ready. Route design-brief-[DECK_SLUG].md to Typography Architect (Phase 1.5) and Slide Image Creator (Phase 2)."
+
+**Niche gap:** If no niche data exists, use adjacent-market research labeled "FROM ADJACENT MARKET [market name]" and set `design_research_niche_gap: true`. Not a blocking condition.
+
+**Outputs:**
+- working/research/design-brief-[DECK_SLUG].md
+- Category F section inserted into working/research/brief-[DECK_SLUG].md
+
+**Hand to:** Director (routes design-brief to Typography Architect and Slide Image Creator)
+
+**Failure mode:** No HIGH/MEDIUM data for a sub-type -- report the gap, use adjacent-market data labeled as such, do not block the brief.
 
 ---
 

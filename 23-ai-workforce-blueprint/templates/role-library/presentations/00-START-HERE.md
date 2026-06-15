@@ -1,5 +1,5 @@
 # 00 -- START HERE -- Presentations Department
-**Version:** 1.9 | 2026-06-14
+**Version:** 2.0 | 2026-06-15
 **Role library path:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **SOP mirror path:** 23-ai-workforce-blueprint/templates/role-library/presentations/sops/
 
@@ -54,6 +54,7 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 -2. **Step -2b (first contact only; idea-only path)** -- ROLE-23 First-Time-User Onboarding detects a first-time Presentations request, orients the owner in under 3 minutes (what the department does, the roles, the Brainstorming Buddy, how to start, the audience-versus-speaker surface distinction), then hands straight to the Brainstorming Buddy and sets the first_time_complete flag so it never repeats. Returning owners skip this step.
 1. **Step 0** -- ROLE-06 Media Librarian creates the landing zone and acquires client assets (LOGO_URL, FOUNDER_PORTRAIT_URL).
 2. **Step 0.5** -- ROLE-03 Capacity and Reliability Engineer probes the box and writes capacity_plan.json.
+2a. **Phase -0.5 (MANDATORY on EVERY deck run -- personal brand AND general; dispatched by Director; runs BEFORE Phase B+)** -- ROLE-04 Deep Research Specialist runs six research categories (A: market/audience, B: competitor offer, C: social proof/evidence mining, D: industry statistics and external proof, E: grounded image content, F: design style and typography research). Blocks Phase B+ until `working/research/brief-[DECK_SLUG].md` is on disk with `research_complete: true` and all required categories present. The AF-RESEARCH-GATE at Phase 1Q enforces this mechanically. Category F routes its design-brief output to ROLE-18 Typography Architect (who loads it before authoring any layout template) and to ROLE-11 Slide Image Creator (who loads it before writing any image prompt). STYLE BRANCH for Category F: if the owner says "match existing deck" or "analyze reference," set `design_research_mode: delegated_to_DIU` and skip F1-F4; otherwise complete F1-F4. If a niche has no established design language, flag `design_research_mode: original_territory` and document what IS available.
 3. **Phase B+** -- ROLE-15 Hook Strategist runs the Hook Lab; outputs hook_package.json.
 4. **Phase 1** -- ROLE-10 Slide Copywriter (concurrent: ROLE-07 Offer and Price Strategist). Output: slides_copy.md + price_ladder.json.
 5. **Phase 1Q** -- ROLE-09 QC Specialist runs copy QC gate (score >= 8.5).
@@ -71,7 +72,11 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 17. **Post-Coach deliverables (per DELIVERABLE_SET, AFTER ROLE-14, BEFORE ROLE-13):** ROLE-19 Presenters Guide Specialist (if "+guide") writes the branded speaker-outline PDF + Notion page; ROLE-20 Presenters Speech Writer (if "+guide+speech") writes the word-for-word script paced to TARGET_WPM=140 as a PDF + Notion page; ROLE-21 Audio Demonstration + Fish Audio Expression Specialist (if WANT_AUDIO_DEMO=true / DELIVERABLE_SET "+audio") turns the QC-passed Speech into an expression-tagged TTS demo mp3. Each routes its deliverable through ROLE-13 for verified last-mile (no self-report).
 18. **Delivery** -- ROLE-13 Delivery Concierge delivers the deck and every post-coach deliverable to all destinations and verifies (ground-truth: file hash + size).
 
-On-call throughout: ROLE-05 Devil's Advocate (high-stakes reviews), ROLE-04 Deep Research Specialist.
+On-call throughout: ROLE-05 Devil's Advocate (high-stakes reviews).
+
+**ROLE-04 Deep Research Specialist:** MANDATORY Phase -0.5 on EVERY deck run (personal brand and general). NOT on-call -- it is a blocking phase gate dispatched by the Director after Step 0.5. See Phase -0.5 above. Output: `working/research/brief-[DECK_SLUG].md` (`research_complete: true`, categories A-F). Categories B/C/D feed Copywriter; E feeds Image Creator; F feeds Typography Architect AND Image Creator.
+
+**Dogfooding doctrine (Workstream 1E):** Every role in this department that produces a deliverable (copy, prompts, images, layouts, assembly) MUST itself serve as a demonstration of the department's own doctrine. A slide written by the Copywriter is itself a proof-of-concept of AF-C1 through AF-C11. A prompt written by the Image Creator is itself a proof-of-concept of AF-P1 through AF-P16. An assembled PPTX produced by the Assembly Specialist is itself a proof-of-concept of AF-F1 through AF-F14. A layout template produced by the Typography Architect is itself a proof-of-concept of the min_body_pt and type_scale_steps requirements. The department's own internal documents -- SOPs, briefs, templates, schemas -- are held to the same bar as a client deliverable. A rule not enforced on the department's own artifacts does not exist.
 
 **ROLE-16 Healer (LIVE)** receives: second consecutive stall handoffs from ROLE-03, loop-4 escalations from ROLE-09, API failCode events from ROLE-12, and any department error flag. Every such event is filed as a Bug Ticket to the ZHC Bugs Department first; the Triage and Dedup Analyst routes department-local Presentations defects to this Healer with the ticket bug_id.
 
@@ -88,8 +93,8 @@ Each role's Section 9 (Standard Operating Procedures) is mirrored verbatim in so
 | sops/brainstorming-buddy-presentations-sops.md | brainstorming-buddy-presentations.md | 9.1 Simple Interview, 9.2 Extensive Interview, 9.3 Confirm-and-Lock, 9.4 Kickoff/Handoff |
 | sops/brand-steward-sops.md | brand-steward.md | 9.1 Style Block, 9.2 Consistency Audit, 9.3 Exemplar Handoff |
 | sops/capacity-reliability-engineer-sops.md | capacity-reliability-engineer.md | 9.1 Capacity Probe, 9.2 Watchdog Cron, 9.3 Model Routing |
-| sops/deep-research-specialist-presentations-sops.md | deep-research-specialist-presentations.md | 9.1 Benchmark Research |
-| sops/delivery-concierge-sops.md | delivery-concierge.md | 9.1 Destination Resolution, 9.2 Upload, 9.3 Notification, 9.4 Verification |
+| sops/deep-research-specialist-presentations-sops.md | deep-research-specialist-presentations.md | 9.1 Mandatory Phase -0.5 Research (all runs; categories A-F incl. Category F design/typography), 9.2 GP-8 Alert, 9.3 Design Style and Typography Research (Category F) |
+| sops/delivery-concierge-sops.md | delivery-concierge.md | 9.0 Package Assembly and Hygiene Sweep (AF-DH1 gate; RUNS BEFORE 9.1), 9.1 Destination Resolution, 9.2 Upload, 9.3 Notification, 9.4 Verification |
 | sops/devils-advocate-presentations-sops.md | devils-advocate-presentations.md | 9.1 Doctrine Review |
 | sops/director-of-presentations-sops.md | director-of-presentations.md | 9.1 Interview, 9.2 PRD Gate, 9.3 Mode, 9.4 Slide Math, 9.5 Approval Gate, 9.6 Parallelization |
 | sops/hook-strategist-sops.md | hook-strategist.md | 9.1 Hook Lab Gen+Score, 9.2 Variant Ladder+Audit |
@@ -119,7 +124,7 @@ These standalone SOP documents live in `sops/` alongside the per-role mirrors. T
 
 | Cluster | SOP file | Covers | Live enforcement it documents |
 |---------|----------|--------|-------------------------------|
-| Slide-Craft | sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md | The master slide-craft auto-fail doctrine + the reconciliation map to the live codes | AF-C2/C6/C7/C9/P3/P12/I1/F6/F7/F9/F10 |
+| Slide-Craft | sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md | The master slide-craft auto-fail doctrine + the reconciliation map to the live codes | AF-C2/C6/C7/C9/C10/C11/P3/P12/I1/I11/I12/I13/F6/F7/F9/F10/F12/F13/F14/DH1/RESEARCH-GATE |
 | Slide-Craft | sops/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md | One core idea per slide; mandatory splits; text-block + word ceilings | AF-C6 + AF-C8 + copy c5 |
 | Slide-Craft | sops/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md | Six banned audience-facing categories (speaker lines, build doctrine, image narration, telegraphing/"webinar", credentials, build tokens) | AF-C9 + AF-F9 + AF-F10 |
 | Slide-Craft | sops/SOP-SLIDE-03-HOOK-DOCTRINE.md | The sacred refrain: 3-4 dedicated pure-type hook slides, ceiling not floor, no footer | AF-C2 + AF-P12 + AF-P3 + AF-I1 + AF-F9 |

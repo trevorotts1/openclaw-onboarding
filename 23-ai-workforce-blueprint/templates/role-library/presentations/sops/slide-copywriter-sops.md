@@ -20,6 +20,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/arc_allocation.json
 - STYLE BLOCK (brand voice, tone, color, type -- used to ensure copy tone matches brand voice)
 - Proof inventory (extracted from intake.json)
+- working/research/brief-[DECK_SLUG].md (Categories C and D from ROLE-04 Phase -0.5 -- proof statistics and external corroboration; load before writing any proof slide)
+
+**Authored-narrative requirements (AF-C10 and AF-C11):** The transcript or source material is INPUT. You AUTHOR slide copy from it; you never paste transcript lines. Verbatim/near-verbatim transcript lines are forbidden (AF-C10). The deck must carry all five arc beats: hook + stakes + promise + proof + CTA (AF-C11). Tag each beat in slides_copy.md so QC can assert them mechanically.
 
 **Steps:**
 1. Open slides_copy.md. Write a file header: `# Slide Copy -- [DECK_SLUG] -- Draft 1`.

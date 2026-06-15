@@ -1,7 +1,7 @@
-# SOP-PITCH-05: THE DELIVERABLE BUNDLE (PRESENTER GUIDE + SCRIPT + AUDIO)
+# SOP-PITCH-05: THE DELIVERABLE BUNDLE (PRESENTER GUIDE + SCRIPT + AUDIO + HYGIENE)
 
 **Cluster:** Pitch-Craft Rules / Closeout
-**Version:** v1.0.0 (2026-06-14)
+**Version:** v2.0.0 (2026-06-15)
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md; 30-fish-audio-api-reference/fish-audio-voice-sop.md
 **Owning role at write time:** Deliverable Producer (ROLE-R3, new closeout role); Presenters Guide Specialist; Presenters Speech Writer
 **Enforced at the gate by:** QC Specialist - Presentations (AF-DELIVER -- closeout hard gate)
@@ -126,3 +126,55 @@ AF-DELIVER is checked independently of `final_deck_qc.json`. Both must pass (AF-
 ## 7. INTEGRATION NOTE
 
 This SOP extends (does not replace) the existing Presenter Guide Specialist and Presenters Speech Writer roles. It adds the audio render stage as a mandatory third artifact, the Fish Audio S2 expression-tag requirement, the ffmpeg stitch procedure, the `deliverable_bundle.json` manifest, and the AF-DELIVER closeout gate. Prior builds that shipped only the deck PPTX + the guide/script as markdown files are now incomplete. The three-artifact bundle is the minimum viable delivery.
+
+---
+
+## 8. THE CLIENT PACKAGE -- EXACT ALLOWED FILE SET (v2.0 -- Deliverable Hygiene)
+
+The client-deliverable package must contain EXACTLY these five files and NOTHING ELSE:
+
+```
+[DECK_SLUG]-FINAL/
+  [Deck-Title]-FINAL.pptx          # assembled deck (from output/[DECK_SLUG].pptx)
+  [Deck-Title]-FINAL.pdf           # portable-document export (from output/[DECK_SLUG].pdf)
+  PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md
+  PRESENTER-SPEECH.pdf             # rendered from working/deliverables/PRESENTER-SPEECH.md
+  PRESENTER-AUDIO.mp3              # Fish Audio S2 render (from working/deliverables/PRESENTER-AUDIO.mp3)
+```
+
+**Five files. Nothing else.** No scripts, logs, prompts, loose PNGs, JSON manifests, QC reports, or `.md` source files. `PRESENTER-GUIDE` and `PRESENTER-SPEECH` ship as **PDF only** -- clients do not open markdown.
+
+**Hygiene gate (AF-DH1):** Before any delivery action, the Delivery Concierge runs SOP 9.0 (Package Assembly and Hygiene Sweep) which creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the five allowed files into it, and runs AF-DH1. Hard-stop on any AF-DH1 failure -- delivery cannot proceed.
+
+---
+
+## 9. BUILD WORKSPACE STRUCTURE (dev artifacts stay OUT of the client package)
+
+The operator-side build workspace that the client NEVER receives:
+
+```
+~/webinar-decks/[client-slug]/[deck-slug]/[YYYY-MM-DD]/
+  working/
+    prompts/        # image prompts (.txt files -- never delivered)
+    renders/        # raw generated images -- never delivered
+    scripts/        # assembly + render scripts (assemble_pptx.py lives HERE, not at root)
+    qc/             # QC reports, vision_qc_log.json, copy_qc_report.json -- never delivered
+    checkpoints/    # run_ledger.json, model_manifest.json, delivery_plan.json
+    deliverables/   # PRESENTER-GUIDE.md, PRESENTER-SPEECH.md, PRESENTER-AUDIO.mp3 (source files)
+    logs/           # all log files -- never delivered
+    audio/          # chunk-NN.mp3 files before stitching
+  output/
+    [deck-slug].pptx    # assembled PPTX (the Delivery Concierge copies this to delivery/)
+    [deck-slug].pdf     # portable-document export (copied to delivery/)
+    pdf-pages/          # per-page PNGs for QC inspection -- never delivered
+  images/               # QC-passed PNGs that fed assembly -- never delivered
+  delivery/
+    [DECK_SLUG]-FINAL/  # clean client package (the ONLY dir that goes to the client)
+      [Deck-Title]-FINAL.pptx
+      [Deck-Title]-FINAL.pdf
+      PRESENTER-GUIDE.pdf
+      PRESENTER-SPEECH.pdf
+      PRESENTER-AUDIO.mp3
+```
+
+**Hard rule for the PPTX Assembly Specialist:** The assembly script MUST write the PPTX to `output/[DECK_SLUG].pptx` and ALL intermediates under `working/`. The assembly script at `working/scripts/assemble_pptx.py` must NEVER hard-code the client delivery folder as `BUNDLE_DIR` or write to `~/Downloads/<DECK>` as its working directory. The delivery folder root (`~/Downloads/<DECK>`) as a build directory is the documented root cause of the forensic reference deck's dev-artifact leak. Dev artifacts must NEVER appear in `output/` or `delivery/` under any circumstance.

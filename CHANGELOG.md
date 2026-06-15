@@ -1,3 +1,64 @@
+## [v12.12.0] - 2026-06-15 - feat: Content-to-Presentation parity -- SOP 9.4B persuasion-intelligence extraction + AF-CONVERTER-PARITY gate
+
+### Changes
+
+**Presentations Department V2 parity extension: converter builds now produce identical quality to regular builds.**
+
+**Fix-A -- SOP 9.4B (Source Persuasion-Intelligence Extraction):**
+- New SOP 9.4B inserted between SOP 9.4 and SOP 9.5 in `content-to-presentation-architect.md` (v1.2) and its SOP mirror
+- Extracts from the source itself: transformation_promise, primary_objection, goal + cta_action, target_feeling, tone_detected, narrative_arc_type, hook_candidate, offer_intelligence (sub-block for offer/price/guarantee/scarcity), and proof_assets
+- Extended `source_brief.json` schema with a new top-level `persuasion_intelligence` block (alongside the existing `analysis` block)
+- New Quality Gates 15-18 in `content-to-presentation-architect.md` enforcing the persuasion block, offer capture, proof-asset separation, and no-converter-image-path invariant
+- No-own-image-path invariant codified: the Content-to-Presentation pipeline NEVER owns a renderer, model choice, text-baking path, or QC log
+
+**Fix-B -- Director wiring and research agent seeding:**
+- `director-of-presentations.md` and SOP mirror: step 4a extended to propagate `persuasion_intelligence` fields into `intake.json` mandatory variables FIRST (TRANSFORMATION_PROMISE, PRIMARY_OBJECTION, GOAL, CTA_ACTION, TARGET_FEELING, TONE, HOOK seed, OFFER_NAME, PRICE_MODE, FINAL_PRICE, PRICE_ANCHOR, OFFER_STACK, VIP_TIER, PROOF_ASSETS) before routing any gap to the Brainstorming Buddy; sets `source_brief_origin: "role-22"` for the parity gate; mandatory-variable reconciliation: only fields in `fields_absent_in_source` + always-Buddy audience/representation fields go to the Buddy
+- `deep-research-specialist-presentations.md` and SOP mirror: updated to consume `persuasion_intelligence` block when present -- Category B seeded by `offer_intelligence.price_anchor`; Category D seeded by `proof_assets` as corroboration targets; Category E scene descriptions seeded by `narrative_arc_type` + `transformation_promise`
+
+**Fix-C -- AF-CONVERTER-PARITY enforcement gate:**
+- New `AF-CONVERTER-PARITY` deck-level auto-fail in `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md`; fires on any deck where `intake.json source_brief_origin: "role-22"` and asserts 5 conditions: canonical renderer used, model pin held, real vision QC executed, Phase -0.5 artifacts present (Category E + F), persuasion variables propagated
+- `qc-specialist-presentations.md`: AF-CONVERTER-PARITY added as step 0a in Phase 1Q run-list (after AF-RESEARCH-GATE), added to the AF table, added to KPI row, and `af_converter_parity_triggered` field added to `copy_qc_report.json` schema
+- `AF-CONVERTER-PARITY` added to the machine-checkable summary table in SOP-SLIDE-00
+
+**Files changed:** content-to-presentation-architect.md (v1.2), sops/content-to-presentation-architect-sops.md, director-of-presentations.md, sops/director-of-presentations-sops.md, deep-research-specialist-presentations.md, sops/deep-research-specialist-presentations-sops.md, sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md, qc-specialist-presentations.md
+
+**Zero client names in any committed file (verified by grep).**
+
+## [v12.11.0] - 2026-06-15 - feat: Presentation Department V2 -- mandatory research phase, deliverable hygiene, 10 new auto-fail codes
+
+### Changes
+
+**Presentation Department V2 enforcement overhaul (3 workstreams, 21 files).**
+
+**WS1 -- Deck Quality (8 new auto-fail codes):**
+- AF-C10: authored-narrative absent on narrative slides (owner-specific detail required)
+- AF-C11: voice-consistency break mid-deck (generic corporate register after narrative establishes voice)
+- AF-I11: real-image-present failure (every non-pure-typography slide needs a 2K raster)
+- AF-I12: typography overuse (headline font family on >60% of slides)
+- AF-I13: body-text below 18pt minimum floor (paired with AF-F12 at final-deck)
+- AF-F12: body/sub-headline below 18pt on the composed slide
+- AF-F13: type-scale step count outside {4, 5} (type_layout_system.md machine-readable token)
+- AF-F14: section-divider indistinguishable from adjacent content slides (SSIM > 0.85 threshold)
+
+**WS2 -- Deliverable Hygiene (AF-DH1 + workspace discipline):**
+- AF-DH1: client package `delivery/[DECK_SLUG]-FINAL/` contains any file outside the 5-item whitelist or any draft-named file
+- SOP-PITCH-05-DELIVERABLE-BUNDLE.md: new Section 8 (five-file whitelist) + Section 9 (workspace structure)
+- delivery-concierge: new SOP 9.0 (Package Assembly and Hygiene Sweep, runs before SOP 9.1)
+- pptx-assembly-specialist + mirror: workspace discipline step (no hard-coded ~/Downloads BUNDLE_DIR, output goes to output/ not delivery/)
+
+**WS3 -- Research Agent (AF-RESEARCH-GATE + mandatory Phase -0.5):**
+- AF-RESEARCH-GATE: blocks Phase 1Q copy QC if research brief is absent, not complete, or missing categories A/C/D/F -- applies to ALL deck types (personal + general)
+- deep-research-specialist-presentations v3.0: dispatched MANDATORY on every deck run as Phase -0.5; added Category F (design style and typography research); added NO-FABRICATION RULE; added `research_complete: true` header field; added SOP 9.3 (Category F research)
+- director-of-presentations + mirror: Step 5a added (dispatch ROLE-04 as Phase -0.5, block Phase B+ until complete)
+- content-to-presentation-architect + mirror: SOP 9.8 Step 3 note (ROLE-04 mandatory even on content-ingest path)
+- typography-architect + mirror: load Design Style Brief (Category F) before any layout template; machine-readable tokens required
+- slide-image-creator + mirror: load Category E + F research briefs before writing any prompt; real-image-present requirement
+- slide-copywriter + mirror: authored-narrative requirements (AF-C10 + AF-C11)
+- qc-specialist-presentations v2.0 + mirror: all 10 new AF codes added to batteries; AF-RESEARCH-GATE as Phase 1Q step 0; KPI table updated; P3 assert block updated; pass condition updated; Gate 6 updated
+- 00-START-HERE.md v2.0: Phase -0.5 inserted in pipeline sequence; ROLE-04 moved from on-call to mandatory blocking phase; dogfooding doctrine note (Workstream 1E); SOP mirror index updated
+
+**Zero client names in any committed file (verified).**
+
 ## [v12.10.0] - 2026-06-15 - fix: three gate/resume correctness bugs -- .id field fix + stale-state disk-verify + Python 3.9 compat
 
 ### Changes

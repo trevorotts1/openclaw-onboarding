@@ -10,6 +10,46 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+### SOP 9.0 -- Package Assembly and Hygiene Sweep (RUNS BEFORE SOP 9.1)
+
+**When to run:** FIRST, immediately upon receiving a QC-passed deck, BEFORE SOP 9.1 (Destination Resolution) and BEFORE any file is moved or uploaded. This step is the AF-DH1 gate.
+
+**Inputs:**
+- working/qc/final_deck_qc.json (must pass AF-F5 before this step proceeds)
+- output/[DECK_SLUG].pptx (assembled deck)
+- output/[DECK_SLUG].pdf (portable-document export)
+- working/deliverables/PRESENTER-GUIDE.pdf (rendered from PRESENTER-GUIDE.md by the Presenters Guide Specialist)
+- working/deliverables/PRESENTER-SPEECH.pdf (rendered from PRESENTER-SPEECH.md by the Presenters Speech Writer)
+- working/deliverables/PRESENTER-AUDIO.mp3 (Fish Audio S2 render)
+- sops/SOP-PITCH-05-DELIVERABLE-BUNDLE.md (the five-file whitelist and the blocklist)
+
+**Steps:**
+1. Create a clean, empty `delivery/[DECK_SLUG]-FINAL/` directory. This directory is NOT under `working/`. If it already exists from a prior run, empty it first.
+2. Copy ONLY the five allowed files into `delivery/[DECK_SLUG]-FINAL/`:
+   - `output/[DECK_SLUG].pptx` -> `delivery/[DECK_SLUG]-FINAL/[Deck-Title]-FINAL.pptx`
+   - `output/[DECK_SLUG].pdf` -> `delivery/[DECK_SLUG]-FINAL/[Deck-Title]-FINAL.pdf`
+   - `working/deliverables/PRESENTER-GUIDE.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-GUIDE.pdf`
+   - `working/deliverables/PRESENTER-SPEECH.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-SPEECH.pdf`
+   - `working/deliverables/PRESENTER-AUDIO.mp3` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-AUDIO.mp3`
+   If any of the five source files does not exist or is empty: halt, notify the Director which artifact is missing, do NOT proceed to delivery.
+3. **Run AF-DH1 (deliverable hygiene gate).** Enumerate every file in `delivery/[DECK_SLUG]-FINAL/`. For each file, check:
+   a. **Whitelist check (primary):** Every file must match one of these exact name patterns: `*-FINAL.pptx`, `*-FINAL.pdf`, `PRESENTER-GUIDE.pdf`, `PRESENTER-SPEECH.pdf`, `PRESENTER-AUDIO.mp3`. Any file not matching = AF-DH1 FAIL.
+   b. **Blocklist check (belt-and-suspenders):** Fail immediately if any file matches: `*.py`, `*.log`, `*.txt` (prompt files), `*_manifest.json`, `*_qc_log.json`, `*_run.log`, `fix_*.py`, `run_*.py`, `write_*.py`, `validate_*.py`, `assemble_*.py`, `post_render*.py`, `*QC-FINAL.md`, `vision_qc_log.json`, `render_manifest.json`. Fail immediately if any of these directories exist inside the package: `working/`, `prompts/`, `images/`, `renders/`, `qc/`, `scripts/`, `checkpoints/`.
+   c. **Format check:** Any PRESENTER-GUIDE or PRESENTER-SPEECH file present as `.md` (not `.pdf`) = AF-DH1 FAIL.
+   d. **Audio check:** PRESENTER-AUDIO.mp3 missing = AF-DH1 FAIL (also caught by AF-DELIVER; both gates are required).
+4. **If AF-DH1 triggers:** halt all delivery. Record the failure in `working/checkpoints/delivery_plan.json` as `"af_dh1_triggered": true, "af_dh1_details": "<specific file or dir that failed>"`. Notify the Director: "AF-DH1: DELIVERY BLOCKED. Package hygiene fail: {details}. The client package must contain exactly the five allowed files. Remove all dev artifacts before re-running SOP 9.0." Do NOT proceed to SOP 9.1 until SOP 9.0 passes cleanly.
+5. **If AF-DH1 passes:** record `"af_dh1_pass": true` in the delivery plan. Proceed to SOP 9.1.
+
+**Outputs:**
+- `delivery/[DECK_SLUG]-FINAL/` (clean five-file package, AF-DH1 verified)
+- `working/checkpoints/delivery_plan.json` (af_dh1_pass or af_dh1_triggered recorded)
+
+**Hand to:** SOP 9.1 (Destination Resolution) -- only if AF-DH1 passed.
+
+**Failure mode:** If any of the five required source files does not exist: halt immediately, notify the Director which artifact is missing. Check: (1) Was the PPTX Assembly Specialist's SOP 9.2 portable-document export run and recorded in render_log.json? (2) Did the Presenters Guide Specialist render PRESENTER-GUIDE.pdf? (3) Did the Presenters Speech Writer render PRESENTER-SPEECH.pdf? (4) Did the Audio Demonstration Specialist produce PRESENTER-AUDIO.mp3? Each missing artifact routes back to its owning role.
+
+---
+
 ### SOP 9.1 -- Destination Resolution
 
 **When to run:** Immediately upon receiving a QC-passed PPTX from ROLE-08 (PPTX Assembly Specialist) via the Director of Presentations. This is the first step before any file is moved or uploaded.
@@ -60,17 +100,17 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **When to run:** Immediately after delivery_plan.json is written (SOP 9.1 complete). Run all deliveries; do not skip any destination in the plan.
 
 **Inputs:**
-- working/checkpoints/delivery_plan.json (all destinations)
-- output/[DECK_SLUG].pptx (the QC-passed assembled deck)
+- working/checkpoints/delivery_plan.json (all destinations; af_dh1_pass must be true before this SOP runs)
+- delivery/[DECK_SLUG]-FINAL/ (the AF-DH1-verified clean package -- copy FROM here, never from working/ or the build root directly)
 - media_library.json (ghl_folder_id, version_number)
 - GHL credentials from client's env stores
 - Google Drive credentials (if applicable)
 
 **Steps (Mac Downloads destination):**
 1. If `type: "mac_downloads"` is in delivery_plan.json:
-   a. Copy the PPTX to the client's Downloads folder:
+   a. Copy the entire clean package from `delivery/[DECK_SLUG]-FINAL/` to the client's Downloads folder:
       ```bash
-      cp output/[DECK_SLUG].pptx ~/Downloads/[DECK_SLUG]_final.pptx
+      cp -r delivery/[DECK_SLUG]-FINAL/ ~/Downloads/[DECK_SLUG]_final/
       ```
    b. Verify: `ls -lh ~/Downloads/[DECK_SLUG]_final.pptx` must return the file with a non-zero size.
    c. Update delivery_plan.json for this destination: `"status": "uploaded", "verified_size_bytes": N, "uploaded_at": "ISO timestamp"`.

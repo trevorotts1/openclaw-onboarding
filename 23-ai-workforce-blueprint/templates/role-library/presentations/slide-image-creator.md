@@ -83,8 +83,12 @@ This file is your fallback identity. It governs only when no persona is assigned
 2. Read working/copy/slides_copy.md (Phase 1 approved output) -- note each slide's assigned ARCHETYPE (A1-A5).
 3. Read the STYLE BLOCK from the Brand Steward. Do not begin writing a single prompt without it.
 4. Read working/copy/hook_variants.json -- know which slides carry hook text overlays.
-5. Write prompts in slide order, declaring the archetype on line 1 of each. Write one complete prompt per slide before moving to the next.
-6. After all prompts are written, run self-check per SOP 9.1 step 7 before handing off to Phase 3 QC.
+5. **Load both research inputs from Phase -0.5 BEFORE writing any prompt:**
+   a. `working/research/grounded-content-[DECK_SLUG].json` (Category E -- the grounded image context from ROLE-04). Every non-typography slide MUST reference the relevant `image_anchors` entry for its archetype. Generic stock-style scenes are forbidden when grounded context exists.
+   b. `working/research/design-brief-[DECK_SLUG].md` (Category F -- the design style brief from ROLE-04). Note which visual styles are overused in the niche (avoid) and which are underused (differentiate). The brief informs your composition and grading direction; you retain full creative authority. If either file is missing, notify the Director before proceeding -- ROLE-04 must complete Phase -0.5.
+6. **Real-image-present requirement (enforced by AF-I11):** Every non-pure-typography slide must specify a real generated raster (Kie / GPT-Image-2) at >=1920px on the long edge, full-bleed or designed-zone, sourced from the Category E grounded anchor. Decorative icon-font glyphs, single-color clip-art PNGs <=256px, and emoji-as-iconography are FORBIDDEN as slide content art. Concept slides that call for an illustration (process, architecture, comparison) must specify a generated diagram-as-image, never text in boxes. A prompt that would result in no real raster (an icon, a glyph, clip art) on a content slide is an auto-fail at Phase 3 QC.
+7. Write prompts in slide order, declaring the archetype on line 1 of each. Write one complete prompt per slide before moving to the next.
+8. After all prompts are written, run self-check per SOP 9.1 step 7 before handing off to Phase 3 QC.
 
 ---
 

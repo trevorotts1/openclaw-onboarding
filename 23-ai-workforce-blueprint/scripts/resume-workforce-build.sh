@@ -335,7 +335,7 @@ if [[ "$qc_status" != "pass" ]]; then
   fi
 fi
 
-# ---- v12.10.0 (fix/gate-and-resume-correctness): DISK-REALITY STALE-STATE RESET ----
+# ---- v12.11.0 (fix/gate-and-resume-correctness): DISK-REALITY STALE-STATE RESET ----
 # A department with status=done OR roleLibraryFilled=true OR sopLibraryFilled=true in
 # the build-state JSON that has NO real how-to.md on disk (or only an empty/placeholder
 # file) represents a FALSE terminal state — likely from a hand-seeded or corrupted
