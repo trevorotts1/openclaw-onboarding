@@ -1,3 +1,34 @@
+## [v12.10.0] - 2026-06-15 - fix: three gate/resume correctness bugs -- .id field fix + stale-state disk-verify + Python 3.9 compat
+
+### Changes
+
+**Three related correctness bugs fixed in one coherent change.**
+
+**Bug 1 — verify-wiring.sh: `.slug` field causing vacuous false pass (CONFIRMED, line 129)**
+
+`verify-wiring.sh` read department names from `.workforce-build-state.json` using `.departments[]?.slug`, but runtime state files store the identifier under `.id` (not `.slug`). Result: `ALL_DEPTS` was always empty, and the gate warned and exited 0 on every box — a second false pass in addition to the earlier `mapfile` portability bug. Fixed in two places:
+
+- `23-ai-workforce-blueprint/scripts/verify-wiring.sh` line 129: `.departments[]?.slug` → `.departments[]?.id`
+- `23-ai-workforce-blueprint/scripts/verify-wiring.sh` line 478 (state-write jq): `$d.slug` → `$d.id` so `wiringStatus` is actually written back to the correct department entry
+- Added a hard-fail guard: if `ALL_DEPTS` is empty but the state file has a non-zero department count, the script exits 9 (`FATAL: schema mismatch or corrupted state`) instead of a vacuous exit 0
+
+Verified with `jq -r '.departments[]?.id'` on a real `.workforce-build-state.json`: returns department ids; old `.slug` returned nothing.
+
+**Bug 2 — resume-workforce-build.sh: false terminal state short-circuits the build**
+
+Departments (and top-level library status) marked `done`/`roleLibraryFilled=true`/`sopLibraryFilled=true` in the JSON state that had zero real content on disk caused `resume-workforce-build.sh` to exit "nothing to do" and skip the build entirely. Fixed by adding a DISK-REALITY STALE-STATE RESET block (v12.10.0) that runs before `pending_count` is read:
+
+- `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh`: new block scans every department claiming `done` or library-filled, verifies at least one real `how-to.md` exists on disk (non-empty, no `[PENDING` marker, >= 256 bytes), and resets any false-done departments back to `pending` (clears `roleLibraryFilled`, `sopLibraryFilled`, and top-level `buildCompletedAt`/library-status). Logs a loud `STALE_RESET` warning for each reset department. Normal builds with real content are unaffected. The reset runs atomically (temp-file replace).
+
+**Bug 3 — qc-interview-completion.py: `X | None` union syntax crashes Python 3.9**
+
+Two function signatures used `Path | None` and `dict | None` (PEP 604, Python 3.10+ at runtime). On Python 3.9 (shipped on some Mac boxes) this throws `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'` at import time, crashing any caller that invokes the script. Fixed:
+
+- `23-ai-workforce-blueprint/scripts/qc-interview-completion.py`: added `from __future__ import annotations` as the first import, which makes ALL annotations lazy string literals at parse time (PEP 563). Both `Path | None` usages are in function signatures only (no runtime `isinstance` or type-guard calls), so this single import fixes the issue without changing behavior on Python 3.10+.
+- `python3 -m py_compile` and `ast.parse` pass cleanly. The `from __future__ import annotations` import is verified present.
+
+**Version bumped:** `skill-version.txt`, `install.sh`, `update-skills.sh`, `cc-compat.json`, `README.md`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `_index.json`, `_qc-summary.md` all updated to v12.10.0.
+
 ## [v12.9.9] - 2026-06-15 - fix: gate scripts bash portability -- replace mapfile with while-read so gates run on Mac (zsh-parent, bash 3.2)
 
 ### Changes

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# verify-wiring.sh — v1.0.1 (WIRING GATE: materialized + registered + reachable + connected)
+# verify-wiring.sh — v1.0.2 (WIRING GATE: materialized + registered + reachable + connected)
+# v1.0.2  2026-06-15  fix: .departments[].slug -> .id (runtime state uses .id, not .slug);
+#                     add guard: ALL_DEPTS empty when state HAS departments = HARD FAIL not
+#                     a vacuous pass; fix state-write jq ($d.slug -> $d.id) so wiringStatus
+#                     is actually written back to the correct department entry.
 # v1.0.1  2026-06-15  fix: replace mapfile (bash 4+ only) with portable while-read loop so
 #                     the script runs correctly when invoked from a zsh parent on Mac clients.
 #
@@ -55,6 +59,7 @@
 #
 # v1.0.0  2026-06-14  Initial implementation; fleet-wide stub-dept fix.
 # v1.0.1  2026-06-15  fix/gate-scripts-bash-portability: replace mapfile with while-read.
+# v1.0.2  2026-06-15  fix/gate-and-resume-correctness: .id field fix + ALL_DEPTS empty guard.
 
 set -uo pipefail
 
@@ -123,12 +128,23 @@ DEPTS_DIR="$WORKSPACE_ROOT/departments"
 # ---- Collect dept list from state --------------------------------------------
 # Portable replacement for `mapfile -t ALL_DEPTS < <(...)` (mapfile is bash 4+ only;
 # Mac ships bash 3.2 and callers may be zsh-parented). while-read works in bash 3.2+.
+#
+# BUG FIX (v1.0.2): runtime .workforce-build-state.json stores departments with field
+# "id" not "slug" (the schema name). Using .slug produced an always-empty ALL_DEPTS,
+# causing the gate to WARN and exit 0 vacuously — a false pass.  Use .id instead.
 ALL_DEPTS=()
 while IFS= read -r _dept_line; do
   [[ -n "$_dept_line" ]] && ALL_DEPTS+=("$_dept_line")
-done < <(jq -r '.departments[]?.slug // empty' "$STATE_FILE" 2>/dev/null || true)
+done < <(jq -r '.departments[]?.id // empty' "$STATE_FILE" 2>/dev/null || true)
 
 if [[ ${#ALL_DEPTS[@]} -eq 0 ]]; then
+  # Guard: if the state file has a non-empty departments array but we got no IDs,
+  # that is a BUG (wrong field name or unreadable state) — hard-fail, not a vacuous pass.
+  _raw_dept_count=$(jq -r '(.departments // []) | length' "$STATE_FILE" 2>/dev/null || echo 0)
+  if (( _raw_dept_count > 0 )); then
+    echo "[verify-wiring] FATAL: state file has ${_raw_dept_count} department(s) but .id was empty for all of them — schema mismatch or corrupted state. Aborting to prevent a vacuous false pass." >&2
+    exit 9
+  fi
   echo "[verify-wiring] WARN: no departments found in state file — nothing to check" >&2
   exit 0
 fi
@@ -475,7 +491,7 @@ if [[ -f "$STATE_FILE" ]]; then
     '
       .departments = ((.departments // []) | map(
         . as $d
-        | ($perdept[$d.slug] // {}) as $pd
+        | ($perdept[$d.id] // {}) as $pd
         | $d
         + (if ($pd | has("wiringStatus"))    then {wiringStatus: $pd.wiringStatus}       else {} end)
         + (if ($pd | has("wiringCheckedAt")) then {wiringCheckedAt: $pd.wiringCheckedAt} else {} end)
