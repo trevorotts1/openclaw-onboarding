@@ -87,12 +87,13 @@
       ]
     },
     "client-experience-booking": {
-      "count": 4,
+      "count": 5,
       "roles": [
         "booking-coordinator",
         "client-onboarding-specialist",
         "director-of-client-experience-booking",
-        "post-session-followup-specialist"
+        "post-session-followup-specialist",
+        "qc-specialist"
       ]
     },
     "communications": {
@@ -3528,6 +3529,16 @@
       "sop_count": 6,
       "sop_min": 6,
       "path": "templates/role-library/account-management/deep-research-specialist/how-to.md"
+    },
+    {
+      "slug": "qc-specialist",
+      "dept": "client-experience-booking",
+      "title": "QC Specialist -- Client Experience & Booking",
+      "role_type": "qc",
+      "word_count": 12400,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/client-experience-booking/qc-specialist/how-to.md"
     }
   ],
   "total_departments": 24
