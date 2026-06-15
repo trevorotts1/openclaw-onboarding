@@ -42,6 +42,8 @@ row exists but has no taskId, so the slide will be re-submitted on resume.
 
 The `submitId` is a local identifier you control: `<deckId>_<slideId>`.
 
+> **MODEL NOTE:** The model in these examples is `gpt-image-2-text-to-image` -- the canonical primary for all client presentations. The producing role ALWAYS sources the model from the client's pinned config (intake.json / MODEL MANIFEST), NEVER copies it from example code. `nano-banana-2` is a FALLBACK-ONLY model and may only appear in a registry row after a logged hard API failure of the primary.
+
 Registry row format:
 
 ```json
@@ -50,7 +52,7 @@ Registry row format:
   "clientSlug": "<clientSlug>",
   "deckId": "<deckId>",
   "slideId": "<slideId>",
-  "model": "nano-banana-pro",
+  "model": "gpt-image-2-text-to-image",
   "targetPath": "/abs/path/to/output.png",
   "perTaskSecret": "<64 hex chars>",
   "callBackUrl": "https://kie-callback.zerohumanworkforce.com/cb?c=<client>&j=<submitId>&s=<secret>",
@@ -67,7 +69,7 @@ POST to `https://api.kie.ai/api/v1/jobs/createTask` with:
 
 ```json
 {
-  "model": "nano-banana-pro",
+  "model": "gpt-image-2-text-to-image",
   "callBackUrl": "https://kie-callback.zerohumanworkforce.com/cb?c=<client>&j=<submitId>&s=<secret>",
   "input": {
     "prompt": "<slide image prompt>",
