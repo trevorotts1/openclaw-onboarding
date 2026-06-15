@@ -1,3 +1,21 @@
+## [v12.14.5] - 2026-06-15 - docs: rename install flow to fleet onboarding tunnel provisioning; field guide renamed
+
+### Changes
+
+**Docs-only rename. Zero behavioral change.**
+
+`38-conversational-ai-system/references/cloudflare-godaddy-setup-guide.md` renamed to `38-conversational-ai-system/references/fleet-onboarding-tunnel-provisioning-field-guide.md`.
+
+- Document title changed from "Cloudflare and GoDaddy Setup Guide" to "Fleet Onboarding Tunnel Provisioning Field Guide".
+- All internal prose references to "the install flow" updated to "fleet onboarding tunnel provisioning".
+- Self-referential path inside the document updated to the new filename.
+- All cross-file references updated: `CHANGELOG.md`, `38-conversational-ai-system/CHANGELOG.md`, `38-conversational-ai-system/references/v6.0-source-playbook.md`, `38-conversational-ai-system/scripts/00-verify-prerequisites.sh`, `38-conversational-ai-system/scripts/13-create-cloudflare-tunnel.sh`.
+
+**Version bumped:** all 9 markers + cc-compat.json onboardingVersion v12.14.4 -> v12.14.5.
+Zero client names in diff (grep verified).
+
+---
+
 ## [v12.14.4] - 2026-06-15 - fix(verify-routing): G4 detects real default agent instead of hardcoding id=main
 
 ### Changes
@@ -3957,18 +3975,18 @@ When skill 38's `00-verify-prerequisites.sh` halts on a missing Cloudflare API t
 
 ### Added
 
-- `38-conversational-ai-system/references/cloudflare-godaddy-setup-guide.md` (361 lines, verbatim from the School of AI source). Four parts: (1) free Cloudflare account, (2) add GoDaddy domain to Cloudflare, (3) update GoDaddy nameservers, (4) create the API token with the 9 permission rows (Account: Cloudflare Tunnel/Zero Trust/Access Apps and Policies/Access Service Tokens/Access Organizations IdPs and Groups/Access SSH Auditing/Account Settings; Zone: DNS/Zone). Each permission row maps 1-to-1 to a v5.14 playbook step (documented in the guide's operator notes section).
+- `38-conversational-ai-system/references/fleet-onboarding-tunnel-provisioning-field-guide.md` (361 lines, verbatim from the School of AI source). Four parts: (1) free Cloudflare account, (2) add GoDaddy domain to Cloudflare, (3) update GoDaddy nameservers, (4) create the API token with the 9 permission rows (Account: Cloudflare Tunnel/Zero Trust/Access Apps and Policies/Access Service Tokens/Access Organizations IdPs and Groups/Access SSH Auditing/Account Settings; Zone: DNS/Zone). Each permission row maps 1-to-1 to a v5.14 playbook step (documented in the guide's operator notes section).
 - Fix vs the Christy source: the source said "After adding all 10 permission rows above" but the table actually has 9 — corrected to "9 permission rows" so the client doesn't waste time counting a missing tenth.
 
 ### Changed
 
-- `38-conversational-ai-system/scripts/00-verify-prerequisites.sh` Rule 13 halt message now points the client at the in-skill `references/cloudflare-godaddy-setup-guide.md` as the primary walk-through, with the Google Doc kept as the canonical-source backup. Behavior is otherwise unchanged: 10-location search, halt on miss, never auto-generate a placeholder.
+- `38-conversational-ai-system/scripts/00-verify-prerequisites.sh` Rule 13 halt message now points the client at the in-skill `references/fleet-onboarding-tunnel-provisioning-field-guide.md` as the primary walk-through, with the Google Doc kept as the canonical-source backup. Behavior is otherwise unchanged: 10-location search, halt on miss, never auto-generate a placeholder.
 - `38-conversational-ai-system/SKILL.md` + `INSTALL.md` updated to list 8 reference documents (was 7) and mention the new guide.
 - `38-conversational-ai-system/skill-version.txt`: 1.1.0 -> 1.2.0 (feature: ships CF+GoDaddy walk-through).
 
 ### Behavior — what the operator now sees on a missing-CF-token halt
 
-`scripts/00-verify-prerequisites.sh` exits with the verbatim Rule 13 message, including a one-line instruction to `cat ~/.openclaw/skills/38-conversational-ai-system/references/cloudflare-godaddy-setup-guide.md` for the full walk-through. The agent (when dispatched) Telegrams the halt message verbatim and waits. The client follows the in-skill guide, adds `CLOUDFLARE_API_TOKEN=...` to their `~/.openclaw/.env`, says "I'm done," and the agent re-runs `00-verify-prerequisites.sh` per QC-PROTOCOL.md Rule 14.
+`scripts/00-verify-prerequisites.sh` exits with the verbatim Rule 13 message, including a one-line instruction to `cat ~/.openclaw/skills/38-conversational-ai-system/references/fleet-onboarding-tunnel-provisioning-field-guide.md` for the full walk-through. The agent (when dispatched) Telegrams the halt message verbatim and waits. The client follows the in-skill guide, adds `CLOUDFLARE_API_TOKEN=...` to their `~/.openclaw/.env`, says "I'm done," and the agent re-runs `00-verify-prerequisites.sh` per QC-PROTOCOL.md Rule 14.
 
 ### Verified live
 
