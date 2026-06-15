@@ -1,8 +1,19 @@
 {
   "generated_at": "2026-06-14T00:00:00Z",
   "version": "12.14.5",
-  "total_roles": 307,
+  "total_roles": 310,
   "departments": {
+    "client-experience-booking": {
+      "count": 6,
+      "roles": [
+        "booking-coordinator",
+        "client-onboarding-specialist",
+        "devils-advocate",
+        "director-of-client-experience-booking",
+        "post-session-followup-specialist",
+        "qc-specialist"
+      ]
+    },
     "account-management": {
       "count": 6,
       "roles": [
@@ -84,16 +95,6 @@
         "bug-intake-clerk",
         "bug-librarian",
         "triage-dedup-analyst"
-      ]
-    },
-    "client-experience-booking": {
-      "count": 5,
-      "roles": [
-        "booking-coordinator",
-        "client-onboarding-specialist",
-        "director-of-client-experience-booking",
-        "post-session-followup-specialist",
-        "qc-specialist"
       ]
     },
     "communications": {
@@ -486,6 +487,12 @@
         "web-designer",
         "web-security-specialist",
         "wordpress-specialist"
+      ]
+    },
+    "engineering": {
+      "count": 1,
+      "roles": [
+        "director-of-engineering"
       ]
     }
   },
@@ -3539,6 +3546,16 @@
       "sop_count": 8,
       "sop_min": 5,
       "path": "templates/role-library/account-management/director-of-account-management/how-to.md"
+    },
+    {
+      "slug": "devils-advocate",
+      "dept": "client-experience-booking",
+      "title": "Devil's Advocate -- Client Experience & Booking",
+      "role_type": "devils-advocate",
+      "word_count": 9200,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/client-experience-booking/devils-advocate/how-to.md"
     },
     {
       "slug": "qc-specialist",
