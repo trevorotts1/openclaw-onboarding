@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # qc-completeness.sh - v10.15.44 (Mac) / v10.16.43 (VPS)
+# v12.9.4 (fix/gate-company-dir-resolution): fail-loud guard for resolver bugs.
+# If _qc_company_info.py emits gate_bug=true (real workforce dir exists but
+# company-dir resolution still returned no result), this script now exits 5
+# (GATE_BUG) with a loud log message rather than silently exiting 4
+# (NO_WORKFORCE_FOUND), which previously hid resolver regressions from operators.
 # v11.18.4 STOCK-BASH-3.2 COMPATIBILITY: the embedded `python3 - <<PYEOF` snippets
 # that lived inside $() command substitutions are externalized to sibling files
 # (_qc_company_info.py, _qc_get.py, _qc_owner_chat.py, _qc_summary.py). Stock
@@ -26,6 +31,7 @@
 #   2 = PARTIAL  (one or more dept below threshold but non-zero)
 #   3 = FAIL  (any dept at zero materialization or library missing)
 #   4 = NO_WORKFORCE_FOUND  (cannot resolve active company)
+#   5 = GATE_BUG  (resolver returned no result but real workforce dir exists)
 
 set -uo pipefail
 
@@ -91,6 +97,21 @@ DEPARTMENTS_JSON="$(printf '%s' "$COMPANY_INFO" | python3 "$SCRIPT_DIR/_qc_get.p
 log "company_root=${COMPANY_ROOT:-<not-found>}"
 log "departments_dir=${DEPARTMENTS_DIR:-<not-found>}"
 log "departments_json=${DEPARTMENTS_JSON:-<not-found>}"
+
+# v12.9.4 FAIL-LOUD: detect the gate_bug sentinel from _qc_company_info.py.
+# If the resolver emitted gate_bug=true, a real workforce root exists but the
+# resolver still returned no company dir — that is a BUG in this script, not a
+# missing workforce.  Exit 5 (GATE_BUG) so CI / operators see a hard failure
+# rather than a misleading NO_WORKFORCE_FOUND that looks like "not built yet".
+GATE_BUG="$(printf '%s' "$COMPANY_INFO" | python3 "$SCRIPT_DIR/_qc_get.py" gate_bug 2>>"$LOG_FILE")"
+if [ "$GATE_BUG" = "True" ] || [ "$GATE_BUG" = "true" ]; then
+  GATE_BUG_MSG="$(printf '%s' "$COMPANY_INFO" | python3 "$SCRIPT_DIR/_qc_get.py" error 2>>"$LOG_FILE")"
+  log "GATE_BUG — resolver returned no company dir but a real workforce dir exists."
+  log "  error: ${GATE_BUG_MSG:-see _qc_company_info.py output above}"
+  log "  This is a resolver bug, not a missing workforce. Check detect_platform paths."
+  printf '{"status":"GATE_BUG","ts":"%s","error":"%s"}\n' "$TS" "${GATE_BUG_MSG}" > "$JSON_FILE"
+  exit 5
+fi
 
 if [ -z "$COMPANY_ROOT" ] || [ -z "$DEPARTMENTS_DIR" ] || [ ! -d "$DEPARTMENTS_DIR" ]; then
   log "NO_WORKFORCE_FOUND — no active zero-human-company on disk. Nothing to QC."
@@ -526,5 +547,6 @@ case "$STATUS" in
   PARTIAL) exit 2 ;;
   FAIL) exit 3 ;;
   NO_WORKFORCE_FOUND) exit 4 ;;
+  GATE_BUG) exit 5 ;;
   *) exit 1 ;;
 esac

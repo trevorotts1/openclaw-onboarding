@@ -1,3 +1,32 @@
+## [v12.9.5] - 2026-06-14 - fix: library completeness gate company-dir resolution (fleet-wide NO_WORKFORCE_FOUND silent failure)
+
+### Changes
+
+**`23-ai-workforce-blueprint/scripts/_qc_company_info.py`** — three-part fix for the resolver bug that caused every Mac box with a built workforce to silently exit `NO_WORKFORCE_FOUND` (rc=4):
+
+1. **sys.path priority**: the `sys.path.insert(0, ...)` loop previously put `lib/` at lowest priority (inserted first, pushed down by later inserts) so `shared-utils/detect_platform.py` (PRD 1.9) loaded instead of `lib/detect_platform.py`. The shared-utils version maps `company_root` to `~/Downloads/openclaw-master-files/zero-human-company` (the template tree). Fixed by inserting `lib/` LAST in the loop so it lands at position 0 (highest priority).
+
+2. **parent_candidates ordering**: `paths.get("company_root")` (the Downloads template path) appeared FIRST in `parent_candidates`. If the template dir contained any subdirectory, the subdir scan broke out early and NEVER reached the real workforce at `~/clawd/zero-human-company`. Fixed by reordering `parent_candidates` to put VPS/Mac real workforce roots first and the detect_platform `company_root` (potentially the template) last.
+
+3. **`_is_template_path()` guard**: new helper function that returns `True` for any path inside `openclaw-master-files/`. Applied to every candidate in the scan so a template-tree path can never win over a real workforce dir regardless of ordering.
+
+**`23-ai-workforce-blueprint/scripts/qc-completeness.sh`** — fail-loud guard for resolver bugs:
+
+- New exit code 5 (`GATE_BUG`): if `_qc_company_info.py` emits `gate_bug=true` (real workforce root exists but resolver returned no company dir), `qc-completeness.sh` now exits 5 with a loud log message rather than silently exiting 4 (`NO_WORKFORCE_FOUND`). This surfaces resolver regressions to operators instead of hiding them as "not built yet".
+
+**`23-ai-workforce-blueprint/scripts/verify-library-gate.sh`** — handles the new exit code:
+
+- Added exit code 8 mapping for `qc-completeness.sh` exit 5 (`GATE_BUG`). The calling orchestrator sees a hard failure and does not advance closeout.
+
+**`23-ai-workforce-blueprint/scripts/test-gate-company-dir-resolution.sh`** — new regression guard (4 tests):
+
+- T1: `REAL_WORKFORCE_FOUND` — resolver with a stub `lib/detect_platform.py` pointing at a temp workforce dir returns a non-empty, non-template `company_root`.
+- T2: `TEMPLATE_PATH_NEVER_WINS` — `_is_template_path()` correctly classifies 5 paths (2 template, 3 real).
+- T3: `GATE_BUG_SENTINEL` — when `get_openclaw_paths()` returns `None` but a real root exists, `gate_bug=true` is emitted.
+- T4: `NO_CLIENT_NAMES` — production files contain no hardcoded client names.
+
+---
+
 ## [v12.9.4] - 2026-06-14 - fix: memorySearch.multimodal disabled + fallback openai (fleet-wide memory failure)
 
 ### Changes
