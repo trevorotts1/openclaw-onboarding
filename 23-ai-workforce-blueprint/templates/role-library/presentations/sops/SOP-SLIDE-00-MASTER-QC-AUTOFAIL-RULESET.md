@@ -384,7 +384,7 @@ These five codes were added after the forensic four-deck failure analysis. Each 
 
 ### AF-BAKED (Fix 4)
 **What failed:** Two of four decks used Pillow ImageDraw plus a black RGBA scrim to composite Helvetica text over Kie images, producing "flat dark slabs." Four to twenty-three slides in the other two decks were rendered entirely in Pillow (no Kie image at all).
-**Detection:** Vision QC (Haiku 4.5) checks each slide. If the vision agent scores text as "overlaid / composited" rather than "rendered as part of image composition," or if the image matches a flat-fill placeholder signature (solid color, tiny file under 50KB), the slide triggers AF-BAKED.
+**Detection:** Vision QC (the client's own vision model: `qwen3-vl:235b-cloud` via Ollama Cloud, fallback `qwen/qwen3-vl-235b-a22b-instruct` via OpenRouter) checks each slide. If the vision agent scores text as "overlaid / composited" rather than "rendered as part of image composition," or if the image matches a flat-fill placeholder signature (solid color, tiny file under 50KB), the slide triggers AF-BAKED.
 
 ### AF-PROMPT-FLOOR (Fix 5)
 **What failed:** 100% of 98 image prompts (across all four decks) were below the 1500-char floor. Median was 277 chars -- 5.4x under floor. Zero prompts had proper archetype declarations or negative blocks.

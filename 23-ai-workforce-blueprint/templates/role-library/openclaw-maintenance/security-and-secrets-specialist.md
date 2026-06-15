@@ -404,7 +404,7 @@ Any access policy that grants admin-level access requires Director approval. Any
 > |----------|-----------|-------|---------------|
 > | `crm-api` | `read:contacts`, `write:activities` | Contacts with tag `lead` or `active-opportunity` | Agent creates and updates CRM activities for outreach sequences |
 > | `email-send-api` | `send` | From: `sales@{{COMPANY_SLUG}}.com`, Templates: `outreach-*` | Agent sends outreach emails using approved templates |
-> | `llm-provider-primary` | `invoke` | Models: `sonnet`, `haiku` | Agent uses LLM for message personalization |
+> | `llm-provider-primary` | `invoke` | Models: `kimi-k2.6:cloud`, `deepseek-v4-flash:cloud` | Agent uses LLM for message personalization |
 > | `analytics-db` | `read` | Tables: `email_engagement`, `contact_activity` | Agent reads engagement data to personalize timing and content |
 >
 > **Explicitly Denied:**

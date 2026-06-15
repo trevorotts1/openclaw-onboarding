@@ -1,3 +1,28 @@
+## [v12.14.6] - 2026-06-15 - fix: strip Anthropic models from client-facing presentation + maintenance SOPs (client-available vision QC)
+
+### Changes
+
+**Client SOPs must use models the CLIENT actually has — never Anthropic (Haiku/Opus/Sonnet/Claude).** Anthropic models are the operator's own tooling, not a client deliverable, and are too expensive. This release removes the last runtime Anthropic model pins from the client-facing role library and replaces them with client-available equivalents (Ollama Cloud / OpenRouter). Vision QC is kept as a mandatory STEP (it catches real image defects — misspellings, deformities, logo errors, baked-vs-overlaid text, flat-fill placeholders); only the MODEL changed.
+
+**Presentations department — the real defect (vision QC was pinned to Haiku 4.5 per-image + Opus cross-deck synthesis):**
+
+- `23-ai-workforce-blueprint/templates/role-library/presentations/qc-specialist-presentations.md` — SOP 9.3 "VISION QC PROTOCOL — Model Tiering": the two-model Haiku/Opus architecture replaced with the client's own vision model. **Primary: `qwen3-vl:235b-cloud`** via the client's Ollama Cloud (`OLLAMA_API_KEY`); **fallback: `qwen/qwen3-vl-235b-a22b-instruct`** via the client's OpenRouter (`OPENROUTER_API_KEY`). Both are genuinely multimodal (Text + Image input, 256K context). Cross-deck synthesis now runs on the text scoring model the role already uses (`minimax-m3:cloud`) or the same vision model — never Anthropic. All "Haiku returns…" hard-block phrasing changed to "the vision model returns…".
+- `23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` — AF-BAKED detection: "Vision QC (Haiku 4.5)" replaced with "Vision QC (the client's own vision model: `qwen3-vl:235b-cloud` via Ollama Cloud, fallback `qwen/qwen3-vl-235b-a22b-instruct` via OpenRouter)".
+
+**OpenClaw-maintenance department — illustrative examples that named Anthropic models as the example of choice (lower severity; no runtime pins):**
+
+- `performance-tuning-specialist.md` — the "Model Comparison Evaluation" worked example (Haiku 3.5 vs. Sonnet 4) re-cast as `deepseek-v4-flash:cloud` vs. `kimi-k2.6:cloud`. Pedagogical structure (cheaper-but-degrades-on-complex-tasks) preserved.
+- `security-and-secrets-specialist.md` — least-privilege scope-table example `Models: sonnet, haiku` → `Models: kimi-k2.6:cloud, deepseek-v4-flash:cloud`.
+
+**Left intentionally as-is (verified NOT defects):** the `_qc-summary.md` D11 rubric that ENFORCES "no Anthropic/Claude"; the `sop-model-overkill-daily.md` Haiku/Sonnet/Opus tier vocabulary that steers clients toward Ollama Cloud free-tier and away from paid Anthropic; the genericized flash-assessment training example in `deep-research-role--openclaw-maintenance.md` ("the AI assistant 4 Opus"); the "Opus audio codec" reference in `audio/deep-research-specialist-audio.md`; "Claude" listed among human research/writing assistants (ChatGPT/Claude/Gemini/Jasper) in graphics/communications roles; and Anthropic-as-vendor mentions in status-page/doc-reference lists across maintenance roles. The `_stage1_drafts/` scaffolding (excluded from `_index.json` and from the library gates) still carries the un-genericized originals and is not a shipped deliverable.
+
+**Operator carve-out:** none needed — the presentation pipeline runs entirely on client models. No Anthropic was added anywhere in client templates.
+
+**Version bumped:** all 9 markers + `cc-compat.json` onboardingVersion v12.14.5 → v12.14.6.
+Zero client names in diff (grep verified).
+
+---
+
 ## [v12.14.5] - 2026-06-15 - docs: rename install flow to fleet onboarding tunnel provisioning; field guide renamed
 
 ### Changes
