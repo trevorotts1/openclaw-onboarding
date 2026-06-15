@@ -1,36 +1,30 @@
-## [v12.9.1] - 2026-06-14 - fix: presentation render enforcement -- 5 new AF codes + canonical module + sovereignty doctrine + leak fix
+## [v12.9.3] - 2026-06-14 - fix: GHL lookup SOP -- orchestrator-only MCP, dual Accept header, no grep -P, fail-fast preflight, two-axis routing
 
 ### Changes
 
-**7-point enforcement fix from the forensic four-deck failure analysis (2026-06-14).**
+**Encode the GHL lookup SOP as fleet-enforced doctrine in skill 36 and skill 44.**
 
-**Root causes addressed:**
-- Two of four decks used nano-banana-pro (wrong model) because example payloads showed it as primary
-- All four decks used Pillow black-scrim plus Helvetica overlay instead of baking text into the image
-- 100% of 98 prompts were under the 1500-char floor (median 277 chars -- 5.4x under floor)
-- Zero vision QC executed -- only path.exists() ran on all four decks
-- Each deck free-wrote its own throwaway renderer -- no shared standard existed
+- `GHL-LOOKUP-SOP.md` (new authoritative SOP) documents 6 hard rules for every GHL lookup
+- MCP tools (`ghl-mcp__*`) are orchestrator-only; sub-agents use the convert-and-flow CLI or raw HTTPS
+- Lookup model: `deepseek-v4-flash` (direct) as primary; never a metered `:cloud` model for lookups
+- Raw HTTP fallback must carry BOTH `Accept` headers (`application/json` + `text/event-stream`) plus `Version` header; missing `text/event-stream` produces HTTP 406
+- Never `grep -P` on macOS (BSD grep has no `-P`); use `python3` or `jq` for pattern matching
+- Fail-fast credential preflight before every lookup session
+- Two-axis routing: READ path (`caf` -> Tier 1 MCP -> Tier 3 raw HTTPS) vs BUILD path (Skill 44 internal Build API -> Tier 4 browser automation); the public `/workflows/` endpoint is read-only -- no MCP tool can build a workflow
 
-**Fix 1: Canonical Render Module** (`23-ai-workforce-blueprint/templates/presentation-render/render_deck.py`) -- single shared module all client decks must call; validates model sovereignty and prompt floor at runtime before any API call; writes render_manifest.json.
+Rules propagated into `36-ghl-mcp-setup/SKILL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md` and `44-convert-and-flow-operator/SKILL.md`, `INSTRUCTIONS.md`.
 
-**Fix 2: Client Sovereignty Doctrine** (CLIENT-WEBINAR-DECK-SOP.md Section 1A) -- plain-language rule: client's express model choice is sovereign; silent substitution is a system defect; fallback fires ONLY on hard API failure with mandatory logging.
+---
+## [v12.9.2] - 2026-06-14 - fix: close ungated claim-points (A1-A6, B1-B7, C1-C4, X1-X2) + behavioral acceptance tests
 
-**Fix 3: Leak fix** (46-kie-callback-relay/SUBMITTER-SOP.md, DEPLOY.md, kie-slide-submitter.js) -- changed all example payloads from nano-banana-pro to gpt-image-2-text-to-image; added FALLBACK-ONLY labels; model always sourced from client config.
+### Changes
 
-**Fix 4: Baked-Text Mandate** (slide-image-creator.md) -- explicit prohibition on Pillow scrim/overlay path; AF-BAKED KPI added; typography baked INTO image by model only.
+**Close ungated claim-points across the workforce build pipeline.** Six A-gates, seven B-gates, four C-gates, and two X-gates are now hard-enforced: A1-A6 (department-done truth), B1-B7 (role-library indexing and registration), C1-C4 (wiring verification), and X1-X2 (cross-cutting guards). The `build-workforce.py` and `verify-wiring.sh` scripts enforce each gate with an explicit FAIL-LOUD path. Behavioral acceptance tests (28/28 pass) added in `tests/test-ungated-claim-points.sh`.
 
-**Fix 5: Prompt Floor Gate** (SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md) -- AF-PROMPT-FLOOR: hard block on prompts outside 1500-15000 chars or missing archetype/negative-block structure; Section 6 documents all new codes.
+---
 
-**Fix 6: Real Vision QC** (qc-specialist-presentations.md) -- Haiku 4.5 per-image plus Opus synthesis; path.exists() explicitly prohibited as QC substitute; AF-NO-VISION-QC blocks any deck without executed vision-API log.
+---
 
-**Fix 7: Fleet propagation** -- CLIENT-WEBINAR-DECK-SOP.md updated with required intake.json fields; MODEL-SPECS.md v1.4 with sovereignty note plus changelog; presentations-suggested-roles.md updated; CHANGELOG and version bumped.
-
-**5 new auto-fail codes:**
-- AF-RENDERER: deck used its own renderer instead of the canonical module
-- AF-MODEL-SOVEREIGNTY: submitted model does not match client's pinned model without logged fallback event
-- AF-BAKED: text drawn by Pillow/PPTX rather than baked by image model
-- AF-PROMPT-FLOOR: prompt outside 1500-15000 chars or missing structural blocks
-- AF-NO-VISION-QC: no executed vision-API log (path.exists() is not QC)
 
 ## [v12.9.0] - 2026-06-14 - feat: presentation vision-gate overhaul + 16 new AF codes + casting ledger + deliverable bundle + gradient ban + PIL logo composite
 

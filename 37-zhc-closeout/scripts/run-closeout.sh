@@ -263,6 +263,27 @@ else
   log "WARN" "verify-zhc-standard.sh not found -- proceeding on buildCompletedAt alone (older Skill 23 bundle)"
 fi
 
+# B5: HARD verify-wiring.sh precondition — wiring must be done before closeout
+VERIFY_WIRING_SCRIPT=""
+for _vw_cand in \
+  "$OC_ROOT/skills/23-ai-workforce-blueprint/scripts/verify-wiring.sh" \
+  "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts/verify-wiring.sh" \
+  "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/verify-wiring.sh"; do
+  [[ -f "$_vw_cand" ]] && VERIFY_WIRING_SCRIPT="$_vw_cand" && break
+done
+if [[ -n "$VERIFY_WIRING_SCRIPT" ]]; then
+  bash "$VERIFY_WIRING_SCRIPT" --all >> "$LOG_FILE" 2>&1
+  VERIFY_WIRING_RC=$?
+  if [[ "$VERIFY_WIRING_RC" != "0" ]]; then
+    log "ERROR" "verify-wiring.sh preflight FAILED (rc=$VERIFY_WIRING_RC): one or more departments are not properly registered/reachable. REFUSING to close out an unwired workforce. The resume cron will re-fire wiring."
+    state_set ".closeoutStatus = \"blocked-wiring-incomplete\" | .closeoutBlockReason = \"verify-wiring.sh rc=$VERIFY_WIRING_RC (registration/reachability not verified)\""
+    exit 0
+  fi
+  log "INFO" "verify-wiring.sh preflight rc=$VERIFY_WIRING_RC (wiring verified)"
+else
+  log "WARN" "verify-wiring.sh not found — proceeding without wiring check (older Skill 23 bundle)"
+fi
+
 closeout_status=$(state_get '.closeoutStatus')
 if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]]; then
   log "INFO" "closeoutStatus=$closeout_status -- already complete; nothing to do"
