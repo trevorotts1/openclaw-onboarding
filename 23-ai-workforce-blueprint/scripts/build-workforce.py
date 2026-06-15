@@ -2228,7 +2228,9 @@ def _verify_departments_against_dashboard_config() -> None:
 # Model assignments per department type
 # Creative/content departments use Kimi (fast, good for writing)
 # Technical departments use GPT 5.4 (strong at code and systems)
-# Legal/operations use Sonnet (careful, precise reasoning)
+# Legal/operations use MiniMax M3 via the client's own Ollama Cloud (careful,
+# precise reasoning). Anthropic is NEVER pinned for a client agent (operator-only,
+# cost-prohibitive); clients run on models they actually have, Ollama Cloud first.
 DEFAULT_MODEL_ASSIGNMENTS = {
     "creative": "ollama/kimi-k2.6:cloud",
     "marketing": "ollama/kimi-k2.6:cloud",
@@ -2242,8 +2244,8 @@ DEFAULT_MODEL_ASSIGNMENTS = {
     "it": "openai-codex/gpt-5.4",
     "webdev": "openai-codex/gpt-5.4",
     "appdev": "openai-codex/gpt-5.4",
-    "operations": "anthropic/claude-sonnet-4-6",
-    "legal": "anthropic/claude-sonnet-4-6",
+    "operations": "ollama/minimax-m3:cloud",
+    "legal": "ollama/minimax-m3:cloud",
     "support": "ollama/kimi-k2.6:cloud",
     "billing": "ollama/kimi-k2.6:cloud",
     "hr": "ollama/kimi-k2.6:cloud",

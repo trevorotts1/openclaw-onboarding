@@ -90,7 +90,7 @@ Reviews HR documents, communications, and records before they are shared, filed,
 - Policies cannot contradict each other. Conflicts must be resolved before publishing
 
 **Recommended model type:** Language + Reasoning
-**Recommended models:** `anthropic/claude-opus-4-6`
+**Recommended models (client-available, Ollama Cloud first — never Anthropic):** `ollama/deepseek-v4-pro:cloud` (primary), `openrouter/deepseek/deepseek-v4-pro` (fallback for clients with OpenRouter)
 **Note:** HR documents involving legal language carry high stakes. Use the strongest available model and always flag for Legal review when in doubt.
 
 **Core SOPs to build:**

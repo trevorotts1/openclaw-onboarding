@@ -1,13 +1,13 @@
 # ANALYSIS NOTES - $100M Leads
 **Author:** Alex Hormozi
 **Analyzed:** June 11, 2026
-**Model:** claude-sonnet-4-6
+**Model:** ollama/deepseek-v4-pro:cloud
 
 ---
 
 ## BOOK: $100M Leads
 ## AUTHOR: Alex Hormozi
-## ANALYSIS AGENT: Claude Sonnet 4.6
+## ANALYSIS AGENT: DeepSeek V4 Pro (Ollama Cloud)
 ## ANALYSIS DATE: 2026-06-11
 
 ---

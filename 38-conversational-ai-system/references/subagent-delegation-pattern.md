@@ -65,7 +65,8 @@ The install subagent does NOT use the conversational reply model (e.g., Gemini 3
 1. **`deepseek/deepseek-v4-pro`** via OpenRouter or Ollama Cloud, with thinking set to `max`. ~1M context, deep reasoning, best long-instruction following.
 2. **`google/gemini-3.5-flash`** via OpenRouter. ~2M context, very fast, good reasoning. Best if budget is a concern.
 3. **`ollama/deepseek-v4-flash`** with `thinking: max`. Free if Ollama Cloud is configured. Slightly less capable than Pro but workable.
-4. **`anthropic/claude-opus-4-7`** via Anthropic API. Highest quality if available; most expensive.
+
+Anthropic models are NOT recommended for client install subagents (operator-only tooling, cost-prohibitive). Use the client's own Ollama Cloud / OpenRouter models above.
 
 Verify model availability against `openrouter.ai/models` and `ollama.com/library` at run-time (per Self-Orientation O.3) — newer models may have superseded these.
 
@@ -218,7 +219,6 @@ large context). Alternatives:
    - gemini-3.5-flash via OpenRouter (faster, slightly less deep)
    - ollama/deepseek-v4-flash with thinking:max (free if Ollama
      Cloud is configured)
-   - claude-opus-4-7 via Anthropic API (highest quality, highest cost)
 
 Stick with the default, or pick another?"
 ```

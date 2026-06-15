@@ -474,17 +474,17 @@ After the standard 18 criteria, score the following seven Design-Craft dimension
 
 **When to run:** Phase 5 -- as each image is downloaded from Kie.ai to working/renders/. Run QC on each image as it arrives; do not wait for all images before starting QC.
 
-### VISION QC PROTOCOL -- Model Tiering (mandatory, 2026-06-14)
+### VISION QC PROTOCOL -- Model Tiering (mandatory)
 
-**Per-image verification runs on Haiku 4.5. Cross-deck synthesis runs on Opus. This tiering is non-negotiable.**
+**Per-image verification AND cross-deck synthesis both run on the client's own vision model. Primary: `qwen3-vl:235b-cloud` via the client's Ollama Cloud (`OLLAMA_API_KEY`). Fallback: `qwen/qwen3-vl-235b-a22b-instruct` via the client's OpenRouter (`OPENROUTER_API_KEY`). Both are genuinely multimodal (Text + Image input, 256K context) and use the client's own keys -- never an operator key. This tiering is non-negotiable.**
 
-Phase 5 image QC uses the following two-model architecture:
-1. **Per-image vision check (Haiku 4.5 -- cheap, one call per image):** For each rendered slide, call the vision API with the image and ask: (a) Is this a placeholder/flat fill? (b) Is the text overlaid (Pillow/PPTX) or baked into the image composition? (c) Does the slide read as a full-bleed premium composition or a flat background with text on top? (d) Is the casting (people demographics, expression) consistent with the brief? Log the response to `working/qc/vision_qc_log.json` with fields: `slide_id`, `vision_model`, `vision_api_called_at`, `vision_api_response` (the raw response), `pass`, `fail_reason`.
-2. **Cross-deck synthesis (Opus -- one call per deck, runs AFTER all per-image checks):** Reads all per-image results, identifies patterns, writes the final Phase 5 QC report. Opus does NOT review individual images -- only Haiku does. This keeps per-image cost near zero while preserving synthesis quality.
+Phase 5 image QC uses the following two-pass architecture (both passes on the client's vision model above):
+1. **Per-image vision check (`qwen3-vl:235b-cloud` -- cheap, one call per image):** For each rendered slide, call the vision API with the image and ask: (a) Is this a placeholder/flat fill? (b) Is the text overlaid (Pillow/PPTX) or baked into the image composition? (c) Does the slide read as a full-bleed premium composition or a flat background with text on top? (d) Is the casting (people demographics, expression) consistent with the brief? Log the response to `working/qc/vision_qc_log.json` with fields: `slide_id`, `vision_model`, `vision_api_called_at`, `vision_api_response` (the raw response), `pass`, `fail_reason`.
+2. **Cross-deck synthesis (one call per deck, runs AFTER all per-image checks):** Reads all per-image results, identifies patterns, writes the final Phase 5 QC report. Synthesis runs on the text scoring model (`minimax-m3:cloud`, the same model the rest of this role uses) OR the vision model above -- it does NOT re-review individual images. This keeps per-image cost near zero while preserving synthesis quality.
 
 **Hard blocks from vision QC:**
-- Any slide where Haiku returns "placeholder/flat fill" -> triggers AF-BAKED -> slide loops back to Slide Image Creator
-- Any slide where Haiku returns "text is overlaid (Pillow/PPTX)" -> triggers AF-BAKED -> loops back
+- Any slide where the vision model returns "placeholder/flat fill" -> triggers AF-BAKED -> slide loops back to Slide Image Creator
+- Any slide where the vision model returns "text is overlaid (Pillow/PPTX)" -> triggers AF-BAKED -> loops back
 - Any deck where ANY slide has a missing or empty `vision_api_response` -> triggers AF-NO-VISION-QC -> DECK FAIL
 
 **path.exists() is NOT vision QC.** A file-presence check that confirms a .png exists at a path is a crash-recovery guard, not a quality gate. The Phase 5 vision check MUST call a multimodal vision API with the image content. Any "QC log" that contains only path-existence records triggers AF-NO-VISION-QC.

@@ -296,7 +296,7 @@ If either skill is missing, install it. Do NOT skip the analysis just because a 
 **Image analysis** (visually analyzing extracted frames):
 - This is a built-in capability of the agent (uses the vision/image model)
 - No installation needed - the agent can analyze images natively
-- If the agent's current model does not support image analysis, switch to one that does (Opus, Sonnet, GPT-5.2, Gemini 3 Pro all support vision)
+- If the agent's current model does not support image analysis, switch to a client-available vision model (Ollama Cloud first — never Anthropic): `ollama/qwen3-vl:235b-cloud` or `ollama/minimax-m3:cloud` (primary), `openrouter/qwen/qwen3-vl-235b-a22b-instruct` or `google/gemini-3.1-pro-preview` (fallback) all support vision
 
 **The self-teaching flow:**
 1. Agent detects the missing skill

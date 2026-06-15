@@ -137,7 +137,7 @@ Receives finished written content from Creative department workers before it is 
 - No factual errors or unverified claims
 
 **Recommended model type:** Language
-**Recommended models:** `anthropic/claude-sonnet-4-6`, `openai-codex/gpt-5.4`
+**Recommended models (client-available, Ollama Cloud first — never Anthropic):** `ollama/minimax-m3:cloud` (primary), `openrouter/deepseek/deepseek-v4-flash` (fallback for clients with OpenRouter), `openai-codex/gpt-5.4`
 
 **Core SOPs to build:**
 - 01-How-to-QC-Written-Content.md

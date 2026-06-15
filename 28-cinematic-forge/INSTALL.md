@@ -166,8 +166,8 @@ The agent should:
 
 The agent executing Cinematic Forge MUST be a model that supports tool calls (API requests, file operations, etc.):
 
-**Recommended:** MiniMax M2.5, Claude Opus/Sonnet, GPT-5.2
-**BANNED:** Kimi K2.5 (cannot make tool calls)
+**Recommended (client-available, Ollama Cloud first — never Anthropic):** `ollama/deepseek-v4-pro:cloud` or `ollama/minimax-m3:cloud` (primary), `openrouter/deepseek/deepseek-v4-pro` (fallback for clients with OpenRouter), GPT-5.2
+**BANNED:** Kimi K2.5 (cannot make tool calls); Anthropic models (operator-only, cost-prohibitive for clients)
 
 ## Important Notes
 

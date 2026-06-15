@@ -92,7 +92,7 @@ Reviews finished SOPs, process documentation, workflow builds, and operational r
 - Version number and date must be updated before any revised SOP replaces the old one
 
 **Recommended model type:** Language + Reasoning
-**Recommended models:** `anthropic/claude-sonnet-4-6`
+**Recommended models (client-available, Ollama Cloud first — never Anthropic):** `ollama/minimax-m3:cloud` (primary), `openrouter/deepseek/deepseek-v4-flash` (fallback for clients with OpenRouter)
 
 **Core SOPs to build:**
 - 01-How-to-QC-an-SOP.md

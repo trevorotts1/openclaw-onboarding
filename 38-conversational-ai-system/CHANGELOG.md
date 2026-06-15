@@ -1,3 +1,11 @@
+## [1.7.6] - 2026-06-15 — fix: strip client-facing Anthropic options from model-picker lists
+
+### Changed (anti-Anthropic strip, repo v12.14.6)
+- Removed `anthropic/claude-opus-4-7` from the install-subagent model lists in `references/subagent-delegation-pattern.md` and the source-of-truth `references/v6.0-source-playbook.md` (both the priority list and the interactive picker); added a "not recommended for client install subagents (operator-only, cost-prohibitive)" note. Primary was already `deepseek/deepseek-v4-pro` via Ollama Cloud / OpenRouter — unchanged.
+- `protocols/web-scraper-protocol.md` (+ playbook copy): scraper "higher quality" alternative `anthropic/claude-haiku-4.5` → `ollama/deepseek-v4-pro:cloud` (or `openrouter/deepseek/deepseek-v4-pro`).
+- `scripts/15-configure-hooks-mappings.sh`: async-tier picker "premium quality" option `anthropic/claude-opus-4-7` → `ollama/deepseek-v4-pro:cloud`.
+- No runtime behavior change; the default/primary models were already client-available. Clients are never pinned to Anthropic.
+
 ## [1.7.2] - 2026-06-11 — de-hoop: route workflow-creation through Skill 44 (Tier 0) first
 
 ### Changed (GHL skills integration review — CAF-first de-hoop)

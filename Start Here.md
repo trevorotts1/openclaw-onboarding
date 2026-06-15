@@ -382,12 +382,12 @@ Before selecting a persona:
 
 ### Model Requirements for Critical Skills
 
-Skills 22 (Book-to-Persona) and 23 (AI Workforce Blueprint) MUST run on high reasoning models:
-- anthropic/claude-opus-4-6
-- anthropic/claude-sonnet-4-6
-- openrouter/xiaomi/mimo-v2-pro (with thinking enabled)
-- google/gemini-3.1-pro-preview
-- openai-codex/gpt-5.4
+Skills 22 (Book-to-Persona) and 23 (AI Workforce Blueprint) MUST run on high reasoning models. Use a model the CLIENT actually has — Ollama Cloud first (cheapest for the client), OpenRouter only as a fallback (most clients have Ollama Cloud; many also have OpenRouter), then the closest available. NEVER pin Anthropic (Opus/Sonnet/Haiku/Claude) — it is the operator's own tooling and is cost-prohibitive for client workloads.
+- `ollama/deepseek-v4-pro:cloud` (Ollama Cloud — preferred primary; 1M context, top reasoning)
+- `openrouter/deepseek/deepseek-v4-pro` (OpenRouter fallback for clients who have it)
+- `openrouter/xiaomi/mimo-v2-pro` (with thinking enabled)
+- `google/gemini-3.1-pro-preview`
+- `openai-codex/gpt-5.4`
 
 NEVER use Kimi 2.5, Gemini Flash, or Gemini Flash Lite for these skills. If the client is on a low reasoning model, suggest switching before proceeding.
 
