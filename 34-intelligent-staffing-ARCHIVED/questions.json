@@ -58,10 +58,10 @@
       "department": "operations",
       "display_name": "Operations",
       "questions": [
-        { "id": "ops-1", "question": "Does your team run recurring operational processes (daily checks, weekly reviews)?", "specialist": "Operations Coordinator", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "operations-coordinator" },
-        { "id": "ops-2", "question": "Does your team manage vendor relationships that require ongoing communication?", "specialist": "Vendor Relations Manager", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "vendor-relations-manager" },
-        { "id": "ops-3", "question": "Does your team track inventory or resources on a continuous basis?", "specialist": "Inventory Manager", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "inventory-manager" },
-        { "id": "ops-4", "question": "Does your team manage projects with ongoing deadlines and task tracking?", "specialist": "Project Manager", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "project-manager" },
+        { "id": "ops-1", "question": "Does your team run recurring operational processes (daily checks, weekly reviews)?", "specialist": "Operations Coordinator", "model": "ollama/minimax-m3:cloud", "type": "permanent", "folder": "operations-coordinator" },
+        { "id": "ops-2", "question": "Does your team manage vendor relationships that require ongoing communication?", "specialist": "Vendor Relations Manager", "model": "ollama/minimax-m3:cloud", "type": "permanent", "folder": "vendor-relations-manager" },
+        { "id": "ops-3", "question": "Does your team track inventory or resources on a continuous basis?", "specialist": "Inventory Manager", "model": "ollama/minimax-m3:cloud", "type": "permanent", "folder": "inventory-manager" },
+        { "id": "ops-4", "question": "Does your team manage projects with ongoing deadlines and task tracking?", "specialist": "Project Manager", "model": "ollama/minimax-m3:cloud", "type": "permanent", "folder": "project-manager" },
         { "id": "ops-5", "question": "Do you occasionally need one-time process documentation or SOP creation?", "specialist": "Process Documenter", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "process-documenter" },
         { "id": "ops-6", "question": "Do you occasionally need one-time workflow audits or efficiency reviews?", "specialist": "Efficiency Analyst", "model": "moonshot/kimi-k2.5", "type": "subagent", "folder": "efficiency-analyst" }
       ]
@@ -94,12 +94,12 @@
       "department": "legal",
       "display_name": "Legal/Compliance",
       "questions": [
-        { "id": "leg-1", "question": "Does your team manage contracts and agreements on an ongoing basis?", "specialist": "Contract Manager", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "contract-manager" },
-        { "id": "leg-2", "question": "Does your team handle compliance monitoring on a continuous basis?", "specialist": "Compliance Monitor", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "compliance-monitor" },
-        { "id": "leg-3", "question": "Does your team manage regulatory filings or recurring legal deadlines?", "specialist": "Regulatory Coordinator", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "regulatory-coordinator" },
-        { "id": "leg-4", "question": "Does your team review vendor or partner agreements regularly?", "specialist": "Agreement Reviewer", "model": "anthropic/claude-sonnet-4-6", "type": "permanent", "folder": "agreement-reviewer" },
-        { "id": "leg-5", "question": "Do you occasionally need one-time legal research or document review?", "specialist": "Legal Researcher", "model": "anthropic/claude-sonnet-4-6", "type": "subagent", "folder": "legal-researcher" },
-        { "id": "leg-6", "question": "Do you occasionally need one-time trademark or IP searches?", "specialist": "IP Researcher", "model": "anthropic/claude-sonnet-4-6", "type": "subagent", "folder": "ip-researcher" }
+        { "id": "leg-1", "question": "Does your team manage contracts and agreements on an ongoing basis?", "specialist": "Contract Manager", "model": "ollama/minimax-m3:cloud", "type": "permanent", "folder": "contract-manager" },
+        { "id": "leg-2", "question": "Does your team handle compliance monitoring on a continuous basis?", "specialist": "Compliance Monitor", "model": "ollama/minimax-m3:cloud", "type": "permanent", "folder": "compliance-monitor" },
+        { "id": "leg-3", "question": "Does your team manage regulatory filings or recurring legal deadlines?", "specialist": "Regulatory Coordinator", "model": "ollama/minimax-m3:cloud", "type": "permanent", "folder": "regulatory-coordinator" },
+        { "id": "leg-4", "question": "Does your team review vendor or partner agreements regularly?", "specialist": "Agreement Reviewer", "model": "ollama/minimax-m3:cloud", "type": "permanent", "folder": "agreement-reviewer" },
+        { "id": "leg-5", "question": "Do you occasionally need one-time legal research or document review?", "specialist": "Legal Researcher", "model": "ollama/minimax-m3:cloud", "type": "subagent", "folder": "legal-researcher" },
+        { "id": "leg-6", "question": "Do you occasionally need one-time trademark or IP searches?", "specialist": "IP Researcher", "model": "ollama/minimax-m3:cloud", "type": "subagent", "folder": "ip-researcher" }
       ]
     },
     {

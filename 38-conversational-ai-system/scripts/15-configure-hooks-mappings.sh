@@ -213,7 +213,7 @@ else
     "deepseek/deepseek-v4-pro:thinking-max — highest-reasoning"
     "google/gemini-3.1-flashlight — balanced"
     "openrouter/free — free + perfect for email"
-    "anthropic/claude-opus-4-7 — premium quality"
+    "ollama/deepseek-v4-pro:cloud — premium quality (Ollama Cloud)"
     "same-as-realtime"
   )
   BATCH_OPTS=(

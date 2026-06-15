@@ -84,7 +84,7 @@ Specialists are assigned models based on their department's complexity:
 |-----------|-------|
 | Marketing, Creative, Graphics, Video, Audio, Research, Comms, CEO | moonshot/kimi-k2.5 |
 | Sales, IT, WebDev, AppDev | openai-codex/gpt-5.4 |
-| Operations, Legal | anthropic/claude-sonnet-4-6 |
+| Operations, Legal | ollama/minimax-m3:cloud |
 
 ## Installation
 

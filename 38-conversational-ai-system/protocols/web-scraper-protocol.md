@@ -36,7 +36,7 @@ good extraction quality, fast.
 Alternatives the operator can choose:
 - `google/gemini-3-flash-lite` via OpenRouter — comparable cost
 - `openrouter/free` — for non-time-sensitive batches
-- `anthropic/claude-haiku-4.5` — higher quality, higher cost
+- `ollama/deepseek-v4-pro:cloud` (or `openrouter/deepseek/deepseek-v4-pro`) — higher quality, higher cost
 - A specific model the operator already pays for
 
 Operator's default model preference saved in env file as `SCRAPER_MODEL`.

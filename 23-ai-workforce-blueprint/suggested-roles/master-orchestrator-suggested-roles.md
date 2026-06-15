@@ -62,7 +62,7 @@ Receives completed routing packages and cross-department handoffs from the Maste
 - Escalations to the CEO must meet the defined escalation threshold
 
 **Recommended model type:** Language + Reasoning
-**Recommended models:** `anthropic/claude-opus-4-6`, `openai-codex/gpt-5.4`
+**Recommended models (client-available, Ollama Cloud first — never Anthropic):** `ollama/deepseek-v4-pro:cloud` (primary), `openrouter/deepseek/deepseek-v4-pro` (fallback for clients with OpenRouter), `openai-codex/gpt-5.4`
 
 **Core SOPs to build:**
 - 01-How-to-QC-a-Routing-Decision.md

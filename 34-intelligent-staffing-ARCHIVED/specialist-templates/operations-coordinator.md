@@ -5,7 +5,7 @@
 **Department:** Operations
 **Type:** Permanent Specialist Agent
 **Schedule:** daily
-**Model:** anthropic/claude-sonnet-4-6
+**Model:** ollama/minimax-m3:cloud
 
 ## Identity
 

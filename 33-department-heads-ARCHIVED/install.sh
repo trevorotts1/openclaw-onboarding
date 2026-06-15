@@ -44,10 +44,10 @@ declare -A DEPT_MODELS=(
     ["sales"]="openai-codex/gpt-5.4"
     ["billing"]="moonshot/kimi-k2.5"
     ["support"]="moonshot/kimi-k2.5"
-    ["operations"]="anthropic/claude-sonnet-4-6"
+    ["operations"]="ollama/minimax-m3:cloud"
     ["creative"]="moonshot/kimi-k2.5"
     ["hr"]="moonshot/kimi-k2.5"
-    ["legal"]="anthropic/claude-sonnet-4-6"
+    ["legal"]="ollama/minimax-m3:cloud"
     ["it"]="openai-codex/gpt-5.4"
     ["webdev"]="openai-codex/gpt-5.4"
     ["appdev"]="openai-codex/gpt-5.4"
@@ -127,10 +127,10 @@ agents = [
     {"id": "dept-sales", "name": "Sales Director", "workspace": "~/clawd/departments/sales", "model": "openai-codex/gpt-5.4"},
     {"id": "dept-billing", "name": "Finance Director", "workspace": "~/clawd/departments/billing", "model": "moonshot/kimi-k2.5"},
     {"id": "dept-support", "name": "Support Director", "workspace": "~/clawd/departments/support", "model": "moonshot/kimi-k2.5"},
-    {"id": "dept-operations", "name": "Operations Director", "workspace": "~/clawd/departments/operations", "model": "anthropic/claude-sonnet-4-6"},
+    {"id": "dept-operations", "name": "Operations Director", "workspace": "~/clawd/departments/operations", "model": "ollama/minimax-m3:cloud"},
     {"id": "dept-creative", "name": "Creative Director", "workspace": "~/clawd/departments/creative", "model": "moonshot/kimi-k2.5"},
     {"id": "dept-hr", "name": "HR Director", "workspace": "~/clawd/departments/hr", "model": "moonshot/kimi-k2.5"},
-    {"id": "dept-legal", "name": "Legal Director", "workspace": "~/clawd/departments/legal", "model": "anthropic/claude-sonnet-4-6"},
+    {"id": "dept-legal", "name": "Legal Director", "workspace": "~/clawd/departments/legal", "model": "ollama/minimax-m3:cloud"},
     {"id": "dept-it", "name": "IT Director", "workspace": "~/clawd/departments/it", "model": "openai-codex/gpt-5.4"},
     {"id": "dept-webdev", "name": "Web Development Director", "workspace": "~/clawd/departments/webdev", "model": "openai-codex/gpt-5.4"},
     {"id": "dept-appdev", "name": "App Development Director", "workspace": "~/clawd/departments/appdev", "model": "openai-codex/gpt-5.4"},
