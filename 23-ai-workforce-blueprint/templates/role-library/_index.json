@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-14T00:00:00Z",
   "version": "12.14.5",
-  "total_roles": 361,
+  "total_roles": 303,
   "departments": {
     "app-development": {
       "count": 17,
@@ -468,11 +468,13 @@
       ]
     },
     "account-management": {
-      "count": 4,
+      "count": 6,
       "roles": [
         "client-relationship-manager",
+        "deep-research-specialist",
         "devils-advocate",
         "director-of-account-management",
+        "qc-specialist",
         "retention-specialist"
       ]
     },
@@ -3506,6 +3508,16 @@
       "sop_count": 4,
       "sop_min": 4,
       "path": "templates/role-library/account-management/devils-advocate/how-to.md"
+    },
+    {
+      "slug": "qc-specialist",
+      "dept": "account-management",
+      "title": "QC Specialist -- Account Management",
+      "role_type": "qc",
+      "word_count": 11500,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/account-management/qc-specialist/how-to.md"
     }
   ],
   "total_departments": 24
