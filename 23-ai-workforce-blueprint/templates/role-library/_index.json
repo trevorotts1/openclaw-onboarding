@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-14T00:00:00Z",
-  "version": "12.15.0",
-  "total_roles": 310,
+  "version": "12.14.5",
+  "total_roles": 311,
   "departments": {
     "client-experience-booking": {
       "count": 6,
@@ -36,7 +36,7 @@
         "cloud-infrastructure-specialist",
         "deep-research-specialist-app-development",
         "desktop-app-specialist",
-        "devils-advocate-—-app-development",
+        "devils-advocate-\u2014-app-development",
         "head-of-app-development",
         "healer-app-development",
         "ios-specialist",
@@ -55,7 +55,7 @@
         "audiobook-production-specialist",
         "crm-specialist-audio-version",
         "deep-research-specialist-audio",
-        "devils-advocate-—-audio",
+        "devils-advocate-\u2014-audio",
         "head-of-audio-production",
         "healer-audio",
         "music-and-audio-producer",
@@ -78,7 +78,7 @@
         "collections-specialist",
         "crm-specialist-billing-version",
         "deep-research-specialist---billing",
-        "devils-advocate-—-billing",
+        "devils-advocate-\u2014-billing",
         "financial-reporting-specialist",
         "fpanda--forecasting-analyst",
         "healer-billing",
@@ -104,7 +104,7 @@
         "chief-communications-officer",
         "crisis-communications-specialist",
         "deep-research-specialist-communications",
-        "devils-advocate-—-communications",
+        "devils-advocate-\u2014-communications",
         "healer-communications",
         "internal-communications-manager",
         "investor--stakeholder-comms-specialist",
@@ -122,13 +122,13 @@
       "roles": [
         "automation-workflow-specialist",
         "crm-platform-administrator",
-        "deep-research-role-—-crm",
-        "devils-advocate-—-crm",
+        "deep-research-role-\u2014-crm",
+        "devils-advocate-\u2014-crm",
         "director-of-crm",
         "email-deliverability-optimization-specialist",
         "healer-crm",
         "pipeline-stage-specialist",
-        "qc-role-—-crm",
+        "qc-role-\u2014-crm",
         "sms--whatsapp--dm-sequence-specialist",
         "sop-writer",
         "tag--segmentation-specialist"
@@ -139,14 +139,14 @@
       "roles": [
         "account-health-monitor-proactive",
         "churn-prevention-specialist",
-        "deep-research-specialist-—-customer-support",
-        "devils-advocate-—-customer-support",
+        "deep-research-specialist-\u2014-customer-support",
+        "devils-advocate-\u2014-customer-support",
         "head-of-customer-success",
         "healer-customer-support",
         "knowledge-base-specialist",
         "live-chat-specialist",
         "onboarding-specialist",
-        "qc-specialist-—-customer-support",
+        "qc-specialist-\u2014-customer-support",
         "refunds-and-disputes-specialist",
         "retention-specialist",
         "sop-writer",
@@ -181,9 +181,9 @@
         "chief-design-officer",
         "course-slide-designer",
         "deck-systems-specialist",
-        "deep-research-specialist-—-graphics",
+        "deep-research-specialist-\u2014-graphics",
         "design-producer",
-        "devils-advocate-—-graphics",
+        "devils-advocate-\u2014-graphics",
         "email-designer",
         "fidelity-tester",
         "generation-operator",
@@ -194,7 +194,7 @@
         "photo-shoot-director",
         "presentation-designer-slides-decks",
         "print--asset-design-specialist",
-        "qc-specialist-—-graphics",
+        "qc-specialist-\u2014-graphics",
         "render-dispatcher",
         "social-media-graphics-specialist",
         "sop-writer",
@@ -219,7 +219,7 @@
         "contract-drafter-client-agreements",
         "customer-agreement-specialist",
         "deep-research-specialist---legal",
-        "devils-advocate-—-legal-compliance",
+        "devils-advocate-\u2014-legal-compliance",
         "dispute-resolution-specialist",
         "employment-contract-specialist",
         "healer-legal-compliance",
@@ -242,15 +242,15 @@
         "content-marketing-strategist",
         "content-strategist",
         "customer-journey-architect",
-        "deep-research-specialist-—-marketing",
-        "devils-advocate-—-marketing",
+        "deep-research-specialist-\u2014-marketing",
+        "devils-advocate-\u2014-marketing",
         "email-campaign-strategist",
         "funnel-strategist",
         "healer-marketing",
         "influencer-marketing-specialist",
         "lead-magnet-specialist",
         "marketing-analytics-specialist",
-        "qc-specialist-—-marketing",
+        "qc-specialist-\u2014-marketing",
         "sop-writer",
         "webinar-event-marketing-specialist"
       ]
@@ -267,8 +267,8 @@
       "roles": [
         "backup-and-recovery-specialist",
         "cost-model-optimizer-specialist",
-        "deep-research-role-—-openclaw-maintenance",
-        "devils-advocate-—-openclaw-maintenance",
+        "deep-research-role-\u2014-openclaw-maintenance",
+        "devils-advocate-\u2014-openclaw-maintenance",
         "director-of-openclaw-maintenance",
         "disaster-recovery-specialist",
         "healer-openclaw-maintenance",
@@ -276,7 +276,7 @@
         "memory-hygiene-specialist",
         "monitoring--observability-specialist",
         "performance-tuning-specialist",
-        "qc-role-—-openclaw-maintenance",
+        "qc-role-\u2014-openclaw-maintenance",
         "security-and-secrets-specialist",
         "skill-update-and-patch-specialist",
         "sop-writer",
@@ -294,8 +294,8 @@
         "conversion-tracking-specialist",
         "creative-testing--a-b-specialist",
         "cross-platform-attribution-specialist",
-        "deep-research-role-—-paid-advertisement",
-        "devils-advocate-—-paid-advertisement",
+        "deep-research-role-\u2014-paid-advertisement",
+        "devils-advocate-\u2014-paid-advertisement",
         "director-of-paid-advertisement",
         "facebook-ads-specialist",
         "google-ads-specialist",
@@ -304,7 +304,7 @@
         "linkedin-ads-specialist",
         "native-ads-specialist",
         "pinterest-ads-specialist",
-        "qc-role-—-paid-advertisement",
+        "qc-role-\u2014-paid-advertisement",
         "retargeting-strategist",
         "snapchat-ads-specialist",
         "sop-writer",
@@ -386,7 +386,7 @@
         "customer-research-specialist",
         "data-analysis-specialist",
         "deep-research-specialist-research",
-        "devils-advocate-—-research",
+        "devils-advocate-\u2014-research",
         "healer-research",
         "industry-analysis-specialist-mckinsey-style",
         "market-trends-specialist",
@@ -406,7 +406,7 @@
         "closer",
         "crm-specialist-sales-version",
         "deep-research-specialist-\\342\\200\\224-sales",
-        "devils-advocate-—-sales",
+        "devils-advocate-\u2014-sales",
         "discovery-call-specialist",
         "follow-up-sequence-specialist",
         "healer-sales",
@@ -422,8 +422,8 @@
       "roles": [
         "bluesky-specialist",
         "community-manager",
-        "deep-research-role-—-social-media",
-        "devils-advocate-—-social-media",
+        "deep-research-role-\u2014-social-media",
+        "devils-advocate-\u2014-social-media",
         "director-of-social-media",
         "discord-community-specialist",
         "facebook-specialist",
@@ -431,7 +431,7 @@
         "instagram-specialist",
         "linkedin-specialist",
         "pinterest-specialist",
-        "qc-role-—-social-media",
+        "qc-role-\u2014-social-media",
         "quora-specialist",
         "reddit-specialist",
         "sop-writer",
@@ -451,7 +451,7 @@
         "color-grading-specialist",
         "crm-specialist-video-version",
         "deep-research-specialist-video",
-        "devils-advocate-—-video",
+        "devils-advocate-\u2014-video",
         "head-of-video-production",
         "healer-video",
         "live-streaming-specialist",
@@ -472,7 +472,7 @@
         "brainstorming-buddy-web-development",
         "conversion-rate-optimization-cro-specialist",
         "deep-research-specialist-web-development",
-        "devils-advocate-—-web-development",
+        "devils-advocate-\u2014-web-development",
         "frontend--javascript--react-specialist",
         "funnel-builder-specialist",
         "head-of-web-development",
@@ -489,110 +489,15 @@
         "wordpress-specialist"
       ]
     },
-<<<<<<< Updated upstream
-=======
-    "general-task": {
-      "count": 8,
-      "roles": [
-        "deep-research-specialist-general-task",
-        "devils-advocate-—-general-task",
-        "generalist-operator",
-        "head-of-general-task",
-        "healer-general-task",
-        "qc-specialist-general-task",
-        "sop-writer",
-        "triage-classifier"
-      ]
-    },
-    "project-architecture-office": {
-      "count": 9,
-      "roles": [
-        "chief-project-architect",
-        "code-editor",
-        "code-monitor",
-        "deep-research-specialist-project-architecture-office",
-        "devils-advocate-—-project-architecture-office",
-        "healer-project-architecture-office",
-        "qc-agent",
-        "research-agent",
-        "sop-writer"
-      ]
-    },
-    "presentations": {
-      "count": 23,
-      "roles": [
-        "audio-demonstration-specialist",
-        "brainstorming-buddy-presentations",
-        "brand-steward",
-        "capacity-reliability-engineer",
-        "content-to-presentation-architect",
-        "deep-research-specialist-presentations",
-        "delivery-concierge",
-        "devils-advocate-presentations",
-        "director-of-presentations",
-        "first-time-onboarding-presentations",
-        "healer-presentations",
-        "hook-strategist",
-        "media-librarian-ghl-updater",
-        "offer-price-strategist",
-        "pptx-assembly-specialist",
-        "presenter-coach",
-        "presenters-guide-specialist",
-        "presenters-speech-writer",
-        "qc-specialist-presentations",
-        "slide-copywriter",
-        "slide-image-creator",
-        "slide-submitter",
-        "typography-architect"
-      ]
-    },
-    "bugs": {
-      "count": 3,
-      "roles": [
-        "bug-intake-clerk",
-        "bug-librarian",
-        "triage-dedup-analyst"
-      ]
-    },
-    "healer": {
-      "count": 1,
-      "roles": [
-        "chief-healer"
-      ]
-    },
-    "personal-assistant": {
-      "count": 9,
-      "roles": [
-        "calendar-scheduling-manager",
-        "daily-briefing-specialist",
-        "director-of-personal-assistant",
-        "healer-personal-assistant",
-        "inbox-manager",
-        "personal-coach",
-        "sop-writer",
-        "task-priority-manager",
-        "travel-logistics-specialist"
-      ]
-    },
-    "quality-control": {
-      "count": 3,
-      "roles": [
-        "director-of-quality-control",
-        "role-auditor",
-        "procedure-auditor"
-      ]
-    },
->>>>>>> Stashed changes
     "engineering": {
-      "count": 2,
+      "count": 6,
       "roles": [
-<<<<<<< Updated upstream
-        "director-of-engineering"
-=======
+        "deep-research-specialist",
         "devils-advocate",
+        "director-of-engineering",
         "qa-engineer",
-        "systems-engineer"
->>>>>>> Stashed changes
+        "systems-engineer",
+        "qc-specialist"
       ]
     }
   },
@@ -650,7 +555,7 @@
     {
       "slug": "deep-research-specialist-app-development",
       "dept": "app-development",
-      "title": "Deep Research Specialist — App Development",
+      "title": "Deep Research Specialist \u2014 App Development",
       "role_type": "deep-research",
       "word_count": 15206,
       "sop_count": 8,
@@ -820,7 +725,7 @@
     {
       "slug": "qc-specialist-audio",
       "dept": "audio",
-      "title": "QC Specialist — Audio Production",
+      "title": "QC Specialist \u2014 Audio Production",
       "role_type": "qc",
       "word_count": 12133,
       "sop_count": 8,
@@ -920,7 +825,7 @@
     {
       "slug": "deep-research-specialist---billing",
       "dept": "billing",
-      "title": "Deep Research Specialist — Billing",
+      "title": "Deep Research Specialist \u2014 Billing",
       "role_type": "deep-research",
       "word_count": 12594,
       "sop_count": 8,
@@ -960,7 +865,7 @@
     {
       "slug": "qc-specialist---billing",
       "dept": "billing",
-      "title": "QC Specialist — Billing",
+      "title": "QC Specialist \u2014 Billing",
       "role_type": "qc",
       "word_count": 12657,
       "sop_count": 8,
@@ -1020,7 +925,7 @@
     {
       "slug": "deep-research-specialist-communications",
       "dept": "communications",
-      "title": "Deep Research Specialist — Communications",
+      "title": "Deep Research Specialist \u2014 Communications",
       "role_type": "deep-research",
       "word_count": 5107,
       "sop_count": 8,
@@ -1090,7 +995,7 @@
     {
       "slug": "qc-specialist-communications",
       "dept": "communications",
-      "title": "QC Specialist — Communications",
+      "title": "QC Specialist \u2014 Communications",
       "role_type": "qc",
       "word_count": 12846,
       "sop_count": 8,
@@ -1128,14 +1033,14 @@
       "path": "templates/role-library/crm/crm-platform-administrator.md"
     },
     {
-      "slug": "deep-research-role-—-crm",
+      "slug": "deep-research-role-\u2014-crm",
       "dept": "crm",
-      "title": "Deep Research Role — CRM",
+      "title": "Deep Research Role \u2014 CRM",
       "role_type": "deep-research",
       "word_count": 13493,
       "sop_count": 7,
       "sop_min": 8,
-      "path": "templates/role-library/crm/deep-research-role-—-crm.md"
+      "path": "templates/role-library/crm/deep-research-role-\u2014-crm.md"
     },
     {
       "slug": "director-of-crm",
@@ -1168,14 +1073,14 @@
       "path": "templates/role-library/crm/pipeline-stage-specialist.md"
     },
     {
-      "slug": "qc-role-—-crm",
+      "slug": "qc-role-\u2014-crm",
       "dept": "crm",
-      "title": "QC Role — CRM",
+      "title": "QC Role \u2014 CRM",
       "role_type": "qc",
       "word_count": 11814,
       "sop_count": 6,
       "sop_min": 8,
-      "path": "templates/role-library/crm/qc-role-—-crm.md"
+      "path": "templates/role-library/crm/qc-role-\u2014-crm.md"
     },
     {
       "slug": "sms--whatsapp--dm-sequence-specialist",
@@ -1218,14 +1123,14 @@
       "path": "templates/role-library/customer-support/churn-prevention-specialist.md"
     },
     {
-      "slug": "deep-research-specialist-—-customer-support",
+      "slug": "deep-research-specialist-\u2014-customer-support",
       "dept": "customer-support",
       "title": "{{ROLE_TITLE}}",
       "role_type": "deep-research",
       "word_count": 8138,
       "sop_count": 7,
       "sop_min": 8,
-      "path": "templates/role-library/customer-support/deep-research-specialist-—-customer-support.md"
+      "path": "templates/role-library/customer-support/deep-research-specialist-\u2014-customer-support.md"
     },
     {
       "slug": "head-of-customer-success",
@@ -1268,14 +1173,14 @@
       "path": "templates/role-library/customer-support/onboarding-specialist.md"
     },
     {
-      "slug": "qc-specialist-—-customer-support",
+      "slug": "qc-specialist-\u2014-customer-support",
       "dept": "customer-support",
       "title": "{{ROLE_TITLE}}",
       "role_type": "qc",
       "word_count": 7132,
       "sop_count": 7,
       "sop_min": 8,
-      "path": "templates/role-library/customer-support/qc-specialist-—-customer-support.md"
+      "path": "templates/role-library/customer-support/qc-specialist-\u2014-customer-support.md"
     },
     {
       "slug": "refunds-and-disputes-specialist",
@@ -1388,14 +1293,14 @@
       "path": "templates/role-library/graphics/course-slide-designer.md"
     },
     {
-      "slug": "deep-research-specialist-—-graphics",
+      "slug": "deep-research-specialist-\u2014-graphics",
       "dept": "graphics",
       "title": "{{ROLE_TITLE}}",
       "role_type": "deep-research",
       "word_count": 11362,
       "sop_count": 8,
       "sop_min": 8,
-      "path": "templates/role-library/graphics/deep-research-specialist-—-graphics.md"
+      "path": "templates/role-library/graphics/deep-research-specialist-\u2014-graphics.md"
     },
     {
       "slug": "email-designer",
@@ -1438,14 +1343,14 @@
       "path": "templates/role-library/graphics/print--asset-design-specialist.md"
     },
     {
-      "slug": "qc-specialist-—-graphics",
+      "slug": "qc-specialist-\u2014-graphics",
       "dept": "graphics",
       "title": "{{ROLE_TITLE}}",
       "role_type": "qc",
       "word_count": 9503,
       "sop_count": 7,
       "sop_min": 8,
-      "path": "templates/role-library/graphics/qc-specialist-—-graphics.md"
+      "path": "templates/role-library/graphics/qc-specialist-\u2014-graphics.md"
     },
     {
       "slug": "social-media-graphics-specialist",
@@ -1580,7 +1485,7 @@
     {
       "slug": "qc-specialist-legal",
       "dept": "legal-compliance",
-      "title": "QC Specialist — Legal & Compliance",
+      "title": "QC Specialist \u2014 Legal & Compliance",
       "role_type": "qc",
       "word_count": 13650,
       "sop_count": 8,
@@ -1668,14 +1573,14 @@
       "path": "templates/role-library/marketing/customer-journey-architect.md"
     },
     {
-      "slug": "deep-research-specialist-—-marketing",
+      "slug": "deep-research-specialist-\u2014-marketing",
       "dept": "marketing",
       "title": "{{ROLE_TITLE}}",
       "role_type": "deep-research",
       "word_count": 12033,
       "sop_count": 8,
       "sop_min": 8,
-      "path": "templates/role-library/marketing/deep-research-specialist-—-marketing.md"
+      "path": "templates/role-library/marketing/deep-research-specialist-\u2014-marketing.md"
     },
     {
       "slug": "email-campaign-strategist",
@@ -1728,14 +1633,14 @@
       "path": "templates/role-library/marketing/marketing-analytics-specialist.md"
     },
     {
-      "slug": "qc-specialist-—-marketing",
+      "slug": "qc-specialist-\u2014-marketing",
       "dept": "marketing",
       "title": "{{ROLE_TITLE}}",
       "role_type": "qc",
       "word_count": 10596,
       "sop_count": 8,
       "sop_min": 8,
-      "path": "templates/role-library/marketing/qc-specialist-—-marketing.md"
+      "path": "templates/role-library/marketing/qc-specialist-\u2014-marketing.md"
     },
     {
       "slug": "webinar-event-marketing-specialist",
@@ -1768,14 +1673,14 @@
       "path": "templates/role-library/openclaw-maintenance/backup-and-recovery-specialist.md"
     },
     {
-      "slug": "deep-research-role-—-openclaw-maintenance",
+      "slug": "deep-research-role-\u2014-openclaw-maintenance",
       "dept": "openclaw-maintenance",
       "title": "{{ROLE_TITLE}}",
       "role_type": "deep-research",
       "word_count": 12974,
       "sop_count": 8,
       "sop_min": 8,
-      "path": "templates/role-library/openclaw-maintenance/deep-research-role-—-openclaw-maintenance.md"
+      "path": "templates/role-library/openclaw-maintenance/deep-research-role-\u2014-openclaw-maintenance.md"
     },
     {
       "slug": "director-of-openclaw-maintenance",
@@ -1838,14 +1743,14 @@
       "path": "templates/role-library/openclaw-maintenance/performance-tuning-specialist.md"
     },
     {
-      "slug": "qc-role-—-openclaw-maintenance",
+      "slug": "qc-role-\u2014-openclaw-maintenance",
       "dept": "openclaw-maintenance",
       "title": "{{ROLE_TITLE}}",
       "role_type": "qc",
       "word_count": 10830,
       "sop_count": 6,
       "sop_min": 8,
-      "path": "templates/role-library/openclaw-maintenance/qc-role-—-openclaw-maintenance.md"
+      "path": "templates/role-library/openclaw-maintenance/qc-role-\u2014-openclaw-maintenance.md"
     },
     {
       "slug": "security-and-secrets-specialist",
@@ -1928,14 +1833,14 @@
       "path": "templates/role-library/paid-advertisement/cross-platform-attribution-specialist.md"
     },
     {
-      "slug": "deep-research-role-—-paid-advertisement",
+      "slug": "deep-research-role-\u2014-paid-advertisement",
       "dept": "paid-advertisement",
       "title": "{{ROLE_TITLE}}",
       "role_type": "deep-research",
       "word_count": 8959,
       "sop_count": 7,
       "sop_min": 8,
-      "path": "templates/role-library/paid-advertisement/deep-research-role-—-paid-advertisement.md"
+      "path": "templates/role-library/paid-advertisement/deep-research-role-\u2014-paid-advertisement.md"
     },
     {
       "slug": "director-of-paid-advertisement",
@@ -2008,14 +1913,14 @@
       "path": "templates/role-library/paid-advertisement/pinterest-ads-specialist.md"
     },
     {
-      "slug": "qc-role-—-paid-advertisement",
+      "slug": "qc-role-\u2014-paid-advertisement",
       "dept": "paid-advertisement",
       "title": "{{ROLE_TITLE}}",
       "role_type": "qc",
       "word_count": 8590,
       "sop_count": 7,
       "sop_min": 8,
-      "path": "templates/role-library/paid-advertisement/qc-role-—-paid-advertisement.md"
+      "path": "templates/role-library/paid-advertisement/qc-role-\u2014-paid-advertisement.md"
     },
     {
       "slug": "retargeting-strategist",
@@ -2170,7 +2075,7 @@
     {
       "slug": "account-executive-full-cycle",
       "dept": "sales",
-      "title": "Account Executive (Full-Cycle) — How-To Guide",
+      "title": "Account Executive (Full-Cycle) \u2014 How-To Guide",
       "role_type": "specialist",
       "word_count": 9271,
       "sop_count": 5,
@@ -2230,7 +2135,7 @@
     {
       "slug": "deep-research-specialist-\\342\\200\\224-sales",
       "dept": "sales",
-      "title": "Deep Research Specialist — Sales",
+      "title": "Deep Research Specialist \u2014 Sales",
       "role_type": "deep-research",
       "word_count": 8639,
       "sop_count": 8,
@@ -2270,7 +2175,7 @@
     {
       "slug": "qc-specialist-\\342\\200\\224-sales",
       "dept": "sales",
-      "title": "QC Specialist — Sales",
+      "title": "QC Specialist \u2014 Sales",
       "role_type": "qc",
       "word_count": 8703,
       "sop_count": 8,
@@ -2318,14 +2223,14 @@
       "path": "templates/role-library/social-media/community-manager.md"
     },
     {
-      "slug": "deep-research-role-—-social-media",
+      "slug": "deep-research-role-\u2014-social-media",
       "dept": "social-media",
-      "title": "Deep Research Role — Social Media",
+      "title": "Deep Research Role \u2014 Social Media",
       "role_type": "deep-research",
       "word_count": 7418,
       "sop_count": 8,
       "sop_min": 8,
-      "path": "templates/role-library/social-media/deep-research-role-—-social-media.md"
+      "path": "templates/role-library/social-media/deep-research-role-\u2014-social-media.md"
     },
     {
       "slug": "director-of-social-media",
@@ -2388,14 +2293,14 @@
       "path": "templates/role-library/social-media/pinterest-specialist.md"
     },
     {
-      "slug": "qc-role-—-social-media",
+      "slug": "qc-role-\u2014-social-media",
       "dept": "social-media",
-      "title": "QC Role — Social Media",
+      "title": "QC Role \u2014 Social Media",
       "role_type": "qc",
       "word_count": 6673,
       "sop_count": 8,
       "sop_min": 8,
-      "path": "templates/role-library/social-media/qc-role-—-social-media.md"
+      "path": "templates/role-library/social-media/qc-role-\u2014-social-media.md"
     },
     {
       "slug": "quora-specialist",
@@ -2450,7 +2355,7 @@
     {
       "slug": "youtube-channel-specialist-organic-only",
       "dept": "social-media",
-      "title": "YouTube Channel Specialist — Organic Only",
+      "title": "YouTube Channel Specialist \u2014 Organic Only",
       "role_type": "specialist",
       "word_count": 6770,
       "sop_count": 5,
@@ -2540,7 +2445,7 @@
     {
       "slug": "long-form-video-specialist-youtube-courses-sales-videos",
       "dept": "video",
-      "title": "Long-Form Video Specialist (YouTube, Courses, Sales Videos) — How-To Guide",
+      "title": "Long-Form Video Specialist (YouTube, Courses, Sales Videos) \u2014 How-To Guide",
       "role_type": "specialist",
       "word_count": 8696,
       "sop_count": 5,
@@ -2680,7 +2585,7 @@
     {
       "slug": "member-area--membership-site-specialist",
       "dept": "web-development",
-      "title": "Member Area / Membership Site Specialist — How-To Guide",
+      "title": "Member Area / Membership Site Specialist \u2014 How-To Guide",
       "role_type": "specialist",
       "word_count": 8191,
       "sop_count": 5,
@@ -3609,7 +3514,6 @@
     },
     {
       "slug": "devils-advocate",
-<<<<<<< Updated upstream
       "dept": "account-management",
       "title": "Devil's Advocate -- Account Management",
       "role_type": "devils-advocate",
@@ -3624,22 +3528,6 @@
       "title": "QC Specialist -- Account Management",
       "role_type": "qc",
       "word_count": 11500,
-=======
-      "dept": "engineering",
-      "title": "Devil's Advocate -- Engineering",
-      "role_type": "devils-advocate",
-      "word_count": 7200,
-      "sop_count": 4,
-      "sop_min": 4,
-      "path": "templates/role-library/engineering/devils-advocate/how-to.md"
-    },
-    {
-      "slug": "qa-engineer",
-      "dept": "engineering",
-      "title": "QA Engineer",
-      "role_type": "specialist",
-      "word_count": 9800,
->>>>>>> Stashed changes
       "sop_count": 5,
       "sop_min": 5,
       "path": "templates/role-library/account-management/qc-specialist/how-to.md"
@@ -3693,6 +3581,36 @@
       "sop_count": 7,
       "sop_min": 7,
       "path": "templates/role-library/client-experience-booking/deep-research-specialist/how-to.md"
+    },
+    {
+      "slug": "qa-engineer",
+      "dept": "engineering",
+      "title": "QA Engineer",
+      "role_type": "specialist",
+      "word_count": 9800,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/engineering/qa-engineer/how-to.md"
+    },
+    {
+      "slug": "systems-engineer",
+      "dept": "engineering",
+      "title": "Systems Engineer",
+      "role_type": "specialist",
+      "word_count": 10800,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/engineering/systems-engineer/how-to.md"
+    },
+    {
+      "slug": "qc-specialist",
+      "dept": "engineering",
+      "title": "QC Specialist -- Engineering",
+      "role_type": "qc",
+      "word_count": 12800,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/engineering/qc-specialist/how-to.md"
     }
   ],
   "total_departments": 25
