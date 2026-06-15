@@ -10,7 +10,7 @@ Usage:
             {
                 "slide_id": "slide-01",
                 "prompt": "<full 1500-15000 char prompt>",
-                "target_filename": "slide-01.png"   # RELATIVE filename only
+                "target_path": "/abs/path/to/slide-01.png"
             },
             ...
         ],
@@ -24,9 +24,6 @@ Usage:
 
     # results is a list of dicts: { slide_id, target_path, status, task_id, model_used, fallback }
     # render_manifest.json is written to workspace_dir
-    # Each slide spec must use "target_filename" (a bare relative filename, no path separators
-    # or ".." segments). The module resolves it to workspace_dir/slides/<target_filename> and
-    # rejects any path that escapes workspace_dir.
 
 Version: 1.0
 Last updated: 2026-06-14
@@ -38,11 +35,9 @@ path. There is no black scrim. See AF-BAKED auto-fail in QC gate.
 
 import json
 import os
-import pathlib
 import time
 import threading
 import urllib.request
-import urllib.parse
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
@@ -78,20 +73,6 @@ POLL_SLEEP_SECONDS = 5
 # Rate limit: 20 requests per 10 seconds (source: https://docs.kie.ai/, verified 2026-06-14)
 RATE_LIMIT_MAX = 20
 RATE_LIMIT_WINDOW = 10.0  # seconds
-
-# SSRF guard: only these hosts are permitted as image download sources.
-# Covers the Kie.ai CDN and its documented result-delivery hosts.
-_ALLOWED_IMAGE_HOSTS = frozenset([
-    "api.kie.ai",
-    "tempfile.aiquickdraw.com",
-    "cdn.kie.ai",
-    "img.kie.ai",
-    "storage.kie.ai",
-    "assets.kie.ai",
-])
-
-# Subdirectory inside workspace_dir where rendered slide PNGs are written.
-_SLIDES_SUBDIR = "slides"
 
 
 # ---------------------------------------------------------------------------
@@ -204,17 +185,10 @@ def _submit_task(slide_id: str, prompt: str, model: str, api_key: str) -> Option
         resp = _kie_post(KIE_CREATE_TASK_URL, body, api_key)
         if resp.get("code") == 200 and resp.get("data", {}).get("taskId"):
             return resp["data"]["taskId"]
-        print(
-            f"[RENDER MODULE v1.0] createTask non-200 for slide {slide_id}: "
-            f"code={resp.get('code')} msg={resp.get('msg')!r} "
-            f"requestId={resp.get('requestId') or resp.get('request_id', '')!r}"
-        )
+        print(f"[RENDER MODULE v1.0] createTask non-200 for slide {slide_id}: {resp}")
         return None
     except Exception as exc:
-        print(
-            f"[RENDER MODULE v1.0] createTask error for slide {slide_id}: "
-            f"{type(exc).__name__} — network or API error during task submission"
-        )
+        print(f"[RENDER MODULE v1.0] createTask error for slide {slide_id}: {exc}")
         return None
 
 
@@ -251,102 +225,25 @@ def _poll_task(task_id: str, api_key: str) -> Optional[List[str]]:
         except Exception as exc:
             print(
                 f"[RENDER MODULE v1.0] poll error for task {task_id} "
-                f"at poll {poll_num + 1}: {type(exc).__name__} — network or API error during poll"
+                f"at poll {poll_num + 1}: {exc}"
             )
 
     print(f"[RENDER MODULE v1.0] task {task_id} timed out after {MAX_POLLS_PER_TASK} polls")
     return None
 
 
-def _validate_image_url(url: str) -> None:
-    """
-    SSRF guard: reject any URL whose scheme is not https or whose host is not
-    on the Kie.ai / CDN allowlist.  file://, ftp://, and http:// are all rejected.
-    Raises ValueError if the URL is not permitted.
-    """
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https":
-        raise ValueError(
-            f"[RENDER MODULE v1.0] SSRF guard: rejected URL with scheme "
-            f"'{parsed.scheme}' — only https is permitted."
-        )
-    host = parsed.hostname or ""
-    if host not in _ALLOWED_IMAGE_HOSTS:
-        raise ValueError(
-            f"[RENDER MODULE v1.0] SSRF guard: rejected URL host '{host}' — "
-            f"not in the CDN allowlist."
-        )
-
-
-def _resolve_target_path(workspace_dir: str, target_filename: str) -> str:
-    """
-    Path traversal guard: accept only a bare relative filename (no directory
-    separators or '..' segments), resolve it under workspace_dir/slides/, and
-    verify the result stays within workspace_dir.  Raises ValueError if the
-    filename is absolute, contains path components, or resolves outside
-    workspace_dir.
-    """
-    # Reject absolute paths outright.
-    if os.path.isabs(target_filename):
-        raise ValueError(
-            f"[RENDER MODULE v1.0] Path guard: target_filename must be a relative "
-            f"filename, not an absolute path: {target_filename!r}"
-        )
-    # Reject anything with directory separators or parent-dir components.
-    basename = os.path.basename(target_filename)
-    if basename != target_filename or ".." in target_filename.split(os.sep):
-        raise ValueError(
-            f"[RENDER MODULE v1.0] Path guard: target_filename must be a bare "
-            f"filename with no path separators or '..' components: {target_filename!r}"
-        )
-    slides_dir = os.path.join(workspace_dir, _SLIDES_SUBDIR)
-    resolved = os.path.realpath(os.path.join(slides_dir, basename))
-    workspace_real = os.path.realpath(workspace_dir)
-    # Use os.path.commonpath to verify the resolved path is inside workspace_dir.
-    try:
-        common = os.path.commonpath([resolved, workspace_real])
-    except ValueError:
-        common = ""
-    if common != workspace_real:
-        raise ValueError(
-            f"[RENDER MODULE v1.0] Path guard: resolved target '{resolved}' "
-            f"escapes workspace_dir '{workspace_real}'. Rejected."
-        )
-    return resolved
-
-
 def _download_image(url: str, target_path: str) -> bool:
-    """
-    Download a Kie.ai CDN URL to target_path.
-    URL is validated against the SSRF allowlist before opening.
-    Returns True on success.
-    """
+    """Download a URL to target_path. Returns True on success."""
     try:
-        _validate_image_url(url)
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        # Build an opener that allows only HTTP/HTTPS — file:// and ftp:// cannot dispatch.
-        opener = urllib.request.OpenerDirector()
-        opener.addheaders = [("User-Agent", "render-deck/1.0")]
-        for handler in (
-            urllib.request.HTTPHandler,
-            urllib.request.HTTPSHandler,
-            urllib.request.UnknownHandler,
-        ):
-            opener.add_handler(handler())
         req = urllib.request.Request(url, headers={"User-Agent": "render-deck/1.0"})
-        with opener.open(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             data = resp.read()
         with open(target_path, "wb") as f:
             f.write(data)
         return True
-    except ValueError as exc:
-        print(f"[RENDER MODULE v1.0] download rejected: {exc}")
-        return False
     except Exception as exc:
-        print(
-            f"[RENDER MODULE v1.0] download failed: "
-            f"{type(exc).__name__} — network error fetching CDN asset"
-        )
+        print(f"[RENDER MODULE v1.0] download failed for {url}: {exc}")
         return False
 
 
@@ -361,10 +258,9 @@ def render_deck(slides: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Di
     Parameters
     ----------
     slides : list of dicts, each with:
-        - slide_id       : str  (e.g. "slide-01")
-        - prompt         : str  (1500-15000 chars; must contain [ARCHETYPE, NEGATIVE BLOCK, "Do not ")
-        - target_filename: str  (RELATIVE bare filename, e.g. "slide-01.png"; no path separators
-                                 or ".." components; resolved to workspace_dir/slides/<filename>)
+        - slide_id   : str  (e.g. "slide-01")
+        - prompt     : str  (1500-15000 chars; must contain [ARCHETYPE, NEGATIVE BLOCK, "Do not ")
+        - target_path: str  (absolute path where the rendered PNG will be saved)
 
     config : dict with:
         - model         : str (REQUIRED -- pinned in client's intake.json;
@@ -417,8 +313,7 @@ def render_deck(slides: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Di
     for slide in slides:
         slide_id = slide["slide_id"]
         prompt = slide["prompt"]
-        # Path traversal guard: require a relative filename; resolve to workspace_dir/slides/.
-        target_path = _resolve_target_path(workspace_dir, slide["target_filename"])
+        target_path = slide["target_path"]
 
         manifest_entry = {
             "slide_id": slide_id,

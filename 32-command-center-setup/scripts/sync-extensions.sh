@@ -315,11 +315,43 @@ fi
 if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
   info "Step 3a: Refreshing build-state from _index.json..."
 
+  # C3: Run gates FIRST (they write per-dept roleLibraryFilled/sopLibraryFilled/wiringStatus),
+  # THEN run refresh (which reads those gate-written fields for gated done-flip).
+  _BLUEPRINT_SCRIPTS="$(dirname "$REFRESH_BUILD_STATE_PY")"
+  _VERIFY_LIB_SH="$_BLUEPRINT_SCRIPTS/verify-library-gate.sh"
+  _VERIFY_WIRING_SH="$_BLUEPRINT_SCRIPTS/verify-wiring.sh"
+  _GATE_LIB_RC=0
+  _GATE_WIRING_RC=0
+
+  if [[ -f "$_VERIFY_LIB_SH" ]]; then
+    info "Step 3a-gate: Running verify-library-gate.sh..."
+    bash "$_VERIFY_LIB_SH" 2>&1 || _GATE_LIB_RC=$?
+    if [[ $_GATE_LIB_RC -eq 0 ]]; then
+      ok "Step 3a-gate: verify-library-gate.sh PASSED"
+    else
+      warn "Step 3a-gate: verify-library-gate.sh rc=$_GATE_LIB_RC (some depts may not have full libraries)"
+    fi
+  else
+    warn "Step 3a-gate: verify-library-gate.sh not found — library gate skipped"
+  fi
+
+  if [[ -f "$_VERIFY_WIRING_SH" ]]; then
+    info "Step 3a-gate: Running verify-wiring.sh --all..."
+    bash "$_VERIFY_WIRING_SH" --all 2>&1 || _GATE_WIRING_RC=$?
+    if [[ $_GATE_WIRING_RC -eq 0 ]]; then
+      ok "Step 3a-gate: verify-wiring.sh PASSED"
+    else
+      warn "Step 3a-gate: verify-wiring.sh rc=$_GATE_WIRING_RC (some depts may not be wired)"
+    fi
+  else
+    warn "Step 3a-gate: verify-wiring.sh not found — wiring gate skipped"
+  fi
+
   if [[ -f "$REFRESH_BUILD_STATE_PY" ]]; then
-    REFRESH_ARGS="--verbose"
-    [[ $VERBOSE -eq 1 ]] || REFRESH_ARGS=""
+    REFRESH_ARGS="--strict"
+    [[ $VERBOSE -eq 1 ]] && REFRESH_ARGS="--strict --verbose"
     if python3 "$REFRESH_BUILD_STATE_PY" $REFRESH_ARGS 2>&1; then
-      ok "Step 3a: build-state refreshed"
+      ok "Step 3a: build-state refreshed (strict mode — status:done gated on library+wiring)"
     else
       fail "Step 3a: refresh-build-state-from-index.py failed"
       die "build-state refresh failed — converge cannot continue without current build-state."
@@ -528,19 +560,33 @@ fi
 
 # ─── Step 6: Append converge record to add-ledger (§1.8) ─────────────────────
 if [[ $CONVERGE_MODE -eq 1 && $DRY_RUN -eq 0 ]]; then
-  python3 - "$ADD_LEDGER_JSONL" "$CC_SYNC_PATH" <<PYEOF
+  # C3: Ledger status is conditional on both gates passing
+  _CONVERGE_STATUS="done"
+  _CONVERGE_GATE_REASON=""
+  if [[ $_GATE_LIB_RC -ne 0 ]]; then
+    _CONVERGE_STATUS="incomplete"
+    _CONVERGE_GATE_REASON="library-gate-failed(rc=$_GATE_LIB_RC)"
+  fi
+  if [[ $_GATE_WIRING_RC -ne 0 ]]; then
+    _CONVERGE_STATUS="incomplete"
+    _CONVERGE_GATE_REASON="${_CONVERGE_GATE_REASON:+$_CONVERGE_GATE_REASON,}wiring-gate-failed(rc=$_GATE_WIRING_RC)"
+  fi
+
+  python3 - "$ADD_LEDGER_JSONL" "$CC_SYNC_PATH" "$_CONVERGE_STATUS" "${_CONVERGE_GATE_REASON:-}" <<PYEOF
 import json, sys, fcntl
 from datetime import datetime, timezone
 ledger_path = sys.argv[1]
 cc_path = sys.argv[2]
+converge_status = sys.argv[3] if len(sys.argv) > 3 else "done"
+gate_reason = sys.argv[4] if len(sys.argv) > 4 else ""
 new_depts = """${NEW_DEPTS:-}""".strip()
 new_roles = """${NEW_ROLES:-}""".strip()
 record = json.dumps({
     "ts": datetime.now(timezone.utc).isoformat(),
     "type": "converge",
     "slug": "full-converge",
-    "status": "done",
-    "detail": f"new_depts={len([d for d in new_depts.splitlines() if d])}, new_roles={len([r for r in new_roles.splitlines() if r])}, cc_sync_path={cc_path}",
+    "status": converge_status,
+    "detail": f"new_depts={len([d for d in new_depts.splitlines() if d])}, new_roles={len([r for r in new_roles.splitlines() if r])}, cc_sync_path={cc_path}, gate_reason={gate_reason}",
     "by": "converge",
 }, separators=(",", ":"))
 try:
@@ -556,7 +602,12 @@ fi
 # ─── Step 7: Telegram summary (extended for converge mode) ───────────────────
 if [[ $DRY_RUN -eq 0 ]]; then
   if [[ ${#REGISTERED[@]} -gt 0 || $CONVERGE_MODE -eq 1 ]]; then
-    MSG="Extension sync complete on $(hostname)."
+    # C3: Telegram message is conditional on gates passing
+    if [[ "${_CONVERGE_STATUS:-done}" == "incomplete" ]]; then
+      MSG="Extension sync INCOMPLETE on $(hostname) — library/wiring gate failed: ${_CONVERGE_GATE_REASON:-unknown}. Depts may not be fully ready. Check logs."
+    else
+      MSG="Extension sync complete on $(hostname)."
+    fi
 
     if [[ ${#REGISTERED[@]} -gt 0 ]]; then
       REG_LIST="$(printf '%s\n' "${REGISTERED[@]}" | sed 's/^/  • /')"
