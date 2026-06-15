@@ -1,3 +1,23 @@
+## [v12.14.2] - 2026-06-15 - fix(skill-35): complete-answer fix for owner scope questions — enabled-channels model, Owner Q&A Playbook, QC auto-fail gate
+
+### Changes
+
+**Skill 35 (social-media-planner) — owner scope question complete-answer fix.**
+
+Root cause: SKILL.md description, Purpose, Key Principles, and INSTRUCTIONS.md "What this skill does" all carried a stale fixed list ("8 platforms: WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook"). Agent read those files first (mandatory TYP order) and parroted the wrong list, omitting Instagram, TikTok, Pinterest, Google Business Profile, carousels, and Reels.
+
+**Deliverables:**
+- `35-social-media-planner/SKILL.md` — stale 8-platform string replaced with correct two-tier model (primary GHL Social Planner channels: Facebook/Instagram/LinkedIn/X/TikTok/Pinterest/GBP + enabled-channels-first statement). New "Owner Q&A Playbook" section: mandatory live-check-before-answering rule, required answer elements, complete example answer.
+- `35-social-media-planner/INSTRUCTIONS.md` — "What this skill does" section updated to enabled-channels model. New "Owner scope question — LIVE CHECK MANDATORY" section added. Banned-failure rule extended to cover scope/capability answers (was connection-status only).
+- `35-social-media-planner/QC.md` — new "SKILL DOCUMENTATION INTEGRITY" auto-fail gate (11 checks): stale string absent, Instagram + TikTok named, Owner Q&A Playbook present, cross-file consistency. Programmatic grep checks included.
+- `35-social-media-planner/CHANGELOG.md` — v2.8.0 entry documenting all 5 fixes.
+- `35-social-media-planner/skill-version.txt` — v2.7.1 → v2.8.0.
+
+**Version bumped:** all 9 markers → v12.14.2.
+Zero client names in diff (grep verified).
+
+---
+
 ## [v12.14.1] - 2026-06-15 - fix: client-provider capability guard (multimodal/text-only mismatch class)
 
 ### Changes

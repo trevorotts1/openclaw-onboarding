@@ -235,6 +235,37 @@ If `qc-skill35.sh` exists in this folder, run it. It must exit 0 in addition to 
 - Loop-until-passing rule added (max 5 loops, then escalate).
 - Bundled `qc-skill35.sh` script referenced (added separately).
 
+---
+
+## SKILL DOCUMENTATION INTEGRITY (auto-fail gate — run before any install or release)
+
+These checks guard against stale platform lists that cause agents to give incomplete answers to owner scope questions. A single failure in this section is an automatic hard fail — do not proceed with install or release until resolved.
+
+- [ ] **SKILL.md description** does NOT contain the stale string "8 platforms (WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook)". It MUST describe the enabled-channels model.
+- [ ] **SKILL.md Purpose** names Facebook, Instagram, LinkedIn, X/Twitter, TikTok, Pinterest, and Google Business Profile as primary GHL Social Planner channels.
+- [ ] **SKILL.md Purpose** names WordPress, Medium, Substack, and YouTube as OPTIONAL add-ons (not primary).
+- [ ] **SKILL.md** contains the "Owner Q&A Playbook" section with the mandatory live-check-before-answering rule.
+- [ ] **INSTRUCTIONS.md "What this skill does"** does NOT contain the stale string "8 platforms: WordPress, Medium, Substack, LinkedIn articles, GHL blog, YouTube, X/Twitter, Facebook". It MUST reference the enabled-channels model.
+- [ ] **INSTRUCTIONS.md** contains the "Owner scope question — LIVE CHECK MANDATORY" section.
+- [ ] **INSTRUCTIONS.md** banned-failure rule covers BOTH connection-status answers AND scope/capability answers.
+- [ ] **SKILL.md**, **INSTRUCTIONS.md**, **README.md**, and **CORE_UPDATES.md** all describe the same primary channel set (Facebook, Instagram, LinkedIn, X/Twitter, TikTok, Pinterest) — no file carries a contradictory older list.
+- [ ] Instagram is named as a primary platform in SKILL.md, INSTRUCTIONS.md, README.md, and CORE_UPDATES.md.
+- [ ] TikTok is named as a primary platform in SKILL.md, INSTRUCTIONS.md, README.md, and CORE_UPDATES.md.
+- [ ] Carousels (Thursday carousel strategy) are mentioned in SKILL.md as a content type.
+
+**How to check programmatically:**
+```bash
+# Must return zero matches (stale string absent):
+grep -r "8 platforms.*WordPress.*Medium.*Substack.*LinkedIn.*GHL blog.*YouTube.*X/Twitter.*Facebook" \
+  ~/.openclaw/skills/35-social-media-planner/ && echo "FAIL: stale platform list found" || echo "PASS: stale string absent"
+
+# Must return matches (correct strings present in SKILL.md):
+grep -l "Instagram" ~/.openclaw/skills/35-social-media-planner/SKILL.md \
+  && grep -l "TikTok" ~/.openclaw/skills/35-social-media-planner/SKILL.md \
+  && grep -l "Owner Q&A Playbook" ~/.openclaw/skills/35-social-media-planner/SKILL.md \
+  && echo "PASS: required strings present" || echo "FAIL: required strings missing"
+```
+
 ## QC Agent Assignments
 
 | Agent | Responsibility |

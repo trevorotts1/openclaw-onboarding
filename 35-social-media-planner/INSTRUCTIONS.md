@@ -1,6 +1,6 @@
 # Social Media Planner / Content Publishing Engine — Execution Instructions
 
-**Version:** v10.12.0 (closes Audit Phase 11 — INSTRUCTIONS.md was missing)
+**Version:** v10.13.0 (closes Audit Phase 12 — complete-answer playbook for owner scope questions)
 **Skill:** 35-social-media-planner (a.k.a. Content Publishing Engine)
 **Status:** Required runtime guide. Referenced from `SKILL.md` as part of the TYP read-order.
 
@@ -10,9 +10,31 @@ This is the **execution guide** for the 15+6 agent content publishing pipeline. 
 
 ## What this skill does
 
-Orchestrate 15 production agents + 6 QC agents to research, create, produce, schedule, and publish content across **8 platforms**: WordPress, Medium, Substack, LinkedIn articles, GHL blog, YouTube, X/Twitter, Facebook. Also handles HTML email newsletters and podcast distribution.
+Orchestrate 15 production agents + 6 QC agents to research, create, produce, schedule, and publish content across every social channel the client has connected in GHL Social Planner. Also produces a weekly blog post, HTML email newsletter, and podcast episode (if Fish Audio / Skill 30 is configured).
+
+**Primary GHL Social Planner channels** (the agent publishes to all that are connected):
+Facebook (feed posts + carousels + Stories/Reels), Instagram (feed posts + Reels + carousels + Stories), LinkedIn (feed posts + PDF carousels), X/Twitter, TikTok, Pinterest, Google Business Profile.
+
+**Content types produced every week**: daily social posts for all enabled platforms, Thursday carousels, short-form videos/Reels, unique comments with the client's action link (1-2 min after every post), blog post (Day 7), HTML email newsletter (Tuesday), podcast episode (if Fish Audio configured — gracefully skipped otherwise).
+
+**Optional add-on channels** (direct integrations, never required): WordPress, Medium, Substack, YouTube.
+
+The exact enabled platform set is determined at runtime by a live GHL connected-accounts query — never assumed from a fixed list.
 
 The skill is **variable-driven** — every credential, URL, brand voice, and image-model setting is pulled from existing files. **Never hardcode a brand name, a domain, or a credential.**
+
+---
+
+## Owner scope question — LIVE CHECK MANDATORY
+
+When an owner asks "what does my planner do?", "what platforms does it update?", "how do I use it?", or any similar scope/capability question:
+
+1. **Run `check-social-connections`** (see section below) before answering — this is NOT optional for scope questions.
+2. **Answer with the full picture**: list every enabled channel (from the live query), all content types produced, how to trigger a run, and the Saturday theme prompt schedule.
+3. **Never answer from memory or a fixed generic list** — omitting a connected platform (such as Instagram or TikTok) because it was not in a memorized list is a BANNED failure.
+4. **Include all required answer elements** (see SKILL.md Owner Q&A Playbook): enabled platform list, content-types statement, scope statement, how-to-trigger, and optional-add-ons note.
+
+A scope answer that omits any platform shown in the live query result, or that lists only a partial set of content types, FAILS QC.
 
 ---
 
@@ -173,8 +195,10 @@ The Marketing department in the dashboard has a "Publish" button on each campaig
 
 ---
 
-## Reporting connection status — LIVE GHL CHECK ONLY (no guessing)
-Before you tell the owner which platforms are or are not connected, you MUST run a LIVE query of their GHL Social Planner connected accounts (via the GHL API for the client's location). You may NOT say "connected" or "not connected" for any channel without that live result. Reporting connection status from an assumption, from the absence of a direct-platform token in the vault, or from memory is a BANNED failure (it is exactly the mistake that told a client "nothing is connected" when their GHL Social Planner had channels live).
+## Reporting connection status AND scope — LIVE GHL CHECK ONLY (no guessing)
+Before you tell the owner which platforms are or are not connected, AND before you answer any question about what the planner does / what it updates / how to use it, you MUST run a LIVE query of their GHL Social Planner connected accounts (via the GHL API for the client's location). You may NOT say "connected" or "not connected" for any channel without that live result. You may NOT answer a scope/capability question with a fixed memorized list — that is exactly how a connected platform (Instagram, TikTok, Pinterest, Google Business Profile) gets omitted from the answer.
+
+Reporting connection status OR skill scope from an assumption, from a memorized platform list, from the absence of a direct-platform token in the vault, or from memory is a BANNED failure (it is exactly the mistake that told a client only "8 platforms: WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook" when their GHL Social Planner had Instagram, TikTok, Pinterest, Facebook carousels, and more connected and active).
 - GHL Social Planner is the PRIMARY publishing path. The client connects their social accounts inside GHL, and you publish through GHL. ONE connected channel is enough to start. The client does NOT need all platforms.
 - The direct-publish destinations (WordPress, Medium, Substack, LinkedIn, YouTube, X/Twitter, Facebook, email newsletter) are OPTIONAL add-ons for posting outside GHL. They are NEVER requirements, and their absence NEVER blocks Skill 35.
 - Fish Audio / podcast (Skill 30) is OPTIONAL too. Skill 35 runs fully without it, it just skips podcast production.

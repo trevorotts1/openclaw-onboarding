@@ -1,5 +1,46 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.8.1 - 2026-06-15 — complete-answer fix: enabled-channels model + Owner Q&A Playbook
+
+### Problem
+An owner asked "how do I use my social media planner skill?" and received an answer listing only "8 platforms: WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook." This omitted Instagram, TikTok, Pinterest, Google Business Profile, Facebook carousels, and Reels — all of which are primary capabilities. Root cause: SKILL.md description, SKILL.md Purpose, SKILL.md Key Principles, and INSTRUCTIONS.md "What this skill does" all carried a stale fixed list. The agent read those files first (mandatory TYP read-order) and parroted the wrong list without triggering the live GHL check.
+
+### Fix 1 — Replace stale platform list in SKILL.md (description + Purpose + Key Principles)
+- Removed the stale "8 platforms (WordPress, Medium, Substack, LinkedIn, GHL blog, YouTube, X/Twitter, Facebook)" string from the frontmatter description, the Purpose section, and the Key Principles section.
+- Replaced with the correct two-tier model: **primary GHL Social Planner channels** (Facebook incl. carousels/Stories/Reels, Instagram incl. Reels/carousels/Stories, LinkedIn incl. PDF carousels, X/Twitter, TikTok, Pinterest, Google Business Profile) + **optional add-on channels** (WordPress, Medium, Substack, YouTube).
+- Added explicit statement that the enabled set is determined at runtime by a live GHL connected-accounts query, not a fixed list.
+- Added full content-types list to Purpose: daily posts, Thursday carousels, Reels, comments with action link, blog post, email newsletter, podcast.
+
+### Fix 2 — Add Owner Q&A Playbook to SKILL.md
+- New "Owner Q&A Playbook" section in SKILL.md specifies the mandatory response protocol when an owner asks "what does the planner do?" or "how do I use it?".
+- Mandatory steps: run live GHL check first, build enabled-platforms list from live result, answer with all required elements.
+- Required elements enumerated: full platform list (from live query), content-types statement, scope statement ("I update every channel connected in GHL — currently: [live list]"), how-to-trigger, optional-add-ons note.
+- Complete example answer provided (with [LIVE CHANNELS] placeholder that MUST be filled from the actual query).
+
+### Fix 3 — Replace stale list in INSTRUCTIONS.md "What this skill does" section
+- Removed "8 platforms: WordPress, Medium, Substack, LinkedIn articles, GHL blog, YouTube, X/Twitter, Facebook" from INSTRUCTIONS.md line 13.
+- Replaced with the enabled-channels model matching SKILL.md (same primary + optional two-tier description).
+- Added new "Owner scope question — LIVE CHECK MANDATORY" section immediately after — four rules: run check-social-connections first, answer with full picture, never answer from a fixed list, include all required answer elements. Scope answer that omits a connected platform fails QC.
+
+### Fix 4 — Extend banned-failure rule to cover scope/capability questions
+- Extended the existing INSTRUCTIONS.md banned-failure rule (previously scoped only to connection-status answers) to also cover scope/capability answers ("what does it do?", "what does it update?").
+- Rule now explicitly names the failure pattern: answering with "8 platforms: WordPress, Medium, Substack..." when Instagram, TikTok, Pinterest, Google Business Profile, and carousels are connected.
+
+### Fix 5 — QC.md auto-fail gate for documentation integrity
+- New "SKILL DOCUMENTATION INTEGRITY" section in QC.md (hard auto-fail gate).
+- 11 checkboxes guarding: stale string absent, correct primary channels named (incl. Instagram + TikTok), Owner Q&A Playbook present, INSTRUCTIONS.md scope-question rule present, cross-file consistency across SKILL.md/INSTRUCTIONS.md/README.md/CORE_UPDATES.md.
+- Programmatic check commands included (grep for stale string, grep for required strings).
+
+### Version bumps
+- `SKILL.md` frontmatter version: v1.4.0 → v1.5.0
+- `INSTRUCTIONS.md` version: v10.12.0 → v10.13.0
+- `skill-version.txt`: v2.8.0 → v2.8.1
+
+### Risk
+Low-to-medium. All changes are additive documentation and a new QC gate. No GHL API calls, publish logic, scheduling, or webhook behavior altered. The live-check-first rule was already present for connection-status answers; this extends it to scope-question answers.
+
+---
+
 ## v2.8.0 - 2026-06-15 — furnace root cause fix: ungated HEARTBEAT.md block removed + guard pattern + QC enforcement
 
 ### Changed (heartbeat-furnace fix, part of onboarding v12.14.0)
