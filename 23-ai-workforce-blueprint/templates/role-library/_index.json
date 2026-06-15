@@ -4,9 +4,10 @@
   "total_roles": 311,
   "departments": {
     "founding-member-concierge": {
-      "count": 1,
+      "count": 2,
       "roles": [
-        "director-of-founding-member-concierge"
+        "director-of-founding-member-concierge",
+        "qc-specialist"
       ]
     },
     "client-experience-booking": {
