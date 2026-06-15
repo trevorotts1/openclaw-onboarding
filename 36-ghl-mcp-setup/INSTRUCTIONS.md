@@ -180,6 +180,20 @@ If `X-RateLimit-Daily-Remaining < 1000`: STOP. Compute reset time from `X-RateLi
   conversations / calendar / tags reads and writes. Workflow creation and editing use
   Skill 44's internal Build API (Tier 0) or the Build-with-AI manual paste (fallback).
   These are orthogonal surfaces — see `38-conversational-ai-system/references/GHL_AI_LAYERS.md`.
+- ❌ Calling an MCP tool (`ghl-mcp__*`) inside a spawned sub-agent. Sub-agents have no
+  MCP tool injection. Lookups inside sub-agents MUST use `caf contacts search/get` (CLI)
+  or raw HTTPS to `services.leadconnectorhq.com`. Never instruct a sub-agent to use MCP.
+- ❌ Raw HTTP fallback with only `Accept: application/json`. The GHL hosted MCP endpoint
+  requires BOTH `Accept: application/json, text/event-stream` AND `Version: 2021-07-28`.
+  Missing `text/event-stream` returns HTTP 406 (content-negotiation failure, not auth).
+- ❌ `grep -P` in any shell script on a Mac client box. BSD grep has no -P flag.
+  Use `python3 -c "import json,sys; ..."` or `jq` for all JSON/SSE parsing.
+- ❌ Metered `:cloud` model for a contact lookup. Use `deepseek-v4-flash` (direct) or
+  any free fallback. Lookups are cheap data-retrieval — not reasoning tasks that justify
+  metered quota burn.
+- ❌ Routing a contact lookup to Tier 4 (browser). The browser tier is for UI-only flows
+  and workflow-build backstops when the Firebase token is unavailable. Lookups never go
+  to the browser.
 
 ## Common Cross-Tier Workflows
 

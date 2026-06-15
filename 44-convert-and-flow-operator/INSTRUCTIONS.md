@@ -1,5 +1,28 @@
 # Skill 44 — Convert and Flow Operator: Runtime Instructions
 
+## Contact Lookup Routing (READ FIRST — applies to every lookup, any session type)
+
+Contact lookups follow a strict two-rule contract. Violating either rule is a hard failure.
+
+**Rule A — Sub-agents use CLI, not MCP.**
+MCP tools (`ghl-mcp__*`) exist only in the orchestrating session. Spawned sub-agents
+have no MCP injection. Sub-agent lookups MUST use `caf contacts search/get` (CLI) or
+raw HTTPS. Never instruct a sub-agent to call an MCP tool.
+
+**Rule B — Raw HTTP requires dual Accept + correct Version header.**
+Any raw HTTPS fallback to `services.leadconnectorhq.com/mcp/` MUST include:
+```
+Accept: application/json, text/event-stream
+Version: 2021-07-28   (contacts/locations/blogs/social/opportunities)
+Version: 2021-04-15   (conversations/calendars/payments)
+```
+Missing `text/event-stream` returns HTTP 406 — not an auth error; a content-negotiation
+error. Also: never use `grep -P` on macOS (BSD grep has no -P); use `python3 -c` or `jq`.
+
+Full lookup routing table and all failure modes: `36-ghl-mcp-setup/GHL-LOOKUP-SOP.md`.
+
+---
+
 ## Step 0 — Model Check Pre-flight (READ BEFORE ANY BUILD OR MODIFY ACTION)
 
 **Trigger:** any time you are about to BUILD or MODIFY a GHL workflow (caf workflows build,

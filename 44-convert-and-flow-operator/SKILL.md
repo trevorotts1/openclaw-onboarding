@@ -74,6 +74,16 @@ commands automatically; operators never need to memorize command syntax.
 - **locations** — get location info, list custom fields, list custom values
 - **workflows** (READ-ONLY on PIT) — list, get, export
 
+### Sub-agent contact lookup rule (CRITICAL)
+
+MCP tools (`ghl-mcp__*`) are available ONLY in the orchestrating agent session. Spawned
+sub-agents receive NO MCP tool injection. **Any contact lookup inside a sub-agent MUST
+use `caf contacts search/get` (the CLI) or raw HTTPS to `services.leadconnectorhq.com`.**
+
+The CLI is a subprocess — it works identically in the orchestrator and in sub-agents.
+This is the primary reason Tier 0 CLI is preferred over the orchestrator-only MCP path
+for lookups. See `36-ghl-mcp-setup/GHL-LOOKUP-SOP.md` for the full lookup routing table.
+
 ### Workflow BUILD and EDIT (Firebase token required)
 
 `workflows build`, `workflows patch-email`, `workflows patch-trigger`, `workflows restore`
