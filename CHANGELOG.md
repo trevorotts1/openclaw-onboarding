@@ -24,6 +24,7 @@ Zero client names in diff (grep verified).
 
 ---
 
+
 ## [v12.14.2] - 2026-06-15 - fix(skill-35): complete-answer fix for owner scope questions — enabled-channels model, Owner Q&A Playbook, QC auto-fail gate
 
 ### Changes
