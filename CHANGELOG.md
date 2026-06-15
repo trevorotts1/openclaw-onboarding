@@ -1,3 +1,29 @@
+## [v12.16.0] - 2026-06-15 - feat(role-library): 5 new departments + Blocked-vs-Return doctrine + Intelligent Model Selector gate (N35)
+
+### Changes
+
+**Blocked-vs-Return doctrine** (`23-ai-workforce-blueprint/master-orchestrator-dept/SOP-01-Blocked-vs-Return.md` + `references/BLOCKED-IS-GATED.md`): Fleet-wide SOP establishing the binary rule for agents that cannot complete an owner task — BLOCKED (owner action required, surface clearly + stop) vs RETURN (agent-resolvable, try-then-report). SOP-00-Owner-Task-Routing updated with the doctrine. `BLOCKED-IS-GATED.md` added as enforcement reference.
+
+**Intelligent Model Selector + AF-MODEL-SOVEREIGNTY gate** (N35): Committed on this branch as `5fa101f`; adds model-selector SOP and AF gate preventing Anthropic model pins in client-facing roles.
+
+**5 new canonical departments — full role stacks added:**
+- `account-management` — Director, Client Relationship Manager, Deep Research Specialist, Devil's Advocate, QC Specialist, Retention Specialist (with full how-to.md subdirs)
+- `client-experience-booking` — Director, Booking Coordinator, Client Onboarding Specialist, Post-Session Followup Specialist, Deep Research Specialist, Devil's Advocate, QC Specialist
+- `engineering` — Director, Systems Engineer, QA Engineer, Deep Research Specialist, Devil's Advocate, QC Specialist
+- `founding-member-concierge` — Director, Concierge Lead, Membership Specialist, Devil's Advocate, QC Specialist
+- `launch-operations` — Director, Go-to-Market Specialist, Launch Manager, Devil's Advocate, QC Specialist, Deep Research Specialist
+
+**5 additional departments filled with canonical roles (from final index regeneration):**
+- `listings` — Director of Listings, Listing Creator
+- `logistics-fulfillment` — capacity planning, scheduling, dispatch roles
+- `podcast` — Director, audio post producer, podcast host, QC Specialist
+- `product-production` — Director, Product Manager, Production Coordinator, QC Specialist
+- `scheduling-dispatch` — Director, Dispatcher, Scheduler
+
+**Role library index regenerated** — `_index.json` v12.16.0, 408 total roles (up from 360 at v12.15.2).
+
+**All 9 version markers bumped** to v12.16.0 via `scripts/bump-version.sh`. `cc-compat.json` onboardingVersion updated to v12.16.0.
+
 ## [v12.15.2] - 2026-06-15 - feat(role-library): Director of Presentations credentialing standard (Margo Whitfield-Reyes, 41yr, 7-part identity block)
 
 ### Changes
