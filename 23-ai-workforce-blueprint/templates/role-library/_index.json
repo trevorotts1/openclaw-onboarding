@@ -3650,7 +3650,17 @@
       "sop_count": 6,
       "sop_min": 4,
       "path": "templates/role-library/founding-member-concierge/concierge-lead/how-to.md"
+    },
+    {
+      "slug": "launch-manager",
+      "dept": "launch-operations",
+      "title": "Launch Manager",
+      "role_type": "specialist",
+      "word_count": 6500,
+      "sop_count": 4,
+      "sop_min": 4,
+      "path": "templates/role-library/launch-operations/launch-manager/how-to.md"
     }
   ],
-  "total_departments": 25
+  "total_departments": 26
 }
