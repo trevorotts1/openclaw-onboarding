@@ -317,6 +317,36 @@ if [[ "${ZHC_SKIP_ROUTING_PREFLIGHT:-0}" != "1" ]]; then
   fi
 fi
 
+# B7: HARD provider-capability smoke test — run ON box with client's own keys.
+# Detects: (a) live agent probe fail, (b) memory search throw, (c) multimodal
+# enabled against a text-only embedding provider (the silent memory-death class).
+# On failure: sets closeoutStatus=blocked-provider-mismatch + alerts operator.
+# Skip via ZHC_SKIP_PROVIDER_SMOKE=1 in unit-test environments.
+if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
+  PROVIDER_SMOKE_SCRIPT=""
+  for _ps_cand in \
+    "${SKILL_DIR%/*}/scripts/smoke-test-provider-capabilities.sh" \
+    "$OC_ROOT/skills/scripts/smoke-test-provider-capabilities.sh" \
+    "$HOME/.openclaw/skills/scripts/smoke-test-provider-capabilities.sh" \
+    "/data/.openclaw/skills/scripts/smoke-test-provider-capabilities.sh"; do
+    [[ -f "$_ps_cand" ]] && PROVIDER_SMOKE_SCRIPT="$_ps_cand" && break
+  done
+  if [[ -n "$PROVIDER_SMOKE_SCRIPT" ]]; then
+    SMOKE_STATE_FILE="$STATE_FILE" \
+    SMOKE_OPERATOR_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-5252140759}" \
+    bash "$PROVIDER_SMOKE_SCRIPT" >> "$LOG_FILE" 2>&1
+    PROVIDER_SMOKE_RC=$?
+    if [[ "$PROVIDER_SMOKE_RC" != "0" ]]; then
+      log "ERROR" "smoke-test-provider-capabilities.sh preflight FAILED (rc=$PROVIDER_SMOKE_RC): provider capability mismatch or live probe failure. REFUSING to close out — config must match the client's real provider capabilities. Check the log and fix openclaw.json before retrying."
+      state_set ".closeoutStatus = \"blocked-provider-mismatch\" | .closeoutBlockReason = \"smoke-test-provider-capabilities.sh rc=$PROVIDER_SMOKE_RC (capability mismatch or probe failure — fix memorySearch config)\""
+      exit 1
+    fi
+    log "INFO" "smoke-test-provider-capabilities.sh preflight rc=$PROVIDER_SMOKE_RC (provider capabilities verified)"
+  else
+    log "WARN" "smoke-test-provider-capabilities.sh not found — skipping provider capability check (ensure openclaw-onboarding is up to date)"
+  fi
+fi
+
 closeout_status=$(state_get '.closeoutStatus')
 if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]]; then
   log "INFO" "closeoutStatus=$closeout_status -- already complete; nothing to do"
