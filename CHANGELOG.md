@@ -1,3 +1,27 @@
+## [v12.9.8] - 2026-06-14 - feat: Presentations Department live welcome -- auto-sends personalized Telegram message to owner on wiring+library gate pass
+
+### Changes
+
+**Fleet-generic, client-personalized welcome auto-send for the Presentations Department.**
+
+When a client's Presentations Department passes BOTH the wiring gate (`wiringStatus==done`) AND the library gate (`roleLibraryFilled==true` and `sopLibraryFilled==true`), the agent automatically sends the owner one friendly welcome message on Telegram. The message is sent exactly once (idempotent).
+
+**New files:**
+
+- **`23-ai-workforce-blueprint/scripts/send-presentation-dept-welcome.sh`** (v1.0.0) -- the send script. Reads `ownerChat`, `ownerName`, `companyName`, and `deptHeadPersona` from the box's own `.workforce-build-state.json`; never hardcodes a client name, chat ID, or credential. Three-condition gate check (wiringStatus+roleLibraryFilled+sopLibraryFilled must all pass). Idempotency guard: writes `presentationDeptWelcomeSent=true` to the state file after a successful send; exits 0 silently on re-run. Supports `--dry-run` (prints resolved message, no send) and `--force` (skips idempotency check). Fleet-generic: Mac (`~/.openclaw`) and VPS (`/data/.openclaw`) auto-detected.
+
+- **`23-ai-workforce-blueprint/scripts/test-presentation-dept-welcome.sh`** (v1.0.0) -- 7-test dry-run suite (36 assertions). Covers: gate blocks on wiring-not-done, role-lib-not-done, sop-lib-not-done; idempotency guard; full PASS with placeholder resolution; anti-commingling (14 client names checked); fallback placeholders. All 36 assertions green.
+
+**Modified files:**
+
+- **`23-ai-workforce-blueprint/scripts/verify-library-gate.sh`** (v10.17.0 to v10.18.0) -- adds the PRESENTATIONS WELCOME hook. After the state file write (which sets `roleLibraryFilled` and `sopLibraryFilled` per-dept), on a full gate pass (boundary + trio + role + SOP all done), calls `send-presentation-dept-welcome.sh`. A send failure is logged as a WARNING and does NOT alter the gate exit code. Hook text redirected through `sed` prefix so it is clearly identifiable in logs.
+
+- **`23-ai-workforce-blueprint/templates/role-library/presentations/first-time-onboarding-presentations.md`** -- adds Section 20 (Auto-Send Welcome Message). Documents the canonical welcome template with all three placeholders (`{{OWNER_FIRST_NAME}}`, `{{BUSINESS_NAME}}`, `{{DEPT_HEAD_PERSONA_OR_ROLE}}`), the placeholder resolution table, the idempotency key, the trigger wire, and the fleet-generic platform note. The send script treats this section as the canonical source of record.
+
+**Welcome message:** introduces the Presentations Department head, frames the dept as a brainstorming partner (not just a file converter), teaches the four-step from-scratch flow, and invites the owner to start with a single sentence. No em dashes. Placeholders resolve from each box's own config at send time.
+
+**Anti-commingling:** the message text contains zero hardcoded names; all 14 known client names pass the anti-commingling assertion in the test suite.
+
 ## [v12.9.7] - 2026-06-14 - feat: wiring-gate doctrine + connection manifests + build-state wiring fields (completes the wiring-verification gate)
 
 ### Changes
