@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-14T00:00:00Z",
-  "version": "12.7.2",
+  "version": "12.7.3",
   "total_roles": 360,
   "departments": {
     "app-development": {
@@ -2994,8 +2994,8 @@
       "dept": "presentations",
       "title": "PPTX Assembly Specialist",
       "role_type": "specialist",
-      "word_count": 1800,
-      "sop_count": 3,
+      "word_count": 6126,
+      "sop_count": 4,
       "sop_min": 3,
       "path": "templates/role-library/presentations/pptx-assembly-specialist.md"
     },
@@ -3424,8 +3424,8 @@
       "dept": "presentations",
       "title": "Content-to-Presentation Architect",
       "role_type": "specialist",
-      "word_count": 5770,
-      "sop_count": 6,
+      "word_count": 9327,
+      "sop_count": 9,
       "sop_min": 6,
       "path": "templates/role-library/presentations/content-to-presentation-architect.md"
     },
