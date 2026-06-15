@@ -1,4 +1,4 @@
-## [v12.14.4] - 2026-06-15 - docs: rename install flow to fleet onboarding tunnel provisioning; field guide renamed
+## [v12.14.5] - 2026-06-15 - docs: rename install flow to fleet onboarding tunnel provisioning; field guide renamed
 
 ### Changes
 
@@ -11,7 +11,41 @@
 - Self-referential path inside the document updated to the new filename.
 - All cross-file references updated: `CHANGELOG.md`, `38-conversational-ai-system/CHANGELOG.md`, `38-conversational-ai-system/references/v6.0-source-playbook.md`, `38-conversational-ai-system/scripts/00-verify-prerequisites.sh`, `38-conversational-ai-system/scripts/13-create-cloudflare-tunnel.sh`.
 
-**Version bumped:** cc-compat.json onboardingVersion v12.14.3 -> v12.14.4.
+**Version bumped:** all 9 markers + cc-compat.json onboardingVersion v12.14.4 -> v12.14.5.
+Zero client names in diff (grep verified).
+
+---
+
+## [v12.14.4] - 2026-06-15 - fix(verify-routing): G4 detects real default agent instead of hardcoding id=main
+
+### Changes
+
+**G4 gate false-FATAL on boxes whose default agent is not named "main" eliminated.**
+
+Root cause: `scripts/verify-routing.sh` G4 unconditionally searched for an agent
+with `id == "main"` when checking whether the default agent has `skills: []` set
+(the structural pptx-skill deny). Boxes whose primary agent is configured as
+`ceo`, `dept-master-orchestrator`, or any other id would hit the `NO_MAIN_AGENT`
+branch and exit 1 (FATAL), even though the routing fix was correctly applied to
+that box's real default agent.
+
+**Fix:**
+
+`scripts/verify-routing.sh` G4 — rewritten Python probe now detects the real
+default agent in two-step priority order:
+
+1. First agent in `agents.list` with `default: true` (the OpenClaw v10+ way of
+   designating the primary agent).
+2. Fall back to agent with `id == "main"` (legacy pre-v10 convention).
+
+All result codes now carry the detected agent id so failure messages name the
+actual agent that is misconfigured. The `NO_MAIN_AGENT` result is replaced by
+`NO_DEFAULT_AGENT` with an updated error message explaining both lookup paths.
+All other gates (G1-G3, G5-G6) are unchanged.
+
+Header comment on line 8 updated to reflect the corrected gate description.
+
+**Version bumped:** all 9 markers + cc-compat.json onboardingVersion bumped to v12.14.4.
 Zero client names in diff (grep verified).
 
 ---

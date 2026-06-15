@@ -5,7 +5,8 @@
 #   G1  ROLE_DISCIPLINE_V1 marker present in the resolved AGENTS.md (exactly once)
 #   G2  CEO_ROUTING_NO_LOOPHOLES_V1 marker present in the resolved AGENTS.md
 #   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V2) present in the resolved SOUL.md
-#   G4  main agent has skills:[] in openclaw.json (pptx skill physically blocked)
+#   G4  default agent has skills:[] in openclaw.json (pptx skill physically blocked)
+#       "default agent" = first agent with default:true; falls back to id="main"
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
 #   G6  at least one department workspace row exists in mission-control.db
 #
@@ -122,8 +123,12 @@ else
   FAILURES=$((FAILURES + 1))
 fi
 
-# ─── G4: main agent has skills:[] ────────────────────────────────────────────
-_info "G4: checking main agent skills:[] in $OC_CONFIG"
+# ─── G4: default agent has skills:[] ─────────────────────────────────────────
+# The "default agent" is the first entry in agents.list with default:true;
+# if none carries that flag, fall back to id=="main" (pre-v10 convention).
+# Boxes whose primary agent is named "ceo", "dept-master-orchestrator", or any
+# other id would previously trigger a false-FATAL here.
+_info "G4: detecting default agent and checking skills:[] in $OC_CONFIG"
 G4_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
 from pathlib import Path
@@ -131,36 +136,58 @@ from pathlib import Path
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
     agents_list = cfg.get("agents", {}).get("list", []) or []
+
+    # Priority 1: agent with default:true
+    default_agent = None
     for ag in agents_list:
-        if isinstance(ag, dict) and ag.get("id") == "main":
-            skills = ag.get("skills")
-            if isinstance(skills, list) and len(skills) == 0:
-                print("PASS")
-            elif skills is None:
-                print("MISSING_KEY")
-            else:
-                print(f"HAS_SKILLS:{json.dumps(skills)}")
-            sys.exit(0)
-    print("NO_MAIN_AGENT")
+        if isinstance(ag, dict) and ag.get("default") is True:
+            default_agent = ag
+            break
+
+    # Priority 2: fall back to id=="main" (legacy convention)
+    if default_agent is None:
+        for ag in agents_list:
+            if isinstance(ag, dict) and ag.get("id") == "main":
+                default_agent = ag
+                break
+
+    if default_agent is None:
+        print("NO_DEFAULT_AGENT")
+        sys.exit(0)
+
+    agent_id = default_agent.get("id", "<unknown>")
+    skills = default_agent.get("skills")
+    if isinstance(skills, list) and len(skills) == 0:
+        print(f"PASS:{agent_id}")
+    elif skills is None:
+        print(f"MISSING_KEY:{agent_id}")
+    else:
+        print(f"HAS_SKILLS:{agent_id}:{json.dumps(skills)}")
 except Exception as e:
     print(f"ERROR:{e}")
 PYEOF
 ) || G4_RESULT="ERROR:python3_failed"
 
 case "$G4_RESULT" in
-  PASS)
-    _pass "G4: main agent skills:[] is set (pptx skill blocked)"
+  PASS:*)
+    _G4_ID="${G4_RESULT#PASS:}"
+    _pass "G4: default agent (id=${_G4_ID}) skills:[] is set (pptx skill blocked)"
     ;;
-  MISSING_KEY)
-    _fail "G4: main agent has no 'skills' key in openclaw.json — pptx deny NOT applied; run apply-routing-fix.sh"
+  MISSING_KEY:*)
+    _G4_ID="${G4_RESULT#MISSING_KEY:}"
+    _fail "G4: default agent (id=${_G4_ID}) has no 'skills' key in openclaw.json — pptx deny NOT applied; run apply-routing-fix.sh"
     FAILURES=$((FAILURES + 1))
     ;;
   HAS_SKILLS:*)
-    _fail "G4: main agent skills is not empty: ${G4_RESULT#HAS_SKILLS:} — run apply-routing-fix.sh"
+    # strip leading "HAS_SKILLS:" then extract id (up to first :) and remainder
+    _G4_REST="${G4_RESULT#HAS_SKILLS:}"
+    _G4_ID="${_G4_REST%%:*}"
+    _G4_SKILLS="${_G4_REST#*:}"
+    _fail "G4: default agent (id=${_G4_ID}) skills is not empty: ${_G4_SKILLS} — run apply-routing-fix.sh"
     FAILURES=$((FAILURES + 1))
     ;;
-  NO_MAIN_AGENT)
-    _fail "G4: no agent with id=main found in openclaw.json agents.list"
+  NO_DEFAULT_AGENT)
+    _fail "G4: no default agent found in openclaw.json agents.list (no default:true entry and no id=main fallback)"
     FAILURES=$((FAILURES + 1))
     ;;
   ERROR:*)
