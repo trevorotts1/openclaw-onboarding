@@ -39,6 +39,8 @@ NO-FABRICATION: this script reads and reports; it never writes answers.
 PRD-2.15 + PRD-2.16 / v12.3.4
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

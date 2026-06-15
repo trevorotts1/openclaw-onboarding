@@ -335,6 +335,132 @@ if [[ "$qc_status" != "pass" ]]; then
   fi
 fi
 
+# ---- v12.10.0 (fix/gate-and-resume-correctness): DISK-REALITY STALE-STATE RESET ----
+# A department with status=done OR roleLibraryFilled=true OR sopLibraryFilled=true in
+# the build-state JSON that has NO real how-to.md on disk (or only an empty/placeholder
+# file) represents a FALSE terminal state — likely from a hand-seeded or corrupted
+# build-state. Trusting it causes the resume to exit "nothing to do" and the real build
+# never runs. This block scans every department claiming 'done' or library-filled and
+# verifies on-disk reality before allowing those claims to stand.
+#
+# VERIFY contract: a department's how-to.md under departments/<id>/*/how-to.md must
+#   exist AND be non-empty. If a dept's roles are completely absent or all stubs, the
+#   state is STALE: reset status to "pending" and clear the library-filled flags so the
+#   normal resume path picks it up and builds it for real.
+#
+# This check runs BEFORE pending_count so the corrected state is what drives
+# everything below. It never promotes a pending→done; it only demotes false dones.
+_WORKSPACE_ROOT_RESUME=$(jq -r '.workspaceRoot // empty' "$STATE_FILE" 2>/dev/null || true)
+if [[ -z "$_WORKSPACE_ROOT_RESUME" || "$_WORKSPACE_ROOT_RESUME" == "null" ]]; then
+  _WORKSPACE_ROOT_RESUME="$(dirname "$STATE_FILE")"
+fi
+_DEPTS_DIR_RESUME="$_WORKSPACE_ROOT_RESUME/departments"
+_stale_reset_count=0
+
+if command -v python3 >/dev/null 2>&1; then
+  _stale_reset_output=$(python3 - "$STATE_FILE" "$_DEPTS_DIR_RESUME" <<'STALE_PY' 2>&1
+import json, os, sys
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+depts_dir  = Path(sys.argv[2])
+HOW_TO_MIN = 256  # bytes — anything smaller is effectively empty/stub
+
+try:
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+except Exception as e:
+    print(f"STALE_CHECK_ERROR: cannot read state: {e}", file=sys.stderr)
+    sys.exit(0)
+
+departments = state.get("departments", [])
+if not isinstance(departments, list):
+    sys.exit(0)
+
+reset_ids = []
+for dept in departments:
+    dept_id = dept.get("id") or dept.get("slug", "")
+    if not dept_id:
+        continue
+    status = dept.get("status", "")
+    role_lib = dept.get("roleLibraryFilled", False)
+    sop_lib  = dept.get("sopLibraryFilled", False)
+
+    # Only audit departments that claim done or library-filled
+    claims_done = (status == "done") or role_lib or sop_lib
+    if not claims_done:
+        continue
+
+    # Check for at least one real how-to.md under departments/<id>/
+    dept_dir = depts_dir / dept_id
+    has_real_howto = False
+    if dept_dir.is_dir():
+        for role_dir in dept_dir.iterdir():
+            if not role_dir.is_dir() or role_dir.name.startswith("."):
+                continue
+            how_to = role_dir / "how-to.md"
+            if how_to.exists() and how_to.stat().st_size >= HOW_TO_MIN:
+                content = how_to.read_text(encoding="utf-8", errors="replace")
+                if "[PENDING" not in content:
+                    has_real_howto = True
+                    break
+
+    if not has_real_howto:
+        reset_ids.append(dept_id)
+
+if not reset_ids:
+    print("STALE_CHECK_CLEAN")
+    sys.exit(0)
+
+# Reset stale departments: status->pending, clear library-filled flags
+changed = False
+for dept in departments:
+    dept_id = dept.get("id") or dept.get("slug", "")
+    if dept_id in reset_ids:
+        print(f"STALE_RESET: dept '{dept_id}' claims done/library-filled but has NO real how-to.md on disk — resetting to pending")
+        dept["status"] = "pending"
+        dept["roleLibraryFilled"] = False
+        dept["sopLibraryFilled"] = False
+        dept.pop("completedAt", None)
+        changed = True
+
+if changed:
+    # Also unset top-level terminal signals if any dept was reset
+    state.pop("buildCompletedAt", None)
+    if state.get("closeoutStatus") not in ("done", "sent", "failed"):
+        state.pop("closeoutStatus", None)
+    state["roleLibraryStatus"] = "pending"
+    state["sopLibraryStatus"]  = "pending"
+
+    import tempfile
+    tmp = state_path.with_suffix(f".stale_reset.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        tmp.replace(state_path)
+        print(f"STALE_RESET_WRITTEN: {len(reset_ids)} dept(s) reset to pending")
+    except Exception as e:
+        tmp.unlink(missing_ok=True)
+        print(f"STALE_RESET_ERROR: could not write state: {e}", file=sys.stderr)
+STALE_PY
+  )
+  # Log and count the stale resets
+  while IFS= read -r _stale_line; do
+    case "$_stale_line" in
+      STALE_CHECK_CLEAN)
+        log "STALE-CHECK: all 'done' departments verified against disk — state is clean" ;;
+      STALE_RESET:*)
+        log "STALE-CHECK [WARN]: $_stale_line"
+        _stale_reset_count=$(( _stale_reset_count + 1 )) ;;
+      STALE_RESET_WRITTEN:*)
+        log "STALE-CHECK [ACTION]: $_stale_line - these departments will now be built for real" ;;
+      STALE_RESET_ERROR:*)
+        log "STALE-CHECK [ERROR]: $_stale_line" ;;
+    esac
+  done <<< "$_stale_reset_output"
+  if (( _stale_reset_count > 0 )); then
+    log "STALE-CHECK: reset $_stale_reset_count stale 'done' department(s) to pending — build will resume"
+  fi
+fi
+
 pending_count=$(jq -r '[.departments[] | select(.status == "pending" or .status == "failed")] | length' "$STATE_FILE")
 stale_building_count=$(jq --arg min "$STALE_BUILDING_MINUTES" -r '
   [.departments[]
