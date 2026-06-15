@@ -1,4 +1,4 @@
-## [v12.14.6] - 2026-06-15 - fix: strip Anthropic models from client-facing presentation + maintenance SOPs (client-available vision QC)
+## [v12.15.1] - 2026-06-15 - fix: strip Anthropic models from client-facing presentation + maintenance SOPs (client-available vision QC)
 
 ### Changes
 
