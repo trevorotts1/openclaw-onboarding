@@ -466,6 +466,12 @@
         "role-auditor",
         "procedure-auditor"
       ]
+    },
+    "engineering": {
+      "count": 1,
+      "roles": [
+        "qa-engineer"
+      ]
     }
   },
   "roles": [
@@ -3478,7 +3484,17 @@
       "sop_count": 4,
       "sop_min": 4,
       "path": "templates/role-library/presentations/first-time-onboarding-presentations.md"
+    },
+    {
+      "slug": "qa-engineer",
+      "dept": "engineering",
+      "title": "QA Engineer",
+      "role_type": "specialist",
+      "word_count": 9800,
+      "sop_count": 5,
+      "sop_min": 5,
+      "path": "templates/role-library/engineering/qa-engineer/how-to.md"
     }
   ],
-  "total_departments": 24
+  "total_departments": 25
 }
