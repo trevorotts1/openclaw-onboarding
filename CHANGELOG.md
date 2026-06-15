@@ -1,3 +1,9 @@
+## [v12.15.2] - 2026-06-15 - feat(role-library): Director of Presentations credentialing standard (Margo Whitfield-Reyes, 41yr, 7-part identity block)
+
+### Changes
+
+**Additive: canonical Director of Presentations persona** (`23-ai-workforce-blueprint/templates/role-library/presentations/director-of-presentations.md`) upgraded to the "role gives the agent its superpowers" standard. New Section 1A -- Identity & Credentialing -- inserted between Role Identity (§1) and Persona Governance Override (§2). Seven-part block: named identity (Margaret "Margo" Whitfield-Reyes), 41-year four-era backstory, certifications (Duarte Academy, Presentation Guild, WCAG 2.2 AA, Adobe Certified Professional Visual Design), 10-principle belief system wired to gate drivers, non-negotiables table linked to actual AF codes (AF-C1 through AF-DH1), department mission, and concrete KPIs (>=8.5 QC pass, zero auto-fails at delivery, >=90% owner approval rate). Every AF code cited was verified present in the department. This establishes the fleet-wide credentialing template for all Director/head roles.
+
 ## [v12.15.1] - 2026-06-15 - fix: strip Anthropic models from client-facing presentation + maintenance SOPs (client-available vision QC)
 
 ### Changes
