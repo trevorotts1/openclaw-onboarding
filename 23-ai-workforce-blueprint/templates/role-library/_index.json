@@ -475,6 +475,15 @@
         "director-of-account-management",
         "retention-specialist"
       ]
+    },
+    "client-experience-booking": {
+      "count": 4,
+      "roles": [
+        "booking-coordinator",
+        "client-onboarding-specialist",
+        "director-of-client-experience-booking",
+        "post-session-followup-specialist"
+      ]
     }
   },
   "roles": [
