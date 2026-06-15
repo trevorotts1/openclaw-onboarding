@@ -1,0 +1,163 @@
+{
+  "_doc": "Model-family -> capability set + default purpose tier. The ONE place modality facts live; both select_model.py (Python, install side) and the Command Center model-selector (TypeScript, runtime side) read this. Capability tokens are the authoritative vocabulary from command-center/src/lib/model-registry-types.ts :: MODEL_CAPABILITIES. A model is matched to a family by the first regex in `families` whose `match` matches the (provider-stripped) model id. Version-agnostic on purpose: qwen3-vl matches any qwen3-vl* slug regardless of size/version.",
+  "_version": "1.0.0",
+  "_capability_vocabulary": [
+    "text", "embeddings", "image_generation", "video_generation",
+    "audio_generation", "audio_transcription", "vision", "audio_input",
+    "streaming", "reasoning", "tool_use", "structured_output",
+    "long_context", "code_execution", "web_search", "computer_use"
+  ],
+  "families": [
+    {
+      "family": "deepseek-pro",
+      "match": "deepseek-v[0-9.]+-pro",
+      "capabilities": ["text", "reasoning", "tool_use", "structured_output", "long_context", "streaming"],
+      "default_tier": "heavy"
+    },
+    {
+      "family": "deepseek-flash",
+      "match": "deepseek-v[0-9.]+-flash",
+      "capabilities": ["text", "tool_use", "structured_output", "streaming"],
+      "default_tier": "fast"
+    },
+    {
+      "family": "kimi",
+      "match": "kimi-k[0-9.]+",
+      "capabilities": ["text", "reasoning", "tool_use", "structured_output", "long_context", "streaming"],
+      "default_tier": "heavy"
+    },
+    {
+      "family": "qwen-vl",
+      "match": "qwen[0-9.]*-vl",
+      "capabilities": ["text", "vision", "reasoning", "tool_use", "structured_output", "streaming"],
+      "default_tier": "heavy"
+    },
+    {
+      "family": "qwen",
+      "match": "qwen[0-9.]*(?:-(?:coder|max|plus|turbo))?",
+      "capabilities": ["text", "reasoning", "tool_use", "structured_output", "long_context", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "minimax",
+      "match": "minimax-m[0-9.]+",
+      "capabilities": ["text", "tool_use", "structured_output", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "mimo-pro",
+      "match": "mimo-v[0-9.]+-pro",
+      "capabilities": ["text", "reasoning", "tool_use", "structured_output", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "glm",
+      "match": "glm-?[0-9.]+",
+      "capabilities": ["text", "reasoning", "tool_use", "structured_output", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "glm-vision",
+      "match": "glm-?[0-9.]+v",
+      "capabilities": ["text", "vision", "reasoning", "tool_use", "structured_output", "streaming"],
+      "default_tier": "heavy"
+    },
+    {
+      "family": "llama-vision",
+      "match": "llama[0-9.-]*-vision",
+      "capabilities": ["text", "vision", "tool_use", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "llama",
+      "match": "llama[0-9.-]*",
+      "capabilities": ["text", "tool_use", "structured_output", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "mistral",
+      "match": "(?:mistral|mixtral|codestral|magistral|ministral)[0-9a-z.-]*",
+      "capabilities": ["text", "tool_use", "structured_output", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "gemma",
+      "match": "gemma[0-9.-]*",
+      "capabilities": ["text", "tool_use", "streaming"],
+      "default_tier": "fast"
+    },
+    {
+      "family": "gemini-pro",
+      "match": "gemini-[0-9.]+-pro",
+      "capabilities": ["text", "vision", "reasoning", "tool_use", "structured_output", "long_context", "streaming"],
+      "default_tier": "heavy"
+    },
+    {
+      "family": "gemini-flash-lite",
+      "match": "gemini-[0-9.]+-flash-lite",
+      "capabilities": ["text", "tool_use", "structured_output", "streaming"],
+      "default_tier": "fast"
+    },
+    {
+      "family": "gemini-flash",
+      "match": "gemini-[0-9.]+-flash",
+      "capabilities": ["text", "vision", "tool_use", "structured_output", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "nemotron",
+      "match": "nemotron[0-9a-z.-]*",
+      "capabilities": ["text", "reasoning", "tool_use", "streaming"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "gpt-image",
+      "match": "gpt-image[0-9.-]*",
+      "capabilities": ["image_generation"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "flux",
+      "match": "flux[0-9a-z.-]*",
+      "capabilities": ["image_generation"],
+      "default_tier": "mid"
+    },
+    {
+      "family": "sdxl",
+      "match": "(?:stable-diffusion|sdxl|sd[0-9.-]*)[0-9a-z.-]*",
+      "capabilities": ["image_generation"],
+      "default_tier": "fast"
+    },
+    {
+      "family": "veo",
+      "match": "veo[0-9.-]*",
+      "capabilities": ["video_generation"],
+      "default_tier": "heavy"
+    },
+    {
+      "family": "kling",
+      "match": "kling[0-9a-z.-]*",
+      "capabilities": ["video_generation"],
+      "default_tier": "heavy"
+    },
+    {
+      "family": "sora",
+      "match": "sora[0-9.-]*",
+      "capabilities": ["video_generation"],
+      "default_tier": "heavy"
+    },
+    {
+      "family": "whisper",
+      "match": "whisper[0-9a-z.-]*",
+      "capabilities": ["audio_transcription"],
+      "default_tier": "fast"
+    },
+    {
+      "family": "tts",
+      "match": "(?:tts|kokoro|fish-audio|xtts)[0-9a-z.-]*",
+      "capabilities": ["audio_generation"],
+      "default_tier": "fast"
+    }
+  ],
+  "default_capabilities": ["text"]
+}

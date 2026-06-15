@@ -60,6 +60,182 @@ FORBIDDEN_PREFIXES = (
     "claude-4",
 )
 
+# ─── Intelligent Model Selector (v12.15.0) ───────────────────────────────────
+# The PREFERENCE CASCADE (PLAN.md §2) — single source of truth for tier order.
+# Every layer (build-time dept default, task-time selector, repair sweep, gate)
+# obeys this exact ordering.
+#
+#   TIER 1 — Ollama Cloud   : ollama/*:cloud (baseUrl https://ollama.com)
+#   TIER 2 — OpenRouter OSS  : openrouter/<oss-vendor>/* (open-weight only)
+#   TIER 3 — Free            : *:free / pricingModel == 'free'  (LAST RESORT)
+#
+# A proprietary OpenRouter route (openrouter/openai/*, openrouter/google/*-pro,
+# openrouter/anthropic/*) is NOT a Tier-2 open-source model. Anthropic is
+# forbidden outright (FORBIDDEN_PREFIXES); other proprietary routes are not
+# silently selected by the cascade.
+TIER_OLLAMA_CLOUD = 1
+TIER_OPENROUTER_OSS = 2
+TIER_FREE = 3
+
+# OpenRouter open-source (open-weight) vendor allow-list (PLAN.md §2 / §12).
+OPENROUTER_OSS_VENDORS = (
+    "deepseek",
+    "moonshot", "moonshotai",
+    "qwen", "alibaba",
+    "z-ai", "zhipu", "zhipuai",
+    "xiaomi",
+    "meta", "meta-llama", "llama",
+    "mistral", "mistralai",
+    "google",   # only the open-weight gemma family is OSS-classified below
+    "nvidia",
+    "minimax",
+)
+
+# The "free" sentinel the Command Center bug used as a default. NEVER a valid
+# resolution. Kept ONLY so the gate can explicitly reject it.
+FREE_SENTINELS = ("openrouter/free", "free", "openrouter/auto:free")
+
+
+def _module_dir() -> str:
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_json_sibling(name: str) -> dict:
+    """Load a JSON data file that ships next to this module (or its symlinks)."""
+    candidates = [
+        os.path.join(_module_dir(), name),
+        os.path.join(os.path.expanduser("~"), "Downloads", "openclaw-master-files",
+                     "shared-utils", name),
+        os.path.join(os.path.expanduser("~"), ".openclaw", "skills",
+                     "shared-utils", name),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            try:
+                with open(p) as f:
+                    return json.load(f)
+            except (OSError, ValueError):
+                continue
+    return {}
+
+
+_CAP_MAP_CACHE = None
+_SUIT_MAP_CACHE = None
+
+
+def load_capability_map() -> dict:
+    global _CAP_MAP_CACHE
+    if _CAP_MAP_CACHE is None:
+        _CAP_MAP_CACHE = _load_json_sibling("model-capabilities.json")
+    return _CAP_MAP_CACHE
+
+
+def load_suitability_map() -> dict:
+    global _SUIT_MAP_CACHE
+    if _SUIT_MAP_CACHE is None:
+        _SUIT_MAP_CACHE = _load_json_sibling("dept-model-suitability.json")
+    return _SUIT_MAP_CACHE
+
+
+def _strip_provider(model_id: str) -> str:
+    """Reduce a fully-qualified model id to its bare family slug for matching.
+
+    ollama/qwen3-vl:235b-cloud      -> qwen3-vl
+    openrouter/deepseek/deepseek-v4-pro -> deepseek-v4-pro
+    """
+    if not model_id:
+        return ""
+    mid = model_id.strip().lower()
+    # drop any :cloud / :free / :235b style suffix
+    mid = mid.split(":", 1)[0]
+    # take the last path segment (vendor/model -> model)
+    mid = mid.split("/")[-1]
+    return mid
+
+
+def capabilities_for_model(model_id: str) -> list:
+    """Resolve a model's capability set from the shipped capability map.
+
+    Family is matched by the FIRST family whose `match` regex matches the
+    provider-stripped slug. More-specific families (e.g. qwen-vl, glm-vision)
+    are listed before their broader siblings in the JSON so they win.
+    """
+    cap_map = load_capability_map()
+    families = cap_map.get("families", [])
+    bare = _strip_provider(model_id)
+    if not bare:
+        return list(cap_map.get("default_capabilities", ["text"]))
+    for fam in families:
+        pat = fam.get("match")
+        if not pat:
+            continue
+        try:
+            if re.fullmatch(pat, bare) or re.match(pat + r"$", bare) or re.match(pat, bare):
+                return list(fam.get("capabilities", []))
+        except re.error:
+            continue
+    return list(cap_map.get("default_capabilities", ["text"]))
+
+
+def model_has_modality(model_id: str, required_modality) -> bool:
+    """True iff the model's capabilities ⊇ required_modality (HARD constraint)."""
+    if not required_modality:
+        return True
+    if isinstance(required_modality, str):
+        required_modality = [required_modality]
+    caps = set(capabilities_for_model(model_id))
+    # Behavior tokens (reasoning/tool_use/etc.) are soft preferences, not hard
+    # eligibility — only true OUTPUT/INPUT modalities are inviolable.
+    hard_modalities = {
+        "vision", "image_generation", "video_generation",
+        "audio_generation", "audio_transcription", "audio_input", "embeddings",
+    }
+    for req in required_modality:
+        if req in hard_modalities and req not in caps:
+            return False
+        # `text` is satisfied by any non-pure-generation model
+        if req == "text" and not (caps & {"text"}) and not (caps - {"image_generation", "video_generation", "audio_generation", "audio_transcription"}):
+            return False
+    return True
+
+
+def tier_of_model(model_id: str) -> int:
+    """Classify a model id into the PREFERENCE CASCADE tier (1/2/3).
+
+    Returns 0 for a model that does not belong to any valid tier (e.g. a
+    proprietary OpenRouter route or the free sentinel — which the gate rejects).
+    """
+    if not model_id:
+        return 0
+    mid = model_id.strip().lower()
+    if mid in FREE_SENTINELS:
+        return TIER_FREE
+    # Tier 3: any *:free slug (free pricing tier)
+    if mid.endswith(":free") or mid.endswith("/free"):
+        return TIER_FREE
+    # Tier 1: Ollama Cloud. The cloud marker is the trailing `cloud` token of
+    # the tag (after the last ':'), which may be compound, e.g.
+    # `ollama/qwen3-vl:235b-cloud` or simple `ollama/deepseek-v4-pro:cloud`.
+    if mid.startswith("ollama/"):
+        tag = mid.split(":", 1)[1] if ":" in mid else ""
+        if tag == "cloud" or tag.endswith("-cloud"):
+            return TIER_OLLAMA_CLOUD
+    if mid.startswith("ollama-cloud/"):
+        return TIER_OLLAMA_CLOUD
+    # Tier 2: OpenRouter open-source vendors
+    if mid.startswith("openrouter/"):
+        parts = mid.split("/")
+        if len(parts) >= 3:
+            vendor = parts[1]
+            model_slug = parts[2]
+            # google is only OSS for the gemma family; gemini-*-pro is proprietary
+            if vendor == "google" and not model_slug.startswith("gemma"):
+                return 0
+            if vendor in OPENROUTER_OSS_VENDORS:
+                return TIER_OPENROUTER_OSS
+        return 0
+    return 0
+
 
 # Pattern definitions — each slot in the chain gets a version-capturing regex.
 KIMI_OLLAMA      = {"label": "Ollama Cloud Kimi (thinking=high) — smartest, 262K ctx",
@@ -369,6 +545,309 @@ def select_model_for_skill(
     }
 
 
+# ─── Task-time selector (PLAN.md §4) ─────────────────────────────────────────
+
+# Difficulty classifier (PLAN.md §4.2). difficulty -> purpose tier.
+_HARD_SIGNALS = (
+    "strategy", "architect", "architecture", "multi-step", "roadmap",
+    "legal", "financial", "compliance", "analyze", "analysis", "design",
+    "qc ", "quality control", "audit", "synthesize", "reasoning", "plan",
+    "evaluate", "diagnose", "investigate", "restructure",
+)
+_SIMPLE_SIGNALS = (
+    "classify", "tag", "yes/no", "yes or no", "format", "rename", "lookup",
+    "canned", "acknowledge", "confirm receipt", "label", "categorize",
+    "extract field", "short reply",
+)
+
+# Modality inference (PLAN.md §4.3).
+_VISION_SIGNALS = (
+    "image", "screenshot", "slide", "photo", "look at", "visual qc",
+    "ocr", "diagram", "thumbnail", "logo", "mockup", "review the design",
+    "see the", "picture",
+)
+_IMAGE_GEN_SIGNALS = (
+    "generate an image", "create an image", "make an image", "design a graphic",
+    "produce a logo", "render an image", "generate artwork", "create a thumbnail",
+    "image generation",
+)
+_VIDEO_SIGNALS = ("generate a video", "produce a video", "edit the video", "render video", "video generation")
+_AUDIO_GEN_SIGNALS = ("voiceover", "text-to-speech", "tts", "narration", "generate audio", "produce audio")
+_AUDIO_TX_SIGNALS = ("transcribe", "transcription", "caption the audio", "speech-to-text")
+
+
+def classify_difficulty(text: str, input_chars: Optional[int] = None) -> str:
+    """Classify task difficulty -> 'hard' | 'medium' | 'simple' (PLAN.md §4.2)."""
+    t = (text or "").lower()
+    if input_chars is not None and input_chars > 50_000:
+        return "hard"
+    if any(sig in t for sig in _HARD_SIGNALS):
+        return "hard"
+    if any(sig in t for sig in _SIMPLE_SIGNALS):
+        return "simple"
+    return "medium"
+
+
+def difficulty_to_tier(difficulty: str) -> str:
+    return {"hard": "heavy", "medium": "mid", "simple": "fast"}.get(difficulty, "mid")
+
+
+def infer_modality(text: str) -> str:
+    """Determine the REQUIRED modality of a task (PLAN.md §4.3). HARD constraint."""
+    t = (text or "").lower()
+    if any(sig in t for sig in _IMAGE_GEN_SIGNALS):
+        return "image_generation"
+    if any(sig in t for sig in _VIDEO_SIGNALS):
+        return "video_generation"
+    if any(sig in t for sig in _AUDIO_GEN_SIGNALS):
+        return "audio_generation"
+    if any(sig in t for sig in _AUDIO_TX_SIGNALS):
+        return "audio_transcription"
+    if any(sig in t for sig in _VISION_SIGNALS):
+        return "vision"
+    return "text"
+
+
+def _cost_band(model: dict) -> int:
+    """Rank a model's cost for the cheapest-of-equal tie-break. Lower = cheaper.
+
+    `model` may be a dict carrying input/output cost-per-million, or just an id.
+    Falls back to a neutral band when no cost data is present.
+    """
+    if not isinstance(model, dict):
+        return 2
+    cost = model.get("input_cost_per_million")
+    if cost is None:
+        cost = model.get("cost")
+    if cost is None:
+        return 2  # neutral / unknown
+    try:
+        cost = float(cost)
+    except (TypeError, ValueError):
+        return 2
+    if cost <= 0:
+        return 0       # free
+    if cost < 1.0:
+        return 1       # low
+    if cost < 5.0:
+        return 2       # mid
+    return 3           # high
+
+
+def select_task_model(
+    task_text: str = "",
+    department: str = "",
+    required_modality: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    sop_model_pin: Optional[str] = None,
+    input_chars: Optional[int] = None,
+    inventory: Optional[list] = None,
+    openclaw_json_path: Optional[str] = None,
+) -> dict:
+    """Task-time selector (PLAN.md §4 + §5 precedence).
+
+    Resolution order (highest wins):
+      1. SOP pin (validated — still gated; PLAN.md §5)
+      2. Task-time cascade over modality-filtered candidates (this function)
+      (role override + dept default are handled by the CC resolver / build side)
+
+    Returns a dict including model_id, tier (1/2/3), modelSource, required_modality,
+    difficulty, chain_position, candidates_considered, needs_owner_input.
+    """
+    # Step A — classify difficulty + modality
+    if difficulty is None:
+        difficulty = classify_difficulty(task_text, input_chars)
+    if required_modality is None:
+        required_modality = infer_modality(task_text)
+    tier_purpose = difficulty_to_tier(difficulty)
+
+    # Build available inventory
+    if inventory is None:
+        cfg = _load_openclaw_config(openclaw_json_path)
+        inventory = _list_available_models(cfg)
+    # Normalize inventory to a list of model ids (accept dicts too)
+    inv_ids = []
+    for m in inventory or []:
+        if isinstance(m, str):
+            inv_ids.append(m)
+        elif isinstance(m, dict) and m.get("id"):
+            inv_ids.append(m["id"])
+    inv_ids = [m for m in inv_ids if not _is_forbidden(m)]
+    # The bare free sentinel (openrouter/free, "free") is NEVER a real,
+    # resolvable model — it is the exact bug this selector exists to kill. Drop
+    # it from the candidate pool so it can never be chosen (a genuine `*:free`
+    # slug like `vendor/model:free` is still allowed as a Tier-3 last resort).
+    inv_ids = [m for m in inv_ids if m.strip().lower() not in FREE_SENTINELS]
+
+    # Step 1 — SOP pin WINS (still validated by the gate; here we just honor it
+    # if it is present, non-forbidden, in inventory, and modality-appropriate).
+    if sop_model_pin:
+        pin = sop_model_pin.strip()
+        pin_ok = (
+            pin.lower() not in FREE_SENTINELS
+            and not _is_forbidden(pin)
+            and (not inv_ids or pin in inv_ids)
+            and model_has_modality(pin, required_modality)
+        )
+        if pin_ok:
+            return {
+                "model_id": pin,
+                "tier": tier_of_model(pin),
+                "modelSource": "sop_pin",
+                "required_modality": required_modality,
+                "difficulty": difficulty,
+                "chain_position": 0,
+                "candidates_considered": [pin],
+                "needs_owner_input": False,
+                "prompt_to_owner": "",
+            }
+        # An invalid pin does NOT silently fall through to free — it surfaces.
+        return {
+            "model_id": None,
+            "tier": 0,
+            "modelSource": "sop_pin_invalid",
+            "required_modality": required_modality,
+            "difficulty": difficulty,
+            "chain_position": 0,
+            "candidates_considered": [pin],
+            "needs_owner_input": True,
+            "prompt_to_owner": (
+                f"SOP pin '{pin}' is invalid (forbidden, missing from inventory, "
+                f"or wrong modality for required '{required_modality}'). "
+                f"Pick a model present in your inventory with the right modality."
+            ),
+        }
+
+    # Step C — walk the cascade over modality-filtered, available candidates.
+    # Modality is a HARD pre-filter applied BEFORE the cascade (PLAN.md §4.3).
+    modality_ok = [m for m in inv_ids if model_has_modality(m, required_modality)]
+    considered = list(modality_ok)
+
+    # Within the difficulty-selected purpose chain, prefer the existing
+    # version-aware chain ordering, but enforce the tier cascade as the outer
+    # loop so Tier 1 always beats Tier 2 beats Tier 3.
+    chain = CHAINS.get(tier_purpose, CHAINS["mid"]).get("normal", [])
+    for cascade_tier in (TIER_OLLAMA_CLOUD, TIER_OPENROUTER_OSS, TIER_FREE):
+        tier_pool = [m for m in modality_ok if tier_of_model(m) == cascade_tier]
+        if not tier_pool:
+            continue
+        # (a) prefer a model that matches a known chain slot (highest version)
+        for idx, entry in enumerate(chain, start=1):
+            match = _best_match_in_position(tier_pool, entry)
+            if match:
+                return {
+                    "model_id": match,
+                    "tier": cascade_tier,
+                    "modelSource": "task_selector",
+                    "required_modality": required_modality,
+                    "difficulty": difficulty,
+                    "chain_position": idx,
+                    "position_label": entry["label"],
+                    "candidates_considered": considered,
+                    "needs_owner_input": False,
+                    "prompt_to_owner": "",
+                }
+        # (b) no chain slot matched, but the tier has modality-correct models:
+        #     pick deterministically (sorted) — effectiveness already satisfied
+        #     by modality + tier; ties broken by lowest cost band then name.
+        best = sorted(tier_pool, key=lambda m: (_cost_band(m), m))[0]
+        return {
+            "model_id": best,
+            "tier": cascade_tier,
+            "modelSource": "task_selector",
+            "required_modality": required_modality,
+            "difficulty": difficulty,
+            "chain_position": 0,
+            "position_label": "tier-modality-match",
+            "candidates_considered": considered,
+            "needs_owner_input": False,
+            "prompt_to_owner": "",
+        }
+
+    # Specialized-modality terminal pool: image/video/audio-generation and
+    # transcription models frequently live on providers that are NOT chat-cascade
+    # tiers (e.g. a dedicated Ollama Cloud image model, Fal, Replicate). If the
+    # task needs such a modality and a modality-correct model exists that simply
+    # didn't classify into T1/T2/T3, select it rather than blocking — it is still
+    # a real, modality-appropriate, non-forbidden, in-inventory model. (Tier 1
+    # Ollama Cloud generation models already win above; this only catches the
+    # non-cascade providers.) Text tasks NEVER reach here — they always have a
+    # cascade tier — so this never silently downgrades a chat task.
+    SPECIALIZED = {"image_generation", "video_generation",
+                   "audio_generation", "audio_transcription"}
+    if required_modality in SPECIALIZED and modality_ok:
+        best = sorted(modality_ok, key=lambda m: (_cost_band(m), m))[0]
+        return {
+            "model_id": best,
+            "tier": tier_of_model(best),
+            "modelSource": "task_selector",
+            "required_modality": required_modality,
+            "difficulty": difficulty,
+            "chain_position": 0,
+            "position_label": "specialized-modality-match",
+            "candidates_considered": considered,
+            "needs_owner_input": False,
+            "prompt_to_owner": "",
+        }
+
+    # Nothing modality-appropriate in any tier — NEVER return a free literal.
+    return {
+        "model_id": None,
+        "tier": 0,
+        "modelSource": "needs_owner_input",
+        "required_modality": required_modality,
+        "difficulty": difficulty,
+        "chain_position": 0,
+        "candidates_considered": considered,
+        "needs_owner_input": True,
+        "prompt_to_owner": (
+            f"No model in your inventory satisfies required modality "
+            f"'{required_modality}' for this {difficulty} task "
+            f"(department: {department or 'unknown'}). "
+            f"A {required_modality} task MUST run on a {required_modality}-capable "
+            f"model — a text-only model is never eligible. "
+            f"Add a {required_modality}-capable model (Ollama Cloud preferred, "
+            f"then OpenRouter open-source) and re-run."
+        ),
+    }
+
+
+def resolve_dept_default_model(
+    dept_canonical: str,
+    inventory: Optional[list] = None,
+    openclaw_json_path: Optional[str] = None,
+) -> dict:
+    """Build-time Layer-1 dept default (PLAN.md §3.2).
+
+    Looks up the department's suitability (tier + baseline modality) and resolves
+    a concrete model from the client inventory via the cascade. Never returns the
+    free sentinel; returns needs_owner_input if no suitable model exists.
+    """
+    suit_map = load_suitability_map()
+    depts = suit_map.get("departments", {})
+    suit = depts.get(dept_canonical) or suit_map.get("default", {"tier": "mid", "modality": ["text"]})
+    tier = suit.get("tier", "mid")
+    modality_list = suit.get("modality", ["text"])
+    # Pick the strongest HARD modality the dept needs as the pre-filter key.
+    hard = {"vision", "image_generation", "video_generation",
+            "audio_generation", "audio_transcription", "audio_input"}
+    required = next((m for m in modality_list if m in hard), "text")
+    # Reuse the task selector machinery (no SOP pin, dept difficulty == tier).
+    diff = {"heavy": "hard", "mid": "medium", "fast": "simple"}.get(tier, "medium")
+    result = select_task_model(
+        task_text="",
+        department=dept_canonical,
+        required_modality=required,
+        difficulty=diff,
+        inventory=inventory,
+        openclaw_json_path=openclaw_json_path,
+    )
+    result["dept"] = dept_canonical
+    result["suitability_tier"] = tier
+    result["suitability_modality"] = modality_list
+    return result
+
+
 def main():
     import argparse
 
@@ -390,6 +869,25 @@ def main():
                              "(< 800K = normal, 800K-3M = large, > 3M = huge)")
     parser.add_argument("--purpose", default="", help="Free-text description")
     parser.add_argument("--config", default=None, help="Path to openclaw.json")
+    # ── Intelligent Model Selector modes (v12.15.0) ──
+    parser.add_argument("--mode", choices=("skill", "task", "dept-default"),
+                        default="skill",
+                        help="skill=legacy purpose-tier chain (default); "
+                             "task=task-time selector (modality+difficulty+cascade); "
+                             "dept-default=Layer-1 build-time dept default model")
+    parser.add_argument("--task-text", default="",
+                        help="[task mode] task title+description for classification")
+    parser.add_argument("--department", default="",
+                        help="[task/dept-default mode] canonical department slug")
+    parser.add_argument("--required-modality", default=None,
+                        help="[task mode] override inferred modality "
+                             "(text|vision|image_generation|video_generation|"
+                             "audio_generation|audio_transcription)")
+    parser.add_argument("--difficulty", default=None,
+                        choices=("hard", "medium", "simple"),
+                        help="[task mode] override inferred difficulty")
+    parser.add_argument("--sop-model-pin", default=None,
+                        help="[task mode] SOP-pinned model id (wins if valid)")
     parser.add_argument(
         "--format",
         choices=("json", "id", "prompt"),
@@ -397,14 +895,30 @@ def main():
     )
     args = parser.parse_args()
 
-    result = select_model_for_skill(
-        skill_name=args.skill,
-        purpose_tier=args.purpose_tier,
-        context_need=args.context_need,
-        input_chars=args.input_chars,
-        purpose=args.purpose,
-        openclaw_json_path=args.config,
-    )
+    if args.mode == "task":
+        result = select_task_model(
+            task_text=args.task_text or args.purpose,
+            department=args.department,
+            required_modality=args.required_modality,
+            difficulty=args.difficulty,
+            sop_model_pin=args.sop_model_pin,
+            input_chars=args.input_chars,
+            openclaw_json_path=args.config,
+        )
+    elif args.mode == "dept-default":
+        result = resolve_dept_default_model(
+            dept_canonical=args.department,
+            openclaw_json_path=args.config,
+        )
+    else:
+        result = select_model_for_skill(
+            skill_name=args.skill,
+            purpose_tier=args.purpose_tier,
+            context_need=args.context_need,
+            input_chars=args.input_chars,
+            purpose=args.purpose,
+            openclaw_json_path=args.config,
+        )
 
     if args.format == "id":
         print(result["model_id"] or "")

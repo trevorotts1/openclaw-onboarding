@@ -4714,7 +4714,12 @@ def add_agent_to_config(config, dept_id, dept_info):
     # N31 FIX (v11.1.0): model MUST be an object {primary, fallbacks:[...]},
     # NEVER a bare string. Bare strings bypass all fallback chains - if Ollama
     # Cloud is over-capacity the agent dies silently. See AGENTS.md N31.
-    _primary = _resolve_director_model(dept_id) or "ollama/kimi-k2.6:cloud"
+    # Layer-1 dept default (PLAN.md §3): modality-aware, cascade-resolved.
+    _dept_default = _resolve_dept_default_model(dept_id)
+    _primary = (_dept_default or {}).get("model_id") or "ollama/kimi-k2.6:cloud"
+    # Record the dept default so the CC seeding step can write the
+    # agent_settings (role_id IS NULL, setting_type='model') row (PLAN.md §3.2).
+    _record_dept_default(dept_id, _dept_default, _primary)
     model = {
         "primary": _primary,
         "fallbacks": [
@@ -4808,30 +4813,138 @@ def add_agent_to_config(config, dept_id, dept_info):
 
     agents_list.append(agent_entry)
     config["agents"]["list"] = agents_list
+    # Layer-1: persist the dept-default artifact for CC seeding (idempotent —
+    # rewrites the full accumulated set each call; PLAN.md §3.2).
+    try:
+        flush_dept_defaults_artifact()
+    except Exception:  # noqa: BLE001  (never fail the build on artifact write)
+        pass
     return True
 
 
-def _resolve_director_model(dept_id):
-    """Call shared-utils/select_model.py --purpose-tier heavy for the dept director."""
-    import subprocess
-    selector_candidates = [
+def _select_model_script_path():
+    """Locate shared-utils/select_model.py across known install layouts."""
+    candidates = [
         os.path.join(HOME, "Downloads", "openclaw-master-files", "shared-utils", "select_model.py"),
         str(Path.home() / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py"),
+        os.path.join(HOME, ".openclaw", "skills", "shared-utils", "select_model.py"),
+        # repo-local (CI / dev) — this script lives at 23-ai-workforce-blueprint/scripts/
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared-utils", "select_model.py"),
     ]
-    for sel in selector_candidates:
+    for sel in candidates:
         if os.path.isfile(sel):
-            try:
-                r = subprocess.run(
-                    ["python3", sel, "--skill", f"dept-{dept_id}",
-                     "--purpose-tier", "heavy", "--format", "id"],
-                    capture_output=True, text=True, timeout=10,
-                )
-                model_id = r.stdout.strip()
-                if model_id and "anthropic/" not in model_id.lower() and "claude-" not in model_id.lower():
-                    return model_id
-            except Exception:
-                pass
+            return sel
     return None
+
+
+def _resolve_dept_default_model(dept_id):
+    """Layer-1 build-time dept default (PLAN.md §3.2).
+
+    Calls select_model.py in --mode dept-default, which looks up the department's
+    suitability (tier + baseline MODALITY) and resolves a concrete, modality-correct
+    model from the client inventory via the authoritative cascade
+    (Ollama Cloud -> OpenRouter open-source -> free). NEVER returns the free
+    sentinel and NEVER returns a model-less result silently. Returns the full
+    selector dict, or None if the selector is unreachable at install time.
+    """
+    import subprocess
+    from canonical_slug import canonical_dept_slug as _cds  # type: ignore  # noqa
+    try:
+        canon = _cds(dept_id)
+    except Exception:  # noqa: BLE001
+        canon = dept_id
+    sel = _select_model_script_path()
+    if not sel:
+        return None
+    try:
+        r = subprocess.run(
+            ["python3", sel, "--mode", "dept-default",
+             "--department", canon, "--format", "json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if r.stdout.strip():
+            data = json.loads(r.stdout)
+            mid = (data.get("model_id") or "").lower()
+            # Defense in depth: never accept a forbidden or free-default model.
+            if mid and "anthropic/" not in mid and "claude-" not in mid and mid not in (
+                "openrouter/free", "free"
+            ):
+                return data
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _resolve_director_model(dept_id):
+    """Dept-default model id for the director agent (modality-aware, Layer-1).
+
+    Backwards-compatible shim: still returns a bare model-id string (so all
+    existing callers keep working), but now resolves via the modality-aware
+    suitability map (a graphics dept gets a vision model, a CEO gets heavy text)
+    instead of always forcing --purpose-tier heavy.
+    """
+    data = _resolve_dept_default_model(dept_id)
+    if data and data.get("model_id"):
+        return data["model_id"]
+    return None
+
+
+# ── Layer-1 dept-default artifact (PLAN.md §3.2 / §6 reconciliation) ──
+# build-workforce.py writes openclaw.json (agent model objects) at install time;
+# it does NOT own the Command Center sqlite agent_settings table. So it emits a
+# dept-default artifact that the CC seeding/closeout step consumes to write the
+# agent_settings (role_id IS NULL, setting_type='model') dept-default rows. This
+# is the bridge that makes "every department always has a real, modality-correct
+# dept-default before any task dispatches" true on both sides.
+_DEPT_DEFAULTS_ACCUM = {}
+
+
+def _record_dept_default(dept_id, selector_data, resolved_primary):
+    selector_data = selector_data or {}
+    _DEPT_DEFAULTS_ACCUM[dept_id] = {
+        "department": dept_id,
+        "model_id": resolved_primary,
+        "tier": selector_data.get("tier"),
+        "required_modality": selector_data.get("required_modality"),
+        "suitability_tier": selector_data.get("suitability_tier"),
+        "needs_owner_input": bool(selector_data.get("needs_owner_input")),
+        "setting_type": "model",
+        "role_id": None,
+        "source": "build-workforce-layer1",
+    }
+
+
+def flush_dept_defaults_artifact():
+    """Write the accumulated dept defaults to a JSON artifact for CC seeding.
+
+    Idempotent; safe to call multiple times. Returns the artifact path or None.
+    """
+    if not _DEPT_DEFAULTS_ACCUM:
+        return None
+    target_dir = DEPARTMENTS_DIR or os.path.join(
+        MASTER_FILES if "MASTER_FILES" in globals() else os.path.join(HOME, "Downloads", "openclaw-master-files")
+    )
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+    except OSError:
+        return None
+    artifact = os.path.join(target_dir, "dept-default-models.json")
+    payload = {
+        "_doc": "Layer-1 dept defaults emitted by build-workforce.py. The CC "
+                "seeding/closeout step writes each as an agent_settings row "
+                "(role_id IS NULL, setting_type='model'). PLAN.md §3.2.",
+        "generated_by": "build-workforce.py",
+        "defaults": list(_DEPT_DEFAULTS_ACCUM.values()),
+    }
+    try:
+        with open(artifact, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"[LAYER-1] Wrote dept-default artifact: {artifact} "
+              f"({len(_DEPT_DEFAULTS_ACCUM)} departments)", file=sys.stderr)
+        return artifact
+    except OSError as e:  # noqa: BLE001
+        print(f"[LAYER-1 WARN] Could not write dept-default artifact: {e}", file=sys.stderr)
+        return None
 
 
 # ============================================================
