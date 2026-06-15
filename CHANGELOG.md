@@ -1,3 +1,29 @@
+## [v12.12.0] - 2026-06-15 - feat: Content-to-Presentation parity -- SOP 9.4B persuasion-intelligence extraction + AF-CONVERTER-PARITY gate
+
+### Changes
+
+**Presentations Department V2 parity extension: converter builds now produce identical quality to regular builds.**
+
+**Fix-A -- SOP 9.4B (Source Persuasion-Intelligence Extraction):**
+- New SOP 9.4B inserted between SOP 9.4 and SOP 9.5 in `content-to-presentation-architect.md` (v1.2) and its SOP mirror
+- Extracts from the source itself: transformation_promise, primary_objection, goal + cta_action, target_feeling, tone_detected, narrative_arc_type, hook_candidate, offer_intelligence (sub-block for offer/price/guarantee/scarcity), and proof_assets
+- Extended `source_brief.json` schema with a new top-level `persuasion_intelligence` block (alongside the existing `analysis` block)
+- New Quality Gates 15-18 in `content-to-presentation-architect.md` enforcing the persuasion block, offer capture, proof-asset separation, and no-converter-image-path invariant
+- No-own-image-path invariant codified: the Content-to-Presentation pipeline NEVER owns a renderer, model choice, text-baking path, or QC log
+
+**Fix-B -- Director wiring and research agent seeding:**
+- `director-of-presentations.md` and SOP mirror: step 4a extended to propagate `persuasion_intelligence` fields into `intake.json` mandatory variables FIRST (TRANSFORMATION_PROMISE, PRIMARY_OBJECTION, GOAL, CTA_ACTION, TARGET_FEELING, TONE, HOOK seed, OFFER_NAME, PRICE_MODE, FINAL_PRICE, PRICE_ANCHOR, OFFER_STACK, VIP_TIER, PROOF_ASSETS) before routing any gap to the Brainstorming Buddy; sets `source_brief_origin: "role-22"` for the parity gate; mandatory-variable reconciliation: only fields in `fields_absent_in_source` + always-Buddy audience/representation fields go to the Buddy
+- `deep-research-specialist-presentations.md` and SOP mirror: updated to consume `persuasion_intelligence` block when present -- Category B seeded by `offer_intelligence.price_anchor`; Category D seeded by `proof_assets` as corroboration targets; Category E scene descriptions seeded by `narrative_arc_type` + `transformation_promise`
+
+**Fix-C -- AF-CONVERTER-PARITY enforcement gate:**
+- New `AF-CONVERTER-PARITY` deck-level auto-fail in `SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md`; fires on any deck where `intake.json source_brief_origin: "role-22"` and asserts 5 conditions: canonical renderer used, model pin held, real vision QC executed, Phase -0.5 artifacts present (Category E + F), persuasion variables propagated
+- `qc-specialist-presentations.md`: AF-CONVERTER-PARITY added as step 0a in Phase 1Q run-list (after AF-RESEARCH-GATE), added to the AF table, added to KPI row, and `af_converter_parity_triggered` field added to `copy_qc_report.json` schema
+- `AF-CONVERTER-PARITY` added to the machine-checkable summary table in SOP-SLIDE-00
+
+**Files changed:** content-to-presentation-architect.md (v1.2), sops/content-to-presentation-architect-sops.md, director-of-presentations.md, sops/director-of-presentations-sops.md, deep-research-specialist-presentations.md, sops/deep-research-specialist-presentations-sops.md, sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md, qc-specialist-presentations.md
+
+**Zero client names in any committed file (verified by grep).**
+
 ## [v12.11.0] - 2026-06-15 - feat: Presentation Department V2 -- mandatory research phase, deliverable hygiene, 10 new auto-fail codes
 
 ### Changes
