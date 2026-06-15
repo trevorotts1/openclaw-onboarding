@@ -1,3 +1,24 @@
+## [v12.9.4] - 2026-06-14 - fix: memorySearch.multimodal disabled + fallback openai (fleet-wide memory failure)
+
+### Changes
+
+**Fix broken memorySearch defaults that silently killed memory on every department agent fleet-wide.**
+
+Root source: `32-command-center-setup/scripts/materialize-dept-agents.sh` scaffolded every
+department agent with `memorySearch.multimodal.enabled=true` and `fallback="none"`. The configured
+embedding provider is text-only (openai-compatible / text-embedding-3-small). Enabling multimodal
+embeddings against a text-only provider causes memory-core to throw "memorySearch.multimodal
+requires a provider adapter that supports multimodal embeddings" on every message, and `fallback="none"`
+means the agent answered with zero memory access.
+
+- `multimodal.enabled` default changed from `true` to `false`; `modalities` cleared to `[]`
+- `fallback` default changed from `"none"` to `"openai"` (matches the text embedding provider)
+- Idempotent migration: re-running `materialize-dept-agents.sh` on an existing box auto-corrects
+  any agent that still has `multimodal.enabled=true` or `fallback="none"` -- no separate migration
+  step needed, no manual box visit required
+- Skill 32 `skill-version.txt` bumped to v12.9.4
+
+---
 ## [v12.9.3] - 2026-06-14 - fix: GHL lookup SOP -- orchestrator-only MCP, dual Accept header, no grep -P, fail-fast preflight, two-axis routing
 
 ### Changes

@@ -190,14 +190,20 @@ for slug, workspace_path in discovered.items():
     agent_id = f"dept-{slug}"
     name = pretty_name(slug)
 
+    # BUG FIX (v12.9.4): multimodal.enabled MUST be false when the configured
+    # embedding provider is text-only (openai-compatible / text-embedding-3-small).
+    # Enabling it caused memory-core to throw "memorySearch.multimodal requires a
+    # provider adapter that supports multimodal embeddings" on EVERY message, and
+    # fallback:"none" silently dropped all memory access.  Safe defaults: multimodal
+    # disabled, fallback "openai" (matches the text embedding provider).
     desired_entry = {
         "id": agent_id,
         "name": name,
         "workspace": workspace_path,
         "memorySearch": {
             "extraPaths": [],
-            "multimodal": {"enabled": True, "modalities": ["all"]},
-            "fallback": "none",
+            "multimodal": {"enabled": False, "modalities": []},
+            "fallback": "openai",
         },
         # NOTE: "wiki" is NOT a valid agents.list[] key in the strict OpenClaw
         # config schema (agents.list entries are z.core.$strict).  It was here
@@ -230,11 +236,22 @@ for slug, workspace_path in discovered.items():
         # Also strip any stale "wiki" key left by earlier runs so existing
         # boxes become schema-valid after the next materialize run.
         existing.setdefault("memorySearch", desired_entry["memorySearch"])
-        if "multimodal" not in existing.get("memorySearch", {}):
+        # IDEMPOTENT MIGRATION (v12.9.4): force multimodal.enabled=false on any
+        # existing agent where it was previously set to true -- that was the broken
+        # default that caused fleet-wide memory failures.  Re-running materialize
+        # corrects all existing boxes without a separate migration step.
+        existing_mm = existing.get("memorySearch", {}).get("multimodal", {})
+        if existing_mm.get("enabled") is True:
+            existing["memorySearch"]["multimodal"] = {"enabled": False, "modalities": []}
+            changed = True
+        elif "multimodal" not in existing.get("memorySearch", {}):
             existing["memorySearch"]["multimodal"] = desired_entry["memorySearch"]["multimodal"]
             changed = True
-        if "fallback" not in existing.get("memorySearch", {}):
-            existing["memorySearch"]["fallback"] = "none"
+        # IDEMPOTENT MIGRATION (v12.9.4): force fallback to "openai" if currently
+        # "none" or absent -- "none" silently drops all memory access on search errors.
+        existing_fb = existing.get("memorySearch", {}).get("fallback")
+        if existing_fb in (None, "none"):
+            existing["memorySearch"]["fallback"] = "openai"
             changed = True
         if "extraPaths" not in existing.get("memorySearch", {}):
             existing["memorySearch"]["extraPaths"] = []
