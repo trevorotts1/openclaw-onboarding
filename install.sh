@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.14.0"
+ONBOARDING_VERSION="v12.14.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5852,7 +5852,7 @@ echo ""
 # a safe baseline. The agent's own reset (Start Here.md Step 3) remains the belt;
 # this is the suspenders. Uses fresh-context heartbeat (not target:last history replay).
 #
-# Fix D2 (furnace-fix v3, v12.14.0): Per-agent heartbeat override for the main/ceo agent.
+# Fix D2 (furnace-fix v3, v12.14.1): Per-agent heartbeat override for the main/ceo agent.
 # agents.defaults.heartbeat applies to ALL agents — but default:true does NOT cause that
 # agent to inherit agents.defaults.heartbeat. Any agent with default:true needs its OWN
 # explicit heartbeat.every override (e.g. agents.list[main].heartbeat.every) or it may

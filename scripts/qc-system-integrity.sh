@@ -626,6 +626,61 @@ else
   WARN=$((WARN+1))
 fi
 
+# ─── CHECK X.8: Provider capability invariants (v12.14.0) ───────────────────
+# Hard-fail: ensures no shipped config has fallback=none or multimodal.enabled=true
+# against a text-only embedding provider (the silent memory-death bug class).
+# Delegates to qc-assert-provider-capability-invariants.sh so the single-source-of-truth
+# logic stays in that script (same logic the smoke test and CI both exercise).
+echo
+blue "── CHECK X.8: Provider capability invariants ──"
+PROVIDER_INVARIANT_SCRIPT=""
+for _pi_cand in \
+  "$(dirname "${BASH_SOURCE[0]}")/qc-assert-provider-capability-invariants.sh" \
+  "$HOME/.openclaw/skills/scripts/qc-assert-provider-capability-invariants.sh" \
+  "/data/.openclaw/skills/scripts/qc-assert-provider-capability-invariants.sh"; do
+  [[ -f "$_pi_cand" ]] && PROVIDER_INVARIANT_SCRIPT="$_pi_cand" && break
+done
+if [[ -n "$PROVIDER_INVARIANT_SCRIPT" ]]; then
+  # Run once, capture both output and exit code atomically
+  _pi_tmp=$(mktemp)
+  bash "$PROVIDER_INVARIANT_SCRIPT" > "$_pi_tmp" 2>&1
+  PROVIDER_INVARIANT_RC=$?
+  PROVIDER_INVARIANT_OUT=$(cat "$_pi_tmp"); rm -f "$_pi_tmp"
+  if [[ "$PROVIDER_INVARIANT_RC" = "0" ]]; then
+    green "  ✓ X.8  Provider capability invariants pass (no fallback=none, no multimodal/text-only mismatch)"; PASS=$((PASS+1))
+  else
+    # Extract each FATAL line as a separate named failure
+    _X8_FOUND=0
+    while IFS= read -r _pline; do
+      case "$_pline" in
+        *"I1: INVARIANT VIOLATED"*)
+          red "  ✗ X.8a memorySearch.fallback=\"none\" — no fallback path on provider failure (memory silently dies)"
+          FAIL=$((FAIL+1))
+          FAILURES+=("X.8a|memorySearch.fallback=none — no recovery path|Set agents.defaults.memorySearch.fallback to a working text-embedding provider (e.g. openai, openrouter)")
+          _X8_FOUND=1
+          ;;
+        *"I2: INVARIANT VIOLATED"*)
+          _detail=$(printf '%s' "$_pline" | sed 's/.*I2: INVARIANT VIOLATED[^:]*: //')
+          red "  ✗ X.8b multimodal.enabled=true against text-only embedding provider: $_detail"
+          FAIL=$((FAIL+1))
+          FAILURES+=("X.8b|multimodal.enabled=true on text-only provider: $_detail|Disable multimodal.enabled on that agent or switch to a multimodal-capable embedding provider")
+          _X8_FOUND=1
+          ;;
+      esac
+    done <<< "$PROVIDER_INVARIANT_OUT"
+    # Catch any failure the pattern above missed (script exited 1 but no I1/I2 lines matched)
+    if [[ "$_X8_FOUND" = "0" ]]; then
+      red "  ✗ X.8  Provider capability invariant check failed (rc=$PROVIDER_INVARIANT_RC)"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.8|Provider capability invariant check failed|Run: bash scripts/qc-assert-provider-capability-invariants.sh for details")
+    fi
+  fi
+else
+  yellow "  ⚠ X.8  qc-assert-provider-capability-invariants.sh not found — skipping provider invariant check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.8|qc-assert-provider-capability-invariants.sh missing|Update openclaw-onboarding to v12.14.0+")
+fi
+
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
 echo
 blue "═══════════════════════════════════════════════════"

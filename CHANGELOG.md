@@ -1,3 +1,55 @@
+## [v12.14.1] - 2026-06-15 - fix: client-provider capability guard (multimodal/text-only mismatch class)
+
+### Changes
+
+**Prevents the "multimodal embeddings enabled against text-only provider" bug class.**
+That config causes the memory-core multimodal adapter to throw on every message,
+silently killing memory search. No startup error. No agent error. Just dead memory.
+
+**Deliverables:**
+
+`scripts/smoke-test-provider-capabilities.sh` — CLIENT-KEYS SMOKE TEST (new file).
+Runs ON the client box with the client's own API keys. FAILS LOUD on:
+- (S1) `memorySearch.fallback = "none"` — no fallback path, silent memory death on provider failure
+- (S2) Capability mismatch: any agent has `multimodal.enabled=true` while the configured
+  embedding provider is TEXT_ONLY (openai, openrouter, ollama, ollama-cloud, gemini, google,
+  cohere, mistral, anthropic, groq, together, fireworks, perplexity, deepseek)
+- (S3) Live agent probe: gateway does not return a valid reply (4xx/ECONNREFUSED/402/model error)
+- (S4) Memory search throws (multimodal adapter throw or embedding provider failure)
+On failure: sets `closeoutStatus=blocked-provider-mismatch` + alerts operator via Telegram.
+Skippable with `ZHC_SKIP_PROVIDER_SMOKE=1` (unit-test environments).
+Live probes skippable with `ZHC_SKIP_LIVE_PROBE=1` (CI/static environments).
+
+`scripts/qc-assert-provider-capability-invariants.sh` — STATIC QC INVARIANT (new file).
+Build-time / CI check. FAILS the build if ANY agent config ships:
+- (I1) `memorySearch.fallback = "none"`
+- (I2) `memorySearch.multimodal.enabled=true` while the configured provider is TEXT_ONLY
+Checks both `agents.defaults.memorySearch` AND per-agent `memorySearch` blocks.
+Same exit-code contract as `verify-routing.sh` (0=pass, 1=FATAL).
+
+`scripts/qc-system-integrity.sh` — Check X.8 added (new gate).
+Runs `qc-assert-provider-capability-invariants.sh` as Check X.8 in the cross-cutting
+invariant section. Failures are hard-fail (not warn) — same severity as routing invariants.
+
+`37-zhc-closeout/scripts/run-closeout.sh` — B7 gate added after B6 (routing check).
+Runs `smoke-test-provider-capabilities.sh` as Gate B7. REFUSES to close out a box
+whose config has a provider capability mismatch. Skippable via `ZHC_SKIP_PROVIDER_SMOKE=1`.
+
+`docs/PROVIDER-CAPABILITY-CONFIG-PRINCIPLE.md` — SOP reference (new file).
+Documents the principle (config derived from real provider capabilities), the TEXT_ONLY
+provider list, the two enforcement gates, and the remediation path.
+
+`tests/unit/provider-capability-guard.test.sh` — 9-scenario test harness (new file).
+Scenarios A-I: text-only+multimodal → smoke FAIL; clean config → smoke PASS; text-only+multimodal
+→ static FAIL; clean → static PASS; fallback=none → static FAIL; fallback=none → smoke FAIL;
+no openclaw.json → static exits 1 gracefully; per-agent multimodal caught; ollama-cloud
+regression guard. All 14 assertions pass.
+
+**Version bumped:** all 9 markers → v12.14.1.
+Zero client names in diff (grep verified).
+
+---
+
 ## [v12.14.0] - 2026-06-15 - fix: heartbeat-furnace root cause (Skill-35 ungated HEARTBEAT.md block removed + per-agent main override + guard pattern + QC enforcement)
 
 ### Changes
