@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# verify-wiring.sh — v1.0.0 (WIRING GATE: materialized + registered + reachable + connected)
+# verify-wiring.sh — v1.0.1 (WIRING GATE: materialized + registered + reachable + connected)
+# v1.0.1  2026-06-15  fix: replace mapfile (bash 4+ only) with portable while-read loop so
+#                     the script runs correctly when invoked from a zsh parent on Mac clients.
 #
 # HARD POST-INSTALL GATE for every department added to a live workforce.
 #
@@ -52,6 +54,7 @@
 #      mark a dept done."
 #
 # v1.0.0  2026-06-14  Initial implementation; fleet-wide stub-dept fix.
+# v1.0.1  2026-06-15  fix/gate-scripts-bash-portability: replace mapfile with while-read.
 
 set -uo pipefail
 
@@ -118,7 +121,12 @@ fi
 DEPTS_DIR="$WORKSPACE_ROOT/departments"
 
 # ---- Collect dept list from state --------------------------------------------
-mapfile -t ALL_DEPTS < <(jq -r '.departments[]?.slug // empty' "$STATE_FILE" 2>/dev/null || true)
+# Portable replacement for `mapfile -t ALL_DEPTS < <(...)` (mapfile is bash 4+ only;
+# Mac ships bash 3.2 and callers may be zsh-parented). while-read works in bash 3.2+.
+ALL_DEPTS=()
+while IFS= read -r _dept_line; do
+  [[ -n "$_dept_line" ]] && ALL_DEPTS+=("$_dept_line")
+done < <(jq -r '.departments[]?.slug // empty' "$STATE_FILE" 2>/dev/null || true)
 
 if [[ ${#ALL_DEPTS[@]} -eq 0 ]]; then
   echo "[verify-wiring] WARN: no departments found in state file — nothing to check" >&2
