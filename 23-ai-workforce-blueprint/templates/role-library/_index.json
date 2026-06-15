@@ -1,8 +1,19 @@
 {
   "generated_at": "2026-06-14T00:00:00Z",
   "version": "12.14.5",
-  "total_roles": 303,
+  "total_roles": 307,
   "departments": {
+    "account-management": {
+      "count": 6,
+      "roles": [
+        "client-relationship-manager",
+        "deep-research-specialist",
+        "devils-advocate",
+        "director-of-account-management",
+        "qc-specialist",
+        "retention-specialist"
+      ]
+    },
     "app-development": {
       "count": 17,
       "roles": [
@@ -67,6 +78,23 @@
         "tax-liaison-specialist"
       ]
     },
+    "bugs": {
+      "count": 3,
+      "roles": [
+        "bug-intake-clerk",
+        "bug-librarian",
+        "triage-dedup-analyst"
+      ]
+    },
+    "client-experience-booking": {
+      "count": 4,
+      "roles": [
+        "booking-coordinator",
+        "client-onboarding-specialist",
+        "director-of-client-experience-booking",
+        "post-session-followup-specialist"
+      ]
+    },
     "communications": {
       "count": 15,
       "roles": [
@@ -125,6 +153,19 @@
         "voice--phone-support-specialist"
       ]
     },
+    "general-task": {
+      "count": 8,
+      "roles": [
+        "deep-research-specialist-general-task",
+        "devils-advocate-—-general-task",
+        "generalist-operator",
+        "head-of-general-task",
+        "healer-general-task",
+        "qc-specialist-general-task",
+        "sop-writer",
+        "triage-classifier"
+      ]
+    },
     "graphics": {
       "count": 31,
       "roles": [
@@ -159,6 +200,12 @@
         "style-librarian",
         "style-steward",
         "thumbnail--cover-designer"
+      ]
+    },
+    "healer": {
+      "count": 1,
+      "roles": [
+        "chief-healer"
       ]
     },
     "legal-compliance": {
@@ -263,6 +310,70 @@
         "tiktok-ads-specialist",
         "twitter-x-ads-specialist",
         "youtube-ads-specialist"
+      ]
+    },
+    "personal-assistant": {
+      "count": 9,
+      "roles": [
+        "calendar-scheduling-manager",
+        "daily-briefing-specialist",
+        "director-of-personal-assistant",
+        "healer-personal-assistant",
+        "inbox-manager",
+        "personal-coach",
+        "sop-writer",
+        "task-priority-manager",
+        "travel-logistics-specialist"
+      ]
+    },
+    "presentations": {
+      "count": 23,
+      "roles": [
+        "audio-demonstration-specialist",
+        "brainstorming-buddy-presentations",
+        "brand-steward",
+        "capacity-reliability-engineer",
+        "content-to-presentation-architect",
+        "deep-research-specialist-presentations",
+        "delivery-concierge",
+        "devils-advocate-presentations",
+        "director-of-presentations",
+        "first-time-onboarding-presentations",
+        "healer-presentations",
+        "hook-strategist",
+        "media-librarian-ghl-updater",
+        "offer-price-strategist",
+        "pptx-assembly-specialist",
+        "presenter-coach",
+        "presenters-guide-specialist",
+        "presenters-speech-writer",
+        "qc-specialist-presentations",
+        "slide-copywriter",
+        "slide-image-creator",
+        "slide-submitter",
+        "typography-architect"
+      ]
+    },
+    "project-architecture-office": {
+      "count": 9,
+      "roles": [
+        "chief-project-architect",
+        "code-editor",
+        "code-monitor",
+        "deep-research-specialist-project-architecture-office",
+        "devils-advocate-—-project-architecture-office",
+        "healer-project-architecture-office",
+        "qc-agent",
+        "research-agent",
+        "sop-writer"
+      ]
+    },
+    "quality-control": {
+      "count": 3,
+      "roles": [
+        "director-of-quality-control",
+        "role-auditor",
+        "procedure-auditor"
       ]
     },
     "research": {
@@ -374,117 +485,6 @@
         "web-designer",
         "web-security-specialist",
         "wordpress-specialist"
-      ]
-    },
-    "general-task": {
-      "count": 8,
-      "roles": [
-        "deep-research-specialist-general-task",
-        "devils-advocate-—-general-task",
-        "generalist-operator",
-        "head-of-general-task",
-        "healer-general-task",
-        "qc-specialist-general-task",
-        "sop-writer",
-        "triage-classifier"
-      ]
-    },
-    "project-architecture-office": {
-      "count": 9,
-      "roles": [
-        "chief-project-architect",
-        "code-editor",
-        "code-monitor",
-        "deep-research-specialist-project-architecture-office",
-        "devils-advocate-—-project-architecture-office",
-        "healer-project-architecture-office",
-        "qc-agent",
-        "research-agent",
-        "sop-writer"
-      ]
-    },
-    "presentations": {
-      "count": 23,
-      "roles": [
-        "audio-demonstration-specialist",
-        "brainstorming-buddy-presentations",
-        "brand-steward",
-        "capacity-reliability-engineer",
-        "content-to-presentation-architect",
-        "deep-research-specialist-presentations",
-        "delivery-concierge",
-        "devils-advocate-presentations",
-        "director-of-presentations",
-        "first-time-onboarding-presentations",
-        "healer-presentations",
-        "hook-strategist",
-        "media-librarian-ghl-updater",
-        "offer-price-strategist",
-        "pptx-assembly-specialist",
-        "presenter-coach",
-        "presenters-guide-specialist",
-        "presenters-speech-writer",
-        "qc-specialist-presentations",
-        "slide-copywriter",
-        "slide-image-creator",
-        "slide-submitter",
-        "typography-architect"
-      ]
-    },
-    "bugs": {
-      "count": 3,
-      "roles": [
-        "bug-intake-clerk",
-        "bug-librarian",
-        "triage-dedup-analyst"
-      ]
-    },
-    "healer": {
-      "count": 1,
-      "roles": [
-        "chief-healer"
-      ]
-    },
-    "personal-assistant": {
-      "count": 9,
-      "roles": [
-        "calendar-scheduling-manager",
-        "daily-briefing-specialist",
-        "director-of-personal-assistant",
-        "healer-personal-assistant",
-        "inbox-manager",
-        "personal-coach",
-        "sop-writer",
-        "task-priority-manager",
-        "travel-logistics-specialist"
-      ]
-    },
-    "quality-control": {
-      "count": 3,
-      "roles": [
-        "director-of-quality-control",
-        "role-auditor",
-        "procedure-auditor"
-      ]
-    },
-    "account-management": {
-      "count": 6,
-      "roles": [
-        "client-relationship-manager",
-        "deep-research-specialist",
-        "devils-advocate",
-        "director-of-account-management",
-        "qc-specialist",
-        "retention-specialist"
-      ]
-    },
-    "client-experience-booking": {
-      "count": 4,
-      "roles": [
-        "booking-coordinator",
-        "client-onboarding-specialist",
-        "director-of-client-experience-booking",
-        "post-session-followup-specialist"
       ]
     }
   },
@@ -3518,6 +3518,16 @@
       "sop_count": 5,
       "sop_min": 5,
       "path": "templates/role-library/account-management/qc-specialist/how-to.md"
+    },
+    {
+      "slug": "deep-research-specialist",
+      "dept": "account-management",
+      "title": "Deep Research Specialist -- Account Management",
+      "role_type": "deep-research",
+      "word_count": 12000,
+      "sop_count": 6,
+      "sop_min": 6,
+      "path": "templates/role-library/account-management/deep-research-specialist/how-to.md"
     }
   ],
   "total_departments": 24
