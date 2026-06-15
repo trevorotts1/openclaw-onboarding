@@ -182,10 +182,68 @@ See:
 
 ---
 
+## 5. WhatsApp auto-install crash-loop (Hostinger Docker VPS only)
+
+**Status: PERMANENTLY RESOLVED by fleet enforcement — no manual action needed on
+boxes installed or updated with v12.14.3+.**
+
+**Symptom:** Gateway goes into a crash-restart loop immediately on boot. Logs show
+the WhatsApp plugin attempting QR-code pairing setup and then failing. The full
+container goes offline; `docker compose logs` shows a repeating cycle of
+gateway-start → WhatsApp init → crash → restart every few seconds.
+
+**Root cause:** The Hostinger Docker wrapper (`server.mjs` boot logic) calls
+`meetsRequirements()` and auto-installs + enables the WhatsApp plugin on **every**
+gateway boot when `WHATSAPP_NUMBER` is set in the project `.env` file
+(`/docker/<project>/.env`), regardless of what `openclaw.json` says. A bot that has
+never been QR-paired with WhatsApp Web immediately crashes on that auto-install.
+Setting `plugins.entries.whatsapp.enabled = false` alone is not sufficient because
+the wrapper's boot sequence runs before the gateway reads `openclaw.json`.
+
+**Permanent fix (auto-applied, no manual action needed on v12.14.3+ installs):**
+
+`scripts/apply-fleet-standards.sh` and `install.sh` now:
+
+1. Set `plugins.entries.whatsapp.enabled = false` in `openclaw.json` (prevents
+   gateway activation even if the env var is present).
+2. Comment out `WHATSAPP_NUMBER=<value>` in `/docker/<project>/.env` so the
+   wrapper's `meetsRequirements()` check never triggers the auto-install path.
+
+Both steps are idempotent and non-blocking. Step 2 creates a timestamped backup
+before modifying the env file.
+
+**If you are remediating a box manually:**
+
+```bash
+# Step 1 — comment out WHATSAPP_NUMBER in the Hostinger env file
+# (replace <project> with your project folder name, e.g. openclaw)
+ENVF="/docker/<project>/.env"
+cp "$ENVF" "${ENVF}.bak-$(date +%Y%m%d%H%M%S)"
+sed -i 's/^\(WHATSAPP_NUMBER=.*\)$/# WHATSAPP_NUMBER PERMANENTLY DISABLED\n# \1/' "$ENVF"
+
+# Step 2 — disable in openclaw.json via fleet-standards script
+bash ~/.openclaw/skills/scripts/apply-fleet-standards.sh
+
+# Step 3 — force-recreate the container so it picks up the new env
+docker compose up -d --force-recreate
+```
+
+**Why not just remove the WhatsApp plugin from the image?** The plugin ships with
+the Hostinger Docker image (upstream OpenClaw). We cannot prevent its presence, but
+we can prevent its activation. The two-layer fix (env file + openclaw.json) is the
+durable solution.
+
+**Fleet rule:** WhatsApp is permanently banned fleet-wide. `apply-fleet-standards.sh`
+hard-fails if `plugins.entries.whatsapp.enabled = true` after the merge step. See
+`FLEET-STANDARDS.md §3` for the full policy.
+
+---
+
 ## Filing upstream
 
-Issues 1-3 are core-runtime, not onboarding. File against the openclaw
-project with the symptom log lines above. Until fixed, the workarounds here
-keep the fleet responsive. The recommended fallback-embeddings and
-agent-timeout values should be carried in the default onboarding config so
-fresh installs are protected by default.
+Issues 1-4 are core-runtime or infrastructure, not onboarding. File against the
+openclaw project with the symptom log lines above. Until fixed, the workarounds here
+keep the fleet responsive. The recommended fallback-embeddings and agent-timeout values
+should be carried in the default onboarding config so fresh installs are protected by
+default. Issue #5 (WhatsApp) has been permanently resolved at the fleet-standards layer
+and does not require an upstream fix.

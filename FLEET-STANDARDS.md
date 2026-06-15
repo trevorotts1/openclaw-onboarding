@@ -31,7 +31,32 @@ This caps both **inbound and outbound** Telegram media to 50 MB per message. (No
 
 Can also be overridden per account via `channels.telegram.accounts.<account-id>.mediaMaxMb`.
 
-### 3. Big Project Mode (universal operating standard)
+### 3. WhatsApp — Permanently Banned (fleet-wide, non-negotiable)
+
+WhatsApp is **permanently non-installable** on every box in the fleet. The OpenClaw
+Hostinger wrapper auto-installs and auto-enables the WhatsApp plugin on every
+gateway boot whenever `WHATSAPP_NUMBER` is present in the Docker `.env` file,
+regardless of `openclaw.json`. An un-paired WhatsApp install causes an immediate
+QR-scan crash-loop that takes the entire gateway down and does not self-recover.
+
+**Fleet rule (enforced by `apply-fleet-standards.sh` and `install.sh` — hard failure):**
+
+1. `plugins.entries.whatsapp.enabled` is locked to `false` in every `openclaw.json`.
+2. `WHATSAPP_NUMBER` must **not** be set (or must be commented out) in the Hostinger
+   Docker project `.env` file (`/docker/<project>/.env`). If the line is present and
+   non-empty, `apply-fleet-standards.sh` comments it out automatically.
+3. Any CI or QC check that finds `"whatsapp"` in the `plugins.entries` enabled list,
+   or an un-commented `WHATSAPP_NUMBER=<value>` line in any `.env` committed to the
+   repo, is a **hard-fail**.
+
+**Why not just leave it uninstalled?** The auto-install path fires on every
+restart — even after a clean `docker compose up -d --force-recreate`. The only
+durable fix is (a) removing `WHATSAPP_NUMBER` from the env file **and** (b) explicitly
+disabling the plugin in `openclaw.json` so the gateway never attempts to activate it.
+
+**Root cause ref:** `KNOWN-ISSUES.md` issue #5 (WhatsApp auto-install boot loop).
+
+### 4. Big Project Mode (universal operating standard)
 
 Every client agent gets the **BIG PROJECT MODE** standard appended to its active
 workspace `AGENTS.md`. It governs how the agent runs any large multi-part build
@@ -80,4 +105,4 @@ present in `AGENTS.md`).
 
 ---
 
-Last verified: 2026-06-02 (OpenClaw 2026.5.28, Sheila Reynolds' box)
+Last verified: 2026-06-15 (OpenClaw 2026.5.x, fleet-wide)

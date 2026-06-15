@@ -1,3 +1,30 @@
+## [v12.14.3] - 2026-06-15 - fix: WhatsApp permanently banned fleet-wide — auto-install crash-loop eliminated, QC guard added
+
+### Changes
+
+**WhatsApp is permanently non-installable on every box in the fleet.**
+
+Root cause: The Hostinger Docker wrapper (`server.mjs` boot logic) calls `meetsRequirements()` and auto-installs + enables the WhatsApp plugin on every gateway boot whenever `WHATSAPP_NUMBER` is set in the project `.env` file (`/docker/<project>/.env`), regardless of `openclaw.json`. An un-paired WhatsApp install causes an immediate QR-scan crash-loop that takes the entire gateway down and does not self-recover. `openclaw doctor --fix` does not clear it; `docker compose up -d --force-recreate` alone does not clear it — the wrapper re-installs it on the very next boot.
+
+**Two-layer durable fix:**
+
+- Layer 1 (both Mac + VPS): `plugins.entries.whatsapp.enabled = false` is merged into `openclaw.json` by both `install.sh` and `scripts/apply-fleet-standards.sh`. The gateway never activates the plugin even if the env var is present.
+- Layer 2 (VPS only): `WHATSAPP_NUMBER=<value>` is commented out in the Hostinger Docker project `.env` file (`/docker/<project>/.env`) so the wrapper's `meetsRequirements()` boot check never triggers the auto-install path. A timestamped backup is created before the file is modified.
+
+**Deliverables:**
+
+- `install.sh` — new `v12.14.3` WhatsApp permanent ban step (fires before gateway restart). Layer 1 disables the plugin in `openclaw.json` via a Python deep-merge with a hard QC assert. Layer 2 (VPS only) comments out `WHATSAPP_NUMBER` in the Hostinger Docker `.env` using `perl -i`. Idempotent on both paths.
+- `scripts/apply-fleet-standards.sh` — `CANONICAL` block updated to include `plugins.entries.whatsapp.enabled = false`. New step 3b: VPS `.env` file WHATSAPP_NUMBER comment-out. New step 3c: hard-fail QC guard that exits 1 if `whatsapp.enabled` is still `true` after the merge.
+- `FLEET-STANDARDS.md` — new §3 "WhatsApp — Permanently Banned" policy. Documents the two-layer fix, the root cause, and the hard-fail CI requirement.
+- `KNOWN-ISSUES.md` — new §5 "WhatsApp auto-install crash-loop". Documents symptom, root cause, permanent fix, and manual remediation steps for pre-v12.14.3 boxes.
+- `tests/unit/whatsapp-ban.test.sh` — new CI guard (8 assertions). Hard-fails if WhatsApp is re-introduced to any allowable configuration in the repo. Covers: CANONICAL block correctness, install.sh enforcement, FLEET-STANDARDS.md policy, KNOWN-ISSUES.md documentation, and no config template enabling whatsapp.
+
+**Version bumped:** all 9 markers → v12.14.3.
+Zero client names in diff (grep verified).
+
+---
+
+
 ## [v12.14.2] - 2026-06-15 - fix(skill-35): complete-answer fix for owner scope questions — enabled-channels model, Owner Q&A Playbook, QC auto-fail gate
 
 ### Changes

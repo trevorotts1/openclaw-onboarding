@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.14.2"
+ONBOARDING_VERSION="v12.14.3"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5496,6 +5496,80 @@ schedule_auto_kickoff "$TELEGRAM_LAST_RESULT" || true
 if command -v openclaw >/dev/null 2>&1; then
     step "Running openclaw doctor --fix to strip any stale plugin-injected config keys"
     openclaw doctor --fix 2>&1 | tail -5 || warn "doctor --fix had issues — continuing anyway (gateway may complain at start)"
+fi
+
+# ----------------------------------------------------------
+# v12.14.3: WhatsApp permanent ban (fleet-wide, non-negotiable)
+# ----------------------------------------------------------
+# ROOT CAUSE: The Hostinger Docker wrapper (server.mjs boot logic) calls
+# meetsRequirements() and auto-installs + enables the WhatsApp plugin on
+# EVERY gateway boot when WHATSAPP_NUMBER is present in the project .env
+# file (/docker/<project>/.env), regardless of openclaw.json. An un-paired
+# WhatsApp install immediately crashes the gateway into a QR-scan restart-loop.
+#
+# FIX LAYER 1: Disable the plugin in openclaw.json so the gateway never
+# activates it — covers both Mac and VPS.
+#
+# FIX LAYER 2 (VPS only): Comment out WHATSAPP_NUMBER in the Hostinger Docker
+# project .env so the wrapper's boot check never triggers the auto-install path.
+# This is the durable fix; layer 1 alone is not sufficient because the wrapper
+# fires before the gateway reads openclaw.json.
+#
+# Both steps are idempotent, non-blocking, and auto-applied on every
+# install/update. See FLEET-STANDARDS.md §3 and KNOWN-ISSUES.md §5.
+step "Applying WhatsApp permanent ban (fleet-wide enforcement)"
+
+# Layer 1: disable plugin in openclaw.json
+_whatsapp_ban_json() {
+    local _cfg="$1"
+    python3 - "$_cfg" <<'WABPYEOF'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+cfg = json.loads(p.read_text())
+plugins = cfg.setdefault("plugins", {})
+entries = plugins.setdefault("entries", {})
+wa = entries.setdefault("whatsapp", {})
+if wa.get("enabled") is False:
+    print("  [whatsapp-ban] plugins.entries.whatsapp.enabled already false — no-op")
+else:
+    wa["enabled"] = False
+    p.write_text(json.dumps(cfg, indent=2) + "\n")
+    print("  [whatsapp-ban] set plugins.entries.whatsapp.enabled = false in " + str(p))
+
+# Hard-assert: must be false after this point
+cfg2 = json.loads(p.read_text())
+enabled = cfg2.get("plugins", {}).get("entries", {}).get("whatsapp", {}).get("enabled", False)
+if enabled:
+    print("ERROR: WhatsApp plugin is still enabled after ban step — HARD FAIL", file=sys.stderr)
+    sys.exit(1)
+print("  [whatsapp-ban] QC: plugins.entries.whatsapp.enabled = false — PASS")
+WABPYEOF
+}
+
+if [ -f "$OC_JSON" ]; then
+    _whatsapp_ban_json "$OC_JSON" || warn "WhatsApp ban json step had issues — continuing (gateway restart still blocked)"
+else
+    note "WhatsApp ban: $OC_JSON not found yet — will be applied by apply-fleet-standards.sh"
+fi
+
+# Layer 2 (VPS only): comment out WHATSAPP_NUMBER in Hostinger Docker .env
+if [ "$IS_VPS" = "true" ] || [ -d "/docker" ]; then
+    _wa_env_found=0
+    for _wa_envf in /docker/*/.env /data/docker/*/.env; do
+        [ -f "$_wa_envf" ] || continue
+        _wa_env_found=1
+        if grep -qE '^[[:space:]]*WHATSAPP_NUMBER[[:space:]]*=[^#]' "$_wa_envf" 2>/dev/null; then
+            _wa_bak="${_wa_envf}.bak-whatsapp-ban-$(date +%Y%m%d%H%M%S)"
+            cp "$_wa_envf" "$_wa_bak"
+            # Comment out the active WHATSAPP_NUMBER line
+            perl -i -pe 's{^([[:space:]]*)(WHATSAPP_NUMBER[[:space:]]*=.+)$}{$1# WHATSAPP_NUMBER PERMANENTLY DISABLED (fleet ban v12.14.3 -- see FLEET-STANDARDS.md SS3)\n# $2}' "$_wa_envf"
+            note "WhatsApp ban: commented out WHATSAPP_NUMBER in $_wa_envf (backup: $_wa_bak)"
+        else
+            note "WhatsApp ban: WHATSAPP_NUMBER already absent/commented in $_wa_envf — no-op"
+        fi
+    done
+    [ "$_wa_env_found" -eq 0 ] && note "WhatsApp ban: no /docker/*/.env found from this context — Layer 1 (openclaw.json) is sufficient"
 fi
 
 # ----------------------------------------------------------
