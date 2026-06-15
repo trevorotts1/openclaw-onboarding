@@ -92,11 +92,14 @@ chmod +x "$FAKE_BIN/curl"
 # ZHC_STATE_FILE overrides the state file path for scripts that support it
 # (run-closeout.sh, create-notion-closeout.sh, closeout-readiness-watchdog.sh).
 # HOME override is also set as a fallback for scripts that compute OC_ROOT from $HOME.
+# ZHC_SKIP_ROUTING_PREFLIGHT=1 prevents B6 routing-preflight from running in the hermetic
+# test environment where verify-routing.sh cannot pass (no real openclaw.json / workspace).
 run_script() {
   HOME="$FAKE_HOME" \
   ZHC_STATE_FILE="$FIXTURE_STATE" \
   PATH="$FAKE_BIN:$PATH" \
   ZHC_SKIP_TG_PREFLIGHT=1 \
+  ZHC_SKIP_ROUTING_PREFLIGHT=1 \
     "$@"
 }
 
