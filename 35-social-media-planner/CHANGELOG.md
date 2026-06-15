@@ -1,5 +1,18 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.8.0 - 2026-06-15 — furnace root cause fix: ungated HEARTBEAT.md block removed + guard pattern + QC enforcement
+
+### Changed (heartbeat-furnace fix, part of onboarding v12.14.0)
+
+**Root cause eliminated:** INSTALL.md Step 9 previously appended an ungated `### Saturday 8:00 AM — Social Media Theme Request` block to the client's live HEARTBEAT.md. The agent reads HEARTBEAT.md on every heartbeat tick; without a day-of-week gate or idempotency marker, the full Skill-35 content pipeline fired on every tick.
+
+- **INSTALL.md Step 9** — Replaced the ungated HEARTBEAT.md prose block with a FURNACE RULE hard-block directive. Provides the cron activation path (from INSTRUCTIONS.md §"Activation") and a removal script for existing installs.
+- **INSTALL.md Completion Checklist** — Updated the `HEARTBEAT.md updated` item to `skill35-weekly-theme cron registered`.
+- **INSTRUCTIONS.md §Weekly trigger** — Removed "informational context only" language; states the block MUST NOT exist.
+- **INSTRUCTIONS.md §Guard pattern** — New section: reusable HEARTBEAT guard pattern (day-of-week gate + idempotency marker) for any future recurring task.
+- **qc-skill35.sh / qc-social-media-planner.sh Section I** — Fix #3 hard-fail: INSTALL.md must not contain the ungated Saturday block.
+- **skill-version.txt** — Bumped to v2.8.0.
+
 ## v2.7.1 - 2026-06-11 — route social posting through Skill 44 (Tier 0) first
 
 ### Changed (GHL skills integration review — Tier 0 routing gap)
