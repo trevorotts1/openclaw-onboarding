@@ -1,3 +1,14 @@
+## [v12.12.1] - 2026-06-15 - fix: director SOP mirror parity -- source_brief_origin propagated to SOP mirror outputs
+
+### Changes
+
+**Patch: Presentations SOP mirror parity fix.**
+
+- `director-of-presentations-sops.md`: added `source_brief_origin` to the Outputs section of the SOP mirror to match the authoritative role file (`director-of-presentations.md` step 4a sets `source_brief_origin: "role-22"` in `intake.json`; the mirror was missing this field in its Outputs listing).
+- All 9 version markers bumped to v12.12.1.
+
+---
+
 ## [v12.12.0] - 2026-06-15 - feat: Content-to-Presentation parity -- SOP 9.4B persuasion-intelligence extraction + AF-CONVERTER-PARITY gate
 
 ### Changes
