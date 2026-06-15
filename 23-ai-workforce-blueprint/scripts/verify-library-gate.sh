@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# verify-library-gate.sh — v10.17.0 (SUBSTANCE GATE + TRIO GATE + BOUNDARY GATE)
+# verify-library-gate.sh — v10.18.0 (SUBSTANCE GATE + TRIO GATE + BOUNDARY GATE + PRESENTATIONS WELCOME)
 #
 # ENFORCED build gate for the ROLE LIBRARY + SOP LIBRARY auto-pull.
+#
+# v10.18.0: adds PRESENTATIONS WELCOME auto-send -- on full gate pass, calls
+# scripts/send-presentation-dept-welcome.sh (idempotent; guarded by
+# presentationDeptWelcomeSent in state file). Failure = WARNING only; does not
+# change exit code. See: templates/role-library/presentations/
+# first-time-onboarding-presentations.md Section 20 for canonical template.
 #
 # v10.17.0 (PRD 2.12): adds BOUNDARY GATE — asserts canonical departments NEVER
 # enter the SOP authoring path. Canonical depts are those with pre-written role
@@ -339,6 +345,28 @@ fi
 
 echo "[verify-library-gate] roleLibraryStatus=$ROLE_STATUS sopLibraryStatus=$SOP_STATUS trioStatus=$TRIO_STATUS sopAuthoringBoundaryStatus=$BOUNDARY_STATUS"
 [ -n "$FAIL_REASON" ] && echo "[verify-library-gate] gaps: $FAIL_REASON" >&2
+
+# ==============================================================================
+# AUTO-SEND: Presentations Department Welcome (v10.18.0)
+# When every gate passes, fire the one-time Presentations dept welcome to the
+# owner via Telegram. The send script is idempotent (presentationDeptWelcomeSent
+# in state file) -- safe to call on every gate pass. A send failure is logged
+# as a WARNING and does NOT alter the gate exit code.
+# Wiring gate runs before this in the resume loop so wiringStatus is already set.
+# Fleet-generic: works for any client Mac or VPS; owner chat read from own config.
+# Canonical template: templates/role-library/presentations/
+#   first-time-onboarding-presentations.md Section 20.
+# ==============================================================================
+if [ "$BOUNDARY_STATUS" = "done" ] && [ "$TRIO_STATUS" = "done" ] && \
+   [ "$ROLE_STATUS" = "done" ] && [ "$SOP_STATUS" = "done" ]; then
+  _WELCOME_SCRIPT="$SCRIPT_DIR/send-presentation-dept-welcome.sh"
+  if [ -f "$_WELCOME_SCRIPT" ]; then
+    echo "[verify-library-gate] PRESENTATIONS WELCOME: all gates passed -- firing send-presentation-dept-welcome.sh"
+    bash "$_WELCOME_SCRIPT" 2>&1 | sed 's/^/  [welcome] /' || true
+  else
+    echo "[verify-library-gate] PRESENTATIONS WELCOME: send script not found at $_WELCOME_SCRIPT -- skipping" >&2
+  fi
+fi
 
 # ---- exit code = the gate verdict (boundary failure = rc 7, takes priority over all) ----
 if [ "$BOUNDARY_STATUS" != "done" ]; then

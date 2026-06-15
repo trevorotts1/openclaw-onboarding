@@ -370,4 +370,32 @@ The Director of Presentations (or the Master Orchestrator on a net-new first con
   --persona-version {{ASSIGNED_PERSONA_VERSION}}
 ```
 
-*End of how-to.md. All 19 sections present and filled.*
+---
+
+## 20. Auto-Send Welcome Message (Owner Telegram -- Dept Live Notification)
+
+**Purpose:** The moment this department passes BOTH the wiring gate (wiringStatus=done) AND the library gate (roleLibraryFilled=true AND sopLibraryFilled=true), the agent sends the owner one welcome message on Telegram. It arrives exactly once, marked idempotent in the build-state.
+
+**Idempotency key:** `.departments[] | select(.slug=="presentations") | .presentationDeptWelcomeSent` in `.workforce-build-state.json`. The send script hard-exits if this is already `true`. Only a failed send leaves it `false` for retry.
+
+**Placeholder resolution (from the box's own `.workforce-build-state.json` -- no client name is ever hardcoded):**
+
+| Placeholder | Source field | Fallback |
+|---|---|---|
+| `{{OWNER_FIRST_NAME}}` | `.ownerName` (first word) | `there` |
+| `{{BUSINESS_NAME}}` | `.companyName` | `your business` |
+| `{{DEPT_HEAD_PERSONA_OR_ROLE}}` | `.departments[presentations].deptHeadPersona` | `your Presentations Department head` |
+
+**Canonical welcome template (stored here; send script reads from this doc's context):**
+
+```
+Hi {{OWNER_FIRST_NAME}}! I'm the head of your Presentations Department at {{BUSINESS_NAME}}. Think of me as your creative partner, not just a tool that converts files. You do NOT need a finished presentation, a script, or even a rough draft -- you can start from a blank page. Here's how it works from scratch: 1) Tell me what you want to give -- a talk, pitch, webinar, even just a goal or feeling; one sentence is enough. 2) We brainstorm together -- I'll ask a few quick questions to find the angle, nail the audience, and shape what you want them to think, feel, and do. 3) I draft the outline and read it back for your yes/adjust/redirect. 4) Once you greenlight it, the team builds the full package: cinematic slide deck, Presenter's Guide, word-for-word speech, and audio demonstration -- you review and tweak at each stage. You get a finished PowerPoint and PDF ready to deliver. The key thing: I brainstorm WITH you -- you don't need it figured out, that's what I'm here for. Ready to start one right now? Just send me: 'Help me brainstorm a presentation about ___ for ___' -- or even just 'I want to create a new presentation, let's brainstorm.'
+```
+
+**Trigger wire:** `scripts/verify-library-gate.sh` (the gate that writes `roleLibraryFilled` and `sopLibraryFilled`) calls `scripts/send-presentation-dept-welcome.sh` in its PASS path -- AFTER writing the state file, BEFORE exiting 0. The wiring gate runs before the library gate in the resume loop, so `wiringStatus` is already set by the time this fires.
+
+**Send script:** `scripts/send-presentation-dept-welcome.sh` -- reads ownerChat, ownerName, companyName, and deptHeadPersona from `.workforce-build-state.json` on the box; never touches another box's state.
+
+**Fleet generic:** identical behavior on Mac (`~/.openclaw`) and VPS (`/data/.openclaw`); platform detected at runtime.
+
+*End of how-to.md. All 20 sections present and filled.*
