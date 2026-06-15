@@ -510,6 +510,14 @@
         "systems-engineer",
         "qc-specialist"
       ]
+    },
+    "launch-operations": {
+      "count": 3,
+      "roles": [
+        "director-of-launch-operations",
+        "go-to-market-specialist",
+        "launch-manager"
+      ]
     }
   },
   "roles": [
