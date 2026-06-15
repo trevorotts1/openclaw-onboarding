@@ -45,7 +45,11 @@ from pathlib import Path
 # ─── Path resolvers ──────────────────────────────────────────────────────────
 
 def find_build_state_path() -> Path:
-    """Resolve the build-state JSON path (VPS first, Mac fallback)."""
+    """Resolve the build-state JSON path (env override first, then VPS, then Mac)."""
+    # Test/override hook: lets the acceptance suite point at a sandbox state file.
+    env_override = os.environ.get("WORKFORCE_BUILD_STATE_PATH")
+    if env_override:
+        return Path(env_override)
     candidates = [
         Path("/data/.openclaw/workspace/.workforce-build-state.json"),
         Path.home() / ".openclaw/workspace/.workforce-build-state.json",
@@ -57,7 +61,11 @@ def find_build_state_path() -> Path:
 
 
 def find_index_json_path() -> Path | None:
-    """Locate the role-library _index.json (VPS first, Mac fallback)."""
+    """Locate the role-library _index.json (env override first, then VPS, then Mac)."""
+    # Test/override hook: lets the acceptance suite point at a sandbox index.
+    env_override = os.environ.get("WORKFORCE_INDEX_PATH")
+    if env_override and Path(env_override).is_file():
+        return Path(env_override)
     candidates = [
         Path("/data/.openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json"),
         Path.home() / ".openclaw/skills/23-ai-workforce-blueprint/templates/role-library/_index.json",

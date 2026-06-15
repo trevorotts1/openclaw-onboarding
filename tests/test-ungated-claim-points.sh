@@ -262,6 +262,181 @@ else
   fi
 fi
 
+# ─── C4-BEHAVIORAL: refresh-build-state gated done-flip (real run) ────────────
+_section "C4-BEHAVIORAL — refresh-build-state-from-index.py gated done-flip (real run)"
+
+REFRESH_PY="$REPO_ROOT/23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
+if [ -f "$REFRESH_PY" ]; then
+  _C4_SANDBOX=$(mktemp -d)
+  # Seed an _index.json with one dept that has role NAMES (count>0)
+  cat > "$_C4_SANDBOX/_index.json" <<'IDXEOF'
+{
+  "total_roles": 3,
+  "departments": {
+    "operations": {
+      "roles": ["operations-director", "ops-analyst", "ops-coordinator"]
+    }
+  }
+}
+IDXEOF
+
+  # Seed a build-state with the dept present but library/wiring NOT done
+  cat > "$_C4_SANDBOX/.workforce-build-state.json" <<'BSEOF'
+{
+  "departments": {
+    "operations": {
+      "slug": "operations",
+      "name": "Operations",
+      "status": "building",
+      "rolesPlanned": 0,
+      "rolesDone": 0,
+      "roleLibraryFilled": false,
+      "sopLibraryFilled": false,
+      "wiringStatus": "pending"
+    }
+  },
+  "totalRoles": 0,
+  "totalDepartments": 0
+}
+BSEOF
+
+  # Run in --strict mode (default). The dept has role NAMES but library/wiring
+  # are NOT done -> status must NOT flip to done.
+  WORKFORCE_INDEX_PATH="$_C4_SANDBOX/_index.json" \
+  WORKFORCE_BUILD_STATE_PATH="$_C4_SANDBOX/.workforce-build-state.json" \
+    python3 "$REFRESH_PY" --strict >/dev/null 2>&1 || true
+
+  _C4_STATUS=$(python3 -c "import json; d=json.load(open('$_C4_SANDBOX/.workforce-build-state.json')); print(d['departments']['operations']['status'])" 2>/dev/null || echo "ERROR")
+  _C4_ROLES=$(python3 -c "import json; d=json.load(open('$_C4_SANDBOX/.workforce-build-state.json')); print(d['departments']['operations']['rolesDone'])" 2>/dev/null || echo "ERROR")
+
+  if [ "$_C4_STATUS" != "done" ]; then
+    _pass "C4-BEHAVIORAL: dept with role names but unfilled library/wiring did NOT flip to done (status=$_C4_STATUS)"
+  else
+    _fail "C4-BEHAVIORAL: dept incorrectly flipped to done despite unfilled library/wiring"
+  fi
+
+  if [ "$_C4_ROLES" = "3" ]; then
+    _pass "C4-BEHAVIORAL: role counts still updated to 3 (counts are not gated, only status is)"
+  else
+    _fail "C4-BEHAVIORAL: role counts not updated correctly (got $_C4_ROLES, expected 3)"
+  fi
+
+  # Now flip the gate fields to done and re-run -> status SHOULD become done
+  python3 -c "
+import json
+p='$_C4_SANDBOX/.workforce-build-state.json'
+d=json.load(open(p))
+d['departments']['operations']['roleLibraryFilled']=True
+d['departments']['operations']['sopLibraryFilled']=True
+d['departments']['operations']['wiringStatus']='done'
+json.dump(d, open(p,'w'), indent=2)
+" 2>/dev/null
+
+  WORKFORCE_INDEX_PATH="$_C4_SANDBOX/_index.json" \
+  WORKFORCE_BUILD_STATE_PATH="$_C4_SANDBOX/.workforce-build-state.json" \
+    python3 "$REFRESH_PY" --strict >/dev/null 2>&1 || true
+
+  _C4_STATUS2=$(python3 -c "import json; d=json.load(open('$_C4_SANDBOX/.workforce-build-state.json')); print(d['departments']['operations']['status'])" 2>/dev/null || echo "ERROR")
+  if [ "$_C4_STATUS2" = "done" ]; then
+    _pass "C4-BEHAVIORAL: dept flipped to done once library+wiring gates pass (status=$_C4_STATUS2)"
+  else
+    _fail "C4-BEHAVIORAL: dept did NOT flip to done even after gates passed (status=$_C4_STATUS2)"
+  fi
+
+  # --counts-only must update counts WITHOUT touching status (regression guard)
+  python3 -c "
+import json
+p='$_C4_SANDBOX/.workforce-build-state.json'
+d=json.load(open(p))
+d['departments']['operations']['status']='building'
+d['departments']['operations']['roleLibraryFilled']=False
+json.dump(d, open(p,'w'), indent=2)
+" 2>/dev/null
+
+  WORKFORCE_INDEX_PATH="$_C4_SANDBOX/_index.json" \
+  WORKFORCE_BUILD_STATE_PATH="$_C4_SANDBOX/.workforce-build-state.json" \
+    python3 "$REFRESH_PY" --counts-only >/dev/null 2>&1 || true
+
+  _C4_STATUS3=$(python3 -c "import json; d=json.load(open('$_C4_SANDBOX/.workforce-build-state.json')); print(d['departments']['operations']['status'])" 2>/dev/null || echo "ERROR")
+  if [ "$_C4_STATUS3" = "building" ]; then
+    _pass "C4-BEHAVIORAL: --counts-only updated counts WITHOUT flipping status (regression guard)"
+  else
+    _fail "C4-BEHAVIORAL: --counts-only changed status (got $_C4_STATUS3, expected building)"
+  fi
+
+  rm -rf "$_C4_SANDBOX"
+else
+  _fail "C4-BEHAVIORAL: refresh-build-state-from-index.py not found"
+fi
+
+# ─── A6-BEHAVIORAL: content-gate refuses stamp on mismatched source ──────────
+# This simulates the EXACT A3 comparison loop from update-skills.sh: build a
+# source manifest and a destination manifest, compare per-skill digests, and
+# assert the gate (a) PASSES when src==dest and (b) FAILS (stamp refused) when
+# the destination content does not match source.
+_section "A6-BEHAVIORAL — A3 content-gate stamp refusal (real digest comparison)"
+
+HASH_SCRIPT="$REPO_ROOT/scripts/skill-content-hash.sh"
+if [ -f "$HASH_SCRIPT" ]; then
+  _A6_SRC=$(mktemp -d)
+  _A6_DEST=$(mktemp -d)
+
+  # Identical content first (clean install)
+  for d in "$_A6_SRC" "$_A6_DEST"; do
+    mkdir -p "$d/01-skill-a" "$d/02-skill-b"
+    echo "alpha content v1" > "$d/01-skill-a/SKILL.md"
+    echo "beta content v1" > "$d/02-skill-b/SKILL.md"
+  done
+
+  # Helper that replicates the A3 gate decision
+  _a6_gate() {
+    local src_dir="$1" dest_dir="$2"
+    local src_manifest dest_manifest gate_pass=1
+    src_manifest=$(bash "$HASH_SCRIPT" "$src_dir" 2>/dev/null)
+    dest_manifest=$(bash "$HASH_SCRIPT" "$dest_dir" 2>/dev/null)
+    while IFS='|' read -r sn sd; do
+      [ -z "$sn" ] && continue
+      [ "$sn" = "__TREE_SHA__" ] && continue
+      local dd
+      dd=$(echo "$dest_manifest" | grep "^${sn}|" | cut -d'|' -f2 | head -1)
+      if [ -z "$dd" ] || [ "$dd" != "$sd" ]; then
+        gate_pass=0
+      fi
+    done <<< "$src_manifest"
+    echo "$gate_pass"
+  }
+
+  _A6_RESULT_CLEAN=$(_a6_gate "$_A6_SRC" "$_A6_DEST")
+  if [ "$_A6_RESULT_CLEAN" = "1" ]; then
+    _pass "A6-BEHAVIORAL: clean install (src==dest) — gate PASSES, stamp allowed"
+  else
+    _fail "A6-BEHAVIORAL: clean install incorrectly failed the gate"
+  fi
+
+  # Now corrupt the destination (half-applied install) — gate must REFUSE stamp
+  echo "CORRUPTED beta content" > "$_A6_DEST/02-skill-b/SKILL.md"
+  _A6_RESULT_DRIFT=$(_a6_gate "$_A6_SRC" "$_A6_DEST")
+  if [ "$_A6_RESULT_DRIFT" = "0" ]; then
+    _pass "A6-BEHAVIORAL: mismatched source/dest — gate FAILS, stamp REFUSED (half-applied-box fix)"
+  else
+    _fail "A6-BEHAVIORAL: gate did NOT detect content mismatch — stamp would be falsely written"
+  fi
+
+  # Missing skill in destination must also fail the gate
+  cp -R "$_A6_SRC/02-skill-b/SKILL.md" "$_A6_DEST/02-skill-b/SKILL.md"   # fix corruption
+  rm -rf "$_A6_DEST/01-skill-a"                                          # delete a whole skill
+  _A6_RESULT_MISSING=$(_a6_gate "$_A6_SRC" "$_A6_DEST")
+  if [ "$_A6_RESULT_MISSING" = "0" ]; then
+    _pass "A6-BEHAVIORAL: skill missing in dest — gate FAILS, stamp REFUSED"
+  else
+    _fail "A6-BEHAVIORAL: gate did NOT detect a missing skill in destination"
+  fi
+
+  rm -rf "$_A6_SRC" "$_A6_DEST"
+else
+  _fail "A6-BEHAVIORAL: skill-content-hash.sh not found"
+fi
+
 # ─── Final report ─────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
