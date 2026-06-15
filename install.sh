@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.13.0"
+ONBOARDING_VERSION="v12.14.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5851,16 +5851,62 @@ echo ""
 # We apply sane defaults here at the end of install.sh so even a stalled box gets
 # a safe baseline. The agent's own reset (Start Here.md Step 3) remains the belt;
 # this is the suspenders. Uses fresh-context heartbeat (not target:last history replay).
-note "Setting sane heartbeat defaults (6h interval, main-only, fresh-context, capped tokens)..."
+#
+# Fix D2 (furnace-fix v3, v12.14.0): Per-agent heartbeat override for the main/ceo agent.
+# agents.defaults.heartbeat applies to ALL agents — but default:true does NOT cause that
+# agent to inherit agents.defaults.heartbeat. Any agent with default:true needs its OWN
+# explicit heartbeat.every override (e.g. agents.list[main].heartbeat.every) or it may
+# fire at the OpenClaw system default (5m or 30m), not the 6h target.
+# Fleet diagnostic: at least one ceo agent burned at the system default (30m) because of this gap.
+note "Setting sane heartbeat defaults (6h interval, main-only, fresh-context, capped tokens) + per-agent main override..."
 if command -v openclaw >/dev/null 2>&1; then
     _hb_ok=1
     openclaw config set agents.defaults.heartbeat.every 6h 2>>"$LOG_FILE" || _hb_ok=0
     openclaw config set agents.defaults.heartbeat.agentsOnly '["main"]' 2>>"$LOG_FILE" || true
     openclaw config set agents.defaults.heartbeat.maxTokens 2000 2>>"$LOG_FILE" || true
     if [ "$_hb_ok" = "1" ]; then
-        success "Heartbeat set to 6h main-only fresh-context (prevents [heartbeat poll] loop on new installs)"
+        success "Heartbeat defaults set to 6h main-only fresh-context (prevents [heartbeat poll] loop on new installs)"
     else
         warn "Could not set heartbeat.every via openclaw config set. Manual fix: openclaw config set agents.defaults.heartbeat.every 6h"
+    fi
+    # Fix D2: explicit per-agent override for the main (ceo/default) agent.
+    # This ensures the main agent does not fall back to the system default heartbeat
+    # cadence regardless of whether it has default:true set.
+    _hb_main_ok=1
+    openclaw config set 'agents.list[main].heartbeat.every' 6h 2>>"$LOG_FILE" || _hb_main_ok=0
+    if [ "$_hb_main_ok" = "1" ]; then
+        success "Per-agent heartbeat override set: agents.list[main].heartbeat.every=6h (Fix D2 — default:true does not inherit agents.defaults.heartbeat)"
+    else
+        # Fallback: try Python direct JSON edit if openclaw config set does not support bracket notation
+        if [ -f "$OC_JSON" ]; then
+            python3 - <<'PYEOF' 2>>"$LOG_FILE" && success "Per-agent main heartbeat override written via Python JSON edit (Fix D2 fallback)" || warn "Fix D2 fallback: could not write agents.list[main].heartbeat.every — set manually: openclaw config set 'agents.list[main].heartbeat.every' 6h"
+import json, os, sys
+oc_json = os.environ.get('OC_JSON', '')
+if not oc_json or not os.path.exists(oc_json):
+    sys.exit(1)
+with open(oc_json) as f:
+    cfg = json.load(f)
+agents_list = cfg.get('agents', {}).get('list', [])
+patched = False
+for ag in agents_list:
+    if isinstance(ag, dict) and ag.get('id') == 'main':
+        ag.setdefault('heartbeat', {})['every'] = '6h'
+        patched = True
+        break
+if not patched:
+    print("  Fix D2: no agents.list entry with id=main found — skip per-agent override", flush=True)
+    sys.exit(0)
+import tempfile, shutil
+tmp = oc_json + '.tmp'
+with open(tmp, 'w') as f:
+    json.dump(cfg, f, indent=2)
+    f.write('\n')
+shutil.move(tmp, oc_json)
+print("  Fix D2: agents.list[main].heartbeat.every=6h written to openclaw.json", flush=True)
+PYEOF
+        else
+            warn "Fix D2: OC_JSON not set — could not write per-agent main heartbeat override. Set manually: openclaw config set 'agents.list[main].heartbeat.every' 6h"
+        fi
     fi
 fi
 

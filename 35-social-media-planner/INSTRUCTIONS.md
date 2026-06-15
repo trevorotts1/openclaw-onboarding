@@ -221,7 +221,7 @@ Report the exact platforms returned by the live query. If the query returns empt
 ## Weekly trigger — CRON, not heartbeat (enforcement)
 The weekly content-theme question and the weekly social-planning run MUST be driven by a hard cron, NOT the heartbeat checklist. Heartbeat timing drifts and silently skips the weekly prompt (this is exactly why a client's Saturday theme question never fired). At activation, install a weekly cron (default Saturday 8:00 AM client-local time) that (a) asks the owner the content-theme question and (b) runs the weekly social plan, backed by a state field so it is idempotent and catches up if a fire is missed. Do NOT rely on heartbeat prose for any weekly trigger.
 
-The cron is installed as part of the activation step below. The HEARTBEAT.md Saturday-theme entry (added by INSTALL.md Step 9) is informational context only — the cron is the enforcement mechanism.
+The cron is installed as part of the activation step below. INSTALL.md Step 9 directs the installer to remove any Saturday theme-request block from the client's live HEARTBEAT.md — that block MUST NOT exist because the agent acts on heartbeat prose every tick. The cron is the sole enforcement mechanism.
 
 ### Activation — install the weekly theme cron
 
@@ -253,6 +253,52 @@ fi
 ```
 
 If `openclaw cron add` is not available on this install, fall back to `openclaw cron create` with identical flags. Do NOT write a `cron.jobs` JSON block — it does not validate on OpenClaw 2026.5.27+.
+
+---
+
+## Reusable guard pattern for any recurring real-work task in HEARTBEAT.md
+
+**Rule:** Any task that must fire on a specific cadence (daily, weekly, monthly) and does real work (calls an API, runs a pipeline, sends a message) MUST use a hard cron, NOT a heartbeat prose entry. If — after careful review — a task absolutely must live in HEARTBEAT.md rather than a cron, it MUST include BOTH guards:
+
+1. **Day-of-week / time gate** — check with `date` before doing work
+2. **Idempotency marker** — a file/key that proves this period's fire already ran
+
+```bash
+#!/usr/bin/env bash
+# ── HEARTBEAT.md recurring real-work guard pattern (fleet-wide template) ──
+# Copy this pattern for any HEARTBEAT.md task that must NOT fire on every tick.
+# Replace DOW, MARKER_PATH, and the "do real work here" block.
+
+DOW=6                          # 1=Mon … 7=Sun (date +%u)
+MARKER_PATH="$HOME/.openclaw/data/<skill>/weekly-task-last-run.json"
+PERIOD_KEY="$(date +%Y-%U)"   # ISO year + week number (change to %Y-%m-%d for daily)
+
+# Guard 1: day-of-week
+if [ "$(date +%u)" != "$DOW" ]; then
+  echo "HEARTBEAT guard: not Saturday (day=$(date +%u)) — skip" && exit 0
+fi
+
+# Guard 2: idempotency (already ran this period?)
+if [ -f "$MARKER_PATH" ] && python3 -c "
+import json, sys
+d = json.load(open('$MARKER_PATH'))
+sys.exit(0 if d.get('period') == '$PERIOD_KEY' else 1)
+" 2>/dev/null; then
+  echo "HEARTBEAT guard: already ran for period $PERIOD_KEY — skip" && exit 0
+fi
+
+# ── Do real work here ────────────────────────────────────────────────────────
+# ...
+
+# ── Write idempotency marker ─────────────────────────────────────────────────
+mkdir -p "$(dirname "$MARKER_PATH")"
+python3 -c "import json; json.dump({'period': '$PERIOD_KEY', 'ts': __import__('datetime').datetime.utcnow().isoformat()}, open('$MARKER_PATH', 'w'))"
+echo "HEARTBEAT guard: work done for period $PERIOD_KEY — marker written"
+```
+
+**Preferred alternative:** register an `openclaw cron add` job instead. Crons fire on a hard schedule, never on every heartbeat tick, and do not pollute HEARTBEAT.md with executable prose.
+
+See also: `docs/HEARTBEAT-GUARD-PATTERN.md` (fleet-wide reference).
 
 ---
 
