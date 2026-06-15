@@ -1,4 +1,4 @@
-## [v12.14.0] - 2026-06-15 - fix(skill-35): complete-answer fix for owner scope questions — enabled-channels model, Owner Q&A Playbook, QC auto-fail gate
+## [v12.14.2] - 2026-06-15 - fix(skill-35): complete-answer fix for owner scope questions — enabled-channels model, Owner Q&A Playbook, QC auto-fail gate
 
 ### Changes
 
@@ -12,6 +12,90 @@ Root cause: SKILL.md description, Purpose, Key Principles, and INSTRUCTIONS.md "
 - `35-social-media-planner/QC.md` — new "SKILL DOCUMENTATION INTEGRITY" auto-fail gate (11 checks): stale string absent, Instagram + TikTok named, Owner Q&A Playbook present, cross-file consistency. Programmatic grep checks included.
 - `35-social-media-planner/CHANGELOG.md` — v2.8.0 entry documenting all 5 fixes.
 - `35-social-media-planner/skill-version.txt` — v2.7.1 → v2.8.0.
+
+**Version bumped:** all 9 markers → v12.14.2.
+Zero client names in diff (grep verified).
+
+---
+
+## [v12.14.1] - 2026-06-15 - fix: client-provider capability guard (multimodal/text-only mismatch class)
+
+### Changes
+
+**Prevents the "multimodal embeddings enabled against text-only provider" bug class.**
+That config causes the memory-core multimodal adapter to throw on every message,
+silently killing memory search. No startup error. No agent error. Just dead memory.
+
+**Deliverables:**
+
+`scripts/smoke-test-provider-capabilities.sh` — CLIENT-KEYS SMOKE TEST (new file).
+Runs ON the client box with the client's own API keys. FAILS LOUD on:
+- (S1) `memorySearch.fallback = "none"` — no fallback path, silent memory death on provider failure
+- (S2) Capability mismatch: any agent has `multimodal.enabled=true` while the configured
+  embedding provider is TEXT_ONLY (openai, openrouter, ollama, ollama-cloud, gemini, google,
+  cohere, mistral, anthropic, groq, together, fireworks, perplexity, deepseek)
+- (S3) Live agent probe: gateway does not return a valid reply (4xx/ECONNREFUSED/402/model error)
+- (S4) Memory search throws (multimodal adapter throw or embedding provider failure)
+On failure: sets `closeoutStatus=blocked-provider-mismatch` + alerts operator via Telegram.
+Skippable with `ZHC_SKIP_PROVIDER_SMOKE=1` (unit-test environments).
+Live probes skippable with `ZHC_SKIP_LIVE_PROBE=1` (CI/static environments).
+
+`scripts/qc-assert-provider-capability-invariants.sh` — STATIC QC INVARIANT (new file).
+Build-time / CI check. FAILS the build if ANY agent config ships:
+- (I1) `memorySearch.fallback = "none"`
+- (I2) `memorySearch.multimodal.enabled=true` while the configured provider is TEXT_ONLY
+Checks both `agents.defaults.memorySearch` AND per-agent `memorySearch` blocks.
+Same exit-code contract as `verify-routing.sh` (0=pass, 1=FATAL).
+
+`scripts/qc-system-integrity.sh` — Check X.8 added (new gate).
+Runs `qc-assert-provider-capability-invariants.sh` as Check X.8 in the cross-cutting
+invariant section. Failures are hard-fail (not warn) — same severity as routing invariants.
+
+`37-zhc-closeout/scripts/run-closeout.sh` — B7 gate added after B6 (routing check).
+Runs `smoke-test-provider-capabilities.sh` as Gate B7. REFUSES to close out a box
+whose config has a provider capability mismatch. Skippable via `ZHC_SKIP_PROVIDER_SMOKE=1`.
+
+`docs/PROVIDER-CAPABILITY-CONFIG-PRINCIPLE.md` — SOP reference (new file).
+Documents the principle (config derived from real provider capabilities), the TEXT_ONLY
+provider list, the two enforcement gates, and the remediation path.
+
+`tests/unit/provider-capability-guard.test.sh` — 9-scenario test harness (new file).
+Scenarios A-I: text-only+multimodal → smoke FAIL; clean config → smoke PASS; text-only+multimodal
+→ static FAIL; clean → static PASS; fallback=none → static FAIL; fallback=none → smoke FAIL;
+no openclaw.json → static exits 1 gracefully; per-agent multimodal caught; ollama-cloud
+regression guard. All 14 assertions pass.
+
+**Version bumped:** all 9 markers → v12.14.1.
+Zero client names in diff (grep verified).
+
+---
+
+## [v12.14.0] - 2026-06-15 - fix: heartbeat-furnace root cause (Skill-35 ungated HEARTBEAT.md block removed + per-agent main override + guard pattern + QC enforcement)
+
+### Changes
+
+**Root cause of fleet-wide heartbeat token furnace eliminated.**
+
+**Root cause (proven):** `35-social-media-planner/INSTALL.md` Step 9 appended a `### Saturday 8:00 AM — Social Media Theme Request` task into the client's live HEARTBEAT.md with no day-of-week gate and no idempotency marker. The agent reads HEARTBEAT.md on every heartbeat tick; the task fired the full Skill-35 content pipeline (15+ agent calls) on every tick, burning the metered model continuously.
+
+**Partial fix gap:** A prior fix added the `skill35-weekly-theme` gated cron (in INSTRUCTIONS.md) but left the ungated HEARTBEAT.md block in INSTALL.md and labeled it "informational context only." The agent acts on prose in HEARTBEAT.md — "informational" is not a safe label.
+
+**Additional gap:** The `main` (ceo/default) agent with `default:true` does NOT inherit `agents.defaults.heartbeat`. It needs its own explicit `heartbeat.every` override, or it falls back to the OpenClaw system default (5m or 30m). At least one fleet box burned at the 30m system default because of this gap.
+
+**Deliverables:**
+
+- **`35-social-media-planner/INSTALL.md` Step 9** — REPLACED the ungated HEARTBEAT.md prose block with a FURNACE RULE hard-block directive that (a) prohibits writing to HEARTBEAT.md, (b) directs to the cron activation block in INSTRUCTIONS.md, and (c) provides a removal script for existing installs that already have the bad block.
+- **`35-social-media-planner/INSTALL.md` Completion Checklist** — Updated the `HEARTBEAT.md updated` checkbox to `skill35-weekly-theme cron registered`.
+- **`35-social-media-planner/INSTRUCTIONS.md` §Weekly trigger** — Removed "informational context only" language; replaced with explicit statement that the block MUST NOT exist.
+- **`35-social-media-planner/INSTRUCTIONS.md` §Guard pattern** — Added the reusable HEARTBEAT guard pattern (day-of-week gate + idempotency marker) as a fleet-wide snippet for any future recurring task that must live in HEARTBEAT.md.
+- **`35-social-media-planner/qc-skill35.sh` Section I** — Added Fix #3 hard-fail assertions: INSTALL.md must not contain the ungated Saturday block; INSTALL.md must direct cron registration.
+- **`35-social-media-planner/qc-social-media-planner.sh` Section I** — Same Fix #3 assertions mirrored.
+- **`35-social-media-planner/skill-version.txt`** — Bumped to v2.8.0.
+- **`install.sh`** — Fix D2: after `agents.defaults.heartbeat` block, adds per-agent `agents.list[main].heartbeat.every=6h` override (bracket notation with Python JSON fallback). Explicitly documents that `default:true` does not inherit `agents.defaults.heartbeat`.
+- **`docs/HEARTBEAT-GUARD-PATTERN.md`** — New fleet-wide reference doc: furnace root cause, the rule, the guard pattern snippet, QC enforcement, and heartbeat cadence standards table.
+- **`version`**, **`cc-compat.json`**, **`install.sh` ONBOARDING_VERSION** — All bumped to v12.14.0.
+
+**Per-box fleet sweep (deployed HEARTBEAT.md cleanup for existing boxes) is the SEPARATE gated step.** This PR fixes the repo/scaffolding only. Running the removal script in Step 9 on each client box is the fleet sweep, gated on testing this PR first.
 
 ---
 

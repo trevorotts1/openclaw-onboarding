@@ -153,7 +153,7 @@ echo "── Section H: Security ──"
 assert "PIT not present in any workspace .md file" "! grep -rE 'pit-[a-f0-9]{8}-[a-f0-9]{4}' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'pit-XXX\\|pit-xxx\\|pit-x'"
 
 echo ""
-echo "── Section I: Fix assertions (v2.2.0) ──"
+echo "── Section I: Fix assertions (v2.3.0) ──"
 SKILL35_DIR="$HOME/.openclaw/skills/35-social-media-planner"
 [ ! -d "$SKILL35_DIR" ] && SKILL35_DIR="$(dirname "$0")"
 
@@ -172,6 +172,15 @@ warn_only "INSTRUCTIONS.md explicitly warns against heartbeat-only weekly trigge
 # FIX #2 delivery: --announce present in cron registration (ensures delivery fires, not just best-effort)
 assert "skill35-weekly-theme cron uses --announce delivery (Fix #2 — delivery enforcement)" \
   "grep -A5 'skill35-weekly-theme' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null | grep -q -- '--announce'"
+
+# FIX #3 (v12.14.0 furnace-fix): INSTALL.md must NOT contain the ungated Saturday HEARTBEAT.md prose block.
+# This is a HARD FAIL — any re-introduction of the ungated block is a furnace regression.
+assert "INSTALL.md does NOT contain ungated Saturday HEARTBEAT.md task block (Fix #3 — furnace regression guard)" \
+  "! grep -qE '###.*Saturday 8:00 AM.*Social Media' \"$SKILL35_DIR/INSTALL.md\" 2>/dev/null"
+
+# FIX #3 corollary: INSTALL.md Step 9 instructs to register the cron, NOT write to HEARTBEAT.md
+assert "INSTALL.md Step 9 directs cron registration (not HEARTBEAT.md write) (Fix #3)" \
+  "grep -qE 'FURNACE RULE|do NOT write to HEARTBEAT|openclaw cron add' \"$SKILL35_DIR/INSTALL.md\" 2>/dev/null"
 
 echo ""
 echo "═══════════════════════════════════════════════"
