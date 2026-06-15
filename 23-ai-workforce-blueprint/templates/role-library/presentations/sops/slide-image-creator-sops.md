@@ -581,11 +581,123 @@ Do not render any description of the picture, any spoken-script or presenter lin
 Do not render extra or missing fingers, malformed or fused hands, warped or distorted facial features, mismatched eyes, distorted teeth, plastic over-smoothed skin, or unnatural body proportions.
 Do not place a busy or high-detail background behind any text zone; keep the text zone clean (scrim, base-color panel, or negative space) so type stays legible.
 Do not render a demographic other than [REPRESENTATION_MIX]; do not lighten, ashen, grey, or desaturate deep skin tones; do not mono-cast the deck.
-Do not render any watermark, signature, UI artifact, emoji or clipart glyph, em dash, dark or pure-black background, grainy or banded texture, basic or default font, text without a designed weight and large size, text within 5% of any edge, text over a face, or a plain background with text dropped on top.
+Do not render any watermark, signature, UI artifact, emoji or clipart glyph, em dash, dark or pure-black background, grainy or banded texture, basic or default font, text without a designed weight and large size, text within 5% of any edge, text over a face, or a plain background with text dropped on top. Do not apply any gradient fill, radial glow, bloom, or metallic shimmer to any text element; all type uses flat solid brand color only.
 ```
 
 **Note on the logo directive:** the `// MODE` comment and the LOGO sentence together are the image-to-image guard; the Slide Submitter reads the mode and passes LOGO_URL as `input_urls[0]` per SOP-IMG-01 Mode B. A prompt that omits the image-to-image mode declaration or the "place, do not redraw" sentence on a logo slide fails AF-P15 at Phase 3 prompt QC.
 
 **Hand to:** QC Specialist -- Presentations (the template is the structure every AF-P check is run against).
+
+---
+
+### SOP 9.10 -- Producing-Rule Additions (Vision-Gate Doctrine, v12.9.0)
+
+**When to run:** Alongside SOP 9.1, SOP 9.6, and SOP 9.7 on every prompt in every presentation deck. These rules are the PRODUCING-ROLE half of each auto-fail code introduced in the vision-gate overhaul. Each rule here has a corresponding hard auto-fail in qc-specialist-presentations-sops.md (the gate is the enforcement; this SOP is the authoring discipline).
+
+**Inputs:**
+- intake.json (audience_composition, FINAL_PRICE, fish_audio_voice_id if available)
+- SOP-CAST-01-AUDIENCE-COMPOSITION-AND-CASTING-LEDGER.md (the casting ledger)
+- SOP-IMG-05-PIL-LOGO-COMPOSITE.md (gradient ban and PIL composite)
+- SOP-PITCH-05-DELIVERABLE-BUNDLE.md (audio deliverable)
+- The brief (value stack, promises, re-pitch block, validator sources, Wall of Wins tiles)
+
+---
+
+**Part A -- GRADIENT BAN (producing side; QC enforcement: AF-GRAD)**
+
+The following prompt language is PERMANENTLY BANNED from every prompt in every presentation deck:
+
+- Any gradient fill on a typographic element: "liquid-gold gradient", "metallic warm gold", "gold-to-gold gradient", "gradient fill on the headline"
+- Any glow on a text element: "soft warm radial glow", "metallic glowing", "raspberry glowing result line", "glow behind the price"
+- Any bloom or shimmer on type: "luminous bloom on the numeral", "warm shimmer on the headline"
+
+Replace ALL of the above with: flat solid brand-color type at full weight and contrast. The STYLE BLOCK gold hex is used as a flat solid color; it can be the fill of a kicker label or divider rule but never a gradient fill on any type glyph. The scrim gradient (on the image atmospheric layer, behind type) is not banned. Only gradients and glows applied TO TYPE are banned.
+
+Write the gradient ban into the DO-NOT BLOCK (element 15) as: "Do not apply any gradient fill, radial glow, bloom, or metallic shimmer to any text element; all type uses flat solid brand color only."
+
+---
+
+**Part B -- OPACITY BACKGROUNDS ON FLAT SLIDES (producing side; QC enforcement: AF-OPACITY)**
+
+Slides that would otherwise be pure flat color (transition slides, type-dominant A4 slides with no photo brief, data-only slides) must include a faded photographic atmospheric background layer at low opacity (approximately 10-15%) behind the type. The atmospheric layer is:
+
+- On-brand and on-temperature (matches the deck's grade profile per SOP 9.7 Part B)
+- Contextually appropriate (a soft bokeh interior, a blurred outdoor scene, a textured warm surface -- never a distracting photo at full opacity)
+- Composed so the type reads cleanly above it (scrim as needed)
+
+State the atmospheric layer in the prompt: "Faded atmospheric background at approximately 10-15% opacity behind the type zone. [Describe the background scene.] The type must read cleanly above it; apply a soft white scrim if needed."
+
+**Exception:** slides explicitly flagged DARK_OK = true use their dark base with no overlay requirement. Hook A4 slides (type-dominant) may use a 10-15% opacity atmospheric OR a clean base color -- both are acceptable.
+
+---
+
+**Part C -- IMAGE-MODEL CONSISTENCY (producing side; QC enforcement: AF-MODEL)**
+
+All slides in a single deck are generated from the SAME image model and the SAME locked color-grade and lighting recipe. The model is declared once in the brief and does not change mid-deck. The grade is declared in the STYLE BLOCK COLOR GRADING PROFILE and applied identically to every prompt via SOP 9.7 Part B.
+
+A mid-deck model swap (switching from one generation model to another without Director sign-off and a full re-grade of prior slides) is a defect. If a slide must be re-generated on a different model because the original is unavailable, flag the Director and the QC Specialist. A mixed-model deck fails AF-MODEL at image QC.
+
+---
+
+**Part D -- LAYOUT VARIETY AND NO-CONSECUTIVE-ARCHETYPE RULE (producing side; QC enforcement: AF-SAME)**
+
+Authoring rule: when assigning archetypes to slides in Phase 1 (the arc assignment step), the following variety constraints apply:
+
+1. NO TWO CONSECUTIVE SLIDES may share the same archetype (A1-A5) AND the same image zone (left/right/top/bottom/full-bleed). A deck where every slide is A2 photo-right / type-left is the documented "swap the person, keep the frame" failure.
+2. MINIMUM VARIETY FLOOR: across any 10-slide window in the deck, at least 3 distinct archetypes must appear.
+3. These constraints are checked at Phase 1 arc assignment AND enforced by AF-SAME at Phase 5/6 image QC.
+
+Vary composition, crop, camera angle, and subject placement across slides while holding the grade and model constant. Consistency is a color and light property, not a composition property.
+
+---
+
+**Part E -- CASTING LEDGER PROPAGATION (producing side; QC enforcement: AF-CAST)**
+
+Before writing any people-prompt, confirm `audience_composition` is captured in intake.json. If absent, HALT (see SOP-CAST-01). When captured:
+
+1. Read the Casting Ledger from the brief (built by the Brief Author per SOP-CAST-01 Section 2).
+2. For each people-slide, write element 11 (Audience Engine) using the demographic assigned by the Casting Ledger for that slide.
+3. Do NOT add a per-slide demographic LOCK ("do not render a demographic other than [X] on this slide"). Replace it with: "render the demographic assigned by the Casting Ledger for this slide ([demographic]); render with dignity, warmth, and accurate skin-tone fidelity."
+4. Facial-intelligence rule: bright, warm, hopeful expression on positive beats (vision, future-pace, celebration, transformation). Brow tension, the "2am-spreadsheet face" on pain beats. Never dour or blank on a positive beat (AF-FACE-MOOD).
+
+---
+
+**Part F -- PROMISES-NOT-PRICES (producing side; QC enforcement: AF-PRICE-FACE)**
+
+On offer-component slides, the slide face carries the PROMISE / OUTCOME of each component, not a per-component dollar value. Examples:
+
+- FAIL: "Day 1 Strategy Session | Value: $997"
+- PASS: "Day 1: The one conversation that changes how your family reads money forever"
+
+The only authorized dollar figure on the deck face is the SINGLE big callout (the final price, e.g., "$97") on the main offer slide. Every other slide states promises, outcomes, and transformations. The value-stack math (total stack dollar value, running tally) lives in the presenter notes and the re-pitch, not on the audience-facing slide copy.
+
+---
+
+**Part G -- EXTERNAL VALIDATORS ONLY (producing side; QC enforcement: AF-VALIDATOR)**
+
+The "who says so" slide cites approximately 4 distinct EXTERNAL third-party references:
+
+- Named publications (Forbes, Harvard Business Review, peer-reviewed journals with the journal name)
+- Named institutions (universities, research centers, named government agencies)
+- Named peer-reviewed studies (author + publication + year)
+
+Do NOT cite self-referential proof on the validator slide: "our families agree", "students who lived it", "our graduates say" -- that is social proof, not external validation. Social proof lives on the Wall of Wins. The validator slide is for external institutions saying the SAME THING independently.
+
+Capture external proof at intake. If the client has not supplied real external proof, the Deep Research Specialist finds credible public research. Never fabricate citations.
+
+---
+
+**Outputs:**
+
+- All prompts passing the gradient ban (no gradient/glow on type)
+- All flat slides carrying an atmospheric background layer
+- Deck-wide archetype variety verified before prompt writing begins
+- Every people-prompt referencing the casting ledger (no per-slide demographic locks)
+- All offer-component slides stating promises not per-item prices
+- The validator slide citing external proof only
+
+**Hand to:** QC Specialist -- Presentations (AF-GRAD, AF-OPACITY, AF-MODEL, AF-SAME, AF-CAST, AF-FACE-MOOD, AF-PRICE-FACE, AF-VALIDATOR)
+
+**Failure mode:** If audience_composition is absent, HALT at Part E (do not proceed to people-prompts). If no external proof is available for the validator slide, flag to the Director before writing that slide's prompt.
 
 ---
