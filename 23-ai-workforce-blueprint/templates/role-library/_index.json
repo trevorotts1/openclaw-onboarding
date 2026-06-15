@@ -3566,7 +3566,17 @@
       "sop_count": 5,
       "sop_min": 5,
       "path": "templates/role-library/client-experience-booking/qc-specialist/how-to.md"
+    },
+    {
+      "slug": "deep-research-specialist",
+      "dept": "client-experience-booking",
+      "title": "Deep Research Specialist -- Client Experience & Booking",
+      "role_type": "deep-research",
+      "word_count": 15800,
+      "sop_count": 7,
+      "sop_min": 7,
+      "path": "templates/role-library/client-experience-booking/deep-research-specialist/how-to.md"
     }
   ],
-  "total_departments": 24
+  "total_departments": 25
 }
