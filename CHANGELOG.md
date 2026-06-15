@@ -1,3 +1,15 @@
+## [v12.9.7] - 2026-06-14 - feat: wiring-gate doctrine + connection manifests + build-state wiring fields (completes the wiring-verification gate)
+
+### Changes
+
+**Completes the wiring-verification gate (originally PR #237).** PR #238 already landed the hardened `verify-wiring.sh` script and the registration/closeout/resume enforcement that consumes it. This change adds the three remaining pieces that were unique to the original gate work and not yet in main, so the gate the script enforces is fully wired:
+
+- **`23-ai-workforce-blueprint/INSTRUCTIONS.md` -- Moment 3.9 (binding wiring doctrine):** a department is ADDED only when it is materialized + registered + reachable + connection-points-verified; only a passing `verify-wiring.sh` (exit 0) may set a department or the overall build to `done`; never hand-flip `wiringStatus`. Updates the resume-loop prose to fire `[WIRING-RESUME]` between `[LIBRARY-RESUME]` and `[COMMS-AUTOMATION-RESUME]`, and adds the wiring gate to the auto-closeout contract.
+- **`23-ai-workforce-blueprint/build-state-schema.json` -- per-department wiring fields:** `wiringStatus` (enum pending|done|failed), `wiringCheckedAt` (ISO timestamp), `wiringFailReasons` (string). All three are written exclusively by `verify-wiring.sh`.
+- **Seven `templates/role-library/<dept>/connection-manifest.json` files** (presentations, graphics, video, sales, marketing, communications, customer-support): each lists the department's external connection points with `name`, `description`, `cfg_key` (dot-path into `openclaw.json`), and `required` (bool). `verify-wiring.sh` already reads these for assertion (d); without them the connection-point check silently passed for every department.
+
+Reconciled against #238: the script/enforcement files (`verify-wiring.sh`, `add-role.sh`, `build-workforce.py`, `resume-workforce-build.sh`, `run-closeout.sh`) keep main's hardened versions. Only the delta above is added here.
+
 ## [v12.9.6] - 2026-06-14 - fix: canonical render module + sovereignty doctrine + prompt floor gate + real vision QC + security hardening
 
 ### Changes
