@@ -150,9 +150,9 @@ This clause is identical to the CEO_DEFERRAL block in `create_role_workspaces.py
 
 ---
 
-## 🔴 N1–N27 — Non-Negotiables (Canonical Index)
+## 🔴 N1–N35 — Non-Negotiables (Canonical Index)
 
-This is the single canonical index of the N1–N27 non-negotiables. Every other doc that references an N-rule MUST link to this section. If a rule is invoked elsewhere without its N-number, that's a bug.
+This is the single canonical index of the N1–N35 non-negotiables. Every other doc that references an N-rule MUST link to this section. If a rule is invoked elsewhere without its N-number, that's a bug.
 
 | N | Rule | Binding doc | Enforced by |
 |---|------|-------------|-------------|
@@ -190,6 +190,7 @@ This is the single canonical index of the N1–N27 non-negotiables. Every other 
 | N32 | **A model-provider change is NOT complete until `embedding-health` passes on the box.** Switching the generative provider (or any API key rotation) can silently orphan all three embedding consumers: OpenClaw memory search, persona gemini-index, and CC SOP embeddings. The `embedding-health` check (PRD Addendum B.6) MUST pass — all three indexes, three legs each (provider capable + key live + smoke embed + stamp matches config) — before any provider-change task is marked done. Ollama Cloud is NEVER embedding-capable (hard rule). Run: `python3 shared-utils/embedding_health.py --json` on the box after any provider/key change. | This file (N32 section) + `shared-utils/embedding_health.py` | `step_embedding_health()` in `fleet_refresh_runner.py`; Sunday cron `--verify-only` pass in `scripts/fleet-refresh.sh` |
 | N33 | **Credential Check Protocol — never falsely report a key missing.** Use `~/.openclaw/skills/shared-utils/check-credential.sh <KEY>` every time. Evidence triad required before "absent": (1) live process env checked (`docker exec printenv` / `ps eww`), (2) MCP server headers checked, (3) all .env stores checked. Only after all three return empty may a key be called GENUINELY-ABSENT. | This file (N33 section) + `shared-utils/check-credential.sh` | `<!-- CREDENTIAL_CHECK_V2 -->` marker (injected by `apply-fleet-standards.sh`) |
 | N34 | **Provider Detection Protocol — a missing config block is NEVER proof a provider is absent.** "Does box X have provider Y" = "can the gateway resolve Y's API key at runtime" — NOT "is there a models.providers.Y block." Run `check-credential.sh --provider <Y>` (3-state verdict). Missing/empty models.providers block alone NEVER produces absent — only downgrades PRESENT_WITH_BLOCK to NEEDS_BLOCK. GENUINELY-ABSENT only after live-env tier + all stores came up empty. Use SONNET (never Haiku) for credential/provider checks. Write NOT_ASSESSED (never false) for any check that did not run. | This file (N34 section) + `shared-utils/check-credential.sh --provider` mode | `check-credential.sh --self-test` in CI (qc-static.yml); fleet sweeps branch off 3-state verdict |
+| N35 | **AF-MODEL-SOVEREIGNTY — no task dispatches without a resolved, valid, modality-appropriate model.** A resolved model must be (a) non-null and NOT the `openrouter/free` literal nor any bare "free" default, (b) present in the client's available inventory, (c) not forbidden (Anthropic), and (d) modality-appropriate (`capabilities ⊇ required_modality`). The authoritative PREFERENCE CASCADE is **Ollama Cloud → OpenRouter open-source → free (last resort)**; precedence is **SOP pin > task selector > role override > dept default > needs_owner_input** (NEVER a silent free downgrade). A vision/image/video/audio task MUST get a model with that modality. Build-time: every department gets a real, modality-correct dept default (suitability map). Task-time: the selector classifies modality + difficulty and walks the cascade. Failures route to `needs_owner_input`, never a silent free fallback. | This file (N35 section) + `shared-utils/select_model.py` (`select_task_model` / `resolve_dept_default_model`) + `shared-utils/assert_model_sovereignty.py` + `shared-utils/{model-capabilities,dept-model-suitability}.json` | `tests/unit/model-selector.test.py` + `.github/workflows/model-selector-guard.yml` (CI gate) + `scripts/repair-model-sovereignty.sh` (fleet repair sweep). CC runtime half (resolver/dispatcher gate/migration 071/display) lands in `blackceo-command-center` — see N35 section. |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
 
@@ -775,6 +776,74 @@ Every fleet sweep that edits `models.providers` MUST:
 ### CI Gate
 
 `check-credential.sh --self-test` runs in `qc-static.yml` and asserts the `NEEDS_BLOCK` guard cannot regress.
+
+---
+
+<!-- N35 -->
+## 🔴 N35 — AF-MODEL-SOVEREIGNTY (no task dispatches without a resolved, valid, modality-appropriate model)
+
+> The Intelligent Model Selector exists to make `openrouter/free` / "no model" /
+> wrong-modality dispatch **structurally impossible**. The free literal is never a
+> valid resolution; it is a sentinel the gate explicitly rejects.
+
+### The PREFERENCE CASCADE (authoritative, exact)
+
+1. **TIER 1 — Ollama Cloud** (`ollama/*:cloud` or `*-cloud` tag, baseUrl `https://ollama.com`)
+2. **TIER 2 — OpenRouter open-source** (open-weight vendors: DeepSeek, Moonshot/Kimi, Qwen, Z-AI/GLM, Xiaomi, Llama, Mistral, Gemma, MiniMax — NOT proprietary OpenAI/Anthropic/Gemini-pro routes)
+3. **TIER 3 — Free** (`*:free`) — LAST RESORT, logged loudly
+
+Within a tier: highest version wins; ties break to the cheaper model.
+**Modality is a HARD pre-filter applied BEFORE the cascade.** A vision task only
+ever considers `vision`-capable models; a text-only model is never eligible.
+
+### Precedence (highest wins)
+
+`SOP pin > task-time selector > role override > dept default > needs_owner_input`
+
+A SOP pin **wins the selection** but does NOT bypass validation — a pin to a
+missing / forbidden / wrong-modality model fails the gate loudly. **Never** a
+silent free downgrade.
+
+### The gate's single assertion
+
+No task dispatches unless the resolved model is (a) non-null and not the free
+literal/default, (b) present in the client's available inventory, (c) not
+forbidden (Anthropic), and (d) modality-appropriate (`capabilities ⊇ required_modality`).
+Otherwise dispatch is BLOCKED and routed to `needs_owner_input`.
+
+### Install points (this repo)
+
+- `shared-utils/select_model.py` — `select_task_model()` (task-time, §4),
+  `resolve_dept_default_model()` (build-time Layer-1, §3), `tier_of_model()`,
+  `capabilities_for_model()`, `model_has_modality()`.
+- `shared-utils/model-capabilities.json` — family → capabilities + default tier
+  (the ONE place modality facts live; Python + the CC TypeScript both read it).
+- `shared-utils/dept-model-suitability.json` — department → tier + baseline modality.
+- `shared-utils/assert_model_sovereignty.py` — the gate logic (`assert_model_sovereignty()` + `scan_config()`).
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` — `_resolve_dept_default_model()`
+  resolves a modality-correct dept default + emits `dept-default-models.json`
+  (consumed by the CC seeding step to write the `agent_settings` dept-default rows).
+- `scripts/repair-model-sovereignty.sh` — per-box fleet repair sweep (idempotent,
+  per-box receipt, re-runs the gate to confirm clean; emits a CC repair payload).
+
+### CI Gate
+
+`tests/unit/model-selector.test.py` (cascade order, modality match, SOP override,
+no-model rejected, dept default, difficulty) + the repair-sweep smoke run in
+`.github/workflows/model-selector-guard.yml`.
+
+### Remaining (Command Center repo `blackceo-command-center`)
+
+The runtime half lands as a SEPARATE PR in the CC repo (own CI/merge cycle):
+delete `DEFAULT_MODEL = 'openrouter/free'` as a return value in
+`intelligence-resolver.ts`; insert SOP-pin + task-selector steps; add the
+`assertModelSovereignty` gate in `task-dispatcher.ts` + the manual dispatch route;
+migration 071 (`sops.model_pin`); seed `model_registry` from the box's
+`openclaw.json` + `model-capabilities.json`; consume `dept-default-models.json`
+to write `agent_settings` rows; `scripts/repair-model-defaults.ts` to rewrite
+offending `tasks.model_id` rows (driven by this repo's repair-sweep receipts);
+tier/source/modality display badges. The CC TypeScript reuses THIS repo's
+`model-capabilities.json` + cascade rules verbatim.
 
 ---
 

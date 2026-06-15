@@ -1,0 +1,98 @@
+name: model-selector-guard
+
+# Fails the build if the Intelligent Model Selector regresses on any of its four
+# mandated invariants (cascade order, modality match, SOP override, no-model
+# rejected) or if the AF-MODEL-SOVEREIGNTY gate stops blocking offenders.
+# Also smoke-tests the repair sweep end-to-end (dry-run + --apply + idempotency).
+# v12.15.0 / feat/intelligent-model-selector
+
+on:
+  push:
+    paths:
+      - shared-utils/select_model.py
+      - shared-utils/assert_model_sovereignty.py
+      - shared-utils/model-capabilities.json
+      - shared-utils/dept-model-suitability.json
+      - scripts/repair-model-sovereignty.sh
+      - tests/unit/model-selector.test.py
+      - .github/workflows/model-selector-guard.yml
+  pull_request:
+    paths:
+      - shared-utils/select_model.py
+      - shared-utils/assert_model_sovereignty.py
+      - shared-utils/model-capabilities.json
+      - shared-utils/dept-model-suitability.json
+      - scripts/repair-model-sovereignty.sh
+      - tests/unit/model-selector.test.py
+      - .github/workflows/model-selector-guard.yml
+
+jobs:
+  model-selector-guard:
+    name: Intelligent Model Selector + AF-MODEL-SOVEREIGNTY (v12.15.0)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run selector + gate unit tests
+        run: |
+          python3 tests/unit/model-selector.test.py
+
+      - name: Smoke-test the repair sweep (dry-run + apply + idempotency)
+        run: |
+          set -euo pipefail
+          WORK=$(mktemp -d)
+          cat > "$WORK/openclaw.json" <<'JSON'
+          {
+            "models": { "list": [
+              {"id":"ollama/deepseek-v4-pro:cloud"},
+              {"id":"ollama/qwen3-vl:235b-cloud"},
+              {"id":"openrouter/deepseek/deepseek-v4-pro"}
+            ]},
+            "agents": { "list": [
+              {"id":"dept-ceo","model":{"primary":"openrouter/free","fallbacks":[]}},
+              {"id":"dept-graphics","model":null},
+              {"id":"dept-legal","model":{"primary":"anthropic/claude-opus","fallbacks":[]}}
+            ]}
+          }
+          JSON
+          # dry-run finds 3 offenders and (correctly) exits 3 because the gate
+          # still sees them unfixed — that nonzero exit is EXPECTED in dry mode.
+          # We assert on the receipt content below, not the exit code.
+          bash scripts/repair-model-sovereignty.sh \
+            --config "$WORK/openclaw.json" --box ci --receipt-dir "$WORK/sweep" || true
+          python3 - "$WORK/sweep/ci.json" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          assert len(d["openclaw_fixes_planned"]) == 3, d["openclaw_fixes_planned"]
+          g = {f["agent"]: f for f in d["openclaw_fixes_planned"]}
+          assert g["dept-graphics"]["required_modality"] == "vision", g["dept-graphics"]
+          print("dry-run OK: 3 offenders, graphics->vision")
+          PY
+          # apply -> gate must come back clean
+          bash scripts/repair-model-sovereignty.sh \
+            --config "$WORK/openclaw.json" --box ci --receipt-dir "$WORK/sweep" --apply
+          python3 - "$WORK/sweep/ci.json" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1]))
+          assert d["clean"] is True, d["gate_offenders_after"]
+          print("apply OK: gate clean after repair")
+          PY
+          # gate must agree independently
+          python3 shared-utils/assert_model_sovereignty.py --scan-config "$WORK/openclaw.json"
+          echo "repair sweep smoke OK"
+
+      - name: No Anthropic / free-default leakage in selector outputs
+        run: |
+          set -euo pipefail
+          # The selector and gate must never emit a forbidden or free-default model.
+          if grep -REn "'(claude-[a-z0-9-]+|anthropic/[a-z0-9-]+)'" \
+            shared-utils/select_model.py shared-utils/assert_model_sovereignty.py 2>&1; then
+            echo "FAIL: Anthropic model string in selector source"; exit 1
+          fi
+          echo "OK: no Anthropic strings in selector source"
