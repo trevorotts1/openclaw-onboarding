@@ -61,9 +61,11 @@ jobs:
             ]}
           }
           JSON
-          # dry-run finds offenders but exits 0 (no remaining-after assertion in dry mode)
+          # dry-run finds 3 offenders and (correctly) exits 3 because the gate
+          # still sees them unfixed — that nonzero exit is EXPECTED in dry mode.
+          # We assert on the receipt content below, not the exit code.
           bash scripts/repair-model-sovereignty.sh \
-            --config "$WORK/openclaw.json" --box ci --receipt-dir "$WORK/sweep"
+            --config "$WORK/openclaw.json" --box ci --receipt-dir "$WORK/sweep" || true
           python3 - "$WORK/sweep/ci.json" <<'PY'
           import json, sys
           d = json.load(open(sys.argv[1]))
