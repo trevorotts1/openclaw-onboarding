@@ -1,4 +1,4 @@
-## [v12.14.0] - 2026-06-15 - fix: client-provider capability guard (multimodal/text-only mismatch class)
+## [v12.14.1] - 2026-06-15 - fix: client-provider capability guard (multimodal/text-only mismatch class)
 
 ### Changes
 
@@ -45,8 +45,37 @@ Scenarios A-I: text-only+multimodal → smoke FAIL; clean config → smoke PASS;
 no openclaw.json → static exits 1 gracefully; per-agent multimodal caught; ollama-cloud
 regression guard. All 14 assertions pass.
 
-**Version bumped:** version, install.sh, update-skills.sh, cc-compat.json, README.md → v12.14.0.
+**Version bumped:** all 9 markers → v12.14.1.
 Zero client names in diff (grep verified).
+
+---
+
+## [v12.14.0] - 2026-06-15 - fix: heartbeat-furnace root cause (Skill-35 ungated HEARTBEAT.md block removed + per-agent main override + guard pattern + QC enforcement)
+
+### Changes
+
+**Root cause of fleet-wide heartbeat token furnace eliminated.**
+
+**Root cause (proven):** `35-social-media-planner/INSTALL.md` Step 9 appended a `### Saturday 8:00 AM — Social Media Theme Request` task into the client's live HEARTBEAT.md with no day-of-week gate and no idempotency marker. The agent reads HEARTBEAT.md on every heartbeat tick; the task fired the full Skill-35 content pipeline (15+ agent calls) on every tick, burning the metered model continuously.
+
+**Partial fix gap:** A prior fix added the `skill35-weekly-theme` gated cron (in INSTRUCTIONS.md) but left the ungated HEARTBEAT.md block in INSTALL.md and labeled it "informational context only." The agent acts on prose in HEARTBEAT.md — "informational" is not a safe label.
+
+**Additional gap:** The `main` (ceo/default) agent with `default:true` does NOT inherit `agents.defaults.heartbeat`. It needs its own explicit `heartbeat.every` override, or it falls back to the OpenClaw system default (5m or 30m). At least one fleet box burned at the 30m system default because of this gap.
+
+**Deliverables:**
+
+- **`35-social-media-planner/INSTALL.md` Step 9** — REPLACED the ungated HEARTBEAT.md prose block with a FURNACE RULE hard-block directive that (a) prohibits writing to HEARTBEAT.md, (b) directs to the cron activation block in INSTRUCTIONS.md, and (c) provides a removal script for existing installs that already have the bad block.
+- **`35-social-media-planner/INSTALL.md` Completion Checklist** — Updated the `HEARTBEAT.md updated` checkbox to `skill35-weekly-theme cron registered`.
+- **`35-social-media-planner/INSTRUCTIONS.md` §Weekly trigger** — Removed "informational context only" language; replaced with explicit statement that the block MUST NOT exist.
+- **`35-social-media-planner/INSTRUCTIONS.md` §Guard pattern** — Added the reusable HEARTBEAT guard pattern (day-of-week gate + idempotency marker) as a fleet-wide snippet for any future recurring task that must live in HEARTBEAT.md.
+- **`35-social-media-planner/qc-skill35.sh` Section I** — Added Fix #3 hard-fail assertions: INSTALL.md must not contain the ungated Saturday block; INSTALL.md must direct cron registration.
+- **`35-social-media-planner/qc-social-media-planner.sh` Section I** — Same Fix #3 assertions mirrored.
+- **`35-social-media-planner/skill-version.txt`** — Bumped to v2.8.0.
+- **`install.sh`** — Fix D2: after `agents.defaults.heartbeat` block, adds per-agent `agents.list[main].heartbeat.every=6h` override (bracket notation with Python JSON fallback). Explicitly documents that `default:true` does not inherit `agents.defaults.heartbeat`.
+- **`docs/HEARTBEAT-GUARD-PATTERN.md`** — New fleet-wide reference doc: furnace root cause, the rule, the guard pattern snippet, QC enforcement, and heartbeat cadence standards table.
+- **`version`**, **`cc-compat.json`**, **`install.sh` ONBOARDING_VERSION** — All bumped to v12.14.0.
+
+**Per-box fleet sweep (deployed HEARTBEAT.md cleanup for existing boxes) is the SEPARATE gated step.** This PR fixes the repo/scaffolding only. Running the removal script in Step 9 on each client box is the fleet sweep, gated on testing this PR first.
 
 ---
 

@@ -372,14 +372,39 @@ cp ~/.openclaw/skills/35-social-media-planner/scripts/content-calendar.example.j
 | `platforms` | yes | Same list `run-publishing-cycle.sh --platforms` accepts. |
 | `schedule` | no  | `"auto"`, `"now"`, or ISO 8601 timestamp. |
 
-### Step 9: Add weekly theme request to HEARTBEAT.md
+### Step 9: Register the weekly theme cron (do NOT write to HEARTBEAT.md)
 
-```markdown
-### Saturday 8:00 AM — Social Media Theme Request
-Ask client: "What's the theme for next week's social media content?"
-- If no response by 12:00 PM: ask again
-- If no response by 6:00 PM: ask again
-- If no response by Sunday 7:00 AM: use "evergreen" theme
+> **FURNACE RULE — HARD BLOCK:** Do NOT add the Saturday theme-request task to HEARTBEAT.md. The agent reads HEARTBEAT.md on every heartbeat tick. Any recurring real-work task written there fires on every tick (potentially every 5–30 minutes) with no day-of-week gate, burning the metered model continuously. This is the proven root cause of the fleet-wide heartbeat token furnace (v12.14.0 fix).
+>
+> The correct mechanism is a hard cron registered via `openclaw cron add`. The cron runs `0 8 * * 6` (Saturdays 8 AM only) and includes an idempotency marker so it cannot double-fire. See INSTRUCTIONS.md §"Weekly trigger — CRON, not heartbeat (enforcement)" for the exact `openclaw cron add` command.
+
+Run the activation block from INSTRUCTIONS.md §"Activation — install the weekly theme cron" now. It is idempotent — safe to re-run.
+
+**If the client's HEARTBEAT.md already contains the Saturday theme-request block** (from a prior install of this skill), remove it:
+
+```bash
+# Remove the ungated Saturday theme block from the client's live HEARTBEAT.md.
+# Run on the client box. Path is the agent's resolved workspace HEARTBEAT.md.
+WORKSPACE_HEARTBEAT="${HOME}/.openclaw/workspace/HEARTBEAT.md"
+if [ -f "$WORKSPACE_HEARTBEAT" ] && grep -q "Saturday 8:00 AM" "$WORKSPACE_HEARTBEAT"; then
+  cp "$WORKSPACE_HEARTBEAT" "${WORKSPACE_HEARTBEAT}.bak-$(date +%Y%m%d%H%M%S)"
+  python3 - <<'PYEOF'
+import re, pathlib, os
+p = pathlib.Path(os.environ['HOME'] + '/.openclaw/workspace/HEARTBEAT.md')
+txt = p.read_text()
+# Strip the ungated Saturday block (### Saturday 8:00 AM ... up to next ### or end)
+txt = re.sub(
+    r'###\s+Saturday 8:00 AM.*?(?=\n###|\Z)',
+    '',
+    txt,
+    flags=re.DOTALL
+).strip() + '\n'
+p.write_text(txt)
+print("Removed ungated Saturday block from HEARTBEAT.md")
+PYEOF
+else
+  echo "No ungated Saturday block found — nothing to remove"
+fi
 ```
 
 ### Step 10: Run QC.md and require 8.5+ to pass
@@ -429,7 +454,7 @@ Send the client this exact summary:
 - [ ] Agent can answer "what is my social media planner link?" without error
 - [ ] Finished media delivery verified: upload to GHL Media Library → return CDN link → no raw Telegram file attachment for files >10 MB
 - [ ] CORE_UPDATES.md applied surgically to AGENTS.md / TOOLS.md / MEMORY.md
-- [ ] HEARTBEAT.md updated with Saturday theme-request schedule
+- [ ] `skill35-weekly-theme` cron registered via `openclaw cron add` (NOT written to HEARTBEAT.md — see Step 9)
 - [ ] QC.md run with score 8.5/10+ (or loop completed)
 - [ ] `qc-skill35.sh` exit 0 (if present)
 - [ ] Client confirmation message sent
