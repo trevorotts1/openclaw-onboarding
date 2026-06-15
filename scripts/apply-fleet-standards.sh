@@ -3,6 +3,7 @@
 #   • Sub-agents fully permitted (spawn + exec + read/write across all agents)
 #   • tools.exec: security=full, ask=off (TOP-LEVEL only — valid on 2026.6.1+)
 #   • Telegram media limit 50 MB (inbound + outbound)
+#   • WhatsApp PERMANENTLY DISABLED (fleet-wide, non-negotiable — see FLEET-STANDARDS.md §3)
 #
 # NOTE (v11.3.1): agents.defaults.tools.exec is INVALID on OpenClaw 2026.6.1+
 #   and causes "agents.defaults: Invalid input" / auto-revert by doctor --fix.
@@ -99,6 +100,18 @@ CANONICAL = {
         "telegram": {
             "mediaMaxMb": 50
         }
+    },
+    # WHATSAPP BAN (fleet-wide, permanent — see FLEET-STANDARDS.md §3).
+    # The Hostinger wrapper auto-installs WhatsApp on every boot when
+    # WHATSAPP_NUMBER is set in the Docker env, causing a QR-scan crash-loop.
+    # Locking enabled=false here prevents the gateway from ever activating it
+    # even if the env var slips back in.
+    "plugins": {
+        "entries": {
+            "whatsapp": {
+                "enabled": False
+            }
+        }
     }
 }
 
@@ -150,6 +163,54 @@ PYEOF
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$OC_CONFIG" 2>/dev/null || true
 fi
+
+# ─── 3b. WhatsApp env-file ban (VPS Hostinger Docker only) ──────────────────
+# The Hostinger wrapper auto-installs and enables WhatsApp on every boot when
+# WHATSAPP_NUMBER is present in /docker/<project>/.env, regardless of openclaw.json.
+# This step comments out the line so it can never trigger the auto-install path.
+# Idempotent: a line already commented-out is a no-op.
+# Non-blocking: if the .env file is not reachable from this context we warn only.
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  _DOCKER_ENV_CANDIDATES=()
+  # Try to locate the Hostinger compose project env file from inside the container.
+  # Common patterns: /docker/<project>/.env or /data/docker/<project>/.env
+  for _candidate in /docker/*/.env /data/docker/*/.env; do
+    [ -f "$_candidate" ] && _DOCKER_ENV_CANDIDATES+=("$_candidate")
+  done
+
+  if [ "${#_DOCKER_ENV_CANDIDATES[@]}" -eq 0 ]; then
+    echo "[apply-fleet-standards] WhatsApp env-ban: no /docker/*/.env found from this context — skipping (safe; plugin already disabled in openclaw.json)"
+  else
+    for _envf in "${_DOCKER_ENV_CANDIDATES[@]}"; do
+      if grep -qE '^[[:space:]]*WHATSAPP_NUMBER[[:space:]]*=' "$_envf" 2>/dev/null; then
+        # Uncommented WHATSAPP_NUMBER line found — comment it out permanently.
+        _envf_bak="${_envf}.bak-whatsapp-ban-$(date +%Y%m%d%H%M%S)"
+        cp "$_envf" "$_envf_bak"
+        # Use perl for in-place sed that works on both GNU and BSD
+        perl -i -pe 's/^([[:space:]]*)(WHATSAPP_NUMBER[[:space:]]*=.*)$/$1# WHATSAPP_NUMBER PERMANENTLY DISABLED (fleet ban — openclaw-onboarding FLEET-STANDARDS.md §3)\n# $2/' "$_envf"
+        echo "[apply-fleet-standards] WhatsApp env-ban: commented out WHATSAPP_NUMBER in $_envf (backup: $_envf_bak)"
+      else
+        echo "[apply-fleet-standards] WhatsApp env-ban: WHATSAPP_NUMBER already absent/commented in $_envf — no-op"
+      fi
+    done
+  fi
+fi
+
+# ─── 3c. WhatsApp env-ban QC guard (hard-fail if still active) ───────────────
+# After the above neutralization, assert that the plugin is truly disabled.
+python3 - "$OC_CONFIG" <<'WAQCEOF'
+import json, sys
+cfg = json.loads(open(sys.argv[1]).read())
+enabled = (cfg.get("plugins", {})
+              .get("entries", {})
+              .get("whatsapp", {})
+              .get("enabled", False))
+if enabled:
+    print("ERROR: plugins.entries.whatsapp.enabled is still True after fleet-standards apply — this is a hard-fail.", file=sys.stderr)
+    sys.exit(1)
+else:
+    print("[apply-fleet-standards] WhatsApp ban QC: plugins.entries.whatsapp.enabled = false — PASS")
+WAQCEOF
 
 # ─── 4. Validate + report ────────────────────────────────────────────────────
 echo ""
