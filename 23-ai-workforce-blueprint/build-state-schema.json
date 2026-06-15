@@ -159,6 +159,21 @@
             "type": "boolean",
             "default": false,
             "description": "True only when EVERY role folder in this dept has its SOP files authored/pulled (no remaining 'to be personalized' stubs), as verified by qc-completeness.sh (sop_stubs_remaining == 0 and avg_sop_per_role > 0). A dept with status=done but sopLibraryFilled=false is INCOMPLETE \u2014 the SOP placeholders were never authored. Added v10.15.8. ENFORCED: see sopLibraryStatus + the verify/resume gate."
+          },
+          "wiringStatus": {
+            "type": "string",
+            "enum": ["pending", "done", "failed"],
+            "default": "pending",
+            "description": "ENFORCED wiring gate (added v12.8.3). Set by verify-wiring.sh ONLY (never hand-set). 'done' means this dept passed all four wiring assertions: (1) materialized - every role has a real how-to.md (>= 3KB, no [PENDING] marker); (2) registered - dept-<slug> agent is in openclaw.json agents.list with a valid workspace path; (3) reachable - a Director/Head/Lead/Architect entry-point role exists; (4) connected - all required keys in connection-manifest.json resolve in openclaw.json. 'failed' means one or more assertions failed; see wiringFailReasons. A dept with status=done but wiringStatus!=done is a STUB DEPT that must not reach closeout. The resume cron fires [WIRING-RESUME] until this is 'done' for every dept. buildCompletedAt MUST NOT be written while any dept has wiringStatus != done."
+          },
+          "wiringCheckedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO timestamp of the last verify-wiring.sh run for this dept. Updated on every gate pass or fail."
+          },
+          "wiringFailReasons": {
+            "type": "string",
+            "description": "Space-separated list of named failure categories from the last failed wiring gate run (e.g. 'materialized:stub-1200B registered:agent-not-in-config'). Cleared when wiringStatus transitions to done."
           }
         }
       }

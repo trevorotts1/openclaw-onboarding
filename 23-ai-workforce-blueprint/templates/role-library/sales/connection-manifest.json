@@ -1,0 +1,19 @@
+{
+  "_comment": "Connection-manifest for the Sales department. verify-wiring.sh reads this and checks each required cfg_key.",
+  "dept": "sales",
+  "version": "1.0.0",
+  "connection_points": [
+    {
+      "name": "ghl-api-key",
+      "description": "GoHighLevel API key required for the Sales department to manage contacts, pipelines, and automations in GHL.",
+      "cfg_key": "env.vars.GHL_API_KEY",
+      "required": true
+    },
+    {
+      "name": "ghl-location-id",
+      "description": "GHL location ID for the Sales department's CRM sub-account.",
+      "cfg_key": "env.vars.GHL_LOCATION_ID",
+      "required": true
+    }
+  ]
+}
