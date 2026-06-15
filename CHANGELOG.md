@@ -1,4 +1,4 @@
-## [v12.7.3] - 2026-06-14 - feat: content-to-presentation one-person/general modes + fluff-strip + cover/close + infographic checklist + system-wide deck PDF
+## [v12.8.3] - 2026-06-14 - feat: content-to-presentation one-person/general modes + fluff-strip + cover/close + infographic checklist + system-wide deck PDF (AF-F11)
 
 ### Changes
 
@@ -14,11 +14,71 @@
 
 **QC interlock for the system-wide PDF (`qc-specialist-presentations.md` + its SOP mirror).** New Phase 6 auto-fail `AF-F11`: the portable-document export must be present, non-empty, flagged as a delivery output, and page-count-matched against the `.pptx` and slide_count_final, or final status is blocked and a revision routes to the PPTX Assembly Specialist. Wired into the final-deck QC steps, the `final_deck_qc.json` pass artifact, and the pass interlock.
 
-**Index + version markers.** `_index.json`: content-to-presentation-architect `sop_count` 6 -> 9 and word_count corrected; pptx-assembly-specialist `sop_count` 3 -> 4 (the renamed SOP 9.2 was already a fourth SOP) and word_count corrected; index header version 12.7.2 -> 12.7.3. All 9 version markers + cc-compat.json onboardingVersion bumped v12.7.2 -> v12.7.3.
+**Index + version markers.** `_index.json`: content-to-presentation-architect `sop_count` 6 -> 9 and word_count corrected; pptx-assembly-specialist `sop_count` 3 -> 4 (the renamed SOP 9.2 was already a fourth SOP) and word_count corrected; index header version 12.7.2 -> 12.7.3. All 9 version markers + cc-compat.json onboardingVersion bumped to v12.8.3.
 
 **Doctrine compliance.** No em dashes, en dashes, or Unicode arrows in any new or modified repo file; "portable-document format" / "image-to-image" written out per file convention; the one external tool fact (the `soffice --headless --convert-to pdf` command) is cited to the design-intelligence-library source. No client names in any changed file. Both SOP mirrors regenerated from the authoritative role files.
 
 ---
+
+
+## [v12.8.2] - 2026-06-14 - feat: ravenous rising-value-curve -- visible climbing value total + escalation rule at every price drop
+
+### Changes
+
+Strengthens the EXISTING, already-enforced slow-drop doctrine in the presentation-department pitch SOPs (the red rule: with every price drop the value must INCREASE -- bigger and better promises -- so the audience sees price falling while value rises and reaches the final price ravenous). Two refinements, built ON the existing AF-C7(c) auto-fail and the Offer Price Strategist Gate 6, NOT duplicating or weakening them.
+
+- **Refinement 1 -- the VISIBLE RISING-VALUE CURVE (the on-screen inverse).** The drop slides already render the PRICE ladder cumulatively (prior prices struck through). Now each drop slide (or its immediate successor) ALSO renders the cumulative RUNNING VALUE TOTAL climbing -- the stacked value going UP, shown against the struck price going DOWN -- so the audience literally watches the two lines move in opposite directions and the widening gap is SEEN, not implied. The Offer Price Strategist records a `running_value_total` at every rung in `offer_stack.json` (`value_additions_by_drop`), beginning at the proven tally and strictly increasing at each drop; every running total reconciles to the dollar with the stack so the cross-slide number-reconciliation gate (AF-C4) finds no new mismatch. Choreography requirement added to `SOP-PITCH-01` (rule 6 + the enforcement table + the integration note), `SOP-PITCH-02` (rule 5 + purpose + enforcement table), and the Offer Price Strategist SOP 9.2 (new step 5b, in `offer-price-strategist.md` + its `sops/` mirror, plus the `offer_stack.json` schema). Rendering requirement added to the design-system price-typography SOP (`SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE.md` new section 2.5, weight-ladder role, enforcement-check row, Phase-5 QC note). The rendered value is the climbing TOTAL itself, never a presenter-narration sentence (the telegraphing phrases stay banned on-slide under AF-C9).
+
+- **Refinement 2 -- the MAGNITUDE / ESCALATION RULE (bigger and better each time).** AF-C7(c) previously checked only that SOME new value is named at each drop and none is stripped. It now also requires the add to ESCALATE: each drop's added value must be a SUBSTANTIVE, named, DISTINCT deliverable/bonus/guarantee that is bigger than the prior rung, lifting the `running_value_total` by a non-trivial amount; a drop that adds only a trivial, restated, or unnamed item now FAILS even though it technically "added" something. Added as two new checkable clauses inside AF-C7 sub-condition (c) -- (c) ESCALATION and (c) RISING-VALUE CURVE -- in `qc-specialist-presentations.md` + its `sops/` mirror (with the procedural one-liner and the Gate 13 summary updated), and as the ESCALATION + RISING-VALUE-CURVE sub-conditions of the Offer Price Strategist **Gate 6** (renamed "Value Added, Never Stripped, and ESCALATING (the rising-value curve)") with a PASS and a FAIL example, plus a cross-reference in Gate 10. New SOP 9.2 step 5a defines escalation operationally. Consistent with the AF-SRC discipline: the running value total is an INTERNAL pitch figure built from the client-stated stack, not an external-service constant, and for non-monetary offers escalation is judged on the substance of the named bonus under the priceless frame, never an invented dollar number.
+
+- **The RAVENOUS objective is now stated explicitly** where the doctrine is summarized (SOP-PITCH-01 purpose, SOP-PITCH-02 purpose, the Offer Strategist Gate 6, and the QC AF-C7 + Gate 13 summary): the falling-price / rising-value inverse, shown on screen and escalating at every rung, is what makes the audience ravenous by the final price.
+
+- Builds ON, does not duplicate, the existing red rule (the lower the price, the greater the value -- zero stripping), AF-C7(c), Gate 6, and the promise-slide-between-drops requirement (FIX-5b). No new auto-fail code or parallel namespace introduced; the refinements are added clauses within the live AF-C7(c) gate and the live Gate 6.
+- All 9 version markers bumped to v12.8.2.
+- Doctrine compliance: no em dashes, no en dashes, no Unicode arrows in any new or modified file; no client names in any changed file; both edited SOP mirrors kept in parity with their authoritative role files.
+
+---
+
+## [v12.8.1] - 2026-06-14 - fix(security): Skill 46 callback-relay hardening (IDOR + secret-in-URL)
+
+### Changes
+
+- fix(security/A): submitId is now 128-bit cryptographically random hex (crypto.randomBytes(16)) in kie-slide-submitter.js. Was predictable deckId_slideId, enabling IDOR against KV. Human-readable deckId/slideId are stored as a separate `label` field in the local registry. Crash-resume rebuilt: on restart, registry is scanned by label rather than reconstructing the filename.
+- fix(security/B): Worker GET /kv-read now requires Authorization: Bearer <KVREAD_TOKEN> in every request. Unauthenticated reads return 401. The bearer token is a Worker secret (never in any .md). The box-kv-poller sends the token on every poll. Misconfigured token fails closed (500 if not set on the Worker).
+- fix(security/C): perTaskSecret is never stored in KV and never returned in any response body. The callBackUrl now carries h=HMAC-SHA256(perTaskSecret, KIE_CALLBACK_HMAC_KEY); the Worker stores this HMAC in KV. On /kv-read the box sends the raw perTaskSecret as &p=<preimage>; the Worker recomputes HMAC(preimage) in constant time and compares against the stored HMAC. Returns 403 on mismatch. The plaintext secret stays entirely on the box.
+- fix(security/D): callBackUrl no longer carries the raw perTaskSecret in the s= param. s= is now HMAC-SHA256(clientSlug + ":" + submitId, KIE_CALLBACK_HMAC_KEY). The Worker recomputes and verifies in constant time on every POST /cb. Nothing secret traverses Kie or appears in logs.
+- Kie HMAC verification (POST /cb), 300-second replay window, and idempotency are unchanged.
+- New Worker secret required: KIE_CALLBACK_HMAC_KEY (set via wrangler secret put).
+- New Worker secret required: KVREAD_TOKEN (set via wrangler secret put).
+- Worker version bumped 1.0.0 -> 1.1.0.
+- No client names in any changed file.
+
+---
+
+## [v12.8.0] - 2026-06-14 - feat: Kie callback Worker (centralized, operator CF) + submitter webhook-primary/poll-fallback
+
+### Changes
+
+- New Skill 46 (46-kie-callback-relay): centralized Cloudflare Worker at kie-callback.zerohumanworkforce.com receives all Kie.ai image-generation callbacks for the fleet, verifies Kie HMAC-SHA256 signature once centrally, enforces a 300-second replay window (operator policy; Kie does not define one), and stores verified results in Worker KV (transport B2 from DESIGN.md).
+- Worker code: worker/src/index.js (Cloudflare Workers ES module, no npm runtime deps). Routes: POST /cb (callback receiver), GET /kv-read (box polling endpoint), GET /healthz (deploy verification). wrangler.toml wired to account 13f808b72eb78027a8046357c6cf1afa, zone zerohumanworkforce.com (zone ID confirmed via CF API 2026-06-14).
+- Box-side KV poller (box-kv-poller.js): polls Worker GET /kv-read every 2 seconds (does not consume Kie's 10-req/s query budget), validates perTaskSecret against local task registry, allowlists result URLs to Kie CDN hosts before download, writes idempotent done-marker (.kie/done/<taskId>.json), falls back to Kie recordInfo poll with backoff up to 10-minute ceiling.
+- Slide submitter (kie-slide-submitter.js): webhook-primary, poll-fallback, crash-safe. Submits full deck batch first (respecting 20-per-10-seconds creation rate; source: https://docs.kie.ai/ verified 2026-06-14), then waits for all results in parallel. Callbacks enabled above 5-slide threshold; smaller decks use efficient batch polling (Candidate C). On restart: skips slides with done-markers, re-enters wait queue for slides with taskId but no marker, re-submits slides that crashed before Kie returned a taskId.
+- Skill 07 (07-kie-setup/SKILL.md) updated: corrected rate limit citation (20 requests per 10 seconds; source: docs.kie.ai verified 2026-06-14), added Skill 46 companion section and callBackUrl format reference, added Flux URL 10-minute expiry note. skill-version.txt bumped v6.5.8 -> v6.6.0.
+- DEPLOY.md: step-by-step deploy guide (KV namespace create, wrangler secret put, wrangler deploy, smoke test, secret rotation procedure).
+- SUBMITTER-SOP.md: operator SOP for the webhook-primary slide submit loop.
+- Zero client names in any new or modified repo file (verified by diff review).
+- All 9 version markers bumped to v12.8.0.
+
+---
+## [v12.7.3] - 2026-06-14 - fix: correct invented Kie.ai rate cap + add unverified-hard-number QC guard (AF-SRC)
+
+### Changes
+
+- **Layer 1 -- corrected the invented Kie.ai rate cap, with a source.** The presentations SOPs carried a "2 RPS / waves of 20 / 15-second sleep / 1.33 req/s" Kie.ai image-generation rate framing that was never verified against the live docs and was wrong. Verified against the live Kie.ai documentation (https://docs.kie.ai/ Section 8 "Rate Limits & Concurrency", verified 2026-06-14): the real cap is **20 new generation requests per 10 seconds, per account**, 100+ concurrent running tasks allowed, HTTP 429 on excess (request rejected, not queued). Replaced every instance of the invented cap with the documented value carrying an inline `(source: <URL>, verified <date>)` citation, and corrected the inter-wave sleep from 15s to the documented 10s window. Files: `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` (Section 9.2 + Appendix A header + reference-implementation code + Phase-4 checklist + common-mistakes), `presentations/slide-submitter.md` + `sops/slide-submitter-sops.md` mirror, `presentations/director-of-presentations.md` + `sops/director-of-presentations-sops.md` mirror, `presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md`, `suggested-roles/presentations-suggested-roles.md`, `presentations/00-START-HERE.md`. The self-hedging "if this appendix ever conflicts with live documentation, verify later with operator sign-off" notes (the fingerprint of an invented constant) were rewritten to point at the citation plus a re-verify-on-version-bump maintenance instruction.
+- **Layer 2 -- the recurrence guard (AF-SRC).** Added a new auto-fail to the presentations QC specialist (`presentations/qc-specialist-presentations.md` + sops mirror): a new "SOP-Doctrine Auto-Fails" subsection with code **AF-SRC**. Any hard EXTERNAL-API constant baked into an SOP (rate limit, token/character cap, price, endpoint URL, model id, quota, payload-size limit) MUST carry a `(source: <doc URL>, verified <date>)` citation OR an explicit `UNVERIFIED-AGAINST-DOCS` tag; and a "if this conflicts with live documentation, verify later" hedge attached to an un-cited hard number is itself an automatic fail (it is the fingerprint of an invented constant). Exact trigger + PASS/PASS-unverified/FAIL examples included; KPI row added. Wired fleet-wide into the Quality Control department analyzer as the **seventh mechanical auto-flag** (unsourced-external-constant): added to `quality-control/procedure-auditor.md`, `sops/audit-a-departments-procedures-sops.md` (Step 2 flag definition + example + enforcement check), `sops/maintain-the-standard-sops.md` (standard definition + fixture replay + enforcement), `director-of-quality-control.md`, and `00-START-HERE.md`. Every "six mechanical auto-flags" reference bumped to "seven." The source analyzer specification the standard is built from (`~/Downloads/ZHC-SYSTEM-ANALYZER/` Section 2.9.1 of the Department Analyzer + the PRD H-SP1 gate) was updated in lockstep so the standard-maintainer's source-diff stays clean (these files are reference docs, not in this repo).
+- **Layer 3 -- sweep.** Swept the role-library for OTHER un-sourced hard external constants; the follow-up worklist is in the PR body (surfaced, not all fixed in this PR).
+- All 9 version markers bumped to v12.7.3.
+- Doctrine compliance: no em dashes, no en dashes, no Unicode arrows in any new or modified file; "image-to-image" / "text-to-image" written out; no client names; both edited SOP mirrors kept in parity with their authoritative role files.
 
 ## [v12.7.2] - 2026-06-14 - feat: Presentations SOP overhaul + image-prompt hardening + ROLE-23 first-time-onboarding (union of all 4 PRs)
 

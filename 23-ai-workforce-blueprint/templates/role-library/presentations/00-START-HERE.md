@@ -61,7 +61,7 @@ Every deck must carry, and the QC Specialist gates, the operator's ten named req
 7. **Phase 1.5 (type-layout gate)** -- ROLE-18 Typography Architect authors working/typography/type_layout_system.md (one distinct layout template per archetype) AFTER the STYLE BLOCK and arc_allocation.json exist and BEFORE the Slide Image Creator writes any prompt. This is a hard gate: it replaces the single hard-coded canonical hierarchy stack in slide-image-creator.md element 5, so the deck rotates layouts instead of stamping one frame. Hook slides are type-driven (no image OR <=15% opacity bg).
 8. **Phase 2** -- ROLE-11 Slide Image Creator writes prompts (requires STYLE BLOCK from ROLE-02 AND type_layout_system.md from ROLE-18; element 5 of every prompt is sourced from the matching archetype layout template).
 9. **Phase 3** -- ROLE-09 QC Specialist runs prompt QC gate (dual-scored).
-10. **Phase 4** -- ROLE-12 Slide Submitter submits to Kie.ai (2 RPS cap, smoke test first).
+10. **Phase 4** -- ROLE-12 Slide Submitter submits to Kie.ai (20-requests-per-10-seconds cap, smoke test first).
 11. **Phase 4 concurrent** -- ROLE-03 watchdog cron runs.
 12. **Phase 5** -- ROLE-09 QC Specialist runs image QC gate (including the ROLE-18 layout-variety / image-position asserts).
 13. **Phase 5 passed** -- ROLE-06 Media Librarian intakes passed images to GHL.

@@ -232,7 +232,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 1. Read capacity_plan.json. Identify: max_concurrent_agents, qc_agents_allowed, writer_agents_allowed.
 2. For Phase 2 (prompt authoring): dispatch prompt writers in batches of min(writer_agents_allowed, 10). Each writer handles a slice of slides. Slices must not overlap. Record the assignment map in working/checkpoints/phase2_dispatch.json.
 3. For Phase 3 (prompt QC): dispatch min(qc_agents_allowed, 10) QC agents. Each scores the same prompt independently. Average their scores. Scores < 8.5 trigger revision; revised prompts are re-scored before proceeding.
-4. For Phase 4 (image generation): submission runs in waves of 20 slides with 15-second sleeps between waves (= 2 RPS cap per master SOP). Dispatch the Slide Submitter as a single detached agent. NEVER split submission across multiple agents (creates rate-cap violations).
+4. For Phase 4 (image generation): submission runs in waves of 20 slides with 10-second sleeps between waves (= the documented 20-requests-per-10-seconds cap per master SOP; source: https://docs.kie.ai/ Section 8, verified 2026-06-14). Dispatch the Slide Submitter as a single detached agent. NEVER split submission across multiple agents (creates rate-cap violations).
 5. For Phase 5 (image QC): dispatch up to 5 QC agents in parallel. Each scores a non-overlapping batch of images.
 6. Log every dispatch event in working/checkpoints/dispatch_log.json with: agent_type, assigned_slides, dispatched_at, status.
 

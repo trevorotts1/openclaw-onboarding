@@ -1,0 +1,50 @@
+# Kie.ai Callback Relay Worker
+# Operator Cloudflare account: 13f808b72eb78027a8046357c6cf1afa
+# Zone: zerohumanworkforce.com (ID: a9ecc0a067f52eaa4c59dc9b11d9dd55)
+#
+# Deploy commands:
+#
+#   1. Create the KV namespace (run once):
+#      npx wrangler kv namespace create KIE_CALLBACK_KV --account-id 13f808b72eb78027a8046357c6cf1afa
+#
+#      Copy the returned id into kv_namespaces[0].id below, and the preview_id into
+#      kv_namespaces[0].preview_id.
+#
+#   2. Set the HMAC secret (run once; get value from https://kie.ai/settings):
+#      npx wrangler secret put KIE_WEBHOOK_HMAC_KEY --name kie-callback-relay
+#
+#   3. Deploy the Worker:
+#      npx wrangler deploy --name kie-callback-relay
+#
+#   4. Verify the Worker is live:
+#      curl https://kie-callback.zerohumanworkforce.com/healthz
+#
+# Route: kie-callback.zerohumanworkforce.com/*
+# The DNS CNAME for kie-callback.zerohumanworkforce.com must point to the Worker.
+# Wrangler adds the route automatically when routes[] is set and the zone is in the account.
+
+name            = "kie-callback-relay"
+main            = "src/index.js"
+compatibility_date = "2024-09-23"
+account_id      = "13f808b72eb78027a8046357c6cf1afa"
+
+# Workers + Pages routes
+routes = [
+  { pattern = "kie-callback.zerohumanworkforce.com/*", zone_name = "zerohumanworkforce.com" }
+]
+
+# KV namespace binding
+# IMPORTANT: fill in `id` and `preview_id` after running:
+#   npx wrangler kv namespace create KIE_CALLBACK_KV
+[[kv_namespaces]]
+binding    = "KIE_CALLBACK_KV"
+id         = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_KV_PREVIEW_NAMESPACE_ID"
+
+[observability]
+enabled = true
+
+# Worker secrets (never in wrangler.toml -- set via `wrangler secret put`):
+#   KIE_WEBHOOK_HMAC_KEY  -- from https://kie.ai/settings > webhookHmacKey
+#
+# No other secret is needed by this Worker. The Kie API key stays on client boxes only.

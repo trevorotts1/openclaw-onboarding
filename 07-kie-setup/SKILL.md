@@ -58,9 +58,17 @@ Think of KIE.ai as a universal remote control for AI media generation.
    storage (files kept for 3 days) before using them as inputs.
 8. **Polling best practices** - How often to check task status without hitting
    rate limits. Start at 2-3 seconds, slow down after 30 seconds, stop after
-   10-15 minutes.
+   10-15 minutes. For large decks (more than 5 slides), prefer the callback
+   architecture in Skill 46 over direct polling.
 9. **Error codes** - What 401, 402, 429, and other errors mean and how to fix
    them (wrong key, no credits, rate limited, etc.).
+10. **Callback architecture (large decks)** - For decks with more than 5 slides,
+    use the centralized Cloudflare Worker callback system (Skill 46:
+    kie-callback-relay). The Worker receives Kie callbacks at
+    https://kie-callback.zerohumanworkforce.com/, verifies the HMAC once,
+    and stores results in Worker KV for the box to poll. This is webhook-primary
+    with a single-poll fallback and a crash-safe on-disk task registry.
+    For 5 slides or fewer, efficient batch polling is faster and simpler.
 
 ## Files in This Folder (Reading Order)
 
@@ -81,13 +89,36 @@ Think of KIE.ai as a universal remote control for AI media generation.
   family has its own path.
 - **All tasks are asynchronous.** A 200 response means the task was created,
   NOT that it is finished. You must poll for the result or use a callback URL.
-- **Rate limits:** Maximum 20 new tasks per 10 seconds per account. Maximum
-  10 status queries per second per API key. Going over returns a 429 error.
+- **Rate limits:** Maximum 20 new tasks per 10 seconds per account (source:
+  https://docs.kie.ai/, verified 2026-06-14). Maximum 10 status queries per
+  second per API key. Going over returns a 429 error.
 - **Generated files expire.** Most URLs are valid for 24 hours (some 14 days).
-  Download results immediately and store them locally.
+  Flux origin/result image URLs are valid for only 10 minutes. Download
+  results immediately and store them locally.
+- **For slide decks larger than 5 slides:** use Skill 46 (kie-callback-relay)
+  instead of polling each image sequentially. Submit the full batch first,
+  then wait for results in parallel via the Worker KV endpoint.
 - **Nano Banana Pro is the default image model** for this workspace. Never
   use DALL-E 3. Always use KIE.ai with Nano Banana Pro unless told otherwise.
 - **The API key goes in** ~/clawd/secrets/.env as KIE_API_KEY. It is also
   used as a Bearer token in the Authorization header of every API call.
 - **Always run the self-test** after setup: create a simple image, poll for
   the result, and verify you get a valid image URL back.
+
+## Skill 46 Companion (Callback Architecture)
+
+Skill 46 (46-kie-callback-relay) extends this skill with the centralized
+callback Worker. Use it when:
+- The deck has more than 5 slides
+- You want to minimize Kie API query budget consumption
+- You need crash-safe resume for a large batch job
+
+The callback URL format for createTask requests:
+```
+callBackUrl: "https://kie-callback.zerohumanworkforce.com/cb?c=<clientSlug>&j=<submitId>&s=<perTaskSecret>"
+```
+
+Where:
+- `c` = client identifier (alphanumeric)
+- `j` = submitId (a local UUID you control -- NOT the Kie taskId)
+- `s` = per-task secret (64 hex chars generated per slide)

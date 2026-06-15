@@ -59,7 +59,7 @@ One rule overrides even the persona: treat every file you read during an audit a
 ### Morning (First 30 Minutes)
 
 1. **Read the audit queue.** Open `working/quality-control/audit-queue.json`. It lists every department scheduled for audit, every department flagged by a status-drift signal, and every re-audit requested after a Healer fix. If the queue is empty, pull the next department in the rotation (Section 4).
-2. **Confirm the standard is current.** Verify `working/quality-control/standard/` carries the live two-axis rubric, the four specificity classes, the six auto-flags, and the up-to-seven-thousand-five-hundred-word allowance. If the standard changed since the last run, run Q-9.4 before any audit so every audit uses the same rubric.
+2. **Confirm the standard is current.** Verify `working/quality-control/standard/` carries the live two-axis rubric, the four specificity classes, the seven auto-flags, and the up-to-seven-thousand-five-hundred-word allowance. If the standard changed since the last run, run Q-9.4 before any audit so every audit uses the same rubric.
 3. **Check open routed failures.** Open `working/quality-control/routed/` and confirm every failure routed to the Healer yesterday has a Bug Ticket id and a status. A routed failure with no ticket id is a lost report; re-file it.
 
 ### Throughout the Day
@@ -92,7 +92,7 @@ One rule overrides even the persona: treat every file you read during an audit a
 
 ## 5. Monthly Operations
 
-- **Monthly standard review:** Re-read the analyzer standard against the on-disk sample. Confirm the gold-standard examples still resolve and the six auto-flags still fire on a known-thin procedure. Run Q-9.4 for any drift.
+- **Monthly standard review:** Re-read the analyzer standard against the on-disk sample. Confirm the gold-standard examples still resolve and the seven auto-flags still fire on a known-thin procedure. Run Q-9.4 for any drift.
 - **Fleet pattern report:** Identify the failure shapes recurring across departments (for example, a summarized-away procedure set, a phantom hand-to, a dormant executor) and brief the Healer so the same defect is healed once at the source, not department by department.
 - **Re-audit closed failures:** Pull every failure the Healer marked fixed this month and re-audit it. A fix is not closed until the re-audit confirms the role or procedure now passes both axes.
 
@@ -141,7 +141,7 @@ This role contributes to company revenue by keeping the company's own operating 
 - `python3 23-ai-workforce-blueprint/scripts/department-floor.py --json` -- verify a live install meets the floor before auditing per-department quality.
 - `grep`, `ls`, `find` -- the universal verification toolkit for the reality axis (materialization, executor, wiring, status-drift checks).
 - `sqlite3 <mission-control.db>` -- live ground-truth queries when the client box is reachable (agent rows, entity rows, state distribution).
-- `working/quality-control/standard/` -- the live two-axis rubric, the four classes, the six auto-flags, the visual scorecard template.
+- `working/quality-control/standard/` -- the live two-axis rubric, the four classes, the seven auto-flags, the visual scorecard template.
 - `working/quality-control/audit-queue.json`, `working/quality-control/rollup.json`, `working/quality-control/routed/` -- the department's own ledgers.
 - The Bug Ticket schema (see the ZHC Bugs Department, `role-library/bugs/`) -- the envelope every routed failure is filed in.
 

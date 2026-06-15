@@ -40,9 +40,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
-### SOP 9.2 -- KIE Submit and 2-RPS Rate Cap
+### SOP 9.2 -- KIE Submit and Rate Cap (20 requests / 10 seconds)
 
 **When to run:** After smoke test passes (SOP 9.5). This is the main submission loop.
+
+**Rate cap source.** The cap below (20 new generation requests per 10 seconds, per account, 100+ concurrent tasks allowed, HTTP 429 on excess) is sourced from the live Kie.ai documentation: https://docs.kie.ai/ Section 8 "Rate Limits & Concurrency", verified 2026-06-14. It is not estimated. Re-confirm against the live docs on each MODEL MANIFEST version bump.
 
 **Inputs:**
 - working/prompts/slide-NN-prompt.txt (all prompt files)
@@ -83,9 +85,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
       ```
 
    c. Record each submission: `{ "slide_number": N, "task_id": "...", "submitted_at": "...", "status": "submitted" }` in phase4_checkpoint.json.
-   d. After submitting all 20 in the wave: sleep for 15 seconds before starting the next wave.
+   d. After submitting all 20 in the wave: sleep for 10 seconds (the documented window) before starting the next wave. Any retries issued during the wave count against the cap, so let the full 10-second window elapse before the next wave.
 4. Repeat step 3 until all slides are submitted.
-5. Total submission rate is therefore: 20 slides / (20 API calls + 15-second sleep) = at most 1.33 requests/second average. This satisfies the 2 RPS cap with margin.
+5. Pacing: each wave is 20 submissions followed by a 10-second window, so the submission rate stays at or below the documented 20 requests / 10 seconds (source: https://docs.kie.ai/ Section 8, verified 2026-06-14). Do not collapse the sleep below the window; do not submit more than 20 in a wave.
 6. Update the generation budget tracker in phase4_checkpoint.json: `{ "slides_submitted": N, "estimated_cost_so_far": N * 0.03 }`. If estimated_cost_so_far > 1.5 x budget ceiling: warn the Director. If estimated_cost_so_far > 2 x SLIDE_COUNT x $0.03: stop and escalate. Never exceed 2x the slide count in API calls without explicit operator authorization.
 
 **Prompt-must-state-references rule:** Every i2i prompt must state what each reference is. Specifically: "the first reference image is the brand logo, place it per the LOGO element; and on A5, the second reference is the founder, whose likeness drives the portrait." This description must appear in the prompt body so the model understands the role of each URL. If a prompt is missing this statement and the slide uses i2i, add it at the end of the prompt before submitting (log the addition in phase4_checkpoint.json).
@@ -95,7 +97,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Hand to:** SOP 9.3 (polling loop)
 
-**Failure mode:** If any API call returns a rate limit error (HTTP 429): increase the sleep between waves from 15 seconds to 30 seconds and retry. Log the rate limit event in phase4_checkpoint.json. If 3 consecutive rate limit errors occur on the same slide, halt and notify the Director.
+**Failure mode:** If any API call returns a rate limit error (HTTP 429): increase the sleep between waves from 10 seconds to 30 seconds and retry. Log the rate limit event in phase4_checkpoint.json. If 3 consecutive rate limit errors occur on the same slide, halt and notify the Director.
 
 ---
 
@@ -140,6 +142,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 The following table is copied verbatim from Appendix A of the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md). It is the authoritative API reference for Phase 4. If this section ever conflicts with Section 9.3 above, Appendix A wins and Section 9.3 must be corrected.
 
+> **Source of every hard constant below:** the live Kie.ai documentation at https://docs.kie.ai/ (endpoints + GPT Image 2 reference + Section 8 "Rate Limits & Concurrency"). Verified 2026-06-14. Every external constant here (model ids, character ceiling, reference-image count, rate cap, task states) is sourced, not estimated.
+
 | Item | Value |
 |---|---|
 | Platform | Kie.ai (the pinned image platform for this SOP) |
@@ -159,7 +163,7 @@ The following table is copied verbatim from Appendix A of the master SOP (univer
 | Optional | `callBackUrl` webhook on createTask (this SOP polls instead) |
 | Cost benchmark | ~3 cents per image at 2K |
 
-Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Section 9. If this appendix ever conflicts with live Kie.ai documentation, verify against the live docs, update the MODEL MANIFEST and this appendix with operator sign-off, and log the change.
+Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Section 9. Every hard external constant here is sourced from the live docs (https://docs.kie.ai/, verified 2026-06-14). On the NEXT MODEL MANIFEST version bump, re-fetch the live docs, re-confirm each constant, and update the verification date; if a constant changed, update the MODEL MANIFEST and this appendix with operator sign-off, refresh the citation, and log the change. Do NOT leave a bare "verify later" note on an un-cited number; that pattern is an AF-SRC auto-fail.
 
 ---
 
