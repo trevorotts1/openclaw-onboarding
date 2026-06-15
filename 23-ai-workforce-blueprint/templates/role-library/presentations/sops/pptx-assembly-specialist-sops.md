@@ -153,7 +153,9 @@ Native text overlay fallback trigger: if two render attempts on any text element
 
 ---
 
-### SOP 9.2 -- Render to PDF for Final QC
+### SOP 9.2 -- Export the Deck to Portable-Document Format (System-Wide Delivery Output + Final QC)
+
+**System-wide rule:** EVERY deck the system produces emits a portable-document-format (`.pdf`) export ALONGSIDE the `.pptx`, so a recipient without PowerPoint can open the deck. The portable-document export is a REQUIRED, verified DELIVERY output of every assembly run, not merely a transient QC artifact. The same export ships to the client and feeds the per-page PNGs the QC Specialist reads. This applies to ALL decks fleet-wide.
 
 **When to run:** Immediately after the PPTX is built (SOP 9.1 complete).
 
@@ -161,29 +163,31 @@ Native text overlay fallback trigger: if two render attempts on any text element
 - output/[DECK_SLUG].pptx
 
 **Steps:**
-1. Convert PPTX to PDF using LibreOffice Impress headless:
+1. Convert the PowerPoint file to a portable-document-format file using LibreOffice Impress in headless mode (the same LibreOffice headless convert path the design-intelligence-library uses, cited in `45-design-intelligence-library/library/_system/PPT-ANALYSIS-SOP.md`):
    ```bash
    soffice --headless --convert-to pdf --outdir output/ output/[DECK_SLUG].pptx
    ```
-   This produces output/[DECK_SLUG].pdf.
+   This produces output/[DECK_SLUG].pdf -- the delivery export, not a throwaway. The `soffice` binary is the same LibreOffice the Capacity & Reliability Engineer verifies at Step 0.5.
 2. Verify the PDF was created and is non-empty.
-3. Extract PDF pages to PNG using pdftoppm:
+3. **Documented fallback if `soffice` is unavailable** (record which path succeeded in render_log.json `pdf_export_tool`): (a) try the `libreoffice --headless --convert-to pdf` alias (cited in `45-design-intelligence-library/library/_system/PPT-ANALYSIS-SOP.md`, which uses `libreoffice --headless --convert-to pdf`); (b) if no LibreOffice binary exists, write a multi-page PDF from the ordered slide PNGs using a Python image-to-PDF library already on the box (for example, Pillow `Image.save(..., save_all=True)`) -- an image-only portable-document export that still opens without PowerPoint, with the limitation flagged when native overlays were applied; (c) if no path produces a non-empty PDF, HALT delivery, flag the Director and Capacity & Reliability Engineer, and request LibreOffice be installed. Never deliver a deck without its portable-document export; the system-wide rule is not waivable.
+4. Extract PDF pages to PNG using pdftoppm (for QC):
    ```bash
    pdftoppm -png -r 100 output/[DECK_SLUG].pdf output/pdf-pages/slide
    ```
    This produces output/pdf-pages/slide-000001.png through slide-NNNNNN.png.
-4. Verify: page count from pdftoppm matches slide_count_final. If the PDF has fewer pages than expected (LibreOffice sometimes drops slides with very large images), flag to the Director.
-5. Write a render_log.json to output/render_log.json: `{ "pptx_path": "...", "pdf_path": "...", "page_count": N, "slide_count_final": N, "counts_match": true, "rendered_at": "ISO timestamp" }`.
-6. Send the PDF path and the pdf-pages directory to the QC Specialist for Phase 6 QC.
+5. Verify: PDF page count matches slide_count_final AND the PPTX slide count. If the PDF has fewer pages than expected (LibreOffice sometimes drops slides with very large images), flag to the Director and do not deliver until counts match.
+6. Write a render_log.json to output/render_log.json: `{ "pptx_path": "...", "pdf_path": "...", "pdf_is_delivery_output": true, "pdf_export_tool": "soffice|libreoffice|pillow-image-pdf", "page_count": N, "slide_count_final": N, "pptx_slide_count": N, "counts_match": true, "rendered_at": "ISO timestamp" }`.
+7. Run the assembly quality gate (Gate 6): assert BOTH output/[DECK_SLUG].pptx and output/[DECK_SLUG].pdf exist, are non-empty, and have matching page/slide counts. Halt delivery on any failure.
+8. Send the PDF path and the pdf-pages directory to the QC Specialist for Phase 6 QC; the `.pptx` and `.pdf` together travel to the Media Librarian / Delivery Concierge as delivery outputs.
 
 **Outputs:**
-- output/[DECK_SLUG].pdf
-- output/pdf-pages/slide-NNNNNN.png (one file per slide)
-- output/render_log.json
+- output/[DECK_SLUG].pdf (REQUIRED delivery output, ships alongside the .pptx; also feeds QC)
+- output/pdf-pages/slide-NNNNNN.png (one file per slide, for QC)
+- output/render_log.json (records `pdf_is_delivery_output` and `pdf_export_tool`)
 
-**Hand to:** QC Specialist -- Presentations (Phase 6 final deck QC)
+**Hand to:** QC Specialist -- Presentations (Phase 6 final deck QC); both files to the Media Librarian / Delivery Concierge for delivery.
 
-**Failure mode:** If `soffice` is not installed: flag to the Director and Capacity & Reliability Engineer. The C&RE should have verified LibreOffice is available in the Step 0.5 capacity probe. If LibreOffice is genuinely unavailable, notify the operator and request it be installed before assembly proceeds.
+**Failure mode:** If `soffice` is not installed: run the documented fallback chain in step 3 (libreoffice alias, then Pillow image-to-PDF) and flag to the Director and Capacity & Reliability Engineer. If no path can produce a non-empty portable-document export, HALT delivery and request LibreOffice be installed; never deliver a `.pptx` without its `.pdf` (the system-wide rule).
 
 ---
 
