@@ -25,7 +25,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v12.12.1"
+ONBOARDING_VERSION="v12.13.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5806,6 +5806,17 @@ if [ -f "$ONBOARDING_DIR/scripts/apply-fleet-standards.sh" ]; then
     success "Fleet standards applied"
 else
     warn "Fleet standards script not found at $ONBOARDING_DIR/scripts/apply-fleet-standards.sh"
+fi
+echo ""
+
+# Apply routing-defect permanent fix (4-layer: doctrine path, pptx deny, symlink unblock, dept seeding)
+# Must run AFTER workspace + openclaw.json + mission-control.db are initialised.
+note "Applying routing-defect permanent fix (Layers 1-4)..."
+if [ -f "$ONBOARDING_DIR/scripts/apply-routing-fix.sh" ]; then
+    bash "$ONBOARDING_DIR/scripts/apply-routing-fix.sh" || warn "Routing fix reported errors (install continues — re-run apply-routing-fix.sh)"
+    success "Routing fix applied"
+else
+    warn "apply-routing-fix.sh not found at $ONBOARDING_DIR/scripts/apply-routing-fix.sh"
 fi
 echo ""
 

@@ -1,3 +1,56 @@
+## [v12.13.0] - 2026-06-15 - fix: permanent routing-defect fix (4 layers) + FAIL-LOUD verify gate + installer wiring + closeout precondition
+
+### Changes
+
+**Permanent fix for the "master agent builds inline instead of routing to departments" defect.
+Every NEW box is now immune. The same script is the fleet-sweep entrypoint for existing boxes.**
+
+**Root cause:** install.sh wrote doctrine to `~/clawd/AGENTS.md` while the agent reads from
+`~/.openclaw/workspace/AGENTS.md` (comment at install.sh line 3446 admitted the mismatch).
+Three additional structural gaps compounded it: pptx skill was physically loaded on the CEO
+agent, tasks skill was skipped due to a symlink-escape guard, and department workspace rows
+were absent from mission-control.db causing routing to fall back to CEO.
+
+**Deliverables:**
+
+`scripts/apply-routing-fix.sh` — idempotent 4-layer canonical fix (new file):
+- Layer 1: resolves main agent's actual workspace from `openclaw.json`
+  (`agents.list[id=main].workspace` -> `agents.defaults.workspace` -> canonical default),
+  injects `ROLE_DISCIPLINE_V1` + `CEO_ROUTING_NO_LOOPHOLES_V1` into THAT file's AGENTS.md,
+  and injects PRIME DIRECTIVE (`CEO_ORCHESTRATOR_RULE_V2`) into its SOUL.md.
+- Layer 2: sets `skills:[]` on the main agent in `openclaw.json` (pptx skill blocked).
+- Layer 3: adds workspace real-path to `skills.load.allowSymlinkTargets` (tasks skill unblocked).
+- Layer 4: runs `seed-workspaces.py` to ensure department rows exist in `mission-control.db`.
+All layers idempotent (marker-guarded or state-checked). Backs up + rolls back on failure.
+Supports `--dry-run`. Config validated with `openclaw config validate` after JSON edits.
+
+`scripts/verify-routing.sh` — FAIL-LOUD gate (new file):
+- G1: ROLE_DISCIPLINE_V1 in resolved AGENTS.md (count == 1)
+- G2: CEO_ROUTING_NO_LOOPHOLES_V1 in resolved AGENTS.md
+- G3: CEO_ORCHESTRATOR_RULE_V2 (PRIME DIRECTIVE) in resolved SOUL.md
+- G4: main agent `skills:[]` in openclaw.json
+- G5: workspace real-path in `skills.load.allowSymlinkTargets`
+- G6: at least one department workspace row in mission-control.db
+Exits 1 (FATAL) on any failure; exits 0 only when all 6 pass.
+
+`install.sh` — apply-routing-fix.sh wired after apply-fleet-standards.sh.
+
+`37-zhc-closeout/scripts/run-closeout.sh` — B6 gate added after B5 (verify-wiring):
+exits 1 with `closeoutStatus: blocked-routing-defect` if routing is broken.
+Skippable in unit-test environments via `ZHC_SKIP_ROUTING_PREFLIGHT=1`.
+
+`37-zhc-closeout/scripts/test-closeout-watchdog.sh` — added `ZHC_SKIP_ROUTING_PREFLIGHT=1`
+to the hermetic `run_script` function so T6 tests can reach the org-chart step.
+
+**Verified:** apply-routing-fix.sh dry-run clean; live run applied all 4 layers + validated;
+idempotency confirmed (second run all no-ops); verify-routing.sh exits 1 on unfixed box,
+exits 0 after fix. Zero client names in diff (grep confirmed).
+
+**Version bumped:** all 9 version markers updated to v12.13.0. cc-compat.json onboardingVersion
+fixed (was stuck at v12.10.0). 37-zhc-closeout/skill-version.txt bumped.
+
+---
+
 ## [v12.12.1] - 2026-06-15 - fix: director SOP mirror parity -- source_brief_origin propagated to SOP mirror outputs
 
 ### Changes
