@@ -1,12 +1,14 @@
 {
   "generated_at": "2026-06-14T00:00:00Z",
   "version": "12.14.5",
-  "total_roles": 311,
+  "total_roles": 312,
   "departments": {
     "founding-member-concierge": {
-      "count": 2,
+      "count": 4,
       "roles": [
+        "concierge-lead",
         "director-of-founding-member-concierge",
+        "membership-specialist",
         "qc-specialist"
       ]
     },
@@ -505,6 +507,12 @@
         "qa-engineer",
         "systems-engineer",
         "qc-specialist"
+      ]
+    },
+    "founding-member-concierge": {
+      "count": 1,
+      "roles": [
+        "deep-research-specialist"
       ]
     }
   },
@@ -3628,6 +3636,16 @@
       "sop_count": 4,
       "sop_min": 4,
       "path": "templates/role-library/engineering/deep-research-specialist/how-to.md"
+    },
+    {
+      "slug": "concierge-lead",
+      "dept": "founding-member-concierge",
+      "title": "Concierge Lead",
+      "role_type": "specialist",
+      "word_count": 11800,
+      "sop_count": 6,
+      "sop_min": 4,
+      "path": "templates/role-library/founding-member-concierge/concierge-lead/how-to.md"
     }
   ],
   "total_departments": 25
