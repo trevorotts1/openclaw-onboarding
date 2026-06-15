@@ -259,6 +259,7 @@ Zero client names in diff (grep verified).
 
 **Per-box fleet sweep (deployed HEARTBEAT.md cleanup for existing boxes) is the SEPARATE gated step.** This PR fixes the repo/scaffolding only. Running the removal script in Step 9 on each client box is the fleet sweep, gated on testing this PR first.
 
+
 ---
 
 ## [v12.13.0] - 2026-06-15 - fix: permanent routing-defect fix (4 layers) + FAIL-LOUD verify gate + installer wiring + closeout precondition

@@ -247,18 +247,29 @@ The weekly content-theme question and the weekly social-planning run MUST be dri
 
 The cron is installed as part of the activation step below. INSTALL.md Step 9 directs the installer to remove any Saturday theme-request block from the client's live HEARTBEAT.md — that block MUST NOT exist because the agent acts on heartbeat prose every tick. The cron is the sole enforcement mechanism.
 
-### Activation — install the weekly theme cron
+### Activation — install the weekly theme cron (AUTOMATED via script)
 
-Run this at the end of INSTALL.md (after Step 9, before Step 10). It is idempotent: it skips if the cron name already exists.
+> **Do NOT run inline bash here.** The cron is now registered by the bundled script called from INSTALL.md Step 9. This ensures it is fail-loud, deduped, and QC-asserted automatically during install. Manual inline invocation is kept only as a break-glass reference.
+
+INSTALL.md Step 9 runs:
 
 ```bash
-# State/marker file for idempotency — prevents double-firing if cron is missed+caught-up
-CRON_MARKER_DIR="$HOME/.openclaw/data/skill35"
-mkdir -p "$CRON_MARKER_DIR"
+bash ~/.openclaw/skills/35-social-media-planner/scripts/register-weekly-cron.sh
+```
 
+The script handles all of the following automatically:
+- Idempotency: skips if a healthy `main`-target `skill35-weekly-theme` entry already exists.
+- Deduplication: deletes stale/erroring duplicate entries before registering.
+- Hard-fail: exits non-zero on any registration failure (installer must not proceed to Step 10).
+- Post-registration QC: asserts exactly 1 entry, `sessionTarget=main`, schedule `0 8 * * 6`.
+- Marker path: `~/.openclaw/data/skill35/weekly-theme-last-run.json` (persistent, not /tmp).
+- Model: cheap/free (flash or free OpenRouter fallback) — never a metered pro model.
+- `sessionTarget=main` (isolated + channel-deliver is rejected by the gateway).
+
+**Break-glass only** (use if the script itself is unavailable on the install path):
+
+```bash
 CRON_NAME="skill35-weekly-theme"
-
-# Check idempotency
 if openclaw cron list 2>/dev/null | grep -q "$CRON_NAME"; then
   echo "cron $CRON_NAME already registered — skipping"
 else
@@ -266,17 +277,16 @@ else
     --name "$CRON_NAME" \
     --cron "0 8 * * 6" \
     --agent main \
+    --session-target main \
     --light-context \
-    --announce \
-    --channel last \
-    --best-effort-deliver \
-    --message "Skill 35 weekly theme prompt: Ask the owner — 'What's the theme for next week's social media content?' If no response by 12:00 PM, ask again. If no response by 6:00 PM, ask again. If no response by Sunday 7:00 AM, use the evergreen theme. After the theme is confirmed (or defaulted), run the weekly social planning batch: bash ~/.openclaw/skills/35-social-media-planner/scripts/weekly-batch.sh. Write the chosen theme and run timestamp to ~/.openclaw/data/skill35/weekly-theme-last-run.json for idempotency (skip if already ran this Saturday)." \
+    --message "Skill 35 weekly theme trigger. Check ~/.openclaw/data/skill35/weekly-theme-last-run.json — if weekISO matches current ISO week, skip. Otherwise: ask the owner their content theme for the week, wait up to 1 hour, default to evergreen if no reply. Run the weekly social plan. Write the marker file after completion." \
     && echo "registered cron: $CRON_NAME (0 8 * * 6 — Saturdays 8 AM)" \
-    || echo "ERROR: openclaw cron add failed — register manually (cron.jobs JSON is invalid on 2026.5.27+)"
+    || { echo "ERROR: openclaw cron add failed"; exit 1; }
 fi
 ```
 
-If `openclaw cron add` is not available on this install, fall back to `openclaw cron create` with identical flags. Do NOT write a `cron.jobs` JSON block — it does not validate on OpenClaw 2026.5.27+.
+Do NOT write a `cron.jobs` JSON block — it does not validate on OpenClaw 2026.5.27+.
+Do NOT use `--announce --channel last --best-effort-deliver` with `sessionTarget=main` — the gateway rejects channel-delivery config on main-target crons (confirmed on a client box 2026-06-15).
 
 ---
 
