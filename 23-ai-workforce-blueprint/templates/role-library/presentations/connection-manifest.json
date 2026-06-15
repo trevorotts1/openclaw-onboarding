@@ -1,0 +1,43 @@
+{
+  "_comment": "Connection-manifest for the Presentations department. Every 'required: true' entry must resolve to a non-empty value in openclaw.json before this dept may be marked done. verify-wiring.sh reads this file and checks each cfg_key.",
+  "dept": "presentations",
+  "version": "1.0.0",
+  "connection_points": [
+    {
+      "name": "kie-api-key",
+      "description": "Kie.ai API key required for the Slide Submitter role to generate images via GPT Image 2. Without this key the presentation pipeline cannot produce slides.",
+      "cfg_key": "env.vars.KIE_API_KEY",
+      "required": true
+    },
+    {
+      "name": "kie-images-per-batch",
+      "description": "Kie.ai image batch size (images per 10-second window). Governs rate limiting for the Slide Submitter role.",
+      "cfg_key": "env.vars.KIE_IMAGES_PER_BATCH",
+      "required": false
+    },
+    {
+      "name": "ghl-api-key",
+      "description": "GoHighLevel API key used by the Media Librarian role to upload completed slide assets into the GHL media library.",
+      "cfg_key": "env.vars.GHL_API_KEY",
+      "required": true
+    },
+    {
+      "name": "ghl-location-id",
+      "description": "GHL location (sub-account) ID so the Media Librarian targets the correct media library.",
+      "cfg_key": "env.vars.GHL_LOCATION_ID",
+      "required": true
+    },
+    {
+      "name": "command-center-board-entry",
+      "description": "The Presentations department must be listed in the Command Center departments.json so the client can monitor pipeline status from the dashboard.",
+      "cfg_key": "commandCenter.departmentsJsonPath",
+      "required": false
+    },
+    {
+      "name": "delivery-destination-drive",
+      "description": "Google Drive folder ID where the Delivery Concierge deposits the final PPTX/PDF deliverable.",
+      "cfg_key": "env.vars.GOOGLE_DRIVE_DELIVERY_FOLDER_ID",
+      "required": false
+    }
+  ]
+}

@@ -812,9 +812,47 @@ dispatches a `[COMMS-AUTOMATION-RESUME]` self-ping (after `[LIBRARY-RESUME]`, al
 See Skill 38 `references/communications-playbook-standard.md` + `templates/journey-templates/` for the
 vertical journey that tells you WHICH playbooks a given business needs.
 
+### Moment 3.9 - WIRING GATE: materialized + registered + reachable + connected (BINDING - added v12.8.3)
+
+**The problem this solves.** After the role library gate passes (Moment 3.6), the build state may still show `roleLibraryFilled: false` or `sopLibraryFilled: false` on 17 of 22 departments, with `roleLibraryStatus / sopLibraryStatus / trioStatus` all null, and yet `buildCompletedAt` was already set and `closeoutStatus = "done"`. This happens because the build marked every department `status: "done"` off a ROLE COUNT alone -- completely decoupled from whether the roles and SOPs actually materialized, were registered so the orchestrator can reach them, or had their external connection points (Kie API, GHL media hook, delivery destinations) resolved. Prose in the SOPs saying "also pull the role library" is NOT enforcement.
+
+**The wiring doctrine (fleet-wide, binding from v12.8.3):**
+
+> A department is **ADDED** only when it is: (1) **materialized** -- every role folder has a real `how-to.md` (not a stub, not empty, not a `[PENDING]` placeholder, not under 3 KB); (2) **registered** -- the `dept-<slug>` agent appears in `openclaw.json` `agents.list[]` with a workspace path that resolves on disk; (3) **reachable** -- at least one Director/Head/Lead/Architect role exists so the orchestrator has an entry point to dispatch tasks; (4) **connection-points-verified** -- every `required: true` key in the dept's `templates/role-library/<dept>/connection-manifest.json` resolves to a non-empty value in `openclaw.json`.
+>
+> **ONLY a passing wiring gate (`verify-wiring.sh` exit 0) may set a department or the overall build to done. A count substituting for materialization is not done. This rule is enforced by the gate -- it is not advisory.**
+
+**Enforcement mechanism:**
+
+- **Script:** `scripts/verify-wiring.sh [--dept <slug> | --all]` -- runs all four assertions per dept, writes `wiringStatus` (done|failed) + `wiringFailReasons` + `wiringCheckedAt` per-dept into `.workforce-build-state.json`, exits non-zero on ANY failure with named missing items. Exit codes: 0=all pass, 2=materialization, 3=registration, 4=reachability, 5=connection, 6=mixed, 9=precondition.
+- **Add path:** `add-role.sh` calls `verify-wiring.sh --dept <slug>` after every role is added so a stub is caught immediately.
+- **Resume gate:** `resume-workforce-build.sh` runs `verify-wiring.sh --all` on every cron fire when libraries are clean; any dept with `wiringStatus != done` produces a `[WIRING-RESUME]` self-ping that persists until fixed.
+- **Build path:** `build-workforce.py` calls `verify-wiring.sh --all` after `verify-library-gate.sh`; instructs the agent NOT to write `buildCompletedAt` / `closeoutStatus=pending` while this gate fails.
+- **Auto-closeout gate:** `resume-workforce-build.sh` HOP-4 requires `wiring_dirty == 0` before writing `buildCompletedAt` -- so no stub department can ever silently close out.
+- **Connection manifests:** `templates/role-library/<dept>/connection-manifest.json` defines per-dept required external hooks. Each manifest entry has `name`, `description`, `cfg_key` (dot-path into `openclaw.json`), and `required` (bool). Manifests ship for: presentations, graphics, video, sales, marketing, communications, customer-support.
+
+**The master orchestrator MUST, after Moment 3.6 and 3.8 pass and BEFORE writing `buildCompletedAt`:**
+
+1. Run the wiring gate across all departments:
+   ```bash
+   # Mac:
+   bash ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/verify-wiring.sh --all
+   # VPS:
+   bash /data/.openclaw/skills/23-ai-workforce-blueprint/scripts/verify-wiring.sh --all
+   ```
+2. Read the output. Fix each named FAIL category:
+   - **Materialized** failures: run `python3 scripts/post-build-role-workspaces.py --dept <slug>` (copies pre-written role library into real `how-to.md` files).
+   - **Registered** failures: verify `openclaw.json` `agents.list` contains `dept-<slug>` with a valid workspace path; re-run `build-workforce.py` or the materialize script if the entry is missing.
+   - **Reachable** failures: confirm a role folder containing "director", "head", "lead", or "architect" in its name exists under the dept.
+   - **Connection** failures: fill each `required: true` `cfg_key` in `openclaw.json` per the dept's `connection-manifest.json`.
+3. Re-run until it exits `0`. **Do NOT flip `wiringStatus` manually -- only the gate may set it.**
+4. ONLY after `verify-wiring.sh` exits `0` for all depts may you write `buildCompletedAt` and set `closeoutStatus = "pending"`.
+
+**NEVER flip `wiringStatus` by hand.** A manually-set `wiringStatus: "done"` on a department that has not actually passed the gate is the same defect that produced stub departments at closeout. The gate is the authority. Run it.
+
 ### When ALL departments are `done` AND the library gate passes
 
-**STATE-DRIVEN (v12.4.x auto-closeout - binding):** `buildCompletedAt` + `closeoutStatus = "pending"` are now written BY A SCRIPT, not by agent memory. `resume-workforce-build.sh` (the */15 cron) detects the full completion contract on the state - every department `done`, `roleLibraryStatus == done` AND `sopLibraryStatus == done`, and `commsAutomationStatus` terminal (`done` or `not-applicable`) - and, when `buildCompletedAt` is still unset, writes `buildCompletedAt` + sets `closeoutStatus = "pending"` itself, then dispatches the `[CLOSEOUT-RESUME]` self-ping on the SAME fire. This was the missing HOP-4 (diag/03): previously no script wrote `buildCompletedAt`, so an interrupted session left a fully-built workforce that never crossed into the closeout. You no longer have to remember this hand-write.
+**STATE-DRIVEN (v12.4.x auto-closeout - binding):** `buildCompletedAt` + `closeoutStatus = "pending"` are now written BY A SCRIPT, not by agent memory. `resume-workforce-build.sh` (the */15 cron) detects the full completion contract on the state -- every department `done`, `roleLibraryStatus == done` AND `sopLibraryStatus == done`, wiring gate passed (`wiring_dirty == 0`, all depts have `wiringStatus == done`), and `commsAutomationStatus` terminal (`done` or `not-applicable`) -- and, when `buildCompletedAt` is still unset, writes `buildCompletedAt` + sets `closeoutStatus = "pending"` itself, then dispatches the `[CLOSEOUT-RESUME]` self-ping on the SAME fire. This was the missing HOP-4 (diag/03): previously no script wrote `buildCompletedAt`, so an interrupted session left a fully-built workforce that never crossed into the closeout. You no longer have to remember this hand-write.
 
 You SHOULD still perform the inline write below when you reach this point in a live session (it is faster for the owner and is idempotent - the cron only writes when `buildCompletedAt` is empty, so the two never conflict), but it is a redundancy now, not the sole guarantee:
 
@@ -845,9 +883,10 @@ All steps are idempotent. The resume cron (this same `resume-workforce-build.sh`
 - Fires if ANY of:
   - `interviewComplete: true` AND ANY department is `pending` / `failed` / stale `building` (>15 min since `lastAttemptAt`), OR
   - all departments `done` AND (`roleLibraryStatus NOT IN {done}` OR `sopLibraryStatus NOT IN {done}`) (v10.15.8 library-dirty extension - fires BEFORE closeout), OR
-  - all departments + libraries `done` AND `commsAutomationStatus NOT IN {done, not-applicable}` (v10.15.9 comms-automation cross-skill gate to Skill 38), OR
+  - all departments + libraries `done` AND ANY dept has `wiringStatus != done` (v12.8.3 wiring-dirty extension - fires AFTER library gate, BEFORE comms automations), OR
+  - all departments + libraries + wiring `done` AND `commsAutomationStatus NOT IN {done, not-applicable}` (v10.15.9 comms-automation cross-skill gate to Skill 38), OR
   - `buildCompletedAt` is set AND `closeoutStatus NOT IN {done, sent}` (v10.13.16 closeout-dirty extension).
-- Dispatches a `[WORKFORCE-RESUME]`, `[LIBRARY-RESUME]`, `[COMMS-AUTOMATION-RESUME]`, or `[CLOSEOUT-RESUME]` Telegram self-message to a paired chat (owner first, Trevor fallback). Order: `[LIBRARY-RESUME]` fires before `[COMMS-AUTOMATION-RESUME]` fires before `[CLOSEOUT-RESUME]` - closeout must not run on an incomplete library, and comms automations sit on top of a complete workforce. That message invokes the agent, who reads `resume-prompt.txt` and continues building, re-pulls the role/SOP libraries, scaffolds the Skill 38 comms automations, OR closes out.
+- Dispatches a `[WORKFORCE-RESUME]`, `[LIBRARY-RESUME]`, `[WIRING-RESUME]`, `[COMMS-AUTOMATION-RESUME]`, or `[CLOSEOUT-RESUME]` Telegram self-message to a paired chat (owner first, Trevor fallback). Order: `[LIBRARY-RESUME]` fires before `[WIRING-RESUME]` fires before `[COMMS-AUTOMATION-RESUME]` fires before `[CLOSEOUT-RESUME]`. A stub dept caught by the wiring gate self-pings with exact failure reasons until fixed. That message invokes the agent, who reads `resume-prompt.txt` and continues building, re-pulls the role/SOP libraries, materializes stub depts, scaffolds the Skill 38 comms automations, OR closes out.
 - v10.15.9: when the libraries stay dirty into the last 2 resume attempts, it ALSO emits a one-line OPERATOR-FACING status (a persistently-failing library pull is surfaced before the cap, throttled via `librariesNearCapNotified`).
 - Caps at `maxResumeAttempts` (default 12) to prevent infinite loops. After cap, pings Trevor's chat directly with an escalation that names the library status instead of continuing to self-ping.
 - Holds a 10-minute lockfile so concurrent cron firings don't double-dispatch.

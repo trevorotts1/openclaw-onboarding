@@ -1,0 +1,25 @@
+{
+  "_comment": "Connection-manifest for the Graphics department. verify-wiring.sh reads this file and checks each required cfg_key.",
+  "dept": "graphics",
+  "version": "1.0.0",
+  "connection_points": [
+    {
+      "name": "kie-api-key",
+      "description": "Kie.ai API key for AI image generation used by graphics production roles.",
+      "cfg_key": "env.vars.KIE_API_KEY",
+      "required": true
+    },
+    {
+      "name": "ghl-api-key",
+      "description": "GoHighLevel API key for uploading finished graphics assets to the GHL media library.",
+      "cfg_key": "env.vars.GHL_API_KEY",
+      "required": true
+    },
+    {
+      "name": "ghl-location-id",
+      "description": "GHL location ID for targeting the correct media library sub-account.",
+      "cfg_key": "env.vars.GHL_LOCATION_ID",
+      "required": true
+    }
+  ]
+}

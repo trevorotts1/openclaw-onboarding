@@ -1,0 +1,25 @@
+{
+  "_comment": "Connection-manifest for the Video department. verify-wiring.sh reads this and checks each required cfg_key.",
+  "dept": "video",
+  "version": "1.0.0",
+  "connection_points": [
+    {
+      "name": "ghl-api-key",
+      "description": "GoHighLevel API key for the Video department to upload completed video assets and thumbnails to the GHL media library.",
+      "cfg_key": "env.vars.GHL_API_KEY",
+      "required": true
+    },
+    {
+      "name": "ghl-location-id",
+      "description": "GHL location ID for targeting the correct sub-account media library.",
+      "cfg_key": "env.vars.GHL_LOCATION_ID",
+      "required": true
+    },
+    {
+      "name": "google-drive-delivery-folder",
+      "description": "Google Drive folder ID where the Video department deposits final video deliverables.",
+      "cfg_key": "env.vars.GOOGLE_DRIVE_DELIVERY_FOLDER_ID",
+      "required": false
+    }
+  ]
+}
