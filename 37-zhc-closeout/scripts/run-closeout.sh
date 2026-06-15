@@ -288,30 +288,33 @@ fi
 # A box with a broken routing defect (CEO builds inline instead of routing to departments)
 # MUST NOT close out — the workforce is not operational. Wires apply-routing-fix.sh as
 # the remediation path. Exit-0 on failure (same pattern as B5) so the resume cron re-fires.
-VERIFY_ROUTING_SCRIPT=""
-for _vr_cand in \
-  "${SKILL_DIR%/*}/scripts/verify-routing.sh" \
-  "$OC_ROOT/skills/scripts/verify-routing.sh" \
-  "$HOME/.openclaw/skills/scripts/verify-routing.sh" \
-  "/data/.openclaw/skills/scripts/verify-routing.sh"; do
-  [[ -f "$_vr_cand" ]] && VERIFY_ROUTING_SCRIPT="$_vr_cand" && break
-done
-# Fallback: search from onboarding dir peer-location
-if [[ -z "$VERIFY_ROUTING_SCRIPT" ]]; then
-  _vr_peer="${SKILL_DIR%/*}/scripts/verify-routing.sh"
-  [[ -f "$_vr_peer" ]] && VERIFY_ROUTING_SCRIPT="$_vr_peer"
-fi
-if [[ -n "$VERIFY_ROUTING_SCRIPT" ]]; then
-  bash "$VERIFY_ROUTING_SCRIPT" >> "$LOG_FILE" 2>&1
-  VERIFY_ROUTING_RC=$?
-  if [[ "$VERIFY_ROUTING_RC" != "0" ]]; then
-    log "ERROR" "verify-routing.sh preflight FAILED (rc=$VERIFY_ROUTING_RC): routing defect detected — CEO master agent is missing one or more routing-fix layers. REFUSING to close out a box with broken routing. Fix: run scripts/apply-routing-fix.sh then retry closeout."
-    state_set ".closeoutStatus = \"blocked-routing-defect\" | .closeoutBlockReason = \"verify-routing.sh rc=$VERIFY_ROUTING_RC (routing defect present — run apply-routing-fix.sh)\""
-    exit 1
+# Skip via ZHC_SKIP_ROUTING_PREFLIGHT=1 in unit-test environments.
+if [[ "${ZHC_SKIP_ROUTING_PREFLIGHT:-0}" != "1" ]]; then
+  VERIFY_ROUTING_SCRIPT=""
+  for _vr_cand in \
+    "${SKILL_DIR%/*}/scripts/verify-routing.sh" \
+    "$OC_ROOT/skills/scripts/verify-routing.sh" \
+    "$HOME/.openclaw/skills/scripts/verify-routing.sh" \
+    "/data/.openclaw/skills/scripts/verify-routing.sh"; do
+    [[ -f "$_vr_cand" ]] && VERIFY_ROUTING_SCRIPT="$_vr_cand" && break
+  done
+  # Fallback: search from onboarding dir peer-location
+  if [[ -z "$VERIFY_ROUTING_SCRIPT" ]]; then
+    _vr_peer="${SKILL_DIR%/*}/scripts/verify-routing.sh"
+    [[ -f "$_vr_peer" ]] && VERIFY_ROUTING_SCRIPT="$_vr_peer"
   fi
-  log "INFO" "verify-routing.sh preflight rc=$VERIFY_ROUTING_RC (routing verified clean)"
-else
-  log "WARN" "verify-routing.sh not found — skipping routing check (ensure openclaw-onboarding is up to date)"
+  if [[ -n "$VERIFY_ROUTING_SCRIPT" ]]; then
+    bash "$VERIFY_ROUTING_SCRIPT" >> "$LOG_FILE" 2>&1
+    VERIFY_ROUTING_RC=$?
+    if [[ "$VERIFY_ROUTING_RC" != "0" ]]; then
+      log "ERROR" "verify-routing.sh preflight FAILED (rc=$VERIFY_ROUTING_RC): routing defect detected — CEO master agent is missing one or more routing-fix layers. REFUSING to close out a box with broken routing. Fix: run scripts/apply-routing-fix.sh then retry closeout."
+      state_set ".closeoutStatus = \"blocked-routing-defect\" | .closeoutBlockReason = \"verify-routing.sh rc=$VERIFY_ROUTING_RC (routing defect present — run apply-routing-fix.sh)\""
+      exit 1
+    fi
+    log "INFO" "verify-routing.sh preflight rc=$VERIFY_ROUTING_RC (routing verified clean)"
+  else
+    log "WARN" "verify-routing.sh not found — skipping routing check (ensure openclaw-onboarding is up to date)"
+  fi
 fi
 
 closeout_status=$(state_get '.closeoutStatus')
