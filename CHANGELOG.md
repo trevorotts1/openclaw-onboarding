@@ -1,3 +1,20 @@
+## [v12.9.3] - 2026-06-14 - fix: GHL lookup SOP -- orchestrator-only MCP, dual Accept header, no grep -P, fail-fast preflight, two-axis routing
+
+### Changes
+
+**Encode the GHL lookup SOP as fleet-enforced doctrine in skill 36 and skill 44.**
+
+- `GHL-LOOKUP-SOP.md` (new authoritative SOP) documents 6 hard rules for every GHL lookup
+- MCP tools (`ghl-mcp__*`) are orchestrator-only; sub-agents use the convert-and-flow CLI or raw HTTPS
+- Lookup model: `deepseek-v4-flash` (direct) as primary; never a metered `:cloud` model for lookups
+- Raw HTTP fallback must carry BOTH `Accept` headers (`application/json` + `text/event-stream`) plus `Version` header; missing `text/event-stream` produces HTTP 406
+- Never `grep -P` on macOS (BSD grep has no `-P`); use `python3` or `jq` for pattern matching
+- Fail-fast credential preflight before every lookup session
+- Two-axis routing: READ path (`caf` -> Tier 1 MCP -> Tier 3 raw HTTPS) vs BUILD path (Skill 44 internal Build API -> Tier 4 browser automation); the public `/workflows/` endpoint is read-only -- no MCP tool can build a workflow
+
+Rules propagated into `36-ghl-mcp-setup/SKILL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md` and `44-convert-and-flow-operator/SKILL.md`, `INSTRUCTIONS.md`.
+
+---
 ## [v12.9.2] - 2026-06-14 - fix: close ungated claim-points (A1-A6, B1-B7, C1-C4, X1-X2) + behavioral acceptance tests
 
 ### Changes
@@ -5,6 +22,9 @@
 **Close ungated claim-points across the workforce build pipeline.** Six A-gates, seven B-gates, four C-gates, and two X-gates are now hard-enforced: A1-A6 (department-done truth), B1-B7 (role-library indexing and registration), C1-C4 (wiring verification), and X1-X2 (cross-cutting guards). The `build-workforce.py` and `verify-wiring.sh` scripts enforce each gate with an explicit FAIL-LOUD path. Behavioral acceptance tests (28/28 pass) added in `tests/test-ungated-claim-points.sh`.
 
 ---
+
+---
+
 
 ## [v12.9.0] - 2026-06-14 - feat: presentation vision-gate overhaul + 16 new AF codes + casting ledger + deliverable bundle + gradient ban + PIL logo composite
 

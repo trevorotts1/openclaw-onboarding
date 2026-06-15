@@ -71,7 +71,15 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 
 6. **The official MCP is stateless.** Initialize does NOT return an `Mcp-Session-Id` header. Do not gate follow-up calls on a session ID — each request is independent.
 
-7. **🔴 GHL rate limits apply to ALL tiers — they share the same backend bucket.** Switching tiers does NOT bypass the limit.
+7. **MCP tools are ORCHESTRATOR-ONLY.** Spawned sub-agents receive no MCP tool injection. Any contact lookup inside a sub-agent MUST use `caf contacts search/get` (Tier 0 CLI) or raw HTTPS (Tier 3). Never tell a sub-agent to call `ghl-mcp__*` tools — it will fail.
+
+8. **Raw HTTP to the MCP endpoint MUST send BOTH Accept values.** The GHL hosted MCP endpoint requires `Accept: application/json, text/event-stream`. Sending only `Accept: application/json` returns HTTP 406 (content-negotiation error, not auth). Both values are mandatory.
+
+9. **Never use `grep -P` on a Mac client box.** BSD grep (macOS default) has no -P flag. Parse JSON/SSE responses with `python3 -c "import json,sys; ..."` or `jq`.
+
+10. **Use `deepseek-v4-flash` (direct) for lookup inference — never a metered `:cloud` model.** Contact lookups are cheap data-retrieval tasks. Metered cloud models burn quota for work a free model handles fine.
+
+11. **🔴 GHL rate limits apply to ALL tiers — they share the same backend bucket.** Switching tiers does NOT bypass the limit.
    - **Burst limit:** 100 requests per 10 seconds per location
    - **Daily limit:** 200,000 requests per day per location
    - **Response headers on every call:** `X-RateLimit-Remaining`, `X-RateLimit-Daily-Remaining`, `X-RateLimit-Limit-Daily`, `X-RateLimit-Daily-Reset` (seconds until reset)
@@ -97,12 +105,13 @@ These are the most common mistakes agents make with the MCP setup. Read them car
 1. **SKILL.md** — You are here. Start here for the overview.
 2. **INSTALL.md** — Step-by-step autonomous setup. Run this first.
 3. **INSTRUCTIONS.md** — How to USE the MCPs day-to-day after install.
-4. **EXAMPLES.md** — Real working curl examples for both MCPs and the fall-through pattern.
-5. **CORE_UPDATES.md** — Exact text to add to SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md.
-6. **QC.md** — 7-section quality control checklist. The QC script itself ships separately as `qc-ghl-mcp-setup.sh` in this folder (do not extract from QC.md — the standalone is the single source of truth).
-7. **ghl-mcp-setup-full.md** — Long-form complete reference with troubleshooting cheat sheet.
-8. **CHANGELOG.md** — Skill version history.
-9. **ghl-mcp-setup.skill** — Machine-readable bundled archive.
+4. **EXAMPLES.md** — Real working curl examples for both MCPs, the fall-through pattern, and sub-agent-safe lookup examples.
+5. **GHL-LOOKUP-SOP.md** — Authoritative SOP for contact lookups and two-axis READ/BUILD routing. Covers: orchestrator-vs-sub-agent MCP rules, dual Accept header contract, no `grep -P`, fail-fast preflight, model selection, and per-path decision table.
+6. **CORE_UPDATES.md** — Exact text to add to SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md.
+7. **QC.md** — 7-section quality control checklist. The QC script itself ships separately as `qc-ghl-mcp-setup.sh` in this folder (do not extract from QC.md — the standalone is the single source of truth).
+8. **ghl-mcp-setup-full.md** — Long-form complete reference with troubleshooting cheat sheet.
+9. **CHANGELOG.md** — Skill version history.
+10. **ghl-mcp-setup.skill** — Machine-readable bundled archive.
 
 ## Priority Operations to Test First
 

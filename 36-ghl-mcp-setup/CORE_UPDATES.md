@@ -111,6 +111,26 @@ Rules: Tier 0 first for covered ops. Media never routes to Tier 0. On 429: stop 
   present and healthy. Tier 4 is the backstop ONLY when the token is genuinely
   unavailable.
 - ❌ "They said review the workflow → I will use the 834-tool MCP." Wrong. Review = Tier 0 `caf workflows export` first; escalate only for what export cannot show (e.g. trigger-bucket state). Never open-ended-pick the Community MCP for a workflow review.
+- ❌ Sub-agent calling an MCP tool. Sub-agents have no MCP injection — use `caf` CLI or raw HTTPS.
+- ❌ Raw HTTP fallback without dual Accept header. Missing `text/event-stream` in Accept causes HTTP 406 (content-negotiation failure, NOT auth). Both values mandatory: `Accept: application/json, text/event-stream`.
+- ❌ Using `grep -P` on a Mac client box. BSD grep has no -P flag. Use `python3 -c "import json,sys; ..."` or `jq`.
+- ❌ Metered `:cloud` model for a contact lookup. Use `deepseek-v4-flash` (direct) or a free fallback — lookups are cheap data-retrieval, not reasoning tasks.
+- ❌ Building a workflow via any MCP. The public `/workflows/` API is read-only. Community MCP `ghl_create_workflow` is unverified. Use Skill 44 internal Build API.
+- ❌ Routing a contact lookup to Tier 4 (browser). Browser = UI-only flows and workflow-build backstops only.
+
+### GHL Lookup SOP — summary (2026-06-14)
+
+```
+- Lookup in orchestrator: Tier 0 caf → Tier 1 MCP (deepseek-v4-flash, dual Accept, Version: 2021-07-28) → Tier 3 raw HTTPS
+- Sub-agent lookup: ONLY caf CLI or raw HTTPS — MCP tools are NOT available in sub-agents
+- Raw HTTP: MUST send BOTH "Accept: application/json, text/event-stream" AND "Version: 2021-07-28" — missing text/event-stream = HTTP 406
+- No grep -P on macOS — use python3 -c / jq
+- Fail-fast preflight: verify GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID before any call
+- BUILD path: Skill 44 internal Build API (Firebase token) → Tier 4 browser backstop; NEVER build via any MCP
+- Funnel page content: browser-only (Tier 4) — always, no exception
+- No metered :cloud model for lookups — deepseek-v4-flash direct or free fallback only
+Full ref: [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/GHL-LOOKUP-SOP.md
+```
 
 ### Mandatory disclosure format
 

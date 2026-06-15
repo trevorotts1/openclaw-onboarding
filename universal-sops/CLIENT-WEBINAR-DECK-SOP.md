@@ -59,6 +59,33 @@ PHASE 6  PPTX assembly, final deck QC, speaker notes, delivery
 
 ---
 
+## 1A. CLIENT SOVEREIGNTY DOCTRINE (the central rule)
+
+**Sovereignty means: the system uses EXACTLY the model the client/brief specifies. Non-negotiable.**
+
+The canonical model for all client presentations is `gpt-image-2-text-to-image` (text-to-image) or `gpt-image-2-image-to-image` (image-to-image with references). These are pinned in the MODEL MANIFEST (Section 9.0) and sourced from the client's brief `intake.json`. No other model may be used as primary.
+
+**The system MUST NEVER:**
+- Silently substitute a different model
+- Downgrade from the client's specified model for any reason including "optimization," "speed," "cost," or "availability"
+- Copy a model ID from example code or documentation without reading it from the client's pinned config
+
+**A fallback (e.g., nano-banana-2) MAY fire ONLY when:**
+1. The client's pinned primary model returns a HARD API failure (HTTP 5xx, credit exhaustion, or unavailability confirmed by the API)
+2. The fallback event is IMMEDIATELY logged in render_manifest.json with: timestamp, slide ID, primary model, failure reason, fallback model
+3. The fallback event is SURFACED to the operator before the deck is delivered
+
+**A fallback is NEVER:**
+- The silent primary (if nano-banana-2 is running as primary without a logged failure event, this is a sovereignty violation)
+- Used to "speed up" a run
+- Used because an agent copied it from an example payload
+
+**Auto-fail AF-MODEL-SOVEREIGNTY:** Any deck whose render_manifest.json shows a submitted model that does not match the client's pinned model -- and has no corresponding logged fallback event -- HARD-FAILS the QC gate. The deck cannot be delivered.
+
+**Plain-language sovereignty statement:** The client's express choice of model is sovereign. The system exists to serve the client's wishes, not to optimize around them. Violating a client's express choice -- whether for model, style, structure, or any other element they have specified -- is a breach of the client relationship and a system defect. Never override what a client has asked for.
+
+---
+
 ## 2. STEP 0: CREATE THE MEDIA LIBRARY (THE FIRST ACTION, ALWAYS)
 
 Before the discovery interview, before slides, before anything, create the landing zones. If these folders do not exist, passed work gets lost.
@@ -116,6 +143,23 @@ Sub-agent counts in this SOP (writers, 5 to 10 QC agents, submission agent) are 
 **FIRST-TIME ONBOARDING (the owner's first-run experience).** The trigger is CONVERSATIONAL: the owner says something like "I need a deck / a webinar / a pitch." The agent does NOT launch into a form. It meets the owner with "Let's brainstorm it together first," then runs the brainstorming buddy as FRIENDLY proactive Q&A (3 to 10 ADAPTIVE questions, NOT a 50-question dump). The brainstorm USES known business context rather than re-asking it (the governing rule below), offers the deliverable add-ons (the guide, the speech, the audio demo), and offers the STYLE BRANCH ("Do you have an existing deck or visual style to match, a reference deck to analyze, or should we create a signature style for you?"). Only after the brainstorm does it ECHO -> PRD -> checklist gate (Section 3.3), then proceed Phase A -> B. The owner sees a conversation and a confirmation, never a build that started before they said go.
 
 **Rule: ask a MINIMUM of 3 and a MAXIMUM of 10 questions.** Before asking anything, check what the agent already knows (brand kit on file, prior decks, memory, GHL settings). NEVER ask a question whose answer is already known. Skip, confirm, or ask, in that order. Record every answer in `working/intake.json` and echo the full intake back to the client for confirmation before Phase 1. The intake also captures the deliverable scope and pacing: `WANT_AUDIO_DEMO` (y/n + voice/persona), `TARGET_WPM` (default 140), and `DELIVERABLE_SET` (deck only / +guide / +guide+speech / +audio), plus the style-branch answer (match / analyze a reference / create a signature style).
+
+**REQUIRED intake.json fields for the render pipeline (a brief missing any of these cannot be dispatched to the build pipeline):**
+```json
+{
+  "model_pin": "gpt-image-2-text-to-image",
+  "prompt_char_floor": 1500,
+  "prompt_char_ceiling": 15000,
+  "baked_text_only": true,
+  "vision_qc_required": true,
+  "canonical_render_module": "23-ai-workforce-blueprint/templates/presentation-render/render_deck.py"
+}
+```
+- `model_pin`: the client's pinned primary image model (default `gpt-image-2-text-to-image`). NEVER overridden by the producing agent without operator sign-off. This is the value the canonical render module validates against (Section 1A sovereignty doctrine).
+- `prompt_char_floor` / `prompt_char_ceiling`: hard limits for all image prompts (1500-15000 chars). The Slide Image Creator must stay within these bounds; the canonical render module hard-blocks anything outside.
+- `baked_text_only`: always `true`. No Pillow overlay path, no black scrim. Typography baked into the image by the model (AF-BAKED auto-fail enforces this).
+- `vision_qc_required`: always `true`. path.exists() is not vision QC. Phase 5 calls the vision API per-image (AF-NO-VISION-QC enforces this).
+- `canonical_render_module`: the path to the shared render module. All producing agents call this module; per-deck renderers are forbidden (AF-RENDERER enforces this).
 
 ### 3.1 The question bank (pull from this, in priority order)
 

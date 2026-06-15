@@ -5,6 +5,8 @@
 ## Department Purpose
 End-to-end branded webinar and slide deck production: copy writing, price ladder choreography, image prompt authoring, brand consistency, QC at every phase, image generation submission, media library management, PPTX assembly, adversarial review, hook development, live-presentation coaching, verified delivery, and department self-healing. Coordinates with Marketing (deck brief), CRM (GHL media library), Research (proof gaps), and the client's OpenClaw agent (discovery interview, approval gates, final delivery).
 
+**Canonical Render Module (mandatory for all producing roles):** All image generation in this department MUST use the shared module at `23-ai-workforce-blueprint/templates/presentation-render/render_deck.py`. Per-deck renderers are FORBIDDEN (AF-RENDERER auto-fail). The canonical module validates model sovereignty, prompt character floor, and structural block requirements before any API call, and writes `render_manifest.json` to the workspace for QC verification.
+
 ## v1.7 Role Roster (22 roles)
 - Brainstorming Buddy (ROLE-17, renamed from Deck Discovery Strategist in v12.1.0)
 - Director (ROLE-01)
@@ -18,7 +20,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - QC Specialist -- Presentations (ROLE-09)
 - Slide Copywriter (ROLE-10)
 - Slide Image Creator (ROLE-11)
-- Slide Submitter (ROLE-12)
+- Slide Submitter (ROLE-12) -- MUST call the canonical render module, not a per-deck renderer
 - Delivery Concierge (ROLE-13, NEW -- v11.23.0)
 - Presenter Coach (ROLE-14, NEW -- v11.23.0)
 - Hook Strategist (ROLE-15, NEW -- v11.23.0)

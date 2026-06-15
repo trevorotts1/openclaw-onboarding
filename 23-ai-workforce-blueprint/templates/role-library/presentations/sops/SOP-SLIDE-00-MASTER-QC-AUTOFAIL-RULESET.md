@@ -165,4 +165,38 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-DEN-7 | 1Q/6 | DECK | no 4-7 slide re-pitch after FINAL | post-FINAL slide count / content |
 | AF-DEN-8 | 1Q/6 | DECK | section below its slide floor | per-section slide count vs floor |
 
+
+| AF-RENDERER | Phase 4/6 | DECK | Deck shipped its own renderer instead of calling the canonical render module | render_manifest.json missing OR render script is not the canonical 23-ai-workforce-blueprint/templates/presentation-render/render_deck.py |
+| AF-MODEL-SOVEREIGNTY | Phase 4/6 | DECK | Submitted model does not match client's pinned model with no logged fallback event | render_manifest.json model_used != intake.json model_pin AND no fallback_events entry for that slide |
+| AF-BAKED | Phase 5/6 | slide (blocks FINAL) | Slide text was drawn by Pillow/PPTX/ImageDraw rather than baked by the image model, OR slide is a flat placeholder fill with no Kie render | Vision QC agent confirms: text is overlaid, not rendered; OR image dimensions/size match known placeholder signatures |
+| AF-PROMPT-FLOOR | Phase 3 | slide | Image prompt outside 1500-15000 chars OR missing required structural blocks | len(prompt) < 1500 OR len(prompt) > 15000 OR prompt missing [ARCHETYPE, NEGATIVE BLOCK, "Do not " imperatives] |
+| AF-NO-VISION-QC | Phase 6 | DECK | Deck submitted without an executed vision-QC log (path.exists() is not vision QC) | working/qc/vision_qc_log.json missing OR empty OR contains only path-existence checks with no vision API call records |
+
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
+
+---
+
+## 6. NEW AUTO-FAIL CODES -- 2026-06-14 ENFORCEMENT OVERHAUL
+
+These five codes were added after the forensic four-deck failure analysis. Each one maps to a specific failure pattern from that analysis:
+
+### AF-RENDERER (Fix 1)
+**What failed:** Each of four test decks wrote its own throwaway renderer (render.py, build_deck.py, gen_and_build.py). No shared standard enforced model, prompt length, text strategy, or QC.
+**Detection:** Phase 4 at dispatch: confirm the producing agent is calling `23-ai-workforce-blueprint/templates/presentation-render/render_deck.py`. At Phase 6: confirm `render_manifest.json` is present and was written by the canonical module (it includes a `module_version` key). If absent: DECK FAIL.
+
+### AF-MODEL-SOVEREIGNTY (Fix 2)
+**What failed:** Two of four decks submitted to `nano-banana-pro` instead of `gpt-image-2-text-to-image`. The wrong model was copy-pasted from example payloads without reading the client's config.
+**Detection:** Compare `render_manifest.json` -> `model_used` per slide against `intake.json` -> `model_pin`. If any slide used a different model AND there is no corresponding entry in `render_manifest.json` -> `fallback_events` with a documented hard API failure: DECK FAIL.
+
+### AF-BAKED (Fix 4)
+**What failed:** Two of four decks used Pillow ImageDraw plus a black RGBA scrim to composite Helvetica text over Kie images, producing "flat dark slabs." Four to twenty-three slides in the other two decks were rendered entirely in Pillow (no Kie image at all).
+**Detection:** Vision QC (Haiku 4.5) checks each slide. If the vision agent scores text as "overlaid / composited" rather than "rendered as part of image composition," or if the image matches a flat-fill placeholder signature (solid color, tiny file under 50KB), the slide triggers AF-BAKED.
+
+### AF-PROMPT-FLOOR (Fix 5)
+**What failed:** 100% of 98 image prompts (across all four decks) were below the 1500-char floor. Median was 277 chars -- 5.4x under floor. Zero prompts had proper archetype declarations or negative blocks.
+**Detection:** Phase 3 (Prompt QC gate). Count characters in each prompt file. Check for `[ARCHETYPE` on line 1, a dedicated NEGATIVE BLOCK paragraph, and at least three "Do not ..." imperative sentences in the final paragraph. Any miss: slide FAIL, loops back to Slide Image Creator.
+
+### AF-NO-VISION-QC (Fix 6)
+**What failed:** All four decks used only `path.exists()` for "verification." No vision API was called on any image. Part1-GENERAL shipped 40 placeholder PNGs because they passed the file-presence check.
+**Detection:** Phase 6 final gate: confirm `working/qc/vision_qc_log.json` exists, is non-empty, and contains at minimum one entry per slide with a non-null `vision_api_response` field. A log that records only `{"slide": N, "exists": true}` entries is NOT a vision QC log and triggers AF-NO-VISION-QC for the DECK.
+

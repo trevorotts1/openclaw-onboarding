@@ -49,9 +49,13 @@ const RATE_LIMIT_WINDOW = 10000; // ms
 // use efficient batch polling (Candidate C from DESIGN.md) for smaller decks.
 const DEFAULT_CALLBACK_THRESHOLD = 5;
 
+// MODEL TIMEOUTS -- primary model is gpt-image-2-text-to-image. nano-banana-pro is FALLBACK-ONLY.
 // Per-model callback timeout defaults (ms) before falling back to Kie poll
 const MODEL_TIMEOUTS = {
-  'nano-banana-pro': 120000,  // 2 minutes (fast model)
+  'gpt-image-2-text-to-image':  300000,  // 5 minutes (primary model for all client presentations)
+  'gpt-image-2-image-to-image': 300000,  // 5 minutes (primary model with reference images)
+  // FALLBACK-ONLY: nano-banana-pro fires only on hard API failure of the primary. Never use as primary.
+  'nano-banana-pro': 120000,  // 2 minutes (fast model -- FALLBACK-ONLY)
   'default':         180000   // 3 minutes fallback
 };
 
@@ -154,7 +158,7 @@ class KieSlideSubmitter {
     for (const slide of pending.filter(s => !s.existing)) {
       await this._throttle();
 
-      const model         = slide.model || opts.model || 'nano-banana-pro';
+      const model         = slide.model || opts.model || 'gpt-image-2-text-to-image';
       const perTaskSecret = crypto.randomBytes(32).toString('hex');
       const submitId      = slide.submitId; // already a 128-bit random hex (fix A)
 

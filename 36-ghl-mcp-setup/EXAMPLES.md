@@ -225,6 +225,55 @@ curl -sS "https://services.leadconnectorhq.com/hooks/?locationId=$GOHIGHLEVEL_LO
 
 Disclosure: `[GHL tier used: 3 (Tier 1 lacked tool: webhooks; Tier 2 returned 404) — raw API GET /hooks/]`
 
+## Sub-Agent-Safe Contact Lookup
+
+MCP tools are NOT available inside spawned sub-agents. Use `caf` (Tier 0 CLI) or
+raw HTTPS instead. Never instruct a sub-agent to call `ghl-mcp__*` tools.
+
+### Tier 0 (preferred — works in orchestrator AND sub-agent)
+
+```bash
+# Search by email — works from any process
+caf contacts search "client@example.com"
+
+# Get by ID
+caf contacts get CONTACT_ID_HERE
+```
+
+### Sub-agent Tier 3 fallback (when caf is unavailable)
+
+Note the MANDATORY dual Accept header — missing `text/event-stream` causes HTTP 406.
+Also note: NO `grep -P` on macOS — use `python3` for parsing.
+
+```bash
+# CORRECT — dual Accept, python3 parsing, no grep -P
+curl -sS -X POST "https://services.leadconnectorhq.com/mcp/" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H "locationId: $GOHIGHLEVEL_LOCATION_ID" \
+  -H "Version: 2021-07-28" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"contacts_get-contacts","arguments":{"limit":5}}}' \
+  | grep "^data:" | head -1 | sed 's/^data: //' | python3 -m json.tool
+
+# WRONG — missing text/event-stream → HTTP 406
+# -H "Accept: application/json"   <-- this alone is WRONG
+
+# WRONG on macOS — grep -P not supported by BSD grep
+# | grep -P '"id"\s*:\s*"([^"]+)"'   <-- NEVER do this
+```
+
+### Orchestrator-to-sub-agent pattern
+
+```bash
+# Orchestrator: look up contact ID via MCP tool (safe here)
+# [GHL tier used: 1 — contacts_search-contacts]
+CONTACT_ID="<id returned by MCP>"
+
+# Sub-agent receives CONTACT_ID, uses caf (no MCP needed)
+caf contacts get "$CONTACT_ID"
+```
+
 ## Smoke Test One-Liners
 
 Save these for fast verification at any time:

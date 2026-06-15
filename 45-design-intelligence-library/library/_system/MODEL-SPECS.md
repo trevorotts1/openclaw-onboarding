@@ -60,6 +60,8 @@ This is the THIRD Kie.ai mode, alongside text-to-image (T2I) and image-to-image 
 
 ## 2. MODEL ROUTING TABLE
 
+> **PRESENTATIONS MODEL SOVEREIGNTY:** For client presentation decks, the model is PINNED in the client's intake.json (field: `model_pin`). The canonical primary is `gpt-image-2-text-to-image` (text-to-image) or `gpt-image-2-image-to-image` (with reference images). The routing table below applies to ALL OTHER use cases. For presentations, `nano-banana-2` is FALLBACK-ONLY and requires a logged hard API failure event. See CLIENT-WEBINAR-DECK-SOP.md Section 1A and AF-MODEL-SOVEREIGNTY.
+
 Choose by task. Category `_RULES.md` files may override.
 
 | Task | First choice | Backup | Why |
@@ -305,3 +307,4 @@ When a new model or endpoint becomes available (e.g., GPT-Image 3, Nano Banana 3
 | 2026-06-12 | v1.1 | Added GPT-Image 2 Image-to-Image (20K + refs 30MB) and Seedream 4.5 Text-to-Image (3K, ratio required). Updated routing: GPT I2I now first choice for text-heavy style-reference work; Seedream T2I added as fast-draft option. Style-reference-only directive extended to GPT I2I. |
 | 2026-06-12 | v1.2 | Added Editing Hierarchy (Seedream 4.5 Edit = only true surgical editor) and Personal Photo Shoot routing rows. |
 | 2026-06-14 | v1.3 | Documented the THIRD mode: image-to-JSON / vision analysis (Section 1B + template 5.8). Synchronous chat-completions endpoint `POST https://api.kie.ai/gpt-5-2/v1/chat/completions`, model `gpt-5-2`, image via `messages[].content[].image_url`, answer at `choices[0].message.content`. Verified against live `docs.kie.ai/market/chat/gpt-5-2`; no `response_format`/`json_schema` documented (JSON by instruction). Powers Workflow A image-to-style-card. No style cards touched. |
+| 2026-06-14 | v1.4 | Added CLIENT SOVEREIGNTY note to MODEL ROUTING TABLE: presentations always use gpt-image-2-text-to-image or gpt-image-2-image-to-image as primary. nano-banana-2 is FALLBACK-ONLY for presentations (logs required). Added AF-MODEL-SOVEREIGNTY auto-fail reference. |
