@@ -608,7 +608,9 @@
       "word_count": 7436,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/account-management/client-relationship-manager.md"
+      "path": "templates/role-library/account-management/client-relationship-manager.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist",
@@ -618,7 +620,9 @@
       "word_count": 9657,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/account-management/deep-research-specialist/how-to.md"
+      "path": "templates/role-library/account-management/deep-research-specialist/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate",
@@ -628,7 +632,9 @@
       "word_count": 4453,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/account-management/devils-advocate/how-to.md"
+      "path": "templates/role-library/account-management/devils-advocate/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-account-management",
@@ -638,7 +644,9 @@
       "word_count": 12026,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/account-management/director-of-account-management/how-to.md"
+      "path": "templates/role-library/account-management/director-of-account-management/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist",
@@ -648,7 +656,9 @@
       "word_count": 9991,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/account-management/qc-specialist/how-to.md"
+      "path": "templates/role-library/account-management/qc-specialist/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "retention-specialist",
@@ -658,7 +668,9 @@
       "word_count": 7177,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/account-management/retention-specialist.md"
+      "path": "templates/role-library/account-management/retention-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "android-specialist",
@@ -668,7 +680,9 @@
       "word_count": 9299,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/android-specialist.md"
+      "path": "templates/role-library/app-development/android-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "api-backend-specialist",
@@ -678,7 +692,9 @@
       "word_count": 10370,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/api-backend-specialist.md"
+      "path": "templates/role-library/app-development/api-backend-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "app-analytics-specialist",
@@ -688,7 +704,9 @@
       "word_count": 9889,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/app-analytics-specialist.md"
+      "path": "templates/role-library/app-development/app-analytics-specialist.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "app-store-optimization-aso-specialist",
@@ -698,7 +716,9 @@
       "word_count": 10057,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/app-store-optimization-aso-specialist.md"
+      "path": "templates/role-library/app-development/app-store-optimization-aso-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "brainstorming-buddy-app-development",
@@ -708,7 +728,9 @@
       "word_count": 2946,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/brainstorming-buddy-app-development.md"
+      "path": "templates/role-library/app-development/brainstorming-buddy-app-development.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "cloud-infrastructure-specialist",
@@ -718,7 +740,9 @@
       "word_count": 9012,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/cloud-infrastructure-specialist.md"
+      "path": "templates/role-library/app-development/cloud-infrastructure-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-app-development",
@@ -728,7 +752,9 @@
       "word_count": 15206,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/deep-research-specialist-app-development.md"
+      "path": "templates/role-library/app-development/deep-research-specialist-app-development.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "desktop-app-specialist",
@@ -738,7 +764,9 @@
       "word_count": 8972,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/desktop-app-specialist.md"
+      "path": "templates/role-library/app-development/desktop-app-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--app-development",
@@ -748,7 +776,9 @@
       "word_count": 1299,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/devils-advocate--app-development.md"
+      "path": "templates/role-library/app-development/devils-advocate--app-development.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "head-of-app-development",
@@ -758,7 +788,9 @@
       "word_count": 8821,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/head-of-app-development.md"
+      "path": "templates/role-library/app-development/head-of-app-development.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-app-development",
@@ -768,7 +800,9 @@
       "word_count": 4520,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/healer-app-development.md"
+      "path": "templates/role-library/app-development/healer-app-development.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "ios-specialist",
@@ -778,7 +812,9 @@
       "word_count": 12252,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/ios-specialist.md"
+      "path": "templates/role-library/app-development/ios-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "pwa-progressive-web-app-specialist",
@@ -788,7 +824,9 @@
       "word_count": 9809,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/pwa-progressive-web-app-specialist.md"
+      "path": "templates/role-library/app-development/pwa-progressive-web-app-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qa-tester-app",
@@ -798,7 +836,9 @@
       "word_count": 9887,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/qa-tester-app.md"
+      "path": "templates/role-library/app-development/qa-tester-app.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-app-development",
@@ -808,7 +848,9 @@
       "word_count": 10836,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/qc-specialist-app-development.md"
+      "path": "templates/role-library/app-development/qc-specialist-app-development.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -818,7 +860,9 @@
       "word_count": 4988,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/sop-writer.md"
+      "path": "templates/role-library/app-development/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "ux-ui-specialist",
@@ -828,7 +872,9 @@
       "word_count": 10376,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/app-development/ux-ui-specialist.md"
+      "path": "templates/role-library/app-development/ux-ui-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "ai-voice-specialist-11-labs-play.ht",
@@ -838,7 +884,9 @@
       "word_count": 12930,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/ai-voice-specialist-11-labs-play.ht.md"
+      "path": "templates/role-library/audio/ai-voice-specialist-11-labs-play.ht.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "audio-mastering-specialist",
@@ -848,7 +896,9 @@
       "word_count": 9655,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/audio-mastering-specialist.md"
+      "path": "templates/role-library/audio/audio-mastering-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "audiobook-production-specialist",
@@ -858,7 +908,9 @@
       "word_count": 10282,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/audiobook-production-specialist.md"
+      "path": "templates/role-library/audio/audiobook-production-specialist.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "crm-specialist-audio-version",
@@ -868,7 +920,9 @@
       "word_count": 18978,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/crm-specialist-audio-version.md"
+      "path": "templates/role-library/audio/crm-specialist-audio-version.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-audio",
@@ -878,7 +932,9 @@
       "word_count": 9848,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/deep-research-specialist-audio.md"
+      "path": "templates/role-library/audio/deep-research-specialist-audio.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--audio",
@@ -888,7 +944,9 @@
       "word_count": 1299,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/devils-advocate--audio.md"
+      "path": "templates/role-library/audio/devils-advocate--audio.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "head-of-audio-production",
@@ -898,7 +956,9 @@
       "word_count": 10903,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/head-of-audio-production.md"
+      "path": "templates/role-library/audio/head-of-audio-production.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-audio",
@@ -908,7 +968,9 @@
       "word_count": 4520,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/healer-audio.md"
+      "path": "templates/role-library/audio/healer-audio.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "music-and-audio-producer",
@@ -918,7 +980,9 @@
       "word_count": 12350,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/music-and-audio-producer.md"
+      "path": "templates/role-library/audio/music-and-audio-producer.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "podcast-editor",
@@ -928,7 +992,9 @@
       "word_count": 11399,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/podcast-editor.md"
+      "path": "templates/role-library/audio/podcast-editor.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "podcast-producer",
@@ -938,7 +1004,9 @@
       "word_count": 11243,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/podcast-producer.md"
+      "path": "templates/role-library/audio/podcast-producer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-audio",
@@ -948,7 +1016,9 @@
       "word_count": 12133,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/qc-specialist-audio.md"
+      "path": "templates/role-library/audio/qc-specialist-audio.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -958,7 +1028,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/sop-writer.md"
+      "path": "templates/role-library/audio/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "sound-design-sfx-specialist",
@@ -968,7 +1040,9 @@
       "word_count": 10029,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/sound-design-sfx-specialist.md"
+      "path": "templates/role-library/audio/sound-design-sfx-specialist.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "speech-writing-specialist",
@@ -978,7 +1052,9 @@
       "word_count": 7440,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/speech-writing-specialist.md"
+      "path": "templates/role-library/audio/speech-writing-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "transcription-specialist",
@@ -988,7 +1064,9 @@
       "word_count": 7624,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/transcription-specialist.md"
+      "path": "templates/role-library/audio/transcription-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "voice-agent-builder",
@@ -998,7 +1076,9 @@
       "word_count": 10874,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/audio/voice-agent-builder.md"
+      "path": "templates/role-library/audio/voice-agent-builder.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "bookkeeping-specialist",
@@ -1008,7 +1088,9 @@
       "word_count": 7134,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/bookkeeping-specialist.md"
+      "path": "templates/role-library/billing/bookkeeping-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "cash-flow-forecasting-specialist",
@@ -1018,7 +1100,9 @@
       "word_count": 8920,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/cash-flow-forecasting-specialist.md"
+      "path": "templates/role-library/billing/cash-flow-forecasting-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "chief-financial-officer",
@@ -1028,7 +1112,9 @@
       "word_count": 13293,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/chief-financial-officer.md"
+      "path": "templates/role-library/billing/chief-financial-officer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "collections-specialist",
@@ -1038,7 +1124,9 @@
       "word_count": 11061,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/collections-specialist.md"
+      "path": "templates/role-library/billing/collections-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "crm-specialist-billing-version",
@@ -1048,7 +1136,9 @@
       "word_count": 9263,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/crm-specialist-billing-version.md"
+      "path": "templates/role-library/billing/crm-specialist-billing-version.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist---billing",
@@ -1058,7 +1148,9 @@
       "word_count": 12594,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/deep-research-specialist---billing.md"
+      "path": "templates/role-library/billing/deep-research-specialist---billing.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--billing",
@@ -1068,7 +1160,9 @@
       "word_count": 1313,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/devils-advocate--billing.md"
+      "path": "templates/role-library/billing/devils-advocate--billing.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "financial-reporting-specialist",
@@ -1078,7 +1172,9 @@
       "word_count": 11248,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/financial-reporting-specialist.md"
+      "path": "templates/role-library/billing/financial-reporting-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "fpanda--forecasting-analyst",
@@ -1088,7 +1184,9 @@
       "word_count": 10021,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/fpanda--forecasting-analyst.md"
+      "path": "templates/role-library/billing/fpanda--forecasting-analyst.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-billing",
@@ -1098,7 +1196,9 @@
       "word_count": 4523,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/healer-billing.md"
+      "path": "templates/role-library/billing/healer-billing.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "invoicing-and-ar-specialist",
@@ -1108,7 +1208,9 @@
       "word_count": 11118,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/invoicing-and-ar-specialist.md"
+      "path": "templates/role-library/billing/invoicing-and-ar-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist---billing",
@@ -1118,7 +1220,9 @@
       "word_count": 12657,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/qc-specialist---billing.md"
+      "path": "templates/role-library/billing/qc-specialist---billing.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -1128,7 +1232,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/sop-writer.md"
+      "path": "templates/role-library/billing/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "subscription--recurring-revenue-specialist",
@@ -1138,7 +1244,9 @@
       "word_count": 11179,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/subscription--recurring-revenue-specialist.md"
+      "path": "templates/role-library/billing/subscription--recurring-revenue-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "tax-liaison-specialist",
@@ -1148,7 +1256,9 @@
       "word_count": 8591,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/billing/tax-liaison-specialist.md"
+      "path": "templates/role-library/billing/tax-liaison-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "bug-intake-clerk",
@@ -1158,7 +1268,9 @@
       "word_count": 1953,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/bugs/bug-intake-clerk.md"
+      "path": "templates/role-library/bugs/bug-intake-clerk.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "bug-librarian",
@@ -1168,7 +1280,9 @@
       "word_count": 2676,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/bugs/bug-librarian.md"
+      "path": "templates/role-library/bugs/bug-librarian.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "bugs-department-sops",
@@ -1178,7 +1292,9 @@
       "word_count": 420,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/bugs/bugs-department-sops.md"
+      "path": "templates/role-library/bugs/bugs-department-sops.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-bugs",
@@ -1188,7 +1304,9 @@
       "word_count": 676,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/bugs/deep-research-specialist-bugs.md"
+      "path": "templates/role-library/bugs/deep-research-specialist-bugs.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate-bugs",
@@ -1198,7 +1316,9 @@
       "word_count": 721,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/bugs/devils-advocate-bugs.md"
+      "path": "templates/role-library/bugs/devils-advocate-bugs.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-bugs",
@@ -1208,7 +1328,9 @@
       "word_count": 712,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/bugs/qc-specialist-bugs.md"
+      "path": "templates/role-library/bugs/qc-specialist-bugs.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "triage-dedup-analyst",
@@ -1218,7 +1340,9 @@
       "word_count": 2161,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/bugs/triage-dedup-analyst.md"
+      "path": "templates/role-library/bugs/triage-dedup-analyst.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "booking-coordinator",
@@ -1228,7 +1352,9 @@
       "word_count": 10116,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/booking-coordinator/how-to.md"
+      "path": "templates/role-library/client-experience-booking/booking-coordinator/how-to.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "client-onboarding-specialist",
@@ -1238,7 +1364,9 @@
       "word_count": 8002,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/client-onboarding-specialist/how-to.md"
+      "path": "templates/role-library/client-experience-booking/client-onboarding-specialist/how-to.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist",
@@ -1248,7 +1376,9 @@
       "word_count": 12013,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/deep-research-specialist/how-to.md"
+      "path": "templates/role-library/client-experience-booking/deep-research-specialist/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate",
@@ -1258,7 +1388,9 @@
       "word_count": 6937,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/devils-advocate/how-to.md"
+      "path": "templates/role-library/client-experience-booking/devils-advocate/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-client-experience-booking",
@@ -1268,7 +1400,9 @@
       "word_count": 6824,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/director-of-client-experience-booking.md"
+      "path": "templates/role-library/client-experience-booking/director-of-client-experience-booking.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "post-session-followup-specialist",
@@ -1278,7 +1412,9 @@
       "word_count": 5347,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/post-session-followup-specialist.md"
+      "path": "templates/role-library/client-experience-booking/post-session-followup-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist",
@@ -1288,7 +1424,9 @@
       "word_count": 10220,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/client-experience-booking/qc-specialist/how-to.md"
+      "path": "templates/role-library/client-experience-booking/qc-specialist/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "brand-messaging-specialist",
@@ -1298,7 +1436,9 @@
       "word_count": 5199,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/brand-messaging-specialist.md"
+      "path": "templates/role-library/communications/brand-messaging-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "chief-communications-officer",
@@ -1308,7 +1448,9 @@
       "word_count": 13219,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/chief-communications-officer.md"
+      "path": "templates/role-library/communications/chief-communications-officer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "crisis-communications-specialist",
@@ -1318,7 +1460,9 @@
       "word_count": 5253,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/crisis-communications-specialist.md"
+      "path": "templates/role-library/communications/crisis-communications-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-communications",
@@ -1328,7 +1472,9 @@
       "word_count": 5107,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/deep-research-specialist-communications.md"
+      "path": "templates/role-library/communications/deep-research-specialist-communications.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--communications",
@@ -1338,7 +1484,9 @@
       "word_count": 1275,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/devils-advocate--communications.md"
+      "path": "templates/role-library/communications/devils-advocate--communications.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "healer-communications",
@@ -1348,7 +1496,9 @@
       "word_count": 4517,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/healer-communications.md"
+      "path": "templates/role-library/communications/healer-communications.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "internal-communications-manager",
@@ -1358,7 +1508,9 @@
       "word_count": 4851,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/internal-communications-manager.md"
+      "path": "templates/role-library/communications/internal-communications-manager.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "investor--stakeholder-comms-specialist",
@@ -1368,7 +1520,9 @@
       "word_count": 4359,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/investor--stakeholder-comms-specialist.md"
+      "path": "templates/role-library/communications/investor--stakeholder-comms-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "media-pitching-specialist",
@@ -1378,7 +1532,9 @@
       "word_count": 9979,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/media-pitching-specialist.md"
+      "path": "templates/role-library/communications/media-pitching-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "op-ed-ghostwriter",
@@ -1388,7 +1544,9 @@
       "word_count": 4958,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/op-ed-ghostwriter.md"
+      "path": "templates/role-library/communications/op-ed-ghostwriter.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "pr--media-relations-specialist",
@@ -1398,7 +1556,9 @@
       "word_count": 10957,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/pr--media-relations-specialist.md"
+      "path": "templates/role-library/communications/pr--media-relations-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "press-release-statement-specialist",
@@ -1408,7 +1568,9 @@
       "word_count": 10865,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/press-release-statement-specialist.md"
+      "path": "templates/role-library/communications/press-release-statement-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-communications",
@@ -1418,7 +1580,9 @@
       "word_count": 12846,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/qc-specialist-communications.md"
+      "path": "templates/role-library/communications/qc-specialist-communications.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -1428,7 +1592,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/sop-writer.md"
+      "path": "templates/role-library/communications/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "speech--talking-points-specialist",
@@ -1438,7 +1604,9 @@
       "word_count": 5122,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/communications/speech--talking-points-specialist.md"
+      "path": "templates/role-library/communications/speech--talking-points-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "automation-workflow-specialist",
@@ -1448,7 +1616,9 @@
       "word_count": 11051,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/automation-workflow-specialist.md"
+      "path": "templates/role-library/crm/automation-workflow-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "crm-platform-administrator",
@@ -1458,7 +1628,9 @@
       "word_count": 11104,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/crm-platform-administrator.md"
+      "path": "templates/role-library/crm/crm-platform-administrator.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-role--crm",
@@ -1468,7 +1640,9 @@
       "word_count": 13493,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/deep-research-role--crm.md"
+      "path": "templates/role-library/crm/deep-research-role--crm.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--crm",
@@ -1478,7 +1652,9 @@
       "word_count": 1275,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/devils-advocate--crm.md"
+      "path": "templates/role-library/crm/devils-advocate--crm.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-crm",
@@ -1488,7 +1664,9 @@
       "word_count": 11021,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/director-of-crm.md"
+      "path": "templates/role-library/crm/director-of-crm.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "email-deliverability-optimization-specialist",
@@ -1498,7 +1676,9 @@
       "word_count": 13816,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/email-deliverability-optimization-specialist.md"
+      "path": "templates/role-library/crm/email-deliverability-optimization-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "healer-crm",
@@ -1508,7 +1688,9 @@
       "word_count": 4517,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/healer-crm.md"
+      "path": "templates/role-library/crm/healer-crm.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "pipeline-stage-specialist",
@@ -1518,7 +1700,9 @@
       "word_count": 4426,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/pipeline-stage-specialist.md"
+      "path": "templates/role-library/crm/pipeline-stage-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "qc-role--crm",
@@ -1528,7 +1712,9 @@
       "word_count": 11814,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/qc-role--crm.md"
+      "path": "templates/role-library/crm/qc-role--crm.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sms--whatsapp--dm-sequence-specialist",
@@ -1538,7 +1724,9 @@
       "word_count": 9139,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/sms--whatsapp--dm-sequence-specialist.md"
+      "path": "templates/role-library/crm/sms--whatsapp--dm-sequence-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -1548,7 +1736,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/sop-writer.md"
+      "path": "templates/role-library/crm/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "tag--segmentation-specialist",
@@ -1558,7 +1748,9 @@
       "word_count": 6088,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/crm/tag--segmentation-specialist.md"
+      "path": "templates/role-library/crm/tag--segmentation-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "account-health-monitor-proactive",
@@ -1568,7 +1760,9 @@
       "word_count": 8159,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/account-health-monitor-proactive.md"
+      "path": "templates/role-library/customer-support/account-health-monitor-proactive.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "churn-prevention-specialist",
@@ -1578,7 +1772,9 @@
       "word_count": 7549,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/churn-prevention-specialist.md"
+      "path": "templates/role-library/customer-support/churn-prevention-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist--customer-support",
@@ -1588,7 +1784,9 @@
       "word_count": 8138,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/deep-research-specialist--customer-support.md"
+      "path": "templates/role-library/customer-support/deep-research-specialist--customer-support.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--customer-support",
@@ -1598,7 +1796,9 @@
       "word_count": 1299,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/devils-advocate--customer-support.md"
+      "path": "templates/role-library/customer-support/devils-advocate--customer-support.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "head-of-customer-success",
@@ -1608,7 +1808,9 @@
       "word_count": 7745,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/head-of-customer-success.md"
+      "path": "templates/role-library/customer-support/head-of-customer-success.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "healer-customer-support",
@@ -1618,7 +1820,9 @@
       "word_count": 4520,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/healer-customer-support.md"
+      "path": "templates/role-library/customer-support/healer-customer-support.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "knowledge-base-specialist",
@@ -1628,7 +1832,9 @@
       "word_count": 8453,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/knowledge-base-specialist.md"
+      "path": "templates/role-library/customer-support/knowledge-base-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "live-chat-specialist",
@@ -1638,7 +1844,9 @@
       "word_count": 7922,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/live-chat-specialist.md"
+      "path": "templates/role-library/customer-support/live-chat-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "onboarding-specialist",
@@ -1648,7 +1856,9 @@
       "word_count": 8147,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/onboarding-specialist.md"
+      "path": "templates/role-library/customer-support/onboarding-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist--customer-support",
@@ -1658,7 +1868,9 @@
       "word_count": 7132,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/qc-specialist--customer-support.md"
+      "path": "templates/role-library/customer-support/qc-specialist--customer-support.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "refunds-and-disputes-specialist",
@@ -1668,7 +1880,9 @@
       "word_count": 8604,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/refunds-and-disputes-specialist.md"
+      "path": "templates/role-library/customer-support/refunds-and-disputes-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "retention-specialist",
@@ -1678,7 +1892,9 @@
       "word_count": 7865,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/retention-specialist.md"
+      "path": "templates/role-library/customer-support/retention-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -1688,7 +1904,9 @@
       "word_count": 4988,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/sop-writer.md"
+      "path": "templates/role-library/customer-support/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "tier-1-support-specialist",
@@ -1698,7 +1916,9 @@
       "word_count": 8192,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/tier-1-support-specialist.md"
+      "path": "templates/role-library/customer-support/tier-1-support-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "tier-2-support-specialist",
@@ -1708,7 +1928,9 @@
       "word_count": 8525,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/tier-2-support-specialist.md"
+      "path": "templates/role-library/customer-support/tier-2-support-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "voice--phone-support-specialist",
@@ -1718,7 +1940,9 @@
       "word_count": 7775,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/customer-support/voice--phone-support-specialist.md"
+      "path": "templates/role-library/customer-support/voice--phone-support-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist",
@@ -1728,7 +1952,9 @@
       "word_count": 8244,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/engineering/deep-research-specialist/how-to.md"
+      "path": "templates/role-library/engineering/deep-research-specialist/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate",
@@ -1738,7 +1964,9 @@
       "word_count": 6078,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/engineering/devils-advocate/how-to.md"
+      "path": "templates/role-library/engineering/devils-advocate/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-engineering",
@@ -1748,7 +1976,9 @@
       "word_count": 13496,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/engineering/director-of-engineering/how-to.md"
+      "path": "templates/role-library/engineering/director-of-engineering/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qa-engineer",
@@ -1758,7 +1988,9 @@
       "word_count": 9112,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/engineering/qa-engineer/how-to.md"
+      "path": "templates/role-library/engineering/qa-engineer/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist",
@@ -1768,7 +2000,9 @@
       "word_count": 10779,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/engineering/qc-specialist/how-to.md"
+      "path": "templates/role-library/engineering/qc-specialist/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "systems-engineer",
@@ -1778,7 +2012,9 @@
       "word_count": 8776,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/engineering/systems-engineer/how-to.md"
+      "path": "templates/role-library/engineering/systems-engineer/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "concierge-lead",
@@ -1788,7 +2024,9 @@
       "word_count": 10520,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/concierge-lead/how-to.md"
+      "path": "templates/role-library/founding-member-concierge/concierge-lead/how-to.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist",
@@ -1798,7 +2036,9 @@
       "word_count": 11111,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/deep-research-specialist/how-to.md"
+      "path": "templates/role-library/founding-member-concierge/deep-research-specialist/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate",
@@ -1808,7 +2048,9 @@
       "word_count": 5461,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/devils-advocate/how-to.md"
+      "path": "templates/role-library/founding-member-concierge/devils-advocate/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-founding-member-concierge",
@@ -1818,7 +2060,9 @@
       "word_count": 10994,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/director-of-founding-member-concierge/how-to.md"
+      "path": "templates/role-library/founding-member-concierge/director-of-founding-member-concierge/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "membership-specialist",
@@ -1828,7 +2072,9 @@
       "word_count": 10934,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/membership-specialist/how-to.md"
+      "path": "templates/role-library/founding-member-concierge/membership-specialist/how-to.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist",
@@ -1838,7 +2084,9 @@
       "word_count": 10075,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/founding-member-concierge/qc-specialist/how-to.md"
+      "path": "templates/role-library/founding-member-concierge/qc-specialist/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-general-task",
@@ -1848,7 +2096,9 @@
       "word_count": 1563,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/general-task/deep-research-specialist-general-task.md"
+      "path": "templates/role-library/general-task/deep-research-specialist-general-task.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--general-task",
@@ -1858,7 +2108,9 @@
       "word_count": 1289,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/general-task/devils-advocate--general-task.md"
+      "path": "templates/role-library/general-task/devils-advocate--general-task.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "generalist-operator",
@@ -1868,7 +2120,9 @@
       "word_count": 1505,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/general-task/generalist-operator.md"
+      "path": "templates/role-library/general-task/generalist-operator.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "head-of-general-task",
@@ -1878,7 +2132,9 @@
       "word_count": 3410,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/general-task/head-of-general-task.md"
+      "path": "templates/role-library/general-task/head-of-general-task.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-general-task",
@@ -1888,7 +2144,9 @@
       "word_count": 4520,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/general-task/healer-general-task.md"
+      "path": "templates/role-library/general-task/healer-general-task.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-general-task",
@@ -1898,7 +2156,9 @@
       "word_count": 1409,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/general-task/qc-specialist-general-task.md"
+      "path": "templates/role-library/general-task/qc-specialist-general-task.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -1908,7 +2168,9 @@
       "word_count": 1246,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/general-task/sop-writer.md"
+      "path": "templates/role-library/general-task/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "triage-classifier",
@@ -1918,7 +2180,9 @@
       "word_count": 1153,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/general-task/triage-classifier.md"
+      "path": "templates/role-library/general-task/triage-classifier.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "ROLE--asset-provenance-librarian",
@@ -1928,7 +2192,9 @@
       "word_count": 9884,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--asset-provenance-librarian.md"
+      "path": "templates/role-library/graphics/ROLE--asset-provenance-librarian.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "ROLE--brand-systems-specialist",
@@ -1938,7 +2204,9 @@
       "word_count": 11222,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--brand-systems-specialist.md"
+      "path": "templates/role-library/graphics/ROLE--brand-systems-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "ROLE--deck-systems-specialist",
@@ -1948,7 +2216,9 @@
       "word_count": 9282,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--deck-systems-specialist.md"
+      "path": "templates/role-library/graphics/ROLE--deck-systems-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "ROLE--design-producer",
@@ -1958,7 +2228,9 @@
       "word_count": 9240,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--design-producer.md"
+      "path": "templates/role-library/graphics/ROLE--design-producer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "ROLE--fidelity-tester",
@@ -1968,7 +2240,9 @@
       "word_count": 10081,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--fidelity-tester.md"
+      "path": "templates/role-library/graphics/ROLE--fidelity-tester.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": true
     },
     {
       "slug": "ROLE--generation-operator",
@@ -1978,7 +2252,9 @@
       "word_count": 9553,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--generation-operator.md"
+      "path": "templates/role-library/graphics/ROLE--generation-operator.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "ROLE--likeness-rights-officer",
@@ -1988,7 +2264,9 @@
       "word_count": 9779,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--likeness-rights-officer.md"
+      "path": "templates/role-library/graphics/ROLE--likeness-rights-officer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "ROLE--motion-systems-specialist",
@@ -1998,7 +2276,9 @@
       "word_count": 10231,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--motion-systems-specialist.md"
+      "path": "templates/role-library/graphics/ROLE--motion-systems-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "ROLE--photo-shoot-director",
@@ -2008,7 +2288,9 @@
       "word_count": 9069,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--photo-shoot-director.md"
+      "path": "templates/role-library/graphics/ROLE--photo-shoot-director.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "ROLE--render-dispatcher",
@@ -2018,7 +2300,9 @@
       "word_count": 10220,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--render-dispatcher.md"
+      "path": "templates/role-library/graphics/ROLE--render-dispatcher.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "ROLE--style-analyst",
@@ -2028,7 +2312,9 @@
       "word_count": 9241,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--style-analyst.md"
+      "path": "templates/role-library/graphics/ROLE--style-analyst.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": true
     },
     {
       "slug": "ROLE--style-librarian",
@@ -2038,7 +2324,9 @@
       "word_count": 9055,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--style-librarian.md"
+      "path": "templates/role-library/graphics/ROLE--style-librarian.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "ROLE--style-steward",
@@ -2048,7 +2336,9 @@
       "word_count": 10225,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ROLE--style-steward.md"
+      "path": "templates/role-library/graphics/ROLE--style-steward.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "ad-creative-specialist",
@@ -2058,7 +2348,9 @@
       "word_count": 8204,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ad-creative-specialist.md"
+      "path": "templates/role-library/graphics/ad-creative-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "ai-image-generator-specialist",
@@ -2068,7 +2360,9 @@
       "word_count": 7754,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/ai-image-generator-specialist.md"
+      "path": "templates/role-library/graphics/ai-image-generator-specialist.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "asset-provenance-librarian",
@@ -2078,7 +2372,9 @@
       "word_count": 9884,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/asset-provenance-librarian.md"
+      "path": "templates/role-library/graphics/asset-provenance-librarian.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "book-cover-designer",
@@ -2088,7 +2384,9 @@
       "word_count": 8742,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/book-cover-designer.md"
+      "path": "templates/role-library/graphics/book-cover-designer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "brainstorming-buddy-graphics",
@@ -2098,7 +2396,9 @@
       "word_count": 3376,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/brainstorming-buddy-graphics.md"
+      "path": "templates/role-library/graphics/brainstorming-buddy-graphics.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": true
     },
     {
       "slug": "brand-identity-specialist-logo-color-type",
@@ -2108,7 +2408,9 @@
       "word_count": 7812,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/brand-identity-specialist-logo-color-type.md"
+      "path": "templates/role-library/graphics/brand-identity-specialist-logo-color-type.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "brand-systems-specialist",
@@ -2118,7 +2420,9 @@
       "word_count": 11222,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/brand-systems-specialist.md"
+      "path": "templates/role-library/graphics/brand-systems-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "chief-design-officer",
@@ -2128,7 +2432,9 @@
       "word_count": 8254,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/chief-design-officer.md"
+      "path": "templates/role-library/graphics/chief-design-officer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": true
     },
     {
       "slug": "course-slide-designer",
@@ -2138,7 +2444,9 @@
       "word_count": 7773,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/course-slide-designer.md"
+      "path": "templates/role-library/graphics/course-slide-designer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "deck-systems-specialist",
@@ -2148,7 +2456,9 @@
       "word_count": 9282,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/deck-systems-specialist.md"
+      "path": "templates/role-library/graphics/deck-systems-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "deep-research-specialist--graphics",
@@ -2158,7 +2468,9 @@
       "word_count": 11362,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/deep-research-specialist--graphics.md"
+      "path": "templates/role-library/graphics/deep-research-specialist--graphics.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": true
     },
     {
       "slug": "design-producer",
@@ -2168,7 +2480,9 @@
       "word_count": 9240,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/design-producer.md"
+      "path": "templates/role-library/graphics/design-producer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "devils-advocate--graphics",
@@ -2178,7 +2492,9 @@
       "word_count": 1275,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/devils-advocate--graphics.md"
+      "path": "templates/role-library/graphics/devils-advocate--graphics.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "email-designer",
@@ -2188,7 +2504,9 @@
       "word_count": 8222,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/email-designer.md"
+      "path": "templates/role-library/graphics/email-designer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "fidelity-tester",
@@ -2198,7 +2516,9 @@
       "word_count": 10081,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/fidelity-tester.md"
+      "path": "templates/role-library/graphics/fidelity-tester.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": true
     },
     {
       "slug": "generation-operator",
@@ -2208,7 +2528,9 @@
       "word_count": 9553,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/generation-operator.md"
+      "path": "templates/role-library/graphics/generation-operator.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "healer-graphics",
@@ -2218,7 +2540,9 @@
       "word_count": 4517,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/healer-graphics.md"
+      "path": "templates/role-library/graphics/healer-graphics.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": true
     },
     {
       "slug": "infographic-specialist",
@@ -2228,7 +2552,9 @@
       "word_count": 7403,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/infographic-specialist.md"
+      "path": "templates/role-library/graphics/infographic-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "likeness-rights-officer",
@@ -2238,7 +2564,9 @@
       "word_count": 9779,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/likeness-rights-officer.md"
+      "path": "templates/role-library/graphics/likeness-rights-officer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "motion-systems-specialist",
@@ -2248,7 +2576,9 @@
       "word_count": 10231,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/motion-systems-specialist.md"
+      "path": "templates/role-library/graphics/motion-systems-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "photo-shoot-director",
@@ -2258,7 +2588,9 @@
       "word_count": 9069,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/photo-shoot-director.md"
+      "path": "templates/role-library/graphics/photo-shoot-director.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "presentation-designer-slides-decks",
@@ -2268,7 +2600,9 @@
       "word_count": 8814,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/presentation-designer-slides-decks.md"
+      "path": "templates/role-library/graphics/presentation-designer-slides-decks.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "print--asset-design-specialist",
@@ -2278,7 +2612,9 @@
       "word_count": 8584,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/print--asset-design-specialist.md"
+      "path": "templates/role-library/graphics/print--asset-design-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "qc-specialist--graphics",
@@ -2288,7 +2624,9 @@
       "word_count": 9503,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/qc-specialist--graphics.md"
+      "path": "templates/role-library/graphics/qc-specialist--graphics.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "render-dispatcher",
@@ -2298,7 +2636,9 @@
       "word_count": 10220,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/render-dispatcher.md"
+      "path": "templates/role-library/graphics/render-dispatcher.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "social-media-graphics-specialist",
@@ -2308,7 +2648,9 @@
       "word_count": 8004,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/social-media-graphics-specialist.md"
+      "path": "templates/role-library/graphics/social-media-graphics-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "sop-writer",
@@ -2318,7 +2660,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/sop-writer.md"
+      "path": "templates/role-library/graphics/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "style-analyst",
@@ -2328,7 +2672,9 @@
       "word_count": 9241,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/style-analyst.md"
+      "path": "templates/role-library/graphics/style-analyst.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": true
     },
     {
       "slug": "style-librarian",
@@ -2338,7 +2684,9 @@
       "word_count": 9055,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/style-librarian.md"
+      "path": "templates/role-library/graphics/style-librarian.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "style-steward",
@@ -2348,7 +2696,9 @@
       "word_count": 10225,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/style-steward.md"
+      "path": "templates/role-library/graphics/style-steward.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "thumbnail--cover-designer",
@@ -2358,7 +2708,9 @@
       "word_count": 7861,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/graphics/thumbnail--cover-designer.md"
+      "path": "templates/role-library/graphics/thumbnail--cover-designer.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "chief-healer",
@@ -2368,7 +2720,9 @@
       "word_count": 4854,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/healer/chief-healer.md"
+      "path": "templates/role-library/healer/chief-healer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-healer",
@@ -2378,7 +2732,9 @@
       "word_count": 676,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/healer/deep-research-specialist-healer.md"
+      "path": "templates/role-library/healer/deep-research-specialist-healer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "dept-healer-template",
@@ -2388,7 +2744,9 @@
       "word_count": 4517,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/healer/dept-healer-template.md"
+      "path": "templates/role-library/healer/dept-healer-template.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate-healer",
@@ -2398,7 +2756,9 @@
       "word_count": 720,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/healer/devils-advocate-healer.md"
+      "path": "templates/role-library/healer/devils-advocate-healer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-healer",
@@ -2408,7 +2768,9 @@
       "word_count": 712,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/healer/qc-specialist-healer.md"
+      "path": "templates/role-library/healer/qc-specialist-healer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist",
@@ -2418,7 +2780,9 @@
       "word_count": 8244,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/launch-operations/deep-research-specialist/how-to.md"
+      "path": "templates/role-library/launch-operations/deep-research-specialist/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate",
@@ -2428,7 +2792,9 @@
       "word_count": 6078,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/launch-operations/devils-advocate/how-to.md"
+      "path": "templates/role-library/launch-operations/devils-advocate/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-launch-operations",
@@ -2438,7 +2804,9 @@
       "word_count": 10626,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/launch-operations/director-of-launch-operations/how-to.md"
+      "path": "templates/role-library/launch-operations/director-of-launch-operations/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "go-to-market-specialist",
@@ -2448,7 +2816,9 @@
       "word_count": 9657,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/launch-operations/go-to-market-specialist/how-to.md"
+      "path": "templates/role-library/launch-operations/go-to-market-specialist/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "launch-manager",
@@ -2458,7 +2828,9 @@
       "word_count": 5649,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/launch-operations/launch-manager/how-to.md"
+      "path": "templates/role-library/launch-operations/launch-manager/how-to.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist",
@@ -2468,7 +2840,9 @@
       "word_count": 10779,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/launch-operations/qc-specialist/how-to.md"
+      "path": "templates/role-library/launch-operations/qc-specialist/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "affiliate-agreement-specialist",
@@ -2478,7 +2852,9 @@
       "word_count": 9083,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/affiliate-agreement-specialist.md"
+      "path": "templates/role-library/legal-compliance/affiliate-agreement-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "chief-legal-officer",
@@ -2488,7 +2864,9 @@
       "word_count": 8936,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/chief-legal-officer.md"
+      "path": "templates/role-library/legal-compliance/chief-legal-officer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "compliance-monitor--specialist",
@@ -2498,7 +2876,9 @@
       "word_count": 8874,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/compliance-monitor--specialist.md"
+      "path": "templates/role-library/legal-compliance/compliance-monitor--specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "contract-drafter-client-agreements",
@@ -2508,7 +2888,9 @@
       "word_count": 9790,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/contract-drafter-client-agreements.md"
+      "path": "templates/role-library/legal-compliance/contract-drafter-client-agreements.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "customer-agreement-specialist",
@@ -2518,7 +2900,9 @@
       "word_count": 10262,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/customer-agreement-specialist.md"
+      "path": "templates/role-library/legal-compliance/customer-agreement-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist---legal",
@@ -2528,7 +2912,9 @@
       "word_count": 9443,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/deep-research-specialist---legal.md"
+      "path": "templates/role-library/legal-compliance/deep-research-specialist---legal.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--legal-compliance",
@@ -2538,7 +2924,9 @@
       "word_count": 1313,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/devils-advocate--legal-compliance.md"
+      "path": "templates/role-library/legal-compliance/devils-advocate--legal-compliance.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "dispute-resolution-specialist",
@@ -2548,7 +2936,9 @@
       "word_count": 6856,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/dispute-resolution-specialist.md"
+      "path": "templates/role-library/legal-compliance/dispute-resolution-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "employment-contract-specialist",
@@ -2558,7 +2948,9 @@
       "word_count": 10311,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/employment-contract-specialist.md"
+      "path": "templates/role-library/legal-compliance/employment-contract-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-legal-compliance",
@@ -2568,7 +2960,9 @@
       "word_count": 4523,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/healer-legal-compliance.md"
+      "path": "templates/role-library/legal-compliance/healer-legal-compliance.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "industry-specific-regulatory-specialist",
@@ -2578,7 +2972,9 @@
       "word_count": 6036,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/industry-specific-regulatory-specialist.md"
+      "path": "templates/role-library/legal-compliance/industry-specific-regulatory-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "ip--trademark-specialist",
@@ -2588,7 +2984,9 @@
       "word_count": 9609,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/ip--trademark-specialist.md"
+      "path": "templates/role-library/legal-compliance/ip--trademark-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-legal",
@@ -2598,7 +2996,9 @@
       "word_count": 13650,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/qc-specialist-legal.md"
+      "path": "templates/role-library/legal-compliance/qc-specialist-legal.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -2608,7 +3008,9 @@
       "word_count": 4988,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/sop-writer.md"
+      "path": "templates/role-library/legal-compliance/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "terms--privacy-policy-specialist",
@@ -2618,7 +3020,9 @@
       "word_count": 7735,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/terms--privacy-policy-specialist.md"
+      "path": "templates/role-library/legal-compliance/terms--privacy-policy-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "vendor-contract-specialist",
@@ -2628,7 +3032,9 @@
       "word_count": 10150,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/legal-compliance/vendor-contract-specialist.md"
+      "path": "templates/role-library/legal-compliance/vendor-contract-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist",
@@ -2638,7 +3044,9 @@
       "word_count": 8244,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/listings/deep-research-specialist/how-to.md"
+      "path": "templates/role-library/listings/deep-research-specialist/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "director-of-listings",
@@ -2648,7 +3056,9 @@
       "word_count": 9657,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/listings/director-of-listings/how-to.md"
+      "path": "templates/role-library/listings/director-of-listings/how-to.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "listing-creator",
@@ -2658,7 +3068,9 @@
       "word_count": 9991,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/listings/listing-creator/how-to.md"
+      "path": "templates/role-library/listings/listing-creator/how-to.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "marketplace-specialist",
@@ -2668,7 +3080,9 @@
       "word_count": 7040,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/listings/marketplace-specialist.md"
+      "path": "templates/role-library/listings/marketplace-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist",
@@ -2678,7 +3092,9 @@
       "word_count": 10779,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/listings/qc-specialist/how-to.md"
+      "path": "templates/role-library/listings/qc-specialist/how-to.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-logistics-fulfillment",
@@ -2688,7 +3104,9 @@
       "word_count": 6930,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/logistics-fulfillment/director-of-logistics-fulfillment.md"
+      "path": "templates/role-library/logistics-fulfillment/director-of-logistics-fulfillment.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "fulfillment-coordinator",
@@ -2698,7 +3116,9 @@
       "word_count": 5890,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/logistics-fulfillment/fulfillment-coordinator.md"
+      "path": "templates/role-library/logistics-fulfillment/fulfillment-coordinator.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "inventory-manager",
@@ -2708,7 +3128,9 @@
       "word_count": 5845,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/logistics-fulfillment/inventory-manager.md"
+      "path": "templates/role-library/logistics-fulfillment/inventory-manager.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "returns-reverse-logistics-specialist",
@@ -2718,7 +3140,9 @@
       "word_count": 5356,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/logistics-fulfillment/returns-reverse-logistics-specialist.md"
+      "path": "templates/role-library/logistics-fulfillment/returns-reverse-logistics-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "affiliate--referral-specialist",
@@ -2728,7 +3152,9 @@
       "word_count": 8252,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/affiliate--referral-specialist.md"
+      "path": "templates/role-library/marketing/affiliate--referral-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "brainstorming-buddy-marketing",
@@ -2738,7 +3164,9 @@
       "word_count": 2903,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/brainstorming-buddy-marketing.md"
+      "path": "templates/role-library/marketing/brainstorming-buddy-marketing.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "brand-positioning-specialist",
@@ -2748,7 +3176,9 @@
       "word_count": 10132,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/brand-positioning-specialist.md"
+      "path": "templates/role-library/marketing/brand-positioning-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "chief-marketing-officer",
@@ -2758,7 +3188,9 @@
       "word_count": 10793,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/chief-marketing-officer.md"
+      "path": "templates/role-library/marketing/chief-marketing-officer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "content-marketing-strategist",
@@ -2768,7 +3200,9 @@
       "word_count": 10690,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/content-marketing-strategist.md"
+      "path": "templates/role-library/marketing/content-marketing-strategist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "content-strategist",
@@ -2778,7 +3212,9 @@
       "word_count": 9822,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/content-strategist.md"
+      "path": "templates/role-library/marketing/content-strategist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "customer-journey-architect",
@@ -2788,7 +3224,9 @@
       "word_count": 9428,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/customer-journey-architect.md"
+      "path": "templates/role-library/marketing/customer-journey-architect.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist--marketing",
@@ -2798,7 +3236,9 @@
       "word_count": 12033,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/deep-research-specialist--marketing.md"
+      "path": "templates/role-library/marketing/deep-research-specialist--marketing.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--marketing",
@@ -2808,7 +3248,9 @@
       "word_count": 1275,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/devils-advocate--marketing.md"
+      "path": "templates/role-library/marketing/devils-advocate--marketing.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "email-campaign-strategist",
@@ -2818,7 +3260,9 @@
       "word_count": 9505,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/email-campaign-strategist.md"
+      "path": "templates/role-library/marketing/email-campaign-strategist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "funnel-strategist",
@@ -2828,7 +3272,9 @@
       "word_count": 9929,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/funnel-strategist.md"
+      "path": "templates/role-library/marketing/funnel-strategist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-marketing",
@@ -2838,7 +3284,9 @@
       "word_count": 4517,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/healer-marketing.md"
+      "path": "templates/role-library/marketing/healer-marketing.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "influencer-marketing-specialist",
@@ -2848,7 +3296,9 @@
       "word_count": 8693,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/influencer-marketing-specialist.md"
+      "path": "templates/role-library/marketing/influencer-marketing-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "lead-magnet-specialist",
@@ -2858,7 +3308,9 @@
       "word_count": 9226,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/lead-magnet-specialist.md"
+      "path": "templates/role-library/marketing/lead-magnet-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "marketing-analytics-specialist",
@@ -2868,7 +3320,9 @@
       "word_count": 9928,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/marketing-analytics-specialist.md"
+      "path": "templates/role-library/marketing/marketing-analytics-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist--marketing",
@@ -2878,7 +3332,9 @@
       "word_count": 10596,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/qc-specialist--marketing.md"
+      "path": "templates/role-library/marketing/qc-specialist--marketing.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -2888,7 +3344,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/sop-writer.md"
+      "path": "templates/role-library/marketing/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "webinar-event-marketing-specialist",
@@ -2898,7 +3356,9 @@
       "word_count": 12065,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/marketing/webinar-event-marketing-specialist.md"
+      "path": "templates/role-library/marketing/webinar-event-marketing-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "master-orchestrator",
@@ -2908,7 +3368,9 @@
       "word_count": 11594,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/master-orchestrator/master-orchestrator.md"
+      "path": "templates/role-library/master-orchestrator/master-orchestrator.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -2918,7 +3380,9 @@
       "word_count": 4964,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/master-orchestrator/sop-writer.md"
+      "path": "templates/role-library/master-orchestrator/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "backup-and-recovery-specialist",
@@ -2928,7 +3392,9 @@
       "word_count": 9673,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/backup-and-recovery-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/backup-and-recovery-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "cost-model-optimizer-specialist",
@@ -2938,7 +3404,9 @@
       "word_count": 4703,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/cost-model-optimizer-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/cost-model-optimizer-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-role--openclaw-maintenance",
@@ -2948,7 +3416,9 @@
       "word_count": 12974,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/deep-research-role--openclaw-maintenance.md"
+      "path": "templates/role-library/openclaw-maintenance/deep-research-role--openclaw-maintenance.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--openclaw-maintenance",
@@ -2958,7 +3428,9 @@
       "word_count": 1299,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/devils-advocate--openclaw-maintenance.md"
+      "path": "templates/role-library/openclaw-maintenance/devils-advocate--openclaw-maintenance.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-openclaw-maintenance",
@@ -2968,7 +3440,9 @@
       "word_count": 10122,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/director-of-openclaw-maintenance.md"
+      "path": "templates/role-library/openclaw-maintenance/director-of-openclaw-maintenance.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "disaster-recovery-specialist",
@@ -2978,7 +3452,9 @@
       "word_count": 10267,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/disaster-recovery-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/disaster-recovery-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-openclaw-maintenance",
@@ -2988,7 +3464,9 @@
       "word_count": 4593,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/healer-openclaw-maintenance.md"
+      "path": "templates/role-library/openclaw-maintenance/healer-openclaw-maintenance.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "integration--mcp-specialist",
@@ -2998,7 +3476,9 @@
       "word_count": 8684,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/integration--mcp-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/integration--mcp-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "memory-hygiene-specialist",
@@ -3008,7 +3488,9 @@
       "word_count": 9758,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/memory-hygiene-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/memory-hygiene-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "monitoring--observability-specialist",
@@ -3018,7 +3500,9 @@
       "word_count": 8944,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/monitoring--observability-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/monitoring--observability-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "performance-tuning-specialist",
@@ -3028,7 +3512,9 @@
       "word_count": 9547,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/performance-tuning-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/performance-tuning-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-role--openclaw-maintenance",
@@ -3038,7 +3524,9 @@
       "word_count": 10830,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/qc-role--openclaw-maintenance.md"
+      "path": "templates/role-library/openclaw-maintenance/qc-role--openclaw-maintenance.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "security-and-secrets-specialist",
@@ -3048,7 +3536,9 @@
       "word_count": 9966,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/security-and-secrets-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/security-and-secrets-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "skill-update-and-patch-specialist",
@@ -3058,7 +3548,9 @@
       "word_count": 8882,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/skill-update-and-patch-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/skill-update-and-patch-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -3068,7 +3560,9 @@
       "word_count": 4988,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/sop-writer.md"
+      "path": "templates/role-library/openclaw-maintenance/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "system-health--uptime-specialist",
@@ -3078,7 +3572,9 @@
       "word_count": 8988,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/system-health--uptime-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/system-health--uptime-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "token-manager-furnace-watch-specialist",
@@ -3088,7 +3584,9 @@
       "word_count": 4667,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/token-manager-furnace-watch-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/token-manager-furnace-watch-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "uptime-connectivity-watchdog-specialist",
@@ -3098,7 +3596,9 @@
       "word_count": 5089,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/uptime-connectivity-watchdog-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/uptime-connectivity-watchdog-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "version-and-upgrade-manager-specialist",
@@ -3108,7 +3608,9 @@
       "word_count": 4947,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/openclaw-maintenance/version-and-upgrade-manager-specialist.md"
+      "path": "templates/role-library/openclaw-maintenance/version-and-upgrade-manager-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "audience-research-specialist",
@@ -3118,7 +3620,9 @@
       "word_count": 7082,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/audience-research-specialist.md"
+      "path": "templates/role-library/paid-advertisement/audience-research-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "bing--microsoft-ads-specialist",
@@ -3128,7 +3632,9 @@
       "word_count": 4956,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/bing--microsoft-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/bing--microsoft-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "conversion-tracking-specialist",
@@ -3138,7 +3644,9 @@
       "word_count": 7643,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/conversion-tracking-specialist.md"
+      "path": "templates/role-library/paid-advertisement/conversion-tracking-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "creative-testing--a-b-specialist",
@@ -3148,7 +3656,9 @@
       "word_count": 7636,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/creative-testing--a-b-specialist.md"
+      "path": "templates/role-library/paid-advertisement/creative-testing--a-b-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "cross-platform-attribution-specialist",
@@ -3158,7 +3668,9 @@
       "word_count": 7690,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/cross-platform-attribution-specialist.md"
+      "path": "templates/role-library/paid-advertisement/cross-platform-attribution-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-role--paid-advertisement",
@@ -3168,7 +3680,9 @@
       "word_count": 8959,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/deep-research-role--paid-advertisement.md"
+      "path": "templates/role-library/paid-advertisement/deep-research-role--paid-advertisement.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--paid-advertisement",
@@ -3178,7 +3692,9 @@
       "word_count": 1299,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/devils-advocate--paid-advertisement.md"
+      "path": "templates/role-library/paid-advertisement/devils-advocate--paid-advertisement.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-paid-advertisement",
@@ -3188,7 +3704,9 @@
       "word_count": 11065,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/director-of-paid-advertisement.md"
+      "path": "templates/role-library/paid-advertisement/director-of-paid-advertisement.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "facebook-ads-specialist",
@@ -3198,7 +3716,9 @@
       "word_count": 10316,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/facebook-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/facebook-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "google-ads-specialist",
@@ -3208,7 +3728,9 @@
       "word_count": 10615,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/google-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/google-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-paid-advertisement",
@@ -3218,7 +3740,9 @@
       "word_count": 4520,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/healer-paid-advertisement.md"
+      "path": "templates/role-library/paid-advertisement/healer-paid-advertisement.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "instagram-ads-specialist",
@@ -3228,7 +3752,9 @@
       "word_count": 9911,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/instagram-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/instagram-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "linkedin-ads-specialist",
@@ -3238,7 +3764,9 @@
       "word_count": 9774,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/linkedin-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/linkedin-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "native-ads-specialist",
@@ -3248,7 +3776,9 @@
       "word_count": 6449,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/native-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/native-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "pinterest-ads-specialist",
@@ -3258,7 +3788,9 @@
       "word_count": 4595,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/pinterest-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/pinterest-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-role--paid-advertisement",
@@ -3268,7 +3800,9 @@
       "word_count": 8590,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/qc-role--paid-advertisement.md"
+      "path": "templates/role-library/paid-advertisement/qc-role--paid-advertisement.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "retargeting-strategist",
@@ -3278,7 +3812,9 @@
       "word_count": 6800,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/retargeting-strategist.md"
+      "path": "templates/role-library/paid-advertisement/retargeting-strategist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "snapchat-ads-specialist",
@@ -3288,7 +3824,9 @@
       "word_count": 5191,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/snapchat-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/snapchat-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -3298,7 +3836,9 @@
       "word_count": 4988,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/sop-writer.md"
+      "path": "templates/role-library/paid-advertisement/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "spotify-audio-ads-specialist",
@@ -3308,7 +3848,9 @@
       "word_count": 9100,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/spotify-audio-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/spotify-audio-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "tiktok-ads-specialist",
@@ -3318,7 +3860,9 @@
       "word_count": 9861,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/tiktok-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/tiktok-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "twitter-x-ads-specialist",
@@ -3328,7 +3872,9 @@
       "word_count": 5649,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/twitter-x-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/twitter-x-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "youtube-ads-specialist",
@@ -3338,7 +3884,9 @@
       "word_count": 9029,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/paid-advertisement/youtube-ads-specialist.md"
+      "path": "templates/role-library/paid-advertisement/youtube-ads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "calendar-scheduling-manager",
@@ -3348,7 +3896,9 @@
       "word_count": 2440,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/calendar-scheduling-manager.md"
+      "path": "templates/role-library/personal-assistant/calendar-scheduling-manager.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "daily-briefing-specialist",
@@ -3358,7 +3908,9 @@
       "word_count": 1644,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/daily-briefing-specialist.md"
+      "path": "templates/role-library/personal-assistant/daily-briefing-specialist.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-personal-assistant",
@@ -3368,7 +3920,9 @@
       "word_count": 680,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/deep-research-specialist-personal-assistant.md"
+      "path": "templates/role-library/personal-assistant/deep-research-specialist-personal-assistant.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate-personal-assistant",
@@ -3378,7 +3932,9 @@
       "word_count": 725,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/devils-advocate-personal-assistant.md"
+      "path": "templates/role-library/personal-assistant/devils-advocate-personal-assistant.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-personal-assistant",
@@ -3388,7 +3944,9 @@
       "word_count": 3638,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/director-of-personal-assistant.md"
+      "path": "templates/role-library/personal-assistant/director-of-personal-assistant.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-personal-assistant",
@@ -3398,7 +3956,9 @@
       "word_count": 843,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/healer-personal-assistant.md"
+      "path": "templates/role-library/personal-assistant/healer-personal-assistant.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "inbox-manager",
@@ -3408,7 +3968,9 @@
       "word_count": 3002,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/inbox-manager.md"
+      "path": "templates/role-library/personal-assistant/inbox-manager.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "personal-coach",
@@ -3418,7 +3980,9 @@
       "word_count": 2047,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/personal-coach.md"
+      "path": "templates/role-library/personal-assistant/personal-coach.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-personal-assistant",
@@ -3428,7 +3992,9 @@
       "word_count": 460,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/qc-specialist-personal-assistant.md"
+      "path": "templates/role-library/personal-assistant/qc-specialist-personal-assistant.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -3438,7 +4004,9 @@
       "word_count": 490,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/sop-writer.md"
+      "path": "templates/role-library/personal-assistant/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "task-priority-manager",
@@ -3448,7 +4016,9 @@
       "word_count": 2185,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/task-priority-manager.md"
+      "path": "templates/role-library/personal-assistant/task-priority-manager.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "travel-logistics-specialist",
@@ -3458,7 +4028,9 @@
       "word_count": 1712,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/personal-assistant/travel-logistics-specialist.md"
+      "path": "templates/role-library/personal-assistant/travel-logistics-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "audio-post-producer",
@@ -3468,7 +4040,9 @@
       "word_count": 6101,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/podcast/audio-post-producer.md"
+      "path": "templates/role-library/podcast/audio-post-producer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "director-of-podcast",
@@ -3478,7 +4052,9 @@
       "word_count": 7189,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/podcast/director-of-podcast.md"
+      "path": "templates/role-library/podcast/director-of-podcast.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "podcast-host",
@@ -3488,7 +4064,9 @@
       "word_count": 6066,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/podcast/podcast-host.md"
+      "path": "templates/role-library/podcast/podcast-host.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-podcast",
@@ -3498,7 +4076,9 @@
       "word_count": 4868,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/podcast/qc-specialist-podcast.md"
+      "path": "templates/role-library/podcast/qc-specialist-podcast.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "00-START-HERE",
@@ -3508,7 +4088,9 @@
       "word_count": 3905,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/00-START-HERE.md"
+      "path": "templates/role-library/presentations/00-START-HERE.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "audio-demonstration-specialist",
@@ -3518,7 +4100,9 @@
       "word_count": 3721,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/audio-demonstration-specialist.md"
+      "path": "templates/role-library/presentations/audio-demonstration-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "brainstorming-buddy-presentations",
@@ -3528,7 +4112,9 @@
       "word_count": 5879,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/brainstorming-buddy-presentations.md"
+      "path": "templates/role-library/presentations/brainstorming-buddy-presentations.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "brand-steward",
@@ -3538,7 +4124,9 @@
       "word_count": 6601,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/brand-steward.md"
+      "path": "templates/role-library/presentations/brand-steward.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "capacity-reliability-engineer",
@@ -3548,7 +4136,9 @@
       "word_count": 3546,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/capacity-reliability-engineer.md"
+      "path": "templates/role-library/presentations/capacity-reliability-engineer.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "content-to-presentation-architect",
@@ -3558,7 +4148,9 @@
       "word_count": 11206,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/content-to-presentation-architect.md"
+      "path": "templates/role-library/presentations/content-to-presentation-architect.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-presentations",
@@ -3568,7 +4160,9 @@
       "word_count": 5529,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/deep-research-specialist-presentations.md"
+      "path": "templates/role-library/presentations/deep-research-specialist-presentations.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "delivery-concierge",
@@ -3578,7 +4172,9 @@
       "word_count": 3924,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/delivery-concierge.md"
+      "path": "templates/role-library/presentations/delivery-concierge.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate-presentations",
@@ -3588,7 +4184,9 @@
       "word_count": 5961,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/devils-advocate-presentations.md"
+      "path": "templates/role-library/presentations/devils-advocate-presentations.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-presentations",
@@ -3598,7 +4196,9 @@
       "word_count": 6888,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/director-of-presentations.md"
+      "path": "templates/role-library/presentations/director-of-presentations.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "first-time-onboarding-presentations",
@@ -3608,7 +4208,9 @@
       "word_count": 3847,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/first-time-onboarding-presentations.md"
+      "path": "templates/role-library/presentations/first-time-onboarding-presentations.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "healer-presentations",
@@ -3618,7 +4220,9 @@
       "word_count": 4969,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/healer-presentations.md"
+      "path": "templates/role-library/presentations/healer-presentations.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "hook-strategist",
@@ -3628,7 +4232,9 @@
       "word_count": 5239,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/hook-strategist.md"
+      "path": "templates/role-library/presentations/hook-strategist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "media-librarian-ghl-updater",
@@ -3638,7 +4244,9 @@
       "word_count": 4272,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/media-librarian-ghl-updater.md"
+      "path": "templates/role-library/presentations/media-librarian-ghl-updater.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "offer-price-strategist",
@@ -3648,7 +4256,9 @@
       "word_count": 9854,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/offer-price-strategist.md"
+      "path": "templates/role-library/presentations/offer-price-strategist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "pptx-assembly-specialist",
@@ -3658,7 +4268,9 @@
       "word_count": 6244,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/pptx-assembly-specialist.md"
+      "path": "templates/role-library/presentations/pptx-assembly-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "presenter-coach",
@@ -3668,7 +4280,9 @@
       "word_count": 6754,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/presenter-coach.md"
+      "path": "templates/role-library/presentations/presenter-coach.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "presenters-guide-specialist",
@@ -3678,7 +4292,9 @@
       "word_count": 3189,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/presenters-guide-specialist.md"
+      "path": "templates/role-library/presentations/presenters-guide-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "presenters-speech-writer",
@@ -3688,7 +4304,9 @@
       "word_count": 3637,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/presenters-speech-writer.md"
+      "path": "templates/role-library/presentations/presenters-speech-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-presentations",
@@ -3698,7 +4316,9 @@
       "word_count": 23111,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/qc-specialist-presentations.md"
+      "path": "templates/role-library/presentations/qc-specialist-presentations.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "slide-copywriter",
@@ -3708,7 +4328,9 @@
       "word_count": 7839,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/slide-copywriter.md"
+      "path": "templates/role-library/presentations/slide-copywriter.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "slide-image-creator",
@@ -3718,7 +4340,9 @@
       "word_count": 19230,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/slide-image-creator.md"
+      "path": "templates/role-library/presentations/slide-image-creator.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "slide-submitter",
@@ -3728,7 +4352,9 @@
       "word_count": 5054,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/slide-submitter.md"
+      "path": "templates/role-library/presentations/slide-submitter.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "typography-architect",
@@ -3738,7 +4364,9 @@
       "word_count": 4016,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/presentations/typography-architect.md"
+      "path": "templates/role-library/presentations/typography-architect.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": true
     },
     {
       "slug": "director-of-product-production",
@@ -3748,7 +4376,9 @@
       "word_count": 8022,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/product-production/director-of-product-production.md"
+      "path": "templates/role-library/product-production/director-of-product-production.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "product-manager",
@@ -3758,7 +4388,9 @@
       "word_count": 6563,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/product-production/product-manager.md"
+      "path": "templates/role-library/product-production/product-manager.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "production-coordinator",
@@ -3768,7 +4400,9 @@
       "word_count": 6507,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/product-production/production-coordinator.md"
+      "path": "templates/role-library/product-production/production-coordinator.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist",
@@ -3778,7 +4412,9 @@
       "word_count": 5685,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/product-production/qc-specialist.md"
+      "path": "templates/role-library/product-production/qc-specialist.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "chief-project-architect",
@@ -3788,7 +4424,9 @@
       "word_count": 3599,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/chief-project-architect.md"
+      "path": "templates/role-library/project-architecture-office/chief-project-architect.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "code-editor",
@@ -3798,7 +4436,9 @@
       "word_count": 1347,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/code-editor.md"
+      "path": "templates/role-library/project-architecture-office/code-editor.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "code-monitor",
@@ -3808,7 +4448,9 @@
       "word_count": 892,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/code-monitor.md"
+      "path": "templates/role-library/project-architecture-office/code-monitor.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-project-architecture-office",
@@ -3818,7 +4460,9 @@
       "word_count": 1590,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/deep-research-specialist-project-architecture-office.md"
+      "path": "templates/role-library/project-architecture-office/deep-research-specialist-project-architecture-office.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--project-architecture-office",
@@ -3828,7 +4472,9 @@
       "word_count": 1313,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/devils-advocate--project-architecture-office.md"
+      "path": "templates/role-library/project-architecture-office/devils-advocate--project-architecture-office.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-project-architecture-office",
@@ -3838,7 +4484,9 @@
       "word_count": 4523,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/healer-project-architecture-office.md"
+      "path": "templates/role-library/project-architecture-office/healer-project-architecture-office.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-agent",
@@ -3848,7 +4496,9 @@
       "word_count": 1169,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/qc-agent.md"
+      "path": "templates/role-library/project-architecture-office/qc-agent.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "research-agent",
@@ -3858,7 +4508,9 @@
       "word_count": 1120,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/research-agent.md"
+      "path": "templates/role-library/project-architecture-office/research-agent.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -3868,7 +4520,9 @@
       "word_count": 722,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/project-architecture-office/sop-writer.md"
+      "path": "templates/role-library/project-architecture-office/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "00-START-HERE",
@@ -3878,7 +4532,9 @@
       "word_count": 1059,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/quality-control/00-START-HERE.md"
+      "path": "templates/role-library/quality-control/00-START-HERE.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-quality-control",
@@ -3888,7 +4544,9 @@
       "word_count": 681,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/quality-control/deep-research-specialist-quality-control.md"
+      "path": "templates/role-library/quality-control/deep-research-specialist-quality-control.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate-quality-control",
@@ -3898,7 +4556,9 @@
       "word_count": 725,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/quality-control/devils-advocate-quality-control.md"
+      "path": "templates/role-library/quality-control/devils-advocate-quality-control.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-quality-control",
@@ -3908,7 +4568,9 @@
       "word_count": 2409,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/quality-control/director-of-quality-control.md"
+      "path": "templates/role-library/quality-control/director-of-quality-control.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "procedure-auditor",
@@ -3918,7 +4580,9 @@
       "word_count": 1240,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/quality-control/procedure-auditor.md"
+      "path": "templates/role-library/quality-control/procedure-auditor.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-quality-control",
@@ -3928,7 +4592,9 @@
       "word_count": 461,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/quality-control/qc-specialist-quality-control.md"
+      "path": "templates/role-library/quality-control/qc-specialist-quality-control.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "role-auditor",
@@ -3938,7 +4604,9 @@
       "word_count": 974,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/quality-control/role-auditor.md"
+      "path": "templates/role-library/quality-control/role-auditor.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "chief-research-officer",
@@ -3948,7 +4616,9 @@
       "word_count": 10495,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/chief-research-officer.md"
+      "path": "templates/role-library/research/chief-research-officer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "competitive-intelligence-specialist",
@@ -3958,7 +4628,9 @@
       "word_count": 6406,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/competitive-intelligence-specialist.md"
+      "path": "templates/role-library/research/competitive-intelligence-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "customer-research-specialist",
@@ -3968,7 +4640,9 @@
       "word_count": 7215,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/customer-research-specialist.md"
+      "path": "templates/role-library/research/customer-research-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "data-analysis-specialist",
@@ -3978,7 +4652,9 @@
       "word_count": 10283,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/data-analysis-specialist.md"
+      "path": "templates/role-library/research/data-analysis-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-research",
@@ -3988,7 +4664,9 @@
       "word_count": 1560,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/deep-research-specialist-research.md"
+      "path": "templates/role-library/research/deep-research-specialist-research.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--research",
@@ -3998,7 +4676,9 @@
       "word_count": 1275,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/devils-advocate--research.md"
+      "path": "templates/role-library/research/devils-advocate--research.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-research",
@@ -4008,7 +4688,9 @@
       "word_count": 4517,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/healer-research.md"
+      "path": "templates/role-library/research/healer-research.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "industry-analysis-specialist-mckinsey-style",
@@ -4018,7 +4700,9 @@
       "word_count": 9264,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/industry-analysis-specialist-mckinsey-style.md"
+      "path": "templates/role-library/research/industry-analysis-specialist-mckinsey-style.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "market-trends-specialist",
@@ -4028,7 +4712,9 @@
       "word_count": 8028,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/market-trends-specialist.md"
+      "path": "templates/role-library/research/market-trends-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "persona-research-specialist",
@@ -4038,7 +4724,9 @@
       "word_count": 9887,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/persona-research-specialist.md"
+      "path": "templates/role-library/research/persona-research-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist---research",
@@ -4048,7 +4736,9 @@
       "word_count": 8789,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/qc-specialist---research.md"
+      "path": "templates/role-library/research/qc-specialist---research.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -4058,7 +4748,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/sop-writer.md"
+      "path": "templates/role-library/research/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "survey-and-polling-specialist",
@@ -4068,7 +4760,9 @@
       "word_count": 9891,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/research/survey-and-polling-specialist.md"
+      "path": "templates/role-library/research/survey-and-polling-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "account-executive-full-cycle",
@@ -4078,7 +4772,9 @@
       "word_count": 9271,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/account-executive-full-cycle.md"
+      "path": "templates/role-library/sales/account-executive-full-cycle.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "account-manager-post-sale",
@@ -4088,7 +4784,9 @@
       "word_count": 6895,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/account-manager-post-sale.md"
+      "path": "templates/role-library/sales/account-manager-post-sale.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "appointment-setter",
@@ -4098,7 +4796,9 @@
       "word_count": 12481,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/appointment-setter.md"
+      "path": "templates/role-library/sales/appointment-setter.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "chief-sales-officer",
@@ -4108,7 +4808,9 @@
       "word_count": 10149,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/chief-sales-officer.md"
+      "path": "templates/role-library/sales/chief-sales-officer.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "closer",
@@ -4118,7 +4820,9 @@
       "word_count": 5313,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/closer.md"
+      "path": "templates/role-library/sales/closer.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "crm-specialist-sales-version",
@@ -4128,7 +4832,9 @@
       "word_count": 6728,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/crm-specialist-sales-version.md"
+      "path": "templates/role-library/sales/crm-specialist-sales-version.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-\\342\\200\\224-sales",
@@ -4138,7 +4844,9 @@
       "word_count": 8639,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/deep-research-specialist-\\342\\200\\224-sales.md"
+      "path": "templates/role-library/sales/deep-research-specialist-\\342\\200\\224-sales.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--sales",
@@ -4148,7 +4856,9 @@
       "word_count": 1275,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/devils-advocate--sales.md"
+      "path": "templates/role-library/sales/devils-advocate--sales.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "discovery-call-specialist",
@@ -4158,7 +4868,9 @@
       "word_count": 14193,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/discovery-call-specialist.md"
+      "path": "templates/role-library/sales/discovery-call-specialist.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "follow-up-sequence-specialist",
@@ -4168,7 +4880,9 @@
       "word_count": 7642,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/follow-up-sequence-specialist.md"
+      "path": "templates/role-library/sales/follow-up-sequence-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "healer-sales",
@@ -4178,7 +4892,9 @@
       "word_count": 4517,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/healer-sales.md"
+      "path": "templates/role-library/sales/healer-sales.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "proposal-and-quote-specialist",
@@ -4188,7 +4904,9 @@
       "word_count": 7690,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/proposal-and-quote-specialist.md"
+      "path": "templates/role-library/sales/proposal-and-quote-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-\\342\\200\\224-sales",
@@ -4198,7 +4916,9 @@
       "word_count": 8703,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/qc-specialist-\\342\\200\\224-sales.md"
+      "path": "templates/role-library/sales/qc-specialist-\\342\\200\\224-sales.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "sales-operations--pipeline-specialist",
@@ -4208,7 +4928,9 @@
       "word_count": 7291,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/sales-operations--pipeline-specialist.md"
+      "path": "templates/role-library/sales/sales-operations--pipeline-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "sdr-sales-development-rep",
@@ -4218,7 +4940,9 @@
       "word_count": 7811,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/sdr-sales-development-rep.md"
+      "path": "templates/role-library/sales/sdr-sales-development-rep.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -4228,7 +4952,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/sales/sop-writer.md"
+      "path": "templates/role-library/sales/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "capacity-planning-specialist",
@@ -4238,7 +4964,9 @@
       "word_count": 4957,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/scheduling-dispatch/capacity-planning-specialist.md"
+      "path": "templates/role-library/scheduling-dispatch/capacity-planning-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "director-of-scheduling-dispatch",
@@ -4248,7 +4976,9 @@
       "word_count": 6969,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/scheduling-dispatch/director-of-scheduling-dispatch.md"
+      "path": "templates/role-library/scheduling-dispatch/director-of-scheduling-dispatch.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "dispatcher",
@@ -4258,7 +4988,9 @@
       "word_count": 6012,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/scheduling-dispatch/dispatcher.md"
+      "path": "templates/role-library/scheduling-dispatch/dispatcher.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "scheduler",
@@ -4268,7 +5000,9 @@
       "word_count": 5461,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/scheduling-dispatch/scheduler.md"
+      "path": "templates/role-library/scheduling-dispatch/scheduler.md",
+      "capability_class": "MECHANICAL",
+      "vision_flag": false
     },
     {
       "slug": "bluesky-specialist",
@@ -4278,7 +5012,9 @@
       "word_count": 3926,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/bluesky-specialist.md"
+      "path": "templates/role-library/social-media/bluesky-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "community-manager",
@@ -4288,7 +5024,9 @@
       "word_count": 6054,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/community-manager.md"
+      "path": "templates/role-library/social-media/community-manager.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-role--social-media",
@@ -4298,7 +5036,9 @@
       "word_count": 7418,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/deep-research-role--social-media.md"
+      "path": "templates/role-library/social-media/deep-research-role--social-media.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--social-media",
@@ -4308,7 +5048,9 @@
       "word_count": 1299,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/devils-advocate--social-media.md"
+      "path": "templates/role-library/social-media/devils-advocate--social-media.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "director-of-social-media",
@@ -4318,7 +5060,9 @@
       "word_count": 5709,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/director-of-social-media.md"
+      "path": "templates/role-library/social-media/director-of-social-media.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "discord-community-specialist",
@@ -4328,7 +5072,9 @@
       "word_count": 5347,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/discord-community-specialist.md"
+      "path": "templates/role-library/social-media/discord-community-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "facebook-specialist",
@@ -4338,7 +5084,9 @@
       "word_count": 6423,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/facebook-specialist.md"
+      "path": "templates/role-library/social-media/facebook-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-social-media",
@@ -4348,7 +5096,9 @@
       "word_count": 4520,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/healer-social-media.md"
+      "path": "templates/role-library/social-media/healer-social-media.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "instagram-specialist",
@@ -4358,7 +5108,9 @@
       "word_count": 7307,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/instagram-specialist.md"
+      "path": "templates/role-library/social-media/instagram-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "linkedin-specialist",
@@ -4368,7 +5120,9 @@
       "word_count": 6516,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/linkedin-specialist.md"
+      "path": "templates/role-library/social-media/linkedin-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "pinterest-specialist",
@@ -4378,7 +5132,9 @@
       "word_count": 6098,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/pinterest-specialist.md"
+      "path": "templates/role-library/social-media/pinterest-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-role--social-media",
@@ -4388,7 +5144,9 @@
       "word_count": 6673,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/qc-role--social-media.md"
+      "path": "templates/role-library/social-media/qc-role--social-media.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "quora-specialist",
@@ -4398,7 +5156,9 @@
       "word_count": 5238,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/quora-specialist.md"
+      "path": "templates/role-library/social-media/quora-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "reddit-specialist",
@@ -4408,7 +5168,9 @@
       "word_count": 6183,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/reddit-specialist.md"
+      "path": "templates/role-library/social-media/reddit-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -4418,7 +5180,9 @@
       "word_count": 4988,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/sop-writer.md"
+      "path": "templates/role-library/social-media/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "threads-specialist",
@@ -4428,7 +5192,9 @@
       "word_count": 4288,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/threads-specialist.md"
+      "path": "templates/role-library/social-media/threads-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "tiktok-specialist",
@@ -4438,7 +5204,9 @@
       "word_count": 6768,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/tiktok-specialist.md"
+      "path": "templates/role-library/social-media/tiktok-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "twitter-x-specialist",
@@ -4448,7 +5216,9 @@
       "word_count": 6214,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/twitter-x-specialist.md"
+      "path": "templates/role-library/social-media/twitter-x-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "youtube-channel-specialist-organic-only",
@@ -4458,7 +5228,9 @@
       "word_count": 6770,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/social-media/youtube-channel-specialist-organic-only.md"
+      "path": "templates/role-library/social-media/youtube-channel-specialist-organic-only.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "ai-video-generator-specialist",
@@ -4468,7 +5240,9 @@
       "word_count": 7136,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/ai-video-generator-specialist.md"
+      "path": "templates/role-library/video/ai-video-generator-specialist.md",
+      "capability_class": "GENERATION",
+      "vision_flag": false
     },
     {
       "slug": "animation-specialist-2d-3d-whiteboard",
@@ -4478,7 +5252,9 @@
       "word_count": 7055,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/animation-specialist-2d-3d-whiteboard.md"
+      "path": "templates/role-library/video/animation-specialist-2d-3d-whiteboard.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "brainstorming-buddy-video",
@@ -4488,7 +5264,9 @@
       "word_count": 2926,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/brainstorming-buddy-video.md"
+      "path": "templates/role-library/video/brainstorming-buddy-video.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "captioning--subtitling-specialist",
@@ -4498,7 +5276,9 @@
       "word_count": 6801,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/captioning--subtitling-specialist.md"
+      "path": "templates/role-library/video/captioning--subtitling-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "color-grading-specialist",
@@ -4508,7 +5288,9 @@
       "word_count": 7198,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/color-grading-specialist.md"
+      "path": "templates/role-library/video/color-grading-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "crm-specialist-video-version",
@@ -4518,7 +5300,9 @@
       "word_count": 13095,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/crm-specialist-video-version.md"
+      "path": "templates/role-library/video/crm-specialist-video-version.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-video",
@@ -4528,7 +5312,9 @@
       "word_count": 15032,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/deep-research-specialist-video.md"
+      "path": "templates/role-library/video/deep-research-specialist-video.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--video",
@@ -4538,7 +5324,9 @@
       "word_count": 1280,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/devils-advocate--video.md"
+      "path": "templates/role-library/video/devils-advocate--video.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "head-of-video-production",
@@ -4548,7 +5336,9 @@
       "word_count": 6535,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/head-of-video-production.md"
+      "path": "templates/role-library/video/head-of-video-production.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-video",
@@ -4558,7 +5348,9 @@
       "word_count": 4517,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/healer-video.md"
+      "path": "templates/role-library/video/healer-video.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "live-streaming-specialist",
@@ -4568,7 +5360,9 @@
       "word_count": 7306,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/live-streaming-specialist.md"
+      "path": "templates/role-library/video/live-streaming-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "long-form-video-specialist-youtube-courses-sales-videos",
@@ -4578,7 +5372,9 @@
       "word_count": 8696,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/long-form-video-specialist-youtube-courses-sales-videos.md"
+      "path": "templates/role-library/video/long-form-video-specialist-youtube-courses-sales-videos.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "motion-graphics-specialist",
@@ -4588,7 +5384,9 @@
       "word_count": 7080,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/motion-graphics-specialist.md"
+      "path": "templates/role-library/video/motion-graphics-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "qc-specialist-video",
@@ -4598,7 +5396,9 @@
       "word_count": 11265,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/qc-specialist-video.md"
+      "path": "templates/role-library/video/qc-specialist-video.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "short-form-video-specialist-reels-shorts-tiktok",
@@ -4608,7 +5408,9 @@
       "word_count": 7234,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/short-form-video-specialist-reels-shorts-tiktok.md"
+      "path": "templates/role-library/video/short-form-video-specialist-reels-shorts-tiktok.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -4618,7 +5420,9 @@
       "word_count": 4976,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/sop-writer.md"
+      "path": "templates/role-library/video/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "storyboard-pre-production-specialist",
@@ -4628,7 +5432,9 @@
       "word_count": 17612,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/storyboard-pre-production-specialist.md"
+      "path": "templates/role-library/video/storyboard-pre-production-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": true
     },
     {
       "slug": "video-editor",
@@ -4638,7 +5444,9 @@
       "word_count": 7222,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/video-editor.md"
+      "path": "templates/role-library/video/video-editor.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "video-seo-specialist",
@@ -4648,7 +5456,9 @@
       "word_count": 6968,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/video-seo-specialist.md"
+      "path": "templates/role-library/video/video-seo-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "vsl-video-sales-letter-specialist",
@@ -4658,7 +5468,9 @@
       "word_count": 7423,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/video/vsl-video-sales-letter-specialist.md"
+      "path": "templates/role-library/video/vsl-video-sales-letter-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "brainstorming-buddy-web-development",
@@ -4668,7 +5480,9 @@
       "word_count": 2956,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/brainstorming-buddy-web-development.md"
+      "path": "templates/role-library/web-development/brainstorming-buddy-web-development.md",
+      "capability_class": "CONVERSATIONAL",
+      "vision_flag": false
     },
     {
       "slug": "conversion-rate-optimization-cro-specialist",
@@ -4678,7 +5492,9 @@
       "word_count": 8274,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/conversion-rate-optimization-cro-specialist.md"
+      "path": "templates/role-library/web-development/conversion-rate-optimization-cro-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "deep-research-specialist-web-development",
@@ -4688,7 +5504,9 @@
       "word_count": 9486,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/deep-research-specialist-web-development.md"
+      "path": "templates/role-library/web-development/deep-research-specialist-web-development.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "devils-advocate--web-development",
@@ -4698,7 +5516,9 @@
       "word_count": 1299,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/devils-advocate--web-development.md"
+      "path": "templates/role-library/web-development/devils-advocate--web-development.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "frontend--javascript--react-specialist",
@@ -4708,7 +5528,9 @@
       "word_count": 7521,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/frontend--javascript--react-specialist.md"
+      "path": "templates/role-library/web-development/frontend--javascript--react-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "funnel-builder-specialist",
@@ -4718,7 +5540,9 @@
       "word_count": 7932,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/funnel-builder-specialist.md"
+      "path": "templates/role-library/web-development/funnel-builder-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "head-of-web-development",
@@ -4728,7 +5552,9 @@
       "word_count": 7209,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/head-of-web-development.md"
+      "path": "templates/role-library/web-development/head-of-web-development.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "healer-web-development",
@@ -4738,7 +5564,9 @@
       "word_count": 4520,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/healer-web-development.md"
+      "path": "templates/role-library/web-development/healer-web-development.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "landing-page-specialist",
@@ -4748,7 +5576,9 @@
       "word_count": 7950,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/landing-page-specialist.md"
+      "path": "templates/role-library/web-development/landing-page-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "member-area--membership-site-specialist",
@@ -4758,7 +5588,9 @@
       "word_count": 8191,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/member-area--membership-site-specialist.md"
+      "path": "templates/role-library/web-development/member-area--membership-site-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "qc-specialist-web-development",
@@ -4768,7 +5600,9 @@
       "word_count": 11655,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/qc-specialist-web-development.md"
+      "path": "templates/role-library/web-development/qc-specialist-web-development.md",
+      "capability_class": "JUDGMENT",
+      "vision_flag": false
     },
     {
       "slug": "seo-specialist-organic-search",
@@ -4778,7 +5612,9 @@
       "word_count": 8000,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/seo-specialist-organic-search.md"
+      "path": "templates/role-library/web-development/seo-specialist-organic-search.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "sop-writer",
@@ -4788,7 +5624,9 @@
       "word_count": 4988,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/sop-writer.md"
+      "path": "templates/role-library/web-development/sop-writer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "technical-seo-specialist",
@@ -4798,7 +5636,9 @@
       "word_count": 7660,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/technical-seo-specialist.md"
+      "path": "templates/role-library/web-development/technical-seo-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "web-accessibility-a11y-specialist",
@@ -4808,7 +5648,9 @@
       "word_count": 7974,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/web-accessibility-a11y-specialist.md"
+      "path": "templates/role-library/web-development/web-accessibility-a11y-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "web-designer",
@@ -4818,7 +5660,9 @@
       "word_count": 7295,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/web-designer.md"
+      "path": "templates/role-library/web-development/web-designer.md",
+      "capability_class": "WRITING",
+      "vision_flag": false
     },
     {
       "slug": "web-security-specialist",
@@ -4828,7 +5672,9 @@
       "word_count": 8375,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/web-security-specialist.md"
+      "path": "templates/role-library/web-development/web-security-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     },
     {
       "slug": "wordpress-specialist",
@@ -4838,7 +5684,9 @@
       "word_count": 8010,
       "sop_count": 0,
       "sop_min": 0,
-      "path": "templates/role-library/web-development/wordpress-specialist.md"
+      "path": "templates/role-library/web-development/wordpress-specialist.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false
     }
   ]
 }
