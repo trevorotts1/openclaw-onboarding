@@ -1,3 +1,30 @@
+## [v12.17.4] - 2026-06-16 - fix(role-library): dedup _index.json roles + restore departments dict schema so qc-completeness.sh counts expected roles correctly (6 false-PARTIAL depts)
+
+### Changes
+
+**Root cause (two codependent defects in `23-ai-workforce-blueprint/templates/role-library/_index.json`):**
+
+1. **Duplicate slug entries inflated the role count.** The flat `roles` array carried 439 entries for only 425 real on-disk roles. 14 entries were genuine duplicates: the same `(dept, slug)` appeared twice — once pointing at the directory model (`<dept>/<slug>/how-to.md`) and once at the legacy single-file model (`<dept>/<slug>.md`). Both physical files exist in the template tree, but a real install materializes exactly ONE role folder per slug (the WS-2 importer in `create_role_workspaces.py::_build_library_index` uses `setdefault` — first writer wins — so the second entry is silently dropped at build time). The duplication spanned exactly 6 departments:
+   - `account-management`: 1 dup (director-of-account-management)
+   - `client-experience-booking`: 2 dups (booking-coordinator, client-onboarding-specialist)
+   - `engineering`: 3 dups (director-of-engineering, qa-engineer, systems-engineer)
+   - `founding-member-concierge`: 3 dups (concierge-lead, director-of-founding-member-concierge, membership-specialist)
+   - `launch-operations`: 3 dups (director-of-launch-operations, go-to-market-specialist, launch-manager)
+   - `listings`: 2 dups (director-of-listings, listing-creator)
+
+2. **`departments` was a list-of-strings, not the dict the consumers read.** `qc-completeness.sh` (line 274) does `idx.get("departments", {}).items()` and reads `dept.get("count")` to derive each department's "expected" role count. `add-role.sh`, `test-add-role-index.sh`, and `test-trio-gate.sh` likewise expect `departments` to be a dict `{slug: {"count": N, "roles": [slug,...]}}`. The regenerated index shipped `departments` as a bare list of 34 strings, so `.items()` raised `AttributeError`, `library_depts` stayed empty, and EVERY department resolved to `expected_roles=0` — forcing PARTIAL via the `not expected and role_count > 0` branch. Combined with (1), the 6 duplicated departments could never count correctly.
+
+**Fix:**
+- Deduped the flat `roles` array to one entry per `(dept, slug)` (439 → 425), keeping the directory-model (`how-to.md`) entry the build actually uses (matches `setdefault` first-writer-wins). Removed ONLY the 14 genuine duplicates; no distinct role was dropped (none of the 14 is a qc/deep-research/devils-advocate trio role; all 425 retained paths exist on disk).
+- Restored `departments` to the canonical dict schema `{slug: {"count": N, "roles": [slug,...]}}` that `qc-completeness.sh` / `add-role.sh` / `test-add-role-index.sh` / `test-trio-gate.sh` read.
+- Recomputed `total_roles` 408 → 425 (now equals unique on-disk roles) and `total_departments` 34 (unchanged). Per-dept `count` now equals unique on-disk roles for all 34 departments.
+
+**Result:** The 6 previously-inflated departments now carry correct, non-zero `expected_roles` equal to their unique on-disk role count (account-management=6, client-experience-booking=7, engineering=6, founding-member-concierge=6, launch-operations=6, listings=5), so they no longer false-show PARTIAL from count inflation. `test-add-role-index.sh` passes 4/4 against the restored dict schema. Version bumped v12.17.3 → v12.17.4 across all 9 markers.
+
+**Files changed:** `23-ai-workforce-blueprint/templates/role-library/_index.json` (dedup + schema) plus the 9 version markers + this CHANGELOG entry.
+
+---
+
 ## [v12.17.3] - 2026-06-16 - feat(role-library): author substantive SOPs for all universal meta-roles and dept-specific thin-role files (bugs/healer/pa/pao/qc depts)
 
 ### Changes
