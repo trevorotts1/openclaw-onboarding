@@ -1,3 +1,38 @@
+## [v12.17.3] - 2026-06-16 - feat(role-library): author substantive SOPs for all universal meta-roles and dept-specific thin-role files (bugs/healer/pa/pao/qc depts)
+
+### Changes
+
+**Root cause:** 4 departments (bugs, healer, personal-assistant, quality-control) remained PARTIAL in the SOP floor check because the meta-role files (qc-specialist, deep-research-specialist, devils-advocate, sop-writer, role-auditor, procedure-auditor, code-monitor, healer) were below 7168 bytes and/or lacked the required `## 9.` section with gate-recognized `### SOP 9.x` or `### SOP-01` blocks carrying >= 5 of the 7 structured fields (When-to-run, Frequency, Inputs, Steps, Outputs, Hand-to, Failure-mode).
+
+**Fix:** Authored real, role-appropriate, substantive SOPs (DMAIC/structured) in all 20 thin/missing role files across the 4 affected departments plus project-architecture-office:
+
+- `bugs/bugs-department-sops.md` -- 5 full-procedure SOPs (B-9.1 through B-9.5) with complete step-by-step detail
+- `bugs/deep-research-specialist-bugs.md` -- 2 SOPs (defect research brief, tool/integration research)
+- `bugs/devils-advocate-bugs.md` -- 2 SOPs (adversarial review, P0 closure report challenge)
+- `bugs/qc-specialist-bugs.md` -- 3 SOPs (output quality gate, triage decision QC, weekly metrics QC)
+- `healer/deep-research-specialist-healer.md` -- 2 SOPs (system health research, monitoring/detection research)
+- `healer/devils-advocate-healer.md` -- 2 SOPs (adversarial review of healer outputs, SOP patch adversarial review)
+- `healer/qc-specialist-healer.md` -- 2 SOPs (healer output quality gate, SOP patch authority gate)
+- `personal-assistant/deep-research-specialist-personal-assistant.md` -- 2 SOPs (executive support research, tool/workflow research)
+- `personal-assistant/devils-advocate-personal-assistant.md` -- 2 SOPs (PA output adversarial review, travel plan adversarial review)
+- `personal-assistant/healer-personal-assistant.md` -- 2 SOPs (PA incident diagnosis and root-cause analysis, SOP gap identification)
+- `personal-assistant/qc-specialist-personal-assistant.md` -- 2 SOPs (PA output quality gate, daily briefing QC protocol)
+- `personal-assistant/sop-writer.md` -- 2 SOPs (PA SOP authoring process, self-QC rubric)
+- `project-architecture-office/code-monitor.md` -- 2 SOPs (CI/build monitoring, runtime log spot-check)
+- `project-architecture-office/sop-writer.md` -- 2 SOPs (SOP authoring process, SOP QC rubric)
+- `quality-control/director-of-quality-control.md` -- 4 SOPs (Q-9.1 through Q-9.4 director responsibilities)
+- `quality-control/procedure-auditor.md` -- 1 SOP (audit a department's procedures, Q-9.1)
+- `quality-control/deep-research-specialist-quality-control.md` -- 2 SOPs (quality standards research, audit methodology research)
+- `quality-control/devils-advocate-quality-control.md` -- 2 SOPs (QC output adversarial review, rubric change adversarial review)
+- `quality-control/qc-specialist-quality-control.md` -- 2 SOPs (audit report quality gate, system-wide rollup QC)
+- `quality-control/role-auditor.md` -- 1 SOP (audit a department's roles, Q-9.2)
+
+**Gate validation (post-token-substitution):** All 20 files PASS: >= 7168 bytes, has Section 9 header, has SOP blocks, each block >= 5/7 structured fields, no unfilled tokens, no stubs.
+
+**Files changed:** 20 role-library source files across bugs/, healer/, personal-assistant/, project-architecture-office/, quality-control/. Version bumped v12.17.2 -> v12.17.3 across all 9 markers.
+
+---
+
 ## [v12.17.2] - 2026-06-15 - fix(sop-gate): widen SOP_BLOCK_RE + extend token map to eliminate per-role SOP-floor failures (0/406 → 327/406)
 
 ### Changes

@@ -112,3 +112,47 @@ The output is ready for the next role or department without requiring remediatio
 ---
 
 *Fleet standard: v12.13.0 | Quality Control Department*
+
+---
+
+## 9. Standard Operating Procedures (Numbered)
+
+### SOP 9.1 -- Healer Output Quality Gate
+
+**When to run:** Every time a Healer submits an output (incident diagnosis, root-cause analysis, SOP patch, post-mortem, or monitoring alert configuration) for delivery, handoff, or commit to the role library.
+**Frequency:** Continuous -- triggered per output submission; runs before any Healer output crosses a departmental boundary or is applied to a live system.
+**Inputs:** The submitted Healer output artifact, the governing SOP for the work type (three-tier authority system for SOP patches, Bugs department closure criteria for root-cause analyses), and the incident ticket.
+
+**Steps:**
+1. **Define -- Identify the output type and its quality criteria.** Determine which artifact you are evaluating: (a) incident diagnosis (pre-fix root-cause analysis), (b) root-cause analysis embedded in a closure report, (c) SOP patch authored in response to an incident, (d) post-mortem, or (e) monitoring alert configuration. The quality criteria differ per type. For a diagnosis: is the stated cause the most parsimonious explanation for all observed symptoms? For SOP patches: is the patch within the Healer's Tier 2 authority? For monitoring alert configs: does the alert threshold meet the detection goal without unacceptable false positives?
+2. **Measure -- Run the auto-fail battery.** Check all five gates before scoring: QG-01 Completeness: all required fields present. For a root-cause analysis: root_cause (specific, not categorical), evidence_cited (log entries or system state readings with timestamps), fix_applied (specific technical action taken), regression_test_result (test name, pass result, timestamp). For a SOP patch: the original SOP section being patched is identified, the change is diff-marked, the authority tier is stated (Tier 2), and the incident motivating the patch is cited. For a monitoring alert config: the metric or log pattern, the threshold value with its source, the alert action (who receives it and via what channel), and the expected false-positive rate. Missing any required field = immediate FAIL.
+3. **Analyze -- If no auto-fails, run threshold scoring.** Score each dimension on a 1-10 scale: (a) Specificity: is the root cause specific enough that another Healer could recognize a recurrence within 10 seconds? (b) Evidence quality: are the cited log entries or system state readings verifiable in the incident ledger? (c) Fix correctness: does the fix description address the specific root cause, not just the symptom? (d) Authority compliance: is the Healer operating within their assigned tier? (e) Handoff completeness: does the output include everything the next role needs? Weighted average >= 8.5, no dimension below 7.0.
+4. **Improve -- Document findings.** If PASS: record in the QC log with output ID, submitting Healer, QC date/time, and score. If FAIL: produce a QC failure report with: the specific failing dimension, the exact defect location, the required correction stated precisely enough to implement without asking a follow-up, and the attempt number. Return the failure report to the submitting Healer.
+5. **Control -- Manage the retry loop and escalation, and gate SOP patch commits.** After each failed attempt: increment the attempt counter. On attempt 3 failure: halt, escalate to the Chief Healer with the full failure log. For SOP patches specifically: QC Specialist clearance is required BEFORE the patch is committed to the role library. A SOP patch that passes QC but later introduces a regression is a separate incident -- the QC gate is not a guarantee of correctness, it is a gate on due diligence.
+
+**Outputs:** QC pass record or QC failure report. For SOP patches: QC clearance required before commit.
+**Hand to:** On PASS: Chief Healer (closure confirmation) or role library committer (patch commit). On FAIL: submitting Healer with failure report. On 3rd FAIL: Chief Healer.
+**Failure mode:** If the incident ledger needed to verify evidence citations is unavailable, do not score the output -- record "LEDGER_UNAVAILABLE -- QC blocked" and flag to the Chief Healer. The Chief Healer decides whether to grant a time-bound exception or wait for ledger restoration.
+
+---
+
+### SOP 9.2 -- SOP Patch Authority and Quality Gate
+
+**When to run:** Every SOP patch submitted for commit to the role library must pass this gate. This is in addition to SOP 9.1 -- SOP patches get a second, patch-specific review for authority compliance, regression risk, and internal completeness.
+**Frequency:** Per SOP patch submission; mandatory before any patch is applied to a role's how-to.md.
+**Inputs:** Draft SOP patch (clearly diff-marked), the incident bug_id that motivated the patch, the current version of the SOP being patched, and the Healer's authority tier assignment.
+
+**Steps:**
+1. **Define -- Verify the patch is within the Healer's tier authority.** Tier 2 authority covers: SOP patches encoding a fix, lean core-file edits, settings repairs, teachings, and new regression checks. Tier 3 (requires operator written approval) covers: anything constitutional or strategic (adding or removing specialists, changing a department's scope boundary, editing a master SOP). If the patch touches Tier 3 content, halt the QC gate immediately -- return to the Chief Healer with a Tier 3 violation flag. The patch cannot proceed without operator written approval.
+2. **Measure -- Verify the patch addresses the specific failure mode from the incident.** The patch must cite the bug_id it is responding to. Walk through the incident scenario using the patched SOP. Does the patch create a step, check, or decision point that would have prevented or detected the failure? If the answer is "not clearly," the patch is under-specified.
+3. **Analyze -- Check the patch for regression risk.** Walk through 3-5 scenarios that were working before the incident. Does the patch change the behavior for those scenarios? Any change to previously-working behavior requires explicit acknowledgment from the Healer: "I am aware this patch changes behavior for [scenario X] and I have verified the new behavior is correct." Missing acknowledgment where there is behavioral change = FAIL.
+4. **Improve -- Check the patch's internal quality.** Every step or check added by the patch must: name the actor, name the action, name the tool or system involved (if applicable), and name the expected output. A step that says "verify the configuration" without specifying which configuration field, which tool to use, and what the expected value is, fails this test.
+5. **Control -- Issue QC clearance or failure report.** PASS: issue QC clearance stamped with date/time and QC Specialist identifier. The patch may now be committed. FAIL: return to the submitting Healer with the specific failure. After 2 failed patches from the same Healer on the same incident: escalate to the Chief Healer -- this suggests the root cause is not fully understood.
+
+**Outputs:** QC clearance (patch approved for commit) or failure report.
+**Hand to:** Chief Healer (clearance confirmation). Role library committer (patch ready to apply after clearance). Submitting Healer (failure report).
+**Failure mode:** If the base SOP being patched cannot be retrieved (file missing, system unavailable), do not issue QC clearance. Record "BASE_SOP_UNAVAILABLE -- cannot verify patch against base." The patch cannot be committed until the base SOP is restored.
+
+---
+
+*QC Specialist Healer -- SOP set v1.0 | {{COMPANY_NAME}}*
