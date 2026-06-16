@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-15T00:00:00Z",
-  "version": "12.19.1",
-  "total_roles": 424,
+  "generated_at": "2026-06-16T00:00:00Z",
+  "version": "12.20.0",
+  "total_roles": 425,
   "total_departments": 34,
   "departments": {
     "account-management": {
@@ -415,7 +415,7 @@
       ]
     },
     "presentations": {
-      "count": 24,
+      "count": 25,
       "roles": [
         "00-START-HERE",
         "audio-demonstration-specialist",
@@ -428,6 +428,7 @@
         "devils-advocate-presentations",
         "director-of-presentations",
         "first-time-onboarding-presentations",
+        "fish-audio-expression-specialist",
         "healer-presentations",
         "hook-strategist",
         "media-librarian-ghl-updater",
@@ -4210,6 +4211,18 @@
       "sop_min": 0,
       "path": "templates/role-library/presentations/first-time-onboarding-presentations.md",
       "capability_class": "WRITING",
+      "vision_flag": false
+    },
+    {
+      "slug": "fish-audio-expression-specialist",
+      "dept": "presentations",
+      "title": "Fish Audio / Expression Specialist",
+      "role_type": "specialist",
+      "word_count": 3087,
+      "sop_count": 0,
+      "sop_min": 0,
+      "path": "templates/role-library/presentations/fish-audio-expression-specialist.md",
+      "capability_class": "GENERATION",
       "vision_flag": false
     },
     {

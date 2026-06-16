@@ -3,7 +3,6 @@
 **Source:** presentations/first-time-onboarding-presentations.md
 **Extract:** Section 9 (Standard Operating Procedures) verbatim mirror.
 **Authority:** This file mirrors the role file. The role file is authoritative. If they diverge, the role file wins and this mirror must be regenerated.
-**Version:** 1.0
 
 ---
 
@@ -22,7 +21,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; map: 00-START-HERE.
 **Steps:**
 1. Confirm first-time (flag absent/false). Read SOUL.md and USER.md so the welcome references the owner's actual business and matches their communication style.
 2. Send the orientation via openclaw message send, covering the five topics concisely:
-   - WHAT THIS DEPARTMENT DOES: builds branded webinar and pitch decks end to end, plus the speaker materials to deliver them: the slide deck, a Presenters Guide, a word-for-word Presenters Speech, and an audio demonstration of that speech.
+   - WHAT THIS DEPARTMENT DOES: builds branded webinar and pitch decks end to end, plus the speaker materials to deliver them: the slide deck, a Presenter's Guide, a word-for-word Presenter's Speech, and an audio demo of that speech.
    - THE ROLES AVAILABLE: a brief, friendly tour (SOP 9.2), naming the helpers they will actually meet, not all internal plumbing.
    - THE BRAINSTORMING BUDDY: the first person they talk to; turns a fuzzy idea into a locked, build-ready brief; brainstorms WITH them, one question at a time, quick or deep, their choice.
    - HOW TO GET STARTED: "Just tell me, or the Brainstorming Buddy, what you have in mind, even one sentence. We take it from there."
@@ -34,6 +33,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; map: 00-START-HERE.
 - The AUDIENCE-vs-SPEAKER surface distinction omitted (it is part of "what this department does"; see SOP 9.2) = FAIL.
 - Re-asking something already in SOUL.md/USER.md = FAIL.
 - Running the orientation on a user already flagged complete = FAIL.
+
+**PASS example:** "Welcome. Since this is your first time in the Presentations department, here is the quick version. We build your full webinar package: the slide deck the audience sees, plus three things just for you as the speaker, your Presenter's Guide, your word-for-word Speech, and an audio demo so you can hear how it should sound. You start by brainstorming with [Buddy persona], who turns your idea into a plan, one easy question at a time. Want the quick path or the deep one? Either way, once you say yes to the plan, the team builds and I will ping you at each checkpoint."
+
+**FAIL example:** dumping the 17-plus internal role names and the phase numbers on a newcomer, or asking the owner what their business is when USER.md already says.
 
 **Outputs:** the orientation message sent; onboarding interaction logged.
 
@@ -57,7 +60,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; map: 00-START-HERE.
    - The Director: runs your build and brings you the approval gates.
    - The deck team: writes your slides, designs the typography and layout, creates the images, and choreographs your offer and price reveal.
    - The Typography Architect: decides the look and type system before any image is made, so the deck reads as one premium piece.
-   - The speaker team: your Presenters Guide (what to cover), your Presenters Speech (the exact words), the audio demonstration (the sound), and your Presenter Coach (rehearses it with you).
+   - The speaker team: your Presenter's Guide (what to cover), your Presenter's Speech (the exact words plus the audio demo), and your Presenter Coach (rehearses it with you).
    - Quality and delivery: a QC specialist gates every stage, and a delivery concierge gets the finished files to you and verifies they arrived.
 2. Explain the surface distinction explicitly, in one short paragraph, with a concrete example: "On the slide you will see four words. In your Speech you will see the full sentence you say about those four words. That separation is deliberate, it is what makes the audience listen to you instead of reading the screen."
 3. Tell them which deliverable is which surface so content never lands on the wrong one: deck = audience; Guide, Speech, audio = speaker.
@@ -131,3 +134,5 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; map: 00-START-HERE.
 **Hand to:** Brainstorming Buddy only if a new idea follows.
 
 **Failure mode:** none specific; keep it light and helpful.
+
+---

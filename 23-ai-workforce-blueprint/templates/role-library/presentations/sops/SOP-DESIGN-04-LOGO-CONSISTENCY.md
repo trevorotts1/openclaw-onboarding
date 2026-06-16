@@ -43,7 +43,7 @@ Guarantee that when a logo asset exists, the SAME mark appears at the SAME size 
 
 **FAIL (the forensic reference deck, original deck):** the logomark mutated across the deck into at least four marks (ringed leaf, bare leaf, a serif monogram, mountain peak, founders-tagline lockup, seen across slides 9, 10, 19, 21, 28, 36 and others), proving it was generated text-to-image per slide. Verdict: deck-level AUTO-FAIL (logo not locked, drifting).
 
-**FAIL (the forensic-deck V8 regression):** the logo still mutated into a roundel, a sprout, a tall tree, a mountain mark, a generic monogram, and varying lockups across s02, s07, s22, s24, s28, s32, s40, s58. Also a logo-text render bug: "IDEHNOTTY DEVELOPMENT" on s16 (garbled brand name). Verdict: deck-level AUTO-FAIL plus per-slide AUTO-FAIL on s16 (logo text garbled).
+**FAIL (the forensic-deck V8 regression):** the logo still mutated into a roundel, a sprout, a tall tree, a mountain mark, a generic monogram, and varying lockups across s02, s07, s22, s24, s28, s32, s40, s58. Also a logo-text render bug: "GRABLED BRANDCO" on s16 (garbled brand name). Verdict: deck-level AUTO-FAIL plus per-slide AUTO-FAIL on s16 (logo text garbled).
 
 **PASS (the gold-standard reference deck):** ONE logo (the brand wordmark), bottom-right, ~9% width, on a white chip with a 1px gold border, "never recolored, never distorted, never clipped," identical on every slide via the image-to-image composite path, with hero placement (bottom-center ~10 to 11%) reserved only for the pivotal moments (s50, s64) and the close. Verdict: PASS.
 
@@ -55,7 +55,7 @@ Guarantee that when a logo asset exists, the SAME mark appears at the SAME size 
 
 1. Phase 3 prompt FAIL (logo being drawn text-to-image): QC loops the prompt back to the Slide Image Creator; the writer adds the image-to-image reference instruction and the `LOGO_URL` is passed in `input.input_urls`.
 2. Phase 5 / Phase 6 logo-drift AUTO-FAIL: the affected slides regenerate via the image-to-image path with the locked asset. If the composite path still drifts after two attempts, the logo is composited as a NATIVE layer at Phase 6 (the logo chip placed by the PPTX Assembly Specialist over the rendered slide), recorded in working/checkpoints/pptx_text_overlays.json. Native composite GUARANTEES the locked mark and correct spelling. This is the same two-failed-attempts fallback the master SOP uses for critical text (extend it from price text to the logo and all critical text).
-3. Logo text garbled (e.g. "IDEHNOTTY DEVELOPMENT"): treat as the text-render failure; composite the logo (with its text) as a native layer so the brand name is guaranteed correct.
+3. Logo text garbled (e.g. "GRABLED BRANDCO"): treat as the text-render failure; composite the logo (with its text) as a native layer so the brand name is guaranteed correct.
 4. Multiple lockups supplied and the wrong one rendered: the Brand Steward re-confirms the single canonical `LOGO_URL` and forbids the others in the STYLE BLOCK; affected slides regenerate.
 5. 3 loops on the same logo failure: escalate to the Director, then the human owner. File a bug ticket.
 

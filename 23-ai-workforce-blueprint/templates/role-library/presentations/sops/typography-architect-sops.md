@@ -3,7 +3,6 @@
 **Source:** presentations/typography-architect.md
 **Extract:** Section 9 (Standard Operating Procedures) verbatim mirror.
 **Authority:** This file mirrors the role file. The role file is authoritative. If they diverge, the role file wins and this mirror must be regenerated.
-**Version:** 1.0
 
 ---
 
@@ -11,102 +10,128 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
-### SOP 9.1 -- Type-Layout System Authoring
+### SOP 9.1 -- Weight Ladder and Type Token System
 
-**When to run:** Phase 0.7 / Phase 1.5, AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json, and BEFORE the Slide Image Creator writes a single image prompt. This is a hard gate: the Slide Image Creator's element 5 requires this file.
+**Purpose:** Replace the one-device-everywhere look (the exact reference failure case Dimension F failure: a black headline with a single teal accent word reused on about 40 of 45 slides) with a named, reusable type token system that gives the deck a real hierarchy.
 
-**Inputs:**
-- working/style/style_block.md (palette, font family, weight map, logo placement rule)
-- working/copy/arc_allocation.json (the slide-type manifest)
-- working/research/design-brief-[DECK_SLUG].md (Category F Design Style Brief from ROLE-04 Phase -0.5 -- REQUIRED; if missing, block and notify the Director)
+**The hard rule:** Every design system MUST define a weight ladder of AT LEAST FOUR named weights drawn from the STYLE BLOCK's headline font family, each with an assigned role, and every headline MUST carry a per-word emphasis instruction. A design system with one weight and one accent device is a FAIL.
+
+**Inputs:** working/brand/style_block.md (font families, hexes).
 
 **Steps:**
+1. Read the headline font family from the STYLE BLOCK (for example Montserrat). Build the weight ladder using that family. The proven ladder is: Black for hero headlines, ExtraBold for sub-heads, Bold for labels and kickers, Medium-Italic for captions and attributions. If the STYLE BLOCK font has different weights, map to the nearest equivalents and record the mapping.
+2. Assign each weight a role and a default size band relative to slide height (hero headline 8 to 12 percent of slide height, sub-head 4 to 6 percent, label 2.5 to 3.5 percent, caption 2 to 2.5 percent). Sizes are guidance for the image prompt, not absolute pixels.
+3. Define the per-word color emphasis system: which word(s) in a headline take the accent color, and the rule that emphasis must change meaningfully slide to slide (not the same single accent word position every time). Record the accent-color roles already set by the STYLE BLOCK (Primary = money/value, Secondary = action/urgency/emphasis).
+4. Write the token system into design_system.json under `weight_ladder` and `emphasis_system`.
 
-0. **Load the Design Style Brief (Category F).** Read `working/research/design-brief-[DECK_SLUG].md` before doing anything else. Note which default font families the brief identifies to avoid (these inform step 1's "do NOT invent a font" rule), which layouts are overused in the niche (inform the do/never lists in step 3), and which compositional approaches are underused (inform focal-point and whitespace choices). The brief is research-not-instruction; you retain full creative authority.
+**Enforcement check (what auto-fails):**
+- Fewer than 4 named weights in the ladder = FAIL.
+- Any weight without an assigned role = FAIL.
+- No per-word emphasis system defined = FAIL.
+- The emphasis rule permits the identical accent word/position on every slide (no variation clause) = FAIL.
 
-1. Inherit the type scale and weight map from the STYLE BLOCK. Do NOT invent a font family. Do NOT use any platform-default family identified in the Design Style Brief's F2 section (AF-F13 enforces this at Phase 6). Carry the weight ladder verbatim (for example: hero headlines in Family Black, sub-headlines in ExtraBold, kicker labels in Bold, section labels in SemiBold, tertiary lines in Medium italic, footnotes in Regular) and the pt-size ranges relative to slide height. **Record the following as machine-readable tokens at the top of type_layout_system.md:**
-   - `font_family_display: [brand display family]`
-   - `font_family_body: [brand body family]`
-   - `type_scale_steps: [N]` (must be exactly 4 or 5; AF-F13 enforces this)
-   - `min_body_pt: 18` (absolute minimum -- AF-F12 enforces this; no body run in the deck may render below this)
-   These tokens are machine-read by the QC Specialist at Phase 6 to assert AF-F12 and AF-F13.
+**PASS example (illustrative -- substitute your DISCOVERY VARIABLES):** weight_ladder = {Black: hero headlines like "Control vs Clarity"; ExtraBold: sub-heads; Bold: kicker labels like "SHIFT 1"; Medium-Italic: the signature-quote attribution "[Founder Name] and [Co-Founder Name]"}; emphasis_system rotates the accent word so "Clarity" is accented on the contrast slide and "Ownership" is accented on the methodology slide.
 
-2. Enumerate the archetypes present in arc_allocation.json. The standing archetype set is: hook, divider, teach-one-big-idea, jaw-drop standalone, data, wall-of-wins, offer-component-card, CTA. Add any archetype the manifest names that is not in this set.
+**FAIL example (the reference failure case):** one device, "black headline plus a single teal accent word," reused on about 40 of 45 slides; no weight ladder; the one good idea (gold $[ANCHOR]) never carried to the other price beats.
 
-3. For EACH archetype, author one distinct LAYOUT TEMPLATE specifying (consult the F4 layout-overuse findings from the Design Style Brief to ensure each template avoids overused patterns):
-   - **IMAGE POSITION:** one of left / right / top / bottom / full-bleed / none / low-opacity-bg. No two adjacent archetypes default to the same position.
-   - **WORD-PLACEMENT ZONE:** which thirds-grid region the text occupies (upper-left / center / bottom-left, etc.), distinct per archetype so the eye is led differently slide to slide.
-   - **TYPE TREATMENT:** which rungs of the weight ladder this archetype uses, in what order, at what pt sizes. NOT every rung on every slide; the canonical stack is per-archetype, not universal.
-   - **DO / NEVER LIST:** the 2 to 4 things this archetype must do and the 2 to 4 it must never do (for example, teach-one-big-idea NEVER carries a hook refrain footer; jaw-drop standalone NEVER carries sub-copy or a tertiary line).
+**Outputs:** design_system.json `weight_ladder` and `emphasis_system` blocks.
 
-4. Apply the layout-rotation discipline borrowed from Skill 45 PPT-ANALYSIS-SOP.md: never more than 3 consecutive slides share the same type family treatment. The deck rotates between type-dominant, image-dominant, and balanced layouts.
+**Hand to:** SOP 9.4 (the per-slide plan consumes these tokens).
 
-5. Explicitly mark which archetypes are type-driven (hook, jaw-drop standalone, divider) versus image-led (teach-one-big-idea, wall-of-wins, offer-component-card). The hook archetype routes to SOP 9.2 for its full spec.
-
-6. Write working/typography/type_layout_system.md. Structure: (a) the four machine-readable token lines at the top (font_family_display, font_family_body, type_scale_steps, min_body_pt); then (b) one section per archetype, each with IMAGE POSITION, WORD-PLACEMENT ZONE, TYPE TREATMENT (weights + pt sizes), and the DO/NEVER list. Open the file with the inherited type scale and weight map so it is self-contained for the Slide Image Creator. **Section-divider archetypes must each declare a distinct focal point and whitespace strategy -- no two divider templates may be structurally identical (AF-F14 enforces this at Phase 6).**
-
-**Outputs:**
-- working/typography/type_layout_system.md (one LAYOUT TEMPLATE per archetype)
-
-**Hand to:** Slide Image Creator (element 5 of every Phase 2 prompt is sourced from the matching archetype's LAYOUT TEMPLATE, replacing the single hard-coded stack) and the QC Specialist (the layout-variety asserts in Phase 5 check against this file).
-
-**Failure mode:** If the STYLE BLOCK is missing the weight map, do NOT invent fonts. Request the weight map from the Brand Steward and block until it arrives. If arc_allocation.json names an archetype with no template, author one rather than letting it fall back to a generic stack; flag the new archetype to the Director.
+**Failure mode:** If the STYLE BLOCK lists only one font with no weight family available, flag to the Director and propose the nearest geometric-sans substitute with a full weight family; do not ship a one-weight system.
 
 ---
 
-### SOP 9.2 -- Hook-Slide Typography Spec
+### SOP 9.2 -- Five-Archetype Layout Rotation Plan
 
-**When to run:** During SOP 9.1, for the hook archetype and any dedicated A4 hook slide in arc_allocation.json. The Hook Strategist owns WHERE hooks land (the placement map); you own HOW the dedicated hook slides look.
+**Purpose:** Kill the cookie-cutter chassis (the reference failure case Dimension F: the identical five-part vertical stack on nearly every slide; V8 rotated image position but kept a rigid recurring chassis). Force a real rotation of WORD-BLOCK placement, not just image position.
 
-**Inputs:**
-- working/style/style_block.md (font family, weight map)
-- working/copy/arc_allocation.json (the positions of the dedicated A4 hook slides)
-- hook_package.json (read-only, for the placement map of dedicated hook slides)
+**The hard rule:** Every slide is assigned exactly ONE of the five archetypes (A1 to A5 per master SOP Section 7.2). NO two consecutive slides may share BOTH the same archetype AND the same text-anchor position. Across any window of five consecutive slides, at least THREE distinct archetypes must appear.
+
+**Inputs:** master SOP Section 7.2 (the five archetypes), arc_allocation.json, slides_copy.md (LADDER, PEOPLE, HOOK_REFRAIN, PURPOSE per slide).
 
 **Steps:**
+1. Pull the five archetypes (A1 full-bleed photo with overlay; A2 photo one side, text opposite; A3 photo-top, data-bottom; A4 type-dominant punch; A5 portrait/selfie). Confirm definitions verbatim from Section 7.2.
+2. Walk the slide list in order. Assign each slide an archetype by content fit: emotional opens/closes/buildups to A1; teach/contrast slides to A2; loss/math/stat/Wall-of-Wins slides to A3; hook anchors and price-drop slides to A4 (type is the hero); founder-authority slides to A5.
+3. After the first pass, run the adjacency check: for each pair of consecutive slides, if both archetype AND text anchor match, reassign one of them (usually by moving the text anchor; A2 left-block becomes A2 right-block, or promote to A4). Repeat until zero adjacency violations remain.
+4. Run the window check: in every sliding window of 5 slides, count distinct archetypes; if fewer than 3, diversify.
+5. Record the assignment in design_system.json `archetype_plan` as an array of {slide, archetype, text_anchor, reason}.
 
-1. Specify the dedicated A4 hook slide as TYPOGRAPHY-DRIVEN: no image, OR a background image at 15% opacity or lower with oversized designed type over it. The hook line is the hero and dominates the frame.
+**Enforcement check (what auto-fails):**
+- Any slide without an archetype assignment = FAIL.
+- Any consecutive pair sharing both archetype and text anchor = FAIL.
+- Any 5-slide window with fewer than 3 distinct archetypes = FAIL.
+- Hook-anchor slides NOT assigned A4 = FAIL (hook slides are pure type).
 
-2. Set the type treatment: the hook line in the heaviest weight (Family Black), oversized (the largest pt range on the deck for a text line), centered or anchored to a single strong thirds-grid region, with maximum breathing room. No kicker, no sub-copy, no tertiary line, no logo competing for the eye (logo chip remains small and consistent per the STYLE BLOCK).
+**PASS example:** slides 8 (A2 photo-left, gap) then 9 (A4 type-punch, reframe) then 10 (A1 full-bleed, son story): three archetypes in three slides, no repeat.
 
-3. Forbid the hook from appearing as a refrain footer device on non-hook slides (this is the FIX-1 over-stamping defect). The hook lives on its 3 to 4 dedicated slides only; everywhere else there is NO hook footer. Record this as a hard NEVER in the hook archetype's DO/NEVER list.
+**FAIL example (the reference failure case):** the same five-part vertical stack (kicker caps, headline, subhead, footer hook, italic caption) on nearly every slide; no five-archetype rotation of word placement.
 
-4. Specify layout variety across the 3 to 4 dedicated hook slides themselves: the open verse, the mid reprise, the post-proof reprise, and the close reprise should not be visually identical. Vary the type anchor and the bg treatment so even the hook slides rotate.
+**Outputs:** design_system.json `archetype_plan`.
 
-**Outputs:**
-- The hook archetype section of working/typography/type_layout_system.md (type-driven spec, no-image-or-low-opacity rule, the no-footer NEVER rule)
+**Hand to:** SOP 9.4 and the Slide Image Creator.
 
-**Hand to:** Slide Image Creator (the dedicated hook slides are rendered type-driven per this spec) and the Hook Strategist (confirms the placement map's dedicated A4 slides match this typography spec).
-
-**Failure mode:** If the placement map asks for more than 4 dedicated hook slides or a hook footer on non-hook slides, flag the conflict to the Hook Strategist and the Director: the FIX-1 ceiling is roughly 1 hook occurrence per 6 slides and never 2 consecutive slides carrying the hook. Do not author a layout that violates the ceiling.
+**Failure mode:** If the arc has a long run of same-type content (for example four consecutive pain slides), do not force a false archetype; instead vary the text anchor and the photographic framing within A1/A2 so consecutive pain slides still feel distinct, and note the constraint in the plan.
 
 ---
 
-### SOP 9.3 -- Layout-Variety Audit (image-position rotation)
+### SOP 9.3 -- Price-Typography System (the full ladder, not one rung)
 
-**When to run:** After SOP 9.1 produces the archetype templates and arc_allocation.json assigns archetypes to slide positions; re-run after the Slide Image Creator drafts prompts, to confirm the rendered plan honors the rotation.
+**Purpose:** Fix the reference failure case Dimension F failure where the one good idea (gold $[ANCHOR] on the anchor) was never carried to the other price beats, so $[DROP1], an off-ladder rung, and the final price landed flat. The price-typography system is defined ONCE and applied to EVERY ladder slide.
 
-**Inputs:**
-- working/typography/type_layout_system.md (the archetype templates with their image positions)
-- working/copy/arc_allocation.json (which archetype sits at each slide position)
+**The hard rule:** Every slide tagged LADDER (ANCHOR, DROP1, DROP2, DROP3, FINAL) MUST render under the same three-part price-typography system: (1) the LIVE price in a metallic-gold gradient hero numeral with a soft glow; (2) every DEAD (superseded) price struck through with a DRAWN gold diagonal double-strike, shown cumulatively; (3) the price numeral is the hero of the slide (largest type element), per master SOP rule "numbers are heroes." The system is identical across all ladder slides; only which price is live changes.
+
+**Inputs:** arc_allocation.json (ladder positions and slide numbers), the price ladder (from ROLE-07's price_ladder.json), master SOP Section 7.4 (strikethrough handling).
 
 **Steps:**
+1. List every LADDER slide and the price that is LIVE on it and the prices that are DEAD (struck) on it, cumulatively. Confirm against price_ladder.json.
+2. Define the gold gradient (for example #B8860B to #E6C66E), the glow treatment for the live price, and the drawn-gold double-strike for dead prices. Pull the exact gold hex from the STYLE BLOCK Primary.
+3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (cross-reference master SOP 7.4 and the native-text fallback).
+4. Write the price-typography rule per ladder slide into design_system.json `price_typography`, each entry naming the live price, the struck prices, and the treatment.
 
-1. Walk the deck in slide order. For each slide, record its image position from its archetype's LAYOUT TEMPLATE (left / right / top / bottom / full-bleed / none / low-opacity-bg).
+**Enforcement check (what auto-fails):**
+- Any LADDER slide without a price-typography rule = FAIL.
+- The gold/glow/strike system applied to only some ladder slides (for example anchor only) = FAIL.
+- A dead price not shown struck cumulatively = FAIL.
+- The price numeral not the largest type element on a price slide = FAIL.
 
-2. Flag any run of more than 2 consecutive slides sharing the same image position. This mirrors the existing TEXT_ANCHOR rule (the copy-QC layout-variety criterion). Where a run exceeds 2, assign an alternate position to the middle slide of the run (swap left/right, or insert a full-bleed or type-driven break) so the eye is moved.
+**PASS example (gold-standard reference deck):** s35 $[ANCHOR] struck in gold, $[DROP1] glows; s51 $[ANCHOR] and $[DROP1] struck, $[DROP2] glows; s65 three struck, $[DROP3] glows; s73 four struck, $[FINAL_PRICE]/$[VIP_PRICE] glows. Same system every rung. (Illustrative -- substitute your DISCOVERY VARIABLES.)
 
-3. Flag any run of more than 3 consecutive slides sharing the same type family treatment (the Skill 45 PPT-ANALYSIS rotation rule) and break it the same way.
+**FAIL example (the reference failure case):** gold $[ANCHOR] on the anchor only; $[DROP1], an off-ladder rung, and the final price rendered flat; the creativity that existed was applied inconsistently.
 
-4. Confirm the hook slides are type-driven (no image OR <=15% opacity bg) and are not visually identical to each other.
+**Outputs:** design_system.json `price_typography`.
 
-5. Write the audit result into type_layout_system.md: `{ "max_consecutive_same_image_position": N, "max_consecutive_same_type_family": N, "hook_slides_type_driven": true|false, "verdict": "PASS|FAIL" }`. PASS requires max image-position run <= 2, max type-family run <= 3, and all hook slides type-driven.
+**Hand to:** Slide Image Creator (must apply to every ladder prompt); QC Specialist (Phase 3 and Phase 5 check this).
 
-**Outputs:**
-- The layout-variety audit block in working/typography/type_layout_system.md
+**Failure mode:** If ROLE-07 has not locked the ladder yet, write the system as a template keyed to ladder POSITIONS (ANCHOR/DROP1/etc.) and bind the actual numbers when price_ladder.json lands; never invent prices.
 
-**Hand to:** QC Specialist (the image-position-variety assert in Phase 5 reads this audit) and the Slide Image Creator (any re-assigned positions are reflected in the prompts).
+---
 
-**Failure mode:** If arc_allocation.json forces more than 2 consecutive slides of the same archetype with the same image position (for example a long offer-component-card run), introduce a position swap or a type-driven break slide between them and flag the arc density to the Director for a possible re-allocation. Never let the deck render photo-right / type-left on every slide.
+### SOP 9.4 -- Per-Slide Type Plan and Anti-Cookie-Cutter Audit
+
+**Purpose:** Produce the single artifact the Slide Image Creator reads: a per-slide entry that fixes the archetype, the weight/treatment, the text anchor, the emphasis word(s), and (if applicable) the price rule, so the image prompt writer renders decisions instead of inventing them. Then audit the whole deck for repetition before handoff.
+
+**The hard rule:** Every slide in the deck has a complete type-plan entry. The completed plan passes the anti-cookie-cutter audit (the adjacency and window checks from SOP 9.2) before it is handed off.
+
+**Inputs:** outputs of SOP 9.1, 9.2, 9.3; slides_copy.md.
+
+**Steps:**
+1. For every slide, write a `type_plan` entry: {slide, archetype, text_anchor, headline_treatment (weight + size band), emphasis_words, sub_treatment, price_rule (or none), hook_treatment (A4 pure-type with image at low opacity, or none), logo_placement (defer to STYLE BLOCK chip)}.
+2. For hook-anchor slides, set hook_treatment = "A4 type-dominant, image at 10 to 20 percent opacity behind the words or no image" and confirm the slide carries the hook line as the hero, nowhere else (cross-reference the Hook Doctrine; the hook is NOT a footer).
+3. Run the anti-cookie-cutter audit across the full plan: adjacency check (no two consecutive slides identical archetype + anchor) and window check (3 distinct archetypes per 5-slide window). Fix and re-audit until clean.
+4. Write design_system.json (machine-readable) and design_system.md (human-readable summary: the weight ladder table, the archetype rotation, the price system, and the per-slide plan).
+5. Register in system_registry.json. Notify the Slide Image Creator that the design system spec is required pre-reading before Phase 2, and notify the Director that the spec is delivered.
+
+**Enforcement check (what auto-fails the deck plan):**
+- Any slide missing a type_plan entry = FAIL.
+- Audit not run before handoff = FAIL.
+- Any adjacency or window violation remaining at handoff = FAIL.
+- Any hook-anchor slide whose hook_treatment is not A4 pure-type = FAIL.
+
+**Outputs:** working/typography/design_system.json, working/typography/design_system.md.
+
+**Hand to:** Slide Image Creator (mandatory pre-reading, paired with the Brand Steward's archetype palette handoff).
+
+**Failure mode:** If slides_copy.md is incomplete (slides still being written), produce the plan for the locked slides and mark the open slides PENDING; deliver the rest only when copy is final. Never hand off a partial plan as if complete.
 
 ---

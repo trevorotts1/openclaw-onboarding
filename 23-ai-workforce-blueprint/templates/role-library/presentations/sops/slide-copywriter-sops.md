@@ -57,9 +57,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - No fabricated proof: if a slide calls for a testimonial and none is in the proof inventory, write `[TESTIMONIAL PENDING -- client must supply]` as a placeholder. Never invent a quote or a number.
 4. For every slide in the Proof section (per arc_allocation.json), include PROOF USED field referencing a specific item from the proof inventory.
 5. For every slide in the Offer Stack and Price Ladder sections, coordinate with the Offer Price Strategist's output in working/copy/price_ladder.json. Do not write price numbers yourself -- pull them from price_ladder.json.
-6. Count hook appearances as you write. Track in a comment at the top of slides_copy.md: `# HOOK APPEARANCES: N`. Update after every hook-bearing slide.
-7. After writing all slides, verify the hook appearance count is >= 7. If not, insert hook refrains in the Urgency/Close section until the count reaches 7.
-8. Write the completed slides_copy.md to working/copy/slides_copy.md.
+6. **(Density-floor overhaul) Place the hook ONLY on the 3 to 4 dedicated slides from hook_package.json** (SOP 9.2). Track in a comment at the top of slides_copy.md: `# HOOK-CARRYING SLIDES: [N, N, N]` (must be 3 to 4). Every other slide is `HOOK_REFRAIN: no`. Do NOT insert refrains to reach a count; there is no count floor anymore, there is a ceiling of 4.
+7. **(Density-floor overhaul) Run the AUDIENCE / SAY tagging pass** (SOP 9.7a): tag every line of every slide AUDIENCE (stays on the slide) or SAY (routes to the Presenter's Speech and Guide). Delete meta-telegraphing, internal pitch-doctrine, and image-narration lines (they belong nowhere). The word "webinar" and any technique self-label are banned on the face. Write the result to working/copy/audience_say_tags.json so QC can verify the pass ran (its absence fails the deck). Confirm one big idea per slide before finalizing each slide (a diagnosis+method+outcome is three slides; a value trio is four; a gap+reframe is two; four pains are four slides).
+8. Write the completed slides_copy.md to working/copy/slides_copy.md and audience_say_tags.json to working/copy/.
 
 **Outputs:**
 - working/copy/slides_copy.md (all slides, complete per-slide template for each)
@@ -70,30 +70,33 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
-### SOP 9.2 -- Hook Authoring and Refrain Placement
+### SOP 9.2 -- Hook Placement on Dedicated Slides (density-floor overhaul: ceiling, not floor)
 
-**When to run:** During Phase 1, after the hook is first established (typically on slide 1 or 2), and again during final hook-count verification.
+**When to run:** During Phase 1, after the Hook Strategist delivers hook_package.json (the canonical hook + the ANCHOR MAP + the HOOK-ABSENT list), and again during final hook verification.
+
+**The hard rule:** the hook is ONE canonical verbatim line placed on the 3 to 4 DEDICATED pure-typography slides named in hook_package.json, and NOWHERE ELSE. It is NEVER a footer band, NEVER body copy on a content/proof/offer slide, NEVER printed twice on a slide, NEVER reworded or extended. (This REPLACES the prior RETIRED "write 7 to 10 variants / distribute across the deck / insert refrains until the count reaches 7" floor engine, which produced the reference failure case 40-slide footer-stamping.)
 
 **Inputs:**
-- mission_prd.json (hook field)
-- arc_allocation.json (slide positions for hook refrains)
+- mission_prd.json (the canonical HOOK string, locked)
+- working/copy/hook_package.json (the 3 to 4 anchor slides + the HOOK-ABSENT list, from the Hook Strategist)
+- arc_allocation.json (the dedicated hook-slide slots the Director reserved)
 - slides_copy.md (in progress)
 
 **Steps:**
-1. Read the hook from mission_prd.json. The hook is a single, memorable sentence that captures the deck's core promise. Example structure: "[Transformation] without [sacrifice/objection]."
-2. Write 7 to 10 VARIANTS of the hook. Each variant says the same thing with different wording. Variants may be shorter, punchier, or reframed for the arc section they appear in. Record all variants in working/copy/hook_variants.json.
-3. Assign each variant to a specific slide in arc_allocation.json. Distribute variants across the deck: first appearance on slide 1-3, then at the Problem close, Solution intro, Proof intro, Offer Stack intro, Price drop, and Urgency close.
-4. Write a TEXT ANCHOR note for each hook-bearing slide in the HOOK VARIANT field of that slide's copy block. The anchor is the EXACT text that will appear on the slide or as an overlay. It must be 8 words or fewer.
-5. Verify distribution: no more than 2 consecutive non-hook slides in the Price Ladder and Urgency sections. The hook must "sing" -- a listener with no context should hear it and want to stay.
-6. Record the final hook placement map in hook_variants.json: `{ "hook_text": "...", "variants": [...], "placement_map": [{"slide": N, "variant_used": "..."},...] }`.
+1. Read the CANONICAL hook string from mission_prd.json. It is rendered VERBATIM on every dedicated slide. You never reword it, shorten it, extend it, or write "variants."
+2. Read the ANCHOR MAP from hook_package.json: the 3 to 4 dedicated hook-slide numbers at the named beats (born after the core contrast; after the proving story; at the payoff; late into the close). Write the canonical hook as the ONE BIG IDEA of each of those slides, tagged `HOOK_REFRAIN: yes` with no competing copy (it is a pure-typography slide; the Typography Architect marks it PURE_TYPE_HOOK in Phase 1.5).
+3. On EVERY other slide (the HOOK-ABSENT list), the hook does NOT appear: not as a footer, not as body copy, not as a caption. Tag those slides `HOOK_REFRAIN: no`.
+4. The signature quote (if any) is its OWN dedicated slide, name-only attribution, and does NOT carry the main hook (AF-HOOK-7).
+5. Verify before handoff: the hook appears on at most 4 slides; footer occurrences = 0; at least one dedicated hook slide exists; the hook is never printed twice on a slide; every occurrence is character-exact to the canonical string.
+6. Record the final placement in hook_package.json (alongside the Strategist's audit): `{ "canonical_hook": "...", "hook_carrying_slides": [N, N, N], "footer_occurrences": 0, "hook_absent": [all other slide numbers] }`.
 
 **Outputs:**
-- working/copy/hook_variants.json
-- slides_copy.md updated with HOOK VARIANT fields
+- slides_copy.md updated with `HOOK_REFRAIN: yes` on the 3 to 4 dedicated slides only
+- hook_package.json placement block confirmed (no separate variant ladder)
 
-**Hand to:** QC Specialist (for hook-count verification in Phase 1Q criteria 1)
+**Hand to:** QC Specialist (for the AF-HOOK ceiling/anti-footer battery in Phase 1Q)
 
-**Failure mode:** If fewer than 7 natural hook placements exist in the arc, insert hook refrains as standalone "refrain slides" -- a single large headline with the hook text and no other body copy. These count toward the slide total.
+**Failure mode:** If the arc has no dedicated hook-slide slots, do NOT manufacture footer refrains. Flag the Director to reserve 3 to 4 dedicated hook slots in arc_allocation.json at the named beats, then write them. A standalone refrain slide is the hook as the one big idea of a pure-typography slide (that is correct); stamping the hook at the bottom of content slides is the banned footer (AF-HOOK-2).
 
 ---
 
@@ -199,3 +202,29 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ---
 
+### SOP 9.7a -- AUDIENCE / SAY Tagging Pass (density-floor overhaul; the slide-is-not-the-script enforcement)
+
+**When to run:** After all slides are drafted, before Phase 1Q handoff. Source authority: universal-sops/presentation-slide-craft/SOP-SLIDE-02-AUDIENCE-FACING-ONLY.md.
+
+**The hard rule:** every line on every slide is tagged AUDIENCE or SAY. Only AUDIENCE copy (the one big idea as headline + optional sub + optional one supporting element, plus the hook on its dedicated slides) stays on the slide face. SAY lines route to the Presenter's Speech and Guide. Meta / doctrine / image-narration lines are DELETED (they belong on neither surface).
+
+**Steps:**
+1. Walk every line of every slide. Tag each:
+   - AUDIENCE: the one big idea, a stat chip, a label, a CTA chip, the hook on a dedicated slide. Stays.
+   - SAY: the words the presenter speaks ("When you come into our program...", "Remember this number", "Stay right here"). Move to the Presenter's Speech/Guide.
+   - DELETE: internal pitch-doctrine ("The lower the price, the greater the value"), image narration ("Same parent, same child, two rooms"), meta-telegraphing ("This is not just a webinar", "one last proof", "an intrigue gap", "hold onto this line"), credential dumps ("licensed counselor, years in recruitment"). These go nowhere.
+2. The word "webinar" and any technique self-label are banned on the face, full stop.
+3. Any unresolved proof stays as `[CLIENT TO SUPPLY]` at copy stage (it must be filled or the slide pulled before render; a bracket token must never reach a rendered image).
+4. Write working/copy/audience_say_tags.json: `{ "slides": [ { "slide": N, "lines": [ {"text":"...","tag":"AUDIENCE|SAY|DELETE","route":"slide|speech|guide|deleted"} ] } ] }`.
+
+**Enforcement check (what auto-fails):**
+- audience_say_tags.json missing at Phase 1Q = the whole deck fails for a missing required artifact (the pass did not run).
+- Any line tagged AUDIENCE that is actually a speaker SAY line, internal doctrine, image narration, meta, credential dump, or contains "webinar" = AF-AUD fail at QC.
+
+**Outputs:** working/copy/audience_say_tags.json.
+
+**Hand to:** QC Specialist (AF-AUD battery); Presenter's Speech Writer (ROLE-20) and Presenter's Guide Specialist (ROLE-19) consume the SAY-tagged lines.
+
+**Failure mode:** If a line is genuinely ambiguous (audience copy or spoken line), default it to SAY (route to the speech) and keep the slide to the one big idea; never leave a maybe-spoken line on the face.
+
+---

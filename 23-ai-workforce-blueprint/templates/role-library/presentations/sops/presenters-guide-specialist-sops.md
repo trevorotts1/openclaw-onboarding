@@ -1,9 +1,8 @@
-# SOPs Mirror -- Presenters Guide Specialist
+# SOPs Mirror -- Presenter's Guide Specialist
 
 **Source:** presentations/presenters-guide-specialist.md
 **Extract:** Section 9 (Standard Operating Procedures) verbatim mirror.
 **Authority:** This file mirrors the role file. The role file is authoritative. If they diverge, the role file wins and this mirror must be regenerated.
-**Version:** 1.0
 
 ---
 
@@ -11,119 +10,125 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
-### SOP 9.1 -- Guide Assembly
+### SOP 9.1 -- Build the Speaker Outline
 
-**When to run:** After Phase 6 final QC passes AND the Presenter Coach has produced talk_track.md, and only if DELIVERABLE_SET includes the guide.
+**Purpose:** Turn the sparse deck into a speaker-facing map: per section and per slide, what to cover and the one point to drive home. This is the OUTLINE, distinct from the word-for-word Speech.
 
-**Inputs:**
-- working/coach/talk_track.md (the timed, slide-by-slide talk track)
-- working/copy/arc_allocation.json (section banners, slide order, time allocation)
-- output/pdf-pages/ (rendered slide thumbnails for the thumbnail references)
+**The hard rule:** Every section gets a section header with its job in one line; every slide gets an entry with (a) the slide's one big idea restated, (b) 2 to 4 talking-point bullets of WHAT to cover, and (c) one bolded POINT TO DRIVE HOME sentence. The entry tells the owner what to say ABOUT, not the exact words to say.
+
+**Inputs:** slides_copy.md (PRESENTER NOTE, PURPOSE, SECTION, LADDER, HOOK_REFRAIN), arc_allocation.json, intake.json.
 
 **Steps:**
+1. Write a one-paragraph OPENING for the Guide: deck title, DURATION_MIN, total slides, the HOOK line verbatim, the GOAL (the action at the end), and a one-line reminder that this Guide is for the SPEAKER and the words to say verbatim live in the Presenter's Speech.
+2. For each SECTION (from arc_allocation.json), write a section header: the section name, the slide range, and its job in one sentence (for example "AUTHORITY: earn the right to teach; slides 6 to 11").
+3. For each slide, write an outline entry:
+   ```
+   SLIDE NN  [HEADLINE]  (SECTION, LADDER tag if any)
+   On screen: [the one big idea, restated in a few words]
+   Cover: [2 to 4 bullets of what to talk about here, derived from the PRESENTER NOTE and the slide PURPOSE]
+   POINT TO DRIVE HOME: [one bold sentence: the belief shift or feeling this slide must land]
+   ```
+4. On HOOK_REFRAIN slides, add a line: "SING THE HOOK here: '[HOOK verbatim]'" so the owner re-anchors on cue.
+5. On LADDER slides, add a line stating the rung, the earned reason, and the pause cue (for example "DROP1: $2,500 because they showed up live. Land the number, then go quiet for 3 seconds.").
+6. Carry any [CLIENT TO SUPPLY] placeholder forward verbatim as "[OWNER: fill in your real [result/win/number] before going live]". Never fabricate.
+7. Write the outline to working/presenter-guide/outline.md.
 
-1. Read the talk track and the arc allocation. Build the outline as one block per SECTION (a banner with the section name and its time budget) and within it one sub-block per SLIDE.
+**Enforcement check (what auto-fails the Guide):**
+- Any slide or section missing from the outline = FAIL.
+- Any slide entry missing the POINT TO DRIVE HOME sentence = FAIL.
+- The outline reproduces the word-for-word Speech instead of talking points = FAIL (wrong deliverable; that is ROLE-20).
+- A fabricated client win/number in place of a [CLIENT TO SUPPLY] flag = FAIL.
 
-2. For each slide block, carry exactly these speaker cues (no more, to keep it at-a-glance):
-   - **THUMBNAIL REF:** the slide number and a thumbnail reference (output/pdf-pages/slide-NN.png).
-   - **ONE POINT TO DRIVE HOME:** the single takeaway for this slide, pulled from the talk track. One line. Never the full script.
-   - **BEAT / TRANSITION:** how to move into the next slide (the transition sentence or gesture cue).
-   - **TIME BUDGET:** the seconds or minutes allotted to this slide from the arc allocation.
-   - **LADDER / HOOK CUE:** if this is a price-ladder drop slide or a dedicated hook slide, the cue (for example "DROP1 here: name the new value added" or "HOOK reprise: sing the line").
+**PASS example (illustrative -- substitute your DISCOVERY VARIABLES):** "SLIDE 09 Control vs Clarity (THE CONTRAST, hook is born here). On screen: control vs clarity. Cover: name the two modes; give the contrast; this is where the hook is born. POINT TO DRIVE HOME: most high-achieving people are controlling out of love and do not realize clarity is the better lever. SING THE HOOK: 'There is a difference between parenting by control and parenting through clarity.'"
 
-3. Keep the guide an OUTLINE. If a block grows past a few lines, it is drifting toward the Speech; trim it back to cues. The Guide is at-a-glance; the Speech is the full read.
+**FAIL example:** an entry that just repeats the slide headline with no talking points and no point to drive home; or an entry that prints the full spoken paragraph (that belongs in the Speech).
 
-4. Source every cue and one-point line from the talk track and the deck. Never fabricate a transition or a takeaway. If the talk track is silent on a slide, flag it back to the Presenter Coach rather than inventing.
+**Outputs:** working/presenter-guide/outline.md.
 
-5. Write working/presenter-guide/presenters_guide.md with a section-banner structure and the per-slide cue blocks.
+**Hand to:** SOP 9.2 (render the PDF).
 
-**Outputs:**
-- working/presenter-guide/presenters_guide.md (the speaker-facing outline source)
-
-**Hand to:** SOP 9.2 (PDF Render).
-
-**Failure mode:** If talk_track.md is missing or incomplete, do NOT write the guide from the deck copy alone (the deck is not the script). Request the talk track from the Presenter Coach and block until it exists.
+**Failure mode:** If a PRESENTER NOTE is blank or under 10 words, flag the slide as [INCOMPLETE PRESENTER NOTE: needs Slide Copywriter revision], log it, and notify the Director. Do not invent talking points for an empty note.
 
 ---
 
-### SOP 9.2 -- PDF Render (designed, branded, fonts >=12)
+### SOP 9.2 -- Render the Beautiful PDF (font never below 12)
 
-**When to run:** Immediately after SOP 9.1 produces presenters_guide.md.
+**Purpose:** Produce a genuinely beautiful, on-brand, readable PDF the owner can hold or put on a second screen. Beautiful and readable are both requirements; the font floor exists because a tired presenter cannot read 9pt under stage lights.
 
-**Inputs:**
-- working/presenter-guide/presenters_guide.md
-- brand assets (logo, palette, font family from the STYLE BLOCK) for the branded design
+**The hard rule:** No text in the PDF renders below 12pt. Body text 12 to 14pt minimum; section headers larger; the POINT TO DRIVE HOME lines visually distinct (bold and/or accent color). The PDF uses the deck's brand colors and headline font (from the design system) so it feels like part of the same product.
+
+**Inputs:** outline.md, design_system.json (optional, for brand match), intake.json (deck title, TONE).
 
 **Steps:**
+1. Convert outline.md to a styled document: cover page (deck title, owner name, date, "Presenter's Guide -- Speaker-Facing"), a one-page contents/section map, then the per-slide entries grouped under section headers.
+2. Apply brand: headline font and Primary/Secondary accent colors from the design system; the POINT TO DRIVE HOME line in the accent color and bold.
+3. Set the type scale with a hard 12pt floor. Verify the floor programmatically after render (extract text run sizes if the toolchain allows, or render to image and confirm legibility); if any run is below 12pt, fix the stylesheet and re-render.
+4. Render to working/presenter-guide/Presenters_Guide_<DeckTitle>.pdf using the box's confirmed PDF toolchain.
+5. Confirm the file exists and opens (ground truth, not a self-report).
 
-1. Render presenters_guide.md to a DESIGNED, BRANDED PDF. Reuse the proven render path: either the LibreOffice headless route (`soffice --headless --convert-to pdf`, as in pptx-assembly-specialist.md:262) by way of an intermediate styled document, or a Markdown-to-PDF path with a branded stylesheet. Apply the brand logo, palette, and font family so the guide looks like a producer's run-of-show, not a plain dump.
+**Enforcement check (what auto-fails):**
+- Any text below 12pt in the rendered PDF = FAIL.
+- The PDF does not open or is zero bytes = FAIL.
+- No POINT TO DRIVE HOME visual distinction = FAIL.
 
-2. Enforce the FONT-FLOOR: no font below 12pt anywhere in the rendered PDF (body, captions, footnotes, cues). This is a hard assert. If any element renders below 12pt, fix the stylesheet and re-render.
+**Outputs:** working/presenter-guide/Presenters_Guide_<DeckTitle>.pdf.
 
-3. Verify the PDF was created, is non-empty, and opens. Confirm the font-floor by inspecting the smallest text element.
+**Hand to:** SOP 9.3 (Notion) and SOP 9.4 (delivery).
 
-4. Name the file output/[DECK_SLUG]_presenters_guide.pdf.
-
-**Outputs:**
-- output/[DECK_SLUG]_presenters_guide.pdf (designed, branded, no font below 12pt)
-
-**Hand to:** SOP 9.3 (Notion Publish).
-
-**Failure mode:** If the render path fails (soffice unavailable, stylesheet error), fall back to the alternate render path (Markdown-to-PDF if soffice failed, or vice versa). If both fail, escalate to the Capacity and Reliability Engineer for the box environment and to the Director; never deliver a guide that renders below 12pt or did not render at all.
+**Failure mode:** If no PDF toolchain is installed on the box, escalate to the Capacity and Reliability Engineer (ROLE-03) to confirm or install one; do not deliver only a Markdown file and call it a beautiful PDF.
 
 ---
 
-### SOP 9.3 -- Notion Publish (with fallback chain)
+### SOP 9.3 -- Publish the Notion Doc
 
-**When to run:** After the PDF renders and passes the font-floor assert.
+**Purpose:** Mirror the Guide into Notion so the owner can read it on any device and the team can reference it.
 
-**Inputs:**
-- working/presenter-guide/presenters_guide.md
-- output/[DECK_SLUG]_presenters_guide.pdf
+**The hard rule:** The Notion doc carries the same content as the PDF, well-formatted (headings, toggles per section, the POINT TO DRIVE HOME lines as callouts), and the published URL is captured and verified.
+
+**Inputs:** outline.md (source of truth), the box's Notion integration credentials (from the env stores per the credential-check rule, never assume missing).
 
 **Steps:**
+1. Create or locate the client's Presentations Notion space.
+2. Create a page titled "Presenter's Guide -- <DeckTitle>".
+3. Render the outline as Notion blocks: section headers as H2, slide entries as H3 + bulleted talking points, POINT TO DRIVE HOME lines as callout blocks in the accent color, hook and ladder cues as quote/callout blocks.
+4. Capture the public or workspace URL; write it to working/presenter-guide/notion_url.json with a verification fetch confirming the page resolves.
 
-1. Publish the guide to Notion as a clean page via the proven fallback chain, in order, stopping at the first that succeeds:
-   - PRIMARY: Notion API (create a page, render the outline as headings + blocks).
-   - FALLBACK 1: Google Docs (create a doc from the markdown, share link).
-   - FALLBACK 2: a hosted text / link to the PDF as the last resort.
+**Enforcement check (what auto-fails):**
+- notion_url.json missing or the URL does not resolve = FAIL.
+- The Notion content diverges from the PDF content = FAIL.
 
-2. On each leg, verify the page or doc actually exists (fetch it back) before declaring that leg a success. Do not trust a create call's return value alone.
+**Outputs:** working/presenter-guide/notion_url.json.
 
-3. Record which leg succeeded and the resulting URL in a publish record alongside the guide.
+**Hand to:** SOP 9.4.
 
-**Outputs:**
-- A Notion page URL (or Google Docs / text fallback URL) for the Presenters Guide
-
-**Hand to:** SOP 9.4 (Verified Delivery).
-
-**Failure mode:** If all three legs fail, attach the PDF as the deliverable and flag the Notion outage to the Director; still proceed to verified delivery of the PDF so the owner is not left empty-handed. Never report "published" without fetching the page back.
+**Failure mode:** If the Notion credential is genuinely absent after checking ALL env stores and the live process env (per the credential-check rule), flag to the Director and operator; deliver the PDF and note the Notion step as blocked, never silently skip it.
 
 ---
 
-### SOP 9.4 -- Verified Delivery via the Delivery Concierge
+### SOP 9.4 -- Surface-Boundary Audit and Delivery
 
-**When to run:** After the PDF and the Notion (or fallback) URL exist.
+**Purpose:** Prove the Guide is a SPEAKER surface and nothing speaker-facing leaked the other way (no Guide content on the deck), then deliver both artifacts and verify.
 
-**Inputs:**
-- output/[DECK_SLUG]_presenters_guide.pdf
-- the Notion / Docs / text URL
+**The hard rule:** The Guide content lives only in the PDF and Notion (speaker surfaces). No slide-copy file or image prompt may contain Guide text. Deliver to the owner with explicit labeling of which artifact is which surface.
+
+**Inputs:** the PDF, the Notion URL, slides_copy.md (to confirm no leakage), intake.json (delivery destinations / environment).
 
 **Steps:**
+1. Surface-boundary check: grep the slide copy and prompt files to confirm none of the Guide's talking-point text or POINT TO DRIVE HOME lines were copied onto the audience deck. If any appear on the deck, flag to the Director (deck must be corrected) and do not deliver until resolved.
+2. Deliver per master SOP Section 11.4: Mac clients get the PDF copied to their Downloads folder with a clear descriptive name (Presenters_Guide_<DeckTitle>.pdf); the Notion URL is included in the message. If the environment is unclear, ASK where to deliver.
+3. Notify the owner via openclaw message send, stating plainly which artifact is which surface: "Two speaker-facing documents are ready. The Presenter's Guide (this PDF and Notion link) is your MAP: what to cover and the point to land on each slide. The Presenter's Speech, coming from [ROLE-20], is the exact words plus an audio demo. The slide deck is what the AUDIENCE sees; the Guide and Speech are only for you."
+4. Verify file existence at every destination (ground truth) before reporting done.
+5. Update working/checkpoints/run_ledger.json: `presenter_guide_phase: "complete"`, with the PDF path and Notion URL.
 
-1. Hand both deliverables to the Delivery Concierge (ROLE-13) using the standard dispatch contract, with the destination set resolved from intake.json (Mac Downloads / GHL / Drive per the client box type).
+**Enforcement check (what auto-fails):**
+- Any Guide content found on the audience deck = FAIL (block delivery, escalate).
+- Delivery reported done without verified file existence = FAIL.
+- Delivery message does not name which artifact is which surface = FAIL.
 
-2. The Delivery Concierge resolves destinations, uploads, sends the verified delivery notification via openclaw message send, and runs ground-truth verification (file hash + size). You do NOT upload or notify yourself; the last mile and the verification belong to the Concierge.
+**Outputs:** delivered PDF, Notion URL, run_ledger.json updated.
 
-3. Wait for the Delivery Concierge's verified-delivery confirmation (its delivery_complete ledger entry). Only then is the Presenters Guide considered shipped.
+**Hand to:** Director of Presentations (completion); Presenter's Speech Writer (ROLE-20) and Presenter Coach (ROLE-14) consume the same source notes.
 
-4. Record the verified-delivery confirmation reference in the guide's publish record and notify the Director.
-
-**Outputs:**
-- A verified-delivery confirmation from the Delivery Concierge for the Presenters Guide PDF + Notion link
-
-**Hand to:** Delivery Concierge (executes and verifies delivery); Director of Presentations (notified on verified delivery).
-
-**Failure mode:** If the Delivery Concierge reports a delivery failure, do NOT self-report success. Surface the failure to the Director and re-dispatch after the cause is fixed. An unverified delivery is not a delivery.
+**Failure mode:** If the owner is unreachable, deliver to the default location (Downloads for Mac), log the delivery, and send one follow-up; never hold a finished Guide hostage to a reply.
 
 ---

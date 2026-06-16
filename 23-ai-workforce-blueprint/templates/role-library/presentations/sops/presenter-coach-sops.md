@@ -149,7 +149,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    REHEARSAL RUN SHEET -- [DECK_SLUG]
    Duration: [DURATION_MIN] min | Slides: [SLIDE_COUNT] | Date: [ISO_DATE]
 
-   --- THE HOOK (say this at least 7 times) ---
+   --- THE HOOK (land it on its 3-4 dedicated beats; ~4-5 total, never 2 in a row) ---
    "[HOOK verbatim]"
 
    --- THE THREE SECRETS (one sentence each) ---
@@ -223,7 +223,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    c. Do not interrupt the run for corrections -- coach after the full pass.
    d. After the run: deliver verbal (or written, if async) feedback using this structure:
       - Timing: "Section [X] ran [N] seconds over/under -- here is how to adjust."
-      - Hook: "You sang the hook [N] times. Target is >= 7. Here are the slides where it was missing: [list]."
+      - Hook: "You landed the hook [N] times. Target is the banded ceiling -- the hook lives on its 3-4 dedicated beats, ~4-5 total appearances max, never 2 in a row, never over-stamped. Here are the dedicated beats where it should land: [list]." (The historical ">= 7 times" floor is RETIRED; over-stamping is the #1 defect -- STRIP excess rather than pad.)
       - Drops: "The [DROP1/DROP2/DROP3/FINAL] delivery -- [specific note on pause, conviction, pacing]."
       - CTA: "The CTA was [strong/needs work] -- [one specific coaching note]."
       - Overall confidence score: 1 to 10 (the owner's apparent comfort level). Anything below 7 triggers a second rehearsal.

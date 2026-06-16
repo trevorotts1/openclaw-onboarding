@@ -158,8 +158,13 @@ A deck that omits these records is NOT done — enforced as AF-PIPELINE-COMPLETE
 **Steps (Create GHL Folder -- run once per deck run):**
 1. If media_library.json has `ghl_folder_id: null`: create the GHL media library folder.
    a. Folder name: `<Client> <Deck> v<N>` (use the values from media_library.json).
-   b. Call the GHL media library API: POST to create folder. Record the returned folder_id.
-   c. Known issue (per master SOP): GHL folder creation via API has been broken before. If the API call fails: log the failure, upload to Media Library root, and note in media_library.json: `ghl_folder_creation_failed: true, fallback: "media_library_root"`.
+   b. Call the GHL media library folder-create API. The CORRECT endpoint is:
+      POST https://services.leadconnectorhq.com/medias/folder
+      Headers: Authorization: Bearer <LOCATION_PIT>, Version: 2021-07-28, Content-Type: application/json
+      Body: {"altId": "<locationId>", "altType": "location", "name": "<folder name>"}
+      IMPORTANT: do NOT use POST /medias/ — that path does not exist and returns 404.
+      The successful response is a folder object; capture the _id field as the folder_id.
+   c. If the API call fails: log the failure, upload to Media Library root, and note in media_library.json: `ghl_folder_creation_failed: true, fallback: "media_library_root"`.
    d. Update media_library.json: `ghl_folder_id: "[returned_id or 'root_fallback']"`.
 
 **Steps (Upload Each Image):**

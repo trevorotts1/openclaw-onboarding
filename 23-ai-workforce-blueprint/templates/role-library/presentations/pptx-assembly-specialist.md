@@ -568,7 +568,7 @@ EVERY assembled deck has BOTH output/[DECK_SLUG].pptx AND output/[DECK_SLUG].pdf
 ## 13. Good Output Examples
 
 ### Example A -- Successful Assembly Log
-render_log.json: pptx_path = "output/enrollment-on-autopilot.pptx", pdf_path = "output/enrollment-on-autopilot.pdf", pdf_is_delivery_output = true, pdf_export_tool = "soffice", page_count = 75, slide_count_final = 75, pptx_slide_count = 75, counts_match = true, rendered_at = "2026-06-11T14:30:00Z". Both the .pptx and the .pdf exist and ship together (Gate 6 passed).
+render_log.json: pptx_path = "output/[DECK_SLUG].pptx", pdf_path = "output/[DECK_SLUG].pdf", page_count = 75, slide_count_final = 75, counts_match = true, rendered_at = "[ISO_DATE]T14:30:00Z".
 
 ### Example B -- Speaker Notes Verification
 python-pptx loop over all 75 slides: every slide.notes_slide.notes_text_frame.text is non-empty. Minimum note length: 1 sentence (20+ characters). No slide has an empty notes field.
